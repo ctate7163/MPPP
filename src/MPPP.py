@@ -16,8 +16,13 @@ import os
 import cv2
 import time
 import glob
+import pandas as pd
+
+
 
 from numpy.linalg import inv, norm, det
+
+
 
 
 class image:
@@ -30,9 +35,10 @@ class image:
         
         self.IMG_path    = IMG_path
         self.filename    = os.path.basename( IMG_path )
+        self.name        = self.filename.split('.')[0]
         self.label       = PDS3Image.open( IMG_path ).label                  # PDS image header metadata
         
-        self.cam         = self.filename[:2]
+        self.cam         = self.filename[:2] + self.filename[45:48]
         self.sol         = int( self.filename[4:8] )
         
         if not just_label:
@@ -57,8 +63,10 @@ class image:
             
         if self.filename[0] == 'Z':
             self.focus_mc = self.label['MINI_HEADER']['ARTICULATION_DEV_POSITION'][0]
-            self.zoom_mc  = self.label['MINI_HEADER']['ARTICULATION_DEV_POSITION'][1]
-            self.filt_mc  = self.label['MINI_HEADER']['ARTICULATION_DEV_POSITION'][2]
+            self.zoom_mc  = self.label['MINI_HEADER']['ARTICULATION_DEV_POSITION'][2]
+            self.filt_mc  = self.label['MINI_HEADER']['ARTICULATION_DEV_POSITION'][1]
+            # self.cam = self.name[:2] + self.name[45:48]
+            # print( self.cam )
             
             # if self.focus_mc > 2**10: self.focus_mc -= 2**11
             
@@ -72,7 +80,7 @@ class image:
 
         # if the image has one color band, either demosaic or stack the image to make it a color image
         if len(self.image.shape)==2:
-            if 'MV0' in self.IMG_path:
+            if 'MV' in self.filename or 'M_' in self.filename:
                 self.image = np.stack( [self.image,self.image,self.image], axis=-1)
             else:
                 # self.image = colour_demosaicing.demosaicing_CFA_Bayer_bilinear  ( self.image, 'RGGB' )
@@ -258,10 +266,10 @@ class image:
 
         # Mars2020 Ecam mask processing    
         else:             
-            self.mask_im[  :1, :] = 0
-            self.mask_im[ -1:, :] = 0
-            self.mask_im[ :, :2 ] = 0
-            self.mask_im[ :,-2: ] = 0
+            self.mask_im[  :2, :] = 0
+            self.mask_im[ -2:, :] = 0
+            self.mask_im[ :, :3 ] = 0
+            self.mask_im[ :,-3: ] = 0
             
             
             # use pre-saved mask
@@ -276,7 +284,7 @@ class image:
                 mask = cv2.imread( mask_path )
                 self.mask_im[ mask[:,:,0] < 100 ] = 0
                 
-            if 'MV0' in self.filename or 'M_0' in self.filename:
+            if 'MV' in self.filename or 'M_' in self.filename:
             
                 parent_path  = os.path.split( os.getcwd() )[0]
                 if self.filename[:2] == 'NL':
@@ -331,6 +339,8 @@ class image:
         
 #         if self.sol >=700:
 #             self.tau = 0.5
+        if self.sol <=700:
+            self.tau = 0.5
 
 
     # Cmod
@@ -339,6 +349,60 @@ class image:
         
         
         GEOMETRIC_CAMERA_MODEL = self.label['GEOMETRIC_CAMERA_MODEL']
+
+        
+        # replace v1 CAHVOR models with V2.1
+        # try: 
+        if 0:
+
+            parent_path  = os.path.split( os.getcwd() )[0]
+            df_cmods_v2_path = os.path.join( parent_path, 'params/Tables - CAHV vs focus.csv' )
+            df_cmods_v2 = pd.read_csv( df_cmods_v2_path )
+
+            df_cam = df_cmods_v2[ df_cmods_v2['Camera set'] == self.cam ]
+
+            fmc = self.focus_mc
+
+            cmod = self.label['GEOMETRIC_CAMERA_MODEL']
+
+            cmodr_est_ = cmod.copy()
+
+            cmodr_est_['MODEL_COMPONENT_1'] = v_cmode_focus( df_cam, 'C', fmc )
+            cmodr_est_['MODEL_COMPONENT_2'] = v_cmode_focus( df_cam, 'A', fmc )
+            cmodr_est_['MODEL_COMPONENT_3'] = v_cmode_focus( df_cam, 'H', fmc )
+            cmodr_est_['MODEL_COMPONENT_4'] = v_cmode_focus( df_cam, 'V', fmc )
+            cmodr_est_['MODEL_COMPONENT_5'] = v_cmode_focus( df_cam, 'O', fmc )
+            cmodr_est_['MODEL_COMPONENT_6'] = v_cmode_focus( df_cam, 'R', fmc )
+            
+
+            cmod_est_ = cmod_transform( cmodr_est_, inverse=0 )
+
+            self.GEOMETRIC_CAMERA_MODEL_v2 = cmod_est_
+
+            GEOMETRIC_CAMERA_MODEL = cmod_est_
+
+            # save .cahvor file
+            if 1:
+                save_path = 'Z:/Mastcam-Z/agisoft/data/cal/cahvor/' + self.filename +'.cahvor'
+
+                print('saving',save_path)
+
+                string = ' MODEL_COMPONENT_1 = ({:5.8f},{:5.8f},{:5.8f})\n'.format( cmod_est_['MODEL_COMPONENT_1'][0],cmod_est_['MODEL_COMPONENT_1'][1],cmod_est_['MODEL_COMPONENT_1'][2], ) \
+                       + ' MODEL_COMPONENT_2 = ({:5.8f},{:5.8f},{:5.8f})\n'.format( cmod_est_['MODEL_COMPONENT_2'][0],cmod_est_['MODEL_COMPONENT_2'][1],cmod_est_['MODEL_COMPONENT_2'][2], ) \
+                       + ' MODEL_COMPONENT_3 = ({:5.8f},{:5.8f},{:5.8f})\n'.format( cmod_est_['MODEL_COMPONENT_3'][0],cmod_est_['MODEL_COMPONENT_3'][1],cmod_est_['MODEL_COMPONENT_3'][2], ) \
+                       + ' MODEL_COMPONENT_4 = ({:5.8f},{:5.8f},{:5.8f})\n'.format( cmod_est_['MODEL_COMPONENT_4'][0],cmod_est_['MODEL_COMPONENT_4'][1],cmod_est_['MODEL_COMPONENT_4'][2], ) \
+                       + ' MODEL_COMPONENT_5 = ({:5.8f},{:5.8f},{:5.8f})\n'.format( cmod_est_['MODEL_COMPONENT_5'][0],cmod_est_['MODEL_COMPONENT_5'][1],cmod_est_['MODEL_COMPONENT_5'][2], ) \
+                       + ' MODEL_COMPONENT_6 = ({:5.8f},{:5.8f},{:5.8f})\n'.format( cmod_est_['MODEL_COMPONENT_6'][0],cmod_est_['MODEL_COMPONENT_6'][1],cmod_est_['MODEL_COMPONENT_6'][2], ) 
+                
+                with open( save_path, "w") as text_file:
+                    text_file.write( string )
+
+        # except: 
+        #     pass
+
+        self.GEOMETRIC_CAMERA_MODEL_v1 = self.label['GEOMETRIC_CAMERA_MODEL']
+
+
         self.cmod_from_cahvor( GEOMETRIC_CAMERA_MODEL )       
         
         if self.filename[0] == 'H':
@@ -346,12 +410,13 @@ class image:
         else:
             self.find_Rt_veh2site_perseverance( )
         
-        self.R_cam2ned  = R.from_matrix( [[0,-1,0],[1,0,0],[0,0,1]] ) 
-        self.R_site2cam = self.R_cam2ned * self.R_veh2cam * self.R_veh2site.inv()
-        self.ypr = find_ypr_from_R( self.R_site2cam  )    
-        self.opk = find_opk_from_R( self.R_site2cam  )    
+        # self.R_cam2ned  = R.from_matrix( [[0,-1,0],[1,0,0],[0,0,1]] ) 
+        # self.R_site2cam = self.R_cam2ned * self.R_veh2cam * self.R_veh2site.inv()
+            
+        self.ypr = find_ypr_from_R( R.from_matrix(self.R_ref)  )    
+        self.opk = find_opk_from_R( R.from_matrix(self.R_ref)  )    
         
-        self.yaw, self.pitch, self.roll = self.ypr
+        self.yaw,  self.pitch, self.roll = self.ypr
         self.omega, self.phi, self.kappa = self.opk      
         self.az, self.el = find_azel_from_ypr( self.ypr  )
 
@@ -368,6 +433,10 @@ class image:
         self.V  = np.array(  GEOMETRIC_CAMERA_MODEL['MODEL_COMPONENT_4'], dtype=np.float64 )
         self.O  = np.array(  GEOMETRIC_CAMERA_MODEL['MODEL_COMPONENT_5'], dtype=np.float64 )
         self.R  = np.array(  GEOMETRIC_CAMERA_MODEL['MODEL_COMPONENT_6'], dtype=np.float64 )
+
+
+
+
 
         self.hs = norm( np.cross( self.H, self.A ) )
         self.vs = norm( np.cross( self.V, self.A ) )
@@ -389,6 +458,25 @@ class image:
 
         self.rot_cam = np.matmul( inv( self.K_cam ), 
                                   np.array( [ self.H, self.V, self.A ] ) )
+        
+        R_cam2ned = np.array( [[0,-1,0],[1,0,0],[0,0,1]] )
+
+        try:
+            R_RM,  t_RM  = T_RM_from_cmod( GEOMETRIC_CAMERA_MODEL )
+        
+
+            R_RpR, t_RpR = T_RpR_from_saved( )
+            R_CM,  t_CM  = T_CM_from_saved ( self.cam )
+    
+            R_CRp = R_CM @ R_RM.T @ R_RpR.T
+            
+
+            # add site transfrom
+            self.R_ref = R_cam2ned @ R_CRp 
+            self.C_ref = (R_RpR @ (R_RM @ t_CM + t_RM) + t_RpR)
+        except:
+            self.R_ref = R_cam2ned @ self.rot_cam 
+            self.C_ref = R_cam2ned @ self.C
         
         self.R_cam = R.from_matrix( self.rot_cam )       
         self.R_veh2cam = self.R_cam
@@ -716,7 +804,7 @@ def remove_duplicate_IMGs( IMG_paths ):
             os.remove( duplicates_i_paths[j] )
             
             
-def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0, frame='site3', angles='opk' ):
+def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0, frame='site3', angles='opk', save_im=1 ):
     
     
     # File parameters    
@@ -728,7 +816,7 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0,
     file_extension = ''
     
     # save images and thereby overwrite existing images
-    save_im    = 1
+    # save_im = 1
 
     # add an alpha channel to the output images
     save_mask  = 1
@@ -745,21 +833,25 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0,
     gamma      = 2        # gamma value
 
     # fraction of the dynamic range to clip off the lower values of image 
-    clip_low_z = 0.02  # for the Mastcam-Z cameras
+    clip_low_z = 0.01  # for the Mastcam-Z cameras
     clip_low   = 0.05  # for everything else
+    # clip_low_z = 0.05   # for the Mastcam-Z cameras
+    # clip_low   = 0.1   # for everything else
 
 
     # scale all the scale parameters below bsy the same number
-    scale_scale = 18
+    scale_scale = 12
+    # scale_scale = 16
+
 
     # color balance parameters for the Mars 2020 science cameras
-    scale_z,  scale_red_z,  scale_blue_z  = [ 1.1*scale_scale, 0.7 , 1.5  ] # Mastcam-Z 
+    scale_z,  scale_red_z,  scale_blue_z  = [ 1.0*scale_scale, 0.7 , 1.5  ] # Mastcam-Z 
     scale_l,  scale_red_l,  scale_blue_l  = [ 1.0*scale_scale, 0.75, 1.40 ] # SuperCam RMI
     scale_s,  scale_red_s,  scale_blue_s  = [ 1.0*scale_scale, 0.85, 1.40 ] # SHERLOC WATSON 
 
     # color balance parameters for the Mars 2020 engineering cameras
-    scale_n,  scale_red_n,  scale_blue_n  = [ 1.0*scale_scale, 0.75, 1.2  ] # Navcam
-    scale_v,  scale_red_v,  scale_blue_v  = [ 1.3*scale_scale, 1.10, 0.93 ] # Grayscale VCE Navcam
+    scale_n,  scale_red_n,  scale_blue_n  = [ 1.1*scale_scale, 0.75, 1.2  ] # Navcam
+    scale_v,  scale_red_v,  scale_blue_v  = [ 1.5*scale_scale, 1.08, 0.96 ] # Grayscale VCE Navcam
     scale_f,  scale_red_f,  scale_blue_f  = [ 1.1*scale_scale, 0.78, 1.25 ] # Front Hazcam
     scale_r,  scale_red_r,  scale_blue_r  = [ 1.1*scale_scale, 0.78, 1.25 ] # Rear Hazcam
     scale_hr, scale_red_hr, scale_blue_hr = [ 1.0*scale_scale, 0.75, 1.43 ] # Inginuity RTE
@@ -849,11 +941,11 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0,
                 
                 
             # Mars 2020 Navcam VCE images
-            if 'MV0' in im.filename or 'M_0' in im.filename:
+            if 'MV' in im.filename or 'M_' in im.filename:
                 im.scale       = scale_v
                 im.scale_red   = scale_red_v
                 im.scale_blue  = scale_blue_v
-                im.clip_low    = 0.1
+                im.clip_low    = 0.0
                 im.gamma       = 1        # gamma already applied
 
 
@@ -938,20 +1030,25 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0,
                     cv2.imwrite( im_save_path_full, im.im8[:,:,::-1] )  
 
 
-            # find image position and rotation parameters
-            im.image_reference( )
 
-            # save reference data for plotting        
-            '''
-            future work: replace these lists with pandas dataframes
-            '''
-            im_XYZs .append( [ im.X, im.Y, im.Z ] )
-            veh_XYZs.append( [ im.X_offset, im.Y_offset, im.Z_offset ] )
-            veh_azs .append( im.az_veh )
-            im_azs  .append( im.az )
-            im_els  .append( im.el )
-            rmcs    .append( im.label['ROVER_MOTION_COUNTER'])
-            sols    .append( int(im.label['LOCAL_TRUE_SOLAR_TIME_SOL']) )
+            if 1:
+            # try:
+
+
+                # find image position and rotation parameters
+                im.image_reference( )
+
+                # save reference data for plotting        
+                '''
+                future work: replace these lists with pandas dataframes
+                '''
+                im_XYZs .append( [ im.X, im.Y, im.Z ] )
+                veh_XYZs.append( [ im.X_offset, im.Y_offset, im.Z_offset ] )
+                veh_azs .append( im.az_veh )
+                im_azs  .append( im.az )
+                im_els  .append( im.el )
+                rmcs    .append( im.label['ROVER_MOTION_COUNTER'])
+                sols    .append( int(im.label['LOCAL_TRUE_SOLAR_TIME_SOL']) )
 
             # create a line for the reference file
 #             # Label	 X/East	Y/North	Z/Altitude	Yaw	Pitch	Roll
@@ -963,19 +1060,22 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0,
 #                  +str( np.round( im.pitch,4))+'\t'\
 #                  +str( np.round( im.roll, 4))+'\n'
 
-            # choose Euler angle convention for export
-            if angles=='opk':
-                # Label	 X/East	Y/North	Z/Altitude	Omega Phi Kappa  pan tilt
-                angle_0, angle_1, angle_2 = [ im.omega, im.phi, im.kappa ]
+                # choose Euler angle convention for export
+                if angles=='opk':
+                    # Label	 X/East	Y/North	Z/Altitude	Omega Phi Kappa  pan tilt
+                    angle_0, angle_1, angle_2 = [ im.omega, im.phi, im.kappa ]
                 
-            elif angles=='ypr':
-                # Label	 X/East	Y/North	Z/Altitude	Yaw Pitch Roll  pan tilt
-                angle_0, angle_1, angle_2 = [ im.yaw , im.pitch, im.roll  ]
-            else:
-                angle_0, angle_1, angle_2 = [ 0,0,0  ]
-                
+                elif angles=='ypr':
+                    # Label	 X/East	Y/North	Z/Altitude	Yaw Pitch Roll  pan tilt
+                    angle_0, angle_1, angle_2 = [ im.yaw , im.pitch, im.roll  ]
+                else:
+                    angle_0, angle_1, angle_2 = [ 0,0,0  ]
+
+                im.X =  im.C_ref[1]
+                im.Y =  im.C_ref[0]
+                im.Z = -im.C_ref[2]
         
-            pos_line =  im.save_name\
+                pos_line =  im.save_name\
                      + '\t'\
                      + str( np.round( im.X    , 5))+'\t'\
                      + str( np.round( im.Y    , 5))+'\t'\
@@ -988,17 +1088,17 @@ def image_list_process( IMG_paths, directory_output, suf, find_offsets_mode = 0,
                      + str( np.round( im.focus_mc, 5))+'\t'\
                        '\n'
 
-            pos_lines.append( pos_line )
+                pos_lines.append( pos_line )
 
-            if 1:
-                try:
-                    print( 'sol {} site {} drive {}  zenith angle {:0.0f} scale {:0.2f}'.
-                                format( im.sol, im.site, im.drive, im.el*57.3, im.ftau ) )
-                except:
-                    print( 'sol {} site {} drive {}'.
+                print( 'sol {} site {} drive {}'.
                                 format( im.sol, im.site, im.drive, ) )
-                print( 'XYZ_ENU = [{:0.2f}, {:0.2f}, {:0.2f}] YPR = [{:0.0f}, {:0.0f}, {:0.0f}]  OPK = [{:0.0f}, {:0.0f}, {:0.0f}]'.format(im.X,im.Y,im.Z,im.yaw,im.pitch,im.roll,im.omega,im.phi,im.kappa) )
+                print( 'XYZ_ENU = [{:0.3f}, {:0.3f}, {:0.3f}] YPR = [{:0.2f}, {:0.2f}, {:0.2f}]  OPK = [{:0.2f}, {:0.2f}, {:0.2f}]'.format(im.X,im.Y,im.Z,im.yaw,im.pitch,im.roll,im.omega,im.phi,im.kappa) )
                 print( )
+            
+            # except:
+            #     print( 'skipping', im.name )
+    
+
 
 
 
@@ -1076,7 +1176,8 @@ def find_opk_from_R( R_ ):
 def find_R_from_opk( opk ):
     # finds matrix R_cam2site from omega, phi, kappa angles    
     R_cam2ned  = R.from_matrix( [[0,-1,0],[1,0,0] ,[0,0,1] ] )   
-    R_angles = R.from_euler( 'XYZ', np.array(opk) ,degrees=1) 
+    angles = np.array([ opk[0], -opk[1], -opk[2]-90])
+    R_angles = R.from_euler( 'XYZ', angles ,degrees=1) 
     R_ = ( R_cam2ned * R_angles).inv()
     return R_
 
@@ -1092,3 +1193,378 @@ def find_R_from_opk( opk ):
 #     R_cam2ned = R.from_matrix( [[0,-1,0],[1,0,0],[0,0,1]] ) 
 #     angles = [ -ypr[0], -ypr[1], ypr[2] ]
 #     return R.from_euler( 'zxy', angles, degrees=1 ) * R_cam2ned.inv() 
+
+
+import numpy as np
+# from scipy.spatial.transform import Rotation as R
+import time
+import matplotlib.pyplot as plt
+
+from numpy.linalg import inv, norm, det
+
+def plot_rays_diff( ray_R, ray_R_prime, cmax=None ):
+    
+    a = ray_R_prime - ray_R
+    
+    if cmax == None:
+        cmax = np.abs( a[:,:,:2] ).max()
+        cmax = np.percentile( np.abs( a[:,:,:2] ), 99 )
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=( 10, 3 ) )
+    
+    im1 = ax1.imshow ( a[:,:,0]  )
+    im1.set_clim( -cmax, cmax )
+
+    im2 = ax2.imshow ( a[:,:,1]  )
+    im2.set_clim( -cmax, cmax )
+    
+    fig.colorbar( im2, ) 
+    
+
+def maltiply_arrays( A, B ):
+
+    C = np.zeros( B.shape )
+    for i in range(B.shape[0]):
+        for j in range(B.shape[1]):
+            C[i,j,:] = np.matmul( A, B[i,j,:] )
+            
+    return C
+
+def cahvor_pixels_2_ray( GEOMETRIC_CAMERA_MODEL, xy_pixels, rotate_2_camera_frame=False ):
+
+    x_pixels = xy_pixels[0,:,0]
+    y_pixels = xy_pixels[:,0,1]
+
+    c = np.array( GEOMETRIC_CAMERA_MODEL['MODEL_COMPONENT_1'] )
+    a = np.array( GEOMETRIC_CAMERA_MODEL['MODEL_COMPONENT_2'] )
+    h = np.array( GEOMETRIC_CAMERA_MODEL['MODEL_COMPONENT_3'] )
+    v = np.array( GEOMETRIC_CAMERA_MODEL['MODEL_COMPONENT_4'] )
+    o = np.array( GEOMETRIC_CAMERA_MODEL['MODEL_COMPONENT_5'] )
+    r = np.array( GEOMETRIC_CAMERA_MODEL['MODEL_COMPONENT_6'] )
+
+    cahvor = np.array( [c,a,h,v,o,r], dtype=np.float64 )
+
+    hs    = norm( np.cross( cahvor[2], cahvor[1]) )
+    vs    = norm( np.cross( cahvor[3], cahvor[1]) )
+    hc    = np.dot( cahvor[2], cahvor[1] ) 
+    vc    = np.dot( cahvor[3], cahvor[1] ) 
+
+    hp    = ( cahvor[2] - hc* cahvor[1] ) / hs
+    vp    = ( cahvor[3] - vc* cahvor[1] ) / vs
+
+    theta   = np.arcsin( ( -norm( np.cross( vp, hp ) )/norm( vp )/norm( hp )) )
+
+    hvt = [hs, vs, hc, vc, theta]
+
+    K_cahv  = np.array([
+                [ -hs*np.sin(theta), hs*np.cos(theta), hc ],
+                [  0,                vs              , vc ],
+                [  0,                0               ,  1 ], ])
+    Ki_cahv = inv( K_cahv )
+
+    hva_cahv = np.array( [ cahvor[2], cahvor[3], cahvor[1] ] )
+
+    R_cahv  = np.matmul( Ki_cahv, hva_cahv )
+    Ri_cahv = inv( R_cahv )
+
+    # rotate vectors by R to align them in camera-centered coordinates
+    cahvor_R = cahvor.copy()
+    if rotate_2_camera_frame:
+        cahvor_R[0] = np.matmul( R_cahv, cahvor[0] )
+        cahvor_R[1] = np.matmul( R_cahv, cahvor[1] )
+        cahvor_R[2] = np.matmul( R_cahv, cahvor[2] )
+        cahvor_R[3] = np.matmul( R_cahv, cahvor[3] )
+        cahvor_R[4] = np.matmul( R_cahv, cahvor[4] )
+
+    # create an array of ray vectors for each nth pixel without distortion, the ray is the true pointing
+    ray_cahv_R = np.sign ( np.dot( cahvor_R[1], np.cross(cahvor_R[3],cahvor_R[2])) ) \
+            * np.cross( (cahvor_R[3]-y_pixels[:,np.newaxis]*cahvor_R[1])[:,np.newaxis,:], (cahvor_R[2]-x_pixels[:,np.newaxis]*cahvor_R[1])[np.newaxis,:,:] )
+
+    # normalize by z value
+    ray_cahv_R /= ray_cahv_R[:,:,2,np.newaxis]
+        
+    # apply CAHVOR distortion to each ray
+    cahvor_R[4] /= norm( cahvor_R[4] )
+    zeta = np.tensordot( ray_cahv_R[:,:,np.newaxis,:], cahvor_R[4].reshape(1, 3))
+    lamb = ray_cahv_R - zeta[:,:,np.newaxis] * cahvor_R[4]
+    tau  = np.sum(lamb * lamb, axis=2) / zeta**2
+    mu   = r[0] + r[1]*tau**1 + r[2]*tau**2
+
+    # ray_R_prime is distorted vector for the true vector ray_R
+    ray_cahv_R_prime  = ray_cahv_R  + mu[:,:,np.newaxis]*lamb
+    ray_cahv_R_prime /= ray_cahv_R_prime[:,:,2,np.newaxis]
+
+    ray_cahv_R_prime_norm = ray_cahv_R_prime / norm(ray_cahv_R_prime, axis=-1 )[:,:,np.newaxis]
+    ray_cahv_R_norm       = ray_cahv_R       / norm(ray_cahv_R      , axis=-1 )[:,:,np.newaxis]
+
+    # u_cahv_R_prime    = maltiply_arrays( K_cahv, ray_cahv_R_prime)
+    # u_cahv_R          = maltiply_arrays( K_cahv, ray_cahv_R)
+
+    u_cahv_R_prime    = maltiply_arrays( hva_cahv, ray_cahv_R_prime)
+    # u_cahv_R_prime   /= u_cahv_R_prime[...,2]
+    u_cahv_R          = maltiply_arrays( hva_cahv, ray_cahv_R)
+    # u_cahv_R         /= u_cahv_R[...,2]
+
+
+    return ray_cahv_R_prime_norm, ray_cahv_R_norm, u_cahv_R_prime, u_cahv_R, hvt
+
+
+def cmod_transform( cmod, inverse=1 ):
+
+    cmodr = cmod.copy()
+
+    q   = q_wxyz2xyzw( cmod['MODEL_TRANSFORM_QUATERNION'] )
+    Rot = R.from_quat( q )
+
+    if inverse==1:
+        cmodr['MODEL_COMPONENT_1']  = Rot.apply( np.array(cmod['MODEL_COMPONENT_1'])- np.array(cmod['MODEL_TRANSFORM_VECTOR']), inverse=inverse )
+    else:
+        # cmodr['MODEL_COMPONENT_1']  = Rot.apply( np.array(cmod['MODEL_COMPONENT_1'])- np.array(cmod['MODEL_TRANSFORM_VECTOR']), inverse=inverse )
+        cmodr['MODEL_COMPONENT_1']  = Rot.apply( np.array(cmod['MODEL_COMPONENT_1']), inverse=inverse ) + np.array(cmod['MODEL_TRANSFORM_VECTOR'])
+        # cmodr['MODEL_COMPONENT_1']  = np.array(cmod['MODEL_COMPONENT_1']) + Rot.apply( - np.array(cmod['MODEL_TRANSFORM_VECTOR']), inverse=inverse )
+
+    cmodr['MODEL_COMPONENT_2']  = Rot.apply( cmod['MODEL_COMPONENT_2'], inverse=inverse )
+    cmodr['MODEL_COMPONENT_3']  = Rot.apply( cmod['MODEL_COMPONENT_3'], inverse=inverse )
+    cmodr['MODEL_COMPONENT_4']  = Rot.apply( cmod['MODEL_COMPONENT_4'], inverse=inverse )
+    cmodr['MODEL_COMPONENT_5']  = Rot.apply( cmod['MODEL_COMPONENT_5'], inverse=inverse )
+    cmodr['MODEL_COMPONENT_6']  = cmod['MODEL_COMPONENT_6'] 
+
+    return cmodr
+
+def v_cmode_focus( df_cam, v, fmc):
+    if v=='R':
+        return np.array([ df_cam[v+'0_a0'],df_cam[v+'1_a0'],df_cam[v+'2_a0'] ]).reshape((3)) 
+    else:
+        return np.array([ df_cam[v+'0_a0'],df_cam[v+'1_a0'],df_cam[v+'2_a0'] ]).reshape((3)) + np.array([ df_cam[v+'0_a1'],df_cam[v+'1_a1'],df_cam[v+'2_a1']]).reshape((3)) * fmc
+    
+
+def dotproduct(v1, v2):
+  return sum((a*b) for a, b in zip(v1, v2))
+
+def length(v):
+  return np.sqrt(dotproduct(v, v))
+
+def angle(v1, v2):
+  return np.arccos(dotproduct(v1, v2) / (length(v1) * length(v2)))
+
+
+def find_M_ECC( im1, im2, plot=0 ):
+
+    imsize = im1.shape[::-1]
+    iterations = 10
+    threshold  = 1e-3
+    blur       = 15
+    mask       = np.zeros( imsize[::-1] ).astype('uint8')
+    ys, ye, xs, xe  = [ 2, -10, 30, -30 ]
+    mask[ys:(ye-1),xs:(xe-1)] = 255
+
+    criteria   = ( cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, iterations, threshold )
+
+    m = np.array([[1,0,(0)],[0,1,0]]).astype('float32')
+
+    
+    im1 = np.uint8( 255/2*im1/np.mean(im1) )
+    im2 = np.uint8( 255/2*im2/np.mean(im2) )    
+
+    retval, m  = cv2.findTransformECC( im1, im2, m, cv2.MOTION_AFFINE, criteria, mask, blur )
+    
+    m = np.vstack( [ m, np.array([[ 0, 0, 1 ]]).astype('float32') ] )
+    M = cv2.invert(m)[1]
+
+        # retval, m  = cv2.findTransformECC( im1, im2, m, cv2.MOTION_AFFINE, criteria, mask, blur )
+        
+
+
+    p = np.matrix([824,600,1])
+    pt = (np.matrix(M)*p.T).T
+    pt /= pt[0,2]
+    dp = pt - p
+    sp = np.linalg.det(M)
+    sp = np.sign(sp)*np.sqrt(np.abs(sp))
+
+            
+    print( 'quality of adjustment', np.round(retval,5), ' scale change {:04.2f}%'.format(100-100*sp), 'center motion', np.round(np.array(dp)[0,:],5), 'pixels' )
+
+    return M
+
+
+def T_RM_from_cmod( cmod ):
+
+    R_RM = R.from_quat( q_wxyz2xyzw(cmod['MODEL_TRANSFORM_QUATERNION'])).as_matrix()
+    t_RM = cmod['MODEL_TRANSFORM_VECTOR'] 
+
+    return R_RM,  t_RM 
+
+# params saved 4/11/24
+q_RRp =	 np.array( [   0.00038668, -0.00049777,  0.00131397, -0.99999894 ])
+t_RRp =	 np.array( [  -0.00044004,  0.00266759, -0.00182606 ])
+
+
+# params saved 4/27/24
+q_RRp =	 np.array( [   -0.00048589,  0.00116867, -0.00121147,  0.99999847 ])
+t_RRp =	 np.array( [   0.00122956,  0.0029741,   0.00080236 ])
+
+# # params saved 4/30/24
+# q_RRp 	 [ 0.00014176 -0.00057312  0.00085162 -0.99999946]
+# t_RRp 	 [ 0.00053009  0.0009701  -0.00106397]
+
+
+
+def T_RpR_from_saved( ):
+
+    # # params saved 4/11/24
+    # q_RRp =	 np.array( [   0.00038668, -0.00049777,  0.00131397, -0.99999894 ])
+    # t_RRp =	 np.array( [  -0.00044004,  0.00266759, -0.00182606 ])
+
+    R_RRp = R.from_quat( q_RRp ).as_matrix()
+
+    R_RpR = np.array(  R_RRp.T )
+    t_RpR = np.array( -R_RRp.T @ t_RRp )
+
+    return R_RpR, t_RpR
+
+
+def T_CM_from_saved( cam ):
+
+    
+
+    # values saved 4/12/24
+    qL_CM_i, qL_CM_j, qL_CM_k, qL_CM_w, tL_CM_i, tL_CM_j, tL_CM_k, qR_CM_i, qR_CM_j, qR_CM_k, qR_CM_w, tR_CM_i, tR_CM_j, tR_CM_k = \
+        np.array([  0.49216189,  0.5038022 ,  0.50501621, -0.49891747,    0.03267, -0.12454, -0.06694 ,  
+                    0.50593745,  0.49109641,  0.4966527 , -0.50614988,    0.03615,  0.11885, -0.06689  ])
+    tL026_CM_i0, tR026_CM_i0, tL034_CM_i0, tR034_CM_i0, tL048_CM_i0, tR048_CM_i0, tL063_CM_i0, tR063_CM_i0, tL079_CM_i0, tR079_CM_i0, tL100_CM_i0, tR100_CM_i0, tL110_CM_i0, tR110_CM_i0 = \
+        np.array([ 0.01, 0.01, 0.00, 0.00, -0.02, -0.02, -0.03, -0.03, -0.025, -0.025, -0.025, -0.025, -0.02, -0.02  ])
+    
+
+    if cam[:2]=='ZL': 
+
+        q_CM = np.array( [qL_CM_i, qL_CM_j, qL_CM_k, qL_CM_w,])
+        t_CM = np.array( [tL_CM_i, tL_CM_j, tL_CM_k,])
+
+        if cam[2:] == '026': t_CM += np.array( [ tL026_CM_i0, 0,0 ])
+        if cam[2:] == '034': t_CM += np.array( [ tL034_CM_i0, 0,0 ])
+        if cam[2:] == '048': t_CM += np.array( [ tL048_CM_i0, 0,0 ])
+        if cam[2:] == '063': t_CM += np.array( [ tL063_CM_i0, 0,0 ])
+        if cam[2:] == '079': t_CM += np.array( [ tL079_CM_i0, 0,0 ])
+        if cam[2:] == '100': t_CM += np.array( [ tL100_CM_i0, 0,0 ])
+        if cam[2:] == '110': t_CM += np.array( [ tL110_CM_i0, 0,0 ])
+
+    if cam[:2]=='ZR':
+
+        q_CM = np.array( [qR_CM_i, qR_CM_j, qR_CM_k, qR_CM_w,])
+        t_CM = np.array( [tR_CM_i, tR_CM_j, tR_CM_k,])
+
+        if cam[2:] == '026': t_CM += np.array( [ tR026_CM_i0, 0,0 ])
+        if cam[2:] == '034': t_CM += np.array( [ tR034_CM_i0, 0,0 ])
+        if cam[2:] == '048': t_CM += np.array( [ tR048_CM_i0, 0,0 ])
+        if cam[2:] == '063': t_CM += np.array( [ tR063_CM_i0, 0,0 ])
+        if cam[2:] == '079': t_CM += np.array( [ tR079_CM_i0, 0,0 ])
+        if cam[2:] == '100': t_CM += np.array( [ tR100_CM_i0, 0,0 ])
+        if cam[2:] == '110': t_CM += np.array( [ tR110_CM_i0, 0,0 ])
+
+    R_CM = R.from_quat( q_CM ).as_matrix()
+
+    return R_CM,  t_CM 
+
+
+def CAHVOR_M_model( z, fl, f ):
+
+    # # thrid Z34 solution 4/11
+    # q_RRp =	 np.array( [  0.00038668, -0.00049777,  0.00131397, -0.99999894 ])
+    # t_RRp =	 np.array( [  -0.00044004,  0.00266759, -0.00182606 ])
+
+    R_RRp = R.from_quat( q_RRp ).as_matrix()
+    R_RpR = R_RRp.T
+    t_RpR = - R_RRp.T @ t_RRp
+
+    if z==0 and fl==34: 
+        # ZL034
+        q_CM_i0,q_CM_j0,q_CM_k0,q_CM_w0,   q_CM_i1,q_CM_j1,q_CM_k1,q_CM_w1,  t_CM_i0,t_CM_j0,t_CM_k0,   fl0,fl1, = \
+            [ 0.49071318,  0.50427292,  0.50641718, -0.49844863, -0.0009365,  -0.00096238, -0.00096644,  0.00095125, \
+            0.03262397, -0.12414077, -0.06682809, 4683.95898432,     0.04987082] 
+        b1_est, b2_est, cx_est, cy_est, k1_est, k2_est = [  0.        ,    0.        ,  862.73050974,  618.07206458, -0.45922782,    0.54560116 ]
+        cx0, cx1, cy0, cy1 = [ cx_est, 0, cy_est, 0 ]
+
+    if z==1 and fl==34: 
+        # ZR034
+        q_CM_i0,q_CM_j0,q_CM_k0,q_CM_w0,   q_CM_i1,q_CM_j1,q_CM_k1,q_CM_w1,  t_CM_i0,t_CM_j0,t_CM_k0,   fl0,fl1, = \
+            [ 0.50364342,  0.48974344,  0.49886872, -0.5075674, -0.00090192, -0.00087702, -0.00089336,  0.00090895,  \
+            0.036259,   0.11896465, -0.06675148, 4689.45655132,   0.05213186]
+        b1_est, b2_est, cx_est, cy_est, k1_est, k2_est =  [  0.        ,    0.        ,  846.77240069,  645.3408401 , -0.45143535,    0.33797551 ]
+        cx0, cx1, cy0, cy1 = [ cx_est, 0, cy_est, 0 ]
+
+    # if z==0 and fl==110: 
+    #     # ZL110
+    #     q_CM_i0,q_CM_j0,q_CM_k0,q_CM_w0,   q_CM_i1,q_CM_j1,q_CM_k1,q_CM_w1,  t_CM_i0,t_CM_j0,t_CM_k0,   fl0,fl1, = \
+    #         [ 0.49071318,  0.50427292,  0.50641718, -0.49844863, -0.0009365,  -0.00096238, -0.00096644,  0.00095125, \
+    #         0.03262397, -0.12414077, -0.06682809, 4683.95898432,     0.04987082] 
+    #     b1_est, b2_est, cx_est, cy_est, k1_est, k2_est = [  0.        ,    0.        ,  862.73050974,  618.07206458, -0.45922782,    0.54560116 ]
+    #     cx0, cx1, cy0, cy1 = [ cx_est, 0, cy_est, 0 ]
+
+    # if z==1 and fl==110: 
+    #     # ZR110
+    #     q_CM_i0,q_CM_j0,q_CM_k0,q_CM_w0,   q_CM_i1,q_CM_j1,q_CM_k1,q_CM_w1,  t_CM_i0,t_CM_j0,t_CM_k0,   fl0,fl1, = \
+    #         [ 0.50364342,  0.48974344,  0.49886872, -0.5075674, -0.00090192, -0.00087702, -0.00089336,  0.00090895,  \
+    #         0.036259,   0.11896465, -0.06675148, 4689.45655132,   0.05213186]
+    #     b1_est, b2_est, cx_est, cy_est, k1_est, k2_est =  [  0.        ,    0.        ,  846.77240069,  645.3408401 , -0.45143535,    0.33797551 ]
+    #     cx0, cx1, cy0, cy1 = [ cx_est, 0, cy_est, 0 ]
+
+
+    fl = fl0 + fl1 * f
+    cx = cx0 + cx1 * f
+    cy = cy0 + cy1 * f
+    Kc = np.array( [ [ fl+b1_est, b2_est, cx  ], [ 0, fl, cy  ], [ 0, 0, 1 ] ])
+
+    q_CM_0 = np.array( [ q_CM_i0, q_CM_j0, q_CM_k0, q_CM_w0 ] ) 
+    q_CM_1 = np.array( [ q_CM_i1, q_CM_j1, q_CM_k1, q_CM_w1 ] ) 
+
+    q_CM   = q_CM_0 + q_CM_1 * f
+    R_CM = R.from_quat( q_CM ).as_matrix()
+
+    t_CM = np.array( [ t_CM_i0,t_CM_j0,t_CM_k0 ] ) 
+    C_M  = t_CM
+
+    HVA_M = Kc @ R_CM
+
+    CAHVOR_M = np.array(  list( C_M ) \
+                      + list( HVA_M[2,:] ) \
+                      + list( HVA_M[0,:] ) \
+                      + list( HVA_M[1,:] ) \
+                      + list( HVA_M[2,:] ) \
+                      + [ 0.0, k1_est, k2_est ] \
+                           )
+    
+    return CAHVOR_M
+
+def CAHVOR_RpM( CAHVOR_M, q_RRp, t_RRp, q_RM, t_RM ):
+
+
+    R_RRp = R.from_quat( q_RRp ).as_matrix()
+    R_RpR = R_RRp.T
+    t_RpR = - R_RRp.T @ t_RRp
+
+    R_RM  = R.from_quat( q_RM ).as_matrix()
+    R_MR  = R_RM.T
+    t_MR  = - R_RM.T @ t_RM
+
+
+    C_M = CAHVOR_M[0:3]
+    A_M = CAHVOR_M[3:6]
+    H_M = CAHVOR_M[6:9]
+    V_M = CAHVOR_M[9:12]
+    k1, k2 = CAHVOR_M[16:18]
+
+    HVR_M = np.array( [H_M,V_M,A_M])
+        
+    C_Rp   = ( R_RpR @ (R_RM @ C_M + t_RM ) + t_RpR ) 
+    HVA_Rp = ( HVR_M @ (R_MR @ R_RRp ) ) 
+
+    CAHVOR_Rp = np.array(  list( C_Rp ) \
+                        + list( HVA_Rp[2,:] ) \
+                        + list( HVA_Rp[0,:] ) \
+                        + list( HVA_Rp[1,:] ) \
+                        + list( HVA_Rp[2,:] ) \
+                        + [ 0.0, k1, k2 ] \
+                            )
+
+    return CAHVOR_Rp
