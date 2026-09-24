@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# models and training outputs (models are released separately: docs/RELEASING.md)
+checkpoints/
+*.pt
+*.pth
+*.safetensors
+*_debug/
+
+# processing outputs and local data
+runs/
+outputs/
+scapes/
+*.db
+*.db-shm
+*.db-wal
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

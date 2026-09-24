@@ -1,0 +1,18 @@
+# pip install -r requirements.txt   (or: pip install -e .[mask,sfm,error,dev])
+numpy
+scipy
+opencv-python-headless   # or opencv-python
+pdr>=1.4                 # Planetary Data Reader
+pvl
+colour-demosaicing
+tifffile
+piexif
+torch                    # masks
+timm                     # masks
+safetensors              # masks (released model format)
+pycolmap>=4.2,<4.3       # COLMAP pipeline (mppp.sfm); a matching pair with pyceres
+pyceres>=2.6,<2.7        # weighted bundle adjustment (mppp.sfm)
+matplotlib               # plots, error model
+pillow
+pytest                   # tests
+nbformat

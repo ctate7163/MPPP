@@ -1,0 +1,13 @@
+* text=auto
+*.py text eol=lf
+*.md text
+*.ipynb text eol=lf
+*.json text
+*.csv text
+*.xml text
+*.IMG binary
+*.png binary
+*.jpg binary
+# package data: stored byte-for-byte (checksums of these files are recorded in run manifests)
+src/mppp/data/** -text
+tests/data/** binary

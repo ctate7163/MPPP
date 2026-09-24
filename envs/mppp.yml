@@ -1,0 +1,31 @@
+# Main environment: processing, masks, the COLMAP pipeline (CPU pycolmap + pyceres, a matching pair).
+#   conda env create -f envs/mppp.yml
+#   conda activate mppp
+#   pip install -e .        (from the repository folder)
+# For a CUDA build of PyTorch, install torch first following https://pytorch.org (then this file skips it).
+name: mppp
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - git
+  - jupyterlab
+  - pip:
+      - numpy
+      - scipy
+      - opencv-python-headless
+      - pdr>=1.4
+      - pvl
+      - colour-demosaicing
+      - tifffile
+      - piexif
+      - matplotlib
+      - pillow
+      - torch
+      - timm
+      - safetensors
+      - pycolmap>=4.2,<4.3
+      - pyceres>=2.6,<2.7
+      - pytest
+      - nbformat

@@ -1,0 +1,117 @@
+# MPPP — Methods
+
+*Status: the v0p1 text with later notes inline (version tags mark when something was added). A clean rewrite is planned for 1.0. Since v0p13 the calibration files and tables are package data in `src/mppp/data/` (formerly `params/`).*
+
+Supplementary description of the Mars Photogrammetry Preprocessing Pipeline, version v0p1 (21 September 2026). It documents what the code does, in the order it does it, with every convention and every unverified assumption stated. Section 8 lists the assumptions; section 9 the verification performed.
+
+## 1. Scope and inputs
+
+MPPP converts Mars 2020 Perseverance radiometrically calibrated image products (PDS3 `*.IMG` with attached label, product type `RAD`) from the engineering cameras (Navcam, front and rear Hazcam) and Mastcam-Z into inputs for structure-from-motion and neural-rendering software (COLMAP 4.2, Agisoft Metashape 2.2, Nerfstudio). Inputs are the PDS products, the mission waypoint table (GeoJSON), a table of atmospheric optical depth against solar longitude, optional Metashape camera calibrations, and a fine-tuned segmentation checkpoint. PDS file names are never altered: every output keeps the PDS stem and changes only the extension. Products and labels are read with the Planetary Data Reader (`pdr` ≥ 1.4); label quantities are reduced to their numerical value and units are taken from the M2020 Camera SIS.
+
+## 2. Identification
+
+Camera, eye, filter, sol, spacecraft clock, product type, site, drive, sequence, camera-specific field, downsample code and product version are parsed from the fixed-width file name (`mppp.filenames`). Site and drive used for positioning are taken from the label `ROVER_MOTION_COUNTER`, and a disagreement with the file name is logged. Images are assigned to an intrinsics group: camera and eye plus zoom in millimetres for Mastcam-Z (`ZL034`, `ZR110`), camera and eye plus downsample code for the engineering cameras (`NL0`, `NL1`). The two eyes of a stereo pair share the spacecraft-clock field and differ in the second character of the name.
+
+## 3. Geometry
+
+### 3.1 Conventions
+
+Camera axes are x right (increasing sample), y down (increasing line), z forward. Pixel coordinates place the centre of the first pixel at (0, 0), as CAHVOR and OpenCV do; COLMAP and Metashape place the image corner at (0, 0), so exporters add 0.5 px to the principal point. Distortion coefficients are stored with OpenCV meaning. The world frame is local East–North–Up in metres with origin at the landing site frame (site 3, drive 0). PDS site and rover-navigation frames are North–East–Down; the matrix P = [[0,1,0],[1,0,0],[0,0,−1]] converts between NED and ENU and is its own inverse. Rotations are world-to-camera, with rows equal to the camera axes expressed in world coordinates.
+
+### 3.2 CAHVOR to pinhole
+
+From the label vectors C, A, H, V (A normalised): h_s = |A × H|, v_s = |A × V|, h_c = A·H, v_c = A·V, H′ = (H − h_c A)/h_s, V′ = (V − v_c A)/v_s, θ = arccos(H′·V′). Then
+
+K = [[h_s sin θ, h_s cos θ, h_c], [0, v_s, v_c], [0, 0, 1]],  R_cam←rnav = K⁻¹ [H; V; A],
+
+and R is replaced by the nearest rotation (SVD). Radial distortion is taken from the CAHVOR R vector as k1 = R₁, k2 = R₂. This is exact only when the distortion axis O coincides with A; the angle between them is recorded per image (0.08° and 0.10° in the two example products). The zeroth-order term R₀ is a scale and is dropped. The CAHVORE entrance-pupil term E of the engineering cameras is ignored. These label-derived intrinsics are priors intended to be refined in bundle adjustment.
+
+### 3.3 Sub-frames and padding
+
+Engineering-camera products are frequently tiles or sub-frames of the 5120 × 3840 detector, and their label camera model is expressed in the tile's pixel coordinates. So that all images of a camera share one intrinsics group, each image is zero-padded to the full detector frame at its resolution (5120 × 3840 × s for the engineering cameras, 1648 × 1200 for Mastcam-Z, with s = 1, ½, ¼ from the downsample code). The offsets are left = (FIRST_LINE_SAMPLE − 1)·s and top = (FIRST_LINE − 1)·s, and the principal point moves by the same amount. A sub-frame that does not fit the frame raises an error.
+
+### 3.4 Calibrated intrinsics
+
+For camera families listed in `camera_model.xml_by_family` (Navcam in v0p1) the padded label intrinsics are replaced by a Metashape calibration from `mppp/data/m20_cmods`. With Metashape's definition u = w/2 + c_x + x′(f + b₁) + y′b₂, v = h/2 + c_y + y′f, the internal principal point is (w/2 + c_x − 0.5, h/2 + c_y − 0.5). Metashape's tangential coefficients are exchanged relative to OpenCV (p1 = P₂, p2 = P₁). The calibration is rescaled to the image resolution by scaling f, c_x, c_y, b₁, b₂; the distortion coefficients are dimensionless and unchanged. A Metashape k4 (r⁸) term has no OpenCV equivalent and triggers a warning.
+
+### 3.5 Pose prior
+
+With q the label quaternion `ROVER_COORDINATE_SYSTEM.ORIGIN_ROTATION_QUATERNION` (scalar first, rover-nav to site), R_q its matrix and o the position of the rover-nav origin in world NED,
+
+R_cam←NED = R_cam←rnav R_qᵀ, C_NED = R_q C + o, R_w2c = R_cam←NED P, C_ENU = P C_NED.
+
+The origin o is taken, in order of preference, from (a) the waypoint with exactly the image's site and drive, as easting/northing/elevation differences from the site-3 waypoint; (b) the drive-0 waypoint of the image's site plus the label `ORIGIN_OFFSET_VECTOR`; (c) without waypoints, the label offset alone, in which case the frame is named `site<N>_enu` and images of different sites are not mutually consistent (the manifest carries a warning). Mars longitude and latitude are taken from the waypoint and, in case (b), displaced on a sphere of radius 3 396 190 m; elevation is the waypoint's elevation above the areoid plus the camera height.
+
+Metashape yaw, pitch and roll are computed with the formula of the pre-package code, kept verbatim because it has been validated by import into Metashape: R_ref = P R_cam←NED, (Q⁻¹ R_ref)⁻¹ decomposed as intrinsic Z-Y-X Euler angles with Q = diag(−1, 1, −1).
+
+## 4. Radiometry and colour
+
+Radiance is L = DN · `RADIANCE_SCALING_FACTOR` + `RADIANCE_OFFSET`. Pixels equal to `INVALID_CONSTANT` (0) in any band are invalid. Single-band engineering products are replicated to three bands; raw-Bayer Mastcam-Z products are demosaiced with the Malvar–He–Cutler (2004) filter using the label CFA pattern.
+
+Scene brightness is normalised to an overhead Sun at a reference optical depth: L′ = L / s, s = μ exp[−(τ − τ_ref)/(6μ)], μ = max(sin e, μ_min), where e is the label solar elevation, τ is interpolated (periodically) in solar longitude from `mppp/data/M2020_taus_versus_L_s.csv`, τ_ref = 0.3 and μ_min = 0.2. The factor 6 is an empirical attenuation of total (direct plus diffuse) surface irradiance. This is a first-order, Lambertian, whole-image correction; it does not model shadows, sky illumination or the photometric function, and the τ table is a twelve-point seasonal climatology, not a per-sol measurement.
+
+Fixed per-camera white-balance gains are then applied (engineering cameras 1.1/1.4/1.8, Mastcam-Z 1.0/1.3/2.0, VCE 1.1/1.0/0.9). These are aesthetic, not colorimetric.
+
+The 16-bit product is round(L′ · 2×10⁵) clipped to [1, 65535]; it is linear in radiance and never gamma-encoded. The 8-bit product is the 16-bit value divided by 64 (optionally gamma-encoded), clipped to [1, 255]. Zero is reserved for invalid pixels in both.
+
+## 5. Masks
+
+`mask_valid` marks valid pixels. `mask` marks pixels to be used for reconstruction: valid pixels that the segmentation network classifies as terrain (as opposed to rover hardware, sky and artefacts). The network is a timm ConvNeXt backbone (tiny or base) with a three-level feature pyramid, a light ASPP block and a single-logit head; the image is scaled to the 8-bit-equivalent range, resized so that its long side is 1648 px, zero-padded to a square, normalised with ImageNet statistics, and the sigmoid output is resized back, thresholded at 0.4 and dilated by a 3 × 3 element. These inference parameters and the validation IoU (0.979 for `convnext_tiny_seg_best.pt`) are stored in the model card that accompanies each checkpoint. Inference runs before padding. By default the mask is written to the alpha channel (full scale = include). Checkpoints trained with v0p5 or later record further inference settings in their card: a rectangular canvas (1664 × 1248), a stride-4 decoder skip (v0p6), and `quad_split_above`: frames with a longer side are processed as four quadrants overlapping by 64 px, stitched from the quadrant cores (v0p6 option; off by default). Older cards keep the behaviour described above. Training images are regenerated from the PDS products with this same pipeline (no mask inference, padded to the detector frame), so the network is trained on exactly the radiance → 8-bit mapping it receives at inference. The default model (v0p10) is `convnext_tiny_s4_seg_best.pt`, a copy of the chosen training run; its card names the run it came from (`promoted_from`). Label quality is audited by running the trained model over every training frame and ranking the frames by IoU with their mask (`mppp.mask.audit`): the network cannot be more accurate than its labels, so the lowest-agreement frames — especially training frames, which the network has seen — are the first candidates for relabelling.
+
+## 6. Optional undistortion
+
+When enabled, image and masks are resampled with OpenCV to a pinhole camera with focal length (f_x + f_y)/2, zero skew, and either the original or a centred principal point. A resampled mask pixel is kept only if all its sources were set. Undistortion is off by default: distortion is left for the SfM software to model, which avoids the double-undistortion problem met with `ns-process-data`.
+
+## 7. Outputs and provenance
+
+Per image: a 16-bit RGBA PNG by default (8-bit PNG and 16-bit deflate TIFF on request). PNG metadata are standard ancillary chunks inserted after IHDR: `iTXt` key–value pairs, an XMP packet carrying the complete per-image record as JSON, and an `eXIf` chunk with camera tags, acquisition time and the Mars position in EXIF-GPS form (planetocentric latitude, east-positive longitude, elevation above the areoid with `GPSAltitudeRef` = 1 when negative, `GPSMapDatum` naming the Mars 2000 sphere).
+
+Per run: `references.txt` (file name, E, N, U, yaw, pitch, roll; an offset floor(mean/10)·10 is subtracted and recorded) and `references_absolute.txt`; a COLMAP text model with one camera per intrinsics group (`PINHOLE`, `OPENCV`, or `FULL_OPENCV` when k3 ≠ 0; group median when intrinsics vary inside a group, with the focal spread reported), world-to-camera pose priors, an empty point list and a `rig_config.json` pairing left and right cameras; `mppp_manifest_v0p1.json` with the complete per-image record (times, L_s, solar geometry, τ, scale factors, focus and zoom motor counts, stereo partner, padding, both intrinsics, pose, position source, mask statistics, processing log) and any failures; and `mppp_config_v0p1.json` with the full configuration, code version, platform, and the SHA-256 of the waypoint snapshot.
+
+## 8. Flagged assumptions (not verified in v0p1)
+
+1. File-name field positions [44:48] (camera specific; Mastcam-Z zoom in mm at [45:48]) and [48] (downsample) follow the pre-package code and the two example names; they were not checked against the SIS for every camera.
+2. `FIRST_LINE(_SAMPLE)` are full-resolution detector coordinates for downsampled products. Inferred from a legacy special case; no downsampled product was available to test.
+3. The Navcam XML calibrations `M2020_N?1_frame.xml` are half-scale (2560 × 1920) and transfer to other resolutions by pure scaling.
+4. O ≈ A for all cameras and zooms (checked only on two products); CAHVORE's E term is negligible at SfM-prior accuracy.
+5. Waypoint `easting`, `northing`, `elev_geoid` are metric and mutually consistent across sites. (v0p2: confirmed on the real table that site 3 drive 0 is the first feature, and the exact-waypoint and drive-0-plus-offset routes agree to 5.6 m for the example frame.)
+6. Resolved in v0p2: the real waypoint table carries `lon`/`lat` properties.
+7. Whether Metashape 2.2 reads EXIF/GPS from a PNG `eXIf` chunk is unknown; `references.txt` is the supported route, and Metashape must be given a Mars coordinate system in either case.
+8. COLMAP's handling of 16-bit RGBA PNG (bit-depth reduction, use of alpha) was not tested; COLMAP's own mask convention is a separate `masks/<image name>.png` directory (`export.write_mask_files` writes `masks/<stem>.png`, which may need renaming to `<stem>.png.png`).
+9. `rig_config.json` relies on left and right file names being identical after the three-character camera code, which fails when product versions or compression codes differ between eyes.
+10. The Navcam example product is a Sun-pointing tile; it exercises the geometry and padding code but is not a meaningful test of terrain masking.
+
+## 9. Verification performed
+
+Thirty-one automated tests. Synthetic round trips with known ground truth: CAHV decomposition against direct CAHV projection; principal-point bookkeeping under padding; Metashape XML conventions; pose of a level north-looking camera; yaw/pitch/roll against the legacy formula for random rotations; τ interpolation and zenith scaling; quantisation; waypoint lookup; lossless 16-bit RGBA PNG round trip with EXIF-GPS read back by an independent library; COLMAP pose round trip. On the two real products: label reading, padding, XML replacement, demosaicing, a single pixel followed by hand from DN to the 16- and 8-bit products, mask inference, the end-to-end batch, and an independent geometric check — the boresight azimuth/elevation derived through CAHV → rover-nav → site → ENU agrees with the label's `INSTRUMENT_AZIMUTH/ELEVATION` to within 1.5° (the residual is the offset between camera boresight and mast pointing). Regression against the pre-package code on both products: identical valid masks and camera positions, integer images within one count, angles within 0.02°.
+
+## 10. COLMAP bridge (`mppp.sfm`, v0p9)
+
+**Cameras.** One COLMAP camera per Navcam eye at full detector resolution (5120 × 3840), model FULL_OPENCV, from the Metashape calibration `M2020_N{L,R}0_frame.xml` with P1 = P2 = B1 = B2 = 0: f_x = f_y = f, c = (w/2 + c_x, h/2 + c_y) (both conventions put the pixel origin at the image corner), k1–k3 copied, k4 = k5 = k6 = 0 (the rational denominator is then 1, so the radial factor equals Metashape's 1 + K1 r² + K2 r⁴ + K3 r⁶ exactly; a non-zero Metashape K4, an r⁸ numerator term, has no FULL_OPENCV equivalent and is refused).
+
+**Resolutions.** MPPP pads every product to the detector frame at its downsample factor s (1, ½, ¼), so a pixel coordinate (corner origin) at scale s is s × the full-resolution coordinate. Features are extracted at native resolution and the keypoints (and their affine shapes) are multiplied by 1/s before they enter `database.db`. Every resolution therefore uses the same two cameras, and refining them refines one physical calibration.
+
+**Rig.** Left is the reference sensor. The right camera's `sensor_from_rig` is the element-wise median, over all CAHV stereo pairs, of R_rel = R_R R_Lᵀ (as a rotation vector) and t = R_R (C_L − C_R). On Belva (100 pairs, all resolutions) the pairs agree to 1.3 × 10⁻⁴ ° and 10 µm; the baseline is 0.42436 m. A frame is an exposure (shared SCLK); left-only exposures are frames with one image; an exposure without its reference (left) image is left out.
+
+**Priors and initial poses.** Frames are initialised from CAHV + waypoints (`MPPPImage.pose`), in ENU metres of the landing frame minus a rounded offset. Every image gets a position prior (σ = 1 m per axis by default, stored in the database; the bundle adjustment uses the reference image of each frame).
+
+**Matching.** Exhaustive SIFT is the baseline. `prior_overlap_pairs` casts a 32 × 24 grid of each image's valid (mask) pixels onto a ground plane 1.95 m below the camera, capped at 40 m, projects the footprint into every other image, and keeps pairs with a visible fraction ≥ min_overlap, plus all stereo pairs. Geometric verification runs in full-resolution pixels with a 6 px RANSAC threshold (1.5 px at quarter, 3 px at half resolution).
+
+**Refinement.** Triangulation with fixed poses (`pycolmap.triangulate_points`), then a bundle adjustment built on COLMAP's own cost functions (pycolmap + pyceres): each observation at scale s has covariance (σ/s)² I in full-resolution pixels (σ = 0.5 native px), so the whitened residual is in units of σ regardless of resolution — COLMAP's standard adjustment weights all residuals equally, which would over-weight quarter-resolution observations 16×. Cauchy loss; waypoint position priors on every frame; per camera f_x, f_y, c_x, c_y, k1–k3 free with p1, p2, k4–k6 held at zero (subset manifold); the right camera's rig rotation free with the baseline vector held at its CAHV value (the stereo baseline then sets the scale); frame poses free. Three rounds of (triangulate, adjust, drop observations above a residual limit in native pixels) with a graduated schedule (24/12/8 full-resolution px triangulation, Cauchy scale 10/2/2 σ, residual limit 8/4/2 native px), then a final adjustment. Implementation notes: the problem is created by pycolmap's adjuster on a copy of the reconstruction holding one dummy point per frame (so every frame pose gets COLMAP's quaternion × translation manifold, which pyceres cannot build), the dummies are removed and the weighted residuals added with the real 3-D points; removing the adjuster's own point blocks from the full reconstruction instead is O(residuals) per point in Ceres and took hours at 10⁶ observations. `Rig.sensor_from_rig()` returns a copy in pycolmap, so the right camera's offset is one explicit parameter block; the rotation is small (≈ 0.12°), so its quaternion is refined in x, y, z with w held (|q|² − 1 = O(10⁻⁶), a scale error below 0.01 px) and normalised when written back. `pycolmap.triangulate_points` runs COLMAP's own point-only adjustment, whose default also refines the rig offset (it moved the Belva baseline by 4 mm); that is switched off.
+
+**Export.** `error_input/native/` is a COLMAP text model in native pixels (one camera per eye and resolution, f and c scaled by s, keypoints scaled back), which `mppp.error.read_colmap` reads; `stations.csv` maps images to site/drive stations; `poses.csv` gives prior − refined camera centres and attitude differences; `residuals.npz` the per-observation residuals in native pixels.
+
+**Verification.** Synthetic tests (`tests/test_sfm.py`): the COLMAP camera reproduces the Metashape projection to 10⁻⁶ px; keypoint scaling is exact; `mppp.error`'s projection equals pycolmap's for four models; on a two-station synthetic rig with half- and quarter-resolution frames, 0.3 px native noise and perturbed start (f +0.3 %, c +3/−2 px, k1 +0.004, poses 3 cm / 0.1°) the weighted adjustment recovers f and c to < 1 px, k1 to 10⁻³ and camera centres to < 2 cm with the baseline held; the whitened cost at the truth equals the number of observations (weights follow native resolution). Belva (478 Navcam images, sols 748–815): all registered, 297 k points, median residual 0.22 native px (CHANGELOG v0p9).
+
+**Flagged assumptions.** (i) The scale-by-1/s mapping assumes 2 × 2 / 4 × 4 binning aligned to the detector corner and MPPP's detector-frame padding; a sub-frame whose FIRST_LINE(_SAMPLE) is not a multiple of the binning would be off by a fraction of a pixel. (ii) Keypoint noise σ is taken as equal in native pixels at all resolutions. (iii) The waypoint position prior σ (1 m) is a placeholder, not a measured localisation error. (iv) `mppp.error` projection now includes lens distortion for SIMPLE_RADIAL, RADIAL, OPENCV and FULL_OPENCV (it ignored distortion before v0p9) and refuses other models.
+
+### 10.x Mastcam-Z 34 mm (v0p13, experimental)
+
+Mastcam-Z frames can join the block. Each eye and zoom is one COLMAP camera at the 1648 × 1200 full frame (`ZL034`, `ZR034`). It is initialised from the median of the per-image label CAHVOR models: the focal length from the CAHV decomposition, the principal point plus 0.5 px for COLMAP's corner origin, and k1, k2 from the CAHVOR R vector with p1 = p2 = 0. Alternatively it can start from the `m20_cmods` Metashape XML, whose values are rounded. The focal length varies with focus by a few pixels between images; the refined camera is a shared average, so focus breathing appears as residual error. Left and right Mastcam-Z exposures have different spacecraft clocks, so they are independent frames, with no rig constraint.
+
+## 11. Alignment health (`mppp.sfm.health`, v0p13)
+
+Before a refined reconstruction is used — for any analysis, and in particular for the error model — `assess_alignment(project, rec)` evaluates it in six groups. **Registration:** fraction of images registered; fraction held at their prior pose because they have fewer than 30 observations. **Tie points:** number of points and observations; the track-length population (2, 3, 4, 5–9, ≥ 10 images per point, so the share of two-view points is visible); the 5th percentile of observations per image; the fraction of points seen from more than one station; the size of the largest block of stations tied by ≥ 50 shared points. **Reprojection:** median and 95th-percentile residual in native pixels; the ratio of the two eyes' median residuals; the fraction of images whose median residual exceeds three times the overall median; the median residual in the outer quarter of the image radius relative to the inner quarter (a distortion-model misfit grows towards the edge). **Camera model:** per camera, the change of focal length (%) and principal point (px) from the calibration, and the maximum and RMS image displacement of the same ray between the calibrated and refined models over the calibration's pinhole footprint (full-resolution pixels). **Stereo rig:** rotation of the refined right-from-left pose relative to the CAHV median, the (held) baseline, and the largest deviation of the individual CAHV pairs from their median. **Poses:** per station, the median magnitude of the refined-minus-prior camera centre and the RMS spread of those shifts within the station (frames of one station share the rover pose, so they should move together); the 95th percentile of the attitude change; per tied block of ≥ 3 stations, the scale and rotation of the similarity between prior and refined station positions.
+
+Each value is compared with a warn and a fail threshold (`DEFAULT_THRESHOLDS`); the verdict is the worst status. The thresholds are provisional values set a priori and are not validated limits. On the Belva Navcam test (sols 748–815, prior-pair matching) the report flags 55 of 478 frames held at their prior, a 0.13° rotation of the refined right camera relative to the CAHV rig (the CAHV pairs themselves agree to 1e-4°; the principal points moved by 2–4 px at the same time, which trades off against it), residuals rising from 0.18 px at the centre to 0.31 px in the outer quarter of the radius, and 6 of 13 stations outside the main tied block.
+

@@ -1,0 +1,19 @@
+{
+  "default": "mppp_mask_v1",
+  "models": {
+    "mppp_mask_v1": {
+      "file": "mppp_mask_convnext_tiny_s4_v1.safetensors",
+      "description": "ConvNeXt-tiny + FPN/ASPP with a stride-4 decoder; include (terrain) vs exclude (rover hardware, sky, artefacts); trained on the v7 mask set of Mars 2020 engineering-camera and Mastcam-Z frames (24 Sep 2026, val IoU 0.971)",
+      "urls": [
+        "https://huggingface.co/ctate7163/mppp-mask/resolve/main/mppp_mask_convnext_tiny_s4_v1.safetensors",
+        "https://github.com/ctate7163/MPPP/releases/download/mask-v1/mppp_mask_convnext_tiny_s4_v1.safetensors"
+      ],
+      "sha256": "678aa6ec0b9242b5359d2e3bf8c89d8325203c84d35259555a45e58ef6f67aa4",
+      "bytes": 124825148,
+      "source_checkpoint": "convnext_tiny_s4_seg_best.pt",
+      "val_iou": 0.97126661210644,
+      "backbone": "convnext_tiny",
+      "stride4": true
+    }
+  }
+}

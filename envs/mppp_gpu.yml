@@ -1,0 +1,24 @@
+# Optional second environment for GPU feature extraction and matching on Windows: the conda-forge CUDA
+# build of pycolmap (same COLMAP version as the main environment).  Do NOT run the notebooks in it:
+# its pycolmap cannot be combined with pip pyceres (the weighted bundle adjustment).  The main notebook
+# kernel calls it as a subprocess (GPU_PY in 03_colmap_alignment.ipynb).
+#   conda env create -f envs/mppp_gpu.yml
+#   conda activate mppp_gpu
+#   pip install -e . --no-deps          (from the repository folder; mppp itself, no torch)
+#   python -c "import sys, pycolmap; print(sys.executable, pycolmap.__version__, pycolmap.has_cuda)"
+name: mppp_gpu
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pycolmap=4.2.*=cuda*
+  - numpy
+  - scipy
+  - opencv
+  - pvl
+  - tifffile
+  - pip
+  - pip:
+      - pdr>=1.4
+      - colour-demosaicing
+      - piexif

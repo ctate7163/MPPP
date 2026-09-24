@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mppp"
+dynamic = ["version"]      # from mppp.__version__ (the single source)
+description = "Mars Photogrammetry Preprocessing Pipeline: Mars 2020 Navcam and Mastcam-Z PDS images -> Metashape and COLMAP inputs"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = [
+  "numpy", "scipy", "opencv-python-headless", "pdr>=1.4", "pvl",
+  "colour-demosaicing", "tifffile", "piexif",
+]
+
+[project.optional-dependencies]
+mask = ["torch", "timm", "safetensors"]
+error = ["matplotlib", "pillow"]
+sfm  = ["pycolmap>=4.2,<4.3", "pyceres>=2.6,<2.7"]   # a matching pair (see README: GPU on Windows)
+dev  = ["pytest", "nbformat", "pillow"]
+
+[tool.setuptools.dynamic]
+version = { attr = "mppp.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["mppp*"]
+
+[tool.setuptools.package-data]
+mppp = ["data/*.json", "data/*.csv", "data/m20_cmods/*.xml"]
+
+[project.urls]
+Homepage = "https://github.com/ctate7163/MPPP"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = ["slow: the 186-check error-model self-test (~45 s)"]

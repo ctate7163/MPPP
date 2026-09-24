@@ -1,0 +1,56 @@
+{
+  "output_dir": "/",
+  "cameras": [
+    "N", "V", "F", "Z", "S", "L" ],
+  "anchor_sol": null,
+  "preview": true,
+  "json_logs": true,
+  "verbose": false,
+  "camera_model": {
+    "coordinate_frame": "NED",
+    "extrinsics_from_waypoints": true,
+    "intrinsics_from_xml": true
+  },
+  "radiometry": {
+    "apply_tau_correction": true,
+    "tau_reference": 0.3,
+    "zenith_min": 0.2
+  },
+  "color": {
+    "enhance": true,
+    "white_balance_ecam": [ 1.1,  1.4, 1.8  ],
+    "white_balance_zcam": [ 1.0,  1.3, 2.0  ],
+    "white_balance_vce":  [ 1.1,  1.0, 0.9  ],
+    "scale_rad_to_int16": 2e5,
+    "scale_int8_to_int16": 64,
+    "offset_int8_to_int16": -0.0,
+    "apply_gamma": false,
+    "gamma": 2.0
+  },
+  "masking": {
+    "mask_invalid": true,
+    "infer_mask": true,
+    "checkpoint_template": "",
+    "checkpoint_trained": "convnext_tiny_seg_best.pt",
+    "checkpoint_config": "",
+    "max_length": 1024,
+  "static_masks_dir": null
+  },
+  "resize": {
+    "apply_padding": true,
+    "extra_padding": false,
+    "extra_fraction": 0.1, 
+    "standard_ratio": 1.3333333,
+    "standard_width": 2560,
+    "standard_height": 1920,
+    "undistort": false,
+    "recenter_principal_point": false
+  },
+  "export": {
+    "format": "PNG8A",
+    "embed_metadata": true,
+    "store_mask_in_alpha": true,
+    "write_colmap": true,
+    "colmap_model": "OPENCV"
+  }
+}
