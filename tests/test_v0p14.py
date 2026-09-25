@@ -170,13 +170,16 @@ def test_ba_recovers_tangential_only_when_asked(tmp_path):
 
 
 def test_features_reused_only_with_same_settings(tmp_path):
-    from mppp.sfm.database import features_up_to_date, _features_record
+    from mppp.sfm.database import features_up_to_date, _features_record, image_fingerprints
     from mppp.sfm.project import SfmProject
     proj = SfmProject(tmp_path, [{"name": "a.png"}, {"name": "b.png"}], {}, {}, [0, 0, 0], {})
     assert not features_up_to_date(proj)                                # nothing yet
     proj.features_db.write_bytes(b"")
     assert not features_up_to_date(proj)                                # no record (e.g. extracted by 0.14.2)
     rec = {"max_num_features": 8192, "max_image_size": 3200, "domain_size_pooling": False, "images": ["a.png", "b.png"]}
+    _features_record(proj).write_text(json.dumps(rec))
+    assert not features_up_to_date(proj, max_num_features=8192)         # no file record (before 0.14.7)
+    rec["files"] = image_fingerprints(proj)
     _features_record(proj).write_text(json.dumps(rec))
     assert features_up_to_date(proj, max_num_features=8192)
     assert not features_up_to_date(proj, max_num_features=16380)        # new setting -> extract again
@@ -185,6 +188,45 @@ def test_features_reused_only_with_same_settings(tmp_path):
     assert features_up_to_date(proj)                                    # default is 16380
     proj.images.append({"name": "c.png"})
     assert not features_up_to_date(proj)                                # an image without features
+
+
+def test_features_extracted_again_when_an_image_or_mask_changes(tmp_path):
+    import os
+    from mppp.sfm.database import features_up_to_date, _features_record, image_fingerprints
+    from mppp.sfm.project import SfmProject
+    proj = SfmProject(tmp_path, [{"name": "a.png"}], {}, {}, [0, 0, 0], {})
+    proj.images_dir.mkdir(parents=True, exist_ok=True)
+    proj.masks_dir.mkdir(parents=True, exist_ok=True)
+    (proj.images_dir / "a.png").write_bytes(b"img")
+    (proj.masks_dir / "a.png.png").write_bytes(b"mask")
+    proj.features_db.write_bytes(b"")
+    rec = {"max_num_features": 16380, "max_image_size": 3200, "domain_size_pooling": False, "images": ["a.png"],
+           "files": image_fingerprints(proj)}
+    _features_record(proj).write_text(json.dumps(rec))
+    assert features_up_to_date(proj)
+    m = proj.masks_dir / "a.png.png"
+    m.write_bytes(b"new mask")                                          # the image was processed again
+    os.utime(m, ns=(m.stat().st_atime_ns, m.stat().st_mtime_ns + 10**9))
+    assert not features_up_to_date(proj)
+
+
+def test_project_copy_refreshed_when_the_processed_image_changes(tmp_path):
+    import os
+    from mppp.sfm.project import _link_or_copy
+    src, dst = tmp_path / "src.png", tmp_path / "dst.png"
+    src.write_bytes(b"v1")
+    _link_or_copy(src, dst, link=False)                                 # a copy (e.g. another drive)
+    assert dst.read_bytes() == b"v1"
+    _link_or_copy(src, dst, link=False)                                 # unchanged: kept
+    src.write_bytes(b"version 2")
+    os.utime(src, ns=(src.stat().st_atime_ns, dst.stat().st_mtime_ns + 10**9))
+    _link_or_copy(src, dst, link=False)
+    assert dst.read_bytes() == b"version 2"
+    l = tmp_path / "link.png"
+    _link_or_copy(src, l, link=True)
+    src.write_bytes(b"version 3")                                       # a hard link follows in place
+    _link_or_copy(src, l, link=True)
+    assert l.read_bytes() == b"version 3"
 
 
 # ---------------------------------------------------------------- v0p14.4
@@ -404,3 +446,115 @@ def test_training_labels_come_from_masks_folder_not_alpha(tmp_path):
     import pytest
     with pytest.raises(ValueError):
         scan_dataset(tmp_path, image_dirs=("images", "masks"), mask_dir="masks")
+
+
+# ---------------------------------------------------------------- v0p14.7
+@needs_data
+def test_reuse_existing_processes_only_what_is_missing_or_changed(tmp_path, capsys):
+    import mppp
+    cfg = mppp.load_config({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": True}})
+    wp = mppp.load_waypoints()
+    png = lambda p: tmp_path / "images_png8" / (p.stem + ".png")                  # noqa: E731
+    man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True)
+    assert man["reuse_existing"]["reused"] == 0 and man["reuse_existing"]["to_process"] == 2
+    refs_full = (tmp_path / "references.txt").read_text()
+    t_nlf = png(NLF).stat().st_mtime_ns
+
+    # False (all selected), nothing changed: nothing is processed, same manifest and references
+    man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True)
+    assert man["reuse_existing"]["reused"] == 2 and man["reuse_existing"]["to_process"] == 0
+    assert png(NLF).stat().st_mtime_ns == t_nlf and man["n_processed"] == 2
+    assert (tmp_path / "references.txt").read_text() == refs_full
+
+    # True (only_existing) after deleting a frame: no reprocessing, manifest and references without it
+    png(ZL0).unlink()
+    man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True, only_existing="PNG8")
+    assert man["reuse_existing"]["to_process"] == 0 and man["n_processed"] == 1
+    assert png(NLF).stat().st_mtime_ns == t_nlf and not png(ZL0).exists()
+    refs = (tmp_path / "references.txt").read_text()
+    assert NLF.stem in refs and ZL0.stem not in refs
+
+    # False again: the full selection; only the missing frame is processed
+    man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True)
+    assert man["reuse_existing"]["reused"] == 1 and man["reuse_existing"]["to_process"] == 1
+    assert png(ZL0).is_file() and png(NLF).stat().st_mtime_ns == t_nlf and man["n_processed"] == 2
+    assert (tmp_path / "references.txt").read_text() == refs_full                 # rebuilt rows = processed rows
+
+    # another configuration (e.g. another mask model): everything is processed again, with the reason
+    cfg2 = mppp.load_config({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": True,
+                                                                          "store_mask_in_alpha": False}})
+    man = mppp.process_images([NLF, ZL0], tmp_path, cfg2, wp, progress=True, reuse_existing=True)
+    assert man["reuse_existing"]["to_process"] == 2
+    assert "export.store_mask_in_alpha" in man["reuse_existing"]["config_changed"]
+    assert "configuration changed" in capsys.readouterr().out
+
+
+def test_mask_model_v2_is_the_default():
+    import mppp
+    from mppp.mask.hub import load_registry
+    reg = load_registry()
+    assert reg["default"] == "mppp_mask_v2" == mppp.default_config()["masking"]["checkpoint"]
+    v2 = reg["models"]["mppp_mask_v2"]
+    assert v2["source_checkpoint"] == "convnext_tiny_s4_seg_20260925.pt" and v2["val_iou"] > 0.977
+    assert v2["sha256"] == "227e483369e11d6e36ce3517cf9f6d6ac60a9a50c1e301f9e7ae53d0cef569b9"
+    assert all(u.endswith(v2["file"]) and "mask-v2" in u or "huggingface" in u for u in v2["urls"])
+    assert "mppp_mask_v1" in reg["models"]                                         # the previous model stays
+
+
+def test_parse_stations():
+    from mppp.config import parse_stations
+    assert parse_stations([[32, 1184], "S032D1208", "Sol0686-0688 S032D1062", "32/1394", (5, 7)]) == \
+        {(32, 1184), (32, 1208), (32, 1062), (32, 1394), (5, 7)}
+    assert parse_stations(None) == set()
+    with pytest.raises(ValueError):
+        parse_stations(["Sol 686"])
+    import mppp
+    with pytest.raises(ValueError):
+        mppp.load_config({"masking": {"skip_inference_at": ["nonsense"]}})
+
+
+@needs_data
+def test_skip_inference_at_one_station_keeps_the_rover(tmp_path, monkeypatch):
+    import numpy as np
+    import mppp
+    from mppp.image import MPPPImage
+
+    def fake_infer(self, rad):                     # a "model" that excludes the left half of every frame
+        m = self.mask_valid.copy()
+        m[:, : m.shape[1] // 2] = 0
+        self.mask, self.mask_card = m, {"name": "fake", "release_name": "fake"}
+    monkeypatch.setattr(MPPPImage, "_infer_mask", fake_infer)
+    monkeypatch.setattr("mppp.process.check_mask_checkpoint", lambda cfg: None)
+    wp = mppp.load_waypoints()
+    base = {"export": {"formats": ["PNG8"], "write_mask_files": True}}
+    man = mppp.process_images([NLF, ZL0], tmp_path, mppp.load_config(base), wp, progress=False, reuse_existing=True)
+    by = {m["source_product"]: m for m in man["images"]}
+    nlf = by[NLF.name]
+    assert nlf["mask"]["inferred"] and nlf["mask"]["included_fraction"] < nlf["mask"]["valid_fraction"]
+    station = f"S{nlf['site']:03d}D{nlf['drive']:04d}"
+    # both example products are from one station: move ZL0 to another drive in the manifest
+    mp = tmp_path / f"mppp_manifest_{mppp.VERSION_TAG}.json"
+    on_disk = json.loads(mp.read_text())
+    for m in on_disk["images"]:
+        if m["source_product"] == ZL0.name:
+            m["drive"] = nlf["drive"] + 1
+    mp.write_text(json.dumps(on_disk))
+
+    cfg = mppp.load_config({**base, "masking": {"skip_inference_at": [station]}})
+    man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True)
+    rep = man["reuse_existing"]
+    assert rep["mask_inference_changed"] == [NLF.stem] and rep["to_process"] == 1 and rep["reused"] == 1
+    by = {m["source_product"]: m for m in man["images"]}
+    nlf, zl0 = by[NLF.name], by[ZL0.name]
+    assert zl0["drive"] == nlf["drive"] + 1                                   # reused from the manifest
+    assert nlf["mask"]["inference_skipped"] and not nlf["mask"]["inferred"]
+    assert nlf["mask"]["included_fraction"] == pytest.approx(nlf["mask"]["valid_fraction"])   # only black masked
+    assert zl0["mask"]["inferred"] and not zl0["mask"]["inference_skipped"]
+    import cv2
+    mk = cv2.imread(str(tmp_path / "masks" / (NLF.stem + ".png")), cv2.IMREAD_GRAYSCALE)
+    assert (mk > 0).mean() == pytest.approx(nlf["mask"]["valid_fraction"])
+    # same list again: nothing to do; list emptied: the station's images get the model mask back
+    man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True)
+    assert man["reuse_existing"]["to_process"] == 0
+    man = mppp.process_images([NLF, ZL0], tmp_path, mppp.load_config(base), wp, progress=False, reuse_existing=True)
+    assert man["reuse_existing"]["mask_inference_changed"] == [NLF.stem]

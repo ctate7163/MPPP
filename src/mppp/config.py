@@ -56,12 +56,16 @@ _DEFAULTS: Dict[str, Any] = {
         "infer_mask": True,
         # v0p13: a registry name (the released model, downloaded once into the user cache),
         # a checkpoint path, or a file name in checkpoints_dir() - see mppp.mask.hub
-        "checkpoint": "mppp_mask_v1",
+        "checkpoint": "mppp_mask_v2",
         "device": "auto",                             # auto | cpu | cuda
         # null -> values from the checkpoint's model card
         "threshold": None,
         "dilate_kernel": None,
         "static_masks_dir": None,
+        # v0p14.7: rover stations (site, drive) where the mask model is NOT run, so the rover stays in the
+        # images; invalid (black) pixels are still masked.  Items: [site, drive], "S032D1184", "32/1184",
+        # or a station label such as "Sol0686-0688 S032D1184".
+        "skip_inference_at": [],
     },
     "resize": {
         "apply_padding": True,        # pad sub-frames/tiles to the full detector frame
@@ -134,6 +138,30 @@ def _migrate_legacy(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
+def parse_stations(spec: Any) -> set:
+    """
+    ``masking.skip_inference_at`` -> {(site, drive)}.  Accepts [site, drive]
+    pairs and strings "S032D1184", "32/1184", "32,1184" or a station label
+    such as "Sol0686-0688 S032D1184".
+    """
+    import re
+    out = set()
+    for item in spec or []:
+        if isinstance(item, str):
+            m = re.search(r"S0*(\d+)\s*D0*(\d+)", item, re.I) or re.fullmatch(r"\s*(\d+)\s*[/,:]\s*(\d+)\s*", item)
+            if not m:
+                raise ValueError(f"masking.skip_inference_at: cannot read a site and drive from {item!r} "
+                                 f"(use [32, 1184], \"S032D1184\" or \"32/1184\")")
+            out.add((int(m.group(1)), int(m.group(2))))
+        else:
+            try:
+                site, drive = item
+                out.add((int(site), int(drive)))
+            except (TypeError, ValueError):
+                raise ValueError(f"masking.skip_inference_at: {item!r} is not [site, drive]") from None
+    return out
+
+
 def validate_config(cfg: Dict[str, Any]) -> None:
     fmts = cfg["export"]["formats"]
     if not fmts or any(f not in VALID_FORMATS for f in fmts):
@@ -145,6 +173,7 @@ def validate_config(cfg: Dict[str, Any]) -> None:
         raise ValueError("color scales must be positive")
     if not 0 < cfg["radiometry"]["zenith_min"] <= 1:
         raise ValueError("radiometry.zenith_min must be in (0, 1]")
+    parse_stations(cfg["masking"].get("skip_inference_at"))
 
 
 def load_config(config: Optional[Union[PathLike, Dict[str, Any]]] = None) -> Dict[str, Any]:

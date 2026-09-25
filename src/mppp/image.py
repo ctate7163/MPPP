@@ -80,8 +80,15 @@ class MPPPImage:
 
         self.mask = self.mask_valid.copy()
         self.mask_card: Optional[Dict[str, Any]] = None
+        self.mask_inference_skipped = False
         if cfg["masking"]["infer_mask"]:
-            self._infer_mask(rad)
+            from .config import parse_stations
+            if (self.site, self.drive) in parse_stations(cfg["masking"].get("skip_inference_at")):
+                self.mask_inference_skipped = True
+                self._say(f"mask inference off at site {self.site} drive {self.drive} (masking.skip_inference_at): "
+                          f"only invalid pixels are masked")
+            else:
+                self._infer_mask(rad)
         if not cfg["masking"]["mask_invalid"]:
             warnings.warn("masking.mask_invalid=False: invalid pixels stay flagged in mask_valid only.")
 
@@ -361,6 +368,7 @@ class MPPPImage:
             "cahvor_O_A_angle_deg": self.cahvor.o_a_angle_deg(),
             "pose": self.pose.to_dict(), "geo": self.geo,
             "mask": {"inferred": self.mask_card is not None,
+                     "inference_skipped": bool(getattr(self, "mask_inference_skipped", False)),
                      "included_fraction": float((self.mask > 0).mean()),
                      "valid_fraction": float((self.mask_valid > 0).mean()),
                      "model": None if self.mask_card is None else

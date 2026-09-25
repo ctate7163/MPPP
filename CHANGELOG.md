@@ -2,6 +2,20 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.14.7 — 2026-09-25
+
+- **New default mask model `mppp_mask_v2`**: `convnext_tiny_s4_seg_20260925.pt` (25 Sep 2026, 4 epochs, lr 5e-5, bf16; val IoU 0.9771, val loss 0.049 on the same split as v1's successor runs).
+  - Exported to `mppp_mask_convnext_tiny_s4_v2.safetensors` (124,825,300 bytes, SHA-256 `227e4833…cef569b9`); the weights are identical to the checkpoint, and the export is deterministic.
+  - `config["masking"]["checkpoint"]` defaults to `"mppp_mask_v2"`. Until it is uploaded (Hugging Face, GitHub release `mask-v2`), MPPP installs it from `checkpoints_dir()` into the cache on first use.
+  - `mppp_mask_v1` stays in the registry: `"checkpoint": "mppp_mask_v1"`.
+- **`process_images(..., reuse_existing=True)`**, used by notebook 03 (`KEEP_ONLY_REMAINING` was not reliable):
+  - Before, `KEEP_ONLY_REMAINING = False` loaded whatever manifest was on disk. After a `True` run that was the reduced set (and it still printed "kept N of M … removed"). Frames deleted since, a changed configuration or a new mask model were not noticed. `True` processed every remaining image again (about 25 min at Three Forks) and rebuilt the COLMAP project on every run.
+  - Now the manifest always describes the selection: `False` = every selected product, `True` = only those still in `images_png8`. Images already processed with the same configuration and with their files present are reused from the manifest (references and priors are rebuilt from it); only missing images are processed. A changed configuration processes everything and names the changed keys.
+  - Notebook 03 rebuilds the COLMAP project when its images differ from the manifest (not on every `True` run).
+- **Features are extracted again when an image or mask file changes** (e.g. processed with another mask model): `features.json` records each image's and mask's size and modification time. Records from before 0.14.7 have none, so the next run extracts once.
+- **Project images that are copies (not hard links) are refreshed** when the processed image is newer.
+- **Mask inference off at chosen rover stations**: `config["masking"]["skip_inference_at"]`, e.g. `["S032D1184"]` (also `[32, 1184]`, `"32/1184"` or a station label). Those images keep the rover; only invalid (black) pixels are masked. Recorded per image as `mask.inference_skipped`. With `reuse_existing`, changing the list processes only the images of the stations concerned. Notebook 03: `NO_MASK_INFERENCE_AT`.
+
 ## 0.14.6 — 2026-09-25
 
 - **Mask training labels always come from `masks/`.** This was already how training read them; it is now enforced and tested.

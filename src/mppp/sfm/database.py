@@ -34,9 +34,29 @@ def _feature_settings(max_num_features: int, max_image_size: int, domain_size_po
             "domain_size_pooling": bool(domain_size_pooling)}
 
 
+def image_fingerprints(project: SfmProject) -> Dict[str, list]:
+    """name -> [image size, image mtime_ns, mask size, mask mtime_ns] of the project's image and mask files."""
+    out: Dict[str, list] = {}
+    for r in project.images:
+        f = []
+        for path in (project.images_dir / r["name"], project.masks_dir / (r["name"] + ".png")):
+            try:
+                st = path.stat()
+                f += [st.st_size, st.st_mtime_ns]
+            except OSError:
+                f += [None, None]
+        out[r["name"]] = f
+    return out
+
+
 def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES,
                         max_image_size: int = 3200, domain_size_pooling: bool = False) -> bool:
-    """True if ``features.db`` exists and was extracted with these settings (``features.json`` beside it)."""
+    """
+    True if ``features.db`` exists and was extracted with these settings from
+    the same image and mask files (``features.json`` beside it; v0p14.7: file
+    sizes and modification times, so images processed again - e.g. with
+    another mask model - are extracted again).
+    """
     rec = _features_record(project)
     if not project.features_db.exists() or not rec.is_file():
         return False
@@ -46,7 +66,13 @@ def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX
         return False
     want = _feature_settings(max_num_features, max_image_size, domain_size_pooling)
     names = {r["name"] for r in project.images}
-    return all(done.get(k) == v for k, v in want.items()) and names <= set(done.get("images", []))
+    if not (all(done.get(k) == v for k, v in want.items()) and names <= set(done.get("images", []))):
+        return False
+    files = done.get("files")
+    if not isinstance(files, dict):
+        return False                                   # recorded before v0p14.7: file state unknown
+    now = image_fingerprints(project)
+    return all(files.get(n) == now[n] for n in names)
 
 
 def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES, max_image_size: int = 3200,
@@ -72,7 +98,7 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
     if not overwrite and features_up_to_date(project, max_num_features, max_image_size, domain_size_pooling):
         return db
     if db.exists() and not overwrite:
-        print(f"[sfm] {db.name}: extracted with other settings (or not recorded) - extracting again "
+        print(f"[sfm] {db.name}: extracted with other settings or from other image/mask files - extracting again "
               f"with max_num_features={max_num_features}", flush=True)
         overwrite = True
     if python is not None:
@@ -103,7 +129,7 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
     project.settings["features"] = {"max_num_features": max_num_features, "max_image_size": max_image_size,
                                     "domain_size_pooling": domain_size_pooling, "masks": bool(reader.mask_path)}
     record = dict(_feature_settings(max_num_features, max_image_size, domain_size_pooling), images=sorted(names),
-                  masks=bool(reader.mask_path))
+                  masks=bool(reader.mask_path), files=image_fingerprints(project))
     _features_record(project).write_text(json.dumps(record, indent=1), encoding="utf-8")
     project.save()
     return db

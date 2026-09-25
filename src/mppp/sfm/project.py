@@ -495,10 +495,16 @@ def _camera_from_label_median(key: str, params: List[tuple], size: Tuple[int, in
 
 
 def _link_or_copy(src: Path, dst: Path, link: bool) -> None:
-    if dst.exists():
-        return
     if not src.is_file():
         raise FileNotFoundError(src)
+    if dst.exists():
+        # a hard link follows src; a copy is refreshed when src has been written again (v0p14.7)
+        if os.path.samefile(src, dst):
+            return
+        a, b = src.stat(), dst.stat()
+        if a.st_size == b.st_size and a.st_mtime_ns <= b.st_mtime_ns:
+            return
+        dst.unlink()
     if link:
         try:
             os.link(src, dst)
