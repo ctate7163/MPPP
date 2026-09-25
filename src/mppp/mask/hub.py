@@ -145,10 +145,34 @@ def _download(url: str, dst: Path, timeout: float = 60.0) -> None:
     tmp.replace(dst)
 
 
-def fetch_model(name: Optional[str] = None, force: bool = False, urls: Optional[List[str]] = None) -> Path:
+def local_candidates(name: str) -> List[Path]:
+    """
+    Local files that can stand in for registry model ``name`` when it cannot
+    be downloaded (v0p14.1), in order: the released ``.safetensors`` in
+    ``checkpoints_dir()``, the checkpoint it was exported from
+    (``source_checkpoint``, e.g. ``convnext_tiny_s4_seg_best.pt``), and the
+    promoted best of the same architecture.
+    """
+    entry = load_registry()["models"][name]
+    d = checkpoints_dir()
+    names = [entry["file"], entry.get("source_checkpoint")]
+    if entry.get("backbone"):
+        names.append(f"{entry['backbone']}{'_s4' if entry.get('stride4') else ''}_seg_best.pt")
+    out: List[Path] = []
+    for n in names:
+        if n and (d / n).is_file() and (d / n) not in out:
+            out.append(d / n)
+    return out
+
+
+def fetch_model(name: Optional[str] = None, force: bool = False, urls: Optional[List[str]] = None,
+                local_fallback: bool = True) -> Path:
     """
     Path of registry model ``name`` in the user cache, downloading it first if
     needed (URLs from the registry, in order) and checking its SHA-256.
+    ``local_fallback`` (default): if every download fails (offline, or the
+    model is not published yet), install the first of :func:`local_candidates`
+    into the cache instead, with a warning if it is not the released file.
     """
     reg = load_registry()
     name = name or reg["default"]
@@ -175,11 +199,20 @@ def fetch_model(name: Optional[str] = None, force: bool = False, urls: Optional[
             errors.append(f"{url}: SHA-256 {got} != registry {want} (kept as {bad.name})")
             continue
         return dst
+    if local_fallback:
+        for cand in local_candidates(name):
+            print(f"[mppp] could not download mask model {name}; installing the local {cand} instead", flush=True)
+            try:
+                return install_model(cand, name)
+            except Exception as e:                              # noqa: BLE001
+                errors.append(f"local {cand}: {type(e).__name__}: {e}")
     raise FileNotFoundError(
         f"mask model {name!r} is not in the cache ({dst}) and could not be downloaded:\n  "
         + "\n  ".join(errors or ["no URLs in the registry"])
-        + "\nInstall a local copy instead: mppp.mask.hub.install_model('<your .pt or .safetensors>', "
-          f"name={name!r}), or set config['masking']['checkpoint'] to a checkpoint path.")
+        + f"\nNo local fallback in {checkpoints_dir()} (looked for {entry['file']}, "
+          f"{entry.get('source_checkpoint')}).  Install a local copy: mppp.mask.hub.install_model("
+          f"'<your .pt or .safetensors>', name={name!r}), set MPPP_CHECKPOINTS to the folder that holds it, "
+          f"or set config['masking']['checkpoint'] to a checkpoint path.")
 
 
 def install_model(src: PathLike, name: Optional[str] = None, check_sha: bool = False) -> Path:

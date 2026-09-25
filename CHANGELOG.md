@@ -2,6 +2,13 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.14.1 — 2026-09-25
+
+- **Local fallback for the mask model.** If `mppp_mask_v1` is not in the cache and cannot be downloaded (offline, or not yet published: Hugging Face 401, GitHub 404), `fetch_model` now installs a local copy into the cache.
+  - It looks in `checkpoints_dir()` (`MPPP_CHECKPOINTS`, else `checkpoints/` in the source folder) for the released `.safetensors`, then the checkpoint it was exported from (`convnext_tiny_s4_seg_best.pt`), then the promoted best of the same architecture.
+  - The best checkpoint prepared with 0.13 converts to exactly the registered file (same SHA-256), so there is no warning. A different checkpoint is installed with a warning.
+  - `local_candidates(name)` lists what would be used, and `fetch_model(local_fallback=False)` turns the fallback off.
+
 ## 0.14.0 (v0p14) — 2026-09-25
 
 ### Keep only the images you left in the output folder
