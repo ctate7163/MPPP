@@ -76,11 +76,11 @@ def export_safetensors(checkpoint: PathLike, out: Optional[PathLike] = None, nam
     from the registry (if the name is registered) or is ``<name>.safetensors``.
     ``update_registry``: write the new SHA-256 and size into
     ``mppp/data/models.json`` (in a source checkout; commit it).
-    Deterministic: the same checkpoint and MPPP version give the same bytes.
+    Deterministic: the same checkpoint (and card) always gives the same bytes,
+    whatever the MPPP version.
     Returns ``{"path", "sha256", "bytes"}``.
     """
     from safetensors.torch import save_file
-    from .. import __version__
     from .model import SAFETENSORS_CARD_KEY, read_card, read_state_dict_checkpoint
     src = Path(checkpoint)
     card = read_card(src)
@@ -91,7 +91,8 @@ def export_safetensors(checkpoint: PathLike, out: Optional[PathLike] = None, nam
         fname = reg["models"][name]["file"] if name and name in reg["models"] else f"{name or src.stem}.safetensors"
         out = src.parent / fname
     out = Path(out)
-    card = dict(card, exported_from=src.name, exported_with_mppp=__version__)
+    # no MPPP version in the card (v0p14): the file - and its SHA-256 - depend only on the checkpoint
+    card = dict(card, exported_from=src.name)
     if name:
         card["release_name"] = name
     meta = {SAFETENSORS_CARD_KEY: json.dumps(card, sort_keys=True), "format": FORMAT}

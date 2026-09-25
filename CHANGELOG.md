@@ -2,6 +2,24 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.14.0 (v0p14) — 2026-09-25
+
+### Keep only the images you left in the output folder
+- `process_images(..., only_existing="PNG8")` processes only the selected products whose image is still in `images_png8/`; `"PNG16"`, `"TIFF16"` or any sub-folder name also work.
+- The manifest, `references.txt`, the COLMAP priors and the config snapshot are built from those images alone.
+- The manifest records what was kept and removed, and which images in the folder were not in the selection.
+- Workflow: process a sol range, delete the unsuitable images from `images_png8/` (or `images_png16/`), then rerun with the same selection and the option set.
+- Nothing is deleted. Outputs of removed images in other folders (masks, other formats) stay on disk but are no longer in the manifest.
+- `filter_to_existing(paths, out_dir, fmt)` is available on its own.
+- **Notebook 01:** `ONLY_REMAINING = "PNG16"` (or None).
+- **Notebook 03:** named test sites (`SITES = {"belva": (748, 815), "rockytop": (461, 530), "threeforks": (684, 692)}`, `SITE = ...`), with the work folder `D:/scapes/<site>_colmap` or `<site>_colmap_nav_zcam34`.
+- **Notebook 03:** `KEEP_ONLY_REMAINING = True` reprocesses the images left in `processed/images_png8/`, then rebuilds the COLMAP project from them (`project.json`). The features already extracted are reused, and the database is rebuilt as usual.
+
+### Mask model export no longer records the MPPP version
+- The embedded card no longer contains `exported_with_mppp`, so the safetensors file (and its SHA-256) depends only on the checkpoint.
+- The registry value is now `59b8f29b…21f5f` (124,825,116 bytes); it was `678aa6ec…67aa4` in 0.13.0, before the model was published.
+- If you installed the model with 0.13.0, install it again (`python -m mppp.mask.hub install …`) so that the cached file matches the registry.
+
 ## 0.13.0 (v0p13) — 2026-09-24
 
 First version prepared for the public repository `github.com/ctate7163/MPPP`. Scope for 1.0: process Mars 2020 **Navcam and Mastcam-Z** products and prepare them for **Metashape and COLMAP**. The mask model ships ready to use. Mask training and the error model are included, but they are not part of the main workflow.
@@ -34,7 +52,7 @@ First version prepared for the public repository `github.com/ctate7163/MPPP`. Sc
   - `install_model` converts or copies a local model into the cache.
   - `resolve_checkpoint`: a path, a registry name, or a file in `checkpoints_dir()`.
   - CLI: `python -m mppp.mask.hub export|install|fetch|list`.
-- `mppp_mask_v1` = the 24 Sep 2026 ConvNeXt-tiny stride-4 model (val IoU 0.971), SHA-256 `678aa6ec…67aa4`. URLs: Hugging Face `ctate7163/mppp-mask`, and the GitHub release `mask-v1`.
+- `mppp_mask_v1` = the 24 Sep 2026 ConvNeXt-tiny stride-4 model (val IoU 0.971), SHA-256 `678aa6ec…67aa4` (superseded in 0.14.0). URLs: Hugging Face `ctate7163/mppp-mask`, and the GitHub release `mask-v1`.
 - **Default `config["masking"]["checkpoint"]` is now `"mppp_mask_v1"`**, downloaded on first use. `process_images` resolves it once, before the first image.
 - **Loading is pickle-free:** `.safetensors` directly, and `.pt` with `torch.load(weights_only=True)`. A `.pt` holding Python objects is refused with instructions. User-supplied ImageNet `.pth` files still fall back to a full load, with a warning.
 - `docs/RELEASING.md`: pushing to GitHub, exporting to safetensors, the GitHub release, Hugging Face (`docs/hf_model_card.md`).

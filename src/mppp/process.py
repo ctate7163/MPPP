@@ -19,7 +19,7 @@ import json
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
 
 from . import VERSION_TAG
 from . import colmap as _colmap
@@ -62,21 +62,63 @@ def check_mask_checkpoint(cfg: Dict[str, Any]) -> Optional[Path]:
     return resolve_checkpoint(m.get("checkpoint"))
 
 
+def filter_to_existing(paths: Sequence[PathLike], out_dir: PathLike, fmt: str) -> tuple:
+    """
+    Keep the products whose output image is still in ``out_dir/<folder>``
+    (``fmt``: an export format such as ``"PNG8"``, or a folder name).  Images
+    are matched by PDS stem (outputs keep the PDS file name).  Returns
+    (kept paths, report).
+    """
+    out_dir = Path(out_dir)
+    folder = out_dir / _FORMAT_DIR.get(str(fmt).upper(), str(fmt))
+    if not folder.is_dir():
+        raise FileNotFoundError(f"only_existing: {folder} does not exist (process once without only_existing first)")
+    stems = {p.stem for p in folder.iterdir()
+             if p.is_file() and p.suffix.lower() in (".png", ".tif", ".tiff")}
+    paths = [Path(p) for p in paths]
+    kept = [p for p in paths if p.stem in stems]
+    if not kept:
+        raise ValueError(f"only_existing: none of the {len(paths)} selected products has an image in {folder}")
+    selected = {p.stem for p in paths}
+    report = {"folder": str(folder), "n_selected": len(paths), "n_kept": len(kept), "n_removed": len(paths) - len(kept),
+              "removed": sorted(p.name for p in paths if p.stem not in stems),
+              "not_in_selection": sorted(stems - selected)}
+    return kept, report
+
+
 def process_images(paths: Iterable[PathLike], out_dir: PathLike,
                    config: Optional[Union[PathLike, Dict[str, Any]]] = None,
                    waypoints: Optional[Dict[str, Any]] = None,
                    stop_on_error: bool = False, progress: bool = True,
-                   provenance: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                   provenance: Optional[Dict[str, Any]] = None,
+                   only_existing: Optional[str] = None) -> Dict[str, Any]:
     """
     Returns the manifest (also written to disk).  ``provenance`` (e.g. the
     report from ``mppp.scapes.select_scape``) is stored in both the manifest
     and the config snapshot.
+
+    ``only_existing`` (v0p14): an output format (``"PNG8"``, ``"PNG16"``,
+    ``"TIFF16"``) or a sub-folder name of ``out_dir``.  Only the selected
+    products whose image is still in that folder are processed, and the
+    manifest, references and COLMAP priors are built from those alone.  Use it
+    after deleting unsuitable images from e.g. ``images_png8/``: rerun with the
+    same selection and ``only_existing="PNG8"``.  Nothing is deleted; outputs
+    of the removed images in other folders (masks, other formats) are left
+    as they are, but they are no longer in the manifest.
     """
     cfg = load_config(config)
     check_mask_checkpoint(cfg)          # one clear error up front, not one FAILED line per image
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = [Path(p) for p in paths]
+    kept_filter = None
+    if only_existing:
+        paths, kept_filter = filter_to_existing(paths, out_dir, only_existing)
+        if progress:
+            print(f"[mppp] only_existing={only_existing!r}: {kept_filter['n_kept']} of {kept_filter['n_selected']} "
+                  f"selected products still have an image in {kept_filter['folder']}; "
+                  f"{kept_filter['n_removed']} removed" + (f"; {len(kept_filter['not_in_selection'])} images in the "
+                  f"folder are not in this selection and are ignored" if kept_filter["not_in_selection"] else ""))
     metas: List[Dict[str, Any]] = []
     refs: List[list] = []
     failed: List[Dict[str, str]] = []
@@ -102,7 +144,7 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
 
     manifest: Dict[str, Any] = {"mppp_version": VERSION_TAG, "n_requested": len(paths),
                                 "n_processed": len(metas), "failed": failed, "provenance": provenance,
-                                "images": metas}
+                                "only_existing": kept_filter, "images": metas}
     frames = sorted({m["pose"]["frame"] for m in metas})
     manifest["world_frames"] = frames
     if len(frames) > 1:
@@ -120,7 +162,8 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
         if exp["write_colmap"]:
             manifest["colmap"] = _colmap.write_text_model(metas, out_dir / "colmap" / "sparse_prior", offset, ext)
     wp_src = (waypoints or {}).get("_mppp_source")
-    save_config_snapshot(cfg, out_dir, extra={"waypoints": wp_src, "n_images": len(metas), "provenance": provenance})
+    save_config_snapshot(cfg, out_dir, extra={"waypoints": wp_src, "n_images": len(metas), "provenance": provenance,
+                                              "only_existing": kept_filter})
     if exp["write_manifest"]:
         (out_dir / f"mppp_manifest_{VERSION_TAG}.json").write_text(
             json.dumps(manifest, indent=1, default=str), encoding="utf-8")

@@ -18,8 +18,8 @@ This is the reconstruction-mask model of [MPPP](https://github.com/ctate7163/MPP
 
 | | |
 |---|---|
-| file | `mppp_mask_convnext_tiny_s4_v1.safetensors` (124,825,148 bytes) |
-| SHA-256 | `678aa6ec0b9242b5359d2e3bf8c89d8325203c84d35259555a45e58ef6f67aa4` |
+| file | `mppp_mask_convnext_tiny_s4_v1.safetensors` (124,825,116 bytes) |
+| SHA-256 | `59b8f29bc67d4d26357ef3bda4fc3449e6c2dd734ccb878239217a52dbb21f5f` |
 | architecture | ConvNeXt-tiny backbone (ImageNet-22k initialisation) + FPN + light ASPP + stride-4 decoder skip, one logit |
 | input | linear 8-bit-equivalent RGB as produced by MPPP, resized to fit a 1664 × 1248 canvas (long side ≤ 1648), ImageNet normalisation |
 | output | sigmoid > 0.5 = include; MPPP dilates the include region by 3 × 3 |

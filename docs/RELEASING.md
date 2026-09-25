@@ -21,18 +21,18 @@ Commands are for Windows (Anaconda Prompt or PowerShell). On Linux and macOS the
 
 ## 1. Push the code (first time, from the bundle)
 
-The release was prepared as a git bundle: one file holding the repository and its history, with the tag `v0.13.0`.
+The release was prepared as a git bundle: one file holding the repository and its history, with the tags `v0.13.0` and `v0.14.0`.
 
 ```bat
 cd /d D:\code
-git clone D:\code\MPPP\release_v0p13\mppp_v0p13.bundle MPPP_git
+git clone D:\code\MPPP\release_v0p14\mppp_v0p14.bundle MPPP_git
 cd MPPP_git
 git remote set-url origin https://github.com/ctate7163/MPPP.git
 git push -u origin main
 git push origin --tags
 ```
 
-`git log --oneline --decorate` should show one commit, `MPPP 0.13.0: first repository release`, tagged `v0.13.0`. The first push opens a browser window (or asks for a token) to sign in to GitHub.
+`git log --oneline --decorate` should show two commits: `MPPP 0.14.0 …` (tag `v0.14.0`) on top of `MPPP 0.13.0: first repository release` (tag `v0.13.0`). The first push opens a browser window (or asks for a token) to sign in to GitHub.
 
 Then work in `D:\code\MPPP_git`:
 * `pip install -e .[mask,sfm]` in your main environment.
@@ -52,14 +52,14 @@ python -m mppp.mask.hub export D:\code\MPPP\checkpoints\convnext_tiny_s4_seg_bes
 ```
 
 The command:
-* writes `D:\code\MPPP\checkpoints\mppp_mask_convnext_tiny_s4_v1.safetensors` (124,825,148 bytes);
+* writes `D:\code\MPPP\checkpoints\mppp_mask_convnext_tiny_s4_v1.safetensors` (124,825,116 bytes);
 * prints its SHA-256;
 * with `--update-registry`, writes the SHA-256 and size into `src/mppp/data/models.json`.
 
-The export is deterministic for a given MPPP version (the version is part of the embedded card). For the checkpoint prepared with this release, exported with MPPP 0.13.0 (`convnext_tiny_s4_seg_best.pt` = the 24 Sep 2026 run, val IoU 0.9713) the SHA-256 is
+The export is deterministic: the file depends only on the checkpoint and its card. For the checkpoint prepared with this release (`convnext_tiny_s4_seg_best.pt` = the 24 Sep 2026 run, val IoU 0.9713) the SHA-256 is
 
 ```
-678aa6ec0b9242b5359d2e3bf8c89d8325203c84d35259555a45e58ef6f67aa4
+59b8f29bc67d4d26357ef3bda4fc3449e6c2dd734ccb878239217a52dbb21f5f
 ```
 
 and `models.json` already contains it. So `git status` should show **no change**. If it shows `models.json` as modified, the file you exported is a different model. That is fine, but commit the new values: `git commit -am "mask model sha256"` and `git push`.
@@ -79,7 +79,7 @@ The registry URL is `https://github.com/ctate7163/MPPP/releases/download/mask-v1
 With the GitHub CLI:
 
 ```bat
-gh release create mask-v1 D:\code\MPPP\checkpoints\mppp_mask_convnext_tiny_s4_v1.safetensors --repo ctate7163/MPPP --title "Mask model v1" --notes "ConvNeXt-tiny + stride-4 decoder, masks_training_set_v7, val IoU 0.971. SHA-256 678aa6ec0b9242b5359d2e3bf8c89d8325203c84d35259555a45e58ef6f67aa4"
+gh release create mask-v1 D:\code\MPPP\checkpoints\mppp_mask_convnext_tiny_s4_v1.safetensors --repo ctate7163/MPPP --title "Mask model v1" --notes "ConvNeXt-tiny + stride-4 decoder, masks_training_set_v7, val IoU 0.971. SHA-256 59b8f29bc67d4d26357ef3bda4fc3449e6c2dd734ccb878239217a52dbb21f5f"
 ```
 
 Or on the web:
@@ -90,7 +90,7 @@ Or on the web:
 
 GitHub release assets can be up to 2 GB each.
 
-A release for the code itself: `gh release create v0.13.0 --repo ctate7163/MPPP --title "MPPP 0.13.0" --notes-file CHANGELOG.md` (or use the web page).
+A release for the code itself: `gh release create v0.14.0 --repo ctate7163/MPPP --title "MPPP 0.14.0" --notes-file CHANGELOG.md` (or use the web page).
 
 ## 4. Upload the model to Hugging Face
 

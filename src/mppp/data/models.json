@@ -8,8 +8,8 @@
         "https://huggingface.co/ctate7163/mppp-mask/resolve/main/mppp_mask_convnext_tiny_s4_v1.safetensors",
         "https://github.com/ctate7163/MPPP/releases/download/mask-v1/mppp_mask_convnext_tiny_s4_v1.safetensors"
       ],
-      "sha256": "678aa6ec0b9242b5359d2e3bf8c89d8325203c84d35259555a45e58ef6f67aa4",
-      "bytes": 124825148,
+      "sha256": "59b8f29bc67d4d26357ef3bda4fc3449e6c2dd734ccb878239217a52dbb21f5f",
+      "bytes": 124825116,
       "source_checkpoint": "convnext_tiny_s4_seg_best.pt",
       "val_iou": 0.97126661210644,
       "backbone": "convnext_tiny",

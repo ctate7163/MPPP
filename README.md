@@ -10,7 +10,7 @@ MPPP turns Mars 2020 Perseverance **Navcam** and **Mastcam-Z** PDS image product
 
 For Navcam (optionally with the Mastcam-Z 34 mm frames of the same sols), MPPP also builds a complete COLMAP project — database, stereo rig, matches — and a prior-aligned, weighted bundle adjustment, with an **alignment health report** (tie points, reprojection error, camera-model change, stereo-rig stability, pose change).
 
-Version **0.13.0** (`v0p13`). Versions before 1.0 are development releases; see [CHANGELOG.md](CHANGELOG.md).
+Version **0.14.0** (`v0p14`). Versions before 1.0 are development releases; see [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 
@@ -44,6 +44,8 @@ paths, provenance = select_scape("belva", "D:/data/m2020")        # or mppp.sele
 manifest = mppp.process_images(paths, "D:/scapes/belva", {"export": {"formats": ["PNG16"]}},
                                mppp.load_waypoints(), provenance=provenance)
 ```
+
+To drop unsuitable frames, delete them from the output image folder and rerun with the same selection and `only_existing="PNG16"` (or `"PNG8"`): only the remaining images are processed again, and the manifest, references and COLMAP priors are rebuilt from them.
 
 Outputs: `images_png16/<PDS stem>.png` (mask in the alpha channel), `references.txt` (+ `_absolute`) for Metashape *Import Reference*, `colmap/sparse_prior/` (cameras, image poses, stereo rig), `mppp_manifest_<version>.json`, `mppp_config_<version>.json`.
 

@@ -6,8 +6,8 @@ authors:
   - family-names: Tate
     given-names: Christian
     affiliation: "Malin Space Science Systems"
-version: 0.13.0
-date-released: 2026-09-24
+version: 0.14.0
+date-released: 2026-09-25
 license: Apache-2.0
 repository-code: "https://github.com/ctate7163/MPPP"
 keywords:
