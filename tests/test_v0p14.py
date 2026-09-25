@@ -123,7 +123,7 @@ def test_reconstruct_defaults_four_rounds_and_half_degree():
     from mppp.sfm.reconstruction import DEFAULT_SCHEDULE, reconstruct
     sig = inspect.signature(reconstruct).parameters
     assert sig["schedule"].default == DEFAULT_SCHEDULE and len(DEFAULT_SCHEDULE) == 4
-    assert DEFAULT_SCHEDULE[-1] == (6.0, 1.5, 1.5)                        # 3 sigma at sigma_px = 0.5
+    assert DEFAULT_SCHEDULE[-1] == DEFAULT_SCHEDULE[-2] == (8.0, 2.0, 2.0)   # v0p14.5: round 4 repeats round 3
     assert all(a[2] >= b[2] for a, b in zip(DEFAULT_SCHEDULE, DEFAULT_SCHEDULE[1:]))   # cut-offs only tighten
     assert sig["min_tri_angle_deg"].default == 0.5 and sig["sigma_px"].default == 0.5
     assert sig["refine_tangential"].default is False
@@ -322,3 +322,52 @@ def test_station_labels_start_with_the_sol():
     assert sorted(lab.values())[1] == "Sol0684-0685 S032D1174"
     proj = SfmProject(Path("."), imgs, {}, {}, [0, 0, 0], {})
     assert proj.station_label("S032D1184") == "Sol0686 S032D1184" and proj.station_label("X") == "X"
+
+
+
+# ---------------------------------------------------------------- v0p14.5
+def test_prior_rotation_correction_keeps_the_ray_at_the_camera_principal_point():
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+    from mppp.sfm.project import prior_rotation_correction
+    rng = np.random.default_rng(4)
+    R = Rotation.from_rotvec(rng.normal(0, 0.5, 3)).as_matrix()
+    f, cl, cc = 4690.0, np.array([770.0, 650.0]), np.array([824.0, 600.0])
+    M = prior_rotation_correction(cl, f, cc)
+    Rn = M @ R
+    ray = lambda Rw2c, c, u: Rw2c.T @ np.r_[(u - c) / f, 1.0]                     # noqa: E731
+    u = cc
+    a, b = ray(R, cl, u), ray(Rn, cc, u)
+    assert np.allclose(a / np.linalg.norm(a), b / np.linalg.norm(b), atol=1e-12)    # same ray at the camera pp
+    ang = np.degrees(np.arccos(np.clip((np.trace(M) - 1) / 2, -1, 1)))
+    assert abs(ang - np.degrees(np.arctan(np.linalg.norm(cc - cl) / f))) < 1e-9     # ~0.89 deg here
+    u = cc + [300.0, -200.0]                                                        # elsewhere: second order only
+    a, b = ray(R, cl, u), ray(Rn, cc, u)
+    err_px = f * np.linalg.norm(a / a @ (R.T[:, 2]) - b / b @ (R.T[:, 2]))
+    assert err_px < 2.0
+    assert np.allclose(prior_rotation_correction(cl, f, cl), np.eye(3))
+
+
+def test_native_model_is_a_valid_colmap_model(tmp_path):
+    pytest.importorskip("pyceres")
+    import numpy as np
+    import pycolmap
+    from test_sfm import _build_rec, _synthetic
+    from mppp.error.colmap import read_colmap
+    from mppp.sfm.export import native_reconstruction, write_native_text_model
+    proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
+    rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
+    info = write_native_text_model(rec, proj, tmp_path / "native")
+    back = pycolmap.Reconstruction(str(tmp_path / "native"))       # <= 0.14.4: 'Check failed: point2D.point3D_id'
+    assert len(back.points3D) == info["points"] == len(rec.points3D) and len(back.images) == len(rec.images)
+    assert {(c.width, c.height) for c in back.cameras.values()} == {(2560, 1920), (1280, 960)}
+    res = []
+    for pt in list(back.points3D.values())[:300]:
+        for el in pt.track.elements:
+            im = back.images[el.image_id]
+            uv = back.cameras[im.camera_id].img_from_cam(im.cam_from_world() * pt.xyz)
+            res.append(np.linalg.norm(uv - im.points2D[el.point2D_idx].xy))
+    assert np.median(res) < 3 * noise                                  # native keypoints and native cameras agree
+    assert len(read_colmap(str(tmp_path / "native")).points) == info["points"]      # mppp.error still reads it
+    full = native_reconstruction(rec, proj, observed_only=False)
+    assert sum(len(im.points2D) for im in full.images.values()) == sum(len(im.points2D) for im in rec.images.values())

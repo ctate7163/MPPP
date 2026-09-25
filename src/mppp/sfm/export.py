@@ -32,46 +32,136 @@ from .reconstruction import native_residuals, track_statistics
 PathLike = Union[str, Path]
 
 
-def write_native_text_model(rec, project: SfmProject, out_dir: PathLike) -> Dict[str, Any]:
-    out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
+def native_reconstruction(rec, project: SfmProject, observed_only: bool = True):
+    """
+    ``rec`` in each image's NATIVE pixels, as a complete COLMAP 4 model (v0p14.5):
+    one camera per (camera, downsample scale) with f and c scaled, a trivial rig
+    and one frame per image, keypoints scaled back, the 3-D points with their
+    mean native residual as ``error``.  ``observed_only``: keep only keypoints
+    that observe a 3-D point (track indices renumbered); otherwise all
+    keypoints, in database order.
+    """
+    import pycolmap
     scale = {r["name"]: float(r["downsample_scale"]) for r in project.images}
-    cams: Dict[tuple, int] = {}
-    cam_rows, img_cam = [], {}
-    for iid in sorted(rec.reg_image_ids()):
+    sensor = lambda cid: pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=cid)       # noqa: E731
+    nat = pycolmap.Reconstruction()
+    cam_ids: Dict[tuple, int] = {}
+    idx_map: Dict[int, Dict[int, int]] = {}
+    reg = sorted(int(i) for i in rec.reg_image_ids())
+    for iid in reg:
         im = rec.images[iid]
         s = scale[im.name]
-        key = (im.camera_id, s)
-        if key not in cams:
+        key = (int(im.camera_id), s)
+        if key not in cam_ids:
             cam = rec.cameras[im.camera_id]
-            cams[key] = len(cams) + 1
-            cam_rows.append((cams[key], cam.model.name, int(round(cam.width * s)), int(round(cam.height * s)),
-                             scale_camera_params(cam.model.name, cam.params, s)))
-        img_cam[iid] = cams[key]
-    write_cameras_txt(out / "cameras.txt", cam_rows, header="native resolution per image")
-
-    img_rows = []
-    for iid in sorted(rec.reg_image_ids()):
-        im = rec.images[iid]
-        T = im.cam_from_world()
-        q = T.rotation.quat                       # x, y, z, w
-        s = scale[im.name]
-        obs = [(*(np.asarray(p2.xy) * s), p2.point3D_id) for p2 in im.points2D if p2.has_point3D()]
-        img_rows.append((iid, (q[3], q[0], q[1], q[2]), np.asarray(T.translation), img_cam[iid], im.name, obs))
-    write_images_txt(out / "images.txt", img_rows)
-
+            cid = len(cam_ids) + 1
+            nat.add_camera(pycolmap.Camera(camera_id=cid, model=cam.model.name, width=int(round(cam.width * s)),
+                                           height=int(round(cam.height * s)),
+                                           params=scale_camera_params(cam.model.name, cam.params, s)))
+            rig = pycolmap.Rig(rig_id=cid)
+            rig.add_ref_sensor(sensor(cid))
+            nat.add_rig(rig)
+            cam_ids[key] = cid
+        cid = cam_ids[key]
+        p2 = im.points2D
+        keep = [k for k in range(len(p2)) if p2[k].has_point3D()] if observed_only else list(range(len(p2)))
+        idx_map[iid] = {k: n for n, k in enumerate(keep)}
+        kp = np.array([p2[k].xy for k in keep], float).reshape(-1, 2) * s
+        fr = pycolmap.Frame(frame_id=iid, rig_id=cid)
+        fr.add_data_id(pycolmap.data_t(sensor_id=sensor(cid), id=iid))
+        fr.rig_from_world = im.cam_from_world()
+        nat.add_frame(fr)
+        new = pycolmap.Image(name=im.name, keypoints=kp, camera_id=cid, image_id=iid)
+        new.frame_id = iid
+        nat.add_image(new)
+    for fid in list(nat.frames):
+        nat.register_frame(fid)
     res = native_residuals(rec, project)
     err: Dict[int, List[float]] = {}
     for r, pid in zip(res["residual_native_px"], res["point3D_id"]):
-        err.setdefault(int(pid), []).append(r)
-    lines = ["# POINT3D_ID, X, Y, Z, R, G, B, ERROR(native px), TRACK[] as (IMAGE_ID, POINT2D_IDX)"]
+        err.setdefault(int(pid), []).append(float(r))
     for pid, pt in rec.points3D.items():
-        tr = " ".join(f"{el.image_id} {el.point2D_idx}" for el in pt.track.elements)
-        c = pt.color
-        lines.append(f"{pid} {pt.xyz[0]:.9g} {pt.xyz[1]:.9g} {pt.xyz[2]:.9g} {int(c[0])} {int(c[1])} {int(c[2])} "
-                     f"{np.mean(err.get(pid, [0.0])):.6g} {tr}")
-    (out / "points3D.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return {"cameras": len(cams), "images": len(img_cam), "points": len(rec.points3D)}
+        tr = pycolmap.Track()
+        for el in pt.track.elements:
+            m = idx_map.get(int(el.image_id))
+            if m is not None and int(el.point2D_idx) in m:
+                tr.add_element(int(el.image_id), m[int(el.point2D_idx)])
+        if tr.length() < 2:
+            continue
+        new_pid = nat.add_point3D(np.asarray(pt.xyz, float), tr, np.asarray(pt.color, np.uint8))
+        e = err.get(int(pid))
+        if e:
+            nat.points3D[new_pid].error = float(np.mean(e))
+    return nat
+
+
+def write_native_text_model(rec, project: SfmProject, out_dir: PathLike) -> Dict[str, Any]:
+    """:func:`native_reconstruction` (observed keypoints only) as a COLMAP TEXT model in ``out_dir``.
+    Up to v0p14.4 the track indices in points3D.txt did not match the shortened keypoint lists in
+    images.txt, which made COLMAP (and the GUI) stop with 'Check failed: point2D.point3D_id == point3D_id'."""
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    nat = native_reconstruction(rec, project, observed_only=True)
+    nat.write_text(str(out))
+    return {"cameras": len(nat.cameras), "images": len(nat.images), "points": len(nat.points3D)}
+
+
+def write_gui_native(project: SfmProject, rec, out_dir: Optional[PathLike] = None, colors: bool = True) -> Dict[str, Any]:
+    """
+    A copy of the project for LOOKING at it in the COLMAP GUI (v0p14.5), in
+    ``<project>/gui_native/``: the refined model and a database in each image's
+    native pixels (one camera per camera and resolution), so keypoints, tie
+    points and matches line up with the image files.  ``sparse/`` is the model
+    (all keypoints, point colours taken from the images), ``database.db`` holds
+    cameras, rigs, frames, images, native keypoints and the verified matches
+    (no descriptors: not for matching).  Opened by ``open_in_colmap.bat``.
+    Not for processing: MPPP's bundle adjustment works on the full-resolution
+    project.
+    """
+    import pycolmap
+    from .database import scale_keypoints
+    out = Path(out_dir) if out_dir else project.root / "gui_native"
+    (out / "sparse").mkdir(parents=True, exist_ok=True)
+    nat = native_reconstruction(rec, project, observed_only=False)
+    if colors:
+        try:
+            nat.extract_colors_for_all_images(str(project.images_dir))
+        except Exception:                                    # noqa: BLE001  (colours are cosmetic)
+            pass
+    nat.write(str(out / "sparse"))
+    dbp = out / "database.db"
+    if dbp.exists():
+        dbp.unlink()
+    src = pycolmap.Database.open(str(project.database))
+    dst = pycolmap.Database.open(str(dbp))
+    scale = {r["name"]: float(r["downsample_scale"]) for r in project.images}
+    for cid, cam in sorted(nat.cameras.items()):
+        dst.write_camera(cam, use_camera_id=True)
+    for rid, rig in sorted(nat.rigs.items()):
+        dst.write_rig(rig, use_rig_id=True)
+    cam_of = {im.name: (im.image_id, im.camera_id) for im in nat.images.values()}
+    n_img = 0
+    for im in src.read_all_images():
+        if im.name not in cam_of:                            # not registered: left out of the view
+            continue
+        iid, cid = cam_of[im.name]
+        dst.write_image(pycolmap.Image(name=im.name, camera_id=cid, image_id=iid), use_image_id=True)
+        dst.write_keypoints(iid, scale_keypoints(src.read_keypoints(im.image_id), scale[im.name]))
+        n_img += 1
+    for fid, fr in sorted(nat.frames.items()):
+        dst.write_frame(fr, use_frame_id=True)
+    ids = {v[0] for v in cam_of.values()}
+    n_pairs = 0
+    pair_ids, geoms = src.read_two_view_geometries()
+    for pid, g in zip(pair_ids, geoms):
+        i1, i2 = pycolmap.pair_id_to_image_pair(pid)
+        if int(i1) in ids and int(i2) in ids:
+            dst.write_two_view_geometry(int(i1), int(i2), g)
+            n_pairs += 1
+    src.close()
+    dst.close()
+    return {"dir": str(out), "images": n_img, "verified_pairs": n_pairs, "points": len(nat.points3D),
+            "cameras": len(nat.cameras)}
 
 
 def station_components(rec, project: SfmProject, min_shared_points: int = 50) -> List[List[str]]:

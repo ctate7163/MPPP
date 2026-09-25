@@ -198,7 +198,7 @@ class SfmProject:
                zero_terms: Sequence[str] = ZEROED_TERMS, link: bool = True,
                prior_sigma_m: Sequence[float] = (1.0, 1.0, 1.0),
                zcam_intrinsics: str = "label", zcam_focus_bin: Optional[float] = ZCAM_FOCUS_BIN,
-               zcam_bin_refine: str = "focal") -> "SfmProject":
+               zcam_bin_refine: str = "focal", zcam_rig: bool = False) -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -228,6 +228,19 @@ class SfmProject:
         attitude).  ``"all"``: every bin refines the same parameters as a
         Navcam camera.  Each image records ``camera_group`` (``ZL034``),
         ``focus_count`` and ``label_f_px``.
+        Mastcam-Z priors (v0p14.5): the label CAHVOR models move the principal
+        point with focus (ZR034 at Three Forks: ~160 px in x, ~120 px in y) and
+        rotate the pointing to compensate, so a label's attitude only fits its
+        own principal point.  Each Mastcam-Z prior attitude is therefore rotated
+        to fit the principal point of its COLMAP camera (the ray through the
+        camera's principal point is kept); the correction is recorded as
+        ``prior_R_correction_deg``.  At Three Forks this brings the spread of the
+        left/right relative rotations from 1.29 deg to 0.08 deg.
+        ``zcam_rig`` (v0p14.5, default False): no stereo rig for Mastcam-Z - each
+        Mastcam-Z image is its own frame.  Even after the correction the pairs
+        disagree by up to 0.08 deg (~7 px at f = 4700 px), too much for a rigid
+        constraint; True restores the rig when left and right share a camera
+        name pattern (only without focus bins).
         """
         if zcam_intrinsics not in ("label", "xml"):
             raise ValueError("zcam_intrinsics must be 'label' or 'xml'")
@@ -267,7 +280,7 @@ class SfmProject:
                 _link_or_copy(processed_dir / m["outputs"]["mask"], root / "masks" / (name + ".png"), link)
             key = camera_key(fn)
             instruments[key] = fam
-            label_f = None
+            label_f, label_c = None, None
             if fam == "Z":
                 from ..colmap import colmap_camera_params
                 model, params = colmap_camera_params(m["intrinsics"])
@@ -275,6 +288,7 @@ class SfmProject:
                 full[:4] /= s                              # to full resolution; distortion is resolution-free
                 label_params.setdefault(key, []).append((model, full))
                 label_f = float(full[0])
+                label_c = [float(full[2]), float(full[3])]
             R = np.asarray(m["pose"]["R_world_to_cam"], float)
             images.append({
                 "name": name, "stem": stem, "instrument": key, "eye": fn["eye"],
@@ -286,6 +300,7 @@ class SfmProject:
                 "prior_R_w2c": R.tolist(), "position_source": m["pose"].get("position_source"),
                 "has_mask": "mask" in m["outputs"],
                 "camera_group": key, "focus_count": _num(m.get("focus_position_count")), "label_f_px": label_f,
+                "label_c_px": label_c,
             })
 
         cameras = {}
@@ -302,13 +317,15 @@ class SfmProject:
         if zcam_focus_bin:
             cameras = _split_by_focus(images, cameras, instruments, float(zcam_focus_bin), zcam_bin_refine)
 
-        rig = _rig_from_pairs(images)
+        _align_priors_to_cameras(images, cameras)
+        rig = _rig_from_pairs([r for r in images if zcam_rig or instruments.get(r["camera_group"]) != "Z"])
         proj = cls(root, images, cameras, rig, offset,
                    {"world_frame": frames.pop(), "image_format": image_format,
                     "prior_sigma_m": list(map(float, prior_sigma_m)), "zero_terms": list(zero_terms),
                     "processed_dir": str(processed_dir), "zcam_intrinsics": zcam_intrinsics,
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
-                    "zcam_bin_refine": zcam_bin_refine})
+                    "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
+                    "prior_R_corrected": True})
         proj.save()
         return proj
 
@@ -381,6 +398,39 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
             for r in members:
                 r["instrument"] = key
     return out
+
+
+def _rotation_onto_axis(d: np.ndarray) -> np.ndarray:
+    """Rotation taking direction ``d`` onto the optical axis (0, 0, 1)."""
+    from scipy.spatial.transform import Rotation
+    d = np.asarray(d, float) / np.linalg.norm(d)
+    v = np.cross(d, [0.0, 0.0, 1.0])
+    sn = float(np.linalg.norm(v))
+    if sn < 1e-15:
+        return np.eye(3)
+    return Rotation.from_rotvec(v / sn * np.arctan2(sn, float(d[2]))).as_matrix()
+
+
+def prior_rotation_correction(label_c: Sequence[float], label_f: float, camera_c: Sequence[float]) -> np.ndarray:
+    """
+    Rotation M (world-to-camera: R_new = M R_label) that makes a label attitude
+    fit a camera whose principal point is ``camera_c`` instead of the label's
+    ``label_c`` (both full-frame px, same focal length ``label_f``): the pixel
+    at ``camera_c`` sees the ray the label model sees there.
+    """
+    d = (np.asarray(camera_c, float) - np.asarray(label_c, float)) / float(label_f)
+    return _rotation_onto_axis(np.array([d[0], d[1], 1.0]))
+
+
+def _align_priors_to_cameras(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, Any]]) -> None:
+    """Rotate the prior attitude of every image with a label principal point to its camera's (in place)."""
+    for r in images:
+        if r.get("label_c_px") is None or r.get("label_f_px") is None:
+            continue
+        p = cameras[r["instrument"]]["params"]
+        M = prior_rotation_correction(r["label_c_px"], r["label_f_px"], (p[2], p[3]))
+        r["prior_R_w2c"] = (M @ np.asarray(r["prior_R_w2c"], float)).tolist()
+        r["prior_R_correction_deg"] = float(np.degrees(np.arccos(np.clip((np.trace(M) - 1) / 2, -1.0, 1.0))))
 
 
 def _rig_family(key: str) -> str:

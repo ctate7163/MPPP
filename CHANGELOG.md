@@ -2,6 +2,27 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.14.5 — 2026-09-25
+
+Fixes after the first Three Forks run with Mastcam-Z.
+
+- **Mastcam-Z prior attitudes fitted to the camera's principal point.**
+  - The label CAHVOR models move the principal point with focus and rotate the pointing to compensate. At Three Forks, ZR034's principal point moves ~160 px in x and ~120 px in y over focus counts −48 to 1266 (ZL034: ~12 px). A label attitude therefore fits only its own principal point.
+  - With one principal point per eye (or per focus bin, held at the eye median), the priors were inconsistent by up to 1.3°. The stereo-pair spread was 1.29° and the rig rotation changed 1.34°. Mastcam-Z points failed the residual filter after round 1, and 223 of the 299 images (all the Mastcam-Z images) ended with < 30 observations.
+  - Each Mastcam-Z prior is now rotated so that the pixel at its camera's principal point sees the ray its label model sees there (`prior_rotation_correction`). The correction is recorded per image as `prior_R_correction_deg` (Three Forks: median 0.07°, max 1.31°).
+  - Checked on the Three Forks priors: the left/right relative rotations then agree to 0.08° (max) instead of 1.29°.
+- **No stereo rig for Mastcam-Z by default** (`SfmProject.create(zcam_rig=False)`). Each Mastcam-Z image is its own frame: even corrected, the pairs disagree by up to 0.08° (~7 px at f = 4700 px), too much for a rigid constraint. Navcam keeps its rig (spread 0.0001°).
+- **Round 4 repeats round 3** (8, 2, 2): it only shows whether another pass changes anything. The default schedule is `(24, 10, 8), (12, 2, 4), (8, 2, 2), (8, 2, 2)`.
+- **Native model fixed:** `error_input/native` crashed the COLMAP GUI.
+  - `images.txt` listed only the observed keypoints, but the tracks in `points3D.txt` used the full keypoint indices, so COLMAP stopped with `Check failed: point2D.point3D_id == point3D_id`.
+  - It is now a complete COLMAP 4 model (cameras, rigs, frames, images, points), built by `native_reconstruction` and verified by reading it back with COLMAP's reader.
+  - The error analysis was not affected: `mppp.error` matches observations by point ID.
+- **COLMAP GUI copy in native pixels:** `reconstruct` also writes `gui_native/` (`write_gui_native`).
+  - It contains the refined model and a database with native-pixel cameras (one per camera and resolution), keypoints and verified matches, so keypoints, tie points and matches line up with the half- and quarter-resolution images. Point colours are taken from the images.
+  - It is for viewing only; the bundle adjustment works on the full-resolution project.
+  - `open_in_colmap.bat` now opens this copy; `open_in_colmap_fullres.bat` opens the full-resolution project.
+- **Notebook 03:** `ZCAM_RIG = False`. The project is rebuilt when a project from ≤ 0.14.4 is found, and the Mastcam-Z prior correction is printed.
+
 ## 0.14.4 — 2026-09-25
 
 Still `v0p14`: manifests and notebooks keep the `v0p14` tag.

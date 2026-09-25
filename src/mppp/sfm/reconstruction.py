@@ -39,8 +39,9 @@ _FIXED_EXTRA = {"FULL_OPENCV": [6, 7, 9, 10, 11], "OPENCV": [6, 7]}
 _TANGENTIAL = {"FULL_OPENCV": [6, 7], "OPENCV": [6, 7]}         # p1, p2
 
 # (triangulation threshold [full-res px], Cauchy scale [sigma], maximum residual kept [native px]) per round.
-# v0p14.3 adds a fourth, tighter round: 1.5 native px = 3 sigma at sigma_px = 0.5.
-DEFAULT_SCHEDULE = ((24.0, 10.0, 8.0), (12.0, 2.0, 4.0), (8.0, 2.0, 2.0), (6.0, 1.5, 1.5))
+# v0p14.5: the fourth round repeats the third's limits - it only shows whether another
+# re-triangulation and adjustment still changes anything (v0p14.3-4 used (6, 1.5, 1.5)).
+DEFAULT_SCHEDULE = ((24.0, 10.0, 8.0), (12.0, 2.0, 4.0), (8.0, 2.0, 2.0), (8.0, 2.0, 2.0))
 
 
 def fixed_camera_params(model_name: str, refine_principal_point: bool = True,
@@ -489,16 +490,18 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 refine_intrinsics: bool = True, refine_rig: Union[bool, str] = "rotation",
                 register: bool = False, max_iterations: int = 50, out_name: str = "cahv_ba",
                 verbose: bool = True, min_track_length: int = 2, min_tri_angle_deg: float = 0.5,
-                refine_tangential: bool = False):
+                refine_tangential: bool = False, gui_native: bool = True):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
     ``schedule``: rounds of (triangulation threshold [full-res px], Cauchy
     scale [sigma], maximum residual kept [native px]) - a graduated schedule
     so that observations far from the initial poses can still pull them.
-    Default (v0p14.3): four rounds, the last keeping residuals up to 1.5
-    native px (3 sigma at ``sigma_px`` = 0.5); the final adjustment uses the
-    last round's Cauchy scale and cut-off.
+    Default: four rounds; the fourth repeats the third's limits (v0p14.5) to
+    show whether one more re-triangulation and adjustment changes anything.
+    The final adjustment uses the last round's Cauchy scale and cut-off.
+    ``gui_native`` (v0p14.5): also write the native-pixel viewing copy
+    ``gui_native/`` for the COLMAP GUI (``open_in_colmap.bat``).
     ``register``: first move whole stations with :func:`register_stations`
     (needed when the waypoint priors are off by more than ~20 px at range;
     at Belva they are within ~1-2 px, so it is off by default).
@@ -568,9 +571,18 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "refine_tangential": bool(refine_tangential),
                                           "schedule": [list(map(float, r)) for r in schedule]}
     project.save()
+    if gui_native:
+        try:
+            from .export import write_gui_native
+            g = write_gui_native(project, rec)               # native-pixel viewing copy (v0p14.5)
+            if verbose:
+                print(f"[sfm] COLMAP GUI copy in native pixels: {g['dir']} ({g['images']} images, "
+                      f"{g['points']} points)", flush=True)
+        except Exception as e:                               # noqa: BLE001  (a viewing aid; never stop the run)
+            print(f"[sfm] gui_native not written: {type(e).__name__}: {e}", flush=True)
     try:
         from .database import write_gui_project
-        write_gui_project(project, model=out_name)          # colmap_gui.ini, open_in_colmap.bat (v0p14.4)
+        write_gui_project(project, model=out_name)          # colmap_gui.ini, open_in_colmap*.bat (v0p14.4)
     except OSError:
         pass
     return rec

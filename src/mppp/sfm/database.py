@@ -239,37 +239,62 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
 
 def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba") -> Dict[str, str]:
     """
-    Files to open the project in the COLMAP GUI (v0p14.4), in the project folder:
+    Files to open the project in the COLMAP GUI (v0p14.4, v0p14.5), in the project folder:
 
-    * ``colmap_gui.ini`` - a COLMAP project file (database, images, masks):
-      File > Open project, then File > Import model ``sparse/<model>``;
-    * ``open_in_colmap.bat`` - Windows: opens the GUI with the project AND the
-      model in one step (``colmap gui --import_path``).  It calls ``COLMAP.bat``
-      from the environment variable ``COLMAP_BAT`` (set it once, e.g.
-      ``setx COLMAP_BAT D:\\tools\\COLMAP\\COLMAP.bat``), else from the PATH.
+    * ``open_in_colmap.bat`` - Windows, double-click: opens the GUI with the
+      NATIVE-pixel viewing copy ``gui_native/`` (database + refined model, see
+      :func:`mppp.sfm.export.write_gui_native`), in which keypoints, tie points
+      and matches line up with the images; before a reconstruction exists it
+      opens the full-resolution project.  It calls ``COLMAP.bat`` from the
+      environment variable ``COLMAP_BAT`` (set it once, e.g.
+      ``setx COLMAP_BAT D:\\tools\\COLMAP\\COLMAP.bat``), else from the PATH;
+    * ``open_in_colmap_fullres.bat`` - the full-resolution project and
+      ``sparse/<model>`` (what the bundle adjustment works on: keypoints are in
+      full-resolution pixels, so on half/quarter-resolution images the GUI's 2-D
+      overlay is off by 2x/4x; the 3-D view is right);
+    * ``colmap_gui.ini`` / ``gui_native/colmap_gui.ini`` - COLMAP project files
+      for File > Open project (then File > Import model).
 
-    Keypoints in ``database.db`` are in full-resolution pixels: on half- and
-    quarter-resolution images the GUI's keypoint overlay is off by 2x / 4x
-    (the 3-D view is correct).  Rewritten by ``build_database`` and
-    ``reconstruct``.  Returns the paths.
+    Rewritten by ``build_database`` and ``reconstruct``.  Returns the paths.
     """
     from .. import __version__
     root = Path(project.root).resolve()
-    lines = [f"# MPPP {__version__}: COLMAP GUI project. File > Open project (this file), then File > Import model"
-             + (f" > {root / 'sparse' / model}" if model else ""),
-             f"database_path={project.database.resolve()}", f"image_path={project.images_dir.resolve()}"]
-    if project.masks_dir.is_dir() and any(r.get("has_mask") for r in project.images):
-        lines += ["", "[ImageReader]", f"mask_path={project.masks_dir.resolve()}"]
-    ini = root / "colmap_gui.ini"
-    ini.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    bat_lines = ["@echo off",
-                 f"rem MPPP {__version__}: open this project and the model sparse\\{model or '<model>'} in the COLMAP GUI (4.x).",
+    native = root / "gui_native"
+    has_native = (native / "sparse" / "cameras.bin").is_file() and (native / "database.db").is_file()
+
+    def ini(path: Path, db: Path, model_dir: Optional[Path], note: str) -> None:
+        lines = [f"# MPPP {__version__}: COLMAP GUI project ({note}). File > Open project (this file)"
+                 + (f", then File > Import model > {model_dir}" if model_dir else ""),
+                 f"database_path={db}", f"image_path={project.images_dir.resolve()}"]
+        if project.masks_dir.is_dir() and any(r.get("has_mask") for r in project.images):
+            lines += ["", "[ImageReader]", f"mask_path={project.masks_dir.resolve()}"]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def bat(path: Path, db: str, model_rel: str, note: str) -> None:
+        lines = ["@echo off",
+                 f"rem MPPP {__version__}: open this project in the COLMAP GUI (4.x): {note}.",
                  "rem Set COLMAP_BAT once to your COLMAP.bat, e.g.  setx COLMAP_BAT D:\\tools\\COLMAP\\COLMAP.bat",
                  'if "%COLMAP_BAT%"=="" set "COLMAP_BAT=COLMAP.bat"',
-                 f'set "MODEL=%~dp0sparse\\{model or "cahv_ba"}"',
+                 f'set "MODEL=%~dp0{model_rel}"',
                  'if not exist "%MODEL%\\cameras.bin" (echo No model in %MODEL% yet: run the reconstruction first. & pause & exit /b 1)',
-                 'call "%COLMAP_BAT%" gui --database_path "%~dp0database.db" --image_path "%~dp0images" --import_path "%MODEL%"',
+                 f'call "%COLMAP_BAT%" gui --database_path "%~dp0{db}" --image_path "%~dp0images" --import_path "%MODEL%"',
                  "if errorlevel 1 (echo Could not start COLMAP: set COLMAP_BAT to your COLMAP.bat. & pause)"]
-    bat = root / "open_in_colmap.bat"
-    bat.write_bytes(("\r\n".join(bat_lines) + "\r\n").encode("utf-8"))
-    return {"ini": str(ini), "bat": str(bat)}
+        path.write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8"))
+
+    m = model or "cahv_ba"
+    ini(root / "colmap_gui.ini", project.database.resolve(), root / "sparse" / m if model else None,
+        "full-resolution keypoints")
+    bat(root / "open_in_colmap_fullres.bat", "database.db", f"sparse\\{m}",
+        f"full-resolution project and sparse\\{m}")
+    out = {"ini": str(root / "colmap_gui.ini"), "bat_fullres": str(root / "open_in_colmap_fullres.bat")}
+    if has_native:
+        ini(native / "colmap_gui.ini", (native / "database.db").resolve(), (native / "sparse").resolve(),
+            "native pixels, for viewing")
+        bat(root / "open_in_colmap.bat", "gui_native\\database.db", "gui_native\\sparse",
+            "native-pixel viewing copy gui_native (keypoints line up with the images)")
+        out["ini_native"] = str(native / "colmap_gui.ini")
+    else:
+        bat(root / "open_in_colmap.bat", "database.db", f"sparse\\{m}",
+            f"full-resolution project and sparse\\{m} (no gui_native yet)")
+    out["bat"] = str(root / "open_in_colmap.bat")
+    return out
