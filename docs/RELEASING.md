@@ -21,7 +21,7 @@ Commands are for Windows (Anaconda Prompt or PowerShell). On Linux and macOS the
 
 ## 1. Push the code (first time, from the bundle)
 
-The release was prepared as a git bundle: one file holding the repository and its history, with the tags `v0.13.0`, `v0.14.0` and `v0.14.1`.
+The release was prepared as a git bundle: one file holding the repository and its history, with the tags `v0.13.0` to `v0.14.2`.
 
 ```bat
 cd /d D:\code
@@ -32,7 +32,7 @@ git push -u origin main
 git push origin --tags
 ```
 
-`git log --oneline --decorate` should show three commits, tagged `v0.14.1`, `v0.14.0` and `v0.13.0`. The first push opens a browser window (or asks for a token) to sign in to GitHub.
+`git log --oneline --decorate` should show four commits, tagged `v0.14.2`, `v0.14.1`, `v0.14.0` and `v0.13.0`. The first push opens a browser window (or asks for a token) to sign in to GitHub.
 
 Then work in `D:\code\MPPP_git`:
 * `pip install -e .[mask,sfm]` in your main environment.

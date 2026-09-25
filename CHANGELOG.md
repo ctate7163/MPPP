@@ -2,6 +2,21 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.14.2 — 2026-09-25
+
+- **Health thresholds doubled** (warn / fail), as requested after the Three Forks test:
+  - `rig_rotation_change_deg`: 0.06 / 0.2
+  - `outlier_image_fraction`: 0.04 / 0.20
+  - `ray_displacement_max_px`: 20 / 60
+- **Weak-image diagnosis** (`diagnose_weak_images`, part of `assess_alignment` and printed by `health_table`).
+  - For every image with fewer than 30 observations, it reports the keypoints, the verified inlier matches with its stereo partner, with other images and with other stations, and the most likely cause, with advice:
+    - `few_keypoints` (masked or featureless);
+    - `unmatched`;
+    - `stereo_only_far` (lower `min_tri_angle_deg`);
+    - `same_station_only` (a left-only mast pan: no baseline to triangulate);
+    - `lost_in_triangulation`.
+  - On the Belva v0p9 result the 55 weak images split into 20 `few_keypoints` (most with 0 keypoints), 17 `same_station_only`, 16 `unmatched` (prior-pair matching) and 2 `lost_in_triangulation`.
+
 ## 0.14.1 — 2026-09-25
 
 - **Local fallback for the mask model.** If `mppp_mask_v1` is not in the cache and cannot be downloaded (offline, or not yet published: Hugging Face 401, GitHub 404), `fetch_model` now installs a local copy into the cache.

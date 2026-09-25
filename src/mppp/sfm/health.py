@@ -56,12 +56,12 @@ DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "residual_median_px": (0.5, 1.0, "above"),
     "residual_p95_px": (2.0, 4.0, "above"),
     "residual_eye_ratio": (1.3, 2.0, "above"),
-    "outlier_image_fraction": (0.02, 0.10, "above"),
+    "outlier_image_fraction": (0.04, 0.20, "above"),       # doubled in v0p14.2 (user request)
     "edge_to_centre_residual": (1.5, 2.5, "above"),
     "focal_change_pct": (0.5, 2.0, "above"),
     "principal_point_change_px": (20.0, 60.0, "above"),
-    "ray_displacement_max_px": (10.0, 30.0, "above"),
-    "rig_rotation_change_deg": (0.03, 0.1, "above"),
+    "ray_displacement_max_px": (20.0, 60.0, "above"),      # doubled in v0p14.2
+    "rig_rotation_change_deg": (0.06, 0.2, "above"),       # doubled in v0p14.2
     "rig_cahv_spread_deg": (0.02, 0.1, "above"),
     "station_shift_median_m": (1.0, 3.0, "above"),
     "attitude_change_p95_deg": (0.5, 2.0, "above"),
@@ -115,6 +115,105 @@ def _camera_change(cam0: Dict[str, Any], cam1) -> Dict[str, Any]:
 
 def _rotation_deg(R: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip((np.trace(R) - 1) / 2, -1.0, 1.0))))
+
+
+# ------------------------------------------------------- weak-image diagnosis
+WEAK_CAUSES = {
+    "few_keypoints": "few SIFT keypoints: the image is mostly masked (rover, sky) or featureless",
+    "unmatched": "keypoints but no verified matches with any other image",
+    "stereo_only_far": "matched only with its stereo partner; those points are too far for the minimum "
+                       "triangulation angle (distant scene)",
+    "same_station_only": "no stereo partner, matched only with images of its own station: a mast pan has "
+                         "almost no baseline, so these matches cannot be triangulated",
+    "lost_in_triangulation": "verified matches exist, but few survive triangulation and the residual filter",
+    "no_database": "database not available for the diagnosis",
+}
+WEAK_ADVICE = {
+    "few_keypoints": "nothing to recover: drop the image (delete it from images_png8, KEEP_ONLY_REMAINING=True) "
+                     "or accept it held at its prior",
+    "unmatched": "with MATCH_MODE='prior_pairs' use 'exhaustive'; otherwise the image overlaps nothing - drop it",
+    "stereo_only_far": "lower reconstruct(min_tri_angle_deg=...): 0.5 keeps stereo-only points to ~50 m, "
+                       "0.25 to ~100 m",
+    "same_station_only": "needs matches to another station (MATCH_MODE='exhaustive' if 'prior_pairs' was used) or "
+                         "its right-eye partner in the selection; otherwise it stays at its prior pose (harmless for "
+                         "the others) - or drop it",
+    "lost_in_triangulation": "raise the first-round triangulation threshold, e.g. schedule=((32, 10, 8), (12, 2, 4), "
+                             "(8, 2, 2)), or add a round",
+    "no_database": "",
+}
+
+
+def classify_weak_image(keypoints: int, inliers_other: Optional[int], inliers_partner: Optional[int],
+                        observations: int, min_keypoints: int = 300, min_inliers: int = 30,
+                        inliers_other_station: Optional[int] = None) -> str:
+    """Most likely reason an image ended up with few observations (see ``WEAK_CAUSES``).
+    ``inliers_other`` counts matches with every image except the stereo partner;
+    ``inliers_other_station`` those with images of other stations (None = unknown)."""
+    if keypoints < min_keypoints:
+        return "few_keypoints"
+    if inliers_other is None:
+        return "no_database"
+    if inliers_other + (inliers_partner or 0) < min_inliers:
+        return "unmatched"
+    if inliers_other < min_inliers and (inliers_partner or 0) >= min_inliers:
+        return "stereo_only_far"
+    if (inliers_partner or 0) < min_inliers and inliers_other_station is not None \
+            and inliers_other_station < min_inliers:
+        return "same_station_only"
+    return "lost_in_triangulation"
+
+
+def diagnose_weak_images(project: SfmProject, rec, min_observations: int = 30) -> List[Dict[str, Any]]:
+    """
+    For every registered image with fewer than ``min_observations`` tie-point
+    observations: keypoints, verified inlier matches with its stereo partner
+    and with all other images (from ``database.db``), observations, and the
+    likely cause (``classify_weak_image``) with advice.
+    """
+    by_iid = {r["image_id"]: r for r in project.images if "image_id" in r}
+    n_obs: Dict[int, int] = {}
+    for pt in rec.points3D.values():
+        for el in pt.track.elements:
+            n_obs[el.image_id] = n_obs.get(el.image_id, 0) + 1
+    weak = [int(i) for i in rec.reg_image_ids() if n_obs.get(int(i), 0) < min_observations]
+    if not weak:
+        return []
+    frame_of = {iid: rec.images[iid].frame_id for iid in weak}
+    partner: Dict[int, Optional[int]] = {}
+    for iid in weak:
+        fr = rec.frames[frame_of[iid]]
+        others = [d.id for d in fr.data_ids if d.id != iid]
+        partner[iid] = int(others[0]) if others else None
+    inl_other = {iid: 0 for iid in weak}
+    inl_cross = {iid: 0 for iid in weak}
+    inl_partner = {iid: 0 for iid in weak}
+    n_pairs = {iid: 0 for iid in weak}
+    have_db = project.database.is_file()
+    if have_db:
+        from .reconstruction import _verified_matches
+        wset = set(weak)
+        for i1, i2, m in _verified_matches(project):
+            for a, b in ((i1, i2), (i2, i1)):
+                if a in wset:
+                    if b == partner[a]:
+                        inl_partner[a] += len(m)
+                    else:
+                        inl_other[a] += len(m)
+                        n_pairs[a] += 1
+                        if by_iid.get(b, {}).get("station") != by_iid.get(a, {}).get("station"):
+                            inl_cross[a] += len(m)
+    out = []
+    for iid in weak:
+        kp = int(rec.images[iid].num_points2D())
+        cause = classify_weak_image(kp, inl_other[iid] if have_db else None, inl_partner[iid] if have_db else None,
+                                    n_obs.get(iid, 0), inliers_other_station=inl_cross[iid] if have_db else None)
+        out.append({"name": by_iid.get(iid, {}).get("name", str(iid)), "station": by_iid.get(iid, {}).get("station"),
+                    "keypoints": kp, "observations": n_obs.get(iid, 0),
+                    "inliers_with_stereo_partner": inl_partner[iid] if have_db else None,
+                    "inliers_with_other_images": inl_other[iid] if have_db else None,
+                    "inliers_with_other_stations": inl_cross[iid] if have_db else None,
+                    "matched_images": n_pairs[iid] if have_db else None, "cause": cause})
+    return sorted(out, key=lambda d: (d["cause"], d["name"]))
 
 
 def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tuple]] = None,
@@ -286,13 +385,14 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         check("poses", "prior_scale_error_pct", 100 * abs(s_ - 1), f"block of {len(cen)} stations; rotation "
               f"{_rotation_deg(R_):.2f} deg (orientation is held only by the position priors)", "%")
 
+    weak = diagnose_weak_images(project, rec, min_frame_observations)
     verdict = max((c["status"] for c in checks), key=lambda s: _RANK[s], default="pass")
     return {"verdict": verdict, "checks": checks, "thresholds": {k: list(v) for k, v in thr.items()},
             "track_length_histogram": hist, "residual_by_camera_resolution": eye_med,
             "residual_by_radius": radial, "worst_images": [{"name": by_iid[i]["name"], "median_px": m}
                                                            for m, i in outl[:20]],
             "cameras": cams_after, "rig": rig_out, "stations": st_tab, "prior_similarity": sims,
-            "held_images": held, "station_components": comps,
+            "held_images": held, "weak_images": weak, "station_components": comps,
             "note": "thresholds are provisional values set a priori, not validated limits"}
 
 
@@ -304,6 +404,23 @@ def health_table(report: Dict[str, Any]) -> str:
         v = "-" if c["value"] is None else (f"{c['value']:.4g}")
         t = "" if c["warn"] is None else f"[warn {c['warn']:g} / fail {c['fail']:g}]"
         out.append(f"{sym[c['status']]}  {c['section']:<13} {c['check']:<31} {v:>10} {c['unit']:<11} {t:<26} {c['note']}")
+    weak = report.get("weak_images") or []
+    if weak:
+        out += ["", f"images with few observations ({len(weak)}), by likely cause:"]
+        causes: Dict[str, List[Dict[str, Any]]] = {}
+        for w in weak:
+            causes.setdefault(w["cause"], []).append(w)
+        for cause, ws in causes.items():
+            out.append(f"  {cause} ({len(ws)}): {WEAK_CAUSES[cause]}")
+            if WEAK_ADVICE.get(cause):
+                out.append(f"    -> {WEAK_ADVICE[cause]}")
+            for w in ws:
+                m = "" if w["inliers_with_other_images"] is None else \
+                    (f", inliers: stereo partner {w['inliers_with_stereo_partner']}, "
+                     f"{w['matched_images']} other images {w['inliers_with_other_images']} "
+                     f"(other stations {w['inliers_with_other_stations']})")
+                out.append(f"      {w['name']}  ({w['station']}; {w['keypoints']} keypoints, "
+                           f"{w['observations']} observations{m})")
     return "\n".join(out)
 
 

@@ -71,3 +71,38 @@ def test_download_failure_falls_back_to_local_checkpoint(tmp_path, monkeypatch):
     assert p == tmp_path / "cache" / "models" / "m1.safetensors" and hub.sha256_file(p) == ref["sha256"]
     with pytest.raises(FileNotFoundError, match="No local fallback"):
         hub.fetch_model("m1", force=True, local_fallback=False)
+
+
+def test_weak_image_causes():
+    from mppp.sfm.health import classify_weak_image as c
+    assert c(100, 0, 0, 0) == "few_keypoints"
+    assert c(5000, None, None, 0) == "no_database"
+    assert c(5000, 3, 10, 0) == "unmatched"
+    assert c(5000, 5, 400, 2) == "stereo_only_far"
+    assert c(5000, 900, 400, 10) == "lost_in_triangulation"
+    assert c(5000, 6600, 0, 9, inliers_other_station=0) == "same_station_only"        # a left-only mast pan
+    assert c(5000, 6600, 0, 9, inliers_other_station=500) == "lost_in_triangulation"
+
+
+def test_health_lists_weak_images_with_advice(tmp_path):
+    from test_sfm import _build_rec, _synthetic
+    from mppp.sfm.health import DEFAULT_THRESHOLDS, assess_alignment, health_table
+    assert DEFAULT_THRESHOLDS["rig_rotation_change_deg"][:2] == (0.06, 0.2)            # doubled (v0p14.2)
+    assert DEFAULT_THRESHOLDS["outlier_image_fraction"][:2] == (0.04, 0.20)
+    assert DEFAULT_THRESHOLDS["ray_displacement_max_px"][:2] == (20.0, 60.0)
+    proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
+    rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+    victim = 3
+    for pid in [pid for pid, pt in rec.points3D.items() if any(e.image_id == victim for e in pt.track.elements)]:
+        if rec.points3D[pid].track.length() <= 2:
+            rec.delete_point3D(pid)
+        else:
+            idx = [e.point2D_idx for e in rec.points3D[pid].track.elements if e.image_id == victim][0]
+            rec.delete_observation(victim, idx)
+    rep = assess_alignment(proj, rec)
+    weak = rep["weak_images"]
+    assert [w["name"] for w in weak] == [proj.images[victim - 1]["name"]] and weak[0]["observations"] == 0
+    assert weak[0]["cause"] == "no_database"                                           # no database.db here
+    txt = health_table(rep)
+    assert "images with few observations (1)" in txt and proj.images[victim - 1]["name"] in txt
