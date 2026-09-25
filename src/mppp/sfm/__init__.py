@@ -16,8 +16,9 @@ Design (see ``docs/methods.md`` §9):
 
 * **One COLMAP camera per Navcam eye**, at full detector resolution
   (5120 x 3840), initialised from ``mppp/data/m20_cmods/M2020_N{L,R}0_frame.xml``
-  with p1 = p2 = b1 = b2 = 0 (radial k1-k3 only; model FULL_OPENCV with
-  p1, p2, k4-k6 held at zero).  Half- and quarter-resolution frames are the
+  with b1 = b2 = 0 and, by default, p1 = p2 = 0 (model FULL_OPENCV with
+  k4-k6 held at zero; p1, p2 held, or started from the XML and refined with
+  ``reconstruct(refine_tangential=True)`` since v0p14.3).  Half- and quarter-resolution frames are the
   same physical camera: their keypoints are scaled to full-resolution pixels
   (exact for binned, detector-frame-padded MPPP images with a corner pixel
   origin), so every resolution shares one set of intrinsics.

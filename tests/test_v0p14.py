@@ -106,3 +106,81 @@ def test_health_lists_weak_images_with_advice(tmp_path):
     assert weak[0]["cause"] == "no_database"                                           # no database.db here
     txt = health_table(rep)
     assert "images with few observations (1)" in txt and proj.images[victim - 1]["name"] in txt
+
+
+# ---------------------------------------------------------------- v0p14.3
+def test_fixed_camera_params_tangential_switch():
+    from mppp.sfm.reconstruction import fixed_camera_params
+    assert fixed_camera_params("FULL_OPENCV") == [6, 7, 9, 10, 11]
+    assert fixed_camera_params("FULL_OPENCV", refine_tangential=True) == [9, 10, 11]
+    assert fixed_camera_params("FULL_OPENCV", refine_principal_point=False, refine_tangential=True) == [2, 3, 9, 10, 11]
+    assert fixed_camera_params("OPENCV", refine_tangential=True) == []
+
+
+def test_reconstruct_defaults_four_rounds_and_half_degree():
+    import inspect
+    from mppp.sfm.reconstruction import DEFAULT_SCHEDULE, reconstruct
+    sig = inspect.signature(reconstruct).parameters
+    assert sig["schedule"].default == DEFAULT_SCHEDULE and len(DEFAULT_SCHEDULE) == 4
+    assert DEFAULT_SCHEDULE[-1] == (6.0, 1.5, 1.5)                        # 3 sigma at sigma_px = 0.5
+    assert all(a[2] >= b[2] for a, b in zip(DEFAULT_SCHEDULE, DEFAULT_SCHEDULE[1:]))   # cut-offs only tighten
+    assert sig["min_tri_angle_deg"].default == 0.5 and sig["sigma_px"].default == 0.5
+    assert sig["refine_tangential"].default is False
+
+
+def test_xml_tangential_terms_kept_when_not_zeroed():
+    from mppp.paths import data_dir
+    from mppp.sfm.project import camera_from_metashape_xml, read_metashape_calibration
+    xml = data_dir() / "m20_cmods/M2020_NL0_frame.xml"
+    c = read_metashape_calibration(xml)
+    p = camera_from_metashape_xml(xml, zero_terms=("b1", "b2"))["params"]
+    assert p[6] == pytest.approx(c["p2"]) and p[7] == pytest.approx(c["p1"])     # OpenCV p1 = Metashape P2
+    assert abs(p[6]) > 1e-4 and p[0] == p[1]                                      # b1 still zeroed
+
+
+def test_ba_recovers_tangential_only_when_asked(tmp_path):
+    pytest.importorskip("pycolmap")
+    pytest.importorskip("pyceres")
+    import numpy as np
+    from test_sfm import _build_rec, _synthetic
+    from mppp.sfm.reconstruction import bundle_adjust
+    from mppp.sfm.health import _camera_change
+    proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
+    for k in cams_d:                                                    # truth has tangential distortion
+        cams_d[k]["params"][6], cams_d[k]["params"][7] = 3e-4, -2e-4
+    for refine in (True, False):
+        rec, true_params = _build_rec(proj, truth, P, cams_d, rigT, noise, np.random.default_rng(1))
+        for cid in rec.cameras:                                         # start at p1 = p2 = 0
+            q = np.array(rec.cameras[cid].params)
+            q[6:8] = 0.0
+            rec.cameras[cid].params = q
+        out = bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation",
+                            refine_tangential=refine, max_iterations=200)
+        assert out["refine_tangential"] is refine
+        for cid in (1, 2):
+            p = np.asarray(rec.cameras[cid].params)
+            if refine:
+                assert abs(p[6] - 3e-4) < 5e-5 and abs(p[7] + 2e-4) < 5e-5
+            else:
+                assert p[6] == p[7] == 0.0
+            assert p[9] == p[10] == p[11] == 0.0
+    ch = _camera_change(dict(cams_d["NL"], params=list(cams_d["NL"]["params"])), rec.cameras[1])
+    assert ch["p1_initial"] == pytest.approx(3e-4) and ch["p1_refined"] == 0.0
+
+
+def test_features_reused_only_with_same_settings(tmp_path):
+    from mppp.sfm.database import features_up_to_date, _features_record
+    from mppp.sfm.project import SfmProject
+    proj = SfmProject(tmp_path, [{"name": "a.png"}, {"name": "b.png"}], {}, {}, [0, 0, 0], {})
+    assert not features_up_to_date(proj)                                # nothing yet
+    proj.features_db.write_bytes(b"")
+    assert not features_up_to_date(proj)                                # no record (e.g. extracted by 0.14.2)
+    rec = {"max_num_features": 8192, "max_image_size": 3200, "domain_size_pooling": False, "images": ["a.png", "b.png"]}
+    _features_record(proj).write_text(json.dumps(rec))
+    assert features_up_to_date(proj, max_num_features=8192)
+    assert not features_up_to_date(proj, max_num_features=16380)        # new setting -> extract again
+    rec["max_num_features"] = 16380
+    _features_record(proj).write_text(json.dumps(rec))
+    assert features_up_to_date(proj)                                    # default is 16380
+    proj.images.append({"name": "c.png"})
+    assert not features_up_to_date(proj)                                # an image without features

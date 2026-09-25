@@ -12,9 +12,12 @@ Reconstruction from the CAHV-initialised cameras.
    own native pixels (``sigma_px / s`` in full-resolution pixels), Cauchy loss;
    frame poses free with the waypoint position priors; the right camera's
    sensor_from_rig free (one offset for all pairs); per-camera focal lengths,
-   principal point and k1-k3 free, p1, p2, k4-k6 held at zero.
+   principal point and k1-k3 free; p1, p2 held at their initial values
+   (zero by default) or refined with ``refine_tangential=True`` (v0p14.3);
+   k4-k6 held at zero.
 4. Drop observations whose residual exceeds ``max_residual_native_px`` and
-   re-triangulate with the refined poses; repeat ``rounds`` times.
+   re-triangulate with the refined poses; one round per ``schedule`` entry
+   (four by default since v0p14.3), then a final adjustment.
 
 The result is in the project's world frame (ENU metres minus ``project.offset``).
 """
@@ -33,6 +36,22 @@ PathLike = Union[str, Path]
 
 # FULL_OPENCV: fx fy cx cy k1 k2 p1 p2 k3 k4 k5 k6 -> indices held constant
 _FIXED_EXTRA = {"FULL_OPENCV": [6, 7, 9, 10, 11], "OPENCV": [6, 7]}
+_TANGENTIAL = {"FULL_OPENCV": [6, 7], "OPENCV": [6, 7]}         # p1, p2
+
+# (triangulation threshold [full-res px], Cauchy scale [sigma], maximum residual kept [native px]) per round.
+# v0p14.3 adds a fourth, tighter round: 1.5 native px = 3 sigma at sigma_px = 0.5.
+DEFAULT_SCHEDULE = ((24.0, 10.0, 8.0), (12.0, 2.0, 4.0), (8.0, 2.0, 2.0), (6.0, 1.5, 1.5))
+
+
+def fixed_camera_params(model_name: str, refine_principal_point: bool = True,
+                        refine_tangential: bool = False) -> List[int]:
+    """Indices of the camera parameters held constant in the bundle adjustment."""
+    fixed = set(_FIXED_EXTRA.get(model_name, []))
+    if refine_tangential:
+        fixed -= set(_TANGENTIAL.get(model_name, []))
+    if not refine_principal_point:
+        fixed |= {2, 3}
+    return sorted(fixed)
 
 
 def _rigid(R: np.ndarray, C: np.ndarray):
@@ -100,7 +119,7 @@ def _scales(rec, project: SfmProject) -> Dict[int, float]:
 
 def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: float = 2.0,
                   refine_intrinsics: bool = True, refine_principal_point: bool = True,
-                  refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
+                  refine_tangential: bool = False, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
                   min_frame_observations: int = 30, num_threads: int = -1, verbose: bool = False) -> Dict[str, Any]:
     """
     Weighted BA in place (see module docstring).  ``sigma_px``: keypoint
@@ -113,7 +132,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     0.14 m); False holds the rig fixed.  Frames with fewer than
     ``min_frame_observations`` observations are held at their current pose
     (on Belva two frames with no observations otherwise rotated freely, by 9
-    and 36 deg).  Returns the solver summary as a dict.
+    and 36 deg).  ``refine_tangential`` (v0p14.3): refine p1, p2 of
+    OPENCV / FULL_OPENCV cameras; otherwise they stay at their initial
+    values.  Returns the solver summary as a dict.
     """
     import pycolmap
     import pycolmap.cost_functions as cf
@@ -201,16 +222,14 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                                         [xyz, rig_blocks[(fr.rig_id, im.camera_id)], pose, cam.params])
             n_obs += 1
 
-    # intrinsics: hold p1, p2, k4-k6 at zero (and the principal point if asked)
+    # intrinsics: hold k4-k6 at zero, p1, p2 at their start unless refine_tangential (and the principal point if asked)
     for cid, cam in work.cameras.items():
         if not prob.has_parameter_block(cam.params):
             continue
         if not refine_intrinsics:
             prob.set_parameter_block_constant(cam.params)
             continue
-        fixed = list(_FIXED_EXTRA.get(cam.model.name, []))
-        if not refine_principal_point:
-            fixed += [2, 3]
+        fixed = fixed_camera_params(cam.model.name, refine_principal_point, refine_tangential)
         prob.set_parameter_block_variable(cam.params)
         if fixed:
             prob.set_manifold(cam.params, pyceres.SubsetManifold(len(cam.params), sorted(fixed)))
@@ -276,7 +295,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         rec.rigs[rid].set_sensor_from_rig(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=cid), T)
     return {"observations": n_obs, "priors": n_prior, "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
-            "termination": str(summary.termination_type), "brief": summary.BriefReport()}
+            "termination": str(summary.termination_type), "brief": summary.BriefReport(),
+            "refine_tangential": bool(refine_tangential)}
 
 
 def _verified_matches(project: SfmProject):
@@ -458,16 +478,20 @@ def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:
 
 
 def reconstruct(project: SfmProject, sigma_px: float = 0.5,
-                schedule: Sequence[Sequence[float]] = ((24.0, 10.0, 8.0), (12.0, 2.0, 4.0), (8.0, 2.0, 2.0)),
+                schedule: Sequence[Sequence[float]] = DEFAULT_SCHEDULE,
                 refine_intrinsics: bool = True, refine_rig: Union[bool, str] = "rotation",
                 register: bool = False, max_iterations: int = 50, out_name: str = "cahv_ba",
-                verbose: bool = True, min_track_length: int = 2, min_tri_angle_deg: float = 1.5):
+                verbose: bool = True, min_track_length: int = 2, min_tri_angle_deg: float = 0.5,
+                refine_tangential: bool = False):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
     ``schedule``: rounds of (triangulation threshold [full-res px], Cauchy
     scale [sigma], maximum residual kept [native px]) - a graduated schedule
     so that observations far from the initial poses can still pull them.
+    Default (v0p14.3): four rounds, the last keeping residuals up to 1.5
+    native px (3 sigma at ``sigma_px`` = 0.5); the final adjustment uses the
+    last round's Cauchy scale and cut-off.
     ``register``: first move whole stations with :func:`register_stations`
     (needed when the waypoint priors are off by more than ~20 px at range;
     at Belva they are within ~1-2 px, so it is off by default).
@@ -475,10 +499,14 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     tie points - e.g. seen only by the two eyes of one stereo pair - are kept,
     as COLMAP's ``ignore_two_view_tracks=False`` triangulates them; 3 drops
     them after every round.
-    ``min_tri_angle_deg``: smallest triangulation angle.  With the 0.424 m
-    Navcam baseline, 1.5 deg keeps stereo-only points out to about 16 m; lower
-    it to keep more distant two-view points (their depth is poorly
-    constrained, their direction is not).
+    ``min_tri_angle_deg``: smallest triangulation angle (default 0.5 deg
+    since v0p14.3; was 1.5).  With the 0.424 m Navcam baseline, 0.5 deg keeps
+    stereo-only points out to about 49 m (1.5 deg: 16 m).  Their depth is
+    poorly constrained, their direction is not: they tie attitudes, and the
+    weighting and the residual cut-offs limit their influence.
+    ``refine_tangential``: refine p1, p2 (see :func:`bundle_adjust`).  Start
+    them from the Metashape calibration by creating the project with
+    ``zero_terms=("b1", "b2")``; with the default ``zero_terms`` they start at 0.
     Returns the reconstruction (also written to ``sparse/<out_name>``).
     """
     if min_track_length < 2:
@@ -496,7 +524,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
         rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg)
         st0 = track_statistics(rec, project)
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
-                           refine_rig=refine_rig, max_iterations=max_iterations)
+                           refine_tangential=refine_tangential, refine_rig=refine_rig, max_iterations=max_iterations)
         n_bad = filter_observations(rec, project, float(rmax))
         n_bad += drop_short_tracks(rec, min_track_length)
         st = track_statistics(rec, project)
@@ -512,7 +540,8 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                   f"median {entry['median_native_px']:.3f} / rms {entry['rms_native_px']:.3f} native px, "
                   f"{n_bad} obs filtered, {entry['elapsed_s']:.0f} s", flush=True)
     ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
-                       refine_intrinsics=refine_intrinsics, refine_rig=refine_rig, max_iterations=2 * max_iterations)
+                       refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential,
+                       refine_rig=refine_rig, max_iterations=2 * max_iterations)
     # the final adjustment can push a few points behind a camera or past the limit
     n_bad = filter_observations(rec, project, float(schedule[-1][2]))
     n_bad += drop_short_tracks(rec, min_track_length)
@@ -528,6 +557,8 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     project.settings["reconstruction"] = {"path": str(out.relative_to(project.root)), "log": log,
                                           "sigma_px_native": sigma_px, "refine_rig": refine_rig,
                                           "min_track_length": min_track_length,
-                                          "min_tri_angle_deg": min_tri_angle_deg}
+                                          "min_tri_angle_deg": min_tri_angle_deg,
+                                          "refine_tangential": bool(refine_tangential),
+                                          "schedule": [list(map(float, r)) for r in schedule]}
     project.save()
     return rec

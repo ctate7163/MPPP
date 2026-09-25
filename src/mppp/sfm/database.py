@@ -13,6 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import json
+
 import numpy as np
 
 from .project import SfmProject
@@ -20,7 +22,34 @@ from .project import SfmProject
 PathLike = Union[str, Path]
 
 
-def extract_features(project: SfmProject, max_num_features: int = 8192, max_image_size: int = 3200,
+DEFAULT_MAX_NUM_FEATURES = 16380          # v0p14.3 (was 8192)
+
+
+def _features_record(project: SfmProject) -> Path:
+    return project.features_db.with_suffix(".json")
+
+
+def _feature_settings(max_num_features: int, max_image_size: int, domain_size_pooling: bool) -> Dict[str, Any]:
+    return {"max_num_features": int(max_num_features), "max_image_size": int(max_image_size),
+            "domain_size_pooling": bool(domain_size_pooling)}
+
+
+def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES,
+                        max_image_size: int = 3200, domain_size_pooling: bool = False) -> bool:
+    """True if ``features.db`` exists and was extracted with these settings (``features.json`` beside it)."""
+    rec = _features_record(project)
+    if not project.features_db.exists() or not rec.is_file():
+        return False
+    try:
+        done = json.loads(rec.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    want = _feature_settings(max_num_features, max_image_size, domain_size_pooling)
+    names = {r["name"] for r in project.images}
+    return all(done.get(k) == v for k, v in want.items()) and names <= set(done.get("images", []))
+
+
+def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES, max_image_size: int = 3200,
                      use_gpu: Optional[bool] = None, num_threads: int = -1, overwrite: bool = False,
                      domain_size_pooling: bool = False, python: Optional[PathLike] = None) -> Path:
     """
@@ -29,14 +58,23 @@ def extract_features(project: SfmProject, max_num_features: int = 8192, max_imag
 
         colmap feature_extractor --database_path features.db --image_path images
             --ImageReader.mask_path masks --ImageReader.camera_model SIMPLE_RADIAL
-            --SiftExtraction.max_num_features 8192 --SiftExtraction.max_image_size 3200
+            --SiftExtraction.max_num_features 16380 --SiftExtraction.max_image_size 3200
+
+    An existing ``features.db`` is reused only if ``features.json`` beside it
+    records the same settings and covers every project image (v0p14.3);
+    otherwise - e.g. after changing ``max_num_features`` - it is extracted
+    again.  ``overwrite=True`` always extracts again.
 
     ``python``: run this step in another Python environment, e.g. a conda one
     with a CUDA pycolmap (v0p11, see :mod:`mppp.sfm.gpu`).
     """
     db = project.features_db
-    if db.exists() and not overwrite:
+    if not overwrite and features_up_to_date(project, max_num_features, max_image_size, domain_size_pooling):
         return db
+    if db.exists() and not overwrite:
+        print(f"[sfm] {db.name}: extracted with other settings (or not recorded) - extracting again "
+              f"with max_num_features={max_num_features}", flush=True)
+        overwrite = True
     if python is not None:
         from .gpu import run_step
         return Path(run_step(python, "extract_features", project, max_num_features=max_num_features,
@@ -64,6 +102,9 @@ def extract_features(project: SfmProject, max_num_features: int = 8192, max_imag
                               extraction_options=opts, device=device)
     project.settings["features"] = {"max_num_features": max_num_features, "max_image_size": max_image_size,
                                     "domain_size_pooling": domain_size_pooling, "masks": bool(reader.mask_path)}
+    record = dict(_feature_settings(max_num_features, max_image_size, domain_size_pooling), images=sorted(names),
+                  masks=bool(reader.mask_path))
+    _features_record(project).write_text(json.dumps(record, indent=1), encoding="utf-8")
     project.save()
     return db
 

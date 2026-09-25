@@ -2,6 +2,35 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.14.3 — 2026-09-25
+
+COLMAP alignment settings after the Three Forks test.
+
+- **Tangential distortion can be refined.** `reconstruct(..., refine_tangential=True)` (and `bundle_adjust`) frees p1, p2 of the FULL_OPENCV cameras; otherwise they stay at their initial values.
+  - To start them from the Metashape calibration rather than zero, create the project with `zero_terms=("b1", "b2")`. For NL0 that is P1 = 1.72e-4, P2 = 1.70e-4, about 2 px at a full-resolution corner.
+  - The library default is unchanged (`False`, p1 = p2 = 0), so earlier results reproduce.
+  - The camera model stays FULL_OPENCV. `fixed_camera_params(model, refine_principal_point, refine_tangential)` returns the held indices.
+- **Fourth round with tighter cut-offs.** The default schedule is `(24, 10, 8), (12, 2, 4), (8, 2, 2), (6, 1.5, 1.5)`: triangulation threshold [full-res px], Cauchy scale [σ], maximum residual kept [native px].
+  - The last round keeps residuals up to 1.5 native px (3σ at σ = 0.5 px).
+  - The final adjustment uses the last round's values.
+  - `DEFAULT_SCHEDULE` in `mppp.sfm.reconstruction`.
+- **`min_tri_angle_deg` default 0.5** (was 1.5). This keeps stereo-only points out to about 49 m instead of 16 m.
+- **`sigma_px`** stays 0.5 (native px). The notebook now passes it explicitly.
+- **SIFT `max_num_features` default 16380** (was 8192).
+  - `features.db` now has a `features.json` record beside it. An existing `features.db` is reused only if the record matches the requested settings and covers every project image; otherwise it is extracted again.
+  - A `features.db` from 0.14.2 has no record, so it is extracted once more.
+  - `features_up_to_date(project, ...)` checks this.
+- **Health report:** the camera-model section also lists p1 and p2 (initial → refined).
+- **Notebook 03:**
+  - `TANGENTIAL = "refine"` (or `"xml"`: from the calibration, held; `"zero"`: the 0.14.2 behaviour). The project is rebuilt when this changes the start values.
+  - `MAX_NUM_FEATURES = 16380`, `SCHEDULE` with four rounds, `min_tri_angle_deg=0.5`.
+  - Prints the initial → refined camera parameters.
+- Tests in `tests/test_v0p14.py`:
+  - p1/p2 are recovered on the synthetic rig only when asked;
+  - the defaults;
+  - the XML tangential terms with the OpenCV/Metashape swap;
+  - feature re-extraction on changed settings.
+
 ## 0.14.2 — 2026-09-25
 
 - **Health thresholds doubled** (warn / fail), as requested after the Three Forks test:

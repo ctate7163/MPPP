@@ -13,7 +13,7 @@ tie points        points, observations, track-length population (incl. two-view 
 reprojection      native-pixel residuals: median, RMS, 95th percentile; per camera and resolution;
                   left/right balance; images whose median residual is far above the rest;
                   residual growth towards the image edge (distortion-model misfit)
-camera model      per camera: change in f, principal point and k1-k3 from the calibration, and the
+camera model      per camera: change in f, principal point and k1-k3, p1, p2 from the calibration, and the
                   resulting image displacement of the same ray (max / RMS over the frame)
 stereo rig        rotation of the right camera relative to the CAHV rig; baseline (held);
                   spread of the CAHV pairs the rig was built from
@@ -107,7 +107,7 @@ def _camera_change(cam0: Dict[str, Any], cam1) -> Dict[str, Any]:
            "ray_displacement_rms_px": float(np.sqrt(np.mean(d ** 2))) if d.size else None,
            "units": "full-resolution pixels"}
     if cam0["model"] in ("OPENCV", "FULL_OPENCV"):
-        for k, i in (("k1", 4), ("k2", 5), ("k3", 8)):
+        for k, i in (("k1", 4), ("k2", 5), ("p1", 6), ("p2", 7), ("k3", 8)):
             if i < len(p0):
                 out[f"{k}_initial"], out[f"{k}_refined"] = float(p0[i]), float(p1[i])
     return out
