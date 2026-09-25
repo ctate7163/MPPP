@@ -2,6 +2,41 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.14.4 — 2026-09-25
+
+Still `v0p14`: manifests and notebooks keep the `v0p14` tag.
+
+- **Mastcam-Z focus breathing: one camera per focus bin.**
+  - `SfmProject.create(zcam_focus_bin=30)` (the default) splits each Mastcam-Z eye and zoom into cameras by focus motor count, named e.g. `ZL034_F02312` after the bin's median count.
+  - Bins are at most 30 counts wide. They are grouped greedily from the lowest count (`focus_bins`), so a cluster of nearly equal counts is never split by a grid line.
+  - Each bin starts from the median label focal length of its images.
+  - `zcam_bin_refine="focal"` (the default): a bin refines fx and fy only. The principal point, k1–k3 and p1/p2 are held at the median of the whole eye and zoom, because for a ~25° field the principal point of a few images is nearly degenerate with their attitude. `"all"` refines everything, like Navcam.
+  - `zcam_focus_bin=None` gives the 0.14.3 behaviour: one camera per eye and zoom.
+  - Images record `camera_group`, `focus_count` and `label_f_px`.
+- **Per-camera held parameters:** `project.cameras[key]["fixed_params"]`, honoured by `bundle_adjust`.
+- **Focal length vs focus** (`mppp.sfm.zcam`, notebook section 7b).
+  - `write_focus_breathing(proj, rec)` plots, per eye and zoom: refined f per bin (marker size ~ observations), the bin start, the per-image label f, and linear fits (refined bins weighted by observations, bins with < 100 observations excluded).
+  - Slopes are given in px/count and %/1000 counts.
+  - Output: `health/zcam_focus_breathing.{png,csv,json}`.
+- **Top-down camera shifts** (`plot_camera_shifts`, notebook section 8, first cell). It replaces the per-station plot. Stations are tens of metres apart but the cameras of one station lie within a metre, so the figure has three parts:
+  - an overview of the station median shifts;
+  - every camera's total shift per station, coloured by attitude change;
+  - one panel per station in local coordinates, with an arrow per image from its prior (CAHV + waypoint) to its refined centre, a shared exaggeration, and colour = vertical shift.
+  - Navcam and Mastcam-Z have different markers; held images are grey crosses. Saved as `error_input/camera_shifts.png`.
+- **COLMAP GUI files** in the project folder, written by `build_database` and `reconstruct` (`write_gui_project`):
+  - `colmap_gui.ini`: File > Open project (database, images, masks);
+  - `open_in_colmap.bat`: opens the GUI with the project and `sparse/cahv_ba` in one step. It uses `COLMAP_BAT`, e.g. `setx COLMAP_BAT D:\tools\COLMAP\COLMAP.bat`.
+- **Health:** the left/right eye ratio compares eye groups (`ZL034` vs `ZR034`), not individual focus bins.
+- **Station labels start with the sol:** `Sol0686 S032D1184`, or `Sol0684-0685 S032D1174` for a station occupied over several sols (`station_labels`, `SfmProject.station_label`).
+  - Used in the health table, weak-image list and health plot, the camera-shift plots and the export summary.
+  - Added as a `station_label` column to `stations.csv` and `poses.csv`.
+  - The station ID (site/drive) is unchanged and still groups the images.
+- **Notebook 03:**
+  - `ZCAM_FOCUS_BIN = 30`, `ZCAM_BIN_REFINE = "focal"`; the project is rebuilt when these change.
+  - The focus-bin summary is printed after the project is built.
+  - With `GPU_PY = None`, extraction and matching no longer request the GPU, so the "no CUDA" warning is gone.
+  - The default test case is Three Forks (`SITE = "threeforks"`, sols 684–693).
+
 ## 0.14.3 — 2026-09-25
 
 COLMAP alignment settings after the Three Forks test.

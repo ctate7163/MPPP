@@ -41,7 +41,7 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 import numpy as np
 
 from .export import _umeyama, pose_residual_table, station_components
-from .project import SfmProject
+from .project import SfmProject, station_labels
 from .reconstruction import native_residuals, track_statistics
 
 PathLike = Union[str, Path]
@@ -171,6 +171,7 @@ def diagnose_weak_images(project: SfmProject, rec, min_observations: int = 30) -
     likely cause (``classify_weak_image``) with advice.
     """
     by_iid = {r["image_id"]: r for r in project.images if "image_id" in r}
+    labels = station_labels(project.images)
     n_obs: Dict[int, int] = {}
     for pt in rec.points3D.values():
         for el in pt.track.elements:
@@ -207,7 +208,9 @@ def diagnose_weak_images(project: SfmProject, rec, min_observations: int = 30) -
         kp = int(rec.images[iid].num_points2D())
         cause = classify_weak_image(kp, inl_other[iid] if have_db else None, inl_partner[iid] if have_db else None,
                                     n_obs.get(iid, 0), inliers_other_station=inl_cross[iid] if have_db else None)
-        out.append({"name": by_iid.get(iid, {}).get("name", str(iid)), "station": by_iid.get(iid, {}).get("station"),
+        st_id = by_iid.get(iid, {}).get("station")
+        out.append({"name": by_iid.get(iid, {}).get("name", str(iid)), "station": st_id,
+                    "station_label": labels.get(st_id, st_id),
                     "keypoints": kp, "observations": n_obs.get(iid, 0),
                     "inliers_with_stereo_partner": inl_partner[iid] if have_db else None,
                     "inliers_with_other_images": inl_other[iid] if have_db else None,
@@ -276,7 +279,8 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         for sel in np.split(order, np.flatnonzero(np.diff(iid_o[order])) + 1):
             iid = int(iid_o[sel[0]])
             meta = by_iid.get(iid, {})
-            key = f"{meta.get('instrument', '?')} x{meta.get('downsample_scale', '?')}"
+            grp = meta.get("camera_group") or meta.get("instrument", "?")          # ZL034, not its focus bins
+            key = f"{grp} x{meta.get('downsample_scale', '?')}"
             groups.setdefault(key, []).extend(r[sel].tolist())
             img_med[iid] = float(np.median(r[sel]))
             im = rec.images[iid]
@@ -358,19 +362,20 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
     by_st: Dict[str, List[Dict[str, Any]]] = {}
     for x in good:
         by_st.setdefault(x["station"], []).append(x)
+    labels = station_labels(project.images)
     st_tab = {}
-    for st, v in sorted(by_st.items()):
+    for st, v in sorted(by_st.items(), key=lambda kv: labels.get(kv[0], kv[0])):
         d = np.array([[x["dE_m"], x["dN_m"], x["dU_m"]] for x in v])
-        st_tab[st] = {"images": len(v), "shift_median_m": float(np.median(np.linalg.norm(d, axis=1))),
+        st_tab[st] = {"label": labels.get(st, st), "images": len(v), "shift_median_m": float(np.median(np.linalg.norm(d, axis=1))),
                       "shift_spread_m": float(np.sqrt(np.mean(np.sum((d - np.median(d, 0)) ** 2, axis=1)))),
                       "attitude_median_deg": float(np.median([x["dAttitude_deg"] for x in v]))}
     if st_tab:
         worst = max(st_tab.items(), key=lambda kv: kv[1]["shift_median_m"])
         check("poses", "station_shift_median_m", worst[1]["shift_median_m"],
-              f"largest station median |refined - prior| ({worst[0]})", "m")
+              f"largest station median |refined - prior| ({labels.get(worst[0], worst[0])})", "m")
         spread = max(st_tab.items(), key=lambda kv: kv[1]["shift_spread_m"])
         check("poses", "within_station_shift_spread_m", spread[1]["shift_spread_m"],
-              f"largest RMS spread of the shifts within one station ({spread[0]})", "m")
+              f"largest RMS spread of the shifts within one station ({labels.get(spread[0], spread[0])})", "m")
     att = np.array([x["dAttitude_deg"] for x in good])
     check("poses", "attitude_change_p95_deg", _q(att, 95), f"median {_q(att, 50):.3f} deg" if att.size else "", "deg")
     sims = []
@@ -393,6 +398,7 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
                                                            for m, i in outl[:20]],
             "cameras": cams_after, "rig": rig_out, "stations": st_tab, "prior_similarity": sims,
             "held_images": held, "weak_images": weak, "station_components": comps,
+            "station_labels": labels,
             "note": "thresholds are provisional values set a priori, not validated limits"}
 
 
@@ -419,7 +425,7 @@ def health_table(report: Dict[str, Any]) -> str:
                     (f", inliers: stereo partner {w['inliers_with_stereo_partner']}, "
                      f"{w['matched_images']} other images {w['inliers_with_other_images']} "
                      f"(other stations {w['inliers_with_other_stations']})")
-                out.append(f"      {w['name']}  ({w['station']}; {w['keypoints']} keypoints, "
+                out.append(f"      {w['name']}  ({w.get('station_label') or w['station']}; {w['keypoints']} keypoints, "
                            f"{w['observations']} observations{m})")
     return "\n".join(out)
 
@@ -467,7 +473,7 @@ def plot_health(report: Dict[str, Any], rec, project: SfmProject, path: PathLike
     ax[1, 1].errorbar(range(len(st)), [v["shift_median_m"] for v in st.values()],
                       yerr=[v["shift_spread_m"] for v in st.values()], fmt="none", ecolor="k", label="spread")
     ax[1, 1].set_xticks(range(len(st)))
-    ax[1, 1].set_xticklabels(list(st), rotation=90, fontsize=7)
+    ax[1, 1].set_xticklabels([v.get("label", k) for k, v in st.items()], rotation=90, fontsize=7)
     ax[1, 1].set_ylabel("|refined - prior| [m]")
     ax[1, 1].set_ylim(bottom=0)
     ax[1, 1].set_title("camera centre vs prior, by station")

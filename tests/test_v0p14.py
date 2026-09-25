@@ -1,5 +1,6 @@
 """v0p14: reprocess only the images left in the output folder; version-free model export."""
 import json
+from pathlib import Path
 
 import pytest
 
@@ -184,3 +185,140 @@ def test_features_reused_only_with_same_settings(tmp_path):
     assert features_up_to_date(proj)                                    # default is 16380
     proj.images.append({"name": "c.png"})
     assert not features_up_to_date(proj)                                # an image without features
+
+
+# ---------------------------------------------------------------- v0p14.4
+def test_focus_bins_greedy_and_tags():
+    from mppp.sfm.project import _focus_tag, focus_bins
+    counts = [100, 110, 129, 131, 200, None, 205, 250]
+    assert focus_bins(counts, 30) == [0, 0, 0, 1, 2, 4, 2, 3]            # no grid line splits 129 / 131 from 100?
+    assert focus_bins([5, 6, 7], 30) == [0, 0, 0] and focus_bins([], 30) == []
+    assert (_focus_tag(2312.4), _focus_tag(-150), _focus_tag(None)) == ("F02312", "Fm00150", "Fna")
+
+
+def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
+    from mppp.sfm.project import ZCAM_BIN_HELD, SfmProject
+    man, out = processed_pair
+    proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False)
+    zmeta = [m for m in man["images"] if m["filename"]["family"] == "Z"][0]
+    fc = float(zmeta["focus_position_count"])
+    key = f"ZL034_F{int(round(fc)):05d}"
+    assert set(proj.cameras) == {"NL", key}
+    z = proj.cameras[key]
+    assert z["group"] == "ZL034" and z["focus_count_median"] == fc and z["n_images"] == 1
+    assert z["fixed_params"] == list(ZCAM_BIN_HELD) and "focus bin" in z["source"]
+    r = [r for r in proj.images if r["camera_group"] == "ZL034"][0]
+    assert r["instrument"] == key and r["focus_count"] == fc and abs(r["label_f_px"] - z["params"][0]) < 1e-9
+    assert proj.settings["zcam_focus_bin"] == 30.0 and proj.settings["zcam_bin_refine"] == "focal"
+    pa = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_bin_refine="all")
+    assert pa.cameras[key]["fixed_params"] == []
+    with pytest.raises(ValueError):
+        SfmProject.create(man["images"], out, tmp_path / "r", zcam_bin_refine="some")
+
+
+@pytest.fixture(scope="module")
+def processed_pair(tmp_path_factory):
+    from test_v0p13 import processed_pair as fx
+    return fx.__wrapped__(tmp_path_factory)
+
+
+def test_ba_holds_camera_specific_parameters(tmp_path):
+    pytest.importorskip("pyceres")
+    import numpy as np
+    from test_sfm import _build_rec, _synthetic
+    from mppp.sfm.reconstruction import bundle_adjust
+    proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
+    rec, true_params = _build_rec(proj, truth, P, cams_d, rigT, noise, rng)
+    start = {cid: np.array(rec.cameras[cid].params) for cid in (1, 2)}
+    proj.cameras["NR"]["fixed_params"] = ["cx", "cy", "k1", "k2", "p1", "p2", "k3"]
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+    bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=100)
+    p1, p2 = np.asarray(rec.cameras[1].params), np.asarray(rec.cameras[2].params)
+    assert np.array_equal(p2[2:], start[2][2:])                         # NR: all but fx, fy held
+    assert abs(p2[0] - start[2][0]) > 1.0                               # its focal length moved (+0.3 % start)
+    assert abs(p1[2] - start[1][2]) > 0.5 and abs(p1[4] - start[1][4]) > 1e-4     # NL refines as before
+    # NR dressed as a Mastcam-Z focus bin: table, plot and health run on it
+    from mppp.sfm.health import assess_alignment
+    from mppp.sfm.zcam import write_focus_breathing
+    proj.cameras["NR"].update(group="NR", focus_count_median=1000.0, focus_count_range=[995.0, 1004.0], n_images=12)
+    for r in proj.images:
+        r["camera_group"] = r["instrument"]
+        if r["instrument"] == "NR":
+            r["focus_count"], r["label_f_px"] = 1000.0, float(start[2][0])
+    fb = write_focus_breathing(proj, rec, tmp_path / "fb", min_observations=10)
+    row = fb["table"][0]
+    assert len(fb["table"]) == 1 and row["camera"] == "NR" and row["observations"] > 1000
+    assert abs(row["f_refined_px"] - 0.5 * (p2[0] + p2[1])) < 1e-9 and row["held_params"].startswith("cx,cy")
+    assert fb["fits"]["NR"]["refined"] is None and Path(fb["png"]).is_file()          # one bin: no slope
+    rep = assess_alignment(proj, rec)
+    assert "NR" in rep["cameras"] and any(c["check"] == "residual_eye_ratio" for c in rep["checks"])
+
+
+def test_focus_slope_fit_and_plot(tmp_path):
+    from mppp.sfm.project import SfmProject
+    from mppp.sfm.zcam import fit_focus_slopes, plot_focus_breathing
+    imgs, table = [], []
+    for g, a in (("ZL034", 0.05), ("ZR034", 0.04)):
+        for c in (1000, 1030, 1070, 1100):
+            for d in (0, 5):
+                imgs.append({"name": f"{g}{c}{d}", "instrument": f"{g}_F{c:05d}", "camera_group": g,
+                             "focus_count": c + d, "label_f_px": 4600 + a * (c + d - 1050) + 0.3})
+            table.append({"camera": f"{g}_F{c:05d}", "group": g, "focus_count_median": c + 2.5, "focus_count_min": c,
+                          "focus_count_max": c + 5, "images": 2, "observations": 500 if c != 1100 else 50,
+                          "f_initial_px": 4600 + a * (c - 1047.5), "f_refined_px": 4610 + 2 * a * (c + 2.5 - 1052.5),
+                          "refined": True})
+    proj = SfmProject(tmp_path, imgs, {}, {}, [0, 0, 0], {})
+    fits = fit_focus_slopes(proj, table, min_observations=100)
+    assert fits["ZL034"]["bins"] == 4 and fits["ZL034"]["bins_fitted"] == 3          # the 50-observation bin is out
+    assert abs(fits["ZL034"]["refined"]["slope_px_per_count"] - 0.10) < 1e-9
+    assert abs(fits["ZL034"]["label"]["slope_px_per_count"] - 0.05) < 1e-9
+    assert abs(fits["ZR034"]["label"]["slope_px_per_count"] - 0.04) < 1e-9 and fits["ZR034"]["refined"]["n"] == 3
+    png = plot_focus_breathing(proj, table, fits, tmp_path / "fb.png")
+    assert png.is_file() and png.stat().st_size > 10000
+
+
+def test_camera_shift_plot(tmp_path):
+    pytest.importorskip("pyceres")
+    import matplotlib
+    matplotlib.use("Agg")
+    from test_sfm import _build_rec, _synthetic
+    from mppp.sfm.export import _nice, plot_camera_shifts, pose_residual_table
+    from mppp.sfm.reconstruction import bundle_adjust
+    proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
+    for r in proj.images:                                          # priors = truth, start perturbed
+        r["prior_R_w2c"], r["prior_C"] = truth[r["name"]][0].tolist(), truth[r["name"]][1].tolist()
+    rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng)
+    bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=50)
+    rows = pose_residual_table(rec, proj)
+    fig = plot_camera_shifts(proj, rows=rows, out_png=tmp_path / "shifts.png")
+    assert (tmp_path / "shifts.png").stat().st_size > 20000 and len(fig.axes) >= 2
+    assert (_nice(37), _nice(0.23), _nice(1)) == (20, 0.2, 1)
+    import csv
+    with open(tmp_path / "p.csv", "w", newline="") as f:              # also from poses.csv (strings)
+        w = csv.DictWriter(f, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+    plot_camera_shifts(proj, rows=list(csv.DictReader(open(tmp_path / "p.csv"))), exaggeration=100)
+
+
+def test_colmap_gui_project_files(tmp_path):
+    from mppp.sfm.database import write_gui_project
+    from mppp.sfm.project import SfmProject
+    (tmp_path / "masks").mkdir()
+    proj = SfmProject(tmp_path, [{"name": "a.png", "has_mask": True}], {}, {}, [0, 0, 0], {})
+    out = write_gui_project(proj, model="cahv_ba")
+    ini = Path(out["ini"]).read_text().splitlines()
+    assert ini[0].startswith("# MPPP") and f"database_path={tmp_path.resolve() / 'database.db'}" in ini
+    assert f"image_path={tmp_path.resolve() / 'images'}" in ini and "[ImageReader]" in ini
+    bat = Path(out["bat"]).read_bytes()
+    assert b"\r\n" in bat and b"--import_path \"%MODEL%\"" in bat and b"sparse\\cahv_ba" in bat
+    assert b"%COLMAP_BAT%" in bat
+
+
+def test_station_labels_start_with_the_sol():
+    from mppp.sfm.project import SfmProject, station_labels
+    imgs = [{"station": "S032D1184", "sol": 686}, {"station": "S032D1184", "sol": 686},
+            {"station": "S032D1174", "sol": 684}, {"station": "S032D1174", "sol": 685}, {"station": "S001D0000"}]
+    lab = station_labels(imgs)
+    assert lab == {"S032D1184": "Sol0686 S032D1184", "S032D1174": "Sol0684-0685 S032D1174", "S001D0000": "S001D0000"}
+    assert sorted(lab.values())[1] == "Sol0684-0685 S032D1174"
+    proj = SfmProject(Path("."), imgs, {}, {}, [0, 0, 0], {})
+    assert proj.station_label("S032D1184") == "Sol0686 S032D1184" and proj.station_label("X") == "X"

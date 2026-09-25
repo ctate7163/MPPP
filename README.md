@@ -10,7 +10,7 @@ MPPP turns Mars 2020 Perseverance **Navcam** and **Mastcam-Z** PDS image product
 
 For Navcam (optionally with the Mastcam-Z 34 mm frames of the same sols), MPPP also builds a complete COLMAP project — database, stereo rig, matches — and a prior-aligned, weighted bundle adjustment, with an **alignment health report** (tie points, reprojection error, camera-model change, stereo-rig stability, pose change).
 
-Version **0.14.3** (`v0p14`). Versions before 1.0 are development releases; see [CHANGELOG.md](CHANGELOG.md).
+Version **0.14.4** (`v0p14`). Versions before 1.0 are development releases; see [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 

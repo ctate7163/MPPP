@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 
 from ..colmap import scale_camera_params, write_cameras_txt, write_images_txt
-from .project import SfmProject
+from .project import SfmProject, station_labels
 from .reconstruction import native_residuals, track_statistics
 
 PathLike = Union[str, Path]
@@ -114,6 +114,7 @@ def _umeyama(src: np.ndarray, dst: np.ndarray):
 
 def pose_residual_table(rec, project: SfmProject) -> List[Dict[str, Any]]:
     from scipy.spatial.transform import Rotation
+    labels = station_labels(project.images)
     rows = []
     n_obs: Dict[int, int] = {}
     for pt in rec.points3D.values():
@@ -130,11 +131,177 @@ def pose_residual_table(rec, project: SfmProject) -> List[Dict[str, Any]]:
         R0 = np.asarray(r["prior_R_w2c"], float)
         dang = float(np.degrees(np.linalg.norm(Rotation.from_matrix(R @ R0.T).as_rotvec())))
         d = C - C0
-        rows.append({"name": r["name"], "station": r["station"], "sol": r["sol"], "instrument": r["instrument"],
+        rows.append({"name": r["name"], "station": r["station"], "station_label": labels.get(r["station"], r["station"]),
+                     "sol": r["sol"], "instrument": r["instrument"],
                      "downsample_scale": r["downsample_scale"], "dE_m": d[0], "dN_m": d[1], "dU_m": d[2],
                      "dC_m": float(np.linalg.norm(d)), "dAttitude_deg": dang,
                      "E_m": C[0], "N_m": C[1], "U_m": C[2], "observations": n_obs.get(iid, 0)})
     return rows
+
+
+def _nice(x: float) -> float:
+    """1, 2 or 5 times a power of ten, nearest to ``x`` from below."""
+    if not np.isfinite(x) or x <= 0:
+        return 1.0
+    e = 10 ** np.floor(np.log10(x))
+    return float(max(m for m in (1, 2, 5) if m * e <= x * 1.0000001) * e)
+
+
+def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[str, Any]]] = None,
+                       out_png: Optional[PathLike] = None, exaggeration: Optional[float] = None,
+                       min_observations: int = 30, ncols: int = 4):
+    """
+    Top-down view of how far each camera moved from its reference (its CAHV +
+    waypoint prior) in the refinement (v0p14.4).  Stations are tens of metres
+    apart while the cameras of one station lie within a metre, so:
+
+    * top left - overview: every station's median shift, prior -> refined, as an
+      arrow exaggerated ``k_overview`` times, coloured by its median vertical
+      shift dU, labelled ``Sol0686 S032D1184``;
+    * top right - every camera's total shift |dC| per station (dots coloured by
+      the attitude change);
+    * below - one panel per station in local coordinates (metres from the
+      station's median camera centre): one arrow per image from its prior to its
+      refined centre, horizontal shift exaggerated ``exaggeration`` times (shared
+      by all panels; default: the median arrow is ~30 % of the median station
+      extent, rounded to 1/2/5), coloured by dU (shared scale).
+
+    Navcam = circles, Mastcam-Z = triangles; images with fewer than
+    ``min_observations`` observations (held at their prior) are grey crosses.
+    ``rows``: from :func:`pose_residual_table` or ``poses.csv`` (computed from
+    ``rec`` if omitted).  Returns the figure (saved to ``out_png`` if given).
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import TwoSlopeNorm
+    if rows is None:
+        if rec is None:
+            raise ValueError("give rec or rows")
+        rows = pose_residual_table(rec, project)
+    labels = station_labels(project.images)
+    R = []
+    for r in rows:
+        r = dict(r)
+        for k in ("E_m", "N_m", "U_m", "dE_m", "dN_m", "dU_m", "dC_m", "dAttitude_deg"):
+            r[k] = float(r[k])
+        r["observations"] = int(float(r["observations"]))
+        r["label"] = r.get("station_label") or labels.get(r["station"], r["station"])
+        R.append(r)
+    stations = sorted({r["label"] for r in R})
+    by_st = {s: [r for r in R if r["label"] == s] for s in stations}
+    good = [r for r in R if r["observations"] >= min_observations]
+    fam_marker = lambda r: "^" if r["instrument"][:1] == "Z" else ("o" if r["instrument"][:1] == "N" else "s")   # noqa: E731
+    cmap = plt.get_cmap("coolwarm")
+    du = np.array([r["dU_m"] for r in good])
+    lim = max(float(np.percentile(np.abs(du), 98)) if du.size else 0.0, 1e-3)
+    norm = TwoSlopeNorm(vcenter=0.0, vmin=-lim, vmax=lim)
+
+    # station summaries and local coordinates
+    summ = {}
+    for s, v in by_st.items():
+        g = [r for r in v if r["observations"] >= min_observations]
+        cE, cN = float(np.median([r["E_m"] for r in v])), float(np.median([r["N_m"] for r in v]))
+        summ[s] = {"E": cE, "N": cN, "n": len(g),
+                   "dE": float(np.median([r["dE_m"] for r in g])) if g else 0.0,
+                   "dN": float(np.median([r["dN_m"] for r in g])) if g else 0.0,
+                   "dU": float(np.median([r["dU_m"] for r in g])) if g else 0.0,
+                   "dH": float(np.median([np.hypot(r["dE_m"], r["dN_m"]) for r in g])) if g else 0.0,
+                   "extent": max(float(np.ptp([r["E_m"] for r in v])), float(np.ptp([r["N_m"] for r in v])), 0.5)}
+    dh_all = np.array([np.hypot(r["dE_m"], r["dN_m"]) for r in good])
+    med_dh = float(np.median(dh_all)) if dh_all.size and np.median(dh_all) > 0 else 0.01
+    if exaggeration is None:
+        exaggeration = max(1.0, _nice(0.3 * float(np.median([v["extent"] for v in summ.values()] or [1.0])) / med_dh))
+    k = float(exaggeration)
+    E_all = np.array([v["E"] for v in summ.values()]); N_all = np.array([v["N"] for v in summ.values()])
+    extent_all = max(float(np.ptp(E_all)) if E_all.size else 0.0, float(np.ptp(N_all)) if N_all.size else 0.0, 5.0)
+    k_ov = _nice(0.08 * extent_all / max(float(np.median([v["dH"] for v in summ.values()] or [med_dh])), 1e-3))
+
+    n_rows = int(np.ceil(len(stations) / ncols))
+    fig = plt.figure(figsize=(4.2 * ncols, 5.2 + 3.9 * n_rows))
+    gs = fig.add_gridspec(1 + n_rows, ncols, height_ratios=[1.45] + [1.0] * n_rows)
+    ax0 = fig.add_subplot(gs[0, : ncols // 2])
+    ax1 = fig.add_subplot(gs[0, ncols // 2:])
+
+    # overview
+    for r in R:
+        ax0.plot(r["E_m"], r["N_m"], fam_marker(r), color="0.75", ms=3, zorder=1)
+    for s, v in summ.items():
+        ax0.annotate("", (v["E"], v["N"]), (v["E"] - k_ov * v["dE"], v["N"] - k_ov * v["dN"]),
+                     arrowprops=dict(arrowstyle="->", lw=1.8, color=cmap(norm(v["dU"]))), zorder=2)
+        ax0.text(v["E"], v["N"], "  " + s, fontsize=6.5, va="center", zorder=3)
+    bar = _nice(0.15 * extent_all / k_ov)
+    x0, y0 = float(E_all.min()), float(N_all.min()) - 0.06 * extent_all
+    ax0.annotate("", (x0 + k_ov * bar, y0), (x0, y0), arrowprops=dict(arrowstyle="->", lw=1.6, color="k"))
+    ax0.text(x0, y0 - 0.035 * extent_all, f"{bar * 100:g} cm (x{k_ov:g})", fontsize=8, va="top")
+    xo = np.r_[E_all, E_all - k_ov * np.array([v["dE"] for v in summ.values()]), x0, x0 + k_ov * bar]
+    yo = np.r_[N_all, N_all - k_ov * np.array([v["dN"] for v in summ.values()]), y0 - 0.05 * extent_all]
+    half = 0.55 * max(np.ptp(xo), np.ptp(yo)) + 0.05 * extent_all
+    ax0.set_xlim(0.5 * (xo.min() + xo.max()) - half, 0.5 * (xo.min() + xo.max()) + half)
+    ax0.set_ylim(0.5 * (yo.min() + yo.max()) - half, 0.5 * (yo.min() + yo.max()) + half)
+    ax0.set_aspect("equal", adjustable="box")
+    ax0.set_xlabel("E [m]"); ax0.set_ylabel("N [m]"); ax0.grid(alpha=0.3)
+    ax0.set_title(f"station median shift, prior -> refined (x{k_ov:g}); colour = dU")
+    fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax0, shrink=0.85, label="dU, refined - prior [m]")
+
+    # per-camera total shift by station, coloured by attitude change
+    att = np.array([r["dAttitude_deg"] for r in good])
+    vmax = max(float(np.percentile(att, 98)) if att.size else 0.1, 1e-3)
+    rng = np.random.default_rng(0)
+    sc = None
+    for i, s in enumerate(stations):
+        g = [r for r in by_st[s] if r["observations"] >= min_observations]
+        h = [r for r in by_st[s] if r["observations"] < min_observations]
+        for fam in ("o", "^", "s"):
+            gg = [r for r in g if fam_marker(r) == fam]
+            if gg:
+                sc = ax1.scatter(i + rng.uniform(-0.18, 0.18, len(gg)), [100 * r["dC_m"] for r in gg],
+                                 c=[r["dAttitude_deg"] for r in gg], cmap="viridis", vmin=0, vmax=vmax, marker=fam,
+                                 s=18, edgecolors="k", linewidths=0.25)
+        if h:
+            ax1.plot(i + rng.uniform(-0.18, 0.18, len(h)), [100 * r["dC_m"] for r in h], "x", color="0.55", ms=5)
+    ax1.set_xticks(range(len(stations)))
+    ax1.set_xticklabels(stations, rotation=60, ha="right", fontsize=7)
+    ax1.set_ylabel("|refined - prior| camera centre [cm]")
+    ax1.set_ylim(bottom=0)
+    ax1.grid(alpha=0.3, axis="y")
+    ax1.set_title(f"per camera: median {100 * float(np.median([r['dC_m'] for r in good])) if good else 0:.1f} cm, "
+                  f"attitude median {float(np.median(att)) if att.size else 0:.3f} deg "
+                  f"(95 %: {float(np.percentile(att, 95)) if att.size else 0:.3f})")
+    if sc is not None:
+        fig.colorbar(sc, ax=ax1, shrink=0.85, label="attitude change [deg]")
+
+    # one panel per station, local coordinates, shared exaggeration and colours
+    for i, s in enumerate(stations):
+        ax = fig.add_subplot(gs[1 + i // ncols, i % ncols])
+        v, c = by_st[s], summ[s]
+        xs, ys = [], []
+        for r in v:
+            x, y = r["E_m"] - c["E"], r["N_m"] - c["N"]
+            xs += [x, x - k * r["dE_m"]]; ys += [y, y - k * r["dN_m"]]
+            if r["observations"] < min_observations:
+                ax.plot(x, y, "x", color="0.55", ms=6)
+                continue
+            ax.annotate("", (x, y), (x - k * r["dE_m"], y - k * r["dN_m"]),
+                        arrowprops=dict(arrowstyle="->", lw=1.1, color=cmap(norm(r["dU_m"]))))
+            ax.plot(x, y, fam_marker(r), color=cmap(norm(r["dU_m"])), mec="k", mew=0.3, ms=5)
+        half = 0.55 * max(np.ptp(xs) if xs else 1.0, np.ptp(ys) if ys else 1.0, 0.3)
+        mx, my = (0.5 * (min(xs) + max(xs)), 0.5 * (min(ys) + max(ys))) if xs else (0.0, 0.0)
+        ax.set_xlim(mx - half, mx + half); ax.set_ylim(my - half, my + half)
+        ax.set_aspect("equal", adjustable="box")
+        ax.grid(alpha=0.3)
+        ax.tick_params(labelsize=7)
+        ax.set_title(f"{s}\nmedian |dH| {100 * c['dH']:.1f} cm, dU {100 * c['dU']:+.1f} cm, {c['n']} cameras",
+                     fontsize=8)
+        if i % ncols == 0:
+            ax.set_ylabel("N - station [m]", fontsize=8)
+        ax.set_xlabel("E - station [m]", fontsize=8)
+    fig.suptitle(f"camera shifts relative to the CAHV + waypoint references; station panels: horizontal x{k:g}, "
+                 f"colour = dU (+/-{lim * 100:.1f} cm); o Navcam, ^ Mastcam-Z, x held (< {min_observations} obs.)",
+                 fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.98))
+    if out_png:
+        Path(out_png).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_png, dpi=120)
+    return fig
 
 
 def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = None) -> Dict[str, Any]:
@@ -144,13 +311,14 @@ def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
 
     with (out / "stations.csv").open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
+        labels = station_labels(project.images)
         w.writerow(["name", "station", "site", "drive", "sol", "sclk_key", "lmst", "solar_elevation_deg",
-                    "instrument", "downsample_scale", "sequence", "registered"])
+                    "instrument", "downsample_scale", "sequence", "registered", "station_label"])
         reg = {rec.images[i].name for i in rec.reg_image_ids()}
         for r in project.images:
             w.writerow([r["name"], r["station"], r["site"], r["drive"], r["sol"], r["sclk_key"], r.get("lmst"),
                         r.get("solar_elevation_deg"), r["instrument"], r["downsample_scale"], r["sequence"],
-                        r["name"] in reg])
+                        r["name"] in reg, labels.get(r["station"], r["station"])])
     rows = pose_residual_table(rec, project)
     if rows:
         with (out / "poses.csv").open("w", newline="", encoding="utf-8") as f:
@@ -210,7 +378,8 @@ def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
                "registered_images": len(rows), "project_images": len(project.images),
                "prior_offset_median_m": float(np.median(dC)) if dC.size else None,
                "prior_offset_by_station_median_m": {k: float(np.median(v)) for k, v in sorted(by_station.items())},
-               "station_components": comps, "prior_similarity_by_component": sims,
+               "station_components": [[labels.get(x, x) for x in c] for c in comps],
+               "prior_similarity_by_component": sims,
                "weak_images_lt30_obs": weak,
                "cameras_initial": project.cameras, "cameras_refined": cams_after,
                "rig_initial": project.rig, "rig_refined": rigs_after, "eps": eps,

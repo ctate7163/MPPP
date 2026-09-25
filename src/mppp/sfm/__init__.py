@@ -22,6 +22,9 @@ Design (see ``docs/methods.md`` §9):
   same physical camera: their keypoints are scaled to full-resolution pixels
   (exact for binned, detector-frame-padded MPPP images with a corner pixel
   origin), so every resolution shares one set of intrinsics.
+* **Mastcam-Z** (v0p13, experimental): one camera per eye, zoom and focus bin
+  (v0p14.4: ``ZL034_F02312``, bins of <= 30 focus motor counts), so focus
+  breathing is refined as one focal length per bin (:mod:`mppp.sfm.zcam`).
 * **One rig**: Navcam left is the reference sensor; the right camera's
   ``sensor_from_rig`` is the median left->right pose of all CAHV pairs (it
   varies by micro-radians / micrometres).  Because every resolution uses the
@@ -38,6 +41,7 @@ from .database import extract_features, build_database  # noqa: F401
 from .pairs import prior_overlap_pairs  # noqa: F401
 from .matching import match  # noqa: F401
 from .reconstruction import reconstruct, bundle_adjust, initial_reconstruction  # noqa: F401
-from .export import export_for_error, pose_residual_table  # noqa: F401
+from .export import export_for_error, plot_camera_shifts, pose_residual_table  # noqa: F401
 from .gpu import check_ba_environment, check_gpu_python  # noqa: F401  (v0p11)
 from .health import assess_alignment, health_table, write_health  # noqa: F401  (v0p13)
+from .zcam import focus_breathing_table, write_focus_breathing  # noqa: F401  (v0p14.4)

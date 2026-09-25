@@ -32,6 +32,33 @@ FULL_FRAME = {"N": (5120, 3840), "F": (5120, 3840), "R": (5120, 3840), "Z": (164
 XML_PATTERN = "M2020_{instrument}0_frame.xml"      # full-resolution calibrations (engineering cameras)
 ZCAM_XML_PATTERN = "{camera}_frame.xml"            # Mastcam-Z, per eye and zoom, e.g. ZL034_frame.xml
 ZEROED_TERMS = ("p1", "p2", "b1", "b2")
+ZCAM_FOCUS_BIN = 30.0                               # focus motor counts per Mastcam-Z camera bin (v0p14.4)
+FULL_OPENCV_NAMES = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6")
+# parameters a focus-bin camera holds with zcam_bin_refine="focal": all but the focal length
+ZCAM_BIN_HELD = ("cx", "cy", "k1", "k2", "p1", "p2", "k3")
+
+
+def focus_bins(counts: Sequence[Optional[float]], width: float = ZCAM_FOCUS_BIN) -> List[int]:
+    """
+    Bin index per image from its focus motor count: sorted counts are grouped
+    greedily, each bin spanning at most ``width`` counts from its first
+    (lowest) member, so a cluster of nearly equal counts is never split by a
+    fixed grid line.  Images without a count share one extra bin (the last).
+    Returns one bin index per input, bins numbered by increasing focus.
+    """
+    idx = [i for i, c in enumerate(counts) if c is not None and np.isfinite(float(c))]
+    order = sorted(idx, key=lambda i: float(counts[i]))
+    out = [-1] * len(counts)
+    b, start = -1, None
+    for i in order:
+        c = float(counts[i])
+        if start is None or c - start > width:
+            b, start = b + 1, c
+        out[i] = b
+    missing = [i for i in range(len(counts)) if out[i] < 0]
+    for i in missing:
+        out[i] = b + 1
+    return out
 
 
 def camera_key(fn: Dict[str, Any]) -> str:
@@ -140,6 +167,10 @@ class SfmProject:
     def database(self) -> Path:
         return self.root / "database.db"
 
+    def station_label(self, station: str) -> str:
+        """``S032D1184`` -> ``Sol0686 S032D1184`` (see :func:`station_labels`)."""
+        return station_labels(self.images).get(station, station)
+
     def image(self, name: str) -> Dict[str, Any]:
         for r in self.images:
             if r["name"] == name:
@@ -166,7 +197,8 @@ class SfmProject:
                image_format: str = "PNG8", xml_dir: Optional[PathLike] = None,
                zero_terms: Sequence[str] = ZEROED_TERMS, link: bool = True,
                prior_sigma_m: Sequence[float] = (1.0, 1.0, 1.0),
-               zcam_intrinsics: str = "label") -> "SfmProject":
+               zcam_intrinsics: str = "label", zcam_focus_bin: Optional[float] = ZCAM_FOCUS_BIN,
+               zcam_bin_refine: str = "focal") -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -183,9 +215,24 @@ class SfmProject:
         Mastcam-Z left and right exposures have different spacecraft clocks, so
         they are separate frames (no rig constraint); Navcam pairs share the
         clock and form the left-referenced rig.
+        ``zcam_focus_bin`` (v0p14.4, default 30): Mastcam-Z focus breathing -
+        each eye and zoom is split into cameras by focus motor count, bins at
+        most this many counts wide (:func:`focus_bins`), named e.g.
+        ``ZL034_F02312`` (the bin's median count); each bin starts from the
+        median label focal length of its images.  None or 0: one camera per
+        eye and zoom (<= 0.14.3).
+        ``zcam_bin_refine``: ``"focal"`` (default) - a bin camera refines fx, fy
+        only; principal point, distortion and p1, p2 are held at the median of
+        the whole eye and zoom (label) or the XML (for a ~25 deg field the
+        principal point of a few images is nearly degenerate with their
+        attitude).  ``"all"``: every bin refines the same parameters as a
+        Navcam camera.  Each image records ``camera_group`` (``ZL034``),
+        ``focus_count`` and ``label_f_px``.
         """
         if zcam_intrinsics not in ("label", "xml"):
             raise ValueError("zcam_intrinsics must be 'label' or 'xml'")
+        if zcam_bin_refine not in ("focal", "all"):
+            raise ValueError("zcam_bin_refine must be 'focal' or 'all'")
         processed_dir, root = Path(processed_dir), Path(root)
         xml_dir = Path(xml_dir) if xml_dir else data_dir() / "m20_cmods"
         (root / "images").mkdir(parents=True, exist_ok=True)
@@ -220,12 +267,14 @@ class SfmProject:
                 _link_or_copy(processed_dir / m["outputs"]["mask"], root / "masks" / (name + ".png"), link)
             key = camera_key(fn)
             instruments[key] = fam
+            label_f = None
             if fam == "Z":
                 from ..colmap import colmap_camera_params
                 model, params = colmap_camera_params(m["intrinsics"])
                 full = np.asarray(params, float).copy()
                 full[:4] /= s                              # to full resolution; distortion is resolution-free
                 label_params.setdefault(key, []).append((model, full))
+                label_f = float(full[0])
             R = np.asarray(m["pose"]["R_world_to_cam"], float)
             images.append({
                 "name": name, "stem": stem, "instrument": key, "eye": fn["eye"],
@@ -236,6 +285,7 @@ class SfmProject:
                 "prior_C": (np.asarray(m["pose"]["C_enu_m"], float) - offset).tolist(),
                 "prior_R_w2c": R.tolist(), "position_source": m["pose"].get("position_source"),
                 "has_mask": "mask" in m["outputs"],
+                "camera_group": key, "focus_count": _num(m.get("focus_position_count")), "label_f_px": label_f,
             })
 
         cameras = {}
@@ -249,14 +299,88 @@ class SfmProject:
             if (cam["width"], cam["height"]) != FULL_FRAME[fam]:
                 raise ValueError(f"{xml.name} is {cam['width']}x{cam['height']}, expected the full frame {FULL_FRAME[fam]}")
             cameras[instr] = cam
+        if zcam_focus_bin:
+            cameras = _split_by_focus(images, cameras, instruments, float(zcam_focus_bin), zcam_bin_refine)
 
         rig = _rig_from_pairs(images)
         proj = cls(root, images, cameras, rig, offset,
                    {"world_frame": frames.pop(), "image_format": image_format,
                     "prior_sigma_m": list(map(float, prior_sigma_m)), "zero_terms": list(zero_terms),
-                    "processed_dir": str(processed_dir)})
+                    "processed_dir": str(processed_dir), "zcam_intrinsics": zcam_intrinsics,
+                    "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
+                    "zcam_bin_refine": zcam_bin_refine})
         proj.save()
         return proj
+
+
+def station_labels(images: Iterable[Dict[str, Any]]) -> Dict[str, str]:
+    """
+    Readable station names, sol first (v0p14.4): ``S032D1184`` -> ``Sol0686 S032D1184``
+    (``Sol0686-0688 S032D1184`` when the rover stayed there several sols).  The
+    station ID itself (site/drive) is unchanged and still what groups images.
+    """
+    sols: Dict[str, set] = {}
+    for r in images:
+        if r.get("station") is None:
+            continue
+        s = sols.setdefault(r["station"], set())
+        try:
+            s.add(int(r["sol"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+    out = {}
+    for st, s in sols.items():
+        sol = "" if not s else (f"Sol{min(s):04d}" if len(s) == 1 else f"Sol{min(s):04d}-{max(s):04d}")
+        out[st] = f"{sol} {st}".strip()
+    return out
+
+
+def _focus_tag(count: Optional[float]) -> str:
+    """Camera-name suffix for a focus count: F02312, Fm00150 (negative), Fna (unknown)."""
+    if count is None:
+        return "Fna"
+    m = int(round(count))
+    return f"F{m:05d}" if m >= 0 else f"Fm{-m:05d}"
+
+
+def _num(v: Any) -> Optional[float]:
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if np.isfinite(x) else None
+
+
+def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, Any]], families: Dict[str, str],
+                    width: float, refine: str) -> Dict[str, Dict[str, Any]]:
+    """Replace each Mastcam-Z camera by one camera per focus bin (see ``SfmProject.create``)."""
+    out = {k: c for k, c in cameras.items() if families.get(k) != "Z"}
+    for group in sorted(k for k in cameras if families.get(k) == "Z"):
+        base = cameras[group]
+        rows = [r for r in images if r["camera_group"] == group]
+        bins = focus_bins([r["focus_count"] for r in rows], width)
+        for b in sorted(set(bins)):
+            members = [r for r, bb in zip(rows, bins) if bb == b]
+            counts = [r["focus_count"] for r in members if r["focus_count"] is not None]
+            med = float(np.median(counts)) if counts else None
+            key = f"{group}_{_focus_tag(med)}"
+            params = list(map(float, base["params"]))
+            fl = [r["label_f_px"] for r in members if r.get("label_f_px") is not None]
+            if fl and "label" in base.get("source", ""):
+                f = float(np.median(fl))
+                params[0], params[1] = f, f * params[1] / params[0]
+            cam = dict(base, params=params, group=group, focus_count_median=med,
+                       focus_count_range=[min(counts), max(counts)] if counts else None, n_images=len(members),
+                       fixed_params=list(ZCAM_BIN_HELD) if refine == "focal" else [],
+                       source=f"{base['source']}; focus bin {key} ({len(members)} images, f from the bin's labels)"
+                       if fl and "label" in base.get("source", "") else f"{base['source']}; focus bin {key}")
+            cam.pop("label_f_spread_px", None)
+            if len(fl) > 1:
+                cam["label_f_spread_px"] = float(np.ptp(fl))
+            out[key] = cam
+            for r in members:
+                r["instrument"] = key
+    return out
 
 
 def _rig_family(key: str) -> str:

@@ -222,7 +222,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                                         [xyz, rig_blocks[(fr.rig_id, im.camera_id)], pose, cam.params])
             n_obs += 1
 
-    # intrinsics: hold k4-k6 at zero, p1, p2 at their start unless refine_tangential (and the principal point if asked)
+    # intrinsics: hold k4-k6 at zero, p1, p2 at their start unless refine_tangential (and the principal point if asked);
+    # a camera may hold more ("fixed_params" in project.cameras, e.g. the Mastcam-Z focus bins, v0p14.4)
+    from .project import FULL_OPENCV_NAMES
+    key_of = {int(v): k for k, v in project.settings.get("database", {}).get("cameras", {}).items()}
     for cid, cam in work.cameras.items():
         if not prob.has_parameter_block(cam.params):
             continue
@@ -230,6 +233,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             prob.set_parameter_block_constant(cam.params)
             continue
         fixed = fixed_camera_params(cam.model.name, refine_principal_point, refine_tangential)
+        extra = project.cameras.get(key_of.get(int(cid), ""), {}).get("fixed_params") or []
+        if extra and cam.model.name in ("OPENCV", "FULL_OPENCV"):
+            fixed = sorted(set(fixed) | {FULL_OPENCV_NAMES.index(n) for n in extra
+                                          if FULL_OPENCV_NAMES.index(n) < len(cam.params)})
         prob.set_parameter_block_variable(cam.params)
         if fixed:
             prob.set_manifold(cam.params, pyceres.SubsetManifold(len(cam.params), sorted(fixed)))
@@ -561,4 +568,9 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "refine_tangential": bool(refine_tangential),
                                           "schedule": [list(map(float, r)) for r in schedule]}
     project.save()
+    try:
+        from .database import write_gui_project
+        write_gui_project(project, model=out_name)          # colmap_gui.ini, open_in_colmap.bat (v0p14.4)
+    except OSError:
+        pass
     return rec

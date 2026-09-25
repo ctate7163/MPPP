@@ -261,7 +261,7 @@ def processed_pair(tmp_path_factory):
 def test_project_with_navcam_and_mastcamz34(processed_pair, tmp_path):
     from mppp.sfm.project import SfmProject, camera_key
     man, out = processed_pair
-    proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False)
+    proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, zcam_focus_bin=None)   # <= 0.14.3
     assert set(proj.cameras) == {"NL", "ZL034"}
     z = proj.cameras["ZL034"]
     assert (z["model"], z["width"], z["height"]) == ("FULL_OPENCV", 1648, 1200) and "label" in z["source"]
@@ -272,7 +272,7 @@ def test_project_with_navcam_and_mastcamz34(processed_pair, tmp_path):
     assert z["params"][6] == z["params"][7] == 0.0
     assert {r["instrument"] for r in proj.images} == {"NL", "ZL034"} and proj.rig == {}
     assert camera_key({"family": "Z", "camera_group": "ZR034", "instrument": "ZR"}) == "ZR034"
-    px = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_intrinsics="xml")
+    px = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_intrinsics="xml", zcam_focus_bin=None)
     assert "ZL034_frame.xml" in px.cameras["ZL034"]["source"] and px.cameras["ZL034"]["params"][0] == 4720
     with pytest.raises(ValueError):
         SfmProject.create(man["images"], out, tmp_path / "r", zcam_intrinsics="guess")

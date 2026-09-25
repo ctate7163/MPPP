@@ -229,4 +229,47 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
                "images": len(project.images) - len(skipped), "keypoints": int(n_kp), "images_without_frame": skipped}
     project.settings["database"] = summary
     project.save()
+    try:
+        summary["gui"] = write_gui_project(project, model=None if not (project.root / "sparse" / "cahv_ba").is_dir()
+                                           else "cahv_ba")
+    except OSError:                                        # read-only or odd paths: the files are a convenience
+        pass
     return summary
+
+
+def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba") -> Dict[str, str]:
+    """
+    Files to open the project in the COLMAP GUI (v0p14.4), in the project folder:
+
+    * ``colmap_gui.ini`` - a COLMAP project file (database, images, masks):
+      File > Open project, then File > Import model ``sparse/<model>``;
+    * ``open_in_colmap.bat`` - Windows: opens the GUI with the project AND the
+      model in one step (``colmap gui --import_path``).  It calls ``COLMAP.bat``
+      from the environment variable ``COLMAP_BAT`` (set it once, e.g.
+      ``setx COLMAP_BAT D:\\tools\\COLMAP\\COLMAP.bat``), else from the PATH.
+
+    Keypoints in ``database.db`` are in full-resolution pixels: on half- and
+    quarter-resolution images the GUI's keypoint overlay is off by 2x / 4x
+    (the 3-D view is correct).  Rewritten by ``build_database`` and
+    ``reconstruct``.  Returns the paths.
+    """
+    from .. import __version__
+    root = Path(project.root).resolve()
+    lines = [f"# MPPP {__version__}: COLMAP GUI project. File > Open project (this file), then File > Import model"
+             + (f" > {root / 'sparse' / model}" if model else ""),
+             f"database_path={project.database.resolve()}", f"image_path={project.images_dir.resolve()}"]
+    if project.masks_dir.is_dir() and any(r.get("has_mask") for r in project.images):
+        lines += ["", "[ImageReader]", f"mask_path={project.masks_dir.resolve()}"]
+    ini = root / "colmap_gui.ini"
+    ini.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    bat_lines = ["@echo off",
+                 f"rem MPPP {__version__}: open this project and the model sparse\\{model or '<model>'} in the COLMAP GUI (4.x).",
+                 "rem Set COLMAP_BAT once to your COLMAP.bat, e.g.  setx COLMAP_BAT D:\\tools\\COLMAP\\COLMAP.bat",
+                 'if "%COLMAP_BAT%"=="" set "COLMAP_BAT=COLMAP.bat"',
+                 f'set "MODEL=%~dp0sparse\\{model or "cahv_ba"}"',
+                 'if not exist "%MODEL%\\cameras.bin" (echo No model in %MODEL% yet: run the reconstruction first. & pause & exit /b 1)',
+                 'call "%COLMAP_BAT%" gui --database_path "%~dp0database.db" --image_path "%~dp0images" --import_path "%MODEL%"',
+                 "if errorlevel 1 (echo Could not start COLMAP: set COLMAP_BAT to your COLMAP.bat. & pause)"]
+    bat = root / "open_in_colmap.bat"
+    bat.write_bytes(("\r\n".join(bat_lines) + "\r\n").encode("utf-8"))
+    return {"ini": str(ini), "bat": str(bat)}
