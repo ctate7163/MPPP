@@ -108,6 +108,7 @@ def rank_rows(rows: Sequence[Dict[str, Any]], sort_by: str = "error_pct", min_te
 
 
 def _read_pair(it) -> tuple:
+    # same rule as training: RGB of the image, labels from the separate masks/ file (alpha ignored)
     im = cv2.imread(it.image, cv2.IMREAD_COLOR)
     ms = cv2.imread(it.mask, cv2.IMREAD_GRAYSCALE)
     return it, im, ms

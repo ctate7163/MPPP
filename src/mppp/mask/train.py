@@ -77,6 +77,10 @@ def scan_dataset(data_dir: PathLike, image_dirs: Sequence[str] = ("images", "ima
                  mask_dir: str = "masks", missing: str = "raise") -> List[Item]:
     """
     ``data_dir/<image_dir>/<name>`` paired with ``data_dir/<mask_dir>/<name>``.
+    The labels are ALWAYS the separate ``mask_dir`` files; an image's alpha
+    channel is never read (see :func:`read_pair`).  The alpha of ``images/``
+    and ``images_variable/`` is only a copy made when they were written, and
+    goes stale as soon as ``masks/`` is edited.
     ``missing``: what to do with images that have no mask — "raise" (default;
     the notebook would have failed later, inside a DataLoader worker) or
     "skip" (e.g. frames removed from the Metashape project; they are counted
@@ -85,6 +89,8 @@ def scan_dataset(data_dir: PathLike, image_dirs: Sequence[str] = ("images", "ima
     if missing not in ("raise", "skip"):
         raise ValueError("missing must be 'raise' or 'skip'")
     root = Path(data_dir)
+    if Path(mask_dir).name in {Path(d).name for d in image_dirs}:
+        raise ValueError(f"mask_dir {mask_dir!r} is also an image dir: the labels must be the separate mask files")
     items, missing_items = [], []
     for d in image_dirs:
         folder = root / d
@@ -175,6 +181,23 @@ def expand_quads(items: Sequence[Item], quad_split_above: Optional[int], overlap
     return out, n
 
 
+def read_pair(it: Item) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    (BGR image, mask) for one training item.  The image is read as 3-channel
+    colour, so any alpha channel is discarded (not composited: RGB is unchanged);
+    the mask is the separate ``masks/`` file.  Used by training and the audit.
+    """
+    im = cv2.imread(it.image, cv2.IMREAD_COLOR)
+    ms = cv2.imread(it.mask, cv2.IMREAD_GRAYSCALE)
+    if im is None or ms is None:
+        raise RuntimeError(f"Failed to read {it.image if im is None else it.mask}")
+    if Path(it.mask).resolve() == Path(it.image).resolve():
+        raise RuntimeError(f"{it.image} is its own mask: labels must come from the masks/ folder")
+    if im.shape[:2] != ms.shape[:2]:
+        raise RuntimeError(f"{it.image} is {im.shape[1]}x{im.shape[0]} but its mask is {ms.shape[1]}x{ms.shape[0]}")
+    return im, ms
+
+
 def letterbox(im: np.ndarray, ms: np.ndarray, size: int,
               canvas: Optional[Tuple[int, int]] = None) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -202,12 +225,7 @@ class MaskDataset(Dataset):
 
     def __getitem__(self, i):
         it = self.items[i]
-        im = cv2.imread(it.image, cv2.IMREAD_COLOR)
-        ms = cv2.imread(it.mask, cv2.IMREAD_GRAYSCALE)
-        if im is None or ms is None:
-            raise RuntimeError(f"Failed to read {it.image if im is None else it.mask}")
-        if im.shape[:2] != ms.shape[:2]:
-            raise RuntimeError(f"{it.image} is {im.shape[1]}x{im.shape[0]} but its mask is {ms.shape[1]}x{ms.shape[0]}")
+        im, ms = read_pair(it)                  # labels from masks/, image alpha ignored
         if it.tile >= 0:
             (y0, y1, x0, x1), _ = quad_boxes(ms.shape[0], ms.shape[1], self.quad_overlap)[it.tile]
             im, ms = im[y0:y1, x0:x1], ms[y0:y1, x0:x1]
@@ -648,6 +666,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
                        training={**asdict(cfg), "precision_resolved": precision, "device": device,
                                  "init": init_report["summary"],
                                  "n_train": len(tr_items), "n_val": len(va_items), "split": "grouped by mask file",
+                                 "labels": "masks/ files (image alpha ignored)",
                                  "n_train_frames": len(tr_frames), "n_val_frames": len(va_frames),
                                  "dataset_fingerprint": _dataset_fingerprint(items)},
                        history=history)

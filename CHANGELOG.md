@@ -2,6 +2,14 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.14.6 — 2026-09-25
+
+- **Mask training labels always come from `masks/`.** This was already how training read them; it is now enforced and tested.
+  - `read_pair` (training and `audit_frames`) reads the image as 3-channel colour, so its alpha channel is discarded, and the label from the separate `masks/<name>` file.
+  - The alpha of `images/` and `images_variable/` is only a copy written when those images were made; it goes stale when `masks/` is edited, and is never used.
+  - `scan_dataset` refuses a `mask_dir` that is also an image dir; the checkpoint card records `training.labels`.
+  - Test: an RGBA image whose alpha disagrees with its `masks/` file trains on the `masks/` file, with RGB unchanged.
+
 ## 0.14.5 — 2026-09-25
 
 Fixes after the first Three Forks run with Mastcam-Z.

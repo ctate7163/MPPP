@@ -371,3 +371,36 @@ def test_native_model_is_a_valid_colmap_model(tmp_path):
     assert len(read_colmap(str(tmp_path / "native")).points) == info["points"]      # mppp.error still reads it
     full = native_reconstruction(rec, proj, observed_only=False)
     assert sum(len(im.points2D) for im in full.images.values()) == sum(len(im.points2D) for im in rec.images.values())
+
+
+# ---------------------------------------------------------------- mask training labels
+def test_training_labels_come_from_masks_folder_not_alpha(tmp_path):
+    import cv2
+    import numpy as np
+    from mppp.mask.train import MaskDataset, read_pair, scan_dataset
+    for d in ("images", "images_variable", "masks"):
+        (tmp_path / d).mkdir()
+    h, w = 64, 96
+    rgb = np.full((h, w, 3), 90, np.uint8)
+    rgb[:, :, 1] = 140
+    stale_alpha = np.zeros((h, w), np.uint8)              # alpha says "all excluded" ...
+    stale_alpha[:, : w // 4] = 255
+    mask = np.zeros((h, w), np.uint8)                      # ... masks/ says the right half is terrain
+    mask[:, w // 2:] = 255
+    for d in ("images", "images_variable"):
+        cv2.imwrite(str(tmp_path / d / "a.png"), np.dstack([rgb, stale_alpha]))
+    cv2.imwrite(str(tmp_path / "masks" / "a.png"), mask)
+
+    items = scan_dataset(tmp_path)
+    assert len(items) == 2 and all(Path(it.mask) == tmp_path / "masks" / "a.png" for it in items)
+    for it in items:
+        im, ms = read_pair(it)
+        assert im.shape == (h, w, 3) and np.array_equal(im, rgb)       # alpha dropped, RGB not composited
+        assert np.array_equal(ms, mask)
+        x, y, _ = MaskDataset([it], size=w, canvas=(w, h))[0]
+        assert np.array_equal(y, (mask > 127).astype(np.uint8))
+        assert np.array_equal(x, cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB))
+
+    import pytest
+    with pytest.raises(ValueError):
+        scan_dataset(tmp_path, image_dirs=("images", "masks"), mask_dir="masks")
