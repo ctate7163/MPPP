@@ -114,6 +114,12 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any]) -> tuple:
     """
     out_dir = Path(out_dir)
     man_p, cfg_p = out_dir / f"mppp_manifest_{VERSION_TAG}.json", out_dir / f"mppp_config_{VERSION_TAG}.json"
+    if not man_p.is_file():
+        # v0p15: after a version change, the newest manifest of an earlier version (same configuration required)
+        older = sorted(out_dir.glob("mppp_manifest_v*.json"), key=lambda q: q.stat().st_mtime)
+        if older:
+            man_p = older[-1]
+            cfg_p = out_dir / man_p.name.replace("mppp_manifest_", "mppp_config_")
     rep: Dict[str, Any] = {"manifest": str(man_p), "reusable": 0, "outputs_missing": [], "config_changed": []}
     if not man_p.is_file():
         rep["reason"] = "no manifest"

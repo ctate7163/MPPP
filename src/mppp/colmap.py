@@ -96,6 +96,28 @@ def project_camera(model: str, p: Sequence[float], x: np.ndarray) -> np.ndarray:
     return np.stack([fx * ud + cx, fy * vd + cy], axis=-1)
 
 
+def unproject_camera(model: str, p: Sequence[float], uv: np.ndarray, iterations: int = 30) -> np.ndarray:
+    """
+    Inverse of :func:`project_camera`: pixels (..., 2) -> normalised camera
+    coordinates (..., 2) (x/z, y/z), undistorted by fixed-point iteration
+    (converges to ~1e-10 px for the Navcam and Mastcam-Z models).
+    """
+    uv = np.asarray(uv, float)
+    p = np.asarray(p, float)
+    if model in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL"):
+        fx = fy = p[0]
+        cx, cy = p[1], p[2]
+    else:
+        fx, fy, cx, cy = p[0], p[1], p[2], p[3]
+    f = np.array([fx, fy])
+    c = np.array([cx, cy])
+    xy = (uv - c) / f
+    for _ in range(int(iterations)):
+        pr = project_camera(model, p, np.concatenate([xy, np.ones(xy.shape[:-1] + (1,))], axis=-1))
+        xy = xy + (uv - pr) / f
+    return xy
+
+
 # ------------------------------------------------------------- text writers
 def write_cameras_txt(path: PathLike, cameras: Sequence[tuple], header: str = "") -> None:
     """``cameras``: (camera_id, model, width, height, params)."""

@@ -39,7 +39,7 @@ from typing import Dict, List, Tuple, Optional, Sequence
 
 __all__ = ["ColmapModel", "read_colmap", "measured_view_graph", "calibrate_eps",
            "convergence_statistics", "measure_theta_c", "match_survival",
-           "observation_residuals"]
+           "observation_residuals", "observed_rays"]
 
 
 # --------------------------------------------------------------------------
@@ -476,6 +476,36 @@ def convergence_statistics(model: ColmapModel, n_bins: int = 18,
             "pair_fraction": obs / max(obs.sum(), 1)}
 
 
+def observed_rays(model: ColmapModel, pt: "ColmapPoint") -> Tuple[List[int], np.ndarray, np.ndarray]:
+    """
+    (image ids, camera centres (N,3), unit ray directions (N,3)) of a track,
+    from the OBSERVED keypoints (undistorted through the camera model), not
+    from the fitted point.  Works with complete keypoint lists (MPPP >= 0.14.5,
+    COLMAP) and with lists that hold only the observed keypoints (earlier MPPP
+    exports, whose track indices do not match them): the keypoint is taken at
+    the track index if it belongs to this point, else found by point id.
+    """
+    from ..colmap import unproject_camera
+    ids, C, U = [], [], []
+    for i, k in zip(pt.image_ids, pt.point2D_idxs):
+        im = model.images.get(int(i))
+        if im is None:
+            continue
+        k = int(k)
+        if not (0 <= k < im.point3D_ids.size and int(im.point3D_ids[k]) == pt.point3D_id):
+            w = np.nonzero(im.point3D_ids == pt.point3D_id)[0]
+            if not w.size:
+                continue
+            k = int(w[0])
+        cam = model.cameras[im.camera_id]
+        xy = unproject_camera(cam.model, cam.params, im.xys[k])
+        d = im.R.T @ np.array([xy[0], xy[1], 1.0])
+        ids.append(int(i))
+        C.append(im.center)
+        U.append(d / np.linalg.norm(d))
+    return ids, np.array(C).reshape(-1, 3), np.array(U).reshape(-1, 3)
+
+
 def measure_theta_c(model: ColmapModel, n_bins: int = 14,
                     theta_max_deg: float = 70.0,
                     min_track: int = 3) -> Dict[str, np.ndarray]:
@@ -492,6 +522,11 @@ def measure_theta_c(model: ColmapModel, n_bins: int = 14,
     Returns the binned correlation curve; fit it yourself so you can see the
     scatter rather than trusting a single number.
 
+    v0p14.7: the pair triangulations use the OBSERVED keypoint rays
+    (:func:`observed_rays`).  Before, the rays were the directions from each
+    camera to the fitted point itself, so every pair triangulated exactly to
+    that point, the residuals were rounding noise and rho was meaningless.
+
     This measurement does not exist in the literature for Mars surface imagery.
     It is self-contained, needs only a sparse model, and is the main thing
     standing between the correlation model and being defensible.
@@ -501,21 +536,19 @@ def measure_theta_c(model: ColmapModel, n_bins: int = 14,
     var = []
 
     for p in model.points.values():
-        ids = [i for i in p.image_ids if i in model.images]
+        if p.track_length < min_track:
+            continue
+        ids, C, u = observed_rays(model, p)
         if len(ids) < min_track:
             continue
-        C = np.array([model.images[i].center for i in ids])
-        u = p.xyz - C
-        u /= np.maximum(np.linalg.norm(u, axis=1, keepdims=True), 1e-12)
 
         # per-pair triangulation residual relative to the full-track point
-        pairs, bis, res = [], [], []
+        bis, res = [], []
         for a in range(len(ids)):
             for b in range(a + 1, len(ids)):
                 x = _triangulate(C[a], u[a], C[b], u[b])
                 if x is None:
                     continue
-                pairs.append((a, b))
                 m = u[a] + u[b]
                 bis.append(m / max(np.linalg.norm(m), 1e-12))
                 res.append(x - p.xyz)
@@ -524,7 +557,7 @@ def measure_theta_c(model: ColmapModel, n_bins: int = 14,
         res = np.array(res)
         bis = np.array(bis)
         s = np.sqrt(np.mean(np.sum(res ** 2, axis=1)))
-        if s <= 0:
+        if not np.isfinite(s) or s <= 0:
             continue
         rn = res / s
         var.append(s)

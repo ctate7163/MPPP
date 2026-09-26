@@ -2,6 +2,18 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.15.0 — 2026-09-25
+
+- **Notebook 04, error analysis of COLMAP alignments** (`notebooks/04_error_analysis.ipynb`, `mppp.error.alignment`). For one or more `error_input/` folders from notebook 03, it measures the numbers the error model runs on and sets them beside the values the model assumes:
+  - image precision ε per instrument, same-station vs cross-station tracks, against range;
+  - the cross-station match gate against convergence angle and |ΔLMST|: a maximum-likelihood fit of A (1 + θ/θ_c)^−k exp(−ΔL/L0), with bootstrap ranges, χ²/dof and a shape-free half-survival angle, per camera pairing and pooled over alignments;
+  - decorrelation ρ(θ), the measured station view graph, and bundle adjustment vs telemetry per station.
+  - Checked on Rockytop: θ̄ 5.6°, CV 0.38 (archive: 4.3° / 0.36 pooled, 2.4° / 0.50 for Rockytop). At Three Forks the cross-station rate is flat to ~15° and then drops sharply (half at 16°), a shape the power law cannot follow (χ²/dof 33); the notebook reports it as such.
+  - A trial is "matched in image a; also matched in image b?" among the geometrically possible pairs, so terrain that never matched (occluded, masked, textureless) stays out of the denominator.
+- **Bug fix, `mppp.error.colmap.measure_theta_c`:** the pairwise triangulations used rays aimed at the fitted 3D point, so every pair returned that point exactly; the residuals were rounding noise and ρ(θ) meaningless. They now use the observed keypoints, undistorted through the camera model (`observed_rays`, `mppp.colmap.unproject_camera`). Measured on real data: median pair residual 15 mm (Three Forks), 127 mm (Rockytop); ρ 0.00-0.03 at 0.25-5° (the model assumes ρ_0 = 0.22 decaying with θ_c = 0.4°).
+- `residuals.npz` of 0.14.5+ exports are matched to the native model by keypoint index (its points are numbered afresh).
+- `process_images(reuse_existing=True)` also reuses the newest manifest of an earlier version (`mppp_manifest_v0p14.json`), so a version change alone does not process everything again.
+
 ## 0.14.7 — 2026-09-25
 
 - **New default mask model `mppp_mask_v2`**: `convnext_tiny_s4_seg_20260925.pt` (25 Sep 2026, 4 epochs, lr 5e-5, bf16; val IoU 0.9771, val loss 0.049 on the same split as v1's successor runs).

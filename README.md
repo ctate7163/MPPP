@@ -10,7 +10,7 @@ MPPP turns Mars 2020 Perseverance **Navcam** and **Mastcam-Z** PDS image product
 
 For Navcam (optionally with the Mastcam-Z 34 mm frames of the same sols), MPPP also builds a complete COLMAP project — database, stereo rig, matches — and a prior-aligned, weighted bundle adjustment, with an **alignment health report** (tie points, reprojection error, camera-model change, stereo-rig stability, pose change).
 
-Version **0.14.5** (`v0p14`). Versions before 1.0 are development releases; see [CHANGELOG.md](CHANGELOG.md).
+Version **0.15.0** (`v0p15`). Versions before 1.0 are development releases; see [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 
@@ -33,6 +33,8 @@ Notebooks (in `notebooks/`):
 |---|---|
 | `01_process_images.ipynb` | select PDS products (named scapes, sol ranges, waypoint radius, lists), process them, write Metashape and COLMAP inputs |
 | `03_colmap_alignment.ipynb` | Navcam (+ optional Mastcam-Z 34 mm): COLMAP database with a left-referenced stereo rig and position priors, matching, CAHV-initialised weighted bundle adjustment, alignment health |
+| `04_error_analysis.ipynb` | one or more alignments from 03: the error model's inputs measured from them (image precision ε, cross-station match gate vs angle and ΔLMST, decorrelation, view graph, registration) next to the values the model assumes |
+| `training/02_train_mask.ipynb` | optional: retrain the mask model from a labelled mask set |
 
 Or in Python:
 
@@ -45,7 +47,7 @@ manifest = mppp.process_images(paths, "D:/scapes/belva", {"export": {"formats": 
                                mppp.load_waypoints(), provenance=provenance)
 ```
 
-To drop unsuitable frames, delete them from the output image folder and rerun with the same selection and `only_existing="PNG16"` (or `"PNG8"`): only the remaining images are processed again, and the manifest, references and COLMAP priors are rebuilt from them.
+To drop unsuitable frames, delete them from the output image folder and rerun with the same selection and `only_existing="PNG16"` (or `"PNG8"`): the manifest, references and COLMAP priors are rebuilt from the remaining images. With `reuse_existing=True`, images already processed with the same configuration are taken from the manifest instead of being processed again. `config["masking"]["skip_inference_at"] = ["S032D1184"]` keeps the rover in the images of chosen stations (only invalid pixels masked).
 
 Outputs: `images_png16/<PDS stem>.png` (mask in the alpha channel), `references.txt` (+ `_absolute`) for Metashape *Import Reference*, `colmap/sparse_prior/` (cameras, image poses, stereo rig), `mppp_manifest_<version>.json`, `mppp_config_<version>.json`.
 
