@@ -1,0 +1,33 @@
+{
+ "cameras": {
+  "ZL034": {
+   "f0_px": 4723.2701,
+   "reference_focus": 610.68,
+   "slope_px_per_count": 0.04628,
+   "aspect": 1.001961,
+   "fit_rms_px": 4.97,
+   "label_f0_px": 4680.36,
+   "label_slope_px_per_count": 0.050553,
+   "focus_range": [
+    -2000,
+    1300
+   ]
+  },
+  "ZR034": {
+   "f0_px": 4734.2445,
+   "reference_focus": 653.8,
+   "slope_px_per_count": 0.048217,
+   "aspect": 1.001672,
+   "fit_rms_px": 2.65,
+   "label_f0_px": 4684.89,
+   "label_slope_px_per_count": 0.046798,
+   "focus_range": [
+    -2000,
+    1300
+   ]
+  }
+ },
+ "units": "full-frame pixels (1648 x 1200); f = f0_px + slope_px_per_count * (focus - reference_focus); fy/fx = aspect",
+ "pixel_mm": 0.0074,
+ "source": "MPPP notebook 05 (v0.21.1): focal length of the refined Mastcam-Z 34 mm focus bins (>= 1000 observations, focus >= -2000 counts) of the Three Forks (sols 684-693) and Rockytop (461-530) Navcam + Mastcam-Z solutions, fitted with one offset per scape (offsets +-3-7 px). These solutions used the polynomial Navcam model (MPPP 0.15); refit with notebook 05 after new runs. The label (CAHVOR) focal lengths are about 1 % shorter at the same focus."
+}

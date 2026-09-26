@@ -2,6 +2,37 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.22.0 — 2026-09-26
+
+Best starting cameras (the refined results of earlier runs now start new ones):
+- **Navcam rational cameras** (`M2020_N{L,R}_rational.json`) are the observation-weighted consensus of the Three Forks, Bell Island and Rockytop rational solutions. They differ from the v0p20 values by 0.15–0.17 px rms.
+- **Navcam rig rotation** starts from the mean refined rig (`M2020_N_rig.json`, `navcam_rig="consensus"`, the default). The baseline vector stays the CAHV value; `"cahv"` restores the old start.
+- **Mastcam-Z 34 mm focus bins** start from the focal-length-against-focus model of notebook 05 (`M2020_ZCAM034_focus_model.json`, `zcam_intrinsics="focus_model"`, the default), not from the label, which is about 1 % short. Bins of at most `zcam_hold_f_images` = 2 images hold f at the model. Bins outside the fitted focus range (−2000 to 1300 counts) use their label f scaled by the model's refined/label ratio.
+
+Alignment:
+- **Outlier frames can be excluded** (`reconstruct(exclude_outliers=True)`, notebook 03 `EXCLUDE_OUTLIERS = True`). `find_outlier_frames` flags a frame (a Navcam pair or one Mastcam-Z image) when:
+  - its median residual is more than 3× the median of all frames (and more than 0.6 px);
+  - it has fewer than 30 observations;
+  - its shift or attitude change from the priors differs from the rest of its station by more than 5 scaled MADs (and 0.25 m or 0.5°). The attitude change is taken in the world frame, so a rover tilt common to the station is not an outlier.
+  Flagged frames are deregistered after round 2 and again before the final adjustment. They are listed in the log and in `project.settings["reconstruction"]["excluded"]`, and the health report counts them separately (`excluded_fraction`, warn 5 %, fail 20 %) instead of as unregistered images. On the Three Forks, Bell Island and Rockytop rational solutions the defaults flag 0, 1 and 1 frames, all weakly tied (26 and 0 observations).
+- **Tie points by convergence angle** (`convergence_statistics`): points per bin of the largest ray angle (0–2–5–10–20–40–180°), cross-station points, and points and observations above 10° and 20°. Notebook 03 prints them and stores them in the project settings.
+- **More points at high convergence.** Notebook 03 now matches with a SIFT ratio test of 0.9 (COLMAP's default is 0.8). In the whole pipeline on the Three Forks test set this gave 8 % more tie points above 10° and 16 % more above 20°, for a 4 % higher median residual. Triangulation options (`TRIANGULATION`: transitivity, angle tolerances), DSP-SIFT and affine-adapted SIFT (`SIFT`, new `estimate_affine_shape` in `extract_features`) were tested too and added no high-convergence points (methods §13).
+- **Rig translation prior** (`bundle_adjust(refine_rig=True, rig_translation_sigma_m=...)`) for experiments. The stereo baseline stays fixed by default: freeing it changes its length by ≤ 0.07 mm, because the images carry no scale (methods §13).
+- `triangulate` takes COLMAP's track options (`max_transitivity`, `create/continue_max_angle_error_deg`, `complete_max_transitivity`); `reconstruct(triangulation_options=...)`.
+- `match` passes `max_ratio`, `max_distance` and `cross_check` to the SIFT matcher and records them.
+
+Error analysis:
+- **Tracks of three or more images** (`load_alignment(min_track_length=3)`, notebook 04 `MIN_TRACK_LENGTH = 3`, the batch default). The ε table gives the number of points and a DOF-corrected ε = ε √(2N/(2N − 3P)).
+- Residuals recomputed from the model (no `residuals.npz`) now carry point ids, so the DOF correction and cross-station split work there too.
+
+Batch runs:
+- **`scripts/run_scapes.py`** runs notebook 03 for several sites, then notebooks 04 and 05 on the ones that finished. Settings are injected after each notebook's `parameters` cell, each executed notebook is saved beside its results, and progress goes to `<root>/batch_log.txt`, one line per cell.
+- Notebook 03 has a `threeforks_large` site (sols 670–694).
+
+Fixes:
+- `exclude_frames` used a `Frame` attribute pycolmap does not have.
+- Tests: the Mastcam-Z binning test names `zcam_intrinsics="label"`; the rational-camera k4 test accepts 0.01 of the 0.02 start offset left, since k4 trades off against k1–k3 on the small synthetic block.
+
 ## 0.21.1 — 2026-09-26
 
 Notebook 05:

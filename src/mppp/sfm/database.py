@@ -31,9 +31,13 @@ def _features_record(project: SfmProject) -> Path:
     return project.features_db.with_suffix(".json")
 
 
-def _feature_settings(max_num_features: int, max_image_size: int, domain_size_pooling: bool) -> Dict[str, Any]:
-    return {"max_num_features": int(max_num_features), "max_image_size": int(max_image_size),
-            "domain_size_pooling": bool(domain_size_pooling)}
+def _feature_settings(max_num_features: int, max_image_size: int, domain_size_pooling: bool,
+                      estimate_affine_shape: bool = False) -> Dict[str, Any]:
+    out = {"max_num_features": int(max_num_features), "max_image_size": int(max_image_size),
+           "domain_size_pooling": bool(domain_size_pooling)}
+    if estimate_affine_shape:                            # recorded only when on: older features.json stay valid
+        out["estimate_affine_shape"] = True
+    return out
 
 
 def image_fingerprints(project: SfmProject) -> Dict[str, list]:
@@ -52,7 +56,8 @@ def image_fingerprints(project: SfmProject) -> Dict[str, list]:
 
 
 def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES,
-                        max_image_size: int = DEFAULT_MAX_IMAGE_SIZE, domain_size_pooling: bool = False) -> bool:
+                        max_image_size: int = DEFAULT_MAX_IMAGE_SIZE, domain_size_pooling: bool = False,
+                        estimate_affine_shape: bool = False) -> bool:
     """
     True if ``features.db`` exists and was extracted with these settings from
     the same image and mask files (``features.json`` beside it; v0p14.7: file
@@ -66,8 +71,10 @@ def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX
         done = json.loads(rec.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    want = _feature_settings(max_num_features, max_image_size, domain_size_pooling)
+    want = _feature_settings(max_num_features, max_image_size, domain_size_pooling, estimate_affine_shape)
     names = {r["name"] for r in project.images}
+    if bool(done.get("estimate_affine_shape", False)) != bool(estimate_affine_shape):
+        return False
     if not (all(done.get(k) == v for k, v in want.items()) and names <= set(done.get("images", []))):
         return False
     files = done.get("files")
@@ -79,7 +86,8 @@ def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX
 
 def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES, max_image_size: int = DEFAULT_MAX_IMAGE_SIZE,
                      use_gpu: Optional[bool] = None, num_threads: int = -1, overwrite: bool = False,
-                     domain_size_pooling: bool = False, python: Optional[PathLike] = None) -> Path:
+                     domain_size_pooling: bool = False, python: Optional[PathLike] = None,
+                     estimate_affine_shape: bool = False) -> Path:
     """
     SIFT at native resolution, with the MPPP masks (keypoints in masked pixels
     are dropped) -> ``features.db``.  Equivalent COLMAP command::
@@ -95,9 +103,16 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
 
     ``python``: run this step in another Python environment, e.g. a conda one
     with a CUDA pycolmap (v0p11, see :mod:`mppp.sfm.gpu`).
+
+    ``domain_size_pooling`` (DSP-SIFT) and ``estimate_affine_shape`` (v0p22):
+    descriptors pooled over several scales, and affine-adapted keypoint
+    regions - both make SIFT more tolerant of the perspective change between
+    strongly converging views (notebook 03, "high convergence").  COLMAP runs
+    either on the CPU only (several times slower than the GPU).
     """
     db = project.features_db
-    if not overwrite and features_up_to_date(project, max_num_features, max_image_size, domain_size_pooling):
+    if not overwrite and features_up_to_date(project, max_num_features, max_image_size, domain_size_pooling,
+                                             estimate_affine_shape):
         return db
     if db.exists() and not overwrite:
         print(f"[sfm] {db.name}: extracted with other settings or from other image/mask files - extracting again "
@@ -107,7 +122,8 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
         from .gpu import run_step
         return Path(run_step(python, "extract_features", project, max_num_features=max_num_features,
                              max_image_size=max_image_size, use_gpu=use_gpu, num_threads=num_threads,
-                             overwrite=overwrite, domain_size_pooling=domain_size_pooling))
+                             overwrite=overwrite, domain_size_pooling=domain_size_pooling,
+                             **({"estimate_affine_shape": True} if estimate_affine_shape else {})))
     import pycolmap
     if db.exists():
         db.unlink()
@@ -120,6 +136,11 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
     opts.num_threads = int(num_threads)
     opts.sift.max_num_features = int(max_num_features)
     opts.sift.domain_size_pooling = bool(domain_size_pooling)
+    opts.sift.estimate_affine_shape = bool(estimate_affine_shape)
+    if (domain_size_pooling or estimate_affine_shape) and use_gpu is not False:
+        if use_gpu:
+            print("[sfm] DSP / affine shape: COLMAP extracts these on the CPU", flush=True)
+        use_gpu = False
     if use_gpu and not getattr(pycolmap, "has_cuda", False):
         import warnings
         warnings.warn("this pycolmap build has no CUDA; running on the CPU (or use the COLMAP GUI/CLI with a GPU)")
@@ -129,8 +150,10 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
                               camera_mode=pycolmap.CameraMode.PER_IMAGE, reader_options=reader,
                               extraction_options=opts, device=device)
     project.settings["features"] = {"max_num_features": max_num_features, "max_image_size": max_image_size,
-                                    "domain_size_pooling": domain_size_pooling, "masks": bool(reader.mask_path)}
-    record = dict(_feature_settings(max_num_features, max_image_size, domain_size_pooling), images=sorted(names),
+                                    "domain_size_pooling": domain_size_pooling,
+                                    "estimate_affine_shape": bool(estimate_affine_shape), "masks": bool(reader.mask_path)}
+    record = dict(_feature_settings(max_num_features, max_image_size, domain_size_pooling, estimate_affine_shape),
+                  images=sorted(names),
                   masks=bool(reader.mask_path), files=image_fingerprints(project))
     _features_record(project).write_text(json.dumps(record, indent=1), encoding="utf-8")
     project.save()

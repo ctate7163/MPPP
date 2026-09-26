@@ -7,7 +7,7 @@ status; the report's ``verdict`` is the worst status.
 
 Checks
 ------
-registration      images registered; frames held at their prior because they have < 30 observations
+registration      images registered (frames excluded as outliers counted separately); frames held at their prior because they have < 30 observations
 tie points        points, observations, track-length population (incl. two-view points),
                   observations per image (5th percentile), cross-station fraction, tied station blocks
 reprojection      native-pixel residuals: median, RMS, 95th percentile; per camera and resolution;
@@ -50,6 +50,7 @@ PathLike = Union[str, Path]
 # name: (warn, fail, direction) - "above": bad when value > threshold; "below": bad when value < threshold
 DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "registered_fraction": (0.98, 0.90, "below"),
+    "excluded_fraction": (0.05, 0.20, "above"),
     "held_frame_fraction": (0.02, 0.10, "above"),
     "obs_per_image_p05": (200, 50, "below"),
     "cross_station_fraction": (0.02, 0.005, "below"),
@@ -321,8 +322,14 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
     n_obs = {r["name"]: r["observations"] for r in rows}
 
     # ---- registration
-    check("registration", "registered_fraction", len(reg) / max(1, len(project.images)),
-          f"{len(reg)} of {len(project.images)} images")
+    # frames excluded as outliers (v0p22) are a decision, not a registration failure: counted separately
+    excl = {n for e in (project.settings.get("reconstruction", {}) or {}).get("excluded", []) or []
+            for n in e.get("images", [])}
+    n_cand = len(project.images) - len(excl)
+    check("registration", "registered_fraction", len(reg) / max(1, n_cand),
+          f"{len(reg)} of {n_cand} images" + (f" ({len(excl)} more excluded as outliers)" if excl else ""))
+    check("registration", "excluded_fraction", len(excl) / max(1, len(project.images)),
+          f"{len(excl)} images in frames that did not align with the majority (exclude_outliers)")
     held = [r["name"] for r in rows if r["observations"] < min_frame_observations]
     check("registration", "held_frame_fraction", len(held) / max(1, len(rows)),
           f"{len(held)} images with < {min_frame_observations} observations stay at their prior pose")

@@ -241,7 +241,7 @@ def test_focus_bins_greedy_and_tags():
 def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     from mppp.sfm.project import ZCAM_BIN_HELD, SfmProject
     man, out = processed_pair
-    proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False)
+    proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, zcam_intrinsics="label")
     zmeta = [m for m in man["images"] if m["filename"]["family"] == "Z"][0]
     fc = float(zmeta["focus_position_count"])
     key = f"ZL034_F{int(round(fc)):05d}"
@@ -252,8 +252,14 @@ def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     r = [r for r in proj.images if r["camera_group"] == "ZL034"][0]
     assert r["instrument"] == key and r["focus_count"] == fc and abs(r["label_f_px"] - z["params"][0]) < 1e-9
     assert proj.settings["zcam_focus_bin"] == 30.0 and proj.settings["zcam_bin_refine"] == "focal"
-    pa = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_bin_refine="all")
+    pa = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_bin_refine="all",
+                           zcam_intrinsics="label")
     assert pa.cameras[key]["fixed_params"] == []
+    # v0p22 default: f from the focus model; a one-image bin holds it
+    pm = SfmProject.create(man["images"], out, tmp_path / "m", link=False)
+    zm = pm.cameras[key]
+    assert "focus model" in zm["source"] and {"fx", "fy"} <= set(zm["fixed_params"])
+    assert zm["params"][0] > z["params"][0]                           # the label f is ~1 % short
     with pytest.raises(ValueError):
         SfmProject.create(man["images"], out, tmp_path / "r", zcam_bin_refine="some")
 

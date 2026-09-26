@@ -3,16 +3,16 @@
  "width": 5120,
  "height": 3840,
  "params": [
-  2955.9616756414,
-  2955.3098202046,
-  2591.3086888709,
-  1943.8669563909,
-  0.3082081629,
-  -0.0265208541,
-  0.0001517509,
-  0.0001754802,
-  0.002065699,
-  0.5962272312,
+  2956.1107567303,
+  2955.7725157439,
+  2590.8766198807,
+  1943.9368260092,
+  0.3088680582,
+  -0.0266596083,
+  0.0001417017,
+  0.0001805629,
+  0.0020946125,
+  0.596972503,
   0.0,
   0.0
  ],
@@ -35,5 +35,5 @@
   "k4"
  ],
  "pixel_origin": "corner of the first pixel (COLMAP)",
- "source": "C. Tate's Navcam calibration (Metashape frame model, 29 Sep 2025, M2020_NL0_frame.xml), re-fitted as a COLMAP rational model including the frame corners and refined by MPPP 0.20.0 bundle adjustments of two sites; the mean of the Three Forks (sols 684-693, 52 images) and Bell Island (sols 1451-1467, 145 images) Navcam solutions, which agree to 0.5 % in k1 and k4 and 1 px in f. Residuals: 0.18 / 0.15 px median; tie points out to the frame corners (~61 deg off-axis). The bundle adjustment refines it per project."
+ "source": "C. Tate's Navcam calibration (Metashape frame model, 29 Sep 2025, M2020_NL0_frame.xml), re-fitted as a COLMAP rational model including the frame corners and refined by MPPP bundle adjustments; since v0p22 the observation-weighted mean of three v0p20 Navcam solutions: Three Forks (sols 684-693), Bell Island (1451-1467) and Rockytop (461-530), 1,540,661 observations. Each solution differs from the mean by 0.1-0.55 px rms over the frame (under 1 px in the corners). The bundle adjustment refines it per project."
 }

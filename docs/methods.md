@@ -156,3 +156,38 @@ A, H and V are rescaled together to |A| = 1, which does not change the projectio
 - **Mastcam-Z focal length.** The refined focal length rises 0.046–0.048 px per focus count (the label: 0.047–0.050), but lies 43–49 px (0.9–1.0 %) above the label values at the same focus. It repeats from scape to scape to 4–5 px.
 - **Mastcam-Z pairs.** Processed with the label geometry, the pairs have a median disparity error of +1.6–1.8 px at 10 m (±1.3–1.7 px from pair to pair). One fixed median rig brings this to +0.1–0.2 px (±0.9–1.0 px).
 - These Mastcam-Z results come from runs with the polynomial Navcam model and should be repeated with v0p20 solutions.
+
+## 13. Starting cameras, outlier frames and convergence (v0p22)
+
+**Starting cameras.** New alignments start from what earlier ones refined. The Navcam rational cameras are the observation-weighted consensus of three rational solutions (Three Forks, Bell Island, Rockytop), 0.15–0.17 px rms from the v0p20 values. The right Navcam's rig rotation starts from their mean refined rig. The rig translation (the baseline) stays the CAHV median. Mastcam-Z 34 mm focus bins start from f = f₀ + a (focus − ref) with fy/fx = aspect, fitted in notebook 05 to the refined bins of Three Forks and Rockytop (focus ≥ −2000 counts). Bins of one or two images hold f there, because such a bin constrains its focal length poorly (it scattered by about ±100 px). Outside the fitted range a bin starts from its label f times f₀/f₀,label (≈ 1.009).
+
+**Stereo baseline: fixed.** The bundle adjustment was repeated on the refined Three Forks, Bell Island and Rockytop rational solutions with the whole rig pose free: with a 2 mm prior, a 10 mm prior, and no prior on the translation.
+
+| | baseline change | centre direction change | rig rotation change | cost change | median residual change |
+|---|---|---|---|---|---|
+| Three Forks (52 images) | −0.07 mm | 0.20 mm | 5 mdeg | −0.22 % | −0.0003 px |
+| Bell Island (145 images) | +0.03 mm | 0.63 mm | 15 mdeg | −0.28 % | −0.0007 px |
+| Rockytop (168 images) | −0.01 mm | 0.47 mm | 12 mdeg | −0.21 % | −0.0004 px |
+
+The three prior settings give the same result to 0.01 mm. The length does not move because the images carry no scale: a longer baseline with a proportionally larger block fits the tie points equally well, and only the 1 m waypoint priors (over 3–11 m of stations) oppose it, far more weakly than the CAHV calibration, whose pairs agree to 10 µm. The direction and the rotation are observable, but move together (the centre change is a 0.03–0.09° turn of the baseline, compensated by the rotation) and change the fit negligibly. The baseline therefore stays fixed at the CAHV value; `rig_translation_sigma_m` remains for experiments. Its error scales every range: 0.1 mm is 0.02 %.
+
+**Outlier frames.** After round 2 of the schedule and again before the final adjustment, `find_outlier_frames` looks for frames that do not align with the majority and `exclude_frames` deregisters them; the following rounds re-triangulate without them. A frame is flagged when its median residual is more than 3× the median over frames (and 0.6 px), when it has fewer than 30 observations (such a frame is held at its prior, i.e. not aligned), or when its shift or attitude change from the priors deviates from its station's median, per instrument family, by more than 5 scaled MADs and 0.25 m or 0.5°. Frames of one station share the rover pose, so their corrections should agree. Attitude changes are compared in the world frame (R_prior⁻¹ R), where a rover tilt is the same for every frame of the station. On the three rational solutions the defaults flag 0, 1 and 1 of 28, 87 and 102 frames; both flagged frames were weakly tied (26 and 0 observations).
+
+**Convergence.** A tie point's convergence is the largest angle between two of its rays. Settings that could add points at high convergence were tested in two ways:
+
+- *Triangulation* (Three Forks, fixed refined poses, then a full adjustment): transitivity 3 and 5, a completion transitivity of 8, and 4° instead of 2° ray-angle tolerance. All variants are within 1 % of the 34,758 points above 10° and within 4 % of the 4,809 above 20°. The tracks are limited by the matches, not by how they are chained.
+- *Matching* on 30 cross-station pairs sampled across the convergence range (Three Forks), counting verified matches whose rays meet within 2 mrad: a ratio test of 0.9 gave 18 % more matches above 10° (1,256 → 1,486); a 12 px verification threshold gave nothing. No variant gave matches above 20° on pairs whose median convergence is 20–47°: upright SIFT does not match across such viewpoint changes.
+- *Whole pipeline* (the 28-image Sol 684–690 Navcam + Mastcam-Z test set, extraction to final adjustment):
+
+| variant | tie points | > 10° | > 20° | cross-station > 20° | median residual | extraction (CPU) |
+|---|---|---|---|---|---|---|
+| default (ratio 0.8) | 59,143 | 17,259 | 3,159 | 555 | 0.131 px | 103 s |
+| ratio 0.9 | 60,525 | 18,657 | 3,679 | 578 | 0.136 px | 103 s |
+| DSP-SIFT | 60,277 | 16,524 | 2,479 | 565 | 0.133 px | 173 s |
+| affine shape | 53,445 | 15,538 | 2,660 | 616 | 0.133 px | 142 s |
+| affine + DSP | 52,778 | 15,273 | 2,727 | 581 | 0.134 px | 201 s |
+| affine + DSP + ratio 0.9 | 54,335 | 16,317 | 3,071 | 616 | 0.138 px | 201 s |
+
+The ratio test of 0.9 is the only setting that added high-convergence points without costing others; it is the notebook 03 default since v0p22. DSP and affine adaptation, which should tolerate viewpoint change, lost more points than they gained here and are CPU-only in COLMAP. No tie point in any variant exceeds 40°. The convergence the tie points reach is set mostly by where the rover stopped and pointed, not by the matcher.
+
+**Error analysis on tracks of three or more.** Two-view tie points (about half of all points, mostly one stereo pair) have one redundant measurement per point: their residuals are 1/√2 of the observation error, and they are selected by the matcher's own tolerance. `load_alignment(min_track_length=3)` drops them before any analysis. The ε table also gives ε √(2N/(2N − 3P)), the residual scaled for the three coordinates each of the P points absorbs from N observations (camera parameters neglected). On the v0p20 solutions this DOF-corrected ε agreed between all tracks and tracks of ≥ 3 (0.284 vs 0.288 px), so the correction accounts for most of the difference.

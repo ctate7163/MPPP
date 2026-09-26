@@ -94,14 +94,28 @@ def initial_reconstruction(project: SfmProject):
 
 
 def triangulate(rec, project: SfmProject, max_reproj_px: float = 8.0, min_angle_deg: float = 1.5,
-                out_dir: Optional[PathLike] = None):
-    """Triangulate all verified matches with the current (fixed) poses and intrinsics."""
+                out_dir: Optional[PathLike] = None, max_transitivity: int = 1, create_max_angle_error_deg: float = 2.0,
+                continue_max_angle_error_deg: float = 2.0, complete_max_transitivity: int = 5):
+    """
+    Triangulate all verified matches with the current (fixed) poses and intrinsics.
+    v0p22 options (COLMAP's IncrementalTriangulator): ``max_transitivity`` - how
+    many images a correspondence may be chained through when a track is built
+    (1 = direct matches only; higher links observations at other stations that
+    were only matched via an intermediate image); ``create_max_angle_error_deg``
+    / ``continue_max_angle_error_deg`` - ray-angle tolerance when a track is
+    created or extended; ``complete_max_transitivity`` - the same for completing
+    existing tracks.
+    """
     import pycolmap
     opts = pycolmap.IncrementalPipelineOptions()
     opts.triangulation.merge_max_reproj_error = max_reproj_px
     opts.triangulation.complete_max_reproj_error = max_reproj_px
     opts.triangulation.min_angle = min_angle_deg
     opts.triangulation.ignore_two_view_tracks = False
+    opts.triangulation.max_transitivity = int(max_transitivity)
+    opts.triangulation.complete_max_transitivity = int(complete_max_transitivity)
+    opts.triangulation.create_max_angle_error = float(create_max_angle_error_deg)
+    opts.triangulation.continue_max_angle_error = float(continue_max_angle_error_deg)
     opts.mapper.filter_max_reproj_error = max_reproj_px
     opts.mapper.filter_min_tri_angle = min_angle_deg
     # triangulate_points runs COLMAP's own (unweighted) BA on the points; by default that
@@ -125,7 +139,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   refine_intrinsics: bool = True, refine_principal_point: bool = True,
                   refine_tangential: bool = True, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
                   min_frame_observations: int = 30, num_threads: int = -1, verbose: bool = False,
-                  attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG) -> Dict[str, Any]:
+                  attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG,
+                  rig_translation_sigma_m: Optional[float] = None) -> Dict[str, Any]:
     """
     Weighted BA in place (see module docstring).  ``sigma_px``: keypoint
     standard deviation in native pixels; ``loss_scale``: Cauchy scale in units
@@ -145,7 +160,11 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     priors; with few, nearly collinear stations it is free to rotate about
     the line through them (0.6 deg at Three Forks, 2.4 deg with Mastcam-Z).
     Relative orientations come from the tie points and are not affected.
-    None or 0 switches it off.  Returns the solver summary as a dict.
+    None or 0 switches it off.  ``rig_translation_sigma_m`` (v0p22): with
+    ``refine_rig=True``, a prior (this 1-sigma per axis, metres) holding the
+    right camera's centre in the rig near its CAHV value, so the data can move
+    the stereo baseline without the scale being left to the position priors
+    alone.  Returns the solver summary as a dict.
     """
     import pycolmap
     import pycolmap.cost_functions as cf
@@ -299,9 +318,18 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             prob.set_parameter_block_constant(pose)
             held.append(int(fid))
 
-    for arr in rig_blocks.values():
+    rig_start = {k: v.copy() for k, v in rig_blocks.items()}
+    n_rig_prior = 0
+    for key, arr in rig_blocks.items():
         if not prob.has_parameter_block(arr):
             continue
+        if refine_rig is True and rig_translation_sigma_m:
+            from scipy.spatial.transform import Rotation
+            q0, t0 = rig_start[key][:4], rig_start[key][4:7]
+            C0 = -Rotation.from_quat(q0 / np.linalg.norm(q0)).as_matrix().T @ t0     # right centre in the rig frame
+            prob.add_residual_block(cf.AbsolutePosePositionPriorCost(np.eye(3) * float(rig_translation_sigma_m) ** 2, C0),
+                                    None, [arr])
+            n_rig_prior += 1
         if refine_rig:
             # pyceres has no product manifold and takes no Python manifolds.  The rig
             # rotation is small (Navcam L->R ~0.13 deg), so its quaternion is refined in
@@ -327,7 +355,18 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         from scipy.spatial.transform import Rotation
         T = pycolmap.Rigid3d(pycolmap.Rotation3d(Rotation.from_quat(q).as_matrix()), arr[4:7].copy())
         rec.rigs[rid].set_sensor_from_rig(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=cid), T)
-    return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att,
+    rig_out = {}
+    for (rid, cid), arr in rig_blocks.items():
+        from scipy.spatial.transform import Rotation
+        R1 = Rotation.from_quat(arr[:4] / np.linalg.norm(arr[:4])).as_matrix()
+        R0 = Rotation.from_quat(rig_start[(rid, cid)][:4] / np.linalg.norm(rig_start[(rid, cid)][:4])).as_matrix()
+        rig_out[f"{rid}:{cid}"] = {"baseline_m": float(np.linalg.norm(arr[4:7])),
+                                   "baseline_start_m": float(np.linalg.norm(rig_start[(rid, cid)][4:7])),
+                                   "centre_change_m": (-(R1.T @ arr[4:7]) + R0.T @ rig_start[(rid, cid)][4:7]).tolist(),
+                                   "rotation_change_deg": float(np.degrees(np.linalg.norm(
+                                       Rotation.from_matrix(R1 @ R0.T).as_rotvec())))}
+    return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att, "rig": rig_out,
+            "rig_translation_priors": n_rig_prior,
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
             "termination": str(summary.termination_type), "brief": summary.BriefReport(),
@@ -512,13 +551,156 @@ def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:
             "observations": int(np.sum(lens)) if lens else 0}
 
 
+OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 0.6, "shift_mad_factor": 5.0, "min_shift_m": 0.25,
+                    "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": 30}
+
+
+def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str, Any]]:
+    """
+    Frames (a Navcam stereo pair, or one Mastcam-Z image) that do not align with
+    the majority (v0p22).  A frame is flagged when
+
+    * its median residual exceeds ``residual_factor`` x the median over all
+      frames and ``min_residual_px`` (native px);
+    * it has fewer than ``min_observations`` tie-point observations (such a
+      frame is held at its prior in the bundle adjustment, i.e. not aligned);
+    * its camera moved from its prior differently from the other frames of its
+      station and instrument family (a rover station is one rover pose): the
+      shift deviates from the station median by more than ``min_shift_m`` and
+      ``shift_mad_factor`` x the station's scaled MAD, or the attitude change
+      by more than ``min_attitude_deg`` and ``attitude_mad_factor`` x MAD.
+      Stations with fewer than 3 frames of a family are not tested this way.
+
+    Returns one record per flagged frame: frame id, images, station, reasons.
+    """
+    from scipy.spatial.transform import Rotation
+    th = dict(OUTLIER_DEFAULTS, **thresholds)
+    by_name = {r["name"]: r for r in project.images}
+    reg = set(rec.reg_image_ids())
+    res = native_residuals(rec, project)
+    med_img: Dict[int, float] = {}
+    n_img: Dict[int, int] = {}
+    order = np.argsort(res["image_id"], kind="stable")
+    for sel in np.split(order, np.flatnonzero(np.diff(res["image_id"][order])) + 1):
+        if sel.size:
+            iid = int(res["image_id"][sel[0]])
+            r = res["residual_native_px"][sel]
+            med_img[iid] = float(np.median(r[np.isfinite(r)])) if np.isfinite(r).any() else float("inf")
+            n_img[iid] = int(sel.size)
+    frames: Dict[int, Dict[str, Any]] = {}
+    for fid, fr in rec.frames.items():
+        ims = [d.id for d in fr.data_ids if d.id in reg]
+        if not ims:
+            continue
+        rows = [by_name[rec.images[i].name] for i in ims]
+        ref = ims[0]
+        im = rec.images[ref]
+        R = im.cam_from_world().rotation.matrix()
+        C = im.projection_center()
+        r0 = by_name[im.name]
+        dC = np.asarray(C) - np.asarray(r0["prior_C"], float)
+        dR = Rotation.from_matrix(np.asarray(r0["prior_R_w2c"], float).T @ R).as_rotvec()   # world frame: a rover tilt is common to a station
+        obs = sum(n_img.get(i, 0) for i in ims)
+        meds = [med_img[i] for i in ims if i in med_img]
+        frames[fid] = {"frame_id": int(fid), "images": [rec.images[i].name for i in ims], "station": rows[0]["station"],
+                       "family": "Z" if str(rows[0]["instrument"]).startswith("Z") else "N", "observations": obs,
+                       "median_residual_px": float(np.median(meds)) if meds else float("inf"), "dC": dC, "dR": dR,
+                       "reasons": []}
+    if not frames:
+        return []
+    all_med = np.median([f["median_residual_px"] for f in frames.values() if np.isfinite(f["median_residual_px"])])
+    lim = max(th["residual_factor"] * all_med, th["min_residual_px"])
+    for f in frames.values():
+        if f["observations"] and f["median_residual_px"] > lim:
+            f["reasons"].append(f"median residual {f['median_residual_px']:.2f} px > {lim:.2f}")
+        if f["observations"] < th["min_observations"]:
+            f["reasons"].append(f"{f['observations']} observations < {th['min_observations']}")
+    groups: Dict[tuple, List[Dict[str, Any]]] = {}
+    for f in frames.values():
+        groups.setdefault((f["station"], f["family"]), []).append(f)
+    for fs in groups.values():
+        if len(fs) < 3:
+            continue
+        D = np.array([f["dC"] for f in fs])
+        dev = np.linalg.norm(D - np.median(D, axis=0), axis=1)
+        mad = 1.4826 * np.median(dev)
+        A = np.array([f["dR"] for f in fs])
+        adev = np.degrees(np.linalg.norm(A - np.median(A, axis=0), axis=1))
+        amad = 1.4826 * np.median(adev)
+        for f, d, a in zip(fs, dev, adev):
+            if d > max(th["min_shift_m"], th["shift_mad_factor"] * mad):
+                f["reasons"].append(f"shift {d:.2f} m from its station's median")
+            if a > max(th["min_attitude_deg"], th["attitude_mad_factor"] * amad):
+                f["reasons"].append(f"attitude {a:.2f} deg from its station's median")
+    out = []
+    for f in frames.values():
+        if f["reasons"]:
+            out.append({k: v for k, v in f.items() if k not in ("dC", "dR")})
+    return sorted(out, key=lambda f: f["frame_id"])
+
+
+def exclude_frames(rec, frame_ids: Sequence[int]) -> int:
+    """Deregister frames (their observations and single-frame points go); returns the number removed."""
+    n = 0
+    reg = set(rec.reg_frame_ids())
+    for fid in frame_ids:
+        if int(fid) in reg:
+            reg.discard(int(fid))
+            rec.deregister_frame(int(fid))
+            n += 1
+    return n
+
+
+CONVERGENCE_BINS_DEG = (0.0, 2.0, 5.0, 10.0, 20.0, 40.0, 180.0)
+
+
+def convergence_statistics(rec, project: SfmProject, bins_deg: Sequence[float] = CONVERGENCE_BINS_DEG,
+                           max_points: Optional[int] = None, seed: int = 0) -> Dict[str, Any]:
+    """
+    Tie points by convergence angle (v0p22): for each 3-D point the largest
+    angle between two of its viewing rays.  Counts per bin for all points and
+    for cross-station points, the number of points and observations above 10
+    and 20 deg, and the median.  ``max_points``: a random sample for speed.
+    """
+    st = {r["name"]: r["station"] for r in project.images}
+    C = {iid: np.asarray(im.projection_center()) for iid, im in rec.images.items() if im.has_pose}
+    pids = list(rec.points3D)
+    if max_points and len(pids) > max_points:
+        pids = list(np.random.default_rng(seed).choice(pids, max_points, replace=False))
+    ang, cross, nobs = [], [], []
+    for pid in pids:
+        pt = rec.points3D[int(pid)]
+        ids = [el.image_id for el in pt.track.elements if el.image_id in C]
+        if len(ids) < 2:
+            continue
+        d = np.array([pt.xyz - C[i] for i in ids])
+        d /= np.linalg.norm(d, axis=1, keepdims=True)
+        c = np.clip(d @ d.T, -1, 1)
+        ang.append(float(np.degrees(np.arccos(c.min()))))
+        cross.append(len({st[rec.images[i].name] for i in ids}) > 1)
+        nobs.append(len(ids))
+    ang, cross, nobs = np.array(ang), np.array(cross, bool), np.array(nobs)
+    b = np.asarray(bins_deg, float)
+    f = 1.0 if not max_points or len(rec.points3D) <= (max_points or 0) else len(rec.points3D) / max(len(pids), 1)
+    return {"bins_deg": b.tolist(), "points": (np.histogram(ang, b)[0] * f).round().astype(int).tolist(),
+            "cross_station_points": (np.histogram(ang[cross], b)[0] * f).round().astype(int).tolist(),
+            "points_over_10deg": int(round(f * np.sum(ang > 10))), "points_over_20deg": int(round(f * np.sum(ang > 20))),
+            "observations_over_10deg": int(round(f * nobs[ang > 10].sum())),
+            "median_angle_deg": float(np.median(ang)) if ang.size else float("nan"),
+            "median_angle_cross_deg": float(np.median(ang[cross])) if cross.any() else float("nan"),
+            "sampled": bool(f != 1.0)}
+
+
 def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 schedule: Sequence[Sequence[float]] = DEFAULT_SCHEDULE,
                 refine_intrinsics: bool = True, refine_rig: Union[bool, str] = "rotation",
                 register: bool = False, max_iterations: int = 50, out_name: str = "cahv_ba",
                 verbose: bool = True, min_track_length: int = 2, min_tri_angle_deg: float = 0.25,
                 refine_tangential: bool = True, gui_native: bool = True,
-                attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG):
+                attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG,
+                exclude_outliers: bool = False, outlier_thresholds: Optional[Dict[str, float]] = None,
+                exclude_after_round: int = 2, rig_translation_sigma_m: Optional[float] = None,
+                triangulation_options: Optional[Dict[str, Any]] = None):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
@@ -549,6 +731,15 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     :func:`bundle_adjust`); they start from the project's cameras (the
     calibration's values unless the project was created with p1, p2 in
     ``zero_terms``).
+    ``exclude_outliers`` (v0p22): after round ``exclude_after_round`` and
+    again before the final adjustment, frames that do not align with the
+    majority (:func:`find_outlier_frames`, ``outlier_thresholds``) are
+    deregistered; the rounds after that re-triangulate without them.  The
+    list is in the log and ``project.settings["reconstruction"]["excluded"]``.
+    ``rig_translation_sigma_m``: see :func:`bundle_adjust` (with ``refine_rig=True``).
+    ``triangulation_options`` (v0p22): extra keyword arguments for
+    :func:`triangulate` (e.g. ``min_angle_deg`` per round is set from
+    ``min_tri_angle_deg``; ``create_max_angle_error``, ``complete``...).
     Returns the reconstruction (also written to ``sparse/<out_name>``).
     """
     if min_track_length < 2:
@@ -562,12 +753,29 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
         rec = triangulate(rec, project, max_reproj_px=8.0)
         reg = register_stations(rec, project, verbose=verbose)
         log.append({"station_registration": reg})
+    excluded: List[Dict[str, Any]] = []
+    topts = dict(triangulation_options or {})
+
+    def _exclude(tag):
+        found = find_outlier_frames(rec, project, **(outlier_thresholds or {}))
+        new = [f for f in found if f["frame_id"] not in {e["frame_id"] for e in excluded}]
+        if new:
+            exclude_frames(rec, [f["frame_id"] for f in new])
+            for f in new:
+                f["when"] = tag
+            excluded.extend(new)
+        if verbose:
+            print(f"[sfm] {tag}: {len(new)} frames excluded as outliers"
+                  + ("".join(f"\n      {', '.join(f['images'])}: {'; '.join(f['reasons'])}" for f in new[:20])
+                     + ("\n      ..." if len(new) > 20 else "")), flush=True)
+        log.append({"excluded_frames": new, "when": tag})
+
     for k, (tpx, loss, rmax) in enumerate(schedule):
-        rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg)
+        rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts)
         st0 = track_statistics(rec, project)
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                            refine_tangential=refine_tangential, refine_rig=refine_rig, max_iterations=max_iterations,
-                           attitude_prior_deg=attitude_prior_deg)
+                           attitude_prior_deg=attitude_prior_deg, rig_translation_sigma_m=rig_translation_sigma_m)
         n_bad = filter_observations(rec, project, float(rmax))
         n_bad += drop_short_tracks(rec, min_track_length)
         st = track_statistics(rec, project)
@@ -582,9 +790,14 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
             print(f"[sfm] round {k + 1}: {st['points']} points ({st['cross_station_fraction']:.2%} cross-station), "
                   f"median {entry['median_native_px']:.3f} / rms {entry['rms_native_px']:.3f} native px, "
                   f"{n_bad} obs filtered, {entry['elapsed_s']:.0f} s", flush=True)
+        if exclude_outliers and k + 1 == min(int(exclude_after_round), len(schedule)):
+            _exclude(f"after round {k + 1}")
+    if exclude_outliers:
+        _exclude("before the final adjustment")
     ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                        refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential,
-                       refine_rig=refine_rig, max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg)
+                       refine_rig=refine_rig, max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
+                       rig_translation_sigma_m=rig_translation_sigma_m)
     # the final adjustment can push a few points behind a camera or past the limit
     n_bad = filter_observations(rec, project, float(schedule[-1][2]))
     n_bad += drop_short_tracks(rec, min_track_length)
@@ -603,7 +816,11 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "min_tri_angle_deg": min_tri_angle_deg,
                                           "refine_tangential": bool(refine_tangential),
                                           "attitude_prior_deg": float(attitude_prior_deg or 0.0),
-                                          "schedule": [list(map(float, r)) for r in schedule]}
+                                          "schedule": [list(map(float, r)) for r in schedule],
+                                          "exclude_outliers": bool(exclude_outliers),
+                                          "excluded": [{k: v for k, v in e.items()} for e in excluded],
+                                          "rig_translation_sigma_m": rig_translation_sigma_m,
+                                          "triangulation_options": topts}
     project.save()
     if gui_native:
         try:

@@ -1,0 +1,50 @@
+{
+ "ref": "NL",
+ "sensor": "NR",
+ "R_sensor_from_ref": [
+  [
+   0.999999443645,
+   0.001053929823,
+   4.4052902e-05
+  ],
+  [
+   -0.001053992513,
+   0.999998395999,
+   0.001448136234
+  ],
+  [
+   -4.2526597e-05,
+   -0.00144818186,
+   0.99999895048
+  ]
+ ],
+ "rotvec_rad": [
+  -0.0014481598,
+  4.32898e-05,
+  -0.0010539617
+ ],
+ "t_sensor_from_ref_m": [
+  -0.424362891,
+  -0.000164564,
+  7.0972e-05
+ ],
+ "baseline_m": 0.4243629284310432,
+ "per_solution_rotvec_rad": {
+  "Three Forks": [
+   -0.00146127,
+   7.96e-05,
+   -0.00103796
+  ],
+  "Bell Island": [
+   -0.00139006,
+   0.00020431,
+   -0.0011471
+  ],
+  "Rockytop": [
+   -0.001492,
+   -0.00010035,
+   -0.00098214
+  ]
+ },
+ "note": "x_NR = R x_NL + t. Rotation: observation-weighted mean of the refined rigs of three v0p20 rational Navcam solutions (Three Forks, Bell Island, Rockytop), consistent with M2020_N{L,R}_rational.json; they agree to 0.15 mrad. The translation is the CAHV baseline, which MPPP holds (it sets the scale). SfmProject.create(navcam_rig='consensus') starts the rig rotation here and keeps the project's CAHV translation."
+}

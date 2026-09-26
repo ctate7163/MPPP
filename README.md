@@ -37,6 +37,13 @@ Notebooks (in `notebooks/`):
 | `05_camera_models.ipynb` | the refined cameras of several alignments from 03 side by side. Covers Navcam intrinsics and stereo rig, and Mastcam-Z focal length against focus. Differences are shown in pixels over the whole frame, with their effect on disparity and range. Also reports the distance from the flight (label) calibration, writes updated CAHVORE / CAHVOR models, and shows example images undistorted with the hardware mask screened |
 | `training/02_train_mask.ipynb` | optional: retrain the mask model from a labelled mask set |
 
+**Several sites in one run:** `scripts/run_scapes.py` runs notebook 03 for each site, then notebooks 04 and 05 on the sites that finished, and logs every cell to `<root>/batch_log.txt`:
+
+```
+python scripts\run_scapes.py --sites taylorfjellet rockytop belva threeforks_large landing --zcam --reprocess ^
+    --root D:\scapes\v0p22 --gpu-py C:\Users\<you>\AppData\Local\miniconda3\envs\mppp_gpu\python.exe
+```
+
 Or in Python:
 
 ```python
@@ -65,6 +72,7 @@ The pip `pycolmap` wheel for Windows is CPU-only. The conda-forge build has CUDA
 | `src/mppp/` | the package |
 | `src/mppp/data/` | package data: camera models (`m20_cmods/`: Metashape calibrations and the rational Navcam cameras), optical-depth table, waypoint snapshot, occlusion profiles, model registry (`models.json`) |
 | `notebooks/` | the workflows above; `notebooks/training/` retrains the mask model |
+| `scripts/` | `run_scapes.py`: batch runs of notebooks 03–05 over several sites |
 | `docs/methods.md` | methods, conventions, equations and flagged assumptions |
 | `docs/RELEASING.md` | how to release code and models (GitHub, Hugging Face, safetensors) |
 | `tests/` | pytest suite; `tests/data/m20/` holds two public PDS products |

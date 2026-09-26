@@ -23,10 +23,15 @@ PathLike = Union[str, Path]
 def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequence[Tuple[str, str, Any]]] = None,
           use_gpu: Optional[bool] = None, max_num_matches: int = 32768, max_error_px: float = 6.0,
           min_num_inliers: int = 15, num_threads: int = -1, guided_matching: bool = False,
-          python: Optional[PathLike] = None) -> Dict[str, Any]:
+          python: Optional[PathLike] = None, max_ratio: float = 0.8, max_distance: float = 0.7,
+          cross_check: bool = True) -> Dict[str, Any]:
     """Match and verify; results go into ``project.database``.  Returns a summary.
     ``python``: run in another Python environment, e.g. a conda one with a CUDA
-    pycolmap (v0p11, see :mod:`mppp.sfm.gpu`)."""
+    pycolmap (v0p11, see :mod:`mppp.sfm.gpu`).  ``max_ratio``, ``max_distance``,
+    ``cross_check`` (v0p22): SIFT matching (Lowe ratio test, descriptor distance,
+    mutual best match); ``guided_matching``: a second pass guided by the
+    verified two-view geometry; ``max_error_px``: RANSAC threshold of the
+    geometric verification, full-resolution pixels."""
     if mode not in ("exhaustive", "prior_pairs"):
         raise ValueError("mode must be 'exhaustive' or 'prior_pairs'")
     if python is not None:
@@ -35,12 +40,16 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
             (project.root / "pairs_prior.txt").write_text("".join(f"{p[0]} {p[1]}\n" for p in pairs), encoding="utf-8")
         return run_step(python, "match", project, mode=mode, use_gpu=use_gpu, max_num_matches=max_num_matches,
                         max_error_px=max_error_px, min_num_inliers=min_num_inliers, num_threads=num_threads,
-                        guided_matching=guided_matching)
+                        guided_matching=guided_matching, max_ratio=max_ratio, max_distance=max_distance,
+                        cross_check=cross_check)
     import pycolmap
     mo = pycolmap.FeatureMatchingOptions()
     mo.max_num_matches = int(max_num_matches)
     mo.num_threads = int(num_threads)
     mo.guided_matching = bool(guided_matching)
+    mo.sift.max_ratio = float(max_ratio)
+    mo.sift.max_distance = float(max_distance)
+    mo.sift.cross_check = bool(cross_check)
     vo = pycolmap.TwoViewGeometryOptions()
     vo.ransac.max_error = float(max_error_px)
     vo.min_num_inliers = int(min_num_inliers)
@@ -67,7 +76,9 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     d = pycolmap.Database.open(db)
     summary = {"mode": mode, "matched_pairs": int(d.num_matched_image_pairs()),
                "verified_pairs": int(d.num_verified_image_pairs()),
-               "inlier_matches": int(d.num_inlier_matches()), "max_error_px_full_res": max_error_px}
+               "inlier_matches": int(d.num_inlier_matches()), "max_error_px_full_res": max_error_px,
+               "max_ratio": max_ratio, "max_distance": max_distance, "cross_check": cross_check,
+               "guided_matching": bool(guided_matching)}
     d.close()
     project.settings["matching"] = summary
     project.save()

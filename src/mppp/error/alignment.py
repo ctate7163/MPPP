@@ -64,6 +64,8 @@ class Alignment:
     poses: List[Dict[str, Any]]
     summary: Dict[str, Any]
     residuals: Dict[str, np.ndarray] = field(default_factory=dict)
+    min_track_length: int = 2                   # v0p22: tie points with fewer images were left out
+    points_before_track_filter: int = 0
 
     @property
     def stations(self) -> List[str]:
@@ -97,9 +99,18 @@ def _family(instrument: str) -> str:
     return "Navcam" if s[:1] == "N" else "Mastcam-Z" if s[:1] == "Z" else s
 
 
-def load_alignment(path: PathLike, label: Optional[str] = None) -> Alignment:
+def load_alignment(path: PathLike, label: Optional[str] = None, min_track_length: int = 2) -> Alignment:
+    """
+    One alignment's ``error_input``.  ``min_track_length`` (v0p22): keep only
+    tie points observed in at least this many images (3 drops the two-view
+    points, about half of all points and mostly single stereo pairs); every
+    analysis then works on the kept points and their observations only.
+    """
     root = find_error_input(path)
     model = read_colmap(str(root / "native"))
+    n_all = len(model.points)
+    if int(min_track_length) > 2:
+        model.points = {k: p for k, p in model.points.items() if p.track_length >= int(min_track_length)}
     with (root / "stations.csv").open(newline="", encoding="utf-8") as f:
         images = {r["name"]: dict(r) for r in csv.DictReader(f)}
     for r in images.values():
@@ -124,7 +135,7 @@ def load_alignment(path: PathLike, label: Optional[str] = None) -> Alignment:
         res = {k: z[k] for k in z.files}
     if label is None:                                    # <WORK>/colmap/error_input -> WORK name
         label = root.parent.parent.name if root.parent.name == "colmap" else root.parent.name
-    return Alignment(label, root, model, images, poses, summary, res)
+    return Alignment(label, root, model, images, poses, summary, res, int(min_track_length), n_all)
 
 
 # ---------------------------------------------------------------------- eps
@@ -141,8 +152,7 @@ def _observations(al: Alignment) -> Dict[str, np.ndarray]:
     else:                                                # no residuals.npz: recompute from the model
         from .colmap import observation_residuals
         o = observation_residuals(m)
-        res, iid = o["residual_px"], o["image_id"].astype(int)
-        pid = None                                       # observation_residuals has no point ids
+        res, iid, pid = o["residual_px"], o["image_id"].astype(int), o["point3D_id"].astype(int)
     if pid is not None:
         ok = np.array([int(i) in m.images and int(p) in m.points for i, p in zip(iid, pid)], bool)
         res, iid, pid = res[ok], iid[ok], pid[ok]
@@ -158,7 +168,7 @@ def _observations(al: Alignment) -> Dict[str, np.ndarray]:
         cross = np.zeros(res.size, bool)
         rng = np.full(res.size, np.nan)
     return {"residual_px": np.asarray(res, float), "family": fam, "instrument": inst, "station": st,
-            "cross": cross, "range_m": rng}
+            "cross": cross, "range_m": rng, "point": np.asarray(pid if pid is not None else np.full(res.size, -1))}
 
 
 def _native_point_ids(m, iid: np.ndarray, p2d: np.ndarray) -> np.ndarray:
@@ -195,7 +205,10 @@ def eps_table(al: Alignment) -> List[Dict[str, Any]]:
     eps = rms(residual)/sqrt(2) (one image axis, the error model's convention),
     for all observations and per instrument family / instrument, split by
     whether the track stays at one station ("intra") or spans stations ("cross").
-    Residuals are post-fit, so these are lower bounds.
+    Residuals are post-fit, so these are lower bounds.  ``eps_dof_px`` (v0p22)
+    corrects for the 3 coordinates each point absorbs: eps sqrt(2N / (2N - 3P))
+    for N observations of P points (the camera parameters, a few per image,
+    are neglected); for two-view points the factor is 2.
     """
     o = al.__dict__.setdefault("_obs", _observations(al))
     rows = []
@@ -206,9 +219,12 @@ def eps_table(al: Alignment) -> List[Dict[str, Any]]:
     for name, g in groups:
         for kind, sel in (("all", g), ("intra", g & ~o["cross"]), ("cross", g & o["cross"])):
             r = o["residual_px"][sel]
+            n_pt = int(np.unique(o["point"][sel]).size) if r.size and o["point"][0] >= 0 else 0
+            dof = 2.0 * r.size - 3.0 * n_pt
+            f = np.sqrt(2.0 * r.size / dof) if n_pt and dof > 0 else float("nan")
             rows.append({"alignment": al.label, "group": name, "tracks": kind, "n_obs": int(r.size),
-                         "rms_px": _rms(r), "eps_px": _rms(r) / np.sqrt(2.0),
-                         "median_px": float(np.median(r)) if r.size else float("nan")})
+                         "n_points": n_pt, "rms_px": _rms(r), "eps_px": _rms(r) / np.sqrt(2.0),
+                         "eps_dof_px": _rms(r) / np.sqrt(2.0) * f, "median_px": float(np.median(r)) if r.size else float("nan")})
     return rows
 
 

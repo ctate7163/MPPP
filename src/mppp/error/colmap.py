@@ -344,7 +344,7 @@ def observation_residuals(model: ColmapModel) -> Dict[str, np.ndarray]:
     station of the observation, range, and whether the parent track spans more
     than one station.
     """
-    res, img, stn, rng_, cross, tlen = [], [], [], [], [], []
+    res, img, stn, rng_, cross, tlen, pids = [], [], [], [], [], [], []
     for pt in model.points.values():
         sts = {model.images[i].station for i in pt.image_ids if i in model.images}
         is_cross = len(sts) > 1
@@ -361,8 +361,8 @@ def observation_residuals(model: ColmapModel) -> Dict[str, np.ndarray]:
             res.append(float(np.linalg.norm(im.xys[k[0]] - uv)))
             img.append(int(i)); stn.append(im.station)
             rng_.append(float(np.linalg.norm(pt.xyz - im.center)))
-            cross.append(is_cross); tlen.append(pt.track_length)
-    return {"residual_px": np.array(res), "image_id": np.array(img),
+            cross.append(is_cross); tlen.append(pt.track_length); pids.append(int(pt.point3D_id))
+    return {"residual_px": np.array(res), "image_id": np.array(img), "point3D_id": np.array(pids, np.int64),
             "station": np.array(stn), "range_m": np.array(rng_),
             "is_cross": np.array(cross, dtype=bool),
             "track_length": np.array(tlen)}
