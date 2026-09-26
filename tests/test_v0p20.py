@@ -235,3 +235,16 @@ def test_attitude_prior_holds_the_block_orientation(tmp_path):
         rot[sigma] = float(np.median(ang))
     assert rot[None] < 0.05                  # no attitude prior: the block stays where the tie points put it
     assert 0.4 < rot[0.01] < 0.6             # a strong attitude prior pulls it onto the rotated priors
+
+
+def test_native_point_ids_follow_the_shortened_keypoint_lists():
+    """residuals.npz carries reconstruction keypoint indices; the native model keeps observed keypoints only."""
+    from types import SimpleNamespace
+    from mppp.error.alignment import _native_point_ids
+    # image 1: keypoints 0..9, observed at 2, 5, 9 -> native list [p10, p11, p12]
+    # image 2: full list of 4 keypoints, observed at 1 and 3
+    m = SimpleNamespace(images={1: SimpleNamespace(point3D_ids=np.array([10, 11, 12])),
+                                2: SimpleNamespace(point3D_ids=np.array([-1, 20, -1, 21, -1, -1]))})
+    iid = np.array([1, 2, 1, 1, 2, 7])
+    p2d = np.array([9, 1, 2, 5, 3, 0])
+    assert _native_point_ids(m, iid, p2d).tolist() == [12, 20, 10, 11, 21, -1]

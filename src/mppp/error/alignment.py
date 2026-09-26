@@ -137,9 +137,7 @@ def _observations(al: Alignment) -> Dict[str, np.ndarray]:
         res, iid, pid = r["residual_native_px"], r["image_id"].astype(int), r["point3D_id"].astype(int)
         if "point2D_idx" in r and np.mean([int(q) in m.points for q in pid[:2000]]) < 0.5:
             # 0.14.5+: the native model numbers its points afresh; look them up by keypoint index
-            p2d = r["point2D_idx"].astype(int)
-            pid = np.array([int(m.images[int(i)].point3D_ids[k]) if int(i) in m.images and
-                            k < m.images[int(i)].point3D_ids.size else -1 for i, k in zip(iid, p2d)])
+            pid = _native_point_ids(m, iid, r["point2D_idx"].astype(int))
     else:                                                # no residuals.npz: recompute from the model
         from .colmap import observation_residuals
         o = observation_residuals(m)
@@ -161,6 +159,31 @@ def _observations(al: Alignment) -> Dict[str, np.ndarray]:
         rng = np.full(res.size, np.nan)
     return {"residual_px": np.asarray(res, float), "family": fam, "instrument": inst, "station": st,
             "cross": cross, "range_m": rng}
+
+
+def _native_point_ids(m, iid: np.ndarray, p2d: np.ndarray) -> np.ndarray:
+    """
+    3-D point id of each residual row, looked up in the native model by keypoint index.
+    ``residuals.npz`` holds the keypoint index of the reconstruction, but the native
+    model written by ``export_for_error`` keeps only the observed keypoints of each
+    image, in their original order.  Every observation has a residual row, so the
+    native index is the rank of the keypoint index among that image's rows.  Before
+    v0p20.1 this was looked up directly: about a third of the observations fell off
+    the end of the shortened lists and the rest were attributed to the wrong points.
+    A model with full keypoint lists (``observed_only=False``) is looked up directly.
+    """
+    pid = np.full(p2d.size, -1, np.int64)
+    order = np.argsort(iid, kind="stable")
+    bounds = np.flatnonzero(np.diff(iid[order])) + 1
+    for rows in np.split(order, bounds):
+        if rows.size == 0 or int(iid[rows[0]]) not in m.images:
+            continue
+        ids = np.asarray(m.images[int(iid[rows[0]])].point3D_ids)
+        u, rank = np.unique(p2d[rows], return_inverse=True)
+        idx = rank if u.size == ids.size else p2d[rows]       # observed-only list, or the full one
+        ok = (idx >= 0) & (idx < ids.size)
+        pid[rows[ok]] = ids[idx[ok]]
+    return pid
 
 
 def _rms(x: np.ndarray) -> float:

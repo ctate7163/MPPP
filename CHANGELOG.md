@@ -2,6 +2,14 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.20.1 — 2026-09-26
+
+- **Fix: residuals were attributed to the wrong tie points in notebook 04** (`mppp.error.alignment`, exports from v0p14.5 on).
+  - `residuals.npz` stores the keypoint index of the reconstruction. The native model written by `export_for_error` keeps only the observed keypoints of each image, so these indices did not fit its shortened lists. About a third of the observations (35–52 %) fell off the end and were dropped, and the rest were matched to the wrong tie points.
+  - The native index is now the rank of the keypoint index among the image's residual rows. Recomputing each residual from the model now reproduces the stored value to 1e-11 px; before, the median mismatch was 0.12–0.16 px.
+  - Affected: the ε table (intra/cross split and totals), ε by range, and the `eps_*` rows of the parameter summary. Pair survival, the gate fit, decorrelation, the view graph and registration read the model directly and were not affected. Existing exports do not need to be redone.
+  - With the fix, notebook 04 agrees with the ε that `export_for_error` reports. For example, Rockytop (rational) gives 0.235 / 0.315 px intra / cross, where the old mapping gave 0.207 / 0.199 px.
+
 ## 0.20.0 — 2026-09-26
 
 Scope: Mars 2020 Navcam and Mastcam-Z at 34 mm.
