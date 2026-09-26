@@ -2,6 +2,14 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.21.1 — 2026-09-26
+
+Notebook 05:
+- **Full-frame example images.** The examples now prefer images that cover the whole detector at full resolution (`pick_example(full_frame=True)`, using the manifest's padding); many Navcam products are sub-frames or downsampled. An image named in `EXAMPLE_FILES` that belongs to the scape uses its own refined camera, which for Mastcam-Z is its focus bin.
+- **Undistortion stops where a lens model folds back.** `radial_limit` finds where the radial mapping stops increasing (57° off-axis for the three-term Navcam polynomial; the rational model has no such limit). Beyond that angle `undistort` leaves the output black and the grid is not drawn, instead of repeating interior pixels near the corners.
+- **Mastcam-Z focus fit** leaves out bins below `FOCUS_MIN` = −2000 motor counts, for the label fit too (`fit_focus_model(min_focus=-2000)`).
+- **Mastcam-Z focus plot.** Left and right eyes share both axes, and a right-hand axis gives the focal length in mm for 7.4 µm pixels (`ZCAM_PIXEL_MM`). The fitted slope is also given in mm per 1000 counts.
+
 ## 0.21.0 — 2026-09-26
 
 - **Notebook 05, camera models across scapes** (`notebooks/05_camera_models.ipynb`, `mppp.sfm.calibration`). Takes the solutions of notebook 03 and puts them side by side:

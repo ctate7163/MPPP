@@ -35,6 +35,7 @@ from ..cmod import CameraModel, PixelCamera, compare_cameras, pixel_grid
 
 PathLike = Union[str, Path]
 PARAM_NAMES = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6")
+ZCAM_PIXEL_MM = 0.0074                  # Mastcam-Z detector pitch (7.4 um), for focal lengths in mm
 FULL_FRAME = {"N": (5120, 3840), "Z": (1648, 1200)}
 
 
@@ -530,15 +531,18 @@ def focus_table(sols: Dict[str, Solution], min_observations: int = 0) -> List[Di
 
 
 def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: int = 2000,
-                    per_scape_offset: bool = True) -> Optional[Dict[str, Any]]:
+                    per_scape_offset: bool = True, min_focus: Optional[float] = -2000.0) -> Optional[Dict[str, Any]]:
     """
     f = f0 + a (focus - ref) [+ a constant per scape] fitted to the refined bins of
     ``group`` with at least ``min_observations`` (weights = observations).  The
     per-scape offsets measure how repeatable the focal length is from scape to
     scape at the same focus (temperature, zoom repeatability, the bundle adjustment).
+    Bins below ``min_focus`` motor counts (default -2000) are left out, of the label fit too:
+    there are few of them and they scatter far from the line.
     """
+    lo = -np.inf if min_focus is None else float(min_focus)
     use = [r for r in rows if r["group"] == group and r["refined"] and r["observations"] >= min_observations
-           and r["focus"] is not None]
+           and r["focus"] is not None and r["focus"] >= lo]
     if len(use) < 3:
         return None
     x = np.array([r["focus"] for r in use], float)
@@ -560,7 +564,8 @@ def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: in
     mean_off = np.average(list(offsets.values()), weights=[sum(r["observations"] for r in use if r["scape"] == s)
                                                             for s in offsets])
     offsets = {s: v - mean_off for s, v in offsets.items()}
-    lab = [r for r in rows if r["group"] == group and r.get("f_label_median_px") is not None and r["focus"] is not None]
+    lab = [r for r in rows if r["group"] == group and r.get("f_label_median_px") is not None and r["focus"] is not None
+           and r["focus"] >= lo]
     lab_fit = None
     if len(lab) >= 3:
         xl = np.array([r["focus"] for r in lab]); yl = np.array([r["f_label_median_px"] for r in lab])
@@ -570,7 +575,7 @@ def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: in
             "slope_px_per_count": float(beta[1]), "slope_pct_per_1000": float(1e5 * beta[1] / beta[0]),
             "rms_px": float(np.sqrt(np.sum(W * res ** 2))), "scape_offsets_px": offsets,
             "scape_offset_sd_px": float(np.std(list(offsets.values()))) if len(offsets) > 1 else 0.0,
-            "n_bins": len(use), "scapes": scapes, "label": lab_fit,
+            "n_bins": len(use), "scapes": scapes, "label": lab_fit, "min_focus": min_focus,
             "focus_range": [float(x.min()), float(x.max())]}
 
 
@@ -732,10 +737,26 @@ def updated_zcam_models(sols: Dict[str, Solution], fits: Dict[str, Dict[str, Any
 
 
 # ================================================================ images
-def pick_example(sol: Solution, group: str, full_resolution: bool = True) -> Optional[str]:
-    """The image of ``group`` with most observations (full resolution preferred)."""
+def is_full_frame(sol: Solution, name: str) -> Optional[bool]:
+    """True if the image covers the whole detector (no sub-frame padding, from the manifest); None if unknown."""
+    r = sol.images[name]
+    m = sol.manifest.get(r.get("stem") or Path(name).stem)
+    if not m:
+        return None
+    return not any((m.get("padding") or {}).values())
+
+
+def pick_example(sol: Solution, group: str, full_frame: bool = True, full_resolution: bool = True) -> Optional[str]:
+    """
+    The image of ``group`` with most observations.  ``full_frame``: prefer images
+    that cover the whole detector (Navcam products are often sub-frames, padded
+    to the frame by MPPP); ``full_resolution``: prefer downsample 1.  Each
+    preference falls back when no image satisfies it.
+    """
     cands = [r for r in sol.images.values() if sol.cameras.get(r["instrument"]) is not None
              and sol.cameras[r["instrument"]].group == group]
+    if full_frame and any(is_full_frame(sol, r["name"]) for r in cands):
+        cands = [r for r in cands if is_full_frame(sol, r["name"])]
     if full_resolution and any(float(r.get("downsample_scale", 1)) == 1.0 for r in cands):
         cands = [r for r in cands if float(r.get("downsample_scale", 1)) == 1.0]
     if not cands:
@@ -766,6 +787,30 @@ def load_example(sol: Solution, name: str, image_path: Optional[PathLike] = None
     return im[..., ::-1].copy(), mask
 
 
+def radial_limit(cam: Camera, rho_max: float = 6.0) -> float:
+    """
+    Largest normalised radius rho = tan(field angle) up to which the lens model's
+    radial mapping still increases (``inf`` if it does over 0..``rho_max``).  A
+    polynomial model folds back beyond it: rays farther out would be drawn from
+    pixels that belong to smaller angles.
+    """
+    p = np.asarray(cam.params, float)
+    rho = np.linspace(0.0, rho_max, 60001)
+    r2 = rho * rho
+    if cam.model == "FULL_OPENCV":
+        k1, k2, k3, k4, k5, k6 = p[4], p[5], p[8], p[9], p[10], p[11]
+        rad = (1 + k1 * r2 + k2 * r2 ** 2 + k3 * r2 ** 3) / (1 + k4 * r2 + k5 * r2 ** 2 + k6 * r2 ** 3)
+    elif cam.model == "OPENCV":
+        rad = 1 + p[4] * r2 + p[5] * r2 ** 2
+    elif cam.model in ("SIMPLE_RADIAL", "RADIAL"):
+        rad = 1 + p[3] * r2 + (p[4] * r2 ** 2 if cam.model == "RADIAL" else 0.0)
+    else:
+        return float("inf")
+    rd = rho * rad
+    bad = np.flatnonzero(np.diff(rd) <= 0)
+    return float(rho[bad[0]]) if bad.size else float("inf")
+
+
 def undistort(image: np.ndarray, cam: Camera, mask: Optional[np.ndarray] = None, fit: str = "width",
               scale: Optional[float] = None) -> Dict[str, Any]:
     """
@@ -788,6 +833,7 @@ def undistort(image: np.ndarray, cam: Camera, mask: Optional[np.ndarray] = None,
         k = 0 if fit == "width" else 1
         edge = np.array([[0.0, cy], [w, cy]]) if k == 0 else np.array([[cx, 0.0], [cx, h]])
         xy = unproject_camera(cam.model, p, edge)
+        xy[np.linalg.norm(xy, axis=1) >= radial_limit(cam)] = np.nan
         c = cx if k == 0 else cy
         size = w if k == 0 else h
         room = np.array([c, size - c])
@@ -796,10 +842,12 @@ def undistort(image: np.ndarray, cam: Camera, mask: Optional[np.ndarray] = None,
         f = float(np.nanmin(fs)) if np.any(np.isfinite(fs)) else float(np.sqrt(p[0] * p[1]))
     mx, my = np.empty((h, w), np.float32), np.empty((h, w), np.float32)
     xs = (np.arange(w) + 0.5 - cx) / f
+    lim = radial_limit(cam)
     for y0 in range(0, h, 256):                           # in bands: a full Navcam frame at once needs GBs
         ys = (np.arange(y0, min(h, y0 + 256)) + 0.5 - cy) / f
         X, Y = np.meshgrid(xs, ys)
         src = project_camera(cam.model, p, np.stack([X, Y, np.ones_like(X)], axis=-1)) - 0.5  # cv2: centre origin
+        src[np.hypot(X, Y) >= 0.999 * lim] = -1e4        # beyond the model's fold-over: no data
         mx[y0:y0 + len(ys)], my[y0:y0 + len(ys)] = src[..., 0], src[..., 1]
     out = cv2.remap(image, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     om = None
@@ -807,6 +855,7 @@ def undistort(image: np.ndarray, cam: Camera, mask: Optional[np.ndarray] = None,
         m = mask if mask.shape[:2] == (h, w) else cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
         om = cv2.remap(m, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     return {"image": out, "mask": om, "f_px": f, "f_in_px": float(np.sqrt(p[0] * p[1])), "scale": s,
+            "valid_field_deg": float(np.degrees(np.arctan(lim))) if np.isfinite(lim) else None,
             "principal_point_px": (cx, cy), "field_deg": float(np.degrees(np.arctan(cx / f) + np.arctan((w - cx) / f)))}
 
 
@@ -845,6 +894,7 @@ def example_figure(image: np.ndarray, mask: Optional[np.ndarray], cam: Camera, t
     import matplotlib.pyplot as plt
     from ..colmap import project_camera, scale_camera_params
     und = undistort(image, cam, mask, fit=fit)
+    lim = radial_limit(cam)
     h, w = image.shape[:2]
     fig, ax = plt.subplots(1, 2, figsize=(15, 15 * h / w / 2 + 0.9))
     ax[0].imshow(screen_mask(image, mask, alpha))
@@ -860,11 +910,15 @@ def example_figure(image: np.ndarray, mask: Optional[np.ndarray], cam: Camera, t
                            color="#00e5ff", lw=0.6, alpha=0.7)
                 X = np.c_[xs / f, ys / f, np.ones_like(xs)]
                 uv = project_camera(cam.model, p, X)
+                uv[np.hypot(X[:, 0], X[:, 1]) >= 0.999 * lim] = np.nan
                 ok = np.all(np.isfinite(uv), axis=1) & (uv[:, 0] > -w * 0.05) & (uv[:, 0] < w * 1.05) & \
                     (uv[:, 1] > -h * 0.05) & (uv[:, 1] < h * 1.05)
                 uv[~ok] = np.nan
                 ax[0].plot(uv[:, 0] - 0.5, uv[:, 1] - 0.5, color="#00e5ff", lw=0.6, alpha=0.7)   # imshow: centre origin
-    ax[0].set_title(f"{title}\noriginal ({cam.distortion} lens model {cam.key}, f = {und['f_in_px']:.0f} px)", fontsize=9)
+    lim_txt = (f"; the model folds back beyond {und['valid_field_deg']:.1f} deg off-axis (black in the undistorted image)"
+               if und["valid_field_deg"] is not None and und["valid_field_deg"] < 75 else "")
+    ax[0].set_title(f"{title}\noriginal ({cam.distortion} lens model {cam.key}, f = {und['f_in_px']:.0f} px{lim_txt})",
+                    fontsize=9)
     ax[1].set_title(f"undistorted to a pinhole, f = {und['f_px']:.0f} px, horizontal field {und['field_deg']:.1f} deg "
                     f"(fit = {fit!r})", fontsize=9)
     for a in ax:

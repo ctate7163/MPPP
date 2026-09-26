@@ -200,3 +200,19 @@ def test_review_fixes_linearity_domain_type3_default_and_empty_consensus(tmp_pat
     assert m3.mtype == 3 and 0.2 < m3.linearity < 0.9
     s = CAL.load_solution(_solution(tmp_path), "x")
     assert CAL.consensus_camera({"x": s}, "NL", "rational", min_observations=1) is None
+
+
+def test_radial_limit_full_frame_pick_and_focus_cutoff(tmp_path):
+    from mppp.sfm import calibration as CAL
+    poly = CAL.reference_camera("NL", "polynomial")
+    lim = CAL.radial_limit(poly)
+    assert 50 < np.degrees(np.arctan(lim)) < 60                     # the three-term polynomial folds back
+    assert CAL.radial_limit(CAL.reference_camera("NL", "rational")) == float("inf")
+    s = CAL.load_solution(_solution(tmp_path), "x")
+    s.manifest = {"NLF_a": {"padding": {"left": 0, "right": 0, "top": 0, "bottom": 0}}}
+    assert CAL.is_full_frame(s, "NLF_a.png") and CAL.is_full_frame(s, "NRF_a.png") is None
+    assert CAL.pick_example(s, "NL") == "NLF_a.png"
+    rows = [{"scape": "a", "group": "ZL034", "focus": float(fc), "refined": True, "observations": 5000,
+             "f_refined_px": 4700 + 0.046 * fc + (300 if fc < -2000 else 0)} for fc in np.linspace(-3500, 1200, 20)]
+    assert CAL.fit_focus_model(rows, "ZL034", 100)["slope_px_per_count"] == pytest.approx(0.046, abs=1e-9)
+    assert CAL.fit_focus_model(rows, "ZL034", 100, min_focus=None)["rms_px"] > 10
