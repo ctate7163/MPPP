@@ -10,7 +10,7 @@ MPPP turns Mars 2020 Perseverance **Navcam** and **Mastcam-Z** PDS image product
 
 For Navcam (optionally with the Mastcam-Z 34 mm frames of the same sols), MPPP also builds a complete COLMAP project — database, stereo rig, matches — and a prior-aligned, weighted bundle adjustment, with an **alignment health report** (tie points, reprojection error, camera-model change, stereo-rig stability, pose change).
 
-Version **0.20.1** (`v0p20`). Versions before 1.0 are development releases; see [CHANGELOG.md](CHANGELOG.md).
+Version **0.21.0** (`v0p21`). Versions before 1.0 are development releases; see [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 
@@ -34,6 +34,7 @@ Notebooks (in `notebooks/`):
 | `01_process_images.ipynb` | select PDS products (named scapes, sol ranges, waypoint radius, lists), process them, write Metashape and COLMAP inputs |
 | `03_colmap_alignment.ipynb` | Navcam (+ optional Mastcam-Z 34 mm): COLMAP database with a left-referenced stereo rig and position priors, matching, CAHV-initialised weighted bundle adjustment, alignment health |
 | `04_error_analysis.ipynb` | one or more alignments from 03: the error model's inputs measured from them (image precision ε, cross-station match gate vs angle and ΔLMST, decorrelation, view graph, registration) next to the values the model assumes |
+| `05_camera_models.ipynb` | the refined cameras of several alignments from 03 side by side. Covers Navcam intrinsics and stereo rig, and Mastcam-Z focal length against focus. Differences are shown in pixels over the whole frame, with their effect on disparity and range. Also reports the distance from the flight (label) calibration, writes updated CAHVORE / CAHVOR models, and shows example images undistorted with the hardware mask screened |
 | `training/02_train_mask.ipynb` | optional: retrain the mask model from a labelled mask set |
 
 Or in Python:

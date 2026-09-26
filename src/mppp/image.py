@@ -130,6 +130,8 @@ class MPPPImage:
         w, h = int(label_get(self.label, "IMAGE.LINE_SAMPLES")), int(label_get(self.label, "IMAGE.LINES"))
         self.cahvor = CAHVOR.from_label(gcm)
         self.intrinsics, self.R_cam_rnav = self.cahvor.decompose(w, h)
+        from .cmod import CameraModel
+        self.camera_model_label = CameraModel.from_label(gcm, w, h)       # v0p21: the full label model
         self.intrinsics_label = self.intrinsics
         self.native_size = (w, h)
 
@@ -366,6 +368,9 @@ class MPPPImage:
             "intrinsics": self.intrinsics.to_dict(),
             "intrinsics_label": self.intrinsics_label.to_dict(),
             "cahvor_O_A_angle_deg": self.cahvor.o_a_angle_deg(),
+            "camera_model_label": dict(self.camera_model_label.to_label_dict(precision=12),
+                                       width=self.native_size[0], height=self.native_size[1],
+                                       frame="ROVER_NAV_FRAME", pixel_origin="centre_of_first_pixel"),
             "pose": self.pose.to_dict(), "geo": self.geo,
             "mask": {"inferred": self.mask_card is not None,
                      "inference_skipped": bool(getattr(self, "mask_inference_skipped", False)),

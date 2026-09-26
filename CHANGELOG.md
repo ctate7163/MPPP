@@ -2,6 +2,29 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.21.0 — 2026-09-26
+
+- **Notebook 05, camera models across scapes** (`notebooks/05_camera_models.ipynb`, `mppp.sfm.calibration`). Takes the solutions of notebook 03 and puts them side by side:
+  - Navcam intrinsics per scape, as pixel differences over the whole frame from the shipped model and from the consensus of each lens model, after removing the rotation a pose absorbs. Includes difference maps and radial profiles.
+  - The label (flight) calibration against the refined cameras.
+  - The Navcam rig. Also the effect of any two geometries on disparity and range: label vs refined, start vs refined, consensus vs each scape.
+  - Mastcam-Z focal length against focus across scapes, with scape-to-scape offsets and the label line.
+  - Mastcam-Z stereo pairs against the label geometry and against one fixed rig.
+  - A table of what limits the geometry, next to the image precision ε.
+  - Updated CAHVORE (Navcam, type 2 and 3) and CAHVOR (Mastcam-Z) models, written as JSON and as label text.
+  - One example image per camera, original and undistorted, with the hardware mask under a white screen (`SCREEN_ALPHA`, default 0.3).
+- **`mppp.cmod`: JPL camera models.**
+  - `CameraModel` (CAHV, CAHVOR, CAHVORE) projects exactly as the JPL library does, including CAHVORE types 1–3.
+  - `fit_to_colmap` fits CAHVOR or CAHVORE to a COLMAP camera.
+  - `PixelCamera` and `compare_cameras` compare any two cameras in pixels, with the rotation removed and fold-over excluded. The rotation is fitted inside 0.85 of the half-diagonal.
+  - The Navcam label is CAHVORE type 2 (fisheye). It agrees with MPPP's rational model to 2.7 px rms; read as perspective CAHVOR it would be about 250 px off. CAHVORE fits the rational model to 0.4 px (type 2) or 0.2 px (type 3), whereas CAHVOR only reaches 9 px rms.
+- **Manifest: the full label camera model** (`camera_model_label`) is now kept for every image: C, A, H, V, O, R, E, type and parameter, with the product size. Older manifests keep only the CAHV part with R1 and R2; `attach_pds_labels` reads the exact models from the PDS archive for them.
+- **First results** (seven v0p15 scapes with the polynomial Navcam model, plus three v0p20 rational solutions; see docs/methods.md §12):
+  - The rational Navcam cameras repeat from scape to scape to 0.1–0.55 px rms; the polynomial ones to 0.6–4.7 px, with up to 21 px in the corners.
+  - The label Navcam stereo geometry predicts about 1.3–1.9 px less disparity than the refined one, so ranges come out about 1 % short at 10 m and 2 % at 20 m.
+  - Mastcam-Z 34 mm focal length lies about 1 % above the label value at the same focus (43–49 px) and repeats from scape to scape to 4–5 px.
+  - One fixed Mastcam-Z rig would leave ±1 px of pair-to-pair disparity scatter at 10 m.
+
 ## 0.20.1 — 2026-09-26
 
 - **Fix: residuals were attributed to the wrong tie points in notebook 04** (`mppp.error.alignment`, exports from v0p14.5 on).

@@ -24,7 +24,7 @@ From the label vectors C, A, H, V (A normalised): h_s = |A × H|, v_s = |A × V|
 
 K = [[h_s sin θ, h_s cos θ, h_c], [0, v_s, v_c], [0, 0, 1]],  R_cam←rnav = K⁻¹ [H; V; A],
 
-and R is replaced by the nearest rotation (SVD). Radial distortion is taken from the CAHVOR R vector as k1 = R₁, k2 = R₂. This is exact only when the distortion axis O coincides with A; the angle between them is recorded per image (0.08° and 0.10° in the two example products). The zeroth-order term R₀ is a scale and is dropped. The CAHVORE entrance-pupil term E of the engineering cameras is ignored. These label-derived intrinsics are priors intended to be refined in bundle adjustment.
+and R is replaced by the nearest rotation (SVD). Radial distortion is taken from the CAHVOR R vector as k1 = R₁, k2 = R₂. This is exact only when the distortion axis O coincides with A; the angle between them is recorded per image (0.08° and 0.10° in the two example products). The zeroth-order term R₀ is a scale and is dropped. The CAHVORE entrance-pupil term E of the engineering cameras is ignored. These label-derived intrinsics are priors intended to be refined in bundle adjustment. The Navcam labels are CAHVORE of type 2 (fisheye), whose R terms act on the field angle rather than on its tangent. The Brown coefficients derived this way (`intrinsics_label`) therefore do not describe Navcam; MPPP uses its own Navcam calibration instead (§3.4). The exact label model is in `mppp.cmod` (§12).
 
 ### 3.3 Sub-frames and padding
 
@@ -119,3 +119,38 @@ Before a refined reconstruction is used — for any analysis, and in particular 
 
 Each value is compared with a warn and a fail threshold (`DEFAULT_THRESHOLDS`); the verdict is the worst status. The thresholds are provisional values set a priori and are not validated limits (v0p20: the station shift and within-station spread limits were doubled to 2/6 m and 0.1/0.4 m). The report header names the project, the time and the MPPP version, so a report cannot be mistaken for another run's. On the Belva Navcam test (sols 748–815, prior-pair matching) the report flags 55 of 478 frames held at their prior, a 0.13° rotation of the refined right camera relative to the CAHV rig (the CAHV pairs themselves agree to 1e-4°; the principal points moved by 2–4 px at the same time, which trades off against it), residuals rising from 0.18 px at the centre to 0.31 px in the outer quarter of the radius, and 6 of 13 stations outside the main tied block.
 
+
+
+## 12. Camera models across scapes (`mppp.cmod`, `mppp.sfm.calibration`, v0p21)
+
+**JPL models.** `mppp.cmod.CameraModel` projects exactly as the JPL `cmod` library does, for CAHV, CAHVOR and CAHVORE (Gennery 2006), with pixel-centre origin. For a point p relative to C:
+
+- ζ = p·O and λ = p − ζO.
+- For CAHVOR, τ = |λ|²/ζ² and μ = r₀ + r₁τ + r₂τ², giving p′ = p + μλ.
+- For CAHVORE, θ solves ζ sin θ − |λ| cos θ − (θ − sin θ)(e₀ + e₁θ² + e₂θ⁴) = 0 (Newton). Then χ = tan(Lθ)/L for L > 0, θ for L = 0, or sin(Lθ)/L for L < 0, and μ = r₀ + r₁χ² + r₂χ⁴, giving p′ = (|λ|/χ)O + (1 + μ)λ. The linearity L is 1 for type 1 (perspective), 0 for type 2 (fisheye) and the model's parameter for type 3.
+- Finally x = p′·H / p′·A and y = p′·V / p′·A.
+
+A, H and V are rescaled together to |A| = 1, which does not change the projection, so that A·H is exactly the principal point; O is normalised. `decompose` uses the convention of §3.2 (y = V′), so label models and MPPP's prior attitudes share a camera frame.
+
+**Checks.**
+
+- The Navcam label of the repository's test product (CAHVORE type 2, E ≈ 10⁻⁸ m) agrees with MPPP's independently derived rational model to 2.7 px rms (1.7 px in the centre, 4.5 px in the corners) after a 0.09° rotation. Read as a perspective CAHVOR model, the same numbers are 250 px off, and 30 % of the frame projects outside it.
+- Fitted to the rational Navcam model, CAHVORE type 2 reaches 0.4 px rms (1 px in the corners) and type 3 reaches 0.2 px. CAHVOR cannot follow the lens: 9 px rms, up to 120 px in the corners.
+- A Mastcam-Z CAHVOR model and FULL_OPENCV with k1 = R₁ and k2 = R₂ are the same camera to 10⁻¹³ px.
+- Since v0p21 the manifest keeps each image's full label model (`camera_model_label`). Older manifests keep only the CAHV part with R₁ and R₂, and taking O along A costs up to 4 px for Navcam and 0.5 px for Mastcam-Z; `attach_pds_labels` reads the exact models from the PDS products.
+
+**Comparing cameras.** Two cameras (COLMAP or CAHV-family, both as `PixelCamera`) are compared over a grid of pixels covering the whole frame. The rays of camera a are rotated by the best-fitting rotation (Kabsch) onto the rays of camera b through the same pixels, because a pose absorbs a common rotation (a principal-point shift is mostly a rotation). The rotation is fitted within 0.85 of the half-diagonal, so that the corners, where lens models differ most, do not tilt it. They are then projected with b. The result is the difference in pixels, summarised over the centre (within half the half-diagonal), the edge (0.5–0.85) and the corners. Grid points are left out, and counted in `coverage`, where b does not map its own projection back onto the ray (a polynomial past its turning point) or where it projects outside its frame.
+
+**Stereo.** `stereo_effect(a, b)` evaluates two geometries, each given by left and right cameras and the right-from-left pose. Points on a grid of left-image rays are placed at several ranges, with depth along the optical axis. Each point is projected with both geometries after removing the left camera's best-fitting rotation, and only points valid in all four projections are kept. The disparity error is Δd = d_a − d_b, with d = x_left − x_right. The range error of processing with a when b is true is ΔZ/Z = Z·Δd/(f·B), positive when points are placed too far. For Mastcam-Z, which has no rig, `stereo_pairs` gives each simultaneous pair's refined and label relative pose.
+
+**Mastcam-Z focus.** `fit_focus_model` fits f = f₀ + a·(focus − ref) to the refined focus-bin focal lengths of all scapes, weighted by observations, with a constant per scape. The spread of those constants is the scape-to-scape repeatability. The same line fitted to the per-image label focal lengths gives the flight-calibration slope.
+
+**Updated models.** `updated_navcam_models` fits CAHVORE (type 2 or 3; E = 0, because COLMAP cameras are central) to consensus left and right cameras and places the right one by the mean refined rig, in the left camera frame. `updated_zcam_models` gives CAHVOR models at chosen focus counts from the focal-length fit. The principal point and distortion stay at the held label-median values: the default bundle adjustment refines only focal length per bin.
+
+**First results (v0p21, seven v0p15 scapes with the polynomial Navcam model plus three v0p20 rational solutions).**
+
+- **Navcam repeatability.** The refined rational cameras agree with their consensus to 0.1–0.55 px rms (under 1 px in the corners). The polynomial ones agree to 0.6–4.7 px, with 1–21 px in the corners. The mixed Navcam + Mastcam-Z run at Three Forks is 6.5–6.9 px off (4 px in the centre), because Mastcam-Z pulls its Navcam cameras.
+- **Navcam label stereo geometry.** The label CAHVORE pair with the label rig predicts 1.3–1.9 px less disparity at the image centre than the refined geometry: ranges about 1 % short at 10 m and 2 % at 20 m. The refined geometries agree with their consensus to ≤ 0.4 px.
+- **Mastcam-Z focal length.** The refined focal length rises 0.046–0.048 px per focus count (the label: 0.047–0.050), but lies 43–49 px (0.9–1.0 %) above the label values at the same focus. It repeats from scape to scape to 4–5 px.
+- **Mastcam-Z pairs.** Processed with the label geometry, the pairs have a median disparity error of +1.6–1.8 px at 10 m (±1.3–1.7 px from pair to pair). One fixed median rig brings this to +0.1–0.2 px (±0.9–1.0 px).
+- These Mastcam-Z results come from runs with the polynomial Navcam model and should be repeated with v0p20 solutions.

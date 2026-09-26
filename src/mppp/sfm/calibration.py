@@ -1,0 +1,876 @@
+"""
+Camera-model solutions across scapes (v0p21, notebook 05).
+
+A *solution* is what notebook 03 leaves in a COLMAP project folder: the
+refined cameras and rigs (``error_input/summary.json``), the refined poses
+(``error_input/native/frames.txt``), the image table (``project.json``) and,
+if the processed folder is next to it, the MPPP manifest with each image's
+label camera model.  This module compares them:
+
+* :func:`camera_table`, :func:`reference_differences` - intrinsics per camera
+  and scape, and how far each solution moves pixels relative to a reference
+  (after removing the rotation a pose absorbs);
+* :func:`stereo_pairs`, :func:`stereo_effect` - the left/right geometry
+  (Navcam rig, Mastcam-Z simultaneous pairs) and what a difference in it does
+  to disparity and range;
+* :func:`focus_table`, :func:`fit_focus_model` - Mastcam-Z focal length
+  against focus motor count across scapes;
+* :func:`label_models` - the PDS label models (CAHVORE Navcam, CAHVOR
+  Mastcam-Z) as :class:`mppp.cmod.CameraModel` in full-frame pixels;
+* :func:`load_example`, :func:`undistort`, :func:`screen_mask` - images for
+  a look at each camera, with the hardware mask screened in white.
+"""
+from __future__ import annotations
+
+import csv
+import json
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+
+import numpy as np
+
+from ..cmod import CameraModel, PixelCamera, compare_cameras, pixel_grid
+
+PathLike = Union[str, Path]
+PARAM_NAMES = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6")
+FULL_FRAME = {"N": (5120, 3840), "Z": (1648, 1200)}
+
+
+# ================================================================ loading
+@dataclass
+class Camera:
+    """One COLMAP camera of a solution (full-frame pixels, corner origin)."""
+    key: str
+    group: str                      # NL, NR, ZL034, ZR034
+    model: str
+    width: int
+    height: int
+    params: np.ndarray              # refined
+    initial: np.ndarray
+    focus: Optional[float] = None   # Mastcam-Z focus motor count (bin median)
+    n_images: int = 0
+    n_obs: int = 0
+    fixed: Tuple[str, ...] = ()
+
+    @property
+    def family(self) -> str:
+        return self.group[:1]
+
+    @property
+    def refined(self) -> bool:
+        return self.n_obs > 0 and not np.allclose(self.params, self.initial)
+
+    @property
+    def distortion(self) -> str:
+        """'rational' (k4..k6 in the denominator), 'polynomial' or 'pinhole'."""
+        if self.model != "FULL_OPENCV":
+            return "polynomial" if self.model in ("OPENCV", "RADIAL", "SIMPLE_RADIAL") else "pinhole"
+        return "rational" if np.any(np.abs(self.params[9:12]) > 0) else "polynomial"
+
+    def pixel_camera(self, initial: bool = False) -> PixelCamera:
+        return PixelCamera.colmap(self.model, self.initial if initial else self.params, self.width, self.height,
+                                  name=self.key)
+
+    def named(self, initial: bool = False) -> Dict[str, float]:
+        p = self.initial if initial else self.params
+        return {k: float(v) for k, v in zip(PARAM_NAMES, p)}
+
+
+@dataclass
+class Solution:
+    label: str
+    root: Path                                       # COLMAP project folder
+    project: Dict[str, Any]
+    summary: Dict[str, Any]
+    cameras: Dict[str, Camera]
+    images: Dict[str, Dict[str, Any]]                # name -> image row (+ refined R_w2c, C)
+    rig_initial: Dict[str, Any] = field(default_factory=dict)
+    rig_refined: Dict[str, Any] = field(default_factory=dict)
+    manifest: Dict[str, Dict[str, Any]] = field(default_factory=dict)    # PDS stem -> MPPP meta
+
+    def groups(self, family: Optional[str] = None) -> List[str]:
+        return sorted({c.group for c in self.cameras.values() if family is None or c.family == family})
+
+    def cameras_of(self, group: str) -> List[Camera]:
+        return sorted((c for c in self.cameras.values() if c.group == group), key=lambda c: (c.focus or 0, c.key))
+
+    @property
+    def navcam_distortion(self) -> str:
+        n = [c.distortion for c in self.cameras.values() if c.family == "N"]
+        return n[0] if n else "-"
+
+    def camera_of_image(self, name: str) -> Camera:
+        return self.cameras[self.images[name]["instrument"]]
+
+
+def _find_root(path: PathLike) -> Path:
+    p = Path(path)
+    for cand in (p, p / "colmap", p.parent if p.name == "error_input" else p):
+        if (cand / "project.json").is_file() and (cand / "error_input" / "summary.json").is_file():
+            return cand
+    raise FileNotFoundError(f"no COLMAP solution (project.json + error_input/summary.json) at {p} or {p / 'colmap'}:"
+                            f" run notebook 03 to the export step first")
+
+
+def _group_of(key: str, cam: Dict[str, Any]) -> str:
+    if cam.get("group"):
+        return str(cam["group"])
+    m = re.match(r"(Z[LR]\d{3})", key)
+    return m.group(1) if m else key[:2]
+
+
+def _focus_of(key: str, cam: Dict[str, Any]) -> Optional[float]:
+    if cam.get("focus_count_median") is not None:
+        return float(cam["focus_count_median"])
+    m = re.search(r"_F(m?)(\d{5})$", key)
+    return None if not m else (-1.0 if m.group(1) else 1.0) * float(m.group(2))
+
+
+def _read_frames(path: Path) -> Dict[int, Tuple[np.ndarray, np.ndarray]]:
+    """native/frames.txt -> {image id: (R_w2c, C)} (one frame per image in the native model)."""
+    from scipy.spatial.transform import Rotation
+    out = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        t = line.split()
+        q = np.array(t[2:6], float)
+        tv = np.array(t[6:9], float)
+        R = Rotation.from_quat([q[1], q[2], q[3], q[0]]).as_matrix()
+        if int(t[9]) != 1:
+            raise ValueError(f"{path}: frame {t[0]} holds {t[9]} images; the native model of notebook 03 has one "
+                             f"image per frame")
+        out[int(t[12])] = (R, -R.T @ tv)
+    return out
+
+
+def _read_manifest(root: Path, processed_dir: Optional[PathLike]) -> Dict[str, Dict[str, Any]]:
+    cands = [Path(processed_dir)] if processed_dir else []
+    pd = root.parent / "processed"
+    cands += [pd]
+    for d in cands:
+        files = sorted(d.glob("mppp_manifest_v*.json"), key=lambda f: f.stat().st_mtime) if d.is_dir() else []
+        if files:
+            m = json.loads(files[-1].read_text(encoding="utf-8"))
+            return {Path(x["source_product"]).stem: x for x in m.get("images", []) if "failed" not in x}
+    return {}
+
+
+def load_solution(path: PathLike, label: Optional[str] = None, processed_dir: Optional[PathLike] = None) -> Solution:
+    """``path``: the scape folder (``D:/scapes/<name>_colmap``) or its ``colmap`` project folder."""
+    root = _find_root(path)
+    project = json.loads((root / "project.json").read_text(encoding="utf-8"))
+    ei = root / "error_input"
+    summary = json.loads((ei / "summary.json").read_text(encoding="utf-8"))
+    rows = {r["name"]: dict(r) for r in project["images"]}
+    for fn in ("stations.csv", "poses.csv"):
+        if (ei / fn).is_file():
+            with (ei / fn).open(newline="", encoding="utf-8") as f:
+                for r in csv.DictReader(f):
+                    if r["name"] in rows:
+                        rows[r["name"]].update({k: v for k, v in r.items() if k not in rows[r["name"]] or k == "instrument"})
+    poses = _read_frames(ei / "native" / "frames.txt") if (ei / "native" / "frames.txt").is_file() else {}
+    for r in rows.values():
+        if r.get("image_id") in poses:
+            r["R_w2c"], r["C"] = poses[r["image_id"]]
+    n_obs: Dict[str, int] = {}
+    n_img: Dict[str, int] = {}
+    for r in rows.values():
+        n_obs[r["instrument"]] = n_obs.get(r["instrument"], 0) + int(float(r.get("observations") or 0))
+        n_img[r["instrument"]] = n_img.get(r["instrument"], 0) + 1
+    ci, cr = summary.get("cameras_initial", {}), summary.get("cameras_refined", {})
+    pc = project.get("cameras", {})
+    cams = {}
+    for key in sorted(set(ci) | set(cr) | set(pc)):
+        c0 = dict(pc.get(key, {}), **ci.get(key, {}))
+        c1 = cr.get(key, c0)
+        if "params" not in c0 and "params" not in c1:
+            continue
+        fam = key[:1]
+        w, h = c0.get("width") or FULL_FRAME.get(fam, (None, None))[0], c0.get("height") or FULL_FRAME.get(fam, (None, None))[1]
+        p0 = np.asarray(c0.get("params", c1.get("params")), float)
+        cams[key] = Camera(key, _group_of(key, c0), c1.get("model", c0.get("model")), int(w), int(h),
+                           np.asarray(c1.get("params", p0), float), p0, _focus_of(key, c0), n_img.get(key, 0),
+                           n_obs.get(key, 0), tuple(c0.get("fixed_params") or ()))
+    return Solution(label or root.parent.name, root, project, summary, cams, rows,
+                    summary.get("rig_initial") or project.get("rig") or {}, summary.get("rig_refined") or {},
+                    _read_manifest(root, processed_dir))
+
+
+def load_solutions(scapes: Dict[str, PathLike], processed_dirs: Optional[Dict[str, PathLike]] = None,
+                   verbose: bool = True) -> Dict[str, Solution]:
+    out = {}
+    for name, path in scapes.items():
+        try:
+            out[name] = load_solution(path, name, (processed_dirs or {}).get(name))
+        except FileNotFoundError as e:
+            if verbose:
+                print(f"{name}: skipped ({e})")
+            continue
+        if verbose:
+            s = out[name]
+            fams = ", ".join(f"{g} x{len(s.cameras_of(g))}" for g in s.groups())
+            print(f"{name}: {len(s.images)} images, cameras {fams}; Navcam lens {s.navcam_distortion}; "
+                  f"manifest {'yes' if s.manifest else 'no'}")
+    return out
+
+
+def solutions_table(sols: Dict[str, Solution]) -> List[Dict[str, Any]]:
+    rows = []
+    for n, s in sols.items():
+        st = s.project.get("settings", {})
+        rows.append({"scape": n, "images": len(s.images), "stations": len({r["station"] for r in s.images.values()}),
+                     "cameras": len(s.cameras), "navcam_lens": s.navcam_distortion,
+                     "sift_max_image_size": st.get("features", {}).get("max_image_size"),
+                     "residual_median_px": s.summary.get("residual_median_native_px"),
+                     "residual_rms_px": s.summary.get("residual_rms_native_px"),
+                     "Mastcam-Z": "yes" if s.groups("Z") else "no"})
+    return rows
+
+
+# ================================================================ intrinsics
+def camera_table(sols: Dict[str, Solution], family: Optional[str] = None, refined_only: bool = False) -> List[Dict[str, Any]]:
+    """One row per camera and scape: refined parameters, change from the start values, images, observations."""
+    rows = []
+    for n, s in sols.items():
+        for c in sorted(s.cameras.values(), key=lambda c: (c.group, c.focus or 0)):
+            if (family and c.family != family) or (refined_only and not c.refined):
+                continue
+            r = {"scape": n, "camera": c.key, "group": c.group, "lens": c.distortion, "focus": c.focus,
+                 "images": c.n_images, "observations": c.n_obs, "refined": c.refined}
+            r.update({k: v for k, v in c.named().items() if k not in ("k5", "k6")})
+            d = c.params - c.initial
+            r.update({f"d{k}": float(v) for k, v in zip(PARAM_NAMES[:4], d[:4])})
+            rows.append(r)
+    return rows
+
+
+def consensus_camera(sols: Dict[str, Solution], group: str, lens: Optional[str] = None,
+                     min_observations: int = 1000) -> Optional[Camera]:
+    """Observation-weighted mean of the refined cameras of ``group`` (one lens model; Navcam: the
+    most common one unless ``lens`` is given).  Mastcam-Z focus bins are not averaged here."""
+    cams = [c for s in sols.values() for c in s.cameras_of(group) if c.refined and c.n_obs >= min_observations]
+    if not cams:
+        return None
+    if lens is None:
+        kinds = [c.distortion for c in cams]
+        lens = max(set(kinds), key=kinds.count)
+    cams = [c for c in cams if c.distortion == lens]
+    if not cams:
+        return None
+    w = np.array([c.n_obs for c in cams], float)
+    P = np.array([c.params for c in cams])
+    p = (w[:, None] * P).sum(0) / w.sum()
+    c0 = cams[0]
+    return Camera(f"{group} consensus ({lens}, {len(cams)} scapes)", group, c0.model, c0.width, c0.height, p, p,
+                  None, sum(c.n_images for c in cams), int(w.sum()))
+
+
+def reference_camera(group: str, lens: str = "rational") -> Optional[Camera]:
+    """The start camera MPPP ships for ``group`` (Navcam rational JSON or Metashape XML)."""
+    from ..paths import data_dir
+    from .project import camera_from_colmap_json, camera_from_metashape_xml
+    d = data_dir() / "m20_cmods"
+    if group in ("NL", "NR"):
+        c = (camera_from_colmap_json(d / f"M2020_{group}_rational.json") if lens == "rational"
+             else camera_from_metashape_xml(d / f"M2020_{group}0_frame.xml", ("b1", "b2")))
+    elif (d / f"{group}_frame.xml").is_file():
+        c = camera_from_metashape_xml(d / f"{group}_frame.xml", ("b1", "b2"))
+    else:
+        return None
+    p = np.asarray(c["params"], float)
+    return Camera(f"{group} shipped ({lens})", group, c["model"], c["width"], c["height"], p, p)
+
+
+def reference_differences(sols: Dict[str, Solution], group: str, reference: Camera, step: float = 96.0,
+                          min_observations: int = 1000) -> List[Dict[str, Any]]:
+    """Pixel differences of every refined camera of ``group`` from ``reference`` (rotation removed)."""
+    rows = []
+    ref = reference.pixel_camera()
+    for n, s in sols.items():
+        for c in s.cameras_of(group):
+            if not c.refined or c.n_obs < min_observations:
+                continue
+            d = compare_cameras(ref, c.pixel_camera(), step=step)
+            rows.append({"scape": n, "camera": c.key, "lens": c.distortion, "observations": c.n_obs,
+                         **{k: d[k] for k in ("rms_px", "centre_rms_px", "edge_rms_px", "corner_rms_px", "max_px",
+                                              "coverage", "rotation_deg")}, "_diff": d})
+    return rows
+
+
+def radial_profile(cam: Camera, n: int = 200, towards: str = "corner") -> Dict[str, np.ndarray]:
+    """Image radius [px] against field angle along the ray towards the far corner (or the
+    horizontal edge), and the departure from a pinhole (f tan theta) and an equidistant
+    fisheye (f theta), with f = sqrt(fx fy)."""
+    from ..colmap import project_camera
+    p = cam.params
+    f = float(np.sqrt(p[0] * p[1]))
+    tx = np.array([cam.width, cam.height if towards == "corner" else p[3]]) - p[2:4]
+    tx = tx / np.linalg.norm(tx)
+    th = np.linspace(0, np.radians(75), n)
+    X = np.c_[np.sin(th) * tx[0], np.sin(th) * tx[1], np.cos(th)]
+    uv = project_camera(cam.model, p, X)
+    r = np.linalg.norm(uv - p[2:4], axis=1)
+    # the frame limit along this direction
+    lim = np.linalg.norm(np.array([cam.width, cam.height]) - p[2:4]) if towards == "corner" else cam.width - p[2]
+    ok = np.r_[True, np.diff(r) > 0] & (r <= lim * 1.02)
+    ok = np.cumprod(ok).astype(bool)                       # stop at the first turning point
+    return {"theta_deg": np.degrees(th[ok]), "r_px": r[ok], "pinhole_px": (f * np.tan(th))[ok],
+            "fisheye_px": (f * th)[ok], "limit_px": lim, "f_px": f}
+
+
+# ================================================================ stereo geometry
+def _ypr(R: np.ndarray) -> Tuple[float, float, float]:
+    """Small rotation in the left-camera frame as (yaw about y, pitch about x, roll about z) [deg]."""
+    from scipy.spatial.transform import Rotation
+    rv = Rotation.from_matrix(R).as_rotvec()
+    return float(np.degrees(rv[1])), float(np.degrees(rv[0])), float(np.degrees(rv[2]))
+
+
+def stereo_pairs(sol: Solution, family: str = "N") -> List[Dict[str, Any]]:
+    """
+    Every simultaneous left/right exposure (same SCLK) of ``family``: the right
+    camera's pose relative to the left one, refined and prior (label), with the
+    difference as yaw (about the left y axis: shifts disparity), pitch (about x:
+    vertical parallax) and roll (about z), and the baseline.
+    """
+    by: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for r in sol.images.values():
+        if str(r["instrument"])[:1] != family or "R_w2c" not in r:
+            continue
+        by.setdefault(r["sclk_key"], {})[r["eye"]] = r
+    rows = []
+    for k, d in sorted(by.items()):
+        if "L" not in d or "R" not in d:
+            continue
+        L, R = d["L"], d["R"]
+        Rrel = R["R_w2c"] @ L["R_w2c"].T
+        t = R["R_w2c"] @ (L["C"] - R["C"])                  # x_R = Rrel x_L + t
+        R0 = np.asarray(R["prior_R_w2c"]) @ np.asarray(L["prior_R_w2c"]).T
+        t0 = np.asarray(R["prior_R_w2c"]) @ (np.asarray(L["prior_C"]) - np.asarray(R["prior_C"]))
+        dy, dp, dr = _ypr(Rrel @ R0.T)
+        y, p, rr = _ypr(Rrel)
+        rows.append({"sclk": k, "station": L["station"], "left": L["name"], "right": R["name"],
+                     "left_camera": L["instrument"], "right_camera": R["instrument"],
+                     "baseline_m": float(np.linalg.norm(t)), "baseline_prior_m": float(np.linalg.norm(t0)),
+                     "yaw_deg": y, "pitch_deg": p, "roll_deg": rr,
+                     "dyaw_mdeg": 1e3 * dy, "dpitch_mdeg": 1e3 * dp, "droll_mdeg": 1e3 * dr,
+                     "R_rel": Rrel, "t_rel": t, "R_rel_prior": R0, "t_rel_prior": t0})
+    return rows
+
+
+def rig_geometry(rig: Dict[str, Any]) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """(R_sensor_from_ref, t) of the first rig in a summary's ``rig_initial`` / ``rig_refined`` (notebook 03
+    builds one rig, the Navcam pair; Mastcam-Z has none unless ``zcam_rig``)."""
+    if not rig:
+        return None
+    r = next(iter(rig.values()))
+    R = np.asarray(r.get("R_sensor_from_ref", r.get("R")), float)
+    t = np.asarray(r.get("t_sensor_from_ref", r.get("t")), float)
+    return R, t
+
+
+def stereo_effect(left_a: PixelCamera, right_a: PixelCamera, rel_a: Tuple[np.ndarray, np.ndarray],
+                  left_b: PixelCamera, right_b: PixelCamera, rel_b: Tuple[np.ndarray, np.ndarray],
+                  ranges_m: Sequence[float] = (2, 5, 10, 20, 50), step: float = 128.0) -> List[Dict[str, Any]]:
+    """
+    Disparity error of stereo processing with geometry ``a`` when the truth is
+    ``b``.  Points at each range (depth along the left optical axis) through a
+    pixel grid of the left camera ``b`` are projected into both cameras with
+    both geometries; the rotation of the left camera that a pose absorbs is
+    removed first.  Returns per range the disparity error (disparity
+    d = x_left - x_right; error = d_a - d_b; mean = bias, and spread), the
+    vertical parallax (y), and the resulting range error at the image centre,
+    dZ/Z = Z (d_a - d_b) / (f B): positive = processing with ``a`` puts points
+    too far away.  Pixels where any of the
+    four projections is untrustworthy (outside the frame, or a polynomial past
+    its turning point) are left out (``coverage``).
+    """
+    uv = pixel_grid(left_b.width, left_b.height, step)
+    db = left_b.rays(uv)
+    da = left_a.rays(uv)
+    ok = np.all(np.isfinite(db), axis=1) & np.all(np.isfinite(da), axis=1)
+    uv, db, da = uv[ok], db[ok], da[ok]
+    from ..cmod import _best_rotation
+    Q = _best_rotation(db, da)                      # left b frame -> left a frame
+    Ra, ta = rel_a
+    Rb, tb = rel_b
+    fb = float(np.median(np.abs(np.diff(left_b.project(np.array([[0, 0, 1.0], [1e-3, 0, 1.0]])), axis=0))[:, 0]) / 1e-3)
+    B = float(np.linalg.norm(tb))
+    ctr = np.linalg.norm(uv - np.array([left_b.width, left_b.height]) / 2, axis=1)
+    c_sel = ctr < 0.15 * np.hypot(left_b.width, left_b.height)
+    out = []
+    for Z in ranges_m:
+        Xb = db / db[:, 2:3] * Z
+        Xa = Xb @ Q.T
+        XRa, XRb = Xa @ Ra.T + ta, Xb @ Rb.T + tb
+        pla, plb, pra, prb = left_a.project(Xa), left_b.project(Xb), right_a.project(XRa), right_b.project(XRb)
+        good = left_a.valid(Xa, pla) & left_b.valid(Xb, plb) & right_a.valid(XRa, pra) & right_b.valid(XRb, prb)
+        e = (pra - prb) - (pla - plb)                # right-minus-left image error of a against b
+        e[~good] = np.nan
+        dx, dy = -e[:, 0], e[:, 1]                  # disparity d = x_left - x_right: error d_a - d_b
+        dxc = float(np.nanmean(dx[c_sel])) if np.any(c_sel & good) else float(np.nanmean(dx))
+        out.append({"range_m": float(Z), "coverage": float(good.mean()), "disparity_bias_px": float(np.nanmean(dx)),
+                    "disparity_sd_px": float(np.nanstd(dx)), "disparity_max_px": float(np.nanmax(np.abs(dx))),
+                    "vertical_parallax_rms_px": float(np.sqrt(np.nanmean(dy ** 2))),
+                    "vertical_parallax_max_px": float(np.nanmax(np.abs(dy))),
+                    "centre_disparity_px": dxc, "range_error_centre_pct": float(100 * Z * dxc / (fb * B)),
+                    "range_error_centre_m": float(Z * Z * dxc / (fb * B)), "f_px": fb, "baseline_m": B})
+    return out
+
+
+def navcam_stereo(sol: Solution, which: str = "refined") -> Optional[Tuple[PixelCamera, PixelCamera, Tuple[np.ndarray, np.ndarray]]]:
+    """
+    (left, right, (R, t)) of the Navcam pair of a solution; ``which``:
+    ``"refined"`` (bundle-adjusted cameras and rig), ``"initial"`` (the start
+    cameras and the rig from the label CAHV poses) or ``"label"`` (the label
+    CAHVORE models and the label rig).
+    """
+    L, R = sol.cameras.get("NL"), sol.cameras.get("NR")
+    rig = rig_geometry(sol.rig_refined if which == "refined" else sol.rig_initial)
+    if L is None or R is None or rig is None:
+        return None
+    if which == "label":
+        ml, mr = median_label_model(sol, "NL"), median_label_model(sol, "NR")
+        if ml is None or mr is None:
+            return None
+        return (PixelCamera.cahv(ml, L.width, L.height, "NL label", as_is=True),
+                PixelCamera.cahv(mr, R.width, R.height, "NR label", as_is=True), rig)
+    return L.pixel_camera(which == "initial"), R.pixel_camera(which == "initial"), rig
+
+
+def mean_rig(sols: Dict[str, Solution], lens: Optional[str] = None) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """Observation-weighted mean refined Navcam rig (rotation vector and translation averaged)."""
+    from scipy.spatial.transform import Rotation
+    rv, tt, w = [], [], []
+    for s in sols.values():
+        g = rig_geometry(s.rig_refined)
+        if g is None or (lens and s.navcam_distortion != lens):
+            continue
+        rv.append(Rotation.from_matrix(g[0]).as_rotvec())
+        tt.append(g[1])
+        w.append(sum(c.n_obs for c in s.cameras.values() if c.family == "N"))
+    if not rv:
+        return None
+    w = np.asarray(w, float)
+    return Rotation.from_rotvec(np.average(rv, axis=0, weights=w)).as_matrix(), np.average(tt, axis=0, weights=w)
+
+
+def disparity_to_range_error(disparity_px: float, range_m: float, f_px: float, baseline_m: float) -> float:
+    """Range error [m] of a disparity error at a range: dZ = Z^2 dd / (f B)."""
+    return range_m ** 2 * disparity_px / (f_px * baseline_m)
+
+
+def zcam_pair_effects(sol: Solution, ranges_m: Sequence[float] = (5, 10, 20, 50), min_observations: int = 300,
+                      reference: str = "label") -> List[Dict[str, Any]]:
+    """
+    Per Mastcam-Z stereo pair with at least ``min_observations`` in each image:
+    the disparity error at the image centre (and its range error) of processing
+    the pair with ``reference`` geometry when the refined one is the truth.
+    ``reference``: ``"label"`` (the bin's start cameras = label median, and the
+    label relative pose) or ``"median"`` (the pair's refined cameras with the
+    median refined relative pose of all such pairs - how well one fixed
+    Mastcam-Z rig would do).
+    """
+    from scipy.spatial.transform import Rotation
+    pairs = [p for p in stereo_pairs(sol, "Z")
+             if min(float(sol.images[p["left"]].get("observations") or 0),
+                    float(sol.images[p["right"]].get("observations") or 0)) >= min_observations]
+    if not pairs:
+        return []
+    if reference == "median":
+        Rm = Rotation.from_rotvec(np.median([Rotation.from_matrix(p["R_rel"]).as_rotvec() for p in pairs], axis=0)).as_matrix()
+        tm = np.median([p["t_rel"] for p in pairs], axis=0)
+    rows = []
+    for p in pairs:
+        L, R = sol.cameras[p["left_camera"]], sol.cameras[p["right_camera"]]
+        b = (L.pixel_camera(), R.pixel_camera(), (p["R_rel"], p["t_rel"]))
+        if reference == "label":
+            a = (L.pixel_camera(True), R.pixel_camera(True), (p["R_rel_prior"], p["t_rel_prior"]))
+        else:
+            a = (L.pixel_camera(), R.pixel_camera(), (Rm, tm))
+        e = stereo_effect(*a, *b, ranges_m=ranges_m, step=103.0)
+        row = {k: p[k] for k in ("sclk", "station", "left", "right", "left_camera", "right_camera", "baseline_m",
+                                 "dyaw_mdeg", "dpitch_mdeg", "droll_mdeg")}
+        if reference == "median":                          # rotation differences from the median rig instead
+            dy, dp, dr = _ypr(p["R_rel"] @ Rm.T)
+            row.update(dyaw_mdeg=1e3 * dy, dpitch_mdeg=1e3 * dp, droll_mdeg=1e3 * dr)
+        row["focus_left"], row["focus_right"] = L.focus, R.focus
+        for r in e:
+            z = int(r["range_m"])
+            row[f"disparity_px_{z}m"] = r["centre_disparity_px"]
+            row[f"range_error_pct_{z}m"] = r["range_error_centre_pct"]
+            row[f"vertical_parallax_px_{z}m"] = r["vertical_parallax_rms_px"]
+        rows.append(row)
+    return rows
+
+
+# ================================================================ Mastcam-Z focus
+def focus_table(sols: Dict[str, Solution], min_observations: int = 0) -> List[Dict[str, Any]]:
+    """One row per Mastcam-Z focus-bin camera and scape: focus count, focal lengths (refined,
+    start = label median of the bin, per-image label spread), images, observations."""
+    rows = []
+    for n, s in sols.items():
+        for c in s.cameras.values():
+            if c.family != "Z" or c.n_obs < min_observations:
+                continue
+            lab = [float(r["label_f_px"]) for r in s.images.values()
+                   if r["instrument"] == c.key and r.get("label_f_px") is not None]
+            rows.append({"scape": n, "camera": c.key, "group": c.group, "focus": c.focus, "images": c.n_images,
+                         "observations": c.n_obs, "refined": c.refined,
+                         "f_refined_px": float(np.sqrt(c.params[0] * c.params[1])),
+                         "fx_refined_px": float(c.params[0]), "fy_refined_px": float(c.params[1]),
+                         "f_start_px": float(np.sqrt(c.initial[0] * c.initial[1])),
+                         "f_label_median_px": float(np.median(lab)) if lab else None,
+                         "f_label_spread_px": float(np.ptp(lab)) if len(lab) > 1 else 0.0,
+                         "aspect": float(c.params[1] / c.params[0]), "cx": float(c.params[2]), "cy": float(c.params[3])})
+    return sorted(rows, key=lambda r: (r["group"], r["scape"], r["focus"] if r["focus"] is not None else 0))
+
+
+def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: int = 2000,
+                    per_scape_offset: bool = True) -> Optional[Dict[str, Any]]:
+    """
+    f = f0 + a (focus - ref) [+ a constant per scape] fitted to the refined bins of
+    ``group`` with at least ``min_observations`` (weights = observations).  The
+    per-scape offsets measure how repeatable the focal length is from scape to
+    scape at the same focus (temperature, zoom repeatability, the bundle adjustment).
+    """
+    use = [r for r in rows if r["group"] == group and r["refined"] and r["observations"] >= min_observations
+           and r["focus"] is not None]
+    if len(use) < 3:
+        return None
+    x = np.array([r["focus"] for r in use], float)
+    y = np.array([r["f_refined_px"] for r in use], float)
+    w = np.array([r["observations"] for r in use], float)
+    ref = float(np.average(x, weights=w))
+    scapes = sorted({r["scape"] for r in use})
+    cols = [np.ones_like(x), x - ref]
+    if per_scape_offset and len(scapes) > 1:
+        for s in scapes[1:]:
+            cols.append(np.array([1.0 if r["scape"] == s else 0.0 for r in use]))
+    X = np.stack(cols, axis=1)
+    W = w / w.sum()
+    beta = np.linalg.lstsq(X * np.sqrt(W)[:, None], y * np.sqrt(W), rcond=None)[0]
+    res = y - X @ beta
+    offsets = {scapes[0]: 0.0}
+    for i, s in enumerate(scapes[1:]):
+        offsets[s] = float(beta[2 + i]) if per_scape_offset and len(beta) > 2 + i else 0.0
+    mean_off = np.average(list(offsets.values()), weights=[sum(r["observations"] for r in use if r["scape"] == s)
+                                                            for s in offsets])
+    offsets = {s: v - mean_off for s, v in offsets.items()}
+    lab = [r for r in rows if r["group"] == group and r.get("f_label_median_px") is not None and r["focus"] is not None]
+    lab_fit = None
+    if len(lab) >= 3:
+        xl = np.array([r["focus"] for r in lab]); yl = np.array([r["f_label_median_px"] for r in lab])
+        bl = np.polyfit(xl - ref, yl, 1)
+        lab_fit = {"f0_px": float(bl[1]), "slope_px_per_count": float(bl[0])}
+    return {"group": group, "reference_focus": ref, "f0_px": float(beta[0] + mean_off),
+            "slope_px_per_count": float(beta[1]), "slope_pct_per_1000": float(1e5 * beta[1] / beta[0]),
+            "rms_px": float(np.sqrt(np.sum(W * res ** 2))), "scape_offsets_px": offsets,
+            "scape_offset_sd_px": float(np.std(list(offsets.values()))) if len(offsets) > 1 else 0.0,
+            "n_bins": len(use), "scapes": scapes, "label": lab_fit,
+            "focus_range": [float(x.min()), float(x.max())]}
+
+
+# ================================================================ label models
+def label_model_from_meta(meta: Dict[str, Any]) -> Optional[CameraModel]:
+    """
+    The label camera model of one image in full-frame pixels and its own camera
+    frame, rebuilt from the MPPP manifest (``intrinsics_label``: the CAHV part,
+    R1 and R2).  Before v0p21 the manifest did not keep O, E or the CAHVORE type:
+    O is taken along A (the labels differ by ~0.1 deg) and Navcam CAHVORE as
+    type 2 (fisheye), which is what the M2020 Navcam labels use.  v0p21
+    manifests carry the full label model (``camera_model_label``); it is used
+    when present.
+    """
+    s = float(meta["filename"].get("downsample_scale", 1.0))
+    pad = meta.get("padding") or {}
+    fam = meta["filename"]["family"]
+    W, H = FULL_FRAME.get(fam, (None, None))
+    if meta.get("camera_model_label"):
+        g = meta["camera_model_label"]
+        cm = CameraModel.from_label(g)
+        cm, _ = cm.camera_frame()
+    else:
+        il = meta.get("intrinsics_label")
+        if not il:
+            return None
+        K = np.asarray(il["K"], float)
+        A = np.array([0.0, 0, 1])
+        Hv, Vv = K[0].copy(), np.array([0.0, K[1, 1], K[1, 2]])
+        d = il.get("dist_opencv", {})
+        src = str(il.get("source", ""))
+        cm = CameraModel(np.zeros(3), A, Hv, Vv, A.copy(), np.array([0.0, d.get("k1", 0.0), d.get("k2", 0.0)]),
+                         meta={"source": "manifest intrinsics_label (O = A assumed)"})
+        if "CAHVORE" in src:
+            cm.E, cm.mtype = np.zeros(3), 2
+        elif "CAHVOR" not in src:
+            cm.O, cm.R = None, None
+    return cm.rescaled(s, float(pad.get("left", 0)), float(pad.get("top", 0)), W, H)
+
+
+def label_models(sol: Solution) -> Dict[str, CameraModel]:
+    """PDS stem -> label model (full frame, camera frame) for every image of the solution in the manifest."""
+    out = {}
+    for r in sol.images.values():
+        m = sol.manifest.get(r.get("stem") or Path(r["name"]).stem)
+        if m:
+            cm = label_model_from_meta(m)
+            if cm is not None:
+                out[r["name"]] = cm
+    return out
+
+
+def label_model_summary(sol: Solution) -> List[Dict[str, Any]]:
+    """Per camera group: the spread of the label models (focal length, principal point, R1, R2)."""
+    lm = label_models(sol)
+    rows = []
+    for g in sol.groups():
+        ms = [lm[n] for n, r in sol.images.items() if n in lm and sol.cameras[r["instrument"]].group == g]
+        if not ms:
+            continue
+        dec = [m.decompose()[1] for m in ms]
+        hs = np.array([d["hs"] for d in dec]); hc = np.array([d["hc"] for d in dec]); vc = np.array([d["vc"] for d in dec])
+        rows.append({"scape": sol.label, "group": g, "images": len(ms), "kind": ms[0].kind,
+                     "hs_median": float(np.median(hs)), "hs_spread": float(np.ptp(hs)),
+                     "hc_median": float(np.median(hc)), "vc_median": float(np.median(vc)),
+                     "hc_spread": float(np.ptp(hc)), "vc_spread": float(np.ptp(vc)),
+                     "r1_median": float(np.median([m.R[1] for m in ms])) if ms[0].R is not None else None,
+                     "r2_median": float(np.median([m.R[2] for m in ms])) if ms[0].R is not None else None})
+    return rows
+
+
+def median_label_model(sol: Solution, group: str) -> Optional[CameraModel]:
+    """The label model of ``group`` whose focal length is the median over the solution's images."""
+    lm = label_models(sol)
+    ms = [lm[n] for n, r in sol.images.items() if n in lm and sol.cameras[r["instrument"]].group == group]
+    if not ms:
+        return None
+    hs = [m.decompose()[1]["hs"] for m in ms]
+    return ms[int(np.argsort(hs)[len(hs) // 2])]
+
+
+def attach_pds_labels(sol: Solution, pds_dir: PathLike, groups: Optional[Sequence[str]] = None,
+                      verbose: bool = True) -> int:
+    """
+    Read the exact label camera models from the PDS products under ``pds_dir``
+    (searched recursively) into the solution's manifest records
+    (``camera_model_label``), for manifests written before v0p21.  Returns
+    the number of images updated.
+    """
+    from ..labels import label_get, read_pds
+    from ..select import iter_imgs
+    want = {Path(r["name"]).stem: r for r in sol.images.values()
+            if groups is None or sol.cameras[r["instrument"]].group in groups}
+    want = {k: v for k, v in want.items() if k in sol.manifest and not sol.manifest[k].get("camera_model_label")}
+    n = 0
+    for fp, fn in iter_imgs(pds_dir):
+        if fn.stem not in want:
+            continue
+        L, _ = read_pds(fp, load_image=False)
+        g = label_get(L, "GEOMETRIC_CAMERA_MODEL")
+        w, h = int(label_get(L, "IMAGE.LINE_SAMPLES")), int(label_get(L, "IMAGE.LINES"))
+        cm = CameraModel.from_label(g, w, h)
+        sol.manifest[fn.stem]["camera_model_label"] = dict(cm.to_label_dict(precision=12), width=w, height=h,
+                                                           frame="ROVER_NAV_FRAME", pixel_origin="centre_of_first_pixel")
+        n += 1
+    if verbose:
+        print(f"{sol.label}: exact label models for {n} of {len(want)} images from {pds_dir}")
+    return n
+
+
+def updated_navcam_models(left: Camera, right: Camera, rig: Tuple[np.ndarray, np.ndarray], mtype: int = 2,
+                          step: float = 48.0) -> Dict[str, Any]:
+    """
+    CAHVORE models (``mtype`` 2 = fisheye as in the labels, 3 = general with a
+    fitted linearity) of a Navcam pair, in the LEFT camera frame (C_left = 0,
+    x right, y down, z forward): the left model is fitted to ``left``, the
+    right one to ``right`` and placed by ``rig`` (x_R = R x_L + t).  Returns
+    the models, their fit residuals and PDS-style text.
+    """
+    from ..cmod import fit_to_colmap
+    ml, fl = fit_to_colmap(left.model, left.params, left.width, left.height, "CAHVORE", mtype, mtype == 3, step)
+    mr_cam, fr = fit_to_colmap(right.model, right.params, right.width, right.height, "CAHVORE", mtype, mtype == 3, step)
+    R, t = rig
+    mr = mr_cam.in_frame(R.T, -R.T @ t)                 # right camera in the left camera frame
+    return {"left": ml, "right": mr, "fit_left": fl, "fit_right": fr,
+            "text": "\n".join([f"/* {left.key}: CAHVORE type {ml.mtype}, left-camera frame, full-frame pixels "
+                                f"(5120 x 3840, pixel-centre origin); fit rms {fl['rms_px']:.2f} px */", ml.label_text(9),
+                                f"/* {right.key}: CAHVORE type {mr.mtype}, left-camera frame; fit rms {fr['rms_px']:.2f} px */",
+                                mr.label_text(9)])}
+
+
+def updated_zcam_models(sols: Dict[str, Solution], fits: Dict[str, Dict[str, Any]],
+                        focus_counts: Sequence[float] = (0, 500, 1000)) -> Dict[str, Any]:
+    """
+    CAHVOR models of each Mastcam-Z eye at the given focus counts, from the
+    fitted focal-length line (``fit_focus_model``) and the bins' principal
+    point and distortion (held at the label median in the bundle adjustment),
+    in each camera's own frame.
+    """
+    from ..cmod import fit_to_colmap
+    out = {}
+    for g, f in fits.items():
+        if not f:
+            continue
+        cams = [c for s in sols.values() for c in s.cameras_of(g) if c.refined]
+        if not cams:
+            continue
+        c0 = max(cams, key=lambda c: c.n_obs)
+        aspect = float(np.median([c.params[1] / c.params[0] for c in cams if c.n_obs > 1000] or [1.0]))
+        rows = []
+        for fc in focus_counts:
+            fval = f["f0_px"] + f["slope_px_per_count"] * (fc - f["reference_focus"])
+            p = c0.params.copy()
+            p[0], p[1] = fval / np.sqrt(aspect), fval * np.sqrt(aspect)
+            cm, rep = fit_to_colmap(c0.model, p, c0.width, c0.height, "CAHVOR", step=24.0)
+            rows.append({"focus": fc, "f_px": fval, "model": cm, "fit_rms_px": rep["rms_px"], "text": cm.label_text(9)})
+        out[g] = rows
+    return out
+
+
+# ================================================================ images
+def pick_example(sol: Solution, group: str, full_resolution: bool = True) -> Optional[str]:
+    """The image of ``group`` with most observations (full resolution preferred)."""
+    cands = [r for r in sol.images.values() if sol.cameras.get(r["instrument"]) is not None
+             and sol.cameras[r["instrument"]].group == group]
+    if full_resolution and any(float(r.get("downsample_scale", 1)) == 1.0 for r in cands):
+        cands = [r for r in cands if float(r.get("downsample_scale", 1)) == 1.0]
+    if not cands:
+        return None
+    return max(cands, key=lambda r: float(r.get("observations") or 0))["name"]
+
+
+def load_example(sol: Solution, name: str, image_path: Optional[PathLike] = None,
+                 mask_path: Optional[PathLike] = None) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    """(RGB uint8, mask uint8 with 255 = used) of one image of the solution: the
+    project's ``images/`` copy (RGBA: alpha = mask) and ``masks/<name>.png``."""
+    import cv2
+    p = Path(image_path) if image_path else sol.root / "images" / name
+    im = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
+    if im is None:
+        raise FileNotFoundError(p)
+    if im.dtype != np.uint8:
+        im = (im / (65535.0 / 255.0)).round().clip(0, 255).astype(np.uint8)
+    mask = None
+    if im.ndim == 3 and im.shape[2] == 4:
+        mask = np.where(im[..., 3] > 0, 255, 0).astype(np.uint8)
+        im = im[..., :3]
+    mp = Path(mask_path) if mask_path else sol.root / "masks" / (name + ".png")
+    if mask is None and mp.is_file():
+        mask = cv2.imread(str(mp), cv2.IMREAD_GRAYSCALE)
+    if im.ndim == 2:
+        im = np.repeat(im[..., None], 3, axis=2)
+    return im[..., ::-1].copy(), mask
+
+
+def undistort(image: np.ndarray, cam: Camera, mask: Optional[np.ndarray] = None, fit: str = "width",
+              scale: Optional[float] = None) -> Dict[str, Any]:
+    """
+    Resample ``image`` (full frame at any downsample scale) to a pinhole camera
+    of the same size and principal point.  ``fit``: ``"width"`` (default) keeps
+    the whole horizontal field (the left and right edges at the principal
+    point's height stay in the frame; corners are cut), ``"height"`` the
+    vertical one, ``"same"`` keeps the focal length (a strong fisheye then
+    loses its edges).  The mask is resampled with nearest neighbour.
+    """
+    import cv2
+    from ..colmap import project_camera, scale_camera_params, unproject_camera
+    h, w = image.shape[:2]
+    s = w / cam.width if scale is None else float(scale)
+    p = scale_camera_params(cam.model, cam.params, s)
+    cx, cy = float(p[2]), float(p[3])                     # COLMAP corner origin
+    if fit == "same":
+        f = float(np.sqrt(p[0] * p[1]))
+    else:
+        k = 0 if fit == "width" else 1
+        edge = np.array([[0.0, cy], [w, cy]]) if k == 0 else np.array([[cx, 0.0], [cx, h]])
+        xy = unproject_camera(cam.model, p, edge)
+        c = cx if k == 0 else cy
+        size = w if k == 0 else h
+        room = np.array([c, size - c])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            fs = room / np.abs(xy[:, k])
+        f = float(np.nanmin(fs)) if np.any(np.isfinite(fs)) else float(np.sqrt(p[0] * p[1]))
+    mx, my = np.empty((h, w), np.float32), np.empty((h, w), np.float32)
+    xs = (np.arange(w) + 0.5 - cx) / f
+    for y0 in range(0, h, 256):                           # in bands: a full Navcam frame at once needs GBs
+        ys = (np.arange(y0, min(h, y0 + 256)) + 0.5 - cy) / f
+        X, Y = np.meshgrid(xs, ys)
+        src = project_camera(cam.model, p, np.stack([X, Y, np.ones_like(X)], axis=-1)) - 0.5  # cv2: centre origin
+        mx[y0:y0 + len(ys)], my[y0:y0 + len(ys)] = src[..., 0], src[..., 1]
+    out = cv2.remap(image, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    om = None
+    if mask is not None:
+        m = mask if mask.shape[:2] == (h, w) else cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+        om = cv2.remap(m, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    return {"image": out, "mask": om, "f_px": f, "f_in_px": float(np.sqrt(p[0] * p[1])), "scale": s,
+            "principal_point_px": (cx, cy), "field_deg": float(np.degrees(np.arctan(cx / f) + np.arctan((w - cx) / f)))}
+
+
+def screen_mask(image: np.ndarray, mask: Optional[np.ndarray], alpha: float = 0.3,
+                hardware_only: bool = True) -> np.ndarray:
+    """``image`` with a white screen of opacity ``alpha`` over the masked pixels (mask 0);
+    ``hardware_only``: leave the black no-data pixels (padding, outside the lens) black."""
+    if mask is None:
+        return image
+    out = image.astype(np.float32)
+    sel = mask == 0
+    if hardware_only:
+        sel &= image.max(axis=2) > 0
+    out[sel] = (1 - alpha) * out[sel] + alpha * 255.0
+    return out.round().clip(0, 255).astype(np.uint8)
+
+
+def distortion_field(cam: Camera, step: float = 256.0) -> Dict[str, np.ndarray]:
+    """Pixel displacement of the lens model from a pinhole with the same fx, fy, cx, cy (arrows for a plot)."""
+    from ..cmod import pixel_grid
+    from ..colmap import unproject_camera
+    uv = pixel_grid(cam.width, cam.height, step)
+    xy = unproject_camera(cam.model, cam.params, uv)
+    pin = xy * cam.params[:2] + cam.params[2:4]
+    return {"uv": uv, "d_px": uv - pin}
+
+
+def example_figure(image: np.ndarray, mask: Optional[np.ndarray], cam: Camera, title: str = "",
+                   alpha: float = 0.3, fit: str = "width", grid: bool = True):
+    """
+    Original and undistorted image side by side, the hardware mask screened in
+    white (opacity ``alpha``).  ``grid``: a line grid drawn straight in the
+    undistorted image and through the lens model in the original, to show the
+    distortion.  Returns the matplotlib figure and the undistortion record.
+    """
+    import matplotlib.pyplot as plt
+    from ..colmap import project_camera, scale_camera_params
+    und = undistort(image, cam, mask, fit=fit)
+    h, w = image.shape[:2]
+    fig, ax = plt.subplots(1, 2, figsize=(15, 15 * h / w / 2 + 0.9))
+    ax[0].imshow(screen_mask(image, mask, alpha))
+    ax[1].imshow(screen_mask(und["image"], und["mask"], alpha))
+    if grid:
+        p = scale_camera_params(cam.model, cam.params, und["scale"])
+        f = und["f_px"]
+        for k in np.linspace(-1, 1, 9):
+            t = np.linspace(-1, 1, 400)
+            for xs, ys in ((np.full_like(t, k * w / 2), t * h / 2), (t * w / 2, np.full_like(t, k * h / 2))):
+                xs, ys = xs + w / 2 - und["principal_point_px"][0], ys + h / 2 - und["principal_point_px"][1]
+                ax[1].plot(xs + und["principal_point_px"][0] - 0.5, ys + und["principal_point_px"][1] - 0.5,
+                           color="#00e5ff", lw=0.6, alpha=0.7)
+                X = np.c_[xs / f, ys / f, np.ones_like(xs)]
+                uv = project_camera(cam.model, p, X)
+                ok = np.all(np.isfinite(uv), axis=1) & (uv[:, 0] > -w * 0.05) & (uv[:, 0] < w * 1.05) & \
+                    (uv[:, 1] > -h * 0.05) & (uv[:, 1] < h * 1.05)
+                uv[~ok] = np.nan
+                ax[0].plot(uv[:, 0] - 0.5, uv[:, 1] - 0.5, color="#00e5ff", lw=0.6, alpha=0.7)   # imshow: centre origin
+    ax[0].set_title(f"{title}\noriginal ({cam.distortion} lens model {cam.key}, f = {und['f_in_px']:.0f} px)", fontsize=9)
+    ax[1].set_title(f"undistorted to a pinhole, f = {und['f_px']:.0f} px, horizontal field {und['field_deg']:.1f} deg "
+                    f"(fit = {fit!r})", fontsize=9)
+    for a in ax:
+        a.set_xlim(-0.5, w - 0.5)
+        a.set_ylim(h - 0.5, -0.5)
+        a.set_xticks([])
+        a.set_yticks([])
+    fig.tight_layout()
+    return fig, und
