@@ -125,8 +125,8 @@ def test_reconstruct_defaults_four_rounds_and_half_degree():
     assert sig["schedule"].default == DEFAULT_SCHEDULE and len(DEFAULT_SCHEDULE) == 4
     assert DEFAULT_SCHEDULE[-1] == DEFAULT_SCHEDULE[-2] == (8.0, 2.0, 2.0)   # v0p14.5: round 4 repeats round 3
     assert all(a[2] >= b[2] for a, b in zip(DEFAULT_SCHEDULE, DEFAULT_SCHEDULE[1:]))   # cut-offs only tighten
-    assert sig["min_tri_angle_deg"].default == 0.5 and sig["sigma_px"].default == 0.5
-    assert sig["refine_tangential"].default is False
+    assert sig["min_tri_angle_deg"].default == 0.25 and sig["sigma_px"].default == 0.5     # v0p20: 0.25 (was 0.5)
+    assert sig["refine_tangential"].default is True                                       # v0p20 (was False)
 
 
 def test_xml_tangential_terms_kept_when_not_zeroed():
@@ -176,7 +176,7 @@ def test_features_reused_only_with_same_settings(tmp_path):
     assert not features_up_to_date(proj)                                # nothing yet
     proj.features_db.write_bytes(b"")
     assert not features_up_to_date(proj)                                # no record (e.g. extracted by 0.14.2)
-    rec = {"max_num_features": 8192, "max_image_size": 3200, "domain_size_pooling": False, "images": ["a.png", "b.png"]}
+    rec = {"max_num_features": 8192, "max_image_size": 5120, "domain_size_pooling": False, "images": ["a.png", "b.png"]}
     _features_record(proj).write_text(json.dumps(rec))
     assert not features_up_to_date(proj, max_num_features=8192)         # no file record (before 0.14.7)
     rec["files"] = image_fingerprints(proj)
@@ -200,7 +200,7 @@ def test_features_extracted_again_when_an_image_or_mask_changes(tmp_path):
     (proj.images_dir / "a.png").write_bytes(b"img")
     (proj.masks_dir / "a.png.png").write_bytes(b"mask")
     proj.features_db.write_bytes(b"")
-    rec = {"max_num_features": 16380, "max_image_size": 3200, "domain_size_pooling": False, "images": ["a.png"],
+    rec = {"max_num_features": 16380, "max_image_size": 5120, "domain_size_pooling": False, "images": ["a.png"],
            "files": image_fingerprints(proj)}
     _features_record(proj).write_text(json.dumps(rec))
     assert features_up_to_date(proj)

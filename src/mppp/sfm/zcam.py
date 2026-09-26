@@ -113,13 +113,13 @@ def plot_focus_breathing(project: SfmProject, table: List[Dict[str, Any]], fits:
         weak = [r for r in rows if r not in good and r["f_refined_px"] is not None]
         if good:
             ax.scatter([r["focus_count_median"] for r in good], [r["f_refined_px"] for r in good],
-                       s=[12 + 3 * np.sqrt(r["observations"]) for r in good], color="C3", zorder=3,
+                       s=[4 + 0.6 * np.sqrt(r["observations"]) for r in good], color="C3", zorder=3,   # v0p20: smaller
                        label="refined (size ~ observations)")
             for r in good:
                 ax.plot([r["focus_count_min"], r["focus_count_max"]], [r["f_refined_px"]] * 2, "-", color="C3", lw=1)
         if weak:
             ax.plot([r["focus_count_median"] for r in weak], [r["f_refined_px"] for r in weak], "x", color="C3",
-                    ms=7, label=f"refined, < {min_observations} observations")
+                    ms=5, label=f"refined, < {min_observations} observations")
         fit = fits.get(g, {})
         xs = np.linspace(np.nanmin(x) - 20, np.nanmax(x) + 20, 50) if x.size else np.array([])
         txt = []

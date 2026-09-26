@@ -96,11 +96,15 @@ def project_camera(model: str, p: Sequence[float], x: np.ndarray) -> np.ndarray:
     return np.stack([fx * ud + cx, fy * vd + cy], axis=-1)
 
 
-def unproject_camera(model: str, p: Sequence[float], uv: np.ndarray, iterations: int = 30) -> np.ndarray:
+def unproject_camera(model: str, p: Sequence[float], uv: np.ndarray, iterations: int = 50,
+                     tol: float = 1e-12) -> np.ndarray:
     """
     Inverse of :func:`project_camera`: pixels (..., 2) -> normalised camera
-    coordinates (..., 2) (x/z, y/z), undistorted by fixed-point iteration
-    (converges to ~1e-10 px for the Navcam and Mastcam-Z models).
+    coordinates (..., 2) (x/z, y/z).  Newton iteration with a numerical
+    Jacobian from the pinhole start (v0p20; the fixed-point iteration used
+    before left up to 0.15 px in the corners of the rational Navcam model).
+    Round-trip error ~1e-9 px where the model is invertible; where it is not
+    (a polynomial past its turning point) the result is NaN.
     """
     uv = np.asarray(uv, float)
     p = np.asarray(p, float)
@@ -110,12 +114,27 @@ def unproject_camera(model: str, p: Sequence[float], uv: np.ndarray, iterations:
     else:
         fx, fy, cx, cy = p[0], p[1], p[2], p[3]
     f = np.array([fx, fy])
-    c = np.array([cx, cy])
-    xy = (uv - c) / f
+    shape = uv.shape
+    target = uv.reshape(-1, 2)
+    xy = (target - np.array([cx, cy])) / f
+    one = np.ones((len(xy), 1))
+    proj = lambda q: project_camera(model, p, np.concatenate([q, one], axis=1))      # noqa: E731
+    h = 1e-7
     for _ in range(int(iterations)):
-        pr = project_camera(model, p, np.concatenate([xy, np.ones(xy.shape[:-1] + (1,))], axis=-1))
-        xy = xy + (uv - pr) / f
-    return xy
+        pr = proj(xy)
+        r = target - pr
+        jx = (proj(xy + [h, 0.0]) - pr) / h
+        jy = (proj(xy + [0.0, h]) - pr) / h
+        det = jx[:, 0] * jy[:, 1] - jy[:, 0] * jx[:, 1]
+        det = np.where(np.abs(det) < 1e-30, np.nan, det)
+        dx = (r[:, 0] * jy[:, 1] - jy[:, 0] * r[:, 1]) / det
+        dy = (jx[:, 0] * r[:, 1] - r[:, 0] * jx[:, 1]) / det
+        xy = xy + np.c_[dx, dy]
+        if np.nanmax(np.abs(np.c_[dx, dy]), initial=0.0) < tol:
+            break
+    bad = ~np.all(np.isfinite(xy), axis=1) | (np.linalg.norm(proj(np.nan_to_num(xy)) - target, axis=1) > 1e-6)
+    xy[bad] = np.nan
+    return xy.reshape(shape)
 
 
 # ------------------------------------------------------------- text writers

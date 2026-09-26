@@ -31,7 +31,11 @@ PathLike = Union[str, Path]
 FULL_FRAME = {"N": (5120, 3840), "F": (5120, 3840), "R": (5120, 3840), "Z": (1648, 1200)}
 XML_PATTERN = "M2020_{instrument}0_frame.xml"      # full-resolution calibrations (engineering cameras)
 ZCAM_XML_PATTERN = "{camera}_frame.xml"            # Mastcam-Z, per eye and zoom, e.g. ZL034_frame.xml
-ZEROED_TERMS = ("p1", "p2", "b1", "b2")
+NAVCAM_RATIONAL_PATTERN = "M2020_{instrument}_rational.json"   # v0p20: COLMAP rational Navcam cameras (full frame)
+NAVCAM_DISTORTION = "rational"                     # default: "rational" (full frame) or "polynomial" (Metashape K1-K3)
+SCOPE = "Navcam (NLF/NRF) and Mastcam-Z at 34 mm (ZL0/ZR0 _034)"
+SCOPE_CAMERA_CODES = ("NLF", "NRF", "ZL0", "ZR0")
+ZEROED_TERMS = ("b1", "b2")          # v0p20: p1, p2 kept from the calibration (was also zeroed), as notebook 03
 ZCAM_FOCUS_BIN = 30.0                               # focus motor counts per Mastcam-Z camera bin (v0p14.4)
 FULL_OPENCV_NAMES = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6")
 # parameters a focus-bin camera holds with zcam_bin_refine="focal": all but the focal length
@@ -105,6 +109,26 @@ def select_best_products(paths: Iterable[PathLike], sizes: Optional[Dict[str, in
 
 
 # -------------------------------------------------------------------- cameras
+def camera_from_colmap_json(path: PathLike, zero_terms: Sequence[str] = ()) -> Dict[str, Any]:
+    """
+    A COLMAP camera stored as JSON (``model``, ``width``, ``height``,
+    ``params``, optional ``free_params`` = parameters the bundle adjustment
+    refines beyond the defaults, e.g. ``["k4"]`` for the rational Navcam
+    model).  ``p1``/``p2`` in ``zero_terms`` are set to 0.
+    """
+    d = json.loads(Path(path).read_text(encoding="utf-8"))
+    params = [float(v) for v in d["params"]]
+    if d["model"] in ("OPENCV", "FULL_OPENCV"):
+        for n in ("p1", "p2"):
+            if n in zero_terms:
+                params[FULL_OPENCV_NAMES.index(n)] = 0.0
+    zeroed = [n for n in ("p1", "p2") if n in zero_terms]
+    return {"model": d["model"], "width": int(d["width"]), "height": int(d["height"]), "params": params,
+            "free_params": list(d.get("free_params") or []),
+            "distortion": "rational" if "rational" in str(d.get("distortion", "")) else d.get("distortion"),
+            "source": f"{Path(path).name}" + (f" ({', '.join(zeroed)} set to 0)" if zeroed else "")}
+
+
 def read_metashape_calibration(path: PathLike) -> Dict[str, Any]:
     """Alias of :func:`mppp.camera.read_metashape_xml` (v0p13: one XML reader)."""
     from ..camera import read_metashape_xml
@@ -191,6 +215,27 @@ class SfmProject:
         d = json.loads((root / "project.json").read_text(encoding="utf-8"))
         return cls(root, d["images"], d["cameras"], d["rig"], d["offset"], d.get("settings", {}))
 
+    def refresh_images(self, metas: Sequence[Dict[str, Any]], link: bool = True) -> int:
+        """
+        v0p20: bring the project's ``images/`` and ``masks/`` up to date with the
+        processed files (a hard link follows them already; a copy is replaced
+        when the processed file is newer).  For a project that is reused rather
+        than created again.  Returns the number of project images checked.
+        """
+        processed = Path(self.settings.get("processed_dir", ""))
+        fmt = self.settings.get("image_format", "PNG8")
+        names = {r["name"] for r in self.images}
+        n = 0
+        for m in metas:
+            name = Path(m["source_product"]).stem + ".png"
+            if name not in names or fmt not in (m.get("outputs") or {}):
+                continue
+            _link_or_copy(processed / m["outputs"][fmt], self.images_dir / name, link)
+            if "mask" in m["outputs"]:
+                _link_or_copy(processed / m["outputs"]["mask"], self.masks_dir / (name + ".png"), link)
+            n += 1
+        return n
+
     # --- creation
     @classmethod
     def create(cls, metas: Sequence[Dict[str, Any]], processed_dir: PathLike, root: PathLike,
@@ -198,7 +243,8 @@ class SfmProject:
                zero_terms: Sequence[str] = ZEROED_TERMS, link: bool = True,
                prior_sigma_m: Sequence[float] = (1.0, 1.0, 1.0),
                zcam_intrinsics: str = "label", zcam_focus_bin: Optional[float] = ZCAM_FOCUS_BIN,
-               zcam_bin_refine: str = "focal", zcam_rig: bool = False) -> "SfmProject":
+               zcam_bin_refine: str = "focal", zcam_rig: bool = False,
+               navcam_distortion: str = NAVCAM_DISTORTION) -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -241,7 +287,17 @@ class SfmProject:
         disagree by up to 0.08 deg (~7 px at f = 4700 px), too much for a rigid
         constraint; True restores the rig when left and right share a camera
         name pattern (only without focus bins).
+        ``navcam_distortion`` (v0p20, default ``"rational"``): the Navcam
+        cameras start from ``M2020_NL_rational.json`` / ``M2020_NR_rational.json``,
+        COLMAP FULL_OPENCV with a rational radial term (k4 in the denominator,
+        refined in the bundle adjustment).  The three-term polynomial of the
+        Metashape calibration (``"polynomial"``) cannot be inverted beyond
+        ~0.88 of the corner radius (~53 deg off-axis), so the frame corners
+        (~9 % of each image) were never triangulated.
+        Scope: Navcam and Mastcam-Z at 34 mm; anything else raises.
         """
+        if navcam_distortion not in ("rational", "polynomial"):
+            raise ValueError("navcam_distortion must be 'rational' or 'polynomial'")
         if zcam_intrinsics not in ("label", "xml"):
             raise ValueError("zcam_intrinsics must be 'label' or 'xml'")
         if zcam_bin_refine not in ("focal", "all"):
@@ -253,6 +309,15 @@ class SfmProject:
         metas = [m for m in metas if "failed" not in m]
         if not metas:
             raise ValueError("no processed images")
+        out_of_scope = [m["source_product"] for m in metas
+                        if m["filename"]["camera_code"] not in SCOPE_CAMERA_CODES
+                        or (m["filename"]["family"] == "Z" and m["filename"].get("zoom_mm") != 34)]
+        if out_of_scope:
+            raise ValueError(f"{len(out_of_scope)} images outside MPPP's scope ({SCOPE}), e.g. {out_of_scope[0]}")
+        undist = [m["source_product"] for m in metas if m.get("undistorted")]
+        if undist:
+            raise ValueError(f"{len(undist)} images were processed with resize.undistort=True (e.g. {undist[0]}); "
+                             f"the COLMAP pipeline needs the original, distorted pixels")
 
         C = np.array([m["pose"]["C_enu_m"] for m in metas], float)
         offset = (np.floor(C.mean(axis=0) / 10.0) * 10.0).tolist()
@@ -264,8 +329,6 @@ class SfmProject:
         for m in metas:
             fn = m["filename"]
             fam = fn["family"]
-            if fam not in FULL_FRAME:
-                raise ValueError(f"{m['source_product']}: family {fam!r} not supported (Navcam/Hazcam/Mastcam-Z)")
             s = float(fn["downsample_scale"])
             W, H = (int(round(v * s)) for v in FULL_FRAME[fam])
             iw, ih = int(m["intrinsics"]["width"]), int(m["intrinsics"]["height"])
@@ -308,9 +371,13 @@ class SfmProject:
             if fam == "Z" and zcam_intrinsics == "label":
                 cameras[instr] = _camera_from_label_median(instr, label_params[instr], FULL_FRAME[fam], zero_terms)
                 continue
-            xml = xml_dir / (ZCAM_XML_PATTERN.format(camera=instr) if fam == "Z"
-                             else XML_PATTERN.format(instrument=instr))
-            cam = camera_from_metashape_xml(xml, zero_terms)
+            if fam == "N" and navcam_distortion == "rational":
+                xml = xml_dir / NAVCAM_RATIONAL_PATTERN.format(instrument=instr)
+                cam = camera_from_colmap_json(xml, zero_terms)
+            else:
+                xml = xml_dir / (ZCAM_XML_PATTERN.format(camera=instr) if fam == "Z"
+                                 else XML_PATTERN.format(instrument=instr))
+                cam = camera_from_metashape_xml(xml, zero_terms)
             if (cam["width"], cam["height"]) != FULL_FRAME[fam]:
                 raise ValueError(f"{xml.name} is {cam['width']}x{cam['height']}, expected the full frame {FULL_FRAME[fam]}")
             cameras[instr] = cam
@@ -325,7 +392,7 @@ class SfmProject:
                     "processed_dir": str(processed_dir), "zcam_intrinsics": zcam_intrinsics,
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
                     "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
-                    "prior_R_corrected": True})
+                    "navcam_distortion": navcam_distortion, "prior_R_corrected": True})
         proj.save()
         return proj
 

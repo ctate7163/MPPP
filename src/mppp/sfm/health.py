@@ -12,8 +12,9 @@ tie points        points, observations, track-length population (incl. two-view 
                   observations per image (5th percentile), cross-station fraction, tied station blocks
 reprojection      native-pixel residuals: median, RMS, 95th percentile; per camera and resolution;
                   left/right balance; images whose median residual is far above the rest;
-                  residual growth towards the image edge (distortion-model misfit)
-camera model      per camera: change in f, principal point and k1-k3, p1, p2 from the calibration, and the
+                  residual growth towards the image edge (distortion-model misfit);
+                  tie-point coverage in rings of image radius, and the corners vs the centre (v0p20)
+camera model      per camera: change in f, principal point and k1-k4, p1, p2 from the calibration, and the
                   resulting image displacement of the same ray (max / RMS over the frame)
 stereo rig        rotation of the right camera relative to the CAHV rig; baseline (held);
                   spread of the CAHV pairs the rig was built from
@@ -63,9 +64,10 @@ DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "ray_displacement_max_px": (20.0, 60.0, "above"),      # doubled in v0p14.2
     "rig_rotation_change_deg": (0.06, 0.2, "above"),       # doubled in v0p14.2
     "rig_cahv_spread_deg": (0.02, 0.1, "above"),
-    "station_shift_median_m": (1.0, 3.0, "above"),
+    "station_shift_median_m": (2.0, 6.0, "above"),          # doubled in v0p20 (user request)
     "attitude_change_p95_deg": (0.5, 2.0, "above"),
-    "within_station_shift_spread_m": (0.05, 0.2, "above"),
+    "within_station_shift_spread_m": (0.1, 0.4, "above"),   # doubled in v0p20 (user request)
+    "corner_triangulated_ratio": (0.5, 0.25, "below"),      # v0p20
     "prior_scale_error_pct": (1.0, 3.0, "above"),
 }
 _RANK = {"pass": 0, "info": 0, "warn": 1, "fail": 2}
@@ -85,7 +87,7 @@ def _q(a: np.ndarray, q: float) -> Optional[float]:
 
 
 def _camera_change(cam0: Dict[str, Any], cam1) -> Dict[str, Any]:
-    """Intrinsic change, and the image displacement of the same ray, over the calibration's pinhole footprint."""
+    """Intrinsic change, and the image displacement of the same ray over the whole frame."""
     import pycolmap
     p0, p1 = np.asarray(cam0["params"], float), np.asarray(cam1.params, float)
     w, h = int(cam0["width"]), int(cam0["height"])
@@ -94,9 +96,15 @@ def _camera_change(cam0: Dict[str, Any], cam1) -> Dict[str, Any]:
     f0, f1 = (p0[0], p1[0]) if one else (p0[0], p1[0])
     cx0, cy0 = (p0[1], p0[2]) if one else (p0[2], p0[3])
     cx1, cy1 = (p1[1], p1[2]) if one else (p1[2], p1[3])
-    gx, gy = np.meshgrid(np.linspace(0, w, 33), np.linspace(0, h, 25))
-    rays = np.c_[(gx.ravel() - cx0) / f0, (gy.ravel() - cy0) / f0, np.ones(gx.size)]
-    u0, u1 = c0.img_from_cam(rays), cam1.img_from_cam(rays)
+    # v0p20: rays through a pixel grid over the whole frame (corners included), undistorted with the initial
+    # camera; pixels it cannot invert (the Navcam polynomial beyond ~0.88 of the corner radius) are left out
+    gx, gy = np.meshgrid(np.linspace(0.5, w - 0.5, 33), np.linspace(0.5, h - 0.5, 25))
+    xy0 = np.asarray(c0.cam_from_img(np.c_[gx.ravel(), gy.ravel()]), float)
+    rays = np.c_[xy0, np.ones(len(xy0))]
+    fin = np.all(np.isfinite(rays), axis=1)
+    rays = np.where(fin[:, None], rays, [[0.0, 0.0, 1.0]])
+    u0, u1 = np.asarray(c0.img_from_cam(rays), float), np.asarray(cam1.img_from_cam(rays), float)
+    u0[~fin] = np.nan
     ok = np.all(np.isfinite(u0), axis=1) & np.all(np.isfinite(u1), axis=1) & \
         (u0[:, 0] >= 0) & (u0[:, 0] <= w) & (u0[:, 1] >= 0) & (u0[:, 1] <= h)
     d = np.linalg.norm(u1[ok] - u0[ok], axis=1)
@@ -107,7 +115,7 @@ def _camera_change(cam0: Dict[str, Any], cam1) -> Dict[str, Any]:
            "ray_displacement_rms_px": float(np.sqrt(np.mean(d ** 2))) if d.size else None,
            "units": "full-resolution pixels"}
     if cam0["model"] in ("OPENCV", "FULL_OPENCV"):
-        for k, i in (("k1", 4), ("k2", 5), ("p1", 6), ("p2", 7), ("k3", 8)):
+        for k, i in (("k1", 4), ("k2", 5), ("p1", 6), ("p2", 7), ("k3", 8), ("k4", 9)):
             if i < len(p0):
                 out[f"{k}_initial"], out[f"{k}_refined"] = float(p0[i]), float(p1[i])
     return out
@@ -115,6 +123,82 @@ def _camera_change(cam0: Dict[str, Any], cam1) -> Dict[str, Any]:
 
 def _rotation_deg(R: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip((np.trace(R) - 1) / 2, -1.0, 1.0))))
+
+
+# ------------------------------------------------ coverage across the image
+RADIUS_EDGES = (0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0)
+
+
+def coverage_by_radius(rec, project: SfmProject, edges: Sequence[float] = RADIUS_EDGES) -> Dict[str, Any]:
+    """
+    Per camera (``NL``, ``NR``, ``ZL034`` ...): keypoints, the fraction of them
+    that became tie points, and the median residual, in rings of radius from
+    the principal point (1 = the farthest frame corner).  A distortion model
+    that cannot be inverted towards the corners shows up as keypoints there
+    that are never triangulated (v0p20: the three-term Navcam polynomial lost
+    everything beyond ~0.88).
+    """
+    by_iid = {r["image_id"]: r for r in project.images if "image_id" in r}
+    e = np.asarray(edges, float)
+    acc: Dict[str, Dict[str, np.ndarray]] = {}
+    res_acc: Dict[str, List[List[float]]] = {}
+    for iid in rec.reg_image_ids():
+        im = rec.images[int(iid)]
+        meta = by_iid.get(int(iid), {})
+        grp = meta.get("camera_group") or meta.get("instrument", "?")
+        cam = rec.cameras[im.camera_id]
+        p = np.asarray(cam.params, float)
+        one = cam.model.name in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL")
+        cx, cy = (p[1], p[2]) if one else (p[2], p[3])
+        rmax = np.hypot(max(cx, cam.width - cx), max(cy, cam.height - cy))
+        pts = im.points2D
+        if not len(pts):
+            continue
+        xy = np.array([q.xy for q in pts], float)
+        tri = np.array([q.has_point3D() for q in pts], bool)
+        k = np.clip(np.digitize(np.hypot(xy[:, 0] - cx, xy[:, 1] - cy) / rmax, e) - 1, 0, e.size - 2)
+        a = acc.setdefault(grp, {"keypoints": np.zeros(e.size - 1), "triangulated": np.zeros(e.size - 1)})
+        a["keypoints"] += np.bincount(k, minlength=e.size - 1)
+        a["triangulated"] += np.bincount(k, weights=tri.astype(float), minlength=e.size - 1)
+        rl = res_acc.setdefault(grp, [[] for _ in range(e.size - 1)])
+        j = np.nonzero(tri)[0]
+        if j.size:
+            X = np.array([rec.points3D[pts[int(q)].point3D_id].xyz for q in j], float)
+            T = im.cam_from_world()
+            xc = X @ np.asarray(T.rotation.matrix()).T + np.asarray(T.translation)
+            uv = np.asarray(cam.img_from_cam(xc), float)
+            d = np.linalg.norm(uv - xy[j], axis=1) * float(meta.get("downsample_scale", 1.0))   # native px
+            okd = np.isfinite(d)
+            for b in range(e.size - 1):
+                sel = okd & (k[j] == b)
+                if sel.any():
+                    rl[b].extend(d[sel].tolist())
+    out: Dict[str, Any] = {"edges": list(map(float, e)), "cameras": {}}
+    for grp, a in sorted(acc.items()):
+        with np.errstate(invalid="ignore", divide="ignore"):
+            frac = a["triangulated"] / a["keypoints"]
+        out["cameras"][grp] = {"keypoints": a["keypoints"].astype(int).tolist(),
+                               "triangulated_fraction": [None if not np.isfinite(v) else float(v) for v in frac],
+                               "residual_median_native_px": [float(np.median(v)) if v else None for v in res_acc[grp]]}
+    return out
+
+
+def _corner_ratio(cov: Dict[str, Any], inner: float = 0.6, outer: float = 0.85, min_keypoints: int = 200):
+    """(worst camera, ratio): triangulated fraction beyond ``outer`` over that inside ``inner``."""
+    e = np.asarray(cov["edges"])
+    lo, hi = e[:-1], e[1:]
+    worst = None
+    for grp, c in cov["cameras"].items():
+        kp, tr = np.asarray(c["keypoints"], float), np.asarray([v or 0.0 for v in c["triangulated_fraction"]])
+        i_in, i_out = hi <= inner + 1e-9, lo >= outer - 1e-9
+        if kp[i_out].sum() < min_keypoints or kp[i_in].sum() == 0:
+            continue
+        f_in = float(np.sum(tr[i_in] * kp[i_in]) / kp[i_in].sum())
+        f_out = float(np.sum(tr[i_out] * kp[i_out]) / kp[i_out].sum())
+        ratio = f_out / f_in if f_in > 0 else 0.0
+        if worst is None or ratio < worst[1]:
+            worst = (grp, ratio, f_in, f_out)
+    return worst
 
 
 # ------------------------------------------------------- weak-image diagnosis
@@ -132,8 +216,8 @@ WEAK_ADVICE = {
     "few_keypoints": "nothing to recover: drop the image (delete it from images_png8, KEEP_ONLY_REMAINING=True) "
                      "or accept it held at its prior",
     "unmatched": "with MATCH_MODE='prior_pairs' use 'exhaustive'; otherwise the image overlaps nothing - drop it",
-    "stereo_only_far": "lower reconstruct(min_tri_angle_deg=...): 0.5 keeps stereo-only points to ~50 m, "
-                       "0.25 to ~100 m",
+    "stereo_only_far": "lower reconstruct(min_tri_angle_deg=...): the default 0.25 keeps stereo-only points to "
+                       "~97 m, 0.1 to ~240 m",
     "same_station_only": "needs matches to another station (MATCH_MODE='exhaustive' if 'prior_pairs' was used) or "
                          "its right-eye partner in the selection; otherwise it stays at its prior pose (harmless for "
                          "the others) - or drop it",
@@ -289,7 +373,9 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
             one = cam.model.name in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL")
             cx, cy = (p[1], p[2]) if one else (p[2], p[3])
             xy = np.array([im.points2D[int(k)].xy for k in idx_o[sel]], float)
-            rad = np.hypot(xy[:, 0] - cx, xy[:, 1] - cy) / np.hypot(cam.width / 2, cam.height / 2)
+            # v0p20: radius relative to the farthest frame corner (as coverage_by_radius), so an off-centre
+            # principal point (Mastcam-Z) no longer pushes the outermost keypoints past the last bin
+            rad = np.hypot(xy[:, 0] - cx, xy[:, 1] - cy) / np.hypot(max(cx, cam.width - cx), max(cy, cam.height - cy))
             edge.append(np.c_[rad, r[sel]])
         for key, v in groups.items():
             eye_med[key] = float(np.median(v))
@@ -318,6 +404,13 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         check("reprojection", "edge_to_centre_residual", (out_ / cen) if cen and out_ else None,
               "median residual in the outer vs inner quarter of the radius: "
               + ", ".join(f"{k}: {v:.3f}" for k, v in radial.items() if v is not None))
+
+    cov = coverage_by_radius(rec, project)
+    wc = _corner_ratio(cov)
+    if wc:
+        check("reprojection", "corner_triangulated_ratio", wc[1],
+              f"{wc[0]}: {100 * wc[3]:.0f} % of keypoints beyond 0.85 of the corner radius become tie points, "
+              f"{100 * wc[2]:.0f} % inside 0.6 (distortion model invertible to the corners?)")
 
     # ---- camera model
     cams_after = {}
@@ -387,14 +480,21 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         P1 = np.array([np.mean([[x["E_m"], x["N_m"], x["U_m"]] for x in v], 0) for v in cen.values()])
         s_, R_, t_ = _umeyama(P0, P1)
         sims.append({"stations": list(cen), "scale": float(s_), "rotation_deg": _rotation_deg(R_)})
+        att = float((project.settings.get("reconstruction") or {}).get("attitude_prior_deg") or 0.0)
+        held_by = (f"position priors and a {att:g} deg attitude prior per frame" if att > 0
+                   else "the position priors only")
         check("poses", "prior_scale_error_pct", 100 * abs(s_ - 1), f"block of {len(cen)} stations; rotation "
-              f"{_rotation_deg(R_):.2f} deg (orientation is held only by the position priors)", "%")
+              f"{_rotation_deg(R_):.2f} deg (orientation held by {held_by})", "%")
 
     weak = diagnose_weak_images(project, rec, min_frame_observations)
     verdict = max((c["status"] for c in checks), key=lambda s: _RANK[s], default="pass")
-    return {"verdict": verdict, "checks": checks, "thresholds": {k: list(v) for k, v in thr.items()},
+    import datetime as _dt
+    from .. import __version__
+    return {"verdict": verdict, "project": str(project.root), "images": len(project.images),
+            "created": _dt.datetime.now().isoformat(timespec="seconds"), "mppp_version": __version__,
+            "checks": checks, "thresholds": {k: list(v) for k, v in thr.items()},
             "track_length_histogram": hist, "residual_by_camera_resolution": eye_med,
-            "residual_by_radius": radial, "worst_images": [{"name": by_iid[i]["name"], "median_px": m}
+            "residual_by_radius": radial, "coverage_by_radius": cov, "worst_images": [{"name": by_iid[i]["name"], "median_px": m}
                                                            for m, i in outl[:20]],
             "cameras": cams_after, "rig": rig_out, "stations": st_tab, "prior_similarity": sims,
             "held_images": held, "weak_images": weak, "station_components": comps,
@@ -405,11 +505,27 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
 def health_table(report: Dict[str, Any]) -> str:
     """Plain-text table: status, section, check, value, thresholds, note."""
     sym = {"pass": "ok  ", "info": "    ", "warn": "WARN", "fail": "FAIL"}
-    out = [f"alignment health: {report['verdict'].upper()}   ({report['note']})", ""]
+    out = [f"alignment health: {report['verdict'].upper()}   ({report['note']})"]
+    if report.get("project"):
+        out.append(f"project {report['project']} ({report.get('images')} images), assessed {report.get('created')} "
+                   f"with MPPP {report.get('mppp_version')}")
+    out.append("")
     for c in report["checks"]:
         v = "-" if c["value"] is None else (f"{c['value']:.4g}")
         t = "" if c["warn"] is None else f"[warn {c['warn']:g} / fail {c['fail']:g}]"
         out.append(f"{sym[c['status']]}  {c['section']:<13} {c['check']:<31} {v:>10} {c['unit']:<11} {t:<26} {c['note']}")
+    cov = report.get("coverage_by_radius") or {}
+    if cov.get("cameras"):
+        e = cov["edges"]
+        out += ["", "tie-point coverage by image radius (1 = farthest frame corner): % of keypoints triangulated "
+                    "/ median residual [native px]"]
+        out.append(f"  {'camera':<14}" + "".join(f"{e[i]:.2f}-{e[i + 1]:.2f}".rjust(13) for i in range(len(e) - 1)))
+        for grp, c in cov["cameras"].items():
+            cells = []
+            for f, r, n in zip(c["triangulated_fraction"], c["residual_median_native_px"], c["keypoints"]):
+                cells.append("-".rjust(13) if not n or f is None else
+                             (f"{100 * f:3.0f}% / " + ("  -  " if r is None else f"{r:.2f}")).rjust(13))
+            out.append(f"  {grp:<14}" + "".join(cells))
     weak = report.get("weak_images") or []
     if weak:
         out += ["", f"images with few observations ({len(weak)}), by likely cause:"]

@@ -23,6 +23,8 @@ PathLike = Union[str, Path]
 
 
 DEFAULT_MAX_NUM_FEATURES = 16380          # v0p14.3 (was 8192)
+DEFAULT_MAX_IMAGE_SIZE = 5120             # v0p20 (was 3200): full-resolution Navcam frames are 5120 px wide, so SIFT
+                                          # really runs at native resolution (3200 shrank them to 0.625x)
 
 
 def _features_record(project: SfmProject) -> Path:
@@ -50,7 +52,7 @@ def image_fingerprints(project: SfmProject) -> Dict[str, list]:
 
 
 def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES,
-                        max_image_size: int = 3200, domain_size_pooling: bool = False) -> bool:
+                        max_image_size: int = DEFAULT_MAX_IMAGE_SIZE, domain_size_pooling: bool = False) -> bool:
     """
     True if ``features.db`` exists and was extracted with these settings from
     the same image and mask files (``features.json`` beside it; v0p14.7: file
@@ -75,7 +77,7 @@ def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX
     return all(files.get(n) == now[n] for n in names)
 
 
-def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES, max_image_size: int = 3200,
+def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES, max_image_size: int = DEFAULT_MAX_IMAGE_SIZE,
                      use_gpu: Optional[bool] = None, num_threads: int = -1, overwrite: bool = False,
                      domain_size_pooling: bool = False, python: Optional[PathLike] = None) -> Path:
     """
@@ -84,7 +86,7 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
 
         colmap feature_extractor --database_path features.db --image_path images
             --ImageReader.mask_path masks --ImageReader.camera_model SIMPLE_RADIAL
-            --SiftExtraction.max_num_features 16380 --SiftExtraction.max_image_size 3200
+            --SiftExtraction.max_num_features 16380 --SiftExtraction.max_image_size 5120
 
     An existing ``features.db`` is reused only if ``features.json`` beside it
     records the same settings and covers every project image (v0p14.3);

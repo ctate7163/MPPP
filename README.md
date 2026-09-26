@@ -10,7 +10,7 @@ MPPP turns Mars 2020 Perseverance **Navcam** and **Mastcam-Z** PDS image product
 
 For Navcam (optionally with the Mastcam-Z 34 mm frames of the same sols), MPPP also builds a complete COLMAP project — database, stereo rig, matches — and a prior-aligned, weighted bundle adjustment, with an **alignment health report** (tie points, reprojection error, camera-model change, stereo-rig stability, pose change).
 
-Version **0.15.0** (`v0p15`). Versions before 1.0 are development releases; see [CHANGELOG.md](CHANGELOG.md).
+Version **0.20.0** (`v0p20`). Versions before 1.0 are development releases; see [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 
@@ -62,8 +62,8 @@ The pip `pycolmap` wheel for Windows is CPU-only. The conda-forge build has CUDA
 | path | content |
 |---|---|
 | `src/mppp/` | the package |
-| `src/mppp/data/` | package data: Metashape calibrations (`m20_cmods/`), optical-depth table, waypoint snapshot, occlusion profiles, model registry (`models.json`) |
-| `notebooks/` | the two workflows above; `notebooks/training/` retrains the mask model |
+| `src/mppp/data/` | package data: camera models (`m20_cmods/`: Metashape calibrations and the rational Navcam cameras), optical-depth table, waypoint snapshot, occlusion profiles, model registry (`models.json`) |
+| `notebooks/` | the workflows above; `notebooks/training/` retrains the mask model |
 | `docs/methods.md` | methods, conventions, equations and flagged assumptions |
 | `docs/RELEASING.md` | how to release code and models (GitHub, Hugging Face, safetensors) |
 | `tests/` | pytest suite; `tests/data/m20/` holds two public PDS products |
@@ -84,8 +84,17 @@ The pip `pycolmap` wheel for Windows is CPU-only. The conda-forge build has CUDA
 
 ## Scope and limits
 
-Supported: Mars 2020 Navcam and Mastcam-Z RAD products (other engineering cameras are processed by the same code but are less tested). The full COLMAP pipeline (`mppp.sfm`) handles Navcam, and Mastcam-Z 34 mm as an experimental option (one camera per eye, no stereo-rig constraint); other Mastcam-Z zooms get a COLMAP prior model and Metashape references. Hazcam XML calibrations have a K4 term that COLMAP's FULL_OPENCV model cannot represent. Orientation and scale of a COLMAP block come from the CAHV stereo baseline and loose (1 m) waypoint position priors; no attitude priors are used yet. The alignment-health thresholds are provisional. See `docs/methods.md` §8 for the flagged assumptions.
+MPPP supports two Mars 2020 cameras: **Navcam** (`NLF`/`NRF`) and **Mastcam-Z at 34 mm** (`ZL0`/`ZR0`, sequence `_034`), RAD products. The COLMAP pipeline (`mppp.sfm`) accepts only these and stops on anything else. Image processing will run on other Mars 2020 cameras and Mastcam-Z zooms, but they are outside the supported and tested scope.
+
+- Navcam cameras start from a rational lens model (`M2020_N{L,R}_rational.json`, v0p20) that is valid to the frame corners (about 61° off-axis). The Metashape three-term calibration remains available (`navcam_distortion="polynomial"`), but it cannot be inverted beyond ~0.88 of the corner radius, so the image corners are lost.
+- Mastcam-Z 34 mm: one camera per eye and focus bin, initialised from the label CAHVOR models, no stereo-rig constraint.
+- Scale of a COLMAP block comes from the CAHV stereo baseline; position from loose (1 m) waypoint priors; orientation, since v0p20, from a weak (1°) CAHV attitude prior per frame. Without it, a block of a few nearly collinear stations could rotate about the line through them (0.6° at Three Forks with Navcam, 2.4° with Mastcam-Z).
+- The alignment-health thresholds are provisional. See `docs/methods.md` §8 for the flagged assumptions.
+
+## Data provenance
+
+All Mars 2020 images used by MPPP, including the two test products in `tests/data/m20/` and the images the mask model was trained on, are public products of the NASA Planetary Data System (PDS). Credits: Navcam NASA/JPL-Caltech; Mastcam-Z NASA/JPL-Caltech/ASU/MSSS. The reconstruction masks, the mask model and the camera models in `src/mppp/data/m20_cmods/` are the author's own work. The waypoint snapshot is a copy of the public Mars 2020 waypoint table. The package contains no sensitive or non-public data.
 
 ## License and citation
 
-Apache-2.0 (see [LICENSE](LICENSE)). If you use MPPP, please cite it as described in [CITATION.cff](CITATION.cff).
+Apache-2.0 (see [LICENSE](LICENSE) and [NOTICE](NOTICE)); released as open source with the approval of Malin Space Science Systems. If you use MPPP, please cite it as described in [CITATION.cff](CITATION.cff).

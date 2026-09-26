@@ -2,6 +2,50 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.20.0 — 2026-09-26
+
+Scope: Mars 2020 Navcam and Mastcam-Z at 34 mm.
+
+- **Rational Navcam lens model (default).**
+  - The three-term polynomial of the Metashape calibration cannot be inverted beyond ~0.88 of the corner radius (~53° off-axis). COLMAP could not undistort those pixels, so corner keypoints were never triangulated. At Three Forks: 45–57 % of corner keypoints matched, but 19 % (0.85–0.90 of the radius) and 0 % (beyond 0.90) became tie points.
+  - A fourth polynomial term (Metashape K4) does not fit the corners either. One denominator term does: FULL_OPENCV (1 + k1 r² + k2 r⁴ + k3 r⁶)/(1 + k4 r²).
+  - Shipped as `m20_cmods/M2020_N{L,R}_rational.json`: the author's calibration re-fitted with the corners, then the mean of two full bundle-adjusted solutions (Three Forks, 52 images; Bell Island, 145 images). These agree to 0.5 % in k1 and k4 and to 1 px in f. It is invertible over the whole frame (corners ≈ 61° off-axis). The bundle adjustment refines k1–k4, p1, p2 per project (`free_params`).
+  - Bell Island, compared with the polynomial run: median / RMS residual 0.151 / 0.334 px (was 0.193 / 0.374 px), edge-to-centre residual ratio 1.41 (was 1.57), corner check 0.67.
+  - Three Forks Navcam, same matches and settings:
+
+    | | 3-term polynomial | rational |
+    |---|---|---|
+    | median / RMS residual | 0.232 / 0.382 px | 0.176 / 0.322 px |
+    | tie points at 0.85–0.90 / 0.90–0.95 / 0.95–1.0 of the corner radius | 20 / 0 / 0 % | 44 / 41 / 31 % |
+    | observations | 423,044 | 431,120 |
+    | principal-point change | 3–5 px | ~1 px |
+
+  - `SfmProject.create(navcam_distortion="polynomial")` keeps the old model. Notebook 03: `NAVCAM_DISTORTION`.
+- **Weak attitude prior per frame** (`reconstruct(attitude_prior_deg=1.0)`, the CAHV pointing).
+  - Block orientation was held only by the waypoint position priors, so a block of a few nearly collinear stations could rotate about the line through them. Three Forks: 0.59° about East with the rational model, 0.17° with the polynomial; 2.4° with Mastcam-Z.
+  - With the prior the attitude change is 0.07° (median). Residuals are unchanged, because relative orientations come from the tie points.
+- **Alignment health:**
+  - Tie-point coverage in rings of image radius per camera, and the check `corner_triangulated_ratio` (triangulated share beyond 0.85 of the corner radius over that inside 0.6; warn < 0.5, fail < 0.25). It was 0.20 with the polynomial and is 0.63 with the rational model.
+  - `station_shift_median_m` and `within_station_shift_spread_m` thresholds doubled (2/6 m, 0.1/0.4 m).
+  - The camera-change check now samples the whole frame, corners included (it stopped at ~0.78 of the corner radius), and reports k4.
+  - The edge residual uses the corner radius.
+  - The report header names the project, the time and the MPPP version.
+- **Defaults:**
+  - `min_tri_angle_deg` 0.25 (stereo-only points to ≈ 97 m; was 0.5).
+  - SIFT at native resolution for every product (`max_image_size` 5120; 3200 shrank full-resolution Navcam frames to 0.625×). Features are extracted once more.
+  - p1, p2 are kept from the calibration and refined (`zero_terms=("b1", "b2")`, `refine_tangential=True`), as notebook 03 already did. The old library default zeroed them, and with the rational model that shifted the corners by up to 7.7 px.
+- **Scope enforced:**
+  - `SfmProject.create` accepts only NLF/NRF and ZL0/ZR0 at 34 mm, checked before any file is linked. It also refuses images processed with `resize.undistort=True`.
+  - `process_images` warns about other products.
+- **Fixes from a code review:**
+  - `reuse_existing` now also notices a new waypoint table.
+  - The bundle adjustment refuses to run without the database camera mapping when cameras carry `free_params`/`fixed_params` (they would have been ignored silently).
+  - `mppp.colmap.unproject_camera` uses Newton iteration (the fixed-point version left 0.15 px in the rational corners); it now agrees with COLMAP to 1e-10.
+  - `SfmProject.refresh_images` updates copied (not hard-linked) images when a project is reused (notebook 03).
+  - `gate_curve` no longer overflows for CV → 0.
+- **Provenance and licence:** NOTICE file and a README section. Images come from the PDS; the masks, mask model and camera models are the author's own work; the package is released under Apache-2.0 with MSSS approval and contains no sensitive data.
+- Notebook 03: sites Bell Island (1451–1467) and Taylor Fjellet (1601–1646); `NAVCAM_DISTORTION`; attitude prior; k4 in the camera printouts; the last cell points to notebook 04. Notebook 04: the two new sites. Mastcam-Z focus-breathing plot: smaller markers.
+
 ## 0.15.0 — 2026-09-25
 
 - **Notebook 04, error analysis of COLMAP alignments** (`notebooks/04_error_analysis.ipynb`, `mppp.error.alignment`). For one or more `error_input/` folders from notebook 03, it measures the numbers the error model runs on and sets them beside the values the model assumes:

@@ -1,0 +1,39 @@
+{
+ "model": "FULL_OPENCV",
+ "width": 5120,
+ "height": 3840,
+ "params": [
+  2948.5910506911,
+  2947.8507894156,
+  2574.4057219188,
+  1950.1081308125,
+  0.2774666851,
+  -0.0210356293,
+  1.52559e-05,
+  -0.0001027216,
+  0.0013971305,
+  0.5637353904,
+  0.0,
+  0.0
+ ],
+ "param_names": [
+  "fx",
+  "fy",
+  "cx",
+  "cy",
+  "k1",
+  "k2",
+  "p1",
+  "p2",
+  "k3",
+  "k4",
+  "k5",
+  "k6"
+ ],
+ "distortion": "rational: radial (1 + k1 r^2 + k2 r^4 + k3 r^6) / (1 + k4 r^2); k5 = k6 = 0",
+ "free_params": [
+  "k4"
+ ],
+ "pixel_origin": "corner of the first pixel (COLMAP)",
+ "source": "C. Tate's Navcam calibration (Metashape frame model, 29 Sep 2025, M2020_NR0_frame.xml), re-fitted as a COLMAP rational model including the frame corners and refined by MPPP 0.20.0 bundle adjustments of two sites; the mean of the Three Forks (sols 684-693, 52 images) and Bell Island (sols 1451-1467, 145 images) Navcam solutions, which agree to 0.5 % in k1 and k4 and 1 px in f. Residuals: 0.18 / 0.15 px median; tie points out to the frame corners (~61 deg off-axis). The bundle adjustment refines it per project."
+}

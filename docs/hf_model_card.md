@@ -54,6 +54,6 @@ mask, probability, card = infer_mask(rgb_uint8_image, "mppp_mask_v2")
 
 The labels are hand-drawn polygons, so boundaries are accurate to a few pixels and some rover parts are drawn coarsely. Frames unlike the training set (other cameras, unusual illumination, dust on the optics) may be masked less reliably. The masks are meant to remove rover and sky features from photogrammetry, not to serve as precise segmentations.
 
-## License
+## Provenance and license
 
-Apache-2.0, as for MPPP. The Mars 2020 images used for training are NASA/JPL-Caltech public data (PDS).
+Apache-2.0, as for MPPP, released with the approval of Malin Space Science Systems. The training images are public Mars 2020 products from the NASA Planetary Data System (Navcam: NASA/JPL-Caltech; Mastcam-Z: NASA/JPL-Caltech/ASU/MSSS). The masks (labels) and the model are the author's own work.

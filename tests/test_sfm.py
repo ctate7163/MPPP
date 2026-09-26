@@ -26,7 +26,7 @@ def _metashape_project(xyz, c):
 def test_camera_from_metashape_xml_matches_metashape_projection():
     from mppp.sfm.project import camera_from_metashape_xml, read_metashape_calibration
     xml = DATA_DIR / "m20_cmods/M2020_NL0_frame.xml"
-    cam_d = camera_from_metashape_xml(xml)
+    cam_d = camera_from_metashape_xml(xml, zero_terms=("p1", "p2", "b1", "b2"))    # v0p20 default keeps p1, p2
     assert cam_d["model"] == "FULL_OPENCV" and (cam_d["width"], cam_d["height"]) == (5120, 3840)
     p = cam_d["params"]
     assert p[0] == p[1] and p[6] == p[7] == 0.0 and p[9:] == [0.0, 0.0, 0.0]        # b1, p1, p2 zeroed; k4-k6 = 0
@@ -188,7 +188,8 @@ def test_weighted_ba_recovers_intrinsics_and_poses(tmp_path):
     for cid in (1, 2):
         p, t = np.asarray(rec.cameras[cid].params), true_params[cid]
         assert abs(p[0] - t[0]) < 1.0 and abs(p[2] - t[2]) < 1.0 and abs(p[4] - t[4]) < 1e-3
-        assert p[6] == p[7] == 0.0 and p[9] == p[10] == p[11] == 0.0                   # held at zero
+        assert abs(p[6] - t[6]) < 5e-5 and abs(p[7] - t[7]) < 5e-5                    # p1, p2 refined (v0p20 default)
+        assert p[9] == p[10] == p[11] == 0.0                                          # k4-k6 held at zero
     T = rec.rigs[1].sensor_from_rig(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=2))
     assert np.allclose(T.translation, rigT[1], atol=1e-9)                              # baseline held
     for r in proj.images:

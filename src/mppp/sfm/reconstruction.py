@@ -3,7 +3,8 @@ Reconstruction from the CAHV-initialised cameras.
 
 ``reconstruct(project)``:
 
-1. :func:`initial_reconstruction` — cameras (XML), rig (CAHV offset), frames
+1. :func:`initial_reconstruction` — cameras (from the database: the project's
+   initial cameras), rig (CAHV offset), frames
    posed from CAHV + waypoints, images with their full-resolution keypoints.
 2. Triangulate the verified matches with the poses fixed
    (``pycolmap.triangulate_points``; thresholds in full-resolution pixels).
@@ -12,9 +13,10 @@ Reconstruction from the CAHV-initialised cameras.
    own native pixels (``sigma_px / s`` in full-resolution pixels), Cauchy loss;
    frame poses free with the waypoint position priors; the right camera's
    sensor_from_rig free (one offset for all pairs); per-camera focal lengths,
-   principal point and k1-k3 free; p1, p2 held at their initial values
-   (zero by default) or refined with ``refine_tangential=True`` (v0p14.3);
-   k4-k6 held at zero.
+   principal point and k1-k3 free; p1, p2 refined (``refine_tangential``,
+   default True since v0p20) or held; k4-k6 held at zero except where a
+   camera lists them in ``free_params`` (v0p20: k4 of the rational Navcam
+   cameras); a Mastcam-Z focus-bin camera holds its ``fixed_params``.
 4. Drop observations whose residual exceeds ``max_residual_native_px`` and
    re-triangulate with the refined poses; one round per ``schedule`` entry
    (four by default since v0p14.3), then a final adjustment.
@@ -42,6 +44,7 @@ _TANGENTIAL = {"FULL_OPENCV": [6, 7], "OPENCV": [6, 7]}         # p1, p2
 # v0p14.5: the fourth round repeats the third's limits - it only shows whether another
 # re-triangulation and adjustment still changes anything (v0p14.3-4 used (6, 1.5, 1.5)).
 DEFAULT_SCHEDULE = ((24.0, 10.0, 8.0), (12.0, 2.0, 4.0), (8.0, 2.0, 2.0), (8.0, 2.0, 2.0))
+ATTITUDE_PRIOR_DEG = 1.0      # v0p20: weak CAHV attitude prior per frame (holds the block's orientation)
 
 
 def fixed_camera_params(model_name: str, refine_principal_point: bool = True,
@@ -120,8 +123,9 @@ def _scales(rec, project: SfmProject) -> Dict[int, float]:
 
 def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: float = 2.0,
                   refine_intrinsics: bool = True, refine_principal_point: bool = True,
-                  refine_tangential: bool = False, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
-                  min_frame_observations: int = 30, num_threads: int = -1, verbose: bool = False) -> Dict[str, Any]:
+                  refine_tangential: bool = True, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
+                  min_frame_observations: int = 30, num_threads: int = -1, verbose: bool = False,
+                  attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG) -> Dict[str, Any]:
     """
     Weighted BA in place (see module docstring).  ``sigma_px``: keypoint
     standard deviation in native pixels; ``loss_scale``: Cauchy scale in units
@@ -133,9 +137,15 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     0.14 m); False holds the rig fixed.  Frames with fewer than
     ``min_frame_observations`` observations are held at their current pose
     (on Belva two frames with no observations otherwise rotated freely, by 9
-    and 36 deg).  ``refine_tangential`` (v0p14.3): refine p1, p2 of
-    OPENCV / FULL_OPENCV cameras; otherwise they stay at their initial
-    values.  Returns the solver summary as a dict.
+    and 36 deg).  ``refine_tangential`` (v0p14.3; default True since v0p20):
+    refine p1, p2 of OPENCV / FULL_OPENCV cameras; otherwise they stay at
+    their initial values.  ``attitude_prior_deg`` (v0p20, default 1 deg):
+    a weak prior on every frame's attitude (the CAHV pointing, 1-sigma per
+    axis).  Without it the block's orientation is held only by the position
+    priors; with few, nearly collinear stations it is free to rotate about
+    the line through them (0.6 deg at Three Forks, 2.4 deg with Mastcam-Z).
+    Relative orientations come from the tie points and are not affected.
+    None or 0 switches it off.  Returns the solver summary as a dict.
     """
     import pycolmap
     import pycolmap.cost_functions as cf
@@ -224,9 +234,13 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             n_obs += 1
 
     # intrinsics: hold k4-k6 at zero, p1, p2 at their start unless refine_tangential (and the principal point if asked);
-    # a camera may hold more ("fixed_params" in project.cameras, e.g. the Mastcam-Z focus bins, v0p14.4)
+    # a camera may hold more ("fixed_params" in project.cameras, e.g. the Mastcam-Z focus bins, v0p14.4) or
+    # refine more ("free_params", e.g. k4 of the rational Navcam cameras, v0p20)
     from .project import FULL_OPENCV_NAMES
     key_of = {int(v): k for k, v in project.settings.get("database", {}).get("cameras", {}).items()}
+    if not key_of and any(c.get("free_params") or c.get("fixed_params") for c in project.cameras.values()):
+        raise RuntimeError("the project has no database camera mapping (run build_database first): per-camera "
+                           "free_params / fixed_params (rational Navcam k4, Mastcam-Z focus bins) would be ignored")
     for cid, cam in work.cameras.items():
         if not prob.has_parameter_block(cam.params):
             continue
@@ -234,16 +248,20 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             prob.set_parameter_block_constant(cam.params)
             continue
         fixed = fixed_camera_params(cam.model.name, refine_principal_point, refine_tangential)
-        extra = project.cameras.get(key_of.get(int(cid), ""), {}).get("fixed_params") or []
+        pc = project.cameras.get(key_of.get(int(cid), ""), {})
+        extra = pc.get("fixed_params") or []
         if extra and cam.model.name in ("OPENCV", "FULL_OPENCV"):
             fixed = sorted(set(fixed) | {FULL_OPENCV_NAMES.index(n) for n in extra
                                           if FULL_OPENCV_NAMES.index(n) < len(cam.params)})
+        free = pc.get("free_params") or []            # v0p20: e.g. the rational Navcam k4
+        if free and cam.model.name == "FULL_OPENCV":
+            fixed = sorted(set(fixed) - {FULL_OPENCV_NAMES.index(n) for n in free})
         prob.set_parameter_block_variable(cam.params)
         if fixed:
             prob.set_manifold(cam.params, pyceres.SubsetManifold(len(cam.params), sorted(fixed)))
 
     # waypoint position priors on every frame (the reference camera's centre)
-    n_prior = 0
+    n_prior = n_att = 0
     if use_priors:
         sig = np.asarray(project.settings.get("prior_sigma_m", [1.0, 1.0, 1.0]), float)
         cov3 = np.diag(sig ** 2)
@@ -259,6 +277,14 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 continue
             prob.add_residual_block(cf.AbsolutePosePositionPriorCost(cov3, C), None, [pose])
             n_prior += 1
+            if attitude_prior_deg:
+                # 6-DoF prior: rotation block first (checked), translation effectively free (the position
+                # prior above holds the centre)
+                ref_r = by_name[rec.images[ref[0]].name]
+                T0 = _rigid(ref_r["prior_R_w2c"], ref_r["prior_C"])
+                cov6 = np.diag([np.radians(float(attitude_prior_deg)) ** 2] * 3 + [1e8] * 3)
+                prob.add_residual_block(cf.AbsolutePosePriorCost(cov6, T0), None, [pose])
+                n_att += 1
 
     # weakly observed frames: hold (their attitude is otherwise set by a handful of points)
     n_frame: Dict[int, int] = {}
@@ -301,7 +327,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         from scipy.spatial.transform import Rotation
         T = pycolmap.Rigid3d(pycolmap.Rotation3d(Rotation.from_quat(q).as_matrix()), arr[4:7].copy())
         rec.rigs[rid].set_sensor_from_rig(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=cid), T)
-    return {"observations": n_obs, "priors": n_prior, "frames_held": held, "initial_cost": summary.initial_cost,
+    return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att,
+            "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
             "termination": str(summary.termination_type), "brief": summary.BriefReport(),
             "refine_tangential": bool(refine_tangential)}
@@ -489,8 +516,9 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 schedule: Sequence[Sequence[float]] = DEFAULT_SCHEDULE,
                 refine_intrinsics: bool = True, refine_rig: Union[bool, str] = "rotation",
                 register: bool = False, max_iterations: int = 50, out_name: str = "cahv_ba",
-                verbose: bool = True, min_track_length: int = 2, min_tri_angle_deg: float = 0.5,
-                refine_tangential: bool = False, gui_native: bool = True):
+                verbose: bool = True, min_track_length: int = 2, min_tri_angle_deg: float = 0.25,
+                refine_tangential: bool = True, gui_native: bool = True,
+                attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
@@ -500,6 +528,8 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     Default: four rounds; the fourth repeats the third's limits (v0p14.5) to
     show whether one more re-triangulation and adjustment changes anything.
     The final adjustment uses the last round's Cauchy scale and cut-off.
+    ``attitude_prior_deg`` (v0p20, default 1 deg): weak CAHV attitude prior
+    per frame; see :func:`bundle_adjust`.
     ``gui_native`` (v0p14.5): also write the native-pixel viewing copy
     ``gui_native/`` for the COLMAP GUI (``open_in_colmap.bat``).
     ``register``: first move whole stations with :func:`register_stations`
@@ -509,14 +539,16 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     tie points - e.g. seen only by the two eyes of one stereo pair - are kept,
     as COLMAP's ``ignore_two_view_tracks=False`` triangulates them; 3 drops
     them after every round.
-    ``min_tri_angle_deg``: smallest triangulation angle (default 0.5 deg
-    since v0p14.3; was 1.5).  With the 0.424 m Navcam baseline, 0.5 deg keeps
-    stereo-only points out to about 49 m (1.5 deg: 16 m).  Their depth is
+    ``min_tri_angle_deg``: smallest triangulation angle (default 0.25 deg
+    since v0p20; 0.5 from v0p14.3, 1.5 before).  With the 0.424 m Navcam
+    baseline, 0.25 deg keeps stereo-only points out to about 97 m (0.5 deg:
+    49 m, 1.5 deg: 16 m).  Their depth is
     poorly constrained, their direction is not: they tie attitudes, and the
     weighting and the residual cut-offs limit their influence.
-    ``refine_tangential``: refine p1, p2 (see :func:`bundle_adjust`).  Start
-    them from the Metashape calibration by creating the project with
-    ``zero_terms=("b1", "b2")``; with the default ``zero_terms`` they start at 0.
+    ``refine_tangential`` (default True since v0p20): refine p1, p2 (see
+    :func:`bundle_adjust`); they start from the project's cameras (the
+    calibration's values unless the project was created with p1, p2 in
+    ``zero_terms``).
     Returns the reconstruction (also written to ``sparse/<out_name>``).
     """
     if min_track_length < 2:
@@ -534,7 +566,8 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
         rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg)
         st0 = track_statistics(rec, project)
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
-                           refine_tangential=refine_tangential, refine_rig=refine_rig, max_iterations=max_iterations)
+                           refine_tangential=refine_tangential, refine_rig=refine_rig, max_iterations=max_iterations,
+                           attitude_prior_deg=attitude_prior_deg)
         n_bad = filter_observations(rec, project, float(rmax))
         n_bad += drop_short_tracks(rec, min_track_length)
         st = track_statistics(rec, project)
@@ -551,7 +584,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                   f"{n_bad} obs filtered, {entry['elapsed_s']:.0f} s", flush=True)
     ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                        refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential,
-                       refine_rig=refine_rig, max_iterations=2 * max_iterations)
+                       refine_rig=refine_rig, max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg)
     # the final adjustment can push a few points behind a camera or past the limit
     n_bad = filter_observations(rec, project, float(schedule[-1][2]))
     n_bad += drop_short_tracks(rec, min_track_length)
@@ -569,6 +602,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "min_track_length": min_track_length,
                                           "min_tri_angle_deg": min_tri_angle_deg,
                                           "refine_tangential": bool(refine_tangential),
+                                          "attitude_prior_deg": float(attitude_prior_deg or 0.0),
                                           "schedule": [list(map(float, r)) for r in schedule]}
     project.save()
     if gui_native:

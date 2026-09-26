@@ -361,8 +361,11 @@ def _half_angle(sc: Dict[str, np.ndarray], min_trials: float = 50.0) -> float:
 
 def gate_curve(theta_deg: np.ndarray, A: float, theta_bar_deg: float, cv: float) -> np.ndarray:
     """A (1 + theta/theta_c)^-k with theta_c = theta_bar/CV^2, k = 1/CV^2 (core.gate_powerlaw)."""
-    cv2 = max(cv, 1e-6) ** 2
-    return A * (1.0 + np.asarray(theta_deg, float) / (theta_bar_deg / cv2)) ** (-1.0 / cv2)
+    th = np.asarray(theta_deg, float)
+    if cv < 1e-3:                                   # the CV -> 0 limit: A exp(-theta/theta_bar), without overflow
+        return A * np.exp(-th / max(theta_bar_deg, 1e-12))
+    cv2 = cv ** 2
+    return A * (1.0 + th / (theta_bar_deg / cv2)) ** (-1.0 / cv2)
 
 
 def fit_gate(pairs: Dict[str, Any], families: Optional[str] = None, L0_h: float = 2.3, fit_L0: bool = False,

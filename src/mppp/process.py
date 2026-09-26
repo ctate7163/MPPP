@@ -86,6 +86,27 @@ def filter_to_existing(paths: Sequence[PathLike], out_dir: PathLike, fmt: str) -
     return kept, report
 
 
+SCOPE_CAMERA_CODES = ("NLF", "NRF", "ZL0", "ZR0")
+
+
+def _warn_out_of_scope(paths: Sequence[Path]) -> None:
+    """v0p20: MPPP supports Navcam and Mastcam-Z at 34 mm; other products are processed but untested."""
+    from .filenames import parse_filename
+    other = []
+    for p in paths:
+        try:
+            fn = parse_filename(p)
+        except ValueError:
+            continue
+        if fn.camera_code not in SCOPE_CAMERA_CODES or (fn.family == "Z" and fn.zoom_mm != 34):
+            other.append(p.name)
+    if other:
+        import warnings
+        warnings.warn(f"{len(other)} products are outside MPPP's supported scope (Navcam NLF/NRF, Mastcam-Z ZL0/ZR0 "
+                      f"at 34 mm), e.g. {other[0]}: they are processed, but untested, and the COLMAP pipeline "
+                      f"refuses them")
+
+
 def _canon(obj: Any) -> Any:
     return json.loads(json.dumps(obj, sort_keys=True, default=str))
 
@@ -105,7 +126,7 @@ def _reference_from_meta(m: Dict[str, Any]) -> list:
     return [Path(m["source_product"]).stem, *m["pose"]["C_enu_m"], *m["pose"]["metashape_ypr_deg"]]
 
 
-def reusable_images(out_dir: PathLike, cfg: Dict[str, Any]) -> tuple:
+def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[Dict[str, Any]] = None) -> tuple:
     """
     Entries of the existing manifest in ``out_dir`` that can be reused as they
     are: processed with the same configuration (``mppp_config_<tag>.json``)
@@ -125,9 +146,15 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any]) -> tuple:
         rep["reason"] = "no manifest"
         return {}, rep
     try:
-        old_cfg = json.loads(cfg_p.read_text(encoding="utf-8"))["config"]
+        snap = json.loads(cfg_p.read_text(encoding="utf-8"))
+        old_cfg = snap["config"]
     except Exception:                                            # noqa: BLE001
         rep["reason"] = f"no readable {cfg_p.name}"
+        return {}, rep
+    # v0p20: the poses depend on the waypoint table too (refresh, or a first run without waypoints)
+    old_wp, new_wp = (snap.get("waypoints") or {}), ((waypoints or {}).get("_mppp_source") or {})
+    if old_wp.get("sha256") != new_wp.get("sha256"):
+        rep.update(reason="waypoint table changed", config_changed=["waypoints"])
         return {}, rep
     # skip_inference_at only affects the images of the listed stations: checked per image below
     diff = [k for k in _config_diff(_canon(cfg), _canon(old_cfg)) if k != "masking.skip_inference_at"]
@@ -187,6 +214,7 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = [Path(p) for p in paths]
+    _warn_out_of_scope(paths)
     kept_filter = None
     if only_existing:
         paths, kept_filter = filter_to_existing(paths, out_dir, only_existing)
@@ -198,7 +226,7 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     reused: Dict[str, Dict[str, Any]] = {}
     reuse_rep = None
     if reuse_existing:
-        have, reuse_rep = reusable_images(out_dir, cfg)
+        have, reuse_rep = reusable_images(out_dir, cfg, waypoints)
         reused = {p.stem: have[p.stem] for p in paths if p.stem in have}
         todo = [p for p in paths if p.stem not in reused]
         reuse_rep.update(reused=len(reused), to_process=len(todo),
