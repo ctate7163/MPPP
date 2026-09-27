@@ -2,6 +2,14 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.22.1 — 2026-09-26
+
+Fixes from the first v0p22 site runs (Airey Hill, Bell Island, Three Forks 684–693, all Navcam + Mastcam-Z 34):
+- **Outlier exclusion told apart from unconstrained frames.** Frames with no tie points at all (defocused focus-stack members, calibration-target and sky images: 79, 16 and 37 images at the three sites) are reported as `kind: "unconstrained"` ("no tie points") and counted by the health check as `unconstrained_fraction` (warn 25 %, fail 60 %), not as outliers. `excluded_fraction` now counts real outliers only (17, 0 and 15 images).
+- **The attitude test of `find_outlier_frames` applies to Navcam frames only.** A Mastcam-Z prior attitude is one mast pointing, whose error is per image, so a Mastcam-Z frame 0.5–1.5° from its station's median (with up to 1300 tie points) was wrongly excluded.
+- **DOF-corrected ε for subsets.** For one family, instrument or track kind, a point shared with other observations now absorbs only its share of 3 degrees of freedom (3 Σ 1/track length over the subset), instead of 3 per point touched; one eye of a stereo pair was overcorrected (0.86 px instead of 0.44).
+- **Notebook 05 with mixed Navcam + Mastcam-Z runs.** `rig_geometry` picks the Navcam rig (a Mastcam-Z pair sharing a clock also becomes a frame with a rig; the label stereo comparison had used the 0.243 m Mastcam-Z rig). `consensus_camera(max_rms_px=1.5)` leaves out cameras far from the mean of the others (`excluded`), and `mean_rig(max_dev_mdeg=50)` leaves out rigs far from the median: Three Forks 684–693 with Mastcam-Z has only 35 left Navcam images at three stations 3 m apart, and its Navcam intrinsics drifted 8.5 px (cy −45 px, rig yaw −146 mdeg) with the block still fitting to 0.13 px — the intrinsics are not observable from such a network (methods §14).
+
 ## 0.22.0 — 2026-09-26
 
 Best starting cameras (the refined results of earlier runs now start new ones):

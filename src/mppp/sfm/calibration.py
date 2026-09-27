@@ -249,10 +249,22 @@ def camera_table(sols: Dict[str, Solution], family: Optional[str] = None, refine
 
 
 def consensus_camera(sols: Dict[str, Solution], group: str, lens: Optional[str] = None,
-                     min_observations: int = 1000) -> Optional[Camera]:
-    """Observation-weighted mean of the refined cameras of ``group`` (one lens model; Navcam: the
-    most common one unless ``lens`` is given).  Mastcam-Z focus bins are not averaged here."""
-    cams = [c for s in sols.values() for c in s.cameras_of(group) if c.refined and c.n_obs >= min_observations]
+                     min_observations: int = 1000, max_rms_px: Optional[float] = 1.5) -> Optional[Camera]:
+    """
+    Observation-weighted mean of the refined cameras of ``group`` (one lens model;
+    Navcam: the most common one unless ``lens`` is given).  Mastcam-Z focus bins
+    are not averaged here.  ``max_rms_px`` (v0p22.1): cameras more than this far
+    (rms over the frame, rotation removed) from the mean of the others are left
+    out, one at a time, worst first - a scape whose few Navcam images all stand
+    at one spot cannot fix its own intrinsics (Three Forks 684-693 with
+    Mastcam-Z: 8.5 px off).  The left-out cameras are listed in ``excluded``.
+    """
+    cams, names = [], {}
+    for n, s_ in sols.items():
+        for c in s_.cameras_of(group):
+            if c.refined and c.n_obs >= min_observations:
+                cams.append(c)
+                names[id(c)] = n
     if not cams:
         return None
     if lens is None:
@@ -261,12 +273,32 @@ def consensus_camera(sols: Dict[str, Solution], group: str, lens: Optional[str] 
     cams = [c for c in cams if c.distortion == lens]
     if not cams:
         return None
-    w = np.array([c.n_obs for c in cams], float)
-    P = np.array([c.params for c in cams])
-    p = (w[:, None] * P).sum(0) / w.sum()
+
+    def _mean(cs):
+        w = np.array([c.n_obs for c in cs], float)
+        P = np.array([c.params for c in cs])
+        return (w[:, None] * P).sum(0) / w.sum(), int(w.sum())
+
+    excluded = []
+    while len(cams) > 2 and max_rms_px:
+        worst = None
+        for i, c in enumerate(cams):
+            others = cams[:i] + cams[i + 1:]
+            p_o, _ = _mean(others)
+            ref = Camera("ref", group, c.model, c.width, c.height, p_o, p_o).pixel_camera()
+            d = compare_cameras(ref, c.pixel_camera(), step=192.0)["rms_px"]
+            if d > max_rms_px and (worst is None or d > worst[1]):
+                worst = (i, d)
+        if worst is None:
+            break
+        excluded.append({"scape": names[id(cams[worst[0]])], "camera": cams[worst[0]].key, "rms_px": float(worst[1])})
+        cams.pop(worst[0])
+    p, n_obs = _mean(cams)
     c0 = cams[0]
-    return Camera(f"{group} consensus ({lens}, {len(cams)} scapes)", group, c0.model, c0.width, c0.height, p, p,
-                  None, sum(c.n_images for c in cams), int(w.sum()))
+    out = Camera(f"{group} consensus ({lens}, {len(cams)} scapes)", group, c0.model, c0.width, c0.height, p, p,
+                 None, sum(c.n_images for c in cams), n_obs)
+    out.__dict__["excluded"] = excluded
+    return out
 
 
 def reference_camera(group: str, lens: str = "rational") -> Optional[Camera]:
@@ -367,7 +399,10 @@ def rig_geometry(rig: Dict[str, Any]) -> Optional[Tuple[np.ndarray, np.ndarray]]
     builds one rig, the Navcam pair; Mastcam-Z has none unless ``zcam_rig``)."""
     if not rig:
         return None
-    r = next(iter(rig.values()))
+    # several rigs (v0p22: a Mastcam-Z pair that shares a clock also becomes a frame with a rig): the
+    # Navcam one is the "N" entry, or the one with the longest baseline (0.424 m against 0.243 m)
+    r = rig.get("N") or max(rig.values(), key=lambda x: float(x.get("baseline_m", np.linalg.norm(
+        np.asarray(x.get("t_sensor_from_ref", x.get("t")), float)))))
     R = np.asarray(r.get("R_sensor_from_ref", r.get("R")), float)
     t = np.asarray(r.get("t_sensor_from_ref", r.get("t")), float)
     return R, t
@@ -442,8 +477,12 @@ def navcam_stereo(sol: Solution, which: str = "refined") -> Optional[Tuple[Pixel
     return L.pixel_camera(which == "initial"), R.pixel_camera(which == "initial"), rig
 
 
-def mean_rig(sols: Dict[str, Solution], lens: Optional[str] = None) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-    """Observation-weighted mean refined Navcam rig (rotation vector and translation averaged)."""
+def mean_rig(sols: Dict[str, Solution], lens: Optional[str] = None,
+             max_dev_mdeg: Optional[float] = 50.0) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """Observation-weighted mean refined Navcam rig (rotation vector and translation averaged).
+    ``max_dev_mdeg`` (v0p22.1): rigs farther than this from the median rotation are left out (a scape
+    whose Navcam intrinsics are not observable also turns its rig: Three Forks 684-693 with Mastcam-Z,
+    -146 mdeg of yaw)."""
     from scipy.spatial.transform import Rotation
     rv, tt, w = [], [], []
     for s in sols.values():
@@ -455,7 +494,13 @@ def mean_rig(sols: Dict[str, Solution], lens: Optional[str] = None) -> Optional[
         w.append(sum(c.n_obs for c in s.cameras.values() if c.family == "N"))
     if not rv:
         return None
-    w = np.asarray(w, float)
+    rv, tt, w = np.asarray(rv), np.asarray(tt), np.asarray(w, float)
+    if max_dev_mdeg and len(rv) > 2:
+        med = np.median(rv, axis=0)
+        dev = np.degrees(np.linalg.norm(rv - med, axis=1)) * 1e3
+        keep = dev <= max_dev_mdeg
+        if keep.sum() >= 2:
+            rv, tt, w = rv[keep], tt[keep], w[keep]
     return Rotation.from_rotvec(np.average(rv, axis=0, weights=w)).as_matrix(), np.average(tt, axis=0, weights=w)
 
 

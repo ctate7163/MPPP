@@ -208,10 +208,19 @@ def eps_table(al: Alignment) -> List[Dict[str, Any]]:
     Residuals are post-fit, so these are lower bounds.  ``eps_dof_px`` (v0p22)
     corrects for the 3 coordinates each point absorbs: eps sqrt(2N / (2N - 3P))
     for N observations of P points (the camera parameters, a few per image,
-    are neglected); for two-view points the factor is 2.
+    are neglected); for two-view points the factor is 2.  For a subset (one
+    family, one instrument, intra or cross tracks) a point shared with other
+    observations absorbs only its share: the 3 P term becomes 3 sum over the
+    subset's observations of 1 / (the point's track length) (v0p22.1; before,
+    every point touched by the subset counted fully, which overcorrected
+    subsets such as one eye of a stereo pair).
     """
     o = al.__dict__.setdefault("_obs", _observations(al))
     rows = []
+    have_pts = o["point"].size > 0 and o["point"][0] >= 0
+    if have_pts:
+        _, inv, cnt = np.unique(o["point"], return_inverse=True, return_counts=True)
+        share = 1.0 / cnt[inv]                              # each observation's share of its point's 3 DoF
     groups = [("all", np.ones(o["residual_px"].size, bool))]
     groups += [(f, o["family"] == f) for f in sorted(set(o["family"]))]
     if len(set(o["instrument"])) > 1:
@@ -219,8 +228,8 @@ def eps_table(al: Alignment) -> List[Dict[str, Any]]:
     for name, g in groups:
         for kind, sel in (("all", g), ("intra", g & ~o["cross"]), ("cross", g & o["cross"])):
             r = o["residual_px"][sel]
-            n_pt = int(np.unique(o["point"][sel]).size) if r.size and o["point"][0] >= 0 else 0
-            dof = 2.0 * r.size - 3.0 * n_pt
+            n_pt = int(np.unique(o["point"][sel]).size) if r.size and have_pts else 0
+            dof = 2.0 * r.size - 3.0 * (float(share[sel].sum()) if have_pts else 0.0)
             f = np.sqrt(2.0 * r.size / dof) if n_pt and dof > 0 else float("nan")
             rows.append({"alignment": al.label, "group": name, "tracks": kind, "n_obs": int(r.size),
                          "n_points": n_pt, "rms_px": _rms(r), "eps_px": _rms(r) / np.sqrt(2.0),

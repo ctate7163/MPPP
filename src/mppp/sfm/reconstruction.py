@@ -570,8 +570,13 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
       ``shift_mad_factor`` x the station's scaled MAD, or the attitude change
       by more than ``min_attitude_deg`` and ``attitude_mad_factor`` x MAD.
       Stations with fewer than 3 frames of a family are not tested this way.
+      The attitude test applies to Navcam frames only: a Mastcam-Z prior
+      attitude is one mast pointing, whose error is per image (v0p22.1).
 
-    Returns one record per flagged frame: frame id, images, station, reasons.
+    Returns one record per flagged frame: frame id, images, station, reasons,
+    and ``kind``: ``"unconstrained"`` for a frame with no tie points at all
+    (e.g. a defocused focus-stack member or a calibration-target image; it was
+    never aligned and is left out of the export) or ``"outlier"``.
     """
     from scipy.spatial.transform import Rotation
     th = dict(OUTLIER_DEFAULTS, **thresholds)
@@ -613,7 +618,9 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
     for f in frames.values():
         if f["observations"] and f["median_residual_px"] > lim:
             f["reasons"].append(f"median residual {f['median_residual_px']:.2f} px > {lim:.2f}")
-        if f["observations"] < th["min_observations"]:
+        if f["observations"] == 0:
+            f["reasons"].append("no tie points")
+        elif f["observations"] < th["min_observations"]:
             f["reasons"].append(f"{f['observations']} observations < {th['min_observations']}")
     groups: Dict[tuple, List[Dict[str, Any]]] = {}
     for f in frames.values():
@@ -630,12 +637,14 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
         for f, d, a in zip(fs, dev, adev):
             if d > max(th["min_shift_m"], th["shift_mad_factor"] * mad):
                 f["reasons"].append(f"shift {d:.2f} m from its station's median")
-            if a > max(th["min_attitude_deg"], th["attitude_mad_factor"] * amad):
+            if f["family"] == "N" and a > max(th["min_attitude_deg"], th["attitude_mad_factor"] * amad):
                 f["reasons"].append(f"attitude {a:.2f} deg from its station's median")
     out = []
     for f in frames.values():
         if f["reasons"]:
-            out.append({k: v for k, v in f.items() if k not in ("dC", "dR")})
+            rec_ = {k: v for k, v in f.items() if k not in ("dC", "dR")}
+            rec_["kind"] = "unconstrained" if f["observations"] == 0 else "outlier"
+            out.append(rec_)
     return sorted(out, key=lambda f: f["frame_id"])
 
 
