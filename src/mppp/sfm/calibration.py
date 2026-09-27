@@ -256,8 +256,8 @@ def consensus_camera(sols: Dict[str, Solution], group: str, lens: Optional[str] 
     are not averaged here.  ``max_rms_px`` (v0p22.1): cameras more than this far
     (rms over the frame, rotation removed) from the mean of the others are left
     out, one at a time, worst first - a scape whose few Navcam images all stand
-    at one spot cannot fix its own intrinsics (Three Forks 684-693 with
-    Mastcam-Z: 8.5 px off).  The left-out cameras are listed in ``excluded``.
+    at one spot cannot fix its own intrinsics (methods section 14).  The
+    left-out cameras are listed in ``excluded``.
     """
     cams, names = [], {}
     for n, s_ in sols.items():
@@ -299,6 +299,73 @@ def consensus_camera(sols: Dict[str, Solution], group: str, lens: Optional[str] 
                  None, sum(c.n_images for c in cams), n_obs)
     out.__dict__["excluded"] = excluded
     return out
+
+
+def write_navcam_consensus(cameras: Dict[str, Camera], rig: Optional[Tuple[np.ndarray, np.ndarray]],
+                           out_dir: PathLike, sols: Optional[Dict[str, Solution]] = None,
+                           repeatability: Optional[Dict[str, Any]] = None, step: float = 96.0) -> Dict[str, Path]:
+    """
+    Write the verified consensus Navcam cameras (v0p22.2) in the format of the
+    shipped start cameras, so that ``SfmProject.create(navcam_cameras=out_dir)``
+    starts a project from them: ``M2020_NL_rational.json``,
+    ``M2020_NR_rational.json`` and, with ``rig``, ``M2020_N_rig.json``.
+    ``cameras``: ``{"NL": Camera, "NR": Camera}`` from :func:`consensus_camera`
+    (its ``excluded`` list is recorded).  With ``sols``, each contributing
+    solution's rms distance from the consensus over the frame (rotation
+    removed) is recorded as ``verification`` - the scape-to-scape
+    repeatability of the calibration - together with ``repeatability``, any
+    further numbers the caller wants kept with the file (the ``eps`` rows of
+    notebook 05, say).  Returns the paths written.
+    """
+    from scipy.spatial.transform import Rotation
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: Dict[str, Path] = {}
+    for g in ("NL", "NR"):
+        c = cameras.get(g)
+        if c is None:
+            continue
+        per_scape = []
+        if sols:
+            for n, s_ in sols.items():
+                for cc in s_.cameras_of(g):
+                    if cc.refined and cc.distortion == c.distortion:
+                        d = compare_cameras(c.pixel_camera(), cc.pixel_camera(), step=step)
+                        per_scape.append({"scape": n, "camera": cc.key, "observations": int(cc.n_obs),
+                                          "rms_px": float(d["rms_px"]), "corner_rms_px": float(d["corner_rms_px"]),
+                                          "excluded": any(e["scape"] == n for e in getattr(c, "excluded", []))})
+        d = {"model": c.model, "width": int(c.width), "height": int(c.height), "params": [float(v) for v in c.params],
+             "param_names": list(PARAM_NAMES[:len(c.params)]),
+             "distortion": ("rational: radial (1 + k1 r^2 + k2 r^4 + k3 r^6) / (1 + k4 r^2); k5 = k6 = 0"
+                            if c.distortion == "rational" else c.distortion),
+             "free_params": ["k4"] if c.distortion == "rational" else [],
+             "pixel_origin": "corner of the first pixel (COLMAP)",
+             "source": f"{c.key}: observation-weighted mean of the refined {g} cameras of the scapes listed in "
+                       f"verification (notebook 05, write_navcam_consensus); {int(c.n_obs)} observations",
+             "verification": {"per_scape": per_scape, "excluded": list(getattr(c, "excluded", [])),
+                              "repeatability": repeatability or {}}}
+        path = out_dir / f"M2020_{g}_rational.json"
+        path.write_text(json.dumps(d, indent=1), encoding="utf-8")
+        written[g] = path
+    if rig is not None:
+        R, t = np.asarray(rig[0], float), np.asarray(rig[1], float)
+        per = {}
+        if sols:
+            for n, s_ in sols.items():
+                gg = rig_geometry(s_.rig_refined)
+                if gg is not None:
+                    per[n] = [float(v) for v in Rotation.from_matrix(gg[0]).as_rotvec()]
+        d = {"ref": "NL", "sensor": "NR", "R_sensor_from_ref": R.tolist(),
+             "rotvec_rad": [float(v) for v in Rotation.from_matrix(R).as_rotvec()],
+             "t_sensor_from_ref_m": t.tolist(), "baseline_m": float(np.linalg.norm(t)),
+             "per_solution_rotvec_rad": per,
+             "note": "x_NR = R x_NL + t. Rotation: observation-weighted mean of the refined rigs of the solutions listed "
+                     "(notebook 05, write_navcam_consensus). SfmProject.create(navcam_cameras=<this folder>) starts the "
+                     "rig rotation here and keeps the project's CAHV translation (the baseline sets the scale)."}
+        path = out_dir / "M2020_N_rig.json"
+        path.write_text(json.dumps(d, indent=1), encoding="utf-8")
+        written["rig"] = path
+    return written
 
 
 def reference_camera(group: str, lens: str = "rational") -> Optional[Camera]:
@@ -481,8 +548,7 @@ def mean_rig(sols: Dict[str, Solution], lens: Optional[str] = None,
              max_dev_mdeg: Optional[float] = 50.0) -> Optional[Tuple[np.ndarray, np.ndarray]]:
     """Observation-weighted mean refined Navcam rig (rotation vector and translation averaged).
     ``max_dev_mdeg`` (v0p22.1): rigs farther than this from the median rotation are left out (a scape
-    whose Navcam intrinsics are not observable also turns its rig: Three Forks 684-693 with Mastcam-Z,
-    -146 mdeg of yaw)."""
+    whose Navcam intrinsics are not observable also turns its rig; methods section 14)."""
     from scipy.spatial.transform import Rotation
     rv, tt, w = [], [], []
     for s in sols.values():

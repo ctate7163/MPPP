@@ -1336,7 +1336,7 @@ def test_measured_gate():
     _check("CV>0 gives a heavier tail than the exponential at wide angle",
            float(gate_powerlaw(np.radians(30.0), cfg1)) > float(np.exp(-30/4.3)))
     _check("illumination gate: dL=0 -> 1", illumination_gate(12.0, 12.0, 2.2) == 1.0)
-    _check("illumination gate: e-fold at L0",
+    _check("illumination gate: e-fold at tau",
            abs(illumination_gate(12.0, 14.2, 2.2) - np.exp(-1.0)) < 1e-9)
     _check("illumination gate: unknown time -> 1", illumination_gate(None, 12.0, 2.2) == 1.0)
     _check("illumination gate: wraps midnight",
@@ -1369,8 +1369,8 @@ def test_measured_gate():
     s_intra = float(compute_metrics(solve_precision_field(g2, two, cfg_intra))["sigma_n"][0,0])
     s_cross = float(compute_metrics(fc)["sigma_n"][0,0])
     _check("cross mode never worse than nearest-station intra", s_cross <= s_intra*(1+1e-9), f"{s_cross:.4g} vs {s_intra:.4g}")
-    _check("completeness uses L0 (counts), not L_eff",
-           ModelConfig().L0_h > ModelConfig().L_eff_h)
+    _check("completeness uses tau (counts), not L_eff",
+           ModelConfig().tau_h > ModelConfig().L_eff_h)
 
     from .cases import CASE_PARAMS
     _check("three matching cases present", set(CASE_PARAMS) == {"pessimistic","measured","optimistic"})

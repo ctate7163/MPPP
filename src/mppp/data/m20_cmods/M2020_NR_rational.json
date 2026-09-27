@@ -35,5 +35,5 @@
   "k4"
  ],
  "pixel_origin": "corner of the first pixel (COLMAP)",
- "source": "C. Tate's Navcam calibration (Metashape frame model, 29 Sep 2025, M2020_NR0_frame.xml), re-fitted as a COLMAP rational model including the frame corners and refined by MPPP bundle adjustments; since v0p22 the observation-weighted mean of three v0p20 Navcam solutions: Three Forks (sols 684-693), Bell Island (1451-1467) and Rockytop (461-530), 1,473,254 observations. Each solution differs from the mean by 0.1-0.55 px rms over the frame (under 1 px in the corners). The bundle adjustment refines it per project."
+ "source": "C. Tate's Navcam calibration (Metashape frame model, 29 Sep 2025, M2020_NR0_frame.xml), re-fitted as a COLMAP rational model including the frame corners and refined by MPPP bundle adjustments; since v0p22 the observation-weighted mean of three v0p20 Navcam solutions: Three Forks (sols 684-693), Bell Island (1451-1467) and Rockytop (461-530), 1,473,254 observations. The bundle adjustment refines it per project."
 }

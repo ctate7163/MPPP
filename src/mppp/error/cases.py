@@ -86,10 +86,10 @@ def run_three_cases(stations, grid, pose=None, **cfg_kw):
     fx.p_cross = np.zeros(grid.shape)
     out["fixed"] = (fx, compute_metrics(fx))
 
-    A_, thb, cv_, L0_, _ = CASE_PARAMS["measured"]
+    A_, thb, cv_, tau_, _ = CASE_PARAMS["measured"]
     sf = solve_precision_field(grid, stations, ModelConfig(
         link_mode="cross", use_theta_gate=True, use_tau_gate=False, gate_form="powerlaw",
-        gate_A=A_, theta_bar_deg=thb, gate_cv=cv_, L0_h=L0_,
+        gate_A=A_, theta_bar_deg=thb, gate_cv=cv_, tau_h=tau_,
         store_station_dirs=True, **cfg_kw), _pose_for("measured", pose, stations))
     out["sfm"] = (sf, compute_metrics(sf))
 
@@ -118,7 +118,7 @@ __all__ = ["CASE_PARAMS", "CASE_POSE", "run_four_cases", "run_three_cases", "lbs
 
 
 #: name -> (eps_cross_px, theta_max_deg, tau_max, description)
-#: name -> (A, theta_bar_deg, CV, L0_h, description)
+#: name -> (A, theta_bar_deg, CV, tau_h, description)
 #: All three share the measured functional form; only the numbers differ.
 #:   pessimistic  classical matcher at the worst archive site, dL uncontrolled
 #:   measured     pooled five-site Navcam archive (Metashape/COLMAP SIFT)
@@ -373,13 +373,13 @@ def run_four_cases(stations: Sequence[Station], grid: Grid,
         _pose_for("fixed", pose, stations))
     out["fixed"] = (f, compute_metrics(f))
 
-    for name, (A_, thb, cv_, L0_, _) in CASE_PARAMS.items():
+    for name, (A_, thb, cv_, tau_, _) in CASE_PARAMS.items():
         # tau gate dropped: on terrain flat over ~5 m viewed from one mast
         # height it is redundant with theta, and it was one parameter nobody
         # could interpret.
         cfg = ModelConfig(link_mode="cross", use_theta_gate=True,
                           use_tau_gate=False, gate_form="powerlaw",
-                          gate_A=A_, theta_bar_deg=thb, gate_cv=cv_, L0_h=L0_,
+                          gate_A=A_, theta_bar_deg=thb, gate_cv=cv_, tau_h=tau_,
                           store_station_dirs=True, **cfg_kw)
         f = solve_precision_field(grid, stations, cfg, _pose_for(name, pose, stations))
         m = compute_metrics(f)

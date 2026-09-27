@@ -210,7 +210,7 @@ def build_view_graph(field: PrecisionField,
             if cfg.use_theta_gate:
                 if cfg.gate_form == "powerlaw":
                     w = w * gate_powerlaw(th, cfg) * illumination_gate(
-                        field.stations[i].lmst_h, field.stations[j].lmst_h, cfg.L0_h)
+                        field.stations[i].lmst_h, field.stations[j].lmst_h, cfg.tau_h)
                 else:
                     w = w * np.exp(-2.0 * (th / th_max) ** m)
             if cfg.use_tau_gate:

@@ -140,9 +140,12 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   refine_tangential: bool = True, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
                   min_frame_observations: int = 30, num_threads: int = -1, verbose: bool = False,
                   attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG,
-                  rig_translation_sigma_m: Optional[float] = None) -> Dict[str, Any]:
+                  rig_translation_sigma_m: Optional[float] = None,
+                  hold_cameras: Sequence[str] = ()) -> Dict[str, Any]:
     """
-    Weighted BA in place (see module docstring).  ``sigma_px``: keypoint
+    Weighted BA in place (see module docstring).  ``hold_cameras`` (v0p22.2):
+    keys of project cameras (``"NL"``, ``"NR"``, a focus bin...) whose
+    intrinsics are held entirely, whatever ``refine_intrinsics`` says.  ``sigma_px``: keypoint
     standard deviation in native pixels; ``loss_scale``: Cauchy scale in units
     of that sigma.  ``refine_rig``: "rotation" (default) refines the right
     camera's orientation in the rig and keeps the CAHV stereo baseline vector,
@@ -263,7 +266,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     for cid, cam in work.cameras.items():
         if not prob.has_parameter_block(cam.params):
             continue
-        if not refine_intrinsics:
+        if not refine_intrinsics or key_of.get(int(cid), "") in set(hold_cameras):
             prob.set_parameter_block_constant(cam.params)
             continue
         fixed = fixed_camera_params(cam.model.name, refine_principal_point, refine_tangential)
@@ -700,6 +703,42 @@ def convergence_statistics(rec, project: SfmProject, bins_deg: Sequence[float] =
             "sampled": bool(f != 1.0)}
 
 
+NETWORK_MIN_STATIONS = 4        # Navcam intrinsics are refined only from networks at least this strong (v0p22.2)
+NETWORK_MIN_SPAN_M = 5.0
+
+
+def navcam_network(project: SfmProject, min_stations: int = NETWORK_MIN_STATIONS,
+                   min_span_m: float = NETWORK_MIN_SPAN_M) -> Dict[str, Any]:
+    """
+    How well the Navcam network can constrain the Navcam intrinsics (v0p22.2):
+    the number of stations with Navcam frames, the span of their prior
+    positions, and the verdict ``"strong"`` (refine) or ``"weak"`` (hold the
+    cameras at their start values).  A scape whose Navcam images all stand at
+    a few stations a few metres apart cannot separate the principal point
+    from the attitudes nor the distortion from the depths (methods §14).
+    """
+    st: Dict[str, List[np.ndarray]] = {}
+    for r in project.images:
+        if str(r["instrument"]).startswith("N"):
+            st.setdefault(r["station"], []).append(np.asarray(r["prior_C"], float))
+    n_st = sum(1 for v in st.values() if len(v) >= 2)
+    C = np.array([np.mean(v, axis=0) for v in st.values()]) if st else np.zeros((0, 3))
+    span = float(np.max(np.linalg.norm(C[:, None, :2] - C[None, :, :2], axis=2))) if len(C) > 1 else 0.0
+    weak = n_st < min_stations or span < min_span_m
+    return {"stations": n_st, "span_m": round(span, 2), "navcam_images": sum(len(v) for v in st.values()),
+            "verdict": "weak" if weak else "strong", "min_stations": min_stations, "min_span_m": min_span_m}
+
+
+def _frames_of_family(rec, project: SfmProject, family: str) -> List[int]:
+    by_name = {r["name"]: r for r in project.images}
+    out = []
+    for fid, fr in rec.frames.items():
+        names = [rec.images[d.id].name for d in fr.data_ids if d.id in rec.images]
+        if names and str(by_name[names[0]]["instrument"]).startswith(family):
+            out.append(int(fid))
+    return out
+
+
 def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 schedule: Sequence[Sequence[float]] = DEFAULT_SCHEDULE,
                 refine_intrinsics: bool = True, refine_rig: Union[bool, str] = "rotation",
@@ -709,9 +748,26 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG,
                 exclude_outliers: bool = False, outlier_thresholds: Optional[Dict[str, float]] = None,
                 exclude_after_round: int = 2, rig_translation_sigma_m: Optional[float] = None,
-                triangulation_options: Optional[Dict[str, Any]] = None):
+                triangulation_options: Optional[Dict[str, Any]] = None,
+                navcam_intrinsics: str = "auto", staged: bool = False, hold_cameras: Sequence[str] = ()):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
+
+    ``navcam_intrinsics`` (v0p22.2): ``"refine"``, ``"hold"`` (the Navcam
+    cameras stay at their start values, the shipped consensus unless the
+    project was created from other cameras) or ``"auto"`` (default: hold when
+    :func:`navcam_network` calls the network weak).  ``refine_rig=False``
+    holds the rig.  ``hold_cameras``: further camera keys to hold.
+    ``staged`` (v0p22.2): with Mastcam-Z in the project, solve the Navcam
+    block first (Mastcam-Z frames deregistered), write it to
+    ``sparse/<out_name>_navcam``, then add the Mastcam-Z frames at their
+    priors and solve everything with the Navcam cameras and rig held at the
+    stage-1 values.  Both solutions come from the same images, features and
+    matches, so the Navcam-only and the combined results are comparable, and
+    the Navcam calibration cannot be pulled by the Mastcam-Z observations.
+    The stage-1 solution stays on disk (``sparse/<out_name>_navcam``) and its
+    log in ``project.settings["reconstruction"]["navcam_stage"]``; export it
+    with ``export_for_error(project, rec_navcam, out_dir=...)``.
 
     ``schedule``: rounds of (triangulation threshold [full-res px], Cauchy
     scale [sigma], maximum residual kept [native px]) - a graduated schedule
@@ -753,11 +809,28 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     """
     if min_track_length < 2:
         raise ValueError("min_track_length must be >= 2")
+    if navcam_intrinsics not in ("auto", "refine", "hold"):
+        raise ValueError("navcam_intrinsics must be 'auto', 'refine' or 'hold'")
     import time
     t0 = time.time()
     rec = initial_reconstruction(project)
     init = copy.deepcopy(rec)
     log: List[Dict[str, Any]] = []
+    network = navcam_network(project)
+    hold = set(hold_cameras)
+    if navcam_intrinsics == "hold" or (navcam_intrinsics == "auto" and network["verdict"] == "weak"):
+        hold |= {k for k in project.cameras if str(k).startswith("N")}
+    network["navcam_intrinsics"] = "hold" if any(str(k).startswith("N") for k in hold) else "refine"
+    if verbose:
+        print(f"[sfm] Navcam network: {network['stations']} stations over {network['span_m']} m -> {network['verdict']}; "
+              f"Navcam intrinsics {network['navcam_intrinsics']}" + (f", holding {sorted(hold)}" if hold else ""), flush=True)
+    log.append({"navcam_network": network})
+    z_frames = _frames_of_family(rec, project, "Z")
+    staged = bool(staged and z_frames and len(z_frames) < len(rec.frames))
+    if staged:
+        exclude_frames(rec, z_frames)
+        if verbose:
+            print(f"[sfm] stage 1: Navcam only ({len(z_frames)} Mastcam-Z frames set aside)", flush=True)
     if register:
         rec = triangulate(rec, project, max_reproj_px=8.0)
         reg = register_stations(rec, project, verbose=verbose)
@@ -784,7 +857,8 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
         st0 = track_statistics(rec, project)
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                            refine_tangential=refine_tangential, refine_rig=refine_rig, max_iterations=max_iterations,
-                           attitude_prior_deg=attitude_prior_deg, rig_translation_sigma_m=rig_translation_sigma_m)
+                           attitude_prior_deg=attitude_prior_deg, rig_translation_sigma_m=rig_translation_sigma_m,
+                           hold_cameras=sorted(hold))
         n_bad = filter_observations(rec, project, float(rmax))
         n_bad += drop_short_tracks(rec, min_track_length)
         st = track_statistics(rec, project)
@@ -806,12 +880,56 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                        refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential,
                        refine_rig=refine_rig, max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
-                       rig_translation_sigma_m=rig_translation_sigma_m)
+                       rig_translation_sigma_m=rig_translation_sigma_m, hold_cameras=sorted(hold))
     # the final adjustment can push a few points behind a camera or past the limit
     n_bad = filter_observations(rec, project, float(schedule[-1][2]))
     n_bad += drop_short_tracks(rec, min_track_length)
     log.append({"final_ba": ba["brief"], "frames_held": ba["frames_held"], "filtered_after_final": n_bad,
                 "tracks": track_statistics(rec, project)})
+    navcam_stage = None
+    if staged:
+        # stage 1 done: keep it, then bring the Mastcam-Z frames in at their priors with the Navcam block held
+        out1 = project.root / "sparse" / f"{out_name}_navcam"
+        out1.mkdir(parents=True, exist_ok=True)
+        rec.write(str(out1))
+        (out1 / "mppp_sfm_log.json").write_text(json.dumps(log, indent=1, default=str), encoding="utf-8")
+        navcam_stage = {"path": str(out1.relative_to(project.root)), "log": log,
+                        "tracks": track_statistics(rec, project), "cameras": {}}
+        log = [{"stage": 2, "note": "Mastcam-Z frames added at their priors; Navcam cameras and rig held"}]
+        for fid in z_frames:
+            rec.frames[fid].rig_from_world = init.frames[fid].rig_from_world
+            rec.register_frame(fid)
+        hold |= {k for k in project.cameras if str(k).startswith("N")}
+        refine_rig = False
+        if verbose:
+            print(f"[sfm] stage 2: {len(z_frames)} Mastcam-Z frames added; Navcam cameras and rig held", flush=True)
+        for k, (tpx, loss, rmax) in enumerate(schedule):
+            rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts)
+            ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
+                               refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
+                               attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold))
+            n_bad = filter_observations(rec, project, float(rmax)) + drop_short_tracks(rec, min_track_length)
+            st = track_statistics(rec, project)
+            res = native_residuals(rec, project)["residual_native_px"]
+            entry = {"round": k + 1, "stage": 2, "triangulation_px_full": tpx, "cauchy_scale_sigma": loss, "ba": ba["brief"],
+                     "filtered_observations": n_bad, "tracks": st,
+                     "rms_native_px": float(np.sqrt(np.mean(res ** 2))) if res.size else float("nan"),
+                     "median_native_px": float(np.median(res)) if res.size else float("nan"),
+                     "elapsed_s": round(time.time() - t0, 1)}
+            log.append(entry)
+            if verbose:
+                print(f"[sfm] stage 2 round {k + 1}: {st['points']} points, median {entry['median_native_px']:.3f} / "
+                      f"rms {entry['rms_native_px']:.3f} native px, {n_bad} obs filtered, {entry['elapsed_s']:.0f} s", flush=True)
+            if exclude_outliers and k + 1 == min(int(exclude_after_round), len(schedule)):
+                _exclude(f"stage 2, after round {k + 1}")
+        if exclude_outliers:
+            _exclude("stage 2, before the final adjustment")
+        ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
+                           refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential, refine_rig=False,
+                           max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold))
+        n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
+        log.append({"final_ba": ba["brief"], "frames_held": ba["frames_held"], "filtered_after_final": n_bad,
+                    "tracks": track_statistics(rec, project)})
     out = project.root / "sparse" / out_name
     out.mkdir(parents=True, exist_ok=True)
     rec.write(str(out))
@@ -829,7 +947,10 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "exclude_outliers": bool(exclude_outliers),
                                           "excluded": [{k: v for k, v in e.items()} for e in excluded],
                                           "rig_translation_sigma_m": rig_translation_sigma_m,
-                                          "triangulation_options": topts}
+                                          "triangulation_options": topts,
+                                          "navcam_network": network, "navcam_intrinsics": network["navcam_intrinsics"],
+                                          "hold_cameras": sorted(hold), "staged": bool(staged),
+                                          "navcam_stage": navcam_stage}
     project.save()
     if gui_native:
         try:

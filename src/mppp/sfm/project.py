@@ -249,7 +249,7 @@ class SfmProject:
                zcam_intrinsics: str = "focus_model", zcam_focus_bin: Optional[float] = ZCAM_FOCUS_BIN,
                zcam_bin_refine: str = "focal", zcam_rig: bool = False,
                navcam_distortion: str = NAVCAM_DISTORTION, zcam_hold_f_images: int = ZCAM_HOLD_F_IMAGES,
-               navcam_rig: str = NAVCAM_RIG) -> "SfmProject":
+               navcam_rig: str = NAVCAM_RIG, navcam_cameras: Optional[PathLike] = None) -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -267,6 +267,13 @@ class SfmProject:
         starts from the focal length against focus count fitted to earlier
         refined solutions (``m20_cmods/M2020_ZCAM034_focus_model.json``, notebook
         05) instead of the label value, which is about 1 % short.
+        ``navcam_cameras`` (v0p22.2): a folder with verified consensus Navcam
+        cameras written by notebook 05 (``calibration.write_navcam_consensus``:
+        ``M2020_NL_rational.json``, ``M2020_NR_rational.json`` and optionally
+        ``M2020_N_rig.json``).  The rational Navcam cameras and, when present,
+        the consensus rig rotation are read from there instead of the shipped
+        ``m20_cmods`` files; the files' ``verification`` blocks are kept in
+        ``settings["navcam_cameras"]``.
         ``navcam_rig`` (v0p22): ``"consensus"`` (default, with the rational
         model) starts the right camera's rotation in the rig from the refined
         consensus of earlier solutions (``m20_cmods/M2020_N_rig.json``, which
@@ -294,13 +301,12 @@ class SfmProject:
         Navcam camera.  Each image records ``camera_group`` (``ZL034``),
         ``focus_count`` and ``label_f_px``.
         Mastcam-Z priors (v0p14.5): the label CAHVOR models move the principal
-        point with focus (ZR034 at Three Forks: ~160 px in x, ~120 px in y) and
+        point with focus (by up to ~100 px or more) and
         rotate the pointing to compensate, so a label's attitude only fits its
         own principal point.  Each Mastcam-Z prior attitude is therefore rotated
         to fit the principal point of its COLMAP camera (the ray through the
         camera's principal point is kept); the correction is recorded as
-        ``prior_R_correction_deg``.  At Three Forks this brings the spread of the
-        left/right relative rotations from 1.29 deg to 0.08 deg.
+        ``prior_R_correction_deg``.
         ``zcam_rig`` (v0p14.5, default False): no stereo rig for Mastcam-Z - each
         Mastcam-Z image is its own frame.  Even after the correction the pairs
         disagree by up to 0.08 deg (~7 px at f = 4700 px), too much for a rigid
@@ -380,6 +386,7 @@ class SfmProject:
                 "station": f"S{int(m['site']):03d}D{int(m['drive']):04d}",
                 "sequence": fn["sequence"], "downsample_scale": s, "native_size": [iw, ih],
                 "lmst": m.get("LMST"), "solar_elevation_deg": m.get("solar_elevation_deg"),
+                "solar_azimuth_deg": m.get("solar_azimuth_deg"),
                 "prior_C": (np.asarray(m["pose"]["C_enu_m"], float) - offset).tolist(),
                 "prior_R_w2c": R.tolist(), "position_source": m["pose"].get("position_source"),
                 "has_mask": "mask" in m["outputs"],
@@ -388,13 +395,18 @@ class SfmProject:
             })
 
         cameras = {}
+        nav_dir = Path(navcam_cameras) if navcam_cameras else xml_dir
+        nav_info: Dict[str, Any] = {}
         for instr, fam in sorted(instruments.items()):
             if fam == "Z" and zcam_intrinsics in ("label", "focus_model"):
                 cameras[instr] = _camera_from_label_median(instr, label_params[instr], FULL_FRAME[fam], zero_terms)
                 continue
             if fam == "N" and navcam_distortion == "rational":
-                xml = xml_dir / NAVCAM_RATIONAL_PATTERN.format(instrument=instr)
+                xml = nav_dir / NAVCAM_RATIONAL_PATTERN.format(instrument=instr)
                 cam = camera_from_colmap_json(xml, zero_terms)
+                if navcam_cameras:
+                    nav_info[instr] = {"file": str(xml),
+                                       "verification": json.loads(xml.read_text(encoding="utf-8")).get("verification")}
             else:
                 xml = xml_dir / (ZCAM_XML_PATTERN.format(camera=instr) if fam == "Z"
                                  else XML_PATTERN.format(instrument=instr))
@@ -410,10 +422,15 @@ class SfmProject:
         _align_priors_to_cameras(images, cameras)
         rig = _rig_from_pairs([r for r in images if zcam_rig or instruments.get(r["camera_group"]) != "Z"])
         if navcam_rig == "consensus" and "N" in rig and navcam_distortion == "rational":
-            shipped = json.loads((data_dir() / "m20_cmods" / NAVCAM_RIG_FILE).read_text(encoding="utf-8"))
+            rig_file = data_dir() / "m20_cmods" / NAVCAM_RIG_FILE
+            if navcam_cameras and (nav_dir / NAVCAM_RIG_FILE).is_file():
+                rig_file = nav_dir / NAVCAM_RIG_FILE
+                nav_info["rig"] = {"file": str(rig_file)}
+            shipped = json.loads(rig_file.read_text(encoding="utf-8"))
             rig["N"]["R_sensor_from_ref_cahv"] = rig["N"]["R_sensor_from_ref"]
             rig["N"]["R_sensor_from_ref"] = shipped["R_sensor_from_ref"]
-            rig["N"]["rotation_source"] = f"{NAVCAM_RIG_FILE} (refined consensus; translation from CAHV)"
+            rig["N"]["rotation_source"] = f"{rig_file.name} (refined consensus; translation from CAHV)" + \
+                (f" from {rig_file.parent}" if navcam_cameras else "")
         proj = cls(root, images, cameras, rig, offset,
                    {"world_frame": frames.pop(), "image_format": image_format,
                     "prior_sigma_m": list(map(float, prior_sigma_m)), "zero_terms": list(zero_terms),
@@ -421,7 +438,8 @@ class SfmProject:
                     "zcam_hold_f_images": int(zcam_hold_f_images) if zcam_intrinsics == "focus_model" else None,
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
                     "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
-                    "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True})
+                    "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
+                    "navcam_cameras": {"dir": str(nav_dir), **nav_info} if navcam_cameras else None})
         proj.save()
         return proj
 

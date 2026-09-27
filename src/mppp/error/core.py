@@ -335,7 +335,7 @@ class Station:
     mask: Optional[OcclusionMask] = field(default_factory=lambda: DEFAULT_ROVER_MASK)
     path_m: Optional[float] = None
     #: Local mean solar time of the station's imaging [hours, 0-24].  Drives the
-    #: illumination gate h(dL) = exp(-|L_i - L_j| / L0) between station pairs.
+    #: illumination gate h(dL) = exp(-|L_i - L_j| / tau) between station pairs.
     #: None means "unknown -> assume co-temporal" (dL = 0, h = 1).
     lmst_h: Optional[float] = None
     is_anchor: bool = False
@@ -535,7 +535,7 @@ class ModelConfig:
         # So eps_cross = eps_intra IS the perfect-matching case; eps_cross = 0
         # is not a distinct scenario.
     # ---- cross-station gate, MEASURED form (Navcam archive, five sites) ----
-    #   w_ij = A * (1 + theta/theta_c)^(-k) * exp(-|dL|/L0),
+    #   w_ij = A * (1 + theta/theta_c)^(-k) * exp(-|dL|/tau),
     #   theta_c = theta_bar / CV^2,   k = 1 / CV^2
     # A plain-exponential gate is the CV -> 0 limit; heavier tails for CV > 0
     # come from a Gamma-distributed per-patch angular tolerance.  The old
@@ -545,10 +545,10 @@ class ModelConfig:
     gate_A: float = 0.4          # cross-station completeness at theta->0, dL->0, rel. to intra
     theta_bar_deg: float = 4.3   # mean per-patch angular tolerance
     gate_cv: float = 0.36        # spread of tolerance across the scene
-    L0_h: float = 2.3            # YIELD e-fold in |dLMST| (cross-station stratum)
+    tau_h: float = 2.3            # YIELD e-fold in |dLMST| (cross-station stratum)
         # Two illumination scales, measured 2026-09-15, and they are NOT
         # interchangeable:
-        #   L0     = 2.3 h  -- matched-pair COUNTS decay with this.  Use it for
+        #   tau     = 2.3 h  -- matched-pair COUNTS decay with this.  Use it for
         #                      completeness (holes / coverage).
         #   L_eff  = 1.46 h -- INFORMATION per possible pair, S/eps^2, decays
         #                      with this (pooled; LOSO 1.40-1.56; single
@@ -556,8 +556,8 @@ class ModelConfig:
         #                      the plateau reported earlier was an artefact of
         #                      describing completeness and precision separately).
         # Using L_eff for counts under-predicts them by the whole eps^2 factor.
-        # An earlier analytic 1/L_eff = 1/L0 + 2/L_eps gave 1.09 h and was wrong
-        # by 26 %: it used the same-station L0 (1.90 h) instead of the
+        # An earlier analytic 1/L_eff = 1/tau + 2/L_eps gave 1.09 h and was wrong
+        # by 26 %: it used the same-station tau (1.90 h) instead of the
         # cross-station one (2.32 h), and linearised (1+x)^-2 over x up to 1.5.
         # Separability S(theta,dL) = P(theta)h(dL) holds below ~8 deg
         # (L_eff 1.40-1.45 h); at 11 deg 1.21 h, at 20 deg 0.98 h.
@@ -947,7 +947,7 @@ def solve_precision_field(grid: Grid,
                 th = np.arccos(c)
                 if cfg.gate_form == "powerlaw":
                     Sij = gate_powerlaw(th, cfg) * illumination_gate(
-                        stations[i].lmst_h, stations[j].lmst_h, cfg.L0_h)
+                        stations[i].lmst_h, stations[j].lmst_h, cfg.tau_h)
                 else:
                     Sij = np.exp(-2.0 * (th / np.radians(cfg.theta_max_deg))
                                  ** cfg.theta_gate_exponent)
@@ -1211,7 +1211,7 @@ def _link_weights(u: np.ndarray, cos_e: np.ndarray, vis: np.ndarray,
                 th = np.arccos(c)
                 if cfg.gate_form == "powerlaw":
                     w = w * gate_powerlaw(th, cfg)
-                    w = w * illumination_gate(stations[i].lmst_h, stations[j].lmst_h, cfg.L0_h)
+                    w = w * illumination_gate(stations[i].lmst_h, stations[j].lmst_h, cfg.tau_h)
                 else:
                     w = w * np.exp(-2.0 * (th / th_max) ** m)
             if cfg.use_tau_gate:
@@ -1243,13 +1243,13 @@ def gate_powerlaw(theta_rad, cfg) -> np.ndarray:
     return cfg.gate_A * (1.0 + np.asarray(theta_rad) / th_c) ** (-k)
 
 
-def illumination_gate(l_i, l_j, L0_h: float) -> float:
-    """exp(-|dLMST|/L0) between two stations; 1 if either time is unknown."""
-    if l_i is None or l_j is None or L0_h <= 0:
+def illumination_gate(l_i, l_j, tau_h: float) -> float:
+    """exp(-|dLMST|/tau) between two stations; 1 if either time is unknown."""
+    if l_i is None or l_j is None or tau_h <= 0:
         return 1.0
     dL = abs(float(l_i) - float(l_j))
     dL = min(dL, 24.0 - dL)          # wrap
-    return float(np.exp(-dL / L0_h))
+    return float(np.exp(-dL / tau_h))
 
 
 def load_occlusion_profiles(path: Optional[str] = None) -> Dict[str, "OcclusionMask"]:

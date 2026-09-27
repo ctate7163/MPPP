@@ -402,12 +402,12 @@ def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
     with (out / "stations.csv").open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         labels = station_labels(project.images)
-        w.writerow(["name", "station", "site", "drive", "sol", "sclk_key", "lmst", "solar_elevation_deg",
+        w.writerow(["name", "station", "site", "drive", "sol", "sclk_key", "lmst", "solar_elevation_deg", "solar_azimuth_deg",
                     "instrument", "downsample_scale", "sequence", "registered", "station_label"])
         reg = {rec.images[i].name for i in rec.reg_image_ids()}
         for r in project.images:
             w.writerow([r["name"], r["station"], r["site"], r["drive"], r["sol"], r["sclk_key"], r.get("lmst"),
-                        r.get("solar_elevation_deg"), r["instrument"], r["downsample_scale"], r["sequence"],
+                        r.get("solar_elevation_deg"), r.get("solar_azimuth_deg"), r["instrument"], r["downsample_scale"], r["sequence"],
                         r["name"] in reg, labels.get(r["station"], r["station"])])
     rows = pose_residual_table(rec, project)
     if rows:
