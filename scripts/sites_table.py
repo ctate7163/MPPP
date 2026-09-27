@@ -78,23 +78,53 @@ for r in rows:
 (out / "sites.md").write_text("\n".join(md) + "\n", encoding="utf-8")
 print("\n".join(md))
 
-# histogram: small multiples, one row per scape, LMST 6-20 h in 15-min bins; Navcam vs Mastcam-Z stacked
-fig, axes = plt.subplots(len(SCAPES), 1, figsize=(7.5, 1.5 * len(SCAPES)), sharex=True)
+# histogram: small multiples, one row per scape, then one row with every image of every scape (each image once);
+# Navcam and Mastcam-Z overlaid (not stacked) as translucent fills with a solid outline, so both stay readable
+NAV_C, ZC_C = "#2a78d6", "#eb6834"          # categorical slots 1 and 2 (dataviz reference palette)
+FILL_ALPHA = 0.30
 bins = np.arange(5, 22.01, 0.25)
+
+
+def overlaid(ax, series):
+    for vals, color, lab in series:
+        if len(vals):
+            ax.hist(vals, bins=bins, color=color, alpha=FILL_ALPHA, label=lab)
+            ax.hist(vals, bins=bins, histtype="step", color=color, lw=1.2)
+    ax.axvline(12, color="0.6", lw=0.6, ls=":")
+    ax.grid(axis="y", color="0.9", lw=0.6); ax.set_axisbelow(True)
+    for sp in ("top", "right"):
+        ax.spines[sp].set_visible(False)
+    ax.set_ylabel("images", fontsize=8); ax.tick_params(labelsize=8)
+
+
+n = len(SCAPES) + 1
+fig, axes = plt.subplots(n, 1, figsize=(7.5, 1.45 * n + 0.6), sharex=True,
+                         gridspec_kw={"height_ratios": [1] * len(SCAPES) + [1.6]})
+seen = {}                                     # stem -> (family, lmst): an image in two scapes counts once
 for ax, (label, root, ver, what) in zip(axes, SCAPES):
     d = json.load(open(f"{root}/processed/mppp_manifest_{ver}.json"))["images"]
     lmN = [lmst_hours(r.get("LMST")) for r in d if r["filename"]["family"] == "N"]
     lmZ = [lmst_hours(r.get("LMST")) for r in d if r["filename"]["family"] == "Z"]
-    ax.hist([lmN, lmZ], bins=bins, stacked=True, color=["#3b6ea5", "#d98b3a"], label=["Navcam", "Mastcam-Z 34"])
-    ax.axvline(12, color="0.5", lw=0.6, ls=":")
+    for r in d:
+        seen[r["filename"]["stem"]] = (r["filename"]["family"], lmst_hours(r.get("LMST")))
+    overlaid(ax, [(lmN, NAV_C, "Navcam"), (lmZ, ZC_C, "Mastcam-Z 34")])
     r = next(x for x in rows if x["scape"] == label)
-    ax.set_title(f"{label}: sols {r['sols']}, {r['stations']} stations / {r['span_m']:g} m, {r['images']} images",
-                 loc="left", fontsize=8, pad=2)
-    ax.set_ylabel("images", fontsize=8); ax.tick_params(labelsize=8)
-axes[0].legend(fontsize=7, loc="upper right")
+    ax.set_title(f"{label}: sols {r['sols']}, {r['stations']} stations / {r['span_m']:g} m, "
+                 f"{r['navcam']} Navcam + {r['mastcam_z']} Mastcam-Z", loc="left", fontsize=8, pad=2)
+allN = [v for f_, v in seen.values() if f_ == "N" and np.isfinite(v)]
+allZ = [v for f_, v in seen.values() if f_ == "Z" and np.isfinite(v)]
+ax = axes[-1]
+overlaid(ax, [(allN, NAV_C, "Navcam"), (allZ, ZC_C, "Mastcam-Z 34")])
+ax.set_title(f"All scapes: {len(allN)} Navcam + {len(allZ)} Mastcam-Z images (each image once)",
+             loc="left", fontsize=8.5, pad=2, fontweight="bold")
+ax.set_facecolor("#f6f6f4")
+from matplotlib.patches import Patch
+fig.legend(handles=[Patch(facecolor=c, alpha=FILL_ALPHA, edgecolor=c, lw=1.2, label=l)
+                    for c, l in ((NAV_C, "Navcam"), (ZC_C, "Mastcam-Z 34"))],
+           loc="upper right", fontsize=8, frameon=False, ncol=2, bbox_to_anchor=(0.99, 0.995))
 axes[-1].set_xlabel("local mean solar time of the image [h]")
 axes[-1].set_xticks(range(6, 23, 2))
-fig.suptitle("When the images were taken: LMST per image, per scape", fontsize=10)
-fig.tight_layout(rect=(0, 0, 1, 0.98))
+fig.suptitle("When the images were taken: LMST per image, per scape", fontsize=10, x=0.02, ha="left")
+fig.tight_layout(rect=(0, 0, 1, 0.985))
 fig.savefig(out / "sites_lmst.png", dpi=160)
-print("wrote", out / "sites_lmst.png")
+print("wrote", out / "sites_lmst.png", "| aggregate:", len(allN), "Navcam,", len(allZ), "Mastcam-Z unique images")
