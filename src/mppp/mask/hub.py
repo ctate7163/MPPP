@@ -83,6 +83,14 @@ def export_safetensors(checkpoint: PathLike, out: Optional[PathLike] = None, nam
     from safetensors.torch import save_file
     from .model import SAFETENSORS_CARD_KEY, read_card, read_state_dict_checkpoint
     src = Path(checkpoint)
+    if not src.is_file():                                   # v0p22.4: a bare name, or a path relative to the
+        for cand in (checkpoints_dir() / src.name, checkpoints_dir() / src):   # repo run from notebooks/
+            if cand.is_file():
+                src = cand
+                break
+        else:
+            raise FileNotFoundError(f"checkpoint not found: {checkpoint} (cwd {Path.cwd()}; also looked in "
+                                    f"{checkpoints_dir()})")
     card = read_card(src)
     sd = read_state_dict_checkpoint(src, card)
     sd = {k: v.detach().cpu().contiguous() for k, v in sd.items()}
