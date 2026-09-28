@@ -95,4 +95,33 @@ Context: Li et al. (2025, Martian World Models) report COLMAP usable on 71.8 % o
 
 ## 7. Sites and scapes
 
-See `docs/results/sites.md` (table of the scapes used, sol ranges, images, stations, span, LMST spread) and `sites_lmst.png`.
+See `docs/results/sites.md` (tables by scape and by site: sol ranges, images, stations, span, LMST spread; `sites.csv`, `sites_by_site.csv`) and `sites_lmst.png` (per site, each camera normalised to unit area).
+
+## 8. Rockytop Navcam worked example (v0p22.2, 27 Sep 2026)
+
+Block: 168 Navcam images, site 26, sols 461–509, 9 stations over 21.6 m; re-adjusted with 0.22.2 (consensus start cameras and rig, outlier exclusion, attitude priors, intrinsics refined: strong network) from the v0p15 features and exhaustive matches (extraction at 3200 px, ratio 0.8). 165 of 168 registered (1 outlier at 0.69 px, 1 without tie points, 1 right image without its left). 426,472 points (50 % two-view, 7.9 % cross-station); median / rms / p95 residual 0.164 / 0.348 / 0.718 px; health PASS. Station shifts from telemetry 0.17–0.41 m; block vs telemetry similarity: scale 1.0045, rotation 1.27°. Camera change from the consensus: f 0.013 %, pp 0.5 px (Rockytop is one of the consensus members, so this is not a validation).
+
+Tracks ≥ 3 (215,166 points): ε all 0.279, intra 0.268, cross 0.320 px (DOF 0.333 / 0.364). ε vs largest ray angle: cross flat 0.31–0.34 px from 0 to 90°; intra 0.22–0.26 px to 5°, 0.28–0.30 px at 5–15° (near-field, confounded with range). At 3–5°: intra 0.236, cross 0.314 px.
+
+Gate (power / |ΔLMST| best; ΔAIC stretched 106, sun-angle 158, exp 225, logistic 827, no covariate ≥ 1,911): A 1.19 (1.11–1.25), θ̄ 4.7° (4.3–5.2), CV 0.41 (0.34–0.46), τ 3.9 h (3.6–4.2), θ_half 4.3°, s_intra 0.48, χ²/dof 14, 232,627 cross trials over |ΔLMST| 0–8.2 h.
+
+ρ (disjoint pairs): 0.068 ± 0.003 at 0–0.1°, ≈ 0.03 from 0.1 to 2°, 0.01–0.02 to 15°, 0 at 30°. Gaussian + floor: ρ_0 0.053, θ_c 0.107°, ρ_∞ 0.021 ± 0.001, χ²/dof 30 (two scales; the single Gaussian does not describe it).
+
+## 9. Lens terms (v0p22.2, `scripts/lens_terms_experiment.py`)
+
+Final adjustment repeated from the converged block with the same observations (TF 431,118 / BI 1,166,323 / RT 1,412,950), both eyes:
+
+| variant | Δcost TF / BI / RT | ΔBIC TF / BI / RT | corner median px TF / BI / RT | residual-field rms px TF / BI / RT |
+|---|---|---|---|---|
+| k4, p1, p2 | 0 / 0 / 0 | 0 / 0 / 0 | 0.255 / 0.228 / 0.243 | 0.038 / 0.023 / 0.021 |
+| + k5 | 0 / −11 / −50 | +27 / +7 / −70 | 0.255 / 0.227 / 0.243 | 0.038 / 0.023 / 0.021 |
+| + k5, k6 | −8 / −11 / −58 | +39 / +38 / −57 | 0.256 / 0.227 / 0.243 | 0.038 / 0.023 / 0.021 |
+| p1 = p2 = 0 | +27,570 / +49,175 / +51,825 | +55,086 / +98,292 / +103,591 | 0.418 / 0.409 / 0.398 | 0.127 / 0.115 / 0.090 |
+| + k5, k6, p = 0 | +27,479 / +49,056 / +51,559 | | 0.420 / 0.406 / 0.396 | 0.127 / 0.114 / 0.090 |
+
+k5, k6: no residual statistic changes in the third decimal; values not repeatable (RT k5 +0.13 NL, −0.06 NR; BI +0.06 / +0.03; TF 0) while k4 moves 0.44–0.97 to compensate; the monotonic range shrinks from 2.0–2.7× the corner radius to 1.07–1.5× (0.99 in one p = 0 case). Keep held at zero.
+p1, p2: removing them raises the median residual 16–31 %, the corner residual 60–80 %, the residual field 4–5× (corner cells 0.24–0.32 px); the camera moves 0.5–2.3 px rms (1.3–4.4 px in the corners). Values repeat across sites: NL p1 (1.3–1.8)e-4, p2 (1.7–1.9)e-4; NR p1 (−0.1–0.4)e-4, p2 (−1.04 to −0.96)e-4 → a physical decentering/tilt per eye; keep refined (or hold at the consensus).
+
+## 10. Revisits within 5 m (`NEARBY_M`, `stations_near`)
+
+Waypoint stations of other sols within 5 m of a scape's stations: Three Forks 684–693: S032D1214 (sol 693, 0.01 m); at 10 m also S024D3076 (sol 433, 5.8 m). Bell Island: S072D0542 (sol 1477, 4.1 m); at 10 m also S073D0000 (6.7 m). Belva: S038D2102 (sol 766, 2.4 m). Rockytop, Taylor Fjellet, Airey Hill: none within 10 m.

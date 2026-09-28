@@ -287,3 +287,48 @@ def test_methods_doc_holds_no_site_results():
     notes = (ROOT / "docs" / "results" / "working_notes.md").read_text(encoding="utf-8")
     assert "Withdrawn" in notes and "0.157" in notes
     assert (ROOT / "docs" / "results" / "sites.md").is_file() and (ROOT / "scripts" / "sites_table.py").is_file()
+
+
+# ----------------------------------------------------------------------------------------------- other visits
+def _wp(site, drive, sol, e, n):
+    return {"type": "Feature", "properties": {"site": site, "drive": drive, "sol": sol, "easting": e, "northing": n}}
+
+
+def test_stations_near_and_find_imgs_near(tmp_path):
+    from mppp.waypoints import stations_near
+    from mppp.select import find_imgs_near
+    wps = {"features": [_wp(26, 500, 461, 1000.0, 2000.0), _wp(26, 600, 470, 1010.0, 2000.0),
+                        _wp(30, 100, 600, 1003.0, 2004.0),       # 5.0 m from S026D0500: a later visit
+                        _wp(30, 200, 610, 1016.0, 2000.0),       # 6 m from S026D0600: outside 5 m
+                        _wp(31, 0, 700, 2000.0, 2000.0)]}
+    rows = stations_near(wps, [(26, 500), (26, 600)], 5.0)
+    keys = {(r["site"], r["drive"]): r for r in rows}
+    assert set(keys) == {(26, 500), (26, 600), (30, 100)}
+    assert keys[(30, 100)]["distance_m"] == pytest.approx(5.0) and keys[(30, 100)]["nearest"] == [26, 500]
+    assert not keys[(30, 100)]["anchor"] and keys[(26, 500)]["anchor"]
+    assert {(r["site"], r["drive"]) for r in stations_near(wps, [(26, 500), (26, 600)], 6.5)} >= {(30, 200)}
+    # an archive of empty .IMG files named like PDS products
+    def name(cam, sol, site, drive):
+        return f"{cam}_{sol:04d}_0700000000_000RAD_N{site:03d}{drive:04d}NCAM00100_0A0095J01.IMG"
+    for cam, sol, site, drive in [("NLF", 461, 26, 500), ("NRF", 461, 26, 500), ("NLF", 470, 26, 600),
+                                  ("NLF", 600, 30, 100), ("NLF", 610, 30, 200), ("NLF", 700, 31, 0)]:
+        (tmp_path / name(cam, sol, site, drive)).write_bytes(b"")
+    paths, rep = find_imgs_near(tmp_path, ["NLF", "NRF"], (455, 480), wps, radius_m=5.0)
+    names = sorted(p.name for p in paths)
+    assert len(names) == 4 and any("_0600_" in n for n in names) and not any("_0610_" in n for n in names)
+    assert rep["n_in_range"] == 3 and rep["n_added"] == 1
+    assert rep["stations_added"] == [{"station": "S030D0100", "distance_m": 5.0, "nearest": "S026D0500", "images": 1,
+                                      "sols": [600, 600]}]
+    paths0, rep0 = find_imgs_near(tmp_path, ["NLF", "NRF"], (455, 480), wps, radius_m=None)
+    assert len(paths0) == 3 and rep0["n_added"] == 0
+
+
+def test_notebook_03_offers_other_visits():
+    nbformat = pytest.importorskip("nbformat")
+    nb = nbformat.read(str(ROOT / "notebooks" / "03_colmap_alignment.ipynb"), as_version=4)
+    src = next(c.source for c in nb.cells if "parameters" in c.metadata.get("tags", []))
+    ns = {}
+    exec(compile("from pathlib import Path\n" + src, "settings", "exec"), ns)
+    assert ns["NEARBY_M"] is None
+    full = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
+    assert "find_imgs_near(PDS_DIR" in full and "radius_m=NEARBY_M" in full

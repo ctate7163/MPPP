@@ -1,0 +1,7 @@
+site,rover_sites,sols,n_sols,scapes,navcam,navcam_left,mastcam_z34,stations,span_m,lmst_min_h,lmst_max_h,navcam_lmst_iqr_h,sun_el_min_deg,sun_el_max_deg
+Three Forks,32,684–693,7,Three Forks; Three Forks + Z34,60,36,342,3,3.1,10.9,15.8,0.7,40,79
+Rockytop,26,461–530,38,Rockytop; Rockytop + Z34,194,122,826,9,21.6,8.7,17.4,2.1,2,49
+Belva,37-38-39,762–815,31,Belva,298,198,0,13,704.4,6.9,17.8,2.2,10,86
+Airey Hill,47,961–991,8,Airey Hill + Z34,78,60,152,3,5.9,5.7,16.6,6.6,7,85
+Bell Island,70-71,1451–1467,12,Bell Island; Bell Island + Z34,159,101,8,6,8.5,8.7,18.0,1.9,7,87
+Taylor Fjellet,78-79,1601–1645,31,Taylor Fjellet,365,245,0,11,37.4,6.7,21.6,2.4,-48,87

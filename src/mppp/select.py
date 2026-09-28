@@ -59,6 +59,53 @@ def find_imgs(input_dir: PathLike, camera_codes: Sequence[str],
     return sorted(out)
 
 
+def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: Tuple[int, int],
+                   waypoints: Dict[str, Any], radius_m: Optional[float] = 5.0, sequ_id: Optional[str] = None,
+                   product_type: Optional[str] = "RAD", include_thumbnails: bool = False) -> Tuple[List[Path], Dict[str, Any]]:
+    """
+    The products of ``sol_range`` plus, for sites the rover visited more than
+    once, the products of every other waypoint station within ``radius_m``
+    metres of one of the stations imaged in ``sol_range`` - whatever their sol
+    (v0p22.2).  Stations are (site, drive) from the file names, placed by the
+    waypoint table (``mppp.load_waypoints()``).  ``radius_m=None`` or 0 gives
+    :func:`find_imgs` over ``sol_range`` alone.  Returns ``(paths, report)``;
+    the report lists the stations in range, the stations added with their
+    distance, and the image count per added station.
+    """
+    from .waypoints import stations_near
+    codes = tuple(c.upper() for c in camera_codes)
+    cands: List[Tuple[Path, M2020Filename]] = []
+    for fp, fn in iter_imgs(input_dir):
+        name = fn.stem.upper()
+        if not name.startswith(codes):
+            continue
+        if product_type and fn.product_type != product_type.upper():
+            continue
+        if fn.thumbnail and not include_thumbnails:
+            continue
+        if sequ_id and sequ_id.upper() not in name[35:]:
+            continue
+        cands.append((fp, fn))
+    in_range = [(fp, fn) for fp, fn in cands if sol_range[0] <= fn.sol <= sol_range[1]]
+    stations = sorted({(fn.site, fn.drive) for _, fn in in_range})
+    report: Dict[str, Any] = {"sol_range": list(sol_range), "radius_m": radius_m,
+                              "stations_in_range": [f"S{a:03d}D{b:04d}" for a, b in stations], "stations_added": []}
+    paths = [fp for fp, _ in in_range]
+    if radius_m and stations:
+        near = {(r["site"], r["drive"]): r for r in stations_near(waypoints, stations, radius_m)}
+        added = {k: r for k, r in near.items() if k not in set(stations)}
+        extra = [(fp, fn) for fp, fn in cands if (fn.site, fn.drive) in added and not sol_range[0] <= fn.sol <= sol_range[1]]
+        counts: Dict[Tuple[int, int], List[int]] = {}
+        for _, fn in extra:
+            counts.setdefault((fn.site, fn.drive), []).append(fn.sol)
+        report["stations_added"] = [{"station": f"S{k[0]:03d}D{k[1]:04d}", "distance_m": added[k]["distance_m"],
+                                     "nearest": "S%03dD%04d" % tuple(added[k]["nearest"]), "images": len(v),
+                                     "sols": [min(v), max(v)]} for k, v in sorted(counts.items())]
+        paths += [fp for fp, _ in extra]
+    report["n_in_range"], report["n_added"] = len(in_range), len(paths) - len(in_range)
+    return sorted(set(paths)), report
+
+
 def find_imgs_in_sol_range(sol_first: int, sol_last: int, camera_codes: Sequence[str],
                            input_dir: PathLike, sequ_id: Optional[str] = None, **kw) -> List[Path]:
     """Legacy-compatible signature."""

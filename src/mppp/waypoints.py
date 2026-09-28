@@ -18,7 +18,7 @@ import math
 import urllib.request
 import warnings
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 from .paths import cache_dir, data_dir
 
@@ -150,6 +150,41 @@ def waypoints_within_radius(data: Dict[str, Any], anchor_sol: int, radius: float
         if en is not None and math.hypot(en[0] - anchor[0], en[1] - anchor[1]) <= float(radius):
             out.append(f)
     return out
+
+
+def stations_near(data: Dict[str, Any], stations: Iterable[Tuple[int, int]], radius_m: float = 5.0) -> List[Dict[str, Any]]:
+    """
+    Waypoint stations within ``radius_m`` metres (planar E-N) of any of ``stations``
+    (site, drive pairs; each placed at its waypoint, or the nearest drive of its
+    site when the exact one is not in the table).  Returns one row per (site,
+    drive) of the table, anchors included: ``site``, ``drive``, ``sol``,
+    ``distance_m`` (to the nearest anchor), ``nearest`` (that anchor) and
+    ``anchor`` (True for the given stations).  Used to add the images of later
+    or earlier visits to the same spot (v0p22.2).
+    """
+    anchors = []
+    for sd in {(int(a), int(b)) for a, b in stations}:
+        f = waypoint_for_site_drive(data, sd[0], sd[1])
+        en = _en(_props(f)) if f is not None else None
+        if en is not None:
+            anchors.append((sd, en))
+    if not anchors:
+        return []
+    given = {sd for sd, _ in anchors}
+    best: Dict[Tuple[int, int], Dict[str, Any]] = {}
+    for f in data.get("features", []):
+        p = _props(f)
+        site, drive, en = _int(p, "site"), _int(p, "drive"), _en(p)
+        if site is None or drive is None or en is None:
+            continue
+        d, near = min((math.hypot(en[0] - a[0], en[1] - a[1]), sd) for sd, a in anchors)
+        if d <= float(radius_m) and ((site, drive) not in best or d < best[(site, drive)]["distance_m"]):
+            best[(site, drive)] = {"site": site, "drive": drive, "sol": _int(p, "sol"), "distance_m": round(d, 2),
+                                   "nearest": list(near), "anchor": (site, drive) in given}
+    for sd, _ in anchors:                                   # anchors without an exact table entry
+        best.setdefault(sd, {"site": sd[0], "drive": sd[1], "sol": None, "distance_m": 0.0, "nearest": list(sd),
+                             "anchor": True})
+    return sorted(best.values(), key=lambda r: (r["site"], r["drive"]))
 
 
 def lonlat_of(feature: Dict[str, Any]) -> Optional[tuple]:

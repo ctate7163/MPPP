@@ -2,6 +2,12 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.22.3 — 2026-09-27
+
+- **Other visits to the same spot** (`select.find_imgs_near`, `waypoints.stations_near`; notebook 03 `NEARBY_M`): the products of the sol range plus those of every waypoint station within `NEARBY_M` metres of a station imaged in the range, whatever their sol. The report lists each added station, its distance and nearest in-range station, and its images. Off by default; with a value the work folder gets a `_near<N>m` suffix.
+- **Lens-term test** (`scripts/lens_terms_experiment.py`): repeats the final adjustment of a refined Navcam block with the same observations and k4 alone, + k5, + k5 + k6, without p1 and p2, and both, and reports cost, BIC, residuals by image radius, the mean residual field, the refined terms, the camera change and the monotonic range of the radial mapping.
+- **Figures.** Notebook 04: ε against convergence angle draws the cross-station curves first, with fixed colours per series and the legend ordered as the curves lie; the gate panels share their x and y axes. `scripts/sites_table.py`: one LMST panel per site (the union of its scapes, each image once) plus one for all sites, Navcam and Mastcam-Z each normalised to unit area, 5–19 h with a dashed line at noon and no y ticks; a per-site table (`sites_by_site.csv`, and in `sites.md`).
+
 ## 0.22.2 — 2026-09-27
 
 Methods only: numbers measured on particular scapes are no longer stated here, in `docs/methods.md`, in the notebooks or in code comments. They are collected in `docs/results/working_notes.md` (with the statements they supersede marked as withdrawn) until the paper's results and discussion sections take them over. Earlier entries below keep their numbers as history; where a later measurement contradicts one, the working notes say so.
