@@ -780,21 +780,93 @@ def attach_pds_labels(sol: Solution, pds_dir: PathLike, groups: Optional[Sequenc
     from ..select import iter_imgs
     want = {Path(r["name"]).stem: r for r in sol.images.values()
             if groups is None or sol.cameras[r["instrument"]].group in groups}
-    want = {k: v for k, v in want.items() if k in sol.manifest and not sol.manifest[k].get("camera_model_label")}
+    # v0p30: also the camera temperature the label model was interpolated to, for manifests without it
+    want = {k: v for k, v in want.items() if k in sol.manifest and (not sol.manifest[k].get("camera_model_label")
+                                                                   or "camera_temperature_degC" not in sol.manifest[k])}
     n = 0
+    if not want:
+        if verbose:
+            print(f"{sol.label}: label models and camera temperatures already in the manifest")
+        return 0
+    todo = set(want)
     for fp, fn in iter_imgs(pds_dir):
-        if fn.stem not in want:
+        if fn.stem not in todo:
             continue
+        todo.discard(fn.stem)
         L, _ = read_pds(fp, load_image=False)
         g = label_get(L, "GEOMETRIC_CAMERA_MODEL")
         w, h = int(label_get(L, "IMAGE.LINE_SAMPLES")), int(label_get(L, "IMAGE.LINES"))
         cm = CameraModel.from_label(g, w, h)
-        sol.manifest[fn.stem]["camera_model_label"] = dict(cm.to_label_dict(precision=12), width=w, height=h,
-                                                           frame="ROVER_NAV_FRAME", pixel_origin="centre_of_first_pixel")
+        rec = sol.manifest[fn.stem]
+        if not rec.get("camera_model_label"):
+            rec["camera_model_label"] = dict(cm.to_label_dict(precision=12), width=w, height=h,
+                                             frame="ROVER_NAV_FRAME", pixel_origin="centre_of_first_pixel")
+        rec["camera_temperature_degC"] = _label_temperature(cm)
         n += 1
+        if not todo:
+            break
     if verbose:
         print(f"{sol.label}: exact label models for {n} of {len(want)} images from {pds_dir}")
     return n
+
+
+def _label_temperature(cm: CameraModel) -> Optional[float]:
+    m = getattr(cm, "meta", None) or {}
+    if str(m.get("interpolation") or "").upper() != "TEMPERATURE":
+        return None
+    try:
+        return float(m.get("interpolation_value"))
+    except (TypeError, ValueError):
+        return None
+
+
+def camera_temperatures(sols: Dict[str, "Solution"], family: str = "N") -> List[Dict[str, Any]]:
+    """
+    v0p30: per scape and camera, the camera temperature of its images (the value the label camera model was
+    interpolated to: ``camera_temperature_degC`` in the manifest, written by MPPP >= 0.30 or added by
+    ``attach_pds_labels``) next to the refined focal lengths - for testing whether the scape-to-scape spread
+    of the focal length follows temperature.  Rows without temperatures have ``n_temp = 0``.
+    """
+    rows = []
+    for n, s in sols.items():
+        for c in sorted(s.cameras.values(), key=lambda c: c.key):
+            if c.family != family or not c.refined:
+                continue
+            t = []
+            for r in s.images.values():
+                if r["instrument"] != c.key:
+                    continue
+                v = (s.manifest.get(Path(r["name"]).stem) or {}).get("camera_temperature_degC")
+                if v is not None:
+                    t.append(float(v))
+            t = np.asarray(t, float)
+            named = c.named()
+            rows.append({"scape": n, "camera": c.key, "images": c.n_images, "n_temp": int(t.size),
+                         "temp_median_degC": float(np.median(t)) if t.size else None,
+                         "temp_min_degC": float(t.min()) if t.size else None,
+                         "temp_max_degC": float(t.max()) if t.size else None,
+                         "fx": float(named["fx"]), "fy": float(named["fy"])})
+    return rows
+
+
+def focal_temperature_fit(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Least-squares line fx = a + b (T - 0 degC) per camera over the scapes with temperatures; b in px/degC and ppm/degC."""
+    out = {}
+    for cam in sorted({r["camera"] for r in rows}):
+        rr = [r for r in rows if r["camera"] == cam and r["temp_median_degC"] is not None]
+        if len(rr) < 3:
+            continue
+        T = np.array([r["temp_median_degC"] for r in rr]); f = np.array([r["fx"] for r in rr])
+        A = np.column_stack([np.ones_like(T), T])
+        coef, *_ = np.linalg.lstsq(A, f, rcond=None)
+        res = f - A @ coef
+        dof = max(1, len(rr) - 2)
+        cov = np.linalg.inv(A.T @ A) * float(res @ res) / dof
+        out[cam] = {"scapes": len(rr), "fx_at_0C": float(coef[0]), "px_per_degC": float(coef[1]),
+                    "px_per_degC_sd": float(np.sqrt(cov[1, 1])), "ppm_per_degC": float(coef[1] / coef[0] * 1e6),
+                    "residual_rms_px": float(np.sqrt(np.mean(res ** 2))),
+                    "corr": float(np.corrcoef(T, f)[0, 1]) if T.std() > 0 else None}
+    return out
 
 
 def updated_navcam_models(left: Camera, right: Camera, rig: Tuple[np.ndarray, np.ndarray], mtype: int = 2,

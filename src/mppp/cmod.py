@@ -437,7 +437,27 @@ def fit_to_colmap(model: str, params: Sequence[float], width: int, height: int, 
         r = build(x).project(d) - uv
         return np.nan_to_num(r, nan=1e3).ravel()
 
-    sol = least_squares(res, np.array(x0, float), x_scale="jac", method="lm", max_nfev=4000)
+    def score(x) -> float:
+        n_ = np.linalg.norm(build(x).project(d) - uv, axis=1)
+        return float(np.sqrt(np.mean(n_ ** 2))) if np.all(np.isfinite(n_)) else float("inf")
+
+    starts = [np.array(x0, float)]
+    if kind == "CAHVORE" and fit_linearity:
+        # v0p30: the type-3 fit from linearity 1 alone can end in a far minimum (a 50 deg O tilt, points
+        # that no longer project: seen for a nine-scape Navcam consensus); also start from the type-2
+        # geometry at several linearities and keep the best finite solution
+        g2, _ = fit_to_colmap(model, params, width, height, "CAHVORE", 2, False, step)
+        _, l2 = g2.decompose()
+        o2 = g2.O / g2.O[2]
+        base = [l2["hs"], l2["vs"], l2["hc"], l2["vc"], o2[0], o2[1], g2.R[1], g2.R[2]]
+        starts += [np.array(base + [lin], float) for lin in (0.0, 0.5, 1.0)]
+    best = None
+    for x_start in starts:
+        sol_ = least_squares(res, x_start, x_scale="jac", method="lm", max_nfev=4000)
+        sc = score(sol_.x)
+        if best is None or sc < best[0]:
+            best = (sc, sol_)
+    sol = best[1]
     cm = build(sol.x)
     r = (cm.project(d) - uv)
     n = np.linalg.norm(r, axis=1)

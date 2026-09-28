@@ -11,7 +11,7 @@ for file names, notebooks and output snapshots.  Releases before 1.0 were
 tagged ``v0pN``; see CHANGELOG.md and docs/history/.
 """
 
-__version__ = "0.22.4"
+__version__ = "0.30.0"
 
 
 def _tag(version: str) -> str:

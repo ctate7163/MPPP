@@ -2,6 +2,34 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.30.0 — 2026-09-28
+
+Image selection and processing:
+- **Navcam 10 % darker** (`color.brightness_by_family = {"N": 0.9}`, notebook 03 `NAVCAM_BRIGHTNESS`): a per-family brightness factor applied with the white balance keeps nominally exposed Navcam frames off the top of the 8-bit range.
+- **LMST window** (`selection.lmst_window_h = [9, 17]`, inclusive) and **saturation limit** (`selection.max_saturated_fraction = 0.05`, of the valid pixels at the product's maximum DN): images outside the window or above the limit are not processed and are listed in the manifest under `skipped` with the reason, like sky-pointing frames. Every image's `lmst_h` and `saturated_fraction` are in the manifest.
+- **`process_images(workers=4)`**: images are processed in worker processes (spawned; each loads the mask model once); results keep the selection order. `workers=1` or `stop_on_error` processes in the calling process; if the pool fails (a dead worker, or a `__main__` that cannot be re-imported) the remaining images are processed in the calling process instead of failing.
+
+Reconstruction:
+- **Bundle adjustment**: the problem is built about twice as fast (per-image lookups hoisted out of the observation loop), and the linear solver is chosen by block size (`linear_solver="auto"`: dense Schur up to 600 frames, where the Schur complement is small and the dense factorisation is multi-threaded; iterative Schur with a Schur-Jacobi preconditioner beyond; `"sparse_schur"` remains). The solver, thread count and Ceres time are in the log.
+- **Exhaustive matching** takes `block_size` (default 100, COLMAP's 50): fewer descriptor reloads and GPU pipeline drains per block.
+- **Five-site consensus start cameras**: `M2020_N{L,R}_rational.json` and `M2020_N_rig.json` are now the observation-weighted consensus of the 0.22.4 solutions of Three Forks, Belva Crater, Bell Island, Olifants and Marble Mountain (notebook 05, 28 Sep 2026), with each site's distance from the consensus recorded in the files.
+- `THIN_PRISM_FISHEYE` and `OPENCV_FISHEYE` cameras are handled by `bundle_adjust` (tangential and thin-prism terms held unless freed by `free_params`; `_PARAM_NAMES` gives the names for any model). **Lens-model test** (`scripts/lens_model_experiment.py`): repeats the final adjustment of a refined block with the Navcam in the rational, the θ-polynomial fisheye, the fisheye + tangential and the thin-prism model (working notes §11). The rational model remains the default.
+
+Health and viewing:
+- **`health/station_map.png`**: a top-down view of the site with every camera's prior-to-refined shift (the figure of `plot_camera_shifts`), written with the health report and shown in notebook 03 section 7.
+- **`block_rotation_deg`** check: the median world-frame attitude change of all frames (about E, N and U) is the rotation of the whole block away from the East-North-Up frame the priors define; warn 0.3°, fail 1°. The report records the world frame and its offset.
+- **Tie-point colours** in the GUI copy are the mean over all valid observations of each point's track (`export.point_colors_from_tracks`); black (invalid) pixels are left out, and a point with no valid sample is mid-grey. COLMAP's own extractor left points black when the image it happened to sample could not be read or the keypoint fell on an invalid pixel.
+- **`open_in_colmap.bat`** starts COLMAP with the database, the images and the refined model in one go. It looks for `COLMAP.bat` at the path given in notebook 03 (`COLMAP_BAT`, kept in `project.settings["colmap_bat"]`), then at the usual install folders, then in the `COLMAP_BAT` environment variable, then on the PATH.
+
+From the review of the nine 0.22.4 alignments (Three Forks, Rockytop, Belva Crater, Pearce Canyon, South Arm, Bell Island, Taylorfjellet, Olifants, Marble Mountain; working notes §12):
+- **Right-only Navcam exposures are kept**: a right image whose left partner is missing (16 of 176 at Pearce Canyon, where they made up the whole `registered_fraction` warning) goes into a one-sensor rig with the right camera as reference, posed from its own CAHV prior with the shared right-camera intrinsics. The database summary lists them (`single_eye_images`).
+- **Pose checks split**: `block_rotation_deg` now uses the world-frame rotation taking the prior attitude to the refined one (the sign was reversed); `attitude_residual_p95_deg` (warn 0.75°, fail 2°) judges each frame's attitude change about the block rotation; the undivided `attitude_change_p95_deg`, which warned at seven of nine sites on ordinary label pointing scatter, is reported without a verdict. The layout scale error is judged as the displacement it makes at the stations (`prior_scale_error_m`, warn 0.5 m, fail 1.5 m) instead of a percentage that flagged every small block; `prior_scale_error_pct` and the layout rotation (deg and m) are reported.
+- **Camera temperature**: the manifest records `camera_temperature_degC` (the temperature the label camera model was interpolated to); `attach_pds_labels` adds it to older manifests; `calibration.camera_temperatures` / `focal_temperature_fit` and notebook 05 section 2a test whether the scape-to-scape focal-length spread (Taylorfjellet +1.4 px in both eyes) follows it. Notebook 05 defaults: the nine scapes under `D:\scapes\colmap`, `PDS_DIR = D:/data/m2020`.
+- **CAHVORE type 3 fit** (`cmod.fit_to_colmap`): also started from the type-2 geometry at linearity 0, 0.5 and 1, keeping the best finite solution (the nine-scape NL fit had ended at linearity 0.99 with a 51° O tilt and an rms of NaN).
+- Notebook 03: every results cell starts with the site, its sol range and its COLMAP folder (`banner()`).
+
+Notebook 03: rewritten first cell; the site table of 17 sites; `KEEP_ONLY_REMAINING = False`; `ADD_NEARBY_WAYPOINTS = 10`; `SKY_ELEVATION_DEG = 10`; `GPU_PY` and `COLMAP_BAT` set; `MAX_NUM_FEATURES = 16000`; `MATCH max_distance = 1.0`; three-round schedule with Cauchy scale 4 in round 2; `ATTITUDE_PRIOR_DEG = 5`; `LINEAR_SOLVER`, `MATCH_BLOCK_SIZE`, `WORKERS`.
+
 ## 0.22.4 — 2026-09-28
 
 - **Mask model v3 is the default** (`mppp_mask_v3`, exported from `checkpoints/convnext_tiny_s4_seg_20260925b.pt`: 9 of 10 epochs, val IoU 0.979; SHA-256 `daa34ffb…`). Until the safetensors is published, `fetch_model` installs the local `.pt` from `checkpoints/` automatically; `python -m mppp.mask.hub export checkpoints/convnext_tiny_s4_seg_20260925b.pt --name mppp_mask_v3` writes the release file.

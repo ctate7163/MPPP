@@ -40,6 +40,8 @@ CKPT = _find_ckpt()
 # test_v0p22_4 turns it on explicitly.
 import mppp.config as _cfg  # noqa: E402
 _cfg._DEFAULTS["selection"]["max_boresight_elevation_deg"] = None
+_cfg._DEFAULTS["selection"]["max_saturated_fraction"] = None       # the Sun tile is 99.99 % saturated
+_cfg._DEFAULTS["selection"]["lmst_window_h"] = None
 
 needs_data = pytest.mark.skipif(not (NLF.is_file() and ZL0.is_file()), reason="example IMGs not present")
 needs_ckpt = pytest.mark.skipif(not CKPT.is_file(), reason="mask checkpoint not present")

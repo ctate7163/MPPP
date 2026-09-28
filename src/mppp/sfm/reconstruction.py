@@ -37,8 +37,13 @@ from .project import SfmProject
 PathLike = Union[str, Path]
 
 # FULL_OPENCV: fx fy cx cy k1 k2 p1 p2 k3 k4 k5 k6 -> indices held constant
-_FIXED_EXTRA = {"FULL_OPENCV": [6, 7, 9, 10, 11], "OPENCV": [6, 7]}
-_TANGENTIAL = {"FULL_OPENCV": [6, 7], "OPENCV": [6, 7]}         # p1, p2
+_FIXED_EXTRA = {"FULL_OPENCV": [6, 7, 9, 10, 11], "OPENCV": [6, 7],
+                "THIN_PRISM_FISHEYE": [6, 7, 10, 11]}          # v0p30: p1, p2 (tangential) and sx1, sy1 (thin prism)
+_TANGENTIAL = {"FULL_OPENCV": [6, 7], "OPENCV": [6, 7], "THIN_PRISM_FISHEYE": [6, 7]}         # p1, p2
+_PARAM_NAMES = {"FULL_OPENCV": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6"),
+                "OPENCV": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"),
+                "THIN_PRISM_FISHEYE": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1"),
+                "OPENCV_FISHEYE": ("fx", "fy", "cx", "cy", "k1", "k2", "k3", "k4")}
 
 # (triangulation threshold [full-res px], Cauchy scale [sigma], maximum residual kept [native px]) per round.
 # v0p14.5: the fourth round repeats the third's limits - it only shows whether another
@@ -141,7 +146,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   min_frame_observations: int = 30, num_threads: int = -1, verbose: bool = False,
                   attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG,
                   rig_translation_sigma_m: Optional[float] = None,
-                  hold_cameras: Sequence[str] = ()) -> Dict[str, Any]:
+                  hold_cameras: Sequence[str] = (), linear_solver: str = "auto") -> Dict[str, Any]:
     """
     Weighted BA in place (see module docstring).  ``hold_cameras`` (v0p22.2):
     keys of project cameras (``"NL"``, ``"NR"``, a focus bin...) whose
@@ -231,28 +236,37 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             rig_blocks[(rid, sid.id)] = arr
     n_obs = 0
     pose_blocks: Dict[int, np.ndarray] = {}
+    # v0p30: everything that is the same for all observations of an image is looked up once per image
+    # (the cost constructors and add_residual_block are what remains in the loop: ~2x faster setup)
+    per_image: Dict[int, tuple] = {}
+    for iid in reg:
+        im = rec.images[iid]
+        fr = work.frames[im.frame_id]
+        rig = rec.rigs[fr.rig_id]
+        cam = work.cameras[im.camera_id]
+        cov = np.eye(2) * (sigma_px / scale[iid]) ** 2
+        pose = pose_blocks.get(im.frame_id)
+        if pose is None:
+            pose = pose_blocks[im.frame_id] = fr.rig_from_world.params
+        sensor = pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=im.camera_id)
+        kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
+        if rig.is_ref_sensor(sensor):
+            per_image[iid] = (cam.model, cov, kps, [pose, cam.params], None)
+        else:
+            per_image[iid] = (cam.model, cov, kps, [rig_blocks[(fr.rig_id, im.camera_id)], pose, cam.params], True)
+    reproj, rig_reproj, add = cf.ReprojErrorCost, cf.RigReprojErrorCost, prob.add_residual_block
     for pid, pt in rec.points3D.items():
         xyz = pt.xyz
         for el in pt.track.elements:
-            if el.image_id not in reg:
+            info = per_image.get(el.image_id)
+            if info is None:
                 continue
-            im = rec.images[el.image_id]
-            fr = work.frames[im.frame_id]
-            rig = rec.rigs[fr.rig_id]
-            cam = work.cameras[im.camera_id]
-            s = scale[el.image_id]
-            cov = np.eye(2) * (sigma_px / s) ** 2
-            xy = np.asarray(im.points2D[el.point2D_idx].xy, float)
-            sensor = pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=im.camera_id)
-            pose = pose_blocks.get(im.frame_id)
-            if pose is None:
-                pose = pose_blocks[im.frame_id] = fr.rig_from_world.params
-            if rig.is_ref_sensor(sensor):
-                prob.add_residual_block(cf.ReprojErrorCost(cam.model, cov, xy), loss,
-                                        [xyz, pose, cam.params])
+            model, cov, kps, blocks, rigged = info
+            xy = kps[el.point2D_idx]
+            if rigged:
+                add(rig_reproj(model, cov, xy), loss, [xyz, *blocks])
             else:
-                prob.add_residual_block(cf.RigReprojErrorCost(cam.model, cov, xy), loss,
-                                        [xyz, rig_blocks[(fr.rig_id, im.camera_id)], pose, cam.params])
+                add(reproj(model, cov, xy), loss, [xyz, *blocks])
             n_obs += 1
 
     # intrinsics: hold k4-k6 at zero, p1, p2 at their start unless refine_tangential (and the principal point if asked);
@@ -271,13 +285,13 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             continue
         fixed = fixed_camera_params(cam.model.name, refine_principal_point, refine_tangential)
         pc = project.cameras.get(key_of.get(int(cid), ""), {})
+        names = _PARAM_NAMES.get(cam.model.name, FULL_OPENCV_NAMES)
         extra = pc.get("fixed_params") or []
-        if extra and cam.model.name in ("OPENCV", "FULL_OPENCV"):
-            fixed = sorted(set(fixed) | {FULL_OPENCV_NAMES.index(n) for n in extra
-                                          if FULL_OPENCV_NAMES.index(n) < len(cam.params)})
-        free = pc.get("free_params") or []            # v0p20: e.g. the rational Navcam k4
-        if free and cam.model.name == "FULL_OPENCV":
-            fixed = sorted(set(fixed) - {FULL_OPENCV_NAMES.index(n) for n in free})
+        if extra and cam.model.name in _PARAM_NAMES:
+            fixed = sorted(set(fixed) | {names.index(n) for n in extra if n in names and names.index(n) < len(cam.params)})
+        free = pc.get("free_params") or []            # v0p20: e.g. the rational Navcam k4; v0p30: any model
+        if free and cam.model.name in _PARAM_NAMES:
+            fixed = sorted(set(fixed) - {names.index(n) for n in free if n in names})
         prob.set_parameter_block_variable(cam.params)
         if fixed:
             prob.set_manifold(cam.params, pyceres.SubsetManifold(len(cam.params), sorted(fixed)))
@@ -343,7 +357,17 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             prob.set_parameter_block_constant(arr)
 
     so = pyceres.SolverOptions()
-    so.linear_solver_type = pyceres.LinearSolverType.SPARSE_SCHUR
+    # v0p30: the linear solver.  The Schur complement has one 6-parameter block per frame plus the cameras, so
+    # for the few hundred frames of a scape a dense Schur solve (multi-threaded LAPACK) beats the sparse
+    # Cholesky, whose factorisation is single-threaded; large blocks (thousands of frames) get the iterative
+    # Schur solver with a Schur-Jacobi preconditioner, which parallelises over the observations.
+    n_frames = len(pose_blocks)
+    solver = linear_solver if linear_solver != "auto" else ("dense_schur" if n_frames <= 600 else "iterative_schur")
+    so.linear_solver_type = {"sparse_schur": pyceres.LinearSolverType.SPARSE_SCHUR,
+                             "dense_schur": pyceres.LinearSolverType.DENSE_SCHUR,
+                             "iterative_schur": pyceres.LinearSolverType.ITERATIVE_SCHUR}[solver]
+    if solver == "iterative_schur":
+        so.preconditioner_type = pyceres.PreconditionerType.SCHUR_JACOBI
     so.max_num_iterations = int(max_iterations)
     so.num_threads = int(num_threads) if num_threads > 0 else (__import__("os").cpu_count() or 1)
     so.minimizer_progress_to_stdout = bool(verbose)
@@ -373,7 +397,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
             "termination": str(summary.termination_type), "brief": summary.BriefReport(),
-            "refine_tangential": bool(refine_tangential)}
+            "refine_tangential": bool(refine_tangential), "linear_solver": solver, "num_threads": so.num_threads,
+            "seconds": float(summary.total_time_in_seconds)}
 
 
 def _verified_matches(project: SfmProject):
@@ -749,7 +774,8 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 exclude_outliers: bool = False, outlier_thresholds: Optional[Dict[str, float]] = None,
                 exclude_after_round: int = 2, rig_translation_sigma_m: Optional[float] = None,
                 triangulation_options: Optional[Dict[str, Any]] = None,
-                navcam_intrinsics: str = "refine", staged: bool = False, hold_cameras: Sequence[str] = ()):
+                navcam_intrinsics: str = "refine", staged: bool = False, hold_cameras: Sequence[str] = (),
+                linear_solver: str = "auto"):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
@@ -803,6 +829,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     deregistered; the rounds after that re-triangulate without them.  The
     list is in the log and ``project.settings["reconstruction"]["excluded"]``.
     ``rig_translation_sigma_m``: see :func:`bundle_adjust` (with ``refine_rig=True``).
+    ``linear_solver`` (v0p30): passed to :func:`bundle_adjust`.
     ``triangulation_options`` (v0p22): extra keyword arguments for
     :func:`triangulate` (e.g. ``min_angle_deg`` per round is set from
     ``min_tri_angle_deg``; ``create_max_angle_error``, ``complete``...).
@@ -859,7 +886,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                            refine_tangential=refine_tangential, refine_rig=refine_rig, max_iterations=max_iterations,
                            attitude_prior_deg=attitude_prior_deg, rig_translation_sigma_m=rig_translation_sigma_m,
-                           hold_cameras=sorted(hold))
+                           hold_cameras=sorted(hold), linear_solver=linear_solver)
         n_bad = filter_observations(rec, project, float(rmax))
         n_bad += drop_short_tracks(rec, min_track_length)
         st = track_statistics(rec, project)
@@ -881,7 +908,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                        refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential,
                        refine_rig=refine_rig, max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
-                       rig_translation_sigma_m=rig_translation_sigma_m, hold_cameras=sorted(hold))
+                       rig_translation_sigma_m=rig_translation_sigma_m, hold_cameras=sorted(hold), linear_solver=linear_solver)
     # the final adjustment can push a few points behind a camera or past the limit
     n_bad = filter_observations(rec, project, float(schedule[-1][2]))
     n_bad += drop_short_tracks(rec, min_track_length)
@@ -908,7 +935,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
             rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts)
             ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
-                               attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold))
+                               attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold), linear_solver=linear_solver)
             n_bad = filter_observations(rec, project, float(rmax)) + drop_short_tracks(rec, min_track_length)
             st = track_statistics(rec, project)
             res = native_residuals(rec, project)["residual_native_px"]
@@ -927,7 +954,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
             _exclude("stage 2, before the final adjustment")
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                            refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential, refine_rig=False,
-                           max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold))
+                           max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold), linear_solver=linear_solver)
         n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
         log.append({"final_ba": ba["brief"], "frames_held": ba["frames_held"], "filtered_after_final": n_bad,
                     "tracks": track_statistics(rec, project)})

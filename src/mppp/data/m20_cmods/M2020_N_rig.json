@@ -3,48 +3,58 @@
  "sensor": "NR",
  "R_sensor_from_ref": [
   [
-   0.999999443645,
-   0.001053929823,
-   4.4052902e-05
+   0.9999993745878899,
+   0.001102162507756478,
+   0.00018989901390195852
   ],
   [
-   -0.001053992513,
-   0.999998395999,
-   0.001448136234
+   -0.0011024340140519623,
+   0.9999983618193746,
+   0.0014356175714974014
   ],
   [
-   -4.2526597e-05,
-   -0.00144818186,
-   0.99999895048
+   -0.00018831641895029232,
+   -0.001435826024776947,
+   0.9999989514697267
   ]
  ],
  "rotvec_rad": [
-  -0.0014481598,
-  4.32898e-05,
-  -0.0010539617
+  -0.0014357225906855662,
+  0.00018910782081753101,
+  -0.0011022988693958622
  ],
  "t_sensor_from_ref_m": [
-  -0.424362891,
-  -0.000164564,
-  7.0972e-05
+  -0.42436297028708164,
+  -0.0001644263418145697,
+  7.1005673053054e-05
  ],
- "baseline_m": 0.4243629284310432,
+ "baseline_m": 0.42436300808235167,
  "per_solution_rotvec_rad": {
   "Three Forks": [
-   -0.00146127,
-   7.96e-05,
-   -0.00103796
+   -0.0014501927227956793,
+   0.00016791366860750815,
+   -0.001059066934357955
+  ],
+  "Belva Crater": [
+   -0.001500991300227561,
+   4.606152893714259e-05,
+   -0.0010930266842975695
   ],
   "Bell Island": [
-   -0.00139006,
-   0.00020431,
-   -0.0011471
+   -0.001413282747669296,
+   0.00013399546633135128,
+   -0.0011434060294650712
   ],
-  "Rockytop": [
-   -0.001492,
-   -0.00010035,
-   -0.00098214
+  "Olifants": [
+   -0.0013971447477104507,
+   0.00033313328336920424,
+   -0.0010788717771895713
+  ],
+  "Marble Mountain": [
+   -0.0015375320670039186,
+   4.062654474746295e-05,
+   -0.0011340356997735879
   ]
  },
- "note": "x_NR = R x_NL + t. Rotation: observation-weighted mean of the refined rigs of three v0p20 rational Navcam solutions (Three Forks, Bell Island, Rockytop), consistent with M2020_N{L,R}_rational.json; they agree to 0.15 mrad. The translation is the CAHV baseline, which MPPP holds (it sets the scale). SfmProject.create(navcam_rig='consensus') starts the rig rotation here and keeps the project's CAHV translation."
+ "note": "x_NR = R x_NL + t. Rotation: observation-weighted mean of the refined rigs of five MPPP 0.22.4 Navcam solutions (Three Forks, Belva Crater, Bell Island, Olifants, Marble Mountain; notebook 05, 28 Sep 2026), shipped since MPPP 0.30. The translation is the CAHV baseline, which MPPP holds (it sets the scale). SfmProject.create(navcam_rig='consensus') starts the rig rotation here and keeps the project's CAHV translation."
 }

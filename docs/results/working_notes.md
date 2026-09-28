@@ -125,3 +125,40 @@ p1, p2: removing them raises the median residual 16–31 %, the corner residual 
 ## 10. Revisits within 5 m (`NEARBY_M`, `stations_near`)
 
 Waypoint stations of other sols within 5 m of a scape's stations: Three Forks 684–693: S032D1214 (sol 693, 0.01 m); at 10 m also S024D3076 (sol 433, 5.8 m). Bell Island: S072D0542 (sol 1477, 4.1 m); at 10 m also S073D0000 (6.7 m). Belva: S038D2102 (sol 766, 2.4 m). Rockytop, Taylor Fjellet, Airey Hill: none within 10 m.
+
+## 11. Lens model: rational vs θ-polynomial fisheye (v0p30, `scripts/lens_model_experiment.py`; Three Forks 684–693 and Bell Island 1451–1467, Navcam both eyes)
+
+Final adjustment repeated from the converged rational block with the same observations (TF 431,118 / BI 1,166,323), the cameras re-initialised in each model and refined with the poses and points; rig, attitude and position priors as in the pipeline. Models: `FULL_OPENCV` rational (k1–k4 + p1, p2; 8 lens dof), `OPENCV_FISHEYE` (θ-polynomial k1–k4, no tangential; 4 dof), `THIN_PRISM_FISHEYE` with sx1, sy1 held (k1–k4 + p1, p2; 8 dof, "fisheye + tangential") and with sx1, sy1 free (10 dof).
+
+| model | cost TF / BI | median px TF / BI | corner median px TF / BI | residual field rms px TF / BI (corner cells) | TF-vs-BI camera difference, shift removed, rms px NL / NR |
+|---|---|---|---|---|---|
+| rational | 71,724 / 196,977 | 0.152 / 0.151 | 0.255 / 0.228 | 0.038 (0.078) / 0.023 (0.062) | 0.42 / 0.71 |
+| fisheye, no tangential | 99,258 / 246,087 | 0.19 / 0.190 | 0.41 / 0.408 | 0.12 (0.32) / 0.114 (0.321) | 1.94 / 2.09 |
+| fisheye + tangential | 70,628 / 195,659 | 0.150 / 0.149 | 0.210 / 0.208 | 0.025 (0.025) / 0.019 (0.054) | 0.16 / 0.45 |
+| + thin prism free | 70,344 / 194,767 | 0.149 / 0.148 | 0.20 / 0.200 | 0.02 / 0.012 (0.026) | 0.64 / 0.58 |
+
+Reading: (i) the tangential terms carry the same information in either radial family — dropping them costs +38 % / +25 % as in §9, whichever radial polynomial is used. (ii) At equal parameter count the θ-polynomial beats the rational: cost −1.5 % / −0.7 %, corner residual −18 % / −9 %, residual-field corner cells −68 % / −13 %, and the two sites agree better (0.16 / 0.45 px rms after the common shift, versus 0.42 / 0.71 for the rational). Fitted values repeat across sites (NR k1 0.0480 / 0.0472, k2 −0.0177 / −0.0144, p1 −0.85e-4 / −0.82e-4, p2 −2.03e-4 / −2.04e-4); k3, k4 trade against each other as k4/k5 do in the rational. (iii) Freeing the thin-prism terms lowers the cost another 0.4 % but the camera is no longer repeatable (the sx1, sy1 terms trade against the principal point: 4–8 px common shift between the sites, 0.6 px rms after removing it) — hold them at zero, as k5, k6 in §9.
+
+Decision for v0.30: the rational model stays the pipeline default. The gain of the fisheye + tangential model is real but small (a few hundredths of a pixel in the corners, none in the centre), the shipped consensus, the CAHVORE conversion, the export and the notebook-05 analysis are all written for the rational parameters, and the error model of notebook 04 does not depend on the lens family. A `navcam_model` switch (start cameras, consensus and CAHVORE conversion for `THIN_PRISM_FISHEYE` with sx1, sy1 held) is the candidate change for a later version, to be judged on the five-site repeatability rather than on the two sites here.
+
+## 12. Nine-site review of the 0.22.4 alignments (28 Sep 2026; Navcam only, 16,000 features, three-round schedule, attitude prior 5°)
+
+| site | stations | images reg. / project | median / rms px | ε intra / cross px | block rotation vs labels, about E, N, U (deg) | attitude about it, median / p95 (deg) | layout scale, rotation vs waypoints | scale as displacement |
+|---|---|---|---|---|---|---|---|---|
+| Three Forks | 4 | 112 (16 excluded) | 0.175 / 0.341 | 0.227 / 0.254 | 0.04 (+0.02, +0.01, −0.04) | 0.10 / 0.69 | 0.41 %, 0.82° | 0.02 m |
+| Rockytop | 9 | 143 / 144 | 0.180 / 0.388 | 0.262 / 0.330 | 0.46 (−0.19, +0.13, +0.40) | 0.22 / 0.50 | 0.45 %, 0.96° | 0.10 m |
+| Belva Crater | 5 | 80 / 82 | 0.142 / 0.329 | 0.206 / 0.310 | 0.08 (0.00, −0.06, −0.05) | 0.18 / 0.26 | 2.13 %, 2.29° | 0.22 m |
+| Pearce Canyon | 11 | 160 / 176 | 0.214 / 0.441 | 0.218 / 0.364 | 0.32 (−0.09, +0.10, −0.29) | 0.24 / 0.35 | 0.87 %, 1.8° | 0.26 m |
+| South Arm | 6 | 104 | 0.159 / 0.325 | 0.181 / 0.286 | 0.07 (−0.02, +0.03, −0.06) | 0.35 / 0.42 | 1.89 %, 3.15° | 0.14 m |
+| Bell Island | 8 | 190 | 0.167 / 0.372 | 0.221 / 0.333 | 0.26 (+0.05, +0.25, −0.02) | 0.25 / 0.48 | 0.15 %, 0.98° | 0.02 m |
+| Taylorfjellet | 11 | 253 | 0.197 / 0.418 | 0.256 / 0.380 | 0.28 (+0.03, −0.01, +0.28) | 0.23 / 0.46 | 0.08 %, 0.23° | 0.03 m |
+| Olifants | 15 | 210 | 0.172 / 0.384 | 0.231 / 0.362 | 0.19 (+0.08, +0.10, −0.15) | 0.20 / 0.28 | 0.26 %, 0.87° | 0.13 m |
+| Marble Mountain | 4 | 64 | 0.175 / 0.379 | 0.250 / 0.337 | 0.06 (−0.05, −0.02, −0.04) | 0.13 / 0.23 | 1.94 %, 1.21° | 0.33 m |
+
+Block rotation: the median world-frame rotation taking each frame's label attitude to its refined one (from `sparse/cahv_initial` and `sparse/cahv_ba` frames; signs as the corrected v0.30 check). Every block stays within 0.46° of the East–North–Up frame the labels define; the larger ones are turns in azimuth (Rockytop +0.40°, Pearce −0.29°, Taylorfjellet +0.28°). Per-frame attitude scatter about it, median 0.10–0.35°, p95 0.23–0.69°, is the label pointing knowledge; the undivided p95 (0.30–0.77°) had warned at seven sites.
+
+Layout against the waypoints: the similarity between waypoint and refined station positions has scale errors of 0.1–2.1 % and rotations of 0.2–3.2°, largest in the smallest blocks. As displacements at the stations (|s − 1| × √Σr²) they are 0.02–0.33 m, the size of waypoint errors, and the rotations 0.07–0.95 m. The solution's attitude follows the labels, so these are errors of the waypoint layout, not rotations of the solution.
+
+Pearce Canyon: the 16 unregistered images were right-only exposures (their left partners are not in the archive selection); fixed in v0.30 (one-sensor rig).
+
+Navcam intrinsics, nine-scape consensus (notebook 05, 28 Sep): repeatability against the consensus 0.16–0.50 px rms per camera and scape, except Taylorfjellet 0.71 px in both eyes with 0.54 px at the centre. Its refined focal lengths are 1.43 / 1.41 px (0.048 %) above the start in both eyes; the other scapes spread from −0.65 to +0.92 px, also in both eyes together. The label focal length does not change with the interpolation temperature (2958.48 ± 0.01 px in every scape), so the label model does not predict this; notebook 05 section 2a now tests it against the camera temperature. The nine-scape consensus differs from the five-scape one shipped in 0.30 by less than its scatter; it is not re-shipped until the temperature question is answered. Stereo: the consensus geometry gives a mean disparity bias of −0.09 px (worst −0.47), the label geometry −0.48 px (worst −1.94), i.e. −0.38 % of range at 10 m with the labels. Rig: the refined right-from-left rotation differs from the CAHV pairs by 5–24 mdeg in yaw and 12–23 mdeg in roll.

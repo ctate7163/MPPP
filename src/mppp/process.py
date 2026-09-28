@@ -25,7 +25,7 @@ from . import VERSION_TAG
 from . import colmap as _colmap
 from . import writers
 from .config import load_config, save_config_snapshot
-from .image import MPPPImage, SkyImage
+from .image import MPPPImage, SkippedImage
 
 PathLike = Union[str, Path]
 _FORMAT_DIR = {"PNG16": "images_png16", "PNG8": "images_png8", "TIFF16": "images_tiff16"}
@@ -185,13 +185,28 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[
     return have, rep
 
 
+def _process_one(path: Path, cfg: Dict[str, Any], waypoints, out_dir: Path) -> Dict[str, Any]:
+    """One image, in a worker process (v0p30): its manifest record and reference row, or a skip / failure."""
+    try:
+        im = MPPPImage(path, cfg, waypoints)
+    except SkippedImage as e:
+        return {"stem": path.stem, "skipped": {"file": str(path), "reason": str(e)}}
+    except Exception as e:                                        # noqa: BLE001
+        return {"stem": path.stem, "failed": {"file": str(path), "error": f"{type(e).__name__}: {e}",
+                                              "traceback": traceback.format_exc()}}
+    files = write_image_products(im, out_dir)
+    m = im.meta
+    m["outputs"] = {k: str(Path(v).relative_to(out_dir)) for k, v in files.items()}
+    return {"stem": path.stem, "meta": m, "reference": im.reference}
+
+
 def process_images(paths: Iterable[PathLike], out_dir: PathLike,
                    config: Optional[Union[PathLike, Dict[str, Any]]] = None,
                    waypoints: Optional[Dict[str, Any]] = None,
                    stop_on_error: bool = False, progress: bool = True,
                    provenance: Optional[Dict[str, Any]] = None,
                    only_existing: Optional[str] = None,
-                   reuse_existing: bool = False) -> Dict[str, Any]:
+                   reuse_existing: bool = False, workers: int = 4) -> Dict[str, Any]:
     """
     Returns the manifest (also written to disk).  ``provenance`` (e.g. the
     report from ``mppp.scapes.select_scape``) is stored in both the manifest
@@ -207,6 +222,10 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     as they are, but they are no longer in the manifest.  When the folder does
     not exist yet, or none of the selection is in it (v0p22.4), the filter is
     ignored for this run and everything is processed; the report says so.
+
+    ``workers`` (v0p30, default 4): images are processed in that many worker
+    processes (``spawn``; each loads the mask model once).  1 processes them
+    in this process, in order, which is what ``stop_on_error`` needs.
 
     ``reuse_existing`` (v0p14.7): images already in ``out_dir``'s manifest,
     processed with the same configuration and with all their outputs present,
@@ -262,29 +281,54 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     t0 = time.time()
 
     skipped: List[Dict[str, str]] = []
-    for i, p in enumerate(todo):
-        try:
-            try:
-                im = MPPPImage(p, cfg, waypoints)
-            except SkyImage as e:                                # v0p22.4: not a failure, a rule
-                skipped.append({"file": str(p), "reason": str(e)})
-                if progress:
-                    print(f"[{i + 1}/{len(todo)}] {p.name}  skipped: {e}")
-                continue
-            files = write_image_products(im, out_dir)
-            m = im.meta
-            m["outputs"] = {k: str(Path(v).relative_to(out_dir)) for k, v in files.items()}
-            new_meta[p.stem] = m
-            new_ref[p.stem] = im.reference
+
+    def _take(i: int, p: Path, r: Dict[str, Any]) -> None:
+        if "skipped" in r:
+            skipped.append(r["skipped"])
+            if progress:
+                print(f"[{i + 1}/{len(todo)}] {p.name}  skipped: {r['skipped']['reason']}")
+        elif "failed" in r:
+            failed.append(r["failed"])
+            if progress:
+                print(f"[{i + 1}/{len(todo)}] {p.name}  FAILED: {r['failed']['error']}")
+        else:
+            new_meta[p.stem] = r["meta"]
+            new_ref[p.stem] = r["reference"]
             if progress:
                 print(f"[{i + 1}/{len(todo)}] {p.name}  ok  ({time.time() - t0:.0f} s)")
-        except Exception as e:                                   # noqa: BLE001
-            if stop_on_error:
-                raise
-            failed.append({"file": str(p), "error": f"{type(e).__name__}: {e}",
-                           "traceback": traceback.format_exc()})
+
+    n_workers = max(1, int(workers or 1))
+    if stop_on_error or n_workers == 1 or len(todo) < 2:
+        for i, p in enumerate(todo):
+            r = _process_one(p, cfg, waypoints, out_dir)
+            if stop_on_error and "failed" in r:
+                raise RuntimeError(r["failed"]["error"] + "\n" + r["failed"]["traceback"])
+            _take(i, p, r)
+    else:
+        import multiprocessing as mp
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+        if progress:
+            print(f"[mppp] processing {len(todo)} images in {min(n_workers, len(todo))} worker processes", flush=True)
+        done = 0
+        pending = list(todo)
+        try:
+            with ProcessPoolExecutor(max_workers=min(n_workers, len(todo)), mp_context=mp.get_context("spawn")) as ex:
+                futures = {ex.submit(_process_one, p, cfg, waypoints, out_dir): p for p in todo}
+                for fut in as_completed(futures):
+                    p = futures[fut]
+                    r = fut.result()                     # a dead worker raises BrokenProcessPool: see below
+                    pending.remove(p)
+                    _take(done, p, r)
+                    done += 1
+        except Exception as e:                                    # noqa: BLE001
+            # the pool itself failed (a worker died, or spawn could not re-import the main module, e.g. under
+            # a bare `python -` / stdin): finish what is left in this process instead of losing the run
             if progress:
-                print(f"[{i + 1}/{len(todo)}] {p.name}  FAILED: {type(e).__name__}: {e}")
+                print(f"[mppp] worker pool failed ({type(e).__name__}: {e}); processing the remaining "
+                      f"{len(pending)} images in this process", flush=True)
+            for p in pending:
+                _take(done, p, _process_one(p, cfg, waypoints, out_dir))
+                done += 1
 
     metas: List[Dict[str, Any]] = []
     refs: List[list] = []

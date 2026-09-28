@@ -329,6 +329,6 @@ def test_notebook_03_offers_other_visits():
     src = next(c.source for c in nb.cells if "parameters" in c.metadata.get("tags", []))
     ns = {}
     exec(compile("from pathlib import Path\n" + src, "settings", "exec"), ns)
-    assert ns["ADD_NEARBY_WAYPOINTS"] == 5
+    assert ns["ADD_NEARBY_WAYPOINTS"] > 0  # 5 m in v0.22.4, 10 m from v0.30
     full = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
     assert "find_imgs_near(PDS_DIR" in full and "radius_m=ADD_NEARBY_WAYPOINTS" in full

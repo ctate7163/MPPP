@@ -3,16 +3,16 @@
  "width": 5120,
  "height": 3840,
  "params": [
-  2948.383956776,
-  2948.0111391532,
-  2574.3014146857,
-  1950.1500942049,
-  0.2773509329,
-  -0.0211064913,
-  1.05343e-05,
-  -9.98781e-05,
-  0.0014202187,
-  0.5635528105,
+  2948.381801381554,
+  2947.659684793753,
+  2574.151160655127,
+  1949.8009283074564,
+  0.276917643969484,
+  -0.02105322793497036,
+  1.9158890849638136e-05,
+  -0.00010240626950634391,
+  0.0014194659610257889,
+  0.5630642440654479,
   0.0,
   0.0
  ],
@@ -35,5 +35,144 @@
   "k4"
  ],
  "pixel_origin": "corner of the first pixel (COLMAP)",
- "source": "C. Tate's Navcam calibration (Metashape frame model, 29 Sep 2025, M2020_NR0_frame.xml), re-fitted as a COLMAP rational model including the frame corners and refined by MPPP bundle adjustments; since v0p22 the observation-weighted mean of three v0p20 Navcam solutions: Three Forks (sols 684-693), Bell Island (1451-1467) and Rockytop (461-530), 1,473,254 observations. The bundle adjustment refines it per project."
+ "source": "NR consensus of five MPPP 0.22.4 Navcam solutions (Three Forks 685-692, Belva Crater 784-815, Bell Island 1451-1467, Olifants 1775-1813, Marble Mountain 1965-1979; notebook 05, 28 Sep 2026): observation-weighted mean of the refined rational cameras, each started from the v0p22 three-site consensus. Shipped as the start camera since MPPP 0.30. The bundle adjustment refines it per project.",
+ "verification": {
+  "per_scape": [
+   {
+    "scape": "Three Forks",
+    "camera": "NR",
+    "observations": 211517,
+    "rms_px": 0.4741508844087781,
+    "corner_rms_px": 0.8382863571927441,
+    "excluded": false
+   },
+   {
+    "scape": "Belva Crater",
+    "camera": "NR",
+    "observations": 383831,
+    "rms_px": 0.27818152673631746,
+    "corner_rms_px": 0.4798782989355543,
+    "excluded": false
+   },
+   {
+    "scape": "Bell Island",
+    "camera": "NR",
+    "observations": 622147,
+    "rms_px": 0.2831881271388726,
+    "corner_rms_px": 0.48720880290277324,
+    "excluded": false
+   },
+   {
+    "scape": "Olifants",
+    "camera": "NR",
+    "observations": 859107,
+    "rms_px": 0.139688556570769,
+    "corner_rms_px": 0.23984128043982825,
+    "excluded": false
+   },
+   {
+    "scape": "Marble Mountain",
+    "camera": "NR",
+    "observations": 183046,
+    "rms_px": 0.2300535421117686,
+    "corner_rms_px": 0.3782502892695539,
+    "excluded": false
+   }
+  ],
+  "excluded": [],
+  "repeatability": {
+   "per_scape": [
+    {
+     "camera": "NL",
+     "scape": "Three Forks",
+     "rms_px": 0.2224403129130991,
+     "centre_rms_px": 0.134087008022869,
+     "edge_rms_px": 0.24593600147863875,
+     "corner_rms_px": 0.3665976866686211,
+     "rotation_deg": 0.009328284350875089
+    },
+    {
+     "camera": "NL",
+     "scape": "Belva Crater",
+     "rms_px": 0.32546168676771736,
+     "centre_rms_px": 0.28286449090356874,
+     "edge_rms_px": 0.3478028951000383,
+     "corner_rms_px": 0.3621528732004277,
+     "rotation_deg": 0.009938128917860074
+    },
+    {
+     "camera": "NL",
+     "scape": "Bell Island",
+     "rms_px": 0.25191453166838307,
+     "centre_rms_px": 0.137069229303398,
+     "edge_rms_px": 0.2768110193402028,
+     "corner_rms_px": 0.4495438536597406,
+     "rotation_deg": 0.008464335174564989
+    },
+    {
+     "camera": "NL",
+     "scape": "Olifants",
+     "rms_px": 0.21318749024300757,
+     "centre_rms_px": 0.13440994811254528,
+     "edge_rms_px": 0.22772536948546812,
+     "corner_rms_px": 0.37786621784705543,
+     "rotation_deg": 0.013119400341446423
+    },
+    {
+     "camera": "NL",
+     "scape": "Marble Mountain",
+     "rms_px": 0.2421845499889753,
+     "centre_rms_px": 0.1550646224052881,
+     "edge_rms_px": 0.26798187719447264,
+     "corner_rms_px": 0.3794341340690917,
+     "rotation_deg": 0.028073600531650197
+    },
+    {
+     "camera": "NR",
+     "scape": "Three Forks",
+     "rms_px": 0.4741508844087781,
+     "centre_rms_px": 0.21936939093052574,
+     "edge_rms_px": 0.5351028308357122,
+     "corner_rms_px": 0.8382863571927441,
+     "rotation_deg": 0.0036893564698684883
+    },
+    {
+     "camera": "NR",
+     "scape": "Belva Crater",
+     "rms_px": 0.27818152673631746,
+     "centre_rms_px": 0.23901178702985643,
+     "edge_rms_px": 0.2669669641317678,
+     "corner_rms_px": 0.4798782989355543,
+     "rotation_deg": 0.015613756266161245
+    },
+    {
+     "camera": "NR",
+     "scape": "Bell Island",
+     "rms_px": 0.2831881271388726,
+     "centre_rms_px": 0.15261649715660386,
+     "edge_rms_px": 0.31554286554621197,
+     "corner_rms_px": 0.48720880290277324,
+     "rotation_deg": 0.012926418511631614
+    },
+    {
+     "camera": "NR",
+     "scape": "Olifants",
+     "rms_px": 0.139688556570769,
+     "centre_rms_px": 0.0869158786496832,
+     "edge_rms_px": 0.15137913762598443,
+     "corner_rms_px": 0.23984128043982825,
+     "rotation_deg": 0.01675682214523327
+    },
+    {
+     "camera": "NR",
+     "scape": "Marble Mountain",
+     "rms_px": 0.2300535421117686,
+     "centre_rms_px": 0.14641252399125718,
+     "edge_rms_px": 0.2514322289264162,
+     "corner_rms_px": 0.3782502892695539,
+     "rotation_deg": 0.018531207330638105
+    }
+   ]
+  }
+ }
 }

@@ -57,10 +57,14 @@ def test_matches_legacy(legacy, img):
         old = legacy(img)
     except OSError as e:                                            # e.g. symlinks unavailable on Windows
         pytest.skip(str(e))
-    new = MPPPImage(img, load_config({"masking": {"infer_mask": False}}), synthetic_waypoints())
+    # v0p30: the Navcam brightness factor (0.9) and the selection rules are newer than the legacy code; compare at 1.0
+    cfg = load_config({"masking": {"infer_mask": False}, "color": {"brightness_by_family": {"N": 1.0}},
+                       "selection": {"max_boresight_elevation_deg": None, "lmst_window_h": None,
+                                     "max_saturated_fraction": None}})
+    new = MPPPImage(img, cfg, synthetic_waypoints())
     assert np.array_equal(old.mask_valid > 0, new.mask_valid > 0)
-    assert np.abs(old.image_int16.astype(int) - new.image_int16.astype(int)).max() <= 1
-    assert np.abs(old.image_int8.astype(int) - new.image_int8.astype(int)).max() <= 1
+    assert int(np.abs(old.image_int16.astype(int) - new.image_int16.astype(int)).max()) <= 1
+    assert int(np.abs(old.image_int8.astype(int) - new.image_int8.astype(int)).max()) <= 1
     assert np.allclose(old.reference[1:4], new.reference[1:4], atol=1e-6)          # position: identical
     assert np.allclose(old.reference[4:7], new.reference[4:7], atol=0.02)          # YPR, degrees
     K_old, K_new = np.array(old.K_cam, float), new.intrinsics.K.copy()

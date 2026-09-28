@@ -234,13 +234,29 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
             rig_of[instr] = db.write_rig(rig)
             ref_of_rig[rig_of[instr]] = instr
 
-    # frames = exposures; a frame must contain its rig's reference sensor, so an
-    # exposure without it (e.g. a right image whose left is missing) is left out
+    # frames = exposures; a frame must contain its rig's reference sensor.  v0p30: an exposure of a
+    # stereo rig without its reference image (a right image whose left is missing - at Pearce Canyon 16
+    # of 176 Navcam images) goes into a one-sensor rig with that camera as reference, so it is posed
+    # from its own CAHV prior and shares the camera's intrinsics instead of being left out.
     groups: Dict[tuple, List[Dict[str, Any]]] = {}
     for r in project.images:
         groups.setdefault((rig_of[r["instrument"]], r["sclk_key"]), []).append(r)
-    skipped = [r["name"] for (rid, _), rs in groups.items() if ref_of_rig[rid] not in {x["instrument"] for x in rs}
-               for r in rs]
+    solo_rig: Dict[str, int] = {}
+    for key in list(groups):
+        rid, sclk = key
+        rs = groups[key]
+        if ref_of_rig[rid] in {x["instrument"] for x in rs}:
+            continue
+        del groups[key]
+        for r in rs:
+            instr = r["instrument"]
+            if instr not in solo_rig:
+                rig = pycolmap.Rig()
+                rig.add_ref_sensor(sensor(cam_ids[instr]))
+                solo_rig[instr] = db.write_rig(rig)
+                ref_of_rig[solo_rig[instr]] = instr
+            groups.setdefault((solo_rig[instr], sclk), []).append(r)
+    skipped: List[str] = []
 
     # images, keypoints, descriptors, priors
     sig = np.asarray(project.settings.get("prior_sigma_m", [1.0, 1.0, 1.0]), float)
@@ -275,9 +291,12 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
             r["frame_id"] = int(fid)
     db.close()
     fdb.close()
-    summary = {"database": str(out), "cameras": cam_ids, "rigs": len(set(rig_of.values())),
+    summary = {"database": str(out), "cameras": cam_ids, "rigs": len(set(rig_of.values()) | set(solo_rig.values())),
                "frames": len({r.get('frame_id') for r in project.images if r.get('frame_id')}),
-               "images": len(project.images) - len(skipped), "keypoints": int(n_kp), "images_without_frame": skipped}
+               "images": len(project.images) - len(skipped), "keypoints": int(n_kp), "images_without_frame": skipped,
+               "single_eye_rigs": {k: int(v) for k, v in solo_rig.items()},
+               "single_eye_images": sorted(r["name"] for (rid, _), rs in groups.items() if rid in solo_rig.values()
+                                           for r in rs)}
     project.settings["database"] = summary
     project.save()
     try:
@@ -288,7 +307,13 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
     return summary
 
 
-def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba") -> Dict[str, str]:
+COLMAP_BAT_CANDIDATES = (r"D:\tools\colmap-x64-windows-nocuda\COLMAP.bat", r"D:\tools\colmap-x64-windows-cuda\COLMAP.bat",
+                         r"D:\tools\COLMAP\COLMAP.bat", r"C:\tools\COLMAP\COLMAP.bat",
+                         r"C:\Program Files\COLMAP\COLMAP.bat", r"%LOCALAPPDATA%\COLMAP\COLMAP.bat")
+
+
+def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba",
+                      colmap_bat: Optional[str] = None) -> Dict[str, str]:
     """
     Files to open the project in the COLMAP GUI (v0p14.4, v0p14.5), in the project folder:
 
@@ -306,8 +331,17 @@ def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba") -> 
     * ``colmap_gui.ini`` / ``gui_native/colmap_gui.ini`` - COLMAP project files
       for File > Open project (then File > Import model).
 
+    ``colmap_bat`` (v0p30): the COLMAP.bat to start (notebook 03 ``COLMAP_BAT``;
+    kept in ``project.settings["colmap_bat"]``).  The batch file tries, in
+    order: that path, the ``COLMAP_BAT`` environment variable, the usual
+    install folders (``COLMAP_BAT_CANDIDATES``) and the PATH, then starts the
+    GUI with the database, the images and the model in one go.
+
     Rewritten by ``build_database`` and ``reconstruct``.  Returns the paths.
     """
+    colmap_bat = colmap_bat or project.settings.get("colmap_bat")
+    if colmap_bat:
+        project.settings["colmap_bat"] = str(colmap_bat)
     from .. import __version__
     root = Path(project.root).resolve()
     native = root / "gui_native"
@@ -322,14 +356,22 @@ def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba") -> 
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def bat(path: Path, db: str, model_rel: str, note: str) -> None:
-        lines = ["@echo off",
+        cands = ([str(colmap_bat)] if colmap_bat else []) + list(COLMAP_BAT_CANDIDATES)
+        lines = ["@echo off", "setlocal",
                  f"rem MPPP {__version__}: open this project in the COLMAP GUI (4.x): {note}.",
-                 "rem Set COLMAP_BAT once to your COLMAP.bat, e.g.  setx COLMAP_BAT D:\\tools\\COLMAP\\COLMAP.bat",
-                 'if "%COLMAP_BAT%"=="" set "COLMAP_BAT=COLMAP.bat"',
+                 "rem Double-click.  COLMAP.bat is looked for at the paths below, then in COLMAP_BAT, then on the PATH;",
+                 "rem set COLMAP_BAT in notebook 03 (or  setx COLMAP_BAT <path>\\COLMAP.bat  once) if yours is elsewhere.",
                  f'set "MODEL=%~dp0{model_rel}"',
                  'if not exist "%MODEL%\\cameras.bin" (echo No model in %MODEL% yet: run the reconstruction first. & pause & exit /b 1)',
-                 f'call "%COLMAP_BAT%" gui --database_path "%~dp0{db}" --image_path "%~dp0images" --import_path "%MODEL%"',
-                 "if errorlevel 1 (echo Could not start COLMAP: set COLMAP_BAT to your COLMAP.bat. & pause)"]
+                 'set "CB="']
+        for c in cands:
+            lines.append(f'if not defined CB if exist "{c}" set "CB={c}"')
+        lines += ['if not defined CB if defined COLMAP_BAT if exist "%COLMAP_BAT%" set "CB=%COLMAP_BAT%"',
+                  'if not defined CB for %%I in (COLMAP.bat) do if not "%%~$PATH:I"=="" set "CB=%%~$PATH:I"',
+                  'if not defined CB (echo COLMAP.bat not found: set COLMAP_BAT in notebook 03 or  setx COLMAP_BAT ^<path^>\\COLMAP.bat & pause & exit /b 1)',
+                  'echo Starting %CB% with %MODEL%',
+                  f'call "%CB%" gui --database_path "%~dp0{db}" --image_path "%~dp0images" --import_path "%MODEL%"',
+                  "if errorlevel 1 (echo COLMAP returned an error. & pause)"]
         path.write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8"))
 
     m = model or "cahv_ba"

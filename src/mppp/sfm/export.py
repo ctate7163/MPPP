@@ -106,6 +106,59 @@ def write_native_text_model(rec, project: SfmProject, out_dir: PathLike) -> Dict
     return {"cameras": len(nat.cameras), "images": len(nat.images), "points": len(nat.points3D)}
 
 
+def point_colors_from_tracks(nat, images_dir: PathLike, invalid_black: bool = True) -> Dict[str, Any]:
+    """
+    Colour every 3-D point of the native-pixel model ``nat`` with the mean of
+    the image pixels of all its observations (v0p30).  COLMAP's own
+    ``extract_colors_for_all_images`` leaves a point black when the image it
+    happens to take the colour from cannot be read or the keypoint falls on an
+    invalid (black, masked) pixel; here every observation contributes, black
+    pixels (``invalid_black``: RGB all zero, MPPP's invalid flag) are left out,
+    and a point with no valid sample gets mid-grey.  Each image is read once.
+    Returns counts.
+    """
+    import cv2
+    images_dir = Path(images_dir)
+    pids = np.array(sorted(nat.points3D), dtype=np.int64)
+    index = {int(p): i for i, p in enumerate(pids)}
+    acc = np.zeros((len(pids), 3), np.float64)
+    cnt = np.zeros(len(pids), np.int64)
+    n_img = n_missing = 0
+    for iid, im in nat.images.items():
+        rows = [(index[int(q.point3D_id)], k) for k, q in enumerate(im.points2D) if q.has_point3D() and int(q.point3D_id) in index]
+        if not rows:
+            continue
+        f = images_dir / im.name
+        img = cv2.imread(str(f), cv2.IMREAD_UNCHANGED) if f.is_file() else None
+        if img is None:
+            n_missing += 1
+            continue
+        n_img += 1
+        if img.ndim == 2:
+            img = np.repeat(img[..., None], 3, axis=2)
+        if img.shape[2] == 4:
+            img = img[..., :3]
+        if img.dtype != np.uint8:
+            img = (img.astype(np.float64) / (65535.0 if img.dtype == np.uint16 else img.max() or 1) * 255).astype(np.uint8)
+        rgb = img[..., ::-1]                                       # cv2 loads BGR
+        h, w = rgb.shape[:2]
+        xy = np.array([im.points2D[k].xy for _, k in rows], float)
+        x = np.clip(np.round(xy[:, 0] - 0.5).astype(int), 0, w - 1)  # COLMAP corner origin -> pixel index
+        y = np.clip(np.round(xy[:, 1] - 0.5).astype(int), 0, h - 1)
+        px = rgb[y, x].astype(np.float64)
+        ok = np.ones(len(rows), bool) if not invalid_black else px.sum(axis=1) > 0
+        idx = np.array([i for i, _ in rows])
+        np.add.at(acc, idx[ok], px[ok])
+        np.add.at(cnt, idx[ok], 1)
+    mean = np.full((len(pids), 3), 128.0)
+    has = cnt > 0
+    mean[has] = acc[has] / cnt[has, None]
+    for i, pid in enumerate(pids):
+        nat.points3D[int(pid)].color = np.round(mean[i]).astype(np.uint8)
+    return {"points": int(len(pids)), "coloured_from_tracks": int(has.sum()), "images_read": n_img,
+            "images_missing": n_missing}
+
+
 def write_gui_native(project: SfmProject, rec, out_dir: Optional[PathLike] = None, colors: bool = True) -> Dict[str, Any]:
     """
     A copy of the project for LOOKING at it in the COLMAP GUI (v0p14.5), in
@@ -123,11 +176,12 @@ def write_gui_native(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
     out = Path(out_dir) if out_dir else project.root / "gui_native"
     (out / "sparse").mkdir(parents=True, exist_ok=True)
     nat = native_reconstruction(rec, project, observed_only=False)
+    color_report = None
     if colors:
         try:
-            nat.extract_colors_for_all_images(str(project.images_dir))
-        except Exception:                                    # noqa: BLE001  (colours are cosmetic)
-            pass
+            color_report = point_colors_from_tracks(nat, project.images_dir)      # v0p30: mean over the track
+        except Exception as e:                               # noqa: BLE001  (colours are cosmetic)
+            color_report = {"error": f"{type(e).__name__}: {e}"}
     nat.write(str(out / "sparse"))
     dbp = out / "database.db"
     if dbp.exists():
@@ -160,7 +214,7 @@ def write_gui_native(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
             n_pairs += 1
     src.close()
     dst.close()
-    return {"dir": str(out), "images": n_img, "verified_pairs": n_pairs, "points": len(nat.points3D),
+    return {"dir": str(out), "images": n_img, "verified_pairs": n_pairs, "points": len(nat.points3D), "colors": color_report,
             "cameras": len(nat.cameras)}
 
 

@@ -22,7 +22,7 @@ PathLike = Union[str, Path]
 
 def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequence[Tuple[str, str, Any]]] = None,
           use_gpu: Optional[bool] = None, max_num_matches: int = 32768, max_error_px: float = 6.0,
-          min_num_inliers: int = 15, num_threads: int = -1, guided_matching: bool = False,
+          min_num_inliers: int = 15, num_threads: int = -1, guided_matching: bool = False, block_size: int = 100,
           python: Optional[PathLike] = None, max_ratio: float = 0.8, max_distance: float = 0.7,
           cross_check: bool = True) -> Dict[str, Any]:
     """Match and verify; results go into ``project.database``.  Returns a summary.
@@ -41,7 +41,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
         return run_step(python, "match", project, mode=mode, use_gpu=use_gpu, max_num_matches=max_num_matches,
                         max_error_px=max_error_px, min_num_inliers=min_num_inliers, num_threads=num_threads,
                         guided_matching=guided_matching, max_ratio=max_ratio, max_distance=max_distance,
-                        cross_check=cross_check)
+                        cross_check=cross_check, block_size=block_size)
     import pycolmap
     mo = pycolmap.FeatureMatchingOptions()
     mo.max_num_matches = int(max_num_matches)
@@ -60,7 +60,12 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     device = pycolmap.Device.auto if use_gpu is None else (pycolmap.Device.cuda if use_gpu else pycolmap.Device.cpu)
     db = str(project.database)
     if mode == "exhaustive":
-        pycolmap.match_exhaustive(db, matching_options=mo, verification_options=vo, device=device)
+        # v0p30: block_size images per block (COLMAP default 50): a block's descriptors are loaded once and every
+        # pair inside it matched, so larger blocks mean fewer reloads and fewer GPU pipeline drains on a block
+        # boundary; the verification of a block runs on num_threads CPU threads while the GPU matches the next
+        po = pycolmap.ExhaustivePairingOptions()
+        po.block_size = int(block_size)
+        pycolmap.match_exhaustive(db, matching_options=mo, pairing_options=po, verification_options=vo, device=device)
     else:
         if pairs is None:
             f = project.root / "pairs_prior.txt"

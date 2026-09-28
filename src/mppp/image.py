@@ -37,8 +37,27 @@ def _pad(arr: np.ndarray, left: int, right: int, top: int, bottom: int) -> np.nd
     return np.pad(arr, pads, mode="constant")
 
 
-class SkyImage(ValueError):
+class SkippedImage(ValueError):
+    """An image the selection rules leave out (v0p30): not an error, listed in the manifest under ``skipped``."""
+
+
+class SkyImage(SkippedImage):
     """The image looks at the sky (v0p22.4): boresight above ``selection.max_boresight_elevation_deg``."""
+
+
+class LmstOutOfWindow(SkippedImage):
+    """Taken outside ``selection.lmst_window_h`` (v0p30)."""
+
+
+class SaturatedImage(SkippedImage):
+    """More than ``selection.max_saturated_fraction`` of the valid pixels are saturated (v0p30)."""
+
+
+def lmst_hours(lmst: Optional[str]) -> Optional[float]:
+    """``'Sol-01451M13:00:25.313'`` -> 13.007 (hours of the sol); None if it cannot be read."""
+    import re
+    m = re.search(r"M(\d+):(\d+):([\d.]+)", str(lmst or ""))
+    return int(m[1]) + int(m[2]) / 60 + float(m[3]) / 3600 if m else None
 
 
 class MPPPImage:
@@ -72,11 +91,13 @@ class MPPPImage:
         self._position(waypoints)
         self._check_boresight()
         self._illumination()
+        self._check_lmst()
+        self._check_saturation(dn)
 
         rad, self.mask_valid = self._radiance_rgb(dn)
         if cfg["radiometry"]["apply_tau_correction"]:
             rad /= self.scale_zenith
-        rad *= self.white_balance.reshape(1, 1, 3)
+        rad *= self.white_balance.reshape(1, 1, 3) * self.brightness
 
         # keep valid pixels strictly positive so that zero uniquely flags "invalid"
         eps = 1.0 / float(cfg["color"]["scale_rad_to_int16"])
@@ -122,6 +143,32 @@ class MPPPImage:
         if el > float(lim):
             raise SkyImage(f"boresight elevation {el:.1f} deg > {float(lim):g} deg (selection.max_boresight_elevation_deg): "
                            f"a sky-pointing frame, not processed")
+
+    def _check_lmst(self) -> None:
+        """v0p30: refuse frames taken outside ``selection.lmst_window_h`` (inclusive)."""
+        win = (self.config.get("selection") or {}).get("lmst_window_h")
+        self.lmst_h = lmst_hours(self.LMST)
+        if not win or self.lmst_h is None:
+            return
+        lo, hi = float(win[0]), float(win[1])
+        if not lo <= self.lmst_h <= hi:
+            raise LmstOutOfWindow(f"LMST {self.lmst_h:.2f} h outside [{lo:g}, {hi:g}] h (selection.lmst_window_h)")
+
+    def _check_saturation(self, dn: np.ndarray) -> None:
+        """v0p30: the fraction of valid pixels at the product's maximum DN; refuse the frame above the limit."""
+        lim = (self.config.get("selection") or {}).get("max_saturated_fraction")
+        invalid_dn = label_float(self.label, "IMAGE.INVALID_CONSTANT", default=0.0)
+        bits = int(label_float(self.label, "IMAGE.SAMPLE_BITS", default=16) or 16)
+        sat_dn = 2 ** (bits - 1) - 1                          # signed integer products (RAD): 32767 for 16 bits
+        if np.issubdtype(dn.dtype, np.floating):
+            sat_dn = float(np.nanmax(dn))
+        valid = (dn != invalid_dn) if dn.ndim == 2 else np.all(dn != invalid_dn, axis=2)
+        sat = (dn >= sat_dn) if dn.ndim == 2 else np.any(dn >= sat_dn, axis=2)
+        n_valid = int(valid.sum())
+        self.saturated_fraction = float((sat & valid).sum() / n_valid) if n_valid else 0.0
+        if lim is not None and self.saturated_fraction > float(lim):
+            raise SaturatedImage(f"{100 * self.saturated_fraction:.1f} % of the valid pixels saturated > {100 * float(lim):g} % "
+                                 f"(selection.max_saturated_fraction)")
 
     def _say(self, msg: str) -> None:
         self.log.append(msg)
@@ -224,6 +271,7 @@ class MPPPImage:
         else:
             wb = [1.0, 1.0, 1.0]
         self.white_balance = np.asarray(wb, dtype=np.float64)
+        self.brightness = float((c.get("brightness_by_family") or {}).get(self.fn.family, 1.0))   # v0p30
 
     def _radiance_rgb(self, dn: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         L = self.label
@@ -360,6 +408,18 @@ class MPPPImage:
         return [self.fn.stem, *self.pose.C.tolist(), *self.pose.metashape_ypr_deg().tolist()]
 
     @property
+    def camera_temperature_degC(self) -> Optional[float]:
+        """v0p30: the temperature the label camera model was interpolated to (Navcam: the camera plate,
+        ``GEOMETRIC_CAMERA_MODEL.INTERPOLATION_VALUE`` when ``INTERPOLATION_METHOD = TEMPERATURE``); None otherwise."""
+        m = getattr(self.camera_model_label, "meta", None) or {}
+        if str(m.get("interpolation") or "").upper() != "TEMPERATURE":
+            return None
+        try:
+            return float(m.get("interpolation_value"))
+        except (TypeError, ValueError):
+            return None
+
+    @property
     def meta(self) -> Dict[str, Any]:
         from . import VERSION_TAG
         L = self.label
@@ -373,6 +433,7 @@ class MPPPImage:
             "solar_azimuth_deg": self.solar_az, "solar_elevation_deg": self.solar_el,
             "tau_estimated": self.tau_estimated, "tau_reference": self.tau_ref,
             "scale_zenith": self.scale_zenith, "white_balance": self.white_balance.tolist(),
+            "brightness": self.brightness, "lmst_h": self.lmst_h, "saturated_fraction": self.saturated_fraction,
             "radiance_scaling_factor": self.scale_dn_to_rad, "radiance_offset": self.offset_dn_to_rad,
             "camera_group": self.fn.camera_group,
             "stereo_partner": self.fn.stereo_partner_stem,
@@ -385,6 +446,7 @@ class MPPPImage:
             "intrinsics": self.intrinsics.to_dict(),
             "intrinsics_label": self.intrinsics_label.to_dict(),
             "cahvor_O_A_angle_deg": self.cahvor.o_a_angle_deg(),
+            "camera_temperature_degC": self.camera_temperature_degC,
             "camera_model_label": dict(self.camera_model_label.to_label_dict(precision=12),
                                        width=self.native_size[0], height=self.native_size[1],
                                        frame="ROVER_NAV_FRAME", pixel_origin="centre_of_first_pixel"),

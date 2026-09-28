@@ -535,7 +535,7 @@ def test_skip_inference_at_one_station_keeps_the_rover(tmp_path, monkeypatch):
     monkeypatch.setattr("mppp.process.check_mask_checkpoint", lambda cfg: None)
     wp = mppp.load_waypoints()
     base = {"export": {"formats": ["PNG8"], "write_mask_files": True}}
-    man = mppp.process_images([NLF, ZL0], tmp_path, mppp.load_config(base), wp, progress=False, reuse_existing=True)
+    man = mppp.process_images([NLF, ZL0], tmp_path, mppp.load_config(base), wp, progress=False, reuse_existing=True, workers=1)
     by = {m["source_product"]: m for m in man["images"]}
     nlf = by[NLF.name]
     assert nlf["mask"]["inferred"] and nlf["mask"]["included_fraction"] < nlf["mask"]["valid_fraction"]
@@ -549,7 +549,7 @@ def test_skip_inference_at_one_station_keeps_the_rover(tmp_path, monkeypatch):
     mp.write_text(json.dumps(on_disk))
 
     cfg = mppp.load_config({**base, "masking": {"skip_inference_at": [station]}})
-    man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True)
+    man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True, workers=1)
     rep = man["reuse_existing"]
     assert rep["mask_inference_changed"] == [NLF.stem] and rep["to_process"] == 1 and rep["reused"] == 1
     by = {m["source_product"]: m for m in man["images"]}
@@ -562,7 +562,7 @@ def test_skip_inference_at_one_station_keeps_the_rover(tmp_path, monkeypatch):
     mk = cv2.imread(str(tmp_path / "masks" / (NLF.stem + ".png")), cv2.IMREAD_GRAYSCALE)
     assert (mk > 0).mean() == pytest.approx(nlf["mask"]["valid_fraction"])
     # same list again: nothing to do; list emptied: the station's images get the model mask back
-    man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True)
+    man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True, workers=1)
     assert man["reuse_existing"]["to_process"] == 0
-    man = mppp.process_images([NLF, ZL0], tmp_path, mppp.load_config(base), wp, progress=False, reuse_existing=True)
+    man = mppp.process_images([NLF, ZL0], tmp_path, mppp.load_config(base), wp, progress=False, reuse_existing=True, workers=1)
     assert man["reuse_existing"]["mask_inference_changed"] == [NLF.stem]

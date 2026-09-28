@@ -45,6 +45,9 @@ _DEFAULTS: Dict[str, Any] = {
         "white_balance_ecam": [1.1, 1.4, 1.8],
         "white_balance_zcam": [1.0, 1.3, 2.0],
         "white_balance_vce": [1.1, 1.0, 0.9],
+        # v0p30: a brightness factor per camera family applied with the white balance (N = Navcam, F/R = Hazcam,
+        # Z = Mastcam-Z); Navcam 0.9 keeps nominally exposed frames off the top of the 8-bit range
+        "brightness_by_family": {"N": 0.9},
         "scale_rad_to_int16": 2e5,
         "scale_int8_to_int16": 64,
         "offset_int8_to_int16": 0.0,
@@ -73,6 +76,11 @@ _DEFAULTS: Dict[str, Any] = {
         # manifest under "skipped".  None turns the rule off.  Mastcam-Z is not filtered.
         "max_boresight_elevation_deg": 45.0,
         "boresight_filter_families": ["N"],
+        # v0p30: images taken outside this local mean solar time window [h, inclusive] are not processed
+        # (None: no window), and neither are images with more than this fraction of their valid pixels
+        # saturated (DN at the product's maximum; None: no limit).  Both are listed under "skipped".
+        "lmst_window_h": [9.0, 17.0],
+        "max_saturated_fraction": 0.05,
     },
     "resize": {
         "apply_padding": True,        # pad sub-frames/tiles to the full detector frame
@@ -106,6 +114,10 @@ def default_config() -> Dict[str, Any]:
 
 
 def _deep_merge(base: Dict[str, Any], over: Dict[str, Any], path: str = "") -> Dict[str, Any]:
+    open_maps = ("color.brightness_by_family", "masking.skip_inference_at")      # v0p30: any key is a value here
+    if path in open_maps:
+        base.update(over)
+        return base
     for k, v in over.items():
         here = f"{path}.{k}" if path else k
         if k not in base:

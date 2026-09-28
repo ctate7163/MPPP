@@ -67,10 +67,17 @@ DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "rig_rotation_change_deg": (0.06, 0.2, "above"),       # doubled in v0p14.2
     "rig_cahv_spread_deg": (0.02, 0.1, "above"),
     "station_shift_median_m": (2.0, 6.0, "above"),          # doubled in v0p20 (user request)
-    "attitude_change_p95_deg": (0.5, 2.0, "above"),
+    # v0p30: attitude_change_p95_deg (block rotation + per-frame scatter) is reported without a verdict; the
+    # two parts are judged separately: block_rotation_deg and attitude_residual_p95_deg (label pointing
+    # knowledge is ~0.1-0.35 deg per frame; the p95 over nine sites was 0.23-0.69 deg)
+    "attitude_residual_p95_deg": (0.75, 2.0, "above"),
     "within_station_shift_spread_m": (0.1, 0.4, "above"),   # doubled in v0p20 (user request)
     "corner_triangulated_ratio": (0.5, 0.25, "below"),      # v0p20
-    "prior_scale_error_pct": (1.0, 3.0, "above"),
+    # v0p30: the scale error of the station layout is judged as the displacement it makes at the stations
+    # (|s - 1| x rms station distance from the centroid x sqrt(n)): 2 % over an 8 m block is 0.2 m, within the
+    # waypoint accuracy; prior_scale_error_pct is reported without a verdict
+    "prior_scale_error_m": (0.5, 1.5, "above"),
+    "block_rotation_deg": (0.3, 1.0, "above"),              # v0p30: the whole block turned away from the ENU frame
 }
 _RANK = {"pass": 0, "info": 0, "warn": 1, "fail": 2}
 
@@ -484,6 +491,38 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
               f"largest RMS spread of the shifts within one station ({labels.get(spread[0], spread[0])})", "m")
     att = np.array([x["dAttitude_deg"] for x in good])
     check("poses", "attitude_change_p95_deg", _q(att, 95), f"median {_q(att, 50):.3f} deg" if att.size else "", "deg")
+    # v0p30: is the block still in the East-North-Up frame?  The common part of every frame's attitude change
+    # (refined relative to the label attitude, expressed in the world frame) is a rotation of the whole block;
+    # the priors allow it only within attitude_prior_deg.  Reported about E, N and U so a tilt is told from a
+    # turn in azimuth (about U).
+    from scipy.spatial.transform import Rotation as _Rot
+    rv = []
+    for x in good:
+        r = project.image(x["name"])
+        iid = r.get("image_id")
+        if iid is None or iid not in rec.images or not rec.images[iid].has_pose:
+            continue
+        R1 = rec.images[iid].cam_from_world().rotation.matrix()
+        R0 = np.asarray(r["prior_R_w2c"], float)
+        # camera axes in the world are R^T, so refined = W @ prior with W = R1^T R0: the world-frame rotation
+        # taking the prior attitude to the refined one (v0p30.0 used R0^T R1, the same angle with the sign reversed)
+        rv.append(_Rot.from_matrix(R1.T @ R0).as_rotvec())
+    if rv:
+        rv = np.degrees(np.array(rv))
+        mean_rv = np.median(rv, axis=0)
+        resid = np.linalg.norm(rv - mean_rv, axis=1)
+        report_extra = {"block_rotation_deg": float(np.linalg.norm(mean_rv)),
+                        "block_rotation_about_E_N_U_deg": mean_rv.tolist(),
+                        "attitude_residual_median_deg": float(np.median(resid)),
+                        "attitude_residual_p95_deg": float(np.percentile(resid, 95))}
+        check("poses", "block_rotation_deg", float(np.linalg.norm(mean_rv)),
+              f"median attitude change of the block in the world frame: about E {mean_rv[0]:+.3f}, N {mean_rv[1]:+.3f}, "
+              f"U (azimuth) {mean_rv[2]:+.3f} deg; the frame stays ENU with the offset in project.offset", "deg")
+        check("poses", "attitude_residual_p95_deg", float(np.percentile(resid, 95)),
+              f"per-frame attitude change about the block rotation (label pointing knowledge); median "
+              f"{np.median(resid):.3f} deg", "deg")
+    else:
+        report_extra = {}
     sims = []
     for comp in comps:
         cen = {s: by_st[s] for s in comp if s in by_st}
@@ -492,12 +531,15 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         P0 = np.array([np.mean([project.image(x["name"])["prior_C"] for x in v], 0) for v in cen.values()])
         P1 = np.array([np.mean([[x["E_m"], x["N_m"], x["U_m"]] for x in v], 0) for v in cen.values()])
         s_, R_, t_ = _umeyama(P0, P1)
-        sims.append({"stations": list(cen), "scale": float(s_), "rotation_deg": _rotation_deg(R_)})
-        att = float((project.settings.get("reconstruction") or {}).get("attitude_prior_deg") or 0.0)
-        held_by = (f"position priors and a {att:g} deg attitude prior per frame" if att > 0
-                   else "the position priors only")
-        check("poses", "prior_scale_error_pct", 100 * abs(s_ - 1), f"block of {len(cen)} stations; rotation "
-              f"{_rotation_deg(R_):.2f} deg (orientation held by {held_by})", "%")
+        extent = float(np.sqrt(np.sum((P0 - P0.mean(0)) ** 2)))      # sqrt(sum |station - centroid|^2)
+        rot = _rotation_deg(R_)
+        sims.append({"stations": list(cen), "scale": float(s_), "rotation_deg": rot, "extent_m": extent,
+                     "scale_error_m": abs(s_ - 1) * extent, "rotation_error_m": float(np.radians(rot)) * extent})
+        check("poses", "prior_scale_error_pct", 100 * abs(s_ - 1), f"block of {len(cen)} stations", "%")
+        check("poses", "prior_scale_error_m", abs(s_ - 1) * extent,
+              f"{100 * abs(s_ - 1):.2f} % over {len(cen)} stations (sqrt sum r^2 {extent:.1f} m); the station layout "
+              f"of the waypoints is turned by {rot:.2f} deg ({np.radians(rot) * extent:.2f} m) against the "
+              f"solution, whose attitude follows the labels (block_rotation_deg)", "m")
 
     weak = diagnose_weak_images(project, rec, min_frame_observations)
     verdict = max((c["status"] for c in checks), key=lambda s: _RANK[s], default="pass")
@@ -511,7 +553,8 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
                                                            for m, i in outl[:20]],
             "cameras": cams_after, "rig": rig_out, "stations": st_tab, "prior_similarity": sims,
             "held_images": held, "weak_images": weak, "station_components": comps,
-            "station_labels": labels,
+            "station_labels": labels, "world_frame": {"frame": project.settings.get("world_frame"),
+                                                       "offset_enu_m": list(project.offset), **report_extra},
             "note": "thresholds are provisional values set a priori, not validated limits"}
 
 
@@ -569,6 +612,14 @@ def write_health(report: Dict[str, Any], out_dir: PathLike, rec=None, project: O
     if rec is not None and project is not None:
         try:
             files["png"] = str(plot_health(report, rec, project, out / "health.png"))
+            try:                                                   # v0p30: top-down station map with the SfM shifts
+                from .export import plot_camera_shifts
+                import matplotlib.pyplot as plt
+                fig = plot_camera_shifts(project, rec=rec, out_png=out / "station_map.png")
+                plt.close(fig)
+                files["station_map"] = str(out / "station_map.png")
+            except Exception as e:                                 # noqa: BLE001
+                files["station_map_error"] = f"{type(e).__name__}: {e}"
         except ImportError:
             pass
     return files
