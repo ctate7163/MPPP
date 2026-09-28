@@ -219,8 +219,8 @@ def test_notebook_03_settings_use_the_latest_methods():
     exec(compile("from pathlib import Path\n" + src, "settings", "exec"), ns)   # the cell is plain assignments
     assert ns["NAVCAM_DISTORTION"] == "rational" and ns["NAVCAM_RIG"] == "consensus"
     assert ns["ZCAM_INTRINSICS"] == "focus_model" and ns["EXCLUDE_OUTLIERS"] is True
-    assert ns["SITES"]["threeforks_large"] == (670, 694)
-    assert {"taylorfjellet", "rockytop", "belva", "landing"} <= set(ns["SITES"])
+    assert ns["SITES"]["threeforks_large"] == (652, 693)
+    assert {"taylorfjellet", "rockytop", "belva_crater", "butler_landing"} <= set(ns["SITES"])
     full = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
     for k in ("exclude_outliers=EXCLUDE_OUTLIERS", "triangulation_options=TRIANGULATION", "navcam_rig=NAVCAM_RIG",
               "convergence_statistics", "match(", "**MATCH"):

@@ -35,6 +35,12 @@ def _find_ckpt():
 
 CKPT = _find_ckpt()
 
+# The Navcam test product is a Sun-pointing tile (boresight +78 deg).  The v0p22.4 sky rule
+# (selection.max_boresight_elevation_deg = 45) would refuse it, so the tests run with the rule off;
+# test_v0p22_4 turns it on explicitly.
+import mppp.config as _cfg  # noqa: E402
+_cfg._DEFAULTS["selection"]["max_boresight_elevation_deg"] = None
+
 needs_data = pytest.mark.skipif(not (NLF.is_file() and ZL0.is_file()), reason="example IMGs not present")
 needs_ckpt = pytest.mark.skipif(not CKPT.is_file(), reason="mask checkpoint not present")
 # the 2025 checkpoint whose decoder activations overflow fp16 (the Sept-2026 failure); v0p11

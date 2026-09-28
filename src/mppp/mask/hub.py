@@ -14,12 +14,12 @@ GitHub release).  ``fetch_model()`` downloads it once into the user cache
 ``config["masking"]["checkpoint"]``:
 
 1. an existing file path -> that file;
-2. a registry name (default ``"mppp_mask_v2"``) -> the cached file, downloaded if needed;
+2. a registry name (default ``"mppp_mask_v3"``) -> the cached file, downloaded if needed;
 3. a bare file name -> ``checkpoints_dir()/<name>`` (models you train).
 
 Export for a release (docs/RELEASING.md)::
 
-    python -m mppp.mask.hub export checkpoints/convnext_tiny_s4_seg_20260925.pt --name mppp_mask_v2 --update-registry
+    python -m mppp.mask.hub export checkpoints/convnext_tiny_s4_seg_20260925b.pt --name mppp_mask_v3 --update-registry
 """
 from __future__ import annotations
 
@@ -271,7 +271,7 @@ def _main(argv=None) -> int:
     e = sub.add_parser("export", help=".pt -> .safetensors with the card embedded")
     e.add_argument("checkpoint")
     e.add_argument("--out")
-    e.add_argument("--name", help="registry name, e.g. mppp_mask_v2")
+    e.add_argument("--name", help="registry name, e.g. mppp_mask_v3")
     e.add_argument("--update-registry", action="store_true")
     i = sub.add_parser("install", help="put a local .pt/.safetensors into the cache as a registry model")
     i.add_argument("src")

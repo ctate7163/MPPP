@@ -98,7 +98,7 @@ def test_default_checkpoint_name_and_preflight(tmp_path, monkeypatch):
     from mppp.process import check_mask_checkpoint, process_images
     from mppp.mask.train import best_checkpoint_name
     cfg = mppp.default_config()
-    assert cfg["masking"]["checkpoint"] == "mppp_mask_v2"                         # v0p14.7: the released default
+    assert cfg["masking"]["checkpoint"] == "mppp_mask_v3"                         # v0p22.4: the released default
     assert best_checkpoint_name({"backbone": "convnext_tiny", "stride4": True}) == "convnext_tiny_s4_seg_best.pt"
     assert best_checkpoint_name({"backbone": "convnext_base"}) == "convnext_base_seg_best.pt"
     cfg["masking"]["checkpoint"] = str(tmp_path / "nope.pt")

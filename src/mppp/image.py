@@ -37,6 +37,10 @@ def _pad(arr: np.ndarray, left: int, right: int, top: int, bottom: int) -> np.nd
     return np.pad(arr, pads, mode="constant")
 
 
+class SkyImage(ValueError):
+    """The image looks at the sky (v0p22.4): boresight above ``selection.max_boresight_elevation_deg``."""
+
+
 class MPPPImage:
     """
     Parameters
@@ -66,6 +70,7 @@ class MPPPImage:
         self._identify()
         self._camera_from_label()
         self._position(waypoints)
+        self._check_boresight()
         self._illumination()
 
         rad, self.mask_valid = self._radiance_rgb(dn)
@@ -106,6 +111,18 @@ class MPPPImage:
         assert (self.width, self.height) == (self.intrinsics.width, self.intrinsics.height)
 
     # ------------------------------------------------------------------ steps
+    def _check_boresight(self) -> None:
+        """v0p22.4: refuse sky-pointing frames before any image work (radiometry, mask inference)."""
+        sel = self.config.get("selection") or {}
+        lim = sel.get("max_boresight_elevation_deg")
+        fams = [str(f).upper() for f in (sel.get("boresight_filter_families") or ["N"])]
+        if lim is None or self.fn.stem[:1].upper() not in fams:
+            return
+        az, el = self.pose.boresight_az_el_deg
+        if el > float(lim):
+            raise SkyImage(f"boresight elevation {el:.1f} deg > {float(lim):g} deg (selection.max_boresight_elevation_deg): "
+                           f"a sky-pointing frame, not processed")
+
     def _say(self, msg: str) -> None:
         self.log.append(msg)
         if self.config.get("verbose"):

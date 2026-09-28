@@ -2,6 +2,15 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.22.4 — 2026-09-28
+
+- **Mask model v3 is the default** (`mppp_mask_v3`, exported from `checkpoints/convnext_tiny_s4_seg_20260925b.pt`: 9 of 10 epochs, val IoU 0.979; SHA-256 `daa34ffb…`). Until the safetensors is published, `fetch_model` installs the local `.pt` from `checkpoints/` automatically; `python -m mppp.mask.hub export checkpoints/convnext_tiny_s4_seg_20260925b.pt --name mppp_mask_v3` writes the release file.
+- **Sky-pointing Navcam frames are not processed** (`selection.max_boresight_elevation_deg`, 45°; notebook 03 `SKY_ELEVATION_DEG`): a frame whose label boresight points higher raises `SkyImage` before radiometry and mask inference and is listed in the manifest under `skipped`. Mastcam-Z is not filtered.
+- **`only_existing` tolerates a first run**: when the image folder does not exist yet, or holds none of the selection, everything is processed and the manifest says the filter was ignored; the next run applies it as before (`KEEP_ONLY_REMAINING = True` is now the notebook default).
+- **Navcam intrinsics are refined by default** (`reconstruct(navcam_intrinsics="refine")`, notebook 03 `NAVCAM_INTRINSICS = "refine"`); `"auto"` (hold on a weak network) and `"hold"` remain options, and the network verdict is still logged.
+- **`ADD_NEARBY_WAYPOINTS`** replaces `NEARBY_M` in notebook 03: metres, inclusive, default 5; 0 turns it off.
+- Notebook 03 defaults: `SCAPES_ROOT = D:/scapes/colmap`; sites `butler_landing`, `rockytop`, `threeforks` (685–692), `threeforks_large` (652–693), `belva_crater`, `tuxedo_park`, `airey_hill`, `bunsen_peak`, `pearce_canyon`, `rio_chiquito`, `south_arm`, `bell_island`, `taylorfjellet`, `olifants`, `groloy`, `marble_mountain`; `SITE = "rockytop"`; `STORE_MASK_IN_ALPHA = True`; `ZCAM_RIG = True`; `MAX_NUM_FEATURES = 12000`; round 2 of the schedule at Cauchy scale 4; `NO_MASK_INFERENCE_AT = ["S032D1184"]`.
+
 ## 0.22.3 — 2026-09-27
 
 - **Other visits to the same spot** (`select.find_imgs_near`, `waypoints.stations_near`; notebook 03 `NEARBY_M`): the products of the sol range plus those of every waypoint station within `NEARBY_M` metres of a station imaged in the range, whatever their sol. The report lists each added station, its distance and nearest in-range station, and its images. Off by default; with a value the work folder gets a `_near<N>m` suffix.

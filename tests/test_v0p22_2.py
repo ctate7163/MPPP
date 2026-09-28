@@ -254,7 +254,7 @@ def test_notebooks_carry_the_new_settings():
     src = next(c.source for c in nb.cells if "parameters" in c.metadata.get("tags", []))
     ns = {}
     exec(compile("from pathlib import Path\n" + src, "settings", "exec"), ns)
-    assert ns["NAVCAM_INTRINSICS"] == "auto" and ns["STAGED"] is True and ns["NAVCAM_RIG_REFINE"] == "rotation"
+    assert ns["NAVCAM_INTRINSICS"] == "refine" and ns["STAGED"] is True and ns["NAVCAM_RIG_REFINE"] == "rotation"
     assert ns["NAVCAM_CAMERAS"] is None and ns["HOLD_CAMERAS"] == ()
     full = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
     for k in ("navcam_intrinsics=NAVCAM_INTRINSICS", "staged=STAGED", "hold_cameras=HOLD_CAMERAS", "error_input_navcam",
@@ -329,6 +329,6 @@ def test_notebook_03_offers_other_visits():
     src = next(c.source for c in nb.cells if "parameters" in c.metadata.get("tags", []))
     ns = {}
     exec(compile("from pathlib import Path\n" + src, "settings", "exec"), ns)
-    assert ns["NEARBY_M"] is None
+    assert ns["ADD_NEARBY_WAYPOINTS"] == 5
     full = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
-    assert "find_imgs_near(PDS_DIR" in full and "radius_m=NEARBY_M" in full
+    assert "find_imgs_near(PDS_DIR" in full and "radius_m=ADD_NEARBY_WAYPOINTS" in full

@@ -31,7 +31,7 @@ The model card, with every inference setting and the training history, is embedd
 
 ## Versions
 
-`mppp_mask_v2` (this file) is MPPP's default from 0.14.7. The previous model, `mppp_mask_v1` (`mppp_mask_convnext_tiny_s4_v1.safetensors`, 24 Sep 2026, 3 epochs, val IoU 0.971), has the same architecture and input; select it with `"checkpoint": "mppp_mask_v1"`.
+`mppp_mask_v3` (`mppp_mask_convnext_tiny_s4_v3.safetensors`, exported from `convnext_tiny_s4_seg_20260925b.pt`: the same architecture and data, 9 of 10 epochs, val IoU 0.979, SHA-256 `daa34ffbccf389135fd74c1ed79755f13c6be6a84213540d5e1f1a9788a82fa7`) is MPPP's default from 0.22.4. `mppp_mask_v2` (this file) was the default from 0.14.7. The previous model, `mppp_mask_v1` (`mppp_mask_convnext_tiny_s4_v1.safetensors`, 24 Sep 2026, 3 epochs, val IoU 0.971), has the same architecture and input; select it with `"checkpoint": "mppp_mask_v1"`.
 
 ## Use
 

@@ -29,10 +29,12 @@ def test_only_existing_rebuilds_manifest_from_remaining_images(tmp_path):
             if l and not l.startswith("#") and not l.startswith("filename")]
     assert len(refs) == 1 and NLF.stem in refs[0]
     assert (tmp_path / "images_png8" / (NLF.stem + ".png")).is_file()          # regenerated, nothing deleted
-    with pytest.raises(FileNotFoundError, match="does not exist"):
-        mppp.process_images([NLF], tmp_path, cfg, wp, progress=False, only_existing="TIFF16")
-    with pytest.raises(ValueError, match="none of the"):
-        mppp.process_images([ZL0], tmp_path, cfg, wp, progress=False, only_existing="PNG8")
+    # v0p22.4: a missing folder or a selection with nothing in the folder no longer raises - the filter is
+    # ignored for that run and everything is processed (the manifest says so)
+    m = mppp.process_images([NLF], tmp_path, cfg, wp, progress=False, only_existing="TIFF16")
+    assert m["n_processed"] == 1 and "does not exist" in m["only_existing"]["skipped"]
+    m = mppp.process_images([ZL0], tmp_path, cfg, wp, progress=False, only_existing="PNG8")
+    assert m["n_processed"] == 1 and "no selected product" in m["only_existing"]["skipped"]
 
 
 def test_export_does_not_depend_on_the_mppp_version(tmp_path, monkeypatch):
@@ -495,11 +497,11 @@ def test_reuse_existing_processes_only_what_is_missing_or_changed(tmp_path, caps
     assert "configuration changed" in capsys.readouterr().out
 
 
-def test_mask_model_v2_is_the_default():
+def test_mask_model_v2_is_registered():
     import mppp
     from mppp.mask.hub import load_registry
     reg = load_registry()
-    assert reg["default"] == "mppp_mask_v2" == mppp.default_config()["masking"]["checkpoint"]
+    assert reg["default"] == "mppp_mask_v3" == mppp.default_config()["masking"]["checkpoint"]   # v0p22.4
     v2 = reg["models"]["mppp_mask_v2"]
     assert v2["source_checkpoint"] == "convnext_tiny_s4_seg_20260925.pt" and v2["val_iou"] > 0.977
     assert v2["sha256"] == "227e483369e11d6e36ce3517cf9f6d6ac60a9a50c1e301f9e7ae53d0cef569b9"

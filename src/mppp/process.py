@@ -25,7 +25,7 @@ from . import VERSION_TAG
 from . import colmap as _colmap
 from . import writers
 from .config import load_config, save_config_snapshot
-from .image import MPPPImage
+from .image import MPPPImage, SkyImage
 
 PathLike = Union[str, Path]
 _FORMAT_DIR = {"PNG16": "images_png16", "PNG8": "images_png8", "TIFF16": "images_tiff16"}
@@ -71,14 +71,19 @@ def filter_to_existing(paths: Sequence[PathLike], out_dir: PathLike, fmt: str) -
     """
     out_dir = Path(out_dir)
     folder = out_dir / _FORMAT_DIR.get(str(fmt).upper(), str(fmt))
+    paths = [Path(p) for p in paths]
     if not folder.is_dir():
-        raise FileNotFoundError(f"only_existing: {folder} does not exist (process once without only_existing first)")
+        # v0p22.4: a first run of a scape has nothing to keep yet - process everything, say so, and let the
+        # next run (with the folder in place) apply the filter as usual
+        return paths, {"folder": str(folder), "n_selected": len(paths), "n_kept": len(paths), "n_removed": 0,
+                       "removed": [], "not_in_selection": [], "skipped": "folder does not exist: first run, everything processed"}
     stems = {p.stem for p in folder.iterdir()
              if p.is_file() and p.suffix.lower() in (".png", ".tif", ".tiff")}
-    paths = [Path(p) for p in paths]
     kept = [p for p in paths if p.stem in stems]
     if not kept:
-        raise ValueError(f"only_existing: none of the {len(paths)} selected products has an image in {folder}")
+        return paths, {"folder": str(folder), "n_selected": len(paths), "n_kept": len(paths), "n_removed": 0,
+                       "removed": [], "not_in_selection": sorted(stems),
+                       "skipped": "no selected product has an image in the folder: everything processed"}
     selected = {p.stem for p in paths}
     report = {"folder": str(folder), "n_selected": len(paths), "n_kept": len(kept), "n_removed": len(paths) - len(kept),
               "removed": sorted(p.name for p in paths if p.stem not in stems),
@@ -199,7 +204,9 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     after deleting unsuitable images from e.g. ``images_png8/``: rerun with the
     same selection and ``only_existing="PNG8"``.  Nothing is deleted; outputs
     of the removed images in other folders (masks, other formats) are left
-    as they are, but they are no longer in the manifest.
+    as they are, but they are no longer in the manifest.  When the folder does
+    not exist yet, or none of the selection is in it (v0p22.4), the filter is
+    ignored for this run and everything is processed; the report says so.
 
     ``reuse_existing`` (v0p14.7): images already in ``out_dir``'s manifest,
     processed with the same configuration and with all their outputs present,
@@ -218,7 +225,10 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     kept_filter = None
     if only_existing:
         paths, kept_filter = filter_to_existing(paths, out_dir, only_existing)
-        if progress:
+        if kept_filter.get("skipped"):
+            if progress:
+                print(f"[mppp] only_existing={only_existing!r} ignored: {kept_filter['skipped']}")
+        elif progress:
             print(f"[mppp] only_existing={only_existing!r}: {kept_filter['n_kept']} of {kept_filter['n_selected']} "
                   f"selected products still have an image in {kept_filter['folder']}; "
                   f"{kept_filter['n_removed']} removed" + (f"; {len(kept_filter['not_in_selection'])} images in the "
@@ -251,9 +261,16 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     failed: List[Dict[str, str]] = []
     t0 = time.time()
 
+    skipped: List[Dict[str, str]] = []
     for i, p in enumerate(todo):
         try:
-            im = MPPPImage(p, cfg, waypoints)
+            try:
+                im = MPPPImage(p, cfg, waypoints)
+            except SkyImage as e:                                # v0p22.4: not a failure, a rule
+                skipped.append({"file": str(p), "reason": str(e)})
+                if progress:
+                    print(f"[{i + 1}/{len(todo)}] {p.name}  skipped: {e}")
+                continue
             files = write_image_products(im, out_dir)
             m = im.meta
             m["outputs"] = {k: str(Path(v).relative_to(out_dir)) for k, v in files.items()}
@@ -280,7 +297,7 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
             refs.append(_reference_from_meta(reused[p.stem]))
 
     manifest: Dict[str, Any] = {"mppp_version": VERSION_TAG, "n_requested": len(paths),
-                                "n_processed": len(metas), "failed": failed, "provenance": provenance,
+                                "n_processed": len(metas), "failed": failed, "skipped": skipped, "provenance": provenance,
                                 "only_existing": kept_filter, "reuse_existing": reuse_rep, "images": metas}
     frames = sorted({m["pose"]["frame"] for m in metas})
     manifest["world_frames"] = frames

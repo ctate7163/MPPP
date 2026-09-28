@@ -749,14 +749,15 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 exclude_outliers: bool = False, outlier_thresholds: Optional[Dict[str, float]] = None,
                 exclude_after_round: int = 2, rig_translation_sigma_m: Optional[float] = None,
                 triangulation_options: Optional[Dict[str, Any]] = None,
-                navcam_intrinsics: str = "auto", staged: bool = False, hold_cameras: Sequence[str] = ()):
+                navcam_intrinsics: str = "refine", staged: bool = False, hold_cameras: Sequence[str] = ()):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
-    ``navcam_intrinsics`` (v0p22.2): ``"refine"``, ``"hold"`` (the Navcam
-    cameras stay at their start values, the shipped consensus unless the
-    project was created from other cameras) or ``"auto"`` (default: hold when
-    :func:`navcam_network` calls the network weak).  ``refine_rig=False``
+    ``navcam_intrinsics`` (v0p22.2): ``"refine"`` (default since v0p22.4: the
+    Navcam intrinsics are always refined), ``"hold"`` (the Navcam cameras stay
+    at their start values, the shipped consensus unless the project was created
+    from other cameras) or ``"auto"`` (hold when :func:`navcam_network` calls
+    the network weak).  The network verdict is logged whatever the setting.  ``refine_rig=False``
     holds the rig.  ``hold_cameras``: further camera keys to hold.
     ``staged`` (v0p22.2): with Mastcam-Z in the project, solve the Navcam
     block first (Mastcam-Z frames deregistered), write it to

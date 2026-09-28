@@ -56,7 +56,7 @@ _DEFAULTS: Dict[str, Any] = {
         "infer_mask": True,
         # v0p13: a registry name (the released model, downloaded once into the user cache),
         # a checkpoint path, or a file name in checkpoints_dir() - see mppp.mask.hub
-        "checkpoint": "mppp_mask_v2",
+        "checkpoint": "mppp_mask_v3",
         "device": "auto",                             # auto | cpu | cuda
         # null -> values from the checkpoint's model card
         "threshold": None,
@@ -66,6 +66,13 @@ _DEFAULTS: Dict[str, Any] = {
         # images; invalid (black) pixels are still masked.  Items: [site, drive], "S032D1184", "32/1184",
         # or a station label such as "Sol0686-0688 S032D1184".
         "skip_inference_at": [],
+    },
+    "selection": {
+        # v0p22.4: Navcam frames whose optical axis points higher than this (sky surveys, cloud movies,
+        # atmospheric opacity frames) hold no terrain and are not processed; they are listed in the
+        # manifest under "skipped".  None turns the rule off.  Mastcam-Z is not filtered.
+        "max_boresight_elevation_deg": 45.0,
+        "boresight_filter_families": ["N"],
     },
     "resize": {
         "apply_padding": True,        # pad sub-frames/tiles to the full detector frame
