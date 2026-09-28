@@ -31,6 +31,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NB = ROOT / "notebooks"
+
+
+def notebook(stem: str):
+    """``notebooks/<stem>.ipynb``, or the highest-versioned ``<stem>_v0pXXpY.ipynb`` beside it (v0p22.4: the
+    notebooks are also shipped with the MPPP version in their file name)."""
+    import re
+    plain = NB / f"{stem}.ipynb"
+    versioned = sorted(NB.glob(f"{stem}_v0p*.ipynb"),
+                       key=lambda p: [int(x) for x in re.findall(r"\d+", p.stem[len(stem):])])
+    if plain.is_file():
+        return plain
+    if versioned:
+        return versioned[-1]
+    raise FileNotFoundError(f"no {stem}.ipynb or {stem}_v0p*.ipynb in {NB}")
 SITE_LABEL = {"threeforks": "Three Forks", "threeforks_large": "Three Forks 670-694", "belva": "Belva",
               "rockytop": "Rockytop", "bellisland": "Bell Island", "taylorfjellet": "Taylor Fjellet",
               "landing": "Landing site"}
@@ -148,7 +162,7 @@ def main(argv=None) -> int:
             ov.update(extra)
             log(f"site {site}: notebook 03 -> {work}")
             try:
-                ok = run_notebook(NB / "03_colmap_alignment.ipynb", work / "03_colmap_alignment_executed.ipynb", ov, log)
+                ok = run_notebook(notebook("03_colmap_alignment"), work / "03_colmap_alignment_executed.ipynb", ov, log)
             except Exception:                                        # noqa: BLE001
                 ok = False
                 log(f"site {site}: runner error\n{traceback.format_exc()}")
@@ -165,12 +179,12 @@ def main(argv=None) -> int:
     today = datetime.date.today().isoformat()
     if "04" in a.only:
         log(f"notebook 04 on {list(labels)}")
-        run_notebook(NB / "04_error_analysis.ipynb", root / "error_analysis" / today / "04_error_analysis_executed.ipynb",
+        run_notebook(notebook("04_error_analysis"), root / "error_analysis" / today / "04_error_analysis_executed.ipynb",
                      {"ALIGNMENTS": repr({k: v for k, v in labels.items()}), "MIN_TRACK_LENGTH": "3",
                       "OUT": f"Path(r{str(root / 'error_analysis' / today)!r})"}, log)
     if "05" in a.only:
         log(f"notebook 05 on {list(labels)}")
-        run_notebook(NB / "05_camera_models.ipynb", root / "camera_analysis" / today / "05_camera_models_executed.ipynb",
+        run_notebook(notebook("05_camera_models"), root / "camera_analysis" / today / "05_camera_models_executed.ipynb",
                      {"SCAPES": "{" + ", ".join(f"{k!r}: Path(r{v!r})" for k, v in labels.items()) + "}",
                       "SCAPES_ROOT": f"Path(r{str(root)!r})",
                       "OUT": f"Path(r{str(root / 'camera_analysis' / today)!r})"}, log)
