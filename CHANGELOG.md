@@ -2,6 +2,16 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.31.1 — 2026-09-28
+
+Checks of the thermal model and the error-model inputs of fifteen Navcam scapes (working notes §14):
+- **Leave-one-scape-out** prediction of each scape's Navcam camera from the other eight: the thermal model cuts the fx prediction error from 0.78 to 0.45 px rms (within-block slope) or 0.33 px (across-scape slope); over the whole frame both give 0.31–0.32 px against 0.44 px without a model.
+- **Geometry of the temperature bins**: against one camera per eye, the binned blocks change shape by 0.1–3 mm within 6 m and 1–28 mm at 12–25 m (60–1600 ppm of range; largest at Pearce Canyon); Taylorfjellet also turns by 0.05°. `thermal_adjust` returns the reference reconstruction (`reference_rec`).
+- **`scripts/error_analysis_batch.py`**: notebook 05's measurements (ε, gate, decorrelation, view graph, registration, parameter row, pooled gate and form comparison) one alignment at a time; notebook 05 with all fifteen alignments loaded at once needs more than 8 GB.
+- **`scripts/site_appearance.py`**: texture and contrast of processed images inside the terrain mask and below −3° elevation (band-pass contrast at the SIFT octaves, rms contrast, spectral slope, coherence, SIFT density and response, repetitiveness, shadow fraction, dynamic range).
+- Findings: ε (0.27 / 0.32 px same / cross station), the zero-angle cross-station rate (0.63) and the gate form are common to all sites; θ½ (3.6–15°) and τ (1.4–9 h) are site parameters, θ½ following the network (cross-station fraction), not the texture. Single-image contrast mostly follows the sun elevation; after removing it, only the SIFT keypoint strength relates to the cross-station rate (ρ −0.71).
+- Notebook 05 defaults: the fifteen Navcam scapes under `D:\scapes\colmap`. Results in `docs/results/v0p31/`.
+
 ## 0.31.0 — 2026-09-28
 
 Navcam focal length and camera temperature (`mppp.sfm.thermal`; working notes §13, methods §15):

@@ -353,7 +353,8 @@ def thermal_adjust(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: floa
     """
     The temperature-bin test on a solved block (see the module docstring).  ``reference``: first the same adjustment
     with one camera per eye (``free`` refined, everything else held, rig held), so that the bin result is compared
-    with the same freedom minus the temperature dependence.  Returns {"reference", "bins", "rows", "rec"}.
+    with the same freedom minus the temperature dependence.  Returns {"reference", "reference_rec", "bins", "rows",
+    "rec", "project"}.
     """
     from .reconstruction import bundle_adjust
     att = float((project.settings.get("reconstruction") or {}).get("attitude_prior_deg") or 1.0)
@@ -374,6 +375,7 @@ def thermal_adjust(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: floa
                  for k, v in p0.settings["database"]["cameras"].items() if str(k).startswith("N") and int(v) in r0.cameras}
         out["reference"] = {"cost": ba0["final_cost"], "initial_cost": ba0["initial_cost"], "seconds": ba0["seconds"],
                             "stats": _stats(r0, p0), "cameras": cams0}
+        out["reference_rec"] = r0
         if verbose:
             print(f"[thermal] one camera per eye: cost {ba0['final_cost']:.1f} ({ba0['seconds']:.0f} s), "
                   f"{out['reference']['stats']}", flush=True)

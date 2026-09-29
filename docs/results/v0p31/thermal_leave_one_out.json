@@ -1,0 +1,150 @@
+{
+ "frame_rms_px": {
+  "none": {
+   "NL": {
+    "Rockytop": 0.29415787282798633,
+    "Three Forks": 0.6773398659470333,
+    "Belva Crater": 0.4834871844226769,
+    "Pearce Canyon": 0.6392281143242001,
+    "South Arm": 0.30767882098892957,
+    "Bell Island": 0.3218825361006576,
+    "Taylorfjellet": 0.8210626603079841,
+    "Olifants": 0.20890764148082727,
+    "Marble Mountain": 0.18821806568398702
+   },
+   "NR": {
+    "Rockytop": 0.22948512105621874,
+    "Three Forks": 0.9425017921824878,
+    "Belva Crater": 0.4356571644015417,
+    "Pearce Canyon": 0.6391652725234298,
+    "South Arm": 0.20423364038241365,
+    "Bell Island": 0.3579185390144922,
+    "Taylorfjellet": 0.8276888241713013,
+    "Olifants": 0.22225553619714036,
+    "Marble Mountain": 0.14034268039445888
+   }
+  },
+  "within": {
+   "NL": {
+    "Rockytop": 0.3370903871814386,
+    "Three Forks": 0.5397618083351584,
+    "Belva Crater": 0.31194360624563444,
+    "Pearce Canyon": 0.4796529229575214,
+    "South Arm": 0.05820325915663349,
+    "Bell Island": 0.23809532119741722,
+    "Taylorfjellet": 0.3510466115894797,
+    "Olifants": 0.20055765580484486,
+    "Marble Mountain": 0.22053043301909508
+   },
+   "NR": {
+    "Rockytop": 0.2507492088660792,
+    "Three Forks": 0.7002531123673623,
+    "Belva Crater": 0.32740817643790826,
+    "Pearce Canyon": 0.45990520649347677,
+    "South Arm": 0.0834793678499601,
+    "Bell Island": 0.26219813776407835,
+    "Taylorfjellet": 0.39342510736718084,
+    "Olifants": 0.22254989437995926,
+    "Marble Mountain": 0.13432327671804759
+   }
+  },
+  "across": {
+   "NL": {
+    "Rockytop": 0.3744099368370206,
+    "Three Forks": 0.4728204685101014,
+    "Belva Crater": 0.24495353107639709,
+    "Pearce Canyon": 0.3663383271644305,
+    "South Arm": 0.19874501405512726,
+    "Bell Island": 0.3920661142776192,
+    "Taylorfjellet": 0.3412037911177576,
+    "Olifants": 0.213940299293416,
+    "Marble Mountain": 0.2909067053383519
+   },
+   "NR": {
+    "Rockytop": 0.2887445828930807,
+    "Three Forks": 0.519052579392903,
+    "Belva Crater": 0.2528821318041754,
+    "Pearce Canyon": 0.2840814375871184,
+    "South Arm": 0.3051041458216778,
+    "Bell Island": 0.37756319739920563,
+    "Taylorfjellet": 0.5291135704213475,
+    "Olifants": 0.22297154416109205,
+    "Marble Mountain": 0.16507157375144924
+   }
+  }
+ },
+ "fx_error_px": {
+  "none": {
+   "NL": {
+    "Rockytop": 0.21047724891559483,
+    "Three Forks": 0.7351826987569439,
+    "Belva Crater": -0.9786388539541804,
+    "Pearce Canyon": -0.9112359337582348,
+    "South Arm": -0.5420096295383701,
+    "Bell Island": -0.6672638991226449,
+    "Taylorfjellet": 1.4218903237965606,
+    "Olifants": 0.3930439845230467,
+    "Marble Mountain": -0.011260377773396613
+   },
+   "NR": {
+    "Rockytop": -0.0031957015676198353,
+    "Three Forks": 1.4095822207896163,
+    "Belva Crater": -0.9002208655692812,
+    "Pearce Canyon": -0.6708029493047434,
+    "South Arm": -0.42832987065321504,
+    "Bell Island": -0.747262352713733,
+    "Taylorfjellet": 1.4144604912389696,
+    "Olifants": 0.04650724250541316,
+    "Marble Mountain": -0.1186369298138743
+   }
+  },
+  "within": {
+   "NL": {
+    "Rockytop": 0.3107791248130525,
+    "Three Forks": 0.4232402799657393,
+    "Belva Crater": -0.6479778710418032,
+    "Pearce Canyon": -0.637263733135569,
+    "South Arm": -0.0976053167455575,
+    "Bell Island": -0.20007548048806711,
+    "Taylorfjellet": 0.5812644020575135,
+    "Olifants": 0.27385563702409854,
+    "Marble Mountain": -0.21329632690185463
+   },
+   "NR": {
+    "Rockytop": 0.08424781817348048,
+    "Three Forks": 0.9846813545673285,
+    "Belva Crater": -0.6836362904482485,
+    "Pearce Canyon": -0.3614602166489931,
+    "South Arm": -0.07801654014429005,
+    "Bell Island": -0.3707761674404537,
+    "Taylorfjellet": 0.6619135911746525,
+    "Olifants": 0.045145083694023924,
+    "Marble Mountain": -0.21952561179750774
+   }
+  },
+  "across": {
+   "NL": {
+    "Rockytop": 0.3880662929882419,
+    "Three Forks": 0.21205788688394023,
+    "Belva Crater": -0.4601912845782863,
+    "Pearce Canyon": -0.42467125887787915,
+    "South Arm": 0.22603873438902156,
+    "Bell Island": 0.18551068610713628,
+    "Taylorfjellet": -0.1440058706293712,
+    "Olifants": 0.1801060414186395,
+    "Marble Mountain": -0.3791259290187554
+   },
+   "NR": {
+    "Rockytop": 0.18862795449922487,
+    "Three Forks": 0.6224384452784761,
+    "Belva Crater": -0.47087098388465165,
+    "Pearce Canyon": 0.005449301078897406,
+    "South Arm": 0.3252693210688449,
+    "Bell Island": 0.052461227038293146,
+    "Taylorfjellet": -0.5370447180216615,
+    "Olifants": 0.04322192573408756,
+    "Marble Mountain": -0.3409281964427464
+   }
+  }
+ }
+}

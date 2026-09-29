@@ -196,3 +196,60 @@ Consensus scatter (rms over the frame from the consensus, rotation removed; mean
 - **Alignment (prior offsets)**: median camera-centre shift from the waypoint prior 0.01 m (Three Forks, Marble Mountain) to 0.27 m (Pearce Canyon), p95 0.04–0.41 m; attitude change median 0.10–0.47°, p95 0.28–0.68°. The largest shifts are at stations with one exposure (2 images: Pearce S054D0762 0.67 m, Marble S091D0606 0.56 m, Belva S039D0858 0.47 m), which the tie points hold only weakly, and at Rockytop S026D1004 (0.36 m median over 31 images, most likely an error of the waypoint itself).
 
 Reading: the reprojection error is set by the matching of long, cross-station tracks and by a heavy tail of bad observations, not by the camera model (no radial signature, no eye or temperature dependence) or by the temperature (≤ 2 % of the cost). The next gains are in the tail: per-scale σ, a tighter final residual cut for long tracks, and the learned-matcher comparison of methods §13.
+
+## 14. What the thermal model changes, and what the error model's parameters depend on (v0p31.1, 28 Sep 2026)
+
+**Leave-one-scape-out test of the thermal slope** (nine scapes of §13; for each scape, the consensus and both slopes are formed from the other eight and used to predict its camera at its own temperature):
+
+| thermal model | fx prediction error, rms / max over 18 cameras | frame difference from the predicted camera, mean / median / max rms px |
+|---|---|---|
+| none | 0.78 / 1.43 px | 0.44 / 0.34 / 0.89 |
+| within-block slope (~30 ppm/°C) | 0.45 / 0.84 px | 0.31 / 0.29 / 0.66 |
+| across-scape slope (~55–60 ppm/°C) | 0.33 / 0.57 px | 0.32 / 0.30 / 0.50 |
+
+Both models cut the prediction error of a new scape's focal length by 40–60 %; the across-scape slope predicts fx better (it absorbs the part of the scape-to-scape spread that follows temperature but is not seen inside a block), the two are equal over the whole frame. For starting a block's camera from the consensus (`SfmProject.create`, held-intrinsics blocks) the across-scape slope is the better predictor; for the bins inside one block the within-block slope is the measured one.
+
+**Geometric effect of the bins inside a block** (one camera per eye vs one per eye and 10 °C bin, same observations; `sparse` difference of all tie points matched by their first observation, after the similarity of the 3–25 m points):
+
+| scape | bins | block rotation mdeg | scale ppm | shape change, median mm (ppm of range): < 3 m | 3–6 m | 6–12 m | 12–25 m | 25–50 m |
+|---|---|---|---|---|---|---|---|---|
+| South Arm | 2 | 0.6 | +12 | 0.13 (60) | 0.15 (38) | 0.26 (32) | 1.1 (69) | 2.2 (63) |
+| Bell Island | 3 | 0.6 | −7 | 0.18 (77) | 0.34 (87) | 1.4 (161) | 3.9 (234) | 12 (367) |
+| Rockytop | 2 | 1.0 | 0 | 0.28 (114) | 0.40 (104) | 1.7 (204) | 4.5 (289) | 27 (708) |
+| Belva Crater | 2 | 1.7 | +52 | 0.58 (283) | 0.83 (202) | 1.2 (139) | 2.2 (134) | 8.5 (255) |
+| Olifants | 3 | 3.3 | +62 | 0.67 (274) | 0.83 (215) | 1.9 (228) | 8.0 (496) | 42 (1248) |
+| Taylorfjellet | 4 | 50.6 | −1 | 0.49 (196) | 0.66 (171) | 1.9 (223) | 6.8 (413) | 26 (731) |
+| Pearce Canyon | 3 | 19.3 | −132 | 1.5 (715) | 2.7 (670) | 5.8 (728) | 28 (1615) | 74 (2165) |
+
+The temperature bins reshape the block by 0.1–3 mm within 6 m, 1–28 mm at 12–25 m (60–1600 ppm of range), with the largest change at Pearce Canyon (a 13-image bin at −36 °C) and a 0.05° turn of the whole Taylorfjellet block. For scale: a single Navcam stereo pair at 20 m has a range precision of about 0.13–0.26 m (full- and half-resolution frames, ε ≈ 0.28 px), so the thermal change is a few per cent of it — but it is systematic and does not average down over many observations.
+
+**Error-model inputs of fifteen Navcam scapes** (`scripts/error_analysis_batch.py`, notebook 05's measurements one alignment at a time; tracks ≥ 3; gate: power form, |ΔLMST| covariate, 5000 points, 50 bootstrap resamples; Rochette, Sid, Rockytop, Three Forks, Tuxedo Park, Airey Hill, Bunsen Peak and Rio Chiquito are the current alignments on D:\scapes\colmap, the other seven the 0.22.4 alignments of §12):
+
+| site | images | stations | ε same / cross station px | same-station rate | cross-station rate at θ = 0 | θ½ deg | τ h | ρ first bin | cross-station fraction | sun el. deg | LMST p10–p90 h | band contrast σ 2 px | SIFT / Mpx |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Rochette | 37 | 3 | 0.285 / 0.295 | 0.56 | 0.85 | 3.7 | 6.7 | 0.105 | 0.03 | 52 | 2.8 | 0.0314 | 3356 |
+| Sid | 81 | 8 | 0.248 / 0.324 | 0.56 | 0.60 | 10.7 | 4.0 | 0.096 | 0.31 | 49 | 2.9 | 0.0320 | 2543 |
+| Rockytop | 136 | 9 | 0.285 / 0.320 | 0.46 | 0.52 | 5.2 | 9.0 | 0.071 | 0.08 | 33 | 2.6 | 0.0398 | 9786 |
+| Three Forks | 56 | 4 | 0.188 / 0.237 | 0.56 | 0.65 | 14.8 | 1.4 | 0.023 | 0.43 | 47 | 2.2 | 0.0339 | 4977 |
+| Belva Crater | 80 | 5 | 0.245 / 0.314 | 0.33 | 0.79 | 8.5 | 1.7 | 0.136 | 0.13 | 53 | 4.7 | 0.0234 | 1904 |
+| Tuxedo Park | 100 | 8 | 0.235 / 0.262 | 0.62 | 0.80 | 4.3 | 2.0 | 0.039 | 0.22 | 40 | 1.7 | 0.0488 | 6479 |
+| Airey Hill | 48 | 3 | 0.327 / 0.282 | 0.29 | 0.78 | 3.6 | 4.0 | 0.077 | 0.06 | 50 | 4.6 | 0.0250 | 2413 |
+| Bunsen Peak | 108 | 6 | 0.297 / 0.381 | 0.44 | 0.61 | 8.1 | 4.9 | 0.038 | 0.35 | 55 | 3.0 | 0.0349 | 4625 |
+| Pearce Canyon | 160 | 11 | 0.266 / 0.368 | 0.45 | 0.61 | 8.9 | 4.0 | 0.052 | 0.36 | 46 | 4.2 | 0.0353 | 9439 |
+| Rio Chiquito | 38 | 2 | 0.231 / 0.240 | 0.55 | 0.78 | 5.6 | — | 0.063 | 0.07 | 71 | 1.1 | 0.0205 | 2140 |
+| South Arm | 104 | 6 | 0.203 / 0.288 | 0.50 | 0.74 | 6.5 | 2.9 | 0.038 | 0.22 | 71 | 2.3 | 0.0188 | 1342 |
+| Bell Island | 187 | 8 | 0.263 / 0.337 | 0.47 | 0.66 | 4.6 | 3.6 | 0.080 | 0.18 | 66 | 4.2 | 0.0247 | 3922 |
+| Taylorfjellet | 245 | 11 | 0.294 / 0.385 | 0.44 | 0.58 | 4.2 | 4.4 | 0.068 | 0.18 | 61 | 3.5 | 0.0254 | 5276 |
+| Olifants | 210 | 15 | 0.273 / 0.367 | 0.45 | 0.53 | 4.7 | 8.6 | 0.052 | 0.15 | 45 | 4.3 | 0.0335 | 8919 |
+| Marble Mountain | 63 | 4 | 0.284 / 0.340 | 0.52 | 0.47 | 4.6 | — | 0.081 | 0.11 | 56 | 2.3 | 0.0302 | 4530 |
+| pooled (Navcam-Navcam) | | | | 0.47 | 0.63 | 6.7 | 3.6 | | | | | | |
+
+— τ unconstrained (Rio Chiquito: LMST range 1.1 h; Marble Mountain: no decline over 5.6 h). Pooled gate: θ̄ 8.0° (7.8–8.3), CV 0.25 (0.20–0.29), τ 3.6 h (3.5–3.7), A 1.36 relative / 0.63 absolute; the stretched exponential (β 0.95) beats the power form by ΔAIC 24, |ΔLMST| beats the sun-vector angle by ΔAIC 48 and no covariate by 88,000; χ²/dof 30 (the sites are not one population).
+
+**Constrained (common to all sites):** the image precision, ε 0.27 px same-station and 0.32 px cross-station, between-site CV 0.14–0.15 — what spread there is follows the resolution mix (ε same-station vs the fraction of full-resolution frames, ρ +0.61), not the terrain; the cross-station rate at zero angle and zero ΔLMST, 0.63 (p10–p90 0.53–0.79, CV 0.17); the same-station rate, 0.47 (0.37–0.56); the illumination covariate and the gate form (pooled, well determined).
+
+**Not constrained per site, or site-dependent:** θ½ 3.6–14.8° (CV 0.46) and the gate shape — the CV runs to its limit at 7 of 15 sites, so a single site cannot fix the shape; the pooled fit is what the model should take. θ½ follows the network, not the appearance: ρ +0.70 with the cross-station fraction (Three Forks and Sid, with the largest cross-station fractions, 0.43 and 0.31, are the widest). τ 1.4–9 h (CV 0.53, χ²/dof 47 against the bootstrap errors). The residual decorrelation ρ at the smallest separation, 0.02–0.14, non-zero at every site (se 0.002–0.007). The registration offsets from the waypoints, 0.03–0.42 m.
+
+**Appearance.** Texture and contrast were measured on five left images per site (radiometric 16-bit and pipeline 8-bit, inside the terrain mask and below −3° elevation, i.e. the ground within ~35 m; `scripts/site_appearance.py`): rms contrast; band-pass contrast at the SIFT octaves σ 1, 2, 4, 8 px (DoG / local mean); power-spectrum slope; structure-tensor coherence; SIFT keypoint density and median response; repetitiveness (keypoints with a look-alike in the same image); shadow fraction; dynamic range. Between-site differences exceed the within-site scatter by 1.2–2.4×, but **single-image contrast is mostly illumination**: band contrast at σ 2 px against the median sun elevation ρ −0.84, rms contrast −0.74, shadow fraction −0.61 (per image, 1/sin(sun elevation) explains 15–43 % of the log contrast). After removing the sun-elevation term per image, the only appearance measure related to an error-model parameter is the SIFT keypoint strength: the cross-station rate at zero angle falls with the sun-corrected keypoint response (ρ −0.71, p < 0.01) and density (ρ −0.51) — rock- and pebble-strewn ground rich in small, high-contrast features (Rockytop, Pearce Canyon, Olifants) gives many keypoints that do not survive a change of station; sand and smooth regolith (South Arm, Belva Crater, Rio Chiquito) give fewer but more durable ones. ε, θ½ and ρ show no relation to any texture measure (|ρ| < 0.5). With 12 measures × 7 parameters tested at n = 15, a single ρ −0.71 is suggestive, not established.
+
+Reading: the error model can take ε, the absolute match rate at zero angle, the gate form and the illumination covariate as common constants (pooled values); θ½ (or θ̄) and τ must be site parameters, and θ½ is set by the network geometry the site allows. Appearance, measured per image, is dominated by the sun; the measure of terrain texture that matters for matching is keypoint strength corrected for sun elevation, and it should be measured on the tie points themselves (the matched fraction of keypoints, and the descriptor distance of cross-station matches against Δθ and ΔLMST) rather than on whole images.

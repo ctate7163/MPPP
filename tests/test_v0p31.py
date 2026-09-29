@@ -223,3 +223,24 @@ def test_health_and_export_on_a_binned_block(tmp_path):
     s = export_for_error(proj, rec2, tmp_path / "error_input")
     summ = json.loads((tmp_path / "error_input" / "summary.json").read_text())
     assert {r["camera"] for r in rep["rows"]} <= set(summ["cameras_refined"])
+
+
+def test_site_appearance_measures_on_synthetic_texture():
+    pytest.importorskip("cv2")
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from site_appearance import measures, elevation_map
+    rng = np.random.default_rng(0)
+    from scipy.ndimage import gaussian_filter
+    base = 20000 + 4000 * gaussian_filter(rng.normal(size=(600, 800)), 2.0)
+    smooth = 20000 + 4000 * gaussian_filter(rng.normal(size=(600, 800)), 8.0)
+    mask = np.zeros((600, 800)); mask[50:550, 50:750] = 255
+    u8 = lambda x: 255 * (x - x.min()) / np.ptp(x)                               # noqa: E731
+    a = measures(base, u8(base), mask)
+    b = measures(smooth, u8(smooth), mask)
+    assert a["band_contrast_s1"] > b["band_contrast_s1"] and a["sift_per_mpix"] > b["sift_per_mpix"]
+    assert 0 < a["mask_frac"] <= 1 and a["spectral_tiles"] > 0 and b["spectral_slope"] > a["spectral_slope"]
+    meta = {"intrinsics": {"K": [[500, 0, 400], [0, 500, 300], [0, 0, 1]], "dist_opencv": {}},
+            "pose": {"R_world_to_cam": [[1, 0, 0], [0, 0, -1], [0, 1, 0]]}}      # looking north, level
+    el = elevation_map(meta, (600, 800))
+    assert abs(el[300, 400]) < 0.2 and el[0, 400] > 25 and el[-1, 400] < -25
