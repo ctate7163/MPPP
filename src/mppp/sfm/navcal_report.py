@@ -16,10 +16,14 @@ from . import navcal as NC
 COLORS = {"rational": "#2a78d6", "fisheye_t": "#eb6834", "within": "#1baf7a"}
 
 
-def load_rig(rig_dir, scapes_json=None, samples_json=None):
+def load_rig(rig_dir, scapes_json=None, samples_json=None, common_reference=True):
     """The rig studies; with the scape folders and the label samples, the left-right temperature difference is
-    filled in where the project records only each image's own eye (MPPP 0.30/0.31 manifests)."""
+    filled in where the project records only each image's own eye (MPPP 0.30/0.31 manifests).  v0p35.1: the rig
+    angles are referred to one common label rig (:func:`navcal.common_reference`) unless ``common_reference`` is
+    False."""
     studies = [json.loads(f.read_text()) for f in sorted(Path(rig_dir).glob("rig_*.json"))]
+    if common_reference:
+        NC.common_reference(studies)
     if scapes_json and samples_json:
         from mppp.sfm.project import SfmProject
         from mppp.sfm.thermal import interpolate_temperatures
@@ -268,3 +272,176 @@ def rig_prediction(loo, studies, f_px: float = 2952.0):
     rms = lambda k: float(np.sqrt(np.mean([r[k] ** 2 for r in rows]))) if rows else float("nan")     # noqa: E731
     return {"rows": rows, "rms": {k: rms(k) for k in ("d_inf_px", "v_inf_px", "roll_mdeg", "d_inf_drift_px",
                                                         "v_inf_drift_px", "roll_drift_mdeg")}}
+
+
+def drift_figure(studies, model, path, highlight=(), old_drift=None, mode="rotation_pp"):
+    """
+    v0p35.1: the rig angles of every block against sol (pitch; yaw corrected to the model's mean temperature with
+    the between-block slope; roll) and yaw against temperature, with the drift ``model`` (:func:`navcal.rig_drift_model`)
+    and, if given, an older linear drift (``old_drift``, :func:`navcal.rig_drift`).  ``highlight``: blocks drawn
+    as open symbols (e.g. the ones added since the last study).  Writes ``path`` (PNG).
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    rows = [(s, s[mode]["rigs"][0]) for s in studies if (s.get(mode) or {}).get("rigs")]
+    sol = np.array([s["network"]["sol_median"] for s, _ in rows], float)
+    T = np.array([s["network"]["T_median_degC"] for s, _ in rows], float)
+    names = [s["scape"] for s, _ in rows]
+    new = np.array([n in set(highlight) for n in names])
+    Tm = model["T_mean_degC"]
+    grid = np.linspace(0, max(2000.0, sol.max() + 50), 400)
+    fig, axs = plt.subplots(2, 2, figsize=(12, 8.5))
+    for ax, ang in zip((axs[0, 0], axs[0, 1], axs[1, 0]), ("pitch", "yaw", "roll")):
+        y = np.array([r[f"{ang}_mdeg"] for _, r in rows]) - model[f"{ang}_T_mdeg_per_degC"] * (T - Tm)
+        e = np.array([r.get(f"sd_{ang}_mdeg", np.nan) for _, r in rows])
+        # the model's level: weighted mean of the temperature-corrected angles minus the drift offset at each sol
+        off = np.array([NC.drift_offset_mdeg(dict(model, **{f"{ang}_mdeg_per_sol": model[f"{ang}_fit_mdeg_per_sol"]}), x)[f"{ang}_mdeg"]
+                        for x in sol])
+        w = 1.0 / (e ** 2 + model[f"{ang}_tau_mdeg"] ** 2)
+        level = float(np.sum(w * (y - off)) / np.sum(w))
+        curve = np.array([NC.drift_offset_mdeg(dict(model, **{f"{ang}_mdeg_per_sol": model[f"{ang}_fit_mdeg_per_sol"]}), x)[f"{ang}_mdeg"]
+                          for x in grid]) + level
+        tau = model[f"{ang}_tau_mdeg"]
+        ax.fill_between(grid, curve - tau, curve + tau, color="#2a78d6", alpha=0.12, lw=0)
+        ls = "--" if ang in model.get("no_drift", []) else "-"
+        ax.plot(grid, curve, ls, color="#2a78d6", lw=1.6,
+                label=f"v0p35.1 fit ({model['blocks']} blocks){' - not used: rate 0' if ls == '--' else ''}; band = tau {tau:.1f}")
+        if old_drift:
+            k = old_drift[f"{ang}_mdeg_per_sol"]
+            c = float(np.sum(w * (y - k * (sol - old_drift["sol0"]))) / np.sum(w))
+            lin = c + k * (grid - old_drift["sol0"])
+            ax.plot(grid, lin, ":", color="#888888", lw=1.3, label=f"v0p35 linear drift ({old_drift['blocks']} blocks)")
+        ax.errorbar(sol[~new], y[~new], yerr=e[~new], fmt="o", color="#1a1a1a", ms=5, capsize=2, label="v0p35 blocks")
+        if new.any():
+            ax.errorbar(sol[new], y[new], yerr=e[new], fmt="o", mfc="white", mec="#eb6834", color="#eb6834", ms=7,
+                        capsize=2, label="added in v0p35.1")
+        for x, yy, n in zip(sol, y, names):
+            ax.annotate(n, (x, yy), fontsize=6.5, xytext=(3, 3), textcoords="offset points", color="#555555")
+        ax.set_xlabel("sol (block median)")
+        ax.set_ylabel(f"{ang} [mdeg]" + (f" at {Tm:.0f} degC" if abs(model[f'{ang}_T_mdeg_per_degC']) > 0.2 else ""))
+        ax.set_title(f"rig {ang}: {model[f'{ang}_fit_mdeg_per_sol'] * 1e3:+.1f} +- {model[f'{ang}_se'] * 1e3:.1f} mdeg / 1000 sol"
+                     + (f" after sol {model['knot_sol']:.0f}, {model[f'{ang}_early_mdeg_per_sol'] * 1e3:+.1f} before"
+                        if model.get(f"{ang}_early_mdeg_per_sol") is not None else ""), fontsize=9)
+        ax.grid(alpha=0.3)
+        ax.legend(fontsize=7, loc={"pitch": "lower right", "yaw": "lower right", "roll": "upper right"}[ang],
+                  framealpha=0.7)
+    ax = axs[1, 1]
+    y = np.array([r["yaw_mdeg"] for _, r in rows])
+    e = np.array([r.get("sd_yaw_mdeg", np.nan) for _, r in rows])
+    ax.errorbar(T[~new], y[~new], yerr=e[~new], fmt="o", color="#1a1a1a", ms=5, capsize=2, label="v0p35 blocks")
+    if new.any():
+        ax.errorbar(T[new], y[new], yerr=e[new], fmt="o", mfc="white", mec="#eb6834", color="#eb6834", ms=7, capsize=2,
+                    label="added in v0p35.1")
+    tt = np.linspace(T.min() - 1, T.max() + 1, 50)
+    w = 1.0 / (e ** 2 + model["yaw_tau_mdeg"] ** 2)
+    b = model["yaw_T_mdeg_per_degC"]
+    a = float(np.sum(w * (y - b * (T - Tm))) / np.sum(w))
+    ax.plot(tt, a + b * (tt - Tm), "-", color="#1baf7a", label=f"between blocks {b:+.2f} mdeg/degC")
+    for x, yy, n in zip(T, y, names):
+        ax.annotate(n, (x, yy), fontsize=6.5, xytext=(3, 3), textcoords="offset points", color="#555555")
+    ax.set_xlabel("block median camera temperature [degC]")
+    ax.set_ylabel("yaw [mdeg]")
+    ax.set_title("rig yaw against temperature (1 mdeg = 0.05 px disparity at infinity)", fontsize=9)
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=7)
+    fig.suptitle("Navcam stereo rig (right camera in the left camera frame, common principal points, one label reference)",
+                 fontsize=10)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+    return path
+
+
+def scale_summary(scale_dir, tag="ppf"):
+    """
+    v0p35.1: the downsample-scale offsets of every block (``scale_<block>.json`` of ``navcam_calibration_study.py
+    scale``; ``tag`` "pp": principal point free, "ppf": focal length too), each expressed as (other scale) minus
+    (half resolution) where the half-resolution camera exists.  Returns {"rows", "pairs": {"<s>-<ref>": weighted
+    mean, median, scatter}, "left_minus_right": mean and rms of the left-minus-right offset (what stereo sees)}.
+    """
+    rows = []
+    for f in sorted(Path(scale_dir).glob("scale_*.json")):
+        d = json.loads(f.read_text()).get(tag) or {}
+        for r in d.get("rows", []):
+            if "dcx_px" not in r or not np.isfinite(r.get("sd_dcx_px", np.nan)):
+                continue
+            s, ref, sg = r["scale"], r["reference_scale"], 1.0
+            if ref != 0.5 and s == 0.5:
+                s, ref, sg = ref, 0.5, -1.0
+            rows.append({"scape": d.get("scape", f.stem[6:]), "eye": r["eye"], "scale": s, "reference_scale": ref,
+                         "images": r["images"], "dcx_px": sg * r["dcx_px"], "dcy_px": sg * r["dcy_px"],
+                         "sd_dcx_px": r["sd_dcx_px"], "sd_dcy_px": r["sd_dcy_px"]})
+    pairs = {}
+    for key in sorted({(r["scale"], r["reference_scale"]) for r in rows}):
+        g = [r for r in rows if (r["scale"], r["reference_scale"]) == key]
+        x = np.array([r["dcx_px"] for r in g]); y = np.array([r["dcy_px"] for r in g])
+        wx = 1 / np.array([r["sd_dcx_px"] for r in g]) ** 2; wy = 1 / np.array([r["sd_dcy_px"] for r in g]) ** 2
+        pairs[f"{key[0]:g}-{key[1]:g}"] = {"cameras": len(g), "blocks": len({r["scape"] for r in g}),
+                                           "mean_dcx_px": float(np.sum(wx * x) / wx.sum()), "mean_dcy_px": float(np.sum(wy * y) / wy.sum()),
+                                           "median_dcx_px": float(np.median(x)), "median_dcy_px": float(np.median(y)),
+                                           "scatter_dcx_px": float(x.std(ddof=1)) if len(x) > 1 else None,
+                                           "scatter_dcy_px": float(y.std(ddof=1)) if len(y) > 1 else None,
+                                           "median_sd_px": float(np.median([r["sd_dcx_px"] for r in g]))}
+    by = {}
+    for r in rows:
+        by.setdefault((r["scape"], r["scale"], r["reference_scale"]), {})[r["eye"]] = r
+    lr = [(v["NL"]["dcx_px"] - v["NR"]["dcx_px"], v["NL"]["dcy_px"] - v["NR"]["dcy_px"]) for v in by.values()
+          if "NL" in v and "NR" in v]
+    lr = np.array(lr) if lr else np.zeros((0, 2))
+    return {"tag": tag, "rows": rows, "pairs": pairs,
+            "left_minus_right": {"pairs": int(len(lr)), "mean_dcx_px": float(lr[:, 0].mean()) if len(lr) else None,
+                                 "rms_dcx_px": float(np.sqrt((lr[:, 0] ** 2).mean())) if len(lr) else None,
+                                 "mean_dcy_px": float(lr[:, 1].mean()) if len(lr) else None,
+                                 "rms_dcy_px": float(np.sqrt((lr[:, 1] ** 2).mean())) if len(lr) else None}}
+
+
+def label_scale_consistency(manifests):
+    """
+    v0p35.1: do the flight (label) camera models of the Navcam downsample scales agree once mapped to full-frame
+    pixels the way MPPP maps keypoints (x_full = (x + dx + 0.5) / scale - 0.5, pixel-centre origin, dx the sub-frame
+    offset)?  From the label CAHVORE in MPPP manifests: per eye and sol, the median principal point (hc, vc) and
+    scale (hs) of each downsample scale minus those of the half-resolution products.  A different pixel convention
+    (e.g. sub-sampling instead of binning) would show as 0.5 px (full resolution) or 1.5 px (quarter) offsets.
+    """
+    from mppp.cmod import CameraModel
+    import collections
+    rows, seen = [], set()
+    for f in manifests:
+        try:
+            ims = json.loads(Path(f).read_text())["images"]
+        except Exception:                                   # noqa: BLE001
+            continue
+        for m in ims:
+            fn = m.get("filename") or {}
+            cm = m.get("camera_model_label")
+            if fn.get("family") != "N" or not cm or m["source_product"] in seen:
+                continue
+            seen.add(m["source_product"])
+            s = float(fn["downsample_scale"])
+            c = CameraModel.from_label(cm)
+            A, H, V = (np.asarray(v, float) for v in (c.A, c.H, c.V))
+            pad = m.get("padding") or {}
+            rows.append({"eye": fn["eye"], "sol": int(fn["sol"]), "scale": s,
+                         "hc": (A @ H + pad.get("left", 0) + 0.5) / s - 0.5, "vc": (A @ V + pad.get("top", 0) + 0.5) / s - 0.5,
+                         "hs": float(np.linalg.norm(np.cross(A, H))) / s})
+    g = collections.defaultdict(lambda: collections.defaultdict(list))
+    for r in rows:
+        g[(r["eye"], r["sol"])][r["scale"]].append(r)
+    out = {"products": len(rows), "differences": {}}
+    for eye in ("L", "R"):
+        for s in (1.0, 0.25):
+            d = []
+            for (e, _), v in g.items():
+                if e != eye or s not in v or 0.5 not in v:
+                    continue
+                a = np.median([[x["hc"], x["vc"], x["hs"]] for x in v[s]], 0)
+                b = np.median([[x["hc"], x["vc"], x["hs"]] for x in v[0.5]], 0)
+                d.append(a - b)
+            if d:
+                d = np.array(d)
+                out["differences"][f"N{eye} {s:g} - 0.5"] = {
+                    "sols": len(d), "dhc_median_px": float(np.median(d[:, 0])), "dvc_median_px": float(np.median(d[:, 1])),
+                    "dhs_median_px": float(np.median(d[:, 2])), "dhc_iqr_px": np.percentile(d[:, 0], [25, 75]).tolist(),
+                    "dvc_iqr_px": np.percentile(d[:, 1], [25, 75]).tolist()}
+    return out

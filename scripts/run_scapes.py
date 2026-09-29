@@ -51,7 +51,8 @@ SITE_LABEL = {"butler_landing": "Butler Landing", "rochette": "Rochette", "sid":
               "airey_hill": "Airey Hill", "bunsen_peak": "Bunsen Peak", "pearce_canyon": "Pearce Canyon",
               "rio_chiquito": "Rio Chiquito", "south_arm": "South Arm", "bell_island": "Bell Island",
               "taylorfjellet": "Taylorfjellet", "olifants": "Olifants", "groloy": "Groloy",
-              "marble_mountain": "Marble Mountain"}
+              "marble_mountain": "Marble Mountain", "van_zyl": "Van Zyl", "seitah_north": "Seitah North",
+              "whale_mountain": "Whale Mountain", "origny": "Origny", "pico_turquino": "Pico Turquino"}
 
 
 class Log:

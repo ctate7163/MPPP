@@ -714,12 +714,21 @@ def start_rig_rotation(shipped: Dict[str, Any], T_median: Optional[float], sol_m
         applied["thermal"] = {**th, "T_median_degC": float(T_median)}
     dr = shipped.get("drift")
     if dr and sol_median is not None:
+        # v0p35: rates x (sol - sol0); v0p35.1: an angle may have an early rate before ``knot_sol`` (a hinge:
+        # + (early - rate) x (min(sol, knot_sol) - knot_ref)), see mppp.sfm.navcal.rig_drift_model
         ds = float(sol_median) - float(dr["sol0"])
-        rv = np.radians(1e-3 * ds * np.array([float(dr.get("pitch_mdeg_per_sol") or 0.0),
-                                             float(dr.get("yaw_mdeg_per_sol") or 0.0),
-                                             float(dr.get("roll_mdeg_per_sol") or 0.0)]))
+        off = []
+        for a in ("pitch", "yaw", "roll"):
+            rate = float(dr.get(f"{a}_mdeg_per_sol") or 0.0)
+            v = rate * ds
+            if dr.get(f"{a}_early_mdeg_per_sol") is not None and dr.get("knot_sol"):
+                v += (float(dr[f"{a}_early_mdeg_per_sol"]) - rate) * (min(float(sol_median), float(dr["knot_sol"]))
+                                                                     - float(dr.get("knot_ref") or 0.0))
+            off.append(float(v))
+        rv = np.radians(1e-3 * np.array(off))
         R = Rotation.from_rotvec(rv).as_matrix() @ R
-        applied["drift"] = {**dr, "sol_median": float(sol_median)}
+        applied["drift"] = {**dr, "sol_median": float(sol_median),
+                            "offset_mdeg": {"pitch": off[0], "yaw": off[1], "roll": off[2]}}
     return R, applied
 
 

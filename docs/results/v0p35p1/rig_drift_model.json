@@ -1,0 +1,33 @@
+{
+ "model": "linear+hinge",
+ "sol0": 1083.9666666666667,
+ "blocks": 20,
+ "sol_range": [
+  12.0,
+  1972.0
+ ],
+ "T_mean_degC": -17.946440958414247,
+ "knot_sol": 300.0,
+ "knot_ref": 292.0,
+ "pitch_fit_mdeg_per_sol": 0.0044589905945230535,
+ "pitch_se": 0.0004051560958065092,
+ "pitch_p": 3.5907149705518443e-28,
+ "pitch_T_mdeg_per_degC": 0.022057794877182457,
+ "pitch_tau_mdeg": 0.7851331348574198,
+ "pitch_mdeg_per_sol": 0.0044589905945230535,
+ "pitch_early_mdeg_per_sol": 0.025805487672012538,
+ "pitch_early_se": 0.0027733577649456686,
+ "yaw_fit_mdeg_per_sol": 0.003891983440320122,
+ "yaw_se": 0.0015951849167681377,
+ "yaw_p": 0.014694087659859587,
+ "yaw_T_mdeg_per_degC": -1.2769975007251277,
+ "yaw_tau_mdeg": 4.0208380196731035,
+ "yaw_mdeg_per_sol": 0.003891983440320122,
+ "roll_fit_mdeg_per_sol": -0.0060976793483485635,
+ "roll_se": 0.001092028962078042,
+ "roll_p": 2.353093526185871e-08,
+ "roll_T_mdeg_per_degC": 0.337077010721578,
+ "roll_tau_mdeg": 2.7554432845580585,
+ "roll_mdeg_per_sol": -0.0060976793483485635,
+ "no_drift": []
+}

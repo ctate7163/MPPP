@@ -757,6 +757,53 @@ def exclude_frames(rec, frame_ids: Sequence[int]) -> int:
     return n
 
 
+def camera_changes(rec, project: SfmProject) -> List[Dict[str, Any]]:
+    """
+    Start and refined parameters of every camera of a solved block (v0p35.1), for the notebook 03 print-out.
+    Cameras are found by their database id (``settings["database"]["cameras"]``), not through the images: after
+    the thermal stage every image of a binned frame belongs to its bin camera, so an eye's camera can have no image
+    left (it then holds the values refined before the split).  Mastcam-Z focus bins are left out (section 7b);
+    thermal bins are included with ``thermal_bin`` set.  A camera missing from ``rec`` gets ``missing`` set.
+    """
+    db = {k: int(v) for k, v in project.settings.get("database", {}).get("cameras", {}).items()}
+    for r in project.images:                      # fallback for projects without the database table
+        if "camera_id" in r:
+            db.setdefault(r.get("base_instrument", r["instrument"]), int(r["camera_id"]))
+    reg = set(rec.reg_image_ids())
+    n_img: Dict[int, int] = {}
+    for iid in reg:
+        cid = int(rec.images[iid].camera_id)
+        n_img[cid] = n_img.get(cid, 0) + 1
+    rows = []
+    for k, c in project.cameras.items():
+        if c.get("group") and not c.get("thermal_bin"):
+            continue
+        cid = db.get(k)
+        if cid is None or cid not in rec.cameras:
+            rows.append({"camera": k, "missing": True})
+            continue
+        cam = rec.cameras[cid]
+        names = _PARAM_NAMES.get(cam.model.name, tuple(f"p{i}" for i in range(len(cam.params))))
+        rows.append({"camera": k, "camera_id": cid, "model": cam.model.name, "names": list(names),
+                     "start": [float(x) for x in c["params"]], "refined": [float(x) for x in cam.params],
+                     "images": int(n_img.get(cid, 0)), "thermal_bin": bool(c.get("thermal_bin")), "missing": False})
+    return rows
+
+
+def print_camera_changes(rec, project: SfmProject, n_params: int = 10) -> List[Dict[str, Any]]:
+    """Print :func:`camera_changes` (start -> refined, first ``n_params`` parameters).  Returns the rows."""
+    rows = camera_changes(rec, project)
+    for r in rows:
+        if r["missing"]:
+            print(f"{r['camera']}: not in the reconstruction")
+            continue
+        tag = ("  [temperature bin]" if r["thermal_bin"] else
+               "  [no images after the thermal split: values before it]" if r["images"] == 0 else "")
+        print(f"{r['camera']} ({r['images']} images){tag}: " + " ".join(
+            f"{n} {a:.4g}->{b:.4g}" for n, a, b in zip(r["names"][:n_params], r["start"], r["refined"])))
+    return rows
+
+
 CONVERGENCE_BINS_DEG = (0.0, 2.0, 5.0, 10.0, 20.0, 40.0, 180.0)
 
 

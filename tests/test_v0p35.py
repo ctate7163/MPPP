@@ -126,7 +126,7 @@ def test_notebooks_v0p35():
     root = Path(__file__).resolve().parents[1] / "notebooks"
     nb3 = nbformat.read(str(root / "03_colmap_alignment.ipynb"), as_version=4)
     full3 = "\n".join(c.source for c in nb3.cells)
-    assert "0.35.0" in nb3.cells[0].source and 'NAVCAM_RIG_REFINE = "auto"' in full3 and "navcam_joint" in full3
+    assert "0.35." in nb3.cells[0].source and 'NAVCAM_RIG_REFINE = "auto"' in full3 and "navcam_joint" in full3
     assert '"auto": "auto"}.get(NAVCAM_RIG_REFINE' in full3
     nb4 = nbformat.read(str(root / "04_camera_models.ipynb"), as_version=4)
     full4 = "\n".join(c.source for c in nb4.cells)
@@ -134,7 +134,7 @@ def test_notebooks_v0p35():
         assert k in full4, k
     for name in ("01_process_images", "05_error_analysis"):
         nb = nbformat.read(str(root / f"{name}.ipynb"), as_version=4)
-        assert "0.35.0" in nb.cells[0].source
+        assert "0.35." in nb.cells[0].source
 
 
 def test_reconstruct_rig_auto_and_thermal_stage_rig_slopes():

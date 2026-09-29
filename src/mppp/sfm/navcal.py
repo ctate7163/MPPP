@@ -77,16 +77,36 @@ def align_project_to_model(project: SfmProject, rec) -> int:
 
 
 def load_scape(name: str, root: PathLike, samples: Optional[Dict[str, Dict[str, Any]]] = None,
-               model: str = "cahv_ba") -> Scape:
-    """A solved block with its camera temperatures (project records, else label ``samples``)."""
+               model: str = "cahv_ba", lens: Optional[str] = None) -> Scape:
+    """
+    A solved block with its camera temperatures (project records, else label ``samples``).
+
+    v0p35.1: a block solved with thermal bins (MPPP >= 0.31, ``THERMAL_BINS_DEG``) is loaded from its one-camera-
+    per-eye model ``sparse/<model>_single`` (the solution before the thermal stage) with the bins stripped from the
+    project, so that every block enters the study the same way.  ``lens`` ("rational" or "fisheye_t") refits the
+    Navcam cameras to that model first (:func:`fit_camera_model`) when the block was solved with the other one.
+    """
     import pycolmap
-    from .thermal import image_temperatures
+    from .thermal import image_temperatures, strip_thermal_bins
     root = Path(root)
     if (root / "colmap").is_dir():
         root = root / "colmap"
     project = SfmProject.load(root)
+    if any(c.get("thermal_bin") for c in project.cameras.values()) and (root / "sparse" / f"{model}_single").is_dir():
+        strip_thermal_bins(project)
+        model = f"{model}_single"
     rec = pycolmap.Reconstruction(str(root / "sparse" / model))
     align_project_to_model(project, rec)
+    if lens:
+        target = {"rational": RATIONAL, "fisheye_t": FISHEYE_T}[lens]
+        key_of = {int(v): k for k, v in project.settings["database"]["cameras"].items()}
+        for cid, cam in rec.cameras.items():
+            if str(key_of.get(int(cid), "")).startswith("N") and cam.model.name != target:
+                new, rms = fit_camera_model(cam, target)
+                cam.model, cam.params = new.model, new.params
+                k = key_of[int(cid)]
+                project.cameras[k] = dict(project.cameras[k], model=target, params=[float(x) for x in new.params],
+                                          refit_rms_px=rms)
     temps = image_temperatures(project, samples=samples)
     return Scape(name, root, project, rec, temps)
 
@@ -313,7 +333,7 @@ def _wls(y: np.ndarray, X: np.ndarray, var: np.ndarray) -> Dict[str, Any]:
     pval = 2 * stats.norm.sf(np.abs(b2 / se))
     q_p = float(stats.chi2.sf(Q, k - p)) if k > p else float("nan")
     return {"coef": b2.tolist(), "se": se.tolist(), "p": pval.tolist(), "tau": math.sqrt(tau2), "Q": Q, "dof": k - p,
-            "p_homogeneous": q_p}
+            "p_homogeneous": q_p, "cov": np.linalg.inv(A)}
 
 
 def rig_tests(studies: Sequence[Dict[str, Any]], angle: str = "yaw", mode: str = "rotation_pp") -> Dict[str, Any]:
@@ -668,6 +688,37 @@ def compare(a, b, step: float = 64.0, rotation_radius: float = 0.85) -> Dict[str
             "rotation_mdeg": float(np.degrees(np.linalg.norm(Rotation.from_matrix(Q).as_rotvec())) * 1e3)}
 
 
+def fit_camera_model(cam, target: str, start: Optional[Sequence[float]] = None) -> Tuple[Any, float]:
+    """
+    ``cam`` refitted to another Navcam lens model over a 64 x 48 pixel grid (v0p35.1): ``THIN_PRISM_FISHEYE``
+    (sx1 = sy1 = 0, :func:`to_fisheye_tangential`) or ``FULL_OPENCV`` rational (k5 = k6 = 0; fx fy cx cy k1 k2 p1
+    p2 k3 k4 fitted, starting from ``start`` or the v0p35 joint rational distortion).  Returns (camera, fit rms px).
+    """
+    if target == FISHEYE_T:
+        return to_fisheye_tangential(cam)
+    if target != RATIONAL:
+        raise ValueError(f"no refit to {target}")
+    from scipy.optimize import least_squares
+    import pycolmap
+    w, h = cam.width, cam.height
+    u, v = np.meshgrid(np.linspace(1, w - 1, 64), np.linspace(1, h - 1, 48))
+    px = np.stack([u.ravel(), v.ravel()], 1)
+    rays = np.array(cam.cam_from_img(px), float)
+    rays = np.c_[rays[:, :2], np.ones(len(rays))]
+    p0 = np.asarray(cam.params, float)
+
+    def model(q):
+        c = pycolmap.Camera(model=RATIONAL, width=w, height=h, params=np.r_[q, 0.0, 0.0])
+        return np.array(c.img_from_cam(rays), float)
+
+    dist = np.asarray(start, float)[4:10] if start is not None else np.array([0.305, -0.026, 0.0, 0.0, 0.002, 0.593])
+    q0 = np.r_[p0[:4], dist]
+    q0[6:8] = p0[6:8] if len(p0) > 7 else 0.0
+    res = least_squares(lambda q: (model(q) - px).ravel(), q0, method="lm", x_scale="jac")
+    rms = float(np.sqrt(np.mean(np.sum((model(res.x) - px) ** 2, 1))))
+    return pycolmap.Camera(model=RATIONAL, width=w, height=h, params=np.r_[res.x, 0.0, 0.0]), rms
+
+
 def to_fisheye_tangential(cam) -> Tuple[Any, float]:
     """A THIN_PRISM_FISHEYE camera (sx1 = sy1 = 0) fitted to ``cam``'s rays over a pixel grid; p1, p2 are fitted
     too.  Returns (camera, fit rms px)."""
@@ -798,13 +849,199 @@ def write_joint_cameras(joint: Dict[str, Any], out_dir: PathLike, loo: Optional[
                                 "bin's rig by the slope"}
     dr = joint.get("rig_drift")
     if dr:
-        d["drift"] = dict(dr, note="v0p35: slow change of the rig over the mission (between-block regression on sol, "
-                                   "with the camera temperature); SfmProject.create turns the start rig by these rates x "
-                                   "(block median sol - sol0)")
+        d["drift"] = dict(dr, note=dr.get("note") or (
+            "slow change of the rig over the mission (between-block regression on sol, with the camera temperature); "
+            "SfmProject.create turns the start rig by rate x (block median sol - sol0)" + (
+                " + (early_rate - rate) x (min(sol, knot_sol) - knot_ref) (v0p35.1: faster early in the mission)"
+                if dr.get("knot_sol") else "")))
     path = out_dir / "M2020_N_rig.json"
     path.write_text(json.dumps(d, indent=1), encoding="utf-8")
     written["rig"] = path
     return written
+
+
+def common_reference(studies: Sequence[Dict[str, Any]], R_common: Optional[np.ndarray] = None) -> np.ndarray:
+    """
+    Refer every block's rig angles to one reference rotation (v0p35.1), in place.  :func:`rig_study` measures the
+    angles from the block's own label (CAHV) rig, and the label calibration changed once early in the mission:
+    blocks before about sol 250 (Van Zyl, Rochette, Seitah North) carry a CAHV rig that differs by 0.2 mdeg in
+    pitch and 0.6 mdeg in roll from all later ones, which would enter a drift fit as a step.  ``R_common`` defaults
+    to the reference shared by most blocks.  Each study gets ``reference_offset_mdeg`` (its own reference against
+    the common one); rows with the absolute angles (``*_abs_mdeg``) are recomputed.  Returns ``R_common``.
+    """
+    from scipy.spatial.transform import Rotation
+    refs = [np.asarray(s["R_reference"], float) for s in studies if s.get("R_reference") is not None]
+    if R_common is None:
+        if not refs:
+            raise ValueError("no block has a reference rig")
+        # the reference most blocks share: the one with the most others within 0.05 mdeg
+        close = [sum(np.degrees(Rotation.from_matrix(a @ b.T).magnitude()) * 1e3 < 0.05 for b in refs) for a in refs]
+        R_common = refs[int(np.argmax(close))]
+    R_common = np.asarray(R_common, float)
+    for s in studies:
+        if s.get("R_reference") is None:
+            continue
+        s["reference_offset_mdeg"] = rig_angles(np.asarray(s["R_reference"], float), R_common)
+        for mode in ("rotation", "rotation_pp", "full", "bins"):
+            for r in (s.get(mode) or {}).get("rigs") or []:
+                if "yaw_abs_mdeg" not in r:
+                    continue
+                rv = np.radians(np.array([r["pitch_abs_mdeg"], r["yaw_abs_mdeg"], r["roll_abs_mdeg"]]) * 1e-3)
+                r.update(rig_angles(Rotation.from_rotvec(rv).as_matrix(), R_common))
+        s["R_common_reference"] = R_common.tolist()
+    return R_common
+
+
+def drift_robustness(studies: Sequence[Dict[str, Any]], mode: str = "rotation_pp",
+                     holdout: Sequence[str] = (), exclude: Sequence[str] = ()) -> Dict[str, Any]:
+    """
+    How robust the rig's drift with sol is (v0p35.1): :func:`rig_drift` on all blocks (less ``exclude``), with
+    sol alone and with temperature alone; leave-one-block-out rates (jackknife); and, when ``holdout`` names blocks,
+    the fit without them and its prediction of their rigs (residual, prediction sd from the formal sd, the fit's
+    standard errors and tau, and the normalised residual z).
+    """
+    use = [s for s in studies if s["scape"] not in set(exclude) and ((s.get(mode) or {}).get("rigs"))]
+    out: Dict[str, Any] = {"mode": mode, "blocks": [s["scape"] for s in use], "excluded": list(exclude)}
+    out["all"] = rig_drift(use, mode)
+    out["sol_only"], out["T_only"] = {}, {}
+    rows = [(s, s[mode]["rigs"][0]) for s in use]
+    T = np.array([s["network"]["T_median_degC"] for s, _ in rows], float)
+    sol = np.array([s["network"]["sol_median"] for s, _ in rows], float)
+    for ang in ("pitch", "yaw", "roll"):
+        y = np.array([r[f"{ang}_mdeg"] for _, r in rows])
+        v = np.maximum(np.array([r.get(f"sd_{ang}_mdeg", np.nan) for _, r in rows]) ** 2, 1e-6)
+        for key, x in (("sol_only", sol), ("T_only", T)):
+            f = _wls(y, np.c_[np.ones(len(y)), x - x.mean()], v)
+            out[key][ang] = {"slope": float(f["coef"][1]), "se": float(f["se"][1]), "p": float(f["p"][1]),
+                             "tau_mdeg": float(f["tau"])}
+    # leave-one-block-out prediction of each block's angles by four models (rms, mdeg)
+    models = {"one rig": lambda so, tt: np.ones((len(so), 1)),
+              "temperature": lambda so, tt: np.c_[np.ones(len(so)), tt - T.mean()],
+              "temperature + sol": lambda so, tt: np.c_[np.ones(len(so)), tt - T.mean(), so / 1000.0],
+              f"temperature + sol + hinge {KNOT_SOL:g}": lambda so, tt: np.c_[np.ones(len(so)), tt - T.mean(), so / 1000.0,
+                                                                          np.minimum(so, KNOT_SOL) / 1000.0]}
+    loo: Dict[str, Any] = {}
+    for ang in ("pitch", "yaw", "roll"):
+        y = np.array([r[f"{ang}_mdeg"] for _, r in rows])
+        v = np.maximum(np.array([r.get(f"sd_{ang}_mdeg", np.nan) for _, r in rows]) ** 2, 1e-6)
+        loo[ang] = {}
+        for lab, Xf in models.items():
+            e = []
+            for i in range(len(rows)):
+                m = np.arange(len(rows)) != i
+                if m.sum() <= Xf(sol[m], T[m]).shape[1] + 1:
+                    e.append(np.nan)
+                    continue
+                f = _wls(y[m], Xf(sol[m], T[m]), v[m])
+                e.append(float(y[i] - (Xf(sol[i:i + 1], T[i:i + 1]) @ np.asarray(f["coef"]))[0]))
+            e = np.array(e)
+            loo[ang][lab] = {"rms_mdeg": float(np.sqrt(np.nanmean(e ** 2))),
+                             "residuals": {s["scape"]: float(x) for (s, _), x in zip(rows, e)}}
+    out["loo_prediction"] = loo
+    jk = {}
+    for s in use:
+        d = rig_drift([t for t in use if t is not s], mode)
+        jk[s["scape"]] = {f"{a}_mdeg_per_sol": d[f"{a}_mdeg_per_sol"] for a in ("pitch", "yaw", "roll")}
+        jk[s["scape"]].update({f"{a}_T_mdeg_per_degC": d[f"{a}_T_mdeg_per_degC"] for a in ("pitch", "yaw", "roll")})
+    out["jackknife"] = jk
+    for a in ("pitch", "yaw", "roll"):
+        vals = np.array([v[f"{a}_mdeg_per_sol"] for v in jk.values()])
+        n = len(vals)
+        out[f"{a}_jackknife"] = {"min": float(vals.min()), "max": float(vals.max()),
+                                 "se": float(np.sqrt((n - 1) / n * np.sum((vals - vals.mean()) ** 2))),
+                                 "sign_stable": bool(np.all(np.sign(vals) == np.sign(out["all"][f"{a}_mdeg_per_sol"])))}
+    if holdout:
+        train = [s for s in use if s["scape"] not in set(holdout)]
+        test = [s for s in use if s["scape"] in set(holdout)]
+        d = rig_drift(train, mode)
+        # the fit's own coefficient covariance for the prediction sd
+        Tt = np.array([s["network"]["T_median_degC"] for s in train], float)
+        st = np.array([s["network"]["sol_median"] for s in train], float)
+        X = np.c_[np.ones(len(train)), Tt - Tt.mean(), st - st.mean()]
+        preds = []
+        for s in test:
+            r = s[mode]["rigs"][0]
+            x = np.array([1.0, s["network"]["T_median_degC"] - Tt.mean(), s["network"]["sol_median"] - st.mean()])
+            row = {"scape": s["scape"], "sol": s["network"]["sol_median"], "T_degC": s["network"]["T_median_degC"]}
+            for a in ("pitch", "yaw", "roll"):
+                y = np.array([t[mode]["rigs"][0][f"{a}_mdeg"] for t in train])
+                v = np.maximum(np.array([t[mode]["rigs"][0].get(f"sd_{a}_mdeg", np.nan) for t in train]) ** 2, 1e-6)
+                f = _wls(y, X, v)
+                pred = float(x @ np.asarray(f["coef"]))
+                var_pred = float(x @ f["cov"] @ x) + f["tau"] ** 2 + float(r.get(f"sd_{a}_mdeg", 0.0)) ** 2
+                row[a] = {"observed_mdeg": float(r[f"{a}_mdeg"]), "predicted_mdeg": pred,
+                          "residual_mdeg": float(r[f"{a}_mdeg"]) - pred, "sd_pred_mdeg": float(np.sqrt(var_pred)),
+                          "z": (float(r[f"{a}_mdeg"]) - pred) / float(np.sqrt(var_pred)),
+                          "no_drift_residual_mdeg": float(r[f"{a}_mdeg"]) - float(np.average(
+                              y, weights=1.0 / (v + f["tau"] ** 2)))}
+            preds.append(row)
+        out["holdout"] = {"train": [s["scape"] for s in train], "fit": d, "predictions": preds}
+    return out
+
+
+KNOT_SOL = 300.0               # v0p35.1: the pitch changes faster before this sol (profiled over 200-400, 20 blocks)
+
+
+def rig_drift_model(studies: Sequence[Dict[str, Any]], mode: str = "rotation_pp", knot_sol: Optional[float] = KNOT_SOL,
+                    knot_angles: Sequence[str] = ("pitch",), no_drift: Sequence[str] = (),
+                    reference: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """
+    The rig's change over the mission in the form the rig file stores (``M2020_N_rig.json`` "drift", applied by
+    :func:`mppp.sfm.project.start_rig_rotation`), v0p35.1.  Per angle a between-block regression (weights 1 / (sd^2 +
+    tau^2)) on the camera temperature and sol; for the ``knot_angles`` the rate may differ before ``knot_sol``
+    (a hinge: early rate before the knot, late rate after); ``no_drift`` angles get a zero rate (their fit is kept
+    for information).  The offset is ``rate (sol - sol0) + (early_rate - rate) (min(sol, knot_sol) - knot_ref)``, with
+    sol0 and knot_ref the means of sol and min(sol, knot_sol) over the ``reference`` blocks (default ``studies``) -
+    the blocks the joint rig was solved from, so that the drift averages to zero over them.
+    """
+    rows = [(s, (s.get(mode) or {}).get("rigs") or []) for s in studies]
+    rows = [(s, r[0]) for s, r in rows if r]
+    T = np.array([s["network"]["T_median_degC"] for s, _ in rows], float)
+    sol = np.array([s["network"]["sol_median"] for s, _ in rows], float)
+    ref = reference if reference is not None else [s for s, _ in rows]
+    ref_sol = np.array([s["network"]["sol_median"] for s in ref], float)
+    hinge = bool(knot_sol) and bool(knot_angles)
+    out: Dict[str, Any] = {"model": "linear" + ("+hinge" if hinge else ""),
+                           "sol0": float(ref_sol.mean()), "blocks": len(rows), "blocks_names": [s["scape"] for s, _ in rows],
+                           "sol_range": [float(sol.min()), float(sol.max())], "T_mean_degC": float(T.mean())}
+    if hinge:
+        out["knot_sol"] = float(knot_sol)
+        out["knot_ref"] = float(np.mean(np.minimum(ref_sol, knot_sol)))
+    for ang in ("pitch", "yaw", "roll"):
+        y = np.array([r[f"{ang}_mdeg"] for _, r in rows])
+        v = np.maximum(np.array([r.get(f"sd_{ang}_mdeg", np.nan) for _, r in rows]) ** 2, 1e-6)
+        cols = [np.ones(len(rows)), T - T.mean(), sol - sol.mean()]
+        h = hinge and ang in knot_angles
+        if h:
+            cols.append(np.minimum(sol, knot_sol))
+        f = _wls(y, np.c_[tuple(cols)], v)
+        rate, se = float(f["coef"][2]), float(f["se"][2])
+        out[f"{ang}_fit_mdeg_per_sol"] = rate
+        out[f"{ang}_se"] = se
+        out[f"{ang}_p"] = float(f["p"][2])
+        out[f"{ang}_T_mdeg_per_degC"] = float(f["coef"][1])
+        out[f"{ang}_tau_mdeg"] = float(f["tau"])
+        out[f"{ang}_mdeg_per_sol"] = 0.0 if ang in no_drift else rate
+        if h:
+            out[f"{ang}_early_mdeg_per_sol"] = rate + float(f["coef"][3])
+            out[f"{ang}_early_se"] = float(np.sqrt(f["cov"][2, 2] + f["cov"][3, 3] + 2 * f["cov"][2, 3]))
+    out["no_drift"] = list(no_drift)
+    return out
+
+
+def drift_offset_mdeg(drift: Dict[str, Any], sol: float) -> Dict[str, float]:
+    """The rig rotation offset (pitch, yaw, roll mdeg) a rig-file drift gives at ``sol`` (see
+    :func:`rig_drift_model`; a v0p35 drift has the rates only)."""
+    ds = float(sol) - float(drift["sol0"])
+    out = {}
+    for a in ("pitch", "yaw", "roll"):
+        rate = float(drift.get(f"{a}_mdeg_per_sol") or 0.0)
+        v = rate * ds
+        if drift.get(f"{a}_early_mdeg_per_sol") is not None and drift.get("knot_sol"):
+            v += (float(drift[f"{a}_early_mdeg_per_sol"]) - rate) * (min(float(sol), float(drift["knot_sol"]))
+                                                                    - float(drift.get("knot_ref", 0.0)))
+        out[f"{a}_mdeg"] = v
+    return out
 
 
 def rig_drift(studies: Sequence[Dict[str, Any]], mode: str = "rotation_pp") -> Dict[str, Any]:
@@ -826,4 +1063,169 @@ def rig_drift(studies: Sequence[Dict[str, Any]], mode: str = "rotation_pp") -> D
         out[f"{ang}_p"] = float(f["p"][2])
         out[f"{ang}_T_mdeg_per_degC"] = float(f["coef"][1])
         out[f"{ang}_tau_mdeg"] = float(f["tau"])
+    return out
+
+
+# ================================================================ downsample scales (v0p35.1)
+def split_by_scale(rec, project: SfmProject, min_images: int = 4, free: Sequence[str] = ("cx", "cy")):
+    """
+    A copy of ``rec`` with one camera per Navcam eye and downsample scale (1, 0.5, 0.25 ...), and a copy of
+    ``project`` whose cameras and database mapping include them.  Every camera starts from its eye's camera and
+    holds all parameters but ``free``.  (Eye, scale) groups with fewer than ``min_images`` images stay on the
+    eye's camera, which then stands for the eye's most common scale.  Frames get a rig with the same sensor poses
+    and their images' cameras.  Returns (rec, project, rows) with one row per camera: {"camera", "eye",
+    "scale", "camera_id", "images"}.
+    """
+    import pycolmap
+    from .reconstruction import _PARAM_NAMES
+    from .project import FULL_OPENCV_NAMES
+    proj = copy.deepcopy(project)
+    db = {k: int(v) for k, v in proj.settings["database"]["cameras"].items()}
+    key_of = {v: k for k, v in db.items()}
+    scale_of = {int(r["image_id"]): float(r.get("downsample_scale", 1.0)) for r in proj.images if "image_id" in r}
+    reg = set(rec.reg_image_ids())
+    count: Dict[Tuple[int, float], int] = {}
+    for iid in reg:
+        im = rec.images[iid]
+        if str(key_of.get(int(im.camera_id), "")).startswith("N"):
+            k = (int(im.camera_id), scale_of.get(int(iid), 1.0))
+            count[k] = count.get(k, 0) + 1
+    main = {}
+    for (cid, s), n in count.items():
+        if n > count.get((cid, main.get(cid, -1.0)), 0):
+            main[cid] = s
+    new = pycolmap.Reconstruction()
+    for cid, cam in rec.cameras.items():
+        new.add_camera(cam)
+    next_cid = max(rec.cameras) + 1
+    cam_for: Dict[Tuple[int, float], int] = {}
+    rows = []
+
+    def _hold(k, model):
+        names = _PARAM_NAMES.get(model, FULL_OPENCV_NAMES)
+        proj.cameras[k] = dict(proj.cameras[k], fixed_params=[n for n in names if n not in set(free)], free_params=[])
+
+    for (cid, s), n in sorted(count.items()):
+        eye = key_of[cid]
+        if s == main[cid] or n < min_images:
+            cam_for[(cid, s)] = cid
+            continue
+        base = rec.cameras[cid]
+        c = pycolmap.Camera(camera_id=next_cid, model=base.model, width=base.width, height=base.height,
+                            params=np.array(base.params, float))
+        new.add_camera(c)
+        k = f"{eye}_s{s:g}"
+        proj.cameras[k] = dict(proj.cameras[eye], group=eye, downsample_scale=s, n_images=n)
+        _hold(k, base.model.name)
+        db[k] = next_cid
+        cam_for[(cid, s)] = next_cid
+        rows.append({"camera": k, "eye": eye, "scale": s, "camera_id": next_cid, "images": n})
+        next_cid += 1
+    for cid, s in main.items():
+        _hold(key_of[cid], rec.cameras[cid].model.name)
+        rows.append({"camera": key_of[cid], "eye": key_of[cid], "scale": s, "camera_id": cid,
+                     "images": count[(cid, s)], "reference": True})
+    proj.settings["database"]["cameras"] = db
+
+    sensor = lambda c: pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=int(c))     # noqa: E731
+    for rid, rig in rec.rigs.items():
+        new.add_rig(rig)
+    next_rid = max(rec.rigs) + 1
+    rig_for: Dict[Tuple, int] = {}
+    cam_of_image: Dict[int, int] = {}
+    for fid, fr in rec.frames.items():
+        m = {}
+        for d in fr.data_ids:
+            im = rec.images[d.id]
+            c = cam_for.get((int(im.camera_id), scale_of.get(int(d.id), 1.0)), int(im.camera_id))
+            cam_of_image[d.id] = c
+            m[int(d.sensor_id.id)] = c
+        old = rec.rigs[fr.rig_id]
+        ref = int(old.ref_sensor_id.id)
+        key = (fr.rig_id, tuple(sorted(m.items())))
+        if all(a == b for a, b in m.items()):
+            rid = fr.rig_id
+        elif key in rig_for:
+            rid = rig_for[key]
+        else:
+            r = pycolmap.Rig(rig_id=next_rid)
+            r.add_ref_sensor(sensor(m.get(ref, ref)))
+            for sid in old.non_ref_sensors:
+                r.add_sensor(sensor(m.get(int(sid.id), int(sid.id))), old.sensor_from_rig(sid))
+            new.add_rig(r)
+            rig_for[key] = rid = next_rid
+            next_rid += 1
+        nf = pycolmap.Frame(frame_id=fid, rig_id=rid)
+        for d in fr.data_ids:
+            nf.add_data_id(pycolmap.data_t(sensor_id=sensor(cam_of_image[d.id]), id=d.id))
+        if fr.has_pose:
+            nf.rig_from_world = fr.rig_from_world
+        new.add_frame(nf)
+    for iid, im in rec.images.items():
+        kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
+        ni = pycolmap.Image(name=im.name, keypoints=kps, camera_id=cam_of_image.get(iid, im.camera_id), image_id=iid)
+        ni.frame_id = im.frame_id
+        new.add_image(ni)
+    for fid in rec.reg_frame_ids():
+        if new.frames[fid].has_pose:
+            new.register_frame(fid)
+    for pid, pt in rec.points3D.items():
+        tr = pycolmap.Track()
+        for el in pt.track.elements:
+            tr.add_element(el.image_id, el.point2D_idx)
+        new.add_point3D(pt.xyz, tr, pt.color)
+    return new, proj, rows
+
+
+def scale_offsets(sc: Scape, free: Sequence[str] = ("cx", "cy"), min_images: int = 4, max_iterations: int = 100,
+                  verbose: bool = True) -> Dict[str, Any]:
+    """
+    Is there a pixel offset between the Navcam downsample scales (v0p35.1)?  The block is re-adjusted with one
+    camera per eye and scale (:func:`split_by_scale`), only ``free`` refined (default the principal point; with
+    ("fx", "fy", "cx", "cy") also a scale error), the rig held, poses and points free, with covariance.  Keypoints
+    of every scale are in full-resolution pixels (native x 1/scale, corner origin: exact for binning that starts
+    at the detector corner), so a wrong native-to-full mapping shows as a principal-point offset of the scale's
+    camera from the reference scale (0.5 px at half resolution and 1.5 px at quarter resolution for a
+    pixel-centre instead of a pixel-corner origin).  The principal point stays observable although a pure shift is
+    close to a rotation, because the strong distortion is centred on it.  Returns the rows with cx, cy (and fx,
+    fy), their sd, and the offsets from the eye's reference camera.
+    """
+    from .reconstruction import bundle_adjust
+    rec, proj, rows = split_by_scale(sc.rec, sc.project, min_images=min_images, free=free)
+    out: Dict[str, Any] = {"scape": sc.name, "free": list(free), "rows": rows}
+    if sum(1 for r in rows if not r.get("reference")) == 0:
+        out["skipped"] = "one scale per eye"
+        return out
+    ba = bundle_adjust(rec, proj, refine_rig=False, max_iterations=max_iterations, covariance=True, **BA_DEFAULTS)
+    cov = (ba.get("covariance") or {})
+    vf = float(cov.get("variance_factor", 1.0))
+    blocks = cov.get("blocks", {})
+    idx = {"fx": 0, "fy": 1, "cx": 2, "cy": 3}
+    for r in rows:
+        p = rec.cameras[r["camera_id"]].params
+        r.update({n: float(p[i]) for n, i in idx.items()})
+        c = blocks.get(f"camera:{r['camera']}")
+        if c is not None and np.asarray(c).shape[0] == len(free):
+            c = np.asarray(c) * vf
+            for j, n in enumerate(free):
+                r[f"sd_{n}"] = float(np.sqrt(c[j, j]))
+            r["cov_free"] = c.tolist()
+    ref = {r["eye"]: r for r in rows if r.get("reference")}
+    for r in rows:
+        b = ref.get(r["eye"])
+        if b is None or r is b:
+            continue
+        r["reference_scale"] = b["scale"]
+        for n in free:
+            r[f"d{n}_px"] = r[n] - b[n]
+            if f"sd_{n}" in r and f"sd_{n}" in b:
+                r[f"sd_d{n}_px"] = float(np.hypot(r[f"sd_{n}"], b[f"sd_{n}"]))
+    out.update({"final_cost": ba["final_cost"], "variance_factor": vf, "observations": ba["observations"],
+                "iterations": ba["iterations"]})
+    if verbose:
+        for r in rows:
+            if "dcx_px" in r:
+                print(f"  {sc.name} {r['camera']:10s} ({r['images']} images) vs {r['eye']} at {r['reference_scale']:g}: "
+                      f"dcx {r['dcx_px']:+.3f} +- {r.get('sd_dcx_px', float('nan')):.3f}  dcy {r['dcy_px']:+.3f} +- "
+                      f"{r.get('sd_dcy_px', float('nan')):.3f} full-res px", flush=True)
     return out

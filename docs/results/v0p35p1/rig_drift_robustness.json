@@ -1,0 +1,4627 @@
+{
+ "table": [
+  {
+   "scape": "Butler Landing",
+   "sol": 12.0,
+   "sol_range": [
+    9,
+    14
+   ],
+   "T_degC": -20.9091913439498,
+   "dT_LR_degC": -0.7302097561189331,
+   "stations": 7,
+   "span_m": 4.846852245755004,
+   "images": 76,
+   "frames": 51,
+   "full_res_fraction": 0.6710526315789473,
+   "observations": 418654,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.004421388179579142,
+    "pitch_mdeg": 0.24207223686640877,
+    "roll_mdeg": 0.5870669069179799
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -8.446779276672366,
+    "pitch_mdeg": -6.647992843845928,
+    "roll_mdeg": 24.772190629661775,
+    "sd_yaw_mdeg": 0.4251949522554284,
+    "sd_pitch_mdeg": 0.0780495424393009,
+    "sd_roll_mdeg": 0.1196465961014217,
+    "baseline_m": 0.4243856182577358,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.693535588579834,
+    "vparallax_inf_px": -10.94601686293504,
+    "variance_factor": 0.8058648001886397
+   },
+   "rotation": {
+    "yaw_mdeg": 5.990991265515785,
+    "pitch_mdeg": 2.565735667815489,
+    "roll_mdeg": 25.146819588360703,
+    "sd_yaw_mdeg": 1.0507181927746487,
+    "sd_pitch_mdeg": 0.6739670834803247,
+    "sd_roll_mdeg": 0.1433094424057485,
+    "baseline_m": 0.4243856182577358,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 17.115188955189296,
+    "vparallax_inf_px": -10.92621596334834,
+    "variance_factor": 0.805445252249579
+   },
+   "full": {
+    "yaw_mdeg": 3.8601244043023577,
+    "pitch_mdeg": -9.262926038625858,
+    "roll_mdeg": 27.31159352167277,
+    "sd_yaw_mdeg": 1.0856495843904161,
+    "sd_pitch_mdeg": 0.7903083549819052,
+    "sd_roll_mdeg": 0.15017784231087017,
+    "baseline_m": 0.4189333893290766,
+    "sd_baseline_mm": 4.084691163892859,
+    "disparity_inf_px": 17.030984994415576,
+    "vparallax_inf_px": -11.486563179505538,
+    "variance_factor": 0.8016944354530634
+   },
+   "bins": [
+    {
+     "T_median_degC": -19.175591435049927,
+     "frames": 15,
+     "yaw_mdeg": 10.206489257825137,
+     "sd_yaw_mdeg": 0.5763335548556994,
+     "pitch_mdeg": -10.71187159072445,
+     "sd_pitch_mdeg": 0.1722135108241199
+    },
+    {
+     "T_median_degC": null,
+     "frames": 6,
+     "yaw_mdeg": 2.2181219697820183,
+     "sd_yaw_mdeg": 1.947194198697816,
+     "pitch_mdeg": 1.0907456278180239,
+     "sd_pitch_mdeg": 1.328894456656149
+    },
+    {
+     "T_median_degC": -21.2106,
+     "frames": 19,
+     "yaw_mdeg": 14.174399212234093,
+     "sd_yaw_mdeg": 0.3321987969728785,
+     "pitch_mdeg": -10.280010843280944,
+     "sd_pitch_mdeg": 0.07698993244715001
+    }
+   ]
+  },
+  {
+   "scape": "Van Zyl",
+   "sol": 63.0,
+   "sol_range": [
+    49,
+    71
+   ],
+   "T_degC": -21.2106,
+   "dT_LR_degC": 0.2272999999999996,
+   "stations": 9,
+   "span_m": 24.91198742191986,
+   "images": 116,
+   "frames": 69,
+   "full_res_fraction": 0.11206896551724138,
+   "observations": 462484,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": 0.0014508430666356155,
+    "pitch_mdeg": 0.2466587781735031,
+    "roll_mdeg": 0.5856343125032739
+   },
+   "rotation_pp": {
+    "yaw_mdeg": 4.567496964014325,
+    "pitch_mdeg": -8.152713038299233,
+    "roll_mdeg": 18.88666603938506,
+    "sd_yaw_mdeg": 0.19277811465299793,
+    "sd_pitch_mdeg": 0.04465893985594008,
+    "sd_roll_mdeg": 0.06692899338144799,
+    "baseline_m": 0.42438567892458073,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.023398414270105,
+    "vparallax_inf_px": -11.022622599188708,
+    "variance_factor": 0.2872162072229921
+   },
+   "rotation": {
+    "yaw_mdeg": -7.535873570656049,
+    "pitch_mdeg": 9.25054282837904,
+    "roll_mdeg": 19.281587043723853,
+    "sd_yaw_mdeg": 0.8132958405915605,
+    "sd_pitch_mdeg": 0.43614621318254243,
+    "sd_roll_mdeg": 0.070694805781773,
+    "baseline_m": 0.42438567892458073,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 15.944850788323947,
+    "vparallax_inf_px": -11.00841057611683,
+    "variance_factor": 0.2857670478929579
+   },
+   "full": {
+    "yaw_mdeg": -12.037312811735545,
+    "pitch_mdeg": 14.048513790375367,
+    "roll_mdeg": 19.529561550371263,
+    "sd_yaw_mdeg": 0.8211587971338766,
+    "sd_pitch_mdeg": 0.4751027359890028,
+    "sd_roll_mdeg": 0.07072394800474227,
+    "baseline_m": 0.4237359095675556,
+    "sd_baseline_mm": 3.2189525206023677,
+    "disparity_inf_px": 15.949312452935828,
+    "vparallax_inf_px": -11.093130205629677,
+    "variance_factor": 0.2843893834849362
+   },
+   "bins": [
+    {
+     "T_median_degC": -20.253,
+     "frames": 10,
+     "yaw_mdeg": 19.180524913445648,
+     "sd_yaw_mdeg": 0.21959175431018169,
+     "pitch_mdeg": 4.644199257975024,
+     "sd_pitch_mdeg": 0.08921313118017361
+    },
+    {
+     "T_median_degC": null,
+     "frames": 7,
+     "yaw_mdeg": -10.345082920191308,
+     "sd_yaw_mdeg": 1.6739312441977614,
+     "pitch_mdeg": -23.150303374337863,
+     "sd_pitch_mdeg": 1.040922588097828
+    },
+    {
+     "T_median_degC": -22.1678,
+     "frames": 51,
+     "yaw_mdeg": 20.278154683047315,
+     "sd_yaw_mdeg": 0.17426366257215567,
+     "pitch_mdeg": 3.7336783232357953,
+     "sd_pitch_mdeg": 0.062419102695009505
+    }
+   ]
+  },
+  {
+   "scape": "Rochette",
+   "sol": 180.0,
+   "sol_range": [
+    178,
+    341
+   ],
+   "T_degC": -20.67997444741926,
+   "dT_LR_degC": 0.5468000000000011,
+   "stations": 3,
+   "span_m": 11.362917567838942,
+   "images": 37,
+   "frames": 19,
+   "full_res_fraction": 0.1891891891891892,
+   "observations": 363555,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.012948994392543762,
+    "pitch_mdeg": 0.23225228725700342,
+    "roll_mdeg": 0.578279539782348
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -6.440196855356178,
+    "pitch_mdeg": -2.6806490602928954,
+    "roll_mdeg": 20.757340246055374,
+    "sd_yaw_mdeg": 0.2768001263260513,
+    "sd_pitch_mdeg": 0.04868639510524154,
+    "sd_roll_mdeg": 0.09410392723449036,
+    "baseline_m": 0.4243851266181192,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.589922011189174,
+    "vparallax_inf_px": -10.740092625980878,
+    "variance_factor": 0.33145845837588545
+   },
+   "rotation": {
+    "yaw_mdeg": -7.9905837438243,
+    "pitch_mdeg": -5.540596151696074,
+    "roll_mdeg": 20.762061261245915,
+    "sd_yaw_mdeg": 0.850996432503527,
+    "sd_pitch_mdeg": 0.5455496800210288,
+    "sd_roll_mdeg": 0.13070106575445914,
+    "baseline_m": 0.42438512661811933,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.57592952361847,
+    "vparallax_inf_px": -10.742673432400125,
+    "variance_factor": 0.3314196374287687
+   },
+   "full": {
+    "yaw_mdeg": -1.0866497776953117,
+    "pitch_mdeg": -48.19469114999202,
+    "roll_mdeg": 21.61498940225327,
+    "sd_yaw_mdeg": 0.8630124653305788,
+    "sd_pitch_mdeg": 0.9697381144447623,
+    "sd_roll_mdeg": 0.1313508955213761,
+    "baseline_m": 0.4242613707742648,
+    "sd_baseline_mm": 11.952692527803366,
+    "disparity_inf_px": 16.621845528671656,
+    "vparallax_inf_px": -11.386434201151815,
+    "variance_factor": 0.3292157290278726
+   },
+   "bins": [
+    {
+     "T_median_degC": -21.051000000000002,
+     "frames": 12,
+     "yaw_mdeg": -7.86845704395738,
+     "sd_yaw_mdeg": 0.17224767559066706,
+     "pitch_mdeg": -6.087829374053176,
+     "sd_pitch_mdeg": 0.043096677373135855
+    },
+    {
+     "T_median_degC": null,
+     "frames": 0,
+     "yaw_mdeg": -7.947107068454941,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": -5.531918078971818,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -17.3781,
+     "frames": 7,
+     "yaw_mdeg": -11.397720043455834,
+     "sd_yaw_mdeg": 0.19681798030496228,
+     "pitch_mdeg": -4.7173650803075775,
+     "sd_pitch_mdeg": 0.07386699767888481
+    }
+   ]
+  },
+  {
+   "scape": "Seitah North",
+   "sol": 242.0,
+   "sol_range": [
+    237,
+    278
+   ],
+   "T_degC": -16.92537910292005,
+   "dT_LR_degC": 1.9886805086980637,
+   "stations": 10,
+   "span_m": 21.9178132467395,
+   "images": 81,
+   "frames": 43,
+   "full_res_fraction": 0.09876543209876543,
+   "observations": 446506,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.008980208722144795,
+    "pitch_mdeg": 0.2056821281685472,
+    "roll_mdeg": 0.5557766349097137
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -11.854911727125762,
+    "pitch_mdeg": -1.5044523633778237,
+    "roll_mdeg": 22.958749398559426,
+    "sd_yaw_mdeg": 0.1495862554331604,
+    "sd_pitch_mdeg": 0.044276460688262693,
+    "sd_roll_mdeg": 0.07348979805263717,
+    "baseline_m": 0.42438375038831017,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.868747546845952,
+    "vparallax_inf_px": -10.680358184879879,
+    "variance_factor": 0.28311221180187623
+   },
+   "rotation": {
+    "yaw_mdeg": -7.365682763088004,
+    "pitch_mdeg": -2.2040100292433604,
+    "roll_mdeg": 22.388166689464647,
+    "sd_yaw_mdeg": 0.6523556551062147,
+    "sd_pitch_mdeg": 0.43340564516556085,
+    "sd_roll_mdeg": 0.08327830003158142,
+    "baseline_m": 0.42438375038831017,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.86276026886435,
+    "vparallax_inf_px": -10.687839674781571,
+    "variance_factor": 0.2823127128172079
+   },
+   "full": {
+    "yaw_mdeg": -9.107102014968751,
+    "pitch_mdeg": 2.374387746372007,
+    "roll_mdeg": 22.452137439935697,
+    "sd_yaw_mdeg": 0.6627572832644194,
+    "sd_pitch_mdeg": 0.6359680205310966,
+    "sd_roll_mdeg": 0.08391389053965456,
+    "baseline_m": 0.42441688797316396,
+    "sd_baseline_mm": 5.03672068306442,
+    "disparity_inf_px": 16.87362695580441,
+    "vparallax_inf_px": -10.81370573621939,
+    "variance_factor": 0.28182210651654105
+   },
+   "bins": []
+  },
+  {
+   "scape": "Sid",
+   "sol": 360.0,
+   "sol_range": [
+    91,
+    371
+   ],
+   "T_degC": -15.664425328572353,
+   "dT_LR_degC": -0.09059999999999846,
+   "stations": 8,
+   "span_m": 21.0308744382704,
+   "images": 81,
+   "frames": 48,
+   "full_res_fraction": 0.14814814814814814,
+   "observations": 432010,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.0018270545454316162,
+    "pitch_mdeg": 0.030219542121954154,
+    "roll_mdeg": 0.0033924428308536327
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -13.237575818440613,
+    "pitch_mdeg": 0.9181516427413928,
+    "roll_mdeg": 22.35622289122332,
+    "sd_yaw_mdeg": 0.25353812908665085,
+    "sd_pitch_mdeg": 0.04999355313574739,
+    "sd_roll_mdeg": 0.08971800156503021,
+    "baseline_m": 0.42436349648683047,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.939808977666416,
+    "vparallax_inf_px": -10.556343787559854,
+    "variance_factor": 0.37570540175517697
+   },
+   "rotation": {
+    "yaw_mdeg": -19.80981825677025,
+    "pitch_mdeg": -1.9661323341176171,
+    "roll_mdeg": 22.0428563628782,
+    "sd_yaw_mdeg": 0.8541201287168368,
+    "sd_pitch_mdeg": 0.5470085290542027,
+    "sd_roll_mdeg": 0.12875121908630022,
+    "baseline_m": 0.42436349648683047,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.88734799154281,
+    "vparallax_inf_px": -10.561052934684085,
+    "variance_factor": 0.3756332105515796
+   },
+   "full": {
+    "yaw_mdeg": -10.532794824156888,
+    "pitch_mdeg": -34.047237891339826,
+    "roll_mdeg": 23.6082669578496,
+    "sd_yaw_mdeg": 0.8795304721112505,
+    "sd_pitch_mdeg": 0.8590833839213964,
+    "sd_roll_mdeg": 0.13244461687107303,
+    "baseline_m": 0.42438009400174675,
+    "sd_baseline_mm": 4.692624807468364,
+    "disparity_inf_px": 16.91079666901851,
+    "vparallax_inf_px": -11.05422871023734,
+    "variance_factor": 0.37399440825856756
+   },
+   "bins": [
+    {
+     "T_median_degC": -23.1247,
+     "frames": 23,
+     "yaw_mdeg": -8.820777986723076,
+     "sd_yaw_mdeg": 0.3000669229126872,
+     "pitch_mdeg": -7.2328567493188,
+     "sd_pitch_mdeg": 0.1283486703190529
+    },
+    {
+     "T_median_degC": null,
+     "frames": 0,
+     "yaw_mdeg": -19.602361358335607,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": -1.4745285957410148,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -7.790936124016201,
+     "frames": 14,
+     "yaw_mdeg": -22.617390180668203,
+     "sd_yaw_mdeg": 0.17011073603187918,
+     "pitch_mdeg": -0.43664074819874593,
+     "sd_pitch_mdeg": 0.052899876594961454
+    },
+    {
+     "T_median_degC": -12.199764669897036,
+     "frames": 9,
+     "yaw_mdeg": -20.468052284692735,
+     "sd_yaw_mdeg": 0.1790450803768767,
+     "pitch_mdeg": -1.5905030373211004,
+     "sd_pitch_mdeg": 0.06181068201520449
+    }
+   ]
+  },
+  {
+   "scape": "Rockytop",
+   "sol": 477.0,
+   "sol_range": [
+    461,
+    509
+   ],
+   "T_degC": -19.244855800758213,
+   "dT_LR_degC": 2.1442000000000014,
+   "stations": 9,
+   "span_m": 21.736031571065737,
+   "images": 136,
+   "frames": 69,
+   "full_res_fraction": 0.22058823529411764,
+   "observations": 485526,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.011721053043929818,
+    "pitch_mdeg": 0.0052808884255466145,
+    "roll_mdeg": 0.0006631788102998902
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -7.207188214156184,
+    "pitch_mdeg": 0.868562565052432,
+    "roll_mdeg": 24.74653910290174,
+    "sd_yaw_mdeg": 0.15859915703383015,
+    "sd_pitch_mdeg": 0.04641095187019942,
+    "sd_roll_mdeg": 0.07377872721706061,
+    "baseline_m": 0.424362906420274,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.629719024513633,
+    "vparallax_inf_px": -10.558263180275617,
+    "variance_factor": 0.3723178563315905
+   },
+   "rotation": {
+    "yaw_mdeg": -25.385239474868087,
+    "pitch_mdeg": 6.474537565577246,
+    "roll_mdeg": 22.901694116859336,
+    "sd_yaw_mdeg": 0.7088669734255559,
+    "sd_pitch_mdeg": 0.49002993253663435,
+    "sd_roll_mdeg": 0.08944622892461342,
+    "baseline_m": 0.42436290642027397,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.575783846598824,
+    "vparallax_inf_px": -10.561629091470422,
+    "variance_factor": 0.37152392021969455
+   },
+   "full": {
+    "yaw_mdeg": -21.978614486694084,
+    "pitch_mdeg": -3.2032961393515174,
+    "roll_mdeg": 23.433505712301802,
+    "sd_yaw_mdeg": 0.7282048162475365,
+    "sd_pitch_mdeg": 0.6222857497864878,
+    "sd_roll_mdeg": 0.09125636323078354,
+    "baseline_m": 0.42438559716662555,
+    "sd_baseline_mm": 3.712709396790754,
+    "disparity_inf_px": 16.580643501381473,
+    "vparallax_inf_px": -10.763801323884081,
+    "variance_factor": 0.3710327711101109
+   },
+   "bins": [
+    {
+     "T_median_degC": -20.5722,
+     "frames": 26,
+     "yaw_mdeg": -21.64936456893932,
+     "sd_yaw_mdeg": 0.11958860848648381,
+     "pitch_mdeg": 6.072027554164348,
+     "sd_pitch_mdeg": 0.053129679967162204
+    },
+    {
+     "T_median_degC": null,
+     "frames": 0,
+     "yaw_mdeg": -24.88285641355082,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": 5.677599415335302,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -16.897886560106038,
+     "frames": 42,
+     "yaw_mdeg": -27.53760516049351,
+     "sd_yaw_mdeg": 0.11585280185895318,
+     "pitch_mdeg": 5.725066175540188,
+     "sd_pitch_mdeg": 0.04472694936937075
+    }
+   ]
+  },
+  {
+   "scape": "Whale Mountain",
+   "sol": 609.0,
+   "sol_range": [
+    606,
+    609
+   ],
+   "T_degC": -18.2441,
+   "dT_LR_degC": null,
+   "stations": 2,
+   "span_m": 7.14514103083286,
+   "images": 31,
+   "frames": 16,
+   "full_res_fraction": 0.06451612903225806,
+   "observations": 276393,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.005775536969687398,
+    "pitch_mdeg": 0.003109725787202536,
+    "roll_mdeg": -0.0015504706585783375
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -7.746847414231282,
+    "pitch_mdeg": 0.9400819974180885,
+    "roll_mdeg": 23.806125697686557,
+    "sd_yaw_mdeg": 0.19598086096086856,
+    "sd_pitch_mdeg": 0.054433250032596234,
+    "sd_roll_mdeg": 0.09085656486469196,
+    "baseline_m": 0.42436272106115225,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.657382208190484,
+    "vparallax_inf_px": -10.5547331450814,
+    "variance_factor": 0.26414289447135597
+   },
+   "rotation": {
+    "yaw_mdeg": -11.160325458894466,
+    "pitch_mdeg": 9.306889585130987,
+    "roll_mdeg": 23.235302351595788,
+    "sd_yaw_mdeg": 0.863122639792854,
+    "sd_pitch_mdeg": 0.580230302610436,
+    "sd_roll_mdeg": 0.11235984322223666,
+    "baseline_m": 0.42436272106115225,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.641352826325146,
+    "vparallax_inf_px": -10.546095389220682,
+    "variance_factor": 0.2638372147965363
+   },
+   "full": {
+    "yaw_mdeg": -8.41065270196156,
+    "pitch_mdeg": -1.8481995005827028,
+    "roll_mdeg": 23.514383819416736,
+    "sd_yaw_mdeg": 0.8822736730753993,
+    "sd_pitch_mdeg": 0.845412517177132,
+    "sd_roll_mdeg": 0.11312008548215323,
+    "baseline_m": 0.42419999799992153,
+    "sd_baseline_mm": 10.285697905627112,
+    "disparity_inf_px": 16.64574009687476,
+    "vparallax_inf_px": -10.682986576855683,
+    "variance_factor": 0.2634568130183144
+   },
+   "bins": []
+  },
+  {
+   "scape": "Three Forks South",
+   "sol": 670.0,
+   "sol_range": [
+    413,
+    693
+   ],
+   "T_degC": -14.483986229053425,
+   "dT_LR_degC": 1.337604937053432,
+   "stations": 28,
+   "span_m": 63.47158672217414,
+   "images": 306,
+   "frames": 153,
+   "full_res_fraction": 0.39869281045751637,
+   "observations": 461956,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.007661224293154372,
+    "pitch_mdeg": -0.00011129776955310714,
+    "roll_mdeg": 0.0004455729370321298
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -10.844044040153117,
+    "pitch_mdeg": 1.1214619838833397,
+    "roll_mdeg": 17.226620528158886,
+    "sd_yaw_mdeg": 0.10644964598152636,
+    "sd_pitch_mdeg": 0.03174023250568583,
+    "sd_roll_mdeg": 0.053221049062416786,
+    "baseline_m": 0.4243629818198913,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.81616170587995,
+    "vparallax_inf_px": -10.548509467131908,
+    "variance_factor": 0.2714348224063481
+   },
+   "rotation": {
+    "yaw_mdeg": -0.23718165856236212,
+    "pitch_mdeg": 6.928531774623726,
+    "roll_mdeg": 17.3950479961844,
+    "sd_yaw_mdeg": 0.461799765036338,
+    "sd_pitch_mdeg": 0.328223939985136,
+    "sd_roll_mdeg": 0.07238143358610546,
+    "baseline_m": 0.4243629818198913,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.81376504340551,
+    "vparallax_inf_px": -10.53537838531338,
+    "variance_factor": 0.2710415045150869
+   },
+   "full": {
+    "yaw_mdeg": 1.029967245847213,
+    "pitch_mdeg": -14.31175528813381,
+    "roll_mdeg": 17.418699698337722,
+    "sd_yaw_mdeg": NaN,
+    "sd_pitch_mdeg": NaN,
+    "sd_roll_mdeg": NaN,
+    "baseline_m": 0.4243300765792521,
+    "sd_baseline_mm": NaN,
+    "disparity_inf_px": 16.806959122525768,
+    "vparallax_inf_px": -10.787526254462819,
+    "variance_factor": 0.27004888377015035
+   },
+   "bins": [
+    {
+     "T_median_degC": -13.8601,
+     "frames": 127,
+     "yaw_mdeg": -0.6885166304263645,
+     "sd_yaw_mdeg": 0.08277577016505928,
+     "pitch_mdeg": 6.919357167837876,
+     "sd_pitch_mdeg": 0.02595764974195672
+    },
+    {
+     "T_median_degC": -20.253,
+     "frames": 6,
+     "yaw_mdeg": 6.593144309557368,
+     "sd_yaw_mdeg": 0.375351415595948,
+     "pitch_mdeg": 6.173087473974749,
+     "sd_pitch_mdeg": 0.10036793986215116
+    },
+    {
+     "T_median_degC": null,
+     "frames": 15,
+     "yaw_mdeg": 4.690450456487605,
+     "sd_yaw_mdeg": 1.022320950075916,
+     "pitch_mdeg": 5.988407666086785,
+     "sd_pitch_mdeg": 0.7983452736508276
+    },
+    {
+     "T_median_degC": -44.0867,
+     "frames": 5,
+     "yaw_mdeg": 21.62638611238693,
+     "sd_yaw_mdeg": 0.4560706029423911,
+     "pitch_mdeg": 2.6625282902958585,
+     "sd_pitch_mdeg": 0.12301227152766785
+    }
+   ]
+  },
+  {
+   "scape": "Three Forks",
+   "sol": 686.0,
+   "sol_range": [
+    433,
+    693
+   ],
+   "T_degC": -14.575284242745756,
+   "dT_LR_degC": 0.10247087566986579,
+   "stations": 4,
+   "span_m": 5.36737527743139,
+   "images": 56,
+   "frames": 29,
+   "full_res_fraction": 0.125,
+   "observations": 458185,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.003306705535916884,
+    "pitch_mdeg": 0.004050858088243294,
+    "roll_mdeg": -0.0004152444490603778
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -9.513217916497938,
+    "pitch_mdeg": 1.200376161288753,
+    "roll_mdeg": 20.614901679504797,
+    "sd_yaw_mdeg": 0.1586909588111581,
+    "sd_pitch_mdeg": 0.0366457550367744,
+    "sd_roll_mdeg": 0.0638923537822764,
+    "baseline_m": 0.4243630216244137,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.747895643071843,
+    "vparallax_inf_px": -10.544805533579847,
+    "variance_factor": 0.22756788021260257
+   },
+   "rotation": {
+    "yaw_mdeg": -0.014274298824362397,
+    "pitch_mdeg": 8.53434329144086,
+    "roll_mdeg": 20.98175979743114,
+    "sd_yaw_mdeg": 0.5725167119012157,
+    "sd_pitch_mdeg": 0.33207909138366437,
+    "sd_roll_mdeg": 0.09476493070875715,
+    "baseline_m": 0.42436302162441375,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.81388765878137,
+    "vparallax_inf_px": -10.529416625661497,
+    "variance_factor": 0.227301543908554
+   },
+   "full": {
+    "yaw_mdeg": 1.0958643233249947,
+    "pitch_mdeg": -13.597751951393915,
+    "roll_mdeg": 20.890481666505156,
+    "sd_yaw_mdeg": 0.5749574881940169,
+    "sd_pitch_mdeg": 0.7108080157049669,
+    "sd_roll_mdeg": 0.09527410555500794,
+    "baseline_m": 0.42433398023770097,
+    "sd_baseline_mm": 24.53195142995174,
+    "disparity_inf_px": 16.811461608350783,
+    "vparallax_inf_px": -10.764124422285477,
+    "variance_factor": 0.22685476032333235
+   },
+   "bins": []
+  },
+  {
+   "scape": "Belva Crater",
+   "sol": 795.0,
+   "sol_range": [
+    784,
+    815
+   ],
+   "T_degC": -21.119,
+   "dT_LR_degC": 0.8659999999999997,
+   "stations": 5,
+   "span_m": 13.603993639373305,
+   "images": 80,
+   "frames": 42,
+   "full_res_fraction": 0.225,
+   "observations": 440204,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.013826367748989188,
+    "pitch_mdeg": 0.007890922730568238,
+    "roll_mdeg": -0.0001239635414170189
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -5.532783771683768,
+    "pitch_mdeg": 2.301280574492078,
+    "roll_mdeg": 17.372140727083508,
+    "sd_yaw_mdeg": 0.15266446990291385,
+    "sd_pitch_mdeg": 0.04076865575615498,
+    "sd_roll_mdeg": 0.0779721153526426,
+    "baseline_m": 0.4243630055046637,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.543064047114513,
+    "vparallax_inf_px": -10.482000347995381,
+    "variance_factor": 0.3193687590210922
+   },
+   "rotation": {
+    "yaw_mdeg": -11.470162067770847,
+    "pitch_mdeg": 3.5203907624189803,
+    "roll_mdeg": 16.70473558708477,
+    "sd_yaw_mdeg": 0.7013656045146943,
+    "sd_pitch_mdeg": 0.5126928286661023,
+    "sd_roll_mdeg": 0.10012380184241779,
+    "baseline_m": 0.42436300550466377,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.52821896178193,
+    "vparallax_inf_px": -10.483628016963166,
+    "variance_factor": 0.3192248640316083
+   },
+   "full": {
+    "yaw_mdeg": -4.526185613902547,
+    "pitch_mdeg": -17.187603273227385,
+    "roll_mdeg": 17.757622167941648,
+    "sd_yaw_mdeg": 0.7272573340711296,
+    "sd_pitch_mdeg": 0.7659241861111296,
+    "sd_roll_mdeg": 0.10499337932671449,
+    "baseline_m": 0.42453038315644087,
+    "sd_baseline_mm": 10.948638028088748,
+    "disparity_inf_px": 16.5462445223925,
+    "vparallax_inf_px": -10.756243359004202,
+    "variance_factor": 0.3184964432335772
+   },
+   "bins": [
+    {
+     "T_median_degC": -20.8914,
+     "frames": 36,
+     "yaw_mdeg": -13.276614742458712,
+     "sd_yaw_mdeg": 0.10427534456765573,
+     "pitch_mdeg": 4.626072413165726,
+     "sd_pitch_mdeg": 0.03280570523113925
+    },
+    {
+     "T_median_degC": null,
+     "frames": 0,
+     "yaw_mdeg": -11.962202456084844,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": 4.710696785663088,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -36.9597,
+     "frames": 6,
+     "yaw_mdeg": -0.26347206529571243,
+     "sd_yaw_mdeg": 0.2651428776666259,
+     "pitch_mdeg": 4.59086823364772,
+     "sd_pitch_mdeg": 0.10874351487721848
+    }
+   ]
+  },
+  {
+   "scape": "Tuxedo Park",
+   "sol": 904.0,
+   "sol_range": [
+    896,
+    907
+   ],
+   "T_degC": -16.05265,
+   "dT_LR_degC": 0.5634770516700822,
+   "stations": 8,
+   "span_m": 46.08307497534886,
+   "images": 100,
+   "frames": 50,
+   "full_res_fraction": 0.0,
+   "observations": 458365,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.006238901464686274,
+    "pitch_mdeg": 0.00398057362512369,
+    "roll_mdeg": 0.0011513981516070716
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -10.345561486084938,
+    "pitch_mdeg": 2.265208760015827,
+    "roll_mdeg": 21.02794922908229,
+    "sd_yaw_mdeg": 0.15247523999744209,
+    "sd_pitch_mdeg": 0.057414893490079326,
+    "sd_roll_mdeg": 0.07148220106974096,
+    "baseline_m": 0.4243629788807688,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.790814524220423,
+    "vparallax_inf_px": -10.488557283110595,
+    "variance_factor": 0.28079979666879956
+   },
+   "rotation": {
+    "yaw_mdeg": -10.345807138431704,
+    "pitch_mdeg": 12.67138434041587,
+    "roll_mdeg": 20.67475338209811,
+    "sd_yaw_mdeg": 0.7047827262742992,
+    "sd_pitch_mdeg": 0.4531555829207932,
+    "sd_roll_mdeg": 0.08272258162022744,
+    "baseline_m": 0.42436297888076874,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.785482834314735,
+    "vparallax_inf_px": -10.471198912762247,
+    "variance_factor": 0.2803139113654617
+   },
+   "full": {
+    "yaw_mdeg": -9.554451830057715,
+    "pitch_mdeg": -3.441710644415476,
+    "roll_mdeg": 20.730904285317504,
+    "sd_yaw_mdeg": 0.7067596672092021,
+    "sd_pitch_mdeg": 0.9119417622370859,
+    "sd_roll_mdeg": 0.08272011261761936,
+    "baseline_m": 0.42439087443419576,
+    "sd_baseline_mm": 1.7765322662716303,
+    "disparity_inf_px": 16.78309275963875,
+    "vparallax_inf_px": -10.704725794085334,
+    "variance_factor": 0.28005113786010005
+   },
+   "bins": []
+  },
+  {
+   "scape": "Airey Hill",
+   "sol": 990.5,
+   "sol_range": [
+    960,
+    991
+   ],
+   "T_degC": -13.100989164627881,
+   "dT_LR_degC": 1.3228700445732864,
+   "stations": 3,
+   "span_m": 5.884462914948434,
+   "images": 48,
+   "frames": 24,
+   "full_res_fraction": 0.2916666666666667,
+   "observations": 356664,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": 0.0,
+    "pitch_mdeg": 0.0,
+    "roll_mdeg": 0.0
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -15.080784596278878,
+    "pitch_mdeg": 2.9764621534104942,
+    "roll_mdeg": 19.483959257629277,
+    "sd_yaw_mdeg": 0.23944179619717615,
+    "sd_pitch_mdeg": 0.05590107182776587,
+    "sd_roll_mdeg": 0.10616353366398046,
+    "baseline_m": 0.42436294207698205,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 17.03444800009538,
+    "vparallax_inf_px": -10.451282130720983,
+    "variance_factor": 0.4407400944236023
+   },
+   "rotation": {
+    "yaw_mdeg": -1.40033995739953,
+    "pitch_mdeg": 6.3435281675230195,
+    "roll_mdeg": 20.781760770341197,
+    "sd_yaw_mdeg": 0.9568990532446137,
+    "sd_pitch_mdeg": 0.6406623804130243,
+    "sd_roll_mdeg": 0.13532812151483425,
+    "baseline_m": 0.42436294207698205,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 17.070547770827943,
+    "vparallax_inf_px": -10.437363218509745,
+    "variance_factor": 0.4403385773070196
+   },
+   "full": {
+    "yaw_mdeg": 5.501410032932582,
+    "pitch_mdeg": -11.064798352531255,
+    "roll_mdeg": 21.36853192005956,
+    "sd_yaw_mdeg": 0.993279537353897,
+    "sd_pitch_mdeg": 0.918790995512853,
+    "sd_roll_mdeg": 0.13724325827183023,
+    "baseline_m": 0.42427213883442816,
+    "sd_baseline_mm": 19.94159732298863,
+    "disparity_inf_px": 17.071845248707632,
+    "vparallax_inf_px": -10.667241773923934,
+    "variance_factor": 0.4395206831451034
+   },
+   "bins": []
+  },
+  {
+   "scape": "Bunsen Peak",
+   "sol": 1084.0,
+   "sol_range": [
+    1066,
+    1094
+   ],
+   "T_degC": -15.0461,
+   "dT_LR_degC": 1.833330587420721,
+   "stations": 6,
+   "span_m": 9.022822009057549,
+   "images": 108,
+   "frames": 54,
+   "full_res_fraction": 0.1111111111111111,
+   "observations": 627842,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.013210514046998151,
+    "pitch_mdeg": 0.002370445231777444,
+    "roll_mdeg": 0.0042030177202328775
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -1.803389139312582,
+    "pitch_mdeg": 3.0241548471723654,
+    "roll_mdeg": 15.702768916528345,
+    "sd_yaw_mdeg": 0.110921416495395,
+    "sd_pitch_mdeg": 0.06069436045182298,
+    "sd_roll_mdeg": 0.0755124310716512,
+    "baseline_m": 0.4243631189487448,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.350796340479974,
+    "vparallax_inf_px": -10.446912019167485,
+    "variance_factor": 0.48266085074380916
+   },
+   "rotation": {
+    "yaw_mdeg": 9.732790738126035,
+    "pitch_mdeg": 22.965054639741616,
+    "roll_mdeg": 16.712706429518843,
+    "sd_yaw_mdeg": 0.7386067579937585,
+    "sd_pitch_mdeg": 0.4853329863306993,
+    "sd_roll_mdeg": 0.09648209973003359,
+    "baseline_m": 0.4243631189487448,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.345993068120606,
+    "vparallax_inf_px": -10.398918477473671,
+    "variance_factor": 0.4818046079428859
+   },
+   "full": {
+    "yaw_mdeg": 8.336937525455737,
+    "pitch_mdeg": 21.425282323568513,
+    "roll_mdeg": 16.608669297564948,
+    "sd_yaw_mdeg": 0.7430186018873944,
+    "sd_pitch_mdeg": 0.6859358558440201,
+    "sd_roll_mdeg": 0.09667875537816924,
+    "baseline_m": 0.4243613262169302,
+    "sd_baseline_mm": 22.278378940051955,
+    "disparity_inf_px": 16.34754891675675,
+    "vparallax_inf_px": -10.524057742574314,
+    "variance_factor": 0.4814691283248819
+   },
+   "bins": [
+    {
+     "T_median_degC": -6.733483527822088,
+     "frames": 8,
+     "yaw_mdeg": -4.152747338852795,
+     "sd_yaw_mdeg": 0.17749521769108864,
+     "pitch_mdeg": 24.41922376307597,
+     "sd_pitch_mdeg": 0.11947965268473446
+    },
+    {
+     "T_median_degC": -26.03980784030607,
+     "frames": 17,
+     "yaw_mdeg": 17.52932586964125,
+     "sd_yaw_mdeg": 0.09817046817977318,
+     "pitch_mdeg": 22.435768556886526,
+     "sd_pitch_mdeg": 0.08171335152707637
+    },
+    {
+     "T_median_degC": -37.5850013907003,
+     "frames": 4,
+     "yaw_mdeg": 25.17187604772906,
+     "sd_yaw_mdeg": 0.1923218472481394,
+     "pitch_mdeg": 21.87961812041804,
+     "sd_pitch_mdeg": 0.35136119673952576
+    },
+    {
+     "T_median_degC": null,
+     "frames": 0,
+     "yaw_mdeg": 8.559821247865067,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": 23.143651520999214,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -12.8998,
+     "frames": 25,
+     "yaw_mdeg": 2.1170708860952945,
+     "sd_yaw_mdeg": 0.08707171973437385,
+     "pitch_mdeg": 23.27325575348144,
+     "sd_pitch_mdeg": 0.06064057557269332
+    }
+   ]
+  },
+  {
+   "scape": "Pearce Canyon",
+   "sol": 1199.0,
+   "sol_range": [
+    1183,
+    1217
+   ],
+   "T_degC": -20.7997,
+   "dT_LR_degC": 0.927294627444823,
+   "stations": 11,
+   "span_m": 27.511006179978573,
+   "images": 160,
+   "frames": 80,
+   "full_res_fraction": 0.1625,
+   "observations": 635672,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.012125170852798814,
+    "pitch_mdeg": -0.0018515549420337982,
+    "roll_mdeg": 0.0027206321937824707
+   },
+   "rotation_pp": {
+    "yaw_mdeg": 3.2796721884181963,
+    "pitch_mdeg": 3.219215772593536,
+    "roll_mdeg": 12.351312417807936,
+    "sd_yaw_mdeg": 0.10043051777311947,
+    "sd_pitch_mdeg": 0.04725030817283401,
+    "sd_roll_mdeg": 0.06875928672729203,
+    "baseline_m": 0.4243630779811812,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.089121176677054,
+    "vparallax_inf_px": -10.435198876181403,
+    "variance_factor": 0.44733949795272915
+   },
+   "rotation": {
+    "yaw_mdeg": 6.735464714345878,
+    "pitch_mdeg": 15.23302183937087,
+    "roll_mdeg": 12.721364904309828,
+    "sd_yaw_mdeg": 0.6128838465329297,
+    "sd_pitch_mdeg": 0.4496640654826767,
+    "sd_roll_mdeg": 0.08065729751527831,
+    "baseline_m": 0.4243630779811813,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.09298220332903,
+    "vparallax_inf_px": -10.410010628517057,
+    "variance_factor": 0.4469203257766723
+   },
+   "full": {
+    "yaw_mdeg": 12.872112008492426,
+    "pitch_mdeg": 1.9220074161498766,
+    "roll_mdeg": 13.26530217353493,
+    "sd_yaw_mdeg": 0.6324277336885841,
+    "sd_pitch_mdeg": 0.5754141260578071,
+    "sd_roll_mdeg": 0.08259983850928491,
+    "baseline_m": 0.42445499486480587,
+    "sd_baseline_mm": 3.971285628120928,
+    "disparity_inf_px": 16.092948482005795,
+    "vparallax_inf_px": -10.506793213297215,
+    "variance_factor": 0.44627033161547597
+   },
+   "bins": [
+    {
+     "T_median_degC": -20.78210397626917,
+     "frames": 38,
+     "yaw_mdeg": 3.3999600784053996,
+     "sd_yaw_mdeg": 0.08119321494735118,
+     "pitch_mdeg": 14.65847643357264,
+     "sd_pitch_mdeg": 0.0524862614321034
+    },
+    {
+     "T_median_degC": -35.90237122693182,
+     "frames": 13,
+     "yaw_mdeg": 20.580326689822403,
+     "sd_yaw_mdeg": 0.1169519477540423,
+     "pitch_mdeg": 11.982750983232904,
+     "sd_pitch_mdeg": 0.13423042489190165
+    },
+    {
+     "T_median_degC": null,
+     "frames": 0,
+     "yaw_mdeg": 5.760769019485273,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": 14.799144201179077,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -14.82,
+     "frames": 29,
+     "yaw_mdeg": -4.589938374526465,
+     "sd_yaw_mdeg": 0.1001735259171493,
+     "pitch_mdeg": 14.985105622096045,
+     "sd_pitch_mdeg": 0.05122042879626445
+    }
+   ]
+  },
+  {
+   "scape": "Pico Turquino",
+   "sol": 1309.0,
+   "sol_range": [
+    1307,
+    1322
+   ],
+   "T_degC": -17.9245,
+   "dT_LR_degC": null,
+   "stations": 7,
+   "span_m": 14.41363503960233,
+   "images": 81,
+   "frames": 41,
+   "full_res_fraction": 0.09876543209876543,
+   "observations": 409497,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.009224709267020246,
+    "pitch_mdeg": 0.0024634871180706794,
+    "roll_mdeg": 0.0015425851946605149
+   },
+   "rotation_pp": {
+    "yaw_mdeg": 3.04866784674362,
+    "pitch_mdeg": 3.7920953378235356,
+    "roll_mdeg": 12.087983714877081,
+    "sd_yaw_mdeg": 0.16349555537413504,
+    "sd_pitch_mdeg": 0.04992329743889217,
+    "sd_roll_mdeg": 0.0771697324527752,
+    "baseline_m": 0.42436293678257925,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.101251121092446,
+    "vparallax_inf_px": -10.404618695268482,
+    "variance_factor": 0.31047692909638247
+   },
+   "rotation": {
+    "yaw_mdeg": -5.135857398387978,
+    "pitch_mdeg": 5.9212530562738905,
+    "roll_mdeg": 11.191299946983875,
+    "sd_yaw_mdeg": 0.7371545695711424,
+    "sd_pitch_mdeg": 0.4984908910989916,
+    "sd_roll_mdeg": 0.0999442613637989,
+    "baseline_m": 0.4243629367825792,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.070575349232058,
+    "vparallax_inf_px": -10.403860026972325,
+    "variance_factor": 0.3102409240681124
+   },
+   "full": {
+    "yaw_mdeg": -1.735177918821909,
+    "pitch_mdeg": 1.4495112424837706,
+    "roll_mdeg": 11.308896439326695,
+    "sd_yaw_mdeg": 0.7691695006722133,
+    "sd_pitch_mdeg": 0.6090834610848266,
+    "sd_roll_mdeg": 0.10276733481536467,
+    "baseline_m": 0.4252299946488462,
+    "sd_baseline_mm": 6.693700200102618,
+    "disparity_inf_px": 16.057679355467826,
+    "vparallax_inf_px": -10.397584381942124,
+    "variance_factor": 0.3099764662616929
+   },
+   "bins": [
+    {
+     "T_median_degC": -15.7796,
+     "frames": 28,
+     "yaw_mdeg": 12.604175079449554,
+     "sd_yaw_mdeg": 0.1258642183696618,
+     "pitch_mdeg": 1.5426700157158604,
+     "sd_pitch_mdeg": 0.04282047996716473
+    },
+    {
+     "T_median_degC": -38.7037,
+     "frames": 6,
+     "yaw_mdeg": 39.11933191012492,
+     "sd_yaw_mdeg": 0.15845463451234298,
+     "pitch_mdeg": -0.4184634818990418,
+     "sd_pitch_mdeg": 0.25056963133974225
+    },
+    {
+     "T_median_degC": null,
+     "frames": 0,
+     "yaw_mdeg": 28.84994989077459,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": 1.7140952188135166,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -19.9337,
+     "frames": 7,
+     "yaw_mdeg": 19.257915040427275,
+     "sd_yaw_mdeg": 0.15620241103455235,
+     "pitch_mdeg": 2.132106223137701,
+     "sd_pitch_mdeg": 0.07578830418734689
+    }
+   ]
+  },
+  {
+   "scape": "Rio Chiquito",
+   "sol": 1333.0,
+   "sol_range": [
+    1332,
+    1334
+   ],
+   "T_degC": -21.4382,
+   "dT_LR_degC": 0.342329863713168,
+   "stations": 2,
+   "span_m": 3.760402351344672,
+   "images": 38,
+   "frames": 19,
+   "full_res_fraction": 0.10526315789473684,
+   "observations": 318117,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.0030411006418635572,
+    "pitch_mdeg": -0.01085342435560784,
+    "roll_mdeg": 0.008085593313273149
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -6.607197841795131,
+    "pitch_mdeg": 4.396082708253269,
+    "roll_mdeg": 10.689305504455847,
+    "sd_yaw_mdeg": 0.19705706375207782,
+    "sd_pitch_mdeg": 0.049333063125145876,
+    "sd_roll_mdeg": 0.08369923301501299,
+    "baseline_m": 0.42436280659814407,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.597653507275027,
+    "vparallax_inf_px": -10.37726344025964,
+    "variance_factor": 0.2453151544640271
+   },
+   "rotation": {
+    "yaw_mdeg": -4.667255046829348,
+    "pitch_mdeg": 0.9673356915307697,
+    "roll_mdeg": 10.76175127265573,
+    "sd_yaw_mdeg": 0.7528092189708628,
+    "sd_pitch_mdeg": 0.5128080915736382,
+    "sd_roll_mdeg": 0.11612277728286341,
+    "baseline_m": 0.42436280659814407,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.6060566347046,
+    "vparallax_inf_px": -10.379309052949793,
+    "variance_factor": 0.2452630533091837
+   },
+   "full": {
+    "yaw_mdeg": 2.2422143590486847,
+    "pitch_mdeg": -26.71866692035988,
+    "roll_mdeg": 11.835605093657833,
+    "sd_yaw_mdeg": 0.7714913480618207,
+    "sd_pitch_mdeg": 0.7592929249596232,
+    "sd_roll_mdeg": 0.11787034687129005,
+    "baseline_m": 0.4242669479505574,
+    "sd_baseline_mm": 25.60858667868579,
+    "disparity_inf_px": 16.628176955421623,
+    "vparallax_inf_px": -10.839126939634298,
+    "variance_factor": 0.24348953305635063
+   },
+   "bins": [
+    {
+     "T_median_degC": -15.557106644250936,
+     "frames": 8,
+     "yaw_mdeg": -9.966563436067036,
+     "sd_yaw_mdeg": 0.16742611769105037,
+     "pitch_mdeg": 0.6338838740147273,
+     "sd_pitch_mdeg": 0.06789577733538013
+    },
+    {
+     "T_median_degC": null,
+     "frames": 0,
+     "yaw_mdeg": -4.714653773861197,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": 0.988851618288829,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -23.219873412085228,
+     "frames": 11,
+     "yaw_mdeg": 0.4808310982291992,
+     "sd_yaw_mdeg": 0.17007036231309453,
+     "pitch_mdeg": 0.9620546546284642,
+     "sd_pitch_mdeg": 0.0418086592386832
+    }
+   ]
+  },
+  {
+   "scape": "South Arm",
+   "sol": 1407.0,
+   "sol_range": [
+    1359,
+    1411
+   ],
+   "T_degC": -22.153270372141805,
+   "dT_LR_degC": 0.546909736876259,
+   "stations": 6,
+   "span_m": 8.065313340244282,
+   "images": 104,
+   "frames": 52,
+   "full_res_fraction": 0.09615384615384616,
+   "observations": 631464,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.013551308354572618,
+    "pitch_mdeg": 3.7049845974353616e-05,
+    "roll_mdeg": -0.0002389932644147407
+   },
+   "rotation_pp": {
+    "yaw_mdeg": 2.525004187612995,
+    "pitch_mdeg": 3.641716557322221,
+    "roll_mdeg": 12.197925996304297,
+    "sd_yaw_mdeg": 0.08965761035029138,
+    "sd_pitch_mdeg": 0.035500563383289455,
+    "sd_roll_mdeg": 0.05635736408657594,
+    "baseline_m": 0.4243628375478185,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.127933159715212,
+    "vparallax_inf_px": -10.415383466112416,
+    "variance_factor": 0.2561033858857056
+   },
+   "rotation": {
+    "yaw_mdeg": -8.21346110410474,
+    "pitch_mdeg": 7.86903158727585,
+    "roll_mdeg": 11.53958674817428,
+    "sd_yaw_mdeg": 0.46899599369098927,
+    "sd_pitch_mdeg": 0.3378095646521993,
+    "sd_roll_mdeg": 0.06469452221913044,
+    "baseline_m": 0.42436283754781856,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.123487438140728,
+    "vparallax_inf_px": -10.411736693212333,
+    "variance_factor": 0.25587269112617705
+   },
+   "full": {
+    "yaw_mdeg": -3.1601531082650345,
+    "pitch_mdeg": -6.983878696147969,
+    "roll_mdeg": 12.17210521597866,
+    "sd_yaw_mdeg": 0.48152936795661255,
+    "sd_pitch_mdeg": 0.46335294490849815,
+    "sd_roll_mdeg": 0.06618860767777207,
+    "baseline_m": 0.42433209411402967,
+    "sd_baseline_mm": 11.325107097389667,
+    "disparity_inf_px": 16.13140778279785,
+    "vparallax_inf_px": -10.58515038728001,
+    "variance_factor": 0.255268434331555
+   },
+   "bins": [
+    {
+     "T_median_degC": -21.72989134283498,
+     "frames": 47,
+     "yaw_mdeg": -9.411072417752196,
+     "sd_yaw_mdeg": 0.06713409719150741,
+     "pitch_mdeg": 7.918008598743514,
+     "sd_pitch_mdeg": 0.026339113374159104
+    },
+    {
+     "T_median_degC": null,
+     "frames": 0,
+     "yaw_mdeg": -8.43506241048126,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": 8.015473300387779,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -47.017404564458026,
+     "frames": 5,
+     "yaw_mdeg": 19.811745496998686,
+     "sd_yaw_mdeg": 0.2627563951012085,
+     "pitch_mdeg": 9.102102580947884,
+     "sd_pitch_mdeg": 0.33464202111380403
+    }
+   ]
+  },
+  {
+   "scape": "Bell Island",
+   "sol": 1461.0,
+   "sol_range": [
+    1451,
+    1501
+   ],
+   "T_degC": -22.3957,
+   "dT_LR_degC": 1.165446701910053,
+   "stations": 8,
+   "span_m": 15.142889670010097,
+   "images": 187,
+   "frames": 109,
+   "full_res_fraction": 0.0962566844919786,
+   "observations": 508180,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.0171120252700085,
+    "pitch_mdeg": 0.008092899667661746,
+    "roll_mdeg": -0.0006707046806150196
+   },
+   "rotation_pp": {
+    "yaw_mdeg": 1.9258634467387665,
+    "pitch_mdeg": 4.648295389269553,
+    "roll_mdeg": 13.806333775169852,
+    "sd_yaw_mdeg": 0.12708643525291652,
+    "sd_pitch_mdeg": 0.04688859776179516,
+    "sd_roll_mdeg": 0.0736240749754514,
+    "baseline_m": 0.42436295061179014,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.158931949668386,
+    "vparallax_inf_px": -10.363435075006919,
+    "variance_factor": 0.37213129544433826
+   },
+   "rotation": {
+    "yaw_mdeg": -7.666731304628844,
+    "pitch_mdeg": 10.418260926540517,
+    "roll_mdeg": 13.491635643258196,
+    "sd_yaw_mdeg": 0.6933304150761285,
+    "sd_pitch_mdeg": 0.48683469732871093,
+    "sd_roll_mdeg": 0.08107967057492992,
+    "baseline_m": 0.42436295061179014,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.147245485560234,
+    "vparallax_inf_px": -10.356525743054362,
+    "variance_factor": 0.37187405974934207
+   },
+   "full": {
+    "yaw_mdeg": -3.3656732467009314,
+    "pitch_mdeg": -2.80356872200337,
+    "roll_mdeg": 13.860176244409201,
+    "sd_yaw_mdeg": 0.7087821633459404,
+    "sd_pitch_mdeg": 0.6179773106300083,
+    "sd_roll_mdeg": 0.08176033995894276,
+    "baseline_m": 0.4243858863538518,
+    "sd_baseline_mm": 4.210865816862477,
+    "disparity_inf_px": 16.138406514216513,
+    "vparallax_inf_px": -10.520814714505605,
+    "variance_factor": 0.3712154821448372
+   },
+   "bins": [
+    {
+     "T_median_degC": -32.95560347631578,
+     "frames": 18,
+     "yaw_mdeg": 8.506730296399564,
+     "sd_yaw_mdeg": 0.22894065095792895,
+     "pitch_mdeg": 11.746843559984006,
+     "sd_pitch_mdeg": 0.1203277187632621
+    },
+    {
+     "T_median_degC": -17.6577350940206,
+     "frames": 8,
+     "yaw_mdeg": -10.639995674819259,
+     "sd_yaw_mdeg": 0.27186461740553264,
+     "pitch_mdeg": 10.114133773208136,
+     "sd_pitch_mdeg": 0.14307085532366298
+    },
+    {
+     "T_median_degC": null,
+     "frames": 0,
+     "yaw_mdeg": -6.929728682068491,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": 9.739145918532946,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -22.06882740675282,
+     "frames": 83,
+     "yaw_mdeg": -8.870125453556343,
+     "sd_yaw_mdeg": 0.10172316707282174,
+     "pitch_mdeg": 9.417089892881183,
+     "sd_pitch_mdeg": 0.03801975612808596
+    }
+   ]
+  },
+  {
+   "scape": "Taylorfjellet",
+   "sol": 1627.0,
+   "sol_range": [
+    1601,
+    1644
+   ],
+   "T_degC": -10.9781,
+   "dT_LR_degC": 1.0722190632206043,
+   "stations": 11,
+   "span_m": 37.999263406304514,
+   "images": 245,
+   "frames": 125,
+   "full_res_fraction": 0.31020408163265306,
+   "observations": 546441,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.012012356953136422,
+    "pitch_mdeg": -0.0006309165870681484,
+    "roll_mdeg": 0.0009117138703515532
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -11.009931261262775,
+    "pitch_mdeg": 5.038046384965993,
+    "roll_mdeg": 13.663320320848015,
+    "sd_yaw_mdeg": 0.1195114499934878,
+    "sd_pitch_mdeg": 0.04063369779545927,
+    "sd_roll_mdeg": 0.06361429974153225,
+    "baseline_m": 0.42436282771448885,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.82438616202262,
+    "vparallax_inf_px": -10.346288718067171,
+    "variance_factor": 0.4432798197361169
+   },
+   "rotation": {
+    "yaw_mdeg": -7.578847190661954,
+    "pitch_mdeg": 8.144738194216215,
+    "roll_mdeg": 13.57900275010426,
+    "sd_yaw_mdeg": 0.6072636236341185,
+    "sd_pitch_mdeg": 0.4140330484377444,
+    "sd_roll_mdeg": 0.07300628278680835,
+    "baseline_m": 0.42436282771448885,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.827427807906133,
+    "vparallax_inf_px": -10.340746690417745,
+    "variance_factor": 0.4432061920837095
+   },
+   "full": {
+    "yaw_mdeg": -5.027838800500769,
+    "pitch_mdeg": 0.2986667997805399,
+    "roll_mdeg": 13.970179523085628,
+    "sd_yaw_mdeg": 0.6271010512542752,
+    "sd_pitch_mdeg": 0.5447856008557118,
+    "sd_roll_mdeg": 0.07410892581802775,
+    "baseline_m": 0.42440157985757304,
+    "sd_baseline_mm": 1.9836933483358177,
+    "disparity_inf_px": 16.83324295207376,
+    "vparallax_inf_px": -10.493123819275752,
+    "variance_factor": 0.4426781659044212
+   },
+   "bins": [
+    {
+     "T_median_degC": -7.873454273236485,
+     "frames": 34,
+     "yaw_mdeg": -11.938474428593125,
+     "sd_yaw_mdeg": 0.12456848376097643,
+     "pitch_mdeg": 8.841307695653228,
+     "sd_pitch_mdeg": 0.06489276797694324
+    },
+    {
+     "T_median_degC": -21.874874176459592,
+     "frames": 15,
+     "yaw_mdeg": 6.183099397500039,
+     "sd_yaw_mdeg": 0.2206614879519616,
+     "pitch_mdeg": 6.505716528530688,
+     "sd_pitch_mdeg": 0.15081443220324667
+    },
+    {
+     "T_median_degC": -10.705473896863534,
+     "frames": 72,
+     "yaw_mdeg": -7.105048053487917,
+     "sd_yaw_mdeg": 0.09299861321699845,
+     "pitch_mdeg": 8.082893962999746,
+     "sd_pitch_mdeg": 0.03435177740123718
+    },
+    {
+     "T_median_degC": null,
+     "frames": 7,
+     "yaw_mdeg": -6.5296723019864045,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": 8.041707280643692,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -31.513642180907098,
+     "frames": 4,
+     "yaw_mdeg": 22.704873856841367,
+     "sd_yaw_mdeg": 0.5586797964796094,
+     "pitch_mdeg": 8.101555266971454,
+     "sd_pitch_mdeg": 0.7414075724363481
+    }
+   ]
+  },
+  {
+   "scape": "Olifants",
+   "sol": 1784.0,
+   "sol_range": [
+    1775,
+    1813
+   ],
+   "T_degC": -18.063694556593077,
+   "dT_LR_degC": 2.4635999999999996,
+   "stations": 15,
+   "span_m": 39.20896451244819,
+   "images": 210,
+   "frames": 105,
+   "full_res_fraction": 0.13333333333333333,
+   "observations": 483194,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.011376318554437657,
+    "pitch_mdeg": 0.0076791659428259275,
+    "roll_mdeg": -0.0001949260006940458
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -0.5016133043948613,
+    "pitch_mdeg": 7.156510328292139,
+    "roll_mdeg": 17.707553268273017,
+    "sd_yaw_mdeg": 0.1491454259757858,
+    "sd_pitch_mdeg": 0.055271313593333225,
+    "sd_roll_mdeg": 0.07917377320377443,
+    "baseline_m": 0.42436299621412615,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.284007700841812,
+    "vparallax_inf_px": -10.234601448377816,
+    "variance_factor": 0.41368438099667565
+   },
+   "rotation": {
+    "yaw_mdeg": 5.02726189209658,
+    "pitch_mdeg": 10.64717540747427,
+    "roll_mdeg": 17.593820102818007,
+    "sd_yaw_mdeg": 0.7906446828022821,
+    "sd_pitch_mdeg": 0.5369703883338529,
+    "sd_roll_mdeg": 0.08980204908046563,
+    "baseline_m": 0.4243629962141261,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.285230109189797,
+    "vparallax_inf_px": -10.228437716475582,
+    "variance_factor": 0.413441821507917
+   },
+   "full": {
+    "yaw_mdeg": 6.976629508466938,
+    "pitch_mdeg": 4.9309781527900025,
+    "roll_mdeg": 17.81844954654902,
+    "sd_yaw_mdeg": 0.8164700350437123,
+    "sd_pitch_mdeg": 0.72389823107145,
+    "sd_roll_mdeg": 0.09139245181881198,
+    "baseline_m": 0.42428220534996247,
+    "sd_baseline_mm": 2.1647315975450017,
+    "disparity_inf_px": 16.285686358356543,
+    "vparallax_inf_px": -10.327566972331624,
+    "variance_factor": 0.4133170784149891
+   },
+   "bins": [
+    {
+     "T_median_degC": -23.302344122082623,
+     "frames": 27,
+     "yaw_mdeg": 10.38728506545174,
+     "sd_yaw_mdeg": 0.13923775908835476,
+     "pitch_mdeg": 11.391606683463419,
+     "sd_pitch_mdeg": 0.0756445898851911
+    },
+    {
+     "T_median_degC": -29.375757773564285,
+     "frames": 5,
+     "yaw_mdeg": 17.071611343380816,
+     "sd_yaw_mdeg": 0.3326096853409287,
+     "pitch_mdeg": 12.739420847982704,
+     "sd_pitch_mdeg": 0.23182019679119842
+    },
+    {
+     "T_median_degC": null,
+     "frames": 0,
+     "yaw_mdeg": 4.482306467561815,
+     "sd_yaw_mdeg": null,
+     "pitch_mdeg": 10.672159948204651,
+     "sd_pitch_mdeg": null
+    },
+    {
+     "T_median_degC": -15.590631976642314,
+     "frames": 73,
+     "yaw_mdeg": 1.6615709098731821,
+     "sd_yaw_mdeg": 0.10739966532807736,
+     "pitch_mdeg": 10.42420402380606,
+     "sd_pitch_mdeg": 0.047706989318646004
+    }
+   ]
+  },
+  {
+   "scape": "Marble Mountain",
+   "sol": 1972.0,
+   "sol_range": [
+    1965,
+    1979
+   ],
+   "T_degC": -16.163218579503365,
+   "dT_LR_degC": 1.5053830938768833,
+   "stations": 4,
+   "span_m": 20.87631249142046,
+   "images": 63,
+   "frames": 41,
+   "full_res_fraction": 0.2222222222222222,
+   "observations": 378814,
+   "reference_offset_mdeg": {
+    "yaw_mdeg": -0.0011844807040679597,
+    "pitch_mdeg": -0.0062462397720485065,
+    "roll_mdeg": 0.0034040329303682165
+   },
+   "rotation_pp": {
+    "yaw_mdeg": -7.324994612585447,
+    "pitch_mdeg": 8.634761665761966,
+    "roll_mdeg": 13.991303065675448,
+    "sd_yaw_mdeg": 0.1771224271039822,
+    "sd_pitch_mdeg": 0.048723399415124095,
+    "sd_roll_mdeg": 0.07435943421477,
+    "baseline_m": 0.42436313577328977,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.6348332557327,
+    "vparallax_inf_px": -10.158400325675075,
+    "variance_factor": 0.36684153655216295
+   },
+   "rotation": {
+    "yaw_mdeg": -12.284049463328579,
+    "pitch_mdeg": 2.610850366607363,
+    "roll_mdeg": 14.4103533542756,
+    "sd_yaw_mdeg": 0.7300466749799415,
+    "sd_pitch_mdeg": 0.4807422454852673,
+    "sd_roll_mdeg": 0.08841918162645743,
+    "baseline_m": 0.42436313577328977,
+    "sd_baseline_mm": null,
+    "disparity_inf_px": 16.622084847318092,
+    "vparallax_inf_px": -10.16863053005568,
+    "variance_factor": 0.36646861676893994
+   },
+   "full": {
+    "yaw_mdeg": -7.8579542944650225,
+    "pitch_mdeg": -10.157490267279217,
+    "roll_mdeg": 14.775886352618276,
+    "sd_yaw_mdeg": 0.7478437428075875,
+    "sd_pitch_mdeg": 0.6220044054478877,
+    "sd_roll_mdeg": 0.08906137585508014,
+    "baseline_m": 0.4244523542029548,
+    "sd_baseline_mm": 12.58491188667218,
+    "disparity_inf_px": 16.623896204284847,
+    "vparallax_inf_px": -10.335567517964819,
+    "variance_factor": 0.36563283968093724
+   },
+   "bins": []
+  }
+ ],
+ "fits": {
+  "v0p35 (15 blocks)": {
+   "sol0": 1083.9666666666667,
+   "T_mean_degC": -17.831677499490784,
+   "blocks": 15,
+   "pitch_mdeg_per_sol": 0.004921921919966107,
+   "pitch_se": 0.000427893551755233,
+   "pitch_p": 1.2788433606088579e-30,
+   "pitch_T_mdeg_per_degC": 0.050364296694869706,
+   "pitch_tau_mdeg": 0.8410949220506921,
+   "yaw_mdeg_per_sol": 0.004508444024600444,
+   "yaw_se": 0.0019321042181682686,
+   "yaw_p": 0.019625206207423435,
+   "yaw_T_mdeg_per_degC": -1.147847769461061,
+   "yaw_tau_mdeg": 3.7987650679111002,
+   "roll_mdeg_per_sol": -0.00614104682260508,
+   "roll_se": 0.0013924427470109286,
+   "roll_p": 1.0324237619492628e-05,
+   "roll_T_mdeg_per_degC": 0.37907736943425396,
+   "roll_tau_mdeg": 2.740382717098316
+  },
+  "all usable (without Whale Mountain)": {
+   "sol0": 927.775,
+   "T_mean_degC": -17.946440958414247,
+   "blocks": 20,
+   "pitch_mdeg_per_sol": 0.006293232733638746,
+   "pitch_se": 0.0006169797972794301,
+   "pitch_p": 1.9814415768867655e-24,
+   "pitch_T_mdeg_per_degC": 0.16293603131151072,
+   "pitch_tau_mdeg": 1.5566131150517901,
+   "yaw_mdeg_per_sol": 0.003891983440320122,
+   "yaw_se": 0.0015951849167681377,
+   "yaw_p": 0.014694087659859587,
+   "yaw_T_mdeg_per_degC": -1.2769975007251277,
+   "yaw_tau_mdeg": 4.0208380196731035,
+   "roll_mdeg_per_sol": -0.0060976793483485635,
+   "roll_se": 0.001092028962078042,
+   "roll_p": 2.353093526185871e-08,
+   "roll_T_mdeg_per_degC": 0.337077010721578,
+   "roll_tau_mdeg": 2.7554432845580585
+  },
+  "without Butler Landing (weak span) and Whale": {
+   "sol0": 975.9736842105264,
+   "T_mean_degC": -17.79050672759659,
+   "blocks": 19,
+   "pitch_mdeg_per_sol": 0.005929879988022039,
+   "pitch_se": 0.0006451142964744372,
+   "pitch_p": 3.856631359868333e-20,
+   "pitch_T_mdeg_per_degC": 0.13416572036434138,
+   "pitch_tau_mdeg": 1.5260499266072391,
+   "yaw_mdeg_per_sol": 0.00337862101636741,
+   "yaw_se": 0.001702993830892744,
+   "yaw_p": 0.04726361352862159,
+   "yaw_T_mdeg_per_degC": -1.3176260465130472,
+   "yaw_tau_mdeg": 4.026281062880241,
+   "roll_mdeg_per_sol": -0.005676000252742591,
+   "roll_se": 0.0011619111291465065,
+   "roll_p": 1.033997686111702e-06,
+   "roll_T_mdeg_per_degC": 0.3704658870439702,
+   "roll_tau_mdeg": 2.748819964880933
+  },
+  "without Butler Landing and Van Zyl (the two earliest)": {
+   "sol0": 1026.6944444444443,
+   "T_mean_degC": -17.6005015457964,
+   "blocks": 18,
+   "pitch_mdeg_per_sol": 0.005002055007143382,
+   "pitch_se": 0.00034404853979075865,
+   "pitch_p": 6.878181014184117e-48,
+   "pitch_T_mdeg_per_degC": 0.046353495689922496,
+   "pitch_tau_mdeg": 0.7490201539713771,
+   "yaw_mdeg_per_sol": 0.0051191888549125915,
+   "yaw_se": 0.0016920789930958545,
+   "yaw_p": 0.002483175678381828,
+   "yaw_T_mdeg_per_degC": -1.1529703486784042,
+   "yaw_tau_mdeg": 3.6863655856309867,
+   "roll_mdeg_per_sol": -0.006140624057385399,
+   "roll_se": 0.001265582056520268,
+   "roll_p": 1.2221292151603399e-06,
+   "roll_T_mdeg_per_degC": 0.32648942171549283,
+   "roll_tau_mdeg": 2.7596659874071405
+  },
+  "all (with Whale Mountain)": {
+   "sol0": 912.5952380952381,
+   "T_mean_degC": -17.96061519848976,
+   "blocks": 21,
+   "pitch_mdeg_per_sol": 0.006239023570655699,
+   "pitch_se": 0.0006049713962571831,
+   "pitch_p": 6.159861970414012e-25,
+   "pitch_T_mdeg_per_degC": 0.16282148357118295,
+   "pitch_tau_mdeg": 1.5372769289088606,
+   "yaw_mdeg_per_sol": 0.003954759466643527,
+   "yaw_se": 0.0015637458028241995,
+   "yaw_p": 0.011437837129536228,
+   "yaw_T_mdeg_per_degC": -1.276858897486637,
+   "yaw_tau_mdeg": 3.9699404836602805,
+   "roll_mdeg_per_sol": -0.006296540003285184,
+   "roll_se": 0.0011207646224552724,
+   "roll_p": 1.9309638822712106e-08,
+   "roll_T_mdeg_per_degC": 0.3366632566516103,
+   "roll_tau_mdeg": 2.8483772998419363
+  },
+  "without Three Forks South (overlaps Three Forks)": {
+   "sol0": 941.3421052631579,
+   "T_mean_degC": -18.128675417854293,
+   "blocks": 19,
+   "pitch_mdeg_per_sol": 0.006316420033592228,
+   "pitch_se": 0.0006593411320427244,
+   "pitch_p": 9.714190572332713e-22,
+   "pitch_T_mdeg_per_degC": 0.1554838673583572,
+   "pitch_tau_mdeg": 1.6456241530387492,
+   "yaw_mdeg_per_sol": 0.003898479253441575,
+   "yaw_se": 0.001697268859219181,
+   "yaw_p": 0.021623721600921436,
+   "yaw_T_mdeg_per_degC": -1.2789771109411252,
+   "yaw_tau_mdeg": 4.232457299455458,
+   "roll_mdeg_per_sol": -0.006294288255370148,
+   "roll_se": 0.0010862223540855952,
+   "roll_p": 6.846009452486096e-09,
+   "roll_T_mdeg_per_degC": 0.4004451514198797,
+   "roll_tau_mdeg": 2.711157821009081
+  },
+  "without Seitah North (pose-prior FAIL) and Whale": {
+   "sol0": 963.8684210526316,
+   "T_mean_degC": -18.000181056071835,
+   "blocks": 19,
+   "pitch_mdeg_per_sol": 0.006401106662669671,
+   "pitch_se": 0.0006629870416133396,
+   "pitch_p": 4.683882261491368e-22,
+   "pitch_T_mdeg_per_degC": 0.15546595246684128,
+   "pitch_tau_mdeg": 1.600583811483844,
+   "yaw_mdeg_per_sol": 0.0035855643514924977,
+   "yaw_se": 0.0016804836547710457,
+   "yaw_p": 0.03287142224510486,
+   "yaw_T_mdeg_per_degC": -1.2558315577799866,
+   "yaw_tau_mdeg": 4.052732168661469,
+   "roll_mdeg_per_sol": -0.005992553057713509,
+   "roll_se": 0.001167161141382531,
+   "roll_p": 2.8319914602876314e-07,
+   "roll_T_mdeg_per_degC": 0.32979115341920184,
+   "roll_tau_mdeg": 2.8180457783041715
+  }
+ },
+ "robustness": {
+  "mode": "rotation_pp",
+  "blocks": [
+   "Airey Hill",
+   "Bell Island",
+   "Belva Crater",
+   "Bunsen Peak",
+   "Butler Landing",
+   "Marble Mountain",
+   "Olifants",
+   "Pearce Canyon",
+   "Pico Turquino",
+   "Rio Chiquito",
+   "Rochette",
+   "Rockytop",
+   "Seitah North",
+   "Sid",
+   "South Arm",
+   "Taylorfjellet",
+   "Three Forks",
+   "Three Forks South",
+   "Tuxedo Park",
+   "Van Zyl"
+  ],
+  "excluded": [],
+  "all": {
+   "sol0": 927.775,
+   "T_mean_degC": -17.946440958414247,
+   "blocks": 20,
+   "pitch_mdeg_per_sol": 0.006293232733638746,
+   "pitch_se": 0.0006169797972794301,
+   "pitch_p": 1.9814415768867655e-24,
+   "pitch_T_mdeg_per_degC": 0.16293603131151072,
+   "pitch_tau_mdeg": 1.5566131150517901,
+   "yaw_mdeg_per_sol": 0.003891983440320122,
+   "yaw_se": 0.0015951849167681377,
+   "yaw_p": 0.014694087659859587,
+   "yaw_T_mdeg_per_degC": -1.2769975007251277,
+   "yaw_tau_mdeg": 4.0208380196731035,
+   "roll_mdeg_per_sol": -0.0060976793483485635,
+   "roll_se": 0.001092028962078042,
+   "roll_p": 2.353093526185871e-08,
+   "roll_T_mdeg_per_degC": 0.337077010721578,
+   "roll_tau_mdeg": 2.7554432845580585
+  },
+  "sol_only": {
+   "pitch": {
+    "slope": 0.0064345632170923,
+    "se": 0.0006204757880990714,
+    "p": 3.3821426452256604e-25,
+    "tau_mdeg": 1.5837776949558018
+   },
+   "yaw": {
+    "slope": 0.002787666707722947,
+    "se": 0.002379997126955227,
+    "p": 0.24148225107072152,
+    "tau_mdeg": 6.074062092354164
+   },
+   "roll": {
+    "slope": -0.005805309577919361,
+    "se": 0.0011254595687506465,
+    "p": 2.4937776318950256e-07,
+    "tau_mdeg": 2.873138503364061
+   }
+  },
+  "T_only": {
+   "pitch": {
+    "slope": 0.3299515496506804,
+    "se": 0.25892818172512083,
+    "p": 0.2025579816606512,
+    "tau_mdeg": 3.781430777885738
+   },
+   "yaw": {
+    "slope": -1.1741386713074717,
+    "se": 0.3049410394399397,
+    "p": 0.00011793503129910472,
+    "tau_mdeg": 4.450099732581278
+   },
+   "roll": {
+    "slope": 0.17531026999170535,
+    "se": 0.29413279366986345,
+    "p": 0.5511590443530531,
+    "tau_mdeg": 4.295204637728372
+   }
+  },
+  "loo_prediction": {
+   "pitch": {
+    "one rig": {
+     "rms_mdeg": 4.193065790151304,
+     "residuals": {
+      "Airey Hill": 1.226894654245793,
+      "Bell Island": 2.986723991277648,
+      "Belva Crater": 0.5161845200260615,
+      "Bunsen Peak": 1.2770942624860202,
+      "Butler Landing": -8.903984105300626,
+      "Marble Mountain": 7.182990044730983,
+      "Olifants": 5.626928389545953,
+      "Pearce Canyon": 1.4824299171083986,
+      "Pico Turquino": 2.0854586284560277,
+      "Rio Chiquito": 2.7212345672742337,
+      "Rochette": -4.72796308649987,
+      "Rockytop": -0.9919437339253379,
+      "Seitah North": -3.489863133670884,
+      "Sid": -0.9397440007701229,
+      "South Arm": 1.927176485764545,
+      "Taylorfjellet": 3.3969950126530577,
+      "Three Forks": -0.6426650836426469,
+      "Three Forks South": -0.7257318257330252,
+      "Tuxedo Park": 0.47820850622412814,
+      "Van Zyl": -10.488113660898975
+     }
+    },
+    "temperature": {
+     "rms_mdeg": 4.21859574326384,
+     "residuals": {
+      "Airey Hill": -0.5157583110070232,
+      "Bell Island": 5.022687731984272,
+      "Belva Crater": 1.702660469480029,
+      "Bunsen Peak": 0.28144795897229136,
+      "Butler Landing": -8.23143278659599,
+      "Marble Mountain": 6.6682974083131725,
+      "Olifants": 5.668047366204814,
+      "Pearce Canyon": 2.576956570033877,
+      "Pico Turquino": 2.0778526920972187,
+      "Rio Chiquito": 4.185833089251726,
+      "Rochette": -3.9232081557967042,
+      "Rockytop": -0.5455073026718655,
+      "Seitah North": -3.8643674400964203,
+      "Sid": -1.778010639285601,
+      "South Arm": 3.712541810644866,
+      "Taylorfjellet": 1.2845751768180267,
+      "Three Forks": -1.9212831652594051,
+      "Three Forks South": -2.049571291882228,
+      "Tuxedo Park": -0.18276308665844665,
+      "Van Zyl": -9.873608867291054
+     }
+    },
+    "temperature + sol": {
+     "rms_mdeg": 1.7835553096363121,
+     "residuals": {
+      "Airey Hill": -0.022356393293022414,
+      "Bell Island": 0.261253110118294,
+      "Belva Crater": 2.0420813164809477,
+      "Bunsen Peak": -0.26665507275467215,
+      "Butler Landing": -2.7693148390230307,
+      "Marble Mountain": -0.04921410701898843,
+      "Olifants": -0.028532967357700834,
+      "Pearce Canyon": 0.18619365863702475,
+      "Pico Turquino": -0.4546692208024141,
+      "Rio Chiquito": 0.70713739734411,
+      "Rochette": 0.7822232258990107,
+      "Rockytop": 2.3019099720671363,
+      "Seitah North": 0.963755361052643,
+      "Sid": 2.672966174237481,
+      "South Arm": -0.6152333751411714,
+      "Taylorfjellet": -3.391343931228903,
+      "Three Forks": 0.41123755590503475,
+      "Three Forks South": 0.4214406253087901,
+      "Tuxedo Park": 0.3167109493429834,
+      "Van Zyl": -4.958494240350091
+     }
+    },
+    "temperature + sol + hinge 300": {
+     "rms_mdeg": 1.1043280395337107,
+     "residuals": {
+      "Airey Hill": 0.03488021831514265,
+      "Bell Island": -0.24419398138657655,
+      "Belva Crater": 0.4820010017276437,
+      "Bunsen Peak": -0.3265286474586677,
+      "Butler Landing": 2.415910672800698,
+      "Marble Mountain": 1.929999237431348,
+      "Olifants": 0.9596450188827985,
+      "Pearce Canyon": -0.5548873966115462,
+      "Pico Turquino": -0.5056938782227784,
+      "Rio Chiquito": 0.12481713567716657,
+      "Rochette": 0.8479889398489577,
+      "Rockytop": 0.4252275290221116,
+      "Seitah North": 0.24436233040347166,
+      "Sid": 1.0563696096084858,
+      "South Arm": -1.1961383074452927,
+      "Taylorfjellet": -1.3091043523316648,
+      "Three Forks": -0.41324123237504096,
+      "Three Forks South": -0.4271910858786683,
+      "Tuxedo Park": -0.25029980560370957,
+      "Van Zyl": -2.700634093213303
+     }
+    }
+   },
+   "yaw": {
+    "one rig": {
+     "rms_mdeg": 6.303946042458785,
+     "residuals": {
+      "Airey Hill": -10.065216223287017,
+      "Bell Island": 7.83651578447414,
+      "Belva Crater": -0.01483196337110737,
+      "Bunsen Peak": 3.91101387234641,
+      "Butler Landing": -3.0816843505836458,
+      "Marble Mountain": -1.901413411961526,
+      "Olifants": 5.281214778417542,
+      "Pearce Canyon": 9.26159298804086,
+      "Pico Turquino": 9.018295884363548,
+      "Rio Chiquito": -1.1458251601152556,
+      "Rochette": -0.9700071382614261,
+      "Rockytop": -1.7774081290191353,
+      "Seitah North": -6.669960240372346,
+      "Sid": -8.12494400924749,
+      "South Arm": 8.46722672118541,
+      "Taylorfjellet": -5.780548255028389,
+      "Three Forks": -4.204882274391022,
+      "Three Forks South": -5.605960624176068,
+      "Tuxedo Park": -5.081080469095181,
+      "Van Zyl": 10.616910702292355
+     }
+    },
+    "temperature": {
+     "rms_mdeg": 5.047985701287522,
+     "residuals": {
+      "Airey Hill": -4.6130765085894545,
+      "Bell Island": 2.5881516558738493,
+      "Belva Crater": -4.14553838741322,
+      "Bunsen Peak": 7.817163393537159,
+      "Butler Landing": -7.047633244954316,
+      "Marble Mountain": 0.30439916126763933,
+      "Olifants": 5.133786257801867,
+      "Pearce Canyon": 5.972836371746553,
+      "Pico Turquino": 9.042181876383648,
+      "Rio Chiquito": -5.814755147628005,
+      "Rochette": -4.517481739108695,
+      "Rockytop": -3.4138285790442855,
+      "Seitah North": -5.439287935402122,
+      "Sid": -5.447065596060272,
+      "South Arm": 3.578684773165256,
+      "Taylorfjellet": 3.721537362493704,
+      "Three Forks": -0.04365053930376206,
+      "Three Forks South": -1.4129017418077883,
+      "Tuxedo Park": -2.7928490005355338,
+      "Van Zyl": 6.944971313542544
+     }
+    },
+    "temperature + sol": {
+     "rms_mdeg": 4.721668699903084,
+     "residuals": {
+      "Airey Hill": -4.311824239525249,
+      "Bell Island": -0.39681408717202427,
+      "Belva Crater": -3.9344581523507762,
+      "Bunsen Peak": 7.486893072500569,
+      "Butler Landing": -3.9346206410498246,
+      "Marble Mountain": -4.613799630524702,
+      "Olifants": 1.8387726866905103,
+      "Pearce Canyon": 4.589592679606458,
+      "Pico Turquino": 7.667723817670731,
+      "Rio Chiquito": -8.34353776348645,
+      "Rochette": -1.7820891144628384,
+      "Rockytop": -1.7419995395825287,
+      "Seitah North": -2.733364822873778,
+      "Sid": -3.0057581570319716,
+      "South Arm": 0.9916140489287733,
+      "Taylorfjellet": 1.0059176256939661,
+      "Three Forks": 1.4215602323298793,
+      "Three Forks South": 0.11249157804315679,
+      "Tuxedo Park": -2.485615678972226,
+      "Van Zyl": 11.534930991152745
+     }
+    },
+    "temperature + sol + hinge 300": {
+     "rms_mdeg": 5.43883972266822,
+     "residuals": {
+      "Airey Hill": -4.350334936729519,
+      "Bell Island": -0.05650262009413831,
+      "Belva Crater": -3.0827581894060647,
+      "Bunsen Peak": 7.528647554416434,
+      "Butler Landing": -11.951544506884378,
+      "Marble Mountain": -6.372299311563458,
+      "Olifants": 1.2169872654457325,
+      "Pearce Canyon": 5.164928161275996,
+      "Pico Turquino": 7.702964509053439,
+      "Rio Chiquito": -8.023634423113563,
+      "Rochette": -1.830300388803379,
+      "Rockytop": -0.49473290912116763,
+      "Seitah North": -2.278656783571755,
+      "Sid": -2.016416751107707,
+      "South Arm": 1.3890715173927826,
+      "Taylorfjellet": -0.5594395790287727,
+      "Three Forks": 2.0123431632572277,
+      "Three Forks South": 0.6948427299403903,
+      "Tuxedo Park": -2.1236945240916274,
+      "Van Zyl": 12.126483793943713
+     }
+    }
+   },
+   "roll": {
+    "one rig": {
+     "rms_mdeg": 4.536352741958204,
+     "residuals": {
+      "Airey Hill": 1.9622620938773814,
+      "Bell Island": -4.014166516125487,
+      "Belva Crater": -0.2606845222055014,
+      "Bunsen Peak": -2.017920054308057,
+      "Butler Landing": 7.528680878976655,
+      "Marble Mountain": -3.81946129730923,
+      "Olifants": 0.09238198665639175,
+      "Pearce Canyon": -5.5457712420891205,
+      "Pico Turquino": -5.822938609149199,
+      "Rio Chiquito": -7.29519770329256,
+      "Rochette": 3.3026690568391537,
+      "Rockytop": 7.501918126854438,
+      "Seitah North": 5.6200012828363235,
+      "Sid": 4.985709956868913,
+      "South Arm": -5.707251031107804,
+      "Taylorfjellet": -4.164724081438273,
+      "Three Forks": 3.152775811432832,
+      "Three Forks South": -0.4138814981493475,
+      "Tuxedo Park": 3.5875585792476556,
+      "Van Zyl": 1.3335577870351578
+     }
+    },
+    "temperature": {
+     "rms_mdeg": 4.7643513753202775,
+     "residuals": {
+      "Airey Hill": 1.208027476643931,
+      "Bell Island": -3.5388352821565707,
+      "Belva Crater": 0.34173730065199237,
+      "Bunsen Peak": -2.6637047819116795,
+      "Butler Landing": 8.440869302615813,
+      "Marble Mountain": -4.214662997760231,
+      "Olifants": 0.11402582876710454,
+      "Pearce Canyon": -5.22934441552891,
+      "Pico Turquino": -5.82700221702993,
+      "Rio Chiquito": -7.07659208230085,
+      "Rochette": 3.9528390384130176,
+      "Rockytop": 7.806494732480552,
+      "Seitah North": 5.459658048800634,
+      "Sid": 4.684964966519502,
+      "South Arm": -5.40285222263144,
+      "Taylorfjellet": -7.168508906401733,
+      "Three Forks": 2.681032022215195,
+      "Three Forks South": -1.119035909393201,
+      "Tuxedo Park": 3.296418952168864,
+      "Van Zyl": 2.0433624676414013
+     }
+    },
+    "temperature + sol": {
+     "rms_mdeg": 2.9590357204152333,
+     "residuals": {
+      "Airey Hill": 0.730725074360862,
+      "Bell Island": 1.1860360891461106,
+      "Belva Crater": 0.013420300268030871,
+      "Bunsen Peak": -2.1351197993124664,
+      "Butler Landing": 3.2125477958412,
+      "Marble Mountain": 2.743842132043035,
+      "Olifants": 6.412268935155032,
+      "Pearce Canyon": -2.9709539469409343,
+      "Pico Turquino": -3.466770189417673,
+      "Rio Chiquito": -3.8438665131024017,
+      "Rochette": -0.5937007472642328,
+      "Rockytop": 5.263956589914269,
+      "Seitah North": 0.9396602898083373,
+      "Sid": 0.5848248439138715,
+      "South Arm": -1.3317947141831095,
+      "Taylorfjellet": -2.999079854808386,
+      "Three Forks": 0.43716659478627307,
+      "Three Forks South": -3.5813513411605697,
+      "Tuxedo Park": 2.81538613626822,
+      "Van Zyl": -3.6101443917580376
+     }
+    },
+    "temperature + sol + hinge 300": {
+     "rms_mdeg": 3.305179991692076,
+     "residuals": {
+      "Airey Hill": 0.7293361770977072,
+      "Bell Island": 1.2065963873565888,
+      "Belva Crater": 0.0580500352021609,
+      "Bunsen Peak": -2.133838835021674,
+      "Butler Landing": 5.531241289533849,
+      "Marble Mountain": 2.9420603884433714,
+      "Olifants": 6.551594593188428,
+      "Pearce Canyon": -2.9987765938659567,
+      "Pico Turquino": -3.4657548580176734,
+      "Rio Chiquito": -3.8653694023009333,
+      "Rochette": -0.5954139565806607,
+      "Rockytop": 5.962353947437979,
+      "Seitah North": 0.9721134003950418,
+      "Sid": 0.6828004164007417,
+      "South Arm": -1.3286902253054098,
+      "Taylorfjellet": -3.427316987343655,
+      "Three Forks": 0.466615034582766,
+      "Three Forks South": -3.632418452529155,
+      "Tuxedo Park": 2.857011597745707,
+      "Van Zyl": -4.628053634423704
+     }
+    }
+   }
+  },
+  "jackknife": {
+   "Airey Hill": {
+    "pitch_mdeg_per_sol": 0.006293023256410688,
+    "yaw_mdeg_per_sol": 0.00384746182276567,
+    "roll_mdeg_per_sol": -0.006090144350446847,
+    "pitch_T_mdeg_per_degC": 0.16345182369168615,
+    "yaw_T_mdeg_per_degC": -1.178058172237718,
+    "roll_T_mdeg_per_degC": 0.32029029588411523
+   },
+   "Bell Island": {
+    "pitch_mdeg_per_sol": 0.00626656038841243,
+    "yaw_mdeg_per_sol": 0.003932793499489164,
+    "roll_mdeg_per_sol": -0.006218916289495376,
+    "pitch_T_mdeg_per_degC": 0.169096022979188,
+    "yaw_T_mdeg_per_degC": -1.2863457832658969,
+    "roll_T_mdeg_per_degC": 0.3650323700618316
+   },
+   "Belva Crater": {
+    "pitch_mdeg_per_sol": 0.006308835111012392,
+    "yaw_mdeg_per_sol": 0.003861202277308071,
+    "roll_mdeg_per_sol": -0.0060975983302748935,
+    "pitch_T_mdeg_per_degC": 0.19290016057602102,
+    "yaw_T_mdeg_per_degC": -1.334762781383,
+    "roll_T_mdeg_per_degC": 0.33727425513671444
+   },
+   "Bunsen Peak": {
+    "pitch_mdeg_per_sol": 0.006296566269513179,
+    "yaw_mdeg_per_sol": 0.0037982678735812843,
+    "roll_mdeg_per_sol": -0.006071140836691572,
+    "pitch_T_mdeg_per_degC": 0.16647307741236542,
+    "yaw_T_mdeg_per_degC": -1.3764622686552943,
+    "roll_T_mdeg_per_degC": 0.36540309011655586
+   },
+   "Butler Landing": {
+    "pitch_mdeg_per_sol": 0.005929879988022039,
+    "yaw_mdeg_per_sol": 0.00337862101636741,
+    "roll_mdeg_per_sol": -0.005676000252742591,
+    "pitch_T_mdeg_per_degC": 0.13416572036434138,
+    "yaw_T_mdeg_per_degC": -1.3176260465130472,
+    "roll_T_mdeg_per_degC": 0.3704658870439702
+   },
+   "Marble Mountain": {
+    "pitch_mdeg_per_sol": 0.00630095856889596,
+    "yaw_mdeg_per_sol": 0.004614172388552443,
+    "roll_mdeg_per_sol": -0.006526988389483091,
+    "pitch_T_mdeg_per_degC": 0.16314570087144548,
+    "yaw_T_mdeg_per_degC": -1.2575179807213652,
+    "roll_T_mdeg_per_degC": 0.32552520294831494
+   },
+   "Olifants": {
+    "pitch_mdeg_per_sol": 0.006297100728499495,
+    "yaw_mdeg_per_sol": 0.003644023250869883,
+    "roll_mdeg_per_sol": -0.006962284281814495,
+    "pitch_T_mdeg_per_degC": 0.16282035094743114,
+    "yaw_T_mdeg_per_degC": -1.2694163662731335,
+    "roll_T_mdeg_per_degC": 0.3635331142120636
+   },
+   "Pearce Canyon": {
+    "pitch_mdeg_per_sol": 0.006283124393851459,
+    "yaw_mdeg_per_sol": 0.003642359535858311,
+    "roll_mdeg_per_sol": -0.0059359390522957115,
+    "pitch_T_mdeg_per_degC": 0.1656979905601663,
+    "yaw_T_mdeg_per_degC": -1.2089023549615003,
+    "roll_T_mdeg_per_degC": 0.2930407128479045
+   },
+   "Pico Turquino": {
+    "pitch_mdeg_per_sol": 0.006320414110972986,
+    "yaw_mdeg_per_sol": 0.0034339037517048636,
+    "roll_mdeg_per_sol": -0.0058906064978995155,
+    "pitch_T_mdeg_per_degC": 0.1622647340120737,
+    "yaw_T_mdeg_per_degC": -1.2656649129268265,
+    "roll_T_mdeg_per_degC": 0.33194020625625165
+   },
+   "Rio Chiquito": {
+    "pitch_mdeg_per_sol": 0.006238013172410126,
+    "yaw_mdeg_per_sol": 0.004542230047895639,
+    "roll_mdeg_per_sol": -0.005797429290651918,
+    "pitch_T_mdeg_per_degC": 0.17597737634417748,
+    "yaw_T_mdeg_per_degC": -1.4307472861984478,
+    "roll_T_mdeg_per_degC": 0.26620088260702685
+   },
+   "Rochette": {
+    "pitch_mdeg_per_sol": 0.006376167738297475,
+    "yaw_mdeg_per_sol": 0.003703235683000732,
+    "roll_mdeg_per_sol": -0.006160598899276089,
+    "pitch_T_mdeg_per_degC": 0.1707638093218438,
+    "yaw_T_mdeg_per_degC": -1.294799125886722,
+    "roll_T_mdeg_per_degC": 0.3311400106291992
+   },
+   "Rockytop": {
+    "pitch_mdeg_per_sol": 0.006443664624529363,
+    "yaw_mdeg_per_sol": 0.003777904758451462,
+    "roll_mdeg_per_sol": -0.005753519942663154,
+    "pitch_T_mdeg_per_degC": 0.172958534631833,
+    "yaw_T_mdeg_per_degC": -1.2845979624120034,
+    "roll_T_mdeg_per_degC": 0.3599989364943686
+   },
+   "Seitah North": {
+    "pitch_mdeg_per_sol": 0.006401106662669671,
+    "yaw_mdeg_per_sol": 0.0035855643514924977,
+    "roll_mdeg_per_sol": -0.005992553057713509,
+    "pitch_T_mdeg_per_degC": 0.15546595246684128,
+    "yaw_T_mdeg_per_degC": -1.2558315577799866,
+    "roll_T_mdeg_per_degC": 0.32979115341920184
+   },
+   "Sid": {
+    "pitch_mdeg_per_sol": 0.00655678195125161,
+    "yaw_mdeg_per_sol": 0.0035957764105098333,
+    "roll_mdeg_per_sol": -0.0060400356237639945,
+    "pitch_T_mdeg_per_degC": 0.12735546586113525,
+    "yaw_T_mdeg_per_degC": -1.2371036855845579,
+    "roll_T_mdeg_per_degC": 0.32929369470061487
+   },
+   "South Arm": {
+    "pitch_mdeg_per_sol": 0.006350331872717676,
+    "yaw_mdeg_per_sol": 0.0038004309832711442,
+    "roll_mdeg_per_sol": -0.005974192913727505,
+    "pitch_T_mdeg_per_degC": 0.14928849835449937,
+    "yaw_T_mdeg_per_degC": -1.2549660484827723,
+    "roll_T_mdeg_per_degC": 0.30752751509453974
+   },
+   "Taylorfjellet": {
+    "pitch_mdeg_per_sol": 0.00656707333985012,
+    "yaw_mdeg_per_sol": 0.003810827733573034,
+    "roll_mdeg_per_sol": -0.00585552936553633,
+    "pitch_T_mdeg_per_degC": 0.26647949643226077,
+    "yaw_T_mdeg_per_degC": -1.307728280884068,
+    "roll_T_mdeg_per_degC": 0.4286481590930091
+   },
+   "Three Forks": {
+    "pitch_mdeg_per_sol": 0.006314659081988789,
+    "yaw_mdeg_per_sol": 0.003966181639974913,
+    "roll_mdeg_per_sol": -0.006074975095262629,
+    "pitch_T_mdeg_per_degC": 0.15587202246895954,
+    "yaw_T_mdeg_per_degC": -1.3014126195574371,
+    "roll_T_mdeg_per_degC": 0.3295643971432074
+   },
+   "Three Forks South": {
+    "pitch_mdeg_per_sol": 0.006316420033592228,
+    "yaw_mdeg_per_sol": 0.003898479253441575,
+    "roll_mdeg_per_sol": -0.006294288255370148,
+    "pitch_T_mdeg_per_degC": 0.1554838673583572,
+    "yaw_T_mdeg_per_degC": -1.2789771109411252,
+    "roll_T_mdeg_per_degC": 0.4004451514198797
+   },
+   "Tuxedo Park": {
+    "pitch_mdeg_per_sol": 0.006296929695166116,
+    "yaw_mdeg_per_sol": 0.003862981496640929,
+    "roll_mdeg_per_sol": -0.006064941078455004,
+    "pitch_T_mdeg_per_degC": 0.16002992102132893,
+    "yaw_T_mdeg_per_degC": -1.254163939621279,
+    "roll_T_mdeg_per_degC": 0.31121280538117013
+   },
+   "Van Zyl": {
+    "pitch_mdeg_per_sol": 0.00568626821633903,
+    "yaw_mdeg_per_sol": 0.005303480950627228,
+    "roll_mdeg_per_sol": -0.0065387268014763565,
+    "pitch_T_mdeg_per_degC": 0.10301034125752459,
+    "yaw_T_mdeg_per_degC": -1.1377166981940734,
+    "roll_T_mdeg_per_degC": 0.2935181798011179
+   }
+  },
+  "pitch_jackknife": {
+   "min": 0.00568626821633903,
+   "max": 0.00656707333985012,
+   "se": 0.00081267621084071,
+   "sign_stable": true
+  },
+  "yaw_jackknife": {
+   "min": 0.00337862101636741,
+   "max": 0.005303480950627228,
+   "se": 0.001899399611564561,
+   "sign_stable": true
+  },
+  "roll_jackknife": {
+   "min": -0.006962284281814495,
+   "max": -0.005676000252742591,
+   "se": 0.0012818209848568381,
+   "sign_stable": true
+  },
+  "holdout": {
+   "train": [
+    "Airey Hill",
+    "Bell Island",
+    "Belva Crater",
+    "Bunsen Peak",
+    "Marble Mountain",
+    "Olifants",
+    "Pearce Canyon",
+    "Rio Chiquito",
+    "Rochette",
+    "Rockytop",
+    "Sid",
+    "South Arm",
+    "Taylorfjellet",
+    "Three Forks",
+    "Tuxedo Park"
+   ],
+   "fit": {
+    "sol0": 1083.9666666666667,
+    "T_mean_degC": -17.831677499490784,
+    "blocks": 15,
+    "pitch_mdeg_per_sol": 0.004921921919966108,
+    "pitch_se": 0.0004278935517552331,
+    "pitch_p": 1.2788433606088579e-30,
+    "pitch_T_mdeg_per_degC": 0.05036429669487055,
+    "pitch_tau_mdeg": 0.8410949220506923,
+    "yaw_mdeg_per_sol": 0.004508444024600443,
+    "yaw_se": 0.001932104218168268,
+    "yaw_p": 0.019625206207423435,
+    "yaw_T_mdeg_per_degC": -1.1478477694610576,
+    "yaw_tau_mdeg": 3.7987650679111,
+    "roll_mdeg_per_sol": -0.006141046822605078,
+    "roll_se": 0.0013924427470109288,
+    "roll_p": 1.0324237619492741e-05,
+    "roll_T_mdeg_per_degC": 0.37907736943425463,
+    "roll_tau_mdeg": 2.7403827170983166
+   },
+   "predictions": [
+    {
+     "scape": "Butler Landing",
+     "sol": 12.0,
+     "T_degC": -20.9091913439498,
+     "pitch": {
+      "observed_mdeg": -6.647992843845928,
+      "predicted_mdeg": -2.257396064006203,
+      "residual_mdeg": -4.390596779839725,
+      "sd_pred_mdeg": 0.9994490342748718,
+      "z": -4.393017181736761,
+      "no_drift_residual_mdeg": -9.821648618983687
+     },
+     "yaw": {
+      "observed_mdeg": -8.446779276672366,
+      "predicted_mdeg": -7.089745314504514,
+      "residual_mdeg": -1.3570339621678524,
+      "sd_pred_mdeg": 4.52022166372129,
+      "z": -0.3002140300019422,
+      "no_drift_residual_mdeg": -2.659769238212566
+     },
+     "roll": {
+      "observed_mdeg": 24.772190629661775,
+      "predicted_mdeg": 22.514275317621966,
+      "residual_mdeg": 2.2579153120398097,
+      "sd_pred_mdeg": 3.2475343238306493,
+      "z": 0.6952706536374561,
+      "no_drift_residual_mdeg": 7.674650522502258
+     }
+    },
+    {
+     "scape": "Pico Turquino",
+     "sol": 1309.0,
+     "T_degC": -17.9245,
+     "pitch": {
+      "observed_mdeg": 3.7920953378235356,
+      "predicted_mdeg": 4.276658546579139,
+      "residual_mdeg": -0.4845632087556031,
+      "sd_pred_mdeg": 0.8755678000501825,
+      "z": -0.5534273973161539,
+      "no_drift_residual_mdeg": 0.6184395626857757
+     },
+     "yaw": {
+      "observed_mdeg": 3.04866784674362,
+      "predicted_mdeg": -4.6682647162802455,
+      "residual_mdeg": 7.716932563023866,
+      "sd_pred_mdeg": 3.9511600432526186,
+      "z": 1.9530802292359792,
+      "no_drift_residual_mdeg": 8.83567788520342
+     },
+     "roll": {
+      "observed_mdeg": 12.087983714877081,
+      "predicted_mdeg": 15.68076653194086,
+      "residual_mdeg": -3.592782817063778,
+      "sd_pred_mdeg": 2.8488326869680667,
+      "z": -1.2611420928645258,
+      "no_drift_residual_mdeg": -5.009556392282436
+     }
+    },
+    {
+     "scape": "Seitah North",
+     "sol": 242.0,
+     "T_degC": -16.92537910292005,
+     "pitch": {
+      "observed_mdeg": -1.5044523633778237,
+      "predicted_mdeg": -0.9247121207301191,
+      "residual_mdeg": -0.5797402426477046,
+      "sd_pred_mdeg": 0.944450843774494,
+      "z": -0.6138384506395008,
+      "no_drift_residual_mdeg": -4.678108138515584
+     },
+     "yaw": {
+      "observed_mdeg": -11.854911727125762,
+      "predicted_mdeg": -10.625613183664067,
+      "residual_mdeg": -1.2292985434616952,
+      "sd_pred_mdeg": 4.263476531953076,
+      "z": -0.28833242876994564,
+      "no_drift_residual_mdeg": -6.067901688665962
+     },
+     "roll": {
+      "observed_mdeg": 22.958749398559426,
+      "predicted_mdeg": 22.612007613072336,
+      "residual_mdeg": 0.3467417854870902,
+      "sd_pred_mdeg": 3.0738702793867008,
+      "z": 0.11280299881629105,
+      "no_drift_residual_mdeg": 5.861209291399909
+     }
+    },
+    {
+     "scape": "Three Forks South",
+     "sol": 670.0,
+     "T_degC": -14.483986229053425,
+     "pitch": {
+      "observed_mdeg": 1.1214619838833397,
+      "predicted_mdeg": 1.3048294960635365,
+      "residual_mdeg": -0.18336751218019676,
+      "sd_pred_mdeg": 0.913982137347395,
+      "z": -0.20062483136965367,
+      "no_drift_residual_mdeg": -2.05219379125442
+     },
+     "yaw": {
+      "observed_mdeg": -10.844044040153117,
+      "predicted_mdeg": -11.498346505781006,
+      "residual_mdeg": 0.6543024656278895,
+      "sd_pred_mdeg": 4.126625633475865,
+      "z": 0.1585562936264633,
+      "no_drift_residual_mdeg": -5.057034001693316
+     },
+     "roll": {
+      "observed_mdeg": 17.226620528158886,
+      "predicted_mdeg": 20.90911636137826,
+      "residual_mdeg": -3.682495833219374,
+      "sd_pred_mdeg": 2.9759720928485707,
+      "z": -1.2374093971071234,
+      "no_drift_residual_mdeg": 0.12908042099936878
+     }
+    },
+    {
+     "scape": "Van Zyl",
+     "sol": 63.0,
+     "T_degC": -21.2106,
+     "pitch": {
+      "observed_mdeg": -8.152713038299233,
+      "predicted_mdeg": -2.0215582810676462,
+      "residual_mdeg": -6.131154757231586,
+      "sd_pred_mdeg": 0.9912020146805741,
+      "z": -6.185575358427232,
+      "no_drift_residual_mdeg": -11.326368813436993
+     },
+     "yaw": {
+      "observed_mdeg": 4.567496964014325,
+      "predicted_mdeg": -6.513843415706416,
+      "residual_mdeg": 11.08134037972074,
+      "sd_pred_mdeg": 4.4763127678509935,
+      "z": 2.4755509622355354,
+      "no_drift_residual_mdeg": 10.354507002474126
+     },
+     "roll": {
+      "observed_mdeg": 18.88666603938506,
+      "predicted_mdeg": 22.08682472920888,
+      "residual_mdeg": -3.200158689823823,
+      "sd_pred_mdeg": 3.225865978862,
+      "z": -0.9920308874557628,
+      "no_drift_residual_mdeg": 1.7891259322255415
+     }
+    }
+   ]
+  }
+ },
+ "robustness_with_whale": {
+  "mode": "rotation_pp",
+  "blocks": [
+   "Airey Hill",
+   "Bell Island",
+   "Belva Crater",
+   "Bunsen Peak",
+   "Butler Landing",
+   "Marble Mountain",
+   "Olifants",
+   "Pearce Canyon",
+   "Pico Turquino",
+   "Rio Chiquito",
+   "Rochette",
+   "Rockytop",
+   "Seitah North",
+   "Sid",
+   "South Arm",
+   "Taylorfjellet",
+   "Three Forks",
+   "Three Forks South",
+   "Tuxedo Park",
+   "Van Zyl",
+   "Whale Mountain"
+  ],
+  "excluded": [],
+  "all": {
+   "sol0": 912.5952380952381,
+   "T_mean_degC": -17.96061519848976,
+   "blocks": 21,
+   "pitch_mdeg_per_sol": 0.006239023570655699,
+   "pitch_se": 0.0006049713962571831,
+   "pitch_p": 6.159861970414012e-25,
+   "pitch_T_mdeg_per_degC": 0.16282148357118295,
+   "pitch_tau_mdeg": 1.5372769289088606,
+   "yaw_mdeg_per_sol": 0.003954759466643527,
+   "yaw_se": 0.0015637458028241995,
+   "yaw_p": 0.011437837129536228,
+   "yaw_T_mdeg_per_degC": -1.276858897486637,
+   "yaw_tau_mdeg": 3.9699404836602805,
+   "roll_mdeg_per_sol": -0.006296540003285184,
+   "roll_se": 0.0011207646224552724,
+   "roll_p": 1.9309638822712106e-08,
+   "roll_T_mdeg_per_degC": 0.3366632566516103,
+   "roll_tau_mdeg": 2.8483772998419363
+  },
+  "sol_only": {
+   "pitch": {
+    "slope": 0.006380411377439422,
+    "se": 0.0006082330717666585,
+    "p": 9.59507995746267e-26,
+    "tau_mdeg": 1.5639842779799384
+   },
+   "yaw": {
+    "slope": 0.0028491739109745766,
+    "se": 0.002327796409924361,
+    "p": 0.22096015141849734,
+    "tau_mdeg": 5.9847267556695405
+   },
+   "roll": {
+    "slope": -0.006004187493109964,
+    "se": 0.001146269901901439,
+    "p": 1.6230631293443657e-07,
+    "tau_mdeg": 2.947959859722591
+   }
+  },
+  "T_only": {
+   "pitch": {
+    "slope": 0.33097661618932817,
+    "se": 0.25400088475247906,
+    "p": 0.1925566661459679,
+    "tau_mdeg": 3.7101942361308393
+   },
+   "yaw": {
+    "slope": -1.1707029047839081,
+    "se": 0.3038678149901654,
+    "p": 0.00011683603611805462,
+    "tau_mdeg": 4.435296796769254
+   },
+   "roll": {
+    "slope": 0.16702071570911017,
+    "se": 0.3013903293336676,
+    "p": 0.5794642400977716,
+    "tau_mdeg": 4.402090663465431
+   }
+  },
+  "loo_prediction": {
+   "pitch": {
+    "one rig": {
+     "rms_mdeg": 4.08642483640964,
+     "residuals": {
+      "Airey Hill": 1.267364268226733,
+      "Bell Island": 3.0227941648924688,
+      "Belva Crater": 0.5584309296038106,
+      "Bunsen Peak": 1.317438352427313,
+      "Butler Landing": -8.838190956079682,
+      "Marble Mountain": 7.208569880128598,
+      "Olifants": 5.656398403315739,
+      "Pearce Canyon": 1.522260742710542,
+      "Pico Turquino": 2.1237819222388374,
+      "Rio Chiquito": 2.757968464074324,
+      "Rochette": -4.672606712855045,
+      "Rockytop": -0.9459271032198688,
+      "Seitah North": -3.4376017777496024,
+      "Sid": -0.8938579211551024,
+      "South Arm": 1.965895411081767,
+      "Taylorfjellet": 3.4320394626254593,
+      "Three Forks": -0.597521553285133,
+      "Three Forks South": -0.6803806217376318,
+      "Tuxedo Park": 0.5205497364360896,
+      "Van Zyl": -10.418356664124667,
+      "Whale Mountain": -0.8708301203496891
+     }
+    },
+    "temperature": {
+     "rms_mdeg": 4.108908630055017,
+     "residuals": {
+      "Airey Hill": -0.47688174559706775,
+      "Bell Island": 5.053175523468157,
+      "Belva Crater": 1.7415532802889377,
+      "Bunsen Peak": 0.317864692100442,
+      "Butler Landing": -8.162575918297225,
+      "Marble Mountain": 6.6902925358207606,
+      "Olifants": 5.692528744553679,
+      "Pearce Canyon": 2.6125435159003425,
+      "Pico Turquino": 2.1112539622665976,
+      "Rio Chiquito": 4.217487069009466,
+      "Rochette": -3.868300669262198,
+      "Rockytop": -0.5036959368017699,
+      "Seitah North": -3.817494049605906,
+      "Sid": -1.7368941578528272,
+      "South Arm": 3.7470847247160495,
+      "Taylorfjellet": 1.3227657977653466,
+      "Three Forks": -1.8800346350162016,
+      "Three Forks South": -2.008037501294709,
+      "Tuxedo Park": -0.14510657432216378,
+      "Van Zyl": -9.798192272497339,
+      "Whale Mountain": -0.772607781308468
+     }
+    },
+    "temperature + sol": {
+     "rms_mdeg": 1.7547919993249055,
+     "residuals": {
+      "Airey Hill": -0.08361423215786701,
+      "Bell Island": 0.2267621850006467,
+      "Belva Crater": 1.9655655425371044,
+      "Bunsen Peak": -0.31745611849089217,
+      "Butler Landing": -2.870963532223528,
+      "Marble Mountain": -0.04758073715735378,
+      "Olifants": -0.039483850499215656,
+      "Pearce Canyon": 0.13989379169436988,
+      "Pico Turquino": -0.4917843800368744,
+      "Rio Chiquito": 0.6666703269194274,
+      "Rochette": 0.6623874338613844,
+      "Rockytop": 2.202581673422106,
+      "Seitah North": 0.8503387510842464,
+      "Sid": 2.556655110574628,
+      "South Arm": -0.6516738276641112,
+      "Taylorfjellet": -3.4149968500602537,
+      "Three Forks": 0.33228203129462686,
+      "Three Forks South": 0.3409912195791277,
+      "Tuxedo Park": 0.2553251151192595,
+      "Van Zyl": -5.035948431357359,
+      "Whale Mountain": 1.183726680699976
+     }
+    },
+    "temperature + sol + hinge 300": {
+     "rms_mdeg": 1.0729017261621172,
+     "residuals": {
+      "Airey Hill": 0.04381574467226912,
+      "Bell Island": -0.23456387737418538,
+      "Belva Crater": 0.49892715594691084,
+      "Bunsen Peak": -0.31755072185538236,
+      "Butler Landing": 2.384148169944038,
+      "Marble Mountain": 1.9051230439944984,
+      "Olifants": 0.9531340843797773,
+      "Pearce Canyon": -0.5396808234866857,
+      "Pico Turquino": -0.49897731141931034,
+      "Rio Chiquito": 0.1350609480611995,
+      "Rochette": 0.8587320887211005,
+      "Rockytop": 0.4457157836000432,
+      "Seitah North": 0.26325256516540874,
+      "Sid": 1.0628701523080912,
+      "South Arm": -1.1831005141808886,
+      "Taylorfjellet": -1.318495524233545,
+      "Three Forks": -0.3912793320428116,
+      "Three Forks South": -0.40454491874753207,
+      "Tuxedo Park": -0.23531333807137278,
+      "Van Zyl": -2.7025434498865994,
+      "Whale Mountain": -0.19254197908075255
+     }
+    }
+   },
+   "yaw": {
+    "one rig": {
+     "rms_mdeg": 6.156805259221449,
+     "residuals": {
+      "Airey Hill": -9.928688772861872,
+      "Bell Island": 7.928290776930511,
+      "Belva Crater": 0.09657750015614841,
+      "Bunsen Peak": 4.012602215424714,
+      "Butler Landing": -2.9626446380993983,
+      "Marble Mountain": -1.7852865659635704,
+      "Olifants": 5.379380733128439,
+      "Pearce Canyon": 9.349802091124516,
+      "Pico Turquino": 9.107120325036979,
+      "Rio Chiquito": -1.0315887165932436,
+      "Rochette": -0.8562160812828132,
+      "Rockytop": -1.6615905367686592,
+      "Seitah North": -6.541901837957832,
+      "Sid": -7.993270048146835,
+      "South Arm": 8.557419719921967,
+      "Taylorfjellet": -5.654709717890735,
+      "Three Forks": -4.082992868662963,
+      "Three Forks South": -5.480555691505076,
+      "Tuxedo Park": -4.956998326245198,
+      "Van Zyl": 10.701742551432082,
+      "Whale Mountain": -2.228226157152151
+     }
+    },
+    "temperature": {
+     "rms_mdeg": 4.948227643324753,
+     "residuals": {
+      "Airey Hill": -4.477259467534415,
+      "Bell Island": 2.7395985284161353,
+      "Belva Crater": -3.9849277016746543,
+      "Bunsen Peak": 7.9235991112908195,
+      "Butler Landing": -6.880424111002979,
+      "Marble Mountain": 0.4281758268781486,
+      "Olifants": 5.250219007586823,
+      "Pearce Canyon": 6.09964594416183,
+      "Pico Turquino": 9.148473517289343,
+      "Rio Chiquito": -5.645601671787414,
+      "Rochette": -4.359901591769233,
+      "Rockytop": -3.269846422981003,
+      "Seitah North": -5.300421164978588,
+      "Sid": -5.31092393366194,
+      "South Arm": 3.724159416459056,
+      "Taylorfjellet": 3.850199348358995,
+      "Three Forks": 0.08019230965180135,
+      "Three Forks South": -1.286022681425134,
+      "Tuxedo Park": -2.662132218419896,
+      "Van Zyl": 7.071582916438115,
+      "Whale Mountain": -2.580581471224159
+     }
+    },
+    "temperature + sol": {
+     "rms_mdeg": 4.598198173331621,
+     "residuals": {
+      "Airey Hill": -4.230627931959427,
+      "Bell Island": -0.35692642600004243,
+      "Belva Crater": -3.8406536837462717,
+      "Bunsen Peak": 7.532508507184012,
+      "Butler Landing": -3.742497764025039,
+      "Marble Mountain": -4.615853270640912,
+      "Olifants": 1.851190631240263,
+      "Pearce Canyon": 4.63615761372265,
+      "Pico Turquino": 7.703462363692926,
+      "Rio Chiquito": -8.28901924394454,
+      "Rochette": -1.6361654277039994,
+      "Rockytop": -1.631958496531153,
+      "Seitah North": -2.5899736609401494,
+      "Sid": -2.8717920785739395,
+      "South Arm": 1.033452816531596,
+      "Taylorfjellet": 1.034039856345931,
+      "Three Forks": 1.5051931492273791,
+      "Three Forks South": 0.202991532779615,
+      "Tuxedo Park": -2.409131403978396,
+      "Van Zyl": 11.566978313613,
+      "Whale Mountain": -1.3689988100680672
+     }
+    },
+    "temperature + sol + hinge 300": {
+     "rms_mdeg": 5.295306523044787,
+     "residuals": {
+      "Airey Hill": -4.320874076540299,
+      "Bell Island": -0.035656588992705185,
+      "Belva Crater": -2.980519541910902,
+      "Bunsen Peak": 7.533002854817045,
+      "Butler Landing": -11.934403910299192,
+      "Marble Mountain": -6.374857343252372,
+      "Olifants": 1.2027585894469448,
+      "Pearce Canyon": 5.171304976287882,
+      "Pico Turquino": 7.70863953743598,
+      "Rio Chiquito": -7.9762535672577926,
+      "Rochette": -1.7786295010240218,
+      "Rockytop": -0.41296759583819753,
+      "Seitah North": -2.1999427071688693,
+      "Sid": -1.9033978914231522,
+      "South Arm": 1.4084860905059338,
+      "Taylorfjellet": -0.5906590045316129,
+      "Three Forks": 2.0360908990401185,
+      "Three Forks South": 0.7309951980360747,
+      "Tuxedo Park": -2.0814018496961832,
+      "Van Zyl": 12.120641798510341,
+      "Whale Mountain": -0.4377349496775098
+     }
+    }
+   },
+   "roll": {
+    "one rig": {
+     "rms_mdeg": 4.6275349793492095,
+     "residuals": {
+      "Airey Hill": 1.6480659385489744,
+      "Bell Island": -4.313428509299625,
+      "Belva Crater": -0.5693302312290989,
+      "Bunsen Peak": -2.3221727126904597,
+      "Butler Landing": 7.200587444010033,
+      "Marble Mountain": -4.1192100832562435,
+      "Olifants": -0.2171462710435108,
+      "Pearce Canyon": -5.841203834696117,
+      "Pico Turquino": -6.117679381041407,
+      "Rio Chiquito": -7.586259890003587,
+      "Rochette": 2.9851194067874864,
+      "Rockytop": 7.1738573791943345,
+      "Seitah North": 5.2966489037529385,
+      "Sid": 4.66395173692969,
+      "South Arm": -6.00227840646693,
+      "Taylorfjellet": -4.46360904889799,
+      "Three Forks": 2.8355913339884538,
+      "Three Forks South": -0.7221461639505797,
+      "Tuxedo Park": 3.269289007289917,
+      "Van Zyl": 1.0209242259564277,
+      "Whale Mountain": 6.186347769780834
+     }
+    },
+    "temperature": {
+     "rms_mdeg": 4.857040649889639,
+     "residuals": {
+      "Airey Hill": 0.9004351363260916,
+      "Bell Island": -3.9145310776285687,
+      "Belva Crater": -0.016244427277868567,
+      "Bunsen Peak": -2.9568763565030274,
+      "Butler Landing": 8.062425741639526,
+      "Marble Mountain": -4.506048770309375,
+      "Olifants": -0.199082816616599,
+      "Pearce Canyon": -5.564003715218298,
+      "Pico Turquino": -6.1240550315533415,
+      "Rio Chiquito": -7.417774670514968,
+      "Rochette": 3.5927220469237753,
+      "Rockytop": 7.459630578175464,
+      "Seitah North": 5.142205018859027,
+      "Sid": 4.374736437486153,
+      "South Arm": -5.765784302575513,
+      "Taylorfjellet": -7.483603917754792,
+      "Three Forks": 2.3758782710264867,
+      "Three Forks South": -1.416070963617159,
+      "Tuxedo Park": 2.9882043820473783,
+      "Van Zyl": 1.6780976434526984,
+      "Whale Mountain": 6.2385300061037405
+     }
+    },
+    "temperature + sol": {
+     "rms_mdeg": 3.0464712153426374,
+     "residuals": {
+      "Airey Hill": 0.5040109215674775,
+      "Bell Island": 1.0593577031030446,
+      "Belva Crater": -0.2422643630386716,
+      "Bunsen Peak": -2.3194213216968222,
+      "Butler Landing": 2.6995632170167134,
+      "Marble Mountain": 2.749782658983591,
+      "Olifants": 6.37159850096856,
+      "Pearce Canyon": -3.1355345563949424,
+      "Pico Turquino": -3.601153297430745,
+      "Rio Chiquito": -3.985709588211101,
+      "Rochette": -1.0045134646353766,
+      "Rockytop": 4.916380711369307,
+      "Seitah North": 0.5429904109436912,
+      "Sid": 0.2178407577216852,
+      "South Arm": -1.4662317553780095,
+      "Taylorfjellet": -3.088895960521235,
+      "Three Forks": 0.15179048938484385,
+      "Three Forks South": -3.8552703125244605,
+      "Tuxedo Park": 2.5858377619781017,
+      "Van Zyl": -4.038254688492813,
+      "Whale Mountain": 4.3428807847420074
+     }
+    },
+    "temperature + sol + hinge 300": {
+     "rms_mdeg": 3.381051618586745,
+     "residuals": {
+      "Airey Hill": 0.5230677777393886,
+      "Bell Island": 0.9963390067276254,
+      "Belva Crater": -0.495276443290912,
+      "Bunsen Peak": -2.319478381862673,
+      "Butler Landing": 5.9437027490407495,
+      "Marble Mountain": 3.273121331238386,
+      "Olifants": 6.677087233650621,
+      "Pearce Canyon": -3.276288769489245,
+      "Pico Turquino": -3.6022669864203465,
+      "Rio Chiquito": -4.095395837528562,
+      "Rochette": -0.9768275662626635,
+      "Rockytop": 5.121117165474381,
+      "Seitah North": 0.4598753820578736,
+      "Sid": -0.014691767633589592,
+      "South Arm": -1.5544280153712826,
+      "Taylorfjellet": -3.0824587466037414,
+      "Three Forks": 0.0460940173359532,
+      "Three Forks South": -4.0246312112200116,
+      "Tuxedo Park": 2.5308934641001706,
+      "Van Zyl": -4.58090264190292,
+      "Whale Mountain": 4.377631130336599
+     }
+    }
+   }
+  },
+  "jackknife": {
+   "Airey Hill": {
+    "pitch_mdeg_per_sol": 0.006238358641632017,
+    "yaw_mdeg_per_sol": 0.003920085850873631,
+    "roll_mdeg_per_sol": -0.00629241596305241,
+    "pitch_T_mdeg_per_degC": 0.16474535213392877,
+    "yaw_T_mdeg_per_degC": -1.1797670070692285,
+    "roll_T_mdeg_per_degC": 0.3250821487678668
+   },
+   "Bell Island": {
+    "pitch_mdeg_per_sol": 0.006215621452007112,
+    "yaw_mdeg_per_sol": 0.003991863348011772,
+    "roll_mdeg_per_sol": -0.006406012987763366,
+    "pitch_T_mdeg_per_degC": 0.1681680793576471,
+    "yaw_T_mdeg_per_degC": -1.2852668335242607,
+    "roll_T_mdeg_per_degC": 0.3616304424112078
+   },
+   "Belva Crater": {
+    "pitch_mdeg_per_sol": 0.006248930026874872,
+    "yaw_mdeg_per_sol": 0.003934742861186268,
+    "roll_mdeg_per_sol": -0.0062977796801848085,
+    "pitch_T_mdeg_per_degC": 0.19165242243409036,
+    "yaw_T_mdeg_per_degC": -1.3332250117654858,
+    "roll_T_mdeg_per_degC": 0.33311098517311744
+   },
+   "Bunsen Peak": {
+    "pitch_mdeg_per_sol": 0.0062435994181307625,
+    "yaw_mdeg_per_sol": 0.003845934821477325,
+    "roll_mdeg_per_sol": -0.006263236740934607,
+    "pitch_T_mdeg_per_degC": 0.16703327977653315,
+    "yaw_T_mdeg_per_degC": -1.3769654051556839,
+    "roll_T_mdeg_per_degC": 0.3674437550102889
+   },
+   "Butler Landing": {
+    "pitch_mdeg_per_sol": 0.0058748140960904775,
+    "yaw_mdeg_per_sol": 0.003482754328895719,
+    "roll_mdeg_per_sol": -0.0059539049047367554,
+    "pitch_T_mdeg_per_degC": 0.13302225838056594,
+    "yaw_T_mdeg_per_degC": -1.3154597978044293,
+    "roll_T_mdeg_per_degC": 0.36469805394638904
+   },
+   "Marble Mountain": {
+    "pitch_mdeg_per_sol": 0.006246490241950118,
+    "yaw_mdeg_per_sol": 0.004677014290618273,
+    "roll_mdeg_per_sol": -0.006726632460799224,
+    "pitch_T_mdeg_per_degC": 0.16302429093050436,
+    "yaw_T_mdeg_per_degC": -1.2573695091813364,
+    "roll_T_mdeg_per_degC": 0.3250870996358874
+   },
+   "Olifants": {
+    "pitch_mdeg_per_sol": 0.006244381993979204,
+    "yaw_mdeg_per_sol": 0.003704401383260325,
+    "roll_mdeg_per_sol": -0.007158087315943884,
+    "pitch_T_mdeg_per_degC": 0.1626606866467449,
+    "yaw_T_mdeg_per_degC": -1.2692294317457096,
+    "roll_T_mdeg_per_degC": 0.36294736422974194
+   },
+   "Pearce Canyon": {
+    "pitch_mdeg_per_sol": 0.00623119720074343,
+    "yaw_mdeg_per_sol": 0.0036946767587513383,
+    "roll_mdeg_per_sol": -0.006120517249079914,
+    "pitch_T_mdeg_per_degC": 0.16489682702247768,
+    "yaw_T_mdeg_per_degC": -1.2080892513121426,
+    "roll_T_mdeg_per_degC": 0.2901989283058287
+   },
+   "Pico Turquino": {
+    "pitch_mdeg_per_sol": 0.0062691275809711065,
+    "yaw_mdeg_per_sol": 0.0034834604992730906,
+    "roll_mdeg_per_sol": -0.006076263587880713,
+    "pitch_T_mdeg_per_degC": 0.1620966936914597,
+    "yaw_T_mdeg_per_degC": -1.2654987523712333,
+    "roll_T_mdeg_per_degC": 0.3313379804800909
+   },
+   "Rio Chiquito": {
+    "pitch_mdeg_per_sol": 0.006186031200175142,
+    "yaw_mdeg_per_sol": 0.00461240649479478,
+    "roll_mdeg_per_sol": -0.005979625826562012,
+    "pitch_T_mdeg_per_degC": 0.17511467387609622,
+    "yaw_T_mdeg_per_degC": -1.429573024572686,
+    "roll_T_mdeg_per_degC": 0.263182380335337
+   },
+   "Rochette": {
+    "pitch_mdeg_per_sol": 0.006306624975409227,
+    "yaw_mdeg_per_sol": 0.0037879806322536655,
+    "roll_mdeg_per_sol": -0.006398994730979052,
+    "pitch_T_mdeg_per_degC": 0.169444997615437,
+    "yaw_T_mdeg_per_degC": -1.2931876824829762,
+    "roll_T_mdeg_per_degC": 0.3266261969477744
+   },
+   "Rockytop": {
+    "pitch_mdeg_per_sol": 0.006375692010242428,
+    "yaw_mdeg_per_sol": 0.003853291646486742,
+    "roll_mdeg_per_sol": -0.005991387660245737,
+    "pitch_T_mdeg_per_degC": 0.17239644068926563,
+    "yaw_T_mdeg_per_degC": -1.283967614274269,
+    "roll_T_mdeg_per_degC": 0.35803679903500163
+   },
+   "Seitah North": {
+    "pitch_mdeg_per_sol": 0.006330959988762833,
+    "yaw_mdeg_per_sol": 0.0036743403980787816,
+    "roll_mdeg_per_sol": -0.006237872528876269,
+    "pitch_T_mdeg_per_degC": 0.15622414091254264,
+    "yaw_T_mdeg_per_degC": -1.2567814595153468,
+    "roll_T_mdeg_per_degC": 0.33244899587886795
+   },
+   "Sid": {
+    "pitch_mdeg_per_sol": 0.006482037817779266,
+    "yaw_mdeg_per_sol": 0.0036819666860711214,
+    "roll_mdeg_per_sol": -0.006275848659449036,
+    "pitch_T_mdeg_per_degC": 0.128770415075177,
+    "yaw_T_mdeg_per_degC": -1.2387232091715727,
+    "roll_T_mdeg_per_degC": 0.33376264242797044
+   },
+   "South Arm": {
+    "pitch_mdeg_per_sol": 0.00630030833076376,
+    "yaw_mdeg_per_sol": 0.0038579906440524294,
+    "roll_mdeg_per_sol": -0.006158766179941956,
+    "pitch_T_mdeg_per_degC": 0.1483669189228559,
+    "yaw_T_mdeg_per_degC": -1.2539024548291064,
+    "roll_T_mdeg_per_degC": 0.30413535380525814
+   },
+   "Taylorfjellet": {
+    "pitch_mdeg_per_sol": 0.006517152630087155,
+    "yaw_mdeg_per_sol": 0.0038705771753526643,
+    "roll_mdeg_per_sol": -0.006044997466404726,
+    "pitch_T_mdeg_per_degC": 0.26709249599437623,
+    "yaw_T_mdeg_per_degC": -1.3084526627649222,
+    "roll_T_mdeg_per_degC": 0.43097973279055546
+   },
+   "Three Forks": {
+    "pitch_mdeg_per_sol": 0.006255407644210163,
+    "yaw_mdeg_per_sol": 0.004029043364805506,
+    "roll_mdeg_per_sol": -0.006289099332050454,
+    "pitch_T_mdeg_per_degC": 0.15711258056291694,
+    "yaw_T_mdeg_per_degC": -1.3027209038242713,
+    "roll_T_mdeg_per_degC": 0.33405441039216377
+   },
+   "Three Forks South": {
+    "pitch_mdeg_per_sol": 0.006256821078130105,
+    "yaw_mdeg_per_sol": 0.003965620533528082,
+    "roll_mdeg_per_sol": -0.006497190090751246,
+    "pitch_T_mdeg_per_degC": 0.15679082478426673,
+    "yaw_T_mdeg_per_degC": -1.2804426166968699,
+    "roll_T_mdeg_per_degC": 0.40489947284432143
+   },
+   "Tuxedo Park": {
+    "pitch_mdeg_per_sol": 0.006241411217688492,
+    "yaw_mdeg_per_sol": 0.00393228585347976,
+    "roll_mdeg_per_sol": -0.006272513353769207,
+    "pitch_T_mdeg_per_degC": 0.1604778000224336,
+    "yaw_T_mdeg_per_degC": -1.2547154083699028,
+    "roll_T_mdeg_per_degC": 0.31289545434316884
+   },
+   "Van Zyl": {
+    "pitch_mdeg_per_sol": 0.005643904602160114,
+    "yaw_mdeg_per_sol": 0.00532104663075429,
+    "roll_mdeg_per_sol": -0.006772761526317998,
+    "pitch_T_mdeg_per_degC": 0.10199922476980318,
+    "yaw_T_mdeg_per_degC": -1.1372972890893336,
+    "roll_T_mdeg_per_degC": 0.28797528545646983
+   },
+   "Whale Mountain": {
+    "pitch_mdeg_per_sol": 0.006293232733638746,
+    "yaw_mdeg_per_sol": 0.003891983440320122,
+    "roll_mdeg_per_sol": -0.0060976793483485635,
+    "pitch_T_mdeg_per_degC": 0.16293603131151072,
+    "yaw_T_mdeg_per_degC": -1.2769975007251277,
+    "roll_T_mdeg_per_degC": 0.337077010721578
+   }
+  },
+  "pitch_jackknife": {
+   "min": 0.005643904602160114,
+   "max": 0.006517152630087155,
+   "se": 0.0007968543058501045,
+   "sign_stable": true
+  },
+  "yaw_jackknife": {
+   "min": 0.003482754328895719,
+   "max": 0.00532104663075429,
+   "se": 0.0018586655858763741,
+   "sign_stable": true
+  },
+  "roll_jackknife": {
+   "min": -0.007158087315943884,
+   "max": -0.0059539049047367554,
+   "se": 0.001285198600431046,
+   "sign_stable": true
+  },
+  "holdout": {
+   "train": [
+    "Airey Hill",
+    "Bell Island",
+    "Belva Crater",
+    "Bunsen Peak",
+    "Marble Mountain",
+    "Olifants",
+    "Pearce Canyon",
+    "Rio Chiquito",
+    "Rochette",
+    "Rockytop",
+    "Sid",
+    "South Arm",
+    "Taylorfjellet",
+    "Three Forks",
+    "Tuxedo Park"
+   ],
+   "fit": {
+    "sol0": 1083.9666666666667,
+    "T_mean_degC": -17.831677499490784,
+    "blocks": 15,
+    "pitch_mdeg_per_sol": 0.004921921919966108,
+    "pitch_se": 0.0004278935517552331,
+    "pitch_p": 1.2788433606088579e-30,
+    "pitch_T_mdeg_per_degC": 0.05036429669487055,
+    "pitch_tau_mdeg": 0.8410949220506923,
+    "yaw_mdeg_per_sol": 0.004508444024600443,
+    "yaw_se": 0.001932104218168268,
+    "yaw_p": 0.019625206207423435,
+    "yaw_T_mdeg_per_degC": -1.1478477694610576,
+    "yaw_tau_mdeg": 3.7987650679111,
+    "roll_mdeg_per_sol": -0.006141046822605078,
+    "roll_se": 0.0013924427470109288,
+    "roll_p": 1.0324237619492741e-05,
+    "roll_T_mdeg_per_degC": 0.37907736943425463,
+    "roll_tau_mdeg": 2.7403827170983166
+   },
+   "predictions": [
+    {
+     "scape": "Butler Landing",
+     "sol": 12.0,
+     "T_degC": -20.9091913439498,
+     "pitch": {
+      "observed_mdeg": -6.647992843845928,
+      "predicted_mdeg": -2.257396064006203,
+      "residual_mdeg": -4.390596779839725,
+      "sd_pred_mdeg": 0.9994490342748718,
+      "z": -4.393017181736761,
+      "no_drift_residual_mdeg": -9.821648618983687
+     },
+     "yaw": {
+      "observed_mdeg": -8.446779276672366,
+      "predicted_mdeg": -7.089745314504514,
+      "residual_mdeg": -1.3570339621678524,
+      "sd_pred_mdeg": 4.52022166372129,
+      "z": -0.3002140300019422,
+      "no_drift_residual_mdeg": -2.659769238212566
+     },
+     "roll": {
+      "observed_mdeg": 24.772190629661775,
+      "predicted_mdeg": 22.514275317621966,
+      "residual_mdeg": 2.2579153120398097,
+      "sd_pred_mdeg": 3.2475343238306493,
+      "z": 0.6952706536374561,
+      "no_drift_residual_mdeg": 7.674650522502258
+     }
+    },
+    {
+     "scape": "Pico Turquino",
+     "sol": 1309.0,
+     "T_degC": -17.9245,
+     "pitch": {
+      "observed_mdeg": 3.7920953378235356,
+      "predicted_mdeg": 4.276658546579139,
+      "residual_mdeg": -0.4845632087556031,
+      "sd_pred_mdeg": 0.8755678000501825,
+      "z": -0.5534273973161539,
+      "no_drift_residual_mdeg": 0.6184395626857757
+     },
+     "yaw": {
+      "observed_mdeg": 3.04866784674362,
+      "predicted_mdeg": -4.6682647162802455,
+      "residual_mdeg": 7.716932563023866,
+      "sd_pred_mdeg": 3.9511600432526186,
+      "z": 1.9530802292359792,
+      "no_drift_residual_mdeg": 8.83567788520342
+     },
+     "roll": {
+      "observed_mdeg": 12.087983714877081,
+      "predicted_mdeg": 15.68076653194086,
+      "residual_mdeg": -3.592782817063778,
+      "sd_pred_mdeg": 2.8488326869680667,
+      "z": -1.2611420928645258,
+      "no_drift_residual_mdeg": -5.009556392282436
+     }
+    },
+    {
+     "scape": "Seitah North",
+     "sol": 242.0,
+     "T_degC": -16.92537910292005,
+     "pitch": {
+      "observed_mdeg": -1.5044523633778237,
+      "predicted_mdeg": -0.9247121207301191,
+      "residual_mdeg": -0.5797402426477046,
+      "sd_pred_mdeg": 0.944450843774494,
+      "z": -0.6138384506395008,
+      "no_drift_residual_mdeg": -4.678108138515584
+     },
+     "yaw": {
+      "observed_mdeg": -11.854911727125762,
+      "predicted_mdeg": -10.625613183664067,
+      "residual_mdeg": -1.2292985434616952,
+      "sd_pred_mdeg": 4.263476531953076,
+      "z": -0.28833242876994564,
+      "no_drift_residual_mdeg": -6.067901688665962
+     },
+     "roll": {
+      "observed_mdeg": 22.958749398559426,
+      "predicted_mdeg": 22.612007613072336,
+      "residual_mdeg": 0.3467417854870902,
+      "sd_pred_mdeg": 3.0738702793867008,
+      "z": 0.11280299881629105,
+      "no_drift_residual_mdeg": 5.861209291399909
+     }
+    },
+    {
+     "scape": "Three Forks South",
+     "sol": 670.0,
+     "T_degC": -14.483986229053425,
+     "pitch": {
+      "observed_mdeg": 1.1214619838833397,
+      "predicted_mdeg": 1.3048294960635365,
+      "residual_mdeg": -0.18336751218019676,
+      "sd_pred_mdeg": 0.913982137347395,
+      "z": -0.20062483136965367,
+      "no_drift_residual_mdeg": -2.05219379125442
+     },
+     "yaw": {
+      "observed_mdeg": -10.844044040153117,
+      "predicted_mdeg": -11.498346505781006,
+      "residual_mdeg": 0.6543024656278895,
+      "sd_pred_mdeg": 4.126625633475865,
+      "z": 0.1585562936264633,
+      "no_drift_residual_mdeg": -5.057034001693316
+     },
+     "roll": {
+      "observed_mdeg": 17.226620528158886,
+      "predicted_mdeg": 20.90911636137826,
+      "residual_mdeg": -3.682495833219374,
+      "sd_pred_mdeg": 2.9759720928485707,
+      "z": -1.2374093971071234,
+      "no_drift_residual_mdeg": 0.12908042099936878
+     }
+    },
+    {
+     "scape": "Van Zyl",
+     "sol": 63.0,
+     "T_degC": -21.2106,
+     "pitch": {
+      "observed_mdeg": -8.152713038299233,
+      "predicted_mdeg": -2.0215582810676462,
+      "residual_mdeg": -6.131154757231586,
+      "sd_pred_mdeg": 0.9912020146805741,
+      "z": -6.185575358427232,
+      "no_drift_residual_mdeg": -11.326368813436993
+     },
+     "yaw": {
+      "observed_mdeg": 4.567496964014325,
+      "predicted_mdeg": -6.513843415706416,
+      "residual_mdeg": 11.08134037972074,
+      "sd_pred_mdeg": 4.4763127678509935,
+      "z": 2.4755509622355354,
+      "no_drift_residual_mdeg": 10.354507002474126
+     },
+     "roll": {
+      "observed_mdeg": 18.88666603938506,
+      "predicted_mdeg": 22.08682472920888,
+      "residual_mdeg": -3.200158689823823,
+      "sd_pred_mdeg": 3.225865978862,
+      "z": -0.9920308874557628,
+      "no_drift_residual_mdeg": 1.7891259322255415
+     }
+    },
+    {
+     "scape": "Whale Mountain",
+     "sol": 609.0,
+     "T_degC": -18.2441,
+     "pitch": {
+      "observed_mdeg": 0.9400819974180885,
+      "predicted_mdeg": 0.8152167733791822,
+      "residual_mdeg": 0.12486522403890632,
+      "sd_pred_mdeg": 0.8939366929774191,
+      "z": 0.13968016417697313,
+      "no_drift_residual_mdeg": -2.2335737777196716
+     },
+     "yaw": {
+      "observed_mdeg": -7.746847414231282,
+      "predicted_mdeg": -7.457323386380801,
+      "residual_mdeg": -0.28952402785048115,
+      "sd_pred_mdeg": 4.034676662944497,
+      "z": -0.07175891701794693,
+      "no_drift_residual_mdeg": -1.9598373757714818
+     },
+     "roll": {
+      "observed_mdeg": 23.806125697686557,
+      "predicted_mdeg": 19.858346180493225,
+      "residual_mdeg": 3.9477795171933323,
+      "sd_pred_mdeg": 2.908184459604877,
+      "z": 1.3574721865234438,
+      "no_drift_residual_mdeg": 6.70858559052704
+     }
+    }
+   ]
+  }
+ },
+ "rig_tests": {
+  "yaw": {
+   "angle": "yaw",
+   "mode": "rotation_pp",
+   "n": 20,
+   "mean_mdeg": -5.518621257079131,
+   "se_mean_mdeg": 1.4144686836708054,
+   "tau_mdeg": 6.322825886917904,
+   "Q": 35463.567477958626,
+   "dof": 19,
+   "p_homogeneous": 0.0,
+   "median_sd_mdeg": 0.15563181346837202,
+   "scatter_sd_mdeg": 6.144279108984172,
+   "covariates": {
+    "T_median_degC": {
+     "label": "camera temperature",
+     "slope": -1.1741386713074717,
+     "se": 0.3049410394399397,
+     "p": 0.00011793503129910472,
+     "tau_mdeg": 4.450099732581278,
+     "spearman": -0.6962406015037594,
+     "spearman_p": 0.00064992440549734,
+     "n": 20,
+     "x_range": [
+      -22.3957,
+      -10.9781
+     ]
+    },
+    "dT_LR_median_degC": {
+     "label": "left-right temperature difference",
+     "slope": 0.41762530331360886,
+     "se": 1.8443831236705828,
+     "p": 0.8208663087348801,
+     "tau_mdeg": 6.445776745880922,
+     "spearman": -0.010526315789473684,
+     "spearman_p": 0.9658856101969363,
+     "n": 19,
+     "x_range": [
+      -0.7302097561189331,
+      2.4635999999999996
+     ]
+    },
+    "sol_median": {
+     "label": "sol",
+     "slope": 0.002787666707722947,
+     "se": 0.002379997126955227,
+     "p": 0.24148225107072152,
+     "tau_mdeg": 6.074062092354164,
+     "spearman": 0.2300751879699248,
+     "spearman_p": 0.32913824647008466,
+     "n": 20,
+     "x_range": [
+      12.0,
+      1972.0
+     ]
+    },
+    "stations": {
+     "label": "stations",
+     "slope": -0.021012819100601675,
+     "se": 0.2587295281590733,
+     "p": 0.9352706618291788,
+     "tau_mdeg": 6.384346611924335,
+     "spearman": 0.04000028480190248,
+     "spearman_p": 0.8670280985218121,
+     "n": 20,
+     "x_range": [
+      2.0,
+      28.0
+     ]
+    },
+    "span_m": {
+     "label": "network span",
+     "slope": -0.04844290197468619,
+     "se": 0.08836203252429327,
+     "p": 0.5835325487970517,
+     "tau_mdeg": 6.0417760844660195,
+     "spearman": -0.03458646616541353,
+     "spearman_p": 0.8849015088305833,
+     "n": 20,
+     "x_range": [
+      3.760402351344672,
+      63.47158672217414
+     ]
+    },
+    "cross_station_fraction": {
+     "label": "cross-station fraction",
+     "slope": 2.4023986224931804,
+     "se": 10.394472274309013,
+     "p": 0.8172194710697718,
+     "tau_mdeg": 6.232548021374902,
+     "spearman": -0.04661654135338346,
+     "spearman_p": 0.8452698052894376,
+     "n": 20,
+     "x_range": [
+      0.028141666666666666,
+      0.474
+     ]
+    },
+    "observations": {
+     "label": "observations (log10)",
+     "slope": 34.12256260527533,
+     "se": 15.474661939480411,
+     "p": 0.027449863857141696,
+     "tau_mdeg": 5.4961206548608255,
+     "spearman": 0.38796992481203,
+     "spearman_p": 0.09097286579754235,
+     "n": 20,
+     "x_range": [
+      5.502586878189152,
+      5.803233082103249
+     ]
+    },
+    "full_res_fraction": {
+     "label": "full-resolution fraction",
+     "slope": -14.753244227101021,
+     "se": 9.027810009699733,
+     "p": 0.10221692977791866,
+     "tau_mdeg": 5.7190829932727105,
+     "spearman": -0.3798420727437909,
+     "spearman_p": 0.09855137457292965,
+     "n": 20,
+     "x_range": [
+      0.0,
+      0.6710526315789473
+     ]
+    }
+   },
+   "within": {
+    "slope_mdeg_per_degC": -1.0544930277609912,
+    "se": 0.0331123661655684,
+    "p": 1.5002095200189363e-222,
+    "tau_mdeg": 1.733621047248146,
+    "Q": 2950.935648823909,
+    "dof": 24,
+    "p_homogeneous": 0.0,
+    "blocks": 15,
+    "bins": 40,
+    "rows": [
+     {
+      "scape": "Bell Island",
+      "T_degC": -32.95560347631578,
+      "value_mdeg": 8.506730296399564,
+      "sd_mdeg": 0.22894065095792895
+     },
+     {
+      "scape": "Bell Island",
+      "T_degC": -17.6577350940206,
+      "value_mdeg": -10.639995674819259,
+      "sd_mdeg": 0.27186461740553264
+     },
+     {
+      "scape": "Bell Island",
+      "T_degC": -22.06882740675282,
+      "value_mdeg": -8.870125453556343,
+      "sd_mdeg": 0.10172316707282174
+     },
+     {
+      "scape": "Belva Crater",
+      "T_degC": -20.8914,
+      "value_mdeg": -13.276614742458712,
+      "sd_mdeg": 0.10427534456765573
+     },
+     {
+      "scape": "Belva Crater",
+      "T_degC": -36.9597,
+      "value_mdeg": -0.26347206529571243,
+      "sd_mdeg": 0.2651428776666259
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -6.733483527822088,
+      "value_mdeg": -4.152747338852795,
+      "sd_mdeg": 0.17749521769108864
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -26.03980784030607,
+      "value_mdeg": 17.52932586964125,
+      "sd_mdeg": 0.09817046817977318
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -37.5850013907003,
+      "value_mdeg": 25.17187604772906,
+      "sd_mdeg": 0.1923218472481394
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -12.8998,
+      "value_mdeg": 2.1170708860952945,
+      "sd_mdeg": 0.08707171973437385
+     },
+     {
+      "scape": "Butler Landing",
+      "T_degC": -19.175591435049927,
+      "value_mdeg": 10.206489257825137,
+      "sd_mdeg": 0.5763335548556994
+     },
+     {
+      "scape": "Butler Landing",
+      "T_degC": -21.2106,
+      "value_mdeg": 14.174399212234093,
+      "sd_mdeg": 0.3321987969728785
+     },
+     {
+      "scape": "Olifants",
+      "T_degC": -23.302344122082623,
+      "value_mdeg": 10.38728506545174,
+      "sd_mdeg": 0.13923775908835476
+     },
+     {
+      "scape": "Olifants",
+      "T_degC": -29.375757773564285,
+      "value_mdeg": 17.071611343380816,
+      "sd_mdeg": 0.3326096853409287
+     },
+     {
+      "scape": "Olifants",
+      "T_degC": -15.590631976642314,
+      "value_mdeg": 1.6615709098731821,
+      "sd_mdeg": 0.10739966532807736
+     },
+     {
+      "scape": "Pearce Canyon",
+      "T_degC": -20.78210397626917,
+      "value_mdeg": 3.3999600784053996,
+      "sd_mdeg": 0.08119321494735118
+     },
+     {
+      "scape": "Pearce Canyon",
+      "T_degC": -35.90237122693182,
+      "value_mdeg": 20.580326689822403,
+      "sd_mdeg": 0.1169519477540423
+     },
+     {
+      "scape": "Pearce Canyon",
+      "T_degC": -14.82,
+      "value_mdeg": -4.589938374526465,
+      "sd_mdeg": 0.1001735259171493
+     },
+     {
+      "scape": "Pico Turquino",
+      "T_degC": -15.7796,
+      "value_mdeg": 12.604175079449554,
+      "sd_mdeg": 0.1258642183696618
+     },
+     {
+      "scape": "Pico Turquino",
+      "T_degC": -38.7037,
+      "value_mdeg": 39.11933191012492,
+      "sd_mdeg": 0.15845463451234298
+     },
+     {
+      "scape": "Pico Turquino",
+      "T_degC": -19.9337,
+      "value_mdeg": 19.257915040427275,
+      "sd_mdeg": 0.15620241103455235
+     },
+     {
+      "scape": "Rio Chiquito",
+      "T_degC": -15.557106644250936,
+      "value_mdeg": -9.966563436067036,
+      "sd_mdeg": 0.16742611769105037
+     },
+     {
+      "scape": "Rio Chiquito",
+      "T_degC": -23.219873412085228,
+      "value_mdeg": 0.4808310982291992,
+      "sd_mdeg": 0.17007036231309453
+     },
+     {
+      "scape": "Rochette",
+      "T_degC": -21.051000000000002,
+      "value_mdeg": -7.86845704395738,
+      "sd_mdeg": 0.17224767559066706
+     },
+     {
+      "scape": "Rochette",
+      "T_degC": -17.3781,
+      "value_mdeg": -11.397720043455834,
+      "sd_mdeg": 0.19681798030496228
+     },
+     {
+      "scape": "Rockytop",
+      "T_degC": -20.5722,
+      "value_mdeg": -21.64936456893932,
+      "sd_mdeg": 0.11958860848648381
+     },
+     {
+      "scape": "Rockytop",
+      "T_degC": -16.897886560106038,
+      "value_mdeg": -27.53760516049351,
+      "sd_mdeg": 0.11585280185895318
+     },
+     {
+      "scape": "Sid",
+      "T_degC": -23.1247,
+      "value_mdeg": -8.820777986723076,
+      "sd_mdeg": 0.3000669229126872
+     },
+     {
+      "scape": "Sid",
+      "T_degC": -7.790936124016201,
+      "value_mdeg": -22.617390180668203,
+      "sd_mdeg": 0.17011073603187918
+     },
+     {
+      "scape": "Sid",
+      "T_degC": -12.199764669897036,
+      "value_mdeg": -20.468052284692735,
+      "sd_mdeg": 0.1790450803768767
+     },
+     {
+      "scape": "South Arm",
+      "T_degC": -21.72989134283498,
+      "value_mdeg": -9.411072417752196,
+      "sd_mdeg": 0.06713409719150741
+     },
+     {
+      "scape": "South Arm",
+      "T_degC": -47.017404564458026,
+      "value_mdeg": 19.811745496998686,
+      "sd_mdeg": 0.2627563951012085
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -7.873454273236485,
+      "value_mdeg": -11.938474428593125,
+      "sd_mdeg": 0.12456848376097643
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -21.874874176459592,
+      "value_mdeg": 6.183099397500039,
+      "sd_mdeg": 0.2206614879519616
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -10.705473896863534,
+      "value_mdeg": -7.105048053487917,
+      "sd_mdeg": 0.09299861321699845
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -31.513642180907098,
+      "value_mdeg": 22.704873856841367,
+      "sd_mdeg": 0.5586797964796094
+     },
+     {
+      "scape": "Three Forks South",
+      "T_degC": -13.8601,
+      "value_mdeg": -0.6885166304263645,
+      "sd_mdeg": 0.08277577016505928
+     },
+     {
+      "scape": "Three Forks South",
+      "T_degC": -20.253,
+      "value_mdeg": 6.593144309557368,
+      "sd_mdeg": 0.375351415595948
+     },
+     {
+      "scape": "Three Forks South",
+      "T_degC": -44.0867,
+      "value_mdeg": 21.62638611238693,
+      "sd_mdeg": 0.4560706029423911
+     },
+     {
+      "scape": "Van Zyl",
+      "T_degC": -20.253,
+      "value_mdeg": 19.180524913445648,
+      "sd_mdeg": 0.21959175431018169
+     },
+     {
+      "scape": "Van Zyl",
+      "T_degC": -22.1678,
+      "value_mdeg": 20.278154683047315,
+      "sd_mdeg": 0.17426366257215567
+     }
+    ]
+   }
+  },
+  "pitch": {
+   "angle": "pitch",
+   "mode": "rotation_pp",
+   "n": 20,
+   "mean_mdeg": 1.8109121177677776,
+   "se_mean_mdeg": 0.8325938953552687,
+   "tau_mdeg": 3.723144867575924,
+   "Q": 124855.17235223576,
+   "dof": 19,
+   "p_homogeneous": 0.0,
+   "median_sd_mdeg": 0.04796835163903777,
+   "scatter_sd_mdeg": 4.086897897575111,
+   "covariates": {
+    "T_median_degC": {
+     "label": "camera temperature",
+     "slope": 0.3299515496506804,
+     "se": 0.25892818172512083,
+     "p": 0.2025579816606512,
+     "tau_mdeg": 3.781430777885738,
+     "spearman": 0.024060150375939848,
+     "spearman_p": 0.9197997451459456,
+     "n": 20,
+     "x_range": [
+      -22.3957,
+      -10.9781
+     ]
+    },
+    "dT_LR_median_degC": {
+     "label": "left-right temperature difference",
+     "slope": 2.5894918220758654,
+     "se": 1.0350668099243838,
+     "p": 0.012357662758905779,
+     "tau_mdeg": 3.61972751196129,
+     "spearman": 0.38947368421052625,
+     "spearman_p": 0.09929910161688718,
+     "n": 19,
+     "x_range": [
+      -0.7302097561189331,
+      2.4635999999999996
+     ]
+    },
+    "sol_median": {
+     "label": "sol",
+     "slope": 0.0064345632170923,
+     "se": 0.0006204757880990714,
+     "p": 3.3821426452256604e-25,
+     "tau_mdeg": 1.5837776949558018,
+     "spearman": 0.9909774436090225,
+     "spearman_p": 3.642322201586896e-17,
+     "n": 20,
+     "x_range": [
+      12.0,
+      1972.0
+     ]
+    },
+    "stations": {
+     "label": "stations",
+     "slope": -0.007912200042615175,
+     "se": 0.15828448183023172,
+     "p": 0.96013257845956,
+     "tau_mdeg": 3.9065771254156276,
+     "spearman": -0.04981167541368988,
+     "spearman_p": 0.8347997767343149,
+     "n": 20,
+     "x_range": [
+      2.0,
+      28.0
+     ]
+    },
+    "span_m": {
+     "label": "network span",
+     "slope": 0.03326164958539302,
+     "se": 0.05693997952618859,
+     "p": 0.5591175008856438,
+     "tau_mdeg": 3.8945704440533464,
+     "spearman": 0.03909774436090225,
+     "spearman_p": 0.8700037043301221,
+     "n": 20,
+     "x_range": [
+      3.760402351344672,
+      63.47158672217414
+     ]
+    },
+    "cross_station_fraction": {
+     "label": "cross-station fraction",
+     "slope": 3.0017180748563312,
+     "se": 6.273514717284974,
+     "p": 0.632312376987034,
+     "tau_mdeg": 3.763008266102945,
+     "spearman": 0.07218045112781954,
+     "spearman_p": 0.7623392575365605,
+     "n": 20,
+     "x_range": [
+      0.028141666666666666,
+      0.474
+     ]
+    },
+    "observations": {
+     "label": "observations (log10)",
+     "slope": 5.464116910046412,
+     "se": 10.702734142396586,
+     "p": 0.6096769274057598,
+     "tau_mdeg": 3.8028362016247685,
+     "spearman": 0.156390977443609,
+     "spearman_p": 0.5102566899029022,
+     "n": 20,
+     "x_range": [
+      5.502586878189152,
+      5.803233082103249
+     ]
+    },
+    "full_res_fraction": {
+     "label": "full-resolution fraction",
+     "slope": -9.186770007202279,
+     "se": 6.024289943011,
+     "p": 0.1272703660992031,
+     "tau_mdeg": 3.8223548383527994,
+     "spearman": -0.16021061682064844,
+     "spearman_p": 0.4998480665185812,
+     "n": 20,
+     "x_range": [
+      0.0,
+      0.6710526315789473
+     ]
+    }
+   },
+   "within": {
+    "slope_mdeg_per_degC": 0.07677913886796797,
+    "se": 0.019357409321000812,
+    "p": 7.296778282277514e-05,
+    "tau_mdeg": 0.9970742164615201,
+    "Q": 3907.1107536725654,
+    "dof": 24,
+    "p_homogeneous": 0.0,
+    "blocks": 15,
+    "bins": 40,
+    "rows": [
+     {
+      "scape": "Bell Island",
+      "T_degC": -32.95560347631578,
+      "value_mdeg": 11.746843559984006,
+      "sd_mdeg": 0.1203277187632621
+     },
+     {
+      "scape": "Bell Island",
+      "T_degC": -17.6577350940206,
+      "value_mdeg": 10.114133773208136,
+      "sd_mdeg": 0.14307085532366298
+     },
+     {
+      "scape": "Bell Island",
+      "T_degC": -22.06882740675282,
+      "value_mdeg": 9.417089892881183,
+      "sd_mdeg": 0.03801975612808596
+     },
+     {
+      "scape": "Belva Crater",
+      "T_degC": -20.8914,
+      "value_mdeg": 4.626072413165726,
+      "sd_mdeg": 0.03280570523113925
+     },
+     {
+      "scape": "Belva Crater",
+      "T_degC": -36.9597,
+      "value_mdeg": 4.59086823364772,
+      "sd_mdeg": 0.10874351487721848
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -6.733483527822088,
+      "value_mdeg": 24.41922376307597,
+      "sd_mdeg": 0.11947965268473446
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -26.03980784030607,
+      "value_mdeg": 22.435768556886526,
+      "sd_mdeg": 0.08171335152707637
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -37.5850013907003,
+      "value_mdeg": 21.87961812041804,
+      "sd_mdeg": 0.35136119673952576
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -12.8998,
+      "value_mdeg": 23.27325575348144,
+      "sd_mdeg": 0.06064057557269332
+     },
+     {
+      "scape": "Butler Landing",
+      "T_degC": -19.175591435049927,
+      "value_mdeg": -10.71187159072445,
+      "sd_mdeg": 0.1722135108241199
+     },
+     {
+      "scape": "Butler Landing",
+      "T_degC": -21.2106,
+      "value_mdeg": -10.280010843280944,
+      "sd_mdeg": 0.07698993244715001
+     },
+     {
+      "scape": "Olifants",
+      "T_degC": -23.302344122082623,
+      "value_mdeg": 11.391606683463419,
+      "sd_mdeg": 0.0756445898851911
+     },
+     {
+      "scape": "Olifants",
+      "T_degC": -29.375757773564285,
+      "value_mdeg": 12.739420847982704,
+      "sd_mdeg": 0.23182019679119842
+     },
+     {
+      "scape": "Olifants",
+      "T_degC": -15.590631976642314,
+      "value_mdeg": 10.42420402380606,
+      "sd_mdeg": 0.047706989318646004
+     },
+     {
+      "scape": "Pearce Canyon",
+      "T_degC": -20.78210397626917,
+      "value_mdeg": 14.65847643357264,
+      "sd_mdeg": 0.0524862614321034
+     },
+     {
+      "scape": "Pearce Canyon",
+      "T_degC": -35.90237122693182,
+      "value_mdeg": 11.982750983232904,
+      "sd_mdeg": 0.13423042489190165
+     },
+     {
+      "scape": "Pearce Canyon",
+      "T_degC": -14.82,
+      "value_mdeg": 14.985105622096045,
+      "sd_mdeg": 0.05122042879626445
+     },
+     {
+      "scape": "Pico Turquino",
+      "T_degC": -15.7796,
+      "value_mdeg": 1.5426700157158604,
+      "sd_mdeg": 0.04282047996716473
+     },
+     {
+      "scape": "Pico Turquino",
+      "T_degC": -38.7037,
+      "value_mdeg": -0.4184634818990418,
+      "sd_mdeg": 0.25056963133974225
+     },
+     {
+      "scape": "Pico Turquino",
+      "T_degC": -19.9337,
+      "value_mdeg": 2.132106223137701,
+      "sd_mdeg": 0.07578830418734689
+     },
+     {
+      "scape": "Rio Chiquito",
+      "T_degC": -15.557106644250936,
+      "value_mdeg": 0.6338838740147273,
+      "sd_mdeg": 0.06789577733538013
+     },
+     {
+      "scape": "Rio Chiquito",
+      "T_degC": -23.219873412085228,
+      "value_mdeg": 0.9620546546284642,
+      "sd_mdeg": 0.0418086592386832
+     },
+     {
+      "scape": "Rochette",
+      "T_degC": -21.051000000000002,
+      "value_mdeg": -6.087829374053176,
+      "sd_mdeg": 0.043096677373135855
+     },
+     {
+      "scape": "Rochette",
+      "T_degC": -17.3781,
+      "value_mdeg": -4.7173650803075775,
+      "sd_mdeg": 0.07386699767888481
+     },
+     {
+      "scape": "Rockytop",
+      "T_degC": -20.5722,
+      "value_mdeg": 6.072027554164348,
+      "sd_mdeg": 0.053129679967162204
+     },
+     {
+      "scape": "Rockytop",
+      "T_degC": -16.897886560106038,
+      "value_mdeg": 5.725066175540188,
+      "sd_mdeg": 0.04472694936937075
+     },
+     {
+      "scape": "Sid",
+      "T_degC": -23.1247,
+      "value_mdeg": -7.2328567493188,
+      "sd_mdeg": 0.1283486703190529
+     },
+     {
+      "scape": "Sid",
+      "T_degC": -7.790936124016201,
+      "value_mdeg": -0.43664074819874593,
+      "sd_mdeg": 0.052899876594961454
+     },
+     {
+      "scape": "Sid",
+      "T_degC": -12.199764669897036,
+      "value_mdeg": -1.5905030373211004,
+      "sd_mdeg": 0.06181068201520449
+     },
+     {
+      "scape": "South Arm",
+      "T_degC": -21.72989134283498,
+      "value_mdeg": 7.918008598743514,
+      "sd_mdeg": 0.026339113374159104
+     },
+     {
+      "scape": "South Arm",
+      "T_degC": -47.017404564458026,
+      "value_mdeg": 9.102102580947884,
+      "sd_mdeg": 0.33464202111380403
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -7.873454273236485,
+      "value_mdeg": 8.841307695653228,
+      "sd_mdeg": 0.06489276797694324
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -21.874874176459592,
+      "value_mdeg": 6.505716528530688,
+      "sd_mdeg": 0.15081443220324667
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -10.705473896863534,
+      "value_mdeg": 8.082893962999746,
+      "sd_mdeg": 0.03435177740123718
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -31.513642180907098,
+      "value_mdeg": 8.101555266971454,
+      "sd_mdeg": 0.7414075724363481
+     },
+     {
+      "scape": "Three Forks South",
+      "T_degC": -13.8601,
+      "value_mdeg": 6.919357167837876,
+      "sd_mdeg": 0.02595764974195672
+     },
+     {
+      "scape": "Three Forks South",
+      "T_degC": -20.253,
+      "value_mdeg": 6.173087473974749,
+      "sd_mdeg": 0.10036793986215116
+     },
+     {
+      "scape": "Three Forks South",
+      "T_degC": -44.0867,
+      "value_mdeg": 2.6625282902958585,
+      "sd_mdeg": 0.12301227152766785
+     },
+     {
+      "scape": "Van Zyl",
+      "T_degC": -20.253,
+      "value_mdeg": 4.644199257975024,
+      "sd_mdeg": 0.08921313118017361
+     },
+     {
+      "scape": "Van Zyl",
+      "T_degC": -22.1678,
+      "value_mdeg": 3.7336783232357953,
+      "sd_mdeg": 0.062419102695009505
+     }
+    ]
+   }
+  },
+  "roll": {
+   "angle": "roll",
+   "mode": "rotation_pp",
+   "n": 20,
+   "mean_mdeg": 17.619777927905723,
+   "se_mean_mdeg": 0.9454204543842077,
+   "tau_mdeg": 4.2273170669928275,
+   "Q": 62920.751573150555,
+   "dof": 19,
+   "p_homogeneous": 0.0,
+   "median_sd_mdeg": 0.07406908071591531,
+   "scatter_sd_mdeg": 4.421495347735969,
+   "covariates": {
+    "T_median_degC": {
+     "label": "camera temperature",
+     "slope": 0.17531026999170535,
+     "se": 0.29413279366986345,
+     "p": 0.5511590443530531,
+     "tau_mdeg": 4.295204637728372,
+     "spearman": 0.21052631578947367,
+     "spearman_p": 0.3729699095048001,
+     "n": 20,
+     "x_range": [
+      -22.3957,
+      -10.9781
+     ]
+    },
+    "dT_LR_median_degC": {
+     "label": "left-right temperature difference",
+     "slope": -0.5515520212006106,
+     "se": 1.2271141529351155,
+     "p": 0.6530920435248491,
+     "tau_mdeg": 4.290959723001246,
+     "spearman": -0.09649122807017543,
+     "spearman_p": 0.6943484389585838,
+     "n": 19,
+     "x_range": [
+      -0.7302097561189331,
+      2.4635999999999996
+     ]
+    },
+    "sol_median": {
+     "label": "sol",
+     "slope": -0.005805309577919361,
+     "se": 0.0011254595687506465,
+     "p": 2.4937776318950256e-07,
+     "tau_mdeg": 2.873138503364061,
+     "spearman": -0.7473684210526315,
+     "spearman_p": 0.000152313709661083,
+     "n": 20,
+     "x_range": [
+      12.0,
+      1972.0
+     ]
+    },
+    "stations": {
+     "label": "stations",
+     "slope": 0.02800015883806743,
+     "se": 0.17903687791848188,
+     "p": 0.875723059055924,
+     "tau_mdeg": 4.418499167346069,
+     "spearman": 0.09660446140836824,
+     "spearman_p": 0.6853598003259913,
+     "n": 20,
+     "x_range": [
+      2.0,
+      28.0
+     ]
+    },
+    "span_m": {
+     "label": "network span",
+     "slope": 0.007903162666996786,
+     "se": 0.06412079611524481,
+     "p": 0.9019057426302534,
+     "tau_mdeg": 4.385447900456361,
+     "spearman": 0.0706766917293233,
+     "spearman_p": 0.7671582206450904,
+     "n": 20,
+     "x_range": [
+      3.760402351344672,
+      63.47158672217414
+     ]
+    },
+    "cross_station_fraction": {
+     "label": "cross-station fraction",
+     "slope": 0.30822372174708895,
+     "se": 7.2429887461672955,
+     "p": 0.9660564509444833,
+     "tau_mdeg": 4.344187941698068,
+     "spearman": 0.05263157894736842,
+     "spearman_p": 0.825581450455932,
+     "n": 20,
+     "x_range": [
+      0.028141666666666666,
+      0.474
+     ]
+    },
+    "observations": {
+     "label": "observations (log10)",
+     "slope": -10.78820899154966,
+     "se": 11.777415718970746,
+     "p": 0.35966261106744146,
+     "tau_mdeg": 4.18429895121625,
+     "spearman": -0.19999999999999998,
+     "spearman_p": 0.3978729793519616,
+     "n": 20,
+     "x_range": [
+      5.502586878189152,
+      5.803233082103249
+     ]
+    },
+    "full_res_fraction": {
+     "label": "full-resolution fraction",
+     "slope": 9.398561550816524,
+     "se": 6.810023279394956,
+     "p": 0.167553668299946,
+     "tau_mdeg": 4.320355762264591,
+     "spearman": 0.24370065657225398,
+     "spearman_p": 0.3004807107374971,
+     "n": 20,
+     "x_range": [
+      0.0,
+      0.6710526315789473
+     ]
+    }
+   },
+   "within": {
+    "slope_mdeg_per_degC": 0.2574517261027142,
+    "se": 0.06699358104518044,
+    "p": 0.00012157353334358189,
+    "tau_mdeg": 3.5388862953514026,
+    "Q": 15507.955179901157,
+    "dof": 24,
+    "p_homogeneous": 0.0,
+    "blocks": 15,
+    "bins": 40,
+    "rows": [
+     {
+      "scape": "Bell Island",
+      "T_degC": -32.95560347631578,
+      "value_mdeg": 20.485617000316438,
+      "sd_mdeg": 0.21220485455269136
+     },
+     {
+      "scape": "Bell Island",
+      "T_degC": -17.6577350940206,
+      "value_mdeg": 18.09619956795688,
+      "sd_mdeg": 0.23851073481498072
+     },
+     {
+      "scape": "Bell Island",
+      "T_degC": -22.06882740675282,
+      "value_mdeg": 12.13223187684335,
+      "sd_mdeg": 0.07714975481049376
+     },
+     {
+      "scape": "Belva Crater",
+      "T_degC": -20.8914,
+      "value_mdeg": 15.983971303226419,
+      "sd_mdeg": 0.06997945202005712
+     },
+     {
+      "scape": "Belva Crater",
+      "T_degC": -36.9597,
+      "value_mdeg": 23.67505604205911,
+      "sd_mdeg": 0.2031607429949319
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -6.733483527822088,
+      "value_mdeg": 19.735077215545388,
+      "sd_mdeg": 0.19970373148567505
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -26.03980784030607,
+      "value_mdeg": 13.426515049216933,
+      "sd_mdeg": 0.11780461660889618
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -37.5850013907003,
+      "value_mdeg": 4.589368460727521,
+      "sd_mdeg": 0.26132640738245044
+     },
+     {
+      "scape": "Bunsen Peak",
+      "T_degC": -12.8998,
+      "value_mdeg": 19.961714153755906,
+      "sd_mdeg": 0.09276785424424429
+     },
+     {
+      "scape": "Butler Landing",
+      "T_degC": -19.175591435049927,
+      "value_mdeg": 20.541866865656836,
+      "sd_mdeg": 0.35847461936876945
+     },
+     {
+      "scape": "Butler Landing",
+      "T_degC": -21.2106,
+      "value_mdeg": 26.40560325230749,
+      "sd_mdeg": 0.13213374650624407
+     },
+     {
+      "scape": "Olifants",
+      "T_degC": -23.302344122082623,
+      "value_mdeg": 16.489419894249274,
+      "sd_mdeg": 0.14204746738720173
+     },
+     {
+      "scape": "Olifants",
+      "T_degC": -29.375757773564285,
+      "value_mdeg": 12.729119315987868,
+      "sd_mdeg": 0.3237134296709572
+     },
+     {
+      "scape": "Olifants",
+      "T_degC": -15.590631976642314,
+      "value_mdeg": 18.384371154303913,
+      "sd_mdeg": 0.08574906800898979
+     },
+     {
+      "scape": "Pearce Canyon",
+      "T_degC": -20.78210397626917,
+      "value_mdeg": 11.724635658305694,
+      "sd_mdeg": 0.08863471376410469
+     },
+     {
+      "scape": "Pearce Canyon",
+      "T_degC": -35.90237122693182,
+      "value_mdeg": 6.134741020477187,
+      "sd_mdeg": 0.17341773812669317
+     },
+     {
+      "scape": "Pearce Canyon",
+      "T_degC": -14.82,
+      "value_mdeg": 15.9638479267166,
+      "sd_mdeg": 0.0969619184183544
+     },
+     {
+      "scape": "Pico Turquino",
+      "T_degC": -15.7796,
+      "value_mdeg": 13.67363540353373,
+      "sd_mdeg": 0.07794719242622372
+     },
+     {
+      "scape": "Pico Turquino",
+      "T_degC": -38.7037,
+      "value_mdeg": 4.494106144131698,
+      "sd_mdeg": 0.18164622312951675
+     },
+     {
+      "scape": "Pico Turquino",
+      "T_degC": -19.9337,
+      "value_mdeg": 14.010670710177994,
+      "sd_mdeg": 0.14037076396505
+     },
+     {
+      "scape": "Rio Chiquito",
+      "T_degC": -15.557106644250936,
+      "value_mdeg": 15.50805100302938,
+      "sd_mdeg": 0.13587307529203446
+     },
+     {
+      "scape": "Rio Chiquito",
+      "T_degC": -23.219873412085228,
+      "value_mdeg": 9.1507985295722,
+      "sd_mdeg": 0.08347042942204382
+     },
+     {
+      "scape": "Rochette",
+      "T_degC": -21.051000000000002,
+      "value_mdeg": 23.563267986360238,
+      "sd_mdeg": 0.09250710816183895
+     },
+     {
+      "scape": "Rochette",
+      "T_degC": -17.3781,
+      "value_mdeg": 14.717455726273826,
+      "sd_mdeg": 0.14576146115840263
+     },
+     {
+      "scape": "Rockytop",
+      "T_degC": -20.5722,
+      "value_mdeg": 24.06635922277008,
+      "sd_mdeg": 0.09627390344855252
+     },
+     {
+      "scape": "Rockytop",
+      "T_degC": -16.897886560106038,
+      "value_mdeg": 22.52594374439215,
+      "sd_mdeg": 0.08498431396316836
+     },
+     {
+      "scape": "Sid",
+      "T_degC": -23.1247,
+      "value_mdeg": 25.664664425279174,
+      "sd_mdeg": 0.2263672191783858
+     },
+     {
+      "scape": "Sid",
+      "T_degC": -7.790936124016201,
+      "value_mdeg": 20.89672270599502,
+      "sd_mdeg": 0.10075499971900298
+     },
+     {
+      "scape": "Sid",
+      "T_degC": -12.199764669897036,
+      "value_mdeg": 23.45171056445253,
+      "sd_mdeg": 0.12314508981701637
+     },
+     {
+      "scape": "South Arm",
+      "T_degC": -21.72989134283498,
+      "value_mdeg": 11.81703441018997,
+      "sd_mdeg": 0.05333357305471008
+     },
+     {
+      "scape": "South Arm",
+      "T_degC": -47.017404564458026,
+      "value_mdeg": 12.292436942142448,
+      "sd_mdeg": 0.2892447809683983
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -7.873454273236485,
+      "value_mdeg": 16.682441819535725,
+      "sd_mdeg": 0.12225352298442538
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -21.874874176459592,
+      "value_mdeg": 7.59203391483382,
+      "sd_mdeg": 0.24649360861382655
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -10.705473896863534,
+      "value_mdeg": 13.515362244169776,
+      "sd_mdeg": 0.06803196694094081
+     },
+     {
+      "scape": "Taylorfjellet",
+      "T_degC": -31.513642180907098,
+      "value_mdeg": 10.659910153266159,
+      "sd_mdeg": 0.6774450109903527
+     },
+     {
+      "scape": "Three Forks South",
+      "T_degC": -13.8601,
+      "value_mdeg": 18.13263009574618,
+      "sd_mdeg": 0.05268849981075706
+     },
+     {
+      "scape": "Three Forks South",
+      "T_degC": -20.253,
+      "value_mdeg": 17.11928790499839,
+      "sd_mdeg": 0.19768588294598555
+     },
+     {
+      "scape": "Three Forks South",
+      "T_degC": -44.0867,
+      "value_mdeg": 6.476230617500571,
+      "sd_mdeg": 0.2425440577361622
+     },
+     {
+      "scape": "Van Zyl",
+      "T_degC": -20.253,
+      "value_mdeg": 21.27914153418152,
+      "sd_mdeg": 0.17206996377802675
+     },
+     {
+      "scape": "Van Zyl",
+      "T_degC": -22.1678,
+      "value_mdeg": 21.430263980618385,
+      "sd_mdeg": 0.13379079397783533
+     }
+    ]
+   }
+  }
+ },
+ "drift_model": {
+  "model": "linear+hinge",
+  "sol0": 1083.9666666666667,
+  "blocks": 20,
+  "sol_range": [
+   12.0,
+   1972.0
+  ],
+  "T_mean_degC": -17.946440958414247,
+  "knot_sol": 300.0,
+  "knot_ref": 292.0,
+  "pitch_fit_mdeg_per_sol": 0.0044589905945230535,
+  "pitch_se": 0.0004051560958065092,
+  "pitch_p": 3.5907149705518443e-28,
+  "pitch_T_mdeg_per_degC": 0.022057794877182457,
+  "pitch_tau_mdeg": 0.7851331348574198,
+  "pitch_mdeg_per_sol": 0.0044589905945230535,
+  "pitch_early_mdeg_per_sol": 0.025805487672012538,
+  "pitch_early_se": 0.0027733577649456686,
+  "yaw_fit_mdeg_per_sol": 0.003891983440320122,
+  "yaw_se": 0.0015951849167681377,
+  "yaw_p": 0.014694087659859587,
+  "yaw_T_mdeg_per_degC": -1.2769975007251277,
+  "yaw_tau_mdeg": 4.0208380196731035,
+  "yaw_mdeg_per_sol": 0.003891983440320122,
+  "roll_fit_mdeg_per_sol": -0.0060976793483485635,
+  "roll_se": 0.001092028962078042,
+  "roll_p": 2.353093526185871e-08,
+  "roll_T_mdeg_per_degC": 0.337077010721578,
+  "roll_tau_mdeg": 2.7554432845580585,
+  "roll_mdeg_per_sol": -0.0060976793483485635,
+  "no_drift": []
+ }
+}

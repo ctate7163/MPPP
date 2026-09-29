@@ -6,6 +6,8 @@ section 15).
   python scripts/navcam_calibration_study.py joint OUT_DIR SCAPES.json [--samples ...] [--points 25000]
   python scripts/navcam_calibration_study.py loo   OUT_DIR SCAPES.json [--samples ...] [--lens rational|fisheye_t]
   python scripts/navcam_calibration_study.py all   OUT_DIR SCAPES.json [--samples ...]      (OUT_DIR/rig, OUT_DIR/joint)
+  python scripts/navcam_calibration_study.py scale OUT_DIR SCAPES.json [--only NAME ...]   (v0p35.1: offsets between the
+                                                                                          downsample scales, scale_<block>.json)
 
 SCAPES.json: {"name": "path to a notebook-03 folder (or its colmap/)", ...}.  Temperatures come from the project
 records (MPPP >= 0.31) or from the label samples ({stem: {"NL", "NR"}}), interpolated in spacecraft clock.
@@ -51,8 +53,15 @@ def cmd_rig(a, scapes_cfg, samples):
     names = a.only or list(scapes_cfg)
     # the common principal points come from all blocks (cheap: cameras only)
     import pycolmap
+    if getattr(a, "common_pp", None):
+        # v0p35.1: the common principal points of an earlier study, so that new blocks are comparable with it
+        common = json.loads(Path(a.common_pp).read_text())
+        scapes_cfg_pp = {}
+    else:
+        common = None
+        scapes_cfg_pp = scapes_cfg
     pp = {"NL": [], "NR": []}
-    for n, root in scapes_cfg.items():
+    for n, root in scapes_cfg_pp.items():
         r = Path(root)
         r = r / "colmap" if (r / "colmap").is_dir() else r
         pj = json.loads((r / "project.json").read_text())
@@ -62,7 +71,8 @@ def cmd_rig(a, scapes_cfg, samples):
         for cid, cam in rec.cameras.items():
             if key_of.get(int(cid)) in pp:
                 pp[key_of[int(cid)]].append(np.asarray(cam.params[2:4], float))
-    common = {k: np.median(np.array(v), axis=0).tolist() for k, v in pp.items()}
+    if common is None:
+        common = {k: np.median(np.array(v), axis=0).tolist() for k, v in pp.items()}
     (out / "common_principal_points.json").write_text(json.dumps(common, indent=1))
     print("common principal points", common, flush=True)
     for n in names:
@@ -71,11 +81,31 @@ def cmd_rig(a, scapes_cfg, samples):
             print(f"{n}: done", flush=True)
             continue
         t = time.time()
-        sc = NC.load_scape(n, scapes_cfg[n], samples)
+        sc = NC.load_scape(n, scapes_cfg[n], samples, lens=getattr(a, "rig_lens", None))
         n_all = len(sc.rec.points3D)
         n_drop = NC.thin_points(sc.rec, a.rig_points, seed=0)
         res = NC.rig_study(sc, common_pp=common)
         res["points_used"] = {"all": n_all, "kept": n_all - n_drop}
+        f.write_text(json.dumps(jsonable(res), indent=1))
+        print(f"{n}: {time.time() - t:.0f} s", flush=True)
+        del sc
+
+
+def cmd_scale(a, scapes_cfg, samples):
+    """v0p35.1: one camera per eye and downsample scale, principal point (and focal length) free - is there a pixel
+    offset between the Navcam resolutions?  Writes OUT/scale_<block>.json."""
+    from mppp.sfm import navcal as NC
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    for n in a.only or list(scapes_cfg):
+        f = out / f"scale_{n.replace(' ', '_')}.json"
+        if f.exists() and not a.force:
+            print(f"{n}: done", flush=True)
+            continue
+        t = time.time()
+        sc = NC.load_scape(n, scapes_cfg[n], samples, lens=getattr(a, "rig_lens", None))
+        NC.thin_points(sc.rec, a.rig_points, seed=0)
+        res = {tag: NC.scale_offsets(sc, free=free) for tag, free in (("pp", ("cx", "cy")), ("ppf", ("fx", "fy", "cx", "cy")))}
         f.write_text(json.dumps(jsonable(res), indent=1))
         print(f"{n}: {time.time() - t:.0f} s", flush=True)
         del sc
@@ -363,7 +393,7 @@ def cmd_all(a, scapes_cfg, samples):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["rig", "joint", "loo", "all"])
+    ap.add_argument("cmd", choices=["rig", "joint", "loo", "all", "scale"])
     ap.add_argument("out")
     ap.add_argument("scapes")
     ap.add_argument("--samples")
@@ -372,6 +402,10 @@ def main(argv=None):
     ap.add_argument("--points", type=int, default=15000, help="joint/loo: points per block")
     ap.add_argument("--rig-points", type=int, default=120000, help="rig: at most this many points per block")
     ap.add_argument("--lens", default="rational")
+    ap.add_argument("--rig-lens", default="rational",
+                    help="rig: refit blocks solved with another Navcam lens model to this one (rational|fisheye_t)")
+    ap.add_argument("--common-pp", help="rig: common principal points JSON of an earlier study (default: the median "
+                                        "of the blocks)")
     ap.add_argument("--warm-slope", type=float, default=40.0)
     ap.add_argument("--grid", type=float, nargs="*", default=[0, 15, 30, 45, 60, 75, 90])
     ap.add_argument("--fixed-slope", type=float, help="joint: skip the profile and use this slope (ppm/degC)")
@@ -384,7 +418,7 @@ def main(argv=None):
     samples = json.loads(Path(a.samples).read_text()) if a.samples else None
     if a.only and a.cmd == "joint":
         scapes_cfg = {k: v for k, v in scapes_cfg.items() if k in a.only}
-    {"rig": cmd_rig, "joint": cmd_joint, "loo": cmd_loo, "all": cmd_all}[a.cmd](a, scapes_cfg, samples)
+    {"rig": cmd_rig, "joint": cmd_joint, "loo": cmd_loo, "all": cmd_all, "scale": cmd_scale}[a.cmd](a, scapes_cfg, samples)
 
 
 if __name__ == "__main__":

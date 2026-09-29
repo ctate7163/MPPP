@@ -319,3 +319,100 @@ In pixels (f ≈ 2956 px): the yaw slope is **0.053 px of disparity at infinity 
 - **Lens model.** With the predicted cameras held, the fisheye + tangential model fits every one of the 15 held-out blocks better than the rational model: cost −0.60 % (median −0.56 %, Wilcoxon p 6·10⁻⁵), corner median 0.239 against 0.259 px (−8 %), median residual 0.193 against 0.194 px. Its transfer penalty is the same (0.61 against 0.57 %), and its prediction is as far from the block's own calibration (0.28 against 0.25 px rms, fisheye closer in 5 of 15, p 0.23). The rig results are the same for both.
 
 Reading: the Navcam intrinsics are stable — one camera per eye with the 38.6 ppm/°C focal term predicts a new block to within 0.5 % in cost and a quarter of a pixel over the frame. The rig is not: its yaw turns by −1.0 mdeg/°C (0.05 px of disparity per °C, the largest thermal effect on stereo range, ten times the focal term), its pitch and roll drift over the mission, and a block-to-block residual of 2–4 mdeg (0.1–0.2 px) remains. Decision: a temperature-dependent rig with a drift for the start and for held rigs (weak networks, the thermal stage's bins), and the rig rotation refined in every block whose network supports it (`refine_rig="auto"`). The lens model is fisheye + tangential (better on unseen blocks, especially the corners; same transfer); the rational model stays available.
+
+
+## 16. Is the rig's drift robust? Six more blocks, the 24 sites, and the resolutions (v0p35.1, 29 Sep 2026)
+
+**Sites.** Notebook 03's `SITES` now lists 23 sites (plus `threeforks_large` on disk). State on `D:\scapes\colmap` (29 Sep, 18:00):
+
+| site | sols | state | flag |
+|---|---|---|---|
+| butler_landing | 1–14 (images 9–14) | 0.35 alignment, health WARN, 76 images, 7 stations | **weak network by span** (4.9 m < 5 m): notebook 03 held cameras and rig, residuals 0.35 px (2.5 × the others), edge/centre 1.8. 67 % full resolution; labels without CAHV temperature (11 label samples). Rig study: used. |
+| van_zyl | 49–71 | 0.35, PASS, 116 images, 9 stations | 64 % quarter resolution, 20 left-only frames, early labels (26 label samples). Used. |
+| rochette | 179–190 | v0p35 block | early label rig (below) |
+| seitah_north | 238–279 | 0.35, **FAIL** | waypoint layout 8.6 % off in scale (1.9 m over 10 stations; station shift 3.1 m, block rotation 0.42°): a pose-prior problem; project recorded as `seitah_colmap` (folder renamed after the run); sols 237–242 without CAHV temperature (6 samples). Used. |
+| sid, rockytop | | v0p35 blocks | — |
+| whale_mountain | 606–610 | 0.35, WARN, 31 images, **2 stations** | weak network (cameras and rig held → the notebook 03 `IndexError`, fixed); nearby waypoints reach sols 592–639, `KEEP_ONLY_REMAINING` kept 31 of 78. Shown, **not fitted**. |
+| threeforks_south | 652–683 | 0.30-era alignment, 306 images, 28 stations | **contains all 56 Three Forks images** (sols 413–693): a replicate, not an independent block. Fitted; fits repeated without it. |
+| pico_turquino | 1307–1322 | 0.35, PASS, 81 images, 7 stations | — (added to `SITES` as 1307–1322, the sols of its images) |
+| origny | 1775–1813 | the v0p35 "Olifants" block, in `olifants_colmap` | **rename the folder** to `origny_colmap`; notebook 03 now warns when a WORK folder holds no image of the site's sol range |
+| olifants | 1880–1889 | 0.35 run found **no PDS products** (datadrive ends at sol 1819, `D:\data\m2020` starts at 1900); its manifest landed in the Origny folder | **needs data** |
+| groloy | 1922–1934 | products on disk, **not run** | — |
+| overlook_mountain | ? | folder appeared during this work, not in `SITES`, not reviewed | — |
+
+In this section "Olifants" is still the v0p35 block of sols 1775–1813 (the site **origny**).
+
+**One label reference.** `rig_study` measures the rig against each block's label (CAHV) rig. These are identical after sol ~250; Butler Landing, Van Zyl, Rochette and Seitah North carry an earlier label calibration that differs by 0.23 mdeg in pitch and 0.58 mdeg in roll. From 0.35.1 all angles are referred to one label rig (`navcal.common_reference`); for the 15 v0p35 blocks this moves only Rochette (rates change < 0.15 mdeg / 1000 sol).
+
+**New blocks** (`navcam_calibration_study.py rig --common-pp <v0p35>`; blocks with thermal bins read from `sparse/cahv_ba_single`, fisheye-solved blocks refitted to the rational model, 0.11–0.20 px rms). Common principal points, one label reference, mdeg, σ rescaled:
+
+| block | sols (median) | stations | images (full-res %) | T °C | yaw | pitch | roll | σ yaw / pitch / roll |
+|---|---|---|---|---|---|---|---|---|
+| **Butler Landing** | 9–14 (12) | 7 | 76 (67) | -20.9 | -8.45 | -6.65 | +24.77 | 0.43 / 0.08 / 0.12 |
+| **Van Zyl** | 49–71 (63) | 9 | 116 (11) | -21.2 | +4.57 | -8.15 | +18.89 | 0.19 / 0.04 / 0.07 |
+| Rochette | 178–341 (180) | 3 | 37 (19) | -20.7 | -6.44 | -2.68 | +20.76 | 0.28 / 0.05 / 0.09 |
+| **Seitah North** | 237–278 (242) | 10 | 81 (10) | -16.9 | -11.85 | -1.50 | +22.96 | 0.15 / 0.04 / 0.07 |
+| **Whale Mountain** (not fitted) | 606–609 (609) | 2 | 31 (6) | -18.2 | -7.75 | +0.94 | +23.81 | 0.20 / 0.05 / 0.09 |
+| **Three Forks South** | 413–693 (670) | 28 | 306 (40) | -14.5 | -10.84 | +1.12 | +17.23 | 0.11 / 0.03 / 0.05 |
+| Three Forks | 433–693 (686) | 4 | 56 (12) | -14.6 | -9.51 | +1.20 | +20.61 | 0.16 / 0.04 / 0.06 |
+| **Pico Turquino** | 1307–1322 (1309) | 7 | 81 (10) | -17.9 | +3.05 | +3.79 | +12.09 | 0.16 / 0.05 / 0.08 |
+
+(the other v0p35 blocks as §15). Table and figure: `docs/results/v0p35p1/rig_drift_robustness.json`, `navcam_rig_drift.png`.
+
+**The replicate.** Three Forks South contains Three Forks at the same epoch and temperature: the rigs agree to 0.08 mdeg in pitch (0.004 px of vertical parallax), 1.3 mdeg in yaw (0.07 px of disparity) and 3.4 mdeg in roll. Pitch is reproducible to its formal σ; yaw and roll carry a block-dependent part of 1–3 mdeg — the floor under their between-block τ.
+
+**Out of sample.** The v0p35 drift (15 blocks, linear in sol with temperature) predicting the new blocks (residual mdeg, z with σ² = fit ⊕ τ ⊕ block; in brackets the residual against one fixed rig):
+
+| block | pitch | yaw | roll |
+|---|---|---|---|
+| Butler Landing (12) | **-4.39, z -4.4** (-9.8) | -1.36, z -0.3 (-2.7) | +2.26, z +0.7 (+7.7) |
+| Van Zyl (63) | **-6.13, z -6.2** (-11.3) | +11.08, z +2.5 (+10.4) | -3.20, z -1.0 (+1.8) |
+| Seitah North (242) | -0.58, z -0.6 (-4.7) | -1.23, z -0.3 (-6.1) | +0.35, z +0.1 (+5.9) |
+| Whale Mountain (609) | +0.12, z +0.1 (-2.2) | -0.29, z -0.1 (-2.0) | +3.95, z +1.4 (+6.7) |
+| Three Forks South (670) | -0.18, z -0.2 (-2.1) | +0.65, z +0.2 (-5.1) | -3.68, z -1.2 (+0.1) |
+| Pico Turquino (1309) | -0.48, z -0.6 (+0.6) | +7.72, z +2.0 (+8.8) | -3.59, z -1.3 (-5.0) |
+
+Every block after sol 240 is predicted within 2 σ on every angle, and the drift removes most of the offset from a fixed rig. The two blocks before sol 100 — Butler Landing, mostly full resolution, and Van Zyl, mostly quarter resolution, so not one block's artefact — have their pitch 4–6 mdeg (0.2–0.3 px of vertical parallax) below the linear line.
+
+**Refit** (`rig_drift`, weights 1/(σ² + τ²); mdeg / 1000 sol):
+
+| fit | pitch | yaw (p) | roll | τ pitch / yaw / roll |
+|---|---|---|---|---|
+| v0p35, 15 blocks | +4.92 ± 0.43 | +4.51 ± 1.93 (0.02) | -6.14 ± 1.39 | 0.84 / 3.80 / 2.74 |
+| **20 blocks** (without Whale Mountain) | +6.29 ± 0.62 | +3.89 ± 1.60 (0.015) | -6.10 ± 1.09 | 1.56 / 4.02 / 2.76 |
+| 19 without Butler Landing | +5.93 ± 0.65 | +3.38 ± 1.70 (0.05) | -5.68 ± 1.16 | 1.53 / 4.03 / 2.75 |
+| 18 without Butler Landing and Van Zyl | +5.00 ± 0.34 | +5.12 ± 1.69 (0.003) | -6.14 ± 1.27 | 0.75 / 3.69 / 2.76 |
+| 19 without Three Forks South | +6.32 ± 0.66 | +3.90 ± 1.70 (0.02) | -6.29 ± 1.09 | 1.65 / 4.23 / 2.71 |
+| 19 without Seitah North | +6.40 ± 0.66 | +3.59 ± 1.68 (0.03) | -5.99 ± 1.17 | 1.60 / 4.05 / 2.82 |
+| 21 with Whale Mountain | +6.24 ± 0.60 | +3.95 ± 1.56 (0.01) | -6.30 ± 1.12 | 1.54 / 3.97 / 2.85 |
+| **20, pitch hinge at sol 300** | **+4.46 ± 0.41** after, **+25.8 ± 2.8** before | +3.89 ± 1.60 | -6.10 ± 1.09 | **0.79** / 4.02 / 2.76 |
+
+Leave-one-block-out rates (20 blocks): pitch +5.7…+6.6, yaw +3.4…+5.3, roll −7.0…−5.7 — every sign stable. Leave-one-block-out **prediction** rms (mdeg):
+
+| model | pitch | yaw | roll |
+|---|---|---|---|
+| one rig | 4.19 | 6.30 | 4.54 |
+| temperature | 4.22 | 5.05 | 4.76 |
+| temperature + sol | 1.78 | **4.72** | **2.96** |
+| + pitch hinge at sol 300 | **1.10** | (5.44) | (3.31) |
+
+- **Pitch drift: robust, faster early.** It holds out of sample after sol 240, its jackknife range is narrow, and it cuts the prediction error from 4.2 to 1.8 mdeg; with a faster rate before sol ~300 to 1.1 mdeg (0.06 px of vertical parallax). The early part is set by four blocks (Butler Landing −6.7, Van Zyl −8.2, Rochette −2.7, Seitah North −1.5 mdeg): the pitch rose by ~9 mdeg in the first 300 sols, then +4.5 mdeg / 1000 sol to Marble Mountain (+8.6). A hinge at sol 250–325 fits best (AIC 54–55 against 80 for the line, τ 1.56 → 0.79); an exponential settling from landing fits worse (AIC ≥ 60) because Butler Landing (sol 12) lies above Van Zyl (sol 63) — the shape before sol 100 is not resolved. Over the mission the pitch changes by ~16 mdeg, 0.8 px of vertical parallax at infinity.
+- **Roll drift: holds.** −6.1 ± 1.1 mdeg / 1000 sol, sign stable, prediction 4.5 → 3.0 mdeg; τ stays 2.8 mdeg, which the Three Forks replicate (3.4 mdeg) shows is mostly estimation. Roll moves the image edges only (1 mdeg = 0.045 px at 2560 px from the centre).
+- **Yaw drift: marginal, kept.** +3.9 ± 1.6 mdeg / 1000 sol with 20 blocks (p 0.015; it was +2.9, p 0.08, with the first 18 and rises to +5.1 without the two earliest). It improves the prediction slightly (5.05 → 4.72 mdeg) and its sign is stable. It is the weakest term; Pico Turquino (+7.7) and Van Zyl (+11.1) are the largest yaw residuals.
+- **Yaw follows temperature: robust.** Within blocks −1.05 ± 0.03 mdeg/°C (40 bins in 15 blocks; v0p35 −1.13 ± 0.04), between blocks −1.17 ± 0.31 (−1.28 with sol); the joint slope −1.03 stands. The yaw residual still correlates with log(observations) (p 0.03). Pitch and roll within-block slopes +0.08 ± 0.02 and +0.26 ± 0.07 mdeg/°C.
+
+**Decision.** The rig file's drift is `navcal.rig_drift_model` on the 20 blocks: pitch +4.46 mdeg / 1000 sol after sol 300 and +25.8 before (hinge), yaw +3.89, roll −6.10; `sol0` and the hinge reference are the means over the 15 joint blocks, so the joint rig is unchanged. Blocks with a strong network still refine the rig rotation (`refine_rig="auto"`); the drift matters for the start and for held rigs (Butler Landing, Whale Mountain, the thermal bins). Written to `D:\scapes\colmap\camera_analysis\navcal_v0p35p1\navcam_joint` (and `_rational`); cameras as v0p35. A block between sols 20 and 170 would pin down the early shape.
+
+**Resolutions: is there a pixel offset between full, half and quarter resolution?** MPPP maps native keypoints to full-frame pixels by a pure scale in corner-origin pixels, x_full = x / s (pixel centres: (x + 0.5)/s − 0.5); sub-frames are placed with the label's FIRST_LINE(_SAMPLE). This is exact for binning that starts at the detector corner. Sub-sampling instead would put half- and quarter-resolution images 0.5 and 1.5 full-res px off, in x and y alike and in both eyes.
+
+- *Flight calibration.* The label CAHVORE of 1,760 Navcam products (all manifests at hand), mapped to full-frame pixels the same way, per eye and sol against the half-resolution products: full − half resolution Δhc +0.002 / +0.001 px, Δvc −0.001 / 0.000 px (NL / NR, 80 sols; interquartile ±0.02 px); quarter − half −0.03 / +0.02 px (48 / 33 sols); focal lengths equal to 0.001 px. Sub-frames (1280 × 224, 5120 × 960, 3840 × 2880, placed with FIRST_LINE(_SAMPLE)) agree with the full frames of their sol to a median 0.005 px. JPL's models of the three resolutions are one camera under exactly MPPP's convention (`navcal_report.label_scale_consistency`, `label_scale_consistency.json`).
+- *Images.* Each block re-adjusted with one camera per eye and scale (`navcal.scale_offsets`: principal point free — "pp" — or principal point and focal length — "ppf"; everything else and the rig held; covariance). The method recovers an injected (1.0, −0.5) px shift to 0.15 px on the synthetic block (test). Over 20 blocks (`scale_offsets.json`), offsets from the half-resolution camera, full-res px:
+
+| scale pair | cameras (blocks) | pp: weighted mean x, y | ppf: weighted mean x, y | scatter over blocks x, y (ppf) | median formal σ |
+|---|---|---|---|---|---|
+| full − half | 26–28 (15–16) | +0.36, −0.10 | −0.17, −0.33 | 0.50, 0.93 | 0.07–0.11 |
+| quarter − half | 15 (10) | +0.06, −0.06 | +0.02, +0.07 | 0.54, 0.48 | 0.14–0.17 |
+
+  Per block the offset of a scale subset reaches ±1 px (Belva Crater full-res +1.2, +0.9; Bunsen Peak −1.1, −1.6), ten times its formal σ, but it changes sign from block to block, is not equal in x and y, differs between the pp and ppf fits (the principal point trades with the focal length and with the attitude of those frames), and — decisive — is **the same in both eyes**: left minus right, the offsets average −0.05 / 0.00 px (x / y) with rms 0.13–0.14 / 0.05–0.06 px over 18–19 block/scale pairs. A common shift of both eyes is an attitude change of those frames (1 px = 0.02°), which the pose absorbs; it does not enter stereo. The quarter − half offset, where a convention error would show at 1.0 px, is +0.02 ± 0.14 px.
+
+Reading: there is **no systematic pixel offset between the Navcam resolutions** at the 0.1–0.2 px level: MPPP's mapping agrees with the flight calibration to 0.03 px, and the blocks show no common offset. The block-specific common-mode shifts of a scale subset (0.5–1 px) are frame-attitude effects of particular image sequences (different pointing and terrain), not a camera property; what stereo sees (left − right) is ≤ 0.14 px rms and averages zero. No correction is needed; `scripts/navcam_calibration_study.py scale` repeats the check on new blocks.
