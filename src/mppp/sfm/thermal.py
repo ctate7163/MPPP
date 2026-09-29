@@ -215,15 +215,35 @@ def _tag(lo: float, hi: float) -> str:
     return f"T{int(round(lo)):+04d}{int(round(hi)):+04d}"
 
 
+def rig_rotation_at(R, t, dT: float, yaw_mdeg_per_degC: float, pitch_mdeg_per_degC: float = 0.0):
+    """v0p35: the stereo rig (x_R = R x_L + t) at a temperature dT from the one it describes, with the right camera's
+    rotation changing by (pitch, yaw) slopes x dT (rotation vector in the right camera frame) and its centre fixed:
+    R' = Rot R, t' = Rot t."""
+    from scipy.spatial.transform import Rotation
+    Q = Rotation.from_rotvec(np.radians(1e-3 * np.array([pitch_mdeg_per_degC * dT, yaw_mdeg_per_degC * dT, 0.0]))).as_matrix()
+    return Q @ np.asarray(R, float), Q @ np.asarray(t, float)
+
+
+def rig_slopes_for_project(project) -> Optional[Dict[str, float]]:
+    """v0p35: the rig's temperature model of the project's start rig (``M2020_N_rig.json`` with a ``thermal``
+    entry, recorded by ``SfmProject.create``): {"yaw_mdeg_per_degC", "pitch_mdeg_per_degC", "T0_degC"} or None."""
+    rig = ((project.settings.get("navcam_cameras") or {}).get("rig") or {})
+    th = rig.get("thermal")
+    return th if th and th.get("yaw_mdeg_per_degC") is not None else None
+
+
 def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float = 10.0,
                          min_images: int = 8, free: Sequence[str] = ("fx", "fy"),
-                         thermal_model: Optional[Dict[str, Dict[str, float]]] = None):
+                         thermal_model: Optional[Dict[str, Dict[str, float]]] = None,
+                         rig_slopes: Optional[Dict[str, float]] = None):
     """
     A copy of ``rec`` with one camera per Navcam eye and temperature bin, and a copy of ``project`` whose cameras
     and database mapping include them (``fixed_params``: all but ``free``).  ``thermal_model``: {"NL": {"ppm_per_degC",
     "T0_degC"}, ...} - the bins then start from the eye's camera scaled by 1 + ppm 1e-6 (T_bin - T0) (fx and fy).
-    Frames without a temperature keep the original cameras.  Returns (rec, project, bins) with ``bins``: one row
-    per bin camera.
+    Frames without a temperature keep the original cameras.  ``rig_slopes`` (v0p35): {"yaw_mdeg_per_degC",
+    "pitch_mdeg_per_degC"} - each bin's rig starts from the block's rig turned to the bin temperature
+    (:func:`rig_rotation_at`, relative to the mean frame temperature of the block).  Returns (rec, project, bins)
+    with ``bins``: one row per bin camera.
     """
     import pycolmap
     from .project import FULL_OPENCV_NAMES
@@ -303,7 +323,16 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
         r = pycolmap.Rig(rig_id=next_rid)
         r.add_ref_sensor(sensor(bin_cam.get((ref, b), ref)))
         for sid in old.non_ref_sensors:
-            r.add_sensor(sensor(bin_cam.get((sid.id, b), sid.id)), old.sensor_from_rig(sid))
+            T = old.sensor_from_rig(sid)
+            if rig_slopes and frame_T:
+                Tb = [frame_T[f] for f, e in fbin.items() if e == b and f in frame_T]
+                if Tb:
+                    dT = float(np.mean(Tb)) - float(np.mean(list(frame_T.values())))
+                    R2, t2 = rig_rotation_at(np.asarray(T.rotation.matrix()), np.asarray(T.translation), dT,
+                                             float(rig_slopes.get("yaw_mdeg_per_degC", 0.0)),
+                                             float(rig_slopes.get("pitch_mdeg_per_degC", 0.0)))
+                    T = pycolmap.Rigid3d(pycolmap.Rotation3d(R2), t2)
+            r.add_sensor(sensor(bin_cam.get((sid.id, b), sid.id)), T)
         new.add_rig(r)
         rig_for[(rid, b)] = next_rid
         next_rid += 1
@@ -379,7 +408,7 @@ def thermal_adjust(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: floa
         if verbose:
             print(f"[thermal] one camera per eye: cost {ba0['final_cost']:.1f} ({ba0['seconds']:.0f} s), "
                   f"{out['reference']['stats']}", flush=True)
-    r1, p1, rows = split_by_temperature(rec, project, temps, bin_deg, min_images, free, thermal_model)
+    r1, p1, rows = split_by_temperature(rec, project, temps, bin_deg, min_images, free, thermal_model, rig_slopes)
     ba1 = bundle_adjust(r1, p1, sigma_px=sigma_px, loss_scale=loss_scale, refine_rig=False,
                         max_iterations=max_iterations, attitude_prior_deg=att)
     for row in rows:
@@ -469,7 +498,7 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
                   free: Sequence[str] = ("fx", "fy"), hold: bool = False,
                   thermal_model: Optional[Dict[str, Dict[str, float]]] = None, sigma_px: float = 0.5,
                   loss_scale: float = 2.0, max_iterations: int = 100, attitude_prior_deg: Optional[float] = None,
-                  linear_solver: str = "auto", verbose: bool = True):
+                  linear_solver: str = "auto", verbose: bool = True, rig_slopes: Optional[Dict[str, float]] = None):
     """
     The final stage of :func:`mppp.sfm.reconstruction.reconstruct` with ``thermal_bins_deg`` (v0p31): the solved
     block is split into Navcam temperature bins (:func:`split_by_temperature`) and adjusted once more with the bins'
@@ -479,7 +508,7 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
     """
     from .reconstruction import bundle_adjust
     before = _stats(rec, project)
-    r1, p1, rows = split_by_temperature(rec, project, temps, bin_deg, min_images, free, thermal_model)
+    r1, p1, rows = split_by_temperature(rec, project, temps, bin_deg, min_images, free, thermal_model, rig_slopes)
     project.cameras = p1.cameras
     project.settings.setdefault("database", {})["cameras"] = p1.settings["database"]["cameras"]
     bin_keys = [r["camera"] for r in rows]
@@ -507,6 +536,7 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
         project.cameras[row["camera"]]["refined_params"] = [float(x) for x in p]
     after = _stats(r1, project)
     report = {"bin_deg": float(bin_deg), "min_images": int(min_images), "free": list(free), "held": bool(hold),
+              "rig_slopes": rig_slopes,
               "thermal_model": thermal_model, "bins": len({tuple(r["bin_degC"]) for r in rows}), "rows": rows,
               "before": before, "after": after, "initial_cost": ba["initial_cost"], "final_cost": ba["final_cost"],
               "seconds": ba["seconds"],

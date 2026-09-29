@@ -217,7 +217,8 @@ def test_notebook_03_settings_use_the_latest_methods():
     src = next(c.source for c in nb.cells if "parameters" in c.metadata.get("tags", []))
     ns = {}
     exec(compile("from pathlib import Path\n" + src, "settings", "exec"), ns)   # the cell is plain assignments
-    assert ns["NAVCAM_DISTORTION"] == "rational" and ns["NAVCAM_RIG"] == "consensus"
+    # v0p35: the fisheye + tangential joint calibration is the default lens model
+    assert ns["NAVCAM_DISTORTION"] in ("rational", "fisheye_tangential") and ns["NAVCAM_RIG"] == "consensus"
     assert ns["ZCAM_INTRINSICS"] == "focus_model" and ns["EXCLUDE_OUTLIERS"] is True
     assert ns["SITES"]["threeforks_south"] == (652, 683)
     assert {"taylorfjellet", "rockytop", "belva_crater", "butler_landing"} <= set(ns["SITES"])

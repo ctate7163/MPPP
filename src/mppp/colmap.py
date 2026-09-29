@@ -56,16 +56,34 @@ def scale_camera_params(model: str, params: Sequence[float], s: float) -> np.nda
     return p
 
 
+_NUMPY_MODELS = ("SIMPLE_PINHOLE", "PINHOLE", "SIMPLE_RADIAL", "RADIAL", "OPENCV", "FULL_OPENCV")
+
+
+def _project_pycolmap(model: str, p: np.ndarray, x: np.ndarray) -> np.ndarray:
+    """v0p35: projection with pycolmap's own camera model for the models the numpy code does not implement
+    (e.g. THIN_PRISM_FISHEYE, the fisheye + tangential Navcam model); points behind the camera give NaN."""
+    import pycolmap
+    cam = pycolmap.Camera(model=model, width=1, height=1, params=np.asarray(p, float))
+    X = np.asarray(x, float).reshape(-1, 3)
+    out = np.full((len(X), 2), np.nan)
+    ok = np.all(np.isfinite(X), axis=1) & (X[:, 2] > 0)
+    if ok.any():
+        out[ok] = np.asarray(cam.img_from_cam(X[ok], check_cheirality=False), float)
+    return out.reshape(np.asarray(x).shape[:-1] + (2,))
+
+
 def project_camera(model: str, p: Sequence[float], x: np.ndarray) -> np.ndarray:
     """
     COLMAP projection of camera-frame point(s) ``x`` (..., 3) WITH lens
     distortion -> pixels (..., 2), exactly as COLMAP does.  Supported:
-    SIMPLE_PINHOLE, PINHOLE, SIMPLE_RADIAL, RADIAL, OPENCV, FULL_OPENCV;
-    anything else raises.  (Before v0p9 the error model ignored distortion,
+    SIMPLE_PINHOLE, PINHOLE, SIMPLE_RADIAL, RADIAL, OPENCV, FULL_OPENCV in
+    numpy; any other COLMAP model through pycolmap (v0p35).  (Before v0p9 the error model ignored distortion,
     wrong by hundreds of pixels for the Navcam FULL_OPENCV model, k1 = -0.27.)
     """
     x = np.asarray(x, float)
     p = np.asarray(p, float)
+    if model not in _NUMPY_MODELS:
+        return _project_pycolmap(model, p, x)
     u, v = x[..., 0] / x[..., 2], x[..., 1] / x[..., 2]
     if model in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL"):
         fx = fy = p[0]

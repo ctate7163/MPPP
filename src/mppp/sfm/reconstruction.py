@@ -141,13 +141,59 @@ def _scales(rec, project: SfmProject) -> Dict[int, float]:
     return {iid: by_name[im.name] for iid, im in rec.images.items() if im.name in by_name}
 
 
+def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att,
+                       pose_blocks: Optional[Dict[int, np.ndarray]] = None) -> Optional[Dict[str, Any]]:
+    """Covariances of the rig and camera blocks of a solved :func:`bundle_adjust` problem (v0p35).  The 3-D points
+    (``rec``'s) are eliminated by the Schur complement; the frame poses (the work copy's) count as further
+    parameters, so each block's covariance is marginal over the poses, the other blocks and the points."""
+    import pycolmap
+    opts = pycolmap.BACovarianceOptions()
+    opts.params = pycolmap.BACovarianceOptionsParams.ALL
+    # rigged frames: COLMAP's own pose discovery wants every image to be its frame's reference, so the frame
+    # poses are handed over explicitly (one pose block per frame, keyed by its first registered image)
+    custom = []
+    for fid, arr in (pose_blocks or {}).items():
+        if not prob.has_parameter_block(arr) or prob.is_parameter_block_constant(arr):
+            continue
+        ims = [d.id for d in work.frames[fid].data_ids if d.id in work.images]
+        pp = pycolmap.ExperimentalPoseParam()
+        pp.image_id = int(ims[0]) if ims else int(fid)
+        pp.cam_from_world = arr[:4]            # the block pointer (the binding checks for 4 values)
+        custom.append(pp)
+    opts.experimental_custom_poses = custom
+    try:
+        bac = pycolmap.estimate_ba_covariance_from_problem(opts, rec, prob)
+    except Exception as e:                                  # noqa: BLE001
+        return {"error": f"{type(e).__name__}: {e}"}
+    if bac is None:
+        return {"error": "covariance estimation failed (rank-deficient problem?)"}
+    blocks: Dict[str, Any] = {}
+    for (rid, cid), arr in rig_blocks.items():
+        if prob.has_parameter_block(arr) and not prob.is_parameter_block_constant(arr):
+            c = bac.get_other_params_cov(arr)
+            if c is not None:
+                blocks[f"rig:{rid}:{cid}"] = np.asarray(c)
+    for cid, cam in work.cameras.items():
+        if prob.has_parameter_block(cam.params) and not prob.is_parameter_block_constant(cam.params):
+            c = bac.get_other_params_cov(cam.params)
+            if c is not None:
+                blocks[f"camera:{key_of.get(int(cid), cid)}"] = np.asarray(c)
+    n_res = prob.num_residuals()
+    n_par = prob.num_effective_parameters() if hasattr(prob, "num_effective_parameters") else prob.num_parameters()
+    red = max(n_res - n_par, 1)
+    return {"blocks": blocks, "variance_factor": float(2.0 * summary.final_cost / red), "residuals": int(n_res),
+            "parameters": int(n_par)}
+
+
 def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: float = 2.0,
                   refine_intrinsics: bool = True, refine_principal_point: bool = True,
                   refine_tangential: bool = True, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
                   min_frame_observations: int = 30, num_threads: int = -1, verbose: bool = False,
                   attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG,
                   rig_translation_sigma_m: Optional[float] = None,
-                  hold_cameras: Sequence[str] = (), linear_solver: str = "auto") -> Dict[str, Any]:
+                  hold_cameras: Sequence[str] = (), linear_solver: str = "auto",
+                  covariance: bool = False, keypoint_scale: Optional[Dict[int, float]] = None,
+                  keypoint_map=None) -> Dict[str, Any]:
     """
     Weighted BA in place (see module docstring).  ``hold_cameras`` (v0p22.2):
     keys of project cameras (``"NL"``, ``"NR"``, a focus bin...) whose
@@ -173,7 +219,20 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     ``refine_rig=True``, a prior (this 1-sigma per axis, metres) holding the
     right camera's centre in the rig near its CAHV value, so the data can move
     the stereo baseline without the scale being left to the position priors
-    alone.  Returns the solver summary as a dict.
+    alone.  ``covariance`` (v0p35): after the solve, the covariance of the
+    rig and camera blocks with the 3-D points eliminated
+    (``pycolmap.estimate_ba_covariance_from_problem``), in the tangent space of
+    their manifolds (only the refined parameters) and for the assumed
+    ``sigma_px``; ``variance_factor`` (2 cost / redundancy) rescales it to the
+    residuals.  Returned under ``"covariance"``.  ``keypoint_scale`` (v0p35):
+    {image_id: s} - that image's keypoints are divided by ``s`` about its
+    camera's principal point before the adjustment, which is exactly a camera
+    whose fx and fy are ``s`` times the shared camera's (the Navcam thermal
+    model f(T) = f0 (1 + b (T - T0)) with one shared camera at T0).
+    ``keypoint_map`` (v0p35): a function (image_id, keypoints, camera) ->
+    keypoints applied after the scaling (e.g. the rig's temperature
+    dependence as a small rotation of the right camera's rays).  Returns
+    the solver summary as a dict.
     """
     import pycolmap
     import pycolmap.cost_functions as cf
@@ -251,6 +310,11 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             pose = pose_blocks[im.frame_id] = fr.rig_from_world.params
         sensor = pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=im.camera_id)
         kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
+        if keypoint_scale and iid in keypoint_scale and keypoint_scale[iid] != 1.0:
+            c0 = np.asarray(cam.params[2:4], float)
+            kps = c0 + (kps - c0) / float(keypoint_scale[iid])
+        if keypoint_map is not None and len(kps):
+            kps = keypoint_map(iid, kps, cam)
         if rig.is_ref_sensor(sensor):
             per_image[iid] = (cam.model, cov, kps, [pose, cam.params], None)
         else:
@@ -375,6 +439,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     so.minimizer_progress_to_stdout = bool(verbose)
     summary = pyceres.SolverSummary()
     pyceres.solve(so, prob, summary)
+    cov_out = None
+    if covariance:
+        cov_out = _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att, pose_blocks)
     for fid in pose_blocks:
         rec.frames[fid].rig_from_world = work.frames[fid].rig_from_world
     for cid, cam in work.cameras.items():
@@ -394,7 +461,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                                    "centre_change_m": (-(R1.T @ arr[4:7]) + R0.T @ rig_start[(rid, cid)][4:7]).tolist(),
                                    "rotation_change_deg": float(np.degrees(np.linalg.norm(
                                        Rotation.from_matrix(R1 @ R0.T).as_rotvec())))}
-    return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att, "rig": rig_out,
+    return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att, "rig": rig_out, "covariance": cov_out,
             "rig_translation_priors": n_rig_prior,
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
@@ -788,7 +855,9 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     Navcam intrinsics are always refined), ``"hold"`` (the Navcam cameras stay
     at their start values, the shipped consensus unless the project was created
     from other cameras) or ``"auto"`` (hold when :func:`navcam_network` calls
-    the network weak).  The network verdict is logged whatever the setting.  ``refine_rig=False``
+    the network weak).  The network verdict is logged whatever the setting.  ``refine_rig="auto"`` (v0p35)
+    refines the rig rotation on a strong network and holds it (at the start rig, turned to the block's camera
+    temperature when the start rig has a temperature model) on a weak one.  ``refine_rig=False``
     holds the rig.  ``hold_cameras``: further camera keys to hold.
     ``staged`` (v0p22.2): with Mastcam-Z in the project, solve the Navcam
     block first (Mastcam-Z frames deregistered), write it to
@@ -867,6 +936,9 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     if navcam_intrinsics == "hold" or (navcam_intrinsics == "auto" and network["verdict"] == "weak"):
         hold |= {k for k in project.cameras if str(k).startswith("N")}
     network["navcam_intrinsics"] = "hold" if any(str(k).startswith("N") for k in hold) else "refine"
+    if refine_rig == "auto":                                # v0p35: the rig follows the intrinsics' network verdict
+        refine_rig = "rotation" if network["verdict"] == "strong" else False
+    network["navcam_rig"] = "rotation" if refine_rig else "hold"
     if verbose:
         print(f"[sfm] Navcam network: {network['stations']} stations over {network['span_m']} m -> {network['verdict']}; "
               f"Navcam intrinsics {network['navcam_intrinsics']}" + (f", holding {sorted(hold)}" if hold else ""), flush=True)
@@ -978,7 +1050,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                     "tracks": track_statistics(rec, project)})
     thermal = None
     if thermal_bins_deg and temperatures:
-        from .thermal import thermal_stage
+        from .thermal import rig_slopes_for_project, thermal_stage
         single = project.root / "sparse" / f"{out_name}_single"
         single.mkdir(parents=True, exist_ok=True)
         rec.write(str(single))
@@ -988,7 +1060,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                      thermal_model=thermal_model, sigma_px=sigma_px,
                                      loss_scale=float(schedule[-1][1]), max_iterations=2 * max_iterations,
                                      attitude_prior_deg=attitude_prior_deg, linear_solver=linear_solver,
-                                     verbose=verbose)
+                                     verbose=verbose, rig_slopes=rig_slopes_for_project(project))
         n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
         thermal["filtered_after"] = n_bad
         thermal["single_camera_model"] = str(single.relative_to(project.root))

@@ -66,7 +66,12 @@ class Camera:
 
     @property
     def distortion(self) -> str:
-        """'rational' (k4..k6 in the denominator), 'polynomial' or 'pinhole'."""
+        """'rational' (k4..k6 in the denominator), 'polynomial', 'fisheye_tangential' (v0p35: THIN_PRISM_FISHEYE),
+        'fisheye' or 'pinhole'."""
+        if self.model == "THIN_PRISM_FISHEYE":
+            return "fisheye_tangential"
+        if self.model == "OPENCV_FISHEYE":
+            return "fisheye"
         if self.model != "FULL_OPENCV":
             return "polynomial" if self.model in ("OPENCV", "RADIAL", "SIMPLE_RADIAL") else "pinhole"
         return "rational" if np.any(np.abs(self.params[9:12]) > 0) else "polynomial"

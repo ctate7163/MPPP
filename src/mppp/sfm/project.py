@@ -32,6 +32,7 @@ FULL_FRAME = {"N": (5120, 3840), "F": (5120, 3840), "R": (5120, 3840), "Z": (164
 XML_PATTERN = "M2020_{instrument}0_frame.xml"      # full-resolution calibrations (engineering cameras)
 ZCAM_XML_PATTERN = "{camera}_frame.xml"            # Mastcam-Z, per eye and zoom, e.g. ZL034_frame.xml
 NAVCAM_RATIONAL_PATTERN = "M2020_{instrument}_rational.json"   # v0p20: COLMAP rational Navcam cameras (full frame)
+NAVCAM_FISHEYE_PATTERN = "M2020_{instrument}_fisheye_tangential.json"   # v0p35: THIN_PRISM_FISHEYE (sx1 = sy1 = 0)
 NAVCAM_DISTORTION = "rational"                     # default: "rational" (full frame) or "polynomial" (Metashape K1-K3)
 SCOPE = "Navcam (NLF/NRF) and Mastcam-Z at 34 mm (ZL0/ZR0 _034)"
 SCOPE_CAMERA_CODES = ("NLF", "NRF", "ZL0", "ZR0")
@@ -323,8 +324,11 @@ class SfmProject:
         """
         if navcam_rig not in ("consensus", "cahv"):
             raise ValueError("navcam_rig must be 'consensus' or 'cahv'")
-        if navcam_distortion not in ("rational", "polynomial"):
-            raise ValueError("navcam_distortion must be 'rational' or 'polynomial'")
+        if navcam_distortion not in ("rational", "polynomial", "fisheye_tangential"):
+            raise ValueError("navcam_distortion must be 'rational', 'polynomial' or 'fisheye_tangential'")
+        if navcam_distortion == "fisheye_tangential" and not navcam_cameras:
+            raise ValueError("navcam_distortion='fisheye_tangential' needs navcam_cameras: a folder with "
+                             "M2020_NL/NR_fisheye_tangential.json (notebook 04, section 2e)")
         if zcam_intrinsics not in ("label", "xml", "focus_model"):
             raise ValueError("zcam_intrinsics must be 'label', 'xml' or 'focus_model'")
         if zcam_bin_refine not in ("focal", "all"):
@@ -402,8 +406,9 @@ class SfmProject:
             if fam == "Z" and zcam_intrinsics in ("label", "focus_model"):
                 cameras[instr] = _camera_from_label_median(instr, label_params[instr], FULL_FRAME[fam], zero_terms)
                 continue
-            if fam == "N" and navcam_distortion == "rational":
-                xml = nav_dir / NAVCAM_RATIONAL_PATTERN.format(instrument=instr)
+            if fam == "N" and navcam_distortion in ("rational", "fisheye_tangential"):
+                xml = nav_dir / (NAVCAM_RATIONAL_PATTERN if navcam_distortion == "rational"
+                                 else NAVCAM_FISHEYE_PATTERN).format(instrument=instr)
                 cam = camera_from_colmap_json(xml, zero_terms)
                 if navcam_cameras:
                     js = json.loads(xml.read_text(encoding="utf-8"))
@@ -436,7 +441,7 @@ class SfmProject:
 
         _align_priors_to_cameras(images, cameras)
         rig = _rig_from_pairs([r for r in images if zcam_rig or instruments.get(r["camera_group"]) != "Z"])
-        if navcam_rig == "consensus" and "N" in rig and navcam_distortion == "rational":
+        if navcam_rig == "consensus" and "N" in rig and navcam_distortion in ("rational", "fisheye_tangential"):
             rig_file = data_dir() / "m20_cmods" / NAVCAM_RIG_FILE
             if navcam_cameras and (nav_dir / NAVCAM_RIG_FILE).is_file():
                 rig_file = nav_dir / NAVCAM_RIG_FILE
@@ -444,6 +449,15 @@ class SfmProject:
             shipped = json.loads(rig_file.read_text(encoding="utf-8"))
             rig["N"]["R_sensor_from_ref_cahv"] = rig["N"]["R_sensor_from_ref"]
             rig["N"]["R_sensor_from_ref"] = shipped["R_sensor_from_ref"]
+            # v0p35: a rig with a temperature model and a drift starts at the block's median Navcam temperature and sol
+            Ts = [float(r["camera_temperature_degC"]) for r in images
+                  if str(r["instrument"]).startswith("N") and r.get("camera_temperature_degC") is not None]
+            sols = [int(r["sol"]) for r in images if str(r["instrument"]).startswith("N") and r.get("sol") is not None]
+            if "rig" in nav_info and (shipped.get("thermal") or shipped.get("drift")):
+                R2, applied = start_rig_rotation(shipped, float(np.median(Ts)) if Ts else None,
+                                                 float(np.median(sols)) if sols else None)
+                rig["N"]["R_sensor_from_ref"] = R2.tolist()
+                nav_info["rig"].update(applied)
             rig["N"]["rotation_source"] = f"{rig_file.name} (refined consensus; translation from CAHV)" + \
                 (f" from {rig_file.parent}" if navcam_cameras else "")
         proj = cls(root, images, cameras, rig, offset,
@@ -685,6 +699,30 @@ def _json_default(o):
     raise TypeError(type(o))
 
 
+def start_rig_rotation(shipped: Dict[str, Any], T_median: Optional[float], sol_median: Optional[float]):
+    """v0p35: the start rig rotation of a block from a rig file (``M2020_N_rig.json``) with a temperature model
+    (``thermal``: yaw/pitch mdeg per degC about T0) and a drift (``drift``: pitch/yaw/roll mdeg per sol about sol0),
+    at the block's median camera temperature and sol.  Returns (R, {"thermal": ..., "drift": ...} as applied)."""
+    from scipy.spatial.transform import Rotation
+    R = np.asarray(shipped["R_sensor_from_ref"], float)
+    applied: Dict[str, Any] = {}
+    th = shipped.get("thermal")
+    if th and th.get("yaw_mdeg_per_degC") is not None and T_median is not None:
+        dT = float(T_median) - float(th["T0_degC"])
+        rv = np.radians(1e-3 * dT * np.array([float(th.get("pitch_mdeg_per_degC") or 0.0), float(th["yaw_mdeg_per_degC"]), 0.0]))
+        R = Rotation.from_rotvec(rv).as_matrix() @ R
+        applied["thermal"] = {**th, "T_median_degC": float(T_median)}
+    dr = shipped.get("drift")
+    if dr and sol_median is not None:
+        ds = float(sol_median) - float(dr["sol0"])
+        rv = np.radians(1e-3 * ds * np.array([float(dr.get("pitch_mdeg_per_sol") or 0.0),
+                                             float(dr.get("yaw_mdeg_per_sol") or 0.0),
+                                             float(dr.get("roll_mdeg_per_sol") or 0.0)]))
+        R = Rotation.from_rotvec(rv).as_matrix() @ R
+        applied["drift"] = {**dr, "sol_median": float(sol_median)}
+    return R, applied
+
+
 def navcam_cameras_fingerprint(folder) -> Optional[str]:
     """v0p31: SHA-256 over the consensus Navcam camera files of ``folder`` (M2020_NL/NR_rational.json,
     M2020_N_rig.json), so that notebook 03 rebuilds a project when a consensus is rewritten in the same folder."""
@@ -693,7 +731,8 @@ def navcam_cameras_fingerprint(folder) -> Optional[str]:
         return None
     h = hashlib.sha256()
     n = 0
-    for name in ("M2020_NL_rational.json", "M2020_NR_rational.json", NAVCAM_RIG_FILE):
+    for name in ("M2020_NL_rational.json", "M2020_NR_rational.json", "M2020_NL_fisheye_tangential.json",
+                 "M2020_NR_fisheye_tangential.json", NAVCAM_RIG_FILE):
         f = Path(folder) / name
         if f.is_file():
             h.update(name.encode())

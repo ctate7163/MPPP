@@ -244,7 +244,7 @@ def test_project_create_accepts_navcam_cameras(tmp_path, monkeypatch):
     sig = inspect.signature(P.SfmProject.create)
     assert "navcam_cameras" in sig.parameters
     src = inspect.getsource(P.SfmProject.create)
-    assert "nav_dir / NAVCAM_RATIONAL_PATTERN" in src and '"navcam_cameras"' in src
+    assert "NAVCAM_RATIONAL_PATTERN" in src and "NAVCAM_FISHEYE_PATTERN" in src and '"navcam_cameras"' in src
 
 
 # ----------------------------------------------------------------------------------------------- docs and notebooks
@@ -254,8 +254,10 @@ def test_notebooks_carry_the_new_settings():
     src = next(c.source for c in nb.cells if "parameters" in c.metadata.get("tags", []))
     ns = {}
     exec(compile("from pathlib import Path\n" + src, "settings", "exec"), ns)
-    assert ns["NAVCAM_INTRINSICS"] in ("refine", "auto") and ns["STAGED"] is True and ns["NAVCAM_RIG_REFINE"] == "rotation"
-    assert (ns["NAVCAM_CAMERAS"] is None or "navcam_consensus" in str(ns["NAVCAM_CAMERAS"])) and ns["HOLD_CAMERAS"] == ()
+    # v0p35: the rig is refined on strong networks only ("auto"), and the start cameras are the joint calibration
+    assert ns["NAVCAM_INTRINSICS"] in ("refine", "auto") and ns["STAGED"] is True and ns["NAVCAM_RIG_REFINE"] in ("rotation", "auto")
+    assert (ns["NAVCAM_CAMERAS"] is None or "navcam_consensus" in str(ns["NAVCAM_CAMERAS"])
+            or "navcam_joint" in str(ns["NAVCAM_CAMERAS"])) and ns["HOLD_CAMERAS"] == ()
     full = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
     for k in ("navcam_intrinsics=NAVCAM_INTRINSICS", "staged=STAGED", "hold_cameras=HOLD_CAMERAS", "error_input_navcam",
               "navcam_cameras=NAVCAM_CAMERAS", "navcam_network(proj)"):

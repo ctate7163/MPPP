@@ -253,3 +253,69 @@ The temperature bins reshape the block by 0.1–3 mm within 6 m, 1–28 mm at 12
 **Appearance.** Texture and contrast were measured on five left images per site (radiometric 16-bit and pipeline 8-bit, inside the terrain mask and below −3° elevation, i.e. the ground within ~35 m; `scripts/site_appearance.py`): rms contrast; band-pass contrast at the SIFT octaves σ 1, 2, 4, 8 px (DoG / local mean); power-spectrum slope; structure-tensor coherence; SIFT keypoint density and median response; repetitiveness (keypoints with a look-alike in the same image); shadow fraction; dynamic range. Between-site differences exceed the within-site scatter by 1.2–2.4×, but **single-image contrast is mostly illumination**: band contrast at σ 2 px against the median sun elevation ρ −0.84, rms contrast −0.74, shadow fraction −0.61 (per image, 1/sin(sun elevation) explains 15–43 % of the log contrast). After removing the sun-elevation term per image, the only appearance measure related to an error-model parameter is the SIFT keypoint strength: the cross-station rate at zero angle falls with the sun-corrected keypoint response (ρ −0.71, p < 0.01) and density (ρ −0.51) — rock- and pebble-strewn ground rich in small, high-contrast features (Rockytop, Pearce Canyon, Olifants) gives many keypoints that do not survive a change of station; sand and smooth regolith (South Arm, Belva Crater, Rio Chiquito) give fewer but more durable ones. ε, θ½ and ρ show no relation to any texture measure (|ρ| < 0.5). With 12 measures × 7 parameters tested at n = 15, a single ρ −0.71 is suggestive, not established.
 
 Reading: the error model can take ε, the absolute match rate at zero angle, the gate form and the illumination covariate as common constants (pooled values); θ½ (or θ̄) and τ must be site parameters, and θ½ is set by the network geometry the site allows. Appearance, measured per image, is dominated by the sun; the measure of terrain texture that matters for matching is keypoint strength corrected for sun elevation, and it should be measured on the tie points themselves (the matched fraction of keypoints, and the descriptor distance of cross-station matches against Δθ and ΔLMST) rather than on whole images.
+
+## 15. Rig stability, joint calibration and the lens model across fifteen Navcam blocks (v0p35, 29 Sep 2026)
+
+Blocks: the fifteen of §14 (Rochette, Sid, Rockytop, Three Forks, Tuxedo Park, Airey Hill, Bunsen Peak, Rio Chiquito: current alignments; Belva Crater, Pearce Canyon, South Arm, Bell Island, Taylorfjellet, Olifants, Marble Mountain: 0.22.4). Camera temperatures: project records for seven blocks, 427 label samples (85 new, from the IMGs under `D:\data\m2020\datadrive`) interpolated in spacecraft clock for the other eight. `scripts/navcam_calibration_study.py all`; tables, tests and figure in `docs/results/v0p35/` (`navcam_calibration_report.py`). Rig angles in mdeg relative to the label (CAHV) rig; formal σ are rescaled by the variance factor (0.24–0.36).
+
+**Rig per block** (at most 120,000 points per block; "pipeline rig": intrinsics and rig rotation free as in `reconstruct`; "common pp": both principal points held at the median over the blocks, NL (2591.17, 1944.22), NR (2574.16, 1950.15) px):
+
+| block | sol | stations, span | T median °C | T left − right °C | yaw, pipeline rig | yaw, common pp (± σ) | pitch | roll | per-bin yaw (T °C: mdeg) | baseline free, m (± σ mm) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Rochette | 180 | 3, 11 m | -20.7 | +0.55 | -8.0 | -6.4 (± 0.28) | -2.9 | +20.2 | -21: -7.9; -17: -11.4 | 0.42426 (± 12.0) |
+| Sid | 360 | 8, 21 m | -15.7 | -0.09 | -19.8 | -13.2 (± 0.25) | +0.9 | +22.4 | -23: -8.8; -12: -20.5; -8: -22.6 | 0.42438 (± 4.7) |
+| Rockytop | 477 | 9, 22 m | -19.2 | +2.14 | -25.4 | -7.2 (± 0.16) | +0.9 | +24.7 | -21: -21.6; -17: -27.5 | 0.42439 (± 3.7) |
+| Three Forks | 686 | 4, 5 m | -14.6 | +0.10 | -0.0 | -9.5 (± 0.16) | +1.2 | +20.6 | — | 0.42433 (± 24.5) |
+| Belva Crater | 795 | 5, 14 m | -21.1 | +0.87 | -11.5 | -5.5 (± 0.15) | +2.3 | +17.4 | -37: -0.2; -21: -13.3 | 0.42453 (± 10.9) |
+| Tuxedo Park | 904 | 8, 46 m | -16.1 | +0.56 | -10.3 | -10.3 (± 0.15) | +2.3 | +21.0 | — | 0.42439 (± 1.8) |
+| Airey Hill | 990 | 3, 6 m | -13.1 | +1.32 | -1.4 | -15.1 (± 0.24) | +3.0 | +19.5 | — | 0.42427 (± 19.9) |
+| Bunsen Peak | 1084 | 6, 9 m | -15.0 | +1.83 | +9.7 | -1.8 (± 0.11) | +3.0 | +15.7 | -38: +25.2; -26: +17.5; -13: +2.1; -7: -4.1 | 0.42436 (± 22.3) |
+| Pearce Canyon | 1199 | 11, 28 m | -20.8 | +0.93 | +6.7 | +3.3 (± 0.10) | +3.2 | +12.3 | -36: +20.6; -21: +3.4; -15: -4.6 | 0.42445 (± 4.0) |
+| Rio Chiquito | 1333 | 2, 4 m | -21.4 | +0.34 | -4.7 | -6.6 (± 0.20) | +4.4 | +10.7 | -23: +0.5; -16: -10.0 | 0.42427 (± 25.6) |
+| South Arm | 1407 | 6, 8 m | -22.2 | +0.55 | -8.2 | +2.5 (± 0.09) | +3.6 | +12.2 | -47: +19.8; -22: -9.4 | 0.42433 (± 11.3) |
+| Bell Island | 1461 | 8, 15 m | -22.4 | +1.17 | -7.6 | +1.9 (± 0.13) | +4.6 | +13.8 | -33: +8.5; -22: -8.9; -18: -10.6 | 0.42439 (± 4.2) |
+| Taylorfjellet | 1627 | 11, 38 m | -11.0 | +1.07 | -7.6 | -11.0 (± 0.12) | +5.0 | +13.7 | -32: +22.7; -22: +6.2; -11: -7.1; -8: -11.9 | 0.42440 (± 2.0) |
+| Olifants | 1784 | 15, 39 m | -18.1 | +2.46 | +5.0 | -0.5 (± 0.15) | +7.1 | +17.7 | -29: +17.1; -23: +10.4; -16: +1.7 | 0.42428 (± 2.2) |
+| Marble Mountain | 1972 | 4, 21 m | -16.2 | +1.51 | -12.3 | -7.3 (± 0.18) | +8.6 | +14.0 | — | 0.42445 (± 12.6) |
+
+- **The yaw trades with the principal points.** With the principal points free, the yaw's formal σ is 0.6–0.9 mdeg and the pipeline yaws scatter with sd 9.5 mdeg (Rockytop −25.4 against −7.2 with common principal points); with common principal points σ is 0.09–0.28 mdeg. Only the combination (disparity at infinity) is what stereo sees; the common-pp yaw carries it.
+- **Between blocks the rig is not one rig.** Common-pp yaw: mean −5.8, scatter 5.8 mdeg against a median formal σ of 0.15 (Q = 24,300 on 14 dof, τ 6.0 mdeg); pitch scatter 2.8 (τ 2.7), roll 4.2 (τ 4.3).
+- **Yaw follows the camera temperature.** Within blocks (30 bins, 11 blocks, one offset per block): **−1.13 ± 0.04 mdeg/°C** (p ≈ 10⁻²⁰³, residual τ 1.6 mdeg); every one of the eleven blocks with more than one bin has a negative slope (−0.8 to −1.6 mdeg/°C). Between blocks the common-pp yaw against the block's median temperature: −1.11 ± 0.31 mdeg/°C (ρ −0.75, p 0.001) — the same slope, so the between-block and within-block responses are one effect. The left–right temperature difference (−0.1 to +2.5 °C) explains nothing (p 0.34).
+- **Pitch and roll drift with sol.** Pitch **+0.0050 ± 0.0004 mdeg/sol** (ρ +0.99, τ falls from 2.7 to 0.9 mdeg), roll **−0.0060 ± 0.0014 mdeg/sol** (p < 10⁻⁴); yaw +0.0045 ± 0.0019 mdeg/sol with the temperature term (p 0.02). Over sols 180–1972: 9 mdeg in pitch (0.46 px of vertical parallax at infinity), 11 in roll. No temperature term in pitch (within blocks +0.055 ± 0.025 mdeg/°C).
+- **Network strength does not set the rig.** Stations, span and cross-station fraction: p > 0.2 for yaw and pitch. The yaw residual after temperature and sol still correlates with log(observations) (+32 mdeg per decade, p < 0.001; τ 3.8 → 2.0 mdeg) — unexplained, and it is why blocks keep a rig of their own.
+- **The baseline is not measurable from these blocks.** With the right camera's position free, the baseline length is 0.42426–0.42453 m with σ 1.8–25.6 mm (set by the 1 m position priors); the label pairs agree to 10 µm. Hold it.
+
+In pixels (f ≈ 2956 px): the yaw slope is **0.053 px of disparity at infinity per °C**; a block spanning 25 °C carries ±0.66 px about its median temperature — ±0.5 % of range at 10 m, ±1.1 % at 20 m — against ±0.05 % for the focal-length term. The drift over the mission is 0.46 px in vertical parallax and 0.42 px in disparity.
+
+**Joint calibration** (15 blocks, 1,653 images, 15,000 points per block, 1,009,322 observations; T0 −19.1 °C; one NL, one NR camera, one rig; `joint_rational.json`, `joint_fisheye_t.json`):
+
+- **Focal slope** (profile over 0–90 ppm/°C; cost 250,589 at 0, 244,734 at 30, 244,639 at 45, 246,425 at 60, 255,073 at 90): **38.6 ± 0.2 ppm/°C** (formal), between the within-block (30 ± 2) and across-block (55–60) estimates of §13–14. This is the slope for a camera shared by blocks, i.e. for start cameras; the formal σ ignores the between-block scatter (§13's two estimates are the realistic bracket).
+- **Rig yaw slope** (profile at 38.6 ppm/°C; cost 247,802 at 0, 244,445 at −1.13): **−1.03 ± 0.01 mdeg/°C** (within-block −1.13). The rig term lowers the joint cost by 1.4 %, the focal term by 2.4 %.
+- **Cameras at T0** (rational, σ rescaled): NL fx 2956.275 ± 0.019, fy 2955.935 ± 0.034, cx 2591.08 ± 0.04, cy 1943.50 ± 0.04 px; NR fx 2948.919 ± 0.018, fy 2948.543 ± 0.034, cx 2574.41 ± 0.04, cy 1949.53 ± 0.04 px; rig yaw −11.57 ± 0.47, pitch +4.97 ± 0.30, roll +15.35 ± 0.06 mdeg; baseline held at 0.42436 m. Against the averaged consensus of 28 Sep: NL 0.10 px rms (corners 0.16), NR 0.23 px (0.35), disparity at infinity +0.12 px.
+- The fisheye + tangential joint fits the same observations with 0.59 % lower cost (242,984 against 244,415) at the same number of parameters.
+
+**Leave one block out** (the joint calibration of the other 14 predicts the block; costs relative to the block's own calibration at the same thermal slopes; Δd∞, Δv∞: predicted minus own disparity and vertical parallax at infinity):
+
+| block | cameras held: cost % (rational / fisheye+t) | fisheye+t − rational, cameras held, % | + rig held, rig(T) % | + rig held, one rig % | prediction vs own, rms px (rational / fisheye+t) | Δfx NL, NR px (rational) | Δd∞ px | Δv∞ px |
+|---|---|---|---|---|---|---|---|---|
+| Rochette | 0.35 / 0.41 | -0.52 | 9.11 | 9.65 | 0.253 / 0.195 | +0.19, +0.14 | -0.168 | +0.325 |
+| Sid | 0.31 / 0.29 | -0.56 | 4.42 | 4.82 | 0.400 / 0.418 | +0.19, -0.05 | -0.034 | +0.177 |
+| Rockytop | 0.67 / 0.67 | -0.52 | 6.69 | 7.35 | 0.198 / 0.223 | -0.16, +0.08 | -0.210 | +0.133 |
+| Three Forks | 2.73 / 3.84 | -1.35 | 7.18 | 5.96 | 0.459 / 0.640 | -0.38, -0.67 | -0.092 | +0.108 |
+| Belva Crater | 0.45 / 0.32 | -0.54 | 0.93 | 0.79 | 0.455 / 0.435 | +0.64, +0.85 | -0.171 | +0.048 |
+| Tuxedo Park | 0.51 / 0.36 | -0.71 | 1.50 | 2.12 | 0.248 / 0.259 | -0.90, -0.65 | -0.130 | +0.039 |
+| Airey Hill | 0.19 / 0.13 | -0.60 | 0.51 | 1.48 | 0.213 / 0.147 | +0.24, +0.17 | -0.147 | +0.014 |
+| Bunsen Peak | 0.57 / 0.65 | -0.34 | 0.65 | 4.20 | 0.168 / 0.361 | +0.06, +0.12 | +0.073 | -0.017 |
+| Pearce Canyon | 0.29 / 0.30 | -0.37 | 0.90 | 3.85 | 0.199 / 0.258 | -0.25, -0.21 | +0.084 | -0.022 |
+| Rio Chiquito | 0.53 / 0.43 | -0.63 | 4.38 | 5.97 | 0.136 / 0.231 | -0.37, -0.07 | +0.004 | -0.076 |
+| South Arm | 0.20 / 0.24 | -0.73 | 1.42 | 3.14 | 0.220 / 0.240 | -0.20, -0.09 | +0.150 | -0.026 |
+| Bell Island | 0.42 / 0.41 | -0.58 | 1.22 | 3.03 | 0.218 / 0.199 | +0.16, +0.41 | +0.109 | -0.095 |
+| Taylorfjellet | 0.50 / 0.44 | -0.61 | 1.89 | 4.05 | 0.144 / 0.157 | -0.27, -0.06 | +0.111 | -0.093 |
+| Olifants | 0.21 / 0.21 | -0.45 | 2.31 | 3.47 | 0.158 / 0.111 | -0.36, +0.06 | +0.162 | -0.206 |
+| Marble Mountain | 0.57 / 0.48 | -0.53 | 7.67 | 8.10 | 0.309 / 0.374 | +0.41, +0.69 | -0.025 | -0.271 |
+
+- **The shared cameras transfer.** With the predicted cameras held (rig free), a new block's cost rises by 0.57 % on average (median 0.45 %; Three Forks 2.7 %), its median residual by 0.001 px (0.194 against 0.193 px) and its corner median by 0.005 px. The prediction is 0.25 px rms from the block's own calibration over the frame (median 0.23, corners 0.46), fx within 0.39 px rms.
+- **The rig does not transfer as well.** Holding the predicted rig as well raises the cost by 3.4 % on average (median 1.9 %); without the rig's temperature term 4.5 % (median 4.1 %); the temperature term helps in 13 of 15 blocks (not at Three Forks and Belva Crater). The early and late blocks cost most (Rochette 9.1 %, Marble Mountain 7.7 %): the drift. As disparity and vertical parallax at infinity, the predicted rig is 0.125 and 0.144 px rms from the block's own; adding the drift (fitted without the block) brings them to 0.106 and 0.041 px, the roll from 4.5 to 3.4 mdeg.
+- **Lens model.** With the predicted cameras held, the fisheye + tangential model fits every one of the 15 held-out blocks better than the rational model: cost −0.60 % (median −0.56 %, Wilcoxon p 6·10⁻⁵), corner median 0.239 against 0.259 px (−8 %), median residual 0.193 against 0.194 px. Its transfer penalty is the same (0.61 against 0.57 %), and its prediction is as far from the block's own calibration (0.28 against 0.25 px rms, fisheye closer in 5 of 15, p 0.23). The rig results are the same for both.
+
+Reading: the Navcam intrinsics are stable — one camera per eye with the 38.6 ppm/°C focal term predicts a new block to within 0.5 % in cost and a quarter of a pixel over the frame. The rig is not: its yaw turns by −1.0 mdeg/°C (0.05 px of disparity per °C, the largest thermal effect on stereo range, ten times the focal term), its pitch and roll drift over the mission, and a block-to-block residual of 2–4 mdeg (0.1–0.2 px) remains. Decision: a temperature-dependent rig with a drift for the start and for held rigs (weak networks, the thermal stage's bins), and the rig rotation refined in every block whose network supports it (`refine_rig="auto"`). The lens model is fisheye + tangential (better on unseen blocks, especially the corners; same transfer); the rational model stays available.
