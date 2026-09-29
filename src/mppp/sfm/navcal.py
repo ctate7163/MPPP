@@ -236,6 +236,125 @@ def reference_rig(sc: Scape, which: str = "cahv") -> Optional[np.ndarray]:
     return np.asarray(R, float) if R is not None else None
 
 
+EPOCH_GAP_SOLS = 30       # v0p40: images more than this many sols apart belong to different rig epochs
+
+
+def sol_epochs(sols: Sequence[int], gap: float = EPOCH_GAP_SOLS) -> List[Tuple[int, int]]:
+    """Sol ranges of the clusters of ``sols`` separated by more than ``gap`` sols."""
+    u = sorted(set(int(x) for x in sols))
+    if not u:
+        return []
+    out, start = [], u[0]
+    for a, b in zip(u, u[1:]):
+        if b - a > gap:
+            out.append((start, a))
+            start = b
+    out.append((start, u[-1]))
+    return out
+
+
+def split_rig_by_epoch(rec, project: SfmProject, temps: Optional[Dict[str, Dict[str, Any]]] = None,
+                       gap: float = EPOCH_GAP_SOLS):
+    """
+    A copy of ``rec`` in which the frames of each sol epoch (:func:`sol_epochs` of the frames' sols) have their own
+    copy of their rig (same sensors, cameras and sensor poses), so that a bundle adjustment with ``refine_rig``
+    solves one rig per epoch; the cameras stay shared.  Returns (rec, project, epochs) with one row per epoch:
+    {"epoch", "sol_min", "sol_max", "sol_median", "frames", "images", "T_median_degC", "rig_id"} (``rig_id`` of the
+    stereo rig of that epoch).
+    """
+    import pycolmap
+    by_name = {r["name"]: r for r in project.images}
+    reg = set(rec.reg_image_ids())
+    sol_of: Dict[int, int] = {}
+    for fid, fr in rec.frames.items():
+        ss = [int(by_name[rec.images[d.id].name]["sol"]) for d in fr.data_ids
+              if d.id in rec.images and rec.images[d.id].name in by_name]
+        if ss:
+            sol_of[fid] = int(np.median(ss))
+    eps = sol_epochs(sol_of.values(), gap)
+    ep_of = {fid: next(i for i, (a, b) in enumerate(eps) if a <= s <= b) for fid, s in sol_of.items()}
+    stereo = {rid for rid, rig in rec.rigs.items() if len(list(rig.non_ref_sensors))}
+    new = pycolmap.Reconstruction()
+    for cam in rec.cameras.values():
+        new.add_camera(cam)
+    for rig in rec.rigs.values():
+        new.add_rig(rig)
+    next_rid = max(rec.rigs) + 1
+    rig_for: Dict[Tuple[int, int], int] = {}
+    for fid, fr in rec.frames.items():
+        e = ep_of.get(fid, 0)
+        rid = fr.rig_id
+        if e > 0:
+            if (rid, e) not in rig_for:
+                old = rec.rigs[rid]
+                r = pycolmap.Rig(rig_id=next_rid)
+                r.add_ref_sensor(old.ref_sensor_id)
+                for sid in old.non_ref_sensors:
+                    r.add_sensor(sid, old.sensor_from_rig(sid))
+                new.add_rig(r)
+                rig_for[(rid, e)] = next_rid
+                next_rid += 1
+            rid = rig_for[(rid, e)]
+        nf = pycolmap.Frame(frame_id=fid, rig_id=rid)
+        for d in fr.data_ids:
+            nf.add_data_id(d)
+        if fr.has_pose:
+            nf.rig_from_world = fr.rig_from_world
+        new.add_frame(nf)
+    for iid, im in rec.images.items():
+        kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
+        ni = pycolmap.Image(name=im.name, keypoints=kps, camera_id=im.camera_id, image_id=iid)
+        ni.frame_id = im.frame_id
+        new.add_image(ni)
+    for fid in rec.reg_frame_ids():
+        if new.frames[fid].has_pose:
+            new.register_frame(fid)
+    for pt in rec.points3D.values():
+        tr = pycolmap.Track()
+        for el in pt.track.elements:
+            tr.add_element(el.image_id, el.point2D_idx)
+        new.add_point3D(pt.xyz, tr, pt.color)
+    rows = []
+    for e, (a, b) in enumerate(eps):
+        fids = [f for f, x in ep_of.items() if x == e]
+        rids = {new.frames[f].rig_id for f in fids} & ({rig_for.get((r, e), r) for r in stereo} if e else stereo)
+        names = [rec.images[d.id].name for f in fids for d in rec.frames[f].data_ids if d.id in reg]
+        T = [temps[n]["T"] for n in names if temps and n in temps]
+        rows.append({"epoch": e, "sol_min": a, "sol_max": b,
+                     "sol_median": float(np.median([sol_of[f] for f in fids])) if fids else float(a),
+                     "frames": len(fids), "images": len(names), "T_median_degC": float(np.median(T)) if T else None,
+                     "rig_id": min(rids) if rids else None})
+    return new, copy.deepcopy(project), rows
+
+
+def expand_epochs(studies: Sequence[Dict[str, Any]], mode: str = "rotation_pp",
+                  min_frames: int = 6) -> List[Dict[str, Any]]:
+    """
+    v0p40: the rig studies with every multi-epoch block (``epochs`` mode, :func:`split_rig_by_epoch`) replaced by
+    one entry per epoch with at least ``min_frames`` stereo frames: its ``mode`` rig is the epoch's rig (common
+    principal points, as ``rotation_pp``) and its network sol and temperature are the epoch's.  Blocks of one epoch
+    are kept as they are.  For the drift fits (:func:`rig_drift`, :func:`rig_drift_model`, :func:`drift_robustness`),
+    so that a block spanning the pitch knee (Sid) is not placed at one median sol.
+    """
+    out = []
+    for s in studies:
+        ep = (s.get("epochs") or {}).get("rigs") or []
+        ep = [r for r in ep if r.get("frames", 0) >= min_frames and r.get("sol_median") is not None]
+        if len(ep) < 2:
+            out.append(s)
+            continue
+        for r in ep:
+            t = copy.deepcopy({k: v for k, v in s.items() if k not in ("rotation", "rotation_pp", "full", "bins", "epochs")})
+            t["scape"] = f"{s['scape']} (sols {r['sol_min']}-{r['sol_max']})"
+            t["parent"] = s["scape"]
+            t["network"] = dict(s["network"], sol_median=r["sol_median"], sol_min=r["sol_min"], sol_max=r["sol_max"],
+                                T_median_degC=r["T_median_degC"] if r.get("T_median_degC") is not None
+                                else s["network"]["T_median_degC"], frames=r["frames"])
+            t[mode] = {"rigs": [r]}
+            out.append(t)
+    return out
+
+
 def rig_study(sc: Scape, bin_deg: float = 10.0, min_images: int = 8, max_iterations: int = 100,
               modes: Sequence[str] = ("rotation", "rotation_pp", "full", "bins"),
               common_pp: Optional[Dict[str, Sequence[float]]] = None, verbose: bool = True) -> Dict[str, Any]:
@@ -249,7 +368,11 @@ def rig_study(sc: Scape, bin_deg: float = 10.0, min_images: int = 8, max_iterati
       then carries the block's whole disparity offset (and the pitch its vertical parallax);
     * ``full``: the right camera's rotation and position in the rig free (baseline length and direction);
     * ``bins``: one camera per eye and ``bin_deg`` temperature bin (fx, fy free, everything else held) and one rig
-      per bin (rotation free) - the rig against temperature inside the block.
+      per bin (rotation free) - the rig against temperature inside the block;
+    * ``epochs`` (v0p40): common principal points as ``rotation_pp``, and one rig per sol epoch (sols separated by
+      more than ``EPOCH_GAP_SOLS``, :func:`split_rig_by_epoch`) - for blocks whose nearby waypoints bring in images
+      from other epochs (Sid: sols 91-101 and 360-371, on either side of the pitch knee near sol 300).  Skipped for a
+      block of one epoch.
     """
     import time
     import pycolmap
@@ -264,7 +387,7 @@ def rig_study(sc: Scape, bin_deg: float = 10.0, min_images: int = 8, max_iterati
         proj = copy.deepcopy(sc.project)
         extra = {}
         ba_kw = {}
-        if mode == "rotation_pp":
+        if mode in ("rotation_pp", "epochs"):
             if not common_pp:
                 continue
             key_of = {int(v): k for k, v in proj.settings.get("database", {}).get("cameras", {}).items()}
@@ -275,6 +398,12 @@ def rig_study(sc: Scape, bin_deg: float = 10.0, min_images: int = 8, max_iterati
                     q[2:4] = np.asarray(common_pp[k], float)
                     cam.params = q
             ba_kw["refine_principal_point"] = False
+        if mode == "epochs":
+            rec, proj, epochs = split_rig_by_epoch(rec, proj, sc.temps)
+            extra["epochs"] = epochs
+            if len(epochs) < 2:
+                out[mode] = {"skipped": "one sol epoch", **extra}
+                continue
         if mode == "bins":
             temps = {n: {"T": v["T"]} for n, v in sc.temps.items()}
             rec, proj, bins = split_by_temperature(rec, proj, temps, bin_deg=bin_deg, min_images=min_images)
@@ -291,6 +420,12 @@ def rig_study(sc: Scape, bin_deg: float = 10.0, min_images: int = 8, max_iterati
             sid = pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=int(r["camera_id"]))
             r.update(stereo_offset(rec.cameras[int(ref_cam)], rec.cameras[int(r["camera_id"])],
                                    rec.rigs[r["rig_id"]].sensor_from_rig(sid)))
+        if mode == "epochs":
+            ep_of = {e["rig_id"]: e for e in extra["epochs"]}
+            for r in rows:
+                e = ep_of.get(r["rig_id"])
+                if e:
+                    r.update({k: e[k] for k in ("epoch", "sol_min", "sol_max", "sol_median", "T_median_degC", "frames")})
         if mode == "bins":
             # the bin of each rig: its reference sensor's camera -> bin row
             cam_bin = {b["camera_id"]: b for b in extra["bins"]}
@@ -302,7 +437,8 @@ def rig_study(sc: Scape, bin_deg: float = 10.0, min_images: int = 8, max_iterati
                 r["frames"] = sum(1 for f in rec.frames.values() if f.rig_id == r["rig_id"] and f.has_pose)
         out[mode] = {"rigs": rows, "final_cost": ba["final_cost"], "iterations": ba["iterations"],
                      "observations": ba["observations"], "variance_factor": (ba.get("covariance") or {}).get("variance_factor"),
-                     "seconds": time.time() - t0, **({"bins": extra["bins"]} if "bins" in extra else {})}
+                     "seconds": time.time() - t0, **({"bins": extra["bins"]} if "bins" in extra else {}),
+                     **({"epochs": extra["epochs"]} if "epochs" in extra else {})}
         if verbose:
             r0 = rows[0] if rows else {}
             print(f"  {sc.name} {mode:8s} {len(rows)} rig(s)  yaw {r0.get('yaw_mdeg', float('nan')):+.2f} "
@@ -781,18 +917,54 @@ def residual_stats(rec, proj: SfmProject, keypoint_scale: Optional[Dict[int, flo
 
 
 # ================================================================ frozen camera files
+NAVCAM_T_REF_DEGC = -20.0     # v0p40: the reference camera temperature of the frozen Navcam cameras and rig
+
+
 def write_joint_cameras(joint: Dict[str, Any], out_dir: PathLike, loo: Optional[Dict[str, Any]] = None,
-                        rig_test: Optional[Dict[str, Any]] = None) -> Dict[str, Path]:
+                        rig_test: Optional[Dict[str, Any]] = None,
+                        T_ref: Optional[float] = NAVCAM_T_REF_DEGC) -> Dict[str, Path]:
     """
     Write the joint calibration (``joint``: the ``joint_<lens>.json`` of scripts/navcam_calibration_study.py) as
     start cameras for notebook 03 (``SfmProject.create(navcam_cameras=out_dir)``): ``M2020_NL_rational.json``,
     ``M2020_NR_rational.json`` (or ``M2020_N*_fisheye_tangential.json`` for the fisheye + tangential model,
     ``navcam_distortion="fisheye_tangential"``; the camera at T0 with its thermal slope and covariance) and ``M2020_N_rig.json``
     (the joint rig rotation; the translation stays the CAHV baseline).  ``loo``: the leave-one-out results, kept
-    as the verification of each camera.
+    as the verification of each camera.  ``T_ref`` (v0p40, default -20 degC): the cameras and the rig are written at
+    this camera temperature - fx, fy scaled by 1 + ppm 1e-6 (T_ref - T0) and the rig turned by its temperature
+    slopes (:func:`mppp.sfm.thermal.rig_rotation_at`) from the joint adjustment's T0 (the mean temperature of its
+    images); None keeps T0.
     """
     import json
     from scipy.spatial.transform import Rotation
+    from .thermal import rig_rotation_at
+    joint = copy.deepcopy(joint)
+    T0j = float(joint["T0_degC"])
+    if T_ref is not None and float(T_ref) != T0j:
+        dT = float(T_ref) - T0j
+        sc = 1.0 + 1e-6 * float(joint["ppm_per_degC"]) * dT
+        for g in ("NL", "NR"):
+            c = joint[g] = copy.deepcopy(joint[g])          # the eyes may share one dict (scale each once)
+            for n in ("fx", "fy"):
+                if n in c["params"]:
+                    c["params"][n] = float(c["params"][n]) * sc
+                if (c.get("sd") or {}).get(n) is not None:
+                    c["sd"][n] = float(c["sd"][n]) * sc
+            fp, cov = c.get("free_params"), c.get("covariance")
+            if fp and cov is not None:
+                m = np.asarray(cov, float).copy()
+                for n in ("fx", "fy"):
+                    if n in fp:
+                        i = fp.index(n)
+                        m[i, :] *= sc
+                        m[:, i] *= sc
+                c["covariance"] = m.tolist()
+        th = joint.get("rig_thermal") or {}
+        if joint.get("rig_R") is not None and th.get("yaw_mdeg_per_degC") is not None:
+            R, t = rig_rotation_at(joint["rig_R"], joint.get("rig_t") or [0, 0, 0], dT, float(th["yaw_mdeg_per_degC"]),
+                                   float(th.get("pitch_mdeg_per_degC") or 0.0))
+            joint["rig_R"], joint["rig_t"] = R.tolist(), t.tolist()
+        joint["T0_joint_degC"] = T0j
+        joint["T0_degC"] = float(T_ref)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     written = {}
@@ -813,7 +985,9 @@ def write_joint_cameras(joint: Dict[str, Any], out_dir: PathLike, loo: Optional[
              "pixel_origin": "corner of the first pixel (COLMAP)",
              "source": (f"v0p35 joint calibration: one {g} camera shared by {len(joint.get('blocks', {}))} Navcam blocks "
                         f"({', '.join(joint.get('blocks', {}))}), {joint['final']['observations']} observations, "
-                        f"thermal model in the keypoints; camera at T0 {joint['T0_degC']:.1f} degC"),
+                        f"thermal model in the keypoints; camera at T0 {joint['T0_degC']:.1f} degC"
+                        + (f" (solved at {joint['T0_joint_degC']:.1f} degC, scaled by the thermal slope)"
+                           if "T0_joint_degC" in joint else "")),
              "sd": c.get("sd"), "covariance": {"params": c.get("free_params"), "matrix": c.get("covariance"),
                                                 "note": "rescaled by the variance factor of the joint adjustment"},
              "thermal": {"ppm_per_degC": float(joint["ppm_per_degC"]), "sd_ppm_per_degC": joint.get("sd_ppm_per_degC"),
@@ -882,7 +1056,7 @@ def common_reference(studies: Sequence[Dict[str, Any]], R_common: Optional[np.nd
         if s.get("R_reference") is None:
             continue
         s["reference_offset_mdeg"] = rig_angles(np.asarray(s["R_reference"], float), R_common)
-        for mode in ("rotation", "rotation_pp", "full", "bins"):
+        for mode in ("rotation", "rotation_pp", "full", "bins", "epochs"):
             for r in (s.get(mode) or {}).get("rigs") or []:
                 if "yaw_abs_mdeg" not in r:
                     continue

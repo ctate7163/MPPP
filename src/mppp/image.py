@@ -410,14 +410,28 @@ class MPPPImage:
     @property
     def camera_temperature_degC(self) -> Optional[float]:
         """v0p30: the temperature the label camera model was interpolated to (Navcam: the camera plate,
-        ``GEOMETRIC_CAMERA_MODEL.INTERPOLATION_VALUE`` when ``INTERPOLATION_METHOD = TEMPERATURE``); None otherwise."""
+        ``GEOMETRIC_CAMERA_MODEL.INTERPOLATION_VALUE`` when ``INTERPOLATION_METHOD = TEMPERATURE``); v0p40: else the
+        eye's ``NAVCAM_LEFT_CAL`` / ``NAVCAM_RIGHT_CAL`` temperature; None otherwise."""
         m = getattr(self.camera_model_label, "meta", None) or {}
-        if str(m.get("interpolation") or "").upper() != "TEMPERATURE":
-            return None
-        try:
-            return float(m.get("interpolation_value"))
-        except (TypeError, ValueError):
-            return None
+        if str(m.get("interpolation") or "").upper() == "TEMPERATURE":
+            try:
+                return float(m.get("interpolation_value"))
+            except (TypeError, ValueError):
+                pass
+        # v0p40: products made before the camera models were interpolated to temperature (early mission, e.g. sol
+        # 54 with INTERPOLATION_METHOD = NONE) still record the camera temperature: the eye's NAVCAM_*_CAL sensor
+        if str(self.fn.stem)[:1] == "N":
+            try:
+                from .labels import label_get
+                names = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
+                vals = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
+                key = "NAVCAM_LEFT_CAL" if str(self.fn.stem)[:2] == "NL" else "NAVCAM_RIGHT_CAL"
+                for k, v in zip(names, vals):
+                    if str(k) == key:
+                        return float(getattr(v, "value", v))
+            except Exception:                                   # noqa: BLE001
+                return None
+        return None
 
     @property
     def meta(self) -> Dict[str, Any]:

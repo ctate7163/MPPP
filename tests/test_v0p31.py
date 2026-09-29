@@ -167,7 +167,7 @@ def test_notebook_order_and_defaults():
     ns = {}
     exec(compile("from pathlib import Path\n" + src, "settings", "exec"), ns)
     assert ns["THERMAL_BINS_DEG"] == 10 and ns["THERMAL_MIN_IMAGES"] == 8
-    assert ns["SITES"]["rochette"] == (179, 190) and ns["SITES"]["rio_chiquito"] == (1333, 1337) and ns["SITES"]["threeforks_south"] == (652, 683)
+    assert ns["SITES"]["rochette"] == (178, 190) and ns["SITES"]["rio_chiquito"] == (1333, 1337) and ns["SITES"]["threeforks_south"] == (652, 674)
     assert ns["SITES"]["sid"] == (361, 378) and ns["SITES"]["airey_hill"] == (960, 991) and len(ns["SITES"]) >= 18
     full = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
     for k in ("thermal_bins_deg=THERMAL_BINS_DEG", "thermal_model=thermal_model_for_project(proj)",

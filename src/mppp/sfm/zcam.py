@@ -1,5 +1,7 @@
 """
-Mastcam-Z focus breathing (v0p14.4): refined focal length versus focus motor count.
+Mastcam-Z focus breathing (v0p14.4): refined focal length versus focus motor count.  v0p40: the cameras of the
+regular focus state (``<bin>_reg``, :mod:`mppp.sfm.backlash`) are drawn apart and left out of the fit, which is the
+dominant backlash state's.
 
 With ``SfmProject.create(zcam_focus_bin=30)`` every Mastcam-Z eye and zoom
 (``ZL034``, ``ZR034``) is split into cameras by focus motor count, and each
@@ -55,6 +57,7 @@ def focus_breathing_table(project: SfmProject, rec) -> List[Dict[str, Any]]:
                      "fx_refined_px": float(p1[0]) if p1 is not None else None,
                      "fy_refined_px": float(p1[1]) if p1 is not None else None,
                      "refined": bool(p1 is not None and obs > 0),
+                     "state": cam.get("backlash_state") or ("regular" if str(key).endswith("_reg") else "backlash"),
                      "held_params": ",".join(cam.get("fixed_params") or [])})
     return rows
 
@@ -83,7 +86,8 @@ def fit_focus_slopes(project: SfmProject, table: List[Dict[str, Any]], min_obser
                 and r.get("label_f_px") is not None]
         ref = float(np.median([r["focus_count"] for r in imgs])) if imgs else float(
             np.median([r["focus_count_median"] for r in rows]))
-        use = [r for r in rows if r["refined"] and r["observations"] >= min_observations]
+        use = [r for r in rows if r["refined"] and r["observations"] >= min_observations
+               and r.get("state", "backlash") != "regular"]         # v0p40: the line is the backlash state's
         refined = _wfit(np.array([r["focus_count_median"] for r in use], float),
                         np.array([r["f_refined_px"] for r in use], float),
                         np.array([r["observations"] for r in use], float), ref) if use else None
@@ -109,8 +113,13 @@ def plot_focus_breathing(project: SfmProject, table: List[Dict[str, Any]], fits:
         rows = [r for r in table if r["group"] == g]
         x = np.array([r["focus_count_median"] for r in rows], float)
         ax.plot(x, [r["f_initial_px"] for r in rows], "o", mfc="none", mec="C0", ms=7, label="bin start (label median)")
+        reg = [r for r in rows if r.get("state") == "regular" and r["f_refined_px"] is not None]   # v0p40
+        rows = [r for r in rows if r not in reg]
         good = [r for r in rows if r["refined"] and r["observations"] >= min_observations]
         weak = [r for r in rows if r not in good and r["f_refined_px"] is not None]
+        if reg:
+            ax.plot([r["focus_count_median"] for r in reg], [r["f_refined_px"] for r in reg], "s", mfc="none",
+                    mec="C2", ms=7, label="regular focus state (own camera)")
         if good:
             ax.scatter([r["focus_count_median"] for r in good], [r["f_refined_px"] for r in good],
                        s=[4 + 0.6 * np.sqrt(r["observations"]) for r in good], color="C3", zorder=3,   # v0p20: smaller

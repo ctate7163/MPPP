@@ -63,6 +63,36 @@ def fixed_camera_params(model_name: str, refine_principal_point: bool = True,
     return sorted(fixed)
 
 
+def tangential_for(refine_tangential: Union[bool, Dict[str, bool]], key: str = "") -> bool:
+    """
+    v0p40: whether p1, p2 of the camera with project key ``key`` are refined.  ``refine_tangential`` is a bool
+    (all cameras) or {family: bool} with the family the first letter of the key ("N": Navcam, including its thermal
+    bins; "Z": Mastcam-Z, including its focus bins) and "default" for the rest (True if not given).
+    """
+    if isinstance(refine_tangential, dict):
+        return bool(refine_tangential.get(str(key)[:1], refine_tangential.get("default", True)))
+    return bool(refine_tangential)
+
+
+def tangential_setting(refine_tangential: Union[bool, Dict[str, bool]]) -> Union[bool, Dict[str, bool]]:
+    """``refine_tangential`` as recorded in the settings and results (a bool or {family: bool})."""
+    if isinstance(refine_tangential, dict):
+        return {str(k): bool(v) for k, v in refine_tangential.items()}
+    return bool(refine_tangential)
+
+
+def _jsonable(o):
+    if isinstance(o, dict):
+        return {str(k): _jsonable(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_jsonable(v) for v in o]
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    if isinstance(o, np.generic):
+        return o.item()
+    return o
+
+
 def _rigid(R: np.ndarray, C: np.ndarray):
     import pycolmap
     R = np.asarray(R, float)
@@ -231,7 +261,7 @@ def unlocalized_stations(project: SfmProject, min_images: int, rec=None,
 
 def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: float = 2.0,
                   refine_intrinsics: bool = True, refine_principal_point: bool = True,
-                  refine_tangential: bool = True, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
+                  refine_tangential: Union[bool, Dict[str, bool]] = True, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
                   min_frame_observations: int = 30, num_threads: int = -1, verbose: bool = False,
                   attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG,
                   rig_translation_sigma_m: Optional[float] = None,
@@ -253,7 +283,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     (on Belva two frames with no observations otherwise rotated freely, by 9
     and 36 deg).  ``refine_tangential`` (v0p14.3; default True since v0p20):
     refine p1, p2 of OPENCV / FULL_OPENCV cameras; otherwise they stay at
-    their initial values.  ``attitude_prior_deg`` (v0p20, default 1 deg):
+    their initial values.  v0p40: or {family: bool}, e.g. ``{"N": True,
+    "Z": False}`` refines the Navcam p1, p2 and holds the Mastcam-Z ones
+    (:func:`tangential_for`).  ``attitude_prior_deg`` (v0p20, default 1 deg):
     a weak prior on every frame's attitude (the CAHV pointing, 1-sigma per
     axis).  Without it the block's orientation is held only by the position
     priors; with few, nearly collinear stations it is free to rotate about
@@ -396,7 +428,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         if not refine_intrinsics or key_of.get(int(cid), "") in set(hold_cameras):
             prob.set_parameter_block_constant(cam.params)
             continue
-        fixed = fixed_camera_params(cam.model.name, refine_principal_point, refine_tangential)
+        fixed = fixed_camera_params(cam.model.name, refine_principal_point,
+                                    tangential_for(refine_tangential, key_of.get(int(cid), "")))
         pc = project.cameras.get(key_of.get(int(cid), ""), {})
         names = _PARAM_NAMES.get(cam.model.name, FULL_OPENCV_NAMES)
         extra = pc.get("fixed_params") or []
@@ -524,8 +557,27 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
             "termination": str(summary.termination_type), "brief": summary.BriefReport(),
-            "refine_tangential": bool(refine_tangential), "linear_solver": solver, "num_threads": so.num_threads,
+            "refine_tangential": tangential_setting(refine_tangential), "linear_solver": solver, "num_threads": so.num_threads,
             "seconds": float(summary.total_time_in_seconds)}
+
+
+def load_alignment(project: SfmProject):
+    """
+    v0p40: the saved alignment of ``project`` (the model ``project.settings["reconstruction"]["path"]`` names), for
+    notebook 03 cells run after a kernel restart.  Raises RuntimeError with the reason when there is none: the
+    reconstruction (section 6) has not finished, or its model folder is missing.
+    """
+    import pycolmap
+    rs = (project.settings or {}).get("reconstruction") or {}
+    if not rs.get("path"):
+        raise RuntimeError(f"{project.root}: no finished alignment - project.json records no reconstruction (section 6 "
+                           f"has not run to the end for this project, or stopped with an error): run section 6 first")
+    d = project.root / str(rs["path"]).replace("\\", "/")
+    if not (d / "images.bin").is_file() and not (d / "images.txt").is_file():
+        raise RuntimeError(f"{d}: the alignment recorded in project.json is missing: run section 6 again")
+    rec = pycolmap.Reconstruction()
+    rec.read(str(d))
+    return rec
 
 
 def _verified_matches(project: SfmProject):
@@ -941,6 +993,45 @@ def navcam_network(project: SfmProject, min_stations: int = NETWORK_MIN_STATIONS
             "verdict": "weak" if weak else "strong", "min_stations": min_stations, "min_span_m": min_span_m}
 
 
+def restore_frames(rec, source, frame_ids: Sequence[int]) -> int:
+    """
+    v0p40: put frames of ``source`` that ``rec`` no longer has back into ``rec`` - with their images
+    (keypoints, camera), cameras and rigs as needed - unregistered and at ``source``'s pose.  pycolmap 4 drops
+    deregistered frames and their images when a model is written and read back, as ``triangulate_points`` does,
+    so the Mastcam-Z frames set aside in stage 1 of a staged reconstruction were gone in stage 2
+    (``KeyError`` in ``reconstruct``).  Returns the number of frames restored.
+    """
+    import pycolmap
+    n = 0
+    for fid in frame_ids:
+        fid = int(fid)
+        if fid in rec.frames:
+            continue
+        fr = source.frames[fid]
+        if fr.rig_id not in rec.rigs:
+            rec.add_rig(source.rigs[fr.rig_id])
+        for d in fr.data_ids:
+            cid = int(source.images[d.id].camera_id)
+            if cid not in rec.cameras:
+                rec.add_camera(source.cameras[cid])
+        nf = pycolmap.Frame(frame_id=fid, rig_id=fr.rig_id)
+        for d in fr.data_ids:
+            nf.add_data_id(d)
+        if fr.has_pose:
+            nf.rig_from_world = fr.rig_from_world
+        rec.add_frame(nf)
+        for d in fr.data_ids:
+            if d.id in rec.images:
+                continue
+            im = source.images[d.id]
+            kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
+            ni = pycolmap.Image(name=im.name, keypoints=kps, camera_id=im.camera_id, image_id=d.id)
+            ni.frame_id = fid
+            rec.add_image(ni)
+        n += 1
+    return n
+
+
 def _frames_of_family(rec, project: SfmProject, family: str) -> List[int]:
     by_name = {r["name"]: r for r in project.images}
     out = []
@@ -956,7 +1047,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 refine_intrinsics: bool = True, refine_rig: Union[bool, str] = "rotation",
                 register: bool = False, max_iterations: int = 50, out_name: str = "cahv_ba",
                 verbose: bool = True, min_track_length: int = 2, min_tri_angle_deg: float = 0.25,
-                refine_tangential: bool = True, gui_native: bool = True,
+                refine_tangential: Union[bool, Dict[str, bool]] = True, gui_native: bool = True,
                 attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG,
                 exclude_outliers: bool = False, outlier_thresholds: Optional[Dict[str, float]] = None,
                 exclude_after_round: int = 2, rig_translation_sigma_m: Optional[float] = None,
@@ -965,10 +1056,17 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 linear_solver: str = "auto", temperatures: Optional[Dict[str, Dict[str, Any]]] = None,
                 thermal_bins_deg: Optional[float] = None, thermal_min_images: int = 8,
                 thermal_free: Sequence[str] = ("fx", "fy"),
-                thermal_model: Optional[Dict[str, Dict[str, float]]] = None, localize_min_images: int = 0):
+                thermal_model: Optional[Dict[str, Dict[str, float]]] = None, localize_min_images: int = 0,
+                zcam_backlash: Optional[str] = None, zcam_backlash_z: float = 3.0):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
+    ``zcam_backlash`` (v0p40, notebook 03 ``ZCAM_BACKLASH``): ``"split"`` - after the final adjustment each
+    Mastcam-Z focus group (eye, sol, sequence, focus count) is classified into the dominant backlash focus state
+    (f about 1 % above the label) or the regular state (f about the label) from its images' own focal lengths, the
+    regular images get their own cameras and the block is adjusted again (:func:`mppp.sfm.backlash.backlash_stage`;
+    groups within ``zcam_backlash_z`` standard errors of the midpoint stay backlash); ``"report"`` classifies only;
+    None: off.  The report is ``project.settings["zcam_backlash"]``.
     ``localize_min_images`` (v0p35.1, notebook 03 ``LOCALIZE_MIN_IMAGES``): stations (site, drive) with fewer images
     than this are not held by their waypoint position (see :func:`unlocalized_stations`, :func:`bundle_adjust`).
     Before the first round they are moved onto the rest of the block as rigid stations
@@ -1151,6 +1249,9 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
         navcam_stage = {"path": str(out1.relative_to(project.root)), "log": log,
                         "tracks": track_statistics(rec, project), "cameras": {}}
         log = [{"stage": 2, "note": "Mastcam-Z frames added at their priors; Navcam cameras and rig held"}]
+        n_restored = restore_frames(rec, init, z_frames)      # v0p40: pycolmap 4 dropped them in stage 1
+        if n_restored:
+            log[0]["frames_restored"] = n_restored
         for fid in z_frames:
             rec.frames[fid].rig_from_world = init.frames[fid].rig_from_world
             rec.register_frame(fid)
@@ -1185,6 +1286,22 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
         n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
         log.append({"final_ba": ba["brief"], "frames_held": ba["frames_held"], "filtered_after_final": n_bad,
                     "tracks": track_statistics(rec, project)})
+    backlash = None
+    if zcam_backlash and any(str(r.get("instrument", "")).startswith("Z") for r in project.images):
+        from .backlash import backlash_stage
+        rec, backlash = backlash_stage(rec, project, mode=zcam_backlash, sigma_px=sigma_px,
+                                       loss_scale=float(schedule[-1][1]), max_iterations=2 * max_iterations,
+                                       attitude_prior_deg=attitude_prior_deg, linear_solver=linear_solver,
+                                       refine_tangential=refine_tangential,
+                                       hold_f_images=int(project.settings.get("zcam_hold_f_images") or 0),
+                                       z_min=zcam_backlash_z, verbose=verbose)
+        if backlash.get("cameras"):
+            n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
+            backlash["filtered_after"] = n_bad
+        log.append({"zcam_backlash": {k: v for k, v in backlash.items() if k not in ("groups", "fits_before", "fits_after")}})
+        project.settings["zcam_backlash"] = {k: v for k, v in backlash.items() if k not in ("fits_before", "fits_after")}
+        project.settings["zcam_backlash"]["groups"] = [{k: v for k, v in g.items() if k != "names"}
+                                                       for g in backlash["groups"]]
     thermal = None
     if thermal_bins_deg and temperatures:
         from .thermal import rig_slopes_for_project, thermal_stage
@@ -1208,6 +1325,9 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     out = project.root / "sparse" / out_name
     out.mkdir(parents=True, exist_ok=True)
     rec.write(str(out))
+    if backlash:                                          # v0p40: per image and focus group, for notebooks 04 / 05
+        import json as _json
+        (project.root / "zcam_focus_states.json").write_text(_json.dumps(_jsonable(backlash), indent=1), encoding="utf-8")
     idir = project.root / "sparse" / "cahv_initial"
     idir.mkdir(parents=True, exist_ok=True)
     init.write(str(idir))
@@ -1219,7 +1339,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "sigma_px_native": sigma_px, "refine_rig": refine_rig,
                                           "min_track_length": min_track_length,
                                           "min_tri_angle_deg": min_tri_angle_deg,
-                                          "refine_tangential": bool(refine_tangential),
+                                          "refine_tangential": tangential_setting(refine_tangential),
                                           "attitude_prior_deg": float(attitude_prior_deg or 0.0),
                                           "schedule": [list(map(float, r)) for r in schedule],
                                           "exclude_outliers": bool(exclude_outliers),
@@ -1230,6 +1350,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "hold_cameras": sorted(hold), "staged": bool(staged),
                                           "navcam_stage": navcam_stage,
                                           "thermal_bins_deg": float(thermal_bins_deg) if thermal and thermal_bins_deg else None,
+                                          "zcam_backlash": zcam_backlash if backlash else None,
                                           "localize_min_images": int(localize_min_images or 0),
                                           "unlocalized_stations": sorted(st for st, v in final_unloc.items()
                                                                          if v["prior"] == "dropped"),

@@ -92,7 +92,7 @@ def test_write_joint_cameras_roundtrip(tmp_path):
              "final": {"observations": 1000}, "blocks": {"A": 10, "B": 12}, "rig_R": np.eye(3).tolist(),
              "rig_t": [-0.424, 0, 0], "rig": {"sd_yaw_mdeg": 0.5},
              "rig_thermal": {"yaw_mdeg_per_degC": -1.0, "pitch_mdeg_per_degC": 0.2, "yaw_profile": {"sd": 0.05}}}
-    w = write_joint_cameras(joint, tmp_path, loo={"A": {"camera_difference": {"NL": {"rms_px": 0.2}}}})
+    w = write_joint_cameras(joint, tmp_path, loo={"A": {"camera_difference": {"NL": {"rms_px": 0.2}}}}, T_ref=None)
     d = json.loads(w["NL"].read_text())
     assert d["thermal"]["ppm_per_degC"] == 40.0 and d["verification"]["per_scape"][0]["scape"] == "A"
     c = camera_from_colmap_json(w["NL"], ("b1", "b2"))
@@ -126,15 +126,15 @@ def test_notebooks_v0p35():
     root = Path(__file__).resolve().parents[1] / "notebooks"
     nb3 = nbformat.read(str(root / "03_colmap_alignment.ipynb"), as_version=4)
     full3 = "\n".join(c.source for c in nb3.cells)
-    assert "0.35." in nb3.cells[0].source and 'NAVCAM_RIG_REFINE = "auto"' in full3 and "navcam_joint" in full3
-    assert '"auto": "auto"}.get(NAVCAM_RIG_REFINE' in full3
+    assert ("0.35." in nb3.cells[0].source or "0.40." in nb3.cells[0].source) and "navcam_joint" in full3
+    assert 'NAVCAM_RIG_REFINE = "' in full3 and '"auto": "auto"' in full3        # v0p40: "refine" maps to "rotation"
     nb4 = nbformat.read(str(root / "04_camera_models.ipynb"), as_version=4)
     full4 = "\n".join(c.source for c in nb4.cells)
     for k in ("navcam_calibration_study.py", "NCR.main(", "write_joint_cameras", "2d  Joint calibration", "2e  Frozen"):
         assert k in full4, k
     for name in ("01_process_images", "05_error_analysis"):
         nb = nbformat.read(str(root / f"{name}.ipynb"), as_version=4)
-        assert "0.35." in nb.cells[0].source
+        assert "0.35." in nb.cells[0].source or "0.40." in nb.cells[0].source
 
 
 def test_reconstruct_rig_auto_and_thermal_stage_rig_slopes():

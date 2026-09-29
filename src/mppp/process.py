@@ -261,7 +261,8 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
         n_temp = 0
         for p in paths:
             m = reused.get(p.stem)
-            if m is not None and "camera_temperature_degC" not in m and str(p.name)[:1] == "N":
+            # v0p40: also where it is None (early products: label model not interpolated to temperature)
+            if m is not None and m.get("camera_temperature_degC") is None and str(p.name)[:1] == "N":
                 try:
                     from .sfm.thermal import label_temperatures
                     t = label_temperatures(p)

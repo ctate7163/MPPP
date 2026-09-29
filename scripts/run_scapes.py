@@ -46,13 +46,14 @@ def notebook(stem: str):
     if versioned:
         return versioned[-1]
     raise FileNotFoundError(f"no {stem}.ipynb or {stem}_v0p*.ipynb in {NB}")
-SITE_LABEL = {"butler_landing": "Butler Landing", "rochette": "Rochette", "sid": "Sid", "rockytop": "Rockytop", "threeforks": "Three Forks",
-              "threeforks_south": "Three Forks South", "threeforks_large": "Three Forks 652-693", "belva_crater": "Belva Crater", "tuxedo_park": "Tuxedo Park",
-              "airey_hill": "Airey Hill", "bunsen_peak": "Bunsen Peak", "pearce_canyon": "Pearce Canyon",
-              "rio_chiquito": "Rio Chiquito", "south_arm": "South Arm", "bell_island": "Bell Island",
-              "taylorfjellet": "Taylorfjellet", "olifants": "Olifants", "groloy": "Groloy",
-              "marble_mountain": "Marble Mountain", "van_zyl": "Van Zyl", "seitah_north": "Seitah North",
-              "whale_mountain": "Whale Mountain", "origny": "Origny", "pico_turquino": "Pico Turquino"}
+class _Labels(dict):
+    """v0p40: labels from the site names (mppp.sfm.sites.site_label; imported once src/ is on the path)."""
+    def get(self, k, default=None):
+        from mppp.sfm.sites import site_label
+        return site_label(k)
+
+
+SITE_LABEL = _Labels()
 
 
 class Log:

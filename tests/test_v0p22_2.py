@@ -255,7 +255,7 @@ def test_notebooks_carry_the_new_settings():
     ns = {}
     exec(compile("from pathlib import Path\n" + src, "settings", "exec"), ns)
     # v0p35: the rig is refined on strong networks only ("auto"), and the start cameras are the joint calibration
-    assert ns["NAVCAM_INTRINSICS"] in ("refine", "auto") and ns["STAGED"] is True and ns["NAVCAM_RIG_REFINE"] in ("rotation", "auto")
+    assert ns["NAVCAM_INTRINSICS"] in ("refine", "auto") and ns["STAGED"] is True and ns["NAVCAM_RIG_REFINE"] in ("rotation", "auto", "refine")
     assert (ns["NAVCAM_CAMERAS"] is None or "navcam_consensus" in str(ns["NAVCAM_CAMERAS"])
             or "navcam_joint" in str(ns["NAVCAM_CAMERAS"])) and ns["HOLD_CAMERAS"] == ()
     full = "\n".join(c.source for c in nb.cells if c.cell_type == "code")

@@ -553,14 +553,16 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
 
 
 def strip_thermal_bins(project) -> int:
-    """Undo :func:`thermal_stage` on a project (v0p31): images back to their eye's camera, bin cameras removed,
+    """Undo :func:`thermal_stage` (and v0p40 the Mastcam-Z focus-state split, :mod:`mppp.sfm.backlash`) on a
+    project (v0p31): images back to their eye's (focus bin's) camera, bin cameras removed,
     the bin table dropped.  Called before the database is built and before a reconstruction, so that a rerun starts
     from one camera per eye and the stereo rig.  Returns the number of bin cameras removed."""
     n = 0
     for r in project.images:
         if "base_instrument" in r:
             r["instrument"] = r.pop("base_instrument")
-    for k in [k for k, c in project.cameras.items() if c.get("thermal_bin")]:
+    for k in [k for k, c in project.cameras.items() if c.get("thermal_bin") or c.get("state_split")]:   # v0p40: also
+        # the regular-focus-state Mastcam-Z cameras (mppp.sfm.backlash.split_by_state)
         project.cameras.pop(k)
         n += 1
     db = project.settings.get("database", {}).get("cameras")
@@ -568,6 +570,9 @@ def strip_thermal_bins(project) -> int:
         for k in [k for k in db if k not in project.cameras]:
             db.pop(k)
     project.settings.pop("thermal", None)
+    project.settings.pop("zcam_backlash", None)
+    for r in project.images:
+        r.pop("backlash_state", None)
     return n
 
 

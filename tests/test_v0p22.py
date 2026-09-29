@@ -220,7 +220,7 @@ def test_notebook_03_settings_use_the_latest_methods():
     # v0p35: the fisheye + tangential joint calibration is the default lens model
     assert ns["NAVCAM_DISTORTION"] in ("rational", "fisheye_tangential") and ns["NAVCAM_RIG"] == "consensus"
     assert ns["ZCAM_INTRINSICS"] == "focus_model" and ns["EXCLUDE_OUTLIERS"] is True
-    assert ns["SITES"]["threeforks_south"] == (652, 683)
+    assert ns["SITES"]["threeforks_south"] == (652, 674)
     assert {"taylorfjellet", "rockytop", "belva_crater", "butler_landing"} <= set(ns["SITES"])
     full = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
     for k in ("exclude_outliers=EXCLUDE_OUTLIERS", "triangulation_options=TRIANGULATION", "navcam_rig=NAVCAM_RIG",

@@ -437,3 +437,33 @@ Notebook 03's `LOCALIZE_MIN_IMAGES = 4` leaves out the position prior of every s
 - the health verdict goes from FAIL to WARN; `block_rotation_deg` 0.42° remains, mostly azimuth (−0.38°).
 
 On the synthetic block (tests), a two-image station 1.8 m off its prior dragged the whole block by 14 cm with its prior, and 4.5 cm (the noise) without it. Where tie points are fewer than at Seitah North, dropping these priors matters for the geometry, not only for the check.
+
+## 18. Closing the Navcam analysis; Mastcam-Z focus states (v0p40, 29 Sep 2026)
+
+**Consensus.** The joint calibration used 23 blocks, from Butler Landing (sol 9) to Marble Mountain (sol 1979), with 8,000 points per block. The focal slope is 38.1 ± 0.2 ppm/°C and the rig yaw slope −1.018 ± 0.007 mdeg/°C. Cameras and rig are written at −20 °C. Against v0p35.1 at the same temperature the cameras differ by 0.5–0.6 px rms, most of it a common +0.5 px shift of cx that trades with a −3.6 mdeg rig yaw. Ten blocks were still aligned with the rational cameras (older runs). A joint of only the 13 fisheye-aligned blocks differs by 0.3–0.4 px, so the consensus should be regenerated once those sites are re-run.
+
+**Rig epochs.** Three blocks hold images from two parts of the mission, brought in by the nearby waypoints: Sid (sols 91–101 and 360–371), Three Forks South (413–433 and 652–693) and South Arm (1359–1360 and 1407–1411). Rochette's sol-341 epoch has only 3 frames and is not split. Solving one rig per epoch shows:
+
+| block, epoch | T (°C) | yaw | pitch | roll (mdeg) |
+|---|---|---|---|---|
+| Sid 91–101 | −22.2 | −1.6 | −3.8 | +26.7 |
+| Sid 360–371 | −8.6 | −15.9 | +1.2 | +21.8 |
+| Three Forks South 413–433 | −17.1 | −10.1 | −0.8 | +17.1 |
+| Three Forks South 652–693 | −14.2 | −11.1 | +1.5 | +17.1 |
+| South Arm 1359–1360 | −22.3 | +1.3 | +3.5 | +11.0 |
+| South Arm 1407–1411 | −21.6 | +3.1 | +3.8 | +13.9 |
+
+Sid's pitch step (+5.0 mdeg) is what the hinge drift predicts (+5.5), and its yaw step (−14.3) is the thermal term for 13.5 °C (−14). As one block at sol 360, Sid had mixed the two sides of the knee. With the epochs the drift barely changes: pitch late rate 4.81 → 4.91, early 25.2 → 22.5 mdeg/1000 sol.
+
+**Site flags.**
+
+| action | sites | reason |
+|---|---|---|
+| re-run (rational Navcam model) | Rochette, Belva Crater, Tuxedo Park, Airey Hill, Bunsen Peak, Rio Chiquito, South Arm, Marble Mountain | aligned with the old rational cameras |
+| re-running | Rockytop, Pearce Canyon | |
+| re-run (rig held on a strong network) | Sid, Origny | `NAVCAM_RIG_REFINE = "refine"` bug |
+| remove candidate | Whale Mountain | 2 stations |
+| keep, cameras and rig held | Butler Landing, Groloy, Overlook Mountain | weak networks |
+| check sol ranges | threeforks_south / threeforks_north, pico_turquino | overlap through the nearby waypoints (sols 413–693 in both); Pico Turquino holds sols to 1322 |
+
+**Mastcam-Z focus states.** The per-image test on two older Nav+Zcam blocks, Airey Hill (152 Zcam images) and Three Forks (342), fitted each image's own focal length with its centre held near its Navcam-shifted label position. Almost all focus groups sit at 1.009–1.013 × the label f, which is the backlash state. A few one- and two-image bins at 0.96–0.99 are failed bins rather than a second state, so they are marked implausible. Those blocks were solved with bins started in the backlash state, and a regular-state image in such a bin shows up only if its centre cannot absorb the difference. The first new Zcam runs will show how many regular groups there are.

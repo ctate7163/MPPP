@@ -75,17 +75,24 @@ def cmd_rig(a, scapes_cfg, samples):
         common = {k: np.median(np.array(v), axis=0).tolist() for k, v in pp.items()}
     (out / "common_principal_points.json").write_text(json.dumps(common, indent=1))
     print("common principal points", common, flush=True)
+    modes = getattr(a, "modes", None)
     for n in names:
         f = out / f"rig_{n.replace(' ', '_')}.json"
-        if f.exists() and not a.force:
+        old = json.loads(f.read_text()) if f.exists() else None
+        if old is not None and not a.force and (not modes or all(m in old for m in modes)):
             print(f"{n}: done", flush=True)
             continue
         t = time.time()
         sc = NC.load_scape(n, scapes_cfg[n], samples, lens=getattr(a, "rig_lens", None))
         n_all = len(sc.rec.points3D)
         n_drop = NC.thin_points(sc.rec, a.rig_points, seed=0)
-        res = NC.rig_study(sc, common_pp=common)
+        kw = {"modes": modes} if modes else {}
+        res = NC.rig_study(sc, common_pp=common, **kw)
         res["points_used"] = {"all": n_all, "kept": n_all - n_drop}
+        if modes and old is not None:
+            # v0p40: --modes adds (with --force: redoes) those modes in an existing study and keeps the others
+            old.update({m: res[m] for m in modes if m in res})
+            res = old
         f.write_text(json.dumps(jsonable(res), indent=1))
         print(f"{n}: {time.time() - t:.0f} s", flush=True)
         del sc
@@ -111,10 +118,28 @@ def cmd_scale(a, scapes_cfg, samples):
         del sc
 
 
-def start_state(scapes_cfg, samples, lens="rational"):
-    """Start cameras (the shipped consensus of the most recent project) and the start rig."""
+def start_state(scapes_cfg, samples, lens="rational", start_dir=None):
+    """Start cameras (the shipped consensus of the most recent project) and the start rig.  v0p40: ``start_dir``
+    (``--start-cameras``) - a folder of frozen cameras (``M2020_N{L,R}_rational.json`` or
+    ``M2020_N{L,R}_fisheye_tangential.json`` and ``M2020_N_rig.json``, e.g. an earlier joint calibration) instead."""
     import pycolmap
     from mppp.sfm import navcal as NC
+    if start_dir:
+        d = Path(start_dir)
+        cams, fits = {}, {}
+        for k in ("NL", "NR"):
+            f = d / f"M2020_{k}_{'rational' if lens == 'rational' else 'fisheye_tangential'}.json"
+            if not f.is_file():                                       # the other lens: refit it
+                g = d / f"M2020_{k}_{'fisheye_tangential' if lens == 'rational' else 'rational'}.json"
+                j = json.loads(g.read_text())
+                c = pycolmap.Camera(model=j["model"], width=5120, height=3840, params=np.asarray(j["params"], float))
+                cams[k], fits[k] = NC.fit_camera_model(c, NC.RATIONAL if lens == "rational" else NC.FISHEYE_T)
+                continue
+            j = json.loads(f.read_text())
+            cams[k] = pycolmap.Camera(model=j["model"], width=5120, height=3840, params=np.asarray(j["params"], float))
+        rj = json.loads((d / "M2020_N_rig.json").read_text())
+        rig = (np.asarray(rj["R_sensor_from_ref"], float), np.asarray(rj["t_sensor_from_ref_m"], float))
+        return cams, rig, fits
     newest = None
     for n, root in scapes_cfg.items():
         r = Path(root)
@@ -134,7 +159,7 @@ def start_state(scapes_cfg, samples, lens="rational"):
 
 def build_merged(a, scapes_cfg, samples, lens="rational", exclude=()):
     from mppp.sfm import navcal as NC
-    cams, rig, fits = start_state(scapes_cfg, samples, lens)
+    cams, rig, fits = start_state(scapes_cfg, samples, lens, getattr(a, "start_cameras", None))
     gen = (NC.load_scape(n, scapes_cfg[n], samples) for n in scapes_cfg if n not in exclude)
     rec, proj, idx = NC.merge_scapes(gen, cams, rig, points_per_scape=a.points, seed=0)
     return rec, proj, idx, fits
@@ -175,14 +200,21 @@ def camera_record(rec, cid, cov=None, vf=1.0):
 
 
 def _cahv_rig(scapes_cfg):
+    """The label (CAHV) rig most blocks share (v0p40: the label rig changed once near sol 250, so the first
+    block's is not necessarily the common one)."""
+    from scipy.spatial.transform import Rotation
+    refs = []
     for n, root in scapes_cfg.items():
         r = Path(root)
         r = r / "colmap" if (r / "colmap").is_dir() else r
         pj = json.loads((r / "project.json").read_text())
         R = ((pj.get("rig") or {}).get("N") or {}).get("R_sensor_from_ref_cahv")
         if R is not None:
-            return np.asarray(R, float)
-    return None
+            refs.append(np.asarray(R, float))
+    if not refs:
+        return None
+    close = [sum(np.degrees(Rotation.from_matrix(a @ b.T).magnitude()) * 1e3 < 0.05 for b in refs) for a in refs]
+    return refs[int(np.argmax(close))]
 
 
 def cmd_joint(a, scapes_cfg, samples):
@@ -199,7 +231,8 @@ def cmd_joint(a, scapes_cfg, samples):
         save_merged(out, f"{lens}_start", rec, proj, idx)
     temps = idx["temps"]
     Ts = np.array([temps[r["name"]] for r in proj.images if r["name"] in temps])
-    T0 = float(np.round(np.mean(Ts), 1))
+    # v0p40: the reference temperature is -20 degC (--t0); "mean" uses the mean image temperature (v0p35)
+    T0 = float(np.round(np.mean(Ts), 1)) if str(getattr(a, "t0", "-20")) == "mean" else float(getattr(a, "t0", -20.0))
     print(f"merged {len(idx['images'])} blocks, {rec.num_reg_images()} images, {rec.num_points3D()} points, "
           f"{sum(p.track.length() for p in rec.points3D.values())} observations, T0 {T0} degC  ({time.time() - t:.0f} s)",
           flush=True)
@@ -401,9 +434,15 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--points", type=int, default=15000, help="joint/loo: points per block")
     ap.add_argument("--rig-points", type=int, default=120000, help="rig: at most this many points per block")
+    ap.add_argument("--t0", default="-20", help="joint (v0p40): reference camera temperature in degC of the shared "
+                    "cameras and rig (default -20), or 'mean' (the mean image temperature, v0p35)")
+    ap.add_argument("--modes", nargs="*", help="rig (v0p40): only these rig_study modes (rotation, rotation_pp, "
+                    "full, bins, epochs), added to an existing study file")
     ap.add_argument("--lens", default="rational")
     ap.add_argument("--rig-lens", default="rational",
                     help="rig: refit blocks solved with another Navcam lens model to this one (rational|fisheye_t)")
+    ap.add_argument("--start-cameras", help="joint: folder of frozen cameras to start from (default: the shipped "
+                                             "consensus of the most recent project)")
     ap.add_argument("--common-pp", help="rig: common principal points JSON of an earlier study (default: the median "
                                         "of the blocks)")
     ap.add_argument("--warm-slope", type=float, default=40.0)

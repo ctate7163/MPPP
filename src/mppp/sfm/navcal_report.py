@@ -274,13 +274,16 @@ def rig_prediction(loo, studies, f_px: float = 2952.0):
                                                         "v_inf_drift_px", "roll_drift_mdeg")}}
 
 
-def drift_figure(studies, model, path, highlight=(), old_drift=None, mode="rotation_pp"):
+def drift_figure(studies, model, path, highlight=(), old_drift=None, mode="rotation_pp", labels=None):
     """
     v0p35.1: the rig angles of every block against sol (pitch; yaw corrected to the model's mean temperature with
     the between-block slope; roll) and yaw against temperature, with the drift ``model`` (:func:`navcal.rig_drift_model`)
     and, if given, an older linear drift (``old_drift``, :func:`navcal.rig_drift`).  ``highlight``: blocks drawn
-    as open symbols (e.g. the ones added since the last study).  Writes ``path`` (PNG).
+    as open symbols (e.g. the ones added since the last study).  Writes ``path`` (PNG).  v0p40: ``old_drift``
+    may be a hinge model (drawn with its hinge); ``labels`` {"fit", "old", "base", "new"} replaces the legend texts.
     """
+    L = {"fit": "v0p35.1 fit", "old": "v0p35 linear drift", "base": "v0p35 blocks", "new": "added in v0p35.1",
+         **(labels or {})}
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -306,16 +309,20 @@ def drift_figure(studies, model, path, highlight=(), old_drift=None, mode="rotat
         ax.fill_between(grid, curve - tau, curve + tau, color="#2a78d6", alpha=0.12, lw=0)
         ls = "--" if ang in model.get("no_drift", []) else "-"
         ax.plot(grid, curve, ls, color="#2a78d6", lw=1.6,
-                label=f"v0p35.1 fit ({model['blocks']} blocks){' - not used: rate 0' if ls == '--' else ''}; band = tau {tau:.1f}")
+                label=f"{L['fit']} ({model['blocks']} blocks){' - not used: rate 0' if ls == '--' else ''}; band = tau {tau:.1f}")
         if old_drift:
-            k = old_drift[f"{ang}_mdeg_per_sol"]
-            c = float(np.sum(w * (y - k * (sol - old_drift["sol0"]))) / np.sum(w))
-            lin = c + k * (grid - old_drift["sol0"])
-            ax.plot(grid, lin, ":", color="#888888", lw=1.3, label=f"v0p35 linear drift ({old_drift['blocks']} blocks)")
-        ax.errorbar(sol[~new], y[~new], yerr=e[~new], fmt="o", color="#1a1a1a", ms=5, capsize=2, label="v0p35 blocks")
+            if old_drift.get("knot_sol") is not None:
+                od = dict(old_drift, **{f"{ang}_mdeg_per_sol": old_drift.get(f"{ang}_fit_mdeg_per_sol", old_drift[f"{ang}_mdeg_per_sol"])})
+                f_old = lambda xx: np.array([NC.drift_offset_mdeg(od, x)[f"{ang}_mdeg"] for x in np.atleast_1d(xx)])  # noqa: E731
+            else:
+                k = old_drift[f"{ang}_mdeg_per_sol"]
+                f_old = lambda xx: k * (np.asarray(xx, float) - old_drift["sol0"])                               # noqa: E731
+            c = float(np.sum(w * (y - f_old(sol))) / np.sum(w))
+            ax.plot(grid, c + f_old(grid), ":", color="#888888", lw=1.3, label=f"{L['old']} ({old_drift['blocks']} blocks)")
+        ax.errorbar(sol[~new], y[~new], yerr=e[~new], fmt="o", color="#1a1a1a", ms=5, capsize=2, label=L["base"])
         if new.any():
             ax.errorbar(sol[new], y[new], yerr=e[new], fmt="o", mfc="white", mec="#eb6834", color="#eb6834", ms=7,
-                        capsize=2, label="added in v0p35.1")
+                        capsize=2, label=L["new"])
         for x, yy, n in zip(sol, y, names):
             ax.annotate(n, (x, yy), fontsize=6.5, xytext=(3, 3), textcoords="offset points", color="#555555")
         ax.set_xlabel("sol (block median)")
@@ -329,10 +336,10 @@ def drift_figure(studies, model, path, highlight=(), old_drift=None, mode="rotat
     ax = axs[1, 1]
     y = np.array([r["yaw_mdeg"] for _, r in rows])
     e = np.array([r.get("sd_yaw_mdeg", np.nan) for _, r in rows])
-    ax.errorbar(T[~new], y[~new], yerr=e[~new], fmt="o", color="#1a1a1a", ms=5, capsize=2, label="v0p35 blocks")
+    ax.errorbar(T[~new], y[~new], yerr=e[~new], fmt="o", color="#1a1a1a", ms=5, capsize=2, label=L["base"])
     if new.any():
         ax.errorbar(T[new], y[new], yerr=e[new], fmt="o", mfc="white", mec="#eb6834", color="#eb6834", ms=7, capsize=2,
-                    label="added in v0p35.1")
+                    label=L["new"])
     tt = np.linspace(T.min() - 1, T.max() + 1, 50)
     w = 1.0 / (e ** 2 + model["yaw_tau_mdeg"] ** 2)
     b = model["yaw_T_mdeg_per_degC"]

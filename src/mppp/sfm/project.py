@@ -250,7 +250,8 @@ class SfmProject:
                zcam_intrinsics: str = "focus_model", zcam_focus_bin: Optional[float] = ZCAM_FOCUS_BIN,
                zcam_bin_refine: str = "focal", zcam_rig: bool = False,
                navcam_distortion: str = NAVCAM_DISTORTION, zcam_hold_f_images: int = ZCAM_HOLD_F_IMAGES,
-               navcam_rig: str = NAVCAM_RIG, navcam_cameras: Optional[PathLike] = None) -> "SfmProject":
+               navcam_rig: str = NAVCAM_RIG, navcam_cameras: Optional[PathLike] = None,
+               zcam_zero_terms: Optional[Sequence[str]] = None) -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -268,6 +269,9 @@ class SfmProject:
         starts from the focal length against focus count fitted to earlier
         refined solutions (``m20_cmods/M2020_ZCAM034_focus_model.json``, notebook
         05) instead of the label value, which is about 1 % short.
+        ``zcam_zero_terms`` (v0p40): the terms set to 0 in the Mastcam-Z
+        cameras (e.g. ``("p1", "p2", "b1", "b2")``) when they differ from the
+        Navcam ones (``zero_terms``); None: ``zero_terms`` for both.
         ``navcam_cameras`` (v0p22.2): a folder with verified consensus Navcam
         cameras written by notebook 04 (``calibration.write_navcam_consensus``:
         ``M2020_NL_rational.json``, ``M2020_NR_rational.json`` and optionally
@@ -403,13 +407,14 @@ class SfmProject:
         nav_dir = Path(navcam_cameras) if navcam_cameras else xml_dir
         nav_info: Dict[str, Any] = {}
         for instr, fam in sorted(instruments.items()):
+            zt = tuple(zcam_zero_terms) if (fam == "Z" and zcam_zero_terms is not None) else tuple(zero_terms)
             if fam == "Z" and zcam_intrinsics in ("label", "focus_model"):
-                cameras[instr] = _camera_from_label_median(instr, label_params[instr], FULL_FRAME[fam], zero_terms)
+                cameras[instr] = _camera_from_label_median(instr, label_params[instr], FULL_FRAME[fam], zt)
                 continue
             if fam == "N" and navcam_distortion in ("rational", "fisheye_tangential"):
                 xml = nav_dir / (NAVCAM_RATIONAL_PATTERN if navcam_distortion == "rational"
                                  else NAVCAM_FISHEYE_PATTERN).format(instrument=instr)
-                cam = camera_from_colmap_json(xml, zero_terms)
+                cam = camera_from_colmap_json(xml, zt)
                 if navcam_cameras:
                     js = json.loads(xml.read_text(encoding="utf-8"))
                     nav_info[instr] = {"file": str(xml), "verification": js.get("verification")}
@@ -430,7 +435,7 @@ class SfmProject:
             else:
                 xml = xml_dir / (ZCAM_XML_PATTERN.format(camera=instr) if fam == "Z"
                                  else XML_PATTERN.format(instrument=instr))
-                cam = camera_from_metashape_xml(xml, zero_terms)
+                cam = camera_from_metashape_xml(xml, zt)
             if (cam["width"], cam["height"]) != FULL_FRAME[fam]:
                 raise ValueError(f"{xml.name} is {cam['width']}x{cam['height']}, expected the full frame {FULL_FRAME[fam]}")
             cameras[instr] = cam
@@ -463,6 +468,7 @@ class SfmProject:
         proj = cls(root, images, cameras, rig, offset,
                    {"world_frame": frames.pop(), "image_format": image_format,
                     "prior_sigma_m": list(map(float, prior_sigma_m)), "zero_terms": list(zero_terms),
+                    "zcam_zero_terms": None if zcam_zero_terms is None else list(zcam_zero_terms),
                     "processed_dir": str(processed_dir), "zcam_intrinsics": zcam_intrinsics,
                     "zcam_hold_f_images": int(zcam_hold_f_images) if zcam_intrinsics == "focus_model" else None,
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,

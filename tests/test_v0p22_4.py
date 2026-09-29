@@ -68,7 +68,7 @@ def test_notebook_03_new_defaults():
     # v0.30 raised ADD_NEARBY_WAYPOINTS to 10 and turned KEEP_ONLY_REMAINING off; the
     # option semantics tested here (inclusive radius, 0 = off, sky rule) are unchanged.
     assert ns["ADD_NEARBY_WAYPOINTS"] > 0 and "NEARBY_M" not in ns
-    assert ns["SITES"]["threeforks_south"] == (652, 683) and ns["SITES"]["rockytop"] == (461, 530)
+    assert ns["SITES"]["threeforks_south"] == (652, 674) and ns["SITES"]["rockytop"] == (461, 530)
     assert {"taylorfjellet", "rockytop", "belva_crater", "butler_landing", "pearce_canyon", "olifants"} <= set(ns["SITES"])
     assert all(" " not in k for k in ns["SITES"])
     assert ns["KEEP_ONLY_REMAINING"] in (0, 1) and ns["STORE_MASK_IN_ALPHA"] is True and ns["ZCAM_RIG"] is True

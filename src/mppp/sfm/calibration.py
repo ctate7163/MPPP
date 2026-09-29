@@ -707,6 +707,8 @@ def focus_table(sols: Dict[str, Solution], min_observations: int = 0) -> List[Di
             lab = [float(r["label_f_px"]) for r in s.images.values()
                    if r["instrument"] == c.key and r.get("label_f_px") is not None]
             rows.append({"scape": n, "camera": c.key, "group": c.group, "focus": c.focus, "images": c.n_images,
+                         # v0p40: the focus state of the camera (mppp.sfm.backlash: "<bin>_reg" = regular)
+                         "state": "regular" if str(c.key).endswith("_reg") else "backlash",
                          "observations": c.n_obs, "refined": c.refined,
                          "f_refined_px": float(np.sqrt(c.params[0] * c.params[1])),
                          "fx_refined_px": float(c.params[0]), "fy_refined_px": float(c.params[1]),
@@ -718,18 +720,24 @@ def focus_table(sols: Dict[str, Solution], min_observations: int = 0) -> List[Di
 
 
 def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: int = 2000,
-                    per_scape_offset: bool = True, min_focus: Optional[float] = -2000.0) -> Optional[Dict[str, Any]]:
+                    per_scape_offset: bool = True, min_focus: Optional[float] = -2000.0,
+                    state: Optional[str] = "backlash") -> Optional[Dict[str, Any]]:
     """
     f = f0 + a (focus - ref) [+ a constant per scape] fitted to the refined bins of
     ``group`` with at least ``min_observations`` (weights = observations).  The
     per-scape offsets measure how repeatable the focal length is from scape to
     scape at the same focus (temperature, zoom repeatability, the bundle adjustment).
     Bins below ``min_focus`` motor counts (default -2000) are left out, of the label fit too:
-    there are few of them and they scatter far from the line.
+    there are few of them and they scatter far from the line.  ``state`` (v0p40): only the bins of that focus
+    state (``"backlash"``, the dominant state; the regular-state ``<bin>_reg`` cameras sit about 1 % lower, at the
+    label, and are summarised in ``regular_state``); None: all bins.
     """
     lo = -np.inf if min_focus is None else float(min_focus)
     use = [r for r in rows if r["group"] == group and r["refined"] and r["observations"] >= min_observations
-           and r["focus"] is not None and r["focus"] >= lo]
+           and r["focus"] is not None and r["focus"] >= lo and (state is None or r.get("state", "backlash") == state)]
+    # v0p40: the regular focus state (f about the label) is left out of the line and reported as its offset
+    reg = [r for r in rows if r["group"] == group and r.get("state") == "regular" and r["refined"]
+           and r.get("f_label_median_px")]
     if len(use) < 3:
         return None
     x = np.array([r["focus"] for r in use], float)
@@ -762,7 +770,9 @@ def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: in
             "slope_px_per_count": float(beta[1]), "slope_pct_per_1000": float(1e5 * beta[1] / beta[0]),
             "rms_px": float(np.sqrt(np.sum(W * res ** 2))), "scape_offsets_px": offsets,
             "scape_offset_sd_px": float(np.std(list(offsets.values()))) if len(offsets) > 1 else 0.0,
-            "n_bins": len(use), "scapes": scapes, "label": lab_fit, "min_focus": min_focus,
+            "n_bins": len(use), "scapes": scapes, "label": lab_fit, "min_focus": min_focus, "state": state,
+            "regular_state": {"bins": len(reg), "f_over_label_median": float(np.median(
+                [r["f_refined_px"] / r["f_label_median_px"] for r in reg])) if reg else None},
             "focus_range": [float(x.min()), float(x.max())]}
 
 
