@@ -450,11 +450,16 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         ref_id, sen_id = db_cams.get(r0["ref"]), db_cams.get(r0["sensor"])
         if ref_id is None or sen_id is None:
             continue
-        for rid, rig in rec.rigs.items():
-            if rig.ref_sensor_id.id != int(ref_id):
+        # v0p31: with Navcam temperature bins the rig is copied per bin (ref NL_T..., sensor NR_T...), all held at
+        # the same value; any of them stands for the family
+        grp = lambda k: str((project.cameras.get(k) or {}).get("group") or k)                  # noqa: E731
+        refs = {int(v) for k, v in db_cams.items() if grp(k) == r0["ref"]} | {int(ref_id)}
+        sens = {int(v) for k, v in db_cams.items() if grp(k) == r0["sensor"]} | {int(sen_id)}
+        for rid, rig in sorted(rec.rigs.items(), key=lambda kv: kv[1].ref_sensor_id.id != int(ref_id)):
+            if rig.ref_sensor_id.id not in refs or fam in rig_out:
                 continue
             for sid in rig.non_ref_sensors:
-                if sid.id != int(sen_id):
+                if sid.id not in sens:
                     continue
                 T = rig.sensor_from_rig(sid)
                 R1, t1 = T.rotation.matrix(), np.asarray(T.translation)

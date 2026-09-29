@@ -66,7 +66,7 @@ with open(out / "sites.csv", "w", newline="") as f:
 hdr = ["scape", "cameras", "manifest", "site", "sols", "n_sols", "images", "navcam (left)", "Mastcam-Z", "Navcam scales", "stations",
        "span m", "LMST h", "LMST spread h", "sun el. deg"]
 md = ["# Scapes used\n", "Made by `scripts/sites_table.py` from the MPPP manifests of the scape folders on disk (the v0p15 manifests are the "
-      "earlier processing of the same image sets; the v0p22 manifests are the runs analysed in notebook 04). Span is the largest "
+      "earlier processing of the same image sets; the v0p22 manifests are the runs analysed in notebook 04, camera models). Span is the largest "
       "horizontal distance between station centres; stations are (site, drive) pairs. LMST is per image, from the label "
       "(`LOCAL_MEAN_SOLAR_TIME`). Histogram: `sites_lmst.png`.\n",
       "| " + " | ".join(hdr) + " |", "|" + "---|" * len(hdr)]

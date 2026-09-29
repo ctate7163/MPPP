@@ -2,6 +2,22 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.31.0 — 2026-09-28
+
+Navcam focal length and camera temperature (`mppp.sfm.thermal`; working notes §13, methods §15):
+- **Temperature-bin experiment** (`scripts/temperature_bins_experiment.py`): on a solved block, every Navcam image gets its camera-plate temperature (`NAVCAM_LEFT_CAL` / `NAVCAM_RIGHT_CAL` of the label, interpolated in spacecraft clock between the labels of the sol where needed; leave-one-out error 0.4–0.6 °C median), each eye is split into one camera per 10 °C bin (bins under 8 images merged into a neighbour) with fx, fy free and everything else of the camera and the rig shared, and the block is re-adjusted; a reference adjustment with one camera per eye and the same freedom is run first. Nine scapes, 21 bins: **fx rises 0.094 ± 0.006 px/°C (NL) and 0.086 ± 0.007 px/°C (NR), about 30 ppm/°C**, with one offset per scape; fy follows with more noise (0.06 ± 0.02 px/°C). Across scapes the slope is 0.16–0.18 px/°C.
+- **Thermal stage in the pipeline**: `reconstruct(temperatures=..., thermal_bins_deg=10)` ends with the same split and adjustment (bins held at the start camera scaled by the thermal model when the Navcam intrinsics are held). The binned block is the delivered model; the one-camera solution is kept in `sparse/<out>_single`. Images of a bin carry the bin camera as `instrument` (the eye in `base_instrument`); `strip_thermal_bins` undoes the split before the database is built and at the start of every reconstruction, so reruns start from one camera per eye. The report is in `project.settings["thermal"]`. Notebook 03: `THERMAL_BINS_DEG = 10`, `THERMAL_MIN_IMAGES = 8` (None = off); temperatures from the manifest, else the labels under `PDS_DIR`.
+- **Temperature-corrected consensus**: notebook 04 section 2a fits both slopes, and `CAL.thermal_model` (`THERMAL_SOURCE = "auto"`: within-block if measured, else across scapes; or `"fixed"` with `THERMAL_PPM`) scales every refined camera to a reference temperature T0 (the observation-weighted mean) before `consensus_camera` averages them; `reference_differences` and the consensus verification scale the consensus to each camera's temperature. The consensus JSON carries `thermal` {ppm_per_degC, T0_degC}, and `SfmProject.create(navcam_cameras=...)` scales the start fx, fy to the block's median camera temperature. On the nine scapes the mean distance of a scape's camera from the consensus drops from 0.39 to 0.27 px rms (Taylorfjellet 0.68 → 0.29 / 0.32 px).
+- Manifests: `camera_temperature_degC` is filled from the label when an older manifest entry is reused; project image records carry it.
+- Notebook 03 rebuilds the project when the consensus files in `NAVCAM_CAMERAS` change (`navcam_cameras_fingerprint`), since a consensus rewritten in the same folder has the same path.
+
+Other changes:
+- **Outlier frames**: `OUTLIER_DEFAULTS["min_residual_px"]` 0.6 → **1.0 px** (the residual test flags a frame whose median residual exceeds both 3 × the block median and 1 native px; the shift and attitude tests are unchanged).
+- **Notebook order**: 04 is now camera models, 05 error analysis (constrain the cameras before the error analysis); `run_scapes.py` runs them in that order.
+- Notebook 04: the difference maps share one colour scale (98th percentile over all panels) and are drawn as images of their sample grid (the square markers aliased into moiré when scaled); bin cameras are labelled; stereo and radial-profile sections use the most observed camera of an eye.
+- Notebook 03 defaults (from the user's settings): `KEEP_ONLY_REMAINING = 1`, `SKY_ELEVATION_DEG = 20`, `LMST_WINDOW_H = (8, 17)`, `NAVCAM_INTRINSICS = "auto"`, `NAVCAM_CAMERAS = D:\scapes\colmap\camera_analysis\2026-09-28\navcam_consensus`, `NO_MASK_INFERENCE_AT = []`; sites: `rochette` (179–190) and `threeforks_south` (652–683) added, `threeforks_large` removed; `butler_landing` 1–14, `sid` 361–378, `airey_hill` 960–991, `rio_chiquito` 1333–1337. Notebook 04 defaults: the 15 scapes of the user's list.
+- `bundle_adjust` skips the prior of a frame whose reference image the project does not list, and `split_by_temperature` keeps deregistered frames unregistered.
+
 ## 0.30.0 — 2026-09-28
 
 Image selection and processing:

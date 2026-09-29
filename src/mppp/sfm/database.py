@@ -184,6 +184,8 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
     replaced; matching has to be run again afterwards.
     """
     import pycolmap
+    from .thermal import strip_thermal_bins
+    strip_thermal_bins(project)                             # v0p31: one camera per eye before the database is built
     fdb_path = Path(features_db) if features_db else project.features_db
     out = Path(database) if database else project.database
     if out.exists():

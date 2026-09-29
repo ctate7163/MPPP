@@ -2,14 +2,15 @@
 Run the MPPP notebooks for several sites in one go (v0p22).
 
 For every site, notebook 03 (COLMAP alignment) runs with its settings cell
-(tagged ``parameters``) overridden; then notebook 04 (error analysis) and 05
-(camera models) run once over all sites that finished.  Each executed notebook
+(tagged ``parameters``) overridden; then notebook 04 (camera models) and 05
+(error analysis) run once over all sites that finished (v0p31: the camera models come first, so that the
+cameras are constrained before the reconstruction error is analysed).  Each executed notebook
 is saved next to its results, and progress goes to ``<root>/batch_log.txt``
 (one line per notebook cell), so a long run can be followed from anywhere.
 
 Example (Windows, the Python environment that runs your notebooks)::
 
-    python scripts\\run_scapes.py --sites taylorfjellet rockytop belva threeforks_large landing ^
+    python scripts\\run_scapes.py --sites taylorfjellet rockytop belva threeforks_south landing ^
         --zcam --reprocess --root D:\\scapes\\v0p22 ^
         --gpu-py C:\\Users\\<you>\\AppData\\Local\\miniconda3\\envs\\mppp_gpu\\python.exe
 
@@ -45,9 +46,12 @@ def notebook(stem: str):
     if versioned:
         return versioned[-1]
     raise FileNotFoundError(f"no {stem}.ipynb or {stem}_v0p*.ipynb in {NB}")
-SITE_LABEL = {"threeforks": "Three Forks", "threeforks_large": "Three Forks 670-694", "belva": "Belva",
-              "rockytop": "Rockytop", "bellisland": "Bell Island", "taylorfjellet": "Taylor Fjellet",
-              "landing": "Landing site"}
+SITE_LABEL = {"butler_landing": "Butler Landing", "rochette": "Rochette", "sid": "Sid", "rockytop": "Rockytop", "threeforks": "Three Forks",
+              "threeforks_south": "Three Forks South", "threeforks_large": "Three Forks 652-693", "belva_crater": "Belva Crater", "tuxedo_park": "Tuxedo Park",
+              "airey_hill": "Airey Hill", "bunsen_peak": "Bunsen Peak", "pearce_canyon": "Pearce Canyon",
+              "rio_chiquito": "Rio Chiquito", "south_arm": "South Arm", "bell_island": "Bell Island",
+              "taylorfjellet": "Taylorfjellet", "olifants": "Olifants", "groloy": "Groloy",
+              "marble_mountain": "Marble Mountain"}
 
 
 class Log:
@@ -178,16 +182,16 @@ def main(argv=None) -> int:
         return 1
     today = datetime.date.today().isoformat()
     if "04" in a.only:
-        log(f"notebook 04 on {list(labels)}")
-        run_notebook(notebook("04_error_analysis"), root / "error_analysis" / today / "04_error_analysis_executed.ipynb",
-                     {"ALIGNMENTS": repr({k: v for k, v in labels.items()}), "MIN_TRACK_LENGTH": "3",
-                      "OUT": f"Path(r{str(root / 'error_analysis' / today)!r})"}, log)
-    if "05" in a.only:
-        log(f"notebook 05 on {list(labels)}")
-        run_notebook(notebook("05_camera_models"), root / "camera_analysis" / today / "05_camera_models_executed.ipynb",
+        log(f"notebook 04 (camera models) on {list(labels)}")
+        run_notebook(notebook("04_camera_models"), root / "camera_analysis" / today / "04_camera_models_executed.ipynb",
                      {"SCAPES": "{" + ", ".join(f"{k!r}: Path(r{v!r})" for k, v in labels.items()) + "}",
                       "SCAPES_ROOT": f"Path(r{str(root)!r})",
                       "OUT": f"Path(r{str(root / 'camera_analysis' / today)!r})"}, log)
+    if "05" in a.only:
+        log(f"notebook 05 (error analysis) on {list(labels)}")
+        run_notebook(notebook("05_error_analysis"), root / "error_analysis" / today / "05_error_analysis_executed.ipynb",
+                     {"ALIGNMENTS": repr({k: v for k, v in labels.items()}), "MIN_TRACK_LENGTH": "3",
+                      "OUT": f"Path(r{str(root / 'error_analysis' / today)!r})"}, log)
     log("batch finished")
     return 0
 

@@ -137,7 +137,8 @@ def triangulate(rec, project: SfmProject, max_reproj_px: float = 8.0, min_angle_
 
 def _scales(rec, project: SfmProject) -> Dict[int, float]:
     by_name = {r["name"]: float(r["downsample_scale"]) for r in project.images}
-    return {iid: by_name[im.name] for iid, im in rec.images.items()}
+    # v0p31: images the project does not describe (deregistered, e.g. frames dropped after a rebuild) are skipped
+    return {iid: by_name[im.name] for iid, im in rec.images.items() if im.name in by_name}
 
 
 def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: float = 2.0,
@@ -307,10 +308,11 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             ref = [d.id for d in fr.data_ids if d.sensor_id.id == rig.ref_sensor_id.id]
             if not ref or ref[0] not in rec.images:
                 continue
-            C = np.asarray(by_name[rec.images[ref[0]].name]["prior_C"], float)
             pose = pose_blocks.get(fid)
-            if pose is None:
+            r_ref = by_name.get(rec.images[ref[0]].name)
+            if pose is None or r_ref is None:             # unregistered frame, or an image the project does not know
                 continue
+            C = np.asarray(r_ref["prior_C"], float)
             prob.add_residual_block(cf.AbsolutePosePositionPriorCost(cov3, C), None, [pose])
             n_prior += 1
             if attitude_prior_deg:
@@ -579,7 +581,7 @@ def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:
             "observations": int(np.sum(lens)) if lens else 0}
 
 
-OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 0.6, "shift_mad_factor": 5.0, "min_shift_m": 0.25,
+OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.0, "shift_mad_factor": 5.0, "min_shift_m": 0.25,
                     "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": 30}
 
 
@@ -775,7 +777,10 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 exclude_after_round: int = 2, rig_translation_sigma_m: Optional[float] = None,
                 triangulation_options: Optional[Dict[str, Any]] = None,
                 navcam_intrinsics: str = "refine", staged: bool = False, hold_cameras: Sequence[str] = (),
-                linear_solver: str = "auto"):
+                linear_solver: str = "auto", temperatures: Optional[Dict[str, Dict[str, Any]]] = None,
+                thermal_bins_deg: Optional[float] = None, thermal_min_images: int = 8,
+                thermal_free: Sequence[str] = ("fx", "fy"),
+                thermal_model: Optional[Dict[str, Dict[str, float]]] = None):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
@@ -830,6 +835,14 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     list is in the log and ``project.settings["reconstruction"]["excluded"]``.
     ``rig_translation_sigma_m``: see :func:`bundle_adjust` (with ``refine_rig=True``).
     ``linear_solver`` (v0p30): passed to :func:`bundle_adjust`.
+    ``thermal_bins_deg`` (v0p31, with ``temperatures`` from :func:`mppp.sfm.thermal.image_temperatures`): after the
+    final adjustment, split the Navcam cameras into camera-temperature bins of this width
+    (:func:`mppp.sfm.thermal.thermal_stage`; bins with fewer than ``thermal_min_images`` images are merged) and
+    adjust once more with the bins' ``thermal_free`` parameters refined - or, when the Navcam intrinsics are held,
+    with every bin held at the eye's camera scaled to the bin temperature by ``thermal_model``
+    ({"NL": {"ppm_per_degC", "T0_degC"}, ...}).  The binned solution is the delivered one; the solution with one
+    camera per eye stays in ``sparse/<out_name>_single`` and the bin table in
+    ``project.settings["thermal"]``.
     ``triangulation_options`` (v0p22): extra keyword arguments for
     :func:`triangulate` (e.g. ``min_angle_deg`` per round is set from
     ``min_tri_angle_deg``; ``create_max_angle_error``, ``complete``...).
@@ -840,7 +853,12 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     if navcam_intrinsics not in ("auto", "refine", "hold"):
         raise ValueError("navcam_intrinsics must be 'auto', 'refine' or 'hold'")
     import time
+    from .thermal import strip_thermal_bins
     t0 = time.time()
+    n_strip = strip_thermal_bins(project)                   # v0p31: a rerun starts from one camera per eye
+    if n_strip and verbose:
+        print(f"[sfm] {n_strip} Navcam temperature-bin cameras of an earlier run removed; starting from one camera "
+              f"per eye", flush=True)
     rec = initial_reconstruction(project)
     init = copy.deepcopy(rec)
     log: List[Dict[str, Any]] = []
@@ -958,6 +976,26 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
         n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
         log.append({"final_ba": ba["brief"], "frames_held": ba["frames_held"], "filtered_after_final": n_bad,
                     "tracks": track_statistics(rec, project)})
+    thermal = None
+    if thermal_bins_deg and temperatures:
+        from .thermal import thermal_stage
+        single = project.root / "sparse" / f"{out_name}_single"
+        single.mkdir(parents=True, exist_ok=True)
+        rec.write(str(single))
+        hold_nav = network["navcam_intrinsics"] == "hold" or any(str(k).startswith("N") for k in hold_cameras)
+        rec, thermal = thermal_stage(rec, project, temperatures, bin_deg=float(thermal_bins_deg),
+                                     min_images=int(thermal_min_images), free=tuple(thermal_free), hold=hold_nav,
+                                     thermal_model=thermal_model, sigma_px=sigma_px,
+                                     loss_scale=float(schedule[-1][1]), max_iterations=2 * max_iterations,
+                                     attitude_prior_deg=attitude_prior_deg, linear_solver=linear_solver,
+                                     verbose=verbose)
+        n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
+        thermal["filtered_after"] = n_bad
+        thermal["single_camera_model"] = str(single.relative_to(project.root))
+        log.append({"thermal": {k: v for k, v in thermal.items() if k != "rows"}})
+        project.settings["thermal"] = thermal
+    elif thermal_bins_deg and verbose:
+        print("[sfm] thermal stage skipped: no image temperatures", flush=True)
     out = project.root / "sparse" / out_name
     out.mkdir(parents=True, exist_ok=True)
     rec.write(str(out))
@@ -978,7 +1016,8 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "triangulation_options": topts,
                                           "navcam_network": network, "navcam_intrinsics": network["navcam_intrinsics"],
                                           "hold_cameras": sorted(hold), "staged": bool(staged),
-                                          "navcam_stage": navcam_stage}
+                                          "navcam_stage": navcam_stage,
+                                          "thermal_bins_deg": float(thermal_bins_deg) if thermal and thermal_bins_deg else None}
     project.save()
     if gui_native:
         try:

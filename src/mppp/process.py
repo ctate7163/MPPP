@@ -257,6 +257,19 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     if reuse_existing:
         have, reuse_rep = reusable_images(out_dir, cfg, waypoints)
         reused = {p.stem: have[p.stem] for p in paths if p.stem in have}
+        # v0p31: images reused from a manifest written before MPPP 0.30 get their camera temperature from the label
+        n_temp = 0
+        for p in paths:
+            m = reused.get(p.stem)
+            if m is not None and "camera_temperature_degC" not in m and str(p.name)[:1] == "N":
+                try:
+                    from .sfm.thermal import label_temperatures
+                    t = label_temperatures(p)
+                    eye = "NL" if p.name.startswith("NL") else "NR"
+                    m["camera_temperature_degC"] = t.get("interp") if t.get("interp") is not None else t.get(eye)
+                    n_temp += 1
+                except Exception:                                  # noqa: BLE001  (a label without it)
+                    m["camera_temperature_degC"] = None
         todo = [p for p in paths if p.stem not in reused]
         reuse_rep.update(reused=len(reused), to_process=len(todo),
                          dropped_from_manifest=sorted(set(have) - set(reused)))

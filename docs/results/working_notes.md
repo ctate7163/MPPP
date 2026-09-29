@@ -162,3 +162,37 @@ Layout against the waypoints: the similarity between waypoint and refined statio
 Pearce Canyon: the 16 unregistered images were right-only exposures (their left partners are not in the archive selection); fixed in v0.30 (one-sensor rig).
 
 Navcam intrinsics, nine-scape consensus (notebook 05, 28 Sep): repeatability against the consensus 0.16–0.50 px rms per camera and scape, except Taylorfjellet 0.71 px in both eyes with 0.54 px at the centre. Its refined focal lengths are 1.43 / 1.41 px (0.048 %) above the start in both eyes; the other scapes spread from −0.65 to +0.92 px, also in both eyes together. The label focal length does not change with the interpolation temperature (2958.48 ± 0.01 px in every scape), so the label model does not predict this; notebook 05 section 2a now tests it against the camera temperature. The nine-scape consensus differs from the five-scape one shipped in 0.30 by less than its scatter; it is not re-shipped until the temperature question is answered. Stereo: the consensus geometry gives a mean disparity bias of −0.09 px (worst −0.47), the label geometry −0.48 px (worst −1.94), i.e. −0.38 % of range at 10 m with the labels. Rig: the refined right-from-left rotation differs from the CAHV pairs by 5–24 mdeg in yaw and 12–23 mdeg in roll.
+
+## 13. Navcam temperature bins and the sources of the residuals (v0p31, 28 Sep 2026; the nine 0.22.4 Navcam alignments of §12)
+
+**Temperature bins** (`scripts/temperature_bins_experiment.py`, 10 °C bins, ≥ 8 images per bin; temperatures from 342 labels, the rest interpolated in SCLK). Reference: one camera per eye, fx, fy free, rest and rig held; then one camera per eye and bin.
+
+| scape | images | T range °C | bins | cost | median px | rms px |
+|---|---|---|---|---|---|---|
+| Taylorfjellet | 245 | −32.0 … −6.4 | 4 | −1.04 % | 0.1967 → 0.1946 | 0.4173 → 0.4153 |
+| Pearce Canyon | 160 | −49.8 … −13.5 | 3 | −1.95 % | 0.2140 → 0.2102 | 0.4414 → 0.4377 |
+| Belva Crater | 80 | −38.4 … −18.7 | 2 | −0.35 % | 0.1424 → 0.1419 | 0.3291 → 0.3285 |
+| South Arm | 104 | −47.9 … −19.6 | 2 | −0.44 % | 0.1592 → 0.1587 | 0.3252 → 0.3246 |
+| Bell Island | 187 | −46.0 … −17.1 | 3 | −0.44 % | 0.1670 → 0.1660 | 0.3717 → 0.3740 |
+| Rockytop | 136 | −35.5 … −13.8 | 2 | −0.32 % | 0.1682 → 0.1672 | 0.3628 → 0.3623 |
+| Olifants | 210 | −34.8 … −10.7 | 3 | −1.15 % | 0.1718 → 0.1698 | 0.3843 → 0.3823 |
+| Marble Mountain | 63 | −42.5 … −12.6 | 1 | 0 | — | — |
+| Three Forks | 56 | −20.8 … −11.6 | 1 | 0 | — | — |
+
+Fit f = a_scape + b T over the 21 bins (weights √obs): **NL fx +0.094 ± 0.006 px/°C (31.9 ± 2.1 ppm/°C), NR fx +0.086 ± 0.007 px/°C (29.2 ± 2.3 ppm/°C)**, residual 0.23 px; fy +0.067 ± 0.016 / +0.057 ± 0.017 px/°C, residual 0.6 px. Every scape with more than one bin has fx rising with temperature in both eyes (Taylorfjellet NL 2955.45 / 2956.44 / 2957.58 / 2957.94 px at −31.5 / −21.9 / −10.7 / −7.9 °C). Bins colder than −30 °C lie up to 0.5 px above the line. Across scapes (one camera per scape against its median temperature): +0.160 / +0.180 px/°C (r 0.90 / 0.93). The scape offsets a_scape at 0 °C still rise with scape temperature (NL 2957.5 Belva Crater … 2958.6 Taylorfjellet).
+
+Consensus scatter (rms over the frame from the consensus, rotation removed; mean over both eyes and nine scapes): no thermal model 0.39 px (median 0.30); within-block slope 0.27 px (0.27); across-scape slope 0.27 px (0.25). Taylorfjellet NL 0.68 → 0.29 (within) / 0.24 (across); Three Forks stays the largest (NL 0.51 / 0.46, NR 0.63 / 0.44): its difference is at the centre (0.38 px), not in f. Decision: the consensus is formed at T0 with the within-block slope (`THERMAL_SOURCE = "auto"`), the direct measurement; the across-scape slope fits the same data and gains nothing measurable.
+
+**Sources of the residuals** (native px, all observations of the final blocks; `share` = share of the summed squared residual):
+
+- **The tail.** 1.2–4.5 % of the observations are above 1 px and carry 24–45 % of the squared residual; the top 1 % carry 16–24 %. Pearce Canyon (4.5 %, 45 %) and Taylorfjellet (3.9 %, 43 %) have the heaviest tails, Three Forks the lightest (1.2 %, 24 %).
+- **Track length** is the strongest single factor: rms 0.17–0.22 px for two-view tracks (the stereo pair), 0.26–0.37 for 3–4 views, 0.35–0.49 for 5–8, 0.34–0.56 for 9–16, up to 0.63 above 16. Long tracks join exposures of different stations, sols and illumination; their keypoints are the least consistent. (Two-view tracks also fit more easily, having no redundancy beyond the pair.)
+- **Resolution**: full-resolution frames have rms 0.31–0.58 native px against 0.29–0.41 for half resolution (Pearce 0.58, Taylorfjellet 0.49, Bell Island 0.48). In full-frame pixels the half-resolution frames are still the noisier, so σ in native px is not constant across scales.
+- **Range**: points nearer than 3 m (ground in front of the rover, 28–54 % of observations) have the highest rms at six scapes (Pearce 0.49, Taylorfjellet 0.47); beyond 50 m it rises again (0.39–0.52). 6–25 m is the best-fitted band.
+- **Local time**: frames before 10:00 or after 16:00 LMST have rms 0.43–0.80 but carry < 10 % of the observations; within 11–15 h the rms is flat.
+- **Image radius**: flat to 0.85 of the half-diagonal; the outer corners (1–3 % of observations) are 10–25 % higher. The mean radial residual is ≤ 0.02 px in every radius band: no lens-model signature.
+- **Eye and temperature**: NL and NR within 0.01 px of each other; no dependence on the camera temperature.
+- **Images**: the worst images are whole stereo pairs (NL and NR of one exposure at 0.6–0.7 px: Bell Island sol 1463, Taylorfjellet 1622, Pearce 1196, Rockytop 509 and 471, Olifants 1807); the worst 5 % of images carry 10–17 % of the squared residual. Marble Mountain's three worst (sol 1979, 0.8–0.9 px) have < 220 observations.
+- **Alignment (prior offsets)**: median camera-centre shift from the waypoint prior 0.01 m (Three Forks, Marble Mountain) to 0.27 m (Pearce Canyon), p95 0.04–0.41 m; attitude change median 0.10–0.47°, p95 0.28–0.68°. The largest shifts are at stations with one exposure (2 images: Pearce S054D0762 0.67 m, Marble S091D0606 0.56 m, Belva S039D0858 0.47 m), which the tie points hold only weakly, and at Rockytop S026D1004 (0.36 m median over 31 images, most likely an error of the waypoint itself).
+
+Reading: the reprojection error is set by the matching of long, cross-station tracks and by a heavy tail of bad observations, not by the camera model (no radial signature, no eye or temperature dependence) or by the temperature (≤ 2 % of the cost). The next gains are in the tail: per-scale σ, a tighter final residual cut for long tracks, and the learned-matcher comparison of methods §13.

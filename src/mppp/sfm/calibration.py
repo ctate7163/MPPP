@@ -1,5 +1,5 @@
 """
-Camera-model solutions across scapes (v0p21, notebook 05).
+Camera-model solutions across scapes (v0p21, notebook 04).
 
 A *solution* is what notebook 03 leaves in a COLMAP project folder: the
 refined cameras and rigs (``error_input/summary.json``), the refined poses
@@ -22,6 +22,7 @@ label camera model.  This module compares them:
 """
 from __future__ import annotations
 
+import copy
 import csv
 import json
 import re
@@ -248,8 +249,38 @@ def camera_table(sols: Dict[str, Solution], family: Optional[str] = None, refine
     return rows
 
 
+def camera_temperature(sol: "Solution", cam: "Camera") -> Optional[float]:
+    """v0p31: the camera temperature a refined camera stands for: a temperature-bin camera's own median, else the
+    median over its images (manifest or project record); None without temperatures."""
+    pc = sol.project.get("cameras", {}).get(cam.key) or {}
+    if pc.get("temperature_median_degC") is not None:
+        return float(pc["temperature_median_degC"])
+    t = []
+    for r in sol.images.values():
+        if r["instrument"] != cam.key:
+            continue
+        v = (sol.manifest.get(Path(r["name"]).stem) or {}).get("camera_temperature_degC")
+        if v is None:
+            v = r.get("camera_temperature_degC")
+        if v is not None:
+            t.append(float(v))
+    return float(np.median(t)) if t else None
+
+
+def thermal_scale(model: Optional[Dict[str, Dict[str, float]]], group: str, T: Optional[float],
+                  to_T0: bool = True) -> float:
+    """Factor on fx, fy between a camera at temperature ``T`` and the reference temperature of ``model``
+    ({group: {"ppm_per_degC", "T0_degC"}}): to T0 (``to_T0``) or from T0 to T.  1 without a model or temperature."""
+    m = (model or {}).get(group)
+    if not m or T is None:
+        return 1.0
+    s = 1.0 + 1e-6 * float(m["ppm_per_degC"]) * (float(T) - float(m["T0_degC"]))
+    return 1.0 / s if to_T0 else s
+
+
 def consensus_camera(sols: Dict[str, Solution], group: str, lens: Optional[str] = None,
-                     min_observations: int = 1000, max_rms_px: Optional[float] = 1.5) -> Optional[Camera]:
+                     min_observations: int = 1000, max_rms_px: Optional[float] = 1.5,
+                     thermal: Optional[Dict[str, Dict[str, float]]] = None) -> Optional[Camera]:
     """
     Observation-weighted mean of the refined cameras of ``group`` (one lens model;
     Navcam: the most common one unless ``lens`` is given).  Mastcam-Z focus bins
@@ -257,12 +288,21 @@ def consensus_camera(sols: Dict[str, Solution], group: str, lens: Optional[str] 
     (rms over the frame, rotation removed) from the mean of the others are left
     out, one at a time, worst first - a scape whose few Navcam images all stand
     at one spot cannot fix its own intrinsics (methods section 14).  The
-    left-out cameras are listed in ``excluded``.
+    left-out cameras are listed in ``excluded``.  ``thermal`` (v0p31: {group:
+    {"ppm_per_degC", "T0_degC"}}): every camera's fx, fy are first scaled to the
+    reference temperature T0 (:func:`camera_temperature`), so the consensus is
+    the camera at T0 and the scapes' thermal offsets do not count as scatter;
+    temperature-bin cameras then enter one per bin.
     """
     cams, names = [], {}
     for n, s_ in sols.items():
         for c in s_.cameras_of(group):
             if c.refined and c.n_obs >= min_observations:
+                if thermal:
+                    f = thermal_scale(thermal, group, camera_temperature(s_, c))
+                    c = copy.copy(c)
+                    c.params = np.array(c.params, float)
+                    c.params[:2] *= f
                 cams.append(c)
                 names[id(c)] = n
     if not cams:
@@ -298,6 +338,7 @@ def consensus_camera(sols: Dict[str, Solution], group: str, lens: Optional[str] 
     out = Camera(f"{group} consensus ({lens}, {len(cams)} scapes)", group, c0.model, c0.width, c0.height, p, p,
                  None, sum(c.n_images for c in cams), n_obs)
     out.__dict__["excluded"] = excluded
+    out.__dict__["thermal"] = (thermal or {}).get(group)
     return out
 
 
@@ -315,7 +356,7 @@ def write_navcam_consensus(cameras: Dict[str, Camera], rig: Optional[Tuple[np.nd
     removed) is recorded as ``verification`` - the scape-to-scape
     repeatability of the calibration - together with ``repeatability``, any
     further numbers the caller wants kept with the file (the ``eps`` rows of
-    notebook 05, say).  Returns the paths written.
+    notebook 05, the error analysis, say).  Returns the paths written.
     """
     from scipy.spatial.transform import Rotation
     out_dir = Path(out_dir)
@@ -330,8 +371,16 @@ def write_navcam_consensus(cameras: Dict[str, Camera], rig: Optional[Tuple[np.nd
             for n, s_ in sols.items():
                 for cc in s_.cameras_of(g):
                     if cc.refined and cc.distortion == c.distortion:
-                        d = compare_cameras(c.pixel_camera(), cc.pixel_camera(), step=step)
+                        # v0p31: with a thermal model, the consensus is first scaled to the camera's temperature
+                        th = {g: c.thermal} if getattr(c, "thermal", None) else None
+                        T = camera_temperature(s_, cc) if th else None
+                        f = thermal_scale(th, g, T, to_T0=False) if th else 1.0
+                        ref = copy.copy(c)
+                        ref.params = np.array(c.params, float)
+                        ref.params[:2] *= f
+                        d = compare_cameras(ref.pixel_camera(), cc.pixel_camera(), step=step)
                         per_scape.append({"scape": n, "camera": cc.key, "observations": int(cc.n_obs),
+                                          "T_degC": T, "thermal_scale": f,
                                           "rms_px": float(d["rms_px"]), "corner_rms_px": float(d["corner_rms_px"]),
                                           "excluded": any(e["scape"] == n for e in getattr(c, "excluded", []))})
         d = {"model": c.model, "width": int(c.width), "height": int(c.height), "params": [float(v) for v in c.params],
@@ -341,9 +390,14 @@ def write_navcam_consensus(cameras: Dict[str, Camera], rig: Optional[Tuple[np.nd
              "free_params": ["k4"] if c.distortion == "rational" else [],
              "pixel_origin": "corner of the first pixel (COLMAP)",
              "source": f"{c.key}: observation-weighted mean of the refined {g} cameras of the scapes listed in "
-                       f"verification (notebook 05, write_navcam_consensus); {int(c.n_obs)} observations",
+                       f"verification (notebook 04, write_navcam_consensus); {int(c.n_obs)} observations"
+                       + (f"; at T0 {c.thermal['T0_degC']:.1f} degC" if getattr(c, "thermal", None) else ""),
              "verification": {"per_scape": per_scape, "excluded": list(getattr(c, "excluded", [])),
                               "repeatability": repeatability or {}}}
+        if getattr(c, "thermal", None):
+            d["thermal"] = dict(c.thermal, note="v0p31: the camera is at T0_degC; SfmProject.create scales fx, fy "
+                                                "by 1 + ppm_per_degC 1e-6 (T - T0) to the camera temperature of the "
+                                                "project's images")
         path = out_dir / f"M2020_{g}_rational.json"
         path.write_text(json.dumps(d, indent=1), encoding="utf-8")
         written[g] = path
@@ -360,7 +414,7 @@ def write_navcam_consensus(cameras: Dict[str, Camera], rig: Optional[Tuple[np.nd
              "t_sensor_from_ref_m": t.tolist(), "baseline_m": float(np.linalg.norm(t)),
              "per_solution_rotvec_rad": per,
              "note": "x_NR = R x_NL + t. Rotation: observation-weighted mean of the refined rigs of the solutions listed "
-                     "(notebook 05, write_navcam_consensus). SfmProject.create(navcam_cameras=<this folder>) starts the "
+                     "(notebook 04, write_navcam_consensus). SfmProject.create(navcam_cameras=<this folder>) starts the "
                      "rig rotation here and keeps the project's CAHV translation (the baseline sets the scale)."}
         path = out_dir / "M2020_N_rig.json"
         path.write_text(json.dumps(d, indent=1), encoding="utf-8")
@@ -385,16 +439,29 @@ def reference_camera(group: str, lens: str = "rational") -> Optional[Camera]:
 
 
 def reference_differences(sols: Dict[str, Solution], group: str, reference: Camera, step: float = 96.0,
-                          min_observations: int = 1000) -> List[Dict[str, Any]]:
-    """Pixel differences of every refined camera of ``group`` from ``reference`` (rotation removed)."""
+                          min_observations: int = 1000,
+                          thermal: Optional[Dict[str, Dict[str, float]]] = None) -> List[Dict[str, Any]]:
+    """Pixel differences of every refined camera of ``group`` from ``reference`` (rotation removed).  ``thermal``
+    (v0p31): the reference is first scaled to each camera's temperature (:func:`thermal_scale`), so the difference
+    is what remains after the temperature correction; ``T_degC`` and ``thermal_scale`` are in the rows."""
     rows = []
-    ref = reference.pixel_camera()
+    ref0 = reference.pixel_camera()
     for n, s in sols.items():
         for c in s.cameras_of(group):
             if not c.refined or c.n_obs < min_observations:
                 continue
+            T = camera_temperature(s, c) if thermal else None
+            f = thermal_scale(thermal, group, T, to_T0=False) if thermal else 1.0
+            if f != 1.0:
+                r2 = copy.copy(reference)
+                r2.params = np.array(reference.params, float)
+                r2.params[:2] *= f
+                ref = r2.pixel_camera()
+            else:
+                ref = ref0
             d = compare_cameras(ref, c.pixel_camera(), step=step)
             rows.append({"scape": n, "camera": c.key, "lens": c.distortion, "observations": c.n_obs,
+                         "T_degC": T, "thermal_scale": f,
                          **{k: d[k] for k in ("rms_px", "centre_rms_px", "edge_rms_px", "corner_rms_px", "max_px",
                                               "coverage", "rotation_deg")}, "_diff": d})
     return rows
@@ -532,6 +599,10 @@ def navcam_stereo(sol: Solution, which: str = "refined") -> Optional[Tuple[Pixel
     CAHVORE models and the label rig).
     """
     L, R = sol.cameras.get("NL"), sol.cameras.get("NR")
+    # v0p31: with temperature bins the eye's images may all belong to bin cameras - take the most observed one
+    if which == "refined":
+        L = max(sol.cameras_of("NL"), key=lambda c: c.n_obs, default=L) if (L is None or L.n_obs == 0) else L
+        R = max(sol.cameras_of("NR"), key=lambda c: c.n_obs, default=R) if (R is None or R.n_obs == 0) else R
     rig = rig_geometry(sol.rig_refined if which == "refined" else sol.rig_initial)
     if L is None or R is None or rig is None:
         return None
@@ -837,11 +908,15 @@ def camera_temperatures(sols: Dict[str, "Solution"], family: str = "N") -> List[
                 if r["instrument"] != c.key:
                     continue
                 v = (s.manifest.get(Path(r["name"]).stem) or {}).get("camera_temperature_degC")
+                if v is None:
+                    v = r.get("camera_temperature_degC")                          # v0p31: project record
                 if v is not None:
                     t.append(float(v))
             t = np.asarray(t, float)
             named = c.named()
-            rows.append({"scape": n, "camera": c.key, "images": c.n_images, "n_temp": int(t.size),
+            rows.append({"scape": n, "camera": c.key, "eye": c.group, "images": c.n_images, "n_temp": int(t.size),
+                         "observations": int(c.n_obs), "temperature_bin": bool(
+                             (s.project.get("cameras", {}).get(c.key) or {}).get("thermal_bin")),
                          "temp_median_degC": float(np.median(t)) if t.size else None,
                          "temp_min_degC": float(t.min()) if t.size else None,
                          "temp_max_degC": float(t.max()) if t.size else None,
@@ -852,8 +927,9 @@ def camera_temperatures(sols: Dict[str, "Solution"], family: str = "N") -> List[
 def focal_temperature_fit(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Least-squares line fx = a + b (T - 0 degC) per camera over the scapes with temperatures; b in px/degC and ppm/degC."""
     out = {}
-    for cam in sorted({r["camera"] for r in rows}):
-        rr = [r for r in rows if r["camera"] == cam and r["temp_median_degC"] is not None]
+    key = "eye" if all("eye" in r for r in rows) else "camera"            # v0p31: temperature-bin cameras by eye
+    for cam in sorted({r[key] for r in rows}):
+        rr = [r for r in rows if r[key] == cam and r["temp_median_degC"] is not None]
         if len(rr) < 3:
             continue
         T = np.array([r["temp_median_degC"] for r in rr]); f = np.array([r["fx"] for r in rr])
@@ -867,6 +943,114 @@ def focal_temperature_fit(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
                     "residual_rms_px": float(np.sqrt(np.mean(res ** 2))),
                     "corr": float(np.corrcoef(T, f)[0, 1]) if T.std() > 0 else None}
     return out
+
+
+def merge_temperature_bins(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """v0p31: :func:`camera_temperatures` rows with the temperature-bin cameras of a scape merged into one row per
+    eye (fx, fy and the median temperature weighted by observations; range over the bins), for the across-scape fit."""
+    out, groups = [], {}
+    for r in rows:
+        if not r.get("temperature_bin"):
+            out.append(r)
+        else:
+            groups.setdefault((r["scape"], r["eye"]), []).append(r)
+    for (sc, eye), rr in groups.items():
+        rr_t = [r for r in rr if r["temp_median_degC"] is not None]
+        w = np.array([max(1, r["observations"]) for r in rr], float)
+        wt = np.array([max(1, r["observations"]) for r in rr_t], float)
+        out.append({"scape": sc, "camera": eye, "eye": eye, "images": sum(r["images"] for r in rr),
+                    "n_temp": sum(r["n_temp"] for r in rr), "observations": int(w.sum()), "temperature_bin": False,
+                    "bins": len(rr),
+                    "temp_median_degC": float(np.average([r["temp_median_degC"] for r in rr_t], weights=wt)) if rr_t else None,
+                    "temp_min_degC": min((r["temp_min_degC"] for r in rr_t), default=None),
+                    "temp_max_degC": max((r["temp_max_degC"] for r in rr_t), default=None),
+                    "fx": float(np.average([r["fx"] for r in rr], weights=w)),
+                    "fy": float(np.average([r["fy"] for r in rr], weights=w))})
+    # an eye whose frames were partly binned keeps its unbinned camera as well: merge it in by observations
+    merged: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for r in out:
+        k = (r["scape"], r.get("eye", r["camera"]))
+        if k not in merged:
+            merged[k] = r
+            continue
+        a = merged[k]
+        wa, wb = max(1, a["observations"]), max(1, r["observations"])
+        ta = [x for x in (a["temp_median_degC"], r["temp_median_degC"]) if x is not None]
+        tw = [w for x, w in ((a["temp_median_degC"], wa), (r["temp_median_degC"], wb)) if x is not None]
+        merged[k] = dict(a, images=a["images"] + r["images"], n_temp=a["n_temp"] + r["n_temp"],
+                         observations=int(wa + wb), fx=(a["fx"] * wa + r["fx"] * wb) / (wa + wb),
+                         fy=(a["fy"] * wa + r["fy"] * wb) / (wa + wb),
+                         temp_median_degC=float(np.average(ta, weights=tw)) if ta else None,
+                         temp_min_degC=min((x for x in (a["temp_min_degC"], r["temp_min_degC"]) if x is not None), default=None),
+                         temp_max_degC=max((x for x in (a["temp_max_degC"], r["temp_max_degC"]) if x is not None), default=None))
+    return list(merged.values())
+
+
+def thermal_bin_rows(sols: Dict[str, "Solution"], experiment: Optional[PathLike] = None) -> List[Dict[str, Any]]:
+    """
+    v0p31: the within-block temperature-bin measurements - one row per scape, eye and bin with ``T_median_degC``,
+    ``fx``, ``fy``, ``observations`` - from each solution's thermal stage (``settings["thermal"]`` of project.json;
+    only stages whose bins were refined, not held) and, optionally, from the JSON of
+    ``scripts/temperature_bins_experiment.py`` (scapes already in ``sols`` are taken from the solution).
+    """
+    rows: List[Dict[str, Any]] = []
+    for n, s in sols.items():
+        th = (s.project.get("settings") or {}).get("thermal") or {}
+        if th.get("held") or not th.get("rows"):
+            continue
+        for r in th["rows"]:
+            rows.append(dict(r, scape=n, source="thermal stage"))
+    if experiment:
+        d = json.loads(Path(experiment).read_text(encoding="utf-8"))
+        have = {_scape_key(r["scape"]) for r in rows}
+        for n, e in (d.get("scapes") or {}).items():
+            if _scape_key(n) in have:
+                continue
+            for r in e.get("rows") or []:
+                rows.append(dict(r, scape=n, source="experiment"))
+    return rows
+
+
+def _scape_key(name: str) -> str:
+    return "".join(ch for ch in str(name).lower() if ch.isalnum()).replace("colmap", "")
+
+
+def thermal_model(sols: Dict[str, "Solution"], bin_fit: Optional[Dict[str, Any]] = None,
+                  across_fit: Optional[Dict[str, Any]] = None, source: str = "auto",
+                  ppm_per_degC: Optional[float] = None, min_observations: int = 1000) -> Optional[Dict[str, Dict[str, Any]]]:
+    """
+    v0p31: the thermal model for :func:`consensus_camera` and :func:`reference_differences`,
+    {eye: {"ppm_per_degC", "T0_degC", "source", "sd_ppm"}}.  ``source``: "within" (the slope of the within-block
+    temperature bins, ``bin_fit`` from :func:`mppp.sfm.thermal.fit_focal_temperature`), "across" (the scape-to-scape
+    line, ``across_fit`` from :func:`focal_temperature_fit`), "auto" (within if measured for the eye, else across),
+    or "fixed" (``ppm_per_degC`` for both eyes).  T0 is the observation-weighted mean temperature of the refined
+    cameras, so that the consensus stays where the data are.  None if no slope is available.
+    """
+    out: Dict[str, Dict[str, Any]] = {}
+    for eye in ("NL", "NR"):
+        ppm = sd = None
+        src = source
+        if source == "fixed" and ppm_per_degC is not None:
+            ppm = float(ppm_per_degC)
+        if source in ("within", "auto") and bin_fit and eye in bin_fit:
+            ppm, sd, src = bin_fit[eye]["ppm_per_degC"], bin_fit[eye].get("ppm_sd"), "within"
+        if ppm is None and source in ("across", "auto") and across_fit and eye in across_fit:
+            f = across_fit[eye]
+            ppm, sd, src = f["ppm_per_degC"], f["px_per_degC_sd"] / f["fx_at_0C"] * 1e6, "across"
+        if ppm is None:
+            continue
+        T, w = [], []
+        for s in sols.values():
+            for c in s.cameras_of(eye):
+                t = camera_temperature(s, c)
+                if c.refined and c.n_obs >= min_observations and t is not None:
+                    T.append(t)
+                    w.append(c.n_obs)
+        if not T:
+            continue
+        out[eye] = {"ppm_per_degC": float(ppm), "sd_ppm": None if sd is None else float(sd),
+                    "T0_degC": float(np.average(T, weights=w)), "source": src}
+    return out or None
 
 
 def updated_navcam_models(left: Camera, right: Camera, rig: Tuple[np.ndarray, np.ndarray], mtype: int = 2,

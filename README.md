@@ -33,14 +33,14 @@ Notebooks (in `notebooks/`):
 |---|---|
 | `01_process_images.ipynb` | select PDS products (named scapes, sol ranges, waypoint radius, lists), process them, write Metashape and COLMAP inputs |
 | `03_colmap_alignment.ipynb` | Navcam (+ optional Mastcam-Z 34 mm): COLMAP database with a left-referenced stereo rig and position priors, matching, CAHV-initialised weighted bundle adjustment, alignment health |
-| `04_error_analysis.ipynb` | one or more alignments from 03: the error model's inputs measured from them (image precision ε, cross-station match gate vs angle and ΔLMST, decorrelation, view graph, registration) next to the values the model assumes |
-| `05_camera_models.ipynb` | the refined cameras of several alignments from 03 side by side. Covers Navcam intrinsics and stereo rig, and Mastcam-Z focal length against focus. Differences are shown in pixels over the whole frame, with their effect on disparity and range. Also reports the distance from the flight (label) calibration, writes updated CAHVORE / CAHVOR models, and shows example images undistorted with the hardware mask screened |
+| `04_camera_models.ipynb` | the refined cameras of several alignments from 03 side by side. Covers Navcam intrinsics and stereo rig, the Navcam focal length against camera temperature (a consensus formed at a reference temperature, v0p31), and Mastcam-Z focal length against focus. Differences are shown in pixels over the whole frame, with their effect on disparity and range. Also reports the distance from the flight (label) calibration, writes updated CAHVORE / CAHVOR models, and shows example images undistorted with the hardware mask screened |
+| `05_error_analysis.ipynb` | one or more alignments from 03: the error model's inputs measured from them (image precision ε, cross-station match gate vs angle and ΔLMST, decorrelation, view graph, registration) next to the values the model assumes |
 | `training/02_train_mask.ipynb` | optional: retrain the mask model from a labelled mask set |
 
-**Several sites in one run:** `scripts/run_scapes.py` runs notebook 03 for each site, then notebooks 04 and 05 on the sites that finished, and logs every cell to `<root>/batch_log.txt`:
+**Several sites in one run:** `scripts/run_scapes.py` runs notebook 03 for each site, then notebooks 04 (camera models) and 05 (error analysis) on the sites that finished, and logs every cell to `<root>/batch_log.txt`:
 
 ```
-python scripts\run_scapes.py --sites taylorfjellet rockytop belva threeforks_large landing --zcam --reprocess ^
+python scripts\run_scapes.py --sites taylorfjellet rockytop belva threeforks_south landing --zcam --reprocess ^
     --root D:\scapes\v0p22 --gpu-py C:\Users\<you>\AppData\Local\miniconda3\envs\mppp_gpu\python.exe
 ```
 

@@ -254,20 +254,20 @@ def test_notebooks_carry_the_new_settings():
     src = next(c.source for c in nb.cells if "parameters" in c.metadata.get("tags", []))
     ns = {}
     exec(compile("from pathlib import Path\n" + src, "settings", "exec"), ns)
-    assert ns["NAVCAM_INTRINSICS"] == "refine" and ns["STAGED"] is True and ns["NAVCAM_RIG_REFINE"] == "rotation"
-    assert ns["NAVCAM_CAMERAS"] is None and ns["HOLD_CAMERAS"] == ()
+    assert ns["NAVCAM_INTRINSICS"] in ("refine", "auto") and ns["STAGED"] is True and ns["NAVCAM_RIG_REFINE"] == "rotation"
+    assert (ns["NAVCAM_CAMERAS"] is None or "navcam_consensus" in str(ns["NAVCAM_CAMERAS"])) and ns["HOLD_CAMERAS"] == ()
     full = "\n".join(c.source for c in nb.cells if c.cell_type == "code")
     for k in ("navcam_intrinsics=NAVCAM_INTRINSICS", "staged=STAGED", "hold_cameras=HOLD_CAMERAS", "error_input_navcam",
               "navcam_cameras=NAVCAM_CAMERAS", "navcam_network(proj)"):
         assert k in full, k
-    nb4 = nbformat.read(str(ROOT / "notebooks" / "04_error_analysis.ipynb"), as_version=4)
+    nb4 = nbformat.read(str(ROOT / "notebooks" / "05_error_analysis.ipynb"), as_version=4)
     src4 = next(c.source for c in nb4.cells if "parameters" in c.metadata.get("tags", []))
     assert "GATE_FORM" in src4 and "ILLUMINATION" in src4 and "FIT_TAU" in src4 and "L0" not in src4
     full4 = "\n".join(c.source for c in nb4.cells)
     for k in ("eps_by_angle", "compare_gate_forms", "fit_rho", "decorrelation("):
         assert k in full4, k
     assert "archive" not in full4.lower() and "0.169" not in full4
-    nb5 = nbformat.read(str(ROOT / "notebooks" / "05_camera_models.ipynb"), as_version=4)
+    nb5 = nbformat.read(str(ROOT / "notebooks" / "04_camera_models.ipynb"), as_version=4)
     assert "write_navcam_consensus" in "\n".join(c.source for c in nb5.cells)
 
 

@@ -268,7 +268,7 @@ class SfmProject:
         refined solutions (``m20_cmods/M2020_ZCAM034_focus_model.json``, notebook
         05) instead of the label value, which is about 1 % short.
         ``navcam_cameras`` (v0p22.2): a folder with verified consensus Navcam
-        cameras written by notebook 05 (``calibration.write_navcam_consensus``:
+        cameras written by notebook 04 (``calibration.write_navcam_consensus``:
         ``M2020_NL_rational.json``, ``M2020_NR_rational.json`` and optionally
         ``M2020_N_rig.json``).  The rational Navcam cameras and, when present,
         the consensus rig rotation are read from there instead of the shipped
@@ -392,6 +392,7 @@ class SfmProject:
                 "has_mask": "mask" in m["outputs"],
                 "camera_group": key, "focus_count": _num(m.get("focus_position_count")), "label_f_px": label_f,
                 "label_c_px": label_c,
+                "camera_temperature_degC": m.get("camera_temperature_degC"),       # v0p31 (manifest, MPPP >= 0.30)
             })
 
         cameras = {}
@@ -405,8 +406,22 @@ class SfmProject:
                 xml = nav_dir / NAVCAM_RATIONAL_PATTERN.format(instrument=instr)
                 cam = camera_from_colmap_json(xml, zero_terms)
                 if navcam_cameras:
-                    nav_info[instr] = {"file": str(xml),
-                                       "verification": json.loads(xml.read_text(encoding="utf-8")).get("verification")}
+                    js = json.loads(xml.read_text(encoding="utf-8"))
+                    nav_info[instr] = {"file": str(xml), "verification": js.get("verification")}
+                    # v0p31: a consensus at a reference temperature is scaled to this block's camera temperature
+                    th = js.get("thermal")
+                    Ts = [float(r["camera_temperature_degC"]) for r in images
+                          if r["instrument"] == instr and r.get("camera_temperature_degC") is not None]
+                    if th and Ts:
+                        T = float(np.median(Ts))
+                        sc = 1.0 + 1e-6 * float(th["ppm_per_degC"]) * (T - float(th["T0_degC"]))
+                        cam["params"] = list(map(float, cam["params"]))
+                        cam["params"][0] *= sc
+                        cam["params"][1] *= sc
+                        cam["source"] = (f"{cam.get('source', xml.name)}; fx, fy x {sc:.6f} for the median camera "
+                                         f"temperature {T:.1f} degC (consensus at {float(th['T0_degC']):.1f} degC, "
+                                         f"{float(th['ppm_per_degC']):+.1f} ppm/degC)")
+                        nav_info[instr]["thermal"] = {"T_median_degC": T, "scale": sc, **th}
             else:
                 xml = xml_dir / (ZCAM_XML_PATTERN.format(camera=instr) if fam == "Z"
                                  else XML_PATTERN.format(instrument=instr))
@@ -439,7 +454,8 @@ class SfmProject:
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
                     "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
                     "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
-                    "navcam_cameras": {"dir": str(nav_dir), **nav_info} if navcam_cameras else None})
+                    "navcam_cameras": {"dir": str(nav_dir), "fingerprint": navcam_cameras_fingerprint(nav_dir),
+                                       **nav_info} if navcam_cameras else None})
         proj.save()
         return proj
 
@@ -667,3 +683,20 @@ def _json_default(o):
     if isinstance(o, Path):
         return str(o)
     raise TypeError(type(o))
+
+
+def navcam_cameras_fingerprint(folder) -> Optional[str]:
+    """v0p31: SHA-256 over the consensus Navcam camera files of ``folder`` (M2020_NL/NR_rational.json,
+    M2020_N_rig.json), so that notebook 03 rebuilds a project when a consensus is rewritten in the same folder."""
+    import hashlib
+    if not folder:
+        return None
+    h = hashlib.sha256()
+    n = 0
+    for name in ("M2020_NL_rational.json", "M2020_NR_rational.json", NAVCAM_RIG_FILE):
+        f = Path(folder) / name
+        if f.is_file():
+            h.update(name.encode())
+            h.update(f.read_bytes())
+            n += 1
+    return h.hexdigest() if n else None
