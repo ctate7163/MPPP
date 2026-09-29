@@ -293,7 +293,7 @@ def _nice(x: float) -> float:
 
 def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[str, Any]]] = None,
                        out_png: Optional[PathLike] = None, exaggeration: Optional[float] = None,
-                       min_observations: int = 30, ncols: int = 4):
+                       min_observations: int = 30, ncols: int = 4, station_panels: bool = False):
     """
     Top-down view of how far each camera moved from its reference (its CAHV +
     waypoint prior) in the refinement (v0p14.4).  Stations are tens of metres
@@ -304,11 +304,14 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
       shift dU, labelled ``Sol0686 S032D1184``;
     * top right - every camera's total shift |dC| per station (dots coloured by
       the attitude change);
-    * below - one panel per station in local coordinates (metres from the
-      station's median camera centre): one arrow per image from its prior to its
-      refined centre, horizontal shift exaggerated ``exaggeration`` times (shared
-      by all panels; default: the median arrow is ~30 % of the median station
-      extent, rounded to 1/2/5), coloured by dU (shared scale).
+    * with ``station_panels`` (off by default since v0p35.1) - one panel per station in local coordinates (metres
+      from the station's median camera centre): one arrow per image from its prior to its refined centre,
+      horizontal shift exaggerated ``exaggeration`` times (shared by all panels; default: the median arrow is
+      ~30 % of the median station extent, rounded to 1/2/5), coloured by dU (shared scale).
+
+    Stations whose waypoint position prior was not used (v0p35.1, ``LOCALIZE_MIN_IMAGES``:
+    ``project.settings["reconstruction"]["unlocalized_stations"]``) are drawn with dashed arrows and marked
+    "(no prior)".
 
     Navcam = circles, Mastcam-Z = triangles; images with fewer than
     ``min_observations`` observations (held at their prior) are grey crosses.
@@ -359,19 +362,29 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
     extent_all = max(float(np.ptp(E_all)) if E_all.size else 0.0, float(np.ptp(N_all)) if N_all.size else 0.0, 5.0)
     k_ov = _nice(0.08 * extent_all / max(float(np.median([v["dH"] for v in summ.values()] or [med_dh])), 1e-3))
 
-    n_rows = int(np.ceil(len(stations) / ncols))
-    fig = plt.figure(figsize=(4.2 * ncols, 5.2 + 3.9 * n_rows))
-    gs = fig.add_gridspec(1 + n_rows, ncols, height_ratios=[1.45] + [1.0] * n_rows)
-    ax0 = fig.add_subplot(gs[0, : ncols // 2])
-    ax1 = fig.add_subplot(gs[0, ncols // 2:])
+    n_rows = int(np.ceil(len(stations) / ncols)) if station_panels else 0
+    if station_panels:
+        fig = plt.figure(figsize=(4.2 * ncols, 5.2 + 3.9 * n_rows))
+        gs = fig.add_gridspec(1 + n_rows, ncols, height_ratios=[1.45] + [1.0] * n_rows)
+        ax0 = fig.add_subplot(gs[0, : ncols // 2])
+        ax1 = fig.add_subplot(gs[0, ncols // 2:])
+    else:                                                   # v0p35.1: the two overview panels only
+        fig = plt.figure(figsize=(15.0, 6.6))
+        gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.25])
+        ax0 = fig.add_subplot(gs[0, 0])
+        ax1 = fig.add_subplot(gs[0, 1])
+    unloc_codes = set((project.settings.get("reconstruction") or {}).get("unlocalized_stations") or [])
+    unloc = {r["label"] for r in R if r["station"] in unloc_codes}
 
     # overview
     for r in R:
         ax0.plot(r["E_m"], r["N_m"], fam_marker(r), color="0.75", ms=3, zorder=1)
     for s, v in summ.items():
         ax0.annotate("", (v["E"], v["N"]), (v["E"] - k_ov * v["dE"], v["N"] - k_ov * v["dN"]),
-                     arrowprops=dict(arrowstyle="->", lw=1.8, color=cmap(norm(v["dU"]))), zorder=2)
-        ax0.text(v["E"], v["N"], "  " + s, fontsize=6.5, va="center", zorder=3)
+                     arrowprops=dict(arrowstyle="->", lw=1.8, color=cmap(norm(v["dU"])),
+                                     ls="--" if s in unloc else "-"), zorder=2)
+        ax0.text(v["E"], v["N"], "  " + s + (" (no prior)" if s in unloc else ""), fontsize=6.5, va="center", zorder=3,
+                 style="italic" if s in unloc else "normal")
     bar = _nice(0.15 * extent_all / k_ov)
     x0, y0 = float(E_all.min()), float(N_all.min()) - 0.06 * extent_all
     ax0.annotate("", (x0 + k_ov * bar, y0), (x0, y0), arrowprops=dict(arrowstyle="->", lw=1.6, color="k"))
@@ -403,7 +416,8 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
         if h:
             ax1.plot(i + rng.uniform(-0.18, 0.18, len(h)), [100 * r["dC_m"] for r in h], "x", color="0.55", ms=5)
     ax1.set_xticks(range(len(stations)))
-    ax1.set_xticklabels(stations, rotation=60, ha="right", fontsize=7)
+    ax1.set_xticklabels([st + (" (no prior)" if st in unloc else "") for st in stations], rotation=60, ha="right",
+                        fontsize=7)
     ax1.set_ylabel("|refined - prior| camera centre [cm]")
     ax1.set_ylim(bottom=0)
     ax1.grid(alpha=0.3, axis="y")
@@ -413,8 +427,8 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
     if sc is not None:
         fig.colorbar(sc, ax=ax1, shrink=0.85, label="attitude change [deg]")
 
-    # one panel per station, local coordinates, shared exaggeration and colours
-    for i, s in enumerate(stations):
+    # one panel per station, local coordinates, shared exaggeration and colours (station_panels)
+    for i, s in enumerate(stations if station_panels else []):
         ax = fig.add_subplot(gs[1 + i // ncols, i % ncols])
         v, c = by_st[s], summ[s]
         xs, ys = [], []
@@ -438,9 +452,10 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
         if i % ncols == 0:
             ax.set_ylabel("N - station [m]", fontsize=8)
         ax.set_xlabel("E - station [m]", fontsize=8)
-    fig.suptitle(f"camera shifts relative to the CAHV + waypoint references; station panels: horizontal x{k:g}, "
-                 f"colour = dU (+/-{lim * 100:.1f} cm); o Navcam, ^ Mastcam-Z, x held (< {min_observations} obs.)",
-                 fontsize=10)
+    fig.suptitle("camera shifts relative to the CAHV + waypoint references"
+                 + (f"; station panels: horizontal x{k:g}, colour = dU (+/-{lim * 100:.1f} cm)" if station_panels else "")
+                 + f"; o Navcam, ^ Mastcam-Z, x held (< {min_observations} obs.)"
+                 + ("; dashed: station without a position prior (LOCALIZE_MIN_IMAGES)" if unloc else ""), fontsize=10)
     fig.tight_layout(rect=(0, 0, 1, 0.98))
     if out_png:
         Path(out_png).parent.mkdir(parents=True, exist_ok=True)

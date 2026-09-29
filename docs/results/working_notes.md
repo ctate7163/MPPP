@@ -416,3 +416,24 @@ Leave-one-block-out rates (20 blocks): pitch +5.7…+6.6, yaw +3.4…+5.3, roll 
   Per block the offset of a scale subset reaches ±1 px (Belva Crater full-res +1.2, +0.9; Bunsen Peak −1.1, −1.6), ten times its formal σ, but it changes sign from block to block, is not equal in x and y, differs between the pp and ppf fits (the principal point trades with the focal length and with the attitude of those frames), and — decisive — is **the same in both eyes**: left minus right, the offsets average −0.05 / 0.00 px (x / y) with rms 0.13–0.14 / 0.05–0.06 px over 18–19 block/scale pairs. A common shift of both eyes is an attitude change of those frames (1 px = 0.02°), which the pose absorbs; it does not enter stereo. The quarter − half offset, where a convention error would show at 1.0 px, is +0.02 ± 0.14 px.
 
 Reading: there is **no systematic pixel offset between the Navcam resolutions** at the 0.1–0.2 px level: MPPP's mapping agrees with the flight calibration to 0.03 px, and the blocks show no common offset. The block-specific common-mode shifts of a scale subset (0.5–1 px) are frame-attitude effects of particular image sequences (different pointing and terrain), not a camera property; what stereo sees (left − right) is ≤ 0.14 px rms and averages zero. No correction is needed; `scripts/navcam_calibration_study.py scale` repeats the check on new blocks.
+
+## 17. Waypoint priors of short stops (v0p35.2, 29 Sep 2026)
+
+Seitah North failed its health check on the waypoint layout: the layout was off by 8.6 % in scale, 1.9 m over 10 stations. Its station shifts, refined minus waypoint, are:
+
+| station | images | shift |
+|---|---|---|
+| S007D2246, S007D2326, S007D2440, S008D0000, S008D0064 | 10–24 | 0.06–0.63 m |
+| S007D2280, S007D2298 (sol 238), S007D2378, S007D2406 (sol 239) | 2 | **3.0–3.1 m** |
+| S008D0012 (sol 278) | 2 | 0.33 m |
+
+The two-image stations are single stereo pairs taken during drives. The four on sols 238–239 carry waypoints about 3 m off. The tie points had already moved them to where they belong. Their 1 m position priors could not hold them, but those four priors made the waypoint layout look 8.6 % too large.
+
+Notebook 03's `LOCALIZE_MIN_IMAGES = 4` leaves out the position prior of every station with fewer than 4 images. Before triangulation these stations are placed on the block from their tie points, and their attitude priors stay. On the solved Seitah North block (one camera per eye, re-adjusted with and without the five two-image stations' priors):
+
+- the prior scale error drops to 1.5 % (0.27 m, pass) over the five stations that keep a prior;
+- the waypoint layout is still turned by 2.3° against the solution;
+- the station shifts are the same to 1 mm, so the solution itself was not being bent;
+- the health verdict goes from FAIL to WARN; `block_rotation_deg` 0.42° remains, mostly azimuth (−0.38°).
+
+On the synthetic block (tests), a two-image station 1.8 m off its prior dragged the whole block by 14 cm with its prior, and 4.5 cm (the noise) without it. Where tie points are fewer than at Seitah North, dropping these priors matters for the geometry, not only for the check.

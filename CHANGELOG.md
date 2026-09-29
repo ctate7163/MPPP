@@ -2,6 +2,13 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.35.2 — 2026-09-29
+
+- **`LOCALIZE_MIN_IMAGES`** (notebook 03, default 4; `reconstruct(localize_min_images=...)`, `bundle_adjust`, `project.settings["localize_min_images"]`): stations (site, drive) with fewer images than this get no waypoint position prior. They are short stops during a drive, and their waypoints can be metres off: at Seitah North four two-image drives on sols 238–239 sat 3.0–3.1 m from their waypoints. Before the first round these stations are placed on the block from their tie points (`register_stations(only=...)`). After that every adjustment, including the thermal stage, leaves out their position priors; their attitude priors stay. A station keeps its prior when it shares fewer than 20 tie points with the others, or when every station is below the minimum (`unlocalized_stations`). Recorded in `project.settings["reconstruction"]["unlocalized_stations"]` and `["unlocalized"]`, and listed after the alignment.
+- **Health:** stations without a position prior are left out of `station_shift_median_m` and of the waypoint-layout fit (`prior_scale_error_*`). Their largest shift is reported as `unlocalized_station_shift_max_m`, with no threshold. In `stations`, `position_prior` is False for them. On the Seitah North block, re-adjusting without the five two-image stations' priors takes the prior scale error from 8.6 % (1.91 m, FAIL) to 1.5 % (0.27 m, pass). The block itself does not move: the station shifts agree to 1 mm, because the tie points already outweighed those priors. The health verdict goes from FAIL to WARN; `block_rotation_deg` 0.42° remains.
+- **`station_map.png` / `camera_shifts.png`** (`plot_camera_shifts`): only the two overview panels are drawn: station arrows, and the per-camera shift by station. The per-station panels are available with `station_panels=True`. Stations without a position prior are drawn with dashed arrows and marked "(no prior)".
+- Tests: `tests/test_v0p35p1.py`.
+
 ## 0.35.1 — 2026-09-29
 
 Is the Navcam rig's drift robust? Six more blocks, a review of the sites, and the resolutions (working notes §16; results in `docs/results/v0p35p1/`):

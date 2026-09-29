@@ -185,6 +185,50 @@ def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_pr
             "parameters": int(n_par)}
 
 
+LOCALIZE_MIN_CROSS_POINTS = 20       # v0p35.1: an unlocalized station keeps its prior below this many cross-station points
+
+
+def unlocalized_stations(project: SfmProject, min_images: int, rec=None,
+                         min_cross_points: int = LOCALIZE_MIN_CROSS_POINTS) -> Dict[str, Dict[str, Any]]:
+    """
+    Stations (site, drive) with fewer than ``min_images`` images in the project (v0p35.1, notebook 03
+    ``LOCALIZE_MIN_IMAGES``): short stops during a drive, whose waypoint positions are the least reliable.
+    Returns {station: {"images", "cross_points", "prior"}} with ``prior`` "dropped" (the bundle adjustment leaves out
+    its position prior) or "kept: ..." when dropping it would leave the station unconstrained: fewer than
+    ``min_cross_points`` tie points shared with other stations in ``rec`` (not checked without ``rec``), or every
+    station of the block below ``min_images``.
+    """
+    if not min_images:
+        return {}
+    n: Dict[str, int] = {}
+    for r in project.images:
+        n[r["station"]] = n.get(r["station"], 0) + 1
+    small = {st for st, k in n.items() if k < int(min_images)}
+    if not small:
+        return {}
+    out: Dict[str, Dict[str, Any]] = {st: {"images": n[st], "cross_points": None, "prior": "dropped"} for st in small}
+    if len(small) == len(n):
+        for v in out.values():
+            v["prior"] = "kept: every station is below the minimum"
+        return out
+    if rec is not None:
+        st_of = {}
+        by_name = {r["name"]: r["station"] for r in project.images}
+        for iid, im in rec.images.items():
+            st_of[iid] = by_name.get(im.name)
+        cross = {st: 0 for st in small}
+        for pt in rec.points3D.values():
+            sts = {st_of.get(el.image_id) for el in pt.track.elements}
+            if len(sts - {None}) > 1:
+                for st in sts & small:
+                    cross[st] += 1
+        for st in small:
+            out[st]["cross_points"] = cross[st]
+            if cross[st] < min_cross_points:
+                out[st]["prior"] = f"kept: {cross[st]} cross-station points (< {min_cross_points})"
+    return out
+
+
 def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: float = 2.0,
                   refine_intrinsics: bool = True, refine_principal_point: bool = True,
                   refine_tangential: bool = True, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
@@ -193,7 +237,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   rig_translation_sigma_m: Optional[float] = None,
                   hold_cameras: Sequence[str] = (), linear_solver: str = "auto",
                   covariance: bool = False, keypoint_scale: Optional[Dict[int, float]] = None,
-                  keypoint_map=None) -> Dict[str, Any]:
+                  keypoint_map=None, localize_min_images: Optional[int] = None) -> Dict[str, Any]:
     """
     Weighted BA in place (see module docstring).  ``hold_cameras`` (v0p22.2):
     keys of project cameras (``"NL"``, ``"NR"``, a focus bin...) whose
@@ -229,6 +273,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     camera's principal point before the adjustment, which is exactly a camera
     whose fx and fy are ``s`` times the shared camera's (the Navcam thermal
     model f(T) = f0 (1 + b (T - T0)) with one shared camera at T0).
+    ``localize_min_images`` (v0p35.1; None: ``project.settings["localize_min_images"]``, default 0 = off): stations
+    (site, drive) with fewer images than this get no waypoint position prior - short stops during a drive, whose
+    waypoint positions can be metres off (Seitah North: four two-image drives 3 m off pulled the block's scale by
+    8.6 %) - see :func:`unlocalized_stations`.  Their attitude prior stays.
     ``keypoint_map`` (v0p35): a function (image_id, keypoints, camera) ->
     keypoints applied after the scaling (e.g. the rig's temperature
     dependence as a small rotation of the right camera's rays).  Returns
@@ -361,8 +409,14 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         if fixed:
             prob.set_manifold(cam.params, pyceres.SubsetManifold(len(cam.params), sorted(fixed)))
 
-    # waypoint position priors on every frame (the reference camera's centre)
+    # waypoint position priors on every frame (the reference camera's centre); v0p35.1: not on the frames of
+    # stations with fewer than localize_min_images images, if they are tied to the rest of the block
     n_prior = n_att = 0
+    if localize_min_images is None:
+        localize_min_images = int(project.settings.get("localize_min_images") or 0)
+    unloc = unlocalized_stations(project, localize_min_images, rec=rec) if localize_min_images else {}
+    no_prior = {st for st, v in unloc.items() if v["prior"] == "dropped"}
+    n_no_prior = 0
     if use_priors:
         sig = np.asarray(project.settings.get("prior_sigma_m", [1.0, 1.0, 1.0]), float)
         cov3 = np.diag(sig ** 2)
@@ -377,8 +431,11 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             if pose is None or r_ref is None:             # unregistered frame, or an image the project does not know
                 continue
             C = np.asarray(r_ref["prior_C"], float)
-            prob.add_residual_block(cf.AbsolutePosePositionPriorCost(cov3, C), None, [pose])
-            n_prior += 1
+            if r_ref.get("station") in no_prior:
+                n_no_prior += 1
+            else:
+                prob.add_residual_block(cf.AbsolutePosePositionPriorCost(cov3, C), None, [pose])
+                n_prior += 1
             if attitude_prior_deg:
                 # 6-DoF prior: rotation block first (checked), translation effectively free (the position
                 # prior above holds the centre)
@@ -462,7 +519,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                                    "rotation_change_deg": float(np.degrees(np.linalg.norm(
                                        Rotation.from_matrix(R1 @ R0.T).as_rotvec())))}
     return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att, "rig": rig_out, "covariance": cov_out,
-            "rig_translation_priors": n_rig_prior,
+            "rig_translation_priors": n_rig_prior, "frames_without_position_prior": n_no_prior,
+            "unlocalized_stations": unloc,
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
             "termination": str(summary.termination_type), "brief": summary.BriefReport(),
@@ -485,7 +543,8 @@ def _verified_matches(project: SfmProject):
 
 
 def register_stations(rec, project: SfmProject, min_inliers: int = 40, max_error_px: float = 12.0,
-                      reference: Optional[str] = None, verbose: bool = True) -> Dict[str, Any]:
+                      reference: Optional[str] = None, verbose: bool = True,
+                      only: Optional[Sequence[str]] = None) -> Dict[str, Any]:
     """
     Correct each station's pose as one rigid block (its CAHV-relative image poses
     kept), from 2-D/3-D correspondences with stations already placed.
@@ -499,7 +558,9 @@ def register_stations(rec, project: SfmProject, min_inliers: int = 40, max_error
     registered set as a generalized (multi-camera) absolute pose, RANSAC with
     ``max_error_px`` in full-resolution pixels.  Its frames and its
     station-only points are moved with it.  Stations that cannot be
-    registered stay at their priors (reported).
+    registered stay at their priors (reported).  ``only`` (v0p35.1): move just
+    these stations; every other station counts as placed from the start (used
+    for the stations without a position prior, ``LOCALIZE_MIN_IMAGES``).
     """
     import pycolmap
     station = {iid: project.image(im.name)["station"] for iid, im in rec.images.items()}
@@ -529,8 +590,15 @@ def register_stations(rec, project: SfmProject, min_inliers: int = 40, max_error
                 if pid is not None and pt_st[pid] == {sa}:
                     corr[sb].setdefault((ib, int(m[k, b])), (pid, sa))
     n_pts = {s: sum(1 for p in pt_st.values() if p == {s}) for s in st_images}
-    ref = reference or max(n_pts, key=n_pts.get)
-    placed, report = {ref}, {"reference": ref, "stations": {}}
+    if only is not None:
+        placed = {s for s in st_images if s not in set(only)}
+        if not placed:
+            return {"reference": None, "stations": {}, "unplaced": sorted(st_images), "only": sorted(only)}
+        ref = reference or max(placed, key=lambda k: n_pts.get(k, 0))
+        report = {"reference": ref, "stations": {}, "only": sorted(only)}
+    else:
+        ref = reference or max(n_pts, key=n_pts.get)
+        placed, report = {ref}, {"reference": ref, "stations": {}}
     frames_of = {s: {rec.images[i].frame_id for i in ims} for s, ims in st_images.items()}
     while True:
         cand = {s: [(k, v) for k, v in c.items() if v[1] in placed] for s, c in corr.items() if s not in placed}
@@ -572,8 +640,11 @@ def register_stations(rec, project: SfmProject, min_inliers: int = 40, max_error
         if verbose:
             print(f"[sfm] station {s}: {n_in}/{len(pts2)} inliers, moved {shift:.3f} m / {ang:.3f} deg")
     for s in st_images:
+        if only is not None and s not in set(only):
+            continue
         report["stations"].setdefault(s, {"registered": s in placed, "correspondences": 0})
-    report["stations"][ref] = {"registered": True, "reference": True}
+    if only is None:
+        report["stations"][ref] = {"registered": True, "reference": True}
     report["unplaced"] = sorted(s for s in st_images if s not in placed)
     return report
 
@@ -894,9 +965,16 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 linear_solver: str = "auto", temperatures: Optional[Dict[str, Dict[str, Any]]] = None,
                 thermal_bins_deg: Optional[float] = None, thermal_min_images: int = 8,
                 thermal_free: Sequence[str] = ("fx", "fy"),
-                thermal_model: Optional[Dict[str, Dict[str, float]]] = None):
+                thermal_model: Optional[Dict[str, Dict[str, float]]] = None, localize_min_images: int = 0):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
+
+    ``localize_min_images`` (v0p35.1, notebook 03 ``LOCALIZE_MIN_IMAGES``): stations (site, drive) with fewer images
+    than this are not held by their waypoint position (see :func:`unlocalized_stations`, :func:`bundle_adjust`).
+    Before the first round they are moved onto the rest of the block as rigid stations
+    (:func:`register_stations` with ``only``), so that triangulation can join their tracks; then every adjustment
+    leaves out their position priors.  Recorded in ``project.settings["localize_min_images"]`` and
+    ``project.settings["reconstruction"]["unlocalized_stations"]``.  0 (default) keeps every prior.
 
     ``navcam_intrinsics`` (v0p22.2): ``"refine"`` (default since v0p22.4: the
     Navcam intrinsics are always refined), ``"hold"`` (the Navcam cameras stay
@@ -978,6 +1056,18 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     rec = initial_reconstruction(project)
     init = copy.deepcopy(rec)
     log: List[Dict[str, Any]] = []
+    project.settings["localize_min_images"] = int(localize_min_images or 0)
+    unloc = unlocalized_stations(project, localize_min_images) if localize_min_images else {}
+    unloc_reg = None
+    if unloc and any(v["prior"] == "dropped" for v in unloc.values()):
+        # v0p35.1: place the short stops on the block before triangulating with the round-1 threshold
+        rec = triangulate(rec, project, max_reproj_px=8.0, min_angle_deg=min_tri_angle_deg)
+        unloc_reg = register_stations(rec, project, only=sorted(unloc), verbose=verbose)
+        log.append({"unlocalized_registration": unloc_reg})
+        if verbose:
+            print(f"[sfm] LOCALIZE_MIN_IMAGES {localize_min_images}: {len(unloc)} stations without a position prior "
+                  f"({', '.join(sorted(unloc))}); registered onto the block: "
+                  f"{sum(1 for v in unloc_reg['stations'].values() if v.get('registered'))}", flush=True)
     network = navcam_network(project)
     hold = set(hold_cameras)
     if navcam_intrinsics == "hold" or (navcam_intrinsics == "auto" and network["verdict"] == "weak"):
@@ -1121,6 +1211,9 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     idir = project.root / "sparse" / "cahv_initial"
     idir.mkdir(parents=True, exist_ok=True)
     init.write(str(idir))
+    final_unloc = unlocalized_stations(project, localize_min_images, rec=rec) if localize_min_images else {}
+    if final_unloc:
+        log.append({"unlocalized_stations": final_unloc})
     (out / "mppp_sfm_log.json").write_text(json.dumps(log, indent=1, default=str), encoding="utf-8")
     project.settings["reconstruction"] = {"path": str(out.relative_to(project.root)), "log": log,
                                           "sigma_px_native": sigma_px, "refine_rig": refine_rig,
@@ -1136,7 +1229,11 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "navcam_network": network, "navcam_intrinsics": network["navcam_intrinsics"],
                                           "hold_cameras": sorted(hold), "staged": bool(staged),
                                           "navcam_stage": navcam_stage,
-                                          "thermal_bins_deg": float(thermal_bins_deg) if thermal and thermal_bins_deg else None}
+                                          "thermal_bins_deg": float(thermal_bins_deg) if thermal and thermal_bins_deg else None,
+                                          "localize_min_images": int(localize_min_images or 0),
+                                          "unlocalized_stations": sorted(st for st, v in final_unloc.items()
+                                                                         if v["prior"] == "dropped"),
+                                          "unlocalized": final_unloc, "unlocalized_registration": unloc_reg}
     project.save()
     if gui_native:
         try:

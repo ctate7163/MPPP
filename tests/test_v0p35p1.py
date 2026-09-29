@@ -152,11 +152,12 @@ def test_notebooks_v0p35p1():
     root = Path(__file__).resolve().parents[1] / "notebooks"
     nb3 = nbformat.read(str(root / "03_colmap_alignment.ipynb"), as_version=4)
     full3 = "\n".join(c.source for c in nb3.cells)
-    assert "0.35.1" in nb3.cells[0].source and "print_camera_changes(rec, proj)" in full3
+    assert "0.35." in nb3.cells[0].source and "print_camera_changes(rec, proj)" in full3
     assert '[r["camera_id"] for r in proj.images if r["instrument"] == k' not in full3
     for site in ("van_zyl", "seitah_north", "whale_mountain", "origny", "(1880, 1889)"):
         assert site in full3, site
     assert "navcal_v0p35p1" in full3 and "holds a block of sols" in full3
+    assert "LOCALIZE_MIN_IMAGES = 4" in full3 and "localize_min_images=LOCALIZE_MIN_IMAGES" in full3
     nb4 = nbformat.read(str(root / "04_camera_models.ipynb"), as_version=4)
     full4 = "\n".join(c.source for c in nb4.cells)
     for k in ("2f  Rig drift with more blocks", "rig_drift_model(", "drift_robustness(", "drift_figure("):
@@ -204,3 +205,130 @@ def test_notebook04_has_resolution_section():
     full4 = "\n".join(c.source for c in nb4.cells)
     for k in ("2g  Pixel offsets between the Navcam resolutions", "label_scale_consistency(", "scale_summary("):
         assert k in full4, k
+
+
+# ------------------------------------------------------------------ v0p35.2 LOCALIZE_MIN_IMAGES, station map
+def _short_stop(tmp_path, offset=(1.5, -1.0, 0.0)):
+    """The synthetic block with one stereo frame of the second station relabelled as a two-image station whose
+    waypoint prior is ``offset`` metres off."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_v0p31 import _synthetic_block
+    proj, rec, noise = _synthetic_block(tmp_path)
+    fid = next(rec.images[int(r["image_id"])].frame_id for r in proj.images if r["station"] == "S001D0100")
+    ims = {rec.images[d.id].name for d in rec.frames[fid].data_ids}
+    for r in proj.images:
+        if r["name"] in ims:
+            r["station"] = "S001D0150"
+            r["prior_C"] = (np.asarray(r["prior_C"], float) + np.asarray(offset)).tolist()
+    return proj, rec, noise, fid
+
+
+def _centre(rec, fid):
+    fr = rec.frames[fid]
+    return np.asarray(fr.rig_from_world.inverse().translation)
+
+
+def test_unlocalized_stations_and_dropped_priors(tmp_path):
+    pytest.importorskip("pyceres")
+    from mppp.sfm.reconstruction import bundle_adjust, unlocalized_stations
+    proj, rec, noise, fid = _short_stop(tmp_path)
+    truth = _centre(rec, fid)
+    u = unlocalized_stations(proj, 4, rec=rec)
+    assert list(u) == ["S001D0150"] and u["S001D0150"]["images"] == 2 and u["S001D0150"]["prior"] == "dropped"
+    assert u["S001D0150"]["cross_points"] > 20
+    assert all(v["prior"].startswith("kept: every") for v in unlocalized_stations(proj, 50).values())
+    import copy
+    r0, p0 = copy.deepcopy(rec), copy.deepcopy(proj)
+    ba0 = bundle_adjust(r0, p0, sigma_px=noise, loss_scale=10.0, max_iterations=30)
+    r1, p1 = copy.deepcopy(rec), copy.deepcopy(proj)
+    p1.settings["localize_min_images"] = 4
+    ba1 = bundle_adjust(r1, p1, sigma_px=noise, loss_scale=10.0, max_iterations=30)
+    assert ba1["frames_without_position_prior"] == 1 and ba1["priors"] == ba0["priors"] - 1
+    # with its prior the 1.8 m error drags the short stop and the whole block (~12-14 cm); without it the block
+    # moves only by the noise (~4-5 cm)
+    e0 = np.linalg.norm(_centre(r0, fid) - truth)
+    e1 = np.linalg.norm(_centre(r1, fid) - truth)
+    assert e1 < 0.6 * e0
+    other = [f for f in rec.frames if f != fid]
+    m0 = np.mean([np.linalg.norm(_centre(r0, f) - _centre(rec, f)) for f in other])
+    m1 = np.mean([np.linalg.norm(_centre(r1, f) - _centre(rec, f)) for f in other])
+    assert m1 < 0.6 * m0
+
+
+def test_register_stations_only_moves_the_short_stop(tmp_path, monkeypatch):
+    pytest.importorskip("pyceres")
+    import pycolmap
+    from mppp.sfm import reconstruction as RC
+    proj, rec, noise, fid = _short_stop(tmp_path)
+    truth = _centre(rec, fid)
+    # matches from the tracks; then the short stop's observations leave the tracks (as after triangulating with
+    # its wrong prior pose), so that its tie points are only correspondences to the other station's points
+    pairs = {}
+    for pt in rec.points3D.values():
+        els = [(el.image_id, el.point2D_idx) for el in pt.track.elements]
+        for a in range(len(els)):
+            for b in range(a + 1, len(els)):
+                (i1, k1), (i2, k2) = sorted((els[a], els[b]))
+                if i1 != i2:
+                    pairs.setdefault((i1, i2), []).append((k1, k2))
+    monkeypatch.setattr(RC, "_verified_matches", lambda project: [(i1, i2, np.array(m)) for (i1, i2), m in pairs.items()])
+    mine = {d.id for d in rec.frames[fid].data_ids}
+    for pid in list(rec.points3D):
+        for el in list(rec.points3D[pid].track.elements):
+            if el.image_id in mine and pid in rec.points3D:
+                rec.delete_observation(el.image_id, el.point2D_idx)
+    register_stations = RC.register_stations
+    others = {f: _centre(rec, f) for f in rec.frames if f != fid}
+    # the frame starts at its (wrong) prior
+    fr = rec.frames[fid]
+    fr.rig_from_world = fr.rig_from_world * pycolmap.Rigid3d(pycolmap.Rotation3d(np.eye(3)), -np.array([1.5, -1.0, 0.0]))
+    assert np.linalg.norm(_centre(rec, fid) - truth) > 1.0
+    rep = register_stations(rec, proj, only=["S001D0150"], max_error_px=40.0, min_inliers=10, verbose=False)
+    assert rep["stations"]["S001D0150"]["registered"]
+    assert np.linalg.norm(_centre(rec, fid) - truth) < 0.2          # from 1.8 m: within reach of triangulation
+    assert all(np.allclose(_centre(rec, f), c) for f, c in others.items())
+
+
+def test_station_map_has_the_two_overview_panels_only(tmp_path):
+    pytest.importorskip("pyceres")
+    import matplotlib
+    matplotlib.use("Agg")
+    from mppp.sfm.export import plot_camera_shifts
+    proj, rec, noise, fid = _short_stop(tmp_path)
+    proj.settings["reconstruction"] = {"unlocalized_stations": ["S001D0150"]}
+    fig = plot_camera_shifts(proj, rec=rec, out_png=tmp_path / "station_map.png")
+    plotted = [a for a in fig.axes if a.get_label() != "<colorbar>"]
+    assert len(plotted) == 2 and (tmp_path / "station_map.png").is_file()
+    assert any("(no prior)" in t.get_text() for t in fig.axes[0].texts)
+    fig2 = plot_camera_shifts(proj, rec=rec, station_panels=True)
+    assert len([a for a in fig2.axes if a.get_label() != "<colorbar>"]) == 2 + 3
+
+
+def test_reconstruct_with_localize_min_images(tmp_path, monkeypatch):
+    pytest.importorskip("pyceres")
+    import copy
+    from mppp.sfm import reconstruction as R
+    from mppp.sfm import health as H
+    proj, rec0, noise, fid = _short_stop(tmp_path)
+    monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(rec0))
+    monkeypatch.setattr(R, "triangulate", lambda rec, project, **kw: rec)          # no database: keep the points
+    calls = []
+    monkeypatch.setattr(R, "register_stations", lambda rec, project, **kw: calls.append(kw) or
+                        {"stations": {s: {"registered": True} for s in kw.get("only", [])}, "only": kw.get("only")})
+    rec = R.reconstruct(proj, sigma_px=noise, schedule=((24.0, 10.0, 8.0),), max_iterations=5, verbose=False,
+                        localize_min_images=4, gui_native=False)
+    rs = proj.settings["reconstruction"]
+    assert calls and calls[0]["only"] == ["S001D0150"]
+    assert rs["localize_min_images"] == 4 and rs["unlocalized_stations"] == ["S001D0150"]
+    assert proj.settings["localize_min_images"] == 4 and rs["unlocalized"]["S001D0150"]["prior"] == "dropped"
+    rep = H.assess_alignment(proj, rec)
+    names = {c["check"]: c for c in rep["checks"]}
+    assert "unlocalized_station_shift_max_m" in names and names["unlocalized_station_shift_max_m"]["value"] > 1.0
+    assert rep["stations"]["S001D0150"]["position_prior"] is False
+    assert all("S001D0150" not in s["stations"] for s in rep["prior_similarity"])
+    # 0 keeps every prior and moves no station
+    calls.clear()
+    R.reconstruct(proj, sigma_px=noise, schedule=((24.0, 10.0, 8.0),), max_iterations=5, verbose=False, gui_native=False)
+    assert not calls and proj.settings["reconstruction"]["unlocalized_stations"] == []

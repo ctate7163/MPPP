@@ -487,10 +487,22 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         st_tab[st] = {"label": labels.get(st, st), "images": len(v), "shift_median_m": float(np.median(np.linalg.norm(d, axis=1))),
                       "shift_spread_m": float(np.sqrt(np.mean(np.sum((d - np.median(d, 0)) ** 2, axis=1)))),
                       "attitude_median_deg": float(np.median([x["dAttitude_deg"] for x in v]))}
-    if st_tab:
-        worst = max(st_tab.items(), key=lambda kv: kv[1]["shift_median_m"])
+    # v0p35.1: stations without a position prior (LOCALIZE_MIN_IMAGES) are expected to move off their waypoint;
+    # they are reported apart and left out of the prior checks below
+    unloc = set((project.settings.get("reconstruction") or {}).get("unlocalized_stations") or [])
+    for st in st_tab:
+        st_tab[st]["position_prior"] = st not in unloc
+    loc_tab = {k: v for k, v in st_tab.items() if k not in unloc}
+    if unloc & set(st_tab):
+        far = max(((k, v) for k, v in st_tab.items() if k in unloc), key=lambda kv: kv[1]["shift_median_m"])
+        check("poses", "unlocalized_station_shift_max_m", far[1]["shift_median_m"],
+              f"{len(unloc & set(st_tab))} stations without a position prior (LOCALIZE_MIN_IMAGES): the largest moved "
+              f"from its waypoint ({labels.get(far[0], far[0])}); not checked", "m")
+    if loc_tab:
+        worst = max(loc_tab.items(), key=lambda kv: kv[1]["shift_median_m"])
         check("poses", "station_shift_median_m", worst[1]["shift_median_m"],
-              f"largest station median |refined - prior| ({labels.get(worst[0], worst[0])})", "m")
+              f"largest station median |refined - prior| ({labels.get(worst[0], worst[0])})"
+              + (" - stations with a position prior" if unloc else ""), "m")
         spread = max(st_tab.items(), key=lambda kv: kv[1]["shift_spread_m"])
         check("poses", "within_station_shift_spread_m", spread[1]["shift_spread_m"],
               f"largest RMS spread of the shifts within one station ({labels.get(spread[0], spread[0])})", "m")
@@ -530,7 +542,7 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         report_extra = {}
     sims = []
     for comp in comps:
-        cen = {s: by_st[s] for s in comp if s in by_st}
+        cen = {s: by_st[s] for s in comp if s in by_st and s not in unloc}
         if len(cen) < 3:
             continue
         P0 = np.array([np.mean([project.image(x["name"])["prior_C"] for x in v], 0) for v in cen.values()])
