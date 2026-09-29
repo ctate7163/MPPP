@@ -2,6 +2,16 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.31.2 — 2026-09-28
+
+The default mask model always comes from Hugging Face (`ctate7163/mppp-mask`):
+- **`mppp_mask_v3` registry entry corrected.** The SHA-256 recorded in 0.22.4 (`daa34ffb…`) was of an export made without the checkpoint's `.json` card: that file carries the default card (no stride-4 decoder, threshold 0.4) and does not load. The released file, exported with its card, is `46830126…` (124,826,276 bytes); it loads and gives the same output as the `.pt`. Its only URL is `https://huggingface.co/ctate7163/mppp-mask/resolve/main/mppp_mask_convnext_tiny_s4_v3.safetensors`; `"hf_repo"` names the repository.
+- **A registry name means the released file.** `fetch_model` / `resolve_checkpoint` check a cached copy against the registry SHA-256 (once per process) and download it again if it differs (the old copy is kept as `*.sha256-mismatch`). A local checkpoint no longer stands in when the download fails, unless `MPPP_MASK_LOCAL_FALLBACK=1` (or `local_fallback=True`). To run another model, give its path in `config["masking"]["checkpoint"]`.
+- **`python -m mppp.mask.hub upload`** (`upload_model`): exports the model if needed, refuses a file whose SHA-256 is not the registry's, creates the Hugging Face repository and uploads the file and `docs/hf_model_card.md` as `README.md`. **`verify`** (`verify_model`) downloads from every registry URL and checks the SHA-256.
+- `HF_TOKEN` (or a `hf auth login` token) is sent to huggingface.co only, for a private repository.
+- `export_safetensors` refuses a `.pt` without its `.json` card (`allow_default_card=True` to override).
+- Model card `docs/hf_model_card.md` and `docs/RELEASING.md` §4–6 rewritten for v3.
+
 ## 0.31.1 — 2026-09-28
 
 Checks of the thermal model and the error-model inputs of fifteen Navcam scapes (working notes §14):

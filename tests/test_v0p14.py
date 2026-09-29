@@ -70,9 +70,12 @@ def test_download_failure_falls_back_to_local_checkpoint(tmp_path, monkeypatch):
     monkeypatch.setenv("MPPP_CACHE", str(tmp_path / "cache"))
     monkeypatch.setenv("MPPP_CHECKPOINTS", str(ckdir))
     assert hub.local_candidates("m1") == [ckdir / "convnext_tiny_s4_seg_best.pt"]
+    with pytest.raises(FileNotFoundError, match="MPPP_MASK_LOCAL_FALLBACK"):
+        hub.resolve_checkpoint("m1")                                      # 0.31.2: no local stand-in by default
+    monkeypatch.setenv("MPPP_MASK_LOCAL_FALLBACK", "1")
     p = hub.resolve_checkpoint("m1")                                      # download fails -> local install
     assert p == tmp_path / "cache" / "models" / "m1.safetensors" and hub.sha256_file(p) == ref["sha256"]
-    with pytest.raises(FileNotFoundError, match="No local fallback"):
+    with pytest.raises(FileNotFoundError, match="stands in only with"):
         hub.fetch_model("m1", force=True, local_fallback=False)
 
 

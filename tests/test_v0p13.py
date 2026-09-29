@@ -135,7 +135,7 @@ def test_registry_fetch_install_resolve(tmp_path, monkeypatch):
         q = hub.install_model(ck, "m1")
     assert q.is_file()
     from mppp.mask import get_model
-    model, card = get_model("m1", "cpu")
+    model, card = get_model(str(q), "cpu")          # 0.31.2: the registry name would fetch the released file again
     assert card["fpn_width"] == 32
 
 
@@ -155,7 +155,8 @@ def test_released_registry_entry():
     from mppp.mask.hub import load_registry
     reg = load_registry()
     e = reg["models"][reg["default"]]
-    assert e["file"].endswith(".safetensors") and len(e.get("sha256", "")) == 64 and len(e["urls"]) == 2
+    assert e["file"].endswith(".safetensors") and len(e.get("sha256", "")) == 64
+    assert e["urls"][0].startswith("https://huggingface.co/")        # 0.31.2: the default comes from Hugging Face
 
 
 # ------------------------------------------------------------ COLMAP helpers

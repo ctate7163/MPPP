@@ -6,7 +6,7 @@ This covers three things:
 2. the released mask model, exported to **safetensors** and attached to a **GitHub release**;
 3. the same model on **Hugging Face**.
 
-MPPP downloads the model from the URLs in `src/mppp/data/models.json`: Hugging Face first, then the GitHub release. It checks the SHA-256 against the value stored there. The model is not stored in git, for two reasons: GitHub rejects files over 100 MB, and a large file in history makes every clone slower forever.
+MPPP downloads the model from the URLs in `src/mppp/data/models.json` and checks the SHA-256 against the value stored there. From 0.31.2 the default model, `mppp_mask_v3`, has one URL, on Hugging Face (`ctate7163/mppp-mask`), and a registry name always means that released file: a cached copy with another SHA-256 is downloaded again, and a local checkpoint stands in only with `MPPP_MASK_LOCAL_FALLBACK=1`. Older models (v1, v2) keep their Hugging Face and GitHub-release URLs. The model is not stored in git, for two reasons: GitHub rejects files over 100 MB, and a large file in history makes every clone slower forever.
 
 Commands are for Windows (Anaconda Prompt or PowerShell). On Linux and macOS the same commands work with `/` paths.
 
@@ -94,43 +94,33 @@ A release for the code itself: `gh release create v0.14.0 --repo ctate7163/MPPP 
 
 ## 4. Upload the model to Hugging Face
 
-The registry URL is `https://huggingface.co/ctate7163/mppp-mask/resolve/main/mppp_mask_convnext_tiny_s4_v2.safetensors`. That means a **model** repository `ctate7163/mppp-mask` with the file at its root. If your Hugging Face user name is not `ctate7163`, change the URL in `src/mppp/data/models.json` and commit.
+The registry URL of `mppp_mask_v3` is `https://huggingface.co/ctate7163/mppp-mask/resolve/main/mppp_mask_convnext_tiny_s4_v3.safetensors`: a public **model** repository `ctate7163/mppp-mask` with the file at its root. MPPP does both steps (repository and upload) for you:
 
 ```bat
-huggingface-cli repo create mppp-mask --type model
-huggingface-cli upload ctate7163/mppp-mask D:\code\MPPP\checkpoints\mppp_mask_convnext_tiny_s4_v2.safetensors mppp_mask_convnext_tiny_s4_v2.safetensors
-huggingface-cli upload ctate7163/mppp-mask docs\hf_model_card.md README.md
+cd /d D:\code\MPPP
+pip install -U huggingface_hub
+hf auth login
+python -m mppp.mask.hub upload --name mppp_mask_v3
 ```
 
-In newer `huggingface_hub` versions the command is `hf` (`hf repo create …`, `hf upload …`). Or in Python:
+`hf auth login` (older versions: `huggingface-cli login`) asks for a token with **write** access from https://huggingface.co/settings/tokens. `upload`:
+* exports `checkpoints\convnext_tiny_s4_seg_20260925b.pt` (with its `.json` card next to it) to `checkpoints\mppp_mask_convnext_tiny_s4_v3.safetensors`, if that file is not there yet;
+* refuses to upload unless the file's SHA-256 is the registry's (`46830126…`), so the URL always serves exactly what `models.json` describes;
+* creates `ctate7163/mppp-mask` if needed (public; `--private` for a private one, then every user needs `HF_TOKEN` or a login to download);
+* uploads the file and `docs/hf_model_card.md` as the repository's `README.md`.
 
-```python
-from huggingface_hub import HfApi
-api = HfApi()
-api.create_repo("ctate7163/mppp-mask", repo_type="model", exist_ok=True)
-api.upload_file(path_or_fileobj=r"D:\code\MPPP\checkpoints\mppp_mask_convnext_tiny_s4_v2.safetensors",
-                path_in_repo="mppp_mask_convnext_tiny_s4_v2.safetensors", repo_id="ctate7163/mppp-mask")
-api.upload_file(path_or_fileobj=r"docs\hf_model_card.md", path_in_repo="README.md", repo_id="ctate7163/mppp-mask")
-```
-
-Or on the web:
-1. Go to https://huggingface.co/new and create a model repository named `mppp-mask`.
-2. Open **Files**, then **Add file**, then **Upload files**, and add the `.safetensors` file.
-3. Upload `docs/hf_model_card.md` renamed to `README.md`, as the model card.
-
-Hugging Face stores large files with Git LFS/Xet automatically.
+Hugging Face stores large files with Xet automatically; nothing goes into git.
 
 ## 5. Check the download path
 
-In a fresh cache, both URLs should serve the same file:
-
 ```bat
+python -m mppp.mask.hub verify --name mppp_mask_v3
 set MPPP_CACHE=%TEMP%\mppp_cache_test
-python -m mppp.mask.hub fetch --name mppp_mask_v2
+python -m mppp.mask.hub fetch --name mppp_mask_v3
 python -m mppp.mask.hub list
 ```
 
-`fetch` downloads from the first URL that works and verifies the SHA-256. To test the GitHub URL on its own, remove the Hugging Face URL temporarily, or use `fetch_model(urls=[...])` in Python.
+`verify` downloads the model from every registry URL into a temporary folder and prints `OK` when the SHA-256 matches. `fetch` with an empty cache is what a new user gets. `list` reports a cached file that is not the released one; it is replaced on next use.
 
 ## 6. Releasing a new model later
 
@@ -138,12 +128,12 @@ python -m mppp.mask.hub list
 2. Export it under a new name so the old URL keeps working:
 
    ```bat
-   python -m mppp.mask.hub export <checkpoints>\convnext_tiny_s4_seg_best.pt --name mppp_mask_v3 --update-registry
+   python -m mppp.mask.hub export <checkpoints>\convnext_tiny_s4_seg_best.pt --name mppp_mask_v4 --update-registry
    ```
 
-   For a name not yet in `models.json`, the file is `mppp_mask_v3.safetensors`, and the entry is created with an empty URL list.
-3. Add the two URLs to the new entry in `src/mppp/data/models.json`: Hugging Face, and a GitHub release tagged `mask-v3`. Upload the file to both places (steps 3 and 4).
-4. To make it the default, set `"default": "mppp_mask_v3"`.
+   For a name not yet in `models.json`, the file is `mppp_mask_v4.safetensors`, and the entry is created with an empty URL list.
+3. Add the Hugging Face URL (`https://huggingface.co/ctate7163/mppp-mask/resolve/main/<file>`) and `"hf_repo": "ctate7163/mppp-mask"` to the new entry in `src/mppp/data/models.json`, then `python -m mppp.mask.hub upload --name <name>` (step 4) and `verify`.
+4. To make it the default, set `"default": "<name>"`.
 5. Commit and push, and note the change in `CHANGELOG.md`.
 
 Users who want the old model can set `config["masking"]["checkpoint"] = "mppp_mask_v1"`.

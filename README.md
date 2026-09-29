@@ -23,7 +23,7 @@ pytest -m "not slow"                # optional: the test suite (the example PDS 
 
 A conda environment file is in `envs/mppp.yml`. Python ≥ 3.10.
 
-**The mask model** (`mppp_mask_v3`, about 125 MB, safetensors; `mppp_mask_v2` and `v1` = the previous ones; until v3 is published, the checkpoint it was exported from, `checkpoints/convnext_tiny_s4_seg_20260925b.pt`, stands in automatically) is downloaded on first use into the user cache (`%LOCALAPPDATA%\mppp` on Windows, `~/.cache/mppp` on Linux, `~/Library/Caches/mppp` on macOS; `MPPP_CACHE` overrides) and checked against its SHA-256. Offline: `python -m mppp.mask.hub install <file.safetensors>`. `python -m mppp.mask.hub list` shows the status.
+**The mask model** (`mppp_mask_v3`, about 125 MB, safetensors; `mppp_mask_v2` and `v1` = the previous ones) comes from Hugging Face, [`ctate7163/mppp-mask`](https://huggingface.co/ctate7163/mppp-mask). It is downloaded on first use into the user cache (`%LOCALAPPDATA%\mppp` on Windows, `~/.cache/mppp` on Linux, `~/Library/Caches/mppp` on macOS; `MPPP_CACHE` overrides) and checked against its SHA-256; a cached copy that is not the released file is downloaded again. Offline: `python -m mppp.mask.hub install <file.safetensors>`. `python -m mppp.mask.hub list` shows the status.
 
 ## Use
 

@@ -6,7 +6,7 @@ Data provenance
 - Mars 2020 images: all images used by and distributed with MPPP (tests/data/m20/, and the images the
   mask model was trained on) are public products of the NASA Planetary Data System (PDS).
   Credits: Navcam NASA/JPL-Caltech; Mastcam-Z NASA/JPL-Caltech/ASU/MSSS.
-- Reconstruction masks, the mask model (mppp_mask_v1, mppp_mask_v2) and the camera models in
+- Reconstruction masks, the mask model (mppp_mask_v1, mppp_mask_v2, mppp_mask_v3) and the camera models in
   src/mppp/data/m20_cmods/ (Metashape frame calibrations and the COLMAP rational Navcam cameras)
   are the author's own work.
 - The waypoint snapshot (src/mppp/data/M20_waypoints.json) is a copy of the public Mars 2020 rover

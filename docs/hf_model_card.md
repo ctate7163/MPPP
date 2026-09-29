@@ -12,34 +12,34 @@ tags:
   - safetensors
 ---
 
-# MPPP mask model v2 (`mppp_mask_v2`)
+# MPPP mask model v3 (`mppp_mask_v3`)
 
 This is the reconstruction-mask model of [MPPP](https://github.com/ctate7163/MPPP), the Mars Photogrammetry Preprocessing Pipeline. For each pixel of a Mars 2020 Perseverance image it predicts whether that pixel should be used for photogrammetric reconstruction. **Include** means terrain. **Exclude** means rover hardware, sky, calibration targets and image artefacts.
 
 | | |
 |---|---|
-| file | `mppp_mask_convnext_tiny_s4_v2.safetensors` (124,825,300 bytes) |
-| SHA-256 | `227e483369e11d6e36ce3517cf9f6d6ac60a9a50c1e301f9e7ae53d0cef569b9` |
+| file | `mppp_mask_convnext_tiny_s4_v3.safetensors` (124,826,276 bytes) |
+| SHA-256 | `46830126e3103c144e251e9173529115aca6ebc1b07d6530b5670ab1c0612aa0` |
 | architecture | ConvNeXt-tiny backbone (ImageNet-22k initialisation) + FPN + light ASPP + stride-4 decoder skip, one logit |
 | input | linear 8-bit-equivalent RGB as produced by MPPP, resized to fit a 1664 × 1248 canvas (long side ≤ 1648), ImageNet normalisation |
 | output | sigmoid > 0.5 = include; MPPP dilates the include region by 3 × 3 |
 | training data | 7,072 training / 786 validation frames (3,931 hand-edited masks of Mars 2020 engineering-camera and Mastcam-Z frames, with brightness-varied copies), split by mask so variants never cross the split |
-| training | 4 epochs, AdamW lr 5e-5 (cosine, warm-up), weight decay 5e-3, horizontal flips, bf16, BCE + Tversky loss (25 Sep 2026) |
-| validation | IoU 0.977 (mean per batch; frames without terrain count as 0 in this metric, so the IoU over frames with terrain is higher) |
+| training | 10 epochs planned, best at epoch 9; AdamW lr 5e-5 (cosine, 5 % warm-up), weight decay 5e-3, horizontal flips, bf16, BCE + Tversky loss (26 Sep 2026; exported from `convnext_tiny_s4_seg_20260925b.pt`) |
+| validation | IoU 0.979 (mean per batch; frames without terrain count as 0 in this metric, so the IoU over frames with terrain is higher) |
 
 The model card, with every inference setting and the training history, is embedded in the safetensors metadata under `mppp_card`. `mppp.mask.model.load_model(path)` reads it.
 
 ## Versions
 
-`mppp_mask_v3` (`mppp_mask_convnext_tiny_s4_v3.safetensors`, exported from `convnext_tiny_s4_seg_20260925b.pt`: the same architecture and data, 9 of 10 epochs, val IoU 0.979, SHA-256 `daa34ffbccf389135fd74c1ed79755f13c6be6a84213540d5e1f1a9788a82fa7`) is MPPP's default from 0.22.4. `mppp_mask_v2` (this file) was the default from 0.14.7. The previous model, `mppp_mask_v1` (`mppp_mask_convnext_tiny_s4_v1.safetensors`, 24 Sep 2026, 3 epochs, val IoU 0.971), has the same architecture and input; select it with `"checkpoint": "mppp_mask_v1"`.
+`mppp_mask_v3` (this file) is MPPP's default. `mppp_mask_v2` (`mppp_mask_convnext_tiny_s4_v2.safetensors`, 25 Sep 2026, 4 epochs, val IoU 0.977) and `mppp_mask_v1` (`mppp_mask_convnext_tiny_s4_v1.safetensors`, 24 Sep 2026, 3 epochs, val IoU 0.971) have the same architecture and input; select one with `"checkpoint": "mppp_mask_v2"`.
 
 ## Use
 
-With MPPP, the model is downloaded and checked automatically on first use:
+With MPPP, the model is downloaded from this repository on first use, checked against its SHA-256 and kept in the user cache:
 
 ```python
 import mppp
-cfg = mppp.load_config({"masking": {"infer_mask": True, "checkpoint": "mppp_mask_v2"}})
+cfg = mppp.load_config({"masking": {"infer_mask": True}})          # checkpoint "mppp_mask_v3" by default
 manifest = mppp.process_images(paths, "out/", cfg, mppp.load_waypoints())
 ```
 
@@ -47,8 +47,10 @@ Direct inference:
 
 ```python
 from mppp.mask import infer_mask
-mask, probability, card = infer_mask(rgb_uint8_image, "mppp_mask_v2")
+mask, probability, card = infer_mask(rgb_uint8_image, "mppp_mask_v3")
 ```
+
+Without MPPP: `safetensors.torch.load_file(path)` gives the weights, and `safetensors.safe_open(path, "pt").metadata()["mppp_card"]` the card (JSON).
 
 ## Limitations
 
