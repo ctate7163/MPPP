@@ -67,8 +67,7 @@ echo   b. Then press a key here: the push asks you to sign in to GitHub in the b
 pause
 git remote add origin https://github.com/%GH_USER%/%REPO%.git
 :push
-git push -u origin main --tags || (echo push failed - check the repository exists and you are signed in & pause & exit /b 1)
-echo Pushed to https://github.com/%GH_USER%/%REPO% (private).
+call "%~dp0github_push.bat" || exit /b 1
 
 echo.
 echo [4] the old bundles (the history is in git and on GitHub now):

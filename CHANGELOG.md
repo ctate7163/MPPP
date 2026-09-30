@@ -2,6 +2,11 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.50.1 — 2026-09-30
+
+GitHub: pull before push.
+- `setup_github.bat` stopped at "Updates were rejected because the remote contains work that you do not have locally": `github.com/ctate7163/MPPP` already held commits. New **`scripts/windows/github_push.bat`** fetches GitHub first: nothing new -> push; commits of the same history -> `git merge` them, then push (stops on a conflict); an unrelated history (an earlier upload) -> you choose **K** keep it as the branch `github-before-v0p50` and make `main` this history (recommended), **M** merge it (`--allow-unrelated-histories -X ours`), or **Q** quit. It then writes `_transfer\mppp_pc.bundle` (this copy's history, for Claude's next session). `setup_github.bat` and `sync_from_claude.bat` call it; `sync_from_claude.bat` merges a delivery into a copy that has its own commits instead of refusing.
+
 ## 0.50.0 — 2026-09-30
 
 Navcam distortion one set for all sols and temperatures, one camera-model folder, zcam34 sites, tests by module, git + GitHub.
