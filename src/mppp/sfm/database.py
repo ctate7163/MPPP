@@ -11,9 +11,10 @@ descriptors, and one position prior per image.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import json
+import os
 
 import numpy as np
 
@@ -176,23 +177,42 @@ def scale_keypoints(kp: np.ndarray, factor: float) -> np.ndarray:
 
 
 def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
-                   database: Optional[PathLike] = None, overwrite: bool = True) -> Dict[str, Any]:
+                   database: Optional[PathLike] = None, overwrite: bool = True,
+                   reuse_matches_from: Sequence[PathLike] = (), keep_matches: bool = True,
+                   matching: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Write ``database.db`` (see module docstring).  Returns a summary.
     ``overwrite`` (default True since v0p13, so that rerunning the notebook
-    does not stop): an existing ``database.db`` - and the matches in it - is
-    replaced; matching has to be run again afterwards.
+    does not stop): an existing ``database.db`` is replaced.
+    ``keep_matches`` (v0p43, default True): the matches of the replaced database - and of the databases in
+    ``reuse_matches_from`` (e.g. the base ``colmap/`` project of a variant) - are copied into the new one when they
+    were made from the same features with the same matching settings (:func:`reuse_matches`); COLMAP then skips
+    those pairs, so a rerun after removing images or changing reconstruction or camera settings does not match
+    again.  Verified two-view geometries are kept only for pairs whose two cameras are unchanged (otherwise
+    COLMAP verifies them again).  ``matching``: the matching settings of the coming :func:`mppp.sfm.match`
+    (:func:`mppp.sfm.matching.match_settings`); matches are reused only when it is given and equal to the
+    recorded ones.
     """
     import pycolmap
     from .thermal import strip_thermal_bins
     strip_thermal_bins(project)                             # v0p31: one camera per eye before the database is built
     fdb_path = Path(features_db) if features_db else project.features_db
     out = Path(database) if database else project.database
+    prev = None
     if out.exists():
         if not overwrite:
             raise FileExistsError(f"{out} exists (overwrite=True replaces it; matches in it are lost)")
         try:
-            out.unlink()
+            if keep_matches and matching is not None and matches_record_path(out).is_file():
+                prev = out.with_name(out.stem + "_previous.db")
+                if prev.exists():
+                    prev.unlink()
+                out.rename(prev)                             # v0p43: its matches are copied into the new database
+                os.replace(matches_record_path(out), matches_record_path(prev))
+            else:
+                out.unlink()
+                if matches_record_path(out).is_file():
+                    matches_record_path(out).unlink()
         except PermissionError as e:                           # Windows: still open in COLMAP or this kernel
             raise PermissionError(f"cannot replace {out}: it is open elsewhere (COLMAP GUI, or a pycolmap "
                                   f"Database in this kernel - close it or restart the kernel)") from e
@@ -299,6 +319,16 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
                "single_eye_rigs": {k: int(v) for k, v in solo_rig.items()},
                "single_eye_images": sorted(r["name"] for (rid, _), rs in groups.items() if rid in solo_rig.values()
                                            for r in rs)}
+    if keep_matches and matching is not None:              # v0p43: matches of the previous / base databases
+        sources = ([prev] if prev else []) + [Path(x) for x in reuse_matches_from if x and Path(x) != out]
+        reused = reuse_matches(project, [x for x in sources if x.is_file()], database=out,
+                               matching=matching) if sources else None
+        if reused:
+            summary["reused_matches"] = reused
+        if prev and prev.exists():
+            if matches_record_path(prev).is_file():
+                matches_record_path(prev).unlink()
+            prev.unlink()
     project.settings["database"] = summary
     project.save()
     try:
@@ -307,6 +337,152 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
     except OSError:                                        # read-only or odd paths: the files are a convenience
         pass
     return summary
+
+
+# --- v0p43: match reuse -------------------------------------------------------------------------------------------
+MAX_NUM_IMAGES = 2147483647                                   # COLMAP kMaxNumImages (pair_id = id1 * this + id2)
+MATCH_KEYS = ("mode", "max_ratio", "max_distance", "cross_check", "guided_matching", "max_error_px",
+              "min_num_inliers", "max_num_matches")
+
+
+def matches_record_path(database: PathLike) -> Path:
+    """``database_matches.json`` beside a ``database.db``: what its matches were made from (v0p43)."""
+    d = Path(database)
+    return d.with_name(d.stem + "_matches.json")
+
+
+def features_key(project: SfmProject) -> Optional[str]:
+    """SHA-256 of ``features.json``: the same text means the same keypoints (it is rewritten on every extraction)."""
+    import hashlib
+    rec = _features_record(project)
+    return hashlib.sha256(rec.read_bytes()).hexdigest() if rec.is_file() else None
+
+
+def _camera_fingerprints(project: SfmProject) -> Dict[str, str]:
+    """image name -> fingerprint of the start camera it is matched with (model, size, parameters)."""
+    import hashlib
+    fp = {}
+    for k, c in project.cameras.items():
+        txt = json.dumps([c.get("model"), c.get("width"), c.get("height"), [round(float(v), 9) for v in c.get("params", [])]])
+        fp[k] = hashlib.sha256(txt.encode()).hexdigest()[:16]
+    out = {}
+    for r in project.images:
+        cam = r.get("instrument")
+        out[r["name"]] = fp.get(cam, "")
+    return out
+
+
+def write_matches_record(project: SfmProject, settings: Dict[str, Any], database: Optional[PathLike] = None) -> Path:
+    """Record the features, matching settings and cameras of ``database.db``'s matches (v0p43; called by
+    :func:`mppp.sfm.match`)."""
+    out = matches_record_path(database or project.database)
+    rec = {"features_key": features_key(project), "matching": {k: settings.get(k) for k in MATCH_KEYS},
+           "cameras": _camera_fingerprints(project)}
+    out.write_text(json.dumps(rec, indent=1), encoding="utf-8")
+    return out
+
+
+def _pair(pair_id: int):
+    return int(pair_id) // MAX_NUM_IMAGES, int(pair_id) % MAX_NUM_IMAGES
+
+
+def _pair_id(i: int, j: int) -> int:
+    return MAX_NUM_IMAGES * min(i, j) + max(i, j)
+
+
+def reuse_matches(project: SfmProject, sources: Sequence[PathLike], database: Optional[PathLike] = None,
+                  matching: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    v0p43: copy the matches of earlier databases (``sources``) into ``database`` (default ``project.database``,
+    freshly written by :func:`build_database`), by image name.  A source is used only if its
+    ``*_matches.json`` records the same features (:func:`features_key`) and - when ``matching`` is given - the
+    same matching settings.  Raw matches of every pair whose two images are both in the new database are copied;
+    a verified two-view geometry only if both images' start cameras are unchanged and the pair keeps its order.
+    COLMAP's matchers skip pairs that already have matches (and verification skips pairs that have a geometry).
+    Returns counts per source.
+    """
+    import sqlite3
+    out_db = Path(database or project.database)
+    fkey = features_key(project)
+    cams_now = _camera_fingerprints(project)
+    report: Dict[str, Any] = {"sources": [], "matches": 0, "geometries": 0}
+    if fkey is None:
+        return report
+    con = sqlite3.connect(str(out_db))
+    try:
+        new_id = {n: int(i) for i, n in con.execute("SELECT image_id, name FROM images")}
+        have_m = {int(r[0]) for r in con.execute("SELECT pair_id FROM matches")}
+        have_g = {int(r[0]) for r in con.execute("SELECT pair_id FROM two_view_geometries")}
+        g_cols = [r[1] for r in con.execute("PRAGMA table_info(two_view_geometries)")]
+        for src in sources:
+            src = Path(src)
+            entry = {"database": str(src), "matches": 0, "geometries": 0}
+            report["sources"].append(entry)
+            recf = matches_record_path(src)
+            if not recf.is_file():
+                entry["skipped"] = "no matches record"
+                continue
+            rec = json.loads(recf.read_text(encoding="utf-8"))
+            if rec.get("features_key") != fkey:
+                entry["skipped"] = "other features"
+                continue
+            if matching is not None and any(rec.get("matching", {}).get(k) != matching.get(k) for k in MATCH_KEYS
+                                            if k in matching):
+                entry["skipped"] = "other matching settings"
+                continue
+            cams_then = rec.get("cameras", {})
+            s = sqlite3.connect(str(src))
+            try:
+                old_name = {int(i): n for i, n in s.execute("SELECT image_id, name FROM images")}
+                for pid, rows, cols, data in s.execute("SELECT pair_id, rows, cols, data FROM matches"):
+                    a, b = _pair(pid)
+                    na, nb = old_name.get(a), old_name.get(b)
+                    if na not in new_id or nb not in new_id:
+                        continue
+                    ia, ib = new_id[na], new_id[nb]
+                    npid = _pair_id(ia, ib)
+                    if npid in have_m:
+                        continue
+                    if data is not None and ia > ib and rows:      # the pair's order flipped: swap the columns
+                        arr = np.frombuffer(data, dtype=np.uint32).reshape(int(rows), int(cols))[:, ::-1]
+                        data = np.ascontiguousarray(arr).tobytes()
+                    con.execute("INSERT INTO matches (pair_id, rows, cols, data) VALUES (?, ?, ?, ?)",
+                                (npid, rows, cols, data))
+                    have_m.add(npid)
+                    entry["matches"] += 1
+                src_cols = [r[1] for r in s.execute("PRAGMA table_info(two_view_geometries)")]
+                cols = [c for c in g_cols if c in src_cols]
+                if "pair_id" in cols:
+                    q = "SELECT " + ", ".join(cols) + " FROM two_view_geometries"
+                    ins = ("INSERT INTO two_view_geometries (" + ", ".join(cols) + ") VALUES ("
+                           + ", ".join("?" * len(cols)) + ")")
+                    k = cols.index("pair_id")
+                    for row in s.execute(q):
+                        a, b = _pair(row[k])
+                        na, nb = old_name.get(a), old_name.get(b)
+                        if na not in new_id or nb not in new_id:
+                            continue
+                        ia, ib = new_id[na], new_id[nb]
+                        if ia > ib:                                     # geometry direction would flip
+                            continue
+                        if cams_then.get(na) != cams_now.get(na) or cams_then.get(nb) != cams_now.get(nb):
+                            continue                                    # another start camera: verify again
+                        npid = _pair_id(ia, ib)
+                        if npid in have_g:
+                            continue
+                        row = list(row)
+                        row[k] = npid
+                        con.execute(ins, row)
+                        have_g.add(npid)
+                        entry["geometries"] += 1
+            finally:
+                s.close()
+            report["matches"] += entry["matches"]
+            report["geometries"] += entry["geometries"]
+        con.commit()
+    finally:
+        con.close()
+    return report
 
 
 COLMAP_BAT_CANDIDATES = (r"D:\tools\colmap-x64-windows-nocuda\COLMAP.bat", r"D:\tools\colmap-x64-windows-cuda\COLMAP.bat",

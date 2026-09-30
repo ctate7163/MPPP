@@ -87,4 +87,27 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     d.close()
     project.settings["matching"] = summary
     project.save()
+    from .database import write_matches_record          # v0p43: what these matches were made from (match reuse)
+    try:
+        write_matches_record(project, match_settings(mode, max_num_matches=max_num_matches, max_error_px=max_error_px,
+                                                     min_num_inliers=min_num_inliers, guided_matching=guided_matching,
+                                                     max_ratio=max_ratio, max_distance=max_distance,
+                                                     cross_check=cross_check))
+    except (OSError, KeyError, ValueError) as e:        # a missing record only means no reuse next time
+        print(f"[sfm] matches record not written: {e}", flush=True)
     return summary
+
+
+def match_settings(mode: str = "exhaustive", **kwargs: Any) -> Dict[str, Any]:
+    """v0p43: the settings that decide the matches of :func:`match` (``kwargs`` as passed to it, the rest at its
+    defaults), for :func:`mppp.sfm.database.build_database` ``matching=`` (match reuse)."""
+    import inspect
+    from .database import MATCH_KEYS
+    sig = inspect.signature(match).parameters
+    out = {"mode": mode}
+    for k in MATCH_KEYS:
+        if k == "mode":
+            continue
+        v = kwargs.get(k, sig[k].default if k in sig else None)
+        out[k] = float(v) if isinstance(v, float) or k in ("max_ratio", "max_distance", "max_error_px") else v
+    return out

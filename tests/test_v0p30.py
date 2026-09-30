@@ -243,5 +243,6 @@ def test_notebook_03_results_cells_start_with_the_site_banner():
     nb = nbformat.read(str(ROOT / "notebooks" / "03_colmap_alignment.ipynb"), as_version=4)
     code_cells = [c.source for c in nb.cells if c.cell_type == "code"]
     k = next(i for i, s in enumerate(code_cells) if "def banner()" in s)
-    assert "COLMAP_DIR = WORK / \"colmap\"" in code_cells[k]
+    assert ("COLMAP_DIR = WORK / \"colmap\"" in code_cells[k]
+            or "COLMAP_DIR = project_dir(WORK, VARIANT)" in code_cells[k])     # v0p43: WORK/colmap or colmap_<variant>
     assert len(code_cells) - k - 1 >= 8 and all(s.startswith("banner()\n") for s in code_cells[k + 1:])

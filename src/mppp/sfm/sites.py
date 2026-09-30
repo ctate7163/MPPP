@@ -1,8 +1,8 @@
 """
 The Navcam sites and their notebook 03 alignments (v0p40).
 
-``SITES`` is the default site list of notebook 03 (name -> sol range of the block); notebook 03 keeps its own
-editable copy.  :func:`discover_scapes` walks ``SCAPES_ROOT`` (``D:/scapes/colmap``) for the WORK folders notebook 03
+``SITES`` is the default site list of notebook 03 (name -> sol range of the block), read from the stable site
+definitions file ``mppp/data/sites.json`` (v0p43; :func:`load_site_table`).  :func:`discover_scapes` walks ``SCAPES_ROOT`` (``D:/scapes/colmap``) for the WORK folders notebook 03
 made (``<site>_colmap``, and ``<site>_colmap_nav_zcam34`` with Mastcam-Z) and returns the ones that hold a finished
 alignment, labelled and in sol order, for notebooks 04 (camera models) and 05 (error analysis).  :func:`scan_scapes`
 returns every folder with the reason it was left out.
@@ -16,40 +16,42 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 PathLike = Union[str, Path]
 
-SITES: Dict[str, Tuple[int, int]] = {         # sol range of the Navcam (+ Mastcam-Z) block (notebook 03)
-    "butler_landing":       (   1,   14),
-    "van_zyl":              (  49,   71),
-    "rochette":             ( 178,  190),
-    "seitah_north":         ( 238,  279),
-    "sid":                  ( 361,  378),
-    "rose_river_falls":     ( 448,  450),
-    "rockytop":             ( 461,  530),
-    "enchanted_lake":       ( 556,  590),
-    "whale_mountain":       ( 606,  610),
-    "threeforks_south":     ( 652,  674),
-    "threeforks_north":     ( 680,  692),
-    "threeforks":           ( 652,  692),
-    "knob_mountain":        ( 698,  706),
-    "berea":                ( 732,  738),
-    "belva_crater":         ( 784,  815),
-    "tuxedo_park":          ( 897,  908),
-    "airey_hill":           ( 960,  991),
-    "bunsen_peak":          (1066, 1095),
-    "overlook_mountain":    (1150, 1155),
-    "pearce_canyon":        (1183, 1218),
-    "pico_turquino":        (1307, 1310),
-    "rio_chiquito":         (1333, 1337),
-    "south_arm":            (1408, 1412),
-    "bell_island":          (1451, 1467),
-    "taylorfjellet_large":  (1601, 1645),
-    "taylorfjellet":        (1606, 1625),
-    "origny_large":         (1765, 1813),
-    "origny":               (1781, 1813),
-    "olifants":             (1880, 1889),
-    "groloy":               (1922, 1934),
-    "marble_mountain":      (1965, 1979),
-    "hippo_pools":          (1947, 1955),
-}
+SITES_FILE = Path(__file__).resolve().parents[1] / "data" / "sites.json"     # v0p43: the stable site definitions
+
+
+def load_site_table(path: Optional[PathLike] = None) -> Dict[str, Any]:
+    """v0p43: the site definitions file (``mppp/data/sites.json`` by default): ``{"sites": {name: {"sols": [a, b],
+    "label", "note", "no_mask_inference_at", "settings"}}, "groups": {name: [site, ...]}}``."""
+    f = Path(path) if path else SITES_FILE
+    d = json.loads(f.read_text(encoding="utf-8"))
+    if not isinstance(d.get("sites"), dict):
+        raise ValueError(f"{f}: no 'sites' object")
+    for k, v in d["sites"].items():
+        sols = v.get("sols") if isinstance(v, dict) else v
+        if not (isinstance(sols, (list, tuple)) and len(sols) == 2):
+            raise ValueError(f"{f}: site {k!r} needs 'sols': [first, last]")
+    return d
+
+
+def load_sites(path: Optional[PathLike] = None) -> Dict[str, Tuple[int, int]]:
+    """v0p43: name -> (first sol, last sol) from the site definitions file (notebook 03 ``SITES``)."""
+    d = load_site_table(path)
+    out = {}
+    for k, v in d["sites"].items():
+        sols = v.get("sols") if isinstance(v, dict) else v
+        out[k] = (int(sols[0]), int(sols[1]))
+    return out
+
+
+def site_group(name: str, path: Optional[PathLike] = None) -> List[str]:
+    """v0p43: the sites of a group in the site definitions file (e.g. ``"nav_zcam34"``)."""
+    groups = load_site_table(path).get("groups", {})
+    if name not in groups:
+        raise KeyError(f"no site group {name!r}; groups: {sorted(groups)}")
+    return list(groups[name])
+
+
+SITES: Dict[str, Tuple[int, int]] = load_sites()   # sol range of the Navcam (+ Mastcam-Z) block (notebook 03)
 
 _WORDS = {"threeforks": "Three Forks", "seitah": "Seitah"}
 ZCAM_SUFFIX = "_colmap_nav_zcam34"
@@ -68,6 +70,16 @@ def check_sites(sites: Dict[str, Sequence[int]]) -> List[str]:
         if int(b) < int(a):
             out.append(f"{k}: sol range ({a}, {b}) ends before it starts - it selects no images")
     return out
+
+
+def work_folder(root: PathLike, site: str, zcam: bool = False) -> Path:
+    """v0p43: notebook 03's WORK folder of a site: ``<root>/<site>_colmap`` or ``<root>/<site>_colmap_nav_zcam34``."""
+    return Path(root) / (site + (ZCAM_SUFFIX if zcam else NAV_SUFFIX))
+
+
+def parse_work_folder(folder: PathLike) -> Tuple[Optional[str], bool]:
+    """v0p43: ``(site, with Mastcam-Z)`` from a WORK folder name; ``(None, False)`` for another name."""
+    return _site_of_folder(Path(folder))
 
 
 def _site_of_folder(folder: Path) -> Tuple[Optional[str], bool]:

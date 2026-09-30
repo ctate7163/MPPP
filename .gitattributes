@@ -11,3 +11,4 @@
 # package data: stored byte-for-byte (checksums of these files are recorded in run manifests)
 src/mppp/data/** -text
 tests/data/** binary
+*.bat text eol=crlf

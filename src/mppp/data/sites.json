@@ -1,0 +1,43 @@
+{
+ "_about": "MPPP site definitions: the sol range of each Navcam (+ Mastcam-Z 34 mm) block that notebook 03 aligns. Keys are the site names used in folder names (<site>_colmap, <site>_colmap_nav_zcam34). 'sols' = [first, last] sol of the block (inclusive); nearby waypoints (ADD_NEARBY_WAYPOINTS) can add other visits. 'settings' = notebook 03 overrides for this site (JSON values), applied by scripts/run_sites.py and scripts/align_scape.py. 'no_mask_inference_at' = stations (S###D####) where the mask model is off. Groups name site lists for run_sites.py --group. Edit here (or pass --sites-file); notebook 03 reads this file (SITES_FILE).",
+ "version": 1,
+ "sites": {
+  "butler_landing":      {"sols": [1, 14], "label": "Butler Landing", "note": "weak Navcam network: cameras and rig held (v0p40)", "no_mask_inference_at": [], "settings": {}},
+  "van_zyl":             {"sols": [49, 71], "label": "Van Zyl", "no_mask_inference_at": [], "settings": {}},
+  "rochette":            {"sols": [178, 190], "label": "Rochette", "no_mask_inference_at": [], "settings": {}},
+  "seitah_north":        {"sols": [238, 279], "label": "Seitah North", "no_mask_inference_at": [], "settings": {}},
+  "sid":                 {"sols": [361, 378], "label": "Sid", "note": "two rig epochs (91-101, 360-371) through nearby waypoints", "no_mask_inference_at": [], "settings": {}},
+  "rose_river_falls":    {"sols": [448, 450], "label": "Rose River Falls", "no_mask_inference_at": [], "settings": {}},
+  "rockytop":            {"sols": [461, 530], "label": "Rockytop", "note": "difficult case: winter sun, low cross-station match rate", "no_mask_inference_at": [], "settings": {}},
+  "enchanted_lake":      {"sols": [556, 590], "label": "Enchanted Lake", "no_mask_inference_at": [], "settings": {}},
+  "whale_mountain":      {"sols": [606, 610], "label": "Whale Mountain", "note": "2 stations; candidate for removal from the Navcam consensus (v0p40)", "no_mask_inference_at": [], "settings": {}},
+  "threeforks_south":    {"sols": [652, 674], "label": "Three Forks South", "note": "with nearby waypoints reaches sols 413-693 (two rig epochs: 413-433, 652-693)", "no_mask_inference_at": [], "settings": {}},
+  "threeforks":          {"sols": [652, 692], "label": "Three Forks", "note": "easy case: flat ground (Three Forks depot, sols 652-692)", "no_mask_inference_at": [], "settings": {}},
+  "threeforks_north":    {"sols": [680, 692], "label": "Three Forks North", "note": "with nearby waypoints reaches sols 413-693", "no_mask_inference_at": [], "settings": {}},
+  "knob_mountain":       {"sols": [698, 706], "label": "Knob Mountain", "no_mask_inference_at": [], "settings": {}},
+  "berea":               {"sols": [732, 738], "label": "Berea", "no_mask_inference_at": [], "settings": {}},
+  "belva_crater":        {"sols": [784, 815], "label": "Belva Crater", "no_mask_inference_at": [], "settings": {}},
+  "tuxedo_park":         {"sols": [897, 908], "label": "Tuxedo Park", "no_mask_inference_at": [], "settings": {}},
+  "airey_hill":          {"sols": [960, 991], "label": "Airey Hill", "no_mask_inference_at": [], "settings": {}},
+  "bunsen_peak":         {"sols": [1066, 1095], "label": "Bunsen Peak", "no_mask_inference_at": [], "settings": {}},
+  "overlook_mountain":   {"sols": [1150, 1155], "label": "Overlook Mountain", "note": "weak Navcam network: cameras and rig held (v0p40)", "no_mask_inference_at": [], "settings": {}},
+  "pearce_canyon":       {"sols": [1183, 1218], "label": "Pearce Canyon", "no_mask_inference_at": [], "settings": {}},
+  "pico_turquino":       {"sols": [1307, 1310], "label": "Pico Turquino", "note": "nearby waypoints reach sol 1322", "no_mask_inference_at": [], "settings": {}},
+  "rio_chiquito":        {"sols": [1333, 1337], "label": "Rio Chiquito", "no_mask_inference_at": [], "settings": {}},
+  "south_arm":           {"sols": [1408, 1412], "label": "South Arm", "note": "two rig epochs (1359-1360, 1407-1411) through nearby waypoints", "no_mask_inference_at": [], "settings": {}},
+  "bell_island":         {"sols": [1451, 1467], "label": "Bell Island", "note": "cross-station packing", "no_mask_inference_at": [], "settings": {}},
+  "taylorfjellet_large": {"sols": [1601, 1645], "label": "Taylorfjellet Large", "note": "widest LMST range", "no_mask_inference_at": [], "settings": {}},
+  "taylorfjellet":       {"sols": [1606, 1625], "label": "Taylorfjellet", "no_mask_inference_at": [], "settings": {}},
+  "origny_large":        {"sols": [1765, 1813], "label": "Origny Large", "no_mask_inference_at": [], "settings": {}},
+  "origny":              {"sols": [1781, 1813], "label": "Origny", "no_mask_inference_at": [], "settings": {}},
+  "olifants":            {"sols": [1880, 1889], "label": "Olifants", "no_mask_inference_at": [], "settings": {}},
+  "groloy":              {"sols": [1922, 1934], "label": "Groloy", "note": "weak Navcam network: cameras and rig held (v0p40)", "no_mask_inference_at": [], "settings": {}},
+  "hippo_pools":         {"sols": [1947, 1955], "label": "Hippo Pools", "no_mask_inference_at": [], "settings": {}},
+  "marble_mountain":     {"sols": [1965, 1979], "label": "Marble Mountain", "no_mask_inference_at": [], "settings": {}}
+ },
+ "groups": {
+  "navcam_consensus": ["butler_landing", "van_zyl", "rochette", "seitah_north", "sid", "rockytop", "whale_mountain", "threeforks_south", "belva_crater", "tuxedo_park", "airey_hill", "bunsen_peak", "overlook_mountain", "pearce_canyon", "pico_turquino", "rio_chiquito", "south_arm", "bell_island", "taylorfjellet", "origny", "olifants", "groloy", "marble_mountain"],
+  "nav_zcam34": ["rockytop", "threeforks", "airey_hill", "bell_island", "south_arm", "taylorfjellet", "threeforks_north", "threeforks_south"],
+  "rerun_rational": ["rochette", "belva_crater", "tuxedo_park", "airey_hill", "bunsen_peak", "rio_chiquito", "south_arm", "marble_mountain"]
+ }
+}

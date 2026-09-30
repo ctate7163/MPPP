@@ -2,6 +2,49 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.43.0 — 2026-09-30
+
+Runs without Jupyter, stable site definitions, and cheap reruns.
+- **Why.** On 30 Sep the four Nav+Zcam notebook runs showed nothing on disk after their Navcam stage. The saved notebooks still held the outputs from when the runs started, and COLMAP writes nothing until the end of a run, so it could not be told whether they were running or had stopped.
+- **Site definitions:** `src/mppp/data/sites.json`, one line per site: sols, label, note, `no_mask_inference_at`, `settings` (notebook 03 overrides for that site). It also has groups: `navcam_consensus` (the 23 joint blocks), `nav_zcam34`, `rerun_rational`.
+  - `mppp.sfm.sites.SITES`, `load_sites`, `load_site_table`, `site_group`, `work_folder`, `parse_work_folder`.
+  - Notebook 03 reads it: `SITES_FILE`, and `SITES_EXTRA` for sites of one run.
+- **Notebook 03:**
+  - `SOURCE = "processed"` aligns the images already in `WORK/processed` from its newest manifest: no PDS search, no image processing. Images deleted from `processed/images_png8` are left out.
+  - `WORK_DIR`: any WORK folder. The site and `INCLUDE_ZCAM34` follow its name.
+  - Exclusions with `WORK/exclude_images.txt` and `EXCLUDE`: stations `S032D1184`, `sol:658` or `sol:654-693`, `seq:NCAM08111`, or file-name patterns. An entry that selects no image is reported.
+  - `VARIANT = "name"` writes to `WORK/colmap_name` and starts from `colmap/`'s features and matches (`mppp.sfm.workdir`).
+  - `run_settings.json` and `run_done.json` (with `RUN_KEY`) are written in the project folder.
+- **Match reuse:**
+  - `build_database(reuse_matches_from=, matching=)` moves the old `database.db` aside and copies its matches into the new one, by image name (`database.reuse_matches`).
+  - Matches are carried over only when `database_matches.json` (written by `match`) records the same features and matching settings. COLMAP then skips those pairs.
+  - Verified two-view geometries are carried over only when both images' start cameras are unchanged. A camera-model change therefore re-verifies but does not re-match.
+  - Tested: after removing images, matching took 0 s and gave identical matches; a camera-model variant re-verified only.
+- **Headless runner** (`mppp.runner`):
+  - `run_notebook` saves the executed notebook after every cell and logs every cell and every printed `[sfm]` line to `log.txt` as it happens.
+  - `RunStatus` writes a status file with a 30 s heartbeat; a "running" status without a heartbeat for 5 min reads as stopped.
+  - `align(work, source, variant, …)` puts runs in `WORK/runs/<time>[_variant]/`, the status in `WORK/mppp_status.json`, and a one-line history in `WORK/runs/runs.txt`. It refuses to start while another run of the folder is alive.
+  - Settings are applied in this order, later winning: the site's `settings`, `WORK/mppp_settings.json`, `--settings FILE`, `--set NAME=VALUE`.
+- **Scripts:**
+  - `scripts/align_scape.py WORK` (default `--source processed`; `--variant`, `--set`, `--settings`, `--status`).
+  - `scripts/run_sites.py`:
+    - `--all`, `--group`, `--sites`, `--zcam`, `--source`, `--variant`, `--jobs`, `--then 04 05`, `--dry-run`, `--status`.
+    - One `align_scape.py` process per site.
+    - Skips sites finished with the same run key, and folders finished before 0.43; `--force` reruns them.
+  - `scripts/run_scapes.py` now uses the shared runner.
+- **Windows** (`scripts/windows/`):
+  - `align_here.bat`: copy it into a WORK folder and double-click. It runs in a minimised window; double-click again (or `align_here.bat status`) for the status.
+  - `run_all_sites.bat` (the settings are at its top) and `sites_status.bat`.
+  - `mppp_env.bat` finds the conda environment with pycolmap, pyceres and nbclient (`MPPP_HOME`, `MPPP_CONDA`, `MPPP_ENV`).
+- **Fix:** rerunning notebook 03 on an existing project after a thermal stage stopped with `KeyError: 'focus_count_range'` (the temperature-bin cameras of the last run were still in `project.json`). The project now drops them (`strip_thermal_bins`) when it is reused.
+- Tests: `tests/test_v0p43.py`.
+- Checked end to end in the cloud on 10 Navcam images of sol 1307, all through `run_sites.py` / `align_scape.py`:
+  - PDS → process → align;
+  - a rerun skipped;
+  - a processed-source rerun with exclusions;
+  - a rerun that reused every match;
+  - a rational-camera variant.
+
 ## 0.42.0 — 2026-09-30
 
 The Mastcam-Z focus model gets temperature and sol terms and a principal point that moves with focus. The data are the backlash-state focus bins (≥ 1000 observations) and 440 simultaneous stereo pairs of the Rockytop (sols 461–530), Three Forks (684–692) and Airey Hill (961–991) Navcam + Mastcam-Z blocks (MPPP 0.22). HEAD_FPA temperatures come from 86 Zcam labels, interpolated in spacecraft clock within each sol and eye. The shipped model is built by the library functions notebook 04 §5b uses. Study scripts and results: `docs/results/v0p42/zcam_focus_study/` (`build_model.py`).

@@ -37,7 +37,22 @@ Notebooks (in `notebooks/`):
 | `05_error_analysis.ipynb` | one or more alignments from 03: the error model's inputs measured from them (image precision ε, cross-station match gate vs angle and ΔLMST, decorrelation, view graph, registration) next to the values the model assumes |
 | `training/02_train_mask.ipynb` | optional: retrain the mask model from a labelled mask set |
 
-**Several sites in one run:** `scripts/run_scapes.py` runs notebook 03 for each site, then notebooks 04 (camera models) and 05 (error analysis) on the sites that finished, and logs every cell to `<root>/batch_log.txt`:
+**Without Jupyter (v0p43).** The sites and their sol ranges are in `src/mppp/data/sites.json`. Each site has its own WORK folder, `<root>/<site>_colmap` or `<site>_colmap_nav_zcam34`. Notebook 03 runs headless and writes a log and a status file.
+
+- **One WORK folder:** copy `scripts\windows\align_here.bat` into the folder that holds `processed\` and double-click it. It aligns the images already processed there with notebook 03's default settings, in a minimised window.
+  - Double-click it again to see the status.
+  - Progress is in `runs\<time>\log.txt`, and the results are in `colmap\`.
+  - The same from a prompt: `python scripts\align_scape.py <WORK>`.
+- **Every site:** `scripts\windows\run_all_sites.bat`, or `python scripts\run_sites.py --all` (also `--group nav_zcam34 --zcam`, or `--sites rockytop sid`). It selects, processes and aligns each site into its folder, one after the other.
+  - Sites already finished with the same settings are skipped.
+  - `--then 04 05` runs the camera-model and error-analysis notebooks at the end.
+  - `sites_status.bat` (or `run_sites.py --status`) lists what is running, finished, failed or stopped.
+- **Reruns redo only the alignment.** The processed images, the SIFT features and the matches are reused. So:
+  - **To leave images out,** list them in `<WORK>\exclude_images.txt`: a station `S032D1184`, `sol:658`, `seq:NCAM08111` or a file-name pattern such as `ZR0_0690_*`.
+  - **To change SfM settings,** use `<WORK>\mppp_settings.json` (`{"ATTITUDE_PRIOR_DEG": 1.0}`) or `--set NAME=VALUE`.
+  - **To try a camera model** without losing the default results, use `--variant NAME`. It writes to `<WORK>\colmap_NAME` and starts from `colmap\`'s features and matches.
+
+`scripts/run_scapes.py` (the v0p22 batch runner) still works:
 
 ```
 python scripts\run_scapes.py --sites taylorfjellet rockytop belva threeforks_south landing --zcam --reprocess ^
@@ -70,9 +85,9 @@ The pip `pycolmap` wheel for Windows is CPU-only. The conda-forge build has CUDA
 | path | content |
 |---|---|
 | `src/mppp/` | the package |
-| `src/mppp/data/` | package data: camera models (`m20_cmods/`: Metashape calibrations and the rational Navcam cameras), optical-depth table, waypoint snapshot, occlusion profiles, model registry (`models.json`) |
+| `src/mppp/data/` | package data: the site definitions (`sites.json`), camera models (`m20_cmods/`: Metashape calibrations and the rational Navcam cameras), optical-depth table, waypoint snapshot, occlusion profiles, model registry (`models.json`) |
 | `notebooks/` | the workflows above; `notebooks/training/` retrains the mask model |
-| `scripts/` | `run_scapes.py`: batch runs of notebooks 03–05 over several sites |
+| `scripts/` | `align_scape.py` (one WORK folder) and `run_sites.py` (many sites): notebook 03 without Jupyter, with logs and status (v0p43); `windows/`: `align_here.bat`, `run_all_sites.bat`, `sites_status.bat`; `run_scapes.py`: the older batch runner |
 | `docs/methods.md` | methods, conventions, equations and flagged assumptions |
 | `docs/RELEASING.md` | how to release code and models (GitHub, Hugging Face, safetensors) |
 | `tests/` | pytest suite; `tests/data/m20/` holds two public PDS products |
