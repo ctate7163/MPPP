@@ -2,6 +2,46 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.42.0 — 2026-09-30
+
+The Mastcam-Z focus model gets temperature and sol terms and a principal point that moves with focus. The data are the backlash-state focus bins (≥ 1000 observations) and 440 simultaneous stereo pairs of the Rockytop (sols 461–530), Three Forks (684–692) and Airey Hill (961–991) Navcam + Mastcam-Z blocks (MPPP 0.22). HEAD_FPA temperatures come from 86 Zcam labels, interpolated in spacecraft clock within each sol and eye. The shipped model is built by the library functions notebook 04 §5b uses. Study scripts and results: `docs/results/v0p42/zcam_focus_study/` (`build_model.py`).
+- **Mastcam-Z focal length follows the block's Navcam scale.** In the 0.22 Three Forks block the Navcam focal lengths refined +0.33 % (NR) and +0.38 % (NL), and every Mastcam-Z bin sat +0.40 % above Rockytop. The Zcam bins inherit the Navcam angular scale through the shared points. Dividing each block's Zcam f by its Navcam refined/start ratio (Rockytop 1.00025, Three Forks 1.00351, Airey Hill 1.00003) brings Three Forks to within 4 px of Rockytop (`calibration.navcam_focal_scale`, `fit_focus_model(navcam_normalise=True)`).
+- **Temperature: no measurable focal-length term.** HEAD_FPA spans −28 to −9 °C over the bins.
+  - Without the Navcam normalisation, a pooled fit gives +1.6 to +2.3 px/°C. This is the Three Forks block effect (a warmer and "longer" block), not temperature.
+  - Normalised, with the sol term: +0.15 ± 0.26 (ZL) and −0.10 ± 0.17 (ZR) px/°C.
+  - Within Rockytop: +0.34 ± 0.22 and −0.01 ± 0.14 px/°C.
+  - The model's thermal slope is 0, and the measurements are recorded in the model file.
+- **Sol: a small positive trend, provisional.** ZL +0.025 ± 0.005 px/sol (+5 ppm/sol); ZR +0.005 ± 0.005 (not significant).
+  - It is carried by Airey Hill, which sits +17.6 (ZL) and +8.6 (ZR) px above the Rockytop/Three Forks level (per-block fit).
+  - With three blocks a sol trend and a block offset cannot be told apart, and the values depend on the weighting: capping the bin weights at 5000 observations gives +0.035 and +0.021 px/sol.
+  - The model evaluates the trend at the sol clamped to 461–991 and does not extrapolate.
+- **Focus slope refit** (weights = observations; close to linear: a quadratic term would add −0.2 ± 4 px (ZL) and +5 ± 2 px (ZR) at 1000 counts from focus 600):
+
+  | eye | f at focus 600, sol 700 | slope (px/count) | was | label slope | f / label | rms |
+  |---|---|---|---|---|---|---|
+  | ZL034 | 4720.2 px | 0.0541 ± 0.0015 | 0.0463 | 0.0505 | 1.0086 | 2.6 px |
+  | ZR034 | 4723.4 px | 0.0646 ± 0.0014 | 0.0482 | 0.0461 | 1.0088 | 2.7 px |
+
+  The v0.21.1 model came from polynomial-Navcam solutions with the backlash and regular states mixed. Fitted range: ZL −400..1300, ZR −1100..1300 counts. Outside it, the bin's label f is scaled by the model's refined/label ratio, as before.
+- **Principal point against focus.** With a ~20° × 15° field, a principal point trades with the pointing, so only the right-minus-left difference is observable. It is measured as the equivalent boresight, where the left principal point's ray lands in the right image: eqx = (cxR − cxL) + fR·yaw, eqy = (cyR − cyL) − fR·pitch (`calibration.zcam_boresight_table`, `fit_zcam_boresight`: Huber, per-block offsets, bootstrap errors).
+  - eqx +2.49 ± 0.29 px and eqy +1.39 ± 0.34 px per 1000 counts: 3.2 and 1.8 px over focus 0–1300. Sigma clipping moved the eqy slope between 0.9 and 1.9, which is why the fit is now Huber.
+  - Roll +20.5 ± 3.0 mdeg per 1000 counts.
+  - No temperature term in the boresight: −0.020 ± 0.016 and 0.000 ± 0.016 px/°C.
+  - Block levels: eqx 193.0 / 192.9 / 192.2 px, eqy 11.0 / 10.7 / 12.8 px, roll −624 / −635 / −634 mdeg.
+  - The model puts the slope on ZR (ZL is the reference). Each ZR focus bin's cx, cy move from the eye's median label principal point by the slope times (bin focus − the eye's median focus in the block). The per-image label ZR principal point (−0.2 px/count in x) is an artifact that the label pointing compensates. It is not used.
+  - With free per-image poses (no `ZCAM_RIG`) the shift is absorbed by the pointing. It makes the bins consistent with one another and with a Mastcam-Z rig.
+- **Focus model file** (`m20_cmods/M2020_ZCAM034_focus_model.json`): per eye `thermal` (`T0_degC` −15, `sensor` HEAD_FPA, `f_px_per_degC`, measured values), `trend` (`sol0` 700, `f_px_per_sol`, `sol_range`), `pp` (`cx_px_per_count`, `cy_px_per_count`) and `block_offsets_px`; `stereo` (roll slope, block levels, temperature terms); the v0.21.1 values under `previous`.
+  - `project.zcam_model_focal` and `zcam_model_pp_shift` evaluate the model.
+  - `_split_by_focus` evaluates it at each bin's median focus, HEAD_FPA temperature and sol, and records `temperature_median_degC`, `sol_median`, `focus_model_terms_px` and `pp_shift_px` on the bin camera.
+  - `backlash_ratios` is unchanged (f0 / label f0 at focus 600): 1.0086 / 1.0088.
+- **Mastcam-Z temperature in the manifest.** `camera_temperature_degC` of a Zcam image is now its HEAD_FPA (`image.ZCAM_TEMPERATURE_KEY`). It is read from the label for reused manifests (`process.py`, `thermal.zcam_label_temperature`) and by `calibration.attach_pds_labels` (notebook 04 §2a). Navcam code filters on the family, so the Zcam values do not enter the Navcam thermal model.
+- **Refit tools** (notebook 04 §5b; settings `FOCUS_THERMAL`, `FOCUS_TREND`, `FOCUS_NAVCAM_NORMALISE`):
+  - `focus_table` rows carry `sol`, `temperature_degC` and `navcam_scale`.
+  - `fit_focus_model(thermal=, trend=, navcam_normalise=, T0=, sol0=, reference_focus=)` returns standard errors and `aspect`.
+  - `focus_model_json` writes a candidate model, which notebook 03 uses through `ZCAM_FOCUS_MODEL` (`SfmProject.create(zcam_focus_model_file=)`).
+  - A project records the model's SHA-256 (`settings["zcam_focus_model"]`). Notebook 03 prints a note when an existing project was built with another model; its bins are rebuilt only with `REPROCESS_ALL`.
+- Tests: `tests/test_v0p42.py`.
+
 ## 0.41.0 — 2026-09-30
 
 The Navcam consensus with first-order temperature and sol terms, the lens-term test, and an exposure rule (working notes §19):

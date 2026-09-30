@@ -282,12 +282,15 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
         for p in paths:
             m = reused.get(p.stem)
             # v0p40: also where it is None (early products: label model not interpolated to temperature)
-            if m is not None and m.get("camera_temperature_degC") is None and str(p.name)[:1] == "N":
+            if m is not None and m.get("camera_temperature_degC") is None and str(p.name)[:1] in ("N", "Z"):
                 try:
-                    from .sfm.thermal import label_temperatures
-                    t = label_temperatures(p)
-                    eye = "NL" if p.name.startswith("NL") else "NR"
-                    m["camera_temperature_degC"] = t.get("interp") if t.get("interp") is not None else t.get(eye)
+                    from .sfm.thermal import label_temperatures, zcam_label_temperature
+                    if str(p.name)[:1] == "Z":                    # v0p42: Mastcam-Z focal-plane temperature
+                        m["camera_temperature_degC"] = zcam_label_temperature(p)
+                    else:
+                        t = label_temperatures(p)
+                        eye = "NL" if p.name.startswith("NL") else "NR"
+                        m["camera_temperature_degC"] = t.get("interp") if t.get("interp") is not None else t.get(eye)
                     n_temp += 1
                 except Exception:                                  # noqa: BLE001  (a label without it)
                     m["camera_temperature_degC"] = None

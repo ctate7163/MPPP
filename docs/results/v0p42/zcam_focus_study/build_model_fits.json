@@ -1,0 +1,239 @@
+{
+ "fits": {
+  "ZL034": {
+   "group": "ZL034",
+   "reference_focus": 600.0,
+   "f0_px": 4720.202375436789,
+   "slope_px_per_count": 0.0541092780393248,
+   "slope_sd_px_per_count": 0.0014548362289711738,
+   "slope_pct_per_1000": 1.146333858923109,
+   "trend": {
+    "sol0": 700.0,
+    "f_px_per_sol": 0.025051703668971668,
+    "sd_px_per_sol": 0.0050798081723810095,
+    "sol_range": [
+     477.0,
+     965.0
+    ]
+   },
+   "navcam_normalised": true,
+   "aspect": 1.0022251160273317,
+   "rms_px": 2.6108699087135694,
+   "scape_offsets_px": {
+    "Airey Hill": 0.0,
+    "Rockytop": 0.0,
+    "Three Forks": 0.0
+   },
+   "scape_offset_sd_px": 0.0,
+   "n_bins": 39,
+   "scapes": [
+    "Airey Hill",
+    "Rockytop",
+    "Three Forks"
+   ],
+   "label": {
+    "f0_px": 4679.827660813551,
+    "slope_px_per_count": 0.05049985007149249
+   },
+   "min_focus": -1100,
+   "state": "backlash",
+   "regular_state": {
+    "bins": 2,
+    "f_over_label_median": 1.0035266968335725
+   },
+   "focus_range": [
+    -378.0,
+    1230.0
+   ]
+  },
+  "ZR034": {
+   "group": "ZR034",
+   "reference_focus": 600.0,
+   "f0_px": 4723.358845178255,
+   "slope_px_per_count": 0.06462175243435136,
+   "slope_sd_px_per_count": 0.0014444390768129742,
+   "slope_pct_per_1000": 1.3681313351899818,
+   "trend": {
+    "sol0": 700.0,
+    "f_px_per_sol": 0.005076369618842807,
+    "sd_px_per_sol": 0.004698346320393921,
+    "sol_range": [
+     484.0,
+     965.0
+    ]
+   },
+   "navcam_normalised": true,
+   "aspect": 1.0019230603927118,
+   "rms_px": 2.7157126158353377,
+   "scape_offsets_px": {
+    "Airey Hill": 0.0,
+    "Rockytop": 0.0,
+    "Three Forks": 0.0
+   },
+   "scape_offset_sd_px": 0.0,
+   "n_bins": 42,
+   "scapes": [
+    "Airey Hill",
+    "Rockytop",
+    "Three Forks"
+   ],
+   "label": {
+    "f0_px": 4682.292525214678,
+    "slope_px_per_count": 0.04611431959777594
+   },
+   "min_focus": -1100,
+   "state": "backlash",
+   "regular_state": {
+    "bins": 3,
+    "f_over_label_median": 0.9744701517996266
+   },
+   "focus_range": [
+    -1092.0,
+    1278.0
+   ]
+  }
+ },
+ "thermal_measured": {
+  "ZL034": {
+   "T0_degC": -15.0,
+   "sensor": "HEAD_FPA",
+   "f_px_per_degC": 0.14541726018688061,
+   "sd_px_per_degC": 0.2606637797032972,
+   "T_range_degC": [
+    -21.589114183832258,
+    -8.905419058954061
+   ]
+  },
+  "ZR034": {
+   "T0_degC": -15.0,
+   "sensor": "HEAD_FPA",
+   "f_px_per_degC": -0.09488941099400854,
+   "sd_px_per_degC": 0.17189529157208355,
+   "T_range_degC": [
+    -27.841911283076975,
+    -8.852348845002982
+   ]
+  }
+ },
+ "thermal_rockytop": {
+  "ZL034": {
+   "T0_degC": -15.0,
+   "sensor": "HEAD_FPA",
+   "f_px_per_degC": 0.3374110711693463,
+   "sd_px_per_degC": 0.22322928105805892,
+   "T_range_degC": [
+    -21.589114183832258,
+    -12.217981679783945
+   ]
+  },
+  "ZR034": {
+   "T0_degC": -15.0,
+   "sensor": "HEAD_FPA",
+   "f_px_per_degC": -0.004974670448722548,
+   "sd_px_per_degC": 0.13594629282589657,
+   "T_range_degC": [
+    -27.841911283076975,
+    -13.69344267443417
+   ]
+  }
+ },
+ "block_offsets": {
+  "ZL034": {
+   "Airey Hill": 17.627872388852403,
+   "Rockytop": -1.3788966175633206,
+   "Three Forks": 2.8955837049719424
+  },
+  "ZR034": {
+   "Airey Hill": 8.605216749437577,
+   "Rockytop": -0.21938564751328826,
+   "Three Forks": 0.24805471993705197
+  }
+ },
+ "boresight": {
+  "pairs": 440,
+  "eqx_px": {
+   "slope_per_count": 0.002490003264938423,
+   "sd": 0.00014375885069787354,
+   "n": 440,
+   "n_downweighted": 121,
+   "scatter": 1.1325542557163149,
+   "offsets": {
+    "Airey Hill": 192.22529646529335,
+    "Rockytop": 193.02315873558882,
+    "Three Forks": 192.92367236419963
+   },
+   "sd_boot": 0.00029497354441940373
+  },
+  "eqy_px": {
+   "slope_per_count": 0.0013867018241970896,
+   "sd": 0.00013528737997265823,
+   "n": 440,
+   "n_downweighted": 136,
+   "scatter": 1.0782247559109088,
+   "offsets": {
+    "Airey Hill": 12.819135837505918,
+    "Rockytop": 10.995108888642362,
+    "Three Forks": 10.698934337671286
+   },
+   "sd_boot": 0.00033765893447963724
+  },
+  "roll_mdeg": {
+   "slope_per_count": 0.020464109883505444,
+   "sd": 0.0014547741790125585,
+   "n": 440,
+   "n_downweighted": 108,
+   "scatter": 12.134286383871535,
+   "offsets": {
+    "Airey Hill": -634.0963337500713,
+    "Rockytop": -623.5220166417786,
+    "Three Forks": -635.3785141434273
+   },
+   "sd_boot": 0.003014378587983463
+  }
+ },
+ "boresight_thermal": {
+  "pairs": 440,
+  "eqx_px": {
+   "slope_per_count": 0.002524691464598925,
+   "sd": 0.00014639312208817036,
+   "n": 440,
+   "n_downweighted": 118,
+   "scatter": 1.1450880804424035,
+   "offsets": {
+    "Airey Hill": 192.29430907249576,
+    "Rockytop": 192.9732466964433,
+    "Three Forks": 193.02456039312142
+   },
+   "per_degC": -0.020295693768509437,
+   "sd_per_degC": 0.01641936462242771
+  },
+  "eqy_px": {
+   "slope_per_count": 0.0013869441627607157,
+   "sd": 0.00013676862009610774,
+   "n": 440,
+   "n_downweighted": 136,
+   "scatter": 1.0771649912625008,
+   "offsets": {
+    "Airey Hill": 12.819311305862186,
+    "Rockytop": 10.995187802127315,
+    "Three Forks": 10.699104814085022
+   },
+   "per_degC": -4.707582745913609e-05,
+   "sd_per_degC": 0.01585898064135019
+  },
+  "roll_mdeg": {
+   "slope_per_count": 0.019902940158750587,
+   "sd": 0.0014509768150195426,
+   "n": 440,
+   "n_downweighted": 109,
+   "scatter": 12.055565284842187,
+   "offsets": {
+    "Airey Hill": -636.0284844037304,
+    "Rockytop": -622.5308946198616,
+    "Three Forks": -637.5412751835366
+   },
+   "per_degC": 0.4334583590839415,
+   "sd_per_degC": 0.1701104010798477
+  }
+ }
+}

@@ -495,3 +495,19 @@ The consensus v0p41 therefore has f(T), NL cx(T), and a rig with the drift only.
 All three stay.
 
 **Exposure brackets.** The NCAM08111 depot sequence (sols 654–693) repeats each view at ~2, ~18 and ~50–65 ms. The long member has a dark blue centre: half the centre radiance of its bracket partners, and B/R 1.74× the edge. Its label exposure is probably not what the detector saw. It is now skipped by `max_exposure_ms = 40`, with an image check (`max_centre_tint = 1.2`) as a backstop.
+
+## 20. Mastcam-Z focus model: temperature, sol and principal point (v0p42, 30 Sep 2026)
+
+**Data.** The three MPPP 0.22 Navcam + Mastcam-Z blocks (Rockytop, sols 461–530; Three Forks, 684–692; Airey Hill, 961–991) supply 945 Zcam images, 150 focus bins and 440 simultaneous stereo pairs. HEAD_FPA (the focal-plane sensor) was read from 86 labels and interpolated in spacecraft clock within each sol and eye. Over the images it runs from −31 to −8 °C; within a 20-minute sequence it changes by 1–2 °C.
+
+**The Zcam focal length follows the block's Navcam scale.** In the Three Forks block the Navcam focal lengths refined 0.35 % above their start, and every Zcam bin sat 0.40 % above the Rockytop line. A Zcam bin in a joint block is tied to the Navcam angular scale through the shared points. With the Navcam scale divided out, Three Forks falls within 4 px of Rockytop.
+
+**Temperature.** Pooled across blocks without that correction, f seems to rise 1.6–2.3 px/°C, because the warm block (Three Forks) is also the "long" one. With the correction, and within Rockytop alone, the slope is 0 within ±0.2–0.3 px/°C. The thermal slope is kept at 0.
+
+**Sol.** Airey Hill sits +18 (ZL) and +9 (ZR) px above the others. As a trend this is +0.025 ± 0.005 (ZL) and +0.005 ± 0.005 (ZR) px/sol. With three blocks it cannot be told apart from an Airey Hill offset, and it changes with the weighting. It is used only inside sols 461–991.
+
+**Focus slope.** 0.0541 (ZL) and 0.0646 (ZR) px/count, against 0.0463 / 0.0482 before. The old fit mixed focus states and used the polynomial Navcam.
+
+**Principal point.** Only the right-minus-left boresight is observable with this field; an absolute principal point trades with pointing. It moves with focus by +2.5 ± 0.3 px (x) and +1.4 ± 0.3 px (y) per 1000 counts, with roll +20 ± 3 mdeg per 1000 counts, and has no temperature term. It is put on ZR. The ZR label principal point swings −0.2 px/count, but that is an artifact that the label pointing cancels.
+
+**Next.** Refit with the four new Nav+Zcam blocks (South Arm, Taylorfjellet at sols ~1600, Three Forks North and South) with notebook 04 §5b. Taylorfjellet tests the sol trend outside 461–991. §5b divides out each block's Navcam scale either way.

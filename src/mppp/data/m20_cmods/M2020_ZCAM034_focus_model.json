@@ -1,33 +1,168 @@
 {
  "cameras": {
   "ZL034": {
+   "f0_px": 4720.202375436789,
+   "reference_focus": 600.0,
+   "slope_px_per_count": 0.0541092780393248,
+   "aspect": 1.0022251160273317,
+   "fit_rms_px": 2.6108699087135694,
+   "focus_range": [
+    -400,
+    1300
+   ],
+   "label_f0_px": 4679.827660813551,
+   "label_slope_px_per_count": 0.05049985007149249,
+   "trend": {
+    "sol0": 700.0,
+    "f_px_per_sol": 0.025051703668971668,
+    "sd_px_per_sol": 0.0050798081723810095,
+    "sol_range": [
+     461,
+     991
+    ],
+    "note": "3 blocks (sols 461-530, 684-692, 961-991); carried by the Airey Hill offset; evaluated at the sol clamped to sol_range (no extrapolation); provisional"
+   },
+   "pp": {
+    "cx_px_per_count": 0.0,
+    "cy_px_per_count": 0.0,
+    "note": "reference eye: the right-minus-left difference is carried by ZR"
+   },
+   "f0_sd_px": null,
+   "slope_sd_px_per_count": 0.0014548362289711738,
+   "n_bins": 39,
+   "thermal": {
+    "T0_degC": -15.0,
+    "sensor": "HEAD_FPA",
+    "f_px_per_degC": 0.0,
+    "measured_px_per_degC": [
+     0.14541726018688061,
+     0.2606637797032972
+    ],
+    "measured_within_rockytop_px_per_degC": [
+     0.3374110711693463,
+     0.22322928105805892
+    ],
+    "T_range_degC": [
+     -21.589114183832258,
+     -8.905419058954061
+    ],
+    "note": "not significant once each block's Navcam focal scale is divided out; held at 0"
+   },
+   "block_offsets_px": {
+    "Airey Hill": 17.627872388852403,
+    "Rockytop": -1.3788966175633206,
+    "Three Forks": 2.8955837049719424
+   }
+  },
+  "ZR034": {
+   "f0_px": 4723.358845178255,
+   "reference_focus": 600.0,
+   "slope_px_per_count": 0.06462175243435136,
+   "aspect": 1.0019230603927118,
+   "fit_rms_px": 2.7157126158353377,
+   "focus_range": [
+    -1100,
+    1300
+   ],
+   "label_f0_px": 4682.292525214678,
+   "label_slope_px_per_count": 0.04611431959777594,
+   "trend": {
+    "sol0": 700.0,
+    "f_px_per_sol": 0.005076369618842807,
+    "sd_px_per_sol": 0.004698346320393921,
+    "sol_range": [
+     461,
+     991
+    ],
+    "note": "3 blocks (sols 461-530, 684-692, 961-991); carried by the Airey Hill offset; evaluated at the sol clamped to sol_range (no extrapolation); provisional"
+   },
+   "pp": {
+    "cx_px_per_count": 0.002490003264938423,
+    "cy_px_per_count": 0.0013867018241970896,
+    "sd_boot_px_per_count": [
+     0.00029497354441940373,
+     0.00033765893447963724
+    ],
+    "note": "right-minus-left equivalent boresight against focus (Huber, per-block offsets, 440 stereo pairs), put on ZR; about the eye's median focus in the block"
+   },
+   "f0_sd_px": null,
+   "slope_sd_px_per_count": 0.0014444390768129742,
+   "n_bins": 42,
+   "thermal": {
+    "T0_degC": -15.0,
+    "sensor": "HEAD_FPA",
+    "f_px_per_degC": 0.0,
+    "measured_px_per_degC": [
+     -0.09488941099400854,
+     0.17189529157208355
+    ],
+    "measured_within_rockytop_px_per_degC": [
+     -0.004974670448722548,
+     0.13594629282589657
+    ],
+    "T_range_degC": [
+     -27.841911283076975,
+     -8.852348845002982
+    ],
+    "note": "not significant once each block's Navcam focal scale is divided out; held at 0"
+   },
+   "block_offsets_px": {
+    "Airey Hill": 8.605216749437577,
+    "Rockytop": -0.21938564751328826,
+    "Three Forks": 0.24805471993705197
+   }
+  }
+ },
+ "state": "backlash",
+ "pixel_mm": 0.0074,
+ "units": "full-frame pixels (1648 x 1200); f = f0_px + slope_px_per_count (focus - reference_focus) + thermal.f_px_per_degC (T_FPA - thermal.T0_degC) + trend.f_px_per_sol (clamp(sol, trend.sol_range) - trend.sol0); fy/fx = aspect; cx, cy + pp.c*_px_per_count (bin focus - the eye's median focus in the block) (mppp.sfm.project.zcam_model_focal, zcam_model_pp_shift)",
+ "source": "MPPP v0p42 (docs/results/v0p42/zcam_focus_study/build_model.py): backlash-state focus bins (>= 1000 observations, focus >= -1100, weights = observations) of the Rockytop (sols 461-530), Three Forks (684-692) and Airey Hill (961-991) Navcam + Mastcam-Z blocks (MPPP 0.22), each block's Mastcam-Z f divided by its Navcam focal scale (refined / start: Rockytop 1.00025, Three Forks 1.00351, Airey Hill 1.00003); HEAD_FPA temperatures from the labels. Replaces the v0.21.1 model (polynomial Navcam, focus states mixed).",
+ "stereo": {
+  "roll_mdeg_per_count": 0.020464109883505444,
+  "roll_sd_boot": 0.003014378587983463,
+  "eqx_px_block": {
+   "Airey Hill": 192.22529646529335,
+   "Rockytop": 193.02315873558882,
+   "Three Forks": 192.92367236419963
+  },
+  "eqy_px_block": {
+   "Airey Hill": 12.819135837505918,
+   "Rockytop": 10.995108888642362,
+   "Three Forks": 10.698934337671286
+  },
+  "roll_mdeg_block": {
+   "Airey Hill": -634.0963337500713,
+   "Rockytop": -623.5220166417786,
+   "Three Forks": -635.3785141434273
+  },
+  "per_degC": {
+   "eqx_px": [
+    -0.020295693768509437,
+    0.01641936462242771
+   ],
+   "eqy_px": [
+    -4.707582745913609e-05,
+    0.01585898064135019
+   ],
+   "roll_mdeg": [
+    0.4334583590839415,
+    0.1701104010798477
+   ]
+  },
+  "note": "information; Mastcam-Z has no rig by default (notebook 03 ZCAM_RIG)"
+ },
+ "previous": {
+  "ZL034": {
    "f0_px": 4723.2701,
    "reference_focus": 610.68,
    "slope_px_per_count": 0.04628,
-   "aspect": 1.001961,
-   "fit_rms_px": 4.97,
-   "label_f0_px": 4680.36,
-   "label_slope_px_per_count": 0.050553,
-   "focus_range": [
-    -2000,
-    1300
-   ]
+   "aspect": 1.001961
   },
   "ZR034": {
    "f0_px": 4734.2445,
    "reference_focus": 653.8,
    "slope_px_per_count": 0.048217,
-   "aspect": 1.001672,
-   "fit_rms_px": 2.65,
-   "label_f0_px": 4684.89,
-   "label_slope_px_per_count": 0.046798,
-   "focus_range": [
-    -2000,
-    1300
-   ]
+   "aspect": 1.001672
   }
- },
- "units": "full-frame pixels (1648 x 1200); f = f0_px + slope_px_per_count * (focus - reference_focus); fy/fx = aspect",
- "pixel_mm": 0.0074,
- "source": "MPPP notebook 05 (v0.21.1): focal length of the refined Mastcam-Z 34 mm focus bins (>= 1000 observations, focus >= -2000 counts) of the Three Forks (sols 684-693) and Rockytop (461-530) Navcam + Mastcam-Z solutions, fitted with one offset per scape (offsets +-3-7 px). These solutions used the polynomial Navcam model (MPPP 0.15); refit with notebook 05 after new runs. The label (CAHVOR) focal lengths are about 1 % shorter at the same focus."
+ }
 }

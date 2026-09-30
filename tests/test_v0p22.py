@@ -135,7 +135,7 @@ def test_focus_model_start_and_hold():
     from mppp.sfm.project import ZCAM_HOLD_F_IMAGES, _split_by_focus, zcam_focus_model
     m = zcam_focus_model()
     g = m["cameras"]["ZL034"]
-    assert ZCAM_HOLD_F_IMAGES == 2 and g["focus_range"] == [-2000, 1300]
+    assert ZCAM_HOLD_F_IMAGES == 2 and g["focus_range"][0] <= -400 and g["focus_range"][1] == 1300   # v0p42 range
     base = {"model": "FULL_OPENCV", "params": [4680.0, 4680.0, 824, 600, -0.02, 0.0, 0, 0, 0, 0, 0, 0],
             "source": "median label CAHVOR", "fixed_params": []}
     rows = []

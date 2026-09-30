@@ -29,6 +29,7 @@ PathLike = Union[str, Path]
 
 # Full detector frame (width, height) at full resolution, by camera family.
 FULL_FRAME = {"N": (5120, 3840), "F": (5120, 3840), "R": (5120, 3840), "Z": (1648, 1200)}
+ZCAM_TEMPERATURE_KEY = "HEAD_FPA"  # v0p42: Mastcam-Z camera temperature (focal plane) in INSTRUMENT_TEMPERATURE_NAME
 LANDING_SITE = 3            # M2020 site index of the landing frame used as world origin
 
 
@@ -454,13 +455,27 @@ class MPPPImage:
     def camera_temperature_degC(self) -> Optional[float]:
         """v0p30: the temperature the label camera model was interpolated to (Navcam: the camera plate,
         ``GEOMETRIC_CAMERA_MODEL.INTERPOLATION_VALUE`` when ``INTERPOLATION_METHOD = TEMPERATURE``); v0p40: else the
-        eye's ``NAVCAM_LEFT_CAL`` / ``NAVCAM_RIGHT_CAL`` temperature; None otherwise."""
+        eye's ``NAVCAM_LEFT_CAL`` / ``NAVCAM_RIGHT_CAL`` temperature; v0p42: Mastcam-Z, the focal-plane temperature
+        (``HEAD_FPA``); None otherwise."""
         m = getattr(self.camera_model_label, "meta", None) or {}
         if str(m.get("interpolation") or "").upper() == "TEMPERATURE":
             try:
                 return float(m.get("interpolation_value"))
             except (TypeError, ValueError):
                 pass
+        # v0p42: Mastcam-Z: the focal-plane (camera head) temperature, HEAD_FPA (the label model is interpolated
+        # to zoom, not temperature)
+        if str(self.fn.stem)[:1] == "Z":
+            try:
+                from .labels import label_get
+                names = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
+                vals = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
+                for k, v in zip(names, vals):
+                    if str(k) == ZCAM_TEMPERATURE_KEY:
+                        return float(getattr(v, "value", v))
+            except Exception:                                   # noqa: BLE001
+                return None
+            return None
         # v0p40: products made before the camera models were interpolated to temperature (early mission, e.g. sol
         # 54 with INTERPOLATION_METHOD = NONE) still record the camera temperature: the eye's NAVCAM_*_CAL sensor
         if str(self.fn.stem)[:1] == "N":

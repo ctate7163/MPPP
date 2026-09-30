@@ -77,6 +77,22 @@ def label_temperatures(path: PathLike) -> Dict[str, Optional[float]]:
     return {"NL": t.get(LEFT_KEY), "NR": t.get(RIGHT_KEY), "interp": interp}
 
 
+def zcam_label_temperature(path: PathLike, key: str = "HEAD_FPA") -> Optional[float]:
+    """v0p42: the Mastcam-Z camera temperature of one PDS product (label only): the focal-plane sensor ``HEAD_FPA``
+    (also recorded: ``DEA``, ``HEAD_HTR_1``, ``HEAD_HTR_2``), degC; None without it."""
+    from ..labels import label_get, read_pds
+    L, _ = read_pds(path, load_image=False)
+    names = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
+    vals = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
+    for k, v in zip(names, vals):
+        if str(k) == key:
+            try:
+                return float(getattr(v, "value", v))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 def _sol_sclk(stem: str) -> Tuple[int, float]:
     from ..filenames import parse_filename
     fn = parse_filename(stem + ".IMG")

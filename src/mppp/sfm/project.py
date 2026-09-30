@@ -251,7 +251,8 @@ class SfmProject:
                zcam_bin_refine: str = "focal", zcam_rig: bool = False,
                navcam_distortion: str = NAVCAM_DISTORTION, zcam_hold_f_images: int = ZCAM_HOLD_F_IMAGES,
                navcam_rig: str = NAVCAM_RIG, navcam_cameras: Optional[PathLike] = None,
-               zcam_zero_terms: Optional[Sequence[str]] = None) -> "SfmProject":
+               zcam_zero_terms: Optional[Sequence[str]] = None,
+               zcam_focus_model_file: Optional[PathLike] = None) -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -285,6 +286,9 @@ class SfmProject:
         matches the shipped rational cameras); the translation (the stereo
         baseline, which sets the scale) stays the project's CAHV value.
         ``"cahv"``: both from the label CAHV pairs (before v0p22).
+        ``zcam_focus_model_file`` (v0p42): a focus-model JSON to use instead of the shipped
+        ``m20_cmods/M2020_ZCAM034_focus_model.json`` (e.g. the candidate notebook 04 §5b writes); the
+        project records its path and SHA-256 (``settings["zcam_focus_model"]``).
         ``zcam_hold_f_images`` (v0p22, default 2): with ``"focus_model"``, bins of
         at most this many images hold their focal length at the model value
         (a bin of one or two images constrains it poorly: it scattered by
@@ -458,10 +462,16 @@ class SfmProject:
             if (cam["width"], cam["height"]) != FULL_FRAME[fam]:
                 raise ValueError(f"{xml.name} is {cam['width']}x{cam['height']}, expected the full frame {FULL_FRAME[fam]}")
             cameras[instr] = cam
+        focus_info = None
         if zcam_focus_bin:
+            fmodel = None
+            if zcam_intrinsics == "focus_model":
+                fmodel = (json.loads(Path(zcam_focus_model_file).read_text(encoding="utf-8")) if zcam_focus_model_file
+                          else zcam_focus_model(xml_dir))
+                focus_info = {"file": str(zcam_focus_model_file) if zcam_focus_model_file else "shipped",
+                              "fingerprint": zcam_focus_model_fingerprint(zcam_focus_model_file, xml_dir)}
             cameras = _split_by_focus(images, cameras, instruments, float(zcam_focus_bin), zcam_bin_refine,
-                                      zcam_focus_model(xml_dir) if zcam_intrinsics == "focus_model" else None,
-                                      int(zcam_hold_f_images))
+                                      fmodel, int(zcam_hold_f_images))
 
         _align_priors_to_cameras(images, cameras)
         rig = _rig_from_pairs([r for r in images if zcam_rig or instruments.get(r["camera_group"]) != "Z"])
@@ -490,6 +500,7 @@ class SfmProject:
                     "zcam_zero_terms": None if zcam_zero_terms is None else list(zcam_zero_terms),
                     "processed_dir": str(processed_dir), "zcam_intrinsics": zcam_intrinsics,
                     "zcam_hold_f_images": int(zcam_hold_f_images) if zcam_intrinsics == "focus_model" else None,
+                    "zcam_focus_model": focus_info,
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
                     "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
                     "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
@@ -546,18 +557,53 @@ def zcam_focus_model(xml_dir: Optional[PathLike] = None) -> Dict[str, Any]:
     return json.loads(f.read_text(encoding="utf-8"))
 
 
+def zcam_model_focal(gm: Dict[str, Any], focus: float, T: Optional[float] = None,
+                     sol: Optional[float] = None) -> Tuple[float, Dict[str, float]]:
+    """v0p42: focal length [px] of one eye's focus model (``zcam_focus_model()["cameras"][group]``) at ``focus``
+    (motor counts), focal-plane temperature ``T`` (degC; the thermal term needs it) and ``sol`` (the trend term is
+    evaluated at the sol clamped to the model's ``sol_range``).  Returns (f, {"focus", "thermal", "trend"} terms)."""
+    terms = {"focus": float(gm["slope_px_per_count"]) * (float(focus) - float(gm["reference_focus"]))}
+    th = gm.get("thermal") or {}
+    terms["thermal"] = (float(th.get("f_px_per_degC") or 0.0) * (float(T) - float(th.get("T0_degC", 0.0)))
+                        if T is not None and th else 0.0)
+    tr = gm.get("trend") or {}
+    if sol is not None and tr and tr.get("f_px_per_sol"):
+        lo, hi = tr.get("sol_range") or (-np.inf, np.inf)
+        terms["trend"] = float(tr["f_px_per_sol"]) * (float(np.clip(float(sol), lo, hi)) - float(tr.get("sol0", 0.0)))
+    else:
+        terms["trend"] = 0.0
+    return float(gm["f0_px"]) + sum(terms.values()), terms
+
+
+def zcam_model_pp_shift(gm: Optional[Dict[str, Any]], focus: Optional[float],
+                        focus_ref: Optional[float]) -> Tuple[float, float]:
+    """v0p42: the principal-point shift (dcx, dcy) [px] of a focus bin at ``focus`` relative to ``focus_ref`` (the
+    eye's median focus in the block, where the camera starts at the median label principal point).  Only the
+    right-minus-left difference is observable with the narrow Mastcam-Z field (the absolute one trades with pointing);
+    the shipped model puts it on ZR."""
+    pp = (gm or {}).get("pp") or {}
+    if focus is None or focus_ref is None or not pp:
+        return 0.0, 0.0
+    d = float(focus) - float(focus_ref)
+    return float(pp.get("cx_px_per_count") or 0.0) * d, float(pp.get("cy_px_per_count") or 0.0) * d
+
+
 def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, Any]], families: Dict[str, str],
                     width: float, refine: str, model: Optional[Dict[str, Any]] = None,
                     hold_f_images: int = 0) -> Dict[str, Dict[str, Any]]:
     """Replace each Mastcam-Z camera by one camera per focus bin (see ``SfmProject.create``).  ``model``: the
     focal-length model (:func:`zcam_focus_model`); bins then start from it, and bins of at most ``hold_f_images``
-    images hold f there."""
+    images hold f there.  v0p42: the model's temperature and sol terms are evaluated at the bin's median focal-plane
+    temperature (``camera_temperature_degC`` of Mastcam-Z images, HEAD_FPA) and sol, and its principal-point slope
+    moves the bin's cx, cy from the eye's median label principal point (:func:`zcam_model_pp_shift`)."""
     out = {k: c for k, c in cameras.items() if families.get(k) != "Z"}
     for group in sorted(k for k in cameras if families.get(k) == "Z"):
         base = cameras[group]
         rows = [r for r in images if r["camera_group"] == group]
         bins = focus_bins([r["focus_count"] for r in rows], width)
         gm = (model or {}).get("cameras", {}).get(group)
+        all_counts = [r["focus_count"] for r in rows if r["focus_count"] is not None]
+        focus_ref = float(np.median(all_counts)) if all_counts else None
         for b in sorted(set(bins)):
             members = [r for r, bb in zip(rows, bins) if bb == b]
             counts = [r["focus_count"] for r in members if r["focus_count"] is not None]
@@ -565,20 +611,30 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
             key = f"{group}_{_focus_tag(med)}"
             params = list(map(float, base["params"]))
             fl = [r["label_f_px"] for r in members if r.get("label_f_px") is not None]
+            Ts = [float(r["camera_temperature_degC"]) for r in members if r.get("camera_temperature_degC") is not None]
+            Tb = float(np.median(Ts)) if Ts else None
+            sols = [float(r["sol"]) for r in members if r.get("sol") is not None]
+            Sb = float(np.median(sols)) if sols else None
             fixed = list(ZCAM_BIN_HELD) if refine == "focal" else []
             lo, hi = (gm or {}).get("focus_range", [-np.inf, np.inf])
+            extra = {}
             if gm and med is not None and not (lo <= med <= hi) and fl and gm.get("label_f0_px"):
                 # outside the fitted focus range: the bin's label f, scaled by the model's refined/label ratio
-                f = float(np.median(fl)) * float(gm["f0_px"]) / float(gm["label_f0_px"])
+                f_ref, terms = zcam_model_focal(gm, float(gm["reference_focus"]), Tb, Sb)
+                ratio = f_ref / float(gm["label_f0_px"])
+                f = float(np.median(fl)) * ratio
                 a = float(gm.get("aspect", 1.0))
                 params[0], params[1] = f / np.sqrt(a), f * np.sqrt(a)
                 src = (f"{base['source']}; focus bin {key} ({len(members)} images, focus outside the model's "
-                       f"range {lo:g}..{hi:g}: label f x {float(gm['f0_px']) / float(gm['label_f0_px']):.4f})")
+                       f"range {lo:g}..{hi:g}: label f x {ratio:.4f})")
+                extra = {"focus_model_terms_px": {k: v for k, v in terms.items() if k != "focus"}}
             elif gm and med is not None:
-                f = float(gm["f0_px"] + gm["slope_px_per_count"] * (med - gm["reference_focus"]))
+                f, terms = zcam_model_focal(gm, med, Tb, Sb)
                 a = float(gm.get("aspect", 1.0))
                 params[0], params[1] = f / np.sqrt(a), f * np.sqrt(a)
-                src = f"{base['source']}; focus bin {key} ({len(members)} images, f from the focus model)"
+                src = f"{base['source']}; focus bin {key} ({len(members)} images, f from the focus model"
+                src += "".join(f", {k} {v:+.1f} px" for k, v in terms.items() if k != "focus" and v) + ")"
+                extra = {"focus_model_terms_px": terms}
                 if len(members) <= hold_f_images:
                     fixed = sorted(set(fixed) | {"fx", "fy"}, key=FULL_OPENCV_NAMES.index)
                     src += f"; f held (<= {hold_f_images} images)"
@@ -588,9 +644,16 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                 src = f"{base['source']}; focus bin {key} ({len(members)} images, f from the bin's labels)"
             else:
                 src = f"{base['source']}; focus bin {key}"
+            # v0p42: principal point against focus (the model's right-minus-left slope, about the eye's median focus)
+            dcx, dcy = zcam_model_pp_shift(gm, med, focus_ref)
+            if dcx or dcy:
+                params[2] += dcx
+                params[3] += dcy
+                src += f"; cx, cy {dcx:+.2f}, {dcy:+.2f} px (focus model pp slope about focus {focus_ref:.0f})"
+                extra["pp_shift_px"] = [dcx, dcy]
             cam = dict(base, params=params, group=group, focus_count_median=med,
                        focus_count_range=[min(counts), max(counts)] if counts else None, n_images=len(members),
-                       fixed_params=fixed, source=src)
+                       fixed_params=fixed, source=src, temperature_median_degC=Tb, sol_median=Sb, **extra)
             cam.pop("label_f_spread_px", None)
             if len(fl) > 1:
                 cam["label_f_spread_px"] = float(np.ptp(fl))
@@ -755,6 +818,20 @@ def start_rig_rotation(shipped: Dict[str, Any], T_median: Optional[float], sol_m
         applied["drift"] = {**dr, "sol_median": float(sol_median),
                             "offset_mdeg": {"pitch": off[0], "yaw": off[1], "roll": off[2]}}
     return R, applied
+
+
+def zcam_focus_model_fingerprint(path: Optional[PathLike] = None, xml_dir: Optional[PathLike] = None) -> str:
+    """v0p42: SHA-256 of the Mastcam-Z focus model file in use (``path``, else the one :func:`zcam_focus_model`
+    reads), so that notebook 03 can tell when a project was built with another model."""
+    import hashlib
+    if path:
+        f = Path(path)
+    else:
+        d = Path(xml_dir) if xml_dir else data_dir() / "m20_cmods"
+        f = d / ZCAM_FOCUS_MODEL
+        if not f.is_file():
+            f = data_dir() / "m20_cmods" / ZCAM_FOCUS_MODEL
+    return hashlib.sha256(f.read_bytes()).hexdigest()
 
 
 def navcam_cameras_fingerprint(folder) -> Optional[str]:

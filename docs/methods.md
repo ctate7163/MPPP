@@ -237,3 +237,12 @@ A, H and V are rescaled together to |A| = 1, which does not change the projectio
 - Per focus group (eye, sol, sequence, focus count): the observation-weighted median of fitted f / label f is taken. Its standard error is the larger of the combined formal errors (floor 0.1 %) and the images' scatter.
 - The group is compared with the midpoint between 1 and the focus model's f0 / label f0, and needs |z| > 3 to be decided.
 - Regular groups get a camera per focus bin that starts at the median label f. The block is then re-adjusted with the Navcam cameras held and the Mastcam-Z bins free as configured.
+
+**Mastcam-Z focus model with temperature, sol and principal point** (v0p42, `calibration.fit_focus_model`, `zcam_boresight_table`, `fit_zcam_boresight`, `project.zcam_model_focal`, `zcam_model_pp_shift`).
+- Data: the refined focus-bin cameras of the backlash state with ≥ 1000 observations, one row per bin (median focus, median sol, median HEAD_FPA temperature of its images).
+- Each block's Mastcam-Z focal lengths are divided by its Navcam focal scale, the mean over the Navcam cameras of refined / start focal length. The Zcam bins inherit the Navcam angular scale through the shared points.
+- Model: f = f0 + a (focus − 600) + b (T_FPA + 15 °C) + c (sol − 700). Weighted least squares with weights = observations, and no per-block constants (a block's constant would absorb its temperature and sol). A term is kept at 0 in the shipped model when it is not significant.
+- The trend term is evaluated at the sol clamped to the fitted range.
+- Principal point: for every simultaneous stereo pair, the equivalent boresight is eqx = (cxR − cxL) + fR·yaw and eqy = (cyR − cyL) − fR·pitch, with yaw and pitch those of the refined right-from-left rotation. This is where the left principal point's ray lands in the right image, with parallax left out. With a ~20° field an absolute principal point trades with the pointing, so only this difference is observable.
+- The boresight fit: eqx, eqy and the roll are regressed on the pair's mean focus with one constant per block, by Huber IRLS (k = 1.345 robust σ). Standard errors come from 300 bootstrap resamples of the pairs; they are about twice the formal ones because pairs of one sequence are correlated.
+- The slopes are assigned to ZR, with ZL as the reference. A ZR bin's cx, cy are moved from the eye's median label principal point by slope × (bin focus − the eye's median focus in the block).

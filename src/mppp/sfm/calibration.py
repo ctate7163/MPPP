@@ -701,12 +701,18 @@ def focus_table(sols: Dict[str, Solution], min_observations: int = 0) -> List[Di
     start = label median of the bin, per-image label spread), images, observations."""
     rows = []
     for n, s in sols.items():
+        nscale = navcam_focal_scale(s)
         for c in s.cameras.values():
             if c.family != "Z" or c.n_obs < min_observations:
                 continue
-            lab = [float(r["label_f_px"]) for r in s.images.values()
-                   if r["instrument"] == c.key and r.get("label_f_px") is not None]
+            mem = [r for r in s.images.values() if r["instrument"] == c.key]
+            lab = [float(r["label_f_px"]) for r in mem if r.get("label_f_px") is not None]
+            # v0p42: the bin's median sol and focal-plane temperature (HEAD_FPA; manifest or project record), and
+            # the block's Navcam focal scale (the Mastcam-Z focal lengths follow it through the shared points)
+            sl = [float(r["sol"]) for r in mem if r.get("sol") is not None]
+            T = camera_temperature(s, c)
             rows.append({"scape": n, "camera": c.key, "group": c.group, "focus": c.focus, "images": c.n_images,
+                         "sol": float(np.median(sl)) if sl else None, "temperature_degC": T, "navcam_scale": nscale,
                          # v0p40: the focus state of the camera (mppp.sfm.backlash: "<bin>_reg" = regular)
                          "state": "regular" if str(c.key).endswith("_reg") else "backlash",
                          "observations": c.n_obs, "refined": c.refined,
@@ -719,9 +725,20 @@ def focus_table(sols: Dict[str, Solution], min_observations: int = 0) -> List[Di
     return sorted(rows, key=lambda r: (r["group"], r["scape"], r["focus"] if r["focus"] is not None else 0))
 
 
+def navcam_focal_scale(sol: Solution) -> Optional[float]:
+    """v0p42: the block's Navcam focal scale, refined / start focal length averaged over the Navcam cameras with
+    observations (1.0 when they were held); None without Navcam cameras.  A Mastcam-Z focus bin of a Navcam +
+    Mastcam-Z block inherits this scale through the shared 3-D points (Three Forks, MPPP 0.22: +0.35 % in both)."""
+    r = [float(np.sqrt(c.params[0] * c.params[1]) / np.sqrt(c.initial[0] * c.initial[1]))
+         for c in sol.cameras.values() if c.family == "N" and c.n_obs > 0]
+    return float(np.mean(r)) if r else None
+
+
 def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: int = 2000,
                     per_scape_offset: bool = True, min_focus: Optional[float] = -2000.0,
-                    state: Optional[str] = "backlash") -> Optional[Dict[str, Any]]:
+                    state: Optional[str] = "backlash", thermal: bool = False, trend: bool = False,
+                    navcam_normalise: bool = False, T0: float = -15.0, sol0: float = 700.0,
+                    reference_focus: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """
     f = f0 + a (focus - ref) [+ a constant per scape] fitted to the refined bins of
     ``group`` with at least ``min_observations`` (weights = observations).  The
@@ -731,6 +748,12 @@ def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: in
     there are few of them and they scatter far from the line.  ``state`` (v0p40): only the bins of that focus
     state (``"backlash"``, the dominant state; the regular-state ``<bin>_reg`` cameras sit about 1 % lower, at the
     label, and are summarised in ``regular_state``); None: all bins.
+
+    v0p42: ``thermal`` adds b (T - ``T0``) with the bin's focal-plane temperature (HEAD_FPA, ``temperature_degC``;
+    bins without one are left out), ``trend`` adds c (sol - ``sol0``) (use without ``per_scape_offset``: one scape's
+    offset is its sol), ``navcam_normalise`` divides each bin's focal length by its block's Navcam focal scale
+    (``navcam_scale``) first, ``reference_focus`` fixes ref (default: the weighted mean focus).  The result then
+    carries ``thermal`` and ``trend`` dicts in the layout of the shipped focus model.
     """
     lo = -np.inf if min_focus is None else float(min_focus)
     use = [r for r in rows if r["group"] == group and r["refined"] and r["observations"] >= min_observations
@@ -738,14 +761,28 @@ def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: in
     # v0p40: the regular focus state (f about the label) is left out of the line and reported as its offset
     reg = [r for r in rows if r["group"] == group and r.get("state") == "regular" and r["refined"]
            and r.get("f_label_median_px")]
-    if len(use) < 3:
+    if thermal:
+        use = [r for r in use if r.get("temperature_degC") is not None]
+    if trend:
+        use = [r for r in use if r.get("sol") is not None]
+    if len(use) < 3 + int(thermal) + int(trend):
         return None
     x = np.array([r["focus"] for r in use], float)
     y = np.array([r["f_refined_px"] for r in use], float)
+    if navcam_normalise:
+        y = y / np.array([float(r.get("navcam_scale") or 1.0) for r in use])
     w = np.array([r["observations"] for r in use], float)
-    ref = float(np.average(x, weights=w))
+    ref = float(np.average(x, weights=w)) if reference_focus is None else float(reference_focus)
     scapes = sorted({r["scape"] for r in use})
     cols = [np.ones_like(x), x - ref]
+    extra = []
+    if thermal:
+        cols.append(np.array([float(r["temperature_degC"]) - T0 for r in use]))
+        extra.append("thermal")
+    if trend:
+        cols.append(np.array([float(r["sol"]) - sol0 for r in use]))
+        extra.append("trend")
+    n_fixed = len(cols)
     if per_scape_offset and len(scapes) > 1:
         for s in scapes[1:]:
             cols.append(np.array([1.0 if r["scape"] == s else 0.0 for r in use]))
@@ -753,9 +790,26 @@ def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: in
     W = w / w.sum()
     beta = np.linalg.lstsq(X * np.sqrt(W)[:, None], y * np.sqrt(W), rcond=None)[0]
     res = y - X @ beta
+    # standard errors (weights as relative precisions, scaled by the weighted residual variance)
+    try:
+        Wn = W * len(y)                                   # relative weights, mean 1
+        s2 = float(np.sum(Wn * res ** 2)) / max(len(y) - X.shape[1], 1)
+        se = np.sqrt(np.clip(np.diag(np.linalg.inv((X * Wn[:, None]).T @ X) * s2), 0, None))
+    except np.linalg.LinAlgError:
+        se = np.full(X.shape[1], np.nan)
+    terms = {}
+    for i, k in enumerate(extra):
+        v, e = float(beta[2 + i]), float(se[2 + i])
+        if k == "thermal":
+            terms["thermal"] = {"T0_degC": float(T0), "sensor": "HEAD_FPA", "f_px_per_degC": v, "sd_px_per_degC": e,
+                                "T_range_degC": [float(min(r["temperature_degC"] for r in use)),
+                                                 float(max(r["temperature_degC"] for r in use))]}
+        else:
+            terms["trend"] = {"sol0": float(sol0), "f_px_per_sol": v, "sd_px_per_sol": e,
+                              "sol_range": [float(min(r["sol"] for r in use)), float(max(r["sol"] for r in use))]}
     offsets = {scapes[0]: 0.0}
     for i, s in enumerate(scapes[1:]):
-        offsets[s] = float(beta[2 + i]) if per_scape_offset and len(beta) > 2 + i else 0.0
+        offsets[s] = float(beta[n_fixed + i]) if per_scape_offset and len(beta) > n_fixed + i else 0.0
     mean_off = np.average(list(offsets.values()), weights=[sum(r["observations"] for r in use if r["scape"] == s)
                                                             for s in offsets])
     offsets = {s: v - mean_off for s, v in offsets.items()}
@@ -767,13 +821,130 @@ def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: in
         bl = np.polyfit(xl - ref, yl, 1)
         lab_fit = {"f0_px": float(bl[1]), "slope_px_per_count": float(bl[0])}
     return {"group": group, "reference_focus": ref, "f0_px": float(beta[0] + mean_off),
-            "slope_px_per_count": float(beta[1]), "slope_pct_per_1000": float(1e5 * beta[1] / beta[0]),
+            "slope_px_per_count": float(beta[1]), "slope_sd_px_per_count": float(se[1]),
+            "slope_pct_per_1000": float(1e5 * beta[1] / beta[0]), **terms, "navcam_normalised": bool(navcam_normalise),
+            "aspect": (float(np.average([r["fy_refined_px"] / r["fx_refined_px"] for r in use], weights=w))
+                       if all(r.get("fx_refined_px") and r.get("fy_refined_px") for r in use) else 1.0),
             "rms_px": float(np.sqrt(np.sum(W * res ** 2))), "scape_offsets_px": offsets,
             "scape_offset_sd_px": float(np.std(list(offsets.values()))) if len(offsets) > 1 else 0.0,
             "n_bins": len(use), "scapes": scapes, "label": lab_fit, "min_focus": min_focus, "state": state,
             "regular_state": {"bins": len(reg), "f_over_label_median": float(np.median(
                 [r["f_refined_px"] / r["f_label_median_px"] for r in reg])) if reg else None},
             "focus_range": [float(x.min()), float(x.max())]}
+
+
+def zcam_boresight_table(sols: Dict[str, Solution], min_observations: int = 100) -> List[Dict[str, Any]]:
+    """
+    v0p42: per simultaneous Mastcam-Z stereo pair, the right-minus-left **equivalent boresight**: where the left
+    principal point's ray lands in the right image, relative to the left principal point (px, parallax left out),
+    ``eqx = (cxR - cxL) + fR yaw``, ``eqy = (cyR - cyL) - fR pitch`` (yaw, pitch of the refined right-from-left
+    rotation), and the roll.  With the narrow Mastcam-Z field a principal point and the pointing trade, so only this
+    difference is observable; against focus it measures how the two eyes' principal points move apart.
+    """
+    rows = []
+    for n, s in sols.items():
+        for p in stereo_pairs(s, "Z"):
+            L, R = s.images[p["left"]], s.images[p["right"]]
+            if min(float(L.get("observations") or 0), float(R.get("observations") or 0)) < min_observations:
+                continue
+            cL, cR = s.cameras[p["left_camera"]], s.cameras[p["right_camera"]]
+            fR = float(np.sqrt(cR.params[0] * cR.params[1]))
+            eqx = float(cR.params[2] - cL.params[2]) + fR * np.radians(p["yaw_deg"])
+            eqy = float(cR.params[3] - cL.params[3]) - fR * np.radians(p["pitch_deg"])
+            TL, TR = L.get("camera_temperature_degC"), R.get("camera_temperature_degC")
+            rows.append({"scape": n, "sclk": p["sclk"], "sol": L.get("sol"), "focus_left": cL.focus,
+                         "focus_right": cR.focus, "left_camera": cL.key, "right_camera": cR.key,
+                         "eqx_px": float(eqx), "eqy_px": float(eqy), "roll_mdeg": 1e3 * float(p["roll_deg"]),
+                         "temperature_degC": (0.5 * (float(TL) + float(TR)) if TL is not None and TR is not None
+                                              else None), "baseline_m": p["baseline_m"]})
+    return rows
+
+
+def fit_zcam_boresight(rows: List[Dict[str, Any]], per_scape_offset: bool = True, thermal: bool = False,
+                       T0: float = -15.0, reference_focus: float = 600.0, huber_k: float = 1.345,
+                       bootstrap: int = 0, seed: int = 0) -> Dict[str, Any]:
+    """v0p42: eqx, eqy (px) and roll (mdeg) of :func:`zcam_boresight_table` against the pair's mean focus
+    (per count), with a constant per scape (``per_scape_offset``) and optionally the temperature; Huber IRLS
+    (``huber_k`` robust sigmas; the eqy slope moved between 0.9 and 1.9 px per 1000 counts with ad-hoc sigma
+    clipping).  ``bootstrap`` > 0 adds a bootstrap standard error of the slope (``sd_boot``; pairs of one sequence
+    are correlated, so it is about twice the formal one).  Returns {quantity: {"slope_per_count", "sd", ...}}."""
+    use = [r for r in rows if r["focus_left"] is not None and r["focus_right"] is not None
+           and (not thermal or r.get("temperature_degC") is not None)]
+    out: Dict[str, Any] = {"pairs": len(use)}
+    if len(use) < 5:
+        return out
+    F = np.array([0.5 * (r["focus_left"] + r["focus_right"]) for r in use]) - reference_focus
+    scapes = sorted({r["scape"] for r in use})
+    cols = [np.array([1.0 if r["scape"] == s else 0.0 for r in use]) for s in scapes] if per_scape_offset \
+        else [np.ones(len(use))]
+    cols.append(F)
+    if thermal:
+        cols.append(np.array([float(r["temperature_degC"]) - T0 for r in use]))
+    X = np.stack(cols, axis=1)
+    k = len(cols) - 1 - int(thermal)
+
+    def _huber(y, X, it=40):
+        b = np.linalg.lstsq(X, y, rcond=None)[0]
+        w = np.ones(len(y))
+        for _ in range(it):
+            r = y - X @ b
+            sig = max(1.4826 * float(np.median(np.abs(r - np.median(r)))), 1e-9)
+            u = np.abs(r) / (huber_k * sig)
+            w = np.where(u <= 1.0, 1.0, 1.0 / np.maximum(u, 1e-12))
+            b = np.linalg.lstsq(X * np.sqrt(w)[:, None], y * np.sqrt(w), rcond=None)[0]
+        r = y - X @ b
+        sig = 1.4826 * float(np.median(np.abs(r - np.median(r))))
+        cov = np.linalg.pinv((X * w[:, None]).T @ X) * sig ** 2
+        return b, np.sqrt(np.clip(np.diag(cov), 0, None)), r, w, sig
+
+    rng = np.random.default_rng(seed)
+    for q in ("eqx_px", "eqy_px", "roll_mdeg"):
+        y = np.array([r[q] for r in use], float)
+        b, se, r, w, sig = _huber(y, X)
+        out[q] = {"slope_per_count": float(b[k]), "sd": float(se[k]), "n": len(y),
+                  "n_downweighted": int(np.sum(w < 1.0)), "scatter": float(sig),
+                  "offsets": ({s: float(v) for s, v in zip(scapes, b[:len(scapes)])} if per_scape_offset
+                              else {"all": float(b[0])})}
+        if thermal:
+            out[q]["per_degC"], out[q]["sd_per_degC"] = float(b[-1]), float(se[-1])
+        if bootstrap:
+            bs = []
+            for _ in range(int(bootstrap)):
+                i = rng.integers(0, len(y), len(y))
+                if np.linalg.matrix_rank(X[i]) < X.shape[1]:
+                    continue
+                bs.append(_huber(y[i], X[i], it=15)[0][k])
+            out[q]["sd_boot"] = float(np.std(bs)) if bs else None
+    return out
+
+
+def focus_model_json(fits: Dict[str, Dict[str, Any]], boresight: Optional[Dict[str, Any]] = None,
+                     pp_eye: str = "ZR034", focus_range: Optional[Dict[str, Sequence[float]]] = None,
+                     source: str = "") -> Dict[str, Any]:
+    """v0p42: a focus-model file (the layout of ``m20_cmods/M2020_ZCAM034_focus_model.json``) from
+    :func:`fit_focus_model` results per eye and a :func:`fit_zcam_boresight` result (principal-point slopes, put on
+    ``pp_eye``).  Save it as JSON and pass the path as notebook 03's ``ZCAM_FOCUS_MODEL``
+    (``SfmProject.create(zcam_focus_model_file=)``) to use it."""
+    cams = {}
+    for g, f in fits.items():
+        if not f:
+            continue
+        c = {"f0_px": f["f0_px"], "reference_focus": f["reference_focus"], "slope_px_per_count": f["slope_px_per_count"],
+             "aspect": f.get("aspect", 1.0), "fit_rms_px": f["rms_px"],
+             "focus_range": list((focus_range or {}).get(g, f["focus_range"]))}
+        if f.get("label"):
+            c["label_f0_px"] = f["label"]["f0_px"]
+            c["label_slope_px_per_count"] = f["label"]["slope_px_per_count"]
+        for k in ("thermal", "trend"):
+            if f.get(k):
+                c[k] = dict(f[k])
+        if boresight and "eqx_px" in boresight:
+            on = g == pp_eye
+            c["pp"] = {"cx_px_per_count": boresight["eqx_px"]["slope_per_count"] if on else 0.0,
+                       "cy_px_per_count": boresight["eqy_px"]["slope_per_count"] if on else 0.0}
+        cams[g] = c
+    return {"cameras": cams, "state": "backlash", "pixel_mm": ZCAM_PIXEL_MM,
+            "units": "see mppp.sfm.project.zcam_model_focal / zcam_model_pp_shift", "source": source}
 
 
 # ================================================================ label models
@@ -867,8 +1038,10 @@ def attach_pds_labels(sol: Solution, pds_dir: PathLike, groups: Optional[Sequenc
     want = {Path(r["name"]).stem: r for r in sol.images.values()
             if groups is None or sol.cameras[r["instrument"]].group in groups}
     # v0p30: also the camera temperature the label model was interpolated to, for manifests without it
-    want = {k: v for k, v in want.items() if k in sol.manifest and (not sol.manifest[k].get("camera_model_label")
-                                                                   or "camera_temperature_degC" not in sol.manifest[k])}
+    # v0p42: and the Mastcam-Z focal-plane temperature (HEAD_FPA) where it is missing
+    want = {k: v for k, v in want.items() if k in sol.manifest and (
+        not sol.manifest[k].get("camera_model_label") or "camera_temperature_degC" not in sol.manifest[k]
+        or (k[:1] == "Z" and sol.manifest[k].get("camera_temperature_degC") is None))}
     n = 0
     if not want:
         if verbose:
@@ -887,13 +1060,27 @@ def attach_pds_labels(sol: Solution, pds_dir: PathLike, groups: Optional[Sequenc
         if not rec.get("camera_model_label"):
             rec["camera_model_label"] = dict(cm.to_label_dict(precision=12), width=w, height=h,
                                              frame="ROVER_NAV_FRAME", pixel_origin="centre_of_first_pixel")
-        rec["camera_temperature_degC"] = _label_temperature(cm)
+        rec["camera_temperature_degC"] = _label_temperature(cm) if fn.stem[:1] != "Z" else _zcam_fpa(L)
         n += 1
         if not todo:
             break
     if verbose:
         print(f"{sol.label}: exact label models for {n} of {len(want)} images from {pds_dir}")
     return n
+
+
+def _zcam_fpa(L: Any) -> Optional[float]:
+    """v0p42: HEAD_FPA (Mastcam-Z focal-plane temperature, degC) of a parsed label."""
+    from ..labels import label_get
+    names = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
+    vals = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
+    for k, v in zip(names, vals):
+        if str(k) == "HEAD_FPA":
+            try:
+                return float(getattr(v, "value", v))
+            except (TypeError, ValueError):
+                return None
+    return None
 
 
 def _label_temperature(cm: CameraModel) -> Optional[float]:
