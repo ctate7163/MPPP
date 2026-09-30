@@ -132,9 +132,135 @@ def read_status(path: PathLike) -> Optional[Dict[str, Any]]:
         age = None
     d["age_s"] = age
     d["alive"] = d.get("state") in ("starting", "running") and age is not None and age < STALE_S
+    # v0p43.3: a run on this computer whose process is gone is dead at once (no 5-minute wait after a stop)
+    if d["alive"] and d.get("host") == socket.gethostname() and d.get("pid") and not pid_alive(int(d["pid"])):
+        d["alive"] = False
     if d.get("state") in ("starting", "running") and not d["alive"]:
         d["state"] = "stopped (no heartbeat)"
     return d
+
+
+def pid_alive(pid: int) -> bool:
+    """Whether a process with this id runs on this computer (v0p43.3)."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        k32 = ctypes.windll.kernel32                                     # type: ignore[attr-defined]
+        h = k32.OpenProcess(0x1000, False, int(pid))                     # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            ok = k32.GetExitCodeProcess(h, ctypes.byref(code))
+            return bool(ok) and code.value == 259                        # STILL_ACTIVE
+        finally:
+            k32.CloseHandle(h)
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+# --- one batch per scapes folder (v0p43.3) ----------------------------------------------------------------------
+BATCH_FILE = "mppp_batch.json"
+
+
+class BatchRunning(RuntimeError):
+    """Another process_sites / run_sites batch is running on the same scapes folder."""
+
+
+def batch_lock(root: PathLike, kind: str, argv=None, force: bool = False) -> "RunStatus":
+    """Start the status (with heartbeat) of a batch over ``root``; refuses while another batch on ``root`` is alive
+    (two batches would process the same sites at once and see each other's half-written folders)."""
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    cur = read_status(root / BATCH_FILE)
+    if cur and cur.get("alive") and not force:
+        raise BatchRunning(f"{cur.get('kind', 'a batch')} is already running on {root} (pid {cur.get('pid')}, started "
+                           f"{cur.get('started')}, now at {cur.get('site') or '-'}). Stop it with stop_mppp.bat "
+                           f"(or scripts/stop_runs.py) first.")
+    return RunStatus(root / BATCH_FILE, kind=kind, argv=list(argv or sys.argv), site=None).start()
+
+
+# --- finding and stopping MPPP runs (scripts/stop_runs.py, v0p43.3) ---------------------------------------------
+RUN_MARKERS = ("_run_process.bat", "_run_sites.bat", "_run_align.bat", "process_sites.py", "run_sites.py",
+               "align_scape.py", "run_scapes.py")
+
+
+def mppp_processes(rows) -> list:
+    """The MPPP runner processes among ``rows`` ({"pid", "ppid", "cmd"}): those whose command line names one of
+    ``RUN_MARKERS`` (the minimised .bat windows and the Python runners; their notebook kernels and image workers
+    are their children).  Only the top of each tree is returned (killing it with /T takes the rest)."""
+    parent = {int(r["pid"]): int(r.get("ppid") or 0) for r in rows}
+    mine, p = set(), os.getpid()
+    while p and p not in mine:                          # this process and its ancestors (the window stopping them)
+        mine.add(p)
+        p = parent.get(p, 0)
+    hits = {int(r["pid"]): r for r in rows if r.get("cmd") and any(m in str(r["cmd"]) for m in RUN_MARKERS)
+            and int(r["pid"]) not in mine}
+    return [r for pid, r in sorted(hits.items()) if int(r.get("ppid") or 0) not in hits]
+
+
+def list_processes() -> list:
+    """All processes with command lines: [{"pid", "ppid", "name", "cmd"}] (Windows: PowerShell/CIM; else ps)."""
+    import subprocess
+    if os.name == "nt":
+        ps = ("Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,CommandLine | "
+              "ConvertTo-Json -Compress")
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+                             timeout=120).stdout
+        data = json.loads(out) if out.strip() else []
+        data = data if isinstance(data, list) else [data]
+        return [{"pid": d.get("ProcessId"), "ppid": d.get("ParentProcessId"), "name": d.get("Name"),
+                 "cmd": d.get("CommandLine") or ""} for d in data]
+    out = subprocess.run(["ps", "-eo", "pid=,ppid=,args="], capture_output=True, text=True).stdout
+    rows = []
+    for ln in out.splitlines():
+        parts = ln.split(None, 2)
+        if len(parts) >= 2:
+            rows.append({"pid": int(parts[0]), "ppid": int(parts[1]), "name": "", "cmd": parts[2] if len(parts) > 2 else ""})
+    return rows
+
+
+def kill_tree(pid: int) -> bool:
+    """Stop a process and everything it started (Windows: taskkill /T /F)."""
+    import signal
+    import subprocess
+    if os.name == "nt":
+        r = subprocess.run(["taskkill", "/PID", str(int(pid)), "/T", "/F"], capture_output=True, text=True)
+        return r.returncode == 0
+    try:
+        os.kill(int(pid), signal.SIGTERM)
+        return True
+    except OSError:
+        return False
+
+
+def mark_stopped(root: PathLike, pids) -> list:
+    """Set ``state: stopped`` in the status files under ``root`` (the batch file and every WORK folder's) whose
+    run was one of ``pids`` or whose process is gone; returns the files changed."""
+    root = Path(root)
+    changed = []
+    files = [root / BATCH_FILE] + sorted(root.glob(f"*/{STATUS_FILE}"))
+    for f in files:
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if d.get("state") not in ("starting", "running"):
+            continue
+        pid = int(d.get("pid") or 0)
+        if pid in set(map(int, pids)) or (d.get("host") == socket.gethostname() and not pid_alive(pid)):
+            d.update(state="stopped", ended=now(), last_error="stopped by stop_runs")
+            f.write_text(json.dumps(d, indent=1, default=str), encoding="utf-8")
+            changed.append(str(f))
+    return changed
 
 
 def python_literal(name: str, value: Any) -> str:
@@ -262,6 +388,16 @@ def run_key(settings: Dict[str, Any], source: str, variant: str) -> str:
     return hashlib.sha256(txt.encode()).hexdigest()[:16]
 
 
+# v0p43.3: bumped when the selection / processing rules change, so that process_sites.py checks every site again
+# (2: interrupted runs are completed instead of trimmed; Navcam tiles below 1/2 of the frame are left out)
+PROCESS_RULES = 2
+
+
+def process_key(settings: Dict[str, Any]) -> str:
+    """The run key of a processing-only run (``process_done.json``)."""
+    return run_key(settings, f"process:{PROCESS_RULES}", "")
+
+
 def work_settings(work: PathLike, site: Optional[str] = None, settings_file: Optional[PathLike] = None,
                   sets: Optional[Dict[str, Any]] = None, sites_file: Optional[PathLike] = None) -> Dict[str, Any]:
     """The notebook 03 settings of a run, later ones winning: the site's ``settings`` (and
@@ -346,7 +482,7 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
         raise RuntimeError(f"{work.name}: a run is still alive (pid {cur.get('pid')}, cell {cur.get('cell')}, "
                            f"heartbeat {cur.get('age_s', 0):.0f} s ago); wait for it or pass --force")
     settings = work_settings(work, site, settings_file, sets, sites_file)
-    key = run_key(settings, "process" if process_only else source, variant)
+    key = process_key(settings) if process_only else run_key(settings, source, variant)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = work / "runs" / (stamp + ("_process" if process_only else (f"_{variant}" if variant else "")))
     log = Log(run_dir / "log.txt", echo=echo)

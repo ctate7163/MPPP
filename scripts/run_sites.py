@@ -54,7 +54,14 @@ def _finished(work: Path, variant: str, key: str):
 
 
 def status_table(root: Path) -> int:
-    from mppp.runner import STATUS_FILE, read_status
+    from mppp.runner import BATCH_FILE, STATUS_FILE, read_status
+    b = read_status(root / BATCH_FILE)                   # v0p43.3: the batch (process_sites / run_sites) on root
+    if b:
+        print(f"batch: {b.get('kind')} {'RUNNING' if b.get('alive') else b.get('state')} (pid {b.get('pid')}, "
+              f"started {b.get('started')}{', now at ' + str(b.get('site')) if b.get('alive') and b.get('site') else ''})"
+              + ("  - stop it with stop_mppp.bat" if b.get("alive") else ""))
+    else:
+        print("batch: none")
     rows = []
     for d in sorted(p for p in root.iterdir() if p.is_dir() and ((p / "processed").is_dir() or (p / STATUS_FILE).is_file())):
         st = read_status(d / STATUS_FILE)
@@ -92,6 +99,8 @@ def main(argv=None) -> int:
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="a notebook 03 setting")
     ap.add_argument("--sites-file", default=None, help="site definitions (default mppp/data/sites.json)")
     ap.add_argument("--force", action="store_true", help="run sites that are already finished again")
+    ap.add_argument("--force-start", action="store_true",
+                    help="start even if the batch file says another batch is running on --root")
     ap.add_argument("--jobs", type=int, default=1, help="sites aligned at the same time (default 1)")
     ap.add_argument("--then", nargs="*", default=[], metavar="NB", help="then notebooks 04 and/or 05 over the finished sites")
     ap.add_argument("--dry-run", action="store_true", help="list what would run")
@@ -101,7 +110,8 @@ def main(argv=None) -> int:
     root = Path(a.root)
     if a.status:
         return status_table(root)
-    from mppp.runner import Log, parse_set, run_analyses, run_key, work_settings
+    from mppp.runner import (STATUS_FILE, BatchRunning, Log, batch_lock, parse_set, read_status, run_analyses,
+                             run_key, work_settings)
     from mppp.sfm.sites import load_site_table, site_label, work_folder
     table = load_site_table(a.sites_file)
     if a.all:
@@ -140,6 +150,12 @@ def main(argv=None) -> int:
         log(f"  {s}: {'would run' if a.dry_run else 'queued'} ({why}) -> {work}")
     if a.dry_run:
         return 0
+    try:                                   # v0p43.3: one batch per scapes folder
+        batch = batch_lock(root, "run_sites", force=a.force_start)
+    except BatchRunning as e:
+        log(f"not started: {e}")
+        print(f"\nMPPP: {e}", file=sys.stderr)
+        return 3
 
     def cmd(work: Path):
         c = [sys.executable, str(ROOT / "scripts" / "align_scape.py"), str(work), "--source", a.source]
@@ -159,6 +175,11 @@ def main(argv=None) -> int:
     while queue or running:
         while queue and len(running) < max(1, a.jobs):
             s, work = queue.pop(0)
+            cur = read_status(work / STATUS_FILE)
+            if cur and cur.get("alive"):                                 # v0p43.3: e.g. align_here.bat there
+                log(f"site {s}: skipped - a run of {work.name} is going on (pid {cur.get('pid')})")
+                continue
+            batch.update(site=s)
             log(f"site {s}: start (log in {work / 'runs'})")
             out = None if a.jobs <= 1 else subprocess.DEVNULL
             running.append((s, work, time.time(), subprocess.Popen(cmd(work), stdout=out, stderr=out)))
@@ -182,6 +203,7 @@ def main(argv=None) -> int:
         else:
             log("no finished site: notebooks 04 / 05 skipped")
     n_bad = sum(not v for v in results.values())
+    batch.stop("finished" if n_bad == 0 else "failed", site=None)
     log(f"run_sites finished: {len(results) - n_bad} ok, {n_bad} failed, {len(sites) - len(results)} skipped")
     return 0 if n_bad == 0 else 1
 

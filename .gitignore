@@ -27,3 +27,6 @@ scapes/
 .idea/
 .DS_Store
 Thumbs.db
+
+# machine-specific: the Python the Windows .bat files use (scripts/windows/mppp_env.bat)
+scripts/windows/mppp_python.txt

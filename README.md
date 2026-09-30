@@ -41,6 +41,9 @@ Notebooks (in `notebooks/`):
 
 - **Python for the .bat files:** `scripts\windows\mppp_env.bat` looks for a Python with pycolmap, pyceres, nbclient and ipykernel (every conda environment it can find). If it finds none it lists what it tried; then write the notebooks' Python (`import sys; print(sys.executable)` in a notebook) into `scripts\windows\mppp_python.txt`. The .bat files can be copied anywhere; they find MPPP through `MPPP_HOME` (default `D:\code\MPPP`).
 - **Process only (many sites):** `scripts\windows\process_sites.bat` (choose the sites at its top), or `python scripts\process_sites.py --all` (also `--group nav_zcam34 --zcam`, or `--sites rockytop sid`). It selects and processes each site's images into `<WORK>\processed\` with notebook 03's defaults, one site after the other, without aligning. Sites already processed with the same settings are skipped.
+- **Camera models in use:** `params\cmods\` (Navcam cameras and rig, Mastcam-Z focus model). Notebook 03 starts from them; replace them only with `python scripts\promote_cmods.py <folder or files> --note "..."` (it keeps the old ones in `params\cmods\history\`).
+- **Site list:** `src\mppp\data\sites.json`; check it after editing with `scripts\windows\check_sites.bat`.
+- **Stop runs:** `scripts\windows\stop_mppp.bat` lists every MPPP run on the computer and stops them (with their notebook kernels) after asking. Only one batch (`process_sites` or `run_sites`) runs on a scapes folder at a time; `sites_status.bat` shows it.
 - **One WORK folder:** copy `scripts\windows\align_here.bat` into the folder that holds `processed\` and double-click it. It aligns the images already processed there with notebook 03's default settings, in a minimised window.
   - Double-click it again to see the status.
   - Progress is in `runs\<time>\log.txt`, and the results are in `colmap\`.

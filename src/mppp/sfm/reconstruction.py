@@ -262,7 +262,7 @@ def unlocalized_stations(project: SfmProject, min_images: int, rec=None,
 def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: float = 2.0,
                   refine_intrinsics: bool = True, refine_principal_point: bool = True,
                   refine_tangential: Union[bool, Dict[str, bool]] = True, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
-                  min_frame_observations: int = 30, num_threads: int = -1, verbose: bool = False,
+                  min_frame_observations: Optional[int] = None, num_threads: int = -1, verbose: bool = False,
                   attitude_prior_deg: Optional[float] = ATTITUDE_PRIOR_DEG,
                   rig_translation_sigma_m: Optional[float] = None,
                   hold_cameras: Sequence[str] = (), linear_solver: str = "auto",
@@ -279,7 +279,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     baseline too (scale is then set only by the position priors, weakly for
     stations metres apart - the first Belva test shrank it from 0.424 to
     0.14 m); False holds the rig fixed.  Frames with fewer than
-    ``min_frame_observations`` observations are held at their current pose
+    ``min_frame_observations`` observations (None: ``MIN_FRAME_OBSERVATIONS``, 20 since v0p43.3, was 30) are held
+    at their current pose
     (on Belva two frames with no observations otherwise rotated freely, by 9
     and 36 deg).  ``refine_tangential`` (v0p14.3; default True since v0p20):
     refine p1, p2 of OPENCV / FULL_OPENCV cameras; otherwise they stay at
@@ -314,6 +315,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     dependence as a small rotation of the right camera's rays).  Returns
     the solver summary as a dict.
     """
+    min_obs_frame = int(MIN_FRAME_OBSERVATIONS if min_frame_observations is None else min_frame_observations)
     import pycolmap
     import pycolmap.cost_functions as cf
     import pyceres
@@ -487,7 +489,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 n_frame[f] = n_frame.get(f, 0) + 1
     held = []
     for fid, pose in pose_blocks.items():
-        if n_frame.get(fid, 0) < min_frame_observations and prob.has_parameter_block(pose):
+        if n_frame.get(fid, 0) < min_obs_frame and prob.has_parameter_block(pose):
             prob.set_parameter_block_constant(pose)
             held.append(int(fid))
 
@@ -772,7 +774,11 @@ def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:
 
 
 OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.0, "shift_mad_factor": 5.0, "min_shift_m": 0.25,
-                    "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": 30}
+                    "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None}
+# v0p43.3: a frame with fewer tie-point observations than this is held at its prior in the bundle adjustment and
+# flagged by the outlier test (was 30; good frames with 20-29 observations were being dropped).  Notebook 03:
+# MIN_FRAME_OBSERVATIONS; reconstruct(min_frame_observations=) sets it for every stage of one run.
+MIN_FRAME_OBSERVATIONS = 20
 
 
 def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str, Any]]:
@@ -800,6 +806,8 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
     """
     from scipy.spatial.transform import Rotation
     th = dict(OUTLIER_DEFAULTS, **thresholds)
+    if th.get("min_observations") is None:                   # v0p43.3: the same limit as the bundle adjustment
+        th["min_observations"] = MIN_FRAME_OBSERVATIONS
     by_name = {r["name"]: r for r in project.images}
     reg = set(rec.reg_image_ids())
     res = native_residuals(rec, project)
@@ -1049,7 +1057,7 @@ def _frames_of_family(rec, project: SfmProject, family: str) -> List[int]:
     return out
 
 
-def reconstruct(project: SfmProject, sigma_px: float = 0.5,
+def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 schedule: Sequence[Sequence[float]] = DEFAULT_SCHEDULE,
                 refine_intrinsics: bool = True, refine_rig: Union[bool, str] = "rotation",
                 register: bool = False, max_iterations: int = 50, out_name: str = "cahv_ba",
@@ -1350,6 +1358,7 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "attitude_prior_deg": float(attitude_prior_deg or 0.0),
                                           "schedule": [list(map(float, r)) for r in schedule],
                                           "exclude_outliers": bool(exclude_outliers),
+                                          "min_frame_observations": int(MIN_FRAME_OBSERVATIONS),
                                           "excluded": [{k: v for k, v in e.items()} for e in excluded],
                                           "rig_translation_sigma_m": rig_translation_sigma_m,
                                           "triangulation_options": topts,
@@ -1378,3 +1387,35 @@ def reconstruct(project: SfmProject, sigma_px: float = 0.5,
     except OSError:
         pass
     return rec
+
+def reconstruct(project: SfmProject, *args, min_frame_observations: Optional[int] = None, **kwargs):
+    """:func:`_reconstruct` (the full description is there).  v0p43.3: ``min_frame_observations`` (notebook 03
+    ``MIN_FRAME_OBSERVATIONS``; None: ``MIN_FRAME_OBSERVATIONS`` = 20) - frames with fewer tie-point observations
+    are held at their prior in every bundle adjustment of the run (also the thermal and focus-state stages) and
+    flagged by the outlier test.  Recorded in ``project.settings["reconstruction"]["min_frame_observations"]``."""
+    global MIN_FRAME_OBSERVATIONS
+    old = MIN_FRAME_OBSERVATIONS
+    if min_frame_observations is not None:
+        MIN_FRAME_OBSERVATIONS = int(min_frame_observations)
+    try:
+        return _reconstruct(project, *args, **kwargs)
+    finally:
+        MIN_FRAME_OBSERVATIONS = old
+
+
+def _wrap_reconstruct():
+    import functools
+    import inspect
+    functools.update_wrapper(reconstruct, _reconstruct, assigned=("__module__", "__qualname__", "__annotations__"))
+    reconstruct.__wrapped__ = _reconstruct
+    sig = inspect.signature(_reconstruct)
+    reconstruct.__signature__ = sig.replace(parameters=list(sig.parameters.values()) + [
+        inspect.Parameter("min_frame_observations", inspect.Parameter.KEYWORD_ONLY, default=None,
+                          annotation=Optional[int])])
+    reconstruct.__doc__ = (_reconstruct.__doc__ or "") + "\n    " + reconstruct.__doc__.split("v0p43.3:", 1)[1].join(
+        ["v0p43.3:", ""])
+
+
+_wrap_reconstruct()
+
+

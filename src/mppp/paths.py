@@ -45,6 +45,22 @@ def params_dir() -> Path:
     return data_dir()
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]      # the MPPP folder of a source checkout (src/mppp/paths.py)
+
+
+def cmods_dir() -> Optional[Path]:
+    """v0p43.3: the folder of the current best consensus camera models and rig - ``MPPP_CMODS`` if set, else
+    ``<MPPP>/params/cmods`` of a source checkout (e.g. ``D:\\code\\MPPP\\params\\cmods``).  None if neither exists;
+    callers then fall back to the package data.  Notebook 03 starts from the models here (``NAVCAM_CAMERAS``,
+    ``ZCAM_FOCUS_MODEL``); ``scripts/promote_cmods.py`` puts a new consensus here and keeps the old one in
+    ``history/``."""
+    env = os.environ.get("MPPP_CMODS")
+    if env:
+        return Path(env)
+    p = REPO_ROOT / "params" / "cmods"
+    return p if p.is_dir() else None
+
+
 def cache_dir(create: bool = True) -> Path:
     env = os.environ.get("MPPP_CACHE")
     if env:

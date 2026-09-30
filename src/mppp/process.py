@@ -79,16 +79,35 @@ def filter_to_existing(paths: Sequence[PathLike], out_dir: PathLike, fmt: str) -
                        "removed": [], "not_in_selection": [], "skipped": "folder does not exist: first run, everything processed"}
     stems = {p.stem for p in folder.iterdir()
              if p.is_file() and p.suffix.lower() in (".png", ".tif", ".tiff")}
-    kept = [p for p in paths if p.stem in stems]
-    if not kept:
+    # v0p43.3: an image counts as removed only if it was processed before (it is in one of the folder's
+    # manifests) and its file is gone.  Products never processed - the rest of a run that was interrupted, or
+    # new products in the selection - are processed, not dropped.  (Before, a run stopped half-way left a partial
+    # folder, and every later run kept only that part.)
+    before = processed_stems(out_dir)
+    kept = [p for p in paths if p.stem in stems or p.stem not in before]
+    if not any(p.stem in stems for p in paths):
         return paths, {"folder": str(folder), "n_selected": len(paths), "n_kept": len(paths), "n_removed": 0,
                        "removed": [], "not_in_selection": sorted(stems),
                        "skipped": "no selected product has an image in the folder: everything processed"}
     selected = {p.stem for p in paths}
     report = {"folder": str(folder), "n_selected": len(paths), "n_kept": len(kept), "n_removed": len(paths) - len(kept),
-              "removed": sorted(p.name for p in paths if p.stem not in stems),
+              "removed": sorted(p.name for p in paths if p.stem not in stems and p.stem in before),
+              "never_processed": sum(1 for p in paths if p.stem not in stems and p.stem not in before),
               "not_in_selection": sorted(stems - selected)}
     return kept, report
+
+
+def processed_stems(out_dir: PathLike) -> set:
+    """v0p43.3: PDS stems of every image in the manifests (``mppp_manifest_v*.json``) of ``out_dir``."""
+    out = set()
+    for f in Path(out_dir).glob("mppp_manifest_v*.json"):
+        try:
+            for m in json.loads(f.read_text(encoding="utf-8")).get("images", []):
+                out.add(Path(str(m.get("source_product", ""))).stem)
+        except (OSError, ValueError, AttributeError):
+            continue
+    out.discard("")
+    return out
 
 
 SCOPE_CAMERA_CODES = ("NLF", "NRF", "ZL0", "ZR0")
@@ -269,8 +288,8 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
                 print(f"[mppp] only_existing={only_existing!r} ignored: {kept_filter['skipped']}")
         elif progress:
             print(f"[mppp] only_existing={only_existing!r}: {kept_filter['n_kept']} of {kept_filter['n_selected']} "
-                  f"selected products still have an image in {kept_filter['folder']}; "
-                  f"{kept_filter['n_removed']} removed" + (f"; {len(kept_filter['not_in_selection'])} images in the "
+                  f"selected products kept ({kept_filter.get('never_processed', 0)} not processed yet); "
+                  f"{kept_filter['n_removed']} removed (processed before, image deleted from {kept_filter['folder']})" + (f"; {len(kept_filter['not_in_selection'])} images in the "
                   f"folder are not in this selection and are ignored" if kept_filter["not_in_selection"] else ""))
     reused: Dict[str, Dict[str, Any]] = {}
     reuse_rep = None

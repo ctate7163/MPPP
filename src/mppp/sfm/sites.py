@@ -51,7 +51,91 @@ def site_group(name: str, path: Optional[PathLike] = None) -> List[str]:
     return list(groups[name])
 
 
-SITES: Dict[str, Tuple[int, int]] = load_sites()   # sol range of the Navcam (+ Mastcam-Z) block (notebook 03)
+def validate_site_table(path: Optional[PathLike] = None,
+                        known_settings: Optional[Iterable[str]] = None) -> Tuple[List[str], List[str]]:
+    """v0p43.3: (errors, warnings) of a site definitions file - what ``scripts/check_sites.py`` prints.  Errors stop
+    the runs (bad JSON, missing or reversed sol ranges, unknown sites in groups, unreadable stations); warnings do not
+    (overlapping sol ranges, settings that are not notebook 03 settings, odd site names)."""
+    import re
+    from ..config import parse_stations
+    f = Path(path) if path else SITES_FILE
+    err: List[str] = []
+    warn: List[str] = []
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [f"{f} does not exist"], []
+    except json.JSONDecodeError as e:
+        lines = f.read_text(encoding="utf-8").splitlines()
+        show = "".join(f"\n      line {i}: {lines[i - 1].strip()[:140]}" for i in (e.lineno - 1, e.lineno)
+                       if 0 < i <= len(lines))
+        hint = (" (a comma missing at the end of the line before, or one too many after the last site?)"
+                if "delimiter" in e.msg or "double quotes" in e.msg else "")
+        return [f"not valid JSON at line {e.lineno}, column {e.colno}: {e.msg}{hint}{show}"], []
+    sites = d.get("sites")
+    if not isinstance(sites, dict) or not sites:
+        return ["no 'sites' object"], []
+    ranges = {}
+    for name, v in sites.items():
+        if not re.fullmatch(r"[a-z0-9_]+", name):
+            warn.append(f"site {name!r}: use lower case letters, digits and _ (it becomes a folder name)")
+        if name.endswith(("_colmap", "_nav_zcam34")):
+            err.append(f"site {name!r}: the name must not end in _colmap / _nav_zcam34 (the folder suffixes)")
+        if not isinstance(v, dict):
+            err.append(f"site {name!r}: must be an object like {{\"sols\": [700, 712]}}")
+            continue
+        sols = v.get("sols")
+        if not (isinstance(sols, list) and len(sols) == 2 and all(isinstance(x, int) for x in sols)):
+            err.append(f"site {name!r}: 'sols' must be [first, last] (two whole numbers), not {sols!r}")
+            continue
+        if sols[1] < sols[0]:
+            err.append(f"site {name!r}: sols {sols} end before they start")
+        ranges[name] = sols
+        unknown = set(v) - {"sols", "label", "note", "no_mask_inference_at", "settings"}
+        if unknown:
+            warn.append(f"site {name!r}: unknown fields {sorted(unknown)} are ignored")
+        try:
+            parse_stations(v.get("no_mask_inference_at") or [])
+        except ValueError as e:
+            err.append(f"site {name!r}: no_mask_inference_at: {e}")
+        st = v.get("settings") or {}
+        if not isinstance(st, dict):
+            err.append(f"site {name!r}: 'settings' must be an object like {{\"ATTITUDE_PRIOR_DEG\": 1.0}}")
+        elif known_settings is not None:
+            bad = sorted(k for k in st if k not in set(known_settings))
+            if bad:
+                warn.append(f"site {name!r}: settings {bad} are not notebook 03 settings (typo?) - they would be set "
+                            f"but not used")
+    groups = d.get("groups") or {}
+    if not isinstance(groups, dict):
+        err.append("'groups' must be an object of name: [site, ...]")
+    else:
+        for g, members in groups.items():
+            if not isinstance(members, list):
+                err.append(f"group {g!r}: must be a list of site names")
+                continue
+            missing = [m for m in members if m not in sites]
+            if missing:
+                err.append(f"group {g!r}: {missing} are not sites")
+    names = sorted(ranges, key=lambda k: ranges[k][0])
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            if ranges[b][0] > ranges[a][1]:
+                break
+            (a0, a1), (b0, b1) = ranges[a], ranges[b]
+            if (a0 <= b0 and b1 <= a1) or (b0 <= a0 and a1 <= b1):
+                continue                                   # one inside the other: a larger / smaller block
+            warn.append(f"sites {a!r} {ranges[a]} and {b!r} {ranges[b]} partly overlap (fine if meant)")
+    return err, warn
+
+
+try:
+    SITES: Dict[str, Tuple[int, int]] = load_sites()   # sol range of the Navcam (+ Mastcam-Z) block (notebook 03)
+except Exception as _e:                                 # noqa: BLE001 - a broken edit must not break "import mppp"
+    import warnings as _w
+    _w.warn(f"MPPP: the site definitions {SITES_FILE} cannot be read ({type(_e).__name__}: {_e}); "
+            f"run scripts/check_sites.py to find the problem")
+    SITES = {}
 
 _WORDS = {"threeforks": "Three Forks", "seitah": "Seitah"}
 ZCAM_SUFFIX = "_colmap_nav_zcam34"

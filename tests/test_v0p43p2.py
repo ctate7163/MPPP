@@ -3,12 +3,12 @@
 
 def test_version():
     import mppp
-    assert mppp.__version__ == "0.43.2"
+    assert tuple(int(x) for x in mppp.__version__.split(".")[:3]) >= (0, 43, 2)
 
 
 def test_navcam_consensus_shipped_with_mppp():
     import json
-    from mppp.sfm.project import (NAVCAM_CONSENSUS_DIR, NAVCAM_FISHEYE_PATTERN, NAVCAM_RIG_FILE,
+    from mppp.sfm.project import (NAVCAM_PACKAGE_CONSENSUS_DIR as NAVCAM_CONSENSUS_DIR, NAVCAM_FISHEYE_PATTERN, NAVCAM_RIG_FILE,
                                   camera_from_colmap_json, navcam_cameras_fingerprint)
     for eye in ("NL", "NR"):
         f = NAVCAM_CONSENSUS_DIR / NAVCAM_FISHEYE_PATTERN.format(instrument=eye)

@@ -42,10 +42,23 @@ ZCAM_FOCUS_MODEL = "M2020_ZCAM034_focus_model.json"  # v0p22: Mastcam-Z 34 mm fo
 ZCAM_HOLD_F_IMAGES = 2                              # v0p22: focus bins with <= this many images hold f at the model
 NAVCAM_RIG = "consensus"                            # v0p22: Navcam rig rotation starts from the refined consensus
 NAVCAM_RIG_FILE = "M2020_N_rig.json"
-# v0p43.2: the Navcam consensus cameras notebook 03 starts from by default, shipped with MPPP (the v0p41 joint of
-# 23 blocks: fisheye + tangential at -20 degC, f +38.1 ppm/degC, NL cx +0.0517 px/degC, rig with the mission drift;
-# identical to camera_analysis/navcal_v0p41/navcam_joint), so the default run does not depend on a scapes folder
-NAVCAM_CONSENSUS_DIR = Path(__file__).resolve().parents[1] / "data" / "navcam_consensus"
+# v0p43.2: the Navcam consensus cameras shipped with MPPP (the v0p41 joint of 23 blocks: fisheye + tangential at
+# -20 degC, f +38.1 ppm/degC, NL cx +0.0517 px/degC, rig with the mission drift; = camera_analysis/navcal_v0p41/
+# navcam_joint).  v0p43.3: the working copy is <MPPP>/params/cmods (paths.cmods_dir); this is the fallback.
+NAVCAM_PACKAGE_CONSENSUS_DIR = Path(__file__).resolve().parents[1] / "data" / "navcam_consensus"
+
+
+def navcam_consensus_dir() -> Path:
+    """v0p43.3: where notebook 03 finds the consensus Navcam cameras and rig by default: ``<MPPP>/params/cmods``
+    (``MPPP_CMODS``) when it holds them, else the copy shipped in the package."""
+    from ..paths import cmods_dir
+    d = cmods_dir()
+    if d is not None and (d / NAVCAM_RIG_FILE).is_file():
+        return d
+    return NAVCAM_PACKAGE_CONSENSUS_DIR
+
+
+NAVCAM_CONSENSUS_DIR = navcam_consensus_dir()
 FULL_OPENCV_NAMES = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6")
 # parameters a focus-bin camera holds with zcam_bin_refine="focal": all but the focal length
 ZCAM_BIN_HELD = ("cx", "cy", "k1", "k2", "p1", "p2", "k3")
@@ -84,20 +97,55 @@ def camera_key(fn: Dict[str, Any]) -> str:
 
 
 # ------------------------------------------------------------------ selection
+NAVCAM_MIN_FRAME_FRACTION = 0.5     # v0p43.3: select_best_products drops Navcam sub-frames / tiles below this
+
+
+def frame_fraction(path: PathLike, size: Optional[int] = None) -> Optional[float]:
+    """v0p43.3: the fraction of the detector frame a Navcam product covers (image lines x samples against the full
+    frame at its downsampling); None if unknown.  A full-resolution tile such as
+    ``NRF_0092_0675115592_573RAD_N0040136NCAM00698_0A00LLJ01`` (1280 x 960 of 5120 x 3840) gives 1/16.  The label is
+    read only when the file is too small to be a full 3-band 16-bit frame (so ordinary frames cost a stat)."""
+    from ..image import FULL_FRAME
+    p = Path(path)
+    fn = parse_filename(p)
+    if fn.family not in FULL_FRAME:
+        return None
+    W, H = FULL_FRAME[fn.family]
+    s = float(fn.downsample_scale)
+    full = W * H * s * s
+    size = p.stat().st_size if size is None else int(size)
+    if size >= 0.5 * full * 3 * 2:                  # at least half a 3-band 16-bit frame: not a small sub-frame
+        return None
+    try:
+        from ..labels import label_get, read_pds, first
+        lab, _ = read_pds(p, load_image=False)
+        lines = float(first(label_get(lab, "IMAGE.LINES")))
+        samples = float(first(label_get(lab, "IMAGE.LINE_SAMPLES")))
+    except Exception:                                   # noqa: BLE001 - unreadable label: keep the product
+        return None
+    return lines * samples / full
+
+
 def select_best_products(paths: Iterable[PathLike], sizes: Optional[Dict[str, int]] = None,
-                         sequence_prefix: Union[None, str, Sequence[str]] = "NCAM") -> Tuple[List[Path], Dict[str, Any]]:
+                         sequence_prefix: Union[None, str, Sequence[str]] = "NCAM",
+                         min_frame_fraction: Optional[float] = NAVCAM_MIN_FRAME_FRACTION,
+                         frame_fraction_families: Sequence[str] = ("N",)) -> Tuple[List[Path], Dict[str, Any]]:
     """
     One product per exposure (instrument + SCLK): the largest file (highest
     resolution / largest sub-frame), then the highest version.  ``sizes``
     maps file name -> bytes (default: stat the files).  ``sequence_prefix``
     keeps only e.g. NCAM sequences (drops SAPP sun images, SCAM support images);
     a tuple keeps several, e.g. ``("NCAM", "ZCAM")`` for Navcam + Mastcam-Z.
-    Returns (paths, report).
+    ``min_frame_fraction`` (v0p43.3, default 0.5; None: off): products of ``frame_fraction_families`` (Navcam)
+    covering less of the detector frame than this are left out - the single full-resolution tiles (1/16 of the
+    frame) of a full-resolution acquisition, which also comes as one full frame.  Returns (paths, report).
     """
     prefixes = None if not sequence_prefix else tuple(
         x.upper() for x in ([sequence_prefix] if isinstance(sequence_prefix, str) else sequence_prefix))
     best: Dict[Tuple[str, str], Tuple[int, int, Path]] = {}
     n_in, dropped_seq = 0, 0
+    fams = {str(f).upper() for f in (frame_fraction_families or ())}
+    subframes: List[Dict[str, Any]] = []
     for p in map(Path, paths):
         n_in += 1
         fn = parse_filename(p)
@@ -107,14 +155,21 @@ def select_best_products(paths: Iterable[PathLike], sizes: Optional[Dict[str, in
         size = (sizes or {}).get(p.name)
         if size is None:
             size = p.stat().st_size
+        if min_frame_fraction and fn.family in fams:
+            frac = frame_fraction(p, size)
+            if frac is not None and frac < float(min_frame_fraction):
+                subframes.append({"file": p.name, "frame_fraction": round(frac, 4)})
+                continue
         key = (fn.instrument, fn.sclk_key)
         cand = (int(size), fn.version, p)
         if key not in best or cand[:2] > best[key][:2]:
             best[key] = cand
     kept = sorted((v[2] for v in best.values()), key=lambda q: (parse_filename(q).sclk, q.name))
     return kept, {"n_input": n_in, "n_dropped_sequence": dropped_seq, "n_exposure_products": len(kept),
-                  "n_superseded": n_in - dropped_seq - len(kept),
-                  "sequence_prefix": list(prefixes) if prefixes else None}
+                  "n_superseded": n_in - dropped_seq - len(subframes) - len(kept),
+                  "sequence_prefix": list(prefixes) if prefixes else None,
+                  "min_frame_fraction": min_frame_fraction, "n_dropped_subframes": len(subframes),
+                  "dropped_subframes": subframes}
 
 
 # -------------------------------------------------------------------- cameras
@@ -346,6 +401,7 @@ class SfmProject:
         if zcam_bin_refine not in ("focal", "all"):
             raise ValueError("zcam_bin_refine must be 'focal' or 'all'")
         processed_dir, root = Path(processed_dir), Path(root)
+        xml_arg = xml_dir                       # v0p43.3: None -> the focus model comes from params/cmods first
         xml_dir = Path(xml_dir) if xml_dir else data_dir() / "m20_cmods"
         (root / "images").mkdir(parents=True, exist_ok=True)
         (root / "masks").mkdir(parents=True, exist_ok=True)
@@ -471,9 +527,9 @@ class SfmProject:
             fmodel = None
             if zcam_intrinsics == "focus_model":
                 fmodel = (json.loads(Path(zcam_focus_model_file).read_text(encoding="utf-8")) if zcam_focus_model_file
-                          else zcam_focus_model(xml_dir))
-                focus_info = {"file": str(zcam_focus_model_file) if zcam_focus_model_file else "shipped",
-                              "fingerprint": zcam_focus_model_fingerprint(zcam_focus_model_file, xml_dir)}
+                          else zcam_focus_model(xml_arg))
+                focus_info = {"file": str(zcam_focus_model_file or zcam_focus_model_path(xml_arg)),
+                              "fingerprint": zcam_focus_model_fingerprint(zcam_focus_model_file, xml_arg)}
             cameras = _split_by_focus(images, cameras, instruments, float(zcam_focus_bin), zcam_bin_refine,
                                       fmodel, int(zcam_hold_f_images))
 
@@ -554,11 +610,18 @@ def _num(v: Any) -> Optional[float]:
 
 def zcam_focus_model(xml_dir: Optional[PathLike] = None) -> Dict[str, Any]:
     """The shipped Mastcam-Z focal-length model: per eye and zoom, f = f0 + slope (focus - reference) and fy/fx."""
-    d = Path(xml_dir) if xml_dir else data_dir() / "m20_cmods"
-    f = d / ZCAM_FOCUS_MODEL
-    if not f.is_file():
-        f = data_dir() / "m20_cmods" / ZCAM_FOCUS_MODEL
-    return json.loads(f.read_text(encoding="utf-8"))
+    return json.loads(zcam_focus_model_path(xml_dir).read_text(encoding="utf-8"))
+
+
+def zcam_focus_model_path(xml_dir: Optional[PathLike] = None) -> Path:
+    """v0p43.3: the focus-model file in use: ``xml_dir``'s, else ``<MPPP>/params/cmods``'s (``MPPP_CMODS``), else the
+    package's ``m20_cmods``."""
+    from ..paths import cmods_dir
+    cands = [Path(xml_dir) / ZCAM_FOCUS_MODEL] if xml_dir else []
+    if cmods_dir() is not None:
+        cands.append(cmods_dir() / ZCAM_FOCUS_MODEL)
+    cands.append(data_dir() / "m20_cmods" / ZCAM_FOCUS_MODEL)
+    return next((f for f in cands if f.is_file()), cands[-1])
 
 
 def zcam_model_focal(gm: Dict[str, Any], focus: float, T: Optional[float] = None,
@@ -831,10 +894,7 @@ def zcam_focus_model_fingerprint(path: Optional[PathLike] = None, xml_dir: Optio
     if path:
         f = Path(path)
     else:
-        d = Path(xml_dir) if xml_dir else data_dir() / "m20_cmods"
-        f = d / ZCAM_FOCUS_MODEL
-        if not f.is_file():
-            f = data_dir() / "m20_cmods" / ZCAM_FOCUS_MODEL
+        f = zcam_focus_model_path(xml_dir)
     return hashlib.sha256(f.read_bytes()).hexdigest()
 
 
