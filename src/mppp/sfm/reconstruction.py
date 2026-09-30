@@ -40,10 +40,7 @@ PathLike = Union[str, Path]
 _FIXED_EXTRA = {"FULL_OPENCV": [6, 7, 9, 10, 11], "OPENCV": [6, 7],
                 "THIN_PRISM_FISHEYE": [6, 7, 10, 11]}          # v0p30: p1, p2 (tangential) and sx1, sy1 (thin prism)
 _TANGENTIAL = {"FULL_OPENCV": [6, 7], "OPENCV": [6, 7], "THIN_PRISM_FISHEYE": [6, 7]}         # p1, p2
-_PARAM_NAMES = {"FULL_OPENCV": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6"),
-                "OPENCV": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"),
-                "THIN_PRISM_FISHEYE": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1"),
-                "OPENCV_FISHEYE": ("fx", "fy", "cx", "cy", "k1", "k2", "k3", "k4")}
+from .project import PARAM_NAMES as _PARAM_NAMES      # v0p50: one table (mppp.sfm.project)
 
 # (triangulation threshold [full-res px], Cauchy scale [sigma], maximum residual kept [native px]) per round.
 # v0p14.5: the fourth round repeats the third's limits - it only shows whether another
@@ -773,7 +770,8 @@ def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:
             "observations": int(np.sum(lens)) if lens else 0}
 
 
-OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.0, "shift_mad_factor": 5.0, "min_shift_m": 0.25,
+OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.2,   # v0p50: 1.2 px (was 1.0)
+                    "shift_mad_factor": 5.0, "min_shift_m": 0.25,
                     "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None}
 # v0p43.3: a frame with fewer tie-point observations than this is held at its prior in the bundle adjustment and
 # flagged by the outlier test (was 30; good frames with 20-29 observations were being dropped).  Notebook 03:

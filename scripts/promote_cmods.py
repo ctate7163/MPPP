@@ -1,5 +1,5 @@
 """
-Make a consensus the current best camera models: copy it into ``<MPPP>/params/cmods`` (``MPPP_CMODS``), where
+Make a consensus the current best camera models: copy it into ``src/mppp/data/cmods`` (v0p50; ``MPPP_CMODS`` overrides), where
 notebook 03 looks for its start cameras by default (``NAVCAM_CAMERAS``, ``ZCAM_FOCUS_MODEL``).
 
     python scripts\\promote_cmods.py D:\\scapes\\colmap\\camera_analysis\\navcal_v0p44\\navcam_joint --note "v0p44 joint, 27 blocks"
@@ -13,9 +13,10 @@ Accepted files (a folder is searched for them):
 - ``M2020_ZCAM034_focus_model*.json``: the Mastcam-Z focus model (saved as ``M2020_ZCAM034_focus_model.json``).
 
 Each file is checked (it must load as a camera / rig / focus model) before anything is copied.  Files it replaces
-go to ``params/cmods/history/<date-time>/``, and ``params/cmods/CHANGES.md`` gets a line with the source, the note
+go to ``cmods/history/<date-time>/``, and ``cmods/CHANGES.md`` gets a line with the source, the note
 and the SHA-256 of each file.  Existing projects are rebuilt from the new models on their next notebook 03 run
 (the models' fingerprints are part of the project check); features and matches are reused.
+The folder is part of the git repository: commit the promotion (git add src/mppp/data/cmods; git commit).
 """
 from __future__ import annotations
 
@@ -36,8 +37,8 @@ ZCAM = "M2020_ZCAM034_focus_model.json"
 
 
 def target_dir() -> Path:
-    from mppp.paths import REPO_ROOT, cmods_dir
-    return cmods_dir() or (REPO_ROOT / "params" / "cmods")
+    from mppp.paths import cmods_dir
+    return cmods_dir()
 
 
 def collect(sources):

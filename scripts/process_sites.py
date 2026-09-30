@@ -2,7 +2,7 @@
 Select and process the images of many sites (or some of them) into their WORK folders, without aligning them.
 
 The sites and their sol ranges come from the site definitions ``src/mppp/data/sites.json`` (or ``--sites-file``).
-Each site goes to ``<root>/<site>_colmap`` (Navcam) or ``<root>/<site>_colmap_nav_zcam34`` (``--zcam``, with the
+Each site goes to ``<root>/<site>_colmap`` (Navcam) or ``<root>/<site>_colmap_zcam34`` (``--zcam``, with the
 Mastcam-Z 34 mm frames).  For each site, sections 1-2 of the newest notebook 03 in ``notebooks/`` run with its
 default settings: one PDS product per exposure is selected from the archive, then processed into
 ``<WORK>/processed`` (8-bit PNG, terrain mask, CAHV + waypoint pose, manifest).  Images already processed with
@@ -15,7 +15,7 @@ Then align a site by double-clicking ``align_here.bat`` copied into its WORK fol
 Examples (Windows, in the environment that runs the notebooks)::
 
     python scripts\\process_sites.py --all                          # every site, Navcam
-    python scripts\\process_sites.py --group nav_zcam34 --zcam       # Navcam + Mastcam-Z 34 mm
+    python scripts\\process_sites.py --all --zcam       # Navcam + Mastcam-Z 34 mm
     python scripts\\process_sites.py --sites rockytop sid south_arm
     python scripts\\process_sites.py --sites sid --set SKY_ELEVATION_DEG=20 --force
     python scripts\\process_sites.py --status                        # every WORK folder under --root
@@ -57,10 +57,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--all", action="store_true", help="every site in the site definitions")
-    g.add_argument("--group", help="a site group of the site definitions (e.g. nav_zcam34, navcam_consensus)")
+    g.add_argument("--group", help="a site group of the site definitions (e.g. navcam_consensus)")
     g.add_argument("--sites", nargs="+", help="site names")
     ap.add_argument("--root", default="D:/scapes/colmap", help="the WORK folders go below it")
-    ap.add_argument("--zcam", action="store_true", help="with the Mastcam-Z 34 mm frames (<site>_colmap_nav_zcam34)")
+    ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z 34 mm blocks (<site>_colmap_zcam34) of the sites with \"zcam34\": true")
     ap.add_argument("--settings", default=None, help="a JSON file of notebook 03 settings for every site")
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="a notebook 03 setting")
     ap.add_argument("--sites-file", default=None, help="site definitions (default mppp/data/sites.json)")
@@ -85,6 +85,8 @@ def main(argv=None) -> int:
     if unknown:
         print(f"ERROR: not in the site definitions: {unknown}", file=sys.stderr)
         return 2
+    from run_sites import filter_zcam34
+    sites, not_z = filter_zcam34(sites, table, a.zcam, bool(a.sites))       # v0p50: --zcam: the zcam34 sites
     sets = parse_set(a.set)
     root.mkdir(parents=True, exist_ok=True)
     log = Log(root / "process_sites_log.txt")

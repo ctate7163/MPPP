@@ -82,7 +82,7 @@ The CAHV pairs agree to 10 µm (Belva, 100 pairs: 1.3 × 10⁻⁴ ° and 10 µm;
 
 No tie point in any variant exceeds 40°. What this shows is the best that upright SIFT with COLMAP verification does on this set; whether the station geometry or the descriptor limits the convergence is not decided by it (section 1).
 
-## 6. Single-pair COLMAP test (v0p22.1, `scripts/pair_experiment.py`; 14 stereo pairs of sols 684–690: 9 Navcam half-resolution, 5 Mastcam-Z 34)
+## 6. Single-pair COLMAP test (v0p22.1, `studies/experiments/pair_experiment.py`; 14 stereo pairs of sols 684–690: 9 Navcam half-resolution, 5 Mastcam-Z 34)
 
 | variant | pairs reconstructed | Navcam | median reprojection |
 |---|---|---|---|
@@ -107,7 +107,7 @@ Gate (power / |ΔLMST| best; ΔAIC stretched 106, sun-angle 158, exp 225, logist
 
 ρ (disjoint pairs): 0.068 ± 0.003 at 0–0.1°, ≈ 0.03 from 0.1 to 2°, 0.01–0.02 to 15°, 0 at 30°. Gaussian + floor: ρ_0 0.053, θ_c 0.107°, ρ_∞ 0.021 ± 0.001, χ²/dof 30 (two scales; the single Gaussian does not describe it).
 
-## 9. Lens terms (v0p22.2, `scripts/lens_terms_experiment.py`)
+## 9. Lens terms (v0p22.2, `studies/experiments/lens_terms_experiment.py`)
 
 Final adjustment repeated from the converged block with the same observations (TF 431,118 / BI 1,166,323 / RT 1,412,950), both eyes:
 
@@ -126,7 +126,7 @@ p1, p2: removing them raises the median residual 16–31 %, the corner residual 
 
 Waypoint stations of other sols within 5 m of a scape's stations: Three Forks 684–693: S032D1214 (sol 693, 0.01 m); at 10 m also S024D3076 (sol 433, 5.8 m). Bell Island: S072D0542 (sol 1477, 4.1 m); at 10 m also S073D0000 (6.7 m). Belva: S038D2102 (sol 766, 2.4 m). Rockytop, Taylor Fjellet, Airey Hill: none within 10 m.
 
-## 11. Lens model: rational vs θ-polynomial fisheye (v0p30, `scripts/lens_model_experiment.py`; Three Forks 684–693 and Bell Island 1451–1467, Navcam both eyes)
+## 11. Lens model: rational vs θ-polynomial fisheye (v0p30, `studies/experiments/lens_model_experiment.py`; Three Forks 684–693 and Bell Island 1451–1467, Navcam both eyes)
 
 Final adjustment repeated from the converged rational block with the same observations (TF 431,118 / BI 1,166,323), the cameras re-initialised in each model and refined with the poses and points; rig, attitude and position priors as in the pipeline. Models: `FULL_OPENCV` rational (k1–k4 + p1, p2; 8 lens dof), `OPENCV_FISHEYE` (θ-polynomial k1–k4, no tangential; 4 dof), `THIN_PRISM_FISHEYE` with sx1, sy1 held (k1–k4 + p1, p2; 8 dof, "fisheye + tangential") and with sx1, sy1 free (10 dof).
 
@@ -165,7 +165,7 @@ Navcam intrinsics, nine-scape consensus (notebook 05, 28 Sep): repeatability aga
 
 ## 13. Navcam temperature bins and the sources of the residuals (v0p31, 28 Sep 2026; the nine 0.22.4 Navcam alignments of §12)
 
-**Temperature bins** (`scripts/temperature_bins_experiment.py`, 10 °C bins, ≥ 8 images per bin; temperatures from 342 labels, the rest interpolated in SCLK). Reference: one camera per eye, fx, fy free, rest and rig held; then one camera per eye and bin.
+**Temperature bins** (`studies/experiments/temperature_bins_experiment.py`, 10 °C bins, ≥ 8 images per bin; temperatures from 342 labels, the rest interpolated in SCLK). Reference: one camera per eye, fx, fy free, rest and rig held; then one camera per eye and bin.
 
 | scape | images | T range °C | bins | cost | median px | rms px |
 |---|---|---|---|---|---|---|

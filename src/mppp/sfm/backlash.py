@@ -3,7 +3,7 @@ Mastcam-Z focus backlash states (v0p40).
 
 At the same focus motor count the Mastcam-Z focus mechanism sits in one of two states.  In the dominant **backlash**
 state the refined focal length is about 1 % above the label (CAHVOR) model; the shipped focus model
-(``m20_cmods/M2020_ZCAM034_focus_model.json``, f0 / label f0 = 1.0086 left, 1.0088 right at focus 600 in the v0p42
+(``cmods/M2020_ZCAM034_focus_model.json``, f0 / label f0 = 1.0086 left, 1.0088 right at focus 600 in the v0p42
 refit; 1.0092 / 1.0105 before) was fitted in this state.
 In the **regular** state the focal length is about the label's.  Regular-state images are mostly single frames or
 small mosaics.  A focus-bin camera that holds images of both states is forced to split the difference, so:

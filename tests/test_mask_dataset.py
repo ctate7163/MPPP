@@ -1,11 +1,11 @@
-"""Training-set builder: masks from a Metashape project, images_variable rebuild."""
-import io
+"""Mask training data (mppp.mask.dataset). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import json
 import zipfile
-
 import cv2
 import numpy as np
 import pytest
+from pathlib import Path  # noqa: E402
+from conftest import NLF, ZL0, needs_data  # noqa: E402
 
 
 def _psx(root, cams, masks):
@@ -92,12 +92,6 @@ def test_make_variable_is_deterministic_and_in_measured_range():
     assert np.array_equal(a, b) and pa == pb and pa != pc
     rc = VariableRecipe()
     assert rc.lo[0] <= pa["lo"] <= rc.lo[1] and rc.gamma[0] <= pa["gamma"] <= rc.gamma[1]
-
-
-# ------------------------------------------------------ v0p6: images/ from PDS
-from pathlib import Path  # noqa: E402
-
-from conftest import NLF, ZL0, needs_data  # noqa: E402
 
 
 @needs_data

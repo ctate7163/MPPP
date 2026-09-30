@@ -385,7 +385,7 @@ class MPPPImage:
             return
         if not self.config["resize"]["apply_padding"]:
             raise ValueError("intrinsics_from_xml requires resize.apply_padding (XML models are full-frame).")
-        xml = params_dir() / "m20_cmods" / pattern.format(eye=self.fn.eye or "")
+        xml = params_dir() / "cmods" / pattern.format(eye=self.fn.eye or "")
         scale = self.fn.downsample_scale / float(cm["xml_scale_by_family"].get(self.fn.family, 1.0))
         intr = intrinsics_from_metashape_xml(xml, scale)
         if (intr.width, intr.height) != (self.intrinsics.width, self.intrinsics.height):

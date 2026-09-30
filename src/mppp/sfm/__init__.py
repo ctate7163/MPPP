@@ -16,7 +16,7 @@ Design (see ``docs/methods.md`` §9):
 
 * **One COLMAP camera per Navcam eye**, at full detector resolution
   (5120 x 3840), FULL_OPENCV.  v0p20: initialised from the rational model
-  ``mppp/data/m20_cmods/M2020_N{L,R}_rational.json`` (radial
+  ``mppp/data/cmods/M2020_N{L,R}_rational.json`` (radial
   (1 + k1 r^2 + k2 r^4 + k3 r^6) / (1 + k4 r^2), valid to the frame corners;
   k1-k4, p1, p2 refined); ``navcam_distortion="polynomial"`` uses the
   Metashape calibration ``M2020_N{L,R}0_frame.xml`` (b1 = b2 = 0, k4-k6 = 0),

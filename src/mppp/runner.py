@@ -57,6 +57,27 @@ def notebook(stem: str, folder: Optional[PathLike] = None) -> Path:
     return max(found)[1]
 
 
+def disable_quickedit() -> bool:
+    """v0p50: switch off QuickEdit mode of this process's Windows console.  A click in a console window in QuickEdit
+    mode starts a text selection, and every print of the process then blocks until the selection ends - a run looks
+    alive (its heartbeat thread goes on) but stops (seen 30 Sep 2026: butler_landing held at "starting" for 47 min).
+    No-op elsewhere; returns True if the mode was changed."""
+    if not sys.platform.startswith("win"):
+        return False
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.GetStdHandle(-10)                    # STD_INPUT_HANDLE
+        mode = ctypes.c_uint32()
+        if not k32.GetConsoleMode(h, ctypes.byref(mode)):
+            return False
+        ENABLE_QUICK_EDIT_MODE, ENABLE_EXTENDED_FLAGS = 0x0040, 0x0080
+        new = (mode.value & ~ENABLE_QUICK_EDIT_MODE) | ENABLE_EXTENDED_FLAGS
+        return bool(k32.SetConsoleMode(h, new)) and new != mode.value
+    except Exception:                                # noqa: BLE001 - never stop a run for this
+        return False
+
+
 class Log:
     """Timestamped lines to a file (and the console)."""
 
@@ -69,13 +90,14 @@ class Log:
     def __call__(self, msg: str) -> None:
         line = f"{now()}  {msg}"
         with self._lock:
+            # v0p50: the file first - a console that blocks (Windows QuickEdit selection) must not hold the log back
+            with self.path.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
             if self.echo:
                 try:
                     print(line, flush=True)
                 except (OSError, UnicodeEncodeError):
                     pass
-            with self.path.open("a", encoding="utf-8") as f:
-                f.write(line + "\n")
 
 
 class RunStatus:
@@ -178,6 +200,7 @@ class BatchRunning(RuntimeError):
 def batch_lock(root: PathLike, kind: str, argv=None, force: bool = False) -> "RunStatus":
     """Start the status (with heartbeat) of a batch over ``root``; refuses while another batch on ``root`` is alive
     (two batches would process the same sites at once and see each other's half-written folders)."""
+    disable_quickedit()                                                  # v0p50
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     cur = read_status(root / BATCH_FILE)
@@ -456,7 +479,7 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
     """
     Run notebook 03 on one WORK folder (v0p43): ``source="processed"`` aligns the images already in
     ``<work>/processed``; ``"pds"`` selects and processes them first (the folder name ``<site>_colmap`` /
-    ``<site>_colmap_nav_zcam34`` names the site).  The executed notebook and ``log.txt`` go to
+    ``<site>_colmap_zcam34`` names the site).  The executed notebook and ``log.txt`` go to
     ``<work>/runs/<time>[_<variant>]/``, the status to ``<work>/mppp_status.json``.  Refuses to start while
     another run of the folder is alive (``force`` overrides).  Returns the final status.
 
@@ -466,6 +489,7 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
     """
     from .sfm.sites import parse_work_folder
     from .sfm.workdir import project_dir
+    disable_quickedit()                                                  # v0p50
     work = Path(work).resolve()
     site, zcam = parse_work_folder(work)
     if process_only:
@@ -474,7 +498,7 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
         raise FileNotFoundError(f"{work} has no processed/ folder: put this in a WORK folder next to processed/, "
                                 f"or use source 'pds'")
     if source == "pds" and not site:
-        raise ValueError(f"{work.name}: a PDS run needs a folder named <site>_colmap or <site>_colmap_nav_zcam34")
+        raise ValueError(f"{work.name}: a PDS run needs a folder named <site>_colmap or <site>_colmap_zcam34")
     work.mkdir(parents=True, exist_ok=True)
     st_path = work / STATUS_FILE
     cur = read_status(st_path)

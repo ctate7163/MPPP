@@ -5,7 +5,7 @@ REM It always runs the current MPPP in MPPP_HOME: the newest notebook 03 there a
 REM this file never needs updating when MPPP changes. Process the images first with process_sites.bat.
 REM
 REM Copy this file into a site's WORK folder (the folder that holds processed\, e.g.
-REM D:\scapes\colmap\south_arm_colmap_nav_zcam34) and double-click it. The alignment runs in the background
+REM D:\scapes\colmap\south_arm_colmap_zcam34) and double-click it. The alignment runs in the background
 REM (a minimised window; closing that window stops it). Nothing needs Jupyter.
 REM
 REM   progress   runs\<date-time>\log.txt   (every notebook cell and every [sfm] line as it happens)
