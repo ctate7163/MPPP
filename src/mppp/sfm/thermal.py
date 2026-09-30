@@ -197,12 +197,26 @@ def _count(xs: Iterable[str]) -> Dict[str, int]:
 
 
 # ----------------------------------------------------------------------------- bins
+# v0p44: the defaults of the final (thermal) stage of notebook 03 - 5 degC bins, a bin with fewer than 5 images
+# (both eyes counted) merged into its neighbour (were 10 degC and 8 images)
+THERMAL_BIN_DEG = 5.0
+THERMAL_MIN_IMAGES = 5
+
+
 def temperature_bins(frame_T: Dict[int, float], frame_n: Dict[int, int], bin_deg: float = 10.0,
                      min_images: int = 8) -> Dict[int, Tuple[float, float]]:
     """
     Bin of every frame (``frame_T``: frame id -> temperature; ``frame_n``: images per frame) as its (lo, hi)
-    edges in degC.  Bins are multiples of ``bin_deg``; a bin with fewer than ``min_images`` images is merged
-    into the neighbour whose centre is nearer (repeatedly, smallest first).
+    edges in degC.
+
+    1. A frame's temperature is the mean of its Navcam images' camera temperatures; the frame goes to the bin
+       ``[floor(T / bin_deg) * bin_deg, + bin_deg)``, so the bins are fixed multiples of ``bin_deg`` (5 degC:
+       ..., -20..-15, -15..-10, ...), not centred on the data.  Only bins holding frames exist.
+    2. Images are counted per bin (a stereo frame counts 2, both eyes together).  While some bin has fewer than
+       ``min_images``, the smallest of them is merged with the neighbouring occupied bin (the next one below or
+       above in temperature, even across empty bins) whose centre is nearer to its own; the merged bin spans both
+       (e.g. -20..-15 + -15..-10 -> -20..-10; -25..-20 + -15..-10 -> -25..-10).  Repeated until every bin has
+       ``min_images`` or only one is left.  A tie between two neighbours goes to the colder one.
     """
     if not frame_T:
         return {}
@@ -322,7 +336,8 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
             db_cams[bkey] = next_cid
             rows.append({"camera": bkey, "eye": key, "camera_id": next_cid, "bin_degC": list(b),
                          "T_median_degC": tm, "T_min_degC": float(np.min(Tb)), "T_max_degC": float(np.max(Tb)),
-                         "images": len(Tb), "start_fx": float(p[0]), "start_fy": float(p[1])})
+                         "images": len(Tb), "start_fx": float(p[0]), "start_fy": float(p[1]),
+                         "start": {"fx": float(p[0]), "fy": float(p[1]), "cx": float(p[2]), "cy": float(p[3])}})
             next_cid += 1
     proj.settings.setdefault("database", {})["cameras"] = db_cams
 
@@ -443,10 +458,8 @@ def thermal_adjust(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: floa
     if verbose:
         print(f"[thermal] {out['bins']['n_bins']} temperature bins: cost {ba1['final_cost']:.1f} "
               f"({ba1['seconds']:.0f} s), {out['bins']['stats']}", flush=True)
-        for r in rows:
-            print(f"   {r['camera']:18s} {r['images']:4d} images  T {r['T_median_degC']:6.1f} degC "
-                  f"[{r['T_min_degC']:.1f}, {r['T_max_degC']:.1f}]  fx {r['fx']:.2f}  fy {r['fy']:.2f}  "
-                  f"({r['observations']} obs)", flush=True)
+        for line in thermal_bin_lines(rows, free):
+            print(line, flush=True)
     return out
 
 
@@ -512,7 +525,8 @@ def thermal_start_cameras(cameras: Dict[str, Dict[str, Any]], model: Dict[str, D
 
 
 # ----------------------------------------------------------------------------- pipeline stage
-def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float = 10.0, min_images: int = 8,
+def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float = THERMAL_BIN_DEG,
+                  min_images: int = THERMAL_MIN_IMAGES,
                   free: Sequence[str] = ("fx", "fy"), hold: bool = False,
                   thermal_model: Optional[Dict[str, Dict[str, float]]] = None, sigma_px: float = 0.5,
                   loss_scale: float = 2.0, max_iterations: int = 100, attitude_prior_deg: Optional[float] = None,
@@ -564,10 +578,32 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
               f"({'held at the thermal model' if hold else 'f refined'}): median {before['median_px']:.4f} -> "
               f"{after['median_px']:.4f}, rms {before['rms_px']:.4f} -> {after['rms_px']:.4f} native px, "
               f"cost {ba['initial_cost']:.1f} -> {ba['final_cost']:.1f}", flush=True)
-        for r in rows:
-            print(f"      {r['camera']:18s} {r['images']:4d} images  T {r['T_median_degC']:6.1f} degC  "
-                  f"fx {r['fx']:.2f}  fy {r['fy']:.2f}", flush=True)
+        for line in thermal_bin_lines(rows, free, hold):
+            print(line, flush=True)
     return r1, report
+
+
+def thermal_bin_lines(rows: Sequence[Dict[str, Any]], free: Sequence[str] = ("fx", "fy"), hold: bool = False) -> List[str]:
+    """v0p44: the temperature-bin table of the thermal stage - per bin camera its images, temperature, fx, fy, cx,
+    cy (refined values; a trailing * marks a parameter held at its start: the eye's camera moved to the bin
+    temperature by the thermal model) and the change from that start."""
+    fr = set() if hold else set(free)
+    mark = {k: ("" if k in fr else "*") for k in ("fx", "fy", "cx", "cy")}
+    out = [f"      {'camera':18s} {'images':>6s} {'T degC':>7s} {'[min, max]':>14s} "
+           + " ".join(f"{k + mark[k]:>10s}" for k in ("fx", "fy", "cx", "cy"))
+           + "   d fx    d fy    d cx    d cy  (px, from the start)"]
+    for r in rows:
+        st = r.get("start") or {}
+        d = [r[k] - st[k] if k in st else float("nan") for k in ("fx", "fy", "cx", "cy")]
+        out.append(f"      {r['camera']:18s} {r['images']:6d} {r['T_median_degC']:7.1f} "
+                   f"{'[' + format(r['T_min_degC'], '.1f') + ', ' + format(r['T_max_degC'], '.1f') + ']':>14s} "
+                   + " ".join(f"{r[k]:10.2f}" for k in ("fx", "fy", "cx", "cy"))
+                   + "  " + " ".join(f"{x:+7.2f}" for x in d))
+    held = [k for k in ("fx", "fy", "cx", "cy") if mark[k]]
+    if held:
+        out.append(f"      * held at the start ({', '.join(held)}): the eye's camera of the block, moved to the bin "
+                   f"temperature by the thermal model (f ppm/degC, NL cx px/degC)")
+    return out
 
 
 def strip_thermal_bins(project) -> int:

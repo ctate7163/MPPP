@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_version():
     import mppp
-    assert mppp.__version__ == "0.43.3"
+    assert tuple(int(x) for x in mppp.__version__.split(".")[:3]) >= (0, 43, 3)
 
 
 # ------------------------------------------------------------------------------------ interrupted runs completed

@@ -1069,7 +1069,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 triangulation_options: Optional[Dict[str, Any]] = None,
                 navcam_intrinsics: str = "refine", staged: bool = False, hold_cameras: Sequence[str] = (),
                 linear_solver: str = "auto", temperatures: Optional[Dict[str, Dict[str, Any]]] = None,
-                thermal_bins_deg: Optional[float] = None, thermal_min_images: int = 8,
+                thermal_bins_deg: Optional[float] = None, thermal_min_images: int = 5,
                 thermal_free: Sequence[str] = ("fx", "fy"),
                 thermal_model: Optional[Dict[str, Dict[str, float]]] = None, localize_min_images: int = 0,
                 zcam_backlash: Optional[str] = None, zcam_backlash_z: float = 3.0):

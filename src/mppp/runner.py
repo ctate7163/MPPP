@@ -390,7 +390,7 @@ def run_key(settings: Dict[str, Any], source: str, variant: str) -> str:
 
 # v0p43.3: bumped when the selection / processing rules change, so that process_sites.py checks every site again
 # (2: interrupted runs are completed instead of trimmed; Navcam tiles below 1/2 of the frame are left out)
-PROCESS_RULES = 2
+PROCESS_RULES = 3                    # 3 (v0p44): Navcam tiles below 1/4 of the frame left out
 
 
 def process_key(settings: Dict[str, Any]) -> str:

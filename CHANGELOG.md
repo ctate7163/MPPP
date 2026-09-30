@@ -2,6 +2,15 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.44.0 — 2026-09-30
+
+Navcam tiles below a quarter frame, thermal-stage defaults, the bin table with principal points, the LMST histogram.
+- **Tiles:** `NAVCAM_MIN_FRAME_FRACTION` 0.5 -> **0.25**: `select_best_products` leaves out Navcam products covering less than a quarter of the detector frame (a quarter-frame product, exactly 1/4, is kept). At Van Zyl (sols 49-71) the v0p43 manifest held 473 such products of 564: full-resolution 1280 x 960 tiles (1/16, e.g. NCAM00603, NCAM00297), 1280 x 424 strips and quarter-resolution 1280 x 224 strips (0.23, NCAM00500-00504). `PROCESS_RULES = 3`: `process_sites.py` checks every site once more.
+- **Thermal stage defaults:** notebook 03 `THERMAL_BINS_DEG` 10 -> **5** degC, `THERMAL_MIN_IMAGES` 8 -> **5** (`thermal.THERMAL_BIN_DEG`, `THERMAL_MIN_IMAGES`; `reconstruct(thermal_min_images=5)`). How bins form and merge is now in `thermal.temperature_bins`' docstring and the notebook comments: fixed multiples of the bin width; a frame by the mean temperature of its Navcam images; images of both eyes counted; the smallest bin under the minimum joins the neighbouring occupied bin whose centre is nearer (a tie goes to the colder one), repeated.
+- **Principal points per bin:** only fx, fy are refined per temperature bin (and nothing when the Navcam intrinsics are held); cx, cy stay at the eye's refined values moved by the thermal model (NL cx +0.0517 px/degC). New notebook 03 setting `THERMAL_FREE = ("fx", "fy")` (add "cx", "cy" to fit them per bin). The thermal-stage table (`thermal.thermal_bin_lines`) now shows per bin camera: images, T median [min, max], fx, fy, cx, cy (* = held) and each one's change from its start; `split_by_temperature` rows carry `start`.
+- **LMST histogram: `scripts/lmst_histogram.py`** - one panel per site plus all sites, Navcam and Mastcam-Z 34 each normalised to unit area, noon and the processing window marked, and `<name>_by_site.csv` (sols, images, stations, span, LMST min / median / max, Navcam LMST IQR). Reads the newest manifest of every WORK folder under `--roots` (default `D:/scapes/colmap`, `D:/scapes/colmap_old`; a folder name under several roots counts once), leaves out Navcam tiles below the selection rule, writes to `--out` (default `<MPPP>/Claude outputs`). Replaces the cloud-only `scripts/sites_table.py` figure. Run on 30 Sep: 21 sites, 2356 Navcam + 711 Mastcam-Z images.
+- Notebooks copied as `*_v0p44.ipynb`.
+
 ## 0.43.3 — 2026-09-30
 
 Stopping runs, one batch at a time, interrupted processing completed, Navcam tiles left out.

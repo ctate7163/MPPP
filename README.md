@@ -43,6 +43,7 @@ Notebooks (in `notebooks/`):
 - **Process only (many sites):** `scripts\windows\process_sites.bat` (choose the sites at its top), or `python scripts\process_sites.py --all` (also `--group nav_zcam34 --zcam`, or `--sites rockytop sid`). It selects and processes each site's images into `<WORK>\processed\` with notebook 03's defaults, one site after the other, without aligning. Sites already processed with the same settings are skipped.
 - **Camera models in use:** `params\cmods\` (Navcam cameras and rig, Mastcam-Z focus model). Notebook 03 starts from them; replace them only with `python scripts\promote_cmods.py <folder or files> --note "..."` (it keeps the old ones in `params\cmods\history\`).
 - **Site list:** `src\mppp\data\sites.json`; check it after editing with `scripts\windows\check_sites.bat`.
+- **Time of day of the images:** `python scripts\lmst_histogram.py` (all sites under `D:\scapes\colmap` and `colmap_old`; `--sites a b`) writes `lmst_histogram.png` and a per-site table into `Claude outputs\`.
 - **Stop runs:** `scripts\windows\stop_mppp.bat` lists every MPPP run on the computer and stops them (with their notebook kernels) after asking. Only one batch (`process_sites` or `run_sites`) runs on a scapes folder at a time; `sites_status.bat` shows it.
 - **One WORK folder:** copy `scripts\windows\align_here.bat` into the folder that holds `processed\` and double-click it. It aligns the images already processed there with notebook 03's default settings, in a minimised window.
   - Double-click it again to see the status.
