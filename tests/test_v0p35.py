@@ -126,7 +126,7 @@ def test_notebooks_v0p35():
     root = Path(__file__).resolve().parents[1] / "notebooks"
     nb3 = nbformat.read(str(root / "03_colmap_alignment.ipynb"), as_version=4)
     full3 = "\n".join(c.source for c in nb3.cells)
-    assert ("0.35." in nb3.cells[0].source or "0.40." in nb3.cells[0].source) and "navcam_joint" in full3
+    assert ("0.35." in nb3.cells[0].source or "0.4" in nb3.cells[0].source) and "navcam_joint" in full3
     assert 'NAVCAM_RIG_REFINE = "' in full3 and '"auto": "auto"' in full3        # v0p40: "refine" maps to "rotation"
     nb4 = nbformat.read(str(root / "04_camera_models.ipynb"), as_version=4)
     full4 = "\n".join(c.source for c in nb4.cells)
@@ -134,7 +134,7 @@ def test_notebooks_v0p35():
         assert k in full4, k
     for name in ("01_process_images", "05_error_analysis"):
         nb = nbformat.read(str(root / f"{name}.ipynb"), as_version=4)
-        assert "0.35." in nb.cells[0].source or "0.40." in nb.cells[0].source
+        assert "0.35." in nb.cells[0].source or "0.4" in nb.cells[0].source
 
 
 def test_reconstruct_rig_auto_and_thermal_stage_rig_slopes():

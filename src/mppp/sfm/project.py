@@ -428,10 +428,29 @@ class SfmProject:
                         cam["params"] = list(map(float, cam["params"]))
                         cam["params"][0] *= sc
                         cam["params"][1] *= sc
+                        # v0p40: a principal point that moves with temperature (cx, cy px/degC about T0)
+                        dcx = float(th.get("cx_px_per_degC") or 0.0) * (T - float(th["T0_degC"]))
+                        dcy = float(th.get("cy_px_per_degC") or 0.0) * (T - float(th["T0_degC"]))
+                        cam["params"][2] += dcx
+                        cam["params"][3] += dcy
                         cam["source"] = (f"{cam.get('source', xml.name)}; fx, fy x {sc:.6f} for the median camera "
                                          f"temperature {T:.1f} degC (consensus at {float(th['T0_degC']):.1f} degC, "
-                                         f"{float(th['ppm_per_degC']):+.1f} ppm/degC)")
+                                         f"{float(th['ppm_per_degC']):+.1f} ppm/degC)"
+                                         + (f"; cx, cy {dcx:+.3f}, {dcy:+.3f} px (principal point thermal)"
+                                            if dcx or dcy else ""))
                         nav_info[instr]["thermal"] = {"T_median_degC": T, "scale": sc, **th}
+                    tr = js.get("trend")                    # v0p41: principal point against sol (about sol0)
+                    Ss = [float(r["sol"]) for r in images if r["instrument"] == instr and r.get("sol") is not None]
+                    if tr and Ss:
+                        S = float(np.median(Ss))
+                        dcx_s = float(tr.get("cx_px_per_sol") or 0.0) * (S - float(tr["sol0"]))
+                        dcy_s = float(tr.get("cy_px_per_sol") or 0.0) * (S - float(tr["sol0"]))
+                        cam["params"] = list(map(float, cam["params"]))
+                        cam["params"][2] += dcx_s
+                        cam["params"][3] += dcy_s
+                        cam["source"] = (f"{cam.get('source', xml.name)}; cx, cy {dcx_s:+.3f}, {dcy_s:+.3f} px for the "
+                                         f"median sol {S:.0f} (trend about sol {float(tr['sol0']):.0f})")
+                        nav_info[instr]["trend"] = {"sol_median": S, "dcx_px": dcx_s, "dcy_px": dcy_s, **tr}
             else:
                 xml = xml_dir / (ZCAM_XML_PATTERN.format(camera=instr) if fam == "Z"
                                  else XML_PATTERN.format(instrument=instr))

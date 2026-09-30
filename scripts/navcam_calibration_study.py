@@ -246,22 +246,61 @@ def cmd_joint(a, scapes_cfg, samples):
     ky = float(within["yaw"]["slope_mdeg_per_degC"]) if within.get("yaw") and a.rig_thermal else 0.0
     kp = float(within["pitch"]["slope_mdeg_per_degC"]) if within.get("pitch") and a.rig_thermal else 0.0
     print(f"rig temperature slopes from the per-bin rigs: yaw {ky:+.3f}, pitch {kp:+.3f} mdeg/degC", flush=True)
+    # v0p40: --drift adds the rig's mission trend per image; --pp-thermal NR|NL|split moves the temperature term from
+    # the rig yaw to the principal point(s): c_x(T) = c_x(T0) + a (T - T0), the rig then has the drift only
+    drift = json.loads(Path(a.drift).read_text()) if getattr(a, "drift", None) else None
+    ppm_mode = getattr(a, "pp_thermal", None)
+    f_right = float(rec.cameras[2].params[0])
+
+    def pp_of(k):
+        """principal-point slopes {camera id: (ax, ay)} for a yaw-equivalent NR slope k px/degC"""
+        if not ppm_mode:
+            return None
+        return {"NR": {2: (k, 0.0)}, "NL": {1: (-k, 0.0)}, "split": {1: (-k / 2, 0.0), 2: (k / 2, 0.0)}}[ppm_mode]
+
+    k_pp = f_right * np.radians(ky * 1e-3) if ppm_mode else 0.0
+    if ppm_mode:
+        print(f"principal-point thermal model ({ppm_mode}): start at the yaw-equivalent {k_pp:+.4f} px/degC; "
+              f"rig: {'drift only' if drift else 'fixed'}", flush=True)
+        ky, kp = 0.0, 0.0
+    xkw = {k: v for k, v in (("drift", drift), ("pp_slopes", pp_of(k_pp))) if v}
     # 1. converge the shared cameras from the per-block solutions at a provisional slope
     t = time.time()
     b0 = a.warm_slope
-    ba = NC.joint_adjust(rec, proj, temps, b0, T0, max_iterations=200, rig_slopes=(ky, kp))
+    ba = NC.joint_adjust(rec, proj, temps, b0, T0, max_iterations=200, rig_slopes=(ky, kp), **xkw)
     print(f"warm-up at {b0} ppm/degC: {ba['brief']}  {time.time() - t:.0f} s", flush=True)
     save_merged(out, f"{lens}_warm", rec, proj, idx, {"T0": T0, "slope": b0})
     # 2. profile the slope
     if a.fixed_slope is not None:
         prof = {"rows": [], "best_ppm_per_degC": float(a.fixed_slope), "sd_ppm_per_degC": float("nan"), "fit": []}
     else:
-        prof = NC.profile_slope(rec, proj, temps, T0, a.grid, max_iterations=100, rig_slopes=(ky, kp))
+        prof = NC.profile_slope(rec, proj, temps, T0, a.grid, max_iterations=100, rig_slopes=(ky, kp), **xkw)
     best = prof["best_ppm_per_degC"]
     print(f"slope {best:.1f} +- {prof['sd_ppm_per_degC']:.1f} ppm/degC", flush=True)
     # 2b. profile the rig yaw slope at the best focal slope (0 = a temperature-independent rig)
     yaw_prof = None
-    if a.rig_thermal and a.fixed_slope is None:
+    if ppm_mode and a.fixed_slope is None:
+        # v0p40: profile the principal-point slope (the rig has no temperature term)
+        import copy as _copy
+        rows = []
+        for k in sorted({0.0, 0.6 * k_pp, k_pp, 1.4 * k_pp}):
+            r = _copy.deepcopy(rec)
+            t1 = time.time()
+            bb = NC.joint_adjust(r, proj, temps, best, T0, max_iterations=100, rig_slopes=(0.0, 0.0),
+                                 **{**xkw, "pp_slopes": pp_of(k)})
+            rows.append({"pp_px_per_degC": k, "cost": float(bb["final_cost"]), "iterations": bb["iterations"],
+                         "variance_factor": float(2 * bb["final_cost"] / max(2 * bb["observations"] - 1, 1))})
+            print(f"  principal-point slope {k:+.4f} px/degC  cost {bb['final_cost']:.2f}  {time.time() - t1:.0f} s", flush=True)
+            del r
+        xs = np.array([r["pp_px_per_degC"] for r in rows]); cs = np.array([r["cost"] for r in rows])
+        c2 = np.polyfit(xs, cs, 2)
+        kb = float(-c2[1] / (2 * c2[0])) if c2[0] > 0 else float(xs[np.argmin(cs)])
+        vf = float(np.median([r["variance_factor"] for r in rows]))
+        yaw_prof = {"pp_rows": rows, "pp_best": kb, "pp_sd": float(np.sqrt(vf / (2 * c2[0]))) if c2[0] > 0 else float("nan")}
+        print(f"principal-point slope {kb:+.4f} +- {yaw_prof['pp_sd']:.4f} px/degC", flush=True)
+        k_pp = kb
+        xkw["pp_slopes"] = pp_of(k_pp)
+    elif a.rig_thermal and a.fixed_slope is None:
         import copy as _copy
         rows = []
         for k in sorted({0.0, ky - 1.0, ky - 0.5, ky, ky + 0.5, ky + 1.0}):
@@ -286,7 +325,7 @@ def cmd_joint(a, scapes_cfg, samples):
         ky = float(a.fixed_rig_yaw)
     # 3. final adjustment at the best slope, with covariances
     t = time.time()
-    ba = NC.joint_adjust(rec, proj, temps, best, T0, max_iterations=200, covariance=True, rig_slopes=(ky, kp))
+    ba = NC.joint_adjust(rec, proj, temps, best, T0, max_iterations=200, covariance=True, rig_slopes=(ky, kp), **xkw)
     cov = ba.get("covariance") or {}
     vf = float(cov.get("variance_factor", 1.0))
     blocks = cov.get("blocks", {})
@@ -295,6 +334,9 @@ def cmd_joint(a, scapes_cfg, samples):
     res = {"lens": lens, "T0_degC": T0, "ppm_per_degC": best, "sd_ppm_per_degC": prof["sd_ppm_per_degC"],
            "rig_thermal": {"yaw_mdeg_per_degC": ky, "pitch_mdeg_per_degC": kp, "within_block": within,
                            "yaw_profile": yaw_prof},
+           "pp_thermal": ({"NL": list((pp_of(k_pp) or {}).get(1, (0.0, 0.0))), "NR": list((pp_of(k_pp) or {}).get(2, (0.0, 0.0))),
+                           "mode": ppm_mode} if ppm_mode else None),
+           "drift_in_joint": drift,
            "profile": [{k: v for k, v in r.items() if k != "state"} for r in prof["rows"]],
            "profile_states": [r["state"] for r in prof["rows"]], "profile_fit": prof["fit"],
            "variance_factor": vf, "final": {k: ba[k] for k in ("final_cost", "iterations", "observations", "brief")},
@@ -434,6 +476,9 @@ def main(argv=None):
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--points", type=int, default=15000, help="joint/loo: points per block")
     ap.add_argument("--rig-points", type=int, default=120000, help="rig: at most this many points per block")
+    ap.add_argument("--pp-thermal", choices=["NR", "NL", "split"], help="joint (v0p40): the stereo change with "
+                    "temperature as a principal-point slope of NR, NL or both (instead of a rig yaw slope)")
+    ap.add_argument("--drift", help="joint (v0p40): a rig drift JSON (rig_drift_model) applied per image in the joint")
     ap.add_argument("--t0", default="-20", help="joint (v0p40): reference camera temperature in degC of the shared "
                     "cameras and rig (default -20), or 'mean' (the mean image temperature, v0p35)")
     ap.add_argument("--modes", nargs="*", help="rig (v0p40): only these rig_study modes (rotation, rotation_pp, "

@@ -2,6 +2,41 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.41.0 — 2026-09-30
+
+The Navcam consensus with first-order temperature and sol terms, the lens-term test, and an exposure rule (working notes §19):
+- **The rig's temperature term becomes a principal-point term.** Tests in the joint adjustment of 23 blocks, all from the same state, with the rig's mission drift applied per image (`navcal.thermal_keypoint_map`, `joint_adjust(pp_slopes=, drift=)`, `navcam_calibration_study.py joint --pp-thermal NL|NR|split --drift FILE`):
+
+  | model | joint cost |
+  |---|---|
+  | no drift, no temperature term | 205,392 |
+  | drift | 198,201 |
+  | drift + rig yaw −1.018 mdeg/°C | 195,847 |
+  | drift + NR cx slope | 195,864 |
+  | drift + NL and NR split | 195,665 |
+  | **drift + NL cx +0.0517 ± 0.0004 px/°C** | **195,596** |
+
+  The NL principal point moving with its temperature fits best, with the same number of parameters (Δ cost −251 against the yaw slope). Putting the drift into the joint is itself worth −7,191.
+- **First-order temperature and sol terms of the intrinsics** (`navcal.split_by_unit`: one fx, fy, cx, cy per block and sol epoch, distortion shared, with the model above applied, then regressed on camera temperature and sol).
+  - Nothing remains in f: −4 ± 5 (NL) and −2 ± 5 (NR) ppm/°C, −6 ± 34 and −26 ± 35 ppm per 1000 sols. The 38.1 ppm/°C focal slope holds.
+  - Nothing remains in cx with temperature: 0.000 ± 0.014 px/°C.
+  - cy: −0.08 ± 0.04 px/°C in both eyes (p 0.05–0.07; the block-to-block scatter is 0.95 px). Not used.
+  - cx over the mission: −0.41 and −0.44 ± 0.11 px per 1000 sols in both eyes (common mode). Imposed in the joint it *raised* the cost by 20 (the frame attitudes absorb a common shift), so it is left out.
+- **Consensus v0p41** (`D:\scapes\colmap\camera_analysis\navcal_v0p41\navcam_joint`; notebook 03 `NAVCAM_CAMERAS`):
+  - **Intrinsics:** fisheye + tangential at −20 °C; fx, fy +38.1 ppm/°C; NL cx +0.0517 px/°C (`thermal.cx_px_per_degC` in the camera file).
+  - **Rig:** no temperature term; the mission drift only (pitch hinge at sol 300, yaw, roll).
+  - **Pipeline:** `SfmProject.create`, the thermal-stage bins and `write_joint_cameras` carry the principal-point terms. `trend` (principal point per sol about sol0) is supported but not written.
+- **k4, p1, p2 stay** (joint of 23 blocks, same model and state, `fixed_params`):
+  - k4 = 0: cost +285, 0.07 px rms, 0.25–0.30 px in the corners, 1.3–1.5 px at the far corners.
+  - p1 = p2 = 0: cost +42,066 (+21 %), 0.47–0.88 px rms.
+  - All three at 0: +42,412.
+- **Exposure rule** (`selection.max_exposure_ms` 40, `selection.max_centre_tint` 1.2; notebook 03 `MAX_EXPOSURE_MS`, `MAX_CENTRE_TINT`; `ExposureImage`).
+  - The NCAM08111 sequence at the Three Forks depot (sols 654–693) brackets each view at ~2, ~18 and ~50–65 ms.
+  - The long member has a dark blue disk in the centre. At sol 658, the frame labelled 54.1 ms has half the others' centre radiance and B/R 1.74× the edge (2 and 18 ms: 1.01, 1.00), as if it was exposed much shorter than labelled. Other Navcam frames there stay below 30 ms.
+  - Frames above either limit are skipped and listed under `skipped`. A manifest entry is reused unless it falls under the rules; a change of the limits does not reprocess the other images. `centre_tint` is recorded in the manifest.
+- **Matching:** `prior_pairs` keeps 59–65 % of the exhaustive pairs on Navcam-only blocks and 23 % on Three Forks North with Mastcam-Z (480 images).
+- Tests: `tests/test_v0p41.py`.
+
 ## 0.40.0 — 2026-09-29
 
 Closing out the Navcam analysis: site discovery, a new consensus from 23 blocks, rig epochs, and the first Mastcam-Z step, the focus backlash states (working notes §18):

@@ -467,3 +467,31 @@ Sid's pitch step (+5.0 mdeg) is what the hinge drift predicts (+5.5), and its ya
 | check sol ranges | threeforks_south / threeforks_north, pico_turquino | overlap through the nearby waypoints (sols 413–693 in both); Pico Turquino holds sols to 1322 |
 
 **Mastcam-Z focus states.** The per-image test on two older Nav+Zcam blocks, Airey Hill (152 Zcam images) and Three Forks (342), fitted each image's own focal length with its centre held near its Navcam-shifted label position. Almost all focus groups sit at 1.009–1.013 × the label f, which is the backlash state. A few one- and two-image bins at 0.96–0.99 are failed bins rather than a second state, so they are marked implausible. Those blocks were solved with bins started in the backlash state, and a regular-state image in such a bin shows up only if its centre cannot absorb the difference. The first new Zcam runs will show how many regular groups there are.
+
+## 19. Navcam temperature and sol terms, lens terms, exposure brackets (v0p41, 30 Sep 2026)
+
+**Where the temperature term belongs.** In the joint adjustment of 23 blocks, with the rig's mission drift applied per image and every model started from the same state, the stereo change with temperature fits best as the NL principal point moving with the NL camera temperature: +0.0517 ± 0.0004 px/°C, joint cost 195,596. The alternatives:
+
+- a rig yaw slope: 195,847;
+- the NR principal point: 195,864;
+- both principal points, split: 195,665.
+
+The NL slope is 0.99 × the yaw-equivalent (f·δ). The two models differ only in how the shift spreads over the fisheye field, and that is what the fit sees. Putting the drift into the joint lowers the cost by 7,191; the joint had never modelled it before.
+
+**Residual first-order terms** (one fx, fy, cx, cy per block/epoch, distortion shared, on top of that model):
+
+- **Focal length:** no residual temperature or sol term (|b| < 5 ppm/°C, < 35 ppm per 1000 sols).
+- **cx with temperature:** none left (±0.014 px/°C).
+- **cy with temperature:** −0.08 px/°C in both eyes, marginal (p 0.05).
+- **cx over the mission:** −0.4 px per 1000 sols, common to both eyes. Imposed in the joint it raises the cost, because a common shift is absorbed by the frame attitudes, so it is not used.
+
+The consensus v0p41 therefore has f(T), NL cx(T), and a rig with the drift only.
+
+**Lens terms.**
+
+- k4 = 0 changes the far corners by up to 1.5 px (cost +285).
+- p1 = p2 = 0 costs 21 % (0.5–0.9 px rms).
+
+All three stay.
+
+**Exposure brackets.** The NCAM08111 depot sequence (sols 654–693) repeats each view at ~2, ~18 and ~50–65 ms. The long member has a dark blue centre: half the centre radiance of its bracket partners, and B/R 1.74× the edge. Its label exposure is probably not what the detector saw. It is now skipped by `max_exposure_ms = 40`, with an image check (`max_centre_tint = 1.2`) as a backstop.

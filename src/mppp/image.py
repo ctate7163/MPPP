@@ -53,6 +53,11 @@ class SaturatedImage(SkippedImage):
     """More than ``selection.max_saturated_fraction`` of the valid pixels are saturated (v0p30)."""
 
 
+class ExposureImage(SkippedImage):
+    """v0p41: a Navcam frame labelled with an exposure above ``selection.max_exposure_ms``, or whose centre is tinted
+    against its edge by more than ``selection.max_centre_tint`` (the blue-disk frames of the exposure brackets)."""
+
+
 def lmst_hours(lmst: Optional[str]) -> Optional[float]:
     """``'Sol-01451M13:00:25.313'`` -> 13.007 (hours of the sol); None if it cannot be read."""
     import re
@@ -92,9 +97,11 @@ class MPPPImage:
         self._check_boresight()
         self._illumination()
         self._check_lmst()
+        self._check_exposure()
         self._check_saturation(dn)
 
         rad, self.mask_valid = self._radiance_rgb(dn)
+        self._check_centre_tint(rad, self.mask_valid)
         if cfg["radiometry"]["apply_tau_correction"]:
             rad /= self.scale_zenith
         rad *= self.white_balance.reshape(1, 1, 3) * self.brightness
@@ -153,6 +160,42 @@ class MPPPImage:
         lo, hi = float(win[0]), float(win[1])
         if not lo <= self.lmst_h <= hi:
             raise LmstOutOfWindow(f"LMST {self.lmst_h:.2f} h outside [{lo:g}, {hi:g}] h (selection.lmst_window_h)")
+
+    def _exposure_family(self) -> bool:
+        fams = (self.config.get("selection") or {}).get("exposure_filter_families", ["N"]) or []
+        return self.fn.stem[:1].upper() in {str(f).upper() for f in fams}
+
+    def _check_exposure(self) -> None:
+        """v0p41: refuse Navcam frames labelled with an exposure above ``selection.max_exposure_ms``."""
+        self.exposure_ms = label_float(self.label, "INSTRUMENT_STATE_PARMS.EXPOSURE_DURATION")
+        lim = (self.config.get("selection") or {}).get("max_exposure_ms")
+        if lim is None or self.exposure_ms is None or not self._exposure_family():
+            return
+        if float(self.exposure_ms) > float(lim):
+            raise ExposureImage(f"exposure {self.exposure_ms:.1f} ms > {float(lim):g} ms (selection.max_exposure_ms): "
+                                f"the long member of an exposure bracket (dark blue centre), not processed")
+
+    def _check_centre_tint(self, rad: np.ndarray, valid: np.ndarray) -> None:
+        """v0p41: (B/R in the centre, r < 0.35 of the half-diagonal) / (B/R at the edge, 0.6-0.9) of the radiance;
+        refuse the frame above ``selection.max_centre_tint`` (the blue-disk frames)."""
+        self.centre_tint = None
+        if rad.ndim != 3 or rad.shape[2] < 3 or not self._exposure_family():
+            return
+        a = rad[::8, ::8]
+        v = (valid[::8, ::8] > 0) if valid is not None else np.ones(a.shape[:2], bool)
+        h, w = a.shape[:2]
+        yy, xx = np.mgrid[0:h, 0:w]
+        r = np.hypot((xx - w / 2) / (w / 2), (yy - h / 2) / (h / 2)) / np.sqrt(2)
+        ok = v & (a[..., 0] > 0)
+        c, o = ok & (r < 0.35), ok & (r > 0.6) & (r < 0.9)
+        if c.sum() < 100 or o.sum() < 100:
+            return
+        br = lambda s: float(np.median(a[..., 2][s]) / max(np.median(a[..., 0][s]), 1e-12))      # noqa: E731
+        self.centre_tint = br(c) / max(br(o), 1e-12)
+        lim = (self.config.get("selection") or {}).get("max_centre_tint")
+        if lim is not None and self.centre_tint > float(lim):
+            raise ExposureImage(f"centre tint {self.centre_tint:.2f} > {float(lim):g} (selection.max_centre_tint): "
+                                f"dark blue centre, not processed")
 
     def _check_saturation(self, dn: np.ndarray) -> None:
         """v0p30: the fraction of valid pixels at the product's maximum DN; refuse the frame above the limit."""
@@ -455,6 +498,7 @@ class MPPPImage:
             "focus_position_count": label_get(L, "INSTRUMENT_STATE_PARMS.FOCUS_POSITION_COUNT"),
             "zoom_position_count": label_get(L, "INSTRUMENT_STATE_PARMS.ZOOM_POSITION_COUNT"),
             "exposure_duration_ms": label_float(L, "INSTRUMENT_STATE_PARMS.EXPOSURE_DURATION"),
+            "centre_tint": getattr(self, "centre_tint", None),                            # v0p41
             "native_size": list(self.native_size), "padding": self.padding,
             "undistorted": self.undistorted,
             "intrinsics": self.intrinsics.to_dict(),

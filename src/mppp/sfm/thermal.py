@@ -290,6 +290,8 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
                 s = 1.0 + 1e-6 * float(m["ppm_per_degC"]) * (tm - float(m["T0_degC"]))
                 p[0] *= s
                 p[1] *= s
+                p[2] += float(m.get("cx_px_per_degC") or 0.0) * (tm - float(m["T0_degC"]))     # v0p40
+                p[3] += float(m.get("cy_px_per_degC") or 0.0) * (tm - float(m["T0_degC"]))
             c = pycolmap.Camera(camera_id=next_cid, model=base.model, width=base.width, height=base.height, params=p)
             new.add_camera(c)
             bin_cam[(cid, b)] = next_cid
@@ -587,4 +589,7 @@ def thermal_model_for_project(project) -> Optional[Dict[str, Dict[str, float]]]:
         th = (nav.get(eye) or {}).get("thermal")
         if th and th.get("ppm_per_degC") is not None and th.get("T_median_degC") is not None:
             out[eye] = {"ppm_per_degC": float(th["ppm_per_degC"]), "T0_degC": float(th["T_median_degC"])}
+            for k in ("cx_px_per_degC", "cy_px_per_degC"):          # v0p40: principal point against temperature
+                if th.get(k):
+                    out[eye][k] = float(th[k])
     return out or None

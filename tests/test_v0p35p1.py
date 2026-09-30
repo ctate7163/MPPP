@@ -153,11 +153,11 @@ def test_notebooks_v0p35p1():
     root = Path(__file__).resolve().parents[1] / "notebooks"
     nb3 = nbformat.read(str(root / "03_colmap_alignment.ipynb"), as_version=4)
     full3 = "\n".join(c.source for c in nb3.cells)
-    assert ("0.35." in nb3.cells[0].source or "0.40." in nb3.cells[0].source) and "print_camera_changes(rec, proj)" in full3
+    assert ("0.35." in nb3.cells[0].source or "0.4" in nb3.cells[0].source) and "print_camera_changes(rec, proj)" in full3
     assert '[r["camera_id"] for r in proj.images if r["instrument"] == k' not in full3
     for site in ("van_zyl", "seitah_north", "whale_mountain", "origny", "(1880, 1889)"):
         assert site in full3, site
-    assert ("navcal_v0p35p1" in full3 or "navcal_v0p40" in full3) and "holds a block of sols" in full3
+    assert ("navcal_v0p35p1" in full3 or "navcal_v0p4" in full3) and "holds a block of sols" in full3
     assert re.search(r"LOCALIZE_MIN_IMAGES\s*= [34]\b", full3) and "localize_min_images=LOCALIZE_MIN_IMAGES" in full3
     nb4 = nbformat.read(str(root / "04_camera_models.ipynb"), as_version=4)
     full4 = "\n".join(c.source for c in nb4.cells)

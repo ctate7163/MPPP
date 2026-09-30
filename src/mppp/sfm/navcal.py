@@ -687,13 +687,19 @@ def subset(rec, idx: Dict[str, Any], keep: Sequence[str]):
     return out
 
 
-def keypoint_scales(proj: SfmProject, temps: Dict[str, float], ppm_per_degC: float, T0: float) -> Dict[int, float]:
-    """{image_id: 1 + b (T - T0)} for the merged project (b in ppm/degC)."""
+def keypoint_scales(proj: SfmProject, temps: Dict[str, float], ppm_per_degC: float, T0: float,
+                    f_ppm_per_sol: Optional[Dict[str, float]] = None, sol0: Optional[float] = None) -> Dict[int, float]:
+    """{image_id: 1 + b (T - T0) [+ c_eye (sol - sol0)]} for the merged project (b in ppm/degC; v0p40: the focal
+    length's trend over the mission, ``f_ppm_per_sol`` {"NL": c, "NR": c} ppm/sol about ``sol0``)."""
     out = {}
     for r in proj.images:
         T = temps.get(r["name"])
-        if T is not None:
-            out[int(r["image_id"])] = 1.0 + 1e-6 * float(ppm_per_degC) * (float(T) - float(T0))
+        v = 1.0 + (1e-6 * float(ppm_per_degC) * (float(T) - float(T0)) if T is not None else 0.0)
+        if f_ppm_per_sol and sol0 is not None and r.get("sol") is not None:
+            eye = str(r.get("instrument", ""))[:2]
+            v += 1e-6 * float(f_ppm_per_sol.get(eye, 0.0)) * (float(r["sol"]) - float(sol0))
+        if T is not None or v != 1.0:
+            out[int(r["image_id"])] = v
     return out
 
 
@@ -736,15 +742,179 @@ def rig_keypoint_map(proj: SfmProject, temps: Dict[str, float], yaw_mdeg_per_deg
     return fmap
 
 
+def thermal_keypoint_map(proj: SfmProject, temps: Dict[str, float], T0: float,
+                         rig_slopes: Optional[Tuple[float, float]] = None,
+                         pp_slopes: Optional[Dict[int, Tuple[float, float]]] = None,
+                         drift: Optional[Dict[str, Any]] = None, right_camera_ids: Sequence[int] = (2,),
+                         pp_sol_slopes: Optional[Dict[int, Tuple[float, float]]] = None, sol0: Optional[float] = None,
+                         base_of: Optional[Dict[int, int]] = None) -> Callable:
+    """
+    v0p40: the per-image corrections of a merged reconstruction as one keypoint map for :func:`bundle_adjust`:
+
+    * ``pp_slopes`` {camera id: (a_x, a_y) px/degC}: a principal point that moves with the camera temperature,
+      c(T) = c(T0) + a (T - T0) (the keypoints move by -a (T - T0), which is the same for any COLMAP model: the
+      principal point is added after the distortion);
+    * ``rig_slopes`` (yaw, pitch) mdeg/degC: the right camera turning in the rig with temperature
+      (:func:`rig_keypoint_map`);
+    * ``drift``: a rig drift (:func:`rig_drift_model`): the right camera turned by the drift offset at the image's
+      sol (:func:`drift_offset_mdeg`; pitch, yaw, roll about x, y, z of the right camera, as the rig file applies it);
+    * ``pp_sol_slopes`` {camera id: (s_x, s_y) px/sol} about ``sol0``: the principal point's trend over the mission.
+
+    ``base_of`` {camera id: base camera id}: camera copies (:func:`split_by_unit`) that follow their base camera's
+    terms.
+    """
+    from scipy.spatial.transform import Rotation
+    T_of = {int(r["image_id"]): temps.get(r["name"]) for r in proj.images}
+    sol_of = {int(r["image_id"]): r.get("sol") for r in proj.images}
+    right = set(int(c) for c in right_camera_ids)
+    ky, kp = (1e-3 * math.radians(1.0) * float(v) for v in (rig_slopes or (0.0, 0.0)))
+    pp = {int(k): np.asarray(v, float) for k, v in (pp_slopes or {}).items()}
+    d_cache: Dict[Any, np.ndarray] = {}
+
+    def drift_rv(sol):
+        if drift is None or sol is None:
+            return np.zeros(3)
+        if sol not in d_cache:
+            o = drift_offset_mdeg(drift, float(sol))
+            d_cache[sol] = 1e-3 * math.radians(1.0) * np.array([o["pitch_mdeg"], o["yaw_mdeg"], o["roll_mdeg"]])
+        return d_cache[sol]
+
+    pps = {int(k): np.asarray(v, float) for k, v in (pp_sol_slopes or {}).items()}
+    bo = {int(k): int(v) for k, v in (base_of or {}).items()}
+
+    def fmap(iid, kps, cam):
+        cid = bo.get(int(cam.camera_id), int(cam.camera_id))
+        T = T_of.get(int(iid))
+        dT = 0.0 if T is None else float(T) - float(T0)
+        if cid in pp and dT:
+            kps = kps - pp[cid] * dT
+        sol = sol_of.get(int(iid))
+        if cid in pps and sol0 is not None and sol is not None:
+            kps = kps - pps[cid] * (float(sol) - float(sol0))
+        if cid in right:
+            rv = np.array([kp * dT, ky * dT, 0.0]) + drift_rv(sol_of.get(int(iid)))
+            if np.any(rv):
+                Rm = Rotation.from_rotvec(-rv).as_matrix()
+                rays = np.array(cam.cam_from_img(kps), float)
+                X = np.c_[rays[:, :2], np.ones(len(rays))] @ Rm.T
+                out = np.array(cam.img_from_cam(X, check_cheirality=False), float)
+                kps = np.where(np.isfinite(out), out, kps)
+        return kps
+    return fmap
+
+
+def split_by_unit(rec, proj: SfmProject, unit_of_image: Dict[int, str], free: Sequence[str] = ("fx", "fy", "cx", "cy")):
+    """
+    v0p40: a copy of a merged reconstruction in which every camera and rig gets one copy per *unit* (e.g. block and
+    sol epoch; ``unit_of_image``: image id -> unit), the rigs with the same sensor poses; each unit camera refines
+    only ``free`` (the distortion stays shared at its current value).  Returns (rec, proj, units) with ``units`` =
+    {unit: {"cameras": {old camera id: new id}, "rigs": {old rig id: new id}}}; the project copy maps the keys
+    ``<camera>@<unit>``.
+    """
+    import pycolmap
+    p2 = copy.deepcopy(proj)
+    db = p2.settings.setdefault("database", {}).setdefault("cameras", {})
+    key_of = {int(v): k for k, v in db.items()}
+    new = pycolmap.Reconstruction()
+    next_cid = max(rec.cameras) + 1
+    next_rid = max(rec.rigs) + 1
+    units: Dict[str, Dict[str, Dict[int, int]]] = {}
+    sensor = lambda c: pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=int(c))      # noqa: E731
+    for cam in rec.cameras.values():
+        new.add_camera(cam)
+    for rig in rec.rigs.values():
+        new.add_rig(rig)
+    names = PARAMS.get(next(iter(rec.cameras.values())).model.name, ())
+    frame_unit = {}
+    for fid, fr in rec.frames.items():
+        us = {unit_of_image.get(int(d.id)) for d in fr.data_ids} - {None}
+        frame_unit[fid] = sorted(us)[0] if us else None
+    for fid, fr in rec.frames.items():
+        u = frame_unit[fid]
+        if u is None:
+            nf = pycolmap.Frame(frame_id=fid, rig_id=fr.rig_id)
+            for d in fr.data_ids:
+                nf.add_data_id(d)
+        else:
+            m = units.setdefault(u, {"cameras": {}, "rigs": {}})
+            for d in fr.data_ids:
+                c = int(d.sensor_id.id)
+                if c not in m["cameras"]:
+                    base = rec.cameras[c]
+                    new.add_camera(pycolmap.Camera(camera_id=next_cid, model=base.model, width=base.width,
+                                                   height=base.height, params=np.array(base.params, float)))
+                    k = key_of.get(c, str(c))
+                    pc = copy.deepcopy(p2.cameras.get(k, {}))
+                    pc.update({"fixed_params": [n for n in names if n not in set(free)], "free_params": [],
+                               "unit": u, "base_camera": k})
+                    p2.cameras[f"{k}@{u}"] = pc
+                    db[f"{k}@{u}"] = next_cid
+                    m["cameras"][c] = next_cid
+                    next_cid += 1
+            if fr.rig_id not in m["rigs"]:
+                old = rec.rigs[fr.rig_id]
+                r = pycolmap.Rig(rig_id=next_rid)
+                ref = old.ref_sensor_id.id
+                if ref not in m["cameras"]:              # a rig sensor without an image in this unit's frames
+                    base = rec.cameras[ref]
+                    new.add_camera(pycolmap.Camera(camera_id=next_cid, model=base.model, width=base.width,
+                                                   height=base.height, params=np.array(base.params, float)))
+                    m["cameras"][ref] = next_cid
+                    next_cid += 1
+                r.add_ref_sensor(sensor(m["cameras"][ref]))
+                for sid in old.non_ref_sensors:
+                    if sid.id not in m["cameras"]:
+                        base = rec.cameras[sid.id]
+                        new.add_camera(pycolmap.Camera(camera_id=next_cid, model=base.model, width=base.width,
+                                                       height=base.height, params=np.array(base.params, float)))
+                        m["cameras"][sid.id] = next_cid
+                        next_cid += 1
+                    r.add_sensor(sensor(m["cameras"][sid.id]), old.sensor_from_rig(sid))
+                new.add_rig(r)
+                m["rigs"][fr.rig_id] = next_rid
+                next_rid += 1
+            nf = pycolmap.Frame(frame_id=fid, rig_id=m["rigs"][fr.rig_id])
+            for d in fr.data_ids:
+                nf.add_data_id(pycolmap.data_t(sensor_id=sensor(m["cameras"][int(d.sensor_id.id)]), id=d.id))
+        if fr.has_pose:
+            nf.rig_from_world = fr.rig_from_world
+        new.add_frame(nf)
+    for iid, im in rec.images.items():
+        kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
+        u = frame_unit.get(im.frame_id)
+        cid = units[u]["cameras"][int(im.camera_id)] if u is not None else int(im.camera_id)
+        ni = pycolmap.Image(name=im.name, keypoints=kps, camera_id=cid, image_id=iid)
+        ni.frame_id = im.frame_id
+        new.add_image(ni)
+    for fid in rec.reg_frame_ids():
+        if new.frames[fid].has_pose:
+            new.register_frame(fid)
+    for pt in rec.points3D.values():
+        tr = pycolmap.Track()
+        for el in pt.track.elements:
+            tr.add_element(el.image_id, el.point2D_idx)
+        new.add_point3D(pt.xyz, tr, pt.color)
+    return new, p2, units
+
+
 def joint_adjust(rec, proj: SfmProject, temps: Dict[str, float], ppm_per_degC: float, T0: float,
                  covariance: bool = False, max_iterations: int = 100, refine_rig: Union[bool, str] = "rotation",
                  hold_cameras: Sequence[str] = (), rig_slopes: Optional[Tuple[float, float]] = None,
-                 **kw) -> Dict[str, Any]:
+                 pp_slopes: Optional[Dict[int, Tuple[float, float]]] = None, drift: Optional[Dict[str, Any]] = None,
+                 f_ppm_per_sol: Optional[Dict[str, float]] = None,
+                 pp_sol_slopes: Optional[Dict[int, Tuple[float, float]]] = None, sol0: Optional[float] = None,
+                 base_of: Optional[Dict[int, int]] = None, **kw) -> Dict[str, Any]:
     """One adjustment of a merged reconstruction with the thermal model at slope ``ppm_per_degC`` and, with
-    ``rig_slopes`` = (yaw, pitch) mdeg/degC, the rig's temperature dependence (:func:`rig_keypoint_map`)."""
+    ``rig_slopes`` = (yaw, pitch) mdeg/degC, the rig's temperature dependence (:func:`rig_keypoint_map`); v0p40:
+    ``pp_slopes`` (principal points against temperature) and ``drift`` (the rig's trend over the mission) through
+    :func:`thermal_keypoint_map`."""
     from .reconstruction import bundle_adjust
-    ks = keypoint_scales(proj, temps, ppm_per_degC, T0)
-    if rig_slopes and any(rig_slopes):
+    ks = keypoint_scales(proj, temps, ppm_per_degC, T0, f_ppm_per_sol, sol0)
+    if pp_slopes or drift or pp_sol_slopes or base_of:
+        right = sorted({2} | {int(k) for k, v in (base_of or {}).items() if int(v) == 2})
+        kw["keypoint_map"] = thermal_keypoint_map(proj, temps, T0, rig_slopes, pp_slopes, drift, right_camera_ids=right,
+                                                  pp_sol_slopes=pp_sol_slopes, sol0=sol0, base_of=base_of)
+    elif rig_slopes and any(rig_slopes):
         kw["keypoint_map"] = rig_keypoint_map(proj, temps, rig_slopes[0], rig_slopes[1], T0)
     args = dict(BA_DEFAULTS)
     args.setdefault("linear_solver", "sparse_schur")        # blocks share only the cameras and the rig: very sparse
@@ -753,13 +923,15 @@ def joint_adjust(rec, proj: SfmProject, temps: Dict[str, float], ppm_per_degC: f
                        keypoint_scale=ks, hold_cameras=hold_cameras, **args)
     ba["ppm_per_degC"] = float(ppm_per_degC)
     ba["rig_slopes_mdeg_per_degC"] = list(rig_slopes) if rig_slopes else None
+    ba["pp_slopes_px_per_degC"] = {int(k): list(map(float, v)) for k, v in (pp_slopes or {}).items()} or None
+    ba["drift"] = bool(drift)
     ba["T0_degC"] = float(T0)
     return ba
 
 
 def profile_slope(rec, proj: SfmProject, temps: Dict[str, float], T0: float, grid: Sequence[float],
                   max_iterations: int = 100, verbose: bool = True,
-                  rig_slopes: Optional[Tuple[float, float]] = None) -> Dict[str, Any]:
+                  rig_slopes: Optional[Tuple[float, float]] = None, **kw) -> Dict[str, Any]:
     """Cost of the joint adjustment over a grid of thermal slopes (each started from the same state); the slope is
     the minimum of a parabola through the three lowest points, its standard deviation var_factor / curvature."""
     import time
@@ -767,7 +939,7 @@ def profile_slope(rec, proj: SfmProject, temps: Dict[str, float], T0: float, gri
     for b in grid:
         t0 = time.time()
         r = copy.deepcopy(rec)
-        ba = joint_adjust(r, proj, temps, b, T0, max_iterations=max_iterations, rig_slopes=rig_slopes)
+        ba = joint_adjust(r, proj, temps, b, T0, max_iterations=max_iterations, rig_slopes=rig_slopes, **kw)
         red = max(2 * ba["observations"] - 1, 1)
         rows.append({"ppm_per_degC": float(b), "cost": float(ba["final_cost"]), "iterations": ba["iterations"],
                      "variance_factor": float(2 * ba["final_cost"] / red), "state": shared_state(r)})
@@ -944,6 +1116,10 @@ def write_joint_cameras(joint: Dict[str, Any], out_dir: PathLike, loo: Optional[
         sc = 1.0 + 1e-6 * float(joint["ppm_per_degC"]) * dT
         for g in ("NL", "NR"):
             c = joint[g] = copy.deepcopy(joint[g])          # the eyes may share one dict (scale each once)
+            a = (joint.get("pp_thermal") or {}).get(g) or (0.0, 0.0)
+            for n, ai in zip(("cx", "cy"), a):                # v0p40: the principal point moves with temperature
+                if n in c["params"]:
+                    c["params"][n] = float(c["params"][n]) + float(ai) * dT
             for n in ("fx", "fy"):
                 if n in c["params"]:
                     c["params"][n] = float(c["params"][n]) * sc
@@ -992,9 +1168,18 @@ def write_joint_cameras(joint: Dict[str, Any], out_dir: PathLike, loo: Optional[
                                                 "note": "rescaled by the variance factor of the joint adjustment"},
              "thermal": {"ppm_per_degC": float(joint["ppm_per_degC"]), "sd_ppm_per_degC": joint.get("sd_ppm_per_degC"),
                          "T0_degC": float(joint["T0_degC"]),
+                         **({"cx_px_per_degC": float(((joint.get("pp_thermal") or {}).get(g) or (0, 0))[0]),
+                             "cy_px_per_degC": float(((joint.get("pp_thermal") or {}).get(g) or (0, 0))[1])}
+                            if joint.get("pp_thermal") else {}),
                          "note": "v0p35: joint profile over all blocks; SfmProject.create scales fx, fy by "
                                  "1 + ppm_per_degC 1e-6 (T - T0) to the block's median camera temperature"},
              "verification": {"per_scape": per, "method": "leave one block out (scripts/navcam_calibration_study.py loo)"}}
+        pt = joint.get("pp_trend")
+        if pt and pt.get(g) is not None:
+            # v0p41: the principal point's first-order trend over the mission (the camera above is at sol0)
+            d["trend"] = {"sol0": float(pt["sol0"]), "cx_px_per_sol": float(pt[g][0]), "cy_px_per_sol": float(pt[g][1]),
+                          "se_cx_px_per_sol": ((pt.get("se") or {}).get(g)),
+                          "note": "v0p41: SfmProject.create moves cx, cy by these rates x (block median sol - sol0)"}
         path = out_dir / (f"M2020_{g}_rational.json" if c["model"] == "FULL_OPENCV" else f"M2020_{g}_fisheye_tangential.json")
         path.write_text(json.dumps(d, indent=1), encoding="utf-8")
         written[g] = path
@@ -1012,6 +1197,9 @@ def write_joint_cameras(joint: Dict[str, Any], out_dir: PathLike, loo: Optional[
          "note": "x_NR = R x_NL + t. v0p35 joint calibration rig; SfmProject.create(navcam_cameras=<this folder>) starts "
                  "the rig rotation here and keeps the project's CAHV translation (the baseline sets the scale)."}
     th = joint.get("rig_thermal") or {}
+    if joint.get("pp_thermal"):
+        d["note"] += (" v0p41: the rig has no temperature term - the stereo change with temperature is carried by "
+                      "the principal points (cx_px_per_degC in the camera files); the rig follows the mission drift only.")
     if th.get("yaw_mdeg_per_degC"):
         d["thermal"] = {"yaw_mdeg_per_degC": float(th["yaw_mdeg_per_degC"]),
                         "pitch_mdeg_per_degC": float(th.get("pitch_mdeg_per_degC") or 0.0),

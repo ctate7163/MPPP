@@ -131,6 +131,21 @@ def _reference_from_meta(m: Dict[str, Any]) -> list:
     return [Path(m["source_product"]).stem, *m["pose"]["C_enu_m"], *m["pose"]["metashape_ypr_deg"]]
 
 
+def _exposure_rule(cfg: Dict[str, Any], m: Dict[str, Any]) -> Optional[str]:
+    """v0p41: why a manifest entry falls under the exposure rules of ``cfg`` (None: it does not)."""
+    sel = cfg.get("selection") or {}
+    fams = {str(f).upper() for f in (sel.get("exposure_filter_families", ["N"]) or [])}
+    if str(m.get("source_product", ""))[:1].upper() not in fams:
+        return None
+    e, lim = m.get("exposure_duration_ms"), sel.get("max_exposure_ms")
+    if e is not None and lim is not None and float(e) > float(lim):
+        return f"exposure {float(e):.1f} ms > {float(lim):g} ms"
+    t, tl = m.get("centre_tint"), sel.get("max_centre_tint")
+    if t is not None and tl is not None and float(t) > float(tl):
+        return f"centre tint {float(t):.2f} > {float(tl):g}"
+    return None
+
+
 def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[Dict[str, Any]] = None) -> tuple:
     """
     Entries of the existing manifest in ``out_dir`` that can be reused as they
@@ -162,7 +177,10 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[
         rep.update(reason="waypoint table changed", config_changed=["waypoints"])
         return {}, rep
     # skip_inference_at only affects the images of the listed stations: checked per image below
-    diff = [k for k in _config_diff(_canon(cfg), _canon(old_cfg)) if k != "masking.skip_inference_at"]
+    # v0p41: the exposure rules are checked per image below (a change does not invalidate the other images)
+    per_image = {"masking.skip_inference_at", "selection.max_exposure_ms", "selection.max_centre_tint",
+                 "selection.exposure_filter_families"}
+    diff = [k for k in _config_diff(_canon(cfg), _canon(old_cfg)) if k not in per_image]
     if diff:
         rep.update(reason="configuration changed", config_changed=diff)
         return {}, rep
@@ -175,7 +193,9 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[
         outs = [out_dir / v for v in (m.get("outputs") or {}).values()]
         stem = Path(m["source_product"]).stem
         want_inferred = infer and (m.get("site"), m.get("drive")) not in skip
-        if bool((m.get("mask") or {}).get("inferred")) != want_inferred:
+        if _exposure_rule(cfg, m):                                        # v0p41: now left out by the rules
+            rep.setdefault("exposure_rule", []).append(stem)
+        elif bool((m.get("mask") or {}).get("inferred")) != want_inferred:
             rep["mask_inference_changed"].append(stem)                   # station added to / removed from the list
         elif outs and all(o.is_file() for o in outs):
             have[stem] = m

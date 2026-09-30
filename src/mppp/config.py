@@ -81,6 +81,15 @@ _DEFAULTS: Dict[str, Any] = {
         # saturated (DN at the product's maximum; None: no limit).  Both are listed under "skipped".
         "lmst_window_h": [9.0, 17.0],
         "max_saturated_fraction": 0.05,
+        # v0p41: Navcam frames labelled with an exposure above this [ms] are not processed (None: no limit).  In the
+        # NCAM08111 exposure brackets (sols 654-693: ~2, ~18 and ~50-65 ms of the same view) the long member shows a
+        # dark blue disk in the centre - its radiance is about half the others' there, as if it was exposed much
+        # shorter than labelled; ordinary Navcam frames stay below ~30 ms at Three Forks.
+        "max_exposure_ms": 40.0,
+        # v0p41: ... and frames whose centre is tinted against the edge: (B/R in the centre) / (B/R at the edge)
+        # of the radiance above this (the blue disk at sol 658: 1.74; the 2 and 18 ms frames 1.01, 1.00).  None: not checked.
+        "max_centre_tint": 1.2,
+        "exposure_filter_families": ["N"],
     },
     "resize": {
         "apply_padding": True,        # pad sub-frames/tiles to the full detector frame
