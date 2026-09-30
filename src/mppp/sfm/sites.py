@@ -3,7 +3,7 @@ The Navcam sites and their notebook 03 alignments (v0p40).
 
 ``SITES`` is the default site list of notebook 03 (name -> sol range of the block), read from the stable site
 definitions file ``mppp/data/sites.json`` (v0p43; :func:`load_site_table`).  :func:`discover_scapes` walks ``SCAPES_ROOT`` (``D:/scapes/colmap``) for the WORK folders notebook 03
-made (``<site>_colmap``, and ``<site>_colmap_nav_zcam34`` with Mastcam-Z) and returns the ones that hold a finished
+made (``<site>_colmap``, and ``<site>_colmap_zcam34`` with Mastcam-Z; v0p50, before ``_colmap_nav_zcam34``) and returns the ones that hold a finished
 alignment, labelled and in sol order, for notebooks 04 (camera models) and 05 (error analysis).  :func:`scan_scapes`
 returns every folder with the reason it was left out.
 """
@@ -21,7 +21,8 @@ SITES_FILE = Path(__file__).resolve().parents[1] / "data" / "sites.json"     # v
 
 def load_site_table(path: Optional[PathLike] = None) -> Dict[str, Any]:
     """v0p43: the site definitions file (``mppp/data/sites.json`` by default): ``{"sites": {name: {"sols": [a, b],
-    "label", "note", "no_mask_inference_at", "settings"}}, "groups": {name: [site, ...]}}``."""
+    "label", "zcam34", "note", "no_mask_inference_at", "settings"}}, "groups": {name: [site, ...]}}``.  ``zcam34``
+    (v0p50, true / false): the site also has a Navcam + Mastcam-Z 34 mm block (``<site>_colmap_zcam34``)."""
     f = Path(path) if path else SITES_FILE
     d = json.loads(f.read_text(encoding="utf-8"))
     if not isinstance(d.get("sites"), dict):
@@ -41,6 +42,12 @@ def load_sites(path: Optional[PathLike] = None) -> Dict[str, Tuple[int, int]]:
         sols = v.get("sols") if isinstance(v, dict) else v
         out[k] = (int(sols[0]), int(sols[1]))
     return out
+
+
+def zcam34_sites(table: Optional[Dict[str, Any]] = None, path: Optional[PathLike] = None) -> List[str]:
+    """v0p50: the sites whose definition has ``"zcam34": true`` (the Navcam + Mastcam-Z 34 mm blocks), in file order."""
+    t = table if table is not None else load_site_table(path)
+    return [k for k, v in t["sites"].items() if isinstance(v, dict) and v.get("zcam34") is True]
 
 
 def site_group(name: str, path: Optional[PathLike] = None) -> List[str]:
@@ -79,8 +86,8 @@ def validate_site_table(path: Optional[PathLike] = None,
     for name, v in sites.items():
         if not re.fullmatch(r"[a-z0-9_]+", name):
             warn.append(f"site {name!r}: use lower case letters, digits and _ (it becomes a folder name)")
-        if name.endswith(("_colmap", "_nav_zcam34")):
-            err.append(f"site {name!r}: the name must not end in _colmap / _nav_zcam34 (the folder suffixes)")
+        if name.endswith(("_colmap", "_zcam34")):
+            err.append(f"site {name!r}: the name must not end in _colmap / _zcam34 (the folder suffixes)")
         if not isinstance(v, dict):
             err.append(f"site {name!r}: must be an object like {{\"sols\": [700, 712]}}")
             continue
@@ -91,7 +98,11 @@ def validate_site_table(path: Optional[PathLike] = None,
         if sols[1] < sols[0]:
             err.append(f"site {name!r}: sols {sols} end before they start")
         ranges[name] = sols
-        unknown = set(v) - {"sols", "label", "note", "no_mask_inference_at", "settings"}
+        if "zcam34" in v and not isinstance(v["zcam34"], bool):
+            err.append(f"site {name!r}: 'zcam34' must be true or false (JSON, no quotes), not {v['zcam34']!r}")
+        if "z34" in v:
+            err.append(f"site {name!r}: 'z34' is now 'zcam34': true / false (v0p50)")
+        unknown = set(v) - {"sols", "label", "zcam34", "z34", "note", "no_mask_inference_at", "settings"}
         if unknown:
             warn.append(f"site {name!r}: unknown fields {sorted(unknown)} are ignored")
         try:
@@ -123,6 +134,10 @@ def validate_site_table(path: Optional[PathLike] = None,
             if ranges[b][0] > ranges[a][1]:
                 break
             (a0, a1), (b0, b1) = ranges[a], ranges[b]
+            if (a0, a1) == (b0, b1):                       # v0p50: e.g. rockytop / rockytop_skinner
+                warn.append(f"sites {a!r} and {b!r} have the same sols {ranges[a]}: they select the same images "
+                            f"(a site is defined by its sol range only)")
+                continue
             if (a0 <= b0 and b1 <= a1) or (b0 <= a0 and a1 <= b1):
                 continue                                   # one inside the other: a larger / smaller block
             warn.append(f"sites {a!r} {ranges[a]} and {b!r} {ranges[b]} partly overlap (fine if meant)")
@@ -138,7 +153,8 @@ except Exception as _e:                                 # noqa: BLE001 - a broke
     SITES = {}
 
 _WORDS = {"threeforks": "Three Forks", "seitah": "Seitah"}
-ZCAM_SUFFIX = "_colmap_nav_zcam34"
+ZCAM_SUFFIX = "_colmap_zcam34"              # v0p50 (Navcam is in every block)
+LEGACY_ZCAM_SUFFIX = "_colmap_nav_zcam34"    # before v0p50: still recognised (scripts/rename_zcam34_folders.py)
 NAV_SUFFIX = "_colmap"
 
 
@@ -157,8 +173,12 @@ def check_sites(sites: Dict[str, Sequence[int]]) -> List[str]:
 
 
 def work_folder(root: PathLike, site: str, zcam: bool = False) -> Path:
-    """v0p43: notebook 03's WORK folder of a site: ``<root>/<site>_colmap`` or ``<root>/<site>_colmap_nav_zcam34``."""
-    return Path(root) / (site + (ZCAM_SUFFIX if zcam else NAV_SUFFIX))
+    """Notebook 03's WORK folder of a site: ``<root>/<site>_colmap`` or ``<root>/<site>_colmap_zcam34`` (v0p50).  A
+    folder of the old name ``<site>_colmap_nav_zcam34`` is used while no folder of the new name exists."""
+    if not zcam:
+        return Path(root) / (site + NAV_SUFFIX)
+    new, old = Path(root) / (site + ZCAM_SUFFIX), Path(root) / (site + LEGACY_ZCAM_SUFFIX)
+    return old if (old.is_dir() and not new.exists()) else new
 
 
 def parse_work_folder(folder: PathLike) -> Tuple[Optional[str], bool]:
@@ -168,8 +188,9 @@ def parse_work_folder(folder: PathLike) -> Tuple[Optional[str], bool]:
 
 def _site_of_folder(folder: Path) -> Tuple[Optional[str], bool]:
     n = folder.name
-    if n.endswith(ZCAM_SUFFIX):
-        return n[: -len(ZCAM_SUFFIX)], True
+    for suf in (ZCAM_SUFFIX, LEGACY_ZCAM_SUFFIX):
+        if n.endswith(suf):
+            return n[: -len(suf)], True
     if n.endswith(NAV_SUFFIX):
         return n[: -len(NAV_SUFFIX)], False
     return None, False

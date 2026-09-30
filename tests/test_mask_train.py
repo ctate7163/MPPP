@@ -1,12 +1,11 @@
-"""Mask training: split, precision policy, non-finite handling, and a CPU smoke run."""
+"""Mask training and its monitor (mppp.mask.train, monitor). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import json
-
 import cv2
 import numpy as np
 import pytest
 import torch
-
 from conftest import CKPT, LEGACY_CKPT, needs_ckpt, needs_legacy_ckpt
+from pathlib import Path
 
 
 def _make_dataset(root, n_scenes=6, size=64):
@@ -120,15 +119,6 @@ def test_nonfinite_loss_stops_training(tmp_path, monkeypatch):
     assert not (tmp_path / "x.pt").exists()
 
 
-@needs_ckpt
-def test_split_forward_equals_forward():
-    from mppp.mask.model import load_model
-    model, _ = load_model(CKPT, "cpu")
-    x = torch.randn(1, 3, 128, 160)
-    with torch.no_grad():
-        assert torch.allclose(model(x), model.decode(model.features(x), x.shape[-2:]))
-
-
 @needs_legacy_ckpt
 def test_reproduces_fp16_overflow_and_fix():
     """
@@ -202,7 +192,6 @@ def test_viewer_process_runs(tmp_path):
     assert alive, err
 
 
-# ------------------------------------------------------------------ v0p5
 def test_canvas_geometry():
     from mppp.mask.train import letterbox
     from mppp.mask.model import canvas_of, fit_to_canvas
@@ -261,17 +250,6 @@ def test_init_from_checkpoint_backbone_only_when_decoder_differs(tmp_path):
         init_from_checkpoint(ConvNeXtSeg("convnext_base"), tmp_path / "old.pt")
 
 
-def test_offline_fails_fast_with_instructions(monkeypatch, tmp_path):
-    import time
-    import mppp.mask.model as M
-    monkeypatch.setattr(M, "_hub_reachable", lambda *a, **k: False)
-    monkeypatch.setattr(M, "_cached_weights", lambda name: None)
-    t = time.time()
-    with pytest.raises(RuntimeError, match="init_from"):
-        M.ConvNeXtSeg("convnext_base", pretrained=True)
-    assert time.time() - t < 10
-
-
 def test_dataloader_workers_with_spawn_like_windows(tmp_path):
     """v0p6 on Windows, num_workers=2: "Can't get local object 'make_collate.<locals>.collate'".
     Windows starts DataLoader workers by spawn, which pickles the collate function; run
@@ -299,3 +277,212 @@ def test_dataloader_workers_with_spawn_like_windows(tmp_path):
     r = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=600)
     assert r.returncode == 0, r.stderr[-2000:]
     assert "OK" in r.stdout
+
+
+def _big_dataset(root, h=120, w=200, n=4):
+    for d in ("images", "masks"):
+        (root / d).mkdir(parents=True)
+    rng = np.random.default_rng(0)
+    for k in range(n):
+        img = rng.integers(1, 255, (h, w, 3), dtype=np.uint8)
+        m = np.zeros((h, w), np.uint8); m[h // 3:, :] = 255
+        if k == 0:                                           # sub-frame padded to the detector frame
+            img[h // 2 - 10:] = 0; m[h // 2 - 10:] = 0      # below the bottom crops' top edge (overlap 8)
+        cv2.imwrite(str(root / "images" / f"s{k}.png"), img)
+        cv2.imwrite(str(root / "masks" / f"s{k}.png"), m)
+
+
+def test_init_from_pre_v0p6_checkpoint_keeps_old_decoder(tmp_path):
+    from mppp.mask.model import ConvNeXtSeg
+    from mppp.mask.train import init_from_checkpoint
+    src = ConvNeXtSeg("convnext_tiny", stride4=False)
+    torch.save({"model": src.state_dict()}, tmp_path / "old.pt")
+    dst = ConvNeXtSeg("convnext_tiny", stride4=True)
+    init_from_checkpoint(dst, tmp_path / "old.pt")
+    sd = dst.state_dict()
+    assert torch.equal(sd["aspp.proj.weight"], src.state_dict()["aspp.proj.weight"])     # fpn/aspp/head copied
+    assert torch.equal(sd["head.3.weight"], src.state_dict()["head.3.weight"])
+    assert not torch.equal(sd["fuse.0.weight"], torch.zeros_like(sd["fuse.0.weight"]))  # fresh init, not zeros
+
+
+def test_expand_quads_and_dataset_crop(tmp_path):
+    from mppp.mask.train import MaskDataset, expand_quads, scan_dataset
+    _big_dataset(tmp_path)
+    items = scan_dataset(tmp_path, image_dirs=("images",))
+    q, n = expand_quads(items, 150, overlap=8)
+    assert n["split"] == 4 and n["empty_skipped"] == 2 and len(q) == 14
+    assert {i.tile for i in q} == {0, 1, 2, 3} and q[0].label.endswith("#q0")
+    same, n0 = expand_quads(items, None)
+    assert same == items and n0["split"] == 0
+    ds = MaskDataset([i for i in q if i.tile == 3], size=64, canvas=(64, 64), quad_overlap=8)
+    im, ms, _ = ds[0]
+    assert im.shape == (64, 64, 3) and ms.shape == (64, 64)
+
+
+def test_train_with_quads_writes_card_and_infers(tmp_path):
+    from mppp.mask.infer import predict_probability
+    from mppp.mask.model import load_model
+    from mppp.mask.train import TrainConfig, scan_dataset, train
+    _big_dataset(tmp_path / "ds", n=6)
+    cfg = TrainConfig(input_size=64, canvas=(64, 64), epochs=1, batch_size=2, pretrained=False,
+                      val_ratio=0.3, val_preview_every=0, quad_split_above=150, quad_overlap=8)
+    out = train(scan_dataset(tmp_path / "ds", image_dirs=("images",)), tmp_path / "q.pt", cfg,
+                device="cpu", debug_dir=None)
+    model, card = load_model(out, "cpu")
+    assert card["stride4"] is True and card["quad_split_above"] == 150 and card["quad_overlap"] == 8
+    assert card["backbone"] == "convnext_tiny" and model.stride4
+    assert card["training"]["n_train"] > card["training"]["n_train_frames"]
+    img = np.full((120, 200, 3), 100, np.uint8)
+    assert predict_probability(model, card, img).shape == (120, 200)
+
+
+def test_scan_dataset_missing_skip(tmp_path):
+    from mppp.mask.train import scan_dataset
+    _big_dataset(tmp_path)
+    (tmp_path / "masks" / "s1.png").unlink()
+    with pytest.raises(FileNotFoundError, match="missing='skip'"):
+        scan_dataset(tmp_path, image_dirs=("images",))
+    with pytest.warns(UserWarning, match="skipped 1"):
+        assert len(scan_dataset(tmp_path, image_dirs=("images",), missing="skip")) == 3
+
+
+def test_curves_axes_start_at_zero(tmp_path):
+    import csv, subprocess, sys
+    from conftest import ROOT
+    d = tmp_path / "dbg"; d.mkdir()
+    cols = ["epoch", "iter", "n_iter", "loss", "iou", "loss_interval", "iou_interval", "grad_norm", "lr",
+            "aspp_pre_bn_peak", "elapsed_s", "step"]
+    with (d / "log.csv").open("w", newline="") as f:
+        w = csv.writer(f); w.writerow(cols)
+        for k in range(1, 6):
+            w.writerow([1, k * 10, 50, 0.5 / k, 0.9, 0.5 / k, 0.9 + k / 100, 1, 1e-4, 3, k, k * 10])
+    code = (f"import sys; sys.path.insert(0, {str(ROOT / 'src')!r});"
+            "import mppp.mask.monitor as M, matplotlib.figure as F;"
+            "lims=[];orig=F.Figure.savefig\n"
+            "def sv(self,*a,**k):\n lims.extend(float(ax.get_ylim()[0]) for ax in self.axes[:2]); return orig(self,*a,**k)\n"
+            f"F.Figure.savefig=sv; M.plot_curves_file({str(d)!r}); print(lims)")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "[0.0, 0.0]"
+
+
+def test_imagenet_safetensors_via_init_from_or_pretrained_file(tmp_path):
+    """22 Sep: init_from=<timm model.safetensors> failed with 'UnpicklingError: invalid load key'."""
+    import timm
+    from safetensors.torch import save_file
+    from mppp.mask.model import ConvNeXtSeg
+    from mppp.mask.train import init_from_checkpoint
+    ref = timm.create_model("convnext_tiny", pretrained=False, num_classes=21841)      # in22k-shaped head
+    f = tmp_path / "convnext_tiny_model.safetensors"
+    save_file({k: v.contiguous() for k, v in ref.state_dict().items()}, str(f))
+    k_seg, k_ref = "bb.stages_3.blocks.2.mlp.fc2.weight", "stages.3.blocks.2.mlp.fc2.weight"
+    a = ConvNeXtSeg("convnext_tiny", stride4=True)
+    rep = init_from_checkpoint(a, f)
+    assert rep["backbone_tensors"] == "178/178" and rep["decoder_tensors"].startswith("0/")
+    assert torch.equal(a.state_dict()[k_seg], ref.state_dict()[k_ref])
+    b = ConvNeXtSeg("convnext_tiny", pretrained=True, pretrained_file=str(f))
+    assert torch.equal(b.state_dict()[k_seg], ref.state_dict()[k_ref])
+    with pytest.raises(ValueError, match="wrong model size"):
+        ConvNeXtSeg("convnext_base", pretrained=True, pretrained_file=str(f))
+    torch.save({"model": a.state_dict()}, tmp_path / "seg.pt")
+    with pytest.raises(ValueError, match="use init_from"):
+        ConvNeXtSeg("convnext_tiny", pretrained=True, pretrained_file=str(tmp_path / "seg.pt"))
+
+
+@pytest.fixture(scope="module")
+def trained(tmp_path_factory):
+    from mppp.mask.train import TrainConfig, scan_dataset, train
+    root = tmp_path_factory.mktemp("v0p10")
+    _make_dataset(root / "ds", n_scenes=8)
+    m = cv2.imread(str(root / "ds" / "masks" / "scene3.png"), cv2.IMREAD_GRAYSCALE)
+    cv2.imwrite(str(root / "ds" / "masks" / "scene3.png"), 255 - m)          # a deliberately wrong label
+    cfg = TrainConfig(input_size=64, canvas=(64, 64), epochs=2, batch_size=2, pretrained=False, lr=1e-3,
+                      val_ratio=0.25, val_preview_every=0, num_workers=0)
+    items = scan_dataset(root / "ds")
+    ck = train(items, root / "ck" / "convnext_tiny_s4_seg_20260101.pt", cfg, device="cpu", debug_dir=None)
+    return root, items, ck
+
+
+def test_promote_checkpoint(trained, tmp_path):
+    import shutil
+    from mppp.mask.model import load_model
+    from mppp.mask.train import promote_checkpoint
+    _, _, ck0 = trained
+    ck = tmp_path / ck0.name
+    shutil.copy2(ck0, ck)
+    shutil.copy2(ck0.with_suffix(".json"), ck.with_suffix(".json"))
+    r = promote_checkpoint(ck)
+    best = tmp_path / "convnext_tiny_s4_seg_best.pt"
+    assert r["promoted"] and best.is_file() and json.loads(best.with_suffix(".json").read_text())["promoted_from"] == ck.name
+    load_model(best, "cpu")
+    # same dataset, lower val IoU -> refused unless forced; the old best is archived, never deleted
+    card = json.loads(ck.with_suffix(".json").read_text())
+    worse = tmp_path / "convnext_tiny_s4_seg_20260102.pt"
+    shutil.copy2(ck, worse)
+    worse.with_suffix(".json").write_text(json.dumps(dict(card, val_iou=card["val_iou"] - 0.1)))
+    r = promote_checkpoint(worse)
+    assert not r["promoted"] and "higher val IoU" in r["reason"]
+    r = promote_checkpoint(worse, force=True)
+    assert r["promoted"] and len(r["archived"]) == 2
+    assert all((tmp_path / "archive").joinpath(p.split("/")[-1].split("\\")[-1]).is_file() for p in r["archived"])
+    assert json.loads(best.with_suffix(".json").read_text())["promoted_from"] == worse.name
+    # a different dataset: val IoUs are not comparable, the new one wins
+    other = tmp_path / "convnext_tiny_s4_seg_20260103.pt"
+    shutil.copy2(ck, other)
+    c2 = dict(card, val_iou=0.1, training=dict(card["training"], dataset_fingerprint="different"))
+    other.with_suffix(".json").write_text(json.dumps(c2))
+    assert promote_checkpoint(other)["promoted"]
+    assert promote_checkpoint(best)["reason"] == "already the default"
+    assert not promote_checkpoint(other)["promoted"]                            # same file again: no-op
+    n = len(list((tmp_path / "archive").iterdir()))
+    for _ in range(2):                                                         # same second: unique names
+        promote_checkpoint(ck, force=True); promote_checkpoint(other, force=True)
+    assert len(list((tmp_path / "archive").iterdir())) == n + 8
+
+
+def test_default_checkpoint_name_and_preflight(tmp_path, monkeypatch):
+    import mppp
+    from mppp.process import check_mask_checkpoint, process_images
+    from mppp.mask.train import best_checkpoint_name
+    cfg = mppp.default_config()
+    assert cfg["masking"]["checkpoint"] == "mppp_mask_v3"                         # v0p22.4: the released default
+    assert best_checkpoint_name({"backbone": "convnext_tiny", "stride4": True}) == "convnext_tiny_s4_seg_best.pt"
+    assert best_checkpoint_name({"backbone": "convnext_base"}) == "convnext_base_seg_best.pt"
+    cfg["masking"]["checkpoint"] = str(tmp_path / "nope.pt")
+    with pytest.raises(FileNotFoundError, match="Mask checkpoint not found"):
+        process_images(["a.IMG", "b.IMG"], tmp_path / "out", cfg, progress=False)      # once, before any image
+    assert not (tmp_path / "out").exists()
+    cfg["masking"]["infer_mask"] = False
+    assert check_mask_checkpoint(cfg) is None
+
+
+def test_training_labels_come_from_masks_folder_not_alpha(tmp_path):
+    import cv2
+    import numpy as np
+    from mppp.mask.train import MaskDataset, read_pair, scan_dataset
+    for d in ("images", "images_variable", "masks"):
+        (tmp_path / d).mkdir()
+    h, w = 64, 96
+    rgb = np.full((h, w, 3), 90, np.uint8)
+    rgb[:, :, 1] = 140
+    stale_alpha = np.zeros((h, w), np.uint8)              # alpha says "all excluded" ...
+    stale_alpha[:, : w // 4] = 255
+    mask = np.zeros((h, w), np.uint8)                      # ... masks/ says the right half is terrain
+    mask[:, w // 2:] = 255
+    for d in ("images", "images_variable"):
+        cv2.imwrite(str(tmp_path / d / "a.png"), np.dstack([rgb, stale_alpha]))
+    cv2.imwrite(str(tmp_path / "masks" / "a.png"), mask)
+
+    items = scan_dataset(tmp_path)
+    assert len(items) == 2 and all(Path(it.mask) == tmp_path / "masks" / "a.png" for it in items)
+    for it in items:
+        im, ms = read_pair(it)
+        assert im.shape == (h, w, 3) and np.array_equal(im, rgb)       # alpha dropped, RGB not composited
+        assert np.array_equal(ms, mask)
+        x, y, _ = MaskDataset([it], size=w, canvas=(w, h))[0]
+        assert np.array_equal(y, (mask > 127).astype(np.uint8))
+        assert np.array_equal(x, cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB))
+
+    import pytest
+    with pytest.raises(ValueError):
+        scan_dataset(tmp_path, image_dirs=("images", "masks"), mask_dir="masks")

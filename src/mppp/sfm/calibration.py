@@ -431,7 +431,7 @@ def reference_camera(group: str, lens: str = "rational") -> Optional[Camera]:
     """The start camera MPPP ships for ``group`` (Navcam rational JSON or Metashape XML)."""
     from ..paths import data_dir
     from .project import camera_from_colmap_json, camera_from_metashape_xml
-    d = data_dir() / "m20_cmods"
+    d = data_dir() / "cmods"
     if group in ("NL", "NR"):
         c = (camera_from_colmap_json(d / f"M2020_{group}_rational.json") if lens == "rational"
              else camera_from_metashape_xml(d / f"M2020_{group}0_frame.xml", ("b1", "b2")))
@@ -921,7 +921,7 @@ def fit_zcam_boresight(rows: List[Dict[str, Any]], per_scape_offset: bool = True
 def focus_model_json(fits: Dict[str, Dict[str, Any]], boresight: Optional[Dict[str, Any]] = None,
                      pp_eye: str = "ZR034", focus_range: Optional[Dict[str, Sequence[float]]] = None,
                      source: str = "") -> Dict[str, Any]:
-    """v0p42: a focus-model file (the layout of ``m20_cmods/M2020_ZCAM034_focus_model.json``) from
+    """v0p42: a focus-model file (the layout of ``cmods/M2020_ZCAM034_focus_model.json``) from
     :func:`fit_focus_model` results per eye and a :func:`fit_zcam_boresight` result (principal-point slopes, put on
     ``pp_eye``).  Save it as JSON and pass the path as notebook 03's ``ZCAM_FOCUS_MODEL``
     (``SfmProject.create(zcam_focus_model_file=)``) to use it."""
@@ -1193,7 +1193,7 @@ def thermal_bin_rows(sols: Dict[str, "Solution"], experiment: Optional[PathLike]
     v0p31: the within-block temperature-bin measurements - one row per scape, eye and bin with ``T_median_degC``,
     ``fx``, ``fy``, ``observations`` - from each solution's thermal stage (``settings["thermal"]`` of project.json;
     only stages whose bins were refined, not held) and, optionally, from the JSON of
-    ``scripts/temperature_bins_experiment.py`` (scapes already in ``sols`` are taken from the solution).
+    ``studies/experiments/temperature_bins_experiment.py`` (scapes already in ``sols`` are taken from the solution).
     """
     rows: List[Dict[str, Any]] = []
     for n, s in sols.items():

@@ -36,6 +36,16 @@ NAVCAM_FISHEYE_PATTERN = "M2020_{instrument}_fisheye_tangential.json"   # v0p35:
 NAVCAM_DISTORTION = "rational"                     # default: "rational" (full frame) or "polynomial" (Metashape K1-K3)
 SCOPE = "Navcam (NLF/NRF) and Mastcam-Z at 34 mm (ZL0/ZR0 _034)"
 SCOPE_CAMERA_CODES = ("NLF", "NRF", "ZL0", "ZR0")
+# v0p50: parameter names per COLMAP model (reconstruction._PARAM_NAMES is this table)
+PARAM_NAMES = {"FULL_OPENCV": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6"),
+               "OPENCV": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"),
+               "THIN_PRISM_FISHEYE": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1"),
+               "OPENCV_FISHEYE": ("fx", "fy", "cx", "cy", "k1", "k2", "k3", "k4")}
+INTRINSIC_CORE = ("fx", "fy", "cx", "cy")          # focal length and principal point; everything else is distortion
+# v0p50: the Navcam distortion (k1-k4, p1, p2, ...) is one set per eye for every sol and temperature: "hold" keeps
+# it at the start (consensus) camera in every block and temperature bin; "refine" fits it per block (before v0p50)
+NAVCAM_DISTORTION_FIT = "hold"
+NAVCAM_TERM_SETTINGS = ("consensus", "zero")       # v0p50: NAVCAM_K4 / NAVCAM_P1: the start camera's value or 0 (held)
 ZEROED_TERMS = ("b1", "b2")          # v0p20: p1, p2 kept from the calibration (was also zeroed), as notebook 03
 ZCAM_FOCUS_BIN = 30.0                               # focus motor counts per Mastcam-Z camera bin (v0p14.4)
 ZCAM_FOCUS_MODEL = "M2020_ZCAM034_focus_model.json"  # v0p22: Mastcam-Z 34 mm focal length against focus count
@@ -44,13 +54,13 @@ NAVCAM_RIG = "consensus"                            # v0p22: Navcam rig rotation
 NAVCAM_RIG_FILE = "M2020_N_rig.json"
 # v0p43.2: the Navcam consensus cameras shipped with MPPP (the v0p41 joint of 23 blocks: fisheye + tangential at
 # -20 degC, f +38.1 ppm/degC, NL cx +0.0517 px/degC, rig with the mission drift; = camera_analysis/navcal_v0p41/
-# navcam_joint).  v0p43.3: the working copy is <MPPP>/params/cmods (paths.cmods_dir); this is the fallback.
-NAVCAM_PACKAGE_CONSENSUS_DIR = Path(__file__).resolve().parents[1] / "data" / "navcam_consensus"
+# navcam_joint).  v0p50: all camera models are in mppp/data/cmods (paths.cmods_dir; MPPP_CMODS overrides).
+NAVCAM_PACKAGE_CONSENSUS_DIR = Path(__file__).resolve().parents[1] / "data" / "cmods"
 
 
 def navcam_consensus_dir() -> Path:
-    """v0p43.3: where notebook 03 finds the consensus Navcam cameras and rig by default: ``<MPPP>/params/cmods``
-    (``MPPP_CMODS``) when it holds them, else the copy shipped in the package."""
+    """Where notebook 03 finds the consensus Navcam cameras and rig by default: ``MPPP_CMODS`` when it holds them,
+    else ``mppp/data/cmods`` (v0p50)."""
     from ..paths import cmods_dir
     d = cmods_dir()
     if d is not None and (d / NAVCAM_RIG_FILE).is_file():
@@ -182,10 +192,10 @@ def camera_from_colmap_json(path: PathLike, zero_terms: Sequence[str] = ()) -> D
     """
     d = json.loads(Path(path).read_text(encoding="utf-8"))
     params = [float(v) for v in d["params"]]
-    if d["model"] in ("OPENCV", "FULL_OPENCV"):
-        for n in ("p1", "p2"):
-            if n in zero_terms:
-                params[FULL_OPENCV_NAMES.index(n)] = 0.0
+    names = PARAM_NAMES.get(d["model"], ())            # v0p50: any model (THIN_PRISM_FISHEYE p1, p2 were not zeroed)
+    for n in ("p1", "p2"):
+        if n in zero_terms and n in names:
+            params[names.index(n)] = 0.0
     zeroed = [n for n in ("p1", "p2") if n in zero_terms]
     return {"model": d["model"], "width": int(d["width"]), "height": int(d["height"]), "params": params,
             "free_params": list(d.get("free_params") or []),
@@ -287,6 +297,9 @@ class SfmProject:
         than created again.  Returns the number of project images checked.
         """
         processed = Path(self.settings.get("processed_dir", ""))
+        if not processed.is_dir() and (self.root.parent / "processed").is_dir():    # v0p50: a renamed WORK folder
+            processed = self.root.parent / "processed"
+            self.settings["processed_dir"] = str(processed)
         fmt = self.settings.get("image_format", "PNG8")
         names = {r["name"] for r in self.images}
         n = 0
@@ -311,7 +324,9 @@ class SfmProject:
                navcam_distortion: str = NAVCAM_DISTORTION, zcam_hold_f_images: int = ZCAM_HOLD_F_IMAGES,
                navcam_rig: str = NAVCAM_RIG, navcam_cameras: Optional[PathLike] = None,
                zcam_zero_terms: Optional[Sequence[str]] = None,
-               zcam_focus_model_file: Optional[PathLike] = None) -> "SfmProject":
+               zcam_focus_model_file: Optional[PathLike] = None,
+               navcam_distortion_fit: str = NAVCAM_DISTORTION_FIT, navcam_k4: str = "consensus",
+               navcam_p1: str = "consensus") -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -323,11 +338,11 @@ class SfmProject:
         ``zcam_intrinsics``: initial Mastcam-Z camera - ``"label"`` (default):
         the median of the per-image label CAHVOR intrinsics of that eye and
         zoom (k1, k2; focus changes f by a few pixels between images, reported
-        as ``label_f_spread_px``); ``"xml"``: ``mppp/data/m20_cmods/ZL034_frame.xml``
+        as ``label_f_spread_px``); ``"xml"``: ``mppp/data/cmods/ZL034_frame.xml``
         etc. (rounded values; a rough start); ``"focus_model"`` (v0p22,
         default): as ``"label"``, but each focus bin's focal length (and fy/fx)
         starts from the focal length against focus count fitted to earlier
-        refined solutions (``m20_cmods/M2020_ZCAM034_focus_model.json``, notebook
+        refined solutions (``cmods/M2020_ZCAM034_focus_model.json``, notebook
         05) instead of the label value, which is about 1 % short.
         ``zcam_zero_terms`` (v0p40): the terms set to 0 in the Mastcam-Z
         cameras (e.g. ``("p1", "p2", "b1", "b2")``) when they differ from the
@@ -337,16 +352,16 @@ class SfmProject:
         ``M2020_NL_rational.json``, ``M2020_NR_rational.json`` and optionally
         ``M2020_N_rig.json``).  The rational Navcam cameras and, when present,
         the consensus rig rotation are read from there instead of the shipped
-        ``m20_cmods`` files; the files' ``verification`` blocks are kept in
+        ``cmods`` files; the files' ``verification`` blocks are kept in
         ``settings["navcam_cameras"]``.
         ``navcam_rig`` (v0p22): ``"consensus"`` (default, with the rational
         model) starts the right camera's rotation in the rig from the refined
-        consensus of earlier solutions (``m20_cmods/M2020_N_rig.json``, which
+        consensus of earlier solutions (``cmods/M2020_N_rig.json``, which
         matches the shipped rational cameras); the translation (the stereo
         baseline, which sets the scale) stays the project's CAHV value.
         ``"cahv"``: both from the label CAHV pairs (before v0p22).
         ``zcam_focus_model_file`` (v0p42): a focus-model JSON to use instead of the shipped
-        ``m20_cmods/M2020_ZCAM034_focus_model.json`` (e.g. the candidate notebook 04 §5b writes); the
+        ``cmods/M2020_ZCAM034_focus_model.json`` (e.g. the candidate notebook 04 §5b writes); the
         project records its path and SHA-256 (``settings["zcam_focus_model"]``).
         ``zcam_hold_f_images`` (v0p22, default 2): with ``"focus_model"``, bins of
         at most this many images hold their focal length at the model value
@@ -400,9 +415,14 @@ class SfmProject:
             raise ValueError("zcam_intrinsics must be 'label', 'xml' or 'focus_model'")
         if zcam_bin_refine not in ("focal", "all"):
             raise ValueError("zcam_bin_refine must be 'focal' or 'all'")
+        if navcam_distortion_fit not in ("hold", "refine"):
+            raise ValueError("navcam_distortion_fit must be 'hold' or 'refine'")
+        for _n, _v in (("navcam_k4", navcam_k4), ("navcam_p1", navcam_p1)):
+            if _v not in NAVCAM_TERM_SETTINGS:
+                raise ValueError(f"{_n} must be one of {NAVCAM_TERM_SETTINGS}")
         processed_dir, root = Path(processed_dir), Path(root)
-        xml_arg = xml_dir                       # v0p43.3: None -> the focus model comes from params/cmods first
-        xml_dir = Path(xml_dir) if xml_dir else data_dir() / "m20_cmods"
+        xml_arg = xml_dir                       # None -> the focus model comes from cmods_dir() (MPPP_CMODS) first
+        xml_dir = Path(xml_dir) if xml_dir else data_dir() / "cmods"
         (root / "images").mkdir(parents=True, exist_ok=True)
         (root / "masks").mkdir(parents=True, exist_ok=True)
         metas = [m for m in metas if "failed" not in m]
@@ -521,6 +541,8 @@ class SfmProject:
                 cam = camera_from_metashape_xml(xml, zt)
             if (cam["width"], cam["height"]) != FULL_FRAME[fam]:
                 raise ValueError(f"{xml.name} is {cam['width']}x{cam['height']}, expected the full frame {FULL_FRAME[fam]}")
+            if fam == "N":
+                cam = navcam_distortion_terms(cam, navcam_distortion_fit, navcam_k4, navcam_p1)
             cameras[instr] = cam
         focus_info = None
         if zcam_focus_bin:
@@ -536,7 +558,7 @@ class SfmProject:
         _align_priors_to_cameras(images, cameras)
         rig = _rig_from_pairs([r for r in images if zcam_rig or instruments.get(r["camera_group"]) != "Z"])
         if navcam_rig == "consensus" and "N" in rig and navcam_distortion in ("rational", "fisheye_tangential"):
-            rig_file = data_dir() / "m20_cmods" / NAVCAM_RIG_FILE
+            rig_file = data_dir() / "cmods" / NAVCAM_RIG_FILE
             if navcam_cameras and (nav_dir / NAVCAM_RIG_FILE).is_file():
                 rig_file = nav_dir / NAVCAM_RIG_FILE
                 nav_info["rig"] = {"file": str(rig_file)}
@@ -564,10 +586,45 @@ class SfmProject:
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
                     "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
                     "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
+                    "navcam_distortion_fit": navcam_distortion_fit, "navcam_k4": navcam_k4, "navcam_p1": navcam_p1,
                     "navcam_cameras": {"dir": str(nav_dir), "fingerprint": navcam_cameras_fingerprint(nav_dir),
                                        **nav_info} if navcam_cameras else None})
         proj.save()
         return proj
+
+
+def navcam_distortion_terms(cam: Dict[str, Any], fit: str = NAVCAM_DISTORTION_FIT, k4: str = "consensus",
+                            p1: str = "consensus") -> Dict[str, Any]:
+    """
+    v0p50: the Navcam distortion settings of one start camera (a ``project.cameras`` dict, changed and returned).
+
+    ``fit="hold"``: every distortion parameter (all but fx, fy, cx, cy) goes into ``fixed_params`` and out of
+    ``free_params`` - the distortion is the consensus camera's for every block, sol and temperature bin (thermal
+    bins inherit ``fixed_params``); ``"refine"``: the block refines it as before v0p50 (k1-k4 always, p1, p2 with
+    TANGENTIAL = "refine").  ``k4="zero"`` / ``p1="zero"``: that term is set to 0 and held in either case.
+    """
+    names = PARAM_NAMES.get(cam["model"], FULL_OPENCV_NAMES)
+    params = list(map(float, cam["params"]))
+    fixed = list(cam.get("fixed_params") or [])
+    free = list(cam.get("free_params") or [])
+    zeroed = []
+    for n, how in (("k4", k4), ("p1", p1)):
+        if how == "zero" and n in names:
+            params[names.index(n)] = 0.0
+            zeroed.append(n)
+            if n not in fixed:
+                fixed.append(n)
+    held = [n for n in names if n not in INTRINSIC_CORE] if fit == "hold" else []
+    for n in held:
+        if n not in fixed:
+            fixed.append(n)
+    free = [n for n in free if n not in fixed]
+    cam = dict(cam, params=params, fixed_params=fixed, free_params=free, distortion_fit=fit,
+               zeroed_terms=zeroed)
+    note = ([f"{', '.join(zeroed)} = 0 (held)"] if zeroed else []) + (["distortion held"] if fit == "hold" else [])
+    if note:
+        cam["source"] = f"{cam.get('source', '')}; " + "; ".join(note)
+    return cam
 
 
 def station_labels(images: Iterable[Dict[str, Any]]) -> Dict[str, str]:
@@ -614,13 +671,12 @@ def zcam_focus_model(xml_dir: Optional[PathLike] = None) -> Dict[str, Any]:
 
 
 def zcam_focus_model_path(xml_dir: Optional[PathLike] = None) -> Path:
-    """v0p43.3: the focus-model file in use: ``xml_dir``'s, else ``<MPPP>/params/cmods``'s (``MPPP_CMODS``), else the
-    package's ``m20_cmods``."""
+    """The focus-model file in use: ``xml_dir``'s, else ``cmods_dir()``'s (``MPPP_CMODS``), else the package's
+    ``mppp/data/cmods`` (v0p50)."""
     from ..paths import cmods_dir
     cands = [Path(xml_dir) / ZCAM_FOCUS_MODEL] if xml_dir else []
-    if cmods_dir() is not None:
-        cands.append(cmods_dir() / ZCAM_FOCUS_MODEL)
-    cands.append(data_dir() / "m20_cmods" / ZCAM_FOCUS_MODEL)
+    cands.append(cmods_dir() / ZCAM_FOCUS_MODEL)
+    cands.append(data_dir() / "cmods" / ZCAM_FOCUS_MODEL)
     return next((f for f in cands if f.is_file()), cands[-1])
 
 

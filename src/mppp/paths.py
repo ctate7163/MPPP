@@ -2,7 +2,7 @@
 Where MPPP finds its files (v0p13).
 
 * **Package data** (``data_dir()``, installed with the package): the Metashape
-  camera calibrations ``m20_cmods/``, the optical-depth table, a snapshot of
+  camera models ``cmods/`` (v0p50: the flight calibrations and the camera models in use), the optical-depth table, a snapshot of
   the M2020 waypoints, the Mastcam-Z occlusion profiles and the model
   registry ``models.json``.  Nothing here is written at run time.
 * **User cache** (``cache_dir()``): refreshed waypoints and downloaded or
@@ -48,17 +48,22 @@ def params_dir() -> Path:
 REPO_ROOT = Path(__file__).resolve().parents[2]      # the MPPP folder of a source checkout (src/mppp/paths.py)
 
 
-def cmods_dir() -> Optional[Path]:
-    """v0p43.3: the folder of the current best consensus camera models and rig - ``MPPP_CMODS`` if set, else
-    ``<MPPP>/params/cmods`` of a source checkout (e.g. ``D:\\code\\MPPP\\params\\cmods``).  None if neither exists;
-    callers then fall back to the package data.  Notebook 03 starts from the models here (``NAVCAM_CAMERAS``,
-    ``ZCAM_FOCUS_MODEL``); ``scripts/promote_cmods.py`` puts a new consensus here and keeps the old one in
-    ``history/``."""
+CMODS = "cmods"      # v0p50: the one camera-model folder of the package data (was params/cmods, data/m20_cmods,
+                     # data/navcam_consensus)
+
+
+def package_cmods_dir() -> Path:
+    """v0p50: ``mppp/data/cmods`` - the flight calibrations (``*_frame.xml``), the rational Navcam start cameras and
+    the camera models in use (Navcam cameras and rig, Mastcam-Z focus model; README.md, CHANGES.md, history/)."""
+    return data_dir() / CMODS
+
+
+def cmods_dir() -> Path:
+    """The folder of the camera models in use: ``MPPP_CMODS`` if set, else ``mppp/data/cmods`` (v0p50; before:
+    ``<MPPP>/params/cmods``).  Notebook 03 starts from the models here (``NAVCAM_CAMERAS``, ``ZCAM_FOCUS_MODEL``);
+    ``scripts/promote_cmods.py`` puts a new consensus here and keeps the old one in ``history/``."""
     env = os.environ.get("MPPP_CMODS")
-    if env:
-        return Path(env)
-    p = REPO_ROOT / "params" / "cmods"
-    return p if p.is_dir() else None
+    return Path(env) if env else package_cmods_dir()
 
 
 def cache_dir(create: bool = True) -> Path:

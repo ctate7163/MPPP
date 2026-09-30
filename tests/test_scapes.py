@@ -1,4 +1,4 @@
-"""Scape selections (from workspace.ipynb): groups 1-2 only, Z110 dropped, versions de-duplicated."""
+"""Metashape scape definitions (mppp.scapes). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import pytest
 
 

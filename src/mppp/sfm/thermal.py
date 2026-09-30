@@ -538,6 +538,13 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
     temperature by ``thermal_model``), everything else of the cameras and the rig held, poses and points free.
     ``project`` is updated in place (bin cameras and their database ids).  Returns (rec, report).
     """
+    # v0p50: the Navcam distortion is one set per eye for all temperatures - a temperature bin fits at most the focal
+    # length and the principal point
+    from .project import INTRINSIC_CORE
+    bad = [n for n in free if n not in INTRINSIC_CORE]
+    if bad:
+        raise ValueError(f"thermal_free {tuple(free)}: {bad} are distortion terms; the Navcam distortion is not fitted "
+                         f"per temperature bin (v0p50) - use a subset of {INTRINSIC_CORE}")
     from .reconstruction import bundle_adjust
     before = _stats(rec, project)
     r1, p1, rows = split_by_temperature(rec, project, temps, bin_deg, min_images, free, thermal_model, rig_slopes)

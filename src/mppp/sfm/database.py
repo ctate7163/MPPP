@@ -23,7 +23,7 @@ from .project import SfmProject
 PathLike = Union[str, Path]
 
 
-DEFAULT_MAX_NUM_FEATURES = 16380          # v0p14.3 (was 8192)
+DEFAULT_MAX_NUM_FEATURES = 16384          # v0p50 (16380 since v0p14.3)
 DEFAULT_MAX_IMAGE_SIZE = 5120             # v0p20 (was 3200): full-resolution Navcam frames are 5120 px wide, so SIFT
                                           # really runs at native resolution (3200 shrank them to 0.625x)
 

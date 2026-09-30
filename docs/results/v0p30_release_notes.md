@@ -26,7 +26,7 @@ Notebook 03 (`03_colmap_alignment_v0p30p0.ipynb`): concise first cell with the 1
 
 belva_crater (5 stations): WARN prior_scale 2.13 %, whole-block rotation 2.29° under the 5° attitude prior — the weakest network; marble_mountain WARN scale 1.94 %; threeforks WARN 16 excluded frames; bell_island WARN attitude p95; olifants PASS. The SKY rule at 10° removes the NCAM00501 sky-survey frames. Belva's 2.3° rotation is why `block_rotation_deg` now exists: with a loose attitude prior a small block can rotate as a whole and still pass every other check.
 
-## Lens model: rational vs fisheye (working notes §11, `scripts/lens_model_experiment.py`)
+## Lens model: rational vs fisheye (working notes §11, `studies/experiments/lens_model_experiment.py`)
 
 Three Forks / Bell Island, same observations, cameras re-initialised per model:
 

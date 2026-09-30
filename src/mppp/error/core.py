@@ -292,7 +292,7 @@ class Instrument:
 MASTCAM_Z_34 = Instrument(
     name="Mastcam-Z 34 mm", ifov_rad=1.0 / 4720.0, baseline_m=0.244,
     eps_intra_px=0.169)
-    # IFOV from the flight CAHVOR frame model (mppp/data/m20_cmods/ZL034_frame.xml,
+    # IFOV from the flight CAHVOR frame model (mppp/data/cmods/ZL034_frame.xml,
     # ZR034 identical): f = 4720 px over 1648x1200, so 1/f = 2.119e-4 rad/px.
     # This REPLACES an earlier linear interpolation between the 26 mm and
     # 110 mm published endpoints (2.17e-4), which was flagged VERIFY.
@@ -307,7 +307,7 @@ NAVCAM = Instrument(
     # eps_intra = 0.169 px: pooled over five Navcam sites, 1068 images, two SfM
     # packages (0.154-0.183 per site).  Replaces the 0.5 px working value.
     # NL0 f = 2950.91 px, NR0 f = 2943.65 px over 5120x3840 (full res)
-    # -> mean 1/f = 3.393e-4 rad/px, from mppp/data/m20_cmods/. Replaces the
+    # -> mean 1/f = 3.393e-4 rad/px, from mppp/data/cmods/. Replaces the
     # earlier 3.3e-4 working value flagged VERIFY.
 
 

@@ -2,7 +2,7 @@
 Process and align many sites into their own WORK folders, one after the other (MPPP v0p43).
 
 The sites and their sol ranges come from the stable site definitions ``src/mppp/data/sites.json`` (or
-``--sites-file``).  Each site goes to ``<root>/<site>_colmap`` (Navcam) or ``<root>/<site>_colmap_nav_zcam34``
+``--sites-file``).  Each site goes to ``<root>/<site>_colmap`` (Navcam) or ``<root>/<site>_colmap_zcam34``
 (``--zcam``, with the Mastcam-Z 34 mm frames): notebook 03 selects the products from the PDS archive, processes
 them (reusing images already processed) and aligns them.  Each site is a separate ``scripts/align_scape.py`` run,
 with its own log in ``<WORK>/runs/`` and status in ``<WORK>/mppp_status.json``; this script's own log is
@@ -10,8 +10,8 @@ with its own log in ``<WORK>/runs/`` and status in ``<WORK>/mppp_status.json``; 
 
 Examples (Windows, in the environment that runs the notebooks)::
 
-    python scripts\\run_sites.py --all                                  # every site, Navcam
-    python scripts\\run_sites.py --group nav_zcam34 --zcam               # the Navcam + Mastcam-Z blocks
+    python scripts\\run_sites.py --all                                  # every site, Navcam only
+    python scripts\\run_sites.py --all --zcam               # the Navcam + Mastcam-Z blocks
     python scripts\\run_sites.py --sites rockytop sid --source processed --variant tight --set ATTITUDE_PRIOR_DEG=1.0
     python scripts\\run_sites.py --status                               # every WORK folder under --root
 
@@ -53,6 +53,21 @@ def _finished(work: Path, variant: str, key: str):
     return False, "not finished"
 
 
+def filter_zcam34(sites, table, zcam: bool, named: bool):
+    """v0p50: with ``--zcam`` only the sites whose definition has ``"zcam34": true`` (sites named with ``--sites``
+    are kept, with a note).  Returns (sites, left out)."""
+    if not zcam:
+        return list(sites), []
+    from mppp.sfm.sites import zcam34_sites
+    z = set(zcam34_sites(table))
+    if named:
+        for s in sites:
+            if s not in z:
+                print(f"note: {s} is not a zcam34 site in the site definitions; run anyway (named with --sites)")
+        return list(sites), []
+    return [s for s in sites if s in z], [s for s in sites if s not in z]
+
+
 def status_table(root: Path) -> int:
     from mppp.runner import BATCH_FILE, STATUS_FILE, read_status
     b = read_status(root / BATCH_FILE)                   # v0p43.3: the batch (process_sites / run_sites) on root
@@ -74,6 +89,14 @@ def status_table(root: Path) -> int:
             age = f"{st['age_s']:.0f} s" if (st.get("alive") and st.get("age_s") is not None) else ""
             if not st.get("alive") and st.get("ended"):
                 extra = f"ended {st['ended']}" + (f"; {st['last_error']}" if st.get("last_error") else "")
+            if st.get("alive") and st.get("state") == "starting":          # v0p50: alive, but no cell started
+                try:
+                    mins = (datetime.datetime.now() - datetime.datetime.fromisoformat(st["started"])).total_seconds() / 60
+                except (KeyError, ValueError, TypeError):
+                    mins = 0
+                if mins > 10:
+                    extra = (f"STUCK? starting for {mins:.0f} min with no cell run - a paused console (press Esc in "
+                             f"its window) or a kernel that does not start; else stop_mppp.bat")
         else:
             state, extra, age = "-", "", ""
         rows.append((d.name, state, age, ", ".join(fin) or "-", str(extra)[:90]))
@@ -88,10 +111,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--all", action="store_true", help="every site in the site definitions")
-    g.add_argument("--group", help="a site group of the site definitions (e.g. nav_zcam34, navcam_consensus)")
+    g.add_argument("--group", help="a site group of the site definitions (e.g. navcam_consensus)")
     g.add_argument("--sites", nargs="+", help="site names")
     ap.add_argument("--root", default="D:/scapes/colmap", help="SCAPES_ROOT: the WORK folders go below it")
-    ap.add_argument("--zcam", action="store_true", help="with the Mastcam-Z 34 mm frames (<site>_colmap_nav_zcam34)")
+    ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z 34 mm blocks (<site>_colmap_zcam34) of the sites with \"zcam34\": true")
     ap.add_argument("--source", choices=("pds", "processed"), default="pds",
                     help="pds (default): select and process, then align; processed: align what is processed")
     ap.add_argument("--variant", default="", help="results in <WORK>/colmap_<variant>")
@@ -129,9 +152,12 @@ def main(argv=None) -> int:
     if unknown:
         print(f"ERROR: not in the site definitions: {unknown}", file=sys.stderr)
         return 2
+    sites, not_z = filter_zcam34(sites, table, a.zcam, bool(a.sites))
     sets = parse_set(a.set)
     root.mkdir(parents=True, exist_ok=True)
     log = Log(root / "run_sites_log.txt")
+    if not_z:
+        log(f"  not zcam34 sites (sites.json \"zcam34\": false), left out: {', '.join(not_z)}")
     log(f"run_sites: {len(sites)} sites, root {root}, Mastcam-Z {a.zcam}, source {a.source}, "
         f"variant {a.variant or '(default)'}, jobs {a.jobs}, settings {sets or '-'}")
 

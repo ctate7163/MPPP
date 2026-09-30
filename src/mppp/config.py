@@ -25,7 +25,7 @@ _DEFAULTS: Dict[str, Any] = {
         "extrinsics_from_waypoints": True,
         # Replace the label CAHVOR intrinsics by a calibrated Metashape XML.
         "intrinsics_from_xml": True,
-        # camera family letter -> XML file pattern in mppp/data/m20_cmods (package data).
+        # camera family letter -> XML file pattern in mppp/data/cmods (package data).
         # {eye} is L/R.  Only listed families are replaced.
         "xml_by_family": {"N": "M2020_N{eye}1_frame.xml"},
         # Resolution (relative to the full-resolution detector) at which the

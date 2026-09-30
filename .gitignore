@@ -30,3 +30,11 @@ Thumbs.db
 
 # machine-specific: the Python the Windows .bat files use (scripts/windows/mppp_env.bat)
 scripts/windows/mppp_python.txt
+
+# v0p50: transfer from Claude (the bundle) and working copies of the notebooks (git holds the versions)
+_transfer/
+*.bundle
+notebooks/*_v0p*.ipynb
+notebooks/* - Copy*.ipynb
+Claude outputs/
+/data/
