@@ -39,6 +39,7 @@ Notebooks (in `notebooks/`):
 
 **Without Jupyter (v0p43).** The sites and their sol ranges are in `src/mppp/data/sites.json`. Each site has its own WORK folder, `<root>/<site>_colmap` or `<site>_colmap_nav_zcam34`. Notebook 03 runs headless and writes a log and a status file.
 
+- **Python for the .bat files:** `scripts\windows\mppp_env.bat` looks for a Python with pycolmap, pyceres, nbclient and ipykernel (every conda environment it can find). If it finds none it lists what it tried; then write the notebooks' Python (`import sys; print(sys.executable)` in a notebook) into `scripts\windows\mppp_python.txt`. The .bat files can be copied anywhere; they find MPPP through `MPPP_HOME` (default `D:\code\MPPP`).
 - **Process only (many sites):** `scripts\windows\process_sites.bat` (choose the sites at its top), or `python scripts\process_sites.py --all` (also `--group nav_zcam34 --zcam`, or `--sites rockytop sid`). It selects and processes each site's images into `<WORK>\processed\` with notebook 03's defaults, one site after the other, without aligning. Sites already processed with the same settings are skipped.
 - **One WORK folder:** copy `scripts\windows\align_here.bat` into the folder that holds `processed\` and double-click it. It aligns the images already processed there with notebook 03's default settings, in a minimised window.
   - Double-click it again to see the status.

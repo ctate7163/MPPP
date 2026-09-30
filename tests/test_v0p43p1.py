@@ -1,4 +1,6 @@
 """MPPP v0p43.1: stage 2 of a staged Nav+Zcam run restores a Mastcam-Z stereo rig whose cameras COLMAP dropped."""
+import sys
+
 import numpy as np
 import pytest
 
@@ -79,7 +81,7 @@ def test_restore_frames_keeps_refined_cameras_that_survived():
 
 def test_version():
     import mppp
-    assert mppp.__version__ == "0.43.1"
+    assert tuple(int(x) for x in mppp.__version__.split(".")[:3]) >= (0, 43, 1)
 
 
 def test_staged_reconstruct_with_a_zcam_stereo_rig(tmp_path, monkeypatch):
@@ -209,3 +211,23 @@ def test_windows_bat_files_are_unversioned_and_crlf():
         assert b"\r\n" in b and b.count(b"\n") == b.count(b"\r\n"), name
         assert b"v0p4" not in b, name
     assert b"process_sites.py" in (win / "_run_process.bat").read_bytes()
+
+
+def test_bat_files_work_from_any_folder_and_find_the_environment():
+    """0.43.1: top-level .bat files find MPPP through MPPP_HOME when copied elsewhere; mppp_env.bat searches the
+    conda environments and uses check_env.py."""
+    import subprocess
+    from pathlib import Path
+    win = Path(__file__).resolve().parents[1] / "scripts" / "windows"
+    for name in ("process_sites.bat", "run_all_sites.bat", "sites_status.bat"):
+        s = (win / name).read_text()
+        assert 'call "%MPPP_WIN%\\mppp_env.bat"' in s and '"%~dp0mppp_env.bat" ||' not in s, name
+        assert "%~dp0_run" not in s, name
+    env = (win / "mppp_env.bat").read_text()
+    for part in ("check_env.py", "environments.txt", "mppp_python.txt", "MPPP_PYTHON", ":try_prefix", ":try_root",
+                 "KMP_DUPLICATE_LIB_OK"):
+        assert part in env, part
+    body = env.split(":try_prefix\n")[1]
+    assert "%~dp0" not in body                     # inside a call :label, %0 is the label
+    r = subprocess.run([sys.executable, str(win / "check_env.py")], capture_output=True, text=True)
+    assert r.returncode in (0, 1) and sys.executable in r.stdout

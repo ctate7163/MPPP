@@ -24,7 +24,7 @@ set "WORK=%~dp0"
 set "WORK=%WORK:~0,-1%"
 if not defined MPPP_HOME set "MPPP_HOME=D:\code\MPPP"
 if not exist "%MPPP_HOME%\scripts\align_scape.py" (
-  echo MPPP not found in "%MPPP_HOME%": set MPPP_HOME to the MPPP folder.
+  echo MPPP not found in "%MPPP_HOME%": set MPPP_HOME to the MPPP folder, e.g.  set MPPP_HOME=D:\code\MPPP
   pause
   exit /b 1
 )

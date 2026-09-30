@@ -2,6 +2,16 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.43.2 — 2026-09-30
+
+Windows .bat files: finding Python, and running from any folder; the default Navcam cameras ship with MPPP.
+- **Navcam consensus shipped:** `src/mppp/data/navcam_consensus/` holds the v0p41 joint cameras (byte-identical to `camera_analysis/navcal_v0p41/navcam_joint`), `mppp.sfm.project.NAVCAM_CONSENSUS_DIR`. Notebook 03 (`03_colmap_alignment_v0p43p2.ipynb`) uses it as the `NAVCAM_CAMERAS` default instead of `D:\scapes\colmap\camera_analysis\...`, which had moved to `colmap_old` on 30 Sep. A `NAVCAM_CAMERAS` folder without the camera files now stops with a clear message in the settings cell. Projects made with the old folder are rebuilt once (the folder is part of the project check); features and matches are reused.
+- **Symptoms (30 Sep):** "MPPP: no Python with pycolmap, pyceres and nbclient was found", and `'"D:\scapes\colmap\mppp_env.bat"' is not recognized` when a .bat was copied into `D:\scapes\colmap`.
+- **`mppp_env.bat` searches properly:** `MPPP_PYTHON` or `scripts\windows\mppp_python.txt` (one line: the notebooks' `python.exe`, from `import sys; print(sys.executable)` in a notebook); then `python` on PATH; then every environment in `%USERPROFILE%\.conda\environments.txt`; then `MPPP_CONDA` and the usual miniconda / anaconda / miniforge folders (`MPPP_ENV` first, base, then every `envs\*`). The chosen environment is put first on PATH as `conda activate` does (no `activate.bat` needed).
+- **The test is `scripts\windows\check_env.py`:** pycolmap, pyceres, nbclient, nbformat and ipykernel must import, with `KMP_DUPLICATE_LIB_OK=TRUE` set as notebook 03 does (the earlier check imported pycolmap and pyceres without it, which can abort on the duplicate Intel OpenMP runtime).
+- **When nothing passes,** the search runs again and prints every Python it tried and what it is missing, with the two fixes (`pip install nbclient ipykernel` into the notebooks' Python, or its path in `mppp_python.txt`).
+- **`process_sites.bat`, `run_all_sites.bat` and `sites_status.bat` work from any folder:** inside MPPP they use their own folder; copied elsewhere they use `MPPP_HOME` (default `D:\code\MPPP`) for `mppp_env.bat` and the `_run_*.bat` helpers.
+
 ## 0.43.1 — 2026-09-30
 
 Fix for staged Nav+Zcam runs; image processing for many sites without alignment.

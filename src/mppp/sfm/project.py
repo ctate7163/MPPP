@@ -42,6 +42,10 @@ ZCAM_FOCUS_MODEL = "M2020_ZCAM034_focus_model.json"  # v0p22: Mastcam-Z 34 mm fo
 ZCAM_HOLD_F_IMAGES = 2                              # v0p22: focus bins with <= this many images hold f at the model
 NAVCAM_RIG = "consensus"                            # v0p22: Navcam rig rotation starts from the refined consensus
 NAVCAM_RIG_FILE = "M2020_N_rig.json"
+# v0p43.2: the Navcam consensus cameras notebook 03 starts from by default, shipped with MPPP (the v0p41 joint of
+# 23 blocks: fisheye + tangential at -20 degC, f +38.1 ppm/degC, NL cx +0.0517 px/degC, rig with the mission drift;
+# identical to camera_analysis/navcal_v0p41/navcam_joint), so the default run does not depend on a scapes folder
+NAVCAM_CONSENSUS_DIR = Path(__file__).resolve().parents[1] / "data" / "navcam_consensus"
 FULL_OPENCV_NAMES = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6")
 # parameters a focus-bin camera holds with zcam_bin_refine="focal": all but the focal length
 ZCAM_BIN_HELD = ("cx", "cy", "k1", "k2", "p1", "p2", "k3")
