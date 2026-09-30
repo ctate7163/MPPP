@@ -1,5 +1,5 @@
 @echo off
-REM MPPP v0p43: the minimised window of run_all_sites.bat (environment already set up by it).
+REM MPPP: the minimised window of run_all_sites.bat (environment already set up by it).
 title MPPP run_sites
 python "%MPPP_HOME%\scripts\run_sites.py" %*
 if errorlevel 1 (

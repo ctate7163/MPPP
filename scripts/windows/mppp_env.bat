@@ -1,5 +1,5 @@
 @echo off
-REM MPPP (v0p43): make "python" the environment that runs the MPPP notebooks (pycolmap 4.2, pyceres, nbclient).
+REM MPPP: make "python" the environment that runs the MPPP notebooks (pycolmap 4.2, pyceres, nbclient).
 REM Called by the other .bat files; it changes the caller's environment (no setlocal here).
 REM Optional environment variables: MPPP_HOME (the MPPP folder; default: two levels above this file),
 REM MPPP_CONDA (the miniconda / anaconda folder), MPPP_ENV (the conda environment; default base).

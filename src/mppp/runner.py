@@ -163,17 +163,31 @@ def _first_line(src: str) -> str:
     return next((ln for ln in src.splitlines() if ln.strip() and not ln.lstrip().startswith("#")), "")[:70]
 
 
+def truncate_before(nb, heading: str) -> int:
+    """Drop the notebook's cells from the first markdown cell that starts with ``heading`` (e.g. ``"## 3"``)
+    on; returns the number of cells kept.  Raises if no cell starts with it."""
+    idx = next((i for i, c in enumerate(nb.cells)
+                if c.cell_type == "markdown" and c.source.lstrip().startswith(heading)), None)
+    if idx is None:
+        raise ValueError(f"no markdown cell starting with {heading!r}")
+    del nb.cells[idx:]
+    return idx
+
+
 def run_notebook(src: PathLike, out: PathLike, overrides: Dict[str, str], log: Callable[[str], None],
                  timeout_h: float = 48.0, status: Optional[RunStatus] = None, cwd: Optional[PathLike] = None,
-                 kernel_name: str = "python3") -> bool:
+                 kernel_name: str = "python3", stop_before: Optional[str] = None) -> bool:
     """Execute ``src`` with ``overrides`` injected; the executed notebook goes to ``out`` (saved after every cell).
-    Progress lines go to ``log``; ``status`` gets the cell running.  Returns True if every cell ran."""
+    Progress lines go to ``log``; ``status`` gets the cell running.  ``stop_before`` (v0p43.1): run only the cells
+    above the first markdown cell starting with it (:func:`truncate_before`).  Returns True if every cell ran."""
     import nbformat
     from nbclient import NotebookClient
     from nbclient.exceptions import CellExecutionError
 
     src, out = Path(src), Path(out)
     nb = nbformat.read(str(src), as_version=4)
+    if stop_before:
+        truncate_before(nb, stop_before)
     inject(nb, dict(overrides, _kernel_python="__import__('sys').executable; print('kernel python', _kernel_python)"))
     out.parent.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -237,6 +251,8 @@ def run_notebook(src: PathLike, out: PathLike, overrides: Dict[str, str], log: C
 
 # --- one WORK folder (scripts/align_scape.py) ------------------------------------------------------------------
 STATUS_FILE = "mppp_status.json"
+PROCESS_STOP = "## 3"                 # notebook 03: sections 1-2 select and process, section 3 on aligns
+PROCESS_DONE = "process_done.json"    # <WORK>/processed/process_done.json: written by a finished processing run
 
 
 def run_key(settings: Dict[str, Any], source: str, variant: str) -> str:
@@ -299,18 +315,25 @@ def _setting_value(v: str) -> Any:
 
 def align(work: PathLike, source: str = "processed", variant: str = "", settings_file: Optional[PathLike] = None,
           sets: Optional[Dict[str, Any]] = None, sites_file: Optional[PathLike] = None, force: bool = False,
-          notebook_stem: str = "03_colmap_alignment", echo: bool = True) -> Dict[str, Any]:
+          notebook_stem: str = "03_colmap_alignment", echo: bool = True,
+          process_only: bool = False) -> Dict[str, Any]:
     """
     Run notebook 03 on one WORK folder (v0p43): ``source="processed"`` aligns the images already in
     ``<work>/processed``; ``"pds"`` selects and processes them first (the folder name ``<site>_colmap`` /
     ``<site>_colmap_nav_zcam34`` names the site).  The executed notebook and ``log.txt`` go to
     ``<work>/runs/<time>[_<variant>]/``, the status to ``<work>/mppp_status.json``.  Refuses to start while
     another run of the folder is alive (``force`` overrides).  Returns the final status.
+
+    ``process_only`` (v0p43.1, ``scripts/process_sites.py``): select from the PDS archive and process into
+    ``<work>/processed`` with notebook 03's settings, and stop before the alignment (section 3).  The run goes to
+    ``<work>/runs/<time>_process/``; a finished run writes ``<work>/processed/process_done.json`` with its run key.
     """
     from .sfm.sites import parse_work_folder
     from .sfm.workdir import project_dir
     work = Path(work).resolve()
     site, zcam = parse_work_folder(work)
+    if process_only:
+        source, variant = "pds", ""
     if source == "processed" and not (work / "processed").is_dir():
         raise FileNotFoundError(f"{work} has no processed/ folder: put this in a WORK folder next to processed/, "
                                 f"or use source 'pds'")
@@ -323,15 +346,16 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
         raise RuntimeError(f"{work.name}: a run is still alive (pid {cur.get('pid')}, cell {cur.get('cell')}, "
                            f"heartbeat {cur.get('age_s', 0):.0f} s ago); wait for it or pass --force")
     settings = work_settings(work, site, settings_file, sets, sites_file)
-    key = run_key(settings, source, variant)
+    key = run_key(settings, "process" if process_only else source, variant)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = work / "runs" / (stamp + (f"_{variant}" if variant else ""))
+    run_dir = work / "runs" / (stamp + ("_process" if process_only else (f"_{variant}" if variant else "")))
     log = Log(run_dir / "log.txt", echo=echo)
     nb_src = notebook(notebook_stem)
     import mppp
     status = RunStatus(st_path, work=str(work), site=site, variant=variant or "", source=source, run_key=key,
                        run_dir=str(run_dir), log=str(run_dir / "log.txt"), notebook=str(nb_src),
-                       mppp=mppp.__version__, project=str(project_dir(work, variant)), settings=settings).start()
+                       mppp=mppp.__version__, project=str(project_dir(work, variant)), settings=settings,
+                       stage="process" if process_only else "align").start()
     ov: Dict[str, str] = {"WORK_DIR": f"Path(r{str(work)!r})", "SOURCE": repr(source), "VARIANT": repr(variant or ""),
                           "RUN_KEY": repr(key), "SCAPES_ROOT": f"Path(r{str(work.parent)!r})"}
     if site:
@@ -341,18 +365,21 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
         ov["SITES_FILE"] = f"Path(r{str(Path(sites_file).resolve())!r})"
     for k, v in settings.items():
         ov[k] = python_literal(k, v)
-    log(f"MPPP {mppp.__version__}: {nb_src.name} on {work} | source {source} | variant {variant or '(default)'} | "
-        f"run key {key} | python {sys.executable}")
+    log(f"MPPP {mppp.__version__}: {nb_src.name}{' (select and process only)' if process_only else ''} on {work} | "
+        f"source {source} | variant {variant or '(default)'} | run key {key} | python {sys.executable}")
     if settings:
         log(f"settings: {json.dumps(settings, default=str)}")
     ok = False
     t_start = time.time()
     try:
-        ok = run_notebook(nb_src, run_dir / f"{notebook_stem}_executed.ipynb", ov, log, status=status,
-                          cwd=nb_src.parent)
+        ok = run_notebook(nb_src, run_dir / f"{notebook_stem}{'_process' if process_only else ''}_executed.ipynb",
+                          ov, log, status=status, cwd=nb_src.parent,
+                          stop_before=PROCESS_STOP if process_only else None)
     except Exception as e:                                               # noqa: BLE001
         log(f"runner error: {type(e).__name__}: {e}")
         status.data["last_error"] = f"{type(e).__name__}: {e}"
+    if process_only:
+        return _finish_process(work, key, ok, t_start, stamp, run_dir, status, log, nb_src)
     done = project_dir(work, variant) / "run_done.json"
     result = {}
     if done.is_file() and done.stat().st_mtime >= t_start - 1:          # written by this run
@@ -367,6 +394,47 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
                 f"key={key}  verdict={result.get('verdict')}  rms={result.get('residual_rms_native_px')}  "
                 f"{run_dir.name}\n")
     return status.data
+
+
+def _finish_process(work: Path, key: str, ok: bool, t_start: float, stamp: str, run_dir: Path, status: RunStatus,
+                    log: Callable[[str], None], nb_src: Path) -> Dict[str, Any]:
+    """End of a ``process_only`` run: check the manifest was written by it, write ``process_done.json``."""
+    import mppp
+    from .sfm.workdir import load_manifest
+    result: Dict[str, Any] = {}
+    if ok:
+        try:
+            man, mf = load_manifest(work / "processed")
+            fresh = Path(mf).stat().st_mtime >= t_start - 1
+        except (FileNotFoundError, ValueError, OSError) as e:
+            man, fresh = None, False
+            log(f"no manifest in {work / 'processed'}: {e}")
+        if man is not None and fresh:
+            result = {"mppp": mppp.__version__, "run_key": key, "notebook": nb_src.name,
+                      "finished": now(), "images": len(man.get("images", [])),
+                      "failed": len(man.get("failed", [])), "skipped": len(man.get("skipped", []))}
+            (work / "processed" / PROCESS_DONE).write_text(json.dumps(result, indent=1), encoding="utf-8")
+            log(f"processed: {result['images']} images, {result['failed']} failed, {result['skipped']} skipped "
+                f"by the selection rules -> {work / 'processed'}")
+        else:
+            ok = False
+            if man is not None:
+                log("the manifest was not rewritten by this run")
+    status.stop("finished" if ok else "failed", result=result)
+    with (work / "runs" / "runs.txt").open("a", encoding="utf-8") as f:
+        f.write(f"{stamp}  {'finished' if ok else 'FAILED  '}  process  key={key}  "
+                f"images={result.get('images')}  {run_dir.name}\n")
+    return status.data
+
+
+def processed_done(work: PathLike, key: str) -> Optional[Dict[str, Any]]:
+    """The ``process_done.json`` of ``work`` if it records ``key``, else None."""
+    p = Path(work) / "processed" / PROCESS_DONE
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return d if d.get("run_key") == key else None
 
 
 def run_analyses(labels: Dict[str, str], root: PathLike, which, log: Callable[[str], None]) -> None:

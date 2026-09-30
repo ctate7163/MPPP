@@ -39,6 +39,7 @@ Notebooks (in `notebooks/`):
 
 **Without Jupyter (v0p43).** The sites and their sol ranges are in `src/mppp/data/sites.json`. Each site has its own WORK folder, `<root>/<site>_colmap` or `<site>_colmap_nav_zcam34`. Notebook 03 runs headless and writes a log and a status file.
 
+- **Process only (many sites):** `scripts\windows\process_sites.bat` (choose the sites at its top), or `python scripts\process_sites.py --all` (also `--group nav_zcam34 --zcam`, or `--sites rockytop sid`). It selects and processes each site's images into `<WORK>\processed\` with notebook 03's defaults, one site after the other, without aligning. Sites already processed with the same settings are skipped.
 - **One WORK folder:** copy `scripts\windows\align_here.bat` into the folder that holds `processed\` and double-click it. It aligns the images already processed there with notebook 03's default settings, in a minimised window.
   - Double-click it again to see the status.
   - Progress is in `runs\<time>\log.txt`, and the results are in `colmap\`.
@@ -87,7 +88,7 @@ The pip `pycolmap` wheel for Windows is CPU-only. The conda-forge build has CUDA
 | `src/mppp/` | the package |
 | `src/mppp/data/` | package data: the site definitions (`sites.json`), camera models (`m20_cmods/`: Metashape calibrations and the rational Navcam cameras), optical-depth table, waypoint snapshot, occlusion profiles, model registry (`models.json`) |
 | `notebooks/` | the workflows above; `notebooks/training/` retrains the mask model |
-| `scripts/` | `align_scape.py` (one WORK folder) and `run_sites.py` (many sites): notebook 03 without Jupyter, with logs and status (v0p43); `windows/`: `align_here.bat`, `run_all_sites.bat`, `sites_status.bat`; `run_scapes.py`: the older batch runner |
+| `scripts/` | `align_scape.py` (one WORK folder) and `run_sites.py` (many sites): notebook 03 without Jupyter, with logs and status (v0p43); `process_sites.py` (select and process only); `windows/`: `process_sites.bat`, `align_here.bat`, `run_all_sites.bat`, `sites_status.bat`; `run_scapes.py`: the older batch runner |
 | `docs/methods.md` | methods, conventions, equations and flagged assumptions |
 | `docs/RELEASING.md` | how to release code and models (GitHub, Hugging Face, safetensors) |
 | `tests/` | pytest suite; `tests/data/m20/` holds two public PDS products |

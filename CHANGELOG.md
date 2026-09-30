@@ -2,6 +2,25 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.43.1 — 2026-09-30
+
+Fix for staged Nav+Zcam runs; image processing for many sites without alignment.
+
+**Processing only: `scripts/process_sites.py`, `scripts/windows/process_sites.bat`.**
+- Selects and processes the images of `--all` sites, a `--group` or `--sites a b c` (`--zcam` for Nav+Zcam folders) into `<root>/<site>_colmap[_nav_zcam34]/processed`, one site after the other, and stops before the alignment.
+- It runs sections 1–2 of the newest notebook 03 with its default settings (`runner.align(process_only=True)`, `run_notebook(stop_before="## 3")`), so it always uses the current code and defaults. The site's settings in `sites.json`, `<WORK>/mppp_settings.json`, `--settings` and `--set` apply as for an alignment.
+- A finished site gets `processed/process_done.json` (run key, image counts); sites processed with the same settings are skipped (`--force` redoes them, still reusing unchanged images). A failed site is logged and the next one starts.
+- Logs: `<root>/process_sites_log.txt`, `<WORK>/runs/<time>_process/log.txt`, `<WORK>/mppp_status.json` (so `align_here.bat` will not start while a folder is being processed). `--status` and `sites_status.bat` show "(processing)".
+- Then `align_here.bat`, copied into a WORK folder, aligns those images with the newest notebook 03's defaults.
+- The .bat files carry no version: they always run the current MPPP in `MPPP_HOME`.
+
+**Fix: staged Nav+Zcam runs stopped at the start of stage 2.**
+- **Symptom:** `ValueError: Check failed: ExistsCamera(sensor_id.id) Camera 28 from rig 27 not found in the reconstruction` in `reconstruct` → `restore_frames`, right after "before the final adjustment" of stage 1 (threeforks_south_colmap_nav_zcam34, 30 Sep). Nothing after `sparse/cahv_ba_navcam` is written.
+- **Cause:** COLMAP's `tear_down` (inside `triangulate_points`) drops not only the deregistered Mastcam-Z frames but also the rigs and cameras no registered frame uses. With `ZCAM_RIG` on, the Mastcam-Z stereo rig and both its cameras were gone after stage 1. `restore_frames` added the rig before its cameras, and `AddRig` requires every camera of the rig to exist. The v0p40 test used a rig that survived stage 1, and the staged-reconstruct test replaced `triangulate` with a no-op, so neither saw it.
+- **Fix:** `restore_frames` adds every camera of the frame's images and of its rig's sensors (from the start reconstruction) before the rig. Cameras still in the block keep their stage-1 values.
+- **Tests:** `tests/test_v0p43p1.py`: a torn-down stereo rig is restored; refined cameras are not overwritten; staged `reconstruct` end to end with a two-camera Mastcam-Z rig and a `triangulate` that tears the block down.
+- Notebooks unchanged (the `_v0p43` copies stay current).
+
 ## 0.43.0 — 2026-09-30
 
 Runs without Jupyter, stable site definitions, and cheap reruns.

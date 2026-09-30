@@ -61,7 +61,7 @@ def status_table(root: Path) -> int:
         projs = sorted(p.name for p in d.glob("colmap*") if (p / "project.json").is_file())
         fin = [p for p in projs if (d / p / "run_done.json").is_file() or (d / p / "error_input" / "summary.json").is_file()]
         if st:
-            state = st.get("state")
+            state = st.get("state") + (" (processing)" if st.get("stage") == "process" else "")
             extra = (f"cell {st.get('cell')} since {st.get('cell_started')}" if st.get("alive")
                      else (st.get("last_error") or ""))
             age = f"{st['age_s']:.0f} s" if (st.get("alive") and st.get("age_s") is not None) else ""

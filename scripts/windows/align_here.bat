@@ -1,6 +1,8 @@
 @echo off
 REM ======================================================================================================
-REM MPPP v0p43 - align the images already processed in THIS folder, with notebook 03's default settings.
+REM MPPP - align the images already processed in THIS folder, with notebook 03's default settings.
+REM It always runs the current MPPP in MPPP_HOME: the newest notebook 03 there and its default settings, so
+REM this file never needs updating when MPPP changes. Process the images first with process_sites.bat.
 REM
 REM Copy this file into a site's WORK folder (the folder that holds processed\, e.g.
 REM D:\scapes\colmap\south_arm_colmap_nav_zcam34) and double-click it. The alignment runs in the background

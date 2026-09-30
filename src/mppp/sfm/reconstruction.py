@@ -1008,12 +1008,19 @@ def restore_frames(rec, source, frame_ids: Sequence[int]) -> int:
         if fid in rec.frames:
             continue
         fr = source.frames[fid]
+        # v0p43.1: cameras first - every camera of the frame's images and every sensor of its rig.  COLMAP's
+        # tear_down (inside triangulate_points) also drops rigs and cameras no registered frame uses, so a
+        # Mastcam-Z stereo rig (ZCAM_RIG) and both its cameras are gone after stage 1, and AddRig checks that
+        # all of a rig's cameras exist ("Camera 28 from rig 27 not found").
+        cids = {int(source.images[d.id].camera_id) for d in fr.data_ids}
         if fr.rig_id not in rec.rigs:
-            rec.add_rig(source.rigs[fr.rig_id])
-        for d in fr.data_ids:
-            cid = int(source.images[d.id].camera_id)
+            cids |= {int(s.id) for s in source.rigs[fr.rig_id].sensor_ids()
+                     if s.type == pycolmap.SensorType.CAMERA}
+        for cid in sorted(cids):
             if cid not in rec.cameras:
                 rec.add_camera(source.cameras[cid])
+        if fr.rig_id not in rec.rigs:
+            rec.add_rig(source.rigs[fr.rig_id])
         nf = pycolmap.Frame(frame_id=fid, rig_id=fr.rig_id)
         for d in fr.data_ids:
             nf.add_data_id(d)

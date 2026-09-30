@@ -1,6 +1,6 @@
 @echo off
 REM ======================================================================================================
-REM MPPP v0p43 - process and align every site of src\mppp\data\sites.json into its own WORK folder under ROOT,
+REM MPPP - process and align every site of src\mppp\data\sites.json into its own WORK folder under ROOT,
 REM one site after the other, in the background (a minimised window; closing it stops the batch).
 REM Finished sites (same settings) are skipped, so double-clicking again continues where it stopped.
 REM
