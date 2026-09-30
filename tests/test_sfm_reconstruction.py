@@ -1023,3 +1023,29 @@ def test_outlier_test_uses_the_frame_limit(tmp_path):
     assert few({"min_observations": 10 ** 7})                              # everything is "too few"
     assert not few({"min_observations": 1})
     assert not few({}) or obs < R.MIN_FRAME_OBSERVATIONS                   # default: the module limit
+
+
+@pytest.mark.parametrize("mode", ["zero", "hold"])
+def test_navcam_rig_yaw_zero_or_hold(tmp_path, mode):
+    """v0p51: NAVCAM_RIG_YAW = "zero" sets the rig yaw (quaternion y, rotation about y) to 0 and holds it; "hold"
+    keeps the start value; pitch and roll are still refined with refine_rig="rotation"."""
+    pytest.importorskip("pyceres")
+    from helpers import _build_rec, _synthetic
+    from mppp.sfm.reconstruction import bundle_adjust
+    proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+    proj.settings["navcam_rig_yaw"] = mode
+    rec, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
+    rig = rec.rigs[1]
+    sid = list(rig.non_ref_sensors)[0]
+    q0 = np.array(rig.sensor_from_rig(sid).params)[:4].copy()
+    bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=30)
+    q1 = np.array(rec.rigs[1].sensor_from_rig(sid).params)[:4]
+    if mode == "zero":
+        assert abs(q1[1]) < 1e-12
+    else:
+        assert abs(q1[1] - q0[1] / np.linalg.norm(q0)) < 1e-9
+    assert abs(q1[0] - q0[0]) > 0 or abs(q1[2] - q0[2]) > 0          # pitch / roll still move
+    proj.settings["navcam_rig_yaw"] = "refine"
+    bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=30)
+    assert abs(np.array(rec.rigs[1].sensor_from_rig(sid).params)[1] - q1[1]) > 0   # refined again when asked

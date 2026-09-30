@@ -490,3 +490,18 @@ def test_deleted_images_stay_out_and_new_ones_come_in(tmp_path):
     assert {p.stem for p in kept} == {p.stem for p in paths[:4] + paths[6:]}
     assert rep["n_removed"] == 2 and rep["never_processed"] == 4
     assert rep["removed"] == sorted(p.name for p in paths[4:6])
+
+
+def test_mask_alpha_transparency():
+    """v0p51: STORE_MASK_IN_ALPHA = 0.5 -> masked pixels half transparent (alpha 128 of 255), included opaque."""
+    from types import SimpleNamespace
+    from mppp.image import MPPPImage
+    from mppp.process import alpha_transparency
+    assert alpha_transparency(True) == 1.0 and alpha_transparency(False) == 0.0 and alpha_transparency(0.5) == 0.5
+    with pytest.raises(ValueError):
+        alpha_transparency(1.5)
+    im = SimpleNamespace(image_int8=np.zeros((2, 2, 3), np.uint8), image_int16=np.zeros((2, 2, 3), np.uint16),
+                         mask=np.array([[1, 0], [0, 1]], np.uint8))
+    a = MPPPImage.rgba(im, 8, 0.5)[..., 3]
+    assert a[0, 0] == 255 and a[0, 1] == 128
+    assert MPPPImage.rgba(im, 8)[..., 3][0, 1] == 0 and MPPPImage.rgba(im, 16, 0.5)[..., 3][0, 1] == 32768

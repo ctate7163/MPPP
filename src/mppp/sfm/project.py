@@ -45,7 +45,11 @@ INTRINSIC_CORE = ("fx", "fy", "cx", "cy")          # focal length and principal 
 # v0p50: the Navcam distortion (k1-k4, p1, p2, ...) is one set per eye for every sol and temperature: "hold" keeps
 # it at the start (consensus) camera in every block and temperature bin; "refine" fits it per block (before v0p50)
 NAVCAM_DISTORTION_FIT = "hold"
-NAVCAM_TERM_SETTINGS = ("consensus", "zero")       # v0p50: NAVCAM_K4 / NAVCAM_P1: the start camera's value or 0 (held)
+NAVCAM_TERM_SETTINGS = ("consensus", "zero")
+# v0p51: the Navcam rig yaw (rotation of the right camera about the left camera's y axis, the one that shifts the
+# disparity): "refine" (with NAVCAM_RIG_REFINE), "hold" (at the start rig's value) or "zero" (set to 0 and held: the
+# principal points absorb the ~10 mdeg differences between blocks); pitch and roll follow NAVCAM_RIG_REFINE
+NAVCAM_RIG_YAW_SETTINGS = ("refine", "hold", "zero")       # v0p50: NAVCAM_K4 / NAVCAM_P1: the start camera's value or 0 (held)
 ZEROED_TERMS = ("b1", "b2")          # v0p20: p1, p2 kept from the calibration (was also zeroed), as notebook 03
 ZCAM_FOCUS_BIN = 30.0                               # focus motor counts per Mastcam-Z camera bin (v0p14.4)
 ZCAM_FOCUS_MODEL = "M2020_ZCAM034_focus_model.json"  # v0p22: Mastcam-Z 34 mm focal length against focus count
@@ -326,7 +330,7 @@ class SfmProject:
                zcam_zero_terms: Optional[Sequence[str]] = None,
                zcam_focus_model_file: Optional[PathLike] = None,
                navcam_distortion_fit: str = NAVCAM_DISTORTION_FIT, navcam_k4: str = "consensus",
-               navcam_p1: str = "consensus") -> "SfmProject":
+               navcam_p1: str = "consensus", navcam_rig_yaw: str = "refine") -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -417,6 +421,8 @@ class SfmProject:
             raise ValueError("zcam_bin_refine must be 'focal' or 'all'")
         if navcam_distortion_fit not in ("hold", "refine"):
             raise ValueError("navcam_distortion_fit must be 'hold' or 'refine'")
+        if navcam_rig_yaw not in NAVCAM_RIG_YAW_SETTINGS:
+            raise ValueError(f"navcam_rig_yaw must be one of {NAVCAM_RIG_YAW_SETTINGS}")
         for _n, _v in (("navcam_k4", navcam_k4), ("navcam_p1", navcam_p1)):
             if _v not in NAVCAM_TERM_SETTINGS:
                 raise ValueError(f"{_n} must be one of {NAVCAM_TERM_SETTINGS}")
@@ -576,6 +582,11 @@ class SfmProject:
                 nav_info["rig"].update(applied)
             rig["N"]["rotation_source"] = f"{rig_file.name} (refined consensus; translation from CAHV)" + \
                 (f" from {rig_file.parent}" if navcam_cameras else "")
+        if navcam_rig_yaw == "zero" and "N" in rig:        # v0p51: the start rig without its yaw
+            R0 = np.asarray(rig["N"]["R_sensor_from_ref"], float)
+            rig["N"]["R_sensor_from_ref"] = rig_without_yaw(R0).tolist()
+            rig["N"]["yaw_removed_mdeg"] = rig_yaw_mdeg(R0)
+            rig["N"]["rotation_source"] = rig["N"].get("rotation_source", "CAHV") + "; yaw set to 0 (NAVCAM_RIG_YAW)"
         proj = cls(root, images, cameras, rig, offset,
                    {"world_frame": frames.pop(), "image_format": image_format,
                     "prior_sigma_m": list(map(float, prior_sigma_m)), "zero_terms": list(zero_terms),
@@ -587,10 +598,26 @@ class SfmProject:
                     "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
                     "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
                     "navcam_distortion_fit": navcam_distortion_fit, "navcam_k4": navcam_k4, "navcam_p1": navcam_p1,
+                    "navcam_rig_yaw": navcam_rig_yaw,
                     "navcam_cameras": {"dir": str(nav_dir), "fingerprint": navcam_cameras_fingerprint(nav_dir),
                                        **nav_info} if navcam_cameras else None})
         proj.save()
         return proj
+
+
+def rig_yaw_mdeg(R) -> float:
+    """v0p51: the yaw of a rig rotation (right from left): its rotation-vector component about y, mdeg."""
+    from scipy.spatial.transform import Rotation
+    return float(np.degrees(Rotation.from_matrix(np.asarray(R, float)).as_rotvec()[1]) * 1e3)
+
+
+def rig_without_yaw(R) -> np.ndarray:
+    """v0p51: a rig rotation with its yaw (rotation-vector y component) set to 0, pitch and roll kept.  For the
+    near-identity Navcam rig the quaternion's y is then 0 too, which is what the bundle adjustment holds."""
+    from scipy.spatial.transform import Rotation
+    rv = Rotation.from_matrix(np.asarray(R, float)).as_rotvec()
+    rv[1] = 0.0
+    return Rotation.from_rotvec(rv).as_matrix()
 
 
 def navcam_distortion_terms(cam: Dict[str, Any], fit: str = NAVCAM_DISTORTION_FIT, k4: str = "consensus",

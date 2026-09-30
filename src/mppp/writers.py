@@ -105,7 +105,7 @@ def simple_tags(meta: Dict[str, Any], bits: int, channels: int) -> Dict[str, str
         "CameraGroup": str(meta.get("camera_group", "")),
         "BitDepthPerChannel": str(bits), "Channels": str(channels),
         "ColorSpace": "linear_rgb" if bits == 16 else "see mppp config (gamma)",
-        "AlphaSemantics": "reconstruction mask (max = include)" if channels == 4 else "none",
+        "AlphaSemantics": "reconstruction mask (max = include; lower = excluded, e.g. half transparent)" if channels == 4 else "none",
         "Undistorted": str(bool(meta.get("undistorted"))).lower(),
         "LMST": str(meta.get("LMST")), "LTST": str(meta.get("LTST")),
     }

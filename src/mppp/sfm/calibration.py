@@ -1346,7 +1346,7 @@ def load_example(sol: Solution, name: str, image_path: Optional[PathLike] = None
         im = (im / (65535.0 / 255.0)).round().clip(0, 255).astype(np.uint8)
     mask = None
     if im.ndim == 3 and im.shape[2] == 4:
-        mask = np.where(im[..., 3] > 0, 255, 0).astype(np.uint8)
+        mask = np.where(im[..., 3] >= 255, 255, 0).astype(np.uint8)    # v0p51: masked alpha may be > 0
         im = im[..., :3]
     mp = Path(mask_path) if mask_path else sol.root / "masks" / (name + ".png")
     if mask is None and mp.is_file():

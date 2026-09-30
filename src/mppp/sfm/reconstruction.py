@@ -492,9 +492,15 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
 
     rig_start = {k: v.copy() for k, v in rig_blocks.items()}
     n_rig_prior = 0
+    rig_yaw = str(project.settings.get("navcam_rig_yaw") or "refine")        # v0p51: "refine", "hold", "zero"
     for key, arr in rig_blocks.items():
         if not prob.has_parameter_block(arr):
             continue
+        nav_rig = str(key_of.get(int(key[1]), "")).startswith("N") if key_of else False
+        if nav_rig and rig_yaw == "zero" and abs(arr[1]) > 0:
+            # the quaternion's y (rotation about y = the yaw, rotation vector = 2 q_xyz) set to 0; w renormalised
+            arr[1] = 0.0
+            arr[3] = np.sign(arr[3] or 1.0) * np.sqrt(max(0.0, 1.0 - arr[0] ** 2 - arr[2] ** 2))
         if refine_rig is True and rig_translation_sigma_m:
             from scipy.spatial.transform import Rotation
             q0, t0 = rig_start[key][:4], rig_start[key][4:7]
@@ -507,7 +513,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             # rotation is small (Navcam L->R ~0.13 deg), so its quaternion is refined in
             # x, y, z with w held: |q|^2 - 1 stays O(1e-6), i.e. a scale error < 0.01 px;
             # the quaternion is normalised when written back.
-            prob.set_manifold(arr, pyceres.SubsetManifold(7, [3, 4, 5, 6] if refine_rig == "rotation" else [3]))
+            held_q = [3, 4, 5, 6] if refine_rig == "rotation" else [3]
+            if nav_rig and rig_yaw in ("hold", "zero"):
+                held_q = [1] + held_q                     # v0p51: the yaw stays; pitch (x) and roll (z) refined
+            prob.set_manifold(arr, pyceres.SubsetManifold(7, held_q))
         else:
             prob.set_parameter_block_constant(arr)
 

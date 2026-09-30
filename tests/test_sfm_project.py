@@ -532,3 +532,26 @@ def test_bundle_adjust_holds_the_navcam_distortion(tmp_path):
     bundle_adjust(rec, proj, refine_rig=False, verbose=False)
     for cid, c in rec.cameras.items():
         assert np.allclose(c.params[4:], before[cid][4:])                  # distortion unchanged
+
+
+def test_rig_without_yaw_keeps_pitch_and_roll():
+    from scipy.spatial.transform import Rotation
+    from mppp.paths import cmods_dir
+    from mppp.sfm.project import rig_without_yaw, rig_yaw_mdeg
+    R = np.asarray(json.loads((cmods_dir() / "M2020_N_rig.json").read_text())["R_sensor_from_ref"], float)
+    assert abs(rig_yaw_mdeg(R)) > 1.0
+    R0 = rig_without_yaw(R)
+    rv, rv0 = Rotation.from_matrix(R).as_rotvec(), Rotation.from_matrix(R0).as_rotvec()
+    assert abs(rv0[1]) < 1e-15 and np.allclose(rv0[[0, 2]], rv[[0, 2]])
+    assert abs(Rotation.from_matrix(R0).as_quat()[1]) < 1e-15
+
+
+def test_thermal_rig_slopes_drop_the_yaw_when_it_is_held():
+    from types import SimpleNamespace
+    from mppp.sfm.thermal import rig_slopes_for_project
+    th = {"yaw_mdeg_per_degC": 0.4, "pitch_mdeg_per_degC": 0.1, "T0_degC": -20}
+    p = SimpleNamespace(settings={"navcam_cameras": {"rig": {"thermal": th}}})
+    assert rig_slopes_for_project(p)["yaw_mdeg_per_degC"] == 0.4
+    p.settings["navcam_rig_yaw"] = "zero"
+    s = rig_slopes_for_project(p)
+    assert s["yaw_mdeg_per_degC"] == 0.0 and s["pitch_mdeg_per_degC"] == 0.1

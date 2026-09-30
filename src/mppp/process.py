@@ -31,14 +31,26 @@ PathLike = Union[str, Path]
 _FORMAT_DIR = {"PNG16": "images_png16", "PNG8": "images_png8", "TIFF16": "images_tiff16"}
 
 
+def alpha_transparency(value: Any) -> float:
+    """v0p51: ``export.store_mask_in_alpha`` as the transparency of the masked pixels: False / 0 -> 0 (no alpha
+    channel), True / 1 -> 1 (masked pixels fully transparent, as before), a number in (0, 1), e.g. 0.5 -> masked
+    pixels half transparent (alpha 128 of 255).  The pixels the mask includes are always opaque."""
+    if isinstance(value, bool) or value is None:
+        return 1.0 if value else 0.0
+    v = float(value)
+    if not 0.0 <= v <= 1.0:
+        raise ValueError(f"export.store_mask_in_alpha = {value!r}: use True / False or a transparency in [0, 1]")
+    return v
+
+
 def write_image_products(im: MPPPImage, out_dir: PathLike) -> Dict[str, str]:
     out_dir, exp = Path(out_dir), im.config["export"]
     meta = im.meta if exp["embed_metadata"] else None
-    alpha = exp["store_mask_in_alpha"]
+    alpha = alpha_transparency(exp["store_mask_in_alpha"])
     written = {}
     for fmt in exp["formats"]:
         bits = 8 if fmt == "PNG8" else 16
-        arr = im.rgba(bits) if alpha else (im.image_int8 if bits == 8 else im.image_int16)
+        arr = im.rgba(bits, alpha) if alpha else (im.image_int8 if bits == 8 else im.image_int16)
         target = out_dir / _FORMAT_DIR[fmt] / im.fn.stem
         if fmt == "TIFF16":
             written[fmt] = str(writers.save_tiff16(arr, target, meta))

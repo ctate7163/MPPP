@@ -2,6 +2,13 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.51.0 — 2026-09-30
+
+Navcam rig yaw held or zero; partly transparent masks.
+- **`NAVCAM_RIG_YAW`** (notebook 03; `SfmProject.create(navcam_rig_yaw=)`, `project.settings["navcam_rig_yaw"]`): `"refine"` (default, as before), `"hold"` (the start rig's yaw, i.e. the joint rig at the block's temperature and sol, kept), or **`"zero"`** (the yaw - rotation of the right camera about the left camera's y axis, which shifts the disparity - set to 0 in the start rig and held; the principal points absorb the ~10 mdeg block-to-block differences). Pitch and roll are still refined with `NAVCAM_RIG_REFINE = "refine"`. In the bundle adjustment the rig quaternion's y component is held (at 0 for "zero"); only the Navcam rig is affected, not the Mastcam-Z rigs. With "hold" or "zero" the thermal stage no longer turns the rig by the yaw temperature slope (`thermal.rig_slopes_for_project`). `project.rig_without_yaw`, `rig_yaw_mdeg`; the removed yaw is recorded as `rig["N"]["yaw_removed_mdeg"]`.
+- **`STORE_MASK_IN_ALPHA = 0.5`:** the masked pixels are half transparent (alpha 128 of 255; 16-bit 32768) instead of fully transparent; `True` / 1 is fully transparent as before, `False` / 0 writes no alpha. `process.alpha_transparency`, `MPPPImage.rgba(bits, transparency)`. `calibration.load_example` now reads only fully opaque alpha as "included". A changed value reprocesses the images (the processing settings change).
+- Notebooks copied as `*_v0p51.ipynb`.
+
 ## 0.50.1 — 2026-09-30
 
 GitHub: pull before push.

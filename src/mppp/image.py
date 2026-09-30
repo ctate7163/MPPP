@@ -440,10 +440,17 @@ class MPPPImage:
         return rad
 
     # ---------------------------------------------------------------- outputs
-    def rgba(self, bits: int = 16) -> np.ndarray:
-        """RGB + alpha; alpha = reconstruction mask at full scale."""
+    def rgba(self, bits: int = 16, transparency: float = 1.0) -> np.ndarray:
+        """RGB + alpha; alpha = reconstruction mask at full scale: the full value where the mask includes the pixel;
+        where it excludes it, ``1 - transparency`` of the full value (v0p51: ``transparency`` 1 = fully transparent,
+        the default; 0.5 = half transparent, so the masked area stays visible in viewers)."""
         im = self.image_int16 if bits == 16 else self.image_int8
-        alpha = np.where(self.mask > 0, np.iinfo(im.dtype).max, 0).astype(im.dtype)
+        top = np.iinfo(im.dtype).max
+        t = min(max(float(transparency), 0.0), 1.0)
+        masked = int(round(top * (1.0 - t)))
+        if masked >= top:
+            raise ValueError(f"store_mask_in_alpha = {transparency}: the masked pixels would be as opaque as the rest")
+        alpha = np.where(self.mask > 0, top, masked).astype(im.dtype)
         return np.dstack([im, alpha])
 
     @property

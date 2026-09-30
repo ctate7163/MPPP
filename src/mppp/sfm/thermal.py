@@ -259,7 +259,11 @@ def rig_slopes_for_project(project) -> Optional[Dict[str, float]]:
     entry, recorded by ``SfmProject.create``): {"yaw_mdeg_per_degC", "pitch_mdeg_per_degC", "T0_degC"} or None."""
     rig = ((project.settings.get("navcam_cameras") or {}).get("rig") or {})
     th = rig.get("thermal")
-    return th if th and th.get("yaw_mdeg_per_degC") is not None else None
+    if not (th and th.get("yaw_mdeg_per_degC") is not None):
+        return None
+    if project.settings.get("navcam_rig_yaw") in ("hold", "zero"):    # v0p51: no yaw with temperature either
+        th = dict(th, yaw_mdeg_per_degC=0.0)
+    return th
 
 
 def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float = 10.0,
