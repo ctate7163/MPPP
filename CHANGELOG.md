@@ -2,6 +2,10 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.51.2 — 2026-10-01
+
+- **Notebook 04 §2d, `RUN_STUDY = True`:** a new Navcam calibration study no longer writes into an existing study folder. On 1 Oct a run with `STUDY_DIR = navcal_v0p40` replaced that study's `scapes.json` (23 blocks; restored) and `rig/common_principal_points.json`, added `rig/rig_Three_Forks_North_N+Z34.json`, and then failed. Now: if `STUDY_DIR` already holds `rig/` or `joint/`, the study goes to `camera_analysis/navcal_<version>_<yyyymmdd>`, and the blocks used are printed. The study's output goes to `<STUDY_DIR>/study_log.txt`; on failure the cell shows the last 40 lines. Before, the output went to the Jupyter server's console, so only "exit status 1" was visible.
+
 ## 0.51.1 — 2026-09-30
 
 - History rewritten: the 0.50.0, 0.50.1 and 0.51.0 commits now have Claude (noreply@anthropic.com) as committer and Christian as author (GitHub showed them as Unverified); their content is unchanged and the tags v0.50.0, v0.50.1, v0.51.0 point to the new commits.
