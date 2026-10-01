@@ -305,7 +305,9 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
     new = pycolmap.Reconstruction()
     for cid, cam in rec.cameras.items():
         new.add_camera(cam)
-    next_cid = max(rec.cameras) + 1
+    # v0p61: above every camera id the project knows too - after stage 1 of a staged run the Mastcam-Z cameras are
+    # no longer in ``rec`` but come back with their frames (restore_frames): their ids must stay free
+    next_cid = max(list(rec.cameras) + [int(v) for v in (proj.settings.get("database", {}).get("cameras") or {}).values()]) + 1
     bin_cam: Dict[Tuple[int, Tuple[float, float]], int] = {}
     rows = []
     for cid in sorted(nav_cids):

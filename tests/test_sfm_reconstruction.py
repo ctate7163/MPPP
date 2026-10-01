@@ -575,7 +575,7 @@ def test_bundle_adjust_solver_choice_and_block_rotation(tmp_path):
 
 def test_outlier_residual_floor():
     from mppp.sfm.reconstruction import OUTLIER_DEFAULTS
-    assert OUTLIER_DEFAULTS["min_residual_px"] == 1.2
+    assert OUTLIER_DEFAULTS["min_residual_px"] == 1.6                    # v0p61 (1.2 before)
 
 
 def _rec():

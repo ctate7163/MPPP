@@ -32,7 +32,7 @@ def test_site_appearance_measures_on_synthetic_texture():
 
 def test_windows_bat_files():
     d = ROOT / "scripts" / "windows"
-    for n in ("align_here.bat", "run_all_sites.bat", "sites_status.bat", "mppp_env.bat", "_run_align.bat",
+    for n in ("align_here.bat", "run_sites.bat", "sites_status.bat", "mppp_env.bat", "_run_align.bat",
               "_run_sites.bat"):
         raw = (d / n).read_bytes()
         assert b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b""), n     # CRLF line ends for cmd.exe
@@ -73,7 +73,7 @@ def test_bat_files_work_from_any_folder_and_find_the_environment():
     import subprocess
     from pathlib import Path
     win = Path(__file__).resolve().parents[1] / "scripts" / "windows"
-    for name in ("process_sites.bat", "run_all_sites.bat", "sites_status.bat"):
+    for name in ("process_sites.bat", "run_sites.bat", "sites_status.bat"):
         s = (win / name).read_text()
         assert 'call "%MPPP_WIN%\\mppp_env.bat"' in s and '"%~dp0mppp_env.bat" ||' not in s, name
         assert "%~dp0_run" not in s, name
@@ -181,11 +181,12 @@ def test_lmst_histogram(tmp_path):
     assert lh.lmst_hours("Sol-01451M13:00:25.313") == pytest.approx(13.007, abs=1e-3)
 
 
-def test_run_all_sites_bat_files_navcam_and_zcam34():
-    """v0p50: run_all_sites.bat runs the Navcam blocks only, run_all_sites_zcam34.bat the zcam34 sites."""
+def test_run_sites_bat_files_navcam_and_zcam34():
+    """v0p50: run_sites.bat runs the Navcam blocks only, run_sites_zcam34.bat the zcam34 sites (v0p61: no "all")."""
     w = ROOT / "scripts" / "windows"
-    nav = (w / "run_all_sites.bat").read_bytes()
-    z = (w / "run_all_sites_zcam34.bat").read_bytes()
+    assert not list(w.glob("run_all_sites*.bat"))
+    nav = (w / "run_sites.bat").read_bytes()
+    z = (w / "run_sites_zcam34.bat").read_bytes()
     assert b"\r\n" in nav and b"\r\n" in z
     assert b"--zcam" not in nav.split(b"start ")[-1] and b"%WHICH% --zcam" in z
 
@@ -201,13 +202,15 @@ def test_filter_zcam_and_consensus_bats(tmp_path):
     assert run_sites.filter_zcam(["b"], table, True, True) == (["b"], [])
     assert not (ROOT / "scripts" / "rename_zcam34_folders.py").exists()                 # v0p53: no renaming
     win = ROOT / "scripts" / "windows"
-    assert 'set "WHICH=--group navcam_consensus"' in (win / "run_all_sites.bat").read_text()
-    t = (win / "run_all_sites_zcam.bat").read_text()           # v0p53: every Mastcam-Z consensus block
+    assert 'set "WHICH=--group navcam_consensus"' in (win / "run_sites.bat").read_text()
+    t = (win / "run_sites_zcam.bat").read_text()           # v0p53: every Mastcam-Z consensus block
     assert 'set "WHICH=--group zcam_consensus"' in t and "--zcam" in t
     assert 'set "EXTRA="' in t and "ZCAM_ZOOMS" not in t               # v0p53.1: the sites' own zoom lists
     for z in (34, 48, 63, 79, 110):                              # v0p53: each runs its consensus group
-        t = (win / f"run_all_sites_zcam{z}.bat").read_text()
+        t = (win / f"run_sites_zcam{z}.bat").read_text()
         assert f'set "WHICH=--group zcam{z}_consensus"' in t and "--zcam" in t, z
+        assert f'set "EXTRA=--set ZCAM_ZOOMS=[{z}]"' in t, z              # v0p61: only that zoom
+        assert "--all" not in t, z
 
 
 def test_experiment_scripts_live_in_studies():

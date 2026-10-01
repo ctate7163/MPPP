@@ -195,12 +195,16 @@ def figure(table, tests, res, path):
     a_ = ax[0, 1]
     sol = np.array([r["sol"] for r in table])
     for ang, col in (("pitch", COLORS["rational"]), ("roll", COLORS["fisheye_t"])):
-        y = np.array([r[f"rotation_pp_{ang}_mdeg"] for r in table])
-        e = np.array([r[f"rotation_pp_{ang}_sd_mdeg"] for r in table])
-        a_.errorbar(sol, y - np.average(y, weights=1 / e ** 2), yerr=e, fmt="o", ms=6, color=col, elinewidth=1,
+        y = np.array([r[f"rotation_pp_{ang}_mdeg"] for r in table], float)
+        e = np.array([r[f"rotation_pp_{ang}_sd_mdeg"] for r in table], float)
+        ok = np.isfinite(y) & np.isfinite(e) & (e > 0)         # v0p61: held angles have no sd
+        if ok.sum() < 2:
+            continue
+        m = np.average(y[ok], weights=1 / e[ok] ** 2)
+        a_.errorbar(sol[ok], y[ok] - m, yerr=e[ok], fmt="o", ms=6, color=col, elinewidth=1,
                     capsize=0, label=f"{ang} (minus its mean)", zorder=3)
-        c = np.polyfit(sol, y - np.average(y, weights=1 / e ** 2), 1)
-        xs = np.array([sol.min(), sol.max()])
+        c = np.polyfit(sol[ok], y[ok] - m, 1)
+        xs = np.array([sol[ok].min(), sol[ok].max()])
         a_.plot(xs, np.polyval(c, xs), "-", color=col, lw=1.2, label=f"{ang}: {1e3 * c[0]:+.1f} mdeg per 1000 sols")
     a_.set_xlabel("median sol of the block")
     a_.set_ylabel("rig angle relative to its mean (mdeg)")

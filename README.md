@@ -21,7 +21,7 @@ pip install -e .[mask,sfm]          # masks (torch, timm, safetensors) and the C
 pytest -m "not slow"                # optional: the test suite (the example PDS products are in tests/data)
 ```
 
-**Git and GitHub (v0p50).** The history is in git; the private repository is `github.com/ctate7163/MPPP`. Once: `scripts\windows\setup_github.bat`. After each delivery from Claude: `scripts\windows\sync_from_claude.bat` (adopts `_transfer\mppp_latest.bundle`, removes deleted files, pushes).
+**Git and GitHub (v0p50).** The history is in git; the private repository is `github.com/ctate7163/MPPP`. Once: `scripts\windows\setup_github.bat`. After each delivery from Claude: `scripts\windows\sync_from_claude.bat` (adopts `_transfer\mppp_latest.bundle`, removes deleted files, pushes). If that stops with "Your local changes ... would be overwritten" (v0p61): `scripts\windows\adopt_claude.bat` stashes this copy's changes, makes main the delivery and pushes; on "GitHub main has commits that this copy does not have" choose K (GitHub's old main is kept as a branch).
 
 
 A conda environment file is in `envs/mppp.yml`. Python ≥ 3.10.
@@ -52,7 +52,7 @@ Notebooks (in `notebooks/`):
   - Double-click it again to see the status.
   - Progress is in `runs\<time>\log.txt`, and the results are in `colmap\`.
   - The same from a prompt: `python scripts\align_scape.py <WORK>`.
-- **Every site:** `scripts\windows\run_all_sites.bat` (Navcam blocks) and `run_all_sites_zcam34.bat` (Navcam + Mastcam-Z 34 mm, the sites with `"zcam34": true`), or `python scripts\run_sites.py --all` (also `--all --zcam` for the zcam34 sites, or `--sites rockytop sid_chal_rocks`). It selects, processes and aligns each site into its folder, one after the other.
+- **Every site:** `scripts\windows\run_sites.bat` (Navcam blocks, group `navcam_consensus`), `run_sites_zcam.bat` (Navcam + every Mastcam-Z zoom of each site's `"zcam"` list, group `zcam_consensus`) and `run_sites_zcam34.bat` ... `run_sites_zcam110.bat` (only that zoom, group `zcam<zoom>_consensus`; v0p61). Or `python scripts\run_sites.py --group navcam_consensus` (also `--group zcam34_consensus --zcam --set ZCAM_ZOOMS=[34]`, or `--sites rockytop chal_rocks_sid`). It selects, processes and aligns each site into its folder, one after the other.
   - Sites already finished with the same settings are skipped.
   - `--then 04 05` runs the camera-model and error-analysis notebooks at the end.
   - `sites_status.bat` (or `run_sites.py --status`) lists what is running, finished, failed or stopped.
@@ -96,7 +96,7 @@ The pip `pycolmap` wheel for Windows is CPU-only. The conda-forge build has CUDA
 | `src/mppp/` | the package |
 | `src/mppp/data/` | package data: the site definitions (`sites.json`), camera models (`cmods/`: the models in use - Navcam cameras and rig, Mastcam-Z focus model - plus the flight Metashape calibrations and the rational Navcam cameras; README and CHANGES there), optical-depth table, waypoint snapshot, occlusion profiles, model registry (`models.json`) |
 | `notebooks/` | the workflows above; `notebooks/training/` retrains the mask model |
-| `scripts/` | `align_scape.py` (one WORK folder) and `run_sites.py` (many sites): notebook 03 without Jupyter, with logs and status (v0p43); `process_sites.py` (select and process only); `windows/`: `process_sites.bat`, `align_here.bat`, `run_all_sites.bat`, `sites_status.bat`; `run_scapes.py`: the older batch runner |
+| `scripts/` | `align_scape.py` (one WORK folder) and `run_sites.py` (many sites): notebook 03 without Jupyter, with logs and status (v0p43); `process_sites.py` (select and process only); `windows/`: `process_sites.bat`, `align_here.bat`, `run_sites.bat`, `sites_status.bat`; `run_scapes.py`: the older batch runner |
 | `docs/methods.md` | methods, conventions, equations and flagged assumptions |
 | `docs/RELEASING.md` | how to release code and models (GitHub, Hugging Face, safetensors) |
 | `tests/` | pytest suite, one file per module (`test_sfm_reconstruction.py`, `test_processing.py`, ...; v0p50), shared helpers in `tests/helpers.py`; `tests/data/m20/` holds two public PDS products |

@@ -2,6 +2,46 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.61.0 — 2026-10-01
+
+Mastcam-Z staged calibration (focus line per eye and zoom, known low-backlash list), the Navcam temperature model after stage 1, clean-ups.
+- **Mastcam-Z stage 2, as one line per eye and zoom** (`mppp.sfm.zcam.refit_focus_lines`; notebook 03 `ZCAM_FOCUS_LINE = True`, `ZCAM_LINE_CYCLES = 2`):
+  - Round 1 of stage 2 holds every Mastcam-Z camera at its start (focus model or labels), so the Zcam frames register on the held Navcam block first.
+  - Rounds 2..1+`ZCAM_LINE_CYCLES` free the Zcam bins, then refit f = f0 + slope (focus - reference) per eye and zoom: Huber, weighted by observations, through the high-backlash bins with >= 200 observations. With fewer than 3 bins or < 300 counts of focus span, only f0 is fitted and the slope is the focus model's.
+  - Every bin is then set on the line (its fy/fx kept), and the later rounds and the final adjustment hold the Zcam cameras.
+  - Bins more than max(4 robust sd, 3 px) off the line are listed as **outlier bins** in the log and in `project.settings["zcam_focus_lines"]`.
+  - The rig (one translation and rotation per zoom), one distortion and the principal point per eye stay as before. Per-bin f is used only to find the line and the backlash outliers.
+- **Known low-backlash observations** (`src/mppp/data/mars2020_mastcam-z_low_backlash_observations.csv`, Christian's list; `mppp.sfm.backlash.load_low_backlash`, `is_low_backlash`):
+  - Matching: entries are full or partial image names, matched as substrings of the file name (case-insensitive). Full product names also match the same eye and spacecraft clock under any product type or version. `sol:ZCAMnnnnn` is accepted, and a trailing `?` marks an uncertain entry.
+  - Notebook 03 `ZCAM_BACKLASH = "list"` (default) and `ZCAM_LOW_BACKLASH = None` (= the shipped list):
+    - Listed images get their own focus bins (`..._reg`), held at the line ÷ (model f0 / label f0), i.e. at the label.
+    - Every other Mastcam-Z image is high-backlash, except 110 mm, which has one state.
+  - The list's SHA-256 is part of the project settings, so a changed list rebuilds the project.
+- **Navcam temperature model at the end of stage 1** (`THERMAL_AFTER_STAGE1 = True`):
+  - The thermal-bin stage runs on the Navcam-only block before the Zcam frames are added, so stage 2 starts from the binned Navcam cameras. The single-camera solution is in `sparse/<out>_single`.
+  - Fix: thermal-bin camera ids no longer collide with Zcam camera ids that stage 2 restores.
+- **`ZCAM_K3 = "label"` / `"zero"`** (notebook 03): `"zero"` sets the Mastcam-Z k3 to 0 and holds it, like p1, p2, for label, focus-model and XML starts.
+- **Defaults:**
+  - Frame exclusion median residual 1.2 → **1.6 px** (`OUTLIER_DEFAULTS["min_residual_px"]`).
+  - `NO_MASK_INFERENCE_AT = ["S032D1184"]` (Three Forks).
+  - `STORE_MASK_IN_ALPHA = 0.5`.
+- **Batch files:**
+  - Renamed: `run_all_sites*.bat` → **`run_sites*.bat`**. Delete the old `run_all_sites*.bat` from `scripts\windows` if a copy delivery left them.
+  - `run_sites_zcam34.bat` (and `_zcam48/63/79/110`) align **only that zoom** (`--set ZCAM_ZOOMS=[34]`).
+  - `run_sites_zcam.bat` aligns all the zooms in each site's `"zcam"` list.
+  - The `--all` hints were removed.
+- **`github_push.bat`:**
+  - Stops with "run sync_from_claude.bat" when `_transfer\mppp_latest.bundle` holds a delivery this copy has not taken.
+  - Stashes uncommitted and untracked files before the fetch. This was the cause of "Your local changes ... would be overwritten".
+  - When GitHub has older shared-history commits, choose **K** (keep them as branch `github-before-<date-time>` and push this copy) or **M** (merge).
+  - New **`adopt_claude.bat`** makes `main` exactly Claude's latest delivery, stashing local changes, then pushes.
+- **Notebook 04 fixes:**
+  - `STUDY_DIR = None` by default, so it no longer points at the old `navcal_v0p40` paths. `RUN_STUDY` makes a new folder `navcal_<tag>_<date>[_2]` instead of failing with `FileExistsError`. The sections after it are skipped with a message when there is no study.
+  - Rig study: the rig yaw is refined, so the pitch/roll/yaw sd are finite. `_wls` drops non-finite rows, which fixes the `LinAlgError` and the nan tables.
+  - `merge_scapes` uses Navcam frames only. This fixes the `IndexError` on `_zcam` blocks.
+  - The rig-drift refit (§2e) runs only when a rig study exists.
+- Notebooks copied as `*_v0p61.ipynb`.
+
 ## 0.60.0 — 2026-10-01
 
 New Navcam consensus from 18 blocks, and notebook 04's study makes it in the form in use.

@@ -174,3 +174,110 @@ def write_focus_breathing(project: SfmProject, rec, out_dir: Optional[PathLike] 
     png = plot_focus_breathing(project, table, fits, out / "zcam_focus_breathing.png", min_observations)
     return {"fits": fits, "table": table, "png": str(png), "csv": str(out / "zcam_focus_breathing.csv"),
             "json": str(out / "zcam_focus_breathing.json")}
+
+
+# ------------------------------------------------------------------ v0p61: one focus line per eye and zoom
+def refit_focus_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] = None, min_observations: int = 200,
+                      min_span: float = 300.0, huber_k: float = 1.345, outlier_sigma: float = 4.0,
+                      apply: bool = True) -> Dict[str, Any]:
+    """
+    v0p61: the block's focal length of each Mastcam-Z eye and zoom as one line in focus motor count,
+    f = f0 + slope (focus - reference), fitted (Huber, weights = observations) to the refined focus-bin cameras of the
+    high-backlash state with at least ``min_observations``; with fewer than 3 such bins or a focus span below
+    ``min_span`` counts only f0 is fitted and the slope is the zoom's focus model's (else the labels').  Bins more
+    than ``outlier_sigma`` robust sd (at least 3 px) off the line are reported as ``outliers`` and do not pull it.
+    ``apply``: every bin camera of the group is then set on the line (fx, fy with its fy/fx kept; the regular-state
+    ``_reg`` cameras at the line divided by the model's f0 / label f0 ratio) in ``rec`` - the caller holds them.
+    Returns {group: {"f0_px", "slope_px_per_count", "reference_focus", "n_bins", "rms_px", "slope_source",
+    "bins": [...], "outliers": [...]}}.
+    """
+    if model is None:
+        try:
+            from .project import zcam_focus_model
+            f = (project.settings.get("zcam_focus_model") or {}).get("file")
+            model = zcam_focus_model(model_file=f)
+        except Exception:                                                  # noqa: BLE001
+            model = {"cameras": {}}
+    db = (project.settings.get("database") or {}).get("cameras") or {}
+    obs = _observations_per_camera(rec)
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for key, cid in db.items():
+        c = project.cameras.get(key) or {}
+        if not str(key).startswith("Z") or int(cid) not in rec.cameras or c.get("group") is None:
+            continue
+        p = rec.cameras[int(cid)].params
+        groups.setdefault(c["group"], []).append({
+            "camera": key, "camera_id": int(cid), "focus": c.get("focus_count_median"),
+            "f_px": float(np.sqrt(p[0] * p[1])), "aspect": float(p[1] / p[0]), "observations": int(obs.get(int(cid), 0)),
+            "regular": c.get("backlash_state") == "regular" or str(key).endswith("_reg")})
+    out: Dict[str, Any] = {}
+    for g, rows in sorted(groups.items()):
+        gm = (model.get("cameras") or {}).get(g) or {}
+        use = [r for r in rows if not r["regular"] and r["focus"] is not None and r["observations"] >= min_observations]
+        ref = float(gm.get("reference_focus", np.median([r["focus"] for r in rows if r["focus"] is not None] or [0.0])))
+        F = np.array([r["focus"] for r in use], float)
+        y = np.array([r["f_px"] for r in use], float)
+        w = np.array([r["observations"] for r in use], float)
+        res: Dict[str, Any] = {"reference_focus": ref, "n_bins": len(use), "bins": [], "outliers": []}
+        if not len(use):
+            res["skipped"] = f"no bin with >= {min_observations} observations"
+            out[g] = res
+            continue
+        fit_slope = len(use) >= 3 and float(np.ptp(F)) >= min_span
+        slope0 = gm.get("slope_px_per_count")
+        if slope0 is None:
+            lab = [(r.get("focus_count"), r.get("label_f_px")) for r in project.images
+                   if r.get("camera_group") == g and r.get("focus_count") is not None and r.get("label_f_px")]
+            slope0 = float(np.polyfit([a for a, _ in lab], [b for _, b in lab], 1)[0]) if len(lab) >= 3 else 0.0
+        X = np.c_[np.ones(len(F)), F - ref] if fit_slope else np.ones((len(F), 1))
+        yy = y if fit_slope else y - float(slope0) * (F - ref)
+        wt = np.ones(len(F))
+        for _ in range(25):                                        # Huber IRLS, weights = observations x Huber
+            sw = np.sqrt(w * wt)
+            b = np.linalg.lstsq(X * sw[:, None], yy * sw, rcond=None)[0]
+            r = yy - X @ b
+            sig = max(1.4826 * float(np.median(np.abs(r - np.median(r)))), 0.5)
+            u = np.abs(r) / (huber_k * sig)
+            wt = np.where(u <= 1.0, 1.0, 1.0 / np.maximum(u, 1e-12))
+        f0, slope = float(b[0]), float(b[1]) if fit_slope else float(slope0)
+        resid = y - (f0 + slope * (F - ref))
+        lim = max(outlier_sigma * sig, 3.0)
+        res.update({"f0_px": f0, "slope_px_per_count": slope, "slope_source": "fitted" if fit_slope else
+                    ("focus model" if gm.get("slope_px_per_count") is not None else "labels"),
+                    "rms_px": float(np.sqrt(np.average(resid ** 2, weights=w))), "robust_sd_px": sig,
+                    "outlier_limit_px": lim, "model_f0_px": gm.get("f0_px"),
+                    "model_slope_px_per_count": gm.get("slope_px_per_count")})
+        for rr, d in zip(use, resid):
+            row = {"camera": rr["camera"], "focus": rr["focus"], "f_px": rr["f_px"], "residual_px": float(d),
+                   "observations": rr["observations"]}
+            res["bins"].append(row)
+            if abs(d) > lim:
+                res["outliers"].append(row)
+        ratio = (float(gm["f0_px"]) / float(gm["label_f0_px"])) if gm.get("label_f0_px") else 1.0
+        if apply:
+            for rr in rows:
+                fl = f0 + slope * ((rr["focus"] if rr["focus"] is not None else ref) - ref)
+                if rr["regular"]:
+                    fl /= ratio
+                p = np.array(rec.cameras[rr["camera_id"]].params, float)
+                a = rr["aspect"]
+                p[0], p[1] = fl / np.sqrt(a), fl * np.sqrt(a)
+                rec.cameras[rr["camera_id"]].params = p
+        out[g] = res
+    return out
+
+
+def focus_line_lines(lines: Dict[str, Any]) -> List[str]:
+    """Printable summary of :func:`refit_focus_lines`."""
+    out = []
+    for g, r in lines.items():
+        if r.get("skipped"):
+            out.append(f"      {g}: {r['skipped']}")
+            continue
+        m = r.get("model_f0_px")
+        out.append(f"      {g}: f = {r['f0_px']:.1f} + {r['slope_px_per_count']:+.4f} (focus - {r['reference_focus']:.0f}) px "
+                   f"[{r['slope_source']}], {r['n_bins']} bins, rms {r['rms_px']:.1f} px"
+                   + (f"; model f0 {m:.1f} ({r['f0_px'] - m:+.1f})" if m else "")
+                   + (f"; outlier bins: " + ", ".join(f"{o['camera']} ({o['residual_px']:+.1f} px)" for o in r["outliers"])
+                      if r["outliers"] else ""))
+    return out

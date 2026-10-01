@@ -1,5 +1,5 @@
 """
-Stop every MPPP run on this computer: process_sites, run_sites / run_all_sites, align_here / align_scape and
+Stop every MPPP run on this computer: process_sites, run_sites / run_sites, align_here / align_scape and
 run_scapes, with their notebook kernels and image-processing workers.
 
     python scripts\\stop_runs.py            # list the runs, ask, stop them

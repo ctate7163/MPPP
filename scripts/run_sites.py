@@ -11,7 +11,7 @@ with its own log in ``<WORK>/runs/`` and status in ``<WORK>/mppp_status.json``; 
 Examples (Windows, in the environment that runs the notebooks)::
 
     python scripts\\run_sites.py --all                                  # every site, Navcam only
-    python scripts\\run_sites.py --group navcam_consensus             # v0p53: what run_all_sites.bat runs
+    python scripts\\run_sites.py --group navcam_consensus             # v0p53: what run_sites.bat runs
     python scripts\\run_sites.py --group zcam34_consensus --zcam      # the Navcam + Mastcam-Z blocks
     python scripts\\run_sites.py --sites rockytop sid --source processed --variant tight --set ATTITUDE_PRIOR_DEG=1.0
     python scripts\\run_sites.py --status                               # every WORK folder under --root

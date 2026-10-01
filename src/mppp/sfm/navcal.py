@@ -385,6 +385,7 @@ def rig_study(sc: Scape, bin_deg: float = 10.0, min_images: int = 8, max_iterati
         t0 = time.time()
         rec = copy.deepcopy(sc.rec)
         proj = copy.deepcopy(sc.project)
+        proj.settings["navcam_rig_yaw"] = "refine"     # v0p61: the study measures the rig (0.53 blocks hold the yaw)
         extra = {}
         ba_kw = {}
         if mode in ("rotation_pp", "epochs"):
@@ -450,6 +451,14 @@ def rig_study(sc: Scape, bin_deg: float = 10.0, min_images: int = 8, max_iterati
 def _wls(y: np.ndarray, X: np.ndarray, var: np.ndarray) -> Dict[str, Any]:
     """Weighted least squares with an additive between-block variance tau^2 (method of moments, DerSimonian-Laird
     generalised to a regression).  Returns coefficients, their standard errors, tau and Q."""
+    # v0p61: rows without a finite value or variance (e.g. a rig angle held in its block: sd nan) are left out
+    y, X, var = np.asarray(y, float), np.asarray(X, float), np.asarray(var, float)
+    ok = np.isfinite(y) & np.isfinite(var) & np.all(np.isfinite(X), axis=1)
+    if ok.sum() <= X.shape[1]:
+        nan = [float("nan")] * X.shape[1]
+        return {"coef": nan, "se": nan, "p": nan, "tau": float("nan"), "Q": float("nan"), "dof": int(ok.sum()) - X.shape[1],
+                "p_homogeneous": float("nan"), "cov": np.full((X.shape[1], X.shape[1]), np.nan), "n_used": int(ok.sum())}
+    y, X, var = y[ok], X[ok], var[ok]
     w = 1.0 / var
     W = np.diag(w)
     XtWX = X.T @ W @ X
@@ -469,7 +478,7 @@ def _wls(y: np.ndarray, X: np.ndarray, var: np.ndarray) -> Dict[str, Any]:
     pval = 2 * stats.norm.sf(np.abs(b2 / se))
     q_p = float(stats.chi2.sf(Q, k - p)) if k > p else float("nan")
     return {"coef": b2.tolist(), "se": se.tolist(), "p": pval.tolist(), "tau": math.sqrt(tau2), "Q": Q, "dof": k - p,
-            "p_homogeneous": q_p, "cov": np.linalg.inv(A)}
+            "p_homogeneous": q_p, "cov": np.linalg.inv(A), "n_used": int(k)}
 
 
 def rig_tests(studies: Sequence[Dict[str, Any]], angle: str = "yaw", mode: str = "rotation_pp") -> Dict[str, Any]:
@@ -611,6 +620,7 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
                                 "free_params": FREE.get(cameras[k].model.name, [])} for k in ("NL", "NR")}
             proj.settings = dict(proj.settings)
             proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+            proj.settings["navcam_rig_yaw"] = "refine"   # v0p61: the joint refines the rig (callers may hold it)
         idx["temps"].update({n: float(v["T"]) for n, v in sc.temps.items()})
         rec = sc.rec
         key_of = {int(v): k for k, v in sc.project.settings.get("database", {}).get("cameras", {}).items()}
@@ -621,7 +631,10 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
         for fid, fr in rec.frames.items():
             if not fr.has_pose:
                 continue
-            ims = [d.id for d in fr.data_ids if d.id in reg and rec.images[d.id].name in by_name]
+            # v0p61: Navcam images only - a Navcam + Mastcam-Z block (``..._colmap_zcam``) also has Mastcam-Z frames,
+            # which have no NL/NR reference image (IndexError on 1 Oct)
+            ims = [d.id for d in fr.data_ids if d.id in reg and rec.images[d.id].name in by_name
+                   and key_of.get(int(rec.images[d.id].camera_id)) in ("NL", "NR")]
             if not ims:
                 continue
             eyes = sorted({key_of.get(int(rec.images[i].camera_id), "") for i in ims})

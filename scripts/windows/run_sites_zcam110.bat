@@ -2,7 +2,7 @@
 REM ======================================================================================================
 REM MPPP - process and align the Navcam + Mastcam-Z block of every site of the zcam110_consensus group of
 REM src\mppp\data\sites.json into its own WORK folder mars2020_sol_<sol>_<site>_colmap_zcam under ROOT (v0p53;
-REM the block has all the Mastcam-Z zooms of the site's "zcam" list),
+REM v0p61: only the 110 mm Mastcam-Z frames (ZCAM_ZOOMS=[110]); run_sites_zcam.bat aligns all the site's zooms),
 REM one site after the other, in the background (a minimised window; closing it stops the batch).
 REM Finished sites (same settings) are skipped, so double-clicking again continues where it stopped.
 REM
@@ -14,11 +14,13 @@ REM Edit the settings below (or run scripts\run_sites.py from a prompt; --help l
 REM ======================================================================================================
 setlocal
 set "ROOT=D:\scapes\colmap"
-REM which sites: --group zcam110_consensus (v0p53 default), --all (every site with a "zcam" list), or --sites a b
+REM which sites: --group zcam110_consensus (default) or --sites a b
 set "WHICH=--group zcam110_consensus"
+REM v0p61: only the 110 mm frames. The results go to <WORK>\colmap like run_sites_zcam.bat (the last run wins);
+REM add --variant z110 to keep them apart in <WORK>\colmap_z110 (notebook 04 reads <WORK>\colmap only).
 REM more options, e.g. --then 04 05   (camera models and error analysis at the end)
-REM                    --source processed --variant tight --set ATTITUDE_PRIOR_DEG=1.0
-set "EXTRA="
+REM                    --source processed --set ATTITUDE_PRIOR_DEG=1.0
+set "EXTRA=--set ZCAM_ZOOMS=[110]"
 
 REM MPPP: this file's own folder if it is MPPP's scripts\windows, else MPPP_HOME (default D:\code\MPPP), so this
 REM .bat also works when copied elsewhere (e.g. into D:\scapes\colmap).

@@ -242,7 +242,7 @@ def camera_from_metashape_xml(path: PathLike, zero_terms: Sequence[str] = ZEROED
     f = float(c["f"])
     params = [f + g("b1"), f, w / 2 + float(c.get("cx") or 0.0), h / 2 + float(c.get("cy") or 0.0),
               float(c.get("k1") or 0.0), float(c.get("k2") or 0.0), g("p2"), g("p1"),
-              float(c.get("k3") or 0.0), 0.0, 0.0, 0.0]
+              g("k3"), 0.0, 0.0, 0.0]                                       # v0p61: k3 may be zeroed
     return {"model": "FULL_OPENCV", "width": int(round(w)), "height": int(round(h)), "params": params,
             "source": f"{Path(path).name} ({', '.join(zero_terms)} set to 0)"}
 
@@ -330,6 +330,7 @@ class SfmProject:
                prior_sigma_m: Sequence[float] = (1.0, 1.0, 1.0),
                zcam_intrinsics: str = "focus_model", zcam_focus_bin: Optional[float] = ZCAM_FOCUS_BIN,
                zcam_bin_refine: str = "focal", zcam_rig: bool = False, zcam_rig_refine: str = "auto",
+               zcam_low_backlash: Optional[PathLike] = None,
                navcam_distortion: str = NAVCAM_DISTORTION, zcam_hold_f_images: int = ZCAM_HOLD_F_IMAGES,
                navcam_rig: str = NAVCAM_RIG, navcam_cameras: Optional[PathLike] = None,
                zcam_zero_terms: Optional[Sequence[str]] = None,
@@ -509,6 +510,15 @@ class SfmProject:
                     _fm_cache["m"] = {"cameras": {}, "zooms": {}, "sources": {}}
             return _fm_cache["m"]
 
+        # v0p61: the known low-backlash (regular focus state) images; every other one is high-backlash (110 mm: one state)
+        from .backlash import is_low_backlash, load_low_backlash, low_backlash_fingerprint
+        _lb = load_low_backlash(zcam_low_backlash)
+        n_low = 0
+        for r in images:
+            if instruments.get(r["camera_group"]) == "Z":
+                r["focus_state"] = "regular" if is_low_backlash(r, _lb) else "backlash"
+                n_low += r["focus_state"] == "regular"
+
         cameras = {}
         nav_dir = Path(navcam_cameras) if navcam_cameras else xml_dir
         nav_info: Dict[str, Any] = {}
@@ -520,6 +530,9 @@ class SfmProject:
                     # v0p53: one distortion per eye and zoom (the focus model's ``distortion``) and an absolute
                     # principal point (``pp0_px`` at the reference focus), when the model has them
                     cameras[instr] = _zcam_model_camera(cameras[instr], _zcam_fmodel().get("cameras", {}).get(instr), zt)
+                if "k3" in zt:                     # v0p61: ZCAM_K3 = "zero" - k3 held at 0 like p1, p2
+                    cameras[instr]["fixed_params"] = sorted(set(cameras[instr].get("fixed_params") or []) | {"k3"},
+                                                            key=FULL_OPENCV_NAMES.index)
                 continue
             if fam == "N" and navcam_distortion in ("rational", "fisheye_tangential"):
                 xml = nav_dir / (NAVCAM_RATIONAL_PATTERN if navcam_distortion == "rational"
@@ -569,6 +582,8 @@ class SfmProject:
                 raise ValueError(f"{xml.name} is {cam['width']}x{cam['height']}, expected the full frame {FULL_FRAME[fam]}")
             if fam == "N":
                 cam = navcam_distortion_terms(cam, navcam_distortion_fit, navcam_k4)
+            if fam == "Z" and "k3" in zt:          # v0p61: ZCAM_K3 = "zero" (Metashape XML start)
+                cam["fixed_params"] = sorted(set(cam.get("fixed_params") or []) | {"k3"}, key=FULL_OPENCV_NAMES.index)
             cameras[instr] = cam
         focus_info = None
         if zcam_intrinsics == "focus_model" and any(f == "Z" for f in instruments.values()):
@@ -644,6 +659,10 @@ class SfmProject:
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
                     "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
                     "zcam_virtual_rig": zrig or None, "zcam_rig_refine": zcam_rig_refine,
+                    "zcam_low_backlash_sha256": (low_backlash_fingerprint(zcam_low_backlash)
+                                                 if any(f == "Z" for f in instruments.values()) else None),
+                    "zcam_low_backlash": {"file": _lb["file"], "images": int(n_low),
+                                          "entries": len(_lb["entries"]) + len(_lb["sol_sequences"])},
                     "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
                     "navcam_distortion_fit": navcam_distortion_fit, "navcam_k4": navcam_k4,
                     "navcam_rig_yaw": navcam_rig_yaw,
@@ -884,18 +903,22 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
         gm = (model or {}).get("cameras", {}).get(group)
         all_counts = [r["focus_count"] for r in rows if r["focus_count"] is not None]
         focus_ref = float(np.median(all_counts)) if all_counts else None
-        for b in sorted(set(bins)):
-            members = [r for r, bb in zip(rows, bins) if bb == b]
+        # v0p61: images of the known low-backlash (regular) focus state (ZCAM_LOW_BACKLASH) get their own bins
+        bkeys = [(bb, r.get("focus_state") == "regular") for r, bb in zip(rows, bins)]
+        for b in sorted(set(bkeys)):
+            members = [r for r, bb in zip(rows, bkeys) if bb == b]
             counts = [r["focus_count"] for r in members if r["focus_count"] is not None]
             med = float(np.median(counts)) if counts else None
-            key = f"{group}_{_focus_tag(med)}"
+            regular = bool(b[1])
+            key = f"{group}_{_focus_tag(med)}" + ("_reg" if regular else "")
             params = list(map(float, base["params"]))
             fl = [r["label_f_px"] for r in members if r.get("label_f_px") is not None]
             Ts = [float(r["camera_temperature_degC"]) for r in members if r.get("camera_temperature_degC") is not None]
             Tb = float(np.median(Ts)) if Ts else None
             sols = [float(r["sol"]) for r in members if r.get("sol") is not None]
             Sb = float(np.median(sols)) if sols else None
-            fixed = list(ZCAM_BIN_HELD) if refine in ("focal", "model") else []
+            fixed = sorted(set(ZCAM_BIN_HELD if refine in ("focal", "model") else ()) | set(base.get("fixed_params") or ()),
+                           key=FULL_OPENCV_NAMES.index)                      # v0p61: + the eye's (k3 = 0)
             lo, hi = (gm or {}).get("focus_range", [-np.inf, np.inf])
             extra = {}
             if gm and med is not None and not (lo <= med <= hi) and fl and gm.get("label_f0_px"):
@@ -936,6 +959,19 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                 params[3] += dcy
                 src += f"; cx, cy {dcx:+.2f}, {dcy:+.2f} px (focus model pp slope about focus {pp_ref:.0f})"
                 extra["pp_shift_px"] = [dcx, dcy]
+            if regular:
+                # the regular state sits at the label: the backlash model's f divided by its f0 / label f0 ratio
+                ratio = (float(gm["f0_px"]) / float(gm["label_f0_px"])) if (gm and gm.get("label_f0_px")) else None
+                if ratio:
+                    params[0], params[1] = params[0] / ratio, params[1] / ratio
+                    src += f"; regular focus state (ZCAM_LOW_BACKLASH): f / {ratio:.4f}"
+                elif fl:
+                    a = params[1] / params[0]
+                    params[0] = float(np.median(fl))
+                    params[1] = params[0] * a
+                    src += "; regular focus state (ZCAM_LOW_BACKLASH): f of the bin's labels"
+                fixed = sorted(set(fixed) | {"fx", "fy"}, key=FULL_OPENCV_NAMES.index)
+                extra = dict(extra, backlash_state="regular", state_source="list")
             cam = dict(base, params=params, group=group, focus_count_median=med,
                        focus_count_range=[min(counts), max(counts)] if counts else None, n_images=len(members),
                        fixed_params=fixed, source=src, temperature_median_degC=Tb, sol_median=Sb, **extra)
@@ -1037,6 +1073,8 @@ def _camera_from_label_median(key: str, params: List[tuple], size: Tuple[int, in
         med[6] = 0.0
     if "p2" in zero_terms:
         med[7] = 0.0
+    if "k3" in zero_terms:                     # v0p61: ZCAM_K3 = "zero"
+        med[8] = 0.0
     return {"model": "FULL_OPENCV", "width": int(size[0]), "height": int(size[1]), "params": med.tolist(),
             "source": f"median of {len(P)} label CAHVOR models ({key}; {', '.join(zero_terms)} set to 0)",
             "label_f_spread_px": float(np.ptp(P[:, 0])) if len(P) else 0.0}

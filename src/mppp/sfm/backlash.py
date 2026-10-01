@@ -39,6 +39,96 @@ DEFAULT_BACKLASH_RATIO = 1.0095      # f / label f in the backlash state when no
 SINGLE_STATE_ZOOMS = (110,)          # v0p53: no backlash state at the end of the zoom's mechanical range
 
 
+LOW_BACKLASH_FILE = "mars2020_mastcam-z_low_backlash_observations.csv"   # v0p61: in mppp/data (Christian, 2 Oct 2026)
+
+
+def low_backlash_path(path: Any = None):
+    """The list in use: ``path``, else ``mppp/data/mars2020_mastcam-z_low_backlash_observations.csv`` (``False``: no
+    list, see :func:`load_low_backlash`)."""
+    from pathlib import Path
+    if path:
+        return Path(path)
+    return Path(__file__).resolve().parents[1] / "data" / LOW_BACKLASH_FILE
+
+
+def load_low_backlash(path: Any = None) -> Dict[str, Any]:
+    """
+    v0p61: the Mastcam-Z observations known to be in the low-backlash (regular) focus state.  One entry per line
+    (several per line separated by commas; ``#`` starts a comment): a full image name or any part of one - a stem
+    (``ZL0_0121_0677679408_053RAD_N0041250ZCAM08114_034085A03``), ``0121_0677679408_053`` (sol, clock), ``ZCAM07114_034``
+    (a sequence at one zoom), ``ZCAM08114`` (a sequence at every zoom) - matched as a substring of the image's file name
+    (case-insensitive); ``sol:sequence`` (``363:ZCAM08394``) also works.  A trailing ``?`` (uncertain) is kept as
+    an entry and counted in ``uncertain``.  A full product name also matches the same eye and spacecraft clock
+    whatever its product type and version (``ZL0_0091_0675031997_228RAD_...A03`` matches ``ZLF_0091_0675031997_228EBY_...J01``,
+    key ``clocks``).  Every other Mastcam-Z image is in the high-backlash state, except at
+    110 mm, which has a single state.  Returns {"entries", "sol_sequences", "clocks", "uncertain", "file"}.
+    """
+    import re
+    if path is False:                                  # no list: every Mastcam-Z image high-backlash
+        return {"entries": set(), "sol_sequences": set(), "clocks": set(), "uncertain": [], "file": None}
+    f = low_backlash_path(path)
+    out: Dict[str, Any] = {"entries": set(), "sol_sequences": set(), "clocks": set(), "uncertain": [], "file": str(f)}
+    if not f.is_file():
+        return out
+    for line in f.read_text(encoding="utf-8-sig").splitlines():
+        line = line.split("#", 1)[0]
+        for tok in re.split(r"[,;\t]+", line):
+            tok = tok.strip().strip('"').strip()
+            if not tok:
+                continue
+            if tok.endswith("?"):
+                tok = tok.rstrip("?").strip()
+                out["uncertain"].append(tok)
+            m = re.fullmatch(r"(\d+):(ZCAM\d{5})", tok, re.I)
+            if m:
+                out["sol_sequences"].add((int(m.group(1)), m.group(2).upper()))
+                continue
+            for ext in (".IMG", ".PNG", ".LBL"):
+                if tok.upper().endswith(ext):
+                    tok = tok[: -len(ext)]
+            if len(tok) >= 6:                          # a too-short fragment would match everything
+                out["entries"].add(tok.upper())
+            c = _clock_key(tok)
+            if c:
+                out["clocks"].add(c)
+    return out
+
+
+def _clock_key(name: str):
+    """(eye, spacecraft clock) of a Mastcam-Z product name (``ZL0_0091_0675031997_...`` -> ("L", "0675031997"))."""
+    import re
+    m = re.match(r"Z([LR])._\d{4}_(\d{10})_", str(name).strip().upper())
+    return (m.group(1), m.group(2)) if m else None
+
+
+def low_backlash_fingerprint(path: Any = None) -> Optional[str]:
+    """SHA-256 of the list in use (None without one), so that notebook 03 rebuilds a project when the list changes."""
+    import hashlib
+    if path is False:
+        return None
+    f = low_backlash_path(path)
+    return hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None
+
+
+def is_low_backlash(row: Dict[str, Any], lst: Dict[str, Any]) -> bool:
+    """Whether an image row (``stem``/``name``, ``sequence``, ``sol``, ``camera_group``) is on the list (never at
+    110 mm, which has one focus state)."""
+    if group_zoom(row.get("camera_group", row.get("instrument"))) in SINGLE_STATE_ZOOMS:
+        return False
+    name = str(row.get("stem") or row.get("name") or "").upper()
+    if any(e in name for e in lst["entries"]):
+        return True
+    c = _clock_key(name)
+    if c and c in lst.get("clocks", ()):
+        return True
+    seq = str(row.get("sequence") or "").upper()
+    try:
+        sol = int(row.get("sol"))
+    except (TypeError, ValueError):
+        sol = None
+    return (sol, seq) in lst["sol_sequences"]
+
+
 def group_zoom(group: Any) -> Optional[int]:
     """``"ZL034"`` -> 34, ``"ZR110_F01234"`` -> 110; None for a name that is not a Mastcam-Z camera."""
     g = str(group)
@@ -399,8 +489,10 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
     """
     from .project import zcam_focus_model
     from .reconstruction import bundle_adjust
-    if mode not in ("split", "report"):
-        raise ValueError("zcam_backlash must be 'split', 'report' or None")
+    if mode not in ("split", "report", "list"):
+        raise ValueError("zcam_backlash must be 'list', 'split', 'report' or None")
+    if mode == "list":            # v0p61: the states come from the list (bins made at the start); classify to compare
+        mode = "report"
     if model is None:
         try:
             f = (project.settings.get("zcam_focus_model") or {}).get("file")

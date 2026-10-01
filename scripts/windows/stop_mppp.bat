@@ -1,6 +1,6 @@
 @echo off
 REM ======================================================================================================
-REM MPPP - stop every MPPP run on this computer: process_sites.bat, run_all_sites.bat, align_here.bat (their
+REM MPPP - stop every MPPP run on this computer: process_sites.bat, run_sites.bat, align_here.bat (their
 REM minimised windows, notebook kernels and image workers). Notebooks open in Jupyter are not touched.
 REM It lists the runs and asks before stopping them. A site stopped half-way is completed by the next run.
 REM ======================================================================================================

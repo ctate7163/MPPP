@@ -837,7 +837,7 @@ def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:
             "observations": int(np.sum(lens)) if lens else 0}
 
 
-OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.2,   # v0p50: 1.2 px (was 1.0)
+OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.6,   # v0p61: 1.6 px (v0p50 1.2, before 1.0)
                     "shift_mad_factor": 5.0, "min_shift_m": 0.25,
                     "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None}
 # v0p43.3: a frame with fewer tie-point observations than this is held at its prior in the bundle adjustment and
@@ -1137,7 +1137,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 thermal_bins_deg: Optional[float] = None, thermal_min_images: int = 5,
                 thermal_free: Sequence[str] = ("fx", "fy"),
                 thermal_model: Optional[Dict[str, Dict[str, float]]] = None, localize_min_images: int = 0,
-                zcam_backlash: Optional[str] = None, zcam_backlash_z: float = 3.0):
+                zcam_backlash: Optional[str] = None, zcam_backlash_z: float = 3.0,
+                zcam_focus_line: bool = True, zcam_line_cycles: int = 2, thermal_after_stage1: bool = True):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
@@ -1147,6 +1148,14 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     regular images get their own cameras and the block is adjusted again (:func:`mppp.sfm.backlash.backlash_stage`;
     groups within ``zcam_backlash_z`` standard errors of the midpoint stay backlash); ``"report"`` classifies only;
     None: off.  The report is ``project.settings["zcam_backlash"]``.
+    ``zcam_focus_line`` (v0p61, notebook 03 ``ZCAM_FOCUS_LINE``; staged runs): stage 2 starts with every Mastcam-Z
+    camera held at its start (the focus model), then ``zcam_line_cycles`` times lets the focus-bin focal lengths free
+    for one round and puts them back on one line per eye and zoom fitted to them
+    (:func:`mppp.sfm.zcam.refit_focus_lines`: f0 and slope in focus count; outlier bins reported, not followed);
+    the remaining rounds and the final adjustment hold them on the line.  Distortion, principal point (linear in
+    focus from the model) and the zoom's rig stay one per eye / zoom.  The lines are in
+    ``project.settings["zcam_focus_lines"]``.  ``thermal_after_stage1`` (v0p61): with ``staged``, the Navcam thermal
+    stage runs at the end of stage 1, so the Mastcam-Z frames are added to the final Navcam cameras (temperature bins).
     ``localize_min_images`` (v0p35.1, notebook 03 ``LOCALIZE_MIN_IMAGES``): stations (site, drive) with fewer images
     than this are not held by their waypoint position (see :func:`unlocalized_stations`, :func:`bundle_adjust`).
     Before the first round they are moved onto the rest of the block as rigid stations
@@ -1328,6 +1337,25 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         (out1 / "mppp_sfm_log.json").write_text(json.dumps(log, indent=1, default=str), encoding="utf-8")
         navcam_stage = {"path": str(out1.relative_to(project.root)), "log": log,
                         "tracks": track_statistics(rec, project), "cameras": {}}
+        if thermal_after_stage1 and thermal_bins_deg and temperatures:
+            # v0p61: the Navcam temperature bins before the Mastcam-Z frames come in (the Navcam-only model is the
+            # one-camera-per-eye model of the block: sparse/<out>_single)
+            from .thermal import rig_slopes_for_project, thermal_stage
+            single = project.root / "sparse" / f"{out_name}_single"
+            single.mkdir(parents=True, exist_ok=True)
+            rec.write(str(single))
+            hold_nav = network["navcam_intrinsics"] == "hold" or any(str(k).startswith("N") for k in hold_cameras)
+            rec, thermal_early = thermal_stage(rec, project, temperatures, bin_deg=float(thermal_bins_deg),
+                                               min_images=int(thermal_min_images), free=tuple(thermal_free),
+                                               hold=hold_nav, thermal_model=thermal_model, sigma_px=sigma_px,
+                                               loss_scale=float(schedule[-1][1]), max_iterations=2 * max_iterations,
+                                               attitude_prior_deg=attitude_prior_deg, linear_solver=linear_solver,
+                                               verbose=verbose, rig_slopes=rig_slopes_for_project(project))
+            n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
+            thermal_early["filtered_after"] = n_bad
+            thermal_early["single_camera_model"] = str(single.relative_to(project.root))
+            thermal_early["when"] = "end of stage 1 (Navcam only)"
+            navcam_stage["thermal"] = {k: v for k, v in thermal_early.items() if k != "rows"}
         log = [{"stage": 2, "note": "Mastcam-Z frames added at their priors; Navcam cameras and rig held"}]
         n_restored = restore_frames(rec, init, z_frames)      # v0p40: pycolmap 4 dropped them in stage 1
         if n_restored:
@@ -1339,11 +1367,26 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         refine_rig = False
         if verbose:
             print(f"[sfm] stage 2: {len(z_frames)} Mastcam-Z frames added; Navcam cameras and rig held", flush=True)
+        zkeys = {k for k in project.cameras if str(k).startswith("Z")}
+        cycles = max(0, min(int(zcam_line_cycles), len(schedule) - 1)) if zcam_focus_line else 0
+        lines = None
         for k, (tpx, loss, rmax) in enumerate(schedule):
             rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts)
+            # v0p61: round 1 with the Mastcam-Z cameras at the focus model, then `cycles` rounds with the bins' f
+            # free (each followed by the refit of one line per eye and zoom), then held on the line
+            zfree = (not zcam_focus_line) or (1 <= k <= cycles)
+            hold_k = hold if zfree else (hold | zkeys)
             ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
-                               attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold), linear_solver=linear_solver)
+                               attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold_k), linear_solver=linear_solver)
+            if zcam_focus_line and zfree:
+                from .zcam import focus_line_lines, refit_focus_lines
+                lines = refit_focus_lines(rec, project)
+                log.append({"stage": 2, "round": k + 1, "zcam_focus_lines": lines})
+                if verbose:
+                    print(f"[sfm] stage 2 round {k + 1}: Mastcam-Z focus lines (bins set on them):", flush=True)
+                    for ln in focus_line_lines(lines):
+                        print(ln, flush=True)
             n_bad = filter_observations(rec, project, float(rmax)) + drop_short_tracks(rec, min_track_length)
             st = track_statistics(rec, project)
             res = native_residuals(rec, project)["residual_native_px"]
@@ -1362,7 +1405,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             _exclude("stage 2, before the final adjustment")
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                            refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential, refine_rig=False,
-                           max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold), linear_solver=linear_solver)
+                           max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
+                           hold_cameras=sorted(hold | zkeys) if zcam_focus_line else sorted(hold), linear_solver=linear_solver)
+        if lines is not None:
+            project.settings["zcam_focus_lines"] = lines
         n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
         log.append({"final_ba": ba["brief"], "frames_held": ba["frames_held"], "filtered_after_final": n_bad,
                     "tracks": track_statistics(rec, project)})
@@ -1382,8 +1428,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         project.settings["zcam_backlash"] = {k: v for k, v in backlash.items() if k not in ("fits_before", "fits_after")}
         project.settings["zcam_backlash"]["groups"] = [{k: v for k, v in g.items() if k != "names"}
                                                        for g in backlash["groups"]]
-    thermal = None
-    if thermal_bins_deg and temperatures:
+    thermal = navcam_stage.get("thermal") if navcam_stage else None
+    if thermal:
+        project.settings["thermal"] = thermal_early
+    elif thermal_bins_deg and temperatures:
         from .thermal import rig_slopes_for_project, thermal_stage
         single = project.root / "sparse" / f"{out_name}_single"
         single.mkdir(parents=True, exist_ok=True)
