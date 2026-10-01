@@ -13,9 +13,16 @@ set "BUNDLE=%MPPP_HOME%\_transfer\mppp_latest.bundle"
 if not exist ".git" (echo not a git working copy yet: run setup_github.bat first & pause & exit /b 1)
 if not exist "%BUNDLE%" (echo %BUNDLE% not found & pause & exit /b 1)
 for /f %%H in ('git rev-parse HEAD') do set "OLD=%%H"
+set "OLDC="
+for /f %%H in ('git rev-parse -q --verify claude/main 2^>nul') do set "OLDC=%%H"
 git fetch -q "%BUNDLE%" "+refs/heads/main:refs/remotes/claude/main" "+refs/tags/*:refs/tags/*" || (pause & exit /b 1)
 git merge-base --is-ancestor HEAD claude/main
-if errorlevel 1 goto :merge_claude
+if not errorlevel 1 goto :take_claude
+REM v0p51.1: Claude rewrote its history (e.g. commit identities) and this copy has no commits of its own since the
+REM last delivery (HEAD is that delivery): take the new history as it is, no merge
+if defined OLDC if /i "%OLD%"=="%OLDC%" (echo Claude's history was rewritten; this copy has no commits of its own - taking it as delivered.& goto :take_claude)
+goto :merge_claude
+:take_claude
 git reset -q --mixed claude/main
 goto :adopted
 :merge_claude

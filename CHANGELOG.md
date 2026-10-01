@@ -2,6 +2,11 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.51.1 — 2026-09-30
+
+- History rewritten: the 0.50.0, 0.50.1 and 0.51.0 commits now have Claude (noreply@anthropic.com) as committer and Christian as author (GitHub showed them as Unverified); their content is unchanged and the tags v0.50.0, v0.50.1, v0.51.0 point to the new commits.
+- `sync_from_claude.bat` takes a rewritten delivery as it is when this copy has no commits of its own since the last delivery (HEAD = the last delivery), instead of merging the old and the new history.
+
 ## 0.51.0 — 2026-09-30
 
 Navcam rig yaw held or zero; partly transparent masks.
