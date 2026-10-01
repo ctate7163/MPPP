@@ -2,6 +2,19 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.52.0 — 2026-10-01
+
+Navcam defaults: k4 = 0, one constant rig yaw; new consensus cameras.
+- **`NAVCAM_K4 = "zero"` is the default** (notebook 03; `SfmProject.create(navcam_k4="zero")`, `navcam_distortion_terms(k4="zero")`): the fisheye k4 = 0 and held (the rational model's k4, a denominator term, is not touched). **`NAVCAM_P1` removed** (and `navcam_p1=`): p1, p2 follow `TANGENTIAL` only. On the joint, p1 = 0 cost +3.7 % and moved cx ~5 px and the pitch -12 mdeg, so p1 stays.
+- **`NAVCAM_RIG_YAW = "hold"` is the default**, and "hold" now means one constant yaw for every block: the rig file's yaw, with no yaw from the drift or temperature terms at the start (`start_rig_rotation(..., yaw=False)`). It is held in the bundle adjustment and in the thermal stage, so the yaw does not change with temperature within a block or between blocks; the principal points absorb the differences. Pitch and roll still follow the drift and `NAVCAM_RIG_REFINE`. `"refine"` (per block, as before 0.52) and `"zero"` remain.
+- **New Navcam consensus (`src/mppp/data/cmods`, promoted with `promote_cmods.py`):** the v0p52 joint `yawc_k4` on 17 blocks. It uses fisheye + tangential at -20 degC, f +38.1 ppm/degC and NL cx +0.0517 px/degC, k4 = 0, one rig yaw of +35.21 mdeg (the drift's yaw rate 0), and pitch and roll with the v0p40 drift. On the same blocks, compared with the v0p41 form:
+  - cost +0.25 %;
+  - median / RMS 0.1778 / 0.3730 px (0.1771 / 0.3726);
+  - corners r 0.95-1: 0.242 px (0.210).
+  A constant yaw alone (`yawc`) costs +0.08 %, and yaw 0 costs +0.48 %. The v0p41 joint is in `cmods/history/v0p41_joint/`. Covariance and sd are copied from v0p41, and there is no leave-one-block-out check yet. Existing projects are rebuilt on their next notebook 03 run (the camera fingerprint changed); features and matches are reused.
+- `studies/navcal_v0p52/joint_variants.py`: variants `yawc` and `yawc_k4` (a constant refined yaw); p1 = 0 is set in the study itself.
+- Notebooks copied as `*_v0p52.ipynb`.
+
 ## 0.51.3 — 2026-10-01
 
 - `studies/navcal_v0p52/joint_variants.py`: Navcam joint calibration variants on one merged block set - `ref` (v0p41 form), `yaw0` (rig yaw 0 and held, the drift's yaw rate 0), `yaw0_k4`, `yaw0_k4p1` - with residuals by image radius, the cameras, the rig and the stereo offset. Results of 1 Oct (17 blocks) in `D:\scapes\colmap\camera_analysis\navcal_v0p52` (candidates, not promoted): yaw 0 costs +0.48 %, k4 = 0 another +0.17 %, p1 = 0 another +3.7 %.

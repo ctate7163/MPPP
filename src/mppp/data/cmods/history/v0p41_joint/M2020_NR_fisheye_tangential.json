@@ -3,16 +3,16 @@
  "width": 5120,
  "height": 3840,
  "params": [
-  2949.1325876089822,
-  2949.0694939835366,
-  2573.7423649109337,
-  1950.2212407725535,
-  0.04486378237812908,
-  -0.005393140759497062,
-  4.392345166283541e-07,
-  -0.00020143065779003425,
-  -0.0073105850649846284,
-  0.0,
+  2948.643566904748,
+  2948.554674352792,
+  2573.77377527664,
+  1950.2791072777297,
+  0.04741055503019603,
+  -0.015553345565212075,
+  2.2776737641970102e-05,
+  -0.0001967474004067951,
+  0.0077113433919372655,
+  -0.007370004248100792,
   0.0,
   0.0
  ],
@@ -33,7 +33,7 @@
  "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
  "free_params": [],
  "pixel_origin": "corner of the first pixel (COLMAP)",
- "source": "MPPP v0p52 joint calibration candidate 'yawc_k4' (studies/navcal_v0p52/joint_variants.py, 1 Oct 2026): one NR camera shared by 17 Navcam blocks (Van Zyl, Rochette, Seitah North, Sid, Rockytop, Whale Mountain, Three Forks South, Belva Crater, Tuxedo Park, Overlook Mountain, Pearce Canyon, Pico Turquino, Bell Island, Origny, Olifants, Groloy, Marble Mountain); fisheye + tangential at -20 degC, f +38.1 ppm/degC, NL cx +0.0517 px/degC, v0p40 rig drift; one constant rig yaw for every block (refined, +35.21 mdeg; no drift or temperature yaw); k4 = 0 (held). Covariance and verification are those of the v0p41 joint (not refitted).",
+ "source": "v0p35 joint calibration: one NR camera shared by 23 Navcam blocks (Butler Landing, Van Zyl, Rochette, Seitah North, Sid, Rockytop, Whale Mountain, Three Forks South, Belva Crater, Tuxedo Park, Airey Hill, Bunsen Peak, Overlook Mountain, Pearce Canyon, Pico Turquino, Rio Chiquito, South Arm, Bell Island, Taylorfjellet, Origny, Olifants, Groloy, Marble Mountain), 803884 observations, thermal model in the keypoints; camera at T0 -20.0 degC (solved at -19.3 degC, scaled by the thermal slope)",
  "sd": {
   "fx": 0.026806822123479596,
   "fy": 0.03394056021333422,
@@ -192,9 +192,7 @@
   "note": "v0p35: joint profile over all blocks; SfmProject.create scales fx, fy by 1 + ppm_per_degC 1e-6 (T - T0) to the block's median camera temperature"
  },
  "verification": {
-  "note": "not verified (no leave-one-block-out run); see variants.json"
- },
- "fixed_params": [
-  "k4"
- ]
+  "per_scape": [],
+  "method": "leave one block out (scripts/navcam_calibration_study.py loo)"
+ }
 }

@@ -45,20 +45,21 @@ INTRINSIC_CORE = ("fx", "fy", "cx", "cy")          # focal length and principal 
 # v0p50: the Navcam distortion (k1-k4, p1, p2, ...) is one set per eye for every sol and temperature: "hold" keeps
 # it at the start (consensus) camera in every block and temperature bin; "refine" fits it per block (before v0p50)
 NAVCAM_DISTORTION_FIT = "hold"
-NAVCAM_TERM_SETTINGS = ("consensus", "zero")
+NAVCAM_TERM_SETTINGS = ("consensus", "zero")       # NAVCAM_K4 (v0p52 default "zero": k4 = 0, held)
 # v0p51: the Navcam rig yaw (rotation of the right camera about the left camera's y axis, the one that shifts the
-# disparity): "refine" (with NAVCAM_RIG_REFINE), "hold" (at the start rig's value) or "zero" (set to 0 and held: the
-# principal points absorb the ~10 mdeg differences between blocks); pitch and roll follow NAVCAM_RIG_REFINE
-NAVCAM_RIG_YAW_SETTINGS = ("refine", "hold", "zero")       # v0p50: NAVCAM_K4 / NAVCAM_P1: the start camera's value or 0 (held)
+# disparity): "hold" (v0p52 default: the rig file's yaw for every block - no yaw from the drift or temperature terms
+# at the start, held in the adjustment and in the thermal stage, so the principal points absorb the differences),
+# "refine" (with NAVCAM_RIG_REFINE) or "zero" (set to 0 and held); pitch and roll follow NAVCAM_RIG_REFINE
+NAVCAM_RIG_YAW_SETTINGS = ("hold", "refine", "zero")
 ZEROED_TERMS = ("b1", "b2")          # v0p20: p1, p2 kept from the calibration (was also zeroed), as notebook 03
 ZCAM_FOCUS_BIN = 30.0                               # focus motor counts per Mastcam-Z camera bin (v0p14.4)
 ZCAM_FOCUS_MODEL = "M2020_ZCAM034_focus_model.json"  # v0p22: Mastcam-Z 34 mm focal length against focus count
 ZCAM_HOLD_F_IMAGES = 2                              # v0p22: focus bins with <= this many images hold f at the model
 NAVCAM_RIG = "consensus"                            # v0p22: Navcam rig rotation starts from the refined consensus
 NAVCAM_RIG_FILE = "M2020_N_rig.json"
-# v0p43.2: the Navcam consensus cameras shipped with MPPP (the v0p41 joint of 23 blocks: fisheye + tangential at
-# -20 degC, f +38.1 ppm/degC, NL cx +0.0517 px/degC, rig with the mission drift; = camera_analysis/navcal_v0p41/
-# navcam_joint).  v0p50: all camera models are in mppp/data/cmods (paths.cmods_dir; MPPP_CMODS overrides).
+# v0p43.2: the Navcam consensus cameras shipped with MPPP.  v0p52: the joint 'yawc_k4' of 17 blocks (fisheye +
+# tangential at -20 degC, f +38.1 ppm/degC, NL cx +0.0517 px/degC, k4 = 0, one rig yaw +35.21 mdeg, pitch and roll
+# with the mission drift; = camera_analysis/navcal_v0p52/navcam_joint_yawc_k4; the v0p41 joint is in history/).  v0p50: all camera models are in mppp/data/cmods (paths.cmods_dir; MPPP_CMODS overrides).
 NAVCAM_PACKAGE_CONSENSUS_DIR = Path(__file__).resolve().parents[1] / "data" / "cmods"
 
 
@@ -329,8 +330,8 @@ class SfmProject:
                navcam_rig: str = NAVCAM_RIG, navcam_cameras: Optional[PathLike] = None,
                zcam_zero_terms: Optional[Sequence[str]] = None,
                zcam_focus_model_file: Optional[PathLike] = None,
-               navcam_distortion_fit: str = NAVCAM_DISTORTION_FIT, navcam_k4: str = "consensus",
-               navcam_p1: str = "consensus", navcam_rig_yaw: str = "refine") -> "SfmProject":
+               navcam_distortion_fit: str = NAVCAM_DISTORTION_FIT, navcam_k4: str = "zero",
+               navcam_rig_yaw: str = "hold") -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -423,9 +424,8 @@ class SfmProject:
             raise ValueError("navcam_distortion_fit must be 'hold' or 'refine'")
         if navcam_rig_yaw not in NAVCAM_RIG_YAW_SETTINGS:
             raise ValueError(f"navcam_rig_yaw must be one of {NAVCAM_RIG_YAW_SETTINGS}")
-        for _n, _v in (("navcam_k4", navcam_k4), ("navcam_p1", navcam_p1)):
-            if _v not in NAVCAM_TERM_SETTINGS:
-                raise ValueError(f"{_n} must be one of {NAVCAM_TERM_SETTINGS}")
+        if navcam_k4 not in NAVCAM_TERM_SETTINGS:
+            raise ValueError(f"navcam_k4 must be one of {NAVCAM_TERM_SETTINGS}")
         processed_dir, root = Path(processed_dir), Path(root)
         xml_arg = xml_dir                       # None -> the focus model comes from cmods_dir() (MPPP_CMODS) first
         xml_dir = Path(xml_dir) if xml_dir else data_dir() / "cmods"
@@ -548,7 +548,7 @@ class SfmProject:
             if (cam["width"], cam["height"]) != FULL_FRAME[fam]:
                 raise ValueError(f"{xml.name} is {cam['width']}x{cam['height']}, expected the full frame {FULL_FRAME[fam]}")
             if fam == "N":
-                cam = navcam_distortion_terms(cam, navcam_distortion_fit, navcam_k4, navcam_p1)
+                cam = navcam_distortion_terms(cam, navcam_distortion_fit, navcam_k4)
             cameras[instr] = cam
         focus_info = None
         if zcam_focus_bin:
@@ -576,8 +576,11 @@ class SfmProject:
                   if str(r["instrument"]).startswith("N") and r.get("camera_temperature_degC") is not None]
             sols = [int(r["sol"]) for r in images if str(r["instrument"]).startswith("N") and r.get("sol") is not None]
             if "rig" in nav_info and (shipped.get("thermal") or shipped.get("drift")):
+                # v0p52: NAVCAM_RIG_YAW = "hold" / "zero": no yaw from the temperature or drift terms - one constant
+                # yaw for every block, sol and temperature (the rig file's), only pitch and roll follow the drift
                 R2, applied = start_rig_rotation(shipped, float(np.median(Ts)) if Ts else None,
-                                                 float(np.median(sols)) if sols else None)
+                                                 float(np.median(sols)) if sols else None,
+                                                 yaw=navcam_rig_yaw == "refine")
                 rig["N"]["R_sensor_from_ref"] = R2.tolist()
                 nav_info["rig"].update(applied)
             rig["N"]["rotation_source"] = f"{rig_file.name} (refined consensus; translation from CAHV)" + \
@@ -597,7 +600,7 @@ class SfmProject:
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
                     "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
                     "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
-                    "navcam_distortion_fit": navcam_distortion_fit, "navcam_k4": navcam_k4, "navcam_p1": navcam_p1,
+                    "navcam_distortion_fit": navcam_distortion_fit, "navcam_k4": navcam_k4,
                     "navcam_rig_yaw": navcam_rig_yaw,
                     "navcam_cameras": {"dir": str(nav_dir), "fingerprint": navcam_cameras_fingerprint(nav_dir),
                                        **nav_info} if navcam_cameras else None})
@@ -620,23 +623,25 @@ def rig_without_yaw(R) -> np.ndarray:
     return Rotation.from_rotvec(rv).as_matrix()
 
 
-def navcam_distortion_terms(cam: Dict[str, Any], fit: str = NAVCAM_DISTORTION_FIT, k4: str = "consensus",
-                            p1: str = "consensus") -> Dict[str, Any]:
+def navcam_distortion_terms(cam: Dict[str, Any], fit: str = NAVCAM_DISTORTION_FIT, k4: str = "zero") -> Dict[str, Any]:
     """
     v0p50: the Navcam distortion settings of one start camera (a ``project.cameras`` dict, changed and returned).
 
     ``fit="hold"``: every distortion parameter (all but fx, fy, cx, cy) goes into ``fixed_params`` and out of
     ``free_params`` - the distortion is the consensus camera's for every block, sol and temperature bin (thermal
     bins inherit ``fixed_params``); ``"refine"``: the block refines it as before v0p50 (k1-k4 always, p1, p2 with
-    TANGENTIAL = "refine").  ``k4="zero"`` / ``p1="zero"``: that term is set to 0 and held in either case.
+    TANGENTIAL = "refine").  ``k4="zero"`` (the v0p52 default): the fisheye k4 = 0 and held in either case (not the
+    rational model's k4).  p1 and p2 are
+    governed by TANGENTIAL only (v0p52: the NAVCAM_P1 setting was removed; the joint needs p1, +3.7 % cost without).
     """
     names = PARAM_NAMES.get(cam["model"], FULL_OPENCV_NAMES)
     params = list(map(float, cam["params"]))
     fixed = list(cam.get("fixed_params") or [])
     free = list(cam.get("free_params") or [])
     zeroed = []
-    for n, how in (("k4", k4), ("p1", p1)):
-        if how == "zero" and n in names:
+    fisheye = "FISHEYE" in str(cam["model"]).upper()       # v0p52: the fisheye theta^9 term only (the rational
+    for n, how in (("k4", k4),):                          # model's k4 is a denominator term and is left alone)
+        if how == "zero" and n in names and fisheye:
             params[names.index(n)] = 0.0
             zeroed.append(n)
             if n not in fixed:
@@ -937,17 +942,20 @@ def _json_default(o):
     raise TypeError(type(o))
 
 
-def start_rig_rotation(shipped: Dict[str, Any], T_median: Optional[float], sol_median: Optional[float]):
+def start_rig_rotation(shipped: Dict[str, Any], T_median: Optional[float], sol_median: Optional[float],
+                       yaw: bool = True):
     """v0p35: the start rig rotation of a block from a rig file (``M2020_N_rig.json``) with a temperature model
     (``thermal``: yaw/pitch mdeg per degC about T0) and a drift (``drift``: pitch/yaw/roll mdeg per sol about sol0),
-    at the block's median camera temperature and sol.  Returns (R, {"thermal": ..., "drift": ...} as applied)."""
+    at the block's median camera temperature and sol.  Returns (R, {"thermal": ..., "drift": ...} as applied).
+    ``yaw=False`` (v0p52): the yaw terms are left out (the rig file's yaw for every block)."""
     from scipy.spatial.transform import Rotation
     R = np.asarray(shipped["R_sensor_from_ref"], float)
     applied: Dict[str, Any] = {}
     th = shipped.get("thermal")
     if th and th.get("yaw_mdeg_per_degC") is not None and T_median is not None:
         dT = float(T_median) - float(th["T0_degC"])
-        rv = np.radians(1e-3 * dT * np.array([float(th.get("pitch_mdeg_per_degC") or 0.0), float(th["yaw_mdeg_per_degC"]), 0.0]))
+        rv = np.radians(1e-3 * dT * np.array([float(th.get("pitch_mdeg_per_degC") or 0.0),
+                                              float(th["yaw_mdeg_per_degC"]) if yaw else 0.0, 0.0]))
         R = Rotation.from_rotvec(rv).as_matrix() @ R
         applied["thermal"] = {**th, "T_median_degC": float(T_median)}
     dr = shipped.get("drift")
@@ -962,7 +970,7 @@ def start_rig_rotation(shipped: Dict[str, Any], T_median: Optional[float], sol_m
             if dr.get(f"{a}_early_mdeg_per_sol") is not None and dr.get("knot_sol"):
                 v += (float(dr[f"{a}_early_mdeg_per_sol"]) - rate) * (min(float(sol_median), float(dr["knot_sol"]))
                                                                      - float(dr.get("knot_ref") or 0.0))
-            off.append(float(v))
+            off.append(float(v) if (yaw or a != "yaw") else 0.0)
         rv = np.radians(1e-3 * np.array(off))
         R = Rotation.from_rotvec(rv).as_matrix() @ R
         applied["drift"] = {**dr, "sol_median": float(sol_median),

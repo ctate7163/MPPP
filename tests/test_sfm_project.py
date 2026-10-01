@@ -481,32 +481,51 @@ def test_navcam_consensus_shipped_with_mppp():
         assert abs(th["ppm_per_degC"] - 38.1) < 0.5 and th["T0_degC"] == -20
     assert (NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).is_file()
     assert navcam_cameras_fingerprint(NAVCAM_CONSENSUS_DIR)
-    # the v0p41 joint (camera_analysis/navcal_v0p41/navcam_joint), byte for byte
+    # v0p52: the joint yawc_k4 (camera_analysis/navcal_v0p52/navcam_joint_yawc_k4), byte for byte
     import hashlib
     sha = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()[:12] for p in NAVCAM_CONSENSUS_DIR.glob("*.json")
            if "fisheye" in p.name or "rig" in p.name}
-    assert sha == {"M2020_NL_fisheye_tangential.json": "15389f18ab97", "M2020_NR_fisheye_tangential.json": "8c114d80b388",
-                   "M2020_N_rig.json": "949b9c26aca7"}
+    assert sha == {"M2020_NL_fisheye_tangential.json": "da1b4f7dc3ad", "M2020_NR_fisheye_tangential.json": "85167b0eb312",
+                   "M2020_N_rig.json": "4bef659a839e"}
 
 
 def test_navcam_distortion_hold_and_zero_terms():
     """v0p50: the Navcam distortion is one set per eye for every sol and temperature (held in every block);
-    NAVCAM_K4 / NAVCAM_P1 = "zero" set that term to 0 and hold it."""
+    v0p52: NAVCAM_K4 = "zero" (the default) sets k4 to 0 and holds it; p1 has no setting of its own (TANGENTIAL)."""
     from mppp.paths import cmods_dir
     from mppp.sfm.project import camera_from_colmap_json, navcam_distortion_terms
     cam = camera_from_colmap_json(cmods_dir() / "M2020_NL_fisheye_tangential.json")
+    cam["params"][9] = 1e-3                                                # a k4 to remove
     names = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1")
-    held = navcam_distortion_terms(cam)                                    # default "hold"
+    held = navcam_distortion_terms(cam)                                    # defaults "hold", k4 "zero"
     assert set(held["fixed_params"]) == set(names[4:]) and not held["free_params"]
-    assert held["params"] == cam["params"] and held["distortion_fit"] == "hold"
-    ref = navcam_distortion_terms(cam, "refine")
+    assert held["params"][9] == 0.0 and held["params"][:9] == cam["params"][:9] and held["distortion_fit"] == "hold"
+    ref = navcam_distortion_terms(cam, "refine", k4="consensus")
     assert ref["fixed_params"] == [] and ref["params"] == cam["params"]
-    z = navcam_distortion_terms(cam, "refine", k4="zero", p1="zero")
-    assert z["params"][9] == 0.0 and z["params"][6] == 0.0 and set(z["fixed_params"]) == {"k4", "p1"}
-    assert cam["params"][9] != 0.0 and z["zeroed_terms"] == ["k4", "p1"]
+    z = navcam_distortion_terms(cam, "refine")
+    assert z["params"][9] == 0.0 and z["params"][6] == cam["params"][6] != 0.0 and z["fixed_params"] == ["k4"]
+    assert z["zeroed_terms"] == ["k4"]
+    with pytest.raises(TypeError):
+        navcam_distortion_terms(cam, "refine", p1="zero")
     with pytest.raises(ValueError):
         from mppp.sfm.project import SfmProject
         SfmProject.create([], "x", "y", navcam_distortion_fit="free")
+
+
+def test_start_rig_rotation_without_yaw_terms():
+    """v0p52: NAVCAM_RIG_YAW = "hold" starts every block at the rig file's yaw - the drift and temperature
+    terms turn pitch and roll only."""
+    from mppp.paths import cmods_dir
+    from mppp.sfm.project import start_rig_rotation, rig_yaw_mdeg
+    shipped = json.loads((cmods_dir() / "M2020_N_rig.json").read_text())
+    shipped["drift"] = dict(shipped["drift"], yaw_mdeg_per_sol=0.01, yaw_early_mdeg_per_sol=0.02)
+    shipped["thermal"] = {"yaw_mdeg_per_degC": -1.0, "pitch_mdeg_per_degC": 0.2, "T0_degC": -20.0}
+    y0 = rig_yaw_mdeg(shipped["R_sensor_from_ref"])
+    Ry, _ = start_rig_rotation(shipped, 0.0, 1800.0)
+    Rn, applied = start_rig_rotation(shipped, 0.0, 1800.0, yaw=False)
+    assert abs(rig_yaw_mdeg(Ry) - y0) > 5.0
+    assert abs(rig_yaw_mdeg(Rn) - y0) < 0.01 and applied["drift"]["offset_mdeg"]["yaw"] == 0.0
+    assert abs(applied["drift"]["offset_mdeg"]["pitch"]) > 1.0
 
 
 def test_zero_terms_apply_to_the_fisheye_model(tmp_path):

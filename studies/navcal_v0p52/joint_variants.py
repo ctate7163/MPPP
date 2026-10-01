@@ -9,6 +9,8 @@ All variants: fisheye + tangential, f +38.1 ppm/degC about T0 = -20 degC, the v0
   yaw0       : rig yaw = 0 and held (the drift's yaw rate 0); NL/NR cx, cy absorb the stereo offset
   yaw0_k4    : yaw0 + k4 = 0 (held), the other lens terms free
   yaw0_k4p1  : yaw0 + k4 = p1 = 0
+  yawc       : one constant rig yaw for every block (refined; the drift's yaw rate 0) - the v0p52 default form
+  yawc_k4    : yawc + k4 = 0 (held)  -> the v0p52 consensus cameras and rig
 
   python studies/navcal_v0p52/joint_variants.py SCAPES.json OUT_DIR [--points 8000] [--only ref yaw0 ...]
 """
@@ -21,7 +23,8 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 VARIANTS = {"ref": dict(yaw="refine", zero=()), "yaw0": dict(yaw="zero", zero=()),
-            "yaw0_k4": dict(yaw="zero", zero=("k4",)), "yaw0_k4p1": dict(yaw="zero", zero=("k4", "p1"))}
+            "yaw0_k4": dict(yaw="zero", zero=("k4",)), "yaw0_k4p1": dict(yaw="zero", zero=("k4", "p1")),
+            "yawc": dict(yaw="const", zero=()), "yawc_k4": dict(yaw="const", zero=("k4",))}
 RAD_BINS = (0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0)
 
 
@@ -96,20 +99,24 @@ def main(argv=None):
         rec = copy.deepcopy(rec0)
         proj = copy.deepcopy(proj0)
         drift = copy.deepcopy(drift0)
-        proj.settings["navcam_rig_yaw"] = v["yaw"]
-        if v["yaw"] == "zero":
+        proj.settings["navcam_rig_yaw"] = "refine" if v["yaw"] == "const" else v["yaw"]
+        if v["yaw"] in ("zero", "const"):
             if drift:
                 for k in ("yaw_mdeg_per_sol", "yaw_early_mdeg_per_sol"):
                     if k in drift:
                         drift[k] = 0.0
+        if v["yaw"] == "zero":
             _, _, T = NC.stereo_rig(rec)
             R0 = rig_without_yaw(np.asarray(T.rotation.matrix()))
             rec.rigs[1].set_sensor_from_rig(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=2),
                                             pycolmap.Rigid3d(pycolmap.Rotation3d(R0), np.asarray(T.translation)))
         for cid, key in ((1, "NL"), (2, "NR")):
             c = dict(proj.cameras[key], model=rec.cameras[cid].model.name, params=list(map(float, rec.cameras[cid].params)))
-            c = navcam_distortion_terms(c, "refine", k4="zero" if "k4" in v["zero"] else "consensus",
-                                        p1="zero" if "p1" in v["zero"] else "consensus")
+            c = navcam_distortion_terms(c, "refine", k4="zero" if "k4" in v["zero"] else "consensus")
+            if "p1" in v["zero"]:                 # MPPP 0.52: no NAVCAM_P1 setting any more; p1 = 0 held here
+                c["params"][names.index("p1")] = 0.0
+                c["fixed_params"] = list(c.get("fixed_params") or []) + ["p1"]
+                c["free_params"] = [n for n in c.get("free_params") or [] if n != "p1"]
             proj.cameras[key] = c
             rec.cameras[cid].params = np.asarray(c["params"], float)
         xkw = {"pp_slopes": {1: (a.pp_nl, 0.0)}}
