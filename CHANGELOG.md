@@ -2,6 +2,10 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.51.3 — 2026-10-01
+
+- `studies/navcal_v0p52/joint_variants.py`: Navcam joint calibration variants on one merged block set - `ref` (v0p41 form), `yaw0` (rig yaw 0 and held, the drift's yaw rate 0), `yaw0_k4`, `yaw0_k4p1` - with residuals by image radius, the cameras, the rig and the stereo offset. Results of 1 Oct (17 blocks) in `D:\scapes\colmap\camera_analysis\navcal_v0p52` (candidates, not promoted): yaw 0 costs +0.48 %, k4 = 0 another +0.17 %, p1 = 0 another +3.7 %.
+
 ## 0.51.2 — 2026-10-01
 
 - **Notebook 04 §2d, `RUN_STUDY = True`:** a new Navcam calibration study no longer writes into an existing study folder. On 1 Oct a run with `STUDY_DIR = navcal_v0p40` replaced that study's `scapes.json` (23 blocks; restored) and `rig/common_principal_points.json`, added `rig/rig_Three_Forks_North_N+Z34.json`, and then failed. Now: if `STUDY_DIR` already holds `rig/` or `joint/`, the study goes to `camera_analysis/navcal_<version>_<yyyymmdd>`, and the blocks used are printed. The study's output goes to `<STUDY_DIR>/study_log.txt`; on failure the cell shows the last 40 lines. Before, the output went to the Jupyter server's console, so only "exit status 1" was visible.
