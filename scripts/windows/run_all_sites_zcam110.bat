@@ -1,21 +1,21 @@
 @echo off
 REM ======================================================================================================
-REM MPPP - process and align the Navcam block of every site of the navcam_consensus group of
-REM src\mppp\data\sites.json (v0p53) into its own WORK folder mars2020_sol_<sol>_<site>_colmap under ROOT
-REM (Navcam only; the Mastcam-Z blocks: run_all_sites_zcam34.bat, _zcam48, _zcam63),
+REM MPPP - process and align the Navcam + Mastcam-Z block of every site of the zcam110_consensus group of
+REM src\mppp\data\sites.json into its own WORK folder mars2020_sol_<sol>_<site>_colmap_zcam under ROOT (v0p53;
+REM the block has all the Mastcam-Z zooms of the site's "zcam" list),
 REM one site after the other, in the background (a minimised window; closing it stops the batch).
 REM Finished sites (same settings) are skipped, so double-clicking again continues where it stopped.
 REM
 REM   batch log     %ROOT%\run_sites_log.txt
-REM   per site      %ROOT%\mars2020_sol_<sol>_<site>_colmap\runs\<date-time>\log.txt and mppp_status.json
+REM   per site      %ROOT%\mars2020_sol_<sol>_<site>_colmap_zcam\runs\<date-time>\log.txt and mppp_status.json
 REM   status        sites_status.bat
 REM
 REM Edit the settings below (or run scripts\run_sites.py from a prompt; --help lists every option).
 REM ======================================================================================================
 setlocal
 set "ROOT=D:\scapes\colmap"
-REM which sites: --group navcam_consensus (v0p53 default), --all, or --sites rockytop sid_chal_rocks
-set "WHICH=--group navcam_consensus"
+REM which sites: --group zcam110_consensus (v0p53 default), --all (every site with a "zcam" list), or --sites a b
+set "WHICH=--group zcam110_consensus"
 REM more options, e.g. --then 04 05   (camera models and error analysis at the end)
 REM                    --source processed --variant tight --set ATTITUDE_PRIOR_DEG=1.0
 set "EXTRA="
@@ -31,7 +31,7 @@ if not exist "%MPPP_WIN%\mppp_env.bat" (
   exit /b 1
 )
 call "%MPPP_WIN%\mppp_env.bat" || ( pause & exit /b 1 )
-start "MPPP run_sites - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% %EXTRA% %*
+start "MPPP run_sites zcam110 - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% --zcam %EXTRA% %*
 echo MPPP run_sites started in a minimised window. Log: "%ROOT%\run_sites_log.txt"
 echo Status of every site: sites_status.bat
 timeout /t 10

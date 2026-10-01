@@ -373,6 +373,33 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         for sid in rig.non_ref_sensors:
             arr = np.array(rig.sensor_from_rig(sid).params, dtype=np.float64)
             rig_blocks[(rid, sid.id)] = arr
+    # v0p53: the Mastcam-Z rig of each zoom, shared by all focus bins - a right image is posed from the frame of its
+    # left partner (same exposure) through this block; its own frame gets no pose block and is set afterwards
+    vrig = project.settings.get("zcam_virtual_rig") or {}
+    vblocks: Dict[str, np.ndarray] = {}
+    vpartner: Dict[int, tuple] = {}
+    if vrig:
+        from scipy.spatial.transform import Rotation as _Rot
+        rows_by_name = {r["name"]: r for r in project.images}
+        lefts = {}
+        for iid in reg:
+            r = rows_by_name.get(rec.images[iid].name) or {}
+            g = str(r.get("camera_group", ""))
+            if g.startswith("ZL"):
+                lefts[(g[2:], r.get("sclk_key"))] = rec.images[iid].frame_id
+        for iid in reg:
+            im = rec.images[iid]
+            r = rows_by_name.get(im.name) or {}
+            g = str(r.get("camera_group", ""))
+            fam = "Z" + g[2:]
+            if g.startswith("ZR") and fam in vrig and (g[2:], r.get("sclk_key")) in lefts:
+                fr = work.frames[im.frame_id]
+                if len(list(fr.data_ids)) == 1:              # a frame of its own (no COLMAP rig)
+                    vpartner[iid] = (fam, lefts[(g[2:], r.get("sclk_key"))])
+        for fam, v in vrig.items():
+            q = _Rot.from_matrix(np.asarray(v["R_sensor_from_ref"], float)).as_quat()
+            vblocks[fam] = np.r_[q, np.asarray(v["t_sensor_from_ref"], float)].astype(np.float64)
+    vframes = {rec.images[i].frame_id for i in vpartner}
     n_obs = 0
     pose_blocks: Dict[int, np.ndarray] = {}
     # v0p30: everything that is the same for all observations of an image is looked up once per image
@@ -384,6 +411,19 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         rig = rec.rigs[fr.rig_id]
         cam = work.cameras[im.camera_id]
         cov = np.eye(2) * (sigma_px / scale[iid]) ** 2
+        if iid in vpartner:                                   # v0p53: posed through the Mastcam-Z rig
+            fam, lf = vpartner[iid]
+            lpose = pose_blocks.get(lf)
+            if lpose is None:
+                lpose = pose_blocks[lf] = work.frames[lf].rig_from_world.params
+            kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
+            if keypoint_scale and iid in keypoint_scale and keypoint_scale[iid] != 1.0:
+                c0 = np.asarray(cam.params[2:4], float)
+                kps = c0 + (kps - c0) / float(keypoint_scale[iid])
+            if keypoint_map is not None and len(kps):
+                kps = keypoint_map(iid, kps, cam)
+            per_image[iid] = (cam.model, cov, kps, [vblocks[fam], lpose, cam.params], True)
+            continue
         pose = pose_blocks.get(im.frame_id)
         if pose is None:
             pose = pose_blocks[im.frame_id] = fr.rig_from_world.params
@@ -520,6 +560,14 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         else:
             prob.set_parameter_block_constant(arr)
 
+    for fam, arr in vblocks.items():                         # v0p53: the Mastcam-Z rigs
+        if not prob.has_parameter_block(arr):
+            continue
+        if vrig[fam].get("hold") or not refine_rig:
+            prob.set_parameter_block_constant(arr)
+        else:
+            prob.set_manifold(arr, pyceres.SubsetManifold(7, [3, 4, 5, 6]))      # rotation refined, w held
+
     so = pyceres.SolverOptions()
     # v0p30: the linear solver.  The Schur complement has one 6-parameter block per frame plus the cameras, so
     # for the few hundred frames of a scape a dense Schur solve (multi-threaded LAPACK) beats the sparse
@@ -542,6 +590,16 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         cov_out = _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att, pose_blocks)
     for fid in pose_blocks:
         rec.frames[fid].rig_from_world = work.frames[fid].rig_from_world
+    if vblocks:                                               # v0p53: write back the Mastcam-Z rigs and right poses
+        from scipy.spatial.transform import Rotation as _Rot
+        vT = {}
+        for fam, arr in vblocks.items():
+            q = arr[:4] / np.linalg.norm(arr[:4])
+            vT[fam] = pycolmap.Rigid3d(pycolmap.Rotation3d(_Rot.from_quat(q).as_matrix()), arr[4:7].copy())
+            vrig[fam]["R_refined"] = _Rot.from_quat(q).as_matrix().tolist()
+            vrig[fam]["t_refined"] = arr[4:7].tolist()
+        for iid, (fam, lf) in vpartner.items():
+            rec.frames[rec.images[iid].frame_id].rig_from_world = vT[fam] * rec.frames[lf].rig_from_world
     for cid, cam in work.cameras.items():
         rec.cameras[cid].params = np.array(cam.params)
     for (rid, cid), arr in rig_blocks.items():

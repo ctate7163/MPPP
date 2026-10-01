@@ -729,8 +729,17 @@ def navcam_focal_scale(sol: Solution) -> Optional[float]:
     """v0p42: the block's Navcam focal scale, refined / start focal length averaged over the Navcam cameras with
     observations (1.0 when they were held); None without Navcam cameras.  A Mastcam-Z focus bin of a Navcam +
     Mastcam-Z block inherits this scale through the shared 3-D points (Three Forks, MPPP 0.22: +0.35 % in both)."""
-    r = [float(np.sqrt(c.params[0] * c.params[1]) / np.sqrt(c.initial[0] * c.initial[1]))
-         for c in sol.cameras.values() if c.family == "N" and c.n_obs > 0]
+    # v0p53 (audit item 1): a temperature-bin camera (NL_T-030-020) starts from the refined eye camera, so its ratio
+    # is multiplied by the eye's refined / start ratio recorded before the thermal split
+    pre = ((sol.project or {}).get("settings") or {}).get("navcam_focal_scale_pre_thermal") or {}
+    r = []
+    for c in sol.cameras.values():
+        if c.family != "N" or c.n_obs <= 0:
+            continue
+        x = float(np.sqrt(c.params[0] * c.params[1]) / np.sqrt(c.initial[0] * c.initial[1]))
+        if "_T" in str(c.key):
+            x *= float(pre.get(str(c.key).split("_T")[0], 1.0))
+        r.append(x)
     return float(np.mean(r)) if r else None
 
 
@@ -853,6 +862,7 @@ def zcam_boresight_table(sols: Dict[str, Solution], min_observations: int = 100)
             eqy = float(cR.params[3] - cL.params[3]) - fR * np.radians(p["pitch_deg"])
             TL, TR = L.get("camera_temperature_degC"), R.get("camera_temperature_degC")
             rows.append({"scape": n, "sclk": p["sclk"], "sol": L.get("sol"), "focus_left": cL.focus,
+                         "zoom": int(str(cL.group)[2:5]) if str(cL.group)[2:5].isdigit() else None,   # v0p53
                          "focus_right": cR.focus, "left_camera": cL.key, "right_camera": cR.key,
                          "eqx_px": float(eqx), "eqy_px": float(eqy), "roll_mdeg": 1e3 * float(p["roll_deg"]),
                          "temperature_degC": (0.5 * (float(TL) + float(TR)) if TL is not None and TR is not None
@@ -918,12 +928,70 @@ def fit_zcam_boresight(rows: List[Dict[str, Any]], per_scape_offset: bool = True
     return out
 
 
+def zcam_shared_terms(sols: Dict[str, "Solution"], zoom: int = 34, min_observations: int = 1000,
+                      state: Optional[str] = "backlash") -> Dict[str, Any]:
+    """
+    v0p53: the terms one Mastcam-Z zoom shares across blocks, for its consensus focus model - per eye
+    (``ZL034``, ``ZR034``) the observation-weighted median distortion (FULL_OPENCV k1..k6, p1, p2) and principal
+    point (``pp0_px``) of the focus-bin cameras with at least ``min_observations`` (only ``state`` bins: the
+    regular-state ``_reg`` cameras are left out by default), and the median Mastcam-Z rig rotation of the blocks
+    (``rig``: the ``Z<zoom>`` rig of each block's refined rigs; the translation stays CAHV in every project).  With
+    ZCAM_BIN_REFINE = "focal" the distortion and pp are those the blocks held (the label medians); a block run with
+    "all" contributes refined ones.
+    """
+    from scipy.spatial.transform import Rotation
+    from .project import FULL_OPENCV_NAMES
+    out: Dict[str, Any] = {"zoom": int(zoom), "cameras": {}, "rig": None}
+    for eye in ("L", "R"):
+        g = f"Z{eye}{int(zoom):03d}"
+        P, W, used = [], [], set()
+        for n, s in sols.items():
+            for c in s.cameras.values():
+                if c.group != g or c.n_obs < min_observations or c.model != "FULL_OPENCV":
+                    continue
+                if state == "backlash" and str(c.key).endswith("_reg"):
+                    continue
+                P.append(np.asarray(c.params, float))
+                W.append(float(c.n_obs))
+                used.add(n)
+        if not P:
+            continue
+        P, W = np.array(P), np.array(W)
+        med = np.array([_wmedian_cols(P[:, j], W) for j in range(P.shape[1])])
+        out["cameras"][g] = {"distortion": {"model": "FULL_OPENCV", "names": list(FULL_OPENCV_NAMES[4:]),
+                                            "params": [float(x) for x in med[4:]]},
+                             "pp0_px": [float(med[2]), float(med[3])], "n_cameras": int(len(P)),
+                             "blocks": sorted(used)}
+    rv, blocks = [], []
+    for n, s in sols.items():
+        r = (s.rig_refined or {}).get(f"Z{int(zoom):03d}")
+        if r and (r.get("R_sensor_from_ref") or r.get("R")):
+            rv.append(Rotation.from_matrix(np.asarray(r.get("R_sensor_from_ref", r.get("R")), float)).as_rotvec())
+            blocks.append(n)
+    if rv:
+        rv = np.array(rv)
+        m = np.median(rv, axis=0)
+        out["rig"] = {"R_sensor_from_ref": Rotation.from_rotvec(m).as_matrix().tolist(),
+                      "rotvec_rad": m.tolist(),
+                      "spread_mdeg": float(np.degrees(np.max(np.linalg.norm(rv - m, axis=1))) * 1e3),
+                      "blocks": blocks,
+                      "note": f"median refined Z{int(zoom):03d} rig of {len(blocks)} blocks (rotation; translation from CAHV)"}
+    return out
+
+
+def _wmedian_cols(x: np.ndarray, w: np.ndarray) -> float:
+    o = np.argsort(x)
+    c = np.cumsum(w[o])
+    return float(x[o][np.searchsorted(c, 0.5 * c[-1])])
+
+
 def focus_model_json(fits: Dict[str, Dict[str, Any]], boresight: Optional[Dict[str, Any]] = None,
                      pp_eye: str = "ZR034", focus_range: Optional[Dict[str, Sequence[float]]] = None,
-                     source: str = "") -> Dict[str, Any]:
+                     source: str = "", shared: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """v0p42: a focus-model file (the layout of ``cmods/M2020_ZCAM034_focus_model.json``) from
     :func:`fit_focus_model` results per eye and a :func:`fit_zcam_boresight` result (principal-point slopes, put on
-    ``pp_eye``).  Save it as JSON and pass the path as notebook 03's ``ZCAM_FOCUS_MODEL``
+    ``pp_eye``).  v0p53: ``shared`` (:func:`zcam_shared_terms`) adds each eye's distortion and ``pp0_px`` and the
+    zoom's ``rig``.  Save it as JSON and pass the path as notebook 03's ``ZCAM_FOCUS_MODEL``
     (``SfmProject.create(zcam_focus_model_file=)``) to use it."""
     cams = {}
     for g, f in fits.items():
@@ -942,9 +1010,18 @@ def focus_model_json(fits: Dict[str, Dict[str, Any]], boresight: Optional[Dict[s
             on = g == pp_eye
             c["pp"] = {"cx_px_per_count": boresight["eqx_px"]["slope_per_count"] if on else 0.0,
                        "cy_px_per_count": boresight["eqy_px"]["slope_per_count"] if on else 0.0}
+        sh = ((shared or {}).get("cameras") or {}).get(g)
+        if sh:                                   # v0p53: one distortion and an absolute principal point per eye
+            c["distortion"] = sh["distortion"]
+            c["pp0_px"] = sh["pp0_px"]
         cams[g] = c
-    return {"cameras": cams, "state": "backlash", "pixel_mm": ZCAM_PIXEL_MM,
-            "units": "see mppp.sfm.project.zcam_model_focal / zcam_model_pp_shift", "source": source}
+    out = {"cameras": cams, "state": "backlash", "pixel_mm": ZCAM_PIXEL_MM,
+           "units": "see mppp.sfm.project.zcam_model_focal / zcam_model_pp_shift", "source": source}
+    if (shared or {}).get("rig"):
+        out["rig"] = shared["rig"]
+    if shared and int(shared.get("zoom", 34)) in (110,):
+        out["state"] = "single"                  # v0p53: no backlash state at 110 mm
+    return out
 
 
 # ================================================================ label models

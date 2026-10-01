@@ -426,10 +426,12 @@ def work_settings(work: PathLike, site: Optional[str] = None, settings_file: Opt
     """The notebook 03 settings of a run, later ones winning: the site's ``settings`` (and
     ``no_mask_inference_at``) in the site definitions, ``<work>/mppp_settings.json``, ``settings_file``,
     ``sets`` (e.g. ``--set NAME=VALUE``)."""
-    from .sfm.sites import load_site_table
+    from .sfm.sites import load_site_table, parse_work_folder, site_zooms
     from .sfm.workdir import SETTINGS_FILE, load_settings
     out: Dict[str, Any] = {}
     rec = (load_site_table(sites_file).get("sites", {}).get(site) or {}) if site else {}
+    if isinstance(rec, dict) and parse_work_folder(work)[1] and site_zooms(rec):
+        out["ZCAM_ZOOMS"] = site_zooms(rec)          # v0p53: the site's Mastcam-Z zooms (part of the run key)
     if isinstance(rec, dict):
         if rec.get("no_mask_inference_at"):
             out["NO_MASK_INFERENCE_AT"] = list(rec["no_mask_inference_at"])
@@ -478,8 +480,8 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
           process_only: bool = False) -> Dict[str, Any]:
     """
     Run notebook 03 on one WORK folder (v0p43): ``source="processed"`` aligns the images already in
-    ``<work>/processed``; ``"pds"`` selects and processes them first (the folder name ``<site>_colmap`` /
-    ``<site>_colmap_zcam34`` names the site).  The executed notebook and ``log.txt`` go to
+    ``<work>/processed``; ``"pds"`` selects and processes them first (the folder name
+    ``mars2020_sol_<sol>_<site>_colmap[_zcam]`` names the site; v0p53).  The executed notebook and ``log.txt`` go to
     ``<work>/runs/<time>[_<variant>]/``, the status to ``<work>/mppp_status.json``.  Refuses to start while
     another run of the folder is alive (``force`` overrides).  Returns the final status.
 
@@ -498,7 +500,7 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
         raise FileNotFoundError(f"{work} has no processed/ folder: put this in a WORK folder next to processed/, "
                                 f"or use source 'pds'")
     if source == "pds" and not site:
-        raise ValueError(f"{work.name}: a PDS run needs a folder named <site>_colmap or <site>_colmap_zcam34")
+        raise ValueError(f"{work.name}: a PDS run needs a folder named mars2020_sol_<sol>_<site>_colmap[_zcam] (v0p53)")
     work.mkdir(parents=True, exist_ok=True)
     st_path = work / STATUS_FILE
     cur = read_status(st_path)
@@ -520,7 +522,7 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
                           "RUN_KEY": repr(key), "SCAPES_ROOT": f"Path(r{str(work.parent)!r})"}
     if site:
         ov["SITE"] = repr(site)
-        ov["INCLUDE_ZCAM34"] = repr(bool(zcam))
+        ov["INCLUDE_ZCAM"] = repr(bool(zcam))            # v0p53 (was INCLUDE_ZCAM34)
     if sites_file:
         ov["SITES_FILE"] = f"Path(r{str(Path(sites_file).resolve())!r})"
     for k, v in settings.items():

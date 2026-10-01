@@ -2,6 +2,56 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.53.0 — 2026-10-01
+
+New folder names, the consensus groups, Mastcam-Z 48, 63 and 110 mm, one Mastcam-Z distortion, principal point and rig per zoom, and no rig temperature term.
+
+- **WORK folders `mars2020_sol_<first sol, 4 digits>_<site>_colmap`**, and `..._colmap_zcam` for a block with Mastcam-Z images (any zoom), e.g. `mars2020_sol_1451_bell_island_colmap`. `sites.work_folder(root, site, zcam, sols)`, `folder_name`.
+  - `discover_scapes` / `scan_scapes` (notebooks 04 and 05) use only the new names, so a folder from before 0.53 is not mixed in.
+  - `parse_work_folder` still reads the old names for a `WORK_DIR` given by hand.
+  - `scripts/rename_zcam34_folders.py` is removed (the old folders are to be deleted and the sites rerun).
+  - Labels: "<Site> N+Z" (was "N+Z34").
+- **`sites.json` version 3:**
+  - `"zcam": [34, 48, 63, 110]` per site replaces `"zcam34": true` (`[]` = Navcam only). The old booleans `zcam34`/`zcam48`/`zcam63`/`zcam110` are still read, with a warning.
+  - Groups `zcam_consensus`, `zcam34_consensus`, `zcam48_consensus`, `zcam63_consensus` (Christian's lists; new site `cannery_passage`, sols 549-552, 48 mm) and `zcam110_consensus` (empty: to fill).
+  - A site listed twice in a group runs once (`south_arm` was twice in `navcam_consensus`).
+  - `check_sites` warns when a member of `zcam<z>_consensus` has no `<z>` in its list.
+  - New functions `site_zooms` and `zcam_sites(zoom=)`; `zcam34_sites` is kept.
+- **Batch files:**
+  - `run_all_sites.bat` runs the `navcam_consensus` group.
+  - New `run_all_sites_zcam.bat` runs the new `zcam_consensus` group: the Mastcam-Z blocks chosen for it in sites.json (sid_chal_rocks for now). It runs with `ZCAM_ZOOMS = "all"`, i.e. every zoom MPPP aligns (34, 48, 63, 110 mm) that the archive has for the block's sols, whatever the site's list says.
+  - `run_all_sites_zcam34.bat` runs `zcam34_consensus`.
+  - New `run_all_sites_zcam48.bat`, `_zcam63.bat` and `_zcam110.bat` run their groups.
+  - A `--zcam` block has all the zooms of the site's list. `run_sites.filter_zcam` replaces `filter_zcam34`, which stays as an alias.
+- **Mastcam-Z 34, 48, 63 and 110 mm** are in scope (`SCOPE_ZCAM_ZOOMS`).
+  - Notebook 03: `INCLUDE_ZCAM` (was `INCLUDE_ZCAM34`, which is still read) and `ZCAM_ZOOMS` (None = the site's list; `"all"` = every supported zoom on disk). Selection is per zoom (`_034`, `_048`, `_063`, `_110`), and only the run's zooms are taken from the manifest.
+  - The runner passes `INCLUDE_ZCAM` from the folder name and `ZCAM_ZOOMS` from the site, and both are part of the run key.
+  - Focus and backlash are handled as at 34 mm: focus bins and backlash classification per zoom. 110 mm has a single focus state (the end of the zoom's range) and is not classified or split (`backlash.SINGLE_STATE_ZOOMS`, state `single`).
+  - A zoom without a focus model starts from its block's labels (median label CAHVOR per eye, f per bin from the bin's labels).
+- **Focus models per zoom:** `M2020_ZCAM<zoom>_focus_model.json`.
+  - `project.zcam_focus_model(xml_dir, model_file)` merges every zoom's file (`cameras`, `zooms[z]`, `sources[z]`; the 34 mm file's top level as before).
+  - `zcam_focus_model_files`; the fingerprint covers every file.
+  - `promote_cmods.py` accepts any zoom.
+  - `scripts/zcam_start_models.py` makes provisional start models from the label CAHVOR models of processed blocks: Metashape XMLs `ZL048_frame.xml` ... and `M2020_ZCAM048_focus_model.json` with distortion, `pp0_px` and the label f-vs-focus line.
+- **One distortion, principal point and rig per eye/zoom (the v0p53 constraint):**
+  - Distortion and principal point: a focus model may hold each eye's `distortion` and `pp0_px`. Notebook 03 then starts the eye from them (`_zcam_model_camera`); the bins hold them, and the principal point moves linearly with focus about the model's reference focus.
+  - `ZCAM_BIN_REFINE = "model"` also holds f on the focus line (f linear in focus). `"focal"` stays the default, so the reruns measure f per bin for the refits.
+  - Rig: `ZCAM_RIG = True` now makes **one Mastcam-Z rig per zoom for every focus bin**. A COLMAP rig has one camera per eye, so with focus bins the rig rarely formed before. The bundle adjustment poses each right image from its left partner of the same exposure through a shared rig block (`settings["zcam_virtual_rig"]`, written back as `R_refined`, exported in `rig_refined["Z034"]`).
+  - The rig rotation comes from the zoom's focus model `rig` when it has one, and is then held (`ZCAM_RIG_REFINE = "auto"`; `"hold"`, `"refine"`). Otherwise it is the CAHV median, refined.
+  - Notebook 04 §5b writes one candidate per zoom with `CAL.zcam_shared_terms` (the observation-weighted median distortion and pp per eye; the median refined rig of the blocks).
+- **Navcam rig: no temperature term.** `SfmProject.create` ignores a rig file's `thermal` (`start_rig_rotation(thermal=False)`), and `settings["navcam_rig_thermal"] = False` turns off the thermal stage's rig slopes. The temperature dependence of the Navcam is fx, fy (bins) and the NL cx slope only.
+- **Audit items of 30 Sep fixed:**
+  - Item 1: `calibration.navcam_focal_scale` is right for thermal-binned blocks. The thermal stage records the eyes' refined/start ratio before the split (`navcam_focal_scale_pre_thermal`).
+  - Item 2: the backlash classifier scales both states by the block's Navcam focal scale (`backlash.navcam_scale`).
+  - Item 4: the backlash stage uses the project's focus model.
+- **`KEEP_ONLY_REMAINING = False` is the default** (notebook 03; was 1): every selected product is processed and kept, so the blocks of several Mastcam-Z zooms reuse the same processed files. Bad images are left out at the alignment (outlier frames, `EXCLUDE`, `exclude_images.txt`), not by deleting them from `processed/images_png8`.
+- `studies/navcal_v0p53/rig_translation.py`: the Navcam rig translation offset from CAHV on the merged joint blocks. Setup: 17 blocks, v0p52 cameras, yaw held, 0.05 m prior on the right centre (`rig_translation_2026-10-01.json`).
+  - Freeing the translation lowers the cost by 0.17 %.
+  - Right centre in the left camera frame: x −0.43 ± 0.11, y +0.16 ± 0.005, z −0.27 ± 0.015 mm (formal sd × variance factor; true errors are probably 2–10× larger).
+  - x is the baseline length (−0.10 %), which is tied to the waypoint scale. The pitch moves −6 mdeg with y and z.
+  - The CAHV translation is good to < 0.5 mm in every component. Not adopted.
+- Notebooks copied as `*_v0p53.ipynb`.
+
 ## 0.52.0 — 2026-10-01
 
 Navcam defaults: k4 = 0, one constant rig yaw; new consensus cameras.

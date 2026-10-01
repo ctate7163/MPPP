@@ -201,7 +201,7 @@ def test_project_default_is_rational_and_scope_is_checked_first(processed_pair, 
     z = json.loads(json.dumps(man["images"], default=str))
     for m in z:
         if m["filename"]["family"] == "Z":
-            m["filename"]["zoom_mm"] = 110
+            m["filename"]["zoom_mm"] = 100                    # v0p53: 34, 48, 63, 110 are in scope; 100 is not
     with pytest.raises(ValueError, match="outside MPPP's scope"):
         SfmProject.create(z, out, tmp_path / "s", link=False)
     und = json.loads(json.dumps(man["images"], default=str))
@@ -461,7 +461,10 @@ def test_focus_model_fingerprint(tmp_path):
     from mppp.paths import data_dir
     from mppp.sfm.project import ZCAM_FOCUS_MODEL, zcam_focus_model_fingerprint
     shipped = data_dir() / "cmods" / ZCAM_FOCUS_MODEL
-    assert zcam_focus_model_fingerprint() == hashlib.sha256(shipped.read_bytes()).hexdigest()
+    h = hashlib.sha256()                                   # v0p53: over every zoom's file (name + content)
+    h.update(shipped.name.encode())
+    h.update(shipped.read_bytes())
+    assert zcam_focus_model_fingerprint() == h.hexdigest()
     alt = tmp_path / "m.json"
     m = json.loads(shipped.read_text())
     m["cameras"]["ZL034"]["f0_px"] += 1
@@ -574,3 +577,48 @@ def test_thermal_rig_slopes_drop_the_yaw_when_it_is_held():
     p.settings["navcam_rig_yaw"] = "zero"
     s = rig_slopes_for_project(p)
     assert s["yaw_mdeg_per_degC"] == 0.0 and s["pitch_mdeg_per_degC"] == 0.1
+
+
+def test_zcam_focus_models_per_zoom(tmp_path):
+    """v0p53: one focus-model file per zoom, merged; a model with distortion and pp0 sets the eye camera; the
+    fingerprint covers every zoom's file."""
+    from mppp.sfm.project import (_zcam_model_camera, zcam_focus_model, zcam_focus_model_files,
+                                  zcam_focus_model_fingerprint, _split_by_focus)
+    fp0 = zcam_focus_model_fingerprint()
+    m48 = {"cameras": {"ZL048": {"f0_px": 6600.0, "reference_focus": 500.0, "slope_px_per_count": 0.1, "aspect": 1.0,
+                                 "focus_range": [0, 1000],
+                                 "distortion": {"names": ["k1", "k2", "p1", "p2", "k3"], "params": [-0.1, 0.2, 0, 0, 0]},
+                                 "pp0_px": [820.0, 610.0], "pp": {"cx_px_per_count": 0.01, "cy_px_per_count": 0.0}}},
+           "rig": {"R_sensor_from_ref": np.eye(3).tolist(), "note": "test"}}
+    (tmp_path / "M2020_ZCAM048_focus_model.json").write_text(json.dumps(m48))
+    files = zcam_focus_model_files(tmp_path)
+    assert set(files) == {34, 48} and files[48].parent == tmp_path
+    m = zcam_focus_model(tmp_path)
+    assert {"ZL034", "ZR034", "ZL048"} <= set(m["cameras"]) and m["zooms"][48]["rig"]["note"] == "test"
+    assert m["state"] == "backlash"                          # the 34 mm file's top level, as before v0p53
+    assert zcam_focus_model_fingerprint(None, tmp_path) != fp0
+    base = {"model": "FULL_OPENCV", "params": [6500.0, 6500.0, 800, 600, -0.05, 0.1, 0.001, 0, 0, 0, 0, 0],
+            "source": "median of 9 label CAHVOR models"}
+    cam = _zcam_model_camera(base, m["cameras"]["ZL048"], ("p1", "p2"))
+    assert cam["params"][4:6] == [-0.1, 0.2] and cam["params"][2:4] == [820.0, 610.0] and cam["pp_at_focus"] == 500.0
+    rows = [{"camera_group": "ZL048", "focus_count": 700, "label_f_px": 6500.0} for _ in range(4)]
+    out = _split_by_focus(rows, {"ZL048": cam}, {"ZL048": "Z"}, 30.0, "model", model=m)
+    c = next(iter(out.values()))
+    assert abs(c["params"][0] - (6600.0 + 0.1 * 200)) < 1e-6 and {"fx", "fy"} <= set(c["fixed_params"])
+    assert abs(c["params"][2] - (820.0 + 0.01 * 200)) < 1e-9                # pp linear in focus about pp0's focus
+    rows63 = [{"camera_group": "ZL063", "focus_count": 700, "label_f_px": 6500.0} for _ in range(4)]
+    lab = _split_by_focus(rows63, {"ZL063": dict(base)}, {"ZL063": "Z"}, 30.0, "focal", model=m)   # no 63 mm model
+    assert abs(next(iter(lab.values()))["params"][0] - 6500.0) < 1e-6
+
+
+def test_start_rig_rotation_has_no_temperature_term():
+    """v0p53: SfmProject.create turns the start rig by no temperature term (thermal=False)."""
+    from mppp.paths import cmods_dir
+    from mppp.sfm.project import start_rig_rotation
+    shipped = json.loads((cmods_dir() / "M2020_N_rig.json").read_text())
+    shipped["thermal"] = {"yaw_mdeg_per_degC": -1.0, "pitch_mdeg_per_degC": 0.5, "T0_degC": -20.0}
+    shipped.pop("drift", None)
+    R1, ap1 = start_rig_rotation(shipped, 0.0, None)
+    R2, ap2 = start_rig_rotation(shipped, 0.0, None, thermal=False)
+    assert "thermal" in ap1 and "thermal" not in ap2
+    assert np.allclose(R2, shipped["R_sensor_from_ref"]) and not np.allclose(R1, shipped["R_sensor_from_ref"])

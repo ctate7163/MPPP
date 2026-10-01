@@ -2,7 +2,7 @@
 A site's WORK folder (v0p43): what notebook 03 needs to align the images already processed there, and to rerun
 an alignment cheaply.
 
-A WORK folder (``<SCAPES_ROOT>/<site>_colmap`` or ``<site>_colmap_zcam34``) holds ``processed/`` (images,
+A WORK folder (v0p53: ``<SCAPES_ROOT>/mars2020_sol_<sol>_<site>_colmap`` or ``..._colmap_zcam``) holds ``processed/`` (images,
 masks, the manifest ``mppp_manifest_v*.json``) and one COLMAP project per variant: ``colmap/`` for the default
 run and ``colmap_<variant>/`` for experiments (other SfM settings or camera models) that should not overwrite it.
 

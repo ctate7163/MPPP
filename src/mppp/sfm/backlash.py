@@ -19,6 +19,12 @@ small mosaics.  A focus-bin camera that holds images of both states is forced to
 4. :func:`backlash_stage` - the block is adjusted again (Navcam cameras held) and every image re-measured.
 
 ``strip_thermal_bins`` (mppp.sfm.thermal) also undoes the split, so a rerun starts from the focus bins.
+
+v0p53: the focus groups of each zoom are classified with that zoom's focus model (``M2020_ZCAM<zoom>_focus_model.json``;
+:data:`DEFAULT_BACKLASH_RATIO` for a zoom without one); 110 mm (the end of the zoom's mechanical range) has one focus
+state only and is not classified (``single``).  Both states are scaled by the block's Navcam focal scale (refined /
+start: the Mastcam-Z focal lengths inherit it through the shared points; audit item 2 of 30 Sep), and the stage
+uses the project's focus model (``settings["zcam_focus_model"]["file"]``; audit item 4).
 """
 from __future__ import annotations
 
@@ -30,6 +36,32 @@ import numpy as np
 STATES = ("backlash", "regular")
 REGULAR_SUFFIX = "_reg"
 DEFAULT_BACKLASH_RATIO = 1.0095      # f / label f in the backlash state when no focus model is at hand
+SINGLE_STATE_ZOOMS = (110,)          # v0p53: no backlash state at the end of the zoom's mechanical range
+
+
+def group_zoom(group: Any) -> Optional[int]:
+    """``"ZL034"`` -> 34, ``"ZR110_F01234"`` -> 110; None for a name that is not a Mastcam-Z camera."""
+    g = str(group)
+    try:
+        return int(g[2:5]) if g.startswith("Z") else None
+    except ValueError:
+        return None
+
+
+def navcam_scale(rec, project) -> Optional[float]:
+    """v0p53: the block's Navcam focal scale now - refined / start focal length (sqrt(fx fy)) averaged over the Navcam
+    eye cameras with images; None without Navcam cameras."""
+    db = (project.settings.get("database") or {}).get("cameras") or {}
+    r = []
+    for key, cid in db.items():
+        if not str(key).startswith("N") or "_T" in str(key) or int(cid) not in rec.cameras:
+            continue
+        start = (project.cameras.get(key) or {}).get("params")
+        if not start:
+            continue
+        p = rec.cameras[int(cid)].params
+        r.append(float(np.sqrt(p[0] * p[1]) / np.sqrt(float(start[0]) * float(start[1]))))
+    return float(np.mean(r)) if r else None
 
 
 def _wmedian(x: np.ndarray, w: np.ndarray) -> float:
@@ -165,7 +197,8 @@ def image_focal_fits(rec, project, min_observations: int = 20, loss_px: float = 
 
 
 def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Dict[str, Any]] = None,
-                    z_min: float = 3.0, floor: float = 0.001, tolerance: float = 0.006) -> List[Dict[str, Any]]:
+                    z_min: float = 3.0, floor: float = 0.001, tolerance: float = 0.006,
+                    nav_scale: Optional[float] = None) -> List[Dict[str, Any]]:
     """
     One row per focus group (:func:`focus_groups`): the observation-weighted median of its images' ratio of fitted to
     label focal length, its standard error (the images' formal errors, at least ``floor`` in the ratio, i.e. 0.1 %,
@@ -175,17 +208,28 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
     (too few observations, no label f) are ``undecided`` too, and so are groups whose ratio lies more than
     ``tolerance`` (0.6 %) outside the two states (below 1 or above the backlash ratio): a failed bin rather than a
     focus state (``implausible``; at Airey Hill and Three Forks a few one- and two-image bins at 0.96-0.98).
+    v0p53: ``nav_scale`` (the block's Navcam focal scale, :func:`navcam_scale`) multiplies both states (1 and the
+    backlash ratio); groups of a :data:`SINGLE_STATE_ZOOMS` zoom are ``single`` (not classified, not split).
     """
     ratios = backlash_ratios(model)
+    ns = float(nav_scale) if nav_scale else 1.0
     rows = []
     for key, members in sorted(focus_groups(project.images).items()):
         g = members[0].get("camera_group")
-        rb = ratios.get(g, DEFAULT_BACKLASH_RATIO)
-        mid = 0.5 * (1.0 + rb)
+        if group_zoom(g) in SINGLE_STATE_ZOOMS:
+            rows.append({"group_key": key, "camera_group": g, "eye": members[0].get("eye"), "sol": members[0].get("sol"),
+                         "sequence": members[0].get("sequence"), "focus_count": members[0].get("focus_count"),
+                         "images": len(members), "fitted": 0, "backlash_ratio": None, "threshold_ratio": None,
+                         "names": [m["name"] for m in members], "cameras": sorted({m["instrument"] for m in members}),
+                         "ratio": None, "sd": None, "z": None, "state": "single", "decided": False})
+            continue
+        rb = ratios.get(g, DEFAULT_BACKLASH_RATIO) * ns
+        mid = 0.5 * (ns + rb)
         fs = [fits[m["name"]] for m in members if m["name"] in fits and fits[m["name"]].get("ratio_label")]
         row = {"group_key": key, "camera_group": g, "eye": members[0].get("eye"), "sol": members[0].get("sol"),
                "sequence": members[0].get("sequence"), "focus_count": members[0].get("focus_count"),
                "images": len(members), "fitted": len(fs), "backlash_ratio": rb, "threshold_ratio": mid,
+               "nav_scale": ns,
                "names": [m["name"] for m in members], "cameras": sorted({m["instrument"] for m in members})}
         if not fs:
             row.update({"ratio": None, "sd": None, "z": None, "state": "undecided", "decided": False})
@@ -200,7 +244,7 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
         if len(x) > 2:                                       # the images' scatter, when there is enough of it
             sd = max(sd, float(1.4826 * np.median(np.abs(x - med)) / np.sqrt(len(x))))
         z = (med - mid) / sd
-        implausible = med < 1.0 - tolerance or med > rb + tolerance
+        implausible = med < ns - tolerance or med > rb + tolerance
         state = "undecided" if implausible else ("regular" if z < -z_min else ("backlash" if z > z_min else "undecided"))
         row.update({"ratio": med, "sd": sd, "z": float(z), "state": state, "decided": state != "undecided",
                     "implausible": bool(implausible),
@@ -211,11 +255,12 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
 
 
 def image_states(groups: Sequence[Dict[str, Any]]) -> Dict[str, str]:
-    """{image name: "regular" | "backlash"} (undecided groups count as backlash)."""
+    """{image name: "regular" | "backlash" | "single"} (undecided groups count as backlash; v0p53: "single" for the
+    one-state zooms)."""
     out = {}
     for g in groups:
         for n in g["names"]:
-            out[n] = "regular" if g["state"] == "regular" else "backlash"
+            out[n] = g["state"] if g["state"] in ("regular", "single") else "backlash"
     return out
 
 
@@ -333,7 +378,7 @@ def split_by_state(rec, project, regular: Iterable[str], hold_f_images: int = 0)
 
 def _state_summary(fits: Dict[str, Dict[str, Any]], states: Dict[str, str]) -> Dict[str, Any]:
     out = {}
-    for s in STATES:
+    for s in STATES + ("single",):
         x = [f["ratio_label"] for n, f in fits.items() if f.get("ratio_label") and states.get(n, "backlash") == s]
         out[s] = {"images": len(x), "ratio_median": float(np.median(x)) if x else None,
                   "ratio_p10": float(np.percentile(x, 10)) if x else None,
@@ -348,8 +393,8 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
     """
     Classify the Mastcam-Z focus groups of a solved block into the backlash and the regular state and (``mode``
     ``"split"``) give the regular images their own cameras (:func:`split_by_state`) and adjust again with the Navcam
-    cameras held; ``"report"`` classifies only.  ``model``: the focus model (backlash ratios; default: the shipped
-    one).  ``project`` is updated in place.  Returns (rec, report) with the groups, the per-image fits before (and
+    cameras held; ``"report"`` classifies only.  ``model``: the focus model (backlash ratios; default: the project's,
+    ``settings["zcam_focus_model"]["file"]``, else the shipped ones of every zoom).  ``project`` is updated in place.  Returns (rec, report) with the groups, the per-image fits before (and
     after) the split and the new cameras.
     """
     from .project import zcam_focus_model
@@ -358,23 +403,26 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
         raise ValueError("zcam_backlash must be 'split', 'report' or None")
     if model is None:
         try:
-            model = zcam_focus_model()
+            f = (project.settings.get("zcam_focus_model") or {}).get("file")
+            model = zcam_focus_model(model_file=f)
         except Exception:                                                # noqa: BLE001
             model = None
+    ns = navcam_scale(rec, project)
     fits = image_focal_fits(rec, project, min_observations=min_observations, loss_px=loss_scale)
-    groups = classify_groups(project, fits, model, z_min=z_min)
+    groups = classify_groups(project, fits, model, z_min=z_min, nav_scale=ns)
     states = image_states(groups)
-    report: Dict[str, Any] = {"mode": mode, "z_min": z_min, "backlash_ratios": backlash_ratios(model),
+    report: Dict[str, Any] = {"mode": mode, "z_min": z_min, "backlash_ratios": backlash_ratios(model), "nav_scale": ns,
                               "groups": groups, "fits_before": fits, "before": _state_summary(fits, states),
                               "cameras": [], "after": None, "fits_after": None}
-    n = {s: sum(1 for g in groups if g["state"] == s) for s in ("backlash", "regular", "undecided")}
+    n = {s: sum(1 for g in groups if g["state"] == s) for s in ("backlash", "regular", "undecided", "single")}
     report["group_counts"] = n
     report["implausible_groups"] = [g["group_key"] for g in groups if g.get("implausible")]
     regular = [nm for nm, s in states.items() if s == "regular"]
     if verbose:
         b = report["before"]
         print(f"[sfm] Mastcam-Z focus states: {len(groups)} focus groups - {n['backlash']} backlash, {n['regular']} "
-              f"regular, {n['undecided']} undecided (kept as backlash); fitted f / label f median "
+              f"regular, {n['undecided']} undecided (kept as backlash), {n['single']} single-state (110 mm); "
+              f"Navcam scale {(ns or 1.0):.5f}; fitted f / label f median "
               f"{(b['backlash']['ratio_median'] or float('nan')):.4f} (backlash), "
               f"{(b['regular']['ratio_median'] or float('nan')):.4f} (regular)", flush=True)
     if mode == "report" or not regular:

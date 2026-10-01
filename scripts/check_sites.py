@@ -52,8 +52,8 @@ def main(argv=None) -> int:
         print(f"{len(err)} error(s): fix them before running (the file is unchanged).")
         return 1
     d = load_site_table(f)
-    from mppp.sfm.sites import zcam34_sites
-    print(f"OK: {len(d['sites'])} sites ({len(zcam34_sites(d))} with zcam34), groups: " +
+    from mppp.sfm.sites import site_zooms, zcam_sites
+    print(f"OK: {len(d['sites'])} sites ({len(zcam_sites(d))} with Mastcam-Z), groups: " +
           ", ".join(f"{g} ({len(m)})" for g, m in (d.get("groups") or {}).items()))
     for name, v in d["sites"].items():
         extra = []
@@ -61,7 +61,7 @@ def main(argv=None) -> int:
             extra.append(f"settings {v['settings']}")
         if v.get("no_mask_inference_at"):
             extra.append(f"no mask at {v['no_mask_inference_at']}")
-        print(f"  {name:22s} sols {v['sols'][0]:>4}-{v['sols'][1]:<4} {'zcam34' if v.get('zcam34') is True else '      '}  "
+        print(f"  {name:22s} sols {v['sols'][0]:>4}-{v['sols'][1]:<4} {('zcam ' + ','.join(map(str, site_zooms(v)))) if site_zooms(v) else '':14s}  "
               f"{'; '.join(extra)}")
     return 0
 

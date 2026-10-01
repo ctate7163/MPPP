@@ -507,6 +507,10 @@ def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
             rigs_after[str(rid)] = {"sensor_camera_id": sid.id, "R": T.rotation.matrix().tolist(),
                                     "t": np.asarray(T.translation).tolist(),
                                     "baseline_m": float(np.linalg.norm(T.translation))}
+    for fam, v in (project.settings.get("zcam_virtual_rig") or {}).items():      # v0p53: the Mastcam-Z rigs
+        R1, t1 = v.get("R_refined", v["R_sensor_from_ref"]), v.get("t_refined", v["t_sensor_from_ref"])
+        rigs_after[fam] = {"R": R1, "t": list(t1), "baseline_m": float(np.linalg.norm(t1)), "virtual": True,
+                           "held": bool(v.get("hold")), "rotation_source": v.get("rotation_source")}
     comps = station_components(rec, project)
     weak = [r["name"] for r in rows if r["observations"] < 30]
     sims = []

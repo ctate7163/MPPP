@@ -139,7 +139,7 @@ def test_backlash_stage_refines_both_states(tmp_path):
     proj, rec, model, truth = _zcam_block(tmp_path)
     rec2, rep = backlash_stage(rec, proj, model=model, mode="split", sigma_px=0.3, loss_scale=2.0,
                                max_iterations=30, verbose=False)
-    assert rep["group_counts"] == {"backlash": 2, "regular": 1, "undecided": 0}
+    assert rep["group_counts"] == {"backlash": 2, "regular": 1, "undecided": 0, "single": 0}
     ids = proj.settings["database"]["cameras"]
     fb = 0.5 * sum(rec2.cameras[ids["ZL034_F00600"]].params[:2])
     fr = 0.5 * sum(rec2.cameras[ids["ZL034_F00600_reg"]].params[:2])
@@ -150,3 +150,124 @@ def test_backlash_stage_refines_both_states(tmp_path):
     assert abs(rep["after"]["regular"]["ratio_median"] / rep["after"]["backlash"]["ratio_median"] - 1 / 1.0095) < 5e-4
     rec3, rep3 = backlash_stage(rec, proj, model=model, mode="report", verbose=False)
     assert rep3["cameras"] == [] and rec3 is rec
+
+
+def test_classify_with_navcam_scale_and_single_state_zoom(tmp_path):
+    """v0p53: both focus states are scaled by the block's Navcam focal scale; 110 mm groups are 'single'."""
+    pytest.importorskip("scipy")
+    from mppp.sfm.backlash import classify_groups, group_zoom, image_focal_fits, image_states
+    proj, rec, model, truth = _zcam_block(tmp_path)
+    fits = image_focal_fits(rec, proj)
+    g0 = {g["sequence"]: g for g in classify_groups(proj, fits, model)}
+    g1 = {g["sequence"]: g for g in classify_groups(proj, fits, model, nav_scale=1.004)}
+    assert abs(g1["zcam1"]["threshold_ratio"] - 1.004 * g0["zcam1"]["threshold_ratio"]) < 1e-12
+    assert g1["zcam1"]["nav_scale"] == 1.004
+    assert group_zoom("ZR110_F01234") == 110 and group_zoom("ZL034") == 34 and group_zoom("NL") is None
+    for r in proj.images:
+        r["camera_group"] = "ZL110"
+    g2 = classify_groups(proj, fits, model)
+    assert {g["state"] for g in g2} == {"single"}
+    assert set(image_states(g2).values()) == {"single"}
+
+
+def _zcam_pair_block(tmp_path, R_rig, t_rig, seed=1, noise=0.2):
+    """Mastcam-Z stereo pairs at one station: ZL034 (camera 1) and ZR034 (camera 2), every image its own frame
+    (focus bins: no COLMAP rig); the right images start 2 cm and 0.2 deg off."""
+    pycolmap = pytest.importorskip("pycolmap")
+    from scipy.spatial.transform import Rotation
+    from mppp.sfm.project import SfmProject
+    rng = np.random.default_rng(seed)
+    W, H, f = 1648, 1200, 4720.0
+    base = [f, f, 824.0, 600.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    C = np.array([0.0, 0.0, 2.0])
+    P = np.column_stack([rng.uniform(-30, 30, 5000), rng.uniform(6, 40, 5000), rng.normal(0, 1.0, 5000)])
+    rec = pycolmap.Reconstruction()
+    images = []
+    for cid in (1, 2):
+        rec.add_camera(pycolmap.Camera(camera_id=cid, model="FULL_OPENCV", width=W, height=H, params=base))
+        rig = pycolmap.Rig(rig_id=cid)
+        rig.add_ref_sensor(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=cid))
+        rec.add_rig(rig)
+    cam_t = rec.cameras[1]
+    tracks, k = {}, 0
+    for e in range(8):
+        a = np.radians(-12 + 3.5 * e)
+        fwd = np.array([np.sin(a), np.cos(a), 0.0]) * np.cos(0.05) + np.array([0, 0, -np.sin(0.05)])
+        right = np.array([np.cos(a), -np.sin(a), 0.0])
+        RL = np.stack([right, np.cross(fwd, right), fwd])
+        tL = -RL @ C
+        RR, tR = R_rig @ RL, R_rig @ tL + t_rig
+        for eye, cid, R, t in (("L", 1, RL, tL), ("R", 2, RR, tR)):
+            k += 1
+            xc = P @ R.T + t
+            ok = xc[:, 2] > 1
+            uv = np.full((len(P), 2), np.nan)
+            uv[ok] = np.asarray(cam_t.img_from_cam(xc[ok]), float)
+            vis = ok & (uv[:, 0] > 5) & (uv[:, 0] < W - 5) & (uv[:, 1] > 5) & (uv[:, 1] < H - 5)
+            idx = np.nonzero(vis)[0]
+            kps = uv[idx] + rng.normal(0, noise, (len(idx), 2))
+            name = f"Z{eye}0_{k:04d}.png"
+            im = pycolmap.Image(name=name, keypoints=kps, camera_id=cid, image_id=k)
+            fr = pycolmap.Frame(frame_id=k, rig_id=cid)
+            fr.add_data_id(pycolmap.data_t(sensor_id=pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=cid), id=k))
+            if eye == "R":                                          # a poor start for the right image
+                dR = Rotation.from_rotvec(np.radians([0.2, -0.1, 0.1])).as_matrix()
+                fr.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(dR @ R), dR @ t + [0.02, 0.0, 0.0])
+            else:
+                fr.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(R), t)
+            rec.add_frame(fr)
+            im.frame_id = k
+            rec.add_image(im)
+            rec.register_frame(k)
+            for j, p in enumerate(idx):
+                tracks.setdefault(int(p), []).append((k, j))
+            Cw = -R.T @ t
+            images.append({"name": name, "stem": name[:-4], "instrument": f"Z{eye}034_F00600", "camera_group": f"Z{eye}034",
+                           "eye": eye, "sclk_key": f"{e:010d}_000", "sol": 700, "station": "S001D0000",
+                           "sequence": "zcam1", "downsample_scale": 1.0, "focus_count": 600.0,
+                           "prior_C": Cw.tolist(), "prior_R_w2c": R.tolist(), "has_mask": False, "image_id": k})
+    for p, els in tracks.items():
+        if len(els) >= 2:
+            tr = pycolmap.Track()
+            for iid, j in els:
+                tr.add_element(iid, j)
+            rec.add_point3D(P[p], tr, np.zeros(3, np.uint8))
+    cams = {f"Z{e}034_F00600": {"model": "FULL_OPENCV", "width": W, "height": H, "params": base, "group": f"Z{e}034",
+                                "fixed_params": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3"]} for e in "LR"}
+    proj = SfmProject(tmp_path, images, cams, {}, [0, 0, 0],
+                      {"prior_sigma_m": [0.05, 0.05, 0.05],
+                       "database": {"cameras": {"ZL034_F00600": 1, "ZR034_F00600": 2}}})
+    proj.root.mkdir(parents=True, exist_ok=True)
+    return proj, rec
+
+
+@pytest.mark.parametrize("hold", [False, True])
+def test_zcam_virtual_rig_poses_right_images(tmp_path, hold):
+    """v0p53: one Mastcam-Z rig per zoom for every focus bin - the right image is posed from its left partner."""
+    pytest.importorskip("pyceres")
+    from scipy.spatial.transform import Rotation
+    from mppp.sfm.reconstruction import bundle_adjust
+    R_rig = Rotation.from_rotvec(np.radians([0.05, -1.2, 0.3])).as_matrix()
+    t_rig = np.array([-0.2425, 0.001, 0.002])
+    proj, rec = _zcam_pair_block(tmp_path, R_rig, t_rig)
+    R_start = R_rig if hold else Rotation.from_rotvec(np.radians([0.0, -1.1, 0.25])).as_matrix()
+    proj.settings["zcam_virtual_rig"] = {"Z034": {"R_sensor_from_ref": R_start.tolist(), "t_sensor_from_ref": t_rig.tolist(),
+                                                  "hold": hold}}
+    ba = bundle_adjust(rec, proj, sigma_px=0.2, loss_scale=2.0, refine_rig="rotation", max_iterations=50,
+                       attitude_prior_deg=None)
+    v = proj.settings["zcam_virtual_rig"]["Z034"]
+    R1 = np.asarray(v["R_refined"])
+    err_mdeg = 1e3 * np.degrees(np.linalg.norm(Rotation.from_matrix(R1 @ R_rig.T).as_rotvec()))
+    assert err_mdeg < 5.0, err_mdeg
+    if hold:
+        assert np.allclose(R1, R_start)
+    names = {im.name: im for im in rec.images.values()}
+    for iid, im in rec.images.items():
+        if im.name.startswith("ZR"):
+            k = int(im.name[4:8])
+            L = names[f"ZL0_{k - 1:04d}.png"]
+            T = rec.frames[L.frame_id].rig_from_world
+            want = R1 @ np.asarray(T.rotation.matrix())
+            got = np.asarray(rec.frames[im.frame_id].rig_from_world.rotation.matrix())
+            assert np.allclose(got, want, atol=1e-9)
+    assert ba["final_cost"] < ba["initial_cost"]

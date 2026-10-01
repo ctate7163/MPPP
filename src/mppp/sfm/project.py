@@ -34,7 +34,8 @@ ZCAM_XML_PATTERN = "{camera}_frame.xml"            # Mastcam-Z, per eye and zoom
 NAVCAM_RATIONAL_PATTERN = "M2020_{instrument}_rational.json"   # v0p20: COLMAP rational Navcam cameras (full frame)
 NAVCAM_FISHEYE_PATTERN = "M2020_{instrument}_fisheye_tangential.json"   # v0p35: THIN_PRISM_FISHEYE (sx1 = sy1 = 0)
 NAVCAM_DISTORTION = "rational"                     # default: "rational" (full frame) or "polynomial" (Metashape K1-K3)
-SCOPE = "Navcam (NLF/NRF) and Mastcam-Z at 34 mm (ZL0/ZR0 _034)"
+SCOPE = "Navcam (NLF/NRF) and Mastcam-Z at 34, 48, 63, 110 mm (ZL0/ZR0 _034, _048, _063, _110; v0p53)"
+SCOPE_ZCAM_ZOOMS = (34, 48, 63, 110)
 SCOPE_CAMERA_CODES = ("NLF", "NRF", "ZL0", "ZR0")
 # v0p50: parameter names per COLMAP model (reconstruction._PARAM_NAMES is this table)
 PARAM_NAMES = {"FULL_OPENCV": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6"),
@@ -54,6 +55,8 @@ NAVCAM_RIG_YAW_SETTINGS = ("hold", "refine", "zero")
 ZEROED_TERMS = ("b1", "b2")          # v0p20: p1, p2 kept from the calibration (was also zeroed), as notebook 03
 ZCAM_FOCUS_BIN = 30.0                               # focus motor counts per Mastcam-Z camera bin (v0p14.4)
 ZCAM_FOCUS_MODEL = "M2020_ZCAM034_focus_model.json"  # v0p22: Mastcam-Z 34 mm focal length against focus count
+ZCAM_FOCUS_MODEL_PATTERN = "M2020_ZCAM{zoom:03d}_focus_model.json"   # v0p53: one file per zoom (34, 48, 63, 110)
+ZCAM_BIN_REFINE_SETTINGS = ("focal", "all", "model")  # v0p53 "model": f held at the focus model (linear in focus)
 ZCAM_HOLD_F_IMAGES = 2                              # v0p22: focus bins with <= this many images hold f at the model
 NAVCAM_RIG = "consensus"                            # v0p22: Navcam rig rotation starts from the refined consensus
 NAVCAM_RIG_FILE = "M2020_N_rig.json"
@@ -325,7 +328,7 @@ class SfmProject:
                zero_terms: Sequence[str] = ZEROED_TERMS, link: bool = True,
                prior_sigma_m: Sequence[float] = (1.0, 1.0, 1.0),
                zcam_intrinsics: str = "focus_model", zcam_focus_bin: Optional[float] = ZCAM_FOCUS_BIN,
-               zcam_bin_refine: str = "focal", zcam_rig: bool = False,
+               zcam_bin_refine: str = "focal", zcam_rig: bool = False, zcam_rig_refine: str = "auto",
                navcam_distortion: str = NAVCAM_DISTORTION, zcam_hold_f_images: int = ZCAM_HOLD_F_IMAGES,
                navcam_rig: str = NAVCAM_RIG, navcam_cameras: Optional[PathLike] = None,
                zcam_zero_terms: Optional[Sequence[str]] = None,
@@ -418,8 +421,10 @@ class SfmProject:
                              "M2020_NL/NR_fisheye_tangential.json (notebook 04, section 2e)")
         if zcam_intrinsics not in ("label", "xml", "focus_model"):
             raise ValueError("zcam_intrinsics must be 'label', 'xml' or 'focus_model'")
-        if zcam_bin_refine not in ("focal", "all"):
-            raise ValueError("zcam_bin_refine must be 'focal' or 'all'")
+        if zcam_rig_refine not in ("auto", "hold", "refine"):
+            raise ValueError("zcam_rig_refine must be 'auto', 'hold' or 'refine'")
+        if zcam_bin_refine not in ZCAM_BIN_REFINE_SETTINGS:
+            raise ValueError(f"zcam_bin_refine must be one of {ZCAM_BIN_REFINE_SETTINGS}")
         if navcam_distortion_fit not in ("hold", "refine"):
             raise ValueError("navcam_distortion_fit must be 'hold' or 'refine'")
         if navcam_rig_yaw not in NAVCAM_RIG_YAW_SETTINGS:
@@ -436,7 +441,7 @@ class SfmProject:
             raise ValueError("no processed images")
         out_of_scope = [m["source_product"] for m in metas
                         if m["filename"]["camera_code"] not in SCOPE_CAMERA_CODES
-                        or (m["filename"]["family"] == "Z" and m["filename"].get("zoom_mm") != 34)]
+                        or (m["filename"]["family"] == "Z" and m["filename"].get("zoom_mm") not in SCOPE_ZCAM_ZOOMS)]
         if out_of_scope:
             raise ValueError(f"{len(out_of_scope)} images outside MPPP's scope ({SCOPE}), e.g. {out_of_scope[0]}")
         undist = [m["source_product"] for m in metas if m.get("undistorted")]
@@ -493,6 +498,16 @@ class SfmProject:
                 "camera_temperature_degC": m.get("camera_temperature_degC"),       # v0p31 (manifest, MPPP >= 0.30)
             })
 
+        _fm_cache: Dict[str, Any] = {}
+
+        def _zcam_fmodel() -> Dict[str, Any]:
+            if "m" not in _fm_cache:
+                try:
+                    _fm_cache["m"] = zcam_focus_model(xml_arg, zcam_focus_model_file)
+                except FileNotFoundError:
+                    _fm_cache["m"] = {"cameras": {}, "zooms": {}, "sources": {}}
+            return _fm_cache["m"]
+
         cameras = {}
         nav_dir = Path(navcam_cameras) if navcam_cameras else xml_dir
         nav_info: Dict[str, Any] = {}
@@ -500,6 +515,10 @@ class SfmProject:
             zt = tuple(zcam_zero_terms) if (fam == "Z" and zcam_zero_terms is not None) else tuple(zero_terms)
             if fam == "Z" and zcam_intrinsics in ("label", "focus_model"):
                 cameras[instr] = _camera_from_label_median(instr, label_params[instr], FULL_FRAME[fam], zt)
+                if zcam_intrinsics == "focus_model":
+                    # v0p53: one distortion per eye and zoom (the focus model's ``distortion``) and an absolute
+                    # principal point (``pp0_px`` at the reference focus), when the model has them
+                    cameras[instr] = _zcam_model_camera(cameras[instr], _zcam_fmodel().get("cameras", {}).get(instr), zt)
                 continue
             if fam == "N" and navcam_distortion in ("rational", "fisheye_tangential"):
                 xml = nav_dir / (NAVCAM_RATIONAL_PATTERN if navcam_distortion == "rational"
@@ -551,18 +570,42 @@ class SfmProject:
                 cam = navcam_distortion_terms(cam, navcam_distortion_fit, navcam_k4)
             cameras[instr] = cam
         focus_info = None
+        if zcam_intrinsics == "focus_model" and any(f == "Z" for f in instruments.values()):
+            fm = _zcam_fmodel()
+            focus_info = {"file": str(zcam_focus_model_file) if zcam_focus_model_file else None,
+                          "files": fm.get("sources", {}), "zooms": sorted(fm.get("zooms", {})),
+                          "fingerprint": zcam_focus_model_fingerprint(zcam_focus_model_file, xml_arg)}
+            missing = sorted({k for k, f in instruments.items() if f == "Z"} - set(fm.get("cameras", {})))
+            if missing:
+                focus_info["no_model"] = missing                  # v0p53: start from the labels (f per bin)
         if zcam_focus_bin:
-            fmodel = None
-            if zcam_intrinsics == "focus_model":
-                fmodel = (json.loads(Path(zcam_focus_model_file).read_text(encoding="utf-8")) if zcam_focus_model_file
-                          else zcam_focus_model(xml_arg))
-                focus_info = {"file": str(zcam_focus_model_file or zcam_focus_model_path(xml_arg)),
-                              "fingerprint": zcam_focus_model_fingerprint(zcam_focus_model_file, xml_arg)}
+            fmodel = _zcam_fmodel() if zcam_intrinsics == "focus_model" else None
             cameras = _split_by_focus(images, cameras, instruments, float(zcam_focus_bin), zcam_bin_refine,
                                       fmodel, int(zcam_hold_f_images))
 
         _align_priors_to_cameras(images, cameras)
-        rig = _rig_from_pairs([r for r in images if zcam_rig or instruments.get(r["camera_group"]) != "Z"])
+        rig = _rig_from_pairs([r for r in images if instruments.get(r["camera_group"]) != "Z"])
+        zrig: Dict[str, Any] = {}
+        if zcam_rig:
+            # v0p53: one Mastcam-Z rig per zoom for every focus bin (a COLMAP rig has one camera per eye, the focus
+            # bins have many): the bundle adjustment poses a right image from its left partner of the same exposure
+            # through this rig (``settings["zcam_virtual_rig"]``).  Rotation: the zoom's focus model ``rig`` when it
+            # has one (held, ZCAM_RIG_REFINE = "auto"), else the CAHV median (refined); translation CAHV.
+            zrows = [dict(r, instrument=r["camera_group"]) for r in images if instruments.get(r["camera_group"]) == "Z"]
+            for fam_key, rg in _rig_from_pairs(zrows).items():
+                z = _rig_zoom(fam_key)
+                zr = (((_zcam_fmodel().get("zooms") or {}).get(z) or {}).get("rig")
+                      if (z and zcam_intrinsics == "focus_model") else None)
+                ent = {"ref": rg["ref"], "sensor": rg["sensor"], "n_pairs": rg["n_pairs"],
+                       "R_sensor_from_ref": rg["R_sensor_from_ref"], "t_sensor_from_ref": rg["t_sensor_from_ref"],
+                       "baseline_m": rg["baseline_m"], "rot_spread_deg": rg["rot_spread_deg"],
+                       "rotation_source": "CAHV median of the pairs"}
+                if zr and zr.get("R_sensor_from_ref"):
+                    ent["R_sensor_from_ref_cahv"] = ent["R_sensor_from_ref"]
+                    ent["R_sensor_from_ref"] = zr["R_sensor_from_ref"]
+                    ent["rotation_source"] = f"Mastcam-Z {z} mm focus model rig ({zr.get('note', '')})"
+                ent["hold"] = (bool(zr) if zcam_rig_refine == "auto" else zcam_rig_refine == "hold")
+                zrig[fam_key] = ent
         if navcam_rig == "consensus" and "N" in rig and navcam_distortion in ("rational", "fisheye_tangential"):
             rig_file = data_dir() / "cmods" / NAVCAM_RIG_FILE
             if navcam_cameras and (nav_dir / NAVCAM_RIG_FILE).is_file():
@@ -580,7 +623,7 @@ class SfmProject:
                 # yaw for every block, sol and temperature (the rig file's), only pitch and roll follow the drift
                 R2, applied = start_rig_rotation(shipped, float(np.median(Ts)) if Ts else None,
                                                  float(np.median(sols)) if sols else None,
-                                                 yaw=navcam_rig_yaw == "refine")
+                                                 yaw=navcam_rig_yaw == "refine", thermal=False)
                 rig["N"]["R_sensor_from_ref"] = R2.tolist()
                 nav_info["rig"].update(applied)
             rig["N"]["rotation_source"] = f"{rig_file.name} (refined consensus; translation from CAHV)" + \
@@ -599,9 +642,11 @@ class SfmProject:
                     "zcam_focus_model": focus_info,
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
                     "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
+                    "zcam_virtual_rig": zrig or None, "zcam_rig_refine": zcam_rig_refine,
                     "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
                     "navcam_distortion_fit": navcam_distortion_fit, "navcam_k4": navcam_k4,
                     "navcam_rig_yaw": navcam_rig_yaw,
+                    "navcam_rig_thermal": False,                      # v0p53: no rig temperature term
                     "navcam_cameras": {"dir": str(nav_dir), "fingerprint": navcam_cameras_fingerprint(nav_dir),
                                        **nav_info} if navcam_cameras else None})
         proj.save()
@@ -697,19 +742,98 @@ def _num(v: Any) -> Optional[float]:
     return x if np.isfinite(x) else None
 
 
-def zcam_focus_model(xml_dir: Optional[PathLike] = None) -> Dict[str, Any]:
-    """The shipped Mastcam-Z focal-length model: per eye and zoom, f = f0 + slope (focus - reference) and fy/fx."""
-    return json.loads(zcam_focus_model_path(xml_dir).read_text(encoding="utf-8"))
-
-
-def zcam_focus_model_path(xml_dir: Optional[PathLike] = None) -> Path:
-    """The focus-model file in use: ``xml_dir``'s, else ``cmods_dir()``'s (``MPPP_CMODS``), else the package's
-    ``mppp/data/cmods`` (v0p50)."""
+def zcam_focus_model_files(xml_dir: Optional[PathLike] = None) -> Dict[int, Path]:
+    """v0p53: {zoom mm: focus-model file} - ``M2020_ZCAM<zoom>_focus_model.json`` in ``xml_dir``, else ``cmods_dir()``
+    (``MPPP_CMODS``), else the package's ``mppp/data/cmods`` (the first folder holding a zoom's file wins)."""
+    import re
     from ..paths import cmods_dir
-    cands = [Path(xml_dir) / ZCAM_FOCUS_MODEL] if xml_dir else []
-    cands.append(cmods_dir() / ZCAM_FOCUS_MODEL)
-    cands.append(data_dir() / "cmods" / ZCAM_FOCUS_MODEL)
+    dirs = ([Path(xml_dir)] if xml_dir else []) + [cmods_dir(), data_dir() / "cmods"]
+    out: Dict[int, Path] = {}
+    for d in dirs:
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("M2020_ZCAM*_focus_model.json")):
+            m = re.fullmatch(r"M2020_ZCAM(\d{3})_focus_model\.json", f.name)
+            if m and int(m.group(1)) not in out:
+                out[int(m.group(1))] = f
+    return out
+
+
+def _zoom_of_group(g: str) -> Optional[int]:
+    try:
+        return int(str(g)[2:5]) if str(g).startswith("Z") else None
+    except ValueError:
+        return None
+
+
+def zcam_focus_model(xml_dir: Optional[PathLike] = None, model_file: Optional[PathLike] = None) -> Dict[str, Any]:
+    """The Mastcam-Z focus models: per eye and zoom, f = f0 + slope (focus - reference) and fy/fx (v0p22).  v0p53: the
+    files of every zoom (:func:`zcam_focus_model_files`) merged - ``cameras`` holds ZL034, ZR034, ZL048 ...;
+    ``zooms[zoom]`` the rest of each file (``rig``, ``stereo``, ``state`` ...); ``sources[zoom]`` the file.  The 34 mm
+    file's top-level entries are kept at the top level too (as before v0p53).  ``model_file``: a file (e.g. notebook
+    04's candidate) whose cameras replace those of the same zoom."""
+    files = zcam_focus_model_files(xml_dir)
+    if not files and not model_file:
+        raise FileNotFoundError(f"no Mastcam-Z focus model ({ZCAM_FOCUS_MODEL_PATTERN.format(zoom=34)}) found")
+    out: Dict[str, Any] = {"cameras": {}, "zooms": {}, "sources": {}}
+    items = [(z, f) for z, f in sorted(files.items())] + ([(None, Path(model_file))] if model_file else [])
+    for z, f in items:
+        d = json.loads(Path(f).read_text(encoding="utf-8"))
+        cams = d.get("cameras") or {}
+        zooms = {_zoom_of_group(g) for g in cams} - {None} or ({z} if z else set())
+        rest = {k: v for k, v in d.items() if k != "cameras"}
+        for zz in zooms:
+            out["zooms"][zz] = rest
+            out["sources"][zz] = str(f)
+            if model_file and z is None:              # the given file replaces that zoom's cameras
+                out["cameras"] = {g: c for g, c in out["cameras"].items() if _zoom_of_group(g) != zz}
+        out["cameras"].update(cams)
+        if 34 in zooms:
+            out.update({k: v for k, v in rest.items() if k not in ("zooms", "sources")})
+    return out
+
+
+def zcam_focus_model_path(xml_dir: Optional[PathLike] = None, zoom: int = 34) -> Path:
+    """The focus-model file of a zoom (default 34 mm) in use: ``xml_dir``'s, else ``cmods_dir()``'s (``MPPP_CMODS``),
+    else the package's ``mppp/data/cmods`` (v0p50)."""
+    from ..paths import cmods_dir
+    name = ZCAM_FOCUS_MODEL_PATTERN.format(zoom=int(zoom))
+    cands = [Path(xml_dir) / name] if xml_dir else []
+    cands.append(cmods_dir() / name)
+    cands.append(data_dir() / "cmods" / name)
     return next((f for f in cands if f.is_file()), cands[-1])
+
+
+def _rig_zoom(fam_key: str) -> Optional[int]:
+    """``"Z034"`` (a Mastcam-Z rig family) -> 34."""
+    try:
+        return int(str(fam_key)[1:4]) if str(fam_key).startswith("Z") else None
+    except ValueError:
+        return None
+
+
+def _zcam_model_camera(cam: Dict[str, Any], gm: Optional[Dict[str, Any]], zero_terms: Sequence[str] = ()) -> Dict[str, Any]:
+    """v0p53: a Mastcam-Z eye camera (label median, FULL_OPENCV) with the focus model's one distortion
+    (``distortion``: {"names": [...], "params": [...]}) and absolute principal point at the reference focus
+    (``pp0_px``), when the model has them."""
+    if not gm:
+        return cam
+    cam = dict(cam, params=list(map(float, cam["params"])))
+    notes = []
+    dist = gm.get("distortion")
+    if dist and dist.get("names") and dist.get("params"):
+        for n, v in zip(dist["names"], dist["params"]):
+            if n in FULL_OPENCV_NAMES[4:]:
+                cam["params"][FULL_OPENCV_NAMES.index(n)] = 0.0 if n in zero_terms else float(v)
+        notes.append("distortion of the focus model")
+    if gm.get("pp0_px"):
+        cam["params"][2], cam["params"][3] = map(float, gm["pp0_px"])
+        cam["pp_at_focus"] = float(gm["reference_focus"])
+        notes.append(f"cx, cy of the focus model at focus {float(gm['reference_focus']):.0f}")
+    if notes:
+        cam["source"] = f"{cam.get('source', '')}; " + "; ".join(notes)
+        cam["model_distortion"] = bool(dist)
+    return cam
 
 
 def zcam_model_focal(gm: Dict[str, Any], focus: float, T: Optional[float] = None,
@@ -770,7 +894,7 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
             Tb = float(np.median(Ts)) if Ts else None
             sols = [float(r["sol"]) for r in members if r.get("sol") is not None]
             Sb = float(np.median(sols)) if sols else None
-            fixed = list(ZCAM_BIN_HELD) if refine == "focal" else []
+            fixed = list(ZCAM_BIN_HELD) if refine in ("focal", "model") else []
             lo, hi = (gm or {}).get("focus_range", [-np.inf, np.inf])
             extra = {}
             if gm and med is not None and not (lo <= med <= hi) and fl and gm.get("label_f0_px"):
@@ -790,7 +914,10 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                 src = f"{base['source']}; focus bin {key} ({len(members)} images, f from the focus model"
                 src += "".join(f", {k} {v:+.1f} px" for k, v in terms.items() if k != "focus" and v) + ")"
                 extra = {"focus_model_terms_px": terms}
-                if len(members) <= hold_f_images:
+                if refine == "model":                 # v0p53: f linear in focus - held at the model
+                    fixed = sorted(set(fixed) | {"fx", "fy"}, key=FULL_OPENCV_NAMES.index)
+                    src += "; f held at the focus model (ZCAM_BIN_REFINE = 'model')"
+                elif len(members) <= hold_f_images:
                     fixed = sorted(set(fixed) | {"fx", "fy"}, key=FULL_OPENCV_NAMES.index)
                     src += f"; f held (<= {hold_f_images} images)"
             elif fl and "label" in base.get("source", ""):
@@ -799,12 +926,14 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                 src = f"{base['source']}; focus bin {key} ({len(members)} images, f from the bin's labels)"
             else:
                 src = f"{base['source']}; focus bin {key}"
-            # v0p42: principal point against focus (the model's right-minus-left slope, about the eye's median focus)
-            dcx, dcy = zcam_model_pp_shift(gm, med, focus_ref)
+            # v0p42: principal point against focus (the model's right-minus-left slope, about the eye's median focus);
+            # v0p53: about the model's reference focus when the eye starts at the model's absolute pp0
+            pp_ref = base.get("pp_at_focus", focus_ref)
+            dcx, dcy = zcam_model_pp_shift(gm, med, pp_ref)
             if dcx or dcy:
                 params[2] += dcx
                 params[3] += dcy
-                src += f"; cx, cy {dcx:+.2f}, {dcy:+.2f} px (focus model pp slope about focus {focus_ref:.0f})"
+                src += f"; cx, cy {dcx:+.2f}, {dcy:+.2f} px (focus model pp slope about focus {pp_ref:.0f})"
                 extra["pp_shift_px"] = [dcx, dcy]
             cam = dict(base, params=params, group=group, focus_count_median=med,
                        focus_count_range=[min(counts), max(counts)] if counts else None, n_images=len(members),
@@ -943,16 +1072,18 @@ def _json_default(o):
 
 
 def start_rig_rotation(shipped: Dict[str, Any], T_median: Optional[float], sol_median: Optional[float],
-                       yaw: bool = True):
+                       yaw: bool = True, thermal: bool = True):
     """v0p35: the start rig rotation of a block from a rig file (``M2020_N_rig.json``) with a temperature model
     (``thermal``: yaw/pitch mdeg per degC about T0) and a drift (``drift``: pitch/yaw/roll mdeg per sol about sol0),
     at the block's median camera temperature and sol.  Returns (R, {"thermal": ..., "drift": ...} as applied).
-    ``yaw=False`` (v0p52): the yaw terms are left out (the rig file's yaw for every block)."""
+    ``yaw=False`` (v0p52): the yaw terms are left out (the rig file's yaw for every block).  ``thermal=False``
+    (v0p53, what ``SfmProject.create`` uses): no temperature term at all - the rig rotation does not depend on
+    temperature; the stereo change with temperature is the principal points' (cx_px_per_degC)."""
     from scipy.spatial.transform import Rotation
     R = np.asarray(shipped["R_sensor_from_ref"], float)
     applied: Dict[str, Any] = {}
     th = shipped.get("thermal")
-    if th and th.get("yaw_mdeg_per_degC") is not None and T_median is not None:
+    if thermal and th and th.get("yaw_mdeg_per_degC") is not None and T_median is not None:
         dT = float(T_median) - float(th["T0_degC"])
         rv = np.radians(1e-3 * dT * np.array([float(th.get("pitch_mdeg_per_degC") or 0.0),
                                               float(th["yaw_mdeg_per_degC"]) if yaw else 0.0, 0.0]))
@@ -979,14 +1110,15 @@ def start_rig_rotation(shipped: Dict[str, Any], T_median: Optional[float], sol_m
 
 
 def zcam_focus_model_fingerprint(path: Optional[PathLike] = None, xml_dir: Optional[PathLike] = None) -> str:
-    """v0p42: SHA-256 of the Mastcam-Z focus model file in use (``path``, else the one :func:`zcam_focus_model`
-    reads), so that notebook 03 can tell when a project was built with another model."""
+    """v0p42: SHA-256 of the Mastcam-Z focus model files in use (v0p53: every zoom's file, and ``path``), so that
+    notebook 03 can tell when a project was built with other models."""
     import hashlib
-    if path:
-        f = Path(path)
-    else:
-        f = zcam_focus_model_path(xml_dir)
-    return hashlib.sha256(f.read_bytes()).hexdigest()
+    h = hashlib.sha256()
+    files = [f for _, f in sorted(zcam_focus_model_files(xml_dir).items())] + ([Path(path)] if path else [])
+    for f in files:
+        h.update(Path(f).name.encode())
+        h.update(Path(f).read_bytes())
+    return h.hexdigest()
 
 
 def navcam_cameras_fingerprint(folder) -> Optional[str]:

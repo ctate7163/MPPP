@@ -31,17 +31,18 @@ def test_labels_and_site_checks():
 
 
 def test_discover_scapes(tmp_path):
-    _site(tmp_path, "rockytop_colmap", [470] * 12)
-    _site(tmp_path, "van_zyl_colmap", [60] * 12)
-    _site(tmp_path, "olifants_colmap", [1780] * 12)                 # the renamed site's block: left out
-    _site(tmp_path, "pearce_canyon_colmap", [1190] * 12, reconstruction=False)   # run in progress
-    _site(tmp_path, "sid_colmap", [365] * 12, error_input=False)
-    _site(tmp_path, "rockytop_colmap_nav_zcam34", [470] * 12)
-    _site(tmp_path, "tiny_colmap", [5] * 4)
+    _site(tmp_path, "mars2020_sol_0461_rockytop_colmap", [470] * 12)
+    _site(tmp_path, "mars2020_sol_0049_van_zyl_colmap", [60] * 12)
+    _site(tmp_path, "mars2020_sol_1880_olifants_colmap", [1780] * 12)      # the renamed site's block: left out
+    _site(tmp_path, "mars2020_sol_1183_pearce_canyon_colmap", [1190] * 12, reconstruction=False)   # run in progress
+    _site(tmp_path, "mars2020_sol_0361_sid_colmap", [365] * 12, error_input=False)
+    _site(tmp_path, "mars2020_sol_0461_rockytop_colmap_zcam", [470] * 12)
+    _site(tmp_path, "mars2020_sol_0005_tiny_colmap", [5] * 4)
+    _site(tmp_path, "rockytop_colmap_zcam34", [470] * 12)              # v0p53: names before v0p53 are not used
     (tmp_path / "camera_analysis").mkdir()
     d = discover_scapes(tmp_path, verbose=False)
-    assert list(d) == ["Van Zyl", "Sid", "Rockytop", "Rockytop N+Z34"]      # sol order
-    assert d["Rockytop"] == tmp_path / "rockytop_colmap"
+    assert list(d) == ["Van Zyl", "Sid", "Rockytop", "Rockytop N+Z"]      # sol order
+    assert d["Rockytop"] == tmp_path / "mars2020_sol_0461_rockytop_colmap"
     rows = {r["label"]: r for r in scan_scapes(tmp_path)}
     assert "no image in the site's sols 1880-1889" in rows["Olifants"]["reason"] and "origny" in rows["Olifants"]["reason"]
     assert "in progress" in rows["Pearce Canyon"]["reason"] and "< 10" in rows["Tiny"]["reason"]
@@ -59,15 +60,23 @@ def test_sites_json_is_the_site_list():
     t = S.load_site_table()
     assert len(t["sites"]) >= 32 and S.SITES["rockytop"] == (461, 530) and S.SITES["south_arm"] == (1408, 1412)
     for g, members in t["groups"].items():
-        assert members and all(m in t["sites"] for m in members), g
+        assert (members or g == "zcam110_consensus") and all(m in t["sites"] for m in members), g
     for k, v in t["sites"].items():
         assert v["sols"][0] <= v["sols"][1] and isinstance(v.get("settings", {}), dict), k
     assert {"rockytop", "south_arm", "taylorfjellet"} <= set(S.zcam34_sites(t)) and "van_zyl" not in S.zcam34_sites(t)
-    assert all(isinstance(v.get("zcam34", False), bool) for v in t["sites"].values())
-    assert S.parse_work_folder("D:/x/south_arm_colmap_nav_zcam34") == ("south_arm", True)     # before v0p50
-    assert S.parse_work_folder("D:/x/south_arm_colmap_zcam34") == ("south_arm", True)
+    assert all(isinstance(v.get("zcam"), list) and set(v["zcam"]) <= {34, 48, 63, 110} for v in t["sites"].values())
+    assert S.site_zooms(t["sites"]["sid_chal_rocks"]) == [34, 48, 63] and {"sid_chal_rocks", "bright_angle"} <= set(S.zcam_sites(t, zoom=63))
+    zc = set(t["groups"]["zcam_consensus"])
+    assert all(S.site_zooms(t["sites"][m]) for m in zc)
+    for g in ("navcam_consensus", "zcam34_consensus", "zcam48_consensus", "zcam63_consensus"):
+        assert g in t["groups"]
+    assert len(S.site_group("navcam_consensus")) == len(set(t["groups"]["navcam_consensus"]))
+    assert S.parse_work_folder("D:/x/mars2020_sol_1408_south_arm_colmap_zcam") == ("south_arm", True)
+    assert S.parse_work_folder("D:/x/mars2020_sol_0361_sid_chal_rocks_colmap") == ("sid_chal_rocks", False)
+    assert S.parse_work_folder("D:/x/south_arm_colmap_zcam34") == ("south_arm", True)     # before v0p53 (by hand)
     assert S.parse_work_folder("D:/x/sid_colmap") == ("sid", False)
-    assert S.work_folder("D:/r", "sid", True).name == "sid_colmap_zcam34"
+    assert S.work_folder("D:/r", "sid_chal_rocks", True).name == "mars2020_sol_0361_sid_chal_rocks_colmap_zcam"
+    assert S.work_folder("D:/r", "x", False, (7, 9)).name == "mars2020_sol_0007_x_colmap"
 
 
 def test_sites_file_override(tmp_path):
@@ -146,21 +155,23 @@ def test_check_sites(tmp_path):
     assert "ATTITUDE_PRIOR_DEG" in cs.notebook03_settings()
 
 
-def test_zcam34_field_and_folder_names(tmp_path):
-    """v0p50: "zcam34": true/false per site; folders <site>_colmap_zcam34 (the old _colmap_nav_zcam34 still found)."""
+def test_zcam_field_and_folder_names(tmp_path):
+    """v0p53: "zcam": [34, 48, 63, 110] per site (the older "zcam34": true is read, with a warning); folders
+    mars2020_sol_<first sol>_<site>_colmap[_zcam]."""
     import json
     from mppp.sfm import sites as S
     f = tmp_path / "s.json"
-    f.write_text(json.dumps({"sites": {"a": {"sols": [1, 2], "zcam34": True}, "b": {"sols": [3, 4], "zcam34": "False"},
-                                       "c": {"sols": [3, 4], "z34": "True"}}}))
+    f.write_text(json.dumps({"sites": {"a": {"sols": [1, 2], "zcam": [34, 110]}, "b": {"sols": [3, 4], "zcam34": "False"},
+                                       "c": {"sols": [3, 4], "z34": "True"}, "d": {"sols": [5, 6], "zcam": [35]},
+                                       "e": {"sols": [7, 8], "zcam48": True}},
+                             "groups": {"zcam63_consensus": ["a", "a"]}}))
     err, warn = S.validate_site_table(f)
     assert any("'b'" in e and "true or false" in e for e in err) and any("'z34' is now" in e for e in err)
-    assert any("same sols" in w for w in warn)
-    assert S.zcam34_sites(S.load_site_table(f)) == ["a"]
-    assert S.work_folder(tmp_path, "a", True).name == "a_colmap_zcam34"
-    (tmp_path / "a_colmap_nav_zcam34").mkdir()
-    assert S.work_folder(tmp_path, "a", True).name == "a_colmap_nav_zcam34"      # the old folder while no new one
-    (tmp_path / "a_colmap_zcam34").mkdir()
-    assert S.work_folder(tmp_path, "a", True).name == "a_colmap_zcam34"
+    assert any("'d'" in e and "34, 48, 63, 110" in e for e in err)
+    assert any("'e'" in w and "replaced by 'zcam'" in w for w in warn)
+    assert any("more than once" in w for w in warn) and any("no 63" in w for w in warn)
+    t = S.load_site_table(f)
+    assert S.zcam_sites(t) == ["a", "d", "e"] and S.zcam_sites(t, zoom=48) == ["e"] and S.zcam34_sites(t) == ["a"]
+    assert S.work_folder(tmp_path, "a", True, (1, 2)).name == "mars2020_sol_0001_a_colmap_zcam"
     err, _ = S.validate_site_table()
     assert err == []

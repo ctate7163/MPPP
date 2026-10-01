@@ -2,8 +2,8 @@
 Select and process the images of many sites (or some of them) into their WORK folders, without aligning them.
 
 The sites and their sol ranges come from the site definitions ``src/mppp/data/sites.json`` (or ``--sites-file``).
-Each site goes to ``<root>/<site>_colmap`` (Navcam) or ``<root>/<site>_colmap_zcam34`` (``--zcam``, with the
-Mastcam-Z 34 mm frames).  For each site, sections 1-2 of the newest notebook 03 in ``notebooks/`` run with its
+Each site goes to ``<root>/mars2020_sol_<first sol>_<site>_colmap`` (Navcam) or ``..._colmap_zcam`` (``--zcam``,
+with the Mastcam-Z frames of the site's ``"zcam"`` zooms; v0p53).  For each site, sections 1-2 of the newest notebook 03 in ``notebooks/`` run with its
 default settings: one PDS product per exposure is selected from the archive, then processed into
 ``<WORK>/processed`` (8-bit PNG, terrain mask, CAHV + waypoint pose, manifest).  Images already processed with
 the same configuration are reused.  The site's ``settings`` and ``no_mask_inference_at`` in the site
@@ -15,7 +15,7 @@ Then align a site by double-clicking ``align_here.bat`` copied into its WORK fol
 Examples (Windows, in the environment that runs the notebooks)::
 
     python scripts\\process_sites.py --all                          # every site, Navcam
-    python scripts\\process_sites.py --all --zcam       # Navcam + Mastcam-Z 34 mm
+    python scripts\\process_sites.py --group zcam34_consensus --zcam   # Navcam + Mastcam-Z
     python scripts\\process_sites.py --sites rockytop sid south_arm
     python scripts\\process_sites.py --sites sid --set SKY_ELEVATION_DEG=20 --force
     python scripts\\process_sites.py --status                        # every WORK folder under --root
@@ -47,7 +47,7 @@ def choose_sites(table, a, ap):
     if a.group:
         if a.group not in table.get("groups", {}):
             raise SystemExit(f"ERROR: no group {a.group!r}; groups: {sorted(table.get('groups', {}))}")
-        return list(table["groups"][a.group])
+        return list(dict.fromkeys(table["groups"][a.group]))
     if a.sites:
         return list(a.sites)
     ap.error("choose --all, --group or --sites (or --status)")
@@ -60,7 +60,7 @@ def main(argv=None) -> int:
     g.add_argument("--group", help="a site group of the site definitions (e.g. navcam_consensus)")
     g.add_argument("--sites", nargs="+", help="site names")
     ap.add_argument("--root", default="D:/scapes/colmap", help="the WORK folders go below it")
-    ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z 34 mm blocks (<site>_colmap_zcam34) of the sites with \"zcam34\": true")
+    ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z blocks (..._colmap_zcam) of the sites with a \"zcam\" list")
     ap.add_argument("--settings", default=None, help="a JSON file of notebook 03 settings for every site")
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="a notebook 03 setting")
     ap.add_argument("--sites-file", default=None, help="site definitions (default mppp/data/sites.json)")
@@ -85,8 +85,8 @@ def main(argv=None) -> int:
     if unknown:
         print(f"ERROR: not in the site definitions: {unknown}", file=sys.stderr)
         return 2
-    from run_sites import filter_zcam34
-    sites, not_z = filter_zcam34(sites, table, a.zcam, bool(a.sites))       # v0p50: --zcam: the zcam34 sites
+    from run_sites import filter_zcam
+    sites, not_z = filter_zcam(sites, table, a.zcam, bool(a.sites))         # v0p53: --zcam: sites with "zcam" zooms
     sets = parse_set(a.set)
     root.mkdir(parents=True, exist_ok=True)
     log = Log(root / "process_sites_log.txt")
@@ -94,7 +94,7 @@ def main(argv=None) -> int:
         f"root {root}, Mastcam-Z {a.zcam}, settings {sets or '-'}")
     todo = []
     for s in sites:
-        work = work_folder(root, s, a.zcam)
+        work = work_folder(root, s, a.zcam, table["sites"][s]["sols"])
         key = process_key(work_settings(work, s, a.settings, sets, a.sites_file))
         done = processed_done(work, key)
         if done and not a.force:

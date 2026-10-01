@@ -78,9 +78,10 @@ def main(argv=None) -> int:
 
     done = []
     for site in a.sites:
-        work = root / (f"{site}_colmap_nav_zcam34" if a.zcam else f"{site}_colmap")
+        from mppp.sfm.sites import work_folder
+        work = work_folder(root, site, a.zcam)
         if "03" in a.only:
-            ov = {"SITE": repr(site), "SCAPES_ROOT": f"Path(r{str(root)!r})", "INCLUDE_ZCAM34": repr(bool(a.zcam)),
+            ov = {"SITE": repr(site), "SCAPES_ROOT": f"Path(r{str(root)!r})", "INCLUDE_ZCAM": repr(bool(a.zcam)),
                   "REPROCESS_ALL": repr(bool(a.reprocess)), "STORE_MASK_IN_ALPHA": "True",
                   "NO_MASK_INFERENCE_AT": repr(mask_off.get(site, []))}
             if a.gpu_py:

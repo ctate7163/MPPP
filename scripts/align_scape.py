@@ -1,11 +1,11 @@
 """
 Align one WORK folder with notebook 03's default settings, without Jupyter open (MPPP v0p43).
 
-A WORK folder is a site folder made by notebook 03 (``<site>_colmap`` or ``<site>_colmap_zcam34``) or any
+A WORK folder is a site folder made by notebook 03 (``mars2020_sol_<sol>_<site>_colmap`` or ``..._colmap_zcam``; v0p53) or any
 folder with a ``processed/`` sub-folder (images, masks and the ``mppp_manifest_v*.json`` of notebook 01 or 03).
 By default the images already processed there are aligned (no PDS search, no image processing)::
 
-    python scripts\\align_scape.py D:\\scapes\\colmap\\south_arm_colmap_zcam34
+    python scripts\\align_scape.py D:\\scapes\\colmap\\mars2020_sol_1408_south_arm_colmap_zcam
 
 ``align_here.bat`` (scripts\\windows) does the same by double-click from inside the WORK folder.
 

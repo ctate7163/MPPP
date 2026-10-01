@@ -258,6 +258,8 @@ def rig_slopes_for_project(project) -> Optional[Dict[str, float]]:
     """v0p35: the rig's temperature model of the project's start rig (``M2020_N_rig.json`` with a ``thermal``
     entry, recorded by ``SfmProject.create``): {"yaw_mdeg_per_degC", "pitch_mdeg_per_degC", "T0_degC"} or None."""
     rig = ((project.settings.get("navcam_cameras") or {}).get("rig") or {})
+    if project.settings.get("navcam_rig_thermal") is False:      # v0p53: the rig has no temperature dependence
+        return None
     th = rig.get("thermal")
     if not (th and th.get("yaw_mdeg_per_degC") is not None):
         return None
@@ -551,6 +553,15 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
                          f"per temperature bin (v0p50) - use a subset of {INTRINSIC_CORE}")
     from .reconstruction import bundle_adjust
     before = _stats(rec, project)
+    # v0p53 (audit item 1 of 30 Sep): the bins start from the refined eye cameras, so their refined / start ratio no
+    # longer holds the block's Navcam focal scale - record the eyes' refined / start (consensus) ratio here
+    pre = {}
+    for key, cid in ((project.settings.get("database") or {}).get("cameras") or {}).items():
+        st = (project.cameras.get(key) or {}).get("params")
+        if str(key).startswith("N") and "_T" not in str(key) and st and int(cid) in rec.cameras:
+            p = rec.cameras[int(cid)].params
+            pre[key] = float(np.sqrt(p[0] * p[1]) / np.sqrt(float(st[0]) * float(st[1])))
+    project.settings["navcam_focal_scale_pre_thermal"] = pre
     r1, p1, rows = split_by_temperature(rec, project, temps, bin_deg, min_images, free, thermal_model, rig_slopes)
     project.cameras = p1.cameras
     project.settings.setdefault("database", {})["cameras"] = p1.settings["database"]["cameras"]

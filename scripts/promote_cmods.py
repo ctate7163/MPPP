@@ -10,7 +10,8 @@ Accepted files (a folder is searched for them):
 
 - ``M2020_NL_fisheye_tangential.json``, ``M2020_NR_fisheye_tangential.json`` (and the ``_rational`` pair): the
   Navcam cameras;  ``M2020_N_rig.json``: the Navcam stereo rig;
-- ``M2020_ZCAM034_focus_model*.json``: the Mastcam-Z focus model (saved as ``M2020_ZCAM034_focus_model.json``).
+- ``M2020_ZCAM<zoom>_focus_model*.json``: a Mastcam-Z focus model, one per zoom (v0p53: 034, 048, 063, 110; saved as
+  ``M2020_ZCAM<zoom>_focus_model.json``), with the zoom's distortion, principal point and rig when notebook 04 wrote them.
 
 Each file is checked (it must load as a camera / rig / focus model) before anything is copied.  Files it replaces
 go to ``cmods/history/<date-time>/``, and ``cmods/CHANGES.md`` gets a line with the source, the note
@@ -34,6 +35,14 @@ sys.path.insert(0, str(ROOT / "src"))
 NAVCAM = ("M2020_NL_fisheye_tangential.json", "M2020_NR_fisheye_tangential.json", "M2020_NL_rational.json",
           "M2020_NR_rational.json", "M2020_N_rig.json")
 ZCAM = "M2020_ZCAM034_focus_model.json"
+import re as _re
+_ZCAM_RE = _re.compile(r"M2020_ZCAM(\d{3})_focus_model.*\.json")
+
+
+def _zcam_name(fname: str):
+    """``M2020_ZCAM048_focus_model_candidate.json`` -> ``M2020_ZCAM048_focus_model.json`` (v0p53); None otherwise."""
+    m = _ZCAM_RE.fullmatch(fname)
+    return f"M2020_ZCAM{m.group(1)}_focus_model.json" if m else None
 
 
 def target_dir() -> Path:
@@ -49,11 +58,11 @@ def collect(sources):
         for f in files:
             if f.name in NAVCAM:
                 out[f.name] = f
-            elif f.name.startswith("M2020_ZCAM034_focus_model"):
-                out[ZCAM] = f
-        if s.is_file() and s.name not in NAVCAM and not s.name.startswith("M2020_ZCAM034_focus_model"):
+            elif _zcam_name(f.name):
+                out[_zcam_name(f.name)] = f
+        if s.is_file() and s.name not in NAVCAM and not _zcam_name(s.name):
             raise SystemExit(f"ERROR: {s.name} is not a camera model file this script knows ({', '.join(NAVCAM)}, "
-                             f"M2020_ZCAM034_focus_model*.json)")
+                             f"M2020_ZCAM<zoom>_focus_model*.json)")
     return out
 
 
@@ -65,10 +74,16 @@ def check(name: str, f: Path) -> str:
         if "R_sensor_from_ref" not in d and "rotation" not in json.dumps(d).lower():
             raise ValueError("no rig rotation in it")
         return f"rig, baseline {d.get('baseline_m', '?')} m"
-    if name == ZCAM:
+    if _zcam_name(name):
         if not isinstance(d.get("cameras"), dict) or not d["cameras"]:
             raise ValueError("no 'cameras' in it")
-        return f"focus model for {sorted(d['cameras'])}"
+        zoom = name[10:13]
+        bad = [g for g in d["cameras"] if str(g)[2:5] != zoom]
+        if bad:
+            raise ValueError(f"cameras {bad} are not of the {int(zoom)} mm zoom")
+        extra = [k for k in ("distortion", "pp0_px") if any(k in c for c in d["cameras"].values())]
+        return (f"focus model for {sorted(d['cameras'])}" + (f" with {', '.join(extra)}" if extra else "")
+                + (" and rig" if d.get("rig") else ""))
     cam = camera_from_colmap_json(f)
     th = d.get("thermal") or {}
     return (f"{cam['model']} {cam['width']}x{cam['height']}, fx {cam['params'][0]:.2f}"

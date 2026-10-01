@@ -123,10 +123,12 @@ def processed_stems(out_dir: PathLike) -> set:
 
 
 SCOPE_CAMERA_CODES = ("NLF", "NRF", "ZL0", "ZR0")
+SCOPE_ZCAM_ZOOMS = (34, 48, 63, 110)          # v0p53: the Mastcam-Z zooms (mm) the COLMAP pipeline aligns
 
 
 def _warn_out_of_scope(paths: Sequence[Path]) -> None:
-    """v0p20: MPPP supports Navcam and Mastcam-Z at 34 mm; other products are processed but untested."""
+    """v0p20: MPPP supports Navcam and Mastcam-Z at 34 mm (v0p53: 34, 48, 63, 110 mm); other products are processed but
+    untested."""
     from .filenames import parse_filename
     other = []
     for p in paths:
@@ -134,12 +136,12 @@ def _warn_out_of_scope(paths: Sequence[Path]) -> None:
             fn = parse_filename(p)
         except ValueError:
             continue
-        if fn.camera_code not in SCOPE_CAMERA_CODES or (fn.family == "Z" and fn.zoom_mm != 34):
+        if fn.camera_code not in SCOPE_CAMERA_CODES or (fn.family == "Z" and fn.zoom_mm not in SCOPE_ZCAM_ZOOMS):
             other.append(p.name)
     if other:
         import warnings
         warnings.warn(f"{len(other)} products are outside MPPP's supported scope (Navcam NLF/NRF, Mastcam-Z ZL0/ZR0 "
-                      f"at 34 mm), e.g. {other[0]}: they are processed, but untested, and the COLMAP pipeline "
+                      f"at 34, 48, 63, 110 mm), e.g. {other[0]}: they are processed, but untested, and the COLMAP pipeline "
                       f"refuses them")
 
 

@@ -3,7 +3,7 @@ The Navcam sites and their notebook 03 alignments (v0p40).
 
 ``SITES`` is the default site list of notebook 03 (name -> sol range of the block), read from the stable site
 definitions file ``mppp/data/sites.json`` (v0p43; :func:`load_site_table`).  :func:`discover_scapes` walks ``SCAPES_ROOT`` (``D:/scapes/colmap``) for the WORK folders notebook 03
-made (``<site>_colmap``, and ``<site>_colmap_zcam34`` with Mastcam-Z; v0p50, before ``_colmap_nav_zcam34``) and returns the ones that hold a finished
+made (v0p53: ``mars2020_sol_<first sol 0000>_<site>_colmap``, and ``..._colmap_zcam`` with Mastcam-Z) and returns the ones that hold a finished
 alignment, labelled and in sol order, for notebooks 04 (camera models) and 05 (error analysis).  :func:`scan_scapes`
 returns every folder with the reason it was left out.
 """
@@ -21,8 +21,9 @@ SITES_FILE = Path(__file__).resolve().parents[1] / "data" / "sites.json"     # v
 
 def load_site_table(path: Optional[PathLike] = None) -> Dict[str, Any]:
     """v0p43: the site definitions file (``mppp/data/sites.json`` by default): ``{"sites": {name: {"sols": [a, b],
-    "label", "zcam34", "note", "no_mask_inference_at", "settings"}}, "groups": {name: [site, ...]}}``.  ``zcam34``
-    (v0p50, true / false): the site also has a Navcam + Mastcam-Z 34 mm block (``<site>_colmap_zcam34``)."""
+    "label", "zcam", "note", "no_mask_inference_at", "settings"}}, "groups": {name: [site, ...]}}``.  ``zcam``
+    (v0p53, a list of Mastcam-Z zooms in mm, 34 / 48 / 63 / 110; before: ``"zcam34": true``): the site also has a Navcam +
+    Mastcam-Z block with those zooms (``mars2020_sol_<sol>_<site>_colmap_zcam``)."""
     f = Path(path) if path else SITES_FILE
     d = json.loads(f.read_text(encoding="utf-8"))
     if not isinstance(d.get("sites"), dict):
@@ -44,18 +45,39 @@ def load_sites(path: Optional[PathLike] = None) -> Dict[str, Tuple[int, int]]:
     return out
 
 
-def zcam34_sites(table: Optional[Dict[str, Any]] = None, path: Optional[PathLike] = None) -> List[str]:
-    """v0p50: the sites whose definition has ``"zcam34": true`` (the Navcam + Mastcam-Z 34 mm blocks), in file order."""
+ZCAM_ZOOMS = (34, 48, 63, 110)     # v0p53: the Mastcam-Z zooms (mm) MPPP aligns
+
+
+def site_zooms(v: Any) -> List[int]:
+    """v0p53: the Mastcam-Z zooms of one site definition: ``"zcam": [34, 48]``; the older ``"zcam34": true``
+    (``"zcam48"``, ``"zcam63"``) is still read."""
+    if not isinstance(v, dict):
+        return []
+    z = v.get("zcam")
+    if isinstance(z, list):
+        return sorted({int(x) for x in z})
+    return [zz for zz in ZCAM_ZOOMS if v.get(f"zcam{zz}") is True]
+
+
+def zcam_sites(table: Optional[Dict[str, Any]] = None, path: Optional[PathLike] = None,
+               zoom: Optional[int] = None) -> List[str]:
+    """v0p53: the sites with a Navcam + Mastcam-Z block (any zoom, or ``zoom``), in file order."""
     t = table if table is not None else load_site_table(path)
-    return [k for k, v in t["sites"].items() if isinstance(v, dict) and v.get("zcam34") is True]
+    return [k for k, v in t["sites"].items() if site_zooms(v) and (zoom is None or int(zoom) in site_zooms(v))]
+
+
+def zcam34_sites(table: Optional[Dict[str, Any]] = None, path: Optional[PathLike] = None) -> List[str]:
+    """v0p50: the sites with Mastcam-Z 34 mm (v0p53: :func:`zcam_sites` with ``zoom=34``)."""
+    return zcam_sites(table, path, 34)
 
 
 def site_group(name: str, path: Optional[PathLike] = None) -> List[str]:
-    """v0p43: the sites of a group in the site definitions file (e.g. ``"nav_zcam34"``)."""
+    """v0p43: the sites of a group in the site definitions file (e.g. ``"navcam_consensus"``); v0p53: a site listed
+    twice is used once."""
     groups = load_site_table(path).get("groups", {})
     if name not in groups:
         raise KeyError(f"no site group {name!r}; groups: {sorted(groups)}")
-    return list(groups[name])
+    return list(dict.fromkeys(groups[name]))
 
 
 def validate_site_table(path: Optional[PathLike] = None,
@@ -86,8 +108,8 @@ def validate_site_table(path: Optional[PathLike] = None,
     for name, v in sites.items():
         if not re.fullmatch(r"[a-z0-9_]+", name):
             warn.append(f"site {name!r}: use lower case letters, digits and _ (it becomes a folder name)")
-        if name.endswith(("_colmap", "_zcam34")):
-            err.append(f"site {name!r}: the name must not end in _colmap / _zcam34 (the folder suffixes)")
+        if name.endswith(("_colmap", "_zcam34", "_zcam")):
+            err.append(f"site {name!r}: the name must not end in _colmap / _zcam (the folder suffixes)")
         if not isinstance(v, dict):
             err.append(f"site {name!r}: must be an object like {{\"sols\": [700, 712]}}")
             continue
@@ -98,11 +120,22 @@ def validate_site_table(path: Optional[PathLike] = None,
         if sols[1] < sols[0]:
             err.append(f"site {name!r}: sols {sols} end before they start")
         ranges[name] = sols
-        if "zcam34" in v and not isinstance(v["zcam34"], bool):
-            err.append(f"site {name!r}: 'zcam34' must be true or false (JSON, no quotes), not {v['zcam34']!r}")
+        if "zcam" in v:
+            z = v["zcam"]
+            if not (isinstance(z, list) and all(isinstance(x, int) and not isinstance(x, bool) for x in z)):
+                err.append(f"site {name!r}: 'zcam' must be a list of zooms like [34, 48] (or []), not {z!r}")
+            elif set(z) - set(ZCAM_ZOOMS):
+                err.append(f"site {name!r}: 'zcam' {z}: MPPP aligns the Mastcam-Z zooms {list(ZCAM_ZOOMS)} only")
+        for old in ("zcam34", "zcam48", "zcam63", "zcam110"):
+            if old in v:
+                if not isinstance(v[old], bool):
+                    err.append(f"site {name!r}: '{old}' must be true or false, not {v[old]!r} (v0p53: use 'zcam': [34, ...])")
+                else:
+                    warn.append(f"site {name!r}: '{old}' is read but is replaced by 'zcam': [34, 48, 63] (v0p53)")
         if "z34" in v:
-            err.append(f"site {name!r}: 'z34' is now 'zcam34': true / false (v0p50)")
-        unknown = set(v) - {"sols", "label", "zcam34", "z34", "note", "no_mask_inference_at", "settings"}
+            err.append(f"site {name!r}: 'z34' is now 'zcam': [34] (v0p53)")
+        unknown = set(v) - {"sols", "label", "zcam", "zcam34", "zcam48", "zcam63", "zcam110", "z34", "note",
+                            "no_mask_inference_at", "settings"}
         if unknown:
             warn.append(f"site {name!r}: unknown fields {sorted(unknown)} are ignored")
         try:
@@ -128,6 +161,15 @@ def validate_site_table(path: Optional[PathLike] = None,
             missing = [m for m in members if m not in sites]
             if missing:
                 err.append(f"group {g!r}: {missing} are not sites")
+            dup = sorted({m for m in members if members.count(m) > 1})
+            if dup:
+                warn.append(f"group {g!r}: {dup} listed more than once (used once)")
+            import re as _re
+            mz = _re.fullmatch(r"zcam(\d+)_consensus", str(g))
+            if mz:
+                no_z = [m for m in members if m in sites and int(mz.group(1)) not in site_zooms(sites[m])]
+                if no_z:
+                    warn.append(f"group {g!r}: {no_z} have no {mz.group(1)} in their 'zcam' list")
     names = sorted(ranges, key=lambda k: ranges[k][0])
     for i, a in enumerate(names):
         for b in names[i + 1:]:
@@ -153,9 +195,10 @@ except Exception as _e:                                 # noqa: BLE001 - a broke
     SITES = {}
 
 _WORDS = {"threeforks": "Three Forks", "seitah": "Seitah"}
-ZCAM_SUFFIX = "_colmap_zcam34"              # v0p50 (Navcam is in every block)
-LEGACY_ZCAM_SUFFIX = "_colmap_nav_zcam34"    # before v0p50: still recognised (scripts/rename_zcam34_folders.py)
+FOLDER_PREFIX = "mars2020_sol_"              # v0p53: mars2020_sol_<first sol, 4 digits>_<site>_colmap[_zcam]
+ZCAM_SUFFIX = "_colmap_zcam"                 # v0p53 (Navcam is in every block; any Mastcam-Z zoom)
 NAV_SUFFIX = "_colmap"
+_OLD_ZCAM_SUFFIXES = ("_colmap_zcam34", "_colmap_nav_zcam34")   # before v0p53: read by parse_work_folder only
 
 
 def site_label(name: str) -> str:
@@ -172,28 +215,52 @@ def check_sites(sites: Dict[str, Sequence[int]]) -> List[str]:
     return out
 
 
-def work_folder(root: PathLike, site: str, zcam: bool = False) -> Path:
-    """Notebook 03's WORK folder of a site: ``<root>/<site>_colmap`` or ``<root>/<site>_colmap_zcam34`` (v0p50).  A
-    folder of the old name ``<site>_colmap_nav_zcam34`` is used while no folder of the new name exists."""
-    if not zcam:
-        return Path(root) / (site + NAV_SUFFIX)
-    new, old = Path(root) / (site + ZCAM_SUFFIX), Path(root) / (site + LEGACY_ZCAM_SUFFIX)
-    return old if (old.is_dir() and not new.exists()) else new
+def folder_name(site: str, first_sol: int, zcam: bool = False) -> str:
+    """v0p53: ``mars2020_sol_1451_bell_island_colmap`` (``..._colmap_zcam`` with Mastcam-Z)."""
+    return f"{FOLDER_PREFIX}{int(first_sol):04d}_{site}" + (ZCAM_SUFFIX if zcam else NAV_SUFFIX)
+
+
+def work_folder(root: PathLike, site: str, zcam: bool = False,
+                sols: Optional[Sequence[int]] = None) -> Path:
+    """Notebook 03's WORK folder of a site (v0p53): ``<root>/mars2020_sol_<first sol>_<site>_colmap`` or
+    ``..._colmap_zcam``.  ``sols``: the site's sol range (default: from the site definitions file)."""
+    if sols is None:
+        table = SITES if site in SITES else load_sites()
+        if site not in table:
+            raise KeyError(f"site {site!r} is not in the site definitions ({SITES_FILE}); give sols=(first, last)")
+        sols = table[site]
+    return Path(root) / folder_name(site, int(sols[0]), zcam)
 
 
 def parse_work_folder(folder: PathLike) -> Tuple[Optional[str], bool]:
-    """v0p43: ``(site, with Mastcam-Z)`` from a WORK folder name; ``(None, False)`` for another name."""
-    return _site_of_folder(Path(folder))
-
-
-def _site_of_folder(folder: Path) -> Tuple[Optional[str], bool]:
-    n = folder.name
-    for suf in (ZCAM_SUFFIX, LEGACY_ZCAM_SUFFIX):
+    """v0p43: ``(site, with Mastcam-Z)`` from a WORK folder name; ``(None, False)`` for another name.  v0p53:
+    ``mars2020_sol_<sol>_<site>_colmap[_zcam]``; the names before v0p53 (``<site>_colmap``, ``<site>_colmap_zcam34``)
+    are still read here, for a WORK_DIR given by hand."""
+    site, z = _site_of_folder(Path(folder))
+    if site is not None:
+        return site, z
+    n = Path(folder).name
+    for suf in _OLD_ZCAM_SUFFIXES:
         if n.endswith(suf):
             return n[: -len(suf)], True
     if n.endswith(NAV_SUFFIX):
         return n[: -len(NAV_SUFFIX)], False
     return None, False
+
+
+_FOLDER_RE = None
+
+
+def _site_of_folder(folder: Path) -> Tuple[Optional[str], bool]:
+    """v0p53 names only (``discover_scapes`` / ``scan_scapes`` skip the folders of earlier versions)."""
+    import re
+    global _FOLDER_RE
+    if _FOLDER_RE is None:
+        _FOLDER_RE = re.compile(r"mars2020_sol_(\d{4,})_(.+?)_colmap(_zcam)?")
+    m = _FOLDER_RE.fullmatch(folder.name)
+    if not m:
+        return None, False
+    return m.group(2), bool(m.group(3))
 
 
 def _in_range(s: int, r: Sequence[int]) -> bool:
@@ -222,8 +289,8 @@ def scan_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = None
         site, zcam = _site_of_folder(folder)
         if site is None:
             continue                                           # camera_analysis and other folders
-        label = site_label(site) + (" N+Z34" if zcam else "")
-        row: Dict[str, Any] = {"label": label, "site": site, "zcam34": zcam, "folder": str(folder), "ok": False,
+        label = site_label(site) + (" N+Z" if zcam else "")
+        row: Dict[str, Any] = {"label": label, "site": site, "zcam": zcam, "zcam34": zcam, "folder": str(folder), "ok": False,
                                "reason": None, "in_sites": site in sites,
                                "site_sols": list(sites[site]) if site in sites else None}
         rows.append(row)

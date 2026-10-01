@@ -50,10 +50,10 @@ def test_process_sites_dry_run(tmp_path, capsys):
     spec.loader.exec_module(ps)
     assert ps.main(["--sites", "sid_chal_rocks", "rockytop", "--root", str(tmp_path), "--dry-run"]) == 0
     log = (tmp_path / "process_sites_log.txt").read_text()
-    assert "sid_chal_rocks: would run" in log and "rockytop_colmap" in log
+    assert "sid_chal_rocks: would run" in log and "mars2020_sol_0461_rockytop_colmap" in log
     assert ps.main(["--all", "--zcam", "--root", str(tmp_path), "--dry-run"]) == 0
     log = (tmp_path / "process_sites_log.txt").read_text()
-    assert "rockytop_colmap_zcam34" in log and "van_zyl_colmap_zcam34" not in log      # v0p50: zcam34 sites only
+    assert "mars2020_sol_0461_rockytop_colmap_zcam" in log and "van_zyl_colmap_zcam" not in log   # v0p53: "zcam" sites only
     assert ps.main(["--sites", "nowhere", "--root", str(tmp_path), "--dry-run"]) == 2
 
 
@@ -190,25 +190,24 @@ def test_run_all_sites_bat_files_navcam_and_zcam34():
     assert b"--zcam" not in nav.split(b"start ")[-1] and b"%WHICH% --zcam" in z
 
 
-def test_filter_zcam34_and_rename_script(tmp_path):
-    import importlib.util
+def test_filter_zcam_and_consensus_bats(tmp_path):
     import sys
     sys.path.insert(0, str(ROOT / "scripts"))
     import run_sites
-    table = {"sites": {"a": {"sols": [1, 2], "zcam34": True}, "b": {"sols": [3, 4], "zcam34": False}}}
-    assert run_sites.filter_zcam34(["a", "b"], table, True, False) == (["a"], ["b"])
-    assert run_sites.filter_zcam34(["a", "b"], table, False, False) == (["a", "b"], [])
-    assert run_sites.filter_zcam34(["b"], table, True, True) == (["b"], [])
-    old = tmp_path / "x_colmap_nav_zcam34"
-    (old / "colmap").mkdir(parents=True)
-    (old / "colmap" / "project.json").write_text(json.dumps({"processed_dir": str(old / "processed")}))
-    spec = importlib.util.spec_from_file_location("rz", ROOT / "scripts" / "rename_zcam34_folders.py")
-    rz = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(rz)
-    assert rz.main(["--root", str(tmp_path)]) == 0 and old.is_dir()                  # dry run
-    assert rz.main(["--root", str(tmp_path), "--apply"]) == 0 and not old.exists()
-    pj = json.loads((tmp_path / "x_colmap_zcam34" / "colmap" / "project.json").read_text())
-    assert pj["processed_dir"].endswith("x_colmap_zcam34" + ("\\" if "\\" in pj["processed_dir"] else "/") + "processed")
+    table = {"sites": {"a": {"sols": [1, 2], "zcam": [34]}, "b": {"sols": [3, 4], "zcam": []},
+                       "c": {"sols": [5, 6], "zcam34": True}}}
+    assert run_sites.filter_zcam(["a", "b", "c"], table, True, False) == (["a", "c"], ["b"])
+    assert run_sites.filter_zcam(["a", "b"], table, False, False) == (["a", "b"], [])
+    assert run_sites.filter_zcam(["b"], table, True, True) == (["b"], [])
+    assert not (ROOT / "scripts" / "rename_zcam34_folders.py").exists()                 # v0p53: no renaming
+    win = ROOT / "scripts" / "windows"
+    assert 'set "WHICH=--group navcam_consensus"' in (win / "run_all_sites.bat").read_text()
+    t = (win / "run_all_sites_zcam.bat").read_text()           # v0p53: every Mastcam-Z consensus block
+    assert 'set "WHICH=--group zcam_consensus"' in t and "--zcam" in t
+    assert 'set "EXTRA=--set ZCAM_ZOOMS=all"' in t                    # every zoom found on disk
+    for z in (34, 48, 63, 110):                                  # v0p53: each runs its consensus group
+        t = (win / f"run_all_sites_zcam{z}.bat").read_text()
+        assert f'set "WHICH=--group zcam{z}_consensus"' in t and "--zcam" in t, z
 
 
 def test_experiment_scripts_live_in_studies():
