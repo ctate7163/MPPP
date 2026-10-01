@@ -2,6 +2,15 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.53.1 — 2026-10-01
+
+- **Mastcam-Z now takes the same nearby visits as the Navcam.** The `chal_rocks_sid` (was `sid_chal_rocks`) Mastcam-Z run would have had no Mastcam-Z frames from sols 91-101.
+  - Cause: `find_imgs_near` started the nearby-waypoint search (`ADD_NEARBY_WAYPOINTS`) from the stations where *that camera and zoom* imaged inside the site's sols. A zoom with no frame in 361-378 got nothing, and the others only got visits near their own stations.
+  - Fix: notebook 03 now starts every zoom's search from the Navcam block's stations (`find_imgs_near(..., anchor_stations=)`). Each zoom gets the products of the same added stations as the Navcam.
+- **Mastcam-Z 79 mm** is in scope (34, 48, 63, 79, 110). `run_all_sites_zcam79.bat` runs the new (empty) `zcam79_consensus` group.
+- **The `run_all_sites_zcam*.bat` files run their group only, with each site's own `"zcam"` list.** `run_all_sites_zcam.bat` no longer sets `ZCAM_ZOOMS=all` and runs the sites of `zcam_consensus` (`chal_rocks_sid`). `ZCAM_ZOOMS = "all"` is still a notebook 03 option.
+- sites.json is Christian's of 1 Oct: Chal Rocks Sid, Chal Rocks Sid Large (sols 74-100), Seitah Overlook, Tenby Berea, and more zooms.
+
 ## 0.53.0 — 2026-10-01
 
 New folder names, the consensus groups, Mastcam-Z 48, 63 and 110 mm, one Mastcam-Z distortion, principal point and rig per zoom, and no rig temperature term.

@@ -1,8 +1,8 @@
 @echo off
 REM ======================================================================================================
-REM MPPP - process and align the Navcam + Mastcam-Z block of every site of the zcam_consensus group of
+REM MPPP - process and align the Navcam + Mastcam-Z block of every site of the zcam79_consensus group of
 REM src\mppp\data\sites.json into its own WORK folder mars2020_sol_<sol>_<site>_colmap_zcam under ROOT (v0p53;
-REM the block has the Mastcam-Z zooms of the site's "zcam" list),
+REM the block has all the Mastcam-Z zooms of the site's "zcam" list),
 REM one site after the other, in the background (a minimised window; closing it stops the batch).
 REM Finished sites (same settings) are skipped, so double-clicking again continues where it stopped.
 REM
@@ -14,8 +14,8 @@ REM Edit the settings below (or run scripts\run_sites.py from a prompt; --help l
 REM ======================================================================================================
 setlocal
 set "ROOT=D:\scapes\colmap"
-REM which sites: --group zcam_consensus (v0p53 default), --all (every site with a "zcam" list), or --sites a b
-set "WHICH=--group zcam_consensus"
+REM which sites: --group zcam79_consensus (v0p53 default), --all (every site with a "zcam" list), or --sites a b
+set "WHICH=--group zcam79_consensus"
 REM more options, e.g. --then 04 05   (camera models and error analysis at the end)
 REM                    --source processed --variant tight --set ATTITUDE_PRIOR_DEG=1.0
 set "EXTRA="
@@ -31,7 +31,7 @@ if not exist "%MPPP_WIN%\mppp_env.bat" (
   exit /b 1
 )
 call "%MPPP_WIN%\mppp_env.bat" || ( pause & exit /b 1 )
-start "MPPP run_sites zcam - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% --zcam %EXTRA% %*
+start "MPPP run_sites zcam79 - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% --zcam %EXTRA% %*
 echo MPPP run_sites started in a minimised window. Log: "%ROOT%\run_sites_log.txt"
 echo Status of every site: sites_status.bat
 timeout /t 10

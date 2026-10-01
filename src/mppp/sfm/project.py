@@ -34,8 +34,8 @@ ZCAM_XML_PATTERN = "{camera}_frame.xml"            # Mastcam-Z, per eye and zoom
 NAVCAM_RATIONAL_PATTERN = "M2020_{instrument}_rational.json"   # v0p20: COLMAP rational Navcam cameras (full frame)
 NAVCAM_FISHEYE_PATTERN = "M2020_{instrument}_fisheye_tangential.json"   # v0p35: THIN_PRISM_FISHEYE (sx1 = sy1 = 0)
 NAVCAM_DISTORTION = "rational"                     # default: "rational" (full frame) or "polynomial" (Metashape K1-K3)
-SCOPE = "Navcam (NLF/NRF) and Mastcam-Z at 34, 48, 63, 110 mm (ZL0/ZR0 _034, _048, _063, _110; v0p53)"
-SCOPE_ZCAM_ZOOMS = (34, 48, 63, 110)
+SCOPE = "Navcam (NLF/NRF) and Mastcam-Z at 34, 48, 63, 79, 110 mm (ZL0/ZR0 _034, _048, _063, _079, _110; v0p53)"
+SCOPE_ZCAM_ZOOMS = (34, 48, 63, 79, 110)
 SCOPE_CAMERA_CODES = ("NLF", "NRF", "ZL0", "ZR0")
 # v0p50: parameter names per COLMAP model (reconstruction._PARAM_NAMES is this table)
 PARAM_NAMES = {"FULL_OPENCV": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6"),
@@ -55,7 +55,7 @@ NAVCAM_RIG_YAW_SETTINGS = ("hold", "refine", "zero")
 ZEROED_TERMS = ("b1", "b2")          # v0p20: p1, p2 kept from the calibration (was also zeroed), as notebook 03
 ZCAM_FOCUS_BIN = 30.0                               # focus motor counts per Mastcam-Z camera bin (v0p14.4)
 ZCAM_FOCUS_MODEL = "M2020_ZCAM034_focus_model.json"  # v0p22: Mastcam-Z 34 mm focal length against focus count
-ZCAM_FOCUS_MODEL_PATTERN = "M2020_ZCAM{zoom:03d}_focus_model.json"   # v0p53: one file per zoom (34, 48, 63, 110)
+ZCAM_FOCUS_MODEL_PATTERN = "M2020_ZCAM{zoom:03d}_focus_model.json"   # v0p53: one file per zoom (34, 48, 63, 79, 110)
 ZCAM_BIN_REFINE_SETTINGS = ("focal", "all", "model")  # v0p53 "model": f held at the focus model (linear in focus)
 ZCAM_HOLD_F_IMAGES = 2                              # v0p22: focus bins with <= this many images hold f at the model
 NAVCAM_RIG = "consensus"                            # v0p22: Navcam rig rotation starts from the refined consensus

@@ -1,5 +1,5 @@
 """
-Mastcam-Z start models from the label CAHVOR models (MPPP v0p53): for each zoom (34, 48, 63, 110 mm) and eye, a
+Mastcam-Z start models from the label CAHVOR models (MPPP v0p53): for each zoom (34, 48, 63, 79, 110 mm) and eye, a
 Metashape frame calibration (``ZL048_frame.xml`` ...) and a provisional focus model
 (``M2020_ZCAM048_focus_model.json``) estimated from the label camera models of the processed images.
 
@@ -133,7 +133,7 @@ def focus_model(zoom: int, eyes) -> dict:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("folders", nargs="+", help="WORK folders (or processed/ folders) with Mastcam-Z images")
-    ap.add_argument("--zooms", nargs="*", type=int, default=[48, 63, 110], help="zooms in mm (default 48 63 110)")
+    ap.add_argument("--zooms", nargs="*", type=int, default=[48, 63, 79, 110], help="zooms in mm (default 48 63 79 110)")
     ap.add_argument("--out", required=True, help="output folder (XMLs and focus models)")
     ap.add_argument("--backlash-ratio", type=float, default=1.0,
                     help="f0 = label f0 x this (default 1.0; 34 mm backlash state: about 1.009)")

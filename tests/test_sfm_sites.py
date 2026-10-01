@@ -60,12 +60,12 @@ def test_sites_json_is_the_site_list():
     t = S.load_site_table()
     assert len(t["sites"]) >= 32 and S.SITES["rockytop"] == (461, 530) and S.SITES["south_arm"] == (1408, 1412)
     for g, members in t["groups"].items():
-        assert (members or g == "zcam110_consensus") and all(m in t["sites"] for m in members), g
+        assert (members or g in ("zcam79_consensus", "zcam110_consensus")) and all(m in t["sites"] for m in members), g
     for k, v in t["sites"].items():
         assert v["sols"][0] <= v["sols"][1] and isinstance(v.get("settings", {}), dict), k
     assert {"rockytop", "south_arm", "taylorfjellet"} <= set(S.zcam34_sites(t)) and "van_zyl" not in S.zcam34_sites(t)
-    assert all(isinstance(v.get("zcam"), list) and set(v["zcam"]) <= {34, 48, 63, 110} for v in t["sites"].values())
-    assert S.site_zooms(t["sites"]["sid_chal_rocks"]) == [34, 48, 63] and {"sid_chal_rocks", "bright_angle"} <= set(S.zcam_sites(t, zoom=63))
+    assert all(isinstance(v.get("zcam"), list) and set(v["zcam"]) <= {34, 48, 63, 79, 110} for v in t["sites"].values())
+    assert 34 in S.site_zooms(t["sites"]["chal_rocks_sid"]) and "bright_angle" in S.zcam_sites(t, zoom=63)
     zc = set(t["groups"]["zcam_consensus"])
     assert all(S.site_zooms(t["sites"][m]) for m in zc)
     for g in ("navcam_consensus", "zcam34_consensus", "zcam48_consensus", "zcam63_consensus"):
@@ -75,7 +75,7 @@ def test_sites_json_is_the_site_list():
     assert S.parse_work_folder("D:/x/mars2020_sol_0361_sid_chal_rocks_colmap") == ("sid_chal_rocks", False)
     assert S.parse_work_folder("D:/x/south_arm_colmap_zcam34") == ("south_arm", True)     # before v0p53 (by hand)
     assert S.parse_work_folder("D:/x/sid_colmap") == ("sid", False)
-    assert S.work_folder("D:/r", "sid_chal_rocks", True).name == "mars2020_sol_0361_sid_chal_rocks_colmap_zcam"
+    assert S.work_folder("D:/r", "chal_rocks_sid", True).name == "mars2020_sol_0361_chal_rocks_sid_colmap_zcam"
     assert S.work_folder("D:/r", "x", False, (7, 9)).name == "mars2020_sol_0007_x_colmap"
 
 
@@ -167,7 +167,7 @@ def test_zcam_field_and_folder_names(tmp_path):
                              "groups": {"zcam63_consensus": ["a", "a"]}}))
     err, warn = S.validate_site_table(f)
     assert any("'b'" in e and "true or false" in e for e in err) and any("'z34' is now" in e for e in err)
-    assert any("'d'" in e and "34, 48, 63, 110" in e for e in err)
+    assert any("'d'" in e and "34, 48, 63, 79, 110" in e for e in err)
     assert any("'e'" in w and "replaced by 'zcam'" in w for w in warn)
     assert any("more than once" in w for w in warn) and any("no 63" in w for w in warn)
     t = S.load_site_table(f)

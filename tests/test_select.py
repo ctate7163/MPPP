@@ -93,6 +93,14 @@ def test_stations_near_and_find_imgs_near(tmp_path):
                                       "sols": [600, 600]}]
     paths0, rep0 = find_imgs_near(tmp_path, ["NLF", "NRF"], (455, 480), wps, radius_m=None)
     assert len(paths0) == 3 and rep0["n_added"] == 0
+    # v0p53.1: Mastcam-Z with no image in the sol range still gets the nearby visit, from the Navcam stations
+    zname = "ZL0_0600_0700000000_000RAD_N0300100ZCAM00100_0340LMJ01.IMG"
+    (tmp_path / zname).write_bytes(b"")
+    zp, _ = find_imgs_near(tmp_path, ["ZL0"], (455, 480), wps, radius_m=5.0, sequ_id="_034")
+    assert zp == []                                                     # no Mastcam-Z station in range: nothing
+    zp, zr = find_imgs_near(tmp_path, ["ZL0"], (455, 480), wps, radius_m=5.0, sequ_id="_034",
+                            anchor_stations=rep["stations_in_range"])
+    assert [p.name for p in zp] == [zname] and zr["stations_added"][0]["station"] == "S030D0100"
 
 
 def test_select_best_products_leaves_out_navcam_tiles(tmp_path, monkeypatch):

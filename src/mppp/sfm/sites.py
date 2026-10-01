@@ -22,7 +22,7 @@ SITES_FILE = Path(__file__).resolve().parents[1] / "data" / "sites.json"     # v
 def load_site_table(path: Optional[PathLike] = None) -> Dict[str, Any]:
     """v0p43: the site definitions file (``mppp/data/sites.json`` by default): ``{"sites": {name: {"sols": [a, b],
     "label", "zcam", "note", "no_mask_inference_at", "settings"}}, "groups": {name: [site, ...]}}``.  ``zcam``
-    (v0p53, a list of Mastcam-Z zooms in mm, 34 / 48 / 63 / 110; before: ``"zcam34": true``): the site also has a Navcam +
+    (v0p53, a list of Mastcam-Z zooms in mm, 34 / 48 / 63 / 79 / 110; before: ``"zcam34": true``): the site also has a Navcam +
     Mastcam-Z block with those zooms (``mars2020_sol_<sol>_<site>_colmap_zcam``)."""
     f = Path(path) if path else SITES_FILE
     d = json.loads(f.read_text(encoding="utf-8"))
@@ -45,7 +45,7 @@ def load_sites(path: Optional[PathLike] = None) -> Dict[str, Tuple[int, int]]:
     return out
 
 
-ZCAM_ZOOMS = (34, 48, 63, 110)     # v0p53: the Mastcam-Z zooms (mm) MPPP aligns
+ZCAM_ZOOMS = (34, 48, 63, 79, 110) # v0p53: the Mastcam-Z zooms (mm) MPPP aligns
 
 
 def site_zooms(v: Any) -> List[int]:
@@ -126,7 +126,7 @@ def validate_site_table(path: Optional[PathLike] = None,
                 err.append(f"site {name!r}: 'zcam' must be a list of zooms like [34, 48] (or []), not {z!r}")
             elif set(z) - set(ZCAM_ZOOMS):
                 err.append(f"site {name!r}: 'zcam' {z}: MPPP aligns the Mastcam-Z zooms {list(ZCAM_ZOOMS)} only")
-        for old in ("zcam34", "zcam48", "zcam63", "zcam110"):
+        for old in ("zcam34", "zcam48", "zcam63", "zcam79", "zcam110"):
             if old in v:
                 if not isinstance(v[old], bool):
                     err.append(f"site {name!r}: '{old}' must be true or false, not {v[old]!r} (v0p53: use 'zcam': [34, ...])")
@@ -134,7 +134,7 @@ def validate_site_table(path: Optional[PathLike] = None,
                     warn.append(f"site {name!r}: '{old}' is read but is replaced by 'zcam': [34, 48, 63] (v0p53)")
         if "z34" in v:
             err.append(f"site {name!r}: 'z34' is now 'zcam': [34] (v0p53)")
-        unknown = set(v) - {"sols", "label", "zcam", "zcam34", "zcam48", "zcam63", "zcam110", "z34", "note",
+        unknown = set(v) - {"sols", "label", "zcam", "zcam34", "zcam48", "zcam63", "zcam79", "zcam110", "z34", "note",
                             "no_mask_inference_at", "settings"}
         if unknown:
             warn.append(f"site {name!r}: unknown fields {sorted(unknown)} are ignored")

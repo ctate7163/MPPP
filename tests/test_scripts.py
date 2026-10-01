@@ -48,9 +48,9 @@ def test_process_sites_dry_run(tmp_path, capsys):
     spec = importlib.util.spec_from_file_location("process_sites", root / "scripts" / "process_sites.py")
     ps = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ps)
-    assert ps.main(["--sites", "sid_chal_rocks", "rockytop", "--root", str(tmp_path), "--dry-run"]) == 0
+    assert ps.main(["--sites", "chal_rocks_sid", "rockytop", "--root", str(tmp_path), "--dry-run"]) == 0
     log = (tmp_path / "process_sites_log.txt").read_text()
-    assert "sid_chal_rocks: would run" in log and "mars2020_sol_0461_rockytop_colmap" in log
+    assert "chal_rocks_sid: would run" in log and "mars2020_sol_0461_rockytop_colmap" in log
     assert ps.main(["--all", "--zcam", "--root", str(tmp_path), "--dry-run"]) == 0
     log = (tmp_path / "process_sites_log.txt").read_text()
     assert "mars2020_sol_0461_rockytop_colmap_zcam" in log and "van_zyl_colmap_zcam" not in log   # v0p53: "zcam" sites only
@@ -95,7 +95,7 @@ def test_process_sites_refuses_while_a_batch_runs(tmp_path):
     spec.loader.exec_module(ps)
     b = batch_lock(tmp_path, "run_sites")
     try:
-        assert ps.main(["--sites", "sid_chal_rocks", "--root", str(tmp_path)]) == 3
+        assert ps.main(["--sites", "chal_rocks_sid", "--root", str(tmp_path)]) == 3
         assert "not started" in (tmp_path / "process_sites_log.txt").read_text()
     finally:
         b.stop("finished")
@@ -204,8 +204,8 @@ def test_filter_zcam_and_consensus_bats(tmp_path):
     assert 'set "WHICH=--group navcam_consensus"' in (win / "run_all_sites.bat").read_text()
     t = (win / "run_all_sites_zcam.bat").read_text()           # v0p53: every Mastcam-Z consensus block
     assert 'set "WHICH=--group zcam_consensus"' in t and "--zcam" in t
-    assert 'set "EXTRA=--set ZCAM_ZOOMS=all"' in t                    # every zoom found on disk
-    for z in (34, 48, 63, 110):                                  # v0p53: each runs its consensus group
+    assert 'set "EXTRA="' in t and "ZCAM_ZOOMS" not in t               # v0p53.1: the sites' own zoom lists
+    for z in (34, 48, 63, 79, 110):                              # v0p53: each runs its consensus group
         t = (win / f"run_all_sites_zcam{z}.bat").read_text()
         assert f'set "WHICH=--group zcam{z}_consensus"' in t and "--zcam" in t, z
 

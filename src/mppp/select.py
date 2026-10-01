@@ -61,7 +61,8 @@ def find_imgs(input_dir: PathLike, camera_codes: Sequence[str],
 
 def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: Tuple[int, int],
                    waypoints: Dict[str, Any], radius_m: Optional[float] = 5.0, sequ_id: Optional[str] = None,
-                   product_type: Optional[str] = "RAD", include_thumbnails: bool = False) -> Tuple[List[Path], Dict[str, Any]]:
+                   product_type: Optional[str] = "RAD", include_thumbnails: bool = False,
+                   anchor_stations: Optional[Sequence[Any]] = None) -> Tuple[List[Path], Dict[str, Any]]:
     """
     The products of ``sol_range`` plus, for sites the rover visited more than
     once, the products of every other waypoint station within ``radius_m``
@@ -71,6 +72,11 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
     :func:`find_imgs` over ``sol_range`` alone.  Returns ``(paths, report)``;
     the report lists the stations in range, the stations added with their
     distance, and the image count per added station.
+
+    ``anchor_stations`` (v0p53.1): the stations the nearby search starts from (``(site, drive)`` or ``"S###D####"``)
+    instead of the stations these cameras imaged in ``sol_range`` - notebook 03 passes the Navcam block's stations, so
+    a Mastcam-Z zoom gets the products of the same visits as the Navcam (e.g. Sid's sols 91-101 for the 361-378
+    block) even where it took no image in ``sol_range``.
     """
     from .waypoints import stations_near
     codes = tuple(c.upper() for c in camera_codes)
@@ -88,6 +94,14 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
         cands.append((fp, fn))
     in_range = [(fp, fn) for fp, fn in cands if sol_range[0] <= fn.sol <= sol_range[1]]
     stations = sorted({(fn.site, fn.drive) for _, fn in in_range})
+    if anchor_stations is not None:
+        anc = set()
+        for st in anchor_stations:
+            if isinstance(st, str):
+                anc.add((int(st[1:4]), int(st[5:9])))
+            else:
+                anc.add((int(st[0]), int(st[1])))
+        stations = sorted(anc)
     report: Dict[str, Any] = {"sol_range": list(sol_range), "radius_m": radius_m,
                               "stations_in_range": [f"S{a:03d}D{b:04d}" for a, b in stations], "stations_added": []}
     paths = [fp for fp, _ in in_range]
