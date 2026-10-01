@@ -60,9 +60,10 @@ ZCAM_BIN_REFINE_SETTINGS = ("focal", "all", "model")  # v0p53 "model": f held at
 ZCAM_HOLD_F_IMAGES = 2                              # v0p22: focus bins with <= this many images hold f at the model
 NAVCAM_RIG = "consensus"                            # v0p22: Navcam rig rotation starts from the refined consensus
 NAVCAM_RIG_FILE = "M2020_N_rig.json"
-# v0p43.2: the Navcam consensus cameras shipped with MPPP.  v0p52: the joint 'yawc_k4' of 17 blocks (fisheye +
-# tangential at -20 degC, f +38.1 ppm/degC, NL cx +0.0517 px/degC, k4 = 0, one rig yaw +35.21 mdeg, pitch and roll
-# with the mission drift; = camera_analysis/navcal_v0p52/navcam_joint_yawc_k4; the v0p41 joint is in history/).  v0p50: all camera models are in mppp/data/cmods (paths.cmods_dir; MPPP_CMODS overrides).
+# v0p43.2: the Navcam consensus cameras shipped with MPPP.  v0p60: the consensus of 18 blocks (mppp.sfm.
+# navcal_consensus: fisheye + tangential at -20 degC, f +38.1 ppm/degC, NL cx +0.0517 px/degC, k4 = 0, one rig yaw
+# +34.94 mdeg, pitch and roll with the mission drift; = camera_analysis/navcal_v0p60/navcam_joint; v0p52 and v0p41 in
+# history/).  v0p50: all camera models are in mppp/data/cmods (paths.cmods_dir; MPPP_CMODS overrides).
 NAVCAM_PACKAGE_CONSENSUS_DIR = Path(__file__).resolve().parents[1] / "data" / "cmods"
 
 

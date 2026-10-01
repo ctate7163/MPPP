@@ -297,3 +297,51 @@ def test_joint_cameras_carry_pp_thermal_and_trend(tmp_path):
     assert abs(L["params"][2] - (2591.0 - 0.05)) < 1e-9 and R["params"][2] == 2591.0      # re-referenced by -1 degC
     assert L["trend"]["sol0"] == 974.0 and L["trend"]["cx_px_per_sol"] == -4e-4
     assert "thermal" not in rig and "principal points" in rig["note"]
+
+
+def test_write_consensus_candidate(tmp_path):
+    """v0p60: the consensus candidate folder from a fit_consensus result (the files in use as the template)."""
+    import json
+    import numpy as np
+    from mppp.paths import cmods_dir
+    from mppp.sfm.navcal_consensus import write_consensus
+    from mppp.sfm.project import PARAM_NAMES, camera_from_colmap_json
+    names = PARAM_NAMES["THIN_PRISM_FISHEYE"]
+    cur = {e: json.loads((cmods_dir() / f"M2020_{e}_fisheye_tangential.json").read_text()) for e in ("NL", "NR")}
+    res = {e: {n: float(v) + (0.5 if n == "cx" else 0.0) for n, v in zip(names, cur[e]["params"])} for e in ("NL", "NR")}
+    res.update({"blocks": {"A": 10, "B": 12}, "rig_abs_mdeg": {"yaw_mdeg": 35.0, "pitch_mdeg": -88.0, "roll_mdeg": -63.0},
+                "rig_R": np.eye(3).tolist(), "residuals": {"median_px": 0.18, "rms_px": 0.38, "p95_px": 0.8},
+                "thermal": {"ppm_per_degC": 38.1, "T0_degC": -20.0, "cx_px_per_degC_NL": 0.0517},
+                "drift": {"model": "linear+hinge", "sol0": 900.0, "yaw_mdeg_per_sol": 0.0}, "k4_zero": True,
+                "sd": {"NL": {"fx": 0.01}}})
+    d = write_consensus(res, tmp_path / "navcam_joint", note="test")
+    nl = camera_from_colmap_json(d / "M2020_NL_fisheye_tangential.json")
+    assert abs(nl["params"][2] - (cur["NL"]["params"][2] + 0.5)) < 1e-9 and nl["params"][9] == 0.0
+    j = json.loads((d / "M2020_NL_fisheye_tangential.json").read_text())
+    assert j["fixed_params"] == ["k4"] and j["sd"]["fx"] == 0.01 and "2 blocks" in j["source"] and j["thermal"]
+    rig = json.loads((d / "M2020_N_rig.json").read_text())
+    assert rig["yaw_constant"] and "thermal" not in rig and rig["drift"]["sol0"] == 900.0
+    assert (d / "consensus.json").is_file()
+    import subprocess, sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    r = subprocess.run([sys.executable, str(root / "scripts" / "promote_cmods.py"), str(d), "--dry-run"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_study_start_state_defaults_to_the_cameras_in_use():
+    """v0p60: navcam_calibration_study.start_state without --start-cameras starts from src/mppp/data/cmods (the
+    projects of MPPP >= 0.50 start from the fisheye consensus; the old search for a rational start found none)."""
+    import importlib.util
+    import json
+    from pathlib import Path
+    pytest.importorskip("pycolmap")
+    from mppp.paths import cmods_dir
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("ncs", root / "scripts" / "navcam_calibration_study.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    cams, rig, fits = m.start_state({}, None, "fisheye_t")
+    want = json.loads((cmods_dir() / "M2020_NL_fisheye_tangential.json").read_text())["params"]
+    assert list(map(float, cams["NL"].params)) == list(map(float, want)) and rig[0].shape == (3, 3)

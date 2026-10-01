@@ -3,25 +3,25 @@
  "sensor": "NR",
  "R_sensor_from_ref": [
   [
-   0.9999992072420447,
-   0.001101189851717164,
-   0.0006106522682135074
+   0.9999992055766506,
+   0.0011001110378708516,
+   0.0006153062425108615
   ],
   [
-   -0.001102127470607298,
-   0.9999982111126261,
-   0.001537233419573122
+   -0.0011010538349092286,
+   0.9999982172512106,
+   0.001534006145087561
   ],
   [
-   -0.0006089583899840206,
-   -0.001537905217558886,
-   0.9999986320076748
+   -0.0006136175684820299,
+   -0.0015346824117352213,
+   0.9999986341107545
   ]
  ],
  "rotvec_rad": [
-  -0.0015375703307070829,
-  0.0006098057305174294,
-  -0.0011016593863548921
+  -0.0015343452867477986,
+  0.0006144623093069328,
+  -0.0011005831596679614
  ],
  "t_sensor_from_ref_m": [
   -0.4243630978966071,
@@ -35,7 +35,7 @@
   "roll": 0.0638617005811876
  },
  "rig_test": {},
- "note": "x_NR = R x_NL + t. Navcam consensus 2026-10-01 (18 blocks); yaw +34.94, pitch -88.10, roll -63.12 mdeg. One yaw for every block: no temperature term, the drift's yaw rate 0; pitch and roll follow the mission drift. Translation from CAHV in each project.",
+ "note": "x_NR = R x_NL + t. v0p52 joint 'yawc_k4' (17 blocks); yaw +35.21, pitch -87.91, roll -63.06 mdeg. One yaw for every block: no temperature term, the drift's yaw rate 0; pitch and roll follow the mission drift. Translation from CAHV in each project.",
  "drift": {
   "model": "linear+hinge",
   "sol0": 973.7115384615385,

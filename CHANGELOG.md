@@ -2,6 +2,23 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.60.0 — 2026-10-01
+
+New Navcam consensus from 18 blocks, and notebook 04's study makes it in the form in use.
+- **Navcam consensus v0p60** (`src/mppp/data/cmods`; `camera_analysis/navcal_v0p60/navcam_joint`):
+  - Blocks: the 16 blocks of the v0p52 joint, plus Bell Island and Taylorfjellet from the MPPP 0.53 runs of 1 Oct (`mars2020_sol_1451_bell_island_colmap`, `mars2020_sol_1606_taylorfjellet_colmap`; the old Bell Island block replaced). 18 blocks, 1897 images.
+  - Form: k4 = 0, one rig yaw (+34.94 mdeg), no rig temperature term, f +38.1 ppm/degC and NL cx +0.0517 px/degC held.
+  - Residuals: median / RMS 0.1808 / 0.3797 px; corners (r 0.95–1) 0.246 px.
+  - Against v0p52: cy +0.14 px (both eyes), fy +0.10 / +0.07 px, fx and cx within 0.02 px, distortion terms within 1e-4, rig yaw −0.27 mdeg.
+  - A constant yaw with k4 free would cost 0.15 % less on the same blocks.
+  - The sd are this joint's (formal × variance factor). There is no leave-one-block-out check yet. The v0p52 joint is in `cmods/history/v0p52_joint/`.
+- **`mppp.sfm.navcal_consensus`** (`fit_consensus`, `write_consensus`) and **`scripts/navcam_calibration_study.py consensus OUT SCAPES.json`** make the consensus in the form in use (minutes) and write the candidate folder for `promote_cmods.py`. It starts from the cameras in use and takes the thermal slopes and the rig drift (its yaw rate 0) from them.
+- **Notebook 04 §2d:** `STUDY_CMD = "consensus"` (default; `"all"` = the v0p40 rig + joint + leave-one-out studies) and `JOINT_POINTS = 8000`. The cell shows the consensus result, and the v0p40 report sections run only when a rig/joint study is in `STUDY_DIR`.
+- **Fix: `RUN_STUDY` failed with `TypeError: 'NoneType' object is not subscriptable`** in `navcam_calibration_study.start_state`. It looked for a block started from the rational consensus, and the 0.53 projects start from the fisheye one. It now starts from `src/mppp/data/cmods` unless `--start-cameras` is given.
+  - In that study's rig part, yaw "± nan" is expected: the 0.53 blocks hold the rig yaw (`NAVCAM_RIG_YAW = "hold"`).
+- Matching stays exhaustive (`MATCH_MODE = "exhaustive"`).
+- Notebooks copied as `*_v0p60.ipynb`.
+
 ## 0.53.1 — 2026-10-01
 
 - **Mastcam-Z now takes the same nearby visits as the Navcam.** The `chal_rocks_sid` (was `sid_chal_rocks`) Mastcam-Z run would have had no Mastcam-Z frames from sols 91-101.

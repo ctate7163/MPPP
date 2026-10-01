@@ -18,3 +18,9 @@
   - `M2020_NR_fisheye_tangential.json` 85167b0eb312 from `D:\scapes\colmap\camera_analysis\navcal_v0p52\navcam_joint_yawc_k4\M2020_NR_fisheye_tangential.json`
   - `M2020_N_rig.json` 4bef659a839e from `D:\scapes\colmap\camera_analysis\navcal_v0p52\navcam_joint_yawc_k4\M2020_N_rig.json`
   - replaced files (the v0p41 joint of 23 blocks) kept in `history/v0p41_joint/`
+
+## 20261001-121403 - v0p60 Navcam consensus: 18 blocks (16 of the v0p52 joint + Bell Island and Taylorfjellet from the 0.53 runs), k4 = 0, one rig yaw +34.94 mdeg; cy +0.14 px, fy +0.07-0.10 px, yaw -0.27 mdeg vs v0p52
+  - `M2020_NL_fisheye_tangential.json` 03d1bc4d1b35 from `D:\scapes\colmap\camera_analysis\navcal_v0p60\navcam_joint\M2020_NL_fisheye_tangential.json`
+  - `M2020_NR_fisheye_tangential.json` 1ce955db253b from `D:\scapes\colmap\camera_analysis\navcal_v0p60\navcam_joint\M2020_NR_fisheye_tangential.json`
+  - `M2020_N_rig.json` eefda5eb2fac from `D:\scapes\colmap\camera_analysis\navcal_v0p60\navcam_joint\M2020_N_rig.json`
+  - replaced files (the v0p52 joint yawc_k4, 17 blocks) kept in `history/v0p52_joint/`

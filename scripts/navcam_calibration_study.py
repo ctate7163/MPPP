@@ -6,6 +6,8 @@ section 15).
   python scripts/navcam_calibration_study.py joint OUT_DIR SCAPES.json [--samples ...] [--points 25000]
   python scripts/navcam_calibration_study.py loo   OUT_DIR SCAPES.json [--samples ...] [--lens rational|fisheye_t]
   python scripts/navcam_calibration_study.py all   OUT_DIR SCAPES.json [--samples ...]      (OUT_DIR/rig, OUT_DIR/joint)
+  python scripts/navcam_calibration_study.py consensus OUT_DIR SCAPES.json [--points 8000]  (v0p60: the consensus in the
+                                                                                          form in use -> OUT_DIR/navcam_joint)
   python scripts/navcam_calibration_study.py scale OUT_DIR SCAPES.json [--only NAME ...]   (v0p35.1: offsets between the
                                                                                           downsample scales, scale_<block>.json)
 
@@ -140,6 +142,12 @@ def start_state(scapes_cfg, samples, lens="rational", start_dir=None):
         rj = json.loads((d / "M2020_N_rig.json").read_text())
         rig = (np.asarray(rj["R_sensor_from_ref"], float), np.asarray(rj["t_sensor_from_ref_m"], float))
         return cams, rig, fits
+    if start_dir is None:
+        # v0p60: the cameras in use (src/mppp/data/cmods, MPPP_CMODS) - projects of MPPP >= 0.50 start from the
+        # fisheye consensus, so the search below for a rational start found none (TypeError on 1 Oct)
+        from mppp.paths import cmods_dir
+        if (cmods_dir() / "M2020_N_rig.json").is_file():
+            return start_state(scapes_cfg, samples, lens, cmods_dir())
     newest = None
     for n, root in scapes_cfg.items():
         r = Path(root)
@@ -466,9 +474,20 @@ def cmd_all(a, scapes_cfg, samples):
         cmd_loo(b, scapes_cfg, samples)
 
 
+def cmd_consensus(a, scapes_cfg, samples):
+    """v0p60: the Navcam consensus in the form in use (mppp.sfm.navcal_consensus: k4 = 0, one rig yaw, no rig
+    temperature term, the thermal slopes of the cameras in use) - OUT/navcam_joint, ready for promote_cmods.py."""
+    from mppp.sfm.navcal_consensus import fit_consensus, write_consensus
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    res = fit_consensus(scapes_cfg, points=a.points, start_dir=a.start_cameras)
+    d = write_consensus(res, out / "navcam_joint")
+    print(f"candidate consensus: {d}  (promote: python scripts\\promote_cmods.py {d} --note \"...\")", flush=True)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["rig", "joint", "loo", "all", "scale"])
+    ap.add_argument("cmd", choices=["rig", "joint", "loo", "all", "scale", "consensus"])
     ap.add_argument("out")
     ap.add_argument("scapes")
     ap.add_argument("--samples")
@@ -486,8 +505,8 @@ def main(argv=None):
     ap.add_argument("--lens", default="rational")
     ap.add_argument("--rig-lens", default="rational",
                     help="rig: refit blocks solved with another Navcam lens model to this one (rational|fisheye_t)")
-    ap.add_argument("--start-cameras", help="joint: folder of frozen cameras to start from (default: the shipped "
-                                             "consensus of the most recent project)")
+    ap.add_argument("--start-cameras", help="joint: folder of frozen cameras to start from (default: the cameras in "
+                                             "use, src/mppp/data/cmods)")
     ap.add_argument("--common-pp", help="rig: common principal points JSON of an earlier study (default: the median "
                                         "of the blocks)")
     ap.add_argument("--warm-slope", type=float, default=40.0)
@@ -502,7 +521,8 @@ def main(argv=None):
     samples = json.loads(Path(a.samples).read_text()) if a.samples else None
     if a.only and a.cmd == "joint":
         scapes_cfg = {k: v for k, v in scapes_cfg.items() if k in a.only}
-    {"rig": cmd_rig, "joint": cmd_joint, "loo": cmd_loo, "all": cmd_all, "scale": cmd_scale}[a.cmd](a, scapes_cfg, samples)
+    {"rig": cmd_rig, "joint": cmd_joint, "loo": cmd_loo, "all": cmd_all, "scale": cmd_scale,
+     "consensus": cmd_consensus}[a.cmd](a, scapes_cfg, samples)
 
 
 if __name__ == "__main__":

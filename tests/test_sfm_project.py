@@ -484,12 +484,12 @@ def test_navcam_consensus_shipped_with_mppp():
         assert abs(th["ppm_per_degC"] - 38.1) < 0.5 and th["T0_degC"] == -20
     assert (NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).is_file()
     assert navcam_cameras_fingerprint(NAVCAM_CONSENSUS_DIR)
-    # v0p52: the joint yawc_k4 (camera_analysis/navcal_v0p52/navcam_joint_yawc_k4), byte for byte
+    # v0p60: the 18-block consensus (camera_analysis/navcal_v0p60/navcam_joint), byte for byte
     import hashlib
     sha = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()[:12] for p in NAVCAM_CONSENSUS_DIR.glob("*.json")
            if "fisheye" in p.name or "rig" in p.name}
-    assert sha == {"M2020_NL_fisheye_tangential.json": "da1b4f7dc3ad", "M2020_NR_fisheye_tangential.json": "85167b0eb312",
-                   "M2020_N_rig.json": "4bef659a839e"}
+    assert sha == {"M2020_NL_fisheye_tangential.json": "03d1bc4d1b35", "M2020_NR_fisheye_tangential.json": "1ce955db253b",
+                   "M2020_N_rig.json": "eefda5eb2fac"}
 
 
 def test_navcam_distortion_hold_and_zero_terms():
