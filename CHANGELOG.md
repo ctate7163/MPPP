@@ -2,6 +2,16 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.63.0 — 2026-10-02
+
+More Navcam–Mastcam-Z tie points.
+- **Notebook 03 defaults:**
+  - `MAX_NUM_FEATURES = 32768` (was 16384). The cap binds on full-resolution Navcam frames (19.7 MP) and rarely on Mastcam-Z (2 MP), so the extra features land mostly on Navcam, including where a Zcam frame overlaps it.
+  - `SIFT = dict(..., num_octaves=5, first_octave=-1)`: five octaves, from 2x down to 1/8 of the image (COLMAP's default of 4 stops at 1/4). This adds coarse features to the finer camera.
+  - `MATCH = dict(..., guided_matching=True)`: a second matching pass guided by each pair's verified two-view geometry.
+- **Code:** `extract_features` / `features_up_to_date` take `num_octaves` and `first_octave`, which are recorded in `features.json` only when they differ from COLMAP's default. `match` defaults to `guided_matching=True`; `DEFAULT_MAX_NUM_FEATURES = 32768`.
+- **Rerun cost:** the new settings re-extract the features and re-match every pair on the next run. Exhaustive matching costs up to about 4x more for full-resolution Navcam pairs.
+
 ## 0.62.0 — 2026-10-02
 
 For the Navcam freeze: run notebook 04 for the latest consensus, rerun the Navcam alignments, run notebook 04 again, then freeze.

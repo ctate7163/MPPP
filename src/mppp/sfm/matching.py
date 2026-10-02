@@ -22,7 +22,7 @@ PathLike = Union[str, Path]
 
 def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequence[Tuple[str, str, Any]]] = None,
           use_gpu: Optional[bool] = None, max_num_matches: int = 32768, max_error_px: float = 6.0,
-          min_num_inliers: int = 15, num_threads: int = -1, guided_matching: bool = False, block_size: int = 100,
+          min_num_inliers: int = 15, num_threads: int = -1, guided_matching: bool = True, block_size: int = 100,
           python: Optional[PathLike] = None, max_ratio: float = 0.8, max_distance: float = 0.7,
           cross_check: bool = True) -> Dict[str, Any]:
     """Match and verify; results go into ``project.database``.  Returns a summary.

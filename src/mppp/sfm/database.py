@@ -23,7 +23,9 @@ from .project import SfmProject
 PathLike = Union[str, Path]
 
 
-DEFAULT_MAX_NUM_FEATURES = 16384          # v0p50 (16380 since v0p14.3)
+DEFAULT_MAX_NUM_FEATURES = 32768          # v0p63 (16384 since v0p50, 16380 since v0p14.3)
+DEFAULT_NUM_OCTAVES = 4                   # COLMAP's defaults: octaves 2x, 1x, 1/2, 1/4 of the image (first_octave -1)
+DEFAULT_FIRST_OCTAVE = -1
 DEFAULT_MAX_IMAGE_SIZE = 5120             # v0p20 (was 3200): full-resolution Navcam frames are 5120 px wide, so SIFT
                                           # really runs at native resolution (3200 shrank them to 0.625x)
 
@@ -33,11 +35,16 @@ def _features_record(project: SfmProject) -> Path:
 
 
 def _feature_settings(max_num_features: int, max_image_size: int, domain_size_pooling: bool,
-                      estimate_affine_shape: bool = False) -> Dict[str, Any]:
+                      estimate_affine_shape: bool = False, num_octaves: int = DEFAULT_NUM_OCTAVES,
+                      first_octave: int = DEFAULT_FIRST_OCTAVE) -> Dict[str, Any]:
     out = {"max_num_features": int(max_num_features), "max_image_size": int(max_image_size),
            "domain_size_pooling": bool(domain_size_pooling)}
     if estimate_affine_shape:                            # recorded only when on: older features.json stay valid
         out["estimate_affine_shape"] = True
+    if int(num_octaves) != DEFAULT_NUM_OCTAVES:          # v0p63, likewise only when not COLMAP's default
+        out["num_octaves"] = int(num_octaves)
+    if int(first_octave) != DEFAULT_FIRST_OCTAVE:
+        out["first_octave"] = int(first_octave)
     return out
 
 
@@ -58,7 +65,8 @@ def image_fingerprints(project: SfmProject) -> Dict[str, list]:
 
 def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES,
                         max_image_size: int = DEFAULT_MAX_IMAGE_SIZE, domain_size_pooling: bool = False,
-                        estimate_affine_shape: bool = False) -> bool:
+                        estimate_affine_shape: bool = False, num_octaves: int = DEFAULT_NUM_OCTAVES,
+                        first_octave: int = DEFAULT_FIRST_OCTAVE) -> bool:
     """
     True if ``features.db`` exists and was extracted with these settings from
     the same image and mask files (``features.json`` beside it; v0p14.7: file
@@ -72,9 +80,13 @@ def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX
         done = json.loads(rec.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    want = _feature_settings(max_num_features, max_image_size, domain_size_pooling, estimate_affine_shape)
+    want = _feature_settings(max_num_features, max_image_size, domain_size_pooling, estimate_affine_shape,
+                             num_octaves, first_octave)
     names = {r["name"] for r in project.images}
     if bool(done.get("estimate_affine_shape", False)) != bool(estimate_affine_shape):
+        return False
+    if (int(done.get("num_octaves", DEFAULT_NUM_OCTAVES)) != int(num_octaves)
+            or int(done.get("first_octave", DEFAULT_FIRST_OCTAVE)) != int(first_octave)):
         return False
     if not (all(done.get(k) == v for k, v in want.items()) and names <= set(done.get("images", []))):
         return False
@@ -88,7 +100,8 @@ def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX
 def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES, max_image_size: int = DEFAULT_MAX_IMAGE_SIZE,
                      use_gpu: Optional[bool] = None, num_threads: int = -1, overwrite: bool = False,
                      domain_size_pooling: bool = False, python: Optional[PathLike] = None,
-                     estimate_affine_shape: bool = False) -> Path:
+                     estimate_affine_shape: bool = False, num_octaves: int = DEFAULT_NUM_OCTAVES,
+                     first_octave: int = DEFAULT_FIRST_OCTAVE) -> Path:
     """
     SIFT at native resolution, with the MPPP masks (keypoints in masked pixels
     are dropped) -> ``features.db``.  Equivalent COLMAP command::
@@ -110,10 +123,15 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
     regions - both make SIFT more tolerant of the perspective change between
     strongly converging views (notebook 03, "high convergence").  COLMAP runs
     either on the CPU only (several times slower than the GPU).
+
+    ``num_octaves``, ``first_octave`` (v0p63): the SIFT scale range.  COLMAP's default (4, -1) detects at 2x, 1x,
+    1/2 and 1/4 of the image, so two images match over about 4-8x of scale at best.  More octaves (5: down to 1/8,
+    6: 1/16) add coarse features to the finer camera - a Mastcam-Z frame seen against a half- or quarter-resolution
+    Navcam frame - at little cost; they do nothing for the coarser camera.
     """
     db = project.features_db
     if not overwrite and features_up_to_date(project, max_num_features, max_image_size, domain_size_pooling,
-                                             estimate_affine_shape):
+                                             estimate_affine_shape, num_octaves, first_octave):
         return db
     if db.exists() and not overwrite:
         print(f"[sfm] {db.name}: extracted with other settings or from other image/mask files - extracting again "
@@ -124,7 +142,9 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
         return Path(run_step(python, "extract_features", project, max_num_features=max_num_features,
                              max_image_size=max_image_size, use_gpu=use_gpu, num_threads=num_threads,
                              overwrite=overwrite, domain_size_pooling=domain_size_pooling,
-                             **({"estimate_affine_shape": True} if estimate_affine_shape else {})))
+                             **({"estimate_affine_shape": True} if estimate_affine_shape else {}),
+                             **({"num_octaves": int(num_octaves)} if int(num_octaves) != DEFAULT_NUM_OCTAVES else {}),
+                             **({"first_octave": int(first_octave)} if int(first_octave) != DEFAULT_FIRST_OCTAVE else {})))
     import pycolmap
     if db.exists():
         db.unlink()
@@ -138,6 +158,8 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
     opts.sift.max_num_features = int(max_num_features)
     opts.sift.domain_size_pooling = bool(domain_size_pooling)
     opts.sift.estimate_affine_shape = bool(estimate_affine_shape)
+    opts.sift.num_octaves = int(num_octaves)
+    opts.sift.first_octave = int(first_octave)
     if (domain_size_pooling or estimate_affine_shape) and use_gpu is not False:
         if use_gpu:
             print("[sfm] DSP / affine shape: COLMAP extracts these on the CPU", flush=True)
@@ -152,8 +174,10 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
                               extraction_options=opts, device=device)
     project.settings["features"] = {"max_num_features": max_num_features, "max_image_size": max_image_size,
                                     "domain_size_pooling": domain_size_pooling,
-                                    "estimate_affine_shape": bool(estimate_affine_shape), "masks": bool(reader.mask_path)}
-    record = dict(_feature_settings(max_num_features, max_image_size, domain_size_pooling, estimate_affine_shape),
+                                    "estimate_affine_shape": bool(estimate_affine_shape), "masks": bool(reader.mask_path),
+                                    "num_octaves": int(num_octaves), "first_octave": int(first_octave)}
+    record = dict(_feature_settings(max_num_features, max_image_size, domain_size_pooling, estimate_affine_shape,
+                                    num_octaves, first_octave),
                   images=sorted(names),
                   masks=bool(reader.mask_path), files=image_fingerprints(project))
     _features_record(project).write_text(json.dumps(record, indent=1), encoding="utf-8")

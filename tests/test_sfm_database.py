@@ -101,8 +101,9 @@ def test_gpu_steps_run_in_another_python(tmp_path):
     with pytest.warns(UserWarning, match="own python"):
         info = check_gpu_python(sys.executable, require_cuda=False)
     assert info["pycolmap"] == info["pycolmap_here"]
-    extract_features(proj, max_num_features=2000, use_gpu=False, python=sys.executable)
+    extract_features(proj, max_num_features=2000, use_gpu=False, python=sys.executable, num_octaves=5)
     assert proj.features_db.is_file() and proj.settings["features"]["max_num_features"] == 2000
+    assert proj.settings["features"]["num_octaves"] == 5                     # v0p63: through the other python too
     assert proj.settings["keep"] == 1                                           # parent's settings survive
     shutil.copy(proj.features_db, proj.database)                               # matchable as it is
     res = match(proj, mode="exhaustive", use_gpu=False, max_error_px=4.0, python=sys.executable)
@@ -134,9 +135,13 @@ def test_features_reused_only_with_same_settings(tmp_path):
     _features_record(proj).write_text(json.dumps(rec))
     assert features_up_to_date(proj, max_num_features=8192)
     assert not features_up_to_date(proj, max_num_features=16384)        # new setting -> extract again
-    rec["max_num_features"] = 16384
+    rec["max_num_features"] = 32768
     _features_record(proj).write_text(json.dumps(rec))
-    assert features_up_to_date(proj)                                    # default is 16384
+    assert features_up_to_date(proj)                                    # default is 32768 (v0p63; 16384 before)
+    assert not features_up_to_date(proj, num_octaves=5)                 # v0p63: other SIFT octaves -> extract again
+    rec["num_octaves"] = 5
+    _features_record(proj).write_text(json.dumps(rec))
+    assert features_up_to_date(proj, num_octaves=5) and not features_up_to_date(proj)
     proj.images.append({"name": "c.png"})
     assert not features_up_to_date(proj)                                # an image without features
 
@@ -151,7 +156,7 @@ def test_features_extracted_again_when_an_image_or_mask_changes(tmp_path):
     (proj.images_dir / "a.png").write_bytes(b"img")
     (proj.masks_dir / "a.png.png").write_bytes(b"mask")
     proj.features_db.write_bytes(b"")
-    rec = {"max_num_features": 16384, "max_image_size": 5120, "domain_size_pooling": False, "images": ["a.png"],
+    rec = {"max_num_features": 32768, "max_image_size": 5120, "domain_size_pooling": False, "images": ["a.png"],
            "files": image_fingerprints(proj)}
     _features_record(proj).write_text(json.dumps(rec))
     assert features_up_to_date(proj)
@@ -342,3 +347,4 @@ def test_match_settings_defaults():
                        max_error_px=6.0)
     assert s["min_num_inliers"] == 15 and s["max_num_matches"] == 32768 and s["max_error_px"] == 6.0
     assert match_settings("exhaustive", max_ratio=0.9) != match_settings("exhaustive", max_ratio=0.8)
+    assert match_settings("exhaustive")["guided_matching"] is True                 # v0p63 default
