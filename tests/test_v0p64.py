@@ -28,7 +28,7 @@ def test_pose_guided_matching_finds_the_navcam_zcam_matches(tmp_path):
     truth = {(e.image_id, e.point2D_idx): pid for pid, pt in rec.points3D.items() for e in pt.track.elements}
     rec = R.triangulate(rec, proj, max_reproj_px=8.0)
     assert _family_ties(rec, proj)["navcam_zcam_points"] == 0
-    db2, rep = pose_guided_matching(rec, proj, proj.database, verbose=False)
+    db2, rep = pose_guided_matching(rec, proj, proj.database, verbose=False, depth="global")   # v0p65: local default
     assert db2 != proj.database and rep["new_matches_by_family"].get("NZ", 0) > 1000
     db = pycolmap.Database.open(str(db2))
     good = bad = 0

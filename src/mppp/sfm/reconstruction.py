@@ -302,6 +302,38 @@ def unlocalized_stations(project: SfmProject, min_images: int, rec=None,
     return out
 
 
+POSE_GUIDED_MAX_BEYOND_GROUND_RISE = 0.02    # v0p65: undo the pose-guided stage above this rise (fraction of points)
+NAVCAM_ASPECT_SIGMA = 2e-5      # v0p65: 1-sigma of the fy / fx prior (relative; 0.03 px of a 1500 px focal length)
+
+
+@__import__("functools").lru_cache(maxsize=1)
+def _aspect_prior_class():
+    import pyceres
+
+    class _AspectPrior(pyceres.CostFunction):
+        """(fy / fx - a0) / sigma on a camera's parameter block (v0p65)."""
+
+        def __init__(self, a0: float, sigma: float, n: int):
+            super().__init__()
+            self.a0, self.sigma, self.n = a0, sigma, n
+            self.set_num_residuals(1)
+            self.set_parameter_block_sizes([n])
+
+        def Evaluate(self, parameters, residuals, jacobians):
+            x = parameters[0]
+            residuals[0] = (x[1] / x[0] - self.a0) / self.sigma
+            if jacobians is not None and jacobians[0] is not None:
+                j = np.zeros(self.n)
+                j[0], j[1] = -x[1] / x[0] ** 2 / self.sigma, 1.0 / x[0] / self.sigma
+                jacobians[0][:] = j
+            return True
+    return _AspectPrior
+
+
+def AspectPrior(a0: float, sigma: float, n: int):
+    return _aspect_prior_class()(a0, sigma, n)
+
+
 def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: float = 2.0,
                   refine_intrinsics: bool = True, refine_principal_point: bool = True,
                   refine_tangential: Union[bool, Dict[str, bool]] = True, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
@@ -310,9 +342,15 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   rig_translation_sigma_m: Optional[float] = None,
                   hold_cameras: Sequence[str] = (), linear_solver: str = "auto",
                   covariance: bool = False, keypoint_scale: Optional[Dict[int, float]] = None,
-                  keypoint_map=None, localize_min_images: Optional[int] = None) -> Dict[str, Any]:
+                  keypoint_map=None, localize_min_images: Optional[int] = None,
+                  navcam_aspect: Optional[str] = None,
+                  aspect_sigma: float = NAVCAM_ASPECT_SIGMA) -> Dict[str, Any]:
     """
-    Weighted BA in place (see module docstring).  ``hold_cameras`` (v0p22.2):
+    Weighted BA in place (see module docstring).  ``navcam_aspect`` (v0p65; None:
+    ``project.settings["navcam_aspect"]``, set by :func:`reconstruct`; default "free"): "hold" adds a prior on every Navcam
+    camera whose fx and fy are both refined, holding fy / fx at its start value (the consensus pixel aspect; 1-sigma
+    ``aspect_sigma``, relative) - the pixel aspect is a property of the detector, and thermal expansion is
+    isotropic; at Three Forks South and Belva (Mastcam-Z) fy moved 2-4 px against fx.  ``hold_cameras`` (v0p22.2):
     keys of project cameras (``"NL"``, ``"NR"``, a focus bin...) whose
     intrinsics are held entirely, whatever ``refine_intrinsics`` says.  ``sigma_px``: keypoint
     standard deviation in native pixels; ``loss_scale``: Cauchy scale in units
@@ -527,6 +565,29 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         if fixed:
             prob.set_manifold(cam.params, pyceres.SubsetManifold(len(cam.params), sorted(fixed)))
 
+    # v0p65: the Navcam pixel aspect held at its start (fy / fx), a soft prior per camera
+    if navcam_aspect is None:
+        navcam_aspect = str(project.settings.get("navcam_aspect") or "free")
+    aspect_costs = []
+    if navcam_aspect == "hold" and refine_intrinsics:
+        for cid, cam in work.cameras.items():
+            key = key_of.get(int(cid), "")
+            pc = project.cameras.get(key, {})
+            if not str(pc.get("group") or key).startswith("N") or key in set(hold_cameras):
+                continue
+            if not prob.has_parameter_block(cam.params) or prob.is_parameter_block_constant(cam.params):
+                continue
+            names = _PARAM_NAMES.get(cam.model.name)
+            if not names or names[:2] != ("fx", "fy"):
+                continue
+            fixed = set((pc.get("fixed_params") or [])) - set(pc.get("free_params") or [])
+            if "fx" in fixed or "fy" in fixed:
+                continue
+            p0 = np.asarray(pc.get("params") or cam.params, float)
+            c = AspectPrior(float(p0[1] / p0[0]), float(aspect_sigma), len(cam.params))
+            aspect_costs.append(c)
+            prob.add_residual_block(c, None, [cam.params])
+
     # waypoint position priors on every frame (the reference camera's centre); v0p35.1: not on the frames of
     # stations with fewer than localize_min_images images, if they are tied to the rest of the block
     n_prior = n_att = 0
@@ -665,7 +726,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                                        Rotation.from_matrix(R1 @ R0.T).as_rotvec())))}
     return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att, "rig": rig_out, "covariance": cov_out,
             "rig_translation_priors": n_rig_prior, "frames_without_position_prior": n_no_prior,
-            "unlocalized_stations": unloc,
+            "unlocalized_stations": unloc, "navcam_aspect": navcam_aspect, "aspect_priors": len(aspect_costs),
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
             "termination": str(summary.termination_type), "brief": summary.BriefReport(),
@@ -1185,7 +1246,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 thermal_model: Optional[Dict[str, Dict[str, float]]] = None, localize_min_images: int = 0,
                 zcam_backlash: Optional[str] = None, zcam_backlash_z: float = 3.0,
                 zcam_focus_line: bool = True, zcam_line_cycles: int = 2, thermal_after_stage1: bool = True,
-                pose_guided: Union[bool, Dict[str, Any]] = True):
+                pose_guided: Union[bool, Dict[str, Any]] = True, navcam_aspect: str = "hold"):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
@@ -1204,7 +1265,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     ``project.settings["zcam_focus_lines"]``.  ``pose_guided`` (v0p64, notebook 03 ``POSE_GUIDED``; staged runs with
     Mastcam-Z): after the stage-2 rounds, matches guided by the poses (:mod:`mppp.sfm.guided`; a dict overrides
     ``GUIDED_DEFAULTS``) go into ``<project>/database_guided.db``, the block is triangulated from it and adjusted
-    once more; the report (Navcam-Mastcam-Z tie points before / after) is in ``project.settings["pose_guided"]``.  ``thermal_after_stage1`` (v0p61): with ``staged``, the Navcam thermal
+    once more; the report (Navcam-Mastcam-Z tie points before / after) is in ``project.settings["pose_guided"]``.
+    ``navcam_aspect`` (v0p65, notebook 03 ``NAVCAM_ASPECT``): "hold" (default) keeps every Navcam camera's fy / fx at
+    its start (the consensus pixel aspect) in all bundle adjustments of the run, the thermal stage included;
+    "free" refines fx and fy independently (before v0p65).  ``thermal_after_stage1`` (v0p61): with ``staged``, the Navcam thermal
     stage runs at the end of stage 1, so the Mastcam-Z frames are added to the final Navcam cameras (temperature bins).
     ``localize_min_images`` (v0p35.1, notebook 03 ``LOCALIZE_MIN_IMAGES``): stations (site, drive) with fewer images
     than this are not held by their waypoint position (see :func:`unlocalized_stations`, :func:`bundle_adjust`).
@@ -1283,6 +1347,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         raise ValueError("min_track_length must be >= 2")
     if navcam_intrinsics not in ("auto", "refine", "hold"):
         raise ValueError("navcam_intrinsics must be 'auto', 'refine' or 'hold'")
+    if navcam_aspect not in ("free", "hold"):
+        raise ValueError("navcam_aspect must be 'free' or 'hold'")
+    project.settings["navcam_aspect"] = navcam_aspect          # v0p65: read by every bundle adjustment of the run
     import time
     from .thermal import strip_thermal_bins
     t0 = time.time()
@@ -1458,7 +1525,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             # v0p64: matches guided by the stage-2 poses (Mastcam-Z against Navcam and the other zooms), then one more
             # triangulation from them and one adjustment at the last round's thresholds
             from .guided import _family_ties, pose_guided_matching
+            from .health import beyond_ground
             before = _family_ties(rec, project)
+            bg0 = beyond_ground(rec, sample=50000)["fraction"] or 0.0
+            rec_before, topts_before = copy.deepcopy(rec), topts2
             dbg, prep = pose_guided_matching(rec, project, topts2.get("database") or project.database, verbose=verbose,
                                              **(pose_guided if isinstance(pose_guided, dict) else {}))
             topts2 = dict(topts, database=dbg)
@@ -1471,6 +1541,17 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                linear_solver=linear_solver)
             n_bad = filter_observations(rec, project, float(rmax)) + drop_short_tracks(rec, min_track_length)
             prep.update({"before": before, "after": _family_ties(rec, project), "filtered": n_bad, "ba": ba["brief"]})
+            # v0p65: false matches that agree with the epipolar geometry land far beyond the ground - if the guided
+            # matches raise that share by more than POSE_GUIDED_MAX_BEYOND_GROUND_RISE, the stage is undone
+            bg1 = beyond_ground(rec, sample=50000)["fraction"] or 0.0
+            prep.update({"beyond_ground_before": bg0, "beyond_ground_after": bg1})
+            if bg1 - bg0 > POSE_GUIDED_MAX_BEYOND_GROUND_RISE:
+                rec, topts2 = rec_before, topts_before
+                prep["reverted"] = (f"beyond-ground share {100 * bg0:.1f} -> {100 * bg1:.1f} % "
+                                    f"(> +{100 * POSE_GUIDED_MAX_BEYOND_GROUND_RISE:g} points)")
+                if verbose:
+                    print(f"[sfm] stage 2, pose-guided matches undone: {prep['reverted']}", flush=True)
+            del rec_before
             log.append({"stage": 2, "pose_guided": prep})
             project.settings["pose_guided"] = prep
             if verbose:
@@ -1545,6 +1626,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "min_tri_angle_deg": min_tri_angle_deg,
                                           "refine_tangential": tangential_setting(refine_tangential),
                                           "attitude_prior_deg": float(attitude_prior_deg or 0.0),
+                                          "navcam_aspect": navcam_aspect,
                                           "schedule": [list(map(float, r)) for r in schedule],
                                           "exclude_outliers": bool(exclude_outliers),
                                           "min_frame_observations": int(MIN_FRAME_OBSERVATIONS),

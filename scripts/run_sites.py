@@ -48,7 +48,7 @@ def _finished(work: Path, variant: str, key: str):
             return False, "unreadable run_done.json"
         if d.get("run_key") == key:
             return True, f"finished {d.get('finished')} with these settings (verdict {d.get('verdict')})"
-        return False, "finished with other settings"
+        return False, "finished with other settings or alignment rules"
     if (proj / "error_input" / "summary.json").is_file():
         return True, "finished before v0p43 (no run key)"
     return False, "not finished"

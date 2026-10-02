@@ -412,7 +412,7 @@ def rig_study(sc: Scape, bin_deg: float = 10.0, min_images: int = 8, max_iterati
             if len({tuple(b["bin_degC"]) for b in bins}) < 2:
                 out[mode] = {"skipped": "one temperature bin", **extra}
                 continue
-        ba = bundle_adjust(rec, proj, refine_rig=(True if mode == "full" else "rotation"), max_iterations=max_iterations,
+        ba = bundle_adjust(rec, proj, navcam_aspect="free", refine_rig=(True if mode == "full" else "rotation"), max_iterations=max_iterations,
                            covariance=True, **BA_DEFAULTS, **ba_kw)
         rows = _rig_rows(ba, rec, R_ref, "full" if mode == "full" else "rotation")
         key_of = {int(v): k for k, v in proj.settings.get("database", {}).get("cameras", {}).items()}
@@ -932,7 +932,7 @@ def joint_adjust(rec, proj: SfmProject, temps: Dict[str, float], ppm_per_degC: f
     args = dict(BA_DEFAULTS)
     args.setdefault("linear_solver", "sparse_schur")        # blocks share only the cameras and the rig: very sparse
     args.update(kw)
-    ba = bundle_adjust(rec, proj, refine_rig=refine_rig, max_iterations=max_iterations, covariance=covariance,
+    ba = bundle_adjust(rec, proj, navcam_aspect="free", refine_rig=refine_rig, max_iterations=max_iterations, covariance=covariance,
                        keypoint_scale=ks, hold_cameras=hold_cameras, **args)
     ba["ppm_per_degC"] = float(ppm_per_degC)
     ba["rig_slopes_mdeg_per_degC"] = list(rig_slopes) if rig_slopes else None
@@ -1571,7 +1571,7 @@ def scale_offsets(sc: Scape, free: Sequence[str] = ("cx", "cy"), min_images: int
     if sum(1 for r in rows if not r.get("reference")) == 0:
         out["skipped"] = "one scale per eye"
         return out
-    ba = bundle_adjust(rec, proj, refine_rig=False, max_iterations=max_iterations, covariance=True, **BA_DEFAULTS)
+    ba = bundle_adjust(rec, proj, navcam_aspect="free", refine_rig=False, max_iterations=max_iterations, covariance=True, **BA_DEFAULTS)
     cov = (ba.get("covariance") or {})
     vf = float(cov.get("variance_factor", 1.0))
     blocks = cov.get("blocks", {})

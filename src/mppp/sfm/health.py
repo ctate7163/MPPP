@@ -78,6 +78,12 @@ DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     # waypoint accuracy; prior_scale_error_pct is reported without a verdict
     "prior_scale_error_m": (0.5, 1.5, "above"),
     "block_rotation_deg": (0.3, 1.0, "above"),              # v0p30: the whole block turned away from the ENU frame
+    # v0p65: tie points far beyond the ground their rays point at (false matches that are epipolar-consistent):
+    # 0-4 % on nine good blocks, 24 % at Three Forks South with COLMAP guided matching (v0p63)
+    "beyond_ground_fraction": (0.05, 0.15, "above"),
+    # v0p65: Navcam pixel aspect fy / fx against its start (the consensus): < 0.06 % on good blocks, 0.24 % at Three
+    # Forks South and 0.2-0.3 % at Belva with Mastcam-Z
+    "navcam_aspect_change_pct": (0.06, 0.15, "above"),
 }
 _RANK = {"pass": 0, "info": 0, "warn": 1, "fail": 2}
 
@@ -136,6 +142,69 @@ def _rotation_deg(R: np.ndarray) -> float:
 
 # ------------------------------------------------ coverage across the image
 RADIUS_EDGES = (0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0)
+
+
+GROUND_CAMERA_HEIGHT_M = 1.9     # v0p65: Navcam / Mastcam-Z camera height above the ground (remote sensing mast)
+
+
+def beyond_ground(rec, camera_height_m: float = GROUND_CAMERA_HEIGHT_M, min_depression_deg: float = 3.0,
+                  factor: float = 3.0, sample: Optional[int] = 200000, seed: int = 0) -> Dict[str, Any]:
+    """
+    v0p65: the share of tie points that lie far beyond the ground their rays point at.  For each observation whose ray
+    points more than ``min_depression_deg`` below the horizon, the flat ground at ``camera_height_m`` below the camera
+    is at h / sin(depression); a point counts as beyond the ground when every such observation sees it more than
+    ``factor`` times farther.  On flat or rising terrain no true point is; a slope falling away from the camera (a
+    crater rim, a valley) can be, so a few percent is normal.  False matches that agree with the epipolar geometry
+    (COLMAP guided matching at Three Forks South) triangulate there.  The world frame is East-North-Up.
+    """
+    ids, xyz = [], []
+    for pid, pt in rec.points3D.items():
+        ids.append(int(pid))
+        xyz.append(pt.xyz)
+    n = len(ids)
+    if not n:
+        return {"points": 0, "fraction": None}
+    sel = np.arange(n)
+    if sample and n > sample:
+        sel = np.sort(np.random.default_rng(seed).choice(n, sample, replace=False))
+    centre: Dict[int, np.ndarray] = {}
+    for iid, im in rec.images.items():
+        if im.has_pose:
+            centre[int(iid)] = np.asarray(im.projection_center(), float)
+    flagged = considered = 0
+    sin_min = np.sin(np.radians(min_depression_deg))
+    for i in sel:
+        pt = rec.points3D[ids[i]]
+        cs = [centre[e.image_id] for e in pt.track.elements if e.image_id in centre]
+        if not cs:
+            continue
+        v = np.asarray(xyz[i], float) - np.asarray(cs)
+        r = np.linalg.norm(v, axis=1)
+        s_ = -v[:, 2] / np.maximum(r, 1e-12)              # sine of the depression below the horizon
+        down = s_ > sin_min
+        if not down.any():
+            continue
+        considered += 1
+        if np.all(r[down] > factor * camera_height_m / s_[down]):
+            flagged += 1
+    return {"points": int(n), "sampled": int(len(sel)), "below_horizon": int(considered), "beyond": int(flagged),
+            "fraction": float(flagged / len(sel)) if len(sel) else None,
+            "fraction_of_below_horizon": float(flagged / considered) if considered else None,
+            "camera_height_m": camera_height_m, "min_depression_deg": min_depression_deg, "factor": factor}
+
+
+def navcam_aspect_changes(project: SfmProject, rec) -> Dict[str, float]:
+    """v0p65: 100 (fy / fx refined / fy / fx start - 1) of every Navcam camera (eye or temperature bin)."""
+    out: Dict[str, float] = {}
+    for k, cid in (project.settings.get("database", {}).get("cameras", {}) or {}).items():
+        c0 = project.cameras.get(k) or {}
+        if not str(c0.get("group") or k).startswith("N") or int(cid) not in rec.cameras:
+            continue
+        if c0.get("model") in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL") or len(c0.get("params") or []) < 2:
+            continue
+        p0, p1 = np.asarray(c0["params"], float), np.asarray(rec.cameras[int(cid)].params, float)
+        out[k] = float(100 * ((p1[1] / p1[0]) / (p0[1] / p0[0]) - 1))
+    return out
 
 
 def coverage_by_radius(rec, project: SfmProject, edges: Sequence[float] = RADIUS_EDGES) -> Dict[str, Any]:
@@ -366,6 +435,12 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
           f"largest tied block {len(comps[0]) if comps else 0} of {n_st} stations; "
           f"{sum(len(c) == 1 for c in comps)} stations with no cross-station ties")
 
+    bg = beyond_ground(rec)
+    check("tie points", "beyond_ground_fraction", bg["fraction"],
+          f"{bg['beyond']} of {bg['sampled']} points more than {bg['factor']:g} x farther than the flat ground "
+          f"({bg['camera_height_m']:g} m below the camera) along every ray pointing below the horizon: false matches "
+          f"that agree with the epipolar geometry, or terrain falling away" if bg["fraction"] is not None else "")
+
     # ---- reprojection
     res = native_residuals(rec, project)
     r = res["residual_native_px"]
@@ -443,6 +518,13 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         cams_after[instr] = ch
         for k in ("focal_change_pct", "principal_point_change_px", "ray_displacement_max_px"):
             check("camera model", k, ch[k], instr, "%" if k.endswith("pct") else "full-res px")
+
+    asp = navcam_aspect_changes(project, rec)
+    if asp:
+        wk = max(asp, key=lambda k: abs(asp[k]))
+        check("camera model", "navcam_aspect_change_pct", abs(asp[wk]),
+              f"largest change of the Navcam pixel aspect fy / fx from its start: {wk} {asp[wk]:+.3f} % "
+              f"(NAVCAM_ASPECT = \"hold\" keeps it at the consensus value)", "%")
 
     # ---- stereo rig
     rig_out = {}
@@ -568,7 +650,7 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
             "track_length_histogram": hist, "residual_by_camera_resolution": eye_med,
             "residual_by_radius": radial, "coverage_by_radius": cov, "worst_images": [{"name": by_iid[i]["name"], "median_px": m}
                                                            for m, i in outl[:20]],
-            "cameras": cams_after, "rig": rig_out, "stations": st_tab, "prior_similarity": sims,
+            "cameras": cams_after, "rig": rig_out, "beyond_ground": bg, "navcam_aspect_change_pct": asp, "stations": st_tab, "prior_similarity": sims,
             "held_images": held, "weak_images": weak, "station_components": comps,
             "station_labels": labels, "world_frame": {"frame": project.settings.get("world_frame"),
                                                        "offset_enu_m": list(project.offset), **report_extra},
@@ -679,3 +761,72 @@ def plot_health(report: Dict[str, Any], rec, project: SfmProject, path: PathLike
     fig.savefig(path, dpi=130)
     plt.close(fig)
     return Path(path)
+
+
+# ----------------------------------------------------------------------------------------------------- block screening
+def screen_block(work: PathLike, model: str = "cahv_ba", thresholds: Optional[Dict[str, tuple]] = None,
+                 sample: Optional[int] = 100000) -> Dict[str, Any]:
+    """
+    v0p65: the two checks that found the bad blocks of v0p63-v0p64 (beyond-ground share of the tie points, change of
+    the Navcam pixel aspect fy / fx from its start), from a saved alignment ``<work>/colmap/sparse/<model>``, for blocks
+    aligned before these checks were part of the health report.  Also records the MPPP version and whether COLMAP
+    guided matching was on.  Returns {"verdict": "pass" | "warn" | "fail", "reasons", "beyond_ground_fraction",
+    "navcam_aspect_change_pct", "aspect_camera", "mppp", "guided_matching", "zcam"}.
+    """
+    import json as _json
+    import pycolmap
+    from .sites import parse_work_folder
+    thr = dict(DEFAULT_THRESHOLDS, **(thresholds or {}))
+    work = Path(work)
+    root = work / "colmap" if (work / "colmap").is_dir() else work
+    out: Dict[str, Any] = {"work": str(work), "zcam": parse_work_folder(work if root != work else work.parent)[1]}
+    sp = root / "sparse" / model
+    if not (sp / "points3D.bin").is_file() and not (sp / "points3D.txt").is_file():
+        out.update(verdict="fail", reasons=[f"no alignment in {sp}"])
+        return out
+    rec = pycolmap.Reconstruction(str(sp))
+    project = SfmProject.load(root)
+    bg = beyond_ground(rec, sample=sample)
+    asp = navcam_aspect_changes(project, rec)
+    wk = max(asp, key=lambda k: abs(asp[k])) if asp else None
+    out.update(beyond_ground_fraction=bg["fraction"], navcam_aspect_change_pct=(asp[wk] if wk else None),
+               aspect_camera=wk)
+    for f, k in (("run_done.json", "mppp"), ("database_matches.json", "matching")):
+        try:
+            d = _json.loads((root / f).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if k == "mppp":
+            out["mppp"] = d.get("mppp")
+        else:
+            out["guided_matching"] = bool((d.get("matching") or {}).get("guided_matching"))
+    reasons, worst = [], "pass"
+    for name, v in (("beyond_ground_fraction", bg["fraction"]),
+                    ("navcam_aspect_change_pct", None if wk is None else abs(asp[wk]))):
+        st = _status(name, v, thr)
+        if st in ("warn", "fail"):
+            reasons.append(f"{name} {v:.4g} ({st}; warn {thr[name][0]:g}, fail {thr[name][1]:g})"
+                           + (f" - {wk}" if name.startswith("navcam") else ""))
+            worst = max(worst, st, key=lambda s: _RANK[s])
+    if out.get("guided_matching"):
+        reasons.append("matched with COLMAP guided matching (v0p63-v0p64.0): realign")
+        worst = max(worst, "warn", key=lambda s: _RANK[s])
+    out.update(verdict=worst, reasons=reasons)
+    return out
+
+
+def screen_blocks(blocks: Dict[str, PathLike], verbose: bool = True, **kw) -> Dict[str, Dict[str, Any]]:
+    """:func:`screen_block` of every block {name: WORK folder}; prints one line per block."""
+    out = {}
+    for name, work in blocks.items():
+        try:
+            r = screen_block(work, **kw)
+        except Exception as e:                                   # noqa: BLE001 - a damaged block is reported, not fatal
+            r = {"work": str(work), "verdict": "fail", "reasons": [f"{type(e).__name__}: {e}"]}
+        out[name] = r
+        if verbose:
+            bg, a = r.get("beyond_ground_fraction"), r.get("navcam_aspect_change_pct")
+            print(f"  {r['verdict'].upper():4s} {name:34s} MPPP {str(r.get('mppp')):7s} beyond-ground "
+                  f"{'-' if bg is None else f'{100 * bg:5.1f} %'}  aspect {'-' if a is None else f'{a:+.3f} %'} "
+                  f"{r.get('aspect_camera') or ''}" + (f"  | {'; '.join(r['reasons'])}" if r.get("reasons") else ""))
+    return out

@@ -404,10 +404,19 @@ PROCESS_STOP = "## 3"                 # notebook 03: sections 1-2 select and pro
 PROCESS_DONE = "process_done.json"    # <WORK>/processed/process_done.json: written by a finished processing run
 
 
+# v0p65: bumped when the alignment code changes its results under unchanged notebook settings (a default changed in
+# the code, not in the notebook), so that run_sites.py aligns every site again instead of skipping it as done.
+# 65: Navcam aspect held, pose-guided matching with a local depth window (v0p65); before v0p65 not part of the key
+ALIGN_RULES = 65
+
+
 def run_key(settings: Dict[str, Any], source: str, variant: str) -> str:
     """A short hash of what decides a run's result (the notebook settings, source and variant)."""
     import hashlib
-    txt = json.dumps({"settings": settings, "source": source, "variant": variant or ""}, sort_keys=True, default=str)
+    d = {"settings": settings, "source": source, "variant": variant or ""}
+    if not str(source).startswith("process:"):
+        d["rules"] = ALIGN_RULES                  # v0p65: changed code defaults rerun the alignments
+    txt = json.dumps(d, sort_keys=True, default=str)
     return hashlib.sha256(txt.encode()).hexdigest()[:16]
 
 

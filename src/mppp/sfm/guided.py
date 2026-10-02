@@ -13,7 +13,12 @@ the database, the block is triangulated from it and adjusted once more.
 For a keypoint ray ``a`` of A (world frame, from centre ``C_A``) and a ray ``b`` of B (from ``C_B``): ``b`` is on the
 epipolar plane when ``|n . b| < sin(tol)`` with ``n = a x (C_B - C_A)`` (normalised), and the two rays meet at range
 ``t`` along ``a`` and ``s > 0`` along ``b`` (closest approach), with ``d_min <= t <= d_max`` (A's depth range from its
-triangulated points).  ``tol`` is ``max_px`` native pixels of either image as an angle.  Camera models of any kind
+triangulated points).  v0p65: by default the depth window is local - for each keypoint of A, the depths of its
+``local_k`` nearest triangulated keypoints of A (within ``local_radius`` of the frame diagonal), widened by
+``local_factor`` either way; keypoints with fewer than ``local_min`` such neighbours are not matched
+(``local_fallback`` "skip") or use the image's whole range ("global").  A window spanning the whole scene lets a
+repeated texture match along the epipolar line at the wrong range (COLMAP's guided matching at Three Forks South put a
+quarter of the points 10-15 x beyond the ground).  ``tol`` is ``max_px`` native pixels of either image as an angle.  Camera models of any kind
 (fisheye included) enter only through their rays (``Camera.cam_ray_from_img``).
 """
 from __future__ import annotations
@@ -28,7 +33,10 @@ import numpy as np
 PathLike = Union[str, Path]
 
 GUIDED_DEFAULTS = {"families": ("Z",), "max_px": 3.0, "max_ratio": 0.85, "max_distance": 0.7, "max_pairs": 8,
-                   "min_points": 20, "max_baseline_m": 50.0, "depth_margin": (0.5, 3.0)}
+                   "min_points": 20, "max_baseline_m": 50.0, "depth_margin": (0.5, 3.0),
+                   # v0p65: the local depth window
+                   "depth": "local", "local_k": 8, "local_min": 3, "local_radius": 0.08, "local_factor": 1.4,
+                   "local_fallback": "skip"}
 
 
 def _pose(im) -> Tuple[np.ndarray, np.ndarray]:
@@ -49,6 +57,37 @@ def _depth_range(rec, iid: int, margin=(0.5, 3.0), default=(0.5, 1000.0)) -> Tup
     _, C = _pose(rec.images[iid])
     d = np.linalg.norm(X - C, axis=1)
     return max(0.1, margin[0] * float(np.percentile(d, 2))), min(5000.0, margin[1] * float(np.percentile(d, 98)))
+
+
+def local_depths(rec, iid: int, xy: np.ndarray, k: int = 8, min_neighbours: int = 3, radius: float = 0.08,
+                 factor: float = 1.4) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    v0p65: (dmin, dmax) for each keypoint ``xy`` of image ``iid`` from the depths (distance from the camera centre)
+    of its ``k`` nearest triangulated keypoints within ``radius`` x the frame diagonal: [min / factor, max x factor];
+    NaN with fewer than ``min_neighbours``.
+    """
+    from scipy.spatial import cKDTree
+    im = rec.images[iid]
+    cam = rec.cameras[im.camera_id]
+    n = len(xy)
+    lo, hi = np.full(n, np.nan), np.full(n, np.nan)
+    pts = [(p.xy, rec.points3D[p.point3D_id].xyz) for p in im.points2D if p.has_point3D()]
+    if len(pts) < min_neighbours or not n:
+        return lo, hi
+    uv = np.array([q[0] for q in pts], float)
+    _, C = _pose(im)
+    d = np.linalg.norm(np.array([q[1] for q in pts], float) - C, axis=1)
+    kk = int(min(k, len(pts)))
+    dist, idx = cKDTree(uv).query(np.asarray(xy, float), k=kk, distance_upper_bound=radius * float(np.hypot(cam.width, cam.height)))
+    dist, idx = dist.reshape(n, kk), idx.reshape(n, kk)
+    ok = np.isfinite(dist)
+    cnt = ok.sum(1)
+    dd = np.where(ok, d[np.minimum(idx, len(d) - 1)], np.nan)
+    good = cnt >= min_neighbours
+    if good.any():
+        lo[good] = np.nanmin(dd[good], axis=1) / factor
+        hi[good] = np.nanmax(dd[good], axis=1) * factor
+    return lo, hi
 
 
 def _in_frame(cam, uv: np.ndarray, margin: float = 0.0) -> np.ndarray:
@@ -112,12 +151,15 @@ def _unit(d: np.ndarray) -> np.ndarray:
 
 def guided_pair_matches(rec, a: int, b: int, desc_a: np.ndarray, desc_b: np.ndarray, scale_a: float = 1.0,
                         scale_b: float = 1.0, depth: Optional[Tuple[float, float]] = None, max_px: float = 3.0,
-                        max_ratio: float = 0.85, max_distance: float = 0.7, chunk: int = 2048) -> np.ndarray:
+                        max_ratio: float = 0.85, max_distance: float = 0.7, chunk: int = 2048,
+                        local: Optional[Dict[str, Any]] = None) -> np.ndarray:
     """
     Keypoint index pairs (k in A, l in B) of one image pair with known poses (see the module docstring): epipolar
     and depth-range candidates, then the ratio test (descriptor angles, best / second best < ``max_ratio``; a single
     candidate must be closer than ``max_distance`` rad) and a cross check, both among the candidates only.
-    ``scale_*``: the images' downsample scale (native pixels = full-frame pixels x scale).
+    ``scale_*``: the images' downsample scale (native pixels = full-frame pixels x scale).  ``local`` (v0p65):
+    {"k", "min", "radius", "factor", "fallback"} - a depth window per keypoint of A (:func:`local_depths`), inside
+    ``depth``; None uses ``depth`` for every keypoint.
     """
     ia, ib = rec.images[a], rec.images[b]
     ca, cb = rec.cameras[ia.camera_id], rec.cameras[ib.camera_id]
@@ -133,12 +175,24 @@ def guided_pair_matches(rec, a: int, b: int, desc_a: np.ndarray, desc_b: np.ndar
     dmin, dmax = depth or _depth_range(rec, a)
     ra = np.asarray(ca.cam_ray_from_img(ka), float) @ Ra          # world rays (rows): R^T r
     rb = np.asarray(cb.cam_ray_from_img(kb), float) @ Rb
+    lo_a, hi_a = np.full(len(ka), float(dmin)), np.full(len(ka), float(dmax))
+    if local is not None:                                          # v0p65: the depth window of each keypoint
+        lo, hi = local_depths(rec, a, ka, int(local.get("k", 8)), int(local.get("min", 3)),
+                              float(local.get("radius", 0.08)), float(local.get("factor", 1.4)))
+        has = np.isfinite(lo)
+        lo_a[has] = np.clip(lo[has], dmin, dmax)
+        hi_a[has] = np.clip(hi[has], dmin, dmax)
+        if str(local.get("fallback", "skip")) == "skip":
+            lo_a[~has], hi_a[~has] = np.inf, -np.inf               # no candidates
     # only keypoints whose rays can reach the other frame (at the near, middle and far depth)
-    dm = float(np.sqrt(dmin * dmax))
     sel_a = np.zeros(len(ka), bool)
     sel_b = np.zeros(len(kb), bool)
+    live = hi_a >= lo_a
+    dm_a = np.sqrt(np.where(live, lo_a * hi_a, 1.0))
+    for da_ in (lo_a, dm_a, hi_a):
+        sel_a |= live & _in_frame(cb, _project(rec, b, Ca + np.where(live, da_, 1.0)[:, None] * ra), 0.02)
+    dm = float(np.sqrt(dmin * dmax))
     for d in (dmin, dm, dmax):
-        sel_a |= _in_frame(cb, _project(rec, b, Ca + d * ra), 0.02)
         sel_b |= _in_frame(ca, _project(rec, a, Cb + d * rb), 0.02)
     ia_idx, ib_idx = np.where(sel_a)[0], np.where(sel_b)[0]
     if not len(ia_idx) or not len(ib_idx):
@@ -147,6 +201,7 @@ def guided_pair_matches(rec, a: int, b: int, desc_a: np.ndarray, desc_b: np.ndar
     fb = float(np.sqrt(cb.params[0] * cb.params[1])) if len(cb.params) > 1 else float(cb.params[0])
     tol = np.sin(max_px / max(scale_a, 1e-6) / fa + max_px / max(scale_b, 1e-6) / fb)
     A, B = ra[ia_idx], rb[ib_idx]
+    LO, HI = lo_a[ia_idx], hi_a[ia_idx]
     n = np.cross(A, base)
     n /= np.linalg.norm(n, axis=1, keepdims=True)
     da, db = _unit(desc_a[ia_idx]), _unit(desc_b[ib_idx])
@@ -164,7 +219,7 @@ def guided_pair_matches(rec, a: int, b: int, desc_a: np.ndarray, desc_b: np.ndar
         den = np.maximum(1.0 - c * c, 1e-12)
         t = (c * e1 - d1) / den                                          # range along A's ray
         u = (e1 - c * d1) / den                                          # along B's ray
-        ok = (t >= dmin) & (t <= dmax) & (u > 0)
+        ok = (t >= LO[e][i]) & (t <= HI[e][i]) & (u > 0)
         i, j = i[ok], j[ok]
         if not len(i):
             continue
@@ -225,6 +280,10 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
     scale = {r["image_id"]: float(r.get("downsample_scale", 1.0)) for r in project.images if "image_id" in r}
     fam = {r["image_id"]: str(r["instrument"])[:1] for r in project.images if "image_id" in r}
     db = pycolmap.Database.open(str(out))
+    if o.get("depth", "local") not in ("local", "global"):
+        raise ValueError("pose-guided matching: depth must be 'local' or 'global'")
+    local = ({"k": o["local_k"], "min": o["local_min"], "radius": o["local_radius"], "factor": o["local_factor"],
+              "fallback": o["local_fallback"]} if o.get("depth", "local") == "local" else None)
     desc: Dict[int, np.ndarray] = {}
     depth: Dict[int, Tuple[float, float]] = {}
     n_new, by_fam, n_pairs_used, n_nodesc = 0, {}, 0, 0
@@ -240,7 +299,7 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
             if a not in depth:
                 depth[a] = _depth_range(rec, a, tuple(o["depth_margin"]))
             m = guided_pair_matches(rec, a, b, desc[a], desc[b], scale.get(a, 1.0), scale.get(b, 1.0), depth[a],
-                                    float(o["max_px"]), float(o["max_ratio"]), float(o["max_distance"]))
+                                    float(o["max_px"]), float(o["max_ratio"]), float(o["max_distance"]), local=local)
             if not len(m):
                 continue
             i1, i2 = (a, b) if a < b else (b, a)

@@ -2,6 +2,29 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.65.0 — 2026-10-02
+
+Lessons from Three Forks South (0.63, COLMAP guided matching) and Belva N+Z (0.60, Navcam fy drift):
+
+- **Navcam pixel aspect held** (notebook 03 `NAVCAM_ASPECT = "hold"`, `reconstruct(navcam_aspect=...)`):
+  - Every bundle adjustment of the run, the thermal stage included, adds a soft prior per Navcam camera and temperature bin: fy / fx stays at its start, the consensus aspect (1-sigma 2e-5, about 0.03 px).
+  - The pixel aspect belongs to the detector, and thermal expansion is isotropic. At Three Forks South fy moved +8 px against fx, and at Belva N+Z 2.6–3.8 px.
+  - `"free"` restores fx and fy refined apart (0.64). The Navcam calibration studies and the consensus keep the aspect free.
+- **Two new health checks** (`mppp.sfm.health`):
+  - `beyond_ground_fraction` (warn 5 %, fail 15 %): the share of tie points more than 3x farther than the flat ground (1.9 m below the camera) along every ray pointing more than 3° below the horizon.
+    - These are false matches that agree with the epipolar geometry. The nine good blocks have 0–4 %; Three Forks South has 24 %.
+  - `navcam_aspect_change_pct` (warn 0.06 %, fail 0.15 %): the largest change of a Navcam camera's fy / fx from its start.
+- **Block screening** (`screen_block`, `screen_blocks`): the two checks from a saved alignment, for blocks aligned before 0.65; COLMAP guided matching is flagged.
+  - Notebook 04 screens the study blocks first (`STUDY_SCREEN = "fail"` leaves out FAIL blocks; `block_screening.json` in the study folder).
+  - With `STUDY_NAVCAM_ONLY = True` the study uses only the Navcam-only blocks. The `_colmap_zcam` blocks repeat the same Navcam frames, and their Navcam cameras can follow the Mastcam-Z frames.
+- **Pose-guided matching with a local depth window:**
+  - Each keypoint of A is matched only within the depths of its 8 nearest triangulated keypoints (within 8 % of the frame diagonal), 1.4x either way.
+  - Keypoints with fewer than 3 such neighbours are not matched (`local_fallback = "skip"`). `depth = "global"` restores the image-wide range of 0.64.
+  - In the synthetic test the Mastcam-Z frames have few triangulated keypoints, so the local window recovers 16,000 of the 30,000 Navcam–Zcam matches, all true. `local_fallback = "global"` recovers 29,600. A real stage-2 Mastcam-Z frame has its tie points spread over the frame.
+  - The stage is undone when it raises the beyond-ground share by more than 2 points (`POSE_GUIDED_MAX_BEYOND_GROUND_RISE`). The shares before and after are in `project.settings["pose_guided"]`.
+- **Alignment rules in the run key** (`runner.ALIGN_RULES = 65`): a code default that changes the results now reruns finished sites. The processing key is unchanged.
+  - The first batch with 0.65 aligns every site again, as the Navcam refresh needs anyway.
+
 ## 0.64.1 — 2026-10-02
 
 - **Guided matching is off again by default** (`match(guided_matching=False)`, notebook 03 `MATCH`). It was on in 0.63.0–0.64.0.
