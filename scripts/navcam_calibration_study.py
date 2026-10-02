@@ -488,7 +488,8 @@ def cmd_consensus(a, scapes_cfg, samples):
               + (", ".join(f"{k} {v[1]:.0f} m" for k, v in big.items()) or "none"), flush=True)
         tr = {k: v[0] for k, v in big.items()} or None
     res = fit_consensus(scapes_cfg, points=a.points, start_dir=a.start_cameras, translation_scapes=tr,
-                        apply_translation=bool(a.apply_translation))
+                        apply_translation=bool(a.apply_translation), refit_thermal=bool(a.refit_thermal),
+                        thermal_terms=tuple(a.thermal_terms))
     d = write_consensus(res, out / "navcam_joint")
     print(f"candidate consensus: {d}  (promote: python scripts\\promote_cmods.py {d} --note \"...\")", flush=True)
 
@@ -522,6 +523,10 @@ def main(argv=None):
                          "this many metres (0: no translation fit)")
     ap.add_argument("--apply-translation", action="store_true",
                     help="consensus (v0p62): write the fitted translation into the candidate rig (projects then use it)")
+    ap.add_argument("--refit-thermal", action="store_true",
+                    help="consensus (v0p64): refit the thermal terms in the consensus form (profiles, --thermal-terms)")
+    ap.add_argument("--thermal-terms", nargs="*", default=["f", "NL_cx"],
+                    help="consensus (v0p64): f (ppm/degC), NL_cx, NR_cx, NL_cy, NR_cy (px/degC); default f NL_cx")
     ap.add_argument("--warm-slope", type=float, default=40.0)
     ap.add_argument("--grid", type=float, nargs="*", default=[0, 15, 30, 45, 60, 75, 90])
     ap.add_argument("--fixed-slope", type=float, help="joint: skip the profile and use this slope (ppm/degC)")

@@ -19,7 +19,7 @@ import datetime
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 
@@ -59,15 +59,85 @@ def radial_stats(rec, proj, ks, kmap) -> Dict[str, Any]:
             "p95_px": float(np.percentile(res, 95)), "radial": bins}
 
 
+THERMAL_TERMS = ("f", "NL_cx", "NR_cx", "NL_cy", "NR_cy")
+THERMAL_STEPS = {"f": 10.0, "NL_cx": 0.03, "NR_cx": 0.03, "NL_cy": 0.03, "NR_cy": 0.03}    # profile grid steps
+
+
+def _thermal_values(th: Dict[str, Any]) -> Dict[str, float]:
+    """{"f": ppm/degC, "NL_cx": px/degC, ...} of a consensus result's ``thermal`` entry."""
+    pp = th.get("pp_slopes") or {}
+    return {"f": float(th["ppm_per_degC"]),
+            "NL_cx": float(pp.get("NL", [th.get("cx_px_per_degC_NL", 0.0), 0.0])[0]),
+            "NL_cy": float(pp.get("NL", [0.0, 0.0])[1]),
+            "NR_cx": float(pp.get("NR", [0.0, 0.0])[0]), "NR_cy": float(pp.get("NR", [0.0, 0.0])[1])}
+
+
+def _pp_slopes(v: Dict[str, float]) -> Dict[int, Tuple[float, float]]:
+    return {1: (float(v["NL_cx"]), float(v["NL_cy"])), 2: (float(v["NR_cx"]), float(v["NR_cy"]))}
+
+
+def profile_thermal(rec, proj, temps, values: Dict[str, float], T0: float, term: str, drift=None,
+                    iterations: int = 50, npoints: int = 5, verbose: bool = True) -> Dict[str, Any]:
+    """
+    v0p64: the joint cost over a grid of one thermal term (``"f"`` ppm/degC, ``"NL_cx"`` ... px/degC), the others at
+    ``values``, each adjustment started from the same converged state (``rec`` is not changed).  The best value is
+    the minimum of a parabola through the costs, its sd sqrt(variance factor / curvature) (:func:`navcal.fit_profile`).
+    A minimum outside the grid extends it by two steps (twice at most).
+    """
+    import copy as _copy
+    from . import navcal as NC
+    step = THERMAL_STEPS[term]
+    c0 = float(values[term])
+    grid = [c0 + step * (k - (npoints - 1) / 2) for k in range(npoints)]
+    rows: list = []
+    done = set()
+    for _ in range(3):
+        for g in grid:
+            if round(g, 9) in done:
+                continue
+            done.add(round(g, 9))
+            v = dict(values, **{term: float(g)})
+            r = _copy.deepcopy(rec)
+            t = time.time()
+            kw: Dict[str, Any] = {"pp_slopes": _pp_slopes(v)}
+            if drift:
+                kw["drift"] = drift
+            ba = NC.joint_adjust(r, proj, temps, v["f"], T0, max_iterations=iterations, rig_slopes=(0.0, 0.0), **kw)
+            red = max(2 * ba["observations"] - 1, 1)
+            rows.append({"ppm_per_degC": float(g), "cost": float(ba["final_cost"]), "iterations": ba["iterations"],
+                         "variance_factor": float(2 * ba["final_cost"] / red)})
+            if verbose:
+                print(f"  {term} {g:+.4f}: cost {ba['final_cost']:.2f} it {ba['iterations']} ({time.time() - t:.0f} s)",
+                      flush=True)
+        fit = NC.fit_profile(sorted(rows, key=lambda r: r["ppm_per_degC"]))
+        lo, hi = min(r["ppm_per_degC"] for r in rows), max(r["ppm_per_degC"] for r in rows)
+        b = fit["best_ppm_per_degC"]
+        if lo <= b <= hi:
+            break
+        grid = [hi + step, hi + 2 * step] if b > hi else [lo - step, lo - 2 * step]
+    out = {"term": term, "best": float(fit["best_ppm_per_degC"]), "sd": float(fit["sd_ppm_per_degC"]),
+           "start": c0, "curvature": fit["curvature"], "variance_factor": fit["variance_factor"],
+           "rows": [{"value": r["ppm_per_degC"], "cost": r["cost"], "iterations": r["iterations"]} for r in fit["rows"]],
+           "at_edge": not (lo <= fit["best_ppm_per_degC"] <= hi)}
+    if verbose:
+        print(f"{term}: {out['best']:+.4f} +- {out['sd']:.4f} (start {c0:+.4f})" + ("  [outside the grid]" if out["at_edge"] else ""),
+              flush=True)
+    return out
+
+
 def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iterations: int = 100,
                   k4_zero: bool = True, start_dir: Optional[PathLike] = None, verbose: bool = True,
                   translation_scapes: Optional[Dict[str, PathLike]] = None, translation_sigma_m: float = 0.05,
-                  apply_translation: bool = False) -> Dict[str, Any]:
+                  apply_translation: bool = False, refit_thermal: bool = False,
+                  thermal_terms: Tuple[str, ...] = ("f", "NL_cx")) -> Dict[str, Any]:
     """The joint adjustment (see the module docstring) of the blocks ``{name: WORK folder}``; returns the shared
     cameras, the rig, residuals by radius and the per-block image counts.  v0p62: ``translation_scapes`` (the large
     blocks, :func:`large_blocks`): then :func:`fit_rig_translation` on them with the new cameras held
     (``res["rig_translation"]``); ``apply_translation`` makes it the rig's translation (``rig_t``), which
-    :func:`write_consensus` then writes with ``"translation": "fitted"`` for the projects to use."""
+    :func:`write_consensus` then writes with ``"translation": "fitted"`` for the projects to use.  v0p64:
+    ``refit_thermal`` profiles the ``thermal_terms`` (``"f"`` ppm/degC, ``"NL_cx"``, ``"NR_cx"``, ``"NL_cy"``,
+    ``"NR_cy"`` px/degC, about T0) one after the other in this same form (:func:`profile_thermal`), then adjusts once
+    more at the best values; the result's ``thermal`` holds them with their sd and the profiles."""
     import pycolmap
     from . import navcal as NC
     from .project import PARAM_NAMES, navcam_distortion_terms
@@ -81,6 +151,12 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
     rig = (np.asarray(rj["R_sensor_from_ref"], float), np.asarray(rj["t_sensor_from_ref_m"], float))
     th = nl.get("thermal") or {}
     ppm, t0, pp_nl = float(th["ppm_per_degC"]), float(th["T0_degC"]), float(th.get("cx_px_per_degC") or 0.0)
+    thr = nr.get("thermal") or {}
+    tvals = {"f": ppm, "NL_cx": pp_nl, "NL_cy": float(th.get("cy_px_per_degC") or 0.0),
+             "NR_cx": float(thr.get("cx_px_per_degC") or 0.0), "NR_cy": float(thr.get("cy_px_per_degC") or 0.0)}
+    bad = [k for k in thermal_terms if k not in THERMAL_TERMS]
+    if bad:
+        raise ValueError(f"thermal_terms {bad}: use {THERMAL_TERMS}")
     drift = copy.deepcopy(rj.get("drift"))
     if drift:
         for k in ("yaw_mdeg_per_sol", "yaw_early_mdeg_per_sol", "yaw_fit_mdeg_per_sol"):
@@ -100,12 +176,27 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
         c = navcam_distortion_terms(c, "refine", k4="zero" if k4_zero else "consensus")
         proj.cameras[key] = c
         rec.cameras[cid].params = np.asarray(c["params"], float)
-    xkw: Dict[str, Any] = {"pp_slopes": {1: (pp_nl, 0.0)}}
+    xkw: Dict[str, Any] = {"pp_slopes": _pp_slopes(tvals)}
     if drift:
         xkw["drift"] = drift
     t = time.time()
-    ba = NC.joint_adjust(rec, proj, temps, ppm, t0, max_iterations=iterations, covariance=True,
+    ba = NC.joint_adjust(rec, proj, temps, ppm, t0, max_iterations=iterations, covariance=not refit_thermal,
                          rig_slopes=(0.0, 0.0), **xkw)
+    profiles = {}
+    if refit_thermal:
+        # v0p64: the thermal terms in the consensus form, one profile after the other from the converged state
+        if verbose:
+            print(f"consensus at the start values: cost {ba['final_cost']:.1f} ({time.time() - t:.0f} s); "
+                  f"thermal profiles: {', '.join(thermal_terms)}", flush=True)
+        for term in thermal_terms:
+            pr = profile_thermal(rec, proj, temps, tvals, t0, term, drift=drift, verbose=verbose)
+            profiles[term] = pr
+            tvals[term] = pr["best"]
+        ppm = tvals["f"]
+        xkw["pp_slopes"] = _pp_slopes(tvals)
+        t = time.time()
+        ba = NC.joint_adjust(rec, proj, temps, ppm, t0, max_iterations=iterations, covariance=True,
+                             rig_slopes=(0.0, 0.0), **xkw)
     ks = NC.keypoint_scales(proj, temps, ppm, t0)
     kmap = NC.thermal_keypoint_map(proj, temps, t0, (0.0, 0.0), xkw["pp_slopes"], drift)
     st = radial_stats(rec, proj, ks, kmap)
@@ -134,7 +225,11 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
            "rig_R": np.asarray(T.rotation.matrix()).tolist(), "rig_t": np.asarray(T.translation).tolist(),
            "stereo": NC.stereo_offset(rec.cameras[1], rec.cameras[2], T), "residuals": st,
            "blocks": {k: len(v) for k, v in idx["images"].items()}, "start_dir": str(d),
-           "thermal": {"ppm_per_degC": ppm, "T0_degC": t0, "cx_px_per_degC_NL": pp_nl}, "drift": drift,
+           "thermal": {"ppm_per_degC": ppm, "T0_degC": t0, "cx_px_per_degC_NL": tvals["NL_cx"],
+                       "pp_slopes": {"NL": [tvals["NL_cx"], tvals["NL_cy"]], "NR": [tvals["NR_cx"], tvals["NR_cy"]]},
+                       "refit": bool(refit_thermal), "terms": list(thermal_terms) if refit_thermal else [],
+                       "sd": {k: profiles[k]["sd"] for k in profiles},
+                       "profiles": profiles}, "drift": drift,
            "k4_zero": bool(k4_zero)}
     if translation_scapes:
         tr = fit_rig_translation(translation_scapes, out, points=points, sigma_m=translation_sigma_m,
@@ -145,7 +240,7 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
             out["rig_t"] = list(tr["t_m"])
     if verbose:
         print(f"consensus: cost {out['final_cost']:.1f}, it {out['iterations']}, median {st['median_px']:.4f} / rms "
-              f"{st['rms_px']:.4f} px, corners {st['radial'][-1]['median_px']:.3f} px, rig yaw "
+              f"{st['rms_px']:.4f} px, corners {st['radial'][-1]['median_px'] or float('nan'):.3f} px, rig yaw "
               f"{out['rig_abs_mdeg']['yaw_mdeg']:+.2f} mdeg  ({out['seconds']:.0f} s)", flush=True)
     return out
 
@@ -206,7 +301,7 @@ def fit_rig_translation(scapes_cfg: Dict[str, PathLike], res: Dict[str, Any], po
     for cid, key in ((1, "NL"), (2, "NR")):
         c = dict(proj.cameras[key], model=rec.cameras[cid].model.name, params=list(map(float, rec.cameras[cid].params)))
         proj.cameras[key] = navcam_distortion_terms(c, "refine", k4="zero" if res.get("k4_zero", True) else "consensus")
-    xkw: Dict[str, Any] = {"pp_slopes": {1: (float(th["cx_px_per_degC_NL"]), 0.0)}, "rig_translation_sigma_m": float(sigma_m)}
+    xkw: Dict[str, Any] = {"pp_slopes": _pp_slopes(_thermal_values(th)), "rig_translation_sigma_m": float(sigma_m)}
     if res.get("drift"):
         xkw["drift"] = res["drift"]
     t = time.time()
@@ -254,8 +349,21 @@ def write_consensus(res: Dict[str, Any], out_dir: PathLike, note: str = "",
         c["source"] = (f"MPPP Navcam consensus (mppp.sfm.navcal_consensus, {stamp}): one {eye} camera shared by "
                        f"{len(blocks)} blocks ({', '.join(blocks)}); fisheye + tangential at "
                        f"{res['thermal']['T0_degC']:g} degC, f {res['thermal']['ppm_per_degC']:+.1f} ppm/degC, NL cx "
-                       f"{res['thermal']['cx_px_per_degC_NL']:+.4f} px/degC (held), k4 = 0 (held), one rig yaw "
+                       f"{res['thermal']['cx_px_per_degC_NL']:+.4f} px/degC "
+                       f"({'refitted' if res['thermal'].get('refit') else 'held'}), k4 = 0 (held), one rig yaw "
                        f"{a['yaw_mdeg']:+.2f} mdeg. {note}".strip())
+        rt = res["thermal"]
+        if rt.get("refit"):                                # v0p64: the refitted thermal terms of this consensus
+            tv = _thermal_values(rt)
+            sdt = rt.get("sd") or {}
+            th0 = dict(c.get("thermal") or {})
+            th0.update({"ppm_per_degC": tv["f"], "T0_degC": float(rt["T0_degC"]),
+                        "cx_px_per_degC": tv[f"{eye}_cx"], "cy_px_per_degC": tv[f"{eye}_cy"],
+                        "note": f"v0p64: refitted with the consensus ({stamp}; profiles of {', '.join(rt.get('terms') or [])})"})
+            for k, kk in (("f", "sd_ppm_per_degC"), (f"{eye}_cx", "sd_cx_px_per_degC"), (f"{eye}_cy", "sd_cy_px_per_degC")):
+                if k in sdt:
+                    th0[kk] = float(sdt[k])
+            c["thermal"] = th0
         sde = (res.get("sd") or {}).get(eye) or {}
         if sde and "diag" not in sde:
             c["sd"] = {k: v for k, v in {**(c.get("sd") or {}), **sde}.items() if k not in c["fixed_params"]}

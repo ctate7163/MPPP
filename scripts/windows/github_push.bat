@@ -1,6 +1,7 @@
 @echo off
 REM ======================================================================================================
-REM MPPP - bring GitHub and this git working copy together, then push (v0p50.1; v0p61: stash, K for shared history).
+REM MPPP - bring GitHub and this git working copy together, then push (v0p50.1; v0p61: stash, K for shared history;
+REM v0p64: main first, then the tags - GitHub's older tags of rewritten commits are replaced only after asking).
 REM
 REM Fetches github.com/<you>/MPPP first ("pull before push"):
 REM   - GitHub has nothing new             -> push.
@@ -65,8 +66,8 @@ if errorlevel 2 goto :merge_shared
 for /f %%D in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmm"') do set "STAMP=%%D"
 git push origin "refs/remotes/origin/main:refs/heads/github-before-%STAMP%" || (pause & exit /b 1)
 echo GitHub's previous main is kept as the branch github-before-%STAMP%
-git push --force-with-lease=main:origin/main -u origin main --tags || (pause & exit /b 1)
-goto :done
+git push --force-with-lease=main:origin/main -u origin main || (pause & exit /b 1)
+goto :tags
 
 :merge_shared
 git merge --no-edit -X ours origin/main
@@ -87,14 +88,25 @@ if errorlevel 3 (echo nothing changed & pause & exit /b 1)
 if errorlevel 2 goto :merge_unrelated
 git push origin "refs/remotes/origin/main:refs/heads/github-before-v0p50" || (pause & exit /b 1)
 echo the old GitHub main is kept as the branch github-before-v0p50
-git push --force-with-lease=main:origin/main -u origin main --tags || (pause & exit /b 1)
-goto :done
+git push --force-with-lease=main:origin/main -u origin main || (pause & exit /b 1)
+goto :tags
 
 :merge_unrelated
 git merge --no-edit --allow-unrelated-histories -X ours origin/main -m "Merge the earlier GitHub history of MPPP" || (git merge --abort & echo merge failed - nothing changed & pause & exit /b 1)
 
 :push
-git push -u origin main --tags || (echo push failed & pause & exit /b 1)
+git push -u origin main || (echo push failed & pause & exit /b 1)
+
+:tags
+REM v0p64: tags separately. GitHub may still hold the tags of Claude's rewritten 0.50.0-0.51.0 commits (e.g.
+REM v0.50.0 "already exists"): this copy's tags point at the rewritten commits that main now contains.
+git push origin --tags 2>nul && goto :done
+echo.
+echo GitHub has tags with the same names on other commits (Claude's older, rewritten history), e.g.:
+git ls-remote --tags origin "v0.5*"
+choice /C YN /M "Replace GitHub's tags with this copy's (main is already pushed)"
+if errorlevel 2 (echo tags left as they are on GitHub & goto :done)
+git push --force origin --tags || (echo tag push failed & pause & exit /b 1)
 
 :done
 if not exist "_transfer" mkdir "_transfer"

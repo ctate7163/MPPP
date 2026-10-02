@@ -1184,7 +1184,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 thermal_free: Sequence[str] = ("fx", "fy"),
                 thermal_model: Optional[Dict[str, Dict[str, float]]] = None, localize_min_images: int = 0,
                 zcam_backlash: Optional[str] = None, zcam_backlash_z: float = 3.0,
-                zcam_focus_line: bool = True, zcam_line_cycles: int = 2, thermal_after_stage1: bool = True):
+                zcam_focus_line: bool = True, zcam_line_cycles: int = 2, thermal_after_stage1: bool = True,
+                pose_guided: Union[bool, Dict[str, Any]] = True):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
@@ -1200,7 +1201,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     (:func:`mppp.sfm.zcam.refit_focus_lines`: f0 and slope in focus count; outlier bins reported, not followed);
     the remaining rounds and the final adjustment hold them on the line.  Distortion, principal point (linear in
     focus from the model) and the zoom's rig stay one per eye / zoom.  The lines are in
-    ``project.settings["zcam_focus_lines"]``.  ``thermal_after_stage1`` (v0p61): with ``staged``, the Navcam thermal
+    ``project.settings["zcam_focus_lines"]``.  ``pose_guided`` (v0p64, notebook 03 ``POSE_GUIDED``; staged runs with
+    Mastcam-Z): after the stage-2 rounds, matches guided by the poses (:mod:`mppp.sfm.guided`; a dict overrides
+    ``GUIDED_DEFAULTS``) go into ``<project>/database_guided.db``, the block is triangulated from it and adjusted
+    once more; the report (Navcam-Mastcam-Z tie points before / after) is in ``project.settings["pose_guided"]``.  ``thermal_after_stage1`` (v0p61): with ``staged``, the Navcam thermal
     stage runs at the end of stage 1, so the Mastcam-Z frames are added to the final Navcam cameras (temperature bins).
     ``localize_min_images`` (v0p35.1, notebook 03 ``LOCALIZE_MIN_IMAGES``): stations (site, drive) with fewer images
     than this are not held by their waypoint position (see :func:`unlocalized_stations`, :func:`bundle_adjust`).
@@ -1450,6 +1454,29 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                       f"rms {entry['rms_native_px']:.3f} native px, {n_bad} obs filtered, {entry['elapsed_s']:.0f} s", flush=True)
             if exclude_outliers and k + 1 == min(int(exclude_after_round), len(schedule)):
                 _exclude(f"stage 2, after round {k + 1}")
+        if pose_guided and zkeys and Path(topts2.get("database") or project.database).is_file():
+            # v0p64: matches guided by the stage-2 poses (Mastcam-Z against Navcam and the other zooms), then one more
+            # triangulation from them and one adjustment at the last round's thresholds
+            from .guided import _family_ties, pose_guided_matching
+            before = _family_ties(rec, project)
+            dbg, prep = pose_guided_matching(rec, project, topts2.get("database") or project.database, verbose=verbose,
+                                             **(pose_guided if isinstance(pose_guided, dict) else {}))
+            topts2 = dict(topts, database=dbg)
+            tpx, loss, rmax = schedule[-1]
+            rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)
+            ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
+                               refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
+                               attitude_prior_deg=attitude_prior_deg,
+                               hold_cameras=sorted(hold | zkeys) if zcam_focus_line else sorted(hold),
+                               linear_solver=linear_solver)
+            n_bad = filter_observations(rec, project, float(rmax)) + drop_short_tracks(rec, min_track_length)
+            prep.update({"before": before, "after": _family_ties(rec, project), "filtered": n_bad, "ba": ba["brief"]})
+            log.append({"stage": 2, "pose_guided": prep})
+            project.settings["pose_guided"] = prep
+            if verbose:
+                print(f"[sfm] stage 2, pose-guided: Navcam-Mastcam-Z tie points {before['navcam_zcam_points']} -> "
+                      f"{prep['after']['navcam_zcam_points']}, points {before['points']} -> {prep['after']['points']}",
+                      flush=True)
         if exclude_outliers:
             _exclude("stage 2, before the final adjustment")
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),

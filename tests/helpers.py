@@ -264,9 +264,11 @@ def _zcam_rig_rec(tmp_path):
     return proj, new, sorted(zf)
 
 
-def _write_database(rec, path):
+def _write_database(rec, path, descriptors=False, keep_pair=None, seed=0):
     """v0p62: a COLMAP database with the cameras, rigs, frames, images and keypoints of ``rec`` and, as verified
-    two-view geometries, the matches its tracks imply - enough for ``pycolmap.triangulate_points``."""
+    two-view geometries, the matches its tracks imply - enough for ``pycolmap.triangulate_points``.  v0p64:
+    ``descriptors`` writes SIFT-like descriptors (one random vector per 3-D point plus noise per observation, random
+    for keypoints without a point); ``keep_pair(a, b)`` False leaves that pair's matches out."""
     import itertools
     from pathlib import Path
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -280,11 +282,23 @@ def _write_database(rec, path):
         for d in f.data_ids:
             nf.add_data_id(d)
         db.write_frame(nf, use_frame_id=True)
+    rng = np.random.default_rng(seed)
+    desc = {i: rng.normal(size=(im.num_points2D(), 128)) for i, im in rec.images.items()} if descriptors else {}
+    if descriptors:
+        for pt in rec.points3D.values():
+            base = rng.normal(size=128) * 3.0
+            for e in pt.track.elements:
+                desc[e.image_id][e.point2D_idx] = base + rng.normal(size=128) * 0.6
     for i, im in rec.images.items():
         ni = pycolmap.Image(name=im.name, camera_id=im.camera_id, image_id=i)
         ni.frame_id = im.frame_id
         db.write_image(ni, use_image_id=True)
         db.write_keypoints(i, np.array([q.xy for q in im.points2D], np.float32).reshape(-1, 2))
+        if descriptors:
+            d = np.abs(desc[i])
+            d = d / np.linalg.norm(d, axis=1, keepdims=True) * 512
+            db.write_descriptors(i, pycolmap.FeatureDescriptors(pycolmap.FeatureExtractorType.SIFT,
+                                                                np.clip(d, 0, 255).astype(np.uint8)))
     pairs = {}
     for pt in rec.points3D.values():
         els = [(e.image_id, e.point2D_idx) for e in pt.track.elements]
@@ -293,6 +307,8 @@ def _write_database(rec, path):
                 a, ia, b, ib = b, ib, a, ia
             pairs.setdefault((a, b), []).append((ia, ib))
     for (a, b), m in pairs.items():
+        if keep_pair is not None and not keep_pair(a, b):
+            continue
         tvg = pycolmap.TwoViewGeometry()
         tvg.config = 2
         tvg.inlier_matches = np.array(m, np.uint32)

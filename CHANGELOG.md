@@ -2,6 +2,24 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.64.0 — 2026-10-02
+
+- **Pose-guided matching after stage 2** (`mppp.sfm.guided`, notebook 03 `POSE_GUIDED = True`):
+  - Once the Mastcam-Z frames are aligned, each Zcam frame is matched again against the 8 registered images that see most of its triangulated points (Navcam and the other zooms; centres within 50 m).
+  - Each keypoint is compared only with the keypoints on its epipolar curve, within 3 native px, between the near and far ground of its frame (its triangulated points, 0.5x to 3x of the 2nd–98th percentile range).
+  - The ratio test (0.85) and cross check then run among those few candidates instead of across the whole image, so matches across a 3–10x pixel-scale difference survive.
+  - The new matches are added as two-view inliers to a copy, `<colmap>\database_guided.db`; the block is triangulated from it and adjusted once more.
+  - `project.settings["pose_guided"]` and the log give the Navcam–Mastcam-Z tie points before and after.
+  - Synthetic test: Navcam–Zcam matches removed from the database; the guided pass recovers about 30,000 with 1 wrong.
+- **Six SIFT octaves with Mastcam-Z:** notebook 03 `SIFT num_octaves = None` resolves to 6 (2x down to 1/16 of the image) when Mastcam-Z is aligned, and to COLMAP's 4 for Navcam-only blocks.
+- **Thermal terms refitted in the consensus form** (notebook 04 `REFIT_THERMAL = True`, `THERMAL_TERMS = ("f", "NL_cx")`; CLI `--refit-thermal --thermal-terms`):
+  - `navcal_consensus.profile_thermal` profiles each term (f ppm/°C, NL/NR cx and cy px/°C) over 5 joint adjustments from the converged consensus (k4 = 0, one rig yaw). The grid is extended when the minimum falls outside it. A final adjustment then runs at the best values.
+  - The terms are written with their sd into the candidate cameras' `thermal` blocks.
+  - This replaces the v0p40 study form (rig temperature slopes, lens choice) for this purpose. fy/fx (anisotropic) is not a term of the model.
+- **`github_push.bat`:**
+  - `main` is pushed first, then the tags.
+  - If GitHub still holds tags of Claude's rewritten 0.50.0–0.51.0 commits ("v0.50.0 already exists"), it asks before replacing them with this copy's.
+
 ## 0.63.0 — 2026-10-02
 
 More Navcam–Mastcam-Z tie points.
