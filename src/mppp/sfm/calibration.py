@@ -428,10 +428,22 @@ def write_navcam_consensus(cameras: Dict[str, Camera], rig: Optional[Tuple[np.nd
 
 
 def reference_camera(group: str, lens: str = "rational") -> Optional[Camera]:
-    """The start camera MPPP ships for ``group`` (Navcam rational JSON or Metashape XML)."""
-    from ..paths import data_dir
+    """The start camera MPPP ships for ``group`` (Navcam rational JSON or Metashape XML).  v0p62: ``lens =
+    "consensus"`` (or ``"fisheye_tangential"``) is the Navcam consensus in use (``cmods_dir()``,
+    ``M2020_<group>_fisheye_tangential.json``) at its reference temperature, with its ``thermal`` terms attached."""
+    from ..paths import cmods_dir, data_dir
     from .project import camera_from_colmap_json, camera_from_metashape_xml
     d = data_dir() / "cmods"
+    if group in ("NL", "NR") and lens in ("consensus", "fisheye_tangential"):
+        f = cmods_dir() / f"M2020_{group}_fisheye_tangential.json"
+        if not f.is_file():
+            f = d / f.name
+        js = json.loads(f.read_text(encoding="utf-8"))
+        p = np.asarray(js["params"], float)
+        cam = Camera(f"{group} consensus", group, js["model"], int(js["width"]), int(js["height"]), p, p)
+        cam.thermal = js.get("thermal")                      # {"ppm_per_degC", "T0_degC", "cx_px_per_degC", ...}
+        cam.source = str(f)
+        return cam
     if group in ("NL", "NR"):
         c = (camera_from_colmap_json(d / f"M2020_{group}_rational.json") if lens == "rational"
              else camera_from_metashape_xml(d / f"M2020_{group}0_frame.xml", ("b1", "b2")))
@@ -470,6 +482,163 @@ def reference_differences(sols: Dict[str, Solution], group: str, reference: Came
                          **{k: d[k] for k in ("rms_px", "centre_rms_px", "edge_rms_px", "corner_rms_px", "max_px",
                                               "coverage", "rotation_deg")}, "_diff": d})
     return rows
+
+
+def camera_at_temperature(cam: Camera, T: Optional[float]) -> Camera:
+    """v0p62: a copy of a consensus camera moved to temperature ``T`` by its ``thermal`` terms (fx, fy by
+    ppm_per_degC; cx, cy by cx_px_per_degC, cy_px_per_degC, all about T0_degC).  Unchanged without either."""
+    th = getattr(cam, "thermal", None)
+    if not th or T is None:
+        return cam
+    dT = float(T) - float(th["T0_degC"])
+    c = copy.copy(cam)
+    c.params = np.array(cam.params, float)
+    c.params[:2] *= 1.0 + 1e-6 * float(th.get("ppm_per_degC") or 0.0) * dT
+    c.params[2] += float(th.get("cx_px_per_degC") or 0.0) * dT
+    c.params[3] += float(th.get("cy_px_per_degC") or 0.0) * dT
+    return c
+
+
+def _main_camera(sol: Solution, group: str, min_observations: int, lens: Optional[str]) -> Optional[Camera]:
+    """The refined camera of ``group`` with the most observations (a temperature bin when the block has bins)."""
+    cs = [c for c in sol.cameras_of(group) if c.refined and c.n_obs >= min_observations
+          and (lens is None or c.distortion == lens)]
+    return max(cs, key=lambda c: c.n_obs) if cs else None
+
+
+def consensus_differences(sols: Dict[str, Solution], group: str, reference: Optional[Camera] = None,
+                          min_observations: int = 1000, step: float = 96.0,
+                          lens: Optional[str] = "fisheye_tangential") -> List[Dict[str, Any]]:
+    """
+    v0p62: per scape, its most observed refined ``group`` camera (``lens`` only) minus the consensus in use
+    (:func:`reference_camera` ``"consensus"``) moved to that camera's temperature (:func:`camera_at_temperature`),
+    rotation removed (:func:`mppp.cmod.compare_cameras`).  What is left is the scape-to-scape variation the consensus
+    and its thermal terms do not explain.  Rows as :func:`reference_differences` plus ``reference``.
+    """
+    ref0 = reference or reference_camera(group, "consensus")
+    rows = []
+    for n, s in sols.items():
+        c = _main_camera(s, group, min_observations, lens)
+        if c is None:
+            continue
+        T = camera_temperature(s, c)
+        ref = camera_at_temperature(ref0, T)
+        d = compare_cameras(ref.pixel_camera(), c.pixel_camera(), step=step)
+        rows.append({"scape": n, "camera": c.key, "lens": c.distortion, "observations": c.n_obs, "T_degC": T,
+                     "reference": "consensus", **{k: d[k] for k in ("rms_px", "centre_rms_px", "edge_rms_px",
+                                                                      "corner_rms_px", "max_px", "coverage",
+                                                                      "rotation_deg")}, "_diff": d})
+    return rows
+
+
+def label_camera(sol: Solution, camera_key: str, drop_e: bool = True) -> Optional[CameraModel]:
+    """
+    v0p62: the median label model (by focal length) of the images of one refined camera - the labels are
+    interpolated to each image's temperature, so a temperature-bin camera gets the labels of its own bin.
+    ``drop_e``: E = 0, i.e. the model at infinite range.  E moves the entrance pupil along the axis with field angle,
+    which only matters for points close to the camera; the fisheye mapping of a type-2/3 CAHVORE is its linearity
+    parameter, not E, and stays.  O and R carry the distortion (they overlap with k1, k2, k3, p1, p2, s1, s2).
+    """
+    from dataclasses import replace
+    lm = label_models(sol)
+    ms = [lm[n] for n, r in sol.images.items() if n in lm and r["instrument"] == camera_key]
+    if not ms:
+        return None
+    hs = [m.decompose()[1]["hs"] for m in ms]
+    m = ms[int(np.argsort(hs)[len(hs) // 2])]
+    if drop_e and m.E is not None:
+        m = replace(m, E=np.zeros(3))
+    return m
+
+
+def label_differences(sols: Dict[str, Solution], group: str, min_observations: int = 1000, step: float = 96.0,
+                      drop_e: bool = True, lens: Optional[str] = "fisheye_tangential") -> List[Dict[str, Any]]:
+    """
+    v0p62: per scape, its most observed refined ``group`` camera minus the PDS label model of the same images
+    (:func:`label_camera`, E = 0 with ``drop_e``), rotation removed.  ``e_effect_1m_px``: rms over the frame of what
+    E does to a point 1 m away (it falls with 1/range), for the record of why E can be dropped.
+    """
+    rows = []
+    for n, s in sols.items():
+        c = _main_camera(s, group, min_observations, lens)
+        if c is None:
+            continue
+        lab = label_camera(s, c.key, drop_e=drop_e)
+        if lab is None:
+            continue
+        w, h = c.width, c.height
+        d = compare_cameras(PixelCamera.cahv(lab, w, h, as_is=True), c.pixel_camera(), step=step)
+        e1 = None
+        if drop_e:
+            full = label_camera(s, c.key, drop_e=False)
+            if full is not None and full.E is not None and np.any(full.E != 0):
+                e1 = compare_cameras(PixelCamera.cahv(full, w, h, as_is=True), PixelCamera.cahv(lab, w, h, as_is=True),
+                                     step=4 * step)["rms_px"]
+        rows.append({"scape": n, "camera": c.key, "lens": c.distortion, "observations": c.n_obs,
+                     "T_degC": camera_temperature(s, c), "reference": f"label {lab.kind}" + (" (E = 0)" if drop_e else ""),
+                     "e_effect_1m_px": e1,
+                     **{k: d[k] for k in ("rms_px", "centre_rms_px", "edge_rms_px", "corner_rms_px", "max_px",
+                                          "coverage", "rotation_deg")}, "_diff": d})
+    return rows
+
+
+def _grid_image(uv: np.ndarray, v: np.ndarray):
+    xs, ys = np.unique(np.round(uv[:, 0], 3)), np.unique(np.round(uv[:, 1], 3))
+    G = np.full((ys.size, xs.size), np.nan)
+    G[np.searchsorted(ys, np.round(uv[:, 1], 3)), np.searchsorted(xs, np.round(uv[:, 0], 3))] = v
+    dx = (xs[-1] - xs[0]) / max(1, xs.size - 1)
+    dy = (ys[-1] - ys[0]) / max(1, ys.size - 1)
+    return G, (xs[0] - dx / 2, xs[-1] + dx / 2, ys[-1] + dy / 2, ys[0] - dy / 2)
+
+
+def difference_maps_figure(rows: Sequence[Dict[str, Any]], title: str, vmax: Optional[float] = None,
+                           cols: int = 4, arrows: bool = True):
+    """
+    v0p62: one panel per row of :func:`consensus_differences` / :func:`label_differences` /
+    :func:`reference_differences`: |difference| in px as an image on one colour scale for all panels (``vmax``,
+    default the 98th percentile over all panels), with the difference vectors as arrows on a coarse grid
+    (``arrows``; one scale for all panels: a difference of ``vmax`` is 8 % of the frame width).  Returns the figure.
+    """
+    import matplotlib.pyplot as plt
+    rows = list(rows)
+    n = max(1, len(rows))
+    cols = max(1, min(cols, n))
+    if vmax is None:
+        allv = np.concatenate([np.asarray(r["_diff"]["norm_px"])[np.isfinite(r["_diff"]["norm_px"])] for r in rows]) \
+            if rows else np.array([1.0])
+        vmax = float(np.percentile(allv, 98)) if allv.size else 1.0
+    nr = int(np.ceil(n / cols))
+    fig, axes = plt.subplots(nr, cols, figsize=(4.2 * cols, 3.4 * nr), squeeze=False)
+    im = None
+    for ax, r in zip(axes.ravel(), rows):
+        d = r["_diff"]
+        uv = np.asarray(d["uv"], float)
+        W, H = float(uv[:, 0].max() + uv[:, 0].min()), float(uv[:, 1].max() + uv[:, 1].min())   # the grid is centred
+        G, ext = _grid_image(uv, np.asarray(d["norm_px"], float))
+        im = ax.imshow(G, extent=ext, origin="upper", cmap="viridis", vmin=0.0, vmax=vmax, interpolation="bilinear")
+        if arrows:
+            dv = np.asarray(d["diff_px"], float)
+            xs, ys = np.unique(np.round(uv[:, 0], 3)), np.unique(np.round(uv[:, 1], 3))
+            keep = np.isin(np.round(uv[:, 0], 3), xs[::6]) & np.isin(np.round(uv[:, 1], 3), ys[::6]) & np.all(np.isfinite(dv), axis=1)
+            keep &= np.linalg.norm(np.nan_to_num(dv), axis=1) > 0.03 * vmax        # no arrows on noise
+            if keep.any():
+                s = 0.08 * W / vmax                       # one arrow scale for all panels: vmax = 8 % of the width
+                ax.quiver(uv[keep, 0], uv[keep, 1], dv[keep, 0] * s, dv[keep, 1] * s, angles="xy", scale_units="xy",
+                          scale=1, color="w", width=0.004, headwidth=3)
+        ax.set_xlim(0, W); ax.set_ylim(H, 0); ax.set_aspect("equal")
+        T = r.get("T_degC")
+        ax.set_title(f"{r['scape']} {r['camera']}" + (f" ({T:.0f} °C)" if T is not None else "")
+                     + f"\nrms {r['rms_px']:.2f} px, centre {r['centre_rms_px']:.2f}, corners {r['corner_rms_px']:.2f}",
+                     fontsize=8)
+        ax.set_xticks([]); ax.set_yticks([])
+    for ax in axes.ravel()[n:]:
+        ax.set_axis_off()
+    fig.suptitle(title)
+    fig.tight_layout(rect=(0, 0, 0.92, 0.97))
+    if im is not None:
+        cax = fig.add_axes([0.93, 0.15, 0.015, 0.7])
+        fig.colorbar(im, cax=cax, label="|difference| [px], all panels")
+    return fig
 
 
 def radial_profile(cam: Camera, n: int = 200, towards: str = "corner") -> Dict[str, np.ndarray]:

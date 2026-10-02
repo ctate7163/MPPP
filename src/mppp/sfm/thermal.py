@@ -268,6 +268,22 @@ def rig_slopes_for_project(project) -> Optional[Dict[str, float]]:
     return th
 
 
+def _database_ids(project) -> Tuple[List[int], List[int]]:
+    """v0p62: the camera and rig ids of the project database (empty without one)."""
+    try:
+        import pycolmap
+        path = getattr(project, "database", None)
+        if path is None or not Path(path).is_file():
+            return [], []
+        db = pycolmap.Database.open(str(path))
+        try:
+            return [int(c.camera_id) for c in db.read_all_cameras()], [int(r.rig_id) for r in db.read_all_rigs()]
+        finally:
+            db.close()
+    except Exception:                                                      # noqa: BLE001
+        return [], []
+
+
 def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float = 10.0,
                          min_images: int = 8, free: Sequence[str] = ("fx", "fy"),
                          thermal_model: Optional[Dict[str, Dict[str, float]]] = None,
@@ -307,7 +323,9 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
         new.add_camera(cam)
     # v0p61: above every camera id the project knows too - after stage 1 of a staged run the Mastcam-Z cameras are
     # no longer in ``rec`` but come back with their frames (restore_frames): their ids must stay free
-    next_cid = max(list(rec.cameras) + [int(v) for v in (proj.settings.get("database", {}).get("cameras") or {}).values()]) + 1
+    db_cam_ids, db_rig_ids = _database_ids(project)
+    next_cid = max(list(rec.cameras) + [int(v) for v in (proj.settings.get("database", {}).get("cameras") or {}).values()]
+                   + db_cam_ids) + 1
     bin_cam: Dict[Tuple[int, Tuple[float, float]], int] = {}
     rows = []
     for cid in sorted(nav_cids):
@@ -350,7 +368,9 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
     proj.settings.setdefault("database", {})["cameras"] = db_cams
 
     sensor = lambda c: pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=int(c))     # noqa: E731
-    next_rid = max(rec.rigs) + 1
+    # v0p62: above the database's rig ids too - after stage 1 the Mastcam-Z rigs are no longer in ``rec`` and come
+    # back with their frames (restore_frames), which would otherwise attach them to a temperature-bin rig
+    next_rid = max(list(rec.rigs) + db_rig_ids) + 1
     rig_for: Dict[Tuple[int, Tuple[float, float]], int] = {}
     for rid, rig in rec.rigs.items():
         new.add_rig(rig)

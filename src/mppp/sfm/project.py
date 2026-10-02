@@ -642,7 +642,13 @@ class SfmProject:
                                                  yaw=navcam_rig_yaw == "refine", thermal=False)
                 rig["N"]["R_sensor_from_ref"] = R2.tolist()
                 nav_info["rig"].update(applied)
-            rig["N"]["rotation_source"] = f"{rig_file.name} (refined consensus; translation from CAHV)" + \
+            fitted_t = shipped.get("translation") == "fitted" and shipped.get("t_sensor_from_ref_m") is not None
+            if fitted_t:                                   # v0p62: the translation fitted on the large blocks
+                rig["N"]["t_sensor_from_ref_cahv"] = rig["N"]["t_sensor_from_ref"]
+                rig["N"]["t_sensor_from_ref"] = [float(x) for x in shipped["t_sensor_from_ref_m"]]
+                rig["N"]["baseline_m"] = float(np.linalg.norm(shipped["t_sensor_from_ref_m"]))
+            rig["N"]["rotation_source"] = (f"{rig_file.name} (refined consensus; translation "
+                                           f"{'fitted on the large blocks' if fitted_t else 'from CAHV'})") + \
                 (f" from {rig_file.parent}" if navcam_cameras else "")
         if navcam_rig_yaw == "zero" and "N" in rig:        # v0p51: the start rig without its yaw
             R0 = np.asarray(rig["N"]["R_sensor_from_ref"], float)

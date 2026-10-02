@@ -2,6 +2,27 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.62.0 — 2026-10-02
+
+For the Navcam freeze: run notebook 04 for the latest consensus, rerun the Navcam alignments, run notebook 04 again, then freeze.
+
+- **Navcam rig translation from the large blocks** (`navcal_consensus.fit_rig_translation`, `large_blocks`, `block_span_m`):
+  - The consensus study now also fits the rig translation (the right camera centre in the left camera frame) on the blocks whose stations span at least 30 m. Over that distance the waypoint scale is independent of the 0.42 m baseline.
+  - The cameras are held at the new consensus and the yaw is held; pitch, roll and translation are refined, with a weak 5 cm prior.
+  - Output: the change of the right centre and the baseline in mm with formal sd (`consensus.json` → `rig_translation`; `M2020_N_rig.json` → `translation_fit`).
+  - Notebook 04 §2d: `RIG_TRANSLATION_MIN_SPAN_M = 30` (0 = off) and `APPLY_RIG_TRANSLATION = False`. CLI: `--translation-min-span`, `--apply-translation`.
+  - Applying writes `"translation": "fitted"` and `t_sensor_from_ref_m` into the candidate rig. Notebook 03 projects then start from it instead of each project's CAHV translation; the CAHV value is kept as `t_sensor_from_ref_cahv`.
+- **Fix: stage 2 failed after the Navcam temperature bins of stage 1** (`THERMAL_AFTER_STAGE1 = True`, new in 0.61.0), e.g. chal_rocks_sid_large: `ValueError: Check failed: existing_frame.RigId() == frame.RigId()` in `triangulate_points`.
+  - Cause: the thermal stage puts the Navcam frames on new temperature-bin rigs and cameras. COLMAP's `triangulate_points` reloads the frames from the project database, which still holds the original rigs.
+  - Fix: stage 2 triangulates against a copy of the database with the bin rigs, cameras and frames (`reconstruction.sync_database`, `<colmap>\database_thermal.db`; `triangulate(database=)`). The project database is unchanged.
+  - Second fix found on the way: the bin rigs took the ids of the Mastcam-Z rigs that stage 1 had dropped, so `restore_frames` attached Mastcam-Z frames to a Navcam bin rig ("rig.HasSensor" check). `split_by_temperature` now numbers new rigs and cameras above every id in the database.
+  - Tests with a real COLMAP database (`helpers._write_database`) reproduce both errors and the full staged run.
+- **Notebook 04 difference maps (§2):** `navcam_difference_maps_consensus_<NL|NR>.png` and `navcam_difference_maps_label_<NL|NR>.png` replace `navcam_difference_maps.png` (which compared with the old shipped rational camera).
+  - Consensus maps: each scape's main refined fisheye-tangential camera minus the consensus in use (`cmods`), moved to the camera's temperature by its thermal terms (f ppm/°C, NL cx px/°C), with rotation removed. What is left is the site-to-site variation.
+  - Label maps: the same cameras minus the PDS label CAHVORE of their own images with E = 0 (the model at infinite range). `e_effect_1m_px` gives the rms effect of E at 1 m.
+  - One colour scale per comparison for both eyes; arrows give the direction.
+  - New: `calibration.reference_camera(g, "consensus")`, `camera_at_temperature`, `consensus_differences`, `label_camera`, `label_differences`, `difference_maps_figure`.
+
 ## 0.61.0 — 2026-10-01
 
 Mastcam-Z staged calibration (focus line per eye and zoom, known low-backlash list), the Navcam temperature model after stage 1, clean-ups.

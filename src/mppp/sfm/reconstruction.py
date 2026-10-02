@@ -127,7 +127,7 @@ def initial_reconstruction(project: SfmProject):
 
 def triangulate(rec, project: SfmProject, max_reproj_px: float = 8.0, min_angle_deg: float = 1.5,
                 out_dir: Optional[PathLike] = None, max_transitivity: int = 1, create_max_angle_error_deg: float = 2.0,
-                continue_max_angle_error_deg: float = 2.0, complete_max_transitivity: int = 5):
+                continue_max_angle_error_deg: float = 2.0, complete_max_transitivity: int = 5, database: Optional[PathLike] = None):
     """
     Triangulate all verified matches with the current (fixed) poses and intrinsics.
     v0p22 options (COLMAP's IncrementalTriangulator): ``max_transitivity`` - how
@@ -158,8 +158,54 @@ def triangulate(rec, project: SfmProject, max_reproj_px: float = 8.0, min_angle_
     opts.ba_refine_extra_params = False
     out = Path(out_dir) if out_dir else project.root / "sparse" / "_triangulation"
     out.mkdir(parents=True, exist_ok=True)
-    return pycolmap.triangulate_points(rec, str(project.database), str(project.images_dir), str(out),
+    return pycolmap.triangulate_points(rec, str(database or project.database), str(project.images_dir), str(out),
                                        clear_points=True, options=opts, refine_intrinsics=False)
+
+
+def sync_database(rec, project: SfmProject, path: Optional[PathLike] = None) -> Path:
+    """
+    v0p62: a copy of the project database whose cameras, rigs, frames and image cameras match ``rec``.
+    ``triangulate_points`` loads the frames from the database and requires every frame of the model to sit on the
+    same rig as in the database ("Check failed: existing_frame.RigId() == frame.RigId()").  After the Navcam
+    temperature bins of stage 1 (``thermal_after_stage1``) the Navcam frames sit on new bin rigs with new bin
+    cameras, so stage 2 triangulates against this copy (default ``<project>/database_thermal.db``); the project
+    database itself is not changed.  Returns the path of the copy.
+    """
+    import shutil
+    import pycolmap
+    out = Path(path) if path else project.root / "database_thermal.db"
+    if out.exists():
+        out.unlink()
+    shutil.copyfile(project.database, out)
+    db = pycolmap.Database.open(str(out))
+    try:
+        for cid, cam in rec.cameras.items():
+            if not db.exists_camera(int(cid)):
+                db.write_camera(cam, use_camera_id=True)
+        for rid, rig in rec.rigs.items():
+            if not db.exists_rig(int(rid)):
+                db.write_rig(rig, use_rig_id=True)
+        for fid, fr in rec.frames.items():
+            if not db.exists_frame(int(fid)):
+                continue
+            old = db.read_frame(int(fid))
+            want = sorted((int(d.sensor_id.id), int(d.id)) for d in fr.data_ids)
+            have = sorted((int(d.sensor_id.id), int(d.id)) for d in old.data_ids)
+            if int(old.rig_id) != int(fr.rig_id) or want != have:
+                nf = pycolmap.Frame(frame_id=int(fid), rig_id=int(fr.rig_id))
+                for d in fr.data_ids:
+                    nf.add_data_id(d)
+                db.update_frame(nf)
+        for iid, im in rec.images.items():
+            if not db.exists_image(int(iid)):
+                continue
+            old = db.read_image(int(iid))
+            if int(old.camera_id) != int(im.camera_id):
+                old.camera_id = int(im.camera_id)
+                db.update_image(old)
+    finally:
+        db.close()
+    return out
 
 
 def _scales(rec, project: SfmProject) -> Dict[int, float]:
@@ -1363,6 +1409,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         for fid in z_frames:
             rec.frames[fid].rig_from_world = init.frames[fid].rig_from_world
             rec.register_frame(fid)
+        # v0p62: the Navcam frames now sit on temperature-bin rigs: triangulate against a database copy that has them
+        db2 = sync_database(rec, project) if (navcam_stage.get("thermal") and project.database.is_file()) else None
+        topts2 = dict(topts, database=db2) if db2 is not None else topts
         hold |= {k for k in project.cameras if str(k).startswith("N")}
         refine_rig = False
         if verbose:
@@ -1371,7 +1420,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         cycles = max(0, min(int(zcam_line_cycles), len(schedule) - 1)) if zcam_focus_line else 0
         lines = None
         for k, (tpx, loss, rmax) in enumerate(schedule):
-            rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts)
+            rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)
             # v0p61: round 1 with the Mastcam-Z cameras at the focus model, then `cycles` rounds with the bins' f
             # free (each followed by the refit of one line per eye and zoom), then held on the line
             zfree = (not zcam_focus_line) or (1 <= k <= cycles)

@@ -217,3 +217,85 @@ def _make_dataset(root, n_scenes=6, size=64):
         cv2.imwrite(str(root / "images" / name), img)
         cv2.imwrite(str(root / "images_variable" / name), np.clip(img * 1.5, 0, 255).astype(np.uint8))
         cv2.imwrite(str(root / "masks" / name), m)
+
+
+def _zcam_rig_rec(tmp_path):
+    """v0p62: the synthetic block with its second half of frames on a two-camera Mastcam-Z rig (cameras 3, 4,
+    rig 2), as in test_staged_reconstruct_with_a_zcam_stereo_rig.  Returns (project, rec, z frame ids)."""
+    proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
+    rec0, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
+    fids = sorted(rec0.frames)
+    zf = set(fids[len(fids) // 2:])
+    new = pycolmap.Reconstruction()
+    for cid, c in rec0.cameras.items():
+        new.add_camera(c)
+        new.add_camera(pycolmap.Camera(camera_id=cid + 2, model=c.model, width=c.width, height=c.height, params=c.params))
+    new.add_rig(rec0.rigs[1])
+    S = lambda c: pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=c)      # noqa: E731
+    r2 = pycolmap.Rig(rig_id=2)
+    r2.add_ref_sensor(S(3))
+    r2.add_sensor(S(4), rec0.rigs[1].sensor_from_rig(S(2)))
+    new.add_rig(r2)
+    for fid in fids:
+        fr = rec0.frames[fid]
+        z = fid in zf
+        nf = pycolmap.Frame(frame_id=fid, rig_id=2 if z else 1)
+        for d in fr.data_ids:
+            nf.add_data_id(pycolmap.data_t(sensor_id=S(d.sensor_id.id + (2 if z else 0)), id=d.id))
+        nf.rig_from_world = fr.rig_from_world
+        new.add_frame(nf)
+        for d in fr.data_ids:
+            im = rec0.images[d.id]
+            ni = pycolmap.Image(name=im.name, keypoints=np.array([q.xy for q in im.points2D]),
+                                camera_id=im.camera_id + (2 if z else 0), image_id=d.id)
+            ni.frame_id = fid
+            new.add_image(ni)
+        new.register_frame(fid)
+    for pid, p in rec0.points3D.items():
+        new.add_point3D(p.xyz, p.track, np.zeros(3, np.uint8))
+    zimg = {d.id for f in zf for d in rec0.frames[f].data_ids}
+    for r in proj.images:
+        if r["image_id"] in zimg:
+            r["instrument"] = "Z" + r["instrument"][1:]
+            r["camera_group"] = r["instrument"]
+    for k in ("NL", "NR"):
+        proj.cameras["Z" + k[1:]] = dict(proj.cameras[k])
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2, "ZL": 3, "ZR": 4}}
+    return proj, new, sorted(zf)
+
+
+def _write_database(rec, path):
+    """v0p62: a COLMAP database with the cameras, rigs, frames, images and keypoints of ``rec`` and, as verified
+    two-view geometries, the matches its tracks imply - enough for ``pycolmap.triangulate_points``."""
+    import itertools
+    from pathlib import Path
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    db = pycolmap.Database.open(str(path))
+    for c in rec.cameras.values():
+        db.write_camera(c, use_camera_id=True)
+    for r in rec.rigs.values():
+        db.write_rig(r, use_rig_id=True)
+    for f in rec.frames.values():
+        nf = pycolmap.Frame(frame_id=f.frame_id, rig_id=f.rig_id)
+        for d in f.data_ids:
+            nf.add_data_id(d)
+        db.write_frame(nf, use_frame_id=True)
+    for i, im in rec.images.items():
+        ni = pycolmap.Image(name=im.name, camera_id=im.camera_id, image_id=i)
+        ni.frame_id = im.frame_id
+        db.write_image(ni, use_image_id=True)
+        db.write_keypoints(i, np.array([q.xy for q in im.points2D], np.float32).reshape(-1, 2))
+    pairs = {}
+    for pt in rec.points3D.values():
+        els = [(e.image_id, e.point2D_idx) for e in pt.track.elements]
+        for (a, ia), (b, ib) in itertools.combinations(els, 2):
+            if a > b:
+                a, ia, b, ib = b, ib, a, ia
+            pairs.setdefault((a, b), []).append((ia, ib))
+    for (a, b), m in pairs.items():
+        tvg = pycolmap.TwoViewGeometry()
+        tvg.config = 2
+        tvg.inlier_matches = np.array(m, np.uint32)
+        db.write_matches(a, b, np.array(m, np.uint32))
+        db.write_two_view_geometry(a, b, tvg)
+    db.close()

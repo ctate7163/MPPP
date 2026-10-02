@@ -480,7 +480,15 @@ def cmd_consensus(a, scapes_cfg, samples):
     from mppp.sfm.navcal_consensus import fit_consensus, write_consensus
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    res = fit_consensus(scapes_cfg, points=a.points, start_dir=a.start_cameras)
+    tr = None
+    if a.translation_min_span is not None and a.translation_min_span > 0:          # v0p62: rig translation, large blocks
+        from mppp.sfm.navcal_consensus import large_blocks
+        big = large_blocks(scapes_cfg, a.translation_min_span)
+        print(f"large blocks (station span >= {a.translation_min_span:g} m): "
+              + (", ".join(f"{k} {v[1]:.0f} m" for k, v in big.items()) or "none"), flush=True)
+        tr = {k: v[0] for k, v in big.items()} or None
+    res = fit_consensus(scapes_cfg, points=a.points, start_dir=a.start_cameras, translation_scapes=tr,
+                        apply_translation=bool(a.apply_translation))
     d = write_consensus(res, out / "navcam_joint")
     print(f"candidate consensus: {d}  (promote: python scripts\\promote_cmods.py {d} --note \"...\")", flush=True)
 
@@ -509,6 +517,11 @@ def main(argv=None):
                                              "use, src/mppp/data/cmods)")
     ap.add_argument("--common-pp", help="rig: common principal points JSON of an earlier study (default: the median "
                                         "of the blocks)")
+    ap.add_argument("--translation-min-span", type=float, default=30.0,
+                    help="consensus (v0p62): fit the Navcam rig translation on the blocks whose stations span at least "
+                         "this many metres (0: no translation fit)")
+    ap.add_argument("--apply-translation", action="store_true",
+                    help="consensus (v0p62): write the fitted translation into the candidate rig (projects then use it)")
     ap.add_argument("--warm-slope", type=float, default=40.0)
     ap.add_argument("--grid", type=float, nargs="*", default=[0, 15, 30, 45, 60, 75, 90])
     ap.add_argument("--fixed-slope", type=float, help="joint: skip the profile and use this slope (ppm/degC)")
