@@ -347,4 +347,4 @@ def test_match_settings_defaults():
                        max_error_px=6.0)
     assert s["min_num_inliers"] == 15 and s["max_num_matches"] == 32768 and s["max_error_px"] == 6.0
     assert match_settings("exhaustive", max_ratio=0.9) != match_settings("exhaustive", max_ratio=0.8)
-    assert match_settings("exhaustive")["guided_matching"] is True                 # v0p63 default
+    assert match_settings("exhaustive")["guided_matching"] is False                # v0p64.1 default (off again)

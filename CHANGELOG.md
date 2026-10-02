@@ -2,6 +2,16 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.64.1 — 2026-10-02
+
+- **Guided matching is off again by default** (`match(guided_matching=False)`, notebook 03 `MATCH`). It was on in 0.63.0–0.64.0.
+  - The first sites the batch ran with it on (Three Forks South and North, 2 Oct) went bad. Three Forks South failed health.
+  - Round-1 residuals: median 0.8–1.0 native px, against 0.17 at Rockytop with 0.62 settings.
+  - About 100k observations were filtered each round, and the cross-station fraction rose to 45–50% (Rockytop: 6.5%).
+  - Only 7–29% of keypoints became tie points (Rockytop: 60–74%), and fy drifted +8 px against fx.
+  - At Three Forks South, 29% of the points lie more than 1 m below the ground. Their rays meet flat ground at a median 3.5 m, but they were triangulated at about 45 m: false matches that agree with the epipolar geometry, 85% of them two-view tracks.
+  - Rerun the sites aligned with 0.63–0.64.0 (Three Forks South and North, and whatever ran after them).
+
 ## 0.64.0 — 2026-10-02
 
 - **Pose-guided matching after stage 2** (`mppp.sfm.guided`, notebook 03 `POSE_GUIDED = True`):
