@@ -2,6 +2,21 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.70.0 — 2026-10-02
+
+- **Early-mission Navcam offsets in the consensus** (notebook 04 `EARLY_MISSION_SOL = 380.0`, `EARLY_ROUNDS = 2`; CLI `--early-mission-sol 380 --early-rounds`):
+  - The images taken before sol 380 see a camera with fx + dfx, fy + dfy, cx + dcx and cy + dcy. The offsets are common to both eyes.
+  - The offsets are applied exactly through the keypoints, `navcal_consensus.early_keypoint_map`: c + f (u − c − dc) / (f + df) per axis. The images keep the shared camera, distortion and rig.
+  - `fit_early_offsets` fits a full quadratic response surface of the joint cost over the four offsets: 15 joint adjustments per round (centre, ±0.5 px per term, +0.5 on each pair). Newton steps run inside a trust region (≤ 2 px per round, kept only if the cost drops) until the minimum lies inside the design.
+  - The output gives, per term, the offset, its sd (from vf·H⁻¹), z and a two-sided p-value. For the four together it gives the likelihood ratio 2 (cost(0) − cost(best)) / vf against χ² with 4 degrees of freedom. The correlation matrix and every round are kept.
+  - The start is the block alignments' own estimate (`early_start_from_blocks`: refined eyes minus start, early blocks minus late blocks), or the start cameras' `early_mission` values when they have them.
+  - Synthetic check (real joint adjustment): an offset of cx −3, cy +1 px is recovered as fx +0.010 ± 0.015, fy −0.005 ± 0.089, cx −3.012 ± 0.012, cy +1.030 ± 0.018 px.
+  - The consensus is adjusted once more with the offsets. `write_consensus` writes `early_mission` into both camera files (offsets, sd, z, p, `applied_terms` = |z| ≥ 3).
+  - Projects (notebook 03) add the applied terms to the eye's start camera, weighted by the share of the block's images before the sol. This is recorded in the camera's `source` and in `navcam_info`.
+- **Version guard in notebooks 01/03/04/05** (`NOTEBOOK_FOR_MPPP`): a notebook stops at its first cell with "run `sync_from_claude.bat`" when the MPPP it imports is older than the notebook.
+  - It stops the `navcam_aspect` and `screen_blocks` errors from v0p65 notebooks run on 0.64.1 code.
+- `navcal.joint_adjust(extra_map=...)` composes an extra keypoint map after the thermal and drift terms.
+
 ## 0.65.1 — 2026-10-02
 
 - **Selection defaults** (`mppp.config`; notebook 03):

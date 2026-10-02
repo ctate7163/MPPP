@@ -125,11 +125,224 @@ def profile_thermal(rec, proj, temps, values: Dict[str, float], T0: float, term:
     return out
 
 
+# ------------------------------------------------------------------------------------- early-mission offsets (v0p70)
+EARLY_MISSION_SOL = 380.0                   # v0p70: the Navcam principal points sat ~2.5-3 px lower in cx before this
+EARLY_TERMS = ("fx", "fy", "cx", "cy")
+EARLY_STEP_PX = 0.5                         # design step of the response surface (px)
+EARLY_APPLY_Z = 3.0                         # terms at least this many sd from 0 are applied by the projects
+
+
+def early_keypoint_map(proj, before_sol: float, offsets) -> Any:
+    """
+    v0p70: the keypoint map that makes the images taken before ``before_sol`` see a camera with fx + dfx, fy + dfy,
+    cx + dcx, cy + dcy (``offsets``, px, the same for both eyes) while they keep the shared camera: a keypoint u of
+    such an image becomes c + f (u - c - dc) / (f + df) per axis - exact for any COLMAP model, whose focal lengths
+    scale and principal point shifts the distorted normalised coordinates.
+    """
+    o = np.asarray(offsets, float)
+    early = {int(r["image_id"]) for r in proj.images
+             if r.get("sol") is not None and float(r["sol"]) < float(before_sol) and "image_id" in r}
+
+    def fmap(iid, kps, cam):
+        if int(iid) not in early or not np.any(o):
+            return kps
+        p = np.asarray(cam.params, float)
+        f, c = p[0:2], p[2:4]
+        return c + f * (kps - c - o[2:4]) / (f + o[0:2])
+    fmap.early_images = early                      # type: ignore[attr-defined]
+    fmap.offsets = o                               # type: ignore[attr-defined]
+    return fmap
+
+
+def _quadratic_design(n: int, h: float):
+    """Centre, +-h on each axis and +h on each pair of axes: (1 + 2n + n(n-1)/2) points, enough for a full quadratic."""
+    pts = [np.zeros(n)]
+    for i in range(n):
+        for s in (1.0, -1.0):
+            e = np.zeros(n)
+            e[i] = s * h
+            pts.append(e)
+    for i in range(n):
+        for j in range(i + 1, n):
+            e = np.zeros(n)
+            e[i] = e[j] = h
+            pts.append(e)
+    return pts
+
+
+def _fit_quadratic(D: np.ndarray, c: np.ndarray):
+    """cost = a + g.d + 1/2 d^T H d through the design points ``D`` (rows); returns (a, g, H, rms of the fit)."""
+    n = D.shape[1]
+    cols = [np.ones(len(D))] + [D[:, i] for i in range(n)] + [0.5 * D[:, i] ** 2 for i in range(n)] \
+        + [D[:, i] * D[:, j] for i in range(n) for j in range(i + 1, n)]
+    A = np.column_stack(cols)
+    coef, *_ = np.linalg.lstsq(A, c, rcond=None)
+    a, g = coef[0], coef[1:1 + n]
+    H = np.diag(coef[1 + n:1 + 2 * n])
+    k = 1 + 2 * n
+    for i in range(n):
+        for j in range(i + 1, n):
+            H[i, j] = H[j, i] = coef[k]
+            k += 1
+    return float(a), g, H, float(np.sqrt(np.mean((A @ coef - c) ** 2)))
+
+
+def _read_cameras_bin(path: PathLike) -> Dict[int, np.ndarray]:
+    """{camera id: params} of a COLMAP ``cameras.bin`` (no image or point data read)."""
+    import struct
+    npar = {0: 3, 1: 4, 2: 4, 3: 5, 4: 8, 5: 8, 6: 12, 7: 5, 8: 4, 9: 5, 10: 12, 11: 4, 12: 5}
+    out = {}
+    with open(path, "rb") as fh:
+        n = struct.unpack("<Q", fh.read(8))[0]
+        for _ in range(n):
+            cid, model = struct.unpack("<Ii", fh.read(8))
+            fh.read(16)
+            k = npar[model]
+            out[int(cid)] = np.array(struct.unpack("<" + "d" * k, fh.read(8 * k)))
+    return out
+
+
+def early_start_from_blocks(scapes_cfg: Dict[str, PathLike], before_sol: float = EARLY_MISSION_SOL,
+                            model: str = "cahv_ba") -> Dict[str, Any]:
+    """
+    v0p70: a start for :func:`fit_early_offsets` from the block alignments: each block's refined eye cameras (NL, NR)
+    minus their start (the consensus at the block's temperature), fx, fy, cx, cy; the mean over the eyes of the
+    blocks whose images are all before ``before_sol`` minus that of the blocks all after it (blocks spanning the sol
+    are left out).  Returns {"start": [dfx, dfy, dcx, dcy], "blocks": {name: {"sol_median", "early", "d": [...]}}}.
+    """
+    from .project import SfmProject
+    rows: Dict[str, Any] = {}
+    for name, w in scapes_cfg.items():
+        root = Path(w) / "colmap" if (Path(w) / "colmap").is_dir() else Path(w)
+        try:
+            proj = SfmProject.load(root)
+            cams = _read_cameras_bin(root / "sparse" / model / "cameras.bin")
+        except Exception:                                   # noqa: BLE001 - a block without them is left out
+            continue
+        sols = [float(r["sol"]) for r in proj.images if r.get("sol") is not None]
+        if not sols:
+            continue
+        db = proj.settings.get("database", {}).get("cameras", {})
+        d = [cams[int(db[e])][:4] - np.asarray(proj.cameras[e]["params"][:4], float)
+             for e in ("NL", "NR") if e in db and int(db[e]) in cams and e in proj.cameras]
+        if not d:
+            continue
+        early = max(sols) < before_sol
+        late = min(sols) >= before_sol
+        rows[name] = {"sol_median": float(np.median(sols)), "early": bool(early), "late": bool(late),
+                      "d": np.mean(d, axis=0).tolist()}
+    e = [v["d"] for v in rows.values() if v["early"]]
+    l_ = [v["d"] for v in rows.values() if v["late"]]
+    start = (np.mean(e, axis=0) - (np.mean(l_, axis=0) if l_ else 0.0)).tolist() if e else [0.0] * 4
+    return {"start": [float(x) for x in start], "blocks": rows, "early_blocks": len(e), "late_blocks": len(l_)}
+
+
+def fit_early_offsets(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, Any], before_sol: float = EARLY_MISSION_SOL,
+                      start=(0.0, 0.0, 0.0, 0.0), step: float = EARLY_STEP_PX, rounds: int = 4, iterations: int = 50,
+                      verbose: bool = True) -> Dict[str, Any]:
+    """
+    v0p70: fx, fy, cx, cy offsets (px, common to both eyes) of the Navcam images taken before ``before_sol``, in the
+    consensus form.  Each evaluation is one joint adjustment (shared cameras, rig, poses and points re-converged, from
+    the same state; ``rec`` is not changed) with the images' keypoints mapped by :func:`early_keypoint_map`.  A full
+    quadratic response surface of the cost over the four offsets (15 adjustments: centre, +-``step`` per term, +step on
+    each pair) gives the minimum and the covariance vf H^-1 (cost = chi2 / 2; vf the variance factor); ``rounds``
+    re-centres the design on the minimum.  Significance: z = offset / sd per term, and the likelihood-ratio statistic
+    2 (cost(0) - cost(best)) / vf against chi2 with 4 degrees of freedom for the four together.
+    """
+    import copy as _copy
+    from scipy import stats
+    from . import navcal as NC
+    n_early = len(early_keypoint_map(proj, before_sol, np.zeros(4)).early_images)
+    out: Dict[str, Any] = {"before_sol": float(before_sol), "terms": list(EARLY_TERMS), "early_images": n_early,
+                           "step_px": float(step), "rounds": []}
+    if not n_early:
+        out["note"] = f"no images before sol {before_sol:g}: nothing to fit"
+        return out
+    cache: Dict[tuple, Dict[str, float]] = {}
+
+    def cost_at(x):
+        key = tuple(np.round(x, 6))
+        if key not in cache:
+            r = _copy.deepcopy(rec)
+            t = time.time()
+            ba = NC.joint_adjust(r, proj, temps, ppm, T0, max_iterations=iterations, rig_slopes=(0.0, 0.0),
+                                 extra_map=early_keypoint_map(proj, before_sol, x), **xkw)
+            red = max(2 * ba["observations"] - 1, 1)
+            cache[key] = {"cost": float(ba["final_cost"]), "vf": float(2 * ba["final_cost"] / red),
+                          "iterations": ba["iterations"]}
+            if verbose:
+                print("  early offsets " + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, x))
+                      + f": cost {ba['final_cost']:.2f} it {ba['iterations']} ({time.time() - t:.0f} s)", flush=True)
+        return cache[key]
+
+    # Newton steps on the response surface, limited to ``max_move`` px per term (a trust region: far from the minimum
+    # the adjustments re-converge along different paths and the surface is only roughly quadratic); a step is kept
+    # only if it lowers the cost, else the region is halved.  The covariance comes from the last design (at the end).
+    best = np.asarray(start, float)
+    cov, vf, max_move, converged = None, None, 4.0 * step, False
+    for rd in range(max(1, int(rounds))):
+        D = np.array(_quadratic_design(4, step))
+        rows = [cost_at(best + d) for d in D]
+        c = np.array([r["cost"] for r in rows])
+        vf = float(np.median([r["vf"] for r in rows]))
+        a, g, H, fit_rms = _fit_quadratic(D, c)
+        ev = np.linalg.eigvalsh(H)
+        ok = bool(np.all(ev > 0))
+        if ok:
+            cov = vf * np.linalg.inv(H)
+            dx = -np.linalg.solve(H, g)
+        else:                                             # not convex here: a gradient step instead
+            dx = -g / max(float(np.max(np.abs(np.diag(H)))), 1e-9)
+        big = float(np.max(np.abs(dx)))
+        if big > max_move:
+            dx = dx * (max_move / big)
+        rec_rd = {"centre": best.tolist(), "costs": c.tolist(), "gradient": g.tolist(), "hessian": H.tolist(),
+                  "eigenvalues": ev.tolist(), "fit_rms": fit_rms, "step": dx.tolist(), "positive_definite": ok}
+        out["rounds"].append(rec_rd)
+        if ok and np.all(np.abs(dx) < 0.5 * step):        # the minimum lies well inside this design: done
+            best = best + dx
+            converged = True
+            break
+        trial = best + dx
+        if cost_at(trial)["cost"] < c[0]:
+            best = trial
+        else:
+            max_move *= 0.5
+            rec_rd["rejected"] = True
+            for d, cc in zip(D, c):                       # fall back to the best design point
+                if cc < cost_at(best)["cost"]:
+                    best = best + d
+            if max_move < 0.25 * step:
+                break
+    out["converged"] = converged
+    c_best = cost_at(best)["cost"]
+    c_zero = cost_at(np.zeros(4))["cost"]
+    out.update({"offsets_px": dict(zip(EARLY_TERMS, map(float, best))), "cost_at_zero": c_zero, "cost_at_best": c_best,
+                "variance_factor": vf})
+    if cov is not None:
+        sd = np.sqrt(np.clip(np.diag(cov), 0, None))
+        z = np.where(sd > 0, best / np.where(sd > 0, sd, 1.0), np.nan)
+        corr = cov / np.outer(np.where(sd > 0, sd, 1.0), np.where(sd > 0, sd, 1.0))
+        lr = max(0.0, 2.0 * (c_zero - c_best) / vf)
+        out.update({"sd_px": dict(zip(EARLY_TERMS, map(float, sd))), "z": dict(zip(EARLY_TERMS, map(float, z))),
+                    "p_value": dict(zip(EARLY_TERMS, (float(2 * stats.norm.sf(abs(v))) for v in z))),
+                    "correlation": corr.tolist(), "likelihood_ratio": lr,
+                    "p_value_all": float(stats.chi2.sf(lr, 4)),
+                    "applied_terms": [k for k, v in zip(EARLY_TERMS, z) if abs(v) >= EARLY_APPLY_Z]})
+    if verbose and cov is not None:
+        print("early-mission offsets (before sol %g, %d images): " % (before_sol, n_early)
+              + ", ".join(f"{k} {out['offsets_px'][k]:+.3f} +- {out['sd_px'][k]:.3f} px (z {out['z'][k]:+.1f})"
+                          for k in EARLY_TERMS)
+              + f"; all four: LR {out['likelihood_ratio']:.1f}, p {out['p_value_all']:.2g}", flush=True)
+    return out
+
+
 def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iterations: int = 100,
                   k4_zero: bool = True, start_dir: Optional[PathLike] = None, verbose: bool = True,
                   translation_scapes: Optional[Dict[str, PathLike]] = None, translation_sigma_m: float = 0.05,
                   apply_translation: bool = False, refit_thermal: bool = False,
-                  thermal_terms: Tuple[str, ...] = ("f", "NL_cx")) -> Dict[str, Any]:
+                  thermal_terms: Tuple[str, ...] = ("f", "NL_cx"), early_mission_sol: Optional[float] = None,
+                  early_rounds: int = 2) -> Dict[str, Any]:
     """The joint adjustment (see the module docstring) of the blocks ``{name: WORK folder}``; returns the shared
     cameras, the rig, residuals by radius and the per-block image counts.  v0p62: ``translation_scapes`` (the large
     blocks, :func:`large_blocks`): then :func:`fit_rig_translation` on them with the new cameras held
@@ -137,7 +350,10 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
     :func:`write_consensus` then writes with ``"translation": "fitted"`` for the projects to use.  v0p64:
     ``refit_thermal`` profiles the ``thermal_terms`` (``"f"`` ppm/degC, ``"NL_cx"``, ``"NR_cx"``, ``"NL_cy"``,
     ``"NR_cy"`` px/degC, about T0) one after the other in this same form (:func:`profile_thermal`), then adjusts once
-    more at the best values; the result's ``thermal`` holds them with their sd and the profiles."""
+    more at the best values; the result's ``thermal`` holds them with their sd and the profiles.  v0p70:
+    ``early_mission_sol`` (e.g. 380): fx, fy, cx, cy offsets of the images before that sol (:func:`fit_early_offsets`,
+    started from the start cameras' ``early_mission`` values), then the final adjustment with them; the result's
+    ``early_mission`` holds the offsets, sd, z, p-values and the terms to apply (|z| >= ``EARLY_APPLY_Z``)."""
     import pycolmap
     from . import navcal as NC
     from .project import PARAM_NAMES, navcam_distortion_terms
@@ -197,8 +413,30 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
         t = time.time()
         ba = NC.joint_adjust(rec, proj, temps, ppm, t0, max_iterations=iterations, covariance=True,
                              rig_slopes=(0.0, 0.0), **xkw)
+    early = None
+    if early_mission_sol:
+        # v0p70: the early-mission offsets in the consensus form, then the consensus once more with them
+        em0 = nl.get("early_mission") or {}
+        if em0:
+            x0 = [float(em0.get(f"d{k}_px", 0.0)) for k in EARLY_TERMS]
+        else:                                       # the block alignments' own (per-block) estimate as the start
+            x0 = early_start_from_blocks(scapes_cfg, float(early_mission_sol))["start"]
+        if verbose:
+            print(f"early-mission offsets before sol {early_mission_sol:g} (start {x0}):", flush=True)
+        early = fit_early_offsets(rec, proj, temps, ppm, t0, xkw, float(early_mission_sol), start=x0,
+                                  rounds=early_rounds, verbose=verbose)
+        if early.get("offsets_px"):
+            xb = [early["offsets_px"][k] for k in EARLY_TERMS]
+            t = time.time()
+            ba = NC.joint_adjust(rec, proj, temps, ppm, t0, max_iterations=iterations, covariance=True,
+                                 rig_slopes=(0.0, 0.0), extra_map=early_keypoint_map(proj, float(early_mission_sol), xb),
+                                 **xkw)
     ks = NC.keypoint_scales(proj, temps, ppm, t0)
     kmap = NC.thermal_keypoint_map(proj, temps, t0, (0.0, 0.0), xkw["pp_slopes"], drift)
+    if early and early.get("offsets_px"):
+        _em = early_keypoint_map(proj, float(early_mission_sol), [early["offsets_px"][k] for k in EARLY_TERMS])
+        _km = kmap
+        kmap = lambda iid, k, cam: _em(iid, _km(iid, k, cam), cam)          # noqa: E731
     st = radial_stats(rec, proj, ks, kmap)
     _, _, T = NC.stereo_rig(rec)
     cov = ba.get("covariance") or {}
@@ -230,7 +468,7 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
                        "refit": bool(refit_thermal), "terms": list(thermal_terms) if refit_thermal else [],
                        "sd": {k: profiles[k]["sd"] for k in profiles},
                        "profiles": profiles}, "drift": drift,
-           "k4_zero": bool(k4_zero)}
+           "k4_zero": bool(k4_zero), "early_mission": early}
     if translation_scapes:
         tr = fit_rig_translation(translation_scapes, out, points=points, sigma_m=translation_sigma_m,
                                  iterations=iterations, verbose=verbose)
@@ -364,6 +602,18 @@ def write_consensus(res: Dict[str, Any], out_dir: PathLike, note: str = "",
                 if k in sdt:
                     th0[kk] = float(sdt[k])
             c["thermal"] = th0
+        em = res.get("early_mission")
+        if em and em.get("offsets_px"):                    # v0p70: the early-mission offsets (both eyes)
+            c["early_mission"] = {"before_sol": em["before_sol"],
+                                  **{f"d{k}_px": float(em["offsets_px"][k]) for k in EARLY_TERMS},
+                                  "sd_px": em.get("sd_px"), "z": em.get("z"), "p_value": em.get("p_value"),
+                                  "p_value_all": em.get("p_value_all"), "applied_terms": em.get("applied_terms", []),
+                                  "early_images": em.get("early_images"),
+                                  "note": f"v0p70 ({stamp}): a camera with these offsets for the images before sol "
+                                          f"{em['before_sol']:g}; projects apply the terms in applied_terms "
+                                          f"(|z| >= {EARLY_APPLY_Z:g}), weighted by the block's share of early images"}
+        elif "early_mission" in c and em is not None:
+            c.pop("early_mission", None)
         sde = (res.get("sd") or {}).get(eye) or {}
         if sde and "diag" not in sde:
             c["sd"] = {k: v for k, v in {**(c.get("sd") or {}), **sde}.items() if k not in c["fixed_params"]}

@@ -916,7 +916,8 @@ def joint_adjust(rec, proj: SfmProject, temps: Dict[str, float], ppm_per_degC: f
                  pp_slopes: Optional[Dict[int, Tuple[float, float]]] = None, drift: Optional[Dict[str, Any]] = None,
                  f_ppm_per_sol: Optional[Dict[str, float]] = None,
                  pp_sol_slopes: Optional[Dict[int, Tuple[float, float]]] = None, sol0: Optional[float] = None,
-                 base_of: Optional[Dict[int, int]] = None, **kw) -> Dict[str, Any]:
+                 base_of: Optional[Dict[int, int]] = None, extra_map: Optional[Callable] = None,
+                 **kw) -> Dict[str, Any]:
     """One adjustment of a merged reconstruction with the thermal model at slope ``ppm_per_degC`` and, with
     ``rig_slopes`` = (yaw, pitch) mdeg/degC, the rig's temperature dependence (:func:`rig_keypoint_map`); v0p40:
     ``pp_slopes`` (principal points against temperature) and ``drift`` (the rig's trend over the mission) through
@@ -929,6 +930,9 @@ def joint_adjust(rec, proj: SfmProject, temps: Dict[str, float], ppm_per_degC: f
                                                   pp_sol_slopes=pp_sol_slopes, sol0=sol0, base_of=base_of)
     elif rig_slopes and any(rig_slopes):
         kw["keypoint_map"] = rig_keypoint_map(proj, temps, rig_slopes[0], rig_slopes[1], T0)
+    if extra_map is not None:                 # v0p70: e.g. the early-mission camera offsets, after the terms above
+        base = kw.get("keypoint_map")
+        kw["keypoint_map"] = (lambda iid, k, cam: extra_map(iid, base(iid, k, cam), cam)) if base else extra_map
     args = dict(BA_DEFAULTS)
     args.setdefault("linear_solver", "sparse_schur")        # blocks share only the cameras and the rig: very sparse
     args.update(kw)

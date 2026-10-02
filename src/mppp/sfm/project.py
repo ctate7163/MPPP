@@ -575,6 +575,23 @@ class SfmProject:
                         cam["source"] = (f"{cam.get('source', xml.name)}; cx, cy {dcx_s:+.3f}, {dcy_s:+.3f} px for the "
                                          f"median sol {S:.0f} (trend about sol {float(tr['sol0']):.0f})")
                         nav_info[instr]["trend"] = {"sol_median": S, "dcx_px": dcx_s, "dcy_px": dcy_s, **tr}
+                    em = js.get("early_mission")            # v0p70: fx, fy, cx, cy offsets before a sol
+                    if em and Ss:
+                        share = float(np.mean([s < float(em["before_sol"]) for s in Ss]))
+                        terms = [t for t in (em.get("applied_terms") or []) if t in ("fx", "fy", "cx", "cy")]
+                        if share > 0 and terms:
+                            cam["params"] = list(map(float, cam["params"]))
+                            d = {}
+                            for t in terms:
+                                i = ("fx", "fy", "cx", "cy").index(t)
+                                d[t] = share * float(em.get(f"d{t}_px") or 0.0)
+                                cam["params"][i] += d[t]
+                            cam["source"] = (f"{cam.get('source', xml.name)}; early-mission offsets "
+                                             + ", ".join(f"{k} {v:+.3f}" for k, v in d.items())
+                                             + f" px ({100 * share:.0f} % of the images before sol "
+                                               f"{float(em['before_sol']):g})")
+                            nav_info[instr]["early_mission"] = {"share": share, "applied_px": d,
+                                                                "before_sol": float(em["before_sol"])}
             else:
                 xml = xml_dir / (ZCAM_XML_PATTERN.format(camera=instr) if fam == "Z"
                                  else XML_PATTERN.format(instrument=instr))
