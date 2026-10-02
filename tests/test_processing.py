@@ -359,7 +359,7 @@ def test_defaults():
     # the tests run with the selection rules off (conftest); the shipped defaults are these
     import mppp.config as c
     src = (ROOT / "src" / "mppp" / "config.py").read_text()
-    assert '"lmst_window_h": [9.0, 17.0]' in src and '"max_saturated_fraction": 0.05' in src
+    assert '"lmst_window_h": [6.0, 18.0]' in src and '"max_saturated_fraction": 0.2,' in src     # v0p65
     assert '"max_boresight_elevation_deg": 45.0' in src
     import inspect
     from mppp.process import process_images

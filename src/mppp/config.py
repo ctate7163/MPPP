@@ -79,8 +79,8 @@ _DEFAULTS: Dict[str, Any] = {
         # v0p30: images taken outside this local mean solar time window [h, inclusive] are not processed
         # (None: no window), and neither are images with more than this fraction of their valid pixels
         # saturated (DN at the product's maximum; None: no limit).  Both are listed under "skipped".
-        "lmst_window_h": [9.0, 17.0],
-        "max_saturated_fraction": 0.05,
+        "lmst_window_h": [6.0, 18.0],              # v0p65 (was [9, 17]; notebook 03 [8, 17])
+        "max_saturated_fraction": 0.2,             # v0p65 (was 0.05)
         # v0p41: Navcam frames labelled with an exposure above this [ms] are not processed (None: no limit).  In the
         # NCAM08111 exposure brackets (sols 654-693: ~2, ~18 and ~50-65 ms of the same view) the long member shows a
         # dark blue disk in the centre - its radiance is about half the others' there, as if it was exposed much

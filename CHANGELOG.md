@@ -2,6 +2,19 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.65.1 — 2026-10-02
+
+- **Selection defaults** (`mppp.config`; notebook 03):
+  - `LMST_WINDOW_H = (6.0, 18.0)`; it was 8–17 h in notebook 03 and 9–17 h in the package config.
+  - `MAX_SATURATED_FRACTION = 0.2` (was 0.05).
+- **Navcam tiles and sub-frames are left out below 1/5 of the frame** (was 1/4). The threshold is now exposed in notebook 03 as `NAVCAM_MIN_FRAME_FRACTION = 0.2` and is passed to `select_best_products`.
+  - `PROCESS_RULES = 4`, so the processing is checked again for every site.
+- **Van Zyl and Chal Rocks difference maps:** the distortion terms are held at the consensus in every alignment. The pattern in the maps (rms 0.34 / 0.38 px, corners about 0.6 px) is the eyes' principal point.
+  - Both eyes' cx sit 1.5–3.2 px below the consensus in the blocks before sol ~380: Van Zyl −3.2 / −2.8, Chal Rocks Large −2.5 / −2.6, Seitah North −2.7 / −2.8, Chal Rocks Sid −1.5 / −1.6 (and cy +1.2 / +1.4).
+  - From sol 461 on, the offset is within ±0.6 px.
+  - A cx shift alone reproduces the Van Zyl map: rms 0.29, corners 0.62 px. Adding the eye's f and cy changes gives rms 0.34, as in the figure.
+  - Van Zyl's coldest bins (−30…−25 °C) have fy +6 px in both eyes: the aspect flag. `NAVCAM_ASPECT = "hold"` removes it.
+
 ## 0.65.0 — 2026-10-02
 
 Lessons from Three Forks South (0.63, COLMAP guided matching) and Belva N+Z (0.60, Navcam fy drift):

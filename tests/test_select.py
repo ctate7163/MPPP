@@ -158,12 +158,12 @@ def test_real_tile_label_if_staged():
 
 def test_quarter_frame_rule(tmp_path, monkeypatch):
     from mppp.sfm import project as P
-    assert P.NAVCAM_MIN_FRAME_FRACTION == 0.25
+    assert P.NAVCAM_MIN_FRAME_FRACTION == 0.2
     names = {"a": "NLF_0049_0000000001_000RAD_N0010000NCAM00603_0A00LLJ01.IMG",     # 1280x960 full-res tile, 1/16
-             "b": "NLF_0049_0000000002_000RAD_N0010000NCAM00500_0A0295J01.IMG",     # quarter-res strip 1280x224
-             "c": "NLF_0049_0000000003_000RAD_N0010000NCAM00414_0A00LLJ01.IMG",     # exactly 1/4: kept
+             "b": "NLF_0049_0000000002_000RAD_N0010000NCAM00500_0A0295J01.IMG",     # 0.19 of the frame: dropped (v0p65)
+             "c": "NLF_0049_0000000003_000RAD_N0010000NCAM00414_0A00LLJ01.IMG",     # 0.2333: kept since v0p65
              "d": "NLF_0049_0000000004_000RAD_N0010000NCAM00415_0A0195J01.IMG"}     # half-res full frame
-    frac = {names["a"]: 1 / 16, names["b"]: 0.2333, names["c"]: 0.25, names["d"]: None}
+    frac = {names["a"]: 1 / 16, names["b"]: 0.19, names["c"]: 0.2333, names["d"]: None}
     paths = []
     for n in names.values():
         (tmp_path / n).write_bytes(b"")
@@ -172,4 +172,4 @@ def test_quarter_frame_rule(tmp_path, monkeypatch):
     kept, rep = P.select_best_products(paths, sizes={n: 1 for n in names.values()})
     assert {p.name for p in kept} == {names["c"], names["d"]} and rep["n_dropped_subframes"] == 2
     from mppp.runner import PROCESS_RULES
-    assert PROCESS_RULES == 3
+    assert PROCESS_RULES == 4

@@ -228,3 +228,16 @@ def test_notebook_defaults_v0p65():
     import inspect
     from mppp.sfm import navcal
     assert inspect.getsource(navcal).count('navcam_aspect="free"') == 3     # the calibration studies keep it free
+
+
+def test_selection_defaults_v0p65p1():
+    """0.65.1: Navcam tiles below 1/5 of the frame left out (was 1/4), LMST window 6-18 h, saturated fraction 0.2."""
+    from mppp.runner import PROCESS_RULES
+    from mppp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
+    cfg = (ROOT / "src" / "mppp" / "config.py").read_text()          # the tests run with the selection rules off
+    assert '"lmst_window_h": [6.0, 18.0]' in cfg and '"max_saturated_fraction": 0.2,' in cfg
+    assert NAVCAM_MIN_FRAME_FRACTION == 0.2 and PROCESS_RULES == 4
+    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
+    src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
+    assert "LMST_WINDOW_H          = (6.0, 18.0)" in src and "MAX_SATURATED_FRACTION = 0.2 " in src
+    assert "NAVCAM_MIN_FRAME_FRACTION = 0.2" in src and "min_frame_fraction=NAVCAM_MIN_FRAME_FRACTION" in src
