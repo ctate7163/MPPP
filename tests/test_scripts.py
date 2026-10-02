@@ -50,10 +50,10 @@ def test_process_sites_dry_run(tmp_path, capsys):
     spec.loader.exec_module(ps)
     assert ps.main(["--sites", "chal_rocks_sid", "rockytop", "--root", str(tmp_path), "--dry-run"]) == 0
     log = (tmp_path / "process_sites_log.txt").read_text()
-    assert "chal_rocks_sid: would run" in log and "mars2020_sol_0460_rockytop_colmap" in log
+    assert "chal_rocks_sid: would run" in log and "mars2020_sol_0461_rockytop_colmap" in log
     assert ps.main(["--all", "--zcam", "--root", str(tmp_path), "--dry-run"]) == 0
     log = (tmp_path / "process_sites_log.txt").read_text()
-    assert "mars2020_sol_0460_rockytop_colmap_zcam" in log and "van_zyl_colmap_zcam" not in log   # v0p53: "zcam" sites only
+    assert "mars2020_sol_0461_rockytop_colmap_zcam" in log and "van_zyl_colmap_zcam" not in log   # v0p53: "zcam" sites only
     assert ps.main(["--sites", "nowhere", "--root", str(tmp_path), "--dry-run"]) == 2
 
 
