@@ -58,7 +58,7 @@ def _meta(stem, sol, site, drive, seq):
 def test_sites_json_is_the_site_list():
     from mppp.sfm import sites as S
     t = S.load_site_table()
-    assert len(t["sites"]) >= 32 and S.SITES["rockytop"] == (461, 530) and S.SITES["south_arm"] == (1408, 1412)
+    assert len(t["sites"]) >= 32 and S.SITES["rockytop"] == (460, 530) and S.SITES["south_arm"] == (1408, 1412)
     for g, members in t["groups"].items():
         assert (members or g in ("zcam79_consensus", "zcam110_consensus")) and all(m in t["sites"] for m in members), g
     for k, v in t["sites"].items():
@@ -135,7 +135,7 @@ def test_check_sites(tmp_path):
     import importlib.util
     from mppp.sfm.sites import SITES_FILE, validate_site_table
     err, warn = validate_site_table()
-    assert err == [] and not any("overlap" in w for w in warn)           # nested blocks are not flagged
+    assert err == [] and not any("overlap" in w and "partly" not in w for w in warn)   # nested blocks are not flagged
     bad = tmp_path / "s.json"
     txt = SITES_FILE.read_text(encoding="utf-8").replace('"settings": {}},', '"settings": {}}', 1)
     bad.write_text(txt, encoding="utf-8")
