@@ -25,6 +25,14 @@ if not "%NPROMO%"=="0" (
   echo Tell Claude first ^(see _transfer\promoted.json^); Claude takes them into the next delivery. Nothing changed.
   pause & exit /b 1
 )
+REM v0p72.2: also a promotion that is not committed (scripts\promote_cmods.py run by hand): it would go into the stash
+git status --porcelain -- src/mppp/data/cmods | findstr . >nul
+if not errorlevel 1 (
+  echo src\mppp\data\cmods has changes that are not committed ^(a camera-model promotion?^):
+  git status --short -- src/mppp/data/cmods
+  echo Tell Claude first ^(Claude takes them into the next delivery^), or commit them. Nothing changed.
+  pause & exit /b 1
+)
 echo Claude's delivery:
 git log --oneline -1 claude/main
 echo this copy now:

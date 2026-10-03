@@ -132,6 +132,7 @@ def test_notebook04_promotion_cell_and_adopt_guard():
     assert "EARLY_START = None" in src and '"--early-start"' in src
     b = (ROOT / "scripts" / "windows" / "adopt_claude.bat").read_bytes()
     assert b"\n" not in b.replace(b"\r\n", b"") and b"claude/main..HEAD -- src/mppp/data/cmods" in b
+    assert b"git status --porcelain -- src/mppp/data/cmods" in b
 
 
 def test_notebook04_draws_rig_drift_and_lmst():

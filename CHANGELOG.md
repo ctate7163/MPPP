@@ -2,6 +2,12 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.72.2 — 2026-10-03
+
+- **`adopt_claude.bat` also stops on uncommitted changes in `src\mppp\data\cmods`,** such as `scripts\promote_cmods.py` run by hand.
+  - On 2 Oct at 18:34 a hand promotion of the section 2e joint went into the stash: `stash@{0}`, "adopt_claude … 18:34:50".
+  - That promotion was not the consensus form (k4 free, no NL cx thermal slope, rig yaw drifting with sol). The cameras in use stayed the v0p60 consensus.
+
 ## 0.72.1 — 2026-10-03
 
 - **`scripts\windows\upload_mask_model.bat`** uploads the default mask model (`mppp_mask_v3`, or a name given as argument) to Hugging Face. It:
