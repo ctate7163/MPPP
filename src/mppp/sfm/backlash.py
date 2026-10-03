@@ -51,7 +51,48 @@ def low_backlash_path(path: Any = None):
     return Path(__file__).resolve().parents[1] / "data" / LOW_BACKLASH_FILE
 
 
-def load_low_backlash(path: Any = None) -> Dict[str, Any]:
+FOUND_FILE = "zcam_low_backlash_found.csv"      # v0p73: next to the WORK folders (SCAPES_ROOT), filled by notebook 03
+
+
+def append_found(path: Any, groups: Sequence[Dict[str, Any]], site: str = "", when: Optional[str] = None) -> int:
+    """
+    v0p73: add the images of newly classified low-backlash (regular) focus groups to the found list ``path``
+    (``<SCAPES_ROOT>/zcam_low_backlash_found.csv``, read with the shipped list by :func:`load_low_backlash`), one
+    stem per line with a comment: site, sol, sequence, focus, ratio, z, date.  Stems already in the file are skipped.
+    Returns the number of lines added.
+    """
+    import datetime
+    from pathlib import Path
+    f = Path(path)
+    have = set()
+    if f.is_file():
+        for line in f.read_text(encoding="utf-8-sig").splitlines():
+            tok = line.split("#", 1)[0].strip()
+            if tok:
+                have.add(tok.upper())
+    when = when or datetime.date.today().isoformat()
+    lines = []
+    for g in groups:
+        for nm in g.get("names") or []:
+            stem = str(nm).rsplit(".", 1)[0]
+            if stem.upper() in have:
+                continue
+            have.add(stem.upper())
+            lines.append(f"{stem}  # {site} sol {g.get('sol')} {g.get('sequence')} focus {g.get('focus_count')} "
+                         f"ratio {g.get('ratio', float('nan')):.4f} z {g.get('z', float('nan')):+.1f} "
+                         f"(notebook 03 classification, {when})")
+    if lines:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        new = not f.is_file()
+        with f.open("a", encoding="utf-8") as fh:
+            if new:
+                fh.write("# Mastcam-Z observations classified low-backlash (regular focus state) by notebook 03 (MPPP "
+                         "v0p73); read together with mppp/data/mars2020_mastcam-z_low_backlash_observations.csv\n")
+            fh.write("\n".join(lines) + "\n")
+    return len(lines)
+
+
+def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
     """
     v0p61: the Mastcam-Z observations known to be in the low-backlash (regular) focus state.  One entry per line
     (several per line separated by commas; ``#`` starts a comment): a full image name or any part of one - a stem
@@ -67,10 +108,20 @@ def load_low_backlash(path: Any = None) -> Dict[str, Any]:
     if path is False:                                  # no list: every Mastcam-Z image high-backlash
         return {"entries": set(), "sol_sequences": set(), "clocks": set(), "uncertain": [], "file": None}
     f = low_backlash_path(path)
-    out: Dict[str, Any] = {"entries": set(), "sol_sequences": set(), "clocks": set(), "uncertain": [], "file": str(f)}
-    if not f.is_file():
+    out: Dict[str, Any] = {"entries": set(), "sol_sequences": set(), "clocks": set(), "uncertain": [], "file": str(f),
+                           "found_file": None, "found": 0}
+    texts = [f.read_text(encoding="utf-8-sig")] if f.is_file() else []
+    if found:                                          # v0p73: the observations notebook 03 classified (found list)
+        from pathlib import Path as _P
+        ff = _P(found)
+        out["found_file"] = str(ff)
+        if ff.is_file():
+            t = ff.read_text(encoding="utf-8-sig")
+            out["found"] = sum(1 for ln in t.splitlines() if ln.split("#", 1)[0].strip())
+            texts.append(t)
+    if not texts:
         return out
-    for line in f.read_text(encoding="utf-8-sig").splitlines():
+    for line in "\n".join(texts).splitlines():
         line = line.split("#", 1)[0]
         for tok in re.split(r"[,;\t]+", line):
             tok = tok.strip().strip('"').strip()
@@ -101,13 +152,20 @@ def _clock_key(name: str):
     return (m.group(1), m.group(2)) if m else None
 
 
-def low_backlash_fingerprint(path: Any = None) -> Optional[str]:
-    """SHA-256 of the list in use (None without one), so that notebook 03 rebuilds a project when the list changes."""
+def low_backlash_fingerprint(path: Any = None, found: Any = None) -> Optional[str]:
+    """SHA-256 of the list in use (None without one), so that notebook 03 rebuilds a project when the list changes
+    (v0p73: and the found list, ``found``)."""
     import hashlib
+    from pathlib import Path
     if path is False:
         return None
     f = low_backlash_path(path)
-    return hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None
+    if not f.is_file():
+        return None
+    h = hashlib.sha256(f.read_bytes())
+    if found and Path(found).is_file():
+        h.update(Path(found).read_bytes())
+    return h.hexdigest()
 
 
 def is_low_backlash(row: Dict[str, Any], lst: Dict[str, Any]) -> bool:
@@ -489,8 +547,9 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
     """
     from .project import zcam_focus_model
     from .reconstruction import bundle_adjust
-    if mode not in ("split", "report", "list"):
-        raise ValueError("zcam_backlash must be 'list', 'split', 'report' or None")
+    if mode not in ("split", "report", "list", "list_split"):
+        raise ValueError("zcam_backlash must be 'list_split', 'list', 'split', 'report' or None")
+    list_split = mode == "list_split"      # v0p73: the list's states, plus groups classified regular now (split)
     if mode == "list":            # v0p61: the states come from the list (bins made at the start); classify to compare
         mode = "report"
     if model is None:
@@ -510,6 +569,24 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
     report["group_counts"] = n
     report["implausible_groups"] = [g["group_key"] for g in groups if g.get("implausible")]
     regular = [nm for nm, s in states.items() if s == "regular"]
+    if list_split:
+        # v0p73: the groups the list already had (their images start in _reg cameras) are not split again; groups
+        # classified regular that the list did not have are the new ones (flagged, split, and for the found list)
+        listed = {r["name"] for r in project.images if r.get("focus_state") == "regular"}
+        new_groups = [g for g in groups if g["state"] == "regular" and not set(g.get("names") or []) <= listed]
+        disagree = [g for g in groups if g["state"] == "backlash" and set(g.get("names") or []) & listed]
+        report["new_regular_groups"] = [{k: v for k, v in g.items()} for g in new_groups]
+        report["list_disagrees"] = [{k: v for k, v in g.items() if k != "names"} for g in disagree]
+        regular = sorted({nm for g in new_groups for nm in g.get("names") or []} - listed)
+        mode = "split" if regular else "report"
+        if verbose:
+            for g in new_groups:
+                print(f"[sfm] LOW BACKLASH (new): {g['camera_group']} sol {g['sol']} {g['sequence']} focus "
+                      f"{g['focus_count']}: f / label f {g['ratio']:.4f} (z {g['z']:+.1f}), {g['images']} images - not on "
+                      f"the list: split now, and added to the found list", flush=True)
+            for g in disagree:
+                print(f"[sfm] list says low backlash, the fit says backlash: {g['camera_group']} sol {g['sol']} "
+                      f"{g['sequence']} focus {g['focus_count']} (f / label f {g['ratio']:.4f}, z {g['z']:+.1f})", flush=True)
     if verbose:
         b = report["before"]
         print(f"[sfm] Mastcam-Z focus states: {len(groups)} focus groups - {n['backlash']} backlash, {n['regular']} "

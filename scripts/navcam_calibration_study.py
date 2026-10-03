@@ -503,7 +503,8 @@ def cmd_consensus(a, scapes_cfg, samples):
         tr = {k: v[0] for k, v in big.items()} or None
     res = fit_consensus(scapes_cfg, points=a.points, start_dir=a.start_cameras, translation_scapes=tr,
                         apply_translation=bool(a.apply_translation), refit_thermal=bool(a.refit_thermal),
-                        thermal_terms=tuple(a.thermal_terms),
+                        thermal_terms=tuple(a.thermal_terms) if a.thermal_terms else None, form=a.form,
+                        thermal_rounds=a.thermal_rounds,
                         early_mission_sol=(a.early_mission_sol or None), early_rounds=a.early_rounds,
                         early_start=tuple(a.early_start) if a.early_start else None)
     d = write_consensus(res, out / "navcam_joint")
@@ -561,8 +562,14 @@ def main(argv=None):
                     help="consensus (v0p62): write the fitted translation into the candidate rig (projects then use it)")
     ap.add_argument("--refit-thermal", action="store_true",
                     help="consensus (v0p64): refit the thermal terms in the consensus form (profiles, --thermal-terms)")
-    ap.add_argument("--thermal-terms", nargs="*", default=["f", "NL_cx"],
-                    help="consensus (v0p64): f (ppm/degC), NL_cx, NR_cx, NL_cy, NR_cy (px/degC); default f NL_cx")
+    ap.add_argument("--thermal-terms", nargs="*", default=None,
+                    help="consensus (v0p64): f (ppm/degC), NL_cx, NR_cx, NL_cy, NR_cy (px/degC); v0p73: NL_fx, NL_fy, "
+                         "NR_fx, NR_fy (ppm/degC), yaw_rate (mdeg/1000 sol); default the form's (v0p73: NL_fx NL_fy "
+                         "NR_fx NR_fy NR_cx yaw_rate; v0p72: f NL_cx)")
+    ap.add_argument("--thermal-rounds", type=int, default=1,
+                    help="consensus (v0p73): profile the thermal terms this many times (2: they settle each other)")
+    ap.add_argument("--form", choices=["v0p73", "v0p72"], default="v0p73",
+                    help="consensus (v0p73): the camera form - v0p73 NL reference (default) or the v0p72 one")
     ap.add_argument("--early-mission-sol", type=float, default=0.0,
                     help="consensus (v0p70): fit fx, fy, cx, cy offsets of the images before this sol (e.g. 380); 0 = off")
     ap.add_argument("--early-rounds", type=int, default=2,

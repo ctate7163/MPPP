@@ -18,7 +18,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -198,6 +198,9 @@ def refit_focus_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
             model = zcam_focus_model(model_file=f)
         except Exception:                                                  # noqa: BLE001
             model = {"cameras": {}}
+    if project.settings.get("zcam_line_params"):          # v0p73: every focus parameter on a line, per state
+        return refit_param_lines(rec, project, model, min_observations=min_observations, min_span=min_span,
+                                 huber_k=huber_k, outlier_sigma=outlier_sigma, apply=apply)
     db = (project.settings.get("database") or {}).get("cameras") or {}
     obs = _observations_per_camera(rec)
     groups: Dict[str, List[Dict[str, Any]]] = {}
@@ -267,10 +270,177 @@ def refit_focus_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
     return out
 
 
+# ------------------------------------------------------------------ v0p73: fx, fy, cx, cy lines per focus state
+PARAM_INDEX = {"fx": 0, "fy": 1, "cx": 2, "cy": 3}
+LINE_PARAMS_V0P73 = {"ZL": ("fx", "fy"), "ZR": ("fx", "fy", "cx", "cy")}   # ZL's principal point: the reference
+LINE_STATES = ("backlash", "regular")
+
+
+def _huber_line(F: np.ndarray, y: np.ndarray, w: np.ndarray, ref: float, fit_slope: bool, slope0: float,
+                huber_k: float = 1.345) -> Tuple[float, float, float, np.ndarray]:
+    """(a, b, robust sd, residuals) of y = a + b (F - ref), Huber IRLS weighted by ``w``; ``fit_slope`` False: b =
+    ``slope0`` and only a is fitted."""
+    X = np.c_[np.ones(len(F)), F - ref] if fit_slope else np.ones((len(F), 1))
+    yy = y if fit_slope else y - float(slope0) * (F - ref)
+    wt = np.ones(len(F))
+    sig = 0.5
+    b = np.zeros(X.shape[1])
+    for _ in range(25):
+        sw = np.sqrt(w * wt)
+        b = np.linalg.lstsq(X * sw[:, None], yy * sw, rcond=None)[0]
+        r = yy - X @ b
+        sig = max(1.4826 * float(np.median(np.abs(r - np.median(r)))), 0.05)
+        u = np.abs(r) / (huber_k * sig)
+        wt = np.where(u <= 1.0, 1.0, 1.0 / np.maximum(u, 1e-12))
+    a, sl = float(b[0]), (float(b[1]) if fit_slope else float(slope0))
+    return a, sl, sig, y - (a + sl * (F - ref))
+
+
+def _line_sd(F: np.ndarray, resid: np.ndarray, w: np.ndarray, ref: float, fit_slope: bool) -> Tuple[float, Optional[float]]:
+    """Standard errors (a, b) of a weighted line from its residual scatter."""
+    X = np.c_[np.ones(len(F)), F - ref] if fit_slope else np.ones((len(F), 1))
+    W = w / max(np.mean(w), 1e-12)
+    dof = max(len(F) - X.shape[1], 1)
+    s2 = float(np.sum(W * resid ** 2) / dof)
+    try:
+        C = np.linalg.inv(X.T @ (X * W[:, None])) * s2
+    except np.linalg.LinAlgError:
+        return float("nan"), None
+    return float(np.sqrt(max(C[0, 0], 0.0))), (float(np.sqrt(max(C[1, 1], 0.0))) if fit_slope else None)
+
+
+def line_params_for(project: SfmProject, group: str) -> Tuple[str, ...]:
+    """The focus parameters of a Mastcam-Z group (``ZR034``) that stage 2 puts on lines (``zcam_line_params``: keys
+    ``ZR034``, ``ZR`` or ``R``)."""
+    lp = project.settings.get("zcam_line_params") or {}
+    eye = str(group)[:2]
+    v = lp.get(group) or lp.get(eye) or lp.get(eye[1:2])
+    return tuple(v) if v else LINE_PARAMS_V0P73.get(eye, ("fx", "fy"))
+
+
+def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] = None, min_observations: int = 200,
+                      min_span: float = 300.0, huber_k: float = 1.345, outlier_sigma: float = 4.0,
+                      apply: bool = True, min_observations_regular: int = 50) -> Dict[str, Any]:
+    """
+    v0p73: every focus parameter of each Mastcam-Z eye and zoom a line in focus count, **one line per focus
+    (backlash) state**: p = a + b (focus - reference) for p in the group's ``zcam_line_params`` (default fx, fy on
+    ZL; fx, fy, cx, cy on ZR, whose principal point the narrow field measures relative to ZL's through the rig).
+    Each line is fitted (Huber, weights = observations) to the refined focus-bin cameras of that state with at least
+    ``min_observations`` (``min_observations_regular`` for the regular state); with fewer than 3 bins or a focus span
+    below ``min_span`` counts only a is fitted, b being the backlash state's line (regular state) or the focus
+    model's (fx, fy: its f slope; cx, cy on ZR: its principal-point slope; else 0).  A regular state without a
+    usable bin follows the backlash line (fx, fy divided by the model's f0 / label f0 ratio).  ``apply``: every bin
+    camera is then set on its state's lines in ``rec`` (the caller holds them).  Returns {group: {"reference_focus",
+    "params", "lines": {state: {param: {"a", "b", "sd_a", "sd_b", "n_bins", "rms", "slope_source", "outliers"}}},
+    "bins": [...], plus the f summary of :func:`refit_focus_lines` (``f0_px``, ``slope_px_per_count``, ...)}}.
+    """
+    db = (project.settings.get("database") or {}).get("cameras") or {}
+    obs = _observations_per_camera(rec)
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for key, cid in db.items():
+        c = project.cameras.get(key) or {}
+        if not str(key).startswith("Z") or int(cid) not in rec.cameras or c.get("group") is None:
+            continue
+        p = np.array(rec.cameras[int(cid)].params, float)
+        groups.setdefault(c["group"], []).append({
+            "camera": key, "camera_id": int(cid), "focus": c.get("focus_count_median"), "p": p,
+            "observations": int(obs.get(int(cid), 0)),
+            "state": "regular" if (c.get("backlash_state") == "regular" or str(key).endswith("_reg")) else "backlash"})
+    out: Dict[str, Any] = {}
+    for g, rows in sorted(groups.items()):
+        gm = (model.get("cameras") or {}).get(g) or {}
+        params = line_params_for(project, g)
+        foc = [r["focus"] for r in rows if r["focus"] is not None]
+        ref = float(gm.get("reference_focus", np.median(foc) if foc else 0.0))
+        ratio = (float(gm["f0_px"]) / float(gm["label_f0_px"])) if gm.get("label_f0_px") and gm.get("f0_px") else 1.0
+        aspect = float(gm.get("aspect", 1.0))
+        f_slope = gm.get("slope_px_per_count")
+        if f_slope is None:
+            lab = [(r.get("focus_count"), r.get("label_f_px")) for r in project.images
+                   if r.get("camera_group") == g and r.get("focus_count") is not None and r.get("label_f_px")]
+            f_slope = float(np.polyfit([a for a, _ in lab], [b for _, b in lab], 1)[0]) if len(lab) >= 3 else 0.0
+        pp = gm.get("pp") or {}
+        model_slope = {"fx": float(f_slope) / np.sqrt(aspect), "fy": float(f_slope) * np.sqrt(aspect),
+                       "cx": float(pp.get("cx_px_per_count") or 0.0) if g[:2] == "ZR" else 0.0,
+                       "cy": float(pp.get("cy_px_per_count") or 0.0) if g[:2] == "ZR" else 0.0}
+        res: Dict[str, Any] = {"reference_focus": ref, "params": list(params), "lines": {}, "bins": [], "outliers": []}
+        for st in LINE_STATES:
+            mo = min_observations if st == "backlash" else min_observations_regular
+            use = [r for r in rows if r["state"] == st and r["focus"] is not None and r["observations"] >= mo]
+            lines_st: Dict[str, Any] = {}
+            if not use:
+                res["lines"][st] = {"skipped": f"no {st}-state bin with >= {mo} observations"}
+                continue
+            F = np.array([r["focus"] for r in use], float)
+            w = np.array([r["observations"] for r in use], float)
+            fit_slope = len(use) >= 3 and float(np.ptp(F)) >= min_span
+            for pn in params:
+                k = PARAM_INDEX[pn]
+                y = np.array([r["p"][k] for r in use], float)
+                bl = (res["lines"].get("backlash") or {}).get(pn) if st == "regular" else None
+                slope0 = bl["b"] if (bl and "b" in bl) else model_slope[pn]
+                src0 = "backlash state" if (bl and "b" in bl) else ("focus model" if gm else "labels")
+                a, b, sig, resid = _huber_line(F, y, w, ref, fit_slope, slope0, huber_k)
+                sda, sdb = _line_sd(F, resid, w, ref, fit_slope)
+                lim = max(outlier_sigma * sig, 3.0 if pn in ("fx", "fy") else 1.0)
+                ent = {"a": a, "b": b, "sd_a": sda, "sd_b": sdb, "n_bins": len(use),
+                       "focus_range": [float(F.min()), float(F.max())], "slope_source": "fitted" if fit_slope else src0,
+                       "rms": float(np.sqrt(np.average(resid ** 2, weights=w))), "robust_sd": sig, "outlier_limit": lim,
+                       "outliers": []}
+                for rr, d in zip(use, resid):
+                    row = {"camera": rr["camera"], "state": st, "param": pn, "focus": rr["focus"],
+                           "value": float(rr["p"][k]), "residual": float(d), "observations": rr["observations"]}
+                    res["bins"].append(row)
+                    if abs(d) > lim:
+                        ent["outliers"].append(row)
+                        res["outliers"].append(row)
+                lines_st[pn] = ent
+            res["lines"][st] = lines_st
+        bk = res["lines"].get("backlash") or {}
+        if all(p in bk for p in ("fx", "fy")):            # the f summary of refit_focus_lines (printing, reports)
+            res.update({"f0_px": float(np.sqrt(bk["fx"]["a"] * bk["fy"]["a"])),
+                        "slope_px_per_count": 0.5 * (bk["fx"]["b"] + bk["fy"]["b"]),
+                        "slope_source": bk["fx"]["slope_source"], "n_bins": bk["fx"]["n_bins"],
+                        "rms_px": float(np.hypot(bk["fx"]["rms"], bk["fy"]["rms"]) / np.sqrt(2)),
+                        "model_f0_px": gm.get("f0_px"), "model_slope_px_per_count": gm.get("slope_px_per_count")})
+        else:
+            res["skipped"] = "no backlash-state line (too few observations)"
+        if apply:
+            for rr in rows:
+                fc = rr["focus"] if rr["focus"] is not None else ref
+                ln = res["lines"].get(rr["state"]) or {}
+                own = bool(ln) and "skipped" not in ln
+                if not own:
+                    ln = res["lines"].get("backlash") or {}
+                if not ln or "skipped" in ln:
+                    continue
+                p = np.array(rec.cameras[rr["camera_id"]].params, float)
+                for pn in params:
+                    if pn not in ln:
+                        continue
+                    v = ln[pn]["a"] + ln[pn]["b"] * (fc - ref)
+                    if rr["state"] == "regular" and not own and pn in ("fx", "fy"):
+                        v /= ratio                           # the regular state sits at the label
+                    p[PARAM_INDEX[pn]] = v
+                rec.cameras[rr["camera_id"]].params = p
+        out[g] = res
+    return out
+
+
 def focus_line_lines(lines: Dict[str, Any]) -> List[str]:
-    """Printable summary of :func:`refit_focus_lines`."""
+    """Printable summary of :func:`refit_focus_lines` (v0p73: every parameter line per state)."""
     out = []
     for g, r in lines.items():
+        if r.get("lines"):
+            out.append(f"      {g} (about focus {r['reference_focus']:.0f}):")
+            for st, ln in r["lines"].items():
+                if "skipped" in ln:
+                    out.append(f"        {st}: {ln['skipped']}")
+                    continue
+                out.append(f"        {st}: " + "; ".join(
+                    f"{pn} {e['a']:.2f} {e['b']:+.5f}/count [{e['slope_source']}, {e['n_bins']} bins, rms {e['rms']:.2f}]"
+                    + (f" {len(e['outliers'])} outlier bins" if e["outliers"] else "") for pn, e in ln.items()))
+            continue
         if r.get("skipped"):
             out.append(f"      {g}: {r['skipped']}")
             continue

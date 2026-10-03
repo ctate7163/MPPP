@@ -407,7 +407,10 @@ PROCESS_DONE = "process_done.json"    # <WORK>/processed/process_done.json: writ
 # v0p65: bumped when the alignment code changes its results under unchanged notebook settings (a default changed in
 # the code, not in the notebook), so that run_sites.py aligns every site again instead of skipping it as done.
 # 65: Navcam aspect held, pose-guided matching with a local depth window (v0p65); before v0p65 not part of the key
-ALIGN_RULES = 65
+# 73: the v0p73 camera form (NL reference, fx/fy thermal per eye, Zcam fx fy cx cy lines per focus state, low-backlash
+#     classification added to the found list); and (v0p73) the camera models in use are part of the key, so that a
+#     promotion makes run_sites.py align every site again
+ALIGN_RULES = 73
 
 
 def run_key(settings: Dict[str, Any], source: str, variant: str) -> str:
@@ -416,6 +419,11 @@ def run_key(settings: Dict[str, Any], source: str, variant: str) -> str:
     d = {"settings": settings, "source": source, "variant": variant or ""}
     if not str(source).startswith("process:"):
         d["rules"] = ALIGN_RULES                  # v0p65: changed code defaults rerun the alignments
+        try:                                      # v0p73: and so do newly promoted camera models
+            from .sfm.cmods_form import models_fingerprint
+            d["cmods"] = models_fingerprint()
+        except Exception:                                                  # noqa: BLE001
+            d["cmods"] = None
     txt = json.dumps(d, sort_keys=True, default=str)
     return hashlib.sha256(txt.encode()).hexdigest()[:16]
 

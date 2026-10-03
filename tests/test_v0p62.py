@@ -154,7 +154,19 @@ def test_write_consensus_records_or_applies_the_large_block_translation(tmp_path
     assert "recorded but not applied" in rig["note"]
     rig = json.loads((write_consensus(_consensus_result(tr, True), tmp_path / "b") / "M2020_N_rig.json").read_text())
     assert rig["translation"] == "fitted" and rig["t_sensor_from_ref_m"] == tr["t_m"] and "2 large blocks" in rig["note"]
+    # v0p73: no new fit - a fitted translation in use (the v0p72 consensus) is carried over
     rig = json.loads((write_consensus(_consensus_result(), tmp_path / "c") / "M2020_N_rig.json").read_text())
+    assert rig["translation"] == "fitted" and "carried over" in rig["note"] and not rig["note"].endswith("..")
+    from mppp.paths import cmods_dir
+    tmpl = tmp_path / "tmpl"
+    tmpl.mkdir()
+    for f in ("M2020_NL_fisheye_tangential.json", "M2020_NR_fisheye_tangential.json"):
+        (tmpl / f).write_bytes((cmods_dir() / f).read_bytes())
+    r0 = json.loads((cmods_dir() / "M2020_N_rig.json").read_text())
+    for k in ("translation", "translation_fit"):
+        r0.pop(k, None)
+    (tmpl / "M2020_N_rig.json").write_text(json.dumps(r0))
+    rig = json.loads((write_consensus(_consensus_result(), tmp_path / "d", template_dir=tmpl) / "M2020_N_rig.json").read_text())
     assert "translation_fit" not in rig and rig["note"].endswith("Translation from CAHV in each project.")
 
 

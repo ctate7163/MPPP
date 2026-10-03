@@ -77,6 +77,21 @@ def label_temperatures(path: PathLike) -> Dict[str, Optional[float]]:
     return {"NL": t.get(LEFT_KEY), "NR": t.get(RIGHT_KEY), "interp": interp}
 
 
+def label_instrument_temperatures(path: PathLike) -> Dict[str, float]:
+    """v0p73: every sensor of a PDS product's ``INSTRUMENT_TEMPERATURE`` (label only), {name: degC}."""
+    from ..labels import label_get, read_pds
+    L, _ = read_pds(path, load_image=False)
+    names = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
+    vals = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
+    out = {}
+    for k, v in zip(names, vals):
+        try:
+            out[str(k)] = float(getattr(v, "value", v))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
 def zcam_label_temperature(path: PathLike, key: str = "HEAD_FPA") -> Optional[float]:
     """v0p42: the Mastcam-Z camera temperature of one PDS product (label only): the focal-plane sensor ``HEAD_FPA``
     (also recorded: ``DEA``, ``HEAD_HTR_1``, ``HEAD_HTR_2``), degC; None without it."""
@@ -343,9 +358,10 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
             tm = float(np.median(Tb))
             if thermal_model and key in thermal_model:
                 m = thermal_model[key]
-                s = 1.0 + 1e-6 * float(m["ppm_per_degC"]) * (tm - float(m["T0_degC"]))
-                p[0] *= s
-                p[1] *= s
+                from .cmods_form import thermal_scale                 # v0p73: fx and fy each their own ppm/degC
+                sx, sy = thermal_scale(m, tm)
+                p[0] *= sx
+                p[1] *= sy
                 p[2] += float(m.get("cx_px_per_degC") or 0.0) * (tm - float(m["T0_degC"]))     # v0p40
                 p[3] += float(m.get("cy_px_per_degC") or 0.0) * (tm - float(m["T0_degC"]))
             c = pycolmap.Camera(camera_id=next_cid, model=base.model, width=base.width, height=base.height, params=p)
@@ -544,10 +560,11 @@ def thermal_start_cameras(cameras: Dict[str, Dict[str, Any]], model: Dict[str, D
     for k, c in cameras.items():
         c = copy.deepcopy(c)
         if k in model and k in T:
-            s = 1.0 + 1e-6 * float(model[k]["ppm_per_degC"]) * (float(T[k]) - float(model[k]["T0_degC"]))
+            from .cmods_form import thermal_scale                     # v0p73: per axis
+            sx, sy = thermal_scale(model[k], float(T[k]))
             c["params"] = list(map(float, c["params"]))
-            c["params"][0] *= s
-            c["params"][1] *= s
+            c["params"][0] *= sx
+            c["params"][1] *= sy
         out[k] = c
     return out
 
@@ -685,6 +702,9 @@ def thermal_model_for_project(project) -> Optional[Dict[str, Dict[str, float]]]:
         th = (nav.get(eye) or {}).get("thermal")
         if th and th.get("ppm_per_degC") is not None and th.get("T_median_degC") is not None:
             out[eye] = {"ppm_per_degC": float(th["ppm_per_degC"]), "T0_degC": float(th["T_median_degC"])}
+            for k in ("fx_ppm_per_degC", "fy_ppm_per_degC"):          # v0p73: per axis
+                if th.get(k) is not None:
+                    out[eye][k] = float(th[k])
             for k in ("cx_px_per_degC", "cy_px_per_degC"):          # v0p40: principal point against temperature
                 if th.get(k):
                     out[eye][k] = float(th[k])

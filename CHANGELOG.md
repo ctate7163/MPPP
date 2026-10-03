@@ -2,6 +2,51 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.73.0 — 2026-10-03
+
+The frozen camera form, checked before every run; Mastcam-Z focus lines for every parameter and focus state.
+
+- **Navcam cameras in use: the v0p72 consensus of 2 Oct** (`navcal_v0p72_20261002_2`, 16 blocks), promoted in the **v0p73 NL-reference form**. NL keeps the label CAHVORE's pointing and position, and everything that moves is NR's:
+  - the stereo temperature change moved from NL cx (+0.0529 px/°C) to NR cx (−0.0528 px/°C = −0.0529 × fx_NR/fx_NL); the stereo geometry is the same;
+  - fx and fy each get their own ppm/°C per eye (all 37.27 until the v0p73 consensus fits them);
+  - k4 = 0;
+  - one rig yaw for every temperature, with a sol rate in the drift (0 until measured).
+  - The v0p60 consensus is in `cmods/history/v0p60_consensus/`.
+  - The hand promotions of the section 2e joint (2 Oct, 18:43–19:07: k4 free, no stereo temperature term) were never committed. Their k3 without its k4 put 3–4 px of error at the Navcam corners of every Zcam34 block aligned after 19:07.
+- **`mppp.sfm.cmods_form`:**
+  - `check_form`: k4 = 0, NL reference, no NL principal-point or rig temperature term.
+  - `convert_to_nl_reference`, `describe`, `thermal_scale` (per axis), `models_fingerprint`.
+- **Checks before a run:**
+  - `run_sites.py` prints the camera models it starts from and refuses to start if they are not in the form (`--allow-form` overrides).
+  - Notebook 03 does the same (`ALLOW_OLD_FORM`).
+  - A held distortion with k4 ≠ 0 raises an error in `navcam_distortion_terms`.
+- **`scripts/prepare_next_run.py` / `prepare_next_run.bat`:** checks that the v0p72 candidate is in use (by its numbers), converts and promotes it if not, checks the form, and lists what `run_sites` will run.
+- **The camera models are part of the run key** (`ALIGN_RULES = 73`): a promotion makes `run_sites.py` align every site again. Notebook 03 rebuilds the project from the new models; processed images, features and matches are reused, so nothing needs deleting.
+- **Navcam consensus, v0p73 form** (`fit_consensus(form="v0p73")`, the default; notebook 04 `CONSENSUS_FORM`):
+  - thermal terms `NL_fx`, `NL_fy`, `NR_fx`, `NR_fy` (ppm/°C), `NR_cx` (px/°C) and `yaw_rate` (mdeg per 1000 sol), each profiled with sd and z;
+  - NL cx and cy cannot be fitted;
+  - per-axis keypoint scales in the joint;
+  - the promotion check compares the stereo slope (NR − NL × fR/fL) rather than each eye's, and requires the form;
+  - notebook 04 has `REFIT_THERMAL = True` by default.
+- **Notebook 04 section 2h: rig residuals per block** (`navcal_consensus.rig_residuals`, `plot_rig_residuals`).
+  - Each block is adjusted with the cameras and the whole model held; only the rig rotation is free.
+  - Yaw, pitch and roll residuals are fitted against block temperature and sol: the yaw should be flat in temperature, and any sol slope is a rate to put into the drift.
+- **Mastcam-Z focus lines per state** (notebook 03 `ZCAM_LINE_PARAMS`, `ZCAM_BIN_REFINE = "focal_pp"`):
+  - stage 2 fits a + b (focus − reference) for fx, fy (ZL, ZR) and cx, cy (ZR, the R−L boresight; ZL is the reference eye), one line per focus state, and sets every bin on its lines;
+  - regular-state bins are refined too, then put on their own line (or the backlash line ÷ the f0/label ratio when they have too few observations).
+- **Low-backlash classification as soon as possible** (`ZCAM_BACKLASH = "list_split"`):
+  - focus groups classified regular that the list does not have are flagged in the log, split off in the same run (lines refitted, final adjustment), and added to `SCAPES_ROOT/zcam_low_backlash_found.csv`;
+  - the found list is read with the shipped list on the next runs (`ZCAM_LOW_BACKLASH_FOUND`);
+  - groups the list calls low-backlash but the fit calls backlash are reported.
+- **Mastcam-Z lens temperature:**
+  - the manifest records every label temperature (`instrument_temperatures`) and `zcam_optics_temperature_degC`, the mean of HEAD_HTR_1 and HEAD_HTR_2 (the optics; not the focal plane HEAD_FPA);
+  - reused records are filled from the labels.
+- **Notebook 04 section 5c** (`mppp.sfm.zcam_lines`):
+  - the focus lines of every block, with the block's Mastcam-Z lens temperature (separate from Navcam) and Navcam focal scale;
+  - one line over chosen blocks (`ZCAM_JOINT_BLOCKS`), with weighted mean, τ, χ²/dof and a slope against lens temperature;
+  - offset and slope plotted against temperature.
+- **Matching:** after COLMAP's abort in the calibrated verification (Rockytop N+Z34, `essential_matrix.cc … kMinNumSamples (4 vs. 5)`), the match step runs again with the Mastcam-Z cameras verified uncalibrated (no prior focal length), keeping the pairs already matched.
+
 ## 0.72.2 — 2026-10-03
 
 - **`adopt_claude.bat` also stops on uncommitted changes in `src\mppp\data\cmods`,** such as `scripts\promote_cmods.py` run by hand.

@@ -29,6 +29,7 @@ PathLike = Union[str, Path]
 
 # Full detector frame (width, height) at full resolution, by camera family.
 FULL_FRAME = {"N": (5120, 3840), "F": (5120, 3840), "R": (5120, 3840), "Z": (1648, 1200)}
+ZCAM_OPTICS_KEYS = ("HEAD_HTR_1", "HEAD_HTR_2")  # v0p73: the two Mastcam-Z sensors on the camera head optics
 ZCAM_TEMPERATURE_KEY = "HEAD_FPA"  # v0p42: Mastcam-Z camera temperature (focal plane) in INSTRUMENT_TEMPERATURE_NAME
 LANDING_SITE = 3            # M2020 site index of the landing frame used as world origin
 
@@ -459,6 +460,24 @@ class MPPPImage:
         return [self.fn.stem, *self.pose.C.tolist(), *self.pose.metashape_ypr_deg().tolist()]
 
     @property
+    def instrument_temperatures(self) -> Dict[str, float]:
+        """v0p73: every sensor of ``INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE(_NAME)`` ({name: degC}; Mastcam-Z:
+        DEA, HEAD_FPA, HEAD_HTR_1, HEAD_HTR_2)."""
+        try:
+            from .labels import label_get
+            names = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
+            vals = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
+            out = {}
+            for k, v in zip(names, vals):
+                try:
+                    out[str(k)] = float(getattr(v, "value", v))
+                except (TypeError, ValueError):
+                    pass
+            return out
+        except Exception:                                       # noqa: BLE001
+            return {}
+
+    @property
     def camera_temperature_degC(self) -> Optional[float]:
         """v0p30: the temperature the label camera model was interpolated to (Navcam: the camera plate,
         ``GEOMETRIC_CAMERA_MODEL.INTERPOLATION_VALUE`` when ``INTERPOLATION_METHOD = TEMPERATURE``); v0p40: else the
@@ -527,6 +546,9 @@ class MPPPImage:
             "intrinsics_label": self.intrinsics_label.to_dict(),
             "cahvor_O_A_angle_deg": self.cahvor.o_a_angle_deg(),
             "camera_temperature_degC": self.camera_temperature_degC,
+            "instrument_temperatures": self.instrument_temperatures,                       # v0p73: all sensors
+            "zcam_optics_temperature_degC": zcam_optics_temperature(self.instrument_temperatures)
+            if str(self.fn.stem)[:1] == "Z" else None,
             "camera_model_label": dict(self.camera_model_label.to_label_dict(precision=12),
                                        width=self.native_size[0], height=self.native_size[1],
                                        frame="ROVER_NAV_FRAME", pixel_origin="centre_of_first_pixel"),
@@ -540,3 +562,13 @@ class MPPPImage:
                                                           "dilate_kernel", "val_iou")}},
             "log": list(self.log),
         }
+
+
+def zcam_optics_temperature(temps: Optional[Dict[str, float]]) -> Optional[float]:
+    """v0p73: the Mastcam-Z lens temperature - the mean of the two camera-head (optics) sensors ``HEAD_HTR_1`` and
+    ``HEAD_HTR_2`` of a label's instrument temperatures (the focal plane, ``HEAD_FPA``, is not the lens); None
+    without them."""
+    if not temps:
+        return None
+    v = [float(temps[k]) for k in ZCAM_OPTICS_KEYS if temps.get(k) is not None]
+    return float(sum(v) / len(v)) if v else None

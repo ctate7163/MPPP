@@ -38,10 +38,29 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
         from .gpu import run_step
         if mode == "prior_pairs" and pairs is not None:
             (project.root / "pairs_prior.txt").write_text("".join(f"{p[0]} {p[1]}\n" for p in pairs), encoding="utf-8")
-        return run_step(python, "match", project, mode=mode, use_gpu=use_gpu, max_num_matches=max_num_matches,
-                        max_error_px=max_error_px, min_num_inliers=min_num_inliers, num_threads=num_threads,
-                        guided_matching=guided_matching, max_ratio=max_ratio, max_distance=max_distance,
-                        cross_check=cross_check, block_size=block_size)
+        kw = dict(mode=mode, use_gpu=use_gpu, max_num_matches=max_num_matches,
+                  max_error_px=max_error_px, min_num_inliers=min_num_inliers, num_threads=num_threads,
+                  guided_matching=guided_matching, max_ratio=max_ratio, max_distance=max_distance,
+                  cross_check=cross_check, block_size=block_size)
+        try:
+            return run_step(python, "match", project, **kw)
+        except RuntimeError as e:
+            if not any(k in str(e) for k in CALIBRATED_ABORT_SIGNS):
+                raise
+            # v0p73: COLMAP 4.2 aborted in the calibrated two-view verification (Rockytop N+Z34, 3 Oct: "Check
+            # failed: cam_rays1_with_jac.size() >= kMinNumSamples (4 vs. 5)" - a pair whose keypoints mostly fail to
+            # unproject).  The Mastcam-Z cameras then lose their prior focal length in the database for one more run,
+            # so their pairs are verified uncalibrated (fundamental matrix, no rays); the pairs already matched are kept
+            n = set_prior_focal(project, families=("Z",), value=False)
+            print(f"[mppp] matching aborted in COLMAP's calibrated verification; again with the {n} Mastcam-Z cameras "
+                  f"verified uncalibrated (prior focal length off)", flush=True)
+            try:
+                out = run_step(python, "match", project, **kw)
+            finally:
+                set_prior_focal(project, families=("Z",), value=True)
+            out = dict(out) if isinstance(out, dict) else {"result": out}
+            out["retried_uncalibrated_zcam"] = n
+            return out
     import pycolmap
     mo = pycolmap.FeatureMatchingOptions()
     mo.max_num_matches = int(max_num_matches)
@@ -96,6 +115,27 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     except (OSError, KeyError, ValueError) as e:        # a missing record only means no reuse next time
         print(f"[sfm] matches record not written: {e}", flush=True)
     return summary
+
+
+CALIBRATED_ABORT_SIGNS = ("kMinNumSamples", "essential_matrix.cc", "cam_rays1_with_jac")
+
+
+def set_prior_focal(project: SfmProject, families: Sequence[str] = ("Z",), value: bool = False) -> int:
+    """v0p73: set ``has_prior_focal_length`` of the database cameras of these camera families (``"Z"``: Mastcam-Z) -
+    without it COLMAP verifies their pairs with a fundamental matrix instead of the calibrated (ray) estimators.
+    Returns the number of cameras changed."""
+    import pycolmap
+    db = pycolmap.Database.open(str(project.database))
+    ids = {int(v) for k, v in ((project.settings.get("database") or {}).get("cameras") or {}).items()
+           if str(k)[:1] in tuple(families)}
+    n = 0
+    for cam in db.read_all_cameras():
+        if int(cam.camera_id) in ids and bool(cam.has_prior_focal_length) != bool(value):
+            cam.has_prior_focal_length = bool(value)
+            db.update_camera(cam)
+            n += 1
+    db.close()
+    return n
 
 
 def match_settings(mode: str = "exhaustive", **kwargs: Any) -> Dict[str, Any]:

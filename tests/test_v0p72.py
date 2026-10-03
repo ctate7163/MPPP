@@ -25,7 +25,7 @@ def _candidate(tmp_path, dcx=0.0, blocks=13, median=0.17, em=True):
     names = ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3"]
     res = {"blocks": {f"b{i}": 100 for i in range(blocks)}, "iterations": 12, "final_cost": 7e4,
            "sd": {e: {n: 0.01 for n in names} for e in ("NL", "NR")},
-           "residuals": {"median_px": median, "rms_px": 0.37, "p95_px": 0.78}}
+           "residuals": {"median_px": median, "rms_px": 0.33, "p95_px": 0.66}}     # v0p73: in use 0.32 / 0.64
     if em:
         res["early_mission"] = {"converged": True, "rounds": [{"positive_definite": True}],
                                 "offsets_px": {"fx": 0.02, "fy": 0.1, "cx": -0.6, "cy": -0.2},

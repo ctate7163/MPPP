@@ -327,6 +327,18 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
                     n_temp += 1
                 except Exception:                                  # noqa: BLE001  (a label without it)
                     m["camera_temperature_degC"] = None
+        # v0p73: every label temperature (Mastcam-Z: the optics sensors HEAD_HTR_1/2) for records made before MPPP 0.73
+        for p in paths:
+            m = reused.get(p.stem)
+            if m is not None and "instrument_temperatures" not in m and str(p.name)[:1] in ("N", "Z"):
+                try:
+                    from .image import zcam_optics_temperature
+                    from .sfm.thermal import label_instrument_temperatures
+                    m["instrument_temperatures"] = label_instrument_temperatures(p)
+                    if str(p.name)[:1] == "Z":
+                        m["zcam_optics_temperature_degC"] = zcam_optics_temperature(m["instrument_temperatures"])
+                except Exception:                                  # noqa: BLE001
+                    pass
         todo = [p for p in paths if p.stem not in reused]
         reuse_rep.update(reused=len(reused), to_process=len(todo),
                          dropped_from_manifest=sorted(set(have) - set(reused)))

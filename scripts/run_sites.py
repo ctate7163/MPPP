@@ -131,6 +131,8 @@ def main(argv=None) -> int:
     ap.add_argument("--jobs", type=int, default=1, help="sites aligned at the same time (default 1)")
     ap.add_argument("--then", nargs="*", default=[], metavar="NB", help="then notebooks 04 and/or 05 over the finished sites")
     ap.add_argument("--dry-run", action="store_true", help="list what would run")
+    ap.add_argument("--allow-form", action="store_true",
+                    help="v0p73: run even if the camera models in use do not follow the v0p73 form")
     ap.add_argument("--status", action="store_true", help="the run status of every WORK folder under --root")
     a = ap.parse_args(argv)
 
@@ -164,6 +166,21 @@ def main(argv=None) -> int:
         log(f"  sites without Mastcam-Z zooms (sites.json \"zcam\": []), left out: {', '.join(not_z)}")
     log(f"run_sites: {len(sites)} sites, root {root}, Mastcam-Z {a.zcam}, source {a.source}, "
         f"variant {a.variant or '(default)'}, jobs {a.jobs}, settings {sets or '-'}")
+    # v0p73: which camera models the alignments will start from, and whether they follow the frozen form
+    from mppp.sfm.cmods_form import check_form, describe, models_fingerprint
+    for line in describe():
+        log("  " + line)
+    form = check_form()
+    log(f"  camera models fingerprint {models_fingerprint()} (part of the run key); form v0p73: "
+        + ("ok" if form["ok"] else "NOT OK"))
+    for w in form["warnings"]:
+        log(f"    warning: {w}")
+    for e in form["errors"]:
+        log(f"    ERROR: {e}")
+    if not form["ok"] and not a.allow_form and not a.dry_run:
+        log("not started: the camera models in use do not follow the v0p73 form - run scripts\\prepare_next_run.py "
+            "(prepare_next_run.bat), or --allow-form to run anyway")
+        return 4
 
     todo = []
     for s in sites:

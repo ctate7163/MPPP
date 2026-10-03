@@ -56,7 +56,9 @@ ZEROED_TERMS = ("b1", "b2")          # v0p20: p1, p2 kept from the calibration (
 ZCAM_FOCUS_BIN = 30.0                               # focus motor counts per Mastcam-Z camera bin (v0p14.4)
 ZCAM_FOCUS_MODEL = "M2020_ZCAM034_focus_model.json"  # v0p22: Mastcam-Z 34 mm focal length against focus count
 ZCAM_FOCUS_MODEL_PATTERN = "M2020_ZCAM{zoom:03d}_focus_model.json"   # v0p53: one file per zoom (34, 48, 63, 79, 110)
-ZCAM_BIN_REFINE_SETTINGS = ("focal", "all", "model")  # v0p53 "model": f held at the focus model (linear in focus)
+ZCAM_BIN_REFINE_SETTINGS = ("focal", "all", "model", "focal_pp")  # v0p53 "model": f held at the focus model;
+# v0p73 "focal_pp": a bin refines fx, fy - and on the right eye (ZR) also cx, cy, the R-L boresight that the narrow field
+# makes observable (ZL keeps its principal point: the Mastcam-Z reference eye, like NL); the regular-state bins too
 ZCAM_HOLD_F_IMAGES = 2                              # v0p22: focus bins with <= this many images hold f at the model
 NAVCAM_RIG = "consensus"                            # v0p22: Navcam rig rotation starts from the refined consensus
 NAVCAM_RIG_FILE = "M2020_N_rig.json"
@@ -331,7 +333,8 @@ class SfmProject:
                prior_sigma_m: Sequence[float] = (1.0, 1.0, 1.0),
                zcam_intrinsics: str = "focus_model", zcam_focus_bin: Optional[float] = ZCAM_FOCUS_BIN,
                zcam_bin_refine: str = "focal", zcam_rig: bool = False, zcam_rig_refine: str = "auto",
-               zcam_low_backlash: Optional[PathLike] = None,
+               zcam_low_backlash: Optional[PathLike] = None, zcam_line_params: Optional[Dict[str, Any]] = None,
+               zcam_low_backlash_found: Optional[PathLike] = None,
                navcam_distortion: str = NAVCAM_DISTORTION, zcam_hold_f_images: int = ZCAM_HOLD_F_IMAGES,
                navcam_rig: str = NAVCAM_RIG, navcam_cameras: Optional[PathLike] = None,
                zcam_zero_terms: Optional[Sequence[str]] = None,
@@ -499,6 +502,7 @@ class SfmProject:
                 "camera_group": key, "focus_count": _num(m.get("focus_position_count")), "label_f_px": label_f,
                 "label_c_px": label_c,
                 "camera_temperature_degC": m.get("camera_temperature_degC"),       # v0p31 (manifest, MPPP >= 0.30)
+                "zcam_optics_temperature_degC": m.get("zcam_optics_temperature_degC"),   # v0p73 (HEAD_HTR_1/2)
             })
 
         _fm_cache: Dict[str, Any] = {}
@@ -513,7 +517,7 @@ class SfmProject:
 
         # v0p61: the known low-backlash (regular focus state) images; every other one is high-backlash (110 mm: one state)
         from .backlash import is_low_backlash, load_low_backlash, low_backlash_fingerprint
-        _lb = load_low_backlash(zcam_low_backlash)
+        _lb = load_low_backlash(zcam_low_backlash, found=zcam_low_backlash_found)    # v0p73: + the found list
         n_low = 0
         for r in images:
             if instruments.get(r["camera_group"]) == "Z":
@@ -548,18 +552,21 @@ class SfmProject:
                           if r["instrument"] == instr and r.get("camera_temperature_degC") is not None]
                     if th and Ts:
                         T = float(np.median(Ts))
-                        sc = 1.0 + 1e-6 * float(th["ppm_per_degC"]) * (T - float(th["T0_degC"]))
+                        from .cmods_form import thermal_scale              # v0p73: fx and fy each their own ppm/degC
+                        sx, sy = thermal_scale(th, T)
+                        sc = float(np.sqrt(sx * sy))
                         cam["params"] = list(map(float, cam["params"]))
-                        cam["params"][0] *= sc
-                        cam["params"][1] *= sc
+                        cam["params"][0] *= sx
+                        cam["params"][1] *= sy
                         # v0p40: a principal point that moves with temperature (cx, cy px/degC about T0)
                         dcx = float(th.get("cx_px_per_degC") or 0.0) * (T - float(th["T0_degC"]))
                         dcy = float(th.get("cy_px_per_degC") or 0.0) * (T - float(th["T0_degC"]))
                         cam["params"][2] += dcx
                         cam["params"][3] += dcy
-                        cam["source"] = (f"{cam.get('source', xml.name)}; fx, fy x {sc:.6f} for the median camera "
-                                         f"temperature {T:.1f} degC (consensus at {float(th['T0_degC']):.1f} degC, "
-                                         f"{float(th['ppm_per_degC']):+.1f} ppm/degC)"
+                        cam["source"] = (f"{cam.get('source', xml.name)}; fx x {sx:.6f}, fy x {sy:.6f} for the median "
+                                         f"camera temperature {T:.1f} degC (consensus at {float(th['T0_degC']):.1f} degC, "
+                                         f"{float(th.get('fx_ppm_per_degC', th['ppm_per_degC'])):+.1f} / "
+                                         f"{float(th.get('fy_ppm_per_degC', th['ppm_per_degC'])):+.1f} ppm/degC)"
                                          + (f"; cx, cy {dcx:+.3f}, {dcy:+.3f} px (principal point thermal)"
                                             if dcx or dcy else ""))
                         nav_info[instr]["thermal"] = {"T_median_degC": T, "scale": sc, **th}
@@ -655,9 +662,12 @@ class SfmProject:
             if "rig" in nav_info and (shipped.get("thermal") or shipped.get("drift")):
                 # v0p52: NAVCAM_RIG_YAW = "hold" / "zero": no yaw from the temperature or drift terms - one constant
                 # yaw for every block, sol and temperature (the rig file's), only pitch and roll follow the drift
+                # v0p73: in the NL-reference form the yaw has no temperature term but may have a sol rate (measured
+                # by the consensus): that rate is applied even with the yaw held
                 R2, applied = start_rig_rotation(shipped, float(np.median(Ts)) if Ts else None,
                                                  float(np.median(sols)) if sols else None,
-                                                 yaw=navcam_rig_yaw == "refine", thermal=False)
+                                                 yaw=navcam_rig_yaw == "refine" or shipped.get("convention") == "NL reference",
+                                                 thermal=False)
                 rig["N"]["R_sensor_from_ref"] = R2.tolist()
                 nav_info["rig"].update(applied)
             fitted_t = shipped.get("translation") == "fitted" and shipped.get("t_sensor_from_ref_m") is not None
@@ -682,11 +692,15 @@ class SfmProject:
                     "zcam_focus_model": focus_info,
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
                     "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
+                    # v0p73: the focus parameters of each eye that stage 2 puts on lines in focus count, per state
+                    "zcam_line_params": ({str(k): list(v) for k, v in zcam_line_params.items()}
+                                         if zcam_line_params else None),
                     "zcam_virtual_rig": zrig or None, "zcam_rig_refine": zcam_rig_refine,
-                    "zcam_low_backlash_sha256": (low_backlash_fingerprint(zcam_low_backlash)
+                    "zcam_low_backlash_sha256": (low_backlash_fingerprint(zcam_low_backlash, zcam_low_backlash_found)
                                                  if any(f == "Z" for f in instruments.values()) else None),
                     "zcam_low_backlash": {"file": _lb["file"], "images": int(n_low),
-                                          "entries": len(_lb["entries"]) + len(_lb["sol_sequences"])},
+                                          "entries": len(_lb["entries"]) + len(_lb["sol_sequences"]),
+                                          "found_file": _lb.get("found_file"), "found": _lb.get("found", 0)},
                     "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
                     "navcam_distortion_fit": navcam_distortion_fit, "navcam_k4": navcam_k4,
                     "navcam_rig_yaw": navcam_rig_yaw,
@@ -731,6 +745,13 @@ def navcam_distortion_terms(cam: Dict[str, Any], fit: str = NAVCAM_DISTORTION_FI
     fisheye = "FISHEYE" in str(cam["model"]).upper()       # v0p52: the fisheye theta^9 term only (the rational
     for n, how in (("k4", k4),):                          # model's k4 is a denominator term and is left alone)
         if how == "zero" and n in names and fisheye:
+            v = params[names.index(n)]
+            if fit == "hold" and abs(v) > 1e-9:
+                # v0p73: a held distortion fitted with k4 free keeps a k3 that is wrong without its k4 (3-4 px at the
+                # corners: the Zcam34 runs of 2-3 Oct after a hand promotion of a k4-free joint)
+                raise ValueError(f"{cam.get('source', 'the Navcam start camera')}: k4 = {v:+.5f}, but the distortion is "
+                                 f"held with k4 = 0 (NAVCAM_DISTORTION_FIT = 'hold', NAVCAM_K4 = 'zero'). Promote a "
+                                 f"k4 = 0 consensus (scripts/prepare_next_run.py) or set NAVCAM_K4 = 'consensus'.")
             params[names.index(n)] = 0.0
             zeroed.append(n)
             if n not in fixed:
@@ -941,7 +962,10 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
             Tb = float(np.median(Ts)) if Ts else None
             sols = [float(r["sol"]) for r in members if r.get("sol") is not None]
             Sb = float(np.median(sols)) if sols else None
-            fixed = sorted(set(ZCAM_BIN_HELD if refine in ("focal", "model") else ()) | set(base.get("fixed_params") or ()),
+            held_here = (ZCAM_BIN_HELD if refine in ("focal", "model") else
+                         (tuple(n for n in ZCAM_BIN_HELD if not (str(group)[1:2] == "R" and n in ("cx", "cy")))
+                          if refine == "focal_pp" else ()))                  # v0p73: ZR's cx, cy free
+            fixed = sorted(set(held_here) | set(base.get("fixed_params") or ()),
                            key=FULL_OPENCV_NAMES.index)                      # v0p61: + the eye's (k3 = 0)
             lo, hi = (gm or {}).get("focus_range", [-np.inf, np.inf])
             extra = {}
@@ -994,7 +1018,8 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                     params[0] = float(np.median(fl))
                     params[1] = params[0] * a
                     src += "; regular focus state (ZCAM_LOW_BACKLASH): f of the bin's labels"
-                fixed = sorted(set(fixed) | {"fx", "fy"}, key=FULL_OPENCV_NAMES.index)
+                if refine != "focal_pp" or len(members) <= hold_f_images:   # v0p73: free, then set on its own line
+                    fixed = sorted(set(fixed) | {"fx", "fy"}, key=FULL_OPENCV_NAMES.index)
                 extra = dict(extra, backlash_state="regular", state_source="list")
             cam = dict(base, params=params, group=group, focus_count_median=med,
                        focus_count_range=[min(counts), max(counts)] if counts else None, n_images=len(members),

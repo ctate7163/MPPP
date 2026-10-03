@@ -501,9 +501,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             if lpose is None:
                 lpose = pose_blocks[lf] = work.frames[lf].rig_from_world.params
             kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
-            if keypoint_scale and iid in keypoint_scale and keypoint_scale[iid] != 1.0:
+            if keypoint_scale and iid in keypoint_scale and np.any(np.asarray(keypoint_scale[iid], float) != 1.0):
                 c0 = np.asarray(cam.params[2:4], float)
-                kps = c0 + (kps - c0) / float(keypoint_scale[iid])
+                kps = c0 + (kps - c0) / np.asarray(keypoint_scale[iid], float)      # v0p73: a scalar or (sx, sy)
             if keypoint_map is not None and len(kps):
                 kps = keypoint_map(iid, kps, cam)
             per_image[iid] = (cam.model, cov, kps, [vblocks[fam], lpose, cam.params], True)
@@ -513,9 +513,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             pose = pose_blocks[im.frame_id] = fr.rig_from_world.params
         sensor = pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=im.camera_id)
         kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
-        if keypoint_scale and iid in keypoint_scale and keypoint_scale[iid] != 1.0:
+        if keypoint_scale and iid in keypoint_scale and np.any(np.asarray(keypoint_scale[iid], float) != 1.0):
             c0 = np.asarray(cam.params[2:4], float)
-            kps = c0 + (kps - c0) / float(keypoint_scale[iid])
+            kps = c0 + (kps - c0) / np.asarray(keypoint_scale[iid], float)          # v0p73: a scalar or (sx, sy)
         if keypoint_map is not None and len(kps):
             kps = keypoint_map(iid, kps, cam)
         if rig.is_ref_sensor(sensor):
@@ -1581,6 +1581,31 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         if backlash.get("cameras"):
             n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
             backlash["filtered_after"] = n_bad
+            if project.settings.get("zcam_line_params") and zcam_focus_line:
+                # v0p73: the new regular-state cameras moved freely in the backlash stage - the lines of every state
+                # are fitted again, all bins set on them, and one adjustment with the Mastcam-Z cameras held
+                from .zcam import focus_line_lines, refit_focus_lines
+                lines = refit_focus_lines(rec, project)
+                project.settings["zcam_focus_lines"] = lines
+                ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
+                                   refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential,
+                                   refine_rig=False, max_iterations=2 * max_iterations,
+                                   attitude_prior_deg=attitude_prior_deg,
+                                   hold_cameras=sorted(hold | {k for k in project.cameras if str(k)[:1] in ("N", "Z")}),
+                                   linear_solver=linear_solver)
+                backlash["lines_after_split"] = {"ba": ba["brief"]}
+                if verbose:
+                    print("[sfm] Mastcam-Z focus lines after the backlash split (bins set on them):", flush=True)
+                    for ln in focus_line_lines(lines):
+                        print(ln, flush=True)
+        found = (project.settings.get("zcam_low_backlash") or {}).get("found_file")
+        if found and backlash.get("new_regular_groups"):
+            # v0p73: flag the newly classified low-backlash observations for the next runs (the found list)
+            from .backlash import append_found
+            n_new = append_found(found, backlash["new_regular_groups"], site=project.root.parent.name)
+            backlash["found_added"] = {"file": found, "lines": n_new}
+            if verbose:
+                print(f"[sfm] {n_new} low-backlash observations added to {found}", flush=True)
         log.append({"zcam_backlash": {k: v for k, v in backlash.items() if k not in ("groups", "fits_before", "fits_after")}})
         project.settings["zcam_backlash"] = {k: v for k, v in backlash.items() if k not in ("fits_before", "fits_after")}
         project.settings["zcam_backlash"]["groups"] = [{k: v for k, v in g.items() if k != "names"}

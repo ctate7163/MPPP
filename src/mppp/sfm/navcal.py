@@ -722,18 +722,26 @@ def subset(rec, idx: Dict[str, Any], keep: Sequence[str]):
 
 
 def keypoint_scales(proj: SfmProject, temps: Dict[str, float], ppm_per_degC: float, T0: float,
-                    f_ppm_per_sol: Optional[Dict[str, float]] = None, sol0: Optional[float] = None) -> Dict[int, float]:
+                    f_ppm_per_sol: Optional[Dict[str, float]] = None, sol0: Optional[float] = None,
+                    axis_ppm: Optional[Dict[str, Tuple[float, float]]] = None) -> Dict[int, Any]:
     """{image_id: 1 + b (T - T0) [+ c_eye (sol - sol0)]} for the merged project (b in ppm/degC; v0p40: the focal
-    length's trend over the mission, ``f_ppm_per_sol`` {"NL": c, "NR": c} ppm/sol about ``sol0``)."""
-    out = {}
+    length's trend over the mission, ``f_ppm_per_sol`` {"NL": c, "NR": c} ppm/sol about ``sol0``).  v0p73:
+    ``axis_ppm`` {"NL": (fx ppm, fy ppm), "NR": (...)} per eye and axis instead of ``ppm_per_degC``: the values are
+    then (sx, sy) pairs (:func:`mppp.sfm.reconstruction.bundle_adjust` takes either)."""
+    out: Dict[int, Any] = {}
     for r in proj.images:
         T = temps.get(r["name"])
-        v = 1.0 + (1e-6 * float(ppm_per_degC) * (float(T) - float(T0)) if T is not None else 0.0)
+        eye = str(r.get("instrument", ""))[:2]
+        if axis_ppm and eye in axis_ppm:
+            bx, by = (float(v) for v in axis_ppm[eye])
+            d = (float(T) - float(T0)) if T is not None else 0.0
+            v = np.array([1.0 + 1e-6 * bx * d, 1.0 + 1e-6 * by * d])
+        else:
+            v = 1.0 + (1e-6 * float(ppm_per_degC) * (float(T) - float(T0)) if T is not None else 0.0)
         if f_ppm_per_sol and sol0 is not None and r.get("sol") is not None:
-            eye = str(r.get("instrument", ""))[:2]
-            v += 1e-6 * float(f_ppm_per_sol.get(eye, 0.0)) * (float(r["sol"]) - float(sol0))
-        if T is not None or v != 1.0:
-            out[int(r["image_id"])] = v
+            v = v + 1e-6 * float(f_ppm_per_sol.get(eye, 0.0)) * (float(r["sol"]) - float(sol0))
+        if T is not None or np.any(np.asarray(v) != 1.0):
+            out[int(r["image_id"])] = tuple(map(float, v)) if np.ndim(v) else float(v)
     return out
 
 
@@ -938,13 +946,13 @@ def joint_adjust(rec, proj: SfmProject, temps: Dict[str, float], ppm_per_degC: f
                  f_ppm_per_sol: Optional[Dict[str, float]] = None,
                  pp_sol_slopes: Optional[Dict[int, Tuple[float, float]]] = None, sol0: Optional[float] = None,
                  base_of: Optional[Dict[int, int]] = None, extra_map: Optional[Callable] = None,
-                 **kw) -> Dict[str, Any]:
+                 axis_ppm: Optional[Dict[str, Tuple[float, float]]] = None, **kw) -> Dict[str, Any]:
     """One adjustment of a merged reconstruction with the thermal model at slope ``ppm_per_degC`` and, with
     ``rig_slopes`` = (yaw, pitch) mdeg/degC, the rig's temperature dependence (:func:`rig_keypoint_map`); v0p40:
     ``pp_slopes`` (principal points against temperature) and ``drift`` (the rig's trend over the mission) through
     :func:`thermal_keypoint_map`."""
     from .reconstruction import bundle_adjust
-    ks = keypoint_scales(proj, temps, ppm_per_degC, T0, f_ppm_per_sol, sol0)
+    ks = keypoint_scales(proj, temps, ppm_per_degC, T0, f_ppm_per_sol, sol0, axis_ppm=axis_ppm)   # v0p73: per axis
     if pp_slopes or drift or pp_sol_slopes or base_of:
         right = sorted({2} | {int(k) for k, v in (base_of or {}).items() if int(v) == 2})
         kw["keypoint_map"] = thermal_keypoint_map(proj, temps, T0, rig_slopes, pp_slopes, drift, right_camera_ids=right,
@@ -960,6 +968,7 @@ def joint_adjust(rec, proj: SfmProject, temps: Dict[str, float], ppm_per_degC: f
     ba = bundle_adjust(rec, proj, navcam_aspect="free", refine_rig=refine_rig, max_iterations=max_iterations, covariance=covariance,
                        keypoint_scale=ks, hold_cameras=hold_cameras, **args)
     ba["ppm_per_degC"] = float(ppm_per_degC)
+    ba["axis_ppm_per_degC"] = {k: list(map(float, v)) for k, v in (axis_ppm or {}).items()} or None
     ba["rig_slopes_mdeg_per_degC"] = list(rig_slopes) if rig_slopes else None
     ba["pp_slopes_px_per_degC"] = {int(k): list(map(float, v)) for k, v in (pp_slopes or {}).items()} or None
     ba["drift"] = bool(drift)
@@ -1111,7 +1120,7 @@ def residual_stats(rec, proj: SfmProject, keypoint_scale: Optional[Dict[int, flo
                 k = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
                 if keypoint_scale and iid in keypoint_scale:
                     c0 = np.asarray(cam.params[2:4])
-                    k = c0 + (k - c0) / keypoint_scale[iid]
+                    k = c0 + (k - c0) / np.asarray(keypoint_scale[iid], float)
                 if keypoint_map is not None and len(k):
                     k = keypoint_map(iid, k, cam)
                 cache[iid] = k

@@ -338,6 +338,13 @@ def test_project_create_with_fisheye_tangential_start_cameras(tmp_path):
     write_joint_cameras(joint, tmp_path / "joint")
     with pytest.raises(ValueError, match="needs navcam_cameras"):
         SfmProject.create(man["images"], out, tmp_path / "p0", link=False, navcam_distortion="fisheye_tangential")
+    # v0p73: a held distortion fitted with k4 free is refused (its k3 is wrong without the k4)
+    with pytest.raises(ValueError, match="k4"):
+        SfmProject.create(man["images"], out, tmp_path / "p1", link=False, navcam_distortion="fisheye_tangential",
+                          navcam_cameras=tmp_path / "joint")
+    q[9] = 0.0
+    cam = {"model": "THIN_PRISM_FISHEYE", "width": 5120, "height": 3840, "params": dict(zip(names, q))}
+    write_joint_cameras(dict(joint, NL=cam, NR=cam), tmp_path / "joint")
     proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, navcam_distortion="fisheye_tangential",
                              navcam_cameras=tmp_path / "joint")
     assert proj.cameras["NL"]["model"] == "THIN_PRISM_FISHEYE"
@@ -486,15 +493,15 @@ def test_navcam_consensus_shipped_with_mppp():
         cam = camera_from_colmap_json(f)
         assert cam["model"] == "THIN_PRISM_FISHEYE" and len(cam["params"]) == 12
         th = json.loads(f.read_text())["thermal"]
-        assert abs(th["ppm_per_degC"] - 38.1) < 0.5 and th["T0_degC"] == -20
+        assert abs(th["ppm_per_degC"] - 37.27) < 0.5 and th["T0_degC"] == -20         # v0p73: the v0p72 consensus
     assert (NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).is_file()
     assert navcam_cameras_fingerprint(NAVCAM_CONSENSUS_DIR)
-    # v0p60: the 18-block consensus (camera_analysis/navcal_v0p60/navcam_joint), byte for byte
+    # v0p73: the 16-block v0p72 consensus (navcal_v0p72_20261002_2) in the NL-reference form, byte for byte
     import hashlib
     sha = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()[:12] for p in NAVCAM_CONSENSUS_DIR.glob("*.json")
            if "fisheye" in p.name or "rig" in p.name}
-    assert sha == {"M2020_NL_fisheye_tangential.json": "03d1bc4d1b35", "M2020_NR_fisheye_tangential.json": "1ce955db253b",
-                   "M2020_N_rig.json": "eefda5eb2fac"}
+    assert sha == {"M2020_NL_fisheye_tangential.json": "d0e76fa53f42", "M2020_NR_fisheye_tangential.json": "b15788a0fec7",
+                   "M2020_N_rig.json": "542d3156ca7e"}
 
 
 def test_navcam_distortion_hold_and_zero_terms():
@@ -505,9 +512,12 @@ def test_navcam_distortion_hold_and_zero_terms():
     cam = camera_from_colmap_json(cmods_dir() / "M2020_NL_fisheye_tangential.json")
     cam["params"][9] = 1e-3                                                # a k4 to remove
     names = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1")
-    held = navcam_distortion_terms(cam)                                    # defaults "hold", k4 "zero"
+    with pytest.raises(ValueError, match="k4"):                            # v0p73: held with a k4 - refused
+        navcam_distortion_terms(cam)
+    cam0 = dict(cam, params=cam["params"][:9] + [0.0] + cam["params"][10:])
+    held = navcam_distortion_terms(cam0)                                   # defaults "hold", k4 "zero"
     assert set(held["fixed_params"]) == set(names[4:]) and not held["free_params"]
-    assert held["params"][9] == 0.0 and held["params"][:9] == cam["params"][:9] and held["distortion_fit"] == "hold"
+    assert held["params"][9] == 0.0 and held["params"][:9] == cam0["params"][:9] and held["distortion_fit"] == "hold"
     ref = navcam_distortion_terms(cam, "refine", k4="consensus")
     assert ref["fixed_params"] == [] and ref["params"] == cam["params"]
     z = navcam_distortion_terms(cam, "refine")

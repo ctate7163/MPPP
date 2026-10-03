@@ -24,3 +24,9 @@
   - `M2020_NR_fisheye_tangential.json` 1ce955db253b from `D:\scapes\colmap\camera_analysis\navcal_v0p60\navcam_joint\M2020_NR_fisheye_tangential.json`
   - `M2020_N_rig.json` eefda5eb2fac from `D:\scapes\colmap\camera_analysis\navcal_v0p60\navcam_joint\M2020_N_rig.json`
   - replaced files (the v0p52 joint yawc_k4, 17 blocks) kept in `history/v0p52_joint/`
+
+## 20261003-120509 - v0p73: the v0p72 Navcam consensus of 2 Oct 2026 (navcal_v0p72_20261002_2, 16 blocks; f +37.27 ppm/degC, stereo cx +0.0529 px/degC refitted, early-mission fx +0.15, fy +0.26, cy -0.39 px before sol 380, rig yaw +36.47 mdeg, baseline 0.42343 m fitted on 6 large blocks) in the NL-reference form: the stereo temperature change moved from NL cx to NR cx (-0.05280 px/degC), fx and fy each their own ppm/degC (both 37.27 until the v0p73 consensus fits them), k4 = 0. Replaces the v0p60 consensus; the hand promotions of the notebook-04 section 2e joint on 2 Oct 18:43-19:07 (k4 free, no stereo temperature term) were never committed
+  - `M2020_NL_fisheye_tangential.json` d0e76fa53f42 from `D:\scapes\colmap\camera_analysis\navcal_v0p72_20261002_2\navcam_joint\M2020_NL_fisheye_tangential.json` (v0p73 NL-reference form)
+  - `M2020_NR_fisheye_tangential.json` b15788a0fec7 from `D:\scapes\colmap\camera_analysis\navcal_v0p72_20261002_2\navcam_joint\M2020_NR_fisheye_tangential.json` (v0p73 NL-reference form)
+  - `M2020_N_rig.json` 542d3156ca7e from `D:\scapes\colmap\camera_analysis\navcal_v0p72_20261002_2\navcam_joint\M2020_N_rig.json` (v0p73 NL-reference form)
+  - replaced files (the v0p60 consensus, 18 blocks) kept in `history/v0p60_consensus/`
