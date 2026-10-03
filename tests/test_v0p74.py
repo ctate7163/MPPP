@@ -107,7 +107,7 @@ def test_project_uses_the_model_rig_translation():
 
 # --------------------------------------------------------------------------------------- calibration tools
 def _block(tmp_path, name, sol, T, fx_a=4720.0, lines=True, verdict="pass", fail_checks=(), regular_z=-5.0,
-           nav_scale=1.0, n_bins=8, edge=1.0):
+           nav_scale=1.0, n_bins=8, edge=1.0, fy_extra=0.0):
     """A solved N+Z block on disk as zcam_calib reads it."""
     w = tmp_path / name
     root = w / "colmap"
@@ -123,7 +123,7 @@ def _block(tmp_path, name, sol, T, fx_a=4720.0, lines=True, verdict="pass", fail
         for k in range(n_bins):
             f = 100 + 120 * k
             key = f"Z{eye}034_F{f:05d}"
-            p = [fx_a + 0.05 * (f - 600), fx_a + 2 + 0.05 * (f - 600), 820, 600, -0.47, 0.7, 0, 0, 0, 0, 0, 0]
+            p = [fx_a + 0.05 * (f - 600), fx_a + 2 + fy_extra + 0.05 * (f - 600), 820, 600, -0.47, 0.7, 0, 0, 0, 0, 0, 0]
             cams[key] = {"group": f"Z{eye}034", "focus_count_median": float(f), "params": p, "fixed_params": ["cx", "cy"],
                          "n_images": 5}
             db[key] = cid
@@ -154,7 +154,7 @@ def _block(tmp_path, name, sol, T, fx_a=4720.0, lines=True, verdict="pass", fail
     images = [{"instrument": "ZL034_F00100", "sol": sol, "zcam_optics_temperature_degC": T, "camera_temperature_degC": T + 4},
               {"instrument": "NL", "sol": sol, "camera_temperature_degC": T - 5}]
     (root / "project.json").write_text(json.dumps({"cameras": cams, "settings": settings, "images": images, "offset": [0, 0, 0]}))
-    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.0", "verdict": verdict}))
+    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.1", "verdict": verdict}))
     checks = [{"check": "registered_fraction", "value": 1.0, "status": "pass"},
               {"check": "residual_median_px", "value": 0.28, "status": "pass"},
               {"check": "beyond_ground_fraction", "value": 0.001, "status": "pass"},
@@ -463,3 +463,110 @@ def test_staged_nz_reconstruct_v0p74(tmp_path, monkeypatch):
     assert any(g.get("sequence") == "ZCAM09001" for g in zb.get("new_regular_groups") or []), zb.get("group_counts")
     assert "ZCAM09001" in (tmp_path / "zcam_low_backlash_found.csv").read_text()
     assert out.num_reg_images() > 0
+
+
+# ----------------------------------------------------------------------------- v0p74.1: pp <-> rig, stricter checks
+def test_pp_shift_to_rig_projects_the_same_pixels():
+    """A right eye with its principal point moved by (dcx, dcy) sees what the original eye sees after the rig
+    rotation pp_shift_to_rig gives (distant points, sub-0.05 px)."""
+    from scipy.spatial.transform import Rotation
+    from mppp.sfm.zcam_calib import pp_shift_to_rig
+    f, cx, cy = 4720.0, 820.0, 600.0
+    R = Rotation.from_rotvec(np.radians([0.0, 3.2, 0.6])).as_matrix()
+    t = np.array([-0.2434, 0.0014, 0.0038])
+    dcx, dcy = 3.0, -2.0
+    R2, t2 = pp_shift_to_rig(R, t, f, dcx, dcy)
+    assert np.linalg.norm(t2) == pytest.approx(np.linalg.norm(t))
+    rng = np.random.default_rng(0)
+    X = rng.uniform([-3, -2.2, 20], [3, 2.2, 60], size=(200, 3))      # the 34 mm field (about +-8 deg), left frame
+    def px(Rm, tm, cxx, cyy):
+        Y = X @ Rm.T + tm
+        return np.c_[f * Y[:, 0] / Y[:, 2] + cxx, f * Y[:, 1] / Y[:, 2] + cyy]
+    a = px(R, t, cx + dcx, cy + dcy)
+    b = px(R2, t2, cx, cy)
+    assert np.abs(a - b).max() < 0.1                                  # the rotation is a shift to second order
+
+
+def test_calibrate_moves_zr_pp_offsets_into_the_rig(tmp_path):
+    """Two blocks whose BA split the same geometry differently (ZR cx 5 px apart, rigs rotated accordingly) give one
+    rig (sd ~ 0) and cx = pp0 after the reduction; the report lists the shifts."""
+    from scipy.spatial.transform import Rotation
+    from mppp.sfm.project import zcam_focus_model_path
+    from mppp.sfm.zcam_calib import block_info, calibrate, check_model, pp_shift_to_rig, report_lines
+    old = json.loads(zcam_focus_model_path().read_text())
+    R0 = Rotation.from_rotvec(np.radians([0.0, 3.2, 0.6])).as_matrix()
+    t0 = np.array([-0.2420, 0.0014, 0.0038])
+    infos = []
+    for n, s, dcx, dcy in (("a", 400, 0.0, 0.0), ("b", 700, 5.0, -3.0), ("c", 1000, -2.0, 1.0)):
+        w = _block(tmp_path, n, s, -10.0)
+        pj = w / "colmap" / "project.json"
+        d = json.loads(pj.read_text())
+        bk = d["settings"]["zcam_focus_lines"]["ZR034"]["lines"]["backlash"]
+        bk["cx"] = dict(bk["cx"], a=820.0 + dcx)
+        bk["cy"] = {"a": 600.0 + dcy, "b": 0.0014, "sd_a": 0.1, "sd_b": 0.0002, "n_bins": 8, "slope_source": "fitted"}
+        # the block's BA put the offset into cx: its rig is the true rig rotated the other way
+        Rb, tb = pp_shift_to_rig(R0, t0, 4720.0, -dcx, -dcy)
+        d["settings"]["zcam_virtual_rig"]["Z034"]["R_refined"] = Rb.tolist()
+        d["settings"]["zcam_virtual_rig"]["Z034"]["t_refined"] = tb.tolist()
+        pj.write_text(json.dumps(d))
+        infos.append(block_info(w))
+    m = calibrate(infos, old)
+    zr = m["cameras"]["ZR034"]
+    assert zr["pp0_px"] == pytest.approx([820.0, 600.0])          # the label pp of the bins at the reference focus
+    assert zr["lines"]["backlash"]["cx"]["a"] == pytest.approx(820.0, abs=1e-6)
+    assert zr["lines"]["backlash"]["cy"]["a"] == pytest.approx(600.0, abs=1e-6)
+    assert max(m["rig"]["sd_rotvec_mdeg"]) < 0.5                  # one rig after the reduction
+    dR = Rotation.from_matrix(np.asarray(m["rig"]["R_sensor_from_ref"])) * Rotation.from_matrix(R0).inv()
+    assert np.degrees(np.linalg.norm(dR.as_rotvec())) * 1e3 < 0.5
+    sh = m["calibration"]["pp_to_rig"]["shifts"]
+    assert sh["b"]["dcx_px"] == pytest.approx(5.0) and sh["b"]["dcy_px"] == pytest.approx(-3.0)
+    rep = check_model(m, old)
+    assert rep["ok"], rep
+    assert {"ZL034 lines", "ZR034 lines", "rig scatter", "rig baseline scatter"} <= {c["check"] for c in rep["checks"]}
+    txt = "\n".join(report_lines(m))
+    assert "moved into the rig" in txt and "+5.00, -3.00" in txt
+
+
+def test_check_model_fails_without_lines_or_with_scattered_rigs(tmp_path):
+    from mppp.sfm.project import zcam_focus_model_path
+    from mppp.sfm.zcam_calib import block_info, calibrate, check_model
+    old = json.loads(zcam_focus_model_path().read_text())
+    infos = [block_info(_block(tmp_path, n, s, -10.0, lines=False)) for n, s in (("a", 400), ("b", 700))]
+    rep = check_model(calibrate(infos, old), old)
+    bad = {c["check"] for c in rep["checks"] if not c["ok"]}
+    assert not rep["ok"] and {"ZL034 lines", "ZR034 lines"} <= bad
+    # rigs 0.5 deg apart: not one rig
+    from scipy.spatial.transform import Rotation
+    infos = []
+    for n, s, yaw in (("c", 400, 3.0), ("d", 700, 3.5)):
+        w = _block(tmp_path, n, s, -10.0)
+        pj = w / "colmap" / "project.json"
+        d = json.loads(pj.read_text())
+        d["settings"]["zcam_virtual_rig"]["Z034"]["R_refined"] = Rotation.from_rotvec(np.radians([0, yaw, 0.6])).as_matrix().tolist()
+        pj.write_text(json.dumps(d))
+        infos.append(block_info(w))
+    rep = check_model(calibrate(infos, old), old)
+    assert not rep["ok"] and "rig scatter" in {c["check"] for c in rep["checks"] if not c["ok"]}
+
+
+def test_start_model_keeps_aspect_and_slope_when_fx_fy_disagree(tmp_path):
+    """Blocks whose fy is inflated (bad Navcam corners): f0 comes from fx and the aspect in use, the slope in use
+    stays, and the report says so; a block-offset scatter beyond the limit fails the check."""
+    from mppp.sfm.project import zcam_focus_model_path
+    from mppp.sfm.zcam_calib import block_info, check_model, start_model_from_blocks
+    old = json.loads(zcam_focus_model_path().read_text())
+    infos = []
+    for n, s, dfy in (("a", 400, 60.0), ("b", 900, 90.0)):
+        w = _block(tmp_path, n, s, -10.0, fx_a=4740.0, lines=False, fy_extra=dfy)
+        infos.append(block_info(w))
+    new = start_model_from_blocks(infos, old)
+    for g in ("ZL034", "ZR034"):
+        e = new["start_update"]["eyes"][g]
+        assert "aspect_kept" in e
+        assert new["cameras"][g]["aspect"] == old["cameras"][g]["aspect"]
+        assert new["cameras"][g]["slope_px_per_count"] == old["cameras"][g]["slope_px_per_count"]
+        assert new["cameras"][g]["f0_px"] == pytest.approx(4740.0 * np.sqrt(old["cameras"][g]["aspect"]), abs=0.3)
+    rep = check_model(new, old)
+    assert rep["ok"] and any(c["check"] == "ZL034 block offsets" for c in rep["checks"])
+    rep2 = check_model(new, old, {"max_offset_scatter_pct": 0.0})
+    assert not rep2["ok"]

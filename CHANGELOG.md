@@ -2,6 +2,15 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.74.1 — 2026-10-03
+
+The Mastcam-Z calibration tools checked against the nine Navcam + Mastcam-Z 34 mm blocks solved on the hand-promoted (k4-free) cameras of 2 October (bad Navcam corners; only Chal Rocks passes the grade).
+
+- **Start update (`zcam_calibration.py start-update`)**: when the bins' fx and fy disagree (the aspect change beyond 0.003 - fy is inflated on blocks with bad Navcam corners) f0 comes from fx and the aspect in use, and the slope in use is kept (the blocks refit their lines anyway); the fitted slope is recorded. A block-offset scatter above 0.5 % of f0 fails the check. On the nine blocks: ZL f0 4720 -> 4745 px, ZR 4723 -> 4752 px (block offsets sd 0.23 %), six low-backlash focus groups found (Chal Rocks, sol 91).
+- **Calibration: the ZR principal point and the rig rotation are one thing to a block's bundle adjustment** (both free in v0p74), so before anything is averaged every block is put on one convention - ZR cx, cy at the reference focus = `pp0_px` (the model's, else the median label value of the blocks), the difference moved into that block's rig rotation (`zcam_calib.pp_shift_to_rig`: a (dcx, dcy) px shift = a rotation of (-dcy, dcx) / f about the right eye's centre; the baseline unchanged). The rigs are then comparable: the report lists them per block with the lens temperature and the shift.
+- **Checks before a promotion**: a calibration must have fx, fy lines for every eye; the rigs' rotation scatter over the blocks ≤ 150 mdeg and the baseline scatter ≤ 3 mm; the rig within 1° of the one in use. (On the pre-v0p74 blocks the CAHV-median rigs differ by up to 1.2° between blocks - the label's focus-dependent right-eye pointing - which the check now refuses.)
+- Tests: `tests/test_v0p74.py` (20).
+
 ## 0.74.0 — 2026-10-03
 
 One command for the whole calibration and alignment run (`run_pipeline.bat`), the Mastcam-Z 34 mm calibration tools, and the Mastcam-Z rig rotation and baseline refined.

@@ -40,7 +40,10 @@ GRADE = {"min_registered_fraction": 0.95, "max_beyond_ground": 0.05, "max_residu
                                  "excluded_fraction", "attitude_residual_p95_deg")}
 # sanity limits of a calibrated model against the start model (v0p74)
 MODEL_LIMITS = {"max_f0_change_pct": 1.5, "max_aspect_dev": 0.01, "max_k1": 1.5, "baseline_m": (0.20, 0.29),
-                "max_rig_change_deg": 1.0, "min_blocks": 2, "max_aspect_change": 0.003}
+                "max_rig_change_deg": 1.0, "min_blocks": 2, "max_aspect_change": 0.003,
+                "max_offset_scatter_pct": 0.5,      # start update: the blocks' f offsets about the model's f0
+                "max_rig_scatter_mdeg": 150.0,      # calibration: the blocks' rig rotations about their mean
+                "max_baseline_scatter_mm": 3.0}
 
 
 def _json(p: Path) -> Optional[Dict[str, Any]]:
@@ -253,22 +256,32 @@ def start_model_from_blocks(infos: Sequence[Dict[str, Any]], model: Dict[str, An
             res[pn] = {"a": float(np.mean(offs)), "b": float(beta[-1]), "sd_b": float(se[-1]),
                        "block_offsets": dict(zip(blocks, map(float, offs))), "scatter_offsets": float(np.std(offs)),
                        "robust_sd": float(sig), "bins": len(rows)}
-        f0 = float(np.sqrt(res["fx"]["a"] * res["fy"]["a"]))
+        asp = res["fy"]["a"] / res["fx"]["a"]
+        consistent = gm.get("aspect") is None or abs(asp - float(gm["aspect"])) <= MODEL_LIMITS["max_aspect_change"]
+        if consistent:
+            f0 = float(np.sqrt(res["fx"]["a"] * res["fy"]["a"]))
+            slope = 0.5 * (res["fx"]["b"] + res["fy"]["b"])
+            offs = {bl: float(np.sqrt(res["fx"]["block_offsets"][bl] * res["fy"]["block_offsets"][bl])) for bl in blocks}
+        else:
+            # fx and fy of the bins disagree (blocks solved on bad Navcam corners inflate fy): fx is the one to trust
+            # - f0 from fx with the aspect in use; the slope in use is kept (the blocks refit their lines anyway)
+            f0 = float(res["fx"]["a"] * math.sqrt(float(gm["aspect"])))
+            slope = float(gm.get("slope_px_per_count") or 0.5 * (res["fx"]["b"] + res["fy"]["b"]))
+            offs = {bl: float(res["fx"]["block_offsets"][bl] * math.sqrt(float(gm["aspect"]))) for bl in blocks}
         rep["eyes"][g] = {"f0_was": gm.get("f0_px"), "f0_now": f0, "slope_was": gm.get("slope_px_per_count"),
-                          "slope_now": 0.5 * (res["fx"]["b"] + res["fy"]["b"]), "aspect_was": gm.get("aspect"),
-                          "aspect_now": res["fy"]["a"] / res["fx"]["a"], "fit": res}
+                          "slope_now": slope, "slope_fitted": 0.5 * (res["fx"]["b"] + res["fy"]["b"]),
+                          "aspect_was": gm.get("aspect"), "aspect_now": asp, "fit": res,
+                          "scatter_offsets_pct": 100.0 * float(np.std(list(offs.values()))) / f0}
         gm["f0_px"] = f0
         gm["reference_focus"] = float(reference_focus)
-        gm["slope_px_per_count"] = 0.5 * (res["fx"]["b"] + res["fy"]["b"])
-        gm["slope_sd_px_per_count"] = 0.5 * math.hypot(res["fx"]["sd_b"], res["fy"]["sd_b"])
-        asp = res["fy"]["a"] / res["fx"]["a"]
-        if gm.get("aspect") is None or abs(asp - float(gm["aspect"])) <= MODEL_LIMITS["max_aspect_change"]:
+        gm["slope_px_per_count"] = slope
+        if consistent:
+            gm["slope_sd_px_per_count"] = 0.5 * math.hypot(res["fx"]["sd_b"], res["fy"]["sd_b"])
             gm["aspect"] = asp
-        else:                                   # fx, fy of single bins drift apart: keep the aspect in use
+        else:                                   # fx, fy of single bins drift apart: keep the aspect and slope in use
             rep["eyes"][g]["aspect_kept"] = f"fitted {asp:.5f} differs from {float(gm['aspect']):.5f} by more than " \
-                                            f"{MODEL_LIMITS['max_aspect_change']}: kept"
-        gm["block_offsets_px"] = {bl: float(np.sqrt(res["fx"]["block_offsets"][bl] * res["fy"]["block_offsets"][bl]))
-                                  - f0 for bl in blocks}
+                                            f"{MODEL_LIMITS['max_aspect_change']}: aspect and slope kept, f0 from fx"
+        gm["block_offsets_px"] = {bl: v - f0 for bl, v in offs.items()}
         gm["n_bins"] = len(rows)
         if gm.get("trend"):                     # the v0p42 sol trend was carried by one block: not kept
             gm["trend_v0p42"] = gm.pop("trend")
@@ -300,6 +313,36 @@ def _wmean(y: np.ndarray, sd: np.ndarray) -> Dict[str, float]:
             "n": int(len(y))}
 
 
+def pp_shift_to_rig(R_sensor_from_ref: np.ndarray, t_sensor_from_ref: np.ndarray, f_px: float,
+                    dcx_px: float, dcy_px: float) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    The rig rotation that replaces a principal-point offset of the right (sensor) eye: a camera whose principal
+    point is moved by (dcx, dcy) px sees the same pixels as the camera with the original principal point rotated
+    about its own centre by (wx, wy) = (-dcy, dcx) / f (small angles, distant points).  Returns (R', t') with
+    x_sensor' = R_d (R x_ref + t): R' = R_d R, t' = R_d t - the baseline is unchanged.
+    """
+    from scipy.spatial.transform import Rotation
+    Rd = Rotation.from_rotvec([-dcy_px / f_px, dcx_px / f_px, 0.0]).as_matrix()
+    return Rd @ np.asarray(R_sensor_from_ref, float), Rd @ np.asarray(t_sensor_from_ref, float)
+
+
+def _label_pp_at(info: Dict[str, Any], group: str, ref: float) -> Optional[Tuple[float, float]]:
+    """The eye's start (label) principal point at the reference focus: a line through the bins' start values."""
+    rows = [(b["focus"], b["start"][2], b["start"][3]) for b in info["bins"]
+            if b["group"] == group and b["focus"] is not None and len(b["start"]) >= 4]
+    if not rows:
+        return None
+    F = np.array([r[0] for r in rows], float) - ref
+    out = []
+    for k in (1, 2):
+        y = np.array([r[k] for r in rows], float)
+        if len(rows) >= 3 and np.ptp(F) > 0:
+            out.append(float(np.polyval(np.polyfit(F, y, 1), 0.0)))
+        else:
+            out.append(float(np.median(y)))
+    return out[0], out[1]
+
+
 def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperature: float = 3.0,
               min_blocks_for_T: int = 3) -> Dict[str, Any]:
     """
@@ -317,6 +360,41 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
     out = copy.deepcopy(model)
     cal: Dict[str, Any] = {"blocks": [i["name"] for i in infos], "when": datetime.date.today().isoformat(),
                            "eyes": {}, "z_temperature": z_temperature}
+    # The right eye's principal-point offset at the reference focus and the rig rotation are the same thing to a
+    # block's bundle adjustment (both free in v0p74): before anything is averaged every block is put on one
+    # convention - ZR's cx, cy at the reference focus = pp0 (the model's, else the label's) and the difference moved
+    # into that block's rig rotation (:func:`pp_shift_to_rig`).  The rigs are then comparable between blocks.
+    shifts: Dict[str, Dict[str, Any]] = {}
+    rig_adj: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+    for g, gm in (out.get("cameras") or {}).items():
+        if not str(g).startswith("ZR"):
+            continue
+        ref0 = None
+        for i in infos:
+            ref0 = ((i["lines"].get(g) or {}).get("reference_focus")) or ref0
+        ref0 = float(ref0 if ref0 is not None else gm.get("reference_focus", 600.0))
+        pp0 = gm.get("pp0_px")
+        if not pp0:
+            lab = [p for p in (_label_pp_at(i, g, ref0) for i in infos) if p is not None]
+            pp0 = [float(np.median([p[0] for p in lab])), float(np.median([p[1] for p in lab]))] if lab else None
+        if not pp0:
+            continue
+        gm["pp0_px"] = [float(pp0[0]), float(pp0[1])]
+        for i in infos:
+            bk = (((i["lines"].get(g) or {}).get("lines") or {}).get("backlash") or {})
+            if not all(isinstance(bk.get(pn), dict) and "a" in bk[pn] for pn in ("cx", "cy")):
+                continue
+            d = (float(bk["cx"]["a"]) - float(pp0[0]), float(bk["cy"]["a"]) - float(pp0[1]))
+            f = float(bk["fx"]["a"]) if isinstance(bk.get("fx"), dict) and "a" in bk["fx"] else float(gm.get("f0_px") or 4720.0)
+            shifts[i["name"]] = {"group": g, "dcx_px": d[0], "dcy_px": d[1], "f_px": f}
+            v = (i.get("rig") or {}).get("Z034") or {}
+            if v.get("R_refined") is not None and v.get("t_refined") is not None:
+                rig_adj[i["name"]] = pp_shift_to_rig(np.asarray(v["R_refined"], float), np.asarray(v["t_refined"], float),
+                                                     f, d[0], d[1])
+    cal["pp_to_rig"] = {"pp0_px": {g: gm.get("pp0_px") for g, gm in (out.get("cameras") or {}).items() if str(g).startswith("ZR")},
+                        "shifts": shifts,
+                        "note": "ZR cx, cy at the reference focus put at pp0 in every block; the difference moved into "
+                                "that block's rig rotation before the rigs were averaged (the two are degenerate in BA)"}
     for g, gm in (out.get("cameras") or {}).items():
         lines: Dict[str, Any] = {}
         ref = None
@@ -333,7 +411,9 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
                         continue
                     ref = L.get("reference_focus", ref)
                     k = (i["navcam_scale"] or 1.0) if pn in ("fx", "fy") else 1.0
-                    rows.append({"block": i["name"], "a": e["a"] / k, "b": e["b"] / k,
+                    sh = shifts.get(i["name"]) if pn in ("cx", "cy") and str(g).startswith("ZR") else None
+                    a_val = e["a"] / k - (sh[f"d{pn}_px"] if sh else 0.0)
+                    rows.append({"block": i["name"], "a": a_val, "b": e["b"] / k,
                                  "sd_a": (e.get("sd_a") or np.nan) / k, "sd_b": (e.get("sd_b") or np.nan) / k,
                                  "T": i.get("T_optics_degC"), "n_bins": e.get("n_bins"), "slope_source": e.get("slope_source")})
                 if not rows:
@@ -385,7 +465,7 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
                     pp[f"{pn}_px_per_count"] = bk[pn]["b"]
                     pp0[k] = bk[pn]["a"]
             gm["pp"] = pp
-            if all(v is not None for v in pp0):
+            if all(v is not None for v in pp0) and not shifts:
                 gm["pp0_px"] = pp0
         if "k1" in bk and "k2" in bk:
             names = list((gm.get("distortion") or {}).get("names") or ["k1", "k2"])
@@ -408,8 +488,10 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
     for i in infos:
         for fam, v in (i.get("rig") or {}).items():
             if str(fam) == "Z034" and v.get("R_refined") is not None and v.get("t_refined") is not None:
-                rigs.append({"block": i["name"], "rotvec": Rotation.from_matrix(np.asarray(v["R_refined"], float)).as_rotvec(),
-                             "t": np.asarray(v["t_refined"], float),
+                Ra, ta = rig_adj.get(i["name"], (np.asarray(v["R_refined"], float), np.asarray(v["t_refined"], float)))
+                rigs.append({"block": i["name"], "rotvec": Rotation.from_matrix(Ra).as_rotvec(), "t": ta,
+                             "T_optics_degC": i.get("T_optics_degC"), "sol": i.get("sol"),
+                             "pp_shift_px": [shifts[i["name"]]["dcx_px"], shifts[i["name"]]["dcy_px"]] if i["name"] in shifts else None,
                              "rotvec_start": Rotation.from_matrix(np.asarray(v["R_sensor_from_ref"], float)).as_rotvec()})
     if rigs:
         rv = np.array([r["rotvec"] for r in rigs])
@@ -421,8 +503,12 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
                       "rotvec_mdeg": (np.degrees(rv.mean(axis=0)) * 1e3).tolist(), "sd_rotvec_mdeg": sd_mdeg,
                       "sd_baseline_mm": float(np.std(np.linalg.norm(tt, axis=1), ddof=1) * 1e3) if len(rigs) > 1 else None,
                       "blocks": [r["block"] for r in rigs],
+                      "per_block": [{"block": r["block"], "rotvec_mdeg": (np.degrees(r["rotvec"]) * 1e3).tolist(),
+                                     "baseline_mm": float(np.linalg.norm(r["t"]) * 1e3), "T_optics_degC": r["T_optics_degC"],
+                                     "sol": r["sol"], "pp_shift_px": r["pp_shift_px"]} for r in rigs],
                       "note": f"v0p74 calibration: mean of {len(rigs)} blocks' refined Mastcam-Z rigs (right from left; the "
-                              f"same for every focus - the focus motion is the principal points')"}
+                              f"same for every focus - the focus motion is the principal points'; ZR cx, cy at the reference "
+                              f"focus = pp0, each block's offset moved into its rig rotation first)"}
         cal["rig"] = {k: v for k, v in out["rig"].items() if k != "R_sensor_from_ref"}
     out["calibration"] = cal
     out["state"] = "calibrated (v0p74)"
@@ -439,10 +525,23 @@ def check_model(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[
 
     def add(name, ok, note):
         checks.append({"check": name, "ok": bool(ok), "note": note})
-    nb = len(((new.get("calibration") or new.get("start_update") or {}).get("blocks")) or [])
+    cal, su = new.get("calibration"), new.get("start_update")
+    nb = len(((cal or su or {}).get("blocks")) or [])
     add("blocks", nb >= lim["min_blocks"], f"{nb} blocks")
     for g, c in (new.get("cameras") or {}).items():
         o = (old.get("cameras") or {}).get(g) or {}
+        if cal is not None:                     # a calibration must have fitted every eye
+            e = (cal.get("eyes") or {}).get(g) or {}
+            bk = e.get("backlash") if isinstance(e, dict) else None
+            has = bool(bk) and all(isinstance(bk.get(pn), dict) for pn in ("fx", "fy"))
+            add(f"{g} lines", has, "fx, fy lines fitted" if has else str(e.get("skipped") or "no backlash fx, fy lines"))
+        if su is not None:
+            e = (su.get("eyes") or {}).get(g) or {}
+            if e.get("skipped"):
+                add(f"{g} start", False, str(e["skipped"]))
+            elif e.get("scatter_offsets_pct") is not None:
+                add(f"{g} block offsets", e["scatter_offsets_pct"] <= lim["max_offset_scatter_pct"],
+                    f"sd {e['scatter_offsets_pct']:.2f} % of f0")
         if c.get("f0_px") and o.get("f0_px"):
             d = 100.0 * abs(c["f0_px"] / o["f0_px"] - 1.0)
             add(f"{g} f0", d <= lim["max_f0_change_pct"], f"{o['f0_px']:.1f} -> {c['f0_px']:.1f} px ({d:.2f} %)")
@@ -456,6 +555,20 @@ def check_model(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[
     if rig:
         b = float(rig.get("baseline_m") or 0.0)
         add("rig baseline", lim["baseline_m"][0] <= b <= lim["baseline_m"][1], f"{b:.4f} m")
+        if rig.get("sd_rotvec_mdeg"):
+            s = max(float(x) for x in rig["sd_rotvec_mdeg"])
+            add("rig scatter", s <= lim["max_rig_scatter_mdeg"],
+                f"rotation sd {', '.join(f'{float(x):.1f}' for x in rig['sd_rotvec_mdeg'])} mdeg over {len(rig.get('blocks') or [])} blocks")
+        if rig.get("sd_baseline_mm") is not None:
+            add("rig baseline scatter", float(rig["sd_baseline_mm"]) <= lim["max_baseline_scatter_mm"],
+                f"sd {float(rig['sd_baseline_mm']):.2f} mm")
+        orig = old.get("rig") or {}
+        if orig.get("R_sensor_from_ref") and rig.get("R_sensor_from_ref"):
+            from scipy.spatial.transform import Rotation
+            dR = Rotation.from_matrix(np.asarray(rig["R_sensor_from_ref"], float)) * \
+                Rotation.from_matrix(np.asarray(orig["R_sensor_from_ref"], float)).inv()
+            ang = float(np.degrees(np.linalg.norm(dR.as_rotvec())))
+            add("rig change", ang <= lim["max_rig_change_deg"], f"{ang:.3f} deg from the rig in use")
     ok = all(c["ok"] for c in checks)
     return {"ok": ok, "checks": checks}
 
@@ -492,6 +605,20 @@ def report_lines(model: Dict[str, Any], grades: Optional[Sequence[Dict[str, Any]
                     + (f" (sd {', '.join(f'{x:.2f}' for x in r['sd_rotvec_mdeg'])})" if r.get("sd_rotvec_mdeg") else ""),
                     f"- baseline {r['baseline_m'] * 1000:.2f} mm" + (f" (sd {r['sd_baseline_mm']:.2f} mm)" if r.get("sd_baseline_mm") else ""),
                     f"- blocks: {', '.join(r['blocks'])}", ""]
+            if r.get("per_block"):
+                out += ["| block | sol | T optics | rotation vector (mdeg) | baseline (mm) | ZR pp offset moved into the rig (px) |",
+                        "|---|---|---|---|---|---|"]
+                for p in r["per_block"]:
+                    T = p.get("T_optics_degC")
+                    sh = p.get("pp_shift_px")
+                    out.append(f"| {p['block']} | {p.get('sol')} | {'' if T is None else f'{T:.1f}'} | "
+                               f"{', '.join(f'{x:+.1f}' for x in p['rotvec_mdeg'])} | {p['baseline_mm']:.2f} | "
+                               f"{'' if sh is None else f'{sh[0]:+.2f}, {sh[1]:+.2f}'} |")
+                out.append("")
+            p2r = cal.get("pp_to_rig") or {}
+            if p2r.get("pp0_px"):
+                out += [f"- ZR principal point at the reference focus fixed at pp0 {p2r['pp0_px']} px; each block's offset "
+                        f"moved into its rig rotation before averaging (the two are degenerate in a block's BA)", ""]
     su = model.get("start_update")
     if su:
         out += ["## Start update (blocks before v0p74)", ""]
