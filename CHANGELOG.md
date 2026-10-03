@@ -2,6 +2,16 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.72.1 — 2026-10-03
+
+- **`scripts\windows\upload_mask_model.bat`** uploads the default mask model (`mppp_mask_v3`, or a name given as argument) to Hugging Face. It:
+  1. finds the notebooks' Python and installs `huggingface_hub` if needed (asks first);
+  2. logs in with a write token if this computer isn't logged in yet;
+  3. checks that the logged-in account owns the registry repository (`ctate7163/mppp-mask`);
+  4. exports `checkpoints\convnext_tiny_s4_seg_20260925b.pt` to the `.safetensors` if needed, and refuses a file whose SHA-256 isn't the registry's;
+  5. uploads the file and `docs\hf_model_card.md` as the README;
+  6. downloads it again and checks the SHA-256 (`mppp.mask.hub verify`).
+
 ## 0.72.0 — 2026-10-03
 
 - **Notebook 04 section 11: check and promote the consensus.**

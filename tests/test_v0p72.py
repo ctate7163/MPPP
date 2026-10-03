@@ -157,3 +157,15 @@ def test_lmst_script_draws(tmp_path):
     (w / "mppp_manifest_v0p72.json").write_text(json.dumps({"images": imgs}))
     assert m.main(["--roots", str(tmp_path), "--sites", "van_zyl", "--out", str(tmp_path / "o"), "--name", "l"]) == 0
     assert (tmp_path / "o" / "l.png").is_file()
+
+
+def test_upload_mask_model_bat():
+    b = (ROOT / "scripts" / "windows" / "upload_mask_model.bat").read_bytes()
+    assert b"\n" not in b.replace(b"\r\n", b"")
+    for s in (b"mppp_env.bat", b"python -m mppp.mask.hub upload --name %MODEL%", b"python -m mppp.mask.hub verify",
+              b"huggingface_hub import login", b"default_model_name", b"hf_repo("):
+        assert s in b, s
+    from mppp.mask.hub import default_model_name, hf_repo, load_registry
+    assert default_model_name() == "mppp_mask_v3" and hf_repo() == "ctate7163/mppp-mask"
+    e = load_registry()["models"]["mppp_mask_v3"]
+    assert e["source_checkpoint"] == "convnext_tiny_s4_seg_20260925b.pt" and e["urls"][0].startswith("https://huggingface.co/ctate7163/")

@@ -76,7 +76,7 @@ def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
 
 def test_version():
     import mppp
-    assert mppp.__version__ == "0.72.0" and mppp.VERSION_TAG == "v0p72"
+    assert mppp.__version__ == "0.72.1" and mppp.VERSION_TAG == "v0p72"
 
 
 def test_notebooks_compile_and_have_a_parameters_cell():
