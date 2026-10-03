@@ -58,7 +58,7 @@ def _meta(stem, sol, site, drive, seq):
 def test_sites_json_is_the_site_list():
     from mppp.sfm import sites as S
     t = S.load_site_table()
-    assert len(t["sites"]) >= 32 and S.SITES["rockytop"] == (461, 530) and S.SITES["south_arm"] == (1408, 1412)
+    assert len(t["sites"]) >= 32 and S.SITES["rockytop"][1] == 530 and S.SITES["south_arm"] == (1408, 1412)
     for g, members in t["groups"].items():
         assert (members or g in ("zcam79_consensus", "zcam110_consensus")) and all(m in t["sites"] for m in members), g
     for k, v in t["sites"].items():

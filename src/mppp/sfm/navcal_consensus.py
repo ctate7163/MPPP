@@ -91,6 +91,7 @@ def profile_thermal(rec, proj, temps, values: Dict[str, float], T0: float, term:
     grid = [c0 + step * (k - (npoints - 1) / 2) for k in range(npoints)]
     rows: list = []
     done = set()
+    t_all = time.time()
     for _ in range(3):
         for g in grid:
             if round(g, 9) in done:
@@ -107,8 +108,8 @@ def profile_thermal(rec, proj, temps, values: Dict[str, float], T0: float, term:
             rows.append({"ppm_per_degC": float(g), "cost": float(ba["final_cost"]), "iterations": ba["iterations"],
                          "variance_factor": float(2 * ba["final_cost"] / red)})
             if verbose:
-                print(f"  {term} {g:+.4f}: cost {ba['final_cost']:.2f} it {ba['iterations']} ({time.time() - t:.0f} s)",
-                      flush=True)
+                print(f"  {term} {g:+.4f}: cost {ba['final_cost']:.2f} it {ba['iterations']} ({time.time() - t:.0f} s)  "
+                      f"{NC.progress(len(rows), max(npoints, len(rows)), t_all, 'profile ' + term)}", flush=True)
         fit = NC.fit_profile(sorted(rows, key=lambda r: r["ppm_per_degC"]))
         lo, hi = min(r["ppm_per_degC"] for r in rows), max(r["ppm_per_degC"] for r in rows)
         b = fit["best_ppm_per_degC"]
@@ -259,6 +260,8 @@ def fit_early_offsets(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, An
         out["note"] = f"no images before sol {before_sol:g}: nothing to fit"
         return out
     cache: Dict[tuple, Dict[str, float]] = {}
+    t_all = time.time()
+    n_max = max(1, int(rounds)) * 16 + 2                  # 15 design points + 1 trial per round, + best and zero
 
     def cost_at(x):
         key = tuple(np.round(x, 6))
@@ -272,7 +275,8 @@ def fit_early_offsets(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, An
                           "iterations": ba["iterations"]}
             if verbose:
                 print("  early offsets " + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, x))
-                      + f": cost {ba['final_cost']:.2f} it {ba['iterations']} ({time.time() - t:.0f} s)", flush=True)
+                      + f": cost {ba['final_cost']:.2f} it {ba['iterations']} ({time.time() - t:.0f} s)  "
+                      + NC.progress(len(cache), n_max, t_all, "adjustment (at most)"), flush=True)
         return cache[key]
 
     # Newton steps on the response surface, limited to ``max_move`` px per term (a trust region: far from the minimum
@@ -299,6 +303,10 @@ def fit_early_offsets(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, An
         rec_rd = {"centre": best.tolist(), "costs": c.tolist(), "gradient": g.tolist(), "hessian": H.tolist(),
                   "eigenvalues": ev.tolist(), "fit_rms": fit_rms, "step": dx.tolist(), "positive_definite": ok}
         out["rounds"].append(rec_rd)
+        if verbose:
+            print(f"  early offsets, round {rd + 1}/{rounds}: centre " + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, best))
+                  + "; step " + " ".join(f"{v:+.3f}" for v in dx) + (" (positive definite)" if ok else " (not convex)"),
+                  flush=True)
         if ok and np.all(np.abs(dx) < 0.5 * step):        # the minimum lies well inside this design: done
             best = best + dx
             converged = True
@@ -385,6 +393,16 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
     if verbose:
         print(f"merged {len(idx['images'])} blocks, {rec.num_reg_images()} images, {rec.num_points3D()} points "
               f"({time.time() - t:.0f} s)", flush=True)
+        if idx.get("duplicates"):
+            print("  images also in an earlier block (kept, counted twice): "
+                  + ", ".join(f"{k} {v}" for k, v in idx["duplicates"].items()), flush=True)
+        # v0p71: the plan of the run, in joint adjustments (each about 1-3 min for ~15 blocks)
+        n_adj = 1 + (len(thermal_terms) * 5 + 1 if refit_thermal else 0) \
+            + ((max(1, int(early_rounds)) * 16 + 3) if early_mission_sol else 0)
+        print(f"{datetime.datetime.now():%H:%M} plan: about {n_adj} joint adjustments (start"
+              + (f", thermal profiles {', '.join(thermal_terms)}" if refit_thermal else "")
+              + (f", early-mission offsets up to {early_rounds} rounds of 16" if early_mission_sol else "")
+              + ", final with covariance" + (", rig translation" if translation_scapes else "") + ")", flush=True)
     proj.settings["navcam_rig_yaw"] = "refine"            # one yaw for all: no drift / temperature term below
     names = PARAM_NAMES["THIN_PRISM_FISHEYE"]
     for cid, key in ((1, "NL"), (2, "NR")):
@@ -402,7 +420,7 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
     if refit_thermal:
         # v0p64: the thermal terms in the consensus form, one profile after the other from the converged state
         if verbose:
-            print(f"consensus at the start values: cost {ba['final_cost']:.1f} ({time.time() - t:.0f} s); "
+            print(f"{datetime.datetime.now():%H:%M} consensus at the start values: cost {ba['final_cost']:.1f} ({time.time() - t:.0f} s); "
                   f"thermal profiles: {', '.join(thermal_terms)}", flush=True)
         for term in thermal_terms:
             pr = profile_thermal(rec, proj, temps, tvals, t0, term, drift=drift, verbose=verbose)
@@ -422,7 +440,8 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
         else:                                       # the block alignments' own (per-block) estimate as the start
             x0 = early_start_from_blocks(scapes_cfg, float(early_mission_sol))["start"]
         if verbose:
-            print(f"early-mission offsets before sol {early_mission_sol:g} (start {x0}):", flush=True)
+            print(f"{datetime.datetime.now():%H:%M} early-mission offsets before sol {early_mission_sol:g} (start "
+                  + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, x0)) + "):", flush=True)
         early = fit_early_offsets(rec, proj, temps, ppm, t0, xkw, float(early_mission_sol), start=x0,
                                   rounds=early_rounds, verbose=verbose)
         if early.get("offsets_px"):

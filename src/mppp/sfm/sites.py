@@ -358,6 +358,18 @@ def discover_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = 
     ``verbose`` prints the table of all folders with the reasons for the ones left out.
     """
     rows = scan_scapes(root, sites, require_error_input, include_zcam, exclude, min_images)
+    # v0p71: two sites with the same label (e.g. bell_island and bell_island_large, both "Bell Island") stay apart:
+    # the later one is labelled with its site name (before, one silently replaced the other)
+    seen: Dict[str, int] = {}
+    for r in rows:
+        if r["ok"]:
+            seen[r["label"]] = seen.get(r["label"], 0) + 1
+    used = set()
+    for r in rows:
+        if r["ok"] and seen[r["label"]] > 1:
+            if r["label"] in used:
+                r["label"] = f"{r['label']} ({r['site']}{', N+Z' if r.get('zcam') else ''})"
+            used.add(r["label"].split(" (")[0])
     if verbose:
         print_scan(rows, sites)
     return {r["label"]: Path(r["folder"]) for r in rows if r["ok"]}

@@ -578,6 +578,16 @@ def thin_points(rec, n: Optional[int], seed: int = 0) -> int:
     return len(drop)
 
 
+def progress(done: int, total: int, t0: float, label: str = "") -> str:
+    """v0p71: ``[label done/total, elapsed, ~left, at HH:MM]`` for the long loops of the studies (log and notebook)."""
+    import datetime as _dt
+    import time as _t
+    el = _t.time() - t0
+    left = el / max(done, 1) * max(total - done, 0)
+    return (f"[{label + ' ' if label else ''}{done}/{total}, {el / 60:.0f} min elapsed, ~{left / 60:.0f} min left, "
+            f"at {_dt.datetime.now():%H:%M}]")
+
+
 def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndarray],
                  points_per_scape: Optional[int] = 25000, seed: int = 0, exclude: Sequence[str] = ()) -> Tuple[Any, SfmProject, Dict[str, Any]]:
     """
@@ -586,7 +596,10 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
     NR / NL alone; each block's frames, images, poses and (subsampled) points with fresh ids.  The merged project
     lists every image with its own block's priors (each block keeps its own world frame).  Returns
     (rec, project, index) with ``index`` = {"scape_of_image": {image_id: scape}, "images": {scape: [image_id]},
-    "frames": {scape: [frame_id]}}.
+    "frames": {scape: [frame_id]}}.  v0p71: an image that is in more than one block (nested or overlapping sites,
+    e.g. Bell Island inside Bell Island Large) enters once per block, renamed ``<name>@<block>`` after its first
+    block, with the same temperature; ``index["duplicates"]`` = {block: count}.  Its observations are then counted
+    twice, which is accepted.
     """
     import pycolmap
     sensor = lambda c: pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=int(c))      # noqa: E731
@@ -607,7 +620,8 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
     new.add_rig(r3)
     proj = None
     seen_names = set()
-    idx: Dict[str, Any] = {"scape_of_image": {}, "images": {}, "frames": {}, "points": {}, "temps": {}}
+    idx: Dict[str, Any] = {"scape_of_image": {}, "images": {}, "frames": {}, "points": {}, "temps": {},
+                           "duplicates": {}}
     next_img, next_frame = 1, 1
     for sc in scapes:
         if sc.name in exclude:
@@ -643,18 +657,25 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
             pending = []
             for i in ims:
                 im = rec.images[i]
-                if im.name in seen_names:
-                    raise ValueError(f"{im.name} is in more than one block")
-                seen_names.add(im.name)
+                name = im.name
+                if name in seen_names:                 # v0p71: the same image in another block - kept, renamed
+                    name = f"{im.name}@{sc.name}"
+                    idx["duplicates"][sc.name] = idx["duplicates"].get(sc.name, 0) + 1
+                    if im.name in idx["temps"]:
+                        idx["temps"][name] = idx["temps"][im.name]
+                seen_names.add(name)
                 cid = 1 if key_of.get(int(im.camera_id)) == "NL" else 2
                 img_map[i] = next_img
                 nf.add_data_id(pycolmap.data_t(sensor_id=sensor(cid), id=next_img))
                 kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
-                ni = pycolmap.Image(name=im.name, keypoints=kps, camera_id=cid, image_id=next_img)
+                ni = pycolmap.Image(name=name, keypoints=kps, camera_id=cid, image_id=next_img)
                 ni.frame_id = next_frame
                 pending.append(ni)
                 r = dict(by_name[im.name])
-                r.update({"image_id": next_img, "camera_id": cid, "frame_id": next_frame, "scape": sc.name})
+                r.update({"name": name, "image_id": next_img, "camera_id": cid, "frame_id": next_frame,
+                          "scape": sc.name})
+                if name != im.name:
+                    r["source_name"] = im.name
                 proj.images.append(r)
                 idx["scape_of_image"][next_img] = sc.name
                 idx["images"][sc.name].append(next_img)
@@ -953,7 +974,8 @@ def profile_slope(rec, proj: SfmProject, temps: Dict[str, float], T0: float, gri
     the minimum of a parabola through the three lowest points, its standard deviation var_factor / curvature."""
     import time
     rows = []
-    for b in grid:
+    tp = time.time()
+    for kb, b in enumerate(grid, 1):
         t0 = time.time()
         r = copy.deepcopy(rec)
         ba = joint_adjust(r, proj, temps, b, T0, max_iterations=max_iterations, rig_slopes=rig_slopes, **kw)
@@ -962,7 +984,8 @@ def profile_slope(rec, proj: SfmProject, temps: Dict[str, float], T0: float, gri
                      "variance_factor": float(2 * ba["final_cost"] / red), "state": shared_state(r)})
         if verbose:
             print(f"  slope {b:6.1f} ppm/degC  cost {ba['final_cost']:.2f}  it {ba['iterations']}  "
-                  f"fx NL {r.cameras[1].params[0]:.3f} NR {r.cameras[2].params[0]:.3f}  {time.time() - t0:.0f} s", flush=True)
+                  f"fx NL {r.cameras[1].params[0]:.3f} NR {r.cameras[2].params[0]:.3f}  {time.time() - t0:.0f} s  "
+                  f"{progress(kb, len(grid), tp, 'slope')}", flush=True)
     return fit_profile(rows)
 
 

@@ -78,7 +78,8 @@ def cmd_rig(a, scapes_cfg, samples):
     (out / "common_principal_points.json").write_text(json.dumps(common, indent=1))
     print("common principal points", common, flush=True)
     modes = getattr(a, "modes", None)
-    for n in names:
+    t_all = time.time()
+    for k_n, n in enumerate(names, 1):
         f = out / f"rig_{n.replace(' ', '_')}.json"
         old = json.loads(f.read_text()) if f.exists() else None
         if old is not None and not a.force and (not modes or all(m in old for m in modes)):
@@ -96,7 +97,7 @@ def cmd_rig(a, scapes_cfg, samples):
             old.update({m: res[m] for m in modes if m in res})
             res = old
         f.write_text(json.dumps(jsonable(res), indent=1))
-        print(f"{n}: {time.time() - t:.0f} s", flush=True)
+        print(f"{n}: {time.time() - t:.0f} s  {NC.progress(k_n, len(names), t_all, 'rig study')}", flush=True)
         del sc
 
 
@@ -311,13 +312,16 @@ def cmd_joint(a, scapes_cfg, samples):
     elif a.rig_thermal and a.fixed_slope is None:
         import copy as _copy
         rows = []
-        for k in sorted({0.0, ky - 1.0, ky - 0.5, ky, ky + 0.5, ky + 1.0}):
+        grid_k = sorted({0.0, ky - 1.0, ky - 0.5, ky, ky + 0.5, ky + 1.0})
+        t_all = time.time()
+        for k in grid_k:
             r = _copy.deepcopy(rec)
             t1 = time.time()
             bb = NC.joint_adjust(r, proj, temps, best, T0, max_iterations=100, rig_slopes=(k, kp))
             rows.append({"yaw_mdeg_per_degC": k, "cost": float(bb["final_cost"]), "iterations": bb["iterations"],
                          "variance_factor": float(2 * bb["final_cost"] / max(2 * bb["observations"] - 1, 1))})
-            print(f"  rig yaw slope {k:+.2f} mdeg/degC  cost {bb['final_cost']:.2f}  it {bb['iterations']}  {time.time() - t1:.0f} s", flush=True)
+            print(f"  rig yaw slope {k:+.2f} mdeg/degC  cost {bb['final_cost']:.2f}  it {bb['iterations']}  {time.time() - t1:.0f} s  "
+                  f"{NC.progress(len(rows), len(grid_k), t_all, 'rig yaw')}", flush=True)
             del r
         xs = np.array([r["yaw_mdeg_per_degC"] for r in rows if r["yaw_mdeg_per_degC"] != 0.0 or True])
         cs = np.array([r["cost"] for r in rows])
@@ -386,6 +390,8 @@ def cmd_loo(a, scapes_cfg, samples):
     res_file = out / f"loo_{lens}.json"
     res = json.loads(res_file.read_text()) if res_file.exists() else {}
     full = _shared(rec0)
+    t_all = time.time()
+    todo = [s for s in names if a.force or s not in res]
     for s in names:
         if s in res and not a.force:
             continue
@@ -452,7 +458,8 @@ def cmd_loo(a, scapes_cfg, samples):
         r = res[s]
         print(f"{lens} {s:16s} held cost +{r['cost_increase_pct']:.2f} % (cameras only +{r['cost_increase_cameras_pct']:.2f} %, no rig(T) +{r['cost_increase_no_rig_thermal_pct']:.2f} %)  median {st_b['median_px']:.4f} / own {st_c['median_px']:.4f}  "
               f"corner {st_b['corner_median_px']:.4f} / {st_c['corner_median_px']:.4f}  prediction rms NL {cmp['NL']['rms_px']:.3f} "
-              f"NR {cmp['NR']['rms_px']:.3f} px  disparity {r['disparity_inf_diff_px']:+.3f} px  {time.time() - t:.0f} s", flush=True)
+              f"NR {cmp['NR']['rms_px']:.3f} px  disparity {r['disparity_inf_diff_px']:+.3f} px  {time.time() - t:.0f} s  "
+              f"{NC.progress(todo.index(s) + 1, len(todo), t_all, 'leave-one-out ' + lens)}", flush=True)
 
 
 def cmd_all(a, scapes_cfg, samples):
@@ -472,6 +479,11 @@ def cmd_all(a, scapes_cfg, samples):
     for lens in ("rational", "fisheye_t"):
         b.lens = lens
         cmd_loo(b, scapes_cfg, samples)
+    # v0p71: then the consensus in the form in use (the candidate to promote), with the early-mission offsets and the
+    # thermal refit when asked - before, "all" ignored --early-mission-sol and --refit-thermal
+    print(f"{time.strftime('%H:%M')} all: the rig, joint and leave-one-out studies are done; now the consensus "
+          f"(the candidate to promote) -> {out / 'navcam_joint'}", flush=True)
+    cmd_consensus(a, scapes_cfg, samples)
 
 
 def cmd_consensus(a, scapes_cfg, samples):

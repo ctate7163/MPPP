@@ -2,6 +2,26 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.71.0 — 2026-10-02
+
+- **Blocks that share images no longer stop the joint studies.** Examples are Bell Island inside Bell Island Large, and Butler Landing Large overlapping Van Zyl and Chal Rocks Large.
+  - `navcal.merge_scapes` keeps a repeated image once per block. After its first block it is renamed `<name>@<block>` and keeps the same temperature. Its observations then count twice.
+  - The count per block is in `index["duplicates"]` and is printed by the consensus.
+  - Before, it raised "… is in more than one block".
+- **Sites with the same label stay apart** (`sites.discover_scapes`): the later one becomes "Bell Island (bell_island_large)". Before, one silently replaced the other in notebook 04's `SCAPES`.
+- **Progress in the long study steps.** A line like `[step k/n, elapsed, ~left, at HH:MM]` (`navcal.progress`) now follows each of these:
+  - each block of the rig study, each leave-one-out block, each point of the slope and rig-yaw profiles;
+  - each thermal-profile point and each early-mission adjustment, with a summary per round;
+  - the consensus also prints its plan (number of joint adjustments) and the clock time of each stage.
+- **Notebook 04 shows the study as it runs.** The subprocess output streams into the cell and is still written to `study_log.txt`. Ceres' "Linear solver failure" warnings (a rejected step the solver retries) go to the log only.
+- **`STUDY_CMD = "all"` now ends with the consensus.** Before, it ignored `--early-mission-sol` and `--refit-thermal` and wrote no candidate in the form in use. The notebook default stays `"consensus"`, and its comment gives the run times.
+- **Notebook 04's v0p35 texts updated** (2d, 2e, 2f, overview table):
+  - what holds and what changed since v0p35;
+  - the label calibration change is now dated between sols 278 and 360 (it said "near sol 250");
+  - promotion goes through `promote_cmods.py`.
+- **Notebook 05:** the |dLMST| figure is 10 × 6 in by default (bins 0–9 h in 0.5 h steps).
+- `sites.json`: Christian's update of 2 Oct (`butler_landing_large`, `bell_island_large` 1435–1478, Rockytop from sol 460, Marble Mountain from sol 1962).
+
 ## 0.70.0 — 2026-10-02
 
 - **Early-mission Navcam offsets in the consensus** (notebook 04 `EARLY_MISSION_SOL = 380.0`, `EARLY_ROUNDS = 2`; CLI `--early-mission-sol 380 --early-rounds`):

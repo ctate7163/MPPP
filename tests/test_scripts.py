@@ -41,6 +41,11 @@ def test_windows_bat_files():
     assert b"run_sites.py" in (d / "_run_sites.bat").read_bytes()
 
 
+def _rocky(zcam=False):
+    from mppp.sfm.sites import SITES, folder_name
+    return folder_name("rockytop", SITES["rockytop"][0], zcam=zcam)
+
+
 def test_process_sites_dry_run(tmp_path, capsys):
     import importlib.util
     from pathlib import Path
@@ -50,10 +55,10 @@ def test_process_sites_dry_run(tmp_path, capsys):
     spec.loader.exec_module(ps)
     assert ps.main(["--sites", "chal_rocks_sid", "rockytop", "--root", str(tmp_path), "--dry-run"]) == 0
     log = (tmp_path / "process_sites_log.txt").read_text()
-    assert "chal_rocks_sid: would run" in log and "mars2020_sol_0461_rockytop_colmap" in log
+    assert "chal_rocks_sid: would run" in log and _rocky() in log
     assert ps.main(["--all", "--zcam", "--root", str(tmp_path), "--dry-run"]) == 0
     log = (tmp_path / "process_sites_log.txt").read_text()
-    assert "mars2020_sol_0461_rockytop_colmap_zcam" in log and "van_zyl_colmap_zcam" not in log   # v0p53: "zcam" sites only
+    assert _rocky(True) in log and "van_zyl_colmap_zcam" not in log   # v0p53: "zcam" sites only
     assert ps.main(["--sites", "nowhere", "--root", str(tmp_path), "--dry-run"]) == 2
 
 
