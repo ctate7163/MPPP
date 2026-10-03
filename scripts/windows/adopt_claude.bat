@@ -16,6 +16,15 @@ set "BUNDLE=%MPPP_HOME%\_transfer\mppp_latest.bundle"
 if not exist ".git" (echo not a git working copy yet: run setup_github.bat first & pause & exit /b 1)
 if not exist "%BUNDLE%" (echo %BUNDLE% not found & pause & exit /b 1)
 git fetch -q "%BUNDLE%" "+refs/heads/main:refs/remotes/claude/main" "+refs/tags/*:refs/tags/*" || (pause & exit /b 1)
+REM v0p72: a camera-model promotion made here (notebook 04 section 11) that Claude's delivery lacks would be lost
+set "NPROMO=0"
+for /f %%C in ('git rev-list --count claude/main..HEAD -- src/mppp/data/cmods 2^>nul') do set "NPROMO=%%C"
+if not "%NPROMO%"=="0" git diff --quiet HEAD claude/main -- src/mppp/data/cmods && set "NPROMO=0"
+if not "%NPROMO%"=="0" (
+  echo This copy has %NPROMO% commit^(s^) of promoted camera models ^(src\mppp\data\cmods^) that Claude's delivery lacks.
+  echo Tell Claude first ^(see _transfer\promoted.json^); Claude takes them into the next delivery. Nothing changed.
+  pause & exit /b 1
+)
 echo Claude's delivery:
 git log --oneline -1 claude/main
 echo this copy now:

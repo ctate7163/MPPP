@@ -350,7 +350,7 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
                   translation_scapes: Optional[Dict[str, PathLike]] = None, translation_sigma_m: float = 0.05,
                   apply_translation: bool = False, refit_thermal: bool = False,
                   thermal_terms: Tuple[str, ...] = ("f", "NL_cx"), early_mission_sol: Optional[float] = None,
-                  early_rounds: int = 2) -> Dict[str, Any]:
+                  early_rounds: int = 2, early_start: Optional[Tuple[float, float, float, float]] = None) -> Dict[str, Any]:
     """The joint adjustment (see the module docstring) of the blocks ``{name: WORK folder}``; returns the shared
     cameras, the rig, residuals by radius and the per-block image counts.  v0p62: ``translation_scapes`` (the large
     blocks, :func:`large_blocks`): then :func:`fit_rig_translation` on them with the new cameras held
@@ -435,7 +435,9 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
     if early_mission_sol:
         # v0p70: the early-mission offsets in the consensus form, then the consensus once more with them
         em0 = nl.get("early_mission") or {}
-        if em0:
+        if early_start is not None:                 # v0p72: e.g. the offsets of a previous run
+            x0 = [float(v) for v in early_start]
+        elif em0:
             x0 = [float(em0.get(f"d{k}_px", 0.0)) for k in EARLY_TERMS]
         else:                                       # the block alignments' own (per-block) estimate as the start
             x0 = early_start_from_blocks(scapes_cfg, float(early_mission_sol))["start"]
@@ -671,4 +673,136 @@ def write_consensus(res: Dict[str, Any], out_dir: PathLike, note: str = "",
                     + (f" (the large-block fit, translation_fit, is recorded but not applied)." if tr else ".")))
     (out / "M2020_N_rig.json").write_text(json.dumps(r, indent=1), encoding="utf-8")
     (out / "consensus.json").write_text(json.dumps(res, indent=1, default=float), encoding="utf-8")
+    return out
+
+
+# ----------------------------------------------------------------------------------------- check and promote (v0p72)
+PROMOTE_LIMITS = {"min_blocks": 8, "residual_factor": 1.15, "max_camera_change_px": 0.5, "max_rig_change_mdeg": 10.0,
+                  "max_ppm_change": 5.0, "max_pp_slope_change": 0.02}
+
+
+def _rotation_mdeg(Ra: np.ndarray, Rb: np.ndarray) -> float:
+    from scipy.spatial.transform import Rotation
+    return float(np.degrees(np.linalg.norm(Rotation.from_matrix(np.asarray(Rb) @ np.asarray(Ra).T).as_rotvec())) * 1e3)
+
+
+def check_candidate(candidate_dir: PathLike, current_dir: Optional[PathLike] = None,
+                    limits: Optional[Dict[str, float]] = None, screening: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    v0p72: is a consensus candidate (``STUDY_DIR/navcam_joint``) fit to replace the cameras in use (``current_dir``,
+    default ``cmods_dir()``)?  Checks (``limits``, :data:`PROMOTE_LIMITS`): the files load; at least ``min_blocks``
+    blocks; the adjustment converged with finite sd; residual median / rms / p95 at most ``residual_factor`` x those of
+    the cameras in use (different block sets, hence the margin); each eye within ``max_camera_change_px`` (rms over
+    the frame, rotation removed) of the camera in use, the rig rotation within ``max_rig_change_mdeg``; the thermal
+    focal slope within ``max_ppm_change`` ppm/degC and the principal-point slopes within ``max_pp_slope_change``
+    px/degC of the ones in use; the early-mission fit (when made) converged on a convex surface with finite sd; no
+    block that failed screening (``screening``: the study's ``block_screening.json``).  Returns {"ok", "checks":
+    [{"check", "value", "limit", "ok", "note"}], "early_mission", "candidate", "current"}.
+    """
+    from . import navcal as NC
+    from ..paths import cmods_dir
+    lim = dict(PROMOTE_LIMITS, **(limits or {}))
+    cand, cur = Path(candidate_dir), Path(current_dir) if current_dir else cmods_dir()
+    checks = []
+
+    def add(name, value, limit, ok, note=""):
+        checks.append({"check": name, "value": value, "limit": limit, "ok": bool(ok), "note": note})
+
+    files = ["M2020_NL_fisheye_tangential.json", "M2020_NR_fisheye_tangential.json", "M2020_N_rig.json", "consensus.json"]
+    missing = [f for f in files if not (cand / f).is_file()]
+    add("files", len(files) - len(missing), len(files), not missing, ", ".join(missing) or "all present")
+    if missing:
+        return {"ok": False, "checks": checks, "candidate": str(cand), "current": str(cur)}
+    res = json.loads((cand / "consensus.json").read_text(encoding="utf-8"))
+    new = {e: json.loads((cand / f"M2020_{e}_fisheye_tangential.json").read_text(encoding="utf-8")) for e in ("NL", "NR")}
+    old = {e: json.loads((cur / f"M2020_{e}_fisheye_tangential.json").read_text(encoding="utf-8")) for e in ("NL", "NR")}
+    rn = json.loads((cand / "M2020_N_rig.json").read_text(encoding="utf-8"))
+    ro = json.loads((cur / "M2020_N_rig.json").read_text(encoding="utf-8"))
+    nb = len(res.get("blocks") or {})
+    add("blocks", nb, lim["min_blocks"], nb >= lim["min_blocks"])
+    sd = res.get("sd") or {}
+    finite = all(isinstance(sd.get(e), dict) and "diag" not in sd[e] and all(np.isfinite(list(sd[e].values())))
+                 for e in ("NL", "NR"))
+    add("covariance", "finite" if finite else "missing", "finite sd of both eyes", finite, str(res.get("covariance_error") or ""))
+    it = int(res.get("iterations") or 0)
+    add("converged", it, "< 100 iterations", 0 < it < 100 and np.isfinite(res.get("final_cost", np.nan)))
+    ref = (old["NL"].get("verification") or {}).get("residuals") or {}
+    for k in ("median_px", "rms_px", "p95_px"):
+        v = float(res["residuals"][k])
+        r = ref.get(k)
+        add(f"residual {k}", round(v, 4), None if r is None else round(lim["residual_factor"] * float(r), 4),
+            r is None or v <= lim["residual_factor"] * float(r), f"cameras in use {r:.4f}" if r else "no reference")
+    for e in ("NL", "NR"):
+        a = NC.pycolmap_camera(old[e]["model"], old[e]["params"])
+        b = NC.pycolmap_camera(new[e]["model"], new[e]["params"])
+        d = NC.compare(a, b)
+        add(f"{e} change vs in use", round(float(d["rms_px"]), 3), lim["max_camera_change_px"],
+            d["rms_px"] <= lim["max_camera_change_px"], f"corners {d.get('corner_rms_px', float('nan')):.3f} px (rotation removed)")
+    dr = _rotation_mdeg(ro["R_sensor_from_ref"], rn["R_sensor_from_ref"])
+    add("rig rotation change", round(dr, 2), lim["max_rig_change_mdeg"], dr <= lim["max_rig_change_mdeg"], "mdeg")
+    th_n, th_o = new["NL"].get("thermal") or {}, old["NL"].get("thermal") or {}
+    dppm = abs(float(th_n.get("ppm_per_degC", 0)) - float(th_o.get("ppm_per_degC", 0)))
+    add("thermal f slope change", round(dppm, 2), lim["max_ppm_change"], dppm <= lim["max_ppm_change"], "ppm/degC")
+    for e in ("NL", "NR"):
+        tn, to = new[e].get("thermal") or {}, old[e].get("thermal") or {}
+        dpp = max(abs(float(tn.get(k) or 0) - float(to.get(k) or 0)) for k in ("cx_px_per_degC", "cy_px_per_degC"))
+        add(f"{e} pp thermal slope change", round(dpp, 4), lim["max_pp_slope_change"], dpp <= lim["max_pp_slope_change"],
+            "px/degC")
+    em = res.get("early_mission")
+    if em:
+        rounds = em.get("rounds") or []
+        convex = bool(rounds) and bool(rounds[-1].get("positive_definite"))
+        sds = list((em.get("sd_px") or {}).values())
+        ok = bool(em.get("converged")) and convex and sds and all(np.isfinite(sds))
+        add("early-mission fit", "converged" if em.get("converged") else "not converged", "converged, convex, finite sd",
+            ok, "applied terms: " + (", ".join(em.get("applied_terms") or []) or "none")
+            + "; " + ", ".join(f"{k} {em['offsets_px'][k]:+.3f} +- {em['sd_px'][k]:.3f} (z {em['z'][k]:+.1f})"
+                               for k in (em.get("sd_px") or {})))
+    if screening:
+        bad = sorted(k for k, r in screening.items() if r.get("verdict") == "fail" and k in (res.get("blocks") or {}))
+        add("screening", len(bad), 0, not bad, ", ".join(bad) or "no failed block in the joint")
+    return {"ok": all(c["ok"] for c in checks), "checks": checks, "early_mission": em, "candidate": str(cand),
+            "current": str(cur)}
+
+
+def check_lines(rep: Dict[str, Any]) -> list:
+    out = [f"candidate {rep['candidate']} against the cameras in use {rep['current']}:"]
+    for c in rep["checks"]:
+        lim = "" if c["limit"] is None else f"  (limit {c['limit']})"
+        out.append(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['check']:28s} {c['value']}{lim}  {c['note']}")
+    out.append("=> " + ("everything checks out" if rep["ok"] else "NOT ready to promote"))
+    return out
+
+
+def promote_candidate(candidate_dir: PathLike, note: str, repo_root: PathLike, commit: bool = True,
+                      verbose: bool = True) -> Dict[str, Any]:
+    """
+    v0p72: ``scripts/promote_cmods.py candidate --note note`` (the files into ``src/mppp/data/cmods``, the old ones to
+    ``history/``), then - with ``commit`` and a git working copy - a local commit of ``src/mppp/data/cmods``, and
+    ``_transfer/promoted.json`` (what was promoted, when, the commit) for Claude to take into the next delivery.
+    """
+    import subprocess
+    import sys
+    root = Path(repo_root)
+    cmd = [sys.executable, str(root / "scripts" / "promote_cmods.py"), str(candidate_dir), "--note", note]
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    out: Dict[str, Any] = {"command": cmd, "returncode": p.returncode, "output": p.stdout + p.stderr}
+    if verbose:
+        print(p.stdout + p.stderr, flush=True)
+    if p.returncode:
+        return out
+    if commit and (root / ".git").exists():
+        a = subprocess.run(["git", "-C", str(root), "add", "src/mppp/data/cmods"], capture_output=True, text=True)
+        c = subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", f"cmods: Navcam consensus promoted ({note})",
+                            "--", "src/mppp/data/cmods"], capture_output=True, text=True)
+        h = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
+        out["commit"] = h.stdout.strip() if c.returncode == 0 else None
+        out["git"] = (a.stdout + a.stderr + c.stdout + c.stderr).strip()
+        if verbose:
+            print(("committed " + out["commit"]) if out["commit"] else ("not committed: " + out["git"]), flush=True)
+    tr = root / "_transfer"
+    tr.mkdir(exist_ok=True)
+    (tr / "promoted.json").write_text(json.dumps({"candidate": str(candidate_dir), "note": note,
+                                                  "when": datetime.datetime.now().isoformat(timespec="seconds"),
+                                                  "commit": out.get("commit")}, indent=1), encoding="utf-8")
     return out

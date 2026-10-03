@@ -2,6 +2,29 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.72.0 — 2026-10-03
+
+- **Notebook 04 section 11: check and promote the consensus.**
+  - `navcal_consensus.check_candidate` checks `STUDY_DIR/navcam_joint` against the cameras in use (`PROMOTE_LIMITS`):
+    - the files load, with at least 8 blocks;
+    - the adjustment converged with finite sd;
+    - residual median, rms and p95 at most 1.15 × those of the cameras in use;
+    - each eye within 0.5 px rms of the camera in use (rotation removed), the rig within 10 mdeg;
+    - thermal slopes within 5 ppm/°C and 0.02 px/°C;
+    - the early-mission fit converged on a convex surface with finite sd;
+    - no block that failed screening.
+  - With `PROMOTE_IF_OK = True` (the default) a candidate that passes is promoted (`scripts/promote_cmods.py`), committed locally (`src/mppp/data/cmods`) and recorded in `_transfer/promoted.json` for Claude. The check is saved as `STUDY_DIR/promotion_check.json`.
+  - CLI: `navcam_calibration_study.py check OUT scapes.json [--promote-if-ok]`, and `consensus ... --promote-if-ok --promote-note "..."`.
+- **Faster consensus runs:**
+  - `EARLY_START` / `--early-start DFX DFY DCX DCY` starts the early-mission fit from given offsets (e.g. a previous run's), which saves rounds.
+  - The block screening is cached per block (`<colmap>/health/screen_cahv_ba.json`) while the alignment is unchanged.
+  - Notebook comments give the speed of `JOINT_POINTS` (4000 is about twice as fast).
+- **`adopt_claude.bat` stops** when this copy has promoted camera models that Claude's delivery lacks, so a local promotion can't be stashed away.
+- **Notebook 04 draws the rig drift and LMST figures.**
+  - Section 2f takes the rig study of `STUDY_DIR`, else of the newest `camera_analysis/navcal_*` with a `rig/` folder, so a consensus-only run still draws `navcam_rig_drift.png`. `NEW_BLOCKS` defaults to `[]`, and the legend reads "fit (<study>)" and "drift in use".
+  - New section 1b writes `OUT/lmst_histogram.png` and `lmst_histogram_by_site.csv` (`scripts/lmst_histogram.py`) for the sites of `SCAPES`.
+- **Notebook 04 2d text corrected:** in the leave-one-block-out, the cameras alone transfer to every block within 0.5–2 % of the cost. The large increases at the ends of the mission (Van Zyl +54–57 %, Marble Mountain +17 %) come from the rig, which the v0p40 joint holds without a sol drift.
+
 ## 0.71.0 — 2026-10-02
 
 - **Blocks that share images no longer stop the joint studies.** Examples are Bell Island inside Bell Island Large, and Butler Landing Large overlapping Van Zyl and Chal Rocks Large.

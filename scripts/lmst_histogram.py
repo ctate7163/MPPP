@@ -11,7 +11,7 @@ Images come from the newest ``processed/mppp_manifest_v*.json`` of every WORK fo
 manifest); a site is the union of its folders, each image counted once.  LMST is per image from its label (``LOCAL_MEAN_SOLAR_TIME``).  The dotted lines mark the
 processing window ``selection.lmst_window_h`` (images outside it are not processed since v0p30; older manifests
 may still hold some).  Navcam tiles below ``--min-frame-fraction`` of the frame (default: the current selection
-rule, 1/4) are left out, as processing does since v0p43.3 / v0p44.  Writes ``<out>/<name>.png`` and ``<out>/<name>_by_site.csv``.
+rule, 1/5 since v0p65) are left out, as processing does.  Writes ``<out>/<name>.png`` and ``<out>/<name>_by_site.csv``.
 """
 from __future__ import annotations
 

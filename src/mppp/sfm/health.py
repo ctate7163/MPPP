@@ -784,6 +784,19 @@ def screen_block(work: PathLike, model: str = "cahv_ba", thresholds: Optional[Di
     if not (sp / "points3D.bin").is_file() and not (sp / "points3D.txt").is_file():
         out.update(verdict="fail", reasons=[f"no alignment in {sp}"])
         return out
+    # v0p72: the result is kept in <colmap>/health/screen_<model>.json and reused while the alignment is unchanged
+    cache = root / "health" / f"screen_{model}.json"
+    key = {"files": {f.name: [f.stat().st_size, f.stat().st_mtime_ns] for f in sorted(sp.glob("*.bin"))},
+           "thresholds": {k: list(v) for k, v in thr.items() if k in ("beyond_ground_fraction", "navcam_aspect_change_pct")},
+           "sample": sample,
+           "meta": {f: [(root / f).stat().st_size, (root / f).stat().st_mtime_ns] for f in ("run_done.json", "database_matches.json")
+                    if (root / f).is_file()}}
+    try:
+        c = _json.loads(cache.read_text(encoding="utf-8"))
+        if c.get("key") == key:
+            return dict(c["result"], cached=True)
+    except (OSError, ValueError):
+        pass
     rec = pycolmap.Reconstruction(str(sp))
     project = SfmProject.load(root)
     bg = beyond_ground(rec, sample=sample)
@@ -812,6 +825,11 @@ def screen_block(work: PathLike, model: str = "cahv_ba", thresholds: Optional[Di
         reasons.append("matched with COLMAP guided matching (v0p63-v0p64.0): realign")
         worst = max(worst, "warn", key=lambda s: _RANK[s])
     out.update(verdict=worst, reasons=reasons)
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(_json.dumps({"key": key, "result": out}, indent=1, default=str), encoding="utf-8")
+    except OSError:
+        pass
     return out
 
 

@@ -19,8 +19,10 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 import numpy as np  # noqa: E402
 
 
@@ -502,14 +504,35 @@ def cmd_consensus(a, scapes_cfg, samples):
     res = fit_consensus(scapes_cfg, points=a.points, start_dir=a.start_cameras, translation_scapes=tr,
                         apply_translation=bool(a.apply_translation), refit_thermal=bool(a.refit_thermal),
                         thermal_terms=tuple(a.thermal_terms),
-                        early_mission_sol=(a.early_mission_sol or None), early_rounds=a.early_rounds)
+                        early_mission_sol=(a.early_mission_sol or None), early_rounds=a.early_rounds,
+                        early_start=tuple(a.early_start) if a.early_start else None)
     d = write_consensus(res, out / "navcam_joint")
     print(f"candidate consensus: {d}  (promote: python scripts\\promote_cmods.py {d} --note \"...\")", flush=True)
+    if getattr(a, "promote_if_ok", False):          # v0p72
+        cmd_check(a, scapes_cfg, samples, promote=True)
+
+
+def cmd_check(a, scapes_cfg, samples, promote: Optional[bool] = None):
+    """v0p72: check OUT/navcam_joint against the cameras in use (navcal_consensus.check_candidate) and, with
+    --promote-if-ok, promote it when everything checks out (and commit src/mppp/data/cmods locally)."""
+    from mppp.sfm.navcal_consensus import check_candidate, check_lines, promote_candidate
+    out = Path(a.out)
+    scr = out / "block_screening.json"
+    rep = check_candidate(out / "navcam_joint", screening=json.loads(scr.read_text()) if scr.is_file() else None)
+    (out / "promotion_check.json").write_text(json.dumps(jsonable(rep), indent=1), encoding="utf-8")
+    print("\n".join(check_lines(rep)), flush=True)
+    promote = getattr(a, "promote_if_ok", False) if promote is None else promote
+    if promote and rep["ok"]:
+        note = a.promote_note or f"consensus of {out.name}"
+        promote_candidate(out / "navcam_joint", note, ROOT)
+    elif promote:
+        print("not promoted: fix the failed checks (or promote by hand with scripts\\promote_cmods.py)", flush=True)
+    return rep
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["rig", "joint", "loo", "all", "scale", "consensus"])
+    ap.add_argument("cmd", choices=["rig", "joint", "loo", "all", "scale", "consensus", "check"])
     ap.add_argument("out")
     ap.add_argument("scapes")
     ap.add_argument("--samples")
@@ -544,6 +567,12 @@ def main(argv=None):
                     help="consensus (v0p70): fit fx, fy, cx, cy offsets of the images before this sol (e.g. 380); 0 = off")
     ap.add_argument("--early-rounds", type=int, default=2,
                     help="consensus (v0p70): response-surface rounds of the early-mission fit (15 adjustments each)")
+    ap.add_argument("--early-start", type=float, nargs=4, metavar=("DFX", "DFY", "DCX", "DCY"),
+                    help="consensus (v0p72): start the early-mission fit here (e.g. a previous run's offsets) instead "
+                         "of the block alignments' estimate - fewer rounds")
+    ap.add_argument("--promote-if-ok", action="store_true",
+                    help="consensus/check (v0p72): promote OUT/navcam_joint if every check passes")
+    ap.add_argument("--promote-note", default="", help="consensus/check: the note for CHANGES.md")
     ap.add_argument("--warm-slope", type=float, default=40.0)
     ap.add_argument("--grid", type=float, nargs="*", default=[0, 15, 30, 45, 60, 75, 90])
     ap.add_argument("--fixed-slope", type=float, help="joint: skip the profile and use this slope (ppm/degC)")
@@ -557,7 +586,7 @@ def main(argv=None):
     if a.only and a.cmd == "joint":
         scapes_cfg = {k: v for k, v in scapes_cfg.items() if k in a.only}
     {"rig": cmd_rig, "joint": cmd_joint, "loo": cmd_loo, "all": cmd_all, "scale": cmd_scale,
-     "consensus": cmd_consensus}[a.cmd](a, scapes_cfg, samples)
+     "consensus": cmd_consensus, "check": cmd_check}[a.cmd](a, scapes_cfg, samples)
 
 
 if __name__ == "__main__":
