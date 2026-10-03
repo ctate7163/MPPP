@@ -2,6 +2,38 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.74.0 — 2026-10-03
+
+One command for the whole calibration and alignment run (`run_pipeline.bat`), the Mastcam-Z 34 mm calibration tools, and the Mastcam-Z rig rotation and baseline refined.
+
+- **`scripts/run_pipeline.py` / `run_pipeline.bat`: unattended, resumable** (state in `<root>\mppp_pipeline\state.json`; started again, it continues after the last finished stage). The stages:
+  1. wait for a running batch;
+  2. `prepare_next_run` (stops the pipeline if the camera models are not right; never promotes an older candidate over cameras already in the frozen form);
+  3. Navcam consensus in the v0p73 form over the screened Navcam-only blocks, with the rig translation fitted on the large blocks and applied, 2 thermal rounds and the early-mission offsets; promoted if every check passes; then the rig residuals;
+  4. Mastcam-Z start update from the current blocks (the low-backlash found list and a start focus model, promoted if checked);
+  5. all Navcam + Mastcam-Z 34 mm blocks;
+  6. all Navcam blocks (`--no-navcam-runs` skips them);
+  7. grading and the Mastcam-Z 34 mm calibration from the best 3 blocks (promoted if checked);
+  8. the N+Z blocks again with the calibration;
+  9. a PLY point cloud per block;
+  10. `REPORT.md`.
+  - Failed sites are tried once more. A batch that starts meanwhile is waited for. Quick-edit is disabled so a click in the window cannot freeze it.
+- **`mppp.sfm.zcam_calib` and `scripts/zcam_calibration.py`** (`start-update`, `calibrate`, `grade`, `pointclouds`):
+  - **block reading:** from `project.json`, `cameras.bin`, `run_done.json`, health and focus states, without loading points;
+  - **automatic grade:** Navcam corners, registration, residuals, beyond-ground, health fails other than the Mastcam-Z start-model checks, and bins per eye; the best blocks are chosen at different sols;
+  - **low-backlash groups:** into the found list;
+  - **start model:** from blocks solved before v0p74 (fx, fy lines with the Navcam scale divided out, block offsets, the regular-state ratio);
+  - **calibration:** for every eye and focus state, weighted lines for fx, fy, cx, cy (ZR), k1 and k2, with τ and χ²/dof and a lens-temperature term where it is significant; the stereo rig rotation and baseline averaged over the blocks;
+  - **sanity checks** before promotion; a Markdown report and figure; PLY export.
+- **Mastcam-Z rig** (notebook 03 `ZCAM_RIG_FIT = "full"`):
+  - in stage 2, while the bins are held on their focus lines, the rig of each zoom is refined in rotation and translation (prior 1 cm per axis on the right centre). One rig per zoom and block, independent of focus: the focus motion goes into the principal points;
+  - the refined rig carries from one adjustment to the next and resets at the start of a run;
+  - a focus model `rig` with a translation sets the start baseline.
+- **Mastcam-Z distortion against focus:** `ZCAM_LINE_PARAMS` adds k1 and k2 on both eyes (free per bin, then put on lines per state).
+- **Bins start on a calibrated model's lines** (`lines` per state, with an optional lens-temperature term); the regular state uses its own lines when it has them.
+- `zcam_line_min_observations` setting (default 200).
+- **Synthetic end-to-end test of a staged N+Z reconstruct with every v0p74 path:** k1/k2 lines, rig fit, `list_split`, the found list.
+
 ## 0.73.0 — 2026-10-03
 
 The frozen camera form, checked before every run; Mastcam-Z focus lines for every parameter and focus state.

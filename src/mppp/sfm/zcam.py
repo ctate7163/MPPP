@@ -199,6 +199,7 @@ def refit_focus_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
         except Exception:                                                  # noqa: BLE001
             model = {"cameras": {}}
     if project.settings.get("zcam_line_params"):          # v0p73: every focus parameter on a line, per state
+        min_observations = int(project.settings.get("zcam_line_min_observations") or min_observations)
         return refit_param_lines(rec, project, model, min_observations=min_observations, min_span=min_span,
                                  huber_k=huber_k, outlier_sigma=outlier_sigma, apply=apply)
     db = (project.settings.get("database") or {}).get("cameras") or {}
@@ -271,13 +272,14 @@ def refit_focus_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
 
 
 # ------------------------------------------------------------------ v0p73: fx, fy, cx, cy lines per focus state
-PARAM_INDEX = {"fx": 0, "fy": 1, "cx": 2, "cy": 3}
+PARAM_INDEX = {"fx": 0, "fy": 1, "cx": 2, "cy": 3, "k1": 4, "k2": 5}     # FULL_OPENCV (v0p74: + k1, k2)
 LINE_PARAMS_V0P73 = {"ZL": ("fx", "fy"), "ZR": ("fx", "fy", "cx", "cy")}   # ZL's principal point: the reference
+LINE_PARAMS_V0P74 = {"ZL": ("fx", "fy", "k1", "k2"), "ZR": ("fx", "fy", "cx", "cy", "k1", "k2")}   # + the radial terms
 LINE_STATES = ("backlash", "regular")
 
 
 def _huber_line(F: np.ndarray, y: np.ndarray, w: np.ndarray, ref: float, fit_slope: bool, slope0: float,
-                huber_k: float = 1.345) -> Tuple[float, float, float, np.ndarray]:
+                huber_k: float = 1.345, floor: float = 0.05) -> Tuple[float, float, float, np.ndarray]:
     """(a, b, robust sd, residuals) of y = a + b (F - ref), Huber IRLS weighted by ``w``; ``fit_slope`` False: b =
     ``slope0`` and only a is fitted."""
     X = np.c_[np.ones(len(F)), F - ref] if fit_slope else np.ones((len(F), 1))
@@ -289,7 +291,7 @@ def _huber_line(F: np.ndarray, y: np.ndarray, w: np.ndarray, ref: float, fit_slo
         sw = np.sqrt(w * wt)
         b = np.linalg.lstsq(X * sw[:, None], yy * sw, rcond=None)[0]
         r = yy - X @ b
-        sig = max(1.4826 * float(np.median(np.abs(r - np.median(r)))), 0.05)
+        sig = max(1.4826 * float(np.median(np.abs(r - np.median(r)))), floor)
         u = np.abs(r) / (huber_k * sig)
         wt = np.where(u <= 1.0, 1.0, 1.0 / np.maximum(u, 1e-12))
     a, sl = float(b[0]), (float(b[1]) if fit_slope else float(slope0))
@@ -362,7 +364,12 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
         pp = gm.get("pp") or {}
         model_slope = {"fx": float(f_slope) / np.sqrt(aspect), "fy": float(f_slope) * np.sqrt(aspect),
                        "cx": float(pp.get("cx_px_per_count") or 0.0) if g[:2] == "ZR" else 0.0,
-                       "cy": float(pp.get("cy_px_per_count") or 0.0) if g[:2] == "ZR" else 0.0}
+                       "cy": float(pp.get("cy_px_per_count") or 0.0) if g[:2] == "ZR" else 0.0, "k1": 0.0, "k2": 0.0}
+        for _st, _ln in ((gm.get("lines") or {}).items() if isinstance(gm.get("lines"), dict) else []):
+            if _st == "backlash" and isinstance(_ln, dict):          # v0p74: a calibrated model's slopes
+                for _pn, _e in _ln.items():
+                    if isinstance(_e, dict) and _e.get("b") is not None and _pn in model_slope:
+                        model_slope[_pn] = float(_e["b"])
         res: Dict[str, Any] = {"reference_focus": ref, "params": list(params), "lines": {}, "bins": [], "outliers": []}
         for st in LINE_STATES:
             mo = min_observations if st == "backlash" else min_observations_regular
@@ -380,9 +387,10 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                 bl = (res["lines"].get("backlash") or {}).get(pn) if st == "regular" else None
                 slope0 = bl["b"] if (bl and "b" in bl) else model_slope[pn]
                 src0 = "backlash state" if (bl and "b" in bl) else ("focus model" if gm else "labels")
-                a, b, sig, resid = _huber_line(F, y, w, ref, fit_slope, slope0, huber_k)
+                a, b, sig, resid = _huber_line(F, y, w, ref, fit_slope, slope0, huber_k,
+                                               floor=0.05 if pn in ("fx", "fy", "cx", "cy") else 1e-5)
                 sda, sdb = _line_sd(F, resid, w, ref, fit_slope)
-                lim = max(outlier_sigma * sig, 3.0 if pn in ("fx", "fy") else 1.0)
+                lim = max(outlier_sigma * sig, 3.0 if pn in ("fx", "fy") else (1.0 if pn in ("cx", "cy") else 0.0))
                 ent = {"a": a, "b": b, "sd_a": sda, "sd_b": sdb, "n_bins": len(use),
                        "focus_range": [float(F.min()), float(F.max())], "slope_source": "fitted" if fit_slope else src0,
                        "rms": float(np.sqrt(np.average(resid ** 2, weights=w))), "robust_sd": sig, "outlier_limit": lim,

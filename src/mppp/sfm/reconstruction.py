@@ -334,6 +334,10 @@ def AspectPrior(a0: float, sigma: float, n: int):
     return _aspect_prior_class()(a0, sigma, n)
 
 
+ZCAM_RIG_TRANSLATION_SIGMA_M = 0.01     # v0p74: prior on the Mastcam-Z right centre (in the left frame) per axis, m
+ZCAM_RIG_FIT = "full"                   # v0p74: the Mastcam-Z rig of each zoom refined in stage 2 (notebook 03 ZCAM_RIG_FIT)
+
+
 def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: float = 2.0,
                   refine_intrinsics: bool = True, refine_principal_point: bool = True,
                   refine_tangential: Union[bool, Dict[str, bool]] = True, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
@@ -344,8 +348,14 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   covariance: bool = False, keypoint_scale: Optional[Dict[int, float]] = None,
                   keypoint_map=None, localize_min_images: Optional[int] = None,
                   navcam_aspect: Optional[str] = None,
-                  aspect_sigma: float = NAVCAM_ASPECT_SIGMA) -> Dict[str, Any]:
+                  aspect_sigma: float = NAVCAM_ASPECT_SIGMA, refine_zcam_rig: Optional[str] = None,
+                  zcam_rig_translation_sigma_m: float = ZCAM_RIG_TRANSLATION_SIGMA_M) -> Dict[str, Any]:
     """
+    v0p74: ``refine_zcam_rig`` ``"rotation"`` / ``"full"`` refines each Mastcam-Z zoom's stereo rig (one per zoom and
+    block, the same for every focus: the focus motion is the principal points'), ``"full"`` also its translation with a
+    prior of ``zcam_rig_translation_sigma_m`` per axis on the right centre - whatever ``refine_rig`` and the rig's hold
+    flag say; None: the rig follows ``refine_rig`` and its hold flag (v0p53).
+
     Weighted BA in place (see module docstring).  ``navcam_aspect`` (v0p65; None:
     ``project.settings["navcam_aspect"]``, set by :func:`reconstruct`; default "free"): "hold" adds a prior on every Navcam
     camera whose fx and fy are both refined, holding fy / fx at its start value (the consensus pixel aspect; 1-sigma
@@ -481,8 +491,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 if len(list(fr.data_ids)) == 1:              # a frame of its own (no COLMAP rig)
                     vpartner[iid] = (fam, lefts[(g[2:], r.get("sclk_key"))])
         for fam, v in vrig.items():
-            q = _Rot.from_matrix(np.asarray(v["R_sensor_from_ref"], float)).as_quat()
-            vblocks[fam] = np.r_[q, np.asarray(v["t_sensor_from_ref"], float)].astype(np.float64)
+            # v0p74: from the rig as refined so far in this run (R_refined, t_refined), else the start rig
+            q = _Rot.from_matrix(np.asarray(v.get("R_refined") or v["R_sensor_from_ref"], float)).as_quat()
+            vblocks[fam] = np.r_[q, np.asarray(v.get("t_refined") or v["t_sensor_from_ref"], float)].astype(np.float64)
     vframes = {rec.images[i].frame_id for i in vpartner}
     n_obs = 0
     pose_blocks: Dict[int, np.ndarray] = {}
@@ -670,10 +681,20 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     for fam, arr in vblocks.items():                         # v0p53: the Mastcam-Z rigs
         if not prob.has_parameter_block(arr):
             continue
-        if vrig[fam].get("hold") or not refine_rig:
+        zmode = refine_zcam_rig if refine_zcam_rig in ("rotation", "full") else (
+            None if (vrig[fam].get("hold") or not refine_rig) else "rotation")
+        if zmode is None:
             prob.set_parameter_block_constant(arr)
-        else:
+        elif zmode == "rotation":
             prob.set_manifold(arr, pyceres.SubsetManifold(7, [3, 4, 5, 6]))      # rotation refined, w held
+        else:                                                 # v0p74: rotation and translation (baseline) refined
+            from scipy.spatial.transform import Rotation as _R
+            # the prior is on the start rig's right centre (CAHV or the focus model's), not on this call's start
+            R0, t0 = np.asarray(vrig[fam]["R_sensor_from_ref"], float), np.asarray(vrig[fam]["t_sensor_from_ref"], float)
+            C0 = -R0.T @ t0
+            prob.add_residual_block(cf.AbsolutePosePositionPriorCost(
+                np.eye(3) * float(zcam_rig_translation_sigma_m) ** 2, C0), None, [arr])
+            prob.set_manifold(arr, pyceres.SubsetManifold(7, [3]))
 
     so = pyceres.SolverOptions()
     # v0p30: the linear solver.  The Schur complement has one 6-parameter block per frame plus the cameras, so
@@ -1374,6 +1395,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                   f"{sum(1 for v in unloc_reg['stations'].values() if v.get('registered'))}", flush=True)
     network = navcam_network(project)
     hold = set(hold_cameras)
+    for _v in (project.settings.get("zcam_virtual_rig") or {}).values():      # v0p74: every run starts at the start rig
+        if isinstance(_v, dict):
+            _v.pop("R_refined", None)
+            _v.pop("t_refined", None)
     if navcam_intrinsics == "hold" or (navcam_intrinsics == "auto" and network["verdict"] == "weak"):
         hold |= {k for k in project.cameras if str(k).startswith("N")}
     network["navcam_intrinsics"] = "hold" if any(str(k).startswith("N") for k in hold) else "refine"
@@ -1489,6 +1514,11 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             print(f"[sfm] stage 2: {len(z_frames)} Mastcam-Z frames added; Navcam cameras and rig held", flush=True)
         zkeys = {k for k in project.cameras if str(k).startswith("Z")}
         cycles = max(0, min(int(zcam_line_cycles), len(schedule) - 1)) if zcam_focus_line else 0
+        # v0p74: the Mastcam-Z rig (rotation, and with "full" the baseline) is refined while the Mastcam-Z cameras are
+        # held on their focus lines - not in the rounds that free the bins (a ZR principal point and the rig rotation
+        # are the same thing in a 25-degree field)
+        zfit = project.settings.get("zcam_rig_fit")
+        zfit = zfit if zfit in ("rotation", "full") else None
         lines = None
         for k, (tpx, loss, rmax) in enumerate(schedule):
             rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)
@@ -1498,7 +1528,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             hold_k = hold if zfree else (hold | zkeys)
             ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
-                               attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold_k), linear_solver=linear_solver)
+                               attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold_k), linear_solver=linear_solver,
+                               refine_zcam_rig=zfit if (zcam_focus_line and not zfree) else None)
             if zcam_focus_line and zfree:
                 from .zcam import focus_line_lines, refit_focus_lines
                 lines = refit_focus_lines(rec, project)
@@ -1538,7 +1569,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
                                attitude_prior_deg=attitude_prior_deg,
                                hold_cameras=sorted(hold | zkeys) if zcam_focus_line else sorted(hold),
-                               linear_solver=linear_solver)
+                               linear_solver=linear_solver, refine_zcam_rig=zfit if zcam_focus_line else None)
             n_bad = filter_observations(rec, project, float(rmax)) + drop_short_tracks(rec, min_track_length)
             prep.update({"before": before, "after": _family_ties(rec, project), "filtered": n_bad, "ba": ba["brief"]})
             # v0p65: false matches that agree with the epipolar geometry land far beyond the ground - if the guided
@@ -1563,7 +1594,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                            refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential, refine_rig=False,
                            max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
-                           hold_cameras=sorted(hold | zkeys) if zcam_focus_line else sorted(hold), linear_solver=linear_solver)
+                           hold_cameras=sorted(hold | zkeys) if zcam_focus_line else sorted(hold), linear_solver=linear_solver,
+                           refine_zcam_rig=zfit if zcam_focus_line else None)
         if lines is not None:
             project.settings["zcam_focus_lines"] = lines
         n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
@@ -1592,7 +1624,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                    refine_rig=False, max_iterations=2 * max_iterations,
                                    attitude_prior_deg=attitude_prior_deg,
                                    hold_cameras=sorted(hold | {k for k in project.cameras if str(k)[:1] in ("N", "Z")}),
-                                   linear_solver=linear_solver)
+                                   linear_solver=linear_solver,
+                                   refine_zcam_rig=project.settings.get("zcam_rig_fit")
+                                   if project.settings.get("zcam_rig_fit") in ("rotation", "full") else None)
                 backlash["lines_after_split"] = {"ba": ba["brief"]}
                 if verbose:
                     print("[sfm] Mastcam-Z focus lines after the backlash split (bins set on them):", flush=True)

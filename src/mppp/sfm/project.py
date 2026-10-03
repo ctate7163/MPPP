@@ -334,7 +334,7 @@ class SfmProject:
                zcam_intrinsics: str = "focus_model", zcam_focus_bin: Optional[float] = ZCAM_FOCUS_BIN,
                zcam_bin_refine: str = "focal", zcam_rig: bool = False, zcam_rig_refine: str = "auto",
                zcam_low_backlash: Optional[PathLike] = None, zcam_line_params: Optional[Dict[str, Any]] = None,
-               zcam_low_backlash_found: Optional[PathLike] = None,
+               zcam_low_backlash_found: Optional[PathLike] = None, zcam_rig_fit: Optional[str] = None,
                navcam_distortion: str = NAVCAM_DISTORTION, zcam_hold_f_images: int = ZCAM_HOLD_F_IMAGES,
                navcam_rig: str = NAVCAM_RIG, navcam_cameras: Optional[PathLike] = None,
                zcam_zero_terms: Optional[Sequence[str]] = None,
@@ -622,7 +622,7 @@ class SfmProject:
         if zcam_focus_bin:
             fmodel = _zcam_fmodel() if zcam_intrinsics == "focus_model" else None
             cameras = _split_by_focus(images, cameras, instruments, float(zcam_focus_bin), zcam_bin_refine,
-                                      fmodel, int(zcam_hold_f_images))
+                                      fmodel, int(zcam_hold_f_images), line_params=zcam_line_params)
 
         _align_priors_to_cameras(images, cameras)
         rig = _rig_from_pairs([r for r in images if instruments.get(r["camera_group"]) != "Z"])
@@ -645,6 +645,11 @@ class SfmProject:
                     ent["R_sensor_from_ref_cahv"] = ent["R_sensor_from_ref"]
                     ent["R_sensor_from_ref"] = zr["R_sensor_from_ref"]
                     ent["rotation_source"] = f"Mastcam-Z {z} mm focus model rig ({zr.get('note', '')})"
+                if zr and zr.get("t_sensor_from_ref"):        # v0p74: the calibrated baseline (right from left)
+                    ent["t_sensor_from_ref_cahv"] = ent["t_sensor_from_ref"]
+                    ent["t_sensor_from_ref"] = [float(x) for x in zr["t_sensor_from_ref"]]
+                    ent["baseline_m"] = float(np.linalg.norm(zr["t_sensor_from_ref"]))
+                    ent["rotation_source"] += "; translation of the focus model"
                 ent["hold"] = (bool(zr) if zcam_rig_refine == "auto" else zcam_rig_refine == "hold")
                 zrig[fam_key] = ent
         if navcam_rig == "consensus" and "N" in rig and navcam_distortion in ("rational", "fisheye_tangential"):
@@ -696,6 +701,7 @@ class SfmProject:
                     "zcam_line_params": ({str(k): list(v) for k, v in zcam_line_params.items()}
                                          if zcam_line_params else None),
                     "zcam_virtual_rig": zrig or None, "zcam_rig_refine": zcam_rig_refine,
+                    "zcam_rig_fit": zcam_rig_fit,                       # v0p74: "rotation" / "full" in stage 2
                     "zcam_low_backlash_sha256": (low_backlash_fingerprint(zcam_low_backlash, zcam_low_backlash_found)
                                                  if any(f == "Z" for f in instruments.values()) else None),
                     "zcam_low_backlash": {"file": _lb["file"], "images": int(n_low),
@@ -934,7 +940,7 @@ def zcam_model_pp_shift(gm: Optional[Dict[str, Any]], focus: Optional[float],
 
 def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, Any]], families: Dict[str, str],
                     width: float, refine: str, model: Optional[Dict[str, Any]] = None,
-                    hold_f_images: int = 0) -> Dict[str, Dict[str, Any]]:
+                    hold_f_images: int = 0, line_params: Optional[Dict[str, Any]] = None) -> Dict[str, Dict[str, Any]]:
     """Replace each Mastcam-Z camera by one camera per focus bin (see ``SfmProject.create``).  ``model``: the
     focal-length model (:func:`zcam_focus_model`); bins then start from it, and bins of at most ``hold_f_images``
     images hold f there.  v0p42: the model's temperature and sol terms are evaluated at the bin's median focal-plane
@@ -962,9 +968,13 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
             Tb = float(np.median(Ts)) if Ts else None
             sols = [float(r["sol"]) for r in members if r.get("sol") is not None]
             Sb = float(np.median(sols)) if sols else None
+            lp = None
+            if line_params:                                  # v0p74: the parameters this eye puts on focus lines
+                lp = line_params.get(group) or line_params.get(str(group)[:2]) or line_params.get(str(group)[1:2])
             held_here = (ZCAM_BIN_HELD if refine in ("focal", "model") else
-                         (tuple(n for n in ZCAM_BIN_HELD if not (str(group)[1:2] == "R" and n in ("cx", "cy")))
-                          if refine == "focal_pp" else ()))                  # v0p73: ZR's cx, cy free
+                         (tuple(n for n in ZCAM_BIN_HELD if not (
+                             (n in set(lp)) if lp else (str(group)[1:2] == "R" and n in ("cx", "cy"))))
+                          if refine == "focal_pp" else ()))                  # v0p73: ZR's cx, cy free; v0p74: + k1, k2
             fixed = sorted(set(held_here) | set(base.get("fixed_params") or ()),
                            key=FULL_OPENCV_NAMES.index)                      # v0p61: + the eye's (k3 = 0)
             lo, hi = (gm or {}).get("focus_range", [-np.inf, np.inf])
@@ -1007,7 +1017,34 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                 params[3] += dcy
                 src += f"; cx, cy {dcx:+.2f}, {dcy:+.2f} px (focus model pp slope about focus {pp_ref:.0f})"
                 extra["pp_shift_px"] = [dcx, dcy]
-            if regular:
+            # v0p74: a calibrated focus model (mppp.sfm.zcam_calib) carries one line per focus parameter and focus
+            # state, p = a + b (focus - ref) [+ c (T_lens - T0)]: the bin starts on it (its state's lines)
+            lines_used = False
+            lmodel = (gm or {}).get("lines") or {}
+            lst = lmodel.get("regular" if regular else "backlash") or {}
+            if lst and med is not None:
+                ref_l = float(lmodel.get("reference_focus", (gm or {}).get("reference_focus", med)))
+                To = [float(r["zcam_optics_temperature_degC"]) for r in members
+                      if r.get("zcam_optics_temperature_degC") is not None]
+                Tl = float(np.median(To)) if To else None
+                done = []
+                for pn, e in lst.items():
+                    if pn not in FULL_OPENCV_NAMES or "a" not in e:
+                        continue
+                    v = float(e["a"]) + float(e.get("b") or 0.0) * (med - ref_l)
+                    if e.get("c_per_degC") and Tl is not None and e.get("T0_degC") is not None:
+                        v += float(e["c_per_degC"]) * (Tl - float(e["T0_degC"]))
+                    params[FULL_OPENCV_NAMES.index(pn)] = v
+                    done.append(pn)
+                if done:
+                    lines_used = "fx" in done
+                    src += f"; {', '.join(done)} on the calibrated focus lines ({'regular' if regular else 'backlash'} state)"
+                    extra["focus_lines"] = done
+            if regular and lines_used:
+                if refine != "focal_pp" or len(members) <= hold_f_images:
+                    fixed = sorted(set(fixed) | {"fx", "fy"}, key=FULL_OPENCV_NAMES.index)
+                extra = dict(extra, backlash_state="regular", state_source="list")
+            elif regular:
                 # the regular state sits at the label: the backlash model's f divided by its f0 / label f0 ratio
                 ratio = (float(gm["f0_px"]) / float(gm["label_f0_px"])) if (gm and gm.get("label_f0_px")) else None
                 if ratio:
