@@ -3,15 +3,15 @@
  "width": 5120,
  "height": 3840,
  "params": [
-  2956.757653522311,
-  2956.6116292300017,
-  2591.4801964927246,
-  1944.0846840724641,
-  0.04279187569608532,
-  -0.00104806417663184,
-  0.0002657995773048127,
-  0.0003651629766825585,
-  -0.00983504424352176,
+  2956.662831606584,
+  2956.4121800487583,
+  2591.3029597333134,
+  1944.2234338282656,
+  0.042868434945665994,
+  -0.0011748347995835136,
+  0.0002560032660608848,
+  0.00036171335728691647,
+  -0.00975770350639931,
   0.0,
   0.0,
   0.0
@@ -33,35 +33,37 @@
  "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
  "free_params": [],
  "pixel_origin": "corner of the first pixel (COLMAP)",
- "source": "MPPP Navcam consensus (mppp.sfm.navcal_consensus, 2026-10-02): one NL camera shared by 16 blocks (Bell Island, Bell Island Large, Belva Crater, Bunsen Peak, Chal Rocks Sid, Enchanted Lake, Marble Mountain, Origny Large, Rochette, Rockytop, Seitah North, Taylorfjellet Large, Three Forks North, Three Forks South, Tuxedo Park, Van Zyl); fisheye + tangential at -20 degC, f +37.3 ppm/degC, NL cx +0.0529 px/degC (refitted), k4 = 0 (held), one rig yaw +36.47 mdeg. [v0p73 NL-reference form from /mnt/user-data/uploads/colmap/camera_analysis/navcal_v0p72_20261002_2/navcam_joint; MPPP 0.73 promotion]",
+ "source": "MPPP Navcam consensus (mppp.sfm.navcal_consensus, 2026-10-04, v0p73 NL-reference form): one NL camera shared by 16 blocks (Bell Island, Belva Crater, Bunsen Peak, Chal Rocks Sid, Enchanted Lake, Marble Mountain, Olifants, Origny Large, Rochette, Rockytop, Seitah North, Taylorfjellet Large, Three Forks North, Three Forks South, Tuxedo Park, Van Zyl); fisheye + tangential at -20 degC, fx +36.4 / fy +40.3 ppm/degC, cx +0.0000 px/degC, k4 = 0 (held), one rig yaw +39.89 mdeg (rate +2.28 mdeg/1000 sol).",
  "sd": {
-  "fx": 0.02487628950271918,
-  "fy": 0.04019308263380124,
-  "cx": 0.05018401065959448,
-  "cy": 0.04911151705881967,
-  "k1": 4.007745844474643e-05,
-  "k2": 8.616850887244947e-05,
-  "p1": 4.097800164308599e-06,
-  "p2": 1.0463156484606795e-06,
-  "k3": 5.72300427272174e-05
+  "fx": 0.02582608585305851,
+  "fy": 0.040568710903942075,
+  "cx": 0.05435850585283571,
+  "cy": 0.050229796042498255,
+  "k1": 4.053744744822133e-05,
+  "k2": 8.703081554866168e-05,
+  "p1": 4.170185401751398e-06,
+  "p2": 1.0597389921798041e-06,
+  "k3": 5.7822710630985836e-05
  },
  "thermal": {
-  "ppm_per_degC": 37.271446322762294,
+  "ppm_per_degC": 38.36519204971194,
   "sd_ppm_per_degC": 0.20528983950192659,
   "T0_degC": -20.0,
-  "note": "v0p64: refitted with the consensus (2026-10-02; profiles of f, NL_cx); v0p73 (2026-10-03): NL-reference form - NL's principal point does not move with temperature",
+  "note": "v0p73: NL-reference form, refitted with the consensus (2026-10-04; profiles of NR_cx, NL_fx, NL_fy, NR_fx, NR_fy, yaw_rate)",
   "cx_px_per_degC": 0.0,
   "cy_px_per_degC": 0.0,
-  "fx_ppm_per_degC": 37.271446322762294,
-  "fy_ppm_per_degC": 37.271446322762294,
-  "form": "v0p73"
+  "fx_ppm_per_degC": 36.415097943747035,
+  "fy_ppm_per_degC": 40.31528615567685,
+  "form": "v0p73",
+  "sd_fx_ppm_per_degC": 0.13466312633635444,
+  "sd_fy_ppm_per_degC": 0.17300303035075765
  },
  "verification": {
   "note": "not verified (no leave-one-block-out run)",
   "residuals": {
-   "median_px": 0.156660579808426,
-   "rms_px": 0.3205159488305657,
-   "p95_px": 0.6439155582787752
+   "median_px": 0.15696424125267372,
+   "rms_px": 0.32216008911363964,
+   "p95_px": 0.6487439501715899
   }
  },
  "fixed_params": [
@@ -69,36 +71,37 @@
  ],
  "early_mission": {
   "before_sol": 380.0,
-  "dfx_px": 0.15229459927366382,
-  "dfy_px": 0.25941841466800264,
-  "dcx_px": 0.07644682219991954,
-  "dcy_px": -0.3850604266623169,
+  "dfx_px": 0.15849099979499467,
+  "dfy_px": 0.25788054052090964,
+  "dcx_px": 0.3011443521493401,
+  "dcy_px": -0.46154164139802856,
   "sd_px": {
-   "fx": 0.018834163936116675,
-   "fy": 0.05255563360577746,
-   "cx": 0.057497602849003945,
-   "cy": 0.06078375375555961
+   "fx": 0.018895397821958385,
+   "fy": 0.05289802989959364,
+   "cx": 0.05712556206500457,
+   "cy": 0.06057333275804212
   },
   "z": {
-   "fx": 8.086082280595498,
-   "fy": 4.936072441137589,
-   "cx": 1.329565380328614,
-   "cy": -6.334923443702211
+   "fx": 8.38780962900987,
+   "fy": 4.875049997332522,
+   "cx": 5.271621691995969,
+   "cy": -7.6195517133197725
   },
   "p_value": {
-   "fx": 6.161456951912325e-16,
-   "fy": 7.971150964876646e-07,
-   "cx": 0.18366151093340066,
-   "cy": 2.3745914948791193e-10
+   "fx": 4.952833837873723e-17,
+   "fy": 1.0878090051747608e-06,
+   "cx": 1.352235822400925e-07,
+   "cy": 2.5455821465804465e-14
   },
-  "p_value_all": 3.115686326586071e-11,
+  "p_value_all": 1.0922624710213672e-18,
   "applied_terms": [
    "fx",
    "fy",
+   "cx",
    "cy"
   ],
   "early_images": 283,
-  "note": "v0p70 (2026-10-02): a camera with these offsets for the images before sol 380; projects apply the terms in applied_terms (|z| >= 3), weighted by the block's share of early images"
+  "note": "v0p70 (2026-10-04): a camera with these offsets for the images before sol 380; projects apply the terms in applied_terms (|z| >= 3), weighted by the block's share of early images"
  },
  "sd_source": "this joint (formal x variance factor)",
  "convention": "NL reference",

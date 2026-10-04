@@ -1,0 +1,107 @@
+{
+ "model": "THIN_PRISM_FISHEYE",
+ "width": 5120,
+ "height": 3840,
+ "params": [
+  2949.159408329438,
+  2948.9752582284686,
+  2573.571624409669,
+  1950.2260414414163,
+  0.04483527128497669,
+  -0.005380932435679412,
+  2.084786010460071e-05,
+  -0.00019837034798510472,
+  -0.00731398317456134,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "param_names": [
+  "fx",
+  "fy",
+  "cx",
+  "cy",
+  "k1",
+  "k2",
+  "p1",
+  "p2",
+  "k3",
+  "k4",
+  "sx1",
+  "sy1"
+ ],
+ "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
+ "free_params": [],
+ "pixel_origin": "corner of the first pixel (COLMAP)",
+ "source": "MPPP Navcam consensus (mppp.sfm.navcal_consensus, 2026-10-02): one NR camera shared by 16 blocks (Bell Island, Bell Island Large, Belva Crater, Bunsen Peak, Chal Rocks Sid, Enchanted Lake, Marble Mountain, Origny Large, Rochette, Rockytop, Seitah North, Taylorfjellet Large, Three Forks North, Three Forks South, Tuxedo Park, Van Zyl); fisheye + tangential at -20 degC, f +37.3 ppm/degC, NL cx +0.0529 px/degC (refitted), k4 = 0 (held), one rig yaw +36.47 mdeg. [v0p73 NL-reference form from /mnt/user-data/uploads/colmap/camera_analysis/navcal_v0p72_20261002_2/navcam_joint; MPPP 0.73 promotion]",
+ "sd": {
+  "fx": 0.024716501764796877,
+  "fy": 0.040098399479070464,
+  "cx": 0.04826206871817737,
+  "cy": 0.04990607255571921,
+  "k1": 3.9582597053561804e-05,
+  "k2": 8.5075678942592e-05,
+  "p1": 4.126619524256083e-06,
+  "p2": 1.0443295448951083e-06,
+  "k3": 5.6322943001539106e-05
+ },
+ "thermal": {
+  "ppm_per_degC": 37.271446322762294,
+  "sd_ppm_per_degC": 0.20528983950192659,
+  "T0_degC": -20.0,
+  "note": "v0p64: refitted with the consensus (2026-10-02; profiles of f, NL_cx); v0p73 (2026-10-03): NL-reference form - the stereo temperature change moved from NL cx (+0.0529 px/degC) to NR cx",
+  "cx_px_per_degC": -0.05279533731490589,
+  "cy_px_per_degC": 0.0,
+  "sd_cx_px_per_degC": 0.0003662609069224692,
+  "fx_ppm_per_degC": 37.271446322762294,
+  "fy_ppm_per_degC": 37.271446322762294,
+  "form": "v0p73"
+ },
+ "verification": {
+  "note": "not verified (no leave-one-block-out run)",
+  "residuals": {
+   "median_px": 0.156660579808426,
+   "rms_px": 0.3205159488305657,
+   "p95_px": 0.6439155582787752
+  }
+ },
+ "fixed_params": [
+  "k4"
+ ],
+ "early_mission": {
+  "before_sol": 380.0,
+  "dfx_px": 0.15229459927366382,
+  "dfy_px": 0.25941841466800264,
+  "dcx_px": 0.07644682219991954,
+  "dcy_px": -0.3850604266623169,
+  "sd_px": {
+   "fx": 0.018834163936116675,
+   "fy": 0.05255563360577746,
+   "cx": 0.057497602849003945,
+   "cy": 0.06078375375555961
+  },
+  "z": {
+   "fx": 8.086082280595498,
+   "fy": 4.936072441137589,
+   "cx": 1.329565380328614,
+   "cy": -6.334923443702211
+  },
+  "p_value": {
+   "fx": 6.161456951912325e-16,
+   "fy": 7.971150964876646e-07,
+   "cx": 0.18366151093340066,
+   "cy": 2.3745914948791193e-10
+  },
+  "p_value_all": 3.115686326586071e-11,
+  "applied_terms": [
+   "fx",
+   "fy",
+   "cy"
+  ],
+  "early_images": 283,
+  "note": "v0p70 (2026-10-02): a camera with these offsets for the images before sol 380; projects apply the terms in applied_terms (|z| >= 3), weighted by the block's share of early images"
+ },
+ "sd_source": "this joint (formal x variance factor)",
+ "convention": "NL reference",
+ "form": "v0p73"
+}

@@ -3,32 +3,32 @@
  "sensor": "NR",
  "R_sensor_from_ref": [
   [
-   0.9999992049420476,
-   0.0010880517948104488,
-   0.0006373841576584529
+   0.9999991707096815,
+   0.0010828697351249557,
+   0.000697117698877297
   ],
   [
-   -0.0010890096863161408,
-   0.9999982753671727,
-   0.001504433642101594
+   -0.0010839751047764074,
+   0.9999981528823881,
+   0.0015872081729283723
   ],
   [
-   -0.000635746156680349,
-   -0.0015051265635112575,
-   0.9999986652095352
+   -0.0006953976715251107,
+   -0.001587962514902683,
+   0.999998497397436
   ]
  ],
  "rotvec_rad": [
-  -0.0015047810694982851,
-  0.0006365655661077928,
-  -0.0010885314398507212
+  -0.0015875864496724208,
+  0.0006962581701463048,
+  -0.0010834231745569228
  ],
  "t_sensor_from_ref_m": [
-  -0.4234349491865374,
-  -0.00019464705029907658,
-  5.271920955785863e-05
+  -0.42401003704535833,
+  -0.00028429949976215496,
+  0.00030182584350051686
  ],
- "baseline_m": 0.4234349972066489,
+ "baseline_m": 0.4240102397823094,
  "sd_mdeg": {
   "yaw": 0.6258961477755934,
   "pitch": 0.397702075129482,
@@ -936,7 +936,7 @@
    }
   }
  },
- "note": "x_NR = R x_NL + t. Navcam consensus 2026-10-02 (16 blocks); yaw +36.47, pitch -86.22, roll -62.37 mdeg. One yaw for every block: no temperature term, the drift's yaw rate 0; pitch and roll follow the mission drift. Translation fitted on 6 large blocks (Bell Island Large, Origny Large, Taylorfjellet Large, Three Forks North, Three Forks South, Tuxedo Park): baseline 0.42343 m; projects use it (translation = fitted).",
+ "note": "x_NR = R x_NL + t. Navcam consensus 2026-10-04 (16 blocks); yaw +39.89, pitch -90.96, roll -62.08 mdeg. One yaw for every block: no temperature term (NR cx carries it), the yaw follows its sol rate; pitch and roll follow the mission drift. Translation fitted jointly with the cameras and the rotation over every block: baseline 0.42401 m (large blocks alone, cameras held: 0.42386 m); projects use it (translation = fitted).",
  "drift": {
   "model": "linear+hinge",
   "sol0": 932.2307692307693,
@@ -971,12 +971,12 @@
   "pitch_mdeg_per_sol": 0.005468631743657528,
   "pitch_early_mdeg_per_sol": 0.0372357234749555,
   "pitch_early_se": 0.0027492897732324445,
-  "yaw_fit_mdeg_per_sol": 0.0,
+  "yaw_fit_mdeg_per_sol": 0.0022787057954142364,
   "yaw_se": 0.001788755354360203,
   "yaw_p": 0.37863685355892374,
   "yaw_T_mdeg_per_degC": -1.453452282789378,
   "yaw_tau_mdeg": 3.782161555294067,
-  "yaw_mdeg_per_sol": 0.0,
+  "yaw_mdeg_per_sol": 0.0022787057954142364,
   "roll_fit_mdeg_per_sol": -0.004220208405692107,
   "roll_se": 0.0012703964404023988,
   "roll_p": 0.0008938694064984091,
@@ -984,7 +984,8 @@
   "roll_tau_mdeg": 2.6864509112569945,
   "roll_mdeg_per_sol": -0.004220208405692107,
   "no_drift": [],
-  "note": "slow change of the rig over the mission (between-block regression on sol, with the camera temperature); SfmProject.create turns the start rig by rate x (block median sol - sol0) + (early_rate - rate) x (min(sol, knot_sol) - knot_ref) (v0p35.1: faster early in the mission)"
+  "note": "slow change of the rig over the mission (between-block regression on sol, with the camera temperature); SfmProject.create turns the start rig by rate x (block median sol - sol0) + (early_rate - rate) x (min(sol, knot_sol) - knot_ref) (v0p35.1: faster early in the mission)",
+  "yaw_early_mdeg_per_sol": 0.0022787057954142364
  },
  "yaw_constant": true,
  "translation_fit": {
@@ -992,33 +993,65 @@
    "Three Forks South": 163,
    "Three Forks North": 162,
    "Tuxedo Park": 100,
-   "Bell Island Large": 48,
    "Taylorfjellet Large": 243,
    "Origny Large": 216
   },
   "dcentre_mm": [
-   -0.9281925195034346,
-   0.029100036576002214,
-   0.0178381666615917
+   -0.15058685868096777,
+   -0.012897011953790383,
+   0.007005315921957118
   ],
   "sd_t_mm": [
-   0.09937722065127955,
-   0.004803972499985322,
-   0.005817298170039794
+   0.10065422637277027,
+   0.0052516395786898805,
+   0.006461481110080495
   ],
-  "baseline_start_m": 0.4243631357732898,
-  "baseline_m": 0.4234349972066489,
-  "dbaseline_mm": -0.9281385666409236,
+  "baseline_start_m": 0.4240102397823094,
+  "baseline_m": 0.42385963067807414,
+  "dbaseline_mm": -0.1506091042352553,
   "t_m": [
-   -0.4234349491865374,
-   -0.00019464705029907658,
-   5.271920955785863e-05
+   -0.42385943945437343,
+   -0.00027432770568250943,
+   0.0002947003353344253
   ],
-  "variance_factor": 0.23460592616946377,
+  "variance_factor": 0.24092341749052287,
   "sigma_m": 0.05
  },
  "translation": "fitted",
  "convention": "NL reference",
  "form": "v0p73",
- "yaw_model": "one yaw for every temperature (the stereo temperature change is NR cx's); yaw rate with sol"
+ "yaw_model": "one yaw for every temperature (the stereo temperature change is NR cx's); yaw rate +2.28 +- 0.11 mdeg per 1000 sol",
+ "translation_joint": {
+  "t_start_m": [
+   -0.42401003704535833,
+   -0.00028429949976215496,
+   0.00030182584350051686
+  ],
+  "t_m": [
+   -0.42401003704535833,
+   -0.00028429949976215496,
+   0.00030182584350051686
+  ],
+  "baseline_start_m": 0.4240102397823094,
+  "baseline_m": 0.4240102397823094,
+  "dbaseline_mm": 0.0,
+  "sigma_m": 0.05,
+  "final_cost": 82414.02309203258,
+  "NR_cx": 2573.1423811287073,
+  "rig_abs_mdeg": {
+   "yaw_mdeg": 39.89265460088483,
+   "pitch_mdeg": -90.96200317838819,
+   "roll_mdeg": -62.07557532877715
+  },
+  "degeneracy": {
+   "delta_mm": 1.0,
+   "yaw_mdeg_per_mm": -0.16832610076566112,
+   "pitch_mdeg_per_mm": -0.004339802351530864,
+   "NR_cx_px_per_mm": 0.01144079215146121,
+   "NL_cx_px_per_mm": -0.01874567413665318,
+   "cost_rise": 23.561013434285996,
+   "sd_baseline_mm": 0.07376203238825527
+  }
+ },
+ "translation_source": "joint with the cameras and the rotation"
 }
