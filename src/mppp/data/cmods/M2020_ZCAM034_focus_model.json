@@ -1,7 +1,7 @@
 {
  "cameras": {
   "ZL034": {
-   "f0_px": 4720.202375436789,
+   "f0_px": 4746.035039392364,
    "reference_focus": 600.0,
    "slope_px_per_count": 0.0541092780393248,
    "aspect": 1.0022251160273317,
@@ -12,16 +12,6 @@
    ],
    "label_f0_px": 4679.827660813551,
    "label_slope_px_per_count": 0.05049985007149249,
-   "trend": {
-    "sol0": 700.0,
-    "f_px_per_sol": 0.025051703668971668,
-    "sd_px_per_sol": 0.0050798081723810095,
-    "sol_range": [
-     461,
-     991
-    ],
-    "note": "3 blocks (sols 461-530, 684-692, 961-991); carried by the Airey Hill offset; evaluated at the sol clamped to sol_range (no extrapolation); provisional"
-   },
    "pp": {
     "cx_px_per_count": 0.0,
     "cy_px_per_count": 0.0,
@@ -29,7 +19,7 @@
    },
    "f0_sd_px": null,
    "slope_sd_px_per_count": 0.0014548362289711738,
-   "n_bins": 39,
+   "n_bins": 132,
    "thermal": {
     "T0_degC": -15.0,
     "sensor": "HEAD_FPA",
@@ -49,13 +39,29 @@
     "note": "not significant once each block's Navcam focal scale is divided out; held at 0"
    },
    "block_offsets_px": {
-    "Airey Hill": 17.627872388852403,
-    "Rockytop": -1.3788966175633206,
-    "Three Forks": 2.8955837049719424
+    "mars2020_sol_0178_rochette_colmap_zcam": 16.972368248219027,
+    "mars2020_sol_0361_chal_rocks_sid_colmap_zcam": -19.722872446519432,
+    "mars2020_sol_0556_enchanted_lake_colmap_zcam": 2.637371785394862,
+    "mars2020_sol_0680_threeforks_north_colmap_zcam": -13.226660400794572,
+    "mars2020_sol_0770_belva_crater_large_colmap_zcam": 1.446201282329639,
+    "mars2020_sol_1333_rio_chiquito_colmap_zcam": -0.7001168596107163,
+    "mars2020_sol_1408_south_arm_colmap_zcam": 1.1263411068284768,
+    "mars2020_sol_1601_taylorfjellet_large_colmap_zcam": 8.342397408479883,
+    "mars2020_sol_1962_marble_mountain_colmap_zcam": 3.124969875669194
+   },
+   "trend_v0p42": {
+    "sol0": 700.0,
+    "f_px_per_sol": 0.025051703668971668,
+    "sd_px_per_sol": 0.0050798081723810095,
+    "sol_range": [
+     461,
+     991
+    ],
+    "note": "3 blocks (sols 461-530, 684-692, 961-991); carried by the Airey Hill offset; evaluated at the sol clamped to sol_range (no extrapolation); provisional"
    }
   },
   "ZR034": {
-   "f0_px": 4723.358845178255,
+   "f0_px": 4753.192503154966,
    "reference_focus": 600.0,
    "slope_px_per_count": 0.06462175243435136,
    "aspect": 1.0019230603927118,
@@ -66,16 +72,6 @@
    ],
    "label_f0_px": 4682.292525214678,
    "label_slope_px_per_count": 0.04611431959777594,
-   "trend": {
-    "sol0": 700.0,
-    "f_px_per_sol": 0.005076369618842807,
-    "sd_px_per_sol": 0.004698346320393921,
-    "sol_range": [
-     461,
-     991
-    ],
-    "note": "3 blocks (sols 461-530, 684-692, 961-991); carried by the Airey Hill offset; evaluated at the sol clamped to sol_range (no extrapolation); provisional"
-   },
    "pp": {
     "cx_px_per_count": 0.002490003264938423,
     "cy_px_per_count": 0.0013867018241970896,
@@ -87,7 +83,7 @@
    },
    "f0_sd_px": null,
    "slope_sd_px_per_count": 0.0014444390768129742,
-   "n_bins": 42,
+   "n_bins": 121,
    "thermal": {
     "T0_degC": -15.0,
     "sensor": "HEAD_FPA",
@@ -107,16 +103,32 @@
     "note": "not significant once each block's Navcam focal scale is divided out; held at 0"
    },
    "block_offsets_px": {
-    "Airey Hill": 8.605216749437577,
-    "Rockytop": -0.21938564751328826,
-    "Three Forks": 0.24805471993705197
+    "mars2020_sol_0178_rochette_colmap_zcam": 16.448249836726973,
+    "mars2020_sol_0361_chal_rocks_sid_colmap_zcam": -19.06827115341912,
+    "mars2020_sol_0556_enchanted_lake_colmap_zcam": 3.220879488419996,
+    "mars2020_sol_0680_threeforks_north_colmap_zcam": -12.960852396092378,
+    "mars2020_sol_0770_belva_crater_large_colmap_zcam": 0.4438585687421437,
+    "mars2020_sol_1333_rio_chiquito_colmap_zcam": -0.9428167008845776,
+    "mars2020_sol_1408_south_arm_colmap_zcam": 2.2692974231940752,
+    "mars2020_sol_1601_taylorfjellet_large_colmap_zcam": 8.099394844705785,
+    "mars2020_sol_1962_marble_mountain_colmap_zcam": 2.4902600885998254
+   },
+   "trend_v0p42": {
+    "sol0": 700.0,
+    "f_px_per_sol": 0.005076369618842807,
+    "sd_px_per_sol": 0.004698346320393921,
+    "sol_range": [
+     461,
+     991
+    ],
+    "note": "3 blocks (sols 461-530, 684-692, 961-991); carried by the Airey Hill offset; evaluated at the sol clamped to sol_range (no extrapolation); provisional"
    }
   }
  },
  "state": "backlash",
  "pixel_mm": 0.0074,
  "units": "full-frame pixels (1648 x 1200); f = f0_px + slope_px_per_count (focus - reference_focus) + thermal.f_px_per_degC (T_FPA - thermal.T0_degC) + trend.f_px_per_sol (clamp(sol, trend.sol_range) - trend.sol0); fy/fx = aspect; cx, cy + pp.c*_px_per_count (bin focus - the eye's median focus in the block) (mppp.sfm.project.zcam_model_focal, zcam_model_pp_shift)",
- "source": "MPPP v0p42 (docs/results/v0p42/zcam_focus_study/build_model.py): backlash-state focus bins (>= 1000 observations, focus >= -1100, weights = observations) of the Rockytop (sols 461-530), Three Forks (684-692) and Airey Hill (961-991) Navcam + Mastcam-Z blocks (MPPP 0.22), each block's Mastcam-Z f divided by its Navcam focal scale (refined / start: Rockytop 1.00025, Three Forks 1.00351, Airey Hill 1.00003); HEAD_FPA temperatures from the labels. Replaces the v0.21.1 model (polynomial Navcam, focus states mixed).",
+ "source": "MPPP v0p42 (docs/results/v0p42/zcam_focus_study/build_model.py): backlash-state focus bins (>= 1000 observations, focus >= -1100, weights = observations) of the Rockytop (sols 461-530), Three Forks (684-692) and Airey Hill (961-991) Navcam + Mastcam-Z blocks (MPPP 0.22), each block's Mastcam-Z f divided by its Navcam focal scale (refined / start: Rockytop 1.00025, Three Forks 1.00351, Airey Hill 1.00003); HEAD_FPA temperatures from the labels. Replaces the v0.21.1 model (polynomial Navcam, focus states mixed).; v0p74 start update from 10 blocks (2026-10-04)",
  "stereo": {
   "roll_mdeg_per_count": 0.020464109883505444,
   "roll_sd_boot": 0.003014378587983463,
@@ -164,5 +176,132 @@
    "slope_px_per_count": 0.048217,
    "aspect": 1.001672
   }
+ },
+ "start_update": {
+  "blocks": [
+   "mars2020_sol_0361_chal_rocks_sid_colmap_zcam",
+   "mars2020_sol_0178_rochette_colmap_zcam",
+   "mars2020_sol_0556_enchanted_lake_colmap_zcam",
+   "mars2020_sol_0680_threeforks_north_colmap_zcam",
+   "mars2020_sol_0770_belva_crater_large_colmap_zcam",
+   "mars2020_sol_1333_rio_chiquito_colmap_zcam",
+   "mars2020_sol_1408_south_arm_colmap_zcam",
+   "mars2020_sol_1601_taylorfjellet_large_colmap_zcam",
+   "mars2020_sol_1781_origny_colmap_zcam",
+   "mars2020_sol_1962_marble_mountain_colmap_zcam"
+  ],
+  "eyes": {
+   "ZL034": {
+    "f0_was": 4720.202375436789,
+    "f0_now": 4746.035039392364,
+    "slope_was": 0.0541092780393248,
+    "slope_now": 0.0541092780393248,
+    "slope_fitted": 0.036831360524956835,
+    "aspect_was": 1.0022251160273317,
+    "aspect_now": 1.0191571197983527,
+    "fit": {
+     "fx": {
+      "a": 4740.763595627239,
+      "b": 0.014079712257625943,
+      "sd_b": 0.0028743067843986976,
+      "block_offsets": {
+       "mars2020_sol_0178_rochette_colmap_zcam": 4757.717112585057,
+       "mars2020_sol_0361_chal_rocks_sid_colmap_zcam": 4721.062629469258,
+       "mars2020_sol_0556_enchanted_lake_colmap_zcam": 4743.398038071207,
+       "mars2020_sol_0680_threeforks_north_colmap_zcam": 4727.551626141266,
+       "mars2020_sol_0770_belva_crater_large_colmap_zcam": 4742.208190606903,
+       "mars2020_sol_1333_rio_chiquito_colmap_zcam": 4740.064256390765,
+       "mars2020_sol_1408_south_arm_colmap_zcam": 4741.888685701626,
+       "mars2020_sol_1601_taylorfjellet_large_colmap_zcam": 4749.09672709511,
+       "mars2020_sol_1962_marble_mountain_colmap_zcam": 4743.885094583956
+      },
+      "scatter_offsets": 10.220202340798814,
+      "robust_sd": 12.781351026877674,
+      "bins": 132
+     },
+     "fy": {
+      "a": 4831.582971764339,
+      "b": 0.05958300879228773,
+      "sd_b": 0.0018097430487061254,
+      "block_offsets": {
+       "mars2020_sol_0178_rochette_colmap_zcam": 4929.13000589335,
+       "mars2020_sol_0361_chal_rocks_sid_colmap_zcam": 4757.956751234045,
+       "mars2020_sol_0556_enchanted_lake_colmap_zcam": 4850.990080905732,
+       "mars2020_sol_0680_threeforks_north_colmap_zcam": 4758.8364658009,
+       "mars2020_sol_0770_belva_crater_large_colmap_zcam": 4833.414364086098,
+       "mars2020_sol_1333_rio_chiquito_colmap_zcam": 4803.227307952328,
+       "mars2020_sol_1408_south_arm_colmap_zcam": 4840.120177345898,
+       "mars2020_sol_1601_taylorfjellet_large_colmap_zcam": 4863.425440602292,
+       "mars2020_sol_1962_marble_mountain_colmap_zcam": 4847.146152058408
+      },
+      "scatter_offsets": 50.26747477446791,
+      "robust_sd": 8.584119305317843,
+      "bins": 132
+     }
+    },
+    "scatter_offsets_pct": 0.21558135381872978,
+    "aspect_kept": "fitted 1.01916 differs from 1.00223 by more than 0.003: aspect and slope kept, f0 from fx"
+   },
+   "ZR034": {
+    "f0_was": 4723.358845178255,
+    "f0_now": 4753.192503154966,
+    "slope_was": 0.06462175243435136,
+    "slope_now": 0.06462175243435136,
+    "slope_fitted": 0.04033924542773093,
+    "aspect_was": 1.0019230603927118,
+    "aspect_now": 1.0188812553298114,
+    "fit": {
+     "fx": {
+      "a": 4748.628746265345,
+      "b": 0.024968787435682316,
+      "sd_b": 0.002850536921766226,
+      "block_offsets": {
+       "mars2020_sol_0178_rochette_colmap_zcam": 4765.0612033872885,
+       "mars2020_sol_0361_chal_rocks_sid_colmap_zcam": 4729.578783428661,
+       "mars2020_sol_0556_enchanted_lake_colmap_zcam": 4751.846533240482,
+       "mars2020_sol_0680_threeforks_north_colmap_zcam": 4735.680338174713,
+       "mars2020_sol_0770_belva_crater_large_colmap_zcam": 4749.072178665234,
+       "mars2020_sol_1333_rio_chiquito_colmap_zcam": 4747.686834805772,
+       "mars2020_sol_1408_south_arm_colmap_zcam": 4750.895864832593,
+       "mars2020_sol_1601_taylorfjellet_large_colmap_zcam": 4756.7203645116915,
+       "mars2020_sol_1962_marble_mountain_colmap_zcam": 4751.116615341667
+      },
+      "scatter_offsets": 9.93774840761162,
+      "robust_sd": 13.881351874297415,
+      "bins": 121
+     },
+     "fy": {
+      "a": 4838.288818090064,
+      "b": 0.055709703419779544,
+      "sd_b": 0.002291120700712872,
+      "block_offsets": {
+       "mars2020_sol_0178_rochette_colmap_zcam": 4936.03641238468,
+       "mars2020_sol_0361_chal_rocks_sid_colmap_zcam": 4771.582163236576,
+       "mars2020_sol_0556_enchanted_lake_colmap_zcam": 4859.234741232659,
+       "mars2020_sol_0680_threeforks_north_colmap_zcam": 4747.714506340698,
+       "mars2020_sol_0770_belva_crater_large_colmap_zcam": 4842.046520512878,
+       "mars2020_sol_1333_rio_chiquito_colmap_zcam": 4811.557160500673,
+       "mars2020_sol_1408_south_arm_colmap_zcam": 4848.694631228522,
+       "mars2020_sol_1601_taylorfjellet_large_colmap_zcam": 4871.820657568457,
+       "mars2020_sol_1962_marble_mountain_colmap_zcam": 4855.9125698054295
+      },
+      "scatter_offsets": 52.618935451741756,
+      "robust_sd": 12.178366870980971,
+      "bins": 121
+     }
+    },
+    "scatter_offsets_pct": 0.2092761708404221,
+    "aspect_kept": "fitted 1.01888 differs from 1.00192 by more than 0.003: aspect and slope kept, f0 from fx"
+   }
+  },
+  "state_ratio": {
+   "regular_median": 1.0003872833078067,
+   "backlash_median": 1.012211107614861,
+   "regular_groups": 6,
+   "backlash_groups": 153,
+   "backlash_over_regular": 1.0118192469100151
+  },
+  "when": "2026-10-04",
+  "note": "v0p74: start model from the blocks solved before v0p74 (Navcam scale divided out)"
  }
 }
