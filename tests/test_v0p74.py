@@ -154,7 +154,7 @@ def _block(tmp_path, name, sol, T, fx_a=4720.0, lines=True, verdict="pass", fail
     images = [{"instrument": "ZL034_F00100", "sol": sol, "zcam_optics_temperature_degC": T, "camera_temperature_degC": T + 4},
               {"instrument": "NL", "sol": sol, "camera_temperature_degC": T - 5}]
     (root / "project.json").write_text(json.dumps({"cameras": cams, "settings": settings, "images": images, "offset": [0, 0, 0]}))
-    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.3", "verdict": verdict}))
+    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.4", "verdict": verdict}))
     checks = [{"check": "registered_fraction", "value": 1.0, "status": "pass"},
               {"check": "residual_median_px", "value": 0.28, "status": "pass"},
               {"check": "beyond_ground_fraction", "value": 0.001, "status": "pass"},
@@ -614,3 +614,69 @@ def test_pipeline_run_timeout_stops_the_tree(tmp_path):
     rc = p.run("x", [sys.executable, "-c", "import time; time.sleep(60)"], timeout_h=2.0 / 3600)
     assert rc == 124 and time.time() - t0 < 30
     assert "TIMEOUT" in (tmp_path / "mppp_pipeline" / "x.log").read_text()
+
+
+# ----------------------------------------------------------------------------- v0p74.4: the rig translation jointly
+def test_write_consensus_applies_the_joint_translation(tmp_path):
+    import importlib.util
+    sys.path.insert(0, str(ROOT / "tests"))
+    from test_v0p62 import _consensus_result
+    from mppp.sfm.navcal_consensus import write_consensus
+    tr = {"blocks": {"Belva": 300, "Taylorfjellet Large": 400}, "dcentre_mm": [-0.43, 0.16, -0.27], "sd_t_mm": [0.1, 0.01, 0.02],
+          "baseline_start_m": 0.4244, "baseline_m": 0.42397, "dbaseline_mm": -0.43, "t_m": [-0.42397, 0.00016, -0.00027],
+          "variance_factor": 1.2, "sigma_m": 0.05}
+    jt = {"t_start_m": [-0.4244, 0, 0], "t_m": [-0.42360, 0.0002, -0.0003], "baseline_start_m": 0.4244, "baseline_m": 0.42360,
+          "dbaseline_mm": -0.8, "sigma_m": 0.05, "final_cost": 1000.0, "iterations": 8, "NR_cx": 2573.6,
+          "rig_abs_mdeg": {"yaw_mdeg": 36.0, "pitch_mdeg": -88.0, "roll_mdeg": -63.0},
+          "degeneracy": {"delta_mm": 1.0, "cost_rise_mean": 1010.0, "yaw_mdeg_per_mm": -1.2, "pitch_mdeg_per_mm": 0.0,
+                         "NR_cx_px_per_mm": 0.03, "NL_cx_px_per_mm": 0.0}}
+    res = _consensus_result(tr, True)
+    res["rig_translation_joint"] = jt
+    res["variance_factor"] = 1.0
+    rig = json.loads((write_consensus(res, tmp_path / "a") / "M2020_N_rig.json").read_text())
+    assert rig["translation"] == "fitted" and rig["t_sensor_from_ref_m"] == jt["t_m"]
+    assert rig["baseline_m"] == pytest.approx(0.42360) and "jointly" in rig["note"] and "large blocks alone" in rig["note"]
+    dg = rig["translation_joint"]["degeneracy"]
+    assert dg["sd_baseline_mm"] == pytest.approx(1.0 / np.sqrt(20.0)) and dg["yaw_mdeg_per_mm"] == -1.2
+    # the promotion check sees the baseline, the agreement of the two fits and how well it is determined
+    from mppp.sfm.navcal_consensus import check_candidate
+    (tmp_path / "a" / "consensus.json").write_text(json.dumps(dict(
+        res, sd={e: {n: 0.01 for n in ("fx", "fy", "cx", "cy")} for e in ("NL", "NR")},
+        residuals={"median_px": 0.15, "rms_px": 0.3, "p95_px": 0.6}, iterations=9, final_cost=1.0,
+        blocks={f"b{i}": 1 for i in range(10)})))
+    by = {c["check"]: c for c in check_candidate(tmp_path / "a")["checks"]}
+    assert by["rig baseline"]["ok"] and by["rig baseline joint vs large blocks"]["ok"]
+    assert by["rig baseline joint vs large blocks"]["value"] == pytest.approx(0.37, abs=0.01)
+    assert by["rig baseline determined"]["ok"] and by["rig baseline determined"]["value"] == pytest.approx(0.224, abs=0.001)
+    jt["degeneracy"]["cost_rise_mean"] = 1000.1                 # a flat profile: the baseline is not determined
+    (tmp_path / "a" / "consensus.json").write_text(json.dumps(dict(
+        res, sd={e: {n: 0.01 for n in ("fx", "fy", "cx", "cy")} for e in ("NL", "NR")},
+        residuals={"median_px": 0.15, "rms_px": 0.3, "p95_px": 0.6}, iterations=9, final_cost=1.0,
+        blocks={f"b{i}": 1 for i in range(10)})))
+    assert not {c["check"]: c for c in check_candidate(tmp_path / "a")["checks"]}["rig baseline determined"]["ok"]
+
+
+def test_baseline_degeneracy_on_a_synthetic_block(tmp_path):
+    """The joint adjustment with the translation free, then the +-1 mm profile: the mechanics (the rig set and
+    re-converged, finite slopes), and on a block whose scale is only the prior's the cost rise is small."""
+    pytest.importorskip("pyceres")
+    sys.path.insert(0, str(ROOT / "tests"))
+    from helpers import _build_rec, _synthetic
+    from mppp.sfm import navcal as NC
+    from mppp.sfm.navcal_consensus import baseline_degeneracy
+    proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
+    rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=False)
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+    temps = {}
+    xkw = {"pp_slopes": {1: (0.0, 0.0), 2: (0.0, 0.0)}}
+    ba = NC.joint_adjust(rec, proj, temps, 0.0, -20.0, max_iterations=30, covariance=False, rig_slopes=(0.0, 0.0),
+                         refine_rig=True, rig_translation_sigma_m=0.05, **xkw)
+    assert np.isfinite(ba["final_cost"])
+    b0 = float(np.linalg.norm(np.asarray(NC.stereo_rig(rec)[2].translation)))
+    dg = baseline_degeneracy(rec, proj, temps, 0.0, -20.0, xkw, None, 1.0, iterations=30, verbose=False)
+    assert dg["baseline_m"] == pytest.approx(b0)
+    assert len(dg["rows"]) == 2 and all(np.isfinite(r["cost"]) for r in dg["rows"])
+    assert np.isfinite(dg["yaw_mdeg_per_mm"]) and np.isfinite(dg["NR_cx_px_per_mm"])
+    assert float(np.linalg.norm(np.asarray(NC.stereo_rig(rec)[2].translation))) == pytest.approx(b0)   # rec untouched
+    for r in dg["rows"]:
+        assert r["cost"] >= ba["final_cost"] - 1e-6 * max(ba["final_cost"], 1.0)

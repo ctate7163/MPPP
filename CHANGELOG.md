@@ -2,6 +2,12 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.74.4 — 2026-10-04
+
+**The Navcam rig translation is fitted together with the cameras and the rig rotation** (`fit_consensus(joint_translation=True)`, `navcam_calibration_study.py consensus --joint-translation`; the pipeline uses it). Until now the baseline came from a second adjustment on the large blocks with the cameras (NR cx included) and the yaw held, i.e. conditional on them: a yaw or NR-cx error from the first step went into the baseline (the two fits of 2–3 Oct differed by 0.6 mm against a formal sd of 0.1 mm). Now the final adjustment frees the translation (prior 5 cm per axis on the right centre) with the cameras and the rotation over every block, and that joint solution is the candidate (`M2020_N_rig.json` `translation_source`). The large-block fit is still made as a cross-check.
+- `baseline_degeneracy`: the baseline held at ±1 mm, everything else re-converged (two more adjustments): yaw, pitch, NR cx and NL cx per mm (the degenerate direction) and the cost rise, from which the baseline's sd. Recorded in the rig file (`translation_joint.degeneracy`) and in the study log.
+- Promotion checks: baseline within 0.420–0.428 m; joint and large-block estimates within 1.5 mm; baseline sd from the profile ≤ 1 mm (a flat profile refuses the promotion: the baseline would then be whatever yaw and cx left over).
+
 ## 0.74.3 — 2026-10-04
 
 Pre-run review of the pipeline.

@@ -172,7 +172,8 @@ class Pipeline:
         self.save()
         rc = self.run("navcam_consensus", [PY, ROOT / "scripts" / "navcam_calibration_study.py", "consensus", out,
                                            out / "scapes.json", "--points", "8000", "--translation-min-span", "30",
-                                           "--apply-translation", "--refit-thermal", "--thermal-rounds", "2",
+                                           "--apply-translation", "--joint-translation", "--refit-thermal",
+                                           "--thermal-rounds", "2",
                                            "--form", "v0p73", "--early-mission-sol", "380", "--early-rounds", EARLY_ROUNDS,
                                            "--early-start", *EARLY_START, "--promote-if-ok",
                                            "--promote-note", f"v0p74 pipeline consensus of {len(blocks)} blocks (v0p73 form)"],

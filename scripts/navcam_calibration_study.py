@@ -506,7 +506,8 @@ def cmd_consensus(a, scapes_cfg, samples):
                         thermal_terms=tuple(a.thermal_terms) if a.thermal_terms else None, form=a.form,
                         thermal_rounds=a.thermal_rounds,
                         early_mission_sol=(a.early_mission_sol or None), early_rounds=a.early_rounds,
-                        early_start=tuple(a.early_start) if a.early_start else None)
+                        early_start=tuple(a.early_start) if a.early_start else None,
+                        joint_translation=bool(a.joint_translation), degeneracy_mm=a.degeneracy_mm)
     d = write_consensus(res, out / "navcam_joint")
     print(f"candidate consensus: {d}  (promote: python scripts\\promote_cmods.py {d} --note \"...\")", flush=True)
     if getattr(a, "promote_if_ok", False):          # v0p72
@@ -555,6 +556,12 @@ def main(argv=None):
                                              "use, src/mppp/data/cmods)")
     ap.add_argument("--common-pp", help="rig: common principal points JSON of an earlier study (default: the median "
                                         "of the blocks)")
+    ap.add_argument("--joint-translation", action="store_true",
+                    help="consensus (v0p74.4): the final adjustment frees the rig translation together with the cameras "
+                         "and the rotation over every block (with --apply-translation this joint value is applied)")
+    ap.add_argument("--degeneracy-mm", type=float, default=1.0,
+                    help="consensus --joint-translation: the baseline held at +- this many mm, the rest re-converged "
+                         "(two more adjustments); 0 skips it")
     ap.add_argument("--translation-min-span", type=float, default=30.0,
                     help="consensus (v0p62): fit the Navcam rig translation on the blocks whose stations span at least "
                          "this many metres (0: no translation fit)")

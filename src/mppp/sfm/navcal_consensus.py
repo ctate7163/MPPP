@@ -406,7 +406,8 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
                   apply_translation: bool = False, refit_thermal: bool = False,
                   thermal_terms: Optional[Tuple[str, ...]] = None, early_mission_sol: Optional[float] = None,
                   early_rounds: int = 2, early_start: Optional[Tuple[float, float, float, float]] = None,
-                  form: str = "v0p73", thermal_rounds: int = 1) -> Dict[str, Any]:
+                  form: str = "v0p73", thermal_rounds: int = 1, joint_translation: bool = False,
+                  degeneracy_mm: float = 1.0) -> Dict[str, Any]:
     """The joint adjustment (see the module docstring) of the blocks ``{name: WORK folder}``; returns the shared
     cameras, the rig, residuals by radius and the per-block image counts.  v0p62: ``translation_scapes`` (the large
     blocks, :func:`large_blocks`): then :func:`fit_rig_translation` on them with the new cameras held
@@ -417,7 +418,13 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
     more at the best values; the result's ``thermal`` holds them with their sd and the profiles.  v0p70:
     ``early_mission_sol`` (e.g. 380): fx, fy, cx, cy offsets of the images before that sol (:func:`fit_early_offsets`,
     started from the start cameras' ``early_mission`` values), then the final adjustment with them; the result's
-    ``early_mission`` holds the offsets, sd, z, p-values and the terms to apply (|z| >= ``EARLY_APPLY_Z``).
+    ``early_mission`` holds the offsets, sd, z, p-values and the terms to apply (|z| >= ``EARLY_APPLY_Z``).  v0p74.4:
+    ``joint_translation``: the final adjustment frees the rig translation (prior ``translation_sigma_m`` per axis on
+    the right centre) TOGETHER with the cameras (NR cx included) and the rig rotation (yaw included), over every
+    block, so the baseline is not estimated conditionally on them; the result's cameras and rig are that joint
+    solution, and ``rig_translation_joint`` records it with a degeneracy profile (:func:`baseline_degeneracy`: the
+    baseline held at +-``degeneracy_mm``, everything else re-converged - how much yaw and NR cx move per mm and
+    what a mm costs).  The large-block fit (``translation_scapes``) is still made as a cross-check.
     v0p73 (``form="v0p73"``, the default): the NL-reference form (:mod:`mppp.sfm.cmods_form`) - fx and fy of each eye
     their own ppm/degC, the stereo temperature change on NR cx (a start with it on NL cx is converted), NL's principal
     point fixed in temperature, one rig yaw with a rate in sol (``"yaw_rate"``, mdeg per 1000 sol, in the drift);
@@ -548,6 +555,33 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
             ba = NC.joint_adjust(rec, proj, temps, ppm, t0, max_iterations=iterations, covariance=True,
                                  rig_slopes=(0.0, 0.0), extra_map=early_keypoint_map(proj, float(early_mission_sol), xb),
                                  **xkw)
+    joint_tr = None
+    if joint_translation:                          # v0p74.4: translation, cameras and rotation together
+        _emap = (early_keypoint_map(proj, float(early_mission_sol), [early["offsets_px"][k] for k in EARLY_TERMS])
+                 if early and early.get("offsets_px") else None)
+        t = time.time()
+        _, _, T_before = NC.stereo_rig(rec)
+        t_before = np.asarray(T_before.translation, float)
+        ba = NC.joint_adjust(rec, proj, temps, ppm, t0, max_iterations=iterations, covariance=True,
+                             rig_slopes=(0.0, 0.0), refine_rig=True, rig_translation_sigma_m=float(translation_sigma_m),
+                             extra_map=_emap, **xkw)
+        _, _, T_after = NC.stereo_rig(rec)
+        joint_tr = {"t_start_m": t_before.tolist(), "t_m": np.asarray(T_after.translation, float).tolist(),
+                    "baseline_start_m": float(np.linalg.norm(t_before)),
+                    "baseline_m": float(np.linalg.norm(np.asarray(T_after.translation, float))),
+                    "sigma_m": float(translation_sigma_m), "final_cost": float(ba["final_cost"]),
+                    "iterations": ba["iterations"], "seconds": time.time() - t,
+                    "rig_abs_mdeg": NC.rig_angles(np.asarray(T_after.rotation.matrix())),
+                    "NR_cx": float(rec.cameras[2].params[2]), "NL_cx": float(rec.cameras[1].params[2])}
+        joint_tr["dbaseline_mm"] = 1e3 * (joint_tr["baseline_m"] - joint_tr["baseline_start_m"])
+        if verbose:
+            print(f"{datetime.datetime.now():%H:%M} joint rig: translation free with the cameras and the rotation: baseline "
+                  f"{joint_tr['baseline_m']:.5f} m ({joint_tr['dbaseline_mm']:+.2f} mm), yaw "
+                  f"{joint_tr['rig_abs_mdeg']['yaw_mdeg']:+.2f} mdeg, NR cx {joint_tr['NR_cx']:.3f} px, cost "
+                  f"{ba['final_cost']:.1f} ({joint_tr['seconds']:.0f} s)", flush=True)
+        if degeneracy_mm:
+            joint_tr["degeneracy"] = baseline_degeneracy(rec, proj, temps, ppm, t0, xkw, _emap, float(degeneracy_mm),
+                                                         iterations=iterations, verbose=verbose)
     if axis:                                       # v0p73: the mean of the four per-axis slopes, for older readers
         ppm = float(np.mean([tvals[k] for k in AXIS_TERMS]))
     ks = NC.keypoint_scales(proj, temps, ppm, t0, axis_ppm=xkw.get("axis_ppm"))
@@ -593,13 +627,20 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
                        "profiles": profiles}, "drift": xkw.get("drift") if axis else drift,
            "form": form, "convention": "NL reference" if axis else None,
            "k4_zero": bool(k4_zero), "early_mission": early}
+    if joint_tr is not None:
+        out["rig_translation_joint"] = joint_tr
     if translation_scapes:
         tr = fit_rig_translation(translation_scapes, out, points=points, sigma_m=translation_sigma_m,
                                  iterations=iterations, verbose=verbose)
         out["rig_translation"] = tr
+        if joint_tr is not None and verbose:
+            print(f"rig translation: joint {joint_tr['baseline_m']:.5f} m vs large blocks alone (cameras held) "
+                  f"{tr['baseline_m']:.5f} m: {1e3 * (joint_tr['baseline_m'] - tr['baseline_m']):+.2f} mm", flush=True)
+    if translation_scapes or joint_tr is not None:
         out["rig_translation_applied"] = bool(apply_translation)
-        if apply_translation:
-            out["rig_t"] = list(tr["t_m"])
+        out["rig_translation_source"] = "joint" if joint_tr is not None else "large blocks (cameras held)"
+        if apply_translation and joint_tr is None:
+            out["rig_t"] = list(tr["t_m"])        # the joint solution is already in rig_t / rig_R / the cameras
     if verbose:
         print(f"consensus: cost {out['final_cost']:.1f}, it {out['iterations']}, median {st['median_px']:.4f} / rms "
               f"{st['rms_px']:.4f} px, corners {st['radial'][-1]['median_px'] or float('nan'):.3f} px, rig yaw "
@@ -627,6 +668,57 @@ def large_blocks(scapes_cfg: Dict[str, PathLike], min_span_m: float = 30.0) -> D
             continue
         if s >= min_span_m:
             out[n] = [str(f), s]
+    return out
+
+
+def baseline_degeneracy(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, Any], extra_map, delta_mm: float = 1.0,
+                        iterations: int = 100, verbose: bool = True) -> Dict[str, Any]:
+    """
+    v0p74.4: how the rest of the model compensates a baseline change.  From the converged joint solution (``rec``
+    is not changed) the rig translation is held at its length +- ``delta_mm`` (direction kept) and everything else
+    - cameras, rig rotation, poses, points - re-converged.  Returns the cost rise per mm^2 (the curvature: with the
+    variance factor, the baseline's sd), and the yaw, pitch and NR / NL cx change per mm (the degenerate
+    direction).  Yaw and NR cx moving by their own sd or more per mm means a baseline error hides in them.
+    """
+    import copy as _copy
+    from . import navcal as NC
+    import pycolmap
+    rid, cid, T = NC.stereo_rig(rec)
+    t_joint = np.asarray(T.translation, float)
+    R_joint = np.asarray(T.rotation.matrix())
+    b0 = float(np.linalg.norm(t_joint))
+    ang0 = NC.rig_angles(R_joint)
+    base = {"cost": None, "yaw_mdeg": ang0["yaw_mdeg"], "pitch_mdeg": ang0["pitch_mdeg"],
+            "NR_cx": float(rec.cameras[2].params[2]), "NL_cx": float(rec.cameras[1].params[2])}
+    rows = []
+    for sgn in (+1.0, -1.0):
+        r = _copy.deepcopy(rec)
+        t_new = t_joint * (b0 + sgn * delta_mm * 1e-3) / b0
+        sid = [s for s in r.rigs[rid].non_ref_sensors if int(s.id) == cid][0]
+        r.rigs[rid].set_sensor_from_rig(sid, pycolmap.Rigid3d(pycolmap.Rotation3d(R_joint), t_new))
+        t = time.time()
+        ba = NC.joint_adjust(r, proj, temps, ppm, T0, max_iterations=iterations, rig_slopes=(0.0, 0.0),
+                             refine_rig="rotation", extra_map=extra_map, **xkw)
+        _, _, T1 = NC.stereo_rig(r)
+        ang = NC.rig_angles(np.asarray(T1.rotation.matrix()))
+        rows.append({"dbaseline_mm": sgn * delta_mm, "cost": float(ba["final_cost"]), "iterations": ba["iterations"],
+                     "yaw_mdeg": ang["yaw_mdeg"], "pitch_mdeg": ang["pitch_mdeg"],
+                     "NR_cx": float(r.cameras[2].params[2]), "NL_cx": float(r.cameras[1].params[2]),
+                     "seconds": time.time() - t})
+        if verbose:
+            print(f"  baseline {sgn * delta_mm:+.1f} mm: cost {ba['final_cost']:.1f}, yaw {ang['yaw_mdeg']:+.2f} mdeg, "
+                  f"NR cx {rows[-1]['NR_cx']:.3f} px ({rows[-1]['seconds']:.0f} s)", flush=True)
+    plus, minus = rows
+    # the joint cost at the minimum: the mean of the two is an upper bound; the curvature from the two points about
+    # the minimum assumed at 0 is (c+ + c-) / 2 - c0 ... without c0 use the symmetric estimate from the pair
+    out = {"delta_mm": delta_mm, "baseline_m": b0, "rows": rows, "at_joint": base,
+           "yaw_mdeg_per_mm": (plus["yaw_mdeg"] - minus["yaw_mdeg"]) / (2 * delta_mm),
+           "pitch_mdeg_per_mm": (plus["pitch_mdeg"] - minus["pitch_mdeg"]) / (2 * delta_mm),
+           "NR_cx_px_per_mm": (plus["NR_cx"] - minus["NR_cx"]) / (2 * delta_mm),
+           "NL_cx_px_per_mm": (plus["NL_cx"] - minus["NL_cx"]) / (2 * delta_mm),
+           "cost_rise_mean": 0.5 * (plus["cost"] + minus["cost"]),
+           "note": "yaw / cx per mm of baseline with everything else re-converged; cost_rise_mean - the joint cost "
+                   "(res['final_cost']) is the rise for +-delta: sd_baseline_mm ~ delta / sqrt(2 rise / variance factor)"}
     return out
 
 
@@ -784,15 +876,30 @@ def write_consensus(res: Dict[str, Any], out_dir: PathLike, note: str = "",
         r["yaw_model"] = (f"one yaw for every temperature (the stereo temperature change is NR cx's); yaw rate "
                           f"{yr:+.2f}" + (f" +- {sdy:.2f}" if sdy else "") + " mdeg per 1000 sol")
     tr = res.get("rig_translation")
-    applied = bool(tr and res.get("rig_translation_applied"))
-    carried = (not tr) and r.get("translation") == "fitted"     # v0p73: no new fit - keep the fitted one in use
+    jt = res.get("rig_translation_joint")                        # v0p74.4: the joint fit, when made, is the one applied
+    applied = bool((tr or jt) and res.get("rig_translation_applied"))
+    carried = not (tr or jt) and r.get("translation") == "fitted"     # v0p73: no new fit - keep the fitted one in use
     if tr:
         r["translation_fit"] = {k: tr[k] for k in ("blocks", "dcentre_mm", "sd_t_mm", "baseline_start_m", "baseline_m",
                                                    "dbaseline_mm", "t_m", "variance_factor", "sigma_m")}
+    if jt:
+        r["translation_joint"] = {k: jt.get(k) for k in ("t_start_m", "t_m", "baseline_start_m", "baseline_m",
+                                                         "dbaseline_mm", "sigma_m", "final_cost", "NR_cx", "rig_abs_mdeg")}
+        dg = jt.get("degeneracy") or {}
+        if dg:
+            rise = dg["cost_rise_mean"] - float(jt["final_cost"])
+            vf = float(res.get("variance_factor") or 1.0)
+            r["translation_joint"]["degeneracy"] = {
+                "delta_mm": dg["delta_mm"], "yaw_mdeg_per_mm": dg["yaw_mdeg_per_mm"],
+                "pitch_mdeg_per_mm": dg["pitch_mdeg_per_mm"], "NR_cx_px_per_mm": dg["NR_cx_px_per_mm"],
+                "NL_cx_px_per_mm": dg["NL_cx_px_per_mm"], "cost_rise": rise,
+                "sd_baseline_mm": (dg["delta_mm"] / np.sqrt(2.0 * rise / vf)) if rise > 0 else None}
     if applied:
-        r["t_sensor_from_ref_m"] = [float(x) for x in tr["t_m"]]
-        r["baseline_m"] = float(tr["baseline_m"])
+        src = jt if jt else tr
+        r["t_sensor_from_ref_m"] = [float(x) for x in src["t_m"]]
+        r["baseline_m"] = float(src["baseline_m"])
         r["translation"] = "fitted"
+        r["translation_source"] = "joint with the cameras and the rotation" if jt else "large blocks, cameras held"
     elif not carried:
         r.pop("translation", None)
     r["note"] = (f"x_NR = R x_NL + t. Navcam consensus {stamp} ({len(blocks)} blocks); yaw {a['yaw_mdeg']:+.2f}, "
@@ -800,7 +907,10 @@ def write_consensus(res: Dict[str, Any], out_dir: PathLike, note: str = "",
                  + ("temperature term (NR cx carries it), the yaw follows its sol rate; " if v73 else
                     "temperature term, the drift's yaw rate 0; ")
                  + "pitch and roll follow the mission drift. "
-                 + (f"Translation fitted on {len(tr['blocks'])} large blocks ({', '.join(sorted(tr['blocks']))}): "
+                 + ((f"Translation fitted jointly with the cameras and the rotation over every block: baseline "
+                     f"{jt['baseline_m']:.5f} m" + (f" (large blocks alone, cameras held: {tr['baseline_m']:.5f} m)" if tr else "")
+                     + "; projects use it (translation = fitted).") if (applied and jt) else
+                    f"Translation fitted on {len(tr['blocks'])} large blocks ({', '.join(sorted(tr['blocks']))}): "
                     f"baseline {tr['baseline_m']:.5f} m; projects use it (translation = fitted)." if applied else
                     (f"Translation fitted earlier, carried over from the cameras in use (baseline "
                      f"{float(r.get('baseline_m', 0)):.5f} m; translation = fitted)." if carried else
@@ -813,7 +923,9 @@ def write_consensus(res: Dict[str, Any], out_dir: PathLike, note: str = "",
 
 # ----------------------------------------------------------------------------------------- check and promote (v0p72)
 PROMOTE_LIMITS = {"min_blocks": 8, "residual_factor": 1.15, "max_camera_change_px": 0.5, "max_rig_change_mdeg": 10.0,
-                  "max_ppm_change": 5.0, "max_pp_slope_change": 0.02}
+                  "max_ppm_change": 5.0, "max_pp_slope_change": 0.02,
+                  # v0p74.4: the rig translation (label baseline 0.42436 m)
+                  "baseline_m": (0.420, 0.428), "max_baseline_disagreement_mm": 1.5, "max_baseline_sd_mm": 1.0}
 
 
 def _rotation_mdeg(Ra: np.ndarray, Rb: np.ndarray) -> float:
@@ -912,6 +1024,24 @@ def check_candidate(candidate_dir: PathLike, current_dir: Optional[PathLike] = N
     if screening:
         bad = sorted(k for k, r in screening.items() if r.get("verdict") == "fail" and k in (res.get("blocks") or {}))
         add("screening", len(bad), 0, not bad, ", ".join(bad) or "no failed block in the joint")
+    jt, tr = res.get("rig_translation_joint"), res.get("rig_translation")
+    if res.get("rig_translation_applied") and (jt or tr):
+        src = jt or tr
+        b = float(src["baseline_m"])
+        add("rig baseline", round(b, 5), lim["baseline_m"], lim["baseline_m"][0] <= b <= lim["baseline_m"][1],
+            f"{'joint' if jt else 'large blocks'}: {src.get('dbaseline_mm', 0.0):+.2f} mm from the start")
+        if jt and tr:                                       # the two estimates must agree
+            d = 1e3 * abs(float(jt["baseline_m"]) - float(tr["baseline_m"]))
+            add("rig baseline joint vs large blocks", round(d, 2), lim["max_baseline_disagreement_mm"],
+                d <= lim["max_baseline_disagreement_mm"], "mm")
+        dg = (jt or {}).get("degeneracy")
+        if dg:
+            rise = dg["cost_rise_mean"] - float(jt["final_cost"])
+            vf = float(res.get("variance_factor") or 1.0)
+            sdb = (dg["delta_mm"] / np.sqrt(2.0 * rise / vf)) if rise > 0 else float("inf")
+            add("rig baseline determined", round(sdb, 3), lim["max_baseline_sd_mm"], sdb <= lim["max_baseline_sd_mm"],
+                f"sd mm from the +-{dg['delta_mm']:g} mm profile; per mm: yaw {dg['yaw_mdeg_per_mm']:+.2f} mdeg, "
+                f"NR cx {dg['NR_cx_px_per_mm']:+.3f} px, pitch {dg['pitch_mdeg_per_mm']:+.2f} mdeg")
     return {"ok": all(c["ok"] for c in checks), "checks": checks, "early_mission": em, "candidate": str(cand),
             "current": str(cur)}
 
