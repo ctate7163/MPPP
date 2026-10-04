@@ -60,12 +60,14 @@ class Pipeline:
         self.root = Path(a.root)
         self.dir = self.root / "mppp_pipeline"
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.log = Log(self.dir / "pipeline_log.txt")
+        self.log = Log(self.dir / ("dry_run_log.txt" if a.dry_run else "pipeline_log.txt"))
         self.state_file = self.dir / "state.json"
         self.state = json.loads(self.state_file.read_text(encoding="utf-8")) if self.state_file.is_file() else {}
 
     # ---------------------------------------------------------------- bookkeeping
     def save(self):
+        if self.a.dry_run:                        # a dry run leaves no state behind (a real run would skip "done" stages)
+            return
         tmp = self.state_file.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.state, indent=1, default=str), encoding="utf-8")
         os.replace(tmp, self.state_file)
@@ -88,12 +90,14 @@ class Pipeline:
             fh.write(f"\n===== {datetime.datetime.now():%Y-%m-%d %H:%M:%S}  {' '.join(map(str, cmd))}\n")
             fh.flush()
             env = dict(os.environ, PYTHONUNBUFFERED="1")
+            p = subprocess.Popen([str(c) for c in cmd], stdout=fh, stderr=subprocess.STDOUT, env=env, cwd=str(ROOT))
             try:
-                p = subprocess.run([str(c) for c in cmd], stdout=fh, stderr=subprocess.STDOUT, env=env, cwd=str(ROOT),
-                                   timeout=timeout_h * 3600 if timeout_h else None)
-                rc = p.returncode
-            except subprocess.TimeoutExpired:
-                fh.write(f"\nTIMEOUT after {timeout_h} h\n")
+                rc = p.wait(timeout=timeout_h * 3600 if timeout_h else None)
+            except subprocess.TimeoutExpired:                 # the whole tree (a hung notebook kernel included)
+                from mppp.runner import kill_tree
+                kill_tree(p.pid)
+                p.wait(timeout=60)
+                fh.write(f"\nTIMEOUT after {timeout_h} h: stopped\n")
                 rc = 124
         self.log(f"  {stage}: exit {rc} (log {lf})")
         return rc
@@ -118,7 +122,8 @@ class Pipeline:
         # cameras already in the frozen form (e.g. a consensus this pipeline promoted, then restarted with --reset):
         # only checked - an older candidate is never promoted over them
         keep = check_form()["ok"]
-        cmd = [PY, ROOT / "scripts" / "prepare_next_run.py", "--root", self.root, "--groups"] + (["--keep"] if keep else [])
+        cmd = [PY, ROOT / "scripts" / "prepare_next_run.py", "--root", self.root, "--groups", NAVCAM_GROUP, ZCAM_GROUP] \
+            + (["--keep"] if keep else [])
         rc = self.run("prepare", cmd)
         if keep:
             return "done", ("cameras in use: the v0p72 consensus in the v0p73 form" if rc == 0 else
@@ -201,20 +206,20 @@ class Pipeline:
         cmd = [PY, ROOT / "scripts" / "run_sites.py", "--root", self.root, "--group", group]
         if zcam:
             cmd += ["--zcam", *ZCAM_SET]
-        rc = self.run(stage, cmd)
+        rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
         for _ in range(3):
             if rc == 3 and not self.a.dry_run:                 # another batch started meanwhile: wait for it
                 st, note = self.s_wait()
                 if st != "done":
                     return "failed", note
-                rc = self.run(stage, cmd)
+                rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
             else:
                 break
         if rc == 4:
             return "failed", "run_sites refused: the camera models are not in the v0p73 form"
         if rc == 1 and not self.a.dry_run:                     # a failed site once more (finished ones are skipped)
             self.log(f"  {stage}: some sites failed - once more")
-            rc = self.run(stage, cmd)
+            rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
         return ("done", "every site finished") if rc == 0 else ("done", f"finished with failed sites (exit {rc}; see run_sites_log.txt)")
 
     def s_zcam_runs(self):
@@ -348,6 +353,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-navcam-runs", action="store_true", help="skip the Navcam-only reruns")
     ap.add_argument("--wait-h", type=float, default=36.0, help="how long to wait for a running batch")
     ap.add_argument("--stage-timeout-h", type=float, default=30.0, help="the consensus stage's time limit")
+    ap.add_argument("--sites-timeout-h", type=float, default=72.0,
+                    help="time limit of one run_sites call (a hung alignment is stopped with its kernel)")
     ap.add_argument("--from", dest="start", choices=STAGES, help="start at this stage (the ones before: skipped)")
     ap.add_argument("--redo", nargs="*", choices=STAGES, help="run these stages again even if done")
     ap.add_argument("--reset", action="store_true", help="forget the state (every stage runs again)")

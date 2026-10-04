@@ -382,9 +382,11 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
         gm["pp0_px"] = [float(pp0[0]), float(pp0[1])]
         for i in infos:
             bk = (((i["lines"].get(g) or {}).get("lines") or {}).get("backlash") or {})
-            if not all(isinstance(bk.get(pn), dict) and "a" in bk[pn] for pn in ("cx", "cy")):
+            has = {pn: isinstance(bk.get(pn), dict) and "a" in bk[pn] for pn in ("cx", "cy")}
+            if not any(has.values()):
                 continue
-            d = (float(bk["cx"]["a"]) - float(pp0[0]), float(bk["cy"]["a"]) - float(pp0[1]))
+            d = (float(bk["cx"]["a"]) - float(pp0[0]) if has["cx"] else 0.0,
+                 float(bk["cy"]["a"]) - float(pp0[1]) if has["cy"] else 0.0)
             f = float(bk["fx"]["a"]) if isinstance(bk.get("fx"), dict) and "a" in bk["fx"] else float(gm.get("f0_px") or 4720.0)
             shifts[i["name"]] = {"group": g, "dcx_px": d[0], "dcy_px": d[1], "f_px": f}
             v = (i.get("rig") or {}).get("Z034") or {}
@@ -465,7 +467,7 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
                     pp[f"{pn}_px_per_count"] = bk[pn]["b"]
                     pp0[k] = bk[pn]["a"]
             gm["pp"] = pp
-            if all(v is not None for v in pp0) and not shifts:
+            if all(v is not None for v in pp0) and not gm.get("pp0_px"):
                 gm["pp0_px"] = pp0
         if "k1" in bk and "k2" in bk:
             names = list((gm.get("distortion") or {}).get("names") or ["k1", "k2"])

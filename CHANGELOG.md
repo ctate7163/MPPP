@@ -2,6 +2,16 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.74.3 — 2026-10-04
+
+Pre-run review of the pipeline.
+- `zcam_calib.calibrate`: the ZR principal-point convention is applied with a cx or a cy line alone as well (the missing axis unshifted), and `pp0_px` is the convention value in every case (it was overwritten by the averaged cx when no cy line existed).
+- `run_pipeline` stage 2 names the two site groups for prepare_next_run's listing.
+- The promotion path (`promote_cmods.py` as a subprocess, both the start model and the calibration) exercised end to end on synthetic blocks.
+- **A `--dry-run` no longer writes `state.json`** (a real run after it would have skipped every stage as "done"); it logs to `dry_run_log.txt`.
+- **`stop_mppp.bat` stops the pipeline** (`run_pipeline.py` is a run marker; `pipeline_status.json` is marked stopped). Closing the window alone left the alignment running.
+- **Stage time limits**: one `run_sites` call at most `--sites-timeout-h` (72 h); on a timeout the whole process tree (a hung kernel included) is stopped, not only the child.
+
 ## 0.74.2 — 2026-10-04
 
 - `run_pipeline`: the early-mission search gets 3 rounds (was 1) and starts from the mean of the two v0p72 consensus fits. The 3 Oct consensus (second notebook 04, 16 blocks, started from the hand-promoted cameras) was refused only because the cx step of its second round was still 0.40 px: the surface is flat in cx (cost changes 5 in 83 800 over 0.5 px), so a round can be short of the 0.25 px criterion from a poor start. Each round is about 35 min.

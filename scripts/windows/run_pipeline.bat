@@ -4,7 +4,8 @@ REM MPPP v0p74 - the whole calibration and alignment run in one go, unattended (
 REM   wait for a running batch, check/promote the camera models, Navcam consensus (v0p73 form) + rig residuals,
 REM   Mastcam-Z start model and low-backlash list from the current blocks, all Navcam + Mastcam-Z 34 mm blocks,
 REM   all Navcam blocks, the Mastcam-Z 34 mm calibration from the 3 best blocks, the N+Z blocks again with it,
-REM   a point cloud per block, a report.  Runs in a minimised window: closing it stops the pipeline.
+REM   a point cloud per block, a report.  Runs in a minimised window.  To stop it: stop_mppp.bat (it stops the
+REM   pipeline and the alignment it is running; closing the window alone leaves the alignment running).
 REM   Double-click again after a stop (or a reboot): it continues after the last finished stage.
 REM
 REM   log      %ROOT%\mppp_pipeline\pipeline_log.txt  (each stage: mppp_pipeline\<stage>.log)

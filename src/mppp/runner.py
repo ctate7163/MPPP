@@ -213,7 +213,7 @@ def batch_lock(root: PathLike, kind: str, argv=None, force: bool = False) -> "Ru
 
 # --- finding and stopping MPPP runs (scripts/stop_runs.py, v0p43.3) ---------------------------------------------
 RUN_MARKERS = ("_run_process.bat", "_run_sites.bat", "_run_align.bat", "process_sites.py", "run_sites.py",
-               "align_scape.py", "run_scapes.py")
+               "align_scape.py", "run_scapes.py", "run_pipeline.py")       # v0p74.3: the pipeline is the top of its tree
 
 
 def mppp_processes(rows) -> list:
@@ -270,7 +270,7 @@ def mark_stopped(root: PathLike, pids) -> list:
     run was one of ``pids`` or whose process is gone; returns the files changed."""
     root = Path(root)
     changed = []
-    files = [root / BATCH_FILE] + sorted(root.glob(f"*/{STATUS_FILE}"))
+    files = [root / BATCH_FILE, root / "mppp_pipeline" / "pipeline_status.json"] + sorted(root.glob(f"*/{STATUS_FILE}"))
     for f in files:
         try:
             d = json.loads(f.read_text(encoding="utf-8"))

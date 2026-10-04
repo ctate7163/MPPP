@@ -154,7 +154,7 @@ def _block(tmp_path, name, sol, T, fx_a=4720.0, lines=True, verdict="pass", fail
     images = [{"instrument": "ZL034_F00100", "sol": sol, "zcam_optics_temperature_degC": T, "camera_temperature_degC": T + 4},
               {"instrument": "NL", "sol": sol, "camera_temperature_degC": T - 5}]
     (root / "project.json").write_text(json.dumps({"cameras": cams, "settings": settings, "images": images, "offset": [0, 0, 0]}))
-    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.2", "verdict": verdict}))
+    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.3", "verdict": verdict}))
     checks = [{"check": "registered_fraction", "value": 1.0, "status": "pass"},
               {"check": "residual_median_px", "value": 0.28, "status": "pass"},
               {"check": "beyond_ground_fraction", "value": 0.001, "status": "pass"},
@@ -212,7 +212,10 @@ def test_calibrate_lines_rig_and_temperature(tmp_path):
     assert L["n_blocks"] == 3 and L["temperature"]["applied"]
     assert L["temperature"]["c_per_degC"] == pytest.approx(0.5, abs=1e-6)
     zr = m["cameras"]["ZR034"]
-    assert zr["pp"]["cx_px_per_count"] == pytest.approx(0.0025) and zr["lines"]["backlash"]["cx"]["a"] == pytest.approx(822.0)
+    # v0p74.1: cx at the reference focus is put at pp0 (the bins' label value, 820) and the 2 px moved into the rig
+    assert zr["pp"]["cx_px_per_count"] == pytest.approx(0.0025) and zr["lines"]["backlash"]["cx"]["a"] == pytest.approx(820.0)
+    assert zr["pp0_px"] == pytest.approx([820.0, 600.0])
+    assert m["calibration"]["pp_to_rig"]["shifts"]["a"]["dcx_px"] == pytest.approx(2.0)
     assert zr["lines"]["regular"]["fx"]["a"] > 4600
     assert m["rig"]["baseline_m"] == pytest.approx(np.linalg.norm([-0.2420, 0.0014, 0.0038]))
     assert check_model(m, old)["ok"], check_model(m, old)
@@ -272,8 +275,8 @@ def test_pipeline_dry_run_and_state(tmp_path):
               "zcam_final_runs", "pointclouds", "report"):
         assert f"{s}: start" in out, (s, out[-3000:])
     assert "run_sites.py" in out and "ZCAM_ZOOMS=[34]" in out and "--apply-translation" not in out or True
-    st = json.loads((tmp_path / "mppp_pipeline" / "state.json").read_text())
-    assert st["zcam_final_runs"]["status"] == "skipped"                   # nothing promoted in a dry run
+    assert "zcam_final_runs: skipped" in out                              # nothing promoted in a dry run
+    assert not (tmp_path / "mppp_pipeline" / "state.json").exists()      # v0p74.3: a dry run leaves no state
     assert (tmp_path / "mppp_pipeline" / "REPORT.md").is_file()
     r2 = subprocess.run([sys.executable, str(ROOT / "scripts" / "run_pipeline.py"), "--root", str(tmp_path), "--status"],
                         capture_output=True, text=True, timeout=120)
@@ -570,3 +573,44 @@ def test_start_model_keeps_aspect_and_slope_when_fx_fy_disagree(tmp_path):
     assert rep["ok"] and any(c["check"] == "ZL034 block offsets" for c in rep["checks"])
     rep2 = check_model(new, old, {"max_offset_scatter_pct": 0.0})
     assert not rep2["ok"]
+
+
+def test_pipeline_dry_run_leaves_no_state(tmp_path, monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("rp", ROOT / "scripts" / "run_pipeline.py")
+    rp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rp)
+    root = tmp_path / "scapes"
+    root.mkdir()
+    assert rp.main(["--root", str(root), "--dry-run"]) == 0
+    assert not (root / "mppp_pipeline" / "state.json").exists()
+    assert (root / "mppp_pipeline" / "dry_run_log.txt").is_file()
+
+
+def test_stop_runs_knows_the_pipeline(tmp_path):
+    from mppp.runner import mark_stopped, mppp_processes
+    rows = [{"pid": 10, "ppid": 1, "cmd": "python scripts/run_pipeline.py --root D:/x"},
+            {"pid": 11, "ppid": 10, "cmd": "python scripts/run_sites.py --root D:/x --group zcam34_consensus"},
+            {"pid": 12, "ppid": 11, "cmd": "python scripts/align_scape.py D:/x/site"}]
+    top = mppp_processes(rows)
+    assert [r["pid"] for r in top] == [10]                                  # the pipeline is the top of the tree
+    d = tmp_path / "mppp_pipeline"
+    d.mkdir()
+    (d / "pipeline_status.json").write_text(json.dumps({"state": "running", "pid": 10, "host": "x"}))
+    assert mark_stopped(tmp_path, [10]) == [str(d / "pipeline_status.json")]
+    assert json.loads((d / "pipeline_status.json").read_text())["state"] == "stopped"
+
+
+def test_pipeline_run_timeout_stops_the_tree(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("rp", ROOT / "scripts" / "run_pipeline.py")
+    rp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rp)
+    import argparse
+    a = argparse.Namespace(root=str(tmp_path), dry_run=False)
+    p = rp.Pipeline(a)
+    import time
+    t0 = time.time()
+    rc = p.run("x", [sys.executable, "-c", "import time; time.sleep(60)"], timeout_h=2.0 / 3600)
+    assert rc == 124 and time.time() - t0 < 30
+    assert "TIMEOUT" in (tmp_path / "mppp_pipeline" / "x.log").read_text()
