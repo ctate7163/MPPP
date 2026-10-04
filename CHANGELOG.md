@@ -2,6 +2,10 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.74.5 — 2026-10-04
+
+- `run_pipeline` stage 3: a Navcam block matched with COLMAP guided matching (screening WARN "realign") is left out of the consensus like a FAIL. On the PC the first 0.74.4 run took Groloy (matched guided, aligned 09:03) into the 17-block joint.
+
 ## 0.74.4 — 2026-10-04
 
 **The Navcam rig translation is fitted together with the cameras and the rig rotation** (`fit_consensus(joint_translation=True)`, `navcam_calibration_study.py consensus --joint-translation`; the pipeline uses it). Until now the baseline came from a second adjustment on the large blocks with the cameras (NR cx included) and the yaw held, i.e. conditional on them: a yaw or NR-cx error from the first step went into the baseline (the two fits of 2–3 Oct differed by 0.6 mm against a formal sd of 0.1 mm). Now the final adjustment frees the translation (prior 5 cm per axis on the right centre) with the cameras and the rotation over every block, and that joint solution is the candidate (`M2020_N_rig.json` `translation_source`). The large-block fit is still made as a cross-check.

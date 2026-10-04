@@ -154,7 +154,7 @@ def _block(tmp_path, name, sol, T, fx_a=4720.0, lines=True, verdict="pass", fail
     images = [{"instrument": "ZL034_F00100", "sol": sol, "zcam_optics_temperature_degC": T, "camera_temperature_degC": T + 4},
               {"instrument": "NL", "sol": sol, "camera_temperature_degC": T - 5}]
     (root / "project.json").write_text(json.dumps({"cameras": cams, "settings": settings, "images": images, "offset": [0, 0, 0]}))
-    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.4", "verdict": verdict}))
+    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.5", "verdict": verdict}))
     checks = [{"check": "registered_fraction", "value": 1.0, "status": "pass"},
               {"check": "residual_median_px", "value": 0.28, "status": "pass"},
               {"check": "beyond_ground_fraction", "value": 0.001, "status": "pass"},
@@ -680,3 +680,23 @@ def test_baseline_degeneracy_on_a_synthetic_block(tmp_path):
     assert float(np.linalg.norm(np.asarray(NC.stereo_rig(rec)[2].translation))) == pytest.approx(b0)   # rec untouched
     for r in dg["rows"]:
         assert r["cost"] >= ba["final_cost"] - 1e-6 * max(ba["final_cost"], 1.0)
+
+
+def test_pipeline_consensus_leaves_out_guided_matched_blocks(tmp_path, monkeypatch):
+    import importlib.util, argparse
+    spec = importlib.util.spec_from_file_location("rp", ROOT / "scripts" / "run_pipeline.py")
+    rp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rp)
+    from mppp.sfm import health as H, sites as S
+    found = {"A": tmp_path / "mars2020_sol_0100_a_colmap", "B": tmp_path / "mars2020_sol_0200_b_colmap"}
+    for w in found.values():
+        (w / "colmap").mkdir(parents=True)
+        (w / "colmap" / "run_done.json").write_text("{}")
+    monkeypatch.setattr(S, "discover_scapes", lambda root, include_zcam=False, verbose=False: found)
+    monkeypatch.setattr(S, "load_site_table", lambda path=None: {"sites": {}, "groups": {}})
+    monkeypatch.setattr(S, "parse_work_folder", lambda w: (w.name.split("_")[3], False))
+    monkeypatch.setattr(H, "screen_blocks", lambda d, verbose=False: {
+        "A": {"verdict": "pass", "guided_matching": False}, "B": {"verdict": "warn", "guided_matching": True}})
+    p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True))
+    blocks, scr, bad = p.navcam_blocks()
+    assert list(blocks) == ["A"] and bad == ["B"]

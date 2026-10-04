@@ -150,7 +150,9 @@ class Pipeline:
                     continue                                   # a stale folder of a site that has its own
             out[label] = w
         scr = screen_blocks({k: str(v) for k, v in out.items()}, verbose=False)
-        bad = sorted(k for k, r in scr.items() if r.get("verdict") == "fail")
+        # v0p74.5: a block matched with COLMAP guided matching (epipolar-consistent false matches) is a WARN for a
+        # single alignment but must not shape the shared cameras: left out of the consensus like a FAIL
+        bad = sorted(k for k, r in scr.items() if r.get("verdict") == "fail" or r.get("guided_matching"))
         return {k: v for k, v in out.items() if k not in bad}, scr, bad
 
     def s_navcam_consensus(self):
