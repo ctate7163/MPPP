@@ -2,6 +2,10 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.74.6 — 2026-10-04
+
+- `fit_consensus` joint translation: `t_start_m` / `dbaseline_mm` were recorded as 0 because the start translation was a view into the rig, not a copy (the fit itself and the promoted rig were right: the pipeline's 4 Oct consensus moved the baseline 0.42343 -> 0.42401 m).
+
 ## 0.74.5 — 2026-10-04
 
 - `run_pipeline` stage 3: a Navcam block matched with COLMAP guided matching (screening WARN "realign") is left out of the consensus like a FAIL. On the PC the first 0.74.4 run took Groloy (matched guided, aligned 09:03) into the 17-block joint.

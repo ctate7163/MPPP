@@ -154,7 +154,7 @@ def _block(tmp_path, name, sol, T, fx_a=4720.0, lines=True, verdict="pass", fail
     images = [{"instrument": "ZL034_F00100", "sol": sol, "zcam_optics_temperature_degC": T, "camera_temperature_degC": T + 4},
               {"instrument": "NL", "sol": sol, "camera_temperature_degC": T - 5}]
     (root / "project.json").write_text(json.dumps({"cameras": cams, "settings": settings, "images": images, "offset": [0, 0, 0]}))
-    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.5", "verdict": verdict}))
+    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.6", "verdict": verdict}))
     checks = [{"check": "registered_fraction", "value": 1.0, "status": "pass"},
               {"check": "residual_median_px", "value": 0.28, "status": "pass"},
               {"check": "beyond_ground_fraction", "value": 0.001, "status": "pass"},
@@ -700,3 +700,23 @@ def test_pipeline_consensus_leaves_out_guided_matched_blocks(tmp_path, monkeypat
     p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True))
     blocks, scr, bad = p.navcam_blocks()
     assert list(blocks) == ["A"] and bad == ["B"]
+
+
+def test_joint_translation_records_the_start_as_a_copy(tmp_path):
+    """The start translation must be a copy: pycolmap's Rigid3d.translation is a view into the rig."""
+    pytest.importorskip("pyceres")
+    sys.path.insert(0, str(ROOT / "tests"))
+    import pycolmap
+    from helpers import _build_rec, _synthetic
+    from mppp.sfm import navcal as NC
+    proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
+    rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=False)
+    rid, cid, T = NC.stereo_rig(rec)
+    t_view = np.asarray(T.translation, float)
+    t_copy = np.array(T.translation, float)
+    sid = [s for s in rec.rigs[rid].non_ref_sensors if int(s.id) == cid][0]
+    rec.rigs[rid].set_sensor_from_rig(sid, pycolmap.Rigid3d(pycolmap.Rotation3d(np.asarray(T.rotation.matrix())),
+                                                             t_copy * 1.001))
+    _, _, T2 = NC.stereo_rig(rec)
+    assert np.allclose(np.array(T2.translation), t_copy * 1.001)
+    assert np.allclose(t_copy, np.array(rigT[1]))                     # the copy kept the start

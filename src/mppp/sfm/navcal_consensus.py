@@ -561,7 +561,7 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
                  if early and early.get("offsets_px") else None)
         t = time.time()
         _, _, T_before = NC.stereo_rig(rec)
-        t_before = np.asarray(T_before.translation, float)
+        t_before = np.array(T_before.translation, float)        # a copy: .translation is a view into the rig
         ba = NC.joint_adjust(rec, proj, temps, ppm, t0, max_iterations=iterations, covariance=True,
                              rig_slopes=(0.0, 0.0), refine_rig=True, rig_translation_sigma_m=float(translation_sigma_m),
                              extra_map=_emap, **xkw)
@@ -684,8 +684,8 @@ def baseline_degeneracy(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, 
     from . import navcal as NC
     import pycolmap
     rid, cid, T = NC.stereo_rig(rec)
-    t_joint = np.asarray(T.translation, float)
-    R_joint = np.asarray(T.rotation.matrix())
+    t_joint = np.array(T.translation, float)
+    R_joint = np.array(T.rotation.matrix())
     b0 = float(np.linalg.norm(t_joint))
     ang0 = NC.rig_angles(R_joint)
     base = {"cost": None, "yaw_mdeg": ang0["yaw_mdeg"], "pitch_mdeg": ang0["pitch_mdeg"],
