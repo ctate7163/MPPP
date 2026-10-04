@@ -49,7 +49,8 @@ STAGES = ("wait", "prepare", "navcam_consensus", "zcam_start", "zcam_runs", "nav
           "zcam_final_runs", "pointclouds", "report")
 ZCAM_GROUP, NAVCAM_GROUP = "zcam34_consensus", "navcam_consensus"
 ZCAM_SET = ["--set", "ZCAM_ZOOMS=[34]"]
-EARLY_START = ("0.152", "0.259", "0.076", "-0.385")          # the v0p72 consensus' early-mission offsets
+EARLY_START = ("0.157", "0.243", "0.139", "-0.454")          # mean of the v0p72_2 and 20261003 consensus' early offsets
+EARLY_ROUNDS = "3"            # a round is ~35 min; the cx direction is flat (the 20261003 run needed 3 from a poor start)
 
 
 class Pipeline:
@@ -167,7 +168,7 @@ class Pipeline:
         rc = self.run("navcam_consensus", [PY, ROOT / "scripts" / "navcam_calibration_study.py", "consensus", out,
                                            out / "scapes.json", "--points", "8000", "--translation-min-span", "30",
                                            "--apply-translation", "--refit-thermal", "--thermal-rounds", "2",
-                                           "--form", "v0p73", "--early-mission-sol", "380", "--early-rounds", "1",
+                                           "--form", "v0p73", "--early-mission-sol", "380", "--early-rounds", EARLY_ROUNDS,
                                            "--early-start", *EARLY_START, "--promote-if-ok",
                                            "--promote-note", f"v0p74 pipeline consensus of {len(blocks)} blocks (v0p73 form)"],
                       timeout_h=self.a.stage_timeout_h)

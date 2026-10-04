@@ -2,6 +2,10 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.74.2 — 2026-10-04
+
+- `run_pipeline`: the early-mission search gets 3 rounds (was 1) and starts from the mean of the two v0p72 consensus fits. The 3 Oct consensus (second notebook 04, 16 blocks, started from the hand-promoted cameras) was refused only because the cx step of its second round was still 0.40 px: the surface is flat in cx (cost changes 5 in 83 800 over 0.5 px), so a round can be short of the 0.25 px criterion from a poor start. Each round is about 35 min.
+
 ## 0.74.1 — 2026-10-03
 
 The Mastcam-Z calibration tools checked against the nine Navcam + Mastcam-Z 34 mm blocks solved on the hand-promoted (k4-free) cameras of 2 October (bad Navcam corners; only Chal Rocks passes the grade).
