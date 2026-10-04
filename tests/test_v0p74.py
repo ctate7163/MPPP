@@ -154,7 +154,7 @@ def _block(tmp_path, name, sol, T, fx_a=4720.0, lines=True, verdict="pass", fail
     images = [{"instrument": "ZL034_F00100", "sol": sol, "zcam_optics_temperature_degC": T, "camera_temperature_degC": T + 4},
               {"instrument": "NL", "sol": sol, "camera_temperature_degC": T - 5}]
     (root / "project.json").write_text(json.dumps({"cameras": cams, "settings": settings, "images": images, "offset": [0, 0, 0]}))
-    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.6", "verdict": verdict}))
+    (root / "run_done.json").write_text(json.dumps({"mppp": "0.74.7", "verdict": verdict}))
     checks = [{"check": "registered_fraction", "value": 1.0, "status": "pass"},
               {"check": "residual_median_px", "value": 0.28, "status": "pass"},
               {"check": "beyond_ground_fraction", "value": 0.001, "status": "pass"},
@@ -720,3 +720,49 @@ def test_joint_translation_records_the_start_as_a_copy(tmp_path):
     _, _, T2 = NC.stereo_rig(rec)
     assert np.allclose(np.array(T2.translation), t_copy * 1.001)
     assert np.allclose(t_copy, np.array(rigT[1]))                     # the copy kept the start
+
+
+# ----------------------------------------------------------------------------- v0p74.7: Ceres FAILURE and weak bins
+def test_bundle_adjust_retries_a_failed_solve(tmp_path, monkeypatch):
+    """A first solve that ends in FAILURE (Ceres leaves the parameters partly updated) is solved again with the
+    iterative Schur solver; the cameras written back are the solution's and the record says so."""
+    pytest.importorskip("pyceres")
+    import pyceres
+    sys.path.insert(0, str(ROOT / "tests"))
+    from helpers import _build_rec, _synthetic
+    from mppp.sfm import reconstruction as R
+    proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
+    rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=True)
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+    real = pyceres.solve
+    calls = []
+
+    def flaky(so, prob, summary):
+        calls.append(so.linear_solver_type)
+        if len(calls) == 1:                                 # the first solve "fails" without touching anything
+            summary.termination_type = pyceres.TerminationType.FAILURE
+            return
+        real(so, prob, summary)
+    monkeypatch.setattr(pyceres, "solve", flaky)
+    start = np.array(rec.cameras[1].params)
+    ba = R.bundle_adjust(rec, proj, max_iterations=30)
+    assert len(calls) == 2 and calls[1] == pyceres.LinearSolverType.ITERATIVE_SCHUR
+    assert ba["retried"] and "CONVERGENCE" in ba["termination"]
+    assert not np.allclose(np.array(rec.cameras[1].params[:2]), start[:2])          # refined and written back
+
+
+def test_set_camera_params_checks_the_write(tmp_path):
+    import pycolmap
+    from mppp.sfm.reconstruction import _set_camera_params
+    r = pycolmap.Reconstruction()
+    r.add_camera(pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=10, height=10, params=[5.0, 5.0, 5.0]))
+    _set_camera_params(r, 1, [6.0, 5.0, 5.0])
+    assert list(r.cameras[1].params) == [6.0, 5.0, 5.0]
+
+
+def test_thermal_stage_holds_bins_with_few_images():
+    from mppp.sfm import thermal as T
+    assert T.THERMAL_MIN_BIN_IMAGES == 3
+    import inspect
+    src = inspect.getsource(T.thermal_stage)
+    assert "weak_bins_held" in src and "WARNING" in src

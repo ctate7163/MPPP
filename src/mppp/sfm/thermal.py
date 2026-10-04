@@ -570,6 +570,9 @@ def thermal_start_cameras(cameras: Dict[str, Dict[str, Any]], model: Dict[str, D
 
 
 # ----------------------------------------------------------------------------- pipeline stage
+THERMAL_MIN_BIN_IMAGES = 3      # v0p74.7: an eye's temperature bin with fewer images is held at the thermal model
+
+
 def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float = THERMAL_BIN_DEG,
                   min_images: int = THERMAL_MIN_IMAGES,
                   free: Sequence[str] = ("fx", "fy"), hold: bool = False,
@@ -617,7 +620,11 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
         if r is not None and k in bin_keys and r.get("instrument") != k:
             r.setdefault("base_instrument", r["instrument"])
             r["instrument"] = k
-    held = [k for k in project.cameras if not str(k).startswith("N")] + (bin_keys if hold else [])
+    # v0p74.7: an eye's bin with fewer than THERMAL_MIN_BIN_IMAGES images (binning is by frame, so one eye can be
+    # left with one image) is held at the thermal model: its fx, fy are hardly observed and made the Schur complement
+    # singular (Ceres FAILURE in the thermal stage of 4 Oct, Chal Rocks: two NR bins of one image)
+    weak = [r["camera"] for r in rows if int(r.get("images") or 0) < THERMAL_MIN_BIN_IMAGES]
+    held = [k for k in project.cameras if not str(k).startswith("N")] + (bin_keys if hold else weak)
     kw = {} if attitude_prior_deg is None else {"attitude_prior_deg": attitude_prior_deg}
     ba = bundle_adjust(r1, project, sigma_px=sigma_px, loss_scale=loss_scale, refine_rig=False,
                        max_iterations=max_iterations, hold_cameras=held, linear_solver=linear_solver, **kw)
@@ -629,6 +636,7 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
         project.cameras[row["camera"]]["refined_params"] = [float(x) for x in p]
     after = _stats(r1, project)
     report = {"bin_deg": float(bin_deg), "min_images": int(min_images), "free": list(free), "held": bool(hold),
+              "weak_bins_held": [] if hold else weak, "ba_termination": ba.get("termination"), "ba_retried": ba.get("retried"),
               "rig_slopes": rig_slopes,
               "thermal_model": thermal_model, "bins": len({tuple(r["bin_degC"]) for r in rows}), "rows": rows,
               "before": before, "after": after, "initial_cost": ba["initial_cost"], "final_cost": ba["final_cost"],
@@ -639,8 +647,15 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
               f"({'held at the thermal model' if hold else 'f refined'}): median {before['median_px']:.4f} -> "
               f"{after['median_px']:.4f}, rms {before['rms_px']:.4f} -> {after['rms_px']:.4f} native px, "
               f"cost {ba['initial_cost']:.1f} -> {ba['final_cost']:.1f}", flush=True)
+        if weak and not hold:
+            print(f"[sfm] thermal stage: held at the thermal model (fewer than {THERMAL_MIN_BIN_IMAGES} images): "
+                  f"{', '.join(weak)}", flush=True)
         for line in thermal_bin_lines(rows, free, hold):
             print(line, flush=True)
+    if after["median_px"] > 1.25 * before["median_px"] + 0.01:      # v0p74.7: never silently worse
+        report["warning"] = (f"the residual median rose {before['median_px']:.4f} -> {after['median_px']:.4f} px in the "
+                             f"thermal stage")
+        print(f"[sfm] WARNING: {report['warning']}", flush=True)
     return r1, report
 
 

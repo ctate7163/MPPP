@@ -402,9 +402,10 @@ def test_shipped_focus_model_layout():
         c = m["cameras"][g]
         assert c["reference_focus"] == 600.0
         assert 0.05 < c["slope_px_per_count"] < 0.07                 # refit (was 0.046 / 0.048)
-        assert 1.006 < c["f0_px"] / c["label_f0_px"] < 1.012          # backlash state, ~0.9 % above the label
+        # v0p74 start update (pipeline, 4 Oct): f0 from the bins' fx over 10 blocks, ~1.4 % above the label
+        assert 1.006 < c["f0_px"] / c["label_f0_px"] < 1.016
         assert c["thermal"]["sensor"] == "HEAD_FPA" and c["thermal"]["f_px_per_degC"] == 0.0
-        assert c["trend"]["sol_range"] == [461, 991] and c["trend"]["sol0"] == 700.0
+        assert "trend" not in c and c["trend_v0p42"]["sol_range"] == [461, 991]   # the one-block sol trend retired
     assert m["cameras"]["ZL034"]["pp"]["cx_px_per_count"] == 0.0
     assert 0.001 < m["cameras"]["ZR034"]["pp"]["cx_px_per_count"] < 0.004
     assert 0.001 < m["cameras"]["ZR034"]["pp"]["cy_px_per_count"] < 0.004
@@ -417,7 +418,8 @@ def test_model_focal_terms_and_sol_clamp():
     assert f == pytest.approx(g["f0_px"]) and t["thermal"] == 0.0 and t["trend"] == 0.0
     f1, _ = zcam_model_focal(g, 1100.0)
     assert f1 - g["f0_px"] == pytest.approx(500 * g["slope_px_per_count"])
-    # the trend does not extrapolate beyond the fitted sols
+    # the trend does not extrapolate beyond the fitted sols (v0p74: the shipped model has none - the v0p42 one here)
+    g = dict(g, trend=g["trend_v0p42"])
     a, _ = zcam_model_focal(g, 600.0, sol=991)
     b, _ = zcam_model_focal(g, 600.0, sol=1700)
     c, _ = zcam_model_focal(g, 600.0, sol=100)
@@ -445,6 +447,7 @@ def test_split_by_focus_uses_temperature_sol_and_pp():
     from mppp.sfm.project import _split_by_focus, zcam_model_focal
     m = copy.deepcopy(_model())
     m["cameras"]["ZR034"]["thermal"]["f_px_per_degC"] = 0.3            # exercise the thermal path
+    m["cameras"]["ZR034"]["trend"] = m["cameras"]["ZR034"]["trend_v0p42"]   # and the sol trend (v0p74: retired)
     base = {"model": "FULL_OPENCV", "params": [4680.0, 4680.0, 824.0, 600.0, 0, 0, 0, 0, 0, 0, 0, 0],
             "source": "median label CAHVOR", "fixed_params": []}
     rows = []
@@ -493,15 +496,17 @@ def test_navcam_consensus_shipped_with_mppp():
         cam = camera_from_colmap_json(f)
         assert cam["model"] == "THIN_PRISM_FISHEYE" and len(cam["params"]) == 12
         th = json.loads(f.read_text())["thermal"]
-        assert abs(th["ppm_per_degC"] - 37.27) < 0.5 and th["T0_degC"] == -20         # v0p73: the v0p72 consensus
+        # v0p74 pipeline consensus (4 Oct, 16 blocks): fx, fy per axis, ~36 and ~40 ppm/degC
+        assert 35.0 < th["fx_ppm_per_degC"] < 37.5 and 39.5 < th["fy_ppm_per_degC"] < 41.5 and th["T0_degC"] == -20
     assert (NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).is_file()
     assert navcam_cameras_fingerprint(NAVCAM_CONSENSUS_DIR)
-    # v0p73: the 16-block v0p72 consensus (navcal_v0p72_20261002_2) in the NL-reference form, byte for byte
+    # v0p74: the pipeline's 16-block consensus of 4 Oct (navcal_v0p74_20261004_pipeline), byte for byte (line ends
+    # normalised: a Windows checkout writes CRLF)
     import hashlib
-    sha = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()[:12] for p in NAVCAM_CONSENSUS_DIR.glob("*.json")
-           if "fisheye" in p.name or "rig" in p.name}
-    assert sha == {"M2020_NL_fisheye_tangential.json": "d0e76fa53f42", "M2020_NR_fisheye_tangential.json": "b15788a0fec7",
-                   "M2020_N_rig.json": "542d3156ca7e"}
+    sha = {p.name: hashlib.sha256(p.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:12]
+           for p in NAVCAM_CONSENSUS_DIR.glob("*.json") if "fisheye" in p.name or "rig" in p.name}
+    assert sha == {"M2020_NL_fisheye_tangential.json": "20844b7af608", "M2020_NR_fisheye_tangential.json": "385d0a81c185",
+                   "M2020_N_rig.json": "2bed6f3c54cc"}
 
 
 def test_navcam_distortion_hold_and_zero_terms():

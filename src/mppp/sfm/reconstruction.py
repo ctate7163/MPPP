@@ -214,8 +214,22 @@ def _scales(rec, project: SfmProject) -> Dict[int, float]:
     return {iid: by_name[im.name] for iid, im in rec.images.items() if im.name in by_name}
 
 
+def _set_camera_params(rec, cid: int, params) -> None:
+    """v0p74.7: ``rec``'s camera ``cid`` gets ``params``, read back and checked (a silent no-op here once left the
+    thermal-bin cameras of a block at their start values while the poses had moved on)."""
+    p = np.array(params, dtype=np.float64)
+    rec.cameras[cid].params = p
+    if np.allclose(np.asarray(rec.cameras[cid].params, float), p, rtol=0, atol=1e-9):
+        return
+    rec.camera(cid).params = p
+    if np.allclose(np.asarray(rec.cameras[cid].params, float), p, rtol=0, atol=1e-9):
+        return
+    raise RuntimeError(f"camera {cid}: the refined parameters could not be written into the reconstruction")
+
+
 def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att,
-                       pose_blocks: Optional[Dict[int, np.ndarray]] = None) -> Optional[Dict[str, Any]]:
+                       pose_blocks: Optional[Dict[int, np.ndarray]] = None,
+                       cam_blocks: Optional[Dict[int, np.ndarray]] = None) -> Optional[Dict[str, Any]]:
     """Covariances of the rig and camera blocks of a solved :func:`bundle_adjust` problem (v0p35).  The 3-D points
     (``rec``'s) are eliminated by the Schur complement; the frame poses (the work copy's) count as further
     parameters, so each block's covariance is marginal over the poses, the other blocks and the points."""
@@ -247,8 +261,9 @@ def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_pr
             if c is not None:
                 blocks[f"rig:{rid}:{cid}"] = np.asarray(c)
     for cid, cam in work.cameras.items():
-        if prob.has_parameter_block(cam.params) and not prob.is_parameter_block_constant(cam.params):
-            c = bac.get_other_params_cov(cam.params)
+        blk = (cam_blocks or {}).get(int(cid), cam.params)
+        if prob.has_parameter_block(blk) and not prob.is_parameter_block_constant(blk):
+            c = bac.get_other_params_cov(blk)
             if c is not None:
                 blocks[f"camera:{key_of.get(int(cid), cid)}"] = np.asarray(c)
     n_res = prob.num_residuals()
@@ -467,6 +482,12 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         for sid in rig.non_ref_sensors:
             arr = np.array(rig.sensor_from_rig(sid).params, dtype=np.float64)
             rig_blocks[(rid, sid.id)] = arr
+    # v0p74.7: the camera intrinsics, too, are explicit arrays owned here (written back below and checked).  Handing
+    # Ceres pycolmap's views (camera.params) was not reliable: in the thermal stage of 4 Oct (Chal Rocks, and
+    # reproduced, intermittently, on Linux) the optimiser refined the temperature-bin cameras but the reconstruction
+    # kept their start values - the poses then fitted cameras the model no longer had (median 0.16 -> 0.37 px)
+    cam_blocks: Dict[int, np.ndarray] = {int(cid): np.ascontiguousarray(np.array(c.params, dtype=np.float64))
+                                         for cid, c in work.cameras.items()}
     # v0p53: the Mastcam-Z rig of each zoom, shared by all focus bins - a right image is posed from the frame of its
     # left partner (same exposure) through this block; its own frame gets no pose block and is set afterwards
     vrig = project.settings.get("zcam_virtual_rig") or {}
@@ -517,7 +538,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 kps = c0 + (kps - c0) / np.asarray(keypoint_scale[iid], float)      # v0p73: a scalar or (sx, sy)
             if keypoint_map is not None and len(kps):
                 kps = keypoint_map(iid, kps, cam)
-            per_image[iid] = (cam.model, cov, kps, [vblocks[fam], lpose, cam.params], True)
+            per_image[iid] = (cam.model, cov, kps, [vblocks[fam], lpose, cam_blocks[int(im.camera_id)]], True)
             continue
         pose = pose_blocks.get(im.frame_id)
         if pose is None:
@@ -530,9 +551,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         if keypoint_map is not None and len(kps):
             kps = keypoint_map(iid, kps, cam)
         if rig.is_ref_sensor(sensor):
-            per_image[iid] = (cam.model, cov, kps, [pose, cam.params], None)
+            per_image[iid] = (cam.model, cov, kps, [pose, cam_blocks[int(im.camera_id)]], None)
         else:
-            per_image[iid] = (cam.model, cov, kps, [rig_blocks[(fr.rig_id, im.camera_id)], pose, cam.params], True)
+            per_image[iid] = (cam.model, cov, kps, [rig_blocks[(fr.rig_id, im.camera_id)], pose,
+                                                    cam_blocks[int(im.camera_id)]], True)
     reproj, rig_reproj, add = cf.ReprojErrorCost, cf.RigReprojErrorCost, prob.add_residual_block
     for pid, pt in rec.points3D.items():
         xyz = pt.xyz
@@ -557,10 +579,11 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         raise RuntimeError("the project has no database camera mapping (run build_database first): per-camera "
                            "free_params / fixed_params (rational Navcam k4, Mastcam-Z focus bins) would be ignored")
     for cid, cam in work.cameras.items():
-        if not prob.has_parameter_block(cam.params):
+        blk = cam_blocks[int(cid)]
+        if not prob.has_parameter_block(blk):
             continue
         if not refine_intrinsics or key_of.get(int(cid), "") in set(hold_cameras):
-            prob.set_parameter_block_constant(cam.params)
+            prob.set_parameter_block_constant(blk)
             continue
         fixed = fixed_camera_params(cam.model.name, refine_principal_point,
                                     tangential_for(refine_tangential, key_of.get(int(cid), "")))
@@ -572,9 +595,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         free = pc.get("free_params") or []            # v0p20: e.g. the rational Navcam k4; v0p30: any model
         if free and cam.model.name in _PARAM_NAMES:
             fixed = sorted(set(fixed) - {names.index(n) for n in free if n in names})
-        prob.set_parameter_block_variable(cam.params)
+        prob.set_parameter_block_variable(blk)
         if fixed:
-            prob.set_manifold(cam.params, pyceres.SubsetManifold(len(cam.params), sorted(fixed)))
+            prob.set_manifold(blk, pyceres.SubsetManifold(len(blk), sorted(fixed)))
 
     # v0p65: the Navcam pixel aspect held at its start (fy / fx), a soft prior per camera
     if navcam_aspect is None:
@@ -586,7 +609,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             pc = project.cameras.get(key, {})
             if not str(pc.get("group") or key).startswith("N") or key in set(hold_cameras):
                 continue
-            if not prob.has_parameter_block(cam.params) or prob.is_parameter_block_constant(cam.params):
+            blk = cam_blocks[int(cid)]
+            if not prob.has_parameter_block(blk) or prob.is_parameter_block_constant(blk):
                 continue
             names = _PARAM_NAMES.get(cam.model.name)
             if not names or names[:2] != ("fx", "fy"):
@@ -594,10 +618,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             fixed = set((pc.get("fixed_params") or [])) - set(pc.get("free_params") or [])
             if "fx" in fixed or "fy" in fixed:
                 continue
-            p0 = np.asarray(pc.get("params") or cam.params, float)
-            c = AspectPrior(float(p0[1] / p0[0]), float(aspect_sigma), len(cam.params))
+            p0 = np.asarray(pc.get("params") or blk, float)
+            c = AspectPrior(float(p0[1] / p0[0]), float(aspect_sigma), len(blk))
             aspect_costs.append(c)
-            prob.add_residual_block(c, None, [cam.params])
+            prob.add_residual_block(c, None, [blk])
 
     # waypoint position priors on every frame (the reference camera's centre); v0p35.1: not on the frames of
     # stations with fewer than localize_min_images images, if they are tied to the rest of the block
@@ -713,9 +737,28 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     so.minimizer_progress_to_stdout = bool(verbose)
     summary = pyceres.SolverSummary()
     pyceres.solve(so, prob, summary)
+    retried = None
+    if summary.termination_type == pyceres.TerminationType.FAILURE:
+        # v0p74.7: Ceres gives up after a few linear-solver failures in a row (the dense Schur complement not
+        # positive definite, e.g. a temperature-bin camera with one image) and then leaves the parameters only partly
+        # updated - in the thermal stage of 4 Oct the poses moved while the cameras stayed at their start (median
+        # 0.16 -> 0.37 px).  Solve again from there, with patience for invalid steps and the iterative Schur solver.
+        first = summary
+        so.max_num_consecutive_invalid_steps = 100
+        so.linear_solver_type = pyceres.LinearSolverType.ITERATIVE_SCHUR
+        so.preconditioner_type = pyceres.PreconditionerType.SCHUR_JACOBI
+        summary = pyceres.SolverSummary()
+        pyceres.solve(so, prob, summary)
+        retried = {"first": first.BriefReport(), "second": summary.BriefReport()}
+        if True:                                              # always: it matters for the record
+            print(f"[sfm] bundle adjustment: the first solve failed ({first.BriefReport()}); solved again with the "
+                  f"iterative Schur solver: {summary.BriefReport()}", flush=True)
+        if summary.termination_type == pyceres.TerminationType.FAILURE:
+            raise RuntimeError(f"bundle adjustment failed twice: {first.BriefReport()} / {summary.BriefReport()}")
     cov_out = None
     if covariance:
-        cov_out = _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att, pose_blocks)
+        cov_out = _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att, pose_blocks,
+                                     cam_blocks=cam_blocks)
     for fid in pose_blocks:
         rec.frames[fid].rig_from_world = work.frames[fid].rig_from_world
     if vblocks:                                               # v0p53: write back the Mastcam-Z rigs and right poses
@@ -728,8 +771,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             vrig[fam]["t_refined"] = arr[4:7].tolist()
         for iid, (fam, lf) in vpartner.items():
             rec.frames[rec.images[iid].frame_id].rig_from_world = vT[fam] * rec.frames[lf].rig_from_world
-    for cid, cam in work.cameras.items():
-        rec.cameras[cid].params = np.array(cam.params)
+    for cid, blk in cam_blocks.items():                      # v0p74.7: written back from the owned arrays, checked
+        if cid in rec.cameras:
+            _set_camera_params(rec, cid, blk)
     for (rid, cid), arr in rig_blocks.items():
         q = arr[:4] / np.linalg.norm(arr[:4])
         from scipy.spatial.transform import Rotation
@@ -750,7 +794,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             "unlocalized_stations": unloc, "navcam_aspect": navcam_aspect, "aspect_priors": len(aspect_costs),
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
-            "termination": str(summary.termination_type), "brief": summary.BriefReport(),
+            "termination": str(summary.termination_type), "brief": summary.BriefReport(), "retried": retried,
             "refine_tangential": tangential_setting(refine_tangential), "linear_solver": solver, "num_threads": so.num_threads,
             "seconds": float(summary.total_time_in_seconds)}
 

@@ -30,3 +30,13 @@
   - `M2020_NR_fisheye_tangential.json` b15788a0fec7 from `D:\scapes\colmap\camera_analysis\navcal_v0p72_20261002_2\navcam_joint\M2020_NR_fisheye_tangential.json` (v0p73 NL-reference form)
   - `M2020_N_rig.json` 542d3156ca7e from `D:\scapes\colmap\camera_analysis\navcal_v0p72_20261002_2\navcam_joint\M2020_N_rig.json` (v0p73 NL-reference form)
   - replaced files (the v0p60 consensus, 18 blocks) kept in `history/v0p60_consensus/`
+
+## 20261004-124857 - v0p74 pipeline consensus of 16 blocks (v0p73 form)
+  - `M2020_N_rig.json` 84500425009a from `D:\scapes\colmap\camera_analysis\navcal_v0p74_20261004_pipeline\navcam_joint\M2020_N_rig.json`
+  - `M2020_NL_fisheye_tangential.json` 6cc50f0b2854 from `D:\scapes\colmap\camera_analysis\navcal_v0p74_20261004_pipeline\navcam_joint\M2020_NL_fisheye_tangential.json`
+  - `M2020_NR_fisheye_tangential.json` ae0d5aa195c1 from `D:\scapes\colmap\camera_analysis\navcal_v0p74_20261004_pipeline\navcam_joint\M2020_NR_fisheye_tangential.json`
+  - replaced files kept in `history/20261004-124857/`
+
+## 20261004-125252 - v0p74 Mastcam-Z 34 mm start model from 10 blocks (start-update)
+  - `M2020_ZCAM034_focus_model.json` cd1b45b942a4 from `D:\scapes\colmap\camera_analysis\zcam34_start_20261004\M2020_ZCAM034_focus_model.json`
+  - replaced files kept in `history/20261004-125252/`

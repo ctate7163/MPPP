@@ -2,6 +2,14 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.74.7 — 2026-10-04
+
+**Fix: a failed Ceres solve left the cameras at their start while the poses had moved.** In the pipeline's first N+Z block (Chal Rocks, 4 Oct) the Navcam thermal stage reported median 0.158 -> 0.367 px and its 12 temperature-bin cameras exactly at their start values. Reproduced in the cloud on that block's own Navcam model: the dense Schur solve fails intermittently (Cholesky of a near-singular Schur complement - two NR bins with one image each), Ceres ends with FAILURE (in 2 of 5 runs) and leaves the state half-updated.
+- `bundle_adjust`: a FAILURE is solved again from where it stopped with the iterative Schur solver and patience for invalid steps (100); a second FAILURE raises instead of passing silently. The record has `retried`.
+- `bundle_adjust`: the camera intrinsics are explicit arrays owned by the adjustment (like the rig blocks), written back and read back (`_set_camera_params`).
+- The camera models the pipeline promoted on the PC on 4 Oct are taken in (`adopt_claude.bat` refuses a delivery without them): the Navcam consensus of 16 blocks (`navcal_v0p74_20261004_pipeline`; fx / fy 36.4 / 40.3 ppm/degC NL, 35.7 / 40.5 NR, NR cx -0.0540 px/degC, yaw rate +2.28 mdeg/1000 sol, baseline 0.42401 m fitted jointly) and the Mastcam-Z 34 mm start model (f0 4746 / 4753 px from fx; the one-block v0p42 sol trend retired as `trend_v0p42`). Tests pinned to them (`test_sfm_project`, SHA with line ends normalised).
+- Thermal stage: an eye's temperature bin with fewer than 3 images is held at the thermal model (`THERMAL_MIN_BIN_IMAGES`; at Chal Rocks NR_T-030-025 and NR_T-020-015); a stage whose residual median rises by more than 25 % prints a WARNING and records it. With the weak bins held the failure did not recur (5 of 5 runs: median 0.158 -> 0.152).
+
 ## 0.74.6 — 2026-10-04
 
 - `fit_consensus` joint translation: `t_start_m` / `dbaseline_mm` were recorded as 0 because the start translation was a view into the rig, not a copy (the fit itself and the promoted rig were right: the pipeline's 4 Oct consensus moved the baseline 0.42343 -> 0.42401 m).
