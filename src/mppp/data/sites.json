@@ -48,7 +48,7 @@
  },
  "groups": {
   "navcam_consensus": ["van_zyl", "seitah_north", "chal_rocks_sid", "rockytop", "threeforks_south", "threeforks_large", "threeforks_north", "belva_crater_large", "tuxedo_park", "bunsen_peak", "pearce_canyon", "rio_chiquito", "pico_turquino", "south_arm", "bell_island", "taylorfjellet", "taylorfjellet_large", "origny_large", "marble_mountain"],
-  "zcam34_consensus": ["chal_rocks_sid", "rochette", "enchanted_lake", "rockytop", "threeforks_north", "belva_crater_large", "rio_chiquito", "south_arm", "taylorfjellet_large", "origny", "marble_mountain"],
+  "zcam34_consensus": ["chal_rocks_sid", "rochette", "enchanted_lake", "rockytop", "threeforks_large", "threeforks_north", "belva_crater_large", "rio_chiquito", "south_arm", "taylorfjellet_large", "origny", "marble_mountain"],
   "zcam48_consensus": ["chal_rocks_sid", "overlook_mountain", "pico_turquino"],
   "zcam63_consensus": ["chal_rocks_sid", "bright_angle"],
   "zcam79_consensus": [],
