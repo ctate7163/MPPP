@@ -2,6 +2,15 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.74.8 — 2026-10-05
+
+**Mastcam-Z focus states: one state per sequence, and the backlash ratio measured on the block.** The 4–5 Oct zcam34 batch added 7 focus groups to the found list at f / label f 1.0036–1.0061, between the regular state (about 1.000) and the backlash state (about 1.0095). All but one were the low-focus end of a sequence whose other groups are backlash: the ratio rises with the focus count (ZR034: refined slope about 0.065 against the labels' 0.041 px/count, about +0.45 % per 1000 counts), and the midpoint came from the start model's f0 / label f0 (1.0142 / 1.0151), 0.25 % above the measured backlash state.
+- `classify_groups`: the backlash ratio is a line in focus count measured on the block (`measured_backlash_lines`: Huber, groups at least 0.4 % above the regular state; a constant with 3–4 groups; else the focus model's ratio, or 1.0095 when the model's is more than 0.3 % off). The midpoint follows the focus count.
+- One focus state per sequence (Christian, 5 Oct: the images of a sequence share a state; the exceptions are on the low-backlash list): `apply_sequence_states` pools the groups of a sol and sequence (both eyes, inverse variance) and gives the sequence's state to every group, undecided ones included; a group decided the other way on its own is a reported `conflict`. Images on the shipped list stay regular whatever their sequence (`listed_names`, `image_states`); the deciding ratios (`ratio_fit`) come from the images not on it.
+- `backlash_stage` prints the measured lines and the conflicts; a found-list image in a backlash sequence is reported for removal.
+- `zcam_calibration.py clean-found`: removes from `<root>/zcam_low_backlash_found.csv` the observations whose sequence is backlash (reclassified from each block's saved per-image fits; dated backup). On the 5 Oct batch: 54 of 60 removed (Rio Chiquito sol 1337 ZCAM09408, Marble Mountain sol 1968 ZCAM10013, Taylorfjellet sol 1603 ZCAM09673 and sol 1621 ZCAM09700, the unlisted images of Three Forks sol 692 ZCAM05086); kept: Rockytop sol 483 ZCAM01518 ZR (4, sequence undecided: check by eye) and two that are on the shipped list. `start-update` no longer adds groups of a backlash sequence.
+- `sites.json`: `threeforks_large` in `zcam34_consensus`.
+
 ## 0.74.7 — 2026-10-04
 
 **Fix: a failed Ceres solve left the cameras at their start while the poses had moved.** In the pipeline's first N+Z block (Chal Rocks, 4 Oct) the Navcam thermal stage reported median 0.158 -> 0.367 px and its 12 temperature-bin cameras exactly at their start values. Reproduced in the cloud on that block's own Navcam model: the dense Schur solve fails intermittently (Cholesky of a near-singular Schur complement - two NR bins with one image each), Ceres ends with FAILURE (in 2 of 5 runs) and leaves the state half-updated.

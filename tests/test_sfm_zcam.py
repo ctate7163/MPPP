@@ -271,3 +271,91 @@ def test_zcam_virtual_rig_poses_right_images(tmp_path, hold):
             got = np.asarray(rec.frames[im.frame_id].rig_from_world.rotation.matrix())
             assert np.allclose(got, want, atol=1e-9)
     assert ba["final_cost"] < ba["initial_cost"]
+
+
+# ---- v0p74.8: measured backlash line, one focus state per sequence ------------------------------------------------
+
+def _rows(groups):
+    """Group rows as classify_groups makes them, for the pooling tests: (key, sol, seq, eye, F, ratio, sd, state)."""
+    out = []
+    for key, sol, seq, eye, F, r, sd, st in groups:
+        out.append({"group_key": key, "camera_group": f"Z{eye}034", "eye": eye, "sol": sol, "sequence": seq,
+                    "focus_count": F, "ratio_fit": r, "sd_fit": sd, "fitted_unlisted": 3, "state": st,
+                    "names": [key], "threshold_ratio": None})
+    return out
+
+
+def test_measured_backlash_line_follows_the_focus_count():
+    from mppp.sfm.backlash import backlash_ratio_at, measured_backlash_lines
+    rows = _rows([(f"g{i}", 700, "zcam1", "R", F, 1.0095 + 4.5e-6 * (F - 600), 0.001, "x")
+                  for i, F in enumerate(range(100, 1300, 100))]
+                 + [("reg", 700, "zcam2", "R", 300, 0.9990, 0.001, "x")])        # a regular group stays out of the fit
+    ln = measured_backlash_lines(rows, 1.0, {"ZR034": 1.0151})["ZR034"]
+    assert ln["source"] == "measured line" and ln["n"] == 12
+    assert abs(ln["a"] - 1.0095) < 2e-5 and abs(ln["b"] - 4.5e-6) < 2e-7
+    assert abs(backlash_ratio_at(ln, 200) - (1.0095 - 0.0018)) < 3e-5
+    few = measured_backlash_lines(rows[:2], 1.0, {"ZR034": 1.0151})["ZR034"]
+    assert few["source"].startswith("default") and abs(few["a"] - 1.0095) < 1e-12      # the model's 1.0151 is off
+    few = measured_backlash_lines(rows[:2], 1.0, {"ZR034": 1.0100})["ZR034"]
+    assert few["source"] == "focus model" and few["a"] == 1.0100
+
+
+def test_sequence_state_overrides_the_low_focus_groups():
+    """Rio Chiquito sol 1337 ZCAM09408: the low-focus groups lie between the states on their own; the sequence is
+    backlash and so are they (reported as conflicts); a sequence without a decision keeps the groups' verdicts."""
+    from mppp.sfm.backlash import apply_sequence_states
+    rows = _rows([("a", 1337, "S1", "L", 180, 1.0057, 0.0010, "regular"),
+                  ("b", 1337, "S1", "L", 300, 1.0066, 0.0010, "undecided"),
+                  ("c", 1337, "S1", "L", 930, 1.0102, 0.0005, "backlash"),
+                  ("d", 1337, "S1", "R", 972, 1.0128, 0.0004, "backlash"),
+                  ("e", 1337, "S1", "R", 1170, None, None, "undecided"),
+                  ("f", 483, "S2", "R", 1278, 1.0015, 0.0010, "regular")])
+    for r in rows:
+        r["threshold_ratio"] = 1.0048
+    seq = apply_sequence_states(rows)
+    assert seq["1337|S1"]["state"] == "backlash" and seq["1337|S1"]["conflicts"] == ["a"]
+    st = {r["group_key"]: r["state"] for r in rows}
+    assert st == {"a": "backlash", "b": "backlash", "c": "backlash", "d": "backlash", "e": "backlash", "f": "regular"}
+    assert rows[0]["own_state"] == "regular" and rows[0]["conflict"]
+    assert seq["483|S2"]["state"] == "regular"
+
+
+def test_listed_images_stay_regular_in_a_backlash_sequence(tmp_path):
+    pytest.importorskip("scipy")
+    from mppp.sfm.backlash import classify_groups, image_focal_fits, image_states
+    proj, rec, model, truth = _zcam_block(tmp_path)
+    for r in proj.images:                                    # zcam3 (f = label) becomes part of zcam1's sequence
+        if r["sequence"] == "zcam3":
+            r["sequence"], r["focus_count"] = "zcam1", 300.0
+    fits = image_focal_fits(rec, proj)
+    rep = {}
+    groups = classify_groups(proj, fits, model, known=False, report=rep)
+    st = image_states(groups)
+    reg = [n for n, s in st.items() if s == "regular"]
+    assert reg == [] and len(rep["sequence_conflicts"]) == 1           # not on the list: the sequence wins
+    names3 = [r["name"] for r in proj.images if r["focus_count"] == 300.0]
+    known = {"entries": {n[:-4].upper() for n in names3}, "sol_sequences": set(), "clocks": set(), "uncertain": [],
+             "file": None}
+    groups = classify_groups(proj, fits, model, known=known)
+    st = image_states(groups)
+    assert sorted(n for n, s in st.items() if s == "regular") == sorted(names3)   # the list's exceptions stay regular
+    g3 = [g for g in groups if g["focus_count"] == 300.0][0]
+    assert g3["all_listed"] and g3["ratio_fit"] is None and not g3.get("conflict")
+
+
+def test_found_contradicted_and_clean(tmp_path):
+    from mppp.sfm.zcam_calib import found_contradicted
+    groups = [{"group_key": "ZL034|sol1337|S1|F180", "camera_group": "ZL034", "eye": "L", "sol": 1337, "sequence": "S1",
+               "focus_count": 180, "ratio": 1.0057, "sd": 0.001, "threshold_ratio": 1.0071, "state": "regular",
+               "z": -1.4, "names": ["ZL0_1337_A.png"]},
+              {"group_key": "ZL034|sol1337|S1|F930", "camera_group": "ZL034", "eye": "L", "sol": 1337, "sequence": "S1",
+               "focus_count": 930, "ratio": 1.0102, "sd": 0.0005, "threshold_ratio": 1.0071, "state": "backlash",
+               "z": 6.2, "names": ["ZL0_1337_B.png"]},
+              {"group_key": "ZR034|sol483|S2|F1278", "camera_group": "ZR034", "eye": "R", "sol": 483, "sequence": "S2",
+               "focus_count": 1278, "ratio": 1.0015, "sd": 0.001, "threshold_ratio": 1.0076, "state": "regular",
+               "z": -6.1, "names": ["ZR0_0483_C.png"]}]
+    f = tmp_path / "found.csv"
+    f.write_text("# header\nZL0_1337_A  # rio\nZR0_0483_C  # rockytop\nZL0_9999_X  # elsewhere\n", encoding="utf-8")
+    res = found_contradicted([{"name": "blk", "backlash_groups": groups}], f, shipped=None)
+    assert [r[0] for r in res["remove"]] == ["ZL0_1337_A"]
+    assert res["keep"] == ["ZR0_0483_C"] and res["unknown"] == ["ZL0_9999_X"]

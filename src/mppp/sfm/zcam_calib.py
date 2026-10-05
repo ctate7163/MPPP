@@ -105,6 +105,8 @@ def block_info(work: PathLike, model: str = "cahv_ba") -> Dict[str, Any]:
             "T_fpa_degC": float(np.mean(Tf)) if Tf else None, "sol": float(np.median(sols)) if sols else None,
             "lines": st.get("zcam_focus_lines") or {}, "rig": st.get("zcam_virtual_rig") or {},
             "rig_fit": st.get("zcam_rig_fit"), "backlash_groups": states.get("groups") or [],
+            "backlash_fits": states.get("fits_before") or {}, "backlash_nav_scale": states.get("nav_scale"),
+            "backlash_ratios": states.get("backlash_ratios") or {},
             "line_params": st.get("zcam_line_params"), "mppp": (_json(root / "run_done.json") or {}).get("mppp")}
 
 
@@ -183,23 +185,125 @@ def select_blocks(infos: Sequence[Dict[str, Any]], n: int = 3, min_sol_gap: floa
     return [infos[g["_i"]] for g in sel], [{k: v for k, v in g.items() if k != "_i"} for g in grades]
 
 
+def block_sequence_states(info: Dict[str, Any], shipped: Optional[Dict[str, Any]] = None,
+                          z_min: float = 3.0) -> Dict[str, Dict[str, Any]]:
+    """
+    v0p74.8: the focus state of every sequence of a solved block (:func:`mppp.sfm.backlash.apply_sequence_states`) from
+    its saved groups (``zcam_focus_states.json``).  Blocks classified with v0p74.8 carry the verdicts; older ones are
+    pooled here from their groups' ratios (all fitted images) and midpoints, the groups whose images are all on the
+    shipped list (``shipped``) left out.  Returns {"sol|sequence": {"z", "state", ...}}.
+    """
+    from .backlash import apply_sequence_states, is_low_backlash
+    rows = [dict(g) for g in (info.get("backlash_groups") or [])]
+    if info.get("backlash_fits") and rows and all(g.get("names") is not None for g in rows):
+        rows = reclassify_block(info, shipped=shipped, z_min=z_min)            # the v0p74.8 rules on the saved fits
+        out = {}
+        for g in rows:
+            out.setdefault(f"{g.get('sol')}|{g.get('sequence')}", {"z": g.get("sequence_z"), "state": g.get("sequence_state")})
+        return out
+    if any("sequence_state" in g for g in rows):
+        out: Dict[str, Dict[str, Any]] = {}
+        for g in rows:
+            out.setdefault(f"{g.get('sol')}|{g.get('sequence')}", {"z": g.get("sequence_z"), "state": g.get("sequence_state")})
+        return out
+    for g in rows:
+        names = g.get("names") or []
+        g["all_listed"] = bool(names) and shipped is not None and all(
+            is_low_backlash({"stem": str(n).rsplit(".", 1)[0], "sol": g.get("sol"), "sequence": g.get("sequence"),
+                             "camera_group": g.get("camera_group")}, shipped) for n in names)
+        ok = g.get("ratio") is not None and g.get("threshold_ratio") is not None and not g["all_listed"]
+        g["ratio_fit"], g["sd_fit"] = (g.get("ratio"), g.get("sd")) if ok else (None, None)
+    return apply_sequence_states(rows, z_min=z_min)
+
+
+def reclassify_block(info: Dict[str, Any], shipped: Optional[Dict[str, Any]] = None, z_min: float = 3.0,
+                     report: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """v0p74.8: a solved block's focus groups classified again with the current rules (measured backlash line, one
+    state per sequence, the shipped list's images as the exceptions) from the per-image fits it saved
+    (``zcam_focus_states.json``: ``fits_before``, the groups' images).  Returns the group rows
+    (:func:`mppp.sfm.backlash.classify_groups`)."""
+    from types import SimpleNamespace
+    from .backlash import classify_groups, load_low_backlash
+    imgs = []
+    for g in info.get("backlash_groups") or []:
+        for n in g.get("names") or []:
+            imgs.append({"name": n, "stem": str(n).rsplit(".", 1)[0], "camera_group": g.get("camera_group"),
+                         "eye": g.get("eye"), "sol": g.get("sol"), "sequence": g.get("sequence"),
+                         "focus_count": g.get("focus_count"), "instrument": (g.get("cameras") or ["?"])[0]})
+    model = {"cameras": {k: {"f0_px": float(v), "label_f0_px": 1.0} for k, v in (info.get("backlash_ratios") or {}).items()}}
+    return classify_groups(SimpleNamespace(images=imgs, settings={}), info.get("backlash_fits") or {}, model,
+                           z_min=z_min, nav_scale=info.get("backlash_nav_scale") or 1.0,
+                           known=shipped if shipped is not None else load_low_backlash(None), report=report)
+
+
 def low_backlash_groups(infos: Sequence[Dict[str, Any]], z_min: float = 3.0,
-                        listed: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+                        listed: Optional[Dict[str, Any]] = None,
+                        shipped: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """The focus groups the blocks classified low-backlash (regular): decided, plausible, at least ``z_min`` sd below
     the midpoint between the two states; ``listed`` (:func:`mppp.sfm.backlash.load_low_backlash`): groups whose images
-    are all on that list already are left out."""
+    are all on that list already are left out.  v0p74.8: and groups of a sequence that is backlash as a whole
+    (:func:`block_sequence_states`; ``shipped``: the shipped list, whose images are the known exceptions)."""
     from .backlash import is_low_backlash
     out = []
     for i in infos:
-        for g in i.get("backlash_groups") or []:
-            if g.get("state") == "regular" and g.get("decided") and not g.get("implausible") and \
-                    g.get("z") is not None and float(g["z"]) <= -abs(z_min) and g.get("names"):
+        seq = block_sequence_states(i, shipped=shipped, z_min=z_min)
+        groups = reclassify_block(i, shipped=shipped, z_min=z_min) if i.get("backlash_fits") else \
+            (i.get("backlash_groups") or [])
+        for g in groups:
+            own = g.get("own_state", g.get("state"))
+            own_z = g.get("own_z", g.get("z"))
+            if own == "regular" and not g.get("implausible") and own_z is not None and float(own_z) <= -abs(z_min) \
+                    and g.get("names"):
+                if (seq.get(f"{g.get('sol')}|{g.get('sequence')}") or {}).get("state") == "backlash":
+                    continue
                 if listed is not None and all(is_low_backlash({"stem": str(n).rsplit(".", 1)[0], "sol": g.get("sol"),
                                                                "sequence": g.get("sequence"),
                                                                "camera_group": g.get("camera_group")}, listed)
                                               for n in g["names"]):
                     continue
                 out.append(dict(g, block=i["name"]))
+    return out
+
+
+def found_contradicted(infos: Sequence[Dict[str, Any]], found_path: PathLike,
+                       shipped: Optional[Dict[str, Any]] = None, z_min: float = 3.0) -> Dict[str, Any]:
+    """
+    v0p74.8: the found-list entries (``<SCAPES_ROOT>/zcam_low_backlash_found.csv``) whose sequence is backlash as a
+    whole in the block that holds them (:func:`block_sequence_states`) and that are not on the shipped list.  Returns
+    {"remove": [(stem, block, "sol|sequence", z)], "keep": [stem, ...], "unknown": [stem, ...]} (unknown: no block
+    holds the image).
+    """
+    from .backlash import is_low_backlash
+    f = Path(found_path)
+    stems = []
+    if f.is_file():
+        for line in f.read_text(encoding="utf-8-sig").splitlines():
+            tok = line.split("#", 1)[0].strip()
+            if tok:
+                stems.append(tok)
+    where: Dict[str, Tuple[str, str, Any]] = {}
+    for i in infos:
+        seq = block_sequence_states(i, shipped=shipped, z_min=z_min)
+        for g in i.get("backlash_groups") or []:
+            k = f"{g.get('sol')}|{g.get('sequence')}"
+            for n in g.get("names") or []:
+                st = str(n).rsplit(".", 1)[0].upper()
+                v = seq.get(k) or {}
+                if st not in where or v.get("state") == "backlash":
+                    where[st] = (i["name"], k, v.get("state"), v.get("z"), g)
+    out: Dict[str, Any] = {"remove": [], "keep": [], "unknown": []}
+    for s in stems:
+        w = where.get(s.upper())
+        if w is None:
+            out["unknown"].append(s)
+            continue
+        name, k, st, z, g = w
+        on_shipped = shipped is not None and is_low_backlash({"stem": s, "sol": g.get("sol"), "sequence": g.get("sequence"),
+                                                              "camera_group": g.get("camera_group")}, shipped)
+        if st == "backlash" and not on_shipped:
+            out["remove"].append((s, name, k, z))
+        else:
+            out["keep"].append(s)
     return out
 
 

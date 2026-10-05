@@ -344,71 +344,233 @@ def image_focal_fits(rec, project, min_observations: int = 20, loss_px: float = 
     return out
 
 
+REGULAR_MARGIN = 0.004       # v0p74.8: groups this far above the regular state (ratio 1) enter the backlash-ratio fit
+
+
+def measured_backlash_lines(rows: Sequence[Dict[str, Any]], nav_scale: float = 1.0,
+                            model_ratios: Optional[Dict[str, float]] = None, reference_focus: float = 600.0,
+                            min_groups_line: int = 5, min_groups_const: int = 3, min_span: float = 300.0,
+                            clip: Tuple[float, float] = (0.005, 0.016)) -> Dict[str, Dict[str, Any]]:
+    """
+    v0p74.8: the backlash state's ratio of fitted to label focal length, measured on the block, per camera group, as a
+    line in focus count, ratio = a + b (focus - ``reference_focus``).  The ratio is not one number: the refined focal
+    lengths and the labels have different slopes in focus count (ZR034: about 0.065 against 0.041 px/count, so the
+    ratio rises by about 0.45 % per 1000 counts), and the start model's f0 / label f0 (1.014 in the v0p74 start model)
+    is not what the blocks measure (about 1.0095 at focus 600).  Fitted (Huber, weights = fitted images) to the groups
+    at least :data:`REGULAR_MARGIN` above the regular state (``nav_scale``) and not more than 2 % above it, own
+    ratios from the images not on the low-backlash list (``ratio_fit``).  With fewer than ``min_groups_line`` groups or
+    a focus span below ``min_span`` the line is a constant (weighted median, at least ``min_groups_const`` groups);
+    below that the model's ratio (``model_ratios``, else :data:`DEFAULT_BACKLASH_RATIO`) times ``nav_scale``.  The
+    line is clipped to ``nav_scale`` + ``clip``.  Returns {group: {"a", "b", "n", "source", "reference_focus"}}.
+    """
+    ns = float(nav_scale or 1.0)
+    by: Dict[str, List[Tuple[float, float, float]]] = {}
+    for r in rows:
+        x = r.get("ratio_fit")
+        if x is None or r.get("focus_count") is None or r.get("state") == "single":
+            continue
+        if ns + REGULAR_MARGIN <= float(x) <= ns + 0.02:
+            by.setdefault(str(r.get("camera_group")), []).append((float(r["focus_count"]), float(x),
+                                                                  float(max(r.get("fitted_unlisted") or 1, 1))))
+    groups = {str(r.get("camera_group")) for r in rows if r.get("state") != "single"}
+    out: Dict[str, Dict[str, Any]] = {}
+    for g in sorted(groups):
+        pts = by.get(g, [])
+        rb_model = float((model_ratios or {}).get(g, DEFAULT_BACKLASH_RATIO)) * ns
+        if len(pts) >= min_groups_line and np.ptp([p[0] for p in pts]) >= min_span:
+            F = np.array([p[0] for p in pts]) - reference_focus
+            y = np.array([p[1] for p in pts])
+            w = np.array([p[2] for p in pts])
+            X = np.c_[np.ones(len(F)), F]
+            wt = np.ones(len(F))
+            for _ in range(20):                                  # Huber IRLS
+                sw = np.sqrt(w * wt)
+                b = np.linalg.lstsq(X * sw[:, None], y * sw, rcond=None)[0]
+                res = y - X @ b
+                sig = max(1.4826 * float(np.median(np.abs(res - np.median(res)))), 2e-4)
+                u = np.abs(res) / (1.345 * sig)
+                wt = np.where(u <= 1.0, 1.0, 1.0 / np.maximum(u, 1e-12))
+            out[g] = {"a": float(b[0]), "b": float(b[1]), "n": len(pts), "source": "measured line"}
+        elif len(pts) >= min_groups_const:
+            out[g] = {"a": _wmedian(np.array([p[1] for p in pts]), np.array([p[2] for p in pts])), "b": 0.0,
+                      "n": len(pts), "source": "measured constant"}
+        elif abs(rb_model / ns - DEFAULT_BACKLASH_RATIO) <= 0.003:
+            out[g] = {"a": rb_model, "b": 0.0, "n": len(pts), "source": "focus model"}
+        else:                     # the model's f0 / label f0 is not the backlash ratio (v0p74 start model: 1.014)
+            out[g] = {"a": DEFAULT_BACKLASH_RATIO * ns, "b": 0.0, "n": len(pts),
+                      "source": f"default (the focus model's {rb_model / ns:.4f} is off)"}
+        out[g].update({"reference_focus": reference_focus, "clip": [ns + clip[0], ns + clip[1]], "nav_scale": ns})
+    return out
+
+
+def backlash_ratio_at(line: Dict[str, Any], focus: Optional[float]) -> float:
+    """The backlash ratio of a :func:`measured_backlash_lines` line at ``focus`` (clipped)."""
+    x = float(line["a"]) + float(line.get("b") or 0.0) * ((float(focus) if focus is not None else line["reference_focus"])
+                                                         - float(line["reference_focus"]))
+    lo, hi = line.get("clip") or (-np.inf, np.inf)
+    return float(min(max(x, lo), hi))
+
+
+def apply_sequence_states(rows: List[Dict[str, Any]], z_min: float = 3.0) -> Dict[str, Dict[str, Any]]:
+    """
+    v0p74.8: the images of one sequence (sol and sequence, both eyes) are in one focus state (Christian, 5 Oct 2026);
+    the exceptions are on the low-backlash list.  Every row (:func:`classify_groups`) keeps its own verdict as
+    ``own_state`` / ``own_z``; the sequence's verdict pools the groups' deviations from their midpoints (inverse
+    variance, own ratios from the images not on the list): ``sequence_z`` below ``-z_min`` regular, above ``z_min``
+    backlash, otherwise none.  A decided sequence gives its state to every group (undecided ones included); a group
+    decided the other way on its own is a ``conflict`` (reported, not followed).  Images on the list stay regular
+    whatever the sequence says (:func:`image_states`).  Undecided sequences leave the groups' own verdicts.
+    Returns {"sol|sequence": {"z", "state", "groups", "conflicts"}}.
+    """
+    seqs: Dict[str, List[Dict[str, Any]]] = {}
+    for r in rows:
+        if r.get("state") == "single":
+            continue
+        seqs.setdefault(f"{r.get('sol')}|{r.get('sequence')}", []).append(r)
+    out: Dict[str, Dict[str, Any]] = {}
+    for key, rs in seqs.items():
+        num = den = 0.0
+        for r in rs:
+            if r.get("ratio_fit") is None or r.get("implausible") or not r.get("sd_fit"):
+                continue
+            d = float(r["ratio_fit"]) - float(r["threshold_ratio"])
+            v = float(r["sd_fit"]) ** 2
+            num += d / v
+            den += 1.0 / v
+        z = num / np.sqrt(den) if den > 0 else None
+        st = None if z is None else ("regular" if z < -z_min else ("backlash" if z > z_min else None))
+        conflicts = []
+        for r in rs:
+            r["own_state"], r["own_z"] = r.get("state"), r.get("z")
+            r["sequence_z"], r["sequence_state"] = (float(z) if z is not None else None), st
+            if st is None:
+                continue
+            if r.get("state") in STATES and r["state"] != st and not r.get("all_listed"):
+                r["conflict"] = True
+                conflicts.append(r["group_key"])
+            r["state"], r["decided"] = st, True
+        out[key] = {"z": (float(z) if z is not None else None), "state": st, "groups": len(rs), "conflicts": conflicts}
+    return out
+
+
 def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Dict[str, Any]] = None,
                     z_min: float = 3.0, floor: float = 0.001, tolerance: float = 0.006,
-                    nav_scale: Optional[float] = None) -> List[Dict[str, Any]]:
+                    nav_scale: Optional[float] = None, known: Any = None, sequence_rule: bool = True,
+                    measured_ratio: bool = True, report: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     One row per focus group (:func:`focus_groups`): the observation-weighted median of its images' ratio of fitted to
     label focal length, its standard error (the images' formal errors, at least ``floor`` in the ratio, i.e. 0.1 %,
-    for the scatter between images and the held centre) and the state: ``regular`` below the midpoint between 1
-    and the group's backlash ratio (:func:`backlash_ratios`) by more than ``z_min`` standard errors, ``backlash``
-    above it by as much, otherwise ``undecided`` (treated as backlash, the dominant state).  Groups without a fit
-    (too few observations, no label f) are ``undecided`` too, and so are groups whose ratio lies more than
-    ``tolerance`` (0.6 %) outside the two states (below 1 or above the backlash ratio): a failed bin rather than a
-    focus state (``implausible``; at Airey Hill and Three Forks a few one- and two-image bins at 0.96-0.98).
-    v0p53: ``nav_scale`` (the block's Navcam focal scale, :func:`navcam_scale`) multiplies both states (1 and the
-    backlash ratio); groups of a :data:`SINGLE_STATE_ZOOMS` zoom are ``single`` (not classified, not split).
+    for the scatter between images and the held centre) and the state: ``regular`` below the midpoint between the
+    regular state (ratio 1) and the backlash state by more than ``z_min`` standard errors, ``backlash`` above it by as
+    much, otherwise ``undecided`` (treated as backlash, the dominant state).  Groups without a fit (too few
+    observations, no label f) are ``undecided`` too, and so are groups whose ratio lies more than ``tolerance`` (0.6 %)
+    outside the two states: a failed bin rather than a focus state (``implausible``).
+    v0p53: ``nav_scale`` (the block's Navcam focal scale, :func:`navcam_scale`) multiplies both states; groups of a
+    :data:`SINGLE_STATE_ZOOMS` zoom are ``single`` (not classified, not split).
+    v0p74.8: (1) the backlash ratio is measured on the block as a line in focus count
+    (:func:`measured_backlash_lines`, ``measured_ratio``; else the focus model's f0 / label f0), so that the
+    midpoint follows the focus count; (2) ``sequence_rule``: one state per sequence (:func:`apply_sequence_states`),
+    the images on the low-backlash list (``known``: a :func:`load_low_backlash` dict, a path, False for none; default
+    the project's list, without the found list) being the exceptions (``listed_names``, regular in
+    :func:`image_states`).  The ratios that decide (``ratio_fit``, ``sd_fit``) come from the images not on that
+    list; ``ratio`` / ``sd`` are every fitted image's, as before.  ``report`` (a dict) receives the lines and the
+    sequences.
     """
     ratios = backlash_ratios(model)
     ns = float(nav_scale) if nav_scale else 1.0
+    if isinstance(known, dict):
+        lst = known
+    elif known is False:
+        lst = load_low_backlash(False)
+    else:
+        f = known if known is not None else ((getattr(project, "settings", None) or {}).get("zcam_low_backlash") or {}).get("file")
+        try:
+            lst = load_low_backlash(f)
+        except Exception:                                                  # noqa: BLE001
+            lst = load_low_backlash(False)
     rows = []
     for key, members in sorted(focus_groups(project.images).items()):
         g = members[0].get("camera_group")
+        base = {"group_key": key, "camera_group": g, "eye": members[0].get("eye"), "sol": members[0].get("sol"),
+                "sequence": members[0].get("sequence"), "focus_count": members[0].get("focus_count"),
+                "images": len(members), "names": [m["name"] for m in members],
+                "cameras": sorted({m["instrument"] for m in members})}
         if group_zoom(g) in SINGLE_STATE_ZOOMS:
-            rows.append({"group_key": key, "camera_group": g, "eye": members[0].get("eye"), "sol": members[0].get("sol"),
-                         "sequence": members[0].get("sequence"), "focus_count": members[0].get("focus_count"),
-                         "images": len(members), "fitted": 0, "backlash_ratio": None, "threshold_ratio": None,
-                         "names": [m["name"] for m in members], "cameras": sorted({m["instrument"] for m in members}),
-                         "ratio": None, "sd": None, "z": None, "state": "single", "decided": False})
+            rows.append(dict(base, fitted=0, backlash_ratio=None, threshold_ratio=None, ratio=None, sd=None, z=None,
+                             state="single", decided=False, listed_names=[]))
             continue
-        rb = ratios.get(g, DEFAULT_BACKLASH_RATIO) * ns
-        mid = 0.5 * (ns + rb)
+        listed = [m["name"] for m in members if is_low_backlash(m, lst)]
         fs = [fits[m["name"]] for m in members if m["name"] in fits and fits[m["name"]].get("ratio_label")]
-        row = {"group_key": key, "camera_group": g, "eye": members[0].get("eye"), "sol": members[0].get("sol"),
-               "sequence": members[0].get("sequence"), "focus_count": members[0].get("focus_count"),
-               "images": len(members), "fitted": len(fs), "backlash_ratio": rb, "threshold_ratio": mid,
-               "nav_scale": ns,
-               "names": [m["name"] for m in members], "cameras": sorted({m["instrument"] for m in members})}
-        if not fs:
-            row.update({"ratio": None, "sd": None, "z": None, "state": "undecided", "decided": False})
-            rows.append(row)
-            continue
-        x = np.array([f["ratio_label"] for f in fs], float)
-        w = np.array([f["observations"] for f in fs], float)
-        sd_i = np.array([f["sd_ratio"] if f.get("sd_ratio") and np.isfinite(f["sd_ratio"]) else floor for f in fs])
-        sd_i = np.maximum(sd_i, floor)
-        med = _wmedian(x, w)
-        sd = float(1.0 / np.sqrt(np.sum(1.0 / sd_i ** 2)))
-        if len(x) > 2:                                       # the images' scatter, when there is enough of it
-            sd = max(sd, float(1.4826 * np.median(np.abs(x - med)) / np.sqrt(len(x))))
-        z = (med - mid) / sd
-        implausible = med < ns - tolerance or med > rb + tolerance
-        state = "undecided" if implausible else ("regular" if z < -z_min else ("backlash" if z > z_min else "undecided"))
-        row.update({"ratio": med, "sd": sd, "z": float(z), "state": state, "decided": state != "undecided",
-                    "implausible": bool(implausible),
-                    "ratio_min": float(x.min()), "ratio_max": float(x.max()),
-                    "offset_from_label_pct": 100.0 * (med - 1.0)})
+        fu = [fits[m["name"]] for m in members if m["name"] in fits and fits[m["name"]].get("ratio_label")
+              and m["name"] not in listed]
+        row = dict(base, fitted=len(fs), fitted_unlisted=len(fu), nav_scale=ns, listed_names=listed,
+                   all_listed=bool(listed) and len(listed) == len(members))
+
+        def stats(ff):
+            x = np.array([f["ratio_label"] for f in ff], float)
+            w = np.array([f["observations"] for f in ff], float)
+            sd_i = np.array([f["sd_ratio"] if f.get("sd_ratio") and np.isfinite(f["sd_ratio"]) else floor for f in ff])
+            sd_i = np.maximum(sd_i, floor)
+            med = _wmedian(x, w)
+            sd = float(1.0 / np.sqrt(np.sum(1.0 / sd_i ** 2)))
+            if len(x) > 2:                                   # the images' scatter, when there is enough of it
+                sd = max(sd, float(1.4826 * np.median(np.abs(x - med)) / np.sqrt(len(x))))
+            return med, sd, x
+        if fs:
+            med, sd, x = stats(fs)
+            row.update({"ratio": med, "sd": sd, "ratio_min": float(x.min()), "ratio_max": float(x.max()),
+                        "offset_from_label_pct": 100.0 * (med - 1.0)})
+        else:
+            row.update({"ratio": None, "sd": None})
+        if fu:
+            mu, su, _ = stats(fu)
+            row.update({"ratio_fit": mu, "sd_fit": su})
+        elif fs:                                             # every fitted image on the list: its own ratio, for the record
+            row.update({"ratio_fit": None, "sd_fit": None})
         rows.append(row)
+    lines = measured_backlash_lines(rows, ns, ratios) if measured_ratio else {
+        g: {"a": float(ratios.get(g, DEFAULT_BACKLASH_RATIO)) * ns, "b": 0.0, "n": 0, "source": "focus model",
+            "reference_focus": 600.0, "clip": [-np.inf, np.inf], "nav_scale": ns}
+        for g in {str(r.get("camera_group")) for r in rows}}
+    for row in rows:
+        if row.get("state") == "single":
+            continue
+        ln = lines.get(str(row["camera_group"]))
+        rb = backlash_ratio_at(ln, row.get("focus_count")) if ln else DEFAULT_BACKLASH_RATIO * ns
+        mid = 0.5 * (ns + rb)
+        row.update({"backlash_ratio": rb, "threshold_ratio": mid})
+        r_dec = row.get("ratio_fit") if row.get("ratio_fit") is not None else row.get("ratio")
+        s_dec = row.get("sd_fit") if row.get("ratio_fit") is not None else row.get("sd")
+        if r_dec is None:
+            row.update({"z": None, "state": "undecided", "decided": False})
+            continue
+        z = (r_dec - mid) / s_dec
+        implausible = r_dec < ns - tolerance or r_dec > rb + tolerance
+        state = "undecided" if implausible else ("regular" if z < -z_min else ("backlash" if z > z_min else "undecided"))
+        row.update({"z": float(z), "state": state, "decided": state != "undecided", "implausible": bool(implausible)})
+    seqs = apply_sequence_states(rows, z_min=z_min) if sequence_rule else {}
+    if report is not None:
+        report["backlash_lines"] = lines
+        report["sequences"] = seqs
+        report["sequence_conflicts"] = [{k: r.get(k) for k in ("group_key", "own_state", "own_z", "sequence_state",
+                                                                "sequence_z", "ratio_fit", "threshold_ratio")}
+                                        for r in rows if r.get("conflict")]
     return rows
 
 
 def image_states(groups: Sequence[Dict[str, Any]]) -> Dict[str, str]:
     """{image name: "regular" | "backlash" | "single"} (undecided groups count as backlash; v0p53: "single" for the
-    one-state zooms)."""
+    one-state zooms; v0p74.8: images on the low-backlash list (``listed_names``) are regular whatever their group)."""
     out = {}
     for g in groups:
+        listed = set(g.get("listed_names") or [])
         for n in g["names"]:
-            out[n] = g["state"] if g["state"] in ("regular", "single") else "backlash"
+            if g["state"] == "single":
+                out[n] = "single"
+            elif n in listed or g["state"] == "regular":
+                out[n] = "regular"
+            else:
+                out[n] = "backlash"
     return out
 
 
@@ -537,7 +699,8 @@ def _state_summary(fits: Dict[str, Dict[str, Any]], states: Dict[str, str]) -> D
 def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: str = "split", sigma_px: float = 0.5,
                    loss_scale: float = 2.0, max_iterations: int = 100, attitude_prior_deg: Optional[float] = None,
                    linear_solver: str = "auto", refine_tangential: Any = True, hold_f_images: int = 0,
-                   z_min: float = 3.0, min_observations: int = 20, verbose: bool = True):
+                   z_min: float = 3.0, min_observations: int = 20, verbose: bool = True,
+                   sequence_rule: bool = True, measured_ratio: bool = True):
     """
     Classify the Mastcam-Z focus groups of a solved block into the backlash and the regular state and (``mode``
     ``"split"``) give the regular images their own cameras (:func:`split_by_state`) and adjust again with the Navcam
@@ -560,11 +723,15 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
             model = None
     ns = navcam_scale(rec, project)
     fits = image_focal_fits(rec, project, min_observations=min_observations, loss_px=loss_scale)
-    groups = classify_groups(project, fits, model, z_min=z_min, nav_scale=ns)
+    cls: Dict[str, Any] = {}
+    groups = classify_groups(project, fits, model, z_min=z_min, nav_scale=ns, sequence_rule=sequence_rule,
+                             measured_ratio=measured_ratio, report=cls)
     states = image_states(groups)
     report: Dict[str, Any] = {"mode": mode, "z_min": z_min, "backlash_ratios": backlash_ratios(model), "nav_scale": ns,
                               "groups": groups, "fits_before": fits, "before": _state_summary(fits, states),
-                              "cameras": [], "after": None, "fits_after": None}
+                              "cameras": [], "after": None, "fits_after": None,
+                              "backlash_lines": cls.get("backlash_lines"), "sequences": cls.get("sequences"),
+                              "sequence_conflicts": cls.get("sequence_conflicts")}
     n = {s: sum(1 for g in groups if g["state"] == s) for s in ("backlash", "regular", "undecided", "single")}
     report["group_counts"] = n
     report["implausible_groups"] = [g["group_key"] for g in groups if g.get("implausible")]
@@ -574,7 +741,10 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
         # classified regular that the list did not have are the new ones (flagged, split, and for the found list)
         listed = {r["name"] for r in project.images if r.get("focus_state") == "regular"}
         new_groups = [g for g in groups if g["state"] == "regular" and not set(g.get("names") or []) <= listed]
-        disagree = [g for g in groups if g["state"] == "backlash" and set(g.get("names") or []) & listed]
+        # v0p74.8: an image on the list (or the found list) whose group the fit and its sequence call backlash -
+        # the shipped list's images are the known exceptions (kept regular); found-list ones are contradicted
+        disagree = [g for g in groups if g["state"] == "backlash"
+                    and (set(g.get("names") or []) & listed) - set(g.get("listed_names") or [])]
         report["new_regular_groups"] = [{k: v for k, v in g.items()} for g in new_groups]
         report["list_disagrees"] = [{k: v for k, v in g.items() if k != "names"} for g in disagree]
         regular = sorted({nm for g in new_groups for nm in g.get("names") or []} - listed)
@@ -585,9 +755,19 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
                       f"{g['focus_count']}: f / label f {g['ratio']:.4f} (z {g['z']:+.1f}), {g['images']} images - not on "
                       f"the list: split now, and added to the found list", flush=True)
             for g in disagree:
-                print(f"[sfm] list says low backlash, the fit says backlash: {g['camera_group']} sol {g['sol']} "
-                      f"{g['sequence']} focus {g['focus_count']} (f / label f {g['ratio']:.4f}, z {g['z']:+.1f})", flush=True)
+                zz = g.get("z")
+                print(f"[sfm] found list says low backlash, the fit and its sequence say backlash: {g['camera_group']} "
+                      f"sol {g['sol']} {g['sequence']} focus {g['focus_count']} (f / label f "
+                      f"{(g.get('ratio_fit') or g.get('ratio') or float('nan')):.4f}, z "
+                      f"{(zz if zz is not None else float('nan')):+.1f}) - remove it from the found list "
+                      f"(scripts/zcam_calibration.py clean-found)", flush=True)
     if verbose:
+        for g, ln in sorted((report.get("backlash_lines") or {}).items()):
+            print(f"[sfm] {g} backlash state: f / label f {ln['a']:.4f} {ln['b'] * 1000:+.4f} per 1000 counts about "
+                  f"focus {ln['reference_focus']:.0f} ({ln['source']}, {ln['n']} groups)", flush=True)
+        for c in report.get("sequence_conflicts") or []:
+            print(f"[sfm] sequence rule: {c['group_key']} fits {c['own_state']} (z {c['own_z']:+.1f}) but its sequence "
+                  f"is {c['sequence_state']} (z {c['sequence_z']:+.1f}): {c['sequence_state']}", flush=True)
         b = report["before"]
         print(f"[sfm] Mastcam-Z focus states: {len(groups)} focus groups - {n['backlash']} backlash, {n['regular']} "
               f"regular, {n['undecided']} undecided (kept as backlash), {n['single']} single-state (110 mm); "
