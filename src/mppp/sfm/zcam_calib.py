@@ -35,15 +35,20 @@ LINE_PARAMS = {"ZL": ("fx", "fy", "k1", "k2"), "ZR": ("fx", "fy", "cx", "cy", "k
 
 # grading (v0p74): what makes a block good enough to calibrate Mastcam-Z from
 GRADE = {"min_registered_fraction": 0.95, "max_beyond_ground": 0.05, "max_residual_median_px": 0.40,
-         "max_edge_to_centre": 1.5, "min_corner_triangulated": 0.4, "min_bins_per_eye": 5,
+         "max_edge_to_centre": 1.6,          # v0p74.9: 1.5 -> 1.6 (Rio Chiquito 1.56, South Arm 1.54 failed on 5 Oct)
+         "min_corner_triangulated": 0.4, "min_bins_per_eye": 5,
          "fail_checks_allowed": ("focal_change_pct", "ray_displacement_max_px", "within_station_shift_spread_m",
                                  "excluded_fraction", "attitude_residual_p95_deg")}
 # sanity limits of a calibrated model against the start model (v0p74)
 MODEL_LIMITS = {"max_f0_change_pct": 1.5, "max_aspect_dev": 0.01, "max_k1": 1.5, "baseline_m": (0.20, 0.29),
-                "max_rig_change_deg": 1.0, "min_blocks": 2, "max_aspect_change": 0.003,
+                "max_rig_change_deg": 1.0, "max_aspect_change": 0.003,
                 "max_offset_scatter_pct": 0.5,      # start update: the blocks' f offsets about the model's f0
                 "max_rig_scatter_mdeg": 150.0,      # calibration: the blocks' rig rotations about their mean
-                "max_baseline_scatter_mm": 3.0}
+                "max_baseline_scatter_mm": 3.0,
+                # v0p74.9 (the 5 Oct promotion had regular-state temperature terms of +8 px/degC and k2 -2.07):
+                "max_T_slope_px_per_degC": 2.0, "max_T_slope_pp_px_per_degC": 0.5, "max_tau_f_px": 10.0,
+                "max_regular_k_dev": {"k1": 0.05, "k2": 0.5}, "min_blocks": 2,
+                "min_blocks_calibration": 3}
 
 
 def _json(p: Path) -> Optional[Dict[str, Any]]:
@@ -170,6 +175,8 @@ def select_blocks(infos: Sequence[Dict[str, Any]], n: int = 3, min_sol_gap: floa
     (selected infos, every grade)."""
     grades = [dict(grade_block(i, limits), _i=k) for k, i in enumerate(infos)]
     ok = sorted((g for g in grades if g["ok"]), key=lambda g: -g["score"])
+    if n is None or n <= 0:                              # v0p74.9: every passing block (the default now)
+        n = len(ok)
     sel: List[Dict[str, Any]] = []
     for g in ok:
         s = g.get("sol")
@@ -447,8 +454,72 @@ def _label_pp_at(info: Dict[str, Any], group: str, ref: float) -> Optional[Tuple
     return out[0], out[1]
 
 
+def regular_ratio(infos: Sequence[Dict[str, Any]], group: str, min_regular_groups: int = 3) -> Dict[str, Any]:
+    """
+    v0p74.9: the ratio of the backlash to the regular focal length of an eye, measured by the blocks' focus-state
+    classification (``zcam_focus_states.json``: the decided groups' fitted / label ratios, both states in one block):
+    the median over the blocks with at least ``min_regular_groups`` regular and 3 backlash groups of that eye of
+    (median backlash ratio / median regular ratio); else :data:`REGULAR_RATIO_DEFAULT`.  Returns {"ratio", "n_blocks",
+    "per_block", "source"}.
+    """
+    from .backlash import backlash_ratio_at, measured_backlash_lines
+    per = []
+    for i in infos:
+        gs = [g for g in (i.get("backlash_groups") or []) if g.get("camera_group") == group and g.get("ratio") is not None
+              and not g.get("implausible")]
+        b = [g for g in gs if g.get("state") == "backlash" and g.get("decided")]
+        r = [g for g in gs if g.get("state") == "regular" and g.get("decided")]
+        if len(r) >= min_regular_groups and len(b) >= 3:
+            # the backlash ratio at each regular group's own focus count (it rises with the focus count, about
+            # 0.45 % per 1000 counts on ZR034; the regular groups sit mostly at low counts)
+            rows = [dict(g, ratio_fit=g.get("ratio_fit", g["ratio"]), fitted_unlisted=g.get("fitted_unlisted", g.get("fitted")))
+                    for g in b]
+            ln = measured_backlash_lines(rows, float(i.get("backlash_nav_scale") or 1.0)).get(group)
+            q = [backlash_ratio_at(ln, g.get("focus_count")) / float(g["ratio"]) for g in r] if ln else \
+                [float(np.median([g["ratio"] for g in b])) / float(g["ratio"]) for g in r]
+            per.append({"block": i["name"], "ratio": float(np.median(q)), "regular": len(r), "backlash": len(b),
+                        "line": (ln or {}).get("source")})
+    if per:
+        return {"ratio": float(np.median([p["ratio"] for p in per])), "n_blocks": len(per), "per_block": per,
+                "source": "measured (backlash / regular groups)"}
+    return {"ratio": REGULAR_RATIO_DEFAULT, "n_blocks": 0, "per_block": [], "source": "default"}
+
+
+def leave_one_out(infos: Sequence[Dict[str, Any]], params: Sequence[str] = ("fx", "fy")) -> Dict[str, Any]:
+    """
+    v0p74.9: each block left out in turn: its backlash-state offset a (at the reference focus, divided by its Navcam
+    scale) of each eye and parameter against the weighted mean (with between-block scatter) of the other blocks.
+    Returns {group: {param: {"rms_px", "max_px", "n", "per_block": [{"block", "a", "predicted", "residual_px"}]}}} - the
+    rms is what a block that took no part in the calibration should expect.
+    """
+    out: Dict[str, Any] = {}
+    groups = sorted({g for i in infos for g in (i.get("lines") or {})})
+    for g in groups:
+        for pn in params:
+            rows = []
+            for i in infos:
+                e = ((((i.get("lines") or {}).get(g) or {}).get("lines") or {}).get("backlash") or {}).get(pn)
+                if isinstance(e, dict) and "a" in e:
+                    k = (i.get("navcam_scale") or 1.0)
+                    rows.append((i["name"], float(e["a"]) / k, float(e.get("sd_a") or np.nan) / k))
+            if len(rows) < 3:
+                continue
+            per = []
+            for j, (name, a, _) in enumerate(rows):
+                others = [r for k_, r in enumerate(rows) if k_ != j]
+                m = _wmean(np.array([r[1] for r in others]), np.array([r[2] for r in others], float))["value"]
+                per.append({"block": name, "a": a, "predicted": m, "residual_px": a - m})
+            res = np.array([p["residual_px"] for p in per])
+            out.setdefault(g, {})[pn] = {"rms_px": float(np.sqrt(np.mean(res ** 2))), "max_px": float(np.max(np.abs(res))),
+                                         "n": len(per), "per_block": per}
+    return out
+
+
+REGULAR_RATIO_DEFAULT = 1.0095          # v0p74.9: backlash / regular focal length when the blocks do not measure it
+
+
 def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperature: float = 3.0,
-              min_blocks_for_T: int = 3) -> Dict[str, Any]:
+              min_blocks_for_T: int = 5, regular: str = "derived") -> Dict[str, Any]:
     """
     v0p74: the Mastcam-Z calibration from the selected v0p74 blocks (their focus lines, ``settings
     ["zcam_focus_lines"][group]["lines"][state][param]``, and rigs).  Per eye, focus state and parameter the
@@ -458,6 +529,13 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
     least ``min_blocks_for_T`` blocks.  The rig: the mean rotation and translation of the blocks' refined rigs.
     Returns the new focus model (``lines`` per eye, f0 / slope / aspect / pp / distortion for older readers,
     ``rig``) with ``calibration`` (every number, the blocks, the scatter).
+    v0p74.9 (after the 5 Oct promotion): (1) ``regular="derived"`` - the regular (low-backlash) state is not averaged
+    from the blocks' regular bins (a handful of 1-3 image bins per block, some misclassified: chi2/dof up to 2.7e5,
+    temperature terms of +8 px/degC, ZR k2 -2.07 - 0.020/count promoted on 5 Oct) but derived: fx, fy = the backlash
+    lines divided by the measured backlash / regular ratio (:func:`regular_ratio`), every other parameter the
+    backlash state's, no temperature term; ``"fitted"`` keeps the old behaviour.  (2) A temperature term needs
+    ``min_blocks_for_T`` (5) blocks.  (3) ``calibration["loo"]``: every block left out in turn - its backlash fx, fy
+    offsets against the mean of the others (:func:`leave_one_out`).
     """
     import copy
     from scipy.spatial.transform import Rotation
@@ -504,7 +582,7 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
     for g, gm in (out.get("cameras") or {}).items():
         lines: Dict[str, Any] = {}
         ref = None
-        for st in ("backlash", "regular"):
+        for st in (("backlash",) if regular == "derived" else ("backlash", "regular")):
             pars: Dict[str, Any] = {}
             names = sorted({pn for i in infos for pn in (((i["lines"].get(g) or {}).get("lines") or {}).get(st) or {})
                             if pn in FULL})
@@ -558,6 +636,20 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
         ref = float(ref if ref is not None else gm.get("reference_focus", 600.0))
         lines["reference_focus"] = ref
         bk = lines.get("backlash") or {}
+        if regular == "derived" and bk:
+            rr = regular_ratio(infos, g)
+            reg = {}
+            for pn, e in bk.items():
+                if not isinstance(e, dict):
+                    continue
+                k = rr["ratio"] if pn in ("fx", "fy") else 1.0
+                reg[pn] = {"a": e["a"] / k, "b": e["b"] / k, "sd_a": e["sd_a"] / k, "sd_b": e["sd_b"] / k,
+                           "tau_a": e.get("tau_a", 0.0), "chi2_dof_a": e.get("chi2_dof_a", float("nan")),
+                           "n_blocks": e.get("n_blocks"), "derived": f"backlash / {k:.5f}" if k != 1.0 else "backlash"}
+                if "c_per_degC" in e:                       # the same temperature term as the backlash state
+                    reg[pn]["c_per_degC"], reg[pn]["T0_degC"] = e["c_per_degC"] / k, e["T0_degC"]
+            lines["regular"] = reg
+            cal.setdefault("regular_ratio", {})[g] = rr
         if "fx" in bk and "fy" in bk:
             gm["f0_px"] = float(np.sqrt(bk["fx"]["a"] * bk["fy"]["a"]))
             gm["slope_px_per_count"] = 0.5 * (bk["fx"]["b"] + bk["fy"]["b"])
@@ -616,6 +708,7 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
                               f"same for every focus - the focus motion is the principal points'; ZR cx, cy at the reference "
                               f"focus = pp0, each block's offset moved into its rig rotation first)"}
         cal["rig"] = {k: v for k, v in out["rig"].items() if k != "R_sensor_from_ref"}
+    cal["loo"] = leave_one_out(infos)
     out["calibration"] = cal
     out["state"] = "calibrated (v0p74)"
     out["source"] = f"MPPP v0p74 Mastcam-Z 34 mm calibration from {len(infos)} blocks: {', '.join(cal['blocks'])}"
@@ -633,7 +726,8 @@ def check_model(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[
         checks.append({"check": name, "ok": bool(ok), "note": note})
     cal, su = new.get("calibration"), new.get("start_update")
     nb = len(((cal or su or {}).get("blocks")) or [])
-    add("blocks", nb >= lim["min_blocks"], f"{nb} blocks")
+    need = lim["min_blocks_calibration"] if cal is not None else lim["min_blocks"]   # v0p74.9: 3 for a calibration
+    add("blocks", nb >= need, f"{nb} blocks")
     for g, c in (new.get("cameras") or {}).items():
         o = (old.get("cameras") or {}).get(g) or {}
         if cal is not None:                     # a calibration must have fitted every eye
@@ -657,6 +751,26 @@ def check_model(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[
         if "k1" in (dist.get("names") or []):
             k1 = dist["params"][dist["names"].index("k1")]
             add(f"{g} k1", abs(k1) <= lim["max_k1"], f"{k1:+.4f}")
+    if cal is not None:                         # v0p74.9: what was promoted on 5 Oct without a check
+        for g, e in (cal.get("eyes") or {}).items():
+            if not isinstance(e, dict) or "skipped" in e:
+                continue
+            for st in ("backlash", "regular"):
+                for pn, x in (e.get(st) or {}).items():
+                    if not isinstance(x, dict):
+                        continue
+                    t = x.get("temperature") or {}
+                    if t.get("applied"):
+                        c = abs(float(t.get("c_per_degC") or 0.0))
+                        lim_c = lim["max_T_slope_px_per_degC"] if pn in ("fx", "fy") else lim["max_T_slope_pp_px_per_degC"]
+                        add(f"{g} {st} {pn} temperature term", c <= lim_c, f"{c:.2f} px/degC applied")
+                    if st == "backlash" and pn in ("fx", "fy") and np.isfinite(x.get("chi2_dof_a", np.nan)):
+                        add(f"{g} {st} {pn} block scatter", float(x.get("tau_a") or 0.0) <= lim["max_tau_f_px"],
+                            f"between-block sd {float(x.get('tau_a') or 0.0):.1f} px (chi2/dof {x['chi2_dof_a']:.1f})")
+                    if pn in ("k1", "k2"):
+                        bk = (e.get("backlash") or {}).get(pn) or {}
+                        if st == "regular" and bk and abs(float(x["a"]) - float(bk["a"])) > lim["max_regular_k_dev"][pn]:
+                            add(f"{g} regular {pn}", False, f"{x['a']:+.3f} against backlash {bk['a']:+.3f}")
     rig = new.get("rig")
     if rig:
         b = float(rig.get("baseline_m") or 0.0)
@@ -704,6 +818,18 @@ def report_lines(model: Dict[str, Any], grades: Optional[Sequence[Dict[str, Any]
                                f"{e['b']:+.6f} | {e['sd_b']:.6f} | {t.get('c_per_degC', float('nan')):+.4f} | "
                                f"{(t.get('z') if t.get('z') is not None else float('nan')):+.1f} | {t.get('applied', False)} | {e['n_blocks']} |")
         out.append("")
+        if cal.get("regular_ratio"):
+            out += ["Regular (low-backlash) state derived from the backlash lines (v0p74.9): fx, fy divided by "
+                    + ", ".join(f"{g} {v['ratio']:.5f} ({v['source']}, {v['n_blocks']} blocks)" for g, v in cal["regular_ratio"].items()), ""]
+        if cal.get("loo"):
+            out += ["## Leave one out (backlash offsets at the reference focus)", "",
+                    "| eye | param | blocks | rms (px) | max (px) | per block (residual px) |", "|---|---|---|---|---|---|"]
+            for g, P in cal["loo"].items():
+                for pn, e in P.items():
+                    out.append(f"| {g} | {pn} | {e['n']} | {e['rms_px']:.2f} | {e['max_px']:.2f} | "
+                               + ", ".join(f"{p['block'].replace('mars2020_', '').replace('_colmap_zcam', '')} {p['residual_px']:+.1f}"
+                                           for p in e["per_block"]) + " |")
+            out.append("")
         if cal.get("rig"):
             r = cal["rig"]
             out += ["## Stereo rig (right from left)", "",

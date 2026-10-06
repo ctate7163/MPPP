@@ -207,7 +207,7 @@ def test_calibrate_lines_rig_and_temperature(tmp_path):
     infos = [block_info(_block(tmp_path, n, s, T, fx_a=4720.0 + 0.5 * T)) for n, s, T in
              (("a", 400, -20.0), ("b", 700, -10.0), ("c", 1000, 0.0))]
     old = json.loads(zcam_focus_model_path().read_text())
-    m = calibrate(infos, old)
+    m = calibrate(infos, old, min_blocks_for_T=3)          # v0p74.9: the default needs 5 blocks for a T term
     L = m["calibration"]["eyes"]["ZL034"]["backlash"]["fx"]
     assert L["n_blocks"] == 3 and L["temperature"]["applied"]
     assert L["temperature"]["c_per_degC"] == pytest.approx(0.5, abs=1e-6)
@@ -766,3 +766,70 @@ def test_thermal_stage_holds_bins_with_few_images():
     import inspect
     src = inspect.getsource(T.thermal_stage)
     assert "weak_bins_held" in src and "WARNING" in src
+
+
+# ----------------------------------------------------------------------------- v0p74.9: after the 5 Oct promotion
+
+def test_calibrate_derives_the_regular_state_and_reports_loo(tmp_path):
+    from mppp.sfm.project import zcam_focus_model_path
+    from mppp.sfm.zcam_calib import block_info, calibrate, check_model, report_lines
+    infos = [block_info(_block(tmp_path, n, s, T, fx_a=4720.0 + d)) for n, s, T, d in
+             (("a", 400, -20.0, 0.0), ("b", 700, -10.0, 2.0), ("c", 1000, 0.0, -2.0), ("d", 1300, -5.0, 1.0))]
+    old = json.loads(zcam_focus_model_path().read_text())
+    m = calibrate(infos, old)
+    zl = m["cameras"]["ZL034"]["lines"]
+    rr = m["calibration"]["regular_ratio"]["ZL034"]
+    assert rr["source"] == "default" and rr["ratio"] == pytest.approx(1.0095)   # 1 regular group per block: too few
+    assert zl["regular"]["fx"]["a"] == pytest.approx(zl["backlash"]["fx"]["a"] / 1.0095)
+    assert "c_per_degC" not in zl["regular"]["fx"] and "c_per_degC" not in zl["backlash"]["fx"]   # 4 blocks < 5
+    loo = m["calibration"]["loo"]["ZL034"]["fx"]
+    assert loo["n"] == 4 and loo["rms_px"] > 0 and {p["block"] for p in loo["per_block"]} == {"a", "b", "c", "d"}
+    assert check_model(m, old)["ok"]
+    assert any("Leave one out" in ln for ln in report_lines(m))
+    fitted = calibrate(infos, old, regular="fitted")
+    assert "regular_ratio" not in fitted["calibration"]
+
+
+def test_check_model_blocks_the_5_oct_regular_lines():
+    """The checks added in v0p74.9 on what was promoted on 5 Oct: regular-state temperature terms of +8 px/degC
+    and ZR k2 -2.07 against +0.86 in the backlash state."""
+    from mppp.sfm.zcam_calib import check_model
+    e = {"backlash": {"fx": {"a": 4720.0, "b": 0.05, "tau_a": 1.0, "chi2_dof_a": 2.0},
+                      "k2": {"a": 0.856, "b": 0.0, "tau_a": 0.1, "chi2_dof_a": 2.0}},
+         "regular": {"fy": {"a": 4694.0, "b": 0.045, "tau_a": 15.0, "chi2_dof_a": 167054.5,
+                            "temperature": {"applied": True, "c_per_degC": 8.13}},
+                     "k2": {"a": -2.066, "b": -0.02, "tau_a": 3.4, "chi2_dof_a": 1448.6}}}
+    new = {"cameras": {"ZR034": {"f0_px": 4725.0}}, "calibration": {"blocks": ["a", "b", "c"], "eyes": {"ZR034": e}}}
+    rep = check_model(new, {"cameras": {"ZR034": {"f0_px": 4750.0}}})
+    bad = {c["check"] for c in rep["checks"] if not c["ok"]}
+    assert not rep["ok"] and {"ZR034 regular fy temperature term", "ZR034 regular k2"} <= bad
+
+
+def test_select_every_passing_block_and_regular_ratio_at_focus():
+    from mppp.sfm.zcam_calib import regular_ratio, select_blocks
+    # select_blocks(n=0): every passing block
+    infos = [{"name": n, "run_done": {"verdict": "WARN"}, "statuses": {}, "checks": {}, "sol": s,
+              "bins": [{"state": "backlash", "group": g, "fixed": [], "focus": 300.0 + 100 * k}
+                       for g in ("ZL034", "ZR034") for k in range(6)]} for n, s in (("a", 100), ("b", 110), ("c", 500))]
+    sel, grades = select_blocks(infos, n=0)
+    assert len(sel) == 3
+    # the regular ratio against the backlash ratio at the regular groups' own focus counts
+    gs = [{"camera_group": "ZR034", "state": "backlash", "decided": True, "ratio": 1.0095 + 4.5e-6 * (F - 600),
+           "focus_count": F, "fitted": 3} for F in range(100, 1300, 100)]
+    gs += [{"camera_group": "ZR034", "state": "regular", "decided": True, "ratio": 1.0000, "focus_count": F, "fitted": 2}
+           for F in (200, 250, 300)]
+    rr = regular_ratio([{"name": "a", "backlash_groups": gs}], "ZR034")
+    assert rr["source"].startswith("measured") and rr["ratio"] == pytest.approx(1.0095 + 4.5e-6 * (250 - 600), abs=2e-4)
+
+
+def test_final_runs_go_to_a_variant_and_homography_abort_is_retried():
+    import importlib.util
+    from mppp.sfm.matching import CALIBRATED_ABORT_SIGNS
+    msg = "E20261006 09:27:36 homography_matrix.cc:167] Check failed: cam_rays1.size() >= 4 (3 vs. 4)"
+    assert any(k in msg for k in CALIBRATED_ABORT_SIGNS)
+    spec = importlib.util.spec_from_file_location("rp9", ROOT / "scripts" / "run_pipeline.py")
+    rp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rp)
+    src = (ROOT / "scripts" / "run_pipeline.py").read_text()
+    assert '"--final-variant", default="cal"' in src and 'variant=self.a.final_variant' in src
+    assert '"--n", type=int, default=0' in src

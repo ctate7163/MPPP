@@ -2,6 +2,16 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.74.9 — 2026-10-06
+
+**After the 5–6 Oct pipeline: the calibration from every passing block, the regular state derived, the final runs kept apart.** The 5 Oct `zcam_calibrate` promoted a 3-block calibration whose regular-state lines were fitted from a handful of 1–3 image bins (chi2/dof up to 2.7e5; temperature terms of +8 px/degC applied; ZR k2 -2.07 - 0.020/count); the final reruns then overwrote the first runs in place, and in Chal Rocks, Enchanted Lake and Three Forks North the right eye lost every tie point in the second Mastcam-Z round (Rochette, Rockytop and Belva kept it; Belva's yield rose from 279 to 561).
+- `calibrate`: the regular state is derived (`regular="derived"`): fx, fy = the backlash lines divided by the measured backlash / regular ratio (`regular_ratio`: each regular group against the block's backlash line at its own focus count; 1.0095 without data), every other parameter the backlash state's. A temperature term needs 5 blocks. `calibration["loo"]`: each block left out in turn (`leave_one_out`); the report has the table.
+- `check_model`: applied temperature terms at most 2 px/degC (0.5 for cx, cy), between-block sd of the backlash fx, fy at most 10 px, regular k1 / k2 within 0.05 / 0.5 of the backlash state's, a calibration from at least 3 blocks. The 5 Oct model fails four of these.
+- `select_blocks` / `zcam_calibration.py calibrate` / `run_pipeline.py`: `--n 0` (default) = every passing block. Grading: Navcam edge/centre limit 1.5 -> 1.6 (Rio Chiquito 1.56, South Arm 1.54).
+- `run_pipeline.py`: `zcam_final_runs` write to `<WORK>/colmap_cal` (`--final-variant`, features and matches seeded from the first run) instead of over the first runs.
+- Matching: COLMAP's `homography_matrix.cc` "cam_rays1.size() >= 4" abort (Three Forks Large, 6 Oct) is retried with the Mastcam-Z cameras verified uncalibrated, like the essential-matrix abort.
+- A candidate from the first-run lines of the 8 passing blocks is in `camera_analysis/zcam34_calibration_20261006_allblocks` (not promoted): backlash fx / fy at focus 600 ZL 4716.1 / 4726.4, ZR 4722.9 / 4734.7 px; leave-one-out rms ZL fx 2.3, fy 5.4, ZR fx 4.1, fy 5.2 px.
+
 ## 0.74.8 — 2026-10-05
 
 **Mastcam-Z focus states: one state per sequence, and the backlash ratio measured on the block.** The 4–5 Oct zcam34 batch added 7 focus groups to the found list at f / label f 1.0036–1.0061, between the regular state (about 1.000) and the backlash state (about 1.0095). All but one were the low-focus end of a sequence whose other groups are backlash: the ratio rises with the focus count (ZR034: refined slope about 0.065 against the labels' 0.041 px/count, about +0.45 % per 1000 counts), and the midpoint came from the start model's f0 / label f0 (1.0142 / 1.0151), 0.25 % above the measured backlash state.

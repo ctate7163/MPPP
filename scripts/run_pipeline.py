@@ -205,10 +205,12 @@ class Pipeline:
         return ("done", {0: "start model promoted, found list updated", 1: "start model not promoted (a check failed); "
                          "found list updated"}.get(rc, f"error (exit {rc}); the focus model in use stays"))
 
-    def _sites(self, stage, group, zcam):
+    def _sites(self, stage, group, zcam, variant=""):
         cmd = [PY, ROOT / "scripts" / "run_sites.py", "--root", self.root, "--group", group]
         if zcam:
             cmd += ["--zcam", *ZCAM_SET]
+        if variant:                       # v0p74.9: results in <WORK>/colmap_<variant>, the first runs kept
+            cmd += ["--variant", variant]
         rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
         for _ in range(3):
             if rc == 3 and not self.a.dry_run:                 # another batch started meanwhile: wait for it
@@ -244,7 +246,10 @@ class Pipeline:
     def s_zcam_final_runs(self):
         if not (self.state.get("zcam_calibrate") or {}).get("promoted"):
             return "skipped", "no new calibration promoted"
-        return self._sites("zcam_final_runs", ZCAM_GROUP, True)
+        # v0p74.9: the final runs go to <WORK>/colmap_<final_variant> (default "cal"; features and matches seeded from
+        # the first run's): on 5-6 Oct they overwrote the first runs in place, and with the promoted model the right
+        # Mastcam-Z eye lost every tie point in Chal Rocks, Enchanted Lake and Three Forks North
+        return self._sites("zcam_final_runs", ZCAM_GROUP, True, variant=self.a.final_variant)
 
     def s_pointclouds(self):
         rc = self.run("pointclouds", [PY, ROOT / "scripts" / "zcam_calibration.py", "pointclouds", "--root", self.root,
@@ -352,7 +357,10 @@ class Pipeline:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default="D:/scapes/colmap")
-    ap.add_argument("--n", type=int, default=3, help="the number of graded N+Z blocks for the calibration")
+    ap.add_argument("--n", type=int, default=0,
+                    help="the number of graded N+Z blocks for the calibration (v0p74.9: 0 = every passing block)")
+    ap.add_argument("--final-variant", default="cal",
+                    help="v0p74.9: zcam_final_runs write to <WORK>/colmap_<this> ('' = in place, over the first runs)")
     ap.add_argument("--no-navcam-runs", action="store_true", help="skip the Navcam-only reruns")
     ap.add_argument("--wait-h", type=float, default=36.0, help="how long to wait for a running batch")
     ap.add_argument("--stage-timeout-h", type=float, default=30.0, help="the consensus stage's time limit")

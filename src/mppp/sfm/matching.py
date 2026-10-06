@@ -117,7 +117,10 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     return summary
 
 
-CALIBRATED_ABORT_SIGNS = ("kMinNumSamples", "essential_matrix.cc", "cam_rays1_with_jac")
+# v0p74.9: + the homography check (Three Forks Large N+Z34, 6 Oct: "homography_matrix.cc:167] Check failed:
+# cam_rays1.size() >= 4 (3 vs. 4)" - the same calibrated-verification abort, not caught by the retry)
+CALIBRATED_ABORT_SIGNS = ("kMinNumSamples", "essential_matrix.cc", "cam_rays1_with_jac", "homography_matrix.cc",
+                          "cam_rays1.size()")
 
 
 def set_prior_focal(project: SfmProject, families: Sequence[str] = ("Z",), value: bool = False) -> int:
