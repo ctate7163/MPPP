@@ -40,3 +40,7 @@
 ## 20261004-125252 - v0p74 Mastcam-Z 34 mm start model from 10 blocks (start-update)
   - `M2020_ZCAM034_focus_model.json` cd1b45b942a4 from `D:\scapes\colmap\camera_analysis\zcam34_start_20261004\M2020_ZCAM034_focus_model.json`
   - replaced files kept in `history/20261004-125252/`
+
+## 20261005-222622 - v0p74 Mastcam-Z 34 mm calibration from 3 blocks (mars2020_sol_0460_rockytop_colmap_zcam, mars2020_sol_1962_marble_mountain_colmap_zcam, mars2020_sol_0770_belva_crater_large_colmap_zcam)
+  - `M2020_ZCAM034_focus_model.json` 589aea1eae5e from `D:\scapes\colmap\camera_analysis\zcam34_calibration_20261005\M2020_ZCAM034_focus_model.json`
+  - replaced files kept in `history/20261005-222622/`
