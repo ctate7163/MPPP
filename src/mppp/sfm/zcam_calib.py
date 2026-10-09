@@ -410,6 +410,20 @@ def start_model_from_blocks(infos: Sequence[Dict[str, Any]], model: Dict[str, An
     return out
 
 
+def _ols(x: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+    """v0p75: slope, se and z of y against x (rows with a finite x), as the Navcam rig-residual tests."""
+    ok = np.isfinite(x) & np.isfinite(y)
+    if ok.sum() < 3 or np.ptp(x[ok]) <= 0:
+        return {"n": int(ok.sum()), "slope": None, "se": None, "z": None}
+    X = np.c_[np.ones(ok.sum()), x[ok] - x[ok].mean()]
+    c, *_ = np.linalg.lstsq(X, y[ok], rcond=None)
+    r = y[ok] - X @ c
+    s2 = float(np.sum(r ** 2) / max(ok.sum() - 2, 1))
+    se = float(np.sqrt(s2 / np.sum((x[ok] - x[ok].mean()) ** 2)))
+    return {"n": int(ok.sum()), "mean_x": float(x[ok].mean()), "intercept": float(c[0]), "slope": float(c[1]), "se": se,
+            "z": float(c[1] / se) if se > 0 else None, "rms": float(np.sqrt(np.mean(r ** 2)))}
+
+
 def _wmean(y: np.ndarray, sd: np.ndarray) -> Dict[str, float]:
     sd = np.where(np.isfinite(sd) & (sd > 0), sd, np.nanmedian(np.where(sd > 0, sd, np.nan)) if np.any(sd > 0) else 1.0)
     w = 1.0 / sd ** 2
@@ -519,7 +533,8 @@ REGULAR_RATIO_DEFAULT = 1.0095          # v0p74.9: backlash / regular focal leng
 
 
 def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperature: float = 3.0,
-              min_blocks_for_T: int = 5, regular: str = "derived") -> Dict[str, Any]:
+              min_blocks_for_T: int = 5, regular: str = "derived", form: Any = "v0p75",
+              rig_translation: str = "cahv") -> Dict[str, Any]:
     """
     v0p74: the Mastcam-Z calibration from the selected v0p74 blocks (their focus lines, ``settings
     ["zcam_focus_lines"][group]["lines"][state][param]``, and rigs).  Per eye, focus state and parameter the
@@ -536,9 +551,25 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
     backlash state's, no temperature term; ``"fitted"`` keeps the old behaviour.  (2) A temperature term needs
     ``min_blocks_for_T`` (5) blocks.  (3) ``calibration["loo"]``: every block left out in turn - its backlash fx, fy
     offsets against the mean of the others (:func:`leave_one_out`).
+    v0p75: ``form`` (default the v0p75 line form, :data:`mppp.sfm.zcam.LINE_FORM_V0P75`; ``"v0p74"`` / None for the
+    free lines): the averaged lines are put on the form - fx and fy of an eye share one slope (the mean of both),
+    k1, k2 have no slope, ZR cx sits at pp0 with no slope, ZR cy at pp0 with its slope; ZL's pp0 (the model's) is
+    kept.  ``rig_translation`` ``"cahv"``: the rig translation is the blocks' CAHV baseline (held in the runs),
+    ``"refined"`` the mean of the refined ones.  The rig consensus adds ``residuals``: each block's refined rotation
+    against its start (the model's rig) as yaw / pitch / roll mdeg, with the slopes against the block's optics
+    temperature and sol (``vs_T``, ``vs_sol``: slope, se, z) - the test for a temperature or sol term.
     """
     import copy
     from scipy.spatial.transform import Rotation
+    from .zcam import LINE_FORM_V0P75
+    if form in (None, "v0p74", "free"):
+        form_of = {}
+    elif form == "v0p75":
+        form_of = LINE_FORM_V0P75
+    elif isinstance(form, dict):
+        form_of = form
+    else:
+        raise ValueError(f"form {form!r}: 'v0p75', 'v0p74' or {{eye: {{param: form}}}}")
     out = copy.deepcopy(model)
     cal: Dict[str, Any] = {"blocks": [i["name"] for i in infos], "when": datetime.date.today().isoformat(),
                            "eyes": {}, "z_temperature": z_temperature}
@@ -628,6 +659,28 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
                         ent["a"] = a_T
                         ent["c_per_degC"], ent["T0_degC"] = c, T0
                 pars[pn] = ent
+            fm = form_of.get(str(g)[:2]) or form_of.get(str(g)) or {}
+            if pars and fm:                                 # v0p75: the averaged lines on the form
+                common = [pn for pn in pars if fm.get(pn) == "common"]
+                if len(common) >= 2:
+                    bs = np.array([pars[pn]["b"] for pn in common]); ss = np.array([pars[pn]["sd_b"] or np.nan for pn in common], float)
+                    ss = np.where(np.isfinite(ss) & (ss > 0), ss, np.nanmax(ss) if np.any(np.isfinite(ss)) else 1.0)
+                    wb = 1.0 / ss ** 2
+                    b_c, sd_c = float(np.sum(wb * bs) / np.sum(wb)), float(1.0 / np.sqrt(np.sum(wb)))
+                    for pn in common:
+                        pars[pn].update({"b": b_c, "sd_b": sd_c, "form": "common", "common_slope_of": list(common)})
+                pp0 = gm.get("pp0_px")
+                for pn, e in pars.items():
+                    f_ = fm.get(pn, "free")
+                    if f_ in ("constant", "pinned"):
+                        e.update({"b": 0.0, "sd_b": 0.0, "form": f_})
+                    if f_ in ("pinned", "pinned_slope") and pn in ("cx", "cy") and pp0:
+                        e.update({"a": float(pp0[0 if pn == "cx" else 1]), "sd_a": 0.0, "form": f_,
+                                  "a_source": "pinned at pp0 (form)"})
+                        e.pop("c_per_degC", None)
+                        e.pop("T0_degC", None)
+                    if f_ in ("constant", "pinned") and "c_per_degC" in e:
+                        pass                                # a temperature term of a constant is still a constant
             if pars:
                 lines[st] = pars
         if not lines:
@@ -696,8 +749,43 @@ def calibrate(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], z_temperat
         tt = np.array([r["t"] for r in rigs])
         R = Rotation.from_rotvec(rv.mean(axis=0)).as_matrix()
         t = tt.mean(axis=0)
+        t_source = "mean of the blocks' refined translations"
+        if rig_translation == "cahv":                      # v0p75: the baseline held at CAHV
+            tc = []
+            for i in infos:
+                v = (i.get("rig") or {}).get("Z034") or {}
+                tv = v.get("t_sensor_from_ref_cahv") or v.get("t_sensor_from_ref")
+                if tv is not None:
+                    tc.append(np.asarray(tv, float))
+            if tc:
+                t = np.mean(np.array(tc), axis=0)
+                t_source = f"CAHV median of the pairs, mean of {len(tc)} blocks (held in the runs)"
+        # v0p75: each block's refined rotation against its start (the model's rig, the same for every block when the
+        # runs start from the model): the residual angles and their trends with temperature and sol
+        res_rows = []
+        for r in rigs:
+            info = next((i for i in infos if i["name"] == r["block"]), {})
+            v = (info.get("rig") or {}).get("Z034") or {}
+            R0 = np.asarray(v.get("R_sensor_from_ref"), float) if v.get("R_sensor_from_ref") is not None else None
+            if R0 is None:
+                continue
+            M = Rotation.from_rotvec(r["rotvec"]).as_matrix() @ R0.T
+            ang = Rotation.from_matrix(M).as_rotvec()
+            res_rows.append({"block": r["block"], "T_optics_degC": r["T_optics_degC"], "sol": r["sol"],
+                             "yaw_mdeg": float(np.degrees(ang[1]) * 1e3), "pitch_mdeg": float(np.degrees(ang[0]) * 1e3),
+                             "roll_mdeg": float(np.degrees(ang[2]) * 1e3),
+                             "start_source": v.get("rotation_source")})
+        residuals: Dict[str, Any] = {"per_block": res_rows, "fits": {}}
+        for ang_name in ("yaw", "pitch", "roll"):
+            y = np.array([rr[f"{ang_name}_mdeg"] for rr in res_rows], float)
+            T = np.array([np.nan if rr["T_optics_degC"] is None else rr["T_optics_degC"] for rr in res_rows], float)
+            S = np.array([np.nan if rr["sol"] is None else rr["sol"] for rr in res_rows], float)
+            residuals["fits"][ang_name] = {"mean_mdeg": float(np.mean(y)) if len(y) else None,
+                                           "sd_mdeg": float(np.std(y, ddof=1)) if len(y) > 1 else None,
+                                           "vs_T": _ols(T, y), "vs_sol": _ols(S / 1000.0, y)}
         sd_mdeg = (np.degrees(rv.std(axis=0, ddof=1)) * 1e3).tolist() if len(rigs) > 1 else None
         out["rig"] = {"R_sensor_from_ref": R.tolist(), "t_sensor_from_ref": t.tolist(), "baseline_m": float(np.linalg.norm(t)),
+                      "translation_source": t_source, "residuals": residuals,
                       "rotvec_mdeg": (np.degrees(rv.mean(axis=0)) * 1e3).tolist(), "sd_rotvec_mdeg": sd_mdeg,
                       "sd_baseline_mm": float(np.std(np.linalg.norm(tt, axis=1), ddof=1) * 1e3) if len(rigs) > 1 else None,
                       "blocks": [r["block"] for r in rigs],
@@ -852,7 +940,7 @@ def report_lines(model: Dict[str, Any], grades: Optional[Sequence[Dict[str, Any]
                 out += [f"- ZR principal point at the reference focus fixed at pp0 {p2r['pp0_px']} px; each block's offset "
                         f"moved into its rig rotation before averaging (the two are degenerate in a block's BA)", ""]
     su = model.get("start_update")
-    if su:
+    if su and su.get("eyes"):
         out += ["## Start update (blocks before v0p74)", ""]
         for g, e in su["eyes"].items():
             if "skipped" in e:

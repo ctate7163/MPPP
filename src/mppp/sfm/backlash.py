@@ -78,9 +78,13 @@ def append_found(path: Any, groups: Sequence[Dict[str, Any]], site: str = "", wh
             if stem.upper() in have:
                 continue
             have.add(stem.upper())
+            ratio = g.get("ratio") if g.get("ratio") is not None else float("nan")
+            z = g.get("z") if g.get("z") is not None else (g.get("sequence_z") if g.get("sequence_z") is not None else float("nan"))
+            how = "bin camera" if g.get("fit_source") == "bin camera" else "notebook 03 classification"
+            if g.get("sequence_state") == "regular" and g.get("own_state") != "regular":
+                how += ", by its sequence"                       # v0p74.8: the sequence rule decided
             lines.append(f"{stem}  # {site} sol {g.get('sol')} {g.get('sequence')} focus {g.get('focus_count')} "
-                         f"ratio {g.get('ratio', float('nan')):.4f} z {g.get('z', float('nan')):+.1f} "
-                         f"(notebook 03 classification, {when})")
+                         f"ratio {ratio:.4f} z {z:+.1f} ({how}, {when})")
     if lines:
         f.parent.mkdir(parents=True, exist_ok=True)
         new = not f.is_file()
@@ -453,10 +457,38 @@ def apply_sequence_states(rows: List[Dict[str, Any]], z_min: float = 3.0) -> Dic
     return out
 
 
+BIN_FALLBACK_SD = 0.001      # v0p75: the ratio sd given to a group classified from its bin camera (no per-image fit):
+#                              a bin of thousands of observations is formally far better, 0.1 % is the systematic part
+#                              (the block's Navcam scale, the f / principal-point trade); the states are 0.95 % apart
+
+
+def bin_focal_fallback(rec, project, min_observations: int = 200) -> Dict[str, Dict[str, Any]]:
+    """
+    v0p75: {camera key: {"f_px", "observations"}} of every Mastcam-Z focus-bin camera with at least
+    ``min_observations`` triangulated observations in ``rec`` - the fallback that classifies a focus group none of
+    whose images got a per-image fit (:func:`image_focal_fits`: fewer than 20 observations each, or registered only
+    through the bin): the bin's refined f against the group's label f.
+    """
+    from .zcam import _observations_per_camera
+    db = (project.settings.get("database") or {}).get("cameras") or {}
+    obs = _observations_per_camera(rec)
+    out: Dict[str, Dict[str, Any]] = {}
+    for key, cid in db.items():
+        if not str(key).startswith("Z") or int(cid) not in rec.cameras:
+            continue
+        n = int(obs.get(int(cid), 0))
+        if n < min_observations:
+            continue
+        p = rec.cameras[int(cid)].params
+        out[str(key)] = {"f_px": float(0.5 * (p[0] + p[1])), "observations": n}
+    return out
+
+
 def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Dict[str, Any]] = None,
                     z_min: float = 3.0, floor: float = 0.001, tolerance: float = 0.006,
                     nav_scale: Optional[float] = None, known: Any = None, sequence_rule: bool = True,
-                    measured_ratio: bool = True, report: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+                    measured_ratio: bool = True, report: Optional[Dict[str, Any]] = None,
+                    bin_fallback: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """
     One row per focus group (:func:`focus_groups`): the observation-weighted median of its images' ratio of fitted to
     label focal length, its standard error (the images' formal errors, at least ``floor`` in the ratio, i.e. 0.1 %,
@@ -474,7 +506,8 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
     the project's list, without the found list) being the exceptions (``listed_names``, regular in
     :func:`image_states`).  The ratios that decide (``ratio_fit``, ``sd_fit``) come from the images not on that
     list; ``ratio`` / ``sd`` are every fitted image's, as before.  ``report`` (a dict) receives the lines and the
-    sequences.
+    sequences.  v0p75: ``bin_fallback`` (:func:`bin_focal_fallback`) classifies a group without any per-image fit
+    from its own bin camera's refined f (``fit_source`` "bin camera", sd :data:`BIN_FALLBACK_SD`).
     """
     ratios = backlash_ratios(model)
     ns = float(nav_scale) if nav_scale else 1.0
@@ -520,6 +553,21 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
             med, sd, x = stats(fs)
             row.update({"ratio": med, "sd": sd, "ratio_min": float(x.min()), "ratio_max": float(x.max()),
                         "offset_from_label_pct": 100.0 * (med - 1.0)})
+        elif bin_fallback and not listed:
+            # v0p75: no per-image fit - the group's bin camera (its own, not shared with another sequence at the
+            # same focus count) stands in: refined f / the group's median label f, with a wide sd
+            cams = [c for c in base["cameras"] if c in bin_fallback]
+            same = [m for m in members if m.get("label_f_px")]
+            shared = any(r.get("instrument") in cams and r["name"] not in set(base["names"])
+                         for r in project.images if r.get("camera_group") == g)
+            if cams and same and not shared:
+                lf = float(np.median([m["label_f_px"] for m in same]))
+                fb = bin_fallback[cams[0]]
+                row.update({"ratio": fb["f_px"] / lf, "sd": BIN_FALLBACK_SD, "ratio_fit": fb["f_px"] / lf,
+                            "sd_fit": BIN_FALLBACK_SD, "fit_source": "bin camera",
+                            "bin_observations": fb["observations"], "offset_from_label_pct": 100.0 * (fb["f_px"] / lf - 1.0)})
+            else:
+                row.update({"ratio": None, "sd": None})
         else:
             row.update({"ratio": None, "sd": None})
         if fu:
@@ -700,7 +748,7 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
                    loss_scale: float = 2.0, max_iterations: int = 100, attitude_prior_deg: Optional[float] = None,
                    linear_solver: str = "auto", refine_tangential: Any = True, hold_f_images: int = 0,
                    z_min: float = 3.0, min_observations: int = 20, verbose: bool = True,
-                   sequence_rule: bool = True, measured_ratio: bool = True):
+                   sequence_rule: bool = True, measured_ratio: bool = True, bin_fallback: bool = True):
     """
     Classify the Mastcam-Z focus groups of a solved block into the backlash and the regular state and (``mode``
     ``"split"``) give the regular images their own cameras (:func:`split_by_state`) and adjust again with the Navcam
@@ -725,7 +773,8 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
     fits = image_focal_fits(rec, project, min_observations=min_observations, loss_px=loss_scale)
     cls: Dict[str, Any] = {}
     groups = classify_groups(project, fits, model, z_min=z_min, nav_scale=ns, sequence_rule=sequence_rule,
-                             measured_ratio=measured_ratio, report=cls)
+                             measured_ratio=measured_ratio, report=cls,
+                             bin_fallback=bin_focal_fallback(rec, project) if bin_fallback else None)
     states = image_states(groups)
     report: Dict[str, Any] = {"mode": mode, "z_min": z_min, "backlash_ratios": backlash_ratios(model), "nav_scale": ns,
                               "groups": groups, "fits_before": fits, "before": _state_summary(fits, states),

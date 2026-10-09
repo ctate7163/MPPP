@@ -1109,7 +1109,7 @@ def _ols(x: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
 
 
 def rig_residuals(scapes_cfg: Dict[str, PathLike], cameras_dir: Optional[PathLike] = None, points: int = 8000,
-                  iterations: int = 60, verbose: bool = True) -> Dict[str, Any]:
+                  iterations: int = 60, verbose: bool = True, epoch_gap: Optional[float] = 100.0) -> Dict[str, Any]:
     """
     v0p73: does the rig follow the model?  Each block on its own, with the Navcam cameras of ``cameras_dir`` (default:
     in use) held and their whole model applied per image - fx, fy per axis and NR cx against temperature, the rig
@@ -1119,6 +1119,9 @@ def rig_residuals(scapes_cfg: Dict[str, PathLike], cameras_dir: Optional[PathLik
     stereo temperature change) and none should follow the sol (the drift rates).  Returns {"blocks": [{"block",
     "T_median_degC", "sol_median", "images", "yaw_mdeg", "pitch_mdeg", "roll_mdeg"}], "fits": {angle: {"vs_T": ...,
     "vs_sol": ...}}, "cameras": dir}: slopes mdeg/degC and mdeg per 1000 sol with se and z.
+    v0p75: ``epoch_gap`` (sols; None = off): a block whose Navcam visits are more than that many sols apart gets one
+    rig per visit (:func:`mppp.sfm.navcal.split_rig_by_epoch`) and one row per visit (``block`` "name [sols a-b]",
+    ``site`` the block, ``epoch``) - the early visits of Chal Rocks Sid and Three Forks then test the drift on their own.
     """
     import pycolmap
     from . import navcal as NC
@@ -1163,21 +1166,46 @@ def rig_residuals(scapes_cfg: Dict[str, PathLike], cameras_dir: Optional[PathLik
         if applied:
             kw["extra_map"] = early_keypoint_map(proj, float(em["before_sol"]),
                                                  [float(em.get(f"d{k}_px", 0.0)) if k in applied else 0.0 for k in EARLY_TERMS])
+        # v0p75: a block whose Navcam visits are more than ``epoch_gap`` sols apart (Chal Rocks Sid: sols 91-101 and
+        # 360-378) gets one rig per visit, refined on its own, and one residual row per visit
+        epochs = []
+        if epoch_gap:
+            rec_e, proj_e, eps = NC.split_rig_by_epoch(rec, proj, temps, gap=float(epoch_gap))
+            if len(eps) > 1:
+                rec, proj, epochs = rec_e, proj_e, eps
         ba = NC.joint_adjust(rec, proj, temps, 0.5 * (tl["fx_ppm"] + tl["fy_ppm"]), t0, max_iterations=iterations,
                              refine_rig="rotation", hold_cameras=("NL", "NR"), rig_slopes=(0.0, 0.0), **kw)
-        _, _, Tr = NC.stereo_rig(rec)
-        a = NC.rig_angles(np.asarray(Tr.rotation.matrix()), R_ref=R_model)
-        Ts = [v for n, v in temps.items() if n in {im.name for im in rec.images.values()}]
-        sols = [float(r["sol"]) for r in proj.images if r.get("sol") is not None]
-        row = {"block": name, "T_median_degC": float(np.median(Ts)) if Ts else None,
-               "sol_median": float(np.median(sols)) if sols else None, "images": int(rec.num_reg_images()),
-               "yaw_mdeg": a["yaw_mdeg"], "pitch_mdeg": a["pitch_mdeg"], "roll_mdeg": a["roll_mdeg"],
-               "cost": float(ba["final_cost"]), "iterations": ba["iterations"]}
-        rows.append(row)
-        if verbose:
-            print(f"  {name}: T {row['T_median_degC']:+.1f} degC, sol {row['sol_median']:.0f}: residual yaw "
-                  f"{row['yaw_mdeg']:+.2f}, pitch {row['pitch_mdeg']:+.2f}, roll {row['roll_mdeg']:+.2f} mdeg "
-                  f"({time.time() - t:.0f} s)  {NC.progress(kb, len(scapes_cfg), t_all, 'block')}", flush=True)
+        units = []
+        if epochs:
+            for e in epochs:
+                if e.get("rig_id") is None:
+                    continue
+                rg = rec.rigs[int(e["rig_id"])]
+                sid = next(iter(rg.non_ref_sensors), None)
+                if sid is None:
+                    continue
+                units.append((f"{name} [sols {e['sol_min']}-{e['sol_max']}]", rg.sensor_from_rig(sid),
+                              e["T_median_degC"], e["sol_median"], e["images"],
+                              {"epoch": e["epoch"], "sols": [e["sol_min"], e["sol_max"]], "frames": e["frames"]}))
+        if not units:
+            _, _, Tr = NC.stereo_rig(rec)
+            Ts = [v for n, v in temps.items() if n in {im.name for im in rec.images.values()}]
+            sols = [float(r["sol"]) for r in proj.images if r.get("sol") is not None]
+            units.append((name, Tr, float(np.median(Ts)) if Ts else None, float(np.median(sols)) if sols else None,
+                          int(rec.num_reg_images()), None))
+        for label, Tr, Tm, sm, n_im, ep in units:
+            a = NC.rig_angles(np.asarray(Tr.rotation.matrix()), R_ref=R_model)
+            row = {"block": label, "site": name, "T_median_degC": Tm, "sol_median": sm, "images": int(n_im),
+                   "yaw_mdeg": a["yaw_mdeg"], "pitch_mdeg": a["pitch_mdeg"], "roll_mdeg": a["roll_mdeg"],
+                   "cost": float(ba["final_cost"]), "iterations": ba["iterations"]}
+            if ep:
+                row["epoch"] = ep
+            rows.append(row)
+            if verbose:
+                print(f"  {label}: T {(row['T_median_degC'] if row['T_median_degC'] is not None else float('nan')):+.1f} degC, "
+                      f"sol {(row['sol_median'] or float('nan')):.0f}: residual yaw "
+                      f"{row['yaw_mdeg']:+.2f}, pitch {row['pitch_mdeg']:+.2f}, roll {row['roll_mdeg']:+.2f} mdeg "
+                      f"({time.time() - t:.0f} s)  {NC.progress(kb, len(scapes_cfg), t_all, 'block')}", flush=True)
     ok = [r for r in rows if "error" not in r]
     fits = {}
     for ang in ("yaw", "pitch", "roll"):

@@ -134,21 +134,34 @@ class Pipeline:
 
     def navcam_blocks(self):
         """{label: WORK folder} of the Navcam-only blocks on disk for the consensus: finished (run_done), one folder
-        per site (the site's own WORK folder when it has one), screening not FAIL."""
+        per site (the site's own WORK folder when it has one), screening not FAIL.  v0p75: the sites of the
+        ``navcam_consensus`` group only (``--all-navcam-blocks`` takes every Navcam block on disk, as before)."""
         from mppp.sfm.health import screen_blocks
-        from mppp.sfm.sites import discover_scapes, load_site_table, parse_work_folder, work_folder
+        from mppp.sfm.sites import discover_scapes, load_site_table, parse_work_folder, site_group, work_folder
         table = load_site_table()
         found = discover_scapes(self.root, include_zcam=False, verbose=False)
+        members = None
+        if not getattr(self.a, "all_navcam_blocks", False):
+            try:
+                members = set(site_group(NAVCAM_GROUP))
+            except KeyError:                                   # a site table without the group: every block
+                members = None
         out = {}
+        skipped = []
         for label, w in found.items():
             site, zc = parse_work_folder(w)
             if zc or not (w / "colmap" / "run_done.json").is_file():
+                continue
+            if members is not None and site not in members:
+                skipped.append(site)
                 continue
             if site in table["sites"]:
                 own = work_folder(self.root, site, False, table["sites"][site]["sols"])
                 if own != w and (own / "colmap" / "run_done.json").is_file():
                     continue                                   # a stale folder of a site that has its own
             out[label] = w
+        if skipped:
+            self.log(f"  navcam_consensus: blocks on disk not in the {NAVCAM_GROUP} group, left out: {', '.join(sorted(set(skipped)))}")
         scr = screen_blocks({k: str(v) for k, v in out.items()}, verbose=False)
         # v0p74.5: a block matched with COLMAP guided matching (epipolar-consistent false matches) is a WARN for a
         # single alignment but must not shape the shared cameras: left out of the consensus like a FAIL
@@ -362,6 +375,9 @@ def main(argv=None) -> int:
     ap.add_argument("--final-variant", default="cal",
                     help="v0p74.9: zcam_final_runs write to <WORK>/colmap_<this> ('' = in place, over the first runs)")
     ap.add_argument("--no-navcam-runs", action="store_true", help="skip the Navcam-only reruns")
+    ap.add_argument("--all-navcam-blocks", action="store_true",
+                    help="v0p75: the Navcam consensus takes every finished Navcam block on disk (default: the sites of "
+                         "the navcam_consensus group only)")
     ap.add_argument("--wait-h", type=float, default=36.0, help="how long to wait for a running batch")
     ap.add_argument("--stage-timeout-h", type=float, default=30.0, help="the consensus stage's time limit")
     ap.add_argument("--sites-timeout-h", type=float, default=72.0,

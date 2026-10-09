@@ -276,6 +276,64 @@ PARAM_INDEX = {"fx": 0, "fy": 1, "cx": 2, "cy": 3, "k1": 4, "k2": 5}     # FULL_
 LINE_PARAMS_V0P73 = {"ZL": ("fx", "fy"), "ZR": ("fx", "fy", "cx", "cy")}   # ZL's principal point: the reference
 LINE_PARAMS_V0P74 = {"ZL": ("fx", "fy", "k1", "k2"), "ZR": ("fx", "fy", "cx", "cy", "k1", "k2")}   # + the radial terms
 LINE_STATES = ("backlash", "regular")
+# v0p75: the *form* of each line - what of p = a + b (focus - ref) is fitted in a block:
+#   "free"      a and b fitted (the v0p73/v0p74 line);
+#   "common"    b shared by every "common" parameter of the eye (fx and fy: one df/dfocus per eye), a fitted each;
+#   "constant"  b = 0, a fitted (k1, k2: one value per eye and block, constant with focus);
+#   "pinned"    a = the model's pp0 (ZR cx: the level is the rig's), b = 0;
+#   "pinned_slope"  a = the model's pp0, b fitted (ZR cy: the right-minus-left boresight moves a little with focus).
+# ZL's cx, cy are not on lines at all (held at the model's pp0: the reference eye).
+LINE_FORM_V0P75 = {"ZL": {"fx": "common", "fy": "common", "k1": "constant", "k2": "constant"},
+                   "ZR": {"fx": "common", "fy": "common", "cx": "pinned", "cy": "pinned_slope",
+                          "k1": "constant", "k2": "constant"}}
+LINE_FORMS = ("free", "common", "constant", "pinned", "pinned_slope")
+PIN_MAX_OFFSET_PX = 300.0    # v0p75: a pp0 further than this from the bins' principal points is not pinned (wrong model)
+
+
+def line_form_for(project: SfmProject, group: str) -> Dict[str, str]:
+    """v0p75: {param: form} of a Mastcam-Z group (``zcam_line_form`` in the settings, keys ``ZR034``, ``ZR`` or
+    ``R``; default :data:`LINE_FORM_V0P75` when the setting is ``"v0p75"`` or missing, ``"free"`` for every
+    parameter when it is ``"v0p74"``), for the parameters of :func:`line_params_for`."""
+    lf = project.settings.get("zcam_line_form")
+    params = line_params_for(project, group)
+    eye = str(group)[:2]
+    if lf in (None, "v0p75"):
+        base = LINE_FORM_V0P75.get(eye, {})
+    elif lf == "v0p74" or lf == "free":
+        base = {}
+    elif isinstance(lf, dict):
+        base = lf.get(group) or lf.get(eye) or lf.get(eye[1:2]) or {}
+    else:
+        raise ValueError(f"zcam_line_form {lf!r}: 'v0p75', 'v0p74' or {{eye: {{param: form}}}}")
+    out = {pn: str(base.get(pn, "free")) for pn in params}
+    bad = {pn: f for pn, f in out.items() if f not in LINE_FORMS}
+    if bad:
+        raise ValueError(f"zcam_line_form of {group}: unknown forms {bad}; use one of {LINE_FORMS}")
+    return out
+
+
+def _huber_fit(X: np.ndarray, y: np.ndarray, w: np.ndarray, huber_k: float = 1.345, floor: float = 0.05):
+    """(coefficients, robust sd, residuals, standard errors) of a weighted Huber IRLS least squares y = X c."""
+    wt = np.ones(len(y))
+    sig = 0.5
+    c = np.zeros(X.shape[1])
+    for _ in range(25):
+        sw = np.sqrt(w * wt)
+        c = np.linalg.lstsq(X * sw[:, None], y * sw, rcond=None)[0]
+        r = y - X @ c
+        sig = max(1.4826 * float(np.median(np.abs(r - np.median(r)))), floor)
+        u = np.abs(r) / (huber_k * sig)
+        wt = np.where(u <= 1.0, 1.0, 1.0 / np.maximum(u, 1e-12))
+    resid = y - X @ c
+    W = w / max(np.mean(w), 1e-12)
+    dof = max(len(y) - X.shape[1], 1)
+    s2 = float(np.sum(W * resid ** 2) / dof)
+    try:
+        C = np.linalg.inv(X.T @ (X * W[:, None])) * s2
+        se = np.sqrt(np.maximum(np.diag(C), 0.0))
+    except np.linalg.LinAlgError:
+        se = np.full(X.shape[1], np.nan)
+    return c, sig, resid, se
 
 
 def _huber_line(F: np.ndarray, y: np.ndarray, w: np.ndarray, ref: float, fit_slope: bool, slope0: float,
@@ -335,6 +393,9 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
     camera is then set on its state's lines in ``rec`` (the caller holds them).  Returns {group: {"reference_focus",
     "params", "lines": {state: {param: {"a", "b", "sd_a", "sd_b", "n_bins", "rms", "slope_source", "outliers"}}},
     "bins": [...], plus the f summary of :func:`refit_focus_lines` (``f0_px``, ``slope_px_per_count``, ...)}}.
+    v0p75: each parameter's line has a *form* (:func:`line_form_for`, :data:`LINE_FORM_V0P75`): fx and fy share one
+    slope per eye, k1 and k2 are constant with focus (one value per block), ZR's cx is pinned at the model's pp0 with
+    no slope (its level is the rig's) and ZR's cy is pinned at pp0 with a fitted slope.
     """
     db = (project.settings.get("database") or {}).get("cameras") or {}
     obs = _observations_per_camera(rec)
@@ -352,6 +413,7 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
     for g, rows in sorted(groups.items()):
         gm = (model.get("cameras") or {}).get(g) or {}
         params = line_params_for(project, g)
+        form = line_form_for(project, g)                   # v0p75
         foc = [r["focus"] for r in rows if r["focus"] is not None]
         ref = float(gm.get("reference_focus", np.median(foc) if foc else 0.0))
         ratio = (float(gm["f0_px"]) / float(gm["label_f0_px"])) if gm.get("label_f0_px") and gm.get("f0_px") else 1.0
@@ -370,7 +432,8 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                 for _pn, _e in _ln.items():
                     if isinstance(_e, dict) and _e.get("b") is not None and _pn in model_slope:
                         model_slope[_pn] = float(_e["b"])
-        res: Dict[str, Any] = {"reference_focus": ref, "params": list(params), "lines": {}, "bins": [], "outliers": []}
+        res: Dict[str, Any] = {"reference_focus": ref, "params": list(params), "form": dict(form), "lines": {},
+                               "bins": [], "outliers": []}
         for st in LINE_STATES:
             mo = min_observations if st == "backlash" else min_observations_regular
             use = [r for r in rows if r["state"] == st and r["focus"] is not None and r["observations"] >= mo]
@@ -381,20 +444,75 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
             F = np.array([r["focus"] for r in use], float)
             w = np.array([r["observations"] for r in use], float)
             fit_slope = len(use) >= 3 and float(np.ptp(F)) >= min_span
+            # v0p75: the common slope of the eye's "common" parameters (fx, fy): one Huber fit of both against focus
+            # with their own offsets; the slope is this state's, the regular state follows the backlash state's
+            common = [pn for pn in params if form.get(pn) == "common"]
+            common_fit = None
+            if len(common) >= 2 and fit_slope:
+                Xc = np.zeros((len(use) * len(common), len(common) + 1))
+                yc = np.zeros(len(use) * len(common))
+                wc = np.tile(w, len(common))
+                for j, pn in enumerate(common):
+                    Xc[j * len(use):(j + 1) * len(use), j] = 1.0
+                    Xc[j * len(use):(j + 1) * len(use), -1] = F - ref
+                    yc[j * len(use):(j + 1) * len(use)] = [r["p"][PARAM_INDEX[pn]] for r in use]
+                c, sig_c, _, se_c = _huber_fit(Xc, yc, wc, huber_k, floor=0.05)
+                common_fit = {"b": float(c[-1]), "sd_b": float(se_c[-1]), "params": list(common)}
             for pn in params:
                 k = PARAM_INDEX[pn]
                 y = np.array([r["p"][k] for r in use], float)
+                fm = form.get(pn, "free")
                 bl = (res["lines"].get("backlash") or {}).get(pn) if st == "regular" else None
                 slope0 = bl["b"] if (bl and "b" in bl) else model_slope[pn]
                 src0 = "backlash state" if (bl and "b" in bl) else ("focus model" if gm else "labels")
-                a, b, sig, resid = _huber_line(F, y, w, ref, fit_slope, slope0, huber_k,
-                                               floor=0.05 if pn in ("fx", "fy", "cx", "cy") else 1e-5)
-                sda, sdb = _line_sd(F, resid, w, ref, fit_slope)
+                fit_b, held_b, src_b = fit_slope, None, None
+                if fm == "constant" or fm == "pinned":
+                    fit_b, held_b, src_b = False, 0.0, "constant with focus (form)"
+                elif fm == "common":
+                    if st == "regular" and bl and "b" in bl:
+                        fit_b, held_b, src_b = False, float(bl["b"]), "backlash state (common slope)"
+                    elif common_fit is not None:
+                        fit_b, held_b, src_b = False, common_fit["b"], f"common slope of {', '.join(common_fit['params'])}"
+                elif fm == "pinned_slope" and not fit_slope:
+                    fit_b, held_b, src_b = False, slope0, src0
+                pin_a = None
+                pin_note = None
+                if fm in ("pinned", "pinned_slope") and pn in ("cx", "cy"):
+                    pp0 = gm.get("pp0_px") if gm else None
+                    if pp0 and len(pp0) == 2:
+                        pin_a = float(pp0[0 if pn == "cx" else 1])
+                        far = abs(float(np.median(y)) - pin_a)
+                        if far > PIN_MAX_OFFSET_PX:        # a model that does not belong to these bins: not pinned
+                            pin_note = (f"not pinned: the model's pp0 {pin_a:.1f} is {far:.0f} px from the bins' median "
+                                        f"(> {PIN_MAX_OFFSET_PX:g}); the level is fitted")
+                            pin_a = None
+                            if fm == "pinned":
+                                fit_b, held_b, src_b = False, 0.0, "constant with focus (form; pp0 not pinned)"
+                if pin_a is not None and held_b is not None:        # a and b both set: nothing to fit
+                    a, b = pin_a, float(held_b)
+                    resid = y - (a + b * (F - ref))
+                    sig = max(1.4826 * float(np.median(np.abs(resid - np.median(resid)))), 0.05)
+                    sda, sdb = float("nan"), None
+                elif pin_a is not None:                             # a pinned, b fitted through the pinned point
+                    Xp = (F - ref)[:, None]
+                    c, sig, resid, se = _huber_fit(Xp, y - pin_a, w, huber_k, floor=0.05)
+                    a, b, sda, sdb = pin_a, float(c[0]), float("nan"), float(se[0])
+                else:
+                    a, b, sig, resid = _huber_line(F, y, w, ref, fit_b, held_b if held_b is not None else slope0, huber_k,
+                                                   floor=0.05 if pn in ("fx", "fy", "cx", "cy") else 1e-5)
+                    sda, sdb = _line_sd(F, resid, w, ref, fit_b)
+                    if fm == "common" and common_fit is not None and st == "backlash":
+                        sdb = common_fit["sd_b"]
                 lim = max(outlier_sigma * sig, 3.0 if pn in ("fx", "fy") else (1.0 if pn in ("cx", "cy") else 0.0))
-                ent = {"a": a, "b": b, "sd_a": sda, "sd_b": sdb, "n_bins": len(use),
-                       "focus_range": [float(F.min()), float(F.max())], "slope_source": "fitted" if fit_slope else src0,
+                ent = {"a": a, "b": b, "sd_a": sda, "sd_b": sdb, "n_bins": len(use), "form": fm,
+                       "focus_range": [float(F.min()), float(F.max())],
+                       "slope_source": src_b if src_b else ("fitted" if fit_b else src0),
                        "rms": float(np.sqrt(np.average(resid ** 2, weights=w))), "robust_sd": sig, "outlier_limit": lim,
                        "outliers": []}
+                if pin_a is not None:
+                    ent["a_source"] = "pinned at the model's pp0 (form)"
+                elif pin_note:
+                    ent["a_source"] = pin_note
                 for rr, d in zip(use, resid):
                     row = {"camera": rr["camera"], "state": st, "param": pn, "focus": rr["focus"],
                            "value": float(rr["p"][k]), "residual": float(d), "observations": rr["observations"]}

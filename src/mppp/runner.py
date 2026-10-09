@@ -450,6 +450,11 @@ def work_settings(work: PathLike, site: Optional[str] = None, settings_file: Opt
     rec = (load_site_table(sites_file).get("sites", {}).get(site) or {}) if site else {}
     if isinstance(rec, dict) and parse_work_folder(work)[1] and site_zooms(rec):
         out["ZCAM_ZOOMS"] = site_zooms(rec)          # v0p53: the site's Mastcam-Z zooms (part of the run key)
+    if isinstance(rec, dict) and rec.get("sols") is not None:
+        from .sfm.sites import sol_ranges
+        rs = sol_ranges(rec["sols"])
+        if len(rs) > 1:                              # v0p75: a site with several visits - part of the run key, so a
+            out["SITE_SOL_RANGES"] = [list(r) for r in rs]   # changed definition reruns the block (one range: as before)
     if isinstance(rec, dict):
         if rec.get("no_mask_inference_at"):
             out["NO_MASK_INFERENCE_AT"] = list(rec["no_mask_inference_at"])

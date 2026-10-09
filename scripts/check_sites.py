@@ -61,7 +61,10 @@ def main(argv=None) -> int:
             extra.append(f"settings {v['settings']}")
         if v.get("no_mask_inference_at"):
             extra.append(f"no mask at {v['no_mask_inference_at']}")
-        print(f"  {name:22s} sols {v['sols'][0]:>4}-{v['sols'][1]:<4} {('zcam ' + ','.join(map(str, site_zooms(v)))) if site_zooms(v) else '':14s}  "
+        from mppp.sfm.sites import sol_ranges
+        rs = sol_ranges(v["sols"])
+        sols_txt = ", ".join(f"{a}-{b}" for a, b in rs) + (" (main visit first)" if len(rs) > 1 else "")
+        print(f"  {name:22s} sols {sols_txt:24s} {('zcam ' + ','.join(map(str, site_zooms(v)))) if site_zooms(v) else '':14s}  "
               f"{'; '.join(extra)}")
     return 0
 

@@ -637,7 +637,9 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
             proj.settings["navcam_rig_yaw"] = "refine"   # v0p61: the joint refines the rig (callers may hold it)
         idx["temps"].update({n: float(v["T"]) for n, v in sc.temps.items()})
         rec = sc.rec
-        key_of = {int(v): k for k, v in sc.project.settings.get("database", {}).get("cameras", {}).items()}
+        from .thermal import eye_key
+        # v0p75: a rig-epoch copy of an eye ("NL#1") is that eye here (the joint has one camera per eye)
+        key_of = {int(v): eye_key(k) for k, v in sc.project.settings.get("database", {}).get("cameras", {}).items()}
         by_name = {r["name"]: r for r in sc.project.images}
         reg = set(rec.reg_image_ids())
         img_map: Dict[int, int] = {}

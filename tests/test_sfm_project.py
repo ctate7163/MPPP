@@ -64,8 +64,15 @@ def test_project_with_navcam_and_mastcamz34(processed_pair, tmp_path):
     assert (z["model"], z["width"], z["height"]) == ("FULL_OPENCV", 1648, 1200) and "label" in z["source"]
     meta = [m for m in man["images"] if m["filename"]["family"] == "Z"][0]
     K = np.asarray(meta["intrinsics"]["K"])
-    assert np.isclose(z["params"][0], K[0, 0]) and np.isclose(z["params"][2], K[0, 2] + 0.5)      # corner origin
-    assert np.isclose(z["params"][4], meta["intrinsics"]["dist_opencv"]["k1"])
+    assert np.isclose(z["params"][0], K[0, 0])
+    # v0p75: ZL's principal point is the focus model's pp0 (the CAHVOR value at the reference focus, one for every
+    # block), no longer the label's (corner origin: K[0, 2] + 0.5)
+    from mppp.sfm.project import zcam_focus_model
+    pp0 = (zcam_focus_model().get("cameras", {}).get("ZL034") or {}).get("pp0_px")
+    assert pp0 and np.isclose(z["params"][2], pp0[0]) and np.isclose(z["params"][3], pp0[1])
+    assert abs(z["params"][2] - (K[0, 2] + 0.5)) < 10
+    # the distortion is the focus model's (v0p53), not the label's
+    assert np.isclose(z["params"][4], zcam_focus_model()["cameras"]["ZL034"]["distortion"]["params"][0])
     assert z["params"][6] == z["params"][7] == 0.0
     assert {r["instrument"] for r in proj.images} == {"NL", "ZL034"} and proj.rig == {}
     assert camera_key({"family": "Z", "camera_group": "ZR034", "instrument": "ZR"}) == "ZR034"
@@ -250,9 +257,16 @@ def test_focus_model_start_and_hold():
     assert abs(f600 - (g["f0_px"] + g["slope_px_per_count"] * (600 - g["reference_focus"]))) < 0.01
     assert abs(by[600]["params"][1] / by[600]["params"][0] - g["aspect"]) < 1e-9
     assert "fx" not in by[600]["fixed_params"] and {"fx", "fy"} <= set(by[1000]["fixed_params"])
-    # outside the fitted range: the bin's label f scaled by the refined/label ratio, not an extrapolation
+    # outside the fitted range: the bin's label f scaled by the refined/label ratio, not an extrapolation - unless
+    # the model carries calibrated lines (v0p74), which every bin starts on (v0p75: they continue through zero)
     f_out = np.sqrt(by[-2600]["params"][0] * by[-2600]["params"][1])
-    assert abs(f_out - 4600.0 * g["f0_px"] / g["label_f0_px"]) < 0.01 and "outside" in by[-2600]["source"]
+    ln = (g.get("lines") or {}).get("backlash")
+    if ln:
+        ref = g["lines"].get("reference_focus", g["reference_focus"])
+        want = np.sqrt((ln["fx"]["a"] + ln["fx"]["b"] * (-2600 - ref)) * (ln["fy"]["a"] + ln["fy"]["b"] * (-2600 - ref)))
+    else:
+        want = 4600.0 * g["f0_px"] / g["label_f0_px"]
+    assert abs(f_out - want) < 0.01 and "outside" in by[-2600]["source"]
     assert "fx" not in by[-2600]["fixed_params"]
     lab = _split_by_focus(rows, {"ZL034": base}, {"ZL034": "Z"}, 30.0, "focal")      # without a model: label f
     assert {round(c["params"][0]) for c in lab.values()} == {4680, 4700, 4600}
@@ -401,14 +415,16 @@ def test_shipped_focus_model_layout():
     for g in ("ZL034", "ZR034"):
         c = m["cameras"][g]
         assert c["reference_focus"] == 600.0
-        assert 0.05 < c["slope_px_per_count"] < 0.07                 # refit (was 0.046 / 0.048)
+        assert 0.045 < c["slope_px_per_count"] < 0.07                # refit (was 0.046 / 0.048; v0p75: 0.0505 / 0.064)
         # v0p74 start update (pipeline, 4 Oct): f0 from the bins' fx over 10 blocks, ~1.4 % above the label
         assert 1.006 < c["f0_px"] / c["label_f0_px"] < 1.016
         assert c["thermal"]["sensor"] == "HEAD_FPA" and c["thermal"]["f_px_per_degC"] == 0.0
         assert "trend" not in c and c["trend_v0p42"]["sol_range"] == [461, 991]   # the one-block sol trend retired
     assert m["cameras"]["ZL034"]["pp"]["cx_px_per_count"] == 0.0
-    assert 0.001 < m["cameras"]["ZR034"]["pp"]["cx_px_per_count"] < 0.004
+    # v0p75: ZR cx constant with focus (not significant between blocks), cy keeps its small slope
+    assert m["cameras"]["ZR034"]["pp"]["cx_px_per_count"] == 0.0
     assert 0.001 < m["cameras"]["ZR034"]["pp"]["cy_px_per_count"] < 0.004
+    assert m.get("form") == "v0p75" and m["cameras"]["ZL034"]["pp0_px"] and m["cameras"]["ZR034"]["pp0_px"]
 
 
 def test_model_focal_terms_and_sol_clamp():
@@ -448,6 +464,8 @@ def test_split_by_focus_uses_temperature_sol_and_pp():
     m = copy.deepcopy(_model())
     m["cameras"]["ZR034"]["thermal"]["f_px_per_degC"] = 0.3            # exercise the thermal path
     m["cameras"]["ZR034"]["trend"] = m["cameras"]["ZR034"]["trend_v0p42"]   # and the sol trend (v0p74: retired)
+    m["cameras"]["ZR034"].pop("lines", None)                            # v0p75: the lines would set f and pp instead
+    m["cameras"]["ZR034"]["pp"]["cx_px_per_count"] = 0.0025                # a pp slope to exercise (v0p75: cx is 0)
     base = {"model": "FULL_OPENCV", "params": [4680.0, 4680.0, 824.0, 600.0, 0, 0, 0, 0, 0, 0, 0, 0],
             "source": "median label CAHVOR", "fixed_params": []}
     rows = []

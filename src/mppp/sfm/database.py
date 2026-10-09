@@ -259,6 +259,7 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
     # rigs: stereo families -> left reference + right sensor; any other camera -> trivial rig
     rig_of: Dict[str, int] = {}
     ref_of_rig: Dict[int, str] = {}
+    rig_of_key: Dict[str, int] = {}                       # v0p75: rig key ("N", "N#1", "Z034") -> rig id (recorded)
     for fam, r in sorted(project.rig.items()):
         if r["ref"] not in cam_ids:
             continue
@@ -269,6 +270,7 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
                                  np.asarray(r["t_sensor_from_ref"], float))
             rig.add_sensor(sensor(cam_ids[r["sensor"]]), T)
         rid = db.write_rig(rig)
+        rig_of_key[str(fam)] = rid
         rig_of[r["ref"]] = rid
         ref_of_rig[rid] = r["ref"]
         if r["sensor"] in cam_ids:
@@ -337,7 +339,8 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
             r["frame_id"] = int(fid)
     db.close()
     fdb.close()
-    summary = {"database": str(out), "cameras": cam_ids, "rigs": len(set(rig_of.values()) | set(solo_rig.values())),
+    summary = {"database": str(out), "cameras": cam_ids, "rigs": len(set(rig_of_key.values()) | set(solo_rig.values())),
+               "rig_ids": rig_of_key,                      # v0p75: rig key -> rig id
                "frames": len({r.get('frame_id') for r in project.images if r.get('frame_id')}),
                "images": len(project.images) - len(skipped), "keypoints": int(n_kp), "images_without_frame": skipped,
                "single_eye_rigs": {k: int(v) for k, v in solo_rig.items()},

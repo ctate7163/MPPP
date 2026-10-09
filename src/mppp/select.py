@@ -28,8 +28,21 @@ def iter_imgs(input_dir: PathLike) -> Iterable[Tuple[Path, M2020Filename]]:
             continue
 
 
+def sol_ranges(sol_range: Any) -> List[Tuple[int, int]]:
+    """v0p75: ``(first, last)`` or ``[(first, last), ...]`` (the visits of a site, ``sites.json`` ``"sols"``) as a
+    list of (first, last) - the same reading as ``mppp.sfm.sites.sol_ranges``, without that module's imports."""
+    if isinstance(sol_range, (list, tuple)) and len(sol_range) == 2 and not isinstance(sol_range[0], (list, tuple)):
+        return [(int(sol_range[0]), int(sol_range[1]))]
+    return [(int(r[0]), int(r[1])) for r in sol_range]
+
+
+def in_sol_range(sol: int, sol_range: Any) -> bool:
+    """v0p75: is ``sol`` inside ``sol_range`` - one ``(first, last)`` or a list of them?"""
+    return any(a <= int(sol) <= b for a, b in sol_ranges(sol_range))
+
+
 def find_imgs(input_dir: PathLike, camera_codes: Sequence[str],
-              sol_range: Optional[Tuple[int, int]] = None,
+              sol_range: Optional[Any] = None,
               site_drive: Optional[Tuple[int, int]] = None,
               sequ_id: Optional[str] = None,
               product_type: Optional[str] = "RAD",
@@ -49,7 +62,7 @@ def find_imgs(input_dir: PathLike, camera_codes: Sequence[str],
             continue
         if fn.thumbnail and not include_thumbnails:
             continue
-        if sol_range and not (sol_range[0] <= fn.sol <= sol_range[1]):
+        if sol_range and not in_sol_range(fn.sol, sol_range):       # v0p75: one range or several visits
             continue
         if site_drive and (fn.site, fn.drive) != tuple(site_drive):
             continue
@@ -59,7 +72,7 @@ def find_imgs(input_dir: PathLike, camera_codes: Sequence[str],
     return sorted(out)
 
 
-def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: Tuple[int, int],
+def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: Any,
                    waypoints: Dict[str, Any], radius_m: Optional[float] = 5.0, sequ_id: Optional[str] = None,
                    product_type: Optional[str] = "RAD", include_thumbnails: bool = False,
                    anchor_stations: Optional[Sequence[Any]] = None) -> Tuple[List[Path], Dict[str, Any]]:
@@ -72,6 +85,9 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
     :func:`find_imgs` over ``sol_range`` alone.  Returns ``(paths, report)``;
     the report lists the stations in range, the stations added with their
     distance, and the image count per added station.
+
+    v0p75: ``sol_range`` may be a list of ranges (the visits of a site, ``sites.json`` ``"sols": [[361, 378], [91, 101]]``):
+    every image of every visit is "in range", and the nearby-waypoint search starts from all their stations.
 
     ``anchor_stations`` (v0p53.1): the stations the nearby search starts from (``(site, drive)`` or ``"S###D####"``)
     instead of the stations these cameras imaged in ``sol_range`` - notebook 03 passes the Navcam block's stations, so
@@ -92,7 +108,7 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
         if sequ_id and sequ_id.upper() not in name[35:]:
             continue
         cands.append((fp, fn))
-    in_range = [(fp, fn) for fp, fn in cands if sol_range[0] <= fn.sol <= sol_range[1]]
+    in_range = [(fp, fn) for fp, fn in cands if in_sol_range(fn.sol, sol_range)]      # v0p75: several visits
     stations = sorted({(fn.site, fn.drive) for _, fn in in_range})
     if anchor_stations is not None:
         anc = set()
@@ -102,13 +118,13 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
             else:
                 anc.add((int(st[0]), int(st[1])))
         stations = sorted(anc)
-    report: Dict[str, Any] = {"sol_range": list(sol_range), "radius_m": radius_m,
+    report: Dict[str, Any] = {"sol_range": [list(r) for r in sol_ranges(sol_range)], "radius_m": radius_m,
                               "stations_in_range": [f"S{a:03d}D{b:04d}" for a, b in stations], "stations_added": []}
     paths = [fp for fp, _ in in_range]
     if radius_m and stations:
         near = {(r["site"], r["drive"]): r for r in stations_near(waypoints, stations, radius_m)}
         added = {k: r for k, r in near.items() if k not in set(stations)}
-        extra = [(fp, fn) for fp, fn in cands if (fn.site, fn.drive) in added and not sol_range[0] <= fn.sol <= sol_range[1]]
+        extra = [(fp, fn) for fp, fn in cands if (fn.site, fn.drive) in added and not in_sol_range(fn.sol, sol_range)]
         counts: Dict[Tuple[int, int], List[int]] = {}
         for _, fn in extra:
             counts.setdefault((fn.site, fn.drive), []).append(fn.sol)

@@ -19,30 +19,78 @@ PathLike = Union[str, Path]
 SITES_FILE = Path(__file__).resolve().parents[1] / "data" / "sites.json"     # v0p43: the stable site definitions
 
 
+def sol_ranges(sols: Any) -> List[Tuple[int, int]]:
+    """
+    v0p75: the sol ranges of a site's ``"sols"`` entry as a list of (first, last): ``[a, b]`` is one range,
+    ``[[a, b], [c, d], ...]`` several - the visits of a site the rover left and came back to (Chal Rocks Sid: sols
+    361-378 and 91-101).  **The first range is the main visit**: it names the WORK folder (``mars2020_sol_<its first
+    sol>_...``) and is the block's sol range for everything that wants one number; the others are the other visits,
+    in any order.  Raises ``ValueError`` for anything else.
+    """
+    if isinstance(sols, (list, tuple)) and len(sols) == 2 and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                                                                   for x in sols):
+        return [(int(sols[0]), int(sols[1]))]
+    if isinstance(sols, (list, tuple)) and sols and all(
+            isinstance(r, (list, tuple)) and len(r) == 2 and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                                                                 for x in r) for r in sols):
+        return [(int(r[0]), int(r[1])) for r in sols]
+    raise ValueError(f"'sols' must be [first, last] or [[first, last], [first, last], ...], not {sols!r}")
+
+
+def sol_span(sols: Any) -> Tuple[int, int]:
+    """v0p75: (first sol of the main visit, last sol of all visits) of a ``"sols"`` entry - what the older code
+    (``SITES[name]``, the folder name, ``work_folder``) wants as one range.  The first sol is the **main visit's**
+    (the first range listed), so a site that gained an earlier visit keeps its folder name."""
+    rs = sol_ranges(sols)
+    return int(rs[0][0]), max(int(b) for _, b in rs)
+
+
+def in_sol_ranges(sol: int, sols: Any) -> bool:
+    """v0p75: is ``sol`` in any range of a ``"sols"`` entry (or a list of (first, last))?"""
+    return any(int(a) <= int(sol) <= int(b) for a, b in sol_ranges(sols))
+
+
+def site_sol_ranges(table: Dict[str, Any], site: str) -> List[Tuple[int, int]]:
+    """v0p75: the sol ranges of ``site`` in a site table (:func:`load_site_table`), main visit first."""
+    v = table["sites"][site]
+    return sol_ranges(v.get("sols") if isinstance(v, dict) else v)
+
+
 def load_site_table(path: Optional[PathLike] = None) -> Dict[str, Any]:
     """v0p43: the site definitions file (``mppp/data/sites.json`` by default): ``{"sites": {name: {"sols": [a, b],
     "label", "zcam", "note", "no_mask_inference_at", "settings"}}, "groups": {name: [site, ...]}}``.  ``zcam``
     (v0p53, a list of Mastcam-Z zooms in mm, 34 / 48 / 63 / 79 / 110; before: ``"zcam34": true``): the site also has a Navcam +
-    Mastcam-Z block with those zooms (``mars2020_sol_<sol>_<site>_colmap_zcam``)."""
+    Mastcam-Z block with those zooms (``mars2020_sol_<sol>_<site>_colmap_zcam``).  v0p75: ``"sols"`` may be a list of
+    ranges, ``[[361, 378], [91, 101]]`` (:func:`sol_ranges`; the first names the folder)."""
     f = Path(path) if path else SITES_FILE
     d = json.loads(f.read_text(encoding="utf-8"))
     if not isinstance(d.get("sites"), dict):
         raise ValueError(f"{f}: no 'sites' object")
     for k, v in d["sites"].items():
         sols = v.get("sols") if isinstance(v, dict) else v
-        if not (isinstance(sols, (list, tuple)) and len(sols) == 2):
-            raise ValueError(f"{f}: site {k!r} needs 'sols': [first, last]")
+        try:
+            sol_ranges(sols)
+        except ValueError as e:
+            raise ValueError(f"{f}: site {k!r}: {e}") from None
     return d
 
 
 def load_sites(path: Optional[PathLike] = None) -> Dict[str, Tuple[int, int]]:
-    """v0p43: name -> (first sol, last sol) from the site definitions file (notebook 03 ``SITES``)."""
+    """v0p43: name -> (first sol, last sol) from the site definitions file (notebook 03 ``SITES``).  v0p75: for a site
+    with several visits this is :func:`sol_span` (first sol of the main visit, last sol of all); the visits themselves
+    are :func:`load_site_ranges`."""
     d = load_site_table(path)
     out = {}
     for k, v in d["sites"].items():
         sols = v.get("sols") if isinstance(v, dict) else v
-        out[k] = (int(sols[0]), int(sols[1]))
+        out[k] = sol_span(sols)
     return out
+
+
+def load_site_ranges(path: Optional[PathLike] = None) -> Dict[str, List[Tuple[int, int]]]:
+    """v0p75: name -> [(first, last), ...] (main visit first) from the site definitions file."""
+    d = load_site_table(path)
+    return {k: sol_ranges(v.get("sols") if isinstance(v, dict) else v) for k, v in d["sites"].items()}
 
 
 ZCAM_ZOOMS = (34, 48, 63, 79, 110) # v0p53: the Mastcam-Z zooms (mm) MPPP aligns
@@ -114,12 +162,23 @@ def validate_site_table(path: Optional[PathLike] = None,
             err.append(f"site {name!r}: must be an object like {{\"sols\": [700, 712]}}")
             continue
         sols = v.get("sols")
-        if not (isinstance(sols, list) and len(sols) == 2 and all(isinstance(x, int) for x in sols)):
-            err.append(f"site {name!r}: 'sols' must be [first, last] (two whole numbers), not {sols!r}")
+        try:
+            rs = sol_ranges(sols)
+        except ValueError:
+            err.append(f"site {name!r}: 'sols' must be [first, last] (two whole numbers) or a list of such ranges "
+                       f"[[first, last], ...], not {sols!r}")
             continue
-        if sols[1] < sols[0]:
-            err.append(f"site {name!r}: sols {sols} end before they start")
-        ranges[name] = sols
+        if any(not isinstance(x, int) for r in (sols if isinstance(sols[0], list) else [sols]) for x in r):
+            err.append(f"site {name!r}: sols {sols} must be whole numbers")
+            continue
+        bad = [r for r in rs if r[1] < r[0]]
+        if bad:
+            err.append(f"site {name!r}: sols {bad[0]} end before they start")
+        for i, r1 in enumerate(rs):                       # v0p75: the visits of one site must not overlap
+            for r2 in rs[i + 1:]:
+                if r1[0] <= r2[1] and r2[0] <= r1[1]:
+                    err.append(f"site {name!r}: its sol ranges {list(r1)} and {list(r2)} overlap")
+        ranges[name] = rs
         if "zcam" in v:
             z = v["zcam"]
             if not (isinstance(z, list) and all(isinstance(x, int) and not isinstance(x, bool) for x in z)):
@@ -170,19 +229,24 @@ def validate_site_table(path: Optional[PathLike] = None,
                 no_z = [m for m in members if m in sites and int(mz.group(1)) not in site_zooms(sites[m])]
                 if no_z:
                     warn.append(f"group {g!r}: {no_z} have no {mz.group(1)} in their 'zcam' list")
-    names = sorted(ranges, key=lambda k: ranges[k][0])
+    names = sorted(ranges, key=lambda k: ranges[k][0][0])
     for i, a in enumerate(names):
         for b in names[i + 1:]:
-            if ranges[b][0] > ranges[a][1]:
-                break
-            (a0, a1), (b0, b1) = ranges[a], ranges[b]
-            if (a0, a1) == (b0, b1):                       # v0p50: e.g. rockytop / rockytop_skinner
+            if sorted(ranges[a]) == sorted(ranges[b]):     # v0p50: e.g. rockytop / rockytop_skinner
                 warn.append(f"sites {a!r} and {b!r} have the same sols {ranges[a]}: they select the same images "
-                            f"(a site is defined by its sol range only)")
+                            f"(a site is defined by its sol ranges only)")
                 continue
-            if (a0 <= b0 and b1 <= a1) or (b0 <= a0 and a1 <= b1):
-                continue                                   # one inside the other: a larger / smaller block
-            warn.append(f"sites {a!r} {ranges[a]} and {b!r} {ranges[b]} partly overlap (fine if meant)")
+            # v0p75: every pair of visits: inside one another is a larger / smaller block, a partial overlap a warning
+            partial = []
+            for (a0, a1) in ranges[a]:
+                for (b0, b1) in ranges[b]:
+                    if b0 > a1 or a0 > b1:
+                        continue
+                    if (a0 <= b0 and b1 <= a1) or (b0 <= a0 and a1 <= b1):
+                        continue
+                    partial.append(([a0, a1], [b0, b1]))
+            for ra, rb in partial[:1]:
+                warn.append(f"sites {a!r} {ra} and {b!r} {rb} partly overlap (fine if meant)")
     return err, warn
 
 
@@ -206,12 +270,19 @@ def site_label(name: str) -> str:
     return " ".join(_WORDS.get(w, w.capitalize()) for w in str(name).split("_") if w)
 
 
-def check_sites(sites: Dict[str, Sequence[int]]) -> List[str]:
-    """Problems of a site list: a sol range whose end is before its start (it selects nothing)."""
+def check_sites(sites: Dict[str, Any]) -> List[str]:
+    """Problems of a site list: a sol range whose end is before its start (it selects nothing).  v0p75: a site may
+    hold several ranges."""
     out = []
-    for k, (a, b) in sites.items():
-        if int(b) < int(a):
-            out.append(f"{k}: sol range ({a}, {b}) ends before it starts - it selects no images")
+    for k, v in sites.items():
+        try:
+            rs = sol_ranges(v)
+        except ValueError as e:
+            out.append(f"{k}: {e}")
+            continue
+        for a, b in rs:
+            if int(b) < int(a):
+                out.append(f"{k}: sol range ({a}, {b}) ends before it starts - it selects no images")
     return out
 
 
@@ -229,7 +300,7 @@ def work_folder(root: PathLike, site: str, zcam: bool = False,
         if site not in table:
             raise KeyError(f"site {site!r} is not in the site definitions ({SITES_FILE}); give sols=(first, last)")
         sols = table[site]
-    return Path(root) / folder_name(site, int(sols[0]), zcam)
+    return Path(root) / folder_name(site, sol_span(sols)[0], zcam)      # v0p75: the main visit's first sol
 
 
 def parse_work_folder(folder: PathLike) -> Tuple[Optional[str], bool]:
@@ -263,8 +334,8 @@ def _site_of_folder(folder: Path) -> Tuple[Optional[str], bool]:
     return m.group(2), bool(m.group(3))
 
 
-def _in_range(s: int, r: Sequence[int]) -> bool:
-    return int(r[0]) <= s <= int(r[1])
+def _in_range(s: int, r: Any) -> bool:
+    return in_sol_ranges(s, r)                              # v0p75: r may hold several visits
 
 
 def scan_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = None,
@@ -292,7 +363,8 @@ def scan_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = None
         label = site_label(site) + (" N+Z" if zcam else "")
         row: Dict[str, Any] = {"label": label, "site": site, "zcam": zcam, "zcam34": zcam, "folder": str(folder), "ok": False,
                                "reason": None, "in_sites": site in sites,
-                               "site_sols": list(sites[site]) if site in sites else None}
+                               "site_sols": list(sol_span(sites[site])) if site in sites else None,
+                               "site_sol_ranges": [list(r) for r in sol_ranges(sites[site])] if site in sites else None}
         rows.append(row)
         if zcam and not include_zcam:
             row["reason"] = "Mastcam-Z block (include_zcam=False)"
@@ -338,11 +410,12 @@ def scan_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = None
         if len(ims) < min_images:
             row["reason"] = f"{len(ims)} images (< {min_images})"
             continue
-        if site in sites and sols and int(sites[site][1]) >= int(sites[site][0]):
+        if site in sites and sols and sol_span(sites[site])[1] >= sol_span(sites[site])[0]:
             if not any(_in_range(s, sites[site]) for s in sols):
-                other = [k for k, r in sites.items() if k != site and int(r[1]) >= int(r[0])
+                other = [k for k, r in sites.items() if k != site and sol_span(r)[1] >= sol_span(r)[0]
                          and _in_range(int(statistics.median(sols)), r)]
-                row["reason"] = (f"no image in the site's sols {sites[site][0]}-{sites[site][1]}: the folder holds sols "
+                sp = sol_span(sites[site])
+                row["reason"] = (f"no image in the site's sols {sp[0]}-{sp[1]}: the folder holds sols "
                                  f"{min(sols)}-{max(sols)}" + (f" ({', '.join(other)}?)" if other else ""))
                 continue
         row["ok"] = True

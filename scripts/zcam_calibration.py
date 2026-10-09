@@ -158,7 +158,8 @@ def cmd_calibrate(a) -> int:
         return 1
     mpath = zcam_focus_model_path()
     old = json.loads(mpath.read_text(encoding="utf-8"))
-    model = calibrate(sel, old, regular=getattr(a, "regular", "derived"))
+    model = calibrate(sel, old, regular=getattr(a, "regular", "derived"), form=getattr(a, "form", "v0p75"),
+                      rig_translation=getattr(a, "rig_translation", "cahv"))
     chk = check_model(model, old)
     (out / "M2020_ZCAM034_focus_model.json").write_text(json.dumps(model, indent=1, default=float), encoding="utf-8")
     (out / "check.json").write_text(json.dumps(chk, indent=1), encoding="utf-8")
@@ -261,6 +262,11 @@ def main(argv=None) -> int:
     ap.add_argument("--regular", default="derived", choices=["derived", "fitted"],
                     help="calibrate: the regular focus state derived from the backlash lines (v0p74.9) or fitted")
     ap.add_argument("--z-min", type=float, default=3.0, help="start-update: |z| of a low-backlash group")
+    ap.add_argument("--form", default="v0p75", choices=["v0p75", "v0p74"],
+                    help="calibrate: v0p75 (one f slope per eye, k1/k2 and ZR cx constant, ZR cy slope, pp pinned) "
+                         "or the free v0p74 lines")
+    ap.add_argument("--rig-translation", default="cahv", choices=["cahv", "refined"],
+                    help="calibrate: the rig translation held at CAHV (v0p75) or the mean refined one")
     ap.add_argument("--promote", action="store_true", help="promote the result when every check passes")
     ap.add_argument("--dry-run", action="store_true", help="write the candidate, promote nothing, add nothing")
     a = ap.parse_args(argv)

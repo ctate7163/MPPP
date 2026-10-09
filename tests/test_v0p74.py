@@ -14,6 +14,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 # --------------------------------------------------------------------------------------- Mastcam-Z rig in the BA
+
+def _old_v0p74():
+    """The shipped focus model as the v0p74 tests knew it: no rig, no pp0 (v0p75 ships both)."""
+    from mppp.sfm.project import zcam_focus_model_path
+    old = json.loads(zcam_focus_model_path().read_text())
+    old.pop("rig", None)
+    for g in old.get("cameras", {}).values():
+        g.pop("pp0_px", None)
+    return old
+
+
 def test_zcam_rig_full_refines_rotation_and_baseline(tmp_path):
     pytest.importorskip("pyceres")
     from scipy.spatial.transform import Rotation
@@ -70,7 +81,8 @@ def test_k1_k2_lines(monkeypatch):
         db[f"ZL034_F{f:05d}"] = cid
         obs[cid] = 500
     proj = SimpleNamespace(cameras=cams, images=[], settings={"database": {"cameras": db},
-                                                              "zcam_line_params": {"ZL": ["fx", "fy", "k1", "k2"]}})
+                                                              "zcam_line_params": {"ZL": ["fx", "fy", "k1", "k2"]},
+                                                              "zcam_line_form": "v0p74"})       # the free lines
     monkeypatch.setattr(zcam, "_observations_per_camera", lambda rec: obs)
     out = zcam.refit_focus_lines(rec, proj, model={"cameras": {"ZL034": {"reference_focus": 600.0, "f0_px": 4700.0,
                                                                           "slope_px_per_count": 0.05}}})
@@ -91,7 +103,7 @@ def test_split_by_focus_starts_on_calibrated_lines():
     rows = [{"camera_group": "ZR034", "focus_count": 900.0, "label_f_px": 4660.0, "focus_state": st, "sol": 500,
              "instrument": "ZR034", "zcam_optics_temperature_degC": -5.0} for st in ("backlash", "regular")]
     out = _split_by_focus(rows, {"ZR034": dict(base)}, {"ZR034": "Z"}, 30.0, "focal_pp", model=model,
-                          line_params={"ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]})
+                          line_params={"ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]}, line_form="v0p74")
     bk = next(c for k, c in out.items() if not k.endswith("_reg"))
     rg = next(c for k, c in out.items() if k.endswith("_reg"))
     assert bk["params"][0] == pytest.approx(4721 + 0.06 * 300) and bk["params"][2] == pytest.approx(830 + 0.6)
@@ -206,8 +218,8 @@ def test_calibrate_lines_rig_and_temperature(tmp_path):
     from mppp.sfm.zcam_calib import block_info, calibrate, check_model, report_lines
     infos = [block_info(_block(tmp_path, n, s, T, fx_a=4720.0 + 0.5 * T)) for n, s, T in
              (("a", 400, -20.0), ("b", 700, -10.0), ("c", 1000, 0.0))]
-    old = json.loads(zcam_focus_model_path().read_text())
-    m = calibrate(infos, old, min_blocks_for_T=3)          # v0p74.9: the default needs 5 blocks for a T term
+    old = _old_v0p74()
+    m = calibrate(infos, old, min_blocks_for_T=3, form="v0p74", rig_translation="refined")   # the v0p74 free lines
     L = m["calibration"]["eyes"]["ZL034"]["backlash"]["fx"]
     assert L["n_blocks"] == 3 and L["temperature"]["applied"]
     assert L["temperature"]["c_per_degC"] == pytest.approx(0.5, abs=1e-6)
@@ -255,7 +267,9 @@ def test_zcam_calibration_cli(tmp_path, monkeypatch):
     cmods = tmp_path / "cmods"
     cmods.mkdir()
     from mppp.sfm.project import zcam_focus_model_path
-    (cmods / "M2020_ZCAM034_focus_model.json").write_bytes(zcam_focus_model_path().read_bytes())
+    old = json.loads(zcam_focus_model_path().read_text())
+    old.pop("rig", None)                                  # v0p75 ships a rig; the fake blocks' rigs are elsewhere
+    (cmods / "M2020_ZCAM034_focus_model.json").write_text(json.dumps(old))
     monkeypatch.setenv("MPPP_CMODS", str(cmods))
     assert zc.main(["calibrate", "--root", str(root), "--n", "3"]) == 0
     out = sorted((root / "camera_analysis").glob("zcam34_calibration_*"))[-1]
@@ -496,7 +510,7 @@ def test_calibrate_moves_zr_pp_offsets_into_the_rig(tmp_path):
     from scipy.spatial.transform import Rotation
     from mppp.sfm.project import zcam_focus_model_path
     from mppp.sfm.zcam_calib import block_info, calibrate, check_model, pp_shift_to_rig, report_lines
-    old = json.loads(zcam_focus_model_path().read_text())
+    old = _old_v0p74()
     R0 = Rotation.from_rotvec(np.radians([0.0, 3.2, 0.6])).as_matrix()
     t0 = np.array([-0.2420, 0.0014, 0.0038])
     infos = []
@@ -513,7 +527,7 @@ def test_calibrate_moves_zr_pp_offsets_into_the_rig(tmp_path):
         d["settings"]["zcam_virtual_rig"]["Z034"]["t_refined"] = tb.tolist()
         pj.write_text(json.dumps(d))
         infos.append(block_info(w))
-    m = calibrate(infos, old)
+    m = calibrate(infos, old, form="v0p74", rig_translation="refined")
     zr = m["cameras"]["ZR034"]
     assert zr["pp0_px"] == pytest.approx([820.0, 600.0])          # the label pp of the bins at the reference focus
     assert zr["lines"]["backlash"]["cx"]["a"] == pytest.approx(820.0, abs=1e-6)
@@ -776,6 +790,7 @@ def test_calibrate_derives_the_regular_state_and_reports_loo(tmp_path):
     infos = [block_info(_block(tmp_path, n, s, T, fx_a=4720.0 + d)) for n, s, T, d in
              (("a", 400, -20.0, 0.0), ("b", 700, -10.0, 2.0), ("c", 1000, 0.0, -2.0), ("d", 1300, -5.0, 1.0))]
     old = json.loads(zcam_focus_model_path().read_text())
+    old.pop("rig", None)                                  # the synthetic blocks' rigs are nowhere near the shipped one
     m = calibrate(infos, old)
     zl = m["cameras"]["ZL034"]["lines"]
     rr = m["calibration"]["regular_ratio"]["ZL034"]

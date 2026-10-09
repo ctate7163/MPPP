@@ -54,6 +54,13 @@ LEFT_KEY, RIGHT_KEY = "NAVCAM_LEFT_CAL", "NAVCAM_RIGHT_CAL"
 
 
 # ----------------------------------------------------------------------------- temperatures
+
+def eye_key(key: Any) -> str:
+    """v0p75: the Navcam eye of a camera key: ``"NL#1"`` (a rig-epoch copy) and ``"NL_T-20..-10"`` (a temperature
+    bin) -> ``"NL"``; other keys unchanged."""
+    k = str(key)
+    return k.split("#", 1)[0].split("_T", 1)[0] if k.startswith("N") else k
+
 def label_temperatures(path: PathLike) -> Dict[str, Optional[float]]:
     """Camera temperatures of one Navcam PDS product (label only): ``NL``, ``NR`` (degC) and ``interp``, the
     value the label's camera model was interpolated to (the image's own eye)."""
@@ -356,8 +363,9 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
                 continue
             p = np.array(base.params, float)
             tm = float(np.median(Tb))
-            if thermal_model and key in thermal_model:
-                m = thermal_model[key]
+            mkey = key if (thermal_model and key in thermal_model) else eye_key(key)   # v0p75: "NL#1" -> NL
+            if thermal_model and mkey in thermal_model:
+                m = thermal_model[mkey]
                 from .cmods_form import thermal_scale                 # v0p73: fx and fy each their own ppm/degC
                 sx, sy = thermal_scale(m, tm)
                 p[0] *= sx

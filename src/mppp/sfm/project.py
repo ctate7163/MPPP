@@ -83,6 +83,7 @@ NAVCAM_CONSENSUS_DIR = navcam_consensus_dir()
 FULL_OPENCV_NAMES = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6")
 # parameters a focus-bin camera holds with zcam_bin_refine="focal": all but the focal length
 ZCAM_BIN_HELD = ("cx", "cy", "k1", "k2", "p1", "p2", "k3")
+NAVCAM_RIG_EPOCH_GAP_SOLS = 100.0   # v0p75: Navcam visits of a block more than this many sols apart get their own rig
 
 
 def focus_bins(counts: Sequence[Optional[float]], width: float = ZCAM_FOCUS_BIN) -> List[int]:
@@ -340,7 +341,8 @@ class SfmProject:
                zcam_zero_terms: Optional[Sequence[str]] = None,
                zcam_focus_model_file: Optional[PathLike] = None,
                navcam_distortion_fit: str = NAVCAM_DISTORTION_FIT, navcam_k4: str = "zero",
-               navcam_rig_yaw: str = "hold") -> "SfmProject":
+               navcam_rig_yaw: str = "hold", navcam_rig_epoch_gap: Optional[float] = None,
+               zcam_line_form: Any = "v0p75") -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -622,7 +624,8 @@ class SfmProject:
         if zcam_focus_bin:
             fmodel = _zcam_fmodel() if zcam_intrinsics == "focus_model" else None
             cameras = _split_by_focus(images, cameras, instruments, float(zcam_focus_bin), zcam_bin_refine,
-                                      fmodel, int(zcam_hold_f_images), line_params=zcam_line_params)
+                                      fmodel, int(zcam_hold_f_images), line_params=zcam_line_params,
+                                      line_form=zcam_line_form)
 
         _align_priors_to_cameras(images, cameras)
         rig = _rig_from_pairs([r for r in images if instruments.get(r["camera_group"]) != "Z"])
@@ -688,6 +691,12 @@ class SfmProject:
             rig["N"]["R_sensor_from_ref"] = rig_without_yaw(R0).tolist()
             rig["N"]["yaw_removed_mdeg"] = rig_yaw_mdeg(R0)
             rig["N"]["rotation_source"] = rig["N"].get("rotation_source", "CAHV") + "; yaw set to 0 (NAVCAM_RIG_YAW)"
+        # v0p75: rig epochs - the Navcam visits of a block more than ``navcam_rig_epoch_gap`` sols apart (Chal Rocks
+        # Sid: sols 91-101 and 360-378; Three Forks: 413-435 and 652-693) each get their own rig rotation, refined
+        # on its own: "N" for the first visit in sol order, "N#1", "N#2" ... for the later ones, each started at the
+        # drift model's value for its own median sol (the pitch hinge at sol 300 is 8 mdeg between Sid's visits)
+        gap = NAVCAM_RIG_EPOCH_GAP_SOLS if navcam_rig_epoch_gap is None else float(navcam_rig_epoch_gap)
+        epochs_info = navcam_rig_epochs(images, rig, gap, nav_info, yaw=navcam_rig_yaw == "refine", cameras=cameras)
         proj = cls(root, images, cameras, rig, offset,
                    {"world_frame": frames.pop(), "image_format": image_format,
                     "prior_sigma_m": list(map(float, prior_sigma_m)), "zero_terms": list(zero_terms),
@@ -702,6 +711,9 @@ class SfmProject:
                                          if zcam_line_params else None),
                     "zcam_virtual_rig": zrig or None, "zcam_rig_refine": zcam_rig_refine,
                     "zcam_rig_fit": zcam_rig_fit,                       # v0p74: "rotation" / "full" in stage 2
+                    "navcam_rig_epochs": epochs_info,                   # v0p75: the Navcam visits with their own rig
+                    "navcam_rig_epochs_gap": gap,
+                    "zcam_line_form": zcam_line_form,                   # v0p75: the form of every focus line
                     "zcam_low_backlash_sha256": (low_backlash_fingerprint(zcam_low_backlash, zcam_low_backlash_found)
                                                  if any(f == "Z" for f in instruments.values()) else None),
                     "zcam_low_backlash": {"file": _lb["file"], "images": int(n_low),
@@ -940,7 +952,8 @@ def zcam_model_pp_shift(gm: Optional[Dict[str, Any]], focus: Optional[float],
 
 def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, Any]], families: Dict[str, str],
                     width: float, refine: str, model: Optional[Dict[str, Any]] = None,
-                    hold_f_images: int = 0, line_params: Optional[Dict[str, Any]] = None) -> Dict[str, Dict[str, Any]]:
+                    hold_f_images: int = 0, line_params: Optional[Dict[str, Any]] = None,
+                    line_form: Any = None) -> Dict[str, Dict[str, Any]]:
     """Replace each Mastcam-Z camera by one camera per focus bin (see ``SfmProject.create``).  ``model``: the
     focal-length model (:func:`zcam_focus_model`); bins then start from it, and bins of at most ``hold_f_images``
     images hold f there.  v0p42: the model's temperature and sol terms are evaluated at the bin's median focal-plane
@@ -971,9 +984,20 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
             lp = None
             if line_params:                                  # v0p74: the parameters this eye puts on focus lines
                 lp = line_params.get(group) or line_params.get(str(group)[:2]) or line_params.get(str(group)[1:2])
+            # v0p75: a line parameter whose form pins both its level and its slope (ZR cx) is never freed in a bin
+            pinned = set()
+            if lp:
+                from .zcam import LINE_FORM_V0P75
+                if line_form in (None, "v0p75"):
+                    fm = LINE_FORM_V0P75.get(str(group)[:2], {})
+                elif isinstance(line_form, dict):
+                    fm = line_form.get(group) or line_form.get(str(group)[:2]) or line_form.get(str(group)[1:2]) or {}
+                else:
+                    fm = {}
+                pinned = {pn for pn in lp if fm.get(pn) == "pinned"}
             held_here = (ZCAM_BIN_HELD if refine in ("focal", "model") else
                          (tuple(n for n in ZCAM_BIN_HELD if not (
-                             (n in set(lp)) if lp else (str(group)[1:2] == "R" and n in ("cx", "cy"))))
+                             (n in set(lp) - pinned) if lp else (str(group)[1:2] == "R" and n in ("cx", "cy"))))
                           if refine == "focal_pp" else ()))                  # v0p73: ZR's cx, cy free; v0p74: + k1, k2
             fixed = sorted(set(held_here) | set(base.get("fixed_params") or ()),
                            key=FULL_OPENCV_NAMES.index)                      # v0p61: + the eye's (k3 = 0)
@@ -1101,6 +1125,77 @@ def _align_priors_to_cameras(images: List[Dict[str, Any]], cameras: Dict[str, Di
         M = prior_rotation_correction(r["label_c_px"], r["label_f_px"], (p[2], p[3]))
         r["prior_R_w2c"] = (M @ np.asarray(r["prior_R_w2c"], float)).tolist()
         r["prior_R_correction_deg"] = float(np.degrees(np.arccos(np.clip((np.trace(M) - 1) / 2, -1.0, 1.0))))
+
+
+def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: float,
+                      nav_info: Optional[Dict[str, Any]] = None, yaw: bool = False,
+                      cameras: Optional[Dict[str, Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+    """
+    v0p75: splits the Navcam rig of a block into one rig per *epoch* - the clusters of the Navcam images' sols
+    separated by more than ``gap`` sols (the visits of a site the rover came back to).  With one cluster nothing
+    changes.  With several, the first cluster (in sol order) keeps ``rig["N"]`` and the cameras NL, NR; every later
+    cluster k gets its own copies ``rig["N#k"]`` with cameras ``NL#k``, ``NR#k`` (the same start values; a COLMAP
+    database puts a camera in one rig only, so an epoch rig needs its own cameras - like the temperature bins), and
+    its images' ``instrument`` becomes ``NL#k`` / ``NR#k`` (``rig_epoch`` k; the eye is :func:`mppp.sfm.thermal.
+    eye_key`).  When the start rig came from a rig file with a drift (``nav_info["rig"]``, the consensus), each
+    epoch's start rotation is the drift model's at that epoch's own median sol (and median Navcam temperature),
+    else every epoch starts at the same rotation.  The bundle adjustment then refines the rigs (and the eye cameras'
+    free terms) on their own.  Returns the epoch table {"gap_sols", "epochs": [{"index", "rig_key", "cameras",
+    "sols", "sol_median", "T_median_degC", "images"}]} (None for one epoch); kept in ``settings["navcam_rig_epochs"]``.
+    """
+    from .navcal import sol_epochs
+    nav = [r for r in images if str(r.get("instrument", "")).startswith("N") and r.get("sol") is not None]
+    if "N" not in rig or not nav:
+        return None
+    eps = sol_epochs([int(r["sol"]) for r in nav], gap)
+    for r in nav:
+        r["rig_epoch"] = 0
+    if len(eps) < 2:
+        return None
+    shipped = None
+    rf = ((nav_info or {}).get("rig") or {}).get("file")
+    if rf and Path(rf).is_file():
+        try:
+            shipped = json.loads(Path(rf).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            shipped = None
+    base = dict(rig["N"])
+    ref_key, sen_key = str(base["ref"]), str(base["sensor"])
+    table = []
+    for k, (a, b) in enumerate(eps):
+        key = "N" if k == 0 else f"N#{k}"
+        members = [r for r in nav if a <= int(r["sol"]) <= b]
+        sols = [int(r["sol"]) for r in members]
+        Ts = [float(r["camera_temperature_degC"]) for r in members if r.get("camera_temperature_degC") is not None]
+        ep = {"index": k, "sols": [int(a), int(b)], "sol_median": float(np.median(sols)),
+              "T_median_degC": float(np.median(Ts)) if Ts else None, "images": len(members)}
+        ent = dict(base, epoch=ep) if k else rig["N"]
+        if k:
+            ent["ref"], ent["sensor"] = f"{ref_key}#{k}", f"{sen_key}#{k}"
+            if cameras is not None:
+                for eye in (ref_key, sen_key):
+                    if eye in cameras:
+                        cameras[f"{eye}#{k}"] = dict(cameras[eye], epoch=k, group=eye,
+                                                     source=f"{cameras[eye].get('source', eye)}; rig epoch {k} "
+                                                            f"(sols {int(a)}-{int(b)}): the eye's camera again")
+            for r in members:
+                r["instrument"] = f"{r['instrument']}#{k}"
+        else:
+            rig["N"]["epoch"] = ep
+        if shipped and (shipped.get("drift") or shipped.get("thermal")):
+            R2, applied = start_rig_rotation(shipped, float(np.median(Ts)) if Ts else None, float(np.median(sols)),
+                                             yaw=yaw or shipped.get("convention") == "NL reference", thermal=False)
+            if base.get("yaw_removed_mdeg") is not None:                   # NAVCAM_RIG_YAW = "zero" stays zero
+                R2 = rig_without_yaw(R2)
+            ent["R_sensor_from_ref"] = R2.tolist()
+            ent["epoch"]["drift_applied"] = applied
+        ent["rotation_source"] = (base.get("rotation_source", "CAHV")
+                                  + f"; rig epoch {k} (sols {int(a)}-{int(b)}, {len(members)} Navcam images)")
+        for r in members:
+            r["rig_epoch"] = k
+        rig[key] = ent
+        table.append(dict(ep, rig_key=key, cameras=[ent["ref"], ent["sensor"]]))
+    return {"gap_sols": float(gap), "epochs": table}
 
 
 def _rig_family(key: str) -> str:

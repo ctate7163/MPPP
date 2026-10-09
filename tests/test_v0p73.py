@@ -188,7 +188,8 @@ def _zcam_setup(monkeypatch, with_regular=True):
                 obs[cid] = 1000
                 cid += 1
     proj = SimpleNamespace(cameras=cams, images=[], settings={
-        "database": {"cameras": db}, "zcam_line_params": {"ZL": ["fx", "fy"], "ZR": ["fx", "fy", "cx", "cy"]}})
+        "database": {"cameras": db}, "zcam_line_params": {"ZL": ["fx", "fy"], "ZR": ["fx", "fy", "cx", "cy"]},
+        "zcam_line_form": "v0p74"})                                           # the free v0p73 lines (v0p75: a form)
     monkeypatch.setattr(zcam, "_observations_per_camera", lambda rec: obs)
     model = {"cameras": {g: {"reference_focus": 600.0, "f0_px": 4701.0, "label_f0_px": 4659.0,
                              "slope_px_per_count": 0.05, "aspect": 1.0} for g in ("ZL034", "ZR034")}}
