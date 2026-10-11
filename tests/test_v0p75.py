@@ -508,3 +508,15 @@ def test_reconstruct_with_two_rig_epochs_and_the_consensus_merge(tmp_path, monke
              for k, i in (("NL", 1), ("NR", 2))}
     merged, mproj, idx = NC.merge_scapes([sc], jcams, (R_rel, np.asarray(rigT[1])), points_per_scape=200, seed=0)
     assert merged.num_reg_images() == len(proj.images) and {im.camera_id for im in merged.images.values()} == {1, 2}
+
+
+def test_pipeline_zcam_group_option(tmp_path):
+    import importlib.util, argparse
+    spec = importlib.util.spec_from_file_location("rp", ROOT / "scripts" / "run_pipeline.py")
+    rp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rp)
+    assert rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True)).zcam_group == "zcam34_consensus"
+    assert rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, zcam_group="zcam34_dev")).zcam_group == "zcam34_dev"
+    from mppp.sfm.sites import site_group
+    dev = site_group("zcam34_dev")
+    assert len(dev) == 6 and set(dev) <= set(site_group("zcam34_consensus"))

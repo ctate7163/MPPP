@@ -47,7 +47,7 @@ sys.path.insert(0, str(ROOT / "src"))
 PY = sys.executable
 STAGES = ("wait", "prepare", "navcam_consensus", "zcam_start", "zcam_runs", "navcam_runs", "zcam_calibrate",
           "zcam_final_runs", "pointclouds", "report")
-ZCAM_GROUP, NAVCAM_GROUP = "zcam34_consensus", "navcam_consensus"
+ZCAM_GROUP, NAVCAM_GROUP = "zcam34_consensus", "navcam_consensus"     # --zcam-group overrides the first (v0p75)
 ZCAM_SET = ["--set", "ZCAM_ZOOMS=[34]"]
 EARLY_START = ("0.157", "0.243", "0.139", "-0.454")          # mean of the v0p72_2 and 20261003 consensus' early offsets
 EARLY_ROUNDS = "3"            # a round is ~35 min; the cx direction is flat (the 20261003 run needed 3 from a poor start)
@@ -57,6 +57,7 @@ class Pipeline:
     def __init__(self, a):
         from mppp.runner import Log
         self.a = a
+        self.zcam_group = getattr(self.a, "zcam_group", None) or ZCAM_GROUP    # v0p75: a smaller group for iterating
         self.root = Path(a.root)
         self.dir = self.root / "mppp_pipeline"
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -122,7 +123,7 @@ class Pipeline:
         # cameras already in the frozen form (e.g. a consensus this pipeline promoted, then restarted with --reset):
         # only checked - an older candidate is never promoted over them
         keep = check_form()["ok"]
-        cmd = [PY, ROOT / "scripts" / "prepare_next_run.py", "--root", self.root, "--groups", NAVCAM_GROUP, ZCAM_GROUP] \
+        cmd = [PY, ROOT / "scripts" / "prepare_next_run.py", "--root", self.root, "--groups", NAVCAM_GROUP, self.zcam_group] \
             + (["--keep"] if keep else [])
         rc = self.run("prepare", cmd)
         if keep:
@@ -214,7 +215,7 @@ class Pipeline:
 
     def s_zcam_start(self):
         rc = self.run("zcam_start", [PY, ROOT / "scripts" / "zcam_calibration.py", "start-update", "--root", self.root,
-                                     "--groups", ZCAM_GROUP, "--promote"], timeout_h=6)
+                                     "--groups", self.zcam_group, "--promote"], timeout_h=6)
         return ("done", {0: "start model promoted, found list updated", 1: "start model not promoted (a check failed); "
                          "found list updated"}.get(rc, f"error (exit {rc}); the focus model in use stays"))
 
@@ -241,7 +242,7 @@ class Pipeline:
         return ("done", "every site finished") if rc == 0 else ("done", f"finished with failed sites (exit {rc}; see run_sites_log.txt)")
 
     def s_zcam_runs(self):
-        return self._sites("zcam_runs", ZCAM_GROUP, True)
+        return self._sites("zcam_runs", self.zcam_group, True)
 
     def s_navcam_runs(self):
         if self.a.no_navcam_runs:
@@ -250,7 +251,7 @@ class Pipeline:
 
     def s_zcam_calibrate(self):
         rc = self.run("zcam_calibrate", [PY, ROOT / "scripts" / "zcam_calibration.py", "calibrate", "--root", self.root,
-                                         "--groups", ZCAM_GROUP, "--n", str(self.a.n), "--promote"], timeout_h=6)
+                                         "--groups", self.zcam_group, "--n", str(self.a.n), "--promote"], timeout_h=6)
         self.state.setdefault("zcam_calibrate", {})["promoted"] = rc == 0 and not self.a.dry_run
         self.save()
         return "done", {0: "calibration promoted", 1: "calibration not promoted (too few passing blocks or a check "
@@ -262,11 +263,11 @@ class Pipeline:
         # v0p74.9: the final runs go to <WORK>/colmap_<final_variant> (default "cal"; features and matches seeded from
         # the first run's): on 5-6 Oct they overwrote the first runs in place, and with the promoted model the right
         # Mastcam-Z eye lost every tie point in Chal Rocks, Enchanted Lake and Three Forks North
-        return self._sites("zcam_final_runs", ZCAM_GROUP, True, variant=self.a.final_variant)
+        return self._sites("zcam_final_runs", self.zcam_group, True, variant=self.a.final_variant)
 
     def s_pointclouds(self):
         rc = self.run("pointclouds", [PY, ROOT / "scripts" / "zcam_calibration.py", "pointclouds", "--root", self.root,
-                                      "--groups", ZCAM_GROUP, NAVCAM_GROUP], timeout_h=6)
+                                      "--groups", self.zcam_group, NAVCAM_GROUP], timeout_h=6)
         return ("done", "point clouds written") if rc == 0 else ("done", f"exit {rc}")
 
     def s_report(self):
@@ -375,6 +376,9 @@ def main(argv=None) -> int:
     ap.add_argument("--final-variant", default="cal",
                     help="v0p74.9: zcam_final_runs write to <WORK>/colmap_<this> ('' = in place, over the first runs)")
     ap.add_argument("--no-navcam-runs", action="store_true", help="skip the Navcam-only reruns")
+    ap.add_argument("--zcam-group", default=None,
+                    help="v0p75: the sites.json group of the Mastcam-Z stages (default zcam34_consensus; e.g. zcam34_dev "
+                         "for a quick set while the form is being settled)")
     ap.add_argument("--all-navcam-blocks", action="store_true",
                     help="v0p75: the Navcam consensus takes every finished Navcam block on disk (default: the sites of "
                          "the navcam_consensus group only)")
