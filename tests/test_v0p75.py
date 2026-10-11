@@ -520,3 +520,22 @@ def test_pipeline_zcam_group_option(tmp_path):
     from mppp.sfm.sites import site_group
     dev = site_group("zcam34_dev")
     assert len(dev) == 6 and set(dev) <= set(site_group("zcam34_consensus"))
+
+
+def test_run_jobs_runs_only_mppp_scripts(tmp_path):
+    import subprocess
+    jobs = tmp_path / "_jobs"
+    jobs.mkdir()
+    (jobs / "01_check.job").write_text("# a comment\ncheck_sites.py\n")
+    (jobs / "02_bad.job").write_text("python -c print(1)\n")
+    (jobs / "03_bad.job").write_text("/tmp/evil.py --root x\n")
+    (jobs / "04_done.job").write_text("check_sites.py\n")
+    (jobs / "04_done.done").write_text("{}")                                     # already run: skipped
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "run_jobs.py"), "--root", str(tmp_path), "--once"],
+                       capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0 and "01_check.job: exit 0" in r.stdout and "04_done" not in r.stdout
+    d = json.loads((jobs / "01_check.done").read_text())
+    assert d["exit_code"] == 0 and d["running"] is False and "OK:" in (jobs / "01_check.log").read_text()
+    assert json.loads((jobs / "02_bad.done").read_text())["exit_code"] == 2
+    assert "not run" in (jobs / "03_bad.log").read_text()
+    assert (jobs / "watcher.json").is_file()
