@@ -239,14 +239,22 @@ def reference_rig(sc: Scape, which: str = "cahv") -> Optional[np.ndarray]:
 EPOCH_GAP_SOLS = 30       # v0p40: images more than this many sols apart belong to different rig epochs
 
 
-def sol_epochs(sols: Sequence[int], gap: float = EPOCH_GAP_SOLS) -> List[Tuple[int, int]]:
-    """Sol ranges of the clusters of ``sols`` separated by more than ``gap`` sols."""
+# v0p75.1: rig epochs are also split at these sols - the Navcam pitch changes rate at sol 300 (KNOT_SOL of the drift
+# model), so a block with images on both sides of it gets one rig before and one after, whatever the gap
+RIG_EPOCH_BREAK_SOLS = (300.0,)
+
+
+def sol_epochs(sols: Sequence[int], gap: float = EPOCH_GAP_SOLS,
+               breaks: Sequence[float] = ()) -> List[Tuple[int, int]]:
+    """Sol ranges of the clusters of ``sols`` separated by more than ``gap`` sols; v0p75.1: a cluster is also cut
+    between two consecutive sols a < b with a < break <= b for every sol in ``breaks`` (e.g. the pitch knot)."""
     u = sorted(set(int(x) for x in sols))
     if not u:
         return []
+    brk = sorted(float(x) for x in (breaks or ()))
     out, start = [], u[0]
     for a, b in zip(u, u[1:]):
-        if b - a > gap:
+        if b - a > gap or any(a < k <= b for k in brk):
             out.append((start, a))
             start = b
     out.append((start, u[-1]))
@@ -254,13 +262,13 @@ def sol_epochs(sols: Sequence[int], gap: float = EPOCH_GAP_SOLS) -> List[Tuple[i
 
 
 def split_rig_by_epoch(rec, project: SfmProject, temps: Optional[Dict[str, Dict[str, Any]]] = None,
-                       gap: float = EPOCH_GAP_SOLS):
+                       gap: float = EPOCH_GAP_SOLS, breaks: Sequence[float] = RIG_EPOCH_BREAK_SOLS):
     """
     A copy of ``rec`` in which the frames of each sol epoch (:func:`sol_epochs` of the frames' sols) have their own
     copy of their rig (same sensors, cameras and sensor poses), so that a bundle adjustment with ``refine_rig``
     solves one rig per epoch; the cameras stay shared.  Returns (rec, project, epochs) with one row per epoch:
     {"epoch", "sol_min", "sol_max", "sol_median", "frames", "images", "T_median_degC", "rig_id"} (``rig_id`` of the
-    stereo rig of that epoch).
+    stereo rig of that epoch).  v0p75.1: epochs are also cut at ``breaks`` (default the pitch knot, sol 300).
     """
     import pycolmap
     by_name = {r["name"]: r for r in project.images}
@@ -271,7 +279,7 @@ def split_rig_by_epoch(rec, project: SfmProject, temps: Optional[Dict[str, Dict[
               if d.id in rec.images and rec.images[d.id].name in by_name]
         if ss:
             sol_of[fid] = int(np.median(ss))
-    eps = sol_epochs(sol_of.values(), gap)
+    eps = sol_epochs(sol_of.values(), gap, breaks)
     ep_of = {fid: next(i for i, (a, b) in enumerate(eps) if a <= s <= b) for fid, s in sol_of.items()}
     stereo = {rid for rid, rig in rec.rigs.items() if len(list(rig.non_ref_sensors))}
     new = pycolmap.Reconstruction()

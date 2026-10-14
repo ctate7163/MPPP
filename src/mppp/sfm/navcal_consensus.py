@@ -19,7 +19,7 @@ import datetime
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -1109,7 +1109,8 @@ def _ols(x: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
 
 
 def rig_residuals(scapes_cfg: Dict[str, PathLike], cameras_dir: Optional[PathLike] = None, points: int = 8000,
-                  iterations: int = 60, verbose: bool = True, epoch_gap: Optional[float] = 100.0) -> Dict[str, Any]:
+                  iterations: int = 60, verbose: bool = True, epoch_gap: Optional[float] = 50.0,
+                  epoch_breaks: Optional[Sequence[float]] = (300.0,)) -> Dict[str, Any]:
     """
     v0p73: does the rig follow the model?  Each block on its own, with the Navcam cameras of ``cameras_dir`` (default:
     in use) held and their whole model applied per image - fx, fy per axis and NR cx against temperature, the rig
@@ -1122,6 +1123,8 @@ def rig_residuals(scapes_cfg: Dict[str, PathLike], cameras_dir: Optional[PathLik
     v0p75: ``epoch_gap`` (sols; None = off): a block whose Navcam visits are more than that many sols apart gets one
     rig per visit (:func:`mppp.sfm.navcal.split_rig_by_epoch`) and one row per visit (``block`` "name [sols a-b]",
     ``site`` the block, ``epoch``) - the early visits of Chal Rocks Sid and Three Forks then test the drift on their own.
+    v0p75.1: ``epoch_gap`` 50 sols (was 100) and ``epoch_breaks`` (sol 300, the pitch knot): images on both sides of
+    the knot are separate rows even within one visit (Rochette 178-190 + 341).
     """
     import pycolmap
     from . import navcal as NC
@@ -1170,7 +1173,8 @@ def rig_residuals(scapes_cfg: Dict[str, PathLike], cameras_dir: Optional[PathLik
         # 360-378) gets one rig per visit, refined on its own, and one residual row per visit
         epochs = []
         if epoch_gap:
-            rec_e, proj_e, eps = NC.split_rig_by_epoch(rec, proj, temps, gap=float(epoch_gap))
+            rec_e, proj_e, eps = NC.split_rig_by_epoch(rec, proj, temps, gap=float(epoch_gap),
+                                                       breaks=tuple(epoch_breaks or ()))     # v0p75.1: + sol 300
             if len(eps) > 1:
                 rec, proj, epochs = rec_e, proj_e, eps
         ba = NC.joint_adjust(rec, proj, temps, 0.5 * (tl["fx_ppm"] + tl["fy_ppm"]), t0, max_iterations=iterations,

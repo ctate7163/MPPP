@@ -83,7 +83,9 @@ NAVCAM_CONSENSUS_DIR = navcam_consensus_dir()
 FULL_OPENCV_NAMES = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6")
 # parameters a focus-bin camera holds with zcam_bin_refine="focal": all but the focal length
 ZCAM_BIN_HELD = ("cx", "cy", "k1", "k2", "p1", "p2", "k3")
-NAVCAM_RIG_EPOCH_GAP_SOLS = 100.0   # v0p75: Navcam visits of a block more than this many sols apart get their own rig
+NAVCAM_RIG_EPOCH_GAP_SOLS = 50.0    # v0p75.1 (v0p75: 100): Navcam visits of a block more than this many sols apart get
+                                    # their own rig rotation (the intrinsics, distortion and baseline stay common)
+NAVCAM_RIG_EPOCH_BREAKS_SOLS = (300.0,)   # v0p75.1: and a visit with images on both sides of the pitch knot is cut there
 
 
 def focus_bins(counts: Sequence[Optional[float]], width: float = ZCAM_FOCUS_BIN) -> List[int]:
@@ -342,7 +344,8 @@ class SfmProject:
                zcam_focus_model_file: Optional[PathLike] = None,
                navcam_distortion_fit: str = NAVCAM_DISTORTION_FIT, navcam_k4: str = "zero",
                navcam_rig_yaw: str = "hold", navcam_rig_epoch_gap: Optional[float] = None,
-               zcam_line_form: Any = "v0p75") -> "SfmProject":
+               zcam_line_form: Any = "v0p75", navcam_rig_epoch_breaks: Optional[Sequence[float]] = None,
+               navcam_rig_epochs_tie: bool = True) -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -695,8 +698,14 @@ class SfmProject:
         # Sid: sols 91-101 and 360-378; Three Forks: 413-435 and 652-693) each get their own rig rotation, refined
         # on its own: "N" for the first visit in sol order, "N#1", "N#2" ... for the later ones, each started at the
         # drift model's value for its own median sol (the pitch hinge at sol 300 is 8 mdeg between Sid's visits)
+        # v0p75.1: gap 50 sols (was 100), and a visit with images on both sides of the pitch knot (sol 300) is cut there
+        # (Rochette 178-190 + 341, Chal Rocks Sid 91-101 + 361-378); the copies' intrinsics, distortion and baseline
+        # are tied to the eye's (``navcam_rig_epochs_tie``, mppp.sfm.reconstruction.epoch_tie_key) - one rig rotation
+        # per epoch is all that differs
         gap = NAVCAM_RIG_EPOCH_GAP_SOLS if navcam_rig_epoch_gap is None else float(navcam_rig_epoch_gap)
-        epochs_info = navcam_rig_epochs(images, rig, gap, nav_info, yaw=navcam_rig_yaw == "refine", cameras=cameras)
+        breaks = tuple(NAVCAM_RIG_EPOCH_BREAKS_SOLS if navcam_rig_epoch_breaks is None else navcam_rig_epoch_breaks)
+        epochs_info = navcam_rig_epochs(images, rig, gap, nav_info, yaw=navcam_rig_yaw == "refine", cameras=cameras,
+                                        breaks=breaks)
         proj = cls(root, images, cameras, rig, offset,
                    {"world_frame": frames.pop(), "image_format": image_format,
                     "prior_sigma_m": list(map(float, prior_sigma_m)), "zero_terms": list(zero_terms),
@@ -713,6 +722,8 @@ class SfmProject:
                     "zcam_rig_fit": zcam_rig_fit,                       # v0p74: "rotation" / "full" in stage 2
                     "navcam_rig_epochs": epochs_info,                   # v0p75: the Navcam visits with their own rig
                     "navcam_rig_epochs_gap": gap,
+                    "navcam_rig_epochs_breaks": list(breaks),           # v0p75.1
+                    "navcam_rig_epochs_tie": bool(navcam_rig_epochs_tie),   # v0p75.1: one camera per eye for all epochs
                     "zcam_line_form": zcam_line_form,                   # v0p75: the form of every focus line
                     "zcam_low_backlash_sha256": (low_backlash_fingerprint(zcam_low_backlash, zcam_low_backlash_found)
                                                  if any(f == "Z" for f in instruments.values()) else None),
@@ -1129,7 +1140,8 @@ def _align_priors_to_cameras(images: List[Dict[str, Any]], cameras: Dict[str, Di
 
 def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: float,
                       nav_info: Optional[Dict[str, Any]] = None, yaw: bool = False,
-                      cameras: Optional[Dict[str, Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+                      cameras: Optional[Dict[str, Dict[str, Any]]] = None,
+                      breaks: Sequence[float] = ()) -> Optional[Dict[str, Any]]:
     """
     v0p75: splits the Navcam rig of a block into one rig per *epoch* - the clusters of the Navcam images' sols
     separated by more than ``gap`` sols (the visits of a site the rover came back to).  With one cluster nothing
@@ -1142,12 +1154,15 @@ def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: fl
     else every epoch starts at the same rotation.  The bundle adjustment then refines the rigs (and the eye cameras'
     free terms) on their own.  Returns the epoch table {"gap_sols", "epochs": [{"index", "rig_key", "cameras",
     "sols", "sol_median", "T_median_degC", "images"}]} (None for one epoch); kept in ``settings["navcam_rig_epochs"]``.
+    v0p75.1: ``breaks`` (sols, default in create the pitch knot 300) cut an epoch whose images straddle them; the
+    copies NL#k, NR#k are tied to NL, NR in the bundle adjustment (one parameter array), so an epoch differs from
+    another only by its rig rotation.
     """
     from .navcal import sol_epochs
     nav = [r for r in images if str(r.get("instrument", "")).startswith("N") and r.get("sol") is not None]
     if "N" not in rig or not nav:
         return None
-    eps = sol_epochs([int(r["sol"]) for r in nav], gap)
+    eps = sol_epochs([int(r["sol"]) for r in nav], gap, breaks)        # v0p75.1: cut at the pitch knot too
     for r in nav:
         r["rig_epoch"] = 0
     if len(eps) < 2:
@@ -1176,7 +1191,7 @@ def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: fl
                 for eye in (ref_key, sen_key):
                     if eye in cameras:
                         cameras[f"{eye}#{k}"] = dict(cameras[eye], epoch=k, group=eye,
-                                                     source=f"{cameras[eye].get('source', eye)}; rig epoch {k} "
+                                                     source=f"{cameras[eye].get('source', eye)}; rig epoch {k} (tied to {eye}) "
                                                             f"(sols {int(a)}-{int(b)}): the eye's camera again")
             for r in members:
                 r["instrument"] = f"{r['instrument']}#{k}"
@@ -1195,7 +1210,7 @@ def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: fl
             r["rig_epoch"] = k
         rig[key] = ent
         table.append(dict(ep, rig_key=key, cameras=[ent["ref"], ent["sensor"]]))
-    return {"gap_sols": float(gap), "epochs": table}
+    return {"gap_sols": float(gap), "breaks_sols": [float(x) for x in breaks], "epochs": table}
 
 
 def _rig_family(key: str) -> str:

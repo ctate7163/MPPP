@@ -59,7 +59,7 @@ def test_thermal_stage_splits_relabels_and_strips(tmp_path):
     temps = image_temperatures(proj)
     assert len(temps) == len(proj.images) and all(v["source"] == "manifest" for v in temps.values())
     n_before = sum(len(im.points2D) for im in rec.images.values())
-    rec2, rep = thermal_stage(rec, proj, temps, bin_deg=10, min_images=4, max_iterations=20, verbose=False)
+    rec2, rep = thermal_stage(rec, proj, temps, bin_deg=10, fine_range=None, min_images=4, max_iterations=20, verbose=False)
     assert rep["bins"] == 2 and len(rep["rows"]) == 4 and not rep["held"]
     keys = {r["camera"] for r in rep["rows"]}
     assert keys == {"NL_T-040-030", "NL_T-020-010", "NR_T-040-030", "NR_T-020-010"}
@@ -80,7 +80,7 @@ def test_thermal_stage_held_bins_follow_the_model(tmp_path):
     bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, max_iterations=10)
     f0 = {k: float(rec.cameras[v].params[0]) for k, v in proj.settings["database"]["cameras"].items()}
     model = {"NL": {"ppm_per_degC": 60.0, "T0_degC": -20.0}, "NR": {"ppm_per_degC": 60.0, "T0_degC": -20.0}}
-    rec2, rep = thermal_stage(rec, proj, image_temperatures(proj), bin_deg=10, min_images=4, hold=True,
+    rec2, rep = thermal_stage(rec, proj, image_temperatures(proj), bin_deg=10, fine_range=None, min_images=4, hold=True,
                               thermal_model=model, max_iterations=5, verbose=False)
     assert rep["held"]
     for r in rep["rows"]:
@@ -121,7 +121,7 @@ def test_health_and_export_on_a_binned_block(tmp_path):
     from mppp.sfm.export import export_for_error, native_reconstruction
     proj, rec, noise = _synthetic_block(tmp_path)
     bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, max_iterations=10)
-    rec2, rep = thermal_stage(rec, proj, image_temperatures(proj), bin_deg=10, min_images=4, max_iterations=5, verbose=False)
+    rec2, rep = thermal_stage(rec, proj, image_temperatures(proj), bin_deg=10, fine_range=None, min_images=4, max_iterations=5, verbose=False)
     h = assess_alignment(proj, rec2)
     rig = [c for c in h["checks"] if "rig" in c["check"]]
     assert rig and all(c["status"] != "fail" for c in rig)
@@ -188,7 +188,7 @@ def test_thermal_defaults_and_notebook():
     ns = {}
     params = next("".join(c["source"]) for c in nb["cells"] if "parameters" in c.get("metadata", {}).get("tags", []))
     assert "THERMAL_BINS_DEG  = 5 " in params and "THERMAL_MIN_IMAGES = 5 " in params
-    assert 'THERMAL_FREE = ("fx", "fy")' in params and "thermal_free=THERMAL_FREE" in src
+    assert 'THERMAL_FREE = ("fx", "fy", "k1")' in params and "thermal_free=THERMAL_FREE" in src     # v0p75.1
 
 
 def test_temperature_bins_merge_as_documented():
@@ -226,11 +226,11 @@ def test_thermal_bin_lines_show_cx_cy_and_held_marks():
 def test_split_by_temperature_records_the_start(tmp_path):
     pytest.importorskip("pycolmap")
     src = (ROOT / "src" / "mppp" / "sfm" / "thermal.py").read_text(encoding="utf-8")
-    assert '"start": {"fx": float(p[0]), "fy": float(p[1]), "cx": float(p[2]), "cy": float(p[3])}' in src
+    assert '"start": {"fx": float(p[0]), "fy": float(p[1]), "cx": float(p[2]), "cy": float(p[3]),' in src   # v0p75.1: + k1
 
 
 def test_thermal_stage_refuses_distortion_terms():
-    """v0p50: a temperature bin fits at most fx, fy, cx, cy - never the Navcam distortion."""
+    """v0p50: a temperature bin fits at most fx, fy, cx, cy - never the Navcam distortion; v0p75.1: except k1."""
     from mppp.sfm.thermal import thermal_stage
     with pytest.raises(ValueError, match="distortion"):
-        thermal_stage(None, None, {}, free=("fx", "k1"))
+        thermal_stage(None, None, {}, free=("fx", "k2"))

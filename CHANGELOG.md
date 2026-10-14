@@ -2,6 +2,15 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.75.1 — 2026-10-14
+
+**Navcam temperature bins with fx, fy and k1; finer bins where the images are; rig epochs every 50 sols and at the pitch knot, with the intrinsics, distortion and baseline common (Christian, 13–14 Oct).** From the 13 Oct test on the four error-analysis blocks (79 bin cameras, points held, poses free): k1 changes with temperature (−3.8 ± 1.1 × 10⁻⁶ /°C) and the fx / fy slope difference survives with k1 free (+4.5 ± 1.1 ppm/°C), so both go into the bins; a fixed aspect with k1(T) fits worse.
+- **Thermal stage**: `THERMAL_FREE = ("fx", "fy", "k1")` (notebook 03 and `reconstruct` default; was fx, fy). k1 is the one distortion term a bin may refine (`THERMAL_FREE_DISTORTION`); an eye's bin with fewer than `THERMAL_K1_MIN_IMAGES` (6) images keeps k1 at the eye's value (fx, fy still free; `report["k1_held_bins"]`). Rows carry `k1`, `start["k1"]`, `free`; the bin table prints d k1.
+- **Finer bins**: `THERMAL_FINE_RANGE_DEGC = (-25, -5)`, `THERMAL_FINE_BIN_DEG = 2.5` (`bin_edges`, `temperature_bins(fine_range, fine_deg)`; notebook 03 `THERMAL_FINE_RANGE`, `THERMAL_FINE_DEG`; `reconstruct(thermal_fine_range, thermal_fine_deg)`, None = uniform). 5 °C bins outside, cut at the range ends; small bins are merged as before. Half-degree tags keep the .5 (`NL_T-022.5-020`).
+- **Rig epochs**: `NAVCAM_RIG_EPOCH_GAP_SOLS = 50` (was 100) and `NAVCAM_RIG_EPOCH_BREAKS_SOLS = (300,)`: an epoch with images on both sides of the pitch knot is cut there (`sol_epochs(breaks)`, `navcam_rig_epochs(breaks)`, `split_rig_by_epoch(breaks)`, `rig_residuals(epoch_gap=50, epoch_breaks=(300,))`). In the 4 Oct consensus neither Chal Rocks Sid (125 images at sols 91–101, 45 at 360–371) nor Rochette (178–190 and 6 images at 341) was split: one rig each at the drift model's value for one sol.
+- **Common intrinsics across epochs**: the epoch copies NL#k, NR#k (and their temperature bins NL#k_T…) share one parameter array with NL, NR (NL_T…) in `bundle_adjust` (`_tie_epoch_cameras`, `epoch_tie_key`; `settings["navcam_rig_epochs_tie"]`, default True; reported as `tied_cameras`): one set of intrinsics and distortion for every visit, one rig rotation per visit. The baseline is common: held at the start in `refine_rig="rotation"` (the default); with `refine_rig=True` a later epoch's translation is held. The database still needs the copies (a camera in one rig only).
+- Tests: `tests/test_v0p751.py` (bin edges, merge, tags, the k1 check, epochs at the knot, the tie, two epochs end to end sharing the cameras with one baseline, untied for comparison).
+
 ## 0.75.0 — 2026-10-08
 
 **The next run's model form (Christian, 8 Oct): one f slope per eye, principal points pinned, distortion constant, one Mastcam-Z rig for the mission; sites with several visits and Navcam rig epochs; the pipeline's consensus from the group.** Code and the start model from the archived 4–5 Oct first runs; nothing here has run on real images yet - the first block (Chal Rocks Sid) is the test.

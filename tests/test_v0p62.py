@@ -22,7 +22,7 @@ def _binned_stage1(tmp_path):
         rec.deregister_frame(f)
     rec = R.triangulate(rec, proj, max_reproj_px=8.0)            # stage 1: COLMAP drops the Mastcam-Z rig
     assert 2 not in rec.rigs
-    rec, rep = thermal_stage(rec, proj, image_temperatures(proj), bin_deg=10, min_images=2, verbose=False)
+    rec, rep = thermal_stage(rec, proj, image_temperatures(proj), bin_deg=10, fine_range=None, min_images=2, verbose=False)
     return proj, rec, init, zf, rep
 
 

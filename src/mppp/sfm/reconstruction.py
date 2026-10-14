@@ -353,6 +353,44 @@ ZCAM_RIG_TRANSLATION_SIGMA_M = 0.01     # v0p74: prior on the Mastcam-Z right ce
 ZCAM_RIG_FIT = "full"                   # v0p74: the Mastcam-Z rig of each zoom refined in stage 2 (notebook 03 ZCAM_RIG_FIT)
 
 
+def epoch_tie_key(key: Any) -> str:
+    """v0p75.1: the camera a Navcam rig-epoch copy is tied to - the key without its ``#k``: ``NL#1`` -> ``NL``,
+    ``NR#2_T-020-015`` -> ``NR_T-020-015``; other keys are their own."""
+    import re
+    k = str(key)
+    return re.sub(r"#\d+", "", k) if k.startswith("N") else k
+
+
+def _tie_epoch_cameras(cam_blocks: Dict[int, np.ndarray], work, project: SfmProject) -> Dict[str, List[str]]:
+    """v0p75.1: make the parameter arrays of the Navcam rig-epoch copies the array of the camera they copy
+    (:func:`epoch_tie_key`; within a group the smallest camera id is the owner).  Off with
+    ``project.settings["navcam_rig_epochs_tie"] = False``.  Returns {owner key: [tied keys]}."""
+    if project.settings.get("navcam_rig_epochs_tie", True) is False:
+        return {}
+    key_of = {int(v): str(k) for k, v in (project.settings.get("database", {}).get("cameras") or {}).items()}
+    if not any("#" in k for k in key_of.values()):
+        return {}
+    groups: Dict[str, List[int]] = {}
+    for cid in sorted(cam_blocks):
+        k = key_of.get(int(cid))
+        if k is None or not k.startswith("N"):
+            continue
+        groups.setdefault(epoch_tie_key(k), []).append(int(cid))
+    out: Dict[str, List[str]] = {}
+    for g, cids in groups.items():
+        if len(cids) < 2 or not any("#" in key_of[c] for c in cids):
+            continue
+        owner = cids[0]
+        c0 = work.cameras[owner]
+        for c in cids[1:]:
+            ci = work.cameras[c]
+            if ci.model != c0.model or len(cam_blocks[c]) != len(cam_blocks[owner]):
+                continue
+            cam_blocks[c] = cam_blocks[owner]
+            out.setdefault(key_of[owner], []).append(key_of[c])
+    return out
+
+
 def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: float = 2.0,
                   refine_intrinsics: bool = True, refine_principal_point: bool = True,
                   refine_tangential: Union[bool, Dict[str, bool]] = True, refine_rig: Union[bool, str] = "rotation", use_priors: bool = True, max_iterations: int = 100,
@@ -488,6 +526,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     # kept their start values - the poses then fitted cameras the model no longer had (median 0.16 -> 0.37 px)
     cam_blocks: Dict[int, np.ndarray] = {int(cid): np.ascontiguousarray(np.array(c.params, dtype=np.float64))
                                          for cid, c in work.cameras.items()}
+    # v0p75.1: the Navcam rig-epoch copies of an eye (NL#1, NL#2 ... and their temperature bins NL#1_T...) share one
+    # parameter array with the eye's camera (NL, NL_T...): one set of intrinsics and distortion for every visit, one
+    # rig rotation per visit.  (The copies exist because a COLMAP database puts a camera in one rig only.)
+    tied = _tie_epoch_cameras(cam_blocks, work, project)
     # v0p53: the Mastcam-Z rig of each zoom, shared by all focus bins - a right image is posed from the frame of its
     # left partner (same exposure) through this block; its own frame gets no pose block and is set afterwards
     vrig = project.settings.get("zcam_virtual_rig") or {}
@@ -578,10 +620,12 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     if not key_of and any(c.get("free_params") or c.get("fixed_params") for c in project.cameras.values()):
         raise RuntimeError("the project has no database camera mapping (run build_database first): per-camera "
                            "free_params / fixed_params (rational Navcam k4, Mastcam-Z focus bins) would be ignored")
-    for cid, cam in work.cameras.items():
+    seen_blocks = set()                                       # v0p75.1: a tied array is set up once (its group's first)
+    for cid, cam in sorted(work.cameras.items()):
         blk = cam_blocks[int(cid)]
-        if not prob.has_parameter_block(blk):
+        if not prob.has_parameter_block(blk) or id(blk) in seen_blocks:
             continue
+        seen_blocks.add(id(blk))
         if not refine_intrinsics or key_of.get(int(cid), "") in set(hold_cameras):
             prob.set_parameter_block_constant(blk)
             continue
@@ -612,6 +656,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             blk = cam_blocks[int(cid)]
             if not prob.has_parameter_block(blk) or prob.is_parameter_block_constant(blk):
                 continue
+            if any(blk is c_.parameter_block for c_ in aspect_costs if hasattr(c_, "parameter_block")):
+                continue
             names = _PARAM_NAMES.get(cam.model.name)
             if not names or names[:2] != ("fx", "fy"):
                 continue
@@ -620,6 +666,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 continue
             p0 = np.asarray(pc.get("params") or blk, float)
             c = AspectPrior(float(p0[1] / p0[0]), float(aspect_sigma), len(blk))
+            try:
+                c.parameter_block = blk                       # v0p75.1: one prior per (tied) array
+            except AttributeError:
+                pass
             aspect_costs.append(c)
             prob.add_residual_block(c, None, [blk])
 
@@ -696,6 +746,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             # x, y, z with w held: |q|^2 - 1 stays O(1e-6), i.e. a scale error < 0.01 px;
             # the quaternion is normalised when written back.
             held_q = [3, 4, 5, 6] if refine_rig == "rotation" else [3]
+            if refine_rig is True and tied and "#" in str(key_of.get(int(key[1]), "")):
+                held_q = [3, 4, 5, 6]                     # v0p75.1: a later visit's rig keeps the common baseline
             if nav_rig and rig_yaw in ("hold", "zero"):
                 held_q = [1] + held_q                     # v0p51: the yaw stays; pitch (x) and roll (z) refined
             prob.set_manifold(arr, pyceres.SubsetManifold(7, held_q))
@@ -791,6 +843,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                                        Rotation.from_matrix(R1 @ R0.T).as_rotvec())))}
     return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att, "rig": rig_out, "covariance": cov_out,
             "rig_translation_priors": n_rig_prior, "frames_without_position_prior": n_no_prior,
+            "tied_cameras": tied,
             "unlocalized_stations": unloc, "navcam_aspect": navcam_aspect, "aspect_priors": len(aspect_costs),
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
@@ -1307,8 +1360,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 navcam_intrinsics: str = "refine", staged: bool = False, hold_cameras: Sequence[str] = (),
                 linear_solver: str = "auto", temperatures: Optional[Dict[str, Dict[str, Any]]] = None,
                 thermal_bins_deg: Optional[float] = None, thermal_min_images: int = 5,
-                thermal_free: Sequence[str] = ("fx", "fy"),
+                thermal_free: Sequence[str] = ("fx", "fy", "k1"),
                 thermal_model: Optional[Dict[str, Dict[str, float]]] = None, localize_min_images: int = 0,
+                thermal_fine_range: Any = "default", thermal_fine_deg: Any = "default",
                 zcam_backlash: Optional[str] = None, zcam_backlash_z: float = 3.0,
                 zcam_focus_line: bool = True, zcam_line_cycles: int = 2, thermal_after_stage1: bool = True,
                 pose_guided: Union[bool, Dict[str, Any]] = True, navcam_aspect: str = "hold"):
@@ -1418,6 +1472,11 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     import time
     from .thermal import strip_thermal_bins
     t0 = time.time()
+    # v0p75.1: finer Navcam temperature bins where the images are dense ("default": THERMAL_FINE_RANGE_DEGC,
+    # THERMAL_FINE_BIN_DEG of mppp.sfm.thermal; None or a falsy value: uniform bins of thermal_bins_deg)
+    from .thermal import THERMAL_FINE_RANGE_DEGC, THERMAL_FINE_BIN_DEG
+    _fine_range = THERMAL_FINE_RANGE_DEGC if isinstance(thermal_fine_range, str) else (thermal_fine_range or None)
+    _fine_deg = THERMAL_FINE_BIN_DEG if isinstance(thermal_fine_deg, str) else (thermal_fine_deg or None)
     n_strip = strip_thermal_bins(project)                   # v0p31: a rerun starts from one camera per eye
     if n_strip and verbose:
         print(f"[sfm] {n_strip} Navcam temperature-bin cameras of an earlier run removed; starting from one camera "
@@ -1536,7 +1595,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                                hold=hold_nav, thermal_model=thermal_model, sigma_px=sigma_px,
                                                loss_scale=float(schedule[-1][1]), max_iterations=2 * max_iterations,
                                                attitude_prior_deg=attitude_prior_deg, linear_solver=linear_solver,
-                                               verbose=verbose, rig_slopes=rig_slopes_for_project(project))
+                                               verbose=verbose, rig_slopes=rig_slopes_for_project(project),
+                                               fine_range=_fine_range, fine_deg=_fine_deg)
             n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
             thermal_early["filtered_after"] = n_bad
             thermal_early["single_camera_model"] = str(single.relative_to(project.root))
@@ -1702,7 +1762,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                      thermal_model=thermal_model, sigma_px=sigma_px,
                                      loss_scale=float(schedule[-1][1]), max_iterations=2 * max_iterations,
                                      attitude_prior_deg=attitude_prior_deg, linear_solver=linear_solver,
-                                     verbose=verbose, rig_slopes=rig_slopes_for_project(project))
+                                     verbose=verbose, rig_slopes=rig_slopes_for_project(project),
+                                               fine_range=_fine_range, fine_deg=_fine_deg)
         n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
         thermal["filtered_after"] = n_bad
         thermal["single_camera_model"] = str(single.relative_to(project.root))
