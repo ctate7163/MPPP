@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 PathLike = Union[str, Path]
 
 FORM_VERSION = "v0p73"
+FORMS = ("v0p73", "v0p80")          # v0p80: as v0p73, but k4 fitted with k3 in the joint (not 0) and k1 against temperature
 CONVENTION = "NL reference"
 NAVCAM_FILES = ("M2020_NL_fisheye_tangential.json", "M2020_NR_fisheye_tangential.json", "M2020_N_rig.json")
 # the candidate of the v0p72 consensus run of 2 Oct 2026 (16 blocks) - promoted in v0p73 in the NL-reference form
@@ -43,6 +44,7 @@ def thermal_terms(th: Optional[Dict[str, Any]]) -> Dict[str, float]:
     ppm = float(th.get("ppm_per_degC") or 0.0)
     return {"fx_ppm": float(th.get("fx_ppm_per_degC", ppm) or 0.0), "fy_ppm": float(th.get("fy_ppm_per_degC", ppm) or 0.0),
             "cx_px": float(th.get("cx_px_per_degC") or 0.0), "cy_px": float(th.get("cy_px_per_degC") or 0.0),
+            "k1": float(th.get("k1_per_degC") or 0.0),                       # v0p80
             "T0": float(th.get("T0_degC", -20.0))}
 
 
@@ -65,7 +67,9 @@ def _load(d: Path, name: str) -> Optional[Dict[str, Any]]:
 def check_form(folder: Optional[PathLike] = None, require_convention: bool = True) -> Dict[str, Any]:
     """
     Whether the Navcam models in ``folder`` (default: the ones in use, :func:`mppp.paths.cmods_dir`) follow the v0p73
-    form (module docstring).  Returns {"ok", "errors": [...], "warnings": [...], "folder", "files": {name: sha12}}.
+    form (module docstring).  v0p80: a file with ``"form": "v0p80"`` may have k4 != 0 (k3 and k4 fitted together in the
+    joint; notebook 03 then holds both, NAVCAM_K4 = "consensus"), and its ``thermal.k1_per_degC`` moves k1 with
+    temperature; ``"form"`` of the result is the newest form both eyes declare.  Returns {"ok", "errors": [...], "warnings": [...], "folder", "files": {name: sha12}}.
     ``errors`` would put wrong cameras into the alignments (k4 not 0, NL principal point moving with temperature,
     a rig temperature term); ``require_convention`` also makes a missing ``"convention": "NL reference"`` an error.
     """
@@ -79,13 +83,17 @@ def check_form(folder: Optional[PathLike] = None, require_convention: bool = Tru
         errors.append(f"missing {', '.join(missing)} in {d}")
         return {"ok": False, "errors": errors, "warnings": warnings, "folder": str(d), "files": files}
     nl, nr, rig = (_load(d, n) for n in NAVCAM_FILES)
+    forms = {str(j.get("form") or "") for j in (nl, nr)}
+    form = "v0p80" if forms == {"v0p80"} else "v0p73"
+    if len(forms) > 1:
+        errors.append(f"the two eyes are in different forms {sorted(forms)}")
     for eye, j in (("NL", nl), ("NR", nr)):
         names = j.get("param_names") or []
         p = j.get("params") or []
         k4 = float(p[names.index("k4")]) if "k4" in names and len(p) > names.index("k4") else None
         if k4 is None:
             errors.append(f"{eye}: no k4 parameter ({j.get('model')})")
-        elif abs(k4) > 1e-12:
+        elif abs(k4) > 1e-12 and form != "v0p80":
             errors.append(f"{eye}: k4 = {k4:+.5f}, the form holds k4 = 0 (notebook 03 sets k4 = 0 and would keep a k3 "
                           f"fitted with k4 free: ~3-4 px at the corners)")
         if not j.get("thermal"):
@@ -109,7 +117,7 @@ def check_form(folder: Optional[PathLike] = None, require_convention: bool = Tru
         warnings.append("rig: yaw_constant not set")
     if require_convention and rig.get("convention") != CONVENTION:
         errors.append(f"rig: convention {rig.get('convention')!r}, expected {CONVENTION!r}")
-    return {"ok": not errors, "errors": errors, "warnings": warnings, "folder": str(d), "files": files}
+    return {"ok": not errors, "errors": errors, "warnings": warnings, "folder": str(d), "files": files, "form": form}
 
 
 def describe(folder: Optional[PathLike] = None) -> List[str]:
@@ -135,7 +143,8 @@ def describe(folder: Optional[PathLike] = None) -> List[str]:
         t = thermal_terms(j.get("thermal"))
         out.append(f"  {n} {sha12(d / n)}: fx {p[0]:.2f} fy {p[1]:.2f} cx {p[2]:.2f} cy {p[3]:.2f} k4 {k4}; thermal fx "
                    f"{t['fx_ppm']:+.1f} fy {t['fy_ppm']:+.1f} ppm/degC, cx {t['cx_px']:+.4f} cy {t['cy_px']:+.4f} px/degC"
-                   f" about {t['T0']:g} degC; {j.get('convention') or 'no convention'}")
+                   + (f", k1 {t['k1']:+.2e}/degC" if t["k1"] else "")
+                   + f" about {t['T0']:g} degC; {j.get('form') or ''} {j.get('convention') or 'no convention'}")
     return out
 
 

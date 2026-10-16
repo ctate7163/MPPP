@@ -46,7 +46,15 @@ INTRINSIC_CORE = ("fx", "fy", "cx", "cy")          # focal length and principal 
 # v0p50: the Navcam distortion (k1-k4, p1, p2, ...) is one set per eye for every sol and temperature: "hold" keeps
 # it at the start (consensus) camera in every block and temperature bin; "refine" fits it per block (before v0p50)
 NAVCAM_DISTORTION_FIT = "hold"
-NAVCAM_TERM_SETTINGS = ("consensus", "zero")       # NAVCAM_K4 (v0p52 default "zero": k4 = 0, held)
+NAVCAM_TERM_SETTINGS = ("consensus", "zero")       # NAVCAM_K4 (v0p52 default "zero": k4 = 0, held; v0p80: "consensus")
+NAVCAM_K4 = "consensus"         # v0p80: a block holds k4 at the consensus camera's value (k3 and k4 come as a pair from the
+                                # joint, where k4 is free); with a k4 = 0 consensus that is the v0p52 behaviour
+# v0p80 (recipe of 14 Oct 2026): the Navcam principal point is held in every block at the start camera (the consensus,
+# moved to the block's temperature by NR cx(T), the one carrier of the stereo temperature change) - a block cannot
+# separate it from the frame attitudes (a 1 px cx shift is 0.087 px rms of yaw on the equidistant fisheye).
+# "refine": fitted per block (before v0p80).  The joint consensus still fits NL cx, cy, NR cy and NR cx(T).
+NAVCAM_PP_SETTINGS = ("hold", "refine")
+NAVCAM_PP = "hold"
 # v0p51: the Navcam rig yaw (rotation of the right camera about the left camera's y axis, the one that shifts the
 # disparity): "hold" (v0p52 default: the rig file's yaw for every block - no yaw from the drift or temperature terms
 # at the start, held in the adjustment and in the thermal stage, so the principal points absorb the differences),
@@ -345,7 +353,7 @@ class SfmProject:
                navcam_distortion_fit: str = NAVCAM_DISTORTION_FIT, navcam_k4: str = "zero",
                navcam_rig_yaw: str = "hold", navcam_rig_epoch_gap: Optional[float] = None,
                zcam_line_form: Any = "v0p75", navcam_rig_epoch_breaks: Optional[Sequence[float]] = None,
-               navcam_rig_epochs_tie: bool = True) -> "SfmProject":
+               navcam_rig_epochs_tie: bool = True, navcam_pp: str = NAVCAM_PP) -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP
         manifest; paths relative to ``processed_dir``), padded to the detector
@@ -442,6 +450,8 @@ class SfmProject:
             raise ValueError(f"navcam_rig_yaw must be one of {NAVCAM_RIG_YAW_SETTINGS}")
         if navcam_k4 not in NAVCAM_TERM_SETTINGS:
             raise ValueError(f"navcam_k4 must be one of {NAVCAM_TERM_SETTINGS}")
+        if navcam_pp not in NAVCAM_PP_SETTINGS:
+            raise ValueError(f"navcam_pp must be one of {NAVCAM_PP_SETTINGS}")
         processed_dir, root = Path(processed_dir), Path(root)
         xml_arg = xml_dir                       # None -> the focus model comes from cmods_dir() (MPPP_CMODS) first
         xml_dir = Path(xml_dir) if xml_dir else data_dir() / "cmods"
@@ -568,12 +578,18 @@ class SfmProject:
                         dcy = float(th.get("cy_px_per_degC") or 0.0) * (T - float(th["T0_degC"]))
                         cam["params"][2] += dcx
                         cam["params"][3] += dcy
+                        # v0p80: k1 against temperature (the joint's k1 slope, measured in the temperature bins)
+                        dk1 = float(th.get("k1_per_degC") or 0.0) * (T - float(th["T0_degC"]))
+                        _nm = PARAM_NAMES.get(cam["model"], FULL_OPENCV_NAMES)
+                        if dk1 and "k1" in _nm:
+                            cam["params"][_nm.index("k1")] += dk1
                         cam["source"] = (f"{cam.get('source', xml.name)}; fx x {sx:.6f}, fy x {sy:.6f} for the median "
                                          f"camera temperature {T:.1f} degC (consensus at {float(th['T0_degC']):.1f} degC, "
                                          f"{float(th.get('fx_ppm_per_degC', th['ppm_per_degC'])):+.1f} / "
                                          f"{float(th.get('fy_ppm_per_degC', th['ppm_per_degC'])):+.1f} ppm/degC)"
                                          + (f"; cx, cy {dcx:+.3f}, {dcy:+.3f} px (principal point thermal)"
-                                            if dcx or dcy else ""))
+                                            if dcx or dcy else "")
+                                         + (f"; k1 {dk1:+.2e} (k1 thermal)" if dk1 else ""))
                         nav_info[instr]["thermal"] = {"T_median_degC": T, "scale": sc, **th}
                     tr = js.get("trend")                    # v0p41: principal point against sol (about sol0)
                     Ss = [float(r["sol"]) for r in images if r["instrument"] == instr and r.get("sol") is not None]
@@ -611,7 +627,7 @@ class SfmProject:
             if (cam["width"], cam["height"]) != FULL_FRAME[fam]:
                 raise ValueError(f"{xml.name} is {cam['width']}x{cam['height']}, expected the full frame {FULL_FRAME[fam]}")
             if fam == "N":
-                cam = navcam_distortion_terms(cam, navcam_distortion_fit, navcam_k4)
+                cam = navcam_distortion_terms(cam, navcam_distortion_fit, navcam_k4, pp=navcam_pp)
             if fam == "Z" and "k3" in zt:          # v0p61: ZCAM_K3 = "zero" (Metashape XML start)
                 cam["fixed_params"] = sorted(set(cam.get("fixed_params") or []) | {"k3"}, key=FULL_OPENCV_NAMES.index)
             cameras[instr] = cam
@@ -732,6 +748,7 @@ class SfmProject:
                                           "found_file": _lb.get("found_file"), "found": _lb.get("found", 0)},
                     "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
                     "navcam_distortion_fit": navcam_distortion_fit, "navcam_k4": navcam_k4,
+                    "navcam_pp": navcam_pp,                             # v0p80: "hold" (recipe) or "refine"
                     "navcam_rig_yaw": navcam_rig_yaw,
                     "navcam_rig_thermal": False,                      # v0p53: no rig temperature term
                     "navcam_cameras": {"dir": str(nav_dir), "fingerprint": navcam_cameras_fingerprint(nav_dir),
@@ -755,7 +772,8 @@ def rig_without_yaw(R) -> np.ndarray:
     return Rotation.from_rotvec(rv).as_matrix()
 
 
-def navcam_distortion_terms(cam: Dict[str, Any], fit: str = NAVCAM_DISTORTION_FIT, k4: str = "zero") -> Dict[str, Any]:
+def navcam_distortion_terms(cam: Dict[str, Any], fit: str = NAVCAM_DISTORTION_FIT, k4: str = "zero",
+                            pp: str = "refine") -> Dict[str, Any]:
     """
     v0p50: the Navcam distortion settings of one start camera (a ``project.cameras`` dict, changed and returned).
 
@@ -765,6 +783,9 @@ def navcam_distortion_terms(cam: Dict[str, Any], fit: str = NAVCAM_DISTORTION_FI
     TANGENTIAL = "refine").  ``k4="zero"`` (the v0p52 default): the fisheye k4 = 0 and held in either case (not the
     rational model's k4).  p1 and p2 are
     governed by TANGENTIAL only (v0p52: the NAVCAM_P1 setting was removed; the joint needs p1, +3.7 % cost without).
+    ``pp="hold"`` (v0p80, notebook 03 ``NAVCAM_PP``; the function's default stays "refine" for the joint and older
+    callers): cx and cy go into ``fixed_params`` too - a block keeps the consensus principal point (with NR cx moved to
+    the block temperature), the one carrier of the stereo temperature change.
     """
     names = PARAM_NAMES.get(cam["model"], FULL_OPENCV_NAMES)
     params = list(map(float, cam["params"]))
@@ -785,14 +806,19 @@ def navcam_distortion_terms(cam: Dict[str, Any], fit: str = NAVCAM_DISTORTION_FI
             zeroed.append(n)
             if n not in fixed:
                 fixed.append(n)
+    if pp not in NAVCAM_PP_SETTINGS:
+        raise ValueError(f"pp must be one of {NAVCAM_PP_SETTINGS}")
     held = [n for n in names if n not in INTRINSIC_CORE] if fit == "hold" else []
+    if pp == "hold":
+        held += ["cx", "cy"]
     for n in held:
         if n not in fixed:
             fixed.append(n)
     free = [n for n in free if n not in fixed]
     cam = dict(cam, params=params, fixed_params=fixed, free_params=free, distortion_fit=fit,
-               zeroed_terms=zeroed)
-    note = ([f"{', '.join(zeroed)} = 0 (held)"] if zeroed else []) + (["distortion held"] if fit == "hold" else [])
+               zeroed_terms=zeroed, pp=pp)
+    note = ([f"{', '.join(zeroed)} = 0 (held)"] if zeroed else []) + (["distortion held"] if fit == "hold" else []) \
+        + (["principal point held"] if pp == "hold" else [])
     if note:
         cam["source"] = f"{cam.get('source', '')}; " + "; ".join(note)
     return cam

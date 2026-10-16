@@ -46,6 +46,7 @@ from .project import PARAM_NAMES as _PARAM_NAMES      # v0p50: one table (mppp.s
 # v0p14.5: the fourth round repeats the third's limits - it only shows whether another
 # re-triangulation and adjustment still changes anything (v0p14.3-4 used (6, 1.5, 1.5)).
 DEFAULT_SCHEDULE = ((24.0, 10.0, 8.0), (12.0, 2.0, 4.0), (8.0, 2.0, 2.0), (8.0, 2.0, 2.0))
+ROUND1_HOLD = True            # v0p80: round 1 adjusts poses and points only (cameras and rig at the promoted models)
 ATTITUDE_PRIOR_DEG = 1.0      # v0p20: weak CAHV attitude prior per frame (holds the block's orientation)
 
 
@@ -347,6 +348,38 @@ def _aspect_prior_class():
 
 def AspectPrior(a0: float, sigma: float, n: int):
     return _aspect_prior_class()(a0, sigma, n)
+
+
+@__import__("functools").lru_cache(maxsize=1)
+def _translation_tie_class():
+    import pyceres
+
+    class _TranslationTie(pyceres.CostFunction):
+        """v0p80: (t_a - t_b) / sigma on two rig blocks (q x, y, z, w, t x, y, z): a later visit's rig keeps the common
+        stereo baseline when the translation is refined (refine_rig=True, the baseline study)."""
+
+        def __init__(self, sigma: float):
+            super().__init__()
+            self.sigma = float(sigma)
+            self.set_num_residuals(3)
+            self.set_parameter_block_sizes([7, 7])
+
+        def Evaluate(self, parameters, residuals, jacobians):
+            a, b = parameters
+            for i in range(3):
+                residuals[i] = (a[4 + i] - b[4 + i]) / self.sigma
+            if jacobians is not None:
+                for k, sgn in ((0, 1.0), (1, -1.0)):
+                    if jacobians[k] is not None:
+                        j = np.zeros((3, 7))
+                        for i in range(3):
+                            j[i, 4 + i] = sgn / self.sigma
+                        jacobians[k][:] = j.ravel()
+            return True
+    return _TranslationTie
+
+
+EPOCH_TRANSLATION_TIE_SIGMA_M = 1e-6     # v0p80: the epochs' baselines are one (to a micrometre)
 
 
 ZCAM_RIG_TRANSLATION_SIGMA_M = 0.01     # v0p74: prior on the Mastcam-Z right centre (in the left frame) per axis, m
@@ -724,6 +757,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
 
     rig_start = {k: v.copy() for k, v in rig_blocks.items()}
     n_rig_prior = 0
+    n_rig_tie = 0
     rig_yaw = str(project.settings.get("navcam_rig_yaw") or "refine")        # v0p51: "refine", "hold", "zero"
     for key, arr in rig_blocks.items():
         if not prob.has_parameter_block(arr):
@@ -747,7 +781,15 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             # the quaternion is normalised when written back.
             held_q = [3, 4, 5, 6] if refine_rig == "rotation" else [3]
             if refine_rig is True and tied and "#" in str(key_of.get(int(key[1]), "")):
-                held_q = [3, 4, 5, 6]                     # v0p75.1: a later visit's rig keeps the common baseline
+                # v0p75.1: a later visit's rig keeps the common baseline - v0p80: its translation is refined but tied to
+                # the first visit's (the baseline study refines the translation; before, a later visit's stayed at CAHV)
+                main = [k2 for k2 in rig_blocks if str(key_of.get(int(k2[1]), "")) == epoch_tie_key(key_of.get(int(key[1]), ""))]
+                if main and prob.has_parameter_block(rig_blocks[main[0]]):
+                    prob.add_residual_block(_translation_tie_class()(EPOCH_TRANSLATION_TIE_SIGMA_M), None,
+                                            [arr, rig_blocks[main[0]]])
+                    n_rig_tie += 1
+                else:
+                    held_q = [3, 4, 5, 6]
             if nav_rig and rig_yaw in ("hold", "zero"):
                 held_q = [1] + held_q                     # v0p51: the yaw stays; pitch (x) and roll (z) refined
             prob.set_manifold(arr, pyceres.SubsetManifold(7, held_q))
@@ -842,7 +884,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                                    "rotation_change_deg": float(np.degrees(np.linalg.norm(
                                        Rotation.from_matrix(R1 @ R0.T).as_rotvec())))}
     return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att, "rig": rig_out, "covariance": cov_out,
-            "rig_translation_priors": n_rig_prior, "frames_without_position_prior": n_no_prior,
+            "rig_translation_priors": n_rig_prior, "rig_translation_ties": n_rig_tie,
+            "frames_without_position_prior": n_no_prior,
             "tied_cameras": tied,
             "unlocalized_stations": unloc, "navcam_aspect": navcam_aspect, "aspect_priors": len(aspect_costs),
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
@@ -850,6 +893,46 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             "termination": str(summary.termination_type), "brief": summary.BriefReport(), "retried": retried,
             "refine_tangential": tangential_setting(refine_tangential), "linear_solver": solver, "num_threads": so.num_threads,
             "seconds": float(summary.total_time_in_seconds)}
+
+
+def navcam_rig_fit(ba: Dict[str, Any], rec, project: SfmProject) -> Dict[str, Any]:
+    """v0p80: the Navcam rig after an adjustment: per rig whose sensor is a Navcam right camera (``NR``, the epoch
+    copies ``NR#k``) its rotation relative to the start (pitch, yaw, roll mdeg, rotation vector in the right camera)
+    and the baseline; with a covariance (refine_rig=True and ``covariance``) the baseline's sd (translation block
+    projected on the baseline direction, scaled by the variance factor).  {"baseline_m", "baseline_start_m",
+    "baseline_sd_m", "epochs": [...]}."""
+    from scipy.spatial.transform import Rotation
+    key_of = {int(v): str(k) for k, v in (project.settings.get("database", {}).get("cameras") or {}).items()}
+    out: Dict[str, Any] = {"baseline_m": None, "baseline_start_m": None, "baseline_sd_m": None, "epochs": []}
+    cov = ba.get("covariance") or {}
+    vf = float(cov.get("variance_factor", 1.0) or 1.0)
+    for name, r in sorted((ba.get("rig") or {}).items()):
+        rid, cid = (int(x) for x in name.split(":"))
+        key = key_of.get(cid, str(cid))
+        if not key.startswith("NR") or "_T" in key:
+            continue
+        T1 = rec.rigs[rid].sensor_from_rig(__import__("pycolmap").sensor_t(type=__import__("pycolmap").SensorType.CAMERA, id=cid))
+        R1 = np.asarray(T1.rotation.matrix())
+        t1 = np.asarray(T1.translation, float)
+        fam = "N" + key[2:]                                   # "NR#1" -> the epoch rig "N#1"
+        R0 = np.asarray((project.rig.get(fam) or project.rig.get("N") or {}).get("R_sensor_from_ref") or R1, float)
+        rv = 1e3 * np.degrees(Rotation.from_matrix(R1 @ R0.T).as_rotvec())
+        e = {"camera": key, "rig_id": rid, "pitch_mdeg": float(rv[0]), "yaw_mdeg": float(rv[1]), "roll_mdeg": float(rv[2]),
+             "baseline_m": float(r["baseline_m"]), "baseline_start_m": float(r["baseline_start_m"]),
+             "t_m": t1.tolist()}
+        c = (cov.get("blocks") or {}).get(f"rig:{rid}:{cid}")
+        if c is not None:
+            c = np.asarray(c, float)
+            if c.shape[0] >= 3:
+                u = t1 / max(np.linalg.norm(t1), 1e-12)
+                e["baseline_sd_m"] = float(np.sqrt(max(u @ c[-3:, -3:] @ u, 0.0) * vf))
+        out["epochs"].append(e)
+    main = [e for e in out["epochs"] if "#" not in e["camera"]] or out["epochs"]
+    if main:
+        out.update(baseline_m=main[0]["baseline_m"], baseline_start_m=main[0]["baseline_start_m"],
+                   baseline_sd_m=main[0].get("baseline_sd_m"))
+    out["variance_factor"] = vf if cov else None
+    return out
 
 
 def load_alignment(project: SfmProject):
@@ -1365,9 +1448,16 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 thermal_fine_range: Any = "default", thermal_fine_deg: Any = "default",
                 zcam_backlash: Optional[str] = None, zcam_backlash_z: float = 3.0,
                 zcam_focus_line: bool = True, zcam_line_cycles: int = 2, thermal_after_stage1: bool = True,
-                pose_guided: Union[bool, Dict[str, Any]] = True, navcam_aspect: str = "hold"):
+                pose_guided: Union[bool, Dict[str, Any]] = True, navcam_aspect: str = "hold",
+                round1_hold: bool = ROUND1_HOLD):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
+
+    ``round1_hold`` (v0p80, notebook 03 ``ROUND1_HOLD``; the camera-model recipe of 14 Oct 2026): the first round
+    (24 px triangulation, loose loss) adjusts poses and points only - every camera and the rig held at their start
+    (the promoted models) - so the cameras are refined from round 2 on, on clean tracks.  With ``refine_rig=True``
+    (the baseline study: translation free) the final Navcam adjustment also estimates the rig covariance, and
+    ``project.settings["reconstruction"]["rig_fit"]`` holds the baseline, its sd and the per-epoch rotations.
 
     ``zcam_backlash`` (v0p40, notebook 03 ``ZCAM_BACKLASH``): ``"split"`` - after the final adjustment each
     Mastcam-Z focus group (eye, sol, sequence, focus count) is classified into the dominant backlash focus state
@@ -1542,8 +1632,11 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     for k, (tpx, loss, rmax) in enumerate(schedule):
         rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts)
         st0 = track_statistics(rec, project)
-        ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
-                           refine_tangential=refine_tangential, refine_rig=refine_rig, max_iterations=max_iterations,
+        held_round = bool(round1_hold) and k == 0 and len(schedule) > 1      # v0p80: poses and points only
+        ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss),
+                           refine_intrinsics=refine_intrinsics and not held_round,
+                           refine_tangential=refine_tangential, refine_rig=False if held_round else refine_rig,
+                           max_iterations=max_iterations,
                            attitude_prior_deg=attitude_prior_deg, rig_translation_sigma_m=rig_translation_sigma_m,
                            hold_cameras=sorted(hold), linear_solver=linear_solver)
         n_bad = filter_observations(rec, project, float(rmax))
@@ -1552,12 +1645,14 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         res = native_residuals(rec, project)["residual_native_px"]
         entry = {"round": k + 1, "triangulation_px_full": tpx, "cauchy_scale_sigma": loss, "after_triangulation": st0,
                  "ba": ba["brief"], "filtered_observations": n_bad, "max_residual_native_px": rmax, "tracks": st,
+                 "cameras_and_rig_held": held_round,
                  "rms_native_px": float(np.sqrt(np.mean(res ** 2))) if res.size else float("nan"),
                  "median_native_px": float(np.median(res)) if res.size else float("nan"),
                  "elapsed_s": round(time.time() - t0, 1)}
         log.append(entry)
         if verbose:
-            print(f"[sfm] round {k + 1}: {st['points']} points ({st['cross_station_fraction']:.2%} cross-station), "
+            print(f"[sfm] round {k + 1}{' (cameras and rig held)' if held_round else ''}: {st['points']} points "
+                  f"({st['cross_station_fraction']:.2%} cross-station), "
                   f"median {entry['median_native_px']:.3f} / rms {entry['rms_native_px']:.3f} native px, "
                   f"{n_bad} obs filtered, {entry['elapsed_s']:.0f} s", flush=True)
         if exclude_outliers and k + 1 == min(int(exclude_after_round), len(schedule)):
@@ -1567,12 +1662,20 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                        refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential,
                        refine_rig=refine_rig, max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
-                       rig_translation_sigma_m=rig_translation_sigma_m, hold_cameras=sorted(hold), linear_solver=linear_solver)
+                       rig_translation_sigma_m=rig_translation_sigma_m, hold_cameras=sorted(hold), linear_solver=linear_solver,
+                       covariance=refine_rig is True)
+    rig_fit = navcam_rig_fit(ba, rec, project)            # v0p80: the Navcam rig of the final Navcam adjustment
     # the final adjustment can push a few points behind a camera or past the limit
     n_bad = filter_observations(rec, project, float(schedule[-1][2]))
     n_bad += drop_short_tracks(rec, min_track_length)
     log.append({"final_ba": ba["brief"], "frames_held": ba["frames_held"], "filtered_after_final": n_bad,
-                "tracks": track_statistics(rec, project)})
+                "tracks": track_statistics(rec, project), "rig_fit": rig_fit})
+    if verbose and rig_fit.get("baseline_m") is not None:
+        print(f"[sfm] Navcam rig: baseline {rig_fit['baseline_m']:.5f} m"
+              + (f" +- {1e3 * rig_fit['baseline_sd_m']:.2f} mm" if rig_fit.get("baseline_sd_m") else "")
+              + f" (start {rig_fit['baseline_start_m']:.5f} m, translation {'refined' if refine_rig is True else 'held'})"
+              + "".join(f"; {e['camera']}: pitch {e['pitch_mdeg']:+.2f} roll {e['roll_mdeg']:+.2f} yaw {e['yaw_mdeg']:+.2f} mdeg"
+                        for e in rig_fit.get("epochs", [])), flush=True)
     navcam_stage = None
     if staged:
         # stage 1 done: keep it, then bring the Mastcam-Z frames in at their priors with the Navcam block held
@@ -1796,6 +1899,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "min_frame_observations": int(MIN_FRAME_OBSERVATIONS),
                                           "excluded": [{k: v for k, v in e.items()} for e in excluded],
                                           "rig_translation_sigma_m": rig_translation_sigma_m,
+                                          "round1_hold": bool(round1_hold),                  # v0p80
+                                          "rig_fit": rig_fit,                                # v0p80
                                           "triangulation_options": topts,
                                           "navcam_network": network, "navcam_intrinsics": network["navcam_intrinsics"],
                                           "hold_cameras": sorted(hold), "staged": bool(staged),

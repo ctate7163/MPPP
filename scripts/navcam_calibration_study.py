@@ -501,7 +501,15 @@ def cmd_consensus(a, scapes_cfg, samples):
         print(f"large blocks (station span >= {a.translation_min_span:g} m): "
               + (", ".join(f"{k} {v[1]:.0f} m" for k, v in big.items()) or "none"), flush=True)
         tr = {k: v[0] for k, v in big.items()} or None
+    k1 = None
+    if getattr(a, "k1_from_bins", False):                  # v0p80: k1 against temperature from the blocks' bins
+        from mppp.sfm.navcal_consensus import k1_slopes_from_blocks
+        kb = k1_slopes_from_blocks(scapes_cfg)
+        (out / "k1_slopes_from_bins.json").write_text(json.dumps(jsonable(kb), indent=1), encoding="utf-8")
+        k1 = kb["apply"]
     res = fit_consensus(scapes_cfg, points=a.points, start_dir=a.start_cameras, translation_scapes=tr,
+                        k1_slopes=k1, leave_one_out=bool(getattr(a, "leave_one_out", False)),
+                        loo_iterations=int(getattr(a, "loo_iterations", 40)),
                         apply_translation=bool(a.apply_translation), refit_thermal=bool(a.refit_thermal),
                         thermal_terms=tuple(a.thermal_terms) if a.thermal_terms else None, form=a.form,
                         thermal_rounds=a.thermal_rounds,
@@ -510,6 +518,15 @@ def cmd_consensus(a, scapes_cfg, samples):
                         joint_translation=bool(a.joint_translation), degeneracy_mm=a.degeneracy_mm)
     d = write_consensus(res, out / "navcam_joint")
     print(f"candidate consensus: {d}  (promote: python scripts\\promote_cmods.py {d} --note \"...\")", flush=True)
+    if getattr(a, "previous", None):                       # v0p80: the change from the previous pass (converged?)
+        from mppp.sfm.navcal_consensus import consensus_change
+        ch = consensus_change(a.previous, d)
+        (out / "pass_change.json").write_text(json.dumps(jsonable(ch), indent=1), encoding="utf-8")
+        w = ch["worst"]
+        print(f"change from {a.previous}: f {w['f_ppm']:.1f} ppm, pp {w['pp_px']:.3f} px, distortion corners "
+              f"{w['corner_px']:.3f} px, rig {w['rig_mdeg']:.2f} mdeg -> "
+              + ("CONVERGED (below 20 ppm, 0.05 px, 0.02 px, 1 mdeg)" if ch["converged"] else "not converged: another "
+                 "pass (navcam_runs, then the consensus) is due"), flush=True)
     if getattr(a, "promote_if_ok", False):          # v0p72
         cmd_check(a, scapes_cfg, samples, promote=True)
 
@@ -575,8 +592,18 @@ def main(argv=None):
                          "NR_fx NR_fy NR_cx yaw_rate; v0p72: f NL_cx)")
     ap.add_argument("--thermal-rounds", type=int, default=1,
                     help="consensus (v0p73): profile the thermal terms this many times (2: they settle each other)")
-    ap.add_argument("--form", choices=["v0p73", "v0p72"], default="v0p73",
-                    help="consensus (v0p73): the camera form - v0p73 NL reference (default) or the v0p72 one")
+    ap.add_argument("--form", choices=["v0p80", "v0p73", "v0p72"], default="v0p73",
+                    help="consensus (v0p73): the camera form - v0p73 NL reference (default), v0p80 (the recipe: k4 free, "
+                         "k1 against temperature) or the v0p72 one")
+    ap.add_argument("--k1-from-bins", action="store_true",
+                    help="consensus (v0p80): k1 against temperature per eye from the blocks' temperature bins "
+                         "(applied where |z| >= 3; OUT/k1_slopes_from_bins.json)")
+    ap.add_argument("--leave-one-out", action="store_true",
+                    help="consensus (v0p80): the joint again without each block; the promotion check gates on it "
+                         "(0.05 px centre, 0.1 px corners)")
+    ap.add_argument("--loo-iterations", type=int, default=40, help="consensus --leave-one-out: iterations per block")
+    ap.add_argument("--previous", help="consensus (v0p80): the previous pass's candidate (or cmods) folder - the change "
+                                       "and whether the iteration has converged (OUT/pass_change.json)")
     ap.add_argument("--early-mission-sol", type=float, default=0.0,
                     help="consensus (v0p70): fit fx, fy, cx, cy offsets of the images before this sol (e.g. 380); 0 = off")
     ap.add_argument("--early-rounds", type=int, default=2,

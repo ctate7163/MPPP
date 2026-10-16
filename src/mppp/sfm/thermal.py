@@ -409,6 +409,9 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
                 p[1] *= sy
                 p[2] += float(m.get("cx_px_per_degC") or 0.0) * (tm - float(m["T0_degC"]))     # v0p40
                 p[3] += float(m.get("cy_px_per_degC") or 0.0) * (tm - float(m["T0_degC"]))
+                _nm = _PARAM_NAMES.get(base.model.name, FULL_OPENCV_NAMES)
+                if m.get("k1_per_degC") and "k1" in _nm:              # v0p80: k1 against temperature (joint slope)
+                    p[_nm.index("k1")] += float(m["k1_per_degC"]) * (tm - float(m["T0_degC"]))
             c = pycolmap.Camera(camera_id=next_cid, model=base.model, width=base.width, height=base.height, params=p)
             new.add_camera(c)
             bin_cam[(cid, b)] = next_cid
@@ -785,7 +788,7 @@ def thermal_model_for_project(project) -> Optional[Dict[str, Dict[str, float]]]:
             for k in ("fx_ppm_per_degC", "fy_ppm_per_degC"):          # v0p73: per axis
                 if th.get(k) is not None:
                     out[eye][k] = float(th[k])
-            for k in ("cx_px_per_degC", "cy_px_per_degC"):          # v0p40: principal point against temperature
+            for k in ("cx_px_per_degC", "cy_px_per_degC", "k1_per_degC"):   # v0p40: principal point; v0p80: k1
                 if th.get(k):
                     out[eye][k] = float(th[k])
     return out or None

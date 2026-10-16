@@ -152,6 +152,9 @@ def validate_site_table(path: Optional[PathLike] = None,
     sites = d.get("sites")
     if not isinstance(sites, dict) or not sites:
         return ["no 'sites' object"], []
+    ver = d.get("version")
+    if ver is not None and (not isinstance(ver, int) or ver > SITES_FILE_VERSION):
+        warn.append(f"file version {ver!r}: this MPPP reads site files up to version {SITES_FILE_VERSION}")
     ranges = {}
     for name, v in sites.items():
         if not re.fullmatch(r"[a-z0-9_]+", name):
@@ -194,7 +197,9 @@ def validate_site_table(path: Optional[PathLike] = None,
         if "z34" in v:
             err.append(f"site {name!r}: 'z34' is now 'zcam': [34] (v0p53)")
         unknown = set(v) - {"sols", "label", "zcam", "zcam34", "zcam48", "zcam63", "zcam79", "zcam110", "z34", "note",
-                            "no_mask_inference_at", "settings"}
+                            "no_mask_inference_at", "settings", "block"}
+        if "block" in v:                                   # v0p80: the block-of-stations record (mppp.maps)
+            err.extend(f"site {name!r}: {e}" for e in check_block_record(v["block"]))
         if unknown:
             warn.append(f"site {name!r}: unknown fields {sorted(unknown)} are ignored")
         try:
@@ -248,6 +253,48 @@ def validate_site_table(path: Optional[PathLike] = None,
             for ra, rb in partial[:1]:
                 warn.append(f"sites {a!r} {ra} and {b!r} {rb} partly overlap (fine if meant)")
     return err, warn
+
+
+SITES_FILE_VERSION = 4          # v0p75/v0p80: "sols" as a list of visits (longest / main first), the "block" record
+
+
+def check_block_record(b: Any) -> List[str]:
+    """v0p80: problems of a site's ``"block"`` record (the block of rover stations it was made from, written by
+    :mod:`mppp.maps`): an object with ``number`` (int), ``half_size_m`` (> 0), ``centre`` ({"lon", "lat"} and/or
+    {"easting_m", "northing_m"}), and optionally ``region``, ``kind``, ``legacy_site``, ``end_of_drive_sols``,
+    ``navcam_360s``, ``zcam_360s``.  Unknown fields are allowed (later versions may add some)."""
+    if not isinstance(b, dict):
+        return [f"'block' must be an object, not {type(b).__name__}"]
+    out = []
+    if "number" in b and not (isinstance(b["number"], int) and not isinstance(b["number"], bool) and b["number"] > 0):
+        out.append(f"block number {b['number']!r} must be a positive whole number")
+    hs = b.get("half_size_m")
+    if hs is not None and not (isinstance(hs, (int, float)) and not isinstance(hs, bool) and hs > 0):
+        out.append(f"block half_size_m {hs!r} must be a positive number")
+    c = b.get("centre")
+    if c is not None:
+        if not isinstance(c, dict):
+            out.append("block centre must be an object like {\"lon\": 77.4, \"lat\": 18.4}")
+        else:
+            for k in ("lon", "lat", "easting_m", "northing_m"):
+                if k in c and not isinstance(c[k], (int, float)):
+                    out.append(f"block centre {k} {c[k]!r} must be a number")
+    return out
+
+
+def site_block(site: str, table: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """v0p80: the ``"block"`` record of a site (None for a site without one)."""
+    t = table if table is not None else load_site_table()
+    v = t["sites"].get(site)
+    return v.get("block") if isinstance(v, dict) else None
+
+
+def block_sites(table: Optional[Dict[str, Any]] = None) -> List[str]:
+    """v0p80: the sites that are blocks of rover stations (with a ``"block"`` record), by block number."""
+    t = table if table is not None else load_site_table()
+    rows = [(int((v.get("block") or {}).get("number") or 10 ** 6), k) for k, v in t["sites"].items()
+            if isinstance(v, dict) and isinstance(v.get("block"), dict)]
+    return [k for _, k in sorted(rows)]
 
 
 try:

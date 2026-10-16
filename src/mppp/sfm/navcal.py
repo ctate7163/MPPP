@@ -956,8 +956,10 @@ def joint_adjust(rec, proj: SfmProject, temps: Dict[str, float], ppm_per_degC: f
                  f_ppm_per_sol: Optional[Dict[str, float]] = None,
                  pp_sol_slopes: Optional[Dict[int, Tuple[float, float]]] = None, sol0: Optional[float] = None,
                  base_of: Optional[Dict[int, int]] = None, extra_map: Optional[Callable] = None,
-                 axis_ppm: Optional[Dict[str, Tuple[float, float]]] = None, **kw) -> Dict[str, Any]:
-    """One adjustment of a merged reconstruction with the thermal model at slope ``ppm_per_degC`` and, with
+                 axis_ppm: Optional[Dict[str, Tuple[float, float]]] = None,
+                 k1_slopes: Optional[Dict[str, float]] = None, **kw) -> Dict[str, Any]:
+    """v0p80: ``k1_slopes`` {"NL": per degC, "NR": per degC}: k1 against temperature (:func:`k1_keypoint_map`).
+    One adjustment of a merged reconstruction with the thermal model at slope ``ppm_per_degC`` and, with
     ``rig_slopes`` = (yaw, pitch) mdeg/degC, the rig's temperature dependence (:func:`rig_keypoint_map`); v0p40:
     ``pp_slopes`` (principal points against temperature) and ``drift`` (the rig's trend over the mission) through
     :func:`thermal_keypoint_map`."""
@@ -969,6 +971,10 @@ def joint_adjust(rec, proj: SfmProject, temps: Dict[str, float], ppm_per_degC: f
                                                   pp_sol_slopes=pp_sol_slopes, sol0=sol0, base_of=base_of)
     elif rig_slopes and any(rig_slopes):
         kw["keypoint_map"] = rig_keypoint_map(proj, temps, rig_slopes[0], rig_slopes[1], T0)
+    if k1_slopes and any(float(v or 0.0) for v in k1_slopes.values()):      # v0p80
+        km = k1_keypoint_map(proj, temps, T0, k1_slopes)
+        base0 = kw.get("keypoint_map")
+        kw["keypoint_map"] = (lambda iid, k, cam: km(iid, base0(iid, k, cam), cam)) if base0 else km
     if extra_map is not None:                 # v0p70: e.g. the early-mission camera offsets, after the terms above
         base = kw.get("keypoint_map")
         kw["keypoint_map"] = (lambda iid, k, cam: extra_map(iid, base(iid, k, cam), cam)) if base else extra_map
@@ -983,7 +989,38 @@ def joint_adjust(rec, proj: SfmProject, temps: Dict[str, float], ppm_per_degC: f
     ba["pp_slopes_px_per_degC"] = {int(k): list(map(float, v)) for k, v in (pp_slopes or {}).items()} or None
     ba["drift"] = bool(drift)
     ba["T0_degC"] = float(T0)
+    ba["k1_slopes_per_degC"] = {k: float(v) for k, v in (k1_slopes or {}).items()} or None
     return ba
+
+
+def k1_keypoint_map(proj: SfmProject, temps: Dict[str, float], T0: float, k1_slopes: Dict[str, float]) -> Callable:
+    """
+    v0p80: k1 that changes with the camera temperature, k1(T) = k1(T0) + s (T - T0), as a keypoint map for the joint:
+    a keypoint seen with the camera at T is moved to where the shared camera (k1 at T0) puts the same ray,
+    x' = pi_T0(pi_T^-1(x)).  ``k1_slopes`` {"NL": s, "NR": s} per degC (eye of the merged camera: 1 = NL, 2 = NR,
+    anything else by its image row's instrument).  Images without a temperature are left alone.
+    """
+    import pycolmap
+    from .project import PARAM_NAMES
+    T_of = {int(r["image_id"]): temps.get(r["name"]) for r in proj.images}
+    eye_of = {int(r["image_id"]): str(r.get("instrument", ""))[:2] for r in proj.images}
+    sl = {str(k): float(v or 0.0) for k, v in k1_slopes.items()}
+
+    def fmap(iid, kps, cam):
+        T = T_of.get(int(iid))
+        s = sl.get(eye_of.get(int(iid), ""), 0.0)
+        if T is None or not s or not len(kps):
+            return kps
+        names = PARAM_NAMES.get(cam.model.name)
+        if not names or "k1" not in names:
+            return kps
+        p = np.array(cam.params, float)
+        p[names.index("k1")] += s * (float(T) - float(T0))
+        camT = pycolmap.Camera(model=cam.model, width=cam.width, height=cam.height, params=p)
+        rays = np.array(camT.cam_from_img(kps), float)
+        out = np.array(cam.img_from_cam(np.c_[rays[:, :2], np.ones(len(rays))], check_cheirality=False), float)
+        return np.where(np.isfinite(out), out, kps)
+    return fmap
 
 
 def profile_slope(rec, proj: SfmProject, temps: Dict[str, float], T0: float, grid: Sequence[float],
