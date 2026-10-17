@@ -104,6 +104,18 @@ def run(a, variant: str = VARIANT, sets=None) -> int:
     if not sites:
         print("no site qualifies", flush=True)
         return 2
+    if variant == VARIANT:
+        # v0p82: the block scale "held" needs the production alignment (<WORK>/colmap) of each block - a site whose
+        # sols changed after the navcam_runs stage (e.g. van_zyl_overlook_large, 17 Oct) has none yet: run it first
+        from mppp.sfm.sites import load_site_table, work_folder
+        t = load_site_table()
+        missing = [s_ for s_ in sites if not (work_folder(Path(a.root), s_, False, t["sites"][s_]["sols"]) / "colmap"
+                                              / "run_done.json").is_file()]
+        if missing:
+            c0 = [sys.executable, str(ROOT / "scripts" / "run_sites.py"), "--root", a.root, "--source", a.source,
+                  "--sites", *missing] + (["--dry-run"] if a.dry_run else [])
+            print("production alignment first (no colmap/ yet): " + " ".join(c0), flush=True)
+            subprocess.call(c0)
     cmd = [sys.executable, str(ROOT / "scripts" / "run_sites.py"), "--root", a.root, "--variant", variant,
            "--source", a.source, "--sites", *sites]
     sets = list(SETS if sets is None else sets) + [f"PRIOR_SIGMA_M={float(a.prior_sigma)}"]
