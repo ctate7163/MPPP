@@ -41,6 +41,10 @@
   - `M2020_ZCAM034_focus_model.json` cd1b45b942a4 from `D:\scapes\colmap\camera_analysis\zcam34_start_20261004\M2020_ZCAM034_focus_model.json`
   - replaced files kept in `history/20261004-125252/`
 
+## 20261005-222622 - v0p74 Mastcam-Z 34 mm calibration from 3 blocks (made on the PC; replaced on 8 Oct)
+  - `M2020_ZCAM034_focus_model.json` 589aea1eae5e from `D:\scapes\colmap\camera_analysis\zcam34_calibration_20261005\M2020_ZCAM034_focus_model.json` (Rockytop, Marble Mountain, Belva Crater Large N+Z)
+  - promoted on the PC (commit e8307c9, merged into this history on 17 Oct); replaced on 8 Oct by the v0p75 start model below - the file is kept in `history/20261005-222622_calibration/`
+
 ## 20261008-175008 - v0p75 start model: one df/dfocus per eye, ZL pp0 fixed, ZR pp0 pinned (cy slope), k1/k2 constant, rig mean of 3 first-run blocks, baseline CAHV (8 Oct 2026, from the archived 4-5 Oct first runs)
   - `M2020_ZCAM034_focus_model.json` 399f9eee93a9 from `/home/claude/v0p75_start/M2020_ZCAM034_focus_model.json`
   - replaced files kept in `history/20261008-175008/`
