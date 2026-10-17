@@ -28,7 +28,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -48,6 +48,10 @@ from .project import PARAM_NAMES as _PARAM_NAMES      # v0p50: one table (mppp.s
 DEFAULT_SCHEDULE = ((24.0, 10.0, 8.0), (12.0, 2.0, 4.0), (8.0, 2.0, 2.0), (8.0, 2.0, 2.0))
 ROUND1_HOLD = True            # v0p80: round 1 adjusts poses and points only (cameras and rig at the promoted models)
 ATTITUDE_PRIOR_DEG = 1.0      # v0p20: weak CAHV attitude prior per frame (holds the block's orientation)
+PRIOR_GAUGE_RECENTRE = True   # v0p82: after every adjustment with position priors the whole block is moved onto them
+                              # (the mean prior residual; reprojection-invariant) - Chal Rocks Large (17 Oct) ended
+                              # -0.19 m E, -0.07 m N, -0.10 m U off its priors on average, which a free gauge with
+                              # Gaussian priors cannot do at convergence
 
 
 def fixed_camera_params(model_name: str, refine_principal_point: bool = True,
@@ -713,6 +717,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         localize_min_images = int(project.settings.get("localize_min_images") or 0)
     unloc = unlocalized_stations(project, localize_min_images, rec=rec) if localize_min_images else {}
     no_prior = {st for st, v in unloc.items() if v["prior"] == "dropped"}
+    # v0p82: stations whose waypoints were flagged (mppp.sfm.waypoint_check; notebook 03 NO_POSITION_PRIOR_AT)
+    flagged = {str(x) for x in (project.settings.get("no_position_prior_at") or [])}
+    no_prior |= flagged
+    prior_frames: List[Tuple[int, np.ndarray]] = []
     n_no_prior = 0
     if use_priors:
         sig = np.asarray(project.settings.get("prior_sigma_m", [1.0, 1.0, 1.0]), float)
@@ -732,6 +740,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 n_no_prior += 1
             else:
                 prob.add_residual_block(cf.AbsolutePosePositionPriorCost(cov3, C), None, [pose])
+                prior_frames.append((fid, C))
                 n_prior += 1
             if attitude_prior_deg:
                 # 6-DoF prior: rotation block first (checked), translation effectively free (the position
@@ -883,7 +892,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                                    "centre_change_m": (-(R1.T @ arr[4:7]) + R0.T @ rig_start[(rid, cid)][4:7]).tolist(),
                                    "rotation_change_deg": float(np.degrees(np.linalg.norm(
                                        Rotation.from_matrix(R1 @ R0.T).as_rotvec())))}
+    gauge = prior_gauge(rec, prior_frames, recentre=bool(project.settings.get("prior_gauge_recentre",
+                                                                               PRIOR_GAUGE_RECENTRE)))
     return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att, "rig": rig_out, "covariance": cov_out,
+            "prior_gauge": gauge, "no_position_prior_at": sorted(flagged),
             "rig_translation_priors": n_rig_prior, "rig_translation_ties": n_rig_tie,
             "frames_without_position_prior": n_no_prior,
             "tied_cameras": tied,
@@ -893,6 +905,33 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             "termination": str(summary.termination_type), "brief": summary.BriefReport(), "retried": retried,
             "refine_tangential": tangential_setting(refine_tangential), "linear_solver": solver, "num_threads": so.num_threads,
             "seconds": float(summary.total_time_in_seconds)}
+
+
+def prior_gauge(rec, prior_frames: Sequence[Tuple[int, Any]], recentre: bool = PRIOR_GAUGE_RECENTRE) -> Optional[Dict[str, Any]]:
+    """v0p82: the mean residual (prior - refined) of the frame centres that have a position prior, and with
+    ``recentre`` the whole reconstruction (frames and points) moved by it.  With equal Gaussian position priors and
+    nothing else holding the block's position, the least-squares solution has a zero mean residual; Ceres stops on a
+    relative cost decrease, and moving a block of ~10^6 observations by 0.2 m changes the cost by a few units only,
+    so that direction may be left unconverged.  The move does not change any reprojection.  Returns
+    {"frames", "mean_residual_m" (E, N, U before), "shift_m" (applied), "recentred"} or None without priors."""
+    import pycolmap
+    if not prior_frames:
+        return None
+    d = []
+    for fid, C in prior_frames:
+        if fid not in rec.frames:
+            continue
+        T = rec.frames[fid].rig_from_world
+        R = np.asarray(T.rotation.matrix())
+        d.append(np.asarray(C, float) - (-R.T @ np.asarray(T.translation, float)))
+    if not d:
+        return None
+    m = np.mean(np.asarray(d), axis=0)
+    out = {"frames": len(d), "mean_residual_m": m.tolist(), "shift_m": [0.0, 0.0, 0.0], "recentred": False}
+    if recentre and np.all(np.isfinite(m)):
+        rec.transform(pycolmap.Sim3d(1.0, pycolmap.Rotation3d(np.eye(3)), m))
+        out.update(shift_m=m.tolist(), recentred=True)
+    return out
 
 
 def navcam_rig_fit(ba: Dict[str, Any], rec, project: SfmProject) -> Dict[str, Any]:
@@ -1645,7 +1684,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         res = native_residuals(rec, project)["residual_native_px"]
         entry = {"round": k + 1, "triangulation_px_full": tpx, "cauchy_scale_sigma": loss, "after_triangulation": st0,
                  "ba": ba["brief"], "filtered_observations": n_bad, "max_residual_native_px": rmax, "tracks": st,
-                 "cameras_and_rig_held": held_round,
+                 "cameras_and_rig_held": held_round, "prior_gauge": ba.get("prior_gauge"),
                  "rms_native_px": float(np.sqrt(np.mean(res ** 2))) if res.size else float("nan"),
                  "median_native_px": float(np.median(res)) if res.size else float("nan"),
                  "elapsed_s": round(time.time() - t0, 1)}
@@ -1669,7 +1708,12 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     n_bad = filter_observations(rec, project, float(schedule[-1][2]))
     n_bad += drop_short_tracks(rec, min_track_length)
     log.append({"final_ba": ba["brief"], "frames_held": ba["frames_held"], "filtered_after_final": n_bad,
-                "tracks": track_statistics(rec, project), "rig_fit": rig_fit})
+                "tracks": track_statistics(rec, project), "rig_fit": rig_fit, "prior_gauge": ba.get("prior_gauge"),
+                "no_position_prior_at": ba.get("no_position_prior_at")})
+    if verbose and ba.get("prior_gauge"):
+        g = ba["prior_gauge"]
+        print(f"[sfm] position priors: mean residual (E, N, U) {np.round(g['mean_residual_m'], 3).tolist()} m over "
+              f"{g['frames']} frames" + (" - block moved onto them" if g["recentred"] else ""), flush=True)
     if verbose and rig_fit.get("baseline_m") is not None:
         print(f"[sfm] Navcam rig: baseline {rig_fit['baseline_m']:.5f} m"
               + (f" +- {1e3 * rig_fit['baseline_sd_m']:.2f} mm" if rig_fit.get("baseline_sd_m") else "")
@@ -1807,7 +1851,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             project.settings["zcam_focus_lines"] = lines
         n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
         log.append({"final_ba": ba["brief"], "frames_held": ba["frames_held"], "filtered_after_final": n_bad,
-                    "tracks": track_statistics(rec, project)})
+                    "tracks": track_statistics(rec, project), "prior_gauge": ba.get("prior_gauge")})
     backlash = None
     if zcam_backlash and any(str(r.get("instrument", "")).startswith("Z") for r in project.images):
         from .backlash import backlash_stage

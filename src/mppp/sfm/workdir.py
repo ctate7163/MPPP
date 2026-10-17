@@ -157,3 +157,26 @@ def load_settings(path: PathLike) -> Dict[str, Any]:
     if not isinstance(d, dict):
         raise ValueError(f"{p}: a settings file holds one JSON object {{\"NAME\": value}}")
     return {k: v for k, v in d.items() if not str(k).startswith("_")}
+
+
+MIN_INCLUDED_FRACTION = 1.0 / 3.0   # v0p82 (Christian, 17 Oct): notebook 03 MIN_INCLUDED_FRACTION
+
+
+def filter_included_fraction(metas: Sequence[Dict[str, Any]], min_fraction: Optional[float] = MIN_INCLUDED_FRACTION
+                             ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """v0p82: ``(kept, removed)`` - images whose mask keeps less than ``min_fraction`` of the image are left out.
+    The share is the manifest's ``mask.included_fraction`` (pixels the mask keeps: everything but rover hardware,
+    rover shadows and other artificial objects; the sky is kept - mppp_mask does not mask it).  Images without the
+    value (no mask) are kept; ``min_fraction`` None or 0: nothing is removed.  ``removed`` lists ``{"image",
+    "included_fraction"}``."""
+    if not min_fraction:
+        return list(metas), []
+    kept, removed = [], []
+    for m in metas:
+        f = (m.get("mask") or {}).get("included_fraction")
+        if f is not None and float(f) < float(min_fraction):
+            removed.append({"image": m.get("source_product") or m.get("name") or m.get("stem"),
+                            "included_fraction": round(float(f), 4)})
+        else:
+            kept.append(m)
+    return kept, removed

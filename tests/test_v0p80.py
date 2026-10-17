@@ -45,7 +45,8 @@ def test_k4_consensus_keeps_a_fitted_k4():
 def test_notebook_v0p80_settings():
     nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
     src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
-    for s in ('NOTEBOOK_FOR_MPPP = "v0p80"', 'NAVCAM_K4         = "consensus"', 'NAVCAM_PP         = "hold"',
+    assert 'NOTEBOOK_FOR_MPPP = "v0p8' in src                       # v0p80 or later
+    for s in ('NAVCAM_K4         = "consensus"', 'NAVCAM_PP         = "hold"',
               "ROUND1_HOLD       = True", '"full": True', "round1_hold=bool(ROUND1_HOLD)", "navcam_pp=NAVCAM_PP",
               '"navcam_pp": NAVCAM_PP', "rig_translation_sigma_m=RIG_TRANSLATION_SIGMA_M if RIG_REFINE is True"):
         assert s in src, s
@@ -180,7 +181,7 @@ def test_pipeline_order_navcam_first():
     import run_pipeline
     s = run_pipeline.STAGES
     assert s.index("navcam_consensus") < s.index("navcam_runs") < s.index("navcam_consensus_2") < s.index("zcam_start")
-    assert s.index("zcam_final_runs") < s.index("baseline_study") < s.index("report")
+    assert s.index("navcam_consensus_2") < s.index("baseline_study") < s.index("zcam_start") < s.index("report")   # v0p82
     assert run_pipeline.CONSENSUS_FORM == "v0p80"
 
 

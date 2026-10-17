@@ -519,7 +519,9 @@ def test_pipeline_zcam_group_option(tmp_path):
     assert rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, zcam_group="zcam34_dev")).zcam_group == "zcam34_dev"
     from mppp.sfm.sites import site_group
     dev = site_group("zcam34_dev")
-    assert len(dev) == 6 and set(dev) <= set(site_group("zcam34_consensus"))
+    from mppp.sfm.sites import load_site_table, site_zooms
+    t = load_site_table()                     # v0p82: Christian's dev group may use a smaller site of a consensus block
+    assert len(dev) == 6 and all(34 in site_zooms(t["sites"][s]) for s in dev)
 
 
 def test_run_jobs_runs_only_mppp_scripts(tmp_path):

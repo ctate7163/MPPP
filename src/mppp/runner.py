@@ -410,7 +410,9 @@ PROCESS_DONE = "process_done.json"    # <WORK>/processed/process_done.json: writ
 # 73: the v0p73 camera form (NL reference, fx/fy thermal per eye, Zcam fx fy cx cy lines per focus state, low-backlash
 #     classification added to the found list); and (v0p73) the camera models in use are part of the key, so that a
 #     promotion makes run_sites.py align every site again
-ALIGN_RULES = 73
+# 82 (v0p82): images with less than 1/3 of the image unmasked left out (MIN_INCLUDED_FRACTION); the block re-centred on its
+#     position priors after the final adjustment (PRIOR_GAUGE_RECENTRE); stations with flagged waypoints without prior
+ALIGN_RULES = 82
 
 
 def run_key(settings: Dict[str, Any], source: str, variant: str) -> str:

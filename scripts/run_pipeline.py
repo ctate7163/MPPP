@@ -1,7 +1,8 @@
 """
 The whole calibration and alignment run, unattended, in one command (several days).  v0p80: the camera-model recipe
-of 14 Oct 2026 - Navcam first and iterated (blocks -> joint -> promote -> blocks -> joint), then Mastcam-Z with the
-promoted Navcam, the baseline study once the Navcam has converged:
+of 14 Oct 2026 - Navcam first and iterated (blocks -> joint -> promote -> blocks -> joint), v0p82: then the waypoint
+check and the Navcam baseline (promoted if significant, confirmed on the blocks, the joint refitted), then Mastcam-Z
+with the promoted Navcam:
 
     python scripts\\run_pipeline.py                  (run_pipeline.bat)
     python scripts\\run_pipeline.py --status         what is done, what is running
@@ -15,7 +16,7 @@ Stages (each logged in ``<root>\\mppp_pipeline\\<stage>.log``, the pipeline in `
                            not) and the form OK - otherwise the pipeline stops here
  3. ``navcam_consensus`` - pass 1 of the Navcam consensus in the v0p80 form (the v0p73 NL-reference form - fx, fy per
                            eye and NR cx against temperature, the rig yaw sol rate, early-mission offsets, the rig
-                           translation, 2 rounds of thermal profiles - with k4 free and k1 against temperature from the
+                           translation held (v0p82), 2 rounds of thermal profiles - with k4 free and k1 against temperature from the
                            blocks' temperature bins) over the Navcam-only blocks of the navcam_consensus group that pass
                            screening, leave-one-block-out, checked and promoted if every check passes; rig residuals
  4. ``navcam_runs``      - run_sites.py --group navcam_consensus with the promoted models and the v0p80 block recipe
@@ -24,17 +25,32 @@ Stages (each logged in ``<root>\\mppp_pipeline\\<stage>.log``, the pipeline in `
  5. ``navcam_consensus_2`` - pass 2 of the consensus on those blocks; the change from pass 1 says whether the iteration
                            has converged (below 20 ppm in f, 0.05 px pp, 0.02 px corner distortion, 1 mdeg rig);
                            promoted if every check passes
- 6. ``zcam_start``       - the current Navcam + Mastcam-Z blocks: their low-backlash groups into the found list, a start
-                           focus model (fx, fy lines, regular-state ratio) promoted if its checks pass
- 7. ``zcam_runs``        - run_sites.py --group zcam34_consensus --zcam --set ZCAM_ZOOMS=[34] (every site: the camera
+ 6. ``waypoint_check``   - v0p82: the waypoint localisation check over the Navcam blocks (navcam_consensus and
+                           navcam_baseline groups): each block's stations against their waypoints after a robust
+                           similarity; flagged (> 1 m, or > 0.5 m and > 3x the block's scatter) ->
+                           camera_analysis/waypoint_flags_<date>
+ 7. ``baseline_study``   - v0p82: the Navcam baseline from the navcam_baseline sites with > 4 waypoints over > 30 m:
+                           cameras held, rig translation free, flagged waypoints without prior, priors at 0.5 m;
+                           combined (between-block term), with the block scale against the waypoints now / free /
+                           predicted and an east-north isotropy test; promoted if > 3 sigma, the blocks agree, the scale
+                           agreement improves and the scales are isotropic - and only when pass 2 converged (or with
+                           ``--baseline-study``); the joint holds the translation in every pass (no --apply-translation)
+ 8. ``baseline_confirm`` - v0p82: after a promotion the same blocks with the new baseline held; if the scale agreement is
+                           not better, the previous rig is promoted back
+ 9. ``navcam_consensus_3`` - v0p82: with a confirmed new baseline, the joint once more (the baseline held)
+10. ``zcam_start``       - v0p82: the found list cleaned (clean-found), then the current Navcam + Mastcam-Z blocks: their
+                           low-backlash groups into the found list, a start focus model written as a candidate - the
+                           promoted v0p75 start model stays (``--zcam-start-promote`` promotes the candidate)
+11. ``zcam_runs``        - run_sites.py --group zcam34_consensus --zcam --set ZCAM_ZOOMS=[34] (every site: the camera
                            models are in the run key), failed sites tried once more
- 8. ``zcam_calibrate``   - grade the N+Z blocks, every passing one gives the Mastcam-Z 34 mm calibration (lines per eye
+12. ``zcam_calibrate``   - grade the N+Z blocks, every passing one gives the Mastcam-Z 34 mm calibration (lines per eye
                            and focus state; rig rotation) - checked, promoted, report
- 9. ``zcam_final_runs``  - only if the calibration was promoted: every N+Z block again from it
-10. ``baseline_study``   - the Navcam baseline from the large blocks (scripts/navcam_baseline_study.py all): only when
-                           pass 2 converged or with ``--baseline-study``; a candidate rig is written, never promoted
-11. ``pointclouds``      - a PLY per finished block
-12. ``report``           - ``<root>\\mppp_pipeline\\REPORT.md``
+13. ``zcam_final_runs``  - only if the calibration was promoted: every N+Z block again from it
+14. ``pointclouds``      - a PLY per finished block
+15. ``report``           - ``<root>\\mppp_pipeline\\REPORT.md``
+
+v0p82 alignments (every run): images whose mask keeps less than 1/3 of the image are left out
+(MIN_INCLUDED_FRACTION), and the block is moved onto its position priors after each adjustment (PRIOR_GAUGE_RECENTRE).
 
 A stage that fails is logged and the pipeline goes on where that makes sense (only ``prepare`` stops it). Exit code 0
 when every stage ran (whatever it found), 1 when the pipeline stopped.
@@ -53,10 +69,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 PY = sys.executable
-STAGES = ("wait", "prepare", "navcam_consensus", "navcam_runs", "navcam_consensus_2", "zcam_start", "zcam_runs",
-          "zcam_calibrate", "zcam_final_runs", "baseline_study", "pointclouds", "report")      # v0p80: Navcam first
+STAGES = ("wait", "prepare", "navcam_consensus", "navcam_runs", "navcam_consensus_2", "waypoint_check",
+          "baseline_study", "baseline_confirm", "navcam_consensus_3", "zcam_start", "zcam_runs", "zcam_calibrate",
+          "zcam_final_runs", "pointclouds", "report")      # v0p80: Navcam first; v0p82: the baseline before Mastcam-Z
 CONSENSUS_FORM = "v0p80"
 ZCAM_GROUP, NAVCAM_GROUP = "zcam34_consensus", "navcam_consensus"     # --zcam-group overrides the first (v0p75)
+BASELINE_GROUP = "navcam_baseline"                                     # v0p82
 ZCAM_SET = ["--set", "ZCAM_ZOOMS=[34]"]
 EARLY_START = ("0.157", "0.243", "0.139", "-0.454")          # mean of the v0p72_2 and 20261003 consensus' early offsets
 EARLY_ROUNDS = "3"            # a round is ~35 min; the cx direction is flat (the 20261003 run needed 3 from a poor start)
@@ -183,7 +201,7 @@ class Pipeline:
         blocks, scr, bad = self.navcam_blocks()
         if len(blocks) < 8:
             return "failed", f"only {len(blocks)} Navcam blocks pass screening (left out: {', '.join(bad)})"
-        tag = "pipeline" if stage == "navcam_consensus" else "pipeline_pass2"
+        tag = {"navcam_consensus": "pipeline", "navcam_consensus_2": "pipeline_pass2"}.get(stage, "pipeline_pass3")
         out = self.root / "camera_analysis" / f"navcal_{VERSION_TAG}_{datetime.date.today():%Y%m%d}_{tag}"
         n = 1
         base = out
@@ -197,15 +215,17 @@ class Pipeline:
         self.state.setdefault(stage, {})["study"] = str(out)
         self.save()
         # v0p80: the recipe's joint - k4 free, k1(T) from the bins, leave-one-block-out as a promotion gate
+        # v0p82: the joint holds the rig translation (the baseline stage carries it); the large blocks' translation
+        # with the cameras held is still fitted and reported (--translation-min-span), not applied
         cmd = [PY, ROOT / "scripts" / "navcam_calibration_study.py", "consensus", out,
                out / "scapes.json", "--points", "8000", "--translation-min-span", "30",
-               "--apply-translation", "--joint-translation", "--refit-thermal",
+               "--refit-thermal",
                "--thermal-rounds", "2",
                "--form", CONSENSUS_FORM, "--k1-from-bins", "--leave-one-out",
                "--early-mission-sol", "380", "--early-rounds", EARLY_ROUNDS,
                "--early-start", *EARLY_START, "--promote-if-ok",
-               "--promote-note", f"{VERSION_TAG} pipeline consensus {'pass 2 ' if previous else ''}of {len(blocks)} blocks "
-                                 f"({CONSENSUS_FORM} form)"]
+               "--promote-note", f"{VERSION_TAG} pipeline consensus {tag.replace('pipeline_', '') + ' ' if previous else ''}of "
+                                 f"{len(blocks)} blocks ({CONSENSUS_FORM} form)"]
         if previous:
             cmd += ["--previous", previous]
         rc = self.run(stage, cmd, timeout_h=self.a.stage_timeout_h)
@@ -249,22 +269,97 @@ class Pipeline:
             prev = str(cmods_dir())
         return self.s_navcam_consensus("navcam_consensus_2", previous=prev)
 
+    def s_waypoint_check(self):
+        """v0p82: the waypoint localisation check over the Navcam blocks (navcam_consensus and navcam_baseline groups,
+        the production runs): flagged stations go into the baseline stage without their position prior."""
+        out = self.root / "camera_analysis" / f"waypoint_flags_{datetime.date.today():%Y%m%d}"
+        rc = self.run("waypoint_check", [PY, ROOT / "scripts" / "waypoint_check.py", "--root", self.root, "--groups",
+                                         NAVCAM_GROUP, BASELINE_GROUP, "--out", out], timeout_h=2)
+        js = out / "waypoint_flags.json"
+        if rc != 0 or not js.is_file():
+            return "done", f"no flags (exit {rc}); the baseline stage keeps every prior"
+        self.state.setdefault("waypoint_check", {})["flags"] = str(js)
+        self.save()
+        fl = json.loads(js.read_text(encoding="utf-8")).get("flagged") or []
+        return "done", f"{len(fl)} flagged stations: {', '.join(fl) or 'none'} ({out / 'waypoint_flags.md'})"
+
     def s_baseline_study(self):
-        """v0p80: the baseline from the large blocks, once the Navcam consensus has converged (or --baseline-study)."""
+        """v0p80/v0p82: the baseline from the large blocks (the navcam_baseline sites with > 4 waypoints over > 30 m),
+        flagged waypoints without prior; promoted if significant and the block scale agreement improves - only once
+        the Navcam consensus has converged (pass 2) or with --baseline-study; otherwise studied, not promoted."""
+        if getattr(self.a, "no_baseline_study", False):
+            return "skipped", "--no-baseline-study"
         conv = bool((self.state.get("navcam_consensus_2") or {}).get("converged"))
-        if not (conv or getattr(self.a, "baseline_study", False)):
-            return "skipped", "the Navcam consensus has not converged (pass 2) - the baseline study waits for it"
+        promote = conv or getattr(self.a, "baseline_study", False)
         out = self.root / "camera_analysis" / f"navcam_baseline_{datetime.date.today():%Y%m%d}"
-        rc = self.run("baseline_study", [PY, ROOT / "scripts" / "navcam_baseline_study.py", "all", "--root", self.root,
-                                         "--out", out, "--write-rig", out / "candidate_rig"],
-                      timeout_h=self.a.sites_timeout_h)
+        self.state.setdefault("baseline_study", {})["study"] = str(out)
+        self.save()
+        cmd = [PY, ROOT / "scripts" / "navcam_baseline_study.py", "all", "--root", self.root, "--out", out,
+               "--write-rig", out / "candidate_rig"]
+        fl = (self.state.get("waypoint_check") or {}).get("flags")
+        if fl:
+            cmd += ["--flags", fl]
+        if promote:
+            cmd.append("--promote")
+        rc = self.run("baseline_study", cmd, timeout_h=self.a.sites_timeout_h)
         js = out / "baseline_study.json"
-        verdict = json.loads(js.read_text(encoding="utf-8"))["combined"].get("verdict") if js.is_file() else f"exit {rc}"
-        return "done", f"{verdict} (candidate rig, if any: {out / 'candidate_rig'}; not promoted)"
+        if not js.is_file():
+            return "done", f"no result (exit {rc})"
+        rep = json.loads(js.read_text(encoding="utf-8"))
+        verdict = rep["combined"].get("verdict")
+        promoted = bool((rep.get("promoted") or {}).get("returncode") == 0)
+        self.state["baseline_study"]["promoted"] = promoted
+        self.save()
+        return "done", (f"{verdict}; " + ("PROMOTED" if promoted else
+                                          "not promoted" + ("" if promote else " (the consensus has not converged)")))
+
+    def s_baseline_confirm(self):
+        """v0p82: the study's blocks again with the promoted baseline held; reverted if the scale agreement with the
+        waypoints is not better."""
+        st = self.state.get("baseline_study") or {}
+        if not st.get("promoted"):
+            return "skipped", "no baseline promoted"
+        cmd = [PY, ROOT / "scripts" / "navcam_baseline_study.py", "confirm", "--root", self.root, "--out", st["study"]]
+        fl = (self.state.get("waypoint_check") or {}).get("flags")
+        if fl:
+            cmd += ["--flags", fl]
+        rc = self.run("baseline_confirm", cmd, timeout_h=self.a.sites_timeout_h)
+        self.state["baseline_confirm"] = dict(self.state.get("baseline_confirm") or {}, confirmed=(rc == 0))
+        self.save()
+        return "done", {0: "confirmed: the block scale agreement improved", 1: "NOT better: the previous rig promoted "
+                        "back"}.get(rc, f"exit {rc} (see baseline_confirm.log)")
+
+    def s_navcam_consensus_3(self):
+        """v0p82: the joint refitted once with the new baseline held (recipe section 4), before Mastcam-Z."""
+        if not (self.state.get("baseline_confirm") or {}).get("confirmed"):
+            return "skipped", "no new baseline in use"
+        prev = None
+        for stg in ("navcam_consensus_2", "navcam_consensus"):
+            stp = (self.state.get(stg) or {}).get("study")
+            if stp and (Path(stp) / "navcam_joint" / "M2020_N_rig.json").is_file():
+                prev = str(Path(stp) / "navcam_joint")
+                break
+        if prev is None:
+            from mppp.paths import cmods_dir
+            prev = str(cmods_dir())
+        return self.s_navcam_consensus("navcam_consensus_3", previous=prev)
 
     def s_zcam_start(self):
-        rc = self.run("zcam_start", [PY, ROOT / "scripts" / "zcam_calibration.py", "start-update", "--root", self.root,
-                                     "--groups", self.zcam_group, "--promote"], timeout_h=6)
+        """v0p82: the found list cleaned (one focus state per sequence), then the start update from the Mastcam-Z
+        blocks on disk - a candidate and new low-backlash groups only: the promoted v0p75 start model stays unless
+        ``--zcam-start-promote`` (the blocks on disk are the 5-6 Oct runs, made with the Navcam and focus models
+        that are being replaced)."""
+        self.run("zcam_start", [PY, ROOT / "scripts" / "zcam_calibration.py", "clean-found", "--root", self.root,
+                                "--groups", self.zcam_group], timeout_h=2)
+        cmd = [PY, ROOT / "scripts" / "zcam_calibration.py", "start-update", "--root", self.root, "--groups",
+               self.zcam_group]
+        promote = bool(getattr(self.a, "zcam_start_promote", False))
+        if promote:
+            cmd.append("--promote")
+        rc = self.run("zcam_start", cmd, timeout_h=6)
+        if not promote:
+            return "done", (f"found list cleaned and updated; start candidate written (exit {rc}), not promoted: the "
+                            f"v0p75 start model stays (--zcam-start-promote to promote)")
         return ("done", {0: "start model promoted, found list updated", 1: "start model not promoted (a check failed); "
                          "found list updated"}.get(rc, f"error (exit {rc}); the focus model in use stays"))
 
@@ -329,10 +424,10 @@ class Pipeline:
         lines += ["", "## Camera models in use", ""] + [f"    {ln}" for ln in describe()]
         f = check_form()
         lines += ["", f"form v0p73: {'OK' if f['ok'] else 'NOT OK: ' + '; '.join(f['errors'])}", ""]
-        for stage_name in ("navcam_consensus", "navcam_consensus_2"):       # v0p80: both passes
+        for stage_name in ("navcam_consensus", "navcam_consensus_2", "navcam_consensus_3"):       # v0p80: every pass
             st = (self.state.get(stage_name) or {}).get("study")
             if st:
-                lines += [f"## Navcam consensus ({'pass 1' if stage_name == 'navcam_consensus' else 'pass 2'})", "",
+                lines += [f"## Navcam consensus (pass {({'navcam_consensus': 1, 'navcam_consensus_2': 2}).get(stage_name, 3)})", "",
                           f"study: `{st}`"]
                 pc = Path(st) / "pass_change.json"
                 if pc.is_file():
@@ -353,6 +448,14 @@ class Pipeline:
                                                  f"mdeg/degC (z {vt['z']:+.1f}); vs sol {vs['slope']:+.2f} +- {vs['se']:.2f} "
                                                  f"mdeg/1000 sol (z {vs['z']:+.1f})")
                 lines.append("")
+        # v0p82: waypoint flags, baseline study and its confirmation
+        for key, files in (("waypoint_check", ("waypoint_flags.md",)), ("baseline_study", ("baseline_study.md",
+                                                                                            "baseline_confirm.md"))):
+            e = self.state.get(key) or {}
+            d = Path(e["flags"]).parent if e.get("flags") else (Path(e["study"]) if e.get("study") else None)
+            for f in files:
+                if d is not None and (d / f).is_file():
+                    lines += [(d / f).read_text(encoding="utf-8"), ""]
         # every block's last run
         lines += ["## Blocks", "", "| block | mppp | verdict | registered | rms px | camera models |", "|---|---|---|---|---|---|"]
         for w in sorted(self.root.glob("mars2020_sol_*_colmap*")):
@@ -432,7 +535,12 @@ def main(argv=None) -> int:
                     help="v0p74.9: zcam_final_runs write to <WORK>/colmap_<this> ('' = in place, over the first runs)")
     ap.add_argument("--no-navcam-runs", action="store_true", help="skip the Navcam-only reruns (and so pass 2)")
     ap.add_argument("--baseline-study", action="store_true",
-                    help="v0p80: run the baseline study even if pass 2 of the Navcam consensus has not converged")
+                    help="v0p80/v0p82: promote a significant baseline even if pass 2 of the Navcam consensus has not "
+                         "converged (it is always studied)")
+    ap.add_argument("--no-baseline-study", action="store_true", help="v0p82: skip the baseline stages")
+    ap.add_argument("--zcam-start-promote", action="store_true",
+                    help="v0p82: let zcam_start promote its start model (default: candidate only, the v0p75 start "
+                         "model in use stays)")
     ap.add_argument("--zcam-group", default=None,
                     help="v0p75: the sites.json group of the Mastcam-Z stages (default zcam34_consensus; e.g. zcam34_dev "
                          "for a quick set while the form is being settled)")

@@ -303,7 +303,7 @@ def test_zcam_block_lines_and_consensus():
 def test_run_key_holds_the_camera_models(monkeypatch):
     from mppp import runner
     from mppp.sfm import cmods_form
-    assert runner.ALIGN_RULES == 73
+    assert runner.ALIGN_RULES >= 73                     # v0p82: 82
     k1 = runner.run_key({"A": 1}, "pds", "")
     monkeypatch.setattr(cmods_form, "models_fingerprint", lambda folder=None: "other")
     assert runner.run_key({"A": 1}, "pds", "") != k1
