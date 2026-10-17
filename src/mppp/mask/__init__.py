@@ -1,5 +1,5 @@
 """
-mppp.mask — reconstruction masks (terrain vs rover hardware, sky, artefacts).
+mppp.mask — reconstruction masks (terrain vs rover hardware, rover shadows and other artificial objects; the sky is not masked).
 
 Inference with the released model (``infer_mask``; the model is downloaded
 once, see :mod:`mppp.mask.hub`) or with any ConvNeXtSeg checkpoint and its

@@ -3,7 +3,7 @@
 MPPP turns Mars 2020 Perseverance **Navcam** and **Mastcam-Z** PDS image products (`*.IMG`, RAD) into photogrammetry-ready inputs for **Agisoft Metashape** and **COLMAP**:
 
 * radiometrically normalised 16-bit (and optionally 8-bit) images that keep their PDS file names, padded to the full detector frame;
-* reconstruction masks (terrain vs rover hardware, sky and artefacts) from a trained segmentation model, shipped ready to use;
+* reconstruction masks (rover hardware, rover shadows and other artificial objects excluded; the sky is not masked) from a trained segmentation model, shipped ready to use;
 * per-image camera models from calibrated Metashape frame calibrations or the label CAHVOR model;
 * pose priors in a local East–North–Up frame (metres, origin at the landing site) from the label CAHV model and the mission waypoints, plus Mars longitude/latitude;
 * a Metashape reference file, a COLMAP prior model, and a manifest and configuration snapshot for full provenance.
