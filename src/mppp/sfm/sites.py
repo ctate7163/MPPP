@@ -276,7 +276,7 @@ def check_block_record(b: Any) -> List[str]:
         if not isinstance(c, dict):
             out.append("block centre must be an object like {\"lon\": 77.4, \"lat\": 18.4}")
         else:
-            for k in ("lon", "lat", "easting_m", "northing_m"):
+            for k in ("lon", "lat", "easting", "northing", "easting_m", "northing_m"):
                 if k in c and not isinstance(c[k], (int, float)):
                     out.append(f"block centre {k} {c[k]!r} must be a number")
     return out

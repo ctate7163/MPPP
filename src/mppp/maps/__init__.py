@@ -1,46 +1,31 @@
 """
-mppp.maps (MPPP v0p80): the blocks of rover stations - where Perseverance parked several times close together - from
-the waypoints, into the site definitions, and their maps.
+mppp.maps (MPPP v0p80): the blocks of rover stations - where Perseverance ended its drive repeatedly in a small area -
+from the waypoints to the MPPP site definitions and their maps.
 
-    from mppp.maps import build_from_waypoints
-    res = build_from_waypoints("M20_waypoints_sol2009_all.json")        # or None: the cached / packaged waypoints
-    res["blocks"]            # 34 blocks: number, name, region, centre, +-30 m square, visits, N× / Z× counts
-    res["sites"], res["groups"]    # sites.json v4 entries blk01_... and the groups blocks_all, blocks_<region>
+- :mod:`.prototype`: the waypoint-map pipeline as delivered on 16 Oct 2026 (``m20_sites/``; block rules, the 34
+  blocks, Mastcam-Z 360 and sample reference lists, figures 1-6 from Mars to the +-30 m blocks, the sites export) -
+  ``prototype.run("all", out)``; its documentation is ``m20_sites/docs/mppp_map.md``.
+- :mod:`.export`: the blocks into ``src/mppp/data/sites.json`` (``merge_into_sites_file``), comparisons.
+- :mod:`.waypoints`: flat waypoint rows and the lon/lat <-> easting/northing fit, for other code.
 
-Modules: :mod:`.waypoints` (rows, lon/lat fit), :mod:`.blocks` (clusters, the 34 block definitions),
-:mod:`.export` (sites.json entries, merge, the waypoint-map work's sites_blocks.json), :mod:`.figures` (traverse map,
-zoom grid), :mod:`.terrain` (DEM hillshade).  Command line: ``scripts/mppp_maps.py``.
+    from mppp import maps
+    sites, groups = maps.load_blocks()            # the 34 blocks as delivered (sites.json v4 entries and groups)
+    maps.prototype.run("figures", "out", figures=("5",))
+
+Command line: ``scripts/mppp_maps.py``.
 """
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from .blocks import BLOCK_DEFS, HALF_SIZE_M, REGIONS, block_lines, build_blocks, clusters, visits_of  # noqa: F401
-from .export import blocks_to_sites, compare_blocks, load_blocks_file, merge_sites, write_sites  # noqa: F401
+from . import export, prototype, waypoints  # noqa: F401
+from .export import compare_blocks, load_blocks_file, merge_into_sites_file, merge_sites, write_sites  # noqa: F401
 from .waypoints import load, lonlat_fit, waypoint_rows  # noqa: F401
-from . import blocks, export, figures, terrain, waypoints  # noqa: F401,E402
 
 PathLike = Union[str, Path]
 
 
-def load_zcam360(path: Optional[PathLike]) -> Optional[list]:
-    """The numbered Mastcam-Z 360s from a CSV with columns number, sol[, name] (None without a file)."""
-    if not path:
-        return None
-    import csv
-    with open(path, encoding="utf-8-sig") as f:
-        return [{"number": int(r["number"]), "sol": int(r["sol"]), "name": r.get("name")} for r in csv.DictReader(f)
-                if r.get("sol")]
-
-
-def build_from_waypoints(waypoints: Optional[PathLike] = None, zcam360: Optional[PathLike] = None,
-                         site_table: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Waypoints -> rows, clusters, blocks, sites.json entries and groups (see the module docstring)."""
-    data = load(waypoints)
-    rows = waypoint_rows(data)
-    blocks = build_blocks(rows, site_table, load_zcam360(zcam360))
-    sites, groups = blocks_to_sites(blocks, site_table)
-    return {"rows": rows, "clusters": clusters(rows), "blocks": blocks, "sites": sites, "groups": groups,
-            "sol_range": [min(r["sol"] for r in rows), max(r["sol"] for r in rows)],
-            "waypoints": str(waypoints) if waypoints else "mppp.load_waypoints()"}
+def load_blocks(path: Optional[PathLike] = None) -> Tuple[Dict[str, Any], Dict[str, List[str]]]:
+    """(sites, groups) of a ``sites_blocks.json`` (default: the packaged one of 16 Oct, waypoints to sol 2009)."""
+    return load_blocks_file(path or prototype.packaged_sites_blocks())

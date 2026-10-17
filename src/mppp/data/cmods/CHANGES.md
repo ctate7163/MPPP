@@ -48,3 +48,9 @@
 ## 20261008-175008 - v0p75 start model: one df/dfocus per eye, ZL pp0 fixed, ZR pp0 pinned (cy slope), k1/k2 constant, rig mean of 3 first-run blocks, baseline CAHV (8 Oct 2026, from the archived 4-5 Oct first runs)
   - `M2020_ZCAM034_focus_model.json` 399f9eee93a9 from `/home/claude/v0p75_start/M2020_ZCAM034_focus_model.json`
   - replaced files kept in `history/20261008-175008/`
+
+## 20261017-092358 - v0p80 best: residual rig yaw(T) of the 4 Oct rig residuals (D:\scapes\colmap\camera_analysis\navcal_v0p74_20261004_pipeline\rig_residuals.json, -0.339 +- 0.134 mdeg/degC) moved into NR cx(T): -0.0540 -> -0.0714 px/degC
+  - `M2020_NL_fisheye_tangential.json` 20844b7af608 from `/home/claude/navcal_v0p80_best_20261017/navcam_joint/M2020_NL_fisheye_tangential.json`
+  - `M2020_NR_fisheye_tangential.json` 47ae2675446c from `/home/claude/navcal_v0p80_best_20261017/navcam_joint/M2020_NR_fisheye_tangential.json`
+  - `M2020_N_rig.json` 2bed6f3c54cc from `/home/claude/navcal_v0p80_best_20261017/navcam_joint/M2020_N_rig.json`
+  - replaced files kept in `history/20261017-092358/`

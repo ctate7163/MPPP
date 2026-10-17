@@ -519,11 +519,11 @@ def test_navcam_consensus_shipped_with_mppp():
     assert (NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).is_file()
     assert navcam_cameras_fingerprint(NAVCAM_CONSENSUS_DIR)
     # v0p74: the pipeline's 16-block consensus of 4 Oct (navcal_v0p74_20261004_pipeline), byte for byte (line ends
-    # normalised: a Windows checkout writes CRLF)
+    # normalised: a Windows checkout writes CRLF); v0p80 (17 Oct): NR with the residual rig yaw(T) moved into NR cx(T)
     import hashlib
     sha = {p.name: hashlib.sha256(p.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:12]
            for p in NAVCAM_CONSENSUS_DIR.glob("*.json") if "fisheye" in p.name or "rig" in p.name}
-    assert sha == {"M2020_NL_fisheye_tangential.json": "20844b7af608", "M2020_NR_fisheye_tangential.json": "385d0a81c185",
+    assert sha == {"M2020_NL_fisheye_tangential.json": "20844b7af608", "M2020_NR_fisheye_tangential.json": "47ae2675446c",
                    "M2020_N_rig.json": "2bed6f3c54cc"}
 
 

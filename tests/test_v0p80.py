@@ -188,8 +188,9 @@ def test_best_candidate_moves_yaw_into_nr_cx(tmp_path, monkeypatch):
     import navcam_best_candidate as nbc
     src = tmp_path / "cmods"
     src.mkdir()
+    pre = CMODS / "history" / "20261017-092358"                  # the models before the 17 Oct promotion
     for f in ("M2020_NL_fisheye_tangential.json", "M2020_NR_fisheye_tangential.json", "M2020_N_rig.json"):
-        shutil.copy(CMODS / f, src / f)
+        shutil.copy((pre / f) if (pre / f).is_file() else (CMODS / f), src / f)
     monkeypatch.setenv("MPPP_CMODS", str(src))
     rr = tmp_path / "rig_residuals.json"
     rr.write_text(json.dumps({"fits": {"yaw": {"vs_T": {"slope": -0.339, "se": 0.134}}}}))
@@ -202,6 +203,14 @@ def test_best_candidate_moves_yaw_into_nr_cx(tmp_path, monkeypatch):
     with pytest.raises(ValueError):                               # too weak a term is not moved
         rr.write_text(json.dumps({"fits": {"yaw": {"vs_T": {"slope": -0.1, "se": 0.134}}}}))
         nbc.build(rr, tmp_path / "out2")
+
+
+def test_shipped_cmods_carry_the_v0p80_promotion():
+    nr = json.loads((CMODS / "M2020_NR_fisheye_tangential.json").read_text())
+    assert nr["thermal"]["cx_px_per_degC"] == pytest.approx(-0.0714, abs=2e-4)
+    assert "v0p80 best" in nr["thermal"]["note"]
+    from mppp.sfm.cmods_form import check_form
+    assert check_form(CMODS)["ok"]
 
 
 def test_sites_block_record_and_groups():
@@ -219,39 +228,50 @@ def test_sites_block_record_and_groups():
     assert not err
 
 
-def test_maps_blocks_from_snapshot():
+def test_maps_packaged_blocks_and_prototype(tmp_path):
     from mppp import maps
-    res = maps.build_from_waypoints(ROOT / "src" / "mppp" / "data" / "M20_waypoints.json")
-    b = {x["number"]: x for x in res["blocks"]}
-    assert len(b) == 34 and not any(x.get("missing") for x in b.values())
-    # N× counts of the waypoint-map work (15 Oct) that the packaged snapshot (to sol 1962) can reproduce
-    expected = {1: 10, 2: 9, 3: 9, 4: 5, 5: 2, 6: 6, 7: 5, 8: 10, 10: 6, 11: 6, 12: 7, 13: 7, 14: 2, 15: 8, 16: 3,
-                17: 6, 18: 2, 19: 8, 20: 5, 21: 3, 22: 8, 23: 3, 24: 5, 25: 2, 26: 4, 27: 7, 28: 7, 29: 9, 30: 8,
-                31: 6, 32: 4}
-    got = {k: b[k]["navcam_360s"] for k in expected}
-    assert got == expected
-    assert b[9]["navcam_360s"] in (7, 8)                          # Three Forks North: 8 in the 15 Oct list
-    assert 413 not in b[9]["end_of_drive_sols"]
-    assert b[17]["note"].startswith("square shifted -20")
-    assert len(res["clusters"]) == 22
-    assert set(res["groups"]) >= {"blocks_all", "blocks_crater_rim_west"}
-    assert res["sites"]["blk28_bell_island"]["sols"] == [1451, 1478]
+    sites, groups = maps.load_blocks()
+    assert len(sites) == 34 and len(groups["blocks_all"]) == 34
+    b9 = sites["blk09_three_forks_north"]["block"]
+    assert b9["n_navcam_360"] == 8 and 413 in b9["end_of_drive_sols"] and [413, 413] not in b9["visits"]
+    assert sites["blk33_hippo_pools"]["sols"] == [[1947, 1961], [2006, 2009]]
+    out = maps.prototype.run("export", tmp_path / "out")                 # blocks are in the package; export only
+    again, _ = maps.load_blocks_file(out / "sites_blocks.json")
+    assert maps.compare_blocks(again, sites)[0].startswith("the same")
+    assert (tmp_path / "out" / "_m20_sites" / "mppp_map.py").is_file()
 
 
-def test_maps_visits_and_merge(tmp_path):
-    from mppp.maps import visits_of
+def test_maps_blocks_rerun_from_waypoints(tmp_path):
+    from mppp import maps
+    out = maps.prototype.run("blocks", tmp_path / "out")
+    sz = __import__("json").loads((out / "_m20_sites" / "sites_zoom.json").read_text(encoding="utf-8"))
+    assert len(sz) == 34
+
+
+def test_sites_json_holds_the_delivered_blocks():
+    from mppp import maps
+    from mppp.sfm.sites import load_site_table
+    t = load_site_table()
+    blk = {k: v for k, v in t["sites"].items() if k.startswith("blk")}
+    sites, groups = maps.load_blocks()
+    assert maps.compare_blocks(blk, sites)[0].startswith("the same")
+    assert all(t["groups"][g] == v for g, v in groups.items())
+
+
+def test_maps_merge_replaces_old_blocks(tmp_path):
+    import json as _json
     from mppp.maps.export import compare_blocks, merge_into_sites_file
-    assert visits_of([91, 99, 100, 360, 361, 371]) == [[360, 371], [91, 100]]     # 11 sols before 9
-    assert visits_of([5, 6, 100, 120]) == [[100, 120], [5, 6]]           # longest first
     f = tmp_path / "sites.json"
     shutil.copy(ROOT / "src" / "mppp" / "data" / "sites.json", f)
     before = f.read_text().splitlines()
     merge_into_sites_file(f, {"blk99_test": {"sols": [1, 2], "label": "T", "zcam": [], "block": {"number": 99}}},
                           {"blocks_test": ["blk99_test"]})
-    d = json.loads(f.read_text())
+    d = _json.loads(f.read_text())
     assert "blk99_test" in d["sites"] and d["groups"]["blocks_test"] == ["blk99_test"]
+    assert not any(k.startswith("blk0") for k in d["sites"])            # the earlier block set is replaced as a set
+    assert "rockytop" in d["sites"] and "navcam_baseline" in d["groups"]
     after = f.read_text().splitlines()
-    assert sum(1 for x in before if x not in after) <= 2                # only the comma lines change
+    assert all(x in after for x in before if not x.strip().startswith(('"blk', '"blocks_')) and x.strip() not in ("},", "}"))
     assert compare_blocks({"a": {"sols": [1, 2]}}, {"a": {"sols": [1, 3]}})[0].startswith("a: sols")
 
 

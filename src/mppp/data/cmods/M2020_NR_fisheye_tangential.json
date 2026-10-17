@@ -33,7 +33,7 @@
  "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
  "free_params": [],
  "pixel_origin": "corner of the first pixel (COLMAP)",
- "source": "MPPP Navcam consensus (mppp.sfm.navcal_consensus, 2026-10-04, v0p73 NL-reference form): one NR camera shared by 16 blocks (Bell Island, Belva Crater, Bunsen Peak, Chal Rocks Sid, Enchanted Lake, Marble Mountain, Olifants, Origny Large, Rochette, Rockytop, Seitah North, Taylorfjellet Large, Three Forks North, Three Forks South, Tuxedo Park, Van Zyl); fisheye + tangential at -20 degC, fx +35.7 / fy +40.5 ppm/degC, cx -0.0540 px/degC, k4 = 0 (held), one rig yaw +39.89 mdeg (rate +2.28 mdeg/1000 sol).",
+ "source": "MPPP Navcam consensus (mppp.sfm.navcal_consensus, 2026-10-04, v0p73 NL-reference form): one NR camera shared by 16 blocks (Bell Island, Belva Crater, Bunsen Peak, Chal Rocks Sid, Enchanted Lake, Marble Mountain, Olifants, Origny Large, Rochette, Rockytop, Seitah North, Taylorfjellet Large, Three Forks North, Three Forks South, Tuxedo Park, Van Zyl); fisheye + tangential at -20 degC, fx +35.7 / fy +40.5 ppm/degC, cx -0.0540 px/degC, k4 = 0 (held), one rig yaw +39.89 mdeg (rate +2.28 mdeg/1000 sol). [v0p80 best: residual rig yaw(T) moved into NR cx(T), 2026-10-17]",
  "sd": {
   "fx": 0.02567553649122583,
   "fy": 0.04064403322168239,
@@ -49,15 +49,18 @@
   "ppm_per_degC": 38.10161887753927,
   "sd_ppm_per_degC": 0.20528983950192659,
   "T0_degC": -20.0,
-  "note": "v0p73: NL-reference form, refitted with the consensus (2026-10-04; profiles of NR_cx, NL_fx, NL_fy, NR_fx, NR_fy, yaw_rate)",
-  "cx_px_per_degC": -0.0539612398502631,
+  "note": "v0p73: NL-reference form, refitted with the consensus (2026-10-04; profiles of NR_cx, NL_fx, NL_fy, NR_fx, NR_fy, yaw_rate); v0p80 best: residual rig yaw(T) moved into NR cx(T) (2026-10-17): -0.0540 -0.0174 = -0.0714 px/degC (yaw vs T -0.339 +- 0.134 mdeg/degC from D:\\scapes\\colmap\\camera_analysis\\navcal_v0p74_20261004_pipeline\\rig_residuals.json)",
+  "cx_px_per_degC": -0.07140696986035229,
   "cy_px_per_degC": 0.0,
-  "sd_cx_px_per_degC": 0.0003773651025025449,
+  "sd_cx_px_per_degC": 0.006894635570699013,
   "fx_ppm_per_degC": 35.706103432644575,
   "fy_ppm_per_degC": 40.49713432243397,
   "form": "v0p73",
   "sd_fx_ppm_per_degC": 0.14598863946143972,
-  "sd_fy_ppm_per_degC": 0.1809511601998598
+  "sd_fy_ppm_per_degC": 0.1809511601998598,
+  "cx_px_per_degC_before_v0p80": -0.0539612398502631,
+  "yaw_T_moved_mdeg_per_degC": -0.3389244318292622,
+  "yaw_T_moved_se": 0.13374376881263672
  },
  "verification": {
   "note": "not verified (no leave-one-block-out run)",
