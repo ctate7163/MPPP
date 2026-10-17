@@ -190,7 +190,7 @@ def restructure(table: Dict[str, Any], blocks: Dict[str, Any], waypoints: Union[
     # field order: sols, label, official_blocks, notes, the waypoint fields, then the rest as they were
     first = ("sols", "label", "official_blocks", "notes", "max_waypoint_separation_m", "n_waypoints", "rover_sites")
     sites = {k: {**{f: v[f] for f in first if f in v}, **{f: x for f, x in v.items() if f not in first}}
-             for k, v in sites.items()}
+             for k, v in order_by_first_sol(sites).items()}
     groups = {}
     for g, members in (table.get("groups") or {}).items():
         if g.startswith("blocks_"):
@@ -209,6 +209,13 @@ def restructure(table: Dict[str, Any], blocks: Dict[str, Any], waypoints: Union[
     out["official_blocks"] = official
     out["groups"] = groups
     return out, rep
+
+
+def order_by_first_sol(sites: Dict[str, Any]) -> Dict[str, Any]:
+    """The sites in the order of their first visit (the earliest sol of any range; Christian, 17 Oct), the file
+    order kept among sites that start on the same sol."""
+    pos = {k: i for i, k in enumerate(sites)}
+    return dict(sorted(sites.items(), key=lambda kv: (min(a for a, _ in _ranges(kv[1]["sols"])), pos[kv[0]])))
 
 
 def update_waypoint_stats(table: Dict[str, Any], waypoints: Union[PathLike, Dict[str, Any]]) -> List[str]:
@@ -245,7 +252,8 @@ def write_table(table: Dict[str, Any], path: PathLike) -> Path:
     L.append("}")
     txt = "\n".join(L) + "\n"
     json.loads(txt)
-    p.write_text(txt, encoding="utf-8")
+    with open(p, "w", encoding="utf-8", newline="\n") as fh:   # LF on Windows too (no line-ending-only diffs)
+        fh.write(txt)
     return p
 
 
