@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from . import export, prototype, waypoints  # noqa: F401
+from . import export, official, prototype, waypoints  # noqa: F401
 from .export import compare_blocks, load_blocks_file, merge_into_sites_file, merge_sites, write_sites  # noqa: F401
 from .waypoints import load, lonlat_fit, waypoint_rows  # noqa: F401
 

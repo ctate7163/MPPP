@@ -360,12 +360,12 @@ def test_shipped_sites_and_model_v0p75():
     from mppp.sfm.project import zcam_focus_model
     t = S.load_site_table()
     r = S.load_site_ranges()
-    assert r["chal_rocks_sid"] == [(361, 378), (91, 101)] and r["threeforks_large"][0] == (652, 693)
-    assert r["enchanted_lake"] == [(556, 590), (422, 423)] and S.SITES["chal_rocks_sid"] == (361, 378)
+    assert r["chal_rocks"] == [(361, 378), (91, 101)] and r["threeforks_large"][0] == (652, 693)
+    assert r["enchanted_lake"] == [(556, 590), (422, 423)] and S.SITES["chal_rocks"] == (361, 378)
     g = t["groups"]
-    assert "olifants" not in g["navcam_consensus"] and "pearce_canyon" in g["navcam_consensus"]
+    assert "olifants" not in g["navcam_consensus"] and "cheyava_falls" in g["navcam_consensus"]
     assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]
-    assert {"threeforks_south", "threeforks_north", "pearce_canyon"} <= set(g["zcam34_consensus"])
+    assert {"threeforks_south", "threeforks_north", "cheyava_falls"} <= set(g["zcam34_consensus"])
     assert "threeforks_large" not in g["zcam34_consensus"]
     m = zcam_focus_model()
     assert m.get("form") == "v0p75" and m["rig"]["translation_source"].startswith("CAHV")

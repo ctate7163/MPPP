@@ -9,8 +9,9 @@ Blocks of rover stations: the waypoint-map pipeline and the site definitions (MP
     python scripts\\mppp_maps.py export   OUT          OUT\\sites_blocks.json (sites v4)
     python scripts\\mppp_maps.py clusters OUT          raw 10 m clusters again (after a new waypoints file)
     python scripts\\mppp_maps.py merge    [--from sites_blocks.json] [--write]
-                                          the blocks into src/mppp/data/sites.json (default: the packaged 16 Oct
-                                          blocks; without --write a dry run into OUT\\sites_merged.json), checked
+                                          the blocks into src/mppp/data/sites.json as its official_blocks table
+                                          (sites file version 5, mppp.maps.official; default: the packaged blocks;
+                                          without --write a dry run into OUT\\sites_merged.json), checked
     python scripts\\mppp_maps.py compare  A.json B.json      how two block files differ
 
 The pipeline is the prototype of 16 Oct (src/mppp/maps/m20_sites, documentation docs/mppp_map.md there), run on a
@@ -48,24 +49,24 @@ def main(argv=None) -> int:
     out = Path(a.args[0]) if a.args else Path("maps_out")
     if a.cmd == "merge":
         import json
-        import shutil
+        from mppp.maps import official
         from mppp.sfm.sites import SITES_FILE, validate_site_table
-        sites, groups = maps.load_blocks(a.src)
+        sites, _ = maps.load_blocks(a.src)
         out.mkdir(parents=True, exist_ok=True)
-        tmp = out / "sites_merged.json"
-        shutil.copy2(SITES_FILE, tmp)
-        maps.merge_into_sites_file(tmp, sites, groups)
+        table = json.loads(SITES_FILE.read_text(encoding="utf-8"))
+        new, rep = official.restructure(table, sites, a.waypoints or maps.prototype.source_dir() / "M20_waypoints.json")
+        print("\n".join(rep))
+        tmp = official.write_table(new, out / "sites_merged.json")
         err, warn = validate_site_table(tmp)
         print(f"{len(sites)} blocks merged -> {tmp}: {len(err)} errors, {len(warn)} warnings")
         for e in err:
             print("  ERROR", e)
         if a.write and not err:
-            maps.merge_into_sites_file(SITES_FILE, sites, groups)
+            official.write_table(new, SITES_FILE)
             print(f"written {SITES_FILE} (commit it; run_sites.py --group blocks_all runs them)")
         elif a.write:
             print("not written: fix the errors first")
             return 1
-        json.loads(tmp.read_text(encoding="utf-8"))
         return 0
     maps.prototype.run(a.cmd, out, figures=tuple(a.args[1:]), waypoints=a.waypoints, legacy_sites=a.legacy_sites,
                        recluster=a.recluster, dpi=a.dpi)

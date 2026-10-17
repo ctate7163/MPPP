@@ -197,7 +197,23 @@ def validate_site_table(path: Optional[PathLike] = None,
         if "z34" in v:
             err.append(f"site {name!r}: 'z34' is now 'zcam': [34] (v0p53)")
         unknown = set(v) - {"sols", "label", "zcam", "zcam34", "zcam48", "zcam63", "zcam79", "zcam110", "z34", "note",
-                            "no_mask_inference_at", "settings", "block"}
+                            "no_mask_inference_at", "settings", "block", "notes", "official_blocks",
+                            "max_waypoint_separation_m", "n_waypoints", "rover_sites"}
+        if ver is not None and isinstance(ver, int) and ver >= 5:     # v0p81: sites file version 5
+            if not (isinstance(sols, list) and sols and all(isinstance(r, list) for r in sols)):
+                err.append(f"site {name!r}: version 5: 'sols' must be a list of ranges, [[first, last]] for one visit, "
+                           f"not {sols!r}")
+            if "notes" not in v:
+                err.append(f"site {name!r}: version 5: every site needs a 'notes' field")
+            if "note" in v:
+                warn.append(f"site {name!r}: 'note' is 'notes' since version 5")
+            ob = v.get("official_blocks")
+            if not (isinstance(ob, list) and all(isinstance(x, int) and not isinstance(x, bool) for x in ob)):
+                err.append(f"site {name!r}: version 5: 'official_blocks' must be a list of block numbers ([] for none)")
+            elif set(map(str, ob)) - set(map(str, (d.get("official_blocks") or {}))):
+                err.append(f"site {name!r}: official_blocks {ob}: not all are in the 'official_blocks' table")
+            if "block" in v:
+                warn.append(f"site {name!r}: the 'block' record is the 'official_blocks' table since version 5")
         if "block" in v:                                   # v0p80: the block-of-stations record (mppp.maps)
             err.extend(f"site {name!r}: {e}" for e in check_block_record(v["block"]))
         if unknown:
@@ -214,6 +230,26 @@ def validate_site_table(path: Optional[PathLike] = None,
             if bad:
                 warn.append(f"site {name!r}: settings {bad} are not notebook 03 settings (typo?) - they would be set "
                             f"but not used")
+    ob = d.get("official_blocks")                         # v0p81: version 5, the official numbered blocks
+    if ob is not None:
+        if not isinstance(ob, dict):
+            err.append("'official_blocks' must be an object {\"1\": {...}, ...}")
+        else:
+            for n, b in ob.items():
+                if not str(n).isdigit() or not isinstance(b, dict):
+                    err.append(f"official block {n!r}: the key must be its number and the value an object")
+                    continue
+                if b.get("site") not in sites:
+                    err.append(f"official block {n} ({b.get('name')}): its site {b.get('site')!r} is not a site")
+                elif int(n) not in (sites[b["site"]].get("official_blocks") or []):
+                    warn.append(f"official block {n}: its site {b['site']!r} does not list it in 'official_blocks'")
+                try:
+                    vr = sol_ranges(b.get("visits"))
+                    if any(r[1] < r[0] for r in vr):
+                        err.append(f"official block {n}: visits {b.get('visits')} end before they start")
+                except (ValueError, TypeError, IndexError):
+                    err.append(f"official block {n}: 'visits' must be [[first, last], ...]")
+                err.extend(f"official block {n}: {e}" for e in check_block_record(b))
     groups = d.get("groups") or {}
     if not isinstance(groups, dict):
         err.append("'groups' must be an object of name: [site, ...]")
@@ -255,7 +291,8 @@ def validate_site_table(path: Optional[PathLike] = None,
     return err, warn
 
 
-SITES_FILE_VERSION = 4          # v0p75/v0p80: "sols" as a list of visits (longest / main first), the "block" record
+SITES_FILE_VERSION = 5          # v0p75/v0p80: "sols" as a list of visits (longest / main first), the "block" record;
+                                # v0p81 (5): the "official_blocks" table, per site "official_blocks", "notes", waypoint fields
 
 
 def check_block_record(b: Any) -> List[str]:
@@ -283,15 +320,28 @@ def check_block_record(b: Any) -> List[str]:
 
 
 def site_block(site: str, table: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-    """v0p80: the ``"block"`` record of a site (None for a site without one)."""
+    """v0p80: the block record of a site (None for a site without one).  v0p81 (version 5): the record of the
+    official block the site runs (``official_blocks[n]["site"] == site``) with its ``"number"``, else of the first
+    block it lists; a version-4 ``"block"`` record is still read."""
     t = table if table is not None else load_site_table()
     v = t["sites"].get(site)
-    return v.get("block") if isinstance(v, dict) else None
+    if not isinstance(v, dict):
+        return None
+    if isinstance(v.get("block"), dict):
+        return v["block"]
+    ob = t.get("official_blocks") or {}
+    runs = [n for n, b in ob.items() if b.get("site") == site]
+    nums = runs or [str(n) for n in (v.get("official_blocks") or []) if str(n) in ob]
+    return {"number": int(nums[0]), **ob[nums[0]]} if nums else None
 
 
 def block_sites(table: Optional[Dict[str, Any]] = None) -> List[str]:
-    """v0p80: the sites that are blocks of rover stations (with a ``"block"`` record), by block number."""
+    """v0p80: the sites that run the blocks of rover stations, by block number (v0p81: the ``"site"`` of each
+    official block; version 4: the sites with a ``"block"`` record)."""
     t = table if table is not None else load_site_table()
+    ob = t.get("official_blocks")
+    if isinstance(ob, dict) and ob:
+        return list(dict.fromkeys(b.get("site") for _, b in sorted(ob.items(), key=lambda x: int(x[0]))))
     rows = [(int((v.get("block") or {}).get("number") or 10 ** 6), k) for k, v in t["sites"].items()
             if isinstance(v, dict) and isinstance(v.get("block"), dict)]
     return [k for _, k in sorted(rows)]

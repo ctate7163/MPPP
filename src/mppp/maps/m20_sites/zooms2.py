@@ -11,7 +11,7 @@ C1,C2,C3,C4='#2a78d6','#eb6834','#1baf7a','#eda100'; INK='#0b0b0b'; INK2='#52514
 last_sol = int(S.max())
 def posi(s):
     w = np.where(S <= s)[0]; return w[-1] if len(w) else 0
-ncol, nrow = 5, 7                     # 5 columns x 7 rows: 34 blocks + the legend
+ncol = 5; nrow = -(-(len(sites) + 1) // ncol)   # 5 columns: the blocks + the legend (34 blocks: 7 rows, 36: 8)
 assert len(sites) + 1 <= ncol*nrow
 fig, axs = plt.subplots(nrow, ncol, figsize=(3.45*ncol, 3.6*nrow), facecolor='#fcfcfb')
 dem_used = set()

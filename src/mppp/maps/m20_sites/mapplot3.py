@@ -177,7 +177,7 @@ REGION_KEYS = {
  'whh':    ['cluster16', 'cluster17', 'cluster18', 'cluster19'],
  'margin': ['cluster13', 'overlook_mountain', 'bright_angle', 'cluster14', 'plateau_point', 'cluster15', 'rio_chiquito'],
  'fan':    ['tenby_berea', 'cluster11', 'wild_basin_lake', 'cluster12', 'airey_hill'],
- 'delta':  ['cluster10', 'threeforks_north', 'cluster6', 'cluster7', 'cluster8', 'cluster9'],
+ 'delta':  ['cluster10', 'threeforks_north', 'cluster6', 'cluster7', 'cluster8', 'cluster9', 'observation_mountain', 'whale_mountain'],
  'land':   ['cluster1', 'cluster2', 'chal_rocks_large', 'cluster3', 'rochette', 'cluster4', 'cluster5']}
 KEY2ID = {o['key']: o['id'] for o in sites}
 RID = {r: sorted(KEY2ID[k] for k in ks) for r, ks in REGION_KEYS.items()}

@@ -53,9 +53,9 @@ def test_process_sites_dry_run(tmp_path, capsys):
     spec = importlib.util.spec_from_file_location("process_sites", root / "scripts" / "process_sites.py")
     ps = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ps)
-    assert ps.main(["--sites", "chal_rocks_sid", "rockytop", "--root", str(tmp_path), "--dry-run"]) == 0
+    assert ps.main(["--sites", "chal_rocks", "rockytop", "--root", str(tmp_path), "--dry-run"]) == 0
     log = (tmp_path / "process_sites_log.txt").read_text()
-    assert "chal_rocks_sid: would run" in log and _rocky() in log
+    assert "chal_rocks: would run" in log and _rocky() in log
     assert ps.main(["--all", "--zcam", "--root", str(tmp_path), "--dry-run"]) == 0
     log = (tmp_path / "process_sites_log.txt").read_text()
     assert _rocky(True) in log and "van_zyl_colmap_zcam" not in log   # v0p53: "zcam" sites only
@@ -100,7 +100,7 @@ def test_process_sites_refuses_while_a_batch_runs(tmp_path):
     spec.loader.exec_module(ps)
     b = batch_lock(tmp_path, "run_sites")
     try:
-        assert ps.main(["--sites", "chal_rocks_sid", "--root", str(tmp_path)]) == 3
+        assert ps.main(["--sites", "chal_rocks", "--root", str(tmp_path)]) == 3
         assert "not started" in (tmp_path / "process_sites_log.txt").read_text()
     finally:
         b.stop("finished")

@@ -2,7 +2,7 @@
 REM ======================================================================================================
 REM MPPP v0p75 - watch D:\scapes\colmap\_jobs and run the jobs dropped there (scripts\run_jobs.py).
 REM   A job is a text file <name>.job whose line is an MPPP script and its arguments, e.g.
-REM     run_sites.py --root D:\scapes\colmap --sites chal_rocks_sid --zcam --set ZCAM_ZOOMS=[34] --force
+REM     run_sites.py --root D:\scapes\colmap --sites chal_rocks --zcam --set ZCAM_ZOOMS=[34] --force
 REM   Only scripts in MPPP's scripts folder are run.  Output: <name>.log (live) and <name>.done (exit code).
 REM   Claude's cloud session writes jobs there through the desktop link and reads the logs back.
 REM   To end the watcher: create a file named "stop" in _jobs, or close this window (a running job goes on;

@@ -207,13 +207,14 @@
   "runs": [
    [
     413,
-    413
+    414
    ],
    [
     652,
     683
    ]
   ],
+  "visits_edited": true,
   "first": 413,
   "n360": 10,
   "zpanos": [
@@ -234,8 +235,12 @@
   "first_all": 413,
   "runs": [
    [
+    413,
+    413
+   ],
+   [
     433,
-    433
+    435
    ],
    [
     663,
@@ -250,6 +255,7 @@
     692
    ]
   ],
+  "visits_edited": true,
   "first": 413,
   "n360": 8,
   "zpanos": [
@@ -372,6 +378,56 @@
   "id": 13
  },
  {
+  "key": "observation_mountain",
+  "old_id": null,
+  "name": "Observation Mountain",
+  "cx": 4351705.9235,
+  "cy": 1093697.9255,
+  "kind": "site",
+  "first_all": 592,
+  "runs": [
+   [
+    592,
+    605
+   ],
+   [
+    629,
+    640
+   ]
+  ],
+  "first": 592,
+  "n360": 4,
+  "zpanos": [],
+  "nz": 0,
+  "npart": 2,
+  "ninterp": 2,
+  "id": 14
+ },
+ {
+  "key": "whale_mountain",
+  "old_id": null,
+  "name": "Whale Mountain",
+  "cx": 4351585.3865,
+  "cy": 1093830.848,
+  "kind": "site",
+  "first_all": 606,
+  "runs": [
+   [
+    606,
+    628
+   ]
+  ],
+  "first": 606,
+  "n360": 2,
+  "zpanos": [
+   22
+  ],
+  "nz": 1,
+  "npart": 0,
+  "ninterp": 0,
+  "id": 15
+ },
+ {
   "key": "tenby_berea",
   "old_id": null,
   "name": "Tenby / Berea",
@@ -391,7 +447,7 @@
   "nz": 0,
   "npart": 1,
   "ninterp": 1,
-  "id": 14
+  "id": 16
  },
  {
   "key": "cluster11",
@@ -419,7 +475,7 @@
   "nz": 1,
   "npart": 2,
   "ninterp": 1,
-  "id": 15
+  "id": 17
  },
  {
   "key": "wild_basin_lake",
@@ -443,7 +499,7 @@
   "nz": 1,
   "npart": 2,
   "ninterp": 0,
-  "id": 16
+  "id": 18
  },
  {
   "key": "cluster12",
@@ -467,7 +523,7 @@
   "nz": 1,
   "npart": 2,
   "ninterp": 0,
-  "id": 17
+  "id": 19
  },
  {
   "key": "airey_hill",
@@ -491,7 +547,7 @@
   "nz": 1,
   "npart": 0,
   "ninterp": 0,
-  "id": 18
+  "id": 20
  },
  {
   "key": "cluster13",
@@ -515,7 +571,7 @@
   "nz": 1,
   "npart": 0,
   "ninterp": 0,
-  "id": 19
+  "id": 21
  },
  {
   "key": "overlook_mountain",
@@ -539,7 +595,7 @@
   "nz": 1,
   "npart": 1,
   "ninterp": 0,
-  "id": 20
+  "id": 22
  },
  {
   "key": "bright_angle",
@@ -567,7 +623,7 @@
   "nz": 1,
   "npart": 1,
   "ninterp": 0,
-  "id": 21
+  "id": 23
  },
  {
   "key": "cluster14",
@@ -589,7 +645,7 @@
   "nz": 0,
   "npart": 4,
   "ninterp": 0,
-  "id": 22
+  "id": 24
  },
  {
   "key": "plateau_point",
@@ -611,7 +667,7 @@
   "nz": 0,
   "npart": 1,
   "ninterp": 0,
-  "id": 23
+  "id": 25
  },
  {
   "key": "cluster15",
@@ -637,7 +693,7 @@
   "nz": 0,
   "npart": 3,
   "ninterp": 0,
-  "id": 24
+  "id": 26
  },
  {
   "key": "rio_chiquito",
@@ -661,7 +717,7 @@
   "nz": 1,
   "npart": 0,
   "ninterp": 0,
-  "id": 25
+  "id": 27
  },
  {
   "key": "cluster16",
@@ -689,7 +745,7 @@
   "nz": 1,
   "npart": 0,
   "ninterp": 0,
-  "id": 26
+  "id": 28
  },
  {
   "key": "cluster17",
@@ -721,7 +777,7 @@
   "nz": 1,
   "npart": 2,
   "ninterp": 0,
-  "id": 27
+  "id": 29
  },
  {
   "key": "cluster18",
@@ -747,7 +803,7 @@
   "nz": 0,
   "npart": 0,
   "ninterp": 0,
-  "id": 28
+  "id": 30
  },
  {
   "key": "cluster19",
@@ -772,7 +828,7 @@
   "nz": 2,
   "npart": 3,
   "ninterp": 0,
-  "id": 29
+  "id": 31
  },
  {
   "key": "cluster21",
@@ -796,7 +852,7 @@
   "nz": 1,
   "npart": 5,
   "ninterp": 0,
-  "id": 30
+  "id": 32
  },
  {
   "key": "cluster22",
@@ -820,7 +876,7 @@
   "nz": 1,
   "npart": 1,
   "ninterp": 0,
-  "id": 31
+  "id": 33
  },
  {
   "key": "groloy",
@@ -848,7 +904,7 @@
   "nz": 1,
   "npart": 1,
   "ninterp": 0,
-  "id": 32
+  "id": 34
  },
  {
   "key": "cluster23",
@@ -874,7 +930,7 @@
   "nz": 0,
   "npart": 2,
   "ninterp": 0,
-  "id": 33
+  "id": 35
  },
  {
   "key": "marble_mountain",
@@ -898,6 +954,6 @@
   "nz": 1,
   "npart": 2,
   "ninterp": 0,
-  "id": 34
+  "id": 36
  }
 ]

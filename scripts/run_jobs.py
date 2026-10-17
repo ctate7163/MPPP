@@ -7,7 +7,7 @@ the Claude desktop link, which can write and read files in the scapes folder but
 Every ``<root>\\_jobs\\<name>.job`` is a text file whose first non-comment line is **an MPPP script and its
 arguments**, e.g.::
 
-    run_sites.py --root D:\\scapes\\colmap --sites chal_rocks_sid --zcam --set ZCAM_ZOOMS=[34] --force
+    run_sites.py --root D:\\scapes\\colmap --sites chal_rocks --zcam --set ZCAM_ZOOMS=[34] --force
 
 Only scripts in MPPP's own ``scripts`` folder run (``run_sites.py``, ``run_pipeline.py``, ``zcam_calibration.py``,
 ``promote_cmods.py``, ``stop_runs.py``, ...); nothing else is executed, and the job file is the whole command, so

@@ -27,7 +27,7 @@ def test_labels_and_site_checks():
     assert site_label("rockytop") == "Rockytop"
     probs = check_sites(SITES)
     assert probs == []
-    assert SITES["hippo_pools"] == (1947, 1955) and SITES["origny"] == (1781, 1813) and SITES["origny_large"] == (1765, 1813) and SITES["olifants"] == (1880, 1889)
+    assert SITES["hippo_pools"] == (1947, 2009) and SITES["origny"] == (1781, 1813) and SITES["origny_large"] == (1765, 1813) and SITES["olifants"] == (1880, 1889)
 
 
 def test_discover_scapes(tmp_path):
@@ -63,9 +63,9 @@ def test_sites_json_is_the_site_list():
         assert (members or g in ("zcam79_consensus", "zcam110_consensus")) and all(m in t["sites"] for m in members), g
     for k, v in t["sites"].items():
         assert all(a <= b for a, b in S.sol_ranges(v["sols"])) and isinstance(v.get("settings", {}), dict), k
-    assert {"rockytop", "south_arm", "taylorfjellet"} <= set(S.zcam34_sites(t)) and "van_zyl" not in S.zcam34_sites(t)
+    assert {"rockytop", "south_arm", "taylorfjellet"} <= set(S.zcam34_sites(t)) and "van_zyl_overlook" not in S.zcam34_sites(t)
     assert all(isinstance(v.get("zcam"), list) and set(v["zcam"]) <= {34, 48, 63, 79, 110} for v in t["sites"].values())
-    assert 34 in S.site_zooms(t["sites"]["chal_rocks_sid"]) and "bright_angle" in S.zcam_sites(t, zoom=63)
+    assert 34 in S.site_zooms(t["sites"]["chal_rocks"]) and "bright_angle" in S.zcam_sites(t, zoom=63)
     zc = set(t["groups"]["zcam_consensus"])
     assert all(S.site_zooms(t["sites"][m]) for m in zc)
     for g in ("navcam_consensus", "zcam34_consensus", "zcam48_consensus", "zcam63_consensus"):
@@ -75,7 +75,7 @@ def test_sites_json_is_the_site_list():
     assert S.parse_work_folder("D:/x/mars2020_sol_0361_sid_chal_rocks_colmap") == ("sid_chal_rocks", False)
     assert S.parse_work_folder("D:/x/south_arm_colmap_zcam34") == ("south_arm", True)     # before v0p53 (by hand)
     assert S.parse_work_folder("D:/x/sid_colmap") == ("sid", False)
-    assert S.work_folder("D:/r", "chal_rocks_sid", True).name == "mars2020_sol_0361_chal_rocks_sid_colmap_zcam"
+    assert S.work_folder("D:/r", "chal_rocks", True).name == "mars2020_sol_0361_chal_rocks_colmap_zcam"
     assert S.work_folder("D:/r", "x", False, (7, 9)).name == "mars2020_sol_0007_x_colmap"
 
 

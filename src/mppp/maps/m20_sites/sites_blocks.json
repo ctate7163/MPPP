@@ -417,14 +417,14 @@
     ],
     [
      413,
-     413
+     414
     ]
    ],
    "label": "Three Forks South",
    "zcam": [
     34
    ],
-   "note": "Block 8 (N×10, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 413, 652–683",
+   "note": "Block 8 (N×10, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 413–414, 652–683",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
@@ -445,7 +445,7 @@
     "visits": [
      [
       413,
-      413
+      414
      ],
      [
       652,
@@ -487,14 +487,18 @@
     ],
     [
      433,
-     433
+     435
+    ],
+    [
+     413,
+     413
     ]
    ],
    "label": "Three Forks North",
    "zcam": [
     34
    ],
-   "note": "Block 9 (N×8, Z×2): from sites.json 'threeforks_north'; centre ±30 m; visits 433, 663–666, 670–673, 678–692",
+   "note": "Block 9 (N×8, Z×2): from sites.json 'threeforks_north'; centre ±30 m; visits 413, 433–435, 663–666, 670–673, 678–692",
    "no_mask_inference_at": [
     "S032D1184"
    ],
@@ -516,8 +520,12 @@
     "half_size_m": 30.0,
     "visits": [
      [
+      413,
+      413
+     ],
+     [
       433,
-      433
+      435
      ],
      [
       663,
@@ -778,7 +786,105 @@
     "mastcam_z_360": []
    }
   },
-  "blk14_tenby_berea": {
+  "blk14_observation_mountain": {
+   "sols": [
+    [
+     592,
+     605
+    ],
+    [
+     629,
+     640
+    ]
+   ],
+   "label": "Observation Mountain",
+   "zcam": [],
+   "note": "Block 14 (N×4): user-defined sol window; centre ±30 m; visits 592–605, 629–640",
+   "no_mask_inference_at": [],
+   "settings": {},
+   "block": {
+    "number": 14,
+    "name": "Observation Mountain",
+    "region": "delta_front",
+    "kind": "sol window",
+    "source_key": "observation_mountain",
+    "legacy_site": null,
+    "centre": {
+     "lon": 77.4012943,
+     "lat": 18.4513455,
+     "easting": 4351705.92,
+     "northing": 1093697.93,
+     "frame": "M20_waypoints easting/northing"
+    },
+    "half_size_m": 30.0,
+    "visits": [
+     [
+      592,
+      605
+     ],
+     [
+      629,
+      640
+     ]
+    ],
+    "end_of_drive_sols": [
+     592,
+     593,
+     629,
+     632
+    ],
+    "n_navcam_360": 4,
+    "n_partial_navcam": 2,
+    "mastcam_z_360": []
+   }
+  },
+  "blk15_whale_mountain": {
+   "sols": [
+    [
+     606,
+     628
+    ]
+   ],
+   "label": "Whale Mountain",
+   "zcam": [
+    34
+   ],
+   "note": "Block 15 (N×2, Z×1): from sites.json 'whale_mountain'; centre ±30 m; visits 606–628",
+   "no_mask_inference_at": [],
+   "settings": {},
+   "block": {
+    "number": 15,
+    "name": "Whale Mountain",
+    "region": "delta_front",
+    "kind": "sites.json",
+    "source_key": "whale_mountain",
+    "legacy_site": "whale_mountain",
+    "centre": {
+     "lon": 77.3991504,
+     "lat": 18.453588,
+     "easting": 4351585.39,
+     "northing": 1093830.85,
+     "frame": "M20_waypoints easting/northing"
+    },
+    "half_size_m": 30.0,
+    "visits": [
+     [
+      606,
+      628
+     ]
+    ],
+    "end_of_drive_sols": [
+     606,
+     609
+    ],
+    "n_navcam_360": 2,
+    "n_partial_navcam": 0,
+    "mastcam_z_360": [
+     22
+    ]
+   }
+  },
+  "blk16_tenby_berea": {
    "sols": [
     [
      732,
@@ -787,11 +893,11 @@
    ],
    "label": "Tenby / Berea",
    "zcam": [],
-   "note": "Block 14 (N×2): from sites.json 'tenby_berea'; centre ±30 m; visits 732–752",
+   "note": "Block 16 (N×2): from sites.json 'tenby_berea'; centre ±30 m; visits 732–752",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 14,
+    "number": 16,
     "name": "Tenby / Berea",
     "region": "upper_fan_belva",
     "kind": "sites.json",
@@ -820,7 +926,7 @@
     "mastcam_z_360": []
    }
   },
-  "blk15_belva_crater": {
+  "blk17_belva_crater": {
    "sols": [
     [
      770,
@@ -835,11 +941,11 @@
    "zcam": [
     34
    ],
-   "note": "Block 15 (N×8, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 770–815, 818–835",
+   "note": "Block 17 (N×8, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 770–815, 818–835",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 15,
+    "number": 17,
     "name": "Belva Crater",
     "region": "upper_fan_belva",
     "kind": "cluster",
@@ -880,7 +986,7 @@
     ]
    }
   },
-  "blk16_wild_basin_lake": {
+  "blk18_wild_basin_lake": {
    "sols": [
     [
      838,
@@ -889,11 +995,11 @@
    ],
    "label": "Wild Basin Lake",
    "zcam": [],
-   "note": "Block 16 (N×3, Z×1): user-defined sol window; centre ±30 m; visits 838–853",
+   "note": "Block 18 (N×3, Z×1): user-defined sol window; centre ±30 m; visits 838–853",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 16,
+    "number": 18,
     "name": "Wild Basin Lake",
     "region": "upper_fan_belva",
     "kind": "sol window",
@@ -925,7 +1031,7 @@
     ]
    }
   },
-  "blk17_tuxedo_park": {
+  "blk19_tuxedo_park": {
    "sols": [
     [
      896,
@@ -936,11 +1042,11 @@
    "zcam": [
     34
    ],
-   "note": "Block 17 (N×6, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 896–908",
+   "note": "Block 19 (N×6, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 896–908",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 17,
+    "number": 19,
     "name": "Tuxedo Park",
     "region": "upper_fan_belva",
     "kind": "cluster",
@@ -975,7 +1081,7 @@
     ]
    }
   },
-  "blk18_airey_hill": {
+  "blk20_airey_hill": {
    "sols": [
     [
      960,
@@ -986,11 +1092,11 @@
    "zcam": [
     34
    ],
-   "note": "Block 18 (N×2, Z×1): from sites.json 'airey_hill'; centre ±30 m; visits 960–992",
+   "note": "Block 20 (N×2, Z×1): from sites.json 'airey_hill'; centre ±30 m; visits 960–992",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 18,
+    "number": 20,
     "name": "Airey Hill",
     "region": "upper_fan_belva",
     "kind": "sites.json",
@@ -1021,7 +1127,7 @@
     ]
    }
   },
-  "blk19_bunsen_peak": {
+  "blk21_bunsen_peak": {
    "sols": [
     [
      1052,
@@ -1032,11 +1138,11 @@
    "zcam": [
     34
    ],
-   "note": "Block 19 (N×8, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1052–1095",
+   "note": "Block 21 (N×8, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1052–1095",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 19,
+    "number": 21,
     "name": "Bunsen Peak",
     "region": "margin_unit_neretva_vallis",
     "kind": "cluster",
@@ -1073,7 +1179,7 @@
     ]
    }
   },
-  "blk20_overlook_mountain": {
+  "blk22_overlook_mountain": {
    "sols": [
     [
      1148,
@@ -1085,11 +1191,11 @@
     48,
     79
    ],
-   "note": "Block 20 (N×5, Z×1): from sites.json 'overlook_mountain'; centre ±30 m; visits 1148–1157",
+   "note": "Block 22 (N×5, Z×1): from sites.json 'overlook_mountain'; centre ±30 m; visits 1148–1157",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 20,
+    "number": 22,
     "name": "Overlook Mountain",
     "region": "margin_unit_neretva_vallis",
     "kind": "sites.json",
@@ -1123,7 +1229,7 @@
     ]
    }
   },
-  "blk21_bright_angel": {
+  "blk23_bright_angel": {
    "sols": [
     [
      1176,
@@ -1139,11 +1245,11 @@
     34,
     63
    ],
-   "note": "Block 21 (N×3, Z×1): from sites.json 'bright_angle'; centre ±30 m; visits 1176–1181, 1219",
+   "note": "Block 23 (N×3, Z×1): from sites.json 'bright_angle'; centre ±30 m; visits 1176–1181, 1219",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 21,
+    "number": 23,
     "name": "Bright Angel",
     "region": "margin_unit_neretva_vallis",
     "kind": "sites.json",
@@ -1179,7 +1285,7 @@
     ]
    }
   },
-  "blk22_cheyava_falls": {
+  "blk24_cheyava_falls": {
    "sols": [
     [
      1182,
@@ -1190,11 +1296,11 @@
    "zcam": [
     34
    ],
-   "note": "Block 22 (N×8): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1182–1218",
+   "note": "Block 24 (N×8): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1182–1218",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 22,
+    "number": 24,
     "name": "Cheyava Falls",
     "region": "margin_unit_neretva_vallis",
     "kind": "cluster",
@@ -1229,7 +1335,7 @@
     "mastcam_z_360": []
    }
   },
-  "blk23_plateau_point": {
+  "blk25_plateau_point": {
    "sols": [
     [
      1252,
@@ -1238,11 +1344,11 @@
    ],
    "label": "Plateau Point",
    "zcam": [],
-   "note": "Block 23 (N×3): user-defined sol window; centre ±30 m; visits 1252–1263",
+   "note": "Block 25 (N×3): user-defined sol window; centre ±30 m; visits 1252–1263",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 23,
+    "number": 25,
     "name": "Plateau Point",
     "region": "margin_unit_neretva_vallis",
     "kind": "sol window",
@@ -1272,7 +1378,7 @@
     "mastcam_z_360": []
    }
   },
-  "blk24_pico_turquino": {
+  "blk26_pico_turquino": {
    "sols": [
     [
      1305,
@@ -1287,11 +1393,11 @@
    "zcam": [
     48
    ],
-   "note": "Block 24 (N×5): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1305–1310, 1320–1321",
+   "note": "Block 26 (N×5): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1305–1310, 1320–1321",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 24,
+    "number": 26,
     "name": "Pico Turquino",
     "region": "margin_unit_neretva_vallis",
     "kind": "cluster",
@@ -1327,7 +1433,7 @@
     "mastcam_z_360": []
    }
   },
-  "blk25_rio_chiquito": {
+  "blk27_rio_chiquito": {
    "sols": [
     [
      1332,
@@ -1338,11 +1444,11 @@
    "zcam": [
     34
    ],
-   "note": "Block 25 (N×2, Z×1): from sites.json 'rio_chiquito'; centre ±30 m; visits 1332–1337",
+   "note": "Block 27 (N×2, Z×1): from sites.json 'rio_chiquito'; centre ±30 m; visits 1332–1337",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 25,
+    "number": 27,
     "name": "Rio Chiquito",
     "region": "margin_unit_neretva_vallis",
     "kind": "sites.json",
@@ -1373,7 +1479,7 @@
     ]
    }
   },
-  "blk26_south_arm": {
+  "blk28_south_arm": {
    "sols": [
     [
      1407,
@@ -1388,11 +1494,11 @@
    "zcam": [
     34
    ],
-   "note": "Block 26 (N×4, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1359–1361, 1407–1414",
+   "note": "Block 28 (N×4, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1359–1361, 1407–1414",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 26,
+    "number": 28,
     "name": "South Arm",
     "region": "crater_rim",
     "kind": "cluster",
@@ -1429,7 +1535,7 @@
     ]
    }
   },
-  "blk27_witch_hazel_hill": {
+  "blk29_witch_hazel_hill": {
    "sols": [
     [
      1362,
@@ -1446,11 +1552,11 @@
    ],
    "label": "Witch Hazel Hill",
    "zcam": [],
-   "note": "Block 27 (N×7, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1362–1379, 1397–1406, 1415–1428",
+   "note": "Block 29 (N×7, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1362–1379, 1397–1406, 1415–1428",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 27,
+    "number": 29,
     "name": "Witch Hazel Hill",
     "region": "crater_rim",
     "kind": "cluster",
@@ -1494,7 +1600,7 @@
     ]
    }
   },
-  "blk28_bell_island": {
+  "blk30_bell_island": {
    "sols": [
     [
      1477,
@@ -1507,11 +1613,11 @@
    ],
    "label": "Bell Island",
    "zcam": [],
-   "note": "Block 28 (N×7): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1451–1467, 1477–1501",
+   "note": "Block 30 (N×7): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1451–1467, 1477–1501",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 28,
+    "number": 30,
     "name": "Bell Island",
     "region": "crater_rim",
     "kind": "cluster",
@@ -1549,7 +1655,7 @@
     "mastcam_z_360": []
    }
   },
-  "blk29_taylorfjellet": {
+  "blk31_taylorfjellet": {
    "sols": [
     [
      1601,
@@ -1564,11 +1670,11 @@
     79,
     110
    ],
-   "note": "Block 29 (N×9, Z×2): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1601–1645",
+   "note": "Block 31 (N×9, Z×2): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1601–1645",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 29,
+    "number": 31,
     "name": "Taylorfjellet",
     "region": "crater_rim",
     "kind": "cluster",
@@ -1607,7 +1713,7 @@
     ]
    }
   },
-  "blk30_origny": {
+  "blk32_origny": {
    "sols": [
     [
      1775,
@@ -1618,11 +1724,11 @@
    "zcam": [
     34
    ],
-   "note": "Block 30 (N×8, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1775–1813",
+   "note": "Block 32 (N×8, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1775–1813",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 30,
+    "number": 32,
     "name": "Origny",
     "region": "crater_rim_west",
     "kind": "cluster",
@@ -1659,7 +1765,7 @@
     ]
    }
   },
-  "blk31_vingeanne": {
+  "blk33_vingeanne": {
    "sols": [
     [
      1817,
@@ -1668,11 +1774,11 @@
    ],
    "label": "Vingeanne",
    "zcam": [],
-   "note": "Block 31 (N×6, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1817–1834",
+   "note": "Block 33 (N×6, Z×1): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1817–1834",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 31,
+    "number": 33,
     "name": "Vingeanne",
     "region": "crater_rim_west",
     "kind": "cluster",
@@ -1707,7 +1813,7 @@
     ]
    }
   },
-  "blk32_groloy": {
+  "blk34_groloy": {
    "sols": [
     [
      1921,
@@ -1722,11 +1828,11 @@
    "zcam": [
     34
    ],
-   "note": "Block 32 (N×4, Z×1): from sites.json 'groloy'; centre ±30 m; visits 1893–1895, 1921–1934",
+   "note": "Block 34 (N×4, Z×1): from sites.json 'groloy'; centre ±30 m; visits 1893–1895, 1921–1934",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 32,
+    "number": 34,
     "name": "Groloy",
     "region": "crater_rim_west",
     "kind": "sites.json",
@@ -1763,7 +1869,7 @@
     ]
    }
   },
-  "blk33_hippo_pools": {
+  "blk35_hippo_pools": {
    "sols": [
     [
      1947,
@@ -1778,11 +1884,11 @@
    "zcam": [
     34
    ],
-   "note": "Block 33 (N×4): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1947–1961, 2006–2009",
+   "note": "Block 35 (N×4): ≥4 end-of-drive Navcam 360s chained at ≤10 m; centre ±30 m; visits 1947–1961, 2006–2009",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 33,
+    "number": 35,
     "name": "Hippo Pools",
     "region": "crater_rim_west",
     "kind": "cluster",
@@ -1817,7 +1923,7 @@
     "mastcam_z_360": []
    }
   },
-  "blk34_marble_mountain": {
+  "blk36_marble_mountain": {
    "sols": [
     [
      1962,
@@ -1830,11 +1936,11 @@
     63,
     110
    ],
-   "note": "Block 34 (N×4, Z×1): from sites.json 'marble_mountain'; centre ±30 m; visits 1962–2005",
+   "note": "Block 36 (N×4, Z×1): from sites.json 'marble_mountain'; centre ±30 m; visits 1962–2005",
    "no_mask_inference_at": [],
    "settings": {},
    "block": {
-    "number": 34,
+    "number": 36,
     "name": "Marble Mountain",
     "region": "crater_rim_west",
     "kind": "sites.json",
@@ -1883,27 +1989,29 @@
    "blk11_delta_front_ascent",
    "blk12_rockytop",
    "blk13_knob_mountain",
-   "blk14_tenby_berea",
-   "blk15_belva_crater",
-   "blk16_wild_basin_lake",
-   "blk17_tuxedo_park",
-   "blk18_airey_hill",
-   "blk19_bunsen_peak",
-   "blk20_overlook_mountain",
-   "blk21_bright_angel",
-   "blk22_cheyava_falls",
-   "blk23_plateau_point",
-   "blk24_pico_turquino",
-   "blk25_rio_chiquito",
-   "blk26_south_arm",
-   "blk27_witch_hazel_hill",
-   "blk28_bell_island",
-   "blk29_taylorfjellet",
-   "blk30_origny",
-   "blk31_vingeanne",
-   "blk32_groloy",
-   "blk33_hippo_pools",
-   "blk34_marble_mountain"
+   "blk14_observation_mountain",
+   "blk15_whale_mountain",
+   "blk16_tenby_berea",
+   "blk17_belva_crater",
+   "blk18_wild_basin_lake",
+   "blk19_tuxedo_park",
+   "blk20_airey_hill",
+   "blk21_bunsen_peak",
+   "blk22_overlook_mountain",
+   "blk23_bright_angel",
+   "blk24_cheyava_falls",
+   "blk25_plateau_point",
+   "blk26_pico_turquino",
+   "blk27_rio_chiquito",
+   "blk28_south_arm",
+   "blk29_witch_hazel_hill",
+   "blk30_bell_island",
+   "blk31_taylorfjellet",
+   "blk32_origny",
+   "blk33_vingeanne",
+   "blk34_groloy",
+   "blk35_hippo_pools",
+   "blk36_marble_mountain"
   ],
   "blocks_crater_floor_seitah": [
    "blk01_oeb_landing_site",
@@ -1920,36 +2028,38 @@
    "blk10_enchanted_lake",
    "blk11_delta_front_ascent",
    "blk12_rockytop",
-   "blk13_knob_mountain"
+   "blk13_knob_mountain",
+   "blk14_observation_mountain",
+   "blk15_whale_mountain"
   ],
   "blocks_upper_fan_belva": [
-   "blk14_tenby_berea",
-   "blk15_belva_crater",
-   "blk16_wild_basin_lake",
-   "blk17_tuxedo_park",
-   "blk18_airey_hill"
+   "blk16_tenby_berea",
+   "blk17_belva_crater",
+   "blk18_wild_basin_lake",
+   "blk19_tuxedo_park",
+   "blk20_airey_hill"
   ],
   "blocks_margin_unit_neretva_vallis": [
-   "blk19_bunsen_peak",
-   "blk20_overlook_mountain",
-   "blk21_bright_angel",
-   "blk22_cheyava_falls",
-   "blk23_plateau_point",
-   "blk24_pico_turquino",
-   "blk25_rio_chiquito"
+   "blk21_bunsen_peak",
+   "blk22_overlook_mountain",
+   "blk23_bright_angel",
+   "blk24_cheyava_falls",
+   "blk25_plateau_point",
+   "blk26_pico_turquino",
+   "blk27_rio_chiquito"
   ],
   "blocks_crater_rim": [
-   "blk26_south_arm",
-   "blk27_witch_hazel_hill",
-   "blk28_bell_island",
-   "blk29_taylorfjellet"
+   "blk28_south_arm",
+   "blk29_witch_hazel_hill",
+   "blk30_bell_island",
+   "blk31_taylorfjellet"
   ],
   "blocks_crater_rim_west": [
-   "blk30_origny",
-   "blk31_vingeanne",
-   "blk32_groloy",
-   "blk33_hippo_pools",
-   "blk34_marble_mountain"
+   "blk32_origny",
+   "blk33_vingeanne",
+   "blk34_groloy",
+   "blk35_hippo_pools",
+   "blk36_marble_mountain"
   ]
  }
 }

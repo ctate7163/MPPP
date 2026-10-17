@@ -18,7 +18,7 @@ REGIONS = {'crater_rim_west': ('cluster21', 'cluster22', 'groloy', 'cluster23', 
            'crater_rim': ('cluster16', 'cluster17', 'cluster18', 'cluster19'),
            'margin_unit_neretva_vallis': ('cluster13', 'overlook_mountain', 'bright_angle', 'cluster14', 'plateau_point', 'cluster15', 'rio_chiquito'),
            'upper_fan_belva': ('tenby_berea', 'cluster11', 'wild_basin_lake', 'cluster12', 'airey_hill'),
-           'delta_front': ('cluster10', 'threeforks_north', 'cluster6', 'cluster7', 'cluster8', 'cluster9'),
+           'delta_front': ('cluster10', 'threeforks_north', 'cluster6', 'cluster7', 'cluster8', 'cluster9', 'observation_mountain', 'whale_mountain'),
            'crater_floor_seitah': ('cluster1', 'cluster2', 'chal_rocks_large', 'cluster3', 'rochette', 'cluster4', 'cluster5')}
 for r, ks in REGIONS.items():
     for k in ks: REGION[k] = r

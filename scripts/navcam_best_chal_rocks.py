@@ -5,7 +5,7 @@ diagnose it (navcam_best_chal_rocks.bat).
 1. ``navcam_best_candidate.py --promote``: the 4 Oct consensus with the residual rig yaw(T) moved into NR cx(T)
    (the one carrier of the stereo temperature change); promoted with a local commit of src/mppp/data/cmods and
    _transfer/promoted.json.  Skipped when the models in use already carry it.
-2. Chal Rocks Sid (sols 361-378 + 91-101; site chal_rocks_sid) aligned again into ``<WORK>/colmap_v0p80`` from the
+2. Chal Rocks Sid (sols 361-378 + 91-101; site chal_rocks, chal_rocks_sid before 17 Oct) aligned again into ``<WORK>/colmap_v0p80`` from the
    images already processed there (``--source processed``; features and matches seeded from ``colmap/``):
    v0p80 recipe - round 1 with cameras and rig held, the principal point held at the consensus, fx fy k1 per
    temperature bin (2.5 degC over -25..-5), one rig rotation per visit (sol-300 knot), intrinsics tied.
@@ -70,7 +70,7 @@ def main(argv=None) -> int:
         log("  " + ln)
     from mppp.sfm.sites import load_site_table, work_folder
     table = load_site_table()
-    sites = ["chal_rocks_sid"] + (["chal_rocks_large"] if a.large else [])
+    sites = ["chal_rocks"] + (["chal_rocks_large"] if a.large else [])
     out_root = root / "error_analysis" / "chal_rocks_v0p80"
     bad = 0
     for s in sites:

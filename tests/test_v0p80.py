@@ -218,11 +218,11 @@ def test_sites_block_record_and_groups():
     assert check_block_record({"number": 3, "half_size_m": 30, "centre": {"lon": 77.4, "lat": 18.4}}) == []
     assert check_block_record({"number": 0}) and check_block_record([1])
     t = load_site_table()
-    assert t["version"] == 4
+    assert t["version"] == 5                                              # v0p81: the official_blocks table
     b = block_sites(t)
-    assert len(b) == 34 and b[0] == "blk01_oeb_landing_site" and b[-1] == "blk34_marble_mountain"
-    assert site_block("blk03_chal_rocks", t)["legacy_site"] == "chal_rocks_large"
-    assert len(site_group("blocks_all")) == 34
+    assert len(b) == 36 and b[0] == "oeb_landing_site" and b[-1] == "marble_mountain"
+    assert site_block("chal_rocks_large", t)["number"] == 3 and site_block("chal_rocks", t)["number"] == 3
+    assert len(site_group("blocks_all")) == 36
     assert "chal_rocks_large" in site_group("navcam_baseline")
     err, _ = validate_site_table()
     assert not err
@@ -231,10 +231,13 @@ def test_sites_block_record_and_groups():
 def test_maps_packaged_blocks_and_prototype(tmp_path):
     from mppp import maps
     sites, groups = maps.load_blocks()
-    assert len(sites) == 34 and len(groups["blocks_all"]) == 34
-    b9 = sites["blk09_three_forks_north"]["block"]
-    assert b9["n_navcam_360"] == 8 and 413 in b9["end_of_drive_sols"] and [413, 413] not in b9["visits"]
-    assert sites["blk33_hippo_pools"]["sols"] == [[1947, 1961], [2006, 2009]]
+    assert len(sites) == 36 and len(groups["blocks_all"]) == 36
+    b9 = sites["blk09_three_forks_north"]["block"]                        # 17 Oct: Christian's visits (413, 433-435)
+    assert b9["n_navcam_360"] == 8 and 413 in b9["end_of_drive_sols"] and [413, 413] in b9["visits"]
+    assert [433, 435] in b9["visits"] and sites["blk08_three_forks_south"]["block"]["visits"][0] == [413, 414]
+    assert sites["blk14_observation_mountain"]["block"]["visits"][0][0] == 592
+    assert sites["blk15_whale_mountain"]["block"]["visits"][0][0] == 606
+    assert sites["blk35_hippo_pools"]["sols"] == [[1947, 1961], [2006, 2009]]
     out = maps.prototype.run("export", tmp_path / "out")                 # blocks are in the package; export only
     again, _ = maps.load_blocks_file(out / "sites_blocks.json")
     assert maps.compare_blocks(again, sites)[0].startswith("the same")
@@ -245,34 +248,55 @@ def test_maps_blocks_rerun_from_waypoints(tmp_path):
     from mppp import maps
     out = maps.prototype.run("blocks", tmp_path / "out")
     sz = __import__("json").loads((out / "_m20_sites" / "sites_zoom.json").read_text(encoding="utf-8"))
-    assert len(sz) == 34
+    assert len(sz) == 36
 
 
-def test_sites_json_holds_the_delivered_blocks():
+def test_sites_json_holds_the_official_blocks():
     from mppp import maps
     from mppp.sfm.sites import load_site_table
     t = load_site_table()
-    blk = {k: v for k, v in t["sites"].items() if k.startswith("blk")}
-    sites, groups = maps.load_blocks()
-    assert maps.compare_blocks(blk, sites)[0].startswith("the same")
-    assert all(t["groups"][g] == v for g, v in groups.items())
+    assert not any(k.startswith("blk") for k in t["sites"])               # v0p81: no blk.. sites
+    sites, _ = maps.load_blocks()
+    ob = t["official_blocks"]
+    assert len(ob) == 36
+    for k, v in sites.items():
+        b = ob[str(v["block"]["number"])]
+        assert b["name"] == v["block"]["name"] and sorted(b["visits"]) == sorted(v["sols"])
+        assert b["centre"] == v["block"]["centre"] and b["site"] in t["sites"]
+        assert v["block"]["number"] in t["sites"][b["site"]]["official_blocks"]
+    for k, v in t["sites"].items():                                       # Christian's v5 rules
+        assert isinstance(v["sols"][0], list) and isinstance(v["notes"], str) and "note" not in v
+        assert isinstance(v["official_blocks"], list) and v["max_waypoint_separation_m"] >= 0
+    assert t["sites"]["observation_mountain"]["sols"] == [[592, 600]] and ob["14"]["site"] == "observation_mountain"
+    assert ob["15"]["site"] == "whale_mountain" and t["sites"]["threeforks_large"]["official_blocks"] == [8, 9]
+    assert t["sites"]["chal_rocks_large"]["rover_sites"] == [3, 4, 11]
 
 
-def test_maps_merge_replaces_old_blocks(tmp_path):
+def test_official_restructure_v4_to_v5(tmp_path):
     import json as _json
-    from mppp.maps.export import compare_blocks, merge_into_sites_file
-    f = tmp_path / "sites.json"
-    shutil.copy(ROOT / "src" / "mppp" / "data" / "sites.json", f)
-    before = f.read_text().splitlines()
-    merge_into_sites_file(f, {"blk99_test": {"sols": [1, 2], "label": "T", "zcam": [], "block": {"number": 99}}},
-                          {"blocks_test": ["blk99_test"]})
-    d = _json.loads(f.read_text())
-    assert "blk99_test" in d["sites"] and d["groups"]["blocks_test"] == ["blk99_test"]
-    assert not any(k.startswith("blk0") for k in d["sites"])            # the earlier block set is replaced as a set
-    assert "rockytop" in d["sites"] and "navcam_baseline" in d["groups"]
-    after = f.read_text().splitlines()
-    assert all(x in after for x in before if not x.strip().startswith(('"blk', '"blocks_')) and x.strip() not in ("},", "}"))
-    assert compare_blocks({"a": {"sols": [1, 2]}}, {"a": {"sols": [1, 3]}})[0].startswith("a: sols")
+    from mppp import maps
+    from mppp.maps import official
+    v4 = {"version": 4, "sites": {"a": {"sols": [72, 100], "label": "A", "note": "x"},
+                                  "b": {"sols": [[361, 378], [91, 101]], "label": "B"},
+                                  "blk03_chal_rocks": {"sols": [[72, 101]], "label": "C", "block": {"number": 3}},
+                                  "r": {"sols": [5, 3], "label": "reversed"}},
+          "groups": {"g": ["b", "old"], "blocks_all": ["blk03_chal_rocks"]}}
+    blocks, _ = maps.load_blocks()
+    wp = ROOT / "src" / "mppp" / "maps" / "m20_sites" / "M20_waypoints.json"
+    t, rep = official.restructure(v4, blocks, wp, {"old": "a"})
+    assert t["version"] == 5 and "blk03_chal_rocks" not in t["sites"] and len(t["official_blocks"]) == 36
+    assert t["sites"]["a"]["sols"] == [[72, 100]] and t["sites"]["a"]["notes"] == "x" and "note" not in t["sites"]["a"]
+    assert t["sites"]["r"]["sols"] == [[3, 5]] and any("reversed" in x for x in rep)
+    assert t["sites"]["b"]["official_blocks"] == [3] and t["groups"]["g"] == ["b", "a"]
+    assert all(v["notes"] for v in t["sites"].values()) and len(t["groups"]["blocks_all"]) == 36
+    again, rep2 = official.restructure(t, blocks, wp)                     # version 5 in, the same out
+    assert again["sites"] == t["sites"] and again["official_blocks"] == t["official_blocks"]
+    f = official.write_table(t, tmp_path / "s.json")
+    assert _json.loads(f.read_text())["official_blocks"]["3"]["name"] == "Chal Rocks"
+    W = official.waypoint_points(wp)
+    st = official.waypoint_stats([[592, 593]], W)
+    assert st["n_waypoints"] == 3 and 20 < st["max_waypoint_separation_m"] < 22 and st["rover_sites"] == [29, 30]
+    assert official.update_waypoint_stats(t, wp) == []
 
 
 def test_diagnose_visits_helper():
@@ -284,7 +308,7 @@ def test_diagnose_visits_helper():
 
 
 def test_diagnose_on_an_upload_if_present(tmp_path):
-    p = Path("/mnt/user-data/uploads/colmap/mars2020_sol_0361_chal_rocks_sid_colmap/colmap")
+    p = Path("/mnt/user-data/uploads/colmap/mars2020_sol_0361_chal_rocks_sid_colmap/colmap")   # the run before the 17 Oct rename
     if not (p / "error_input" / "native").is_dir():
         pytest.skip("no Chal Rocks Sid run here")
     from mppp.sfm.diagnose import write_report
