@@ -34,7 +34,48 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 VARIANTS = {"fisheye_t": ("THIN_PRISM_FISHEYE", ["k4"]), "rational_k4": ("FULL_OPENCV", ["k4"]),
-            "rational_k5": ("FULL_OPENCV", ["k4", "k5"]), "rational_k6": ("FULL_OPENCV", ["k4", "k5", "k6"])}
+            "rational_k5": ("FULL_OPENCV", ["k4", "k5"]), "rational_k6": ("FULL_OPENCV", ["k4", "k5", "k6"]),
+            # 18 Oct (Christian): the k5 start fitted to the fisheye camera with k5 free (not k5 = 0 from the k4 fit)
+            "rational_k5_fit": ("FULL_OPENCV", ["k4", "k5"]),
+            # 18 Oct (Christian: "account for the different tangential parameter definitions"): COLMAP applies p1, p2 to
+            # the fisheye's angle coordinates (theta x / r) in THIN_PRISM_FISHEYE but to the pinhole coordinates
+            # (x / z, r = tan theta) in FULL_OPENCV - the same Brown formula in different spaces, equal only near the
+            # axis.  This start keeps the fisheye's p1, p2 (the small-angle equivalent) and fits only the radial terms.
+            "rational_k4_ptheta": ("FULL_OPENCV", ["k4"])}
+DENOMINATOR_FIT = {"rational_k5_fit": 2}
+HOLD_P_FIT = {"rational_k4_ptheta"}
+
+
+def fit_rational(cam, n_den: int = 1, grid=(128, 96), hold_p: bool = False):
+    """The FULL_OPENCV camera closest to ``cam`` over a pixel grid (all of fx fy cx cy k1 k2 p1 p2 k3 and the first
+    ``n_den`` denominator terms fitted, the rest 0), started from :func:`navcal.fit_camera_model`."""
+    import pycolmap
+    from scipy.optimize import least_squares
+    from mppp.sfm import navcal as NC
+    w, h = cam.width, cam.height
+    u, v = np.meshgrid(np.linspace(1, w - 1, grid[0]), np.linspace(1, h - 1, grid[1]))
+    px = np.stack([u.ravel(), v.ravel()], 1)
+    rays = np.c_[np.array(cam.cam_from_img(px), float), np.ones(len(px))]
+    q4 = np.asarray(NC.fit_camera_model(cam, NC.RATIONAL)[0].params, float)[:10]
+
+    p_fish = np.asarray(cam.params, float)[6:8]           # THIN_PRISM_FISHEYE p1, p2 (theta space)
+    if hold_p:
+        q4[6:8] = p_fish
+
+    def params(q):
+        q = np.array(q, float)
+        if hold_p:
+            q = np.r_[q[:6], p_fish, q[6:]]
+        return np.r_[q, np.zeros(12 - len(q))]
+
+    def model(q):
+        return np.array(pycolmap.Camera(model="FULL_OPENCV", width=w, height=h, params=params(q)).img_from_cam(rays), float)
+    x0 = np.r_[q4, np.zeros(n_den - 1)]
+    if hold_p:
+        x0 = np.r_[x0[:6], x0[8:]]
+    r = least_squares(lambda q: (model(q) - px).ravel(), x0, method="lm", x_scale="jac", max_nfev=20000)
+    rms = float(np.sqrt(np.mean(np.sum((model(r.x) - px) ** 2, 1))))
+    return pycolmap.Camera(model="FULL_OPENCV", width=w, height=h, params=params(r.x)), rms
 
 
 def monotonic_reach(params, width=5120, height=3840):
@@ -49,6 +90,9 @@ def monotonic_reach(params, width=5120, height=3840):
     return float(stop / rc)
 
 
+ONLY = None
+
+
 def run_block(label, root, cams_in_use, rig, thermal, points):
     import pycolmap
     from mppp.sfm import navcal as NC
@@ -56,10 +100,14 @@ def run_block(label, root, cams_in_use, rig, thermal, points):
     sc = NC.load_scape(label, root)
     out, cams_out = {}, {}
     for vname, (model, free) in VARIANTS.items():
+        if ONLY and vname not in ONLY:
+            continue
         cams, fit_rms = {}, {}
         for k in ("NL", "NR"):
             c = cams_in_use[k]
-            if model == "FULL_OPENCV":
+            if vname in DENOMINATOR_FIT or vname in HOLD_P_FIT:
+                c, fit_rms[k] = fit_rational(c, DENOMINATOR_FIT.get(vname, 1), hold_p=vname in HOLD_P_FIT)
+            elif model == "FULL_OPENCV":
                 c, fit_rms[k] = NC.fit_camera_model(c, NC.RATIONAL)
             cams[k] = c
         rec, proj, idx = NC.merge_scapes([sc], cams, rig, points_per_scape=points, seed=0)
@@ -93,7 +141,8 @@ def run_block(label, root, cams_in_use, rig, thermal, points):
                          for k in ("NL", "NR")) if model == "FULL_OPENCV" else ""), flush=True)
     n = 2 * out["fisheye_t"]["observations"]
     base = out["rational_k4"]
-    npar = {"fisheye_t": 10, "rational_k4": 10, "rational_k5": 11, "rational_k6": 12}
+    npar = {"fisheye_t": 10, "rational_k4": 10, "rational_k5": 11, "rational_k6": 12, "rational_k5_fit": 11,
+            "rational_k4_ptheta": 10}
     for v, e in out.items():
         e["delta_cost_vs_rational_k4"] = e["cost"] - base["cost"]
         # cost = chi2 / 2 (whitened): delta BIC = 2 delta cost + delta k ln N, two eyes
@@ -110,7 +159,11 @@ def main(argv=None):
     ap.add_argument("blocks", nargs="+", help="label=WORK folder")
     ap.add_argument("--points", type=int, default=20000)
     ap.add_argument("--out", default="lens_k5_experiment.json")
+    ap.add_argument("--variants", nargs="*", help="only these variants (fisheye_t and rational_k4 are always run)")
     a = ap.parse_args(argv)
+    global ONLY
+    if a.variants:
+        ONLY = set(a.variants) | {"fisheye_t", "rational_k4"}
     d = cmods_dir()
     nl, nr, rj = (json.loads((d / n).read_text()) for n in
                   ("M2020_NL_fisheye_tangential.json", "M2020_NR_fisheye_tangential.json", "M2020_N_rig.json"))
@@ -127,7 +180,7 @@ def main(argv=None):
         res[label], allcams[label] = run_block(label, root, cams, rig, thermal, a.points)
     labels = list(res)
     rep = {}
-    for v in VARIANTS:                     # repeatability: each pair of blocks, camera difference with rotation removed
+    for v in [x for x in VARIANTS if x in res[labels[0]]]:   # repeatability: each pair of blocks, camera difference with rotation removed
         rows = []
         for i in range(len(labels)):
             for j in range(i + 1, len(labels)):
@@ -136,7 +189,7 @@ def main(argv=None):
                     rows.append({"pair": f"{labels[i]}-{labels[j]}", "eye": k, **c})
         rep[v] = rows
     summary = {}
-    for v in VARIANTS:
+    for v in [x for x in VARIANTS if x in res[labels[0]]]:
         summary[v] = {"delta_bic": {b: round(res[b][v]["delta_bic_vs_rational_k4"], 1) for b in labels},
                       "corner_median_px": {b: round(res[b][v]["corner_median_px"], 4) for b in labels},
                       "median_px": {b: round(res[b][v]["median_px"], 4) for b in labels}}

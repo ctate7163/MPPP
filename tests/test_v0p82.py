@@ -232,3 +232,17 @@ def test_v0p83_athermal_rig_is_the_v0p80_default():
     assert N.NL_PP_THERMAL_FORMS == ("v0p80",) and "NL_cx" in N.THERMAL_TERMS
     src = (ROOT / "src" / "mppp" / "sfm" / "navcal_consensus.py").read_text()
     assert '("NL_cx",) + V0P73_TERMS if nl_pp_thermal' in src
+
+
+def test_v0p82_1_covariance_damping_and_epoch_temps():
+    from mppp.sfm import reconstruction as R
+    assert R.COVARIANCE_DAMPING_STEPS[0] == 0.0 and max(R.COVARIANCE_DAMPING_STEPS) <= 1e-4
+    src = (ROOT / "src" / "mppp" / "sfm" / "navcal.py").read_text()
+    assert 'isinstance(temps[n], dict) else temps[n]' in src     # rig residuals after pass 2 (float temperatures)
+
+
+def test_v0p82_1_covariance_uses_camera_views():
+    from mppp.sfm import reconstruction as R
+    assert R.COVARIANCE_CAMERA_VIEWS is True
+    src = (ROOT / "src" / "mppp" / "sfm" / "reconstruction.py").read_text()
+    assert "views_used = bool(covariance) and COVARIANCE_CAMERA_VIEWS" in src and '"camera_views_unchanged"' in src

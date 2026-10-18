@@ -534,3 +534,20 @@ mapping becomes erratic (1.46-1.49 corner radii at worst, against 1.98-2.89 with
 shared, rotation removed; Chal Rocks Large left out - its early-mission offsets are not applied here) the distortion
 differs by NL / NR corner rms 0.96 / 1.29 px (fisheye_t), 1.15 / 1.61 (k4), 1.21 / 1.62 (k5), 1.31 / 1.68 (k5 + k6).
 Same result as v0p22.2 (section 9) and v0p30 (section 11): keep THIN_PRISM_FISHEYE; k5 and k6 stay held.
+
+### 18 Oct (cont.) - rational starts matched to the fisheye camera; the tangential definitions
+
+What the rational start was: `navcal.fit_camera_model` - FULL_OPENCV fx fy cx cy k1 k2 p1 p2 k3 k4 (k5 = k6 = 0)
+least-squares fitted to the consensus THIN_PRISM_FISHEYE camera's rays over a 64 x 48 pixel grid. Best possible
+match on a 128 x 96 grid: k1-k4 0.212 / 0.109 px rms (NL / NR; corners 0.53 / 0.28, max 2.3 / 1.4 px), + k5
+0.209 / 0.102, + k5 k6 0.209 / 0.102 - no rational form reproduces the fisheye camera better than ~0.1-0.2 px.
+The cause is the tangential terms: COLMAP applies the same Brown p1, p2 formula to the fisheye's angle coordinates
+(theta x / r) in THIN_PRISM_FISHEYE and to the pinhole coordinates (x / z, r = tan theta) in FULL_OPENCV; at the
+frame corner (61 deg off axis, tan^2 / theta^2 ~ 2.7) the two decentering fields differ in shape. With p1 = p2 = 0
+in the fisheye camera the rational fit is 0.046 / 0.037 px (radial alone matches). The best-fit rational p are about
+half the fisheye's (NL p1 1.3e-4 vs 2.6e-4).
+Starts tried in the adjustment (six blocks, `lens_k5_experiment.py`): rational_k5 from its own grid fit
+(`rational_k5_fit`) - the same optimum or worse local minima (Three Forks South +24.8, Rockytop +8.7) with fold-back
+at 1.1-1.4 corner radii; the fisheye's p1, p2 held in the start fit (`rational_k4_ptheta`, the small-angle
+equivalent) - the same optimum as rational_k4 within 0.5 (Three Forks South +14). The adjustment, not the start,
+decides: the data prefer decentering in angle space (the fisheye form), by 0.2-0.9 % in cost.

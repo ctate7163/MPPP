@@ -253,12 +253,25 @@ def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_pr
         pp.cam_from_world = arr[:4]            # the block pointer (the binding checks for 4 values)
         custom.append(pp)
     opts.experimental_custom_poses = custom
-    try:
-        bac = pycolmap.estimate_ba_covariance_from_problem(opts, rec, prob)
-    except Exception as e:                                  # noqa: BLE001
-        return {"error": f"{type(e).__name__}: {e}"}
+    # v0p82.1: the 23-block joint of 18 Oct (k3, k4 free with k1(T)) failed the LDLT ("Simplicial LDLT for computing
+    # L_inv failed") - nearly collinear theta^3..theta^9 terms, not a true null space.  Retry with a small damping
+    # of the (Schur-reduced) information matrix; the result says which damping it needed (sd of directions near the
+    # null space come out slightly too small with damping, so it is reported, not hidden).
+    bac, damping, errors = None, None, []
+    d0 = float(getattr(opts, "damping", 1e-8) or 1e-8)
+    for damp in COVARIANCE_DAMPING_STEPS:
+        opts.damping = max(d0, damp) if damp else d0
+        try:
+            bac = pycolmap.estimate_ba_covariance_from_problem(opts, rec, prob)
+        except Exception as e:                              # noqa: BLE001
+            errors.append(f"damping {opts.damping:g}: {type(e).__name__}: {e}")
+            bac = None
+        if bac is not None:
+            damping = float(opts.damping)
+            break
+        errors.append(f"damping {opts.damping:g}: LDLT failed")
     if bac is None:
-        return {"error": "covariance estimation failed (rank-deficient problem?)"}
+        return {"error": "covariance estimation failed (rank-deficient problem?); " + "; ".join(errors)}
     blocks: Dict[str, Any] = {}
     for (rid, cid), arr in rig_blocks.items():
         if prob.has_parameter_block(arr) and not prob.is_parameter_block_constant(arr):
@@ -275,9 +288,12 @@ def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_pr
     n_par = prob.num_effective_parameters() if hasattr(prob, "num_effective_parameters") else prob.num_parameters()
     red = max(n_res - n_par, 1)
     return {"blocks": blocks, "variance_factor": float(2.0 * summary.final_cost / red), "residuals": int(n_res),
-            "parameters": int(n_par)}
+            "parameters": int(n_par), "damping": damping, "damped": bool(damping and damping > d0),
+            "attempts": errors}
 
 
+COVARIANCE_DAMPING_STEPS = (0.0, 1e-6, 1e-4)
+COVARIANCE_CAMERA_VIEWS = True                    # v0p82.1: see bundle_adjust (the covariance needs the cameras' own memory)      # v0p82.1: the default (COLMAP's 1e-8), then damped retries
 LOCALIZE_MIN_CROSS_POINTS = 20       # v0p35.1: an unlocalized station keeps its prior below this many cross-station points
 
 
@@ -563,6 +579,14 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     # kept their start values - the poses then fitted cameras the model no longer had (median 0.16 -> 0.37 px)
     cam_blocks: Dict[int, np.ndarray] = {int(cid): np.ascontiguousarray(np.array(c.params, dtype=np.float64))
                                          for cid, c in work.cameras.items()}
+    # v0p82.1: COLMAP's covariance estimator (BACovarianceOptionsParams.ALL) fails ("Simplicial LDLT ... failed",
+    # every consensus since v0p74.7) when the intrinsics are arrays of our own - it works with the cameras' own
+    # memory (pycolmap views), as before v0p74.7.  With ``covariance`` the problem therefore uses the views; the
+    # write-back below is checked as before, and a solve in which no free camera moved is reported (the v0p74.7 case).
+    views_used = bool(covariance) and COVARIANCE_CAMERA_VIEWS
+    if views_used:
+        cam_starts = {cid: np.array(blk) for cid, blk in cam_blocks.items()}
+        cam_blocks = {int(cid): c.params for cid, c in work.cameras.items()}
     # v0p75.1: the Navcam rig-epoch copies of an eye (NL#1, NL#2 ... and their temperature bins NL#1_T...) share one
     # parameter array with the eye's camera (NL, NL_T...): one set of intrinsics and distortion for every visit, one
     # rig rotation per visit.  (The copies exist because a COLMAP database puts a camera in one rig only.)
@@ -874,9 +898,18 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             vrig[fam]["t_refined"] = arr[4:7].tolist()
         for iid, (fam, lf) in vpartner.items():
             rec.frames[rec.images[iid].frame_id].rig_from_world = vT[fam] * rec.frames[lf].rig_from_world
+    views_unchanged = None
+    if views_used:                                            # v0p82.1: did the views take the solve's update?
+        free_cids = [cid for cid, blk in cam_blocks.items()
+                     if prob.has_parameter_block(blk) and not prob.is_parameter_block_constant(blk)]
+        views_unchanged = bool(free_cids) and all(np.allclose(np.asarray(cam_blocks[c]), cam_starts[c], rtol=0, atol=0)
+                                                  for c in free_cids)
+        if views_unchanged:
+            print("[sfm] bundle adjustment: no free camera changed in the covariance solve (camera views) - check "
+                  "the cameras", flush=True)
     for cid, blk in cam_blocks.items():                      # v0p74.7: written back from the owned arrays, checked
         if cid in rec.cameras:
-            _set_camera_params(rec, cid, blk)
+            _set_camera_params(rec, cid, np.array(blk, dtype=np.float64))
     for (rid, cid), arr in rig_blocks.items():
         q = arr[:4] / np.linalg.norm(arr[:4])
         from scipy.spatial.transform import Rotation
@@ -902,7 +935,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             "unlocalized_stations": unloc, "navcam_aspect": navcam_aspect, "aspect_priors": len(aspect_costs),
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
-            "termination": str(summary.termination_type), "brief": summary.BriefReport(), "retried": retried,
+            "termination": str(summary.termination_type), "brief": summary.BriefReport(), "retried": retried, "camera_views": views_used, "camera_views_unchanged": views_unchanged,
             "refine_tangential": tangential_setting(refine_tangential), "linear_solver": solver, "num_threads": so.num_threads,
             "seconds": float(summary.total_time_in_seconds)}
 

@@ -678,6 +678,7 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
            "NL": dict(zip(names, map(float, rec.cameras[1].params))),
            "NR": dict(zip(names, map(float, rec.cameras[2].params))), "sd": sd,
            "covariance_blocks": sorted(blocks), "covariance_error": cov.get("error"),
+           "covariance_damping": cov.get("damping"),
            "rig_abs_mdeg": NC.rig_angles(np.asarray(T.rotation.matrix())),
            "rig_R": np.asarray(T.rotation.matrix()).tolist(), "rig_t": np.asarray(T.translation).tolist(),
            "stereo": NC.stereo_offset(rec.cameras[1], rec.cameras[2], T), "residuals": st,
@@ -1218,7 +1219,10 @@ def check_candidate(candidate_dir: PathLike, current_dir: Optional[PathLike] = N
     sd = res.get("sd") or {}
     finite = all(isinstance(sd.get(e), dict) and "diag" not in sd[e] and all(np.isfinite(list(sd[e].values())))
                  for e in ("NL", "NR"))
-    add("covariance", "finite" if finite else "missing", "finite sd of both eyes", finite, str(res.get("covariance_error") or ""))
+    _damp = res.get("covariance_damping")
+    add("covariance", "finite" if finite else "missing", "finite sd of both eyes", finite,
+        str(res.get("covariance_error") or "") + (f"damped {float(_damp):g} (sd of near-null directions slightly low)"
+                                                  if _damp and float(_damp) > 1e-8 else ""))
     it = int(res.get("iterations") or 0)
     add("converged", it, "< 100 iterations", 0 < it < 100 and np.isfinite(res.get("final_cost", np.nan)))
     ref = (old["NL"].get("verification") or {}).get("residuals") or {}

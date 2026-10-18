@@ -327,7 +327,9 @@ def split_rig_by_epoch(rec, project: SfmProject, temps: Optional[Dict[str, Dict[
         fids = [f for f, x in ep_of.items() if x == e]
         rids = {new.frames[f].rig_id for f in fids} & ({rig_for.get((r, e), r) for r in stereo} if e else stereo)
         names = [rec.images[d.id].name for f in fids for d in rec.frames[f].data_ids if d.id in reg]
-        T = [temps[n]["T"] for n in names if temps and n in temps]
+        # v0p82.1: ``temps`` per image is a dict {"T", ...} (load_scape) or a float (merge_scapes' index) - the pipeline's
+        # rig-residual step after pass 2 failed on the float form ("'float' object is not subscriptable")
+        T = [float(temps[n]["T"] if isinstance(temps[n], dict) else temps[n]) for n in names if temps and n in temps]
         rows.append({"epoch": e, "sol_min": a, "sol_max": b,
                      "sol_median": float(np.median([sol_of[f] for f in fids])) if fids else float(a),
                      "frames": len(fids), "images": len(names), "T_median_degC": float(np.median(T)) if T else None,
