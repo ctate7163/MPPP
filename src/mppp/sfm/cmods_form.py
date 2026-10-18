@@ -105,7 +105,11 @@ def check_form(folder: Optional[PathLike] = None, require_convention: bool = Tru
         if require_convention and j.get("convention") != CONVENTION:
             errors.append(f"{eye}: convention {j.get('convention')!r}, expected {CONVENTION!r}")
     t = thermal_terms(nl.get("thermal"))
-    if abs(t["cx_px"]) > 1e-12 or abs(t["cy_px"]) > 1e-12:
+    both = str((nl.get("thermal") or {}).get("pp_thermal") or "") == "both"   # v0p83: both eyes' principal points
+    if both:
+        warnings.append(f"v0p83: NL principal point moves with temperature too (cx {t['cx_px']:+.4f}, cy "
+                        f"{t['cy_px']:+.4f} px/degC; pp_thermal = both)")
+    elif abs(t["cx_px"]) > 1e-12 or abs(t["cy_px"]) > 1e-12:
         errors.append(f"NL principal point moves with temperature (cx {t['cx_px']:+.4f}, cy {t['cy_px']:+.4f} px/degC): "
                       f"in the NL-reference form that term is NR's (convert_to_nl_reference)")
     if abs(thermal_terms(nr.get("thermal"))["cx_px"]) == 0.0 and abs(t["cx_px"]) == 0.0:

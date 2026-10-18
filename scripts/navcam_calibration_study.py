@@ -515,7 +515,9 @@ def cmd_consensus(a, scapes_cfg, samples):
                         thermal_rounds=a.thermal_rounds,
                         early_mission_sol=(a.early_mission_sol or None), early_rounds=a.early_rounds,
                         early_start=tuple(a.early_start) if a.early_start else None,
-                        joint_translation=bool(a.joint_translation), degeneracy_mm=a.degeneracy_mm)
+                        joint_translation=bool(a.joint_translation), degeneracy_mm=a.degeneracy_mm,
+                        nl_pp_thermal=True if getattr(a, "nl_pp_thermal", False) else None,
+                        early_hold=bool(getattr(a, "early_hold", False)))
     d = write_consensus(res, out / "navcam_joint")
     print(f"candidate consensus: {d}  (promote: python scripts\\promote_cmods.py {d} --note \"...\")", flush=True)
     if getattr(a, "previous", None):                       # v0p80: the change from the previous pass (converged?)
@@ -611,6 +613,12 @@ def main(argv=None):
     ap.add_argument("--early-start", type=float, nargs=4, metavar=("DFX", "DFY", "DCX", "DCY"),
                     help="consensus (v0p72): start the early-mission fit here (e.g. a previous run's offsets) instead "
                          "of the block alignments' estimate - fewer rounds")
+    ap.add_argument("--nl-pp-thermal", action="store_true",
+                    help="consensus (v0p83): NL's principal point moves with temperature too (NL_cx profiled; the "
+                         "stereo temperature change on both eyes' principal points, no rig temperature term)")
+    ap.add_argument("--early-hold", action="store_true",
+                    help="consensus (v0p83): apply the start cameras' early-mission offsets (or --early-start) without "
+                         "refitting them (a side study on the same blocks)")
     ap.add_argument("--promote-if-ok", action="store_true",
                     help="consensus/check (v0p72): promote OUT/navcam_joint if every check passes")
     ap.add_argument("--promote-note", default="", help="consensus/check: the note for CHANGES.md")

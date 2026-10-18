@@ -199,3 +199,36 @@ def test_sites_in_order_of_first_visit():
     assert first == sorted(first)
     from mppp.maps.official import order_by_first_sol
     assert list(order_by_first_sol({"b": {"sols": [[5, 6], [1, 2]]}, "a": {"sols": [[3, 4]]}})) == ["b", "a"]
+
+
+def test_v0p83_both_principal_points_pass_the_form_check(tmp_path):
+    """v0p83 option (Christian, 18 Oct): the stereo temperature change on both eyes' principal points, never a rig
+    temperature term - NL cx(T) is an error unless the cameras say pp_thermal = both."""
+    import inspect
+    import shutil
+    from mppp.paths import cmods_dir
+    from mppp.sfm.cmods_form import NAVCAM_FILES, check_form
+    from mppp.sfm.navcal_consensus import fit_consensus
+    for n in NAVCAM_FILES:
+        shutil.copy2(cmods_dir() / n, tmp_path / n)
+    f = tmp_path / "M2020_NL_fisheye_tangential.json"
+    j = json.loads(f.read_text())
+    j["thermal"]["cx_px_per_degC"] = 0.02
+    f.write_text(json.dumps(j))
+    r = check_form(tmp_path)
+    assert not r["ok"] and any("NL principal point" in e for e in r["errors"])
+    j["thermal"]["pp_thermal"] = "both"
+    f.write_text(json.dumps(j))
+    r = check_form(tmp_path)
+    assert r["ok"] and any("v0p83" in w for w in r["warnings"])
+    sig = inspect.signature(fit_consensus).parameters
+    assert sig["nl_pp_thermal"].default is None and sig["early_hold"].default is False
+    src = (ROOT / "scripts" / "navcam_calibration_study.py").read_text()
+    assert "--nl-pp-thermal" in src and "--early-hold" in src
+
+
+def test_v0p83_athermal_rig_is_the_v0p80_default():
+    from mppp.sfm import navcal_consensus as N
+    assert N.NL_PP_THERMAL_FORMS == ("v0p80",) and "NL_cx" in N.THERMAL_TERMS
+    src = (ROOT / "src" / "mppp" / "sfm" / "navcal_consensus.py").read_text()
+    assert '("NL_cx",) + V0P73_TERMS if nl_pp_thermal' in src

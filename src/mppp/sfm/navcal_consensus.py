@@ -66,6 +66,10 @@ AXIS_TERMS = ("NL_fx", "NL_fy", "NR_fx", "NR_fy")
 # v0p73 (Christian, 3 Oct 2026): the NL-reference form - fx and fy of each eye against temperature, NR cx against
 # temperature (the stereo yaw change), one rig yaw for every temperature with a rate in sol (mdeg / 1000 sol)
 V0P73_TERMS = ("NR_cx", "NL_fx", "NL_fy", "NR_fx", "NR_fy", "yaw_rate")   # NR_cx first: it and NR_fx trade a little
+# v0p83 (Christian, 18 Oct 2026): an athermal rig - the stereo temperature change on both eyes' principal points (NL
+# and NR cx against temperature), never a rig temperature term (that would need a rig per temperature bin).  The
+# consensus in these forms profiles NL_cx too (pipeline pass 3 on; pass 2 of the 17 Oct run was NR cx only).
+NL_PP_THERMAL_FORMS = ("v0p80",)
 THERMAL_ROUNDS = 2          # v0p73: profile the terms this many times (one term at a time: the second round settles
                             # what the first left to the terms after it - synthetic: NR_fx 31.3 -> 30.0 for a true 30)
 UNITS = {"f": "ppm/degC", "NL_fx": "ppm/degC", "NL_fy": "ppm/degC", "NR_fx": "ppm/degC", "NR_fy": "ppm/degC",
@@ -414,7 +418,8 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
                   early_rounds: int = 2, early_start: Optional[Tuple[float, float, float, float]] = None,
                   form: str = "v0p73", thermal_rounds: int = 1, joint_translation: bool = False,
                   degeneracy_mm: float = 1.0, k1_slopes: Optional[Dict[str, float]] = None,
-                  leave_one_out: bool = False, loo_iterations: int = 40) -> Dict[str, Any]:
+                  leave_one_out: bool = False, loo_iterations: int = 40, nl_pp_thermal: Optional[bool] = None,
+                  early_hold: bool = False) -> Dict[str, Any]:
     """The joint adjustment (see the module docstring) of the blocks ``{name: WORK folder}``; returns the shared
     cameras, the rig, residuals by radius and the per-block image counts.  v0p62: ``translation_scapes`` (the large
     blocks, :func:`large_blocks`): then :func:`fit_rig_translation` on them with the new cameras held
@@ -445,7 +450,15 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
     cx slope 0, no rig temperature term).  ``leave_one_out``: after the final adjustment, the joint again without each
     block (``loo_iterations``, the thermal terms held), and how far each eye moves (:func:`navcal.compare`, rotation
     removed; centre / corner rms px) and the stereo terms (NR cx, rig yaw) - ``res["leave_one_out"]``, gated by
-    :func:`check_candidate` (0.05 px centre, 0.1 px corners)."""
+    :func:`check_candidate` (0.05 px centre, 0.1 px corners).
+
+    v0p83 (Christian, 18 Oct 2026: the stereo temperature change on the principal points of both eyes, never a rig
+    temperature term - a rig per temperature bin would be needed): ``nl_pp_thermal`` lets NL's principal point move
+    with temperature too (``NL_cx`` / ``NL_cy`` profiled; the start's NL slope is kept, not moved to NR; the cameras
+    are written with ``thermal.pp_thermal = "both"``, which :func:`mppp.sfm.cmods_form.check_form` accepts).  Default
+    (None): on in the forms of :data:`NL_PP_THERMAL_FORMS` (v0p80) or when the start cameras carry
+    ``pp_thermal = "both"``; the default terms then start with ``NL_cx``.  ``early_hold``: apply the start's early-mission offsets (or ``early_start``) without refitting them -
+    a side study on the same blocks without the ~19 adjustments of a response-surface round."""
     import pycolmap
     from . import navcal as NC
     from .project import PARAM_NAMES, navcam_distortion_terms
@@ -480,8 +493,11 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
     drift = copy.deepcopy(rj.get("drift"))
     tvals["yaw_rate"] = (1000.0 * float((drift or {}).get("yaw_mdeg_per_sol") or 0.0)
                          if (axis and rj.get("convention") == "NL reference") else 0.0)
+    if nl_pp_thermal is None:                    # v0p83: the form (NL_PP_THERMAL_FORMS) or the start cameras say so
+        nl_pp_thermal = axis and (form in NL_PP_THERMAL_FORMS or str(th.get("pp_thermal") or "") == "both")
+    nl_pp_thermal = bool(nl_pp_thermal) and axis
     converted = None
-    if axis and (tvals["NL_cx"] or tvals["NL_cy"]):
+    if axis and not nl_pp_thermal and (tvals["NL_cx"] or tvals["NL_cy"]):
         # v0p73: the start has the stereo temperature change on NL's principal point - move it to NR's
         ratio = float(nr["params"][0]) / float(nl["params"][0])
         converted = {"NL_cx": tvals["NL_cx"], "NL_cy": tvals["NL_cy"], "ratio": ratio}
@@ -489,13 +505,14 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
         tvals["NR_cy"] -= tvals["NL_cy"] * ratio
         tvals["NL_cx"] = tvals["NL_cy"] = 0.0
     if thermal_terms is None:
-        thermal_terms = V0P73_TERMS if axis else ("f", "NL_cx")
+        thermal_terms = (("NL_cx",) + V0P73_TERMS if nl_pp_thermal else V0P73_TERMS) if axis else ("f", "NL_cx")
     thermal_terms = tuple(thermal_terms)
     bad = [k for k in thermal_terms if k not in THERMAL_TERMS]
     if bad:
         raise ValueError(f"thermal_terms {bad}: use {THERMAL_TERMS}")
-    if axis and any(k in thermal_terms for k in ("NL_cx", "NL_cy")):
-        raise ValueError("the v0p73 form keeps NL's principal point fixed in temperature (NL reference): fit NR_cx / NR_cy")
+    if axis and not nl_pp_thermal and any(k in thermal_terms for k in ("NL_cx", "NL_cy")):
+        raise ValueError("the v0p73 form keeps NL's principal point fixed in temperature (NL reference): fit NR_cx / "
+                         "NR_cy, or pass nl_pp_thermal=True (v0p83: both eyes' principal points)")
     if not axis and any(k in thermal_terms for k in AXIS_TERMS + ("yaw_rate",)):
         raise ValueError(f"{AXIS_TERMS} and yaw_rate need form='v0p73'")
     if drift and not axis:
@@ -514,17 +531,20 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
                   + ", ".join(f"{k} {v}" for k, v in idx["duplicates"].items()), flush=True)
         # v0p71: the plan of the run, in joint adjustments (each about 1-3 min for ~15 blocks)
         n_adj = 1 + (len(thermal_terms) * 5 * max(1, int(thermal_rounds)) + 1 if refit_thermal else 0) \
-            + ((max(1, int(early_rounds)) * 16 + 3) if early_mission_sol else 0)
+            + (((max(1, int(early_rounds)) * 16 + 3) if not early_hold else 1) if early_mission_sol else 0)
         print(f"{datetime.datetime.now():%H:%M} plan: about {n_adj} joint adjustments (start"
               + (f", thermal profiles {', '.join(thermal_terms)}" if refit_thermal else "")
-              + (f", early-mission offsets up to {early_rounds} rounds of 16" if early_mission_sol else "")
+              + ((", early-mission offsets held" if early_hold else f", early-mission offsets up to {early_rounds} rounds of 16")
+                 if early_mission_sol else "")
               + ", final with covariance" + (", rig translation" if translation_scapes else "") + ")", flush=True)
         if converted:
             print(f"v0p73 NL-reference form: the start's NL cx slope {converted['NL_cx']:+.4f} px/degC moved to NR "
                   f"(NR cx {tvals['NR_cx']:+.4f} px/degC)", flush=True)
         if axis:
-            print(f"{form} form: fx, fy per eye against temperature, NR cx against temperature, NL principal point "
-                  f"fixed, one rig yaw with a sol rate (start {tvals['yaw_rate']:+.2f} mdeg/1000 sol)"
+            print(f"{form} form: fx, fy per eye against temperature, "
+                  + ("NL and NR cx against temperature (v0p83)" if nl_pp_thermal else
+                     "NR cx against temperature, NL principal point fixed")
+                  + f", one rig yaw with a sol rate (start {tvals['yaw_rate']:+.2f} mdeg/1000 sol)"
                   + (f"; k4 free; k1 per degC NL {tvals['NL_k1']:+.2e}, NR {tvals['NR_k1']:+.2e} ({k1_source})"
                      if form == "v0p80" else ""), flush=True)
     proj.settings["navcam_rig_yaw"] = "refine"            # one yaw for all: no drift / temperature term below
@@ -575,8 +595,16 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
         if verbose:
             print(f"{datetime.datetime.now():%H:%M} early-mission offsets before sol {early_mission_sol:g} (start "
                   + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, x0)) + "):", flush=True)
-        early = fit_early_offsets(rec, proj, temps, ppm, t0, xkw, float(early_mission_sol), start=x0,
-                                  rounds=early_rounds, verbose=verbose)
+        if early_hold:                              # v0p83: held at the start's offsets, not refitted
+            n_e = len(early_keypoint_map(proj, float(early_mission_sol), np.zeros(4)).early_images)
+            early = {"before_sol": float(early_mission_sol), "terms": list(EARLY_TERMS), "early_images": n_e,
+                     "held": True, "converged": True, "offsets_px": dict(zip(EARLY_TERMS, map(float, x0))),
+                     "sd_px": em0.get("sd_px"), "z": em0.get("z"), "p_value": em0.get("p_value"),
+                     "p_value_all": em0.get("p_value_all"),
+                     "applied_terms": em0.get("applied_terms") or list(EARLY_TERMS), "rounds": []}
+        else:
+            early = fit_early_offsets(rec, proj, temps, ppm, t0, xkw, float(early_mission_sol), start=x0,
+                                      rounds=early_rounds, verbose=verbose)
         if early.get("offsets_px"):
             xb = [early["offsets_px"][k] for k in EARLY_TERMS]
             t = time.time()
@@ -660,6 +688,7 @@ def fit_consensus(scapes_cfg: Dict[str, PathLike], points: int = 8000, iteration
                        "yaw_rate_mdeg_per_1000sol": tvals["yaw_rate"] if axis else None,
                        "k1_slopes": ({"NL": tvals["NL_k1"], "NR": tvals["NR_k1"]} if form == "v0p80" else None),
                        "k1_source": k1_source if form == "v0p80" else None,
+                       "pp_thermal": "both" if nl_pp_thermal else ("NR" if axis else None),
                        "refit": bool(refit_thermal), "terms": list(thermal_terms) if refit_thermal else [],
                        "rounds": int(thermal_rounds) if refit_thermal else 0,
                        "sd": {k: profiles[k]["sd"] for k in profiles},
@@ -1040,6 +1069,10 @@ def write_consensus(res: Dict[str, Any], out_dir: PathLike, note: str = "",
                             "note": f"{form}: NL-reference form, refitted with the consensus ({stamp}; profiles of "
                                     f"{', '.join(rt.get('terms') or []) or 'none'})"})
                 th0.pop("cx_px_per_degC_NL", None)
+                if rt.get("pp_thermal") == "both":          # v0p83: both principal points move with temperature
+                    th0["pp_thermal"] = "both"
+                else:
+                    th0.pop("pp_thermal", None)
                 if form == "v0p80":                         # v0p80: k1 against temperature (from the blocks' bins)
                     th0["k1_per_degC"] = float(tv.get(f"{eye}_k1") or 0.0)
                     th0["k1_source"] = rt.get("k1_source")
@@ -1238,7 +1271,10 @@ def check_candidate(candidate_dir: PathLike, current_dir: Optional[PathLike] = N
         add("rig yaw rate", round(float(yr), 3), "measured", True,
             "mdeg per 1000 sol" + (f", sd {sdy:.3f} (z {float(yr) / sdy:+.1f})" if sdy else ""))
     em = res.get("early_mission")
-    if em:
+    if em and em.get("held"):                       # v0p83: held at the start's offsets (a side study)
+        add("early-mission fit", "held", "converged, convex, finite sd", True,
+            "held at the start's offsets: " + ", ".join(f"{k} {v:+.3f}" for k, v in em["offsets_px"].items()))
+    elif em:
         rounds = em.get("rounds") or []
         convex = bool(rounds) and bool(rounds[-1].get("positive_definite"))
         sds = list((em.get("sd_px") or {}).values())
