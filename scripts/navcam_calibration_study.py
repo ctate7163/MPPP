@@ -533,6 +533,18 @@ def cmd_consensus(a, scapes_cfg, samples):
         cmd_check(a, scapes_cfg, samples, promote=True)
 
 
+def cmd_tied(a, scapes_cfg, samples):
+    """v0p83: the tied joint (mppp.sfm.navcal_tied) - temperature-bin cameras and epoch rigs tied to global thermal,
+    distortion, early-mission and drift parameters, all estimated in one adjustment over thinned blocks."""
+    from mppp.sfm.navcal_tied import fit_tied
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    res = fit_tied(scapes_cfg, start_dir=a.start_cameras, points=a.points, bin_deg=a.bin_deg, max_span=a.max_span,
+                   hold=tuple(a.hold or ()), tie_rigs=not a.free_rigs)
+    (out / "tied_joint.json").write_text(json.dumps(jsonable(res), indent=1), encoding="utf-8")
+    print(f"-> {out / 'tied_joint.json'}", flush=True)
+
+
 def cmd_check(a, scapes_cfg, samples, promote: Optional[bool] = None):
     """v0p72: check OUT/navcam_joint against the cameras in use (navcal_consensus.check_candidate) and, with
     --promote-if-ok, promote it when everything checks out (and commit src/mppp/data/cmods locally)."""
@@ -553,7 +565,7 @@ def cmd_check(a, scapes_cfg, samples, promote: Optional[bool] = None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["rig", "joint", "loo", "all", "scale", "consensus", "check"])
+    ap.add_argument("cmd", choices=["rig", "joint", "loo", "all", "scale", "consensus", "check", "tied"])
     ap.add_argument("out")
     ap.add_argument("scapes")
     ap.add_argument("--samples")
@@ -619,6 +631,10 @@ def main(argv=None):
     ap.add_argument("--early-hold", action="store_true",
                     help="consensus (v0p83): apply the start cameras' early-mission offsets (or --early-start) without "
                          "refitting them (a side study on the same blocks)")
+    ap.add_argument("--bin-deg", type=float, default=2.0, help="tied (v0p83): temperature bin width, degC")
+    ap.add_argument("--max-span", type=float, default=25.0, help="tied (v0p83): longest rig epoch, sols")
+    ap.add_argument("--hold", nargs="*", help="tied (v0p83): global terms held, e.g. S_NL_cy S_NR_cy E D_pre_roll")
+    ap.add_argument("--free-rigs", action="store_true", help="tied (v0p83): epoch rigs free (not tied to the drift)")
     ap.add_argument("--promote-if-ok", action="store_true",
                     help="consensus/check (v0p72): promote OUT/navcam_joint if every check passes")
     ap.add_argument("--promote-note", default="", help="consensus/check: the note for CHANGES.md")
@@ -635,7 +651,7 @@ def main(argv=None):
     if a.only and a.cmd == "joint":
         scapes_cfg = {k: v for k, v in scapes_cfg.items() if k in a.only}
     {"rig": cmd_rig, "joint": cmd_joint, "loo": cmd_loo, "all": cmd_all, "scale": cmd_scale,
-     "consensus": cmd_consensus, "check": cmd_check}[a.cmd](a, scapes_cfg, samples)
+     "consensus": cmd_consensus, "check": cmd_check, "tied": cmd_tied}[a.cmd](a, scapes_cfg, samples)
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ def test_notebook_carries_the_v0p82_settings():
               "prior_sigma_m=(PRIOR_SIGMA_M,) * 3", 'proj.settings["no_position_prior_at"]'):
         assert k in src, k
     from mppp.runner import ALIGN_RULES
-    assert ALIGN_RULES == 82
+    assert ALIGN_RULES >= 82
 
 
 class _Frame:
@@ -246,3 +246,29 @@ def test_v0p82_1_covariance_uses_camera_views():
     assert R.COVARIANCE_CAMERA_VIEWS is True
     src = (ROOT / "src" / "mppp" / "sfm" / "reconstruction.py").read_text()
     assert "views_used = bool(covariance) and COVARIANCE_CAMERA_VIEWS" in src and '"camera_views_unchanged"' in src
+
+
+def test_v0p83_rig_epochs_at_most_25_sols():
+    from mppp.sfm.navcal import sol_epochs, RIG_EPOCH_MAX_SPAN_SOLS
+    from mppp.sfm.project import NAVCAM_RIG_EPOCH_MAX_SPAN_SOLS
+    from mppp.runner import ALIGN_RULES
+    assert RIG_EPOCH_MAX_SPAN_SOLS == NAVCAM_RIG_EPOCH_MAX_SPAN_SOLS == 25.0 and ALIGN_RULES == 83
+    assert sol_epochs([652, 660, 680, 693], 50, (300,), 25) == [(652, 660), (680, 693)]      # split at the middle sol
+    eps = sol_epochs(list(range(20, 100)) + [361, 378], 50, (300,), 25)
+    assert eps == [(20, 39), (40, 59), (60, 79), (80, 99), (361, 378)] and all(b - a <= 25 for a, b in eps)
+    assert sol_epochs([652, 693], 50, (300,), None) == [(652, 693)]
+
+
+def test_v0p83_linear_tie_and_hook():
+    import pyceres
+    from mppp.sfm.navcal_tied import _linear_tie_class
+    T = _linear_tie_class()
+    x, g = np.array([3.0, 1.0]), np.array([0.0, 0.0])
+    p = pyceres.Problem()
+    p.add_residual_block(T(np.array([[1.0, 0, -1.0, 0], [0, 1.0, 0, -2.0]]), np.array([1e-3, 1e-3]), [2, 2]), None, [x, g])
+    p.set_parameter_block_constant(x)
+    s = pyceres.SolverSummary()
+    pyceres.solve(pyceres.SolverOptions(), p, s)
+    assert np.allclose(g, [3.0, 0.5], atol=1e-6)
+    src = (ROOT / "src" / "mppp" / "sfm" / "reconstruction.py").read_text()
+    assert "extra_residuals(prob, cam_blocks=cam_blocks" in src

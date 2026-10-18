@@ -244,10 +244,17 @@ EPOCH_GAP_SOLS = 30       # v0p40: images more than this many sols apart belong 
 RIG_EPOCH_BREAK_SOLS = (300.0,)
 
 
+# v0p83 (Christian, 18 Oct 2026): a rig epoch spans at most this many sols - a longer one is split at its middle sol
+# (again, until every piece spans <= this many)
+RIG_EPOCH_MAX_SPAN_SOLS = 25.0
+
+
 def sol_epochs(sols: Sequence[int], gap: float = EPOCH_GAP_SOLS,
-               breaks: Sequence[float] = ()) -> List[Tuple[int, int]]:
+               breaks: Sequence[float] = (), max_span: Optional[float] = None) -> List[Tuple[int, int]]:
     """Sol ranges of the clusters of ``sols`` separated by more than ``gap`` sols; v0p75.1: a cluster is also cut
-    between two consecutive sols a < b with a < break <= b for every sol in ``breaks`` (e.g. the pitch knot)."""
+    between two consecutive sols a < b with a < break <= b for every sol in ``breaks`` (e.g. the pitch knot).
+    v0p83: ``max_span`` (sols): a cluster spanning more is split at its middle sol ((first + last) / 2; sols up to
+    the middle in the first part), recursively, so that no epoch spans more than ``max_span`` sols."""
     u = sorted(set(int(x) for x in sols))
     if not u:
         return []
@@ -258,11 +265,23 @@ def sol_epochs(sols: Sequence[int], gap: float = EPOCH_GAP_SOLS,
             out.append((start, a))
             start = b
     out.append((start, u[-1]))
+    if max_span is not None and max_span > 0:
+        def _split(lo: int, hi: int) -> List[Tuple[int, int]]:
+            mem = [x for x in u if lo <= x <= hi]
+            if hi - lo <= max_span or len(mem) < 2:
+                return [(lo, hi)]
+            mid = 0.5 * (lo + hi)
+            left, right = [x for x in mem if x <= mid], [x for x in mem if x > mid]
+            if not left or not right:
+                return [(lo, hi)]
+            return _split(left[0], left[-1]) + _split(right[0], right[-1])
+        out = [piece for a_, b_ in out for piece in _split(a_, b_)]
     return out
 
 
 def split_rig_by_epoch(rec, project: SfmProject, temps: Optional[Dict[str, Dict[str, Any]]] = None,
-                       gap: float = EPOCH_GAP_SOLS, breaks: Sequence[float] = RIG_EPOCH_BREAK_SOLS):
+                       gap: float = EPOCH_GAP_SOLS, breaks: Sequence[float] = RIG_EPOCH_BREAK_SOLS,
+                       max_span: Optional[float] = RIG_EPOCH_MAX_SPAN_SOLS):
     """
     A copy of ``rec`` in which the frames of each sol epoch (:func:`sol_epochs` of the frames' sols) have their own
     copy of their rig (same sensors, cameras and sensor poses), so that a bundle adjustment with ``refine_rig``
@@ -279,7 +298,7 @@ def split_rig_by_epoch(rec, project: SfmProject, temps: Optional[Dict[str, Dict[
               if d.id in rec.images and rec.images[d.id].name in by_name]
         if ss:
             sol_of[fid] = int(np.median(ss))
-    eps = sol_epochs(sol_of.values(), gap, breaks)
+    eps = sol_epochs(sol_of.values(), gap, breaks, max_span)      # v0p83: and at most max_span sols each
     ep_of = {fid: next(i for i, (a, b) in enumerate(eps) if a <= s <= b) for fid, s in sol_of.items()}
     stereo = {rid for rid, rig in rec.rigs.items() if len(list(rig.non_ref_sensors))}
     new = pycolmap.Reconstruction()

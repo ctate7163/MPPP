@@ -412,7 +412,8 @@ PROCESS_DONE = "process_done.json"    # <WORK>/processed/process_done.json: writ
 #     promotion makes run_sites.py align every site again
 # 82 (v0p82): images with less than 1/3 of the image unmasked left out (MIN_INCLUDED_FRACTION); the block re-centred on its
 #     position priors after the final adjustment (PRIOR_GAUGE_RECENTRE); stations with flagged waypoints without prior
-ALIGN_RULES = 82
+# 83 (v0p83): Navcam rig epochs span at most 25 sols (an epoch spanning more is split at its middle sol)
+ALIGN_RULES = 83
 
 
 def run_key(settings: Dict[str, Any], source: str, variant: str) -> str:

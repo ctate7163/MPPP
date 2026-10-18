@@ -234,7 +234,8 @@ def _set_camera_params(rec, cid: int, params) -> None:
 
 def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att,
                        pose_blocks: Optional[Dict[int, np.ndarray]] = None,
-                       cam_blocks: Optional[Dict[int, np.ndarray]] = None) -> Optional[Dict[str, Any]]:
+                       cam_blocks: Optional[Dict[int, np.ndarray]] = None,
+                       extra_blocks: Optional[Dict[str, np.ndarray]] = None) -> Optional[Dict[str, Any]]:
     """Covariances of the rig and camera blocks of a solved :func:`bundle_adjust` problem (v0p35).  The 3-D points
     (``rec``'s) are eliminated by the Schur complement; the frame poses (the work copy's) count as further
     parameters, so each block's covariance is marginal over the poses, the other blocks and the points."""
@@ -284,6 +285,11 @@ def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_pr
             c = bac.get_other_params_cov(blk)
             if c is not None:
                 blocks[f"camera:{key_of.get(int(cid), cid)}"] = np.asarray(c)
+    for name, blk in (extra_blocks or {}).items():         # v0p83: e.g. the tied joint's global parameters
+        if prob.has_parameter_block(blk) and not prob.is_parameter_block_constant(blk):
+            c = bac.get_other_params_cov(blk)
+            if c is not None:
+                blocks[f"extra:{name}"] = np.asarray(c)
     n_res = prob.num_residuals()
     n_par = prob.num_effective_parameters() if hasattr(prob, "num_effective_parameters") else prob.num_parameters()
     red = max(n_res - n_par, 1)
@@ -455,8 +461,14 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   keypoint_map=None, localize_min_images: Optional[int] = None,
                   navcam_aspect: Optional[str] = None,
                   aspect_sigma: float = NAVCAM_ASPECT_SIGMA, refine_zcam_rig: Optional[str] = None,
-                  zcam_rig_translation_sigma_m: float = ZCAM_RIG_TRANSLATION_SIGMA_M) -> Dict[str, Any]:
+                  zcam_rig_translation_sigma_m: float = ZCAM_RIG_TRANSLATION_SIGMA_M,
+                  extra_residuals=None) -> Dict[str, Any]:
     """
+    v0p83: ``extra_residuals`` - a callable ``f(prob, cam_blocks=..., rig_blocks=..., key_of=..., work=...)`` called
+    once the problem is built (before the solve) to add residuals of its own, e.g. ties of temperature-bin cameras
+    and epoch rigs to global thermal and drift parameters (:mod:`mppp.sfm.navcal_tied`); it returns a dict, kept in
+    the result under ``"extra"``, whose ``"cov_blocks"`` {name: array} get a covariance too.
+
     v0p74: ``refine_zcam_rig`` ``"rotation"`` / ``"full"`` refines each Mastcam-Z zoom's stereo rig (one per zoom and
     block, the same for every focus: the focus motion is the principal points'), ``"full"`` also its translation with a
     prior of ``zcam_rig_translation_sigma_m`` per axis on the right centre - whatever ``refine_rig`` and the rig's hold
@@ -847,6 +859,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 np.eye(3) * float(zcam_rig_translation_sigma_m) ** 2, C0), None, [arr])
             prob.set_manifold(arr, pyceres.SubsetManifold(7, [3]))
 
+    extra_info = None
+    if extra_residuals is not None:                          # v0p83: e.g. the tied joint's thermal / drift ties
+        extra_info = extra_residuals(prob, cam_blocks=cam_blocks, rig_blocks=rig_blocks, key_of=key_of, work=work)
     so = pyceres.SolverOptions()
     # v0p30: the linear solver.  The Schur complement has one 6-parameter block per frame plus the cameras, so
     # for the few hundred frames of a scape a dense Schur solve (multi-threaded LAPACK) beats the sparse
@@ -885,7 +900,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     cov_out = None
     if covariance:
         cov_out = _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att, pose_blocks,
-                                     cam_blocks=cam_blocks)
+                                     cam_blocks=cam_blocks, extra_blocks=(extra_info or {}).get("cov_blocks"))
     for fid in pose_blocks:
         rec.frames[fid].rig_from_world = work.frames[fid].rig_from_world
     if vblocks:                                               # v0p53: write back the Mastcam-Z rigs and right poses
@@ -935,7 +950,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             "unlocalized_stations": unloc, "navcam_aspect": navcam_aspect, "aspect_priors": len(aspect_costs),
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
-            "termination": str(summary.termination_type), "brief": summary.BriefReport(), "retried": retried, "camera_views": views_used, "camera_views_unchanged": views_unchanged,
+            "termination": str(summary.termination_type), "brief": summary.BriefReport(), "retried": retried, "extra": extra_info, "camera_views": views_used, "camera_views_unchanged": views_unchanged,
             "refine_tangential": tangential_setting(refine_tangential), "linear_solver": solver, "num_threads": so.num_threads,
             "seconds": float(summary.total_time_in_seconds)}
 

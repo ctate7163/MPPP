@@ -93,7 +93,8 @@ FULL_OPENCV_NAMES = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4",
 ZCAM_BIN_HELD = ("cx", "cy", "k1", "k2", "p1", "p2", "k3")
 NAVCAM_RIG_EPOCH_GAP_SOLS = 50.0    # v0p75.1 (v0p75: 100): Navcam visits of a block more than this many sols apart get
                                     # their own rig rotation (the intrinsics, distortion and baseline stay common)
-NAVCAM_RIG_EPOCH_BREAKS_SOLS = (300.0,)   # v0p75.1: and a visit with images on both sides of the pitch knot is cut there
+NAVCAM_RIG_EPOCH_BREAKS_SOLS = (300.0,)
+NAVCAM_RIG_EPOCH_MAX_SPAN_SOLS = 25.0     # v0p83 (Christian, 18 Oct): an epoch spanning more sols is split at its middle sol   # v0p75.1: and a visit with images on both sides of the pitch knot is cut there
 
 
 def focus_bins(counts: Sequence[Optional[float]], width: float = ZCAM_FOCUS_BIN) -> List[int]:
@@ -721,7 +722,7 @@ class SfmProject:
         gap = NAVCAM_RIG_EPOCH_GAP_SOLS if navcam_rig_epoch_gap is None else float(navcam_rig_epoch_gap)
         breaks = tuple(NAVCAM_RIG_EPOCH_BREAKS_SOLS if navcam_rig_epoch_breaks is None else navcam_rig_epoch_breaks)
         epochs_info = navcam_rig_epochs(images, rig, gap, nav_info, yaw=navcam_rig_yaw == "refine", cameras=cameras,
-                                        breaks=breaks)
+                                        breaks=breaks, max_span=NAVCAM_RIG_EPOCH_MAX_SPAN_SOLS)
         proj = cls(root, images, cameras, rig, offset,
                    {"world_frame": frames.pop(), "image_format": image_format,
                     "prior_sigma_m": list(map(float, prior_sigma_m)), "zero_terms": list(zero_terms),
@@ -1167,7 +1168,7 @@ def _align_priors_to_cameras(images: List[Dict[str, Any]], cameras: Dict[str, Di
 def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: float,
                       nav_info: Optional[Dict[str, Any]] = None, yaw: bool = False,
                       cameras: Optional[Dict[str, Dict[str, Any]]] = None,
-                      breaks: Sequence[float] = ()) -> Optional[Dict[str, Any]]:
+                      breaks: Sequence[float] = (), max_span: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """
     v0p75: splits the Navcam rig of a block into one rig per *epoch* - the clusters of the Navcam images' sols
     separated by more than ``gap`` sols (the visits of a site the rover came back to).  With one cluster nothing
@@ -1188,7 +1189,7 @@ def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: fl
     nav = [r for r in images if str(r.get("instrument", "")).startswith("N") and r.get("sol") is not None]
     if "N" not in rig or not nav:
         return None
-    eps = sol_epochs([int(r["sol"]) for r in nav], gap, breaks)        # v0p75.1: cut at the pitch knot too
+    eps = sol_epochs([int(r["sol"]) for r in nav], gap, breaks, max_span)   # v0p75.1: pitch knot; v0p83: <= max_span
     for r in nav:
         r["rig_epoch"] = 0
     if len(eps) < 2:
@@ -1236,7 +1237,8 @@ def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: fl
             r["rig_epoch"] = k
         rig[key] = ent
         table.append(dict(ep, rig_key=key, cameras=[ent["ref"], ent["sensor"]]))
-    return {"gap_sols": float(gap), "breaks_sols": [float(x) for x in breaks], "epochs": table}
+    return {"gap_sols": float(gap), "breaks_sols": [float(x) for x in breaks],
+            "max_span_sols": None if max_span is None else float(max_span), "epochs": table}
 
 
 def _rig_family(key: str) -> str:

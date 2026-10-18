@@ -1,0 +1,593 @@
+{
+ "blocks": [
+  {
+   "block": "Chal Rocks Large [sols 65-99]",
+   "site": "Chal Rocks Large",
+   "T_median_degC": -21.7574,
+   "sol_median": 84.0,
+   "images": 123,
+   "yaw_mdeg": 1.4992327877358875,
+   "pitch_mdeg": 2.02604153681031,
+   "roll_mdeg": 2.790390198211098,
+   "cost": 5141.82958109611,
+   "iterations": 42,
+   "epoch": {
+    "epoch": 0,
+    "sols": [
+     65,
+     99
+    ],
+    "frames": 67
+   }
+  },
+  {
+   "block": "Chal Rocks Large [sols 360-371]",
+   "site": "Chal Rocks Large",
+   "T_median_degC": -9.27978,
+   "sol_median": 361.0,
+   "images": 45,
+   "yaw_mdeg": -1.8517270173172817,
+   "pitch_mdeg": 0.5600673420760488,
+   "roll_mdeg": 0.43434963316761255,
+   "cost": 5141.82958109611,
+   "iterations": 42,
+   "epoch": {
+    "epoch": 1,
+    "sols": [
+     360,
+     371
+    ],
+    "frames": 23
+   }
+  },
+  {
+   "block": "Rockytop",
+   "site": "Rockytop",
+   "T_median_degC": -19.5222,
+   "sol_median": 477.0,
+   "images": 235,
+   "yaw_mdeg": -0.5881655757200067,
+   "pitch_mdeg": -0.7281099756383195,
+   "roll_mdeg": -0.007629735554199258,
+   "cost": 9603.80297544626,
+   "iterations": 12
+  },
+  {
+   "block": "Origny Large",
+   "site": "Origny Large",
+   "T_median_degC": -17.0585,
+   "sol_median": 1781.0,
+   "images": 259,
+   "yaw_mdeg": 0.44138805115461843,
+   "pitch_mdeg": 0.4634345487611617,
+   "roll_mdeg": 4.071514485905101,
+   "cost": 5239.420439888985,
+   "iterations": 12
+  },
+  {
+   "block": "Van Zyl Overlook Large",
+   "site": "Van Zyl Overlook Large",
+   "T_median_degC": -20.5722,
+   "sol_median": 52.0,
+   "images": 257,
+   "yaw_mdeg": 5.474038039958078,
+   "pitch_mdeg": 1.7519038758282783,
+   "roll_mdeg": -0.5171090150156818,
+   "cost": 4255.022891671952,
+   "iterations": 26
+  },
+  {
+   "block": "Rochette [sols 175-190]",
+   "site": "Rochette",
+   "T_median_degC": -20.8914,
+   "sol_median": 178.0,
+   "images": 58,
+   "yaw_mdeg": 0.6030130511833751,
+   "pitch_mdeg": 1.2538595959618208,
+   "roll_mdeg": -0.5238714215184894,
+   "cost": 3403.6639396460178,
+   "iterations": 45,
+   "epoch": {
+    "epoch": 0,
+    "sols": [
+     175,
+     190
+    ],
+    "frames": 30
+   }
+  },
+  {
+   "block": "Rochette [sols 341-341]",
+   "site": "Rochette",
+   "T_median_degC": -9.27978,
+   "sol_median": 341.0,
+   "images": 22,
+   "yaw_mdeg": 5.320318349544071,
+   "pitch_mdeg": -1.1101675519177538,
+   "roll_mdeg": 17.796837295302755,
+   "cost": 3403.6639396460178,
+   "iterations": 45,
+   "epoch": {
+    "epoch": 1,
+    "sols": [
+     341,
+     341
+    ],
+    "frames": 11
+   }
+  },
+  {
+   "block": "Seitah North",
+   "site": "Seitah North",
+   "T_median_degC": -16.9654,
+   "sol_median": 239.0,
+   "images": 73,
+   "yaw_mdeg": -1.259635900738211,
+   "pitch_mdeg": -0.24779940946359422,
+   "roll_mdeg": 0.3989002217047003,
+   "cost": 4689.209249987999,
+   "iterations": 31
+  },
+  {
+   "block": "Issole Seitah South [sols 201-201]",
+   "site": "Issole Seitah South",
+   "T_median_degC": -18.60995,
+   "sol_median": 201.0,
+   "images": 12,
+   "yaw_mdeg": -3.235621619678439,
+   "pitch_mdeg": 0.7988154608113446,
+   "roll_mdeg": 4.2293337905413155,
+   "cost": 6666.84380892133,
+   "iterations": 15,
+   "epoch": {
+    "epoch": 0,
+    "sols": [
+     201,
+     201
+    ],
+    "frames": 6
+   }
+  },
+  {
+   "block": "Issole Seitah South [sols 281-299]",
+   "site": "Issole Seitah South",
+   "T_median_degC": -12.8998,
+   "sol_median": 286.0,
+   "images": 49,
+   "yaw_mdeg": -1.438063252173134,
+   "pitch_mdeg": -0.41895858137759245,
+   "roll_mdeg": 1.4249619127888422,
+   "cost": 6666.84380892133,
+   "iterations": 15,
+   "epoch": {
+    "epoch": 1,
+    "sols": [
+     281,
+     299
+    ],
+    "frames": 29
+   }
+  },
+  {
+   "block": "Issole Seitah South [sols 300-335]",
+   "site": "Issole Seitah South",
+   "T_median_degC": -14.0859,
+   "sol_median": 321.0,
+   "images": 78,
+   "yaw_mdeg": -2.609535005352205,
+   "pitch_mdeg": -1.059621009637067,
+   "roll_mdeg": 0.038722542561317304,
+   "cost": 6666.84380892133,
+   "iterations": 15,
+   "epoch": {
+    "epoch": 2,
+    "sols": [
+     300,
+     335
+    ],
+    "frames": 55
+   }
+  },
+  {
+   "block": "Artuby Ridge [sols 173-178]",
+   "site": "Artuby Ridge",
+   "T_median_degC": -21.2106,
+   "sol_median": 175.0,
+   "images": 45,
+   "yaw_mdeg": -1.2476432460552411,
+   "pitch_mdeg": 0.4252418624132799,
+   "roll_mdeg": 3.435801304113089,
+   "cost": 2409.5012321434892,
+   "iterations": 42,
+   "epoch": {
+    "epoch": 0,
+    "sols": [
+     173,
+     178
+    ],
+    "frames": 23
+   }
+  },
+  {
+   "block": "Artuby Ridge [sols 341-348]",
+   "site": "Artuby Ridge",
+   "T_median_degC": -11.89165,
+   "sol_median": 342.0,
+   "images": 60,
+   "yaw_mdeg": 4.6839649077951755,
+   "pitch_mdeg": -2.1155809505722316,
+   "roll_mdeg": 0.04572059702142939,
+   "cost": 2409.5012321434892,
+   "iterations": 42,
+   "epoch": {
+    "epoch": 1,
+    "sols": [
+     341,
+     348
+    ],
+    "frames": 31
+   }
+  },
+  {
+   "block": "Chal Rocks [sols 91-99]",
+   "site": "Chal Rocks",
+   "T_median_degC": -21.5297,
+   "sol_median": 92.0,
+   "images": 38,
+   "yaw_mdeg": -0.3999059887798325,
+   "pitch_mdeg": 2.151673734738029,
+   "roll_mdeg": 3.6899391067666465,
+   "cost": 4924.574316287279,
+   "iterations": 17,
+   "epoch": {
+    "epoch": 0,
+    "sols": [
+     91,
+     99
+    ],
+    "frames": 19
+   }
+  },
+  {
+   "block": "Chal Rocks [sols 360-371]",
+   "site": "Chal Rocks",
+   "T_median_degC": -9.27978,
+   "sol_median": 361.0,
+   "images": 45,
+   "yaw_mdeg": -2.526777463805282,
+   "pitch_mdeg": 0.6003888593266805,
+   "roll_mdeg": 0.46996812636534613,
+   "cost": 4924.574316287279,
+   "iterations": 17,
+   "epoch": {
+    "epoch": 1,
+    "sols": [
+     360,
+     371
+    ],
+    "frames": 23
+   }
+  },
+  {
+   "block": "Enchanted Lake [sols 422-423]",
+   "site": "Enchanted Lake",
+   "T_median_degC": -24.2406,
+   "sol_median": 422.0,
+   "images": 24,
+   "yaw_mdeg": -2.5358593549548076,
+   "pitch_mdeg": -0.2329756277982001,
+   "roll_mdeg": 4.371864836995802,
+   "cost": 9777.733204968983,
+   "iterations": 10,
+   "epoch": {
+    "epoch": 0,
+    "sols": [
+     422,
+     423
+    ],
+    "frames": 12
+   }
+  },
+  {
+   "block": "Enchanted Lake [sols 556-586]",
+   "site": "Enchanted Lake",
+   "T_median_degC": -23.717100000000002,
+   "sol_median": 557.0,
+   "images": 62,
+   "yaw_mdeg": 1.6317460414124465,
+   "pitch_mdeg": -0.9104906643984783,
+   "roll_mdeg": -0.23060656689816203,
+   "cost": 9777.733204968983,
+   "iterations": 10,
+   "epoch": {
+    "epoch": 1,
+    "sols": [
+     556,
+     586
+    ],
+    "frames": 31
+   }
+  },
+  {
+   "block": "Three Forks Large [sols 413-434]",
+   "site": "Three Forks Large",
+   "T_median_degC": -16.9654,
+   "sol_median": 433.0,
+   "images": 107,
+   "yaw_mdeg": -3.9665048302510764,
+   "pitch_mdeg": 0.14862040219787095,
+   "roll_mdeg": 0.6000569854132379,
+   "cost": 3142.49919657968,
+   "iterations": 15,
+   "epoch": {
+    "epoch": 0,
+    "sols": [
+     413,
+     434
+    ],
+    "frames": 54
+   }
+  },
+  {
+   "block": "Three Forks Large [sols 652-693]",
+   "site": "Three Forks Large",
+   "T_median_degC": -14.406,
+   "sol_median": 674.0,
+   "images": 265,
+   "yaw_mdeg": -0.44138964449773194,
+   "pitch_mdeg": 0.20545167730356018,
+   "roll_mdeg": -0.547410001989439,
+   "cost": 3142.49919657968,
+   "iterations": 15,
+   "epoch": {
+    "epoch": 1,
+    "sols": [
+     652,
+     693
+    ],
+    "frames": 133
+   }
+  },
+  {
+   "block": "Tuxedo Park",
+   "site": "Tuxedo Park",
+   "T_median_degC": -16.0059,
+   "sol_median": 904.0,
+   "images": 100,
+   "yaw_mdeg": -2.097328989473451,
+   "pitch_mdeg": 0.39646878045186024,
+   "roll_mdeg": 2.90651704097133,
+   "cost": 4169.968066990866,
+   "iterations": 23
+  },
+  {
+   "block": "Belva Crater Large",
+   "site": "Belva Crater Large",
+   "T_median_degC": -21.324399999999997,
+   "sol_median": 795.0,
+   "images": 162,
+   "yaw_mdeg": -1.2301486403242683,
+   "pitch_mdeg": 0.4213406784372943,
+   "roll_mdeg": 3.1175357945644193,
+   "cost": 4068.7485643533955,
+   "iterations": 16
+  },
+  {
+   "block": "Bunsen Peak",
+   "site": "Bunsen Peak",
+   "T_median_degC": -14.406,
+   "sol_median": 1067.0,
+   "images": 226,
+   "yaw_mdeg": 0.4297495031709991,
+   "pitch_mdeg": 0.09319813641409591,
+   "roll_mdeg": -2.7285455880754745,
+   "cost": 11387.329238898172,
+   "iterations": 14
+  },
+  {
+   "block": "Pico Turquino",
+   "site": "Pico Turquino",
+   "T_median_degC": -17.9245,
+   "sol_median": 1309.0,
+   "images": 81,
+   "yaw_mdeg": -1.6494676135264128,
+   "pitch_mdeg": -0.9903911016301122,
+   "roll_mdeg": -4.068610184654523,
+   "cost": 3224.220182439164,
+   "iterations": 10
+  },
+  {
+   "block": "Cheyava Falls",
+   "site": "Cheyava Falls",
+   "T_median_degC": -21.119,
+   "sol_median": 1195.0,
+   "images": 173,
+   "yaw_mdeg": 0.9581430956560206,
+   "pitch_mdeg": -0.7175034876112532,
+   "roll_mdeg": -3.2975794103995506,
+   "cost": 11306.353317241555,
+   "iterations": 18
+  },
+  {
+   "block": "Witch Hazel Hill",
+   "site": "Witch Hazel Hill",
+   "T_median_degC": -18.76975,
+   "sol_median": 1400.0,
+   "images": 160,
+   "yaw_mdeg": 0.8461101555693115,
+   "pitch_mdeg": -0.09486385021786667,
+   "roll_mdeg": 1.0239387657024182,
+   "cost": 6933.597796371075,
+   "iterations": 8
+  },
+  {
+   "block": "South Arm",
+   "site": "South Arm",
+   "T_median_degC": -22.1678,
+   "sol_median": 1407.0,
+   "images": 100,
+   "yaw_mdeg": 2.685320477246144,
+   "pitch_mdeg": -1.060318459158445,
+   "roll_mdeg": -3.9835704192330854,
+   "cost": 6599.77791640459,
+   "iterations": 7
+  },
+  {
+   "block": "Hippo Pools",
+   "site": "Hippo Pools",
+   "T_median_degC": -15.4598,
+   "sol_median": 1955.0,
+   "images": 104,
+   "yaw_mdeg": 1.675639728991507,
+   "pitch_mdeg": 1.590150973899641,
+   "roll_mdeg": 3.493316588065764,
+   "cost": 4426.084997352698,
+   "iterations": 14
+  },
+  {
+   "block": "Bell Island Large [sols 1435-1478]",
+   "site": "Bell Island Large",
+   "T_median_degC": -22.1678,
+   "sol_median": 1461.0,
+   "images": 254,
+   "yaw_mdeg": 0.10174689185477936,
+   "pitch_mdeg": -0.6650232815845323,
+   "roll_mdeg": -2.5687108454703327,
+   "cost": 4184.754295180234,
+   "iterations": 11,
+   "epoch": {
+    "epoch": 0,
+    "sols": [
+     1435,
+     1478
+    ],
+    "frames": 137
+   }
+  },
+  {
+   "block": "Bell Island Large [sols 1549-1552]",
+   "site": "Bell Island Large",
+   "T_median_degC": -14.7261,
+   "sol_median": 1551.0,
+   "images": 41,
+   "yaw_mdeg": 0.7951149719125113,
+   "pitch_mdeg": 0.2900770102143842,
+   "roll_mdeg": 2.1811615299818388,
+   "cost": 4184.754295180234,
+   "iterations": 11,
+   "epoch": {
+    "epoch": 1,
+    "sols": [
+     1549,
+     1552
+    ],
+    "frames": 22
+   }
+  },
+  {
+   "block": "Taylorfjellet Large",
+   "site": "Taylorfjellet Large",
+   "T_median_degC": -10.9781,
+   "sol_median": 1627.0,
+   "images": 243,
+   "yaw_mdeg": -1.2069702974217755,
+   "pitch_mdeg": -0.6405282820963076,
+   "roll_mdeg": -1.3505755148665846,
+   "cost": 6459.044919172391,
+   "iterations": 12
+  },
+  {
+   "block": "Taylorfjellet Huge",
+   "site": "Taylorfjellet Huge",
+   "T_median_degC": -10.3373,
+   "sol_median": 1635.0,
+   "images": 393,
+   "yaw_mdeg": 0.022401272019197477,
+   "pitch_mdeg": -0.39879223528442215,
+   "roll_mdeg": -0.8770754609842003,
+   "cost": 6122.741934825647,
+   "iterations": 18
+  },
+  {
+   "block": "Marble Mountain",
+   "site": "Marble Mountain",
+   "T_median_degC": -16.0059,
+   "sol_median": 1978.5,
+   "images": 130,
+   "yaw_mdeg": -1.573723972824878,
+   "pitch_mdeg": 1.1890243316768947,
+   "roll_mdeg": 0.8767931195221694,
+   "cost": 6299.481124157224,
+   "iterations": 15
+  }
+ ],
+ "fits": {
+  "yaw": {
+   "mean_mdeg": -0.08407940899030975,
+   "sd_mdeg": 2.275327488597616,
+   "vs_T": {
+    "n": 32,
+    "mean_x": -17.0486090625,
+    "intercept": -0.08407940899030987,
+    "slope": -0.015957572828260186,
+    "se": 0.09417057980902711,
+    "z": -0.16945390864770385,
+    "rms": 2.274239349997814
+   },
+   "vs_sol": {
+    "n": 32,
+    "mean_x": 0.801921875,
+    "intercept": -0.08407940899030987,
+    "slope": 0.12714383062731266,
+    "se": 0.6758995537697094,
+    "z": 0.18811054086097642,
+    "rms": 2.2739867783125014
+   }
+  },
+  "pitch": {
+   "mean_mdeg": 0.09295732309176186,
+   "sd_mdeg": 0.990000637122093,
+   "vs_T": {
+    "n": 32,
+    "mean_x": -17.0486090625,
+    "intercept": 0.0929573230917618,
+    "slope": -0.04660232613878037,
+    "se": 0.04010076050489538,
+    "z": -1.1621307314880298,
+    "rms": 0.9684418179225126
+   },
+   "vs_sol": {
+    "n": 32,
+    "mean_x": 0.801921875,
+    "intercept": 0.09295732309176179,
+    "slope": -0.19341726373752313,
+    "se": 0.2921323822421445,
+    "z": -0.6620877228776447,
+    "rms": 0.9828460028276782
+   }
+  },
+  "roll": {
+   "mean_mdeg": 1.1467603034689533,
+   "sd_mdeg": 3.800350563086995,
+   "vs_T": {
+    "n": 32,
+    "mean_x": -17.0486090625,
+    "intercept": 1.1467603034689537,
+    "slope": 0.16430771084887233,
+    "se": 0.15447726471606318,
+    "z": 1.0636368474731734,
+    "rms": 3.7306585008795143
+   },
+   "vs_sol": {
+    "n": 32,
+    "mean_x": 0.801921875,
+    "intercept": 1.1467603034689537,
+    "slope": -1.525767406818422,
+    "se": 1.0946950872888266,
+    "z": -1.3937830036281695,
+    "rms": 3.68297647319737
+   }
+  }
+ },
+ "cameras": "pass2 candidate"
+}
