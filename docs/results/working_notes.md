@@ -511,3 +511,26 @@ All three stay.
 **Principal point.** Only the right-minus-left boresight is observable with this field; an absolute principal point trades with pointing. It moves with focus by +2.5 ± 0.3 px (x) and +1.4 ± 0.3 px (y) per 1000 counts, with roll +20 ± 3 mdeg per 1000 counts, and has no temperature term. It is put on ZR. The ZR label principal point swings −0.2 px/count, but that is an artifact that the label pointing cancels.
 
 **Next.** Refit with the four new Nav+Zcam blocks (South Arm, Taylorfjellet at sols ~1600, Three Forks North and South) with notebook 04 §5b. Taylorfjellet tests the sol trend outside 461–991. §5b divides out each block's Navcam scale either way.
+
+## 18 Oct 2026 - rational with k5 free (k6 held), again (`studies/experiments/lens_k5_experiment.py`)
+
+Six blocks (Bell Island, Taylorfjellet, Three Forks South: v0.53-0.65 runs; Rockytop, Origny Large, Chal Rocks Large:
+v0p82 runs), each merged on its own into one NL and one NR camera with the consensus rig and thermal model (fx, fy per
+axis, NR cx(T); no k1(T), drift or early-mission terms in any variant), 20 000 points per block, ~71-96 k observations.
+Rational starts fitted to the consensus fisheye cameras (grid rms 0.11-0.22 px).
+
+| block | cost fisheye_t vs rational_k4 | dcost k5 - k4 | dBIC k5 | corner median px fisheye / k4 / k5 | k5 NL / NR |
+|---|---|---|---|---|---|
+| Bell Island | -0.52 % | -0.4 | +23.6 | 0.233 / 0.252 / 0.253 | -0.024 / +0.028 |
+| Taylorfjellet | -0.79 % | -1.0 | +22.3 | 0.285 / 0.326 / 0.326 | +0.059 / +0.009 |
+| Three Forks South | -0.22 % | +4.1 | +32.1 | 0.310 / 0.316 / 0.317 | -0.039 / +0.042 |
+| Rockytop | -0.86 % | -2.5 | +19.3 | 0.247 / 0.266 / 0.266 | +0.015 / -0.050 |
+| Origny Large | -0.61 % | +0.4 | +24.8 | 0.214 / 0.234 / 0.234 | +0.012 / -0.000 |
+| Chal Rocks Large | -0.65 % | -1.0 | +21.8 | 0.220 / 0.239 / 0.240 | -0.042 / -0.043 |
+
+k5 buys nothing (cost within the convergence noise of a few units, BIC worse on every block, corners unchanged); its
+value flips sign between blocks and eyes while k4 moves by up to 0.1 to compensate; the monotonic reach of the radial
+mapping becomes erratic (1.46-1.49 corner radii at worst, against 1.98-2.89 with k4 alone). Across blocks (fx fy cx cy
+shared, rotation removed; Chal Rocks Large left out - its early-mission offsets are not applied here) the distortion
+differs by NL / NR corner rms 0.96 / 1.29 px (fisheye_t), 1.15 / 1.61 (k4), 1.21 / 1.62 (k5), 1.31 / 1.68 (k5 + k6).
+Same result as v0p22.2 (section 9) and v0p30 (section 11): keep THIN_PRISM_FISHEYE; k5 and k6 stay held.
