@@ -365,7 +365,7 @@ def test_shipped_sites_and_model_v0p75():
     g = t["groups"]
     assert "olifants" not in g["navcam_consensus"] and "cheyava_falls" in g["navcam_consensus"]
     assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]
-    assert {"threeforks_south", "threeforks_north", "cheyava_falls"} <= set(g["zcam34_consensus_v0p82"])   # v0p85: the 13-block list kept
+    assert "zcam34_consensus_v0p82" not in g and "threeforks_north" in g["zcam34_consensus"]   # 19 Oct pm
     assert "threeforks_large" not in g["zcam34_consensus"]
     m = zcam_focus_model()
     assert m.get("form") == "v0p75" and m["rig"]["translation_source"].startswith("CAHV")

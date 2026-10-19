@@ -130,9 +130,7 @@ def test_notebook04_promotion_cell_and_adopt_guard():
     assert "PROMOTE_IF_OK = True" in code[-1] and "check_candidate(" in code[-1] and "promote_candidate(" in code[-1]
     src = "".join(code)
     assert "EARLY_START = None" in src and '"--early-start"' in src
-    b = (ROOT / "scripts" / "windows" / "adopt_claude.bat").read_bytes()
-    assert b"\n" not in b.replace(b"\r\n", b"") and b"claude/main..HEAD -- src/mppp/data/cmods" in b
-    assert b"git status --porcelain -- src/mppp/data/cmods" in b
+    assert not (ROOT / "scripts" / "windows" / "adopt_claude.bat").exists()          # v0p85: claude_sync.bat
 
 
 def test_notebook04_draws_rig_drift_and_lmst():
@@ -161,11 +159,7 @@ def test_lmst_script_draws(tmp_path):
 
 
 def test_upload_mask_model_bat():
-    b = (ROOT / "scripts" / "windows" / "upload_mask_model.bat").read_bytes()
-    assert b"\n" not in b.replace(b"\r\n", b"")
-    for s in (b"mppp_env.bat", b"python -m mppp.mask.hub upload --name %MODEL%", b"python -m mppp.mask.hub verify",
-              b"huggingface_hub import login", b"default_model_name", b"hf_repo("):
-        assert s in b, s
+    # v0p85: upload_mask_model.bat removed (one-off, 2 Oct); the registry stays
     from mppp.mask.hub import default_model_name, hf_repo, load_registry
     assert default_model_name() == "mppp_mask_v3" and hf_repo() == "ctate7163/mppp-mask"
     e = load_registry()["models"]["mppp_mask_v3"]

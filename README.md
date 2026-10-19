@@ -21,7 +21,7 @@ pip install -e .[mask,sfm]          # masks (torch, timm, safetensors) and the C
 pytest -m "not slow"                # optional: the test suite (the example PDS products are in tests/data)
 ```
 
-**Git and GitHub (v0p50).** The history is in git; the private repository is `github.com/ctate7163/MPPP`. Once: `scripts\windows\setup_github.bat`. After each delivery from Claude: `scripts\windows\sync_from_claude.bat` (adopts `_transfer\mppp_latest.bundle`, removes deleted files, pushes). If that stops with "Your local changes ... would be overwritten" (v0p61): `scripts\windows\adopt_claude.bat` stashes this copy's changes, makes main the delivery and pushes; on "GitHub main has commits that this copy does not have" choose K (GitHub's old main is kept as a branch).
+**Git and GitHub (v0p50).** The history is in git; the private repository is `github.com/ctate7163/MPPP`. After each delivery from Claude: `_transfer\claude_sync.bat` (fast-forwards to `_transfer\mppp_latest.bundle`, stashes local changes to tracked files, pushes to GitHub, writes `_transfer\mppp_pc.bundle`; v0p82 - it replaces sync_from_claude.bat, adopt_claude.bat and github_push.bat, removed in v0p85).
 
 
 A conda environment file is in `envs/mppp.yml`. Python ≥ 3.10.
@@ -52,7 +52,7 @@ Notebooks (in `notebooks/`):
   - Double-click it again to see the status.
   - Progress is in `runs\<time>\log.txt`, and the results are in `colmap\`.
   - The same from a prompt: `python scripts\align_scape.py <WORK>`.
-- **Every site:** `scripts\windows\run_sites.bat` (Navcam blocks, group `navcam_consensus`), `run_sites_zcam.bat` (Navcam + every Mastcam-Z zoom of each site's `"zcam"` list, group `zcam_consensus`) and `run_sites_zcam34.bat` ... `run_sites_zcam110.bat` (only that zoom, group `zcam<zoom>_consensus`; v0p61). Or `python scripts\run_sites.py --group navcam_consensus` (also `--group zcam34_consensus --zcam --set ZCAM_ZOOMS=[34]`, or `--sites rockytop chal_rocks_sid`). It selects, processes and aligns each site into its folder, one after the other.
+- **Every site:** `scripts\windows\run_sites.bat` (Navcam blocks, group `navcam_consensus`), `run_sites_zcam.bat` (Navcam + every Mastcam-Z zoom of each site's `"zcam"` list, group `zcam_consensus`) and `run_sites_zcam34.bat` (only the 34 mm frames, group `zcam34_consensus`; v0p61; for another zoom: `python scripts\run_sites.py --group zcam63_consensus --zcam --set ZCAM_ZOOMS=[63]`). Or `python scripts\run_sites.py --group navcam_consensus` (also `--group zcam34_consensus --zcam --set ZCAM_ZOOMS=[34]`, or `--sites rockytop chal_rocks_sid`). It selects, processes and aligns each site into its folder, one after the other.
   - Sites already finished with the same settings are skipped.
   - `--then 04 05` runs the camera-model and error-analysis notebooks at the end.
   - `sites_status.bat` (or `run_sites.py --status`) lists what is running, finished, failed or stopped.

@@ -106,5 +106,5 @@ def test_notebook_and_script_defaults_v0p64():
     nb4 = json.loads((ROOT / "notebooks" / "04_camera_models.ipynb").read_text(encoding="utf-8"))
     src4 = "".join("".join(c["source"]) for c in nb4["cells"] if c["cell_type"] == "code")
     assert "REFIT_THERMAL = True" in src4 and "--refit-thermal" in src4          # v0p73 default True
-    g = (ROOT / "scripts" / "windows" / "github_push.bat").read_bytes()
-    assert b"\n" not in g.replace(b"\r\n", b"") and b"git push origin --tags" in g and b"--tags ||" not in g.split(b":tags")[0]
+    g = (ROOT / "scripts" / "windows" / "claude_sync.bat").read_bytes()   # v0p85: github_push.bat removed
+    assert b"git push origin --tags" in g

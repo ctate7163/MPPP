@@ -547,6 +547,9 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                     v = ln[pn]["a"] + ln[pn]["b"] * (fc - ref)
                     if rr["state"] == "regular" and not own and pn in ("fx", "fy"):
                         v /= ratio                           # the regular state sits at the label
+                    if pn == "k2":                           # v0p85 (Christian): |k2| <= 10
+                        from .reconstruction import K2_LIMIT
+                        v = float(np.clip(v, -K2_LIMIT, K2_LIMIT))
                     p[PARAM_INDEX[pn]] = v
                 rec.cameras[rr["camera_id"]].params = p
         out[g] = res

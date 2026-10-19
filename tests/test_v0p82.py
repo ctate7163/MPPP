@@ -282,8 +282,9 @@ def test_v0p85_groups_cameras_and_pipeline():
     from mppp.sfm.sites import load_site_table
     from mppp.sfm.cmods_form import check_form
     g = load_site_table()["groups"]
-    assert len(g["navcam_consensus"]) == 17 and len(g["navcam_consensus_v0p82"]) == 23     # 17 since 19 Oct pm
-    assert g["zcam34_consensus"] == ["chal_rocks", "rochette", "rio_chiquito", "south_arm", "origny", "marble_mountain"]
+    assert len(g["navcam_consensus"]) == 17 and "navcam_consensus_v0p82" not in g     # 17 since 19 Oct pm
+    assert g["zcam34_consensus"] == ["chal_rocks", "rochette", "threeforks_north", "rio_chiquito", "south_arm", "origny",
+                                     "marble_mountain"]                    # + Three Forks North (19 Oct pm)
     cm = json.loads((ROOT / "src/mppp/data/cmods/M2020_NR_fisheye_tangential.json").read_text())
     assert abs(cm["thermal"]["cx_px_per_degC"] + 0.0525) < 1e-3 and check_form()["ok"]
     src = (ROOT / "scripts" / "run_pipeline.py").read_text()

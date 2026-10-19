@@ -211,7 +211,7 @@ def test_filter_zcam_and_consensus_bats(tmp_path):
     t = (win / "run_sites_zcam.bat").read_text()           # v0p53: every Mastcam-Z consensus block
     assert 'set "WHICH=--group zcam_consensus"' in t and "--zcam" in t
     assert 'set "EXTRA="' in t and "ZCAM_ZOOMS" not in t               # v0p53.1: the sites' own zoom lists
-    for z in (34, 48, 63, 79, 110):                              # v0p53: each runs its consensus group
+    for z in (34,):                     # v0p53: each runs its consensus group (v0p85: 48, 63, 79, 110 removed)
         t = (win / f"run_sites_zcam{z}.bat").read_text()
         assert f'set "WHICH=--group zcam{z}_consensus"' in t and "--zcam" in t, z
         assert f'set "EXTRA=--set ZCAM_ZOOMS=[{z}]"' in t, z              # v0p61: only that zoom

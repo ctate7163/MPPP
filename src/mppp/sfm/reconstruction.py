@@ -48,6 +48,7 @@ from .project import PARAM_NAMES as _PARAM_NAMES      # v0p50: one table (mppp.s
 DEFAULT_SCHEDULE = ((24.0, 10.0, 8.0), (12.0, 2.0, 4.0), (8.0, 2.0, 2.0), (8.0, 2.0, 2.0))
 ROUND1_HOLD = True            # v0p80: round 1 adjusts poses and points only (cameras and rig at the promoted models)
 ATTITUDE_PRIOR_DEG = 1.0      # v0p20: weak CAHV attitude prior per frame (holds the block's orientation)
+K2_LIMIT = 10.0                  # v0p85 (Christian): a camera's k2 is kept within +-10 (set to +-10 when beyond)
 BOGUS_MAX_EXTRA_PARAM = 1.0e6    # v0p85: COLMAP's "bogus camera" limits off (default 1.0, 10, 0.1) - see triangulate()
 BOGUS_MAX_FOCAL_RATIO = 1.0e3
 BOGUS_MIN_FOCAL_RATIO = 1.0e-3
@@ -941,6 +942,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     for cid, blk in cam_blocks.items():                      # v0p74.7: written back from the owned arrays, checked
         if cid in rec.cameras:
             _set_camera_params(rec, cid, np.array(blk, dtype=np.float64))
+    k2_clamped = clamp_k2(rec)                               # v0p85: |k2| <= K2_LIMIT
     for (rid, cid), arr in rig_blocks.items():
         q = arr[:4] / np.linalg.norm(arr[:4])
         from scipy.spatial.transform import Rotation
@@ -962,13 +964,32 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             "prior_gauge": gauge, "no_position_prior_at": sorted(flagged),
             "rig_translation_priors": n_rig_prior, "rig_translation_ties": n_rig_tie,
             "frames_without_position_prior": n_no_prior,
-            "tied_cameras": tied,
+            "tied_cameras": tied, "k2_clamped": k2_clamped,
             "unlocalized_stations": unloc, "navcam_aspect": navcam_aspect, "aspect_priors": len(aspect_costs),
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
             "termination": str(summary.termination_type), "brief": summary.BriefReport(), "retried": retried, "extra": extra_info, "camera_views": views_used, "camera_views_unchanged": views_unchanged,
             "refine_tangential": tangential_setting(refine_tangential), "linear_solver": solver, "num_threads": so.num_threads,
             "seconds": float(summary.total_time_in_seconds)}
+
+
+def clamp_k2(rec, limit: float = None) -> Dict[int, float]:
+    """v0p85 (Christian, 19 Oct): every camera's ``k2`` within +-``limit`` (default :data:`K2_LIMIT`, 10): a value
+    beyond it is set to +-limit.  The Mastcam-Z 34 mm bins reach k2 ~2 in a 25-degree field (r <= 0.22, so k2 r^4
+    is a few pixels); Z63 and Z110 will go higher.  Returns {camera_id: value before} of the cameras changed."""
+    lim = float(K2_LIMIT if limit is None else limit)
+    out = {}
+    for cid, cam in rec.cameras.items():
+        names = _PARAM_NAMES.get(cam.model.name)
+        if not names or "k2" not in names:
+            continue
+        i = names.index("k2")
+        p = np.array(cam.params, float)
+        if i < len(p) and abs(p[i]) > lim:
+            out[int(cid)] = float(p[i])
+            p[i] = float(np.sign(p[i]) * lim)
+            cam.params = p
+    return out
 
 
 def prior_gauge(rec, prior_frames: Sequence[Tuple[int, Any]], recentre: bool = PRIOR_GAUGE_RECENTRE) -> Optional[Dict[str, Any]]:

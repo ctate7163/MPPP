@@ -9,7 +9,8 @@ REM   navcam_consensus_2: the joint over those 17 blocks (NL and NR cx against t
 REM                    started at the pass-2 values, one round), promoted if every check passes; rig residuals
 REM   waypoint_check
 REM   (baseline study skipped: the v0p82 run's study of 18 Oct answers the baseline question)
-REM   zcam_start, zcam_runs, zcam_calibrate, zcam_final_runs: the 6 blocks of zcam34_consensus
+REM   zcam_start, zcam_runs, zcam_calibrate, zcam_final_runs: the 7 blocks of zcam34_consensus
+REM                    (with Three Forks North since 19 Oct pm)
 REM   (sites fixed 19 Oct: Chal Rocks Large from sol 72, Enchanted Lake with sol 421, Bell Island Large from 1431)
 REM   pointclouds, report
 REM

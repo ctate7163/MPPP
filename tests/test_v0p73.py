@@ -337,8 +337,7 @@ def test_set_prior_focal(tmp_path):
 
 def test_scripts_and_bat_exist():
     assert (ROOT / "scripts" / "prepare_next_run.py").is_file()
-    b = (ROOT / "scripts" / "windows" / "prepare_next_run.bat").read_bytes()
-    assert b"\r\n" in b and b"prepare_next_run.py" in b
+    assert not (ROOT / "scripts" / "windows" / "prepare_next_run.bat").exists()     # v0p85: removed (the .py stays)
 
 
 def test_notebook_settings():

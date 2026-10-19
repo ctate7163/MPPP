@@ -126,12 +126,8 @@ def test_outlier_frame_threshold_and_reconstruct_options():
 
 def test_windows_scripts_v0p61():
     w = ROOT / "scripts" / "windows"
-    a = (w / "adopt_claude.bat").read_bytes()
-    assert b"\r\n" in a and b"\n" not in a.replace(b"\r\n", b"")
-    assert b"git stash push -u" in a and b"claude/main" in a and b"github_push.bat" in a
-    g = (w / "github_push.bat").read_bytes()
-    assert b"\n" not in g.replace(b"\r\n", b"") and b"git stash push -u" in g and b"--force-with-lease" in g
-    assert b"sync_from_claude.bat" in g
+    # v0p85: adopt_claude.bat, github_push.bat and sync_from_claude.bat removed (claude_sync.bat replaces them)
+    assert not (w / "adopt_claude.bat").exists() and (w / "claude_sync.bat").is_file()
     z = (w / "run_sites_zcam.bat").read_text()
     assert 'set "EXTRA="' in z and "ZCAM_ZOOMS" not in z.split("set \"EXTRA=")[1].splitlines()[0]
 

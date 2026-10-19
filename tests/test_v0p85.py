@@ -217,7 +217,8 @@ def test_zr_trace_and_report(tmp_path):
     t = out.read_text()
     assert "**ZR lost its frames at `r3_tri`** (after `r2_ba`: 8 -> 0)" in t and t.count("| r3_tri |") == 1
     bat = (ROOT / "scripts" / "windows" / "zr_diagnose_z34.bat").read_bytes()
-    assert b"MPPP_ZCAM_TRACE=2" in bat and b"--sites rochette south_arm --zcam" in bat and b"\r\n" in bat
+    assert b"MPPP_ZCAM_TRACE=1" in bat and b"--group zcam34_diag --zcam" in bat and b"\r\n" in bat
+    assert b"zcam_calibration.py\" calibrate --root \"%ROOT%\" --groups zcam34_diag --n 0 --promote" in bat
 
 
 def test_sites_19_oct_afternoon():
@@ -307,3 +308,16 @@ def test_triangulation_keeps_cameras_with_k2_above_one(tmp_path):
         root = tmp_path
     out = R.triangulate(rec, P(), max_reproj_px=4.0, min_angle_deg=0.1)
     assert all(out.images[i].num_points3D > 250 for i in ids), {i: out.images[i].num_points3D for i in ids}
+
+
+def test_k2_clamped_to_ten():
+    import numpy as np
+    import pycolmap
+    from mppp.sfm import reconstruction as R
+    rec = pycolmap.Reconstruction()
+    for cid, k2 in ((1, 12.5), (2, -30.0), (3, 2.2)):
+        rec.add_camera(pycolmap.Camera(model="FULL_OPENCV", width=1648, height=1200,
+                                       params=[4700, 4700, 824, 600, -0.4, k2, 0, 0, 0, 0, 0, 0], camera_id=cid))
+    assert R.K2_LIMIT == 10.0
+    assert R.clamp_k2(rec) == {1: 12.5, 2: -30.0}
+    assert [float(rec.cameras[c].params[5]) for c in (1, 2, 3)] == [10.0, -10.0, 2.2]
