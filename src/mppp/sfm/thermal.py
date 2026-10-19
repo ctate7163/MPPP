@@ -1,175 +1,47 @@
 """
-Navcam focal length against camera temperature (v0p31).
+The Navcam temperature bins of a solved block: the final stage of :func:`mppp.sfm.reconstruction.reconstruct`.
 
-The flight team's Navcam camera models are interpolated by the camera-plate
-temperature (``GEOMETRIC_CAMERA_MODEL.INTERPOLATION_VALUE``), but their focal
-length hardly changes with it (less than 0.01 px over the scapes).  The refined
-MPPP cameras of the scapes differ by up to ~2 px in focal length, in both eyes
-together, and across scapes the difference follows the scape's median camera
-temperature (notebook 04 section 2a).  This module measures the effect inside
-one block and corrects for it.
-
-Temperatures
-    :func:`label_temperatures` reads the camera temperatures of one PDS label
-    (``NAVCAM_LEFT_CAL`` / ``NAVCAM_RIGHT_CAL`` in
-    ``INSTRUMENT_STATE_PARMS``: both eyes are in every Navcam label, and the
-    image's own one is the model's interpolation temperature).
-    :func:`interpolate_temperatures` fills the images of a block from a few
-    sampled labels, linearly in spacecraft clock within a sol.
-    :func:`image_temperatures` gives each project image its eye's temperature:
-    from the project/manifest (``camera_temperature_degC``, MPPP >= 0.30), from
-    a table of label samples, or by reading the labels under ``pds_dir``.
-
-Temperature bins
-    :func:`temperature_bins` puts every exposure (frame) in a bin of
-    ``bin_deg`` by the mean temperature of its images; bins with fewer than
-    ``min_images`` images are merged into their nearer neighbour.
-    :func:`split_by_temperature` rebuilds a solved reconstruction with one
-    Navcam camera per eye and bin (the stereo rig copied per bin, so both eyes
-    of an exposure stay in one rig) and adds the bin cameras to a copy of the
-    project with everything but the free parameters (default ``fx``, ``fy``)
-    held.  :func:`thermal_adjust` runs the bundle adjustment on it, after the
-    same adjustment with one camera per eye (the reference cost), and reports
-    per bin the refined focal lengths.  :func:`fit_focal_temperature` fits
-    ``f = a_scape + b T`` over the bins of one or several scapes: the scape
-    offsets absorb everything that differs between scapes, so ``b`` is the
-    within-block thermal coefficient.
-
-Correction
-    :func:`thermal_start_cameras` sets the bins' start focal lengths from a
-    thermal model (``beta`` in ppm/degC about ``T0``) - with the bins held
-    this is the temperature-corrected calibration for weak networks.
+The refined Navcam cameras of a block follow the camera temperature (fx, fy by ~40 ppm/degC, the principal points
+and k1 by their slopes - the thermal terms of the promoted model, :mod:`mppp.calib`).  :func:`temperature_bins` puts
+every exposure (frame) in a bin of ``bin_deg`` by the mean temperature of its images (bins with fewer than
+``min_images`` images merged into their nearer neighbour); :func:`split_by_temperature` rebuilds a solved
+reconstruction with one Navcam camera per eye and bin (the stereo rig copied per bin), each bin started from the
+eye's camera moved to the bin temperature by the thermal model; :func:`thermal_stage` adjusts it once more with the
+bins' ``free`` parameters refined (fx, fy, k1), everything else held.  :func:`image_temperatures` gives each project
+image its eye's temperature (:mod:`mppp.labels` reads the labels).
 """
 from __future__ import annotations
 
 import copy
+import logging
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
-PathLike = Union[str, Path]
+from .. import calib
+from ..labels import LEFT_KEY, RIGHT_KEY, camera_temperature, instrument_temperatures, label_temperatures  # noqa: F401
 
-LEFT_KEY, RIGHT_KEY = "NAVCAM_LEFT_CAL", "NAVCAM_RIGHT_CAL"
+log = logging.getLogger("mppp.sfm")
+PathLike = Union[str, Path]
 
 
 # ----------------------------------------------------------------------------- temperatures
 
 def eye_key(key: Any) -> str:
-    """v0p75: the Navcam eye of a camera key: ``"NL#1"`` (a rig-epoch copy) and ``"NL_T-20..-10"`` (a temperature
+    """The Navcam eye of a camera key: ``"NL#1"`` (a rig-epoch copy) and ``"NL_T-20..-10"`` (a temperature
     bin) -> ``"NL"``; other keys unchanged."""
     k = str(key)
     return k.split("#", 1)[0].split("_T", 1)[0] if k.startswith("N") else k
-
-def label_temperatures(path: PathLike) -> Dict[str, Optional[float]]:
-    """Camera temperatures of one Navcam PDS product (label only): ``NL``, ``NR`` (degC) and ``interp``, the
-    value the label's camera model was interpolated to (the image's own eye)."""
-    from ..labels import label_get, read_pds
-    L, _ = read_pds(path, load_image=False)
-    names = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
-    vals = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
-    t = {}
-    for k, v in zip(names, vals):
-        try:
-            t[str(k)] = float(getattr(v, "value", v))
-        except (TypeError, ValueError):
-            pass
-    g = label_get(L, "GEOMETRIC_CAMERA_MODEL") or {}
-    interp = None
-    if str(g.get("INTERPOLATION_METHOD") or "").upper() == "TEMPERATURE":
-        try:
-            interp = float(g.get("INTERPOLATION_VALUE"))
-        except (TypeError, ValueError):
-            interp = None
-    return {"NL": t.get(LEFT_KEY), "NR": t.get(RIGHT_KEY), "interp": interp}
-
-
-def label_instrument_temperatures(path: PathLike) -> Dict[str, float]:
-    """v0p73: every sensor of a PDS product's ``INSTRUMENT_TEMPERATURE`` (label only), {name: degC}."""
-    from ..labels import label_get, read_pds
-    L, _ = read_pds(path, load_image=False)
-    names = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
-    vals = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
-    out = {}
-    for k, v in zip(names, vals):
-        try:
-            out[str(k)] = float(getattr(v, "value", v))
-        except (TypeError, ValueError):
-            pass
-    return out
-
-
-def zcam_label_temperature(path: PathLike, key: str = "HEAD_FPA") -> Optional[float]:
-    """v0p42: the Mastcam-Z camera temperature of one PDS product (label only): the focal-plane sensor ``HEAD_FPA``
-    (also recorded: ``DEA``, ``HEAD_HTR_1``, ``HEAD_HTR_2``), degC; None without it."""
-    from ..labels import label_get, read_pds
-    L, _ = read_pds(path, load_image=False)
-    names = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
-    vals = label_get(L, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
-    for k, v in zip(names, vals):
-        if str(k) == key:
-            try:
-                return float(getattr(v, "value", v))
-            except (TypeError, ValueError):
-                return None
-    return None
-
-
-def _sol_sclk(stem: str) -> Tuple[int, float]:
-    from ..filenames import parse_filename
-    fn = parse_filename(stem + ".IMG")
-    return int(fn.sol), float(fn.sclk)
-
-
-def interpolate_temperatures(samples: Dict[str, Dict[str, Optional[float]]], stems: Iterable[str],
-                             max_gap_s: float = 1800.0) -> Dict[str, Dict[str, Any]]:
-    """
-    Both eyes' camera temperatures for ``stems`` (PDS product stems) from label ``samples`` ({stem: {"NL", "NR"}}):
-    exact where the stem (or its exposure) was sampled, else linear in spacecraft clock between the nearest samples
-    of the same sol, else the nearest sample of the sol within ``max_gap_s``.  Returns {stem: {"NL", "NR", "source",
-    "gap_s"}}; stems of sols without samples are left out.
-    """
-    by_sol: Dict[int, List[Tuple[float, float, float]]] = {}
-    exact: Dict[Tuple[int, str], Dict[str, float]] = {}
-    for s, v in samples.items():
-        if v.get("NL") is None or v.get("NR") is None:
-            continue
-        sol, sclk = _sol_sclk(s)
-        by_sol.setdefault(sol, []).append((sclk, float(v["NL"]), float(v["NR"])))
-        exact[(sol, f"{sclk:.3f}")] = v
-    for sol in by_sol:
-        by_sol[sol].sort()
-    out: Dict[str, Dict[str, Any]] = {}
-    for s in stems:
-        sol, sclk = _sol_sclk(s)
-        e = exact.get((sol, f"{sclk:.3f}"))
-        if e is not None:
-            out[s] = {"NL": float(e["NL"]), "NR": float(e["NR"]), "source": "label", "gap_s": 0.0}
-            continue
-        pts = by_sol.get(sol)
-        if not pts:
-            continue
-        t = np.array([p[0] for p in pts])
-        i = int(np.searchsorted(t, sclk))
-        if 0 < i < len(pts):
-            (t0, l0, r0), (t1, l1, r1) = pts[i - 1], pts[i]
-            w = (sclk - t0) / (t1 - t0) if t1 > t0 else 0.0
-            out[s] = {"NL": l0 + w * (l1 - l0), "NR": r0 + w * (r1 - r0), "source": "interpolated",
-                      "gap_s": float(min(sclk - t0, t1 - sclk))}
-        else:
-            j = 0 if i == 0 else len(pts) - 1
-            gap = abs(pts[j][0] - sclk)
-            if gap <= max_gap_s:
-                out[s] = {"NL": pts[j][1], "NR": pts[j][2], "source": "nearest", "gap_s": float(gap)}
-    return out
 
 
 def image_temperatures(project, samples: Optional[Dict[str, Dict[str, Optional[float]]]] = None,
                        pds_dir: Optional[PathLike] = None, verbose: bool = False) -> Dict[str, Dict[str, Any]]:
     """
     Each Navcam image's camera temperature (its own eye) keyed by image name: from the project record
-    (``camera_temperature_degC``), else from ``samples`` (label temperatures, interpolated), else from the labels
-    under ``pds_dir`` (every image's own label).  Returns {name: {"T", "T_NL", "T_NR", "source"}}.
+    (``camera_temperature_degC``), else from ``samples`` ({stem: {"NL", "NR"}} label temperatures of the same
+    exposures), else from the labels under ``pds_dir`` (every image's own label).  Returns {name: {"T", "T_NL",
+    "T_NR", "source"}}.
     """
     out: Dict[str, Dict[str, Any]] = {}
     nav = [r for r in project.images if str(r.get("instrument", "")).startswith("N")]
@@ -181,14 +53,12 @@ def image_temperatures(project, samples: Optional[Dict[str, Dict[str, Optional[f
         else:
             todo.append(r)
     if todo and samples:
-        interp = interpolate_temperatures(samples, [r["stem"] for r in todo])
         for r in list(todo):
-            v = interp.get(r["stem"])
-            if v is None:
+            v = samples.get(r["stem"])
+            if v is None or v.get("NL") is None or v.get("NR") is None:
                 continue
             eye = "NL" if str(r["instrument"]).startswith("NL") else "NR"
-            out[r["name"]] = {"T": float(v[eye]), "T_NL": v["NL"], "T_NR": v["NR"], "source": v["source"],
-                              "gap_s": v["gap_s"]}
+            out[r["name"]] = {"T": float(v[eye]), "T_NL": v["NL"], "T_NR": v["NR"], "source": "label"}
         todo = [r for r in todo if r["name"] not in out]
     if todo and pds_dir:
         from ..select import iter_imgs
@@ -205,9 +75,8 @@ def image_temperatures(project, samples: Optional[Dict[str, Dict[str, Optional[f
             if not want:
                 break
     if verbose:
-        n = len(nav)
-        print(f"[thermal] temperatures for {len(out)} of {n} Navcam images "
-              f"({', '.join(f'{k} {v}' for k, v in _count(x['source'] for x in out.values()).items())})")
+        log.info("temperatures for %d of %d Navcam images (%s)", len(out), len(nav),
+                 ", ".join(f"{k} {v}" for k, v in _count(x["source"] for x in out.values()).items()))
     return out
 
 
@@ -219,16 +88,16 @@ def _count(xs: Iterable[str]) -> Dict[str, int]:
 
 
 # ----------------------------------------------------------------------------- bins
-# v0p44: the defaults of the final (thermal) stage of notebook 03 - 5 degC bins, a bin with fewer than 5 images
-# (both eyes counted) merged into its neighbour (were 10 degC and 8 images)
+# the defaults of the final (thermal) stage of notebook 03 - 5 degC bins, a bin with fewer than 5 images
+# (both eyes counted) merged into its neighbour
 THERMAL_BIN_DEG = 5.0
 THERMAL_MIN_IMAGES = 5
-# v0p75.1: finer bins where the images are dense (most Navcam frames are taken at -25..-5 degC): 2.5 degC there,
+# finer bins where the images are dense (most Navcam frames are taken at -25..-5 degC): 2.5 degC there,
 # THERMAL_BIN_DEG outside; the merge of small bins (THERMAL_MIN_IMAGES) is unchanged
 THERMAL_FINE_RANGE_DEGC = (-25.0, -5.0)
 THERMAL_FINE_BIN_DEG = 2.5
-# v0p75.1: fx, fy and k1 per temperature bin (the 13 Oct test: k1 changes with temperature, -3.8e-6 /degC, and
-# the fx / fy slopes stay different with k1 free); k1 is the one distortion term a bin may refine
+# fx, fy and k1 per temperature bin (k1 changes with temperature, and the fx / fy slopes stay different with k1
+# free); k1 is the one distortion term a bin may refine
 THERMAL_FREE = ("fx", "fy", "k1")
 THERMAL_FREE_DISTORTION = ("k1",)
 THERMAL_K1_MIN_IMAGES = 6       # an eye's bin with fewer images keeps k1 at the eye's value (fx, fy still free)
@@ -236,7 +105,7 @@ THERMAL_K1_MIN_IMAGES = 6       # an eye's bin with fewer images keeps k1 at the
 
 def bin_edges(T: float, bin_deg: float = THERMAL_BIN_DEG, fine_range: Optional[Sequence[float]] = None,
               fine_deg: Optional[float] = None) -> Tuple[float, float]:
-    """v0p75.1: the (lo, hi) bin of temperature ``T``: ``fine_deg`` wide inside ``fine_range`` = (a, b) (edges at a,
+    """The (lo, hi) bin of temperature ``T``: ``fine_deg`` wide inside ``fine_range`` = (a, b) (edges at a,
     a + fine_deg, ...), ``bin_deg`` wide (multiples of ``bin_deg``) outside, cut at a and b so that no bin straddles
     the fine range.  Without a fine range: ``[floor(T / bin_deg) * bin_deg, + bin_deg)`` as before."""
     if fine_range and fine_deg:
@@ -269,7 +138,7 @@ def temperature_bins(frame_T: Dict[int, float], frame_n: Dict[int, int], bin_deg
        (e.g. -20..-15 + -15..-10 -> -20..-10; -25..-20 + -15..-10 -> -25..-10).  Repeated until every bin has
        ``min_images`` or only one is left.  A tie between two neighbours goes to the colder one.
 
-    v0p75.1: ``fine_range`` (a, b) and ``fine_deg``: bins ``fine_deg`` wide inside [a, b) (:func:`bin_edges`), where
+    ``fine_range`` (a, b) and ``fine_deg``: bins ``fine_deg`` wide inside [a, b) (:func:`bin_edges`), where
     the images are dense; the merge rule then works on those bins as on the others.
     """
     if not frame_T:
@@ -296,36 +165,13 @@ def temperature_bins(frame_T: Dict[int, float], frame_n: Dict[int, int], bin_deg
 
 
 def _tag(lo: float, hi: float) -> str:
-    def f(x):                                    # v0p75.1: half-degree edges of the fine bins keep their .5
+    def f(x):                                    # half-degree edges of the fine bins keep their .5
         return f"{int(round(x)):+04d}" if abs(x - round(x)) < 1e-9 else f"{x:+06.1f}"
     return f"T{f(lo)}{f(hi)}"
 
 
-def rig_rotation_at(R, t, dT: float, yaw_mdeg_per_degC: float, pitch_mdeg_per_degC: float = 0.0):
-    """v0p35: the stereo rig (x_R = R x_L + t) at a temperature dT from the one it describes, with the right camera's
-    rotation changing by (pitch, yaw) slopes x dT (rotation vector in the right camera frame) and its centre fixed:
-    R' = Rot R, t' = Rot t."""
-    from scipy.spatial.transform import Rotation
-    Q = Rotation.from_rotvec(np.radians(1e-3 * np.array([pitch_mdeg_per_degC * dT, yaw_mdeg_per_degC * dT, 0.0]))).as_matrix()
-    return Q @ np.asarray(R, float), Q @ np.asarray(t, float)
-
-
-def rig_slopes_for_project(project) -> Optional[Dict[str, float]]:
-    """v0p35: the rig's temperature model of the project's start rig (``M2020_N_rig.json`` with a ``thermal``
-    entry, recorded by ``SfmProject.create``): {"yaw_mdeg_per_degC", "pitch_mdeg_per_degC", "T0_degC"} or None."""
-    rig = ((project.settings.get("navcam_cameras") or {}).get("rig") or {})
-    if project.settings.get("navcam_rig_thermal") is False:      # v0p53: the rig has no temperature dependence
-        return None
-    th = rig.get("thermal")
-    if not (th and th.get("yaw_mdeg_per_degC") is not None):
-        return None
-    if project.settings.get("navcam_rig_yaw") in ("hold", "zero"):    # v0p51: no yaw with temperature either
-        th = dict(th, yaw_mdeg_per_degC=0.0)
-    return th
-
-
 def _database_ids(project) -> Tuple[List[int], List[int]]:
-    """v0p62: the camera and rig ids of the project database (empty without one)."""
+    """The camera and rig ids of the project database (empty without one)."""
     try:
         import pycolmap
         path = getattr(project, "database", None)
@@ -343,22 +189,19 @@ def _database_ids(project) -> Tuple[List[int], List[int]]:
 def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float = 10.0,
                          min_images: int = 8, free: Sequence[str] = ("fx", "fy"),
                          thermal_model: Optional[Dict[str, Dict[str, float]]] = None,
-                         rig_slopes: Optional[Dict[str, float]] = None,
                          fine_range: Optional[Sequence[float]] = None, fine_deg: Optional[float] = None,
                          k1_min_images: int = THERMAL_K1_MIN_IMAGES):
     """
     A copy of ``rec`` with one camera per Navcam eye and temperature bin, and a copy of ``project`` whose cameras
-    and database mapping include them (``fixed_params``: all but ``free``).  ``thermal_model``: {"NL": {"ppm_per_degC",
-    "T0_degC"}, ...} - the bins then start from the eye's camera scaled by 1 + ppm 1e-6 (T_bin - T0) (fx and fy).
-    Frames without a temperature keep the original cameras.  ``rig_slopes`` (v0p35): {"yaw_mdeg_per_degC",
-    "pitch_mdeg_per_degC"} - each bin's rig starts from the block's rig turned to the bin temperature
-    (:func:`rig_rotation_at`, relative to the mean frame temperature of the block).  Returns (rec, project, bins)
-    with ``bins``: one row per bin camera.  v0p75.1: ``fine_range`` / ``fine_deg`` as in :func:`temperature_bins`;
-    with ``k1`` in ``free``, a bin camera with fewer than ``k1_min_images`` images keeps k1 at the eye's value.
+    and database mapping include them (``fixed_params``: all but ``free``).  ``thermal_model``: {"NL": {"T0_degC",
+    "fx_ppm_per_degC", "fy_ppm_per_degC", "cx_px_per_degC", "cy_px_per_degC", "k1_per_degC"}, ...} - the bins then
+    start from the eye's camera moved to the bin temperature by those terms (:func:`mppp.calib.camera_at`).
+    Frames without a temperature keep the original cameras.  Returns (rec, project, bins) with ``bins``: one row per
+    bin camera.  ``fine_range`` / ``fine_deg`` as in :func:`temperature_bins`; with ``k1`` in ``free``, a bin camera
+    with fewer than ``k1_min_images`` images keeps k1 at the eye's value.
     """
     import pycolmap
-    from .project import FULL_OPENCV_NAMES
-    from .reconstruction import _PARAM_NAMES
+    from .project import FULL_OPENCV_NAMES, PARAM_NAMES as _PARAM_NAMES
     proj = copy.deepcopy(project)
     db_cams = dict(proj.settings.get("database", {}).get("cameras", {}))
     key_of = {int(v): k for k, v in db_cams.items()}
@@ -380,7 +223,7 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
     new = pycolmap.Reconstruction()
     for cid, cam in rec.cameras.items():
         new.add_camera(cam)
-    # v0p61: above every camera id the project knows too - after stage 1 of a staged run the Mastcam-Z cameras are
+    # above every camera id the project knows too - after stage 1 of a staged run the Mastcam-Z cameras are
     # no longer in ``rec`` but come back with their frames (restore_frames): their ids must stay free
     db_cam_ids, db_rig_ids = _database_ids(project)
     next_cid = max(list(rec.cameras) + [int(v) for v in (proj.settings.get("database", {}).get("cameras") or {}).values()]
@@ -400,24 +243,16 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
                 continue
             p = np.array(base.params, float)
             tm = float(np.median(Tb))
-            mkey = key if (thermal_model and key in thermal_model) else eye_key(key)   # v0p75: "NL#1" -> NL
+            mkey = key if (thermal_model and key in thermal_model) else eye_key(key)   # "NL#1" -> NL
             if thermal_model and mkey in thermal_model:
-                m = thermal_model[mkey]
-                from .cmods_form import thermal_scale                 # v0p73: fx and fy each their own ppm/degC
-                sx, sy = thermal_scale(m, tm)
-                p[0] *= sx
-                p[1] *= sy
-                p[2] += float(m.get("cx_px_per_degC") or 0.0) * (tm - float(m["T0_degC"]))     # v0p40
-                p[3] += float(m.get("cy_px_per_degC") or 0.0) * (tm - float(m["T0_degC"]))
-                _nm = _PARAM_NAMES.get(base.model.name, FULL_OPENCV_NAMES)
-                if m.get("k1_per_degC") and "k1" in _nm:              # v0p80: k1 against temperature (joint slope)
-                    p[_nm.index("k1")] += float(m["k1_per_degC"]) * (tm - float(m["T0_degC"]))
+                _, p, _ = calib.camera_at({"model": base.model.name, "params": p, "thermal": thermal_model[mkey]}, tm)
+                p = np.asarray(p, float)
             c = pycolmap.Camera(camera_id=next_cid, model=base.model, width=base.width, height=base.height, params=p)
             new.add_camera(c)
             bin_cam[(cid, b)] = next_cid
             bkey = f"{key}_{_tag(*b)}"
             names = _PARAM_NAMES.get(base.model.name, FULL_OPENCV_NAMES)
-            free_b = [n for n in free if not (n == "k1" and len(Tb) < int(k1_min_images))]     # v0p75.1
+            free_b = [n for n in free if not (n == "k1" and len(Tb) < int(k1_min_images))]
             pc = dict(proj.cameras.get(key, {}))
             pc.update({"params": p.tolist(), "group": key, "temperature_bin_degC": list(b),
                        "temperature_median_degC": tm, "n_images": len(Tb),
@@ -435,7 +270,7 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
     proj.settings.setdefault("database", {})["cameras"] = db_cams
 
     sensor = lambda c: pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=int(c))     # noqa: E731
-    # v0p62: above the database's rig ids too - after stage 1 the Mastcam-Z rigs are no longer in ``rec`` and come
+    # above the database's rig ids too - after stage 1 the Mastcam-Z rigs are no longer in ``rec`` and come
     # back with their frames (restore_frames), which would otherwise attach them to a temperature-bin rig
     next_rid = max(list(rec.rigs) + db_rig_ids) + 1
     rig_for: Dict[Tuple[int, Tuple[float, float]], int] = {}
@@ -451,16 +286,7 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
         r = pycolmap.Rig(rig_id=next_rid)
         r.add_ref_sensor(sensor(bin_cam.get((ref, b), ref)))
         for sid in old.non_ref_sensors:
-            T = old.sensor_from_rig(sid)
-            if rig_slopes and frame_T:
-                Tb = [frame_T[f] for f, e in fbin.items() if e == b and f in frame_T]
-                if Tb:
-                    dT = float(np.mean(Tb)) - float(np.mean(list(frame_T.values())))
-                    R2, t2 = rig_rotation_at(np.asarray(T.rotation.matrix()), np.asarray(T.translation), dT,
-                                             float(rig_slopes.get("yaw_mdeg_per_degC", 0.0)),
-                                             float(rig_slopes.get("pitch_mdeg_per_degC", 0.0)))
-                    T = pycolmap.Rigid3d(pycolmap.Rotation3d(R2), t2)
-            r.add_sensor(sensor(bin_cam.get((sid.id, b), sid.id)), T)
+            r.add_sensor(sensor(bin_cam.get((sid.id, b), sid.id)), old.sensor_from_rig(sid))
         new.add_rig(r)
         rig_for[(rid, b)] = next_rid
         next_rid += 1
@@ -503,62 +329,6 @@ def _stats(rec, project) -> Dict[str, float]:
             "p95_px": float(np.percentile(r, 95))}
 
 
-def thermal_adjust(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float = 10.0, min_images: int = 8,
-                   free: Sequence[str] = ("fx", "fy"), sigma_px: float = 0.5, loss_scale: float = 2.0,
-                   max_iterations: int = 100, thermal_model: Optional[Dict[str, Dict[str, float]]] = None,
-                   reference: bool = True, verbose: bool = True) -> Dict[str, Any]:
-    """
-    The temperature-bin test on a solved block (see the module docstring).  ``reference``: first the same adjustment
-    with one camera per eye (``free`` refined, everything else held, rig held), so that the bin result is compared
-    with the same freedom minus the temperature dependence.  Returns {"reference", "reference_rec", "bins", "rows",
-    "rec", "project"}.
-    """
-    from .reconstruction import bundle_adjust
-    att = float((project.settings.get("reconstruction") or {}).get("attitude_prior_deg") or 1.0)
-    out: Dict[str, Any] = {"bin_deg": bin_deg, "min_images": min_images, "free": list(free)}
-    if reference:
-        r0 = copy.deepcopy(rec)
-        p0 = copy.deepcopy(project)
-        from .project import FULL_OPENCV_NAMES
-        from .reconstruction import _PARAM_NAMES
-        for k, c in p0.cameras.items():
-            if str(k).startswith("N"):
-                names = _PARAM_NAMES.get(c.get("model", "FULL_OPENCV"), FULL_OPENCV_NAMES)
-                c["fixed_params"] = [n for n in names if n not in set(free)]
-                c["free_params"] = []
-        ba0 = bundle_adjust(r0, p0, sigma_px=sigma_px, loss_scale=loss_scale, refine_rig=False,
-                            max_iterations=max_iterations, attitude_prior_deg=att)
-        cams0 = {k: [float(x) for x in r0.cameras[int(v)].params[:4]]
-                 for k, v in p0.settings["database"]["cameras"].items() if str(k).startswith("N") and int(v) in r0.cameras}
-        out["reference"] = {"cost": ba0["final_cost"], "initial_cost": ba0["initial_cost"], "seconds": ba0["seconds"],
-                            "stats": _stats(r0, p0), "cameras": cams0}
-        out["reference_rec"] = r0
-        if verbose:
-            print(f"[thermal] one camera per eye: cost {ba0['final_cost']:.1f} ({ba0['seconds']:.0f} s), "
-                  f"{out['reference']['stats']}", flush=True)
-    r1, p1, rows = split_by_temperature(rec, project, temps, bin_deg, min_images, free, thermal_model, rig_slopes,
-                                        fine_range=fine_range, fine_deg=fine_deg)
-    ba1 = bundle_adjust(r1, p1, sigma_px=sigma_px, loss_scale=loss_scale, refine_rig=False,
-                        max_iterations=max_iterations, attitude_prior_deg=att)
-    for row in rows:
-        p = r1.cameras[row["camera_id"]].params
-        row.update({"fx": float(p[0]), "fy": float(p[1]), "cx": float(p[2]), "cy": float(p[3])})
-    obs = _obs_per_camera(r1)
-    for row in rows:
-        row["observations"] = int(obs.get(row["camera_id"], 0))
-    out["bins"] = {"cost": ba1["final_cost"], "initial_cost": ba1["initial_cost"], "seconds": ba1["seconds"],
-                   "stats": _stats(r1, p1), "n_bins": len({tuple(r["bin_degC"]) for r in rows})}
-    out["rows"] = rows
-    out["rec"] = r1
-    out["project"] = p1
-    if verbose:
-        print(f"[thermal] {out['bins']['n_bins']} temperature bins: cost {ba1['final_cost']:.1f} "
-              f"({ba1['seconds']:.0f} s), {out['bins']['stats']}", flush=True)
-        for line in thermal_bin_lines(rows, free):
-            print(line, flush=True)
-    return out
-
-
 def _obs_per_camera(rec) -> Dict[int, int]:
     n: Dict[int, int] = {}
     for pt in rec.points3D.values():
@@ -568,61 +338,8 @@ def _obs_per_camera(rec) -> Dict[int, int]:
     return n
 
 
-# ----------------------------------------------------------------------------- fits
-def fit_focal_temperature(rows: Sequence[Dict[str, Any]], param: str = "fx", min_observations: int = 2000,
-                          weight: bool = True) -> Dict[str, Any]:
-    """
-    ``param = a_scape + b T`` over temperature-bin rows (``scape``, ``eye``, ``T_median_degC``, ``param``,
-    ``observations``) - one offset per scape and eye, one slope per eye; weights sqrt(observations).  Returns per
-    eye {"px_per_degC", "sd", "ppm_per_degC", "rows", "scapes", "residual_rms_px", "offsets"}.
-    """
-    out: Dict[str, Any] = {}
-    for eye in sorted({r["eye"] for r in rows}):
-        rr = [r for r in rows if r["eye"] == eye and r.get("observations", 0) >= min_observations and r.get(param) is not None]
-        scapes = sorted({r.get("scape", "") for r in rr})
-        # scapes with a single bin carry no slope information but are kept for their offset
-        if len(rr) < 3 or len(rr) <= len(scapes):
-            continue
-        A = np.zeros((len(rr), len(scapes) + 1))
-        y = np.array([float(r[param]) for r in rr])
-        for i, r in enumerate(rr):
-            A[i, scapes.index(r.get("scape", ""))] = 1.0
-            A[i, -1] = float(r["T_median_degC"])
-        w = np.sqrt(np.array([float(r.get("observations", 1)) for r in rr])) if weight else np.ones(len(rr))
-        w = w / w.mean()
-        coef, *_ = np.linalg.lstsq(A * w[:, None], y * w, rcond=None)
-        res = y - A @ coef
-        dof = max(1, len(rr) - A.shape[1])
-        s2 = float(np.sum((w * res) ** 2)) / dof
-        cov = np.linalg.pinv((A * w[:, None]).T @ (A * w[:, None])) * s2
-        b = float(coef[-1])
-        f0 = float(np.mean(y))
-        out[eye] = {"param": param, "px_per_degC": b, "sd": float(np.sqrt(cov[-1, -1])), "ppm_per_degC": b / f0 * 1e6,
-                    "ppm_sd": float(np.sqrt(cov[-1, -1])) / f0 * 1e6, "rows": len(rr), "scapes": len(scapes),
-                    "residual_rms_px": float(np.sqrt(np.mean(res ** 2))),
-                    "offsets": {s: float(c) for s, c in zip(scapes, coef[:-1])}}
-    return out
-
-
-def thermal_start_cameras(cameras: Dict[str, Dict[str, Any]], model: Dict[str, Dict[str, float]],
-                          T: Dict[str, float]) -> Dict[str, Dict[str, Any]]:
-    """Cameras (``{"NL": {...params...}}``) scaled to temperatures ``T`` ({"NL": degC}) with ``model``
-    ({"NL": {"ppm_per_degC", "T0_degC"}}): fx and fy times 1 + ppm 1e-6 (T - T0)."""
-    out = {}
-    for k, c in cameras.items():
-        c = copy.deepcopy(c)
-        if k in model and k in T:
-            from .cmods_form import thermal_scale                     # v0p73: per axis
-            sx, sy = thermal_scale(model[k], float(T[k]))
-            c["params"] = list(map(float, c["params"]))
-            c["params"][0] *= sx
-            c["params"][1] *= sy
-        out[k] = c
-    return out
-
-
 # ----------------------------------------------------------------------------- pipeline stage
-THERMAL_MIN_BIN_IMAGES = 3      # v0p74.7: an eye's temperature bin with fewer images is held at the thermal model
+THERMAL_MIN_BIN_IMAGES = 3      # an eye's temperature bin with fewer images is held at the thermal model
 
 
 def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float = THERMAL_BIN_DEG,
@@ -630,30 +347,30 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
                   free: Sequence[str] = THERMAL_FREE, hold: bool = False,
                   thermal_model: Optional[Dict[str, Dict[str, float]]] = None, sigma_px: float = 0.5,
                   loss_scale: float = 2.0, max_iterations: int = 100, attitude_prior_deg: Optional[float] = None,
-                  linear_solver: str = "auto", verbose: bool = True, rig_slopes: Optional[Dict[str, float]] = None,
+                  linear_solver: str = "auto", verbose: bool = True,
                   fine_range: Optional[Sequence[float]] = THERMAL_FINE_RANGE_DEGC,
                   fine_deg: Optional[float] = THERMAL_FINE_BIN_DEG):
     """
-    The final stage of :func:`mppp.sfm.reconstruction.reconstruct` with ``thermal_bins_deg`` (v0p31): the solved
+    The final stage of :func:`mppp.sfm.reconstruction.reconstruct` with ``thermal_bins_deg``: the solved
     block is split into Navcam temperature bins (:func:`split_by_temperature`) and adjusted once more with the bins'
     ``free`` parameters refined (or, with ``hold``, every bin held at its start: the eye's camera scaled to the bin
     temperature by ``thermal_model``), everything else of the cameras and the rig held, poses and points free.
     ``project`` is updated in place (bin cameras and their database ids).  Returns (rec, report).
-    v0p75.1: ``free`` may include k1 (:data:`THERMAL_FREE_DISTORTION`; default fx, fy, k1); bins are
-    ``fine_deg`` wide inside ``fine_range`` (default 2.5 degC over -25..-5 degC) and ``bin_deg`` outside.
+    ``free`` may include k1 (:data:`THERMAL_FREE_DISTORTION`; default fx, fy, k1); bins are ``fine_deg`` wide inside
+    ``fine_range`` (default 2.5 degC over -25..-5 degC) and ``bin_deg`` outside.
     """
-    # v0p50: the Navcam distortion is one set per eye for all temperatures - a temperature bin fits at most the focal
-    # length and the principal point; v0p75.1: and k1
+    # the Navcam distortion is one set per eye for all temperatures - a temperature bin fits at most the focal
+    # length, the principal point and k1
     from .project import INTRINSIC_CORE
     bad = [n for n in free if n not in INTRINSIC_CORE and n not in THERMAL_FREE_DISTORTION]
     if bad:
         raise ValueError(f"thermal_free {tuple(free)}: {bad} are distortion terms; the Navcam distortion is not fitted "
-                         f"per temperature bin (v0p50) except {THERMAL_FREE_DISTORTION} (v0p75.1) - use a subset of "
+                         f"per temperature bin except {THERMAL_FREE_DISTORTION} - use a subset of "
                          f"{tuple(INTRINSIC_CORE) + THERMAL_FREE_DISTORTION}")
     from .reconstruction import bundle_adjust
     before = _stats(rec, project)
-    # v0p53 (audit item 1 of 30 Sep): the bins start from the refined eye cameras, so their refined / start ratio no
-    # longer holds the block's Navcam focal scale - record the eyes' refined / start (consensus) ratio here
+    # the bins start from the refined eye cameras, so their refined / start ratio no longer holds the block's Navcam
+    # focal scale - record the eyes' refined / start (promoted model) ratio here
     pre = {}
     for key, cid in ((project.settings.get("database") or {}).get("cameras") or {}).items():
         st = (project.cameras.get(key) or {}).get("params")
@@ -661,7 +378,7 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
             p = rec.cameras[int(cid)].params
             pre[key] = float(np.sqrt(p[0] * p[1]) / np.sqrt(float(st[0]) * float(st[1])))
     project.settings["navcam_focal_scale_pre_thermal"] = pre
-    r1, p1, rows = split_by_temperature(rec, project, temps, bin_deg, min_images, free, thermal_model, rig_slopes,
+    r1, p1, rows = split_by_temperature(rec, project, temps, bin_deg, min_images, free, thermal_model,
                                         fine_range=fine_range, fine_deg=fine_deg)
     project.cameras = p1.cameras
     project.settings.setdefault("database", {})["cameras"] = p1.settings["database"]["cameras"]
@@ -678,9 +395,8 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
         if r is not None and k in bin_keys and r.get("instrument") != k:
             r.setdefault("base_instrument", r["instrument"])
             r["instrument"] = k
-    # v0p74.7: an eye's bin with fewer than THERMAL_MIN_BIN_IMAGES images (binning is by frame, so one eye can be
-    # left with one image) is held at the thermal model: its fx, fy are hardly observed and made the Schur complement
-    # singular (Ceres FAILURE in the thermal stage of 4 Oct, Chal Rocks: two NR bins of one image)
+    # an eye's bin with fewer than THERMAL_MIN_BIN_IMAGES images (binning is by frame, so one eye can be left with
+    # one image) is held at the thermal model: its fx, fy are hardly observed and make the Schur complement singular
     weak = [r["camera"] for r in rows if int(r.get("images") or 0) < THERMAL_MIN_BIN_IMAGES]
     held = [k for k in project.cameras if not str(k).startswith("N")] + (bin_keys if hold else weak)
     kw = {} if attitude_prior_deg is None else {"attitude_prior_deg": attitude_prior_deg}
@@ -691,7 +407,7 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
         p = r1.cameras[row["camera_id"]].params
         row.update({"fx": float(p[0]), "fy": float(p[1]), "cx": float(p[2]), "cy": float(p[3]),
                     "observations": int(obs.get(row["camera_id"], 0))})
-        if "k1" in (row.get("start") or {}):                # v0p75.1
+        if "k1" in (row.get("start") or {}):
             row["k1"] = float(p[4])
         project.cameras[row["camera"]]["refined_params"] = [float(x) for x in p]
     after = _stats(r1, project)
@@ -700,7 +416,6 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
               "fine_bin_deg": float(fine_deg) if fine_range and fine_deg else None,
               "k1_held_bins": [r["camera"] for r in rows if "k1" in free and "k1" not in r.get("free", [])],
               "weak_bins_held": [] if hold else weak, "ba_termination": ba.get("termination"), "ba_retried": ba.get("retried"),
-              "rig_slopes": rig_slopes,
               "thermal_model": thermal_model, "bins": len({tuple(r["bin_degC"]) for r in rows}), "rows": rows,
               "before": before, "after": after, "initial_cost": ba["initial_cost"], "final_cost": ba["final_cost"],
               "seconds": ba["seconds"],
@@ -716,20 +431,20 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
                   f"{', '.join(weak)}", flush=True)
         for line in thermal_bin_lines(rows, free, hold):
             print(line, flush=True)
-    if after["median_px"] > 1.25 * before["median_px"] + 0.01:      # v0p74.7: never silently worse
+    if after["median_px"] > 1.25 * before["median_px"] + 0.01:      # never silently worse
         report["warning"] = (f"the residual median rose {before['median_px']:.4f} -> {after['median_px']:.4f} px in the "
                              f"thermal stage")
-        print(f"[sfm] WARNING: {report['warning']}", flush=True)
+        log.warning(report["warning"])
     return r1, report
 
 
 def thermal_bin_lines(rows: Sequence[Dict[str, Any]], free: Sequence[str] = ("fx", "fy"), hold: bool = False) -> List[str]:
-    """v0p44: the temperature-bin table of the thermal stage - per bin camera its images, temperature, fx, fy, cx,
+    """The temperature-bin table of the thermal stage - per bin camera its images, temperature, fx, fy, cx,
     cy (refined values; a trailing * marks a parameter held at its start: the eye's camera moved to the bin
     temperature by the thermal model) and the change from that start."""
     fr = set() if hold else set(free)
     mark = {k: ("" if k in fr else "*") for k in ("fx", "fy", "cx", "cy")}
-    k1 = any("k1" in r for r in rows)                        # v0p75.1: k1 per bin (1e-6 units)
+    k1 = any("k1" in r for r in rows)                        # k1 per bin (1e-6 units)
     out = [f"      {'camera':20s} {'images':>6s} {'T degC':>7s} {'[min, max]':>14s} "
            + " ".join(f"{k + mark[k]:>10s}" for k in ("fx", "fy", "cx", "cy"))
            + "   d fx    d fy    d cx    d cy  (px, from the start)" + ("   d k1 [1e-6]" if k1 else "")]
@@ -751,16 +466,16 @@ def thermal_bin_lines(rows: Sequence[Dict[str, Any]], free: Sequence[str] = ("fx
 
 
 def strip_thermal_bins(project) -> int:
-    """Undo :func:`thermal_stage` (and v0p40 the Mastcam-Z focus-state split, :mod:`mppp.sfm.backlash`) on a
-    project (v0p31): images back to their eye's (focus bin's) camera, bin cameras removed,
+    """Undo :func:`thermal_stage` (and the Mastcam-Z focus-state split, :mod:`mppp.sfm.backlash`) on a
+    project: images back to their eye's (focus bin's) camera, bin cameras removed,
     the bin table dropped.  Called before the database is built and before a reconstruction, so that a rerun starts
     from one camera per eye and the stereo rig.  Returns the number of bin cameras removed."""
     n = 0
     for r in project.images:
         if "base_instrument" in r:
             r["instrument"] = r.pop("base_instrument")
-    for k in [k for k, c in project.cameras.items() if c.get("thermal_bin") or c.get("state_split")]:   # v0p40: also
-        # the regular-focus-state Mastcam-Z cameras (mppp.sfm.backlash.split_by_state)
+    for k in [k for k, c in project.cameras.items() if c.get("thermal_bin") or c.get("state_split")]:
+        # also the regular-focus-state Mastcam-Z cameras (mppp.sfm.backlash.split_by_state)
         project.cameras.pop(k)
         n += 1
     db = project.settings.get("database", {}).get("cameras")
@@ -775,20 +490,18 @@ def strip_thermal_bins(project) -> int:
 
 
 def thermal_model_for_project(project) -> Optional[Dict[str, Dict[str, float]]]:
-    """v0p31: the thermal model of the project's Navcam start cameras, referred to the temperature they were scaled
-    to (``SfmProject.create`` from a consensus with a ``thermal`` entry): {"NL": {"ppm_per_degC", "T0_degC"}, ...}
-    for :func:`thermal_stage` (bins held at the start camera scaled to the bin temperature).  None if the start
+    """The thermal model of the project's Navcam start cameras, referred to the temperature they were scaled to
+    (``SfmProject.create`` records it under ``settings["navcam_cameras"][eye]["thermal"]``): {"NL": {"T0_degC",
+    "fx_ppm_per_degC", "fy_ppm_per_degC", "cx_px_per_degC", "cy_px_per_degC", "k1_per_degC"}, ...} for
+    :func:`thermal_stage` (bins started at the eye's camera moved to the bin temperature).  None if the start
     cameras carry no thermal model."""
     nav = (project.settings.get("navcam_cameras") or {})
     out = {}
     for eye in ("NL", "NR"):
         th = (nav.get(eye) or {}).get("thermal")
-        if th and th.get("ppm_per_degC") is not None and th.get("T_median_degC") is not None:
-            out[eye] = {"ppm_per_degC": float(th["ppm_per_degC"]), "T0_degC": float(th["T_median_degC"])}
-            for k in ("fx_ppm_per_degC", "fy_ppm_per_degC"):          # v0p73: per axis
-                if th.get(k) is not None:
-                    out[eye][k] = float(th[k])
-            for k in ("cx_px_per_degC", "cy_px_per_degC", "k1_per_degC"):   # v0p40: principal point; v0p80: k1
-                if th.get(k):
-                    out[eye][k] = float(th[k])
+        if th and th.get("T_median_degC") is not None:
+            t = calib.thermal_terms(th)
+            out[eye] = {"T0_degC": float(th["T_median_degC"]), "fx_ppm_per_degC": t["fx_ppm"],
+                        "fy_ppm_per_degC": t["fy_ppm"], "cx_px_per_degC": t["cx_px"], "cy_px_per_degC": t["cy_px"],
+                        "k1_per_degC": t["k1"]}
     return out or None

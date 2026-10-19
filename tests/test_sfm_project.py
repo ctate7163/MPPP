@@ -1,13 +1,10 @@
-"""COLMAP project set-up, start cameras, focus bins and models (mppp.sfm.project). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""COLMAP project set-up, start cameras, focus bins and models (mppp.sfm.project)."""
 import numpy as np
 import pytest
 from mppp.paths import data_dir  # noqa: E402
 from pathlib import Path
 import json
-import math  # noqa: E402
-from scipy.spatial.transform import Rotation  # noqa: E402
-from mppp.sfm import navcal as NC  # noqa: E402
-from mppp.sfm.project import start_rig_rotation  # noqa: E402
+from mppp import calib  # noqa: E402
 import copy
 
 
@@ -15,29 +12,6 @@ pycolmap = pytest.importorskip("pycolmap")
 
 
 DATA_DIR = data_dir()
-
-
-def _metashape_project(xyz, c):
-    """Metashape frame model, corner pixel origin."""
-    x, y = xyz[0] / xyz[2], xyz[1] / xyz[2]
-    r2 = x * x + y * y
-    rad = 1 + c["k1"] * r2 + c["k2"] * r2 ** 2 + c["k3"] * r2 ** 3
-    xp, yp = x * rad, y * rad
-    return np.array([c["width"] * 0.5 + c["cx"] + xp * c["f"], c["height"] * 0.5 + c["cy"] + yp * c["f"]])
-
-
-def test_camera_from_metashape_xml_matches_metashape_projection():
-    from mppp.sfm.project import camera_from_metashape_xml, read_metashape_calibration
-    xml = DATA_DIR / "cmods/M2020_NL0_frame.xml"
-    cam_d = camera_from_metashape_xml(xml, zero_terms=("p1", "p2", "b1", "b2"))    # v0p20 default keeps p1, p2
-    assert cam_d["model"] == "FULL_OPENCV" and (cam_d["width"], cam_d["height"]) == (5120, 3840)
-    p = cam_d["params"]
-    assert p[0] == p[1] and p[6] == p[7] == 0.0 and p[9:] == [0.0, 0.0, 0.0]        # b1, p1, p2 zeroed; k4-k6 = 0
-    c = read_metashape_calibration(xml)
-    cam = pycolmap.Camera(model=cam_d["model"], width=5120, height=3840, params=p)
-    for X in ([0.3, -0.2, 1.0], [-0.6, 0.4, 1.0], [0.0, 0.0, 1.0]):
-        X = np.array(X)
-        assert np.allclose(cam.img_from_cam(X), _metashape_project(X, c), atol=1e-6)
 
 
 @pytest.fixture(scope="module")
@@ -58,28 +32,36 @@ def test_project_with_navcam_and_mastcamz34(processed_pair, tmp_path):
     from mppp.sfm.project import SfmProject, camera_key
     man, out = processed_pair
     proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, zcam_focus_bin=None,
-                             navcam_distortion_fit="refine")          # v0p50: the default holds the distortion   # <= 0.14.3
+                             navcam_distortion_fit="refine")          # the default holds the distortion
     assert set(proj.cameras) == {"NL", "ZL034"}
     z = proj.cameras["ZL034"]
     assert (z["model"], z["width"], z["height"]) == ("FULL_OPENCV", 1648, 1200) and "label" in z["source"]
     meta = [m for m in man["images"] if m["filename"]["family"] == "Z"][0]
     K = np.asarray(meta["intrinsics"]["K"])
     assert np.isclose(z["params"][0], K[0, 0])
-    # v0p75: ZL's principal point is the focus model's pp0 (the CAHVOR value at the reference focus, one for every
-    # block), no longer the label's (corner origin: K[0, 2] + 0.5)
+    # ZL's principal point is the focus model's pp0 (the CAHVOR value at the reference focus, one for every block),
+    # not the label's (corner origin: K[0, 2] + 0.5)
     from mppp.sfm.project import zcam_focus_model
     pp0 = (zcam_focus_model().get("cameras", {}).get("ZL034") or {}).get("pp0_px")
     assert pp0 and np.isclose(z["params"][2], pp0[0]) and np.isclose(z["params"][3], pp0[1])
     assert abs(z["params"][2] - (K[0, 2] + 0.5)) < 10
-    # the distortion is the focus model's (v0p53), not the label's
+    # the distortion is the focus model's, not the label's
     assert np.isclose(z["params"][4], zcam_focus_model()["cameras"]["ZL034"]["distortion"]["params"][0])
     assert z["params"][6] == z["params"][7] == 0.0
     assert {r["instrument"] for r in proj.images} == {"NL", "ZL034"} and proj.rig == {}
     assert camera_key({"family": "Z", "camera_group": "ZR034", "instrument": "ZR"}) == "ZR034"
-    px = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_intrinsics="xml", zcam_focus_bin=None)
-    assert "ZL034_frame.xml" in px.cameras["ZL034"]["source"] and px.cameras["ZL034"]["params"][0] == 4720
+    # the Navcam eye: the promoted model at the block's (one image's) temperature and the early-mission share
+    nl = proj.cameras["NL"]
+    nmeta = [m for m in man["images"] if m["filename"]["family"] == "N"][0]
+    want = calib.camera_at(calib.load_camera("N", "L"), nmeta["camera_temperature_degC"], nmeta["sol"])[1]
+    assert nl["model"] == "THIN_PRISM_FISHEYE" and np.allclose(nl["params"], want)
+    info = proj.settings["navcam_cameras"]["NL"]
+    assert info["thermal"]["T_median_degC"] == nmeta["camera_temperature_degC"] and "verification" in info
+    assert proj.settings["navcam_cameras"]["models_fingerprint"] == calib.models_fingerprint()
     with pytest.raises(ValueError):
         SfmProject.create(man["images"], out, tmp_path / "r", zcam_intrinsics="guess")
+    with pytest.raises(ValueError):
+        SfmProject.create(man["images"], out, tmp_path / "r", zcam_intrinsics="xml")
 
 
 def test_rig_family_for_mastcamz_pairs_with_shared_clock():
@@ -90,16 +72,6 @@ def test_rig_family_for_mastcamz_pairs_with_shared_clock():
     rig = _rig_from_pairs(imgs)
     assert list(rig) == ["Z034"] and (rig["Z034"]["ref"], rig["Z034"]["sensor"]) == ("ZL034", "ZR034")
     assert abs(rig["Z034"]["baseline_m"] - 0.242) < 1e-9
-
-
-def test_xml_tangential_terms_kept_when_not_zeroed():
-    from mppp.paths import data_dir
-    from mppp.sfm.project import camera_from_metashape_xml, read_metashape_calibration
-    xml = data_dir() / "cmods/M2020_NL0_frame.xml"
-    c = read_metashape_calibration(xml)
-    p = camera_from_metashape_xml(xml, zero_terms=("b1", "b2"))["params"]
-    assert p[6] == pytest.approx(c["p2"]) and p[7] == pytest.approx(c["p1"])     # OpenCV p1 = Metashape P2
-    assert abs(p[6]) > 1e-4 and p[0] == p[1]                                      # b1 still zeroed
 
 
 def test_project_copy_refreshed_when_the_processed_image_changes(tmp_path):
@@ -135,7 +107,7 @@ def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     zmeta = [m for m in man["images"] if m["filename"]["family"] == "Z"][0]
     fc = float(zmeta["focus_position_count"])
     key = f"ZL034_F{int(round(fc)):05d}"
-    # v0p61: the test image (ZCAM07114, 34 mm) is on the shipped low-backlash list: a regular-state bin, f held
+    # the test image (ZCAM07114, 34 mm) is on the shipped low-backlash list: a regular-state bin, f held
     reg = SfmProject.create(man["images"], out, tmp_path / "g", link=False, zcam_intrinsics="label")
     assert set(reg.cameras) == {"NL", key + "_reg"} and reg.settings["zcam_low_backlash"]["images"] == 1
     assert {"fx", "fy"} <= set(reg.cameras[key + "_reg"]["fixed_params"])
@@ -151,7 +123,7 @@ def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     pa = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_bin_refine="all",
                            zcam_intrinsics="label", zcam_low_backlash=False)
     assert pa.cameras[key]["fixed_params"] == []
-    # v0p22 default: f from the focus model; a one-image bin holds it
+    # default: f from the focus model; a one-image bin holds it
     pm = SfmProject.create(man["images"], out, tmp_path / "m", link=False, zcam_low_backlash=False)
     zm = pm.cameras[key]
     assert "focus model" in zm["source"] and {"fx", "fy"} <= set(zm["fixed_params"])
@@ -193,17 +165,15 @@ def test_prior_rotation_correction_keeps_the_ray_at_the_camera_principal_point()
     assert np.allclose(prior_rotation_correction(cl, f, cl), np.eye(3))
 
 
-def test_project_default_is_rational_and_scope_is_checked_first(processed_pair, tmp_path):  # noqa: F811
+def test_project_scope_is_checked_first(processed_pair, tmp_path):  # noqa: F811
     from mppp.sfm.project import SfmProject
     man, out = processed_pair
     proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, zcam_focus_bin=None,
-                             navcam_distortion_fit="refine")          # v0p50: the default holds the distortion
+                             navcam_distortion_fit="refine")
     nl = proj.cameras["NL"]
-    assert nl["free_params"] == ["k4"] and "rational" in nl["source"] and proj.settings["navcam_distortion"] == "rational"
-    assert abs(nl["params"][6]) > 1e-5                                      # p1/p2 not zeroed by default any more
-    poly = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_focus_bin=None,
-                             navcam_distortion="polynomial")
-    assert poly.cameras["NL"]["params"][9] == 0.0 and not poly.cameras["NL"].get("free_params")
+    assert nl["free_params"] == [] and proj.settings["navcam_distortion"] == "fisheye_tangential"
+    assert abs(nl["params"][6]) > 1e-5                                      # p1/p2 not zeroed by default
+    assert set(nl["fixed_params"]) == {"sx1", "sy1", "cx", "cy"}            # the held zeros and the principal point
     # out of scope: rejected before any file is linked into the project
     bad = json.loads(json.dumps(man["images"], default=str))
     bad[0]["filename"]["camera_code"] = "FLF"
@@ -213,15 +183,17 @@ def test_project_default_is_rational_and_scope_is_checked_first(processed_pair, 
     z = json.loads(json.dumps(man["images"], default=str))
     for m in z:
         if m["filename"]["family"] == "Z":
-            m["filename"]["zoom_mm"] = 100                    # v0p53: 34, 48, 63, 110 are in scope; 100 is not
+            m["filename"]["zoom_mm"] = 100                    # 34, 48, 63, 79, 110 are in scope; 100 is not
     with pytest.raises(ValueError, match="outside MPPP's scope"):
         SfmProject.create(z, out, tmp_path / "s", link=False)
     und = json.loads(json.dumps(man["images"], default=str))
     und[0]["undistorted"] = True
     with pytest.raises(ValueError, match="undistort"):
         SfmProject.create(und, out, tmp_path / "t", link=False)
-    with pytest.raises(ValueError):
-        SfmProject.create(man["images"], out, tmp_path / "u", navcam_distortion="fisheye")
+    for kw in ({"navcam_distortion": "rational"}, {"navcam_distortion": "polynomial"}, {"navcam_k4": "zero"},
+               {"navcam_rig_yaw": "zero"}):
+        with pytest.raises(ValueError):
+            SfmProject.create(man["images"], out, tmp_path / "u", **kw)
 
 
 def test_refresh_images_updates_copies(processed_pair, tmp_path):  # noqa: F811
@@ -229,7 +201,7 @@ def test_refresh_images_updates_copies(processed_pair, tmp_path):  # noqa: F811
     from mppp.sfm.project import SfmProject
     man, out = processed_pair
     proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, zcam_focus_bin=None,
-                             navcam_distortion_fit="refine")          # v0p50: the default holds the distortion
+                             navcam_distortion_fit="refine")
     m = man["images"][0]
     src = out / m["outputs"]["PNG8"]
     dst = proj.images_dir / (Path(m["source_product"]).stem + ".png")
@@ -245,7 +217,7 @@ def test_focus_model_start_and_hold():
     from mppp.sfm.project import ZCAM_HOLD_F_IMAGES, _split_by_focus, zcam_focus_model
     m = zcam_focus_model()
     g = m["cameras"]["ZL034"]
-    assert ZCAM_HOLD_F_IMAGES == 2 and g["focus_range"][0] <= -400 and g["focus_range"][1] == 1300   # v0p42 range
+    assert ZCAM_HOLD_F_IMAGES == 2 and g["focus_range"][0] <= -400 and g["focus_range"][1] == 1300
     base = {"model": "FULL_OPENCV", "params": [4680.0, 4680.0, 824, 600, -0.02, 0.0, 0, 0, 0, 0, 0, 0],
             "source": "median label CAHVOR", "fixed_params": []}
     rows = []
@@ -258,7 +230,7 @@ def test_focus_model_start_and_hold():
     assert abs(by[600]["params"][1] / by[600]["params"][0] - g["aspect"]) < 1e-9
     assert "fx" not in by[600]["fixed_params"] and {"fx", "fy"} <= set(by[1000]["fixed_params"])
     # outside the fitted range: the bin's label f scaled by the refined/label ratio, not an extrapolation - unless
-    # the model carries calibrated lines (v0p74), which every bin starts on (v0p75: they continue through zero)
+    # the model carries calibrated lines, which every bin starts on (they continue through zero)
     f_out = np.sqrt(by[-2600]["params"][0] * by[-2600]["params"][1])
     ln = (g.get("lines") or {}).get("backlash")
     if ln:
@@ -272,7 +244,7 @@ def test_focus_model_start_and_hold():
     assert {round(c["params"][0]) for c in lab.values()} == {4680, 4700, 4600}
 
 
-def test_shipped_rig_and_rational_cameras_agree():
+def test_shipped_rig_and_cameras_agree():
     from mppp.paths import data_dir
     from mppp.sfm.project import NAVCAM_RIG, NAVCAM_RIG_FILE
     from scipy.spatial.transform import Rotation
@@ -284,42 +256,36 @@ def test_shipped_rig_and_rational_cameras_agree():
     ang = np.degrees(np.linalg.norm(Rotation.from_matrix(R).as_rotvec()))
     assert 0.05 < ang < 0.5                                   # the two Navcams are toed by ~0.1-0.2 deg
     for e in "LR":
-        c = json.loads((d / f"M2020_N{e}_rational.json").read_text())
-        p = c["params"] if "params" in c else c["camera"]["params"]
-        assert 2900 < p[0] < 3000 and 0.2 < p[9] < 0.7
+        c = json.loads((d / f"M2020_N{e}_fisheye_tangential.json").read_text())
+        assert c["model"] == "THIN_PRISM_FISHEYE" and 2900 < c["params"][0] < 3000 and c["form"] == "navcam-v1"
+    assert not (d / "history").exists() and not list(d.glob("*.xml")) and not list(d.glob("*rational*"))
 
 
-def test_project_create_accepts_navcam_cameras(tmp_path, monkeypatch):
+def test_project_create_signature_has_no_removed_options():
     from mppp.sfm import project as P
     import inspect
     sig = inspect.signature(P.SfmProject.create)
-    assert "navcam_cameras" in sig.parameters
-    src = inspect.getsource(P.SfmProject.create)
-    assert "NAVCAM_RATIONAL_PATTERN" in src and "NAVCAM_FISHEYE_PATTERN" in src and '"navcam_cameras"' in src
+    assert "navcam_cameras" in sig.parameters and "xml_dir" not in sig.parameters
+    src = inspect.getsource(P)
+    assert "XML_PATTERN" not in src and "camera_from_metashape_xml" not in src and "rig_without_yaw" not in src
 
 
-def test_shipped_cameras_are_the_five_site_consensus():
-    from mppp.paths import data_dir
-    for g in ("NL", "NR"):
-        d = json.loads((data_dir() / "cmods" / f"M2020_{g}_rational.json").read_text())
-        assert "five" in d["source"] and len(d["verification"]["per_scape"]) == 5
-        assert all(r["rms_px"] < 0.5 for r in d["verification"]["per_scape"])
-    rig = json.loads((data_dir() / "cmods" / "history" / "v0p22_consensus" / "M2020_N_rig.json").read_text())   # v0p50
-    assert len(rig["per_solution_rotvec_rad"]) == 5 and abs(rig["baseline_m"] - 0.4244) < 1e-3
-
-
-def test_start_rig_rotation_temperature_and_drift():
+def test_start_rig_from_the_promoted_rig():
     from scipy.spatial.transform import Rotation
-    from mppp.sfm.project import start_rig_rotation
-    R0 = Rotation.from_rotvec([0.0014, 0.0011, 0.0002]).as_matrix()
-    sh = {"R_sensor_from_ref": R0.tolist(), "thermal": {"yaw_mdeg_per_degC": -1.0, "pitch_mdeg_per_degC": 0.0, "T0_degC": -19.0},
-          "drift": {"sol0": 1000.0, "pitch_mdeg_per_sol": 0.005, "yaw_mdeg_per_sol": 0.0, "roll_mdeg_per_sol": -0.006}}
-    R, applied = start_rig_rotation(sh, -9.0, 1400.0)
-    rv = np.degrees(Rotation.from_matrix(R @ R0.T).as_rotvec()) * 1e3
-    assert np.allclose(rv, [2.0, -10.0, -2.4], atol=0.01)                # pitch +0.005x400, yaw -1x10, roll -0.006x400
-    assert applied["thermal"]["T_median_degC"] == -9.0 and applied["drift"]["sol_median"] == 1400.0
-    R1, a1 = start_rig_rotation({"R_sensor_from_ref": R0.tolist()}, -9.0, 1400.0)
-    assert np.allclose(R1, R0) and a1 == {}
+    from mppp.sfm.start_cameras import navcam_start_rig
+    rig = calib.load_rig("N")
+    R0 = np.asarray(rig["R_sensor_from_ref"], float)
+    images = [{"instrument": "NL", "sol": 1400, "camera_temperature_degC": -9.0},
+              {"instrument": "NR", "sol": 1400, "camera_temperature_degC": -9.5}]
+    ent = {"R_sensor_from_ref": np.eye(3).tolist(), "t_sensor_from_ref": [-0.4244, 0, 0], "baseline_m": 0.4244}
+    info = navcam_start_rig(ent, images)
+    rv = np.degrees(Rotation.from_matrix(np.asarray(ent["R_sensor_from_ref"]) @ R0.T).as_rotvec()) * 1e3
+    off = calib.drift_offset_mdeg(rig["drift"], 1400.0)
+    assert np.allclose(rv, [off["pitch_mdeg"], off["yaw_mdeg"], off["roll_mdeg"]], atol=1e-6)
+    assert info["drift"]["sol_median"] == 1400.0 and info["T_median_degC"] == -9.25
+    assert ent["t_sensor_from_ref"] == rig["t_sensor_from_ref_m"] and "fitted" in ent["rotation_source"]
+    assert ent["R_sensor_from_ref_cahv"] == np.eye(3).tolist()
+    assert navcam_start_rig(dict(ent), images, "F") is None                 # no Hazcam rig file: CAHV stays
 
 
 def test_project_camera_fallback_for_fisheye_tangential():
@@ -334,75 +300,49 @@ def test_project_camera_fallback_for_fisheye_tangential():
     assert np.all(np.isnan(project_camera("THIN_PRISM_FISHEYE", p, np.array([[0.1, 0.1, -1.0]]))))
 
 
-def test_project_create_with_fisheye_tangential_start_cameras(tmp_path):
-    from conftest import NLF, needs_data
+def test_project_create_with_start_cameras_from_a_folder(tmp_path):
+    from conftest import NLF
     if not NLF.is_file():
         pytest.skip("example IMGs not present")
     import mppp
-    from mppp.sfm.navcal import write_joint_cameras
     from mppp.sfm.project import SfmProject
     out = tmp_path / "proc"
     cfg = mppp.load_config({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": False}})
     man = mppp.process_images([NLF], out, cfg, mppp.load_waypoints(), progress=False)
-    names = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1")
-    q = [2956.3, 2956.4, 2591.8, 1944.2, 0.0451, -0.0100, 2.5e-4, 3.6e-4, 0.0030, -0.0062, 0.0, 0.0]
-    cam = {"model": "THIN_PRISM_FISHEYE", "width": 5120, "height": 3840, "params": dict(zip(names, q))}
-    joint = {"NL": cam, "NR": cam, "T0_degC": -19.1, "ppm_per_degC": 38.6, "final": {"observations": 1}, "blocks": {},
-             "rig_R": np.eye(3).tolist(), "rig_t": [-0.424, 0, 0]}
-    write_joint_cameras(joint, tmp_path / "joint")
-    with pytest.raises(ValueError, match="needs navcam_cameras"):
-        SfmProject.create(man["images"], out, tmp_path / "p0", link=False, navcam_distortion="fisheye_tangential")
-    # v0p73: a held distortion fitted with k4 free is refused (its k3 is wrong without the k4)
-    with pytest.raises(ValueError, match="k4"):
-        SfmProject.create(man["images"], out, tmp_path / "p1", link=False, navcam_distortion="fisheye_tangential",
-                          navcam_cameras=tmp_path / "joint")
-    q[9] = 0.0
-    cam = {"model": "THIN_PRISM_FISHEYE", "width": 5120, "height": 3840, "params": dict(zip(names, q))}
-    write_joint_cameras(dict(joint, NL=cam, NR=cam), tmp_path / "joint")
-    proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, navcam_distortion="fisheye_tangential",
-                             navcam_cameras=tmp_path / "joint")
+    cand = tmp_path / "joint"
+    cand.mkdir()
+    src = calib.models._folder(None)
+    for n in calib.NAVCAM_FILES:
+        (cand / n).write_bytes((src / n).read_bytes())
+    d = json.loads((cand / "M2020_NL_fisheye_tangential.json").read_text())
+    d["params"][4] = 0.0451
+    d["thermal"] = {"T0_degC": -20.0, "fx_ppm_per_degC": 0.0, "fy_ppm_per_degC": 0.0, "cx_px_per_degC": 0.0,
+                    "cy_px_per_degC": 0.0, "k1_per_degC": 0.0}
+    d.pop("early_mission", None)
+    (cand / "M2020_NL_fisheye_tangential.json").write_text(json.dumps(d))
+    proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, navcam_cameras=cand)
     assert proj.cameras["NL"]["model"] == "THIN_PRISM_FISHEYE"
     assert abs(proj.cameras["NL"]["params"][4] - 0.0451) < 1e-9
+    assert proj.settings["navcam_cameras"]["dir"] == str(cand) and proj.settings["navcam_cameras"]["NL"]["file"].startswith(str(cand))
+    assert proj.settings["navcam_cameras"]["fingerprint"] == calib.navcam_fingerprint(cand)
 
 
-def _study(name, sol, T, pitch, yaw, roll, R_ref=None, sd=0.05):
-    R_ref = np.eye(3) if R_ref is None else R_ref
-    R = Rotation.from_rotvec(np.radians(np.array([pitch, yaw, roll]) * 1e-3)).as_matrix() @ R_ref
-    rel = NC.rig_angles(R, R_ref)
-    ab = {k.replace("_mdeg", "_abs_mdeg"): v for k, v in NC.rig_angles(R).items()}
-    row = {**rel, **ab, "sd_pitch_mdeg": sd, "sd_yaw_mdeg": sd, "sd_roll_mdeg": sd}
-    return {"scape": name, "R_reference": R_ref.tolist(),
-            "network": {"sol_median": float(sol), "T_median_degC": float(T)},
-            "rotation_pp": {"rigs": [dict(row)]}, "rotation": {"rigs": [dict(row)]}}
-
-
-def _synthetic(rate=0.005, early=0.025, K=300.0, kT=-1.0, seed=0):
-    rng = np.random.default_rng(seed)
-    out = []
-    for i, sol in enumerate([60, 180, 240, 360, 480, 700, 800, 900, 1000, 1100, 1200, 1330, 1400, 1460, 1630, 1780, 1970]):
-        T = -18 + 4 * math.sin(i)
-        p = 1.0 + rate * sol + (early - rate) * min(sol, K) + rng.normal(0, 0.05)
-        y = -5.0 + kT * (T + 18) + rng.normal(0, 0.05)
-        r = 20.0 - 0.005 * sol + rng.normal(0, 0.05)
-        out.append(_study(f"b{i}", sol, T, p, y, r))
-    return out
-
-
-def test_start_rig_rotation_applies_the_hinge():
-    st = _synthetic()
-    m = NC.rig_drift_model(st, knot_sol=300.0)
+def test_rig_at_applies_the_hinge():
+    rig = calib.load_rig("N")
+    m = dict(rig["drift"])
     shipped = {"R_sensor_from_ref": np.eye(3).tolist(), "drift": m}
+    from mppp.calib.joint import rig_angles
     for sol in (63.0, 1084.0, 1970.0):
-        R, applied = start_rig_rotation(shipped, None, sol)
-        ang = NC.rig_angles(R)
-        exp = NC.drift_offset_mdeg(m, sol)
+        R, _, applied = calib.rig_at(shipped, sol)
+        ang = rig_angles(R)
+        exp = calib.drift_offset_mdeg(m, sol)
         for a in ("pitch", "yaw", "roll"):
             assert ang[f"{a}_mdeg"] == pytest.approx(exp[f"{a}_mdeg"], abs=1e-6)
         assert isinstance(applied["drift"]["offset_mdeg"]["pitch"], float)
-    # a v0p35 rig file (rates only) still works
-    R, _ = start_rig_rotation({"R_sensor_from_ref": np.eye(3).tolist(),
-                               "drift": {"sol0": 1000.0, "pitch_mdeg_per_sol": 0.005}}, None, 1200.0)
-    assert NC.rig_angles(R)["pitch_mdeg"] == pytest.approx(1.0, abs=1e-6)
+    # a rig file with rates only still works
+    R, _, _ = calib.rig_at({"R_sensor_from_ref": np.eye(3).tolist(),
+                            "drift": {"sol0": 1000.0, "pitch_mdeg_per_sol": 0.005}}, 1200.0)
+    assert rig_angles(R)["pitch_mdeg"] == pytest.approx(1.0, abs=1e-6)
 
 
 def _model():
@@ -415,16 +355,17 @@ def test_shipped_focus_model_layout():
     for g in ("ZL034", "ZR034"):
         c = m["cameras"][g]
         assert c["reference_focus"] == 600.0
-        assert 0.045 < c["slope_px_per_count"] < 0.07                # refit (was 0.046 / 0.048; v0p75: 0.0505 / 0.064)
-        # v0p74 start update (pipeline, 4 Oct): f0 from the bins' fx over 10 blocks, ~1.4 % above the label
+        assert 0.045 < c["slope_px_per_count"] < 0.07
+        # f0 from the bins' fx over 10 blocks, ~1.4 % above the label
         assert 1.006 < c["f0_px"] / c["label_f0_px"] < 1.016
         assert c["thermal"]["sensor"] == "HEAD_FPA" and c["thermal"]["f_px_per_degC"] == 0.0
-        assert "trend" not in c and c["trend_v0p42"]["sol_range"] == [461, 991]   # the one-block sol trend retired
+        assert "trend" not in c and "trend_v0p42" not in c                    # no sol trend in the form
+        assert c["lines"]["backlash"]["fx"]["form"] == "common" and c["regular_ratio"] > 1.0
     assert m["cameras"]["ZL034"]["pp"]["cx_px_per_count"] == 0.0
-    # v0p75: ZR cx constant with focus (not significant between blocks), cy keeps its small slope
+    # ZR cx constant with focus (not significant between blocks), cy keeps its small slope
     assert m["cameras"]["ZR034"]["pp"]["cx_px_per_count"] == 0.0
     assert 0.001 < m["cameras"]["ZR034"]["pp"]["cy_px_per_count"] < 0.004
-    assert m.get("form") == "v0p75" and m["cameras"]["ZL034"]["pp0_px"] and m["cameras"]["ZR034"]["pp0_px"]
+    assert m.get("form") == "zcam-v1" and m["cameras"]["ZL034"]["pp0_px"] and m["cameras"]["ZR034"]["pp0_px"]
 
 
 def test_model_focal_terms_and_sol_clamp():
@@ -434,8 +375,8 @@ def test_model_focal_terms_and_sol_clamp():
     assert f == pytest.approx(g["f0_px"]) and t["thermal"] == 0.0 and t["trend"] == 0.0
     f1, _ = zcam_model_focal(g, 1100.0)
     assert f1 - g["f0_px"] == pytest.approx(500 * g["slope_px_per_count"])
-    # the trend does not extrapolate beyond the fitted sols (v0p74: the shipped model has none - the v0p42 one here)
-    g = dict(g, trend=g["trend_v0p42"])
+    # a sol trend (none in the form; a model that carried one) does not extrapolate beyond the fitted sols
+    g = dict(g, trend={"sol0": 700.0, "f_px_per_sol": 0.025, "sol_range": [461, 991]})
     a, _ = zcam_model_focal(g, 600.0, sol=991)
     b, _ = zcam_model_focal(g, 600.0, sol=1700)
     c, _ = zcam_model_focal(g, 600.0, sol=100)
@@ -463,9 +404,9 @@ def test_split_by_focus_uses_temperature_sol_and_pp():
     from mppp.sfm.project import _split_by_focus, zcam_model_focal
     m = copy.deepcopy(_model())
     m["cameras"]["ZR034"]["thermal"]["f_px_per_degC"] = 0.3            # exercise the thermal path
-    m["cameras"]["ZR034"]["trend"] = m["cameras"]["ZR034"]["trend_v0p42"]   # and the sol trend (v0p74: retired)
-    m["cameras"]["ZR034"].pop("lines", None)                            # v0p75: the lines would set f and pp instead
-    m["cameras"]["ZR034"]["pp"]["cx_px_per_count"] = 0.0025                # a pp slope to exercise (v0p75: cx is 0)
+    m["cameras"]["ZR034"]["trend"] = {"sol0": 700.0, "f_px_per_sol": 0.025, "sol_range": [461, 991]}   # a sol trend
+    m["cameras"]["ZR034"].pop("lines", None)                            # the lines would set f and pp instead
+    m["cameras"]["ZR034"]["pp"]["cx_px_per_count"] = 0.0025                # a pp slope to exercise (the form's is 0)
     base = {"model": "FULL_OPENCV", "params": [4680.0, 4680.0, 824.0, 600.0, 0, 0, 0, 0, 0, 0, 0, 0],
             "source": "median label CAHVOR", "fixed_params": []}
     rows = []
@@ -494,7 +435,7 @@ def test_focus_model_fingerprint(tmp_path):
     from mppp.paths import data_dir
     from mppp.sfm.project import ZCAM_FOCUS_MODEL, zcam_focus_model_fingerprint
     shipped = data_dir() / "cmods" / ZCAM_FOCUS_MODEL
-    h = hashlib.sha256()                                   # v0p53: over every zoom's file (name + content)
+    h = hashlib.sha256()                                   # over every zoom's file (name + content)
     h.update(shipped.name.encode())
     h.update(shipped.read_bytes())
     assert zcam_focus_model_fingerprint() == h.hexdigest()
@@ -506,72 +447,50 @@ def test_focus_model_fingerprint(tmp_path):
 
 
 def test_navcam_consensus_shipped_with_mppp():
-    import json
-    from mppp.sfm.project import (NAVCAM_PACKAGE_CONSENSUS_DIR as NAVCAM_CONSENSUS_DIR, NAVCAM_FISHEYE_PATTERN, NAVCAM_RIG_FILE,
-                                  camera_from_colmap_json, navcam_cameras_fingerprint)
+    from mppp.sfm.project import NAVCAM_CONSENSUS_DIR, NAVCAM_FISHEYE_PATTERN, NAVCAM_RIG_FILE, camera_from_colmap_json
     for eye in ("NL", "NR"):
         f = NAVCAM_CONSENSUS_DIR / NAVCAM_FISHEYE_PATTERN.format(instrument=eye)
         cam = camera_from_colmap_json(f)
         assert cam["model"] == "THIN_PRISM_FISHEYE" and len(cam["params"]) == 12
         th = json.loads(f.read_text())["thermal"]
-        # v0p85: the 18 Oct pass-2 consensus (23 blocks): fx, fy per axis, ~38-41 and ~43-45 ppm/degC
+        # the 18 Oct 2026 pass-2 consensus (23 blocks): fx, fy per axis, ~38-41 and ~43-45 ppm/degC
         assert 37.0 < th["fx_ppm_per_degC"] < 41.5 and 43.0 < th["fy_ppm_per_degC"] < 46.0 and th["T0_degC"] == -20
+        assert "ppm_per_degC" not in th                                          # the per-axis terms are the model
     assert (NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).is_file()
-    assert navcam_cameras_fingerprint(NAVCAM_CONSENSUS_DIR)
-    # v0p74: the pipeline's 16-block consensus of 4 Oct (navcal_v0p74_20261004_pipeline), byte for byte (line ends
-    # normalised: a Windows checkout writes CRLF); v0p80 (17 Oct): NR with the residual rig yaw(T) moved into NR cx(T)
-    import hashlib
-    sha = {p.name: hashlib.sha256(p.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:12]
-           for p in NAVCAM_CONSENSUS_DIR.glob("*.json") if "fisheye" in p.name or "rig" in p.name}
-    # v0p85 (19 Oct): the pass-2 consensus of 18 Oct (23 blocks), the rig's fitted-translation flag restored
-    assert sha == {"M2020_NL_fisheye_tangential.json": "d8bb51518338", "M2020_NR_fisheye_tangential.json": "7d8c5fb15413",
-                   "M2020_N_rig.json": "4aa6455701fc"}
+    assert calib.navcam_fingerprint(NAVCAM_CONSENSUS_DIR)
+    # the parameters of the 18 Oct 2026 pass-2 consensus of 23 blocks (the rig's fitted translation flag kept)
+    nl = json.loads((NAVCAM_CONSENSUS_DIR / "M2020_NL_fisheye_tangential.json").read_text())
+    rig = json.loads((NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).read_text())
+    assert nl["params"][0] == pytest.approx(2956.1655944938043) and nl["params"][9] == pytest.approx(-0.006617090516290966)
+    assert rig["translation"] == "fitted" and rig["baseline_m"] == pytest.approx(0.4240102397823094)
+    assert rig["drift"]["yaw_mdeg_per_sol"] == pytest.approx(0.0025605370970143183)
 
 
-def test_navcam_distortion_hold_and_zero_terms():
-    """v0p50: the Navcam distortion is one set per eye for every sol and temperature (held in every block);
-    v0p52: NAVCAM_K4 = "zero" (the default) sets k4 to 0 and holds it; p1 has no setting of its own (TANGENTIAL)."""
+def test_navcam_distortion_hold_and_held_zeros():
+    """The Navcam distortion is one set per eye for every sol and temperature (held in every block); the form's
+    sx1, sy1 are fixed at 0 in either case; p1 has no setting of its own (TANGENTIAL)."""
     from mppp.paths import cmods_dir
     from mppp.sfm.project import camera_from_colmap_json, navcam_distortion_terms
     cam = camera_from_colmap_json(cmods_dir() / "M2020_NL_fisheye_tangential.json")
-    cam["params"][9] = 1e-3                                                # a k4 to remove
     names = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1")
-    with pytest.raises(ValueError, match="k4"):                            # v0p73: held with a k4 - refused
-        navcam_distortion_terms(cam)
-    cam0 = dict(cam, params=cam["params"][:9] + [0.0] + cam["params"][10:])
-    held = navcam_distortion_terms(cam0)                                   # defaults "hold", k4 "zero"
+    held = navcam_distortion_terms(cam)                                    # defaults "hold"
     assert set(held["fixed_params"]) == set(names[4:]) and not held["free_params"]
-    assert held["params"][9] == 0.0 and held["params"][:9] == cam0["params"][:9] and held["distortion_fit"] == "hold"
-    ref = navcam_distortion_terms(cam, "refine", k4="consensus")
-    assert ref["fixed_params"] == [] and ref["params"] == cam["params"]
-    z = navcam_distortion_terms(cam, "refine")
-    assert z["params"][9] == 0.0 and z["params"][6] == cam["params"][6] != 0.0 and z["fixed_params"] == ["k4"]
-    assert z["zeroed_terms"] == ["k4"]
+    assert held["params"] == cam["params"] and held["distortion_fit"] == "hold"
+    ref = navcam_distortion_terms(cam, "refine")
+    assert ref["fixed_params"] == ["sx1", "sy1"] and ref["params"] == cam["params"]
+    pp = navcam_distortion_terms(cam, "hold", pp="hold")
+    assert {"cx", "cy"} <= set(pp["fixed_params"]) and "principal point held" in pp["source"]
     with pytest.raises(TypeError):
-        navcam_distortion_terms(cam, "refine", p1="zero")
+        navcam_distortion_terms(cam, "refine", k4="zero")
+    with pytest.raises(ValueError):
+        navcam_distortion_terms(cam, "free")
     with pytest.raises(ValueError):
         from mppp.sfm.project import SfmProject
         SfmProject.create([], "x", "y", navcam_distortion_fit="free")
 
 
-def test_start_rig_rotation_without_yaw_terms():
-    """v0p52: NAVCAM_RIG_YAW = "hold" starts every block at the rig file's yaw - the drift and temperature
-    terms turn pitch and roll only."""
-    from mppp.paths import cmods_dir
-    from mppp.sfm.project import start_rig_rotation, rig_yaw_mdeg
-    shipped = json.loads((cmods_dir() / "M2020_N_rig.json").read_text())
-    shipped["drift"] = dict(shipped["drift"], yaw_mdeg_per_sol=0.01, yaw_early_mdeg_per_sol=0.02)
-    shipped["thermal"] = {"yaw_mdeg_per_degC": -1.0, "pitch_mdeg_per_degC": 0.2, "T0_degC": -20.0}
-    y0 = rig_yaw_mdeg(shipped["R_sensor_from_ref"])
-    Ry, _ = start_rig_rotation(shipped, 0.0, 1800.0)
-    Rn, applied = start_rig_rotation(shipped, 0.0, 1800.0, yaw=False)
-    assert abs(rig_yaw_mdeg(Ry) - y0) > 5.0
-    assert abs(rig_yaw_mdeg(Rn) - y0) < 0.01 and applied["drift"]["offset_mdeg"]["yaw"] == 0.0
-    assert abs(applied["drift"]["offset_mdeg"]["pitch"]) > 1.0
-
-
 def test_zero_terms_apply_to_the_fisheye_model(tmp_path):
-    """v0p50: TANGENTIAL = "zero" zeroes p1, p2 of a THIN_PRISM_FISHEYE start camera too (was OPENCV only)."""
+    """TANGENTIAL = "zero" zeroes p1, p2 of a THIN_PRISM_FISHEYE start camera."""
     from mppp.paths import cmods_dir
     from mppp.sfm.project import camera_from_colmap_json
     cam = camera_from_colmap_json(cmods_dir() / "M2020_NL_fisheye_tangential.json", ("p1", "p2"))
@@ -579,7 +498,7 @@ def test_zero_terms_apply_to_the_fisheye_model(tmp_path):
 
 
 def test_bundle_adjust_holds_the_navcam_distortion(tmp_path):
-    """v0p50: with the distortion held only f and the principal point change in the adjustment."""
+    """With the distortion held only f and the principal point change in the adjustment."""
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
     from mppp.sfm.project import navcam_distortion_terms
@@ -595,34 +514,11 @@ def test_bundle_adjust_holds_the_navcam_distortion(tmp_path):
         assert np.allclose(c.params[4:], before[cid][4:])                  # distortion unchanged
 
 
-def test_rig_without_yaw_keeps_pitch_and_roll():
-    from scipy.spatial.transform import Rotation
-    from mppp.paths import cmods_dir
-    from mppp.sfm.project import rig_without_yaw, rig_yaw_mdeg
-    R = np.asarray(json.loads((cmods_dir() / "M2020_N_rig.json").read_text())["R_sensor_from_ref"], float)
-    assert abs(rig_yaw_mdeg(R)) > 1.0
-    R0 = rig_without_yaw(R)
-    rv, rv0 = Rotation.from_matrix(R).as_rotvec(), Rotation.from_matrix(R0).as_rotvec()
-    assert abs(rv0[1]) < 1e-15 and np.allclose(rv0[[0, 2]], rv[[0, 2]])
-    assert abs(Rotation.from_matrix(R0).as_quat()[1]) < 1e-15
-
-
-def test_thermal_rig_slopes_drop_the_yaw_when_it_is_held():
-    from types import SimpleNamespace
-    from mppp.sfm.thermal import rig_slopes_for_project
-    th = {"yaw_mdeg_per_degC": 0.4, "pitch_mdeg_per_degC": 0.1, "T0_degC": -20}
-    p = SimpleNamespace(settings={"navcam_cameras": {"rig": {"thermal": th}}})
-    assert rig_slopes_for_project(p)["yaw_mdeg_per_degC"] == 0.4
-    p.settings["navcam_rig_yaw"] = "zero"
-    s = rig_slopes_for_project(p)
-    assert s["yaw_mdeg_per_degC"] == 0.0 and s["pitch_mdeg_per_degC"] == 0.1
-
-
 def test_zcam_focus_models_per_zoom(tmp_path):
-    """v0p53: one focus-model file per zoom, merged; a model with distortion and pp0 sets the eye camera; the
+    """One focus-model file per zoom, merged; a model with distortion and pp0 sets the eye camera; the
     fingerprint covers every zoom's file."""
-    from mppp.sfm.project import (_zcam_model_camera, zcam_focus_model, zcam_focus_model_files,
-                                  zcam_focus_model_fingerprint, _split_by_focus)
+    from mppp.sfm.project import zcam_focus_model, zcam_focus_model_files, zcam_focus_model_fingerprint, _split_by_focus
+    from mppp.sfm.start_cameras import zcam_eye_camera
     fp0 = zcam_focus_model_fingerprint()
     m48 = {"cameras": {"ZL048": {"f0_px": 6600.0, "reference_focus": 500.0, "slope_px_per_count": 0.1, "aspect": 1.0,
                                  "focus_range": [0, 1000],
@@ -634,11 +530,11 @@ def test_zcam_focus_models_per_zoom(tmp_path):
     assert set(files) == {34, 48} and files[48].parent == tmp_path
     m = zcam_focus_model(tmp_path)
     assert {"ZL034", "ZR034", "ZL048"} <= set(m["cameras"]) and m["zooms"][48]["rig"]["note"] == "test"
-    assert m["state"] == "backlash"                          # the 34 mm file's top level, as before v0p53
+    assert m["state"] == "backlash"                          # the 34 mm file's top level
     assert zcam_focus_model_fingerprint(None, tmp_path) != fp0
-    base = {"model": "FULL_OPENCV", "params": [6500.0, 6500.0, 800, 600, -0.05, 0.1, 0.001, 0, 0, 0, 0, 0],
-            "source": "median of 9 label CAHVOR models"}
-    cam = _zcam_model_camera(base, m["cameras"]["ZL048"], ("p1", "p2"))
+    cam = zcam_eye_camera("ZL048", [("FULL_OPENCV", np.array([6500.0, 6500.0, 800, 600, -0.05, 0.1, 0.001, 0, 0, 0, 0, 0]))],
+                          (1648, 1200), ("p1", "p2"), m["cameras"]["ZL048"])
+    base = dict(cam)
     assert cam["params"][4:6] == [-0.1, 0.2] and cam["params"][2:4] == [820.0, 610.0] and cam["pp_at_focus"] == 500.0
     rows = [{"camera_group": "ZL048", "focus_count": 700, "label_f_px": 6500.0} for _ in range(4)]
     out = _split_by_focus(rows, {"ZL048": cam}, {"ZL048": "Z"}, 30.0, "model", model=m)
@@ -648,16 +544,3 @@ def test_zcam_focus_models_per_zoom(tmp_path):
     rows63 = [{"camera_group": "ZL063", "focus_count": 700, "label_f_px": 6500.0} for _ in range(4)]
     lab = _split_by_focus(rows63, {"ZL063": dict(base)}, {"ZL063": "Z"}, 30.0, "focal", model=m)   # no 63 mm model
     assert abs(next(iter(lab.values()))["params"][0] - 6500.0) < 1e-6
-
-
-def test_start_rig_rotation_has_no_temperature_term():
-    """v0p53: SfmProject.create turns the start rig by no temperature term (thermal=False)."""
-    from mppp.paths import cmods_dir
-    from mppp.sfm.project import start_rig_rotation
-    shipped = json.loads((cmods_dir() / "M2020_N_rig.json").read_text())
-    shipped["thermal"] = {"yaw_mdeg_per_degC": -1.0, "pitch_mdeg_per_degC": 0.5, "T0_degC": -20.0}
-    shipped.pop("drift", None)
-    R1, ap1 = start_rig_rotation(shipped, 0.0, None)
-    R2, ap2 = start_rig_rotation(shipped, 0.0, None, thermal=False)
-    assert "thermal" in ap1 and "thermal" not in ap2
-    assert np.allclose(R2, shipped["R_sensor_from_ref"]) and not np.allclose(R1, shipped["R_sensor_from_ref"])

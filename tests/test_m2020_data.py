@@ -45,16 +45,19 @@ def test_navcam_tile_is_padded_to_full_frame(nlf):
     assert not nlf.image_int16[:1448].any() and not nlf.mask_valid[:1448].any()
     inside = nlf.mask_valid[1448:1448 + 944, 1928:1928 + 1264]
     assert (inside > 0).mean() > 0.99
-    # label principal point moves with the padding
+    # label principal point moves with the padding (the label pinhole stays the Metashape reference)
     lab = nlf.intrinsics_label
-    assert lab.cx == pytest.approx(666.709, abs=1e-2)
-    # XML calibration (2560x1920) rescaled x2 to the full frame
-    assert "M2020_NL1_frame.xml" in nlf.intrinsics.source
-    assert nlf.intrinsics.fy == pytest.approx(2 * 1475.4568151785811)
-    assert nlf.intrinsics.dist["k3"] == pytest.approx(-0.022056754778257665)
-    # and the XML principal point agrees with the padded label model to a few pixels
-    assert abs(nlf.intrinsics.cx - (lab.cx + 1928)) < 10 and abs(nlf.intrinsics.cy - (lab.cy + 1448)) < 10
-    assert abs(nlf.intrinsics.fx / lab.fx - 1) < 0.01
+    assert lab.cx == pytest.approx(666.709, abs=1e-2) and "PDS label" in nlf.intrinsics.source
+    assert nlf.intrinsics.cx == pytest.approx(lab.cx + 1928) and nlf.intrinsics.cy == pytest.approx(lab.cy + 1448)
+    # the COLMAP prior camera: the promoted NL model at the image's temperature and sol, at full resolution
+    from mppp import calib
+    c = nlf.colmap_camera
+    assert c["model"] == "THIN_PRISM_FISHEYE" and (c["width"], c["height"]) == (5120, 3840)
+    want = calib.camera_at(calib.load_camera("N", "L"), nlf.camera_temperature_degC, nlf.sol)[1]
+    assert np.allclose(c["params"], want) and c["params"][10] == c["params"][11] == 0.0
+    # and the promoted principal point agrees with the padded label model to a few pixels
+    assert abs(c["params"][2] - (lab.cx + 1928 + 0.5)) < 10 and abs(c["params"][3] - (lab.cy + 1448 + 0.5)) < 10
+    assert abs(c["params"][0] / lab.fx - 1) < 0.01
 
 
 def test_zcam_is_demosaiced_and_keeps_label_model(zl0):
@@ -168,8 +171,9 @@ def test_process_images_end_to_end(tmp_path, waypoints):
     refs = (tmp_path / "references.txt").read_text().splitlines()
     assert len(refs) == 3 and refs[1].startswith(NLF.stem + ".png")
     cams = (tmp_path / "colmap/sparse_prior/cameras.txt").read_text()
-    assert "FULL_OPENCV 5120 3840" in cams and "OPENCV 1648 1200" in cams
+    assert "THIN_PRISM_FISHEYE 5120 3840" in cams and "FULL_OPENCV 1648 1200" in cams
     assert man["colmap"]["cameras"].keys() == {"NL0", "ZL034"}
+    assert all(v["source"] == "promoted model" for v in man["colmap"]["cameras"].values())
 
 
 def test_two_positioning_routes_agree(cfg_nomask):

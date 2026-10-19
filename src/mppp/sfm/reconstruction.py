@@ -820,15 +820,11 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     rig_start = {k: v.copy() for k, v in rig_blocks.items()}
     n_rig_prior = 0
     n_rig_tie = 0
-    rig_yaw = str(project.settings.get("navcam_rig_yaw") or "refine")        # v0p51: "refine", "hold", "zero"
+    rig_yaw = str(project.settings.get("navcam_rig_yaw") or "refine")        # "refine" or "hold"
     for key, arr in rig_blocks.items():
         if not prob.has_parameter_block(arr):
             continue
         nav_rig = str(key_of.get(int(key[1]), "")).startswith("N") if key_of else False
-        if nav_rig and rig_yaw == "zero" and abs(arr[1]) > 0:
-            # the quaternion's y (rotation about y = the yaw, rotation vector = 2 q_xyz) set to 0; w renormalised
-            arr[1] = 0.0
-            arr[3] = np.sign(arr[3] or 1.0) * np.sqrt(max(0.0, 1.0 - arr[0] ** 2 - arr[2] ** 2))
         if refine_rig is True and rig_translation_sigma_m:
             from scipy.spatial.transform import Rotation
             q0, t0 = rig_start[key][:4], rig_start[key][4:7]
@@ -852,8 +848,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                     n_rig_tie += 1
                 else:
                     held_q = [3, 4, 5, 6]
-            if nav_rig and rig_yaw in ("hold", "zero"):
-                held_q = [1] + held_q                     # v0p51: the yaw stays; pitch (x) and roll (z) refined
+            if nav_rig and rig_yaw == "hold":
+                held_q = [1] + held_q                     # the yaw stays; pitch (x) and roll (z) refined
             prob.set_manifold(arr, pyceres.SubsetManifold(7, held_q))
         else:
             prob.set_parameter_block_constant(arr)
@@ -1817,7 +1813,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         if thermal_after_stage1 and thermal_bins_deg and temperatures:
             # v0p61: the Navcam temperature bins before the Mastcam-Z frames come in (the Navcam-only model is the
             # one-camera-per-eye model of the block: sparse/<out>_single)
-            from .thermal import rig_slopes_for_project, thermal_stage
+            from .thermal import thermal_stage
             single = project.root / "sparse" / f"{out_name}_single"
             single.mkdir(parents=True, exist_ok=True)
             rec.write(str(single))
@@ -1827,8 +1823,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                                hold=hold_nav, thermal_model=thermal_model, sigma_px=sigma_px,
                                                loss_scale=float(schedule[-1][1]), max_iterations=2 * max_iterations,
                                                attitude_prior_deg=attitude_prior_deg, linear_solver=linear_solver,
-                                               verbose=verbose, rig_slopes=rig_slopes_for_project(project),
-                                               fine_range=_fine_range, fine_deg=_fine_deg)
+                                               verbose=verbose, fine_range=_fine_range, fine_deg=_fine_deg)
             n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
             thermal_early["filtered_after"] = n_bad
             thermal_early["single_camera_model"] = str(single.relative_to(project.root))
@@ -2055,7 +2050,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     if thermal:
         project.settings["thermal"] = thermal_early
     elif thermal_bins_deg and temperatures:
-        from .thermal import rig_slopes_for_project, thermal_stage
+        from .thermal import thermal_stage
         single = project.root / "sparse" / f"{out_name}_single"
         single.mkdir(parents=True, exist_ok=True)
         rec.write(str(single))
@@ -2065,8 +2060,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                      thermal_model=thermal_model, sigma_px=sigma_px,
                                      loss_scale=float(schedule[-1][1]), max_iterations=2 * max_iterations,
                                      attitude_prior_deg=attitude_prior_deg, linear_solver=linear_solver,
-                                     verbose=verbose, rig_slopes=rig_slopes_for_project(project),
-                                               fine_range=_fine_range, fine_deg=_fine_deg)
+                                     verbose=verbose, fine_range=_fine_range, fine_deg=_fine_deg)
         n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
         thermal["filtered_after"] = n_bad
         thermal["single_camera_model"] = str(single.relative_to(project.root))

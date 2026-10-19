@@ -63,48 +63,10 @@ def test_staged_reconstruct_runs_pose_guided_matching(tmp_path, monkeypatch):
     assert not (proj.root / "database_guided.db").exists()
 
 
-def test_profile_thermal_finds_the_minimum(monkeypatch):
-    from mppp.sfm import navcal as NC
-    from mppp.sfm import navcal_consensus as NCC
-    calls = []
-
-    def fake_joint(r, proj, temps, ppm, T0, max_iterations=50, rig_slopes=None, pp_slopes=None, **kw):
-        x = pp_slopes[1][0]
-        calls.append(x)
-        return {"final_cost": 1000.0 + 5e5 * (x - 0.031) ** 2 + 0.01 * (ppm - 38.0) ** 2, "observations": 10000,
-                "iterations": 3}
-    monkeypatch.setattr(NC, "joint_adjust", fake_joint)
-    v = {"f": 38.1, "NL_cx": 0.0517, "NL_cy": 0.0, "NR_cx": 0.0, "NR_cy": 0.0}
-    out = NCC.profile_thermal(object(), None, {}, v, -20.0, "NL_cx", verbose=False)
-    assert abs(out["best"] - 0.031) < 1e-6 and out["sd"] > 0 and not out["at_edge"] and len(calls) == 5
-    far = NCC.profile_thermal(object(), None, {}, dict(v, NL_cx=0.2), -20.0, "NL_cx", verbose=False)
-    assert abs(far["best"] - 0.031) < 1e-6 and len(far["rows"]) > 5          # the grid was extended
-    with pytest.raises(KeyError):
-        NCC.profile_thermal(object(), None, {}, v, -20.0, "fy", verbose=False)
-
-
-def test_write_consensus_with_refitted_thermal_terms(tmp_path):
-    from test_v0p62 import _consensus_result
-    from mppp.sfm.navcal_consensus import write_consensus
-    res = _consensus_result()
-    res["thermal"] = {"ppm_per_degC": 36.5, "T0_degC": -20.0, "cx_px_per_degC_NL": 0.045,
-                      "pp_slopes": {"NL": [0.045, 0.01], "NR": [0.002, -0.004]}, "refit": True,
-                      "terms": ["f", "NL_cx", "NR_cy"], "sd": {"f": 0.4, "NL_cx": 0.003, "NR_cy": 0.002}, "profiles": {}}
-    d = write_consensus(res, tmp_path / "nj")
-    L = json.loads((d / "M2020_NL_fisheye_tangential.json").read_text())["thermal"]
-    R = json.loads((d / "M2020_NR_fisheye_tangential.json").read_text())["thermal"]
-    assert L["ppm_per_degC"] == 36.5 and L["cx_px_per_degC"] == 0.045 and L["cy_px_per_degC"] == 0.01
-    assert L["sd_ppm_per_degC"] == 0.4 and R["cy_px_per_degC"] == -0.004 and R["sd_cy_px_per_degC"] == 0.002
-    assert "refitted" in json.loads((d / "M2020_NL_fisheye_tangential.json").read_text())["source"]
-
-
 def test_notebook_and_script_defaults_v0p64():
     nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
     src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert "num_octaves=None" in src and "num_octaves=6 if INCLUDE_ZCAM else 4" in src
     assert "POSE_GUIDED" in src and "pose_guided=POSE_GUIDED" in src
-    nb4 = json.loads((ROOT / "notebooks" / "04_camera_models.ipynb").read_text(encoding="utf-8"))
-    src4 = "".join("".join(c["source"]) for c in nb4["cells"] if c["cell_type"] == "code")
-    assert "REFIT_THERMAL = True" in src4 and "--refit-thermal" in src4          # v0p73 default True
     g = (ROOT / "scripts" / "windows" / "claude_sync.bat").read_bytes()   # v0p85: github_push.bat removed
     assert b"git push origin --tags" in g

@@ -18,10 +18,11 @@ import cv2
 import numpy as np
 
 from . import radiometry
-from .camera import CAHVOR, Intrinsics, Pose, intrinsics_from_metashape_xml, pose_from_label
+from .camera import CAHVOR, Intrinsics, Pose, pose_from_label
 from .config import load_config
 from .filenames import parse_filename
-from .labels import first, label_float, label_get, read_pds
+from .labels import (ZCAM_OPTICS_KEYS, ZCAM_TEMPERATURE_KEY, camera_temperature, first, instrument_temperatures,  # noqa: F401
+                     label_float, label_get, read_pds, zcam_optics_temperature)
 from .paths import data_dir, resolve_resource
 from .waypoints import lonlat_of, offset_lonlat, waypoint_for_site_drive
 
@@ -29,8 +30,6 @@ PathLike = Union[str, Path]
 
 # Full detector frame (width, height) at full resolution, by camera family.
 FULL_FRAME = {"N": (5120, 3840), "F": (5120, 3840), "R": (5120, 3840), "Z": (1648, 1200)}
-ZCAM_OPTICS_KEYS = ("HEAD_HTR_1", "HEAD_HTR_2")  # v0p73: the two Mastcam-Z sensors on the camera head optics
-ZCAM_TEMPERATURE_KEY = "HEAD_FPA"  # v0p42: Mastcam-Z camera temperature (focal plane) in INSTRUMENT_TEMPERATURE_NAME
 LANDING_SITE = 3            # M2020 site index of the landing frame used as world origin
 
 
@@ -40,23 +39,23 @@ def _pad(arr: np.ndarray, left: int, right: int, top: int, bottom: int) -> np.nd
 
 
 class SkippedImage(ValueError):
-    """An image the selection rules leave out (v0p30): not an error, listed in the manifest under ``skipped``."""
+    """An image the selection rules leave out: not an error, listed in the manifest under ``skipped``."""
 
 
 class SkyImage(SkippedImage):
-    """The image looks at the sky (v0p22.4): boresight above ``selection.max_boresight_elevation_deg``."""
+    """The image looks at the sky: boresight above ``selection.max_boresight_elevation_deg``."""
 
 
 class LmstOutOfWindow(SkippedImage):
-    """Taken outside ``selection.lmst_window_h`` (v0p30)."""
+    """Taken outside ``selection.lmst_window_h``."""
 
 
 class SaturatedImage(SkippedImage):
-    """More than ``selection.max_saturated_fraction`` of the valid pixels are saturated (v0p30)."""
+    """More than ``selection.max_saturated_fraction`` of the valid pixels are saturated."""
 
 
 class ExposureImage(SkippedImage):
-    """v0p41: a Navcam frame labelled with an exposure above ``selection.max_exposure_ms``, or whose centre is tinted
+    """A Navcam frame labelled with an exposure above ``selection.max_exposure_ms``, or whose centre is tinted
     against its edge by more than ``selection.max_centre_tint`` (the blue-disk frames of the exposure brackets)."""
 
 
@@ -128,8 +127,8 @@ class MPPPImage:
             warnings.warn("masking.mask_invalid=False: invalid pixels stay flagged in mask_valid only.")
 
         rad = self._pad_to_full_frame(rad)
-        self._apply_xml_intrinsics()
         rad = self._extra_padding(rad)
+        self._colmap_camera()
         self._apply_static_mask()
         self.undistorted = bool(cfg["resize"]["undistort"])
         if self.undistorted:
@@ -142,7 +141,7 @@ class MPPPImage:
 
     # ------------------------------------------------------------------ steps
     def _check_boresight(self) -> None:
-        """v0p22.4: refuse sky-pointing frames before any image work (radiometry, mask inference)."""
+        """Refuse sky-pointing frames before any image work (radiometry, mask inference)."""
         sel = self.config.get("selection") or {}
         lim = sel.get("max_boresight_elevation_deg")
         fams = [str(f).upper() for f in (sel.get("boresight_filter_families") or ["N"])]
@@ -154,7 +153,7 @@ class MPPPImage:
                            f"a sky-pointing frame, not processed")
 
     def _check_lmst(self) -> None:
-        """v0p30: refuse frames taken outside ``selection.lmst_window_h`` (inclusive)."""
+        """Refuse frames taken outside ``selection.lmst_window_h`` (inclusive)."""
         win = (self.config.get("selection") or {}).get("lmst_window_h")
         self.lmst_h = lmst_hours(self.LMST)
         if not win or self.lmst_h is None:
@@ -168,7 +167,7 @@ class MPPPImage:
         return self.fn.stem[:1].upper() in {str(f).upper() for f in fams}
 
     def _check_exposure(self) -> None:
-        """v0p41: refuse Navcam frames labelled with an exposure above ``selection.max_exposure_ms``."""
+        """Refuse Navcam frames labelled with an exposure above ``selection.max_exposure_ms``."""
         self.exposure_ms = label_float(self.label, "INSTRUMENT_STATE_PARMS.EXPOSURE_DURATION")
         lim = (self.config.get("selection") or {}).get("max_exposure_ms")
         if lim is None or self.exposure_ms is None or not self._exposure_family():
@@ -178,7 +177,7 @@ class MPPPImage:
                                 f"the long member of an exposure bracket (dark blue centre), not processed")
 
     def _check_centre_tint(self, rad: np.ndarray, valid: np.ndarray) -> None:
-        """v0p41: (B/R in the centre, r < 0.35 of the half-diagonal) / (B/R at the edge, 0.6-0.9) of the radiance;
+        """(B/R in the centre, r < 0.35 of the half-diagonal) / (B/R at the edge, 0.6-0.9) of the radiance;
         refuse the frame above ``selection.max_centre_tint`` (the blue-disk frames)."""
         self.centre_tint = None
         if rad.ndim != 3 or rad.shape[2] < 3 or not self._exposure_family():
@@ -200,7 +199,7 @@ class MPPPImage:
                                 f"dark blue centre, not processed")
 
     def _check_saturation(self, dn: np.ndarray) -> None:
-        """v0p30: the fraction of valid pixels at the product's maximum DN; refuse the frame above the limit."""
+        """The fraction of valid pixels at the product's maximum DN; refuse the frame above the limit."""
         lim = (self.config.get("selection") or {}).get("max_saturated_fraction")
         invalid_dn = label_float(self.label, "IMAGE.INVALID_CONSTANT", default=0.0)
         bits = int(label_float(self.label, "IMAGE.SAMPLE_BITS", default=16) or 16)
@@ -240,7 +239,7 @@ class MPPPImage:
         self.cahvor = CAHVOR.from_label(gcm)
         self.intrinsics, self.R_cam_rnav = self.cahvor.decompose(w, h)
         from .cmod import CameraModel
-        self.camera_model_label = CameraModel.from_label(gcm, w, h)       # v0p21: the full label model
+        self.camera_model_label = CameraModel.from_label(gcm, w, h)       # the full label model
         self.intrinsics_label = self.intrinsics
         self.native_size = (w, h)
 
@@ -316,7 +315,7 @@ class MPPPImage:
         else:
             wb = [1.0, 1.0, 1.0]
         self.white_balance = np.asarray(wb, dtype=np.float64)
-        self.brightness = float((c.get("brightness_by_family") or {}).get(self.fn.family, 1.0))   # v0p30
+        self.brightness = float((c.get("brightness_by_family") or {}).get(self.fn.family, 1.0))
 
     def _radiance_rgb(self, dn: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         L = self.label
@@ -379,21 +378,50 @@ class MPPPImage:
         self.intrinsics = self.intrinsics.shifted(left, top, W, H)
         return rad
 
-    def _apply_xml_intrinsics(self) -> None:
-        cm = self.config["camera_model"]
-        pattern = cm["xml_by_family"].get(self.fn.family) if cm["intrinsics_from_xml"] else None
-        if not pattern:
+    def _colmap_camera(self) -> None:
+        """The COLMAP prior camera of the image from the promoted models (``camera_model.use_promoted_models``):
+        the Navcam / Hazcam eye at the image's temperature and sol, the Mastcam-Z eye at its focus count and
+        backlash state, scaled to the image resolution and moved by its padding; the label CAHVOR start where no
+        model applies.  The label pinhole ``intrinsics`` (the Metashape reference) are kept beside it."""
+        from . import calib
+        self.colmap_camera: Optional[Dict[str, Any]] = None
+        if not self.config["camera_model"].get("use_promoted_models", True):
             return
-        if not self.config["resize"]["apply_padding"]:
-            raise ValueError("intrinsics_from_xml requires resize.apply_padding (XML models are full-frame).")
-        xml = data_dir() / "cmods" / pattern.format(eye=self.fn.eye or "")
-        scale = self.fn.downsample_scale / float(cm["xml_scale_by_family"].get(self.fn.family, 1.0))
-        intr = intrinsics_from_metashape_xml(xml, scale)
-        if (intr.width, intr.height) != (self.intrinsics.width, self.intrinsics.height):
-            raise ValueError(f"XML calibration is {intr.width}x{intr.height} after scaling by {scale:g}, "
-                             f"image is {self.intrinsics.width}x{self.intrinsics.height}")
-        self.intrinsics = intr
-        self._say(f"intrinsics replaced by {xml.name}")
+        if not self.config["resize"]["apply_padding"] or self.fn.family not in FULL_FRAME:
+            return                                           # the models are full-frame
+        fam, eye = self.fn.family, self.fn.eye or ""
+        s = self.fn.downsample_scale
+        extra = getattr(self, "padding_extra", None) or {"x": 0, "y": 0}
+        name = params = None
+        src = ""
+        try:
+            if fam in ("N", "F", "R"):
+                model = calib.load_camera(fam, eye)
+                name, params, applied = calib.camera_at(model, self.camera_temperature_degC, self.sol)
+                src = (Path(model["file"]).name if model.get("file") else model.get("source", "start model")) \
+                    + f" at {self.camera_temperature_degC} degC, sol {self.sol}"
+                if not model.get("file"):
+                    self._say(f"{fam}{eye}: no calibrated model, the Hazcam start model is used (not calibrated)")
+            elif fam == "Z" and self.fn.zoom_mm:
+                zm = calib.load_zcam(int(self.fn.zoom_mm))
+                focus = label_float(self.label, "INSTRUMENT_STATE_PARMS.FOCUS_POSITION_COUNT")
+                if zm is not None and focus is not None and self.fn.camera_group in (zm.get("cameras") or {}):
+                    from .sfm.backlash import is_low_backlash, load_low_backlash
+                    listed = is_low_backlash({"stem": self.fn.stem, "sequence": self.fn.sequence, "sol": self.sol,
+                                              "camera_group": self.fn.camera_group}, load_low_backlash())
+                    state = calib.focus_state(listed)
+                    name, params, info = calib.zcam_camera_at(zm, self.fn.camera_group, focus, state)
+                    src = f"{Path(zm['file']).name}: {info['source']}, {state} state"
+        except FileNotFoundError as e:
+            self._say(f"no promoted camera model ({e}); the label camera is the COLMAP prior")
+        if name is None:                                     # the padded label camera at the image resolution
+            name, params, src = calib.label_camera({"intrinsics": self.intrinsics.to_dict(), "filename": self.fn.to_dict(),
+                                                    "camera_model_label": self.camera_model_label.to_label_dict(12)})
+        else:
+            params = calib.scaled(name, params, s, extra["x"], extra["y"])
+        self.colmap_camera = {"model": name, "width": int(self.intrinsics.width), "height": int(self.intrinsics.height),
+                              "params": [float(v) for v in params], "pixel_origin": "corner of the first pixel (COLMAP)",
+                              "source": src}
 
     def _extra_padding(self, rad: np.ndarray) -> np.ndarray:
         r = self.config["resize"]
@@ -443,7 +471,7 @@ class MPPPImage:
     # ---------------------------------------------------------------- outputs
     def rgba(self, bits: int = 16, transparency: float = 1.0) -> np.ndarray:
         """RGB + alpha; alpha = reconstruction mask at full scale: the full value where the mask includes the pixel;
-        where it excludes it, ``1 - transparency`` of the full value (v0p51: ``transparency`` 1 = fully transparent,
+        where it excludes it, ``1 - transparency`` of the full value (``transparency`` 1 = fully transparent,
         the default; 0.5 = half transparent, so the masked area stays visible in viewers)."""
         im = self.image_int16 if bits == 16 else self.image_int8
         top = np.iinfo(im.dtype).max
@@ -461,61 +489,22 @@ class MPPPImage:
 
     @property
     def instrument_temperatures(self) -> Dict[str, float]:
-        """v0p73: every sensor of ``INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE(_NAME)`` ({name: degC}; Mastcam-Z:
-        DEA, HEAD_FPA, HEAD_HTR_1, HEAD_HTR_2)."""
+        """Every sensor of ``INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE(_NAME)`` ({name: degC}; Mastcam-Z: DEA,
+        HEAD_FPA, HEAD_HTR_1, HEAD_HTR_2) - :func:`mppp.labels.instrument_temperatures`."""
         try:
-            from .labels import label_get
-            names = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
-            vals = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
-            out = {}
-            for k, v in zip(names, vals):
-                try:
-                    out[str(k)] = float(getattr(v, "value", v))
-                except (TypeError, ValueError):
-                    pass
-            return out
+            return instrument_temperatures(self.label)
         except Exception:                                       # noqa: BLE001
             return {}
 
     @property
     def camera_temperature_degC(self) -> Optional[float]:
-        """v0p30: the temperature the label camera model was interpolated to (Navcam: the camera plate,
-        ``GEOMETRIC_CAMERA_MODEL.INTERPOLATION_VALUE`` when ``INTERPOLATION_METHOD = TEMPERATURE``); v0p40: else the
-        eye's ``NAVCAM_LEFT_CAL`` / ``NAVCAM_RIGHT_CAL`` temperature; v0p42: Mastcam-Z, the focal-plane temperature
-        (``HEAD_FPA``); None otherwise."""
-        m = getattr(self.camera_model_label, "meta", None) or {}
-        if str(m.get("interpolation") or "").upper() == "TEMPERATURE":
-            try:
-                return float(m.get("interpolation_value"))
-            except (TypeError, ValueError):
-                pass
-        # v0p42: Mastcam-Z: the focal-plane (camera head) temperature, HEAD_FPA (the label model is interpolated
-        # to zoom, not temperature)
-        if str(self.fn.stem)[:1] == "Z":
-            try:
-                from .labels import label_get
-                names = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
-                vals = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
-                for k, v in zip(names, vals):
-                    if str(k) == ZCAM_TEMPERATURE_KEY:
-                        return float(getattr(v, "value", v))
-            except Exception:                                   # noqa: BLE001
-                return None
+        """The temperature of the camera that took the image (:func:`mppp.labels.camera_temperature`): the value
+        the label camera model was interpolated to, else the eye's own calibration sensor (Navcam, Hazcam), the
+        focal-plane sensor ``HEAD_FPA`` (Mastcam-Z); None otherwise."""
+        try:
+            return camera_temperature(self.label, self.fn.family, self.fn.eye)
+        except Exception:                                       # noqa: BLE001
             return None
-        # v0p40: products made before the camera models were interpolated to temperature (early mission, e.g. sol
-        # 54 with INTERPOLATION_METHOD = NONE) still record the camera temperature: the eye's NAVCAM_*_CAL sensor
-        if str(self.fn.stem)[:1] == "N":
-            try:
-                from .labels import label_get
-                names = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
-                vals = label_get(self.label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
-                key = "NAVCAM_LEFT_CAL" if str(self.fn.stem)[:2] == "NL" else "NAVCAM_RIGHT_CAL"
-                for k, v in zip(names, vals):
-                    if str(k) == key:
-                        return float(getattr(v, "value", v))
-            except Exception:                                   # noqa: BLE001
-                return None
-        return None
 
     @property
     def meta(self) -> Dict[str, Any]:
@@ -539,14 +528,15 @@ class MPPPImage:
             "focus_position_count": label_get(L, "INSTRUMENT_STATE_PARMS.FOCUS_POSITION_COUNT"),
             "zoom_position_count": label_get(L, "INSTRUMENT_STATE_PARMS.ZOOM_POSITION_COUNT"),
             "exposure_duration_ms": label_float(L, "INSTRUMENT_STATE_PARMS.EXPOSURE_DURATION"),
-            "centre_tint": getattr(self, "centre_tint", None),                            # v0p41
+            "centre_tint": getattr(self, "centre_tint", None),
             "native_size": list(self.native_size), "padding": self.padding,
             "undistorted": self.undistorted,
             "intrinsics": self.intrinsics.to_dict(),
             "intrinsics_label": self.intrinsics_label.to_dict(),
+            "colmap_camera": self.colmap_camera,
             "cahvor_O_A_angle_deg": self.cahvor.o_a_angle_deg(),
             "camera_temperature_degC": self.camera_temperature_degC,
-            "instrument_temperatures": self.instrument_temperatures,                       # v0p73: all sensors
+            "instrument_temperatures": self.instrument_temperatures,
             "zcam_optics_temperature_degC": zcam_optics_temperature(self.instrument_temperatures)
             if str(self.fn.stem)[:1] == "Z" else None,
             "camera_model_label": dict(self.camera_model_label.to_label_dict(precision=12),
@@ -563,12 +553,3 @@ class MPPPImage:
             "log": list(self.log),
         }
 
-
-def zcam_optics_temperature(temps: Optional[Dict[str, float]]) -> Optional[float]:
-    """v0p73: the Mastcam-Z lens temperature - the mean of the two camera-head (optics) sensors ``HEAD_HTR_1`` and
-    ``HEAD_HTR_2`` of a label's instrument temperatures (the focal plane, ``HEAD_FPA``, is not the lens); None
-    without them."""
-    if not temps:
-        return None
-    v = [float(temps[k]) for k in ZCAM_OPTICS_KEYS if temps.get(k) is not None]
-    return float(sum(v) / len(v)) if v else None

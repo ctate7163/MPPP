@@ -23,14 +23,11 @@ _DEFAULTS: Dict[str, Any] = {
         # World frame of the pose priors: local East-North-Up, metres, origin
         # at the M2020 landing site frame (site 3, drive 0).
         "extrinsics_from_waypoints": True,
-        # Replace the label CAHVOR intrinsics by a calibrated Metashape XML.
-        "intrinsics_from_xml": True,
-        # camera family letter -> XML file pattern in mppp/data/cmods (package data).
-        # {eye} is L/R.  Only listed families are replaced.
-        "xml_by_family": {"N": "M2020_N{eye}1_frame.xml"},
-        # Resolution (relative to the full-resolution detector) at which the
-        # XML calibration was made: 0.5 = half-scale 2560x1920 Navcam.
-        "xml_scale_by_family": {"N": 0.5},
+        # The COLMAP prior camera of every image comes from the promoted camera models (mppp.calib: the Navcam /
+        # Hazcam eye at the image's temperature and sol, the Mastcam-Z eye at its focus count and backlash state);
+        # False writes the label CAHVOR camera instead.  The label pinhole intrinsics (the Metashape reference) are
+        # recorded either way.
+        "use_promoted_models": True,
     },
     "radiometry": {
         "apply_tau_correction": True,
@@ -45,7 +42,7 @@ _DEFAULTS: Dict[str, Any] = {
         "white_balance_ecam": [1.1, 1.4, 1.8],
         "white_balance_zcam": [1.0, 1.3, 2.0],
         "white_balance_vce": [1.1, 1.0, 0.9],
-        # v0p30: a brightness factor per camera family applied with the white balance (N = Navcam, F/R = Hazcam,
+        # a brightness factor per camera family applied with the white balance (N = Navcam, F/R = Hazcam,
         # Z = Mastcam-Z); Navcam 0.9 keeps nominally exposed frames off the top of the 8-bit range
         "brightness_by_family": {"N": 0.9},
         "scale_rad_to_int16": 2e5,
@@ -57,7 +54,7 @@ _DEFAULTS: Dict[str, Any] = {
     "masking": {
         "mask_invalid": True,
         "infer_mask": True,
-        # v0p13: a registry name (the released model, downloaded once into the user cache),
+        # a registry name (the released model, downloaded once into the user cache),
         # a checkpoint path, or a file name in checkpoints_dir() - see mppp.mask.hub
         "checkpoint": "mppp_mask_v3",
         "device": "auto",                             # auto | cpu | cuda
@@ -65,28 +62,28 @@ _DEFAULTS: Dict[str, Any] = {
         "threshold": None,
         "dilate_kernel": None,
         "static_masks_dir": None,
-        # v0p14.7: rover stations (site, drive) where the mask model is NOT run, so the rover stays in the
+        # rover stations (site, drive) where the mask model is NOT run, so the rover stays in the
         # images; invalid (black) pixels are still masked.  Items: [site, drive], "S032D1184", "32/1184",
         # or a station label such as "Sol0686-0688 S032D1184".
         "skip_inference_at": [],
     },
     "selection": {
-        # v0p22.4: Navcam frames whose optical axis points higher than this (sky surveys, cloud movies,
+        # Navcam frames whose optical axis points higher than this (sky surveys, cloud movies,
         # atmospheric opacity frames) hold no terrain and are not processed; they are listed in the
         # manifest under "skipped".  None turns the rule off.  Mastcam-Z is not filtered.
         "max_boresight_elevation_deg": 45.0,
         "boresight_filter_families": ["N"],
-        # v0p30: images taken outside this local mean solar time window [h, inclusive] are not processed
+        # images taken outside this local mean solar time window [h, inclusive] are not processed
         # (None: no window), and neither are images with more than this fraction of their valid pixels
         # saturated (DN at the product's maximum; None: no limit).  Both are listed under "skipped".
-        "lmst_window_h": [6.0, 18.0],              # v0p65 (was [9, 17]; notebook 03 [8, 17])
-        "max_saturated_fraction": 0.2,             # v0p65 (was 0.05)
-        # v0p41: Navcam frames labelled with an exposure above this [ms] are not processed (None: no limit).  In the
+        "lmst_window_h": [6.0, 18.0],
+        "max_saturated_fraction": 0.2,
+        # Navcam frames labelled with an exposure above this [ms] are not processed (None: no limit).  In the
         # NCAM08111 exposure brackets (sols 654-693: ~2, ~18 and ~50-65 ms of the same view) the long member shows a
         # dark blue disk in the centre - its radiance is about half the others' there, as if it was exposed much
         # shorter than labelled; ordinary Navcam frames stay below ~30 ms at Three Forks.
         "max_exposure_ms": 40.0,
-        # v0p41: ... and frames whose centre is tinted against the edge: (B/R in the centre) / (B/R at the edge)
+        # ... and frames whose centre is tinted against the edge: (B/R in the centre) / (B/R at the edge)
         # of the radiance above this (the blue disk at sol 658: 1.74; the 2 and 18 ms frames 1.01, 1.00).  None: not checked.
         "max_centre_tint": 1.2,
         "exposure_filter_families": ["N"],
@@ -120,7 +117,7 @@ def default_config() -> Dict[str, Any]:
 
 
 def _deep_merge(base: Dict[str, Any], over: Dict[str, Any], path: str = "") -> Dict[str, Any]:
-    open_maps = ("color.brightness_by_family", "masking.skip_inference_at")      # v0p30: any key is a value here
+    open_maps = ("color.brightness_by_family", "masking.skip_inference_at")      # any key is a value here
     if path in open_maps:
         base.update(over)
         return base

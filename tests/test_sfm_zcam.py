@@ -341,21 +341,3 @@ def test_listed_images_stay_regular_in_a_backlash_sequence(tmp_path):
     assert sorted(n for n, s in st.items() if s == "regular") == sorted(names3)   # the list's exceptions stay regular
     g3 = [g for g in groups if g["focus_count"] == 300.0][0]
     assert g3["all_listed"] and g3["ratio_fit"] is None and not g3.get("conflict")
-
-
-def test_found_contradicted_and_clean(tmp_path):
-    from mppp.sfm.zcam_calib import found_contradicted
-    groups = [{"group_key": "ZL034|sol1337|S1|F180", "camera_group": "ZL034", "eye": "L", "sol": 1337, "sequence": "S1",
-               "focus_count": 180, "ratio": 1.0057, "sd": 0.001, "threshold_ratio": 1.0071, "state": "regular",
-               "z": -1.4, "names": ["ZL0_1337_A.png"]},
-              {"group_key": "ZL034|sol1337|S1|F930", "camera_group": "ZL034", "eye": "L", "sol": 1337, "sequence": "S1",
-               "focus_count": 930, "ratio": 1.0102, "sd": 0.0005, "threshold_ratio": 1.0071, "state": "backlash",
-               "z": 6.2, "names": ["ZL0_1337_B.png"]},
-              {"group_key": "ZR034|sol483|S2|F1278", "camera_group": "ZR034", "eye": "R", "sol": 483, "sequence": "S2",
-               "focus_count": 1278, "ratio": 1.0015, "sd": 0.001, "threshold_ratio": 1.0076, "state": "regular",
-               "z": -6.1, "names": ["ZR0_0483_C.png"]}]
-    f = tmp_path / "found.csv"
-    f.write_text("# header\nZL0_1337_A  # rio\nZR0_0483_C  # rockytop\nZL0_9999_X  # elsewhere\n", encoding="utf-8")
-    res = found_contradicted([{"name": "blk", "backlash_groups": groups}], f, shipped=None)
-    assert [r[0] for r in res["remove"]] == ["ZL0_1337_A"]
-    assert res["keep"] == ["ZR0_0483_C"] and res["unknown"] == ["ZL0_9999_X"]

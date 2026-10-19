@@ -75,9 +75,12 @@ def test_health_lists_weak_images_with_advice(tmp_path):
 
 
 def _rational(eye="L", zero=()):
-    from mppp.paths import data_dir
-    from mppp.sfm.project import camera_from_colmap_json
-    return camera_from_colmap_json(data_dir() / f"cmods/M2020_N{eye}_rational.json", zero)
+    """A FULL_OPENCV Navcam camera with a rational radial term (the synthetic test camera's f and principal point
+    with the k1-k4 of an earlier rational fit, invertible to the frame corners)."""
+    from helpers import synthetic_navcam_cameras
+    c = synthetic_navcam_cameras()[f"N{eye}"]
+    c["params"][4:10] = [0.305, -0.026, 0.0, 0.0, 0.002, 0.593]
+    return c
 
 
 def test_coverage_by_radius_and_corner_ratio():

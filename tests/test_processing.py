@@ -19,18 +19,11 @@ def _meta():
             "geo": {"lon_east_deg": 77.45089, "lat_deg": 18.44463, "elev_geoid_m": -2567.25}}
 
 
-def test_config_defaults_and_legacy_migration(tmp_path):
+def test_config_defaults_and_unknown_keys(tmp_path):
     from mppp import load_config
     cfg = load_config()
-    assert cfg["export"]["formats"] == ["PNG16"]
-    legacy = {"output_dir": "/", "cameras": ["N"], "export": {"format": "PNG8A", "colmap_model": "OPENCV"},
-              "masking": {"checkpoint_trained": "x.pt", "checkpoint_template": "", "max_length": 1024},
-              "resize": {"standard_width": 2560}, "camera_model": {"coordinate_frame": "NED"}}
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")                           # legacy keys must migrate silently
-        cfg = load_config(legacy)
-    assert cfg["export"]["formats"] == ["PNG8"] and cfg["export"]["store_mask_in_alpha"] is True
-    assert cfg["masking"]["checkpoint"] == "x.pt"
+    assert cfg["export"]["formats"] == ["PNG16"] and cfg["camera_model"]["use_promoted_models"] is True
+    assert "intrinsics_from_xml" not in cfg["camera_model"] and "xml_by_family" not in cfg["camera_model"]
     with pytest.warns(UserWarning, match="unknown key"):
         load_config({"color": {"typo_key": 1}})
     with pytest.raises(ValueError):
@@ -294,23 +287,6 @@ NLF = DATA / "NLF_0709_0729883381_848RAD_N0332864SAPP00601_0A00LLJ01.IMG"
 ZL0 = DATA / "ZL0_0709_0729888971_069RAD_N0332864ZCAM07114_0340LMA01.IMG"
 
 
-def test_manifest_keeps_the_full_label_model(cfg_nomask):
-    from mppp.cmod import PixelCamera, compare_cameras
-    from mppp.image import MPPPImage
-    from mppp.sfm.calibration import label_model_from_meta
-    for path, tol in ((ZL0, 0.6), (NLF, 5.0)):
-        m = json.loads(json.dumps(MPPPImage(path, cfg_nomask, None).meta, default=float))
-        assert m["camera_model_label"]["MODEL_TYPE"] in ("CAHVOR", "CAHVORE")
-        exact = label_model_from_meta(m)
-        m.pop("camera_model_label")
-        approx = label_model_from_meta(m)                       # older manifests: O along A
-        d = compare_cameras(PixelCamera.cahv(exact, as_is=True), PixelCamera.cahv(approx, as_is=True), 96, False)
-        assert d["max_px"] < tol
-        _, li = exact.decompose()
-        W, H = (5120, 3840) if path == NLF else (1648, 1200)
-        assert (exact.width, exact.height) == (W, H) and 0.4 * W < li["hc"] < 0.6 * W
-
-
 @needs_data
 def test_sky_pointing_navcam_is_skipped(tmp_path):
     import mppp
@@ -408,19 +384,17 @@ def test_worker_pool_matches_sequential(tmp_path):
 
 
 def test_label_temperature_fallback_for_uninterpolated_models():
-    from mppp.image import MPPPImage
-    from types import SimpleNamespace
-    im = MPPPImage.__new__(MPPPImage)
-    im.__dict__["camera_model_label"] = SimpleNamespace(meta={"interpolation": "NONE"})
-    im.fn = SimpleNamespace(stem="NLF_0054_0671740217_053RAD_N0032046NCAM00745_0A0195J01")
-    im.label = {"INSTRUMENT_STATE_PARMS": {"INSTRUMENT_TEMPERATURE_NAME": ["NAVCAM_LEFT_1", "NAVCAM_LEFT_CAL",
-                                                                           "NAVCAM_RIGHT_CAL"],
-                                           "INSTRUMENT_TEMPERATURE": [-20.24, -20.253, -19.2028]}}
-    assert MPPPImage.camera_temperature_degC.fget(im) == -20.253
-    im.fn = SimpleNamespace(stem="NRF_0054_0671740217_053RAD_N0032046NCAM00745_0A0195J01")
-    assert MPPPImage.camera_temperature_degC.fget(im) == -19.2028
-    im.__dict__["camera_model_label"] = SimpleNamespace(meta={"interpolation": "TEMPERATURE", "interpolation_value": -7.5})
-    assert MPPPImage.camera_temperature_degC.fget(im) == -7.5
+    from mppp.labels import camera_temperature, instrument_temperatures
+    label = {"GEOMETRIC_CAMERA_MODEL": {"INTERPOLATION_METHOD": "NONE"},
+             "INSTRUMENT_STATE_PARMS": {"INSTRUMENT_TEMPERATURE_NAME": ["NAVCAM_LEFT_1", "NAVCAM_LEFT_CAL",
+                                                                        "NAVCAM_RIGHT_CAL", "FRONT_HAZ_LEFT_CAL"],
+                                        "INSTRUMENT_TEMPERATURE": [-20.24, -20.253, -19.2028, -18.0]}}
+    assert camera_temperature(label, "N", "L") == -20.253 and camera_temperature(label, "N", "R") == -19.2028
+    assert camera_temperature(label, "F", "L") == -18.0 and camera_temperature(label, "R", "L") is None
+    assert instrument_temperatures(label)["NAVCAM_LEFT_1"] == -20.24
+    label["GEOMETRIC_CAMERA_MODEL"] = {"INTERPOLATION_METHOD": "TEMPERATURE", "INTERPOLATION_VALUE": -7.5}
+    assert camera_temperature(label, "N", "L") == -7.5
+    assert camera_temperature({}, "N", "L") is None and instrument_temperatures({}) == {}
 
 
 def test_exposure_rules():
@@ -450,16 +424,15 @@ def test_exposure_rules():
     assert abs(im.centre_tint - 1.0) < 1e-6
 
 
-def test_zcam_camera_temperature_is_head_fpa(monkeypatch):
-    from mppp import image as I
-    ns = types.SimpleNamespace(camera_model_label=types.SimpleNamespace(meta={"interpolation": "ZOOM"}),
-                               fn=types.SimpleNamespace(stem="ZL0_0684_0727673848_348RAD_N0321174ZCAM07114_0340LMA01"),
-                               label={"INSTRUMENT_STATE_PARMS": {
-                                   "INSTRUMENT_TEMPERATURE_NAME": ["DEA", "HEAD_FPA", "HEAD_HTR_1", "HEAD_HTR_2"],
-                                   "INSTRUMENT_TEMPERATURE": [30.76, -13.445, -14.77, -14.62]}})
-    assert I.MPPPImage.camera_temperature_degC.fget(ns) == pytest.approx(-13.445)
-    ns.label["INSTRUMENT_STATE_PARMS"]["INSTRUMENT_TEMPERATURE_NAME"] = ["DEA"]
-    assert I.MPPPImage.camera_temperature_degC.fget(ns) is None
+def test_zcam_camera_temperature_is_head_fpa():
+    from mppp.labels import camera_temperature, zcam_head_temperature, zcam_optics_temperature, instrument_temperatures
+    label = {"GEOMETRIC_CAMERA_MODEL": {"INTERPOLATION_METHOD": "ZOOM"},
+             "INSTRUMENT_STATE_PARMS": {"INSTRUMENT_TEMPERATURE_NAME": ["DEA", "HEAD_FPA", "HEAD_HTR_1", "HEAD_HTR_2"],
+                                        "INSTRUMENT_TEMPERATURE": [30.76, -13.445, -14.77, -14.62]}}
+    assert camera_temperature(label, "Z", "L") == pytest.approx(-13.445) == zcam_head_temperature(label)
+    assert zcam_optics_temperature(instrument_temperatures(label)) == pytest.approx(-14.695)
+    label["INSTRUMENT_STATE_PARMS"]["INSTRUMENT_TEMPERATURE_NAME"] = ["DEA"]
+    assert camera_temperature(label, "Z", "L") is None and zcam_optics_temperature(instrument_temperatures(label)) is None
 
 
 def _paths(tmp_path, n):

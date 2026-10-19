@@ -33,7 +33,7 @@
  "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
  "free_params": [],
  "pixel_origin": "corner of the first pixel (COLMAP)",
- "source": "MPPP Navcam consensus (mppp.sfm.navcal_consensus, 2026-10-18, v0p80 NL-reference form): one NL camera shared by 23 blocks (Artuby Ridge, Bell Island Large, Belva Crater Large, Bunsen Peak, Chal Rocks, Chal Rocks Large, Cheyava Falls, Enchanted Lake, Hippo Pools, Issole Seitah South, Marble Mountain, Origny Large, Pico Turquino, Rochette, Rockytop, Seitah North, South Arm, Taylorfjellet Huge, Taylorfjellet Large, Three Forks Large, Tuxedo Park, Van Zyl Overlook Large, Witch Hazel Hill); fisheye + tangential at -20 degC, fx +40.7 / fy +45.2 ppm/degC, cx +0.0000 px/degC, k1 -7.24e-06/degC, k4 -0.00662 (fitted with k3), one rig yaw +39.48 mdeg (rate +2.56 mdeg/1000 sol).",
+ "source": "MPPP Navcam consensus (2026-10-18, NL-reference form): one NL camera shared by 23 blocks (Artuby Ridge, Bell Island Large, Belva Crater Large, Bunsen Peak, Chal Rocks, Chal Rocks Large, Cheyava Falls, Enchanted Lake, Hippo Pools, Issole Seitah South, Marble Mountain, Origny Large, Pico Turquino, Rochette, Rockytop, Seitah North, South Arm, Taylorfjellet Huge, Taylorfjellet Large, Three Forks Large, Tuxedo Park, Van Zyl Overlook Large, Witch Hazel Hill); fisheye + tangential at -20 degC, fx +40.7 / fy +45.2 ppm/degC, cx +0.0000 px/degC, k1 -7.24e-06/degC, k4 -0.00662 (fitted with k3), one rig yaw +39.48 mdeg (rate +2.56 mdeg/1000 sol).",
  "sd": {
   "fx": 0.02582608585305851,
   "fy": 0.040568710903942075,
@@ -46,19 +46,16 @@
   "k3": 5.7822710630985836e-05
  },
  "thermal": {
-  "ppm_per_degC": 42.98474310397981,
-  "sd_ppm_per_degC": 0.20528983950192659,
   "T0_degC": -20.0,
-  "note": "v0p80: NL-reference form, refitted with the consensus (2026-10-18; profiles of NR_cx, NL_fx, NL_fy, NR_fx, NR_fy, yaw_rate)",
-  "cx_px_per_degC": 0.0,
-  "cy_px_per_degC": 0.0,
   "fx_ppm_per_degC": 40.745813000108726,
   "fy_ppm_per_degC": 45.22367320785089,
-  "form": "v0p80",
   "sd_fx_ppm_per_degC": 0.1238156721242466,
   "sd_fy_ppm_per_degC": 0.14949218151082624,
+  "cx_px_per_degC": 0.0,
+  "cy_px_per_degC": 0.0,
   "k1_per_degC": -7.2357792130127725e-06,
-  "k1_source": "temperature bins of the blocks (k1_slopes_from_blocks)"
+  "k1_source": "temperature bins of the blocks (k1_slopes_from_blocks)",
+  "note": "NL-reference form, refitted with the consensus (2026-10-18; profiles of NR_cx, NL_fx, NL_fy, NR_fx, NR_fy, yaw_rate)"
  },
  "verification": {
   "note": "leave-one-block-out: max centre 0.011 px, corners 0.027 px over 23 blocks (ok)",
@@ -84,7 +81,6 @@
    "p95_px": 0.6853508596830039
   }
  },
- "fixed_params": [],
  "early_mission": {
   "before_sol": 380.0,
   "dfx_px": 0.19739867906435019,
@@ -117,9 +113,12 @@
    "cy"
   ],
   "early_images": 905,
-  "note": "v0p70 (2026-10-18): a camera with these offsets for the images before sol 380; projects apply the terms in applied_terms (|z| >= 3), weighted by the block's share of early images"
+  "note": "(2026-10-18): a camera with these offsets for the images before sol 380; projects apply the terms in applied_terms (|z| >= 3), weighted by the block's share of early images"
  },
  "sd_source": "copied from the cameras in use (not refitted)",
  "convention": "NL reference",
- "form": "v0p80"
+ "form": "navcam-v1",
+ "family": "N",
+ "eye": "L",
+ "fixed_params": []
 }

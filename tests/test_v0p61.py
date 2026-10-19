@@ -1,9 +1,6 @@
-"""v0p61: the low-backlash list, regular-state focus bins, the focus-line refit, k3 = 0, the notebook 04 guards and
-the Windows scripts."""
+"""v0p61: the low-backlash list, regular-state focus bins and the notebook 03 guards (the focus-line refit, k3 = 0
+and the notebook 04 guards were retired with the calibration studies in 0.90)."""
 from pathlib import Path
-from types import SimpleNamespace
-
-import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,63 +55,6 @@ def test_split_by_focus_regular_state_bins():
     assert {r["instrument"] for r in rows if r["focus_state"] == "regular"} == set(reg)
 
 
-def test_label_median_k3_zero():
-    from mppp.sfm.project import _camera_from_label_median
-    p = [("FULL_OPENCV", [5000, 5000, 824, 600, 0.1, 0.2, 1e-4, 2e-4, 0.3, 0, 0, 0])]
-    assert _camera_from_label_median("ZL034", p, (1648, 1200), ("p1", "p2"))["params"][8] == pytest.approx(0.3)
-    c = _camera_from_label_median("ZL034", p, (1648, 1200), ("p1", "p2", "k3"))
-    assert c["params"][6:9] == [0.0, 0.0, 0.0]
-
-
-class _Cam:
-    def __init__(self, f, a=1.0):
-        self.params = np.array([f / np.sqrt(a), f * np.sqrt(a), 824, 600, 0, 0, 0, 0, 0, 0, 0, 0], float)
-
-
-def test_refit_focus_lines_flags_the_outlier_bin(monkeypatch):
-    from mppp.sfm import zcam
-    focus = [500, 800, 1100, 1400, 1700, 2000]
-    f_true = lambda c: 5000.0 + 0.2 * (c - 1100)               # noqa: E731
-    fs = [f_true(c) for c in focus]
-    fs[3] += 40.0                                              # an outlier bin
-    keys = [f"ZL034_F{c:05d}" for c in focus] + ["ZL034_F01100_reg"]
-    cams = {i + 1: _Cam(f) for i, f in enumerate(fs)}
-    cams[len(keys)] = _Cam(4950.0)
-    rec = SimpleNamespace(cameras=cams)
-    proj = SimpleNamespace(
-        settings={"database": {"cameras": {k: i + 1 for i, k in enumerate(keys)}}},
-        cameras={k: {"group": "ZL034", "focus_count_median": float(c),
-                     "backlash_state": "regular" if k.endswith("_reg") else None}
-                 for k, c in zip(keys, focus + [1100])},
-        images=[])
-    monkeypatch.setattr(zcam, "_observations_per_camera", lambda rec: {i + 1: 1000 for i in range(len(keys))})
-    model = {"cameras": {"ZL034": {"f0_px": 5045.0, "label_f0_px": 5000.0, "reference_focus": 1100.0,
-                                   "slope_px_per_count": 0.19}}}
-    out = zcam.refit_focus_lines(rec, proj, model=model)["ZL034"]
-    assert out["slope_source"] == "fitted" and out["n_bins"] == 6
-    assert out["f0_px"] == pytest.approx(5000.0, abs=1.0) and out["slope_px_per_count"] == pytest.approx(0.2, abs=0.005)
-    assert [o["camera"] for o in out["outliers"]] == ["ZL034_F01400"]
-    # applied: every bin on the line, the regular bin at line / (f0 / label f0)
-    assert np.sqrt(cams[4].params[0] * cams[4].params[1]) == pytest.approx(f_true(1400), abs=1.0)
-    assert np.sqrt(cams[7].params[0] * cams[7].params[1]) == pytest.approx(f_true(1100) / 1.009, abs=1.0)
-    assert any("outlier bins: ZL034_F01400" in s for s in zcam.focus_line_lines({"ZL034": out}))
-    # two bins: f0 only, slope from the model
-    proj2 = SimpleNamespace(settings={"database": {"cameras": {keys[0]: 1, keys[1]: 2}}},
-                            cameras={k: proj.cameras[k] for k in keys[:2]}, images=[])
-    o2 = zcam.refit_focus_lines(SimpleNamespace(cameras={1: _Cam(fs[0]), 2: _Cam(fs[1])}), proj2, model=model,
-                                apply=False)["ZL034"]
-    assert o2["slope_source"] == "focus model" and o2["slope_px_per_count"] == 0.19
-
-
-def test_wls_ignores_nan_rows():
-    from mppp.sfm.navcal import _wls
-    y = np.array([1.0, 2.0, np.nan, 3.0, 4.0])
-    X = np.c_[np.ones(5), np.arange(5.0)]
-    r = _wls(y, X, np.array([0.1, 0.1, 0.1, np.nan, 0.1]))
-    assert r["n_used"] == 3 and np.all(np.isfinite(r["coef"]))
-    assert np.isnan(_wls(y[:2], X[:2], np.array([0.1, np.nan]))["coef"][0])
-
-
 def test_outlier_frame_threshold_and_reconstruct_options():
     import inspect
     from mppp.sfm import reconstruction as R
@@ -142,6 +82,3 @@ def test_notebook_defaults_v0p61():
         assert s.replace(" ", "") in src.replace(" ", ""), s
     i = src.index("NO_MASK_INFERENCE_AT = [")
     assert re.search(r'\n\s+"S032D1184"', src[i:i + 400])
-    nb4 = json.loads((ROOT / "notebooks" / "04_camera_models.ipynb").read_text(encoding="utf-8"))
-    src4 = "".join("".join(c["source"]) for c in nb4["cells"] if c["cell_type"] == "code")
-    assert "navcal_v0p40" not in src4

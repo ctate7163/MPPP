@@ -1023,7 +1023,7 @@
   "sigma_m": 0.05
  },
  "convention": "NL reference",
- "form": "v0p80",
+ "form": "navcam-v1",
  "yaw_model": "one yaw for every temperature (the stereo temperature change is NR cx's); yaw rate +2.56 +- 0.10 mdeg per 1000 sol",
  "translation_joint": {
   "t_start_m": [
@@ -1058,5 +1058,6 @@
   }
  },
  "translation_source": "joint with the cameras and the rotation",
- "translation": "fitted"
+ "translation": "fitted",
+ "family": "N"
 }

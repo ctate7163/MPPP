@@ -16,10 +16,11 @@ DATA_DIR = data_dir()
 
 def _synthetic(tmp_path, noise_native_px=0.3, seed=0):
     """Two stations, a mast pan of 6 stereo exposures each (half and quarter resolution), terrain points."""
-    from mppp.sfm.project import SfmProject, camera_from_metashape_xml
+    from helpers import synthetic_navcam_cameras
+    from mppp.sfm.project import SfmProject
     from scipy.spatial.transform import Rotation
     rng = np.random.default_rng(seed)
-    cams = {f"N{e}": camera_from_metashape_xml(DATA_DIR / f"cmods/M2020_N{e}0_frame.xml") for e in "LR"}
+    cams = synthetic_navcam_cameras()
     R_rel = Rotation.from_rotvec(np.radians([-0.09, 0.015, -0.08])).as_matrix()
     t_rel = np.array([-0.4244, 0.0, 0.0])
     images, truth = [], {}
@@ -284,41 +285,6 @@ def test_ba_holds_camera_specific_parameters(tmp_path):
     assert fb["fits"]["NR"]["refined"] is None and Path(fb["png"]).is_file()          # one bin: no slope
     rep = assess_alignment(proj, rec)
     assert "NR" in rep["cameras"] and any(c["check"] == "residual_eye_ratio" for c in rep["checks"])
-
-
-def _rational(eye="L", zero=()):
-    from mppp.paths import data_dir
-    from mppp.sfm.project import camera_from_colmap_json
-    return camera_from_colmap_json(data_dir() / f"cmods/M2020_N{eye}_rational.json", zero)
-
-
-def test_bundle_adjustment_refines_k4_of_the_rational_camera(tmp_path):
-    pytest.importorskip("pycolmap")
-    pytest.importorskip("pyceres")
-    from helpers import _build_rec, _synthetic
-    from mppp.sfm.reconstruction import bundle_adjust
-    for with_map in (True, False):
-        proj, truth, P, _, rigT, noise, rng = _synthetic(tmp_path / str(with_map))
-        cams = {f"N{e}": _rational(e) for e in "LR"}
-        proj.cameras = cams
-        if with_map:
-            proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
-        rec, true_params = _build_rec(proj, truth, P, cams, rigT, noise, rng)
-        for cid in (1, 2):
-            q = np.array(rec.cameras[cid].params)
-            q[9] += 0.02                                                    # start k4 off
-            rec.cameras[cid].params = q
-        if not with_map:                                                    # free_params would be ignored
-            with pytest.raises(RuntimeError, match="build_database"):
-                bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, max_iterations=5)
-            continue
-        bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=200)
-        for cid in (1, 2):
-            p, t = np.asarray(rec.cameras[cid].params), true_params[cid]
-            # k4 started 0.02 off; it trades off against k1-k3 on this small block (0.005-0.008 left with the
-            # v0p22 consensus cameras), so the test asks for most of the offset to be recovered
-            assert abs(p[9] - t[9]) < 0.5 * 0.02 and abs(p[0] - t[0]) < 1.0
-            assert p[10] == p[11] == 0.0                                    # k5, k6 held
 
 
 def test_attitude_prior_holds_the_block_orientation(tmp_path):
@@ -1025,10 +991,10 @@ def test_outlier_test_uses_the_frame_limit(tmp_path):
     assert not few({}) or obs < R.MIN_FRAME_OBSERVATIONS                   # default: the module limit
 
 
-@pytest.mark.parametrize("mode", ["zero", "hold"])
-def test_navcam_rig_yaw_zero_or_hold(tmp_path, mode):
-    """v0p51: NAVCAM_RIG_YAW = "zero" sets the rig yaw (quaternion y, rotation about y) to 0 and holds it; "hold"
-    keeps the start value; pitch and roll are still refined with refine_rig="rotation"."""
+@pytest.mark.parametrize("mode", ["hold"])
+def test_navcam_rig_yaw_hold(tmp_path, mode):
+    """NAVCAM_RIG_YAW = "hold" keeps the start yaw (quaternion y, rotation about y); pitch and roll are still
+    refined with refine_rig="rotation"."""
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
     from mppp.sfm.reconstruction import bundle_adjust
@@ -1041,10 +1007,7 @@ def test_navcam_rig_yaw_zero_or_hold(tmp_path, mode):
     q0 = np.array(rig.sensor_from_rig(sid).params)[:4].copy()
     bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=30)
     q1 = np.array(rec.rigs[1].sensor_from_rig(sid).params)[:4]
-    if mode == "zero":
-        assert abs(q1[1]) < 1e-12
-    else:
-        assert abs(q1[1] - q0[1] / np.linalg.norm(q0)) < 1e-9
+    assert abs(q1[1] - q0[1] / np.linalg.norm(q0)) < 1e-9
     assert abs(q1[0] - q0[0]) > 0 or abs(q1[2] - q0[2]) > 0          # pitch / roll still move
     proj.settings["navcam_rig_yaw"] = "refine"
     bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=30)

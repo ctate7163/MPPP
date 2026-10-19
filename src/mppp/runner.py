@@ -426,7 +426,7 @@ def run_key(settings: Dict[str, Any], source: str, variant: str) -> str:
     if not str(source).startswith("process:"):
         d["rules"] = ALIGN_RULES                  # v0p65: changed code defaults rerun the alignments
         try:                                      # v0p73: and so do newly promoted camera models
-            from .sfm.cmods_form import models_fingerprint
+            from .calib import models_fingerprint
             d["cmods"] = models_fingerprint()
         except Exception:                                                  # noqa: BLE001
             d["cmods"] = None

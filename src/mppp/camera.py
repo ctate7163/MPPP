@@ -1,6 +1,7 @@
 """
-Camera models: CAHVOR label -> pinhole + Brown distortion, Metashape XML
-calibrations, and the pose of the camera in the local-level world frame.
+Camera models: CAHVOR label -> pinhole + Brown distortion (the Metashape reference intrinsics), and the pose
+of the camera in the local-level world frame.  The COLMAP cameras of the pipeline come from the promoted models
+(:mod:`mppp.calib`), not from here.
 
 Conventions used throughout MPPP
 --------------------------------
@@ -12,7 +13,6 @@ Conventions used throughout MPPP
   first pixel at (0, 0); exporters add 0.5 px (``K_corner_origin``).
 * Distortion (INTERNAL): OpenCV ordering and meaning,
   ``x' = x(1 + k1 r^2 + k2 r^4 + k3 r^6) + 2 p1 x y + p2 (r^2 + 2 x^2)``.
-  Metashape's P1/P2 are the OpenCV p2/p1 (swapped); this is handled on import.
 * World frame: local East-North-Up (ENU), metres.  PDS site and rover-nav
   frames are North-East-Down (NED); ``P_NED_ENU`` converts (it is its own inverse).
 * Rotations are world->camera matrices (rows = camera axes in world coords).
@@ -20,7 +20,6 @@ Conventions used throughout MPPP
 from __future__ import annotations
 
 import warnings
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
@@ -69,7 +68,7 @@ class Intrinsics:
         return K
 
     def opencv_dist(self) -> np.ndarray:
-        """[k1, k2, p1, p2, k3] for cv2.  Metashape's k4 (r^8) has no OpenCV equivalent."""
+        """[k1, k2, p1, p2, k3] for cv2 (a k4, r^8 term, has no OpenCV equivalent)."""
         d = self.dist
         if d.get("k4", 0.0):
             warnings.warn("k4 (r^8 term) is non-zero and is ignored by the OpenCV model.")
@@ -104,11 +103,10 @@ class CAHVOR:
 
     @classmethod
     def from_label(cls, gcm: Dict[str, Any]) -> "CAHVOR":
-        def comp(i):
-            v = gcm.get(f"MODEL_COMPONENT_{i}")
-            return None if v is None else np.asarray(v, dtype=np.float64)
-        return cls(comp(1), comp(2), comp(3), comp(4), comp(5), comp(6),
-                   str(gcm.get("MODEL_TYPE", "CAHV")))
+        """From a PDS ``GEOMETRIC_CAMERA_MODEL`` group (:func:`mppp.cmod.parse_label_model`, the one parser)."""
+        from .cmod import parse_label_model
+        c = parse_label_model(gcm)
+        return cls(c["C"], c["A"], c["H"], c["V"], c["O"], c["R"], c["model_type"])
 
     def project_cahv(self, X: np.ndarray) -> np.ndarray:
         """Linear (CAHV) projection of 3-D points (N,3), rover-nav frame -> (sample, line)."""
@@ -152,44 +150,6 @@ class CAHVOR:
             return None
         c = (self.O @ self.A) / np.linalg.norm(self.O) / np.linalg.norm(self.A)
         return float(np.degrees(np.arccos(np.clip(c, -1, 1))))
-
-
-def read_metashape_xml(path: PathLike) -> Dict[str, Any]:
-    path = Path(path)
-    if not path.is_file():
-        raise FileNotFoundError(f"Calibration XML not found: {path}")
-    out: Dict[str, Any] = {}
-    for child in ET.parse(path).getroot():
-        text = (child.text or "").strip()
-        try:
-            out[child.tag] = float(text)
-        except ValueError:
-            out[child.tag] = text or None
-    if out.get("projection", "frame") != "frame":
-        raise ValueError(f"Only 'frame' calibrations are supported ({path})")
-    return out
-
-
-def intrinsics_from_metashape_xml(path: PathLike, scale: float = 1.0) -> Intrinsics:
-    """
-    Metashape calibration -> internal convention.
-
-    Metashape:  u = w/2 + cx + x' f + x' b1 + y' b2 ;  v = h/2 + cy + y' f   (corner origin)
-    with tangential terms P1 (r^2+2x^2) + 2 P2 x y in x  ->  OpenCV p2 = P1, p1 = P2.
-    ``scale`` rescales the calibration to another resolution of the same
-    detector (f, cx, cy, b1, b2 scale; distortion coefficients do not).
-    """
-    c = read_metashape_xml(path)
-    g = lambda k: float(c.get(k) or 0.0)
-    w, h = g("width") * scale, g("height") * scale
-    f, b1, b2 = g("f") * scale, g("b1") * scale, g("b2") * scale
-    cx = w / 2 + g("cx") * scale - 0.5
-    cy = h / 2 + g("cy") * scale - 0.5
-    K = np.array([[f + b1, b2, cx], [0.0, f, cy], [0.0, 0.0, 1.0]])
-    dist = {"k1": g("k1"), "k2": g("k2"), "k3": g("k3"), "k4": g("k4"),
-            "p1": g("p2"), "p2": g("p1")}
-    return Intrinsics(int(round(w)), int(round(h)), K, dist,
-                      source=f"Metashape XML {Path(path).name} (scale {scale:g})")
 
 
 @dataclass

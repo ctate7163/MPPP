@@ -222,12 +222,6 @@ def test_notebook_defaults_v0p65():
     nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
     src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert 'NAVCAM_ASPECT     = "hold"' in src and "navcam_aspect=NAVCAM_ASPECT" in src
-    nb4 = json.loads((ROOT / "notebooks" / "04_camera_models.ipynb").read_text(encoding="utf-8"))
-    src4 = "".join("".join(c["source"]) for c in nb4["cells"] if c["cell_type"] == "code")
-    assert "STUDY_NAVCAM_ONLY = True" in src4 and 'STUDY_SCREEN = "fail"' in src4 and "screen_blocks(blocks)" in src4
-    import inspect
-    from mppp.sfm import navcal
-    assert inspect.getsource(navcal).count('navcam_aspect="free"') == 3     # the calibration studies keep it free
 
 
 def test_selection_defaults_v0p65p1():

@@ -1,4 +1,4 @@
-"""Shared test helpers (v0p50): synthetic blocks and reconstructions, tiny mask checkpoints and datasets."""
+"""Shared test helpers: synthetic blocks and reconstructions, tiny mask checkpoints and datasets."""
 from __future__ import annotations
 
 import numpy as np
@@ -25,12 +25,31 @@ def _metashape_project(xyz, c):
     return np.array([c["width"] * 0.5 + c["cx"] + xp * c["f"], c["height"] * 0.5 + c["cy"] + yp * c["f"]])
 
 
+# the synthetic Navcam cameras of the test blocks: FULL_OPENCV at the full frame (the 2025 Metashape flight
+# calibrations; b1 = b2 = 0, OpenCV p1 = Metashape P2)
+SYNTHETIC_NAVCAM = {
+    "NL": {"model": "FULL_OPENCV", "width": 5120, "height": 3840,
+           "params": [2950.913630357162, 2950.913630357162, 2594.16, 1942.16, -0.27553822382529308, 0.1029429156106715,
+                      0.00017021336842175613, 0.0001724664689685259, -0.022056754778257665, 0.0, 0.0, 0.0],
+           "source": "synthetic NL (flight calibration; b1, b2 set to 0)"},
+    "NR": {"model": "FULL_OPENCV", "width": 5120, "height": 3840,
+           "params": [2943.646045723977, 2943.646045723977, 2578.42, 1948.08, -0.2740321297802521, 0.10026324745511327,
+                      4.1378111050475709e-05, -9.3701488339649036e-05, -0.020782449396760324, 0.0, 0.0, 0.0],
+           "source": "synthetic NR (flight calibration; b1, b2 set to 0)"},
+}
+
+
+def synthetic_navcam_cameras():
+    """Fresh copies of :data:`SYNTHETIC_NAVCAM` (``project.cameras`` dicts)."""
+    return {k: dict(v, params=list(v["params"])) for k, v in SYNTHETIC_NAVCAM.items()}
+
+
 def _synthetic(tmp_path, noise_native_px=0.3, seed=0):
     """Two stations, a mast pan of 6 stereo exposures each (half and quarter resolution), terrain points."""
-    from mppp.sfm.project import SfmProject, camera_from_metashape_xml
+    from mppp.sfm.project import SfmProject
     from scipy.spatial.transform import Rotation
     rng = np.random.default_rng(seed)
-    cams = {f"N{e}": camera_from_metashape_xml(DATA_DIR / f"cmods/M2020_N{e}0_frame.xml") for e in "LR"}
+    cams = synthetic_navcam_cameras()
     R_rel = Rotation.from_rotvec(np.radians([-0.09, 0.015, -0.08])).as_matrix()
     t_rel = np.array([-0.4244, 0.0, 0.0])
     images, truth = [], {}

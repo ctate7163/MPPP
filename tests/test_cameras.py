@@ -66,21 +66,6 @@ def test_padding_shifts_principal_point_only():
     assert np.allclose(p.K_corner_origin[:2, 2], p.K[:2, 2] + 0.5)
 
 
-def test_metashape_xml_conventions(tmp_path):
-    from mppp.camera import intrinsics_from_metashape_xml
-    x = tmp_path / "c.xml"
-    x.write_text("<calibration><projection>frame</projection><width>2560</width><height>1920</height>"
-                 "<f>1475</f><cx>17</cx><cy>11</cy><b1>0.5</b1><k1>-0.27</k1><k3>-0.02</k3>"
-                 "<p1>1e-4</p1><p2>2e-4</p2></calibration>")
-    i = intrinsics_from_metashape_xml(x, scale=2.0)
-    assert (i.width, i.height) == (5120, 3840)
-    assert i.fy == pytest.approx(2950) and i.fx == pytest.approx(2951)
-    assert i.cx == pytest.approx(2560 + 34 - 0.5) and i.cy == pytest.approx(1920 + 22 - 0.5)
-    assert i.K_corner_origin[0, 2] == pytest.approx(2560 + 34)       # Metashape/COLMAP convention restored
-    assert (i.dist["p1"], i.dist["p2"]) == (2e-4, 1e-4)              # Metashape P1/P2 swapped vs OpenCV
-    assert i.dist["k1"] == -0.27 and i.dist["k3"] == -0.02           # distortion is scale free
-
-
 def test_pose_level_camera_looking_north():
     from mppp.camera import pose_from_label
     # rover-nav == site (identity quaternion); camera looks north (+x NED), x right = east, y down
@@ -160,37 +145,31 @@ def test_unproject_inverts_project():
     assert np.allclose(unproject_camera("SIMPLE_RADIAL", [1000, 500, 400, 0.0], [[600, 400]]), [[0.1, 0.0]])
 
 
-def _rational(eye="L", zero=()):
+def _navcam(eye="L", zero=()):
     from mppp.paths import data_dir
     from mppp.sfm.project import camera_from_colmap_json
-    return camera_from_colmap_json(data_dir() / f"cmods/M2020_N{eye}_rational.json", zero)
+    return camera_from_colmap_json(data_dir() / f"cmods/M2020_N{eye}_fisheye_tangential.json", zero)
 
 
-def test_rational_navcam_camera_is_invertible_over_the_whole_frame():
+def test_navcam_camera_is_invertible_over_the_whole_frame():
     pycolmap = pytest.importorskip("pycolmap")
     from mppp.colmap import project_camera, unproject_camera
     g = np.stack(np.meshgrid(np.linspace(0.5, 5119.5, 41), np.linspace(0.5, 3839.5, 31)), -1).reshape(-1, 2)
     for eye in "LR":
-        c = _rational(eye)
-        assert c["model"] == "FULL_OPENCV" and (c["width"], c["height"]) == (5120, 3840)
-        assert c["free_params"] == ["k4"] and c["params"][9] > 0.3 and c["distortion"] == "rational"
+        c = _navcam(eye)
+        assert c["model"] == "THIN_PRISM_FISHEYE" and (c["width"], c["height"]) == (5120, 3840)
+        assert c["params"][10] == c["params"][11] == 0.0                     # sx1 = sy1 = 0 held
         assert abs(c["params"][6]) > 1e-5                                   # fitted p1/p2 kept by default
-        cam = pycolmap.Camera(model="FULL_OPENCV", width=5120, height=3840, params=c["params"])
+        cam = pycolmap.Camera(model=c["model"], width=5120, height=3840, params=c["params"])
         xy = np.asarray(cam.cam_from_img(g))
         assert np.isfinite(xy).all()                                        # COLMAP can undistort every pixel
         corner_deg = np.degrees(np.arctan(np.hypot(*xy[0])))
         assert 55 < corner_deg < 65
-        mine = unproject_camera("FULL_OPENCV", c["params"], g)
-        assert np.abs(mine - xy).max() < 1e-8
-        back = project_camera("FULL_OPENCV", c["params"], np.c_[mine, np.ones(len(mine))])
-        assert np.abs(back - g).max() < 1e-8
-    # the Metashape three-term polynomial cannot be inverted in the corners
-    from mppp.paths import data_dir
-    from mppp.sfm.project import camera_from_metashape_xml
-    poly = camera_from_metashape_xml(data_dir() / "cmods/M2020_NL0_frame.xml")
-    xy = np.asarray(pycolmap.Camera(model="FULL_OPENCV", width=5120, height=3840, params=poly["params"]).cam_from_img(g))
-    assert 0 < np.isnan(xy[:, 0]).sum() < 0.05 * len(g)
-    assert _rational("L", ("p1", "p2"))["params"][6] == 0.0              # TANGENTIAL = "zero" still possible
+        mine = unproject_camera(c["model"], c["params"], g)
+        assert np.abs(mine - xy).max() < 1e-6
+        back = project_camera(c["model"], c["params"], np.c_[mine, np.ones(len(mine))])
+        assert np.abs(back - g).max() < 1e-6
+    assert _navcam("L", ("p1", "p2"))["params"][6] == 0.0                  # TANGENTIAL = "zero" still possible
 
 
 DATA = Path(__file__).parent / "data" / "m20"
@@ -212,17 +191,17 @@ def _label_model(path):
     return CameraModel.from_label(label_get(L, "GEOMETRIC_CAMERA_MODEL"), w, h), (fs - 1, fl - 1)
 
 
-def _rational_v0p21():
+def _navcam_model():
     from mppp.paths import data_dir
-    return json.loads((data_dir() / "cmods" / "M2020_NL_rational.json").read_text())
+    return json.loads((data_dir() / "cmods" / "M2020_NL_fisheye_tangential.json").read_text())
 
 
-def test_navcam_label_is_cahvore_fisheye_and_matches_the_rational_model():
+def test_navcam_label_is_cahvore_fisheye_and_matches_the_promoted_model():
     from mppp.cmod import CameraModel, compare_to_colmap
     cm, (dx, dy) = _label_model(NLF)
     assert cm.kind == "CAHVORE" and cm.mtype == 2 and cm.linearity == 0.0
     full = cm.rescaled(1.0, dx, dy, 5120, 3840)                 # a full-resolution sub-frame
-    nl = _rational_v0p21()
+    nl = _navcam_model()
     d = compare_to_colmap(full, nl["model"], nl["params"], 5120, 3840, step=160)
     assert d["rms_px"] < 4 and d["corner_rms_px"] < 7 and d["rotation_deg"] < 0.2
     # read as a perspective CAHVOR, the same numbers are hundreds of pixels off
@@ -250,7 +229,7 @@ def test_cahvor_is_brown_k1_k2_and_cahvore_fits_navcam():
     p = [4700.0, 4710.0, 830.0, 590.0, -0.47, 0.65, 0, 0, 0, 0, 0, 0]
     cm, rep = fit_to_colmap("FULL_OPENCV", p, 1648, 1200, "CAHVOR", step=64)
     assert rep["rms_px"] < 1e-6 and np.allclose(cm.R[1:], [-0.47, 0.65], atol=1e-8)
-    nl = _rational_v0p21()
+    nl = _navcam_model()
     _, r2 = fit_to_colmap(nl["model"], nl["params"], 5120, 3840, "CAHVORE", 2, step=128)
     _, r3 = fit_to_colmap(nl["model"], nl["params"], 5120, 3840, "CAHVORE", 3, True, step=128)
     _, r1 = fit_to_colmap(nl["model"], nl["params"], 5120, 3840, "CAHVOR", step=128)

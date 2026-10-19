@@ -107,3 +107,87 @@ def as_vector(value: Iterable[Any], n: Optional[int] = None) -> np.ndarray:
     if n is not None and v.shape != (n,):
         raise ValueError(f"Expected a vector of length {n}, got shape {v.shape}")
     return v
+
+
+# ------------------------------------------------------------------ instrument temperatures
+LEFT_KEY, RIGHT_KEY = "NAVCAM_LEFT_CAL", "NAVCAM_RIGHT_CAL"      # the Navcam camera-plate sensors of each eye
+# the Hazcam calibration sensors as the engineering-camera labels name them (the rear pair has no _CAL sensor in
+# the labels seen so far: the REAR_*_HAZ_1 sensors stand in)
+HAZCAM_KEYS = {"F": ("FRONT_HAZ_LEFT_CAL", "FRONT_HAZ_RIGHT_CAL"), "R": ("REAR_LEFT_HAZ_1", "REAR_RIGHT_HAZ_1")}
+ZCAM_TEMPERATURE_KEY = "HEAD_FPA"                                  # the Mastcam-Z focal-plane sensor
+ZCAM_OPTICS_KEYS = ("HEAD_HTR_1", "HEAD_HTR_2")                    # the two Mastcam-Z camera-head (optics) sensors
+
+
+def instrument_temperatures(label: Dict[str, Any]) -> Dict[str, float]:
+    """Every sensor of a label's ``INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE(_NAME)`` as {name: degC}
+    (Mastcam-Z: DEA, HEAD_FPA, HEAD_HTR_1, HEAD_HTR_2; Navcam: NAVCAM_LEFT_CAL, NAVCAM_RIGHT_CAL ...)."""
+    names = label_get(label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE_NAME") or []
+    vals = label_get(label, "INSTRUMENT_STATE_PARMS.INSTRUMENT_TEMPERATURE") or []
+    if not isinstance(names, (list, tuple)):
+        names, vals = [names], [vals]
+    out: Dict[str, float] = {}
+    for k, v in zip(names, vals):
+        try:
+            out[str(k)] = float(getattr(v, "value", v))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def interpolation_temperature(label: Dict[str, Any]) -> Optional[float]:
+    """The temperature the label's camera model was interpolated to (``GEOMETRIC_CAMERA_MODEL.INTERPOLATION_VALUE``
+    when ``INTERPOLATION_METHOD`` is TEMPERATURE); None otherwise."""
+    g = label_get(label, "GEOMETRIC_CAMERA_MODEL") or {}
+    if str(g.get("INTERPOLATION_METHOD") or "").upper() != "TEMPERATURE":
+        return None
+    try:
+        return float(first(g.get("INTERPOLATION_VALUE")))
+    except (TypeError, ValueError):
+        return None
+
+
+def zcam_head_temperature(label: Dict[str, Any]) -> Optional[float]:
+    """The Mastcam-Z focal-plane temperature (``HEAD_FPA``), degC; None without it."""
+    return instrument_temperatures(label).get(ZCAM_TEMPERATURE_KEY)
+
+
+def zcam_optics_temperature(temps: Optional[Dict[str, float]]) -> Optional[float]:
+    """The Mastcam-Z lens temperature - the mean of the two camera-head (optics) sensors ``HEAD_HTR_1`` and
+    ``HEAD_HTR_2`` of a label's instrument temperatures (the focal plane, ``HEAD_FPA``, is not the lens); None
+    without them."""
+    if not temps:
+        return None
+    v = [float(temps[k]) for k in ZCAM_OPTICS_KEYS if temps.get(k) is not None]
+    return float(sum(v) / len(v)) if v else None
+
+
+def camera_temperature(label: Dict[str, Any], family: str, eye: Optional[str] = None) -> Optional[float]:
+    """
+    The temperature of the camera that took a product, from its label: Navcam / Hazcam - the temperature the
+    camera model was interpolated to, else the eye's own sensor (``NAVCAM_LEFT_CAL`` / ``NAVCAM_RIGHT_CAL``, the
+    Hazcam equivalents; products made before the models were interpolated to temperature still record it);
+    Mastcam-Z - the focal-plane sensor ``HEAD_FPA`` (its label model is interpolated to zoom, not temperature).
+    None when the label has none.
+    """
+    fam = str(family)[:1].upper()
+    e = str(eye or "")[-1:].upper()
+    if fam in ("N", "F", "R"):
+        T = interpolation_temperature(label)
+        if T is not None:
+            return T
+        t = instrument_temperatures(label)
+        keys = (LEFT_KEY, RIGHT_KEY) if fam == "N" else HAZCAM_KEYS.get(fam, ())
+        if keys:
+            return t.get(keys[1] if e == "R" else keys[0])
+        return None
+    if fam == "Z":
+        return zcam_head_temperature(label)
+    return None
+
+
+def label_temperatures(path: PathLike) -> Dict[str, Optional[float]]:
+    """Camera temperatures of one Navcam PDS product (label only): ``NL``, ``NR`` (degC) and ``interp``, the
+    value the label's camera model was interpolated to (the image's own eye)."""
+    L, _ = read_pds(path, load_image=False)
+    t = instrument_temperatures(L)
+    return {"NL": t.get(LEFT_KEY), "NR": t.get(RIGHT_KEY), "interp": interpolation_temperature(L)}

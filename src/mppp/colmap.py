@@ -1,6 +1,6 @@
 """
 mppp.colmap — COLMAP text I/O and camera-model math, shared by the whole
-package (v0p13: one place for what ``mppp.colmap``, ``mppp.sfm.export`` and
+package (one place for what ``mppp.colmap``, ``mppp.sfm.export`` and
 ``mppp.error.colmap`` each had a copy of).
 
 * ``write_text_model(metas, out_dir)``: the prior model written by
@@ -60,7 +60,7 @@ _NUMPY_MODELS = ("SIMPLE_PINHOLE", "PINHOLE", "SIMPLE_RADIAL", "RADIAL", "OPENCV
 
 
 def _project_pycolmap(model: str, p: np.ndarray, x: np.ndarray) -> np.ndarray:
-    """v0p35: projection with pycolmap's own camera model for the models the numpy code does not implement
+    """Projection with pycolmap's own camera model for the models the numpy code does not implement
     (e.g. THIN_PRISM_FISHEYE, the fisheye + tangential Navcam model); points behind the camera give NaN."""
     import pycolmap
     cam = pycolmap.Camera(model=model, width=1, height=1, params=np.asarray(p, float))
@@ -77,8 +77,7 @@ def project_camera(model: str, p: Sequence[float], x: np.ndarray) -> np.ndarray:
     COLMAP projection of camera-frame point(s) ``x`` (..., 3) WITH lens
     distortion -> pixels (..., 2), exactly as COLMAP does.  Supported:
     SIMPLE_PINHOLE, PINHOLE, SIMPLE_RADIAL, RADIAL, OPENCV, FULL_OPENCV in
-    numpy; any other COLMAP model through pycolmap (v0p35).  (Before v0p9 the error model ignored distortion,
-    wrong by hundreds of pixels for the Navcam FULL_OPENCV model, k1 = -0.27.)
+    numpy; any other COLMAP model through pycolmap.
     """
     x = np.asarray(x, float)
     p = np.asarray(p, float)
@@ -119,8 +118,7 @@ def unproject_camera(model: str, p: Sequence[float], uv: np.ndarray, iterations:
     """
     Inverse of :func:`project_camera`: pixels (..., 2) -> normalised camera
     coordinates (..., 2) (x/z, y/z).  Newton iteration with a numerical
-    Jacobian from the pinhole start (v0p20; the fixed-point iteration used
-    before left up to 0.15 px in the corners of the rational Navcam model).
+    Jacobian from the pinhole start.
     Round-trip error ~1e-9 px where the model is invertible; where it is not
     (a polynomial past its turning point) the result is NaN.
     """
@@ -182,9 +180,11 @@ def write_images_txt(path: PathLike, images: Sequence[tuple]) -> None:
 def write_text_model(metas: Sequence[Dict[str, Any]], out_dir: PathLike,
                      offset: Optional[np.ndarray] = None, image_ext: str = ".png") -> Dict[str, Any]:
     """
-    ``metas``: ``MPPPImage.meta`` dicts.  One COLMAP camera per ``camera_group``;
-    if intrinsics differ inside a group (e.g. Mastcam-Z focus), the group median
-    is written and the spread is reported in the returned summary.
+    ``metas``: ``MPPPImage.meta`` dicts.  One COLMAP camera per ``camera_group``, from each image's
+    ``colmap_camera`` (the promoted model at the image's temperature, sol, focus and backlash state,
+    :mod:`mppp.calib`) when the meta has one, else from the label pinhole ``intrinsics``; if the cameras differ
+    inside a group (e.g. Mastcam-Z focus), the group median is written and the spread is reported in the returned
+    summary.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -194,20 +194,29 @@ def write_text_model(metas: Sequence[Dict[str, Any]], out_dir: PathLike,
     for m in metas:
         groups.setdefault(m["camera_group"], []).append(m)
 
+    def _cam(m: Dict[str, Any]) -> tuple:
+        c = m.get("colmap_camera")
+        if c:
+            return str(c["model"]), [float(v) for v in c["params"]], (int(c["width"]), int(c["height"]))
+        model, params = colmap_camera_params(m["intrinsics"])
+        return model, params, (int(m["intrinsics"]["width"]), int(m["intrinsics"]["height"]))
+
     cam_ids, summary = {}, {"cameras": {}, "offset_enu_m": off.tolist(), "n_images": len(metas)}
     cams = []
     for cid, (g, ms) in enumerate(groups.items(), start=1):
-        models = {colmap_camera_params(m["intrinsics"])[0] for m in ms}
-        sizes = {(m["intrinsics"]["width"], m["intrinsics"]["height"]) for m in ms}
+        rows = [_cam(m) for m in ms]
+        models = {r[0] for r in rows}
+        sizes = {r[2] for r in rows}
         if len(models) != 1 or len(sizes) != 1:
             raise ValueError(f"camera group {g}: mixed models {models} or sizes {sizes}")
-        P = np.array([colmap_camera_params(m["intrinsics"])[1] for m in ms])
+        P = np.array([r[1] for r in rows])
         w, h = sizes.pop()
         model = models.pop()
         cam_ids[g] = cid
         cams.append((cid, model, w, h, np.median(P, axis=0)))
         summary["cameras"][g] = {"camera_id": cid, "model": model, "n_images": len(ms),
-                                 "focal_spread_px": float(np.ptp(P[:, 0]))}
+                                 "focal_spread_px": float(np.ptp(P[:, 0])),
+                                 "source": "promoted model" if ms[0].get("colmap_camera") else "label"}
     write_cameras_txt(out_dir / "cameras.txt", cams)
 
     ims = []

@@ -32,7 +32,7 @@ _FORMAT_DIR = {"PNG16": "images_png16", "PNG8": "images_png8", "TIFF16": "images
 
 
 def alpha_transparency(value: Any) -> float:
-    """v0p51: ``export.store_mask_in_alpha`` as the transparency of the masked pixels: False / 0 -> 0 (no alpha
+    """``export.store_mask_in_alpha`` as the transparency of the masked pixels: False / 0 -> 0 (no alpha
     channel), True / 1 -> 1 (masked pixels fully transparent, as before), a number in (0, 1), e.g. 0.5 -> masked
     pixels half transparent (alpha 128 of 255).  The pixels the mask includes are always opaque."""
     if isinstance(value, bool) or value is None:
@@ -64,7 +64,7 @@ def write_image_products(im: MPPPImage, out_dir: PathLike) -> Dict[str, str]:
 def check_mask_checkpoint(cfg: Dict[str, Any]) -> Optional[Path]:
     """
     With ``masking.infer_mask`` on, resolve the mask checkpoint once, before any
-    image (v0p10; v0p13: registry names are downloaded here on first use).
+    image (registry names are downloaded here on first use).
     Raises FileNotFoundError with instructions.  Returns the path.
     """
     m = cfg.get("masking", {})
@@ -85,13 +85,13 @@ def filter_to_existing(paths: Sequence[PathLike], out_dir: PathLike, fmt: str) -
     folder = out_dir / _FORMAT_DIR.get(str(fmt).upper(), str(fmt))
     paths = [Path(p) for p in paths]
     if not folder.is_dir():
-        # v0p22.4: a first run of a scape has nothing to keep yet - process everything, say so, and let the
+        # a first run of a scape has nothing to keep yet - process everything, say so, and let the
         # next run (with the folder in place) apply the filter as usual
         return paths, {"folder": str(folder), "n_selected": len(paths), "n_kept": len(paths), "n_removed": 0,
                        "removed": [], "not_in_selection": [], "skipped": "folder does not exist: first run, everything processed"}
     stems = {p.stem for p in folder.iterdir()
              if p.is_file() and p.suffix.lower() in (".png", ".tif", ".tiff")}
-    # v0p43.3: an image counts as removed only if it was processed before (it is in one of the folder's
+    # an image counts as removed only if it was processed before (it is in one of the folder's
     # manifests) and its file is gone.  Products never processed - the rest of a run that was interrupted, or
     # new products in the selection - are processed, not dropped.  (Before, a run stopped half-way left a partial
     # folder, and every later run kept only that part.)
@@ -110,7 +110,7 @@ def filter_to_existing(paths: Sequence[PathLike], out_dir: PathLike, fmt: str) -
 
 
 def processed_stems(out_dir: PathLike) -> set:
-    """v0p43.3: PDS stems of every image in the manifests (``mppp_manifest_v*.json``) of ``out_dir``."""
+    """PDS stems of every image in the manifests (``mppp_manifest_v*.json``) of ``out_dir``."""
     out = set()
     for f in Path(out_dir).glob("mppp_manifest_v*.json"):
         try:
@@ -123,12 +123,11 @@ def processed_stems(out_dir: PathLike) -> set:
 
 
 SCOPE_CAMERA_CODES = ("NLF", "NRF", "ZL0", "ZR0")
-SCOPE_ZCAM_ZOOMS = (34, 48, 63, 79, 110)         # v0p53: the Mastcam-Z zooms (mm) the COLMAP pipeline aligns
+SCOPE_ZCAM_ZOOMS = (34, 48, 63, 79, 110)         # the Mastcam-Z zooms (mm) the COLMAP pipeline aligns
 
 
 def _warn_out_of_scope(paths: Sequence[Path]) -> None:
-    """v0p20: MPPP supports Navcam and Mastcam-Z at 34 mm (v0p53: 34, 48, 63, 79, 110 mm); other products are processed but
-    untested."""
+    """MPPP supports Navcam and Mastcam-Z at 34, 48, 63, 79, 110 mm; other products are processed but untested."""
     from .filenames import parse_filename
     other = []
     for p in paths:
@@ -165,7 +164,7 @@ def _reference_from_meta(m: Dict[str, Any]) -> list:
 
 
 def _exposure_rule(cfg: Dict[str, Any], m: Dict[str, Any]) -> Optional[str]:
-    """v0p41: why a manifest entry falls under the exposure rules of ``cfg`` (None: it does not)."""
+    """Why a manifest entry falls under the exposure rules of ``cfg`` (None: it does not)."""
     sel = cfg.get("selection") or {}
     fams = {str(f).upper() for f in (sel.get("exposure_filter_families", ["N"]) or [])}
     if str(m.get("source_product", ""))[:1].upper() not in fams:
@@ -189,7 +188,7 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[
     out_dir = Path(out_dir)
     man_p, cfg_p = out_dir / f"mppp_manifest_{VERSION_TAG}.json", out_dir / f"mppp_config_{VERSION_TAG}.json"
     if not man_p.is_file():
-        # v0p15: after a version change, the newest manifest of an earlier version (same configuration required)
+        # after a version change, the newest manifest of an earlier version (same configuration required)
         older = sorted(out_dir.glob("mppp_manifest_v*.json"), key=lambda q: q.stat().st_mtime)
         if older:
             man_p = older[-1]
@@ -204,13 +203,13 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[
     except Exception:                                            # noqa: BLE001
         rep["reason"] = f"no readable {cfg_p.name}"
         return {}, rep
-    # v0p20: the poses depend on the waypoint table too (refresh, or a first run without waypoints)
+    # the poses depend on the waypoint table too (refresh, or a first run without waypoints)
     old_wp, new_wp = (snap.get("waypoints") or {}), ((waypoints or {}).get("_mppp_source") or {})
     if old_wp.get("sha256") != new_wp.get("sha256"):
         rep.update(reason="waypoint table changed", config_changed=["waypoints"])
         return {}, rep
     # skip_inference_at only affects the images of the listed stations: checked per image below
-    # v0p41: the exposure rules are checked per image below (a change does not invalidate the other images)
+    # the exposure rules are checked per image below (a change does not invalidate the other images)
     per_image = {"masking.skip_inference_at", "selection.max_exposure_ms", "selection.max_centre_tint",
                  "selection.exposure_filter_families"}
     diff = [k for k in _config_diff(_canon(cfg), _canon(old_cfg)) if k not in per_image]
@@ -226,7 +225,7 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[
         outs = [out_dir / v for v in (m.get("outputs") or {}).values()]
         stem = Path(m["source_product"]).stem
         want_inferred = infer and (m.get("site"), m.get("drive")) not in skip
-        if _exposure_rule(cfg, m):                                        # v0p41: now left out by the rules
+        if _exposure_rule(cfg, m):                                        # now left out by the rules
             rep.setdefault("exposure_rule", []).append(stem)
         elif bool((m.get("mask") or {}).get("inferred")) != want_inferred:
             rep["mask_inference_changed"].append(stem)                   # station added to / removed from the list
@@ -239,7 +238,7 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[
 
 
 def _process_one(path: Path, cfg: Dict[str, Any], waypoints, out_dir: Path) -> Dict[str, Any]:
-    """One image, in a worker process (v0p30): its manifest record and reference row, or a skip / failure."""
+    """One image, in a worker process: its manifest record and reference row, or a skip / failure."""
     try:
         im = MPPPImage(path, cfg, waypoints)
     except SkippedImage as e:
@@ -265,7 +264,7 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     report from ``mppp.scapes.select_scape``) is stored in both the manifest
     and the config snapshot.
 
-    ``only_existing`` (v0p14): an output format (``"PNG8"``, ``"PNG16"``,
+    ``only_existing``: an output format (``"PNG8"``, ``"PNG16"``,
     ``"TIFF16"``) or a sub-folder name of ``out_dir``.  Only the selected
     products whose image is still in that folder are processed, and the
     manifest, references and COLMAP priors are built from those alone.  Use it
@@ -273,14 +272,14 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     same selection and ``only_existing="PNG8"``.  Nothing is deleted; outputs
     of the removed images in other folders (masks, other formats) are left
     as they are, but they are no longer in the manifest.  When the folder does
-    not exist yet, or none of the selection is in it (v0p22.4), the filter is
+    not exist yet, or none of the selection is in it, the filter is
     ignored for this run and everything is processed; the report says so.
 
-    ``workers`` (v0p30, default 4): images are processed in that many worker
+    ``workers`` (default 4): images are processed in that many worker
     processes (``spawn``; each loads the mask model once).  1 processes them
     in this process, in order, which is what ``stop_on_error`` needs.
 
-    ``reuse_existing`` (v0p14.7): images already in ``out_dir``'s manifest,
+    ``reuse_existing``: images already in ``out_dir``'s manifest,
     processed with the same configuration and with all their outputs present,
     are taken from the manifest instead of being processed again; only the
     rest of the selection is processed.  The manifest, references and priors
@@ -310,35 +309,28 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     if reuse_existing:
         have, reuse_rep = reusable_images(out_dir, cfg, waypoints)
         reused = {p.stem: have[p.stem] for p in paths if p.stem in have}
-        # v0p31: images reused from a manifest written before MPPP 0.30 get their camera temperature from the label
-        n_temp = 0
+        # images reused from an older manifest get their camera and instrument temperatures from the label
+        # (also where the camera temperature is None: early products, label model not interpolated to temperature)
         for p in paths:
             m = reused.get(p.stem)
-            # v0p40: also where it is None (early products: label model not interpolated to temperature)
-            if m is not None and m.get("camera_temperature_degC") is None and str(p.name)[:1] in ("N", "Z"):
-                try:
-                    from .sfm.thermal import label_temperatures, zcam_label_temperature
-                    if str(p.name)[:1] == "Z":                    # v0p42: Mastcam-Z focal-plane temperature
-                        m["camera_temperature_degC"] = zcam_label_temperature(p)
-                    else:
-                        t = label_temperatures(p)
-                        eye = "NL" if p.name.startswith("NL") else "NR"
-                        m["camera_temperature_degC"] = t.get("interp") if t.get("interp") is not None else t.get(eye)
-                    n_temp += 1
-                except Exception:                                  # noqa: BLE001  (a label without it)
-                    m["camera_temperature_degC"] = None
-        # v0p73: every label temperature (Mastcam-Z: the optics sensors HEAD_HTR_1/2) for records made before MPPP 0.73
-        for p in paths:
-            m = reused.get(p.stem)
-            if m is not None and "instrument_temperatures" not in m and str(p.name)[:1] in ("N", "Z"):
-                try:
-                    from .image import zcam_optics_temperature
-                    from .sfm.thermal import label_instrument_temperatures
-                    m["instrument_temperatures"] = label_instrument_temperatures(p)
+            if m is None or str(p.name)[:1] not in ("N", "F", "R", "Z"):
+                continue
+            need_T = m.get("camera_temperature_degC") is None
+            need_all = "instrument_temperatures" not in m
+            if not (need_T or need_all):
+                continue
+            try:
+                from .labels import camera_temperature, instrument_temperatures, read_pds, zcam_optics_temperature
+                L, _ = read_pds(p, load_image=False)
+                if need_T:
+                    m["camera_temperature_degC"] = camera_temperature(L, p.name[0], p.name[1])
+                if need_all:
+                    m["instrument_temperatures"] = instrument_temperatures(L)
                     if str(p.name)[:1] == "Z":
                         m["zcam_optics_temperature_degC"] = zcam_optics_temperature(m["instrument_temperatures"])
-                except Exception:                                  # noqa: BLE001
-                    pass
+            except Exception:                                      # noqa: BLE001  (a label without it)
+                if need_T:
+                    m["camera_temperature_degC"] = None
         todo = [p for p in paths if p.stem not in reused]
         reuse_rep.update(reused=len(reused), to_process=len(todo),
                          dropped_from_manifest=sorted(set(have) - set(reused)))

@@ -14,10 +14,11 @@ DATA_DIR = data_dir()
 
 def _synthetic(tmp_path, noise_native_px=0.3, seed=0):
     """Two stations, a mast pan of 6 stereo exposures each (half and quarter resolution), terrain points."""
-    from mppp.sfm.project import SfmProject, camera_from_metashape_xml
+    from helpers import synthetic_navcam_cameras
+    from mppp.sfm.project import SfmProject
     from scipy.spatial.transform import Rotation
     rng = np.random.default_rng(seed)
-    cams = {f"N{e}": camera_from_metashape_xml(DATA_DIR / f"cmods/M2020_N{e}0_frame.xml") for e in "LR"}
+    cams = synthetic_navcam_cameras()
     R_rel = Rotation.from_rotvec(np.radians([-0.09, 0.015, -0.08])).as_matrix()
     t_rel = np.array([-0.4244, 0.0, 0.0])
     images, truth = [], {}

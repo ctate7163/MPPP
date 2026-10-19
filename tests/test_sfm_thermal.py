@@ -28,29 +28,6 @@ def test_temperature_bins_merge_small_bins():
     assert temperature_bins({1: 5.0}, {1: 2}) == {1: (0.0, 10.0)}
 
 
-def test_interpolate_temperatures_in_sclk():
-    from mppp.sfm.thermal import interpolate_temperatures
-    mk = lambda sol, sclk: f"NLF_{sol:04d}_{sclk:010d}_000ECM_N0000000NCAM00000_01_095J01"       # noqa: E731
-    samples = {mk(100, 1000000): {"NL": -30.0, "NR": -31.0}, mk(100, 1001000): {"NL": -20.0, "NR": -21.0}}
-    out = interpolate_temperatures(samples, [mk(100, 1000000), mk(100, 1000500), mk(100, 1002000), mk(100, 1009000),
-                                             mk(101, 1100000)])
-    assert out[mk(100, 1000000)]["source"] == "label" and out[mk(100, 1000000)]["NL"] == -30.0
-    assert out[mk(100, 1000500)]["source"] == "interpolated" and abs(out[mk(100, 1000500)]["NR"] + 26.0) < 1e-9
-    assert out[mk(100, 1002000)]["source"] == "nearest" and out[mk(100, 1002000)]["NL"] == -20.0
-    assert mk(100, 1009000) not in out and mk(101, 1100000) not in out          # beyond the gap / sol without samples
-
-
-def test_fit_focal_temperature_uses_within_scape_changes_only():
-    from mppp.sfm.thermal import fit_focal_temperature
-    rows = []
-    for sc, off, temps in (("A", 0.0, (-40, -30, -20)), ("B", 3.0, (-25, -10)), ("C", -2.0, (-35, -15))):
-        for T in temps:
-            rows.append({"scape": sc, "eye": "NL", "T_median_degC": T, "fx": 2955.0 + off + 0.08 * T, "observations": 1e5})
-    f = fit_focal_temperature(rows, "fx")["NL"]
-    assert abs(f["px_per_degC"] - 0.08) < 1e-9 and f["scapes"] == 3 and f["residual_rms_px"] < 1e-9
-    assert abs(f["offsets"]["B"] - f["offsets"]["A"] - 3.0) < 1e-9
-
-
 def test_thermal_stage_splits_relabels_and_strips(tmp_path):
     from mppp.sfm.reconstruction import bundle_adjust
     from mppp.sfm.thermal import image_temperatures, thermal_stage, strip_thermal_bins
@@ -79,7 +56,8 @@ def test_thermal_stage_held_bins_follow_the_model(tmp_path):
     proj, rec, noise = _synthetic_block(tmp_path)
     bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, max_iterations=10)
     f0 = {k: float(rec.cameras[v].params[0]) for k, v in proj.settings["database"]["cameras"].items()}
-    model = {"NL": {"ppm_per_degC": 60.0, "T0_degC": -20.0}, "NR": {"ppm_per_degC": 60.0, "T0_degC": -20.0}}
+    model = {"NL": {"fx_ppm_per_degC": 60.0, "fy_ppm_per_degC": 60.0, "T0_degC": -20.0},
+             "NR": {"fx_ppm_per_degC": 60.0, "fy_ppm_per_degC": 60.0, "T0_degC": -20.0}}
     rec2, rep = thermal_stage(rec, proj, image_temperatures(proj), bin_deg=10, fine_range=None, min_images=4, hold=True,
                               thermal_model=model, max_iterations=5, verbose=False)
     assert rep["held"]
@@ -131,33 +109,8 @@ def test_health_and_export_on_a_binned_block(tmp_path):
     assert {r["camera"] for r in rep["rows"]} <= set(summ["cameras_refined"])
 
 
-def test_rig_rotation_at_keeps_centre_and_is_identity_at_zero():
-    from mppp.sfm.thermal import rig_rotation_at
-    from scipy.spatial.transform import Rotation
-    R = Rotation.from_rotvec([0.0014, 0.0011, 0.0002]).as_matrix()
-    t = np.array([-0.42436, -0.00016, 0.00007])
-    R0, t0 = rig_rotation_at(R, t, 0.0, -1.0, 0.3)
-    assert np.allclose(R0, R) and np.allclose(t0, t)
-    R2, t2 = rig_rotation_at(R, t, 10.0, -1.0, 0.3)
-    assert np.allclose(-R2.T @ t2, -R.T @ t)                              # the right camera's centre does not move
-    rv = Rotation.from_matrix(R2 @ R.T).as_rotvec()
-    assert np.allclose(np.degrees(rv) * 1e3, [3.0, -10.0, 0.0], atol=1e-6)  # pitch x, yaw y (mdeg)
-
-
-def test_reconstruct_rig_auto_and_thermal_stage_rig_slopes():
-    import inspect
-    from mppp.sfm import reconstruction as R, thermal as TH
-    src = inspect.getsource(R.reconstruct)
-    assert 'refine_rig == "auto"' in src and "rig_slopes_for_project(project)" in src
-    assert "rig_slopes" in inspect.signature(TH.thermal_stage).parameters
-    assert "rig_slopes" in inspect.signature(TH.split_by_temperature).parameters
-    assert TH.rig_slopes_for_project(type("P", (), {"settings": {}})()) is None
-    p = type("P", (), {"settings": {"navcam_cameras": {"rig": {"thermal": {"yaw_mdeg_per_degC": -1.0, "T0_degC": -19.1}}}}})()
-    assert TH.rig_slopes_for_project(p)["yaw_mdeg_per_degC"] == -1.0
-
-
 def test_zcam_label_temperature(tmp_path):
-    from mppp.sfm.thermal import zcam_label_temperature
+    from mppp.labels import camera_temperature, read_pds
     lab = ("PDS_VERSION_ID = PDS3\r\nRECORD_TYPE = FIXED_LENGTH\r\nRECORD_BYTES = 100\r\nLABEL_RECORDS = 1\r\n"
            "GROUP = INSTRUMENT_STATE_PARMS\r\n"
            "  INSTRUMENT_TEMPERATURE = (28.15 <degC>, -15.04 <degC>, -15.41 <degC>, -16.23 <degC>)\r\n"
@@ -166,10 +119,33 @@ def test_zcam_label_temperature(tmp_path):
     p = tmp_path / "ZL0_0461_0707874602_394RAD_N0260630ZCAM07114_0340LMA01.IMG"
     p.write_bytes(lab.encode("ascii"))
     try:
-        v = zcam_label_temperature(p)
+        L, _ = read_pds(p, load_image=False)
     except Exception as e:                                   # noqa: BLE001  (a reader that needs a full product)
         pytest.skip(f"minimal label not readable: {e}")
-    assert v == pytest.approx(-15.04)
+    assert camera_temperature(L, "Z", "L") == pytest.approx(-15.04)
+
+
+def test_thermal_stage_has_no_rig_temperature_term():
+    import inspect
+    from mppp.sfm import thermal as TH
+    from mppp.sfm.reconstruction import reconstruct
+    src = inspect.getsource(reconstruct)
+    assert 'refine_rig == "auto"' in src and "rig_slopes" not in src
+    assert "rig_slopes" not in inspect.signature(TH.thermal_stage).parameters
+    assert "rig_slopes" not in inspect.signature(TH.split_by_temperature).parameters
+    assert not hasattr(TH, "rig_slopes_for_project") and not hasattr(TH, "thermal_adjust")
+
+
+def test_thermal_model_for_project_is_the_start_cameras_model():
+    from types import SimpleNamespace
+    from mppp.sfm.thermal import thermal_model_for_project
+    th = {"T_median_degC": -12.5, "T0_degC": -20.0, "fx_ppm_per_degC": 40.0, "fy_ppm_per_degC": 45.0,
+          "cx_px_per_degC": 0.0, "cy_px_per_degC": 0.0, "k1_per_degC": -7e-6}
+    p = SimpleNamespace(settings={"navcam_cameras": {"NL": {"thermal": th}, "NR": {}}})
+    m = thermal_model_for_project(p)
+    assert set(m) == {"NL"} and m["NL"]["T0_degC"] == -12.5 and m["NL"]["fx_ppm_per_degC"] == 40.0
+    assert m["NL"]["k1_per_degC"] == -7e-6
+    assert thermal_model_for_project(SimpleNamespace(settings={})) is None
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -188,7 +164,7 @@ def test_thermal_defaults_and_notebook():
     ns = {}
     params = next("".join(c["source"]) for c in nb["cells"] if "parameters" in c.get("metadata", {}).get("tags", []))
     assert "THERMAL_BINS_DEG  = 5 " in params and "THERMAL_MIN_IMAGES = 5 " in params
-    assert 'THERMAL_FREE = ("fx", "fy", "k1")' in params and "thermal_free=THERMAL_FREE" in src     # v0p75.1
+    assert 'THERMAL_FREE = ("fx", "fy", "k1")' in params and "thermal_free=THERMAL_FREE" in src
 
 
 def test_temperature_bins_merge_as_documented():

@@ -1,5 +1,5 @@
 """
-JPL camera models (CAHV, CAHVOR, CAHVORE) and their link to COLMAP cameras (v0p21).
+JPL camera models (CAHV, CAHVOR, CAHVORE) and their link to COLMAP cameras.
 
 The PDS labels carry the flight team's calibration as a CAHV-family model in
 the rover navigation frame:
@@ -35,6 +35,28 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import numpy as np
 
 CAHVORE_LINEARITY = {1: 1.0, 2: 0.0}          # type -> linearity (type 3: the label's parameter)
+
+
+def parse_label_model(gcm: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    The one parser of a PDS ``GEOMETRIC_CAMERA_MODEL`` group: {"model_type", "C", "A", "H", "V" (arrays), "O",
+    "R", "E" (arrays or None), "mtype", "mparm"} from MODEL_COMPONENT_1..9, as the label carries them (nothing
+    normalised).  :meth:`CameraModel.from_label` and :meth:`mppp.camera.CAHVOR.from_label` both use it.
+    """
+    def comp(i):
+        v = gcm.get(f"MODEL_COMPONENT_{i}")
+        return None if v is None else np.asarray(v, float)
+    t = str(gcm.get("MODEL_TYPE", "CAHV")).upper()
+    o = r = e = None
+    mtype, mparm = None, 0.0
+    if t in ("CAHVOR", "CAHVORE"):
+        o, r = comp(5), comp(6)
+    if t == "CAHVORE":
+        e = comp(7)
+        mtype = int(round(float(np.ravel(comp(8))[0]))) if comp(8) is not None else 1
+        mparm = float(np.ravel(comp(9))[0]) if comp(9) is not None else 0.0
+    return {"model_type": t, "C": comp(1), "A": comp(2), "H": comp(3), "V": comp(4), "O": o, "R": r, "E": e,
+            "mtype": mtype, "mparm": mparm}
 
 
 @dataclass
@@ -82,21 +104,10 @@ class CameraModel:
     @classmethod
     def from_label(cls, gcm: Dict[str, Any], width: Optional[int] = None,
                    height: Optional[int] = None) -> "CameraModel":
-        """From a PDS ``GEOMETRIC_CAMERA_MODEL`` group (MODEL_COMPONENT_1..9)."""
-        def comp(i):
-            v = gcm.get(f"MODEL_COMPONENT_{i}")
-            return None if v is None else np.asarray(v, float)
-        t = str(gcm.get("MODEL_TYPE", "CAHV")).upper()
-        o = r = e = None
-        mtype, mparm = None, 0.0
-        if t in ("CAHVOR", "CAHVORE"):
-            o, r = comp(5), comp(6)
-        if t == "CAHVORE":
-            e = comp(7)
-            mtype = int(round(float(np.ravel(comp(8))[0]))) if comp(8) is not None else 1
-            mparm = float(np.ravel(comp(9))[0]) if comp(9) is not None else 0.0
-        return cls(comp(1), comp(2), comp(3), comp(4), o, r, e, mtype, mparm, width, height,
-                   meta={"source": "PDS label", "model_type": t, "interpolation": gcm.get("INTERPOLATION_METHOD"),
+        """From a PDS ``GEOMETRIC_CAMERA_MODEL`` group (MODEL_COMPONENT_1..9; :func:`parse_label_model`)."""
+        c = parse_label_model(gcm)
+        return cls(c["C"], c["A"], c["H"], c["V"], c["O"], c["R"], c["E"], c["mtype"], c["mparm"], width, height,
+                   meta={"source": "PDS label", "model_type": c["model_type"], "interpolation": gcm.get("INTERPOLATION_METHOD"),
                          "interpolation_value": gcm.get("INTERPOLATION_VALUE")})
 
     # ------------------------------------------------------------ projection

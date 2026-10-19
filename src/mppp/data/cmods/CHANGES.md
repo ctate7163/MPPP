@@ -62,3 +62,16 @@
   - replaced files kept in `history/20261019-070226/`
 
 - 2026-10-19 (v0p85): M2020_N_rig.json of the promotion above edited by hand: "translation": "fitted" restored (the pass-2 writer dropped it because the new large-block fit was recorded, not applied; t and the baseline 0.42401 m are unchanged) - sha 4aa6455701fc
+
+## 0.90.0 - the forms frozen (mppp.calib)
+  - one form per family: Navcam / Hazcam THIN_PRISM_FISHEYE with sx1 = sy1 = 0, thermal terms on fx, fy, cx, cy, k1,
+    early-mission offsets, the rig drift in sol (`"form": "navcam-v1"`); Mastcam-Z per zoom, focus lines per
+    backlash state, p1 = p2 = k3 = 0, no temperature term (`"form": "zcam-v1"`)
+  - `M2020_NL_fisheye_tangential.json`, `M2020_NR_fisheye_tangential.json`: the shared `ppm_per_degC` and the
+    `v0p80` bookkeeping keys dropped from `thermal` (the per-axis terms are the model), `form`, `family`, `eye` added;
+    parameters unchanged (the 18 Oct 2026 consensus)
+  - `M2020_ZCAM034_focus_model.json`: the superseded `trend_v0p42` entries and the temperature terms dropped;
+    parameters unchanged
+  - removed: the Metashape flight calibrations `*_frame.xml`, the rational Navcam cameras `M2020_N?_rational.json`,
+    the `history/` folder (the git history keeps replaced models)
+  - Hazcam start models are made by `mppp.calib.hazcam_start_model` until a calibrated file is promoted

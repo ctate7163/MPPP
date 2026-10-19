@@ -1,0 +1,653 @@
+"""
+Navcam calibration study across scapes (v0p35, mppp.sfm.navcal; results in docs/results/v0p35/ and working notes
+section 15).
+
+  python scripts/navcam_calibration_study.py rig   OUT_DIR SCAPES.json [--samples label_temps.json] [--only NAME ...]
+  python scripts/navcam_calibration_study.py joint OUT_DIR SCAPES.json [--samples ...] [--points 25000]
+  python scripts/navcam_calibration_study.py loo   OUT_DIR SCAPES.json [--samples ...] [--lens rational|fisheye_t]
+  python scripts/navcam_calibration_study.py all   OUT_DIR SCAPES.json [--samples ...]      (OUT_DIR/rig, OUT_DIR/joint)
+  python scripts/navcam_calibration_study.py consensus OUT_DIR SCAPES.json [--points 8000]  (v0p60: the consensus in the
+                                                                                          form in use -> OUT_DIR/navcam_joint)
+  python scripts/navcam_calibration_study.py scale OUT_DIR SCAPES.json [--only NAME ...]   (v0p35.1: offsets between the
+                                                                                          downsample scales, scale_<block>.json)
+
+SCAPES.json: {"name": "path to a notebook-03 folder (or its colmap/)", ...}.  Temperatures come from the project
+records (MPPP >= 0.31) or from the label samples ({stem: {"NL", "NR"}}), interpolated in spacecraft clock.
+"""
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+from typing import Optional
+
+HERE = Path(__file__).resolve().parent          # the studies/calibration folder (its modules import as siblings)
+ROOT = HERE.parents[1]                          # the repository root
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+import numpy as np  # noqa: E402
+
+
+def jsonable(o):
+    if isinstance(o, dict):
+        return {str(k): jsonable(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [jsonable(v) for v in o]
+    if isinstance(o, np.generic):
+        return o.item()
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    return o
+
+
+def common_principal_points(scapes):
+    """Median refined principal point of each eye over the blocks."""
+    pts = {"NL": [], "NR": []}
+    for sc in scapes:
+        key_of = {int(v): k for k, v in sc.project.settings["database"]["cameras"].items()}
+        for cid, cam in sc.rec.cameras.items():
+            k = key_of.get(int(cid))
+            if k in pts:
+                pts[k].append(np.asarray(cam.params[2:4], float))
+    return {k: np.median(np.array(v), axis=0).tolist() for k, v in pts.items()}
+
+
+def cmd_rig(a, scapes_cfg, samples):
+    import navcal as NC
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    names = a.only or list(scapes_cfg)
+    # the common principal points come from all blocks (cheap: cameras only)
+    import pycolmap
+    if getattr(a, "common_pp", None):
+        # v0p35.1: the common principal points of an earlier study, so that new blocks are comparable with it
+        common = json.loads(Path(a.common_pp).read_text())
+        scapes_cfg_pp = {}
+    else:
+        common = None
+        scapes_cfg_pp = scapes_cfg
+    pp = {"NL": [], "NR": []}
+    for n, root in scapes_cfg_pp.items():
+        r = Path(root)
+        r = r / "colmap" if (r / "colmap").is_dir() else r
+        pj = json.loads((r / "project.json").read_text())
+        key_of = {int(v): k for k, v in pj["settings"]["database"]["cameras"].items()}
+        rec = pycolmap.Reconstruction()
+        rec.read(str(r / "sparse" / "cahv_ba"))
+        for cid, cam in rec.cameras.items():
+            if key_of.get(int(cid)) in pp:
+                pp[key_of[int(cid)]].append(np.asarray(cam.params[2:4], float))
+    if common is None:
+        common = {k: np.median(np.array(v), axis=0).tolist() for k, v in pp.items()}
+    (out / "common_principal_points.json").write_text(json.dumps(common, indent=1))
+    print("common principal points", common, flush=True)
+    modes = getattr(a, "modes", None)
+    t_all = time.time()
+    for k_n, n in enumerate(names, 1):
+        f = out / f"rig_{n.replace(' ', '_')}.json"
+        old = json.loads(f.read_text()) if f.exists() else None
+        if old is not None and not a.force and (not modes or all(m in old for m in modes)):
+            print(f"{n}: done", flush=True)
+            continue
+        t = time.time()
+        sc = NC.load_scape(n, scapes_cfg[n], samples, lens=getattr(a, "rig_lens", None))
+        n_all = len(sc.rec.points3D)
+        n_drop = NC.thin_points(sc.rec, a.rig_points, seed=0)
+        kw = {"modes": modes} if modes else {}
+        res = NC.rig_study(sc, common_pp=common, **kw)
+        res["points_used"] = {"all": n_all, "kept": n_all - n_drop}
+        if modes and old is not None:
+            # v0p40: --modes adds (with --force: redoes) those modes in an existing study and keeps the others
+            old.update({m: res[m] for m in modes if m in res})
+            res = old
+        f.write_text(json.dumps(jsonable(res), indent=1))
+        print(f"{n}: {time.time() - t:.0f} s  {NC.progress(k_n, len(names), t_all, 'rig study')}", flush=True)
+        del sc
+
+
+def cmd_scale(a, scapes_cfg, samples):
+    """v0p35.1: one camera per eye and downsample scale, principal point (and focal length) free - is there a pixel
+    offset between the Navcam resolutions?  Writes OUT/scale_<block>.json."""
+    import navcal as NC
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    for n in a.only or list(scapes_cfg):
+        f = out / f"scale_{n.replace(' ', '_')}.json"
+        if f.exists() and not a.force:
+            print(f"{n}: done", flush=True)
+            continue
+        t = time.time()
+        sc = NC.load_scape(n, scapes_cfg[n], samples, lens=getattr(a, "rig_lens", None))
+        NC.thin_points(sc.rec, a.rig_points, seed=0)
+        res = {tag: NC.scale_offsets(sc, free=free) for tag, free in (("pp", ("cx", "cy")), ("ppf", ("fx", "fy", "cx", "cy")))}
+        f.write_text(json.dumps(jsonable(res), indent=1))
+        print(f"{n}: {time.time() - t:.0f} s", flush=True)
+        del sc
+
+
+def start_state(scapes_cfg, samples, lens="rational", start_dir=None):
+    """Start cameras (the shipped consensus of the most recent project) and the start rig.  v0p40: ``start_dir``
+    (``--start-cameras``) - a folder of frozen cameras (``M2020_N{L,R}_rational.json`` or
+    ``M2020_N{L,R}_fisheye_tangential.json`` and ``M2020_N_rig.json``, e.g. an earlier joint calibration) instead."""
+    import pycolmap
+    import navcal as NC
+    if start_dir:
+        d = Path(start_dir)
+        cams, fits = {}, {}
+        for k in ("NL", "NR"):
+            f = d / f"M2020_{k}_{'rational' if lens == 'rational' else 'fisheye_tangential'}.json"
+            if not f.is_file():                                       # the other lens: refit it
+                g = d / f"M2020_{k}_{'fisheye_tangential' if lens == 'rational' else 'rational'}.json"
+                j = json.loads(g.read_text())
+                c = pycolmap.Camera(model=j["model"], width=5120, height=3840, params=np.asarray(j["params"], float))
+                cams[k], fits[k] = NC.fit_camera_model(c, NC.RATIONAL if lens == "rational" else NC.FISHEYE_T)
+                continue
+            j = json.loads(f.read_text())
+            cams[k] = pycolmap.Camera(model=j["model"], width=5120, height=3840, params=np.asarray(j["params"], float))
+        rj = json.loads((d / "M2020_N_rig.json").read_text())
+        rig = (np.asarray(rj["R_sensor_from_ref"], float), np.asarray(rj["t_sensor_from_ref_m"], float))
+        return cams, rig, fits
+    if start_dir is None:
+        # v0p60: the cameras in use (src/mppp/data/cmods, MPPP_CMODS) - projects of MPPP >= 0.50 start from the
+        # fisheye consensus, so the search below for a rational start found none (TypeError on 1 Oct)
+        from mppp.paths import cmods_dir
+        if (cmods_dir() / "M2020_N_rig.json").is_file():
+            return start_state(scapes_cfg, samples, lens, cmods_dir())
+    newest = None
+    for n, root in scapes_cfg.items():
+        r = Path(root)
+        r = r / "colmap" if (r / "colmap").is_dir() else r
+        pj = json.loads((r / "project.json").read_text())
+        if pj["cameras"].get("NL", {}).get("source", "").endswith("rational.json") and (pj.get("rig") or {}).get("N"):
+            newest = pj
+    cams = {k: pycolmap.Camera(model=newest["cameras"][k]["model"], width=5120, height=3840,
+                               params=np.asarray(newest["cameras"][k]["params"], float)) for k in ("NL", "NR")}
+    fits = {}
+    if lens != "rational":
+        for k in ("NL", "NR"):
+            cams[k], fits[k] = NC.to_fisheye_tangential(cams[k])
+    rig = (np.asarray(newest["rig"]["N"]["R_sensor_from_ref"], float), np.asarray(newest["rig"]["N"]["t_sensor_from_ref"], float))
+    return cams, rig, fits
+
+
+def build_merged(a, scapes_cfg, samples, lens="rational", exclude=()):
+    import navcal as NC
+    cams, rig, fits = start_state(scapes_cfg, samples, lens, getattr(a, "start_cameras", None))
+    gen = (NC.load_scape(n, scapes_cfg[n], samples) for n in scapes_cfg if n not in exclude)
+    rec, proj, idx = NC.merge_scapes(gen, cams, rig, points_per_scape=a.points, seed=0)
+    return rec, proj, idx, fits
+
+
+def save_merged(out, tag, rec, proj, idx, extra=None):
+    import pickle
+    d = out / f"merged_{tag}"
+    d.mkdir(parents=True, exist_ok=True)
+    rec.write(str(d))
+    with open(d / "project_index.pkl", "wb") as f:
+        pickle.dump({"project": proj, "index": idx, **(extra or {})}, f)
+
+
+def load_merged(out, tag):
+    import pickle
+    import pycolmap
+    d = out / f"merged_{tag}"
+    rec = pycolmap.Reconstruction(str(d))
+    with open(d / "project_index.pkl", "rb") as f:
+        o = pickle.load(f)
+    return rec, o["project"], o["index"], o
+
+
+def camera_record(rec, cid, cov=None, vf=1.0):
+    import navcal as NC
+    cam = rec.cameras[cid]
+    names = NC.PARAMS[cam.model.name]
+    out = {"model": cam.model.name, "width": cam.width, "height": cam.height,
+           "params": {n: float(v) for n, v in zip(names, cam.params)}}
+    if cov is not None:
+        free = [n for n in names if n not in ("k5", "k6", "sx1", "sy1") and not (cam.model.name == "THIN_PRISM_FISHEYE" and False)]
+        free = free[:cov.shape[0]]
+        out["free_params"] = free
+        out["sd"] = {n: float(np.sqrt(cov[i, i] * vf)) for i, n in enumerate(free)}
+        out["covariance"] = (np.asarray(cov) * vf).tolist()
+    return out
+
+
+def _cahv_rig(scapes_cfg):
+    """The label (CAHV) rig most blocks share (v0p40: the label rig changed once near sol 250, so the first
+    block's is not necessarily the common one)."""
+    from scipy.spatial.transform import Rotation
+    refs = []
+    for n, root in scapes_cfg.items():
+        r = Path(root)
+        r = r / "colmap" if (r / "colmap").is_dir() else r
+        pj = json.loads((r / "project.json").read_text())
+        R = ((pj.get("rig") or {}).get("N") or {}).get("R_sensor_from_ref_cahv")
+        if R is not None:
+            refs.append(np.asarray(R, float))
+    if not refs:
+        return None
+    close = [sum(np.degrees(Rotation.from_matrix(a @ b.T).magnitude()) * 1e3 < 0.05 for b in refs) for a in refs]
+    return refs[int(np.argmax(close))]
+
+
+def cmd_joint(a, scapes_cfg, samples):
+    import navcal as NC
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    lens = a.lens
+    t = time.time()
+    if (out / f"merged_{lens}_start").exists():
+        rec, proj, idx, _ = load_merged(out, f"{lens}_start")
+        fits = {}
+    else:
+        rec, proj, idx, fits = build_merged(a, scapes_cfg, samples, lens)
+        save_merged(out, f"{lens}_start", rec, proj, idx)
+    temps = idx["temps"]
+    Ts = np.array([temps[r["name"]] for r in proj.images if r["name"] in temps])
+    # v0p40: the reference temperature is -20 degC (--t0); "mean" uses the mean image temperature (v0p35)
+    T0 = float(np.round(np.mean(Ts), 1)) if str(getattr(a, "t0", "-20")) == "mean" else float(getattr(a, "t0", -20.0))
+    print(f"merged {len(idx['images'])} blocks, {rec.num_reg_images()} images, {rec.num_points3D()} points, "
+          f"{sum(p.track.length() for p in rec.points3D.values())} observations, T0 {T0} degC  ({time.time() - t:.0f} s)",
+          flush=True)
+    # 0. the rig's temperature slopes measured inside the blocks (rig study, per-bin rigs), if available
+    rig_dir = Path(a.rig_dir) if a.rig_dir else out.parent / "rig"
+    within = {}
+    studies = [json.loads(f.read_text()) for f in sorted(rig_dir.glob("rig_*.json"))] if rig_dir.is_dir() else []
+    for ang in ("yaw", "pitch"):
+        w = NC.rig_tests(studies, ang, mode="rotation_pp").get("within") if studies else None
+        within[ang] = w
+    ky = float(within["yaw"]["slope_mdeg_per_degC"]) if within.get("yaw") and a.rig_thermal else 0.0
+    kp = float(within["pitch"]["slope_mdeg_per_degC"]) if within.get("pitch") and a.rig_thermal else 0.0
+    print(f"rig temperature slopes from the per-bin rigs: yaw {ky:+.3f}, pitch {kp:+.3f} mdeg/degC", flush=True)
+    # v0p40: --drift adds the rig's mission trend per image; --pp-thermal NR|NL|split moves the temperature term from
+    # the rig yaw to the principal point(s): c_x(T) = c_x(T0) + a (T - T0), the rig then has the drift only
+    drift = json.loads(Path(a.drift).read_text()) if getattr(a, "drift", None) else None
+    ppm_mode = getattr(a, "pp_thermal", None)
+    f_right = float(rec.cameras[2].params[0])
+
+    def pp_of(k):
+        """principal-point slopes {camera id: (ax, ay)} for a yaw-equivalent NR slope k px/degC"""
+        if not ppm_mode:
+            return None
+        return {"NR": {2: (k, 0.0)}, "NL": {1: (-k, 0.0)}, "split": {1: (-k / 2, 0.0), 2: (k / 2, 0.0)}}[ppm_mode]
+
+    k_pp = f_right * np.radians(ky * 1e-3) if ppm_mode else 0.0
+    if ppm_mode:
+        print(f"principal-point thermal model ({ppm_mode}): start at the yaw-equivalent {k_pp:+.4f} px/degC; "
+              f"rig: {'drift only' if drift else 'fixed'}", flush=True)
+        ky, kp = 0.0, 0.0
+    xkw = {k: v for k, v in (("drift", drift), ("pp_slopes", pp_of(k_pp))) if v}
+    # 1. converge the shared cameras from the per-block solutions at a provisional slope
+    t = time.time()
+    b0 = a.warm_slope
+    ba = NC.joint_adjust(rec, proj, temps, b0, T0, max_iterations=200, rig_slopes=(ky, kp), **xkw)
+    print(f"warm-up at {b0} ppm/degC: {ba['brief']}  {time.time() - t:.0f} s", flush=True)
+    save_merged(out, f"{lens}_warm", rec, proj, idx, {"T0": T0, "slope": b0})
+    # 2. profile the slope
+    if a.fixed_slope is not None:
+        prof = {"rows": [], "best_ppm_per_degC": float(a.fixed_slope), "sd_ppm_per_degC": float("nan"), "fit": []}
+    else:
+        prof = NC.profile_slope(rec, proj, temps, T0, a.grid, max_iterations=100, rig_slopes=(ky, kp), **xkw)
+    best = prof["best_ppm_per_degC"]
+    print(f"slope {best:.1f} +- {prof['sd_ppm_per_degC']:.1f} ppm/degC", flush=True)
+    # 2b. profile the rig yaw slope at the best focal slope (0 = a temperature-independent rig)
+    yaw_prof = None
+    if ppm_mode and a.fixed_slope is None:
+        # v0p40: profile the principal-point slope (the rig has no temperature term)
+        import copy as _copy
+        rows = []
+        for k in sorted({0.0, 0.6 * k_pp, k_pp, 1.4 * k_pp}):
+            r = _copy.deepcopy(rec)
+            t1 = time.time()
+            bb = NC.joint_adjust(r, proj, temps, best, T0, max_iterations=100, rig_slopes=(0.0, 0.0),
+                                 **{**xkw, "pp_slopes": pp_of(k)})
+            rows.append({"pp_px_per_degC": k, "cost": float(bb["final_cost"]), "iterations": bb["iterations"],
+                         "variance_factor": float(2 * bb["final_cost"] / max(2 * bb["observations"] - 1, 1))})
+            print(f"  principal-point slope {k:+.4f} px/degC  cost {bb['final_cost']:.2f}  {time.time() - t1:.0f} s", flush=True)
+            del r
+        xs = np.array([r["pp_px_per_degC"] for r in rows]); cs = np.array([r["cost"] for r in rows])
+        c2 = np.polyfit(xs, cs, 2)
+        kb = float(-c2[1] / (2 * c2[0])) if c2[0] > 0 else float(xs[np.argmin(cs)])
+        vf = float(np.median([r["variance_factor"] for r in rows]))
+        yaw_prof = {"pp_rows": rows, "pp_best": kb, "pp_sd": float(np.sqrt(vf / (2 * c2[0]))) if c2[0] > 0 else float("nan")}
+        print(f"principal-point slope {kb:+.4f} +- {yaw_prof['pp_sd']:.4f} px/degC", flush=True)
+        k_pp = kb
+        xkw["pp_slopes"] = pp_of(k_pp)
+    elif a.rig_thermal and a.fixed_slope is None:
+        import copy as _copy
+        rows = []
+        grid_k = sorted({0.0, ky - 1.0, ky - 0.5, ky, ky + 0.5, ky + 1.0})
+        t_all = time.time()
+        for k in grid_k:
+            r = _copy.deepcopy(rec)
+            t1 = time.time()
+            bb = NC.joint_adjust(r, proj, temps, best, T0, max_iterations=100, rig_slopes=(k, kp))
+            rows.append({"yaw_mdeg_per_degC": k, "cost": float(bb["final_cost"]), "iterations": bb["iterations"],
+                         "variance_factor": float(2 * bb["final_cost"] / max(2 * bb["observations"] - 1, 1))})
+            print(f"  rig yaw slope {k:+.2f} mdeg/degC  cost {bb['final_cost']:.2f}  it {bb['iterations']}  {time.time() - t1:.0f} s  "
+                  f"{NC.progress(len(rows), len(grid_k), t_all, 'rig yaw')}", flush=True)
+            del r
+        xs = np.array([r["yaw_mdeg_per_degC"] for r in rows if r["yaw_mdeg_per_degC"] != 0.0 or True])
+        cs = np.array([r["cost"] for r in rows])
+        near = np.argsort(np.abs(xs - ky))[:5]
+        c2 = np.polyfit(xs[near], cs[near], 2)
+        kbest = float(-c2[1] / (2 * c2[0])) if c2[0] > 0 else float(xs[np.argmin(cs)])
+        vf = float(np.median([r["variance_factor"] for r in rows]))
+        yaw_prof = {"rows": rows, "best": kbest, "sd": float(np.sqrt(vf / (2 * c2[0]))) if c2[0] > 0 else float("nan"),
+                    "cost_zero_minus_best": float(np.interp(0.0, xs, cs) - np.polyval(c2, kbest)) if 0.0 in xs else None}
+        print(f"rig yaw slope {kbest:+.3f} +- {yaw_prof['sd']:.3f} mdeg/degC (within-block {ky:+.3f})", flush=True)
+        ky = kbest
+    elif a.rig_thermal and a.fixed_rig_yaw is not None:
+        ky = float(a.fixed_rig_yaw)
+    # 3. final adjustment at the best slope, with covariances
+    t = time.time()
+    ba = NC.joint_adjust(rec, proj, temps, best, T0, max_iterations=200, covariance=True, rig_slopes=(ky, kp), **xkw)
+    cov = ba.get("covariance") or {}
+    vf = float(cov.get("variance_factor", 1.0))
+    blocks = cov.get("blocks", {})
+    save_merged(out, f"{lens}_final", rec, proj, idx, {"T0": T0, "slope": best, "rig_slopes": (ky, kp)})
+    rows = NC._rig_rows(ba, rec, _cahv_rig(scapes_cfg), "rotation")
+    res = {"lens": lens, "T0_degC": T0, "ppm_per_degC": best, "sd_ppm_per_degC": prof["sd_ppm_per_degC"],
+           "rig_thermal": {"yaw_mdeg_per_degC": ky, "pitch_mdeg_per_degC": kp, "within_block": within,
+                           "yaw_profile": yaw_prof},
+           "pp_thermal": ({"NL": list((pp_of(k_pp) or {}).get(1, (0.0, 0.0))), "NR": list((pp_of(k_pp) or {}).get(2, (0.0, 0.0))),
+                           "mode": ppm_mode} if ppm_mode else None),
+           "drift_in_joint": drift,
+           "profile": [{k: v for k, v in r.items() if k != "state"} for r in prof["rows"]],
+           "profile_states": [r["state"] for r in prof["rows"]], "profile_fit": prof["fit"],
+           "variance_factor": vf, "final": {k: ba[k] for k in ("final_cost", "iterations", "observations", "brief")},
+           "NL": camera_record(rec, 1, blocks.get("camera:NL"), vf), "NR": camera_record(rec, 2, blocks.get("camera:NR"), vf),
+           "rig": rows[0] if rows else None, "rig_R": NC.stereo_rig(rec)[2].rotation.matrix().tolist(),
+           "rig_t": np.asarray(NC.stereo_rig(rec)[2].translation).tolist(),
+           "blocks": {k: len(v) for k, v in idx["images"].items()},
+           "points_per_block": idx["points"], "start_fits": fits, "seconds": time.time() - t}
+    (out / f"joint_{lens}.json").write_text(json.dumps(jsonable(res), indent=1))
+    print(json.dumps(jsonable({k: res[k] for k in ("ppm_per_degC", "sd_ppm_per_degC", "variance_factor")})), flush=True)
+
+
+def _set_shared(rec, state):
+    """Set the shared cameras (1 = NL, 2 = NR) and the stereo rig of a merged reconstruction."""
+    import pycolmap
+    rec.cameras[1].params = np.asarray(state["NL"], float)
+    rec.cameras[2].params = np.asarray(state["NR"], float)
+    T = pycolmap.Rigid3d(pycolmap.Rotation3d(np.asarray(state["rig_R"], float)), np.asarray(state["rig_t"], float))
+    rec.rigs[1].set_sensor_from_rig(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=2), T)
+
+
+def _shared(rec):
+    import navcal as NC
+    _, _, T = NC.stereo_rig(rec)
+    return {"NL": np.array(rec.cameras[1].params), "NR": np.array(rec.cameras[2].params),
+            "rig_R": np.asarray(T.rotation.matrix()), "rig_t": np.asarray(T.translation)}
+
+
+def cmd_loo(a, scapes_cfg, samples):
+    """Leave one block out: the joint calibration of the others predicts the held-out block's cameras and rig."""
+    import navcal as NC
+    out = Path(a.out)
+    lens = a.lens
+    rec0, proj, idx, meta = load_merged(out, f"{lens}_final")
+    temps, T0, slope = idx["temps"], meta["T0"], meta["slope"]
+    rs = tuple(meta.get("rig_slopes") or (0.0, 0.0))
+    kmap = NC.rig_keypoint_map(proj, temps, rs[0], rs[1], T0) if any(rs) else None
+    names = [n for n in idx["images"] if not a.only or n in a.only]
+    res_file = out / f"loo_{lens}.json"
+    res = json.loads(res_file.read_text()) if res_file.exists() else {}
+    full = _shared(rec0)
+    t_all = time.time()
+    todo = [s for s in names if a.force or s not in res]
+    for s in names:
+        if s in res and not a.force:
+            continue
+        t = time.time()
+        others = [n for n in idx["images"] if n != s]
+        # a. the joint calibration without s (warm start from the full joint solution)
+        rm = NC.subset(rec0, idx, others)
+        ba_m = NC.joint_adjust(rm, proj, temps, slope, T0, max_iterations=100, rig_slopes=rs)
+        pred = _shared(rm)
+        del rm
+        ks = NC.keypoint_scales(proj, temps, slope, T0)
+        imgs = idx["images"][s]
+        # b. s with the predicted cameras and rig held
+        rb = NC.subset(rec0, idx, [s])
+        _set_shared(rb, pred)
+        ba_b = NC.joint_adjust(rb, proj, temps, slope, T0, max_iterations=100, hold_cameras=("NL", "NR"), refine_rig=False,
+                               rig_slopes=rs)
+        st_b = NC.residual_stats(rb, proj, ks, imgs, kmap)
+        # b0. the same without the rig's temperature dependence
+        rb0 = NC.subset(rec0, idx, [s])
+        _set_shared(rb0, pred)
+        ba_b0 = NC.joint_adjust(rb0, proj, temps, slope, T0, max_iterations=100, hold_cameras=("NL", "NR"), refine_rig=False)
+        st_b0 = NC.residual_stats(rb0, proj, ks, imgs)
+        del rb0
+        # b2. s with the predicted cameras held and its own rig rotation (the lens-model question alone)
+        rb2 = NC.subset(rec0, idx, [s])
+        _set_shared(rb2, pred)
+        ba_b2 = NC.joint_adjust(rb2, proj, temps, slope, T0, max_iterations=100, hold_cameras=("NL", "NR"), rig_slopes=rs)
+        st_b2 = NC.residual_stats(rb2, proj, ks, imgs, kmap)
+        del rb2
+        # c. s with its own cameras and rig rotation
+        rc = NC.subset(rec0, idx, [s])
+        ba_c = NC.joint_adjust(rc, proj, temps, slope, T0, max_iterations=100, rig_slopes=rs)
+        st_c = NC.residual_stats(rc, proj, ks, imgs, kmap)
+        own = _shared(rc)
+        # d. how far the prediction is from the block's own calibration
+        model = rc.cameras[1].model.name
+        cmp = {}
+        for k in ("NL", "NR"):
+            ca = NC.pycolmap_camera(model, pred[k])
+            cb = NC.pycolmap_camera(model, own[k])
+            cmp[k] = {**NC.compare(cb, ca), "dfx_px": float(pred[k][0] - own[k][0]), "dcx_px": float(pred[k][2] - own[k][2]),
+                      "dcy_px": float(pred[k][3] - own[k][3])}
+        import pycolmap
+        def _stereo(st):
+            T = pycolmap.Rigid3d(pycolmap.Rotation3d(st["rig_R"]), st["rig_t"])
+            return NC.stereo_offset(NC.pycolmap_camera(model, st["NL"]), NC.pycolmap_camera(model, st["NR"]), T)
+        so_p, so_o = _stereo(pred), _stereo(own)
+        res[s] = {"held": {"cost": ba_b["final_cost"], **st_b}, "own": {"cost": ba_c["final_cost"], **st_c},
+                  "held_cameras": {"cost": ba_b2["final_cost"], **st_b2},
+                  "held_no_rig_thermal": {"cost": ba_b0["final_cost"], **st_b0},
+                  "cost_increase_no_rig_thermal_pct": 100 * (ba_b0["final_cost"] - ba_c["final_cost"]) / ba_c["final_cost"],
+                  "cost_increase_pct": 100 * (ba_b["final_cost"] - ba_c["final_cost"]) / ba_c["final_cost"],
+                  "cost_increase_cameras_pct": 100 * (ba_b2["final_cost"] - ba_c["final_cost"]) / ba_c["final_cost"],
+                  "camera_difference": cmp,
+                  "disparity_inf_diff_px": so_p["disparity_inf_px"] - so_o["disparity_inf_px"],
+                  "vparallax_inf_diff_px": so_p["vparallax_inf_px"] - so_o["vparallax_inf_px"],
+                  "rig_diff": NC.rig_angles(pred["rig_R"], own["rig_R"]),
+                  "loo_joint": {"final_cost": ba_m["final_cost"], "iterations": ba_m["iterations"]},
+                  "pred_state": {k: np.asarray(v).tolist() for k, v in pred.items()},
+                  "own_state": {k: np.asarray(v).tolist() for k, v in own.items()},
+                  "full_state": {k: np.asarray(v).tolist() for k, v in full.items()}, "seconds": time.time() - t}
+        res_file.write_text(json.dumps(jsonable(res), indent=1))
+        r = res[s]
+        print(f"{lens} {s:16s} held cost +{r['cost_increase_pct']:.2f} % (cameras only +{r['cost_increase_cameras_pct']:.2f} %, no rig(T) +{r['cost_increase_no_rig_thermal_pct']:.2f} %)  median {st_b['median_px']:.4f} / own {st_c['median_px']:.4f}  "
+              f"corner {st_b['corner_median_px']:.4f} / {st_c['corner_median_px']:.4f}  prediction rms NL {cmp['NL']['rms_px']:.3f} "
+              f"NR {cmp['NR']['rms_px']:.3f} px  disparity {r['disparity_inf_diff_px']:+.3f} px  {time.time() - t:.0f} s  "
+              f"{NC.progress(todo.index(s) + 1, len(todo), t_all, 'leave-one-out ' + lens)}", flush=True)
+
+
+def cmd_all(a, scapes_cfg, samples):
+    """The three studies in order: rig study, joint calibration (rational, then fisheye + tangential at the same
+    thermal slopes), leave one block out for both lens models.  OUT/rig and OUT/joint."""
+    import copy as _copy
+    out = Path(a.out)
+    b = _copy.copy(a)
+    b.out = str(out / "rig")
+    cmd_rig(b, scapes_cfg, samples)
+    b = _copy.copy(a)
+    b.out, b.lens, b.rig_dir = str(out / "joint"), "rational", str(out / "rig")
+    cmd_joint(b, scapes_cfg, samples)
+    j = json.loads((out / "joint" / "joint_rational.json").read_text())
+    b.lens, b.fixed_slope, b.fixed_rig_yaw = "fisheye_t", j["ppm_per_degC"], j["rig_thermal"]["yaw_mdeg_per_degC"]
+    cmd_joint(b, scapes_cfg, samples)
+    for lens in ("rational", "fisheye_t"):
+        b.lens = lens
+        cmd_loo(b, scapes_cfg, samples)
+    # v0p71: then the consensus in the form in use (the candidate to promote), with the early-mission offsets and the
+    # thermal refit when asked - before, "all" ignored --early-mission-sol and --refit-thermal
+    print(f"{time.strftime('%H:%M')} all: the rig, joint and leave-one-out studies are done; now the consensus "
+          f"(the candidate to promote) -> {out / 'navcam_joint'}", flush=True)
+    cmd_consensus(a, scapes_cfg, samples)
+
+
+def cmd_consensus(a, scapes_cfg, samples):
+    """v0p60: the Navcam consensus in the form in use (mppp.sfm.navcal_consensus: k4 = 0, one rig yaw, no rig
+    temperature term, the thermal slopes of the cameras in use) - OUT/navcam_joint, ready for promote_cmods.py."""
+    from navcal_consensus import fit_consensus, write_consensus
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    tr = None
+    if a.translation_min_span is not None and a.translation_min_span > 0:          # v0p62: rig translation, large blocks
+        from navcal_consensus import large_blocks
+        big = large_blocks(scapes_cfg, a.translation_min_span)
+        print(f"large blocks (station span >= {a.translation_min_span:g} m): "
+              + (", ".join(f"{k} {v[1]:.0f} m" for k, v in big.items()) or "none"), flush=True)
+        tr = {k: v[0] for k, v in big.items()} or None
+    k1 = None
+    if getattr(a, "k1_from_bins", False):                  # v0p80: k1 against temperature from the blocks' bins
+        from navcal_consensus import k1_slopes_from_blocks
+        kb = k1_slopes_from_blocks(scapes_cfg)
+        (out / "k1_slopes_from_bins.json").write_text(json.dumps(jsonable(kb), indent=1), encoding="utf-8")
+        k1 = kb["apply"]
+    res = fit_consensus(scapes_cfg, points=a.points, start_dir=a.start_cameras, translation_scapes=tr,
+                        k1_slopes=k1, leave_one_out=bool(getattr(a, "leave_one_out", False)),
+                        loo_iterations=int(getattr(a, "loo_iterations", 40)),
+                        apply_translation=bool(a.apply_translation), refit_thermal=bool(a.refit_thermal),
+                        thermal_terms_profiled=tuple(a.thermal_terms) if a.thermal_terms else None,
+                        thermal_rounds=a.thermal_rounds,
+                        early_mission_sol=(a.early_mission_sol or None), early_rounds=a.early_rounds,
+                        early_start=tuple(a.early_start) if a.early_start else None,
+                        joint_translation=bool(a.joint_translation), degeneracy_mm=a.degeneracy_mm,
+                        early_hold=bool(getattr(a, "early_hold", False)))
+    d = write_consensus(res, out / "navcam_joint")
+    print(f"candidate consensus: {d}  (promote: python scripts/promote_cmods.py {d} --note \"...\")", flush=True)
+    if getattr(a, "previous", None):                       # v0p80: the change from the previous pass (converged?)
+        from navcal_consensus import consensus_change
+        ch = consensus_change(a.previous, d)
+        (out / "pass_change.json").write_text(json.dumps(jsonable(ch), indent=1), encoding="utf-8")
+        w = ch["worst"]
+        print(f"change from {a.previous}: f {w['f_ppm']:.1f} ppm, pp {w['pp_px']:.3f} px, distortion corners "
+              f"{w['corner_px']:.3f} px, rig {w['rig_mdeg']:.2f} mdeg -> "
+              + ("CONVERGED (below 20 ppm, 0.05 px, 0.02 px, 1 mdeg)" if ch["converged"] else "not converged: another "
+                 "pass (navcam_runs, then the consensus) is due"), flush=True)
+    if getattr(a, "promote_if_ok", False):          # v0p72
+        cmd_check(a, scapes_cfg, samples, promote=True)
+
+
+def cmd_tied(a, scapes_cfg, samples):
+    """v0p83: the tied joint (mppp.sfm.navcal_tied) - temperature-bin cameras and epoch rigs tied to global thermal,
+    distortion, early-mission and drift parameters, all estimated in one adjustment over thinned blocks."""
+    from navcal_tied import fit_tied
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    res = fit_tied(scapes_cfg, start_dir=a.start_cameras, points=a.points, bin_deg=a.bin_deg, max_span=a.max_span,
+                   hold=tuple(a.hold or ()), tie_rigs=not a.free_rigs)
+    (out / "tied_joint.json").write_text(json.dumps(jsonable(res), indent=1), encoding="utf-8")
+    print(f"-> {out / 'tied_joint.json'}", flush=True)
+
+
+def cmd_check(a, scapes_cfg, samples, promote: Optional[bool] = None):
+    """v0p72: check OUT/navcam_joint against the cameras in use (navcal_consensus.check_candidate) and, with
+    --promote-if-ok, promote it when everything checks out (and commit src/mppp/data/cmods locally)."""
+    from navcal_consensus import check_candidate, check_lines, promote_candidate
+    out = Path(a.out)
+    scr = out / "block_screening.json"
+    rep = check_candidate(out / "navcam_joint", screening=json.loads(scr.read_text()) if scr.is_file() else None)
+    (out / "promotion_check.json").write_text(json.dumps(jsonable(rep), indent=1), encoding="utf-8")
+    print("\n".join(check_lines(rep)), flush=True)
+    promote = getattr(a, "promote_if_ok", False) if promote is None else promote
+    if promote and rep["ok"]:
+        note = a.promote_note or f"consensus of {out.name}"
+        promote_candidate(out / "navcam_joint", note, ROOT)
+    elif promote:
+        print("not promoted: fix the failed checks (or promote by hand with scripts\\promote_cmods.py)", flush=True)
+    return rep
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("cmd", choices=["rig", "joint", "loo", "all", "scale", "consensus", "check", "tied"])
+    ap.add_argument("out")
+    ap.add_argument("scapes")
+    ap.add_argument("--samples")
+    ap.add_argument("--only", nargs="*")
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--points", type=int, default=15000, help="joint/loo: points per block")
+    ap.add_argument("--rig-points", type=int, default=120000, help="rig: at most this many points per block")
+    ap.add_argument("--pp-thermal", choices=["NR", "NL", "split"], help="joint (v0p40): the stereo change with "
+                    "temperature as a principal-point slope of NR, NL or both (instead of a rig yaw slope)")
+    ap.add_argument("--drift", help="joint (v0p40): a rig drift JSON (rig_drift_model) applied per image in the joint")
+    ap.add_argument("--t0", default="-20", help="joint (v0p40): reference camera temperature in degC of the shared "
+                    "cameras and rig (default -20), or 'mean' (the mean image temperature, v0p35)")
+    ap.add_argument("--modes", nargs="*", help="rig (v0p40): only these rig_study modes (rotation, rotation_pp, "
+                    "full, bins, epochs), added to an existing study file")
+    ap.add_argument("--lens", default="rational")
+    ap.add_argument("--rig-lens", default="rational",
+                    help="rig: refit blocks solved with another Navcam lens model to this one (rational|fisheye_t)")
+    ap.add_argument("--start-cameras", help="joint: folder of frozen cameras to start from (default: the cameras in "
+                                             "use, src/mppp/data/cmods)")
+    ap.add_argument("--common-pp", help="rig: common principal points JSON of an earlier study (default: the median "
+                                        "of the blocks)")
+    ap.add_argument("--joint-translation", action="store_true",
+                    help="consensus (v0p74.4): the final adjustment frees the rig translation together with the cameras "
+                         "and the rotation over every block (with --apply-translation this joint value is applied)")
+    ap.add_argument("--degeneracy-mm", type=float, default=1.0,
+                    help="consensus --joint-translation: the baseline held at +- this many mm, the rest re-converged "
+                         "(two more adjustments); 0 skips it")
+    ap.add_argument("--translation-min-span", type=float, default=30.0,
+                    help="consensus (v0p62): fit the Navcam rig translation on the blocks whose stations span at least "
+                         "this many metres (0: no translation fit)")
+    ap.add_argument("--apply-translation", action="store_true",
+                    help="consensus (v0p62): write the fitted translation into the candidate rig (projects then use it)")
+    ap.add_argument("--refit-thermal", action="store_true",
+                    help="consensus (v0p64): refit the thermal terms in the consensus form (profiles, --thermal-terms)")
+    ap.add_argument("--thermal-terms", nargs="*", default=None,
+                    help="consensus (v0p64): f (ppm/degC), NL_cx, NR_cx, NL_cy, NR_cy (px/degC); v0p73: NL_fx, NL_fy, "
+                         "NR_fx, NR_fy (ppm/degC), yaw_rate (mdeg/1000 sol); default the form's (v0p73: NL_fx NL_fy "
+                         "NR_fx NR_fy NR_cx yaw_rate; v0p72: f NL_cx)")
+    ap.add_argument("--thermal-rounds", type=int, default=1,
+                    help="consensus (v0p73): profile the thermal terms this many times (2: they settle each other)")
+    ap.add_argument("--k1-from-bins", action="store_true",
+                    help="consensus (v0p80): k1 against temperature per eye from the blocks' temperature bins "
+                         "(applied where |z| >= 3; OUT/k1_slopes_from_bins.json)")
+    ap.add_argument("--leave-one-out", action="store_true",
+                    help="consensus (v0p80): the joint again without each block; the promotion check gates on it "
+                         "(0.05 px centre, 0.1 px corners)")
+    ap.add_argument("--loo-iterations", type=int, default=40, help="consensus --leave-one-out: iterations per block")
+    ap.add_argument("--previous", help="consensus (v0p80): the previous pass's candidate (or cmods) folder - the change "
+                                       "and whether the iteration has converged (OUT/pass_change.json)")
+    ap.add_argument("--early-mission-sol", type=float, default=0.0,
+                    help="consensus (v0p70): fit fx, fy, cx, cy offsets of the images before this sol (e.g. 380); 0 = off")
+    ap.add_argument("--early-rounds", type=int, default=2,
+                    help="consensus (v0p70): response-surface rounds of the early-mission fit (15 adjustments each)")
+    ap.add_argument("--early-start", type=float, nargs=4, metavar=("DFX", "DFY", "DCX", "DCY"),
+                    help="consensus (v0p72): start the early-mission fit here (e.g. a previous run's offsets) instead "
+                         "of the block alignments' estimate - fewer rounds")
+    ap.add_argument("--early-hold", action="store_true",
+                    help="consensus (v0p83): apply the start cameras' early-mission offsets (or --early-start) without "
+                         "refitting them (a side study on the same blocks)")
+    ap.add_argument("--bin-deg", type=float, default=2.0, help="tied (v0p83): temperature bin width, degC")
+    ap.add_argument("--max-span", type=float, default=25.0, help="tied (v0p83): longest rig epoch, sols")
+    ap.add_argument("--hold", nargs="*", help="tied (v0p83): global terms held, e.g. S_NL_cy S_NR_cy E D_pre_roll")
+    ap.add_argument("--free-rigs", action="store_true", help="tied (v0p83): epoch rigs free (not tied to the drift)")
+    ap.add_argument("--promote-if-ok", action="store_true",
+                    help="consensus/check (v0p72): promote OUT/navcam_joint if every check passes")
+    ap.add_argument("--promote-note", default="", help="consensus/check: the note for CHANGES.md")
+    ap.add_argument("--warm-slope", type=float, default=40.0)
+    ap.add_argument("--grid", type=float, nargs="*", default=[0, 15, 30, 45, 60, 75, 90])
+    ap.add_argument("--fixed-slope", type=float, help="joint: skip the profile and use this slope (ppm/degC)")
+    ap.add_argument("--fixed-rig-yaw", type=float, help="joint: the rig yaw slope (mdeg/degC) with --fixed-slope")
+    ap.add_argument("--rig-dir", help="joint: the rig study folder (default OUT/../rig)")
+    ap.add_argument("--no-rig-thermal", dest="rig_thermal", action="store_false",
+                    help="joint: no temperature dependence of the rig")
+    a = ap.parse_args(argv)
+    scapes_cfg = json.loads(Path(a.scapes).read_text())
+    samples = json.loads(Path(a.samples).read_text()) if a.samples else None
+    if a.only and a.cmd == "joint":
+        scapes_cfg = {k: v for k, v in scapes_cfg.items() if k in a.only}
+    {"rig": cmd_rig, "joint": cmd_joint, "loo": cmd_loo, "all": cmd_all, "scale": cmd_scale,
+     "consensus": cmd_consensus, "check": cmd_check, "tied": cmd_tied}[a.cmd](a, scapes_cfg, samples)
+
+
+if __name__ == "__main__":
+    main()

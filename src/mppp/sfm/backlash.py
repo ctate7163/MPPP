@@ -1,45 +1,51 @@
 """
-Mastcam-Z focus backlash states (v0p40).
+Mastcam-Z focus backlash states.
 
-At the same focus motor count the Mastcam-Z focus mechanism sits in one of two states.  In the dominant **backlash**
-state the refined focal length is about 1 % above the label (CAHVOR) model; the shipped focus model
-(``cmods/M2020_ZCAM034_focus_model.json``, f0 / label f0 = 1.0086 left, 1.0088 right at focus 600 in the v0p42
-refit; 1.0092 / 1.0105 before) was fitted in this state.
-In the **regular** state the focal length is about the label's.  Regular-state images are mostly single frames or
-small mosaics.  A focus-bin camera that holds images of both states is forced to split the difference, so:
+At the same focus motor count the Mastcam-Z focus mechanism sits in one of two states.  In the dominant
+**backlash** state the refined focal length is about 1 % above the label (CAHVOR) model; the promoted focus model
+(``cmods/M2020_ZCAM034_focus_model.json``) is in this state, and every image is taken to be in it unless the
+low-backlash observation list (``mppp/data/mars2020_mastcam-z_low_backlash_observations.csv``), the found list
+next to the WORK folders, or its own focal fit says otherwise (:func:`mppp.calib.focus_state`).  In the
+**regular** state the focal length is about the label's.  Regular-state images are mostly single frames or small
+mosaics.  A focus-bin camera that holds images of both states is forced to split the difference, so:
 
 1. :func:`image_focal_fits` - after the alignment, each Mastcam-Z image's focal length is measured on its own: its
    rotation and a focal scale free, its centre, the 3-D points and the rest of the camera held (Cauchy loss);
 2. :func:`classify_groups` - images of one focus setting (a *focus group*: eye, sol, sequence and focus count;
    :func:`focus_groups`) share a state; the group's ratio of fitted to label focal length is compared with the
-   midpoint between the two states (1 and the focus model's ratio) - clearly below: regular, clearly above:
-   backlash, within ``z_min`` standard errors: undecided (kept in the dominant backlash state);
+   midpoint between the two states (1 and the measured backlash ratio) - clearly below: regular, clearly above:
+   backlash, within ``z_min`` standard errors: undecided (kept in the dominant backlash state); one state per
+   sequence (:func:`apply_sequence_states`);
 3. :func:`split_by_state` - regular-state images move to their own camera per focus bin (``<bin>_reg``, start f =
    the median label f of its images; bins of at most ``hold_f_images`` images hold f there);
-4. :func:`backlash_stage` - the block is adjusted again (Navcam cameras held) and every image re-measured.
+4. :func:`backlash_stage` - the block is adjusted again (Navcam cameras held) and every image re-measured; newly
+   found regular groups go to the found list (:func:`append_found`).
 
-``strip_thermal_bins`` (mppp.sfm.thermal) also undoes the split, so a rerun starts from the focus bins.
-
-v0p53: the focus groups of each zoom are classified with that zoom's focus model (``M2020_ZCAM<zoom>_focus_model.json``;
-:data:`DEFAULT_BACKLASH_RATIO` for a zoom without one); 110 mm (the end of the zoom's mechanical range) has one focus
-state only and is not classified (``single``).  Both states are scaled by the block's Navcam focal scale (refined /
-start: the Mastcam-Z focal lengths inherit it through the shared points; audit item 2 of 30 Sep), and the stage
-uses the project's focus model (``settings["zcam_focus_model"]["file"]``; audit item 4).
+``strip_thermal_bins`` (mppp.sfm.thermal) also undoes the split, so a rerun starts from the focus bins.  The focus
+groups of each zoom are classified with that zoom's focus model (:data:`DEFAULT_BACKLASH_RATIO` for a zoom without
+one); 110 mm (the end of the zoom's mechanical range) has one focus state only and is not classified (``single``).
+Both states are scaled by the block's Navcam focal scale (refined / start: the Mastcam-Z focal lengths inherit it
+through the shared points).
 """
 from __future__ import annotations
 
 import copy
+import logging
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-STATES = ("backlash", "regular")
+from .. import calib
+from ..calib.fit import huber_fit, weighted_median as _wmedian
+
+log = logging.getLogger("mppp.sfm")
+STATES = calib.ZCAM_STATES
 REGULAR_SUFFIX = "_reg"
 DEFAULT_BACKLASH_RATIO = 1.0095      # f / label f in the backlash state when no focus model is at hand
-SINGLE_STATE_ZOOMS = (110,)          # v0p53: no backlash state at the end of the zoom's mechanical range
+SINGLE_STATE_ZOOMS = (110,)          # no backlash state at the end of the zoom's mechanical range
 
 
-LOW_BACKLASH_FILE = "mars2020_mastcam-z_low_backlash_observations.csv"   # v0p61: in mppp/data (Christian, 2 Oct 2026)
+LOW_BACKLASH_FILE = "mars2020_mastcam-z_low_backlash_observations.csv"   # in mppp/data
 
 
 def low_backlash_path(path: Any = None):
@@ -51,12 +57,12 @@ def low_backlash_path(path: Any = None):
     return Path(__file__).resolve().parents[1] / "data" / LOW_BACKLASH_FILE
 
 
-FOUND_FILE = "zcam_low_backlash_found.csv"      # v0p73: next to the WORK folders (SCAPES_ROOT), filled by notebook 03
+FOUND_FILE = "zcam_low_backlash_found.csv"      # next to the WORK folders (SCAPES_ROOT), filled by notebook 03
 
 
 def append_found(path: Any, groups: Sequence[Dict[str, Any]], site: str = "", when: Optional[str] = None) -> int:
     """
-    v0p73: add the images of newly classified low-backlash (regular) focus groups to the found list ``path``
+    add the images of newly classified low-backlash (regular) focus groups to the found list ``path``
     (``<SCAPES_ROOT>/zcam_low_backlash_found.csv``, read with the shipped list by :func:`load_low_backlash`), one
     stem per line with a comment: site, sol, sequence, focus, ratio, z, date.  Stems already in the file are skipped.
     Returns the number of lines added.
@@ -82,7 +88,7 @@ def append_found(path: Any, groups: Sequence[Dict[str, Any]], site: str = "", wh
             z = g.get("z") if g.get("z") is not None else (g.get("sequence_z") if g.get("sequence_z") is not None else float("nan"))
             how = "bin camera" if g.get("fit_source") == "bin camera" else "notebook 03 classification"
             if g.get("sequence_state") == "regular" and g.get("own_state") != "regular":
-                how += ", by its sequence"                       # v0p74.8: the sequence rule decided
+                how += ", by its sequence"                       # the sequence rule decided
             lines.append(f"{stem}  # {site} sol {g.get('sol')} {g.get('sequence')} focus {g.get('focus_count')} "
                          f"ratio {ratio:.4f} z {z:+.1f} ({how}, {when})")
     if lines:
@@ -90,15 +96,15 @@ def append_found(path: Any, groups: Sequence[Dict[str, Any]], site: str = "", wh
         new = not f.is_file()
         with f.open("a", encoding="utf-8") as fh:
             if new:
-                fh.write("# Mastcam-Z observations classified low-backlash (regular focus state) by notebook 03 (MPPP "
-                         "v0p73); read together with mppp/data/mars2020_mastcam-z_low_backlash_observations.csv\n")
+                fh.write("# Mastcam-Z observations classified low-backlash (regular focus state) by notebook 03; "
+                         "read together with mppp/data/mars2020_mastcam-z_low_backlash_observations.csv\n")
             fh.write("\n".join(lines) + "\n")
     return len(lines)
 
 
 def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
     """
-    v0p61: the Mastcam-Z observations known to be in the low-backlash (regular) focus state.  One entry per line
+    the Mastcam-Z observations known to be in the low-backlash (regular) focus state.  One entry per line
     (several per line separated by commas; ``#`` starts a comment): a full image name or any part of one - a stem
     (``ZL0_0121_0677679408_053RAD_N0041250ZCAM08114_034085A03``), ``0121_0677679408_053`` (sol, clock), ``ZCAM07114_034``
     (a sequence at one zoom), ``ZCAM08114`` (a sequence at every zoom) - matched as a substring of the image's file name
@@ -115,7 +121,7 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
     out: Dict[str, Any] = {"entries": set(), "sol_sequences": set(), "clocks": set(), "uncertain": [], "file": str(f),
                            "found_file": None, "found": 0}
     texts = [f.read_text(encoding="utf-8-sig")] if f.is_file() else []
-    if found:                                          # v0p73: the observations notebook 03 classified (found list)
+    if found:                                          # the observations notebook 03 classified (found list)
         from pathlib import Path as _P
         ff = _P(found)
         out["found_file"] = str(ff)
@@ -158,7 +164,7 @@ def _clock_key(name: str):
 
 def low_backlash_fingerprint(path: Any = None, found: Any = None) -> Optional[str]:
     """SHA-256 of the list in use (None without one), so that notebook 03 rebuilds a project when the list changes
-    (v0p73: and the found list, ``found``)."""
+    (and the found list, ``found``)."""
     import hashlib
     from pathlib import Path
     if path is False:
@@ -201,7 +207,7 @@ def group_zoom(group: Any) -> Optional[int]:
 
 
 def navcam_scale(rec, project) -> Optional[float]:
-    """v0p53: the block's Navcam focal scale now - refined / start focal length (sqrt(fx fy)) averaged over the Navcam
+    """the block's Navcam focal scale now - refined / start focal length (sqrt(fx fy)) averaged over the Navcam
     eye cameras with images; None without Navcam cameras."""
     db = (project.settings.get("database") or {}).get("cameras") or {}
     r = []
@@ -214,12 +220,6 @@ def navcam_scale(rec, project) -> Optional[float]:
         p = rec.cameras[int(cid)].params
         r.append(float(np.sqrt(p[0] * p[1]) / np.sqrt(float(start[0]) * float(start[1]))))
     return float(np.mean(r)) if r else None
-
-
-def _wmedian(x: np.ndarray, w: np.ndarray) -> float:
-    o = np.argsort(x)
-    c = np.cumsum(w[o])
-    return float(x[o][np.searchsorted(c, 0.5 * c[-1])])
 
 
 def backlash_ratios(model: Optional[Dict[str, Any]] = None) -> Dict[str, float]:
@@ -348,7 +348,7 @@ def image_focal_fits(rec, project, min_observations: int = 20, loss_px: float = 
     return out
 
 
-REGULAR_MARGIN = 0.004       # v0p74.8: groups this far above the regular state (ratio 1) enter the backlash-ratio fit
+REGULAR_MARGIN = 0.004       # groups this far above the regular state (ratio 1) enter the backlash-ratio fit
 
 
 def measured_backlash_lines(rows: Sequence[Dict[str, Any]], nav_scale: float = 1.0,
@@ -356,10 +356,10 @@ def measured_backlash_lines(rows: Sequence[Dict[str, Any]], nav_scale: float = 1
                             min_groups_line: int = 5, min_groups_const: int = 3, min_span: float = 300.0,
                             clip: Tuple[float, float] = (0.005, 0.016)) -> Dict[str, Dict[str, Any]]:
     """
-    v0p74.8: the backlash state's ratio of fitted to label focal length, measured on the block, per camera group, as a
+    the backlash state's ratio of fitted to label focal length, measured on the block, per camera group, as a
     line in focus count, ratio = a + b (focus - ``reference_focus``).  The ratio is not one number: the refined focal
     lengths and the labels have different slopes in focus count (ZR034: about 0.065 against 0.041 px/count, so the
-    ratio rises by about 0.45 % per 1000 counts), and the start model's f0 / label f0 (1.014 in the v0p74 start model)
+    ratio rises by about 0.45 % per 1000 counts), and a start model's f0 / label f0
     is not what the blocks measure (about 1.0095 at focus 600).  Fitted (Huber, weights = fitted images) to the groups
     at least :data:`REGULAR_MARGIN` above the regular state (``nav_scale``) and not more than 2 % above it, own
     ratios from the images not on the low-backlash list (``ratio_fit``).  With fewer than ``min_groups_line`` groups or
@@ -385,22 +385,14 @@ def measured_backlash_lines(rows: Sequence[Dict[str, Any]], nav_scale: float = 1
             F = np.array([p[0] for p in pts]) - reference_focus
             y = np.array([p[1] for p in pts])
             w = np.array([p[2] for p in pts])
-            X = np.c_[np.ones(len(F)), F]
-            wt = np.ones(len(F))
-            for _ in range(20):                                  # Huber IRLS
-                sw = np.sqrt(w * wt)
-                b = np.linalg.lstsq(X * sw[:, None], y * sw, rcond=None)[0]
-                res = y - X @ b
-                sig = max(1.4826 * float(np.median(np.abs(res - np.median(res)))), 2e-4)
-                u = np.abs(res) / (1.345 * sig)
-                wt = np.where(u <= 1.0, 1.0, 1.0 / np.maximum(u, 1e-12))
+            b, _, _, _ = huber_fit(np.c_[np.ones(len(F)), F], y, w, floor=2e-4, iterations=20)
             out[g] = {"a": float(b[0]), "b": float(b[1]), "n": len(pts), "source": "measured line"}
         elif len(pts) >= min_groups_const:
             out[g] = {"a": _wmedian(np.array([p[1] for p in pts]), np.array([p[2] for p in pts])), "b": 0.0,
                       "n": len(pts), "source": "measured constant"}
         elif abs(rb_model / ns - DEFAULT_BACKLASH_RATIO) <= 0.003:
             out[g] = {"a": rb_model, "b": 0.0, "n": len(pts), "source": "focus model"}
-        else:                     # the model's f0 / label f0 is not the backlash ratio (v0p74 start model: 1.014)
+        else:                     # the model's f0 / label f0 is not the backlash ratio
             out[g] = {"a": DEFAULT_BACKLASH_RATIO * ns, "b": 0.0, "n": len(pts),
                       "source": f"default (the focus model's {rb_model / ns:.4f} is off)"}
         out[g].update({"reference_focus": reference_focus, "clip": [ns + clip[0], ns + clip[1]], "nav_scale": ns})
@@ -417,7 +409,7 @@ def backlash_ratio_at(line: Dict[str, Any], focus: Optional[float]) -> float:
 
 def apply_sequence_states(rows: List[Dict[str, Any]], z_min: float = 3.0) -> Dict[str, Dict[str, Any]]:
     """
-    v0p74.8: the images of one sequence (sol and sequence, both eyes) are in one focus state (Christian, 5 Oct 2026);
+    the images of one sequence (sol and sequence, both eyes) are in one focus state;
     the exceptions are on the low-backlash list.  Every row (:func:`classify_groups`) keeps its own verdict as
     ``own_state`` / ``own_z``; the sequence's verdict pools the groups' deviations from their midpoints (inverse
     variance, own ratios from the images not on the list): ``sequence_z`` below ``-z_min`` regular, above ``z_min``
@@ -457,14 +449,14 @@ def apply_sequence_states(rows: List[Dict[str, Any]], z_min: float = 3.0) -> Dic
     return out
 
 
-BIN_FALLBACK_SD = 0.001      # v0p75: the ratio sd given to a group classified from its bin camera (no per-image fit):
+BIN_FALLBACK_SD = 0.001      # the ratio sd given to a group classified from its bin camera (no per-image fit):
 #                              a bin of thousands of observations is formally far better, 0.1 % is the systematic part
 #                              (the block's Navcam scale, the f / principal-point trade); the states are 0.95 % apart
 
 
 def bin_focal_fallback(rec, project, min_observations: int = 200) -> Dict[str, Dict[str, Any]]:
     """
-    v0p75: {camera key: {"f_px", "observations"}} of every Mastcam-Z focus-bin camera with at least
+    {camera key: {"f_px", "observations"}} of every Mastcam-Z focus-bin camera with at least
     ``min_observations`` triangulated observations in ``rec`` - the fallback that classifies a focus group none of
     whose images got a per-image fit (:func:`image_focal_fits`: fewer than 20 observations each, or registered only
     through the bin): the bin's refined f against the group's label f.
@@ -497,16 +489,16 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
     much, otherwise ``undecided`` (treated as backlash, the dominant state).  Groups without a fit (too few
     observations, no label f) are ``undecided`` too, and so are groups whose ratio lies more than ``tolerance`` (0.6 %)
     outside the two states: a failed bin rather than a focus state (``implausible``).
-    v0p53: ``nav_scale`` (the block's Navcam focal scale, :func:`navcam_scale`) multiplies both states; groups of a
+    ``nav_scale`` (the block's Navcam focal scale, :func:`navcam_scale`) multiplies both states; groups of a
     :data:`SINGLE_STATE_ZOOMS` zoom are ``single`` (not classified, not split).
-    v0p74.8: (1) the backlash ratio is measured on the block as a line in focus count
+    (1) the backlash ratio is measured on the block as a line in focus count
     (:func:`measured_backlash_lines`, ``measured_ratio``; else the focus model's f0 / label f0), so that the
     midpoint follows the focus count; (2) ``sequence_rule``: one state per sequence (:func:`apply_sequence_states`),
     the images on the low-backlash list (``known``: a :func:`load_low_backlash` dict, a path, False for none; default
     the project's list, without the found list) being the exceptions (``listed_names``, regular in
     :func:`image_states`).  The ratios that decide (``ratio_fit``, ``sd_fit``) come from the images not on that
     list; ``ratio`` / ``sd`` are every fitted image's, as before.  ``report`` (a dict) receives the lines and the
-    sequences.  v0p75: ``bin_fallback`` (:func:`bin_focal_fallback`) classifies a group without any per-image fit
+    sequences.  ``bin_fallback`` (:func:`bin_focal_fallback`) classifies a group without any per-image fit
     from its own bin camera's refined f (``fit_source`` "bin camera", sd :data:`BIN_FALLBACK_SD`).
     """
     ratios = backlash_ratios(model)
@@ -554,7 +546,7 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
             row.update({"ratio": med, "sd": sd, "ratio_min": float(x.min()), "ratio_max": float(x.max()),
                         "offset_from_label_pct": 100.0 * (med - 1.0)})
         elif bin_fallback and not listed:
-            # v0p75: no per-image fit - the group's bin camera (its own, not shared with another sequence at the
+            # no per-image fit - the group's bin camera (its own, not shared with another sequence at the
             # same focus count) stands in: refined f / the group's median label f, with a wide sd
             cams = [c for c in base["cameras"] if c in bin_fallback]
             same = [m for m in members if m.get("label_f_px")]
@@ -607,8 +599,8 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
 
 
 def image_states(groups: Sequence[Dict[str, Any]]) -> Dict[str, str]:
-    """{image name: "regular" | "backlash" | "single"} (undecided groups count as backlash; v0p53: "single" for the
-    one-state zooms; v0p74.8: images on the low-backlash list (``listed_names``) are regular whatever their group)."""
+    """{image name: "regular" | "backlash" | "single"} (undecided groups count as backlash; "single" for the
+    one-state zooms; images on the low-backlash list (``listed_names``) are regular whatever their group)."""
     out = {}
     for g in groups:
         listed = set(g.get("listed_names") or [])
@@ -760,8 +752,8 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
     from .reconstruction import bundle_adjust
     if mode not in ("split", "report", "list", "list_split"):
         raise ValueError("zcam_backlash must be 'list_split', 'list', 'split', 'report' or None")
-    list_split = mode == "list_split"      # v0p73: the list's states, plus groups classified regular now (split)
-    if mode == "list":            # v0p61: the states come from the list (bins made at the start); classify to compare
+    list_split = mode == "list_split"      # the list's states, plus groups classified regular now (split)
+    if mode == "list":            # the states come from the list (bins made at the start); classify to compare
         mode = "report"
     if model is None:
         try:
@@ -786,11 +778,11 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
     report["implausible_groups"] = [g["group_key"] for g in groups if g.get("implausible")]
     regular = [nm for nm, s in states.items() if s == "regular"]
     if list_split:
-        # v0p73: the groups the list already had (their images start in _reg cameras) are not split again; groups
+        # the groups the list already had (their images start in _reg cameras) are not split again; groups
         # classified regular that the list did not have are the new ones (flagged, split, and for the found list)
         listed = {r["name"] for r in project.images if r.get("focus_state") == "regular"}
         new_groups = [g for g in groups if g["state"] == "regular" and not set(g.get("names") or []) <= listed]
-        # v0p74.8: an image on the list (or the found list) whose group the fit and its sequence call backlash -
+        # an image on the list (or the found list) whose group the fit and its sequence call backlash -
         # the shipped list's images are the known exceptions (kept regular); found-list ones are contradicted
         disagree = [g for g in groups if g["state"] == "backlash"
                     and (set(g.get("names") or []) & listed) - set(g.get("listed_names") or [])]
@@ -808,8 +800,7 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
                 print(f"[sfm] found list says low backlash, the fit and its sequence say backlash: {g['camera_group']} "
                       f"sol {g['sol']} {g['sequence']} focus {g['focus_count']} (f / label f "
                       f"{(g.get('ratio_fit') or g.get('ratio') or float('nan')):.4f}, z "
-                      f"{(zz if zz is not None else float('nan')):+.1f}) - remove it from the found list "
-                      f"(scripts/zcam_calibration.py clean-found)", flush=True)
+                      f"{(zz if zz is not None else float('nan')):+.1f}) - remove it from the found list", flush=True)
     if verbose:
         for g, ln in sorted((report.get("backlash_lines") or {}).items()):
             print(f"[sfm] {g} backlash state: f / label f {ln['a']:.4f} {ln['b'] * 1000:+.4f} per 1000 counts about "
@@ -846,21 +837,3 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
               f"label f median {(a['backlash']['ratio_median'] or float('nan')):.4f} (backlash), "
               f"{(a['regular']['ratio_median'] or float('nan')):.4f} (regular)", flush=True)
     return rec2, report
-
-
-def strip_state_split(project) -> int:
-    """Undo :func:`split_by_state` on a project: regular-state images back to their focus-bin camera, the ``_reg``
-    cameras removed.  Returns the number of cameras removed."""
-    n = 0
-    split = {k for k, c in project.cameras.items() if c.get("state_split")}
-    for r in project.images:
-        if r.get("instrument") in split and "base_instrument" in r:
-            r["instrument"] = r.pop("base_instrument")
-    for k in split:
-        project.cameras.pop(k)
-        n += 1
-    db = project.settings.get("database", {}).get("cameras")
-    if isinstance(db, dict):
-        for k in [k for k in db if k not in project.cameras]:
-            db.pop(k)
-    return n

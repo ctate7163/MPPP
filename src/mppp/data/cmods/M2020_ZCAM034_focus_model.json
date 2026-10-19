@@ -15,14 +15,14 @@
    "pp": {
     "cx_px_per_count": 0.0,
     "cy_px_per_count": 0.0,
-    "note": "v0p75: reference eye, cx, cy held at pp0 (the CAHVOR principal point at focus 600) in every block"
+    "note": "reference eye, cx, cy held at pp0 (the CAHVOR principal point at focus 600) in every block"
    },
    "n_bins": 132,
    "thermal": {
     "T0_degC": -15.0,
     "sensor": "HEAD_FPA",
     "f_px_per_degC": 0.0,
-    "note": "no temperature term (v0p75 start)"
+    "note": "no temperature term"
    },
    "distortion": {
     "names": [
@@ -33,7 +33,7 @@
      -0.46,
      0.635
     ],
-    "note": "v0p75 start: k1, k2 constant with focus (block medians of the 4-5 Oct first runs)"
+    "note": "k1, k2 constant with focus (block medians of the 4-5 Oct first runs)"
    },
    "lines": {
     "backlash": {
@@ -90,17 +90,7 @@
     876.68,
     559.09
    ],
-   "regular_ratio": 1.009,
-   "trend_v0p42": {
-    "sol0": 700.0,
-    "f_px_per_sol": 0.025051703668971668,
-    "sd_px_per_sol": 0.0050798081723810095,
-    "sol_range": [
-     461,
-     991
-    ],
-    "note": "3 blocks (sols 461-530, 684-692, 961-991); carried by the Airey Hill offset; evaluated at the sol clamped to sol_range (no extrapolation); provisional"
-   }
+   "regular_ratio": 1.009
   },
   "ZR034": {
    "f0_px": 4728.796319360774,
@@ -124,7 +114,7 @@
     "T0_degC": -15.0,
     "sensor": "HEAD_FPA",
     "f_px_per_degC": 0.0,
-    "note": "no temperature term (v0p75 start)"
+    "note": "no temperature term"
    },
    "pp0_px": [
     743.1541318639494,
@@ -139,7 +129,7 @@
      -0.468,
      0.875
     ],
-    "note": "v0p75 start: k1, k2 constant with focus (block medians of the 4-5 Oct first runs)"
+    "note": "k1, k2 constant with focus (block medians of the 4-5 Oct first runs)"
    },
    "lines": {
     "backlash": {
@@ -214,22 +204,12 @@
     },
     "reference_focus": 600.0
    },
-   "regular_ratio": 1.0109,
-   "trend_v0p42": {
-    "sol0": 700.0,
-    "f_px_per_sol": 0.005076369618842807,
-    "sd_px_per_sol": 0.004698346320393921,
-    "sol_range": [
-     461,
-     991
-    ],
-    "note": "3 blocks (sols 461-530, 684-692, 961-991); carried by the Airey Hill offset; evaluated at the sol clamped to sol_range (no extrapolation); provisional"
-   }
+   "regular_ratio": 1.0109
   }
  },
  "state": "backlash",
  "pixel_mm": 0.0074,
- "units": "full-frame pixels (1648 x 1200); f = f0_px + slope_px_per_count (focus - reference_focus) + thermal.f_px_per_degC (T_FPA - thermal.T0_degC) + trend.f_px_per_sol (clamp(sol, trend.sol_range) - trend.sol0); fy/fx = aspect; cx, cy + pp.c*_px_per_count (bin focus - the eye's median focus in the block) (mppp.sfm.project.zcam_model_focal, zcam_model_pp_shift)",
+ "units": "full-frame pixels (1648 x 1200); fx, fy = lines[state][fx|fy].a + .b (focus - lines.reference_focus); cx, cy = pp0_px + pp.<c>_px_per_count (focus - reference_focus) (ZR: lines); k1, k2 constant; p1 = p2 = k3 = 0",
  "source": "MPPP v0p74 Mastcam-Z 34 mm calibration from 8 blocks: mars2020_sol_0178_rochette_colmap_zcam, mars2020_sol_0361_chal_rocks_sid_colmap_zcam, mars2020_sol_0460_rockytop_colmap_zcam, mars2020_sol_0556_enchanted_lake_colmap_zcam, mars2020_sol_0770_belva_crater_large_colmap_zcam, mars2020_sol_1333_rio_chiquito_colmap_zcam, mars2020_sol_1408_south_arm_colmap_zcam, mars2020_sol_1962_marble_mountain_colmap_zcam - candidate computed in the cloud on 6 Oct from the first-run block lines (block_lines.json of zcam34_calibration_20261005); rig and pp0 kept from the 5 Oct model; NOT promoted",
  "stereo": {
   "roll_mdeg_per_count": 0.020464109883505444,
@@ -264,9 +244,6 @@
    ]
   },
   "note": "information; Mastcam-Z has no rig by default (notebook 03 ZCAM_RIG)"
- },
- "previous": {
-  "note": "replaces the 5 Oct 2026 calibration (3-block design, fitted regular lines)"
  },
  "rig": {
   "R_sensor_from_ref": [
@@ -310,10 +287,11 @@
   ],
   "note": "v0p75 start: one rotation for the mission (no focus, temperature or sol term), mean of 3 first-run blocks after each block's ZR pp offset was moved into its rig; refined per block in the runs, then averaged over the passing blocks"
  },
- "form": "v0p75",
+ "form": "zcam-v1",
  "note": "v0p75 start model (8 Oct 2026): initial values from the 4-5 Oct first runs; to be refined by the next pipeline run",
  "start_note": {
   "when": "2026-10-08",
   "note": "written by Claude from the archived first runs (block_lines of 5 Oct, 8-block candidate of 6 Oct): one df/dfocus per eye, ZL pp0 fixed, ZR pp0 pinned with a cy slope, k1/k2 constant, rig mean of 3 blocks"
- }
+ },
+ "zoom_mm": 34
 }

@@ -1,16 +1,13 @@
 """
-Mastcam-Z focus breathing (v0p14.4): refined focal length versus focus motor count.  v0p40: the cameras of the
-regular focus state (``<bin>_reg``, :mod:`mppp.sfm.backlash`) are drawn apart and left out of the fit, which is the
-dominant backlash state's.
+Mastcam-Z focus breathing: refined focal length versus focus motor count, and the focus lines of a block.
 
-With ``SfmProject.create(zcam_focus_bin=30)`` every Mastcam-Z eye and zoom
-(``ZL034``, ``ZR034``) is split into cameras by focus motor count, and each
-bin's focal length is refined on its own.  :func:`focus_breathing_table`
-collects, per bin, the focus counts, the number of images and observations,
-and the initial (median label) and refined focal lengths;
-:func:`fit_focus_slopes` fits f = f0 + a (focus - ref) per group, to the
-refined bins (weighted by observations) and to the per-image label values;
-:func:`plot_focus_breathing` draws both.  All focal lengths are in
+With ``SfmProject.create(zcam_focus_bin=30)`` every Mastcam-Z eye and zoom (``ZL034``, ``ZR034``) is split into
+cameras by focus motor count and backlash state, and each bin's focal length is refined on its own.
+:func:`focus_breathing_table` collects, per bin, the focus counts, the number of images and observations, and the
+initial and refined focal lengths; :func:`fit_focus_slopes` fits f = f0 + a (focus - ref) per group;
+:func:`plot_focus_breathing` draws both.  :func:`refit_focus_lines` (stage 2 of the reconstruction) puts every
+focus parameter of each eye on one line in focus count per backlash state, in the form of
+:data:`mppp.calib.ZCAM_LINE_FORM`, and sets the bin cameras back on their lines.  All focal lengths are in
 full-frame pixels (1648 x 1200).
 """
 from __future__ import annotations
@@ -22,6 +19,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
+from .. import calib
+from ..calib import forms
+from ..calib.fit import huber_fit, huber_line
 from .project import SfmProject
 
 PathLike = Union[str, Path]
@@ -57,7 +57,7 @@ def focus_breathing_table(project: SfmProject, rec) -> List[Dict[str, Any]]:
                      "fx_refined_px": float(p1[0]) if p1 is not None else None,
                      "fy_refined_px": float(p1[1]) if p1 is not None else None,
                      "refined": bool(p1 is not None and obs > 0),
-                     "state": cam.get("backlash_state") or ("regular" if str(key).endswith("_reg") else "backlash"),
+                     "state": cam.get("backlash_state") or ("regular" if str(key).endswith("_reg") else calib.ZCAM_DEFAULT_STATE),
                      "held_params": ",".join(cam.get("fixed_params") or [])})
     return rows
 
@@ -87,7 +87,7 @@ def fit_focus_slopes(project: SfmProject, table: List[Dict[str, Any]], min_obser
         ref = float(np.median([r["focus_count"] for r in imgs])) if imgs else float(
             np.median([r["focus_count_median"] for r in rows]))
         use = [r for r in rows if r["refined"] and r["observations"] >= min_observations
-               and r.get("state", "backlash") != "regular"]         # v0p40: the line is the backlash state's
+               and r.get("state", "backlash") != "regular"]         # the line is the backlash state's
         refined = _wfit(np.array([r["focus_count_median"] for r in use], float),
                         np.array([r["f_refined_px"] for r in use], float),
                         np.array([r["observations"] for r in use], float), ref) if use else None
@@ -113,7 +113,7 @@ def plot_focus_breathing(project: SfmProject, table: List[Dict[str, Any]], fits:
         rows = [r for r in table if r["group"] == g]
         x = np.array([r["focus_count_median"] for r in rows], float)
         ax.plot(x, [r["f_initial_px"] for r in rows], "o", mfc="none", mec="C0", ms=7, label="bin start (label median)")
-        reg = [r for r in rows if r.get("state") == "regular" and r["f_refined_px"] is not None]   # v0p40
+        reg = [r for r in rows if r.get("state") == "regular" and r["f_refined_px"] is not None]
         rows = [r for r in rows if r not in reg]
         good = [r for r in rows if r["refined"] and r["observations"] >= min_observations]
         weak = [r for r in rows if r not in good and r["f_refined_px"] is not None]
@@ -122,7 +122,7 @@ def plot_focus_breathing(project: SfmProject, table: List[Dict[str, Any]], fits:
                     mec="C2", ms=7, label="regular focus state (own camera)")
         if good:
             ax.scatter([r["focus_count_median"] for r in good], [r["f_refined_px"] for r in good],
-                       s=[4 + 0.6 * np.sqrt(r["observations"]) for r in good], color="C3", zorder=3,   # v0p20: smaller
+                       s=[4 + 0.6 * np.sqrt(r["observations"]) for r in good], color="C3", zorder=3,
                        label="refined (size ~ observations)")
             for r in good:
                 ax.plot([r["focus_count_min"], r["focus_count_max"]], [r["f_refined_px"]] * 2, "-", color="C3", lw=1)
@@ -176,21 +176,12 @@ def write_focus_breathing(project: SfmProject, rec, out_dir: Optional[PathLike] 
             "json": str(out / "zcam_focus_breathing.json")}
 
 
-# ------------------------------------------------------------------ v0p61: one focus line per eye and zoom
+# ------------------------------------------------------------------ the focus lines of a block
 def refit_focus_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] = None, min_observations: int = 200,
                       min_span: float = 300.0, huber_k: float = 1.345, outlier_sigma: float = 4.0,
                       apply: bool = True) -> Dict[str, Any]:
-    """
-    v0p61: the block's focal length of each Mastcam-Z eye and zoom as one line in focus motor count,
-    f = f0 + slope (focus - reference), fitted (Huber, weights = observations) to the refined focus-bin cameras of the
-    high-backlash state with at least ``min_observations``; with fewer than 3 such bins or a focus span below
-    ``min_span`` counts only f0 is fitted and the slope is the zoom's focus model's (else the labels').  Bins more
-    than ``outlier_sigma`` robust sd (at least 3 px) off the line are reported as ``outliers`` and do not pull it.
-    ``apply``: every bin camera of the group is then set on the line (fx, fy with its fy/fx kept; the regular-state
-    ``_reg`` cameras at the line divided by the model's f0 / label f0 ratio) in ``rec`` - the caller holds them.
-    Returns {group: {"f0_px", "slope_px_per_count", "reference_focus", "n_bins", "rms_px", "slope_source",
-    "bins": [...], "outliers": [...]}}.
-    """
+    """Every focus parameter of each Mastcam-Z eye and zoom on one line in focus count per backlash state
+    (:func:`refit_param_lines`); ``model`` defaults to the project's focus model."""
     if model is None:
         try:
             from .project import zcam_focus_model
@@ -198,204 +189,64 @@ def refit_focus_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
             model = zcam_focus_model(model_file=f)
         except Exception:                                                  # noqa: BLE001
             model = {"cameras": {}}
-    if project.settings.get("zcam_line_params"):          # v0p73: every focus parameter on a line, per state
-        min_observations = int(project.settings.get("zcam_line_min_observations") or min_observations)
-        return refit_param_lines(rec, project, model, min_observations=min_observations, min_span=min_span,
-                                 huber_k=huber_k, outlier_sigma=outlier_sigma, apply=apply)
-    db = (project.settings.get("database") or {}).get("cameras") or {}
-    obs = _observations_per_camera(rec)
-    groups: Dict[str, List[Dict[str, Any]]] = {}
-    for key, cid in db.items():
-        c = project.cameras.get(key) or {}
-        if not str(key).startswith("Z") or int(cid) not in rec.cameras or c.get("group") is None:
-            continue
-        p = rec.cameras[int(cid)].params
-        groups.setdefault(c["group"], []).append({
-            "camera": key, "camera_id": int(cid), "focus": c.get("focus_count_median"),
-            "f_px": float(np.sqrt(p[0] * p[1])), "aspect": float(p[1] / p[0]), "observations": int(obs.get(int(cid), 0)),
-            "regular": c.get("backlash_state") == "regular" or str(key).endswith("_reg")})
-    out: Dict[str, Any] = {}
-    for g, rows in sorted(groups.items()):
-        gm = (model.get("cameras") or {}).get(g) or {}
-        use = [r for r in rows if not r["regular"] and r["focus"] is not None and r["observations"] >= min_observations]
-        ref = float(gm.get("reference_focus", np.median([r["focus"] for r in rows if r["focus"] is not None] or [0.0])))
-        F = np.array([r["focus"] for r in use], float)
-        y = np.array([r["f_px"] for r in use], float)
-        w = np.array([r["observations"] for r in use], float)
-        res: Dict[str, Any] = {"reference_focus": ref, "n_bins": len(use), "bins": [], "outliers": []}
-        if not len(use):
-            res["skipped"] = f"no bin with >= {min_observations} observations"
-            out[g] = res
-            continue
-        fit_slope = len(use) >= 3 and float(np.ptp(F)) >= min_span
-        slope0 = gm.get("slope_px_per_count")
-        if slope0 is None:
-            lab = [(r.get("focus_count"), r.get("label_f_px")) for r in project.images
-                   if r.get("camera_group") == g and r.get("focus_count") is not None and r.get("label_f_px")]
-            slope0 = float(np.polyfit([a for a, _ in lab], [b for _, b in lab], 1)[0]) if len(lab) >= 3 else 0.0
-        X = np.c_[np.ones(len(F)), F - ref] if fit_slope else np.ones((len(F), 1))
-        yy = y if fit_slope else y - float(slope0) * (F - ref)
-        wt = np.ones(len(F))
-        for _ in range(25):                                        # Huber IRLS, weights = observations x Huber
-            sw = np.sqrt(w * wt)
-            b = np.linalg.lstsq(X * sw[:, None], yy * sw, rcond=None)[0]
-            r = yy - X @ b
-            sig = max(1.4826 * float(np.median(np.abs(r - np.median(r)))), 0.5)
-            u = np.abs(r) / (huber_k * sig)
-            wt = np.where(u <= 1.0, 1.0, 1.0 / np.maximum(u, 1e-12))
-        f0, slope = float(b[0]), float(b[1]) if fit_slope else float(slope0)
-        resid = y - (f0 + slope * (F - ref))
-        lim = max(outlier_sigma * sig, 3.0)
-        res.update({"f0_px": f0, "slope_px_per_count": slope, "slope_source": "fitted" if fit_slope else
-                    ("focus model" if gm.get("slope_px_per_count") is not None else "labels"),
-                    "rms_px": float(np.sqrt(np.average(resid ** 2, weights=w))), "robust_sd_px": sig,
-                    "outlier_limit_px": lim, "model_f0_px": gm.get("f0_px"),
-                    "model_slope_px_per_count": gm.get("slope_px_per_count")})
-        for rr, d in zip(use, resid):
-            row = {"camera": rr["camera"], "focus": rr["focus"], "f_px": rr["f_px"], "residual_px": float(d),
-                   "observations": rr["observations"]}
-            res["bins"].append(row)
-            if abs(d) > lim:
-                res["outliers"].append(row)
-        ratio = (float(gm["f0_px"]) / float(gm["label_f0_px"])) if gm.get("label_f0_px") else 1.0
-        if apply:
-            for rr in rows:
-                fl = f0 + slope * ((rr["focus"] if rr["focus"] is not None else ref) - ref)
-                if rr["regular"]:
-                    fl /= ratio
-                p = np.array(rec.cameras[rr["camera_id"]].params, float)
-                a = rr["aspect"]
-                p[0], p[1] = fl / np.sqrt(a), fl * np.sqrt(a)
-                rec.cameras[rr["camera_id"]].params = p
-        out[g] = res
-    return out
+    min_observations = int(project.settings.get("zcam_line_min_observations") or min_observations)
+    return refit_param_lines(rec, project, model, min_observations=min_observations, min_span=min_span,
+                             huber_k=huber_k, outlier_sigma=outlier_sigma, apply=apply)
 
 
-# ------------------------------------------------------------------ v0p73: fx, fy, cx, cy lines per focus state
-PARAM_INDEX = {"fx": 0, "fy": 1, "cx": 2, "cy": 3, "k1": 4, "k2": 5}     # FULL_OPENCV (v0p74: + k1, k2)
-LINE_PARAMS_V0P73 = {"ZL": ("fx", "fy"), "ZR": ("fx", "fy", "cx", "cy")}   # ZL's principal point: the reference
-LINE_PARAMS_V0P74 = {"ZL": ("fx", "fy", "k1", "k2"), "ZR": ("fx", "fy", "cx", "cy", "k1", "k2")}   # + the radial terms
-LINE_STATES = ("backlash", "regular")
-# v0p75: the *form* of each line - what of p = a + b (focus - ref) is fitted in a block:
-#   "free"      a and b fitted (the v0p73/v0p74 line);
-#   "common"    b shared by every "common" parameter of the eye (fx and fy: one df/dfocus per eye), a fitted each;
-#   "constant"  b = 0, a fitted (k1, k2: one value per eye and block, constant with focus);
-#   "pinned"    a = the model's pp0 (ZR cx: the level is the rig's), b = 0;
-#   "pinned_slope"  a = the model's pp0, b fitted (ZR cy: the right-minus-left boresight moves a little with focus).
-# ZL's cx, cy are not on lines at all (held at the model's pp0: the reference eye).
-LINE_FORM_V0P75 = {"ZL": {"fx": "common", "fy": "common", "k1": "constant", "k2": "constant"},
-                   "ZR": {"fx": "common", "fy": "common", "cx": "pinned", "cy": "pinned_slope",
-                          "k1": "constant", "k2": "constant"}}
-LINE_FORMS = ("free", "common", "constant", "pinned", "pinned_slope")
-PIN_MAX_OFFSET_PX = 300.0    # v0p75: a pp0 further than this from the bins' principal points is not pinned (wrong model)
+# ------------------------------------------------------------------ fx, fy, cx, cy, k1, k2 lines per focus state
+PARAM_INDEX = {"fx": 0, "fy": 1, "cx": 2, "cy": 3, "k1": 4, "k2": 5}     # FULL_OPENCV
+LINE_PARAMS = forms.ZCAM_LINE_PARAMS                 # the parameters each eye puts on lines (ZL's principal point: the reference)
+LINE_STATES = forms.ZCAM_STATES
+LINE_FORM = forms.ZCAM_LINE_FORM                     # the form of each line (see mppp.calib.forms)
+LINE_FORMS = forms.ZCAM_LINE_FORMS
+PIN_MAX_OFFSET_PX = 300.0    # a pp0 further than this from the bins' principal points is not pinned (wrong model)
 
 
 def line_form_for(project: SfmProject, group: str) -> Dict[str, str]:
-    """v0p75: {param: form} of a Mastcam-Z group (``zcam_line_form`` in the settings, keys ``ZR034``, ``ZR`` or
-    ``R``; default :data:`LINE_FORM_V0P75` when the setting is ``"v0p75"`` or missing, ``"free"`` for every
-    parameter when it is ``"v0p74"``), for the parameters of :func:`line_params_for`."""
+    """{param: form} of a Mastcam-Z group (``zcam_line_form`` in the settings as {eye: {param: form}} for a study;
+    default :data:`mppp.calib.ZCAM_LINE_FORM`), for the parameters of :func:`line_params_for`."""
     lf = project.settings.get("zcam_line_form")
     params = line_params_for(project, group)
     eye = str(group)[:2]
-    if lf in (None, "v0p75"):
-        base = LINE_FORM_V0P75.get(eye, {})
-    elif lf == "v0p74" or lf == "free":
-        base = {}
-    elif isinstance(lf, dict):
+    if isinstance(lf, dict):
         base = lf.get(group) or lf.get(eye) or lf.get(eye[1:2]) or {}
+        out = {pn: str(base.get(pn, "free")) for pn in params}
     else:
-        raise ValueError(f"zcam_line_form {lf!r}: 'v0p75', 'v0p74' or {{eye: {{param: form}}}}")
-    out = {pn: str(base.get(pn, "free")) for pn in params}
+        out = forms.zcam_line_form(eye, params)
     bad = {pn: f for pn, f in out.items() if f not in LINE_FORMS}
     if bad:
         raise ValueError(f"zcam_line_form of {group}: unknown forms {bad}; use one of {LINE_FORMS}")
     return out
 
 
-def _huber_fit(X: np.ndarray, y: np.ndarray, w: np.ndarray, huber_k: float = 1.345, floor: float = 0.05):
-    """(coefficients, robust sd, residuals, standard errors) of a weighted Huber IRLS least squares y = X c."""
-    wt = np.ones(len(y))
-    sig = 0.5
-    c = np.zeros(X.shape[1])
-    for _ in range(25):
-        sw = np.sqrt(w * wt)
-        c = np.linalg.lstsq(X * sw[:, None], y * sw, rcond=None)[0]
-        r = y - X @ c
-        sig = max(1.4826 * float(np.median(np.abs(r - np.median(r)))), floor)
-        u = np.abs(r) / (huber_k * sig)
-        wt = np.where(u <= 1.0, 1.0, 1.0 / np.maximum(u, 1e-12))
-    resid = y - X @ c
-    W = w / max(np.mean(w), 1e-12)
-    dof = max(len(y) - X.shape[1], 1)
-    s2 = float(np.sum(W * resid ** 2) / dof)
-    try:
-        C = np.linalg.inv(X.T @ (X * W[:, None])) * s2
-        se = np.sqrt(np.maximum(np.diag(C), 0.0))
-    except np.linalg.LinAlgError:
-        se = np.full(X.shape[1], np.nan)
-    return c, sig, resid, se
-
-
-def _huber_line(F: np.ndarray, y: np.ndarray, w: np.ndarray, ref: float, fit_slope: bool, slope0: float,
-                huber_k: float = 1.345, floor: float = 0.05) -> Tuple[float, float, float, np.ndarray]:
-    """(a, b, robust sd, residuals) of y = a + b (F - ref), Huber IRLS weighted by ``w``; ``fit_slope`` False: b =
-    ``slope0`` and only a is fitted."""
-    X = np.c_[np.ones(len(F)), F - ref] if fit_slope else np.ones((len(F), 1))
-    yy = y if fit_slope else y - float(slope0) * (F - ref)
-    wt = np.ones(len(F))
-    sig = 0.5
-    b = np.zeros(X.shape[1])
-    for _ in range(25):
-        sw = np.sqrt(w * wt)
-        b = np.linalg.lstsq(X * sw[:, None], yy * sw, rcond=None)[0]
-        r = yy - X @ b
-        sig = max(1.4826 * float(np.median(np.abs(r - np.median(r)))), floor)
-        u = np.abs(r) / (huber_k * sig)
-        wt = np.where(u <= 1.0, 1.0, 1.0 / np.maximum(u, 1e-12))
-    a, sl = float(b[0]), (float(b[1]) if fit_slope else float(slope0))
-    return a, sl, sig, y - (a + sl * (F - ref))
-
-
-def _line_sd(F: np.ndarray, resid: np.ndarray, w: np.ndarray, ref: float, fit_slope: bool) -> Tuple[float, Optional[float]]:
-    """Standard errors (a, b) of a weighted line from its residual scatter."""
-    X = np.c_[np.ones(len(F)), F - ref] if fit_slope else np.ones((len(F), 1))
-    W = w / max(np.mean(w), 1e-12)
-    dof = max(len(F) - X.shape[1], 1)
-    s2 = float(np.sum(W * resid ** 2) / dof)
-    try:
-        C = np.linalg.inv(X.T @ (X * W[:, None])) * s2
-    except np.linalg.LinAlgError:
-        return float("nan"), None
-    return float(np.sqrt(max(C[0, 0], 0.0))), (float(np.sqrt(max(C[1, 1], 0.0))) if fit_slope else None)
-
-
 def line_params_for(project: SfmProject, group: str) -> Tuple[str, ...]:
     """The focus parameters of a Mastcam-Z group (``ZR034``) that stage 2 puts on lines (``zcam_line_params``: keys
-    ``ZR034``, ``ZR`` or ``R``)."""
+    ``ZR034``, ``ZR`` or ``R``; default :data:`mppp.calib.ZCAM_LINE_PARAMS`)."""
     lp = project.settings.get("zcam_line_params") or {}
     eye = str(group)[:2]
     v = lp.get(group) or lp.get(eye) or lp.get(eye[1:2])
-    return tuple(v) if v else LINE_PARAMS_V0P73.get(eye, ("fx", "fy"))
+    return tuple(v) if v else LINE_PARAMS.get(eye, ("fx", "fy"))
 
 
 def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] = None, min_observations: int = 200,
                       min_span: float = 300.0, huber_k: float = 1.345, outlier_sigma: float = 4.0,
                       apply: bool = True, min_observations_regular: int = 50) -> Dict[str, Any]:
     """
-    v0p73: every focus parameter of each Mastcam-Z eye and zoom a line in focus count, **one line per focus
-    (backlash) state**: p = a + b (focus - reference) for p in the group's ``zcam_line_params`` (default fx, fy on
-    ZL; fx, fy, cx, cy on ZR, whose principal point the narrow field measures relative to ZL's through the rig).
-    Each line is fitted (Huber, weights = observations) to the refined focus-bin cameras of that state with at least
+    Every focus parameter of each Mastcam-Z eye and zoom a line in focus count, **one line per focus (backlash)
+    state**: p = a + b (focus - reference) for p in the group's ``zcam_line_params`` (default fx, fy, k1, k2 on ZL;
+    plus cx, cy on ZR, whose principal point the narrow field measures relative to ZL's through the rig).  Each line
+    is fitted (Huber, weights = observations) to the refined focus-bin cameras of that state with at least
     ``min_observations`` (``min_observations_regular`` for the regular state); with fewer than 3 bins or a focus span
     below ``min_span`` counts only a is fitted, b being the backlash state's line (regular state) or the focus
     model's (fx, fy: its f slope; cx, cy on ZR: its principal-point slope; else 0).  A regular state without a
-    usable bin follows the backlash line (fx, fy divided by the model's f0 / label f0 ratio).  ``apply``: every bin
-    camera is then set on its state's lines in ``rec`` (the caller holds them).  Returns {group: {"reference_focus",
+    usable bin follows the backlash line (fx, fy divided by the model's regular ratio).  ``apply``: every bin camera
+    is then set on its state's lines in ``rec`` (the caller holds them).  Returns {group: {"reference_focus",
     "params", "lines": {state: {param: {"a", "b", "sd_a", "sd_b", "n_bins", "rms", "slope_source", "outliers"}}},
-    "bins": [...], plus the f summary of :func:`refit_focus_lines` (``f0_px``, ``slope_px_per_count``, ...)}}.
-    v0p75: each parameter's line has a *form* (:func:`line_form_for`, :data:`LINE_FORM_V0P75`): fx and fy share one
-    slope per eye, k1 and k2 are constant with focus (one value per block), ZR's cx is pinned at the model's pp0 with
-    no slope (its level is the rig's) and ZR's cy is pinned at pp0 with a fitted slope.
+    "bins": [...], plus the f summary (``f0_px``, ``slope_px_per_count``, ...)}}.
+    Each parameter's line has a *form* (:func:`line_form_for`, :data:`mppp.calib.ZCAM_LINE_FORM`): fx and fy share
+    one slope per eye, k1 and k2 are constant with focus (one value per block), ZR's cx is pinned at the model's pp0
+    with no slope and ZR's cy is pinned at pp0 with a fitted slope.
     """
     db = (project.settings.get("database") or {}).get("cameras") or {}
     obs = _observations_per_camera(rec)
@@ -413,10 +264,11 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
     for g, rows in sorted(groups.items()):
         gm = (model.get("cameras") or {}).get(g) or {}
         params = line_params_for(project, g)
-        form = line_form_for(project, g)                   # v0p75
+        form = line_form_for(project, g)
         foc = [r["focus"] for r in rows if r["focus"] is not None]
         ref = float(gm.get("reference_focus", np.median(foc) if foc else 0.0))
-        ratio = (float(gm["f0_px"]) / float(gm["label_f0_px"])) if gm.get("label_f0_px") and gm.get("f0_px") else 1.0
+        ratio = float(gm.get("regular_ratio") or ((float(gm["f0_px"]) / float(gm["label_f0_px"]))
+                                                   if gm.get("label_f0_px") and gm.get("f0_px") else 1.0))
         aspect = float(gm.get("aspect", 1.0))
         f_slope = gm.get("slope_px_per_count")
         if f_slope is None:
@@ -428,7 +280,7 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                        "cx": float(pp.get("cx_px_per_count") or 0.0) if g[:2] == "ZR" else 0.0,
                        "cy": float(pp.get("cy_px_per_count") or 0.0) if g[:2] == "ZR" else 0.0, "k1": 0.0, "k2": 0.0}
         for _st, _ln in ((gm.get("lines") or {}).items() if isinstance(gm.get("lines"), dict) else []):
-            if _st == "backlash" and isinstance(_ln, dict):          # v0p74: a calibrated model's slopes
+            if _st == "backlash" and isinstance(_ln, dict):          # a calibrated model's slopes
                 for _pn, _e in _ln.items():
                     if isinstance(_e, dict) and _e.get("b") is not None and _pn in model_slope:
                         model_slope[_pn] = float(_e["b"])
@@ -444,7 +296,7 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
             F = np.array([r["focus"] for r in use], float)
             w = np.array([r["observations"] for r in use], float)
             fit_slope = len(use) >= 3 and float(np.ptp(F)) >= min_span
-            # v0p75: the common slope of the eye's "common" parameters (fx, fy): one Huber fit of both against focus
+            # the common slope of the eye's "common" parameters (fx, fy): one Huber fit of both against focus
             # with their own offsets; the slope is this state's, the regular state follows the backlash state's
             common = [pn for pn in params if form.get(pn) == "common"]
             common_fit = None
@@ -456,7 +308,7 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                     Xc[j * len(use):(j + 1) * len(use), j] = 1.0
                     Xc[j * len(use):(j + 1) * len(use), -1] = F - ref
                     yc[j * len(use):(j + 1) * len(use)] = [r["p"][PARAM_INDEX[pn]] for r in use]
-                c, sig_c, _, se_c = _huber_fit(Xc, yc, wc, huber_k, floor=0.05)
+                c, se_c, _, _ = huber_fit(Xc, yc, wc, huber_k, floor=0.05)
                 common_fit = {"b": float(c[-1]), "sd_b": float(se_c[-1]), "params": list(common)}
             for pn in params:
                 k = PARAM_INDEX[pn]
@@ -495,12 +347,11 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                     sda, sdb = float("nan"), None
                 elif pin_a is not None:                             # a pinned, b fitted through the pinned point
                     Xp = (F - ref)[:, None]
-                    c, sig, resid, se = _huber_fit(Xp, y - pin_a, w, huber_k, floor=0.05)
+                    c, se, sig, resid = huber_fit(Xp, y - pin_a, w, huber_k, floor=0.05)
                     a, b, sda, sdb = pin_a, float(c[0]), float("nan"), float(se[0])
                 else:
-                    a, b, sig, resid = _huber_line(F, y, w, ref, fit_b, held_b if held_b is not None else slope0, huber_k,
-                                                   floor=0.05 if pn in ("fx", "fy", "cx", "cy") else 1e-5)
-                    sda, sdb = _line_sd(F, resid, w, ref, fit_b)
+                    a, b, sig, resid, (sda, sdb) = huber_line(F, y, w, ref, fit_b, held_b if held_b is not None else slope0,
+                                                              huber_k, floor=0.05 if pn in ("fx", "fy", "cx", "cy") else 1e-5)
                     if fm == "common" and common_fit is not None and st == "backlash":
                         sdb = common_fit["sd_b"]
                 lim = max(outlier_sigma * sig, 3.0 if pn in ("fx", "fy") else (1.0 if pn in ("cx", "cy") else 0.0))
@@ -547,7 +398,7 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                     v = ln[pn]["a"] + ln[pn]["b"] * (fc - ref)
                     if rr["state"] == "regular" and not own and pn in ("fx", "fy"):
                         v /= ratio                           # the regular state sits at the label
-                    if pn == "k2":                           # v0p85 (Christian): |k2| <= 10
+                    if pn == "k2":                           # |k2| <= K2_LIMIT
                         from .reconstruction import K2_LIMIT
                         v = float(np.clip(v, -K2_LIMIT, K2_LIMIT))
                     p[PARAM_INDEX[pn]] = v
@@ -557,7 +408,7 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
 
 
 def focus_line_lines(lines: Dict[str, Any]) -> List[str]:
-    """Printable summary of :func:`refit_focus_lines` (v0p73: every parameter line per state)."""
+    """Printable summary of :func:`refit_focus_lines` (every parameter line per state)."""
     out = []
     for g, r in lines.items():
         if r.get("lines"):
