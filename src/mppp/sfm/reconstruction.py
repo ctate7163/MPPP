@@ -1819,8 +1819,41 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         zfit = project.settings.get("zcam_rig_fit")
         zfit = zfit if zfit in ("rotation", "full") else None
         lines = None
+        # v0p85: a Mastcam-Z eye must not drop out (v0p82 run: ZR034 lost every tie point after its cameras were set
+        # on the focus lines, or after the pose-guided matches) - see mppp.sfm.zcam_guard
+        from . import zcam_guard as ZG
+        cov_prev, line_snap, undone = None, None, set()
+        poses_prev, cams_prev, reg_prev = {}, {}, set()
         for k, (tpx, loss, rmax) in enumerate(schedule):
             rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)
+            cov = ZG.group_coverage(rec, project)
+            if cov_prev is not None and line_snap is not None:
+                bad = [g for g in ZG.collapsed(cov_prev, cov) if g not in undone]
+                if bad:
+                    diag = ZG.diagnose(rec, project, bad, poses_prev, cams_prev, reg_prev, topts2.get("database"))
+                    print(f"[sfm] stage 2 round {k + 1}: Mastcam-Z frames lost at the triangulation - "
+                          f"{ZG.diagnosis_line(diag)}", flush=True)
+                    n_rest = ZG.restore(rec, line_snap, ZG.camera_ids_of(project, bad))
+                    rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)
+                    cov2 = ZG.group_coverage(rec, project)
+                    if ZG.collapsed(cov_prev, cov2):                  # not the lines: the poses of the group back too
+                        n_pose = ZG.restore_poses(rec, project, bad, poses_prev)
+                        rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg,
+                                          **topts2)
+                        cov3 = ZG.group_coverage(rec, project)
+                        print(f"[sfm] stage 2 round {k + 1}: still lost after the cameras were restored; "
+                              f"{n_pose} frame poses restored too: {ZG.brief(cov3)}", flush=True)
+                        diag["after_pose_restore"], diag["poses_restored"] = cov3, n_pose
+                        cov2 = cov3
+                    log.append({"stage": 2, "round": k + 1, "zcam_guard": {
+                        "collapsed": bad, "before": cov_prev, "after_lines": cov, "restored_cameras": n_rest,
+                        "after_restore": cov2, "diagnosis": diag}})
+                    print(f"[sfm] stage 2 round {k + 1}: {', '.join(bad)} lost its frames with tie points after the "
+                          f"focus lines were applied ({ZG.brief(cov_prev)} -> {ZG.brief(cov)}); the line values are "
+                          f"undone for it ({n_rest} cameras back to their refined values): {ZG.brief(cov2)}", flush=True)
+                    undone |= set(bad)
+                    cov = cov2
+            line_snap = None
             # v0p61: round 1 with the Mastcam-Z cameras at the focus model, then `cycles` rounds with the bins' f
             # free (each followed by the refit of one line per eye and zoom), then held on the line
             zfree = (not zcam_focus_line) or (1 <= k <= cycles)
@@ -1829,9 +1862,15 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
                                attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold_k), linear_solver=linear_solver,
                                refine_zcam_rig=zfit if (zcam_focus_line and not zfree) else None)
+            cov_prev = ZG.group_coverage(rec, project)              # v0p85: after the adjustment, before any line
+            poses_prev, cams_prev = ZG.frame_poses(rec, project), ZG.snapshot(rec, project)
+            reg_prev = set(int(f) for f in rec.reg_frame_ids())
             if zcam_focus_line and zfree:
                 from .zcam import focus_line_lines, refit_focus_lines
+                line_snap = ZG.snapshot(rec, project)
                 lines = refit_focus_lines(rec, project)
+                if undone:                                       # v0p85: a group whose lines were undone stays off them
+                    ZG.restore(rec, line_snap, ZG.camera_ids_of(project, undone))
                 log.append({"stage": 2, "round": k + 1, "zcam_focus_lines": lines})
                 if verbose:
                     print(f"[sfm] stage 2 round {k + 1}: Mastcam-Z focus lines (bins set on them):", flush=True)
@@ -1841,14 +1880,15 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             st = track_statistics(rec, project)
             res = native_residuals(rec, project)["residual_native_px"]
             entry = {"round": k + 1, "stage": 2, "triangulation_px_full": tpx, "cauchy_scale_sigma": loss, "ba": ba["brief"],
-                     "filtered_observations": n_bad, "tracks": st,
+                     "filtered_observations": n_bad, "tracks": st, "zcam_coverage": ZG.group_coverage(rec, project),
                      "rms_native_px": float(np.sqrt(np.mean(res ** 2))) if res.size else float("nan"),
                      "median_native_px": float(np.median(res)) if res.size else float("nan"),
                      "elapsed_s": round(time.time() - t0, 1)}
             log.append(entry)
             if verbose:
                 print(f"[sfm] stage 2 round {k + 1}: {st['points']} points, median {entry['median_native_px']:.3f} / "
-                      f"rms {entry['rms_native_px']:.3f} native px, {n_bad} obs filtered, {entry['elapsed_s']:.0f} s", flush=True)
+                      f"rms {entry['rms_native_px']:.3f} native px, {n_bad} obs filtered, {entry['elapsed_s']:.0f} s; "
+                      f"Mastcam-Z frames with tie points {ZG.brief(entry['zcam_coverage'])}", flush=True)
             if exclude_outliers and k + 1 == min(int(exclude_after_round), len(schedule)):
                 _exclude(f"stage 2, after round {k + 1}")
         if pose_guided and zkeys and Path(topts2.get("database") or project.database).is_file():
@@ -1857,6 +1897,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             from .guided import _family_ties, pose_guided_matching
             from .health import beyond_ground
             before = _family_ties(rec, project)
+            zcov0 = ZG.group_coverage(rec, project)                # v0p85
+            zposes0, zcams0 = ZG.frame_poses(rec, project), ZG.snapshot(rec, project)
+            zreg0 = set(int(f) for f in rec.reg_frame_ids())
             bg0 = beyond_ground(rec, sample=50000)["fraction"] or 0.0
             rec_before, topts_before = copy.deepcopy(rec), topts2
             dbg, prep = pose_guided_matching(rec, project, topts2.get("database") or project.database, verbose=verbose,
@@ -1864,6 +1907,16 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             topts2 = dict(topts, database=dbg)
             tpx, loss, rmax = schedule[-1]
             rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)
+            zcov_t = ZG.group_coverage(rec, project)              # v0p85: right after the guided triangulation
+            zbad_t = ZG.collapsed(zcov0, zcov_t)
+            if zbad_t:
+                prep["zcam_diagnosis"] = ZG.diagnose(rec, project, zbad_t, zposes0, zcams0, zreg0, dbg)
+                prep["zcam_diagnosis"]["database_before"] = ZG.diagnose(
+                    rec, project, zbad_t, zposes0, zcams0, zreg0, topts_before.get("database")).get(
+                    "db_pairs_per_image_median")
+                print(f"[sfm] stage 2, pose-guided: Mastcam-Z frames lost at the triangulation - "
+                      f"{ZG.diagnosis_line(prep['zcam_diagnosis'])} (database before: pairs per image median "
+                      f"{prep['zcam_diagnosis']['database_before']})", flush=True)
             ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
                                attitude_prior_deg=attitude_prior_deg,
@@ -1875,7 +1928,16 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             # matches raise that share by more than POSE_GUIDED_MAX_BEYOND_GROUND_RISE, the stage is undone
             bg1 = beyond_ground(rec, sample=50000)["fraction"] or 0.0
             prep.update({"beyond_ground_before": bg0, "beyond_ground_after": bg1})
-            if bg1 - bg0 > POSE_GUIDED_MAX_BEYOND_GROUND_RISE:
+            zcov1 = ZG.group_coverage(rec, project)
+            zbad = ZG.collapsed(zcov0, zcov1)
+            prep.update({"zcam_coverage_before": zcov0, "zcam_coverage_after": zcov1})
+            if zbad:                                             # v0p85: e.g. Rochette 18 Oct, ZR034 96 -> 0 frames
+                rec, topts2 = rec_before, topts_before
+                prep["reverted"] = (f"{', '.join(zbad)} lost its frames with tie points ({ZG.brief(zcov0)} -> "
+                                    f"{ZG.brief(zcov1)})")
+                if verbose:
+                    print(f"[sfm] stage 2, pose-guided matches undone: {prep['reverted']}", flush=True)
+            elif bg1 - bg0 > POSE_GUIDED_MAX_BEYOND_GROUND_RISE:
                 rec, topts2 = rec_before, topts_before
                 prep["reverted"] = (f"beyond-ground share {100 * bg0:.1f} -> {100 * bg1:.1f} % "
                                     f"(> +{100 * POSE_GUIDED_MAX_BEYOND_GROUND_RISE:g} points)")
