@@ -189,3 +189,32 @@ def test_zcam_guard_db_pairs(tmp_path):
     con.commit()
     con.close()
     assert ZG._db_pairs(db, [7, 9, 11]) == {7: 1, 9: 1, 11: 0}
+
+
+def test_zr_trace_and_report(tmp_path):
+    """zr_report finds the step where an eye loses its frames, in the last run of the trace."""
+    def head(step, zr):
+        return {"head": {"step": step, "coverage": {"ZL034": {"frames": 8, "with_points": 8, "observations": 1},
+                                                     "ZR034": {"frames": 8, "with_points": zr, "observations": 1}},
+                         "points": 100}}
+
+    def row(step, n, obs):
+        return {"step": step, "name": n, "group": n[:2] + "034", "registered": True, "obs": obs, "keypoints": 50,
+                "frame_id": 1, "rig_id": 1, "camera_id": 1, "cam": [1, 1, 1, 1, 0, 0], "C": [0, 0, 0],
+                "q": [0, 0, 0, 1]}
+    proj = tmp_path / "mars2020_sol_1408_south_arm_zcam" / "colmap_zrdiag"
+    proj.mkdir(parents=True)
+    lines = []
+    for run in range(2):
+        for step, zr in (("stage2_start", 0), ("r1_tri", 8), ("r2_ba", 8), ("r3_tri", 0 if run else 8)):
+            lines.append(head(step, zr))
+            lines += [row(step, f"ZL{i}", 100) for i in range(8)]
+            lines += [row(step, f"ZR{i}", 100 if zr else 0) for i in range(8)]
+    (proj / "zr_trace.jsonl").write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    out = tmp_path / "r.md"
+    subprocess.run([sys.executable, str(ROOT / "scripts" / "zr_report.py"), str(proj), "--out", str(out)],
+                   check=True, capture_output=True, text=True)
+    t = out.read_text()
+    assert "**ZR lost its frames at `r3_tri`** (after `r2_ba`: 8 -> 0)" in t and t.count("| r3_tri |") == 1
+    bat = (ROOT / "scripts" / "windows" / "zr_diagnose_z34.bat").read_bytes()
+    assert b"MPPP_ZCAM_TRACE=2" in bat and b"--sites rochette south_arm --zcam" in bat and b"\r\n" in bat

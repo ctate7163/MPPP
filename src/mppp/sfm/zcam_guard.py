@@ -219,3 +219,78 @@ def restore_poses(rec, project, groups: Iterable[str], poses0: Dict[int, Any]) -
         fr.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(np.asarray(R, float)), -np.asarray(R, float) @ C)
         n += 1
     return n
+
+
+# ------------------------------------------------------------------ v0p85 diagnostic trace (zr_diagnose_z34.bat)
+def trace_enabled() -> int:
+    """``MPPP_ZCAM_TRACE`` (environment): 1 = a per-image trace of the Mastcam-Z frames at every step of stage 2
+    (``<project>/zr_trace.jsonl``); 2 = also the model after every triangulation (``sparse/_zdiag_<step>``)."""
+    import os
+    try:
+        return int(os.environ.get("MPPP_ZCAM_TRACE", "0") or 0)
+    except ValueError:
+        return 0
+
+
+def trace(rec, project, step: str, extra: Dict[str, Any] = None) -> None:
+    """Append one record per Mastcam-Z image (registration, observations, keypoints, frame, rig, camera parameters,
+    centre and the pose relative to its left partner against the Mastcam-Z rig) to ``<project>/zr_trace.jsonl``."""
+    lvl = trace_enabled()
+    if not lvl:
+        return
+    import json
+    import time
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+    rows = {r["image_id"]: r for r in project.images if "image_id" in r and str(r.get("instrument", "")).startswith("Z")}
+    reg = set(int(i) for i in rec.reg_image_ids())
+    poses = frame_poses(rec, project)
+    left = {}
+    for iid, r in rows.items():
+        if str(r.get("camera_group", "")).startswith("ZL"):
+            left[(str(r["camera_group"])[2:], r.get("sclk_key"))] = iid
+    vrig = project.settings.get("zcam_virtual_rig") or {}
+    out = []
+    for iid, r in sorted(rows.items()):
+        g = str(r.get("camera_group", ""))
+        e: Dict[str, Any] = {"step": step, "name": r["name"], "group": g, "image_id": iid, "in_rec": iid in rec.images}
+        if iid in rec.images:
+            im = rec.images[iid]
+            fr = rec.frames[im.frame_id] if im.frame_id in rec.frames else None
+            e.update(registered=iid in reg, obs=int(im.num_points3D), keypoints=int(im.num_points2D()),
+                     frame_id=int(im.frame_id), frame_sensors=len(list(fr.data_ids)) if fr is not None else None,
+                     rig_id=int(fr.rig_id) if fr is not None else None, camera_id=int(im.camera_id),
+                     cam=[round(float(x), 4) for x in np.asarray(rec.cameras[im.camera_id].params, float)[:6]]
+                     if im.camera_id in rec.cameras else None)
+            if iid in poses:
+                R, C = poses[iid]
+                e["C"] = [round(float(x), 4) for x in C]
+                e["q"] = [round(float(x), 7) for x in Rotation.from_matrix(R).as_quat()]
+                li = left.get((g[2:], r.get("sclk_key"))) if g.startswith("ZR") else None
+                v = vrig.get("Z" + g[2:]) if g.startswith("ZR") else None
+                if li is not None and li in poses:
+                    RL, CL = poses[li]
+                    Rrel = R @ RL.T
+                    e["rel_to_left_deg"] = [round(float(x), 4) for x in np.degrees(Rotation.from_matrix(Rrel).as_rotvec())]
+                    e["baseline_m"] = round(float(np.linalg.norm(C - CL)), 4)
+                    if v:
+                        Rv = np.asarray(v.get("R_refined") or v["R_sensor_from_ref"], float)
+                        e["rel_minus_rig_deg"] = round(float(np.degrees(np.linalg.norm(
+                            Rotation.from_matrix(Rrel @ Rv.T).as_rotvec()))), 4)
+        out.append(e)
+    head = {"step": step, "time": time.strftime("%Y-%m-%dT%H:%M:%S"), "coverage": group_coverage(rec, project),
+            "points": int(len(rec.points3D)), "zcam_virtual_rig": {k: {kk: vv for kk, vv in v.items()
+                                                                       if kk in ("R_refined", "t_refined", "hold")}
+                                                                   for k, v in vrig.items()}}
+    if extra:
+        head.update(extra)
+    p = project.root / "zr_trace.jsonl"
+    with open(p, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"head": head}, default=str) + "\n")
+        for e in out:
+            f.write(json.dumps(e, default=str) + "\n")
+    if lvl >= 2 and step.endswith("_tri"):
+        d = project.root / "sparse" / f"_zdiag_{step}"
+        d.mkdir(parents=True, exist_ok=True)
+        rec.write(str(d))
+    print(f"[zr-trace] {step}: {brief(head['coverage'])}, {head['points']} points", flush=True)
