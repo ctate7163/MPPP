@@ -413,7 +413,9 @@ PROCESS_DONE = "process_done.json"    # <WORK>/processed/process_done.json: writ
 # 82 (v0p82): images with less than 1/3 of the image unmasked left out (MIN_INCLUDED_FRACTION); the block re-centred on its
 #     position priors after the final adjustment (PRIOR_GAUGE_RECENTRE); stations with flagged waypoints without prior
 # 83 (v0p83): Navcam rig epochs span at most 25 sols (an epoch spanning more is split at its middle sol)
-ALIGN_RULES = 83
+# 85 (v0p85): sub-frames below 1/3 of the full frame left out (NAVCAM_MIN_FRAME_FRACTION 1/3, was 0.2); the mask rule
+#     MIN_INCLUDED_FRACTION off (None, was 1/3)
+ALIGN_RULES = 85
 
 
 def run_key(settings: Dict[str, Any], source: str, variant: str) -> str:

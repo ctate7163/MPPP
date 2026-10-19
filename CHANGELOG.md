@@ -9,6 +9,8 @@ The development history v0p1–v0p12 (21–24 September 2026) is in [docs/histor
 - **`scripts/move_scapes.py`** (`move_scapes.bat`; `run_v0p85.bat` runs it with `--apply` first): renames the folders of `D:\scapes\colmap` into `D:\scapes` (a site whose first sol changed gets the new one, so its processed images are reused), rewrites the absolute paths in each block's `project.json`, `run_done.json` and `colmap_gui.ini`, merges `camera_analysis`, `mppp_pipeline`, `error_analysis`, ... entry by entry; never overwrites (conflicts are listed); log `mppp_pipeline\move_scapes_v0p85.json`.
 - **Nearby visits from the block's first sol**: notebook 03 `NEARBY_FROM_FIRST_SOL` (default False; `find_imgs_near(min_sol=)`).
 - **Sites**: Chal Rocks Large from sol 72 (the nearby station S003D2150 added sols 65-66) and Rochette from 178 (sols 175, 177; sol 341 stays) with `NEARBY_FROM_FIRST_SOL`; Enchanted Lake second visit 421-423; Bell Island Large 1431-1478; Hippo Pools 1948-1961 + 2006-2009 (no sol 1947, `NEARBY_FROM_FIRST_SOL`).
+- **The 1/3 rule is about sub-frames** (Christian): `NAVCAM_MIN_FRAME_FRACTION` 1/3 (was 0.2; notebook 03 `SUBFRAME_FAMILIES = ("N",)`); v0p82's mask rule `MIN_INCLUDED_FRACTION` (images whose mask keeps < 1/3) off. ALIGN_RULES 85.
+- `run_pipeline.py --stop-before STAGE`; `run_v0p85.bat --navcam-only` (stops before zcam_start), then `--continue`.
 - Groups `navcam_consensus` (12 blocks) and `zcam34_consensus` (6); the pass-2 Navcam cameras promoted; the consensus writer keeps `translation: fitted`; `run_v0p85.bat`. Tests: `tests/test_v0p85.py`.
 
 ## 0.80.1 — 2026-10-17

@@ -236,8 +236,8 @@ def test_selection_defaults_v0p65p1():
     from mppp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
     cfg = (ROOT / "src" / "mppp" / "config.py").read_text()          # the tests run with the selection rules off
     assert '"lmst_window_h": [6.0, 18.0]' in cfg and '"max_saturated_fraction": 0.2,' in cfg
-    assert NAVCAM_MIN_FRAME_FRACTION == 0.2 and PROCESS_RULES == 4
+    assert NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3) and PROCESS_RULES == 4     # v0p85: 1/3
     nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
     src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert "LMST_WINDOW_H          = (6.0, 18.0)" in src and "MAX_SATURATED_FRACTION = 0.2 " in src
-    assert "NAVCAM_MIN_FRAME_FRACTION = 0.2" in src and "min_frame_fraction=NAVCAM_MIN_FRAME_FRACTION" in src
+    assert "NAVCAM_MIN_FRAME_FRACTION = 1/3" in src and "min_frame_fraction=NAVCAM_MIN_FRAME_FRACTION" in src

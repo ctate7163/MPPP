@@ -102,3 +102,27 @@ def test_site_fixes_19_oct():
     assert "NEARBY_FROM_FIRST_SOL = False" in src and "min_sol=_NEAR_MIN" in src
     bat = (ROOT / "scripts" / "windows" / "run_v0p85.bat").read_text()
     assert "move_scapes.py\" --apply" in bat
+
+
+def test_one_third_rule_is_about_subframes():
+    """Christian (19 Oct): the 1/3 rule leaves out sub-frames covering less than 1/3 of the frame - not images whose
+    mask keeps less than 1/3 (v0p82's reading, now off)."""
+    import pytest
+    from mppp.runner import ALIGN_RULES
+    from mppp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
+    from mppp.sfm.workdir import MIN_INCLUDED_FRACTION
+    assert NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3) and MIN_INCLUDED_FRACTION is None and ALIGN_RULES >= 85
+    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
+    src = "".join("".join(c["source"]) for c in nb["cells"])
+    assert "MIN_INCLUDED_FRACTION  = None" in src and 'SUBFRAME_FAMILIES = ("N",)' in src
+    assert "frame_fraction_families=SUBFRAME_FAMILIES" in src
+
+
+def test_pipeline_stop_before(tmp_path):
+    out = subprocess.run([sys.executable, str(ROOT / "scripts" / "run_pipeline.py"), "--root", str(tmp_path),
+                          "--dry-run", "--from", "navcam_runs", "--stop-before", "zcam_start", "--no-baseline-study"],
+                         capture_output=True, text=True, timeout=120)
+    log = out.stdout + out.stderr
+    assert "stopped before zcam_start" in log, log[-2000:]
+    bat = (ROOT / "scripts" / "windows" / "run_v0p85.bat").read_bytes()
+    assert b"--stop-before zcam_start" in bat and b"\r\n" in bat

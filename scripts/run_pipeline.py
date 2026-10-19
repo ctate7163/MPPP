@@ -501,6 +501,9 @@ class Pipeline:
                     self.mark(s, "skipped", note=f"--from {self.a.start}")
         rc = 0
         for s in order:
+            if getattr(self.a, "stop_before", None) and s == self.a.stop_before:     # v0p85
+                self.log(f"stopped before {s} (--stop-before); run again without it to go on from here")
+                break
             if (self.state.get(s) or {}).get("status") in ("done", "skipped") and s not in (self.a.redo or []) \
                     and s != "report":
                 self.log(f"{s}: {self.state[s]['status']} before - not run again")
@@ -554,6 +557,8 @@ def main(argv=None) -> int:
                     help="time limit of one run_sites call (a hung alignment is stopped with its kernel)")
     ap.add_argument("--from", dest="start", choices=STAGES, help="start at this stage (the ones before: skipped)")
     ap.add_argument("--redo", nargs="*", choices=STAGES, help="run these stages again even if done")
+    ap.add_argument("--stop-before", choices=STAGES, default=None,
+                    help="v0p85: stop before this stage (e.g. zcam_start: the Navcam part only); start again without it to go on")
     ap.add_argument("--reset", action="store_true", help="forget the state (every stage runs again)")
     ap.add_argument("--status", action="store_true", help="show the state and exit")
     ap.add_argument("--dry-run", action="store_true", help="show the commands, run nothing")

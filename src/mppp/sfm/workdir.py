@@ -159,7 +159,7 @@ def load_settings(path: PathLike) -> Dict[str, Any]:
     return {k: v for k, v in d.items() if not str(k).startswith("_")}
 
 
-MIN_INCLUDED_FRACTION = 1.0 / 3.0   # v0p82 (Christian, 17 Oct): notebook 03 MIN_INCLUDED_FRACTION
+MIN_INCLUDED_FRACTION = None   # v0p85: off (v0p82: 1/3 - a misreading of Christian's 1/3 rule, which is about sub-frames: NAVCAM_MIN_FRAME_FRACTION); notebook 03 MIN_INCLUDED_FRACTION
 
 
 def filter_included_fraction(metas: Sequence[Dict[str, Any]], min_fraction: Optional[float] = MIN_INCLUDED_FRACTION

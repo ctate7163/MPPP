@@ -130,8 +130,9 @@ def camera_key(fn: Dict[str, Any]) -> str:
 
 
 # ------------------------------------------------------------------ selection
-NAVCAM_MIN_FRAME_FRACTION = 0.2     # select_best_products drops Navcam sub-frames / tiles below this (v0p65; 0.25 in v0p44,
-                                    # 0.5 in v0p43.3); notebook 03 NAVCAM_MIN_FRAME_FRACTION
+NAVCAM_MIN_FRAME_FRACTION = 1.0 / 3.0   # select_best_products drops sub-frames / tiles below this share of the full
+                                        # frame (v0p85, Christian's 1/3 rule; 0.2 in v0p65, 0.25 in v0p44, 0.5 in
+                                        # v0p43.3); notebook 03 NAVCAM_MIN_FRAME_FRACTION
 
 
 def frame_fraction(path: PathLike, size: Optional[int] = None) -> Optional[float]:
@@ -170,9 +171,9 @@ def select_best_products(paths: Iterable[PathLike], sizes: Optional[Dict[str, in
     maps file name -> bytes (default: stat the files).  ``sequence_prefix``
     keeps only e.g. NCAM sequences (drops SAPP sun images, SCAM support images);
     a tuple keeps several, e.g. ``("NCAM", "ZCAM")`` for Navcam + Mastcam-Z.
-    ``min_frame_fraction`` (v0p43.3; default 0.2 since v0p65, 0.25 in v0p44, 0.5 before; None: off): products of ``frame_fraction_families`` (Navcam)
+    ``min_frame_fraction`` (v0p43.3; default 1/3 since v0p85, 0.2 in v0p65, 0.25 in v0p44, 0.5 before; None: off): products of ``frame_fraction_families`` (Navcam)
     covering less of the detector frame than this are left out - the single full-resolution tiles (1/16 of the
-    frame; a quarter-frame tile, exactly 1/4, is kept) of a full-resolution acquisition, which also comes as one full frame.  Returns (paths, report).
+    frame; since v0p85 a quarter-frame tile, 1/4, is left out too) of a full-resolution acquisition, which also comes as one full frame.  Returns (paths, report).
     """
     prefixes = None if not sequence_prefix else tuple(
         x.upper() for x in ([sequence_prefix] if isinstance(sequence_prefix, str) else sequence_prefix))

@@ -17,6 +17,8 @@ REM v0p85: the block folders live in D:\scapes (not D:\scapes\colmap) and have n
 REM the pipeline starts, scripts\move_scapes.py --apply moves what is still in D:\scapes\colmap (renames, nothing is
 REM copied or overwritten; log D:\scapes\mppp_pipeline\move_scapes_v0p85.json). Same as move_scapes.bat.
 REM
+REM   run_v0p85.bat --navcam-only   the Navcam part only (stops before zcam_start); then  run_v0p85.bat --continue
+REM
 REM Same window, log and stop rules as run_pipeline.bat (stop_mppp.bat to stop; double-click this again to go on).
 REM ======================================================================================================
 setlocal
@@ -25,6 +27,10 @@ call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
 python "%MPPP_HOME%\scripts\move_scapes.py" --apply || ( echo moving the block folders failed - nothing started & pause & exit /b 1 )
 if /i "%~1"=="--continue" (
   call "%~dp0run_pipeline.bat" --no-baseline-study
+  exit /b %ERRORLEVEL%
+)
+if /i "%~1"=="--navcam-only" (
+  call "%~dp0run_pipeline.bat" --reset --from navcam_runs --no-baseline-study --stop-before zcam_start
   exit /b %ERRORLEVEL%
 )
 call "%~dp0run_pipeline.bat" --reset --from navcam_runs --no-baseline-study %*
