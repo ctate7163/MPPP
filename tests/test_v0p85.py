@@ -335,3 +335,31 @@ def test_lightglue_default_and_safe_fallback(tmp_path, monkeypatch):
     assert (tmp_path / "mppp" / "lightglue_probe.json").is_file() and M.lightglue_probe()["cached"]
     nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
     assert 'matcher="sift_lightglue"' in "".join("".join(c["source"]) for c in nb["cells"])
+
+
+def test_gpu_python_pointer_and_install_bats(tmp_path, monkeypatch):
+    """v0p86: install_lightglue.bat points MPPP at its environment through %LOCALAPPDATA%/mppp/gpu_python.txt;
+    render_paper.bat renders the JOSS paper after every claude_sync.bat."""
+    from mppp.sfm.gpu import gpu_python
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("MPPP_GPU_PY", raising=False)
+    assert gpu_python("C:/x/python.exe") == "C:/x/python.exe"
+    py = tmp_path / "env" / "python.exe"
+    py.parent.mkdir()
+    py.write_text("")
+    (tmp_path / "mppp").mkdir()
+    (tmp_path / "mppp" / "gpu_python.txt").write_text(f"{py}\n# comment\n", encoding="utf-8")
+    assert gpu_python("C:/x/python.exe") == str(py)
+    (tmp_path / "mppp" / "gpu_python.txt").write_text("C:/missing/python.exe\n", encoding="utf-8")
+    assert gpu_python("C:/x/python.exe") == "C:/x/python.exe"
+    win = ROOT / "scripts" / "windows"
+    lg = (win / "install_lightglue.bat").read_bytes()
+    assert b"\r\n" in lg and b"\n" not in lg.replace(b"\r\n", b"")
+    for k in (b'"colmap=4.2.1=cuda_%CU%*_1"', b"onnxruntime-cpp", b"--clone %OLD%", b"lightglue_check.py",
+              b"gpu_python.txt", b"--off"):
+        assert k in lg, k
+    rp = (win / "render_paper.bat").read_bytes()
+    assert b"--citeproc" in rp and b"--quiet" in rp and b"\r\n" in rp
+    assert b"render_paper.bat\" --quiet" in (win / "claude_sync.bat").read_bytes()
+    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
+    assert "GPU_PY = gpu_python(" in "".join(nb["cells"][3]["source"])

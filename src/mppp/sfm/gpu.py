@@ -33,6 +33,22 @@ _BOOT = ("import sys; sys.path.insert(0, sys.argv[1]); "
          "from mppp.sfm.gpu import _main; _main(sys.argv[2:])")
 
 
+def gpu_python(default: Optional[PathLike] = None) -> Optional[str]:
+    """v0p86: the GPU environment's python.exe - ``MPPP_GPU_PY``, else the one line of
+    ``%LOCALAPPDATA%/mppp/gpu_python.txt`` (written by ``install_lightglue.bat`` once its environment passed the
+    LightGlue test; delete the file to go back), else ``default``.  A path that does not exist is skipped."""
+    cands = [os.environ.get("MPPP_GPU_PY")]
+    f = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".cache") / "mppp" / "gpu_python.txt"
+    if f.is_file():
+        lines = [ln.strip().strip('"') for ln in f.read_text(encoding="utf-8").splitlines()
+                 if ln.strip() and not ln.lstrip().startswith("#")]
+        cands.append(lines[0] if lines else None)
+    for c in cands:
+        if c and Path(c).is_file():
+            return str(c)
+    return None if default is None else str(default)
+
+
 def _env_for(python: Path) -> Dict[str, str]:
     """Environment for a conda python run without ``conda activate``: its DLL folders on PATH."""
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "CONDA_PREFIX")}

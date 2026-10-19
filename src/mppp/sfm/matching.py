@@ -15,7 +15,8 @@ learned matcher (COLMAP 4.2 ``FeatureMatcherType.SIFT_LIGHTGLUE``) that copes be
 illumination differences (Navcam - Mastcam-Z, other LMST).  It needs a pycolmap built with ONNX support and the
 LightGlue model (downloaded by COLMAP on first use); without it COLMAP aborts the whole process, so
 :func:`lightglue_probe` first tries it in a separate process on synthetic images and times it.  Unavailable, or
-slower than :data:`LIGHTGLUE_MAX_MS_PER_PAIR` (a CPU-only build), the run uses SIFT brute force and says so.
+too slow for the block (more than :data:`LIGHTGLUE_MAX_HOURS_PER_BLOCK` at the probe's speed with the pipeline's
+feature setting, ``max_num_features`` 32 768), the run uses SIFT brute force and says so.
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ PathLike = Union[str, Path]
 
 MATCHERS = ("sift_lightglue", "sift")
 DEFAULT_MATCHER = "sift_lightglue"            # v0p86
-LIGHTGLUE_MAX_MS_PER_PAIR = 80.0             # slower than this (CPU ONNX, slow GPU): SIFT brute force instead
+LIGHTGLUE_MAX_HOURS_PER_BLOCK = 2.0          # projected LightGlue matching time above this: SIFT brute force instead
 
 
 def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequence[Tuple[str, str, Any]]] = None,
@@ -86,12 +87,17 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     used = "sift"
     if matcher == "sift_lightglue":                       # v0p86
         probe = lightglue_probe(use_gpu=use_gpu)
-        if probe.get("ok") and float(probe.get("ms_per_pair") or 1e9) <= LIGHTGLUE_MAX_MS_PER_PAIR:
+        n_pairs = _pair_count(project, mode, pairs)
+        ms = float(probe.get("ms_per_pair") or 1e9)
+        hours = n_pairs * ms / 3.6e6
+        if probe.get("ok") and hours <= LIGHTGLUE_MAX_HOURS_PER_BLOCK:
             mo.type = pycolmap.FeatureMatcherType.SIFT_LIGHTGLUE
             used = "sift_lightglue"
-            print(f"[mppp] matcher: SIFT + LightGlue ({probe.get('ms_per_pair'):.0f} ms per pair in the probe)", flush=True)
+            print(f"[mppp] matcher: SIFT + LightGlue ({ms:.0f} ms per pair in the probe; {n_pairs} pairs, about "
+                  f"{hours * 60:.0f} min)", flush=True)
         else:
-            why = probe.get("error") or f"{probe.get('ms_per_pair'):.0f} ms per pair (> {LIGHTGLUE_MAX_MS_PER_PAIR:g})"
+            why = probe.get("error") or (f"{ms:.0f} ms per pair x {n_pairs} pairs = {hours:.1f} h "
+                                         f"> {LIGHTGLUE_MAX_HOURS_PER_BLOCK:g} h")
             print(f"[mppp] matcher: SIFT + LightGlue not used here ({why}); SIFT brute force", flush=True)
     vo = pycolmap.TwoViewGeometryOptions()
     vo.ransac.max_error = float(max_error_px)
@@ -182,6 +188,23 @@ def match_settings(mode: str = "exhaustive", **kwargs: Any) -> Dict[str, Any]:
 
 
 # ------------------------------------------------------------------ v0p86: SIFT + LightGlue availability
+def _pair_count(project: SfmProject, mode: str, pairs) -> int:
+    """Pairs this matching call will match (exhaustive: n (n - 1) / 2 less the pairs already in the database)."""
+    if mode != "exhaustive":
+        if pairs is not None:
+            return len(pairs)
+        f = project.root / "pairs_prior.txt"
+        return sum(1 for ln in f.read_text().splitlines() if ln.strip()) if f.is_file() else 0
+    import pycolmap
+    d = pycolmap.Database.open(str(project.database))
+    try:
+        n = int(d.num_images())
+        done = int(d.num_matched_image_pairs())
+    finally:
+        d.close()
+    return max(n * (n - 1) // 2 - done, 0)
+
+
 def _probe_cache() -> Path:
     import os
     base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".cache") / "mppp"
@@ -190,14 +213,18 @@ def _probe_cache() -> Path:
 
 def lightglue_probe(use_gpu: Optional[bool] = None, refresh: bool = False, timeout_s: float = 600.0) -> Dict[str, Any]:
     """Whether this Python's pycolmap can match SIFT features with LightGlue, and how fast: runs
-    ``python -m mppp.sfm.matching probe`` (synthetic 1648 x 1200 images, SIFT, then LightGlue on 1 and on 15 pairs;
-    the difference gives ms per pair without the model loading).  A missing ONNX build aborts that process, not
-    this one.  The result is cached per Python and pycolmap version (``%LOCALAPPDATA%/mppp/lightglue_probe.json``)."""
+    ``python -m mppp.sfm.matching probe`` on synthetic images (:func:`_probe_main`; ``ms_per_pair`` with the
+    pipeline's feature setting when LightGlue is fast enough to try that).  A missing ONNX build aborts that process, not
+    this one.  The result is cached per Python and pycolmap build (``%LOCALAPPDATA%/mppp/lightglue_probe.json``)."""
     import json
     import subprocess
     import sys
     import pycolmap
-    key = f"{sys.executable}|{pycolmap.__version__}|{'gpu' if use_gpu else ('cpu' if use_gpu is False else 'auto')}"
+    core = sorted(Path(pycolmap.__file__).parent.glob("_core*"))   # the build, not only the version
+    st = core[0].stat() if core else None
+    build = f"{st.st_size}:{int(st.st_mtime)}" if st else "?"
+    key = (f"{sys.executable}|{pycolmap.__version__}|{build}|"
+           f"{'gpu' if use_gpu else ('cpu' if use_gpu is False else 'auto')}")
     cache = _probe_cache()
     try:
         have = json.loads(cache.read_text(encoding="utf-8")) if cache.is_file() else {}
@@ -230,44 +257,72 @@ def lightglue_probe(use_gpu: Optional[bool] = None, refresh: bool = False, timeo
     return out
 
 
-def _probe_main(opts: Dict[str, Any]) -> None:
-    import json
-    import tempfile
+def _texture(rng, h: int, w: int, scales) -> "np.ndarray":
+    import numpy as np
+    a = np.zeros((h, w))
+    for sc in scales:
+        b = rng.random((h // sc + 1, w // sc + 1))
+        a += np.kron(b, np.ones((sc, sc)))[:h, :w]
+    return a / len(scales)
+
+
+def _probe_round(td: Path, tag: str, big, n: int, H: int, W: int, max_feat: int, device) -> Dict[str, Any]:
+    """Extract SIFT on ``n`` shifted crops of ``big`` and match them all with LightGlue; seconds and keypoints."""
     import time
     import numpy as np
     import pycolmap
     from PIL import Image
+    img = td / f"{tag}{n}"
+    img.mkdir()
+    for k in range(n):
+        Image.fromarray((255 * big[3 * k:3 * k + H, 5 * k:5 * k + W]).astype(np.uint8)).save(img / f"{k}.png")
+    db = td / f"{tag}{n}.db"
+    eo = pycolmap.FeatureExtractionOptions()
+    eo.sift.max_num_features = int(max_feat)
+    eo.max_image_size = max(H, W)
+    pycolmap.extract_features(str(db), str(img), extraction_options=eo, device=device)
+    mo = pycolmap.FeatureMatchingOptions()
+    mo.type = pycolmap.FeatureMatcherType.SIFT_LIGHTGLUE
+    t0 = time.time()
+    pycolmap.match_exhaustive(str(db), matching_options=mo, device=device)
+    dt = time.time() - t0
+    d = pycolmap.Database.open(str(db))
+    try:
+        kp = [int(d.read_keypoints(im.image_id).shape[0]) for im in d.read_all_images()]
+        inl = int(d.num_inlier_matches())
+    finally:
+        d.close()
+    return {"seconds": dt, "keypoints": int(np.median(kp)), "inlier_matches": inl}
+
+
+def _probe_main(opts: Dict[str, Any]) -> None:
+    """Round 1: 2 and 6 small images, ~8 000 keypoints (does LightGlue run, roughly how fast).  Round 2, only when
+    round 1 is fast: 2 and 4 dense-texture images with the pipeline's feature setting (max_num_features 32 768);
+    ms per pair = (t4 - t2) / 5 pairs, without the model loading."""
+    import json
+    import tempfile
+    import numpy as np
+    import pycolmap
     use_gpu = opts.get("use_gpu")
     device = pycolmap.Device.auto if use_gpu is None else (pycolmap.Device.cuda if use_gpu else pycolmap.Device.cpu)
     rng = np.random.default_rng(0)
-    H, W = 1200, 1648
-    base = rng.random((H // 4 + 40, W // 4 + 40))
-    big = np.kron(base, np.ones((4, 4)))                    # blocky texture: thousands of SIFT features
+    out: Dict[str, Any] = {"cuda": bool(getattr(pycolmap, "has_cuda", False))}
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
-        times = {}
-        for n in (2, 6):
-            img = td / f"img{n}"
-            img.mkdir()
-            for k in range(n):
-                y, x = 3 * k, 5 * k
-                a = big[y:y + H, x:x + W]
-                Image.fromarray((255 * a).astype(np.uint8)).save(img / f"{k}.png")
-            db = td / f"d{n}.db"
-            eo = pycolmap.FeatureExtractionOptions()
-            eo.sift.max_num_features = 8192
-            pycolmap.extract_features(str(db), str(img), extraction_options=eo, device=pycolmap.Device.cpu)
-            mo = pycolmap.FeatureMatchingOptions()
-            mo.type = pycolmap.FeatureMatcherType.SIFT_LIGHTGLUE
-            t0 = time.time()
-            pycolmap.match_exhaustive(str(db), matching_options=mo, device=device)
-            times[n] = time.time() - t0
-            d = pycolmap.Database.open(str(db))
-            inl = int(d.num_inlier_matches())
-            d.close()
-        ms = 1000.0 * max(times[6] - times[2], 1e-3) / 14.0
-        print("MPPP_PROBE " + json.dumps({"ok": inl > 0, "ms_per_pair": ms, "seconds": times, "inlier_matches": inl,
-                                          "cuda": bool(getattr(pycolmap, "has_cuda", False))}), flush=True)
+        H, W = 1200, 1648
+        big = _texture(rng, H + 40, W + 40, (4,))
+        r2 = _probe_round(td, "s", big, 2, H, W, 8192, device)
+        r6 = _probe_round(td, "s", big, 6, H, W, 8192, device)
+        ms_small = 1000.0 * max(r6["seconds"] - r2["seconds"], 1e-3) / 14.0
+        out.update(ok=r6["inlier_matches"] > 0, ms_per_pair_small=ms_small, keypoints_small=r6["keypoints"],
+                   ms_per_pair=ms_small, keypoints=r6["keypoints"])
+        if out["ok"] and ms_small < 300.0 and not opts.get("quick"):
+            H, W = 1600, 2200
+            big = _texture(rng, H + 40, W + 40, (2, 4, 8, 16))
+            a = _probe_round(td, "b", big, 2, H, W, 32768, device)
+            b = _probe_round(td, "b", big, 4, H, W, 32768, device)
+            out.update(ms_per_pair=1000.0 * max(b["seconds"] - a["seconds"], 1e-3) / 5.0, keypoints=b["keypoints"])
+    print("MPPP_PROBE " + json.dumps(out), flush=True)
 
 
 if __name__ == "__main__":
