@@ -364,7 +364,7 @@ def test_shipped_sites_and_model_v0p75():
     assert r["enchanted_lake"] == [(556, 590), (421, 423)] and S.SITES["chal_rocks"] == (361, 378)
     g = t["groups"]
     assert "olifants" not in g["navcam_consensus"] and "cheyava_falls" in g["navcam_consensus"]
-    assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]
+    assert "threeforks_large" not in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]   # v0p86
     assert "zcam34_consensus_v0p82" not in g and "threeforks_north" in g["zcam34_consensus"]   # 19 Oct pm
     assert "threeforks_large" not in g["zcam34_consensus"]
     m = zcam_focus_model()

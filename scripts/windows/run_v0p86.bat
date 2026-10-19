@@ -1,12 +1,12 @@
 @echo off
 REM ======================================================================================================
-REM MPPP v0p86 (was run_v0p85.bat) - the full run: 17 Navcam blocks, 7 Mastcam-Z 34 mm blocks (Christian, 19 Oct 2026).
+REM MPPP v0p86 (was run_v0p85.bat) - the full run: 16 Navcam blocks, 7 Mastcam-Z 34 mm blocks (Christian, 19 Oct 2026).
 REM Start it after zr_diagnose_z34.bat has finished
 REM and _transfer\claude_sync.bat has been run.
 REM
 REM   Navcam cameras: the 18 Oct pass-2 consensus of 23 blocks, already promoted in the repo (cmods CHANGES.md)
-REM   navcam_runs:     the 17 blocks of the navcam_consensus group (sites.json), rig epochs of at most 25 sols
-REM   navcam_consensus_2: the joint over those 17 blocks (NL and NR cx against temperature, early offsets
+REM   navcam_runs:     the 16 blocks of the navcam_consensus group (sites.json; Three Forks Large left out in v0p86), rig epochs of at most 25 sols
+REM   navcam_consensus_2: the joint over those 16 blocks (NL and NR cx against temperature, early offsets
 REM                    started at the pass-2 values, one round), promoted if every check passes; rig residuals
 REM   waypoint_check
 REM   (baseline study skipped: the v0p82 run's study of 18 Oct answers the baseline question)
