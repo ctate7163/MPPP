@@ -7,7 +7,8 @@ v0p85 (Christian, 19 Oct 2026): move the block folders from ``D:\\scapes\\colmap
 
 * Block folders get the v0p85 name.  Where the site's first sol in ``sites.json`` changed (e.g. Bell Island Large
   1435 -> 1431), the folder takes the new first sol, so the next run reuses its processed images - unless a folder
-  with that sol already exists (then only ``_colmap`` is dropped).
+  with that sol already exists (then only ``_colmap`` is dropped).  Block folders already in the new root are
+  renamed the same way when their site's first sol changed later (e.g. Issole South Seitah 285 -> 201).
 * Inside each moved block, the absolute paths in ``*/project.json``, ``*/run_done.json`` and ``colmap_gui.ini`` are
   rewritten to the new folder.
 * Everything else in the old root (``camera_analysis``, ``mppp_pipeline``, ``pointclouds``, ``error_analysis``,
@@ -95,6 +96,16 @@ def plan(old_root: Path, new_root: Path, table: Dict) -> Tuple[List[Tuple[Path, 
                     moves.append((c, dest / c.name, "merge"))
         else:
             conflicts.append(f"{p} -> {dest}: exists, left in place")
+    # v0p85: block folders already in the new root whose site's first sol changed since (e.g. Issole 285 -> 201)
+    if new_root.is_dir():
+        for p in sorted(new_root.iterdir()):
+            site, zcam = S._site_of_folder(p)
+            if not p.is_dir() or site not in table or p.name.endswith((S.OLD_NAV_SUFFIX, S.OLD_ZCAM_SUFFIX)):
+                continue
+            want = S.folder_name(site, S.sol_span(table[site])[0], zcam)
+            if want != p.name and want not in taken:
+                moves.append((p, new_root / want, "rename"))
+                taken.add(want)
     return moves, conflicts
 
 
@@ -105,13 +116,10 @@ def main() -> int:
     ap.add_argument("--apply", action="store_true", help="move (default: dry run)")
     a = ap.parse_args()
     old_root, new_root = Path(a.old_root), Path(a.new_root)
-    if not old_root.is_dir():
-        print(f"{old_root}: not found - nothing to move")
-        return 0
     table = S.load_sites()
     moves, conflicts = plan(old_root, new_root, table)
     if not moves and not conflicts:
-        print(f"{old_root}: nothing left to move")
+        print(f"{old_root}: nothing left to move; every block folder in {new_root} has its site's first sol")
         return 0
     print(("Moving" if a.apply else "Would move (dry run; --apply to move)") + f" {len(moves)} entries "
           f"from {old_root} to {new_root}:")
@@ -121,7 +129,7 @@ def main() -> int:
         print(f"  {kind:5s}  {src.name}  ->  {dst}{renamed}")
         if a.apply:
             src.rename(dst)
-            n = rewrite_paths(dst, src, dst, True) if kind == "block" else 0
+            n = rewrite_paths(dst, src, dst, True) if kind in ("block", "rename") else 0
             log.append({"from": str(src), "to": str(dst), "kind": kind, "files_rewritten": n})
     for c in conflicts:
         print(f"  CONFLICT  {c}")

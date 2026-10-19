@@ -218,3 +218,34 @@ def test_zr_trace_and_report(tmp_path):
     assert "**ZR lost its frames at `r3_tri`** (after `r2_ba`: 8 -> 0)" in t and t.count("| r3_tri |") == 1
     bat = (ROOT / "scripts" / "windows" / "zr_diagnose_z34.bat").read_bytes()
     assert b"MPPP_ZCAM_TRACE=2" in bat and b"--sites rochette south_arm --zcam" in bat and b"\r\n" in bat
+
+
+def test_sites_19_oct_afternoon():
+    """Christian (19 Oct): notes last; Issole 201 + 286-339; Seitah North Large in the Navcam consensus and the
+    baseline; seven more consensus blocks; Seitah Overlook 113-125; Butler Landing 1-14 + 32-44; Butler Landing
+    Large gone; Van Zyl Overlook Huge 15-99 + 361-378 replaces Van Zyl Overlook Large."""
+    t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
+    S, G = t["sites"], t["groups"]
+    assert all(list(v)[-1] == "notes" for v in S.values() if "notes" in v)
+    assert S["issole_seitah_south"]["sols"] == [[201, 201], [286, 339]]
+    assert S["seitah_north_large"]["sols"] == [[202, 284]]
+    assert S["artuby_ridge"]["sols"] == [[342, 349], [174, 176]]
+    assert S["seitah_overlook"]["sols"] == [[113, 125]] and S["butler_landing"]["sols"] == [[1, 14], [32, 44]]
+    assert "butler_landing_large" not in S and "van_zyl_overlook_large" not in S
+    assert S["van_zyl_overlook_huge"]["sols"] == [[15, 99], [361, 378]]
+    nc = set(G["navcam_consensus"])
+    assert {"seitah_north_large", "marble_mountain", "hippo_pools", "cheyava_falls", "bunsen_peak", "tuxedo_park",
+            "belva_crater_large", "oeb_landing_site"} <= nc and len(nc) == 17
+    assert "seitah_north_large" in G["navcam_baseline"] and "van_zyl_overlook_huge" in G["navcam_baseline"]
+    assert not any(s in ("butler_landing_large", "van_zyl_overlook_large") for g in G.values() for s in g)
+
+
+def test_move_scapes_renames_in_the_new_root(tmp_path):
+    new = tmp_path / "scapes"
+    (new / "mars2020_sol_0285_issole_seitah_south" / "colmap").mkdir(parents=True)
+    (new / "mars2020_sol_0178_rochette_zcam").mkdir()
+    cmd = [sys.executable, str(ROOT / "scripts" / "move_scapes.py"), "--old-root", str(new / "colmap"),
+           "--new-root", str(new), "--apply"]
+    subprocess.run(cmd, capture_output=True, text=True, check=True)
+    names = {p.name for p in new.iterdir()}
+    assert "mars2020_sol_0201_issole_seitah_south" in names and "mars2020_sol_0178_rochette_zcam" in names

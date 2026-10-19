@@ -137,7 +137,7 @@ def test_check_sites(tmp_path):
     err, warn = validate_site_table()
     assert err == [] and not any("overlap" in w and "partly" not in w for w in warn)   # nested blocks are not flagged
     bad = tmp_path / "s.json"
-    txt = SITES_FILE.read_text(encoding="utf-8").replace('"settings": {}},', '"settings": {}}', 1)
+    txt = SITES_FILE.read_text(encoding="utf-8").replace('"},\n  "', '"}\n  "', 1)     # v0p85: lines end with "notes"
     bad.write_text(txt, encoding="utf-8")
     err, _ = validate_site_table(bad)
     assert len(err) == 1 and "comma missing" in err[0] and "line" in err[0]

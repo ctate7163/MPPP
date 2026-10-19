@@ -172,8 +172,9 @@ def test_baseline_rule_needs_better_scale_agreement_and_isotropy():
 def test_baseline_sites_qualify_from_the_waypoint_fields():
     m = _script("navcam_baseline_study")
     keep, left = m.qualifying_sites()
-    assert keep and all(s in ("van_zyl_overlook_large", "chal_rocks_large", "threeforks_large", "belva_crater_large",
-                              "bell_island_large", "taylorfjellet_huge", "origny_large") for s in keep)
+    assert keep and all(s in ("van_zyl_overlook_huge", "chal_rocks_large", "seitah_north_large", "threeforks_large",
+                              "belva_crater_large", "bell_island_large", "taylorfjellet_huge", "origny_large")
+                        for s in keep)                                   # v0p85: van_zyl huge, seitah north large
     t = {"sites": {"a": {"n_waypoints": 5, "max_waypoint_separation_m": 31.0},
                    "b": {"n_waypoints": 4, "max_waypoint_separation_m": 90.0},
                    "c": {"n_waypoints": 9, "max_waypoint_separation_m": 30.0}}, "groups": {}}
@@ -281,7 +282,7 @@ def test_v0p85_groups_cameras_and_pipeline():
     from mppp.sfm.sites import load_site_table
     from mppp.sfm.cmods_form import check_form
     g = load_site_table()["groups"]
-    assert len(g["navcam_consensus"]) == 12 and len(g["navcam_consensus_v0p82"]) == 23
+    assert len(g["navcam_consensus"]) == 17 and len(g["navcam_consensus_v0p82"]) == 23     # 17 since 19 Oct pm
     assert g["zcam34_consensus"] == ["chal_rocks", "rochette", "rio_chiquito", "south_arm", "origny", "marble_mountain"]
     cm = json.loads((ROOT / "src/mppp/data/cmods/M2020_NR_fisheye_tangential.json").read_text())
     assert abs(cm["thermal"]["cx_px_per_degC"] + 0.0525) < 1e-3 and check_form()["ok"]

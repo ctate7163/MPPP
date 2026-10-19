@@ -246,6 +246,8 @@ def write_table(table: Dict[str, Any], path: PathLike) -> Path:
         L.append(f" {json.dumps(sec)}: {{")
         w = max((len(json.dumps(k)) for k, _ in items), default=8) + 1
         for i, (k, v) in enumerate(items):
+            if sec == "sites" and isinstance(v, dict) and "notes" in v:     # v0p85 (Christian): "notes" last
+                v = {**{kk: vv for kk, vv in v.items() if kk != "notes"}, "notes": v["notes"]}
             L.append(f"  {(json.dumps(k) + ':').ljust(w)} {json.dumps(v, ensure_ascii=False)}"
                      + ("," if i + 1 < len(items) else ""))
         L.append(" }" + ("," if sec != "groups" else ""))
