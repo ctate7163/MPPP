@@ -12,7 +12,7 @@ so :func:`run` copies the folder to a work directory and runs ``mppp_map.py`` th
 figure needs one to a few GB at 300-450 dpi).
 
     from mppp.maps import prototype
-    prototype.run("all", "D:/scapes/colmap/maps_20261017")                       # blocks, zooms, figures 2-6, export
+    prototype.run("all", "D:/scapes/maps_20261017")                       # blocks, zooms, figures 2-6, export
     prototype.run("figures", out, figures=("5", "6"), dpi=450)
     prototype.run("all", out, waypoints="M20_waypoints_newer.json", recluster=True)   # new waypoints
 

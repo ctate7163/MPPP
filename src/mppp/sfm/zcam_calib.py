@@ -1,7 +1,7 @@
 """
 Mastcam-Z 34 mm calibration from solved Navcam + Mastcam-Z blocks (MPPP v0p74).
 
-The blocks (``..._colmap_zcam`` WORK folders, notebook 03) are read from disk without loading their points:
+The blocks (``..._zcam`` WORK folders, notebook 03) are read from disk without loading their points:
 ``project.json`` (cameras, settings: focus lines, Mastcam-Z rig, backlash classification), ``sparse/cahv_ba/
 cameras.bin`` (refined cameras), ``run_done.json`` and ``health/health.json``.
 

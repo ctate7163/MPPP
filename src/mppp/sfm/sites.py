@@ -2,8 +2,8 @@
 The Navcam sites and their notebook 03 alignments (v0p40).
 
 ``SITES`` is the default site list of notebook 03 (name -> sol range of the block), read from the stable site
-definitions file ``mppp/data/sites.json`` (v0p43; :func:`load_site_table`).  :func:`discover_scapes` walks ``SCAPES_ROOT`` (``D:/scapes/colmap``) for the WORK folders notebook 03
-made (v0p53: ``mars2020_sol_<first sol 0000>_<site>_colmap``, and ``..._colmap_zcam`` with Mastcam-Z) and returns the ones that hold a finished
+definitions file ``mppp/data/sites.json`` (v0p43; :func:`load_site_table`).  :func:`discover_scapes` walks ``SCAPES_ROOT`` (``D:/scapes``; ``D:/scapes/colmap`` before v0p85) for the WORK folders notebook 03
+made (v0p85: ``mars2020_sol_<first sol 0000>_<site>``, and ``..._zcam`` with Mastcam-Z; ``..._colmap[_zcam]`` before) and returns the ones that hold a finished
 alignment, labelled and in sol order, for notebooks 04 (camera models) and 05 (error analysis).  :func:`scan_scapes`
 returns every folder with the reason it was left out.
 """
@@ -60,7 +60,7 @@ def load_site_table(path: Optional[PathLike] = None) -> Dict[str, Any]:
     """v0p43: the site definitions file (``mppp/data/sites.json`` by default): ``{"sites": {name: {"sols": [a, b],
     "label", "zcam", "note", "no_mask_inference_at", "settings"}}, "groups": {name: [site, ...]}}``.  ``zcam``
     (v0p53, a list of Mastcam-Z zooms in mm, 34 / 48 / 63 / 79 / 110; before: ``"zcam34": true``): the site also has a Navcam +
-    Mastcam-Z block with those zooms (``mars2020_sol_<sol>_<site>_colmap_zcam``).  v0p75: ``"sols"`` may be a list of
+    Mastcam-Z block with those zooms (``mars2020_sol_<sol>_<site>_zcam``).  v0p75: ``"sols"`` may be a list of
     ranges, ``[[361, 378], [91, 101]]`` (:func:`sol_ranges`; the first names the folder)."""
     f = Path(path) if path else SITES_FILE
     d = json.loads(f.read_text(encoding="utf-8"))
@@ -356,9 +356,13 @@ except Exception as _e:                                 # noqa: BLE001 - a broke
     SITES = {}
 
 _WORDS = {"threeforks": "Three Forks", "seitah": "Seitah"}
-FOLDER_PREFIX = "mars2020_sol_"              # v0p53: mars2020_sol_<first sol, 4 digits>_<site>_colmap[_zcam]
-ZCAM_SUFFIX = "_colmap_zcam"                 # v0p53 (Navcam is in every block; any Mastcam-Z zoom)
-NAV_SUFFIX = "_colmap"
+FOLDER_PREFIX = "mars2020_sol_"              # v0p85: mars2020_sol_<first sol, 4 digits>_<site>[_zcam]
+ZCAM_SUFFIX = "_zcam"                        # v0p85 (Navcam is in every block; any Mastcam-Z zoom); v0p53-v0p82 _colmap_zcam
+NAV_SUFFIX = ""                              # v0p85 (Christian): no "_colmap"; v0p53-v0p82 _colmap
+OLD_NAV_SUFFIX = "_colmap"                   # v0p53-v0p82 names: still read (parse_work_folder, scan_scapes)
+OLD_ZCAM_SUFFIX = "_colmap_zcam"
+DEFAULT_SCAPES_ROOT = "D:/scapes"            # v0p85: the block folders' root (v0p53-v0p82: D:/scapes/colmap)
+OLD_SCAPES_ROOT = "D:/scapes/colmap"
 _OLD_ZCAM_SUFFIXES = ("_colmap_zcam34", "_colmap_nav_zcam34")   # before v0p53: read by parse_work_folder only
 
 
@@ -384,14 +388,14 @@ def check_sites(sites: Dict[str, Any]) -> List[str]:
 
 
 def folder_name(site: str, first_sol: int, zcam: bool = False) -> str:
-    """v0p53: ``mars2020_sol_1451_bell_island_colmap`` (``..._colmap_zcam`` with Mastcam-Z)."""
+    """v0p85: ``mars2020_sol_1451_bell_island`` (``..._zcam`` with Mastcam-Z; v0p53-v0p82 ``..._colmap[_zcam]``)."""
     return f"{FOLDER_PREFIX}{int(first_sol):04d}_{site}" + (ZCAM_SUFFIX if zcam else NAV_SUFFIX)
 
 
 def work_folder(root: PathLike, site: str, zcam: bool = False,
                 sols: Optional[Sequence[int]] = None) -> Path:
-    """Notebook 03's WORK folder of a site (v0p53): ``<root>/mars2020_sol_<first sol>_<site>_colmap`` or
-    ``..._colmap_zcam``.  ``sols``: the site's sol range (default: from the site definitions file)."""
+    """Notebook 03's WORK folder of a site (v0p53): ``<root>/mars2020_sol_<first sol>_<site>`` (v0p85) or
+    ``..._zcam``.  ``sols``: the site's sol range (default: from the site definitions file)."""
     if sols is None:
         table = SITES if site in SITES else load_sites()
         if site not in table:
@@ -402,7 +406,7 @@ def work_folder(root: PathLike, site: str, zcam: bool = False,
 
 def parse_work_folder(folder: PathLike) -> Tuple[Optional[str], bool]:
     """v0p43: ``(site, with Mastcam-Z)`` from a WORK folder name; ``(None, False)`` for another name.  v0p53:
-    ``mars2020_sol_<sol>_<site>_colmap[_zcam]``; the names before v0p53 (``<site>_colmap``, ``<site>_colmap_zcam34``)
+    ``mars2020_sol_<sol>_<site>[_zcam]``; the names before v0p53 (``<site>_colmap``, ``<site>_colmap_zcam34``)
     are still read here, for a WORK_DIR given by hand."""
     site, z = _site_of_folder(Path(folder))
     if site is not None:
@@ -411,8 +415,8 @@ def parse_work_folder(folder: PathLike) -> Tuple[Optional[str], bool]:
     for suf in _OLD_ZCAM_SUFFIXES:
         if n.endswith(suf):
             return n[: -len(suf)], True
-    if n.endswith(NAV_SUFFIX):
-        return n[: -len(NAV_SUFFIX)], False
+    if n.endswith(OLD_NAV_SUFFIX):
+        return n[: -len(OLD_NAV_SUFFIX)], False
     return None, False
 
 
@@ -420,11 +424,11 @@ _FOLDER_RE = None
 
 
 def _site_of_folder(folder: Path) -> Tuple[Optional[str], bool]:
-    """v0p53 names only (``discover_scapes`` / ``scan_scapes`` skip the folders of earlier versions)."""
+    """v0p53 and later names only (``discover_scapes`` / ``scan_scapes`` skip the folders of earlier versions)."""
     import re
     global _FOLDER_RE
     if _FOLDER_RE is None:
-        _FOLDER_RE = re.compile(r"mars2020_sol_(\d{4,})_(.+?)_colmap(_zcam)?")
+        _FOLDER_RE = re.compile(r"mars2020_sol_(\d{4,})_(.+?)(?:_colmap)?(_zcam)?")   # v0p85 names and v0p53-v0p82 (_colmap)
     m = _FOLDER_RE.fullmatch(folder.name)
     if not m:
         return None, False

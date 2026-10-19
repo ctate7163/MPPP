@@ -2,7 +2,7 @@
 Waypoint localisation check (MPPP v0p82, mppp.sfm.waypoint_check): which rover stations' waypoint positions disagree
 with the bundle adjustments, over finished blocks.
 
-    python scripts\\waypoint_check.py [--root D:\\scapes\\colmap] [--groups navcam_consensus navcam_baseline]
+    python scripts\\waypoint_check.py [--root D:\\scapes] [--groups navcam_consensus navcam_baseline]
                                       [--variant ""] [--out DIR] [--folders WORK ...]
 
 Each block's refined camera centres against its waypoint priors, station by station, after a robust similarity
@@ -40,7 +40,7 @@ def block_folders(root: Path, groups, variant: str = ""):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--root", default="D:/scapes/colmap")
+    ap.add_argument("--root", default="D:/scapes")
     ap.add_argument("--groups", nargs="*", default=["navcam_consensus", "navcam_baseline"])
     ap.add_argument("--variant", default="", help="results of <WORK>/colmap_<variant> (default <WORK>/colmap)")
     ap.add_argument("--folders", nargs="*", help="project folders to check instead of the groups")

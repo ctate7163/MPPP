@@ -34,7 +34,7 @@ FORMS = ("v0p73", "v0p80")          # v0p80: as v0p73, but k4 fitted with k3 in 
 CONVENTION = "NL reference"
 NAVCAM_FILES = ("M2020_NL_fisheye_tangential.json", "M2020_NR_fisheye_tangential.json", "M2020_N_rig.json")
 # the candidate of the v0p72 consensus run of 2 Oct 2026 (16 blocks) - promoted in v0p73 in the NL-reference form
-V0P72_CANDIDATE = r"D:\scapes\colmap\camera_analysis\navcal_v0p72_20261002_2\navcam_joint"
+V0P72_CANDIDATE = r"D:\scapes\camera_analysis\navcal_v0p72_20261002_2\navcam_joint"
 
 
 def thermal_terms(th: Optional[Dict[str, Any]]) -> Dict[str, float]:

@@ -15,7 +15,7 @@ REM   Options are passed on, e.g.  navcam_best_chal_rocks.bat --no-promote   or 
 REM Runs in a minimised window; stop_mppp.bat stops it.  Keep the computer awake until it has finished (some hours).
 REM ======================================================================================================
 setlocal
-set "ROOT=D:\scapes\colmap"
+set "ROOT=D:\scapes"
 if not defined MPPP_HOME if exist "%~dp0mppp_env.bat" if exist "%~dp0..\navcam_best_chal_rocks.py" for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 if not defined MPPP_HOME set "MPPP_HOME=D:\code\MPPP"
 set "MPPP_WIN=%MPPP_HOME%\scripts\windows"

@@ -2,8 +2,8 @@
 Time of day (LMST) of the processed images, per site: one histogram panel per site plus one for all sites, Navcam and
 Mastcam-Z 34 mm each normalised to unit area, and a table per site.
 
-    python scripts\\lmst_histogram.py                                   # D:\\scapes\\colmap and D:\\scapes\\colmap_old
-    python scripts\\lmst_histogram.py --roots D:\\scapes\\colmap --sites rockytop sid threeforks_south
+    python scripts\\lmst_histogram.py                                   # D:\\scapes and D:\\scapes\\colmap_old
+    python scripts\\lmst_histogram.py --roots D:\\scapes --sites rockytop sid threeforks_south
     python scripts\\lmst_histogram.py --out "D:\\code\\MPPP\\Claude outputs" --name lmst_2026-09-30
 
 Images come from the newest ``processed/mppp_manifest_v*.json`` of every WORK folder (``<site>_colmap``,
@@ -191,7 +191,7 @@ def draw(images, rows, out_png: Path, window=None):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--roots", nargs="+", default=["D:/scapes/colmap", "D:/scapes/colmap_old"],
+    ap.add_argument("--roots", nargs="+", default=["D:/scapes", "D:/scapes/colmap_old"],
                     help="folders holding the WORK folders")
     ap.add_argument("--sites", nargs="+", default=None, help="only these sites")
     ap.add_argument("--out", default=str(ROOT / "Claude outputs"), help="output folder")

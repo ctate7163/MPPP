@@ -459,7 +459,7 @@ class Pipeline:
                     lines += [(d / f).read_text(encoding="utf-8"), ""]
         # every block's last run
         lines += ["## Blocks", "", "| block | mppp | verdict | registered | rms px | camera models |", "|---|---|---|---|---|---|"]
-        for w in sorted(self.root.glob("mars2020_sol_*_colmap*")):
+        for w in sorted(p for p in self.root.glob("mars2020_sol_*") if p.is_dir()):      # v0p85: no _colmap
             rd = w / "colmap" / "run_done.json"
             if rd.is_file():
                 d = json.loads(rd.read_text(encoding="utf-8"))
@@ -529,7 +529,7 @@ class Pipeline:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--root", default="D:/scapes/colmap")
+    ap.add_argument("--root", default="D:/scapes")
     ap.add_argument("--n", type=int, default=0,
                     help="the number of graded N+Z blocks for the calibration (v0p74.9: 0 = every passing block)")
     ap.add_argument("--final-variant", default="cal",

@@ -2,7 +2,7 @@
 Make a consensus the current best camera models: copy it into ``src/mppp/data/cmods`` (v0p50; ``MPPP_CMODS`` overrides), where
 notebook 03 looks for its start cameras by default (``NAVCAM_CAMERAS``, ``ZCAM_FOCUS_MODEL``).
 
-    python scripts\\promote_cmods.py D:\\scapes\\colmap\\camera_analysis\\navcal_v0p44\\navcam_joint --note "v0p44 joint, 27 blocks"
+    python scripts\\promote_cmods.py D:\\scapes\\camera_analysis\\navcal_v0p44\\navcam_joint --note "v0p44 joint, 27 blocks"
     python scripts\\promote_cmods.py D:\\...\\M2020_ZCAM034_focus_model_candidate.json --note "7-block refit"
     python scripts\\promote_cmods.py --list
 

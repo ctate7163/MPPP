@@ -166,7 +166,7 @@ def _read_manifest(root: Path, processed_dir: Optional[PathLike]) -> Dict[str, D
 
 
 def load_solution(path: PathLike, label: Optional[str] = None, processed_dir: Optional[PathLike] = None) -> Solution:
-    """``path``: the scape folder (``D:/scapes/<name>_colmap``) or its ``colmap`` project folder."""
+    """``path``: the scape folder (``D:/scapes/mars2020_sol_<sol>_<site>``) or its ``colmap`` project folder."""
     root = _find_root(path)
     project = json.loads((root / "project.json").read_text(encoding="utf-8"))
     ei = root / "error_input"

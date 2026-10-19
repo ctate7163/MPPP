@@ -507,7 +507,7 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
     """
     Run notebook 03 on one WORK folder (v0p43): ``source="processed"`` aligns the images already in
     ``<work>/processed``; ``"pds"`` selects and processes them first (the folder name
-    ``mars2020_sol_<sol>_<site>_colmap[_zcam]`` names the site; v0p53).  The executed notebook and ``log.txt`` go to
+    ``mars2020_sol_<sol>_<site>[_zcam]`` names the site; v0p53).  The executed notebook and ``log.txt`` go to
     ``<work>/runs/<time>[_<variant>]/``, the status to ``<work>/mppp_status.json``.  Refuses to start while
     another run of the folder is alive (``force`` overrides).  Returns the final status.
 
@@ -526,7 +526,7 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
         raise FileNotFoundError(f"{work} has no processed/ folder: put this in a WORK folder next to processed/, "
                                 f"or use source 'pds'")
     if source == "pds" and not site:
-        raise ValueError(f"{work.name}: a PDS run needs a folder named mars2020_sol_<sol>_<site>_colmap[_zcam] (v0p53)")
+        raise ValueError(f"{work.name}: a PDS run needs a folder named mars2020_sol_<sol>_<site>[_zcam] (v0p53)")
     work.mkdir(parents=True, exist_ok=True)
     st_path = work / STATUS_FILE
     cur = read_status(st_path)

@@ -2,8 +2,8 @@
 Process and align many sites into their own WORK folders, one after the other (MPPP v0p43).
 
 The sites and their sol ranges come from the stable site definitions ``src/mppp/data/sites.json`` (or
-``--sites-file``).  Each site goes to ``<root>/mars2020_sol_<first sol>_<site>_colmap`` (Navcam) or
-``..._colmap_zcam`` (``--zcam``, with the Mastcam-Z frames of the zooms in the site's ``"zcam"`` list; v0p53): notebook 03 selects the products from the PDS archive, processes
+``--sites-file``).  Each site goes to ``<root>/mars2020_sol_<first sol>_<site>`` (Navcam; v0p85, ``..._colmap`` before) or
+``..._zcam`` (``--zcam``, with the Mastcam-Z frames of the zooms in the site's ``"zcam"`` list; v0p53): notebook 03 selects the products from the PDS archive, processes
 them (reusing images already processed) and aligns them.  Each site is a separate ``scripts/align_scape.py`` run,
 with its own log in ``<WORK>/runs/`` and status in ``<WORK>/mppp_status.json``; this script's own log is
 ``<root>/run_sites_log.txt``.
@@ -117,8 +117,8 @@ def main(argv=None) -> int:
     g.add_argument("--all", action="store_true", help="every site in the site definitions")
     g.add_argument("--group", help="a site group of the site definitions (e.g. navcam_consensus)")
     g.add_argument("--sites", nargs="+", help="site names")
-    ap.add_argument("--root", default="D:/scapes/colmap", help="SCAPES_ROOT: the WORK folders go below it")
-    ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z blocks (..._colmap_zcam) of the sites with a \"zcam\" list")
+    ap.add_argument("--root", default="D:/scapes", help="SCAPES_ROOT: the WORK folders go below it")
+    ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z blocks (..._zcam) of the sites with a \"zcam\" list")
     ap.add_argument("--source", choices=("pds", "processed"), default="pds",
                     help="pds (default): select and process, then align; processed: align what is processed")
     ap.add_argument("--variant", default="", help="results in <WORK>/colmap_<variant>")

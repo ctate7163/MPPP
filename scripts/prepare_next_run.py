@@ -69,7 +69,7 @@ def main(argv=None) -> int:
     ap.add_argument("--candidate", default=V0P72_CANDIDATE, help="the consensus folder that should be in use")
     ap.add_argument("--check-only", action="store_true", help="check and show; change nothing")
     ap.add_argument("--keep", action="store_true", help="keep the cameras in use even if they are not the candidate")
-    ap.add_argument("--root", default="D:/scapes/colmap", help="SCAPES_ROOT (for --groups)")
+    ap.add_argument("--root", default="D:/scapes", help="SCAPES_ROOT (for --groups)")
     ap.add_argument("--groups", nargs="*", default=["navcam_consensus", "zcam34_consensus"],
                     help="site groups to list (a dry run of run_sites.py; zcam groups with --zcam)")
     a = ap.parse_args(argv)

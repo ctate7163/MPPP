@@ -26,12 +26,12 @@ sys.path.insert(0, str(ROOT / "src"))
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", action="append", default=None,
-                    help="scapes folder(s) whose status files are updated (default D:/scapes/colmap)")
+                    help="scapes folder(s) whose status files are updated (default D:/scapes)")
     ap.add_argument("--yes", action="store_true", help="stop without asking")
     ap.add_argument("--list", action="store_true", help="only list the runs")
     a = ap.parse_args(argv)
     from mppp.runner import kill_tree, list_processes, mark_stopped, mppp_processes
-    roots = [Path(r) for r in (a.root or ["D:/scapes/colmap"])]
+    roots = [Path(r) for r in (a.root or ["D:/scapes"])]
     runs = mppp_processes(list_processes())
     if not runs:
         print("No MPPP runs are running.")

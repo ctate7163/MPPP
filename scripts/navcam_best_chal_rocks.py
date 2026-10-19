@@ -16,7 +16,7 @@ diagnose it (navcam_best_chal_rocks.bat).
 The diagnosis goes to ``<WORK>/colmap_v0p80/diagnose/`` and is copied to ``<root>/error_analysis/chal_rocks_v0p80/``.
 Log: ``<root>/mppp_pipeline/chal_rocks_v0p80_log.txt``.
 
-    python scripts\\navcam_best_chal_rocks.py [--root D:\\scapes\\colmap] [--large] [--no-promote] [--source pds]
+    python scripts\\navcam_best_chal_rocks.py [--root D:\\scapes] [--large] [--no-promote] [--source pds]
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ VARIANT = "v0p80"
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--root", default="D:/scapes/colmap")
+    ap.add_argument("--root", default="D:/scapes")
     ap.add_argument("--rig-residuals", help=f"default ROOT/{RIG_RESIDUALS}")
     ap.add_argument("--large", action="store_true", help="also Chal Rocks Large")
     ap.add_argument("--no-promote", action="store_true", help="align with the models in use as they are")

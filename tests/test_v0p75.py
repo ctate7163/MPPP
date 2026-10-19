@@ -38,7 +38,7 @@ def test_site_table_with_visits(tmp_path):
         "groups": {"navcam_consensus": ["sid", "one"]}}))
     assert S.load_sites(f) == {"sid": (361, 378), "one": (700, 712)}
     assert S.load_site_ranges(f) == {"sid": [(361, 378), (91, 101)], "one": [(700, 712)]}
-    assert S.work_folder(tmp_path, "sid", True, [[361, 378], [91, 101]]).name == "mars2020_sol_0361_sid_colmap_zcam"
+    assert S.work_folder(tmp_path, "sid", True, [[361, 378], [91, 101]]).name == "mars2020_sol_0361_sid_zcam"
     err, warn = S.validate_site_table(f)
     assert not err and not warn
     f.write_text(json.dumps({"sites": {"sid": {"sols": [[361, 378], [370, 400]], "zcam": [34]}}, "groups": {}}))
@@ -361,7 +361,7 @@ def test_shipped_sites_and_model_v0p75():
     t = S.load_site_table()
     r = S.load_site_ranges()
     assert r["chal_rocks"] == [(361, 378), (91, 101)] and r["threeforks_large"][0] == (652, 693)
-    assert r["enchanted_lake"] == [(556, 590), (422, 423)] and S.SITES["chal_rocks"] == (361, 378)
+    assert r["enchanted_lake"] == [(556, 590), (421, 423)] and S.SITES["chal_rocks"] == (361, 378)
     g = t["groups"]
     assert "olifants" not in g["navcam_consensus"] and "cheyava_falls" in g["navcam_consensus"]
     assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]

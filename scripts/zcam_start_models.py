@@ -13,9 +13,9 @@ These are the start for the 48, 63 and 110 mm blocks until notebook 04 §5b make
 from the aligned blocks.  Notebook 03 does not need the XMLs (``ZCAM_INTRINSICS = "focus_model"`` starts each eye
 from the labels of its block); they are for Metashape and for ``ZCAM_INTRINSICS = "xml"``.
 
-    python scripts\\zcam_start_models.py D:\\scapes\\colmap\\mars2020_sol_0361_sid_chal_rocks_colmap_zcam ^
-        D:\\scapes\\colmap\\mars2020_sol_1150_overlook_mountain_colmap_zcam --zooms 48 63 110 ^
-        --out D:\\scapes\\colmap\\camera_analysis\\zcam_start_models
+    python scripts\\zcam_start_models.py D:\\scapes\\mars2020_sol_0361_sid_chal_rocks_zcam ^
+        D:\\scapes\\mars2020_sol_1150_overlook_mountain_zcam --zooms 48 63 110 ^
+        --out D:\\scapes\\camera_analysis\\zcam_start_models
 
 Then check them and copy them into the models in use with ``scripts\\promote_cmods.py <out> --note "..."``
 (focus models) - the XMLs are copied by hand into ``src\\mppp\\data\\cmods`` if wanted.

@@ -27,7 +27,7 @@ def test_labels_and_site_checks():
     assert site_label("rockytop") == "Rockytop"
     probs = check_sites(SITES)
     assert probs == []
-    assert SITES["hippo_pools"] == (1947, 2009) and SITES["origny"] == (1781, 1813) and SITES["origny_large"] == (1765, 1813) and SITES["olifants"] == (1880, 1889)
+    assert SITES["hippo_pools"] == (1948, 2009) and SITES["origny"] == (1781, 1813) and SITES["origny_large"] == (1765, 1813) and SITES["olifants"] == (1880, 1889)
 
 
 def test_discover_scapes(tmp_path):
@@ -75,8 +75,8 @@ def test_sites_json_is_the_site_list():
     assert S.parse_work_folder("D:/x/mars2020_sol_0361_sid_chal_rocks_colmap") == ("sid_chal_rocks", False)
     assert S.parse_work_folder("D:/x/south_arm_colmap_zcam34") == ("south_arm", True)     # before v0p53 (by hand)
     assert S.parse_work_folder("D:/x/sid_colmap") == ("sid", False)
-    assert S.work_folder("D:/r", "chal_rocks", True).name == "mars2020_sol_0361_chal_rocks_colmap_zcam"
-    assert S.work_folder("D:/r", "x", False, (7, 9)).name == "mars2020_sol_0007_x_colmap"
+    assert S.work_folder("D:/r", "chal_rocks", True).name == "mars2020_sol_0361_chal_rocks_zcam"   # v0p85
+    assert S.work_folder("D:/r", "x", False, (7, 9)).name == "mars2020_sol_0007_x"
 
 
 def test_sites_file_override(tmp_path):
@@ -172,6 +172,6 @@ def test_zcam_field_and_folder_names(tmp_path):
     assert any("more than once" in w for w in warn) and any("no 63" in w for w in warn)
     t = S.load_site_table(f)
     assert S.zcam_sites(t) == ["a", "d", "e"] and S.zcam_sites(t, zoom=48) == ["e"] and S.zcam34_sites(t) == ["a"]
-    assert S.work_folder(tmp_path, "a", True, (1, 2)).name == "mars2020_sol_0001_a_colmap_zcam"
+    assert S.work_folder(tmp_path, "a", True, (1, 2)).name == "mars2020_sol_0001_a_zcam"
     err, _ = S.validate_site_table()
     assert err == []

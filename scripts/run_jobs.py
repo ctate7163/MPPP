@@ -2,12 +2,12 @@
 v0p75: a job folder the PC watches, so that runs can be started from elsewhere (Claude's cloud session through
 the Claude desktop link, which can write and read files in the scapes folder but has no shell on the PC).
 
-    python scripts\\run_jobs.py --root D:\\scapes\\colmap          (or watch_jobs.bat: minimised window, stays up)
+    python scripts\\run_jobs.py --root D:\\scapes          (or watch_jobs.bat: minimised window, stays up)
 
 Every ``<root>\\_jobs\\<name>.job`` is a text file whose first non-comment line is **an MPPP script and its
 arguments**, e.g.::
 
-    run_sites.py --root D:\\scapes\\colmap --sites chal_rocks --zcam --set ZCAM_ZOOMS=[34] --force
+    run_sites.py --root D:\\scapes --sites chal_rocks --zcam --set ZCAM_ZOOMS=[34] --force
 
 Only scripts in MPPP's own ``scripts`` folder run (``run_sites.py``, ``run_pipeline.py``, ``zcam_calibration.py``,
 ``promote_cmods.py``, ``stop_runs.py``, ...); nothing else is executed, and the job file is the whole command, so
@@ -88,7 +88,7 @@ def pending(jobs: Path):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--root", default="D:/scapes/colmap", help="the scapes folder; jobs in <root>/_jobs")
+    ap.add_argument("--root", default="D:/scapes", help="the scapes folder; jobs in <root>/_jobs")
     ap.add_argument("--poll", type=float, default=15.0, help="seconds between looks at the folder")
     ap.add_argument("--once", action="store_true", help="run the pending jobs and exit")
     a = ap.parse_args(argv)

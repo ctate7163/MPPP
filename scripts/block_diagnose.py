@@ -3,8 +3,8 @@ Diagnose a finished Navcam block (MPPP v0p80, mppp.sfm.diagnose): residuals with
 visits, per visit, eye and temperature bin; registration to the waypoints per visit, rover site and station; the rig
 per epoch; the temperature bins.  Writes <project>/diagnose/diagnose.md, .json, .png.
 
-    python scripts\\block_diagnose.py D:\\scapes\\colmap\\mars2020_sol_0361_chal_rocks_sid_colmap\\colmap_v0p80 ^
-        --compare D:\\scapes\\colmap\\mars2020_sol_0361_chal_rocks_sid_colmap\\colmap
+    python scripts\\block_diagnose.py D:\\scapes\\mars2020_sol_0361_chal_rocks_sid\\colmap_v0p80 ^
+        --compare D:\\scapes\\mars2020_sol_0361_chal_rocks_sid\\colmap
 """
 from __future__ import annotations
 

@@ -3,7 +3,7 @@
 Load it as notebook 03's SITES_EXTRA, or merge its "sites" and "groups" into src/mppp/data/sites.json.
 Each block keeps the MPPP fields (sols, label, zcam, note, no_mask_inference_at, settings) and adds a "block" record.
 "sols" follows the version-4 multi-visit form: a list of [first, last] ranges, the longest visit first
-(it names the folder: mars2020_sol_<first sol>_<key>_colmap); every listed visit is selected."""
+(it names the folder: mars2020_sol_<first sol>_<key>; ..._colmap before v0p85); every listed visit is selected."""
 import json, re, sys, numpy as np
 from sitesdef import P, X, Y, S, F, HALF, fmt_runs, fmt_counts
 from dem import LocalFrame

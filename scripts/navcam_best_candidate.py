@@ -92,7 +92,7 @@ def build(rig_residuals: Path, out: Path, min_z: float = 2.0, force: bool = Fals
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--root", default="D:/scapes/colmap")
+    ap.add_argument("--root", default="D:/scapes")
     ap.add_argument("--rig-residuals", help="rig_residuals.json (default: the newest under ROOT/camera_analysis)")
     ap.add_argument("--out", help="candidate folder (default ROOT/camera_analysis/navcal_v0p80_best_<date>/navcam_joint)")
     ap.add_argument("--min-z", type=float, default=2.0)

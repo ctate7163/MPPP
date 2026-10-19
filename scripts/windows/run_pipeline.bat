@@ -13,7 +13,7 @@ REM   status   run_pipeline.bat --status          report   %ROOT%\mppp_pipeline\
 REM Keep the computer awake (no sleep, no automatic restart for updates) until it has finished.
 REM ======================================================================================================
 setlocal
-set "ROOT=D:\scapes\colmap"
+set "ROOT=D:\scapes"
 if not defined MPPP_HOME if exist "%~dp0mppp_env.bat" if exist "%~dp0..\run_pipeline.py" for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 if not defined MPPP_HOME set "MPPP_HOME=D:\code\MPPP"
 set "MPPP_WIN=%MPPP_HOME%\scripts\windows"

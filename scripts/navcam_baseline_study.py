@@ -15,7 +15,7 @@ touched), with:
 The final Navcam adjustment estimates the rig covariance; ``project.json`` ``settings.reconstruction.rig_fit`` holds
 the baseline and its sd, and ``error_input/summary.json`` the block's scale against the priors.
 
-    python scripts\\navcam_baseline_study.py run      [--root D:\\scapes\\colmap] [--sites ...] [--flags waypoint_flags.json]
+    python scripts\\navcam_baseline_study.py run      [--root D:\\scapes] [--sites ...] [--flags waypoint_flags.json]
                                                      [--prior-sigma 0.5] [--dry-run]
     python scripts\\navcam_baseline_study.py combine  [--root ...] [--out DIR] [--write-rig DIR] [--promote]
     python scripts\\navcam_baseline_study.py all      (run, then combine)
@@ -446,7 +446,7 @@ def confirm(a) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["run", "combine", "all", "confirm"])
-    ap.add_argument("--root", default="D:/scapes/colmap")
+    ap.add_argument("--root", default="D:/scapes")
     ap.add_argument("--sites", nargs="*", help=f"default: the {GROUP} group of sites.json")
     ap.add_argument("--source", default="pds", choices=["processed", "pds"],
                     help="run: pds (default since v0p82: selected again, the processed images reused; a site without a "

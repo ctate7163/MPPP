@@ -1,11 +1,11 @@
 """
 Align one WORK folder with notebook 03's default settings, without Jupyter open (MPPP v0p43).
 
-A WORK folder is a site folder made by notebook 03 (``mars2020_sol_<sol>_<site>_colmap`` or ``..._colmap_zcam``; v0p53) or any
+A WORK folder is a site folder made by notebook 03 (``mars2020_sol_<sol>_<site>`` or ``..._zcam``; v0p53) or any
 folder with a ``processed/`` sub-folder (images, masks and the ``mppp_manifest_v*.json`` of notebook 01 or 03).
 By default the images already processed there are aligned (no PDS search, no image processing)::
 
-    python scripts\\align_scape.py D:\\scapes\\colmap\\mars2020_sol_1408_south_arm_colmap_zcam
+    python scripts\\align_scape.py D:\\scapes\\mars2020_sol_1408_south_arm_zcam
 
 ``align_here.bat`` (scripts\\windows) does the same by double-click from inside the WORK folder.
 
@@ -18,7 +18,7 @@ and the matches while the features and matching settings are the same.  So:
   ``--set "SCHEDULE=((24,10,8),(12,4,4),(8,2,2),(8,2,2))"``), or put them in ``<WORK>\\mppp_settings.json``
   (``{"ATTITUDE_PRIOR_DEG": 1.0}``) or a file given with ``--settings``;
 - **try a camera model** without losing the default results: ``--variant rational --set NAVCAM_DISTORTION="rational"
-  --set NAVCAM_CAMERAS="D:/scapes/colmap/camera_analysis/navcal_v0p40/navcam_joint_rational"``; the variant goes
+  --set NAVCAM_CAMERAS="D:/scapes/camera_analysis/navcal_v0p40/navcam_joint_rational"``; the variant goes
   to ``<WORK>\\colmap_rational`` and starts from ``colmap\\``'s features and matches.
 
 Progress: ``<WORK>\\runs\\<time>\\log.txt`` (every cell and every [sfm] line as it is printed), the executed

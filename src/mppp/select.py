@@ -75,7 +75,8 @@ def find_imgs(input_dir: PathLike, camera_codes: Sequence[str],
 def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: Any,
                    waypoints: Dict[str, Any], radius_m: Optional[float] = 5.0, sequ_id: Optional[str] = None,
                    product_type: Optional[str] = "RAD", include_thumbnails: bool = False,
-                   anchor_stations: Optional[Sequence[Any]] = None) -> Tuple[List[Path], Dict[str, Any]]:
+                   anchor_stations: Optional[Sequence[Any]] = None,
+                   min_sol: Optional[int] = None) -> Tuple[List[Path], Dict[str, Any]]:
     """
     The products of ``sol_range`` plus, for sites the rover visited more than
     once, the products of every other waypoint station within ``radius_m``
@@ -93,6 +94,9 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
     instead of the stations these cameras imaged in ``sol_range`` - notebook 03 passes the Navcam block's stations, so
     a Mastcam-Z zoom gets the products of the same visits as the Navcam (e.g. Sid's sols 91-101 for the 361-378
     block) even where it took no image in ``sol_range``.
+
+    ``min_sol`` (v0p85): the nearby visits add no image from before this sol (notebook 03 ``NEARBY_FROM_FIRST_SOL``:
+    the block's first sol, so e.g. Rochette starts at sol 178, not with the sol-175 station 9 m away).
     """
     from .waypoints import stations_near
     codes = tuple(c.upper() for c in camera_codes)
@@ -118,13 +122,14 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
             else:
                 anc.add((int(st[0]), int(st[1])))
         stations = sorted(anc)
-    report: Dict[str, Any] = {"sol_range": [list(r) for r in sol_ranges(sol_range)], "radius_m": radius_m,
+    report: Dict[str, Any] = {"sol_range": [list(r) for r in sol_ranges(sol_range)], "radius_m": radius_m, "min_sol": min_sol,
                               "stations_in_range": [f"S{a:03d}D{b:04d}" for a, b in stations], "stations_added": []}
     paths = [fp for fp, _ in in_range]
     if radius_m and stations:
         near = {(r["site"], r["drive"]): r for r in stations_near(waypoints, stations, radius_m)}
         added = {k: r for k, r in near.items() if k not in set(stations)}
-        extra = [(fp, fn) for fp, fn in cands if (fn.site, fn.drive) in added and not in_sol_range(fn.sol, sol_range)]
+        extra = [(fp, fn) for fp, fn in cands if (fn.site, fn.drive) in added and not in_sol_range(fn.sol, sol_range)
+                 and (min_sol is None or fn.sol >= int(min_sol))]
         counts: Dict[Tuple[int, int], List[int]] = {}
         for _, fn in extra:
             counts.setdefault((fn.site, fn.drive), []).append(fn.sol)

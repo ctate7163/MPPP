@@ -2,6 +2,15 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.85.0 — 2026-10-19
+
+**The v0p85 run: 12 Navcam / 6 Mastcam-Z 34 mm blocks, the pass-2 Navcam cameras, block folders in `D:\scapes` without `_colmap`, and site fixes (Christian, 19 Oct).**
+- **Block folders** (Christian): `D:\scapes\mars2020_sol_<first sol>_<site>[_zcam]` (before: `D:\scapes\colmap\..._colmap[_zcam]`). `mppp.sfm.sites.DEFAULT_SCAPES_ROOT`; every `--root` default, `ROOT=` in the .bat files and `SCAPES_ROOT` in notebooks 03-05 follow. The old names are still read (`parse_work_folder`, `scan_scapes`).
+- **`scripts/move_scapes.py`** (`move_scapes.bat`; `run_v0p85.bat` runs it with `--apply` first): renames the folders of `D:\scapes\colmap` into `D:\scapes` (a site whose first sol changed gets the new one, so its processed images are reused), rewrites the absolute paths in each block's `project.json`, `run_done.json` and `colmap_gui.ini`, merges `camera_analysis`, `mppp_pipeline`, `error_analysis`, ... entry by entry; never overwrites (conflicts are listed); log `mppp_pipeline\move_scapes_v0p85.json`.
+- **Nearby visits from the block's first sol**: notebook 03 `NEARBY_FROM_FIRST_SOL` (default False; `find_imgs_near(min_sol=)`).
+- **Sites**: Chal Rocks Large from sol 72 (the nearby station S003D2150 added sols 65-66) and Rochette from 178 (sols 175, 177; sol 341 stays) with `NEARBY_FROM_FIRST_SOL`; Enchanted Lake second visit 421-423; Bell Island Large 1431-1478; Hippo Pools 1948-1961 + 2006-2009 (no sol 1947, `NEARBY_FROM_FIRST_SOL`).
+- Groups `navcam_consensus` (12 blocks) and `zcam34_consensus` (6); the pass-2 Navcam cameras promoted; the consensus writer keeps `translation: fitted`; `run_v0p85.bat`. Tests: `tests/test_v0p85.py`.
+
 ## 0.80.1 — 2026-10-17
 
 **The waypoint-map work itself in `mppp.maps`, its 34 blocks in `sites.json`, the PC's promotions in the history, and the v0p80 Navcam promotion (Christian, 17 Oct).**

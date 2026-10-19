@@ -5,9 +5,9 @@ REM minimised windows, notebook kernels and image workers). Notebooks open in Ju
 REM It lists the runs and asks before stopping them. A site stopped half-way is completed by the next run.
 REM ======================================================================================================
 setlocal
-set "ROOT=D:\scapes\colmap"
+set "ROOT=D:\scapes"
 REM MPPP: this file's own folder if it is MPPP's scripts\windows, else MPPP_HOME (default D:\code\MPPP), so this
-REM .bat also works when copied elsewhere (e.g. into D:\scapes\colmap).
+REM .bat also works when copied elsewhere (e.g. into D:\scapes).
 if not defined MPPP_HOME if exist "%~dp0mppp_env.bat" if exist "%~dp0..\process_sites.py" for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 if not defined MPPP_HOME set "MPPP_HOME=D:\code\MPPP"
 set "MPPP_WIN=%MPPP_HOME%\scripts\windows"

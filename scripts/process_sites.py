@@ -2,7 +2,7 @@
 Select and process the images of many sites (or some of them) into their WORK folders, without aligning them.
 
 The sites and their sol ranges come from the site definitions ``src/mppp/data/sites.json`` (or ``--sites-file``).
-Each site goes to ``<root>/mars2020_sol_<first sol>_<site>_colmap`` (Navcam) or ``..._colmap_zcam`` (``--zcam``,
+Each site goes to ``<root>/mars2020_sol_<first sol>_<site>`` (Navcam; v0p85, ``..._colmap`` before) or ``..._zcam`` (``--zcam``,
 with the Mastcam-Z frames of the site's ``"zcam"`` zooms; v0p53).  For each site, sections 1-2 of the newest notebook 03 in ``notebooks/`` run with its
 default settings: one PDS product per exposure is selected from the archive, then processed into
 ``<WORK>/processed`` (8-bit PNG, terrain mask, CAHV + waypoint pose, manifest).  Images already processed with
@@ -59,8 +59,8 @@ def main(argv=None) -> int:
     g.add_argument("--all", action="store_true", help="every site in the site definitions")
     g.add_argument("--group", help="a site group of the site definitions (e.g. navcam_consensus)")
     g.add_argument("--sites", nargs="+", help="site names")
-    ap.add_argument("--root", default="D:/scapes/colmap", help="the WORK folders go below it")
-    ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z blocks (..._colmap_zcam) of the sites with a \"zcam\" list")
+    ap.add_argument("--root", default="D:/scapes", help="the WORK folders go below it")
+    ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z blocks (..._zcam) of the sites with a \"zcam\" list")
     ap.add_argument("--settings", default=None, help="a JSON file of notebook 03 settings for every site")
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="a notebook 03 setting")
     ap.add_argument("--sites-file", default=None, help="site definitions (default mppp/data/sites.json)")

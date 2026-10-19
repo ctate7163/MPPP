@@ -676,7 +676,7 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
         for fid, fr in rec.frames.items():
             if not fr.has_pose:
                 continue
-            # v0p61: Navcam images only - a Navcam + Mastcam-Z block (``..._colmap_zcam``) also has Mastcam-Z frames,
+            # v0p61: Navcam images only - a Navcam + Mastcam-Z block (``..._zcam``) also has Mastcam-Z frames,
             # which have no NL/NR reference image (IndexError on 1 Oct)
             ims = [d.id for d in fr.data_ids if d.id in reg and rec.images[d.id].name in by_name
                    and key_of.get(int(rec.images[d.id].camera_id)) in ("NL", "NR")]

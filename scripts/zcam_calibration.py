@@ -1,10 +1,10 @@
 """
 Mastcam-Z 34 mm calibration from the solved Navcam + Mastcam-Z blocks (MPPP v0p74; mppp.sfm.zcam_calib).
 
-    python scripts\\zcam_calibration.py start-update --root D:\\scapes\\colmap --promote
-    python scripts\\zcam_calibration.py calibrate    --root D:\\scapes\\colmap --n 3 --promote
-    python scripts\\zcam_calibration.py grade        --root D:\\scapes\\colmap
-    python scripts\\zcam_calibration.py pointclouds  --root D:\\scapes\\colmap --groups zcam34_consensus navcam_consensus
+    python scripts\\zcam_calibration.py start-update --root D:\\scapes --promote
+    python scripts\\zcam_calibration.py calibrate    --root D:\\scapes --n 3 --promote
+    python scripts\\zcam_calibration.py grade        --root D:\\scapes
+    python scripts\\zcam_calibration.py pointclouds  --root D:\\scapes --groups zcam34_consensus navcam_consensus
 
 * ``start-update``: from the blocks as they are (also those solved before v0p74), (1) the focus groups they
   classified low-backlash go into ``<root>\\zcam_low_backlash_found.csv`` (every later run reads it), (2) a start focus
@@ -256,7 +256,7 @@ def cmd_pointclouds(a) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["start-update", "calibrate", "grade", "pointclouds", "clean-found"])
-    ap.add_argument("--root", default="D:/scapes/colmap")
+    ap.add_argument("--root", default="D:/scapes")
     ap.add_argument("--groups", nargs="*", default=["zcam34_consensus"])
     ap.add_argument("--n", type=int, default=0, help="calibrate: the number of best blocks (v0p74.9: 0 = every passing one)")
     ap.add_argument("--regular", default="derived", choices=["derived", "fitted"],
