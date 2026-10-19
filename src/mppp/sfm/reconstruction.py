@@ -180,8 +180,11 @@ def triangulate(rec, project: SfmProject, max_reproj_px: float = 8.0, min_angle_
     opts.ba_refine_extra_params = False
     out = Path(out_dir) if out_dir else project.root / "sparse" / "_triangulation"
     out.mkdir(parents=True, exist_ok=True)
-    return pycolmap.triangulate_points(rec, str(database or project.database), str(project.images_dir), str(out),
-                                       clear_points=True, options=opts, refine_intrinsics=False)
+    rec = pycolmap.triangulate_points(rec, str(database or project.database), str(project.images_dir), str(out),
+                                      clear_points=True, options=opts, refine_intrinsics=False)
+    settings = getattr(project, "settings", None) or {}
+    drop_mixed_short_tracks(rec, int(settings.get("min_mixed_track_length") or MIN_MIXED_TRACK_LENGTH))
+    return rec
 
 
 def sync_database(rec, project: SfmProject, path: Optional[PathLike] = None) -> Path:
@@ -1246,12 +1249,43 @@ def filter_observations(rec, project: SfmProject, max_residual_native_px: float 
     return n
 
 
-def drop_short_tracks(rec, min_track_length: int = 2) -> int:
-    """Delete 3-D points observed in fewer than ``min_track_length`` images; returns the number deleted."""
+# v0p86 (Christian, 19 Oct): a point seen by Navcam and Mastcam-Z needs a third view.  In the 19 Oct diagnostic
+# 36-47 % of the two-view Navcam + Mastcam-Z points sat more than 0.25 m off the terrain (Rochette 4 699, South Arm
+# 9 706: low reprojection error, wrong place - epipolar-consistent false matches, mostly from the pose-guided
+# Navcam-Mastcam-Z matching), against ~1 % of the two-view points of one camera type (the stereo pairs, kept)
+MIN_MIXED_TRACK_LENGTH = 3
+
+
+def drop_mixed_short_tracks(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH) -> int:
+    """Delete points whose track holds both Navcam (``N...``) and Mastcam-Z (``Z...``) images and is shorter than
+    ``min_mixed_track_length``; returns the number deleted.  Blocks of one camera type are untouched."""
+    if min_mixed_track_length <= 2:
+        return 0
+    fam: Dict[int, str] = {}
+    bad = []
+    for pid, pt in rec.points3D.items():
+        if pt.track.length() >= min_mixed_track_length:
+            continue
+        fs = set()
+        for el in pt.track.elements:
+            f = fam.get(el.image_id)
+            if f is None:
+                f = fam[el.image_id] = rec.images[el.image_id].name[:1]
+            fs.add(f)
+        if "N" in fs and "Z" in fs:
+            bad.append(int(pid))
+    for pid in bad:
+        rec.delete_point3D(pid)
+    return len(bad)
+
+
+def drop_short_tracks(rec, min_track_length: int = 2, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH) -> int:
+    """Delete 3-D points observed in fewer than ``min_track_length`` images, and Navcam + Mastcam-Z points in fewer
+    than ``min_mixed_track_length`` (v0p86); returns the number deleted."""
     short = [int(pid) for pid, pt in rec.points3D.items() if pt.track.length() < min_track_length]
     for pid in short:
         rec.delete_point3D(pid)
-    return len(short)
+    return len(short) + drop_mixed_short_tracks(rec, min_mixed_track_length)
 
 
 def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:

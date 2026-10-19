@@ -363,3 +363,26 @@ def test_gpu_python_pointer_and_install_bats(tmp_path, monkeypatch):
     assert b"render_paper.bat\" --quiet" in (win / "claude_sync.bat").read_bytes()
     nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
     assert "GPU_PY = gpu_python(" in "".join(nb["cells"][3]["source"])
+
+
+def test_mixed_navcam_zcam_points_need_a_third_view():
+    """v0p86: two-view points with a Navcam and a Mastcam-Z image are deleted; stereo pairs of one type are kept."""
+    from types import SimpleNamespace as NS
+    from mppp.sfm.reconstruction import drop_mixed_short_tracks, drop_short_tracks, MIN_MIXED_TRACK_LENGTH
+
+    class Rec:
+        def __init__(self, tracks):
+            self.images = {1: NS(name="NLF_a.png"), 2: NS(name="NRF_a.png"), 3: NS(name="ZL0_a.png"), 4: NS(name="ZR0_a.png")}
+            self.points3D = {k: NS(track=NS(elements=[NS(image_id=i) for i in t], length=(lambda t=t: len(t))))
+                             for k, t in tracks.items()}
+
+        def delete_point3D(self, pid):
+            del self.points3D[pid]
+
+    rec = Rec({1: [1, 2], 2: [3, 4], 3: [1, 3], 4: [2, 4], 5: [1, 2, 3], 6: [1]})
+    assert MIN_MIXED_TRACK_LENGTH == 3
+    assert drop_mixed_short_tracks(rec) == 2 and sorted(rec.points3D) == [1, 2, 5, 6]
+    rec = Rec({1: [1, 2], 3: [1, 3], 6: [1]})
+    assert drop_short_tracks(rec, 2) == 2 and sorted(rec.points3D) == [1]
+    rec = Rec({3: [1, 3]})
+    assert drop_mixed_short_tracks(rec, 2) == 0
