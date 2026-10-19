@@ -254,7 +254,7 @@ def test_check_model_limits():
 def test_zcam_calibration_cli(tmp_path, monkeypatch):
     """The CLI end to end on a fake scapes root (a sites table with three N+Z sites)."""
     import importlib.util
-    from mppp.sfm import sites as SITES
+    from mppp.waypoints import sites as SITES
     spec = importlib.util.spec_from_file_location("zc", ROOT / "scripts" / "zcam_calibration.py")
     zc = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(zc)

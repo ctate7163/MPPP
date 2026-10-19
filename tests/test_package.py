@@ -17,7 +17,7 @@ def test_package_data_and_cache(tmp_path, monkeypatch):
     from mppp import paths
     d = paths.data_dir()
     for f in ("M20_waypoints.json", "M2020_taus_versus_L_s.csv", "M2020_occlusion_profiles.csv", "models.json",
-              "cmods/M2020_NL0_frame.xml", "cmods/ZL034_frame.xml"):
+              "sites.json", "cmods/M2020_NL_fisheye_tangential.json", "cmods/M2020_ZCAM034_focus_model.json"):
         assert (d / f).is_file(), f
     assert paths.source_root() == ROOT
     monkeypatch.setenv("MPPP_CACHE", str(tmp_path / "c"))
@@ -27,16 +27,21 @@ def test_package_data_and_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("MPPP_CHECKPOINTS", str(tmp_path / "k"))
     assert paths.checkpoints_dir() == tmp_path / "k"
     pyproject = (ROOT / "pyproject.toml").read_text()
-    assert '"data/*.json", "data/*.csv", "data/cmods/*.xml"' in pyproject
+    assert '"data/*.json", "data/*.csv", "data/cmods/*.json", "data/cmods/*.md"' in pyproject
+    assert "history" not in pyproject and "m20_sites" not in pyproject
 
 
-def test_legacy_and_studies_are_outside_the_package():
+def test_studies_are_outside_the_package():
     pkg = ROOT / "src" / "mppp"
-    assert not (pkg / "error" / "compat.py").exists() and (ROOT / "src/legacy/error_compat.py").is_file()
-    assert not (pkg / "error" / "study_navcam.py").exists() and (ROOT / "studies/error/study_navcam.py").is_file()
-    assert not (pkg / "error" / "data").exists()
-    for f in ("image.py", "readers.py", "writers.py", "config.json"):
-        assert (ROOT / "src/legacy" / f).is_file() and not (ROOT / "src" / f).exists()
+    assert not (ROOT / "src" / "legacy").exists() and not (pkg / "maps").exists()
+    for gone in ("calibration.py", "navcal.py", "navcal_consensus.py", "navcal_report.py", "navcal_tied.py",
+                 "zcam_calib.py", "zcam_lines.py", "diagnose.py", "sites.py", "cmods_form.py"):
+        assert not (pkg / "sfm" / gone).exists(), gone
+    for f in ("calibration/navcal_consensus.py", "calibration/zcam_calib.py", "m20_sites/prototype.py"):
+        assert (ROOT / "studies" / f).is_file(), f
+    assert not (pkg / "scapes.py").exists()
+    for f in ("tests/data/legacy_expected_ZL0.npz", "tests/data/legacy_expected_NLF.npz"):
+        assert (ROOT / f).is_file()
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,9 +51,6 @@ def test_methods_doc_holds_no_site_results():
     txt = (ROOT / "docs" / "methods.md").read_text(encoding="utf-8")
     for bad in ("0.1–0.55 px", "8.5 px", "| Three Forks (52 images)", "59,143", "71.8 %", "0.284 vs 0.288"):
         assert bad not in txt, bad
-    notes = (ROOT / "docs" / "results" / "working_notes.md").read_text(encoding="utf-8")
-    assert "Withdrawn" in notes and "0.157" in notes
-    assert (ROOT / "docs" / "results" / "sites.md").is_file() and (ROOT / "scripts" / "sites_table.py").is_file()
 
 
 def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
@@ -62,21 +64,27 @@ def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
     assert not (REPO_ROOT / "params").exists()
     assert not (data_dir() / "m20_cmods").exists() and not (data_dir() / "navcam_consensus").exists()
     for f in ("M2020_NL_fisheye_tangential.json", "M2020_NR_fisheye_tangential.json", "M2020_N_rig.json",
-              "M2020_ZCAM034_focus_model.json", "M2020_NL_rational.json", "M2020_NL0_frame.xml", "ZL034_frame.xml",
-              "README.md", "CHANGES.md"):
+              "M2020_ZCAM034_focus_model.json", "README.md", "CHANGES.md"):
         assert (cmods_dir() / f).is_file(), f
+    assert not list(cmods_dir().glob("*.xml")) and not list(cmods_dir().glob("*rational*"))
+    assert not (cmods_dir() / "history").exists()
     for f in ("M20_waypoints.json", "M2020_occlusion_profiles.csv", "M2020_taus_versus_L_s.csv"):
         assert (data_dir() / f).is_file(), f
-    # MPPP_CMODS elsewhere; an empty folder falls back to the package copies
+    # MPPP_CMODS elsewhere: a model missing there falls back to the package copy
+    from mppp.calib.models import camera_file, zcam_file
     monkeypatch.setenv("MPPP_CMODS", str(tmp_path))
-    assert cmods_dir() == tmp_path
-    assert navcam_consensus_dir() == NAVCAM_PACKAGE_CONSENSUS_DIR
+    assert cmods_dir() == tmp_path and navcam_consensus_dir() == tmp_path
+    assert camera_file("N", "L") == package_cmods_dir() / "M2020_NL_fisheye_tangential.json"
+    assert zcam_file(34).parent == package_cmods_dir()
     assert zcam_focus_model_path().parent.name == "cmods"
 
 
 def test_version():
     import mppp
-    assert mppp.__version__ == "0.85.0" and mppp.VERSION_TAG == "v0p85"
+    assert mppp.__version__ == "0.90.0" and mppp.VERSION_TAG == "v0p90"
+    cff = (ROOT / "CITATION.cff").read_text()
+    assert f"version: {mppp.__version__}" in cff
+    assert f"## {mppp.__version__}" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
 
 def test_notebooks_compile_and_have_a_parameters_cell():

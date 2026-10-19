@@ -2,9 +2,9 @@
 Time of day (LMST) of the processed images, per site: one histogram panel per site plus one for all sites, Navcam and
 Mastcam-Z 34 mm each normalised to unit area, and a table per site.
 
-    python scripts\\lmst_histogram.py                                   # D:\\scapes and D:\\scapes\\colmap_old
-    python scripts\\lmst_histogram.py --roots D:\\scapes --sites rockytop sid threeforks_south
-    python scripts\\lmst_histogram.py --out "D:\\code\\MPPP\\Claude outputs" --name lmst_2026-09-30
+    python studies/analyses/lmst_histogram.py                           # MPPP_SCAPES
+    python studies/analyses/lmst_histogram.py --roots ROOT --sites rockytop sid threeforks_south
+    python studies/analyses/lmst_histogram.py --out OUT --name lmst_2026-09-30
 
 Images come from the newest ``processed/mppp_manifest_v*.json`` of every WORK folder (``<site>_colmap``,
 ``<site>_colmap_nav_zcam34``) under ``--roots``; a folder name found under several roots counts once (its newest
@@ -16,6 +16,7 @@ rule, 1/5 since v0p65) are left out, as processing does.  Writes ``<out>/<name>.
 from __future__ import annotations
 
 import argparse
+import os
 import csv
 import json
 import re
@@ -24,8 +25,6 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
 NAV_C, ZC_C = "#2a78d6", "#eb6834"          # categorical slots 1 and 2 (validated: CVD dE 24.7, normal 33.6)
 FILL_ALPHA = 0.30
@@ -50,7 +49,7 @@ def newest_manifest(processed: Path):
 
 def collect(roots, only=None, min_frame_fraction=None):
     """{site: {stem: record}} and [(site, folder, manifest, n images)] from the WORK folders under ``roots``."""
-    from mppp.sfm.sites import parse_work_folder
+    from mppp.waypoints.sites import parse_work_folder
     found = []                                   # (site, folder, manifest file)
     for root in map(Path, roots):
         if not root.is_dir():
@@ -123,7 +122,7 @@ def draw(images, rows, out_png: Path, window=None):
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
-    from mppp.sfm.sites import site_label
+    from mppp.waypoints.sites import site_label
 
     def panel(ax, series, title, bold=False):
         for vals, color in series:
@@ -191,10 +190,10 @@ def draw(images, rows, out_png: Path, window=None):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--roots", nargs="+", default=["D:/scapes", "D:/scapes/colmap_old"],
+    ap.add_argument("--roots", nargs="+", default=[os.environ.get("MPPP_SCAPES", ".")],
                     help="folders holding the WORK folders")
     ap.add_argument("--sites", nargs="+", default=None, help="only these sites")
-    ap.add_argument("--out", default=str(ROOT / "Claude outputs"), help="output folder")
+    ap.add_argument("--out", default=".", help="output folder")
     ap.add_argument("--name", default="lmst_histogram", help="file name stem")
     ap.add_argument("--min-frame-fraction", type=float, default=None,
                     help="leave out Navcam tiles below this fraction of the frame, as the current selection does "

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_discover_scapes_keeps_sites_with_the_same_label(tmp_path, monkeypatch):
-    from mppp.sfm import sites as S
+    from mppp.waypoints import sites as S
     rows = [{"label": "Bell Island", "site": "bell_island", "folder": str(tmp_path / "a"), "ok": True},
             {"label": "Bell Island", "site": "bell_island_large", "folder": str(tmp_path / "b"), "ok": True},
             {"label": "Van Zyl", "site": "van_zyl", "folder": str(tmp_path / "c"), "ok": True},

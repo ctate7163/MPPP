@@ -1,7 +1,7 @@
 """
-The blocks of rover stations in the MPPP site definitions (MPPP v0p80, :mod:`mppp.maps`).
+The blocks of rover stations in the MPPP site definitions (MPPP v0p80, ``studies/m20_sites``).
 
-The blocks themselves come from the waypoint-map pipeline (:mod:`mppp.maps.prototype`, ``m20_sites/export_sites.py``:
+The blocks themselves come from the waypoint-map pipeline (``prototype.py``, ``m20_sites/export_sites.py``:
 ``sites_blocks.json``, sites.json version 4, keys ``blk01_oeb_landing_site`` ... ``blk34_marble_mountain``, groups
 ``blocks_all`` and ``blocks_<region>``).  Here: :func:`load_blocks_file` reads such a file, :func:`merge_into_sites_file`
 puts its sites and groups into ``src/mppp/data/sites.json`` keeping every other line as it is (blocks of an earlier
@@ -27,7 +27,7 @@ def merge_sites(table: Dict[str, Any], sites: Dict[str, Any], groups: Dict[str, 
                 replace: bool = True) -> Dict[str, Any]:
     """A copy of ``table`` with ``sites`` and ``groups`` added (``replace``: an existing key is overwritten, else kept);
     the file version set to 4."""
-    from ..sfm.sites import SITES_FILE_VERSION
+    from mppp.waypoints.sites import SITES_FILE_VERSION
     out = json.loads(json.dumps(table))
     out["version"] = max(int(out.get("version") or 0), SITES_FILE_VERSION)
     for k, v in sites.items():
@@ -70,7 +70,7 @@ def merge_into_sites_file(path: PathLike, sites: Dict[str, Any], groups: Dict[st
     every other line as it is (so that the diff shows only the blocks); falls back to :func:`write_sites` for a file in
     another layout.  The version is set to 4."""
     import re
-    from ..sfm.sites import SITES_FILE_VERSION
+    from mppp.waypoints.sites import SITES_FILE_VERSION
     p = Path(path)
     text = p.read_text(encoding="utf-8")
     table = json.loads(text)

@@ -1,22 +1,23 @@
 """
-The Navcam sites and their notebook 03 alignments (v0p40).
+The sites (blocks of rover stations) and their WORK folders.
 
-``SITES`` is the default site list of notebook 03 (name -> sol range of the block), read from the stable site
-definitions file ``mppp/data/sites.json`` (v0p43; :func:`load_site_table`).  :func:`discover_scapes` walks ``SCAPES_ROOT`` (``D:/scapes``; ``D:/scapes/colmap`` before v0p85) for the WORK folders notebook 03
-made (v0p85: ``mars2020_sol_<first sol 0000>_<site>``, and ``..._zcam`` with Mastcam-Z; ``..._colmap[_zcam]`` before) and returns the ones that hold a finished
-alignment, labelled and in sol order, for notebooks 04 (camera models) and 05 (error analysis).  :func:`scan_scapes`
-returns every folder with the reason it was left out.
+The site definitions are the package data file ``mppp/data/sites.json`` (:func:`load_site_table`,
+:func:`load_sites` for name -> sol range).  A site's block folder is ``mars2020_sol_<first sol, 4 digits>_<site>``
+(``..._zcam`` when Mastcam-Z is included) under the scapes root (:func:`work_folder`, :func:`parse_work_folder`).
+:func:`discover_scapes` walks a root for the folders that hold a finished alignment, labelled and in sol order;
+:func:`scan_scapes` returns every folder with the reason it was left out.  Nothing here is read at import time.
 """
 from __future__ import annotations
 
 import json
+import os
 import statistics
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 PathLike = Union[str, Path]
 
-SITES_FILE = Path(__file__).resolve().parents[1] / "data" / "sites.json"     # v0p43: the stable site definitions
+SITES_FILE = Path(__file__).resolve().parents[1] / "data" / "sites.json"     # the site definitions
 
 
 def sol_ranges(sols: Any) -> List[Tuple[int, int]]:
@@ -347,22 +348,13 @@ def block_sites(table: Optional[Dict[str, Any]] = None) -> List[str]:
     return [k for _, k in sorted(rows)]
 
 
-try:
-    SITES: Dict[str, Tuple[int, int]] = load_sites()   # sol range of the Navcam (+ Mastcam-Z) block (notebook 03)
-except Exception as _e:                                 # noqa: BLE001 - a broken edit must not break "import mppp"
-    import warnings as _w
-    _w.warn(f"MPPP: the site definitions {SITES_FILE} cannot be read ({type(_e).__name__}: {_e}); "
-            f"run scripts/check_sites.py to find the problem")
-    SITES = {}
-
 _WORDS = {"threeforks": "Three Forks", "seitah": "Seitah"}
 FOLDER_PREFIX = "mars2020_sol_"              # v0p85: mars2020_sol_<first sol, 4 digits>_<site>[_zcam]
 ZCAM_SUFFIX = "_zcam"                        # v0p85 (Navcam is in every block; any Mastcam-Z zoom); v0p53-v0p82 _colmap_zcam
 NAV_SUFFIX = ""                              # v0p85 (Christian): no "_colmap"; v0p53-v0p82 _colmap
 OLD_NAV_SUFFIX = "_colmap"                   # v0p53-v0p82 names: still read (parse_work_folder, scan_scapes)
 OLD_ZCAM_SUFFIX = "_colmap_zcam"
-DEFAULT_SCAPES_ROOT = "D:/scapes"            # v0p85: the block folders' root (v0p53-v0p82: D:/scapes/colmap)
-OLD_SCAPES_ROOT = "D:/scapes/colmap"
+DEFAULT_SCAPES_ROOT = os.environ.get("MPPP_SCAPES", "")   # the block folders' root; set MPPP_SCAPES or pass --root
 _OLD_ZCAM_SUFFIXES = ("_colmap_zcam34", "_colmap_nav_zcam34")   # before v0p53: read by parse_work_folder only
 
 
@@ -397,7 +389,7 @@ def work_folder(root: PathLike, site: str, zcam: bool = False,
     """Notebook 03's WORK folder of a site (v0p53): ``<root>/mars2020_sol_<first sol>_<site>`` (v0p85) or
     ``..._zcam``.  ``sols``: the site's sol range (default: from the site definitions file)."""
     if sols is None:
-        table = SITES if site in SITES else load_sites()
+        table = load_sites()
         if site not in table:
             raise KeyError(f"site {site!r} is not in the site definitions ({SITES_FILE}); give sols=(first, last)")
         sols = table[site]
@@ -451,7 +443,7 @@ def scan_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = None
     block - a renamed site - is left out; sites not in ``sites`` are not checked).  ``exclude``: folder names, site
     names or labels to leave out.  Rows in sol order.
     """
-    sites = SITES if sites is None else sites
+    sites = load_sites() if sites is None else sites
     root = Path(root)
     excl = {str(e).lower() for e in exclude}
     rows: List[Dict[str, Any]] = []
@@ -550,8 +542,8 @@ def discover_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = 
 
 
 def print_scan(rows: List[Dict[str, Any]], sites: Optional[Dict[str, Sequence[int]]] = None) -> None:
-    for w in check_sites(SITES if sites is None else sites):
-        print("SITES:", w)
+    for w in check_sites(load_sites() if sites is None else sites):
+        print("sites:", w)
     used = [r for r in rows if r["ok"]]
     print(f"{len(used)} of {len(rows)} site folders used:")
     for r in rows:

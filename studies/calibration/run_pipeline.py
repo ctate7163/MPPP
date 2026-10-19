@@ -168,7 +168,7 @@ class Pipeline:
         per site (the site's own WORK folder when it has one), screening not FAIL.  v0p75: the sites of the
         ``navcam_consensus`` group only (``--all-navcam-blocks`` takes every Navcam block on disk, as before)."""
         from mppp.sfm.health import screen_blocks
-        from mppp.sfm.sites import discover_scapes, load_site_table, parse_work_folder, site_group, work_folder
+        from mppp.waypoints.sites import discover_scapes, load_site_table, parse_work_folder, site_group, work_folder
         table = load_site_table()
         found = discover_scapes(self.root, include_zcam=False, verbose=False)
         members = None

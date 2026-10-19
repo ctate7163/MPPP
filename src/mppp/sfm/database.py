@@ -358,11 +358,12 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
             prev.unlink()
     project.settings["database"] = summary
     project.save()
-    try:
-        summary["gui"] = write_gui_project(project, model=None if not (project.root / "sparse" / "cahv_ba").is_dir()
-                                           else "cahv_ba")
-    except OSError:                                        # read-only or odd paths: the files are a convenience
-        pass
+    if project.settings.get("gui_files"):                 # opt-in (``--gui``): files to open the project in the COLMAP GUI
+        try:
+            summary["gui"] = write_gui_project(project, model=None if not (project.root / "sparse" / "cahv_ba").is_dir()
+                                               else "cahv_ba")
+        except OSError:                                    # read-only or odd paths: the files are a convenience
+            pass
     return summary
 
 
@@ -512,9 +513,9 @@ def reuse_matches(project: SfmProject, sources: Sequence[PathLike], database: Op
     return report
 
 
-COLMAP_BAT_CANDIDATES = (r"D:\tools\colmap-x64-windows-nocuda\COLMAP.bat", r"D:\tools\colmap-x64-windows-cuda\COLMAP.bat",
-                         r"D:\tools\COLMAP\COLMAP.bat", r"C:\tools\COLMAP\COLMAP.bat",
-                         r"C:\Program Files\COLMAP\COLMAP.bat", r"%LOCALAPPDATA%\COLMAP\COLMAP.bat")
+# the usual COLMAP install folders on Windows; COLMAP_BAT (environment) or the PATH come first
+COLMAP_BAT_CANDIDATES = (r"C:\Program Files\COLMAP\COLMAP.bat", r"%LOCALAPPDATA%\COLMAP\COLMAP.bat",
+                         r"%LOCALAPPDATA%\Programs\COLMAP\COLMAP.bat")
 
 
 def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba",
@@ -528,7 +529,7 @@ def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba",
       and matches line up with the images; before a reconstruction exists it
       opens the full-resolution project.  It calls ``COLMAP.bat`` from the
       environment variable ``COLMAP_BAT`` (set it once, e.g.
-      ``setx COLMAP_BAT D:\\tools\\COLMAP\\COLMAP.bat``), else from the PATH;
+      ``setx COLMAP_BAT C:\\path\\to\\COLMAP.bat``), else from the PATH;
     * ``open_in_colmap_fullres.bat`` - the full-resolution project and
       ``sparse/<model>`` (what the bundle adjustment works on: keypoints are in
       full-resolution pixels, so on half/quarter-resolution images the GUI's 2-D
@@ -542,7 +543,8 @@ def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba",
     install folders (``COLMAP_BAT_CANDIDATES``) and the PATH, then starts the
     GUI with the database, the images and the model in one go.
 
-    Rewritten by ``build_database`` and ``reconstruct``.  Returns the paths.
+    Written by ``build_database`` and ``reconstruct`` when ``project.settings["gui_files"]`` is set (the ``--gui``
+    option of ``mppp align``).  Returns the paths.
     """
     colmap_bat = colmap_bat or project.settings.get("colmap_bat")
     if colmap_bat:

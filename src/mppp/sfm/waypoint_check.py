@@ -8,7 +8,7 @@ error relative to the others: the manual localisations against the HiRISE basema
 Censible, ICRA 2024), a station far beyond that - or far beyond the block's own scatter - is flagged.
 
     from mppp.sfm import waypoint_check as WC
-    r = WC.check_block("D:/scapes/mars2020_sol_0072_chal_rocks_large/colmap")
+    r = WC.check_block("<scapes root>/mars2020_sol_0072_chal_rocks_large/colmap")
     m = WC.mission_flags([r, ...])                  # stations flagged in any block; written by write_flags()
 
 Flag rule (:data:`FLAG_ABS_M`, :data:`FLAG_MIN_M`, :data:`FLAG_K`): a station whose horizontal residual is above

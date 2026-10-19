@@ -20,7 +20,9 @@ import warnings
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
-from .paths import cache_dir, data_dir
+import numpy as np
+
+from ..paths import cache_dir, data_dir
 
 PathLike = Union[str, Path]
 
@@ -207,3 +209,62 @@ def offset_lonlat(lon_deg: float, lat_deg: float, d_east: float, d_north: float)
     lat = lat_deg + math.degrees(d_north / MARS_RADIUS_M)
     lon = lon_deg + math.degrees(d_east / (MARS_RADIUS_M * math.cos(math.radians(lat_deg))))
     return lon, lat
+
+
+# --- flat rows and the map-frame <-> lon/lat relation (used by the site/block tools) -----------------
+
+def _kind(note: Any) -> str:
+    n = str(note or "").lower()
+    if "end-of-drive" in n or "first localization" in n:
+        return "end_of_drive"
+    if "mid-drive" in n:
+        return "mid_drive"
+    if "interpolated" in n:
+        return "interpolated"
+    if "site increment" in n:
+        return "site_increment"
+    return n or "unknown"
+
+
+def waypoint_rows(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """One row per waypoint, in file order (sol order): {"sol", "site", "drive", "rmc", "E", "N", "lon", "lat", "kind",
+    "pano" (a Navcam 360 panorama at the stop), "end_of_drive" (kind end_of_drive)}.  Waypoints without easting /
+    northing are left out."""
+    out = []
+    for f in data.get("features") or []:
+        p = f.get("properties", f)
+        try:
+            E, N = float(p["easting"]), float(p["northing"])
+            sol = int(p["sol"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        ims = p.get("images") or []
+        pano = any(bool(i.get("isPanoramic")) or "pano" in str(i.get("name", "")).lower() for i in ims if isinstance(i, dict))
+        kind = _kind(p.get("Note"))
+        out.append({"sol": sol, "site": int(p.get("site") or 0), "drive": int(p.get("drive") or 0),
+                    "rmc": p.get("RMC") or f"{p.get('site')}_{p.get('drive')}", "E": E, "N": N,
+                    "lon": float(p["lon"]) if p.get("lon") is not None else None,
+                    "lat": float(p["lat"]) if p.get("lat") is not None else None,
+                    "kind": kind, "pano": bool(pano), "end_of_drive": kind == "end_of_drive"})
+    return out
+
+
+def lonlat_fit(rows: Sequence[Dict[str, Any]]):
+    """(to_lonlat, to_en): the least-squares affine maps between (E, N) and (lon, lat) of the rows that have both
+    (exact to the file's precision over the crater: the map frame is an equirectangular projection)."""
+    r = [x for x in rows if x.get("lon") is not None and x.get("lat") is not None]
+    if len(r) < 3:
+        raise ValueError("fewer than 3 waypoints with both easting/northing and lon/lat")
+    EN = np.array([[x["E"], x["N"], 1.0] for x in r])
+    LL = np.array([[x["lon"], x["lat"], 1.0] for x in r])
+    A, *_ = np.linalg.lstsq(EN, LL[:, :2], rcond=None)
+    B, *_ = np.linalg.lstsq(LL, EN[:, :2], rcond=None)
+
+    def to_lonlat(E, N) -> Tuple[float, float]:
+        v = np.array([E, N, 1.0]) @ A
+        return float(v[0]), float(v[1])
+
+    def to_en(lon, lat) -> Tuple[float, float]:
+        v = np.array([lon, lat, 1.0]) @ B
+        return float(v[0]), float(v[1])
+    return to_lonlat, to_en

@@ -1,20 +1,20 @@
 """
-Blocks of rover stations: the waypoint-map pipeline and the site definitions (MPPP v0p80, mppp.maps).
+Blocks of rover stations: the waypoint-map pipeline and the site definitions (a study; run from this folder).
 
-    python scripts\\mppp_maps.py all      OUT [--waypoints FILE] [--recluster] [--dpi 450]
+    python mppp_maps.py all      OUT [--waypoints FILE] [--recluster] [--dpi 450]
                                           blocks -> zooms (figure 1) -> figures 2-6 -> OUT\\sites_blocks.json
-    python scripts\\mppp_maps.py blocks   OUT          the block list (OUT\\_m20_sites\\sites_zoom.json)
-    python scripts\\mppp_maps.py zooms    OUT          figure 1, the +-30 m panels
-    python scripts\\mppp_maps.py figures  OUT [2 3 4 5 6]
-    python scripts\\mppp_maps.py export   OUT          OUT\\sites_blocks.json (sites v4)
-    python scripts\\mppp_maps.py clusters OUT          raw 10 m clusters again (after a new waypoints file)
-    python scripts\\mppp_maps.py merge    [--from sites_blocks.json] [--write]
+    python mppp_maps.py blocks   OUT          the block list (OUT\\_m20_sites\\sites_zoom.json)
+    python mppp_maps.py zooms    OUT          figure 1, the +-30 m panels
+    python mppp_maps.py figures  OUT [2 3 4 5 6]
+    python mppp_maps.py export   OUT          OUT\\sites_blocks.json (sites v4)
+    python mppp_maps.py clusters OUT          raw 10 m clusters again (after a new waypoints file)
+    python mppp_maps.py merge    [--from sites_blocks.json] [--write]
                                           the blocks into src/mppp/data/sites.json as its official_blocks table
-                                          (sites file version 5, mppp.maps.official; default: the packaged blocks;
+                                          (sites file version 5, mppp.waypoints.blocks; default: the packaged blocks;
                                           without --write a dry run into OUT\\sites_merged.json), checked
-    python scripts\\mppp_maps.py compare  A.json B.json      how two block files differ
+    python mppp_maps.py compare  A.json B.json      how two block files differ
 
-The pipeline is the prototype of 16 Oct (src/mppp/maps/m20_sites, documentation docs/mppp_map.md there), run on a
+The pipeline is the prototype of 16 Oct (studies/m20_sites/m20_sites, documentation docs/mppp_map.md there), run on a
 copy in OUT\\_m20_sites.  Figures need adjustText (pip install adjustText); 1 m HiRISE DTMs via M20_DEMS.
 """
 from __future__ import annotations
@@ -23,8 +23,8 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+ROOT = Path(__file__).resolve().parents[2]          # the repository (studies/m20_sites/mppp_maps.py)
+sys.path.insert(0, str(ROOT))                        # for "studies.m20_sites"; mppp itself must be installed
 
 
 def main(argv=None) -> int:
@@ -38,23 +38,23 @@ def main(argv=None) -> int:
     ap.add_argument("--from", dest="src", help="merge: the sites_blocks.json to merge (default the packaged one)")
     ap.add_argument("--write", action="store_true", help="merge: write src/mppp/data/sites.json")
     a = ap.parse_args(argv)
-    from mppp import maps
+    from studies.m20_sites import export as maps_export, load_blocks, prototype
+    from mppp.waypoints import blocks as official
     if a.cmd == "compare":
         if len(a.args) != 2:
             ap.error("compare A.json B.json")
-        x, _ = maps.load_blocks_file(a.args[0])
-        y, _ = maps.load_blocks_file(a.args[1])
-        print("\n".join(maps.compare_blocks(x, y)))
+        x, _ = maps_export.load_blocks_file(a.args[0])
+        y, _ = maps_export.load_blocks_file(a.args[1])
+        print("\n".join(maps_export.compare_blocks(x, y)))
         return 0
     out = Path(a.args[0]) if a.args else Path("maps_out")
     if a.cmd == "merge":
         import json
-        from mppp.maps import official
-        from mppp.sfm.sites import SITES_FILE, validate_site_table
-        sites, _ = maps.load_blocks(a.src)
+        from mppp.waypoints.sites import SITES_FILE, validate_site_table
+        sites, _ = load_blocks(a.src)
         out.mkdir(parents=True, exist_ok=True)
         table = json.loads(SITES_FILE.read_text(encoding="utf-8"))
-        new, rep = official.restructure(table, sites, a.waypoints or maps.prototype.source_dir() / "M20_waypoints.json")
+        new, rep = official.restructure(table, sites, a.waypoints or prototype.source_dir() / "M20_waypoints.json")
         print("\n".join(rep))
         tmp = official.write_table(new, out / "sites_merged.json")
         err, warn = validate_site_table(tmp)
@@ -68,7 +68,7 @@ def main(argv=None) -> int:
             print("not written: fix the errors first")
             return 1
         return 0
-    maps.prototype.run(a.cmd, out, figures=tuple(a.args[1:]), waypoints=a.waypoints, legacy_sites=a.legacy_sites,
+    prototype.run(a.cmd, out, figures=tuple(a.args[1:]), waypoints=a.waypoints, legacy_sites=a.legacy_sites,
                        recluster=a.recluster, dpi=a.dpi)
     print(f"done: {out.resolve()}")
     return 0

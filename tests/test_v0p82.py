@@ -195,11 +195,11 @@ def test_pipeline_order_and_translation_held(tmp_path):
 
 
 def test_sites_in_order_of_first_visit():
-    from mppp.sfm.sites import load_site_table
+    from mppp.waypoints.sites import load_site_table
     t = load_site_table()
     first = [min(a for a, _ in v["sols"]) for v in t["sites"].values()]
     assert first == sorted(first)
-    from mppp.maps.official import order_by_first_sol
+    from mppp.waypoints.blocks import order_by_first_sol
     assert list(order_by_first_sol({"b": {"sols": [[5, 6], [1, 2]]}, "a": {"sols": [[3, 4]]}})) == ["b", "a"]
 
 
@@ -279,7 +279,7 @@ def test_v0p83_linear_tie_and_hook():
 def test_v0p85_groups_cameras_and_pipeline():
     """v0p85 (Christian, 19 Oct): 12 Navcam blocks weighed by value and run time, the 6 Mastcam-Z 34 blocks of the
     shortened 18 Oct run, the pass-2 consensus promoted, early offsets started at pass 2 (one round), no baseline."""
-    from mppp.sfm.sites import load_site_table
+    from mppp.waypoints.sites import load_site_table
     from mppp.sfm.cmods_form import check_form
     g = load_site_table()["groups"]
     assert len(g["navcam_consensus"]) == 17 and "navcam_consensus_v0p82" not in g     # 17 since 19 Oct pm

@@ -40,7 +40,7 @@ if str(HERE) not in sys.path:
 
 def blocks_of(root: Path, groups, zcam: bool):
     """{site: WORK folder} of the groups' sites that exist on disk (a site listed twice once)."""
-    from mppp.sfm.sites import load_site_table, work_folder, zcam_sites
+    from mppp.waypoints.sites import load_site_table, work_folder, zcam_sites
     table = load_site_table()
     zs = set(zcam_sites(table))
     out = {}

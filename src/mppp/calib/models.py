@@ -24,7 +24,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
-from ..paths import cmods_dir
+from ..paths import cmods_dir, package_cmods_dir
 from . import forms
 
 log = logging.getLogger("mppp.calib")
@@ -50,6 +50,17 @@ def _folder(folder: Optional[PathLike]) -> Path:
     return Path(folder) if folder else cmods_dir()
 
 
+def _resolve(folder: Optional[PathLike], name: str) -> Path:
+    """``name`` in ``folder`` (default: the models in use); a file missing from an ``MPPP_CMODS`` folder falls back
+    to the package copy, so an override folder needs to hold only the models it changes."""
+    f = _folder(folder) / name
+    if not f.is_file() and folder is None:
+        pkg = package_cmods_dir() / name
+        if pkg.is_file():
+            return pkg
+    return f
+
+
 def _read(f: Path) -> Dict[str, Any]:
     return json.loads(f.read_text(encoding="utf-8"))
 
@@ -59,7 +70,7 @@ def camera_file(family: str, eye: str, folder: Optional[PathLike] = None) -> Pat
     key = (str(family)[:1].upper(), str(eye)[-1:].upper())
     if key not in CAMERA_FILE:
         raise ValueError(f"no camera file for family {family!r} eye {eye!r}")
-    return _folder(folder) / CAMERA_FILE[key]
+    return _resolve(folder, CAMERA_FILE[key])
 
 
 def hazcam_start_model(family: str, eye: str) -> Dict[str, Any]:
@@ -107,7 +118,7 @@ def rig_file(family: str, folder: Optional[PathLike] = None) -> Path:
     fam = str(family)[:1].upper()
     if fam not in RIG_FILE:
         raise ValueError(f"no stereo rig file for family {family!r}")
-    return _folder(folder) / RIG_FILE[fam]
+    return _resolve(folder, RIG_FILE[fam])
 
 
 def load_rig(family: str = "N", folder: Optional[PathLike] = None) -> Optional[Dict[str, Any]]:
@@ -122,7 +133,7 @@ def load_rig(family: str = "N", folder: Optional[PathLike] = None) -> Optional[D
 
 
 def zcam_file(zoom: int, folder: Optional[PathLike] = None) -> Path:
-    return _folder(folder) / ZCAM_FILE_PATTERN.format(zoom=int(zoom))
+    return _resolve(folder, ZCAM_FILE_PATTERN.format(zoom=int(zoom)))
 
 
 def zcam_files(folder: Optional[PathLike] = None) -> Dict[int, Path]:

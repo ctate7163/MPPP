@@ -450,14 +450,14 @@ def work_settings(work: PathLike, site: Optional[str] = None, settings_file: Opt
     """The notebook 03 settings of a run, later ones winning: the site's ``settings`` (and
     ``no_mask_inference_at``) in the site definitions, ``<work>/mppp_settings.json``, ``settings_file``,
     ``sets`` (e.g. ``--set NAME=VALUE``)."""
-    from .sfm.sites import load_site_table, parse_work_folder, site_zooms
+    from .waypoints.sites import load_site_table, parse_work_folder, site_zooms
     from .sfm.workdir import SETTINGS_FILE, load_settings
     out: Dict[str, Any] = {}
     rec = (load_site_table(sites_file).get("sites", {}).get(site) or {}) if site else {}
     if isinstance(rec, dict) and parse_work_folder(work)[1] and site_zooms(rec):
         out["ZCAM_ZOOMS"] = site_zooms(rec)          # v0p53: the site's Mastcam-Z zooms (part of the run key)
     if isinstance(rec, dict) and rec.get("sols") is not None:
-        from .sfm.sites import sol_ranges
+        from .waypoints.sites import sol_ranges
         rs = sol_ranges(rec["sols"])
         if len(rs) > 1:                              # v0p75: a site with several visits - part of the run key, so a
             out["SITE_SOL_RANGES"] = [list(r) for r in rs]   # changed definition reruns the block (one range: as before)
@@ -518,7 +518,7 @@ def align(work: PathLike, source: str = "processed", variant: str = "", settings
     ``<work>/processed`` with notebook 03's settings, and stop before the alignment (section 3).  The run goes to
     ``<work>/runs/<time>_process/``; a finished run writes ``<work>/processed/process_done.json`` with its run key.
     """
-    from .sfm.sites import parse_work_folder
+    from .waypoints.sites import parse_work_folder
     from .sfm.workdir import project_dir
     disable_quickedit()                                                  # v0p50
     work = Path(work).resolve()

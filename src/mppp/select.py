@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from .filenames import M2020Filename, parse_filename
+from .waypoints.sites import sol_ranges
 
 PathLike = Union[str, Path]
 
@@ -26,14 +27,6 @@ def iter_imgs(input_dir: PathLike) -> Iterable[Tuple[Path, M2020Filename]]:
             yield fp, parse_filename(fp)
         except ValueError:
             continue
-
-
-def sol_ranges(sol_range: Any) -> List[Tuple[int, int]]:
-    """v0p75: ``(first, last)`` or ``[(first, last), ...]`` (the visits of a site, ``sites.json`` ``"sols"``) as a
-    list of (first, last) - the same reading as ``mppp.sfm.sites.sol_ranges``, without that module's imports."""
-    if isinstance(sol_range, (list, tuple)) and len(sol_range) == 2 and not isinstance(sol_range[0], (list, tuple)):
-        return [(int(sol_range[0]), int(sol_range[1]))]
-    return [(int(r[0]), int(r[1])) for r in sol_range]
 
 
 def in_sol_range(sol: int, sol_range: Any) -> bool:

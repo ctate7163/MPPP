@@ -2115,11 +2115,12 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                       f"{g['points']} points)", flush=True)
         except Exception as e:                               # noqa: BLE001  (a viewing aid; never stop the run)
             print(f"[sfm] gui_native not written: {type(e).__name__}: {e}", flush=True)
-    try:
-        from .database import write_gui_project
-        write_gui_project(project, model=out_name)          # colmap_gui.ini, open_in_colmap*.bat (v0p14.4)
-    except OSError:
-        pass
+    if project.settings.get("gui_files"):
+        try:
+            from .database import write_gui_project
+            write_gui_project(project, model=out_name)      # colmap_gui.ini, open_in_colmap*.bat
+        except OSError:
+            pass
     return rec
 
 def reconstruct(project: SfmProject, *args, min_frame_observations: Optional[int] = None, **kwargs):

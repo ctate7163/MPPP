@@ -14,8 +14,6 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
 
 def notebook03_settings():
@@ -40,7 +38,7 @@ def main(argv=None) -> int:
     import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        from mppp.sfm.sites import SITES_FILE, load_site_table, validate_site_table
+        from mppp.waypoints.sites import SITES_FILE, load_site_table, validate_site_table
     f = Path(a.sites_file) if a.sites_file else SITES_FILE
     print(f"site definitions: {f}")
     err, warn = validate_site_table(f, notebook03_settings())
@@ -52,7 +50,7 @@ def main(argv=None) -> int:
         print(f"{len(err)} error(s): fix them before running (the file is unchanged).")
         return 1
     d = load_site_table(f)
-    from mppp.sfm.sites import site_zooms, zcam_sites
+    from mppp.waypoints.sites import site_zooms, zcam_sites
     print(f"OK: {len(d['sites'])} sites ({len(zcam_sites(d))} with Mastcam-Z), groups: " +
           ", ".join(f"{g} ({len(m)})" for g, m in (d.get("groups") or {}).items()))
     for name, v in d["sites"].items():
@@ -61,7 +59,7 @@ def main(argv=None) -> int:
             extra.append(f"settings {v['settings']}")
         if v.get("no_mask_inference_at"):
             extra.append(f"no mask at {v['no_mask_inference_at']}")
-        from mppp.sfm.sites import sol_ranges
+        from mppp.waypoints.sites import sol_ranges
         rs = sol_ranges(v["sols"])
         sols_txt = ", ".join(f"{a}-{b}" for a, b in rs) + (" (main visit first)" if len(rs) > 1 else "")
         print(f"  {name:22s} sols {sols_txt:24s} {('zcam ' + ','.join(map(str, site_zooms(v)))) if site_zooms(v) else '':14s}  "

@@ -26,7 +26,7 @@ from typing import Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from mppp.sfm import sites as S                                  # noqa: E402
+from mppp.waypoints import sites as S                                  # noqa: E402
 
 
 def new_block_name(folder: Path, table: Dict, taken: set) -> str:
@@ -111,8 +111,8 @@ def plan(old_root: Path, new_root: Path, table: Dict) -> Tuple[List[Tuple[Path, 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--old-root", default=S.OLD_SCAPES_ROOT)
-    ap.add_argument("--new-root", default=S.DEFAULT_SCAPES_ROOT)
+    ap.add_argument("--old-root", default="D:/scapes/colmap")
+    ap.add_argument("--new-root", default="D:/scapes")
     ap.add_argument("--apply", action="store_true", help="move (default: dry run)")
     a = ap.parse_args()
     old_root, new_root = Path(a.old_root), Path(a.new_root)

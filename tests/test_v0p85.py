@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_folder_names_and_old_names():
-    from mppp.sfm import sites as S
+    from mppp.waypoints import sites as S
     assert S.DEFAULT_SCAPES_ROOT == "D:/scapes"
     assert S.folder_name("south_arm", 1408) == "mars2020_sol_1408_south_arm"
     assert S.folder_name("south_arm", 1408, True) == "mars2020_sol_1408_south_arm_zcam"
@@ -23,7 +23,7 @@ def test_folder_names_and_old_names():
 
 
 def test_scan_scapes_reads_new_and_old_names(tmp_path):
-    from mppp.sfm import sites as S
+    from mppp.waypoints import sites as S
     for n in ("mars2020_sol_1408_south_arm", "mars2020_sol_1408_south_arm_colmap_zcam", "camera_analysis"):
         (tmp_path / n).mkdir()
     rows = S.scan_scapes(tmp_path, {"south_arm": [[1408, 1412]]})

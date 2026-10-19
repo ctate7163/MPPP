@@ -261,7 +261,7 @@ def write_table(table: Dict[str, Any], path: PathLike) -> Path:
 
 def site_official_blocks(site: str, table: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """The official block records a site includes (with their ``"number"``)."""
-    from ..sfm.sites import load_site_table
+    from .sites import load_site_table
     t = table if table is not None else load_site_table()
     ob = t.get("official_blocks") or {}
     return [{"number": int(n), **ob[str(n)]} for n in (t["sites"][site].get("official_blocks") or []) if str(n) in ob]
@@ -269,6 +269,6 @@ def site_official_blocks(site: str, table: Optional[Dict[str, Any]] = None) -> L
 
 def block_runs(table: Optional[Dict[str, Any]] = None) -> List[Tuple[int, str]]:
     """(number, site) of every official block, by number."""
-    from ..sfm.sites import load_site_table
+    from .sites import load_site_table
     t = table if table is not None else load_site_table()
     return [(int(n), b.get("site")) for n, b in sorted((t.get("official_blocks") or {}).items(), key=lambda x: int(x[0]))]

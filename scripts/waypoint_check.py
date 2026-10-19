@@ -19,13 +19,11 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
 
 def block_folders(root: Path, groups, variant: str = ""):
     """{site: project dir} of the finished blocks of ``groups`` (the site's own WORK folder, ``colmap[_variant]``)."""
-    from mppp.sfm.sites import load_site_table, site_group, work_folder
+    from mppp.waypoints.sites import load_site_table, site_group, work_folder
     table = load_site_table()
     out = {}
     for g in groups:

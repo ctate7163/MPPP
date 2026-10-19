@@ -1,6 +1,6 @@
 """
 The waypoint-map pipeline of 4-16 Oct 2026 (``m20_sites/``, the prototype for mppp.map) run from the package
-(MPPP v0p80, :mod:`mppp.maps`).
+(the waypoint-map study; not part of the package).
 
 ``m20_sites/`` is that work as delivered (``m20_site_figures_with_dem.zip``, 16 Oct): ``mppp_map.py`` and its step
 scripts (``cluster.py``, ``analyze.py``, ``sitesdef.py``, ``zooms2.py``, ``mapplot3.py``, ``export_sites.py``), the
@@ -11,7 +11,7 @@ support modules (``refdata.py`` - Mastcam-Z numbered 360s #1-#56, sample cores; 
 so :func:`run` copies the folder to a work directory and runs ``mppp_map.py`` there, one process per step (each map
 figure needs one to a few GB at 300-450 dpi).
 
-    from mppp.maps import prototype
+    from studies.m20_sites import prototype   # run from the repository folder
     prototype.run("all", "D:/scapes/maps_20261017")                       # blocks, zooms, figures 2-6, export
     prototype.run("figures", out, figures=("5", "6"), dpi=450)
     prototype.run("all", out, waypoints="M20_waypoints_newer.json", recluster=True)   # new waypoints

@@ -74,7 +74,7 @@ ISOTROPY_Z = 3.0                               # east and north block scales mus
 def qualifying_sites(sites=None, table=None):
     """(sites to run, [(site, reason) left out]) - the group's (or ``sites``) with more than MIN_WAYPOINTS
     waypoints over more than MIN_SEPARATION_M."""
-    from mppp.sfm.sites import load_site_table
+    from mppp.waypoints.sites import load_site_table
     t = table if table is not None else load_site_table()
     names = list(sites) if sites else list(dict.fromkeys(t.get("groups", {}).get(GROUP, [])))
     keep, out = [], []
@@ -110,7 +110,7 @@ def run(a, variant: str = VARIANT, sets=None) -> int:
     if variant == VARIANT:
         # v0p82: the block scale "held" needs the production alignment (<WORK>/colmap) of each block - a site whose
         # sols changed after the navcam_runs stage (e.g. van_zyl_overlook_large, 17 Oct) has none yet: run it first
-        from mppp.sfm.sites import load_site_table, work_folder
+        from mppp.waypoints.sites import load_site_table, work_folder
         t = load_site_table()
         missing = [s_ for s_ in sites if not (work_folder(Path(a.root), s_, False, t["sites"][s_]["sols"]) / "colmap"
                                               / "run_done.json").is_file()]
@@ -160,7 +160,7 @@ def scale_agreement(work: Path, proj: Path) -> Dict[str, Any]:
 
 
 def _block_rows(root: Path, sites: Optional[List[str]]) -> List[Dict[str, Any]]:
-    from mppp.sfm.sites import load_site_table, site_label, work_folder
+    from mppp.waypoints.sites import load_site_table, site_label, work_folder
     table = load_site_table()
     names = sites or qualifying_sites(None, table)[0]
     rows = []
@@ -406,7 +406,7 @@ def confirm(a) -> int:
     ``<WORK>/colmap_baseline_check``); the scale agreement must be better than before the promotion, else the rig
     before it is promoted back.  Writes ``baseline_confirm.json`` / ``.md`` next to the study.  Exit 0 confirmed,
     1 reverted, 2 nothing to confirm."""
-    from mppp.sfm.sites import load_site_table, work_folder
+    from mppp.waypoints.sites import load_site_table, work_folder
     out = Path(a.out) if a.out else Path(a.root) / "camera_analysis" / f"navcam_baseline_{datetime.date.today():%Y%m%d}"
     pf = out / "baseline_promotion.json"
     if not pf.is_file():

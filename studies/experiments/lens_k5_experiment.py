@@ -29,8 +29,6 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 VARIANTS = {"fisheye_t": ("THIN_PRISM_FISHEYE", ["k4"]), "rational_k4": ("FULL_OPENCV", ["k4"]),

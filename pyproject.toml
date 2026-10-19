@@ -28,7 +28,7 @@ where = ["src"]
 include = ["mppp*"]
 
 [tool.setuptools.package-data]
-mppp = ["data/*.json", "data/*.csv", "data/cmods/*.json", "data/cmods/*.md", "maps/m20_sites/*", "maps/m20_sites/docs/*", "maps/m20_sites/terrain/*"]
+mppp = ["data/*.json", "data/*.csv", "data/cmods/*.json", "data/cmods/*.md"]
 
 [project.urls]
 Homepage = "https://github.com/ctate7163/MPPP"

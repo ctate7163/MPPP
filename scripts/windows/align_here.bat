@@ -5,7 +5,7 @@ REM It always runs the current MPPP in MPPP_HOME: the newest notebook 03 there a
 REM this file never needs updating when MPPP changes. Process the images first with process_sites.bat.
 REM
 REM Copy this file into a site's WORK folder (the folder that holds processed\, e.g.
-REM D:\scapes\mars2020_sol_1408_south_arm_zcam) and double-click it. The alignment runs in the background
+REM <scapes root>\mars2020_sol_1408_south_arm_zcam) and double-click it. The alignment runs in the background
 REM (a minimised window; closing that window stops it). Nothing needs Jupyter.
 REM
 REM   progress   runs\<date-time>\log.txt   (every notebook cell and every [sfm] line as it happens)
@@ -17,14 +17,14 @@ REM   - leave images out: list them in exclude_images.txt here (S032D1184 / sol:
 REM   - other settings:   mppp_settings.json here, e.g. {"ATTITUDE_PRIOR_DEG": 1.0, "THERMAL_BINS_DEG": null}
 REM   - side by side:     from a prompt, align_here.bat --variant NAME --set NAME=VALUE   (-> colmap_NAME\)
 REM   - status only:      align_here.bat status
-REM MPPP is looked for in MPPP_HOME (default D:\code\MPPP).
+REM MPPP is looked for in MPPP_HOME (default: two folders above this file).
 REM ======================================================================================================
 setlocal
 set "WORK=%~dp0"
 set "WORK=%WORK:~0,-1%"
-if not defined MPPP_HOME set "MPPP_HOME=D:\code\MPPP"
+if not defined MPPP_HOME set "MPPP_HOME=%~dp0..\.."
 if not exist "%MPPP_HOME%\scripts\align_scape.py" (
-  echo MPPP not found in "%MPPP_HOME%": set MPPP_HOME to the MPPP folder, e.g.  set MPPP_HOME=D:\code\MPPP
+  echo MPPP not found in "%MPPP_HOME%": set MPPP_HOME to the MPPP folder
   pause
   exit /b 1
 )

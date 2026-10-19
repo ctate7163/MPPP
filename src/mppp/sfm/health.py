@@ -775,7 +775,7 @@ def screen_block(work: PathLike, model: str = "cahv_ba", thresholds: Optional[Di
     """
     import json as _json
     import pycolmap
-    from .sites import parse_work_folder
+    from ..waypoints.sites import parse_work_folder
     thr = dict(DEFAULT_THRESHOLDS, **(thresholds or {}))
     work = Path(work)
     root = work / "colmap" if (work / "colmap").is_dir() else work

@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 # ------------------------------------------------------------------------------------------------- sites, selection
 def test_sol_ranges_span_and_membership():
-    from mppp.sfm import sites as S
+    from mppp.waypoints import sites as S
     assert S.sol_ranges([1, 2]) == [(1, 2)]
     assert S.sol_ranges([[361, 378], [91, 101]]) == [(361, 378), (91, 101)]
     assert S.sol_span([[361, 378], [91, 101]]) == (361, 378)          # the main visit names the folder; last of all
@@ -30,7 +30,7 @@ def test_sol_ranges_span_and_membership():
 
 
 def test_site_table_with_visits(tmp_path):
-    from mppp.sfm import sites as S
+    from mppp.waypoints import sites as S
     f = tmp_path / "sites.json"
     f.write_text(json.dumps({"sites": {
         "sid": {"sols": [[361, 378], [91, 101]], "zcam": [34], "settings": {}},
@@ -50,7 +50,7 @@ def test_site_table_with_visits(tmp_path):
 
 
 def test_scan_accepts_a_folder_of_the_second_visit(tmp_path):
-    from mppp.sfm import sites as S
+    from mppp.waypoints import sites as S
     w = tmp_path / "mars2020_sol_0361_sid_colmap"
     (w / "colmap" / "sparse" / "m").mkdir(parents=True)
     (w / "colmap" / "sparse" / "m" / "images.bin").write_bytes(b"")
@@ -76,7 +76,7 @@ def test_find_imgs_over_several_visits(tmp_path):
 
 def test_run_key_carries_the_visits(tmp_path, monkeypatch):
     from mppp import runner
-    from mppp.sfm import sites as S
+    from mppp.waypoints import sites as S
     table = {"sites": {"sid": {"sols": [[361, 378], [91, 101]], "zcam": [34], "settings": {}},
                        "one": {"sols": [700, 712], "zcam": [34], "settings": {}}}, "groups": {}}
     monkeypatch.setattr(S, "load_site_table", lambda path=None: table)
@@ -356,7 +356,7 @@ def test_pipeline_consensus_takes_the_group_only(tmp_path, monkeypatch):
 
 
 def test_shipped_sites_and_model_v0p75():
-    from mppp.sfm import sites as S
+    from mppp.waypoints import sites as S
     from mppp.sfm.project import zcam_focus_model
     t = S.load_site_table()
     r = S.load_site_ranges()
@@ -517,9 +517,9 @@ def test_pipeline_zcam_group_option(tmp_path):
     spec.loader.exec_module(rp)
     assert rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True)).zcam_group == "zcam34_consensus"
     assert rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, zcam_group="zcam34_dev")).zcam_group == "zcam34_dev"
-    from mppp.sfm.sites import site_group
+    from mppp.waypoints.sites import site_group
     dev = site_group("zcam34_dev")
-    from mppp.sfm.sites import load_site_table, site_zooms
+    from mppp.waypoints.sites import load_site_table, site_zooms
     t = load_site_table()                     # v0p82: Christian's dev group may use a smaller site of a consensus block
     assert len(dev) == 6 and all(34 in site_zooms(t["sites"][s]) for s in dev)
 

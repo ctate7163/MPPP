@@ -32,13 +32,13 @@ that fails is logged and the next one starts.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "scripts"))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))                      # sibling scripts (align_scape)
 
 
 def choose_sites(table, a, ap):
@@ -59,7 +59,7 @@ def main(argv=None) -> int:
     g.add_argument("--all", action="store_true", help="every site in the site definitions")
     g.add_argument("--group", help="a site group of the site definitions (e.g. navcam_consensus)")
     g.add_argument("--sites", nargs="+", help="site names")
-    ap.add_argument("--root", default="D:/scapes", help="the WORK folders go below it")
+    ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the WORK folders go below it (default: MPPP_SCAPES)")
     ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z blocks (..._zcam) of the sites with a \"zcam\" list")
     ap.add_argument("--settings", default=None, help="a JSON file of notebook 03 settings for every site")
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="a notebook 03 setting")
@@ -70,6 +70,8 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="list what would run")
     ap.add_argument("--status", action="store_true", help="the run status of every WORK folder under --root")
     a = ap.parse_args(argv)
+    if not a.root:
+        ap.error("--root (or the MPPP_SCAPES environment variable) is required")
     root = Path(a.root)
     if a.status:
         from run_sites import status_table
@@ -78,7 +80,7 @@ def main(argv=None) -> int:
     import mppp
     from mppp.runner import (STATUS_FILE, BatchRunning, Log, align, batch_lock, notebook, parse_set, processed_done,
                              process_key, read_status, work_settings)
-    from mppp.sfm.sites import load_site_table, work_folder
+    from mppp.waypoints.sites import load_site_table, work_folder
     table = load_site_table(a.sites_file)
     sites = choose_sites(table, a, ap)
     unknown = [s for s in sites if s not in table["sites"]]

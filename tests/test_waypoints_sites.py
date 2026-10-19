@@ -1,6 +1,8 @@
-"""Site definitions and WORK folders (mppp.sfm.sites, workdir). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Site definitions and WORK folders (mppp.waypoints.sites, workdir). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import json
-from mppp.sfm.sites import SITES, check_sites, discover_scapes, scan_scapes, site_label
+from mppp.waypoints.sites import check_sites, discover_scapes, load_sites, scan_scapes, site_label
+
+SITES = load_sites()
 import pytest
 from pathlib import Path
 
@@ -56,9 +58,9 @@ def _meta(stem, sol, site, drive, seq):
 
 
 def test_sites_json_is_the_site_list():
-    from mppp.sfm import sites as S
+    from mppp.waypoints import sites as S
     t = S.load_site_table()
-    assert len(t["sites"]) >= 32 and S.SITES["rockytop"][1] == 530 and S.SITES["south_arm"] == (1408, 1412)
+    assert len(t["sites"]) >= 32 and load_sites()["rockytop"][1] == 530 and load_sites()["south_arm"] == (1408, 1412)
     for g, members in t["groups"].items():
         assert (members or g in ("zcam79_consensus", "zcam110_consensus")) and all(m in t["sites"] for m in members), g
     for k, v in t["sites"].items():
@@ -80,7 +82,7 @@ def test_sites_json_is_the_site_list():
 
 
 def test_sites_file_override(tmp_path):
-    from mppp.sfm.sites import load_sites
+    from mppp.waypoints.sites import load_sites
     f = tmp_path / "s.json"
     f.write_text(json.dumps({"sites": {"a": {"sols": [5, 9]}, "b": [1, 2]}}))
     assert load_sites(f) == {"a": (5, 9), "b": (1, 2)}
@@ -133,7 +135,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_check_sites(tmp_path):
     import importlib.util
-    from mppp.sfm.sites import SITES_FILE, validate_site_table
+    from mppp.waypoints.sites import SITES_FILE, validate_site_table
     err, warn = validate_site_table()
     assert err == [] and not any("overlap" in w and "partly" not in w for w in warn)   # nested blocks are not flagged
     bad = tmp_path / "s.json"
@@ -159,7 +161,7 @@ def test_zcam_field_and_folder_names(tmp_path):
     """v0p53: "zcam": [34, 48, 63, 110] per site (the older "zcam34": true is read, with a warning); folders
     mars2020_sol_<first sol>_<site>_colmap[_zcam]."""
     import json
-    from mppp.sfm import sites as S
+    from mppp.waypoints import sites as S
     f = tmp_path / "s.json"
     f.write_text(json.dumps({"sites": {"a": {"sols": [1, 2], "zcam": [34, 110]}, "b": {"sols": [3, 4], "zcam34": "False"},
                                        "c": {"sols": [3, 4], "z34": "True"}, "d": {"sols": [5, 6], "zcam": [35]},

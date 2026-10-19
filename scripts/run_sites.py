@@ -25,6 +25,7 @@ GB of memory; one at a time is the safe default).
 from __future__ import annotations
 
 import argparse
+import os
 import datetime
 import json
 import subprocess
@@ -32,8 +33,6 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
 
 def _finished(work: Path, variant: str, key: str):
@@ -59,7 +58,7 @@ def filter_zcam(sites, table, zcam: bool, named: bool):
     with a note).  Returns (sites, left out)."""
     if not zcam:
         return list(sites), []
-    from mppp.sfm.sites import zcam_sites
+    from mppp.waypoints.sites import zcam_sites
     z = set(zcam_sites(table))
     if named:
         for s in sites:
@@ -117,7 +116,7 @@ def main(argv=None) -> int:
     g.add_argument("--all", action="store_true", help="every site in the site definitions")
     g.add_argument("--group", help="a site group of the site definitions (e.g. navcam_consensus)")
     g.add_argument("--sites", nargs="+", help="site names")
-    ap.add_argument("--root", default="D:/scapes", help="SCAPES_ROOT: the WORK folders go below it")
+    ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the scapes root: the WORK folders go below it (default: MPPP_SCAPES)")
     ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z blocks (..._zcam) of the sites with a \"zcam\" list")
     ap.add_argument("--source", choices=("pds", "processed"), default="pds",
                     help="pds (default): select and process, then align; processed: align what is processed")
@@ -136,12 +135,14 @@ def main(argv=None) -> int:
     ap.add_argument("--status", action="store_true", help="the run status of every WORK folder under --root")
     a = ap.parse_args(argv)
 
+    if not a.root:
+        ap.error("--root (or the MPPP_SCAPES environment variable) is required")
     root = Path(a.root)
     if a.status:
         return status_table(root)
     from mppp.runner import (STATUS_FILE, BatchRunning, Log, batch_lock, parse_set, read_status, run_analyses,
                              run_key, work_settings)
-    from mppp.sfm.sites import load_site_table, site_label, work_folder
+    from mppp.waypoints.sites import load_site_table, site_label, work_folder
     table = load_site_table(a.sites_file)
     if a.all:
         sites = list(table["sites"])
@@ -205,7 +206,7 @@ def main(argv=None) -> int:
         return 3
 
     def cmd(work: Path):
-        c = [sys.executable, str(ROOT / "scripts" / "align_scape.py"), str(work), "--source", a.source]
+        c = [sys.executable, str(Path(__file__).resolve().parent / "align_scape.py"), str(work), "--source", a.source]
         if a.variant:
             c += ["--variant", a.variant]
         if a.settings:

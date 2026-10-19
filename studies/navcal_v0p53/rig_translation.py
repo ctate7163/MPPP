@@ -21,8 +21,6 @@ import argparse, copy, json, sys, time
 from pathlib import Path
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 
