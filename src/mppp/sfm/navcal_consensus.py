@@ -1127,7 +1127,10 @@ def write_consensus(res: Dict[str, Any], out_dir: PathLike, note: str = "",
     tr = res.get("rig_translation")
     jt = res.get("rig_translation_joint")                        # v0p74.4: the joint fit, when made, is the one applied
     applied = bool((tr or jt) and res.get("rig_translation_applied"))
-    carried = not (tr or jt) and r.get("translation") == "fitted"     # v0p73: no new fit - keep the fitted one in use
+    # v0p73: no new fit - keep the fitted one in use; v0p85: also when a new fit is only recorded (the v0p82 pipeline
+    # never applies one - the baseline stage carries it): the 18 Oct pass-2 candidate had lost "translation": "fitted",
+    # which would have sent every project back to its own CAHV baseline
+    carried = not applied and r.get("translation") == "fitted"
     if tr:
         r["translation_fit"] = {k: tr[k] for k in ("blocks", "dcentre_mm", "sd_t_mm", "baseline_start_m", "baseline_m",
                                                    "dbaseline_mm", "t_m", "variance_factor", "sigma_m")}
@@ -1162,7 +1165,9 @@ def write_consensus(res: Dict[str, Any], out_dir: PathLike, note: str = "",
                     f"Translation fitted on {len(tr['blocks'])} large blocks ({', '.join(sorted(tr['blocks']))}): "
                     f"baseline {tr['baseline_m']:.5f} m; projects use it (translation = fitted)." if applied else
                     (f"Translation fitted earlier, carried over from the cameras in use (baseline "
-                     f"{float(r.get('baseline_m', 0)):.5f} m; translation = fitted)." if carried else
+                     f"{float(r.get('baseline_m', 0)):.5f} m; translation = fitted)"
+                     + (" - the new large-block fit, translation_fit, is recorded but not applied." if tr else ".")
+                     if carried else
                      "Translation from CAHV in each project"
                      + (" (the large-block fit, translation_fit, is recorded but not applied)." if tr else "."))))
     (out / "M2020_N_rig.json").write_text(json.dumps(r, indent=1), encoding="utf-8")

@@ -514,8 +514,8 @@ def test_navcam_consensus_shipped_with_mppp():
         cam = camera_from_colmap_json(f)
         assert cam["model"] == "THIN_PRISM_FISHEYE" and len(cam["params"]) == 12
         th = json.loads(f.read_text())["thermal"]
-        # v0p74 pipeline consensus (4 Oct, 16 blocks): fx, fy per axis, ~36 and ~40 ppm/degC
-        assert 35.0 < th["fx_ppm_per_degC"] < 37.5 and 39.5 < th["fy_ppm_per_degC"] < 41.5 and th["T0_degC"] == -20
+        # v0p85: the 18 Oct pass-2 consensus (23 blocks): fx, fy per axis, ~38-41 and ~43-45 ppm/degC
+        assert 37.0 < th["fx_ppm_per_degC"] < 41.5 and 43.0 < th["fy_ppm_per_degC"] < 46.0 and th["T0_degC"] == -20
     assert (NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).is_file()
     assert navcam_cameras_fingerprint(NAVCAM_CONSENSUS_DIR)
     # v0p74: the pipeline's 16-block consensus of 4 Oct (navcal_v0p74_20261004_pipeline), byte for byte (line ends
@@ -523,8 +523,9 @@ def test_navcam_consensus_shipped_with_mppp():
     import hashlib
     sha = {p.name: hashlib.sha256(p.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:12]
            for p in NAVCAM_CONSENSUS_DIR.glob("*.json") if "fisheye" in p.name or "rig" in p.name}
-    assert sha == {"M2020_NL_fisheye_tangential.json": "20844b7af608", "M2020_NR_fisheye_tangential.json": "47ae2675446c",
-                   "M2020_N_rig.json": "2bed6f3c54cc"}
+    # v0p85 (19 Oct): the pass-2 consensus of 18 Oct (23 blocks), the rig's fitted-translation flag restored
+    assert sha == {"M2020_NL_fisheye_tangential.json": "d8bb51518338", "M2020_NR_fisheye_tangential.json": "7d8c5fb15413",
+                   "M2020_N_rig.json": "4aa6455701fc"}
 
 
 def test_navcam_distortion_hold_and_zero_terms():

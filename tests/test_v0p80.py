@@ -207,9 +207,13 @@ def test_best_candidate_moves_yaw_into_nr_cx(tmp_path, monkeypatch):
 
 
 def test_shipped_cmods_carry_the_v0p80_promotion():
+    # v0p85: the v0p80 promotion (NR cx -0.0714) is in cmods/history; in use is the 18 Oct pass-2 consensus
+    hist = sorted((CMODS / "history").glob("*/M2020_NR_fisheye_tangential.json"))
+    old = [json.loads(h.read_text()) for h in hist]
+    assert any(abs(o["thermal"].get("cx_px_per_degC", 0) + 0.0714) < 2e-4 and "v0p80 best" in o["thermal"].get("note", "")
+               for o in old)
     nr = json.loads((CMODS / "M2020_NR_fisheye_tangential.json").read_text())
-    assert nr["thermal"]["cx_px_per_degC"] == pytest.approx(-0.0714, abs=2e-4)
-    assert "v0p80 best" in nr["thermal"]["note"]
+    assert nr["thermal"]["cx_px_per_degC"] == pytest.approx(-0.0525, abs=2e-4)
     from mppp.sfm.cmods_form import check_form
     assert check_form(CMODS)["ok"]
 

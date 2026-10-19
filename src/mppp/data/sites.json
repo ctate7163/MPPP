@@ -96,8 +96,8 @@
   "36": {"name": "Marble Mountain", "site": "marble_mountain", "region": "crater_rim_west", "kind": "sites.json", "source_key": "marble_mountain", "visits": [[1962, 2005]], "end_of_drive_sols": [1962, 1965, 1979, 1980], "n_navcam_360": 4, "n_partial_navcam": 2, "mastcam_z_360": [56], "centre": {"lon": 77.2319353, "lat": 18.4370008, "easting": 4342184.12, "northing": 1092847.65, "frame": "M20_waypoints easting/northing"}, "half_size_m": 30.0, "notes": "Block 36 (N×4, Z×1): from sites.json 'marble_mountain'; centre ±30 m; visits 1962–2005", "max_waypoint_separation_m": 19.8, "n_waypoints": 6, "rover_sites": [91]}
  },
  "groups": {
-  "navcam_consensus":                  ["van_zyl_overlook_large", "chal_rocks_large", "rochette", "seitah_north", "issole_seitah_south", "artuby_ridge", "chal_rocks", "rockytop", "enchanted_lake", "threeforks_large", "belva_crater_large", "tuxedo_park", "bunsen_peak", "cheyava_falls", "pico_turquino", "witch_hazel_hill", "south_arm", "bell_island_large", "taylorfjellet_large", "taylorfjellet_huge", "origny_large", "marble_mountain", "hippo_pools"],
-  "zcam34_consensus":                  ["chal_rocks_large", "rochette", "enchanted_lake", "threeforks_south", "threeforks_north", "belva_crater", "bunsen_peak", "cheyava_falls", "rio_chiquito", "south_arm", "taylorfjellet_large", "origny", "marble_mountain"],
+  "navcam_consensus":                  ["chal_rocks", "rochette", "artuby_ridge", "issole_seitah_south", "enchanted_lake", "rockytop", "threeforks_large", "bunsen_peak", "cheyava_falls", "south_arm", "taylorfjellet_large", "hippo_pools"],
+  "zcam34_consensus":                  ["chal_rocks", "rochette", "rio_chiquito", "south_arm", "origny", "marble_mountain"],
   "zcam34_dev":                        ["chal_rocks", "threeforks_north", "rochette", "enchanted_lake", "south_arm", "marble_mountain"],
   "navcam_baseline":                   ["van_zyl_overlook_large", "chal_rocks_large", "threeforks_large", "belva_crater_large", "bell_island_large", "taylorfjellet_huge", "origny_large"],
   "zcam48_consensus":                  ["chal_rocks_large", "overlook_mountain", "pico_turquino"],
@@ -111,6 +111,8 @@
   "blocks_upper_fan_belva":            ["tenby_berea", "belva_crater_large", "wild_basin_lake", "tuxedo_park", "airey_hill"],
   "blocks_margin_unit_neretva_vallis": ["bunsen_peak", "overlook_mountain", "bright_angel", "cheyava_falls", "plateau_point", "pico_turquino", "rio_chiquito"],
   "blocks_crater_rim":                 ["south_arm", "witch_hazel_hill", "bell_island", "taylorfjellet_large"],
-  "blocks_crater_rim_west":            ["origny", "vingeanne", "groloy", "hippo_pools", "marble_mountain"]
+  "blocks_crater_rim_west":            ["origny", "vingeanne", "groloy", "hippo_pools", "marble_mountain"],
+  "navcam_consensus_v0p82":            ["van_zyl_overlook_large", "chal_rocks_large", "rochette", "seitah_north", "issole_seitah_south", "artuby_ridge", "chal_rocks", "rockytop", "enchanted_lake", "threeforks_large", "belva_crater_large", "tuxedo_park", "bunsen_peak", "cheyava_falls", "pico_turquino", "witch_hazel_hill", "south_arm", "bell_island_large", "taylorfjellet_large", "taylorfjellet_huge", "origny_large", "marble_mountain", "hippo_pools"],
+  "zcam34_consensus_v0p82":            ["chal_rocks_large", "rochette", "enchanted_lake", "threeforks_south", "threeforks_north", "belva_crater", "bunsen_peak", "cheyava_falls", "rio_chiquito", "south_arm", "taylorfjellet_large", "origny", "marble_mountain"]
  }
 }

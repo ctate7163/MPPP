@@ -54,3 +54,11 @@
   - `M2020_NR_fisheye_tangential.json` 47ae2675446c from `/home/claude/navcal_v0p80_best_20261017/navcam_joint/M2020_NR_fisheye_tangential.json`
   - `M2020_N_rig.json` 2bed6f3c54cc from `/home/claude/navcal_v0p80_best_20261017/navcam_joint/M2020_N_rig.json`
   - replaced files kept in `history/20261017-092358/`
+
+## 20261019-070226 - v0p85: the 18 Oct pass-2 consensus of 23 v0p82 blocks (v0p80 form: k3+k4, k1(T) NL, NR cx -0.0525 px/degC, yaw rate +2.56 mdeg/1000 sol, early offsets fx +0.197 fy +0.254 cx +0.324 cy -0.572 px; leave-one-out 0.011 / 0.027 px; not promoted by the pipeline only because of the covariance bug fixed in 0.82.1; rig residuals: no yaw temperature term left)
+  - `M2020_NL_fisheye_tangential.json` b59e2267b62e from `/mnt/user-data/uploads/colmap/camera_analysis/navcal_v0p82_20261018_pipeline_pass2/navcam_joint/M2020_NL_fisheye_tangential.json`
+  - `M2020_NR_fisheye_tangential.json` 7d4a299dd60a from `/mnt/user-data/uploads/colmap/camera_analysis/navcal_v0p82_20261018_pipeline_pass2/navcam_joint/M2020_NR_fisheye_tangential.json`
+  - `M2020_N_rig.json` 49198e58ec14 from `/mnt/user-data/uploads/colmap/camera_analysis/navcal_v0p82_20261018_pipeline_pass2/navcam_joint/M2020_N_rig.json`
+  - replaced files kept in `history/20261019-070226/`
+
+- 2026-10-19 (v0p85): M2020_N_rig.json of the promotion above edited by hand: "translation": "fitted" restored (the pass-2 writer dropped it because the new large-block fit was recorded, not applied; t and the baseline 0.42401 m are unchanged) - sha 4aa6455701fc

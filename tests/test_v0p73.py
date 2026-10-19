@@ -56,6 +56,10 @@ def test_v0p60_models_fail_the_form_and_convert(tmp_path):
 def test_k4_not_zero_fails_the_form(tmp_path):
     from mppp.sfm.cmods_form import check_form
     d = _copy(CMODS, tmp_path / "k4")
+    for f in FILES[:2]:                     # v0p85: the shipped cameras are v0p80 (k4 free): test the v0p73 form
+        jj = json.loads((d / f).read_text())
+        jj["form"] = "v0p73"
+        (d / f).write_text(json.dumps(jj))
     j = json.loads((d / FILES[0]).read_text())
     j["params"][j["param_names"].index("k4")] = -0.0059
     (d / FILES[0]).write_text(json.dumps(j))

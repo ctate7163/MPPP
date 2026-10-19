@@ -150,7 +150,8 @@ def test_write_consensus_records_or_applies_the_large_block_translation(tmp_path
           "baseline_start_m": 0.4244, "baseline_m": 0.42397, "dbaseline_mm": -0.43, "t_m": [-0.42397, 0.00016, -0.00027],
           "variance_factor": 1.2, "sigma_m": 0.05}
     rig = json.loads((write_consensus(_consensus_result(tr, False), tmp_path / "a") / "M2020_N_rig.json").read_text())
-    assert rig["translation_fit"]["dcentre_mm"] == tr["dcentre_mm"] and "translation" not in rig
+    # v0p85: the in-use rig's fitted translation is carried over; the new fit is only recorded
+    assert rig["translation_fit"]["dcentre_mm"] == tr["dcentre_mm"] and rig["translation"] == "fitted"
     assert "recorded but not applied" in rig["note"]
     rig = json.loads((write_consensus(_consensus_result(tr, True), tmp_path / "b") / "M2020_N_rig.json").read_text())
     assert rig["translation"] == "fitted" and rig["t_sensor_from_ref_m"] == tr["t_m"] and "2 large blocks" in rig["note"]

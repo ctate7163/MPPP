@@ -76,8 +76,9 @@ CONSENSUS_FORM = "v0p80"
 ZCAM_GROUP, NAVCAM_GROUP = "zcam34_consensus", "navcam_consensus"     # --zcam-group overrides the first (v0p75)
 BASELINE_GROUP = "navcam_baseline"                                     # v0p82
 ZCAM_SET = ["--set", "ZCAM_ZOOMS=[34]"]
-EARLY_START = ("0.157", "0.243", "0.139", "-0.454")          # mean of the v0p72_2 and 20261003 consensus' early offsets
-EARLY_ROUNDS = "3"            # a round is ~35 min; the cx direction is flat (the 20261003 run needed 3 from a poor start)
+EARLY_START = ("0.197", "0.254", "0.324", "-0.572")          # v0p85: the 18 Oct pass-2 offsets (z 5.8-13.5)
+EARLY_ROUNDS = "1"            # v0p85: one round around the pass-2 optimum (was 3 from a poorer start)
+EARLY_ROUNDS_V0P82 = "3"            # a round is ~35 min; the cx direction is flat (the 20261003 run needed 3 from a poor start)
 
 
 class Pipeline:

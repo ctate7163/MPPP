@@ -309,6 +309,8 @@ def test_write_consensus_candidate(tmp_path):
     names = PARAM_NAMES["THIN_PRISM_FISHEYE"]
     cur = {e: json.loads((cmods_dir() / f"M2020_{e}_fisheye_tangential.json").read_text()) for e in ("NL", "NR")}
     res = {e: {n: float(v) + (0.5 if n == "cx" else 0.0) for n, v in zip(names, cur[e]["params"])} for e in ("NL", "NR")}
+    for e in ("NL", "NR"):                     # v0p85: the cameras in use have k4 != 0 (v0p80); this result holds k4 = 0
+        res[e]["k4"] = 0.0
     res.update({"blocks": {"A": 10, "B": 12}, "rig_abs_mdeg": {"yaw_mdeg": 35.0, "pitch_mdeg": -88.0, "roll_mdeg": -63.0},
                 "rig_R": np.eye(3).tolist(), "residuals": {"median_px": 0.18, "rms_px": 0.38, "p95_px": 0.8},
                 "thermal": {"ppm_per_degC": 38.1, "T0_degC": -20.0, "cx_px_per_degC_NL": 0.0517},

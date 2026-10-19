@@ -272,3 +272,19 @@ def test_v0p83_linear_tie_and_hook():
     assert np.allclose(g, [3.0, 0.5], atol=1e-6)
     src = (ROOT / "src" / "mppp" / "sfm" / "reconstruction.py").read_text()
     assert "extra_residuals(prob, cam_blocks=cam_blocks" in src
+
+
+def test_v0p85_groups_cameras_and_pipeline():
+    """v0p85 (Christian, 19 Oct): 12 Navcam blocks weighed by value and run time, the 6 Mastcam-Z 34 blocks of the
+    shortened 18 Oct run, the pass-2 consensus promoted, early offsets started at pass 2 (one round), no baseline."""
+    from mppp.sfm.sites import load_site_table
+    from mppp.sfm.cmods_form import check_form
+    g = load_site_table()["groups"]
+    assert len(g["navcam_consensus"]) == 12 and len(g["navcam_consensus_v0p82"]) == 23
+    assert g["zcam34_consensus"] == ["chal_rocks", "rochette", "rio_chiquito", "south_arm", "origny", "marble_mountain"]
+    cm = json.loads((ROOT / "src/mppp/data/cmods/M2020_NR_fisheye_tangential.json").read_text())
+    assert abs(cm["thermal"]["cx_px_per_degC"] + 0.0525) < 1e-3 and check_form()["ok"]
+    src = (ROOT / "scripts" / "run_pipeline.py").read_text()
+    assert 'EARLY_ROUNDS = "1"' in src and '"0.197", "0.254", "0.324", "-0.572"' in src
+    bat = (ROOT / "scripts" / "windows" / "run_v0p85.bat").read_text()
+    assert "--reset --from navcam_runs --no-baseline-study" in bat
