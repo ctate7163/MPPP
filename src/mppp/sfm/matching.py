@@ -28,7 +28,7 @@ PathLike = Union[str, Path]
 
 MATCHERS = ("sift_lightglue", "sift")
 DEFAULT_MATCHER = "sift_lightglue"            # v0p86
-LIGHTGLUE_MAX_MS_PER_PAIR = 250.0            # slower than this (CPU ONNX): SIFT brute force instead
+LIGHTGLUE_MAX_MS_PER_PAIR = 80.0             # slower than this (CPU ONNX, slow GPU): SIFT brute force instead
 
 
 def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequence[Tuple[str, str, Any]]] = None,
