@@ -234,3 +234,22 @@ def test_thermal_stage_refuses_distortion_terms():
     from mppp.sfm.thermal import thermal_stage
     with pytest.raises(ValueError, match="distortion"):
         thermal_stage(None, None, {}, free=("fx", "k2"))
+
+
+def test_bin_rig_gets_its_own_camera_for_an_eye_without_images(tmp_path):
+    """v0p86 (Marble Mountain, 19 Oct): an eye without images in a temperature bin still gets a (held) bin camera on
+    that bin's rig - a camera may sit on one rig only in the COLMAP database ("SQLite error: constraint failed" in
+    sync_database), so the bin rig must not carry the eye's original camera."""
+    from mppp.sfm.thermal import image_temperatures, split_by_temperature
+    proj, rec, noise = _synthetic_block(tmp_path)
+    cold = {r["name"] for r in proj.images if r["station"].endswith("0000")}
+    temps = {k: v for k, v in image_temperatures(proj).items() if not (k.startswith("NR") and k in cold)}
+    r1, p1, rows = split_by_temperature(rec, proj, temps, bin_deg=10, min_images=1)
+    seen = {}
+    for rid, rig in r1.rigs.items():
+        for s in [rig.ref_sensor_id] + list(rig.non_ref_sensors):
+            assert s.id not in seen, f"camera {s.id} on rigs {seen[s.id]} and {rid}"
+            seen[s.id] = rid
+    held = [k for k, c in p1.cameras.items() if c.get("n_images") == 0 and c.get("thermal_bin")]
+    assert held and all(set(p1.cameras[k]["fixed_params"]) >= {"fx", "fy", "cx", "cy"} for k in held)
+    assert all(k not in {r["camera"] for r in rows} for k in held)

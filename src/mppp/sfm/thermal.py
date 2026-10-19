@@ -442,6 +442,31 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
     for rid, rig in rec.rigs.items():
         new.add_rig(rig)
 
+    def _bin_cam(cid: int, b) -> int:
+        """The bin camera of a Navcam eye.  v0p86: an eye without registered images in the bin (Marble Mountain,
+        19 Oct: an NL frame at -42 degC whose NR image was not registered) gets a held copy of its camera too - the
+        bin rig would otherwise carry the eye's original camera, which also sits on the original rig, and the COLMAP
+        database allows a camera on one rig only ("SQLite error: constraint failed" in sync_database)."""
+        nonlocal next_cid
+        if (cid, b) in bin_cam or cid not in nav_cids or cid not in rec.cameras:
+            return bin_cam.get((cid, b), cid)
+        base = rec.cameras[cid]
+        key = key_of[cid]
+        new.add_camera(pycolmap.Camera(camera_id=next_cid, model=base.model, width=base.width, height=base.height,
+                                       params=np.array(base.params, float)))
+        bin_cam[(cid, b)] = next_cid
+        bkey = f"{key}_{_tag(*b)}"
+        names = _PARAM_NAMES.get(base.model.name, FULL_OPENCV_NAMES)
+        pc = dict(proj.cameras.get(key, {}))
+        pc.update({"params": list(map(float, base.params)), "group": key, "temperature_bin_degC": list(b),
+                   "n_images": 0, "fixed_params": list(names), "free_params": [], "thermal_bin": True,
+                   "source": f"{pc.get('source', key)}; temperature bin {b[0]:g}..{b[1]:g} degC, no registered "
+                             f"image of this eye: a held copy for the bin rig"})
+        proj.cameras[bkey] = pc
+        db_cams[bkey] = next_cid                         # not in the bin table: it has no images to fit
+        next_cid += 1
+        return bin_cam[(cid, b)]
+
     def _rig_of(rid: int, b) -> int:
         if (rid, b) in rig_for:
             return rig_for[(rid, b)]
@@ -449,7 +474,7 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
         old = rec.rigs[rid]
         ref = old.ref_sensor_id.id
         r = pycolmap.Rig(rig_id=next_rid)
-        r.add_ref_sensor(sensor(bin_cam.get((ref, b), ref)))
+        r.add_ref_sensor(sensor(_bin_cam(ref, b)))
         for sid in old.non_ref_sensors:
             T = old.sensor_from_rig(sid)
             if rig_slopes and frame_T:
@@ -460,7 +485,7 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
                                              float(rig_slopes.get("yaw_mdeg_per_degC", 0.0)),
                                              float(rig_slopes.get("pitch_mdeg_per_degC", 0.0)))
                     T = pycolmap.Rigid3d(pycolmap.Rotation3d(R2), t2)
-            r.add_sensor(sensor(bin_cam.get((sid.id, b), sid.id)), T)
+            r.add_sensor(sensor(_bin_cam(sid.id, b)), T)
         new.add_rig(r)
         rig_for[(rid, b)] = next_rid
         next_rid += 1
