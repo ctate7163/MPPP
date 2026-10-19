@@ -1,5 +1,5 @@
 """
-mppp_error.metrics -- derived scalars from a fused covariance field.
+mppp.error.metrics -- derived scalars from a fused covariance field.
 
 PRIMARY METRIC
 --------------
@@ -26,7 +26,7 @@ kappa       : anisotropy.  kappa >> 1 means one direction is unconstrained --
               you where to put the next station.
 n_eff       : effective independent station count.  n_eff << n_vis means your
               stations are redundant and adding more nearby ones will not help.
-gain        : sigma_n(best single station) / sigma_n(fused).  Pure network
+improvement : sigma_n(best single station) / sigma_n(fused).  Pure network
               value, independent of eps.  The cleanest network-design figure of
               merit in the set.
 sigma_slope : differential error between adjacent cells.  Predicts PERCEIVED
@@ -117,7 +117,6 @@ def compute_metrics(field: PrecisionField,
                         best_single / sigma_n, np.nan)
     out["improvement"] = np.where(bad, np.nan, gain)
     out["sigma_n_best_single"] = np.where(np.isfinite(best_single), best_single, np.nan)
-    out["gain"] = out["improvement"]      # backwards-compatible alias
 
     # --- differential (slope) error ---------------------------------------
     out["sigma_slope"] = _sigma_slope(field, out["sigma_n"], rho_adjacent)

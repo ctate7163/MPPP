@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
-from conftest import CKPT, NLF, ZL0, needs_ckpt, needs_data
+from conftest import CKPT, NLF, ZL0, config_selection_off, needs_ckpt, needs_data
 
 pytestmark = needs_data
 
@@ -124,8 +124,8 @@ def test_stereo_free_projection_consistency(zl0):
 
 
 def test_undistort_zeroes_distortion_and_keeps_size(waypoints):
-    from mppp import MPPPImage, load_config
-    cfg = load_config({"masking": {"infer_mask": False}, "resize": {"undistort": True}})
+    from mppp import MPPPImage
+    cfg = config_selection_off({"masking": {"infer_mask": False}, "resize": {"undistort": True}})
     im = MPPPImage(ZL0, cfg, waypoints)
     assert im.undistorted and not im.intrinsics.is_distorted()
     assert im.image_int16.shape == (1200, 1648, 3) and im.intrinsics.skew == 0
@@ -135,9 +135,9 @@ def test_undistort_zeroes_distortion_and_keeps_size(waypoints):
 
 @needs_ckpt
 def test_mask_inference(waypoints):
-    from mppp import MPPPImage, load_config
+    from mppp import MPPPImage
     from mppp.mask import get_model, read_card
-    cfg = load_config()
+    cfg = config_selection_off()
     cfg["masking"]["checkpoint"] = str(CKPT)            # the v0p10 default if present, else the 2025 model
     im = MPPPImage(ZL0, cfg, waypoints)
     assert im.mask_card["backbone"] == "convnext_tiny" and im.mask_card["threshold"] == read_card(CKPT)["threshold"]
@@ -152,8 +152,8 @@ def test_mask_inference(waypoints):
 def test_process_images_end_to_end(tmp_path, waypoints):
     from mppp import process_images, VERSION_TAG
     from mppp.writers import read_png_chunks
-    cfg = {"masking": {"infer_mask": False},
-           "export": {"formats": ["PNG16", "PNG8"], "write_mask_files": True}}
+    cfg = config_selection_off({"masking": {"infer_mask": False},
+                                "export": {"formats": ["PNG16", "PNG8"], "write_mask_files": True}})
     man = process_images([NLF, ZL0, tmp_path / "missing_0000_0000000000_000RAD_N0000000XXXX00000_0000LLJ01.IMG"],
                          tmp_path, cfg, waypoints, progress=False)
     assert man["n_processed"] == 2 and len(man["failed"]) == 1 and man["world_frames"] == ["site3_enu"]
@@ -195,3 +195,21 @@ def test_two_positioning_routes_agree(cfg_nomask):
     d = exact.pose.C - via_offset.pose.C
     assert np.hypot(d[0], d[1]) < 10.0 and abs(d[2]) < 2.0
     assert exact.geo["lat_deg"] == pytest.approx(18.46167105) and exact.geo["lon_east_deg"] == pytest.approx(77.40293429)
+
+
+# Mastcam-Z temperatures from the label (v0p73)
+
+
+def test_zcam_optics_temperature():
+    from mppp.image import zcam_optics_temperature
+    t = {"DEA": 34.7, "HEAD_FPA": -9.6, "HEAD_HTR_1": -13.8, "HEAD_HTR_2": -13.6}
+    assert zcam_optics_temperature(t) == pytest.approx(-13.7)
+    assert zcam_optics_temperature({"HEAD_FPA": -9.6}) is None
+
+
+@needs_data
+def test_label_instrument_temperatures():
+    from mppp.labels import instrument_temperatures, read_pds
+    t = instrument_temperatures(read_pds(ZL0, load_image=False)[0])
+    assert set(t) >= {"DEA", "HEAD_FPA", "HEAD_HTR_1", "HEAD_HTR_2"}
+    assert t["HEAD_HTR_1"] == pytest.approx(-13.8094)

@@ -2,6 +2,9 @@
 from pathlib import Path
 import numpy as np
 import pytest
+import copy
+import json
+from types import SimpleNamespace
 
 
 def test_alignment_health_on_synthetic_block(tmp_path):
@@ -152,3 +155,103 @@ def test_write_health_adds_station_map(tmp_path):
     rec, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng, perturb=False)
     files = write_health(assess_alignment(proj, rec), tmp_path / "health", rec, proj)
     assert Path(files["station_map"]).is_file() and Path(files["png"]).is_file()
+
+
+# beyond-ground and aspect checks, block screening (v0p65)
+
+
+def _mock_rec(points, centres):
+    ims = {i: SimpleNamespace(has_pose=True, projection_center=(lambda c=c: np.asarray(c, float)))
+           for i, c in centres.items()}
+    pts = {k + 1: SimpleNamespace(xyz=np.asarray(X, float),
+                                  track=SimpleNamespace(elements=[SimpleNamespace(image_id=i) for i in t]))
+           for k, (X, t) in enumerate(points)}
+    return SimpleNamespace(images=ims, points3D=pts)
+
+
+def test_beyond_ground_flags_points_far_below_the_horizon():
+    from mppp.sfm.health import beyond_ground
+    C = {1: [0, 0, 1.9], 2: [0.4, 0, 1.9]}
+    good = [([5, y, 0.0], (1, 2)) for y in np.linspace(-2, 2, 17)]          # on flat ground 5 m away
+    far = [([40, 0, -1.9 * 40 / 5 + 1.9], (1, 2))] * 3                       # along a ray that meets ground at 5 m
+    sky = [([30, 0, 6.0], (1, 2))]                                           # above the horizon: not considered
+    r = beyond_ground(_mock_rec(good + far + sky, C))
+    assert r["points"] == 21 and r["beyond"] == 3 and r["below_horizon"] == 20
+    assert r["fraction"] == pytest.approx(3 / 21) and r["fraction_of_below_horizon"] == pytest.approx(3 / 20)
+    # a point that one camera sees close (within 3x its ground range) is not flagged
+    mixed = [([40, 0, -1.9 * 40 / 5 + 1.9], (1, 3))]
+    C3 = {**C, 3: [38, 0, -1.9 * 40 / 5 + 1.9 + 1.9]}
+    assert beyond_ground(_mock_rec(mixed, C3))["beyond"] == 0
+    assert beyond_ground(_mock_rec([], C))["fraction"] is None
+
+
+def test_health_thresholds_v0p65():
+    from mppp.sfm.health import DEFAULT_THRESHOLDS, _status
+    assert DEFAULT_THRESHOLDS["beyond_ground_fraction"] == (0.05, 0.15, "above")
+    assert DEFAULT_THRESHOLDS["navcam_aspect_change_pct"] == (0.06, 0.15, "above")
+    thr = DEFAULT_THRESHOLDS
+    # the nine good blocks (0-4 %) pass, Three Forks South (24 %) fails; Van Zyl's NR bin (0.21 %) fails the aspect
+    assert _status("beyond_ground_fraction", 0.039, thr) == "pass"
+    assert _status("beyond_ground_fraction", 0.24, thr) == "fail"
+    assert _status("navcam_aspect_change_pct", 0.052, thr) == "pass"
+    assert _status("navcam_aspect_change_pct", 0.21, thr) == "fail"
+
+
+def test_navcam_aspect_changes():
+    from mppp.sfm.health import navcam_aspect_changes
+    p = [1500.0, 1500.0, 512, 512, 0, 0, 0, 0, 0, 0, 0, 0]
+    proj = SimpleNamespace(settings={"database": {"cameras": {"NL": 1, "NR_T-030-020": 2, "ZL034": 3}}},
+                           cameras={"NL": {"model": "THIN_PRISM_FISHEYE", "params": p},
+                                    "NR_T-030-020": {"model": "THIN_PRISM_FISHEYE", "params": p, "group": "NR"},
+                                    "ZL034": {"model": "FULL_OPENCV", "params": p}})
+    cams = {1: SimpleNamespace(params=np.array([1500.0, 1500.0 * 1.001])),
+            2: SimpleNamespace(params=np.array([1501.0, 1501.0])),
+            3: SimpleNamespace(params=np.array([1500.0, 1600.0]))}
+    out = navcam_aspect_changes(proj, SimpleNamespace(cameras=cams))
+    assert set(out) == {"NL", "NR_T-030-020"}
+    assert out["NL"] == pytest.approx(0.1) and out["NR_T-030-020"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_screen_block(tmp_path, monkeypatch):
+    pytest.importorskip("pyceres")
+    from helpers import _block_without_navcam_zcam_matches
+    from mppp.sfm import reconstruction as R
+    from mppp.sfm.health import screen_block, screen_blocks
+    proj, new, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
+    monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(new))
+    R.reconstruct(proj, sigma_px=0.3, schedule=((24.0, 10.0, 8.0),), max_iterations=5, verbose=False,
+                  navcam_intrinsics="refine", staged=True, out_name="cahv_ba", zcam_focus_line=False, pose_guided=False)
+    proj.save()
+    r = screen_block(proj.root)
+    assert r["verdict"] in ("pass", "warn", "fail") and r["beyond_ground_fraction"] is not None
+    assert r["navcam_aspect_change_pct"] is not None and abs(r["navcam_aspect_change_pct"]) < 0.06
+    (proj.root / "database_matches.json").write_text(json.dumps({"matching": {"guided_matching": True}}))
+    r2 = screen_block(proj.root)
+    assert r2["verdict"] != "pass" and any("guided" in s for s in r2["reasons"])
+    out = screen_blocks({"a": proj.root, "missing": tmp_path / "none"}, verbose=False)
+    assert out["missing"]["verdict"] == "fail"
+
+
+def test_screen_block_cache(tmp_path, monkeypatch):
+    from mppp.sfm import health as H
+    root = tmp_path / "w" / "colmap"
+    sp = root / "sparse" / "cahv_ba"
+    sp.mkdir(parents=True)
+    (sp / "points3D.bin").write_bytes(b"x")
+    (sp / "cameras.bin").write_bytes(b"y")
+    calls = []
+
+    class FakeRec:
+        def __init__(self, p):
+            calls.append(p)
+    import pycolmap
+    monkeypatch.setattr(pycolmap, "Reconstruction", FakeRec)
+    monkeypatch.setattr(H.SfmProject, "load", staticmethod(lambda r: None))
+    monkeypatch.setattr(H, "beyond_ground", lambda rec, sample=None: {"fraction": 0.01})
+    monkeypatch.setattr(H, "navcam_aspect_changes", lambda p, r: {"NL": 0.01})
+    a = H.screen_block(tmp_path / "w")
+    b = H.screen_block(tmp_path / "w")
+    assert a["verdict"] == "pass" and b.get("cached") and len(calls) == 1
+    (sp / "points3D.bin").write_bytes(b"xx")                  # the alignment changed: screened again
+    H.screen_block(tmp_path / "w")
+    assert len(calls) == 2

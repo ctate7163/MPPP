@@ -1,5 +1,5 @@
 """
-mppp_error.network -- how good is a view graph, really?
+mppp.error.network -- how good is a view graph, really?
 
 HOW TO MEASURE VIEW-GRAPH QUALITY
 =================================
@@ -32,7 +32,7 @@ the one below it, and the last one is the truth.
    estimated station poses -- which is what "view graph quality" means
    operationally, because it is exactly the Sigma_pose the error model needs.
 
-This module implements 5 (and re-exports 1-4 from mppp_error.viewgraph).  Doing so
+This module implements 5 (and 1-4 are mppp.error.viewgraph).  Doing so
 closes the circularity flagged earlier: Sigma_pose in 'ba' mode is no longer an
 assumed input, it is DERIVED from the tie geometry.
 
@@ -54,10 +54,9 @@ from __future__ import annotations
 
 import numpy as np
 from dataclasses import dataclass
-from typing import Sequence, Optional, List, Dict, Tuple
+from typing import Sequence, Optional, List, Dict
 
-from .core import (Station, Grid, ModelConfig, PoseModel, Surface,
-                   solve_precision_field, skew, tangent_basis)
+from .core import Station, Grid, ModelConfig, PoseModel, skew, tangent_basis
 
 __all__ = ["NetworkPose", "pose_covariance_from_network", "network_report",
            "rigidity_score", "datum_modes"]

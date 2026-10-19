@@ -267,8 +267,8 @@ def profile_thermal(rec, proj, temps, values: Dict[str, float], T0: float, term:
             rows.append({"ppm_per_degC": float(g), "cost": float(ba["final_cost"]), "iterations": ba["iterations"],
                          "variance_factor": float(2 * ba["final_cost"] / red)})
             if verbose:
-                print(f"  {term} {g:+.4f}: cost {ba['final_cost']:.2f} it {ba['iterations']} ({time.time() - t:.0f} s)  "
-                      f"{J.progress(len(rows), max(npoints, len(rows)), t_all, 'profile ' + term)}", flush=True)
+                log.info(f"  {term} {g:+.4f}: cost {ba['final_cost']:.2f} it {ba['iterations']} ({time.time() - t:.0f} s)  "
+                      f"{J.progress(len(rows), max(npoints, len(rows)), t_all, 'profile ' + term)}")
         fit = J.fit_profile(sorted(rows, key=lambda r: r["ppm_per_degC"]))
         lo, hi = min(r["ppm_per_degC"] for r in rows), max(r["ppm_per_degC"] for r in rows)
         b = fit["best_ppm_per_degC"]
@@ -282,8 +282,8 @@ def profile_thermal(rec, proj, temps, values: Dict[str, float], T0: float, term:
            "at_edge": not (lo <= fit["best_ppm_per_degC"] <= hi)}
     out["z"] = (out["best"] / out["sd"]) if out["sd"] and np.isfinite(out["sd"]) and out["sd"] > 0 else None
     if verbose:
-        print(f"{term}: {out['best']:+.4f} +- {out['sd']:.4f} {UNITS.get(term, '')} (start {c0:+.4f})"
-              + ("  [outside the grid]" if out["at_edge"] else ""), flush=True)
+        log.info(f"{term}: {out['best']:+.4f} +- {out['sd']:.4f} {UNITS.get(term, '')} (start {c0:+.4f})"
+              + ("  [outside the grid]" if out["at_edge"] else ""))
     return out
 
 
@@ -396,9 +396,9 @@ def fit_early_offsets(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, An
             cache[key] = {"cost": float(ba["final_cost"]), "vf": float(2 * ba["final_cost"] / red),
                           "iterations": ba["iterations"]}
             if verbose:
-                print("  early offsets " + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, x))
+                log.info("  early offsets " + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, x))
                       + f": cost {ba['final_cost']:.2f} it {ba['iterations']} ({time.time() - t:.0f} s)  "
-                      + J.progress(len(cache), n_max, t_all, "adjustment (at most)"), flush=True)
+                      + J.progress(len(cache), n_max, t_all, "adjustment (at most)"))
         return cache[key]
 
     # Newton steps on the response surface within a trust region of ``max_move`` px per term; a step is kept only
@@ -425,7 +425,7 @@ def fit_early_offsets(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, An
                   "eigenvalues": ev.tolist(), "fit_rms": fit_rms, "step": dx.tolist(), "positive_definite": ok}
         out["rounds"].append(rec_rd)
         if verbose:
-            print(f"  early offsets, round {rd + 1}/{rounds}: centre " + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, best))
+            log.info(f"  early offsets, round {rd + 1}/{rounds}: centre " + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, best))
                   + "; step " + " ".join(f"{v:+.3f}" for v in dx) + (" (positive definite)" if ok else " (not convex)"),
                   flush=True)
         if ok and np.all(np.abs(dx) < 0.5 * step):
@@ -459,10 +459,10 @@ def fit_early_offsets(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, An
                     "p_value_all": float(stats.chi2.sf(lr, 4)),
                     "applied_terms": [k for k, v in zip(EARLY_TERMS, z) if abs(v) >= EARLY_APPLY_Z]})
     if verbose and cov is not None:
-        print("early-mission offsets (before sol %g, %d images): " % (before_sol, n_early)
+        log.info("early-mission offsets (before sol %g, %d images): " % (before_sol, n_early)
               + ", ".join(f"{k} {out['offsets_px'][k]:+.3f} +- {out['sd_px'][k]:.3f} px (z {out['z'][k]:+.1f})"
                           for k in EARLY_TERMS)
-              + f"; all four: LR {out['likelihood_ratio']:.1f}, p {out['p_value_all']:.2g}", flush=True)
+              + f"; all four: LR {out['likelihood_ratio']:.1f}, p {out['p_value_all']:.2g}")
     return out
 
 
@@ -503,9 +503,9 @@ def leave_one_block_out(rec, proj, idx: Dict[str, Any], temps, ppm: float, T0: f
                                  + fR * np.radians(1e-3 * row["rig_yaw_mdeg"]))
         rows[name] = row
         if verbose:
-            print(f"  leave out {name}: NL centre {row['NL']['centre_px']:.3f} corner {row['NL']['corner_px']:.3f}, NR "
+            log.info(f"  leave out {name}: NL centre {row['NL']['centre_px']:.3f} corner {row['NL']['corner_px']:.3f}, NR "
                   f"centre {row['NR']['centre_px']:.3f} corner {row['NR']['corner_px']:.3f} px, stereo "
-                  f"{row['stereo_px']:+.3f} px  {J.progress(kb, len(names), t_all, 'leave-one-out')}", flush=True)
+                  f"{row['stereo_px']:+.3f} px  {J.progress(kb, len(names), t_all, 'leave-one-out')}")
     ok_rows = [v for v in rows.values() if "error" not in v]
     mx = {"centre_px": max((max(v["NL"]["centre_px"], v["NR"]["centre_px"]) for v in ok_rows), default=None),
           "corner_px": max((max(v["NL"]["corner_px"], v["NR"]["corner_px"]) for v in ok_rows), default=None),
@@ -576,10 +576,10 @@ def k1_slopes_from_blocks(scapes_cfg: Dict[str, PathLike], min_rows: int = 6, z_
         if z is not None and abs(z) >= z_apply:
             out["apply"][eye] = float(x[-1])
     if verbose:
-        print("k1 against temperature from the blocks' bins: " + "; ".join(
+        log.info("k1 against temperature from the blocks' bins: " + "; ".join(
             f"{e} {v['slope']:+.2e} +- {v['se']:.1e} /degC (z {v['z']:+.1f}, {v['n']} bins)" if v.get("slope") is not None
             else f"{e} -" for e, v in out["fits"].items()) + f" -> applied NL {out['apply']['NL']:+.2e}, NR "
-            f"{out['apply']['NR']:+.2e}", flush=True)
+            f"{out['apply']['NR']:+.2e}")
     return out
 
 
@@ -664,8 +664,8 @@ def baseline_degeneracy(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, 
                      "NR_cx": float(r.cameras[2].params[2]), "NL_cx": float(r.cameras[1].params[2]),
                      "seconds": time.time() - t})
         if verbose:
-            print(f"  baseline {sgn * delta_mm:+.1f} mm: cost {ba['final_cost']:.1f}, yaw {ang['yaw_mdeg']:+.2f} mdeg, "
-                  f"NR cx {rows[-1]['NR_cx']:.3f} px ({rows[-1]['seconds']:.0f} s)", flush=True)
+            log.info(f"  baseline {sgn * delta_mm:+.1f} mm: cost {ba['final_cost']:.1f}, yaw {ang['yaw_mdeg']:+.2f} mdeg, "
+                  f"NR cx {rows[-1]['NR_cx']:.3f} px ({rows[-1]['seconds']:.0f} s)")
     plus, minus = rows
     return {"delta_mm": delta_mm, "baseline_m": b0, "rows": rows, "at_joint": base,
             "yaw_mdeg_per_mm": (plus["yaw_mdeg"] - minus["yaw_mdeg"]) / (2 * delta_mm),
@@ -695,8 +695,8 @@ def fit_rig_translation(scapes_cfg: Dict[str, PathLike], res: Dict[str, Any], po
                                     points_per_scape=points, seed=0)
     temps = idx["temps"]
     if verbose:
-        print(f"rig translation: merged {len(idx['images'])} large blocks, {rec.num_reg_images()} images "
-              f"({time.time() - t:.0f} s)", flush=True)
+        log.info(f"rig translation: merged {len(idx['images'])} large blocks, {rec.num_reg_images()} images "
+              f"({time.time() - t:.0f} s)")
     proj.settings["navcam_rig_yaw"] = "hold"
     for cid, key in ((1, "NL"), (2, "NR")):
         c = dict(proj.cameras[key], model=rec.cameras[cid].model.name, params=list(map(float, rec.cameras[cid].params)))
@@ -725,10 +725,10 @@ def fit_rig_translation(scapes_cfg: Dict[str, PathLike], res: Dict[str, Any], po
            "dbaseline_mm": 1e3 * float(np.linalg.norm(t1) - np.linalg.norm(t0)),
            "rig_abs_mdeg": J.rig_angles(R1), "seconds": time.time() - t}
     if verbose:
-        print(f"rig translation ({len(out['blocks'])} large blocks): right centre change [mm] "
+        log.info(f"rig translation ({len(out['blocks'])} large blocks): right centre change [mm] "
               f"{np.round(out['dcentre_mm'], 3).tolist()} (x along the baseline), sd [mm] "
               f"{None if sd_t is None else np.round(sd_t, 3).tolist()}, baseline {out['baseline_m']:.5f} m "
-              f"({out['dbaseline_mm']:+.2f} mm)  ({out['seconds']:.0f} s)", flush=True)
+              f"({out['dbaseline_mm']:+.2f} mm)  ({out['seconds']:.0f} s)")
     return out
 
 
@@ -794,21 +794,21 @@ def fit_navcam(scapes_cfg: Dict[str, PathLike], points: int = 8000, iterations: 
                                     points_per_scape=points, seed=0)
     temps = idx["temps"]
     if verbose:
-        print(f"merged {len(idx['images'])} blocks, {rec.num_reg_images()} images, {rec.num_points3D()} points "
-              f"({time.time() - t:.0f} s)", flush=True)
+        log.info(f"merged {len(idx['images'])} blocks, {rec.num_reg_images()} images, {rec.num_points3D()} points "
+              f"({time.time() - t:.0f} s)")
         if idx.get("duplicates"):
-            print("  images also in an earlier block (kept, counted twice): "
-                  + ", ".join(f"{k} {v}" for k, v in idx["duplicates"].items()), flush=True)
+            log.info("  images also in an earlier block (kept, counted twice): "
+                  + ", ".join(f"{k} {v}" for k, v in idx["duplicates"].items()))
         n_adj = 1 + (len(terms) * 5 * max(1, int(thermal_rounds)) + 1 if refit_thermal else 0) \
             + (((max(1, int(early_rounds)) * 16 + 3) if not early_hold else 1) if early_mission_sol else 0)
-        print(f"{datetime.datetime.now():%H:%M} plan: about {n_adj} joint adjustments (start"
+        log.info(f"{datetime.datetime.now():%H:%M} plan: about {n_adj} joint adjustments (start"
               + (f", thermal profiles {', '.join(terms)}" if refit_thermal else "")
               + ((", early-mission offsets held" if early_hold else f", early-mission offsets up to {early_rounds} rounds of 16")
                  if early_mission_sol else "")
-              + ", final with covariance" + (", rig translation" if translation_scapes else "") + ")", flush=True)
-        print(f"{FORM_ID}: fx, fy per eye against temperature, NL and NR cx against temperature, one rig yaw with a sol "
+              + ", final with covariance" + (", rig translation" if translation_scapes else "") + ")")
+        log.info(f"{FORM_ID}: fx, fy per eye against temperature, NL and NR cx against temperature, one rig yaw with a sol "
               f"rate (start {tvals['yaw_rate']:+.2f} mdeg/1000 sol); k4 free; k1 per degC NL {tvals['NL_k1']:+.2e}, NR "
-              f"{tvals['NR_k1']:+.2e} ({k1_source})", flush=True)
+              f"{tvals['NR_k1']:+.2e} ({k1_source})")
     proj.settings["navcam_rig_yaw"] = "refine"            # one yaw for all: the drift carries the sol rate
     names = forms.NAVCAM_PARAMS
     for cid, key in ((1, "NL"), (2, "NR")):
@@ -823,12 +823,12 @@ def fit_navcam(scapes_cfg: Dict[str, PathLike], points: int = 8000, iterations: 
     profiles = {}
     if refit_thermal:
         if verbose:
-            print(f"{datetime.datetime.now():%H:%M} consensus at the start values: cost {ba['final_cost']:.1f} "
-                  f"({time.time() - t:.0f} s); thermal profiles: {', '.join(terms)}", flush=True)
+            log.info(f"{datetime.datetime.now():%H:%M} consensus at the start values: cost {ba['final_cost']:.1f} "
+                  f"({time.time() - t:.0f} s); thermal profiles: {', '.join(terms)}")
         history = []
         for rnd in range(max(1, int(thermal_rounds))):
             if verbose and thermal_rounds > 1:
-                print(f"{datetime.datetime.now():%H:%M} thermal profiles, round {rnd + 1} of {thermal_rounds}", flush=True)
+                log.info(f"{datetime.datetime.now():%H:%M} thermal profiles, round {rnd + 1} of {thermal_rounds}")
             for term in terms:
                 pr = profile_thermal(rec, proj, temps, tvals, t0, term, drift=drift, verbose=verbose)
                 pr["round"] = rnd + 1
@@ -836,8 +836,8 @@ def fit_navcam(scapes_cfg: Dict[str, PathLike], points: int = 8000, iterations: 
                 tvals = dict(tvals, **{term: float(pr["best"])})
             history.append({k: tvals[k] for k in terms})
         if len(history) > 1 and verbose:
-            print("change in the last round: " + ", ".join(f"{k} {history[-1][k] - history[-2][k]:+.4f}"
-                                                          for k in terms), flush=True)
+            log.info("change in the last round: " + ", ".join(f"{k} {history[-1][k] - history[-2][k]:+.4f}"
+                                                          for k in terms))
         ppm = _mean_ppm(tvals)
         xkw = _joint_kw(tvals, drift)
         t = time.time()
@@ -852,8 +852,8 @@ def fit_navcam(scapes_cfg: Dict[str, PathLike], points: int = 8000, iterations: 
         else:
             x0 = early_start_from_blocks(scapes_cfg, float(early_mission_sol))["start"]
         if verbose:
-            print(f"{datetime.datetime.now():%H:%M} early-mission offsets before sol {early_mission_sol:g} (start "
-                  + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, x0)) + "):", flush=True)
+            log.info(f"{datetime.datetime.now():%H:%M} early-mission offsets before sol {early_mission_sol:g} (start "
+                  + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, x0)) + "):")
         if early_hold:
             n_e = len(J.early_keypoint_map(proj, float(early_mission_sol), np.zeros(4)).early_images)
             early = {"before_sol": float(early_mission_sol), "terms": list(EARLY_TERMS), "early_images": n_e,
@@ -887,10 +887,10 @@ def fit_navcam(scapes_cfg: Dict[str, PathLike], points: int = 8000, iterations: 
                     "NR_cx": float(rec.cameras[2].params[2]), "NL_cx": float(rec.cameras[1].params[2])}
         joint_tr["dbaseline_mm"] = 1e3 * (joint_tr["baseline_m"] - joint_tr["baseline_start_m"])
         if verbose:
-            print(f"{datetime.datetime.now():%H:%M} joint rig: translation free with the cameras and the rotation: baseline "
+            log.info(f"{datetime.datetime.now():%H:%M} joint rig: translation free with the cameras and the rotation: baseline "
                   f"{joint_tr['baseline_m']:.5f} m ({joint_tr['dbaseline_mm']:+.2f} mm), yaw "
                   f"{joint_tr['rig_abs_mdeg']['yaw_mdeg']:+.2f} mdeg, NR cx {joint_tr['NR_cx']:.3f} px, cost "
-                  f"{ba['final_cost']:.1f} ({joint_tr['seconds']:.0f} s)", flush=True)
+                  f"{ba['final_cost']:.1f} ({joint_tr['seconds']:.0f} s)")
         if degeneracy_mm:
             joint_tr["degeneracy"] = baseline_degeneracy(rec, proj, temps, ppm, t0, xkw, _emap, float(degeneracy_mm),
                                                          iterations=iterations, verbose=verbose)
@@ -952,17 +952,17 @@ def fit_navcam(scapes_cfg: Dict[str, PathLike], points: int = 8000, iterations: 
                                  iterations=iterations, verbose=verbose)
         out["rig_translation"] = tr
         if joint_tr is not None and verbose:
-            print(f"rig translation: joint {joint_tr['baseline_m']:.5f} m vs large blocks alone (cameras held) "
-                  f"{tr['baseline_m']:.5f} m: {1e3 * (joint_tr['baseline_m'] - tr['baseline_m']):+.2f} mm", flush=True)
+            log.info(f"rig translation: joint {joint_tr['baseline_m']:.5f} m vs large blocks alone (cameras held) "
+                  f"{tr['baseline_m']:.5f} m: {1e3 * (joint_tr['baseline_m'] - tr['baseline_m']):+.2f} mm")
     if translation_scapes or joint_tr is not None:
         out["rig_translation_applied"] = bool(apply_translation)
         out["rig_translation_source"] = "joint" if joint_tr is not None else "large blocks (cameras held)"
         if apply_translation and joint_tr is None:
             out["rig_t"] = list(tr["t_m"])
     if verbose:
-        print(f"consensus: cost {out['final_cost']:.1f}, it {out['iterations']}, median {st['median_px']:.4f} / rms "
+        log.info(f"consensus: cost {out['final_cost']:.1f}, it {out['iterations']}, median {st['median_px']:.4f} / rms "
               f"{st['rms_px']:.4f} px, corners {st['radial'][-1]['median_px'] or float('nan'):.3f} px, rig yaw "
-              f"{out['rig_abs_mdeg']['yaw_mdeg']:+.2f} mdeg  ({out['seconds']:.0f} s)", flush=True)
+              f"{out['rig_abs_mdeg']['yaw_mdeg']:+.2f} mdeg  ({out['seconds']:.0f} s)")
     return out
 
 

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from conftest import NLF, ZL0, needs_data
 from pathlib import Path
-from conftest import NLF, ZL0, needs_data, synthetic_waypoints
+from conftest import NLF, ZL0, config_selection_off, needs_data, synthetic_waypoints
 from types import SimpleNamespace
 import types
 
@@ -121,7 +121,7 @@ def test_references_offset(tmp_path):
 def test_only_existing_rebuilds_manifest_from_remaining_images(tmp_path):
     import mppp
     from mppp.process import filter_to_existing
-    cfg = mppp.load_config({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": True}})
+    cfg = config_selection_off({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": True}})
     wp = mppp.load_waypoints()
     man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False)
     assert man["n_processed"] == 2 and man["only_existing"] is None
@@ -148,9 +148,11 @@ def test_only_existing_rebuilds_manifest_from_remaining_images(tmp_path):
 
 
 @needs_data
-def test_reuse_existing_processes_only_what_is_missing_or_changed(tmp_path, capsys):
+def test_reuse_existing_processes_only_what_is_missing_or_changed(tmp_path, caplog):
+    import logging
     import mppp
-    cfg = mppp.load_config({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": True}})
+    caplog.set_level(logging.INFO, logger="mppp.process")
+    cfg = config_selection_off({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": True}})
     wp = mppp.load_waypoints()
     png = lambda p: tmp_path / "images_png8" / (p.stem + ".png")                  # noqa: E731
     man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True)
@@ -179,12 +181,12 @@ def test_reuse_existing_processes_only_what_is_missing_or_changed(tmp_path, caps
     assert (tmp_path / "references.txt").read_text() == refs_full                 # rebuilt rows = processed rows
 
     # another configuration (e.g. another mask model): everything is processed again, with the reason
-    cfg2 = mppp.load_config({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": True,
+    cfg2 = config_selection_off({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": True,
                                                                           "store_mask_in_alpha": False}})
     man = mppp.process_images([NLF, ZL0], tmp_path, cfg2, wp, progress=True, reuse_existing=True)
     assert man["reuse_existing"]["to_process"] == 2
     assert "export.store_mask_in_alpha" in man["reuse_existing"]["config_changed"]
-    assert "configuration changed" in capsys.readouterr().out
+    assert "configuration changed" in caplog.text
 
 
 def test_parse_stations():
@@ -213,7 +215,7 @@ def test_skip_inference_at_one_station_keeps_the_rover(tmp_path, monkeypatch):
     monkeypatch.setattr("mppp.process.check_mask_checkpoint", lambda cfg: None)
     wp = mppp.load_waypoints()
     base = {"export": {"formats": ["PNG8"], "write_mask_files": True}}
-    man = mppp.process_images([NLF, ZL0], tmp_path, mppp.load_config(base), wp, progress=False, reuse_existing=True, workers=1)
+    man = mppp.process_images([NLF, ZL0], tmp_path, config_selection_off(base), wp, progress=False, reuse_existing=True, workers=1)
     by = {m["source_product"]: m for m in man["images"]}
     nlf = by[NLF.name]
     assert nlf["mask"]["inferred"] and nlf["mask"]["included_fraction"] < nlf["mask"]["valid_fraction"]
@@ -226,7 +228,7 @@ def test_skip_inference_at_one_station_keeps_the_rover(tmp_path, monkeypatch):
             m["drive"] = nlf["drive"] + 1
     mp.write_text(json.dumps(on_disk))
 
-    cfg = mppp.load_config({**base, "masking": {"skip_inference_at": [station]}})
+    cfg = config_selection_off({**base, "masking": {"skip_inference_at": [station]}})
     man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True, workers=1)
     rep = man["reuse_existing"]
     assert rep["mask_inference_changed"] == [NLF.stem] and rep["to_process"] == 1 and rep["reused"] == 1
@@ -242,7 +244,7 @@ def test_skip_inference_at_one_station_keeps_the_rover(tmp_path, monkeypatch):
     # same list again: nothing to do; list emptied: the station's images get the model mask back
     man = mppp.process_images([NLF, ZL0], tmp_path, cfg, wp, progress=False, reuse_existing=True, workers=1)
     assert man["reuse_existing"]["to_process"] == 0
-    man = mppp.process_images([NLF, ZL0], tmp_path, mppp.load_config(base), wp, progress=False, reuse_existing=True, workers=1)
+    man = mppp.process_images([NLF, ZL0], tmp_path, config_selection_off(base), wp, progress=False, reuse_existing=True, workers=1)
     assert man["reuse_existing"]["mask_inference_changed"] == [NLF.stem]
 
 
@@ -250,7 +252,7 @@ def test_reuse_existing_finds_the_manifest_of_the_previous_version(tmp_path):
     import json
     import mppp
     from mppp.process import reusable_images
-    cfg = mppp.load_config({"masking": {"infer_mask": False}})
+    cfg = config_selection_off({"masking": {"infer_mask": False}})
     (tmp_path / "images_png8").mkdir()
     (tmp_path / "images_png8" / "a.png").write_bytes(b"x")
     meta = {"source_product": "a.IMG", "site": 1, "drive": 2, "outputs": {"PNG8": "images_png8/a.png"},
@@ -264,7 +266,7 @@ def test_reuse_existing_finds_the_manifest_of_the_previous_version(tmp_path):
 def test_reuse_existing_notices_a_new_waypoint_table(tmp_path):
     import mppp
     from mppp.process import reusable_images
-    cfg = mppp.load_config({"masking": {"infer_mask": False}})
+    cfg = config_selection_off({"masking": {"infer_mask": False}})
     (tmp_path / "images_png8").mkdir()
     (tmp_path / "images_png8" / "a.png").write_bytes(b"x")
     meta = {"source_product": "a.IMG", "site": 1, "drive": 2, "outputs": {"PNG8": "images_png8/a.png"},
@@ -293,13 +295,13 @@ def test_sky_pointing_navcam_is_skipped(tmp_path):
     from mppp.image import MPPPImage, SkyImage
     from mppp.process import process_images
     wp = synthetic_waypoints()
-    on = mppp.load_config({"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": 45.0}})
-    off = mppp.load_config({"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": None}})
+    on = config_selection_off({"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": 45.0}})
+    off = config_selection_off({"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": None}})
     with pytest.raises(SkyImage):
         MPPPImage(NLF, on, wp)                                    # the Sun-pointing tile looks up at +78 deg
     assert MPPPImage(NLF, off, wp).pose.boresight_az_el_deg[1] > 45
     MPPPImage(ZL0, on, wp)                                        # Mastcam-Z is not filtered (looks down anyway)
-    high = mppp.load_config({"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": 80.0}})
+    high = config_selection_off({"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": 80.0}})
     MPPPImage(NLF, high, wp)
     man = process_images([NLF, ZL0], tmp_path / "out", on, wp, progress=False)
     assert man["n_processed"] == 1 and man["failed"] == [] and len(man["skipped"]) == 1
@@ -311,7 +313,7 @@ def test_only_existing_is_ignored_on_a_first_run(tmp_path):
     import mppp
     from mppp.process import process_images, filter_to_existing
     wp = synthetic_waypoints()
-    cfg = mppp.load_config({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"]}})
+    cfg = config_selection_off({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"]}})
     kept, rep = filter_to_existing([ZL0], tmp_path / "nothing", "PNG8")
     assert kept == [ZL0] and rep["skipped"] and rep["n_kept"] == 1
     man = process_images([ZL0], tmp_path / "out", cfg, wp, only_existing="PNG8", progress=False)
@@ -350,20 +352,20 @@ def test_brightness_lmst_and_saturation_rules(tmp_path):
     wp = synthetic_waypoints()
     assert lmst_hours("Sol-01451M13:00:25.313") == pytest.approx(13.007, abs=1e-3) and lmst_hours(None) is None
     base = {"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": None}}
-    im = MPPPImage(NLF, mppp.load_config(base), wp)
+    im = MPPPImage(NLF, config_selection_off(base), wp)
     assert im.brightness == 0.9 and im.meta["brightness"] == 0.9 and im.meta["saturated_fraction"] > 0.99
-    assert MPPPImage(ZL0, mppp.load_config(base), wp).brightness == 1.0
-    dark = mppp.load_config(dict(base, color={"brightness_by_family": {"N": 0.5}}))
-    a = MPPPImage(ZL0, mppp.load_config(base), wp).image_int8.astype(int)
-    b = MPPPImage(ZL0, mppp.load_config(dict(base, color={"brightness_by_family": {"Z": 0.5}})), wp).image_int8.astype(int)
+    assert MPPPImage(ZL0, config_selection_off(base), wp).brightness == 1.0
+    dark = config_selection_off(dict(base, color={"brightness_by_family": {"N": 0.5}}))
+    a = MPPPImage(ZL0, config_selection_off(base), wp).image_int8.astype(int)
+    b = MPPPImage(ZL0, config_selection_off(dict(base, color={"brightness_by_family": {"Z": 0.5}})), wp).image_int8.astype(int)
     v = a > 10
     assert np.median(b[v] / a[v]) == pytest.approx(0.5, abs=0.05)          # brightness scales the product
     with pytest.raises(SaturatedImage):
-        MPPPImage(NLF, mppp.load_config(dict(base, selection={"max_boresight_elevation_deg": None, "max_saturated_fraction": 0.05})), wp)
+        MPPPImage(NLF, config_selection_off(dict(base, selection={"max_boresight_elevation_deg": None, "max_saturated_fraction": 0.05})), wp)
     with pytest.raises(LmstOutOfWindow):
-        MPPPImage(ZL0, mppp.load_config(dict(base, selection={"lmst_window_h": [9.0, 12.0]})), wp)   # taken at 14.5 h
-    MPPPImage(ZL0, mppp.load_config(dict(base, selection={"lmst_window_h": [9.0, 17.0]})), wp)
-    man = process_images([NLF, ZL0], tmp_path / "out", mppp.load_config(dict(base, selection={
+        MPPPImage(ZL0, config_selection_off(dict(base, selection={"lmst_window_h": [9.0, 12.0]})), wp)   # taken at 14.5 h
+    MPPPImage(ZL0, config_selection_off(dict(base, selection={"lmst_window_h": [9.0, 17.0]})), wp)
+    man = process_images([NLF, ZL0], tmp_path / "out", config_selection_off(dict(base, selection={
         "max_boresight_elevation_deg": None, "max_saturated_fraction": 0.05, "lmst_window_h": [9.0, 17.0]})), wp,
         progress=False, workers=1)
     assert man["n_processed"] == 1 and len(man["skipped"]) == 1 and "saturated" in man["skipped"][0]["reason"]
@@ -374,7 +376,7 @@ def test_worker_pool_matches_sequential(tmp_path):
     import mppp
     from mppp.process import process_images
     wp = synthetic_waypoints()
-    cfg = mppp.load_config({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"]}})
+    cfg = config_selection_off({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"]}})
     seq = process_images([ZL0, NLF], tmp_path / "seq", cfg, wp, progress=False, workers=1)
     par = process_images([ZL0, NLF], tmp_path / "par", cfg, wp, progress=False, workers=2)
     assert seq["n_processed"] == par["n_processed"] == 2 and not par["failed"]

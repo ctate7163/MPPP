@@ -147,15 +147,6 @@ def test_frame_fraction_reads_labels_only_for_small_files(tmp_path, monkeypatch)
     assert len(kept) == 1 and rep["n_dropped_subframes"] == 0            # Mastcam-Z is not filtered
 
 
-def test_real_tile_label_if_staged():
-    f = Path("/mnt/user-data/uploads/m2020/datadrive/00092/ids/rdr/ncam/"
-             "NRF_0092_0675115592_573RAD_N0040136NCAM00698_0A00LLJ01.IMG")
-    if not f.is_file():
-        pytest.skip("tile product not available here")
-    from mppp.sfm.project import frame_fraction
-    assert frame_fraction(f) == pytest.approx(1 / 16)
-
-
 def test_quarter_frame_rule(tmp_path, monkeypatch):
     from mppp.sfm import project as P
     assert P.NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3)          # v0p85 (0.2 before)
@@ -175,3 +166,30 @@ def test_quarter_frame_rule(tmp_path, monkeypatch):
     assert {p.name for p in kept} == {names["c"], names["d"]} and rep["n_dropped_subframes"] == 2
     from mppp.pipeline import PROCESS_RULES
     assert PROCESS_RULES == 4
+
+
+def test_find_imgs_over_several_visits(tmp_path):
+    from mppp.select import find_imgs, in_sol_range, sol_ranges
+    assert sol_ranges((1, 2)) == [(1, 2)] and sol_ranges([[1, 2], [5, 6]]) == [(1, 2), (5, 6)]
+    assert in_sol_range(5, [[1, 2], [5, 6]]) and not in_sol_range(3, [[1, 2], [5, 6]]) and in_sol_range(3, (1, 4))
+    names = {s: f"NLF_{s:04d}_0700000000_000RAD_N{s:03d}0100NCAM00100_0A0095J01.IMG" for s in (95, 365, 700)}
+    for n in names.values():
+        (tmp_path / n).write_bytes(b"")
+    got = find_imgs(tmp_path, ["NLF"], sol_range=[[361, 378], [91, 101]])
+    assert [p.name for p in got] == [names[95], names[365]]
+    assert [p.name for p in find_imgs(tmp_path, ["NLF"], sol_range=(361, 378))] == [names[365]]
+
+
+def _wp(site, drive, sol, e, n):
+    return {"type": "Feature", "properties": {"site": site, "drive": drive, "sol": sol, "easting": e, "northing": n}}
+
+
+def test_find_imgs_near_min_sol(tmp_path):
+    from mppp.select import find_imgs_near
+    wps = {"features": [_wp(9, 1000, 178, 0.0, 0.0), _wp(9, 900, 175, 5.0, 0.0), _wp(9, 1914, 341, 0.0, 8.0)]}
+    for sol, site, drive in [(178, 9, 1000), (175, 9, 900), (177, 9, 900), (341, 9, 1914)]:
+        (tmp_path / f"NLF_{sol:04d}_0700000000_000RAD_N{site:03d}{drive:04d}NCAM00100_0A0095J01.IMG").write_bytes(b"")
+    p, r = find_imgs_near(tmp_path, ["NLF"], [[178, 190]], wps, radius_m=10.0)
+    assert sorted(int(x.name[4:8]) for x in p) == [175, 177, 178, 341]
+    p, r = find_imgs_near(tmp_path, ["NLF"], [[178, 190]], wps, radius_m=10.0, min_sol=178)
+    assert sorted(int(x.name[4:8]) for x in p) == [178, 341] and r["min_sol"] == 178

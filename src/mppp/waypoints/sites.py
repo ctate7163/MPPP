@@ -9,11 +9,15 @@ The site definitions are the package data file ``mppp/data/sites.json`` (:func:`
 """
 from __future__ import annotations
 
+import logging
+
 import json
 import os
 import statistics
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+
+log = logging.getLogger("mppp.waypoints")
 
 PathLike = Union[str, Path]
 
@@ -543,11 +547,11 @@ def discover_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = 
 
 def print_scan(rows: List[Dict[str, Any]], sites: Optional[Dict[str, Sequence[int]]] = None) -> None:
     for w in check_sites(load_sites() if sites is None else sites):
-        print("sites:", w)
+        log.info("sites:", w)
     used = [r for r in rows if r["ok"]]
-    print(f"{len(used)} of {len(rows)} site folders used:")
+    log.info(f"{len(used)} of {len(rows)} site folders used:")
     for r in rows:
         sol = f"{r['sol_min']}-{r['sol_max']}" if r.get("sol_min") is not None else "-"
         info = (f"{r.get('images', 0):4d} images, {r.get('stations', 0):3d} stations, sols {sol:>9s}, "
                 f"health {r.get('health') or '-'}" if r.get("images") is not None else "")
-        print(f"  {'+' if r['ok'] else '-'} {r['label']:24s} {info}" + ("" if r["ok"] else f"  [{r['reason']}]"))
+        log.info(f"  {'+' if r['ok'] else '-'} {r['label']:24s} {info}" + ("" if r["ok"] else f"  [{r['reason']}]"))

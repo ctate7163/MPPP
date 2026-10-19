@@ -18,6 +18,8 @@ one camera per focus bin and backlash state.
 """
 from __future__ import annotations
 
+import logging
+
 import json
 import os
 import shutil
@@ -31,6 +33,8 @@ from .. import calib
 from ..calib import forms
 from ..filenames import parse_filename
 from ..paths import cmods_dir
+
+log = logging.getLogger("mppp.sfm")
 
 PathLike = Union[str, Path]
 

@@ -6,15 +6,17 @@ Exports for error analysis.
 * ``native/`` — COLMAP TEXT model in each image's NATIVE pixels: one camera per
   (instrument, resolution) with f, cx, cy scaled by the downsample factor (the
   distortion coefficients are resolution-free), keypoints scaled back.  This is
-  what ``mppp.error.read_colmap`` reads, and what matches the image files.
+  what ``mppp.colmap.read_colmap`` reads, and what matches the image files.
 * ``stations.csv`` — image -> station (site/drive), sol, SCLK, LMST, solar
-  elevation, instrument, downsample scale; ``mppp.error`` ``assign_stations``
-  takes the name -> station mapping.
+  elevation, instrument, downsample scale (the name -> station mapping).
 * ``poses.csv`` — CAHV/waypoint prior vs refined camera centre (ENU, metres)
   and attitude difference (degrees), per image.
 * ``residuals.npz`` — per-observation residual in native pixels.
 * ``summary.json`` — cameras and rig before/after, track statistics, and the
-  ``mppp.error`` epsilon estimates.
+  epsilon estimates (:func:`epsilon_from_residuals`).
+
+The error model (the ``error`` package, under development) reads these folders;
+nothing here imports it.
 """
 from __future__ import annotations
 
@@ -25,7 +27,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
-from ..colmap import scale_camera_params, write_cameras_txt, write_images_txt
+from ..colmap import scale_camera_params
 from .project import SfmProject, station_labels
 from .reconstruction import native_residuals, track_statistics
 
@@ -463,6 +465,38 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
     return fig
 
 
+def epsilon_from_residuals(res: Dict[str, np.ndarray], image_names: Dict[int, str],
+                           stations: Dict[str, str]) -> Dict[str, float]:
+    """
+    The image-measurement precision epsilon of the error model from the
+    per-observation residuals of :func:`native_residuals`: eps = rms(|r|) / sqrt(2)
+    (per axis), over the observations of tie points seen from ONE station
+    (``eps_intra_px``) and of points seen from SEVERAL (``eps_cross_px``), with
+    the observation counts, the plain rms values and their ratio.  Observations
+    with a non-finite residual (behind the camera) are left out.  The keys are
+    those of the error model's calibration, which used to re-read the text model.
+    """
+    r, iid, pid = res["residual_native_px"], res["image_id"], res["point3D_id"]
+    ok = np.isfinite(r)
+    r, iid, pid = r[ok], iid[ok], pid[ok]
+    if r.size == 0:
+        return {"eps_intra_px": float("nan"), "eps_cross_px": float("nan")}
+    st = np.array([stations[image_names[int(i)]] for i in iid])
+    cross = np.zeros(r.size, bool)
+    order = np.argsort(pid, kind="stable")
+    for sel in np.split(order, np.flatnonzero(np.diff(pid[order])) + 1):
+        cross[sel] = len(set(st[sel].tolist())) > 1
+    a, b = r[~cross], r[cross]
+
+    def rms(x):
+        return float(np.sqrt(np.mean(np.square(x)))) if x.size else float("nan")
+    out = {"eps_intra_px": rms(a) / float(np.sqrt(2.0)), "eps_cross_px": rms(b) / float(np.sqrt(2.0)),
+           "n_intra_obs": int(a.size), "n_cross_obs": int(b.size),
+           "resid_rms_intra_px": rms(a), "resid_rms_cross_px": rms(b)}
+    out["eps_ratio"] = out["eps_cross_px"] / out["eps_intra_px"] if out["eps_intra_px"] > 0 else float("nan")
+    return out
+
+
 def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = None) -> Dict[str, Any]:
     out = Path(out_dir) if out_dir else project.root / "error_input"
     out.mkdir(parents=True, exist_ok=True)
@@ -487,13 +521,10 @@ def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
     res = native_residuals(rec, project)
     np.savez_compressed(out / "residuals.npz", **res)
 
-    eps = {}
     try:
-        from ..error.colmap import read_colmap, calibrate_eps_from_residuals
-        model = read_colmap(str(out / "native"))
-        model.assign_stations({r["name"]: r["station"] for r in project.images})
-        eps = calibrate_eps_from_residuals(model)
-    except Exception as e:                                       # noqa: BLE001
+        eps = epsilon_from_residuals(res, {int(i): rec.images[i].name for i in rec.reg_image_ids()},
+                                     {r["name"]: r["station"] for r in project.images})
+    except (KeyError, ValueError) as e:
         eps = {"error": f"{type(e).__name__}: {e}"}
 
     cams_after = {}

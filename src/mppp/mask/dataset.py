@@ -32,6 +32,8 @@ of the image files and the separate ``masks/`` files.
 """
 from __future__ import annotations
 
+import logging
+
 import csv
 import datetime as _dt
 import hashlib
@@ -45,6 +47,8 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import cv2
 import numpy as np
+
+log = logging.getLogger("mppp.mask")
 
 PathLike = Union[str, Path]
 
@@ -236,7 +240,7 @@ def build_variable_images(root: PathLike, reuse_from: Sequence[PathLike] = (),
         cv2.imwrite(str(out_dir / name), np.dstack([out_bgr, alpha]), [cv2.IMWRITE_PNG_COMPRESSION, 1])
         rows.append({"name": name, "source": src, **{k2: f"{v:.5f}" for k2, v in params.items()}})
         if progress and k % 250 == 0:
-            print(f"  images_variable {k}/{len(names)}")
+            log.info(f"  images_variable {k}/{len(names)}")
     fields = ["name", "source", "lo", "hi", "gamma", "gain_r", "gain_g", "gain_b"]
     with (root / "images_variable_manifest.csv").open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
@@ -261,10 +265,10 @@ def build_training_set(root: PathLike, psx: Optional[PathLike] = None, reuse_var
     report: Dict[str, object] = {"root": str(root), "created": _dt.datetime.now().isoformat(timespec="seconds")}
     if psx is not None:
         report["masks"] = export_masks_from_psx(psx, root / "images", root / "masks")
-        print(f"[dataset] masks: {report['masks']['written']} written from {Path(psx).name}")
+        log.info(f"[dataset] masks: {report['masks']['written']} written from {Path(psx).name}")
     report["images_variable"] = build_variable_images(root, reuse_variable_from, recipe)
     iv = report["images_variable"]
-    print(f"[dataset] images_variable: {iv['written']} written ({iv['reused_original']} original, "
+    log.info(f"[dataset] images_variable: {iv['written']} written ({iv['reused_original']} original, "
           f"{iv['synthesized']} synthesized); {len(iv['images_without_mask'])} images have no mask")
     (root / "build_report.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     return report
@@ -432,9 +436,9 @@ def regenerate_images_from_pds(root: PathLike, pds_dir: PathLike, masks_dir: str
 
     t0 = time.time()
     if index is None:
-        print(f"[regen] indexing {pds_dir} ...")
+        log.info(f"[regen] indexing {pds_dir} ...")
         index = index_pds(pds_dir)
-        print(f"[regen] {len(index)} .IMG files indexed in {time.time() - t0:.0f} s")
+        log.info(f"[regen] {len(index)} .IMG files indexed in {time.time() - t0:.0f} s")
 
     log_path = odir / "_mppp_regen_log.csv"
     fields = ["name", "status", "source", "width", "height", "seconds", "note"]
@@ -458,7 +462,7 @@ def regenerate_images_from_pds(root: PathLike, pds_dir: PathLike, masks_dir: str
                 continue
             tasks.append((str(m), str(src), str(out), status, alpha))
         fh.flush()
-        print(f"[regen] {len(masks)} masks: {done_before} already done, {len(tasks)} to process, "
+        log.info(f"[regen] {len(masks)} masks: {done_before} already done, {len(tasks)} to process, "
               f"{counts.get('missing', 0)} without a PDS product; workers={workers}")
 
         def consume(results):
@@ -470,7 +474,7 @@ def regenerate_images_from_pds(root: PathLike, pds_dir: PathLike, masks_dir: str
                 if k % print_every == 0 or k == len(tasks):
                     fh.flush()
                     rate = (time.time() - t1) / k
-                    print(f"[regen] {k}/{len(tasks)}  {rate:.1f} s/image  ETA {rate * (len(tasks) - k) / 60:.0f} min  "
+                    log.info(f"[regen] {k}/{len(tasks)}  {rate:.1f} s/image  ETA {rate * (len(tasks) - k) / 60:.0f} min  "
                           f"{ {c: n for c, n in sorted(counts.items())} }")
 
         if workers and workers > 1 and tasks:
@@ -482,5 +486,5 @@ def regenerate_images_from_pds(root: PathLike, pds_dir: PathLike, masks_dir: str
     counts["already_done"] = done_before
     res = {"root": str(root), "images_dir": str(odir), "archived_previous_images": str(archived) if archived else None,
            "log": str(log_path), "counts": counts, "minutes": round((time.time() - t0) / 60, 1)}
-    print(f"[regen] finished in {res['minutes']} min: {counts}  (details: {log_path.name})")
+    log.info(f"[regen] finished in {res['minutes']} min: {counts}  (details: {log_path.name})")
     return res

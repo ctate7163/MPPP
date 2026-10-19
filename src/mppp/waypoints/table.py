@@ -7,7 +7,7 @@ and works offline; ``load_waypoints(refresh=True)`` downloads the current file
 into the user cache (``mppp.paths.cache_dir()``), which is then used by
 default.  The SHA-256 of the file used is recorded in every run manifest.
 
-``mppp.error.waypoints`` builds error-model stations from the same file
+The error model's ``waypoints`` module builds stations from the same file
 (v0p13: one loader for both).
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ import math
 import urllib.request
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 

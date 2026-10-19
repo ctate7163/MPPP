@@ -349,3 +349,46 @@ def test_match_settings_defaults():
     assert s["min_num_inliers"] == 15 and s["max_num_matches"] == 32768 and s["max_error_px"] == 6.0
     assert match_settings("exhaustive", max_ratio=0.9) != match_settings("exhaustive", max_ratio=0.8)
     assert match_settings("exhaustive")["guided_matching"] is False                # v0p64.1 default (off again)
+
+
+# Navcam rig epochs in the database (v0p75)
+
+
+def test_database_puts_epoch_frames_on_their_own_rig(tmp_path):
+    """Navcam images of a later rig epoch (cameras NL#1, NR#1, rig N#1) get frames on that epoch's rig."""
+    import pycolmap
+    from helpers import _synthetic
+    from mppp.sfm.database import build_database
+    from mppp.sfm.reconstruction import initial_reconstruction
+    proj, truth, *_ = _synthetic(tmp_path)
+    nav = [r for r in proj.images if r["instrument"] in ("NL", "NR")]
+    assert len(nav) >= 4
+    last = nav[-2:]                                                # the last stereo pair is a later visit
+    for r in last:
+        r["instrument"], r["rig_epoch"] = r["instrument"] + "#1", 1
+    for eye in ("NL", "NR"):
+        proj.cameras[f"{eye}#1"] = dict(proj.cameras[eye], group=eye, epoch=1)
+    proj.rig["N#1"] = dict(proj.rig["N"], ref="NL#1", sensor="NR#1", epoch={"index": 1})
+    fdb = pycolmap.Database.open(str(proj.features_db))
+    cam = fdb.write_camera(pycolmap.Camera(model="PINHOLE", width=100, height=100, params=[100, 100, 50, 50]))
+    rng = np.random.default_rng(0)
+    for r in proj.images:
+        iid = fdb.write_image(pycolmap.Image(name=r["name"], camera_id=cam))
+        fdb.write_keypoints(iid, rng.uniform(0, 100, (20, 2)).astype(np.float32))
+        fdb.write_descriptors(iid, pycolmap.FeatureDescriptors(pycolmap.FeatureExtractorType.SIFT,
+                                                             rng.integers(0, 255, (20, 128)).astype(np.uint8)))
+    fdb.close()
+    summary = build_database(proj)
+    assert set(summary["rig_ids"]) >= {"N", "N#1"} and summary["rig_ids"]["N"] != summary["rig_ids"]["N#1"]
+    assert {"NL#1", "NR#1"} <= set(summary["cameras"])
+    rec = initial_reconstruction(proj)
+    by_name = {im.name: im for im in rec.images.values()}
+    rid_last = {rec.frames[by_name[r["name"]].frame_id].rig_id for r in last}
+    rid_first = {rec.frames[by_name[r["name"]].frame_id].rig_id for r in nav[:-2]}
+    assert rid_last == {summary["rig_ids"]["N#1"]} and rid_first == {summary["rig_ids"]["N"]}
+    assert rec.rigs[summary["rig_ids"]["N#1"]].num_sensors() == 2
+    assert {by_name[r["name"]].camera_id for r in last} == {summary["cameras"]["NL#1"], summary["cameras"]["NR#1"]}
+    assert rec.num_reg_images() == len(proj.images)
+    # the consensus sees the epoch cameras as their eyes
+    from mppp.sfm.thermal import eye_key
+    assert {eye_key(k) for k in summary["cameras"] if k.startswith("N")} == {"NL", "NR"}

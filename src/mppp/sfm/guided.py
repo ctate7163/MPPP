@@ -23,12 +23,16 @@ quarter of the points 10-15 x beyond the ground).  ``tol`` is ``max_px`` native 
 """
 from __future__ import annotations
 
+import logging
+
 import shutil
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
+
+log = logging.getLogger("mppp.sfm")
 
 PathLike = Union[str, Path]
 
@@ -328,6 +332,6 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
            "new_matches_by_family": by_fam, "options": {k: (list(v) if isinstance(v, tuple) else v) for k, v in o.items()},
            "seconds": round(time.time() - t0, 1)}
     if verbose:
-        print(f"[sfm] pose-guided matching: {len(pairs)} pairs, {n_new} new matches ({by_fam}) in {n_pairs_used} pairs, "
-              f"{rep['seconds']:.0f} s -> {out.name}", flush=True)
+        log.info(f"pose-guided matching: {len(pairs)} pairs, {n_new} new matches ({by_fam}) in {n_pairs_used} pairs, "
+              f"{rep['seconds']:.0f} s -> {out.name}")
     return out, rep

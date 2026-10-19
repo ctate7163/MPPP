@@ -10,6 +10,8 @@ descriptors, and one position prior per image.
 """
 from __future__ import annotations
 
+import logging
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
@@ -19,6 +21,8 @@ import os
 import numpy as np
 
 from .project import SfmProject
+
+log = logging.getLogger("mppp.sfm")
 
 PathLike = Union[str, Path]
 
@@ -134,8 +138,8 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
                                              estimate_affine_shape, num_octaves, first_octave):
         return db
     if db.exists() and not overwrite:
-        print(f"[sfm] {db.name}: extracted with other settings or from other image/mask files - extracting again "
-              f"with max_num_features={max_num_features}", flush=True)
+        log.info(f"{db.name}: extracted with other settings or from other image/mask files - extracting again "
+              f"with max_num_features={max_num_features}")
         overwrite = True
     if python is not None:
         from .gpu import run_step
@@ -162,7 +166,7 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
     opts.sift.first_octave = int(first_octave)
     if (domain_size_pooling or estimate_affine_shape) and use_gpu is not False:
         if use_gpu:
-            print("[sfm] DSP / affine shape: COLMAP extracts these on the CPU", flush=True)
+            log.info("DSP / affine shape: COLMAP extracts these on the CPU")
         use_gpu = False
     if use_gpu and not getattr(pycolmap, "has_cuda", False):
         import warnings

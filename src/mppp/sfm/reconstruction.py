@@ -25,6 +25,8 @@ The result is in the project's world frame (ENU metres minus ``project.offset``)
 """
 from __future__ import annotations
 
+import logging
+
 import copy
 import json
 from pathlib import Path
@@ -41,6 +43,8 @@ _FIXED_EXTRA = {"FULL_OPENCV": [6, 7, 9, 10, 11], "OPENCV": [6, 7],
                 "THIN_PRISM_FISHEYE": [6, 7, 10, 11]}          # v0p30: p1, p2 (tangential) and sx1, sy1 (thin prism)
 _TANGENTIAL = {"FULL_OPENCV": [6, 7], "OPENCV": [6, 7], "THIN_PRISM_FISHEYE": [6, 7]}         # p1, p2
 from .project import PARAM_NAMES as _PARAM_NAMES      # v0p50: one table (mppp.sfm.project)
+
+logger = logging.getLogger("mppp.sfm")
 
 # (triangulation threshold [full-res px], Cauchy scale [sigma], maximum residual kept [native px]) per round.
 # v0p14.5: the fourth round repeats the third's limits - it only shows whether another
@@ -906,8 +910,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         pyceres.solve(so, prob, summary)
         retried = {"first": first.BriefReport(), "second": summary.BriefReport()}
         if True:                                              # always: it matters for the record
-            print(f"[sfm] bundle adjustment: the first solve failed ({first.BriefReport()}); solved again with the "
-                  f"iterative Schur solver: {summary.BriefReport()}", flush=True)
+            logger.info(f"bundle adjustment: the first solve failed ({first.BriefReport()}); solved again with the "
+                  f"iterative Schur solver: {summary.BriefReport()}")
         if summary.termination_type == pyceres.TerminationType.FAILURE:
             raise RuntimeError(f"bundle adjustment failed twice: {first.BriefReport()} / {summary.BriefReport()}")
     cov_out = None
@@ -933,8 +937,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         views_unchanged = bool(free_cids) and all(np.allclose(np.asarray(cam_blocks[c]), cam_starts[c], rtol=0, atol=0)
                                                   for c in free_cids)
         if views_unchanged:
-            print("[sfm] bundle adjustment: no free camera changed in the covariance solve (camera views) - check "
-                  "the cameras", flush=True)
+            logger.info("bundle adjustment: no free camera changed in the covariance solve (camera views) - check "
+                  "the cameras")
     for cid, blk in cam_blocks.items():                      # v0p74.7: written back from the owned arrays, checked
         if cid in rec.cameras:
             _set_camera_params(rec, cid, np.array(blk, dtype=np.float64))
@@ -1184,7 +1188,7 @@ def register_stations(rec, project: SfmProject, min_inliers: int = 40, max_error
                                  "shift_m": shift, "rotation_deg": ang}
         placed.add(s)
         if verbose:
-            print(f"[sfm] station {s}: {n_in}/{len(pts2)} inliers, moved {shift:.3f} m / {ang:.3f} deg")
+            logger.info(f"station {s}: {n_in}/{len(pts2)} inliers, moved {shift:.3f} m / {ang:.3f} deg")
     for s in st_images:
         if only is not None and s not in set(only):
             continue
@@ -1419,11 +1423,11 @@ def print_camera_changes(rec, project: SfmProject, n_params: int = 10) -> List[D
     rows = camera_changes(rec, project)
     for r in rows:
         if r["missing"]:
-            print(f"{r['camera']}: not in the reconstruction")
+            logger.info(f"{r['camera']}: not in the reconstruction")
             continue
         tag = ("  [temperature bin]" if r["thermal_bin"] else
                "  [no images after the thermal split: values before it]" if r["images"] == 0 else "")
-        print(f"{r['camera']} ({r['images']} images){tag}: " + " ".join(
+        logger.info(f"{r['camera']} ({r['images']} images){tag}: " + " ".join(
             f"{n} {a:.4g}->{b:.4g}" for n, a, b in zip(r["names"][:n_params], r["start"], r["refined"])))
     return rows
 
@@ -1689,8 +1693,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     _fine_deg = THERMAL_FINE_BIN_DEG if isinstance(thermal_fine_deg, str) else (thermal_fine_deg or None)
     n_strip = strip_thermal_bins(project)                   # v0p31: a rerun starts from one camera per eye
     if n_strip and verbose:
-        print(f"[sfm] {n_strip} Navcam temperature-bin cameras of an earlier run removed; starting from one camera "
-              f"per eye", flush=True)
+        logger.info(f"{n_strip} Navcam temperature-bin cameras of an earlier run removed; starting from one camera "
+              f"per eye")
     rec = initial_reconstruction(project)
     init = copy.deepcopy(rec)
     log: List[Dict[str, Any]] = []
@@ -1703,9 +1707,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         unloc_reg = register_stations(rec, project, only=sorted(unloc), verbose=verbose)
         log.append({"unlocalized_registration": unloc_reg})
         if verbose:
-            print(f"[sfm] LOCALIZE_MIN_IMAGES {localize_min_images}: {len(unloc)} stations without a position prior "
+            logger.info(f"LOCALIZE_MIN_IMAGES {localize_min_images}: {len(unloc)} stations without a position prior "
                   f"({', '.join(sorted(unloc))}); registered onto the block: "
-                  f"{sum(1 for v in unloc_reg['stations'].values() if v.get('registered'))}", flush=True)
+                  f"{sum(1 for v in unloc_reg['stations'].values() if v.get('registered'))}")
     network = navcam_network(project)
     hold = set(hold_cameras)
     for _v in (project.settings.get("zcam_virtual_rig") or {}).values():      # v0p74: every run starts at the start rig
@@ -1719,15 +1723,15 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         refine_rig = "rotation" if network["verdict"] == "strong" else False
     network["navcam_rig"] = "rotation" if refine_rig else "hold"
     if verbose:
-        print(f"[sfm] Navcam network: {network['stations']} stations over {network['span_m']} m -> {network['verdict']}; "
-              f"Navcam intrinsics {network['navcam_intrinsics']}" + (f", holding {sorted(hold)}" if hold else ""), flush=True)
+        logger.info(f"Navcam network: {network['stations']} stations over {network['span_m']} m -> {network['verdict']}; "
+              f"Navcam intrinsics {network['navcam_intrinsics']}" + (f", holding {sorted(hold)}" if hold else ""))
     log.append({"navcam_network": network})
     z_frames = _frames_of_family(rec, project, "Z")
     staged = bool(staged and z_frames and len(z_frames) < len(rec.frames))
     if staged:
         exclude_frames(rec, z_frames)
         if verbose:
-            print(f"[sfm] stage 1: Navcam only ({len(z_frames)} Mastcam-Z frames set aside)", flush=True)
+            logger.info(f"stage 1: Navcam only ({len(z_frames)} Mastcam-Z frames set aside)")
     if register:
         rec = triangulate(rec, project, max_reproj_px=8.0)
         reg = register_stations(rec, project, verbose=verbose)
@@ -1744,9 +1748,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 f["when"] = tag
             excluded.extend(new)
         if verbose:
-            print(f"[sfm] {tag}: {len(new)} frames excluded as outliers"
+            logger.info(f"{tag}: {len(new)} frames excluded as outliers"
                   + ("".join(f"\n      {', '.join(f['images'])}: {'; '.join(f['reasons'])}" for f in new[:20])
-                     + ("\n      ..." if len(new) > 20 else "")), flush=True)
+                     + ("\n      ..." if len(new) > 20 else "")))
         log.append({"excluded_frames": new, "when": tag})
 
     for k, (tpx, loss, rmax) in enumerate(schedule):
@@ -1771,10 +1775,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                  "elapsed_s": round(time.time() - t0, 1)}
         log.append(entry)
         if verbose:
-            print(f"[sfm] round {k + 1}{' (cameras and rig held)' if held_round else ''}: {st['points']} points "
+            logger.info(f"round {k + 1}{' (cameras and rig held)' if held_round else ''}: {st['points']} points "
                   f"({st['cross_station_fraction']:.2%} cross-station), "
                   f"median {entry['median_native_px']:.3f} / rms {entry['rms_native_px']:.3f} native px, "
-                  f"{n_bad} obs filtered, {entry['elapsed_s']:.0f} s", flush=True)
+                  f"{n_bad} obs filtered, {entry['elapsed_s']:.0f} s")
         if exclude_outliers and k + 1 == min(int(exclude_after_round), len(schedule)):
             _exclude(f"after round {k + 1}")
     if exclude_outliers:
@@ -1793,14 +1797,14 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 "no_position_prior_at": ba.get("no_position_prior_at")})
     if verbose and ba.get("prior_gauge"):
         g = ba["prior_gauge"]
-        print(f"[sfm] position priors: mean residual (E, N, U) {np.round(g['mean_residual_m'], 3).tolist()} m over "
-              f"{g['frames']} frames" + (" - block moved onto them" if g["recentred"] else ""), flush=True)
+        logger.info(f"position priors: mean residual (E, N, U) {np.round(g['mean_residual_m'], 3).tolist()} m over "
+              f"{g['frames']} frames" + (" - block moved onto them" if g["recentred"] else ""))
     if verbose and rig_fit.get("baseline_m") is not None:
-        print(f"[sfm] Navcam rig: baseline {rig_fit['baseline_m']:.5f} m"
+        logger.info(f"Navcam rig: baseline {rig_fit['baseline_m']:.5f} m"
               + (f" +- {1e3 * rig_fit['baseline_sd_m']:.2f} mm" if rig_fit.get("baseline_sd_m") else "")
               + f" (start {rig_fit['baseline_start_m']:.5f} m, translation {'refined' if refine_rig is True else 'held'})"
               + "".join(f"; {e['camera']}: pitch {e['pitch_mdeg']:+.2f} roll {e['roll_mdeg']:+.2f} yaw {e['yaw_mdeg']:+.2f} mdeg"
-                        for e in rig_fit.get("epochs", [])), flush=True)
+                        for e in rig_fit.get("epochs", [])))
     navcam_stage = None
     if staged:
         # stage 1 done: keep it, then bring the Mastcam-Z frames in at their priors with the Navcam block held
@@ -1842,7 +1846,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         hold |= {k for k in project.cameras if str(k).startswith("N")}
         refine_rig = False
         if verbose:
-            print(f"[sfm] stage 2: {len(z_frames)} Mastcam-Z frames added; Navcam cameras and rig held", flush=True)
+            logger.info(f"stage 2: {len(z_frames)} Mastcam-Z frames added; Navcam cameras and rig held")
         zkeys = {k for k in project.cameras if str(k).startswith("Z")}
         cycles = max(0, min(int(zcam_line_cycles), len(schedule) - 1)) if zcam_focus_line else 0
         # v0p74: the Mastcam-Z rig (rotation, and with "full" the baseline) is refined while the Mastcam-Z cameras are
@@ -1865,8 +1869,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 bad = [g for g in ZG.collapsed(cov_prev, cov) if g not in undone]
                 if bad:
                     diag = ZG.diagnose(rec, project, bad, poses_prev, cams_prev, reg_prev, topts2.get("database"))
-                    print(f"[sfm] stage 2 round {k + 1}: Mastcam-Z frames lost at the triangulation - "
-                          f"{ZG.diagnosis_line(diag)}", flush=True)
+                    logger.info(f"stage 2 round {k + 1}: Mastcam-Z frames lost at the triangulation - "
+                          f"{ZG.diagnosis_line(diag)}")
                     n_rest = ZG.restore(rec, line_snap, ZG.camera_ids_of(project, bad))
                     rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)
                     cov2 = ZG.group_coverage(rec, project)
@@ -1875,16 +1879,16 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                         rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg,
                                           **topts2)
                         cov3 = ZG.group_coverage(rec, project)
-                        print(f"[sfm] stage 2 round {k + 1}: still lost after the cameras were restored; "
-                              f"{n_pose} frame poses restored too: {ZG.brief(cov3)}", flush=True)
+                        logger.info(f"stage 2 round {k + 1}: still lost after the cameras were restored; "
+                              f"{n_pose} frame poses restored too: {ZG.brief(cov3)}")
                         diag["after_pose_restore"], diag["poses_restored"] = cov3, n_pose
                         cov2 = cov3
                     log.append({"stage": 2, "round": k + 1, "zcam_guard": {
                         "collapsed": bad, "before": cov_prev, "after_lines": cov, "restored_cameras": n_rest,
                         "after_restore": cov2, "diagnosis": diag}})
-                    print(f"[sfm] stage 2 round {k + 1}: {', '.join(bad)} lost its frames with tie points after the "
+                    logger.info(f"stage 2 round {k + 1}: {', '.join(bad)} lost its frames with tie points after the "
                           f"focus lines were applied ({ZG.brief(cov_prev)} -> {ZG.brief(cov)}); the line values are "
-                          f"undone for it ({n_rest} cameras back to their refined values): {ZG.brief(cov2)}", flush=True)
+                          f"undone for it ({n_rest} cameras back to their refined values): {ZG.brief(cov2)}")
                     undone |= set(bad)
                     cov = cov2
             line_snap = None
@@ -1909,9 +1913,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 ZG.trace(rec, project, f"r{k + 1}_lines")
                 log.append({"stage": 2, "round": k + 1, "zcam_focus_lines": lines})
                 if verbose:
-                    print(f"[sfm] stage 2 round {k + 1}: Mastcam-Z focus lines (bins set on them):", flush=True)
+                    logger.info(f"stage 2 round {k + 1}: Mastcam-Z focus lines (bins set on them):")
                     for ln in focus_line_lines(lines):
-                        print(ln, flush=True)
+                        logger.info(ln)
             n_bad = filter_observations(rec, project, float(rmax)) + drop_short_tracks(rec, min_track_length)
             st = track_statistics(rec, project)
             res = native_residuals(rec, project)["residual_native_px"]
@@ -1922,9 +1926,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                      "elapsed_s": round(time.time() - t0, 1)}
             log.append(entry)
             if verbose:
-                print(f"[sfm] stage 2 round {k + 1}: {st['points']} points, median {entry['median_native_px']:.3f} / "
+                logger.info(f"stage 2 round {k + 1}: {st['points']} points, median {entry['median_native_px']:.3f} / "
                       f"rms {entry['rms_native_px']:.3f} native px, {n_bad} obs filtered, {entry['elapsed_s']:.0f} s; "
-                      f"Mastcam-Z frames with tie points {ZG.brief(entry['zcam_coverage'])}", flush=True)
+                      f"Mastcam-Z frames with tie points {ZG.brief(entry['zcam_coverage'])}")
             ZG.trace(rec, project, f"r{k + 1}_filtered", {"filtered": n_bad})
             if exclude_outliers and k + 1 == min(int(exclude_after_round), len(schedule)):
                 _exclude(f"stage 2, after round {k + 1}")
@@ -1953,9 +1957,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 prep["zcam_diagnosis"]["database_before"] = ZG.diagnose(
                     rec, project, zbad_t, zposes0, zcams0, zreg0, topts_before.get("database")).get(
                     "db_pairs_per_image_median")
-                print(f"[sfm] stage 2, pose-guided: Mastcam-Z frames lost at the triangulation - "
+                logger.info(f"stage 2, pose-guided: Mastcam-Z frames lost at the triangulation - "
                       f"{ZG.diagnosis_line(prep['zcam_diagnosis'])} (database before: pairs per image median "
-                      f"{prep['zcam_diagnosis']['database_before']})", flush=True)
+                      f"{prep['zcam_diagnosis']['database_before']})")
             ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
                                attitude_prior_deg=attitude_prior_deg,
@@ -1976,18 +1980,18 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 prep["reverted"] = (f"{', '.join(zbad)} lost its frames with tie points ({ZG.brief(zcov0)} -> "
                                     f"{ZG.brief(zcov1)})")
                 if verbose:
-                    print(f"[sfm] stage 2, pose-guided matches undone: {prep['reverted']}", flush=True)
+                    logger.info(f"stage 2, pose-guided matches undone: {prep['reverted']}")
             elif bg1 - bg0 > POSE_GUIDED_MAX_BEYOND_GROUND_RISE:
                 rec, topts2 = rec_before, topts_before
                 prep["reverted"] = (f"beyond-ground share {100 * bg0:.1f} -> {100 * bg1:.1f} % "
                                     f"(> +{100 * POSE_GUIDED_MAX_BEYOND_GROUND_RISE:g} points)")
                 if verbose:
-                    print(f"[sfm] stage 2, pose-guided matches undone: {prep['reverted']}", flush=True)
+                    logger.info(f"stage 2, pose-guided matches undone: {prep['reverted']}")
             del rec_before
             log.append({"stage": 2, "pose_guided": prep})
             project.settings["pose_guided"] = prep
             if verbose:
-                print(f"[sfm] stage 2, pose-guided: Navcam-Mastcam-Z tie points {before['navcam_zcam_points']} -> "
+                logger.info(f"stage 2, pose-guided: Navcam-Mastcam-Z tie points {before['navcam_zcam_points']} -> "
                       f"{prep['after']['navcam_zcam_points']}, points {before['points']} -> {prep['after']['points']}",
                       flush=True)
         ZG.trace(rec, project, "before_final")
@@ -2031,9 +2035,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                    if project.settings.get("zcam_rig_fit") in ("rotation", "full") else None)
                 backlash["lines_after_split"] = {"ba": ba["brief"]}
                 if verbose:
-                    print("[sfm] Mastcam-Z focus lines after the backlash split (bins set on them):", flush=True)
+                    logger.info("Mastcam-Z focus lines after the backlash split (bins set on them):")
                     for ln in focus_line_lines(lines):
-                        print(ln, flush=True)
+                        logger.info(ln)
         found = (project.settings.get("zcam_low_backlash") or {}).get("found_file")
         if found and backlash.get("new_regular_groups"):
             # v0p73: flag the newly classified low-backlash observations for the next runs (the found list)
@@ -2041,7 +2045,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             n_new = append_found(found, backlash["new_regular_groups"], site=project.root.parent.name)
             backlash["found_added"] = {"file": found, "lines": n_new}
             if verbose:
-                print(f"[sfm] {n_new} low-backlash observations added to {found}", flush=True)
+                logger.info(f"{n_new} low-backlash observations added to {found}")
         log.append({"zcam_backlash": {k: v for k, v in backlash.items() if k not in ("groups", "fits_before", "fits_after")}})
         project.settings["zcam_backlash"] = {k: v for k, v in backlash.items() if k not in ("fits_before", "fits_after")}
         project.settings["zcam_backlash"]["groups"] = [{k: v for k, v in g.items() if k != "names"}
@@ -2067,7 +2071,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         log.append({"thermal": {k: v for k, v in thermal.items() if k != "rows"}})
         project.settings["thermal"] = thermal
     elif thermal_bins_deg and verbose:
-        print("[sfm] thermal stage skipped: no image temperatures", flush=True)
+        logger.info("thermal stage skipped: no image temperatures")
     out = project.root / "sparse" / out_name
     out.mkdir(parents=True, exist_ok=True)
     rec.write(str(out))
@@ -2111,10 +2115,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             from .export import write_gui_native
             g = write_gui_native(project, rec)               # native-pixel viewing copy (v0p14.5)
             if verbose:
-                print(f"[sfm] COLMAP GUI copy in native pixels: {g['dir']} ({g['images']} images, "
-                      f"{g['points']} points)", flush=True)
+                logger.info(f"COLMAP GUI copy in native pixels: {g['dir']} ({g['images']} images, "
+                      f"{g['points']} points)")
         except Exception as e:                               # noqa: BLE001  (a viewing aid; never stop the run)
-            print(f"[sfm] gui_native not written: {type(e).__name__}: {e}", flush=True)
+            logger.info(f"gui_native not written: {type(e).__name__}: {e}")
     if project.settings.get("gui_files"):
         try:
             from .database import write_gui_project

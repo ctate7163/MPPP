@@ -263,3 +263,29 @@ def test_experiment_scripts_live_in_studies():
     for name in ("lens_model_experiment.py", "lens_terms_experiment.py", "pair_experiment.py",
                  "temperature_bins_experiment.py", "error_sources.py", "run_v0p22_batch.bat"):
         assert not (ROOT / "scripts" / name).exists() and (ROOT / "studies" / "experiments" / name).is_file(), name
+
+
+def test_windows_run_sites_zcam_passes_extra_through():
+    z = (ROOT / "scripts" / "windows" / "run_sites_zcam.bat").read_text()
+    assert 'set "EXTRA="' in z and "ZCAM_ZOOMS" not in z.split("set \"EXTRA=")[1].splitlines()[0]
+
+
+def test_scripts_and_bat_exist():
+    assert (ROOT / "studies" / "calibration" / "prepare_next_run.py").is_file()      # 0.90: a calibration study
+    assert not (ROOT / "scripts" / "prepare_next_run.py").exists()
+    assert not (ROOT / "scripts" / "windows" / "prepare_next_run.bat").exists()
+
+
+def test_stop_runs_knows_the_pipeline(tmp_path):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from _batch import mark_stopped, mppp_processes
+    rows = [{"pid": 10, "ppid": 1, "cmd": "python scripts/run_pipeline.py --root D:/x"},
+            {"pid": 11, "ppid": 10, "cmd": "python scripts/run_sites.py --root D:/x --group zcam34_consensus"},
+            {"pid": 12, "ppid": 11, "cmd": "python scripts/align_scape.py D:/x/site"}]
+    top = mppp_processes(rows)
+    assert [r["pid"] for r in top] == [10]                                  # the pipeline is the top of the tree
+    d = tmp_path / "mppp_pipeline"
+    d.mkdir()
+    (d / "pipeline_status.json").write_text(json.dumps({"state": "running", "pid": 10, "host": "x"}))
+    assert mark_stopped(tmp_path, [10]) == [str(d / "pipeline_status.json")]
+    assert json.loads((d / "pipeline_status.json").read_text())["state"] == "stopped"

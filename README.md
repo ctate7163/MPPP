@@ -123,7 +123,7 @@ The pip `pycolmap` wheel for Windows is CPU-only. The conda-forge build has CUDA
 | `mppp.sfm` | the COLMAP pipeline and the alignment health report |
 | `mppp.paths` | package data, user cache and checkpoint locations |
 
-**Also included, not needed for processing:** mask-model training and label auditing (`mppp.mask.train`, `mask.dataset`, `mask.audit`, `notebooks/training/`), and a photogrammetric error model (`mppp.error`, under development; `docs/error/`).
+**Also included, not needed for processing:** mask-model training and label auditing (`mppp.mask.train`, `mask.dataset`, `mask.audit`, `notebooks/training/`), and a photogrammetric error model (`mppp.error`, under development; its original notes are in `docs/history/`).
 
 ## Scope and limits
 

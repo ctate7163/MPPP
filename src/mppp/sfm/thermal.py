@@ -421,16 +421,16 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
               "seconds": ba["seconds"],
               "images_with_temperature": int(sum(1 for r in project.images if r["name"] in temps))}
     if verbose:
-        print(f"[sfm] thermal stage: {report['bins']} temperature bins of {bin_deg:g} degC"
+        log.info(f"thermal stage: {report['bins']} temperature bins of {bin_deg:g} degC"
               + (f" ({fine_deg:g} degC over {fine_range[0]:g}..{fine_range[1]:g})" if fine_range and fine_deg else "")
               + f" ({'held at the thermal model' if hold else ', '.join(free) + ' refined'}): median {before['median_px']:.4f} -> "
               f"{after['median_px']:.4f}, rms {before['rms_px']:.4f} -> {after['rms_px']:.4f} native px, "
-              f"cost {ba['initial_cost']:.1f} -> {ba['final_cost']:.1f}", flush=True)
+              f"cost {ba['initial_cost']:.1f} -> {ba['final_cost']:.1f}")
         if weak and not hold:
-            print(f"[sfm] thermal stage: held at the thermal model (fewer than {THERMAL_MIN_BIN_IMAGES} images): "
-                  f"{', '.join(weak)}", flush=True)
+            log.info(f"thermal stage: held at the thermal model (fewer than {THERMAL_MIN_BIN_IMAGES} images): "
+                  f"{', '.join(weak)}")
         for line in thermal_bin_lines(rows, free, hold):
-            print(line, flush=True)
+            log.info(line)
     if after["median_px"] > 1.25 * before["median_px"] + 0.01:      # never silently worse
         report["warning"] = (f"the residual median rose {before['median_px']:.4f} -> {after['median_px']:.4f} px in the "
                              f"thermal stage")

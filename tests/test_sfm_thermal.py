@@ -1,4 +1,5 @@
 """Navcam temperature model and thermal stage (mppp.sfm.thermal). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+import copy
 import json
 import pytest
 import numpy as np
@@ -205,5 +206,124 @@ def test_split_by_temperature_records_the_start(tmp_path):
 def test_thermal_stage_refuses_distortion_terms():
     """v0p50: a temperature bin fits at most fx, fy, cx, cy - never the Navcam distortion; v0p75.1: except k1."""
     from mppp.sfm.thermal import thermal_stage
+    with pytest.raises(ValueError, match="distortion"):
+        thermal_stage(None, None, {}, free=("fx", "k2"))
+
+
+# stage 2 after the temperature bins of stage 1 (v0p62)
+
+
+def _binned_stage1(tmp_path):
+    from helpers import _write_database, _zcam_rig_rec
+    from mppp.sfm import reconstruction as R
+    from mppp.sfm.thermal import image_temperatures, thermal_stage
+    proj, rec, zf = _zcam_rig_rec(tmp_path)
+    _write_database(rec, proj.database)
+    proj.images_dir.mkdir(parents=True, exist_ok=True)
+    for r in proj.images:
+        r["camera_temperature_degC"] = -32.0 if r["image_id"] % 4 < 2 else -14.0
+    init = copy.deepcopy(rec)
+    for f in zf:
+        rec.deregister_frame(f)
+    rec = R.triangulate(rec, proj, max_reproj_px=8.0)            # stage 1: COLMAP drops the Mastcam-Z rig
+    assert 2 not in rec.rigs
+    rec, rep = thermal_stage(rec, proj, image_temperatures(proj), bin_deg=10, fine_range=None, min_images=2, verbose=False)
+    return proj, rec, init, zf, rep
+
+
+def test_thermal_bin_rigs_avoid_the_set_aside_zcam_rig(tmp_path):
+    pytest.importorskip("pyceres")
+    from mppp.sfm import reconstruction as R
+    proj, rec, init, zf, rep = _binned_stage1(tmp_path)
+    assert 2 not in rec.rigs and min(r for r in rec.rigs if r != 1) > 2          # the bin rigs start above rig 2
+    assert R.restore_frames(rec, init, zf) == len(zf)                           # 0.61.0: "rig.HasSensor" failed here
+    assert all(rec.frames[f].rig_id == 2 for f in zf)
+
+
+def test_stage2_triangulates_against_a_synced_database(tmp_path):
+    pytest.importorskip("pyceres")
+    from mppp.sfm import reconstruction as R
+    proj, rec, init, zf, rep = _binned_stage1(tmp_path)
+    R.restore_frames(rec, init, zf)
+    for f in zf:
+        rec.frames[f].rig_from_world = init.frames[f].rig_from_world
+        rec.register_frame(f)
+    with pytest.raises(ValueError, match="RigId"):                              # the error of 1 Oct (chal_rocks_sid_large)
+        R.triangulate(copy.deepcopy(rec), proj, max_reproj_px=8.0)
+    db2 = R.sync_database(rec, proj)
+    assert db2.is_file() and db2 != proj.database
+    out = R.triangulate(rec, proj, max_reproj_px=8.0, database=db2)
+    assert len(out.points3D) > 1000 and all(out.frames[f].has_pose for f in zf)
+
+
+def test_staged_reconstruct_with_thermal_after_stage1_and_a_real_database(tmp_path, monkeypatch):
+    pytest.importorskip("pyceres")
+    from helpers import _write_database, _zcam_rig_rec
+    from mppp.sfm import reconstruction as R
+    from mppp.sfm.thermal import image_temperatures
+    proj, new, zf = _zcam_rig_rec(tmp_path)
+    _write_database(new, proj.database)
+    proj.images_dir.mkdir(parents=True, exist_ok=True)
+    for r in proj.images:
+        r["camera_temperature_degC"] = -32.0 if r["image_id"] % 4 < 2 else -14.0
+    monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(new))
+    rec = R.reconstruct(proj, sigma_px=0.3, schedule=((24.0, 10.0, 8.0), (8.0, 3.0, 4.0)), max_iterations=5,
+                        verbose=False, navcam_intrinsics="refine", staged=True, out_name="cahv_ba",
+                        temperatures=image_temperatures(proj), thermal_bins_deg=10, thermal_min_images=2,
+                        thermal_after_stage1=True, zcam_focus_line=False)
+    assert proj.settings["thermal"]["when"] == "end of stage 1 (Navcam only)"
+    assert set(zf) <= set(rec.reg_frame_ids()) and {3, 4} <= set(rec.cameras)
+    assert (proj.root / "database_thermal.db").is_file()
+
+
+def test_thermal_stage_holds_bins_with_few_images():
+    from mppp.sfm import thermal as T
+    assert T.THERMAL_MIN_BIN_IMAGES == 3
+
+
+def test_eye_key():
+    from mppp.sfm.thermal import eye_key
+    assert eye_key("NL#1") == "NL" and eye_key("NR#2_T-20..-10") == "NR" and eye_key("NL_T-20..-10") == "NL"
+    assert eye_key("ZL034_F00600") == "ZL034_F00600" and eye_key("NL") == "NL"
+
+
+# fine bins over -25..-5 degC, k1 free (v0p75.1)
+
+
+def test_bin_edges_fine_in_the_middle():
+    from mppp.sfm.thermal import bin_edges, THERMAL_FINE_RANGE_DEGC, THERMAL_FINE_BIN_DEG
+    fr, fd = THERMAL_FINE_RANGE_DEGC, THERMAL_FINE_BIN_DEG
+    assert (fr, fd) == ((-25.0, -5.0), 2.5)
+    assert bin_edges(-17.3, 5.0, fr, fd) == (-17.5, -15.0)
+    assert bin_edges(-25.0, 5.0, fr, fd) == (-25.0, -22.5)
+    assert bin_edges(-5.01, 5.0, fr, fd) == (-7.5, -5.0)
+    assert bin_edges(-27.0, 5.0, fr, fd) == (-30.0, -25.0) and bin_edges(-47.0, 5.0, fr, fd) == (-50.0, -45.0)
+    assert bin_edges(-5.0, 5.0, fr, fd) == (-5.0, 0.0) and bin_edges(-3.0, 5.0, fr, fd) == (-5.0, 0.0)
+    assert bin_edges(-17.3, 5.0) == (-20.0, -15.0)                       # no fine range: as before
+    # an odd range: the coarse bins are cut at its ends
+    assert bin_edges(-23.0, 5.0, (-22.0, -8.0), 2.0) == (-25.0, -22.0) and bin_edges(-7.0, 5.0, (-22.0, -8.0), 2.0) == (-8.0, -5.0)
+
+
+def test_temperature_bins_fine_then_merged():
+    from mppp.sfm.thermal import temperature_bins
+    T = {1: -18.0, 2: -17.0, 3: -16.0, 4: -14.0, 5: -13.0, 6: -40.0}
+    n = {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2}
+    b = temperature_bins(T, n, 5.0, 4, (-25.0, -5.0), 2.5)
+    assert b[2] == b[3] == (-17.5, -15.0) and b[4] == b[5] == (-15.0, -12.5)     # full fine bins stay 2.5 degC
+    assert b[1] == b[6] == (-40.0, -17.5)        # the two small ones merged (nearest occupied neighbour, as before)
+    u = temperature_bins(T, n, 5.0, 4)                                   # uniform 5 degC bins as before
+    assert u[1] == u[2] == u[3] and u[4] == u[5] == (-15.0, -10.0) and u[6] == u[1]
+
+
+def test_bin_tags_keep_half_degrees():
+    from mppp.sfm.thermal import _tag, eye_key
+    assert _tag(-20.0, -15.0) == "T-020-015"
+    assert _tag(-22.5, -20.0) == "T-022.5-020" and _tag(-25.0, -22.5) == "T-025-022.5"
+    assert eye_key("NL_" + _tag(-22.5, -20.0)) == "NL" and eye_key("NR#1_" + _tag(-22.5, -20.0)) == "NR"
+
+
+def test_thermal_stage_takes_k1_but_no_other_distortion():
+    from mppp.sfm.thermal import thermal_stage, THERMAL_FREE
+    assert THERMAL_FREE == ("fx", "fy", "k1")
     with pytest.raises(ValueError, match="distortion"):
         thermal_stage(None, None, {}, free=("fx", "k2"))

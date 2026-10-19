@@ -1,4 +1,5 @@
-"""The reconstruction-error package (mppp.error): error model self-test, stations, gate, decorrelation, projections. (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""The error model's readers and fits (mppp.error.waypoints, colmap, alignment): stations from the waypoint
+snapshot, the gate and decorrelation fits, projections.  The physics checks are tests/test_error_model.py."""
 import json
 from pathlib import Path
 import pytest
@@ -9,14 +10,6 @@ import copy
 DATA = Path(__file__).resolve().parents[1] / "src/mppp/data/M20_waypoints.json"   # packaged snapshot (v0p13)
 
 
-@pytest.mark.slow
-def test_error_model_selftest_186():
-    import matplotlib
-    matplotlib.use("Agg")
-    from mppp.error.selftest import run_all
-    assert run_all(verbose=False)
-
-
 def test_build_stations_no_longer_shadowed():
     """v0p15: a second `_last_per_sol` shadowed the first -> build_stations raised TypeError."""
     from mppp.error.waypoints import build_stations, load_featurecollection
@@ -24,24 +17,27 @@ def test_build_stations_no_longer_shadowed():
     assert len(stations) >= 2
 
 
-def test_sol_1842_mid_drive_rule_is_documented_behaviour():
+def test_sol_1842_last_per_sol_orders_by_site_and_drive():
     """
-    OPEN ISSUE (docs/mppp_error_review_v0p2.md #7), pinned, NOT fixed: on sol 1842
-    the 'highest drive' rule keeps 87_5286 (final='m', mid-drive) over 88_0
-    (final='y').  If this changes, the frozen site-87 prediction must be re-checked.
+    Review finding #7(b) (docs/history/mppp_error_review_v0p2.md), fixed in v0p90: the last position of a sol is
+    the highest (site, drive), so on sol 1842 the end-of-drive 88_0 (final='y') is kept over the mid-drive
+    87_5286 (final='m'); the 'highest drive' rule kept the latter.  Both callers (stations_from_rmcs,
+    build_stations) use the one rule.
     """
-    from mppp.error.waypoints import _last_per_sol
+    from mppp.error.waypoints import stations_from_rmcs
     feats = json.loads(DATA.read_text())["features"]
     by = {f["properties"]["RMC"]: f["properties"] for f in feats}
     assert by["87_5286"]["final"] == "m" and by["88_0"]["final"] == "y"
-    assert _last_per_sol(by, ["87_5286", "88_0"]) == ["87_5286"]
-
-
-pycolmap = pytest.importorskip("pycolmap")
+    assert by["87_5286"]["sol"] == by["88_0"]["sol"] == 1842
+    sts, info = stations_from_rmcs(str(DATA), ["87_5286", "88_0"])
+    assert info["rmcs"] == ["88_0"] and len(sts) == 1
+    sts, info = stations_from_rmcs(str(DATA), ["87_5286", "88_0"], last_per_sol=False)
+    assert info["rmcs"] == ["87_5286", "88_0"] and len(sts) == 2
 
 
 def test_error_projection_matches_pycolmap_with_distortion():
-    from mppp.error.colmap import project_camera
+    pycolmap = pytest.importorskip("pycolmap")
+    from mppp.colmap import project_camera
     rng = np.random.default_rng(3)
     for model, params in [("FULL_OPENCV", [2950, 2951, 2594, 1942, -0.27, 0.1, 1e-4, -2e-4, -0.02, 0.01, 0.002, 0.001]),
                           ("OPENCV", [1000, 1001, 640, 480, -0.1, 0.02, 1e-3, -1e-3]),
@@ -71,7 +67,7 @@ def _quat(R):
 def _synthetic_model(noise_px=0.0, seed=0, full_keypoint_lists=True):
     """Two stations 6 m apart, three cameras each, 200 terrain points seen by all six."""
     from mppp.colmap import project_camera
-    from mppp.error.colmap import ColmapCamera, ColmapImage, ColmapModel, ColmapPoint
+    from mppp.colmap import ColmapCamera, ColmapImage, ColmapModel, ColmapPoint
     rng = np.random.default_rng(seed)
     cam = ColmapCamera(1, "FULL_OPENCV", 1280, 960, np.array([1000, 1000, 640, 480, -0.2, 0.05, 1e-4, -1e-4,
                                                                0, 0, 0, 0], float))
@@ -156,7 +152,7 @@ def test_lmst_family_and_find_error_input(tmp_path):
     (e / "native").mkdir(parents=True)
     (e / "stations.csv").write_text("name,station\n")
     assert find_error_input(tmp_path / "work") == e == find_error_input(tmp_path / "work" / "colmap") == find_error_input(e)
-    with pytest.raises(FileNotFoundError, match="notebook 03"):
+    with pytest.raises(FileNotFoundError, match="notebook 02"):
         find_error_input(tmp_path)
 
 

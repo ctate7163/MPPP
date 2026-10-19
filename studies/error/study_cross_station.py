@@ -36,9 +36,9 @@ Three cases over identical Navcam station geometry:
 
 The spread between OPTIMISTIC and PESSIMISTIC brackets the answer.  Real data
 then tells you which end you are at -- and the same measurement backs out
-eps_cross and theta_max directly (see mppp_error.colmap).
+eps_cross and theta_max directly (see mppp.error.colmap).
 
-Run:  python -m mppp_error.study_cross_station --out DIR
+Run:  python studies/error/study_cross_station.py --out DIR
 """
 
 from __future__ import annotations

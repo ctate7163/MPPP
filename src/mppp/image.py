@@ -10,6 +10,8 @@ differences are listed in CHANGELOG.md.
 """
 from __future__ import annotations
 
+import logging
+
 import warnings
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
@@ -25,6 +27,8 @@ from .labels import (ZCAM_OPTICS_KEYS, ZCAM_TEMPERATURE_KEY, camera_temperature,
                      label_float, label_get, read_pds, zcam_optics_temperature)
 from .paths import data_dir, resolve_resource
 from .waypoints import lonlat_of, offset_lonlat, waypoint_for_site_drive
+
+log = logging.getLogger("mppp.process")
 
 PathLike = Union[str, Path]
 
@@ -217,7 +221,7 @@ class MPPPImage:
     def _say(self, msg: str) -> None:
         self.log.append(msg)
         if self.config.get("verbose"):
-            print(f"[mppp] {self.fn.stem}: {msg}")
+            log.info(f"{self.fn.stem}: {msg}")
 
     def _identify(self) -> None:
         rmc = label_get(self.label, "ROVER_MOTION_COUNTER")

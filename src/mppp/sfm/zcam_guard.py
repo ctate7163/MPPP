@@ -14,7 +14,11 @@ The counts of every round go to the alignment log (``zcam_coverage``), so the ne
 """
 from __future__ import annotations
 
+import logging
+
 from typing import Any, Dict, Iterable, List
+
+log = logging.getLogger("mppp.sfm")
 
 MIN_OBS = 20            # a frame "has tie points" with at least this many observations (min_frame_observations)
 MAX_LOSS = 0.5          # a group that loses more than this share of its frames with tie points has collapsed
@@ -293,4 +297,4 @@ def trace(rec, project, step: str, extra: Dict[str, Any] = None) -> None:
         d = project.root / "sparse" / f"_zdiag_{step}"
         d.mkdir(parents=True, exist_ok=True)
         rec.write(str(d))
-    print(f"[zr-trace] {step}: {brief(head['coverage'])}, {head['points']} points", flush=True)
+    log.info(f"[zr-trace] {step}: {brief(head['coverage'])}, {head['points']} points")

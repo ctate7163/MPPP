@@ -20,12 +20,16 @@ version (checked).
 """
 from __future__ import annotations
 
+import logging
+
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
+
+log = logging.getLogger("mppp.sfm")
 
 PathLike = Union[str, Path]
 _SRC = str(Path(__file__).resolve().parents[2])          # .../src
@@ -56,7 +60,7 @@ def _run(python: PathLike, args, echo: bool = True) -> str:
     for line in proc.stdout:                                   # stream COLMAP's log into the notebook
         out.append(line)
         if echo:
-            print(line, end="")
+            log.info(line, end="")
     if proc.wait() != 0:
         tail = "".join(out[-30:])
         raise RuntimeError(f"GPU step failed in {python} (exit {proc.returncode}):\n{tail}")
@@ -125,18 +129,18 @@ def run_step(python: PathLike, step: str, project, **kwargs: Any) -> Dict[str, A
 def _main(argv) -> None:
     import pycolmap
     if argv[0] == "check":
-        print(json.dumps({"pycolmap": pycolmap.__version__, "has_cuda": bool(getattr(pycolmap, "has_cuda", False)),
+        log.info(json.dumps({"pycolmap": pycolmap.__version__, "has_cuda": bool(getattr(pycolmap, "has_cuda", False)),
                           "python": sys.executable}))
         return
     from .project import SfmProject
     step, root, kwargs = argv[0], argv[1], json.loads(argv[2])
     proj = SfmProject.load(root)
-    print(f"[mppp.sfm.gpu] {step} in {sys.executable} (pycolmap {pycolmap.__version__}, "
-          f"CUDA {getattr(pycolmap, 'has_cuda', False)})", flush=True)
+    log.info(f"[mppp.sfm.gpu] {step} in {sys.executable} (pycolmap {pycolmap.__version__}, "
+          f"CUDA {getattr(pycolmap, 'has_cuda', False)})")
     if step == "extract_features":
         from .database import extract_features
         res: Any = str(extract_features(proj, **kwargs))
     else:
         from .matching import match
         res = match(proj, **kwargs)
-    print("MPPP_RESULT " + json.dumps(res, default=str), flush=True)
+    log.info("MPPP_RESULT " + json.dumps(res, default=str))

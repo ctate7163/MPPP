@@ -1,13 +1,15 @@
 """
 mppp.colmap — COLMAP text I/O and camera-model math, shared by the whole
-package (one place for what ``mppp.colmap``, ``mppp.sfm.export`` and
-``mppp.error.colmap`` each had a copy of).
+package (one place for what ``mppp.sfm.export`` and the error model each had a
+copy of).
 
 * ``write_text_model(metas, out_dir)``: the prior model written by
   ``process_images`` (one camera per intrinsics group, the pose prior of every
   image, empty points, ``rig_config.json`` for the stereo pairs).
-* ``write_cameras_txt`` / ``write_images_txt``: the text writers used by it and
-  by ``mppp.sfm.export``.
+* ``write_cameras_txt`` / ``write_images_txt``: the text writers it uses.
+* ``read_colmap(path)``: the TEXT reader (``cameras.txt`` / ``images.txt`` /
+  ``points3D.txt``) into the plain ``ColmapModel`` dataclasses, which
+  the error model (the ``error`` package) analyses without pycolmap.
 * ``project_camera``: COLMAP projection with distortion (vectorised);
   ``scale_camera_params``: a camera at another resolution.
 
@@ -19,7 +21,9 @@ metres minus ``offset`` (kept small for numerical conditioning).
 from __future__ import annotations
 
 import json
-from collections import OrderedDict
+import os
+from collections import OrderedDict, defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
@@ -239,3 +243,197 @@ def write_text_model(metas: Sequence[Dict[str, Any]], out_dir: PathLike,
     (out_dir / "rig_config.json").write_text(json.dumps(rigs, indent=2), encoding="utf-8")
     summary["rigs"] = len(rigs)
     return summary
+
+
+# ------------------------------------------------------------- text reader
+@dataclass
+class ColmapImage:
+    image_id: int
+    qvec: np.ndarray          # (4,) w,x,y,z  world-to-camera
+    tvec: np.ndarray          # (3,)          world-to-camera
+    camera_id: int
+    name: str
+    xys: np.ndarray           # (K,2) keypoints
+    point3D_ids: np.ndarray   # (K,)  -1 where unobserved
+    station: Optional[str] = None
+
+    @property
+    def R(self) -> np.ndarray:
+        w, x, y, z = self.qvec
+        return np.array([
+            [1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w],
+            [2*x*y + 2*z*w, 1 - 2*x*x - 2*z*z, 2*y*z - 2*x*w],
+            [2*x*z - 2*y*w, 2*y*z + 2*x*w, 1 - 2*x*x - 2*y*y]])
+
+    @property
+    def center(self) -> np.ndarray:
+        """Camera perspective centre in world coordinates."""
+        return -self.R.T @ self.tvec
+
+
+@dataclass
+class ColmapCamera:
+    camera_id: int
+    model: str
+    width: int
+    height: int
+    params: np.ndarray
+
+    @property
+    def focal(self) -> float:
+        return float(self.params[0])
+
+
+@dataclass
+class ColmapPoint:
+    point3D_id: int
+    xyz: np.ndarray
+    rgb: np.ndarray
+    error: float                       # COLMAP reprojection error [px]
+    image_ids: np.ndarray
+    point2D_idxs: np.ndarray
+
+    @property
+    def track_length(self) -> int:
+        return int(self.image_ids.size)
+
+
+@dataclass
+class ColmapModel:
+    cameras: Dict[int, ColmapCamera]
+    images: Dict[int, ColmapImage]
+    points: Dict[int, ColmapPoint]
+
+    def assign_stations(self, mapping: Optional[Dict[str, str]] = None,
+                        cluster_radius_m: float = 1.0) -> Dict[str, List[int]]:
+        """
+        Group images into stations.
+
+        mapping : filename -> station name.  Supply this if you have it (e.g.
+                  from the PDS RMC in the filename); it is always better than
+                  clustering.
+        Otherwise images are single-linkage clustered by perspective-centre
+        proximity, which works because a mast mosaic's exposures all sit within
+        a few tens of cm while stations are metres apart.
+        """
+        if mapping:
+            for im in self.images.values():
+                im.station = mapping.get(im.name, mapping.get(
+                    os.path.basename(im.name), "unassigned"))
+        else:
+            ids = sorted(self.images)
+            C = np.array([self.images[i].center for i in ids])
+            label = -np.ones(len(ids), dtype=int)
+            nxt = 0
+            for a in range(len(ids)):
+                if label[a] >= 0:
+                    continue
+                label[a] = nxt
+                stack = [a]
+                while stack:
+                    v = stack.pop()
+                    d = np.linalg.norm(C - C[v], axis=1)
+                    for b in np.where((d < cluster_radius_m) & (label < 0))[0]:
+                        label[b] = nxt
+                        stack.append(int(b))
+                nxt += 1
+            for k, i in enumerate(ids):
+                self.images[i].station = f"ST{label[k]:02d}"
+
+        groups: Dict[str, List[int]] = defaultdict(list)
+        for i, im in self.images.items():
+            groups[im.station].append(i)
+        return dict(groups)
+
+    @property
+    def station_names(self) -> List[str]:
+        return sorted({im.station for im in self.images.values()
+                       if im.station is not None})
+
+    def station_center(self, name: str) -> np.ndarray:
+        C = [im.center for im in self.images.values() if im.station == name]
+        return np.mean(C, axis=0)
+
+
+def _rows(path):
+    with open(path) as fh:
+        for line in fh:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                yield line
+
+
+def read_colmap(path: str) -> ColmapModel:
+    """Read a COLMAP TEXT sparse model directory."""
+    for f in ("cameras.txt", "images.txt", "points3D.txt"):
+        if not os.path.exists(os.path.join(path, f)):
+            raise FileNotFoundError(
+                f"{f} not found in {path}. Export with:  colmap model_converter "
+                f"--input_path <bin_dir> --output_path {path} --output_type TXT")
+
+    cameras = {}
+    for ln in _rows(os.path.join(path, "cameras.txt")):
+        t = ln.split()
+        cameras[int(t[0])] = ColmapCamera(int(t[0]), t[1], int(t[2]), int(t[3]),
+                                          np.array([float(v) for v in t[4:]]))
+
+    # images.txt has TWO lines per image and the second is EMPTY when the image
+    # has no observations.  Filtering blank lines desynchronises the pairing and
+    # silently mis-assigns every subsequent image, so the raw lines are kept and
+    # the header/observation alternation is tracked explicitly.
+    images = {}
+    raw = []
+    with open(os.path.join(path, "images.txt")) as fh:
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            raw.append(line.rstrip("\n"))
+    while raw and not raw[-1].strip():
+        raw.pop()
+    buf = []
+    expect_header = True
+    for line in raw:
+        if expect_header:
+            if not line.strip():
+                continue                       # blank padding before a header
+            buf.append(line)
+            expect_header = False
+        else:
+            buf.append(line)                   # may legitimately be empty
+            expect_header = True
+    if len(buf) % 2:
+        buf.append("")
+    for k in range(0, len(buf) - 1, 2):
+        t = buf[k].split()
+        pts = buf[k + 1].split()
+        xys = np.array([[float(pts[m]), float(pts[m + 1])]
+                        for m in range(0, len(pts), 3)]) if pts else np.zeros((0, 2))
+        pid = np.array([int(pts[m + 2]) for m in range(0, len(pts), 3)],
+                       dtype=np.int64) if pts else np.zeros(0, dtype=np.int64)
+        images[int(t[0])] = ColmapImage(
+            int(t[0]), np.array([float(v) for v in t[1:5]]),
+            np.array([float(v) for v in t[5:8]]), int(t[8]), t[9], xys, pid)
+
+    points = {}
+    for ln in _rows(os.path.join(path, "points3D.txt")):
+        t = ln.split()
+        tr = t[8:]
+        points[int(t[0])] = ColmapPoint(
+            int(t[0]), np.array([float(v) for v in t[1:4]]),
+            np.array([int(v) for v in t[4:7]]), float(t[7]),
+            np.array([int(tr[m]) for m in range(0, len(tr), 2)], dtype=np.int64),
+            np.array([int(tr[m + 1]) for m in range(0, len(tr), 2)], dtype=np.int64))
+
+    # Validate poses.  A non-unit quaternion means a corrupt or hand-written
+    # file; silently propagating it produces NaN camera centres and NaN
+    # residuals hundreds of lines downstream, which is very hard to trace.
+    bad = [im.name for im in images.values()
+           if not np.isfinite(im.qvec).all()
+           or abs(np.linalg.norm(im.qvec) - 1.0) > 1e-3]
+    if bad:
+        raise ValueError(
+            f"{len(bad)} image(s) have non-unit or non-finite quaternions, "
+            f"first: {bad[0]!r}. COLMAP always writes unit quaternions, so this "
+            "file was probably generated or edited by hand.")
+
+    return ColmapModel(cameras, images, points)

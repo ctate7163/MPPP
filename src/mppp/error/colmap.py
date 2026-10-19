@@ -1,5 +1,5 @@
 """
-mppp_error.colmap -- read a COLMAP reconstruction and back out the model parameters.
+mppp.error.colmap -- back the error-model parameters out of a COLMAP reconstruction.
 
 This is the bridge from predicted precision to measured precision.  Everything
 the error model needs to be calibrated is already sitting in a COLMAP sparse
@@ -12,8 +12,12 @@ reconstruction; it just has to be extracted.
     view graph   <- shared-track counts between stations
     validation   <- predicted sigma_n vs. COLMAP's own point covariance
 
-Only the TEXT format is read (cameras.txt / images.txt / points3D.txt).  Export
-with `colmap model_converter --output_type TXT`.  No external dependencies.
+The model is the plain ``ColmapModel`` read by :func:`mppp.colmap.read_colmap`
+(TEXT format only, ``cameras.txt`` / ``images.txt`` / ``points3D.txt``; export
+with ``colmap model_converter --output_type TXT``); no pycolmap needed.  The
+MPPP pipeline writes such a model in native pixels to
+``<project>/error_input/native/`` (:func:`mppp.sfm.export.export_for_error`),
+and :mod:`mppp.error.alignment` reads it from there.
 
 WHAT A COARSE SPARSE MODEL IS AND IS NOT ENOUGH FOR
 ---------------------------------------------------
@@ -31,212 +35,16 @@ Not enough:  absolute accuracy against ground truth (needs external control or
 
 from __future__ import annotations
 
-import os
 import numpy as np
-from dataclasses import dataclass, field as _field
 from collections import defaultdict
-from typing import Dict, List, Tuple, Optional, Sequence
+from typing import Dict, List, Tuple
 
-__all__ = ["ColmapModel", "read_colmap", "measured_view_graph", "calibrate_eps",
-           "convergence_statistics", "measure_theta_c", "match_survival",
-           "observation_residuals", "observed_rays"]
+from ..colmap import (ColmapCamera, ColmapImage, ColmapModel, ColmapPoint, project_camera,
+                      read_colmap, unproject_camera)
 
-
-# --------------------------------------------------------------------------
-
-@dataclass
-class ColmapImage:
-    image_id: int
-    qvec: np.ndarray          # (4,) w,x,y,z  world-to-camera
-    tvec: np.ndarray          # (3,)          world-to-camera
-    camera_id: int
-    name: str
-    xys: np.ndarray           # (K,2) keypoints
-    point3D_ids: np.ndarray   # (K,)  -1 where unobserved
-    station: Optional[str] = None
-
-    @property
-    def R(self) -> np.ndarray:
-        w, x, y, z = self.qvec
-        return np.array([
-            [1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w, 2*x*z + 2*y*w],
-            [2*x*y + 2*z*w, 1 - 2*x*x - 2*z*z, 2*y*z - 2*x*w],
-            [2*x*z - 2*y*w, 2*y*z + 2*x*w, 1 - 2*x*x - 2*y*y]])
-
-    @property
-    def center(self) -> np.ndarray:
-        """Camera perspective centre in world coordinates."""
-        return -self.R.T @ self.tvec
-
-
-@dataclass
-class ColmapCamera:
-    camera_id: int
-    model: str
-    width: int
-    height: int
-    params: np.ndarray
-
-    @property
-    def focal(self) -> float:
-        return float(self.params[0])
-
-
-@dataclass
-class ColmapPoint:
-    point3D_id: int
-    xyz: np.ndarray
-    rgb: np.ndarray
-    error: float                       # COLMAP reprojection error [px]
-    image_ids: np.ndarray
-    point2D_idxs: np.ndarray
-
-    @property
-    def track_length(self) -> int:
-        return int(self.image_ids.size)
-
-
-@dataclass
-class ColmapModel:
-    cameras: Dict[int, ColmapCamera]
-    images: Dict[int, ColmapImage]
-    points: Dict[int, ColmapPoint]
-
-    def assign_stations(self, mapping: Optional[Dict[str, str]] = None,
-                        cluster_radius_m: float = 1.0) -> Dict[str, List[int]]:
-        """
-        Group images into stations.
-
-        mapping : filename -> station name.  Supply this if you have it (e.g.
-                  from the PDS RMC in the filename); it is always better than
-                  clustering.
-        Otherwise images are single-linkage clustered by perspective-centre
-        proximity, which works because a mast mosaic's exposures all sit within
-        a few tens of cm while stations are metres apart.
-        """
-        if mapping:
-            for im in self.images.values():
-                im.station = mapping.get(im.name, mapping.get(
-                    os.path.basename(im.name), "unassigned"))
-        else:
-            ids = sorted(self.images)
-            C = np.array([self.images[i].center for i in ids])
-            label = -np.ones(len(ids), dtype=int)
-            nxt = 0
-            for a in range(len(ids)):
-                if label[a] >= 0:
-                    continue
-                label[a] = nxt
-                stack = [a]
-                while stack:
-                    v = stack.pop()
-                    d = np.linalg.norm(C - C[v], axis=1)
-                    for b in np.where((d < cluster_radius_m) & (label < 0))[0]:
-                        label[b] = nxt
-                        stack.append(int(b))
-                nxt += 1
-            for k, i in enumerate(ids):
-                self.images[i].station = f"ST{label[k]:02d}"
-
-        groups: Dict[str, List[int]] = defaultdict(list)
-        for i, im in self.images.items():
-            groups[im.station].append(i)
-        return dict(groups)
-
-    @property
-    def station_names(self) -> List[str]:
-        return sorted({im.station for im in self.images.values()
-                       if im.station is not None})
-
-    def station_center(self, name: str) -> np.ndarray:
-        C = [im.center for im in self.images.values() if im.station == name]
-        return np.mean(C, axis=0)
-
-
-# --------------------------------------------------------------------------
-
-def _rows(path):
-    with open(path) as fh:
-        for line in fh:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                yield line
-
-
-def read_colmap(path: str) -> ColmapModel:
-    """Read a COLMAP TEXT sparse model directory."""
-    for f in ("cameras.txt", "images.txt", "points3D.txt"):
-        if not os.path.exists(os.path.join(path, f)):
-            raise FileNotFoundError(
-                f"{f} not found in {path}. Export with:  colmap model_converter "
-                f"--input_path <bin_dir> --output_path {path} --output_type TXT")
-
-    cameras = {}
-    for ln in _rows(os.path.join(path, "cameras.txt")):
-        t = ln.split()
-        cameras[int(t[0])] = ColmapCamera(int(t[0]), t[1], int(t[2]), int(t[3]),
-                                          np.array([float(v) for v in t[4:]]))
-
-    # images.txt has TWO lines per image and the second is EMPTY when the image
-    # has no observations.  Filtering blank lines desynchronises the pairing and
-    # silently mis-assigns every subsequent image, so the raw lines are kept and
-    # the header/observation alternation is tracked explicitly.
-    images = {}
-    raw = []
-    with open(os.path.join(path, "images.txt")) as fh:
-        for line in fh:
-            if line.startswith("#"):
-                continue
-            raw.append(line.rstrip("\n"))
-    while raw and not raw[-1].strip():
-        raw.pop()
-    buf = []
-    expect_header = True
-    for line in raw:
-        if expect_header:
-            if not line.strip():
-                continue                       # blank padding before a header
-            buf.append(line)
-            expect_header = False
-        else:
-            buf.append(line)                   # may legitimately be empty
-            expect_header = True
-    if len(buf) % 2:
-        buf.append("")
-    for k in range(0, len(buf) - 1, 2):
-        t = buf[k].split()
-        pts = buf[k + 1].split()
-        xys = np.array([[float(pts[m]), float(pts[m + 1])]
-                        for m in range(0, len(pts), 3)]) if pts else np.zeros((0, 2))
-        pid = np.array([int(pts[m + 2]) for m in range(0, len(pts), 3)],
-                       dtype=np.int64) if pts else np.zeros(0, dtype=np.int64)
-        images[int(t[0])] = ColmapImage(
-            int(t[0]), np.array([float(v) for v in t[1:5]]),
-            np.array([float(v) for v in t[5:8]]), int(t[8]), t[9], xys, pid)
-
-    points = {}
-    for ln in _rows(os.path.join(path, "points3D.txt")):
-        t = ln.split()
-        tr = t[8:]
-        points[int(t[0])] = ColmapPoint(
-            int(t[0]), np.array([float(v) for v in t[1:4]]),
-            np.array([int(v) for v in t[4:7]]), float(t[7]),
-            np.array([int(tr[m]) for m in range(0, len(tr), 2)], dtype=np.int64),
-            np.array([int(tr[m + 1]) for m in range(0, len(tr), 2)], dtype=np.int64))
-
-    # Validate poses.  A non-unit quaternion means a corrupt or hand-written
-    # file; silently propagating it produces NaN camera centres and NaN
-    # residuals hundreds of lines downstream, which is very hard to trace.
-    bad = [im.name for im in images.values()
-           if not np.isfinite(im.qvec).all()
-           or abs(np.linalg.norm(im.qvec) - 1.0) > 1e-3]
-    if bad:
-        raise ValueError(
-            f"{len(bad)} image(s) have non-unit or non-finite quaternions, "
-            f"first: {bad[0]!r}. COLMAP always writes unit quaternions, so this "
-            "file was probably generated or edited by hand.")
-
-    return ColmapModel(cameras, images, points)
+__all__ = ["ColmapModel", "ColmapCamera", "ColmapImage", "ColmapPoint", "read_colmap",
+           "measured_view_graph", "calibrate_eps", "calibrate_eps_from_residuals",
+           "measure_theta_c", "match_survival", "observation_residuals", "observed_rays"]
 
 
 # --------------------------------------------------------------------------
@@ -326,9 +134,6 @@ def _project(model: ColmapModel, image_id: int, X: np.ndarray):
         return None
     return project_camera(cam.model, cam.params, x)
 
-
-# v0p13: the projection lives in mppp.colmap (shared with mppp.sfm); re-exported here
-from ..colmap import project_camera  # noqa: E402,F401
 
 
 def observation_residuals(model: ColmapModel) -> Dict[str, np.ndarray]:
@@ -438,44 +243,6 @@ def match_survival(model: ColmapModel, n_bins: int = 15,
             "survival": surv, "theta_half_deg": theta_half}
 
 
-def convergence_statistics(model: ColmapModel, n_bins: int = 18,
-                           theta_max_deg: float = 90.0) -> Dict[str, np.ndarray]:
-    """
-    Track survival vs. convergence angle -- the empirical theta_max.
-
-    For every observed pair within every track, compute the convergence angle at
-    the 3D point.  The histogram of OBSERVED pairs, divided by the histogram of
-    GEOMETRICALLY POSSIBLE pairs (all image pairs that could have seen the
-    point), gives a matching-success curve.  The angle at which it falls to half
-    is a directly measured theta_max for whatever matcher produced this model.
-
-    This is the single most valuable number to extract, because theta_max is
-    otherwise a literature guess.
-    """
-    edges = np.linspace(0.0, np.radians(theta_max_deg), n_bins + 1)
-    obs = np.zeros(n_bins)
-    resid = [[] for _ in range(n_bins)]
-    for p in model.points.values():
-        ids = [i for i in p.image_ids if i in model.images]
-        if len(ids) < 2:
-            continue
-        C = np.array([model.images[i].center for i in ids])
-        u = p.xyz - C
-        u /= np.maximum(np.linalg.norm(u, axis=1, keepdims=True), 1e-12)
-        for a in range(len(ids)):
-            for b in range(a + 1, len(ids)):
-                th = np.arccos(np.clip(float(u[a] @ u[b]), -1.0, 1.0))
-                k = int(np.searchsorted(edges, th) - 1)
-                if 0 <= k < n_bins:
-                    obs[k] += 1
-                    resid[k].append(p.error)
-    centres = np.degrees(0.5 * (edges[:-1] + edges[1:]))
-    rms = np.array([np.sqrt(np.mean(np.square(r))) if r else np.nan
-                    for r in resid])
-    return {"theta_deg": centres, "n_pairs": obs, "resid_rms_px": rms,
-            "pair_fraction": obs / max(obs.sum(), 1)}
-
-
 def observed_rays(model: ColmapModel, pt: "ColmapPoint") -> Tuple[List[int], np.ndarray, np.ndarray]:
     """
     (image ids, camera centres (N,3), unit ray directions (N,3)) of a track,
@@ -485,7 +252,6 @@ def observed_rays(model: ColmapModel, pt: "ColmapPoint") -> Tuple[List[int], np.
     exports, whose track indices do not match them): the keypoint is taken at
     the track index if it belongs to this point, else found by point id.
     """
-    from ..colmap import unproject_camera
     ids, C, U = [], [], []
     for i, k in zip(pt.image_ids, pt.point2D_idxs):
         im = model.images.get(int(i))
@@ -593,7 +359,7 @@ def measured_view_graph(model: ColmapModel) -> Tuple[np.ndarray, List[str], np.n
     Observed station-station view graph from shared tracks.
 
     Returns (W, names, mean_theta_deg) where W[i,j] is the number of 3D points
-    observed by both stations.  Feed W into mppp_error.viewgraph.ViewGraph to reuse
+    observed by both stations.  Feed W into mppp.error.viewgraph.ViewGraph to reuse
     the spectral machinery, and compare against the PREDICTED graph -- the
     discrepancy is the calibration signal.
     """

@@ -181,7 +181,7 @@ def _quat(R):
 def _synthetic_model(noise_px=0.0, seed=0, full_keypoint_lists=True):
     """Two stations 6 m apart, three cameras each, 200 terrain points seen by all six."""
     from mppp.colmap import project_camera
-    from mppp.error.colmap import ColmapCamera, ColmapImage, ColmapModel, ColmapPoint
+    from mppp.colmap import ColmapCamera, ColmapImage, ColmapModel, ColmapPoint
     rng = np.random.default_rng(seed)
     cam = ColmapCamera(1, "FULL_OPENCV", 1280, 960, np.array([1000, 1000, 640, 480, -0.2, 0.05, 1e-4, -1e-4,
                                                                0, 0, 0, 0], float))
@@ -334,3 +334,12 @@ def _write_database(rec, path, descriptors=False, keep_pair=None, seed=0):
         db.write_matches(a, b, np.array(m, np.uint32))
         db.write_two_view_geometry(a, b, tvg)
     db.close()
+
+
+def _block_without_navcam_zcam_matches(tmp_path):
+    """The N+Z rig block with a database that holds only same-family matches (no Navcam - Mastcam-Z pairs)."""
+    proj, rec, zf = _zcam_rig_rec(tmp_path)
+    fam = {r["image_id"]: r["instrument"][0] for r in proj.images}
+    _write_database(rec, proj.database, descriptors=True, keep_pair=lambda a, b: fam[a] == fam[b])
+    proj.images_dir.mkdir(parents=True, exist_ok=True)
+    return proj, rec, zf, fam

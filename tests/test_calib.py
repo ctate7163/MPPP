@@ -4,6 +4,7 @@ import json
 
 import numpy as np
 import pytest
+from conftest import config_selection_off
 
 from mppp import calib
 from mppp.calib import forms, models as M
@@ -186,7 +187,7 @@ def test_label_fallback_for_a_zoom_without_a_file():
         pytest.skip("example IMGs not present")
     import mppp
     from mppp.image import MPPPImage
-    cfg = mppp.load_config({"masking": {"infer_mask": False}})
+    cfg = config_selection_off({"masking": {"infer_mask": False}})
     im = MPPPImage(ZL0, cfg, mppp.load_waypoints())
     meta = im.meta
     name, p, src = calib.label_camera(meta)
@@ -216,7 +217,7 @@ def test_navcam_label_fallback_is_the_cahvore_fisheye():
         pytest.skip("example IMGs not present")
     import mppp
     from mppp.image import MPPPImage
-    cfg = mppp.load_config({"masking": {"infer_mask": False}})
+    cfg = config_selection_off({"masking": {"infer_mask": False}})
     im = MPPPImage(NLF, cfg, mppp.load_waypoints())
     meta = im.meta
     name, p, src = calib.label_camera(meta)
@@ -269,3 +270,10 @@ def test_promote_replaces_the_file_and_logs_it(tmp_path, monkeypatch):
     z.write_bytes((src / "M2020_ZCAM034_focus_model.json").read_bytes())
     res = calib.promote([z])
     assert "M2020_ZCAM034_focus_model.json" in res["files"]
+
+
+def test_shipped_navcam_models_carry_the_pass2_consensus():
+    """v0p85: in use is the 18 Oct pass-2 consensus (NR cx(T) -0.0525 px/degC); it passes the form check."""
+    nr = M._read(M._folder(None) / M.CAMERA_FILE[("N", "R")])
+    assert nr["thermal"]["cx_px_per_degC"] == pytest.approx(-0.0525, abs=2e-4)
+    assert calib.check_form()["ok"]

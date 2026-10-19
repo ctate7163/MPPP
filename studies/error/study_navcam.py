@@ -2,9 +2,9 @@
 [Research script, not part of the installed package (v0p13). Run from the repository:
  python studies/error/study_navcam.py --help]
 
-mppp_error.study_navcam -- the four regimes on a real Navcam station geometry.
+studies/error/study_navcam.py -- the four regimes on a real Navcam station geometry.
 
-    python -m mppp_error.study_navcam --out DIR [--spacing 3] [--instrument navcam|mcz34]
+    python studies/error/study_navcam.py --out DIR [--spacing 3] [--instrument navcam|mcz34]
 
 WHAT THIS ANSWERS
 =================
@@ -53,7 +53,6 @@ import numpy as np
 
 from mppp.error.core import (Grid, Station, Instrument, NAVCAM, MASTCAM_Z_34,
                    ModelConfig, PoseModel, choose_anchor)
-from mppp.error.sitemap import load_site_image, crop_to_extent, trim_border_fraction
 from mppp.error.cases import run_four_cases, case_table, CASE_PARAMS
 from mppp.error.metrics import compute_metrics
 from mppp.error.network import pose_covariance_from_network, network_report
@@ -75,6 +74,9 @@ from mppp.error.waypoints import stations_from_rmcs
 #: honest illustration of the paper's premise: real acquisitions are usually
 #: far from the geometry a network-design tool would recommend.
 _HERE = os.path.dirname(os.path.abspath(__file__))
+import sys  # noqa: E402
+sys.path.insert(0, _HERE)
+from sitemap import load_site_image, crop_to_extent, trim_border_fraction  # noqa: E402
 from mppp.waypoints import snapshot_path as _snapshot  # noqa: E402
 DEFAULT_WAYPOINTS = str(_snapshot())                  # the packaged, frozen waypoint snapshot
 DEFAULT_SITE_IMAGE = os.path.join(_HERE, "data", "butler_landing_1_vertical_50m.jpg")   # not distributed
@@ -218,7 +220,7 @@ def main(argv=None):
                     help="fraction trimmed off EACH side of the raw site "
                          "image before it is treated as the nominal "
                          "--site-image-width-m footprint; see "
-                         "mppp_error.sitemap.trim_border_fraction")
+                         "studies/error/sitemap.py trim_border_fraction")
     ap.add_argument("--metrics", default="sigma_n,kappa,sigma_slope,G_n",
                     help="comma-separated metric keys to render, one figure "
                          "each; see ERROR_METRICS for the available set")

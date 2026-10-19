@@ -1,5 +1,5 @@
 """
-mppp_error.cases -- the four reconstruction regimes.
+mppp.error.cases -- the reconstruction regimes compared by run_four_cases.
 
 FIXED       Fixed-baseline stereo only.  Each ground cell falls back to whichever
             single station gives the best normal precision from its own 24.4 cm
@@ -53,68 +53,14 @@ registration is only as good as rover localisation.
 from __future__ import annotations
 
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import replace as _dc_replace
 from typing import Dict, Sequence, Optional, Tuple, List
 
-from dataclasses import replace as _dc_replace
-
 from .core import (Grid, Station, Instrument, ModelConfig, PoseModel,
-                   PrecisionField, solve_precision_field, sym_inv3,
-                   outer, _EPS)
+                   PrecisionField, solve_precision_field, sym_inv3, outer)
 from .metrics import compute_metrics
 
-def run_three_cases(stations, grid, pose=None, **cfg_kw):
-    """
-    The three-case study used for the deck.
-
-      fixed  every cell takes the CLOSEST visible station's own stereo.
-             completeness = 1 where any station sees the cell (its own pair).
-      sfm    link_mode='cross' with the MEASURED gate (A .4, theta_bar 4.3 deg,
-             CV .36, L_eff 1.5 h) and measured redundancy (rho_inf .22,
-             theta_rho .4 deg).  completeness = expected matched cross pairs.
-      best   the ceiling: every station weighted equally, N_eff = N (no
-             correlation), dLMST = 0, epsilon and completeness flat to 90 deg.
-             Equivalent to full fusion with no gate; completeness = every
-             possible cross pair.
-    """
-    from copy import deepcopy
-    out = {}
-    fx = solve_precision_field(grid, stations, ModelConfig(
-        link_mode="nearest", store_station_dirs=True, use_correlation=False, **cfg_kw),
-        _pose_for("fixed", pose, stations))
-    fx.completeness = np.where(fx.n_vis > 0, 1.0, 0.0)
-    fx.p_cross = np.zeros(grid.shape)
-    out["fixed"] = (fx, compute_metrics(fx))
-
-    A_, thb, cv_, tau_, _ = CASE_PARAMS["measured"]
-    sf = solve_precision_field(grid, stations, ModelConfig(
-        link_mode="cross", use_theta_gate=True, use_tau_gate=False, gate_form="powerlaw",
-        gate_A=A_, theta_bar_deg=thb, gate_cv=cv_, tau_h=tau_,
-        store_station_dirs=True, **cfg_kw), _pose_for("measured", pose, stations))
-    out["sfm"] = (sf, compute_metrics(sf))
-
-    # best: strip LMST so dL=0, no correlation, no gate
-    st0 = deepcopy(list(stations))
-    for st in st0:
-        st.lmst_h = None
-    bf = solve_precision_field(grid, st0, ModelConfig(
-        link_mode="full", use_correlation=False, store_station_dirs=True, **cfg_kw),
-        _pose_for("ideal", pose, st0))
-    # every possible cross pair matches
-    npair = np.zeros(grid.shape)
-    for i in range(len(st0)):
-        for j in range(i + 1, len(st0)):
-            both = bf.station_vis[i] & bf.station_vis[j]
-            npair += np.where(both, len(st0[i].instrument.eye_offsets)
-                              * len(st0[j].instrument.eye_offsets), 0.0)
-    bf.completeness = npair
-    bf.p_cross = np.where(npair > 0, 1.0, 0.0)
-    out["best"] = (bf, compute_metrics(bf))
-    return out
-
-
-__all__ = ["CASE_PARAMS", "CASE_POSE", "run_four_cases", "run_three_cases", "lbs_field", "ideal_field",
-           "case_table"]
+__all__ = ["CASE_PARAMS", "CASE_POSE", "run_four_cases", "lbs_field", "ideal_field", "case_table"]
 
 
 #: name -> (eps_cross_px, theta_max_deg, tau_max, description)
@@ -293,34 +239,6 @@ def ideal_field(grid: Grid, stations: Sequence[Station],
                                  pose or PoseModel())
 
 
-def _apply_fixed_fallback(gated: PrecisionField, fixed: PrecisionField,
-                          m_gated: dict, m_fixed: dict):
-    """
-    A station's OWN intra-station stereo needs no cross-station tie.
-
-    The link weight w_i scales a station's whole precision contribution, which
-    is right for the cross-station part but wrong for its own fixed-baseline
-    stereo.  Where the tie is weak this drove the gated result BELOW the
-    fixed-baseline result, which no real pipeline would ever deliver: it would
-    simply fall back to per-station stereo.
-
-    So the delivered product is the better of (gated fusion, best single
-    station), chosen per cell.
-
-    CAVEAT worth surfacing rather than hiding: where the fallback is taken, the
-    terrain is well MEASURED but poorly REGISTERED -- that station's cloud
-    floats relative to the rest of the network, because there is no tie to place
-    it.  `fallback_taken` flags exactly those cells.
-    """
-    sg, sf = m_gated["sigma_n"], m_fixed["sigma_n"]
-    take = np.isfinite(sf) & (~np.isfinite(sg) | (sf < sg))
-    S = np.where(take[..., None, None], fixed.Sigma, gated.Sigma)
-    out = PrecisionField(**{**gated.__dict__, "Sigma": S,
-                            "unconstrained": gated.unconstrained & fixed.unconstrained})
-    out.fallback_taken = take
-    return out
-
-
 #: Per-case pose model. Each regime is registered differently, so each gets
 #: the pose error its own registration path actually incurs:
 #:   FIXED       telemetry/VO, ~3% of PATH DRIVEN -- products are placed in the
@@ -352,19 +270,13 @@ def _pose_for(case: str, pose, stations):
 
 def run_four_cases(stations: Sequence[Station], grid: Grid,
                    pose: Optional[PoseModel] = None,
-                   eps_cross_override: Optional[Dict[str, float]] = None,
                    include_full: bool = True,
-                   fallback_to_fixed: bool = True,
                    **cfg_kw) -> Dict[str, Tuple[PrecisionField, dict]]:
     """
-    Solve all four regimes on identical geometry.
-
-    eps_cross_override lets you replace the default case parameters, e.g.
-    {"optimistic": 0.0} for perfect cross-station matching or
-    {"optimistic": eps_intra} for cross-matching as good as intra-matching.
-
-    fallback_to_fixed : deliver max(SfM+MVS, fixed-baseline stereo) per cell,
-    which is what a real pipeline does.  See _apply_fixed_fallback.
+    Solve all regimes on identical geometry: ``fixed`` (link_mode 'ops'), the
+    three ``CASE_PARAMS`` gates (link_mode 'cross'), ``lbs``, ``ideal`` and,
+    with ``include_full``, ``full_fusion``.  ``cfg_kw`` go to every
+    ``ModelConfig``; ``pose`` replaces the per-case ``CASE_POSE`` model.
     """
     out: Dict[str, Tuple[PrecisionField, dict]] = {}
 

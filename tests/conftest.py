@@ -35,13 +35,10 @@ def _find_ckpt():
 
 CKPT = _find_ckpt()
 
-# The Navcam test product is a Sun-pointing tile (boresight +78 deg).  The v0p22.4 sky rule
-# (selection.max_boresight_elevation_deg = 45) would refuse it, so the tests run with the rule off;
-# test_v0p22_4 turns it on explicitly.
-import mppp.config as _cfg  # noqa: E402
-_cfg._DEFAULTS["selection"]["max_boresight_elevation_deg"] = None
-_cfg._DEFAULTS["selection"]["max_saturated_fraction"] = None       # the Sun tile is 99.99 % saturated
-_cfg._DEFAULTS["selection"]["lmst_window_h"] = None
+# The Navcam test product is a Sun-pointing tile (boresight +78 deg, 99.99 % saturated, taken outside the LMST
+# window).  The three selection rules of the shipped defaults would refuse it, so the tests that process it pass
+# SELECTION_OFF (``cfg_nomask``, ``config_selection_off``) explicitly; the defaults themselves are not changed.
+SELECTION_OFF = {"selection": {"max_boresight_elevation_deg": None, "max_saturated_fraction": None, "lmst_window_h": None}}
 
 needs_data = pytest.mark.skipif(not (NLF.is_file() and ZL0.is_file()), reason="example IMGs not present")
 needs_ckpt = pytest.mark.skipif(not CKPT.is_file(), reason="mask checkpoint not present")
@@ -71,7 +68,15 @@ def waypoints():
     return load_waypoints(snapshot_path())                                     # the packaged snapshot
 
 
+def config_selection_off(over=None):
+    """``mppp.load_config`` with the three selection rules off (the test products), plus ``over``."""
+    from mppp import load_config
+    cfg = {"selection": dict(SELECTION_OFF["selection"])}
+    for k, v in (over or {}).items():
+        cfg[k] = {**cfg.get(k, {}), **v} if isinstance(v, dict) else v
+    return load_config(cfg)
+
+
 @pytest.fixture(scope="session")
 def cfg_nomask():
-    from mppp import load_config
-    return load_config({"masking": {"infer_mask": False}})
+    return config_selection_off({"masking": {"infer_mask": False}})

@@ -1,7 +1,6 @@
 """
-mppp command line.
+mppp.error command line (the error model is under development; see mppp.error).
 
-    python -m mppp.error selftest
     python -m mppp.error demo   [--out DIR]
     python -m mppp.error sweep  --param eps --values 0.25,0.5,1,2
     python -m mppp.error run    --waypoints traverse.geojson --sol 1500 [options]
@@ -83,11 +82,6 @@ def _render(field, args, tag, suptitle):
                         **{k: v for k, v in m.items() if isinstance(v, np.ndarray)})
     print(f"\nwrote {png}\nwrote {npz}")
     return m, png, npz
-
-
-def cmd_selftest(args):
-    from .selftest import run_all
-    return 0 if run_all() else 1
 
 
 def cmd_demo(args):
@@ -182,12 +176,9 @@ def cmd_run(args):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="mppp", description=__doc__,
+    ap = argparse.ArgumentParser(prog="python -m mppp.error", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-
-    p = sub.add_parser("selftest", help="run analytic validation")
-    p.set_defaults(func=cmd_selftest)
 
     p = sub.add_parser("demo", help="synthetic three-station example")
     _add_model_args(p); p.set_defaults(func=cmd_demo)
@@ -204,7 +195,7 @@ def main(argv=None):
     p.add_argument("--sol", type=int, default=-1)
     p.add_argument("--camera-height", type=float, default=1.9)
     p.add_argument("--flatten-elevation", action="store_true",
-                   help="reproduce v1 behaviour (discards station elevations)")
+                   help="discard station elevations (all cameras at --camera-height)")
     p.set_defaults(func=cmd_run)
 
     args = ap.parse_args(argv)

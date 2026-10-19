@@ -35,6 +35,8 @@ visible; checkpoints are never overwritten and always get a model card.
 """
 from __future__ import annotations
 
+import logging
+
 import datetime as _dt
 import hashlib
 import json
@@ -52,6 +54,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from .model import DEFAULT_CARD, ConvNeXtSeg, canvas_of, fit_to_canvas, needs_quad_split, quad_boxes, write_card
+
+log = logging.getLogger("mppp.mask")
 
 PathLike = Union[str, Path]
 FP16_MAX = 65504.0
@@ -526,7 +530,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
     tr_items, tr_q = expand_quads(tr_frames, cfg.quad_split_above, cfg.quad_overlap, cfg.skip_empty_quads)
     va_items, va_q = expand_quads(va_frames, cfg.quad_split_above, cfg.quad_overlap, cfg.skip_empty_quads)
     if cfg.quad_split_above:
-        print(f"[mask.train] quad split > {cfg.quad_split_above} px: train {tr_q['split']}/{tr_q['frames']} frames "
+        log.info(f"[mask.train] quad split > {cfg.quad_split_above} px: train {tr_q['split']}/{tr_q['frames']} frames "
               f"-> {len(tr_items)} samples, val {va_q['split']}/{va_q['frames']} -> {len(va_items)} "
               f"({tr_q['empty_skipped'] + va_q['empty_skipped']} empty padding quadrants skipped)")
     collate = make_collate(card)
@@ -541,11 +545,11 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
     if cfg.init_from:
         model = ConvNeXtSeg(cfg.backbone, pretrained=False, fpn_width=cfg.fpn_width, stride4=cfg.stride4)
         init_report = init_from_checkpoint(model, cfg.init_from)
-        print(f"[mask.train] init from {Path(cfg.init_from).name}: {init_report['summary']}")
+        log.info(f"[mask.train] init from {Path(cfg.init_from).name}: {init_report['summary']}")
     else:
         pfile = resolve_pretrained_file(cfg.pretrained_file, cfg.backbone) if cfg.pretrained else None
         if pfile:
-            print(f"[mask.train] ImageNet-22k backbone weights from {pfile}")
+            log.info(f"[mask.train] ImageNet-22k backbone weights from {pfile}")
         model = ConvNeXtSeg(cfg.backbone, pretrained=cfg.pretrained, fpn_width=cfg.fpn_width,
                             pretrained_file=pfile, stride4=cfg.stride4)
         init_report = {"summary": ("ImageNet-22k" + (f" ({Path(pfile).name})" if pfile else "")) if cfg.pretrained
@@ -563,7 +567,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
         from .monitor import TrainingMonitor
         ddir = out.parent / f"{out.stem}_debug" if debug_dir == "auto" else Path(debug_dir)
         monitor = TrainingMonitor(ddir, threshold=cfg.threshold, live=live)
-        print(f"[mask.train] debug plots -> {ddir}")
+        log.info(f"[mask.train] debug plots -> {ddir}")
     mean = torch.tensor(card["normalisation"]["mean"]).view(3, 1, 1)
     std = torch.tensor(card["normalisation"]["std"]).view(3, 1, 1)
     to_uint8 = lambda xt: (((xt.detach().float().cpu() * std + mean).clamp(0, 1) * 255)
@@ -582,7 +586,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
                 samples.append((im, ms, p1, va_items[k].label))
         model.train()
         m = monitor.on_val_preview(ep, it, len(tl), samples)
-        print(f"    held-out preview ({len(samples)} fixed frames) IoU {m:.4f}")
+        log.info(f"    held-out preview ({len(samples)} fixed frames) IoU {m:.4f}")
 
     peak = {"aspp_pre_bn": 0.0}
     model.aspp.proj.register_forward_hook(
@@ -591,7 +595,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
     history: List[Dict] = []
     best = -1.0
     t0 = time.time()
-    print(f"[mask.train] {cfg.backbone}{' +stride4' if cfg.stride4 else ''}  precision={precision}  device={device}  "
+    log.info(f"[mask.train] {cfg.backbone}{' +stride4' if cfg.stride4 else ''}  precision={precision}  device={device}  "
           f"train={len(tr_items)} val={len(va_items)} samples (grouped by mask)")
     for ep in range(cfg.epochs):
         model.train()
@@ -627,7 +631,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
                        "bce": bce, "tversky": tv, "grad_norm": gnorm, "lr": opt.param_groups[0]["lr"],
                        "aspp_pre_bn_peak": peak["aspp_pre_bn"], "fp16_headroom": FP16_MAX / max(peak["aspp_pre_bn"], 1e-9),
                        "elapsed_s": time.time() - t0}
-                print(f"  ep {ep + 1} it {it}/{len(tl)}  loss {rec['loss']:.4f}  IoU {rec['iou']:.4f}  "
+                log.info(f"  ep {ep + 1} it {it}/{len(tl)}  loss {rec['loss']:.4f}  IoU {rec['iou']:.4f}  "
                       f"(last {i_n}: loss {rec['loss_interval']:.4f} IoU {rec['iou_interval']:.4f})  "
                       f"|g| {gnorm:.3g}  lr {rec['lr']:.2e}  ASPP pre-BN peak {peak['aspp_pre_bn']:.3g}")
                 i_loss = i_iou = 0.0
@@ -657,7 +661,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
             raise NonFiniteLoss(f"non-finite validation loss after epoch {ep + 1}")
         history.append({"epoch": ep + 1, "train_loss": s_loss / len(tl), "train_iou": s_iou / len(tl),
                         "val_loss": v_loss, "val_iou": v_iou, "aspp_pre_bn_peak": peak["aspp_pre_bn"]})
-        print(f"[ep {ep + 1}/{cfg.epochs}] train IoU {s_iou / len(tl):.4f}  val IoU {v_iou:.4f}  val loss {v_loss:.4f}")
+        log.info(f"[ep {ep + 1}/{cfg.epochs}] train IoU {s_iou / len(tl):.4f}  val IoU {v_iou:.4f}  val loss {v_loss:.4f}")
         if v_iou > best:
             best = v_iou
             torch.save({"model": model.state_dict(), "val_iou": best, "epoch": ep + 1}, out)
@@ -670,7 +674,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
                                  "n_train_frames": len(tr_frames), "n_val_frames": len(va_frames),
                                  "dataset_fingerprint": _dataset_fingerprint(items)},
                        history=history)
-            print(f"  -> saved {out.name} (val IoU {best:.4f})")
+            log.info(f"  -> saved {out.name} (val IoU {best:.4f})")
     if monitor:
         monitor.finish()
     return out

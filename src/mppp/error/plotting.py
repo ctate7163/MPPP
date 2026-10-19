@@ -1,12 +1,10 @@
 """
-mppp_error.plotting -- map rendering.
+mppp.error.plotting -- map rendering of a PrecisionField and its metrics.
 
-Fixes carried over from the v1 code:
-  * imshow extent uses cell EDGES, not centres (v1 was offset by half a cell,
-    which matters for a metric product).
-  * log scale is actually implemented rather than printing "not implemented".
-  * station markers handle NaN azimuth without silently drawing heading 0.
-  * unconstrained cells render as an explicit colour, not as silent NaN.
+  * imshow extent uses cell EDGES, not centres (an offset by half a cell
+    matters for a metric product).
+  * log scale, station markers with the rover glyph (NaN azimuth draws no
+    heading), and unconstrained cells rendered as an explicit colour.
 """
 
 from __future__ import annotations

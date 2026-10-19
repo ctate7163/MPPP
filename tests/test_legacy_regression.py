@@ -38,8 +38,8 @@ def test_matches_legacy(name, img):
     ref = old["reference"]
     assert np.allclose(ref[:3], new.reference[1:4], atol=1e-6)                   # position: identical
     assert np.allclose(ref[3:6], new.reference[4:7], atol=0.02)                   # YPR, degrees
-    K_new = new.intrinsics.K.copy()
-    if "XML" in new.intrinsics.source:
-        K_new[:2, 2] += 0.5
-        assert (old["d_cam"][2], old["d_cam"][3]) == (new.intrinsics.dist["p2"], new.intrinsics.dist["p1"])
-    assert np.allclose(old["K_cam"], K_new, rtol=2e-5, atol=2e-2)
+    if name == "NLF":
+        # the legacy Navcam K came from the Metashape XML calibration, which 0.90 no longer ships; the Navcam
+        # intrinsics now come from the promoted model (mppp.calib) and are compared in tests/test_calib.py
+        return
+    assert np.allclose(old["K_cam"], new.intrinsics.K, rtol=2e-5, atol=2e-2)

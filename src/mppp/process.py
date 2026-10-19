@@ -15,6 +15,8 @@ Output layout::
 """
 from __future__ import annotations
 
+import logging
+
 import json
 import time
 import traceback
@@ -26,6 +28,8 @@ from . import colmap as _colmap
 from . import writers
 from .config import load_config, save_config_snapshot
 from .image import MPPPImage, SkippedImage
+
+log = logging.getLogger("mppp.process")
 
 PathLike = Union[str, Path]
 _FORMAT_DIR = {"PNG16": "images_png16", "PNG8": "images_png8", "TIFF16": "images_tiff16"}
@@ -298,9 +302,9 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
         paths, kept_filter = filter_to_existing(paths, out_dir, only_existing)
         if kept_filter.get("skipped"):
             if progress:
-                print(f"[mppp] only_existing={only_existing!r} ignored: {kept_filter['skipped']}")
+                log.info(f"only_existing={only_existing!r} ignored: {kept_filter['skipped']}")
         elif progress:
-            print(f"[mppp] only_existing={only_existing!r}: {kept_filter['n_kept']} of {kept_filter['n_selected']} "
+            log.info(f"only_existing={only_existing!r}: {kept_filter['n_kept']} of {kept_filter['n_selected']} "
                   f"selected products kept ({kept_filter.get('never_processed', 0)} not processed yet); "
                   f"{kept_filter['n_removed']} removed (processed before, image deleted from {kept_filter['folder']})" + (f"; {len(kept_filter['not_in_selection'])} images in the "
                   f"folder are not in this selection and are ignored" if kept_filter["not_in_selection"] else ""))
@@ -337,7 +341,7 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
         if progress:
             why = (f" ({reuse_rep['reason']}" + (f": {', '.join(reuse_rep['config_changed'][:6])}"
                    if reuse_rep["config_changed"] else "") + ")") if reuse_rep.get("reason") else ""
-            print(f"[mppp] reuse_existing: {len(reused)} of {len(paths)} images reused from the manifest, "
+            log.info(f"reuse_existing: {len(reused)} of {len(paths)} images reused from the manifest, "
                   f"{len(todo)} to process{why}"
                   + (f"; {len(reuse_rep['dropped_from_manifest'])} manifest images not in this selection are left out"
                      if reuse_rep["dropped_from_manifest"] else "")
@@ -360,16 +364,16 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
         if "skipped" in r:
             skipped.append(r["skipped"])
             if progress:
-                print(f"[{i + 1}/{len(todo)}] {p.name}  skipped: {r['skipped']['reason']}")
+                log.info(f"[{i + 1}/{len(todo)}] {p.name}  skipped: {r['skipped']['reason']}")
         elif "failed" in r:
             failed.append(r["failed"])
             if progress:
-                print(f"[{i + 1}/{len(todo)}] {p.name}  FAILED: {r['failed']['error']}")
+                log.info(f"[{i + 1}/{len(todo)}] {p.name}  FAILED: {r['failed']['error']}")
         else:
             new_meta[p.stem] = r["meta"]
             new_ref[p.stem] = r["reference"]
             if progress:
-                print(f"[{i + 1}/{len(todo)}] {p.name}  ok  ({time.time() - t0:.0f} s)")
+                log.info(f"[{i + 1}/{len(todo)}] {p.name}  ok  ({time.time() - t0:.0f} s)")
 
     n_workers = max(1, int(workers or 1))
     if stop_on_error or n_workers == 1 or len(todo) < 2:
@@ -382,7 +386,7 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
         import multiprocessing as mp
         from concurrent.futures import ProcessPoolExecutor, as_completed
         if progress:
-            print(f"[mppp] processing {len(todo)} images in {min(n_workers, len(todo))} worker processes", flush=True)
+            log.info(f"processing {len(todo)} images in {min(n_workers, len(todo))} worker processes")
         done = 0
         pending = list(todo)
         try:
@@ -398,8 +402,8 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
             # the pool itself failed (a worker died, or spawn could not re-import the main module, e.g. under
             # a bare `python -` / stdin): finish what is left in this process instead of losing the run
             if progress:
-                print(f"[mppp] worker pool failed ({type(e).__name__}: {e}); processing the remaining "
-                      f"{len(pending)} images in this process", flush=True)
+                log.info(f"worker pool failed ({type(e).__name__}: {e}); processing the remaining "
+                      f"{len(pending)} images in this process")
             for p in pending:
                 _take(done, p, _process_one(p, cfg, waypoints, out_dir))
                 done += 1

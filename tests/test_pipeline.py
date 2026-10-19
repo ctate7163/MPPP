@@ -60,6 +60,7 @@ def test_settings_merge_json_and_set(tmp_path, clean_env):
     assert s.attitude_prior_deg == 1.0 and s.thermal_bins_deg == 10 and s.exclude == ["sol:658"]
     assert s.schedule == [(24, 10, 8), (8, 2, 2)] and s.match == {"max_ratio": 0.85} and s.navcam_intrinsics == "hold"
     assert load_settings(work, "rockytop").thermal_bins_deg is None
+    assert Settings().nearby_from_first_sol is False
     assert load_settings(None, "rochette").nearby_from_first_sol is True       # the site's settings in sites.json
     assert load_settings(None, "rockytop").no_mask_inference_at == ["S032D1184"]
     with pytest.raises(KeyError, match="unknown setting"):
@@ -196,3 +197,107 @@ def test_processing_config_and_project_settings(tmp_path, clean_env):
         _check_settings(s.replace(navcam_rig_refine="sometimes"))
     with pytest.raises(ValueError, match="navcam_pp"):
         _check_settings(s.replace(navcam_pp="zero"))
+
+
+def test_pipeline_defaults_v0p61():
+    from mppp.pipeline import Settings
+    s = Settings()
+    assert s.store_mask_in_alpha == 0.5 and s.zcam_k3 == "label" and s.zcam_backlash == "list_split"
+    assert s.zcam_low_backlash is None and s.zcam_focus_line is True and s.thermal_after_stage1 is True
+    assert s.no_mask_inference_at == ["S032D1184"]
+
+
+def test_pipeline_and_script_defaults_v0p64(tmp_path):
+    from mppp.pipeline import Settings, resolve_site
+    s = Settings(scapes_root=tmp_path)
+    assert s.sift["num_octaves"] is None and s.pose_guided is True
+    assert resolve_site("rockytop", s)[1].sift["num_octaves"] == 4          # 6 with Mastcam-Z, else COLMAP's 4
+    assert resolve_site("rockytop", s.replace(include_zcam=True))[1].sift["num_octaves"] == 6
+
+
+def test_run_key_includes_the_alignment_rules(monkeypatch):
+    from mppp import pipeline
+    s = pipeline.Settings()
+    k1 = pipeline.run_key(s)
+    p1 = pipeline.process_key(s)
+    monkeypatch.setattr(pipeline, "ALIGN_RULES", pipeline.ALIGN_RULES + 1)
+    assert pipeline.run_key(s) != k1                          # a new rules version reruns the alignments
+    assert pipeline.process_key(s) == p1                      # ... but not the processing
+    assert pipeline.ALIGN_RULES - 1 >= 65
+
+
+def test_pipeline_defaults_v0p65():
+    from mppp.pipeline import Settings
+    assert Settings().navcam_aspect == "hold"
+
+
+def test_selection_defaults_v0p65p1():
+    """0.65.1: Navcam tiles below 1/5 of the frame left out (was 1/4), LMST window 6-18 h, saturated fraction 0.2."""
+    from mppp.pipeline import PROCESS_RULES, Settings
+    from mppp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
+    from mppp.config import default_config
+    sel = default_config()["selection"]
+    assert sel["lmst_window_h"] == [6.0, 18.0] and sel["max_saturated_fraction"] == 0.2
+    assert NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3) and PROCESS_RULES == 4     # v0p85: 1/3
+    s = Settings()
+    assert s.lmst_window_h == (6.0, 18.0) and s.max_saturated_fraction == 0.2
+    assert s.navcam_min_frame_fraction == pytest.approx(1 / 3)
+
+
+def test_run_key_holds_the_camera_models(monkeypatch):
+    import mppp.calib
+    import mppp.calib.models
+    from mppp import pipeline
+    assert pipeline.ALIGN_RULES >= 73
+    s = pipeline.Settings()
+    k1 = pipeline.run_key(s)
+    for mod in (mppp.calib, mppp.calib.models):
+        monkeypatch.setattr(mod, "models_fingerprint", lambda folder=None: "other")
+    assert pipeline.run_key(s) != k1
+    assert pipeline.process_key(s) == pipeline.process_key(pipeline.Settings())
+
+
+def test_pipeline_settings_v0p73():
+    from mppp.pipeline import Settings
+    s = Settings()
+    assert s.zcam_bin_refine == "focal_pp" and s.zcam_backlash == "list_split"
+    assert s.zcam_line_params == {"ZL": ["fx", "fy", "k1", "k2"], "ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]}
+    assert s.zcam_low_backlash_found == "auto"
+
+
+def test_resolved_site_carries_the_visits(tmp_path):
+    from mppp.pipeline import Settings, resolve_site
+    extra = {"sid2": {"sols": [[361, 378], [91, 101]], "zcam": [34]}, "one": {"sols": [700, 712], "zcam": [34]}}
+    s = Settings(scapes_root=tmp_path, sites_extra=extra)
+    st, _ = resolve_site("sid2", s)
+    assert st.sol_ranges == [(361, 378), (91, 101)] and st.work.name == "mars2020_sol_0361_sid2"
+    assert resolve_site("one", s)[0].sol_ranges == [(700, 712)]
+    assert resolve_site(tmp_path / "mars2020_sol_0361_sid2_zcam", s)[0].zooms == [34]
+
+
+def test_pipeline_v0p80_settings(tmp_path):
+    from mppp.pipeline import Settings, _rig_refine, wanted_project_settings
+    s = Settings()
+    assert s.navcam_pp == "hold" and s.round1_hold is True and s.rig_translation_sigma_m == 0.005
+    assert _rig_refine(s) == "rotation" and _rig_refine(s.replace(navcam_rig_refine="full")) is True
+    w = wanted_project_settings(s, tmp_path)
+    assert w["navcam_k4"] == "consensus" and w["navcam_pp"] == "hold"
+
+
+def test_pipeline_carries_the_v0p82_settings(tmp_path):
+    from mppp.pipeline import ALIGN_RULES, Settings, wanted_project_settings
+    s = Settings()
+    assert s.min_included_fraction is None and s.no_position_prior_at == [] and s.prior_gauge_recentre is True
+    assert s.prior_sigma_m == 1.0 and wanted_project_settings(s, tmp_path)["prior_sigma_m"] == [1.0, 1.0, 1.0]
+    assert ALIGN_RULES >= 82
+
+
+def test_one_third_rule_is_about_subframes():
+    """Christian (19 Oct): the 1/3 rule leaves out sub-frames covering less than 1/3 of the frame - not images whose
+    mask keeps less than 1/3 (v0p82's reading, now off)."""
+    from mppp.pipeline import ALIGN_RULES, Settings
+    from mppp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
+    from mppp.sfm.workdir import MIN_INCLUDED_FRACTION
+    assert NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3) and MIN_INCLUDED_FRACTION is None and ALIGN_RULES >= 85
+    s = Settings()
+    assert s.min_included_fraction is None and s.subframe_families == ("N",)

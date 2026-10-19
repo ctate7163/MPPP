@@ -792,28 +792,28 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
         mode = "split" if regular else "report"
         if verbose:
             for g in new_groups:
-                print(f"[sfm] LOW BACKLASH (new): {g['camera_group']} sol {g['sol']} {g['sequence']} focus "
+                log.info(f"LOW BACKLASH (new): {g['camera_group']} sol {g['sol']} {g['sequence']} focus "
                       f"{g['focus_count']}: f / label f {g['ratio']:.4f} (z {g['z']:+.1f}), {g['images']} images - not on "
-                      f"the list: split now, and added to the found list", flush=True)
+                      f"the list: split now, and added to the found list")
             for g in disagree:
                 zz = g.get("z")
-                print(f"[sfm] found list says low backlash, the fit and its sequence say backlash: {g['camera_group']} "
+                log.info(f"found list says low backlash, the fit and its sequence say backlash: {g['camera_group']} "
                       f"sol {g['sol']} {g['sequence']} focus {g['focus_count']} (f / label f "
                       f"{(g.get('ratio_fit') or g.get('ratio') or float('nan')):.4f}, z "
-                      f"{(zz if zz is not None else float('nan')):+.1f}) - remove it from the found list", flush=True)
+                      f"{(zz if zz is not None else float('nan')):+.1f}) - remove it from the found list")
     if verbose:
         for g, ln in sorted((report.get("backlash_lines") or {}).items()):
-            print(f"[sfm] {g} backlash state: f / label f {ln['a']:.4f} {ln['b'] * 1000:+.4f} per 1000 counts about "
-                  f"focus {ln['reference_focus']:.0f} ({ln['source']}, {ln['n']} groups)", flush=True)
+            log.info(f"{g} backlash state: f / label f {ln['a']:.4f} {ln['b'] * 1000:+.4f} per 1000 counts about "
+                  f"focus {ln['reference_focus']:.0f} ({ln['source']}, {ln['n']} groups)")
         for c in report.get("sequence_conflicts") or []:
-            print(f"[sfm] sequence rule: {c['group_key']} fits {c['own_state']} (z {c['own_z']:+.1f}) but its sequence "
-                  f"is {c['sequence_state']} (z {c['sequence_z']:+.1f}): {c['sequence_state']}", flush=True)
+            log.info(f"sequence rule: {c['group_key']} fits {c['own_state']} (z {c['own_z']:+.1f}) but its sequence "
+                  f"is {c['sequence_state']} (z {c['sequence_z']:+.1f}): {c['sequence_state']}")
         b = report["before"]
-        print(f"[sfm] Mastcam-Z focus states: {len(groups)} focus groups - {n['backlash']} backlash, {n['regular']} "
+        log.info(f"Mastcam-Z focus states: {len(groups)} focus groups - {n['backlash']} backlash, {n['regular']} "
               f"regular, {n['undecided']} undecided (kept as backlash), {n['single']} single-state (110 mm); "
               f"Navcam scale {(ns or 1.0):.5f}; fitted f / label f median "
               f"{(b['backlash']['ratio_median'] or float('nan')):.4f} (backlash), "
-              f"{(b['regular']['ratio_median'] or float('nan')):.4f} (regular)", flush=True)
+              f"{(b['regular']['ratio_median'] or float('nan')):.4f} (regular)")
     if mode == "report" or not regular:
         return rec, report
     rec2, rows = split_by_state(rec, project, regular, hold_f_images=hold_f_images)
@@ -833,7 +833,7 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
         project.cameras[row["camera"]]["refined_params"] = [float(x) for x in p]
     if verbose:
         a = report["after"]
-        print(f"[sfm] {len(rows)} regular-state cameras ({len(regular)} images); after the adjustment fitted f / "
+        log.info(f"{len(rows)} regular-state cameras ({len(regular)} images); after the adjustment fitted f / "
               f"label f median {(a['backlash']['ratio_median'] or float('nan')):.4f} (backlash), "
-              f"{(a['regular']['ratio_median'] or float('nan')):.4f} (regular)", flush=True)
+              f"{(a['regular']['ratio_median'] or float('nan')):.4f} (regular)")
     return rec2, report

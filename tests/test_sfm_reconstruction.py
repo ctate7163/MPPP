@@ -575,7 +575,7 @@ def _centre(rec, fid):
     return np.asarray(fr.rig_from_world.inverse().translation)
 
 
-def test_eye_camera_without_images_after_thermal_split(capsys):
+def test_eye_camera_without_images_after_thermal_split(caplog):
     rec, p = _rec()
     proj = SimpleNamespace(
         cameras={"NL": {"params": p}, "NR": {"params": p},
@@ -588,8 +588,10 @@ def test_eye_camera_without_images_after_thermal_split(capsys):
     assert [r["camera"] for r in rows] == ["NL", "NR", "NL_T10"]          # Mastcam-Z focus bin left out
     assert rows[0]["names"][-2:] == ["sx1", "sy1"] and rows[0]["images"] == 0
     assert rows[2]["thermal_bin"] and rows[2]["refined"][0] == pytest.approx(p[0] * 1.003)
-    print_camera_changes(rec, proj)
-    out = capsys.readouterr().out
+    import logging
+    with caplog.at_level(logging.INFO, logger="mppp.sfm"):
+        print_camera_changes(rec, proj)
+    out = caplog.text
     assert "no images after the thermal split" in out and "[temperature bin]" in out
 
 
@@ -1012,3 +1014,394 @@ def test_navcam_rig_yaw_hold(tmp_path, mode):
     proj.settings["navcam_rig_yaw"] = "refine"
     bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=30)
     assert abs(np.array(rec.rigs[1].sensor_from_rig(sid).params)[1] - q1[1]) > 0   # refined again when asked
+
+
+def test_outlier_frame_threshold_and_reconstruct_options():
+    import inspect
+    from mppp.sfm import reconstruction as R
+    assert R.OUTLIER_DEFAULTS["min_residual_px"] == 1.6
+    sig = inspect.signature(R._reconstruct).parameters
+    assert sig["zcam_focus_line"].default is True and sig["zcam_line_cycles"].default == 2
+    assert sig["thermal_after_stage1"].default is True
+
+
+# the Navcam pixel aspect held in the BA, the pose-guided guard (v0p65)
+
+
+def test_aspect_prior_cost():
+    pyceres = pytest.importorskip("pyceres")
+    from mppp.sfm.reconstruction import AspectPrior
+    x = np.array([100.0, 101.0, 5.0, 5.0])
+    prob = pyceres.Problem()
+    c = AspectPrior(1.0, 1e-4, 4)
+    prob.add_residual_block(c, None, [x])
+    so = pyceres.SolverOptions()
+    s = pyceres.SolverSummary()
+    pyceres.solve(so, prob, s)
+    assert x[1] / x[0] == pytest.approx(1.0, abs=1e-6) and x[2] == 5.0
+
+
+def test_bundle_adjust_holds_the_navcam_aspect(tmp_path):
+    pytest.importorskip("pyceres")
+    from helpers import _synthetic, _build_rec
+    from mppp.sfm import reconstruction as R
+    proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
+    rec0, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
+    if "database" not in proj.settings:
+        proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+    key_of = {int(v): k for k, v in proj.settings["database"]["cameras"].items()}
+    # the start camera (the "consensus") with a pixel aspect 0.3 % off the truth: free, the data pulls fy / fx to the
+    # truth; held, it stays at the start
+    for cid, k in key_of.items():
+        p = list(proj.cameras[k]["params"])
+        p[1] = p[0] * 1.003
+        proj.cameras[k]["params"] = p
+        rec0.cameras[cid].params = np.asarray(p, float)
+    a0 = {cid: rec0.cameras[cid].params[1] / rec0.cameras[cid].params[0] for cid in key_of}
+    out = {}
+    for mode in ("free", "hold"):
+        rec = copy.deepcopy(rec0)
+        ba = R.bundle_adjust(rec, proj, sigma_px=0.3, max_iterations=30, navcam_aspect=mode)
+        out[mode] = {cid: rec.cameras[cid].params[1] / rec.cameras[cid].params[0] / a0[cid] - 1 for cid in key_of}
+        assert ba["navcam_aspect"] == mode and ba["aspect_priors"] == (len(key_of) if mode == "hold" else 0)
+    for cid in key_of:
+        assert abs(out["hold"][cid]) < 2e-4 < abs(out["free"][cid])
+    # the project setting decides when the argument is not given (as in the thermal stage)
+    proj.settings["navcam_aspect"] = "hold"
+    assert R.bundle_adjust(copy.deepcopy(rec0), proj, sigma_px=0.3, max_iterations=2)["aspect_priors"] == len(key_of)
+
+
+def test_staged_reconstruct_records_aspect_and_guard(tmp_path, monkeypatch):
+    pytest.importorskip("pyceres")
+    from helpers import _block_without_navcam_zcam_matches
+    from mppp.sfm import reconstruction as R
+    proj, new, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
+    monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(new))
+    R.reconstruct(proj, sigma_px=0.3, schedule=((24.0, 10.0, 8.0), (8.0, 3.0, 4.0)), max_iterations=5,
+                  verbose=False, navcam_intrinsics="refine", staged=True, out_name="cahv_ba", zcam_focus_line=False)
+    assert proj.settings["navcam_aspect"] == "hold" and proj.settings["reconstruction"]["navcam_aspect"] == "hold"
+    pg = proj.settings["pose_guided"]
+    assert "beyond_ground_before" in pg and "beyond_ground_after" in pg and "reverted" not in pg
+    # the guard: a rise above the limit undoes the stage
+    monkeypatch.setattr(R, "POSE_GUIDED_MAX_BEYOND_GROUND_RISE", -1.0)
+    rec = R.reconstruct(proj, sigma_px=0.3, schedule=((24.0, 10.0, 8.0),), max_iterations=5, verbose=False,
+                        navcam_intrinsics="refine", staged=True, out_name="cahv_ba", zcam_focus_line=False)
+    assert "reverted" in proj.settings["pose_guided"] and rec.num_points3D() > 0
+    with pytest.raises(ValueError):
+        R.reconstruct(proj, verbose=False, navcam_aspect="x")
+
+
+# Ceres FAILURE retried, the camera write checked (v0p74.7)
+
+
+def test_bundle_adjust_retries_a_failed_solve(tmp_path, monkeypatch):
+    """A first solve that ends in FAILURE (Ceres leaves the parameters partly updated) is solved again with the
+    iterative Schur solver; the cameras written back are the solution's and the record says so."""
+    pytest.importorskip("pyceres")
+    import pyceres
+    from helpers import _build_rec, _synthetic
+    from mppp.sfm import reconstruction as R
+    proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
+    rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=True)
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+    real = pyceres.solve
+    calls = []
+
+    def flaky(so, prob, summary):
+        calls.append(so.linear_solver_type)
+        if len(calls) == 1:                                 # the first solve "fails" without touching anything
+            summary.termination_type = pyceres.TerminationType.FAILURE
+            return
+        real(so, prob, summary)
+    monkeypatch.setattr(pyceres, "solve", flaky)
+    start = np.array(rec.cameras[1].params)
+    ba = R.bundle_adjust(rec, proj, max_iterations=30)
+    assert len(calls) == 2 and calls[1] == pyceres.LinearSolverType.ITERATIVE_SCHUR
+    assert ba["retried"] and "CONVERGENCE" in ba["termination"]
+    assert not np.allclose(np.array(rec.cameras[1].params[:2]), start[:2])          # refined and written back
+
+
+def test_set_camera_params_checks_the_write(tmp_path):
+    import pycolmap
+    from mppp.sfm.reconstruction import _set_camera_params
+    r = pycolmap.Reconstruction()
+    r.add_camera(pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=10, height=10, params=[5.0, 5.0, 5.0]))
+    _set_camera_params(r, 1, [6.0, 5.0, 5.0])
+    assert list(r.cameras[1].params) == [6.0, 5.0, 5.0]
+
+
+# two Navcam rig epochs through stage 1 and the thermal stage (v0p75)
+
+
+def test_reconstruct_with_two_rig_epochs(tmp_path, monkeypatch):
+    """A Navcam block whose second station is a later visit: two rigs (N, N#1 with cameras NL#1, NR#1) through
+    stage 1 and the thermal stage, with temperature bins per epoch camera."""
+    pytest.importorskip("pyceres")
+    proj, rec, single, rigT = _two_epoch_block(tmp_path, monkeypatch)
+    eyes = {r["eye"] for r in proj.settings["thermal"]["rows"]}
+    assert {"NL", "NR", "NL#1", "NR#1"} <= eyes                           # bins per epoch camera
+    assert len(single.cameras) == 4 and {rid for rid, rg in single.rigs.items() if rg.num_sensors() == 2} == {1, 2}
+
+
+# rig epochs tied to the eye's camera (v0p75.1)
+
+
+def test_epoch_tie_key_and_tie():
+    from mppp.sfm.reconstruction import epoch_tie_key, _tie_epoch_cameras
+    assert epoch_tie_key("NL#1") == "NL" and epoch_tie_key("NR#2_T-022.5-020") == "NR_T-022.5-020"
+    assert epoch_tie_key("NL_T-020-015") == "NL_T-020-015" and epoch_tie_key("ZL034#1") == "ZL034#1"
+    cams = {1: "NL", 2: "NR", 3: "NL#1", 4: "NR#1", 5: "NL_T-020-015", 6: "NL#1_T-020-015", 7: "NL#1_T-010-005"}
+    proj = SimpleNamespace(settings={"database": {"cameras": {v: k for k, v in cams.items()}}})
+    work = SimpleNamespace(cameras={k: SimpleNamespace(model="THIN_PRISM_FISHEYE") for k in cams})
+    blocks = {k: np.full(12, float(k)) for k in cams}
+    tied = _tie_epoch_cameras(blocks, work, proj)
+    assert tied == {"NL": ["NL#1"], "NR": ["NR#1"], "NL_T-020-015": ["NL#1_T-020-015"]}
+    assert blocks[3] is blocks[1] and blocks[4] is blocks[2] and blocks[6] is blocks[5] and blocks[7][0] == 7.0
+    proj.settings["navcam_rig_epochs_tie"] = False
+    blocks2 = {k: np.full(12, float(k)) for k in cams}
+    assert _tie_epoch_cameras(blocks2, work, proj) == {} and blocks2[3] is not blocks2[1]
+
+
+def _two_epoch_block(tmp_path, monkeypatch, **kw):
+    """A Navcam block whose second station is a later visit: two rigs (N, N#1 with cameras NL#1, NR#1) through
+    stage 1 and the thermal stage, both refined to the true rig; the consensus merge maps the epoch cameras to
+    their eyes and keeps every image."""
+    pytest.importorskip("pyceres")
+    import pycolmap
+    from helpers import _build_rec, _synthetic
+    from mppp.sfm import reconstruction as R
+    from mppp.sfm.thermal import image_temperatures
+    proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
+    for r in proj.images:
+        later = r["station"].endswith("0100")
+        r["camera_temperature_degC"] = -32.0 if not later else -14.0
+        r["sol"] = 95 if not later else 365
+        if later:
+            r["instrument"], r["rig_epoch"] = r["instrument"] + "#1", 1
+        else:
+            r["rig_epoch"] = 0
+    for eye in ("NL", "NR"):
+        proj.cameras[f"{eye}#1"] = dict(proj.cameras[eye], group=eye, epoch=1)
+    proj.rig["N#1"] = dict(proj.rig["N"], ref="NL#1", sensor="NR#1", epoch={"index": 1, "sols": [365, 365]})
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2, "NL#1": 3, "NR#1": 4}, "rig_ids": {"N": 1, "N#1": 2}}
+    proj.settings["navcam_rig_epochs"] = {"gap_sols": 100.0, "epochs": [{"index": 0, "rig_key": "N"}, {"index": 1, "rig_key": "N#1"}]}
+    # the synthetic reconstruction with the later frames on a second rig and the camera copies
+    for r in proj.images:                                    # _build_rec keys cameras by NL / NR
+        r["instrument"] = r["instrument"].split("#")[0]
+    rec0, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
+    sens = lambda c: pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=c)        # noqa: E731
+    for cid in (1, 2):
+        c = rec0.cameras[cid]
+        rec0.add_camera(pycolmap.Camera(camera_id=cid + 2, model=c.model, width=c.width, height=c.height, params=np.array(c.params)))
+    rig2 = pycolmap.Rig(rig_id=2)
+    rig2.add_ref_sensor(sens(3))
+    rig2.add_sensor(sens(4), rec0.rigs[1].sensor_from_rig(sens(2)))
+    rec0.add_rig(rig2)
+    later_names = {r["name"] for r in proj.images if r["rig_epoch"] == 1}
+    new = pycolmap.Reconstruction()
+    for c in rec0.cameras.values():
+        new.add_camera(c)
+    for rg in rec0.rigs.values():
+        new.add_rig(rg)
+    for fid, fr in rec0.frames.items():
+        later = any(rec0.images[d.id].name in later_names for d in fr.data_ids)
+        nf = pycolmap.Frame(frame_id=fid, rig_id=2 if later else 1)
+        for d in fr.data_ids:
+            nf.add_data_id(pycolmap.data_t(sensor_id=sens(d.sensor_id.id + (2 if later else 0)), id=d.id))
+        nf.rig_from_world = fr.rig_from_world
+        new.add_frame(nf)
+    for iid, im in rec0.images.items():
+        later = im.name in later_names
+        ni = pycolmap.Image(name=im.name, keypoints=np.array([q.xy for q in im.points2D]),
+                            camera_id=im.camera_id + (2 if later else 0), image_id=iid)
+        ni.frame_id = im.frame_id
+        new.add_image(ni)
+    for fid in rec0.reg_frame_ids():
+        new.register_frame(fid)
+    for pid, p in rec0.points3D.items():
+        new.add_point3D(p.xyz, p.track, np.zeros(3, np.uint8))
+    for r in proj.images:
+        if r["rig_epoch"] == 1:
+            r["instrument"] += "#1"
+    monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(new))
+    monkeypatch.setattr(R, "triangulate", lambda rec, project, **kw: rec)
+    rec = R.reconstruct(proj, sigma_px=noise, schedule=((24.0, 10.0, 8.0),), max_iterations=8, verbose=False,
+                        navcam_intrinsics="refine", refine_rig="rotation", temperatures=image_temperatures(proj),
+                        thermal_bins_deg=10, thermal_min_images=4, out_name="cahv_ba", **kw)
+    single = pycolmap.Reconstruction(str(proj.root / "sparse" / "cahv_ba_single"))
+    return proj, rec, single, rigT
+
+
+def test_two_epochs_share_the_cameras_and_refine_their_rigs(tmp_path, monkeypatch):
+    pytest.importorskip("pyceres")
+    from scipy.spatial.transform import Rotation
+    proj, rec, single, rigT = _two_epoch_block(tmp_path, monkeypatch)
+    # the epoch copies NL#1, NR#1 come out with exactly the eye's parameters; each rig its own rotation
+    assert np.array_equal(np.asarray(single.cameras[1].params), np.asarray(single.cameras[3].params))
+    assert np.array_equal(np.asarray(single.cameras[2].params), np.asarray(single.cameras[4].params))
+    R_rel = np.asarray(rigT[0])
+    for rid in (1, 2):
+        rg = single.rigs[rid]
+        sid = next(iter(rg.non_ref_sensors))
+        d = Rotation.from_matrix(np.asarray(rg.sensor_from_rig(sid).rotation.matrix()) @ R_rel.T).as_rotvec()
+        assert np.degrees(np.linalg.norm(d)) * 1e3 < 20.0
+    t1 = np.asarray(single.rigs[1].sensor_from_rig(next(iter(single.rigs[1].non_ref_sensors))).translation)
+    t2 = np.asarray(single.rigs[2].sensor_from_rig(next(iter(single.rigs[2].non_ref_sensors))).translation)
+    assert np.allclose(t1, t2)                                            # one baseline for both visits
+    # the thermal stage: fx, fy, k1 free per bin, the finer bins reported
+    th = proj.settings["thermal"]
+    assert th["free"] == ["fx", "fy", "k1"] and th["fine_range_degC"] == [-25.0, -5.0] and th["fine_bin_deg"] == 2.5
+    assert all("k1" in r and "k1" in r["start"] for r in th["rows"])
+    assert any("k1" in r["free"] for r in th["rows"]) or th["k1_held_bins"]
+
+
+def test_untied_epochs_keep_their_own_cameras(tmp_path, monkeypatch):
+    pytest.importorskip("pyceres")
+    def setup(project):
+        project.settings["navcam_rig_epochs_tie"] = False
+    import mppp.sfm.reconstruction as R
+    orig = R._tie_epoch_cameras
+    monkeypatch.setattr(R, "_tie_epoch_cameras", lambda b, w, p: (setup(p), orig(b, w, p))[1])
+    proj, rec, single, rigT = _two_epoch_block(tmp_path, monkeypatch)
+    assert not np.array_equal(np.asarray(single.cameras[1].params), np.asarray(single.cameras[3].params))
+
+
+# round-1 hold and the rig translation tie (v0p80)
+
+
+def test_reconstruct_signature_round1_hold():
+    import inspect
+    from mppp.sfm.reconstruction import ROUND1_HOLD, reconstruct
+    assert ROUND1_HOLD is True
+    assert inspect.signature(reconstruct).parameters["round1_hold"].default is True
+
+
+def test_translation_tie_cost():
+    pytest.importorskip("pyceres")
+    from mppp.sfm.reconstruction import _translation_tie_class
+    c = _translation_tie_class()(1e-3)
+    a = np.array([0, 0, 0, 1, 0.42, 0.001, 0.002])
+    b = np.array([0, 0, 0, 1, 0.41, 0.001, 0.0])
+    res = np.zeros(3)
+    ja, jb = np.zeros(21), np.zeros(21)
+    assert c.Evaluate([a, b], res, [ja, jb])
+    assert np.allclose(res, [10.0, 0.0, 2.0])
+    assert ja.reshape(3, 7)[0, 4] == pytest.approx(1e3) and jb.reshape(3, 7)[2, 6] == pytest.approx(-1e3)
+
+
+# the prior gauge, the covariance damping (v0p82)
+
+
+class _Frame:
+    def __init__(self, C):
+        import pycolmap
+        self.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(np.eye(3)), -np.asarray(C, float))
+
+
+class _Rec:
+    def __init__(self, centres):
+        self.frames = {i: _Frame(c) for i, c in enumerate(centres)}
+        self.moved = None
+
+    def transform(self, sim):
+        self.moved = np.asarray(sim.translation, float)
+        for f in self.frames.values():
+            T = f.rig_from_world
+            import pycolmap
+            f.rig_from_world = pycolmap.Rigid3d(T.rotation, np.asarray(T.translation) - np.asarray(T.rotation.matrix()) @ self.moved)
+
+
+def test_prior_gauge_moves_the_block_onto_its_priors():
+    from mppp.sfm.reconstruction import PRIOR_GAUGE_RECENTRE, prior_gauge
+    assert PRIOR_GAUGE_RECENTRE is True
+    priors = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 1.0]])
+    rec = _Rec(priors + [-0.19, -0.07, -0.10])
+    g = prior_gauge(rec, list(enumerate(priors)))
+    assert np.allclose(g["mean_residual_m"], [0.19, 0.07, 0.10]) and g["recentred"]
+    g2 = prior_gauge(rec, list(enumerate(priors)), recentre=False)
+    assert np.allclose(g2["mean_residual_m"], 0, atol=1e-12) and not g2["recentred"]
+    assert prior_gauge(rec, []) is None
+
+
+def test_covariance_damping_steps():
+    from mppp.sfm import reconstruction as R
+    assert R.COVARIANCE_DAMPING_STEPS[0] == 0.0 and max(R.COVARIANCE_DAMPING_STEPS) <= 1e-4
+
+
+def test_covariance_uses_camera_views():
+    from mppp.sfm import reconstruction as R
+    assert R.COVARIANCE_CAMERA_VIEWS is True
+
+
+# COLMAP's bogus-camera limit lifted for |k2| > 1, k2 clamped (v0p85)
+
+
+def test_triangulation_keeps_cameras_with_k2_above_one(tmp_path):
+    """The ZR dropout (19 Oct diagnostic): COLMAP triangulates no image of a camera with |k2| > 1 unless its
+    bogus-camera limit is lifted - mppp.sfm.reconstruction.triangulate lifts it."""
+    import numpy as np
+    import pycolmap
+    from mppp.sfm import reconstruction as R
+    rng = np.random.default_rng(0)
+    W, H, f = 1648, 1200, 4700.0
+    X = rng.uniform([-3, -2, 18], [3, 2, 30], size=(300, 3))
+    rec = pycolmap.Reconstruction()
+    db_path = tmp_path / "d.db"
+    db = pycolmap.Database.open(str(db_path))
+    for c, k2 in ((1, 0.6), (2, 1.016)):                     # ZL-like and ZR-like cameras
+        cam = pycolmap.Camera(model="FULL_OPENCV", width=W, height=H, params=[f, f, W / 2, H / 2, 0, k2, 0, 0, 0, 0, 0, 0],
+                              camera_id=c)
+        rec.add_camera(cam)
+        db.write_camera(cam, use_camera_id=True)
+        rig = pycolmap.Rig(rig_id=c)
+        rig.add_ref_sensor(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=c))
+        rec.add_rig(rig)
+        db.write_rig(rig, use_rig_id=True)
+    ids = []
+    for i in range(1, 7):
+        c = 1 if i % 2 else 2
+        x = 0.24 * (c - 1) + 0.5 * ((i - 1) // 2)
+        cam = rec.cameras[c]
+        Y = X - np.array([x, 0, 0])
+        uv = cam.img_from_cam(Y)
+        fr = pycolmap.Frame(frame_id=i, rig_id=c)
+        fr.add_data_id(pycolmap.data_t(sensor_id=pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=c), id=i))
+        fr.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(np.eye(3)), np.array([-x, 0, 0]))
+        rec.add_frame(fr)
+        im = pycolmap.Image(name=f"{i}.png", keypoints=uv, camera_id=c, image_id=i)
+        im.frame_id = i
+        rec.add_image(im)
+        db.write_image(pycolmap.Image(name=f"{i}.png", camera_id=c, image_id=i), use_image_id=True)
+        db.write_keypoints(i, uv.astype(np.float32))
+        db.write_frame(fr, use_frame_id=True)
+        ids.append(i)
+    for i in ids:
+        rec.register_frame(i)
+    for a in ids:
+        for b in ids:
+            if a < b:
+                tvg = pycolmap.TwoViewGeometry()
+                tvg.config = 2
+                tvg.inlier_matches = np.c_[np.arange(300), np.arange(300)].astype(np.uint32)
+                db.write_two_view_geometry(a, b, tvg)
+    db.close()
+
+    class P:
+        database = db_path
+        images_dir = tmp_path
+        root = tmp_path
+    out = R.triangulate(rec, P(), max_reproj_px=4.0, min_angle_deg=0.1)
+    assert all(out.images[i].num_points3D > 250 for i in ids), {i: out.images[i].num_points3D for i in ids}
+
+
+def test_k2_clamped_to_ten():
+    import numpy as np
+    import pycolmap
+    from mppp.sfm import reconstruction as R
+    rec = pycolmap.Reconstruction()
+    for cid, k2 in ((1, 12.5), (2, -30.0), (3, 2.2)):
+        rec.add_camera(pycolmap.Camera(model="FULL_OPENCV", width=1648, height=1200,
+                                       params=[4700, 4700, 824, 600, -0.4, k2, 0, 0, 0, 0, 0, 0], camera_id=cid))
+    assert R.K2_LIMIT == 10.0
+    assert R.clamp_k2(rec) == {1: 12.5, 2: -30.0}
+    assert [float(rec.cameras[c].params[5]) for c in (1, 2, 3)] == [10.0, -10.0, 2.2]

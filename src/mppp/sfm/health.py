@@ -30,10 +30,12 @@ to the CAHV rig, residuals growing towards the image edge, and 6 of 13
 stations outside the main tied block.
 
     report = assess_alignment(project, rec)
-    print(health_table(report))
+    log.info(health_table(report))
     write_health(report, project.root / "health")        # health.json, health.md, health.png
 """
 from __future__ import annotations
+
+import logging
 
 import json
 from pathlib import Path
@@ -44,6 +46,8 @@ import numpy as np
 from .export import _umeyama, pose_residual_table, station_components
 from .project import SfmProject, station_labels
 from .reconstruction import native_residuals, track_statistics
+
+log = logging.getLogger("mppp.sfm")
 
 PathLike = Union[str, Path]
 
@@ -844,7 +848,7 @@ def screen_blocks(blocks: Dict[str, PathLike], verbose: bool = True, **kw) -> Di
         out[name] = r
         if verbose:
             bg, a = r.get("beyond_ground_fraction"), r.get("navcam_aspect_change_pct")
-            print(f"  {r['verdict'].upper():4s} {name:34s} MPPP {str(r.get('mppp')):7s} beyond-ground "
+            log.info(f"  {r['verdict'].upper():4s} {name:34s} MPPP {str(r.get('mppp')):7s} beyond-ground "
                   f"{'-' if bg is None else f'{100 * bg:5.1f} %'}  aspect {'-' if a is None else f'{a:+.3f} %'} "
                   f"{r.get('aspect_camera') or ''}" + (f"  | {'; '.join(r['reasons'])}" if r.get("reasons") else ""))
     return out

@@ -1,9 +1,10 @@
 """
-mppp_error.waypoints -- build Stations from an M2020 traverse GeoJSON.
+mppp.error.waypoints -- build Stations from an M2020 traverse GeoJSON.
 
-Rewrite of the v1 `mars20_waypoints.py` with these changes:
+The waypoint file is the packaged snapshot (``mppp.waypoints.snapshot_path()``)
+or any file of the same format.  Compared with the original ``mars20_waypoints.py``:
 
-  * TRUE ELEVATIONS ARE PRESERVED.  v1's make_report did
+  * TRUE ELEVATIONS ARE PRESERVED.  The original ``make_report`` did
     `stations_xyz[:,2] = 1.9`, discarding relative station elevations.  On any
     slope that removes real network geometry -- and elevation diversity between
     stations is one of the few things that breaks the collinear-drive
@@ -12,8 +13,7 @@ Rewrite of the v1 `mars20_waypoints.py` with these changes:
   * PATH LENGTH is accumulated along the traverse (in drive order), not
     straight-line from the anchor, so PoseModel('telemetry') sees a realistic
     VO drift distance.
-  * site_drive_for_sol returns (site, drive, matched_sol).  v1's caller
-    unpacked the third value as `anchor_method`, which was a naming bug.
+  * site_drive_for_sol returns (site, drive, matched_sol).
   * Station selection radius is decoupled from the grid extent.
 
 Azimuth convention: degrees clockwise from North (compass), matching the
@@ -106,8 +106,16 @@ def site_drive_for_sol(fc: dict, sol: int, fallback: str = "nearest",
     return site, drive, matched
 
 
-def _last_per_sol_features(feats: Sequence[dict]) -> List[dict]:
-    """Keep only the highest (site, drive) waypoint for each sol."""
+def _last_per_sol(feats: Sequence[dict]) -> List[dict]:
+    """
+    Keep only the LAST rover position of each sol: the highest (site, drive).
+    A sol with a mid-drive localization and an end-of-drive localization has
+    two waypoints but one imaging station (the 360 is taken where the rover
+    stops), so the mid-drive entry is dropped.  Ordering by (site, drive)
+    rather than by drive alone keeps the end-of-sol waypoint when the site
+    frame was incremented during the sol (sol 1842: 88_0 over 87_5286).
+    Features without sol/site/drive are kept.
+    """
     best: Dict[int, Tuple[Tuple[int, int], dict]] = {}
     others = []
     for f in feats:
@@ -120,23 +128,6 @@ def _last_per_sol_features(feats: Sequence[dict]) -> List[dict]:
         if sol not in best or key > best[sol][0]:
             best[sol] = (key, f)
     return [v[1] for v in best.values()] + others
-
-
-def _last_per_sol(props_by_rmc: dict, rmcs):
-    """
-    Keep only the LAST rover position of each sol.  A sol with a mid-drive
-    localization and an end-of-drive localization has two waypoints but one
-    imaging station (the 360 is taken where the rover stops); the mid-drive
-    entry is dropped.  'Last' = highest drive count within the sol.
-    """
-    best = {}
-    for r in rmcs:
-        pr = props_by_rmc[r]
-        sol = pr["sol"]; drive = int(str(r).split("_")[1])
-        if sol not in best or drive > best[sol][0]:
-            best[sol] = (drive, r)
-    keep = {v[1] for v in best.values()}
-    return [r for r in rmcs if r in keep]
 
 
 def stations_from_rmcs(
@@ -182,10 +173,11 @@ def stations_from_rmcs(
                 by_rmc[f"{rec[1]}_{rec[2]}"] = p
 
     missing = [r for r in rmcs if r not in by_rmc]
-    if not missing and last_per_sol:
-        rmcs = _last_per_sol(by_rmc, list(rmcs))
     if missing:
         raise ValueError(f"RMC(s) not found in waypoint file: {missing}")
+    if last_per_sol:
+        kept = {id(f["properties"]) for f in _last_per_sol([{"properties": by_rmc[r]} for r in rmcs])}
+        rmcs = [r for r in rmcs if id(by_rmc[r]) in kept]
 
     anchor_rmc = anchor_rmc or rmcs[0]
     ap = by_rmc[anchor_rmc]
@@ -245,9 +237,9 @@ def build_stations(
                       rotated into the world frame by the rover heading.
     camera_height_m : additional height of the camera above the waypoint
                       elevation, applied on top of cam_offset_xyz[2].
-    flatten_elevation : if True, reproduce v1's behaviour of forcing all
-                      stations to a common height.  Provided only for
-                      back-comparison; leave False for real work.
+    flatten_elevation : if True, force all stations to a common height (the
+                      original mars20_waypoints behaviour).  Provided only
+                      for back-comparison; leave False for real work.
 
     Returns (stations, info) where info carries anchor metadata.
     """
@@ -293,7 +285,7 @@ def build_stations(
         return pos, a
 
     # ---- select and order --------------------------------------------------
-    cand = _last_per_sol_features(feats) if last_per_sol else list(feats)
+    cand = _last_per_sol(feats) if last_per_sol else list(feats)
     keep = []
     for f in cand:
         p = f.get("properties") or {}

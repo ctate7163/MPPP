@@ -356,3 +356,10 @@ def test_verify_reports_each_url(tmp_path, monkeypatch):
                     [Path(rel["path"]).as_uri(), (tmp_path / "missing.safetensors").as_uri()])
     res = hub.verify_model("m1")
     assert [r["ok"] for r in res] == [True, False]
+
+
+def test_registry_default_model_and_release():
+    from mppp.mask.hub import default_model_name, hf_repo, load_registry
+    assert default_model_name() == "mppp_mask_v3" and hf_repo() == "ctate7163/mppp-mask"
+    e = load_registry()["models"]["mppp_mask_v3"]
+    assert e["source_checkpoint"] == "convnext_tiny_s4_seg_20260925b.pt" and e["urls"][0].startswith("https://huggingface.co/ctate7163/")

@@ -1,6 +1,8 @@
 """
-mppp_error.sitemap -- load an overhead site mosaic and crop it to a map extent.
+studies/error/sitemap.py -- load an overhead site mosaic and crop it to a map extent.
 
+Helper of ``study_navcam.py`` (moved out of ``mppp.error`` in v0p90: it fetches a
+live URL and caches under /tmp, which has no place in the installed package).
 Used to place a real Mastcam-Z (or Navcam) overhead context image behind the
 FIXED panel's otherwise-blank "improvement over itself" slot.
 

@@ -1,7 +1,7 @@
 """
-Error-model parameters measured from MPPP COLMAP alignments (v0p14.7).
+Error-model parameters measured from MPPP COLMAP alignments.
 
-An alignment made by notebook 03 writes ``<WORK>/colmap/error_input/``
+An alignment made by the pipeline (``mppp.pipeline``, notebook 02) writes ``<WORK>/colmap/error_input/``
 (:func:`mppp.sfm.export_for_error`): the native-pixel COLMAP model, per-image
 station table, pose-vs-prior table, per-observation residuals and a summary.
 This module turns one or more of those folders into the numbers the error
@@ -26,8 +26,8 @@ values it assumes (``ModelConfig`` defaults, ``cases.CASE_PARAMS``):
 ``parameters``            all of the above as one row
 ========================  ===================================================
 
-Caveats (see docs/error/mppp_error_README_v0p15.md, "Calibrating from real
-data"): sparse tracks are biased towards well-matched terrain, so eps is a
+``notebooks/03_error_analysis.ipynb`` runs these on the sites of a study.
+Caveats: sparse tracks are biased towards well-matched terrain, so eps is a
 lower bound and the survival curves are optimistic; "possible" pairs ignore
 occlusion and the MPPP masks, which lowers the same-station and cross-station
 rates alike (the gate is their ratio).
@@ -44,7 +44,7 @@ from typing import Tuple, Any, Dict, List, Optional, Sequence, Union
 import numpy as np
 
 from ..colmap import project_camera
-from .colmap import ColmapModel, measure_theta_c, measured_view_graph, read_colmap
+from .colmap import ColmapModel, measured_view_graph, read_colmap
 
 PathLike = Union[str, Path]
 MARS_DAY_H = 24.0                     # LMST hours per sol
@@ -85,7 +85,7 @@ def find_error_input(path: PathLike) -> Path:
         if (cand / "stations.csv").is_file() and (cand / "native").is_dir():
             return cand
     raise FileNotFoundError(f"no error_input (stations.csv + native/) at {p}, {p / 'error_input'} or "
-                            f"{p / 'colmap' / 'error_input'}: run notebook 03 to the export step first")
+                            f"{p / 'colmap' / 'error_input'}: run the pipeline (notebook 02) to the export step first")
 
 
 def _lmst_hours(s: Any) -> Optional[float]:

@@ -1,6 +1,7 @@
 """Mastcam-Z focus breathing and backlash states (mppp.sfm.zcam, backlash). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import numpy as np
 import pytest
+from types import SimpleNamespace
 
 
 def test_focus_slope_fit_and_plot(tmp_path):
@@ -341,3 +342,430 @@ def test_listed_images_stay_regular_in_a_backlash_sequence(tmp_path):
     assert sorted(n for n, s in st.items() if s == "regular") == sorted(names3)   # the list's exceptions stay regular
     g3 = [g for g in groups if g["focus_count"] == 300.0][0]
     assert g3["all_listed"] and g3["ratio_fit"] is None and not g3.get("conflict")
+
+
+# the low-backlash list (mppp.sfm.backlash)
+
+
+def test_low_backlash_list_shipped_and_matching(tmp_path):
+    from mppp.sfm.backlash import is_low_backlash, load_low_backlash, low_backlash_fingerprint, low_backlash_path
+    lst = load_low_backlash()
+    assert low_backlash_path().is_file() and len(lst["entries"]) >= 60 and lst["clocks"]
+    assert low_backlash_fingerprint() and len(lst["uncertain"]) == 1
+    row = lambda stem, g: {"stem": stem, "camera_group": g}                     # noqa: E731
+    # a sequence at one zoom (ZCAM08045_034), any product type / version
+    assert is_low_backlash(row("ZLF_0091_0675032123_223EBY_N0040136ZCAM08045_034085J01", "ZL034"), lst)
+    # a full product name: same eye and clock, other product type
+    assert is_low_backlash(row("ZRF_0094_0675283792_738EBY_N0040136ZCAM03144_034085J01", "ZR034"), lst)
+    # (sol, clock) fragments at 48 mm; never at 110 mm (one focus state)
+    assert is_low_backlash(row("ZLF_0121_0677678747_053EBY_N0041250ZCAM08114_048085J01", "ZL048"), lst)
+    assert not is_low_backlash(row("ZLF_0121_0677678823_053EBY_N0041250ZCAM08114_110085J01", "ZL110"), lst)
+    assert not is_low_backlash(row("ZLF_0363_0700000000_000EBY_N0040136ZCAM08394_034085J01", "ZL034"), lst)
+    # own list: comments, separators, sol:sequence, extensions, too-short fragments ignored
+    f = tmp_path / "low.csv"
+    f.write_text("# list\nZCAM01234_063, 12:ZCAM00001\nABC\nZL0_0005_0600000000_000RAD_N0000000ZCAM00002_034085A01.IMG?\n")
+    own = load_low_backlash(f)
+    assert "ABC" not in own["entries"] and (12, "ZCAM00001") in own["sol_sequences"] and own["uncertain"]
+    assert is_low_backlash({"stem": "x", "sequence": "ZCAM00001", "sol": 12, "camera_group": "ZL034"}, own)
+    assert is_low_backlash(row("ZLF_0005_0600000000_000EBY_N0000000ZCAM00002_034085J01", "ZL034"), own)
+    assert is_low_backlash(row("ZRF_0010_0610000000_000EBY_N0000000ZCAM01234_063085J01", "ZR063"), own)
+    assert low_backlash_fingerprint(tmp_path / "none.csv") is None
+
+
+# the fx, fy, cx, cy lines per focus state and the low-backlash found list (v0p73)
+
+
+def _zcam_setup(monkeypatch, with_regular=True):
+    import pycolmap
+    from mppp.sfm import zcam
+    rec = pycolmap.Reconstruction()
+    cams, db, obs = {}, {}, {}
+    rng = np.random.default_rng(0)
+    cid = 1
+    truth = {"fx": (4700.0, 0.05), "fy": (4702.0, 0.05), "cx": (820.0, 0.002), "cy": (600.0, -0.001)}
+    for eye in ("L", "R"):
+        g = f"Z{eye}034"
+        for st, foci in (("backlash", [100, 300, 500, 700, 900]), ("regular", [200, 600, 800] if with_regular else [])):
+            for f in foci:
+                k = 1.0 / 1.009 if st == "regular" else 1.0
+                p = [truth["fx"][0] * k + truth["fx"][1] * (f - 600) + rng.normal(0, 0.3),
+                     truth["fy"][0] * k + truth["fy"][1] * (f - 600) + rng.normal(0, 0.3),
+                     truth["cx"][0] + truth["cx"][1] * (f - 600) + (3.0 if eye == "R" else 0.0) + rng.normal(0, 0.05),
+                     truth["cy"][0] + truth["cy"][1] * (f - 600) + rng.normal(0, 0.05), 0, 0, 0, 0]
+                rec.add_camera(pycolmap.Camera(camera_id=cid, model="OPENCV", width=1648, height=1200,
+                                               params=np.array(p, float)))
+                key = f"{g}_F{f:05d}" + ("_reg" if st == "regular" else "")
+                cams[key] = {"group": g, "focus_count_median": float(f), "backlash_state": st}
+                db[key] = cid
+                obs[cid] = 1000
+                cid += 1
+    proj = SimpleNamespace(cameras=cams, images=[], settings={
+        "database": {"cameras": db}, "zcam_line_params": {"ZL": ["fx", "fy"], "ZR": ["fx", "fy", "cx", "cy"]},
+        "zcam_line_form": {"ZL": {"fx": "free", "fy": "free"},
+                           "ZR": {"fx": "free", "fy": "free", "cx": "free", "cy": "free"}}})   # free lines (a study)
+    monkeypatch.setattr(zcam, "_observations_per_camera", lambda rec: obs)
+    model = {"cameras": {g: {"reference_focus": 600.0, "f0_px": 4701.0, "label_f0_px": 4659.0,
+                             "slope_px_per_count": 0.05, "aspect": 1.0} for g in ("ZL034", "ZR034")}}
+    return rec, proj, model, db
+
+
+def test_param_lines_per_state(monkeypatch):
+    from mppp.sfm.zcam import focus_line_lines, refit_focus_lines
+    rec, proj, model, db = _zcam_setup(monkeypatch)
+    out = refit_focus_lines(rec, proj, model=model)
+    zr = out["ZR034"]["lines"]
+    assert set(zr) == {"backlash", "regular"}
+    assert zr["backlash"]["fx"]["a"] == pytest.approx(4700.0, abs=0.5)
+    assert zr["backlash"]["fx"]["b"] == pytest.approx(0.05, abs=0.003)
+    assert zr["backlash"]["cx"]["a"] == pytest.approx(823.0, abs=0.1)
+    assert zr["regular"]["fx"]["a"] == pytest.approx(4700.0 / 1.009, abs=0.6)
+    assert set(out["ZL034"]["lines"]["backlash"]) == {"fx", "fy"}            # ZL: the reference principal point
+    p = rec.cameras[db["ZR034_F00300"]].params                                # every bin set on its state's line
+    ln = zr["backlash"]
+    assert p[0] == pytest.approx(ln["fx"]["a"] + ln["fx"]["b"] * (300 - 600))
+    assert p[2] == pytest.approx(ln["cx"]["a"] + ln["cx"]["b"] * (300 - 600))
+    assert any("regular" in s for s in focus_line_lines(out))
+
+
+def test_param_lines_regular_without_bins_follows_backlash(monkeypatch):
+    from mppp.sfm.zcam import refit_focus_lines
+    rec, proj, model, db = _zcam_setup(monkeypatch, with_regular=False)
+    out = refit_focus_lines(rec, proj, model=model)
+    assert "skipped" in out["ZL034"]["lines"]["regular"]
+
+
+def test_found_list_append_and_load(tmp_path):
+    from mppp.sfm.backlash import append_found, is_low_backlash, load_low_backlash, low_backlash_fingerprint
+    f = tmp_path / "zcam_low_backlash_found.csv"
+    g = {"names": ["ZL0_0500_0711000000_111RAD_N0261154ZCAM07999_0340LMA01.png"], "sol": 500, "sequence": "ZCAM07999",
+         "focus_count": 400, "ratio": 1.0004, "z": -9.0}
+    fp0 = low_backlash_fingerprint(None, f)
+    assert append_found(f, [g], site="test") == 1
+    assert append_found(f, [g], site="test") == 0                            # not twice
+    lb = load_low_backlash(None, found=f)
+    assert lb["found"] == 1 and lb["found_file"] == str(f)
+    row = {"stem": "ZL0_0500_0711000000_111RAD_N0261154ZCAM07999_0340LMA01", "camera_group": "ZL034", "sol": 500,
+           "sequence": "ZCAM07999"}
+    assert is_low_backlash(row, lb)
+    assert not is_low_backlash(row, load_low_backlash(None))
+    assert low_backlash_fingerprint(None, f) != fp0
+
+
+def test_backlash_mode_list_split_accepted():
+    from mppp.sfm.backlash import backlash_stage
+    with pytest.raises(ValueError, match="list_split"):
+        backlash_stage(None, None, mode="bogus")
+
+
+# the virtual rig in the BA, k1/k2 lines, the staged N+Z reconstruct (v0p74)
+
+
+def test_zcam_rig_full_refines_rotation_and_baseline(tmp_path):
+    pytest.importorskip("pyceres")
+    from scipy.spatial.transform import Rotation
+    from mppp.sfm.reconstruction import bundle_adjust
+    R_rig = Rotation.from_rotvec(np.radians([0.05, -1.2, 0.3])).as_matrix()
+    t_rig = np.array([-0.2425, 0.001, 0.002])
+    proj, rec = _zcam_pair_block(tmp_path, R_rig, t_rig)
+    R0 = Rotation.from_rotvec(np.radians([0.0, -1.1, 0.25])).as_matrix()
+    t0 = t_rig + np.array([0.006, 0.0, 0.0])
+    proj.settings["zcam_virtual_rig"] = {"Z034": {"R_sensor_from_ref": R0.tolist(), "t_sensor_from_ref": t0.tolist(),
+                                                  "hold": True}}            # held - "full" overrides it
+    bundle_adjust(rec, proj, sigma_px=0.2, loss_scale=2.0, refine_rig=False, max_iterations=80, attitude_prior_deg=None,
+                  refine_zcam_rig="full", zcam_rig_translation_sigma_m=0.05)
+    v = proj.settings["zcam_virtual_rig"]["Z034"]
+    R1, t1 = np.asarray(v["R_refined"]), np.asarray(v["t_refined"])
+    err_mdeg = 1e3 * np.degrees(np.linalg.norm(Rotation.from_matrix(R1 @ R_rig.T).as_rotvec()))
+    assert err_mdeg < 5.0, err_mdeg
+    assert abs(np.linalg.norm(t1) - np.linalg.norm(t_rig)) < abs(np.linalg.norm(t0) - np.linalg.norm(t_rig))
+
+
+def test_zcam_rig_hold_stays_without_fit(tmp_path):
+    pytest.importorskip("pyceres")
+    from scipy.spatial.transform import Rotation
+    from mppp.sfm.reconstruction import bundle_adjust
+    R_rig = Rotation.from_rotvec(np.radians([0.05, -1.2, 0.3])).as_matrix()
+    t_rig = np.array([-0.2425, 0.001, 0.002])
+    proj, rec = _zcam_pair_block(tmp_path, R_rig, t_rig)
+    R0 = Rotation.from_rotvec(np.radians([0.0, -1.1, 0.25])).as_matrix()
+    proj.settings["zcam_virtual_rig"] = {"Z034": {"R_sensor_from_ref": R0.tolist(), "t_sensor_from_ref": t_rig.tolist(),
+                                                  "hold": True}}
+    bundle_adjust(rec, proj, sigma_px=0.2, refine_rig=False, max_iterations=20, attitude_prior_deg=None)
+    assert np.allclose(proj.settings["zcam_virtual_rig"]["Z034"]["R_refined"], R0)
+
+
+def test_k1_k2_lines(monkeypatch):
+    import pycolmap
+    from mppp.sfm import zcam
+    rec = pycolmap.Reconstruction()
+    cams, db, obs = {}, {}, {}
+    for cid, f in enumerate([100, 300, 500, 700, 900], 1):
+        p = [4700 + 0.05 * (f - 600), 4702 + 0.05 * (f - 600), 820.0, 600.0, -0.47 + 2e-5 * (f - 600), 0.7, 0, 0]
+        rec.add_camera(pycolmap.Camera(camera_id=cid, model="OPENCV", width=1648, height=1200, params=np.array(p)))
+        cams[f"ZL034_F{f:05d}"] = {"group": "ZL034", "focus_count_median": float(f), "backlash_state": "backlash"}
+        db[f"ZL034_F{f:05d}"] = cid
+        obs[cid] = 500
+    proj = SimpleNamespace(cameras=cams, images=[], settings={"database": {"cameras": db},
+                                                              "zcam_line_params": {"ZL": ["fx", "fy", "k1", "k2"]},
+                                                              "zcam_line_form": {"ZL": {p: "free" for p in ("fx", "fy", "k1", "k2")}}})   # free lines (a study)
+    monkeypatch.setattr(zcam, "_observations_per_camera", lambda rec: obs)
+    out = zcam.refit_focus_lines(rec, proj, model={"cameras": {"ZL034": {"reference_focus": 600.0, "f0_px": 4700.0,
+                                                                          "slope_px_per_count": 0.05}}})
+    k1 = out["ZL034"]["lines"]["backlash"]["k1"]
+    assert k1["a"] == pytest.approx(-0.47, abs=1e-6) and k1["b"] == pytest.approx(2e-5, rel=1e-3)
+
+
+def _nz_block(tmp_path):
+    """The synthetic block: the first station's exposures as Navcam rig frames, the second station's as Mastcam-Z
+    images (ZL, ZR each its own frame, posed through the virtual rig), in focus bins, with one focus group whose labels
+    say low-backlash (f / label f = 1.000) but that is not on the list."""
+    import pycolmap
+    from helpers import _build_rec, _synthetic
+    proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path, noise_native_px=0.1)
+    rec0, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng, perturb=False)
+    fids = sorted(rec0.frames)
+    zf = set(fids[len(fids) // 2:])
+    by_id = {r["image_id"]: r for r in proj.images}
+    S = lambda c: pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=c)      # noqa: E731
+    new = pycolmap.Reconstruction()
+    for c in rec0.cameras.values():
+        new.add_camera(c)
+    new.add_rig(rec0.rigs[1])
+    base = {e: np.asarray(rec0.cameras[cid].params, float) for e, cid in (("L", 1), ("R", 2))}
+    focus = {}
+    for n, fid in enumerate(sorted(zf)):
+        focus[fid] = (200.0, 200.0, 500.0, 500.0, 800.0, 800.0)[n % 6]
+    db = {"NL": 1, "NR": 2}
+    next_cid, next_rid, next_fid = 10, 10, 1000
+    bins = {}
+    for fid in fids:
+        fr = rec0.frames[fid]
+        if fid not in zf:
+            nf = pycolmap.Frame(frame_id=fid, rig_id=1)
+            for d in fr.data_ids:
+                nf.add_data_id(d)
+            nf.rig_from_world = fr.rig_from_world
+            new.add_frame(nf)
+            for d in fr.data_ids:
+                im = rec0.images[d.id]
+                ni = pycolmap.Image(name=im.name, keypoints=np.array([q.xy for q in im.points2D]), camera_id=im.camera_id,
+                                    image_id=d.id)
+                ni.frame_id = fid
+                new.add_image(ni)
+            new.register_frame(fid)
+            continue
+        for d in fr.data_ids:
+            im = rec0.images[d.id]
+            r = by_id[d.id]
+            eye = r["eye"]
+            key = f"Z{eye}034_F{int(focus[fid]):05d}"
+            if key not in bins:
+                cid = next_cid
+                next_cid += 1
+                new.add_camera(pycolmap.Camera(camera_id=cid, model="FULL_OPENCV", width=5120, height=3840,
+                                               params=base[eye].copy()))
+                rig = pycolmap.Rig(rig_id=next_rid)
+                rig.add_ref_sensor(S(cid))
+                new.add_rig(rig)
+                bins[key] = (cid, next_rid)
+                next_rid += 1
+                db[key] = cid
+                held = ["p1", "p2", "k3"] + (["cx", "cy"] if eye == "L" else [])
+                proj.cameras[key] = {"model": "FULL_OPENCV", "width": 5120, "height": 3840,
+                                     "params": list(map(float, base[eye])), "group": f"Z{eye}034",
+                                     "focus_count_median": focus[fid], "backlash_state": "backlash",
+                                     "fixed_params": held, "n_images": 0}
+            cid, rid = bins[key]
+            proj.cameras[key]["n_images"] += 1
+            T = fr.rig_from_world if eye == "L" else (rec0.rigs[1].sensor_from_rig(S(2)) * fr.rig_from_world)
+            nf = pycolmap.Frame(frame_id=next_fid, rig_id=rid)
+            nf.add_data_id(pycolmap.data_t(sensor_id=S(cid), id=d.id))
+            nf.rig_from_world = T
+            new.add_frame(nf)
+            ni = pycolmap.Image(name=im.name, keypoints=np.array([q.xy for q in im.points2D]), camera_id=cid, image_id=d.id)
+            ni.frame_id = next_fid
+            new.add_image(ni)
+            new.register_frame(next_fid)
+            next_fid += 1
+            regular = focus[fid] == 800.0 and fid == max(zf)            # the last exposure: a low-backlash group
+            f_true = float(base[eye][0])
+            r.update({"instrument": key, "camera_group": f"Z{eye}034", "focus_count": focus[fid],
+                      "label_f_px": f_true if regular else f_true / 1.0086, "focus_state": "backlash",
+                      "sequence": "ZCAM09001" if regular else "ZCAM08000", "sol": 600,
+                      "label_c_px": [float(base[eye][2]), float(base[eye][3])]})
+    for pid, p in rec0.points3D.items():
+        new.add_point3D(p.xyz, p.track, np.zeros(3, np.uint8))
+    R_rel, t_rel = rigT
+    proj.settings.update({
+        "database": {"cameras": db}, "zcam_rig_fit": "full",
+        "zcam_line_params": {"ZL": ["fx", "fy", "k1", "k2"], "ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]},
+        "zcam_virtual_rig": {"Z034": {"ref": "ZL034", "sensor": "ZR034", "R_sensor_from_ref": np.asarray(R_rel).tolist(),
+                                      "t_sensor_from_ref": (np.asarray(t_rel) + [0.003, 0, 0]).tolist(), "hold": True}},
+        "zcam_low_backlash": {"found_file": str(tmp_path / "zcam_low_backlash_found.csv")},
+        "zcam_line_min_observations": 20})
+    return proj, new
+
+
+def test_staged_nz_reconstruct_v0p74(tmp_path, monkeypatch):
+    """Staged reconstruct with every v0p74 Mastcam-Z path: focus bins with fx, fy, (cx, cy), k1, k2 free, per-state
+    lines, the virtual rig refined in rotation and baseline while the bins are held, list_split classification with the
+    found list."""
+    pytest.importorskip("pyceres")
+    import copy
+    from mppp.sfm import reconstruction as R
+    proj, rec = _nz_block(tmp_path)
+    monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(rec))
+    tracks = {pid: [(e.image_id, e.point2D_idx) for e in p.track.elements] for pid, p in rec.points3D.items()}
+
+    def retriangulate(r, project, **kw):
+        """the true tracks back on every registered image (what COLMAP's triangulation would find)"""
+        import pycolmap
+        reg = {int(i) for i in r.reg_image_ids()} if hasattr(r, "reg_image_ids") else \
+            {d.id for f in r.reg_frame_ids() for d in r.frames[f].data_ids}
+        for pid, els in tracks.items():
+            if pid not in r.points3D:
+                continue
+            have = {(e.image_id, e.point2D_idx) for e in r.points3D[pid].track.elements}
+            for iid, j in els:
+                if iid in reg and (iid, j) not in have and not r.images[iid].points2D[j].has_point3D():
+                    r.add_observation(pid, pycolmap.TrackElement(iid, j))
+        return r
+    monkeypatch.setattr(R, "triangulate", retriangulate)
+    out = R.reconstruct(proj, sigma_px=0.1, schedule=((24.0, 10.0, 8.0), (12.0, 4.0, 4.0), (8.0, 3.0, 3.0)),
+                        max_iterations=15, verbose=False, navcam_intrinsics="refine", staged=True, out_name="cahv_ba",
+                        zcam_focus_line=True, zcam_line_cycles=1, zcam_backlash="list_split", pose_guided=False,
+                        gui_native=False, attitude_prior_deg=None)
+    st = proj.settings
+    lines = st["zcam_focus_lines"]
+    assert set(lines) == {"ZL034", "ZR034"}
+    assert set(lines["ZR034"]["lines"]["backlash"]) == {"fx", "fy", "cx", "cy", "k1", "k2"}
+    assert set(lines["ZL034"]["lines"]["backlash"]) == {"fx", "fy", "k1", "k2"}
+    v = st["zcam_virtual_rig"]["Z034"]
+    assert v.get("R_refined") is not None and v.get("t_refined") is not None
+    assert not np.allclose(v["t_refined"], v["t_sensor_from_ref"])           # the baseline moved (held flag overridden)
+    zb = st["zcam_backlash"]
+    assert zb["mode"] == "list_split"
+    assert any(g.get("sequence") == "ZCAM09001" for g in zb.get("new_regular_groups") or []), zb.get("group_counts")
+    assert "ZCAM09001" in (tmp_path / "zcam_low_backlash_found.csv").read_text()
+    assert out.num_reg_images() > 0
+
+
+# the Mastcam-Z line form, the bin-camera fallback of the focus-state classification (v0p75)
+
+
+def _bins(monkeypatch, pp0=(820.0, 600.0), cx_bins=820.0, form=None):
+    import pycolmap
+    from mppp.sfm import zcam
+    rec = pycolmap.Reconstruction()
+    cams, db, obs = {}, {}, {}
+    rng = np.random.default_rng(1)
+    cid = 1
+    for eye in ("L", "R"):
+        g = f"Z{eye}034"
+        for st, foci in (("backlash", [100, 300, 500, 700, 900, 1100]), ("regular", [200, 600, 800])):
+            for f in foci:
+                k = 1.0 / 1.0095 if st == "regular" else 1.0
+                p = [4700.0 * k + 0.050 * (f - 600) + rng.normal(0, 0.3),          # fx slope 0.050
+                     4710.0 * k + 0.060 * (f - 600) + rng.normal(0, 0.3),          # fy slope 0.060: the common one is between
+                     cx_bins + 0.0005 * (f - 600) + rng.normal(0, 0.05),
+                     600.0 + 0.0017 * (f - 600) + rng.normal(0, 0.05),
+                     -0.47 + 3e-5 * (f - 600), 0.7, 0, 0]
+                rec.add_camera(pycolmap.Camera(camera_id=cid, model="OPENCV", width=1648, height=1200, params=np.array(p, float)))
+                key = f"{g}_F{f:05d}" + ("_reg" if st == "regular" else "")
+                cams[key] = {"group": g, "focus_count_median": float(f), "backlash_state": st}
+                db[key] = cid
+                obs[cid] = 1000
+                cid += 1
+    settings = {"database": {"cameras": db},
+                "zcam_line_params": {"ZL": ["fx", "fy", "k1", "k2"], "ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]}}
+    if form is not None:
+        settings["zcam_line_form"] = form
+    proj = SimpleNamespace(cameras=cams, images=[], settings=settings)
+    monkeypatch.setattr(zcam, "_observations_per_camera", lambda rec: obs)
+    model = {"cameras": {g: {"reference_focus": 600.0, "f0_px": 4705.0, "label_f0_px": 4659.0, "slope_px_per_count": 0.05,
+                             "aspect": 1.002, "pp0_px": list(pp0) if g == "ZR034" else [876.7, 559.1]}
+                         for g in ("ZL034", "ZR034")}}
+    return rec, proj, model, db
+
+
+def test_line_form_lookup():
+    from mppp.sfm.zcam import LINE_FORM, line_form_for
+    p = SimpleNamespace(settings={"zcam_line_params": {"ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]}})
+    assert line_form_for(p, "ZR034") == LINE_FORM["ZR"]
+    p.settings["zcam_line_form"] = {"ZR": {k: "free" for k in ("fx", "fy", "cx", "cy", "k1", "k2")}}
+    assert set(line_form_for(p, "ZR034").values()) == {"free"}
+    p.settings["zcam_line_form"] = {"ZR": {"cy": "constant"}}
+    assert line_form_for(p, "ZR034")["cy"] == "constant" and line_form_for(p, "ZR034")["fx"] == "free"
+    p.settings["zcam_line_form"] = {"ZR": {"cy": "odd"}}
+    with pytest.raises(ValueError, match="unknown forms"):
+        line_form_for(p, "ZR034")
+
+
+def test_refit_lines_on_the_v0p75_form(monkeypatch):
+    from mppp.sfm.zcam import refit_focus_lines
+    rec, proj, model, db = _bins(monkeypatch)
+    out = refit_focus_lines(rec, proj, model=model)
+    zr, zl = out["ZR034"]["lines"], out["ZL034"]["lines"]
+    assert out["ZR034"]["form"]["cx"] == "pinned" and out["ZR034"]["form"]["fx"] == "common"
+    # one slope for fx and fy per eye, between the two true slopes; the regular state follows it
+    for ln in (zr, zl):
+        assert ln["backlash"]["fx"]["b"] == ln["backlash"]["fy"]["b"]
+        assert 0.050 < ln["backlash"]["fx"]["b"] < 0.060 and ln["backlash"]["fx"]["slope_source"].startswith("common slope")
+        assert ln["regular"]["fx"]["b"] == ln["backlash"]["fx"]["b"] and ln["regular"]["fx"]["a"] == pytest.approx(4700 / 1.0095, abs=0.6)
+        assert ln["backlash"]["k1"]["b"] == 0.0 and ln["backlash"]["k1"]["a"] == pytest.approx(-0.47, abs=1e-6)   # constant
+        assert ln["backlash"]["k2"]["b"] == 0.0
+    assert zr["backlash"]["cx"] == {**zr["backlash"]["cx"], "a": 820.0, "b": 0.0}         # pinned, no slope
+    assert zr["backlash"]["cx"]["a_source"].startswith("pinned")
+    assert zr["backlash"]["cy"]["a"] == 600.0 and zr["backlash"]["cy"]["b"] == pytest.approx(0.0017, abs=2e-4)   # pinned level, slope
+    assert "cx" not in zl["backlash"]                                                     # ZL: the reference pp
+    p = rec.cameras[db["ZR034_F00300"]].params                                           # every bin set on the lines
+    assert p[2] == pytest.approx(820.0) and p[3] == pytest.approx(600.0 + zr["backlash"]["cy"]["b"] * (300 - 600))
+    assert p[4] == pytest.approx(zr["backlash"]["k1"]["a"]) and p[0] == pytest.approx(zr["backlash"]["fx"]["a"] + zr["backlash"]["fx"]["b"] * (300 - 600))
+
+
+def test_refit_lines_free_form_and_foreign_pp0(monkeypatch):
+    from mppp.sfm.zcam import PIN_MAX_OFFSET_PX, refit_focus_lines
+    rec, proj, model, _ = _bins(monkeypatch, form={"ZL": {k: "free" for k in ("fx", "fy", "k1", "k2")},
+                                                   "ZR": {k: "free" for k in ("fx", "fy", "cx", "cy", "k1", "k2")}})
+    out = refit_focus_lines(rec, proj, model=model)
+    zr = out["ZR034"]["lines"]["backlash"]
+    assert zr["fx"]["b"] != zr["fy"]["b"] and zr["fx"]["b"] == pytest.approx(0.050, abs=0.003) and zr["fy"]["b"] == pytest.approx(0.060, abs=0.003)
+    assert zr["cx"]["b"] == pytest.approx(0.0005, abs=2e-4) and zr["k1"]["b"] == pytest.approx(3e-5, rel=0.05)
+    # a model whose pp0 does not belong to these bins (a synthetic block against the shipped model): not pinned
+    rec, proj, model, _ = _bins(monkeypatch, pp0=(820.0 + PIN_MAX_OFFSET_PX + 50, 600.0))
+    out = refit_focus_lines(rec, proj, model=model)
+    zr = out["ZR034"]["lines"]["backlash"]
+    assert zr["cx"]["a"] == pytest.approx(820.0, abs=0.5) and zr["cx"]["b"] == 0.0 and "not pinned" in zr["cx"]["a_source"]
+
+
+def test_bin_fallback_classifies_groups_without_image_fits():
+    from mppp.sfm.backlash import BIN_FALLBACK_SD, classify_groups
+    ims = []
+    for sol, seq, foc, cam in ((1624, "ZCAM09705", 792.0, "ZR034_F00792"), (1618, "ZCAM09697", 1002.0, "ZR034_F01002")):
+        ims += [{"name": f"ZR0_{sol}_{k}_{seq}.png", "instrument": cam, "camera_group": "ZR034", "eye": "R", "sol": sol,
+                 "sequence": seq, "focus_count": foc, "label_f_px": 4650.0} for k in range(4)]
+    proj = SimpleNamespace(images=ims, settings={})
+    fits = {ims[4]["name"]: {"ratio_label": 1.0100, "sd_ratio": 0.0002, "observations": 2000}}   # one image of the second
+    fb = {"ZR034_F00792": {"f_px": 4650.0 * 1.0005, "observations": 15000}}      # the first: its bin sits at the label
+    rows = classify_groups(proj, fits, model=None, nav_scale=1.0, known=False, sequence_rule=False, measured_ratio=False,
+                           bin_fallback=fb)
+    by = {r["sequence"]: r for r in rows}
+    assert by["ZCAM09705"]["fit_source"] == "bin camera" and by["ZCAM09705"]["sd"] == BIN_FALLBACK_SD
+    assert by["ZCAM09705"]["state"] == "regular" and by["ZCAM09705"]["fitted"] == 0
+    assert by["ZCAM09697"]["state"] == "backlash" and "fit_source" not in by["ZCAM09697"]
+    rows = classify_groups(proj, fits, model=None, nav_scale=1.0, known=False, sequence_rule=False, measured_ratio=False)
+    assert {r["sequence"]: r["state"] for r in rows}["ZCAM09705"] == "undecided"           # without the fallback
+    # a bin shared with another sequence at the same focus count does not stand for one group
+    ims.append(dict(ims[0], name="other.png", sequence="ZCAM09800"))
+    rows = classify_groups(proj, fits, model=None, nav_scale=1.0, known=False, sequence_rule=False, measured_ratio=False,
+                           bin_fallback=fb)
+    assert {r["sequence"]: r["state"] for r in rows}["ZCAM09705"] == "undecided"
+
+
+def test_append_found_survives_a_group_without_a_fit(tmp_path):
+    from mppp.sfm.backlash import append_found
+    f = tmp_path / "found.csv"
+    n = append_found(f, [{"names": ["a.png"], "sol": 1, "sequence": "ZCAM0", "focus_count": 5.0, "ratio": None, "z": None,
+                          "sequence_z": -4.0, "sequence_state": "regular", "own_state": "undecided"}], site="s")
+    txt = f.read_text()
+    assert n == 1 and "by its sequence" in txt and "z -4.0" in txt

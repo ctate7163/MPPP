@@ -30,7 +30,7 @@ def test_native_model_is_a_valid_colmap_model(tmp_path):
     import numpy as np
     import pycolmap
     from helpers import _build_rec, _synthetic
-    from mppp.error.colmap import read_colmap
+    from mppp.colmap import read_colmap
     from mppp.sfm.export import native_reconstruction, write_native_text_model
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
@@ -45,7 +45,7 @@ def test_native_model_is_a_valid_colmap_model(tmp_path):
             uv = back.cameras[im.camera_id].img_from_cam(im.cam_from_world() * pt.xyz)
             res.append(np.linalg.norm(uv - im.points2D[el.point2D_idx].xy))
     assert np.median(res) < 3 * noise                                  # native keypoints and native cameras agree
-    assert len(read_colmap(str(tmp_path / "native")).points) == info["points"]      # mppp.error still reads it
+    assert len(read_colmap(str(tmp_path / "native")).points) == info["points"]      # the text reader reads it
     full = native_reconstruction(rec, proj, observed_only=False)
     assert sum(len(im.points2D) for im in full.images.values()) == sum(len(im.points2D) for im in rec.images.values())
 
@@ -106,3 +106,43 @@ def test_station_map_has_the_two_overview_panels_only(tmp_path):
     assert any("(no prior)" in t.get_text() for t in fig.axes[0].texts)
     fig2 = plot_camera_shifts(proj, rec=rec, station_panels=True)
     assert len([a for a in fig2.axes if a.get_label() != "<colorbar>"]) == 2 + 3
+
+
+def test_epsilon_from_residuals_splits_intra_and_cross_station_points():
+    """eps = rms / sqrt(2) over the observations of points seen from one station (intra) and from several (cross);
+    non-finite residuals (behind the camera) are left out; the keys are those of summary.json's "eps"."""
+    from mppp.sfm.export import epsilon_from_residuals
+    names = {1: "a.png", 2: "b.png", 3: "c.png"}
+    stations = {"a.png": "S1", "b.png": "S1", "c.png": "S2"}
+    res = {"residual_native_px": np.array([1.0, 1.0, 2.0, 2.0, 2.0, np.inf]),
+           "image_id": np.array([1, 2, 1, 2, 3, 3]),
+           "point3D_id": np.array([10, 10, 11, 11, 11, 12]), "point2D_idx": np.zeros(6, int)}
+    e = epsilon_from_residuals(res, names, stations)
+    assert e["n_intra_obs"] == 2 and e["n_cross_obs"] == 3
+    assert e["eps_intra_px"] == pytest.approx(1 / np.sqrt(2)) and e["eps_cross_px"] == pytest.approx(2 / np.sqrt(2))
+    assert e["resid_rms_cross_px"] == pytest.approx(2.0) and e["eps_ratio"] == pytest.approx(2.0)
+    assert set(e) == {"eps_intra_px", "eps_cross_px", "n_intra_obs", "n_cross_obs", "resid_rms_intra_px",
+                      "resid_rms_cross_px", "eps_ratio"}
+    empty = {k: v[:0] for k, v in res.items()}
+    assert np.isnan(epsilon_from_residuals(empty, names, stations)["eps_intra_px"])
+
+
+def test_export_for_error_computes_eps_from_its_own_residuals(tmp_path):
+    """summary.json's "eps" comes from the residuals the export holds (v0p90), not from re-reading the text model;
+    it equals the per-observation calibration of the error model on that model."""
+    pytest.importorskip("pyceres")
+    import json
+    from helpers import _build_rec, _synthetic
+    from mppp.colmap import read_colmap
+    from mppp.error.colmap import calibrate_eps_from_residuals
+    from mppp.sfm.export import export_for_error
+    proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
+    rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
+    summary = export_for_error(proj, rec, tmp_path / "ei")
+    eps = json.loads((tmp_path / "ei" / "summary.json").read_text())["eps"]
+    assert eps["n_intra_obs"] > 0 and eps["n_cross_obs"] > 0 and 0.5 * noise < eps["eps_intra_px"] < 2 * noise
+    m = read_colmap(str(tmp_path / "ei" / "native"))
+    m.assign_stations({r["name"]: r["station"] for r in proj.images})
+    ref = calibrate_eps_from_residuals(m)
+    for k in ("eps_intra_px", "eps_cross_px", "n_intra_obs", "n_cross_obs"):
+        assert summary["eps"][k] == pytest.approx(ref[k], rel=1e-9)

@@ -39,4 +39,4 @@ Homepage = "https://github.com/ctate7163/MPPP"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
-markers = ["slow: the 186-check error-model self-test (~45 s)"]
+markers = ["slow: tests that take more than a few seconds (error-model physics, mask training)"]

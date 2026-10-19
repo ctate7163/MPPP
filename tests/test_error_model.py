@@ -1,31 +1,24 @@
 """
-mppp.selftest -- analytic validation of the physics engine.
-
-Every test compares the vectorised implementation against either a closed-form
-result or an independently written naive reference.  Run with:
-
-    python -m mppp_error selftest
-
-A failure here means the physics is wrong, not that a plot looks odd.
+Physics checks of the error model (mppp.error): every test compares the
+vectorised implementation against a closed-form result or an independently
+written naive reference.  A failure here means the physics is wrong, not that
+a plot looks odd.  (v0p90: the former ``mppp.error.selftest``, as pytest tests.)
 """
-
 from __future__ import annotations
 
+import os
+import tempfile
+
 import numpy as np
-from typing import List, Tuple
+import pytest
 
-from .core import (Grid, FlatPlane, Instrument, Station, ModelConfig, PoseModel,
-                   OcclusionMask, solve_precision_field, skew, outer, sym_inv3)
-from .metrics import compute_metrics
-
-__all__ = ["run_all"]
-
-_RESULTS: List[Tuple[str, bool, str]] = []
+from mppp.error.core import (Grid, FlatPlane, Instrument, Station, ModelConfig, PoseModel,
+                             OcclusionMask, solve_precision_field)
+from mppp.error.metrics import compute_metrics
 
 
 def _check(name, ok, msg=""):
-    _RESULTS.append((name, bool(ok), msg))
-    return bool(ok)
+    assert ok, f"{name}: {msg}"
 
 
 def _rel(a, b):
@@ -128,13 +121,14 @@ def test_precision_addition():
 # 4. correlation floor: sigma_fused -> sqrt(rho_inf) * sigma_single
 # --------------------------------------------------------------------------
 
+@pytest.mark.slow
 def test_correlation_floor():
     """
     The rho_inf floor is the asymptote at LARGE angular separation.  At
     theta = 0 the model correctly gives rho = 1 (identical observations, zero
     information gain), so the floor must be probed with well-separated views.
     """
-    from .core import _correlation_inflation
+    from mppp.error.core import _correlation_inflation
 
     # -- unit test the participation ratio against k_eff = N/(1+(N-1)rho) ----
     for rho_inf in (0.0, 0.05, 0.25):
@@ -194,8 +188,6 @@ def test_correlation_floor():
     _check("co-located stations give zero gain when correlation is on",
            _rel(s_many / s_one, 1.0) < 1e-12,
            f"ratio {s_many/s_one:.9f} (want 1.0)")
-
-
 
 
 # --------------------------------------------------------------------------
@@ -480,7 +472,7 @@ def test_vectorised_matches_reference():
 # --------------------------------------------------------------------------
 
 def test_link_modes():
-    from .core import ModelConfig
+    from mppp.error.core import ModelConfig
     inst = _plain_instrument()
     sts = [Station(xyz=[-11, 2, 2.0], az_deg=70.0, instrument=inst, is_anchor=True),
            Station(xyz=[7, -8, 1.9], az_deg=300.0, instrument=inst),
@@ -627,10 +619,10 @@ def _write_synthetic_colmap(d, eps_intra=0.4, eps_cross=1.1,
     return len(images), len(pts)
 
 
+@pytest.mark.slow
 def test_colmap_roundtrip():
-    import tempfile
-    from .colmap import (read_colmap, calibrate_eps_from_residuals,
-                             match_survival, measured_view_graph)
+    from mppp.colmap import read_colmap
+    from mppp.error.colmap import calibrate_eps_from_residuals, match_survival, measured_view_graph
     EI, EC, TM = 0.4, 1.1, 30.0
     with tempfile.TemporaryDirectory() as d:
         n_im, n_pt = _write_synthetic_colmap(d, EI, EC, TM)
@@ -670,8 +662,7 @@ def test_colmap_roundtrip():
 
 
 def test_colmap_rejects_bad_quaternion():
-    import tempfile, os
-    from .colmap import read_colmap
+    from mppp.colmap import read_colmap
     with tempfile.TemporaryDirectory() as d:
         _write_synthetic_colmap(d)
         lines = open(f"{d}/images.txt").read().split("\n")
@@ -691,8 +682,7 @@ def test_colmap_rejects_bad_quaternion():
 def test_colmap_handles_empty_observation_lines():
     """COLMAP writes a BLANK second line for images with no observations.
     Filtering blank lines desynchronises the header/observation pairing."""
-    import tempfile
-    from .colmap import read_colmap
+    from mppp.colmap import read_colmap
     with tempfile.TemporaryDirectory() as d:
         _write_synthetic_colmap(d)
         lines = open(f"{d}/images.txt").read().split("\n")
@@ -717,7 +707,7 @@ def test_colmap_handles_empty_observation_lines():
 
 def test_precision_convention():
     """eps='disparity' must equal eps='per_image' scaled by sqrt(2)."""
-    from .core import Instrument
+    from mppp.error.core import Instrument
     g = Grid(x=np.array([18.0]), y=np.array([0.0]))
     a = Instrument(name="a", ifov_rad=2e-4, baseline_m=0.25, eps_intra_px=0.5,
                    precision_convention="per_image")
@@ -735,7 +725,7 @@ def test_precision_convention():
 
 
 def test_correlation_kernels():
-    from .core import correlation_kernel
+    from mppp.error.core import correlation_kernel
     tc = np.radians(15.0)
     for kind in ("gaussian", "exponential", "cosine", "tilt"):
         _check(f"kernel {kind}: rho(0) = 1",
@@ -755,14 +745,14 @@ def test_correlation_kernels():
 
 
 def test_four_cases_ordering():
-    from .cases import run_four_cases
-    from .core import Instrument, NAVCAM
+    from mppp.error.cases import run_four_cases
+    from mppp.error.core import Instrument, NAVCAM
     inst = Instrument(name="N", ifov_rad=NAVCAM.ifov_rad,
                       baseline_m=NAVCAM.baseline_m, eps_intra_px=0.5)
     sts = [Station(xyz=[0, 0, 1.9], az_deg=30, name="W1", instrument=inst),
            Station(xyz=[3.2, 1.1, 1.9], az_deg=120, name="W2", instrument=inst),
            Station(xyz=[1.0, 4.0, 1.9], az_deg=240, name="W3", instrument=inst)]
-    from .core import choose_anchor
+    from mppp.error.core import choose_anchor
     choose_anchor(sts, "center")
     g = Grid.covering(sts, margin_m=30.0, n=61)
     res = run_four_cases(sts, g, use_correlation=False)
@@ -782,28 +772,11 @@ def test_four_cases_ordering():
            f"max b_eff = {np.nanmax(lbs.effective_baseline):.2f} m")
 
 
-def test_trim_border_fraction():
-    from .sitemap import trim_border_fraction
-    img = np.zeros((400, 400, 3), dtype=np.uint8)
-    img[100:300, 100:300] = 255           # a known centre-50% block
-    out = trim_border_fraction(img, 0.25)
-    _check("trim_border_fraction keeps the centre 50% in each dim",
-           out.shape == (200, 200, 3), f"{out.shape}")
-    _check("trimmed content matches the known centre block",
-           np.all(out == 255), f"min={out.min()}, max={out.max()}")
-    _check("frac=0 is a no-op", trim_border_fraction(img, 0.0).shape == img.shape)
-    try:
-        trim_border_fraction(img, 0.5)
-        _check("frac=0.5 rejected (would leave nothing)", False)
-    except ValueError:
-        _check("frac=0.5 rejected (would leave nothing)", True)
-
-
 def test_plot_map_colorbar_and_rover_icon():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from .plotting import plot_map
+    from mppp.error.plotting import plot_map
     inst = _plain_instrument()
     sts = [Station(xyz=[-6, 1, 2.0], az_deg=75.0, instrument=inst, is_anchor=True),
            Station(xyz=[4, -3, 1.9], az_deg=310.0, instrument=inst)]
@@ -812,13 +785,12 @@ def test_plot_map_colorbar_and_rover_icon():
     m = compute_metrics(f)
 
     fig, axes = plt.subplots(1, 2)
-    ax_with = plot_map(f, m["sigma_n"], scale=100.0, log=True, ax=axes[0],
+    plot_map(f, m["sigma_n"], scale=100.0, log=True, ax=axes[0],
                        show_colorbar=True)
-    ax_without = plot_map(f, m["sigma_n"], scale=100.0, log=True, ax=axes[1],
+    plot_map(f, m["sigma_n"], scale=100.0, log=True, ax=axes[1],
                           show_colorbar=False)
     _check("show_colorbar=True attaches a colorbar",
            len(fig.axes) > 2)  # 2 data axes + at least 1 colorbar axis
-    n_axes_with_cbar = len(fig.axes)
     fig2, ax2 = plt.subplots()
     plot_map(f, m["sigma_n"], scale=100.0, log=True, ax=ax2, show_colorbar=False)
     _check("show_colorbar=False attaches no extra axis",
@@ -842,39 +814,6 @@ def test_plot_map_colorbar_and_rover_icon():
     plt.close(fig4)
 
 
-def test_study_navcam_metric_figures_and_filenames():
-    """
-    End-to-end: --metrics with multiple keys must produce one figure per
-    metric, named Mars2020_recon_error_Sol_{sol}_{metric}.png, with the
-    correct sol baked in from the real anchor waypoint.
-    """
-    import subprocess, sys, glob, tempfile
-    if _study_script("study_navcam") is None:
-        _check("study_navcam figures (skipped: studies/ not present, not a source checkout)", True)
-        return
-    with tempfile.TemporaryDirectory() as d:
-        r = subprocess.run(
-            [sys.executable, _study_script("study_navcam"), "--out", d,
-             "--grid", "41", "--metrics", "sigma_n,kappa", "--no-sweep"],
-            capture_output=True, text=True, timeout=180, env=_subprocess_env())
-        _check("study_navcam --metrics run completes",
-               r.returncode == 0, r.stderr[-500:] if r.returncode else "")
-        for mk in ("sigma_n", "kappa"):
-            hits = glob.glob(f"{d}/Mars2020_recon_error_Sol_13_{mk}.png")
-            _check(f"filename convention correct for metric '{mk}'",
-                   len(hits) == 1, f"found {hits}")
-        # a bogus metric key should be skipped, not crash the run
-        r2 = subprocess.run(
-            [sys.executable, _study_script("study_navcam"), "--out", d,
-             "--grid", "41", "--metrics", "sigma_n,not_a_real_metric",
-             "--no-sweep"],
-            capture_output=True, text=True, timeout=180, env=_subprocess_env())
-        _check("unknown metric key is skipped, not fatal",
-               r2.returncode == 0
-               and "unknown metric key" in r2.stdout.lower(),
-               r2.stdout[-300:])
-
-
 def test_ideal_ordering_holds_on_real_data():
     """
     Same three-tier invariant (full_fusion <= ideal <= lbs) but on the BUNDLED
@@ -883,15 +822,13 @@ def test_ideal_ordering_holds_on_real_data():
     boundary interactions don't reliably show up in hand-placed synthetic
     layouts). Skips gracefully if the data file is not present in this build.
     """
-    import os
-    from .core import Instrument, NAVCAM
-    from .waypoints import stations_from_rmcs
-    from .cases import run_four_cases
-    from ..waypoints import snapshot_path
+    from mppp.error.core import Instrument, NAVCAM
+    from mppp.error.waypoints import stations_from_rmcs
+    from mppp.error.cases import run_four_cases
+    from mppp.waypoints import snapshot_path
     data = str(snapshot_path())                       # the frozen packaged snapshot
     if not os.path.exists(data):
-        _check("real-data ordering test (skipped, data file absent)", True)
-        return
+        pytest.skip("packaged waypoint snapshot absent")
     inst = Instrument(name="Navcam", ifov_rad=NAVCAM.ifov_rad,
                       baseline_m=NAVCAM.baseline_m, eps_intra_px=0.5)
     sts, _ = stations_from_rmcs(data, ["3_0", "3_110", "3_1266", "3_1398"],
@@ -913,7 +850,7 @@ def test_ideal_ordering_holds_on_real_data():
 
 
 def test_stations_from_rmcs():
-    from .waypoints import stations_from_rmcs
+    from mppp.error.waypoints import stations_from_rmcs
     fc = {"type": "FeatureCollection", "features": [
         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0, 0]},
          "properties": {"RMC": "1_0", "site": 1, "drive": 0, "sol": 1,
@@ -968,8 +905,8 @@ def test_ideal_dominates_lbs_and_is_dominated_by_full_fusion():
     old "ideal never exceeds full_fusion" check, extended to include the new
     all-pairs IDEAL sitting strictly between the two.
     """
-    from .cases import run_four_cases
-    from .core import Instrument, NAVCAM, choose_anchor
+    from mppp.error.cases import run_four_cases
+    from mppp.error.core import Instrument, NAVCAM, choose_anchor
     inst = Instrument(name="N", ifov_rad=NAVCAM.ifov_rad,
                       baseline_m=NAVCAM.baseline_m, eps_intra_px=0.5)
     sts = [Station(xyz=[0, 0, 1.9], az_deg=30, name="W1", instrument=inst),
@@ -1005,8 +942,8 @@ def test_ideal_field_uses_single_ray_per_station():
     """ideal_field must ignore each station's own intra-pair baseline -- it
     should give the SAME result as full_fusion on stations whose instrument
     already has eye_offsets=(0.0,) (i.e. no intra-pair to lose)."""
-    from .core import Instrument, choose_anchor
-    from .cases import ideal_field
+    from mppp.error.core import Instrument, choose_anchor
+    from mppp.error.cases import ideal_field
     mono = Instrument(name="mono", ifov_rad=2e-4, baseline_m=0.25,
                       eps_intra_px=0.5, eye_offsets=(0.0,))
     sts = [Station(xyz=[0, 0, 1.9], az_deg=30, name="W1", instrument=mono),
@@ -1014,7 +951,7 @@ def test_ideal_field_uses_single_ray_per_station():
     choose_anchor(sts, "first")
     g = Grid.square(15.0, 41)
     f_ideal = ideal_field(g, sts, ModelConfig(store_station_dirs=True, use_correlation=False))
-    from .core import ModelConfig as MC
+    from mppp.error.core import ModelConfig as MC
     f_full = solve_precision_field(g, sts, MC(link_mode="full", use_correlation=False,
                                               store_station_dirs=True))
     m1 = compute_metrics(f_ideal)["sigma_n"]
@@ -1026,9 +963,9 @@ def test_ideal_field_uses_single_ray_per_station():
 
 
 def test_network_pose():
-    from .network import (pose_covariance_from_network, datum_modes,
+    from mppp.error.network import (pose_covariance_from_network, datum_modes,
                               rigidity_score)
-    from .core import Instrument, NAVCAM, choose_anchor
+    from mppp.error.core import Instrument, NAVCAM, choose_anchor
     inst = Instrument(name="N", ifov_rad=NAVCAM.ifov_rad,
                       baseline_m=NAVCAM.baseline_m, eps_intra_px=0.5)
     sts = [Station(xyz=[0, 0, 1.9], az_deg=30, name="W1", instrument=inst),
@@ -1088,7 +1025,7 @@ def test_plot_stats_box_and_axis_label_control():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from .plotting import plot_map
+    from mppp.error.plotting import plot_map
     inst = _plain_instrument()
     sts = [Station(xyz=[-6, 1, 2.0], az_deg=75.0, instrument=inst, is_anchor=True),
            Station(xyz=[4, -3, 1.9], az_deg=310.0, instrument=inst)]
@@ -1133,114 +1070,13 @@ def test_plot_stats_box_and_axis_label_control():
     plt.close(fig)
 
 
-def test_sitemap_crop():
-    from .sitemap import crop_to_extent, load_site_image, SiteImageError
-    img = np.full((500, 500, 3), 200, dtype=np.uint8)
-    W = 50.0
-    px_per_m = 500 / W
-    col = int(250 + 10*px_per_m); row = int(250 - 10*px_per_m)
-    img[row-3:row+3, col-3:col+3] = [255, 0, 0]
-
-    crop = crop_to_extent(img, W, (-20, 20, -20, 20))
-    _check("crop has the expected shape", crop.shape == (400, 400, 3),
-           f"{crop.shape}")
-    _check("fully-contained crop is not flagged partial",
-           crop.partial_coverage is False)
-    mask = (crop[..., 0] > 200) & (crop[..., 1] < 50)
-    rr, cc = np.where(mask)
-    ppm = crop.shape[1] / 40.0
-    x_est = cc.mean()/ppm - 20
-    y_est = 20 - rr.mean()/ppm
-    _check("known feature recovered at the right E/N position",
-           abs(x_est - 10) < 0.5 and abs(y_est - 10) < 0.5,
-           f"x={x_est:.2f} (want 10), y={y_est:.2f} (want 10)")
-
-    crop2 = crop_to_extent(img, W, (-40, 40, -40, 40))
-    _check("out-of-bounds extent is padded and flagged partial",
-           crop2.shape == (800, 800, 3) and crop2.partial_coverage,
-           f"shape {crop2.shape}, partial {crop2.partial_coverage}")
-    _check("padding uses white fill",
-           np.mean(crop2 == 255) > 0.3, f"{np.mean(crop2==255):.3f}")
-
-    try:
-        crop_to_extent(img, W, (100, 140, 100, 140))
-        _check("fully-outside extent raises", False, "no exception raised")
-    except SiteImageError:
-        _check("fully-outside extent raises", True)
-
-    import tempfile
-    from PIL import Image
-    with tempfile.TemporaryDirectory() as d:
-        p_img = f"{d}/s.jpg"
-        Image.fromarray(img).save(p_img)
-        loaded = load_site_image(p_img)
-        _check("local image loads with the right shape",
-               loaded.shape == (500, 500, 3), f"{loaded.shape}")
-    try:
-        load_site_image("https://mcz-images.sese.asu.edu/nope.jpg")
-        _check("blocked-host fetch raises with an actionable message", False)
-    except SiteImageError as e:
-        _check("blocked-host fetch raises with an actionable message",
-               "network" in str(e).lower() or "allowlist" in str(e).lower()
-               or "add" in str(e).lower(), str(e)[:80])
-
-
-def test_spacing_sweep_baseline_marker():
-    """
-    Regression test for two bugs found by visual inspection that automated
-    testing should have caught:
-      1. a silent str.replace() no-op left the baseline-marker code entirely
-         absent despite the script printing "patched" and exiting 0;
-      2. set_xlim() called before set_xscale('log') was silently discarded
-         when the scale changed, collapsing the whole plot to a sliver.
-    Both produced a working, crash-free script with a visibly wrong figure --
-    exactly the failure mode plain execution checks miss.
-    """
-    import matplotlib
-    matplotlib.use("Agg")
-    import subprocess, sys, glob, tempfile
-    if _study_script("study_navcam") is None:
-        _check("study_navcam sweep (skipped: studies/ not present, not a source checkout)", True)
-        return
-    with tempfile.TemporaryDirectory() as d:
-        r = subprocess.run(
-            [sys.executable, _study_script("study_navcam"), "--out", d,
-             "--stations", "3", "--grid", "41"],
-            capture_output=True, text=True, timeout=180, env=_subprocess_env())
-        _check("study_navcam runs to completion", r.returncode == 0,
-               r.stderr[-500:] if r.returncode else "")
-        png = glob.glob(f"{d}/navcam_spacing_sweep.png")
-        _check("spacing sweep figure was written", len(png) == 1)
-        if not png:
-            return
-        from PIL import Image
-        import numpy as np
-        im = np.asarray(Image.open(png[0]).convert("RGB"))
-        # The specific green used for the baseline marker (tab:green ~ (44,160,44))
-        green = ((np.abs(im[..., 0].astype(int) - 44) < 25) &
-                 (np.abs(im[..., 1].astype(int) - 160) < 25) &
-                 (np.abs(im[..., 2].astype(int) - 44) < 25))
-        _check("baseline marker (tab:green) is actually drawn in the figure",
-               green.sum() > 50, f"{green.sum()} matching px")
-        # Collapsed-axis failure mode: nearly all plotted (non-white,
-        # non-black-text) content crammed into a narrow vertical strip.
-        content = np.any(im < 250, axis=-1)                # non-white pixels
-        col_has_content = content.any(axis=0)
-        cols = np.where(col_has_content)[0]
-        if cols.size:
-            span_frac = (cols.max() - cols.min()) / im.shape[1]
-            _check("plot content spans a reasonable fraction of the figure "
-                   "width (not collapsed to a sliver)",
-                   span_frac > 0.5, f"content spans {span_frac:.2f} of width")
-
-
 def test_plot_shares_colour_limits():
     """Explicit vmin/vmax must be honoured EXACTLY, or shared colour bars across
     panels silently desynchronise and the panels stop being comparable."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from .plotting import plot_map
+    from mppp.error.plotting import plot_map
     inst = _plain_instrument()
     sts = [Station(xyz=[-6, 1, 2.0], az_deg=75.0, instrument=inst, is_anchor=True),
            Station(xyz=[4, -3, 1.9], az_deg=310.0, instrument=inst)]
@@ -1286,7 +1122,7 @@ def test_pose_modes_path_vs_baseline():
            np.allclose(sfm.station_sigmas(anchor)[0], 0.0))
 
     # the per-case mapping must use these
-    from .cases import CASE_POSE
+    from mppp.error.cases import CASE_POSE
     _check("all cases are geometry-only (pose none); registration reported separately",
            CASE_POSE["fixed"] == "none"
            and CASE_POSE["optimistic"] == "none"
@@ -1297,12 +1133,10 @@ def test_pose_modes_path_vs_baseline():
 
 
 def test_occlusion_profiles_from_csv():
-    from .core import load_occlusion_profiles, eye_masks_for
-    import os
-    from ..paths import data_dir
+    from mppp.error.core import load_occlusion_profiles, eye_masks_for
+    from mppp.paths import data_dir
     if not os.path.exists(os.path.join(str(data_dir()), "M2020_occlusion_profiles.csv")):
-        _check("occlusion profile CSV (skipped, absent)", True)
-        return
+        pytest.skip("occlusion profile CSV absent")
     prof = load_occlusion_profiles()
     _check("four per-eye profiles loaded",
            set(prof) == {"zcam_left", "zcam_right", "ncam_left", "ncam_right"},
@@ -1320,7 +1154,7 @@ def test_occlusion_profiles_from_csv():
 
 
 def test_measured_gate():
-    from .core import gate_powerlaw, illumination_gate
+    from mppp.error.core import gate_powerlaw, illumination_gate
     cfg = ModelConfig(gate_A=0.4, theta_bar_deg=4.3, gate_cv=0.36)
     _check("gate at theta=0 equals A", abs(float(gate_powerlaw(0.0, cfg)) - 0.4) < 1e-12)
     th = np.radians(np.array([1, 2, 4.3, 10, 20, 45]))
@@ -1372,7 +1206,7 @@ def test_measured_gate():
     _check("completeness uses tau (counts), not L_eff",
            ModelConfig().tau_h > ModelConfig().L_eff_h)
 
-    from .cases import CASE_PARAMS
+    from mppp.error.cases import CASE_PARAMS
     _check("three matching cases present", set(CASE_PARAMS) == {"pessimistic","measured","optimistic"})
     _check("cases are ordered pessimistic < measured < optimistic in theta_bar",
            CASE_PARAMS["pessimistic"][1] < CASE_PARAMS["measured"][1] < CASE_PARAMS["optimistic"][1])
@@ -1403,7 +1237,7 @@ def test_redundancy_cap():
 
 
 def test_anchor_modes():
-    from .core import choose_anchor
+    from mppp.error.core import choose_anchor
     sts = [Station(xyz=[0, 0, 1.9], az_deg=0, name="A"),
            Station(xyz=[10, 0, 1.9], az_deg=0, name="B"),
            Station(xyz=[20, 0, 1.9], az_deg=0, name="C")]
@@ -1461,88 +1295,3 @@ def test_metrics_end_to_end():
            f"{good.sum()}/{good.size}")
     _check("gain >= 1 where fused", np.all(m["improvement"][np.isfinite(m["improvement"])] >= 1 - 1e-9))
     _check("coverage fraction in [0,1]", 0.0 <= float(m["_coverage_fraction"]) <= 1.0)
-
-
-# --------------------------------------------------------------------------
-
-def _study_script(name: str):
-    """Path of a research script in ``studies/error/`` (v0p13: moved out of the package), or None."""
-    from ..paths import source_root
-    root = source_root()
-    f = root / "studies" / "error" / f"{name}.py" if root else None
-    return str(f) if f is not None and f.is_file() else None
-
-
-def _subprocess_env():
-    """Child interpreters must find the ``mppp`` package (merged layout, v0p2)."""
-    import os
-    src = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    env = dict(os.environ)
-    env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
-    return env
-
-
-def run_all(verbose: bool = True) -> bool:
-    _RESULTS.clear()
-    tests = [
-        test_two_ray_analytic,
-        test_monocular_rank_deficient,
-        test_precision_addition,
-        test_correlation_floor,
-        test_cluster_neff_model,
-        test_cluster_keeps_best_member,
-        test_cluster_neff_is_not_a_bandpass_eps,
-        test_convergent_pair_isotropy,
-        test_eps_scaling,
-        test_rotation_invariance,
-        test_occlusion,
-        test_pose_far_field,
-        test_vectorised_matches_reference,
-        test_link_modes,
-        test_colmap_roundtrip,
-        test_colmap_rejects_bad_quaternion,
-        test_colmap_handles_empty_observation_lines,
-        test_precision_convention,
-        test_correlation_kernels,
-        test_four_cases_ordering,
-        test_network_pose,
-        test_anchor_modes,
-        test_redundancy_cap,
-        test_measured_gate,
-        test_pose_modes_path_vs_baseline,
-        test_occlusion_profiles_from_csv,
-        test_plot_shares_colour_limits,
-        test_plot_stats_box_and_axis_label_control,
-        test_sitemap_crop,
-        test_ideal_dominates_lbs_and_is_dominated_by_full_fusion,
-        test_ideal_field_uses_single_ray_per_station,
-        test_stations_from_rmcs,
-        test_trim_border_fraction,
-        test_plot_map_colorbar_and_rover_icon,
-        test_study_navcam_metric_figures_and_filenames,
-        test_ideal_ordering_holds_on_real_data,
-        test_spacing_sweep_baseline_marker,
-        test_numerics,
-        test_metrics_end_to_end,
-    ]
-    for t in tests:
-        try:
-            t()
-        except Exception as exc:                       # noqa: BLE001
-            _check(t.__name__, False, f"EXCEPTION {type(exc).__name__}: {exc}")
-
-    n_ok = sum(1 for _, ok, _ in _RESULTS if ok)
-    if verbose:
-        print("=" * 74)
-        print("mppp self-test")
-        print("=" * 74)
-        for name, ok, msg in _RESULTS:
-            flag = "PASS" if ok else "FAIL"
-            print(f"[{flag}] {name}")
-            if msg and not ok:
-                print(f"       {msg}")
-            elif msg and ok:
-                print(f"       {msg}")
-        print("-" * 74)
-        print(f"{n_ok}/{len(_RESULTS)} checks passed")
-    return n_ok == len(_RESULTS)

@@ -32,6 +32,8 @@ module level, no package-relative imports.
 """
 from __future__ import annotations
 
+import logging
+
 import csv
 import subprocess
 import sys
@@ -39,6 +41,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
+
+log = logging.getLogger("mppp.mask")
 
 PathLike = Union[str, Path]
 
@@ -273,7 +277,7 @@ class TrainingMonitor:
         self.dir = Path(out_dir)
         self.archived = archive_previous_run(self.dir)
         if self.archived:
-            print(f"[monitor] previous run's debug files moved to {self.archived.name}")
+            log.info(f"[monitor] previous run's debug files moved to {self.archived.name}")
         (self.dir / "batch").mkdir(parents=True, exist_ok=True)
         (self.dir / "val").mkdir(parents=True, exist_ok=True)
         self.threshold, self.live, self.tile_h = threshold, live, tile_h
@@ -335,7 +339,7 @@ class TrainingMonitor:
         if cv2.imwrite(str(tmp), bgr):
             tmp.replace(path)                                # viewers never see a half-written file
         else:
-            print(f"[monitor] could not write {path}")
+            log.info(f"[monitor] could not write {path}")
 
     def _spawn_curves(self) -> None:
         if self._child is not None and self._child.poll() is None:
@@ -348,7 +352,7 @@ class TrainingMonitor:
             self._child = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "curves", str(self.dir)],
                                            stdout=log, stderr=log, creationflags=flags)
         except Exception as e:                               # plotting must never stop training
-            print(f"[monitor] curve renderer not started: {e}")
+            log.info(f"[monitor] curve renderer not started: {e}")
             self._child = None
         finally:
             log.close()
@@ -358,16 +362,16 @@ class TrainingMonitor:
         try:
             self._viewer = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "watch", str(self.dir)],
                                             stdout=open(self.dir / "viewer.log", "a"), stderr=subprocess.STDOUT)
-            print("[monitor] live viewer started in its own window (close it any time; training is unaffected)")
+            log.info("[monitor] live viewer started in its own window (close it any time; training is unaffected)")
         except Exception as e:
-            print(f"[monitor] live viewer not started: {e}")
+            log.info(f"[monitor] live viewer not started: {e}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "curves":
-        print(plot_curves_file(sys.argv[2]))
+        log.info(plot_curves_file(sys.argv[2]))
     elif len(sys.argv) == 3 and sys.argv[1] == "watch":
         watch(sys.argv[2])
     else:
-        print("usage: python monitor.py curves|watch <debug_dir>")
+        log.info("usage: python monitor.py curves|watch <debug_dir>")
         sys.exit(2)

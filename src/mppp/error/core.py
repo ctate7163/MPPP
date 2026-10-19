@@ -1,5 +1,5 @@
 """
-mppp_error.core -- Mars Photogrammetric Precision Prediction: physics engine.
+mppp.error.core -- Mars Photogrammetric Precision Prediction: physics engine.
 
 First-principles 3D precision model for rover-based surface reconstruction.
 
@@ -37,7 +37,8 @@ measurements are independent then sigma_disp = sqrt(2) * sigma_x', and the two
 formulations agree exactly.  Both conventions appear in the literature; this
 code uses sigma_x' (per-image) throughout because it is the quantity that
 generalises to N rays and to mixed mono/stereo visibility.
-`selftest.py::test_two_ray_analytic` verifies the correspondence numerically.
+``tests/test_error_model.py::test_two_ray_analytic`` verifies the
+correspondence numerically.
 
 eps, rho and theta_c are independent
 ------------------------------------
@@ -51,26 +52,28 @@ interpolation bias, foreshortening bias, interior-orientation residual, surface
 definition ambiguity).  They are different moments of the same underlying
 physics and must be measured separately.
 
-Angular gating and correlation are OFF by default
--------------------------------------------------
-Under the current scaling argument theta_c (decorrelation) and theta_max
-(matching failure) are within roughly a factor of two of each other, so
-applying either without measured values would impose a strong, unvalidated
-constraint.  Both are implemented and switchable but default to disabled.
-The maps produced with defaults are pure network geometry.
+What the defaults switch on
+---------------------------
+``ModelConfig()`` applies the occlusion mask and the measured error
+correlation (``use_correlation=True``, exponential kernel, rho_0 = 0.22 at
+zero separation decaying to rho_inf = 0 within theta_c = 0.4 deg, as measured on
+the Navcam archive with ``alignment.decorrelation`` / ``fit_rho``).  The cross-station matchability gate
+(``use_theta_gate``) and the transition-tilt gate (``use_tau_gate``) are OFF
+unless a ``link_mode`` that needs them is chosen; ``cases.run_four_cases``
+switches the measured power-law gate on for the SfM cases.  The parameter
+values measured on the archive are listed once, at ``ModelConfig``.
 """
 
 from __future__ import annotations
 
 import warnings
-import os
 import re
 import numpy as np
-from dataclasses import dataclass, field, replace
-from typing import Optional, Sequence, Tuple, Literal, List
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Sequence, Tuple, Literal, List
 
 __all__ = [
-    "Surface", "FlatPlane", "GriddedSurface",
+    "Surface", "FlatPlane",
     "OcclusionMask", "MASTCAM_Z_34", "NAVCAM", "DEFAULT_ROVER_MASK",
     "Instrument", "Station", "PoseModel", "ModelConfig",
     "Grid", "PrecisionField", "solve_precision_field", "choose_anchor",
@@ -147,38 +150,6 @@ class FlatPlane(Surface):
         N = np.zeros(X.shape + (3,))
         N[..., 2] = 1.0
         return Z, N
-
-
-@dataclass
-class GriddedSurface(Surface):
-    """
-    Bilinear-sampled DTM on a regular grid.  Normals from the local gradient.
-
-    x, y are 1-D coordinate vectors (ascending); Z has shape (len(y), len(x)).
-    Points outside the DTM footprint fall back to the nearest edge value, which
-    is adequate for a design tool but should not be trusted near the boundary.
-    """
-    x: np.ndarray
-    y: np.ndarray
-    Z: np.ndarray
-
-    def sample(self, X, Y):
-        xi = np.clip(np.interp(X, self.x, np.arange(self.x.size)), 0, self.x.size - 1)
-        yi = np.clip(np.interp(Y, self.y, np.arange(self.y.size)), 0, self.y.size - 1)
-        x0 = np.floor(xi).astype(int); x1 = np.minimum(x0 + 1, self.x.size - 1)
-        y0 = np.floor(yi).astype(int); y1 = np.minimum(y0 + 1, self.y.size - 1)
-        fx = xi - x0; fy = yi - y0
-        Zi = (self.Z[y0, x0] * (1 - fx) * (1 - fy) + self.Z[y0, x1] * fx * (1 - fy)
-              + self.Z[y1, x0] * (1 - fx) * fy + self.Z[y1, x1] * fx * fy)
-        # normals from central differences of the source grid, then sampled
-        dzdy, dzdx = np.gradient(self.Z, self.y, self.x)
-        gx = (dzdx[y0, x0] * (1 - fx) * (1 - fy) + dzdx[y0, x1] * fx * (1 - fy)
-              + dzdx[y1, x0] * (1 - fx) * fy + dzdx[y1, x1] * fx * fy)
-        gy = (dzdy[y0, x0] * (1 - fx) * (1 - fy) + dzdy[y0, x1] * fx * (1 - fy)
-              + dzdy[y1, x0] * (1 - fx) * fy + dzdy[y1, x1] * fx * fy)
-        N = np.stack([-gx, -gy, np.ones_like(gx)], axis=-1)
-        N /= np.linalg.norm(N, axis=-1, keepdims=True)
-        return Zi, N
 
 
 # --------------------------------------------------------------------------
@@ -296,11 +267,6 @@ MASTCAM_Z_34 = Instrument(
     # ZR034 identical): f = 4720 px over 1648x1200, so 1/f = 2.119e-4 rad/px.
     # This REPLACES an earlier linear interpolation between the 26 mm and
     # 110 mm published endpoints (2.17e-4), which was flagged VERIFY.
-MASTCAM_Z_110 = Instrument(
-    name="Mastcam-Z 110 mm", ifov_rad=2.0 / (14852.0 + 14830.0), baseline_m=0.244,
-    eps_intra_px=0.169)
-    # ZL110 f = 14852 px, ZR110 f = 14830 px -> mean 1/f = 6.738e-5 rad/px.
-    # Used for the far-target long-baseline pairs.
 NAVCAM = Instrument(
     name="Navcam", ifov_rad=2.0 / (2950.913630357162 + 2943.646045723977),
     baseline_m=0.424, eps_intra_px=0.169)
@@ -492,10 +458,12 @@ class ModelConfig:
     """
     Solver configuration.
 
-    Defaults produce a PURE GEOMETRY map: emission-angle gating disabled, no
-    angular matchability gate, no error correlation.  Every optional term is
-    off unless explicitly enabled, so the baseline map has no unvalidated
-    parameters in it.
+    Defaults: occlusion mask on, no emission-angle cutoff, the measured error
+    correlation ON (exponential kernel, rho_0 0.22, rho_inf 0, theta_c 0.4 deg),
+    the cross-station matchability gate and the transition-tilt gate OFF, and
+    ``link_mode='full'`` (every station fuses freely).  The gate parameters
+    below are the values measured on the five-site Navcam archive and are used
+    when ``use_theta_gate`` is switched on (``cases.run_four_cases`` does).
     """
     # --- always active -----------------------------------------------------
     apply_occlusion: bool = True
@@ -507,7 +475,7 @@ class ModelConfig:
         # invertible, including at points seen by zero or one ray.  Cells whose
         # sigma approaches this value are flagged unconstrained.
 
-    # --- cross-station matchability (OFF by default) -----------------------
+    # --- cross-station matchability gate (OFF by default) ------------------
     # A station can only contribute to a FUSED solution if it can be tied to the
     # rest of the network.  That tie is a cross-station image match, whose
     # precision eps_cross is worse than the within-station eps_intra because the
@@ -570,10 +538,6 @@ class ModelConfig:
     #: probability the cell actually has a tie, P = 1 - exp(-mu/k).
     clump_k: float = 20.0
     theta_max_deg: float = 20.0  # (gaussian form only)
-    #: DISPLAY threshold for the coverage contour, in expected matched pairs.
-    #: With the clumping model the natural choice is P_cross = 0.5, i.e.
-    #: mu = k ln 2 ~ 14 for k = 20.  No longer used as a hard gate.
-    min_expected_pairs: float = 14.0
         # Literature anchors: dense NCC/SGM ~10-20 deg; SIFT-class ~25-35 deg;
         # affine-covariant (ASIFT) ~45-60 deg; learned dense ~45-70 deg.
     theta_gate_exponent: float = 2.0
@@ -596,10 +560,10 @@ class ModelConfig:
         # alone, because at grazing emission a small delta-theta produces a
         # large tilt change.
 
-    # --- error correlation (OFF by default) --------------------------------
+    # --- error correlation (ON by default, exponential kernel) --------------
     use_correlation: bool = True
     correlation_kernel: Literal["cluster", "gaussian", "exponential", "cosine", "tilt"] = "exponential"
-        # 'cluster'     THE SIMPLE N_eff MODEL (default).  Stations whose view
+        # 'cluster'     the simple N_eff model.  Stations whose view
         #               directions at a cell fall within theta_c of each other
         #               are ONE look, at the precision of the best of them:
         #               the most precise member keeps its weight, the rest are
@@ -616,10 +580,11 @@ class ModelConfig:
         # 'gaussian'    exp(-th^2 / 2 th_c^2).  Conventional in geostatistics,
         #               but NEVER reaches zero, so with many stations tiny
         #               spurious correlations accumulate and suppress N_eff.
-        # 'exponential' exp(-th / th_c).  Heavier tail still.
+        # 'exponential' exp(-th / th_c).  Heavier tail still.  The DEFAULT: it is
+        #               the form fitted to the measured rho(theta) (alignment.fit_rho).
         # 'cosine'      max(cos(pi th / 2 th_c), 0)^2.  COMPACT SUPPORT: exactly
         #               zero beyond th_c, so distant views are treated as truly
-        #               independent.  Default for that reason.
+        #               independent.
         # 'tilt'        based on transition tilt tau rather than angle, which is
         #               the quantity that actually governs affine matchability
         #               for grazing rover geometry.
@@ -633,22 +598,19 @@ class ModelConfig:
         #     theta_min * r  <  b  <  theta_max * r
         # below it a second station is redundant, above it unmatchable.
         # None falls back to theta_c_deg (kept for backwards compatibility).
-    theta_c_deg: float = 0.4   # measured decorrelation e-fold (0.14-0.81 deg per site)
-        # decorrelation angle theta_rho.  2 deg is a PLACEHOLDER chosen so
-        # that a cross-station pair is never treated as worth less than a
-        # station's own intra-pair (0.42 m at 40 m = 0.6 deg, which the
-        # classical range equation treats as independent); a 5 deg cut made
-        # the spacing sweep flat-line at 1x below 5 m for exactly that reason.  Distinct from theta_max (matching
-        # cutoff): shared sub-pixel bias decorrelates within a few degrees,
-        # matching survives to tens of degrees, so theta_c << theta_max.
-        # Unmeasured for Mars imagery; mppp_error.colmap.measure_theta_c estimates it.
-        # Decorrelation angle.  Scaling argument theta_c ~ GSD / h_window gives
-        # 12-23 deg for MCZ-34 at 25 m on rocky terrain -- UNMEASURED.
+    theta_c_deg: float = 0.4
+        # Decorrelation angle theta_rho, MEASURED on the Navcam archive
+        # (e-fold 0.14-0.81 deg per site, pooled 0.4; alignment.decorrelation /
+        # colmap.measure_theta_c).  Distinct from theta_max (matching cutoff):
+        # shared sub-pixel bias decorrelates within a degree, matching survives
+        # to tens of degrees, so theta_c << theta_max.  Small enough that a
+        # station's own intra-pair (0.42 m at 40 m = 0.6 deg) is barely
+        # affected, as the classical range equation assumes.
     rho_inf: float = 0.0       # floor for well-separated looks (~0 measured)
     rho_0: float = 0.22        # correlation at zero separation (repeat looks from one place)
-        # Common-mode correlation floor: rho_inf = sigma_com^2 / sigma^2.
-        # Puts a hard floor sigma_fused >= sqrt(rho_inf) * sigma_single.
-        # Sweep {0, 0.05, 0.2}; 0 is the optimistic bound.
+        # rho_inf is the common-mode floor sigma_com^2 / sigma^2 and puts a hard
+        # floor sigma_fused >= sqrt(rho_inf) * sigma_single; the archive gives
+        # ~0 (test_redundancy_cap pins the 1/sqrt(rho_0) = 2.1x saturation).
 
     # --- bookkeeping -------------------------------------------------------
     store_station_dirs: bool = False     # needed for correlation & gating
@@ -746,7 +708,7 @@ class PrecisionField:
     """Fused covariance field and the per-station bookkeeping needed downstream.
 
     Extra attributes may be attached by analysis modules (e.g.
-    `effective_baseline` from mppp_error.cases.lbs_field).
+    `effective_baseline` from mppp.error.cases.lbs_field).
     """
     grid: Grid
     Sigma: np.ndarray            # (Ny,Nx,3,3) fused covariance [m^2]

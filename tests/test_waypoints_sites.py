@@ -177,3 +177,178 @@ def test_zcam_field_and_folder_names(tmp_path):
     assert S.work_folder(tmp_path, "a", True, (1, 2)).name == "mars2020_sol_0001_a_zcam"
     err, _ = S.validate_site_table()
     assert err == []
+
+
+def test_discover_scapes_keeps_sites_with_the_same_label(tmp_path, monkeypatch):
+    from mppp.waypoints import sites as S
+    rows = [{"label": "Bell Island", "site": "bell_island", "folder": str(tmp_path / "a"), "ok": True},
+            {"label": "Bell Island", "site": "bell_island_large", "folder": str(tmp_path / "b"), "ok": True},
+            {"label": "Van Zyl", "site": "van_zyl", "folder": str(tmp_path / "c"), "ok": True},
+            {"label": "Bell Island", "site": "x", "folder": str(tmp_path / "d"), "ok": False}]
+    monkeypatch.setattr(S, "scan_scapes", lambda *a, **k: [dict(r) for r in rows])
+    out = S.discover_scapes(tmp_path, verbose=False)
+    assert set(out) == {"Bell Island", "Bell Island (bell_island_large)", "Van Zyl"}
+    assert out["Bell Island (bell_island_large)"] == tmp_path / "b"
+
+
+# sites with several visits (v0p75)
+
+
+def test_sol_ranges_span_and_membership():
+    from mppp.waypoints import sites as S
+    assert S.sol_ranges([1, 2]) == [(1, 2)]
+    assert S.sol_ranges([[361, 378], [91, 101]]) == [(361, 378), (91, 101)]
+    assert S.sol_span([[361, 378], [91, 101]]) == (361, 378)          # the main visit names the folder; last of all
+    assert S.sol_span([[91, 101], [361, 378]]) == (91, 378)
+    assert S.in_sol_ranges(95, [[361, 378], [91, 101]]) and not S.in_sol_ranges(200, [[361, 378], [91, 101]])
+    for bad in ([1], [1, 2, 3], [[1, 2], 3], "x", [[1, "a"]]):
+        with pytest.raises(ValueError):
+            S.sol_ranges(bad)
+    assert S.check_sites({"a": [[5, 9], [20, 10]]}) and not S.check_sites({"a": [[5, 9], [10, 20]]})
+
+
+def test_site_table_with_visits(tmp_path):
+    from mppp.waypoints import sites as S
+    f = tmp_path / "sites.json"
+    f.write_text(json.dumps({"sites": {
+        "sid": {"sols": [[361, 378], [91, 101]], "zcam": [34], "settings": {}},
+        "one": {"sols": [700, 712], "zcam": [], "settings": {}}},
+        "groups": {"navcam_consensus": ["sid", "one"]}}))
+    assert S.load_sites(f) == {"sid": (361, 378), "one": (700, 712)}
+    assert S.load_site_ranges(f) == {"sid": [(361, 378), (91, 101)], "one": [(700, 712)]}
+    assert S.work_folder(tmp_path, "sid", True, [[361, 378], [91, 101]]).name == "mars2020_sol_0361_sid_zcam"
+    err, warn = S.validate_site_table(f)
+    assert not err and not warn
+    f.write_text(json.dumps({"sites": {"sid": {"sols": [[361, 378], [370, 400]], "zcam": [34]}}, "groups": {}}))
+    err, _ = S.validate_site_table(f)
+    assert err and "overlap" in err[0]
+    f.write_text(json.dumps({"sites": {"sid": {"sols": [[361, 378], [91]], "zcam": [34]}}, "groups": {}}))
+    err, _ = S.validate_site_table(f)
+    assert err and "list of such ranges" in err[0]
+
+
+def test_scan_accepts_a_folder_of_the_second_visit(tmp_path):
+    from mppp.waypoints import sites as S
+    w = tmp_path / "mars2020_sol_0361_sid_colmap"
+    (w / "colmap" / "sparse" / "m").mkdir(parents=True)
+    (w / "colmap" / "sparse" / "m" / "images.bin").write_bytes(b"")
+    ims = [{"sol": 95, "instrument": "NL", "station": "S003D0100"}] * 12
+    (w / "colmap" / "project.json").write_text(json.dumps({"images": ims, "settings": {"reconstruction": {"path": "sparse/m"}}}))
+    rows = S.scan_scapes(tmp_path, {"sid": [[361, 378], [91, 101]]})
+    assert rows[0]["ok"] and rows[0]["site_sol_ranges"] == [[361, 378], [91, 101]] and rows[0]["site_sols"] == [361, 378]
+    rows = S.scan_scapes(tmp_path, {"sid": [361, 378]})
+    assert not rows[0]["ok"] and "no image in the site's sols 361-378" in rows[0]["reason"]
+
+
+def test_shipped_sites_v0p75():
+    from mppp.waypoints import sites as S
+    t = S.load_site_table()
+    r = S.load_site_ranges()
+    assert r["chal_rocks"] == [(361, 378), (91, 101)] and r["threeforks_large"][0] == (652, 693)
+    assert r["enchanted_lake"] == [(556, 590), (421, 423)] and S.load_sites()["chal_rocks"] == (361, 378)
+    g = t["groups"]
+    assert "olifants" not in g["navcam_consensus"] and "cheyava_falls" in g["navcam_consensus"]
+    assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]
+    assert "zcam34_consensus_v0p82" not in g and "threeforks_north" in g["zcam34_consensus"]   # 19 Oct pm
+    assert "threeforks_large" not in g["zcam34_consensus"]
+    assert len(g["navcam_consensus"]) == 17 and "navcam_consensus_v0p82" not in g               # v0p85, 19 Oct pm
+    assert g["zcam34_consensus"] == ["chal_rocks", "rochette", "threeforks_north", "rio_chiquito", "south_arm", "origny",
+                                     "marble_mountain"]
+
+
+def test_zcam34_dev_group_sites_have_the_zoom():
+    from mppp.waypoints.sites import site_group
+    dev = site_group("zcam34_dev")
+    from mppp.waypoints.sites import load_site_table, site_zooms
+    t = load_site_table()                     # v0p82: Christian's dev group may use a smaller site of a consensus block
+    assert len(dev) == 6 and all(34 in site_zooms(t["sites"][s]) for s in dev)
+
+
+def test_sites_block_record_and_groups():
+    from mppp.waypoints.sites import block_sites, check_block_record, load_site_table, site_block, site_group, validate_site_table
+    assert check_block_record({"number": 3, "half_size_m": 30, "centre": {"lon": 77.4, "lat": 18.4}}) == []
+    assert check_block_record({"number": 0}) and check_block_record([1])
+    t = load_site_table()
+    assert t["version"] == 5                                              # v0p81: the official_blocks table
+    b = block_sites(t)
+    assert len(b) == 36 and b[0] == "oeb_landing_site" and b[-1] == "marble_mountain"
+    assert site_block("chal_rocks_large", t)["number"] == 3 and site_block("chal_rocks", t)["number"] == 3
+    assert len(site_group("blocks_all")) == 36
+    assert "chal_rocks_large" in site_group("navcam_baseline")
+    err, _ = validate_site_table()
+    assert not err
+
+
+# the unmasked-area filter of the WORK folder, the site order (v0p82)
+
+
+def test_included_fraction_filter():
+    from mppp.sfm.workdir import MIN_INCLUDED_FRACTION, filter_included_fraction
+    assert MIN_INCLUDED_FRACTION is None                     # v0p85: off (1/3 in v0p82)
+    ims = [{"source_product": "a", "mask": {"included_fraction": 0.30}},
+           {"source_product": "b", "mask": {"included_fraction": 0.34}}, {"source_product": "c"}]
+    assert filter_included_fraction(ims)[1] == []
+    kept, removed = filter_included_fraction(ims, 1 / 3)
+    assert [m["source_product"] for m in kept] == ["b", "c"] and removed == [{"image": "a", "included_fraction": 0.3}]
+    assert filter_included_fraction(ims, None)[1] == []
+
+
+def test_sites_in_order_of_first_visit():
+    from mppp.waypoints.sites import load_site_table
+    t = load_site_table()
+    first = [min(a for a, _ in v["sols"]) for v in t["sites"].values()]
+    assert first == sorted(first)
+
+
+# block folders without _colmap, the 19 Oct site fixes (v0p85)
+
+
+def test_folder_names_and_old_names():
+    from mppp.waypoints import sites as S
+    assert S.folder_name("south_arm", 1408) == "mars2020_sol_1408_south_arm"
+    assert S.folder_name("south_arm", 1408, True) == "mars2020_sol_1408_south_arm_zcam"
+    for n, want in [("mars2020_sol_1408_south_arm", ("south_arm", False)),
+                    ("mars2020_sol_1408_south_arm_zcam", ("south_arm", True)),
+                    ("mars2020_sol_1408_south_arm_colmap", ("south_arm", False)),          # v0p53-v0p82
+                    ("mars2020_sol_1408_south_arm_colmap_zcam", ("south_arm", True)),
+                    ("mars2020_sol_0072_chal_rocks_large", ("chal_rocks_large", False)),
+                    ("camera_analysis", (None, False)), ("mppp_pipeline", (None, False))]:
+        assert S.parse_work_folder(n) == want, n
+
+
+def test_scan_scapes_reads_new_and_old_names(tmp_path):
+    from mppp.waypoints import sites as S
+    for n in ("mars2020_sol_1408_south_arm", "mars2020_sol_1408_south_arm_colmap_zcam", "camera_analysis"):
+        (tmp_path / n).mkdir()
+    rows = S.scan_scapes(tmp_path, {"south_arm": [[1408, 1412]]})
+    assert sorted((r["site"], r["zcam"]) for r in rows) == [("south_arm", False), ("south_arm", True)]
+
+
+def test_site_fixes_19_oct():
+    t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))["sites"]
+    assert t["chal_rocks_large"]["sols"][0] == [72, 100]
+    assert t["chal_rocks_large"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
+    assert [421, 423] in t["enchanted_lake"]["sols"]
+    assert t["bell_island_large"]["sols"][0][0] == 1431
+    assert t["rochette"]["sols"][0][0] == 178 and t["rochette"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
+    assert t["hippo_pools"]["sols"][0][0] == 1948 and t["hippo_pools"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
+
+
+def test_sites_19_oct_afternoon():
+    """Christian (19 Oct): notes last; Issole 201 + 286-339; Seitah North Large in the Navcam consensus and the
+    baseline; seven more consensus blocks; Seitah Overlook 113-125; Butler Landing 1-14 + 32-44; Butler Landing
+    Large gone; Van Zyl Overlook Huge 15-99 + 361-378 replaces Van Zyl Overlook Large."""
+    t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
+    S, G = t["sites"], t["groups"]
+    assert all(list(v)[-1] == "notes" for v in S.values() if "notes" in v)
+    assert S["issole_seitah_south"]["sols"] == [[201, 201], [286, 339]]
+    assert S["seitah_north_large"]["sols"] == [[202, 284]]
+    assert S["artuby_ridge"]["sols"] == [[342, 349], [174, 176]]
+    assert S["seitah_overlook"]["sols"] == [[113, 125]] and S["butler_landing"]["sols"] == [[1, 14], [32, 44]]
+    assert "butler_landing_large" not in S and "van_zyl_overlook_large" not in S
+    assert S["van_zyl_overlook_huge"]["sols"] == [[15, 99], [361, 378]]
+    nc = set(G["navcam_consensus"])
+    assert {"seitah_north_large", "marble_mountain", "hippo_pools", "cheyava_falls", "bunsen_peak", "tuxedo_park",
+            "belva_crater_large", "oeb_landing_site"} <= nc and len(nc) == 17
+    assert "seitah_north_large" in G["navcam_baseline"] and "van_zyl_overlook_huge" in G["navcam_baseline"]
+    assert not any(s in ("butler_landing_large", "van_zyl_overlook_large") for g in G.values() for s in g)

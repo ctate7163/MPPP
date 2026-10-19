@@ -114,7 +114,8 @@ def test_pipeline_run_timeout_stops_the_tree(tmp_path):
 
 def test_pipeline_consensus_leaves_out_guided_matched_blocks(tmp_path, monkeypatch):
     rp = _script("run_pipeline")
-    from mppp.sfm import health as H, sites as S
+    from mppp.sfm import health as H
+    from mppp.waypoints import sites as S
     found = {"A": tmp_path / "mars2020_sol_0100_a_colmap", "B": tmp_path / "mars2020_sol_0200_b_colmap"}
     for w in found.values():
         (w / "colmap").mkdir(parents=True)
@@ -131,7 +132,8 @@ def test_pipeline_consensus_leaves_out_guided_matched_blocks(tmp_path, monkeypat
 
 def test_pipeline_consensus_takes_the_group_only(tmp_path, monkeypatch):
     rp = _script("run_pipeline")
-    from mppp.sfm import health as H, sites as S
+    from mppp.sfm import health as H
+    from mppp.waypoints import sites as S
     found = {"A": tmp_path / "mars2020_sol_0100_a_colmap", "B": tmp_path / "mars2020_sol_0200_b_colmap",
              "Olifants": tmp_path / "mars2020_sol_1880_olifants_colmap"}
     for w in found.values():

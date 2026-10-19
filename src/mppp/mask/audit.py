@@ -26,6 +26,8 @@ candidate for a label problem.
 """
 from __future__ import annotations
 
+import logging
+
 import csv
 import time
 from collections import deque
@@ -35,6 +37,8 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 
 import cv2
 import numpy as np
+
+log = logging.getLogger("mppp.mask")
 
 PathLike = Union[str, Path]
 
@@ -168,7 +172,7 @@ def audit_frames(items: Sequence, checkpoint: PathLike, out_csv: Optional[PathLi
 
     rows: List[Dict[str, Any]] = []
     t0 = time.time()
-    print(f"[mask.audit] {ckpt.name}: {len(sel)} frames (image_dirs={image_dirs}, which={which}), "
+    log.info(f"[mask.audit] {ckpt.name}: {len(sel)} frames (image_dirs={image_dirs}, which={which}), "
           f"threshold {thr}, {'bf16' if use_amp else 'fp32'} on {dev}")
     with ThreadPoolExecutor(max(1, int(read_workers))) as pool:
         pending: deque = deque()
@@ -202,13 +206,13 @@ def audit_frames(items: Sequence, checkpoint: PathLike, out_csv: Optional[PathLi
             rows.append(row)
             if progress_every and (k % progress_every == 0 or k == len(sel)):
                 el = time.time() - t0
-                print(f"  {k}/{len(sel)}  {el:.0f} s  (~{el / k * (len(sel) - k) / 60:.1f} min left)")
+                log.info(f"  {k}/{len(sel)}  {el:.0f} s  (~{el / k * (len(sel) - k) / 60:.1f} min left)")
 
     rows = rank_rows(rows, sort_by, min_terrain_pct=0.0 if sort_by == "iou" else None)   # CSV keeps every frame
     if out_csv is not None:
         path = ckpt.parent / f"{ckpt.stem}_debug" / "frame_audit.csv" if out_csv == "auto" else Path(out_csv)
         write_audit_csv(rows, path)
-        print(f"[mask.audit] -> {path}")
+        log.info(f"[mask.audit] -> {path}")
     return rows
 
 

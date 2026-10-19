@@ -1,5 +1,5 @@
 """
-mppp_error.viewgraph -- station view graph and its strength.
+mppp.error.viewgraph -- station view graph and its strength.
 
 The view graph asks a different question from the precision field.  The
 precision field asks "how well is each ground point determined?"  The view graph
@@ -46,7 +46,7 @@ redundancy
 CAVEAT
 ------
 This is a PREDICTED graph, built from geometry and a matchability model.  The
-measured graph from an actual SfM run (see mppp_error.colmap.measured_view_graph)
+measured graph from an actual SfM run (see mppp.error.colmap.measured_view_graph)
 will differ, and the difference is exactly the calibration signal for
 eps_cross and theta_max.
 """
@@ -54,11 +54,10 @@ eps_cross and theta_max.
 from __future__ import annotations
 
 import numpy as np
-from dataclasses import dataclass, field as _dcfield
-from typing import List, Optional, Dict, Sequence
+from dataclasses import dataclass
+from typing import List, Optional
 
-from .core import (PrecisionField, ModelConfig, _link_weights, gate_powerlaw,
-                   illumination_gate)
+from .core import PrecisionField, ModelConfig, gate_powerlaw, illumination_gate
 
 __all__ = ["ViewGraph", "build_view_graph", "graph_report"]
 

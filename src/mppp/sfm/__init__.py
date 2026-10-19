@@ -1,6 +1,6 @@
 """
 mppp.sfm - the bridge from MPPP-processed images to a COLMAP database and an
-aligned reconstruction for error analysis (``mppp.error``).
+aligned reconstruction for error analysis (the ``error`` package).
 
 Steps (notebook ``03_colmap_alignment``)::
 

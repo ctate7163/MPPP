@@ -1,6 +1,7 @@
 """COLMAP project set-up, start cameras, focus bins and models (mppp.sfm.project)."""
 import numpy as np
 import pytest
+from conftest import config_selection_off
 from mppp.paths import data_dir  # noqa: E402
 from pathlib import Path
 import json
@@ -21,7 +22,7 @@ def processed_pair(tmp_path_factory):
     if not (NLF.is_file() and ZL0.is_file()):
         pytest.skip("example IMGs not present")
     out = tmp_path_factory.mktemp("proc")
-    cfg = mppp.load_config({"masking": {"infer_mask": False},
+    cfg = config_selection_off({"masking": {"infer_mask": False},
                             "export": {"formats": ["PNG8"], "write_colmap": False}})
     man = mppp.process_images([NLF, ZL0], out, cfg, mppp.load_waypoints(), progress=False)
     assert man["n_processed"] == 2
@@ -307,7 +308,7 @@ def test_project_create_with_start_cameras_from_a_folder(tmp_path):
     import mppp
     from mppp.sfm.project import SfmProject
     out = tmp_path / "proc"
-    cfg = mppp.load_config({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": False}})
+    cfg = config_selection_off({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": False}})
     man = mppp.process_images([NLF], out, cfg, mppp.load_waypoints(), progress=False)
     cand = tmp_path / "joint"
     cand.mkdir()
@@ -544,3 +545,215 @@ def test_zcam_focus_models_per_zoom(tmp_path):
     rows63 = [{"camera_group": "ZL063", "focus_count": 700, "label_f_px": 6500.0} for _ in range(4)]
     lab = _split_by_focus(rows63, {"ZL063": dict(base)}, {"ZL063": "Z"}, 30.0, "focal", model=m)   # no 63 mm model
     assert abs(next(iter(lab.values()))["params"][0] - 6500.0) < 1e-6
+
+
+def _zrows(group, counts, regular=()):
+    return [{"camera_group": group, "instrument": group, "focus_count": float(c), "label_f_px": 5000.0 + 0.1 * c,
+             "focus_state": "regular" if i in regular else "backlash", "sol": 100, "name": f"{group}_{i}"}
+            for i, c in enumerate(counts)]
+
+
+def test_split_by_focus_regular_state_bins():
+    from mppp.sfm.project import _split_by_focus
+    base = {"model": "FULL_OPENCV", "width": 1648, "height": 1200, "source": "median of label CAHVOR models",
+            "params": [5000.0, 5000.0, 824.0, 600.0, 0, 0, 0, 0, 0, 0, 0, 0], "fixed_params": ["k3"]}
+    rows = _zrows("ZL034", [1000, 1005, 1010, 1012], regular=(2, 3))
+    gm = {"f0_px": 5045.0, "label_f0_px": 5000.0, "reference_focus": 1000.0, "slope_px_per_count": 0.1,
+          "aspect": 1.0, "focus_range": [0, 3000]}
+    cams = _split_by_focus(rows, {"ZL034": base}, {"ZL034": "Z"}, 30.0, "focal", {"cameras": {"ZL034": gm}})
+    reg = [k for k in cams if k.endswith("_reg")]
+    assert len(cams) == 2 and len(reg) == 1
+    c = cams[reg[0]]
+    assert c["backlash_state"] == "regular" and {"fx", "fy", "k3"} <= set(c["fixed_params"])
+    other = cams[next(k for k in cams if not k.endswith("_reg"))]
+    assert c["params"][0] == pytest.approx(other["params"][0] / 1.009 + 0.1 * (c["focus_count_median"] - other["focus_count_median"]) / 1.009, rel=1e-6)
+    assert "k3" in other["fixed_params"]                      # the eye's fixed terms are inherited (ZCAM_K3 = "zero")
+    assert {r["instrument"] for r in rows if r["focus_state"] == "regular"} == set(reg)
+
+
+# the early-mission Navcam offsets of the camera files (v0p70)
+_P_EARLY = np.array([2956.7, 2956.75, 2591.6, 1944.3, 0.0451, -0.0100, 2.5e-4, 3.6e-4, 0.0030, 0.0, 0.0, 0.0])
+
+
+def test_project_applies_the_early_mission_offsets(tmp_path):
+    P = _P_EARLY
+    from conftest import NLF
+    if not NLF.is_file():
+        pytest.skip("example IMGs not present")
+    import mppp
+    from mppp.calib import load_camera
+    from mppp.calib.models import CAMERA_FILE
+    from mppp.sfm.project import SfmProject
+    out = tmp_path / "proc"
+    cfg = config_selection_off({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": False}})
+    man = mppp.process_images([NLF], out, cfg, mppp.load_waypoints(), progress=False)
+    (tmp_path / "joint").mkdir()
+    for eye in "LR":
+        js = load_camera("N", eye)
+        js.pop("file", None)
+        js["params"] = [float(v) for v in P]
+        js["thermal"] = {k: 0.0 for k in ("fx_ppm_per_degC", "fy_ppm_per_degC", "cx_px_per_degC", "cy_px_per_degC",
+                                          "k1_per_degC")} | {"T0_degC": -19.1}
+        js["early_mission"] = {"before_sol": 1e6, "dfx_px": 0.3, "dfy_px": 0.0, "dcx_px": -2.7, "dcy_px": 0.5,
+                               "applied_terms": ["cx", "cy"]}
+        (tmp_path / "joint" / CAMERA_FILE[("N", eye)]).write_text(json.dumps(js))
+    proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, navcam_distortion="fisheye_tangential",
+                             navcam_cameras=tmp_path / "joint")
+    p = proj.cameras["NL"]["params"]
+    assert p[0] == pytest.approx(P[0], abs=0.05) and p[2] == pytest.approx(P[2] - 2.7, abs=0.05)
+    assert p[3] == pytest.approx(P[3] + 0.5, abs=0.05) and "early-mission" in proj.cameras["NL"]["source"]
+
+
+def test_focal_pp_bins_free_zr_principal_point():
+    from mppp.sfm.project import ZCAM_BIN_REFINE_SETTINGS, _split_by_focus
+    assert "focal_pp" in ZCAM_BIN_REFINE_SETTINGS
+    base = {"model": "OPENCV", "params": [4700, 4700, 824, 600, 0, 0, 0, 0], "source": "label", "fixed_params": []}
+    cams = {"ZL034": dict(base), "ZR034": dict(base)}
+    rows = [{"camera_group": g, "focus_count": f, "label_f_px": 4660.0, "focus_state": "backlash", "sol": 500,
+             "instrument": g} for g in ("ZL034", "ZR034") for f in (100, 105, 400)]
+    out = _split_by_focus(rows, cams, {"ZL034": "Z", "ZR034": "Z"}, 30.0, "focal_pp")
+    zr = [c for k, c in out.items() if k.startswith("ZR")]
+    zl = [c for k, c in out.items() if k.startswith("ZL")]
+    assert all("cx" not in c["fixed_params"] and "k1" in c["fixed_params"] for c in zr)
+    assert all("cx" in c["fixed_params"] for c in zl)
+
+
+def test_split_by_focus_starts_on_calibrated_lines():
+    from mppp.sfm.project import _split_by_focus
+    base = {"model": "FULL_OPENCV", "params": [4700, 4700, 824, 600, -0.47, 0.7, 0, 0, 0, 0, 0, 0], "source": "label",
+            "fixed_params": []}
+    model = {"cameras": {"ZR034": {"f0_px": 4720.0, "reference_focus": 600.0, "slope_px_per_count": 0.05, "aspect": 1.0,
+                                   "lines": {"reference_focus": 600.0,
+                                             "backlash": {"fx": {"a": 4721.0, "b": 0.06}, "fy": {"a": 4723.0, "b": 0.06},
+                                                          "cx": {"a": 830.0, "b": 0.002}, "k1": {"a": -0.46, "b": 1e-5,
+                                                                                              "c_per_degC": 1e-3, "T0_degC": -15.0}},
+                                             "regular": {"fx": {"a": 4677.0, "b": 0.05}, "fy": {"a": 4679.0, "b": 0.05}}}}}}
+    rows = [{"camera_group": "ZR034", "focus_count": 900.0, "label_f_px": 4660.0, "focus_state": st, "sol": 500,
+             "instrument": "ZR034", "zcam_optics_temperature_degC": -5.0} for st in ("backlash", "regular")]
+    out = _split_by_focus(rows, {"ZR034": dict(base)}, {"ZR034": "Z"}, 30.0, "focal_pp", model=model,
+                          line_params={"ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]},
+                          line_form={"ZR": {p: "free" for p in ("fx", "fy", "cx", "cy", "k1", "k2")}})   # free lines
+    bk = next(c for k, c in out.items() if not k.endswith("_reg"))
+    rg = next(c for k, c in out.items() if k.endswith("_reg"))
+    assert bk["params"][0] == pytest.approx(4721 + 0.06 * 300) and bk["params"][2] == pytest.approx(830 + 0.6)
+    assert bk["params"][4] == pytest.approx(-0.46 + 1e-5 * 300 + 1e-3 * 10)
+    assert rg["params"][0] == pytest.approx(4677 + 0.05 * 300)                  # its own line, no ratio
+    assert "k1" not in bk["fixed_params"] and "cx" not in bk["fixed_params"]  # free (line params of ZR)
+
+
+# Navcam rig epochs, pinned line parameters (v0p75)
+
+
+def _rig_entry():
+    return {"ref": "NL", "sensor": "NR", "n_pairs": 10, "R_sensor_from_ref": np.eye(3).tolist(),
+            "t_sensor_from_ref": [-0.424, 0.0, 0.0], "baseline_m": 0.424, "rotation_source": "CAHV"}
+
+
+def test_navcam_rig_epochs_split_the_visits(tmp_path):
+    from scipy.spatial.transform import Rotation
+    from mppp.sfm.project import navcam_rig_epochs
+    images = [{"instrument": "NL", "sol": s, "camera_temperature_degC": -20.0} for s in (91, 95, 101, 360, 365, 378)] + \
+             [{"instrument": "NR", "sol": s, "camera_temperature_degC": -21.0} for s in (91, 95, 101, 360, 365, 378)] + \
+             [{"instrument": "ZL034", "sol": 365}]
+    rig = {"N": _rig_entry()}
+    cams = {"NL": {"model": "FULL_OPENCV", "params": [1.0] * 12, "source": "consensus"},
+            "NR": {"model": "FULL_OPENCV", "params": [2.0] * 12, "source": "consensus"}}
+    # a rig file with a pitch drift: each epoch starts at its own sol
+    rf = tmp_path / "M2020_N_rig.json"
+    rf.write_text(json.dumps({"R_sensor_from_ref": np.eye(3).tolist(), "t_sensor_from_ref_m": [-0.424, 0, 0],
+                              "drift": {"sol0": 932.0, "pitch_mdeg_per_sol": 0.0055, "yaw_mdeg_per_sol": 0.0,
+                                        "roll_mdeg_per_sol": 0.0}, "convention": "NL reference"}))
+    info = navcam_rig_epochs(images, rig, 100.0, {"rig": {"file": str(rf)}}, cameras=cams)
+    assert set(rig) == {"N", "N#1"} and [e["sols"] for e in info["epochs"]] == [[91, 101], [360, 378]]
+    assert info["epochs"][1] == {**info["epochs"][1], "rig_key": "N#1", "cameras": ["NL#1", "NR#1"], "images": 6}
+    assert rig["N#1"]["ref"] == "NL#1" and rig["N#1"]["sensor"] == "NR#1" and rig["N"]["ref"] == "NL"
+    assert set(cams) == {"NL", "NR", "NL#1", "NR#1"} and cams["NR#1"]["params"] == [2.0] * 12
+    assert cams["NL#1"]["group"] == "NL" and cams["NL#1"]["epoch"] == 1 and "rig epoch 1" in cams["NL#1"]["source"]
+    assert {r["instrument"] for r in images if r["sol"] < 200 and r.get("rig_epoch") == 0} == {"NL", "NR"}
+    assert {r["instrument"] for r in images if r["sol"] > 300 and r.get("rig_epoch") == 1} == {"NL#1", "NR#1"}
+    assert "rig_epoch" not in images[-1] and images[-1]["instrument"] == "ZL034"       # Mastcam-Z untouched
+    p0 = Rotation.from_matrix(np.asarray(rig["N"]["R_sensor_from_ref"])).as_rotvec(degrees=True)[0] * 1e3
+    p1 = Rotation.from_matrix(np.asarray(rig["N#1"]["R_sensor_from_ref"])).as_rotvec(degrees=True)[0] * 1e3
+    assert p0 == pytest.approx(0.0055 * (95 - 932), abs=1e-6) and p1 == pytest.approx(0.0055 * (365 - 932), abs=1e-6)
+    assert "rig epoch 1 (sols 360-378" in rig["N#1"]["rotation_source"] and rig["N"]["epoch"]["index"] == 0
+    # one visit (or visits closer than the gap): nothing changes
+    rig2 = {"N": _rig_entry()}
+    one = [{"instrument": "NL", "sol": s} for s in (1408, 1412, 1359)]
+    assert navcam_rig_epochs(one, rig2, 100.0, cameras={}) is None and set(rig2) == {"N"}
+    assert all(r["instrument"] == "NL" and r["rig_epoch"] == 0 for r in one)
+
+
+def test_split_by_focus_holds_pinned_params():
+    from mppp.sfm.project import _split_by_focus
+    base = {"model": "FULL_OPENCV", "params": [4700, 4700, 743.2, 664.0, -0.47, 0.7, 0, 0, 0, 0, 0, 0], "source": "label",
+            "fixed_params": [], "pp_at_focus": 600.0}
+    model = {"cameras": {"ZR034": {"f0_px": 4720.0, "reference_focus": 600.0, "slope_px_per_count": 0.064, "aspect": 1.0025,
+                                   "pp0_px": [743.2, 664.0], "pp": {"cx_px_per_count": 0.0, "cy_px_per_count": 0.0017},
+                                   "lines": {"reference_focus": 600.0,
+                                             "backlash": {"fx": {"a": 4722.9, "b": 0.064}, "fy": {"a": 4734.7, "b": 0.064},
+                                                          "cx": {"a": 743.2, "b": 0.0}, "cy": {"a": 664.0, "b": 0.0017},
+                                                          "k1": {"a": -0.468, "b": 0.0}, "k2": {"a": 0.875, "b": 0.0}}}}}}
+    rows = [{"camera_group": "ZR034", "focus_count": 900.0, "label_f_px": 4660.0, "focus_state": "backlash", "sol": 500,
+             "instrument": "ZR034"} for _ in range(3)]
+    lp = {"ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]}
+    out = _split_by_focus(rows, {"ZR034": dict(base)}, {"ZR034": "Z"}, 30.0, "focal_pp", model=model, line_params=lp)
+    c = next(iter(out.values()))
+    assert "cx" in c["fixed_params"] and "cy" not in c["fixed_params"] and "k1" not in c["fixed_params"]   # cx pinned
+    assert c["params"][2] == pytest.approx(743.2) and c["params"][3] == pytest.approx(664.0 + 0.0017 * 300)
+    assert c["params"][0] == pytest.approx(4722.9 + 0.064 * 300)
+    out = _split_by_focus(rows, {"ZR034": dict(base)}, {"ZR034": "Z"}, 30.0, "focal_pp", model=model, line_params=lp,
+                          line_form={"ZR": {p: "free" for p in lp["ZR"]}})
+    assert "cx" not in next(iter(out.values()))["fixed_params"]                        # free lines: nothing pinned
+
+
+def test_shipped_zcam_focus_model_lines():
+    from mppp.sfm.project import zcam_focus_model
+    m = zcam_focus_model()
+    assert m.get("form") == "zcam-v1" and m["rig"]["translation_source"].startswith("CAHV")
+    for eye in ("ZL034", "ZR034"):
+        c = m["cameras"][eye]
+        bk = c["lines"]["backlash"]
+        assert bk["fx"]["b"] == bk["fy"]["b"] and bk["k1"]["b"] == 0.0 and len(c["pp0_px"]) == 2
+        assert c["lines"]["regular"]["fx"]["a"] < bk["fx"]["a"]
+    assert m["cameras"]["ZR034"]["lines"]["backlash"]["cx"]["b"] == 0.0
+    assert 0.001 < m["cameras"]["ZR034"]["lines"]["backlash"]["cy"]["b"] < 0.003
+
+
+def test_navcam_rig_epochs_with_the_knot(tmp_path):
+    from mppp.sfm.project import navcam_rig_epochs
+    images = [{"instrument": e, "sol": s, "camera_temperature_degC": -20.0} for s in (280, 290, 305, 310) for e in ("NL", "NR")]
+    rig = {"N": {"ref": "NL", "sensor": "NR", "R_sensor_from_ref": np.eye(3).tolist(), "t_sensor_from_ref": [-0.424, 0, 0]}}
+    cams = {"NL": {"params": [1.0] * 12}, "NR": {"params": [2.0] * 12}}
+    info = navcam_rig_epochs(images, rig, 50.0, cameras=cams, breaks=(300.0,))
+    assert [e["sols"] for e in info["epochs"]] == [[280, 290], [305, 310]] and info["breaks_sols"] == [300.0]
+    assert set(rig) == {"N", "N#1"} and "tied to NL" in cams["NL#1"]["source"]
+    assert navcam_rig_epochs([dict(r, instrument=r["instrument"].split("#")[0]) for r in images],
+                             {"N": dict(rig["N"])}, 50.0, cameras={}) is None              # no break: one epoch
+
+
+# the principal point and k3/k4 of the Navcam start cameras (v0p80)
+
+
+def _fisheye_cam():
+    return {"model": "THIN_PRISM_FISHEYE", "width": 5120, "height": 3840,
+            "params": [2956.0, 2956.0, 2591.0, 1944.0, 0.0428, -0.0012, 2e-4, 3e-4, -0.0098, 0.0, 0.0, 0.0]}
+
+
+def test_navcam_pp_hold_adds_cx_cy_to_fixed():
+    from mppp.sfm.project import NAVCAM_PP, navcam_distortion_terms
+    assert NAVCAM_PP == "hold"
+    c = navcam_distortion_terms(_fisheye_cam(), "hold", pp="hold")
+    assert {"cx", "cy"} <= set(c["fixed_params"]) and "fx" not in c["fixed_params"] and "fy" not in c["fixed_params"]
+    assert c["pp"] == "hold" and "principal point held" in c["source"]
+    r = navcam_distortion_terms(_fisheye_cam(), "hold")                           # the function default: refine
+    assert "cx" not in r["fixed_params"]
+    with pytest.raises(ValueError):
+        navcam_distortion_terms(_fisheye_cam(), "hold", pp="maybe")
+
+
+def test_k4_consensus_keeps_a_fitted_k4():
+    from mppp.sfm.project import navcam_distortion_terms
+    cam = _fisheye_cam()
+    cam["params"][9] = 0.0021
+    c = navcam_distortion_terms(cam, "hold", pp="hold")                          # k3, k4 come as a pair from the model
+    assert c["params"][9] == pytest.approx(0.0021) and "k4" in c["fixed_params"] and "k3" in c["fixed_params"]
