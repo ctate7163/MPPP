@@ -48,6 +48,9 @@ from .project import PARAM_NAMES as _PARAM_NAMES      # v0p50: one table (mppp.s
 DEFAULT_SCHEDULE = ((24.0, 10.0, 8.0), (12.0, 2.0, 4.0), (8.0, 2.0, 2.0), (8.0, 2.0, 2.0))
 ROUND1_HOLD = True            # v0p80: round 1 adjusts poses and points only (cameras and rig at the promoted models)
 ATTITUDE_PRIOR_DEG = 1.0      # v0p20: weak CAHV attitude prior per frame (holds the block's orientation)
+BOGUS_MAX_EXTRA_PARAM = 1.0e6    # v0p85: COLMAP's "bogus camera" limits off (default 1.0, 10, 0.1) - see triangulate()
+BOGUS_MAX_FOCAL_RATIO = 1.0e3
+BOGUS_MIN_FOCAL_RATIO = 1.0e-3
 PRIOR_GAUGE_RECENTRE = True   # v0p82: after every adjustment with position priors the whole block is moved onto them
                               # (the mean prior residual; reprojection-invariant) - Chal Rocks Large (17 Oct) ended
                               # -0.19 m E, -0.07 m N, -0.10 m U off its priors on average, which a free gauge with
@@ -145,6 +148,19 @@ def triangulate(rec, project: SfmProject, max_reproj_px: float = 8.0, min_angle_
     """
     import pycolmap
     opts = pycolmap.IncrementalPipelineOptions()
+    # v0p85: COLMAP treats a camera with any distortion parameter beyond +-1 (max_extra_param) or a focal length
+    # beyond 10x the image size (max_focal_length_ratio) as "bogus" and triangulates none of its images.  The
+    # Mastcam-Z 34 mm FULL_OPENCV k2 is about 1.0 (ZR 1.016 on its focus line, bins to 2.2: a 2-3 px effect at the
+    # corners, since r <= 0.22 in a narrow field), so in the 18-19 Oct run every ZR frame lost its tie points at the
+    # first triangulation after its cameras were set on the line (Rochette diagnostic, 19 Oct: the frames that kept
+    # tie points were exactly those of bins with |k| < 1).  Z110 has f ~ 9 x the width.  Our own checks judge cameras.
+    opts.max_extra_param = BOGUS_MAX_EXTRA_PARAM
+    opts.max_focal_length_ratio = BOGUS_MAX_FOCAL_RATIO
+    opts.min_focal_length_ratio = BOGUS_MIN_FOCAL_RATIO
+    for sub in (opts.triangulation, opts.mapper):
+        sub.max_extra_param = BOGUS_MAX_EXTRA_PARAM
+        sub.max_focal_length_ratio = BOGUS_MAX_FOCAL_RATIO
+        sub.min_focal_length_ratio = BOGUS_MIN_FOCAL_RATIO
     opts.triangulation.merge_max_reproj_error = max_reproj_px
     opts.triangulation.complete_max_reproj_error = max_reproj_px
     opts.triangulation.min_angle = min_angle_deg

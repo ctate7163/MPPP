@@ -415,7 +415,8 @@ PROCESS_DONE = "process_done.json"    # <WORK>/processed/process_done.json: writ
 # 83 (v0p83): Navcam rig epochs span at most 25 sols (an epoch spanning more is split at its middle sol)
 # 85 (v0p85): sub-frames below 1/3 of the full frame left out (NAVCAM_MIN_FRAME_FRACTION 1/3, was 0.2); the mask rule
 #     MIN_INCLUDED_FRACTION off (None, was 1/3)
-ALIGN_RULES = 85
+# 86 (v0p85): COLMAP's bogus-camera limits off in the triangulation (|distortion| > 1 dropped every Mastcam-Z right frame)
+ALIGN_RULES = 86
 
 
 def run_key(settings: Dict[str, Any], source: str, variant: str) -> str:

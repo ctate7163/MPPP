@@ -249,3 +249,61 @@ def test_move_scapes_renames_in_the_new_root(tmp_path):
     subprocess.run(cmd, capture_output=True, text=True, check=True)
     names = {p.name for p in new.iterdir()}
     assert "mars2020_sol_0201_issole_seitah_south" in names and "mars2020_sol_0178_rochette_zcam" in names
+
+
+def test_triangulation_keeps_cameras_with_k2_above_one(tmp_path):
+    """The ZR dropout (19 Oct diagnostic): COLMAP triangulates no image of a camera with |k2| > 1 unless its
+    bogus-camera limit is lifted - mppp.sfm.reconstruction.triangulate lifts it."""
+    import numpy as np
+    import pycolmap
+    from mppp.sfm import reconstruction as R
+    rng = np.random.default_rng(0)
+    W, H, f = 1648, 1200, 4700.0
+    X = rng.uniform([-3, -2, 18], [3, 2, 30], size=(300, 3))
+    rec = pycolmap.Reconstruction()
+    db_path = tmp_path / "d.db"
+    db = pycolmap.Database.open(str(db_path))
+    for c, k2 in ((1, 0.6), (2, 1.016)):                     # ZL-like and ZR-like cameras
+        cam = pycolmap.Camera(model="FULL_OPENCV", width=W, height=H, params=[f, f, W / 2, H / 2, 0, k2, 0, 0, 0, 0, 0, 0],
+                              camera_id=c)
+        rec.add_camera(cam)
+        db.write_camera(cam, use_camera_id=True)
+        rig = pycolmap.Rig(rig_id=c)
+        rig.add_ref_sensor(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=c))
+        rec.add_rig(rig)
+        db.write_rig(rig, use_rig_id=True)
+    ids = []
+    for i in range(1, 7):
+        c = 1 if i % 2 else 2
+        x = 0.24 * (c - 1) + 0.5 * ((i - 1) // 2)
+        cam = rec.cameras[c]
+        Y = X - np.array([x, 0, 0])
+        uv = cam.img_from_cam(Y)
+        fr = pycolmap.Frame(frame_id=i, rig_id=c)
+        fr.add_data_id(pycolmap.data_t(sensor_id=pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=c), id=i))
+        fr.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(np.eye(3)), np.array([-x, 0, 0]))
+        rec.add_frame(fr)
+        im = pycolmap.Image(name=f"{i}.png", keypoints=uv, camera_id=c, image_id=i)
+        im.frame_id = i
+        rec.add_image(im)
+        db.write_image(pycolmap.Image(name=f"{i}.png", camera_id=c, image_id=i), use_image_id=True)
+        db.write_keypoints(i, uv.astype(np.float32))
+        db.write_frame(fr, use_frame_id=True)
+        ids.append(i)
+    for i in ids:
+        rec.register_frame(i)
+    for a in ids:
+        for b in ids:
+            if a < b:
+                tvg = pycolmap.TwoViewGeometry()
+                tvg.config = 2
+                tvg.inlier_matches = np.c_[np.arange(300), np.arange(300)].astype(np.uint32)
+                db.write_two_view_geometry(a, b, tvg)
+    db.close()
+
+    class P:
+        database = db_path
+        images_dir = tmp_path
+        root = tmp_path
+    out = R.triangulate(rec, P(), max_reproj_px=4.0, min_angle_deg=0.1)
+    assert all(out.images[i].num_points3D > 250 for i in ids), {i: out.images[i].num_points3D for i in ids}
