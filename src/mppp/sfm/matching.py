@@ -1,11 +1,12 @@
 """
 Feature matching on ``database.db`` (full-resolution keypoints).
 
-``mode="exhaustive"`` is the baseline of the COLMAP pipeline spec (all pairs,
-SIFT brute force; use a GPU).  ``mode="prior_pairs"`` matches only the pairs
-from :func:`mppp.sfm.prior_overlap_pairs` — for CPU runs and quick tests; it
-biases completeness statistics towards pairs the priors expected to overlap,
-so use exhaustive matching for survival / theta_max analysis.
+``mode="lightglue"`` (the default of the pipeline) matches COLMAP's SIFT features with LightGlue
+(:mod:`mppp.sfm.lightglue`), all pairs, or only ``pairs`` when given.  ``mode="exhaustive"`` is COLMAP's own
+nearest-neighbour SIFT matching of all pairs (ratio test, cross check; use a GPU); ``mode="prior_pairs"`` matches
+only the pairs from :func:`mppp.sfm.prior_overlap_pairs` with it - for CPU runs and quick tests; it biases
+completeness statistics towards pairs the priors expected to overlap, so do not use it for survival / theta_max
+analysis.
 
 Geometric verification runs in full-resolution pixels: ``max_error_px`` = 6
 is 1.5 px at quarter resolution, 3 px at half and 6 px at full resolution.
@@ -17,6 +18,9 @@ from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
 from .project import SfmProject
 
+import logging
+
+log = logging.getLogger("mppp.sfm")
 PathLike = Union[str, Path]
 
 
@@ -24,16 +28,28 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
           use_gpu: Optional[bool] = None, max_num_matches: int = 32768, max_error_px: float = 6.0,
           min_num_inliers: int = 15, num_threads: int = -1, guided_matching: bool = False, block_size: int = 100,
           python: Optional[PathLike] = None, max_ratio: float = 0.8, max_distance: float = 0.7,
-          cross_check: bool = True) -> Dict[str, Any]:
+          cross_check: bool = True, max_keypoints: int = 8192, filter_threshold: float = 0.1,
+          device: Optional[str] = None) -> Dict[str, Any]:
     """Match and verify; results go into ``project.database``.  Returns a summary.
     ``python``: run in another Python environment, e.g. a conda one with a CUDA
     pycolmap (v0p11, see :mod:`mppp.sfm.gpu`).  ``max_ratio``, ``max_distance``,
     ``cross_check`` (v0p22): SIFT matching (Lowe ratio test, descriptor distance,
     mutual best match); ``guided_matching``: a second pass guided by the
     verified two-view geometry; ``max_error_px``: RANSAC threshold of the
-    geometric verification, full-resolution pixels."""
-    if mode not in ("exhaustive", "prior_pairs"):
-        raise ValueError("mode must be 'exhaustive' or 'prior_pairs'")
+    geometric verification, full-resolution pixels.  ``max_keypoints``, ``filter_threshold``, ``device``: LightGlue
+    (the keypoints per image it attends over, its match confidence threshold, "cuda"/"cpu"; see
+    :mod:`mppp.sfm.lightglue`)."""
+    if mode not in ("lightglue", "exhaustive", "prior_pairs"):
+        raise ValueError("mode must be 'lightglue', 'exhaustive' or 'prior_pairs'")
+    if mode == "lightglue":
+        from . import lightglue as LG
+        pair_names = [(p[0], p[1]) for p in pairs] if pairs is not None else None
+        lg = LG.match_pairs_lightglue(project, pair_names, max_keypoints=max_keypoints,
+                                      filter_threshold=filter_threshold, device=device)
+        LG.verify(project, lg["pairs_file"], max_error_px=max_error_px, min_num_inliers=min_num_inliers)
+        return _finish(project, mode, max_error_px, min_num_inliers, max_num_matches, guided_matching, max_ratio,
+                       max_distance, cross_check, extra={"lightglue": lg, "max_keypoints": int(max_keypoints),
+                                                         "filter_threshold": float(filter_threshold)})
     if python is not None:
         from .gpu import run_step
         if mode == "prior_pairs" and pairs is not None:
@@ -52,8 +68,8 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
             # unproject).  The Mastcam-Z cameras then lose their prior focal length in the database for one more run,
             # so their pairs are verified uncalibrated (fundamental matrix, no rays); the pairs already matched are kept
             n = set_prior_focal(project, families=("Z",), value=False)
-            print(f"[mppp] matching aborted in COLMAP's calibrated verification; again with the {n} Mastcam-Z cameras "
-                  f"verified uncalibrated (prior focal length off)", flush=True)
+            log.warning("matching aborted in COLMAP's calibrated verification; again with the %d Mastcam-Z cameras "
+                        "verified uncalibrated (prior focal length off)", n)
             try:
                 out = run_step(python, "match", project, **kw)
             finally:
@@ -97,23 +113,35 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
         po.match_list_path = str(f)
         pycolmap.match_image_pairs(db, matching_options=mo, pairing_options=po, verification_options=vo,
                                    device=device)
-    d = pycolmap.Database.open(db)
+    return _finish(project, mode, max_error_px, min_num_inliers, max_num_matches, guided_matching, max_ratio,
+                   max_distance, cross_check)
+
+
+def _finish(project: SfmProject, mode: str, max_error_px: float, min_num_inliers: int, max_num_matches: int,
+            guided_matching: bool, max_ratio: float, max_distance: float, cross_check: bool,
+            extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The matching summary into the project settings and the matches record (what the matches were made from, for
+    their reuse by a later run)."""
+    import pycolmap
+    d = pycolmap.Database.open(str(project.database))
     summary = {"mode": mode, "matched_pairs": int(d.num_matched_image_pairs()),
                "verified_pairs": int(d.num_verified_image_pairs()),
                "inlier_matches": int(d.num_inlier_matches()), "max_error_px_full_res": max_error_px,
                "max_ratio": max_ratio, "max_distance": max_distance, "cross_check": cross_check,
-               "guided_matching": bool(guided_matching)}
+               "guided_matching": bool(guided_matching), **(extra or {})}
     d.close()
     project.settings["matching"] = summary
     project.save()
-    from .database import write_matches_record          # v0p43: what these matches were made from (match reuse)
+    from .database import write_matches_record
     try:
         write_matches_record(project, match_settings(mode, max_num_matches=max_num_matches, max_error_px=max_error_px,
                                                      min_num_inliers=min_num_inliers, guided_matching=guided_matching,
                                                      max_ratio=max_ratio, max_distance=max_distance,
-                                                     cross_check=cross_check))
+                                                     cross_check=cross_check,
+                                                     **{k: v for k, v in (extra or {}).items()
+                                                        if k in ("max_keypoints", "filter_threshold")}))
     except (OSError, KeyError, ValueError) as e:        # a missing record only means no reuse next time
-        print(f"[sfm] matches record not written: {e}", flush=True)
+        log.warning("matches record not written: %s", e)
     return summary
 
 

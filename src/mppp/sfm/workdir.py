@@ -51,7 +51,7 @@ def load_manifest(processed_dir: PathLike) -> Tuple[Dict[str, Any], Path]:
     files = sorted(d.glob("mppp_manifest_v*.json"), key=lambda f: f.stat().st_mtime)
     if not files:
         raise FileNotFoundError(f"no mppp_manifest_v*.json in {d}: process the images first "
-                                f"(notebook 03 with SOURCE = 'pds', or notebook 01)")
+                                f"(mppp process, or notebook 01)")
     return json.loads(files[-1].read_text(encoding="utf-8")), files[-1]
 
 

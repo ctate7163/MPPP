@@ -97,9 +97,9 @@ def test_site_fixes_19_oct():
     assert t["bell_island_large"]["sols"][0][0] == 1431
     assert t["rochette"]["sols"][0][0] == 178 and t["rochette"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
     assert t["hippo_pools"]["sols"][0][0] == 1948 and t["hippo_pools"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
-    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
-    src = "".join("".join(c["source"]) for c in nb["cells"])
-    assert "NEARBY_FROM_FIRST_SOL = False" in src and "min_sol=_NEAR_MIN" in src
+    from mppp.pipeline import Settings, load_settings
+    assert Settings().nearby_from_first_sol is False
+    assert load_settings(None, "rochette").nearby_from_first_sol is True       # the site's settings in sites.json
     bat = (ROOT / "scripts" / "windows" / "run_v0p85.bat").read_text()
     assert "move_scapes.py\" --apply" in bat
 
@@ -108,14 +108,12 @@ def test_one_third_rule_is_about_subframes():
     """Christian (19 Oct): the 1/3 rule leaves out sub-frames covering less than 1/3 of the frame - not images whose
     mask keeps less than 1/3 (v0p82's reading, now off)."""
     import pytest
-    from mppp.runner import ALIGN_RULES
+    from mppp.pipeline import ALIGN_RULES, Settings
     from mppp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
     from mppp.sfm.workdir import MIN_INCLUDED_FRACTION
     assert NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3) and MIN_INCLUDED_FRACTION is None and ALIGN_RULES >= 85
-    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
-    src = "".join("".join(c["source"]) for c in nb["cells"])
-    assert "MIN_INCLUDED_FRACTION  = None" in src and 'SUBFRAME_FAMILIES = ("N",)' in src
-    assert "frame_fraction_families=SUBFRAME_FAMILIES" in src
+    s = Settings()
+    assert s.min_included_fraction is None and s.subframe_families == ("N",)
 
 
 def test_pipeline_stop_before(tmp_path):

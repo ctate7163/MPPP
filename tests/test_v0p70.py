@@ -38,11 +38,10 @@ def test_project_applies_the_early_mission_offsets(tmp_path):
     assert p[3] == pytest.approx(P[3] + 0.5, abs=0.05) and "early-mission" in proj.cameras["NL"]["source"]
 
 
-def test_notebooks_carry_the_version_guard():
+def test_notebooks_print_the_version_and_carry_no_guard():
     import glob
-    import mppp
     for p in sorted(glob.glob(str(ROOT / "notebooks" / "0*.ipynb"))):
         nb = json.loads(Path(p).read_text(encoding="utf-8"))
         src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
-        if "import mppp\n" in src:
-            assert f'NOTEBOOK_FOR_MPPP = "{mppp.VERSION_TAG}"' in src, p
+        assert "NOTEBOOK_FOR_MPPP" not in src and "sync_from_claude" not in src, p
+        assert "mppp.__version__" in src, p

@@ -208,30 +208,28 @@ def test_screen_block(tmp_path, monkeypatch):
 
 # ------------------------------------------------------------------------------------------------------- run key
 def test_run_key_includes_the_alignment_rules(monkeypatch):
-    from mppp import runner
-    s = {"A": 1}
-    k1 = runner.run_key(s, "pds", "")
-    p1 = runner.process_key(s)
-    monkeypatch.setattr(runner, "ALIGN_RULES", runner.ALIGN_RULES + 1)
-    assert runner.run_key(s, "pds", "") != k1                 # a new rules version reruns the alignments
-    assert runner.process_key(s) == p1                        # ... but not the processing
-    assert runner.ALIGN_RULES - 1 >= 65
+    from mppp import pipeline
+    s = pipeline.Settings()
+    k1 = pipeline.run_key(s)
+    p1 = pipeline.process_key(s)
+    monkeypatch.setattr(pipeline, "ALIGN_RULES", pipeline.ALIGN_RULES + 1)
+    assert pipeline.run_key(s) != k1                          # a new rules version reruns the alignments
+    assert pipeline.process_key(s) == p1                      # ... but not the processing
+    assert pipeline.ALIGN_RULES - 1 >= 65
 
 
-def test_notebook_defaults_v0p65():
-    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
-    src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
-    assert 'NAVCAM_ASPECT     = "hold"' in src and "navcam_aspect=NAVCAM_ASPECT" in src
+def test_pipeline_defaults_v0p65():
+    from mppp.pipeline import Settings
+    assert Settings().navcam_aspect == "hold"
 
 
 def test_selection_defaults_v0p65p1():
     """0.65.1: Navcam tiles below 1/5 of the frame left out (was 1/4), LMST window 6-18 h, saturated fraction 0.2."""
-    from mppp.runner import PROCESS_RULES
+    from mppp.pipeline import PROCESS_RULES, Settings
     from mppp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
     cfg = (ROOT / "src" / "mppp" / "config.py").read_text()          # the tests run with the selection rules off
     assert '"lmst_window_h": [6.0, 18.0]' in cfg and '"max_saturated_fraction": 0.2,' in cfg
     assert NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3) and PROCESS_RULES == 4     # v0p85: 1/3
-    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
-    src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
-    assert "LMST_WINDOW_H          = (6.0, 18.0)" in src and "MAX_SATURATED_FRACTION = 0.2 " in src
-    assert "NAVCAM_MIN_FRAME_FRACTION = 1/3" in src and "min_frame_fraction=NAVCAM_MIN_FRAME_FRACTION" in src
+    s = Settings()
+    assert s.lmst_window_h == (6.0, 18.0) and s.max_saturated_fraction == 0.2
+    assert s.navcam_min_frame_fraction == pytest.approx(1 / 3)

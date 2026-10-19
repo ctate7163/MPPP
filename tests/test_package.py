@@ -88,19 +88,25 @@ def test_version():
 
 
 def test_notebooks_compile_and_have_a_parameters_cell():
-    """Not a check of the notebooks' text: every code cell must be valid Python and the runner needs the tagged
-    parameters cell (and, in notebook 03, the section-3 heading where processing-only runs stop)."""
+    """Not a check of the notebooks' text: every code cell must be valid Python, each notebook has a tagged
+    parameters cell, prints the package version, and carries no author paths or version-sync cells."""
     import ast
     import json
     import re
-    from mppp.runner import PROCESS_STOP
-    for f in sorted((ROOT / "notebooks").glob("0[345]_*.ipynb")):
+    files = sorted((ROOT / "notebooks").glob("*.ipynb")) + sorted((ROOT / "notebooks" / "training").glob("*.ipynb"))
+    assert [f.name for f in files] == ["01_process_images.ipynb", "02_colmap_alignment.ipynb",
+                                       "03_error_analysis.ipynb", "train_mask.ipynb"]
+    for f in files:
         nb = json.loads(f.read_text(encoding="utf-8"))
         cells = nb["cells"]
         assert any("parameters" in c.get("metadata", {}).get("tags", []) for c in cells), f.name
-        for c in cells:
-            if c["cell_type"] == "code":
-                src = "".join(c["source"])
-                ast.parse("\n".join(ln for ln in src.splitlines() if not re.match(r"\s*(%|!(?!=))", ln)))    # magics
-        if f.name.startswith("03_"):
-            assert any(c["cell_type"] == "markdown" and "".join(c["source"]).startswith(PROCESS_STOP) for c in cells)
+        code = [c for c in cells if c["cell_type"] == "code"]
+        assert "mppp.__version__" in "".join(code[0]["source"]), f.name
+        for c in code:
+            src = "".join(c["source"])
+            ast.parse("\n".join(ln for ln in src.splitlines() if not re.match(r"\s*(%|!(?!=))", ln)))    # magics
+            for bad in ("NOTEBOOK_FOR_MPPP", "sync_from_claude", "adopt_claude", "D:/", "D:\\", "C:\\"):
+                assert bad not in src, (f.name, bad)
+    nb2 = json.loads((ROOT / "notebooks" / "02_colmap_alignment.ipynb").read_text(encoding="utf-8"))
+    src2 = "".join("".join(c["source"]) for c in nb2["cells"] if c["cell_type"] == "code")
+    assert "from mppp.pipeline import align" in src2 and "health_table" in src2 and "plot_camera_shifts" in src2

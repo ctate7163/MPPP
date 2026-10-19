@@ -154,7 +154,7 @@ def test_check_sites(tmp_path):
     cs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cs)
     assert cs.main([]) == 0 and cs.main(["--sites-file", str(bad)]) == 1
-    assert "ATTITUDE_PRIOR_DEG" in cs.notebook03_settings()
+    assert "ATTITUDE_PRIOR_DEG" in cs.pipeline_settings() and "attitude_prior_deg" in cs.pipeline_settings()
 
 
 def test_zcam_field_and_folder_names(tmp_path):

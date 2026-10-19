@@ -29,14 +29,11 @@ def test_included_fraction_filter():
     assert filter_included_fraction(ims, None)[1] == []
 
 
-def test_notebook_carries_the_v0p82_settings():
-    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
-    src = "\n".join("".join(c["source"]) for c in nb["cells"])
-    for k in ("MIN_INCLUDED_FRACTION  = None", "NO_POSITION_PRIOR_AT = []", "PRIOR_GAUGE_RECENTRE = True",
-              "PRIOR_SIGMA_M = 1.0", "filter_included_fraction(manifest[\"images\"], MIN_INCLUDED_FRACTION)",
-              "prior_sigma_m=(PRIOR_SIGMA_M,) * 3", 'proj.settings["no_position_prior_at"]'):
-        assert k in src, k
-    from mppp.runner import ALIGN_RULES
+def test_pipeline_carries_the_v0p82_settings(tmp_path):
+    from mppp.pipeline import ALIGN_RULES, Settings, wanted_project_settings
+    s = Settings()
+    assert s.min_included_fraction is None and s.no_position_prior_at == [] and s.prior_gauge_recentre is True
+    assert s.prior_sigma_m == 1.0 and wanted_project_settings(s, tmp_path)["prior_sigma_m"] == [1.0, 1.0, 1.0]
     assert ALIGN_RULES >= 82
 
 
@@ -253,7 +250,7 @@ def test_v0p82_1_covariance_uses_camera_views():
 def test_v0p83_rig_epochs_at_most_25_sols():
     from mppp.sfm.navcal import sol_epochs, RIG_EPOCH_MAX_SPAN_SOLS
     from mppp.sfm.project import NAVCAM_RIG_EPOCH_MAX_SPAN_SOLS
-    from mppp.runner import ALIGN_RULES
+    from mppp.pipeline import ALIGN_RULES
     assert RIG_EPOCH_MAX_SPAN_SOLS == NAVCAM_RIG_EPOCH_MAX_SPAN_SOLS == 25.0 and ALIGN_RULES >= 83
     assert sol_epochs([652, 660, 680, 693], 50, (300,), 25) == [(652, 660), (680, 693)]      # split at the middle sol
     eps = sol_epochs(list(range(20, 100)) + [361, 378], 50, (300,), 25)

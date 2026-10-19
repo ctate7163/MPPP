@@ -30,31 +30,40 @@ A conda environment file is in `envs/mppp.yml`. Python ≥ 3.10.
 
 ## Use
 
-Notebooks (in `notebooks/`):
+The pipeline is importable (`mppp.pipeline`: `Settings`, `select_images`, `process_site`, `align`, `run_site`) and a command-line tool:
+
+```
+mppp process SITE [--root DIR] [--pds DIR] [--zcam] [--set NAME=VALUE ...] [--settings FILE]   # select and process
+mppp align WORK [--variant NAME] [--set ...] [--gui] [--stop-after STEP]                         # align what is processed
+mppp run SITE [...]                                                                             # both
+mppp sites [list|check|folder SITE]   mppp cmods [list|promote PATH --note ...]   mppp mask [list|fetch|install FILE]
+```
+
+`MPPP_PDS` (the PDS archive) and `MPPP_SCAPES` (the root of the site folders) are the defaults of `--pds` and `--root`; `MPPP_GPU_PYTHON` names a CUDA pycolmap environment for the feature and matching steps. Every setting is a field of `mppp.pipeline.Settings` (`help(Settings)`); a site's `settings` in `sites.json`, `<WORK>/mppp_settings.json`, `--settings FILE` and `--set` override it, in that order.
+
+Notebooks (in `notebooks/`) are thin callers of the same functions that show the results:
 
 | notebook | what it does |
 |---|---|
-| `01_process_images.ipynb` | select PDS products (named scapes, sol ranges, waypoint radius, lists), process them, write Metashape and COLMAP inputs |
-| `03_colmap_alignment.ipynb` | Navcam (+ optional Mastcam-Z 34 mm): COLMAP database with a left-referenced stereo rig and position priors, matching, CAHV-initialised weighted bundle adjustment, alignment health |
-| `04_camera_models.ipynb` | the refined cameras of several alignments from 03 side by side. Covers Navcam intrinsics and stereo rig, the Navcam focal length against camera temperature (a consensus formed at a reference temperature, v0p31), and Mastcam-Z focal length against focus. Differences are shown in pixels over the whole frame, with their effect on disparity and range. Also reports the distance from the flight (label) calibration, writes updated CAHVORE / CAHVOR models, and shows example images undistorted with the hardware mask screened |
-| `05_error_analysis.ipynb` | one or more alignments from 03: the error model's inputs measured from them (image precision ε, cross-station match gate vs angle and ΔLMST, decorrelation, view graph, registration) next to the values the model assumes |
-| `training/02_train_mask.ipynb` | optional: retrain the mask model from a labelled mask set |
+| `01_process_images.ipynb` | `select_images` + `process_site`: one PDS product per exposure of a site, processed into `<WORK>/processed` (8-bit PNG, terrain mask, CAHV + waypoint pose, manifest) |
+| `02_colmap_alignment.ipynb` | `align`: COLMAP database with a left-referenced stereo rig and position priors, matching, CAHV-initialised weighted bundle adjustment, the alignment health report, the camera changes and the export for the error analysis |
+| `03_error_analysis.ipynb` | one or more alignments from 02: the error model's inputs measured from them (image precision ε, cross-station match gate vs angle and ΔLMST, decorrelation, view graph, registration) next to the values the model assumes |
+| `training/train_mask.ipynb` | optional: retrain the mask model from a labelled mask set |
 
-**Without Jupyter (v0p43).** The sites and their sol ranges are in `src/mppp/data/sites.json`. Each site has its own WORK folder, `<root>/<site>_colmap` or, for sites with `"zcam34": true`, `<site>_colmap_zcam34` (v0p50; the old `_colmap_nav_zcam34` folders are still found, `scripts\rename_zcam34_folders.py` renames them). Notebook 03 runs headless and writes a log and a status file.
+**Batch runs.** The sites and their sol ranges are in `src/mppp/data/sites.json`. Each site has its own WORK folder, `<root>/mars2020_sol_<first sol>_<site>` or, with Mastcam-Z, `..._zcam`. `mppp process` / `mppp align` / `mppp run` and the scripts below write a log (`<WORK>/runs/<time>/log.txt`) and a status file with a heartbeat (`<WORK>/mppp_status.json`).
 
-- **Python for the .bat files:** `scripts\windows\mppp_env.bat` looks for a Python with pycolmap, pyceres, nbclient and ipykernel (every conda environment it can find). If it finds none it lists what it tried; then write the notebooks' Python (`import sys; print(sys.executable)` in a notebook) into `scripts\windows\mppp_python.txt`. The .bat files can be copied anywhere; they find MPPP through `MPPP_HOME` (default `D:\code\MPPP`).
-- **Process only (many sites):** `scripts\windows\process_sites.bat` (choose the sites at its top), or `python scripts\process_sites.py --all` (also `--all --zcam` for the zcam34 sites, or `--sites rockytop sid_chal_rocks`). It selects and processes each site's images into `<WORK>\processed\` with notebook 03's defaults, one site after the other, without aligning. Sites already processed with the same settings are skipped.
-- **Camera models:** `src\mppp\data\cmods\` (v0p50: the one folder of camera models; `params\` is retired): the Navcam cameras and rig and the Mastcam-Z focus model in use, and the flight calibrations. Notebook 03 starts from them; replace the models in use only with `python scripts\promote_cmods.py <folder or files> --note "..."` (it keeps the old ones in `cmods\history\`), then commit.
+- **Python for the .bat files:** `scripts\windows\mppp_env.bat` looks for a Python with pycolmap and pyceres (every conda environment it can find). If it finds none it lists what it tried; then write the notebooks' Python (`import sys; print(sys.executable)` in a notebook) into `scripts\windows\mppp_python.txt`. The .bat files can be copied anywhere; they find MPPP through `MPPP_HOME` (default `D:\code\MPPP`).
+- **Process only (many sites):** `scripts\windows\process_sites.bat` (choose the sites at its top), or `python scripts\process_sites.py --all` (also `--all --zcam` for the zcam34 sites, or `--sites rockytop sid_chal_rocks`). It selects and processes each site's images into `<WORK>\processed\` with the pipeline's defaults, one site after the other, without aligning. Sites already processed with the same settings are skipped.
+- **Camera models:** `src\mppp\data\cmods\` (v0p50: the one folder of camera models; `params\` is retired): the Navcam cameras and rig and the Mastcam-Z focus model in use, and the flight calibrations. Every alignment starts from them; replace the models in use only with `mppp cmods promote <folder or files> --note "..."` (`scripts\promote_cmods.py` does the same; the git history keeps the old ones), then commit.
 - **Site list:** `src\mppp\data\sites.json`; check it after editing with `scripts\windows\check_sites.bat`.
 - **Time of day of the images:** `python scripts\lmst_histogram.py` (all sites under `D:\scapes` and `colmap_old`; `--sites a b`) writes `lmst_histogram.png` and a per-site table into `Claude outputs\`.
-- **Stop runs:** `scripts\windows\stop_mppp.bat` lists every MPPP run on the computer and stops them (with their notebook kernels) after asking. Only one batch (`process_sites` or `run_sites`) runs on a scapes folder at a time; `sites_status.bat` shows it.
-- **One WORK folder:** copy `scripts\windows\align_here.bat` into the folder that holds `processed\` and double-click it. It aligns the images already processed there with notebook 03's default settings, in a minimised window.
+- **Stop runs:** `scripts\windows\stop_mppp.bat` lists every MPPP run on the computer and stops them (with their worker processes) after asking. Only one batch (`process_sites` or `run_sites`) runs on a scapes folder at a time; `sites_status.bat` shows it.
+- **One WORK folder:** copy `scripts\windows\align_here.bat` into the folder that holds `processed\` and double-click it. It aligns the images already processed there with the pipeline's default settings, in a minimised window.
   - Double-click it again to see the status.
   - Progress is in `runs\<time>\log.txt`, and the results are in `colmap\`.
-  - The same from a prompt: `python scripts\align_scape.py <WORK>`.
-- **Every site:** `scripts\windows\run_sites.bat` (Navcam blocks, group `navcam_consensus`), `run_sites_zcam.bat` (Navcam + every Mastcam-Z zoom of each site's `"zcam"` list, group `zcam_consensus`) and `run_sites_zcam34.bat` (only the 34 mm frames, group `zcam34_consensus`; v0p61; for another zoom: `python scripts\run_sites.py --group zcam63_consensus --zcam --set ZCAM_ZOOMS=[63]`). Or `python scripts\run_sites.py --group navcam_consensus` (also `--group zcam34_consensus --zcam --set ZCAM_ZOOMS=[34]`, or `--sites rockytop chal_rocks_sid`). It selects, processes and aligns each site into its folder, one after the other.
+  - The same from a prompt: `mppp align <WORK>` (or `python scripts\align_scape.py <WORK>`).
+- **Every site:** `scripts\windows\run_sites.bat` (Navcam blocks, group `navcam_consensus`), `run_sites_zcam.bat` (Navcam + every Mastcam-Z zoom of each site's `"zcam"` list, group `zcam_consensus`) and `run_sites_zcam34.bat` (only the 34 mm frames, group `zcam34_consensus`; v0p61; for another zoom: `python scripts\run_sites.py --group zcam63_consensus --zcam --set zcam_zooms=[63]`). Or `python scripts\run_sites.py --group navcam_consensus` (also `--group zcam34_consensus --zcam --set zcam_zooms=[34]`, or `--sites rockytop chal_rocks_sid`). It selects, processes and aligns each site into its folder, one after the other.
   - Sites already finished with the same settings are skipped.
-  - `--then 04 05` runs the camera-model and error-analysis notebooks at the end.
   - `sites_status.bat` (or `run_sites.py --status`) lists what is running, finished, failed or stopped.
 - **Reruns redo only the alignment.** The processed images, the SIFT features and the matches are reused. So:
   - **To leave images out,** list them in `<WORK>\exclude_images.txt`: a station `S032D1184`, `sol:658`, `seq:NCAM08111` or a file-name pattern such as `ZR0_0690_*`.
@@ -87,7 +96,7 @@ Outputs: `images_png16/<PDS stem>.png` (mask in the alpha channel), `references.
 
 ## GPU on Windows (COLMAP feature extraction and matching)
 
-The pip `pycolmap` wheel for Windows is CPU-only. The conda-forge build has CUDA, but it cannot be combined with the pip `pyceres` that the weighted bundle adjustment needs. Keep the main environment on the pip wheels and create a second environment for the GPU steps only (`envs/mppp_gpu.yml`); set `GPU_PY` in `03_colmap_alignment.ipynb` to that environment's `python.exe`, and extraction and matching run there as a subprocess. `mppp.sfm.check_gpu_python` and `check_ba_environment` verify the setup.
+The pip `pycolmap` wheel for Windows is CPU-only. The conda-forge build has CUDA, but it cannot be combined with the pip `pyceres` that the weighted bundle adjustment needs. Keep the main environment on the pip wheels and create a second environment for the GPU steps only (`envs/mppp_gpu.yml`); set `MPPP_GPU_PYTHON` (`Settings.gpu_python`) to that environment's `python.exe`, and extraction and matching run there as a subprocess. `mppp.sfm.check_gpu_python` and `check_ba_environment` verify the setup.
 
 ## Layout
 
@@ -96,7 +105,7 @@ The pip `pycolmap` wheel for Windows is CPU-only. The conda-forge build has CUDA
 | `src/mppp/` | the package |
 | `src/mppp/data/` | package data: the site definitions (`sites.json`), camera models (`cmods/`: the models in use - Navcam cameras and rig, Mastcam-Z focus model - plus the flight Metashape calibrations and the rational Navcam cameras; README and CHANGES there), optical-depth table, waypoint snapshot, occlusion profiles, model registry (`models.json`) |
 | `notebooks/` | the workflows above; `notebooks/training/` retrains the mask model |
-| `scripts/` | `align_scape.py` (one WORK folder) and `run_sites.py` (many sites): notebook 03 without Jupyter, with logs and status (v0p43); `process_sites.py` (select and process only); `windows/`: `process_sites.bat`, `align_here.bat`, `run_sites.bat`, `sites_status.bat`; `run_scapes.py`: the older batch runner |
+| `scripts/` | `align_scape.py` (one WORK folder) and `run_sites.py` (many sites, one `mppp align` process each): the pipeline with logs and status; `process_sites.py` (select and process only); `_batch.py` (batch lock, stopping runs); `windows/`: `process_sites.bat`, `align_here.bat`, `run_sites.bat`, `sites_status.bat` |
 | `docs/methods.md` | methods, conventions, equations and flagged assumptions |
 | `docs/RELEASING.md` | how to release code and models (GitHub, Hugging Face, safetensors) |
 | `tests/` | pytest suite, one file per module (`test_sfm_reconstruction.py`, `test_processing.py`, ...; v0p50), shared helpers in `tests/helpers.py`; `tests/data/m20/` holds two public PDS products |

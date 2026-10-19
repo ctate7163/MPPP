@@ -20,7 +20,7 @@ def test_discover_scapes_keeps_sites_with_the_same_label(tmp_path, monkeypatch):
 
 
 def test_study_scripts_and_notebooks_v0p71():
-    nb5 = json.loads((ROOT / "notebooks" / "05_error_analysis.ipynb").read_text(encoding="utf-8"))
+    nb5 = json.loads((ROOT / "notebooks" / "03_error_analysis.ipynb").read_text(encoding="utf-8"))
     src5 = "".join("".join(c["source"]) for c in nb5["cells"] if c["cell_type"] == "code")
     j = src5.index("# |dLMST|: cross-station rate")
     assert "fig, ax = plt.subplots(figsize=(10, 6))\ndl_edges = np.arange(0, 9, 0.5)" in src5[j:j + 300]

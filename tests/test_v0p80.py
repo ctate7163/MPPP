@@ -42,14 +42,13 @@ def test_k4_consensus_keeps_a_fitted_k4():
     assert c["params"][9] == pytest.approx(0.0021) and "k4" in c["fixed_params"] and "k3" in c["fixed_params"]
 
 
-def test_notebook_v0p80_settings():
-    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
-    src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
-    assert 'NOTEBOOK_FOR_MPPP = "v0p8' in src                       # v0p80 or later
-    for s in ('NAVCAM_K4         = "consensus"', 'NAVCAM_PP         = "hold"',
-              "ROUND1_HOLD       = True", '"full": True', "round1_hold=bool(ROUND1_HOLD)", "navcam_pp=NAVCAM_PP",
-              '"navcam_pp": NAVCAM_PP', "rig_translation_sigma_m=RIG_TRANSLATION_SIGMA_M if RIG_REFINE is True"):
-        assert s in src, s
+def test_pipeline_v0p80_settings(tmp_path):
+    from mppp.pipeline import Settings, _rig_refine, wanted_project_settings
+    s = Settings()
+    assert s.navcam_pp == "hold" and s.round1_hold is True and s.rig_translation_sigma_m == 0.005
+    assert _rig_refine(s) == "rotation" and _rig_refine(s.replace(navcam_rig_refine="full")) is True
+    w = wanted_project_settings(s, tmp_path)
+    assert w["navcam_k4"] == "consensus" and w["navcam_pp"] == "hold"
 
 
 def test_reconstruct_signature_round1_hold():

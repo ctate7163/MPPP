@@ -72,13 +72,9 @@ def test_windows_scripts_v0p61():
     assert 'set "EXTRA="' in z and "ZCAM_ZOOMS" not in z.split("set \"EXTRA=")[1].splitlines()[0]
 
 
-def test_notebook_defaults_v0p61():
-    import json
-    import re
-    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
-    src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
-    for s in ("STORE_MASK_IN_ALPHA = 0.5", 'ZCAM_K3           = "label"',
-              'ZCAM_BACKLASH', "ZCAM_LOW_BACKLASH", "ZCAM_FOCUS_LINE", "THERMAL_AFTER_STAGE1"):
-        assert s.replace(" ", "") in src.replace(" ", ""), s
-    i = src.index("NO_MASK_INFERENCE_AT = [")
-    assert re.search(r'\n\s+"S032D1184"', src[i:i + 400])
+def test_pipeline_defaults_v0p61():
+    from mppp.pipeline import Settings
+    s = Settings()
+    assert s.store_mask_in_alpha == 0.5 and s.zcam_k3 == "label" and s.zcam_backlash == "list_split"
+    assert s.zcam_low_backlash is None and s.zcam_focus_line is True and s.thermal_after_stage1 is True
+    assert s.no_mask_inference_at == ["S032D1184"]

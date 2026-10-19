@@ -63,10 +63,9 @@ def test_staged_reconstruct_runs_pose_guided_matching(tmp_path, monkeypatch):
     assert not (proj.root / "database_guided.db").exists()
 
 
-def test_notebook_and_script_defaults_v0p64():
-    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
-    src = "".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
-    assert "num_octaves=None" in src and "num_octaves=6 if INCLUDE_ZCAM else 4" in src
-    assert "POSE_GUIDED" in src and "pose_guided=POSE_GUIDED" in src
-    g = (ROOT / "scripts" / "windows" / "claude_sync.bat").read_bytes()   # v0p85: github_push.bat removed
-    assert b"git push origin --tags" in g
+def test_pipeline_and_script_defaults_v0p64(tmp_path):
+    from mppp.pipeline import Settings, resolve_site
+    s = Settings(scapes_root=tmp_path)
+    assert s.sift["num_octaves"] is None and s.pose_guided is True
+    assert resolve_site("rockytop", s)[1].sift["num_octaves"] == 4          # 6 with Mastcam-Z, else COLMAP's 4
+    assert resolve_site("rockytop", s.replace(include_zcam=True))[1].sift["num_octaves"] == 6

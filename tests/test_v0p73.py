@@ -130,13 +130,14 @@ def test_label_instrument_temperatures():
 def test_run_key_holds_the_camera_models(monkeypatch):
     import mppp.calib
     import mppp.calib.models
-    from mppp import runner
-    assert runner.ALIGN_RULES >= 73                     # v0p82: 82
-    k1 = runner.run_key({"A": 1}, "pds", "")
+    from mppp import pipeline
+    assert pipeline.ALIGN_RULES >= 73
+    s = pipeline.Settings()
+    k1 = pipeline.run_key(s)
     for mod in (mppp.calib, mppp.calib.models):
         monkeypatch.setattr(mod, "models_fingerprint", lambda folder=None: "other")
-    assert runner.run_key({"A": 1}, "pds", "") != k1
-    assert runner.process_key({"A": 1}) == runner.process_key({"A": 1})
+    assert pipeline.run_key(s) != k1
+    assert pipeline.process_key(s) == pipeline.process_key(pipeline.Settings())
 
 
 def test_set_prior_focal(tmp_path):
@@ -166,10 +167,12 @@ def test_scripts_and_bat_exist():
     assert not (ROOT / "scripts" / "windows" / "prepare_next_run.bat").exists()
 
 
-def test_notebook_settings():
-    nb3 = (ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8")
-    assert 'ZCAM_BIN_REFINE   = \\"focal_pp\\"' in nb3 and 'ZCAM_BACKLASH     = \\"list_split\\"' in nb3
-    assert "ZCAM_LINE_PARAMS" in nb3 and "ZCAM_LOW_BACKLASH_FOUND" in nb3 and "check_form" in nb3
+def test_pipeline_settings_v0p73():
+    from mppp.pipeline import Settings
+    s = Settings()
+    assert s.zcam_bin_refine == "focal_pp" and s.zcam_backlash == "list_split"
+    assert s.zcam_line_params == {"ZL": ["fx", "fy", "k1", "k2"], "ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]}
+    assert s.zcam_low_backlash_found == "auto"
 
 
 def pycolmap_sensor(cid):

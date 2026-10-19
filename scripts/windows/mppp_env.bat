@@ -1,5 +1,5 @@
 @echo off
-REM MPPP: make "python" a Python that runs the MPPP notebooks (pycolmap, pyceres, nbclient, ipykernel).
+REM MPPP: make "python" a Python that runs the MPPP pipeline (mppp, pycolmap, pyceres).
 REM Called by the other .bat files; it changes the caller's environment (no setlocal here).
 REM Looked for, in this order (the first that passes check_env.py is used):
 REM   1. MPPP_PYTHON, or the path in mppp_python.txt next to this file (one line: ...\python.exe).
@@ -29,15 +29,15 @@ for %%C in ("%MPPP_CONDA%" "%LOCALAPPDATA%\miniconda3" "%USERPROFILE%\miniconda3
 if defined _MPPP_VERBOSE goto :fail
 set "_MPPP_VERBOSE=1"
 echo.
-echo MPPP: looking for a Python with pycolmap, pyceres, nbclient and ipykernel. Tried:
+echo MPPP: looking for a Python with mppp, pycolmap and pyceres. Tried:
 goto :search
 
 :fail
 set "_MPPP_VERBOSE="
 echo.
-echo MPPP: no Python with pycolmap, pyceres, nbclient and ipykernel was found (see above).
-echo  - If the notebooks' Python is listed and only nbclient or ipykernel is missing, install them there:
-echo      "...\python.exe" -m pip install nbclient ipykernel
+echo MPPP: no Python with mppp, pycolmap and pyceres was found (see above).
+echo  - If the notebooks' Python is listed and only mppp is missing, install it there:
+echo      "...\python.exe" -m pip install -e <MPPP folder>[sfm]
 echo  - Otherwise run   import sys; print(sys.executable)   in a notebook and write that path, one line,
 echo    into %~dp0mppp_python.txt   (or set MPPP_PYTHON to it).
 exit /b 1

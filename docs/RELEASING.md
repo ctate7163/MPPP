@@ -124,7 +124,7 @@ python -m mppp.mask.hub list
 
 ## 6. Releasing a new model later
 
-1. Train and promote it (`notebooks/training/02_train_mask.ipynb`).
+1. Train and promote it (`notebooks/training/train_mask.ipynb`).
 2. Export it under a new name so the old URL keeps working:
 
    ```bat

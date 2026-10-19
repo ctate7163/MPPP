@@ -1,6 +1,6 @@
 """
 Stop every MPPP run on this computer: process_sites, run_sites / run_sites, align_here / align_scape and
-run_scapes, with their notebook kernels and image-processing workers.
+run_scapes, with their image-processing workers.
 
     python scripts\\stop_runs.py            # list the runs, ask, stop them
     python scripts\\stop_runs.py --yes      # stop them without asking
@@ -20,6 +20,9 @@ import sys
 import time
 from pathlib import Path
 
+HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))                      # sibling modules (_batch)
 
 
 def main(argv=None) -> int:
@@ -29,7 +32,7 @@ def main(argv=None) -> int:
     ap.add_argument("--yes", action="store_true", help="stop without asking")
     ap.add_argument("--list", action="store_true", help="only list the runs")
     a = ap.parse_args(argv)
-    from mppp.runner import kill_tree, list_processes, mark_stopped, mppp_processes
+    from _batch import kill_tree, list_processes, mark_stopped, mppp_processes
     roots = [Path(r) for r in (a.root or [os.environ.get("MPPP_SCAPES", ".")])]
     runs = mppp_processes(list_processes())
     if not runs:

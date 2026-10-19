@@ -159,12 +159,9 @@ def test_thermal_defaults_and_notebook():
     sig = inspect.signature(T.thermal_stage).parameters
     assert sig["bin_deg"].default == 5.0 and sig["min_images"].default == 5
     assert inspect.signature(reconstruct).parameters["thermal_min_images"].default == 5
-    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
-    src = "\n".join("".join(c["source"]) for c in nb["cells"])
-    ns = {}
-    params = next("".join(c["source"]) for c in nb["cells"] if "parameters" in c.get("metadata", {}).get("tags", []))
-    assert "THERMAL_BINS_DEG  = 5 " in params and "THERMAL_MIN_IMAGES = 5 " in params
-    assert 'THERMAL_FREE = ("fx", "fy", "k1")' in params and "thermal_free=THERMAL_FREE" in src
+    from mppp.pipeline import Settings
+    s = Settings()
+    assert s.thermal_bins_deg == 5 and s.thermal_min_images == 5 and s.thermal_free == ("fx", "fy", "k1")
 
 
 def test_temperature_bins_merge_as_documented():

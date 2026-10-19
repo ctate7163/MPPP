@@ -74,17 +74,14 @@ def test_find_imgs_over_several_visits(tmp_path):
     assert [p.name for p in find_imgs(tmp_path, ["NLF"], sol_range=(361, 378))] == [names[365]]
 
 
-def test_run_key_carries_the_visits(tmp_path, monkeypatch):
-    from mppp import runner
-    from mppp.waypoints import sites as S
-    table = {"sites": {"sid": {"sols": [[361, 378], [91, 101]], "zcam": [34], "settings": {}},
-                       "one": {"sols": [700, 712], "zcam": [34], "settings": {}}}, "groups": {}}
-    monkeypatch.setattr(S, "load_site_table", lambda path=None: table)
-    w = tmp_path / "mars2020_sol_0361_sid_colmap"
-    w.mkdir()
-    st = runner.work_settings(w, "sid")
-    assert st["SITE_SOL_RANGES"] == [[361, 378], [91, 101]]
-    assert "SITE_SOL_RANGES" not in runner.work_settings(tmp_path / "mars2020_sol_0700_one_colmap", "one")
+def test_resolved_site_carries_the_visits(tmp_path):
+    from mppp.pipeline import Settings, resolve_site
+    extra = {"sid2": {"sols": [[361, 378], [91, 101]], "zcam": [34]}, "one": {"sols": [700, 712], "zcam": [34]}}
+    s = Settings(scapes_root=tmp_path, sites_extra=extra)
+    st, _ = resolve_site("sid2", s)
+    assert st.sol_ranges == [(361, 378), (91, 101)] and st.work.name == "mars2020_sol_0361_sid2"
+    assert resolve_site("one", s)[0].sol_ranges == [(700, 712)]
+    assert resolve_site(tmp_path / "mars2020_sol_0361_sid2_zcam", s)[0].zooms == [34]
 
 
 # ------------------------------------------------------------------------------------------------- Navcam rig epochs

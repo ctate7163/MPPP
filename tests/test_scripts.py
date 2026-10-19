@@ -73,9 +73,15 @@ def test_bat_files_work_from_any_folder_and_find_the_environment():
     assert r.returncode in (0, 1) and sys.executable in r.stdout
 
 
+def _batch():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import _batch
+    return _batch
+
+
 def test_process_sites_refuses_while_a_batch_runs(tmp_path):
     import importlib.util
-    from mppp.runner import batch_lock
+    batch_lock = _batch().batch_lock
     spec = importlib.util.spec_from_file_location("process_sites", ROOT / "scripts" / "process_sites.py")
     ps = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ps)
@@ -101,6 +107,9 @@ def test_stop_mppp_bat():
     assert b.count(b"\n") == b.count(b"\r\n") and b"stop_runs.py" in b and b"mppp_env.bat" in b
     for name in ("process_sites.py", "run_sites.py"):
         assert "batch_lock(" in (ROOT / "scripts" / name).read_text()
+    for name in ("align_scape.py", "process_sites.py", "run_sites.py", "stop_runs.py", "check_sites.py", "_batch.py"):
+        src = (ROOT / "scripts" / name).read_text()
+        assert "nbclient" not in src and "run_notebook" not in src and "ipynb" not in src, name
 
 
 def test_promote_cmods(monkeypatch, tmp_path, capsys):
@@ -167,6 +176,87 @@ def test_filter_zcam_and_consensus_bats(tmp_path):
         assert f'set "WHICH=--group zcam{z}_consensus"' in t and "--zcam" in t, z
         assert f'set "EXTRA=--set ZCAM_ZOOMS=[{z}]"' in t, z              # v0p61: only that zoom
         assert "--all" not in t, z
+
+
+def test_batch_lock_refuses_a_second_batch(tmp_path):
+    from mppp.runner import read_status
+    B = _batch()
+    b = B.batch_lock(tmp_path, "process_sites")
+    try:
+        with pytest.raises(B.BatchRunning, match="already running"):
+            B.batch_lock(tmp_path, "run_sites")
+    finally:
+        b.stop("finished")
+    assert read_status(tmp_path / B.BATCH_FILE)["alive"] is False
+    b2 = B.batch_lock(tmp_path, "run_sites")                  # free again
+    b2.stop("finished")
+
+
+def test_mppp_processes_picks_the_tops_of_run_trees():
+    mppp_processes = _batch().mppp_processes
+    rows = [
+        {"pid": 10, "ppid": 1, "cmd": r'cmd /c call "D:\code\MPPP\scripts\windows\_run_process.bat" --root D:\x --all'},
+        {"pid": 11, "ppid": 10, "cmd": r'python "D:\code\MPPP\scripts\process_sites.py" --root D:\x --all'},
+        {"pid": 12, "ppid": 11, "cmd": r"python -m mppp.process_worker"},
+        {"pid": 20, "ppid": 1, "cmd": r"python D:\code\MPPP\scripts\run_sites.py --all"},
+        {"pid": 21, "ppid": 20, "cmd": r"python D:\code\MPPP\scripts\align_scape.py D:\x\sid_colmap"},
+        {"pid": 30, "ppid": 1, "cmd": r"python -m ipykernel_launcher -f kernel-2.json"},        # Jupyter: untouched
+        {"pid": 31, "ppid": 1, "cmd": r"jupyter-lab"},
+        {"pid": 40, "ppid": 1, "cmd": r'cmd /c "D:\code\MPPP\scripts\windows\stop_mppp.bat"'},
+        {"pid": 50, "ppid": 1, "cmd": r"mppp align D:\x\mars2020_sol_0460_rockytop"},
+    ]
+    assert [r["pid"] for r in mppp_processes(rows)] == [10, 20, 50]
+
+
+def test_mppp_processes_never_includes_its_own_ancestors():
+    import os
+    mppp_processes = _batch().mppp_processes
+    me, parent = os.getpid(), os.getppid()
+    rows = [{"pid": parent, "ppid": 1, "cmd": "bash -c 'python scripts/stop_runs.py; python scripts/process_sites.py'"},
+            {"pid": me, "ppid": parent, "cmd": "python scripts/stop_runs.py"},
+            {"pid": 999999, "ppid": 1, "cmd": "python scripts/process_sites.py --all"}]
+    assert [r["pid"] for r in mppp_processes(rows)] == [999999]
+
+
+def test_mark_stopped(tmp_path):
+    import os
+    from mppp.runner import STATUS_FILE, RunStatus, read_status
+    B = _batch()
+    (tmp_path / "sid_colmap").mkdir()
+    a = RunStatus(tmp_path / B.BATCH_FILE, pid=4242)
+    a.update(state="running")
+    b = RunStatus(tmp_path / "sid_colmap" / STATUS_FILE, pid=os.getpid())
+    b.update(state="running")
+    changed = B.mark_stopped(tmp_path, [4242])
+    assert changed == [str(tmp_path / B.BATCH_FILE)]
+    assert read_status(tmp_path / B.BATCH_FILE)["state"] == "stopped"
+    assert read_status(tmp_path / "sid_colmap" / STATUS_FILE)["alive"] is True
+
+
+def test_run_sites_dry_run_and_finished(tmp_path):
+    import importlib.util
+    import json
+    spec = importlib.util.spec_from_file_location("run_sites", ROOT / "scripts" / "run_sites.py")
+    rs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rs)
+    assert rs.main(["--sites", "rockytop", "--root", str(tmp_path), "--dry-run"]) == 0
+    log = (tmp_path / "run_sites_log.txt").read_text()
+    assert "rockytop: would run (not finished)" in log and "camera models fingerprint" in log
+    assert rs.main(["--sites", "rockytop", "--root", str(tmp_path), "--source", "processed", "--dry-run"]) == 0
+    assert "has no processed/" in (tmp_path / "run_sites_log.txt").read_text()
+    # a finished folder (run_done.json with the run key of these settings) is skipped
+    from mppp.pipeline import Settings, load_settings, resolve_site, run_key
+    st, s = resolve_site("rockytop", Settings(scapes_root=tmp_path))
+    (st.work / "processed").mkdir(parents=True)
+    (st.work / "colmap").mkdir()
+    s = load_settings(st.work, "rockytop", base=Settings(scapes_root=tmp_path)).replace(source="processed")
+    key = run_key(resolve_site(st.work, s)[1])                  # the key is of the resolved settings
+    (st.work / "colmap" / "run_done.json").write_text(json.dumps({"run_key": key, "verdict": "pass", "finished": "t"}))
+    assert rs.main(["--sites", "rockytop", "--root", str(tmp_path), "--source", "processed", "--dry-run"]) == 0
+    assert "rockytop: skipped - finished t with these settings" in (tmp_path / "run_sites_log.txt").read_text()
+    assert rs.main(["--sites", "rockytop", "--root", str(tmp_path), "--source", "processed", "--dry-run",
+                    "--set", "attitude_prior_deg=1.0"]) == 0
+    assert "finished with other settings" in (tmp_path / "run_sites_log.txt").read_text()
 
 
 def test_experiment_scripts_live_in_studies():

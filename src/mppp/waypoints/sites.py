@@ -133,7 +133,7 @@ def validate_site_table(path: Optional[PathLike] = None,
                         known_settings: Optional[Iterable[str]] = None) -> Tuple[List[str], List[str]]:
     """v0p43.3: (errors, warnings) of a site definitions file - what ``scripts/check_sites.py`` prints.  Errors stop
     the runs (bad JSON, missing or reversed sol ranges, unknown sites in groups, unreadable stations); warnings do not
-    (overlapping sol ranges, settings that are not notebook 03 settings, odd site names)."""
+    (overlapping sol ranges, settings that are not pipeline settings, odd site names)."""
     import re
     from ..config import parse_stations
     f = Path(path) if path else SITES_FILE
@@ -229,7 +229,7 @@ def validate_site_table(path: Optional[PathLike] = None,
         elif known_settings is not None:
             bad = sorted(k for k in st if k not in set(known_settings))
             if bad:
-                warn.append(f"site {name!r}: settings {bad} are not notebook 03 settings (typo?) - they would be set "
+                warn.append(f"site {name!r}: settings {bad} are not pipeline settings (typo?) - they would be set "
                             f"but not used")
     ob = d.get("official_blocks")                         # v0p81: version 5, the official numbered blocks
     if ob is not None:

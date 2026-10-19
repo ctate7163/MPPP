@@ -173,5 +173,5 @@ def test_quarter_frame_rule(tmp_path, monkeypatch):
     assert {p.name for p in kept} == {names["d"]} and rep["n_dropped_subframes"] == 3
     kept, rep = P.select_best_products(paths, sizes={n: 1 for n in names.values()}, min_frame_fraction=0.2)
     assert {p.name for p in kept} == {names["c"], names["d"]} and rep["n_dropped_subframes"] == 2
-    from mppp.runner import PROCESS_RULES
+    from mppp.pipeline import PROCESS_RULES
     assert PROCESS_RULES == 4

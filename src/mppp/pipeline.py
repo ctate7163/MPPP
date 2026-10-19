@@ -1,0 +1,1004 @@
+"""
+The MPPP pipeline as functions: select the PDS products of a site, process them, align them with COLMAP.
+
+::
+
+    from mppp.pipeline import Settings, run_site, process_site, align
+    s = Settings(pds_dir="/data/m2020", scapes_root="/scapes")
+    report = run_site("threeforks", s)            # select + process + align -> the health report
+
+Every setting of a run is a field of :class:`Settings` (the defaults are the production ones).  Settings come
+from, later ones winning: the site's ``settings`` in the site definitions (``mppp/data/sites.json``),
+``<WORK>/mppp_settings.json``, a ``--settings`` file and ``--set NAME=VALUE`` overrides
+(:func:`load_settings`; names are case-insensitive, so the upper-case names of older settings files still work).
+
+A site's WORK folder is ``<scapes_root>/mars2020_sol_<first sol>_<site>[_zcam]`` and holds ``processed/`` (images,
+masks, manifest) and one COLMAP project per variant (``colmap/``, ``colmap_<variant>/``).  :func:`run_key` names
+the result a run would give (settings, camera models, alignment rules): a folder whose ``run_done.json`` records
+the same key is finished and skipped by the batch scripts.
+
+Progress goes to the ``mppp.pipeline`` logger; the command-line tool (:mod:`mppp.cli`) and
+:func:`mppp.runner.run_logged` add a log file and a status file with a heartbeat.
+"""
+from __future__ import annotations
+
+import csv
+import dataclasses
+import datetime
+import hashlib
+import json
+import logging
+import os
+from collections import Counter
+from dataclasses import dataclass, field, fields
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+
+PathLike = Union[str, Path]
+log = logging.getLogger("mppp.pipeline")
+
+SOURCES = ("pds", "processed")
+STEPS = ("manifest", "project", "features", "database", "match", "reconstruct", "health", "export")
+ZCAM_ZOOMS_ALL = (34, 48, 63, 79, 110)
+RUN_DONE = "run_done.json"
+PROCESS_DONE = "process_done.json"      # <WORK>/processed/process_done.json: written by a finished processing run
+RUN_SETTINGS = "run_settings.json"
+
+# Bumped when the alignment code changes its results under unchanged settings (a default changed in the code, not
+# in the settings), so that the batch scripts align every site again instead of skipping it as done.
+ALIGN_RULES = 86
+# Likewise for the selection and processing rules (process_done.json).
+PROCESS_RULES = 4
+
+
+def _env_path(name: str) -> Optional[Path]:
+    v = os.environ.get(name)
+    return Path(v) if v else None
+
+
+def _env_str(name: str) -> Optional[str]:
+    return os.environ.get(name) or None
+
+
+@dataclass
+class Settings:
+    """Every setting of a run.  Paths may be strings; ``None`` paths come from the environment where noted."""
+
+    # --- data and output ---------------------------------------------------------------------------------------
+    pds_dir: Optional[Path] = field(default_factory=lambda: _env_path("MPPP_PDS"))        # the local PDS archive (MPPP_PDS)
+    scapes_root: Optional[Path] = field(default_factory=lambda: _env_path("MPPP_SCAPES"))  # one WORK folder per site below it (MPPP_SCAPES)
+    gpu_python: Optional[str] = field(default_factory=lambda: _env_str("MPPP_GPU_PYTHON"))  # python.exe of a CUDA pycolmap environment for features and matching; None: this process, CPU (MPPP_GPU_PYTHON)
+    colmap_bat: Optional[str] = field(default_factory=lambda: _env_str("COLMAP_BAT"))      # COLMAP.bat for open_in_colmap.bat; None: search the usual places (COLMAP_BAT)
+    workers: int = 4                              # image-processing worker processes
+    gui_files: bool = False                       # write colmap_gui.ini and open_in_colmap.bat into the project
+
+    # --- site ----------------------------------------------------------------------------------------------------
+    sites_file: Optional[Path] = None             # the site definitions (name -> sols); None: mppp/data/sites.json
+    sites_extra: Dict[str, Any] = field(default_factory=dict)   # more sites for this run, {"my_site": (700, 712)}
+    source: str = "pds"                           # "pds": select and process (reusing what is processed); "processed": align <WORK>/processed as it is
+    variant: str = ""                             # "" -> results in WORK/colmap; "name" -> WORK/colmap_name (starts from colmap/'s features and matches)
+    exclude: List[str] = field(default_factory=list)   # images left out, as in WORK/exclude_images.txt: "S032D1184", "sol:658", "seq:NCAM08111", "ZR0_0690_*"
+    reuse_matches: bool = True                    # keep the matches of the previous database.db (same features and matching settings)
+    add_nearby_waypoints: float = 10.0            # also every waypoint station within this many metres of a station of the sol range, any sol; 0: off
+    nearby_from_first_sol: bool = False           # the nearby stations add no image from before the block's first sol
+    sequence_prefixes: Tuple[str, ...] = ("NCAM",)   # Navcam sequences kept (SAPP sun images, SCAM support images dropped); "ZCAM" is added with Mastcam-Z
+
+    # --- processing ----------------------------------------------------------------------------------------------
+    reprocess_all: bool = False                   # process every image again (new masks, radiometry, poses) and rebuild the project
+    keep_only_remaining: bool = False             # only the images still in processed/images_png8 (deleted ones stay out); False: every selected product
+    sky_elevation_deg: Optional[float] = 20.0     # Navcam frames pointing higher than this (sky surveys) are not processed
+    lmst_window_h: Optional[Tuple[float, float]] = (6.0, 18.0)   # images taken outside this local mean solar time window are not processed
+    max_saturated_fraction: Optional[float] = 0.2  # images with more than this fraction of their valid pixels saturated are not processed
+    navcam_min_frame_fraction: Optional[float] = 1 / 3   # sub-frames / tiles covering less of the detector frame are left out (the full frame is kept)
+    subframe_families: Tuple[str, ...] = ("N",)   # the camera families the sub-frame rule applies to
+    min_included_fraction: Optional[float] = None  # images whose mask keeps less than this share of the image are left out of the alignment; None: keep all
+    max_exposure_ms: Optional[float] = 40.0       # Navcam frames with a longer exposure are not processed (the long member of the exposure brackets)
+    max_centre_tint: Optional[float] = 1.2        # nor frames whose centre is bluer than the edge by more than this (B/R ratio)
+    navcam_brightness: float = 0.9                # brightness factor for Navcam
+    no_mask_inference_at: List[str] = field(default_factory=lambda: ["S032D1184"])   # stations where the mask model is off (the rover stays in the images)
+    store_mask_in_alpha: Any = 0.5                # the mask in the PNG alpha channel: 1 = masked pixels transparent, 0.5 = half, 0 = no alpha
+    infer_mask: bool = True                       # run the mask model (False: no terrain masks)
+    mask_checkpoint: Optional[str] = None         # a mask model or checkpoint file; None: the released default
+
+    # --- cameras -------------------------------------------------------------------------------------------------
+    navcam_cameras: Optional[Path] = None         # a folder of Navcam camera models to start from; None: the models in use (mppp.calib)
+    navcam_intrinsics: str = "auto"               # "refine", "hold" (keep the start cameras) or "auto" (hold where the network is weak)
+    navcam_rig: str = "consensus"                 # rig rotation start: "consensus" (the promoted rig) or "cahv"; the baseline is CAHV
+    navcam_rig_refine: str = "refine"             # "refine" (rotation), "auto" (strong network only), "hold", or "full" (rotation and translation, baseline studies)
+    navcam_rig_yaw: str = "hold"                  # one constant rig yaw held in every block ("hold") or refined with the rig ("refine")
+    navcam_distortion_fit: str = "hold"           # Navcam distortion held at the models in every block ("hold") or fitted per block ("refine")
+    navcam_pp: str = "hold"                       # the Navcam principal point held at the models ("hold") or refined per block ("refine")
+    navcam_aspect: str = "hold"                   # every Navcam camera keeps fy / fx at its start ("hold") or refines fx, fy apart ("free")
+    round1_hold: bool = True                      # round 1 adjusts poses and points only; the cameras refine from round 2 on
+    rig_translation_sigma_m: float = 0.005        # with navcam_rig_refine "full": the prior on the right camera centre per axis (m)
+    tangential: str = "refine"                    # Navcam p1, p2 when the distortion is refined: "refine" or "zero"
+    zcam_k3: str = "label"                        # Mastcam-Z k3: "label" (the start camera's, held) or "zero"
+    zcam_tangential: Optional[str] = "zero"       # Mastcam-Z p1, p2: "refine", "zero", or None (as tangential)
+    include_zcam: bool = False                    # add the Mastcam-Z frames of the same sols (folder ..._zcam)
+    zcam_zooms: Any = None                        # their zooms (mm), e.g. [34, 48]; None: the site's "zcam" list ([34] without one); "all": every zoom
+    zcam_intrinsics: str = "focus_model"          # Mastcam-Z start: "focus_model" (the promoted model) or "label"
+    zcam_focus_model: Optional[Path] = None       # a focus-model JSON to start from; None: the one in use
+    zcam_focus_bin: Optional[float] = 30          # focus motor counts per Mastcam-Z camera (None: one camera per eye)
+    zcam_bin_refine: str = "focal_pp"             # a focus-bin camera refines fx, fy and on ZR cx, cy ("focal_pp"); "focal", "all", "model"
+    zcam_line_params: Dict[str, List[str]] = field(default_factory=lambda: {"ZL": ["fx", "fy", "k1", "k2"],
+                                                                            "ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]})   # the focus parameters stage 2 puts on a line per eye
+    zcam_hold_f_images: int = 2                   # focus bins with at most this many images hold f at the focus model
+    zcam_backlash: Optional[str] = "list_split"   # focus backlash states: "list_split", "list", "split", "report" or None
+    zcam_low_backlash: Any = None                 # the low-backlash observation list; None: the shipped CSV; False: none
+    zcam_low_backlash_found: Any = "auto"         # the low-backlash observations found by runs: "auto" = <scapes_root>/zcam_low_backlash_found.csv; None: off
+    zcam_focus_line: bool = True                  # stage 2 puts the focus-bin cameras on lines in focus count (False: f per bin)
+    zcam_line_cycles: int = 2                     # rounds of freeing the bins and refitting the lines
+    zcam_line_form: Optional[Dict[str, Any]] = None   # the form of each focus line {eye: {param: form}} for a study; None: the shipped form
+    zcam_rig: bool = True                         # the two Mastcam-Z eyes of an exposure form a stereo rig, one per zoom
+    zcam_rig_fit: Optional[str] = "rotation"      # the Mastcam-Z rig refined in stage 2: "rotation", "full" (and translation), None
+    zcam_rig_refine: str = "refine"               # "refine" (from the model's rig), "auto" (held when the model has one), "hold"
+    pose_guided: Any = True                       # after the stage-2 rounds, match again guided by the poses (a dict overrides mppp.sfm.guided.GUIDED_DEFAULTS)
+    thermal_after_stage1: bool = True             # the Navcam temperature bins are fitted at the end of stage 1, before Mastcam-Z comes in
+    navcam_rig_epoch_gap_sols: float = 50         # Navcam visits more than this many sols apart get their own rig rotation
+    navcam_rig_epoch_breaks_sols: Tuple[float, ...] = (300,)   # images on both sides of these sols get separate rig rotations
+
+    # --- features and matching -----------------------------------------------------------------------------------
+    max_num_features: int = 32768                 # SIFT features per image
+    sift: Dict[str, Any] = field(default_factory=lambda: dict(domain_size_pooling=False, estimate_affine_shape=False,
+                                                              num_octaves=None, first_octave=-1))   # num_octaves None: 6 with Mastcam-Z, else 4
+    match_mode: str = "lightglue"                 # the matcher: "lightglue" (SIFT + LightGlue, the default), "exhaustive" (COLMAP's SIFT matcher) or "prior_pairs" (quick / CPU)
+    match: Dict[str, Any] = field(default_factory=lambda: dict(max_ratio=0.9, max_distance=1.0, cross_check=True,
+                                                               guided_matching=False, max_error_px=6.0,
+                                                               max_keypoints=8192, filter_threshold=0.1))   # matching options (the last two: LightGlue)
+    match_block_size: int = 100                   # images per exhaustive-matching block
+
+    # --- reconstruction ------------------------------------------------------------------------------------------
+    schedule: Any = ((24.0, 10.0, 8.0), (12.0, 4.0, 4.0), (8.0, 2.0, 2.0))   # rounds of (triangulation threshold px, Cauchy scale, max residual kept px)
+    min_tri_angle_deg: float = 0.25               # keeps stereo-only points out to ~97 m at the 0.42 m baseline
+    triangulation: Dict[str, Any] = field(default_factory=lambda: dict(max_transitivity=1))   # COLMAP track building
+    attitude_prior_deg: float = 2.0               # CAHV attitude prior per frame
+    localize_min_images: int = 3                  # stations with fewer images get no waypoint position prior
+    prior_sigma_m: float = 1.0                    # waypoint position prior, 1-sigma per axis (m)
+    no_position_prior_at: List[str] = field(default_factory=list)   # stations (S###D####) whose position priors are left out (flagged localisations)
+    prior_gauge_recentre: bool = True             # after each adjustment the block is moved onto its position priors (their mean residual)
+    exclude_outliers: bool = True                 # drop frames that do not align with the majority, then re-adjust
+    outlier_thresholds: Dict[str, Any] = field(default_factory=dict)   # e.g. {"residual_factor": 3.0, "min_shift_m": 0.25}
+    min_frame_observations: int = 20              # frames with fewer tie-point observations are held at their prior and excluded as outliers
+    staged: bool = True                           # Navcam block first, then Mastcam-Z with the Navcam cameras and rig held
+    hold_cameras: Tuple[str, ...] = ()            # further camera keys held at their start values, e.g. ("ZL034_f0",)
+    linear_solver: str = "auto"                   # "auto" (dense Schur up to 600 frames, else iterative), "sparse_schur", "dense_schur", "iterative_schur"
+    thermal_bins_deg: Optional[float] = 5         # Navcam camera-temperature bins for the final stage (one camera per eye and bin); None: off
+    thermal_fine_range: Any = (-25.0, -5.0)       # finer bins in this temperature range
+    thermal_fine_deg: Any = 2.5                   # ... this wide; None: uniform bins
+    thermal_min_images: int = 5                   # a bin with fewer images is merged into the nearer neighbouring bin
+    thermal_free: Tuple[str, ...] = ("fx", "fy", "k1")   # refined per bin (unless the Navcam intrinsics are held)
+
+    # --- helpers
+    def __post_init__(self):
+        for f in fields(self):
+            v = getattr(self, f.name)
+            if f.name in PATH_FIELDS and isinstance(v, str):
+                setattr(self, f.name, Path(v))
+            if f.name in TUPLE_FIELDS and isinstance(v, list):
+                setattr(self, f.name, tuple(v))
+
+    def replace(self, **changes: Any) -> "Settings":
+        """A copy with ``changes`` (case-insensitive names) applied."""
+        return dataclasses.replace(self, **normalize(changes))
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Every field, JSON-ready (paths as strings, tuples as lists)."""
+        return json.loads(json.dumps(dataclasses.asdict(self), default=str))
+
+    def key_dict(self) -> Dict[str, Any]:
+        """The fields that decide a run's result (machine paths and bookkeeping left out)."""
+        return {k: v for k, v in self.to_dict().items() if k not in NOT_IN_KEY}
+
+
+PATH_FIELDS = {"pds_dir", "scapes_root", "sites_file", "navcam_cameras", "zcam_focus_model"}
+TUPLE_FIELDS = {"sequence_prefixes", "subframe_families", "hold_cameras", "thermal_free", "navcam_rig_epoch_breaks_sols"}
+NOT_IN_KEY = {"pds_dir", "scapes_root", "gpu_python", "colmap_bat", "workers", "gui_files", "sites_file",
+              "source", "variant"}
+SETTING_NAMES = tuple(f.name for f in fields(Settings))
+
+
+def setting_names(upper: bool = False) -> List[str]:
+    """The setting names (upper case: as older settings files and ``sites.json`` write them)."""
+    return [n.upper() if upper else n for n in SETTING_NAMES]
+
+
+def normalize(d: Dict[str, Any]) -> Dict[str, Any]:
+    """``{NAME: value}`` with the names lower-cased and checked; a ``py:`` string value (from ``--set``) is
+    evaluated as a Python literal."""
+    out = {}
+    for k, v in d.items():
+        name = str(k).lower()
+        if name == "include_zcam34":                   # the name before zcam_zooms
+            name, v = "include_zcam", bool(v)
+        if name not in SETTING_NAMES:
+            raise KeyError(f"unknown setting {k!r}; the settings are {', '.join(SETTING_NAMES)}")
+        if isinstance(v, str) and v.startswith("py:"):
+            v = _python_value(v[3:].strip())
+        out[name] = v
+    return out
+
+
+def _python_value(src: str) -> Any:
+    """A ``--set`` value written as Python (``dict(max_ratio=0.85)``, ``((24, 10, 8),)``): literals and the
+    ``dict`` / ``list`` / ``tuple`` / ``Path`` constructors, nothing else."""
+    import ast
+    try:
+        return ast.literal_eval(src)
+    except (ValueError, SyntaxError):
+        pass
+    names = {"dict": dict, "list": list, "tuple": tuple, "set": set, "Path": Path, "True": True, "False": False,
+             "None": None}
+    return eval(compile(src, "<set>", "eval"), {"__builtins__": {}}, names)     # noqa: S307 - the user's own option
+
+
+def load_settings(work: Optional[PathLike] = None, site: Optional[str] = None,
+                  settings_file: Optional[PathLike] = None, sets: Optional[Dict[str, Any]] = None,
+                  sites_file: Optional[PathLike] = None, base: Optional[Settings] = None) -> Settings:
+    """
+    The settings of a run, later ones winning: ``base`` (default :class:`Settings`), the site's ``settings`` (and
+    ``no_mask_inference_at``) in the site definitions, ``<work>/mppp_settings.json``, ``settings_file``, ``sets``
+    (``--set NAME=VALUE``, parsed by :func:`mppp.runner.parse_set`).
+    """
+    from .sfm.workdir import SETTINGS_FILE, load_settings as read_json
+    from .waypoints.sites import load_site_table
+    over: Dict[str, Any] = {}
+    rec = (load_site_table(sites_file).get("sites", {}).get(site) or {}) if site else {}
+    if isinstance(rec, dict):
+        if rec.get("no_mask_inference_at"):
+            over["no_mask_inference_at"] = list(rec["no_mask_inference_at"])
+        over.update(rec.get("settings") or {})
+    if work:
+        over.update(read_json(Path(work) / SETTINGS_FILE))
+    if settings_file:
+        over.update(read_json(settings_file))
+    over.update(sets or {})
+    if sites_file:
+        over["sites_file"] = Path(sites_file)
+    s = base if base is not None else Settings()
+    return s.replace(**over)
+
+
+work_settings = load_settings
+
+
+# ----------------------------------------------------------------------------------------------------- run keys
+def run_key(settings: Union[Settings, Dict[str, Any]], source: Optional[str] = None, variant: Optional[str] = None
+            ) -> str:
+    """A short hash of what decides a run's result: the settings (as :func:`resolve_site` returns them, so the
+    site's Mastcam-Z zooms count), the source and variant, the alignment rules and the camera models in use (a
+    promotion makes every site run again)."""
+    if isinstance(settings, Settings):
+        d: Dict[str, Any] = {"settings": settings.key_dict(),
+                             "source": settings.source if source is None else source,
+                             "variant": (settings.variant if variant is None else variant) or ""}
+    else:
+        d = {"settings": settings, "source": source or "pds", "variant": variant or ""}
+    if not str(d["source"]).startswith("process:"):
+        d["rules"] = ALIGN_RULES
+        try:
+            from .calib import models_fingerprint
+            d["cmods"] = models_fingerprint()
+        except Exception:                                                  # noqa: BLE001
+            d["cmods"] = None
+    txt = json.dumps(d, sort_keys=True, default=str)
+    return hashlib.sha256(txt.encode()).hexdigest()[:16]
+
+
+def process_key(settings: Union[Settings, Dict[str, Any]]) -> str:
+    """The run key of a processing-only run (``process_done.json``)."""
+    return run_key(settings, f"process:{PROCESS_RULES}", "")
+
+
+def processed_done(work: PathLike, key: str) -> Optional[Dict[str, Any]]:
+    """The ``process_done.json`` of ``work`` if it records ``key``, else None."""
+    p = Path(work) / "processed" / PROCESS_DONE
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return d if d.get("run_key") == key else None
+
+
+def run_done(work: PathLike, variant: str = "") -> Optional[Dict[str, Any]]:
+    """The ``run_done.json`` of a project (None if there is none)."""
+    from .sfm.workdir import project_dir
+    p = project_dir(work, variant) / RUN_DONE
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+# ------------------------------------------------------------------------------------------------------ the site
+@dataclass
+class Site:
+    """A site resolved against the settings: its sol ranges and WORK folder."""
+    name: str
+    sol_ranges: List[Tuple[int, int]]        # every visit, main visit first
+    work: Path
+    zcam: bool
+    zooms: List[int]
+
+    @property
+    def sols(self) -> Tuple[int, int]:
+        return self.sol_ranges[0][0], max(b for _, b in self.sol_ranges)
+
+    @property
+    def sols_text(self) -> str:
+        return ", ".join(f"{a}-{b}" for a, b in self.sol_ranges)
+
+
+def site_table(settings: Settings) -> Dict[str, Any]:
+    """The site definitions with ``sites_extra`` added."""
+    from .waypoints.sites import load_site_table
+    t = load_site_table(settings.sites_file)
+    sites = dict(t.get("sites", {}))
+    for k, v in (settings.sites_extra or {}).items():
+        sites[k] = {"sols": list(v)} if not isinstance(v, dict) else dict(v)
+    return dict(t, sites=sites)
+
+
+def zcam_zooms(settings: Settings, site_rec: Optional[Dict[str, Any]]) -> List[int]:
+    """The Mastcam-Z zooms of a run: ``zcam_zooms``, the site's list, ``[34]``; ``[]`` without ``include_zcam``."""
+    from .waypoints.sites import site_zooms
+    if not settings.include_zcam:
+        return []
+    z = settings.zcam_zooms
+    if z is None:
+        z = site_zooms(site_rec) or [34]
+    if isinstance(z, str) and z.lower() == "all":
+        z = list(ZCAM_ZOOMS_ALL)
+    zooms = sorted(int(x) for x in z)
+    if set(zooms) - set(ZCAM_ZOOMS_ALL):
+        raise ValueError(f"zcam_zooms = {zooms}: MPPP aligns the Mastcam-Z zooms {list(ZCAM_ZOOMS_ALL)} mm")
+    return zooms
+
+
+def resolve_site(site_or_work: PathLike, settings: Settings) -> Tuple[Site, Settings]:
+    """
+    ``(site, settings)`` for a site name or a WORK folder: a folder's name (``mars2020_sol_<sol>_<site>[_zcam]``)
+    names the site and whether Mastcam-Z is included; a folder of another name must hold ``processed/`` and gets
+    the sol range of its manifest.  The returned settings carry ``include_zcam``, ``zcam_zooms`` and the SIFT
+    octaves as derived.
+    """
+    from .sfm.workdir import load_manifest, sol_range
+    from .waypoints.sites import check_sites, parse_work_folder, sol_ranges, work_folder
+    table = site_table(settings)
+    sites = table["sites"]
+    for w in check_sites({k: v.get("sols") for k, v in sites.items()}):
+        log.warning("sites: %s", w)
+    p = Path(site_or_work)
+    s = settings
+    is_folder = isinstance(site_or_work, Path) or any(c in str(site_or_work) for c in "/\\") or p.is_dir()
+    if is_folder:
+        work = p.expanduser().resolve()
+        name, zcam = parse_work_folder(work)
+        if name:
+            s = s.replace(include_zcam=zcam)
+        name = name or work.name
+        rec = sites.get(name)
+        if rec is not None:
+            ranges = sol_ranges(rec["sols"])
+        elif (work / "processed").is_dir():
+            ranges = [sol_range(load_manifest(work / "processed")[0]["images"])]
+        else:
+            raise KeyError(f"{work.name}: not a site of {settings.sites_file or 'mppp/data/sites.json'} and no "
+                           f"processed/ folder in it")
+    else:
+        name = str(site_or_work)
+        rec = sites.get(name)
+        if rec is None:
+            raise KeyError(f"site {name!r} is not in {settings.sites_file or 'mppp/data/sites.json'} or sites_extra")
+        ranges = sol_ranges(rec["sols"])
+        if not s.scapes_root:
+            raise ValueError("no scapes root: set Settings.scapes_root (or the MPPP_SCAPES environment variable)")
+        work = Path(s.scapes_root) / work_folder(".", name, bool(s.include_zcam), rec["sols"]).name
+    for a, b in ranges:
+        if b < a:
+            raise ValueError(f"site {name!r}: a visit ends before it starts ({ranges})")
+    zooms = zcam_zooms(s, rec)
+    if s.sift.get("num_octaves") is None:              # 6 octaves with Mastcam-Z (coarse features on the Zcam frames), else COLMAP's 4
+        s = s.replace(sift=dict(s.sift, num_octaves=6 if zooms else 4))
+    s = s.replace(zcam_zooms=zooms)
+    return Site(name, ranges, work, bool(s.include_zcam), zooms), s
+
+
+# ------------------------------------------------------------------------------------------- 1. select the products
+def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Path], Dict[str, Any]]:
+    """One PDS product per exposure of the site's sol ranges (and the nearby stations), with the selection
+    report (``provenance`` of the manifest).  :func:`select_images` returns the paths alone."""
+    from . import load_waypoints
+    from .select import find_imgs, find_imgs_near
+    from .sfm import select_best_products
+    from .waypoints.sites import sol_ranges
+    st = site if isinstance(site, Site) else resolve_site(site, settings)[0]
+    if not settings.pds_dir:
+        raise ValueError("no PDS archive: set Settings.pds_dir (or the MPPP_PDS environment variable)")
+    pds = Path(settings.pds_dir)
+    ranges = [list(r) for r in st.sol_ranges]
+    near = None
+    radius = float(settings.add_nearby_waypoints or 0)
+    if radius:
+        waypoints = load_waypoints()
+        min_sol = min(int(r[0]) for r in sol_ranges(ranges)) if settings.nearby_from_first_sol else None
+        paths, near = find_imgs_near(pds, ["NLF", "NRF"], ranges, waypoints, radius_m=radius, min_sol=min_sol)
+        log.info("Navcam: %d in sols %s + %d from other visits within %g m%s", near["n_in_range"], st.sols_text,
+                 near["n_added"], radius, f" (none before sol {min_sol})" if min_sol is not None else "")
+        for a in near["stations_added"]:
+            log.info("   %s (%s m from %s): %s images, sols %s-%s", a["station"], a["distance_m"], a["nearest"],
+                     a["images"], a["sols"][0], a["sols"][1])
+    else:
+        paths = find_imgs(pds, ["NLF", "NRF"], sol_range=ranges)
+        log.info("Navcam: %d products in sols %s", len(paths), st.sols_text)
+    prefixes = tuple(settings.sequence_prefixes)
+    for zoom in st.zooms:                      # every zoom of the site (sequ_id "_034", "_048", ...)
+        if radius:
+            # from the Navcam block's stations, so every zoom gets the same visits
+            zp, znear = find_imgs_near(pds, ["ZL0", "ZR0"], ranges, waypoints, radius_m=radius,
+                                       sequ_id=f"_{zoom:03d}", anchor_stations=near["stations_in_range"], min_sol=min_sol)
+            log.info("Mastcam-Z %d: %d in range + %d from other visits", zoom, znear["n_in_range"], znear["n_added"])
+        else:
+            zp = find_imgs(pds, ["ZL0", "ZR0"], sol_range=ranges, sequ_id=f"_{zoom:03d}")
+            log.info("Mastcam-Z %d: %d products", zoom, len(zp))
+        paths += zp
+    if st.zooms:
+        prefixes += ("ZCAM",)
+    paths, sel = select_best_products(paths, sequence_prefix=prefixes,
+                                      min_frame_fraction=settings.navcam_min_frame_fraction,
+                                      frame_fraction_families=settings.subframe_families)
+    log.info("selection: %s", json.dumps({k: v for k, v in sel.items() if k != "dropped_subframes"}))
+    if sel.get("n_dropped_subframes"):
+        log.info("%d Navcam tiles / sub-frames below %s of the frame left out, e.g. %s", sel["n_dropped_subframes"],
+                 sel["min_frame_fraction"], sel["dropped_subframes"][0]["file"])
+    log.info("%d products", len(paths))
+    sel["site"] = st.name
+    sel["sol_ranges"] = ranges
+    return paths, sel
+
+
+def select_images(site: Union[str, Site], settings: Settings) -> List[Path]:
+    """The PDS products of a site (section 1 of the pipeline): see :func:`select_products`."""
+    return select_products(site, settings)[0]
+
+
+# ------------------------------------------------------------------------------------------------------ 2. process
+def processing_config(settings: Settings) -> Dict[str, Any]:
+    """The image-processing configuration of a run (:func:`mppp.default_config` with the settings applied)."""
+    from . import default_config
+    cfg = default_config()
+    cfg["export"].update(formats=["PNG8"], store_mask_in_alpha=settings.store_mask_in_alpha, write_mask_files=True,
+                         write_colmap=False)
+    cfg["masking"]["skip_inference_at"] = list(settings.no_mask_inference_at or [])
+    cfg["masking"]["infer_mask"] = bool(settings.infer_mask)
+    if settings.mask_checkpoint:
+        cfg["masking"]["checkpoint"] = str(settings.mask_checkpoint)
+    cfg["selection"].update(max_boresight_elevation_deg=settings.sky_elevation_deg,
+                            lmst_window_h=list(settings.lmst_window_h) if settings.lmst_window_h else None,
+                            max_saturated_fraction=settings.max_saturated_fraction,
+                            max_exposure_ms=settings.max_exposure_ms, max_centre_tint=settings.max_centre_tint)
+    cfg["color"]["brightness_by_family"] = {"N": settings.navcam_brightness}
+    return cfg
+
+
+def process_site(site_or_work: PathLike, settings: Settings) -> Path:
+    """
+    Select and process the images of a site (sections 1-2): one product per exposure from the PDS archive into
+    ``<WORK>/processed`` (8-bit PNG, terrain mask, CAHV + waypoint pose, manifest).  Images already processed with
+    the same configuration are reused (``reprocess_all`` processes them again).  Writes
+    ``processed/process_done.json`` with the processing key and returns the ``processed`` folder.
+    """
+    from . import load_waypoints, process_images
+    st, s = resolve_site(site_or_work, settings)
+    paths, sel = select_products(st, s)
+    processed = st.work / "processed"
+    processed.mkdir(parents=True, exist_ok=True)
+    cfg = processing_config(s)
+    manifest = process_images(paths, processed, cfg, load_waypoints(), provenance=sel,
+                              only_existing="PNG8" if s.keep_only_remaining else None,
+                              reuse_existing=not s.reprocess_all, workers=s.workers)
+    log.info("%d images in the manifest, %d failed, %d skipped by the selection rules (sky, LMST window, "
+             "saturation, exposure)", manifest["n_processed"], len(manifest["failed"]), len(manifest.get("skipped", [])))
+    skipped = sorted({f"S{m['site']:03d}D{m['drive']:04d}" for m in manifest["images"]
+                      if (m.get("mask") or {}).get("inference_skipped")})
+    if skipped:
+        log.info("images without mask inference (rover visible) at %s", skipped)
+    if manifest.get("only_existing"):
+        o = manifest["only_existing"]
+        log.info("kept %d of %d selected; %d removed", o["n_kept"], o["n_selected"], o["n_removed"])
+    from . import __version__
+    done = {"mppp": __version__, "run_key": process_key(s), "site": st.name, "finished": _now(),
+            "images": len(manifest.get("images", [])), "failed": len(manifest.get("failed", [])),
+            "skipped": len(manifest.get("skipped", []))}
+    (processed / PROCESS_DONE).write_text(json.dumps(done, indent=1), encoding="utf-8")
+    log.info("processed: %d images -> %s", done["images"], processed)
+    return processed
+
+
+# --------------------------------------------------------------------------------------------------- 3. the manifest
+def load_images(work: PathLike, settings: Settings, zooms: Sequence[int] = ()) -> List[Dict[str, Any]]:
+    """The manifest images of ``<work>/processed`` that go into the alignment: the newest manifest, minus the
+    images deleted from ``images_png8`` (``keep_only_remaining``), the exclusions (``exclude_images.txt`` and
+    ``exclude``), the images with too little unmasked area, and the Mastcam-Z zooms not in ``zooms``."""
+    from .sfm.workdir import (EXCLUDE_FILE, apply_exclusions, filter_included_fraction, keep_existing, load_manifest,
+                              read_exclusions)
+    work = Path(work)
+    processed = work / "processed"
+    if not processed.is_dir():
+        raise FileNotFoundError(f"{work} has no processed/ folder: process the images first (mppp process)")
+    manifest, mf = load_manifest(processed)
+    images = list(manifest["images"])
+    n0 = len(images)
+    if settings.keep_only_remaining:
+        images, gone = keep_existing(images, processed, "PNG8")
+        if gone:
+            log.info("%d images of the manifest are no longer in processed/images_png8 - left out", len(gone))
+    log.info("%d of %d images from %s", len(images), n0, mf.name)
+    entries = read_exclusions(work / EXCLUDE_FILE) + list(settings.exclude or [])
+    if entries:
+        images, removed = apply_exclusions(images, entries)
+        by: Dict[str, List[str]] = {}
+        for r in removed:
+            by.setdefault(r["entry"], []).append(r["image"])
+        for e, ims in by.items():
+            ims = [x for x in ims if x]
+            log.info("excluded by %r: %d images%s", e, len(ims), "" if ims else "  <- matches no image (typo?)")
+        log.info("%d images after the exclusions", len(images))
+    images, small = filter_included_fraction(images, settings.min_included_fraction)
+    if small:
+        log.info("%d images with less than %.3f of the image unmasked left out, e.g. %s", len(small),
+                 settings.min_included_fraction or 0,
+                 ", ".join(f"{r['image']} ({r['included_fraction']:.2f})" for r in small[:3]))
+    n = len(images)
+    images = [m for m in images if "failed" in m or (m.get("filename") or {}).get("family") != "Z"
+              or m["filename"].get("zoom_mm") in list(zooms)]
+    if len(images) < n:
+        log.info("%d Mastcam-Z images of other zooms than %s left out", n - len(images), list(zooms))
+    return images
+
+
+# ----------------------------------------------------------------------------------------------------- 4. project
+def _zero_terms(s: Settings) -> Tuple[Tuple[str, ...], Optional[Tuple[str, ...]]]:
+    """(Navcam zero terms, Mastcam-Z zero terms or None when they follow the Navcam ones)."""
+    for k, v in (("tangential", s.tangential), ("zcam_tangential", s.zcam_tangential)):
+        if v not in ("refine", "zero") and not (k == "zcam_tangential" and v is None):
+            raise ValueError(f"{k} = {v!r}: use 'refine' or 'zero'")
+    zt = s.zcam_tangential or s.tangential
+    zero = ("p1", "p2", "b1", "b2") if s.tangential == "zero" else ("b1", "b2")
+    zzero = None if zt == s.tangential else (("p1", "p2", "b1", "b2") if zt == "zero" else ("b1", "b2"))
+    if s.zcam_k3 not in ("label", "zero"):
+        raise ValueError(f"zcam_k3 = {s.zcam_k3!r}: use 'label' or 'zero'")
+    if s.zcam_k3 == "zero":
+        zzero = tuple(zzero if zzero is not None else zero) + ("k3",)
+    return zero, zzero
+
+
+def _refine_tangential(s: Settings) -> Any:
+    """p1, p2 refined per camera family: a bool when both follow ``tangential``."""
+    zt = s.zcam_tangential or s.tangential
+    return (s.tangential == "refine") if zt == s.tangential else {"N": s.tangential == "refine", "Z": zt == "refine"}
+
+
+def _rig_refine(s: Settings) -> Any:
+    r = {"refine": "rotation", "rotation": "rotation", "auto": "auto", "hold": False, "full": True}.get(s.navcam_rig_refine)
+    if r is None:
+        raise ValueError(f"navcam_rig_refine = {s.navcam_rig_refine!r}: use 'refine', 'auto', 'hold' or 'full'")
+    return r
+
+
+def _check_settings(s: Settings) -> None:
+    for k, v, ok in (("navcam_distortion_fit", s.navcam_distortion_fit, ("hold", "refine")),
+                     ("navcam_rig_yaw", s.navcam_rig_yaw, ("hold", "refine")),
+                     ("navcam_pp", s.navcam_pp, ("hold", "refine")),
+                     ("navcam_intrinsics", s.navcam_intrinsics, ("refine", "hold", "auto")),
+                     ("source", s.source, SOURCES)):
+        if v not in ok:
+            raise ValueError(f"{k} = {v!r}: use one of {ok}")
+    _rig_refine(s)
+    _zero_terms(s)
+    if s.navcam_cameras and not (Path(s.navcam_cameras) / "M2020_N_rig.json").is_file():
+        raise FileNotFoundError(f"navcam_cameras = {s.navcam_cameras}: no Navcam cameras there (moved?); None uses "
+                                f"the models in use (mppp.calib)")
+
+
+def _low_backlash_found(s: Settings, work: Path) -> Optional[Path]:
+    from .sfm.backlash import FOUND_FILE
+    if not s.include_zcam:
+        return None
+    if s.zcam_low_backlash_found == "auto":
+        return (Path(s.scapes_root) if s.scapes_root else work.parent) / FOUND_FILE
+    return Path(s.zcam_low_backlash_found) if s.zcam_low_backlash_found else None
+
+
+def wanted_project_settings(s: Settings, work: Path) -> Dict[str, Any]:
+    """What ``project.settings`` must record for the project to be reused rather than built again."""
+    from .sfm.backlash import low_backlash_fingerprint
+    zero, zzero = _zero_terms(s)
+    z = bool(s.include_zcam)
+    found = _low_backlash_found(s, work)
+    return {"zero_terms": list(zero), "zcam_intrinsics": s.zcam_intrinsics,
+            "zcam_zero_terms": list(zzero) if (zzero is not None and z) else None,
+            "zcam_focus_bin": float(s.zcam_focus_bin) if s.zcam_focus_bin else None, "zcam_bin_refine": s.zcam_bin_refine,
+            "zcam_rig": s.zcam_rig, "zcam_rig_refine": s.zcam_rig_refine,
+            "zcam_low_backlash_sha256": low_backlash_fingerprint(s.zcam_low_backlash, found) if z else None,
+            "zcam_line_params": ({str(k): list(v) for k, v in s.zcam_line_params.items()}
+                                 if (s.zcam_line_params and z) else None),
+            "zcam_rig_fit": s.zcam_rig_fit if z else None,
+            "zcam_line_form": s.zcam_line_form if z else None,
+            "navcam_rig_epochs_gap": float(s.navcam_rig_epoch_gap_sols),
+            "navcam_rig_epochs_breaks": [float(x) for x in s.navcam_rig_epoch_breaks_sols],
+            "navcam_distortion": "fisheye_tangential", "navcam_rig": s.navcam_rig,
+            "zcam_hold_f_images": int(s.zcam_hold_f_images) if s.zcam_intrinsics == "focus_model" else None,
+            "prior_R_corrected": True,
+            "navcam_distortion_fit": s.navcam_distortion_fit, "navcam_k4": "consensus",
+            "navcam_rig_yaw": s.navcam_rig_yaw, "navcam_pp": s.navcam_pp,
+            "prior_sigma_m": [float(s.prior_sigma_m)] * 3}
+
+
+def check_camera_models(s: Settings) -> Dict[str, Any]:
+    """The camera models this run starts from, logged; raises when they do not follow the frozen forms."""
+    from .calib import check_form, describe
+    for line in describe(s.navcam_cameras):
+        log.info("%s", line)
+    form = check_form(s.navcam_cameras)
+    for w in form["warnings"]:
+        log.warning("camera models: %s", w)
+    if not form["ok"]:
+        raise RuntimeError("the camera models do not follow the frozen forms: "
+                           + "; ".join(form["errors"]))
+    return form
+
+
+def build_project(work: PathLike, images: List[Dict[str, Any]], settings: Settings):
+    """
+    The COLMAP project of a run (``<work>/colmap`` or ``colmap_<variant>``): created from the manifest images with
+    the start cameras, rig and priors, or reused when it holds the same images with the same camera settings and
+    models (``reprocess_all`` rebuilds it).  A variant starts from the default project's features and matches.
+    Returns ``(project, info)`` with ``info["reuse_matches_from"]``.
+    """
+    from .calib import navcam_fingerprint
+    from .paths import cmods_dir
+    from .sfm import SfmProject
+    from .sfm.workdir import project_dir, seed_variant
+    s = settings
+    work = Path(work)
+    root = project_dir(work, s.variant)
+    info: Dict[str, Any] = {"reuse_matches_from": [], "created": False}
+    if s.variant:
+        seed = seed_variant(root, project_dir(work, None))
+        info["reuse_matches_from"] = seed["reuse_matches_from"] if s.reuse_matches else []
+        if seed["copied"]:
+            log.info("variant %s: features copied from %s", s.variant, seed["base"])
+    info["form"] = check_camera_models(s)
+    found = _low_backlash_found(s, work)
+    zero, zzero = _zero_terms(s)
+    z = bool(s.include_zcam)
+    proj = SfmProject.load(root) if (root / "project.json").is_file() else None
+    wanted = wanted_project_settings(s, work)
+    names = {Path(m["source_product"]).stem for m in images}
+    nav_dir = Path(s.navcam_cameras) if s.navcam_cameras else cmods_dir()
+    have = (proj.settings.get("navcam_cameras") or {}) if proj is not None else {}
+    rebuild = (s.reprocess_all or proj is None or names != {r["stem"] for r in proj.images}
+               or any(proj.settings.get(k) != v for k, v in wanted.items())
+               or have.get("dir") != str(nav_dir)
+               or have.get("fingerprint") != navcam_fingerprint(nav_dir))     # rewritten models rebuild the project
+    if rebuild:
+        proj = SfmProject.create(images, work / "processed", root, prior_sigma_m=(s.prior_sigma_m,) * 3,
+                                 zcam_intrinsics=s.zcam_intrinsics, zero_terms=zero,
+                                 zcam_focus_bin=s.zcam_focus_bin, zcam_bin_refine=s.zcam_bin_refine, zcam_rig=s.zcam_rig,
+                                 navcam_rig=s.navcam_rig, zcam_hold_f_images=s.zcam_hold_f_images,
+                                 navcam_cameras=s.navcam_cameras,
+                                 zcam_zero_terms=zzero if z else None, zcam_rig_refine=s.zcam_rig_refine,
+                                 zcam_low_backlash=s.zcam_low_backlash, zcam_low_backlash_found=found,
+                                 zcam_line_params=s.zcam_line_params if z else None,
+                                 zcam_rig_fit=s.zcam_rig_fit if z else None,
+                                 zcam_focus_model_file=s.zcam_focus_model,
+                                 navcam_distortion_fit=s.navcam_distortion_fit, navcam_rig_yaw=s.navcam_rig_yaw,
+                                 navcam_rig_epoch_gap=s.navcam_rig_epoch_gap_sols,
+                                 navcam_rig_epoch_breaks=s.navcam_rig_epoch_breaks_sols,
+                                 zcam_line_form=s.zcam_line_form if z else None, navcam_pp=s.navcam_pp)
+        info["created"] = True
+    else:
+        from .sfm.thermal import strip_thermal_bins
+        strip_thermal_bins(proj)                     # back to one camera per eye / focus bin before a rerun
+        proj.refresh_images(images)                  # copies (no hard links) follow images processed again
+        if z and s.zcam_intrinsics == "focus_model":
+            from .calib import zcam_fingerprint
+            fm = (proj.settings.get("zcam_focus_model") or {}).get("fingerprint")
+            if fm != zcam_fingerprint(None, s.zcam_focus_model):
+                log.warning("this project's Mastcam-Z focus bins were built with %s; set reprocess_all to rebuild "
+                            "them from the current one (a new alignment)",
+                            "an earlier focus model" if fm is None else "another focus model")
+    if s.colmap_bat:
+        proj.settings["colmap_bat"] = str(s.colmap_bat)
+    proj.settings["gui_files"] = bool(s.gui_files)
+    proj.save()
+    _log_project(proj)
+    return proj, info
+
+
+def _log_project(proj) -> None:
+    import numpy as np
+    log.info("%d images; baseline %s m; CAHV pairs %s; rig rotation %s", len(proj.images),
+             {k: round(v["baseline_m"], 4) for k, v in proj.rig.items()},
+             {k: v["n_pairs"] for k, v in proj.rig.items()},
+             {k: v.get("rotation_source", "CAHV") for k, v in proj.rig.items()})
+    for k, c in proj.cameras.items():
+        if not c.get("group"):
+            log.info("%s %s p1 %.2e p2 %.2e %s%s k3 %.3g k4 %.3g", k, [round(x, 3) for x in c["params"][:5]],
+                     c["params"][6], c["params"][7], "distortion held" if c.get("distortion_fit") == "hold" else "",
+                     f" ({', '.join(c['zeroed_terms'])} = 0)" if c.get("zeroed_terms") else "",
+                     c["params"][8], c["params"][9])
+    bins = Counter(c["group"] for c in proj.cameras.values() if c.get("group") and "focus_count_range" in c)
+    for g, n in sorted(bins.items()):
+        cs = [c for c in proj.cameras.values() if c.get("group") == g and "focus_count_range" in c]
+        held = sum("fx" in (c.get("fixed_params") or []) for c in cs)
+        log.info("%s: %d focus bins (%d with f held), counts %.0f-%.0f, images per bin %s", g, n, held,
+                 min(c["focus_count_range"][0] for c in cs), max(c["focus_count_range"][1] for c in cs),
+                 sorted(c["n_images"] for c in cs))
+    corr = [r["prior_R_correction_deg"] for r in proj.images if "prior_R_correction_deg" in r]
+    if corr:
+        log.info("Mastcam-Z prior attitude correction: median %.3f deg, max %.3f deg (%d images)",
+                 float(np.median(corr)), max(corr), len(corr))
+    log.info("images per camera: %s", dict(Counter(r["instrument"] for r in proj.images)))
+
+
+# --------------------------------------------------------------------------------------- 5. features, database, match
+def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] = (), stop_after: Optional[str] = None
+                      ) -> Dict[str, Any]:
+    """SIFT features (reused while the images are the same), the database (matches carried over while the
+    features and matching settings are the same), then the matching."""
+    from .sfm import build_database, extract_features, match, prior_overlap_pairs
+    from .sfm.matching import match_settings
+    s = settings
+    gpu = True if s.gpu_python else None
+    extract_features(proj, max_num_features=s.max_num_features, use_gpu=gpu, python=s.gpu_python,
+                     overwrite=bool(s.reprocess_all), **s.sift)
+    out: Dict[str, Any] = {}
+    if stop_after == "features":
+        return out
+    db = build_database(proj, reuse_matches_from=list(reuse_from),
+                        matching=match_settings(s.match_mode, **s.match) if s.reuse_matches else None)
+    if db.get("reused_matches"):
+        log.info("matches reused: %s %s", {k: db["reused_matches"][k] for k in ("matches", "geometries")},
+                 [x.get("skipped") or "used" for x in db["reused_matches"]["sources"]])
+    log.info("database: %s", {k: v for k, v in db.items() if k != "reused_matches"})
+    out["database"] = db
+    if stop_after == "database":
+        return out
+    pairs = None
+    if s.match_mode == "prior_pairs":
+        pairs = prior_overlap_pairs(proj, min_overlap=0.05)
+        log.info("%d prior pairs", len(pairs))
+    kw = dict(use_gpu=gpu, block_size=s.match_block_size, **s.match)
+    if s.match_mode != "lightglue":
+        kw["python"] = s.gpu_python                     # COLMAP's matcher may run in the CUDA environment
+    if pairs is not None:
+        kw["pairs"] = pairs
+    out["match"] = match(proj, mode=s.match_mode, **kw)
+    log.info("matching: %s", out["match"])
+    return out
+
+
+# ------------------------------------------------------------------------------------------------- 6. reconstruct
+def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
+    """Triangulation from the rover poses and the weighted bundle adjustment; the export for the error analysis
+    (``error_input/``, ``summary.json``) and the convergence statistics.  Returns ``(rec, summary)``."""
+    from .sfm import export_for_error, reconstruct
+    from .sfm.reconstruction import camera_changes, convergence_statistics, navcam_network
+    from .sfm.thermal import image_temperatures, thermal_model_for_project
+    s = settings
+    net = navcam_network(proj)
+    log.info("Navcam network: %s stations over %.1f m, %s images -> %s (intrinsics setting %r)", net["stations"],
+             net["span_m"], net["navcam_images"], net["verdict"], s.navcam_intrinsics)
+    temps = image_temperatures(proj, pds_dir=s.pds_dir if s.thermal_bins_deg else None, verbose=bool(s.thermal_bins_deg))
+    proj.settings["no_position_prior_at"] = list(s.no_position_prior_at or [])
+    proj.settings["prior_gauge_recentre"] = bool(s.prior_gauge_recentre)
+    if s.no_position_prior_at:
+        log.info("waypoint position priors left out (flagged): %s", ", ".join(s.no_position_prior_at))
+    rig_refine = _rig_refine(s)
+    z = bool(s.include_zcam)
+    rec = reconstruct(proj, sigma_px=0.5, schedule=s.schedule, refine_rig=rig_refine,
+                      refine_tangential=_refine_tangential(s), min_track_length=2,
+                      min_tri_angle_deg=s.min_tri_angle_deg, attitude_prior_deg=s.attitude_prior_deg,
+                      triangulation_options=s.triangulation, exclude_outliers=s.exclude_outliers,
+                      outlier_thresholds=s.outlier_thresholds, min_frame_observations=s.min_frame_observations,
+                      navcam_intrinsics=s.navcam_intrinsics, staged=s.staged, hold_cameras=tuple(s.hold_cameras),
+                      linear_solver=s.linear_solver, temperatures=temps, thermal_bins_deg=s.thermal_bins_deg,
+                      thermal_min_images=s.thermal_min_images, thermal_free=tuple(s.thermal_free),
+                      thermal_model=thermal_model_for_project(proj), thermal_fine_range=s.thermal_fine_range,
+                      thermal_fine_deg=s.thermal_fine_deg, localize_min_images=s.localize_min_images,
+                      zcam_backlash=s.zcam_backlash if z else None, zcam_focus_line=bool(s.zcam_focus_line),
+                      zcam_line_cycles=int(s.zcam_line_cycles), pose_guided=s.pose_guided,
+                      navcam_aspect=s.navcam_aspect, thermal_after_stage1=bool(s.thermal_after_stage1),
+                      round1_hold=bool(s.round1_hold),
+                      rig_translation_sigma_m=s.rig_translation_sigma_m if rig_refine is True else None)
+    rs = proj.settings["reconstruction"]
+    log.info("Navcam intrinsics: %s | held cameras: %s | staged: %s", rs.get("navcam_intrinsics"),
+             rs.get("hold_cameras") or "none", rs.get("staged"))
+    excluded = rs.get("excluded", [])
+    log.info("%d frames excluded as outliers", len(excluded))
+    for st, v in (rs.get("unlocalized") or {}).items():
+        log.info("   no position prior: %s (%s images, %s cross-station points): %s", st, v["images"],
+                 v["cross_points"], v["prior"])
+    for e in excluded:
+        log.info("   %s | %s | %s", ", ".join(e["images"]), e["station"], "; ".join(e["reasons"]))
+    summary = export_for_error(proj, rec)
+    log.info("export: %s", json.dumps({k: summary[k] for k in ("tracks", "residual_rms_native_px", "registered_images",
+                                                                "project_images", "prior_offset_median_m",
+                                                                "station_components")}, default=str))
+    if rs.get("navcam_stage"):
+        import pycolmap
+        rec_nav = pycolmap.Reconstruction(str(proj.root / rs["navcam_stage"]["path"]))
+        nav = export_for_error(proj, rec_nav, out_dir=proj.root / "error_input_navcam")
+        log.info("Navcam-only stage exported to error_input_navcam/: %s",
+                 {k: nav[k] for k in ("tracks", "residual_rms_native_px", "registered_images")})
+    conv = convergence_statistics(rec, proj)
+    proj.settings["reconstruction"]["convergence"] = conv
+    proj.save()
+    log.info("tie points by convergence angle %s deg: %s | cross-station: %s | > 10 deg: %s, > 20 deg: %s",
+             conv["bins_deg"], conv["points"], conv["cross_station_points"], conv["points_over_10deg"],
+             conv["points_over_20deg"])
+    for r in camera_changes(rec, proj):
+        if r["missing"]:
+            log.info("%s: not in the reconstruction", r["camera"])
+            continue
+        log.info("%s (%d images)%s: %s", r["camera"], r["images"],
+                 "  [temperature bin]" if r["thermal_bin"] else "", " ".join(
+                     f"{n} {a:.4g}->{b:.4g}" for n, a, b in zip(r["names"][:10], r["start"], r["refined"])))
+    bl = proj.settings.get("zcam_backlash")
+    if bl:
+        log.info("Mastcam-Z focus groups: %s | f / label f: %s", bl["group_counts"],
+                 {k: (round(v["ratio_median"], 4) if v["ratio_median"] else None) for k, v in (bl.get("after") or bl["before"]).items()})
+    return rec, summary
+
+
+# ------------------------------------------------------------------------------------------------- 7-8. health, export
+def health(proj, rec) -> Tuple[Dict[str, Any], Dict[str, str]]:
+    """The alignment health report, logged and written to ``<project>/health/``; the Mastcam-Z focus breathing
+    when there are focus-bin cameras.  Returns ``(report, files)``."""
+    from .sfm import assess_alignment, health_table, write_health
+    report = assess_alignment(proj, rec)
+    for line in health_table(report).splitlines():
+        log.info("%s", line)
+    files = write_health(report, proj.root / "health", rec, proj)
+    if report["verdict"] == "fail":
+        log.warning("FAIL: fix the alignment (matching, priors, masks, thresholds) before any error analysis")
+    if any(c.get("group") for c in proj.cameras.values()):
+        from .sfm import write_focus_breathing
+        fb = write_focus_breathing(proj, rec)
+        files["focus_breathing"] = fb["png"]
+        for g, f in fb["fits"].items():
+            for kind in ("refined", "label"):
+                if f[kind]:
+                    log.info("%s %7s: f = %.1f px at count %.0f, slope %+.4f px/count, rms %.2f px, n = %d", g, kind,
+                             f[kind]["f0_px"], f["reference_count"], f[kind]["slope_px_per_count"], f[kind]["rms_px"],
+                             f[kind]["n"])
+    return report, files
+
+
+def finish(proj, report: Dict[str, Any], summary: Dict[str, Any], settings: Settings, site: str, key: str,
+           form: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The camera-shift figure beside ``error_input/`` and ``run_done.json`` (the run key: a rerun with the same
+    settings and camera models is skipped by the batch scripts)."""
+    from . import __version__
+    from .calib import models_fingerprint
+    from .sfm import plot_camera_shifts
+    import matplotlib.pyplot as plt
+    with (proj.root / "error_input" / "poses.csv").open(encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    fig = plot_camera_shifts(proj, rows=rows, out_png=proj.root / "error_input" / "camera_shifts.png")
+    plt.close(fig)
+    eps = summary.get("eps", {})
+    log.info("error_input: %s | eps (rms residual / sqrt 2): same-station %.3f px, cross-station %.3f px",
+             proj.root / "error_input", eps.get("eps_intra_px", float("nan")), eps.get("eps_cross_px", float("nan")))
+    done = {"mppp": __version__, "run_key": key, "site": site, "variant": settings.variant or "",
+            "source": settings.source, "finished": _now(), "verdict": report.get("verdict"),
+            "images": len(proj.images), "registered_images": summary.get("registered_images"),
+            "residual_rms_native_px": summary.get("residual_rms_native_px"),
+            "camera_models": {"fingerprint": models_fingerprint(), "form_ok": (form or {}).get("ok", True),
+                              "dir": str(settings.navcam_cameras or (proj.settings.get("navcam_cameras") or {}).get("dir"))},
+            "zcam_new_low_backlash": len((proj.settings.get("zcam_backlash") or {}).get("new_regular_groups") or [])}
+    (proj.root / RUN_DONE).write_text(json.dumps(done, indent=1, default=str), encoding="utf-8")
+    log.info("done: %s", proj.root / RUN_DONE)
+    return done
+
+
+# ------------------------------------------------------------------------------------------------------- 3-8. align
+def align(work: PathLike, settings: Settings, stop_after: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Align the images processed in ``<work>/processed`` (sections 3-8): project, features, database, matching,
+    reconstruction, health report, export.  ``stop_after`` (one of :data:`STEPS`) stops after that step and returns
+    what is there.  Returns the health report (``report["summary"]`` holds the export summary, ``report["run_key"]``
+    the key written to ``run_done.json``).
+    """
+    from . import __version__
+    from .sfm.workdir import project_dir
+    if stop_after is not None and stop_after not in STEPS:
+        raise ValueError(f"stop_after = {stop_after!r}: use one of {STEPS}")
+    work = Path(work).resolve()
+    if not (work / "processed").is_dir():
+        raise FileNotFoundError(f"{work} has no processed/ folder: process the images first "
+                                f"(mppp process {work.name}, or run with source 'pds')")
+    st, s = resolve_site(work, settings)
+    _check_settings(s)
+    key = run_key(s)
+    root = project_dir(work, s.variant)
+    log.info("== %s (sols %s) | %s | variant %s | run key %s", st.name, st.sols_text, root, s.variant or "(default)", key)
+    _warn_other_block(root, st)
+    if s.gpu_python:
+        from .sfm import check_gpu_python
+        log.info("GPU env: %s", check_gpu_python(s.gpu_python))
+    images = load_images(work, s, st.zooms)
+    if stop_after == "manifest":
+        return {"images": len(images)}
+    proj, info = build_project(work, images, s)
+    (proj.root / RUN_SETTINGS).write_text(json.dumps({"mppp": __version__, "run_key": key, "settings": s.to_dict()},
+                                                     indent=1), encoding="utf-8")
+    if stop_after == "project":
+        return {"project": str(proj.root), "images": len(proj.images), "run_key": key}
+    out = extract_and_match(proj, s, info["reuse_matches_from"], stop_after)
+    if stop_after in ("features", "database", "match"):
+        return dict(out, project=str(proj.root), run_key=key)
+    rec, summary = reconstruct_project(proj, s)
+    if stop_after == "reconstruct":
+        return {"project": str(proj.root), "summary": summary, "run_key": key}
+    report, files = health(proj, rec)
+    report["summary"] = summary
+    report["files"] = files
+    report["run_key"] = key
+    report["project"] = str(proj.root)
+    if stop_after == "health":
+        return report
+    report["run_done"] = finish(proj, report, summary, s, st.name, key, info.get("form"))
+    return report
+
+
+def _warn_other_block(root: Path, st: Site) -> None:
+    """A project folder left by another sol range (e.g. a site renamed in the site definitions) would mix two
+    blocks."""
+    if not (root / "project.json").is_file():
+        return
+    try:
+        sols = [int(r["sol"]) for r in json.loads((root / "project.json").read_text(encoding="utf-8")).get("images", [])
+                if "sol" in r]
+    except (OSError, ValueError):
+        return
+    if sols and not any(a <= x <= b for x in sols for a, b in st.sol_ranges):
+        log.warning("%s holds a block of sols %d-%d, none in %s: rename or move that folder before running %r "
+                    "with this sol range", root, min(sols), max(sols), st.sols_text, st.name)
+
+
+def run_site(site_or_work: PathLike, settings: Settings, stop_after: Optional[str] = None) -> Dict[str, Any]:
+    """Select, process and align a site (or a WORK folder): :func:`process_site` when ``source`` is ``"pds"``, then
+    :func:`align`.  Returns the health report."""
+    st, s = resolve_site(site_or_work, settings)
+    if s.source == "pds":
+        process_site(st.work, s)
+    elif not (st.work / "processed").is_dir():
+        raise FileNotFoundError(f"{st.work} has no processed/ folder (source 'processed'): process the images first")
+    return align(st.work, s, stop_after=stop_after)
+
+
+def load_results(work: PathLike, variant: str = ""):
+    """``(project, rec, report, summary)`` of a finished alignment, read from disk (for the notebooks)."""
+    from .sfm import SfmProject
+    from .sfm.reconstruction import load_alignment
+    from .sfm.workdir import project_dir
+    root = project_dir(work, variant)
+    proj = SfmProject.load(root)
+    rec = load_alignment(proj)
+    report = json.loads((root / "health" / "health.json").read_text(encoding="utf-8")) \
+        if (root / "health" / "health.json").is_file() else None
+    summary = json.loads((root / "error_input" / "summary.json").read_text(encoding="utf-8")) \
+        if (root / "error_input" / "summary.json").is_file() else None
+    return proj, rec, report, summary
+
+
+def _now() -> str:
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+__all__ = ["Settings", "Site", "ALIGN_RULES", "PROCESS_RULES", "STEPS", "load_settings", "work_settings", "normalize",
+           "setting_names", "run_key", "process_key", "processed_done", "run_done", "resolve_site", "select_images",
+           "select_products", "process_site", "processing_config", "load_images", "build_project", "extract_and_match",
+           "reconstruct_project", "health", "finish", "align", "run_site", "load_results"]

@@ -602,7 +602,9 @@ def test_pipeline_dry_run_leaves_no_state(tmp_path, monkeypatch):
 
 
 def test_stop_runs_knows_the_pipeline(tmp_path):
-    from mppp.runner import mark_stopped, mppp_processes
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from _batch import mark_stopped, mppp_processes
     rows = [{"pid": 10, "ppid": 1, "cmd": "python scripts/run_pipeline.py --root D:/x"},
             {"pid": 11, "ppid": 10, "cmd": "python scripts/run_sites.py --root D:/x --group zcam34_consensus"},
             {"pid": 12, "ppid": 11, "cmd": "python scripts/align_scape.py D:/x/site"}]

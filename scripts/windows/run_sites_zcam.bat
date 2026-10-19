@@ -17,7 +17,7 @@ if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx M
 set "ROOT=%MPPP_SCAPES%"
 REM which sites: --group zcam_consensus (default) or --sites a b
 set "WHICH=--group zcam_consensus"
-REM more options, e.g. --then 04 05   (camera models and error analysis at the end)
+REM more options, e.g. --jobs 2   (two sites at a time)
 REM                    --source processed --variant tight --set ATTITUDE_PRIOR_DEG=1.0
 set "EXTRA="
 

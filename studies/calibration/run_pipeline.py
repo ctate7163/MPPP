@@ -70,6 +70,8 @@ HERE = Path(__file__).resolve().parent          # the studies/calibration folder
 ROOT = HERE.parents[1]                          # the repository root
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))        # _batch (batch lock, process control)
 PY = sys.executable
 STAGES = ("wait", "prepare", "navcam_consensus", "navcam_runs", "navcam_consensus_2", "waypoint_check",
           "baseline_study", "baseline_confirm", "navcam_consensus_3", "zcam_start", "zcam_runs", "zcam_calibrate",
@@ -125,7 +127,7 @@ class Pipeline:
             try:
                 rc = p.wait(timeout=timeout_h * 3600 if timeout_h else None)
             except subprocess.TimeoutExpired:                 # the whole tree (a hung notebook kernel included)
-                from mppp.runner import kill_tree
+                from _batch import kill_tree
                 kill_tree(p.pid)
                 p.wait(timeout=60)
                 fh.write(f"\nTIMEOUT after {timeout_h} h: stopped\n")
@@ -135,7 +137,8 @@ class Pipeline:
 
     # ---------------------------------------------------------------- stages
     def s_wait(self):
-        from mppp.runner import BATCH_FILE, read_status
+        from _batch import BATCH_FILE
+        from mppp.runner import read_status
         t0 = time.time()
         while True:
             cur = read_status(self.root / BATCH_FILE)
