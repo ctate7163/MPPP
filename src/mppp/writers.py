@@ -27,7 +27,7 @@ import cv2
 import numpy as np
 
 PathLike = Union[str, Path]
-XMP_NS = "https://github.com/msss/mppp/ns/0.1/"          # identifier only; not resolvable
+XMP_NS = "https://github.com/ctate7163/MPPP/ns/0.1/"          # identifier only; not resolvable
 PNG_SIG = b"\x89PNG\r\n\x1a\n"
 
 

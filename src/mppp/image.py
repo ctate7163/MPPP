@@ -22,7 +22,7 @@ from .camera import CAHVOR, Intrinsics, Pose, intrinsics_from_metashape_xml, pos
 from .config import load_config
 from .filenames import parse_filename
 from .labels import first, label_float, label_get, read_pds
-from .paths import params_dir, resolve_resource
+from .paths import data_dir, resolve_resource
 from .waypoints import lonlat_of, offset_lonlat, waypoint_for_site_drive
 
 PathLike = Union[str, Path]
@@ -299,7 +299,7 @@ class MPPPImage:
         if r["apply_tau_correction"]:
             if self.L_s is None or self.solar_el is None:
                 raise ValueError("tau correction needs SOLAR_LONGITUDE and SOLAR_ELEVATION in the label")
-            table = resolve_resource(r["tau_table"], params_dir())
+            table = resolve_resource(r["tau_table"], data_dir())
             self.tau_estimated = radiometry.interpolate_table(table, self.L_s)
             self.scale_zenith, self.solar_mu = radiometry.zenith_scale(
                 self.solar_el, self.tau_estimated, self.tau_ref, r["zenith_min"])
@@ -386,7 +386,7 @@ class MPPPImage:
             return
         if not self.config["resize"]["apply_padding"]:
             raise ValueError("intrinsics_from_xml requires resize.apply_padding (XML models are full-frame).")
-        xml = params_dir() / "cmods" / pattern.format(eye=self.fn.eye or "")
+        xml = data_dir() / "cmods" / pattern.format(eye=self.fn.eye or "")
         scale = self.fn.downsample_scale / float(cm["xml_scale_by_family"].get(self.fn.family, 1.0))
         intr = intrinsics_from_metashape_xml(xml, scale)
         if (intr.width, intr.height) != (self.intrinsics.width, self.intrinsics.height):

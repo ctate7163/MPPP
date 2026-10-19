@@ -40,11 +40,6 @@ def data_file(name: str) -> Path:
     return p
 
 
-def params_dir() -> Path:
-    """Alias of :func:`data_dir` (the calibration XMLs and tables were in ``params/`` before v0p13)."""
-    return data_dir()
-
-
 REPO_ROOT = Path(__file__).resolve().parents[2]      # the MPPP folder of a source checkout (src/mppp/paths.py)
 
 

@@ -19,7 +19,7 @@ def test_package_data_and_cache(tmp_path, monkeypatch):
     for f in ("M20_waypoints.json", "M2020_taus_versus_L_s.csv", "M2020_occlusion_profiles.csv", "models.json",
               "cmods/M2020_NL0_frame.xml", "cmods/ZL034_frame.xml"):
         assert (d / f).is_file(), f
-    assert paths.params_dir() == d and paths.source_root() == ROOT
+    assert paths.source_root() == ROOT
     monkeypatch.setenv("MPPP_CACHE", str(tmp_path / "c"))
     assert paths.cache_dir() == tmp_path / "c" and (tmp_path / "c").is_dir()
     monkeypatch.delenv("MPPP_CHECKPOINTS", raising=False)

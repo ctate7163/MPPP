@@ -112,9 +112,6 @@ _DEFAULTS: Dict[str, Any] = {
     "verbose": False,
 }
 
-_LEGACY_FORMATS = {"PNG8A": (["PNG8"], True), "PNG16A": (["PNG16"], True),
-                   "PNG8": (["PNG8"], None), "PNG16": (["PNG16"], None),
-                   "TIFF16": (["TIFF16"], None), "TIFF16A": (["TIFF16"], True)}
 VALID_FORMATS = ("PNG16", "PNG8", "TIFF16")
 
 
@@ -137,33 +134,6 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any], path: str = "") -> D
         else:
             base[k] = v
     return base
-
-
-def _migrate_legacy(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Accept keys used by the pre-package ``config.json``."""
-    cfg = copy.deepcopy(cfg)
-    exp = cfg.get("export", {})
-    if "format" in exp:
-        fmts, alpha = _LEGACY_FORMATS.get(str(exp.pop("format")).upper(), (None, None))
-        if fmts is None:
-            raise ValueError("export.format not recognised")
-        exp.setdefault("formats", fmts)
-        if alpha is not None:
-            exp.setdefault("store_mask_in_alpha", alpha)
-    exp.pop("colmap_model", None)          # chosen automatically from the coefficients
-    m = cfg.get("masking", {})
-    if "checkpoint_trained" in m:
-        m.setdefault("checkpoint", m.pop("checkpoint_trained"))
-    for dead in ("checkpoint_template", "checkpoint_config", "max_length"):
-        m.pop(dead, None)
-    r = cfg.get("resize", {})
-    for dead in ("standard_ratio", "standard_width", "standard_height"):
-        r.pop(dead, None)
-    cm = cfg.get("camera_model", {})
-    cm.pop("coordinate_frame", None)
-    for dead in ("output_dir", "cameras", "anchor_sol", "preview", "json_logs"):
-        cfg.pop(dead, None)
-    return cfg
 
 
 def parse_stations(spec: Any) -> set:
@@ -217,7 +187,7 @@ def load_config(config: Optional[Union[PathLike, Dict[str, Any]]] = None) -> Dic
             user = json.loads(p.read_text(encoding="utf-8"))
             if not isinstance(user, dict):
                 raise ValueError("Config JSON must be a top-level object.")
-        _deep_merge(cfg, _migrate_legacy(user))
+        _deep_merge(cfg, user)
     validate_config(cfg)
     return cfg
 
