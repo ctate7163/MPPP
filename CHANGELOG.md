@@ -2,6 +2,12 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.86.0 — 2026-10-19
+
+**SIFT + LightGlue matching (Christian, 19 Oct).**
+- `mppp.sfm.matching.match(matcher="sift_lightglue")`, the default (notebook 03 `MATCH["matcher"]`): COLMAP 4.2's LightGlue on the SIFT features. A pycolmap without ONNX support aborts the whole process on LightGlue, so `lightglue_probe()` first tries it in a separate process on synthetic 1648 x 1200 images (1 and 15 pairs: ms per pair without the model loading), cached per Python and pycolmap in `%LOCALAPPDATA%\mppp\lightglue_probe.json`. Unavailable, or slower than 250 ms per pair (CPU ONNX), the run uses SIFT brute force and says so; the matching summary records `matcher_requested`, `matcher` and the probe. `matcher="sift"`: brute force as before.
+- `run_v0p85.bat` renamed `run_v0p86.bat`.
+
 ## 0.85.0 — 2026-10-19
 
 **The v0p85 run: 12 Navcam / 6 Mastcam-Z 34 mm blocks, the pass-2 Navcam cameras, block folders in `D:\scapes` without `_colmap`, and site fixes (Christian, 19 Oct).**

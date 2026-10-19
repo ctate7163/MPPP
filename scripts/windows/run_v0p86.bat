@@ -1,6 +1,7 @@
 @echo off
 REM ======================================================================================================
-REM MPPP v0p85 - the ~27-31 h run (17 Navcam blocks since 19 Oct pm) (Christian, 19 Oct 2026). Start it only after the v0p82 run has finished
+REM MPPP v0p86 (was run_v0p85.bat) - the full run: 17 Navcam blocks, 7 Mastcam-Z 34 mm blocks (Christian, 19 Oct 2026).
+REM Start it after zr_diagnose_z34.bat has finished
 REM and _transfer\claude_sync.bat has been run.
 REM
 REM   Navcam cameras: the 18 Oct pass-2 consensus of 23 blocks, already promoted in the repo (cmods CHANGES.md)
@@ -14,11 +15,12 @@ REM                    (with Three Forks North since 19 Oct pm)
 REM   (sites fixed 19 Oct: Chal Rocks Large from sol 72, Enchanted Lake with sol 421, Bell Island Large from 1431)
 REM   pointclouds, report
 REM
+REM v0p86: SIFT + LightGlue matching where this PC's pycolmap supports it (else SIFT, with a note in the logs).
 REM v0p85: the block folders live in D:\scapes (not D:\scapes\colmap) and have no "_colmap" in their names. Before
 REM the pipeline starts, scripts\move_scapes.py --apply moves what is still in D:\scapes\colmap (renames, nothing is
 REM copied or overwritten; log D:\scapes\mppp_pipeline\move_scapes_v0p85.json). Same as move_scapes.bat.
 REM
-REM   run_v0p85.bat --navcam-only   the Navcam part only (stops before zcam_start); then  run_v0p85.bat --continue
+REM   run_v0p86.bat --navcam-only   the Navcam part only (stops before zcam_start); then  run_v0p86.bat --continue
 REM
 REM Same window, log and stop rules as run_pipeline.bat (stop_mppp.bat to stop; double-click this again to go on).
 REM ======================================================================================================

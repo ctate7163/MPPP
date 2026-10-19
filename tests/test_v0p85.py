@@ -100,7 +100,7 @@ def test_site_fixes_19_oct():
     nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
     src = "".join("".join(c["source"]) for c in nb["cells"])
     assert "NEARBY_FROM_FIRST_SOL = False" in src and "min_sol=_NEAR_MIN" in src
-    bat = (ROOT / "scripts" / "windows" / "run_v0p85.bat").read_text()
+    bat = (ROOT / "scripts" / "windows" / "run_v0p86.bat").read_text()
     assert "move_scapes.py\" --apply" in bat
 
 
@@ -124,7 +124,7 @@ def test_pipeline_stop_before(tmp_path):
                          capture_output=True, text=True, timeout=120)
     log = out.stdout + out.stderr
     assert "stopped before zcam_start" in log, log[-2000:]
-    bat = (ROOT / "scripts" / "windows" / "run_v0p85.bat").read_bytes()
+    bat = (ROOT / "scripts" / "windows" / "run_v0p86.bat").read_bytes()
     assert b"--stop-before zcam_start" in bat and b"\r\n" in bat
 
 
@@ -321,3 +321,17 @@ def test_k2_clamped_to_ten():
     assert R.K2_LIMIT == 10.0
     assert R.clamp_k2(rec) == {1: 12.5, 2: -30.0}
     assert [float(rec.cameras[c].params[5]) for c in (1, 2, 3)] == [10.0, -10.0, 2.2]
+
+
+def test_lightglue_default_and_safe_fallback(tmp_path, monkeypatch):
+    """v0p86: SIFT + LightGlue is the default matcher; the probe runs in a separate process (a pycolmap without
+    ONNX aborts on LightGlue) and the result is cached."""
+    import inspect
+    from mppp.sfm import matching as M
+    assert inspect.signature(M.match).parameters["matcher"].default == "sift_lightglue"
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    r = M.lightglue_probe(refresh=True)
+    assert set(r) >= {"ok", "python", "pycolmap"}
+    assert (tmp_path / "mppp" / "lightglue_probe.json").is_file() and M.lightglue_probe()["cached"]
+    nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
+    assert 'matcher="sift_lightglue"' in "".join("".join(c["source"]) for c in nb["cells"])
