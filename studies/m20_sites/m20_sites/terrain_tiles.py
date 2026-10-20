@@ -1,4 +1,4 @@
-import json, glob, numpy as np, matplotlib
+import json, glob, os, numpy as np, matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.colors import LightSource
@@ -14,8 +14,8 @@ def tiles(levels,box):
     U=[];V=[];H=[]
     for z in levels:
         deg=180/2**z
-        for fn in glob.glob(f'terrain/{z}_*.terrain'):
-            _,x,y=map(int,fn.split('/')[-1][:-8].split('_'))
+        for fn in sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'terrain', f'{z}_*.terrain'))):   # sorted: the same grid on every OS
+            _,x,y=map(int,os.path.basename(fn)[:-8].split('_'))
             u,v,h=qmesh.read(fn)
             lo=-180+x*deg+u*deg; la=-90+y*deg+v*deg
             m=(lo>box[0]-deg)&(lo<box[1]+deg)&(la>box[2]-deg)&(la<box[3]+deg)

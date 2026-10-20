@@ -65,7 +65,7 @@ def test_sites_json_is_the_site_list():
         assert (members or g in ("zcam79_consensus", "zcam110_consensus")) and all(m in t["sites"] for m in members), g
     for k, v in t["sites"].items():
         assert all(a <= b for a, b in S.sol_ranges(v["sols"])) and isinstance(v.get("settings", {}), dict), k
-    assert {"rockytop", "south_arm", "taylorfjellet"} <= set(S.zcam34_sites(t)) and "van_zyl_overlook" not in S.zcam34_sites(t)
+    assert {"rockytop", "south_arm", "taylorfjellet_large"} <= set(S.zcam34_sites(t)) and "van_zyl_overlook" not in S.zcam34_sites(t)
     assert all(isinstance(v.get("zcam"), list) and set(v["zcam"]) <= {34, 48, 63, 79, 110} for v in t["sites"].values())
     assert 34 in S.site_zooms(t["sites"]["chal_rocks"]) and "bright_angle" in S.zcam_sites(t, zoom=63)
     zc = set(t["groups"]["zcam_consensus"])
@@ -269,9 +269,9 @@ def test_sites_block_record_and_groups():
     t = load_site_table()
     assert t["version"] == 5                                              # v0p81: the official_blocks table
     b = block_sites(t)
-    assert len(b) == 36 and b[0] == "oeb_landing_site" and b[-1] == "marble_mountain"
+    assert len(b) == 38 and b[0] == "oeb_landing_site" and b[-1] == "marble_mountain"   # 0.91: + Rose River Falls, Olifants
     assert site_block("chal_rocks_large", t)["number"] == 3 and site_block("chal_rocks", t)["number"] == 3
-    assert len(site_group("blocks_all")) == 36
+    assert len(site_group("blocks_all")) == 38
     assert "chal_rocks_large" in site_group("navcam_baseline")
     err, _ = validate_site_table()
     assert not err

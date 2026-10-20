@@ -716,3 +716,144 @@ def write_lmst_table(rows: Sequence[Dict[str, Any]], path: PathLike) -> Path:
         w.writeheader()
         w.writerows(rows)
     return Path(path)
+
+
+# --- editing the official blocks (0.91) --------------------------------------------------------------------------------
+
+def _waypoint_records(waypoints: Union[PathLike, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    d = waypoints if isinstance(waypoints, dict) else json.loads(Path(waypoints).read_text(encoding="utf-8"))
+    out = []
+    for f in d.get("features") or []:
+        p = f.get("properties") or {}
+        try:
+            out.append({"sol": int(p["sol"]), "site": int(p.get("site", -1)), "e": float(p["easting"]), "n": float(p["northing"]),
+                        "lon": float(p.get("lon", np.nan)), "lat": float(p.get("lat", np.nan)), "final": str(p.get("final") or "")})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return sorted(out, key=lambda r: r["sol"])
+
+
+def official_block_from_site(table: Dict[str, Any], site: str, waypoints: Union[PathLike, Dict[str, Any]],
+                             panos: Sequence[Sequence[Any]] = (), half_size_m: float = 30.0,
+                             region: Optional[str] = None, name: Optional[str] = None) -> Dict[str, Any]:
+    """
+    An ``official_blocks`` record for a site of the table, by the figures' block rule: the centre is the mean of
+    the site's end-of-drive waypoints (all of its waypoints when it has none), every waypoint within ±``half_size_m``
+    of it belongs to the block; the visits run from the first waypoint inside to the sol before the next one
+    outside; N× = the end-of-drive waypoints inside, the partial count = the mid-drive ones; the numbered
+    Mastcam-Z 360s (``panos`` rows (number, [sols], name, zooms)) whose rover position (the last waypoint at or
+    before the first sol) is inside.  ``region``: default the region of the previous block in sol.
+    """
+    s = table["sites"][site]
+    rs = _ranges(s["sols"])
+    recs = _waypoint_records(waypoints)
+    own = [r for r in recs if _in(r["sol"], rs)]
+    if not own:
+        raise ValueError(f"{site}: no waypoint on sols {rs}")
+    eod = [r for r in own if r["final"] == "y"] or own
+    ce, cn = float(np.mean([r["e"] for r in eod])), float(np.mean([r["n"] for r in eod]))
+    inside = [abs(r["e"] - ce) <= half_size_m and abs(r["n"] - cn) <= half_size_m for r in recs]
+    visits, k = [], 0
+    while k < len(recs):
+        if not inside[k]:
+            k += 1
+            continue
+        j = k
+        while j + 1 < len(recs) and inside[j + 1]:
+            j += 1
+        end = recs[j + 1]["sol"] - 1 if j + 1 < len(recs) else recs[j]["sol"]
+        visits.append([recs[k]["sol"], max(recs[k]["sol"], end)])
+        k = j + 1
+    ins = [r for r, f in zip(recs, inside) if f]
+    eod_sols = sorted({r["sol"] for r in ins if r["final"] == "y"})
+    n_part = sum(1 for r in ins if r["final"] == "m")
+
+    def pos_at(sol):
+        w = [r for r in recs if r["sol"] <= sol]
+        return w[-1] if w else recs[0]
+    zp = sorted(int(num) for num, sols, *_ in panos
+                if abs(pos_at(int(sols[0]))["e"] - ce) <= half_size_m and abs(pos_at(int(sols[0]))["n"] - cn) <= half_size_m)
+    first = visits[0][0]
+    if region is None:
+        prev = [b for b in (table.get("official_blocks") or {}).values() if min(a for a, _ in _ranges(b["visits"])) <= first]
+        region = max(prev, key=lambda b: min(a for a, _ in _ranges(b["visits"])))["region"] if prev else ""
+    label = name or s.get("label") or site.replace("_", " ").title()
+    rec = {"name": label, "site": site, "region": region, "kind": "sites.json", "source_key": site,
+           "visits": sorted(visits, key=lambda r: (-(r[1] - r[0]), r[0])), "end_of_drive_sols": eod_sols,
+           "n_navcam_360": len(eod_sols), "n_partial_navcam": int(n_part), "mastcam_z_360": zp,
+           "centre": {"lon": round(float(np.mean([r["lon"] for r in eod])), 7), "lat": round(float(np.mean([r["lat"] for r in eod])), 7),
+                      "easting": round(ce, 2), "northing": round(cn, 2), "frame": "M20_waypoints easting/northing"},
+           "half_size_m": float(half_size_m),
+           "notes": f"(N×{len(eod_sols)}, Z×{len(zp)}): from sites.json {site!r}; centre ±{half_size_m:g} m; visits "
+                    + ", ".join(f"{a}–{b}" for a, b in sorted(visits))}
+    rec.update(waypoint_stats(rec["visits"], waypoint_points(waypoints)))
+    return rec
+
+
+def renumber_official_blocks(table: Dict[str, Any], waypoints: Union[PathLike, Dict[str, Any]]) -> List[str]:
+    """Number the official blocks by their first sol (1..n), rewrite every site's ``official_blocks`` list and the
+    ``blocks_*`` groups, and put the block number into each block's notes.  Returns the renumbering lines."""
+    W = waypoint_points(waypoints)
+    official = table.get("official_blocks") or {}
+    order = sorted(official, key=lambda n: (min(a for a, _ in _ranges(official[n]["visits"])), int(n) if str(n).isdigit() else 10 ** 6))
+    rep = []
+    new = {}
+    for i, n in enumerate(order, start=1):
+        b = official[n]
+        if str(i) != str(n):
+            rep.append(f"block {n} {b['name']} -> {i}")
+        b["notes"] = re.sub(r"^Block \d+ ", "", b.get("notes") or "")
+        b["notes"] = f"Block {i} " + b["notes"].lstrip()
+        new[str(i)] = b
+    table["official_blocks"] = new
+    for k, v in table["sites"].items():
+        v["official_blocks"] = included_blocks(_ranges(v["sols"]), new, W)
+    groups = table.setdefault("groups", {})
+    for g in [g for g in groups if g.startswith("blocks_")]:
+        del groups[g]
+    groups["blocks_all"] = [new[n]["site"] for n in sorted(new, key=int)]
+    for n in sorted(new, key=int):
+        groups.setdefault("blocks_" + (new[n]["region"] or "other"), []).append(new[n]["site"])
+    return rep
+
+
+def rename_site(table: Dict[str, Any], old: str, new: str, label: Optional[str] = None) -> List[str]:
+    """Rename a site everywhere: the sites table (in place, order kept), the official block that it runs (name,
+    site, source_key, notes), every group."""
+    if old not in table["sites"]:
+        raise KeyError(old)
+    if new in table["sites"]:
+        raise KeyError(f"{new} exists")
+    table["sites"] = {(new if k == old else k): v for k, v in table["sites"].items()}
+    if label:
+        table["sites"][new]["label"] = label
+    rep = [f"site {old} -> {new}"]
+    for n, b in (table.get("official_blocks") or {}).items():
+        if b.get("site") == old:
+            b["site"] = new
+            if b.get("source_key") == old:
+                b["source_key"] = new
+            if label:
+                rep.append(f"block {n}: {b['name']} -> {label}")
+                b["name"] = label
+            b["notes"] = (b.get("notes") or "").replace(f"'{old}'", f"'{new}'")
+    for g, members in (table.get("groups") or {}).items():
+        if old in members:
+            table["groups"][g] = [new if m == old else m for m in members]
+            rep.append(f"group {g}: {old} -> {new}")
+    return rep
+
+
+def remove_site(table: Dict[str, Any], site: str, replacement: Optional[str] = None) -> List[str]:
+    """Drop a site; in the groups it is replaced by ``replacement`` (or removed)."""
+    if site not in table["sites"]:
+        raise KeyError(site)
+    del table["sites"][site]
+    rep = [f"site {site} removed" + (f" (groups: {replacement})" if replacement else "")]
+    for g, members in (table.get("groups") or {}).items():
+        if site in members:
+            table["groups"][g] = list(dict.fromkeys(replacement if m == site and replacement else m for m in members if m != site or replacement))
+    for n, b in (table.get("official_blocks") or {}).items():
+        if b.get("site") == site:
+            raise ValueError(f"official block {n} ({b['name']}) runs on {site}: give it another site first")
+    return rep

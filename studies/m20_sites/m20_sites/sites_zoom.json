@@ -369,6 +369,34 @@
  },
  {
   "id": 12,
+  "key": "rose_river_falls",
+  "site": "rose_river_falls",
+  "name": "Rose River Falls",
+  "region": "delta_front",
+  "kind": "sites.json",
+  "cx": 4351987.44,
+  "cy": 1094063.3,
+  "lon": 77.4063015,
+  "lat": 18.4575097,
+  "half_size_m": 30.0,
+  "runs": [
+   [
+    448,
+    455
+   ]
+  ],
+  "first": 448,
+  "first_all": 448,
+  "n360": 3,
+  "npart": 1,
+  "ninterp": 0,
+  "zpanos": [
+   17
+  ],
+  "nz": 1
+ },
+ {
+  "id": 13,
   "key": "cluster8",
   "site": "rockytop",
   "name": "Rockytop",
@@ -398,7 +426,7 @@
   "nz": 3
  },
  {
-  "id": 13,
+  "id": 14,
   "key": "cluster9",
   "site": "knob_mountain",
   "name": "Knob Mountain",
@@ -428,7 +456,7 @@
   "nz": 0
  },
  {
-  "id": 14,
+  "id": 15,
   "key": "observation_mountain",
   "site": "observation_mountain",
   "name": "Observation Mountain",
@@ -458,10 +486,10 @@
   "nz": 0
  },
  {
-  "id": 15,
-  "key": "whale_mountain",
-  "site": "whale_mountain",
-  "name": "Whale Mountain",
+  "id": 16,
+  "key": "hidden_harbor",
+  "site": "hidden_harbor",
+  "name": "Hidden Harbor",
   "region": "delta_front",
   "kind": "sites.json",
   "cx": 4351585.39,
@@ -486,7 +514,7 @@
   "nz": 1
  },
  {
-  "id": 16,
+  "id": 17,
   "key": "tenby_berea",
   "site": "tenby_berea",
   "name": "Tenby / Berea",
@@ -512,7 +540,7 @@
   "nz": 0
  },
  {
-  "id": 17,
+  "id": 18,
   "key": "cluster11",
   "site": "belva_crater_large",
   "name": "Belva Crater",
@@ -544,7 +572,7 @@
   "nz": 1
  },
  {
-  "id": 18,
+  "id": 19,
   "key": "wild_basin_lake",
   "site": "wild_basin_lake",
   "name": "Wild Basin Lake",
@@ -572,7 +600,7 @@
   "nz": 1
  },
  {
-  "id": 19,
+  "id": 20,
   "key": "cluster12",
   "site": "tuxedo_park",
   "name": "Tuxedo Park",
@@ -600,7 +628,7 @@
   "nz": 1
  },
  {
-  "id": 20,
+  "id": 21,
   "key": "airey_hill",
   "site": "airey_hill",
   "name": "Airey Hill",
@@ -628,7 +656,7 @@
   "nz": 1
  },
  {
-  "id": 21,
+  "id": 22,
   "key": "cluster13",
   "site": "bunsen_peak",
   "name": "Bunsen Peak",
@@ -656,7 +684,7 @@
   "nz": 1
  },
  {
-  "id": 22,
+  "id": 23,
   "key": "overlook_mountain",
   "site": "overlook_mountain",
   "name": "Overlook Mountain",
@@ -684,7 +712,7 @@
   "nz": 1
  },
  {
-  "id": 23,
+  "id": 24,
   "key": "bright_angle",
   "site": "bright_angel",
   "name": "Bright Angel",
@@ -716,7 +744,7 @@
   "nz": 1
  },
  {
-  "id": 24,
+  "id": 25,
   "key": "cluster14",
   "site": "cheyava_falls",
   "name": "Cheyava Falls",
@@ -742,7 +770,7 @@
   "nz": 0
  },
  {
-  "id": 25,
+  "id": 26,
   "key": "plateau_point",
   "site": "plateau_point",
   "name": "Plateau Point",
@@ -768,7 +796,7 @@
   "nz": 0
  },
  {
-  "id": 26,
+  "id": 27,
   "key": "cluster15",
   "site": "pico_turquino",
   "name": "Pico Turquino",
@@ -798,7 +826,7 @@
   "nz": 0
  },
  {
-  "id": 27,
+  "id": 28,
   "key": "rio_chiquito",
   "site": "rio_chiquito",
   "name": "Rio Chiquito",
@@ -826,7 +854,7 @@
   "nz": 1
  },
  {
-  "id": 28,
+  "id": 29,
   "key": "cluster16",
   "site": "south_arm",
   "name": "South Arm",
@@ -858,7 +886,7 @@
   "nz": 1
  },
  {
-  "id": 29,
+  "id": 30,
   "key": "cluster17",
   "site": "witch_hazel_hill",
   "name": "Witch Hazel Hill",
@@ -894,7 +922,7 @@
   "nz": 1
  },
  {
-  "id": 30,
+  "id": 31,
   "key": "cluster18",
   "site": "bell_island",
   "name": "Bell Island",
@@ -924,7 +952,7 @@
   "nz": 0
  },
  {
-  "id": 31,
+  "id": 32,
   "key": "cluster19",
   "site": "taylorfjellet_large",
   "name": "Taylorfjellet",
@@ -953,7 +981,7 @@
   "nz": 2
  },
  {
-  "id": 32,
+  "id": 33,
   "key": "cluster21",
   "site": "origny",
   "name": "Origny",
@@ -981,7 +1009,7 @@
   "nz": 1
  },
  {
-  "id": 33,
+  "id": 34,
   "key": "cluster22",
   "site": "vingeanne",
   "name": "Vingeanne",
@@ -1009,7 +1037,36 @@
   "nz": 1
  },
  {
-  "id": 34,
+  "id": 35,
+  "key": "olifants",
+  "site": "olifants",
+  "name": "Olifants",
+  "region": "crater_rim_west",
+  "kind": "sites.json",
+  "cx": 4341575.48,
+  "cy": 1092460.11,
+  "lon": 77.2211098,
+  "lat": 18.4304628,
+  "half_size_m": 30.0,
+  "runs": [
+   [
+    1877,
+    1889
+   ]
+  ],
+  "first": 1877,
+  "first_all": 1877,
+  "n360": 3,
+  "npart": 2,
+  "ninterp": 0,
+  "zpanos": [
+   53,
+   54
+  ],
+  "nz": 2
+ },
+ {
+  "id": 36,
   "key": "groloy",
   "site": "groloy",
   "name": "Groloy",
@@ -1041,7 +1098,7 @@
   "nz": 1
  },
  {
-  "id": 35,
+  "id": 37,
   "key": "cluster23",
   "site": "hippo_pools",
   "name": "Hippo Pools",
@@ -1071,7 +1128,7 @@
   "nz": 0
  },
  {
-  "id": 36,
+  "id": 38,
   "key": "marble_mountain",
   "site": "marble_mountain",
   "name": "Marble Mountain",

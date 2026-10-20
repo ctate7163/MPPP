@@ -11,7 +11,8 @@ C1,C2,C3,C4='#2a78d6','#eb6834','#1baf7a','#eda100'; INK='#0b0b0b'; INK2='#52514
 last_sol = int(S.max())
 def posi(s):
     w = np.where(S <= s)[0]; return w[-1] if len(w) else 0
-ncol = 5; nrow = -(-(len(sites) + 1) // ncol)   # 5 columns: the blocks + the legend (34 blocks: 7 rows, 36: 8)
+ncol = int(__import__('os').environ.get('M20_ZOOM_COLS', 6)); nrow = -(-(len(sites) + 1) // ncol)   # 6 columns (20 Oct): the blocks + the legend
+CONTOURS = __import__('os').environ.get('M20_ZOOM_CONTOURS', '0') == '1'   # 20 Oct: no contour lines by default
 assert len(sites) + 1 <= ncol*nrow
 fig, axs = plt.subplots(nrow, ncol, figsize=(3.45*ncol, 3.6*nrow), facecolor='#fcfcfb')
 dem_used = set(); ortho_used = set(); BACKGROUND = background_mode()   # M20_BACKGROUND: 'dtm' (default) or 'ortho'
@@ -37,7 +38,7 @@ for k, (ax, o) in enumerate(zip(axs.flat, sites)):
         if not shown:
             ax.imshow(hs, extent=[-HALF, HALF, -HALF, HALF], origin='lower', cmap='gray', vmin=0, vmax=1, alpha=0.9, zorder=0)
         lev = np.arange(np.floor(np.nanmin(zr)), np.ceil(np.nanmax(zr)) + 0.5, 0.5)
-        if len(lev) > 1:
+        if CONTOURS and len(lev) > 1:
             cs = ax.contour(g, g, zr, levels=lev, colors='#7a5c3a', linewidths=0.4, alpha=0.6, zorder=1)
     # ---- waypoints in the square ----
     inb = np.where((np.abs(X - cx) <= HALF) & (np.abs(Y - cy) <= HALF))[0]
@@ -67,7 +68,7 @@ for k, (ax, o) in enumerate(zip(axs.flat, sites)):
     if runs[-1][1] >= last_sol: lab += '+'
     title = f"{o['id']}. {o['name']}"
     ax.set_title(title + '\n' + '\n'.join(textwrap.wrap('sols ' + lab, 40)), fontsize=9.6, loc='left', color=INK)
-    ax.text(0.98, 0.02, f"{fmt_counts(o)}  ·  {o['npart']} partial", transform=ax.transAxes, ha='right', va='bottom', fontsize=8.2, color=INK2,
+    ax.text(0.98, 0.02, fmt_counts(o), transform=ax.transAxes, ha='right', va='bottom', fontsize=8.2, color=INK2,
             bbox=dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.75), zorder=7)
     if k % ncol == 0: ax.set_ylabel('Relative northing [m]', fontsize=9.5, color=INK)          # left-most column
     if k + ncol >= len(sites): ax.set_xlabel('Relative easting [m]', fontsize=9.5, color=INK)  # bottom-most panel in each column
@@ -83,11 +84,11 @@ lg.plot([], [], color=MUT, lw=0.8, label='Traverse')
 lg.plot([], [], marker='o', ms=12, mfc='none', mec=C2, ls='none', alpha=0.5, label='10 m radius around each 360')
 lg.scatter([], [], marker='D', s=44, facecolor='none', ec=C3, lw=1.6, label='Sample core (rover position)')
 lg.scatter([], [], marker='^', s=74, facecolor='none', ec=C4, lw=1.6, label='Mastcam-Z numbered 360 (rover position)')
-if dem_used:
+if dem_used and CONTOURS:
     lg.plot([], [], color='#7a5c3a', lw=0.6, label='DEM contours, 0.5 m')
 lg.legend(loc='center', fontsize=9.6, frameon=False)
-bg = ('HiRISE DTM hillshade: ' + ', '.join(sorted(dem_used))) if dem_used else 'no 1 m DTM background (set M20_DEMS to the HiRISE DTM files)'
-if ortho_used: bg = 'HiRISE orthomosaic: ' + ', '.join(sorted(ortho_used)) + ('; 0.5 m DTM contours' if dem_used else '')
+bg = 'HiRISE DTM hillshade' if dem_used else 'no 1 m DTM background (set M20_DEMS to the HiRISE DTM files)'
+if ortho_used: bg = 'HiRISE orthomosaic' + ('; 0.5 m DTM contours' if dem_used and CONTOURS else '')
 fig.suptitle_text = (f'M2020 blocks of rover stations, ordered by first sol: all waypoints within ±30 m of each block centre (N× Navcam 360s, Z× Mastcam-Z 360s) (local metres, north up; '
              f'labels = sol; title sols = sols the rover ended inside the square). {bg}.')
 fig.suptitle('\n'.join(textwrap.wrap(fig.suptitle_text, 140)), x=0.01, ha='left', fontsize=12.5, color=INK)
