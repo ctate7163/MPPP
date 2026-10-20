@@ -22,7 +22,7 @@ from pathlib import Path
 
 # 0.90: the figure lives in the package (mppp.waypoints.blocks: lmst_images, lmst_site_row, plot_lmst_histograms,
 # write_lmst_table); this script is its command line.
-from mppp.waypoints.blocks import lmst_images, lmst_site_row, plot_lmst_histograms, write_lmst_table
+from mppp.waypoints.blocks import lmst_hours, lmst_images, lmst_site_row, plot_lmst_histograms, write_lmst_table  # noqa: F401
 
 
 def main(argv=None) -> int:

@@ -1485,6 +1485,11 @@ def fit_zcam(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], rig_transla
     for g, gm in (out.get("cameras") or {}).items():
         zoom_key = f"Z{str(g)[2:5]}"
         if not str(g).startswith("ZR"):
+            if not gm.get("pp0_px"):                  # the form needs every eye's pp0 (ZL: the label pp at the reference)
+                ref_l = float(gm.get("reference_focus", 600.0))
+                lab = [p for p in (_label_pp_at(i, g, ref_l) for i in infos) if p is not None]
+                if lab:
+                    gm["pp0_px"] = [float(np.median([p[0] for p in lab])), float(np.median([p[1] for p in lab]))]
             continue
         ref0 = None
         for i in infos:

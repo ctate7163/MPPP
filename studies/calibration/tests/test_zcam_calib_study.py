@@ -148,11 +148,11 @@ def test_calibrate_lines_rig_and_no_temperature_term(tmp_path):
     old = _old_v0p74()
     m = calibrate(infos, old, rig_translation="refined")
     L = m["calibration"]["eyes"]["ZL034"]["backlash"]["fx"]
-    assert L["n_blocks"] == 3 and "temperature" not in L
+    assert L["n_blocks"] == 3 and not (L.get("temperature") or {}).get("applied")   # 0.91: the trend reported, not applied
     assert m["cameras"]["ZL034"]["lines"]["backlash"]["fx"]["a"] == pytest.approx(4715.0, abs=2.5)   # the mean over T
     assert "c_per_degC" not in m["cameras"]["ZL034"]["lines"]["backlash"]["fx"]
     zr = m["cameras"]["ZR034"]
-    assert zr["pp"]["cx_px_per_count"] == 0.0 and zr["lines"]["backlash"]["cx"] == {"a": 820.0, "b": 0.0, "form": "pinned"}
+    assert zr["pp"]["cx_px_per_count"] == 0.0 and zr["lines"]["backlash"]["cx"] == {"a": pytest.approx(820.0), "b": 0.0, "form": "pinned"}
     assert zr["pp0_px"] == pytest.approx([820.0, 600.0])
     assert m["calibration"]["pp_to_rig"]["shifts"]["a"]["dcx_px"] == pytest.approx(2.0)
     assert zr["lines"]["regular"]["fx"]["a"] > 4600
@@ -387,8 +387,6 @@ def test_calibrate_on_the_form_with_rig_residuals():
     assert len(res["per_block"]) == 4 and all(abs(r["pitch_mdeg"]) < 1e-6 for r in res["per_block"])
     assert res["fits"]["yaw"]["vs_T"]["slope"] == pytest.approx(10.0, rel=0.05)         # 0.010 deg/degC put in
     assert abs(res["fits"]["yaw"]["vs_T"]["z"]) > 3 and res["fits"]["roll"]["vs_sol"]["slope"] == pytest.approx(0.0, abs=1e-6)
-    # the free v0p74 form keeps separate slopes and the refined translation
-    m2 = calibrate(infos, model, min_blocks_for_T=99, form="v0p74", rig_translation="refined")
-    zr2 = m2["cameras"]["ZR034"]["lines"]["backlash"]
-    assert zr2["fx"]["b"] != zr2["fy"]["b"] and zr2["cx"]["b"] == pytest.approx(0.0004)
+    # 0.90: the form is fixed (the free v0p74 form is gone); the refined translation on request
+    m2 = calibrate(infos, model, rig_translation="refined")
     assert m2["rig"]["baseline_m"] == pytest.approx(np.linalg.norm([-0.2415, 0.0012, 0.0058]))
