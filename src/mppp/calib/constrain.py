@@ -426,3 +426,43 @@ def plot_rig_vs_sol(rig: Dict[str, Any], path: PathLike, blocks: Optional[Sequen
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return Path(path)
+
+
+def plot_model_change(old: Dict[str, Dict[str, Any]], new: Dict[str, Dict[str, Any]], path: PathLike,
+                      T_range: Tuple[float, float] = (-40.0, 0.0), sols: Sequence[float] = (100.0, 1000.0),
+                      labels: Tuple[str, str] = ("in use", "candidate"), title: Optional[str] = None) -> Path:
+    """
+    What a candidate joint changes against the model in use, over temperature: fx, fy (ppm), cx, cy (px) and k1
+    of ``new`` minus ``old`` per eye (``old``/``new`` = {"NL": model, "NR": model}), one line per sol in ``sols``
+    (before and after the early-mission sol, so the early offsets show as the gap between the lines); the
+    distortion change at the frame corners in the title.
+    """
+    plt = _plt()
+    Ts = np.linspace(T_range[0], T_range[1], 81)
+    rows = [("fx", "Δfx  ppm"), ("fy", "Δfy  ppm"), ("cx", "Δcx  px"), ("cy", "Δcy  px"), ("k1", "Δk1 ×1e3")]
+    fig, axs = plt.subplots(len(rows), 2, figsize=(10, 10), sharex=True)
+    for j, eye in enumerate(("NL", "NR")):
+        for s, ls in zip(sols, ("--", "-")):
+            o = np.array([camera_at(old[eye], T_degC=T, sol=s)[1][:5] for T in Ts])
+            n = np.array([camera_at(new[eye], T_degC=T, sol=s)[1][:5] for T in Ts])
+            for i, (name, lab) in enumerate(rows):
+                k = i
+                d = (1e6 * (n[:, k] / o[:, k] - 1) if name in ("fx", "fy") else
+                     1e3 * (n[:, k] - o[:, k]) if name == "k1" else n[:, k] - o[:, k])
+                axs[i, j].plot(Ts, d, color=PLOT_COLORS[eye], ls=ls, lw=1.6, label=f"sol {s:g}")
+                axs[i, j].axhline(0, color="k", lw=0.6, alpha=0.5)
+                if j == 0:
+                    axs[i, j].set_ylabel(lab)
+        axs[0, j].set_title(f"{eye}: {labels[1]} − {labels[0]}")
+        axs[0, j].legend(fontsize=8, frameon=False)
+    for i in range(len(rows)):
+        lo = min(ax.get_ylim()[0] for ax in axs[i]); hi = max(ax.get_ylim()[1] for ax in axs[i])
+        for ax in axs[i]:
+            ax.set_ylim(lo, hi)
+    for ax in axs[-1]:
+        ax.set_xlabel("camera temperature  °C")
+    fig.suptitle(title or "Change of the Navcam joint model", y=0.995)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return Path(path)

@@ -44,6 +44,7 @@ def main(argv=None) -> int:
     ap.add_argument("--frame-model", default="NL", help="its camera: NL, NR (promoted model) or a COLMAP cameras JSON")
     ap.add_argument("--frame-mask", default=None)
     ap.add_argument("--frame-T", type=float, default=-20.0)
+    ap.add_argument("--cmods", default=None, help="a folder of camera model files instead of the package's (a candidate joint)")
     a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -51,7 +52,7 @@ def main(argv=None) -> int:
     from mppp.waypoints import blocks as B
     from mppp.waypoints.sites import load_site_table, site_label
     from mppp.waypoints.table import snapshot_path
-    nl, nr, rig = M.load_camera("N", "L"), M.load_camera("N", "R"), M.load_rig("N")
+    nl, nr, rig = M.load_camera("N", "L", a.cmods), M.load_camera("N", "R", a.cmods), M.load_rig("N", a.cmods)
     folders = [Path(b) for b in a.blocks] if a.blocks else (finished_blocks(Path(a.root), a.group) if a.root else [])
     res = []
     for f in folders:
