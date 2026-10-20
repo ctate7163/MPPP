@@ -455,7 +455,7 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
         ax.set_ylabel("focal length (full-frame px)", fontsize=8)
         ax.secondary_yaxis("right", functions=(lambda f, f0=f2["fx"]: f - f0, lambda d, f0=f2["fx"]: d + f0)).set_ylabel(
             f"Δf from {T0:.0f} °C (px; {model_label} fx)", fontsize=8)
-        ax.legend(fontsize=6.5, loc="upper left")
+        ax.legend(fontsize=6.5, loc="lower right")
         ax = axs[1][j]
         cx_iu = th_iu["cx_px"]
         if eye == "NL":
