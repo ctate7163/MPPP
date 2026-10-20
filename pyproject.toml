@@ -19,10 +19,11 @@ mask    = ["torch", "timm", "safetensors"]                                   # m
 sfm     = ["pycolmap>=4.2,<4.3", "pyceres>=2.6,<2.7", "torch", "kornia>=0.7"]   # COLMAP pipeline; kornia: SIFT + LightGlue matching
 error   = ["matplotlib", "pillow"]                                            # the error model (under development)
 plots   = ["matplotlib", "pillow"]                                            # health and camera plots
+maps    = ["matplotlib", "scipy", "pillow", "adjustText", "rasterio", "pyproj"]   # the M20 site-map figures (make_maps.bat)
 notebooks = ["jupyterlab", "matplotlib", "pillow"]
 release = ["huggingface_hub"]                                                 # scripts/release_mask_model.py
 dev     = ["pytest", "pyflakes", "nbformat", "pillow"]
-all     = ["mppp[mask,sfm,error,plots,notebooks,dev]"]
+all     = ["mppp[mask,sfm,error,plots,maps,notebooks,dev]"]
 
 [tool.setuptools.dynamic]
 version = { attr = "mppp.__version__" }

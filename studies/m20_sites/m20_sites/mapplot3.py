@@ -8,7 +8,7 @@ from adjustText import adjust_text
 from terrain_tiles import dem as tile_dem
 from refdata import PANOS, SAMPLES
 from sitesdef import P, X, Y, S, F, HALF, fmt_runs, fmt_counts
-from dem import LocalFrame, sample_dem
+from dem import LocalFrame, sample_dem, sample_ortho, background_mode
 sites = json.load(open('sites_zoom.json')); LF = LocalFrame(P)
 lon = np.array([p['lon'] for p in P]); lat = np.array([p['lat'] for p in P]); isE = F == 'y'
 C1,C2,C3,C4='#2a78d6','#eb6834','#1baf7a','#eda100'; INK='#0b0b0b'; INK2='#52514e'
@@ -17,7 +17,8 @@ M_LON = np.deg2rad(1)*R*COS; M_LAT = np.deg2rad(1)*R           # metres per degr
 CMAP = plt.get_cmap('gist_earth')
 BOX_A = (77.1, 78.1, 17.9, 18.8)
 BOX_B = (77.205, 77.47, 18.38, 18.515)
-used_all = set()
+used_all = set(); ortho_used = set()
+BACKGROUND = background_mode()          # M20_BACKGROUND: 'dtm' (default) or 'ortho'
 import os
 import matplotlib.patheffects as pe
 DPI = int(os.environ.get('M20_DPI', 300))     # output resolution of every figure (set M20_DPI=300 for smaller files)
@@ -43,7 +44,7 @@ def terrain(box, step, tile_levels):
     if np.isfinite(Zd).any(): Z = np.where(np.isfinite(Zd), Zd, Z)
     return gx, gy, Z, bool(used)
 
-def draw_terrain(ax, gx, gy, Z, norm, ci, exag=3, alt=40, flat=None, coslat=None):
+def draw_terrain(ax, gx, gy, Z, norm, ci, exag=3, alt=40, flat=None, coslat=None, ortho=True):
     """Tinted hillshade. exag = vertical exaggeration. flat: if set, rescale the shading so level ground has this brightness
     (1.0 = as bright as the unshaded tint), which keeps a strongly exaggerated relief from darkening the whole panel.
     coslat: east-west metres-per-degree factor for this grid (default: Jezero's latitude)."""
@@ -54,6 +55,13 @@ def draw_terrain(ax, gx, gy, Z, norm, ci, exag=3, alt=40, flat=None, coslat=None
     if flat is not None: shade = np.clip(shade*flat/(0.35 + 0.65*np.sin(np.deg2rad(alt))), 0, 1.15)
     rgb = CMAP(norm(Zf))[..., :3]; rgb = 0.55*rgb + 0.45*0.86
     out = np.clip(rgb*shade[..., None], 0, 1); out = np.where(np.isnan(Z)[..., None], 0.93, out)
+    if ortho and BACKGROUND == 'ortho' and (gx[-1] - gx[0]) < 2.0:      # orthomosaic only on local panels (C-I, zooms)
+        G, used = sample_ortho(*np.meshgrid(gx, gy))
+        if np.isfinite(G).any():
+            ortho_used.update(used)
+            tint = CMAP(norm(Zf))[..., :3]
+            o3 = np.clip(0.82*G[..., None] + 0.18*tint, 0, 1)            # grey orthomosaic with a light elevation tint
+            out = np.where(np.isfinite(G)[..., None], o3, out)
     ax.imshow(out, extent=[gx[0], gx[-1], gy[0], gy[-1]], origin='lower', interpolation='bilinear', zorder=0)
     lev = np.arange(np.floor(np.nanmin(Zf)/ci)*ci, np.nanmax(Zf)+ci, ci)
     ax.contour(gx, gy, Zf, levels=lev, colors='k', linewidths=0.3, alpha=0.25, zorder=1)
@@ -129,6 +137,7 @@ def panel_B(ax, insets=None, letter='B', bbox=None, bg_in_title=True, landing_la
          plt.Line2D([], [], marker='s', mfc='none', mec=C2, mew=2, ls='none', ms=11, label='Block of rover stations')]
     ax.legend(handles=h, loc='lower center', bbox_to_anchor=(0.6, 0.01), fontsize=7.6*FS, framealpha=0.92, facecolor='white', edgecolor='#d6d5d0')
     bg = 'HiRISE DTM where available, coarse HiRISE+MOLA terrain elsewhere' if hasdtm else 'coarse HiRISE-DTM-based terrain, ~70 m grid (HiRISE DTM not yet connected)'
+    if ortho_used: bg += '; HiRISE orthomosaic in grey'
     ax.set_title(f'{letter}. Blocks of rover stations' + (', numbered by first sol. Background: ' + bg if bg_in_title else ''), loc='left', fontsize=9.5*FS, color=INK)
     ax.set_xlabel('Longitude [°E]')
     scalebar(ax, bbox, 1000, '1 km')
@@ -162,14 +171,18 @@ def ab_layout(W, top, h, left=0.85, gap=0.95, cbar=1.25, bbox=None, crater=None)
     return (left, top-hh, rA*hh, hh), (left + rA*hh + gap, top-hh, rB*hh, hh), hh
 
 def fig2(out):
-    W = 18.0; Htot = 7.4
+    W = 18.0
+    per = -(-len(sites)//3)                                   # table rows per column (3 columns)
+    hh0 = ab_layout(W, 0, None)[2]
+    tab_h = per*7.2*FS*1.25/72 + 0.45                         # the table, sized to the number of blocks
+    Htot = 0.45 + hh0 + 1.05 + tab_h + 0.1
     rect = lambda x, y, w, h: [x/W, y/Htot, w/W, h/Htot]
     a, b, hh = ab_layout(W, Htot-0.45, None)
     fig = plt.figure(figsize=(W, Htot), facecolor='#fcfcfb')
     axA = fig.add_axes(rect(*a)); axB = fig.add_axes(rect(*b))
     panel_A(axA); nB = panel_B(axB)
     colorbar(fig, rect(b[0]+b[2]+0.12, b[1], 0.2, b[3]), nB, 'Elevation [m] (tint)')
-    axC = fig.add_axes(rect(0.85, 0.1, W-1.2, a[1]-1.05)); panel_C(axC)
+    axC = fig.add_axes(rect(0.85, 0.1, W-1.2, a[1]-1.05)); panel_C(axC, per=per)
     fig.savefig(out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out)
 
 REGION_KEYS = {
@@ -180,11 +193,19 @@ REGION_KEYS = {
  'delta':  ['cluster10', 'threeforks_north', 'cluster6', 'cluster7', 'cluster8', 'cluster9', 'observation_mountain', 'whale_mountain'],
  'land':   ['cluster1', 'cluster2', 'chal_rocks_large', 'cluster3', 'rochette', 'cluster4', 'cluster5']}
 KEY2ID = {o['key']: o['id'] for o in sites}
-RID = {r: sorted(KEY2ID[k] for k in ks) for r, ks in REGION_KEYS.items()}
+# sites.json v5 blocks (from_sites.py) carry their region; the prototype's own blocks (sitesdef.py) use REGION_KEYS
+REGION_OF = {'crater_rim_west': 'rimw', 'crater_rim': 'whh', 'margin_unit_neretva_vallis': 'margin',
+             'upper_fan_belva': 'fan', 'delta_front': 'delta', 'crater_floor_seitah': 'land'}
+if all(o.get('region') in REGION_OF for o in sites):
+    RID = {r: sorted(o['id'] for o in sites if REGION_OF[o['region']] == r) for r in REGION_KEYS}
+else:
+    RID = {r: sorted(KEY2ID[k] for k in ks) for r, ks in REGION_KEYS.items()}
 def rng(r): return f"{RID[r][0]}–{RID[r][-1]}"
-REGION_TITLE = {'rimw': 'Crater rim west: Origny to Marble Mountain', 'whh': 'Witch Hazel Hill: South Arm to Taylorfjellet',
-                'margin': 'Margin unit to the rim: Bunsen Peak to Rio Chiquito', 'fan': 'Upper fan: Tenby to Airey Hill',
-                'delta': 'Delta front: Three Forks to Knob Mountain', 'land': 'Crater floor: landing site and Séítah'}
+_REGION_LABEL = {'rimw': 'Crater rim west', 'whh': 'Witch Hazel Hill', 'margin': 'Margin unit to the rim', 'fan': 'Upper fan',
+                 'delta': 'Delta front', 'land': 'Crater floor'}
+_NAME = {o['id']: o['name'] for o in sites}
+REGION_TITLE = {r: (f"{_REGION_LABEL[r]}: {_NAME[ids[0]]} to {_NAME[ids[-1]]}" if r != 'land'
+                    else 'Crater floor: landing site and Séítah') for r, ids in RID.items()}   # follows the block list
 GROUPS = {'D': RID['rimw'], 'E': RID['whh'], 'F': RID['delta'], 'G': RID['land'], 'H': RID['fan'], 'I': RID['margin']}
 
 def fig3(out):
@@ -328,8 +349,9 @@ def box_2to1(b):
 BOX_B5 = box_2to1(BOX_B)
 BOX_C5 = (BOX_A[0], BOX_A[1], BOX_A[3] - (BOX_A[1]-BOX_A[0])*COS, BOX_A[3])     # crater panel square (1:1): y max 18.8 kept, bottom extended to ~17.85
 def fig5(out, with_I=True):
-    """A global Mars | B Isidis (true elevation range); C crater (2:1) | D traverse (2:1); E-H tall regional panels;
-    I one wide panel (upper fan, Belva, margin unit, Neretva Vallis) at the same scale. with_I=False drops row 4 (figure 6).
+    """A global Mars | B Isidis (one colour range, clipped at the 1st/99th percentile); C crater (square) | D traverse (2:1);
+    E-H tall regional panels; I one wide panel (upper fan, Belva, margin unit, Neretva Vallis) at the same scale.
+    with_I=False drops row 4 (figure 6: E F over G H, with the block list as panel I).
     Every row spans the same width: its last colour bar ends where row 2's does."""
     W = 18.0; left, right, gapC = 0.85, 0.2, 0.95
     # ---- row 1 geometry ----
@@ -457,7 +479,9 @@ def fig5(out, with_I=True):
     dpi5 = DPI
     scale_note = (f'E–I share one scale (E–H {BH/1000:.1f} km tall, I {BH4/1000:.1f} km tall; box I in D overlaps F and G).' if with_I
                   else f'E–H share one scale ({BH/1000:.1f} km tall, 1.5 km wide).')
-    bg_note = ' Background C–I: coarse HiRISE-DTM-based terrain, ~70 m grid (HiRISE DTM not yet connected).' if not used_all else ' Background C–I: HiRISE DTM where available.'
+    bg_note = (' Background C–I: coarse HiRISE-DTM-based terrain, ~70 m grid (HiRISE DTM not yet connected).' if not used_all
+               else ' Background C–I: 1 m HiRISE DTM (' + ', '.join(sorted(used_all)) + ') where available, ~70 m terrain elsewhere.')
+    if ortho_used: bg_note += ' HiRISE orthomosaic (' + ', '.join(sorted(ortho_used)) + ') in grey where available.'
     fig.text(left/W, 0.1/Htot, scale_note + bg_note + '\nSquares = blocks of rover stations (±30 m, numbered by first sol); dots = end-of-drive Navcam 360; '
              'small squares = mid-drive partial Navcam; triangles = Mastcam-Z numbered 360s; diamonds = sample cores.', fontsize=8.5*FS, color=INK2)
     fig.savefig(out, dpi=dpi5, facecolor=fig.get_facecolor()); print('saved', out, dpi5, 'dpi')
@@ -476,4 +500,6 @@ if __name__ == '__main__':
         import subprocess
         for w in which: subprocess.run([sys.executable, __file__, od, w], check=True)
     else:
-        f, n = names[which[0]]; f(f'{od}/{n}')
+        f, n = names[which[0]]
+        tag = os.environ.get('M20_TAG', '').strip()      # unique names per run: m20_..._<tag>.png
+        f(f'{od}/{n[:-4]}_{tag}.png' if tag else f'{od}/{n}')

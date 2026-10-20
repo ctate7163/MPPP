@@ -3,7 +3,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from refdata import PANOS, SAMPLES
 from sitesdef import P, X, Y, S, F, HALF, fmt_runs, fmt_counts
-from dem import LocalFrame, sample_dem, hillshade, dem_paths
+from dem import LocalFrame, sample_dem, sample_ortho, background_mode, hillshade, dem_paths
 out_png = sys.argv[1] if len(sys.argv) > 1 else '/mnt/user-data/outputs/m20_cluster_zooms.png'
 sites = json.load(open('sites_zoom.json'))
 LF = LocalFrame(P)
@@ -14,7 +14,7 @@ def posi(s):
 ncol = 5; nrow = -(-(len(sites) + 1) // ncol)   # 5 columns: the blocks + the legend (34 blocks: 7 rows, 36: 8)
 assert len(sites) + 1 <= ncol*nrow
 fig, axs = plt.subplots(nrow, ncol, figsize=(3.45*ncol, 3.6*nrow), facecolor='#fcfcfb')
-dem_used = set()
+dem_used = set(); ortho_used = set(); BACKGROUND = background_mode()   # M20_BACKGROUND: 'dtm' (default) or 'ortho'
 for k, (ax, o) in enumerate(zip(axs.flat, sites)):
     cx, cy = o['cx'], o['cy']
     # ---- DEM background (local metres, via lon/lat) ----
@@ -22,11 +22,20 @@ for k, (ax, o) in enumerate(zip(axs.flat, sites)):
     GE, GN = np.meshgrid(g, g)
     lon, lat = LF.to_lonlat(GE + cx, GN + cy)
     z, used = sample_dem(lon, lat)
+    shown = False
+    if BACKGROUND == 'ortho':          # orthomosaic at ~0.25 m: sample a finer grid than the DTM
+        go = np.linspace(-HALF, HALF, 241); GEo, GNo = np.meshgrid(go, go)
+        img, oused = sample_ortho(*LF.to_lonlat(GEo + cx, GNo + cy))
+        if np.isfinite(img).any():
+            ortho_used.update(oused); shown = True
+            ax.imshow(np.where(np.isfinite(img), img, 0.93), extent=[-HALF, HALF, -HALF, HALF], origin='lower', cmap='gray',
+                      vmin=0, vmax=1, zorder=0)
     if np.isfinite(z).any():
         dem_used.update(used)
         hs = hillshade(z, g[1]-g[0], g[1]-g[0])
         zr = z - np.nanmedian(z)
-        ax.imshow(hs, extent=[-HALF, HALF, -HALF, HALF], origin='lower', cmap='gray', vmin=0, vmax=1, alpha=0.9, zorder=0)
+        if not shown:
+            ax.imshow(hs, extent=[-HALF, HALF, -HALF, HALF], origin='lower', cmap='gray', vmin=0, vmax=1, alpha=0.9, zorder=0)
         lev = np.arange(np.floor(np.nanmin(zr)), np.ceil(np.nanmax(zr)) + 0.5, 0.5)
         if len(lev) > 1:
             cs = ax.contour(g, g, zr, levels=lev, colors='#7a5c3a', linewidths=0.4, alpha=0.6, zorder=1)
@@ -77,7 +86,8 @@ lg.scatter([], [], marker='^', s=74, facecolor='none', ec=C4, lw=1.6, label='Mas
 if dem_used:
     lg.plot([], [], color='#7a5c3a', lw=0.6, label='DEM contours, 0.5 m')
 lg.legend(loc='center', fontsize=9.6, frameon=False)
-bg = ('HiRISE DTM hillshade: ' + ', '.join(sorted(dem_used))) if dem_used else 'no DEM background (DTM file not available to this run)'
+bg = ('HiRISE DTM hillshade: ' + ', '.join(sorted(dem_used))) if dem_used else 'no 1 m DTM background (set M20_DEMS to the HiRISE DTM files)'
+if ortho_used: bg = 'HiRISE orthomosaic: ' + ', '.join(sorted(ortho_used)) + ('; 0.5 m DTM contours' if dem_used else '')
 fig.suptitle_text = (f'M2020 blocks of rover stations, ordered by first sol: all waypoints within ±30 m of each block centre (N× Navcam 360s, Z× Mastcam-Z 360s) (local metres, north up; '
              f'labels = sol; title sols = sols the rover ended inside the square). {bg}.')
 fig.suptitle('\n'.join(textwrap.wrap(fig.suptitle_text, 140)), x=0.01, ha='left', fontsize=12.5, color=INK)

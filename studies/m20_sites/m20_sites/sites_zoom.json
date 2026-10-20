@@ -1,12 +1,16 @@
 [
  {
+  "id": 1,
   "key": "cluster1",
-  "old_id": 1,
+  "site": "oeb_landing_site",
   "name": "OEB Landing Site",
-  "cx": 4354499.7945,
-  "cy": 1093308.6439999999,
+  "region": "crater_floor_seitah",
   "kind": "cluster",
-  "first_all": 13,
+  "cx": 4354499.79,
+  "cy": 1093308.64,
+  "lon": 77.4509873,
+  "lat": 18.4447781,
+  "half_size_m": 30.0,
   "runs": [
    [
     13,
@@ -18,24 +22,28 @@
    ]
   ],
   "first": 13,
+  "first_all": 13,
   "n360": 10,
+  "npart": 0,
+  "ninterp": 0,
   "zpanos": [
    1,
    2
   ],
-  "nz": 2,
-  "npart": 0,
-  "ninterp": 0,
-  "id": 1
+  "nz": 2
  },
  {
+  "id": 2,
   "key": "cluster2",
-  "old_id": 2,
+  "site": "van_zyl_overlook",
   "name": "Van Zyl Overlook",
-  "cx": 4354566.32275,
-  "cy": 1093303.16925,
+  "region": "crater_floor_seitah",
   "kind": "cluster",
-  "first_all": 20,
+  "cx": 4354566.32,
+  "cy": 1093303.17,
+  "lon": 77.4521706,
+  "lat": 18.4446858,
+  "half_size_m": 30.0,
   "runs": [
    [
     20,
@@ -55,23 +63,27 @@
    ]
   ],
   "first": 20,
+  "first_all": 20,
   "n360": 9,
+  "npart": 0,
+  "ninterp": 0,
   "zpanos": [
    3
   ],
-  "nz": 1,
-  "npart": 0,
-  "ninterp": 0,
-  "id": 2
+  "nz": 1
  },
  {
+  "id": 3,
   "key": "chal_rocks_large",
-  "old_id": null,
+  "site": "chal_rocks_large",
   "name": "Chal Rocks",
-  "cx": 4354568.87875,
-  "cy": 1093262.8525,
-  "kind": "site",
-  "first_all": 72,
+  "region": "crater_floor_seitah",
+  "kind": "sites.json",
+  "cx": 4354568.88,
+  "cy": 1093262.85,
+  "lon": 77.452216,
+  "lat": 18.4440056,
+  "half_size_m": 30.0,
   "runs": [
    [
     72,
@@ -83,24 +95,28 @@
    ]
   ],
   "first": 72,
+  "first_all": 72,
   "n360": 9,
+  "npart": 0,
+  "ninterp": 0,
   "zpanos": [
    4,
    16
   ],
-  "nz": 2,
-  "npart": 0,
-  "ninterp": 0,
-  "id": 3
+  "nz": 2
  },
  {
+  "id": 4,
   "key": "cluster3",
-  "old_id": 3,
+  "site": "artuby_ridge",
   "name": "Artuby Ridge",
-  "cx": 4354270.898,
-  "cy": 1092411.0699999998,
+  "region": "crater_floor_seitah",
   "kind": "cluster",
-  "first_all": 173,
+  "cx": 4354270.9,
+  "cy": 1092411.07,
+  "lon": 77.446916,
+  "lat": 18.4296355,
+  "half_size_m": 30.0,
   "runs": [
    [
     173,
@@ -112,21 +128,25 @@
    ]
   ],
   "first": 173,
+  "first_all": 173,
   "n360": 5,
-  "zpanos": [],
-  "nz": 0,
   "npart": 1,
   "ninterp": 0,
-  "id": 4
+  "zpanos": [],
+  "nz": 0
  },
  {
+  "id": 5,
   "key": "rochette",
-  "old_id": null,
+  "site": "rochette",
   "name": "Rochette",
-  "cx": 4354125.9684999995,
-  "cy": 1092479.0565,
-  "kind": "site",
-  "first_all": 178,
+  "region": "crater_floor_seitah",
+  "kind": "sites.json",
+  "cx": 4354125.97,
+  "cy": 1092479.06,
+  "lon": 77.4443382,
+  "lat": 18.4307825,
+  "half_size_m": 30.0,
   "runs": [
    [
     178,
@@ -134,23 +154,27 @@
    ]
   ],
   "first": 178,
+  "first_all": 178,
   "n360": 2,
+  "npart": 1,
+  "ninterp": 0,
   "zpanos": [
    8
   ],
-  "nz": 1,
-  "npart": 1,
-  "ninterp": 0,
-  "id": 5
+  "nz": 1
  },
  {
+  "id": 6,
   "key": "cluster4",
-  "old_id": 4,
+  "site": "issole_seitah_south",
   "name": "Issole, South Seitah",
-  "cx": 4353958.717166667,
-  "cy": 1092590.2526666669,
+  "region": "crater_floor_seitah",
   "kind": "cluster",
-  "first_all": 201,
+  "cx": 4353958.72,
+  "cy": 1092590.25,
+  "lon": 77.4413634,
+  "lat": 18.4326584,
+  "half_size_m": 30.0,
   "runs": [
    [
     201,
@@ -162,24 +186,28 @@
    ]
   ],
   "first": 201,
+  "first_all": 201,
   "n360": 6,
+  "npart": 1,
+  "ninterp": 0,
   "zpanos": [
    13,
    14
   ],
-  "nz": 2,
-  "npart": 1,
-  "ninterp": 0,
-  "id": 6
+  "nz": 2
  },
  {
+  "id": 7,
   "key": "cluster5",
-  "old_id": 5,
+  "site": "seitah_north",
   "name": "Brac, Seitah North",
-  "cx": 4354051.42975,
-  "cy": 1092665.57975,
+  "region": "crater_floor_seitah",
   "kind": "cluster",
-  "first_all": 237,
+  "cx": 4354051.43,
+  "cy": 1092665.58,
+  "lon": 77.4430125,
+  "lat": 18.4339292,
+  "half_size_m": 30.0,
   "runs": [
    [
     237,
@@ -187,23 +215,27 @@
    ]
   ],
   "first": 237,
+  "first_all": 237,
   "n360": 5,
+  "npart": 0,
+  "ninterp": 0,
   "zpanos": [
    11
   ],
-  "nz": 1,
-  "npart": 0,
-  "ninterp": 0,
-  "id": 7
+  "nz": 1
  },
  {
+  "id": 8,
   "key": "cluster10",
-  "old_id": 10,
+  "site": "threeforks_south",
   "name": "Three Forks South",
-  "cx": 4352093.2096,
-  "cy": 1093780.5872000002,
+  "region": "delta_front",
   "kind": "cluster",
-  "first_all": 413,
+  "cx": 4352093.21,
+  "cy": 1093780.59,
+  "lon": 77.4081827,
+  "lat": 18.4527401,
+  "half_size_m": 30.0,
   "runs": [
    [
     413,
@@ -214,25 +246,28 @@
     683
    ]
   ],
-  "visits_edited": true,
   "first": 413,
+  "first_all": 413,
   "n360": 10,
+  "npart": 14,
+  "ninterp": 0,
   "zpanos": [
    23
   ],
-  "nz": 1,
-  "npart": 14,
-  "ninterp": 0,
-  "id": 8
+  "nz": 1
  },
  {
+  "id": 9,
   "key": "threeforks_north",
-  "old_id": null,
+  "site": "threeforks_north",
   "name": "Three Forks North",
-  "cx": 4352110.958333333,
-  "cy": 1093811.848,
-  "kind": "site",
-  "first_all": 413,
+  "region": "delta_front",
+  "kind": "sites.json",
+  "cx": 4352110.96,
+  "cy": 1093811.85,
+  "lon": 77.4084984,
+  "lat": 18.4532675,
+  "half_size_m": 30.0,
   "runs": [
    [
     413,
@@ -255,26 +290,29 @@
     692
    ]
   ],
-  "visits_edited": true,
   "first": 413,
+  "first_all": 413,
   "n360": 8,
+  "npart": 10,
+  "ninterp": 0,
   "zpanos": [
    23,
    24
   ],
-  "nz": 2,
-  "npart": 10,
-  "ninterp": 1,
-  "id": 9
+  "nz": 2
  },
  {
+  "id": 10,
   "key": "cluster6",
-  "old_id": 6,
+  "site": "enchanted_lake",
   "name": "Enchanted Lake",
-  "cx": 4351714.5926,
-  "cy": 1093657.1376,
+  "region": "delta_front",
   "kind": "cluster",
-  "first_all": 421,
+  "cx": 4351714.59,
+  "cy": 1093657.14,
+  "lon": 77.4014485,
+  "lat": 18.4506574,
+  "half_size_m": 30.0,
   "runs": [
    [
     421,
@@ -286,23 +324,27 @@
    ]
   ],
   "first": 421,
+  "first_all": 421,
   "n360": 6,
+  "npart": 2,
+  "ninterp": 0,
   "zpanos": [
    21
   ],
-  "nz": 1,
-  "npart": 2,
-  "ninterp": 0,
-  "id": 10
+  "nz": 1
  },
  {
+  "id": 11,
   "key": "cluster7",
-  "old_id": 7,
+  "site": "delta_front_ascent",
   "name": "Delta front ascent",
-  "cx": 4352128.12775,
-  "cy": 1094049.476,
+  "region": "delta_front",
   "kind": "cluster",
-  "first_all": 437,
+  "cx": 4352128.13,
+  "cy": 1094049.48,
+  "lon": 77.4088038,
+  "lat": 18.4572764,
+  "half_size_m": 30.0,
   "runs": [
    [
     437,
@@ -318,21 +360,25 @@
    ]
   ],
   "first": 437,
+  "first_all": 437,
   "n360": 6,
-  "zpanos": [],
-  "nz": 0,
   "npart": 4,
   "ninterp": 0,
-  "id": 11
+  "zpanos": [],
+  "nz": 0
  },
  {
+  "id": 12,
   "key": "cluster8",
-  "old_id": 8,
+  "site": "rockytop",
   "name": "Rockytop",
-  "cx": 4351973.318333333,
-  "cy": 1094137.6016666666,
+  "region": "delta_front",
   "kind": "cluster",
-  "first_all": 460,
+  "cx": 4351973.32,
+  "cy": 1094137.6,
+  "lon": 77.4060503,
+  "lat": 18.4587631,
+  "half_size_m": 30.0,
   "runs": [
    [
     460,
@@ -340,25 +386,29 @@
    ]
   ],
   "first": 460,
+  "first_all": 460,
   "n360": 7,
+  "npart": 3,
+  "ninterp": 0,
   "zpanos": [
    18,
    19,
    20
   ],
-  "nz": 3,
-  "npart": 3,
-  "ninterp": 0,
-  "id": 12
+  "nz": 3
  },
  {
+  "id": 13,
   "key": "cluster9",
-  "old_id": 9,
+  "site": "knob_mountain",
   "name": "Knob Mountain",
-  "cx": 4352123.1707999995,
-  "cy": 1094103.8405999998,
+  "region": "delta_front",
   "kind": "cluster",
-  "first_all": 536,
+  "cx": 4352123.17,
+  "cy": 1094103.84,
+  "lon": 77.4087156,
+  "lat": 18.4581936,
+  "half_size_m": 30.0,
   "runs": [
    [
     536,
@@ -370,21 +420,25 @@
    ]
   ],
   "first": 536,
+  "first_all": 536,
   "n360": 7,
-  "zpanos": [],
-  "nz": 0,
   "npart": 1,
-  "ninterp": 2,
-  "id": 13
+  "ninterp": 0,
+  "zpanos": [],
+  "nz": 0
  },
  {
+  "id": 14,
   "key": "observation_mountain",
-  "old_id": null,
+  "site": "observation_mountain",
   "name": "Observation Mountain",
-  "cx": 4351705.9235,
-  "cy": 1093697.9255,
-  "kind": "site",
-  "first_all": 592,
+  "region": "delta_front",
+  "kind": "sol window",
+  "cx": 4351705.92,
+  "cy": 1093697.93,
+  "lon": 77.4012943,
+  "lat": 18.4513455,
+  "half_size_m": 30.0,
   "runs": [
    [
     592,
@@ -396,21 +450,25 @@
    ]
   ],
   "first": 592,
+  "first_all": 592,
   "n360": 4,
-  "zpanos": [],
-  "nz": 0,
   "npart": 2,
-  "ninterp": 2,
-  "id": 14
+  "ninterp": 0,
+  "zpanos": [],
+  "nz": 0
  },
  {
+  "id": 15,
   "key": "whale_mountain",
-  "old_id": null,
+  "site": "whale_mountain",
   "name": "Whale Mountain",
-  "cx": 4351585.3865,
-  "cy": 1093830.848,
-  "kind": "site",
-  "first_all": 606,
+  "region": "delta_front",
+  "kind": "sites.json",
+  "cx": 4351585.39,
+  "cy": 1093830.85,
+  "lon": 77.3991504,
+  "lat": 18.453588,
+  "half_size_m": 30.0,
   "runs": [
    [
     606,
@@ -418,23 +476,27 @@
    ]
   ],
   "first": 606,
+  "first_all": 606,
   "n360": 2,
+  "npart": 0,
+  "ninterp": 0,
   "zpanos": [
    22
   ],
-  "nz": 1,
-  "npart": 0,
-  "ninterp": 0,
-  "id": 15
+  "nz": 1
  },
  {
+  "id": 16,
   "key": "tenby_berea",
-  "old_id": null,
+  "site": "tenby_berea",
   "name": "Tenby / Berea",
-  "cx": 4350741.448,
-  "cy": 1094820.8435,
-  "kind": "site",
-  "first_all": 732,
+  "region": "upper_fan_belva",
+  "kind": "sites.json",
+  "cx": 4350741.45,
+  "cy": 1094820.84,
+  "lon": 77.3841397,
+  "lat": 18.4702898,
+  "half_size_m": 30.0,
   "runs": [
    [
     732,
@@ -442,21 +504,25 @@
    ]
   ],
   "first": 732,
+  "first_all": 732,
   "n360": 2,
-  "zpanos": [],
-  "nz": 0,
   "npart": 1,
-  "ninterp": 1,
-  "id": 16
+  "ninterp": 0,
+  "zpanos": [],
+  "nz": 0
  },
  {
+  "id": 17,
   "key": "cluster11",
-  "old_id": 11,
+  "site": "belva_crater_large",
   "name": "Belva Crater",
-  "cx": 4349870.181500001,
-  "cy": 1095553.3955,
+  "region": "upper_fan_belva",
   "kind": "cluster",
-  "first_all": 770,
+  "cx": 4349870.18,
+  "cy": 1095553.4,
+  "lon": 77.368643,
+  "lat": 18.4826484,
+  "half_size_m": 30.0,
   "runs": [
    [
     770,
@@ -468,23 +534,27 @@
    ]
   ],
   "first": 770,
+  "first_all": 770,
   "n360": 8,
+  "npart": 2,
+  "ninterp": 0,
   "zpanos": [
    25
   ],
-  "nz": 1,
-  "npart": 2,
-  "ninterp": 1,
-  "id": 17
+  "nz": 1
  },
  {
+  "id": 18,
   "key": "wild_basin_lake",
-  "old_id": null,
+  "site": "wild_basin_lake",
   "name": "Wild Basin Lake",
-  "cx": 4349711.904666666,
-  "cy": 1095477.9093333334,
-  "kind": "site",
-  "first_all": 838,
+  "region": "upper_fan_belva",
+  "kind": "sol window",
+  "cx": 4349711.9,
+  "cy": 1095477.91,
+  "lon": 77.3658278,
+  "lat": 18.4813749,
+  "half_size_m": 30.0,
   "runs": [
    [
     838,
@@ -492,23 +562,27 @@
    ]
   ],
   "first": 838,
+  "first_all": 838,
   "n360": 3,
+  "npart": 2,
+  "ninterp": 0,
   "zpanos": [
    27
   ],
-  "nz": 1,
-  "npart": 2,
-  "ninterp": 0,
-  "id": 18
+  "nz": 1
  },
  {
+  "id": 19,
   "key": "cluster12",
-  "old_id": 12,
+  "site": "tuxedo_park",
   "name": "Tuxedo Park",
-  "cx": 4349271.759500001,
-  "cy": 1095550.19075,
+  "region": "upper_fan_belva",
   "kind": "cluster",
-  "first_all": 896,
+  "cx": 4349271.76,
+  "cy": 1095550.19,
+  "lon": 77.3579992,
+  "lat": 18.4825944,
+  "half_size_m": 30.0,
   "runs": [
    [
     896,
@@ -516,23 +590,27 @@
    ]
   ],
   "first": 896,
+  "first_all": 896,
   "n360": 6,
+  "npart": 2,
+  "ninterp": 0,
   "zpanos": [
    30
   ],
-  "nz": 1,
-  "npart": 2,
-  "ninterp": 0,
-  "id": 19
+  "nz": 1
  },
  {
+  "id": 20,
   "key": "airey_hill",
-  "old_id": null,
+  "site": "airey_hill",
   "name": "Airey Hill",
-  "cx": 4348949.8715,
-  "cy": 1096376.2185,
-  "kind": "site",
-  "first_all": 960,
+  "region": "upper_fan_belva",
+  "kind": "sites.json",
+  "cx": 4348949.87,
+  "cy": 1096376.22,
+  "lon": 77.352274,
+  "lat": 18.49653,
+  "half_size_m": 30.0,
   "runs": [
    [
     960,
@@ -540,23 +618,27 @@
    ]
   ],
   "first": 960,
+  "first_all": 960,
   "n360": 2,
+  "npart": 0,
+  "ninterp": 0,
   "zpanos": [
    32
   ],
-  "nz": 1,
-  "npart": 0,
-  "ninterp": 0,
-  "id": 20
+  "nz": 1
  },
  {
+  "id": 21,
   "key": "cluster13",
-  "old_id": 13,
+  "site": "bunsen_peak",
   "name": "Bunsen Peak",
-  "cx": 4347540.3522499995,
-  "cy": 1096096.21225,
+  "region": "margin_unit_neretva_vallis",
   "kind": "cluster",
-  "first_all": 1052,
+  "cx": 4347540.35,
+  "cy": 1096096.21,
+  "lon": 77.3272037,
+  "lat": 18.4918061,
+  "half_size_m": 30.0,
   "runs": [
    [
     1052,
@@ -564,23 +646,27 @@
    ]
   ],
   "first": 1052,
+  "first_all": 1052,
   "n360": 8,
+  "npart": 0,
+  "ninterp": 0,
   "zpanos": [
    37
   ],
-  "nz": 1,
-  "npart": 0,
-  "ninterp": 0,
-  "id": 21
+  "nz": 1
  },
  {
+  "id": 22,
   "key": "overlook_mountain",
-  "old_id": null,
+  "site": "overlook_mountain",
   "name": "Overlook Mountain",
-  "cx": 4346775.145,
-  "cy": 1096031.2985,
-  "kind": "site",
-  "first_all": 1148,
+  "region": "margin_unit_neretva_vallis",
+  "kind": "sites.json",
+  "cx": 4346775.14,
+  "cy": 1096031.3,
+  "lon": 77.3135934,
+  "lat": 18.4907109,
+  "half_size_m": 30.0,
   "runs": [
    [
     1148,
@@ -588,23 +674,27 @@
    ]
   ],
   "first": 1148,
+  "first_all": 1148,
   "n360": 5,
+  "npart": 1,
+  "ninterp": 0,
   "zpanos": [
    38
   ],
-  "nz": 1,
-  "npart": 1,
-  "ninterp": 0,
-  "id": 22
+  "nz": 1
  },
  {
+  "id": 23,
   "key": "bright_angle",
-  "old_id": null,
+  "site": "bright_angel",
   "name": "Bright Angel",
-  "cx": 4346226.544,
-  "cy": 1096351.473,
-  "kind": "site",
-  "first_all": 1176,
+  "region": "margin_unit_neretva_vallis",
+  "kind": "sites.json",
+  "cx": 4346226.54,
+  "cy": 1096351.47,
+  "lon": 77.3038357,
+  "lat": 18.4961125,
+  "half_size_m": 30.0,
   "runs": [
    [
     1176,
@@ -616,23 +706,27 @@
    ]
   ],
   "first": 1176,
+  "first_all": 1176,
   "n360": 3,
+  "npart": 1,
+  "ninterp": 0,
   "zpanos": [
    39
   ],
-  "nz": 1,
-  "npart": 1,
-  "ninterp": 0,
-  "id": 23
+  "nz": 1
  },
  {
+  "id": 24,
   "key": "cluster14",
-  "old_id": 14,
+  "site": "cheyava_falls",
   "name": "Cheyava Falls",
-  "cx": 4346300.736399999,
-  "cy": 1096433.0458,
+  "region": "margin_unit_neretva_vallis",
   "kind": "cluster",
-  "first_all": 1182,
+  "cx": 4346300.74,
+  "cy": 1096433.05,
+  "lon": 77.3051553,
+  "lat": 18.4974887,
+  "half_size_m": 30.0,
   "runs": [
    [
     1182,
@@ -640,21 +734,25 @@
    ]
   ],
   "first": 1182,
+  "first_all": 1182,
   "n360": 8,
-  "zpanos": [],
-  "nz": 0,
   "npart": 4,
   "ninterp": 0,
-  "id": 24
+  "zpanos": [],
+  "nz": 0
  },
  {
+  "id": 25,
   "key": "plateau_point",
-  "old_id": null,
+  "site": "plateau_point",
   "name": "Plateau Point",
-  "cx": 4345922.259666666,
-  "cy": 1095856.0176666668,
-  "kind": "site",
-  "first_all": 1252,
+  "region": "margin_unit_neretva_vallis",
+  "kind": "sol window",
+  "cx": 4345922.26,
+  "cy": 1095856.02,
+  "lon": 77.2984236,
+  "lat": 18.4877539,
+  "half_size_m": 30.0,
   "runs": [
    [
     1252,
@@ -662,21 +760,25 @@
    ]
   ],
   "first": 1252,
+  "first_all": 1252,
   "n360": 3,
-  "zpanos": [],
-  "nz": 0,
   "npart": 1,
   "ninterp": 0,
-  "id": 25
+  "zpanos": [],
+  "nz": 0
  },
  {
+  "id": 26,
   "key": "cluster15",
-  "old_id": 15,
+  "site": "pico_turquino",
   "name": "Pico Turquino",
-  "cx": 4345506.119750001,
-  "cy": 1094678.8155,
+  "region": "margin_unit_neretva_vallis",
   "kind": "cluster",
-  "first_all": 1305,
+  "cx": 4345506.12,
+  "cy": 1094678.82,
+  "lon": 77.2910219,
+  "lat": 18.4678937,
+  "half_size_m": 30.0,
   "runs": [
    [
     1305,
@@ -688,21 +790,25 @@
    ]
   ],
   "first": 1305,
+  "first_all": 1305,
   "n360": 5,
-  "zpanos": [],
-  "nz": 0,
   "npart": 3,
   "ninterp": 0,
-  "id": 26
+  "zpanos": [],
+  "nz": 0
  },
  {
+  "id": 27,
   "key": "rio_chiquito",
-  "old_id": null,
+  "site": "rio_chiquito",
   "name": "Rio Chiquito",
-  "cx": 4345264.128,
-  "cy": 1094513.811,
-  "kind": "site",
-  "first_all": 1332,
+  "region": "margin_unit_neretva_vallis",
+  "kind": "sites.json",
+  "cx": 4345264.13,
+  "cy": 1094513.81,
+  "lon": 77.2867178,
+  "lat": 18.46511,
+  "half_size_m": 30.0,
   "runs": [
    [
     1332,
@@ -710,23 +816,27 @@
    ]
   ],
   "first": 1332,
+  "first_all": 1332,
   "n360": 2,
+  "npart": 0,
+  "ninterp": 0,
   "zpanos": [
    40
   ],
-  "nz": 1,
-  "npart": 0,
-  "ninterp": 0,
-  "id": 27
+  "nz": 1
  },
  {
+  "id": 28,
   "key": "cluster16",
-  "old_id": 16,
+  "site": "south_arm",
   "name": "South Arm",
-  "cx": 4344038.282,
-  "cy": 1094137.67775,
+  "region": "crater_rim",
   "kind": "cluster",
-  "first_all": 1359,
+  "cx": 4344038.28,
+  "cy": 1094137.68,
+  "lon": 77.2649143,
+  "lat": 18.4587644,
+  "half_size_m": 30.0,
   "runs": [
    [
     1359,
@@ -738,23 +848,27 @@
    ]
   ],
   "first": 1359,
+  "first_all": 1359,
   "n360": 4,
+  "npart": 0,
+  "ninterp": 0,
   "zpanos": [
    43
   ],
-  "nz": 1,
-  "npart": 0,
-  "ninterp": 0,
-  "id": 28
+  "nz": 1
  },
  {
+  "id": 29,
   "key": "cluster17",
-  "old_id": 17,
+  "site": "witch_hazel_hill",
   "name": "Witch Hazel Hill",
-  "cx": 4344025.341166667,
-  "cy": 1094243.9926666666,
+  "region": "crater_rim",
   "kind": "cluster",
-  "first_all": 1362,
+  "cx": 4344025.34,
+  "cy": 1094243.99,
+  "lon": 77.2646842,
+  "lat": 18.460558,
+  "half_size_m": 30.0,
   "runs": [
    [
     1362,
@@ -770,23 +884,27 @@
    ]
   ],
   "first": 1362,
+  "first_all": 1362,
   "n360": 7,
+  "npart": 2,
+  "ninterp": 0,
   "zpanos": [
    42
   ],
-  "nz": 1,
-  "npart": 2,
-  "ninterp": 0,
-  "id": 29
+  "nz": 1
  },
  {
+  "id": 30,
   "key": "cluster18",
-  "old_id": 18,
+  "site": "bell_island",
   "name": "Bell Island",
-  "cx": 4343637.548571428,
-  "cy": 1094345.8437142854,
+  "region": "crater_rim",
   "kind": "cluster",
-  "first_all": 1451,
+  "cx": 4343637.55,
+  "cy": 1094345.84,
+  "lon": 77.2577867,
+  "lat": 18.4622763,
+  "half_size_m": 30.0,
   "runs": [
    [
     1451,
@@ -798,21 +916,25 @@
    ]
   ],
   "first": 1451,
+  "first_all": 1451,
   "n360": 7,
-  "zpanos": [],
-  "nz": 0,
   "npart": 0,
   "ninterp": 0,
-  "id": 30
+  "zpanos": [],
+  "nz": 0
  },
  {
+  "id": 31,
   "key": "cluster19",
-  "old_id": 19,
+  "site": "taylorfjellet_large",
   "name": "Taylorfjellet",
-  "cx": 4344002.702400001,
-  "cy": 1093477.7722,
+  "region": "crater_rim",
   "kind": "cluster",
-  "first_all": 1601,
+  "cx": 4344002.7,
+  "cy": 1093477.77,
+  "lon": 77.2642815,
+  "lat": 18.4476314,
+  "half_size_m": 30.0,
   "runs": [
    [
     1601,
@@ -820,24 +942,28 @@
    ]
   ],
   "first": 1601,
+  "first_all": 1601,
   "n360": 9,
+  "npart": 3,
+  "ninterp": 0,
   "zpanos": [
    46,
    47
   ],
-  "nz": 2,
-  "npart": 3,
-  "ninterp": 0,
-  "id": 31
+  "nz": 2
  },
  {
+  "id": 32,
   "key": "cluster21",
-  "old_id": 21,
+  "site": "origny",
   "name": "Origny",
-  "cx": 4341893.831833333,
-  "cy": 1092296.0926666667,
+  "region": "crater_rim_west",
   "kind": "cluster",
-  "first_all": 1775,
+  "cx": 4341893.83,
+  "cy": 1092296.09,
+  "lon": 77.2267722,
+  "lat": 18.4276958,
+  "half_size_m": 30.0,
   "runs": [
    [
     1775,
@@ -845,23 +971,27 @@
    ]
   ],
   "first": 1775,
+  "first_all": 1775,
   "n360": 8,
+  "npart": 5,
+  "ninterp": 0,
   "zpanos": [
    51
   ],
-  "nz": 1,
-  "npart": 5,
-  "ninterp": 0,
-  "id": 32
+  "nz": 1
  },
  {
+  "id": 33,
   "key": "cluster22",
-  "old_id": 22,
+  "site": "vingeanne",
   "name": "Vingeanne",
-  "cx": 4341418.189333334,
-  "cy": 1092539.7893333333,
+  "region": "crater_rim_west",
   "kind": "cluster",
-  "first_all": 1817,
+  "cx": 4341418.19,
+  "cy": 1092539.79,
+  "lon": 77.2183123,
+  "lat": 18.4318071,
+  "half_size_m": 30.0,
   "runs": [
    [
     1817,
@@ -869,23 +999,27 @@
    ]
   ],
   "first": 1817,
+  "first_all": 1817,
   "n360": 6,
+  "npart": 1,
+  "ninterp": 0,
   "zpanos": [
    52
   ],
-  "nz": 1,
-  "npart": 1,
-  "ninterp": 0,
-  "id": 33
+  "nz": 1
  },
  {
+  "id": 34,
   "key": "groloy",
-  "old_id": null,
+  "site": "groloy",
   "name": "Groloy",
-  "cx": 4341401.7495,
-  "cy": 1092206.6235,
-  "kind": "site",
-  "first_all": 1893,
+  "region": "crater_rim_west",
+  "kind": "sites.json",
+  "cx": 4341401.75,
+  "cy": 1092206.62,
+  "lon": 77.2180199,
+  "lat": 18.4261864,
+  "half_size_m": 30.0,
   "runs": [
    [
     1893,
@@ -897,23 +1031,27 @@
    ]
   ],
   "first": 1893,
+  "first_all": 1893,
   "n360": 4,
+  "npart": 1,
+  "ninterp": 0,
   "zpanos": [
    55
   ],
-  "nz": 1,
-  "npart": 1,
-  "ninterp": 0,
-  "id": 34
+  "nz": 1
  },
  {
+  "id": 35,
   "key": "cluster23",
-  "old_id": 23,
+  "site": "hippo_pools",
   "name": "Hippo Pools",
-  "cx": 4342236.46375,
-  "cy": 1092761.996,
+  "region": "crater_rim_west",
   "kind": "cluster",
-  "first_all": 1947,
+  "cx": 4342236.46,
+  "cy": 1092762.0,
+  "lon": 77.2328664,
+  "lat": 18.4355558,
+  "half_size_m": 30.0,
   "runs": [
    [
     1947,
@@ -925,21 +1063,25 @@
    ]
   ],
   "first": 1947,
+  "first_all": 1947,
   "n360": 4,
-  "zpanos": [],
-  "nz": 0,
   "npart": 2,
   "ninterp": 0,
-  "id": 35
+  "zpanos": [],
+  "nz": 0
  },
  {
+  "id": 36,
   "key": "marble_mountain",
-  "old_id": null,
+  "site": "marble_mountain",
   "name": "Marble Mountain",
-  "cx": 4342184.115,
-  "cy": 1092847.6464999998,
-  "kind": "site",
-  "first_all": 1962,
+  "region": "crater_rim_west",
+  "kind": "sites.json",
+  "cx": 4342184.12,
+  "cy": 1092847.65,
+  "lon": 77.2319353,
+  "lat": 18.4370008,
+  "half_size_m": 30.0,
   "runs": [
    [
     1962,
@@ -947,13 +1089,13 @@
    ]
   ],
   "first": 1962,
+  "first_all": 1962,
   "n360": 4,
+  "npart": 2,
+  "ninterp": 0,
   "zpanos": [
    56
   ],
-  "nz": 1,
-  "npart": 2,
-  "ninterp": 0,
-  "id": 36
+  "nz": 1
  }
 ]
