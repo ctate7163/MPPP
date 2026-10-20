@@ -250,7 +250,7 @@ def test_shipped_sites_v0p75():
     assert "olifants" not in g["navcam_consensus"] and "cheyava_falls" in g["navcam_consensus"]
     assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
     assert "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
-    assert len(g["navcam_consensus"]) == 23 and "navcam_consensus_v0p82" not in g
+    assert len(g["navcam_consensus"]) == 24 and "navcam_consensus_v0p82" not in g
     assert len(g["zcam34_consensus"]) == 11 and g["zcam34_consensus"][:2] == ["chal_rocks", "rochette"]   # 20 Oct (Christian): 11 blocks
 
 
@@ -347,6 +347,6 @@ def test_sites_19_oct_afternoon():
     assert S["van_zyl_overlook_huge"]["sols"] == [[15, 99], [361, 378]]
     nc = set(G["navcam_consensus"])
     assert {"seitah_north_large", "marble_mountain", "hippo_pools", "cheyava_falls", "bunsen_peak", "tuxedo_park",
-            "belva_crater_large", "oeb_landing_site", "van_zyl_overlook_huge", "origny_large"} <= nc and len(nc) == 23
+            "belva_crater_large", "oeb_landing_site", "van_zyl_overlook_huge", "origny_large"} <= nc and len(nc) == 24 and "knob_mountain_large" in nc
     assert "seitah_north_large" in G["navcam_baseline"] and "van_zyl_overlook_huge" in G["navcam_baseline"]
     assert not any(s in ("butler_landing_large", "van_zyl_overlook_large") for g in G.values() for s in g)
