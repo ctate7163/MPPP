@@ -28,6 +28,9 @@ echo uncommitted changes (tracked ones are stashed): >> "%LOG%"
 git status --porcelain >> "%LOG%" 2>&1
 git stash push -m "claude_sync %DATE% %TIME%" >> "%LOG%" 2>&1
 git merge --ff-only claude/main >> "%LOG%" 2>&1 || goto :fail
+REM 20 Oct: the uncommitted edits come back right after the merge (they were left in the stash before - paper.md)
+REM (this run stashed something unless the log says "No local changes to save"; on a conflict they stay in the stash)
+findstr /c:"No local changes to save" "%LOG%" >nul 2>&1 || (git stash pop >> "%LOG%" 2>&1 || echo YOUR EDITS ARE STILL IN THE STASH - git stash list, git stash pop >> "%LOG%")
 echo after: >> "%LOG%"
 git log --oneline -3 >> "%LOG%" 2>&1
 git push origin main >> "%LOG%" 2>&1 || echo PUSH OF MAIN FAILED >> "%LOG%"
