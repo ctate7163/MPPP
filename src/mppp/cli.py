@@ -90,6 +90,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name", default=None, help="install: the registry name")
     p.add_argument("--force", action="store_true", help="fetch: download again")
 
+    p = sub.add_parser("waypoints", help="the Mars 2020 waypoint table in use (cached download or packaged snapshot)")
+    p.add_argument("--refresh", action="store_true", help="download the current table now (every sync should)")
+
     sub.add_parser("version", help="the MPPP version")
     return ap
 
@@ -305,6 +308,22 @@ def cmd_mask(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_waypoints(a: argparse.Namespace) -> int:
+    from .waypoints import load_waypoints
+    from .waypoints.table import WAYPOINTS_URL, cached_path, waypoints_age_days
+    w = load_waypoints(refresh=bool(a.refresh))
+    src = w["_mppp_source"]
+    last = max(w["features"], key=lambda f: (int((f.get("properties", f)).get("sol") or 0)))
+    pl = last.get("properties", last)
+    age = waypoints_age_days()
+    print(f"{src['n_features']} waypoints from {src['path']} ({'packaged snapshot' if src['packaged_snapshot'] else 'downloaded'}, "
+          f"file time {src['file_time']}{'' if age is None else f', {age:.1f} days old'})")
+    print(f"last waypoint: sol {pl.get('sol')} site {pl.get('site')} drive {pl.get('drive')}")
+    if src["packaged_snapshot"]:
+        print(f"no downloaded copy at {cached_path()}: mppp waypoints --refresh downloads {WAYPOINTS_URL}")
+    return 0
+
+
 def cmd_version(a: argparse.Namespace) -> int:
     from . import __file__ as where, __version__
     print(f"mppp {__version__} ({Path(where).parent})")
@@ -312,7 +331,7 @@ def cmd_version(a: argparse.Namespace) -> int:
 
 
 COMMANDS = {"process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
-            "mask": cmd_mask, "version": cmd_version}
+            "mask": cmd_mask, "waypoints": cmd_waypoints, "version": cmd_version}
 
 
 def main(argv: Optional[List[str]] = None) -> int:

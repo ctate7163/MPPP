@@ -12,7 +12,9 @@ The error model's ``waypoints`` module builds stations from the same file
 """
 from __future__ import annotations
 
+import datetime
 import hashlib
+import time
 import json
 import math
 import urllib.request
@@ -40,18 +42,35 @@ def cached_path() -> Path:
     return cache_dir() / WAYPOINTS_FILE
 
 
-def load_waypoints(path: Optional[PathLike] = None, refresh: bool = False,
-                   url: str = WAYPOINTS_URL, timeout: float = 30.0) -> Dict[str, Any]:
+MAX_AGE_DAYS = 1.0   # refresh="auto": a cached table older than this is downloaded again (the mission adds waypoints
+                     # every drive; a stale table places new stations from the onboard estimate instead)
+
+
+def waypoints_age_days(path: Optional[PathLike] = None) -> Optional[float]:
+    """Age of the cached (or given) waypoint file in days; None when there is none (only the packaged snapshot)."""
+    target = Path(path) if path is not None else cached_path()
+    if not target.is_file():
+        return None
+    return (time.time() - target.stat().st_mtime) / 86400.0
+
+
+def load_waypoints(path: Optional[PathLike] = None, refresh: Union[bool, str] = False,
+                   url: str = WAYPOINTS_URL, timeout: float = 30.0, max_age_days: float = MAX_AGE_DAYS) -> Dict[str, Any]:
     """
-    The waypoint GeoJSON as a dict (``_mppp_source`` records path, SHA-256, count).
+    The waypoint GeoJSON as a dict (``_mppp_source`` records path, SHA-256, count, download time).
 
     * ``path`` given: that file (``refresh`` downloads into it first).
     * default: the user-cache copy if one exists, else the packaged snapshot.
     * ``refresh=True``: download the current file from ``url`` into the cache
       (or ``path``); if the download fails, a warning is issued and the
       existing copy is used.
+    * ``refresh="auto"`` (0.90, what the pipeline uses): download when the cache is missing or older than
+      ``max_age_days`` - so every processing run and every sync of the code works from the current table.
     """
     target = Path(path) if path is not None else cached_path()
+    if refresh == "auto":
+        age = waypoints_age_days(target)
+        refresh = age is None or age > max_age_days
     if refresh:
         try:
             with urllib.request.urlopen(url, timeout=timeout) as r:
@@ -72,7 +91,8 @@ def load_waypoints(path: Optional[PathLike] = None, refresh: bool = False,
         raise ValueError(f"No 'features' in waypoint file {target}")
     data["_mppp_source"] = {"path": str(target), "sha256": hashlib.sha256(raw).hexdigest(),
                             "n_features": len(data["features"]),
-                            "packaged_snapshot": target.resolve() == snapshot_path().resolve()}
+                            "packaged_snapshot": target.resolve() == snapshot_path().resolve(),
+                            "file_time": datetime.datetime.fromtimestamp(target.stat().st_mtime).isoformat(timespec="seconds")}
     return data
 
 

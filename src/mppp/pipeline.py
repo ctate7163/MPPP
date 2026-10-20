@@ -418,8 +418,11 @@ def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Pa
     ranges = [list(r) for r in st.sol_ranges]
     near = None
     radius = float(settings.add_nearby_waypoints or 0)
+    waypoints = load_waypoints(refresh="auto")                 # 0.90: the current mission table (cache <= 1 day old)
+    src = waypoints["_mppp_source"]
+    log.info("waypoints: %d features, %s%s", src["n_features"], src["file_time"],
+             " (packaged snapshot: no download possible - new stations get the onboard estimate)" if src["packaged_snapshot"] else "")
     if radius:
-        waypoints = load_waypoints()
         min_sol = min(int(r[0]) for r in sol_ranges(ranges)) if settings.nearby_from_first_sol else None
         paths, near = find_imgs_near(pds, ["NLF", "NRF"], ranges, waypoints, radius_m=radius, min_sol=min_sol)
         log.info("Navcam: %d in sols %s + %d from other visits within %g m%s", near["n_in_range"], st.sols_text,
@@ -493,7 +496,7 @@ def process_site(site_or_work: PathLike, settings: Settings) -> Path:
     processed = st.work / "processed"
     processed.mkdir(parents=True, exist_ok=True)
     cfg = processing_config(s)
-    manifest = process_images(paths, processed, cfg, load_waypoints(), provenance=sel,
+    manifest = process_images(paths, processed, cfg, load_waypoints(refresh="auto"), provenance=sel,
                               only_existing="PNG8" if s.keep_only_remaining else None,
                               reuse_existing=not s.reprocess_all, workers=s.workers)
     log.info("%d images in the manifest, %d failed, %d skipped by the selection rules (sky, LMST window, "

@@ -3,7 +3,11 @@ Waypoint localisation check (MPPP v0p82): which rover stations' waypoint positio
 
 A block's refined camera centres are compared with their waypoint priors station by station, after the best
 similarity transform (scale, rotation, translation) between the two - fitted robustly (Huber) on the stations that
-kept their prior, so that one bad localisation does not bend the fit.  What is left per station is its localisation
+kept their prior, so that one bad localisation does not bend the fit.  Only *surveyed* stations - those with a
+waypoint of their own (``position_source`` "waypoint site N drive D (exact)") - enter the fit: a station placed from
+the rover's onboard estimate (site origin + label ORIGIN_OFFSET_VECTOR, :func:`mppp.sfm.reconstruction.is_unsurveyed`)
+is checked against the fit but says nothing about the block's scale (0.90: the scale check of 19 Oct was skewed by
+such stations - Hippo Pools -3418 ppm from 5 stations, 3 of them unsurveyed).  What is left per station is its localisation
 error relative to the others: the manual localisations against the HiRISE basemap are good to about 0.3-0.5 m (JPL,
 Censible, ICRA 2024), a station far beyond that - or far beyond the block's own scatter - is flagged.
 
@@ -27,6 +31,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
+
+from .reconstruction import is_unsurveyed
 
 PathLike = Union[str, Path]
 FLAG_ABS_M = 1.0          # horizontal residual above this: always flagged (about 2-3x the manual localisation accuracy)
@@ -53,6 +59,7 @@ def station_rows(project_dir: PathLike, min_observations: int = MIN_OBSERVATIONS
     rs = st.get("reconstruction") or {}
     unloc = rs.get("unlocalized") or {}
     flagged = set(st.get("no_position_prior_at") or [])
+    surveyed_images = {str(r.get("name")): not is_unsurveyed(r) for r in (P.get("images") or [])}
     rows: Dict[str, List[Dict[str, str]]] = {}
     with open(pdir / "error_input" / "poses.csv", encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
@@ -65,9 +72,11 @@ def station_rows(project_dir: PathLike, min_observations: int = MIN_OBSERVATIONS
         prior = ref - d
         sols = [int(r["sol"]) for r in g]
         how = "dropped (flagged)" if s in flagged else (unloc.get(s) or {}).get("prior", "kept")
+        surveyed = all(surveyed_images.get(r["name"], True) for r in g)   # no project rows (old runs): surveyed
         out.append({"station": s, "site": int(s[1:4]) if s[1:4].isdigit() else None,
                     "drive": int(s[5:]) if s[5:].isdigit() else None, "sols": [min(sols), max(sols)],
-                    "images": len(g), "refined": ref.mean(0), "prior": prior.mean(0), "position_prior": how})
+                    "images": len(g), "refined": ref.mean(0), "prior": prior.mean(0), "position_prior": how,
+                    "surveyed": surveyed})
     return sorted(out, key=lambda r: (r["sols"][0], r["station"]))
 
 
@@ -114,9 +123,12 @@ def check_block(project_dir: PathLike, name: Optional[str] = None, abs_m: float 
     pdir = _project_dir(project_dir)
     rows = station_rows(pdir)
     out: Dict[str, Any] = {"block": name or pdir.parent.name, "project": str(pdir), "stations": [], "flagged": []}
-    kept = [r for r in rows if r["position_prior"] == "kept" or str(r["position_prior"]).startswith("kept")]
+    kept_all = [r for r in rows if r["position_prior"] == "kept" or str(r["position_prior"]).startswith("kept")]
+    kept = [r for r in kept_all if r.get("surveyed", True)]           # the fit: waypoint stations only
+    n_unsurveyed = sum(not r.get("surveyed", True) for r in rows)
     if len(kept) < 2:
-        out["note"] = f"{len(kept)} stations with a position prior: nothing to compare"
+        out["note"] = (f"{len(kept)} surveyed stations with a position prior ({n_unsurveyed} from the onboard "
+                       f"estimate): nothing to compare")
         out["stations"] = [_jsonable(r) for r in rows]
         return out
     src = np.array([r["prior"] for r in kept])
@@ -135,14 +147,15 @@ def check_block(project_dir: PathLike, name: Optional[str] = None, abs_m: float 
     scatter = float(max(np.hypot(*mad), 0.05))
     for r in rows:
         rh = r["residual_h_m"]
-        r["flag"] = bool(rh > abs_m or (rh > min_m and rh > k * scatter))
-        r["flag_reason"] = (f"{rh:.2f} m > {abs_m:g} m" if rh > abs_m else
+        r["flag"] = bool(r.get("surveyed", True) and (rh > abs_m or (rh > min_m and rh > k * scatter)))
+        r["flag_reason"] = ("" if not r.get("surveyed", True) else      # an onboard estimate is expected to be off
+                            f"{rh:.2f} m > {abs_m:g} m" if rh > abs_m else
                             f"{rh:.2f} m > {min_m:g} m and > {k:g} x scatter {scatter:.2f} m" if r["flag"] else "")
     n_kept = len(kept)
     out.update(similarity={"scale_ppm": 1e6 * (fit["scale"] - 1.0), "rotation_mdeg": 1e3 * fit["rotation_deg"],
                            "yaw_mdeg": 1e3 * fit["yaw_deg"], "translation_m": fit["t"].tolist(),
                            "translation_only": fit["translation_only"], "stations": n_kept,
-                           "extent_m": ext},
+                           "unsurveyed_stations": n_unsurveyed, "extent_m": ext},
                scatter_h_m=scatter, stations=[_jsonable(r) for r in rows],
                flagged=[r["station"] for r in rows if r["flag"]],
                mean_raw_offset_m=np.average([r["raw_m"] for r in kept], axis=0,
@@ -203,7 +216,7 @@ def mission_flags(results: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
             if r["residual_h_m"] > e["worst_residual_h_m"]:
                 e["worst_residual_h_m"] = r["residual_h_m"]
                 e["worst_residual_m"] = r["residual_m"]
-                e["position_prior"] = r["position_prior"]
+                e["position_prior"] = r["position_prior"] + ("" if r.get("surveyed", True) else " (onboard estimate)")
             if r.get("flag"):
                 e["flag"] = True
                 e["reasons"].append(f"{b['block']}: {r['flag_reason']}")
@@ -232,12 +245,13 @@ def write_flags(m: Dict[str, Any], out_dir: PathLike) -> Path:
     L = [f"# Waypoint localisation check ({m['created'][:10]})", "",
          f"Rule: horizontal residual after the block's robust similarity > {m['rule']['abs_m']:g} m, or > "
          f"{m['rule']['min_m']:g} m and > {m['rule']['k']:g} x the block's scatter.", "",
-         "| block | stations | scale ppm | rotation mdeg | mean raw offset E N U m | scatter m | flagged |",
+         "| block | stations (surveyed + onboard) | scale ppm | rotation mdeg | mean raw offset E N U m | scatter m | flagged |",
          "|---|---|---|---|---|---|---|"]
     for b in m["blocks"]:
         s = b.get("similarity") or {}
         mo = b.get("mean_raw_offset_m")
-        L.append(f"| {b['block']} | {s.get('stations', '-')} | {s.get('scale_ppm', float('nan')):+.0f} | "
+        L.append(f"| {b['block']} | {s.get('stations', '-')} + {s.get('unsurveyed_stations', 0)} | "
+                 f"{s.get('scale_ppm', float('nan')):+.0f} | "
                  f"{s.get('rotation_mdeg', float('nan')):.0f} | "
                  + (" ".join(f"{x:+.2f}" for x in mo) if mo else "-")
                  + f" | {b.get('scatter_h_m') or float('nan'):.2f} | {', '.join(b.get('flagged') or []) or '-'} |")

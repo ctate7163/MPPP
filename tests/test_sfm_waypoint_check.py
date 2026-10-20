@@ -17,12 +17,16 @@ def test_similarity_fit_is_robust():
     assert f["scale"] == pytest.approx(1.0025, abs=4e-4) and f["yaw_deg"] == pytest.approx(0.3, abs=0.05)
 
 
-def _fake_block(tmp, stations, bad=None, stretch_e=0.0):
+def _fake_block(tmp, stations, bad=None, stretch_e=0.0, unsurveyed=()):
     """A project folder with project.json and error_input/poses.csv: refined = prior (+ the bad offset, + an east
-    stretch) per station, 10 images each."""
+    stretch) per station, 10 images each.  Stations in ``unsurveyed`` get the onboard-estimate position_source."""
     p = tmp / "mars2020_sol_0001_fake_colmap" / "colmap"
     (p / "error_input").mkdir(parents=True)
-    (p / "project.json").write_text(json.dumps({"settings": {"reconstruction": {"unlocalized": {}}}, "images": []}))
+    images = [{"name": f"NLF_{k}_{i}.png", "station": st,
+               "position_source": (f"waypoint site {int(st[1:4])} drive 0 + label ORIGIN_OFFSET_VECTOR" if st in unsurveyed
+                                   else f"waypoint site {int(st[1:4])} drive {int(st[5:])} (exact)")}
+              for k, (st, e, n) in enumerate(stations) for i in range(10)]
+    (p / "project.json").write_text(json.dumps({"settings": {"reconstruction": {"unlocalized": {}}}, "images": images}))
     with open(p / "error_input" / "poses.csv", "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["name", "station", "station_label", "sol", "instrument", "downsample_scale", "dE_m", "dN_m", "dU_m",
@@ -63,3 +67,24 @@ def test_small_block_translation_only(tmp_path):
     st = [(f"S030D{i:04d}", float(i * 3), 0.0) for i in range(6)]          # 15 m
     r = WC.check_block(_fake_block(tmp_path, st))
     assert r["similarity"]["translation_only"] and r["anisotropy"] is None
+
+
+def test_block_scale_from_surveyed_stations_only(tmp_path):
+    """0.90: a station placed from the rover's onboard estimate (no waypoint of its own) is 2 m off; it must neither
+    bend the block scale nor be flagged, and the report counts it separately."""
+    from mppp.sfm import waypoint_check as WC
+    rng = np.random.default_rng(5)
+    st = [(f"S040D{i:04d}", float(x), float(y)) for i, (x, y) in enumerate(rng.uniform(-60, 60, (8, 2)))]
+    bad = ("S040D0007", (2.0, 1.0, 0.0))
+    r_all = WC.check_block(_fake_block(tmp_path / "a", st, bad=bad))
+    r_unsv = WC.check_block(_fake_block(tmp_path / "b", st, bad=bad, unsurveyed=("S040D0007", "S040D0006")))
+    assert r_all["flagged"] == ["S040D0007"]
+    assert r_unsv["flagged"] == [] and r_unsv["similarity"]["stations"] == 6
+    assert r_unsv["similarity"]["unsurveyed_stations"] == 2
+    assert abs(r_unsv["similarity"]["scale_ppm"]) < 1.0 and abs(r_unsv["similarity"]["rotation_mdeg"]) < 0.1
+    rows = {x["station"]: x for x in r_unsv["stations"]}
+    assert rows["S040D0007"]["surveyed"] is False and rows["S040D0007"]["residual_h_m"] == pytest.approx(np.hypot(2, 1), abs=0.05)
+    m = WC.mission_flags([r_unsv])
+    assert "(onboard estimate)" in next(e for e in m["stations"] if e["station"] == "S040D0007")["position_prior"]
+    out = WC.write_flags(m, tmp_path / "flags")
+    assert "| 6 + 2 |" in (out / "waypoint_flags.md").read_text()

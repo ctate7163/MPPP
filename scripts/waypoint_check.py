@@ -57,7 +57,8 @@ def main(argv=None) -> int:
             print(f"{name}: not checked ({type(e).__name__}: {e})", flush=True)
             continue
         s = r.get("similarity") or {}
-        print(f"{name}: {s.get('stations', 0)} stations over {s.get('extent_m', 0):.0f} m, scale {s.get('scale_ppm', 0):+.0f} ppm, "
+        print(f"{name}: {s.get('stations', 0)} surveyed stations (+{s.get('unsurveyed_stations', 0)} onboard) over "
+              f"{s.get('extent_m', 0):.0f} m, scale {s.get('scale_ppm', 0):+.0f} ppm, "
               f"scatter {r.get('scatter_h_m') or 0:.2f} m, flagged {', '.join(r['flagged']) or '-'}", flush=True)
         results.append(r)
     if not results:

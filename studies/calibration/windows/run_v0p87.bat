@@ -2,7 +2,7 @@
 REM ======================================================================================================
 REM MPPP v0p87 (was run_v0p87.bat) - the full run: 16 Navcam blocks, 7 Mastcam-Z 34 mm blocks (Christian, 19 Oct 2026).
 REM Start it after zr_diagnose_z34.bat has finished
-REM and _transfer\claude_sync.bat has been run.
+REM and the code has been synced (git fetch/merge of the bundle). The current waypoint table is downloaded first.
 REM
 REM   Navcam cameras: the 18 Oct pass-2 consensus of 23 blocks, already promoted in the repo (cmods CHANGES.md)
 REM   navcam_runs:     the 16 blocks of the navcam_consensus group (sites.json; Three Forks Large left out in v0p86), rig epochs of at most 25 sols
@@ -28,6 +28,7 @@ REM ============================================================================
 setlocal
 if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
+python -m mppp waypoints --refresh
 python "%MPPP_HOME%\scripts\move_scapes.py" --apply || ( echo moving the block folders failed - nothing started & pause & exit /b 1 )
 if /i "%~1"=="--continue" (
   call "%~dp0run_pipeline.bat" --no-baseline-study
