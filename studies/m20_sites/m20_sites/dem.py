@@ -105,3 +105,19 @@ def hillshade(z, dx, dy, az=315, alt=40, exag=1.0):
     a, b = np.deg2rad(az), np.deg2rad(alt)
     hs = np.sin(b)*np.sin(slope) + np.cos(b)*np.cos(slope)*np.cos(a - aspect)
     return np.clip(hs, 0, 1)
+
+
+def save_figure(fig, path, **kw):
+    """savefig; when Windows refuses the file (open in a viewer: OSError 22 / 13), the next free _2, _3 ... name."""
+    import os
+    base, ext = os.path.splitext(str(path))
+    for k in range(1, 20):
+        p = path if k == 1 else f"{base}_{k}{ext}"
+        try:
+            fig.savefig(p, **kw)
+            if k > 1: print(f"{path} is in use (close the viewer); written to {p}", flush=True)
+            return p
+        except OSError as e:
+            if getattr(e, "errno", None) not in (13, 22):
+                raise
+    raise OSError(f"cannot write {path}: the file is in use")

@@ -3,7 +3,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from refdata import PANOS, SAMPLES
 from sitesdef import P, X, Y, S, F, HALF, fmt_runs, fmt_counts
-from dem import LocalFrame, sample_dem, sample_ortho, background_mode, hillshade, dem_paths
+from dem import LocalFrame, sample_dem, sample_ortho, background_mode, hillshade, dem_paths, save_figure
 out_png = sys.argv[1] if len(sys.argv) > 1 else '/mnt/user-data/outputs/m20_cluster_zooms.png'
 sites = json.load(open('sites_zoom.json'))
 LF = LocalFrame(P)
@@ -93,5 +93,5 @@ fig.suptitle_text = (f'M2020 blocks of rover stations, ordered by first sol: all
              f'labels = sol; title sols = sols the rover ended inside the square). {bg}.')
 fig.suptitle('\n'.join(textwrap.wrap(fig.suptitle_text, 140)), x=0.01, ha='left', fontsize=12.5, color=INK)
 fig.tight_layout(rect=(0, 0, 1, 0.975))
-fig.savefig(out_png, dpi=int(__import__('os').environ.get('M20_DPI', 300)), facecolor=fig.get_facecolor())
+out_png = save_figure(fig, out_png, dpi=int(__import__('os').environ.get('M20_DPI', 300)), facecolor=fig.get_facecolor())
 print('saved', out_png, 'DEM:', sorted(dem_used) or 'none')

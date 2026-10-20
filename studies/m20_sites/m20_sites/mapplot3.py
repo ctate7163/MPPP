@@ -8,7 +8,7 @@ from adjustText import adjust_text
 from terrain_tiles import dem as tile_dem
 from refdata import PANOS, SAMPLES
 from sitesdef import P, X, Y, S, F, HALF, fmt_runs, fmt_counts
-from dem import LocalFrame, sample_dem, sample_ortho, background_mode
+from dem import LocalFrame, sample_dem, sample_ortho, background_mode, save_figure
 sites = json.load(open('sites_zoom.json')); LF = LocalFrame(P)
 lon = np.array([p['lon'] for p in P]); lat = np.array([p['lat'] for p in P]); isE = F == 'y'
 C1,C2,C3,C4='#2a78d6','#eb6834','#1baf7a','#eda100'; INK='#0b0b0b'; INK2='#52514e'
@@ -183,7 +183,7 @@ def fig2(out):
     panel_A(axA); nB = panel_B(axB)
     colorbar(fig, rect(b[0]+b[2]+0.12, b[1], 0.2, b[3]), nB, 'Elevation [m] (tint)')
     axC = fig.add_axes(rect(0.85, 0.1, W-1.2, a[1]-1.05)); panel_C(axC, per=per)
-    fig.savefig(out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out)
+    out = save_figure(fig, out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out)
 
 REGION_KEYS = {
  'rimw':   ['cluster21', 'cluster22', 'groloy', 'cluster23', 'marble_mountain'],
@@ -266,7 +266,7 @@ def fig3(out):
     fig.text(0.85/W, 0.25/Htot, 'D–I: squares = blocks of rover stations (±30 m, as in the block panels); '
              'dots = end-of-drive Navcam 360; small squares = mid-drive partial Navcam; triangles = Mastcam-Z numbered 360s; diamonds = sample cores.',
              fontsize=8.5*FS, color=INK2)
-    fig.savefig(out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out, 'DTM files:', sorted(used_all) or 'none')
+    out = save_figure(fig, out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out, 'DTM files:', sorted(used_all) or 'none')
 
 def fig4(out):
     """Wide layout: row 1 = A | B | C (one-column list); row 2 = six regional panels in reverse chronological order, D-I left to right."""
@@ -339,7 +339,7 @@ def fig4(out):
         else: x += gap
     fig.text(left/W, 0.22/Htot, 'D–I share one scale (2.4 km tall). Squares = blocks of rover stations (±30 m); dots = end-of-drive Navcam 360; '
              'small squares = mid-drive partial Navcam; triangles = Mastcam-Z numbered 360s; diamonds = sample cores.', fontsize=8.5*FS, color=INK2)
-    fig.savefig(out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out)
+    out = save_figure(fig, out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out)
 
 ISIDIS_LATC = 14.0
 ISIDIS = (85.5 - 15.0/np.cos(np.deg2rad(ISIDIS_LATC)), 85.5 + 15.0/np.cos(np.deg2rad(ISIDIS_LATC)), ISIDIS_LATC - 15.0, ISIDIS_LATC + 15.0)   # square, 30 deg tall
@@ -484,7 +484,7 @@ def fig5(out, with_I=True):
     if ortho_used: bg_note += ' HiRISE orthomosaic (' + ', '.join(sorted(ortho_used)) + ') in grey where available.'
     fig.text(left/W, 0.1/Htot, scale_note + bg_note + '\nSquares = blocks of rover stations (±30 m, numbered by first sol); dots = end-of-drive Navcam 360; '
              'small squares = mid-drive partial Navcam; triangles = Mastcam-Z numbered 360s; diamonds = sample cores.', fontsize=8.5*FS, color=INK2)
-    fig.savefig(out, dpi=dpi5, facecolor=fig.get_facecolor()); print('saved', out, dpi5, 'dpi')
+    out = save_figure(fig, out, dpi=dpi5, facecolor=fig.get_facecolor()); print('saved', out, dpi5, 'dpi')
 
 def fig6(out):
     """Figure 5 without row 4 (panel I)."""
