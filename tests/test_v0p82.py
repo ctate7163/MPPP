@@ -289,5 +289,5 @@ def test_v0p85_groups_cameras_and_pipeline():
     assert abs(cm["thermal"]["cx_px_per_degC"] + 0.0525) < 1e-3 and check_form()["ok"]
     src = (ROOT / "scripts" / "run_pipeline.py").read_text()
     assert 'EARLY_ROUNDS = "1"' in src and '"0.197", "0.254", "0.324", "-0.572"' in src
-    bat = (ROOT / "scripts" / "windows" / "run_v0p86.bat").read_text()
+    bat = (ROOT / "scripts" / "windows" / "run_v0p87.bat").read_text()
     assert "--reset --from navcam_runs --no-baseline-study" in bat

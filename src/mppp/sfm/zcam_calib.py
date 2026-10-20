@@ -347,6 +347,7 @@ def start_model_from_blocks(infos: Sequence[Dict[str, Any]], model: Dict[str, An
     """
     import copy
     out = copy.deepcopy(model)
+    out.pop("calibration", None)        # v0p87: a start update is not a calibration (the shipped model may be one)
     rep: Dict[str, Any] = {"blocks": [i["name"] for i in infos], "eyes": {}}
     for g, gm in (out.get("cameras") or {}).items():
         rows = [(i, b) for i in infos for b in i["bins"]

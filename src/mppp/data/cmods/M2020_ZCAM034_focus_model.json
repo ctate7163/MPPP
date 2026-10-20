@@ -1,10 +1,10 @@
 {
  "cameras": {
   "ZL034": {
-   "f0_px": 4721.247191156167,
+   "f0_px": 4725.963432976128,
    "reference_focus": 600.0,
-   "slope_px_per_count": 0.0505,
-   "aspect": 1.0021840079726891,
+   "slope_px_per_count": 0.03203079141457461,
+   "aspect": 1.0022805428415649,
    "fit_rms_px": null,
    "focus_range": [
     -400,
@@ -30,58 +30,46 @@
      "k2"
     ],
     "params": [
-     -0.46,
-     0.635
+     -0.4589368594969934,
+     0.6775797084842665
     ],
-    "note": "v0p75 start: k1, k2 constant with focus (block medians of the 4-5 Oct first runs)"
+    "note": "v0p74 calibration: k1, k2 at the reference focus (the lines give them per focus)"
    },
    "lines": {
     "backlash": {
      "fx": {
-      "a": 4716.1,
-      "b": 0.0505,
-      "form": "common"
+      "a": 4720.58375163647,
+      "b": 0.03203079141457461
      },
      "fy": {
-      "a": 4726.4,
-      "b": 0.0505,
-      "form": "common"
+      "a": 4731.3492451192715,
+      "b": 0.03203079141457461
      },
      "k1": {
-      "a": -0.46,
-      "b": 0.0,
-      "form": "constant"
+      "a": -0.4589368594969934,
+      "b": 0.0
      },
      "k2": {
-      "a": 0.635,
-      "b": 0.0,
-      "form": "constant"
+      "a": 0.6775797084842665,
+      "b": 0.0
      }
     },
     "regular": {
      "fx": {
-      "a": 4674.033696729436,
-      "b": 0.05004955401387513,
-      "form": "common",
-      "derived": "backlash / 1.00900"
+      "a": 4676.160229456632,
+      "b": 0.031729362471099164
      },
      "fy": {
-      "a": 4684.24182358771,
-      "b": 0.05004955401387513,
-      "form": "common",
-      "derived": "backlash / 1.00900"
+      "a": 4686.824413193929,
+      "b": 0.031729362471099164
      },
      "k1": {
-      "a": -0.46,
-      "b": 0.0,
-      "form": "constant",
-      "derived": "backlash"
+      "a": -0.4589368594969934,
+      "b": 0.0
      },
      "k2": {
-      "a": 0.635,
-      "b": 0.0,
-      "form": "constant",
-      "derived": "backlash"
+      "a": 0.6775797084842665,
+      "b": 0.0
      }
     },
     "reference_focus": 600.0
@@ -103,10 +91,10 @@
    }
   },
   "ZR034": {
-   "f0_px": 4728.796319360774,
+   "f0_px": 4731.659419392691,
    "reference_focus": 600.0,
-   "slope_px_per_count": 0.064,
-   "aspect": 1.0024984649262105,
+   "slope_px_per_count": 0.04853606048150386,
+   "aspect": 1.0022686947102721,
    "fit_rms_px": null,
    "focus_range": [
     -1100,
@@ -116,8 +104,8 @@
    "label_slope_px_per_count": 0.04611431959777594,
    "pp": {
     "cx_px_per_count": 0.0,
-    "cy_px_per_count": 0.0017,
-    "note": "v0p75 start: ZR principal point pinned at pp0; cx constant with focus (between blocks +0.0006 +/- 0.0004 px/count, z 1.4), cy slope kept (+0.0017 +/- 0.0002, z 8)"
+    "cy_px_per_count": 0.0012216133918659864,
+    "note": "v0p74 calibration: ZR principal point line (the R-L boresight; ZL the reference)"
    },
    "n_bins": 121,
    "thermal": {
@@ -136,80 +124,62 @@
      "k2"
     ],
     "params": [
-     -0.468,
-     0.875
+     -0.4732314377927261,
+     1.0503799549987516
     ],
-    "note": "v0p75 start: k1, k2 constant with focus (block medians of the 4-5 Oct first runs)"
+    "note": "v0p74 calibration: k1, k2 at the reference focus (the lines give them per focus)"
    },
    "lines": {
     "backlash": {
-     "fx": {
-      "a": 4722.9,
-      "b": 0.064,
-      "form": "common"
-     },
-     "fy": {
-      "a": 4734.7,
-      "b": 0.064,
-      "form": "common"
-     },
-     "k1": {
-      "a": -0.468,
-      "b": 0.0,
-      "form": "constant"
-     },
-     "k2": {
-      "a": 0.875,
-      "b": 0.0,
-      "form": "constant"
-     },
      "cx": {
       "a": 743.1541318639494,
-      "b": 0.0,
-      "form": "pinned"
+      "b": 0.0
      },
      "cy": {
       "a": 663.9621648425003,
-      "b": 0.0017,
-      "form": "pinned_slope"
+      "b": 0.0012216133918659864
+     },
+     "fx": {
+      "a": 4726.301189464105,
+      "b": 0.04853606048150386
+     },
+     "fy": {
+      "a": 4737.023723971795,
+      "b": 0.04853606048150386
+     },
+     "k1": {
+      "a": -0.4732314377927261,
+      "b": 0.0
+     },
+     "k2": {
+      "a": 1.0503799549987516,
+      "b": 0.0
      }
     },
     "regular": {
-     "fx": {
-      "a": 4671.975467405283,
-      "b": 0.06330992185181522,
-      "form": "common",
-      "derived": "backlash / 1.01090"
-     },
-     "fy": {
-      "a": 4683.648234246711,
-      "b": 0.06330992185181522,
-      "form": "common",
-      "derived": "backlash / 1.01090"
-     },
-     "k1": {
-      "a": -0.468,
-      "b": 0.0,
-      "form": "constant",
-      "derived": "backlash"
-     },
-     "k2": {
-      "a": 0.875,
-      "b": 0.0,
-      "form": "constant",
-      "derived": "backlash"
-     },
      "cx": {
       "a": 743.1541318639494,
-      "b": 0.0,
-      "form": "pinned",
-      "derived": "backlash"
+      "b": 0.0
      },
      "cy": {
       "a": 663.9621648425003,
-      "b": 0.0017,
-      "form": "pinned_slope",
-      "derived": "backlash"
+      "b": 0.0012216133918659864
+     },
+     "fx": {
+      "a": 4681.82386276781,
+      "b": 0.048079307064392125
+     },
+     "fy": {
+      "a": 4692.445491799698,
+      "b": 0.048079307064392125
+     },
+     "k1": {
+      "a": -0.4732314377927261,
+      "b": 0.0
+     },
+     "k2": {
+      "a": 1.0503799549987516,
+      "b": 0.0
      }
     },
     "reference_focus": 600.0
@@ -227,10 +197,10 @@
    }
   }
  },
- "state": "backlash",
+ "state": "calibrated (v0p74)",
  "pixel_mm": 0.0074,
  "units": "full-frame pixels (1648 x 1200); f = f0_px + slope_px_per_count (focus - reference_focus) + thermal.f_px_per_degC (T_FPA - thermal.T0_degC) + trend.f_px_per_sol (clamp(sol, trend.sol_range) - trend.sol0); fy/fx = aspect; cx, cy + pp.c*_px_per_count (bin focus - the eye's median focus in the block) (mppp.sfm.project.zcam_model_focal, zcam_model_pp_shift)",
- "source": "MPPP v0p74 Mastcam-Z 34 mm calibration from 8 blocks: mars2020_sol_0178_rochette_colmap_zcam, mars2020_sol_0361_chal_rocks_sid_colmap_zcam, mars2020_sol_0460_rockytop_colmap_zcam, mars2020_sol_0556_enchanted_lake_colmap_zcam, mars2020_sol_0770_belva_crater_large_colmap_zcam, mars2020_sol_1333_rio_chiquito_colmap_zcam, mars2020_sol_1408_south_arm_colmap_zcam, mars2020_sol_1962_marble_mountain_colmap_zcam - candidate computed in the cloud on 6 Oct from the first-run block lines (block_lines.json of zcam34_calibration_20261005); rig and pp0 kept from the 5 Oct model; NOT promoted",
+ "source": "MPPP v0p74 Mastcam-Z 34 mm calibration from 1 blocks: mars2020_sol_1408_south_arm_zcam",
  "stereo": {
   "roll_mdeg_per_count": 0.020464109883505444,
   "roll_sd_boot": 0.003014378587983463,
@@ -271,49 +241,627 @@
  "rig": {
   "R_sensor_from_ref": [
    [
-    0.9976004467586513,
-    0.011260771163499763,
-    0.0683121047819666
+    0.9975552439332027,
+    0.011323643780803536,
+    0.06895875863799936
    ],
    [
-    -0.009903370228312102,
-    0.9997473780303541,
-    -0.020176803006252634
+    -0.009959240909149554,
+    0.9997484193915763,
+    -0.020097548222564418
    ],
    [
-    -0.06852205400497034,
-    0.019451867628467862,
-    0.99745995055476
+    -0.0691689874284849,
+    0.01936163772954782,
+    0.9974170532743802
    ]
   ],
   "t_sensor_from_ref": [
-   -0.24348483142451366,
-   0.0011803541821165386,
-   0.005774176807239247
+   -0.24347670607110294,
+   0.001173479196587262,
+   0.006109432836603354
   ],
-  "baseline_m": 0.24355614853175095,
+  "baseline_m": 0.2435561713901827,
+  "translation_source": "CAHV median of the pairs, mean of 1 blocks (held in the runs)",
+  "residuals": {
+   "per_block": [
+    {
+     "block": "mars2020_sol_1408_south_arm_zcam",
+     "T_optics_degC": -19.273939268292683,
+     "sol": 1412.0,
+     "yaw_mdeg": 37.20384934326167,
+     "pitch_mdeg": -4.750876324813404,
+     "roll_mdeg": -2.8810559040489356,
+     "start_source": "Mastcam-Z 34 mm focus model rig (v0p75 start: one rotation for the mission (no focus, temperature or sol term), mean of 3 first-run blocks after each block's ZR pp offset was moved into its rig; refined per block in the runs, then averaged over the passing blocks); translation of the focus model"
+    }
+   ],
+   "fits": {
+    "yaw": {
+     "mean_mdeg": 37.20384934326167,
+     "sd_mdeg": null,
+     "vs_T": {
+      "n": 1,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_sol": {
+      "n": 1,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    },
+    "pitch": {
+     "mean_mdeg": -4.750876324813404,
+     "sd_mdeg": null,
+     "vs_T": {
+      "n": 1,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_sol": {
+      "n": 1,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    },
+    "roll": {
+     "mean_mdeg": -2.8810559040489356,
+     "sd_mdeg": null,
+     "vs_T": {
+      "n": 1,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_sol": {
+      "n": 1,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    }
+   }
+  },
   "rotvec_mdeg": [
-   1136.261245104103,
-   3923.4056844640886,
-   -606.8332160592308
+   1131.4180971322337,
+   3960.553869645665,
+   -610.2467731243828
   ],
-  "sd_rotvec_mdeg": [
-   0.66299966769805,
-   32.90931503601698,
-   5.995006864881791
-  ],
-  "translation_source": "CAHV median of the pairs (held in the runs); the first runs' refined baselines 241.1-243.5 mm are not adopted",
+  "sd_rotvec_mdeg": null,
+  "sd_baseline_mm": null,
   "blocks": [
-   "mars2020_sol_0460_rockytop_colmap_zcam",
-   "mars2020_sol_1962_marble_mountain_colmap_zcam",
-   "mars2020_sol_1408_south_arm_colmap_zcam"
+   "mars2020_sol_1408_south_arm_zcam"
   ],
-  "note": "v0p75 start: one rotation for the mission (no focus, temperature or sol term), mean of 3 first-run blocks after each block's ZR pp offset was moved into its rig; refined per block in the runs, then averaged over the passing blocks"
+  "per_block": [
+   {
+    "block": "mars2020_sol_1408_south_arm_zcam",
+    "rotvec_mdeg": [
+     1131.4180971322337,
+     3960.553869645665,
+     -610.2467731243828
+    ],
+    "baseline_mm": 243.55614853175095,
+    "T_optics_degC": -19.273939268292683,
+    "sol": 1412.0,
+    "pp_shift_px": [
+     0.0,
+     0.0
+    ]
+   }
+  ],
+  "note": "v0p74 calibration: mean of 1 blocks' refined Mastcam-Z rigs (right from left; the same for every focus - the focus motion is the principal points'; ZR cx, cy at the reference focus = pp0, each block's offset moved into its rig rotation first)"
  },
  "form": "v0p75",
  "note": "v0p75 start model (8 Oct 2026): initial values from the 4-5 Oct first runs; to be refined by the next pipeline run",
  "start_note": {
   "when": "2026-10-08",
   "note": "written by Claude from the archived first runs (block_lines of 5 Oct, 8-block candidate of 6 Oct): one df/dfocus per eye, ZL pp0 fixed, ZR pp0 pinned with a cy slope, k1/k2 constant, rig mean of 3 blocks"
+ },
+ "calibration": {
+  "blocks": [
+   "mars2020_sol_1408_south_arm_zcam"
+  ],
+  "when": "2026-10-19",
+  "eyes": {
+   "ZL034": {
+    "backlash": {
+     "fx": {
+      "a": 4720.58375163647,
+      "b": 0.03203079141457461,
+      "sd_a": 0.6694992270070016,
+      "sd_b": 0.0016379308071307994,
+      "tau_a": 0.0,
+      "tau_b": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "blocks": [
+       {
+        "block": "mars2020_sol_1408_south_arm_zcam",
+        "a": 4720.58375163647,
+        "b": 0.03203079141457461,
+        "sd_a": 0.6694992270070016,
+        "sd_b": 0.0023163839616730866,
+        "T": -19.273939268292683,
+        "n_bins": 7,
+        "slope_source": "common slope of fx, fy"
+       }
+      ],
+      "form": "common",
+      "common_slope_of": [
+       "fx",
+       "fy"
+      ]
+     },
+     "fy": {
+      "a": 4731.3492451192715,
+      "b": 0.03203079141457461,
+      "sd_a": 1.1848158259790753,
+      "sd_b": 0.0016379308071307994,
+      "tau_a": 0.0,
+      "tau_b": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "blocks": [
+       {
+        "block": "mars2020_sol_1408_south_arm_zcam",
+        "a": 4731.3492451192715,
+        "b": 0.03203079141457461,
+        "sd_a": 1.1848158259790753,
+        "sd_b": 0.0023163839616730866,
+        "T": -19.273939268292683,
+        "n_bins": 7,
+        "slope_source": "common slope of fx, fy"
+       }
+      ],
+      "form": "common",
+      "common_slope_of": [
+       "fx",
+       "fy"
+      ]
+     },
+     "k1": {
+      "a": -0.4589368594969934,
+      "b": 0.0,
+      "sd_a": 0.010959572727588653,
+      "sd_b": 0.0,
+      "tau_a": 0.0,
+      "tau_b": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "blocks": [
+       {
+        "block": "mars2020_sol_1408_south_arm_zcam",
+        "a": -0.4589368594969934,
+        "b": 0.0,
+        "sd_a": 0.010959572727588653,
+        "sd_b": NaN,
+        "T": -19.273939268292683,
+        "n_bins": 7,
+        "slope_source": "constant with focus (form)"
+       }
+      ],
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.6775797084842665,
+      "b": 0.0,
+      "sd_a": 0.16339928511718266,
+      "sd_b": 0.0,
+      "tau_a": 0.0,
+      "tau_b": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "blocks": [
+       {
+        "block": "mars2020_sol_1408_south_arm_zcam",
+        "a": 0.6775797084842665,
+        "b": 0.0,
+        "sd_a": 0.16339928511718266,
+        "sd_b": NaN,
+        "T": -19.273939268292683,
+        "n_bins": 7,
+        "slope_source": "constant with focus (form)"
+       }
+      ],
+      "form": "constant"
+     }
+    },
+    "reference_focus": 600.0,
+    "regular": {
+     "fx": {
+      "a": 4676.160229456632,
+      "b": 0.031729362471099164,
+      "sd_a": 0.6631988380455687,
+      "sd_b": 0.001622516896612976,
+      "tau_a": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "derived": "backlash / 1.00950"
+     },
+     "fy": {
+      "a": 4686.824413193929,
+      "b": 0.031729362471099164,
+      "sd_a": 1.1736659989886828,
+      "sd_b": 0.001622516896612976,
+      "tau_a": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "derived": "backlash / 1.00950"
+     },
+     "k1": {
+      "a": -0.4589368594969934,
+      "b": 0.0,
+      "sd_a": 0.010959572727588653,
+      "sd_b": 0.0,
+      "tau_a": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "derived": "backlash"
+     },
+     "k2": {
+      "a": 0.6775797084842665,
+      "b": 0.0,
+      "sd_a": 0.16339928511718266,
+      "sd_b": 0.0,
+      "tau_a": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "derived": "backlash"
+     }
+    }
+   },
+   "ZR034": {
+    "backlash": {
+     "cx": {
+      "a": 743.1541318639494,
+      "b": 0.0,
+      "sd_a": 0.0,
+      "sd_b": 0.0,
+      "tau_a": 0.0,
+      "tau_b": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "blocks": [
+       {
+        "block": "mars2020_sol_1408_south_arm_zcam",
+        "a": 743.1541318639494,
+        "b": 0.0,
+        "sd_a": NaN,
+        "sd_b": NaN,
+        "T": -19.273939268292683,
+        "n_bins": 7,
+        "slope_source": "constant with focus (form)"
+       }
+      ],
+      "form": "pinned",
+      "a_source": "pinned at pp0 (form)"
+     },
+     "cy": {
+      "a": 663.9621648425003,
+      "b": 0.0012216133918659864,
+      "sd_a": 0.0,
+      "sd_b": 0.00028893338036628573,
+      "tau_a": 0.0,
+      "tau_b": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "blocks": [
+       {
+        "block": "mars2020_sol_1408_south_arm_zcam",
+        "a": 663.9621648425003,
+        "b": 0.0012216133918659864,
+        "sd_a": NaN,
+        "sd_b": 0.00028893338036628573,
+        "T": -19.273939268292683,
+        "n_bins": 7,
+        "slope_source": "fitted"
+       }
+      ],
+      "form": "pinned_slope",
+      "a_source": "pinned at pp0 (form)"
+     },
+     "fx": {
+      "a": 4726.301189464105,
+      "b": 0.04853606048150386,
+      "sd_a": 1.1174940589158233,
+      "sd_b": 0.0019206895515552964,
+      "tau_a": 0.0,
+      "tau_b": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "blocks": [
+       {
+        "block": "mars2020_sol_1408_south_arm_zcam",
+        "a": 4726.301189464105,
+        "b": 0.04853606048150386,
+        "sd_a": 1.1174940589158233,
+        "sd_b": 0.0027162652129177982,
+        "T": -19.273939268292683,
+        "n_bins": 7,
+        "slope_source": "common slope of fx, fy"
+       }
+      ],
+      "form": "common",
+      "common_slope_of": [
+       "fx",
+       "fy"
+      ]
+     },
+     "fy": {
+      "a": 4737.023723971795,
+      "b": 0.04853606048150386,
+      "sd_a": 1.272942039854309,
+      "sd_b": 0.0019206895515552964,
+      "tau_a": 0.0,
+      "tau_b": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "blocks": [
+       {
+        "block": "mars2020_sol_1408_south_arm_zcam",
+        "a": 4737.023723971795,
+        "b": 0.04853606048150386,
+        "sd_a": 1.272942039854309,
+        "sd_b": 0.0027162652129177982,
+        "T": -19.273939268292683,
+        "n_bins": 7,
+        "slope_source": "common slope of fx, fy"
+       }
+      ],
+      "form": "common",
+      "common_slope_of": [
+       "fx",
+       "fy"
+      ]
+     },
+     "k1": {
+      "a": -0.4732314377927261,
+      "b": 0.0,
+      "sd_a": 0.008229442699188756,
+      "sd_b": 0.0,
+      "tau_a": 0.0,
+      "tau_b": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "blocks": [
+       {
+        "block": "mars2020_sol_1408_south_arm_zcam",
+        "a": -0.4732314377927261,
+        "b": 0.0,
+        "sd_a": 0.008229442699188756,
+        "sd_b": NaN,
+        "T": -19.273939268292683,
+        "n_bins": 7,
+        "slope_source": "constant with focus (form)"
+       }
+      ],
+      "form": "constant"
+     },
+     "k2": {
+      "a": 1.0503799549987516,
+      "b": 0.0,
+      "sd_a": 0.14534819261469537,
+      "sd_b": 0.0,
+      "tau_a": 0.0,
+      "tau_b": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "blocks": [
+       {
+        "block": "mars2020_sol_1408_south_arm_zcam",
+        "a": 1.0503799549987516,
+        "b": 0.0,
+        "sd_a": 0.14534819261469537,
+        "sd_b": NaN,
+        "T": -19.273939268292683,
+        "n_bins": 7,
+        "slope_source": "constant with focus (form)"
+       }
+      ],
+      "form": "constant"
+     }
+    },
+    "reference_focus": 600.0,
+    "regular": {
+     "cx": {
+      "a": 743.1541318639494,
+      "b": 0.0,
+      "sd_a": 0.0,
+      "sd_b": 0.0,
+      "tau_a": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "derived": "backlash"
+     },
+     "cy": {
+      "a": 663.9621648425003,
+      "b": 0.0012216133918659864,
+      "sd_a": 0.0,
+      "sd_b": 0.00028893338036628573,
+      "tau_a": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "derived": "backlash"
+     },
+     "fx": {
+      "a": 4681.82386276781,
+      "b": 0.048079307064392125,
+      "sd_a": 1.1069777700998744,
+      "sd_b": 0.0019026147117932604,
+      "tau_a": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "derived": "backlash / 1.00950"
+     },
+     "fy": {
+      "a": 4692.445491799698,
+      "b": 0.048079307064392125,
+      "sd_a": 1.26096289237673,
+      "sd_b": 0.0019026147117932604,
+      "tau_a": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "derived": "backlash / 1.00950"
+     },
+     "k1": {
+      "a": -0.4732314377927261,
+      "b": 0.0,
+      "sd_a": 0.008229442699188756,
+      "sd_b": 0.0,
+      "tau_a": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "derived": "backlash"
+     },
+     "k2": {
+      "a": 1.0503799549987516,
+      "b": 0.0,
+      "sd_a": 0.14534819261469537,
+      "sd_b": 0.0,
+      "tau_a": 0.0,
+      "chi2_dof_a": 0.0,
+      "n_blocks": 1,
+      "derived": "backlash"
+     }
+    }
+   }
+  },
+  "z_temperature": 3.0,
+  "pp_to_rig": {
+   "pp0_px": {
+    "ZR034": [
+     743.1541318639494,
+     663.9621648425003
+    ]
+   },
+   "shifts": {
+    "mars2020_sol_1408_south_arm_zcam": {
+     "group": "ZR034",
+     "dcx_px": 0.0,
+     "dcy_px": 0.0,
+     "f_px": 4726.439516874504
+    }
+   },
+   "note": "ZR cx, cy at the reference focus put at pp0 in every block; the difference moved into that block's rig rotation before the rigs were averaged (the two are degenerate in BA)"
+  },
+  "regular_ratio": {
+   "ZL034": {
+    "ratio": 1.0095,
+    "n_blocks": 0,
+    "per_block": [],
+    "source": "default"
+   },
+   "ZR034": {
+    "ratio": 1.0095,
+    "n_blocks": 0,
+    "per_block": [],
+    "source": "default"
+   }
+  },
+  "rig": {
+   "t_sensor_from_ref": [
+    -0.24347670607110294,
+    0.001173479196587262,
+    0.006109432836603354
+   ],
+   "baseline_m": 0.2435561713901827,
+   "translation_source": "CAHV median of the pairs, mean of 1 blocks (held in the runs)",
+   "residuals": {
+    "per_block": [
+     {
+      "block": "mars2020_sol_1408_south_arm_zcam",
+      "T_optics_degC": -19.273939268292683,
+      "sol": 1412.0,
+      "yaw_mdeg": 37.20384934326167,
+      "pitch_mdeg": -4.750876324813404,
+      "roll_mdeg": -2.8810559040489356,
+      "start_source": "Mastcam-Z 34 mm focus model rig (v0p75 start: one rotation for the mission (no focus, temperature or sol term), mean of 3 first-run blocks after each block's ZR pp offset was moved into its rig; refined per block in the runs, then averaged over the passing blocks); translation of the focus model"
+     }
+    ],
+    "fits": {
+     "yaw": {
+      "mean_mdeg": 37.20384934326167,
+      "sd_mdeg": null,
+      "vs_T": {
+       "n": 1,
+       "slope": null,
+       "se": null,
+       "z": null
+      },
+      "vs_sol": {
+       "n": 1,
+       "slope": null,
+       "se": null,
+       "z": null
+      }
+     },
+     "pitch": {
+      "mean_mdeg": -4.750876324813404,
+      "sd_mdeg": null,
+      "vs_T": {
+       "n": 1,
+       "slope": null,
+       "se": null,
+       "z": null
+      },
+      "vs_sol": {
+       "n": 1,
+       "slope": null,
+       "se": null,
+       "z": null
+      }
+     },
+     "roll": {
+      "mean_mdeg": -2.8810559040489356,
+      "sd_mdeg": null,
+      "vs_T": {
+       "n": 1,
+       "slope": null,
+       "se": null,
+       "z": null
+      },
+      "vs_sol": {
+       "n": 1,
+       "slope": null,
+       "se": null,
+       "z": null
+      }
+     }
+    }
+   },
+   "rotvec_mdeg": [
+    1131.4180971322337,
+    3960.553869645665,
+    -610.2467731243828
+   ],
+   "sd_rotvec_mdeg": null,
+   "sd_baseline_mm": null,
+   "blocks": [
+    "mars2020_sol_1408_south_arm_zcam"
+   ],
+   "per_block": [
+    {
+     "block": "mars2020_sol_1408_south_arm_zcam",
+     "rotvec_mdeg": [
+      1131.4180971322337,
+      3960.553869645665,
+      -610.2467731243828
+     ],
+     "baseline_mm": 243.55614853175095,
+     "T_optics_degC": -19.273939268292683,
+     "sol": 1412.0,
+     "pp_shift_px": [
+      0.0,
+      0.0
+     ]
+    }
+   ],
+   "note": "v0p74 calibration: mean of 1 blocks' refined Mastcam-Z rigs (right from left; the same for every focus - the focus motion is the principal points'; ZR cx, cy at the reference focus = pp0, each block's offset moved into its rig rotation first)"
+  },
+  "loo": {}
  }
 }

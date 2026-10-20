@@ -100,7 +100,7 @@ def test_site_fixes_19_oct():
     nb = json.loads((ROOT / "notebooks" / "03_colmap_alignment.ipynb").read_text(encoding="utf-8"))
     src = "".join("".join(c["source"]) for c in nb["cells"])
     assert "NEARBY_FROM_FIRST_SOL = False" in src and "min_sol=_NEAR_MIN" in src
-    bat = (ROOT / "scripts" / "windows" / "run_v0p86.bat").read_text()
+    bat = (ROOT / "scripts" / "windows" / "run_v0p87.bat").read_text()
     assert "move_scapes.py\" --apply" in bat
 
 
@@ -124,7 +124,7 @@ def test_pipeline_stop_before(tmp_path):
                          capture_output=True, text=True, timeout=120)
     log = out.stdout + out.stderr
     assert "stopped before zcam_start" in log, log[-2000:]
-    bat = (ROOT / "scripts" / "windows" / "run_v0p86.bat").read_bytes()
+    bat = (ROOT / "scripts" / "windows" / "run_v0p87.bat").read_bytes()
     assert b"--stop-before zcam_start" in bat and b"\r\n" in bat
 
 
@@ -386,3 +386,33 @@ def test_mixed_navcam_zcam_points_need_a_third_view():
     assert drop_short_tracks(rec, 2) == 2 and sorted(rec.points3D) == [1]
     rec = Rec({3: [1, 3]})
     assert drop_mixed_short_tracks(rec, 2) == 0
+
+
+def test_unsurveyed_stations_get_loose_priors(tmp_path):
+    """v0p87 (Christian, 19 Oct): stations without a waypoint of their own get 10 m / 3 deg priors, the others keep
+    1 m / 1 deg; the gauge is weighted by 1 / sigma^2."""
+    import numpy as np
+    import pytest
+    from mppp.sfm import reconstruction as R
+    assert R.UNSURVEYED_PRIOR_SIGMA_M == 10.0 and R.UNSURVEYED_ATTITUDE_PRIOR_DEG == 3.0
+    assert R.is_unsurveyed({"position_source": "waypoint site 6 drive 0 + label ORIGIN_OFFSET_VECTOR"})
+    assert not R.is_unsurveyed({"position_source": "waypoint site 6 drive 2666 (exact)"})
+    assert not R.is_unsurveyed({"position_source": "label ORIGIN_OFFSET_VECTOR (site frame)"}) and not R.is_unsurveyed({})
+    pytest.importorskip("pyceres")
+    from helpers import _build_rec, _synthetic
+    proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+    st = sorted({r["station"] for r in proj.images})
+    for r in proj.images:
+        r["position_source"] = ("waypoint site 1 drive 0 + label ORIGIN_OFFSET_VECTOR" if r["station"] == st[-1]
+                                else f"waypoint site 1 drive {r['station']} (exact)")
+    rec, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
+    out = R.bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, max_iterations=10)
+    assert out["frames_unsurveyed"] > 0 and out["unsurveyed_prior"] == {"sigma_m": 10.0, "attitude_deg": 3.0}
+    assert out["priors"] == len(rec.frames)
+    # the gauge: a frame with weight 1/100 hardly moves the mean
+    fid = next(iter(rec.frames))
+    T = rec.frames[fid].rig_from_world
+    C = -np.asarray(T.rotation.matrix()).T @ np.asarray(T.translation)
+    g = R.prior_gauge(rec, [(fid, C + [1.0, 0, 0], 1.0), (fid, C + [101.0, 0, 0], 0.01)], recentre=False)
+    assert abs(g["mean_residual_m"][0] - 2.01 / 1.01) < 1e-9

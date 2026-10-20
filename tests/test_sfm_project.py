@@ -415,7 +415,7 @@ def test_shipped_focus_model_layout():
     for g in ("ZL034", "ZR034"):
         c = m["cameras"][g]
         assert c["reference_focus"] == 600.0
-        assert 0.045 < c["slope_px_per_count"] < 0.07                # refit (was 0.046 / 0.048; v0p75: 0.0505 / 0.064)
+        assert 0.025 < c["slope_px_per_count"] < 0.07                # v0p87 South Arm: 0.0320 / 0.0485 (v0p75: 0.0505 / 0.064)
         # v0p74 start update (pipeline, 4 Oct): f0 from the bins' fx over 10 blocks, ~1.4 % above the label
         assert 1.006 < c["f0_px"] / c["label_f0_px"] < 1.016
         assert c["thermal"]["sensor"] == "HEAD_FPA" and c["thermal"]["f_px_per_degC"] == 0.0
@@ -634,7 +634,7 @@ def test_zcam_focus_models_per_zoom(tmp_path):
     assert set(files) == {34, 48} and files[48].parent == tmp_path
     m = zcam_focus_model(tmp_path)
     assert {"ZL034", "ZR034", "ZL048"} <= set(m["cameras"]) and m["zooms"][48]["rig"]["note"] == "test"
-    assert m["state"] == "backlash"                          # the 34 mm file's top level, as before v0p53
+    assert m["state"] == "calibrated (v0p74)"                # the 34 mm file's top level (v0p87: the South Arm calibration)
     assert zcam_focus_model_fingerprint(None, tmp_path) != fp0
     base = {"model": "FULL_OPENCV", "params": [6500.0, 6500.0, 800, 600, -0.05, 0.1, 0.001, 0, 0, 0, 0, 0],
             "source": "median of 9 label CAHVOR models"}

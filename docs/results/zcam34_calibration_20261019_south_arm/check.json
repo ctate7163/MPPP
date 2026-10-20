@@ -1,0 +1,80 @@
+{
+ "ok": false,
+ "checks": [
+  {
+   "check": "blocks",
+   "ok": false,
+   "note": "1 blocks"
+  },
+  {
+   "check": "ZL034 lines",
+   "ok": true,
+   "note": "fx, fy lines fitted"
+  },
+  {
+   "check": "ZL034 f0",
+   "ok": true,
+   "note": "4721.2 -> 4726.0 px (0.10 %)"
+  },
+  {
+   "check": "ZL034 aspect",
+   "ok": true,
+   "note": "1.00228"
+  },
+  {
+   "check": "ZL034 k1",
+   "ok": true,
+   "note": "-0.4589"
+  },
+  {
+   "check": "ZR034 lines",
+   "ok": true,
+   "note": "fx, fy lines fitted"
+  },
+  {
+   "check": "ZR034 f0",
+   "ok": true,
+   "note": "4728.8 -> 4731.7 px (0.06 %)"
+  },
+  {
+   "check": "ZR034 aspect",
+   "ok": true,
+   "note": "1.00227"
+  },
+  {
+   "check": "ZR034 k1",
+   "ok": true,
+   "note": "-0.4732"
+  },
+  {
+   "check": "ZL034 backlash fx block scatter",
+   "ok": true,
+   "note": "between-block sd 0.0 px (chi2/dof 0.0)"
+  },
+  {
+   "check": "ZL034 backlash fy block scatter",
+   "ok": true,
+   "note": "between-block sd 0.0 px (chi2/dof 0.0)"
+  },
+  {
+   "check": "ZR034 backlash fx block scatter",
+   "ok": true,
+   "note": "between-block sd 0.0 px (chi2/dof 0.0)"
+  },
+  {
+   "check": "ZR034 backlash fy block scatter",
+   "ok": true,
+   "note": "between-block sd 0.0 px (chi2/dof 0.0)"
+  },
+  {
+   "check": "rig baseline",
+   "ok": true,
+   "note": "0.2436 m"
+  },
+  {
+   "check": "rig change",
+   "ok": true,
+   "note": "0.038 deg from the rig in use"
+  }
+ ]
+}

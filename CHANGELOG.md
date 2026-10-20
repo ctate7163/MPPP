@@ -2,6 +2,16 @@
 
 The development history v0p1–v0p12 (21–24 September 2026) is in [docs/history/CHANGELOG_v0p1-v0p12.md](docs/history/CHANGELOG_v0p1-v0p12.md).
 
+## 0.87.0 — 2026-10-19
+
+**Mastcam-Z 34 mm start model from South Arm (Christian, 19 Oct pm).**
+- `M2020_ZCAM034_focus_model.json` promoted from the South Arm block of the 19 Oct ZR-fix diagnostic run alone (`zcam_calib.calibrate`, form v0p75, regular state derived from backlash / 1.0095). The calibration's "blocks" check (>= 2) fails with one block; promoted anyway on request - better than the v0p75 start for the next run. Rochette was left out (its approach-station poses, see the handoff), Marble Mountain had failed (fixed in 0.86.0). Against the v0p75 start: ZL fx(600) 4716.1 -> 4720.6 px, slope 0.0505 -> 0.0320 px/count; ZR fx(600) 4722.9 -> 4726.3 px, slope 0.064 -> 0.0485; ZR k2 0.875 -> 1.050, ZL k2 0.635 -> 0.678; ZR cy slope 0.0017 -> 0.0012 px/count; rig 0.038 deg from the one in use, baseline 243.56 mm. Report: `docs/results/zcam34_calibration_20261019_south_arm/`; the old file in `cmods/history/20261019-155805/`.
+- **Stations without a waypoint of their own get looser priors** (Christian): position prior 10 m per axis and attitude prior 3 deg, against 1 m / 1 deg for surveyed stations (`reconstruction.UNSURVEYED_PRIOR_SIGMA_M`, `UNSURVEYED_ATTITUDE_PRIOR_DEG`; project settings `unsurveyed_prior_sigma_m`, `unsurveyed_attitude_prior_deg`). Unsurveyed = `position_source` "waypoint site N drive 0 + label ORIGIN_OFFSET_VECTOR" (mid-drive and approach stops: the site's drive-0 waypoint plus the onboard odometry), `is_unsurveyed`. The gauge recentring weights the frames by 1 / sigma^2. The adjustment record has `frames_unsurveyed`, `unsurveyed_prior`. Why: at Rochette S006D2594 the 1 m / 1 deg priors held a station whose solve wanted 0.9 m and 1.5 deg of heading, and S006D2684 moved 6.3 m against its 1 m prior. The database's COLMAP pose priors are unchanged (1 m; our adjustment adds its own prior costs).
+- `zcam_calib.start_model_from_blocks` drops the copied model's `calibration` (with a calibrated model in use, a start update inherited its one-block calibration and failed the "blocks" check).
+- `run_v0p86.bat` renamed `run_v0p87.bat`.
+- Found in the v0p86 run: the PC's GPU env has ONNX Runtime with CUDA; LightGlue failed only for want of cuDNN 9 (`cudnn64_9.dll`). See the handoff.
+- `docs/HANDOFF_v0p87.md`: notes for the next agent (changes since v0p85, what the data showed since v0p80).
+
 ## 0.86.0 — 2026-10-19
 
 **SIFT + LightGlue matching (Christian, 19 Oct).**
