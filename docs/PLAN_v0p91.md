@@ -4,44 +4,52 @@
 0.91 is the next development release: the joint as one adjustment, the rig fitted for yaw and roll too, the site
 maps in the package, the CLI carried further, and the fixes the 0.90 audit listed. Order of work at the end.
 
-## 1. The Navcam joint as one bundle adjustment
+## 1. The Navcam joint as one bundle adjustment (Christian, 20 Oct)
 
-**Now.** The joint (`calib.fit.fit_navcam` / `calib.joint`) solves the merged blocks for the two cameras, the rig
-and the points, and gets the *global* terms — fx(T), fy(T) per eye, cx(T) per eye, k1(T) from the bins, the rig yaw
-rate, the four early-mission offsets — one at a time from cost profiles (five adjustments per term, a parabola
-through them), then refits; the rig pitch and roll drift are not in the joint at all but a between-block regression
-on the blocks' rig epochs (`fit_rig_drift`), and the knot sits at sol 300 by hand. Each pass is ~90 adjustments and
-the terms are solved sequentially, so correlated terms (NR cx(T) against the yaw rate; the early offsets of the
-two eyes) converge slowly — pass 2 moved f by 50 ppm and the rig by 3.8 mdeg from pass 1.
+**The requirement.** One set of Navcam parameters for every temperature and sol, solved at once. Each parameter
+that depends on temperature is an offset at −20 °C and a slope (NL fx = fx₀ + a·(T − T0), likewise fy, cx, cy, k1
+per eye); each rig angle is an offset at sol 0 and a slope in sol (pitch with its early-mission hinge); the
+distortion terms (k1–k4, p1, p2 per eye) and the per-eye early-mission offsets are constants; and *all of them,
+with the block poses and the points, are optimised in one bundle adjustment* — no profiles, no sequential
+refits, no separate between-block regression for the rig. The unknowns:
 
-**Target.** One adjustment whose unknowns are: the two cameras at T0 (12 + 12), the thermal terms (fx, fy, cx, cy,
-k1 per eye: 10), the early-mission offsets *per eye* (8), the rig rotation at sol 0 (3) and its linear trends in
-sol for pitch, yaw and roll (3; the pitch hinge rate and knot as 2 more if the data want it), the per-block rig
-epochs tied to the trend (the epochs become residuals about the trend, not free rotations), the block poses and
-the points. Every image's camera is then a function of its temperature and sol, and the covariance of the whole
-set comes out of the one normal matrix.
+| group | parameters |
+|---|---|
+| intrinsics at T0, per eye | fx₀, fy₀, cx₀, cy₀, k1₀, k2, k3, k4, p1, p2 (sx1 = sy1 = 0) |
+| thermal slopes, per eye | fx, fy (ppm/°C), cx, cy (px/°C), k1 (/°C) |
+| early mission, per eye | Δfx, Δfy, Δcx, Δcy (px) for images before sol 380 |
+| rig | rotation at sol 0 (3), rates in sol for pitch, yaw, roll (3), the pitch hinge (early rate, knot) |
+| per block | poses, points (the rig epochs are no longer free: an epoch's rig is the trend at its sol) |
 
-**How, in pyceres.** COLMAP's cost functions take a camera's parameter block directly, so a camera that is a
-function of (T, sol) needs one of:
+Every image's camera is then the law evaluated at its own temperature and sol; one normal matrix gives the
+covariance of the whole set.
 
-1. **Per-image "virtual" camera blocks with linear constraints** — each temperature bin camera is its own block
-   (as the runs do today), plus residual blocks that tie the bin's parameters to the global law
-   (`p_bin − (p0 + a (T_bin − T0) + early)` with a small σ). This uses only COLMAP's cost functions and pyceres'
-   existing residuals; the global terms enter as parameter blocks of a Python cost functor evaluated a few
-   hundred times per iteration (cheap). The rig epochs tie the same way to `R(sol0) + rate·sol`.
-   *Recommended: it is the current data structure plus constraint residuals, and it keeps Ceres' sparse solver on
-   the 600k reprojections.*
-2. A custom reprojection functor in Python taking (p0, thermal, early, pose, point) — correct but ~100× slower
-   than COLMAP's compiled functors at this size; not for 2,700 images.
-3. Keep the outer loop but make it a Gauss–Newton over all global terms at once (numerical Jacobian: one
-   adjustment per term per iteration, ~35 adjustments per iteration instead of ~90 per pass, all terms moving
-   together). A fallback if (1) stalls.
+**Afterwards, the figures.** The per-block, per-temperature-bin and per-sol values are *diagnostics* drawn over
+the global solution: with the global parameters held, each bin (per block and eye) and each rig epoch is refined
+alone, and the refined-minus-global values go on the refined figures — the bins on `plot_intrinsics_vs_temperature`
+(the line is the global law), the epochs on `plot_rig_trends` (the line is the global trend referred to sol 0),
+the blocks in `navcam_block_table` — so the figures show the scatter about one solution instead of a sequence of
+passes.
 
-Deliverables: `calib.joint.joint_adjust_all` (option 1), `calib.fit.fit_navcam` using it with the profiles kept
-only as a check, the model files carrying `rig.drift` with `sol0 = 0`, yaw and roll rates with their sd, and
-the covariance of the global terms; `navcam_block_table` and `plot_rig_trends` reading the same rig file.
-Acceptance: pass-to-pass change below the convergence limits (20 ppm, 0.05 px, 0.02 px corners, 1 mdeg) in two
-passes on the 23 blocks; per-eye early offsets bring NR within ±50 ppm on OEB / Seitah North Large / Issole.
+**How, in pyceres.** COLMAP's reprojection functors take a camera parameter block as it is; a camera that is a
+function of (T, sol) therefore needs one of:
+
+1. **Image-group camera blocks tied to the law** (recommended): the bins stay camera blocks (as the runs have
+   them), the rig epochs stay rig blocks, and *constraint residuals* tie each of them to the global parameters
+   — `p_bin − law(p₀, slopes, early; T_bin, sol_bin)` and `R_epoch − trend(R₀, rates; sol)` with a σ small enough to
+   be a constraint. The law's parameters are ordinary parameter blocks of a small Python cost functor (one
+   residual per bin and epoch, a few hundred in all, cheap), the 600k reprojections keep COLMAP's compiled
+   functors, and Ceres solves everything together. Rig epochs with too few frames need no rule any more: they
+   contribute what they can and the trend holds them.
+2. A Python reprojection functor over the law directly — exact, but ~100× slower at this size.
+3. The outer loop kept, but as one Gauss–Newton over all global terms with numerical Jacobians — the fallback.
+
+Deliverables: `calib.joint.joint_adjust_all` (option 1), `calib.fit.fit_navcam` using it (the profile code kept
+only as a cross-check), the model files with `thermal`, `early_mission` per eye and `rig.drift` with `sol0 = 0`
+and the fitted yaw/roll rates, the covariance of the global parameters in `consensus.json`, and the diagnostic
+pass that produces the bins/epochs for the figures.  Acceptance: a second joint on the same blocks changes nothing
+(the convergence limits are then a check, not a stage); per-eye early offsets bring NR within ±50 ppm on OEB,
+Seitah North Large and Issole; the figures from the diagnostic pass.
 
 ## 2. The rig: linear yaw and roll trends, fitted
 
@@ -96,9 +104,14 @@ Per the handoff `claude/m20-maps-handoff-2026-10-20-for-v0p90.md` (its §6 is th
 - The aspect question: hold fy = fx × the joint's aspect in the block runs and see whether Bunsen Peak's and
   Cheyava Falls' residuals rise.
 - LightGlue through kornia on the PC: one block A/B against SIFT (matches, inliers, time); the ONNX path is gone.
-- Mastcam-Z: with the 20 Oct four-block calibration promoted, the seven-block group (`zcam34_consensus` now
-  has Three Forks North, Belva Crater and Taylorfjellet ready) runs next; the per-zoom line fits report their focus
-  coverage per block.
+- Mastcam-Z: with the 20 Oct four-block calibration promoted, the 11-block group runs next (`zcam34_consensus`:
+  Chal Rocks, Rochette, Issole, Three Forks North, Enchanted Lake, Rockytop, Belva Crater, Bunsen Peak, South
+  Arm, Taylorfjellet, Marble Mountain); the per-zoom line fits report their focus coverage per block.
+- **Mastcam-Z p1, p2 refined** (form `zcam-v2`): on Rochette's 20 Oct block the tangential residual field is
+  ZL p1 +7.5e-4, ZR −4.2e-4 (0.36 / 0.16 px at the frame corners, 0.095 / 0.058 px rms over the observations,
+  consistent in sign over every focus bin), beyond what cx, cy absorb. Per eye, constant over focus, refined in
+  the block runs and averaged in the calibration like k1, k2; `MODEL_LIMITS` get a `max_p` and a between-block
+  scatter check for them.
 - Paper: per-eye offsets and the block table as a paragraph and a figure; figure 1 combined, figure 3 from the
   station map, the opacity citation, the generative-AI statement, figure sizes.
 - CI stage 2 (Rockytop test set on Zenodo, nightly end-to-end run with the gates of the audit).
