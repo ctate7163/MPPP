@@ -192,7 +192,8 @@ def test_processing_config_and_project_settings(tmp_path, clean_env):
     w = wanted_project_settings(s, tmp_path)
     assert w["zcam_zero_terms"] is None and w["navcam_distortion"] == "fisheye_tangential"
     wz = wanted_project_settings(s.replace(include_zcam=True), tmp_path)
-    assert wz["zcam_zero_terms"] == ["p1", "p2", "b1", "b2"] and wz["zcam_low_backlash_sha256"]
+    assert wz["zcam_zero_terms"] is None and wz["zcam_low_backlash_sha256"]        # zcam-v2: p1, p2 refined
+    assert wanted_project_settings(s.replace(include_zcam=True, zcam_tangential="zero"), tmp_path)["zcam_zero_terms"] == ["p1", "p2", "b1", "b2"]
     from mppp.pipeline import _check_settings
     with pytest.raises(ValueError, match="navcam_rig_refine"):
         _check_settings(s.replace(navcam_rig_refine="sometimes"))
