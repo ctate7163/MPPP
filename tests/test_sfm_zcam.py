@@ -690,8 +690,9 @@ def _bins(monkeypatch, pp0=(820.0, 600.0), cx_bins=820.0, form=None):
 
 def test_line_form_lookup():
     from mppp.sfm.zcam import LINE_FORM, line_form_for
-    p = SimpleNamespace(settings={"zcam_line_params": {"ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]}})
+    p = SimpleNamespace(settings={"zcam_line_params": {"ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]}})
     assert line_form_for(p, "ZR034") == LINE_FORM["ZR"]
+    assert LINE_FORM["ZR"]["p1"] == "constant"                      # zcam-v2: p1, p2 constant over focus
     p.settings["zcam_line_form"] = {"ZR": {k: "free" for k in ("fx", "fy", "cx", "cy", "k1", "k2")}}
     assert set(line_form_for(p, "ZR034").values()) == {"free"}
     p.settings["zcam_line_form"] = {"ZR": {"cy": "constant"}}

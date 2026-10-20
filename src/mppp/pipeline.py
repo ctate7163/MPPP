@@ -114,15 +114,15 @@ class Settings:
     rig_translation_sigma_m: float = 0.005        # with navcam_rig_refine "full": the prior on the right camera centre per axis (m)
     tangential: str = "refine"                    # Navcam p1, p2 when the distortion is refined: "refine" or "zero"
     zcam_k3: str = "label"                        # Mastcam-Z k3: "label" (the start camera's, held) or "zero"
-    zcam_tangential: Optional[str] = "zero"       # Mastcam-Z p1, p2: "refine", "zero", or None (as tangential)
+    zcam_tangential: Optional[str] = "refine"     # Mastcam-Z p1, p2: "refine" (0.91, zcam-v2: per eye, constant over focus), "zero" (zcam-v1), or None (as tangential)
     include_zcam: bool = False                    # add the Mastcam-Z frames of the same sols (folder ..._zcam)
     zcam_zooms: Any = None                        # their zooms (mm), e.g. [34, 48]; None: the site's "zcam" list ([34] without one); "all": every zoom
     zcam_intrinsics: str = "focus_model"          # Mastcam-Z start: "focus_model" (the promoted model) or "label"
     zcam_focus_model: Optional[Path] = None       # a focus-model JSON to start from; None: the one in use
     zcam_focus_bin: Optional[float] = 30          # focus motor counts per Mastcam-Z camera (None: one camera per eye)
     zcam_bin_refine: str = "focal_pp"             # a focus-bin camera refines fx, fy and on ZR cx, cy ("focal_pp"); "focal", "all", "model"
-    zcam_line_params: Dict[str, List[str]] = field(default_factory=lambda: {"ZL": ["fx", "fy", "k1", "k2"],
-                                                                            "ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]})   # the focus parameters stage 2 puts on a line per eye
+    zcam_line_params: Dict[str, List[str]] = field(default_factory=lambda: {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"],
+                                                                            "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]})   # the focus parameters stage 2 puts on a line per eye
     zcam_hold_f_images: int = 2                   # focus bins with at most this many images hold f at the focus model
     zcam_backlash: Optional[str] = "list_split"   # focus backlash states: "list_split", "list", "split", "report" or None
     zcam_low_backlash: Any = None                 # the low-backlash observation list; None: the shipped CSV; False: none

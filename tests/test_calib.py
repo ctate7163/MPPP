@@ -149,7 +149,14 @@ def test_validate_rejects_a_held_term_that_is_not_zero():
     z = calib.load_zcam(34)
     assert forms.validate(z) == []
     bad = copy.deepcopy(z)
-    bad["cameras"]["ZL034"]["lines"]["backlash"]["p1"] = {"a": 0.001, "b": 0.0}
+    bad["cameras"]["ZL034"]["lines"]["backlash"]["p1"] = {"a": 0.001, "b": 1e-5}     # zcam-v2: p1 constant over focus
+    assert any("p1" in p for p in forms.validate(bad))
+    ok = copy.deepcopy(z)
+    ok["cameras"]["ZL034"]["lines"]["backlash"]["p1"] = {"a": 0.001, "b": 0.0}
+    ok["cameras"]["ZL034"]["distortion"] = {"names": ["k1", "k2", "p1"], "params": [-0.4, 0.8, 0.001]}
+    assert forms.validate(ok) == []
+    bad = copy.deepcopy(ok)
+    bad["cameras"]["ZL034"]["distortion"]["params"][2] = 0.02                           # not a lens
     assert any("p1" in p for p in forms.validate(bad))
     bad = copy.deepcopy(z)
     bad["cameras"]["ZR034"]["distortion"] = {"names": ["k1", "k2", "k3"], "params": [-0.4, 0.8, 0.01]}

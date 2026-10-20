@@ -70,11 +70,12 @@ HAZCAM = Form(
 
 ZCAM = Form(
     name="zcam", families=("Z",), colmap_model="FULL_OPENCV", param_names=FULL_OPENCV_PARAMS,
-    frame=FULL_FRAME["Z"], held_zero=("p1", "p2", "k3", "k4", "k5", "k6"),
+    frame=FULL_FRAME["Z"], held_zero=("k3", "k4", "k5", "k6"),
     temperature=(), sol=(), focus=("fx", "fy", "cx", "cy"),
-    description=("FULL_OPENCV at 1648 x 1200 with p1 = p2 = k3 = 0 held; one calibration per zoom: fx, fy lines in "
-                 "focus count per eye and backlash state (a + b (focus - reference_focus)), the principal point per "
-                 "the pp terms, k1, k2 constant; no temperature term"))
+    description=("FULL_OPENCV at 1648 x 1200 with k3 = 0 held (zcam-v2, 0.91: p1, p2 refined per eye, constant over "
+                 "focus); one calibration per zoom: fx, fy lines in focus count per eye and backlash state (a + b "
+                 "(focus - reference_focus)), the principal point per the pp terms, k1, k2, p1, p2 constant; no "
+                 "temperature term"))
 
 # the line form of each Mastcam-Z focus parameter in a block: what of p = a + b (focus - ref) is fitted
 #   "common"        b shared by every "common" parameter of the eye (fx and fy: one df/dfocus per eye), a fitted each;
@@ -82,11 +83,13 @@ ZCAM = Form(
 #   "pinned"        a = the model's pp0 (ZR cx: the level is the rig's), b = 0;
 #   "pinned_slope"  a = the model's pp0, b fitted (ZR cy: the right-minus-left boresight moves a little with focus).
 # ZL's cx, cy are not on lines (held at the model's pp0: the reference eye).
-ZCAM_LINE_FORM = {"ZL": {"fx": "common", "fy": "common", "k1": "constant", "k2": "constant"},
+ZCAM_LINE_FORM = {"ZL": {"fx": "common", "fy": "common", "k1": "constant", "k2": "constant", "p1": "constant", "p2": "constant"},
                   "ZR": {"fx": "common", "fy": "common", "cx": "pinned", "cy": "pinned_slope",
-                         "k1": "constant", "k2": "constant"}}
-ZCAM_LINE_PARAMS = {"ZL": ("fx", "fy", "k1", "k2"), "ZR": ("fx", "fy", "cx", "cy", "k1", "k2")}
+                         "k1": "constant", "k2": "constant", "p1": "constant", "p2": "constant"}}
+ZCAM_LINE_PARAMS = {"ZL": ("fx", "fy", "k1", "k2", "p1", "p2"), "ZR": ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2")}
+ZCAM_FORM_ID = "zcam-v2"                 # 0.91: p1, p2 refined (zcam-v1 held them at 0; its files still load)
 ZCAM_LINE_FORMS = ("free", "common", "constant", "pinned", "pinned_slope")
+ZCAM_MAX_P = 5e-3                        # |p1|, |p2| beyond this is not a lens (Rochette 20 Oct: 7.5e-4, 4.2e-4)
 
 FORMS = {"navcam": NAVCAM, "hazcam": HAZCAM, "zcam": ZCAM}
 
@@ -171,16 +174,23 @@ def validate_zcam(model: Dict[str, Any]) -> List[str]:
             out.append(f"{g}: not a Mastcam-Z eye and zoom (ZL034 ...)")
         dist = c.get("distortion") or {}
         names, params = list(dist.get("names") or []), list(dist.get("params") or [])
-        for n in ("p1", "p2", "k3", "k4", "k5", "k6"):
+        for n in ("k3", "k4", "k5", "k6"):
             if n in names and abs(float(params[names.index(n)])) > TOL:
                 out.append(f"{g}: distortion {n} = {params[names.index(n)]:+.3g}, the form holds it at 0")
+        for n in ("p1", "p2"):
+            if n in names and abs(float(params[names.index(n)])) > ZCAM_MAX_P:
+                out.append(f"{g}: distortion {n} = {params[names.index(n)]:+.3g}, beyond {ZCAM_MAX_P:g}")
         lines = c.get("lines") or {}
         for st in ZCAM_STATES:
             ln = lines.get(st) or {}
-            for n in ("p1", "p2", "k3"):
+            for n in ("k3",):
                 e = ln.get(n)
                 if isinstance(e, dict) and (abs(float(e.get("a") or 0.0)) > TOL or abs(float(e.get("b") or 0.0)) > TOL):
                     out.append(f"{g}: {st} line for {n} is not 0, the form holds it at 0")
+            for n in ("p1", "p2", "k1", "k2"):
+                e = ln.get(n)
+                if isinstance(e, dict) and abs(float(e.get("b") or 0.0)) > TOL:
+                    out.append(f"{g}: {st} line for {n} has a focus slope, the form keeps it constant")
             for n in ("fx", "fy"):
                 if lines and n not in ln:
                     out.append(f"{g}: no {st} line for {n}")

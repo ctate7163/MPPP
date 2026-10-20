@@ -186,7 +186,8 @@ def test_processing_config_and_project_settings(tmp_path, clean_env):
     assert cfg["selection"]["lmst_window_h"] == [6.0, 18.0] and cfg["color"]["brightness_by_family"] == {"N": 0.9}
     assert processing_config(Settings(infer_mask=False, mask_checkpoint="x.pt"))["masking"]["checkpoint"] == "x.pt"
     s = Settings()
-    assert _zero_terms(s) == (("b1", "b2"), ("p1", "p2", "b1", "b2")) and _refine_tangential(s) == {"N": True, "Z": False}
+    assert _zero_terms(s) == (("b1", "b2"), None) and _refine_tangential(s) is True   # zcam-v2: p1, p2 refined like the Navcam
+    assert _zero_terms(s.replace(zcam_tangential="zero")) == (("b1", "b2"), ("p1", "p2", "b1", "b2"))
     assert _zero_terms(s.replace(zcam_k3="zero"))[1] == ("p1", "p2", "b1", "b2", "k3")
     w = wanted_project_settings(s, tmp_path)
     assert w["zcam_zero_terms"] is None and w["navcam_distortion"] == "fisheye_tangential"
@@ -261,7 +262,7 @@ def test_pipeline_settings_v0p73():
     from mppp.pipeline import Settings
     s = Settings()
     assert s.zcam_bin_refine == "focal_pp" and s.zcam_backlash == "list_split"
-    assert s.zcam_line_params == {"ZL": ["fx", "fy", "k1", "k2"], "ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]}
+    assert s.zcam_line_params == {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"], "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]}
     assert s.zcam_low_backlash_found == "auto"
 
 

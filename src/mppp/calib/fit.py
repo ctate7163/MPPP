@@ -1246,6 +1246,7 @@ def promote_navcam(candidate_dir: PathLike, note: str, folder: Optional[PathLike
 ZCAM_MODEL_LIMITS = {"max_f0_change_pct": 1.5, "max_aspect_dev": 0.01, "max_k1": 1.5, "baseline_m": (0.20, 0.29),
                      "max_rig_change_deg": 1.0, "max_rig_scatter_mdeg": 150.0, "max_baseline_scatter_mm": 3.0,
                      "max_tau_f_px": 10.0, "min_blocks": 3,
+                     "max_p": forms.ZCAM_MAX_P, "max_tau_p": 1e-3,     # zcam-v2: |p1|, |p2| and their block scatter
                      "max_offset_scatter_pct": 0.5,     # a start update: the blocks' f offsets about the model's f0
                      "min_blocks_start": 2}
 REGULAR_RATIO_DEFAULT = 1.0095          # backlash / regular focal length when the blocks do not measure it
@@ -1529,8 +1530,11 @@ def fit_zcam(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], rig_transla
             if all(v is not None for v in pp0l) and not gm.get("pp0_px"):
                 gm["pp0_px"] = pp0l
         if "k1" in bk and "k2" in bk:
-            gm["distortion"] = {"names": ["k1", "k2"], "params": [bk["k1"]["a"], bk["k2"]["a"]],
-                                "note": "k1, k2 constant with focus (p1 = p2 = k3 = 0 held)"}
+            dn = [n for n in ("k1", "k2", "p1", "p2") if n in bk]
+            gm["distortion"] = {"names": dn, "params": [bk[n]["a"] for n in dn],
+                                "sd": [bk[n].get("sd_a") for n in dn], "tau": [bk[n].get("tau_a") for n in dn],
+                                "note": "k1, k2" + (", p1, p2" if "p1" in dn else "") + " constant with focus (k3 = 0 held"
+                                + ("; p1 = p2 = 0 held" if "p1" not in dn else "") + ")"}
         gm["lines"] = {st: {pn: {k: v for k, v in e.items() if k in ("a", "b", "form", "derived")}
                             for pn, e in prs.items()} for st, prs in lines.items() if isinstance(prs, dict)}
         gm["lines"]["reference_focus"] = ref
@@ -1595,7 +1599,7 @@ def fit_zcam(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], rig_transla
     cal["loo"] = zcam_leave_one_out(infos)
     out["calibration"] = cal
     out["state"] = "calibrated"
-    out["form"] = "zcam-v1"
+    out["form"] = forms.ZCAM_FORM_ID
     out["source"] = f"MPPP Mastcam-Z calibration (mppp.calib.fit.fit_zcam) from {len(infos)} blocks: {', '.join(cal['blocks'])}"
     return out
 
@@ -1613,7 +1617,7 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
     def add(name, ok, note):
         checks.append({"check": name, "ok": bool(ok), "note": note})
     bad = forms.validate_zcam(new)
-    add("form", not bad, "; ".join(bad) or "zcam-v1")
+    add("form", not bad, "; ".join(bad) or forms.ZCAM_FORM_ID)
     cal, su = new.get("calibration"), new.get("start_update")
     nb = len(((cal or su or {}).get("blocks")) or [])
     add("blocks", nb >= (lim["min_blocks"] if cal is not None else lim["min_blocks_start"]), f"{nb} blocks")
@@ -1640,6 +1644,13 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
         if "k1" in (dist.get("names") or []):
             k1 = dist["params"][dist["names"].index("k1")]
             add(f"{g} k1", abs(k1) <= lim["max_k1"], f"{k1:+.4f}")
+        for pn in ("p1", "p2"):                 # zcam-v2: the tangential terms, small and agreed between the blocks
+            if pn in (dist.get("names") or []):
+                i_ = dist["names"].index(pn)
+                v = float(dist["params"][i_])
+                tau = (dist.get("tau") or [None] * len(dist["names"]))[i_]
+                ok_ = abs(v) <= lim["max_p"] and (tau is None or not np.isfinite(tau) or float(tau) <= lim["max_tau_p"])
+                add(f"{g} {pn}", ok_, f"{v:+.2e}" + (f", between-block sd {float(tau):.1e}" if tau is not None and np.isfinite(tau) else ""))
         for pn in ("fx", "fy"):
             x = (bk or {}).get(pn) or {}
             if isinstance(x, dict) and np.isfinite(x.get("chi2_dof_a", np.nan)):
