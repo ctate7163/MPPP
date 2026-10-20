@@ -206,19 +206,27 @@ _REGION_LABEL = {'rimw': 'Crater rim west', 'whh': 'Witch Hazel Hill', 'margin':
 _NAME = {o['id']: o['name'] for o in sites}
 REGION_TITLE = {r: (f"{_REGION_LABEL[r]}: {_NAME[ids[0]]} to {_NAME[ids[-1]]}" if r != 'land'
                     else 'Crater floor: landing site and Séítah') for r, ids in RID.items()}   # follows the block list
-GROUPS = {'D': RID['rimw'], 'E': RID['whh'], 'F': RID['delta'], 'G': RID['land'], 'H': RID['fan'], 'I': RID['margin']}
 
 def fig3(out):
-    for k, ids in GROUPS.items():
-        names = {o['id'] for o in sites}; assert set(ids) <= names, k
-    BW, BH = 1000.0, 1500.0                              # D-G boxes: 1 km wide, 1.5 km tall
-    boxes = {k: box_around(ids, size_m=(BW, BH)) for k, ids in GROUPS.items() if k in 'DEFG'}
+    """A | B (crater, traverse) over C (the block table, rows for every block) over six regional panels, lettered in
+    the order they appear: row 1 = D upper fan (wide, left-justified with A), E delta front, F crater floor; row 2 =
+    G crater rim west, H Witch Hazel Hill, I margin unit (wide, right-justified with B).  Axis labels on the left-most
+    and bottom-most panels; the scale bar of the wide panels lower right (clear of the traverse)."""
+    for r, ids in RID.items():
+        names = {o['id'] for o in sites}; assert set(ids) <= names, r
+    order1, order2 = ['fan', 'delta', 'land'], ['rimw', 'whh', 'margin']          # letters D E F / G H I
+    letters = dict(zip(order1 + order2, 'DEFGHI'))
+    wide = {'fan', 'margin'}
+    BW, BH = 1000.0, 1500.0                              # skinny boxes: 1 km wide, 1.5 km tall
     W = 18.0
-    hA = ab_layout(W, 0, None)[2]
+    a0, b0, hA = ab_layout(W, 0, None)
     gap, cslot = 0.55, 1.45                               # gap between panels; colour-bar slot
-    s = (W - 0.85 - 3*gap - 2*cslot - 0.2) / 4           # D-G panel width [in]
-    sh = s*BH/BW                                          # D-G panel height [in]
-    wHI = 2*s + gap                                       # H and I take the footprint of a D-E pair
+    x0 = 0.85; bR = b0[0] + b0[2]                         # A's left edge, B's right edge
+    xF = (x0 + bR + cslot) / 2                            # the wide panels: D from x0, I to bR, the same width
+    wW = bR - xF
+    s = (W - 0.2 - cslot - gap - xF) / 2                  # skinny panel width [in]
+    sh = s*BH/BW                                          # panel height [in]
+    boxes = {r: box_around(RID[r], size_m=(BW, BH)) for r in order1 + order2 if r not in wide}
     def fit_box(ids, w_in, h_in, pad_m=180):              # widen whichever side is short so the box matches the panel shape
         hb = box_around(ids, pad_m=pad_m)
         wm, hm = (hb[1]-hb[0])*M_LON, (hb[3]-hb[2])*M_LAT
@@ -226,55 +234,62 @@ def fig3(out):
         else: hm = wm*h_in/w_in
         cl, ca = (hb[0]+hb[1])/2, (hb[2]+hb[3])/2
         return (cl - wm/2/M_LON, cl + wm/2/M_LON, ca - hm/2/M_LAT, ca + hm/2/M_LAT)
-    boxes['H'] = fit_box(GROUPS['H'], wHI, sh); boxes['I'] = fit_box(GROUPS['I'], wHI, sh)
-    hC = 1.6
-    Htot = 0.45 + hA + 0.75 + hC + 0.45 + sh + 0.85 + sh + 0.75
+    for r in wide: boxes[r] = fit_box(RID[r], wW, sh)
+    per = -(-len(sites)//3)                               # table rows per column (3 columns): every block listed
+    hC = per*7.2*FS*1.25/72 + 0.45
+    Htot = 0.45 + hA + 0.75 + hC + 0.45 + sh + 1.0 + sh + 0.95
     rect = lambda x, y, w, h: [x/W, y/Htot, w/W, h/Htot]
     fig = plt.figure(figsize=(W, Htot), facecolor='#fcfcfb')
     y = Htot - 0.45
     a, b, _ = ab_layout(W, y, hA)
     axA = fig.add_axes(rect(*a)); axB = fig.add_axes(rect(*b))
-    panel_A(axA); nB = panel_B(axB, insets={k: boxes[k] for k in 'DEFGHI'})
+    panel_A(axA); nB = panel_B(axB, insets={letters[r]: boxes[r] for r in order1 + order2})
     colorbar(fig, rect(b[0]+b[2]+0.12, b[1], 0.2, b[3]), nB, 'Elevation [m] (tint)')
     y = b[1] - 0.75
-    axC = fig.add_axes(rect(0.85, y-hC, W-1.2, hC)); panel_C(axC)
-    y1 = y - hC - 0.45                 # top of row 1 (H, F, G)
-    y2 = y1 - sh - 0.85                # top of row 2 (D, E, I)
-    T = {k: terrain(boxes[k], 0.000015, [12, 13]) for k in 'DEFG'}
-    T['H'] = terrain(boxes['H'], 0.00002, [12, 13]); T['I'] = terrain(boxes['I'], 0.00002, [12, 13])
+    axC = fig.add_axes(rect(0.85, y-hC, W-1.2, hC)); panel_C(axC, per=per)
+    y1 = y - hC - 0.45                 # top of row 1 (D, E, F)
+    y2 = y1 - sh - 1.0                 # top of row 2 (G, H, I)
+    T = {r: terrain(boxes[r], 0.00002 if r in wide else 0.000015, [12, 13]) for r in order1 + order2}
     def norm_of(keys):
         z = np.concatenate([T[k][2][np.isfinite(T[k][2])].ravel() for k in keys]); return plt.Normalize(np.percentile(z, 1), np.percentile(z, 99))
-    norms = {'D': norm_of('DE'), 'E': norm_of('DE'), 'F': norm_of('FG'), 'G': norm_of('FG'), 'H': norm_of('H'), 'I': norm_of('I')}
-    rmap = {'D': 'rimw', 'E': 'whh', 'F': 'delta', 'G': 'land', 'H': 'fan', 'I': 'margin'}
-    titles = {k: f"{k}. {REGION_TITLE[r]}" for k, r in rmap.items()}
-    ci = {'D': 5, 'E': 5, 'F': 5, 'G': 5, 'H': 10, 'I': 10}
-    bar = {'D': (200, '200 m'), 'E': (200, '200 m'), 'F': (200, '200 m'), 'G': (200, '200 m'), 'H': (500, '500 m'), 'I': (500, '500 m')}
-    x0 = 0.85
-    # (panel, x, y_top, width, colour bar after it?, colour-bar label)
-    xF = x0 + wHI + cslot
-    layout = [('H', x0, y1, wHI, 'Elevation [m], H'), ('F', xF, y1, s, None), ('G', xF + s + gap, y1, s, 'Elevation [m], F and G'),
-              ('D', x0, y2, s, None), ('E', x0 + s + gap, y2, s, 'Elevation [m], D and E'), ('I', xF, y2, wHI, 'Elevation [m], I')]
-    for k, x, yt, w, cl in layout:
+    norms = {'fan': norm_of(['fan']), 'delta': norm_of(['delta', 'land']), 'land': norm_of(['delta', 'land']),
+             'rimw': norm_of(['rimw', 'whh']), 'whh': norm_of(['rimw', 'whh']), 'margin': norm_of(['margin'])}
+    ci = {r: (10 if r in wide else 5) for r in order1 + order2}
+    bar = {r: ((500, '500 m') if r in wide else (200, '200 m')) for r in order1 + order2}
+    # (region, x, y_top, width, colour-bar label after it or None)
+    layout = [('fan', x0, y1, wW, 'Elevation [m], D'), ('delta', xF, y1, s, None), ('land', xF + s + gap, y1, s, 'Elevation [m], E and F'),
+              ('rimw', x0, y2, s, None), ('whh', x0 + s + gap, y2, s, 'Elevation [m], G and H'), ('margin', xF, y2, wW, 'Elevation [m], I')]
+    for r, x, yt, w, cl in layout:
         ax = fig.add_axes(rect(x, yt-sh, w, sh))
-        gx, gy, Z, _ = T[k]; draw_terrain(ax, gx, gy, Z, norms[k], ci[k], exag=2)
-        overlay(ax, boxes[k], ids=GROUPS[k], eod=True, squares=True, fs=8*FS)
-        scalebar(ax, boxes[k], *bar[k])
-        ax.set_title(titles[k], loc='left', fontsize=9.5*FS, color=INK)
+        gx, gy, Z, _ = T[r]; draw_terrain(ax, gx, gy, Z, norms[r], ci[r], exag=2)
+        overlay(ax, boxes[r], ids=RID[r], eod=True, squares=True, fs=8*FS)
+        scalebar(ax, boxes[r], *bar[r], where='right' if r in wide else 'left')
+        ax.set_title(f"{letters[r]}. {REGION_TITLE[r]}", loc='left', fontsize=9.5*FS, color=INK)
         ax.tick_params(labelsize=6.5*FS); ax.ticklabel_format(useOffset=False)
         ax.xaxis.set_major_locator(plt.MaxNLocator(3 if w == s else 6)); ax.yaxis.set_major_locator(plt.MaxNLocator(6))
-        if cl: colorbar(fig, rect(x + w + 0.12, yt-sh, 0.18, sh), norms[k], cl)
+        if x == x0: ax.set_ylabel('Latitude [°N]')                   # the left-most column
+        if yt == y2: ax.set_xlabel('Longitude [°E]')                 # the bottom row
+        if cl: colorbar(fig, rect(x + w + 0.12, yt-sh, 0.18, sh), norms[r], cl)
     fig.text(0.85/W, 0.25/Htot, 'D–I: squares = blocks of rover stations (±30 m, as in the block panels); '
              'dots = end-of-drive Navcam 360; small squares = mid-drive partial Navcam; triangles = Mastcam-Z numbered 360s; diamonds = sample cores.',
              fontsize=8.5*FS, color=INK2)
     out = save_figure(fig, out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out, 'DTM files:', sorted(used_all) or 'none')
 
 def fig4(out):
-    """Wide layout: row 1 = A | B | C (one-column list); row 2 = six regional panels in reverse chronological order, D-I left to right."""
+    """Wide layout: row 1 = A | B | C (one-column list); row 2 = six regional panels in reverse chronological order, D-I
+    left to right, as tall as row 1 (20 Oct: no colour bars on this row - the tint shares row 1's scale per pair)."""
     order = ['rimw', 'whh', 'margin', 'fan', 'delta', 'land']           # reverse chronological
     letters = dict(zip(order, 'DEFGHI'))
     skinny = {'rimw', 'whh', 'delta', 'land'}
-    BH = 2400.0                                                          # every regional panel 2.4 km tall (same scale across the row)
     BW_SK, BW_WIDE = 1000.0, 3000.0
+    W = 24.0
+    left, gap, right = 0.9, 0.55, 0.2
+    wC = 5.6
+    a, b, hA = ab_layout(W - wC - 0.4, 0, None)
+    km = sum(BW_SK if r in skinny else BW_WIDE for r in order)/1000.0
+    inch_per_km = (W - left - 5*gap - right) / km                        # five gaps, no colour-bar slots (20 Oct)
+    sh = hA                                                              # the regional row as tall as row 1
+    BH = sh/inch_per_km*1000.0                                           # ... so every regional panel shows this many metres
     def centred(ids, w, h):
         hb = box_around(ids, pad_m=0); cl, ca = (hb[0]+hb[1])/2, (hb[2]+hb[3])/2
         return (cl - w/2/M_LON, cl + w/2/M_LON, ca - h/2/M_LAT, ca + h/2/M_LAT)
@@ -282,21 +297,14 @@ def fig4(out):
     for r in order:
         if r in skinny: boxes[r] = centred(RID[r], BW_SK, BH)
     boxes['margin'] = centred(RID['margin'], BW_WIDE, BH)               # old I: a little narrower (3.3 -> 3.0 km), a little taller
-    hb = box_around(RID['fan'], pad_m=180)                               # old H: keep its east edge, extend west and up/down to 3.0 x 2.4 km
+    hb = box_around(RID['fan'], pad_m=180)                               # old H: keep its east edge, extend west and up/down to 3.0 x BH km
     fit_w = max((hb[1]-hb[0])*M_LON, (hb[3]-hb[2])*M_LAT*1.45)
     east = (hb[0]+hb[1])/2 + fit_w/2/M_LON; ca = (hb[2]+hb[3])/2
     boxes['fan'] = (east - BW_WIDE/M_LON, east, ca - BH/2/M_LAT, ca + BH/2/M_LAT)
     for r in order:                                                      # every block of the region must sit inside its box
         for i in RID[r]:
-            o = next(q for q in sites if q['id'] == i); lo, la = site_ll(o); b = boxes[r]
-            assert b[0] <= lo <= b[1] and b[2] <= la <= b[3], (r, i)
-    W = 24.0
-    left, gap, cslot, right = 0.9, 0.55, 1.65, 0.2
-    km = sum(BW_SK if r in skinny else BW_WIDE for r in order)/1000.0
-    inch_per_km = (W - left - 2*gap - 4*cslot - right) / km              # gaps D|E and H|I; colour-bar slots after E, F, G and I
-    sh = BH/1000.0*inch_per_km
-    wC = 5.6
-    a, b, hA = ab_layout(W - wC - 0.4, 0, None)
+            o = next(q for q in sites if q['id'] == i); lo, la = site_ll(o); b_ = boxes[r]
+            assert b_[0] <= lo <= b_[1] and b_[2] <= la <= b_[3], (r, i)
     Htot = 0.45 + hA + 1.25 + sh + 0.75
     rect = lambda x, y, w, h: [x/W, y/Htot, w/W, h/Htot]
     fig = plt.figure(figsize=(W, Htot), facecolor='#fcfcfb')
@@ -314,14 +322,13 @@ def fig4(out):
         z = np.concatenate([T[r][2][np.isfinite(T[r][2])].ravel() for r in rs]); return plt.Normalize(np.percentile(z, 1), np.percentile(z, 99))
     NORM = {'rimw': norm_of(['rimw', 'whh']), 'whh': norm_of(['rimw', 'whh']), 'margin': norm_of(['margin']), 'fan': norm_of(['fan']),
             'delta': norm_of(['delta', 'land']), 'land': norm_of(['delta', 'land'])}
-    CB = {'whh': 'Elevation [m], D and E', 'margin': 'Elevation [m], F', 'fan': 'Elevation [m], G', 'land': 'Elevation [m], H and I'}
     LONG = {'rimw': 'Crater rim west', 'whh': 'Crater rim', 'margin': 'Margin Unit and Neretva Vallis', 'fan': 'Upper Fan and Belva Crater',
             'delta': 'Delta Front', 'land': 'Crater Floor and Séítah'}
     last = int(S.max())
     def sol_span(r):
         bl = [q for q in sites if q['id'] in RID[r]]
-        a = min(q['runs'][0][0] for q in bl); bmax = max(q['runs'][-1][1] for q in bl)
-        return f"{a}–{bmax}" + ('+' if bmax >= last else '')
+        a_ = min(q['runs'][0][0] for q in bl); bmax = max(q['runs'][-1][1] for q in bl)
+        return f"{a_}–{bmax}" + ('+' if bmax >= last else '')
     x = left
     for k, r in enumerate(order):
         w = (BW_SK if r in skinny else BW_WIDE)/1000.0*inch_per_km
@@ -334,10 +341,10 @@ def fig4(out):
         ax.set_title(lab, loc='left', fontsize=9.2*FS, color=INK)
         ax.tick_params(labelsize=6.3*FS); ax.ticklabel_format(useOffset=False)
         ax.xaxis.set_major_locator(plt.MaxNLocator(2 if r in skinny else 5)); ax.yaxis.set_major_locator(plt.MaxNLocator(8))
-        x += w
-        if r in CB: colorbar(fig, rect(x+0.1, yt-sh, 0.17, sh), NORM[r], CB[r]); x += cslot
-        else: x += gap
-    fig.text(left/W, 0.22/Htot, 'D–I share one scale (2.4 km tall). Squares = blocks of rover stations (±30 m); dots = end-of-drive Navcam 360; '
+        if k == 0: ax.set_ylabel('Latitude [°N]')
+        ax.set_xlabel('Longitude [°E]')
+        x += w + gap
+    fig.text(left/W, 0.22/Htot, f'D–I share one scale ({BH/1000:.1f} km tall; elevation tint as in B). Squares = blocks of rover stations (±30 m); dots = end-of-drive Navcam 360; '
              'small squares = mid-drive partial Navcam; triangles = Mastcam-Z numbered 360s; diamonds = sample cores.', fontsize=8.5*FS, color=INK2)
     out = save_figure(fig, out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out)
 

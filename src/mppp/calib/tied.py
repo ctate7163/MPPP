@@ -233,7 +233,13 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
         cam_id[key] = n
         db[name] = n
         c = {"model": base.model.name, "params": list(map(float, p)), "width": base.width, "height": base.height}
-        newproj.cameras[name] = navcam_distortion_terms(c, "refine")
+        if per_block:              # the diagnostic bins like the block runs' thermal bins: fx, fy, k1 free, the rest held
+            c = navcam_distortion_terms(c, "hold", pp="hold")
+            c["fixed_params"] = [n for n in c["fixed_params"] if n != "k1"]
+            c["free_params"] = sorted(set(c.get("free_params") or []) | {"fx", "fy", "k1"})
+            newproj.cameras[name] = c
+        else:
+            newproj.cameras[name] = navcam_distortion_terms(c, "refine")
         units["cameras"][n] = {"key": name, "scape": scape or None, "eye": eye, "bin": b, "early": early, "T": T,
                                "images": u["images"]}
     newproj.settings = dict(newproj.settings)
@@ -441,7 +447,7 @@ def keypoint_terms(units: Dict[str, Any], proj, temps: Dict[str, float], g: Dict
 # ====================================================================================== the fits
 def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT,
                 tie_rigs: bool = True, tie_cameras: bool = True, iterations: int = 100, covariance: bool = True,
-                passes: int = 2, verbose: bool = True) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
+                passes: int = 2, verbose: bool = True, refine_pp: bool = True) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
     """The adjustment of a tied reconstruction (``passes`` solves, the slopes of the keypoint map updated between
     them).  Returns (ba result of the last pass, the global arrays, residual statistics)."""
     from ..sfm.reconstruction import bundle_adjust
@@ -451,7 +457,8 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
     n_pass = max(1, int(passes))
     for p_ in range(n_pass):
         ks, kmap = keypoint_terms(units, proj, temps, g)
-        ba = bundle_adjust(rec, proj, sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=True,
+        ba = bundle_adjust(rec, proj, sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=refine_pp,
+                           refine_principal_point=refine_pp,
                            refine_rig="rotation", max_iterations=iterations, attitude_prior_deg=5.0,
                            covariance=covariance and p_ == n_pass - 1, navcam_aspect="free",
                            linear_solver="sparse_schur", keypoint_scale=ks, keypoint_map=kmap, extra_residuals=hook)
@@ -462,10 +469,54 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
     return ba, g, stats
 
 
+def _sd_from_units(cov: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any], held: Dict[str, Any]) -> Dict[str, Any]:
+    """The sd of the camera globals propagated from the bin cameras' own covariances (the ties are exact, so the
+    globals are the weighted least-squares combination of the bins: cov = (A^T W A)^-1 with W the bins' inverse
+    variances, correlations between bins ignored) - the fallback when the problem's covariance of the global
+    blocks comes out infinite (22 blocks, 20 Oct)."""
+    out = {}
+    blocks = cov.get("blocks") or {}
+    vf = float(cov.get("variance_factor", 1.0))
+    for eye in ("NL", "NR"):
+        rows_A, rows_w = [], []
+        for cid, u in units["cameras"].items():
+            if u["eye"] != eye:
+                continue
+            c = blocks.get(f"camera:{u['key']}")
+            if c is None or not np.all(np.isfinite(np.diag(c))):
+                continue
+            dT = u["T"] - st["T0"]
+            for i, k in enumerate(TIED_PARAMS):
+                a = np.zeros(10 + 5 + 4)
+                a[i] = 1.0
+                if k in SLOPE_TERMS:
+                    a[10 + SLOPE_TERMS.index(k)] = dT
+                if u["early"] and k in EARLY_TERMS:
+                    a[15 + EARLY_TERMS.index(k)] = 1.0
+                var = float(np.diag(c)[i]) * vf if i < len(np.diag(c)) else np.nan
+                if np.isfinite(var) and var > 0:
+                    rows_A.append(a); rows_w.append(1.0 / var)
+        if len(rows_A) < 19:
+            continue
+        A, w = np.array(rows_A), np.array(rows_w)
+        free = [j for j in range(19) if np.any(A[:, j] != 0)]
+        N = (A[:, free].T * w) @ A[:, free]
+        try:
+            C = np.linalg.inv(N)
+        except np.linalg.LinAlgError:
+            continue
+        sd = np.full(19, np.nan)
+        sd[free] = np.sqrt(np.clip(np.diag(C), 0, None))
+        out[eye] = {"G": sd[:10], "S": sd[10:15], "E": sd[15:19]}
+    return out
+
+
 def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, Any], units: Dict[str, Any]) -> Dict[str, Any]:
-    """The global parameters with their sd, in the units of the model files."""
+    """The global parameters with their sd, in the units of the model files (the sd from the problem's covariance
+    of the global blocks, else propagated from the bin cameras' covariances, :func:`_sd_from_units`)."""
     cov = ba.get("covariance") or {}
     held = (ba.get("extra") or {}).get("held") or {}
+    fallback = None
     out: Dict[str, Any] = {"T0_degC": st["T0"], "knot_sol": st["knot"], "early_sol": units["early_sol"],
                            "covariance_error": cov.get("error"), "covariance_damping": cov.get("damping"),
                            "held": held, "ties": (ba.get("extra") or {}).get("ties")}
@@ -473,6 +524,13 @@ def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, A
         G, S, E = g[f"G_{eye}"], g[f"S_{eye}"], g[f"E_{eye}"]
         sdG, sdS = _sd(cov, f"G_{eye}", 10, held.get(f"G_{eye}", ())), _sd(cov, f"S_{eye}", 5, held.get(f"S_{eye}", ()))
         sdE = _sd(cov, f"E_{eye}", 4, held.get(f"E_{eye}", ()))
+        if sdS is None or not np.all(np.isfinite(sdS)):
+            if fallback is None:
+                fallback = _sd_from_units(cov, st, units, held)
+            fb = fallback.get(eye)
+            if fb is not None:
+                sdG, sdS, sdE = fb["G"], fb["S"], fb["E"]
+                out.setdefault("sd_source", {})[eye] = "propagated from the bin cameras' covariances"
         out[eye] = {"params_T0": dict(zip(TIED_PARAMS, map(float, G))),
                     "sd_params_T0": None if sdG is None else dict(zip(TIED_PARAMS, map(float, sdG))),
                     "fx_ppm_per_degC": float(1e6 * S[0] / G[0]), "fy_ppm_per_degC": float(1e6 * S[1] / G[1]),
@@ -672,7 +730,7 @@ def diagnostic_pass(rec0, proj0, idx: Dict[str, Any], st: Dict[str, Any], g: Dic
     rec, proj, units = tied_reconstruction(rec0, proj0, idx, stl, bin_deg=bin_deg, early_sol=early_sol,
                                            max_span=max_span, per_block=True)
     ba, g2, stats = adjust_tied(rec, proj, idx, stl, units, hold=(), tie_rigs=False, tie_cameras=False,
-                                iterations=iterations, covariance=False, passes=1, verbose=verbose)
+                                iterations=iterations, covariance=False, passes=1, verbose=verbose, refine_pp=False)
     rows = unit_rows(rec, proj, idx, units, stl, g)
     if verbose:
         c = [r for r in rows["cameras"] if r["images"] >= 8]

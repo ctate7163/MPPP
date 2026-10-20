@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 
 from . import forms, joint as J, models as M
-from .constrain import thermal_terms
+from .constrain import rig_at, thermal_terms
 
 log = logging.getLogger("mppp.calib")
 PathLike = Union[str, Path]
@@ -1138,8 +1138,12 @@ def check_navcam(candidate_dir: PathLike, current_dir: Optional[PathLike] = None
         d = J.compare(J.pycolmap_camera(old[e]["model"], old[e]["params"]), J.pycolmap_camera(new[e]["model"], new[e]["params"]))
         add(f"{e} change vs in use", round(float(d["rms_px"]), 3), lim["max_camera_change_px"],
             d["rms_px"] <= lim["max_camera_change_px"], f"corners {d.get('corner_rms_px', float('nan')):.3f} px (rotation removed)")
-    dr = J.rotation_mdeg(ro["R_sensor_from_ref"], rn["R_sensor_from_ref"])
-    add("rig rotation change", round(dr, 2), lim["max_rig_change_mdeg"], dr <= lim["max_rig_change_mdeg"], "mdeg")
+    # the files' rotations are at their own sol0 (932 for the profile joint's, 0 for the tied joint's): compare the
+    # rigs at one sol in the middle of the mission
+    Ro, _, _ = rig_at(ro, sol=1000.0)
+    Rn, _, _ = rig_at(rn, sol=1000.0)
+    dr = J.rotation_mdeg(Ro, Rn)
+    add("rig rotation change", round(dr, 2), lim["max_rig_change_mdeg"], dr <= lim["max_rig_change_mdeg"], "mdeg at sol 1000")
     tt = {(e, w): thermal_terms(m[e].get("thermal")) for e in ("NL", "NR") for w, m in (("new", new), ("old", old))}
     dppm = max(abs(tt[(e, "new")][a] - tt[(e, "old")][a]) for e in ("NL", "NR") for a in ("fx_ppm", "fy_ppm"))
     add("thermal f slope change", round(dppm, 2), lim["max_ppm_change"], dppm <= lim["max_ppm_change"],

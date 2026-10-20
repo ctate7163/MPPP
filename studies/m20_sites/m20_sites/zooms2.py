@@ -72,7 +72,7 @@ for k, (ax, o) in enumerate(zip(axs.flat, sites)):
             bbox=dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.75), zorder=7)
     if k % ncol == 0: ax.set_ylabel('Relative northing [m]', fontsize=9.5, color=INK)          # left-most column
     if k + ncol >= len(sites): ax.set_xlabel('Relative easting [m]', fontsize=9.5, color=INK)  # bottom-most panel in each column
-    ax.tick_params(labelsize=7.8, colors=INK2); ax.grid(color='#e4e3df', lw=0.4, zorder=0)
+    ax.tick_params(labelsize=7.8, colors=INK2)
     for sp in ax.spines.values(): sp.set_color(C2); sp.set_linewidth(1.6)   # orange border = block of rover stations
 rest = list(axs.flat)[len(sites):]
 for ax in rest: ax.axis('off')

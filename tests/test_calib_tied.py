@@ -109,3 +109,19 @@ def test_tied_figure_inputs_feed_the_refined_figures(tmp_path):
     C.plot_rig_trends(fi["rig_residuals"], cons, rig["drift"], tmp_path / "rig.png", cx_inuse_px_per_degC=-0.05)
     C.plot_intrinsics_vs_temperature(cons, inuse, fi["bins"], fi["rig_residuals"], tmp_path / "intr.png")
     assert (tmp_path / "rig.png").stat().st_size > 1000 and (tmp_path / "intr.png").stat().st_size > 1000
+
+
+def test_sd_fallback_from_the_bin_cameras(tmp_path):
+    """When the problem's covariance of the global blocks is unusable (20 Oct: infinite on 22 blocks), the sd of
+    the camera globals is propagated from the bin cameras' own covariances."""
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, stats = T.adjust_tied(rec2, proj2, idx, st, units, iterations=15, covariance=True, passes=1, verbose=False)
+    cov = ba["covariance"]
+    assert any(k.startswith("camera:") for k in cov["blocks"])
+    for k in [k for k in cov["blocks"] if k.startswith("extra:")]:
+        cov["blocks"][k] = np.full_like(cov["blocks"][k], np.inf)
+    res = T.globals_result(st, g, ba, units)
+    assert res.get("sd_source", {}).get("NL") and np.isfinite(res["NL"]["sd"]["fx_ppm_per_degC"]) and res["NL"]["sd"]["fx_ppm_per_degC"] > 0
+    assert np.isfinite(res["NR"]["early_mission"]["sd_px"]["cx"])

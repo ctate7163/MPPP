@@ -24,7 +24,7 @@ if exist "%MPPP_WIN%\mppp_env.bat" ( call "%MPPP_WIN%\mppp_env.bat" || ( pause &
 set "WHICH=%~1"
 if "%WHICH%"=="" set "WHICH=both"
 if not "%~2"=="" set "M20_DPI=%~2"
-if not defined M20_DPI set "M20_DPI=300"
+if not defined M20_DPI set "M20_DPI=200"
 
 set "DEMROOT=D:\scapes\dem"
 if defined MPPP_SCAPES if exist "%MPPP_SCAPES%\dem" set "DEMROOT=%MPPP_SCAPES%\dem"
