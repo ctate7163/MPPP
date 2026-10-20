@@ -71,9 +71,21 @@ def infos_of(blocks, need_finished=True, log=print):
 
 
 def promote(candidate_dir: Path, note: str) -> dict:
-    """promote_cmods.py + a local commit + _transfer/promoted.json (as the Navcam consensus)."""
-    from navcal_consensus import promote_candidate
-    return promote_candidate(candidate_dir, note, ROOT)
+    """Promote the candidate's Mastcam-Z 34 mm focus model (``M2020_ZCAM034_focus_model.json``) into the models in
+    use (:func:`mppp.calib.models.promote`: CHANGES.md line, the replaced file in git) and commit it.  0.90: the
+    Navcam promoter is not used here (it looks for the Navcam files, which a Mastcam-Z candidate has not)."""
+    import subprocess
+    from mppp.calib import models as M
+    out = M.promote([Path(candidate_dir) / "M2020_ZCAM034_focus_model.json"], note=note)
+    print(f"promoted {sorted(out['files'])} into {out['folder']} ({out['stamp']})", flush=True)
+    try:
+        subprocess.run(["git", "add", "src/mppp/data/cmods"], cwd=ROOT, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", f"cmods: Mastcam-Z 34 mm calibration promoted ({note})"], cwd=ROOT, check=True)
+        out["commit"] = "committed"
+    except Exception as e:                                                 # noqa: BLE001
+        out["commit"] = f"not committed ({e}); commit src/mppp/data/cmods by hand"
+        print(out["commit"], flush=True)
+    return out
 
 
 def _out_dir(root: Path, name: str) -> Path:

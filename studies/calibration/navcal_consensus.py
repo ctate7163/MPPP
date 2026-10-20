@@ -32,14 +32,24 @@ check_candidate = F.check_navcam
 V0P73_TERMS = DEFAULT_TERMS
 
 
-def promote_candidate(candidate_dir: PathLike, note: str, repo_root: PathLike = None, commit: bool = False,
+def promote_candidate(candidate_dir: PathLike, note: str, repo_root: PathLike = None, commit: bool = True,
                       verbose: bool = True) -> Dict[str, Any]:
-    """Promote a candidate folder with :func:`mppp.calib.fit.promote_navcam` (``repo_root`` / ``commit`` are
-    kept for the study scripts: commit the models folder yourself afterwards)."""
+    """Promote a Navcam candidate folder with :func:`mppp.calib.fit.promote_navcam` and (``commit``, the default,
+    as the 0.86 pipeline did) commit ``src/mppp/data/cmods`` in ``repo_root`` so the promotion travels with the
+    repository (claude_sync pushes it)."""
+    import subprocess
     out = F.promote_navcam(candidate_dir, note, check=False)
     if verbose:
-        print(f"promoted {sorted(out['files'])} into {out['folder']} ({out['stamp']}); commit src/mppp/data/cmods",
-              flush=True)
+        print(f"promoted {sorted(out['files'])} into {out['folder']} ({out['stamp']})", flush=True)
+    if commit and repo_root:
+        try:
+            subprocess.run(["git", "add", "src/mppp/data/cmods"], cwd=str(repo_root), check=True)
+            subprocess.run(["git", "commit", "-q", "-m", f"cmods: Navcam consensus promoted ({note})"], cwd=str(repo_root), check=True)
+            out["commit"] = "committed"
+        except Exception as e:                                             # noqa: BLE001
+            out["commit"] = f"not committed ({e}); commit src/mppp/data/cmods by hand"
+            if verbose:
+                print(out["commit"], flush=True)
     return out
 
 
