@@ -175,10 +175,10 @@ def test_navcam_camera_is_invertible_over_the_whole_frame():
 DATA = Path(__file__).parent / "data" / "m20"
 
 
-NLF = DATA / "NLF_0709_0729883381_848RAD_N0332864SAPP00601_0A00LLJ01.IMG"
+from conftest import NLF  # noqa: E402  (0.91: the Rockytop products)
 
 
-ZL0 = DATA / "ZL0_0709_0729888971_069RAD_N0332864ZCAM07114_0340LMA01.IMG"
+from conftest import ZL0  # noqa: E402
 
 
 def _label_model(path):
@@ -200,7 +200,7 @@ def test_navcam_label_is_cahvore_fisheye_and_matches_the_promoted_model():
     from mppp.cmod import CameraModel, compare_to_colmap
     cm, (dx, dy) = _label_model(NLF)
     assert cm.kind == "CAHVORE" and cm.mtype == 2 and cm.linearity == 0.0
-    full = cm.rescaled(1.0, dx, dy, 5120, 3840)                 # a full-resolution sub-frame
+    full = cm.rescaled(0.5, dx, dy, 5120, 3840)                 # 0.91: a tile of a half-resolution frame
     nl = _navcam_model()
     d = compare_to_colmap(full, nl["model"], nl["params"], 5120, 3840, step=160)
     assert d["rms_px"] < 4 and d["corner_rms_px"] < 7 and d["rotation_deg"] < 0.2

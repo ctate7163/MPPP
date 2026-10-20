@@ -205,12 +205,14 @@ def test_label_fallback_for_a_zoom_without_a_file():
     assert name == "FULL_OPENCV" and "label" in src
     assert p[0] == pytest.approx(K[0, 0]) and p[2] == pytest.approx(K[0, 2] + 0.5)
     assert p[4] == pytest.approx(meta["intrinsics_label"]["dist_opencv"]["k1"]) and p[6:] == [0.0] * 6
-    # the image's COLMAP prior camera: the 34 mm model (the test image is at 34 mm, on the low-backlash list)
+    # the image's COLMAP prior camera: the 34 mm model, in the backlash state unless the image is on the
+    # low-backlash list (0.91: the Rockytop test frame of sol 464 is not)
     c = meta["colmap_camera"]
-    assert c["model"] == "FULL_OPENCV" and "regular state" in c["source"] and c["width"] == meta["intrinsics"]["width"]
+    state = "regular" if "regular state" in c["source"] else "backlash"
+    assert c["model"] == "FULL_OPENCV" and f"{state} state" in c["source"] and c["width"] == meta["intrinsics"]["width"]
     zm = calib.load_zcam(34)
     focus = float(meta["focus_position_count"])
-    want = calib.zcam_camera_at(zm, "ZL034", focus, "regular")[1]
+    want = calib.zcam_camera_at(zm, "ZL034", focus, state)[1]
     assert np.allclose(c["params"], want)                                    # full resolution, no extra padding
     # a zoom without a file (48 mm here): the label start
     meta2 = copy.deepcopy(meta)

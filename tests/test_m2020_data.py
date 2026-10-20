@@ -1,4 +1,4 @@
-"""Tests on the two real M2020 PDS products in data/m20 (skipped when absent)."""
+"""Tests on the two real M2020 PDS products in tests/data/m20 (0.91: Rockytop, sols 461 and 464; skipped when absent)."""
 import json
 
 import cv2
@@ -32,31 +32,35 @@ def zl0(cfg_nomask, waypoints):
 def test_label_reading():
     from mppp.labels import read_pds, label_float, label_get
     label, img = read_pds(NLF)
-    assert img.shape == (944, 1264, 3)                               # band-sequential -> HWC
-    assert label_get(label, "ROVER_MOTION_COUNTER")[:2] == [33, 2864]
-    assert label_float(label, "SITE_DERIVED_GEOMETRY_PARMS.SOLAR_ELEVATION") == pytest.approx(78.0691)
+    assert img.shape == (960, 1280, 3)                               # band-sequential -> HWC
+    assert label_get(label, "ROVER_MOTION_COUNTER")[:2] == [26, 630]
+    assert label_float(label, "SITE_DERIVED_GEOMETRY_PARMS.SOLAR_ELEVATION") == pytest.approx(37.4547)
     assert label_float(label, "derived_image_parms.radiance_scaling_factor") == pytest.approx(5e-6)
 
 
 def test_navcam_tile_is_padded_to_full_frame(nlf):
-    assert (nlf.width, nlf.height) == (5120, 3840) and nlf.native_size == (1264, 944)
-    assert nlf.padding == {"left": 1928, "right": 1928, "top": 1448, "bottom": 1448}
-    assert nlf.image_int16.shape == (3840, 5120, 3) and nlf.mask.shape == (3840, 5120)
-    assert not nlf.image_int16[:1448].any() and not nlf.mask_valid[:1448].any()
-    inside = nlf.mask_valid[1448:1448 + 944, 1928:1928 + 1264]
-    assert (inside > 0).mean() > 0.99
-    # label principal point moves with the padding (the label pinhole stays the Metashape reference)
+    """0.91: the test frame is the top-left 1280 x 960 tile of a half-resolution (2560 x 1920) frame of the sol-461
+    Navcam 360: padded right and below to the frame of its downsampling."""
+    assert (nlf.width, nlf.height) == (2560, 1920) and nlf.native_size == (1280, 960)
+    assert nlf.padding == {"left": 0, "right": 1280, "top": 0, "bottom": 960}
+    assert nlf.image_int16.shape == (1920, 2560, 3) and nlf.mask.shape == (1920, 2560)
+    assert not nlf.image_int16[960:].any() and not nlf.mask_valid[:, 1280:].any()
+    inside = nlf.mask_valid[:960, :1280]
+    assert (inside > 0).mean() > 0.97                                # the tile's own invalid border ~2 %
+    # the label model is the frame's (no shift for a top-left tile)
     lab = nlf.intrinsics_label
-    assert lab.cx == pytest.approx(666.709, abs=1e-2) and "PDS label" in nlf.intrinsics.source
-    assert nlf.intrinsics.cx == pytest.approx(lab.cx + 1928) and nlf.intrinsics.cy == pytest.approx(lab.cy + 1448)
-    # the COLMAP prior camera: the promoted NL model at the image's temperature and sol, at full resolution
+    assert lab.cx == pytest.approx(1297.166, abs=1e-2) and "PDS label" in nlf.intrinsics.source
+    assert nlf.intrinsics.cx == pytest.approx(lab.cx) and nlf.intrinsics.cy == pytest.approx(lab.cy)
+    # the COLMAP prior camera: the promoted NL model at the image's temperature and sol, at the frame's resolution
     from mppp import calib
     c = nlf.colmap_camera
-    assert c["model"] == "THIN_PRISM_FISHEYE" and (c["width"], c["height"]) == (5120, 3840)
+    s = nlf.width / 5120.0
+    assert c["model"] == "THIN_PRISM_FISHEYE" and (c["width"], c["height"]) == (2560, 1920)
     want = calib.camera_at(calib.load_camera("N", "L"), nlf.camera_temperature_degC, nlf.sol)[1]
-    assert np.allclose(c["params"], want) and c["params"][10] == c["params"][11] == 0.0
-    # and the promoted principal point agrees with the padded label model to a few pixels
-    assert abs(c["params"][2] - (lab.cx + 1928 + 0.5)) < 10 and abs(c["params"][3] - (lab.cy + 1448 + 0.5)) < 10
+    assert np.allclose(c["params"][:2], np.array(want[:2]) * s, rtol=1e-9)
+    assert np.allclose(c["params"][4:], want[4:]) and c["params"][10] == c["params"][11] == 0.0
+    # and the promoted principal point agrees with the label model to a few pixels
+    assert abs(c["params"][2] - lab.cx) < 5 and abs(c["params"][3] - lab.cy) < 5
     assert abs(c["params"][0] / lab.fx - 1) < 0.01
 
 
@@ -64,8 +68,8 @@ def test_zcam_is_demosaiced_and_keeps_label_model(zl0):
     assert (zl0.width, zl0.height) == (1648, 1200) and not any(zl0.padding.values())
     assert any("demosaiced" in m for m in zl0.log)
     assert zl0.intrinsics.source.startswith("PDS label CAHVOR")
-    assert zl0.intrinsics.fx == pytest.approx(4664.06, abs=0.1)     # 34 mm / 7.4 um ~ 4600 px
-    assert zl0.fn.zoom_mm == 34 and zl0.meta["focus_position_count"] == 270
+    assert zl0.intrinsics.fx == pytest.approx(4705.62, abs=0.1)     # 34 mm / 7.4 um ~ 4600 px
+    assert zl0.fn.zoom_mm == 34 and zl0.meta["focus_position_count"] == 1128
     rgb = zl0.image_int16[zl0.mask_valid > 0].astype(float).mean(axis=0)
     assert rgb.min() > 1000 and rgb.max() / rgb.min() < 2.0         # three plausible colour channels
     assert zl0.cahvor.o_a_angle_deg() < 0.5                          # O ~= A assumption holds
@@ -74,13 +78,14 @@ def test_zcam_is_demosaiced_and_keeps_label_model(zl0):
 def test_radiometry_matches_hand_calculation(zl0):
     from mppp.labels import read_pds
     _, dn = read_pds(ZL0)
-    assert zl0.tau_estimated == pytest.approx(0.4)                   # L_s 25.4 lies on the 25..80 plateau
-    mu = np.sin(np.radians(58.1934))
-    assert zl0.scale_zenith == pytest.approx(mu * np.exp(-(0.4 - 0.3) / 6 / mu))
+    tau = zl0.tau_estimated                                          # from the L_s table (sol 464)
+    assert 0.3 < tau < 2.0
+    mu = np.sin(np.radians(48.5603))                                 # the label's solar elevation
+    assert zl0.scale_zenith == pytest.approx(mu * np.exp(-(tau - 0.3) / 6 / mu))
     # a green Bayer site keeps its own sample through Malvar demosaicing: check one pixel end to end
     y, x = 600, 801                                                  # RGGB: (even row, odd col) = G
     assert dn[y, x] > 0
-    rad = dn[y, x] * 1.921518333e-06 + 0.0007140575326
+    rad = dn[y, x] * 1.98012026e-06 + 0.001093646162
     expect = rad / zl0.scale_zenith * 1.3 * 2e5
     assert zl0.image_int16[y, x, 1] == pytest.approx(expect, abs=1.0)
     assert zl0.image_int8[y, x, 1] == pytest.approx(expect / 64, abs=1.0)
@@ -98,8 +103,8 @@ def test_boresight_agrees_with_label_pointing(nlf, zl0):
 def test_camera_height_and_site_frame_position(cfg_nomask):
     from mppp import MPPPImage
     im = MPPPImage(ZL0, cfg_nomask, None)                            # no waypoints: own site frame
-    assert im.pose.frame == "site33_enu" and im.geo["lat_deg"] is None
-    n, e, d = 254.136, -335.623, -42.4607
+    assert im.pose.frame == "site26_enu" and im.geo["lat_deg"] is None
+    n, e, d = 71.1481, -9.19205, -11.4931                            # the label's ROVER ORIGIN_OFFSET_VECTOR
     assert np.allclose(im.pose.C[:2], [e, n], atol=1.5)              # camera within the rover footprint
     assert 1.8 < im.pose.C[2] - (-d) < 2.3                           # Mastcam-Z ~2 m above the nav origin
 
@@ -109,9 +114,9 @@ def test_waypoint_position_and_gps(zl0, waypoints):
     assert zl0.geo["lat_deg"] is not None and 18.3 < zl0.geo["lat_deg"] < 18.6
     assert 77.2 < zl0.geo["lon_east_deg"] < 77.6
     if "_mppp_source" not in waypoints:                              # synthetic fixture: exact expectation
-        d_e, d_n = 4350000.0 - 4354494.0 - 335.623, 1096000.0 - 1093299.0 + 254.136
+        d_e, d_n = 4351987.44 - 4354494.0 - 9.19205, 1094063.3 - 1093299.0 + 71.1481
         assert np.allclose(zl0.pose.C[:2], [d_e, d_n], atol=1.5)
-        assert zl0.pose.C[2] == pytest.approx(69.9 + 42.4607 + 2.0, abs=0.4)
+        assert zl0.pose.C[2] == pytest.approx(-2534.78 + 2569.9 + 11.4931 + 2.0, abs=0.4)
 
 
 def test_stereo_free_projection_consistency(zl0):
@@ -144,8 +149,10 @@ def test_mask_inference(waypoints):
     assert set(np.unique(im.mask)) <= {0, 255}
     assert not im.mask[im.mask_valid == 0].any()                    # invalid pixels never included
     assert im.mask_probability.shape == (1200, 1648) and 0 <= im.mask_probability.min() <= im.mask_probability.max() <= 1
-    # this frame looks down at terrain (elevation -43 deg): nearly all valid pixels are terrain
-    assert (im.mask > 0).sum() / (im.mask_valid > 0).sum() > 0.9
+    # this frame looks 11 deg above the horizon towards the Rockytop scarp: terrain below, sky above
+    frac = (im.mask > 0).sum() / (im.mask_valid > 0).sum()
+    assert 0.3 < frac < 1.0
+    assert (im.mask[-200:] > 0).mean() >= (im.mask[:200] > 0).mean()   # more terrain at the bottom than at the top
     assert get_model(CKPT, "cpu")[0] is get_model(CKPT, "cpu")[0]   # model loaded once
 
 
@@ -171,16 +178,16 @@ def test_process_images_end_to_end(tmp_path, waypoints):
     refs = (tmp_path / "references.txt").read_text().splitlines()
     assert len(refs) == 3 and refs[1].startswith(NLF.stem + ".png")
     cams = (tmp_path / "colmap/sparse_prior/cameras.txt").read_text()
-    assert "THIN_PRISM_FISHEYE 5120 3840" in cams and "FULL_OPENCV 1648 1200" in cams
-    assert man["colmap"]["cameras"].keys() == {"NL0", "ZL034"}
+    assert "THIN_PRISM_FISHEYE 2560 1920" in cams and "FULL_OPENCV 1648 1200" in cams
+    assert man["colmap"]["cameras"].keys() == {"NL1", "ZL034"}             # NL1: the half-resolution Navcam frame
     assert all(v["source"] == "promoted model" for v in man["colmap"]["cameras"].values())
 
 
 def test_two_positioning_routes_agree(cfg_nomask):
     """
-    Independent check on real waypoints: exact (site 33, drive 2864) waypoint vs
-    (site 33, drive 0) waypoint + label ORIGIN_OFFSET_VECTOR.  They differ only by
-    localisation updates between the two (5.6 m E, 0.4 m N, 0.7 m U here).
+    Independent check on real waypoints: exact (site 26, drive 630) waypoint vs
+    (site 26, drive 0) waypoint + label ORIGIN_OFFSET_VECTOR.  They differ only by
+    localisation updates between the two (0.4 m E, 1.1 m N here).
     """
     from mppp import MPPPImage, load_waypoints
     from mppp.waypoints import waypoint_for_site_drive
@@ -189,12 +196,12 @@ def test_two_positioning_routes_agree(cfg_nomask):
     exact = MPPPImage(ZL0, cfg_nomask, wp)
     assert exact.pose.position_source.endswith("(exact)")
     trimmed = {"features": [f for f in wp["features"]
-                            if (f["properties"]["site"], f["properties"]["drive"]) != (33, 2864)]}
+                            if (f["properties"]["site"], f["properties"]["drive"]) != (26, 630)]}
     via_offset = MPPPImage(ZL0, cfg_nomask, trimmed)
     assert "drive 0 + label" in via_offset.pose.position_source
     d = exact.pose.C - via_offset.pose.C
     assert np.hypot(d[0], d[1]) < 10.0 and abs(d[2]) < 2.0
-    assert exact.geo["lat_deg"] == pytest.approx(18.46167105) and exact.geo["lon_east_deg"] == pytest.approx(77.40293429)
+    assert exact.geo["lat_deg"] == pytest.approx(18.4586918) and exact.geo["lon_east_deg"] == pytest.approx(77.40614454)
 
 
 # Mastcam-Z temperatures from the label (v0p73)
@@ -212,4 +219,4 @@ def test_label_instrument_temperatures():
     from mppp.labels import instrument_temperatures, read_pds
     t = instrument_temperatures(read_pds(ZL0, load_image=False)[0])
     assert set(t) >= {"DEA", "HEAD_FPA", "HEAD_HTR_1", "HEAD_HTR_2"}
-    assert t["HEAD_HTR_1"] == pytest.approx(-13.8094)
+    assert t["HEAD_HTR_1"] == pytest.approx(-20.538)

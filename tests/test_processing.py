@@ -283,10 +283,10 @@ def test_reuse_existing_notices_a_new_waypoint_table(tmp_path):
 DATA = Path(__file__).parent / "data" / "m20"
 
 
-NLF = DATA / "NLF_0709_0729883381_848RAD_N0332864SAPP00601_0A00LLJ01.IMG"
+from conftest import NLF  # noqa: E402  (0.91: the Rockytop products)
 
 
-ZL0 = DATA / "ZL0_0709_0729888971_069RAD_N0332864ZCAM07114_0340LMA01.IMG"
+from conftest import ZL0  # noqa: E402
 
 
 @needs_data
@@ -295,13 +295,14 @@ def test_sky_pointing_navcam_is_skipped(tmp_path):
     from mppp.image import MPPPImage, SkyImage
     from mppp.process import process_images
     wp = synthetic_waypoints()
-    on = config_selection_off({"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": 45.0}})
+    # 0.91: the Rockytop Navcam tile looks 30 deg down; a limit of -40 deg makes it "sky-pointing" for the test
+    on = config_selection_off({"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": -40.0}})
     off = config_selection_off({"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": None}})
     with pytest.raises(SkyImage):
-        MPPPImage(NLF, on, wp)                                    # the Sun-pointing tile looks up at +78 deg
-    assert MPPPImage(NLF, off, wp).pose.boresight_az_el_deg[1] > 45
-    MPPPImage(ZL0, on, wp)                                        # Mastcam-Z is not filtered (looks down anyway)
-    high = config_selection_off({"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": 80.0}})
+        MPPPImage(NLF, on, wp)
+    assert MPPPImage(NLF, off, wp).pose.boresight_az_el_deg[1] > -40
+    MPPPImage(ZL0, on, wp)                                        # Mastcam-Z is not filtered (it looks up 11 deg)
+    high = config_selection_off({"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": -20.0}})
     MPPPImage(NLF, high, wp)
     man = process_images([NLF, ZL0], tmp_path / "out", on, wp, progress=False)
     assert man["n_processed"] == 1 and man["failed"] == [] and len(man["skipped"]) == 1
@@ -353,22 +354,24 @@ def test_brightness_lmst_and_saturation_rules(tmp_path):
     assert lmst_hours("Sol-01451M13:00:25.313") == pytest.approx(13.007, abs=1e-3) and lmst_hours(None) is None
     base = {"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": None}}
     im = MPPPImage(NLF, config_selection_off(base), wp)
-    assert im.brightness == 0.9 and im.meta["brightness"] == 0.9 and im.meta["saturated_fraction"] > 0.99
+    assert im.brightness == 0.9 and im.meta["brightness"] == 0.9 and im.meta["saturated_fraction"] < 0.01   # well exposed
     assert MPPPImage(ZL0, config_selection_off(base), wp).brightness == 1.0
     dark = config_selection_off(dict(base, color={"brightness_by_family": {"N": 0.5}}))
     a = MPPPImage(ZL0, config_selection_off(base), wp).image_int8.astype(int)
     b = MPPPImage(ZL0, config_selection_off(dict(base, color={"brightness_by_family": {"Z": 0.5}})), wp).image_int8.astype(int)
     v = a > 10
     assert np.median(b[v] / a[v]) == pytest.approx(0.5, abs=0.05)          # brightness scales the product
+    # the rule's mechanics: a frame whose saturated share exceeds the limit is refused (a negative limit: any frame)
     with pytest.raises(SaturatedImage):
-        MPPPImage(NLF, config_selection_off(dict(base, selection={"max_boresight_elevation_deg": None, "max_saturated_fraction": 0.05})), wp)
+        MPPPImage(NLF, config_selection_off(dict(base, selection={"max_boresight_elevation_deg": None, "max_saturated_fraction": -1.0})), wp)
+    MPPPImage(NLF, config_selection_off(dict(base, selection={"max_boresight_elevation_deg": None, "max_saturated_fraction": 0.05})), wp)
     with pytest.raises(LmstOutOfWindow):
-        MPPPImage(ZL0, config_selection_off(dict(base, selection={"lmst_window_h": [9.0, 12.0]})), wp)   # taken at 14.5 h
+        MPPPImage(ZL0, config_selection_off(dict(base, selection={"lmst_window_h": [9.0, 12.0]})), wp)   # taken at 12.1 h
     MPPPImage(ZL0, config_selection_off(dict(base, selection={"lmst_window_h": [9.0, 17.0]})), wp)
     man = process_images([NLF, ZL0], tmp_path / "out", config_selection_off(dict(base, selection={
-        "max_boresight_elevation_deg": None, "max_saturated_fraction": 0.05, "lmst_window_h": [9.0, 17.0]})), wp,
+        "max_boresight_elevation_deg": None, "max_saturated_fraction": 0.05, "lmst_window_h": [12.5, 17.0]})), wp,
         progress=False, workers=1)
-    assert man["n_processed"] == 1 and len(man["skipped"]) == 1 and "saturated" in man["skipped"][0]["reason"]
+    assert man["n_processed"] == 1 and len(man["skipped"]) == 1 and "LMST" in man["skipped"][0]["reason"]
 
 
 @needs_data

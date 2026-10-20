@@ -108,8 +108,11 @@ def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     zmeta = [m for m in man["images"] if m["filename"]["family"] == "Z"][0]
     fc = float(zmeta["focus_position_count"])
     key = f"ZL034_F{int(round(fc)):05d}"
-    # the test image (ZCAM07114, 34 mm) is on the shipped low-backlash list: a regular-state bin, f held
-    reg = SfmProject.create(man["images"], out, tmp_path / "g", link=False, zcam_intrinsics="label")
+    # a list naming the test image (0.91: the Rockytop ZCAM03381 frame is not on the shipped list): a regular-state
+    # bin, f held
+    lb = tmp_path / "low_backlash.csv"
+    lb.write_text(zmeta["filename"]["stem"] + "\n" if "stem" in zmeta["filename"] else Path(zmeta["source_product"]).stem + "\n")
+    reg = SfmProject.create(man["images"], out, tmp_path / "g", link=False, zcam_intrinsics="label", zcam_low_backlash=lb)
     assert set(reg.cameras) == {"NL", key + "_reg"} and reg.settings["zcam_low_backlash"]["images"] == 1
     assert {"fx", "fy"} <= set(reg.cameras[key + "_reg"]["fixed_params"])
     proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, zcam_intrinsics="label",

@@ -77,28 +77,28 @@ def test_mask_list(capsys):
 
 def test_process_dry_run_and_run(tmp_path, capsys, clean_env):
     from mppp.cli import main
-    pds = tmp_path / "pds" / "sol0709"
+    pds = tmp_path / "pds" / "sol0461"
     pds.mkdir(parents=True)
     for f in (NLF, ZL0):
         shutil.copy(f, pds / f.name)
-    extra = json.dumps({"sol709": [709, 709]})
+    extra = json.dumps({"rockytop_test": [461, 464]})
     settings = tmp_path / "settings.json"
     # the Navcam test product is a Sun-pointing SAPP tile: the selection rules are off for it
     settings.write_text(json.dumps({"sequence_prefixes": ["NCAM", "SAPP"], "navcam_min_frame_fraction": None,
                                     "sky_elevation_deg": None, "lmst_window_h": None, "max_saturated_fraction": None,
                                     "max_exposure_ms": None, "max_centre_tint": None, "infer_mask": False,
                                     "workers": 1, "add_nearby_waypoints": 0}))
-    args = ["process", "sol709", "--root", str(tmp_path / "scapes"), "--pds", str(tmp_path / "pds"), "--zcam",
+    args = ["process", "rockytop_test", "--root", str(tmp_path / "scapes"), "--pds", str(tmp_path / "pds"), "--zcam",
             "--settings", str(settings), "--set", f"sites_extra={extra}"]
     assert main(args + ["--dry-run"]) == 0
     out = capsys.readouterr().out
     assert "2 products would be processed" in out and NLF.name in out and ZL0.name in out
-    work = tmp_path / "scapes" / "mars2020_sol_0709_sol709_zcam"
+    work = tmp_path / "scapes" / "mars2020_sol_0461_rockytop_test_zcam"
     assert not work.exists()
     assert main(args + ["--no-echo"]) == 0
     assert (work / "processed" / "process_done.json").is_file() and (work / "mppp_status.json").is_file()
     st = json.loads((work / "mppp_status.json").read_text())
-    assert st["state"] == "finished" and st["stage"] == "process" and st["site"] == "sol709"
+    assert st["state"] == "finished" and st["stage"] == "process" and st["site"] == "rockytop_test"
     assert list((work / "runs").glob("*_process/log.txt"))
     assert main(["process", "nowhere", "--root", str(tmp_path / "scapes"), "--pds", str(tmp_path / "pds")]) == 2
     assert "not in" in capsys.readouterr().err

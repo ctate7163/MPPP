@@ -10,9 +10,12 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from mppp.paths import checkpoints_dir  # noqa: E402
 
-DATA = ROOT / "tests" / "data" / "m20"                                     # two public PDS products (v0p13)
-NLF = DATA / "NLF_0709_0729883381_848RAD_N0332864SAPP00601_0A00LLJ01.IMG"
-ZL0 = DATA / "ZL0_0709_0729888971_069RAD_N0332864ZCAM07114_0340LMA01.IMG"
+DATA = ROOT / "tests" / "data" / "m20"                                     # two public PDS products (0.91: Rockytop)
+# 0.91: Rockytop, the waypoint of sols 461-464 (site 26 drive 630) - a quarter-resolution frame of the sol-461 Navcam
+# 360 and a full 34 mm Mastcam-Z frame of ZCAM03381 (sol 464); the example data set of the same place is a release
+# asset (mppp fetch example)
+NLF = DATA / "NLF_0461_0707870987_044RAD_N0260630NCAM03461_0A0195J02.IMG"
+ZL0 = DATA / "ZL0_0464_0708130229_159RAD_N0260630ZCAM03381_0340LMA01.IMG"
 
 
 def _find_ckpt():
@@ -48,7 +51,7 @@ needs_legacy_ckpt = pytest.mark.skipif(not LEGACY_CKPT.is_file(), reason="2025 m
 
 
 def synthetic_waypoints():
-    """Minimal GeoJSON with the landing frame (site 3) and site 33 origins. NOT real positions."""
+    """Minimal GeoJSON with the landing frame (site 3) and the site 26 (the test products) and site 33 origins."""
     def feat(sol, site, drive, e, n, z, lon, lat):
         return {"type": "Feature",
                 "properties": {"sol": sol, "site": site, "drive": drive, "easting": e, "northing": n,
@@ -57,6 +60,7 @@ def synthetic_waypoints():
     return {"type": "FeatureCollection", "features": [
         feat(13, 3, 0, 4354494.0, 1093299.0, -2569.9, 77.45089, 18.44463),
         feat(14, 3, 38, 4354497.4, 1093294.0, -2569.9, 77.45095, 18.44455),
+        feat(449, 26, 0, 4351987.44, 1094063.3, -2534.78, 77.40630, 18.45751),
         feat(700, 33, 0, 4350000.0, 1096000.0, -2500.0, 77.37100, 18.49020),
         feat(705, 33, 1000, 4349900.0, 1096100.0, -2499.0, 77.36920, 18.49190),
     ]}

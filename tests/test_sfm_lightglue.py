@@ -35,17 +35,17 @@ def test_lightglue_matches_and_verifies(tmp_path, monkeypatch):
     for k in ("MPPP_PDS", "MPPP_SCAPES", "MPPP_GPU_PYTHON", "COLMAP_BAT"):
         monkeypatch.delenv(k, raising=False)
     from mppp.pipeline import Settings, align, process_site
-    pds = tmp_path / "pds" / "sol0709"
+    pds = tmp_path / "pds" / "sol0461"
     pds.mkdir(parents=True)
     for f in (NLF, ZL0):
         shutil.copy(f, pds / f.name)
-    s = Settings(pds_dir=pds.parent, scapes_root=tmp_path / "scapes", sites_extra={"sol709": (709, 709)},
+    s = Settings(pds_dir=pds.parent, scapes_root=tmp_path / "scapes", sites_extra={"rockytop_test": (461, 464)},
                  add_nearby_waypoints=0, include_zcam=True, zcam_zooms=[34], sequence_prefixes=("NCAM", "SAPP"),
                  navcam_min_frame_fraction=None, sky_elevation_deg=None, lmst_window_h=None,
                  max_saturated_fraction=None, max_exposure_ms=None, max_centre_tint=None, infer_mask=False,
                  workers=1, max_num_features=2048, match_mode="lightglue")
     s.match.update(max_keypoints=512, device="cpu")
-    processed = process_site("sol709", s)
+    processed = process_site("rockytop_test", s)
     work = processed.parent
     rep = align(work, s, stop_after="database")
     assert "database" in rep

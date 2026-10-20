@@ -112,7 +112,7 @@ def test_resolve_site(tmp_path, clean_env):
 
 @pytest.fixture
 def pds(tmp_path):
-    d = tmp_path / "pds" / "sol0709"
+    d = tmp_path / "pds" / "sol0461"
     d.mkdir(parents=True)
     for f in (NLF, ZL0):
         shutil.copy(f, d / f.name)
@@ -122,7 +122,7 @@ def pds(tmp_path):
 def _test_settings(tmp_path, pds):
     from mppp.pipeline import Settings
     # the Navcam test product is a Sun-pointing SAPP tile: the selection rules are off for it
-    return Settings(pds_dir=pds, scapes_root=tmp_path / "scapes", sites_extra={"sol709": (709, 709)},
+    return Settings(pds_dir=pds, scapes_root=tmp_path / "scapes", sites_extra={"rockytop_test": (461, 464)},
                     add_nearby_waypoints=0, include_zcam=True, zcam_zooms=[34], sequence_prefixes=("NCAM", "SAPP"),
                     navcam_min_frame_fraction=None, sky_elevation_deg=None, lmst_window_h=None,
                     max_saturated_fraction=None, max_exposure_ms=None, max_centre_tint=None, infer_mask=False,
@@ -132,36 +132,36 @@ def _test_settings(tmp_path, pds):
 def test_select_images_on_a_pds_folder(tmp_path, pds, clean_env):
     from mppp.pipeline import select_images, select_products
     s = _test_settings(tmp_path, pds)
-    paths = select_images("sol709", s)
+    paths = select_images("rockytop_test", s)
     assert sorted(p.name for p in paths) == sorted([NLF.name, ZL0.name])
-    assert select_images("sol709", s.replace(include_zcam=False)) == [pds / "sol0709" / NLF.name]
-    assert select_images("sol709", s.replace(sequence_prefixes=("NCAM",), include_zcam=False)) == []
-    paths, sel = select_products("sol709", s)
-    assert sel["site"] == "sol709" and sel["sol_ranges"] == [[709, 709]] and sel["n_exposure_products"] == 2
+    assert select_images("rockytop_test", s.replace(include_zcam=False)) == [pds / "sol0461" / NLF.name]
+    assert select_images("rockytop_test", s.replace(sequence_prefixes=("SAPP",), include_zcam=False)) == []   # the tile is NCAM
+    paths, sel = select_products("rockytop_test", s)
+    assert sel["site"] == "rockytop_test" and sel["sol_ranges"] == [[461, 464]] and sel["n_exposure_products"] == 2
     with pytest.raises(ValueError, match="PDS archive"):
-        select_images("sol709", s.replace(pds_dir=None))
+        select_images("rockytop_test", s.replace(pds_dir=None))
 
 
 def test_process_site_end_to_end(tmp_path, pds, clean_env):
     from mppp.pipeline import PROCESS_DONE, load_images, process_key, process_site, processed_done, resolve_site
     from mppp.sfm.workdir import load_manifest
     s = _test_settings(tmp_path, pds)
-    processed = process_site("sol709", s)
-    work = tmp_path / "scapes" / "mars2020_sol_0709_sol709_zcam"
+    processed = process_site("rockytop_test", s)
+    work = tmp_path / "scapes" / "mars2020_sol_0461_rockytop_test_zcam"
     assert processed == work / "processed" and (processed / "images_png8").is_dir()
     man, mf = load_manifest(processed)
     assert man["n_processed"] == 2 and not man["failed"] and mf.name.startswith("mppp_manifest_v")
     assert {m["outputs"]["PNG8"].split("/")[0] for m in man["images"]} == {"images_png8"}
-    assert man["provenance"]["site"] == "sol709"
+    assert man["provenance"]["site"] == "rockytop_test"
     done = json.loads((processed / PROCESS_DONE).read_text())
-    key = process_key(resolve_site("sol709", s)[1])             # the key is of the resolved settings (zooms, octaves)
+    key = process_key(resolve_site("rockytop_test", s)[1])             # the key is of the resolved settings (zooms, octaves)
     assert done["images"] == 2 and done["run_key"] == key and processed_done(work, key)
     assert process_key(resolve_site(work, s)[1]) == key
     assert processed_done(work, "other") is None
     # the same folder as a WORK path, reusing what is processed
     assert process_site(work, s) == processed
     # the manifest images that go into an alignment: exclusions and zoom filters
-    ims = load_images(work, s.replace(exclude=["ZL0_0709_*"]), zooms=[34])
+    ims = load_images(work, s.replace(exclude=["ZL0_0464_*"]), zooms=[34])
     assert [m["source_product"] for m in ims] == [NLF.name]
     assert len(load_images(work, s, zooms=[])) == 1 and len(load_images(work, s, zooms=[34])) == 2
 
