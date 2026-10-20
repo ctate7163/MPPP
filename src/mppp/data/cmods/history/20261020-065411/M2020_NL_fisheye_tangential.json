@@ -1,0 +1,125 @@
+{
+ "model": "THIN_PRISM_FISHEYE",
+ "width": 5120,
+ "height": 3840,
+ "params": [
+  2956.1655944938043,
+  2956.0203326800365,
+  2591.332043947514,
+  1944.3069304900002,
+  0.045182565535483867,
+  -0.010220926222926587,
+  0.0002691541403743861,
+  0.00036172528766585215,
+  0.003615861953948451,
+  -0.006617090516290966,
+  0.0,
+  0.0
+ ],
+ "param_names": [
+  "fx",
+  "fy",
+  "cx",
+  "cy",
+  "k1",
+  "k2",
+  "p1",
+  "p2",
+  "k3",
+  "k4",
+  "sx1",
+  "sy1"
+ ],
+ "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
+ "free_params": [],
+ "pixel_origin": "corner of the first pixel (COLMAP)",
+ "source": "MPPP Navcam consensus (mppp.sfm.navcal_consensus, 2026-10-18, v0p80 NL-reference form): one NL camera shared by 23 blocks (Artuby Ridge, Bell Island Large, Belva Crater Large, Bunsen Peak, Chal Rocks, Chal Rocks Large, Cheyava Falls, Enchanted Lake, Hippo Pools, Issole Seitah South, Marble Mountain, Origny Large, Pico Turquino, Rochette, Rockytop, Seitah North, South Arm, Taylorfjellet Huge, Taylorfjellet Large, Three Forks Large, Tuxedo Park, Van Zyl Overlook Large, Witch Hazel Hill); fisheye + tangential at -20 degC, fx +40.7 / fy +45.2 ppm/degC, cx +0.0000 px/degC, k1 -7.24e-06/degC, k4 -0.00662 (fitted with k3), one rig yaw +39.48 mdeg (rate +2.56 mdeg/1000 sol).",
+ "sd": {
+  "fx": 0.02582608585305851,
+  "fy": 0.040568710903942075,
+  "cx": 0.05435850585283571,
+  "cy": 0.050229796042498255,
+  "k1": 4.053744744822133e-05,
+  "k2": 8.703081554866168e-05,
+  "p1": 4.170185401751398e-06,
+  "p2": 1.0597389921798041e-06,
+  "k3": 5.7822710630985836e-05
+ },
+ "thermal": {
+  "ppm_per_degC": 42.98474310397981,
+  "sd_ppm_per_degC": 0.20528983950192659,
+  "T0_degC": -20.0,
+  "note": "v0p80: NL-reference form, refitted with the consensus (2026-10-18; profiles of NR_cx, NL_fx, NL_fy, NR_fx, NR_fy, yaw_rate)",
+  "cx_px_per_degC": 0.0,
+  "cy_px_per_degC": 0.0,
+  "fx_ppm_per_degC": 40.745813000108726,
+  "fy_ppm_per_degC": 45.22367320785089,
+  "form": "v0p80",
+  "sd_fx_ppm_per_degC": 0.1238156721242466,
+  "sd_fy_ppm_per_degC": 0.14949218151082624,
+  "k1_per_degC": -7.2357792130127725e-06,
+  "k1_source": "temperature bins of the blocks (k1_slopes_from_blocks)"
+ },
+ "verification": {
+  "note": "leave-one-block-out: max centre 0.011 px, corners 0.027 px over 23 blocks (ok)",
+  "leave_one_out": {
+   "max": {
+    "centre_px": 0.011419072200047148,
+    "corner_px": 0.026545217591304057,
+    "stereo_px": 0.007067016078410567
+   },
+   "worst": {
+    "centre_px": "Cheyava Falls",
+    "corner_px": "Cheyava Falls"
+   },
+   "limits": {
+    "centre_px": 0.05,
+    "corner_px": 0.1
+   },
+   "ok": true
+  },
+  "residuals": {
+   "median_px": 0.16442159856514724,
+   "rms_px": 0.33700987826840034,
+   "p95_px": 0.6853508596830039
+  }
+ },
+ "fixed_params": [],
+ "early_mission": {
+  "before_sol": 380.0,
+  "dfx_px": 0.19739867906435019,
+  "dfy_px": 0.2541892159542798,
+  "dcx_px": 0.3242573561850768,
+  "dcy_px": -0.5718610717137018,
+  "sd_px": {
+   "fx": 0.014662714260957437,
+   "fy": 0.04347925521254642,
+   "cx": 0.045706036954925464,
+   "cy": 0.04926719299212328
+  },
+  "z": {
+   "fx": 13.46262878421942,
+   "fy": 5.846218264588182,
+   "cx": 7.0944097932807875,
+   "cy": -11.607340239683019
+  },
+  "p_value": {
+   "fx": 2.5951637057982146e-41,
+   "fy": 5.028741338949891e-09,
+   "cx": 1.2990467438822765e-12,
+   "cy": 3.7819730032466095e-31
+  },
+  "p_value_all": 2.3392868065621063e-46,
+  "applied_terms": [
+   "fx",
+   "fy",
+   "cx",
+   "cy"
+  ],
+  "early_images": 905,
+  "note": "v0p70 (2026-10-18): a camera with these offsets for the images before sol 380; projects apply the terms in applied_terms (|z| >= 3), weighted by the block's share of early images"
+ },
+ "sd_source": "copied from the cameras in use (not refitted)",
+ "convention": "NL reference",
+ "form": "v0p80"
+}

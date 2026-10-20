@@ -3,25 +3,25 @@
  "sensor": "NR",
  "R_sensor_from_ref": [
   [
-   0.9999991775826539,
-   0.0010811698475264371,
-   0.0006898592441482917
+   0.9999991490873967,
+   0.0010730404414347847,
+   0.0007418953386745005
   ],
   [
-   -0.001082272429622256,
-   0.9999981344941664,
-   0.0015999045518619948
+   -0.0010741971456595457,
+   0.9999982054935859,
+   0.0015604839314592072
   ],
   [
-   -0.0006881281886514538,
-   -0.0016006498517130007,
-   0.9999984821986723
+   -0.0007402195449718916,
+   -0.001561279545478945,
+   0.9999985072394889
   ]
  ],
  "rotvec_rad": [
-  -0.0016002783235092822,
-  0.0006889941993532386,
-  -0.0010817218968118348
+  -0.0015608828150047765,
+  0.0007410579529284083,
+  -0.001073619534018997
  ],
  "t_sensor_from_ref_m": [
   -0.42401003704535833,
@@ -936,7 +936,7 @@
    }
   }
  },
- "note": "x_NR = R x_NL + t. Navcam consensus 2026-10-18 (23 blocks); yaw +39.48, pitch -91.69, roll -61.98 mdeg. One yaw for every block: no temperature term (NR cx carries it), the yaw follows its sol rate; pitch and roll follow the mission drift. Translation fitted earlier, carried over from the cameras in use (baseline 0.42401 m; translation = fitted) - the new large-block fit, translation_fit (0.42438 m), is recorded but not applied (v0p85: flag restored at promotion).",
+ "note": "x_NR = R x_NL + t. Navcam consensus 2026-10-20 (16 blocks); yaw +42.46, pitch -89.43, roll -61.51 mdeg. One yaw for every block: no temperature term (NR cx carries it), the yaw follows its sol rate; pitch and roll follow the mission drift. Translation fitted earlier, carried over from the cameras in use (baseline 0.42401 m; translation = fitted) - the new large-block fit, translation_fit, is recorded but not applied.",
  "drift": {
   "model": "linear+hinge",
   "sol0": 932.2307692307693,
@@ -971,12 +971,12 @@
   "pitch_mdeg_per_sol": 0.005468631743657528,
   "pitch_early_mdeg_per_sol": 0.0372357234749555,
   "pitch_early_se": 0.0027492897732324445,
-  "yaw_fit_mdeg_per_sol": 0.0025605370970143183,
+  "yaw_fit_mdeg_per_sol": 0.0021612675573975887,
   "yaw_se": 0.001788755354360203,
   "yaw_p": 0.37863685355892374,
   "yaw_T_mdeg_per_degC": -1.453452282789378,
   "yaw_tau_mdeg": 3.782161555294067,
-  "yaw_mdeg_per_sol": 0.0025605370970143183,
+  "yaw_mdeg_per_sol": 0.0021612675573975887,
   "roll_fit_mdeg_per_sol": -0.004220208405692107,
   "roll_se": 0.0012703964404023988,
   "roll_p": 0.0008938694064984091,
@@ -985,46 +985,43 @@
   "roll_mdeg_per_sol": -0.004220208405692107,
   "no_drift": [],
   "note": "slow change of the rig over the mission (between-block regression on sol, with the camera temperature); SfmProject.create turns the start rig by rate x (block median sol - sol0) + (early_rate - rate) x (min(sol, knot_sol) - knot_ref) (v0p35.1: faster early in the mission)",
-  "yaw_early_mdeg_per_sol": 0.0025605370970143183
+  "yaw_early_mdeg_per_sol": 0.0021612675573975887
  },
  "yaw_constant": true,
  "translation_fit": {
   "blocks": {
-   "Van Zyl Overlook Large": 257,
-   "Chal Rocks Large": 168,
-   "Rochette": 80,
-   "Issole Seitah South": 139,
-   "Artuby Ridge": 105,
-   "Rockytop": 235,
-   "Three Forks Large": 372,
-   "Belva Crater Large": 162,
+   "Oeb Landing Site": 511,
+   "Seitah North Large": 295,
+   "Rockytop": 246,
+   "Enchanted Lake": 106,
+   "Belva Crater Large": 163,
    "Tuxedo Park": 100,
-   "Bell Island Large": 295,
-   "Taylorfjellet Large": 243,
-   "Taylorfjellet Huge": 393,
-   "Origny Large": 259,
-   "Hippo Pools": 104
+   "Taylorfjellet Large": 244
   },
   "dcentre_mm": [
-   0.3705392024632159,
-   0.012884026388002252,
-   -0.03671693931062382
+   -0.23532926750197136,
+   -0.0038877322001087565,
+   -0.0674200365151685
   ],
-  "sd_t_mm": null,
+  "sd_t_mm": [
+   0.08014937989014116,
+   0.004811298466891139,
+   0.006255560016247356
+  ],
   "baseline_start_m": 0.4240102397823094,
-  "baseline_m": 0.42438080353026775,
-  "dbaseline_mm": 0.37056374795835234,
+  "baseline_m": 0.42377490736931683,
+  "dbaseline_mm": -0.23533241299256158,
   "t_m": [
-   -0.4243805598792141,
-   -0.00030331309396545156,
-   0.0003388255710267871
+   -0.42377464720183516,
+   -0.0002903266781166829,
+   0.00036907350644208324
   ],
-  "variance_factor": 1.0,
+  "variance_factor": 0.3302080721309248,
   "sigma_m": 0.05
  },
  "convention": "NL reference",
  "form": "v0p80",
- "yaw_model": "one yaw for every temperature (the stereo temperature change is NR cx's); yaw rate +2.56 +- 0.10 mdeg per 1000 sol",
+ "yaw_model": "one yaw for every temperature (the stereo temperature change is NR cx's); yaw rate +2.16 +- 0.12 mdeg per 1000 sol",
  "translation_joint": {
   "t_start_m": [
    -0.42401003704535833,
