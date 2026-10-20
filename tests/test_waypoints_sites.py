@@ -249,11 +249,9 @@ def test_shipped_sites_v0p75():
     g = t["groups"]
     assert "olifants" not in g["navcam_consensus"] and "cheyava_falls" in g["navcam_consensus"]
     assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
-    assert "zcam34_consensus_v0p82" not in g and "threeforks_north" in g["zcam34_consensus"]   # 19 Oct pm
-    assert "threeforks_large" not in g["zcam34_consensus"]
+    assert "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
     assert len(g["navcam_consensus"]) == 23 and "navcam_consensus_v0p82" not in g
-    assert g["zcam34_consensus"] == ["chal_rocks", "rochette", "threeforks_north", "rio_chiquito", "south_arm", "origny",
-                                     "marble_mountain"]
+    assert g["zcam34_consensus"] == ["chal_rocks", "rochette", "south_arm", "marble_mountain"]   # 20 Oct (Christian)
 
 
 def test_zcam34_dev_group_sites_have_the_zoom():
