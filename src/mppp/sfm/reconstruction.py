@@ -1331,11 +1331,46 @@ def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:
 
 OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.6,   # 1.6 px (v0p50 1.2, before 1.0)
                     "shift_mad_factor": 5.0, "min_shift_m": 0.25,
-                    "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None}
+                    "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None,
+                    "min_navcam_ties": None}
+# a Mastcam-Z frame needs at least this many valid tie points with Navcam (points seen by the frame and by a Navcam
+# image with a third look, MIN_MIXED_TRACK_LENGTH) - fewer, and it is excluded like an outlier (Christian, 20 Oct)
+ZCAM_MIN_NAVCAM_TIES = 10
 # a frame with fewer tie-point observations than this is held at its prior in the bundle adjustment and
 # flagged by the outlier test (was 30; good frames with 20-29 observations were being dropped).  Notebook 03:
 # MIN_FRAME_OBSERVATIONS; reconstruct(min_frame_observations=) sets it for every stage of one run.
 MIN_FRAME_OBSERVATIONS = 20
+
+
+def _zcam_terrain(rec) -> Dict[str, Any]:
+    """:func:`mppp.sfm.health.zcam_terrain` (the Mastcam-Z points above / below the Navcam terrain), never raising."""
+    from .health import zcam_terrain
+    try:
+        return zcam_terrain(rec, sample=100000)
+    except Exception as e:                                        # noqa: BLE001
+        return {"note": f"{type(e).__name__}: {e}"}
+
+
+def _zcam_terrain_line(t: Dict[str, Any]) -> str:
+    from .health import zcam_terrain_line
+    return zcam_terrain_line(t)
+
+
+def navcam_tie_counts(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH) -> Dict[int, int]:
+    """Per registered Mastcam-Z image, its valid tie points with Navcam: 3-D points it observes whose track also
+    holds a Navcam image and is at least ``min_mixed_track_length`` long (the third look)."""
+    fam = {int(i): rec.images[i].name[:1] for i in rec.reg_image_ids()}
+    out = {i: 0 for i, f in fam.items() if f == "Z"}
+    for pt in rec.points3D.values():
+        if pt.track.length() < min_mixed_track_length:
+            continue
+        ids = {int(el.image_id) for el in pt.track.elements}
+        if not any(fam.get(i) == "N" for i in ids):
+            continue
+        for i in ids:
+            if fam.get(i) == "Z":
+                out[i] += 1
+    return out
 
 
 def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str, Any]]:
@@ -1354,7 +1389,10 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
       by more than ``min_attitude_deg`` and ``attitude_mad_factor`` x MAD.
       Stations with fewer than 3 frames of a family are not tested this way.
       The attitude test applies to Navcam frames only: a Mastcam-Z prior
-      attitude is one mast pointing, whose error is per image.
+      attitude is one mast pointing, whose error is per image;
+    * (a Mastcam-Z frame, Navcam images registered) it has fewer than
+      ``min_navcam_ties`` (:data:`ZCAM_MIN_NAVCAM_TIES`, 10) valid tie points
+      with Navcam (:func:`navcam_tie_counts`: a third look on each).
 
     Returns one record per flagged frame: frame id, images, station, reasons,
     and ``kind``: ``"unconstrained"`` for a frame with no tie points at all
@@ -1365,6 +1403,8 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
     th = dict(OUTLIER_DEFAULTS, **thresholds)
     if th.get("min_observations") is None:                   # the same limit as the bundle adjustment
         th["min_observations"] = MIN_FRAME_OBSERVATIONS
+    if th.get("min_navcam_ties") is None:
+        th["min_navcam_ties"] = ZCAM_MIN_NAVCAM_TIES
     by_name = {r["name"]: r for r in project.images}
     reg = set(rec.reg_image_ids())
     res = native_residuals(rec, project)
@@ -1398,6 +1438,15 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
                        "reasons": []}
     if not frames:
         return []
+    ties = navcam_tie_counts(rec) if any(f["family"] == "N" for f in frames.values()) else {}
+    if ties and int(th["min_navcam_ties"]) > 0:
+        for fid, f in frames.items():
+            if f["family"] != "Z" or not f["observations"]:
+                continue
+            n = sum(ties.get(int(d.id), 0) for d in rec.frames[fid].data_ids)
+            f["navcam_ties"] = n
+            if n < int(th["min_navcam_ties"]):
+                f["reasons"].append(f"{n} tie points with Navcam < {int(th['min_navcam_ties'])}")
     all_med = np.median([f["median_residual_px"] for f in frames.values() if np.isfinite(f["median_residual_px"])])
     lim = max(th["residual_factor"] * all_med, th["min_residual_px"])
     for f in frames.values():
@@ -1799,8 +1848,13 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     excluded: List[Dict[str, Any]] = []
     topts = dict(triangulation_options or {})
 
-    def _exclude(tag):
-        found = find_outlier_frames(rec, project, **(outlier_thresholds or {}))
+    def _exclude(tag, navcam_ties: bool = False):
+        # the Mastcam-Z frames' Navcam-tie minimum only once their matches are complete (after the pose-guided
+        # matching, before the final adjustment); earlier exclusions test residuals and observations only
+        th_ = dict(outlier_thresholds or {})
+        if not navcam_ties:
+            th_["min_navcam_ties"] = 0
+        found = find_outlier_frames(rec, project, **th_)
         new = [f for f in found if f["frame_id"] not in {e["frame_id"] for e in excluded}]
         if new:
             exclude_frames(rec, [f["frame_id"] for f in new])
@@ -1981,6 +2035,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             res = native_residuals(rec, project)["residual_native_px"]
             entry = {"round": k + 1, "stage": 2, "triangulation_px_full": tpx, "cauchy_scale_sigma": loss, "ba": ba["brief"],
                      "filtered_observations": n_bad, "tracks": st, "zcam_coverage": ZG.group_coverage(rec, project),
+                     "zcam_terrain": _zcam_terrain(rec),
                      "rms_native_px": float(np.sqrt(np.mean(res ** 2))) if res.size else float("nan"),
                      "median_native_px": float(np.median(res)) if res.size else float("nan"),
                      "elapsed_s": round(time.time() - t0, 1)}
@@ -1989,6 +2044,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 logger.info(f"stage 2 round {k + 1}: {st['points']} points, median {entry['median_native_px']:.3f} / "
                       f"rms {entry['rms_native_px']:.3f} native px, {n_bad} obs filtered, {entry['elapsed_s']:.0f} s; "
                       f"Mastcam-Z frames with tie points {ZG.brief(entry['zcam_coverage'])}")
+                logger.info(f"stage 2 round {k + 1}: {_zcam_terrain_line(entry['zcam_terrain'])}")
             ZG.trace(rec, project, f"r{k + 1}_filtered", {"filtered": n_bad})
             if exclude_outliers and k + 1 == min(int(exclude_after_round), len(schedule)):
                 _exclude(f"stage 2, after round {k + 1}")
@@ -2030,7 +2086,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             # false matches that agree with the epipolar geometry land far beyond the ground - if the guided
             # matches raise that share by more than POSE_GUIDED_MAX_BEYOND_GROUND_RISE, the stage is undone
             bg1 = beyond_ground(rec, sample=50000)["fraction"] or 0.0
-            prep.update({"beyond_ground_before": bg0, "beyond_ground_after": bg1})
+            prep.update({"beyond_ground_before": bg0, "beyond_ground_after": bg1,
+                         "zcam_terrain_after": _zcam_terrain(rec)})
+            if verbose:
+                logger.info(f"stage 2, pose-guided: {_zcam_terrain_line(prep['zcam_terrain_after'])}")
             ZG.trace(rec, project, "guided_ba")
             zcov1 = ZG.group_coverage(rec, project)
             zbad = ZG.collapsed(zcov0, zcov1)
@@ -2055,7 +2114,18 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                       f"{prep['after']['navcam_zcam_points']}, points {before['points']} -> {prep['after']['points']}")
         ZG.trace(rec, project, "before_final")
         if exclude_outliers:
-            _exclude("stage 2, before the final adjustment")
+            _exclude("stage 2, before the final adjustment", navcam_ties=True)
+        else:                                  # the Navcam-tie minimum holds even without the outlier tests
+            weak = [f for f in find_outlier_frames(rec, project, residual_factor=1e9, min_residual_px=1e9,
+                                                   shift_mad_factor=1e9, min_shift_m=1e9, attitude_mad_factor=1e9,
+                                                   min_attitude_deg=1e9, min_observations=0)
+                    if f.get("navcam_ties") is not None and f["kind"] == "outlier"]
+            if weak:
+                exclude_frames(rec, [f["frame_id"] for f in weak])
+                for f in weak:
+                    f["when"] = "stage 2, before the final adjustment (Navcam ties)"
+                excluded.extend(weak)
+                log.append({"excluded_frames": weak, "when": "stage 2, Navcam ties"})
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                            refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential, refine_rig=False,
                            max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,

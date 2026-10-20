@@ -187,7 +187,7 @@ def consensus_lines(cons: Sequence[Dict[str, Any]]) -> List[str]:
 
 
 def plot_block_lines(rows: Sequence[Dict[str, Any]], out: Optional[PathLike] = None, temperature: str = "T_optics_degC",
-                     figsize=(13, 9)):
+                     figsize=(13, 9), dpi: int = 200):
     """Offset a (top) and slope b (bottom) of every focus line against the block lens temperature, one column per
     parameter, one colour per eye and zoom, filled for the backlash state, open for the regular state."""
     import matplotlib.pyplot as plt
@@ -218,5 +218,5 @@ def plot_block_lines(rows: Sequence[Dict[str, Any]], out: Optional[PathLike] = N
     fig.legend(handles=handles, loc="upper center", ncol=min(len(handles), 6), fontsize=8)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     if out:
-        fig.savefig(out, dpi=130)
+        fig.savefig(out, dpi=dpi)
     return fig

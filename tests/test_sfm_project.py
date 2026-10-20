@@ -457,17 +457,17 @@ def test_navcam_consensus_shipped_with_mppp():
         cam = camera_from_colmap_json(f)
         assert cam["model"] == "THIN_PRISM_FISHEYE" and len(cam["params"]) == 12
         th = json.loads(f.read_text())["thermal"]
-        # the 18 Oct 2026 pass-2 consensus (23 blocks): fx, fy per axis, ~38-41 and ~43-45 ppm/degC
-        assert 37.0 < th["fx_ppm_per_degC"] < 41.5 and 43.0 < th["fy_ppm_per_degC"] < 47.5 and th["T0_degC"] == -20
+        # the 20 Oct 2026 tied joint (22 blocks): fx, fy per axis, ~35-37 ppm/degC (equal within 1 sd)
+        assert 34.5 < th["fx_ppm_per_degC"] < 37.5 and 34.5 < th["fy_ppm_per_degC"] < 38.0 and th["T0_degC"] == -20
         assert "ppm_per_degC" not in th                                          # the per-axis terms are the model
     assert (NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).is_file()
     assert calib.navcam_fingerprint(NAVCAM_CONSENSUS_DIR)
-    # the parameters of the 20 Oct 2026 pass-2 consensus of 16 blocks (the rig's fitted translation flag kept)
+    # the parameters of the 20 Oct 2026 tied joint navcal_tied_20261020_2 (the rig's fitted translation flag kept)
     nl = json.loads((NAVCAM_CONSENSUS_DIR / "M2020_NL_fisheye_tangential.json").read_text())
     rig = json.loads((NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).read_text())
-    assert nl["params"][0] == pytest.approx(2956.1785734362966) and nl["params"][9] == pytest.approx(-0.0066789096026409495)
+    assert nl["params"][0] == pytest.approx(2956.174675387718) and nl["params"][9] == pytest.approx(-0.00668292165703605)
     assert rig["translation"] == "fitted" and rig["baseline_m"] == pytest.approx(0.4240102397823094)
-    assert rig["drift"]["yaw_mdeg_per_sol"] == pytest.approx(0.0021612675573975887)
+    assert rig["drift"]["yaw_mdeg_per_sol"] == pytest.approx(0.002900943422501099)
 
 
 def test_navcam_distortion_hold_and_held_zeros():

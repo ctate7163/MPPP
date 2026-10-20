@@ -284,12 +284,18 @@ def test_promote_replaces_the_file_and_logs_it(tmp_path, monkeypatch):
     assert "M2020_ZCAM034_focus_model.json" in res["files"]
 
 
-def test_shipped_navcam_models_carry_the_pass2_consensus():
-    """In use is the 20 Oct pass-2 consensus of 16 blocks (NR cx(T) -0.0414, NL cx(T) +0.0134 px/degC), in the frozen
-    form; it passes the form check."""
+def test_shipped_navcam_models_are_the_tied_joint():
+    """In use (20 Oct, 0.91) is the tied joint navcal_tied_20261020_2 of 22 blocks (NR cx(T) -0.0400, NL cx(T)
+    +0.0165 px/degC, k1(T) on both eyes), in the frozen form, with the early-mission offsets of both eyes applied
+    and the rig drift referred to sol 0; it passes the form check."""
     nr = M._read(M._folder(None) / M.CAMERA_FILE[("N", "R")])
     nl = M._read(M._folder(None) / M.CAMERA_FILE[("N", "L")])
-    assert nr["thermal"]["cx_px_per_degC"] == pytest.approx(-0.0414, abs=2e-4)
-    assert nl["thermal"]["cx_px_per_degC"] == pytest.approx(0.0134, abs=2e-4)
+    rig = M._read(M._folder(None) / M.RIG_FILE["N"])
+    assert nr["thermal"]["cx_px_per_degC"] == pytest.approx(-0.0400, abs=2e-4)
+    assert nl["thermal"]["cx_px_per_degC"] == pytest.approx(0.0165, abs=2e-4)
+    assert nl["thermal"]["k1_per_degC"] == pytest.approx(-6.71e-6, abs=1e-7)
     assert nl["form"] == "navcam-v1" and "ppm_per_degC" not in nl["thermal"]
+    for c in (nl, nr):
+        assert c["early_mission"]["applied_terms"] == ["fx", "fy", "cx", "cy"] and c["early_mission"]["per_eye"]
+    assert rig["drift"]["sol0"] == 0.0 and rig["drift"]["knot_sol"] == 250.0
     assert calib.check_form()["ok"]

@@ -3,7 +3,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from refdata import PANOS, SAMPLES
 from sitesdef import P, X, Y, S, F, HALF, fmt_runs, fmt_counts
-from dem import LocalFrame, sample_dem, sample_ortho, background_mode, hillshade, dem_paths, save_figure
+from dem import LocalFrame, sample_dem, sample_ortho, ortho_stretch, background_mode, hillshade, dem_paths, save_figure
 out_png = sys.argv[1] if len(sys.argv) > 1 else '/mnt/user-data/outputs/m20_cluster_zooms.png'
 sites = json.load(open('sites_zoom.json'))
 LF = LocalFrame(P)
@@ -16,21 +16,44 @@ CONTOURS = __import__('os').environ.get('M20_ZOOM_CONTOURS', '0') == '1'   # 20 
 assert len(sites) + 1 <= ncol*nrow
 fig, axs = plt.subplots(nrow, ncol, figsize=(3.45*ncol, 3.6*nrow), facecolor='#fcfcfb')
 dem_used = set(); ortho_used = set(); BACKGROUND = background_mode()   # M20_BACKGROUND: 'dtm' (default) or 'ortho'
+# 20 Oct: the orthomosaic panels in colour with ONE gentle stretch for all blocks (was: grey, 0.5-99.5 % per panel).
+# A colour mosaic is shown as it is; a grey one (the TRN mosaic) is tinted by the DTM's height about the block's
+# median (gist_earth over +-ZOOM_TINT_M), so the panels read alike.
+ZOOM_TINT_M = float(__import__('os').environ.get('M20_ZOOM_TINT_M', 3.0))
+TINT = plt.get_cmap('gist_earth')
+g = np.linspace(-HALF, HALF, 121); GE, GN = np.meshgrid(g, g)
+go = np.linspace(-HALF, HALF, 241); GEo, GNo = np.meshgrid(go, go)
+raw = {}
+if BACKGROUND == 'ortho':          # orthomosaic at ~0.25 m: sample a finer grid than the DTM; raw values first
+    for o in sites:
+        img, oused = sample_ortho(*LF.to_lonlat(GEo + o['cx'], GNo + o['cy']), stretch=None)
+        if np.isfinite(img).any():
+            raw[o['id']] = img; ortho_used.update(oused)
+STRETCH = ortho_stretch(list(raw.values())) if raw else None
 for k, (ax, o) in enumerate(zip(axs.flat, sites)):
     cx, cy = o['cx'], o['cy']
     # ---- DEM background (local metres, via lon/lat) ----
-    g = np.linspace(-HALF, HALF, 121)
-    GE, GN = np.meshgrid(g, g)
     lon, lat = LF.to_lonlat(GE + cx, GN + cy)
     z, used = sample_dem(lon, lat)
     shown = False
-    if BACKGROUND == 'ortho':          # orthomosaic at ~0.25 m: sample a finer grid than the DTM
-        go = np.linspace(-HALF, HALF, 241); GEo, GNo = np.meshgrid(go, go)
-        img, oused = sample_ortho(*LF.to_lonlat(GEo + cx, GNo + cy))
-        if np.isfinite(img).any():
-            ortho_used.update(oused); shown = True
-            ax.imshow(np.where(np.isfinite(img), img, 0.93), extent=[-HALF, HALF, -HALF, HALF], origin='lower', cmap='gray',
-                      vmin=0, vmax=1, zorder=0)
+    if o['id'] in raw:
+        lo, hi = STRETCH
+        img = np.clip((raw[o['id']] - lo) / max(hi - lo, 1e-6), 0, 1)
+        if img.ndim == 3:
+            rgb = np.where(np.isfinite(img), img, 0.93)
+        else:
+            gimg = np.where(np.isfinite(img), img, 0.93)
+            if np.isfinite(z).any():   # the height tint on the ortho grid (nearest DTM sample, 0.5 m)
+                zr_ = z - np.nanmedian(z)
+                zi = zr_[np.clip(np.round((GNo + HALF) / (g[1] - g[0])).astype(int), 0, len(g) - 1),
+                         np.clip(np.round((GEo + HALF) / (g[1] - g[0])).astype(int), 0, len(g) - 1)]
+                tint = TINT(np.clip(0.15 + 0.7 * (np.nan_to_num(zi) + ZOOM_TINT_M) / (2 * ZOOM_TINT_M), 0, 1))[..., :3]
+                hue = tint / np.maximum(tint.mean(axis=-1, keepdims=True), 1e-3)   # the tint's colour at unit brightness
+                rgb = np.clip(gimg[..., None] * (0.6 + 0.4 * hue), 0, 1)
+            else:
+                rgb = np.repeat(gimg[..., None], 3, axis=-1)
+        ax.imshow(rgb, extent=[-HALF, HALF, -HALF, HALF], origin='lower', interpolation='bilinear', zorder=0)
+        shown = True
     if np.isfinite(z).any():
         dem_used.update(used)
         hs = hillshade(z, g[1]-g[0], g[1]-g[0])
@@ -88,7 +111,10 @@ if dem_used and CONTOURS:
     lg.plot([], [], color='#7a5c3a', lw=0.6, label='DEM contours, 0.5 m')
 lg.legend(loc='center', fontsize=9.6, frameon=False)
 bg = 'HiRISE DTM hillshade' if dem_used else 'no 1 m DTM background (set M20_DEMS to the HiRISE DTM files)'
-if ortho_used: bg = 'HiRISE orthomosaic' + ('; 0.5 m DTM contours' if dem_used and CONTOURS else '')
+if ortho_used:
+    bg = ('HiRISE orthomosaic' + (' (one stretch for all panels)' if STRETCH else '')
+          + (f', tinted by the DTM height about each block\'s median (±{ZOOM_TINT_M:g} m)' if dem_used and raw and next(iter(raw.values())).ndim == 2 else '')
+          + ('; 0.5 m DTM contours' if dem_used and CONTOURS else ''))
 fig.suptitle_text = (f'M2020 blocks of rover stations, ordered by first sol: all waypoints within ±30 m of each block centre (N× Navcam 360s, Z× Mastcam-Z 360s) (local metres, north up; '
              f'labels = sol; title sols = sols the rover ended inside the square). {bg}.')
 fig.suptitle('\n'.join(textwrap.wrap(fig.suptitle_text, 140)), x=0.01, ha='left', fontsize=12.5, color=INK)

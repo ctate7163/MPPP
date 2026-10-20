@@ -58,10 +58,13 @@ ANGLES = ("pitch", "yaw", "roll")                                             # 
 TIE_SIGMA = {"fx": 1e-3, "fy": 1e-3, "cx": 1e-3, "cy": 1e-3, "k": 1e-7, "q": 1e-8}
 BIN_DEG = 2.0                    # fine bins; within a bin the images' own temperatures count (keypoint map)
 POINTS_PER_BLOCK = 8000          # Christian, 20 Oct: 8000 for the pipeline passes
-MAX_SPAN_SOLS = 25.0
+MAX_SPAN_SOLS = 50.0                 # rig epochs of the joint: at most 50 sols (doubled 20 Oct; was 25)
+KNOTS_TESTED = tuple(float(k) for k in np.linspace(200.0, 400.0, 25))   # the pitch transitions after the BA (20 Oct)
 EARLY_SOL = 380.0
 KNOT_SOL = 250.0                 # the pitch hinge (the free-knot refit of 20 Oct: 250, range 200-290)
 HOLD_DEFAULT = ("Q0_yaw",)       # the runs hold the yaw: a constant yaw mirrors NR's cx
+ISO_F = True    # one focal slope per eye (fy's ppm/degC = fx's): 20 Oct joint fx/fy 36.0/37.1, 35.6/35.3 ppm/degC,
+                # the per-block bins fy-fx +2.0 +- 4.3, +3.7 +- 4.5 ppm/degC (Christian: "set those equal if possible")
 _IDX = {n: i for i, n in enumerate(("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1"))}
 _MDEG = np.radians(1e-3)
 
@@ -331,12 +334,14 @@ _HELD_NAMES = {"S_NL": SLOPE_TERMS, "S_NR": SLOPE_TERMS, "E_NL": EARLY_TERMS, "E
 
 
 def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT, tie_rigs: bool = True,
-              tie_cameras: bool = True, pp_prior: Optional[Dict[str, float]] = None):
+              tie_cameras: bool = True, pp_prior: Optional[Dict[str, float]] = None, iso_f: bool = ISO_F):
     """The ``extra_residuals`` callable for :func:`mppp.sfm.reconstruction.bundle_adjust` and the global parameter
     arrays it ties to.  ``hold``: global terms held at their start (``"E_NR"``, ``"S_NL_cy"``, ``"Q0_yaw"``, ``"H"``
     ...).  ``H``'s yaw and roll are always held at 0 (linear yaw and roll trends); terms the data cannot see are held
     too (the early offsets without early-mission cameras, the hinge without rig units before the knot).  With
-    ``tie_cameras`` / ``tie_rigs`` False the units stay free and the globals are held (the diagnostic pass)."""
+    ``tie_cameras`` / ``tie_rigs`` False the units stay free and the globals are held (the diagnostic pass).
+    ``iso_f``: one relative focal slope per eye - fy's tie reads fx's slope scaled by fy/fx (the S array's fy entry
+    is held and kept equal by :func:`sync_iso`)."""
     import pyceres
     LinearTie = _linear_tie_class()
     g = {"G_NL": st["G"]["NL"].copy(), "G_NR": st["G"]["NR"].copy(), "S_NL": st["S"]["NL"].copy(),
@@ -345,6 +350,9 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
     sig = np.array([TIE_SIGMA["fx"], TIE_SIGMA["fy"], TIE_SIGMA["cx"], TIE_SIGMA["cy"]] + [TIE_SIGMA["k"]] * 6)
     knot = float(st["knot"])
     hold = list(hold) + ["H_yaw", "H_roll"]
+    if iso_f and tie_cameras:
+        hold += ["S_NL_fy", "S_NR_fy"]
+        sync_iso(g)
     for eye in ("NL", "NR"):
         if not any(u["early"] and u["eye"] == eye for u in units["cameras"].values()):
             hold.append(f"E_{eye}")
@@ -373,6 +381,9 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                     A[i, 12 + i] = -1.0                        # G
                 for i, k in enumerate(SLOPE_TERMS):
                     A[TIED_PARAMS.index(k), 22 + i] = -dT      # S
+                if iso_f:                                      # fy follows fx's relative slope
+                    A[TIED_PARAMS.index("fy"), 22 + 1] = 0.0
+                    A[TIED_PARAMS.index("fy"), 22 + 0] = -dT * float(g[f"G_{eye}"][1] / g[f"G_{eye}"][0])
                 if u["early"]:
                     for i, k in enumerate(EARLY_TERMS):
                         A[TIED_PARAMS.index(k), 27 + i] = -1.0  # E (this eye)
@@ -434,6 +445,12 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
     return hook, g
 
 
+def sync_iso(g: Dict[str, np.ndarray]) -> None:
+    """The isotropic focal slope: fy's slope set to fx's relative slope (same ppm/degC) in place."""
+    for eye in ("NL", "NR"):
+        g[f"S_{eye}"][1] = g[f"S_{eye}"][0] * g[f"G_{eye}"][1] / g[f"G_{eye}"][0]
+
+
 def _sd(cov: Dict[str, Any], name: str, n: int, held: Sequence[int] = ()) -> Optional[np.ndarray]:
     c = (cov.get("blocks") or {}).get(f"extra:{name}")
     if c is None:
@@ -470,11 +487,12 @@ def keypoint_terms(units: Dict[str, Any], proj, temps: Dict[str, float], g: Dict
 def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT,
                 tie_rigs: bool = True, tie_cameras: bool = True, iterations: int = 100, covariance: bool = True,
                 passes: int = 2, verbose: bool = True, refine_pp: bool = True,
-                pp_prior: Optional[Dict[str, float]] = None) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
+                pp_prior: Optional[Dict[str, float]] = None, iso_f: bool = ISO_F) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
     """The adjustment of a tied reconstruction (``passes`` solves, the slopes of the keypoint map updated between
     them).  Returns (ba result of the last pass, the global arrays, residual statistics)."""
     from ..sfm.reconstruction import bundle_adjust
-    hook, g = make_ties(st, units, hold=hold, tie_rigs=tie_rigs, tie_cameras=tie_cameras, pp_prior=pp_prior)
+    iso = bool(iso_f and tie_cameras)
+    hook, g = make_ties(st, units, hold=hold, tie_rigs=tie_rigs, tie_cameras=tie_cameras, pp_prior=pp_prior, iso_f=iso)
     temps = idx["temps"]
     ba = None
     n_pass = max(1, int(passes))
@@ -485,14 +503,21 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
                            refine_rig="rotation", max_iterations=iterations, attitude_prior_deg=5.0,
                            covariance=covariance and p_ == n_pass - 1, navcam_aspect="free",
                            linear_solver="sparse_schur", keypoint_scale=ks, keypoint_map=kmap, extra_residuals=hook)
+        if iso:
+            sync_iso(g)
         if verbose:
             log.info(f"  pass {p_ + 1}: {ba['brief'][:160]}")
+    if ba is not None:
+        ba.setdefault("extra", {})
+        if isinstance(ba["extra"], dict):
+            ba["extra"]["iso_f"] = iso
     ks, kmap = keypoint_terms(units, proj, temps, g)
     stats = J.residual_stats(rec, proj, keypoint_scale=ks, keypoint_map=kmap)
     return ba, g, stats
 
 
-def _sd_from_units(cov: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any], held: Dict[str, Any]) -> Dict[str, Any]:
+def _sd_from_units(cov: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any], held: Dict[str, Any],
+                   iso_f: bool = False) -> Dict[str, Any]:
     """The sd of the camera globals propagated from the bin cameras' own covariances (the ties are exact, so the
     globals are the weighted least-squares combination of the bins: cov = (A^T W A)^-1 with W the bins' inverse
     variances, correlations between bins ignored) - the fallback when the problem's covariance of the global
@@ -514,6 +539,8 @@ def _sd_from_units(cov: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any
                 a[i] = 1.0
                 if k in SLOPE_TERMS:
                     a[10 + SLOPE_TERMS.index(k)] = dT
+                if iso_f and k == "fy":
+                    a[11], a[10] = 0.0, dT                     # fy's slope is fx's (ratio fy/fx = 1 to 1e-5)
                 if u["early"] and k in EARLY_TERMS:
                     a[15 + EARLY_TERMS.index(k)] = 1.0
                 var = float(np.diag(c)[i]) * vf if i < len(np.diag(c)) else np.nan
@@ -530,6 +557,8 @@ def _sd_from_units(cov: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any
             continue
         sd = np.full(19, np.nan)
         sd[free] = np.sqrt(np.clip(np.diag(C), 0, None))
+        if iso_f:
+            sd[11] = sd[10]
         out[eye] = {"G": sd[:10], "S": sd[10:15], "E": sd[15:19]}
     return out
 
@@ -539,17 +568,20 @@ def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, A
     of the global blocks, else propagated from the bin cameras' covariances, :func:`_sd_from_units`)."""
     cov = ba.get("covariance") or {}
     held = (ba.get("extra") or {}).get("held") or {}
+    iso = bool((ba.get("extra") or {}).get("iso_f"))
     fallback = None
     out: Dict[str, Any] = {"T0_degC": st["T0"], "knot_sol": st["knot"], "early_sol": units["early_sol"],
                            "covariance_error": cov.get("error"), "covariance_damping": cov.get("damping"),
-                           "held": held, "ties": (ba.get("extra") or {}).get("ties")}
+                           "held": held, "ties": (ba.get("extra") or {}).get("ties"), "isotropic_f_slope": iso}
     for eye in ("NL", "NR"):
         G, S, E = g[f"G_{eye}"], g[f"S_{eye}"], g[f"E_{eye}"]
         sdG, sdS = _sd(cov, f"G_{eye}", 10, held.get(f"G_{eye}", ())), _sd(cov, f"S_{eye}", 5, held.get(f"S_{eye}", ()))
         sdE = _sd(cov, f"E_{eye}", 4, held.get(f"E_{eye}", ()))
+        if iso and sdS is not None:
+            sdS = sdS.copy(); sdS[1] = sdS[0] * G[1] / G[0]
         if sdS is None or not np.all(np.isfinite(sdS)):
             if fallback is None:
-                fallback = _sd_from_units(cov, st, units, held)
+                fallback = _sd_from_units(cov, st, units, held, iso_f=iso)
             fb = fallback.get(eye)
             if fb is not None:
                 sdG, sdS, sdE = fb["G"], fb["S"], fb["E"]
@@ -611,7 +643,7 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
              bin_deg: float = BIN_DEG, max_span: float = MAX_SPAN_SOLS, early_sol: Optional[float] = None,
              knot_sol: Optional[float] = None, hold: Sequence[str] = HOLD_DEFAULT, iterations: int = 100,
              covariance: bool = True, passes: int = 2, diagnostics: bool = True, exclude: Sequence[str] = (),
-             verbose: bool = True) -> Dict[str, Any]:
+             verbose: bool = True, iso_f: bool = ISO_F) -> Dict[str, Any]:
     """The one-adjustment Navcam joint over the blocks ``{name: WORK folder}`` (module docstring), then the
     diagnostic pass.  Returns the global terms with their sd (:func:`globals_result`), the residual statistics, the
     units of the joint and of the diagnostic pass (:func:`unit_rows`) - what :func:`write_tied` writes."""
@@ -629,13 +661,14 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
                  f"(epochs <= {max_span:g} sols, {bin_deg:g} degC bins)  ({time.time() - t:.0f} s)")
     t = time.time()
     ba, g, stats = adjust_tied(rec, proj, idx, st, units, hold=hold, iterations=iterations, covariance=covariance,
-                               passes=passes, verbose=verbose)
+                               passes=passes, verbose=verbose, iso_f=iso_f)
     res = globals_result(st, g, ba, units)
     res.update({"blocks": list(scapes_cfg), "points_per_block": points, "bin_deg": bin_deg, "max_span_sols": max_span,
                 "start_dir": st["folder"], "final_cost": float(ba["final_cost"]), "iterations": ba["iterations"],
                 "brief": ba["brief"], "seconds": time.time() - t, "residuals": stats,
                 "images": {s: len(v) for s, v in idx["images"].items()}, "hold": list(hold),
                 "units": unit_rows(rec, proj, idx, units, st, g)})
+    res["k1_significance"] = k1_significance(res)
     if verbose:
         for line in describe_result(res):
             log.info(line)
@@ -667,7 +700,7 @@ def _epoch_rows(res: Dict[str, Any], min_frames: int = 8) -> List[Dict[str, Any]
     return rows
 
 
-def knot_comparison(res: Dict[str, Any], knots: Sequence[float] = (250.0, 300.0, 350.0)) -> Dict[str, Any]:
+def knot_comparison(res: Dict[str, Any], knots: Sequence[float] = KNOTS_TESTED) -> Dict[str, Any]:
     """After the BA (Christian, 20 Oct): the pitch hinge refitted on the diagnostic pass's free epochs with the knot
     at each of ``knots`` and free, compared by the weighted residual sum of squares (Q2, with the between-epoch
     scatter tau) - which knot looks better."""
@@ -725,11 +758,22 @@ def describe_rig_tests(res: Dict[str, Any]) -> List[str]:
     lines = []
     kc = res.get("knot_comparison") or {}
     if kc.get("knots"):
-        lines.append("pitch knot after the BA (diagnostic epochs): " + "; ".join(
-            f"{k}: Q2 {v.get('pitch_Q2', float('nan')):.1f}, tau {v.get('pitch_tau_mdeg', float('nan')):.2f} mdeg, early "
-            f"{v.get('pitch_early_mdeg_per_1000sol', float('nan')):+.1f} / late {v.get('pitch_mdeg_per_1000sol', float('nan')):+.1f} mdeg/1000 sol"
-            + (f" (free knot {v.get('knot_sol')}, range {v.get('knot_sol_range')})" if k == "free" else "")
-            for k, v in kc["knots"].items() if "error" not in v) + f" -> best fixed knot {kc.get('best_fixed')}")
+        ok = {k: v for k, v in kc["knots"].items() if "error" not in v and v.get("pitch_Q2") is not None}
+        fixed = {k: v for k, v in ok.items() if k != "free"}
+        line = "pitch knot after the BA (diagnostic epochs), Q2 by knot: " + ", ".join(
+            f"{float(k):g} {v['pitch_Q2']:.1f}" for k, v in fixed.items())
+        b = kc.get("best_fixed")
+        if b in ok:
+            v = ok[b]
+            q = v["pitch_Q2"]
+            near = [float(k) for k, w in fixed.items() if w["pitch_Q2"] <= q + 1.0]
+            line += (f" -> best fixed knot {float(b):g} (Q2 {q:.1f}, tau {v.get('pitch_tau_mdeg', float('nan')):.2f} mdeg, early "
+                     f"{v.get('pitch_early_mdeg_per_1000sol', float('nan')):+.1f} / late {v.get('pitch_mdeg_per_1000sol', float('nan')):+.1f}"
+                     f" mdeg/1000 sol; within Q2 + 1: {min(near):g}-{max(near):g})")
+        if "free" in ok:
+            v = ok["free"]
+            line += f"; free knot {v.get('knot_sol')} (range {v.get('knot_sol_range')}, Q2 {v['pitch_Q2']:.1f})"
+        lines.append(line)
     rp = res.get("roll_profile") or {}
     if rp.get("models"):
         m = rp["models"]
@@ -826,6 +870,27 @@ def pointing_pass(rec0, proj0, idx: Dict[str, Any], stl: Dict[str, Any], g: Dict
             "covariance_error": cov.get("error"), "pp_prior_px": dict(PP_PRIOR_PX if pp_prior is None else pp_prior)}
 
 
+def k1_significance(res: Dict[str, Any], theta_corner: float = 1.05) -> Dict[str, Dict[str, float]]:
+    """Is k1's thermal slope significant?  Per eye: the slope over its sd (z) and what it does to the image corner
+    (fisheye: theta_d = theta (1 + k1 theta^2 ...), so dk1 moves a ray at theta by f dk1 theta^3 px) over the span of
+    the bin temperatures.  ``theta_corner``: the Navcam's corner field angle, ~60 deg."""
+    out = {}
+    cams = ((res.get("units") or {}).get("cameras")) or []
+    for eye in ("NL", "NR"):
+        o = res.get(eye) or {}
+        k = o.get("k1_per_degC")
+        if k is None:
+            continue
+        sd = float((o.get("sd") or {}).get("k1_per_degC", float("nan")))
+        Ts = [float(c["T"]) for c in cams if c.get("eye") == eye]
+        span = (max(Ts) - min(Ts)) if Ts else float("nan")
+        f = float((o.get("params_T0") or {}).get("fx", float("nan")))
+        out[eye] = {"k1_per_degC": float(k), "sd": sd, "z": float(k / sd) if sd and np.isfinite(sd) and sd > 0 else float("nan"),
+                    "span_degC": float(span), "theta_corner_rad": theta_corner,
+                    "corner_px": float(abs(k) * span * f * theta_corner ** 3)}
+    return out
+
+
 def describe_result(res: Dict[str, Any]) -> List[str]:
     lines = []
     for eye in ("NL", "NR"):
@@ -837,6 +902,12 @@ def describe_result(res: Dict[str, Any]) -> List[str]:
                      f"{o['cx_px_per_degC']:+.4f} +- {sd.get('cx_px_per_degC', nan):.4f}, cy {o['cy_px_per_degC']:+.4f} "
                      f"+- {sd.get('cy_px_per_degC', nan):.4f} px/degC; k1 {o['k1_per_degC']:+.2e}/degC; early offsets "
                      + ", ".join(f"{k} {v:+.3f}" for k, v in o["early_mission"]["offsets_px"].items()) + " px")
+    if res.get("isotropic_f_slope"):
+        lines.append("focal slope isotropic: fy's ppm/degC tied to fx's (ISO_F; --aniso-f frees it)")
+    for eye, k in k1_significance(res).items():
+        lines.append(f"{eye} k1(T): {k['k1_per_degC']:+.2e} +- {k['sd']:.1e}/degC (z {k['z']:+.1f}); over the bins' "
+                     f"{k['span_degC']:.0f} degC it moves the corner (theta {k['theta_corner_rad']:.2f} rad) by "
+                     f"{k['corner_px']:.2f} px")
     r = res["rig"]
     lines.append(f"rig at sol 0: {r['angles_sol0_mdeg']}; rates mdeg/1000 sol {r['rate_mdeg_per_1000sol']} "
                  f"(pitch before sol {r['knot_sol']:g}: {r['pitch_early_mdeg_per_1000sol']:+.2f})")
@@ -878,10 +949,17 @@ def write_tied(res: Dict[str, Any], out_dir: PathLike, note: str = "", template_
             if sd.get(k) is not None and np.isfinite(sd[k]):
                 c["thermal"]["sd_" + k] = float(sd[k])
         em = o["early_mission"]
+        # the joint fitted all four offsets of each eye: projects apply all four (constrain.navcam_camera reads
+        # applied_terms - without it the offsets were silently dropped, 20 Oct)
         c["early_mission"] = {"before_sol": float(em["before_sol"]), "per_eye": True,
-                              **{f"d{k}_px": float(v) for k, v in em["offsets_px"].items()}}
+                              **{f"d{k}_px": float(v) for k, v in em["offsets_px"].items()},
+                              "applied_terms": [k for k in EARLY_TERMS if k in em["offsets_px"]],
+                              "note": "tied joint: the offsets of this eye for the images before before_sol, all fitted "
+                                      "terms applied (weighted by a block's share of early images)"}
         if em.get("sd_px"):
             c["early_mission"]["sd_px"] = {k: float(v) for k, v in em["sd_px"].items() if np.isfinite(v)}
+            c["early_mission"]["z"] = {k: float(em["offsets_px"][k] / v) for k, v in em["sd_px"].items()
+                                       if np.isfinite(v) and v > 0 and k in em["offsets_px"]}
         if o.get("sd_params_T0"):
             c["sd_params"] = {k: float(v) for k, v in o["sd_params_T0"].items() if np.isfinite(v)}
         c["fit"] = {"method": "tied joint", "blocks": blocks, "date": stamp, "residuals": res.get("residuals"),
@@ -919,19 +997,22 @@ def write_tied(res: Dict[str, Any], out_dir: PathLike, note: str = "", template_
     return out
 
 
-BLOCK_AGREEMENT = {"f_ppm": 150.0, "rig_mdeg": 5.0, "min_images": 8, "max_share": 1.0}   # reported, never failing, until the first real run sets the limits (Christian, 20 Oct)
+# the limits from the first real run (navcal_tied_20261020_2: |dfx| p95 196 ppm, |dfy| p95 456 ppm, rig p95 7.7 mdeg;
+# Christian, 20 Oct): fx 250 ppm, fy 500 ppm, rig 8 mdeg, at most 10 % of the units off
+BLOCK_AGREEMENT = {"f_ppm": 250.0, "fy_ppm": 500.0, "rig_mdeg": 8.0, "min_images": 8, "max_share": 0.10}
 
 
 def block_agreement(res: Dict[str, Any], limits: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
     """The promotion gate of the tied joint in place of the leave-one-block-out: in the diagnostic pass (every
     block's bins and epochs free about the held global solution) the share of block-bin cameras with >= min_images
-    images whose fx or fy differ from the law by more than ``f_ppm``, and of rig epochs (>= min_images frames) more
+    images whose fx differs from the law by more than ``f_ppm`` or fy by more than ``fy_ppm``, and of rig epochs (>= min_images frames) more
     than ``rig_mdeg`` from the trend, must be at most ``max_share`` each."""
     lim = dict(BLOCK_AGREEMENT, **(limits or {}))
     d = res.get("diagnostics") or {}
     cams = [c for c in d.get("cameras") or [] if c.get("images", 0) >= lim["min_images"]]
     rigs = [r for r in d.get("rigs") or [] if r.get("frames", 0) >= lim["min_images"]]
-    bad_c = [c for c in cams if max(abs(c["dfx_ppm"]), abs(c["dfy_ppm"])) > lim["f_ppm"]]
+    fy_lim = float(lim.get("fy_ppm", lim["f_ppm"]))
+    bad_c = [c for c in cams if abs(c["dfx_ppm"]) > lim["f_ppm"] or abs(c["dfy_ppm"]) > fy_lim]
     bad_r = [r for r in rigs if max(abs(r["dpitch_mdeg"]), abs(r["droll_mdeg"]), abs(r["dyaw_mdeg"])) > lim["rig_mdeg"]]
     sc = len(bad_c) / len(cams) if cams else float("nan")
     sr = len(bad_r) / len(rigs) if rigs else float("nan")
@@ -939,7 +1020,8 @@ def block_agreement(res: Dict[str, Any], limits: Optional[Dict[str, float]] = No
     return {"ok": ok, "limits": lim, "cameras": len(cams), "cameras_off": len(bad_c), "share_cameras_off": sc,
             "rigs": len(rigs), "rigs_off": len(bad_r), "share_rigs_off": sr,
             "worst_camera_ppm": max((max(abs(c["dfx_ppm"]), abs(c["dfy_ppm"])) for c in cams), default=float("nan")),
-            "worst_rig_mdeg": max((max(abs(r["dpitch_mdeg"]), abs(r["droll_mdeg"])) for r in rigs), default=float("nan")),
+            "worst_rig_mdeg": max((max(abs(r["dpitch_mdeg"]), abs(r["droll_mdeg"]), abs(r["dyaw_mdeg"])) for r in rigs),
+                                  default=float("nan")),
             "blocks_off": sorted({c["scape"] for c in bad_c} | {r["scape"] for r in bad_r})}
 
 

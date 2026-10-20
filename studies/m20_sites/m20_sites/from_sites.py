@@ -20,6 +20,11 @@ def sites_file(arg=None):
     sys.exit(f'sites.json not found (tried the argument, $M20_SITES_FILE and {DEFAULT})')
 
 
+# visits left out of the figures' sol ranges only (titles, tables; sites.json keeps them): Three Forks North's
+# single sol 413 so its range fits on one line (Christian, 20 Oct)
+MAP_OMIT_VISITS = {'threeforks_north': [[413, 413]]}
+
+
 def blocks_from_sites(path):
     doc = json.load(open(path, encoding='utf-8'))
     if 'official_blocks' not in doc:
@@ -27,13 +32,15 @@ def blocks_from_sites(path):
     out = []
     for num, b in sorted(doc['official_blocks'].items(), key=lambda kv: int(kv[0])):
         runs = sorted([int(a), int(z)] for a, z in b['visits'])          # chronological for titles and tables
+        omit = MAP_OMIT_VISITS.get(b.get('site'), [])
+        shown = [r for r in runs if r not in omit] or runs
         c = b['centre']
         out.append({
             'id': int(num), 'key': b.get('source_key') or b.get('site'), 'site': b.get('site'), 'name': b['name'],
             'region': b.get('region', ''), 'kind': b.get('kind', ''),
             'cx': float(c['easting']), 'cy': float(c['northing']), 'lon': c.get('lon'), 'lat': c.get('lat'),
             'half_size_m': float(b.get('half_size_m', 30.0)),
-            'runs': runs, 'first': runs[0][0], 'first_all': min([runs[0][0]] + list(b.get('end_of_drive_sols', []))),
+            'runs': shown, 'first': runs[0][0], 'first_all': min([runs[0][0]] + list(b.get('end_of_drive_sols', []))),
             'n360': int(b.get('n_navcam_360', 0)), 'npart': int(b.get('n_partial_navcam', 0)), 'ninterp': 0,
             'zpanos': list(b.get('mastcam_z_360', [])), 'nz': len(b.get('mastcam_z_360', [])),
         })

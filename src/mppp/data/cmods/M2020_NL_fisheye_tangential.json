@@ -3,16 +3,16 @@
  "width": 5120,
  "height": 3840,
  "params": [
-  2956.1785734362966,
-  2956.166932254311,
-  2591.4299047580243,
-  1944.335717578222,
-  0.045197370421572326,
-  -0.010294923069542664,
-  0.00025937237958498336,
-  0.00036514800791527367,
-  0.0037102184092106362,
-  -0.0066789096026409495,
+  2956.174675387718,
+  2956.183369669779,
+  2591.6064433057236,
+  1944.3657705378764,
+  0.04522283424715975,
+  -0.010316959210466208,
+  0.0002614432994833285,
+  0.0003650325581561156,
+  0.0037276719700956363,
+  -0.00668292165703605,
   0.0,
   0.0
  ],
@@ -33,7 +33,7 @@
  "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
  "free_params": [],
  "pixel_origin": "corner of the first pixel (COLMAP)",
- "source": "MPPP Navcam consensus (mppp.sfm.navcal_consensus, 2026-10-20, v0p80 NL-reference form): one NL camera shared by 16 blocks (Artuby Ridge, Belva Crater Large, Bunsen Peak, Chal Rocks, Cheyava Falls, Enchanted Lake, Hippo Pools, Issole Seitah South, Marble Mountain, Oeb Landing Site, Rochette, Rockytop, Seitah North Large, South Arm, Taylorfjellet Large, Tuxedo Park); fisheye + tangential at -20 degC, fx +40.5 / fy +46.9 ppm/degC, cx +0.0134 px/degC, k1 -5.50e-06/degC, k4 -0.00668 (fitted with k3), one rig yaw +42.46 mdeg (rate +2.16 mdeg/1000 sol).",
+ "source": "MPPP Navcam joint, one adjustment (mppp.calib.tied.fit_tied, 2026-10-20): one NL camera shared by 22 blocks (artuby_ridge, bell_island_large, belva_crater_large, bunsen_peak, chal_rocks, chal_rocks_large, cheyava_falls, enchanted_lake, hippo_pools, issole_seitah_south, marble_mountain, oeb_landing_site, origny_large, rochette, rockytop, seitah_north_large, south_arm, taylorfjellet_huge, taylorfjellet_large, threeforks_large, tuxedo_park, witch_hazel_hill); fisheye + tangential at -20 degC, fx +36.0 / fy +37.1 ppm/degC, cx +0.0165 px/degC, k1 -6.71e-06/degC, early offsets per eye; every term with the rig trend and the block poses in one bundle adjustment. rewritten from tied_joint.json with applied_terms (20 Oct)",
  "sd": {
   "fx": 0.030117230913328612,
   "fy": 0.042768668286572914,
@@ -48,16 +48,18 @@
  },
  "thermal": {
   "T0_degC": -20.0,
-  "note": "v0p80: NL-reference form, refitted with the consensus (2026-10-20; profiles of NL_cx, NR_cx, NL_fx, NL_fy, NR_fx, NR_fy, yaw_rate)",
-  "cx_px_per_degC": 0.013419629193341227,
-  "cy_px_per_degC": 0.0,
-  "fx_ppm_per_degC": 40.54143161900605,
-  "fy_ppm_per_degC": 46.86477467913099,
-  "sd_fx_ppm_per_degC": 0.15104288857809142,
-  "sd_fy_ppm_per_degC": 0.18837369799275241,
-  "k1_per_degC": -5.500288636467811e-06,
-  "k1_source": "temperature bins of the blocks (k1_slopes_from_blocks)",
-  "sd_cx_px_per_degC": 0.0003414979364225242
+  "fx_ppm_per_degC": 36.01253137697347,
+  "fy_ppm_per_degC": 37.11845606915044,
+  "cx_px_per_degC": 0.016520065089434263,
+  "cy_px_per_degC": 0.016016801234679277,
+  "k1_per_degC": -6.7068712251055e-06,
+  "k1_source": "tied joint",
+  "note": "one adjustment of every term (2026-10-20)",
+  "sd_fx_ppm_per_degC": 0.5219477288578058,
+  "sd_fy_ppm_per_degC": 1.2762174559810389,
+  "sd_cx_px_per_degC": 0.0031189186147320093,
+  "sd_cy_px_per_degC": 0.0021424284689948057,
+  "sd_k1_per_degC": 6.677650825577574e-07
  },
  "verification": {
   "note": "leave-one-block-out: max centre 0.025 px, corners 0.059 px over 16 blocks (ok)",
@@ -86,41 +88,82 @@
  "fixed_params": [],
  "early_mission": {
   "before_sol": 380.0,
-  "dfx_px": 0.07369862812449571,
-  "dfy_px": 0.15173883836394442,
-  "dcx_px": 0.5675854146528414,
-  "dcy_px": -0.3525700411058337,
-  "sd_px": {
-   "fx": 0.015139665402617328,
-   "fy": 0.04575660462792776,
-   "cx": 0.05169614710530113,
-   "cy": 0.05336898951894034
-  },
-  "z": {
-   "fx": 4.8679165730938,
-   "fy": 3.316217179963784,
-   "cx": 10.979259508386825,
-   "cy": -6.606271624848896
-  },
-  "p_value": {
-   "fx": 1.1278091901545203e-06,
-   "fy": 0.0009124489004217359,
-   "cx": 4.808490740236672e-28,
-   "cy": 3.9411948472787515e-11
-  },
-  "p_value_all": 9.44132342438963e-28,
+  "per_eye": true,
+  "dfx_px": 0.005641979251509205,
+  "dfy_px": 0.0001917251706647884,
+  "dcx_px": 0.3231534165154047,
+  "dcy_px": -0.04625174964534013,
   "applied_terms": [
    "fx",
    "fy",
    "cx",
    "cy"
   ],
-  "early_images": 1120,
-  "note": "v0p70 (2026-10-20): a camera with these offsets for the images before sol 380; projects apply the terms in applied_terms (|z| >= 3), weighted by the block's share of early images"
+  "note": "tied joint: the offsets of this eye for the images before before_sol, all fitted terms applied (weighted by a block's share of early images)",
+  "sd_px": {
+   "fx": 0.019372308437504544,
+   "fy": 0.04828273757530752,
+   "cx": 0.07358576437039313,
+   "cy": 0.06682992687773631
+  },
+  "z": {
+   "fx": 0.2912393878979546,
+   "fy": 0.003970884425634543,
+   "cx": 4.391520823087677,
+   "cy": -0.6920814043378584
+  }
  },
  "sd_source": "this joint (formal x variance factor)",
  "convention": "NL reference",
  "form": "navcam-v1",
  "family": "N",
- "eye": "L"
+ "eye": "L",
+ "sd_params": {
+  "fx": 0.0242856317845441,
+  "fy": 0.039801322814029774,
+  "cx": 0.045616919103289036,
+  "cy": 0.04094241639242055,
+  "k1": 6.962672855950908e-05,
+  "k2": 0.0002523410255650957,
+  "p1": 3.152174971933707e-06,
+  "p2": 8.462626090882365e-07,
+  "k3": 0.00036509761587020877,
+  "k4": 0.0001808577107223921
+ },
+ "fit": {
+  "method": "tied joint",
+  "blocks": [
+   "artuby_ridge",
+   "bell_island_large",
+   "belva_crater_large",
+   "bunsen_peak",
+   "chal_rocks",
+   "chal_rocks_large",
+   "cheyava_falls",
+   "enchanted_lake",
+   "hippo_pools",
+   "issole_seitah_south",
+   "marble_mountain",
+   "oeb_landing_site",
+   "origny_large",
+   "rochette",
+   "rockytop",
+   "seitah_north_large",
+   "south_arm",
+   "taylorfjellet_huge",
+   "taylorfjellet_large",
+   "threeforks_large",
+   "tuxedo_park",
+   "witch_hazel_hill"
+  ],
+  "date": "2026-10-20",
+  "residuals": {
+   "observations": 769815,
+   "median_px": 0.17098556258038305,
+   "rms_px": 0.37124846606306394,
+   "corner_median_px": 0.21279655842045722,
+   "p95_px": 0.7366575466401867
+  },
+  "covariance_error": null
+ }
 }

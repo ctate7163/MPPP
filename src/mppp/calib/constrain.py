@@ -309,6 +309,8 @@ def label_camera(meta: Dict[str, Any]) -> Tuple[str, List[float], str]:
 # The refined formats of the calibration study, ported unchanged (project doc "plot formats", 20 Oct 2026):
 # docs/history/results/figures_20261018/fig_rig.py (+ fig_rig_trends_20oct.py) and fig_intr.py.
 IFOV_MDEG = 18.9          # one Navcam pixel, 0.33 mrad
+FIG_DPI = 200             # the standard figures (make_figures.bat; Christian, 20 Oct)
+RIG_TREND_YLIMS = {"pitch": (-5.0, 20.0), "roll": (-15.0, 15.0)}   # mdeg (20 Oct)
 EYE_COLORS = {"NL": "C0", "NR": "C3"}        # left eye cool, right eye warm
 
 
@@ -329,18 +331,21 @@ def drift_offset_rel(drift: Dict[str, Any], angle: str, sols, sol_ref: float = 0
 
 def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], drift: Dict[str, Any], path: PathLike,
                     cx_inuse_px_per_degC: Optional[float] = None, label: str = "", sol_ref: float = 0.0,
-                    T0: float = NAVCAM_T0_DEGC, model_label: str = "drift model") -> Path:
+                    T0: float = NAVCAM_T0_DEGC, model_label: str = "drift model",
+                    ylims: Optional[Dict[str, Tuple[float, float]]] = None, dpi: int = FIG_DPI) -> Path:
     """
-    Rig trends 2 x 2 (fig_rig.py, 12.5 x 8.2 in, dpi 130): pitch (UL), yaw with its temperature slope removed
+    Rig trends 2 x 2 (fig_rig.py, 12.5 x 8.2 in, dpi 200): pitch (UL), yaw with its temperature slope removed
     to T0 (UR) and roll (LL) of every block rig epoch against its median sol, each relative to the joint rig at
     ``sol_ref`` (= 0), with the ``drift`` model line, dashed lines at the knot, the residual-trend statistics in the
     titles and a secondary IFOV axis; LR: the stereo pointing NR cx − NL cx against epoch temperature with the
     model slope (dashed), the slope in use for the block runs (dotted) and the slope with the yaw residual folded
     in (solid, ± se band).  ``rig_residuals`` is the study's ``rig_residuals.json`` (rig rotation free, cameras
-    held), ``consensus`` its ``consensus.json``.
+    held), ``consensus`` its ``consensus.json``.  ``ylims``: per angle (default :data:`RIG_TREND_YLIMS`: pitch
+    -5 to +20, roll -15 to +15 mdeg; yaw from its data); points outside are counted in the legend.
     """
     plt = _plt()
     rr, cons = rig_residuals, consensus
+    ylims = dict(RIG_TREND_YLIMS if ylims is None else ylims)
     B = rr["blocks"]; names = [b["block"] for b in B]
     sol = np.array([b["sol_median"] for b in B], float); T = np.array([b["T_median_degC"] for b in B], float)
     ppl = cons["thermal"]["pp_slopes"]
@@ -377,9 +382,16 @@ def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], dr
         ax.set_xlabel("median sol of the rig epoch", fontsize=8)
         ax.set_ylabel(f"{ang} relative to the joint rig at sol {sol_ref:.0f} (mdeg)", fontsize=8)
         ax.grid(alpha=0.3); ax.legend(fontsize=7, loc="lower right")
-    lo = min(a.get_ylim()[0] for a in panels.values()); hi = max(a.get_ylim()[1] for a in panels.values())
-    for a in panels.values():
-        a.set_ylim(lo, hi); a.set_xlim(0, 2050)
+    for ang, a in panels.items():
+        if ang in ylims:
+            lo, hi = ylims[ang]
+            y = np.concatenate([ln.get_ydata() for ln in a.get_lines() if ln.get_marker() == "o"] or [np.array([])])
+            n_out = int(np.sum((y < lo) | (y > hi)))
+            a.set_ylim(lo, hi)
+            if n_out:
+                a.text(0.01, 0.98, f"{n_out} epoch(s) outside the axis", transform=a.transAxes, ha="left", va="top",
+                       fontsize=7, color="0.3")
+        a.set_xlim(0, 2050)
         a.secondary_yaxis("right", functions=(lambda m: m / IFOV_MDEG, lambda p: p * IFOV_MDEG)).set_ylabel("Navcam IFOV equivalent (px)", fontsize=8)
     ax = axs[1][1]
     yaw_px = np.array([b["yaw_mdeg"] for b in B]) / IFOV_MDEG
@@ -402,7 +414,7 @@ def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], dr
     nb = len({b.get("site") or b["block"] for b in B})
     fig.suptitle(f"Navcam rig trends{(' ' + label) if label else ''} ({nb} blocks, {len(B)} rig epochs; drift referred to sol {sol_ref:.0f}; "
                  f"right axes in Navcam IFOV, 0.33 mrad = {IFOV_MDEG} mdeg)", fontsize=10)
-    fig.tight_layout(rect=(0, 0, 1, 0.97)); fig.savefig(path, dpi=130)
+    fig.tight_layout(rect=(0, 0, 1, 0.97)); fig.savefig(path, dpi=dpi)
     plt.close(fig)
     return Path(path)
 
@@ -410,7 +422,7 @@ def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], dr
 def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, Dict[str, Any]], bins: Sequence[Dict[str, Any]],
                                    rig_residuals: Dict[str, Any], path: PathLike, early_sol: float = 380.0,
                                    label: str = "", T0: float = NAVCAM_T0_DEGC, model_label: str = "new model",
-                                   pp_units: Optional[Sequence[Dict[str, Any]]] = None) -> Path:
+                                   pp_units: Optional[Sequence[Dict[str, Any]]] = None, dpi: int = FIG_DPI) -> Path:
     """
     Intrinsics against temperature 2 x 2 (fig_intr.py, 12.5 x 8.6 in, sharex): columns NL (cool) / NR (warm), rows
     focal length and principal point as the change from T0; left/right share y range and ticks.  Points: the
@@ -461,13 +473,14 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
         cx_iu = th_iu["cx_px"]
         if eye == "NL":
             ax.plot(tt, cx_iu * (tt - T0), ":", color="0.4", lw=1.2, label=f"cx in use for the block runs: {cx_iu:+.4f} px/°C")
-            ax.plot(tt, pp["NL"][0] * (tt - T0), "-", color=col, lw=1.3, label=f"cx {model_label}: {pp['NL'][0]:+.4f} px/°C; cy: 0")
+            ax.plot(tt, pp["NL"][0] * (tt - T0), "-", color=col, lw=1.3, label=f"cx {model_label}: {pp['NL'][0]:+.4f} px/°C")
+            ax.plot(tt, pp["NL"][1] * (tt - T0), "-.", color=col, lw=0.8, label=f"cy {model_label}: {pp['NL'][1]:+.4f} px/°C")
         else:
             ax.plot(tt, cx_iu * (tt - T0), ":", color="0.4", lw=1.2, label=f"cx in use for the block runs: {cx_iu:+.4f} px/°C")
             ax.plot(tt, pp["NR"][0] * (tt - T0), "--", color=col, lw=1.2, label=f"cx {model_label}: {pp['NR'][0]:+.4f} px/°C")
             ax.fill_between(tt, (CX_ALL - CX_ALL_SE) * (tt - T0), (CX_ALL + CX_ALL_SE) * (tt - T0), color=col, alpha=0.12, lw=0)
             ax.plot(tt, CX_ALL * (tt - T0), "-", color=col, lw=1.6, label=f"stereo cx (NR − NL) with the yaw residual folded in: {CX_ALL:+.4f} ± {CX_ALL_SE:.4f} px/°C")
-            ax.plot(tt, 0 * tt, "-.", color=col, lw=0.8, label="cy: 0")
+            ax.plot(tt, pp["NR"][1] * (tt - T0), "-.", color=col, lw=0.8, label=f"cy {model_label}: {pp['NR'][1]:+.4f} px/°C")
             y = CX2 * (Tblk - T0) + yaw / IFOV_MDEG
             ax.plot(Tblk, y, "o", color=col, ms=5, mec="white", mew=0.5, zorder=3, label="rig epoch stereo pointing as NR cx − NL cx (model + yaw residual)")
         pu = [r for r in (pp_units or []) if r["eye"] == eye]
@@ -503,6 +516,63 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
         a.axvspan(Tb_all.min(), Tb_all.max(), color="0.85", alpha=0.35, lw=0, zorder=0); a.grid(alpha=0.3); a.set_xlim(-60, 0)
     nb = len(sols)
     fig.suptitle(f"Navcam intrinsic temperature dependence{(' ' + label) if label else ''} ({nb} blocks; T0 = {T0:.0f} °C; grey band: temperatures of the bins)", fontsize=10)
-    fig.tight_layout(rect=(0, 0, 1, 0.97)); fig.savefig(path, dpi=140)
+    fig.tight_layout(rect=(0, 0, 1, 0.97)); fig.savefig(path, dpi=dpi)
+    plt.close(fig)
+    return Path(path)
+
+
+def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_DPI, label: str = "") -> Optional[Path]:
+    """Mastcam-Z rig trends 2 x 4 (Christian, 20 Oct): the blocks' rig rotation residuals about the mean (yaw, pitch,
+    roll, mdeg) and their refined baseline minus the CAHV baseline (mm), against sol (top) and the lens temperature
+    (bottom), each with its least-squares line and slope +- se in the title.  ``model``: a calibration's
+    ``M2020_ZCAM034_focus_model.json`` (``rig.residuals.per_block``, ``rig.per_block``).  None without rig rows."""
+    rig = model.get("rig") or (model.get("calibration") or {}).get("rig") or {}
+    res = ((rig.get("residuals") or {}).get("per_block")) or []
+    pb = {r["block"]: r for r in rig.get("per_block") or []}
+    if not res:
+        return None
+    plt = _plt()
+    cols = [("yaw", "yaw_mdeg", "mdeg"), ("pitch", "pitch_mdeg", "mdeg"), ("roll", "roll_mdeg", "mdeg"),
+            ("baseline − CAHV", "dbaseline_mm", "mm")]
+    fig, axs = plt.subplots(2, 4, figsize=(15.5, 7.6), squeeze=False)
+    for j, (name, key, unit) in enumerate(cols):
+        rows = [dict(r, **{k: v for k, v in pb.get(r["block"], {}).items() if k not in r}) for r in res]
+        for i, (xk, xl, scale) in enumerate((("sol", "sol of the block", 1.0), ("T_optics_degC", "block lens temperature (°C)", 1.0))):
+            ax = axs[i][j]
+            pts = [(float(r[xk]), float(r[key]), r["block"]) for r in rows
+                   if r.get(xk) is not None and r.get(key) is not None and np.isfinite(r[key])]
+            if not pts:
+                ax.set_axis_off()
+                continue
+            x = np.array([p[0] for p in pts]); y = np.array([p[1] for p in pts])
+            ax.plot(x, y, "o", color="C0" if i == 0 else "C3", ms=6, mec="white", mew=0.5)
+            for xx, yy, n in pts:
+                ax.annotate(n.replace("mars2020_", "")[:18], (xx, yy), fontsize=6, alpha=0.6, xytext=(3, 3),
+                            textcoords="offset points")
+            title = f"{name}"
+            if len(x) >= 3 and np.ptp(x) > 0:
+                A = np.c_[np.ones_like(x), x - x.mean()]
+                b, *_ = np.linalg.lstsq(A, y, rcond=None)
+                r_ = y - A @ b
+                se = float(np.sqrt(r_ @ r_ / (len(y) - 2) / np.sum((x - x.mean()) ** 2)))
+                xs = np.linspace(x.min(), x.max(), 2)
+                ax.plot(xs, b[0] + b[1] * (xs - x.mean()), "-", color="0.3", lw=1)
+                per = 1000.0 if xk == "sol" else 1.0
+                z = b[1] / se if se > 0 else float("nan")
+                title += (f": {b[1] * per:+.2f} ± {se * per:.2f} {unit}/{'1000 sol' if xk == 'sol' else '°C'} (z {z:+.1f})"
+                          f"\nsd about the line {np.std(r_, ddof=2):.2f} {unit}")
+            ax.set_title(title, fontsize=8.5)
+            ax.axhline(0, color="0.6", lw=0.6)
+            ax.set_xlabel(xl, fontsize=8)
+            ax.set_ylabel(f"{name} ({unit})", fontsize=8)
+            ax.grid(alpha=0.3)
+    bc = rig.get("baseline_vs_cahv") or {}
+    sup = (f"Mastcam-Z 34 mm rig trends{(' ' + label) if label else ''}: {len(res)} blocks; rotation residuals about the "
+           f"mean rig; baseline {rig.get('baseline_m', float('nan')) * 1e3:.1f} mm")
+    if bc.get("mean_mm") is not None:
+        sup += f" ({bc['mean_mm']:+.2f} mm from the CAHV baselines, sd {bc.get('sd_mm') or float('nan'):.2f} mm)"
+    fig.suptitle(sup, fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(path, dpi=dpi)
     plt.close(fig)
     return Path(path)

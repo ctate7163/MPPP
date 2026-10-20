@@ -39,7 +39,7 @@ import logging
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -195,6 +195,99 @@ def beyond_ground(rec, camera_height_m: float = GROUND_CAMERA_HEIGHT_M, min_depr
             "fraction": float(flagged / len(sel)) if len(sel) else None,
             "fraction_of_below_horizon": float(flagged / considered) if considered else None,
             "camera_height_m": camera_height_m, "min_depression_deg": min_depression_deg, "factor": factor}
+
+
+ZCAM_TERRAIN_CELL_M = 0.5         # the Navcam terrain grid of zcam_terrain
+ZCAM_TERRAIN_TOL_M = 0.15         # a Mastcam-Z point within this (+ 1 % of its range) of the terrain is on it
+
+
+def zcam_terrain(rec, cell_m: float = ZCAM_TERRAIN_CELL_M, tol_m: float = ZCAM_TERRAIN_TOL_M, tol_frac: float = 0.01,
+                 min_cell_points: int = 3, sample: Optional[int] = 300000, seed: int = 0) -> Dict[str, Any]:
+    """
+    The Mastcam-Z tie points above and below the terrain - a proxy for the Mastcam-Z alignment (Christian, 20 Oct).
+    The terrain is the Navcam-only points (tracks of Navcam images only) gridded at ``cell_m`` in East-North (the
+    median height of a cell with at least ``min_cell_points``, else of the 3 x 3 cells around it).  Each point seen by
+    a Mastcam-Z image over a terrain cell is *above* or *below* when its height differs by more than
+    ``tol_m`` + ``tol_frac`` x its distance from the nearest Navcam camera, else *on*.  A misaligned Mastcam-Z frame
+    puts its points off the surface (below it above all: rocks stand above the gridded ground, nothing lies below
+    it).  Counted for all Mastcam-Z points and for the Navcam-Mastcam-Z tie points; points beyond the Navcam terrain
+    are counted as ``off_grid``.  The world frame is East-North-Up.
+    """
+    fam: Dict[int, str] = {}
+    centres_n = []
+    for iid, im in rec.images.items():
+        if not im.has_pose:
+            continue
+        fam[int(iid)] = im.name[:1]
+        if im.name[:1] == "N":
+            centres_n.append(np.asarray(im.projection_center(), float))
+    out: Dict[str, Any] = {"cell_m": cell_m, "tol_m": tol_m, "tol_frac": tol_frac}
+    pts = list(rec.points3D.values())
+    if sample and len(pts) > sample:
+        pts = [pts[i] for i in np.sort(np.random.default_rng(seed).choice(len(pts), sample, replace=False))]
+    nav, zc, mixed = [], [], []
+    for pt in pts:
+        fs = {fam.get(int(el.image_id)) for el in pt.track.elements}
+        if "Z" in fs:
+            zc.append(pt.xyz)
+            mixed.append("N" in fs)
+        elif fs == {"N"}:
+            nav.append(pt.xyz)
+    out.update({"navcam_points": len(nav), "zcam_points": len(zc)})
+    if not nav or not zc or not centres_n:
+        out["note"] = "no Navcam terrain or no Mastcam-Z points"
+        return out
+    N = np.asarray(nav, float); Z = np.asarray(zc, float); mixed = np.asarray(mixed, bool)
+    ij = np.floor(N[:, :2] / cell_m).astype(np.int64)
+    order = np.lexsort((ij[:, 1], ij[:, 0]))
+    ij, hz = ij[order], N[order, 2]
+    cut = np.flatnonzero(np.any(np.diff(ij, axis=0) != 0, axis=1)) + 1
+    grid: Dict[Tuple[int, int], Tuple[float, int]] = {}
+    for a, b in zip(np.r_[0, cut], np.r_[cut, len(ij)]):
+        grid[(int(ij[a, 0]), int(ij[a, 1]))] = (float(np.median(hz[a:b])), int(b - a))
+
+    def terrain_at(i, j):
+        h, n = grid.get((i, j), (None, 0))
+        if n >= min_cell_points:
+            return h
+        hs = [grid[(i + di, j + dj)] for di in (-1, 0, 1) for dj in (-1, 0, 1) if (i + di, j + dj) in grid]
+        if sum(n_ for _, n_ in hs) >= min_cell_points:
+            return float(np.median([h_ for h_, _ in hs]))
+        return None
+    C = np.asarray(centres_n, float)
+    zij = np.floor(Z[:, :2] / cell_m).astype(np.int64)
+    dz = np.full(len(Z), np.nan)
+    for k, (i, j) in enumerate(zij):
+        t = terrain_at(int(i), int(j))
+        if t is not None:
+            dz[k] = Z[k, 2] - t
+    rng = np.min(np.linalg.norm(Z[:, None, :2] - C[None, ::max(1, len(C) // 200), :2], axis=2), axis=1) \
+        if len(Z) * min(len(C), 200) < 5e7 else np.full(len(Z), 10.0)
+    tol = tol_m + tol_frac * rng
+
+    def counts(sel):
+        d, t = dz[sel], tol[sel]
+        on = np.isfinite(d)
+        n = int(on.sum())
+        above, below = int(np.sum(d[on] > t[on])), int(np.sum(d[on] < -t[on]))
+        return {"points": int(sel.sum()), "on_grid": n, "off_grid": int(sel.sum()) - n, "above": above, "below": below,
+                "on_terrain": n - above - below,
+                "above_fraction": above / n if n else None, "below_fraction": below / n if n else None,
+                "median_dz_m": float(np.median(d[on])) if n else None}
+    out["zcam"] = counts(np.ones(len(Z), bool))
+    out["navcam_zcam"] = counts(mixed)
+    return out
+
+
+def zcam_terrain_line(t: Dict[str, Any]) -> str:
+    """One line of :func:`zcam_terrain` for the logs."""
+    if "zcam" not in t:
+        return t.get("note", "")
+    z, m = t["zcam"], t["navcam_zcam"]
+    f = (lambda v: "-" if v is None else f"{100 * v:.1f} %")             # noqa: E731
+    return (f"Mastcam-Z points vs the Navcam terrain: {f(z['above_fraction'])} above, {f(z['below_fraction'])} below "
+            f"({z['on_grid']} on the grid, {z['off_grid']} beyond); Navcam-Mastcam-Z ties {f(m['above_fraction'])} above, "
+            f"{f(m['below_fraction'])} below ({m['on_grid']})")
 
 
 def navcam_aspect_changes(project: SfmProject, rec) -> Dict[str, float]:
@@ -445,6 +538,12 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
           f"({bg['camera_height_m']:g} m below the camera) along every ray pointing below the horizon: false matches "
           f"that agree with the epipolar geometry, or terrain falling away" if bg["fraction"] is not None else "")
 
+    zt = zcam_terrain(rec)                               # 20 Oct: the Mastcam-Z points against the Navcam terrain
+    if "zcam" in zt:
+        check("tie points", "zcam_below_terrain_fraction", zt["zcam"]["below_fraction"], zcam_terrain_line(zt))
+        check("tie points", "zcam_above_terrain_fraction", zt["zcam"]["above_fraction"],
+              f"median height above the terrain {zt['zcam']['median_dz_m']:+.3f} m" if zt["zcam"]["median_dz_m"] is not None else "")
+
     # ---- reprojection
     res = native_residuals(rec, project)
     r = res["residual_native_px"]
@@ -651,7 +750,7 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
     return {"verdict": verdict, "project": str(project.root), "images": len(project.images),
             "created": _dt.datetime.now().isoformat(timespec="seconds"), "mppp_version": __version__,
             "checks": checks, "thresholds": {k: list(v) for k, v in thr.items()},
-            "track_length_histogram": hist, "residual_by_camera_resolution": eye_med,
+            "track_length_histogram": hist, "zcam_terrain": zt, "residual_by_camera_resolution": eye_med,
             "residual_by_radius": radial, "coverage_by_radius": cov, "worst_images": [{"name": by_iid[i]["name"], "median_px": m}
                                                            for m, i in outl[:20]],
             "cameras": cams_after, "rig": rig_out, "beyond_ground": bg, "navcam_aspect_change_pct": asp, "stations": st_tab, "prior_similarity": sims,

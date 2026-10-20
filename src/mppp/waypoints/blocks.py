@@ -597,7 +597,7 @@ LMST_T_C = "#8a8a8a"       # the camera temperature points on the secondary axis
 
 
 def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[str, Any]], path: PathLike,
-                         window: Optional[Sequence[float]] = None, temperature: bool = True) -> Tuple[int, int]:
+                         window: Optional[Sequence[float]] = None, temperature: bool = True, dpi: int = 200) -> Tuple[int, int]:
     """The LMST histogram figure: one stepped panel per site (``rows`` order) and one for all sites, Navcam and
     Mastcam-Z 34 each to unit area, local noon dashed, the processing ``window`` dotted.  ``temperature`` (0.90,
     Christian): every panel gets a secondary right axis with the Navcam camera temperature of each image against
@@ -703,7 +703,7 @@ def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[
                  fontsize=9.5, x=0.01, ha="left", y=0.995)
     fig.subplots_adjust(left=0.03, right=0.96 if Tlim else 0.99, top=1 - 0.55 / fig.get_figheight(), bottom=0.5 / fig.get_figheight())
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=160)
+    fig.savefig(path, dpi=dpi)
     plt.close(fig)
     return len(allN), len(allZ)
 

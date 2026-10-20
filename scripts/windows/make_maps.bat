@@ -10,7 +10,7 @@ REM   m20_jezero_traverse_sites_regions_wide_<tag>.png  figure 4
 REM   m20_mars_to_rover_sites_<tag>.png                 figure 5   Mars -> Isidis -> Jezero -> traverse -> regions
 REM   m20_mars_to_rover_sites_no_I_<tag>.png            figure 6   figure 5 with the block list instead of panel I
 REM One set per background: tag "dtm" (1 m HiRISE DTM where it covers, ~70 m tiles elsewhere) and, when an
-REM orthomosaic is found, tag "ortho".  Arguments: make_maps.bat [dtm|ortho|both] [DPI]   (default: both 300).
+REM orthomosaic is found, tag "ortho".  Arguments: make_maps.bat [dtm|ortho|both] [DPI]   (default: both 200).
 REM
 REM Needs in the MPPP environment: matplotlib scipy pillow adjustText rasterio pyproj  (pip install -e ".[maps]").
 REM DTM / orthomosaic paths: M20_DEMS / M20_ORTHOS if set, otherwise the files under D:\scapes\dem (below).
@@ -26,21 +26,7 @@ if "%WHICH%"=="" set "WHICH=both"
 if not "%~2"=="" set "M20_DPI=%~2"
 if not defined M20_DPI set "M20_DPI=200"
 
-set "DEMROOT=D:\scapes\dem"
-if defined MPPP_SCAPES if exist "%MPPP_SCAPES%\dem" set "DEMROOT=%MPPP_SCAPES%\dem"
-REM the files under DEMROOT win over an M20_DEMS / M20_ORTHOS left in the environment (a placeholder broke the 20 Oct run)
-if exist "%DEMROOT%\msr_trn\*DTM*.tif" set "M20_DEMS="
-if exist "%DEMROOT%\msr_trn\*Orthomosaic*.tif" set "M20_ORTHOS="
-if not defined M20_DEMS (
-  for %%F in ("%DEMROOT%\msr_trn\*DTM*.tif" "%DEMROOT%\m2020_trn\*DTM*.tif") do (
-    if defined M20_DEMS ( set "M20_DEMS=!M20_DEMS!;%%~fF" ) else ( set "M20_DEMS=%%~fF" )
-  )
-)
-if not defined M20_ORTHOS (
-  for %%F in ("%DEMROOT%\msr_trn\*Orthomosaic*.tif" "%DEMROOT%\m2020_trn\*rtho*.tif") do (
-    if defined M20_ORTHOS ( set "M20_ORTHOS=!M20_ORTHOS!;%%~fF" ) else ( set "M20_ORTHOS=%%~fF" )
-  )
-)
+call "%MPPP_WIN%\m20_dem_env.bat"
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY=%%d"
 set "OUT=%MPPP_HOME%\Claude outputs\maps_%TODAY%"
 set "M20_SITES_FILE=%MPPP_HOME%\src\mppp\data\sites.json"

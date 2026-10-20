@@ -31,7 +31,7 @@ echo tied joint: blocks under %MPPP_SCAPES% (group navcam_consensus) -^> %OUT%
 python -m mppp --log "%OUT%_log.txt" calib navcam --root "%MPPP_SCAPES%" --out "%OUT%" --knot 250 --points 8000 %*
 if errorlevel 1 ( echo tied joint FAILED - see %OUT%_log.txt & pause & exit /b 1 )
 echo figures -^> %FIG%
-python "%MPPP_HOME%\scripts\paper_figures.py" --root "%MPPP_SCAPES%" --study "%OUT%" --out "%FIG%" --tag !TAG!
+python "%MPPP_HOME%\scripts\paper_figures.py" --root "%MPPP_SCAPES%" --study "%OUT%" --out "%FIG%" --tag !TAG! --site-map none
 echo done: %OUT%  and  %FIG%
 pause
 exit /b 0

@@ -86,3 +86,8 @@
   - replaced files kept in `history/20261020-065411/`
   - 0.90: the three files converted to the frozen form on adoption (`form`, `family`, `eye`; the shared
     `ppm_per_degC` and v0p80 bookkeeping dropped from `thermal`); parameters unchanged; no history folder (git)
+
+## 20261020-154310 - Navcam tied joint navcal_tied_20261020_2 (0.91, 22 blocks, 4358 images, knot 250, yaw held; fx/fy slopes fitted separately - agree within 1 sd; early-mission offsets of both eyes applied)
+  - `M2020_NL_fisheye_tangential.json` 3a929587a1cc from `D:\scapes\camera_analysis\navcal_tied_20261020_2\navcam_joint\M2020_NL_fisheye_tangential.json` (rewritten with applied_terms) (THIN_PRISM_FISHEYE 5120x3840, fx 2956.17 at -20.0 degC)
+  - `M2020_NR_fisheye_tangential.json` eb9633c261ff from `D:\scapes\camera_analysis\navcal_tied_20261020_2\navcam_joint\M2020_NR_fisheye_tangential.json` (rewritten with applied_terms) (THIN_PRISM_FISHEYE 5120x3840, fx 2948.69 at -20.0 degC)
+  - `M2020_N_rig.json` cf7cd2204615 from `D:\scapes\camera_analysis\navcal_tied_20261020_2\navcam_joint\M2020_N_rig.json` (rewritten with applied_terms) (rig, baseline 0.4240102397823094 m)

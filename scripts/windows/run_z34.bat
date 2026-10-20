@@ -1,16 +1,19 @@
 @echo off
 REM ======================================================================================================
-REM MPPP 0.90 - the Mastcam-Z 34 mm run and calibration (Christian, 20 Oct 2026): the zcam34_consensus group of
-REM sites.json (chal_rocks, rochette, south_arm, marble_mountain), each block aligned as Navcam + Mastcam-Z 34 mm
-REM with the Navcam models in use (src\mppp\data\cmods: the 20 Oct pass-2 consensus) and the Mastcam-Z 34 mm start
-REM model in use (the 0.87 South Arm model), then zcam_calibration.py calibrate over the finished blocks, promoted
-REM when every check passes (at least 3 graded blocks; one of the four may fail its grade).
+REM MPPP 0.91 - the long Mastcam-Z 34 mm run and calibration (Christian, 20 Oct 2026): the 11 blocks of the
+REM zcam34_consensus group of sites.json (chal_rocks, rochette, issole_seitah_south, threeforks_north,
+REM enchanted_lake, rockytop, belva_crater, bunsen_peak, south_arm, taylorfjellet_large, marble_mountain), each
+REM aligned as Navcam + Mastcam-Z 34 mm with the Navcam models in use - the tied joint navcal_tied_20261020_2,
+REM promoted 20 Oct (src\mppp\data\cmods\CHANGES.md) - and the Mastcam-Z 34 mm start model in use; then
+REM zcam_calibration.py calibrate over the finished blocks (zcam-v2: p1, p2 refined, with the no-tangential twin,
+REM the rig's sol / temperature trends, baseline vs CAHV), promoted when every check passes.
 REM
-REM   run_z34.bat            the four blocks (finished ones with the same settings are skipped), then the calibration
+REM   run_z34.bat            the blocks (finished ones with the same run key are skipped; the new Navcam models
+REM                          change the key, so every block runs once), then the calibration
 REM   run_z34.bat --force    every block again
 REM
 REM Log of the runs: %MPPP_SCAPES%\run_sites_log.txt; the calibration: %MPPP_SCAPES%\camera_analysis\zcam34_calibration_<date>\report.md
-REM Stop with stop_mppp.bat. Expect about 1-1.5 h per block (SIFT), the calibration itself a few minutes.
+REM Stop with stop_mppp.bat. Expect about 1-1.5 h per block (exhaustive SIFT matching), ~12-16 h in all.
 REM ======================================================================================================
 setlocal
 if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"

@@ -1,7 +1,7 @@
 @echo off
 REM ======================================================================================================
 REM MPPP v0p87 (was run_v0p87.bat) - the full run: 16 Navcam blocks, 7 Mastcam-Z 34 mm blocks (Christian, 19 Oct 2026).
-REM Start it after zr_diagnose_z34.bat has finished
+REM (0.87 run script)
 REM and the code has been synced (git fetch/merge of the bundle). The current waypoint table is downloaded first.
 REM
 REM   Navcam cameras: the 18 Oct pass-2 consensus of 23 blocks, already promoted in the repo (cmods CHANGES.md)

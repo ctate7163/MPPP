@@ -217,6 +217,9 @@ def cmd_calibrate(a) -> int:
         matplotlib.use("Agg")
         plot_block_lines(rows, out / "zcam_focus_lines_vs_temperature.png")
         rep += ["", "![focus lines against the lens temperature](zcam_focus_lines_vs_temperature.png)"]
+        from mppp.calib.constrain import plot_zcam_rig_trends
+        if plot_zcam_rig_trends(model, out / "zcam_rig_trends.png"):
+            rep += ["", "![rig rotations and baseline against sol and lens temperature](zcam_rig_trends.png)"]
     except Exception as e:                                                 # noqa: BLE001
         rep += ["", f"(figure not made: {e})"]
     (out / "report.md").write_text("\n".join(rep), encoding="utf-8")

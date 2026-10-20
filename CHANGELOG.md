@@ -6,6 +6,27 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p1, p2, the site maps and the CLI.
 
+- **20 Oct, evening - the Navcam models in use are the tied joint `navcal_tied_20261020_2`** (22 blocks, every
+  check passed; `src/mppp/data/cmods/CHANGES.md`).  `write_tied` now lists `early_mission.applied_terms` (fx, fy,
+  cx, cy of each eye): without it the projects dropped the early-mission offsets.  Gate of the tied joint from the
+  first real run: block agreement fx 250 ppm, fy 500 ppm, rig 8 mdeg, at most 10 % of the units off; the thermal
+  f slope change against the files in use is reported, not gated.  Next joints: one focal slope per eye (fy's
+  ppm/°C tied to fx's, `ISO_F`, `--aniso-f` frees it; 20 Oct: fy − fx +1.1 ± 1.4, −0.25 ± 1.4 ppm/°C), the k1(T)
+  significance line (z −10 / −5.8), rig epochs of up to 50 sols (was 25), the pitch transition tested at 25
+  knots over sols 200-400.
+- **Mastcam-Z frames need 10 valid Navcam ties**: a Navcam-Mastcam-Z point needs a third look (0.86, unchanged);
+  a Mastcam-Z frame with fewer than `ZCAM_MIN_NAVCAM_TIES` (10) such points is excluded before the stage-2 final
+  adjustment (after the pose-guided matching).  `mppp.sfm.health.zcam_terrain`: the Mastcam-Z points (and the
+  Navcam-Mastcam-Z ties) above and below the Navcam-only terrain (0.5 m grid, 0.15 m + 1 % of range) - logged in
+  every stage-2 round and after the pose-guided matching, and in the health report.
+- **Figures**: `make_figures.bat` (the standard set at 200 dpi: Navcam rig trends with pitch −5..20 and roll
+  −15..15 mdeg, intrinsics vs temperature with the joint's cy slopes drawn, block table, LMST histograms, station
+  maps, the Mastcam-Z rig trends and focus lines, the site map = figure 2 of the maps); `m20_dem_env.bat` shared
+  with `make_maps.bat` (the TRN orthomosaic first).  Cluster zooms on the orthomosaic in colour with one stretch for
+  all panels (a grey mosaic tinted by the DTM height); figure 3's regional titles as figure 6's; Three Forks
+  North's sol 413 left out of the figures' ranges.  `zr_diagnose_z34.bat` removed.
+- **Sites**: plateau_point and vingeanne in navcam_consensus (26); olifants in zcam34_consensus (12).
+
 - **Navcam joint in one adjustment** (`mppp.calib.tied`): every term of the frozen form is a parameter of one
   bundle adjustment over the blocks - the intrinsics at −20 °C with one slope each in temperature (fx, fy, cx, cy,
   k1 per eye), the distortion (k2, p1, p2, k3, k4), the early-mission offsets *per eye*, and the rig as its rotation

@@ -75,6 +75,11 @@ def test_tied_adjust_and_files(tmp_path):
     nl = json.loads((out / "M2020_NL_fisheye_tangential.json").read_text())
     rig = json.loads((out / "M2020_N_rig.json").read_text())
     assert nl["early_mission"]["per_eye"] and "dfx_px" in nl["early_mission"]
+    assert nl["early_mission"]["applied_terms"] == ["fx", "fy", "cx", "cy"]     # the projects apply the offsets
+    from mppp.calib.constrain import camera_at
+    _, p_early, applied = camera_at(nl, -20.0, sol=100)
+    _, p_late, _ = camera_at(nl, -20.0, sol=1000)
+    assert p_early[2] - p_late[2] == pytest.approx(nl["early_mission"]["dcx_px"]) and "early_mission" in applied
     assert rig["drift"]["sol0"] == 0.0 and rig["drift"]["knot_ref"] == 0.0 and "roll_mdeg_per_sol" in rig["drift"]
     assert not forms.validate_rig(rig)
     assert (out / "tied_joint.json").exists() and (out / "consensus.json").exists()
@@ -140,3 +145,30 @@ def test_pointing_pass_rigs_at_the_trend(tmp_path):
     assert len(pt["cameras"]) == 4                                   # 2 eyes x 2 eras, one block
     assert all(c["sd_cx_px"] is not None and 0 < c["sd_cx_px"] < 1.0 for c in pt["cameras"])
     assert len(pt["stereo"]) == 2 and all(abs(s["dcx_stereo_px"]) < 0.5 for s in pt["stereo"])
+
+
+def test_isotropic_focal_slope(tmp_path):
+    """One ppm/degC per eye by default (fy's slope tied to fx's, 20 Oct); ``iso_f=False`` frees fy's; the k1(T)
+    significance line (z, corner displacement)."""
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, stats = T.adjust_tied(rec2, proj2, idx, st, units, iterations=15, covariance=True, passes=1, verbose=False)
+    assert 1 in ((ba.get("extra") or {}).get("held") or {}).get("S_NL", [])
+    res = T.globals_result(st, g, ba, units)
+    res["units"] = T.unit_rows(rec2, proj2, idx, units, st, g)
+    for eye in ("NL", "NR"):
+        assert res[eye]["fy_ppm_per_degC"] == pytest.approx(res[eye]["fx_ppm_per_degC"], abs=1e-9)
+        assert res[eye]["sd"]["fy_ppm_per_degC"] == pytest.approx(res[eye]["sd"]["fx_ppm_per_degC"], rel=1e-6)
+    assert res["isotropic_f_slope"]
+    ks = T.k1_significance(res)
+    assert set(ks) == {"NL", "NR"} and all(np.isfinite(v["corner_px"]) and v["span_degC"] > 0 for v in ks.values())
+    assert any("isotropic" in line for line in T.describe_result(res))
+    # the bins still follow the law with fy on fx's slope
+    assert max(abs(r["dfy_ppm"]) for r in res["units"]["cameras"]) < 5.0
+    rec3, proj3, units3 = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba3, g3, _ = T.adjust_tied(rec3, proj3, idx, st, units3, iterations=15, covariance=False, passes=1, verbose=False,
+                               iso_f=False)
+    res3 = T.globals_result(st, g3, ba3, units3)
+    assert not res3["isotropic_f_slope"]
+    assert 1 not in ((ba3.get("extra") or {}).get("held") or {}).get("S_NL", [])

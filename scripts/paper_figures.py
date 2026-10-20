@@ -1,10 +1,12 @@
 """
-The refined figures of a Navcam run (MPPP 0.90), in the formats of the calibration study (project doc "plot
-formats", 20 Oct 2026), from the promoted camera models, a consensus study folder and the finished blocks:
+The standard figures (MPPP 0.91; scripts\\windows\\make_figures.bat), in the formats of the calibration study
+(project doc "plot formats", 20 Oct 2026), from the promoted camera models, a Navcam joint folder, a Mastcam-Z
+calibration folder and the finished blocks, at 200 dpi by default:
 
     python scripts/paper_figures.py --root D:\\scapes --study D:\\scapes\\camera_analysis\\navcal_v0p86_20261020_pipeline_pass2
                                     [--out "D:\\code\\MPPP\\Claude outputs"] [--label "after the 20 Oct pass"]
-                                    [--blocks folder ...] [--terrain DIR --refdata DIR] [--frame image.png ...]
+                                    [--zcam D:\\scapes\\camera_analysis\\zcam34_calibration_20261021] [--dpi 200]
+                                    [--site-map maps|simple|none] [--blocks folder ...] [--frame image.png ...]
 
 Writes, into ``--out`` (default ``<MPPP>/Claude outputs``):
   navcam_rig_trends_<tag>.png            rig trends 2x2 (mppp.calib.constrain.plot_rig_trends) - needs --study
@@ -12,7 +14,10 @@ Writes, into ``--out`` (default ``<MPPP>/Claude outputs``):
   lmst_histogram_<tag>.png + _by_site.csv      (mppp.waypoints.blocks.plot_lmst_histograms)
   station_maps_<tag>/<block>.png         the blocks' health/station_map.png (mppp.sfm.export.plot_camera_shifts)
   navcam_block_table_<tag>.md/.json      each block against the joint (mppp.calib.fit.navcam_block_table)
-  site_map.png                           the traverse map (mppp.waypoints.blocks.plot_site_map, with --terrain)
+  zcam_rig_trends_<tag>.png              Mastcam-Z rig rotations and baseline vs sol and lens temperature - --zcam
+  zcam_focus_lines_vs_temperature_<tag>.png   the blocks' focus lines vs lens temperature - --zcam
+  site_map_<tag>.png                     the traverse map: figure 2 of ``mppp maps`` (crater | traverse, block table,
+                                         1 m DTM where M20_DEMS has it); --site-map simple: plot_site_map
   undistorted_example.png                with --frame (mppp.colmap.plot_undistorted_example)
 """
 from __future__ import annotations
@@ -40,6 +45,23 @@ def finished_blocks(root: Path, group: str = "navcam_consensus"):
     return out
 
 
+def site_map_from_maps(path: Path, dpi: int = 200) -> bool:
+    """The site map as figure 2 of the site-map study (``mppp maps figures 2``: crater | traverse with the official
+    blocks and their table; the 1 m DTM where M20_DEMS has it), copied to ``path``."""
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        r = subprocess.run([sys.executable, "-m", "mppp", "maps", "figures", "2", "--out", td, "--background", "dtm",
+                            "--tag", "dtm", "--dpi", str(dpi)])
+        found = sorted(Path(td).glob("m20_jezero_traverse_clusters_map*.png"))
+        if r.returncode or not found:
+            print("site map: mppp maps figures 2 failed - see above")
+            return False
+        shutil.copyfile(found[0], path)
+    print(f"site map: {path}")
+    return True
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the scapes root (default MPPP_SCAPES)")
@@ -56,6 +78,9 @@ def main(argv=None) -> int:
     ap.add_argument("--frame-model", default="NL", help="its camera: NL, NR (promoted model) or a COLMAP cameras JSON")
     ap.add_argument("--frame-mask", default=None)
     ap.add_argument("--frame-T", type=float, default=-20.0)
+    ap.add_argument("--zcam", default=None, help="a Mastcam-Z calibration folder (zcam_calibration.py calibrate)")
+    ap.add_argument("--dpi", type=int, default=200)
+    ap.add_argument("--site-map", choices=["maps", "simple", "none"], default="maps")
     a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -64,7 +89,7 @@ def main(argv=None) -> int:
     from mppp.waypoints.sites import load_site_table
     from mppp.waypoints.table import snapshot_path
     study = Path(a.study) if a.study else None
-    tag = a.tag or (study.name.split("_")[2] if study and len(study.name.split("_")) > 2 else "run")
+    tag = a.tag or (study.name if study else "run")
     inuse = {"NL": M.load_camera("N", "L", a.cmods), "NR": M.load_camera("N", "R", a.cmods)}
     rig_inuse = M.load_rig("N", a.cmods)
     folders = [Path(b) for b in a.blocks] if a.blocks else (finished_blocks(Path(a.root), a.group) if a.root else [])
@@ -85,7 +110,7 @@ def main(argv=None) -> int:
             th = {e: C.thermal_terms(inuse[e].get("thermal")) for e in ("NL", "NR")}
             C.plot_rig_trends(rr, cons, rig_new["drift"], out / f"navcam_rig_trends_{tag}.png",
                               cx_inuse_px_per_degC=th["NR"]["cx_px"] - th["NL"]["cx_px"], label=a.label,
-                              model_label=f"{tag} drift model")
+                              model_label=f"{tag} drift model", dpi=a.dpi)
             tb = study / "thermal_bins.json"                 # 0.91: the tied joint's diagnostic block bins
             bins = json.loads(tb.read_text(encoding="utf-8")) if tb.is_file() else (F.thermal_bin_rows(res) if res else [])
             pu = study / "pp_units.json"                     # 0.91: the pointing pass's per-block principal points
@@ -93,7 +118,7 @@ def main(argv=None) -> int:
             if bins:
                 C.plot_intrinsics_vs_temperature(cons, inuse, bins, rr,
                                                  out / f"navcam_intrinsics_vs_temperature_{tag}.png", label=a.label,
-                                                 model_label=tag, pp_units=pp_units)
+                                                 model_label=tag, pp_units=pp_units, dpi=a.dpi)
         else:
             print(f"no rig_residuals.json in {study}: rig trends and intrinsics figures skipped")
     # ---- the block table against the joint the blocks were run with
@@ -121,17 +146,38 @@ def main(argv=None) -> int:
         if images:
             rows = sorted((B.lmst_site_row(k, list(v.values())) for k, v in images.items()), key=lambda r: r["first_sol"])
             window = (default_config().get("selection") or {}).get("lmst_window_h")
-            B.plot_lmst_histograms(images, rows, out / f"lmst_histogram_{tag}.png", tuple(window) if window else None)
+            B.plot_lmst_histograms(images, rows, out / f"lmst_histogram_{tag}.png", tuple(window) if window else None,
+                                   dpi=a.dpi)
             B.write_lmst_table(rows, out / f"lmst_histogram_{tag}_by_site.csv")
+    # ---- Mastcam-Z: the calibration folder's model and block lines
+    if a.zcam:
+        zd = Path(a.zcam)
+        zm = zd / "M2020_ZCAM034_focus_model.json"
+        if zm.is_file():
+            C.plot_zcam_rig_trends(json.loads(zm.read_text(encoding="utf-8")), out / f"zcam_rig_trends_{tag}.png",
+                                   dpi=a.dpi, label=zd.name)
+        bl = zd / "block_lines.json"
+        if bl.is_file():
+            sys.path.insert(0, str(HERE / "studies" / "calibration"))
+            import matplotlib
+            matplotlib.use("Agg")
+            from zcam_lines import plot_block_lines
+            plot_block_lines(json.loads(bl.read_text(encoding="utf-8")), out / f"zcam_focus_lines_vs_temperature_{tag}.png",
+                             dpi=a.dpi)
+        if not zm.is_file() and not bl.is_file():
+            print(f"no Mastcam-Z calibration in {zd}: zcam figures skipped")
     # ---- the traverse map
-    tab = load_site_table()
-    panos, samples = (), ()
-    if a.refdata:
-        sys.path.insert(0, str(Path(a.refdata)))
-        from refdata import PANOS, SAMPLES                                      # the site study's reference lists
-        panos, samples = PANOS, SAMPLES
-    B.plot_site_map(None, snapshot_path(), out / "site_map.png", terrain_dir=a.terrain, panos=panos, samples=samples,
-                    highlight=tab["groups"].get(a.group) or [])
+    if a.site_map == "maps":
+        site_map_from_maps(out / f"site_map_{tag}.png", a.dpi)
+    elif a.site_map == "simple":
+        tab = load_site_table()
+        panos, samples = (), ()
+        if a.refdata:
+            sys.path.insert(0, str(Path(a.refdata)))
+            from refdata import PANOS, SAMPLES                                      # the site study's reference lists
+            panos, samples = PANOS, SAMPLES
+        B.plot_site_map(None, snapshot_path(), out / f"site_map_{tag}.png", terrain_dir=a.terrain, panos=panos,
+                        samples=samples, highlight=tab["groups"].get(a.group) or [], dpi=a.dpi)
     if a.frame:
         import cv2
         from mppp.calib.constrain import camera_at

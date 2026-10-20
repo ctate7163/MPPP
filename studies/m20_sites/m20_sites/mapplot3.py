@@ -60,7 +60,11 @@ def draw_terrain(ax, gx, gy, Z, norm, ci, exag=3, alt=40, flat=None, coslat=None
         if np.isfinite(G).any():
             ortho_used.update(used)
             tint = CMAP(norm(Zf))[..., :3]
-            o3 = np.clip(0.82*G[..., None] + 0.18*tint, 0, 1)            # grey orthomosaic with a light elevation tint
+            if G.ndim == 3:                                            # a colour mosaic: as it is
+                o3 = np.clip(G, 0, 1)
+            else:
+                o3 = np.clip(0.82*G[..., None] + 0.18*tint, 0, 1)        # grey orthomosaic with a light elevation tint
+            G = G if G.ndim == 2 else np.nanmean(G, axis=-1)
             out = np.where(np.isfinite(G)[..., None], o3, out)
     ax.imshow(out, extent=[gx[0], gx[-1], gy[0], gy[-1]], origin='lower', interpolation='bilinear', zorder=0)
     lev = np.arange(np.floor(np.nanmin(Zf)/ci)*ci, np.nanmax(Zf)+ci, ci)
@@ -207,6 +211,30 @@ _NAME = {o['id']: o['name'] for o in sites}
 REGION_TITLE = {r: (f"{_REGION_LABEL[r]}: {_NAME[ids[0]]} to {_NAME[ids[-1]]}" if r != 'land'
                     else 'Crater floor: landing site and Séítah') for r, ids in RID.items()}   # follows the block list
 
+# the regional panels' titles, the same in figures 3-6 (20 Oct: figure 3 takes figure 6's)
+REGION_LONG = {'rimw': 'Crater rim west', 'whh': 'Crater rim', 'margin': 'Margin Unit and Neretva Vallis',
+               'fan': 'Upper Fan and Belva Crater', 'delta': 'Delta Front', 'land': 'Crater Floor and Séítah',
+               'mfan': 'Upper Fan, Belva Crater, Margin Unit and Neretva Vallis'}
+
+def region_sol_span(r, ids=None):
+    bl = [q for q in sites if q['id'] in (ids if ids is not None else RID[r])]
+    a_ = min(q['runs'][0][0] for q in bl); b_ = max(q['runs'][-1][1] for q in bl)
+    return f"{a_}–{b_}" + ('+' if b_ >= int(S.max()) else '')
+
+def region_title(ax, fig, letter, r, room_px, fs, ids=None):
+    """'D. Delta Front, sols 413–692, blocks 7–16' on one line, shrunk to fit ``room_px`` (down to 7 pt); two lines
+    when it still does not fit."""
+    ids = ids if ids is not None else RID[r]
+    one = f"{letter}. {REGION_LONG[r]}, sols {region_sol_span(r, ids)}, blocks {ids[0]}–{ids[-1]}"
+    f = fs
+    while True:
+        t = ax.set_title(one, loc='left', fontsize=f, color=INK)
+        if t.get_window_extent(fig.canvas.get_renderer()).width <= room_px: return t
+        if f < 7.25: break
+        f -= 0.25
+    return ax.set_title(f"{letter}. {REGION_LONG[r]},\nsols {region_sol_span(r, ids)}, blocks {ids[0]}–{ids[-1]}",
+                        loc='left', fontsize=fs, color=INK)
+
 def fig3(out):
     """A | B (crater, traverse) over C (the block table, rows for every block) over six regional panels, lettered in
     the order they appear: row 1 = D upper fan (wide, left-justified with A), E delta front, F crater floor; row 2 =
@@ -264,7 +292,7 @@ def fig3(out):
         gx, gy, Z, _ = T[r]; draw_terrain(ax, gx, gy, Z, norms[r], ci[r], exag=2)
         overlay(ax, boxes[r], ids=RID[r], eod=True, squares=True, fs=8*FS)
         scalebar(ax, boxes[r], *bar[r], where='right' if r in wide else 'left')
-        ax.set_title(f"{letters[r]}. {REGION_TITLE[r]}", loc='left', fontsize=9.5*FS, color=INK)
+        region_title(ax, fig, letters[r], r, (w + (cslot if cl else gap) - 0.1)*fig.dpi, 9.5*FS)
         ax.tick_params(labelsize=6.5*FS); ax.ticklabel_format(useOffset=False)
         ax.xaxis.set_major_locator(plt.MaxNLocator(3 if w == s else 6)); ax.yaxis.set_major_locator(plt.MaxNLocator(6))
         if x == x0: ax.set_ylabel('Latitude [°N]')                   # the left-most column

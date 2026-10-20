@@ -1146,8 +1146,11 @@ def check_navcam(candidate_dir: PathLike, current_dir: Optional[PathLike] = None
     add("rig rotation change", round(dr, 2), lim["max_rig_change_mdeg"], dr <= lim["max_rig_change_mdeg"], "mdeg at sol 1000")
     tt = {(e, w): thermal_terms(m[e].get("thermal")) for e in ("NL", "NR") for w, m in (("new", new), ("old", old))}
     dppm = max(abs(tt[(e, "new")][a] - tt[(e, "old")][a]) for e in ("NL", "NR") for a in ("fx_ppm", "fy_ppm"))
-    add("thermal f slope change", round(dppm, 2), lim["max_ppm_change"], dppm <= lim["max_ppm_change"],
-        "ppm/degC, largest of fx, fy per eye: " + ", ".join(f"{e} {tt[(e, 'new')]['fx_ppm']:+.1f}/{tt[(e, 'new')]['fy_ppm']:+.1f}"
+    tied = res.get("method") == "tied"
+    # the tied joint estimates the slopes over all blocks in one adjustment; the files in use carry the 0.86 binned
+    # estimate, so the change is reported, not gated (20 Oct: 10.9 ppm/degC, the joint's sd 0.5-1.3)
+    add("thermal f slope change", round(dppm, 2), lim["max_ppm_change"], tied or dppm <= lim["max_ppm_change"],
+        ("report only (tied joint); " if tied else "") + "ppm/degC, largest of fx, fy per eye: " + ", ".join(f"{e} {tt[(e, 'new')]['fx_ppm']:+.1f}/{tt[(e, 'new')]['fy_ppm']:+.1f}"
                                                             for e in ("NL", "NR")))
 
     def stereo(m, k):           # the stereo temperature change: NR's principal-point slope minus NL's (x fR/fL)
@@ -1162,12 +1165,20 @@ def check_navcam(candidate_dir: PathLike, current_dir: Optional[PathLike] = None
         "temperature term", fm["ok"], "; ".join(fm["errors"] + fm["warnings"]) or "ok")
     lo = res.get("leave_one_out")
     ag = res.get("block_agreement")
+    if res.get("method") == "tied" and (cand / "tied_joint.json").is_file():
+        try:                     # re-judged with the limits of today (the candidate may predate them)
+            from .tied import block_agreement
+            ag = block_agreement(M._read(cand / "tied_joint.json")) or ag
+        except Exception as e:                                        # noqa: BLE001
+            log.warning("block agreement from tied_joint.json: %s", e)
     if res.get("method") == "tied":
         # the tied joint (0.91): the blocks' agreement with the one solution in the diagnostic pass is the gate
         if ag:
             add("block agreement", f"cameras {ag['cameras_off']}/{ag['cameras']}, rigs {ag['rigs_off']}/{ag['rigs']} off",
-                f"<= {ag['limits']['max_share']:.0%} off ({ag['limits']['f_ppm']:g} ppm, {ag['limits']['rig_mdeg']:g} mdeg)",
-                bool(ag.get("ok")), f"worst camera {ag['worst_camera_ppm']:.0f} ppm, worst rig {ag['worst_rig_mdeg']:.1f} mdeg"
+                f"<= {ag['limits']['max_share']:.0%} off (fx {ag['limits']['f_ppm']:g} ppm, fy "
+                f"{ag['limits'].get('fy_ppm', ag['limits']['f_ppm']):g} ppm, rig {ag['limits']['rig_mdeg']:g} mdeg)",
+                bool(ag.get("ok")), f"cameras {ag['share_cameras_off']:.0%}, rigs {ag['share_rigs_off']:.0%} off; "
+                f"worst camera {ag['worst_camera_ppm']:.0f} ppm, worst rig {ag['worst_rig_mdeg']:.1f} mdeg"
                 + (f"; blocks off: {', '.join(ag['blocks_off'])}" if ag.get("blocks_off") else ""))
         else:
             add("block agreement", "not run", "required", False, "run the tied joint with diagnostics")

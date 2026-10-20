@@ -3,19 +3,19 @@
  "sensor": "NR",
  "R_sensor_from_ref": [
   [
-   0.9999991490873967,
-   0.0010730404414347847,
-   0.0007418953386745005
+   0.999999259555157,
+   0.000990639804771994,
+   0.00070676864316505
   ],
   [
-   -0.0010741971456595457,
-   0.9999982054935859,
-   0.0015604839314592072
+   -0.0009918875992955224,
+   0.999997946346997,
+   0.001767331541884542
   ],
   [
-   -0.0007402195449718916,
-   -0.001561279545478945,
-   0.9999985072394889
+   -0.0007050164027338836,
+   -0.0017680312683257425,
+   0.9999981885070124
   ]
  ],
  "rotvec_rad": [
@@ -936,56 +936,45 @@
    }
   }
  },
- "note": "x_NR = R x_NL + t. Navcam consensus 2026-10-20 (16 blocks); yaw +42.46, pitch -89.43, roll -61.51 mdeg. One yaw for every block: no temperature term (NR cx carries it), the yaw follows its sol rate; pitch and roll follow the mission drift. Translation fitted earlier, carried over from the cameras in use (baseline 0.42401 m; translation = fitted) - the new large-block fit, translation_fit, is recorded but not applied.",
+ "note": "x_NR = R x_NL + t. Navcam tied joint 2026-10-20 (22 blocks): rotation at sol 0, yaw +40.44, pitch -101.28, roll -56.80 mdeg; rates pitch +5.36, yaw +2.90, roll -4.93 mdeg/1000 sol (pitch before sol 250: +27.91). Translation held. rewritten from tied_joint.json with applied_terms (20 Oct)",
  "drift": {
   "model": "linear+hinge",
-  "sol0": 932.2307692307693,
-  "blocks": 13,
+  "sol0": 0.0,
+  "knot_sol": 250.0,
+  "knot_ref": 0.0,
+  "pitch_mdeg_per_sol": 0.0053648756364592055,
+  "yaw_mdeg_per_sol": 0.002900943422501099,
+  "roll_mdeg_per_sol": -0.004933369673982572,
+  "pitch_early_mdeg_per_sol": 0.027913908160663102,
+  "hinge_angles": [
+   "pitch"
+  ],
+  "blocks": 22,
   "blocks_names": [
-   "Bell Island",
-   "Belva Crater",
-   "Bunsen Peak",
-   "Chal Rocks Sid",
-   "Marble Mountain",
-   "Origny Large",
-   "Rockytop",
-   "Seitah North",
-   "Taylorfjellet Large",
-   "Three Forks North",
-   "Three Forks South",
-   "Tuxedo Park",
-   "Van Zyl"
+   "artuby_ridge",
+   "bell_island_large",
+   "belva_crater_large",
+   "bunsen_peak",
+   "chal_rocks",
+   "chal_rocks_large",
+   "cheyava_falls",
+   "enchanted_lake",
+   "hippo_pools",
+   "issole_seitah_south",
+   "marble_mountain",
+   "oeb_landing_site",
+   "origny_large",
+   "rochette",
+   "rockytop",
+   "seitah_north_large",
+   "south_arm",
+   "taylorfjellet_huge",
+   "taylorfjellet_large",
+   "threeforks_large",
+   "tuxedo_park",
+   "witch_hazel_hill"
   ],
-  "sol_range": [
-   64.0,
-   1979.0
-  ],
-  "T_mean_degC": -17.192303846153848,
-  "knot_sol": 300.0,
-  "knot_ref": 277.15384615384613,
-  "pitch_fit_mdeg_per_sol": 0.005468631743657528,
-  "pitch_se": 0.0002872079644637576,
-  "pitch_p": 7.851851134423751e-81,
-  "pitch_T_mdeg_per_degC": -0.10355462012203241,
-  "pitch_tau_mdeg": 0.5234848218308251,
-  "pitch_mdeg_per_sol": 0.005468631743657528,
-  "pitch_early_mdeg_per_sol": 0.0372357234749555,
-  "pitch_early_se": 0.0027492897732324445,
-  "yaw_fit_mdeg_per_sol": 0.0021612675573975887,
-  "yaw_se": 0.001788755354360203,
-  "yaw_p": 0.37863685355892374,
-  "yaw_T_mdeg_per_degC": -1.453452282789378,
-  "yaw_tau_mdeg": 3.782161555294067,
-  "yaw_mdeg_per_sol": 0.0021612675573975887,
-  "roll_fit_mdeg_per_sol": -0.004220208405692107,
-  "roll_se": 0.0012703964404023988,
-  "roll_p": 0.0008938694064984091,
-  "roll_T_mdeg_per_degC": 0.08436332376913333,
-  "roll_tau_mdeg": 2.6864509112569945,
-  "roll_mdeg_per_sol": -0.004220208405692107,
-  "no_drift": [],
-  "note": "slow change of the rig over the mission (between-block regression on sol, with the camera temperature); SfmProject.create turns the start rig by rate x (block median sol - sol0) + (early_rate - rate) x (min(sol, knot_sol) - knot_ref) (v0p35.1: faster early in the mission)",
-  "yaw_early_mdeg_per_sol": 0.0021612675573975887
+  "source": "tied joint (2026-10-20): yaw and roll linear in sol, pitch with the early hinge, all fitted with the cameras in one adjustment; sd mdeg/1000 sol {'pitch': 0.05218711518691906, 'yaw': 0.1505357621100728, 'roll': 0.07665689454026706}"
  },
  "yaw_constant": true,
  "translation_fit": {
@@ -1056,5 +1045,6 @@
  },
  "translation_source": "joint with the cameras and the rotation",
  "translation": "fitted",
- "family": "N"
+ "family": "N",
+ "source": "MPPP Navcam tied joint (mppp.calib.tied.fit_tied, 2026-10-20)"
 }

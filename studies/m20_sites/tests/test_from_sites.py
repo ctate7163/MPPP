@@ -14,7 +14,7 @@ def test_blocks_from_sites_packaged():
     assert len(blocks) == len(doc["official_blocks"])
     assert [b["id"] for b in blocks] == sorted(b["id"] for b in blocks)
     for b in blocks:
-        assert b["runs"] == sorted(b["runs"]) and b["first"] == b["runs"][0][0]
+        assert b["runs"] == sorted(b["runs"]) and b["first"] <= b["runs"][0][0]   # a visit left out of the figures only (MAP_OMIT_VISITS) keeps first
         assert b["region"] in {"crater_rim_west", "crater_rim", "margin_unit_neretva_vallis", "upper_fan_belva",
                                "delta_front", "crater_floor_seitah"}
 

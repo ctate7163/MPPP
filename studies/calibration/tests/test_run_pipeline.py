@@ -87,16 +87,15 @@ def test_bats():
     for b, needs in (("run_pipeline.bat", b"studies\\calibration\\run_pipeline.py"),
                      ("run_v0p91.bat", b"--stop-before zcam_start"),
                      ("navcam_tied_joint.bat", b"calib navcam"),
-                     ("zr_diagnose_z34.bat", b"MPPP_ZCAM_TRACE=1")):
+                     ("make_figures.bat", b"paper_figures.py"), ("m20_dem_env.bat", b"M20_ORTHOS"),
+                     ("make_maps.bat", b"m20_dem_env.bat"), ("run_z34.bat", b"--group zcam34_consensus --zcam")):
         t = (WIN / b).read_bytes()
         assert b"\r\n" in t and needs in t
         assert b'"%~dp0..\\..\\.."' not in t, b                        # the repo is two levels up, not three
     assert not (HERE / "windows").exists()
     bat = (WIN / "run_v0p91.bat").read_text()
     assert "--reset --from navcam_runs --no-baseline-study" in bat
-    z = (WIN / "zr_diagnose_z34.bat").read_bytes()
-    assert b"--group zcam34_diag --zcam" in z
-    assert b"zcam_calibration.py\" calibrate --root \"%ROOT%\" --groups zcam34_diag --n 0 --promote" in z
+    assert not (WIN / "zr_diagnose_z34.bat").exists()                     # removed 20 Oct
 
 
 def test_pipeline_dry_run_leaves_no_state(tmp_path):
