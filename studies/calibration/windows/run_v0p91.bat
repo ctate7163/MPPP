@@ -18,7 +18,7 @@ REM
 REM Same window, log and stop rules as run_pipeline.bat (stop_mppp.bat to stop; double-click this again to go on).
 REM ======================================================================================================
 setlocal
-if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
+if not defined MPPP_HOME for %%I in ("%~dp0..\..\..") do set "MPPP_HOME=%%~fI"
 call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
 python -m mppp doctor
 python -m mppp waypoints --refresh
