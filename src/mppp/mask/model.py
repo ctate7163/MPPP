@@ -44,8 +44,8 @@ DEFAULT_CARD: Dict[str, Any] = {
     "threshold": 0.4,
     "dilate_kernel": 3,
     "state_dict_key": "model",
-    "stride4": False,                # v0p6: stride-4 skip in the decoder (absent in older cards)
-    # v0p6: frames whose long side exceeds this are processed as four overlapping quadrants
+    "stride4": False,                # stride-4 skip in the decoder (absent in older cards)
+    # frames whose long side exceeds this are processed as four overlapping quadrants
     # (training and inference).  None (absent in older cards) = never split.
     "quad_split_above": None,
     "quad_overlap": 64,              # px at full resolution, each side of the centre lines
@@ -304,7 +304,7 @@ def card_path(checkpoint: PathLike) -> Path:
     return Path(checkpoint).with_suffix(".json")
 
 
-SAFETENSORS_CARD_KEY = "mppp_card"          # v0p13: the model card travels inside the .safetensors metadata
+SAFETENSORS_CARD_KEY = "mppp_card"          # the model card travels inside the .safetensors metadata
 
 
 def _safetensors_card(checkpoint: PathLike) -> Optional[Dict[str, Any]]:

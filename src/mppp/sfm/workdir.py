@@ -1,8 +1,8 @@
 """
-A site's WORK folder (v0p43): what notebook 03 needs to align the images already processed there, and to rerun
+A site's WORK folder: what notebook 03 needs to align the images already processed there, and to rerun
 an alignment cheaply.
 
-A WORK folder (v0p53: ``<SCAPES_ROOT>/mars2020_sol_<sol>_<site>`` or ``..._zcam``) holds ``processed/`` (images,
+A WORK folder (``<SCAPES_ROOT>/mars2020_sol_<sol>_<site>`` or ``..._zcam``) holds ``processed/`` (images,
 masks, the manifest ``mppp_manifest_v*.json``) and one COLMAP project per variant: ``colmap/`` for the default
 run and ``colmap_<variant>/`` for experiments (other SfM settings or camera models) that should not overwrite it.
 
@@ -159,12 +159,12 @@ def load_settings(path: PathLike) -> Dict[str, Any]:
     return {k: v for k, v in d.items() if not str(k).startswith("_")}
 
 
-MIN_INCLUDED_FRACTION = None   # v0p85: off (v0p82: 1/3 - a misreading of Christian's 1/3 rule, which is about sub-frames: NAVCAM_MIN_FRAME_FRACTION); notebook 03 MIN_INCLUDED_FRACTION
+MIN_INCLUDED_FRACTION = None   # off (1/3 - a misreading of Christian's 1/3 rule, which is about sub-frames: NAVCAM_MIN_FRAME_FRACTION); notebook 03 MIN_INCLUDED_FRACTION
 
 
 def filter_included_fraction(metas: Sequence[Dict[str, Any]], min_fraction: Optional[float] = MIN_INCLUDED_FRACTION
                              ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """v0p82: ``(kept, removed)`` - images whose mask keeps less than ``min_fraction`` of the image are left out.
+    """``(kept, removed)`` - images whose mask keeps less than ``min_fraction`` of the image are left out.
     The share is the manifest's ``mask.included_fraction`` (pixels the mask keeps: everything but rover hardware,
     rover shadows and other artificial objects; the sky is kept - mppp_mask does not mask it).  Images without the
     value (no mask) are kept; ``min_fraction`` None or 0: nothing is removed.  ``removed`` lists ``{"image",

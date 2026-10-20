@@ -73,7 +73,7 @@ def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX
                         first_octave: int = DEFAULT_FIRST_OCTAVE) -> bool:
     """
     True if ``features.db`` exists and was extracted with these settings from
-    the same image and mask files (``features.json`` beside it; v0p14.7: file
+    the same image and mask files (``features.json`` beside it; file
     sizes and modification times, so images processed again - e.g. with
     another mask model - are extracted again).
     """
@@ -96,7 +96,7 @@ def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX
         return False
     files = done.get("files")
     if not isinstance(files, dict):
-        return False                                   # recorded before v0p14.7: file state unknown
+        return False                                   # recorded before file state unknown
     now = image_fingerprints(project)
     return all(files.get(n) == now[n] for n in names)
 
@@ -115,20 +115,20 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
             --SiftExtraction.max_num_features 16380 --SiftExtraction.max_image_size 5120
 
     An existing ``features.db`` is reused only if ``features.json`` beside it
-    records the same settings and covers every project image (v0p14.3);
+    records the same settings and covers every project image;
     otherwise - e.g. after changing ``max_num_features`` - it is extracted
     again.  ``overwrite=True`` always extracts again.
 
     ``python``: run this step in another Python environment, e.g. a conda one
     with a CUDA pycolmap (v0p11, see :mod:`mppp.sfm.gpu`).
 
-    ``domain_size_pooling`` (DSP-SIFT) and ``estimate_affine_shape`` (v0p22):
+    ``domain_size_pooling`` (DSP-SIFT) and ``estimate_affine_shape``:
     descriptors pooled over several scales, and affine-adapted keypoint
     regions - both make SIFT more tolerant of the perspective change between
     strongly converging views (notebook 03, "high convergence").  COLMAP runs
     either on the CPU only (several times slower than the GPU).
 
-    ``num_octaves``, ``first_octave`` (v0p63): the SIFT scale range.  COLMAP's default (4, -1) detects at 2x, 1x,
+    ``num_octaves``, ``first_octave``: the SIFT scale range.  COLMAP's default (4, -1) detects at 2x, 1x,
     1/2 and 1/4 of the image, so two images match over about 4-8x of scale at best.  More octaves (5: down to 1/8,
     6: 1/16) add coarse features to the finer camera - a Mastcam-Z frame seen against a half- or quarter-resolution
     Navcam frame - at little cost; they do nothing for the coarser camera.
@@ -223,7 +223,7 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
     """
     import pycolmap
     from .thermal import strip_thermal_bins
-    strip_thermal_bins(project)                             # v0p31: one camera per eye before the database is built
+    strip_thermal_bins(project)                             # one camera per eye before the database is built
     fdb_path = Path(features_db) if features_db else project.features_db
     out = Path(database) if database else project.database
     prev = None
@@ -235,7 +235,7 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
                 prev = out.with_name(out.stem + "_previous.db")
                 if prev.exists():
                     prev.unlink()
-                out.rename(prev)                             # v0p43: its matches are copied into the new database
+                out.rename(prev)                             # its matches are copied into the new database
                 os.replace(matches_record_path(out), matches_record_path(prev))
             else:
                 out.unlink()
@@ -263,7 +263,7 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
     # rigs: stereo families -> left reference + right sensor; any other camera -> trivial rig
     rig_of: Dict[str, int] = {}
     ref_of_rig: Dict[int, str] = {}
-    rig_of_key: Dict[str, int] = {}                       # v0p75: rig key ("N", "N#1", "Z034") -> rig id (recorded)
+    rig_of_key: Dict[str, int] = {}                       # rig key ("N", "N#1", "Z034") -> rig id (recorded)
     for fam, r in sorted(project.rig.items()):
         if r["ref"] not in cam_ids:
             continue
@@ -286,7 +286,7 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
             rig_of[instr] = db.write_rig(rig)
             ref_of_rig[rig_of[instr]] = instr
 
-    # frames = exposures; a frame must contain its rig's reference sensor.  v0p30: an exposure of a
+    # frames = exposures; a frame must contain its rig's reference sensor.  an exposure of a
     # stereo rig without its reference image (a right image whose left is missing - at Pearce Canyon 16
     # of 176 Navcam images) goes into a one-sensor rig with that camera as reference, so it is posed
     # from its own CAHV prior and shares the camera's intrinsics instead of being left out.
@@ -344,13 +344,13 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
     db.close()
     fdb.close()
     summary = {"database": str(out), "cameras": cam_ids, "rigs": len(set(rig_of_key.values()) | set(solo_rig.values())),
-               "rig_ids": rig_of_key,                      # v0p75: rig key -> rig id
+               "rig_ids": rig_of_key,                      # rig key -> rig id
                "frames": len({r.get('frame_id') for r in project.images if r.get('frame_id')}),
                "images": len(project.images) - len(skipped), "keypoints": int(n_kp), "images_without_frame": skipped,
                "single_eye_rigs": {k: int(v) for k, v in solo_rig.items()},
                "single_eye_images": sorted(r["name"] for (rid, _), rs in groups.items() if rid in solo_rig.values()
                                            for r in rs)}
-    if keep_matches and matching is not None:              # v0p43: matches of the previous / base databases
+    if keep_matches and matching is not None:              # matches of the previous / base databases
         sources = ([prev] if prev else []) + [Path(x) for x in reuse_matches_from if x and Path(x) != out]
         reused = reuse_matches(project, [x for x in sources if x.is_file()], database=out,
                                matching=matching) if sources else None
@@ -371,14 +371,14 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
     return summary
 
 
-# --- v0p43: match reuse -------------------------------------------------------------------------------------------
+# --- match reuse -------------------------------------------------------------------------------------------
 MAX_NUM_IMAGES = 2147483647                                   # COLMAP kMaxNumImages (pair_id = id1 * this + id2)
 MATCH_KEYS = ("mode", "max_ratio", "max_distance", "cross_check", "guided_matching", "max_error_px",
               "min_num_inliers", "max_num_matches", "max_keypoints", "filter_threshold")
 
 
 def matches_record_path(database: PathLike) -> Path:
-    """``database_matches.json`` beside a ``database.db``: what its matches were made from (v0p43)."""
+    """``database_matches.json`` beside a ``database.db``: what its matches were made from."""
     d = Path(database)
     return d.with_name(d.stem + "_matches.json")
 
@@ -425,7 +425,7 @@ def _pair_id(i: int, j: int) -> int:
 def reuse_matches(project: SfmProject, sources: Sequence[PathLike], database: Optional[PathLike] = None,
                   matching: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    v0p43: copy the matches of earlier databases (``sources``) into ``database`` (default ``project.database``,
+    copy the matches of earlier databases (``sources``) into ``database`` (default ``project.database``,
     freshly written by :func:`build_database`), by image name.  A source is used only if its
     ``*_matches.json`` records the same features (:func:`features_key`) and - when ``matching`` is given - the
     same matching settings.  Raw matches of every pair whose two images are both in the new database are copied;
@@ -525,7 +525,7 @@ COLMAP_BAT_CANDIDATES = (r"C:\Program Files\COLMAP\COLMAP.bat", r"%LOCALAPPDATA%
 def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba",
                       colmap_bat: Optional[str] = None) -> Dict[str, str]:
     """
-    Files to open the project in the COLMAP GUI (v0p14.4, v0p14.5), in the project folder:
+    Files to open the project in the COLMAP GUI, in the project folder:
 
     * ``open_in_colmap.bat`` - Windows, double-click: opens the GUI with the
       NATIVE-pixel viewing copy ``gui_native/`` (database + refined model, see
@@ -541,7 +541,7 @@ def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba",
     * ``colmap_gui.ini`` / ``gui_native/colmap_gui.ini`` - COLMAP project files
       for File > Open project (then File > Import model).
 
-    ``colmap_bat`` (v0p30): the COLMAP.bat to start (notebook 03 ``COLMAP_BAT``;
+    ``colmap_bat``: the COLMAP.bat to start (notebook 03 ``COLMAP_BAT``;
     kept in ``project.settings["colmap_bat"]``).  The batch file tries, in
     order: that path, the ``COLMAP_BAT`` environment variable, the usual
     install folders (``COLMAP_BAT_CANDIDATES``) and the PATH, then starts the

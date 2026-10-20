@@ -454,7 +454,7 @@ def fit_to_colmap(model: str, params: Sequence[float], width: int, height: int, 
 
     starts = [np.array(x0, float)]
     if kind == "CAHVORE" and fit_linearity:
-        # v0p30: the type-3 fit from linearity 1 alone can end in a far minimum (a 50 deg O tilt, points
+        # the type-3 fit from linearity 1 alone can end in a far minimum (a 50 deg O tilt, points
         # that no longer project: seen for a nine-scape Navcam consensus); also start from the type-2
         # geometry at several linearities and keep the best finite solution
         g2, _ = fit_to_colmap(model, params, width, height, "CAHVORE", 2, False, step)

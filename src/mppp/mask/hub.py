@@ -1,5 +1,5 @@
 """
-Released mask models (v0p13): safetensors export, the model registry, download
+Released mask models: safetensors export, the model registry, download
 and local installation.
 
 The released model is one ``.safetensors`` file with the model card embedded
@@ -120,7 +120,7 @@ def export_safetensors(checkpoint: PathLike, out: Optional[PathLike] = None, nam
     from safetensors.torch import save_file
     from .model import SAFETENSORS_CARD_KEY, read_card, read_state_dict_checkpoint
     src = Path(checkpoint)
-    if not src.is_file():                                   # v0p22.4: a bare name, or a path relative to the
+    if not src.is_file():                                   # a bare name, or a path relative to the
         for cand in (checkpoints_dir() / src.name, checkpoints_dir() / src):   # repo run from notebooks/
             if cand.is_file():
                 src = cand
@@ -140,7 +140,7 @@ def export_safetensors(checkpoint: PathLike, out: Optional[PathLike] = None, nam
         fname = reg["models"][name]["file"] if name and name in reg["models"] else f"{name or src.stem}.safetensors"
         out = src.parent / fname
     out = Path(out)
-    # no MPPP version in the card (v0p14): the file - and its SHA-256 - depend only on the checkpoint
+    # no MPPP version in the card: the file - and its SHA-256 - depend only on the checkpoint
     card = dict(card, exported_from=src.name)
     if name:
         card["release_name"] = name
@@ -218,7 +218,7 @@ def _download(url: str, dst: Path, timeout: float = 60.0) -> None:
 def local_candidates(name: str) -> List[Path]:
     """
     Local files that can stand in for registry model ``name`` when it cannot
-    be downloaded (v0p14.1), in order: the released ``.safetensors`` in
+    be downloaded, in order: the released ``.safetensors`` in
     ``checkpoints_dir()``, the checkpoint it was exported from
     (``source_checkpoint``, e.g. ``convnext_tiny_s4_seg_best.pt``), and the
     promoted best of the same architecture.

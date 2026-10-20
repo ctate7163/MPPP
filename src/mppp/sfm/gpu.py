@@ -1,5 +1,5 @@
 """
-GPU feature extraction and matching in a second Python environment (v0p11).
+GPU feature extraction and matching in a second Python environment.
 
 Why: on Windows the pip ``pycolmap`` wheel has no CUDA.  conda-forge has a
 CUDA build, but its ``ceres::Problem`` / cost-function types are not

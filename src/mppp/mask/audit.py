@@ -3,7 +3,7 @@ Frame audit (v0p10; statistics v0p12): run a trained mask model over the
 training set and rank frames by agreement with their labels, to find bad
 labels and bad images.
 
-v0p12: ranked by the % of the frame that is wrong (``error_pct``) by default.
+ranked by the % of the frame that is wrong (``error_pct``) by default.
 IoU is meaningless for frames without terrain (sky, calibration target, rover
 deck): a single false pixel gives 0, so the IoU ranking was all such frames.
 Also recorded: ``interior_error_pct`` (errors away from label edges = wrong

@@ -30,7 +30,7 @@ def iter_imgs(input_dir: PathLike) -> Iterable[Tuple[Path, M2020Filename]]:
 
 
 def in_sol_range(sol: int, sol_range: Any) -> bool:
-    """v0p75: is ``sol`` inside ``sol_range`` - one ``(first, last)`` or a list of them?"""
+    """is ``sol`` inside ``sol_range`` - one ``(first, last)`` or a list of them?"""
     return any(a <= int(sol) <= b for a, b in sol_ranges(sol_range))
 
 
@@ -55,7 +55,7 @@ def find_imgs(input_dir: PathLike, camera_codes: Sequence[str],
             continue
         if fn.thumbnail and not include_thumbnails:
             continue
-        if sol_range and not in_sol_range(fn.sol, sol_range):       # v0p75: one range or several visits
+        if sol_range and not in_sol_range(fn.sol, sol_range):       # one range or several visits
             continue
         if site_drive and (fn.site, fn.drive) != tuple(site_drive):
             continue
@@ -73,22 +73,21 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
     """
     The products of ``sol_range`` plus, for sites the rover visited more than
     once, the products of every other waypoint station within ``radius_m``
-    metres of one of the stations imaged in ``sol_range`` - whatever their sol
-    (v0p22.2).  Stations are (site, drive) from the file names, placed by the
+    metres of one of the stations imaged in ``sol_range`` - whatever their sol.  Stations are (site, drive) from the file names, placed by the
     waypoint table (``mppp.load_waypoints()``).  ``radius_m=None`` or 0 gives
     :func:`find_imgs` over ``sol_range`` alone.  Returns ``(paths, report)``;
     the report lists the stations in range, the stations added with their
     distance, and the image count per added station.
 
-    v0p75: ``sol_range`` may be a list of ranges (the visits of a site, ``sites.json`` ``"sols": [[361, 378], [91, 101]]``):
+    ``sol_range`` may be a list of ranges (the visits of a site, ``sites.json`` ``"sols": [[361, 378], [91, 101]]``):
     every image of every visit is "in range", and the nearby-waypoint search starts from all their stations.
 
-    ``anchor_stations`` (v0p53.1): the stations the nearby search starts from (``(site, drive)`` or ``"S###D####"``)
+    ``anchor_stations``: the stations the nearby search starts from (``(site, drive)`` or ``"S###D####"``)
     instead of the stations these cameras imaged in ``sol_range`` - notebook 03 passes the Navcam block's stations, so
     a Mastcam-Z zoom gets the products of the same visits as the Navcam (e.g. Sid's sols 91-101 for the 361-378
     block) even where it took no image in ``sol_range``.
 
-    ``min_sol`` (v0p85): the nearby visits add no image from before this sol (notebook 03 ``NEARBY_FROM_FIRST_SOL``:
+    ``min_sol``: the nearby visits add no image from before this sol (notebook 03 ``NEARBY_FROM_FIRST_SOL``:
     the block's first sol, so e.g. Rochette starts at sol 178, not with the sol-175 station 9 m away).
     """
     from .waypoints import stations_near
@@ -105,7 +104,7 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
         if sequ_id and sequ_id.upper() not in name[35:]:
             continue
         cands.append((fp, fn))
-    in_range = [(fp, fn) for fp, fn in cands if in_sol_range(fn.sol, sol_range)]      # v0p75: several visits
+    in_range = [(fp, fn) for fp, fn in cands if in_sol_range(fn.sol, sol_range)]      # several visits
     stations = sorted({(fn.site, fn.drive) for _, fn in in_range})
     if anchor_stations is not None:
         anc = set()

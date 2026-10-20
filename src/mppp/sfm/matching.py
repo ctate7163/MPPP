@@ -33,7 +33,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     """Match and verify; results go into ``project.database``.  Returns a summary.
     ``python``: run in another Python environment, e.g. a conda one with a CUDA
     pycolmap (v0p11, see :mod:`mppp.sfm.gpu`).  ``max_ratio``, ``max_distance``,
-    ``cross_check`` (v0p22): SIFT matching (Lowe ratio test, descriptor distance,
+    ``cross_check``: SIFT matching (Lowe ratio test, descriptor distance,
     mutual best match); ``guided_matching``: a second pass guided by the
     verified two-view geometry; ``max_error_px``: RANSAC threshold of the
     geometric verification, full-resolution pixels.  ``max_keypoints``, ``filter_threshold``, ``device``: LightGlue
@@ -63,7 +63,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
         except RuntimeError as e:
             if not any(k in str(e) for k in CALIBRATED_ABORT_SIGNS):
                 raise
-            # v0p73: COLMAP 4.2 aborted in the calibrated two-view verification (Rockytop N+Z34, 3 Oct: "Check
+            # COLMAP 4.2 aborted in the calibrated two-view verification (Rockytop N+Z34, 3 Oct: "Check
             # failed: cam_rays1_with_jac.size() >= kMinNumSamples (4 vs. 5)" - a pair whose keypoints mostly fail to
             # unproject).  The Mastcam-Z cameras then lose their prior focal length in the database for one more run,
             # so their pairs are verified uncalibrated (fundamental matrix, no rays); the pairs already matched are kept
@@ -95,7 +95,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     device = pycolmap.Device.auto if use_gpu is None else (pycolmap.Device.cuda if use_gpu else pycolmap.Device.cpu)
     db = str(project.database)
     if mode == "exhaustive":
-        # v0p30: block_size images per block (COLMAP default 50): a block's descriptors are loaded once and every
+        # block_size images per block (COLMAP default 50): a block's descriptors are loaded once and every
         # pair inside it matched, so larger blocks mean fewer reloads and fewer GPU pipeline drains on a block
         # boundary; the verification of a block runs on num_threads CPU threads while the GPU matches the next
         po = pycolmap.ExhaustivePairingOptions()
@@ -145,14 +145,14 @@ def _finish(project: SfmProject, mode: str, max_error_px: float, min_num_inliers
     return summary
 
 
-# v0p74.9: + the homography check (Three Forks Large N+Z34, 6 Oct: "homography_matrix.cc:167] Check failed:
+# + the homography check (Three Forks Large N+Z34, 6 Oct: "homography_matrix.cc:167] Check failed:
 # cam_rays1.size() >= 4 (3 vs. 4)" - the same calibrated-verification abort, not caught by the retry)
 CALIBRATED_ABORT_SIGNS = ("kMinNumSamples", "essential_matrix.cc", "cam_rays1_with_jac", "homography_matrix.cc",
                           "cam_rays1.size()")
 
 
 def set_prior_focal(project: SfmProject, families: Sequence[str] = ("Z",), value: bool = False) -> int:
-    """v0p73: set ``has_prior_focal_length`` of the database cameras of these camera families (``"Z"``: Mastcam-Z) -
+    """set ``has_prior_focal_length`` of the database cameras of these camera families (``"Z"``: Mastcam-Z) -
     without it COLMAP verifies their pairs with a fundamental matrix instead of the calibrated (ray) estimators.
     Returns the number of cameras changed."""
     import pycolmap
@@ -170,7 +170,7 @@ def set_prior_focal(project: SfmProject, families: Sequence[str] = ("Z",), value
 
 
 def match_settings(mode: str = "exhaustive", **kwargs: Any) -> Dict[str, Any]:
-    """v0p43: the settings that decide the matches of :func:`match` (``kwargs`` as passed to it, the rest at its
+    """the settings that decide the matches of :func:`match` (``kwargs`` as passed to it, the rest at its
     defaults), for :func:`mppp.sfm.database.build_database` ``matching=`` (match reuse)."""
     import inspect
     from .database import MATCH_KEYS

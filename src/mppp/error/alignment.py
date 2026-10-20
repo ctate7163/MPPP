@@ -64,7 +64,7 @@ class Alignment:
     poses: List[Dict[str, Any]]
     summary: Dict[str, Any]
     residuals: Dict[str, np.ndarray] = field(default_factory=dict)
-    min_track_length: int = 2                   # v0p22: tie points with fewer images were left out
+    min_track_length: int = 2                   # tie points with fewer images were left out
     points_before_track_filter: int = 0
 
     @property
@@ -101,7 +101,7 @@ def _family(instrument: str) -> str:
 
 def load_alignment(path: PathLike, label: Optional[str] = None, min_track_length: int = 2) -> Alignment:
     """
-    One alignment's ``error_input``.  ``min_track_length`` (v0p22): keep only
+    One alignment's ``error_input``.  ``min_track_length``: keep only
     tie points observed in at least this many images (3 drops the two-view
     points, about half of all points and mostly single stereo pairs); every
     analysis then works on the kept points and their observations only.
@@ -251,7 +251,7 @@ def eps_table(al: Alignment) -> List[Dict[str, Any]]:
     eps = rms(residual)/sqrt(2) (one image axis, the error model's convention),
     for all observations and per instrument family / instrument, split by
     whether the track stays at one station ("intra") or spans stations ("cross").
-    Residuals are post-fit, so these are lower bounds.  ``eps_dof_px`` (v0p22)
+    Residuals are post-fit, so these are lower bounds.  ``eps_dof_px``
     corrects for the 3 coordinates each point absorbs: eps sqrt(2N / (2N - 3P))
     for N observations of P points (the camera parameters, a few per image,
     are neglected); for two-view points the factor is 2.  For a subset (one
@@ -303,7 +303,7 @@ def eps_by_range(al: Alignment, edges_m: Sequence[float] = (0, 2, 4, 6, 8, 10, 1
 def eps_by_angle(al: Alignment, edges_deg: Sequence[float] = (0, 1, 2, 3, 5, 7, 10, 15, 20, 30, 45, 90),
                  min_obs: int = 200) -> List[Dict[str, Any]]:
     """
-    eps against convergence angle (v0p22.2): for every observation the largest
+    eps against convergence angle: for every observation the largest
     ray angle of its point (``theta_max``) and the angle to the nearest other
     ray of the same point (``theta_nn``), same-station and cross-station tracks
     apart.  Rows: kind, angle, bin, n, eps_px, median_px.  A rise with angle
@@ -582,7 +582,7 @@ def fit_gate(pairs: Dict[str, Any], families: Optional[str] = None, tau_h: float
     the sun vectors [deg], e-fold ``sun0_deg``; "shadow" the shadow-tip
     distance of a unit post, e-fold ``s0``; "none").  s_intra is the
     same-station match rate (A is relative to it, as in ``ModelConfig.gate_A``).
-    Every parameter is fitted from the data (v0p22.2); ``fit_tau=False``
+    Every parameter is fitted from the data; ``fit_tau=False``
     holds the illumination e-fold at ``tau_h``.  ``n_boot`` > 0 adds a
     bootstrap over the sampled points (16-84 %).
     """

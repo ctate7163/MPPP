@@ -59,7 +59,7 @@ def panel_stats(gt: np.ndarray, prob: np.ndarray, threshold: float) -> Tuple[flo
     g = gt > 0
     p = prob > threshold
     union = np.logical_or(p, g).sum()
-    # v0p12: no terrain in truth and prediction is perfect agreement (IoU 1), not 0
+    # no terrain in truth and prediction is perfect agreement (IoU 1), not 0
     iou = float(np.logical_and(p, g).sum() / union) if union else 1.0
     diff = p.astype(np.int8) - g.astype(np.int8)
     return iou, 100.0 * float((diff < 0).mean()), 100.0 * float((diff > 0).mean()), diff
@@ -179,7 +179,7 @@ def plot_curves_file(debug_dir: PathLike) -> Path:
         a.set_xlabel("iteration", fontsize=8, color=MUTED_HEX)
         for e in range(1, int(np.nanmax(s) // n_iter) + 1):
             a.axvline(e * n_iter, color=GRID_HEX, lw=1.5)
-    ax[0].set_ylim(bottom=0)                            # loss and IoU axes start at zero (v0p6)
+    ax[0].set_ylim(bottom=0)                            # loss and IoU axes start at zero
     ax[1].set_ylim(0, 1.02)
     fig.tight_layout()
     tmp = d / "curves.tmp.png"

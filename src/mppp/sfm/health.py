@@ -1,5 +1,5 @@
 """
-Alignment health (v0p13): is the COLMAP alignment good enough to analyse?
+Alignment health: is the COLMAP alignment good enough to analyse?
 
 Run it after :func:`mppp.sfm.reconstruct` (and before any error analysis on the
 result).  Each check has a value, provisional warn/fail thresholds and a
@@ -13,7 +13,7 @@ tie points        points, observations, track-length population (incl. two-view 
 reprojection      native-pixel residuals: median, RMS, 95th percentile; per camera and resolution;
                   left/right balance; images whose median residual is far above the rest;
                   residual growth towards the image edge (distortion-model misfit);
-                  tie-point coverage in rings of image radius, and the corners vs the centre (v0p20)
+                  tie-point coverage in rings of image radius, and the corners vs the centre
 camera model      per camera: change in f, principal point and k1-k4, p1, p2 from the calibration, and the
                   resulting image displacement of the same ray (max / RMS over the frame)
 stereo rig        rotation of the right camera relative to the CAHV rig; baseline (held);
@@ -71,21 +71,21 @@ DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "rig_rotation_change_deg": (0.06, 0.2, "above"),       # doubled in v0p14.2
     "rig_cahv_spread_deg": (0.02, 0.1, "above"),
     "station_shift_median_m": (2.0, 6.0, "above"),          # doubled in v0p20 (user request)
-    # v0p30: attitude_change_p95_deg (block rotation + per-frame scatter) is reported without a verdict; the
+    # attitude_change_p95_deg (block rotation + per-frame scatter) is reported without a verdict; the
     # two parts are judged separately: block_rotation_deg and attitude_residual_p95_deg (label pointing
     # knowledge is ~0.1-0.35 deg per frame; the p95 over nine sites was 0.23-0.69 deg)
     "attitude_residual_p95_deg": (0.75, 2.0, "above"),
     "within_station_shift_spread_m": (0.1, 0.4, "above"),   # doubled in v0p20 (user request)
     "corner_triangulated_ratio": (0.5, 0.25, "below"),      # v0p20
-    # v0p30: the scale error of the station layout is judged as the displacement it makes at the stations
+    # the scale error of the station layout is judged as the displacement it makes at the stations
     # (|s - 1| x rms station distance from the centroid x sqrt(n)): 2 % over an 8 m block is 0.2 m, within the
     # waypoint accuracy; prior_scale_error_pct is reported without a verdict
     "prior_scale_error_m": (0.5, 1.5, "above"),
-    "block_rotation_deg": (0.3, 1.0, "above"),              # v0p30: the whole block turned away from the ENU frame
-    # v0p65: tie points far beyond the ground their rays point at (false matches that are epipolar-consistent):
-    # 0-4 % on nine good blocks, 24 % at Three Forks South with COLMAP guided matching (v0p63)
+    "block_rotation_deg": (0.3, 1.0, "above"),              # the whole block turned away from the ENU frame
+    # tie points far beyond the ground their rays point at (false matches that are epipolar-consistent):
+    # 0-4 % on nine good blocks, 24 % at Three Forks South with COLMAP guided matching
     "beyond_ground_fraction": (0.05, 0.15, "above"),
-    # v0p65: Navcam pixel aspect fy / fx against its start (the consensus): < 0.06 % on good blocks, 0.24 % at Three
+    # Navcam pixel aspect fy / fx against its start (the consensus): < 0.06 % on good blocks, 0.24 % at Three
     # Forks South and 0.2-0.3 % at Belva with Mastcam-Z
     "navcam_aspect_change_pct": (0.06, 0.15, "above"),
 }
@@ -115,7 +115,7 @@ def _camera_change(cam0: Dict[str, Any], cam1) -> Dict[str, Any]:
     f0, f1 = (p0[0], p1[0]) if one else (p0[0], p1[0])
     cx0, cy0 = (p0[1], p0[2]) if one else (p0[2], p0[3])
     cx1, cy1 = (p1[1], p1[2]) if one else (p1[2], p1[3])
-    # v0p20: rays through a pixel grid over the whole frame (corners included), undistorted with the initial
+    # rays through a pixel grid over the whole frame (corners included), undistorted with the initial
     # camera; pixels it cannot invert (the Navcam polynomial beyond ~0.88 of the corner radius) are left out
     gx, gy = np.meshgrid(np.linspace(0.5, w - 0.5, 33), np.linspace(0.5, h - 0.5, 25))
     xy0 = np.asarray(c0.cam_from_img(np.c_[gx.ravel(), gy.ravel()]), float)
@@ -148,13 +148,13 @@ def _rotation_deg(R: np.ndarray) -> float:
 RADIUS_EDGES = (0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0)
 
 
-GROUND_CAMERA_HEIGHT_M = 1.9     # v0p65: Navcam / Mastcam-Z camera height above the ground (remote sensing mast)
+GROUND_CAMERA_HEIGHT_M = 1.9     # Navcam / Mastcam-Z camera height above the ground (remote sensing mast)
 
 
 def beyond_ground(rec, camera_height_m: float = GROUND_CAMERA_HEIGHT_M, min_depression_deg: float = 3.0,
                   factor: float = 3.0, sample: Optional[int] = 200000, seed: int = 0) -> Dict[str, Any]:
     """
-    v0p65: the share of tie points that lie far beyond the ground their rays point at.  For each observation whose ray
+    the share of tie points that lie far beyond the ground their rays point at.  For each observation whose ray
     points more than ``min_depression_deg`` below the horizon, the flat ground at ``camera_height_m`` below the camera
     is at h / sin(depression); a point counts as beyond the ground when every such observation sees it more than
     ``factor`` times farther.  On flat or rising terrain no true point is; a slope falling away from the camera (a
@@ -198,7 +198,7 @@ def beyond_ground(rec, camera_height_m: float = GROUND_CAMERA_HEIGHT_M, min_depr
 
 
 def navcam_aspect_changes(project: SfmProject, rec) -> Dict[str, float]:
-    """v0p65: 100 (fy / fx refined / fy / fx start - 1) of every Navcam camera (eye or temperature bin)."""
+    """100 (fy / fx refined / fy / fx start - 1) of every Navcam camera (eye or temperature bin)."""
     out: Dict[str, float] = {}
     for k, cid in (project.settings.get("database", {}).get("cameras", {}) or {}).items():
         c0 = project.cameras.get(k) or {}
@@ -217,7 +217,7 @@ def coverage_by_radius(rec, project: SfmProject, edges: Sequence[float] = RADIUS
     that became tie points, and the median residual, in rings of radius from
     the principal point (1 = the farthest frame corner).  A distortion model
     that cannot be inverted towards the corners shows up as keypoints there
-    that are never triangulated (v0p20: the three-term Navcam polynomial lost
+    that are never triangulated (the three-term Navcam polynomial lost
     everything beyond ~0.88).
     """
     by_iid = {r["image_id"]: r for r in project.images if "image_id" in r}
@@ -403,7 +403,7 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
     n_obs = {r["name"]: r["observations"] for r in rows}
 
     # ---- registration
-    # frames excluded as outliers (v0p22) are a decision, not a registration failure: counted separately
+    # frames excluded as outliers are a decision, not a registration failure: counted separately
     ex_recs = (project.settings.get("reconstruction", {}) or {}).get("excluded", []) or []
     unc = {n for e in ex_recs if e.get("kind", "outlier" if e.get("observations", 1) else "unconstrained") == "unconstrained"
            for n in e.get("images", [])}
@@ -472,7 +472,7 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
             one = cam.model.name in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL")
             cx, cy = (p[1], p[2]) if one else (p[2], p[3])
             xy = np.array([im.points2D[int(k)].xy for k in idx_o[sel]], float)
-            # v0p20: radius relative to the farthest frame corner (as coverage_by_radius), so an off-centre
+            # radius relative to the farthest frame corner (as coverage_by_radius), so an off-centre
             # principal point (Mastcam-Z) no longer pushes the outermost keypoints past the last bin
             rad = np.hypot(xy[:, 0] - cx, xy[:, 1] - cy) / np.hypot(max(cx, cam.width - cx), max(cy, cam.height - cy))
             edge.append(np.c_[rad, r[sel]])
@@ -536,7 +536,7 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         ref_id, sen_id = db_cams.get(r0["ref"]), db_cams.get(r0["sensor"])
         if ref_id is None or sen_id is None:
             continue
-        # v0p31: with Navcam temperature bins the rig is copied per bin (ref NL_T..., sensor NR_T...), all held at
+        # with Navcam temperature bins the rig is copied per bin (ref NL_T..., sensor NR_T...), all held at
         # the same value; any of them stands for the family
         grp = lambda k: str((project.cameras.get(k) or {}).get("group") or k)                  # noqa: E731
         refs = {int(v) for k, v in db_cams.items() if grp(k) == r0["ref"]} | {int(ref_id)}
@@ -573,7 +573,7 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         st_tab[st] = {"label": labels.get(st, st), "images": len(v), "shift_median_m": float(np.median(np.linalg.norm(d, axis=1))),
                       "shift_spread_m": float(np.sqrt(np.mean(np.sum((d - np.median(d, 0)) ** 2, axis=1)))),
                       "attitude_median_deg": float(np.median([x["dAttitude_deg"] for x in v]))}
-    # v0p35.1: stations without a position prior (LOCALIZE_MIN_IMAGES) are expected to move off their waypoint;
+    # stations without a position prior (LOCALIZE_MIN_IMAGES) are expected to move off their waypoint;
     # they are reported apart and left out of the prior checks below
     unloc = set((project.settings.get("reconstruction") or {}).get("unlocalized_stations") or [])
     for st in st_tab:
@@ -594,7 +594,7 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
               f"largest RMS spread of the shifts within one station ({labels.get(spread[0], spread[0])})", "m")
     att = np.array([x["dAttitude_deg"] for x in good])
     check("poses", "attitude_change_p95_deg", _q(att, 95), f"median {_q(att, 50):.3f} deg" if att.size else "", "deg")
-    # v0p30: is the block still in the East-North-Up frame?  The common part of every frame's attitude change
+    # is the block still in the East-North-Up frame?  The common part of every frame's attitude change
     # (refined relative to the label attitude, expressed in the world frame) is a rotation of the whole block;
     # the priors allow it only within attitude_prior_deg.  Reported about E, N and U so a tilt is told from a
     # turn in azimuth (about U).
@@ -715,7 +715,7 @@ def write_health(report: Dict[str, Any], out_dir: PathLike, rec=None, project: O
     if rec is not None and project is not None:
         try:
             files["png"] = str(plot_health(report, rec, project, out / "health.png"))
-            try:                                                   # v0p30: top-down station map with the SfM shifts
+            try:                                                   # top-down station map with the SfM shifts
                 from .export import plot_camera_shifts
                 import matplotlib.pyplot as plt
                 fig = plot_camera_shifts(project, rec=rec, out_png=out / "station_map.png")
@@ -771,7 +771,7 @@ def plot_health(report: Dict[str, Any], rec, project: SfmProject, path: PathLike
 def screen_block(work: PathLike, model: str = "cahv_ba", thresholds: Optional[Dict[str, tuple]] = None,
                  sample: Optional[int] = 100000) -> Dict[str, Any]:
     """
-    v0p65: the two checks that found the bad blocks of v0p63-v0p64 (beyond-ground share of the tie points, change of
+    the two checks that found the bad blocks of v0p63-v0p64 (beyond-ground share of the tie points, change of
     the Navcam pixel aspect fy / fx from its start), from a saved alignment ``<work>/colmap/sparse/<model>``, for blocks
     aligned before these checks were part of the health report.  Also records the MPPP version and whether COLMAP
     guided matching was on.  Returns {"verdict": "pass" | "warn" | "fail", "reasons", "beyond_ground_fraction",
@@ -788,7 +788,7 @@ def screen_block(work: PathLike, model: str = "cahv_ba", thresholds: Optional[Di
     if not (sp / "points3D.bin").is_file() and not (sp / "points3D.txt").is_file():
         out.update(verdict="fail", reasons=[f"no alignment in {sp}"])
         return out
-    # v0p72: the result is kept in <colmap>/health/screen_<model>.json and reused while the alignment is unchanged
+    # the result is kept in <colmap>/health/screen_<model>.json and reused while the alignment is unchanged
     cache = root / "health" / f"screen_{model}.json"
     key = {"files": {f.name: [f.stat().st_size, f.stat().st_mtime_ns] for f in sorted(sp.glob("*.bin"))},
            "thresholds": {k: list(v) for k, v in thr.items() if k in ("beyond_ground_fraction", "navcam_aspect_change_pct")},

@@ -15,7 +15,7 @@ Reconstruction from the CAHV-initialised cameras.
    sensor_from_rig free (one offset for all pairs); per-camera focal lengths,
    principal point and k1-k3 free; p1, p2 refined (``refine_tangential``,
    default True since v0p20) or held; k4-k6 held at zero except where a
-   camera lists them in ``free_params`` (v0p20: k4 of the rational Navcam
+   camera lists them in ``free_params`` (k4 of the rational Navcam
    cameras); a Mastcam-Z focus-bin camera holds its ``fixed_params``.
 4. Drop observations whose residual exceeds ``max_residual_native_px`` and
    re-triangulate with the refined poses; one round per ``schedule`` entry
@@ -25,6 +25,7 @@ The result is in the project's world frame (ENU metres minus ``project.offset``)
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 
 import copy
@@ -40,23 +41,23 @@ PathLike = Union[str, Path]
 
 # FULL_OPENCV: fx fy cx cy k1 k2 p1 p2 k3 k4 k5 k6 -> indices held constant
 _FIXED_EXTRA = {"FULL_OPENCV": [6, 7, 9, 10, 11], "OPENCV": [6, 7],
-                "THIN_PRISM_FISHEYE": [6, 7, 10, 11]}          # v0p30: p1, p2 (tangential) and sx1, sy1 (thin prism)
+                "THIN_PRISM_FISHEYE": [6, 7, 10, 11]}          # p1, p2 (tangential) and sx1, sy1 (thin prism)
 _TANGENTIAL = {"FULL_OPENCV": [6, 7], "OPENCV": [6, 7], "THIN_PRISM_FISHEYE": [6, 7]}         # p1, p2
-from .project import PARAM_NAMES as _PARAM_NAMES      # v0p50: one table (mppp.sfm.project)
+from .project import PARAM_NAMES as _PARAM_NAMES      # one table (mppp.sfm.project)
 
 logger = logging.getLogger("mppp.sfm")
 
 # (triangulation threshold [full-res px], Cauchy scale [sigma], maximum residual kept [native px]) per round.
-# v0p14.5: the fourth round repeats the third's limits - it only shows whether another
+# the fourth round repeats the third's limits - it only shows whether another
 # re-triangulation and adjustment still changes anything (v0p14.3-4 used (6, 1.5, 1.5)).
 DEFAULT_SCHEDULE = ((24.0, 10.0, 8.0), (12.0, 2.0, 4.0), (8.0, 2.0, 2.0), (8.0, 2.0, 2.0))
-ROUND1_HOLD = True            # v0p80: round 1 adjusts poses and points only (cameras and rig at the promoted models)
-ATTITUDE_PRIOR_DEG = 1.0      # v0p20: weak CAHV attitude prior per frame (holds the block's orientation)
+ROUND1_HOLD = True            # round 1 adjusts poses and points only (cameras and rig at the promoted models)
+ATTITUDE_PRIOR_DEG = 1.0      # weak CAHV attitude prior per frame (holds the block's orientation)
 K2_LIMIT = 10.0                  # v0p85 (Christian): a camera's k2 is kept within +-10 (set to +-10 when beyond)
-BOGUS_MAX_EXTRA_PARAM = 1.0e6    # v0p85: COLMAP's "bogus camera" limits off (default 1.0, 10, 0.1) - see triangulate()
+BOGUS_MAX_EXTRA_PARAM = 1.0e6    # COLMAP's "bogus camera" limits off (default 1.0, 10, 0.1) - see triangulate()
 BOGUS_MAX_FOCAL_RATIO = 1.0e3
 BOGUS_MIN_FOCAL_RATIO = 1.0e-3
-PRIOR_GAUGE_RECENTRE = True   # v0p82: after every adjustment with position priors the whole block is moved onto them
+PRIOR_GAUGE_RECENTRE = True   # after every adjustment with position priors the whole block is moved onto them
                               # (the mean prior residual; reprojection-invariant) - Chal Rocks Large (17 Oct) ended
                               # -0.19 m E, -0.07 m N, -0.10 m U off its priors on average, which a free gauge with
                               # Gaussian priors cannot do at convergence
@@ -75,7 +76,7 @@ def fixed_camera_params(model_name: str, refine_principal_point: bool = True,
 
 def tangential_for(refine_tangential: Union[bool, Dict[str, bool]], key: str = "") -> bool:
     """
-    v0p40: whether p1, p2 of the camera with project key ``key`` are refined.  ``refine_tangential`` is a bool
+    whether p1, p2 of the camera with project key ``key`` are refined.  ``refine_tangential`` is a bool
     (all cameras) or {family: bool} with the family the first letter of the key ("N": Navcam, including its thermal
     bins; "Z": Mastcam-Z, including its focus bins) and "default" for the rest (True if not given).
     """
@@ -153,7 +154,7 @@ def triangulate(rec, project: SfmProject, max_reproj_px: float = 8.0, min_angle_
     """
     import pycolmap
     opts = pycolmap.IncrementalPipelineOptions()
-    # v0p85: COLMAP treats a camera with any distortion parameter beyond +-1 (max_extra_param) or a focal length
+    # COLMAP treats a camera with any distortion parameter beyond +-1 (max_extra_param) or a focal length
     # beyond 10x the image size (max_focal_length_ratio) as "bogus" and triangulates none of its images.  The
     # Mastcam-Z 34 mm FULL_OPENCV k2 is about 1.0 (ZR 1.016 on its focus line, bins to 2.2: a 2-3 px effect at the
     # corners, since r <= 0.22 in a narrow field), so in the 18-19 Oct run every ZR frame lost its tie points at the
@@ -190,7 +191,7 @@ def triangulate(rec, project: SfmProject, max_reproj_px: float = 8.0, min_angle_
 
 def sync_database(rec, project: SfmProject, path: Optional[PathLike] = None) -> Path:
     """
-    v0p62: a copy of the project database whose cameras, rigs, frames and image cameras match ``rec``.
+    a copy of the project database whose cameras, rigs, frames and image cameras match ``rec``.
     ``triangulate_points`` loads the frames from the database and requires every frame of the model to sit on the
     same rig as in the database ("Check failed: existing_frame.RigId() == frame.RigId()").  After the Navcam
     temperature bins of stage 1 (``thermal_after_stage1``) the Navcam frames sit on new bin rigs with new bin
@@ -236,12 +237,12 @@ def sync_database(rec, project: SfmProject, path: Optional[PathLike] = None) -> 
 
 def _scales(rec, project: SfmProject) -> Dict[int, float]:
     by_name = {r["name"]: float(r["downsample_scale"]) for r in project.images}
-    # v0p31: images the project does not describe (deregistered, e.g. frames dropped after a rebuild) are skipped
+    # images the project does not describe (deregistered, e.g. frames dropped after a rebuild) are skipped
     return {iid: by_name[im.name] for iid, im in rec.images.items() if im.name in by_name}
 
 
 def _set_camera_params(rec, cid: int, params) -> None:
-    """v0p74.7: ``rec``'s camera ``cid`` gets ``params``, read back and checked (a silent no-op here once left the
+    """``rec``'s camera ``cid`` gets ``params``, read back and checked (a silent no-op here once left the
     thermal-bin cameras of a block at their start values while the poses had moved on)."""
     p = np.array(params, dtype=np.float64)
     rec.cameras[cid].params = p
@@ -257,7 +258,7 @@ def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_pr
                        pose_blocks: Optional[Dict[int, np.ndarray]] = None,
                        cam_blocks: Optional[Dict[int, np.ndarray]] = None,
                        extra_blocks: Optional[Dict[str, np.ndarray]] = None) -> Optional[Dict[str, Any]]:
-    """Covariances of the rig and camera blocks of a solved :func:`bundle_adjust` problem (v0p35).  The 3-D points
+    """Covariances of the rig and camera blocks of a solved :func:`bundle_adjust` problem.  The 3-D points
     (``rec``'s) are eliminated by the Schur complement; the frame poses (the work copy's) count as further
     parameters, so each block's covariance is marginal over the poses, the other blocks and the points."""
     import pycolmap
@@ -275,7 +276,7 @@ def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_pr
         pp.cam_from_world = arr[:4]            # the block pointer (the binding checks for 4 values)
         custom.append(pp)
     opts.experimental_custom_poses = custom
-    # v0p82.1: the 23-block joint of 18 Oct (k3, k4 free with k1(T)) failed the LDLT ("Simplicial LDLT for computing
+    # the 23-block joint of 18 Oct (k3, k4 free with k1(T)) failed the LDLT ("Simplicial LDLT for computing
     # L_inv failed") - nearly collinear theta^3..theta^9 terms, not a true null space.  Retry with a small damping
     # of the (Schur-reduced) information matrix; the result says which damping it needed (sd of directions near the
     # null space come out slightly too small with damping, so it is reported, not hidden).
@@ -306,7 +307,7 @@ def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_pr
             c = bac.get_other_params_cov(blk)
             if c is not None:
                 blocks[f"camera:{key_of.get(int(cid), cid)}"] = np.asarray(c)
-    for name, blk in (extra_blocks or {}).items():         # v0p83: e.g. the tied joint's global parameters
+    for name, blk in (extra_blocks or {}).items():         # e.g. the tied joint's global parameters
         if prob.has_parameter_block(blk) and not prob.is_parameter_block_constant(blk):
             c = bac.get_other_params_cov(blk)
             if c is not None:
@@ -320,8 +321,8 @@ def _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_pr
 
 
 COVARIANCE_DAMPING_STEPS = (0.0, 1e-6, 1e-4)
-COVARIANCE_CAMERA_VIEWS = True                    # v0p82.1: see bundle_adjust (the covariance needs the cameras' own memory)      # v0p82.1: the default (COLMAP's 1e-8), then damped retries
-LOCALIZE_MIN_CROSS_POINTS = 20       # v0p35.1: an unlocalized station keeps its prior below this many cross-station points
+COVARIANCE_CAMERA_VIEWS = True                    # see bundle_adjust (the covariance needs the cameras' own memory)      # the default (COLMAP's 1e-8), then damped retries
+LOCALIZE_MIN_CROSS_POINTS = 20       # an unlocalized station keeps its prior below this many cross-station points
 
 
 def unlocalized_stations(project: SfmProject, min_images: int, rec=None,
@@ -365,8 +366,8 @@ def unlocalized_stations(project: SfmProject, min_images: int, rec=None,
     return out
 
 
-POSE_GUIDED_MAX_BEYOND_GROUND_RISE = 0.02    # v0p65: undo the pose-guided stage above this rise (fraction of points)
-NAVCAM_ASPECT_SIGMA = 2e-5      # v0p65: 1-sigma of the fy / fx prior (relative; 0.03 px of a 1500 px focal length)
+POSE_GUIDED_MAX_BEYOND_GROUND_RISE = 0.02    # undo the pose-guided stage above this rise (fraction of points)
+NAVCAM_ASPECT_SIGMA = 2e-5      # 1-sigma of the fy / fx prior (relative; 0.03 px of a 1500 px focal length)
 
 
 @__import__("functools").lru_cache(maxsize=1)
@@ -374,7 +375,7 @@ def _aspect_prior_class():
     import pyceres
 
     class _AspectPrior(pyceres.CostFunction):
-        """(fy / fx - a0) / sigma on a camera's parameter block (v0p65)."""
+        """(fy / fx - a0) / sigma on a camera's parameter block."""
 
         def __init__(self, a0: float, sigma: float, n: int):
             super().__init__()
@@ -402,7 +403,7 @@ def _translation_tie_class():
     import pyceres
 
     class _TranslationTie(pyceres.CostFunction):
-        """v0p80: (t_a - t_b) / sigma on two rig blocks (q x, y, z, w, t x, y, z): a later visit's rig keeps the common
+        """(t_a - t_b) / sigma on two rig blocks (q x, y, z, w, t x, y, z): a later visit's rig keeps the common
         stereo baseline when the translation is refined (refine_rig=True, the baseline study)."""
 
         def __init__(self, sigma: float):
@@ -426,15 +427,15 @@ def _translation_tie_class():
     return _TranslationTie
 
 
-EPOCH_TRANSLATION_TIE_SIGMA_M = 1e-6     # v0p80: the epochs' baselines are one (to a micrometre)
+EPOCH_TRANSLATION_TIE_SIGMA_M = 1e-6     # the epochs' baselines are one (to a micrometre)
 
 
-ZCAM_RIG_TRANSLATION_SIGMA_M = 0.01     # v0p74: prior on the Mastcam-Z right centre (in the left frame) per axis, m
-ZCAM_RIG_FIT = "full"                   # v0p74: the Mastcam-Z rig of each zoom refined in stage 2 (notebook 03 ZCAM_RIG_FIT)
+ZCAM_RIG_TRANSLATION_SIGMA_M = 0.01     # prior on the Mastcam-Z right centre (in the left frame) per axis, m
+ZCAM_RIG_FIT = "full"                   # the Mastcam-Z rig of each zoom refined in stage 2 (notebook 03 ZCAM_RIG_FIT)
 
 
 def epoch_tie_key(key: Any) -> str:
-    """v0p75.1: the camera a Navcam rig-epoch copy is tied to - the key without its ``#k``: ``NL#1`` -> ``NL``,
+    """the camera a Navcam rig-epoch copy is tied to - the key without its ``#k``: ``NL#1`` -> ``NL``,
     ``NR#2_T-020-015`` -> ``NR_T-020-015``; other keys are their own."""
     import re
     k = str(key)
@@ -442,7 +443,7 @@ def epoch_tie_key(key: Any) -> str:
 
 
 def _tie_epoch_cameras(cam_blocks: Dict[int, np.ndarray], work, project: SfmProject) -> Dict[str, List[str]]:
-    """v0p75.1: make the parameter arrays of the Navcam rig-epoch copies the array of the camera they copy
+    """make the parameter arrays of the Navcam rig-epoch copies the array of the camera they copy
     (:func:`epoch_tie_key`; within a group the smallest camera id is the owner).  Off with
     ``project.settings["navcam_rig_epochs_tie"] = False``.  Returns {owner key: [tied keys]}."""
     if project.settings.get("navcam_rig_epochs_tie", True) is False:
@@ -485,21 +486,21 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   zcam_rig_translation_sigma_m: float = ZCAM_RIG_TRANSLATION_SIGMA_M,
                   extra_residuals=None) -> Dict[str, Any]:
     """
-    v0p83: ``extra_residuals`` - a callable ``f(prob, cam_blocks=..., rig_blocks=..., key_of=..., work=...)`` called
+    ``extra_residuals`` - a callable ``f(prob, cam_blocks=..., rig_blocks=..., key_of=..., work=...)`` called
     once the problem is built (before the solve) to add residuals of its own, e.g. ties of temperature-bin cameras
     and epoch rigs to global thermal and drift parameters (:mod:`mppp.sfm.navcal_tied`); it returns a dict, kept in
     the result under ``"extra"``, whose ``"cov_blocks"`` {name: array} get a covariance too.
 
-    v0p74: ``refine_zcam_rig`` ``"rotation"`` / ``"full"`` refines each Mastcam-Z zoom's stereo rig (one per zoom and
+    ``refine_zcam_rig`` ``"rotation"`` / ``"full"`` refines each Mastcam-Z zoom's stereo rig (one per zoom and
     block, the same for every focus: the focus motion is the principal points'), ``"full"`` also its translation with a
     prior of ``zcam_rig_translation_sigma_m`` per axis on the right centre - whatever ``refine_rig`` and the rig's hold
-    flag say; None: the rig follows ``refine_rig`` and its hold flag (v0p53).
+    flag say; None: the rig follows ``refine_rig`` and its hold flag.
 
     Weighted BA in place (see module docstring).  ``navcam_aspect`` (v0p65; None:
     ``project.settings["navcam_aspect"]``, set by :func:`reconstruct`; default "free"): "hold" adds a prior on every Navcam
     camera whose fx and fy are both refined, holding fy / fx at its start value (the consensus pixel aspect; 1-sigma
     ``aspect_sigma``, relative) - the pixel aspect is a property of the detector, and thermal expansion is
-    isotropic; at Three Forks South and Belva (Mastcam-Z) fy moved 2-4 px against fx.  ``hold_cameras`` (v0p22.2):
+    isotropic; at Three Forks South and Belva (Mastcam-Z) fy moved 2-4 px against fx.  ``hold_cameras``:
     keys of project cameras (``"NL"``, ``"NR"``, a focus bin...) whose
     intrinsics are held entirely, whatever ``refine_intrinsics`` says.  ``sigma_px``: keypoint
     standard deviation in native pixels; ``loss_scale``: Cauchy scale in units
@@ -514,7 +515,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     (on Belva two frames with no observations otherwise rotated freely, by 9
     and 36 deg).  ``refine_tangential`` (v0p14.3; default True since v0p20):
     refine p1, p2 of OPENCV / FULL_OPENCV cameras; otherwise they stay at
-    their initial values.  v0p40: or {family: bool}, e.g. ``{"N": True,
+    their initial values.  or {family: bool}, e.g. ``{"N": True,
     "Z": False}`` refines the Navcam p1, p2 and holds the Mastcam-Z ones
     (:func:`tangential_for`).  ``attitude_prior_deg`` (v0p20, default 1 deg):
     a weak prior on every frame's attitude (the CAHV pointing, 1-sigma per
@@ -522,16 +523,16 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     priors; with few, nearly collinear stations it is free to rotate about
     the line through them (0.6 deg at Three Forks, 2.4 deg with Mastcam-Z).
     Relative orientations come from the tie points and are not affected.
-    None or 0 switches it off.  ``rig_translation_sigma_m`` (v0p22): with
+    None or 0 switches it off.  ``rig_translation_sigma_m``: with
     ``refine_rig=True``, a prior (this 1-sigma per axis, metres) holding the
     right camera's centre in the rig near its CAHV value, so the data can move
     the stereo baseline without the scale being left to the position priors
-    alone.  ``covariance`` (v0p35): after the solve, the covariance of the
+    alone.  ``covariance``: after the solve, the covariance of the
     rig and camera blocks with the 3-D points eliminated
     (``pycolmap.estimate_ba_covariance_from_problem``), in the tangent space of
     their manifolds (only the refined parameters) and for the assumed
     ``sigma_px``; ``variance_factor`` (2 cost / redundancy) rescales it to the
-    residuals.  Returned under ``"covariance"``.  ``keypoint_scale`` (v0p35):
+    residuals.  Returned under ``"covariance"``.  ``keypoint_scale``:
     {image_id: s} - that image's keypoints are divided by ``s`` about its
     camera's principal point before the adjustment, which is exactly a camera
     whose fx and fy are ``s`` times the shared camera's (the Navcam thermal
@@ -540,7 +541,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     (site, drive) with fewer images than this get no waypoint position prior - short stops during a drive, whose
     waypoint positions can be metres off (Seitah North: four two-image drives 3 m off pulled the block's scale by
     8.6 %) - see :func:`unlocalized_stations`.  Their attitude prior stays.
-    ``keypoint_map`` (v0p35): a function (image_id, keypoints, camera) ->
+    ``keypoint_map``: a function (image_id, keypoints, camera) ->
     keypoints applied after the scaling (e.g. the rig's temperature
     dependence as a small rotation of the right camera's rays).  Returns
     the solver summary as a dict.
@@ -606,13 +607,13 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         for sid in rig.non_ref_sensors:
             arr = np.array(rig.sensor_from_rig(sid).params, dtype=np.float64)
             rig_blocks[(rid, sid.id)] = arr
-    # v0p74.7: the camera intrinsics, too, are explicit arrays owned here (written back below and checked).  Handing
+    # the camera intrinsics, too, are explicit arrays owned here (written back below and checked).  Handing
     # Ceres pycolmap's views (camera.params) was not reliable: in the thermal stage of 4 Oct (Chal Rocks, and
     # reproduced, intermittently, on Linux) the optimiser refined the temperature-bin cameras but the reconstruction
     # kept their start values - the poses then fitted cameras the model no longer had (median 0.16 -> 0.37 px)
     cam_blocks: Dict[int, np.ndarray] = {int(cid): np.ascontiguousarray(np.array(c.params, dtype=np.float64))
                                          for cid, c in work.cameras.items()}
-    # v0p82.1: COLMAP's covariance estimator (BACovarianceOptionsParams.ALL) fails ("Simplicial LDLT ... failed",
+    # COLMAP's covariance estimator (BACovarianceOptionsParams.ALL) fails ("Simplicial LDLT ... failed",
     # every consensus since v0p74.7) when the intrinsics are arrays of our own - it works with the cameras' own
     # memory (pycolmap views), as before v0p74.7.  With ``covariance`` the problem therefore uses the views; the
     # write-back below is checked as before, and a solve in which no free camera moved is reported (the v0p74.7 case).
@@ -620,11 +621,11 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     if views_used:
         cam_starts = {cid: np.array(blk) for cid, blk in cam_blocks.items()}
         cam_blocks = {int(cid): c.params for cid, c in work.cameras.items()}
-    # v0p75.1: the Navcam rig-epoch copies of an eye (NL#1, NL#2 ... and their temperature bins NL#1_T...) share one
+    # the Navcam rig-epoch copies of an eye (NL#1, NL#2 ... and their temperature bins NL#1_T...) share one
     # parameter array with the eye's camera (NL, NL_T...): one set of intrinsics and distortion for every visit, one
     # rig rotation per visit.  (The copies exist because a COLMAP database puts a camera in one rig only.)
     tied = _tie_epoch_cameras(cam_blocks, work, project)
-    # v0p53: the Mastcam-Z rig of each zoom, shared by all focus bins - a right image is posed from the frame of its
+    # the Mastcam-Z rig of each zoom, shared by all focus bins - a right image is posed from the frame of its
     # left partner (same exposure) through this block; its own frame gets no pose block and is set afterwards
     vrig = project.settings.get("zcam_virtual_rig") or {}
     vblocks: Dict[str, np.ndarray] = {}
@@ -648,13 +649,13 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 if len(list(fr.data_ids)) == 1:              # a frame of its own (no COLMAP rig)
                     vpartner[iid] = (fam, lefts[(g[2:], r.get("sclk_key"))])
         for fam, v in vrig.items():
-            # v0p74: from the rig as refined so far in this run (R_refined, t_refined), else the start rig
+            # from the rig as refined so far in this run (R_refined, t_refined), else the start rig
             q = _Rot.from_matrix(np.asarray(v.get("R_refined") or v["R_sensor_from_ref"], float)).as_quat()
             vblocks[fam] = np.r_[q, np.asarray(v.get("t_refined") or v["t_sensor_from_ref"], float)].astype(np.float64)
     vframes = {rec.images[i].frame_id for i in vpartner}
     n_obs = 0
     pose_blocks: Dict[int, np.ndarray] = {}
-    # v0p30: everything that is the same for all observations of an image is looked up once per image
+    # everything that is the same for all observations of an image is looked up once per image
     # (the cost constructors and add_residual_block are what remains in the loop: ~2x faster setup)
     per_image: Dict[int, tuple] = {}
     for iid in reg:
@@ -663,7 +664,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         rig = rec.rigs[fr.rig_id]
         cam = work.cameras[im.camera_id]
         cov = np.eye(2) * (sigma_px / scale[iid]) ** 2
-        if iid in vpartner:                                   # v0p53: posed through the Mastcam-Z rig
+        if iid in vpartner:                                   # posed through the Mastcam-Z rig
             fam, lf = vpartner[iid]
             lpose = pose_blocks.get(lf)
             if lpose is None:
@@ -671,7 +672,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
             if keypoint_scale and iid in keypoint_scale and np.any(np.asarray(keypoint_scale[iid], float) != 1.0):
                 c0 = np.asarray(cam.params[2:4], float)
-                kps = c0 + (kps - c0) / np.asarray(keypoint_scale[iid], float)      # v0p73: a scalar or (sx, sy)
+                kps = c0 + (kps - c0) / np.asarray(keypoint_scale[iid], float)      # a scalar or (sx, sy)
             if keypoint_map is not None and len(kps):
                 kps = keypoint_map(iid, kps, cam)
             per_image[iid] = (cam.model, cov, kps, [vblocks[fam], lpose, cam_blocks[int(im.camera_id)]], True)
@@ -683,7 +684,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         kps = np.array([q.xy for q in im.points2D], float).reshape(-1, 2)
         if keypoint_scale and iid in keypoint_scale and np.any(np.asarray(keypoint_scale[iid], float) != 1.0):
             c0 = np.asarray(cam.params[2:4], float)
-            kps = c0 + (kps - c0) / np.asarray(keypoint_scale[iid], float)          # v0p73: a scalar or (sx, sy)
+            kps = c0 + (kps - c0) / np.asarray(keypoint_scale[iid], float)          # a scalar or (sx, sy)
         if keypoint_map is not None and len(kps):
             kps = keypoint_map(iid, kps, cam)
         if rig.is_ref_sensor(sensor):
@@ -714,7 +715,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     if not key_of and any(c.get("free_params") or c.get("fixed_params") for c in project.cameras.values()):
         raise RuntimeError("the project has no database camera mapping (run build_database first): per-camera "
                            "free_params / fixed_params (rational Navcam k4, Mastcam-Z focus bins) would be ignored")
-    seen_blocks = set()                                       # v0p75.1: a tied array is set up once (its group's first)
+    seen_blocks = set()                                       # a tied array is set up once (its group's first)
     for cid, cam in sorted(work.cameras.items()):
         blk = cam_blocks[int(cid)]
         if not prob.has_parameter_block(blk) or id(blk) in seen_blocks:
@@ -730,14 +731,14 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         extra = pc.get("fixed_params") or []
         if extra and cam.model.name in _PARAM_NAMES:
             fixed = sorted(set(fixed) | {names.index(n) for n in extra if n in names and names.index(n) < len(cam.params)})
-        free = pc.get("free_params") or []            # v0p20: e.g. the rational Navcam k4; v0p30: any model
+        free = pc.get("free_params") or []            # e.g. the rational Navcam k4; any model
         if free and cam.model.name in _PARAM_NAMES:
             fixed = sorted(set(fixed) - {names.index(n) for n in free if n in names})
         prob.set_parameter_block_variable(blk)
         if fixed:
             prob.set_manifold(blk, pyceres.SubsetManifold(len(blk), sorted(fixed)))
 
-    # v0p65: the Navcam pixel aspect held at its start (fy / fx), a soft prior per camera
+    # the Navcam pixel aspect held at its start (fy / fx), a soft prior per camera
     if navcam_aspect is None:
         navcam_aspect = str(project.settings.get("navcam_aspect") or "free")
     aspect_costs = []
@@ -761,20 +762,20 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             p0 = np.asarray(pc.get("params") or blk, float)
             c = AspectPrior(float(p0[1] / p0[0]), float(aspect_sigma), len(blk))
             try:
-                c.parameter_block = blk                       # v0p75.1: one prior per (tied) array
+                c.parameter_block = blk                       # one prior per (tied) array
             except AttributeError:
                 pass
             aspect_costs.append(c)
             prob.add_residual_block(c, None, [blk])
 
-    # waypoint position priors on every frame (the reference camera's centre); v0p35.1: not on the frames of
+    # waypoint position priors on every frame (the reference camera's centre); not on the frames of
     # stations with fewer than localize_min_images images, if they are tied to the rest of the block
     n_prior = n_att = 0
     if localize_min_images is None:
         localize_min_images = int(project.settings.get("localize_min_images") or 0)
     unloc = unlocalized_stations(project, localize_min_images, rec=rec) if localize_min_images else {}
     no_prior = {st for st, v in unloc.items() if v["prior"] == "dropped"}
-    # v0p82: stations whose waypoints were flagged (mppp.sfm.waypoint_check; notebook 03 NO_POSITION_PRIOR_AT)
+    # stations whose waypoints were flagged (mppp.sfm.waypoint_check; notebook 03 NO_POSITION_PRIOR_AT)
     flagged = {str(x) for x in (project.settings.get("no_position_prior_at") or [])}
     no_prior |= flagged
     prior_frames: List[Tuple[int, np.ndarray]] = []
@@ -843,7 +844,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             # the quaternion is normalised when written back.
             held_q = [3, 4, 5, 6] if refine_rig == "rotation" else [3]
             if refine_rig is True and tied and "#" in str(key_of.get(int(key[1]), "")):
-                # v0p75.1: a later visit's rig keeps the common baseline - v0p80: its translation is refined but tied to
+                # a later visit's rig keeps the common baseline - its translation is refined but tied to
                 # the first visit's (the baseline study refines the translation; before, a later visit's stayed at CAHV)
                 main = [k2 for k2 in rig_blocks if str(key_of.get(int(k2[1]), "")) == epoch_tie_key(key_of.get(int(key[1]), ""))]
                 if main and prob.has_parameter_block(rig_blocks[main[0]]):
@@ -858,7 +859,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         else:
             prob.set_parameter_block_constant(arr)
 
-    for fam, arr in vblocks.items():                         # v0p53: the Mastcam-Z rigs
+    for fam, arr in vblocks.items():                         # the Mastcam-Z rigs
         if not prob.has_parameter_block(arr):
             continue
         zmode = refine_zcam_rig if refine_zcam_rig in ("rotation", "full") else (
@@ -867,7 +868,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             prob.set_parameter_block_constant(arr)
         elif zmode == "rotation":
             prob.set_manifold(arr, pyceres.SubsetManifold(7, [3, 4, 5, 6]))      # rotation refined, w held
-        else:                                                 # v0p74: rotation and translation (baseline) refined
+        else:                                                 # rotation and translation (baseline) refined
             from scipy.spatial.transform import Rotation as _R
             # the prior is on the start rig's right centre (CAHV or the focus model's), not on this call's start
             R0, t0 = np.asarray(vrig[fam]["R_sensor_from_ref"], float), np.asarray(vrig[fam]["t_sensor_from_ref"], float)
@@ -877,10 +878,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             prob.set_manifold(arr, pyceres.SubsetManifold(7, [3]))
 
     extra_info = None
-    if extra_residuals is not None:                          # v0p83: e.g. the tied joint's thermal / drift ties
+    if extra_residuals is not None:                          # e.g. the tied joint's thermal / drift ties
         extra_info = extra_residuals(prob, cam_blocks=cam_blocks, rig_blocks=rig_blocks, key_of=key_of, work=work)
     so = pyceres.SolverOptions()
-    # v0p30: the linear solver.  The Schur complement has one 6-parameter block per frame plus the cameras, so
+    # the linear solver.  The Schur complement has one 6-parameter block per frame plus the cameras, so
     # for the few hundred frames of a scape a dense Schur solve (multi-threaded LAPACK) beats the sparse
     # Cholesky, whose factorisation is single-threaded; large blocks (thousands of frames) get the iterative
     # Schur solver with a Schur-Jacobi preconditioner, which parallelises over the observations.
@@ -898,7 +899,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     pyceres.solve(so, prob, summary)
     retried = None
     if summary.termination_type == pyceres.TerminationType.FAILURE:
-        # v0p74.7: Ceres gives up after a few linear-solver failures in a row (the dense Schur complement not
+        # Ceres gives up after a few linear-solver failures in a row (the dense Schur complement not
         # positive definite, e.g. a temperature-bin camera with one image) and then leaves the parameters only partly
         # updated - in the thermal stage of 4 Oct the poses moved while the cameras stayed at their start (median
         # 0.16 -> 0.37 px).  Solve again from there, with patience for invalid steps and the iterative Schur solver.
@@ -920,7 +921,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                                      cam_blocks=cam_blocks, extra_blocks=(extra_info or {}).get("cov_blocks"))
     for fid in pose_blocks:
         rec.frames[fid].rig_from_world = work.frames[fid].rig_from_world
-    if vblocks:                                               # v0p53: write back the Mastcam-Z rigs and right poses
+    if vblocks:                                               # write back the Mastcam-Z rigs and right poses
         from scipy.spatial.transform import Rotation as _Rot
         vT = {}
         for fam, arr in vblocks.items():
@@ -931,7 +932,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         for iid, (fam, lf) in vpartner.items():
             rec.frames[rec.images[iid].frame_id].rig_from_world = vT[fam] * rec.frames[lf].rig_from_world
     views_unchanged = None
-    if views_used:                                            # v0p82.1: did the views take the solve's update?
+    if views_used:                                            # did the views take the solve's update?
         free_cids = [cid for cid, blk in cam_blocks.items()
                      if prob.has_parameter_block(blk) and not prob.is_parameter_block_constant(blk)]
         views_unchanged = bool(free_cids) and all(np.allclose(np.asarray(cam_blocks[c]), cam_starts[c], rtol=0, atol=0)
@@ -939,10 +940,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         if views_unchanged:
             logger.info("bundle adjustment: no free camera changed in the covariance solve (camera views) - check "
                   "the cameras")
-    for cid, blk in cam_blocks.items():                      # v0p74.7: written back from the owned arrays, checked
+    for cid, blk in cam_blocks.items():                      # written back from the owned arrays, checked
         if cid in rec.cameras:
             _set_camera_params(rec, cid, np.array(blk, dtype=np.float64))
-    k2_clamped = clamp_k2(rec)                               # v0p85: |k2| <= K2_LIMIT
+    k2_clamped = clamp_k2(rec)                               # |k2| <= K2_LIMIT
     for (rid, cid), arr in rig_blocks.items():
         q = arr[:4] / np.linalg.norm(arr[:4])
         from scipy.spatial.transform import Rotation
@@ -993,7 +994,7 @@ def clamp_k2(rec, limit: float = None) -> Dict[int, float]:
 
 
 def prior_gauge(rec, prior_frames: Sequence[Tuple[int, Any]], recentre: bool = PRIOR_GAUGE_RECENTRE) -> Optional[Dict[str, Any]]:
-    """v0p82: the mean residual (prior - refined) of the frame centres that have a position prior, and with
+    """the mean residual (prior - refined) of the frame centres that have a position prior, and with
     ``recentre`` the whole reconstruction (frames and points) moved by it.  With equal Gaussian position priors and
     nothing else holding the block's position, the least-squares solution has a zero mean residual; Ceres stops on a
     relative cost decrease, and moving a block of ~10^6 observations by 0.2 m changes the cost by a few units only,
@@ -1020,7 +1021,7 @@ def prior_gauge(rec, prior_frames: Sequence[Tuple[int, Any]], recentre: bool = P
 
 
 def navcam_rig_fit(ba: Dict[str, Any], rec, project: SfmProject) -> Dict[str, Any]:
-    """v0p80: the Navcam rig after an adjustment: per rig whose sensor is a Navcam right camera (``NR``, the epoch
+    """the Navcam rig after an adjustment: per rig whose sensor is a Navcam right camera (``NR``, the epoch
     copies ``NR#k``) its rotation relative to the start (pitch, yaw, roll mdeg, rotation vector in the right camera)
     and the baseline; with a covariance (refine_rig=True and ``covariance``) the baseline's sd (translation block
     projected on the baseline direction, scaled by the variance factor).  {"baseline_m", "baseline_start_m",
@@ -1061,7 +1062,7 @@ def navcam_rig_fit(ba: Dict[str, Any], rec, project: SfmProject) -> Dict[str, An
 
 def load_alignment(project: SfmProject):
     """
-    v0p40: the saved alignment of ``project`` (the model ``project.settings["reconstruction"]["path"]`` names), for
+    the saved alignment of ``project`` (the model ``project.settings["reconstruction"]["path"]`` names), for
     notebook 03 cells run after a kernel restart.  Raises RuntimeError with the reason when there is none: the
     reconstruction (section 6) has not finished, or its model folder is missing.
     """
@@ -1108,7 +1109,7 @@ def register_stations(rec, project: SfmProject, min_inliers: int = 40, max_error
     registered set as a generalized (multi-camera) absolute pose, RANSAC with
     ``max_error_px`` in full-resolution pixels.  Its frames and its
     station-only points are moved with it.  Stations that cannot be
-    registered stay at their priors (reported).  ``only`` (v0p35.1): move just
+    registered stay at their priors (reported).  ``only``: move just
     these stations; every other station counts as placed from the start (used
     for the stations without a position prior, ``LOCALIZE_MIN_IMAGES``).
     """
@@ -1269,10 +1270,10 @@ def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:
             "observations": int(np.sum(lens)) if lens else 0}
 
 
-OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.6,   # v0p61: 1.6 px (v0p50 1.2, before 1.0)
+OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.6,   # 1.6 px (v0p50 1.2, before 1.0)
                     "shift_mad_factor": 5.0, "min_shift_m": 0.25,
                     "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None}
-# v0p43.3: a frame with fewer tie-point observations than this is held at its prior in the bundle adjustment and
+# a frame with fewer tie-point observations than this is held at its prior in the bundle adjustment and
 # flagged by the outlier test (was 30; good frames with 20-29 observations were being dropped).  Notebook 03:
 # MIN_FRAME_OBSERVATIONS; reconstruct(min_frame_observations=) sets it for every stage of one run.
 MIN_FRAME_OBSERVATIONS = 20
@@ -1281,7 +1282,7 @@ MIN_FRAME_OBSERVATIONS = 20
 def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str, Any]]:
     """
     Frames (a Navcam stereo pair, or one Mastcam-Z image) that do not align with
-    the majority (v0p22).  A frame is flagged when
+    the majority.  A frame is flagged when
 
     * its median residual exceeds ``residual_factor`` x the median over all
       frames and ``min_residual_px`` (native px);
@@ -1294,7 +1295,7 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
       by more than ``min_attitude_deg`` and ``attitude_mad_factor`` x MAD.
       Stations with fewer than 3 frames of a family are not tested this way.
       The attitude test applies to Navcam frames only: a Mastcam-Z prior
-      attitude is one mast pointing, whose error is per image (v0p22.1).
+      attitude is one mast pointing, whose error is per image.
 
     Returns one record per flagged frame: frame id, images, station, reasons,
     and ``kind``: ``"unconstrained"`` for a frame with no tie points at all
@@ -1303,7 +1304,7 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
     """
     from scipy.spatial.transform import Rotation
     th = dict(OUTLIER_DEFAULTS, **thresholds)
-    if th.get("min_observations") is None:                   # v0p43.3: the same limit as the bundle adjustment
+    if th.get("min_observations") is None:                   # the same limit as the bundle adjustment
         th["min_observations"] = MIN_FRAME_OBSERVATIONS
     by_name = {r["name"]: r for r in project.images}
     reg = set(rec.reg_image_ids())
@@ -1387,7 +1388,7 @@ def exclude_frames(rec, frame_ids: Sequence[int]) -> int:
 
 def camera_changes(rec, project: SfmProject) -> List[Dict[str, Any]]:
     """
-    Start and refined parameters of every camera of a solved block (v0p35.1), for the notebook 03 print-out.
+    Start and refined parameters of every camera of a solved block, for the notebook 03 print-out.
     Cameras are found by their database id (``settings["database"]["cameras"]``), not through the images: after
     the thermal stage every image of a binned frame belongs to its bin camera, so an eye's camera can have no image
     left (it then holds the values refined before the split).  Mastcam-Z focus bins are left out (section 7b);
@@ -1438,7 +1439,7 @@ CONVERGENCE_BINS_DEG = (0.0, 2.0, 5.0, 10.0, 20.0, 40.0, 180.0)
 def convergence_statistics(rec, project: SfmProject, bins_deg: Sequence[float] = CONVERGENCE_BINS_DEG,
                            max_points: Optional[int] = None, seed: int = 0) -> Dict[str, Any]:
     """
-    Tie points by convergence angle (v0p22): for each 3-D point the largest
+    Tie points by convergence angle: for each 3-D point the largest
     angle between two of its viewing rays.  Counts per bin for all points and
     for cross-station points, the number of points and observations above 10
     and 20 deg, and the median.  ``max_points``: a random sample for speed.
@@ -1472,14 +1473,14 @@ def convergence_statistics(rec, project: SfmProject, bins_deg: Sequence[float] =
             "sampled": bool(f != 1.0)}
 
 
-NETWORK_MIN_STATIONS = 4        # Navcam intrinsics are refined only from networks at least this strong (v0p22.2)
+NETWORK_MIN_STATIONS = 4        # Navcam intrinsics are refined only from networks at least this strong
 NETWORK_MIN_SPAN_M = 5.0
 
 
 def navcam_network(project: SfmProject, min_stations: int = NETWORK_MIN_STATIONS,
                    min_span_m: float = NETWORK_MIN_SPAN_M) -> Dict[str, Any]:
     """
-    How well the Navcam network can constrain the Navcam intrinsics (v0p22.2):
+    How well the Navcam network can constrain the Navcam intrinsics:
     the number of stations with Navcam frames, the span of their prior
     positions, and the verdict ``"strong"`` (refine) or ``"weak"`` (hold the
     cameras at their start values).  A scape whose Navcam images all stand at
@@ -1500,7 +1501,7 @@ def navcam_network(project: SfmProject, min_stations: int = NETWORK_MIN_STATIONS
 
 def restore_frames(rec, source, frame_ids: Sequence[int]) -> int:
     """
-    v0p40: put frames of ``source`` that ``rec`` no longer has back into ``rec`` - with their images
+    put frames of ``source`` that ``rec`` no longer has back into ``rec`` - with their images
     (keypoints, camera), cameras and rigs as needed - unregistered and at ``source``'s pose.  pycolmap 4 drops
     deregistered frames and their images when a model is written and read back, as ``triangulate_points`` does,
     so the Mastcam-Z frames set aside in stage 1 of a staged reconstruction were gone in stage 2
@@ -1513,7 +1514,7 @@ def restore_frames(rec, source, frame_ids: Sequence[int]) -> int:
         if fid in rec.frames:
             continue
         fr = source.frames[fid]
-        # v0p43.1: cameras first - every camera of the frame's images and every sensor of its rig.  COLMAP's
+        # cameras first - every camera of the frame's images and every sensor of its rig.  COLMAP's
         # tear_down (inside triangulate_points) also drops rigs and cameras no registered frame uses, so a
         # Mastcam-Z stereo rig (ZCAM_RIG) and both its cameras are gone after stage 1, and AddRig checks that
         # all of a rig's cameras exist ("Camera 28 from rig 27 not found").
@@ -1601,7 +1602,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     once more; the report (Navcam-Mastcam-Z tie points before / after) is in ``project.settings["pose_guided"]``.
     ``navcam_aspect`` (v0p65, notebook 03 ``NAVCAM_ASPECT``): "hold" (default) keeps every Navcam camera's fy / fx at
     its start (the consensus pixel aspect) in all bundle adjustments of the run, the thermal stage included;
-    "free" refines fx and fy independently (before v0p65).  ``thermal_after_stage1`` (v0p61): with ``staged``, the Navcam thermal
+    "free" refines fx and fy independently.  ``thermal_after_stage1``: with ``staged``, the Navcam thermal
     stage runs at the end of stage 1, so the Mastcam-Z frames are added to the final Navcam cameras (temperature bins).
     ``localize_min_images`` (v0p35.1, notebook 03 ``LOCALIZE_MIN_IMAGES``): stations (site, drive) with fewer images
     than this are not held by their waypoint position (see :func:`unlocalized_stations`, :func:`bundle_adjust`).
@@ -1610,15 +1611,15 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     leaves out their position priors.  Recorded in ``project.settings["localize_min_images"]`` and
     ``project.settings["reconstruction"]["unlocalized_stations"]``.  0 (default) keeps every prior.
 
-    ``navcam_intrinsics`` (v0p22.2): ``"refine"`` (default since v0p22.4: the
+    ``navcam_intrinsics``: ``"refine"`` (default since the
     Navcam intrinsics are always refined), ``"hold"`` (the Navcam cameras stay
     at their start values, the shipped consensus unless the project was created
     from other cameras) or ``"auto"`` (hold when :func:`navcam_network` calls
-    the network weak).  The network verdict is logged whatever the setting.  ``refine_rig="auto"`` (v0p35)
+    the network weak).  The network verdict is logged whatever the setting.  ``refine_rig="auto"``
     refines the rig rotation on a strong network and holds it (at the start rig, turned to the block's camera
     temperature when the start rig has a temperature model) on a weak one.  ``refine_rig=False``
     holds the rig.  ``hold_cameras``: further camera keys to hold.
-    ``staged`` (v0p22.2): with Mastcam-Z in the project, solve the Navcam
+    ``staged``: with Mastcam-Z in the project, solve the Navcam
     block first (Mastcam-Z frames deregistered), write it to
     ``sparse/<out_name>_navcam``, then add the Mastcam-Z frames at their
     priors and solve everything with the Navcam cameras and rig held at the
@@ -1632,17 +1633,17 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     ``schedule``: rounds of (triangulation threshold [full-res px], Cauchy
     scale [sigma], maximum residual kept [native px]) - a graduated schedule
     so that observations far from the initial poses can still pull them.
-    Default: four rounds; the fourth repeats the third's limits (v0p14.5) to
+    Default: four rounds; the fourth repeats the third's limits to
     show whether one more re-triangulation and adjustment changes anything.
     The final adjustment uses the last round's Cauchy scale and cut-off.
     ``attitude_prior_deg`` (v0p20, default 1 deg): weak CAHV attitude prior
     per frame; see :func:`bundle_adjust`.
-    ``gui_native`` (v0p14.5): also write the native-pixel viewing copy
+    ``gui_native``: also write the native-pixel viewing copy
     ``gui_native/`` for the COLMAP GUI (``open_in_colmap.bat``).
     ``register``: first move whole stations with :func:`register_stations`
     (needed when the waypoint priors are off by more than ~20 px at range;
     at Belva they are within ~1-2 px, so it is off by default).
-    ``min_track_length``: shortest track kept (v0p13).  Default 2: two-view
+    ``min_track_length``: shortest track kept.  Default 2: two-view
     tie points - e.g. seen only by the two eyes of one stereo pair - are kept,
     as COLMAP's ``ignore_two_view_tracks=False`` triangulates them; 3 drops
     them after every round.
@@ -1656,13 +1657,13 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     :func:`bundle_adjust`); they start from the project's cameras (the
     calibration's values unless the project was created with p1, p2 in
     ``zero_terms``).
-    ``exclude_outliers`` (v0p22): after round ``exclude_after_round`` and
+    ``exclude_outliers``: after round ``exclude_after_round`` and
     again before the final adjustment, frames that do not align with the
     majority (:func:`find_outlier_frames`, ``outlier_thresholds``) are
     deregistered; the rounds after that re-triangulate without them.  The
     list is in the log and ``project.settings["reconstruction"]["excluded"]``.
     ``rig_translation_sigma_m``: see :func:`bundle_adjust` (with ``refine_rig=True``).
-    ``linear_solver`` (v0p30): passed to :func:`bundle_adjust`.
+    ``linear_solver``: passed to :func:`bundle_adjust`.
     ``thermal_bins_deg`` (v0p31, with ``temperatures`` from :func:`mppp.sfm.thermal.image_temperatures`): after the
     final adjustment, split the Navcam cameras into camera-temperature bins of this width
     (:func:`mppp.sfm.thermal.thermal_stage`; bins with fewer than ``thermal_min_images`` images are merged) and
@@ -1671,7 +1672,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     ({"NL": {"ppm_per_degC", "T0_degC"}, ...}).  The binned solution is the delivered one; the solution with one
     camera per eye stays in ``sparse/<out_name>_single`` and the bin table in
     ``project.settings["thermal"]``.
-    ``triangulation_options`` (v0p22): extra keyword arguments for
+    ``triangulation_options``: extra keyword arguments for
     :func:`triangulate` (e.g. ``min_angle_deg`` per round is set from
     ``min_tri_angle_deg``; ``create_max_angle_error``, ``complete``...).
     Returns the reconstruction (also written to ``sparse/<out_name>``).
@@ -1682,16 +1683,16 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         raise ValueError("navcam_intrinsics must be 'auto', 'refine' or 'hold'")
     if navcam_aspect not in ("free", "hold"):
         raise ValueError("navcam_aspect must be 'free' or 'hold'")
-    project.settings["navcam_aspect"] = navcam_aspect          # v0p65: read by every bundle adjustment of the run
+    project.settings["navcam_aspect"] = navcam_aspect          # read by every bundle adjustment of the run
     import time
     from .thermal import strip_thermal_bins
     t0 = time.time()
-    # v0p75.1: finer Navcam temperature bins where the images are dense ("default": THERMAL_FINE_RANGE_DEGC,
+    # finer Navcam temperature bins where the images are dense ("default": THERMAL_FINE_RANGE_DEGC,
     # THERMAL_FINE_BIN_DEG of mppp.sfm.thermal; None or a falsy value: uniform bins of thermal_bins_deg)
     from .thermal import THERMAL_FINE_RANGE_DEGC, THERMAL_FINE_BIN_DEG
     _fine_range = THERMAL_FINE_RANGE_DEGC if isinstance(thermal_fine_range, str) else (thermal_fine_range or None)
     _fine_deg = THERMAL_FINE_BIN_DEG if isinstance(thermal_fine_deg, str) else (thermal_fine_deg or None)
-    n_strip = strip_thermal_bins(project)                   # v0p31: a rerun starts from one camera per eye
+    n_strip = strip_thermal_bins(project)                   # a rerun starts from one camera per eye
     if n_strip and verbose:
         logger.info(f"{n_strip} Navcam temperature-bin cameras of an earlier run removed; starting from one camera "
               f"per eye")
@@ -1702,7 +1703,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     unloc = unlocalized_stations(project, localize_min_images) if localize_min_images else {}
     unloc_reg = None
     if unloc and any(v["prior"] == "dropped" for v in unloc.values()):
-        # v0p35.1: place the short stops on the block before triangulating with the round-1 threshold
+        # place the short stops on the block before triangulating with the round-1 threshold
         rec = triangulate(rec, project, max_reproj_px=8.0, min_angle_deg=min_tri_angle_deg)
         unloc_reg = register_stations(rec, project, only=sorted(unloc), verbose=verbose)
         log.append({"unlocalized_registration": unloc_reg})
@@ -1712,14 +1713,14 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                   f"{sum(1 for v in unloc_reg['stations'].values() if v.get('registered'))}")
     network = navcam_network(project)
     hold = set(hold_cameras)
-    for _v in (project.settings.get("zcam_virtual_rig") or {}).values():      # v0p74: every run starts at the start rig
+    for _v in (project.settings.get("zcam_virtual_rig") or {}).values():      # every run starts at the start rig
         if isinstance(_v, dict):
             _v.pop("R_refined", None)
             _v.pop("t_refined", None)
     if navcam_intrinsics == "hold" or (navcam_intrinsics == "auto" and network["verdict"] == "weak"):
         hold |= {k for k in project.cameras if str(k).startswith("N")}
     network["navcam_intrinsics"] = "hold" if any(str(k).startswith("N") for k in hold) else "refine"
-    if refine_rig == "auto":                                # v0p35: the rig follows the intrinsics' network verdict
+    if refine_rig == "auto":                                # the rig follows the intrinsics' network verdict
         refine_rig = "rotation" if network["verdict"] == "strong" else False
     network["navcam_rig"] = "rotation" if refine_rig else "hold"
     if verbose:
@@ -1756,7 +1757,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     for k, (tpx, loss, rmax) in enumerate(schedule):
         rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts)
         st0 = track_statistics(rec, project)
-        held_round = bool(round1_hold) and k == 0 and len(schedule) > 1      # v0p80: poses and points only
+        held_round = bool(round1_hold) and k == 0 and len(schedule) > 1      # poses and points only
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss),
                            refine_intrinsics=refine_intrinsics and not held_round,
                            refine_tangential=refine_tangential, refine_rig=False if held_round else refine_rig,
@@ -1788,7 +1789,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                        refine_rig=refine_rig, max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
                        rig_translation_sigma_m=rig_translation_sigma_m, hold_cameras=sorted(hold), linear_solver=linear_solver,
                        covariance=refine_rig is True)
-    rig_fit = navcam_rig_fit(ba, rec, project)            # v0p80: the Navcam rig of the final Navcam adjustment
+    rig_fit = navcam_rig_fit(ba, rec, project)            # the Navcam rig of the final Navcam adjustment
     # the final adjustment can push a few points behind a camera or past the limit
     n_bad = filter_observations(rec, project, float(schedule[-1][2]))
     n_bad += drop_short_tracks(rec, min_track_length)
@@ -1815,7 +1816,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         navcam_stage = {"path": str(out1.relative_to(project.root)), "log": log,
                         "tracks": track_statistics(rec, project), "cameras": {}}
         if thermal_after_stage1 and thermal_bins_deg and temperatures:
-            # v0p61: the Navcam temperature bins before the Mastcam-Z frames come in (the Navcam-only model is the
+            # the Navcam temperature bins before the Mastcam-Z frames come in (the Navcam-only model is the
             # one-camera-per-eye model of the block: sparse/<out>_single)
             from .thermal import thermal_stage
             single = project.root / "sparse" / f"{out_name}_single"
@@ -1834,13 +1835,13 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             thermal_early["when"] = "end of stage 1 (Navcam only)"
             navcam_stage["thermal"] = {k: v for k, v in thermal_early.items() if k != "rows"}
         log = [{"stage": 2, "note": "Mastcam-Z frames added at their priors; Navcam cameras and rig held"}]
-        n_restored = restore_frames(rec, init, z_frames)      # v0p40: pycolmap 4 dropped them in stage 1
+        n_restored = restore_frames(rec, init, z_frames)      # pycolmap 4 dropped them in stage 1
         if n_restored:
             log[0]["frames_restored"] = n_restored
         for fid in z_frames:
             rec.frames[fid].rig_from_world = init.frames[fid].rig_from_world
             rec.register_frame(fid)
-        # v0p62: the Navcam frames now sit on temperature-bin rigs: triangulate against a database copy that has them
+        # the Navcam frames now sit on temperature-bin rigs: triangulate against a database copy that has them
         db2 = sync_database(rec, project) if (navcam_stage.get("thermal") and project.database.is_file()) else None
         topts2 = dict(topts, database=db2) if db2 is not None else topts
         hold |= {k for k in project.cameras if str(k).startswith("N")}
@@ -1849,13 +1850,13 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             logger.info(f"stage 2: {len(z_frames)} Mastcam-Z frames added; Navcam cameras and rig held")
         zkeys = {k for k in project.cameras if str(k).startswith("Z")}
         cycles = max(0, min(int(zcam_line_cycles), len(schedule) - 1)) if zcam_focus_line else 0
-        # v0p74: the Mastcam-Z rig (rotation, and with "full" the baseline) is refined while the Mastcam-Z cameras are
+        # the Mastcam-Z rig (rotation, and with "full" the baseline) is refined while the Mastcam-Z cameras are
         # held on their focus lines - not in the rounds that free the bins (a ZR principal point and the rig rotation
         # are the same thing in a 25-degree field)
         zfit = project.settings.get("zcam_rig_fit")
         zfit = zfit if zfit in ("rotation", "full") else None
         lines = None
-        # v0p85: a Mastcam-Z eye must not drop out (v0p82 run: ZR034 lost every tie point after its cameras were set
+        # a Mastcam-Z eye must not drop out (v0p82 run: ZR034 lost every tie point after its cameras were set
         # on the focus lines, or after the pose-guided matches) - see mppp.sfm.zcam_guard
         from . import zcam_guard as ZG
         cov_prev, line_snap, undone = None, None, set()
@@ -1892,7 +1893,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                     undone |= set(bad)
                     cov = cov2
             line_snap = None
-            # v0p61: round 1 with the Mastcam-Z cameras at the focus model, then `cycles` rounds with the bins' f
+            # round 1 with the Mastcam-Z cameras at the focus model, then `cycles` rounds with the bins' f
             # free (each followed by the refit of one line per eye and zoom), then held on the line
             zfree = (not zcam_focus_line) or (1 <= k <= cycles)
             hold_k = hold if zfree else (hold | zkeys)
@@ -1901,14 +1902,14 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold_k), linear_solver=linear_solver,
                                refine_zcam_rig=zfit if (zcam_focus_line and not zfree) else None)
             ZG.trace(rec, project, f"r{k + 1}_ba", {"zfree": zfree, "refine_zcam_rig": zfit if (zcam_focus_line and not zfree) else None})
-            cov_prev = ZG.group_coverage(rec, project)              # v0p85: after the adjustment, before any line
+            cov_prev = ZG.group_coverage(rec, project)              # after the adjustment, before any line
             poses_prev, cams_prev = ZG.frame_poses(rec, project), ZG.snapshot(rec, project)
             reg_prev = set(int(f) for f in rec.reg_frame_ids())
             if zcam_focus_line and zfree:
                 from .zcam import focus_line_lines, refit_focus_lines
                 line_snap = ZG.snapshot(rec, project)
                 lines = refit_focus_lines(rec, project)
-                if undone:                                       # v0p85: a group whose lines were undone stays off them
+                if undone:                                       # a group whose lines were undone stays off them
                     ZG.restore(rec, line_snap, ZG.camera_ids_of(project, undone))
                 ZG.trace(rec, project, f"r{k + 1}_lines")
                 log.append({"stage": 2, "round": k + 1, "zcam_focus_lines": lines})
@@ -1934,7 +1935,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 _exclude(f"stage 2, after round {k + 1}")
                 ZG.trace(rec, project, f"r{k + 1}_excluded")
         if pose_guided and zkeys and Path(topts2.get("database") or project.database).is_file():
-            # v0p64: matches guided by the stage-2 poses (Mastcam-Z against Navcam and the other zooms), then one more
+            # matches guided by the stage-2 poses (Mastcam-Z against Navcam and the other zooms), then one more
             # triangulation from them and one adjustment at the last round's thresholds
             from .guided import _family_ties, pose_guided_matching
             from .health import beyond_ground
@@ -1950,7 +1951,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             tpx, loss, rmax = schedule[-1]
             rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)
             ZG.trace(rec, project, "guided_tri", {"database": str(dbg)})
-            zcov_t = ZG.group_coverage(rec, project)              # v0p85: right after the guided triangulation
+            zcov_t = ZG.group_coverage(rec, project)              # right after the guided triangulation
             zbad_t = ZG.collapsed(zcov0, zcov_t)
             if zbad_t:
                 prep["zcam_diagnosis"] = ZG.diagnose(rec, project, zbad_t, zposes0, zcams0, zreg0, dbg)
@@ -1967,7 +1968,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                linear_solver=linear_solver, refine_zcam_rig=zfit if zcam_focus_line else None)
             n_bad = filter_observations(rec, project, float(rmax)) + drop_short_tracks(rec, min_track_length)
             prep.update({"before": before, "after": _family_ties(rec, project), "filtered": n_bad, "ba": ba["brief"]})
-            # v0p65: false matches that agree with the epipolar geometry land far beyond the ground - if the guided
+            # false matches that agree with the epipolar geometry land far beyond the ground - if the guided
             # matches raise that share by more than POSE_GUIDED_MAX_BEYOND_GROUND_RISE, the stage is undone
             bg1 = beyond_ground(rec, sample=50000)["fraction"] or 0.0
             prep.update({"beyond_ground_before": bg0, "beyond_ground_after": bg1})
@@ -1975,7 +1976,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             zcov1 = ZG.group_coverage(rec, project)
             zbad = ZG.collapsed(zcov0, zcov1)
             prep.update({"zcam_coverage_before": zcov0, "zcam_coverage_after": zcov1})
-            if zbad:                                             # v0p85: e.g. Rochette 18 Oct, ZR034 96 -> 0 frames
+            if zbad:                                             # e.g. Rochette 18 Oct, ZR034 96 -> 0 frames
                 rec, topts2 = rec_before, topts_before
                 prep["reverted"] = (f"{', '.join(zbad)} lost its frames with tie points ({ZG.brief(zcov0)} -> "
                                     f"{ZG.brief(zcov1)})")
@@ -2020,7 +2021,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
             backlash["filtered_after"] = n_bad
             if project.settings.get("zcam_line_params") and zcam_focus_line:
-                # v0p73: the new regular-state cameras moved freely in the backlash stage - the lines of every state
+                # the new regular-state cameras moved freely in the backlash stage - the lines of every state
                 # are fitted again, all bins set on them, and one adjustment with the Mastcam-Z cameras held
                 from .zcam import focus_line_lines, refit_focus_lines
                 lines = refit_focus_lines(rec, project)
@@ -2040,7 +2041,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                         logger.info(ln)
         found = (project.settings.get("zcam_low_backlash") or {}).get("found_file")
         if found and backlash.get("new_regular_groups"):
-            # v0p73: flag the newly classified low-backlash observations for the next runs (the found list)
+            # flag the newly classified low-backlash observations for the next runs (the found list)
             from .backlash import append_found
             n_new = append_found(found, backlash["new_regular_groups"], site=project.root.parent.name)
             backlash["found_added"] = {"file": found, "lines": n_new}
@@ -2075,7 +2076,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     out = project.root / "sparse" / out_name
     out.mkdir(parents=True, exist_ok=True)
     rec.write(str(out))
-    if backlash:                                          # v0p40: per image and focus group, for notebooks 04 / 05
+    if backlash:                                          # per image and focus group, for notebooks 04 / 05
         import json as _json
         (project.root / "zcam_focus_states.json").write_text(_json.dumps(_jsonable(backlash), indent=1), encoding="utf-8")
     idir = project.root / "sparse" / "cahv_initial"
@@ -2113,7 +2114,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     if gui_native:
         try:
             from .export import write_gui_native
-            g = write_gui_native(project, rec)               # native-pixel viewing copy (v0p14.5)
+            g = write_gui_native(project, rec)               # native-pixel viewing copy
             if verbose:
                 logger.info(f"COLMAP GUI copy in native pixels: {g['dir']} ({g['images']} images, "
                       f"{g['points']} points)")
@@ -2127,34 +2128,27 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             pass
     return rec
 
-def reconstruct(project: SfmProject, *args, min_frame_observations: Optional[int] = None, **kwargs):
-    """:func:`_reconstruct` (the full description is there).  v0p43.3: ``min_frame_observations`` (notebook 03
-    ``MIN_FRAME_OBSERVATIONS``; None: ``MIN_FRAME_OBSERVATIONS`` = 20) - frames with fewer tie-point observations
-    are held at their prior in every bundle adjustment of the run (also the thermal and focus-state stages) and
-    flagged by the outlier test.  Recorded in ``project.settings["reconstruction"]["min_frame_observations"]``."""
+@contextlib.contextmanager
+def frame_observation_floor(value: Optional[int]):
+    """Set the run-wide floor on tie-point observations per frame (``MIN_FRAME_OBSERVATIONS``) for the duration of
+    the block: every bundle adjustment of the run - the staged, thermal and focus-state passes included - holds
+    frames with fewer observations at their prior, and the outlier test flags them.  ``None`` leaves the default."""
     global MIN_FRAME_OBSERVATIONS
     old = MIN_FRAME_OBSERVATIONS
-    if min_frame_observations is not None:
-        MIN_FRAME_OBSERVATIONS = int(min_frame_observations)
+    if value is not None:
+        MIN_FRAME_OBSERVATIONS = int(value)
     try:
-        return _reconstruct(project, *args, **kwargs)
+        yield MIN_FRAME_OBSERVATIONS
     finally:
         MIN_FRAME_OBSERVATIONS = old
 
 
-def _wrap_reconstruct():
-    import functools
-    import inspect
-    functools.update_wrapper(reconstruct, _reconstruct, assigned=("__module__", "__qualname__", "__annotations__"))
-    reconstruct.__wrapped__ = _reconstruct
-    sig = inspect.signature(_reconstruct)
-    reconstruct.__signature__ = sig.replace(parameters=list(sig.parameters.values()) + [
-        inspect.Parameter("min_frame_observations", inspect.Parameter.KEYWORD_ONLY, default=None,
-                          annotation=Optional[int])])
-    reconstruct.__doc__ = (_reconstruct.__doc__ or "") + "\n    " + reconstruct.__doc__.split("v0p43.3:", 1)[1].join(
-        ["v0p43.3:", ""])
+def reconstruct(project: SfmProject, *args, min_frame_observations: Optional[int] = None, **kwargs):
+    """The staged reconstruction of a project (see :func:`_reconstruct` for every argument).
+    ``min_frame_observations``: the floor on tie-point observations per frame for the whole run (None: 20); recorded
+    in ``project.settings["reconstruction"]["min_frame_observations"]``."""
+    with frame_observation_floor(min_frame_observations):
+        return _reconstruct(project, *args, **kwargs)
 
 
-_wrap_reconstruct()
-
-
+reconstruct.__wrapped__ = _reconstruct          # inspect.signature(reconstruct) follows _reconstruct's parameters

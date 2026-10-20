@@ -13,7 +13,7 @@ the database, the block is triangulated from it and adjusted once more.
 For a keypoint ray ``a`` of A (world frame, from centre ``C_A``) and a ray ``b`` of B (from ``C_B``): ``b`` is on the
 epipolar plane when ``|n . b| < sin(tol)`` with ``n = a x (C_B - C_A)`` (normalised), and the two rays meet at range
 ``t`` along ``a`` and ``s > 0`` along ``b`` (closest approach), with ``d_min <= t <= d_max`` (A's depth range from its
-triangulated points).  v0p65: by default the depth window is local - for each keypoint of A, the depths of its
+triangulated points).  by default the depth window is local - for each keypoint of A, the depths of its
 ``local_k`` nearest triangulated keypoints of A (within ``local_radius`` of the frame diagonal), widened by
 ``local_factor`` either way; keypoints with fewer than ``local_min`` such neighbours are not matched
 (``local_fallback`` "skip") or use the image's whole range ("global").  A window spanning the whole scene lets a
@@ -38,7 +38,7 @@ PathLike = Union[str, Path]
 
 GUIDED_DEFAULTS = {"families": ("Z",), "max_px": 3.0, "max_ratio": 0.85, "max_distance": 0.7, "max_pairs": 8,
                    "min_points": 20, "max_baseline_m": 50.0, "depth_margin": (0.5, 3.0),
-                   # v0p65: the local depth window
+                   # the local depth window
                    "depth": "local", "local_k": 8, "local_min": 3, "local_radius": 0.08, "local_factor": 1.4,
                    "local_fallback": "skip"}
 
@@ -66,7 +66,7 @@ def _depth_range(rec, iid: int, margin=(0.5, 3.0), default=(0.5, 1000.0)) -> Tup
 def local_depths(rec, iid: int, xy: np.ndarray, k: int = 8, min_neighbours: int = 3, radius: float = 0.08,
                  factor: float = 1.4) -> Tuple[np.ndarray, np.ndarray]:
     """
-    v0p65: (dmin, dmax) for each keypoint ``xy`` of image ``iid`` from the depths (distance from the camera centre)
+    (dmin, dmax) for each keypoint ``xy`` of image ``iid`` from the depths (distance from the camera centre)
     of its ``k`` nearest triangulated keypoints within ``radius`` x the frame diagonal: [min / factor, max x factor];
     NaN with fewer than ``min_neighbours``.
     """
@@ -161,7 +161,7 @@ def guided_pair_matches(rec, a: int, b: int, desc_a: np.ndarray, desc_b: np.ndar
     Keypoint index pairs (k in A, l in B) of one image pair with known poses (see the module docstring): epipolar
     and depth-range candidates, then the ratio test (descriptor angles, best / second best < ``max_ratio``; a single
     candidate must be closer than ``max_distance`` rad) and a cross check, both among the candidates only.
-    ``scale_*``: the images' downsample scale (native pixels = full-frame pixels x scale).  ``local`` (v0p65):
+    ``scale_*``: the images' downsample scale (native pixels = full-frame pixels x scale).  ``local``:
     {"k", "min", "radius", "factor", "fallback"} - a depth window per keypoint of A (:func:`local_depths`), inside
     ``depth``; None uses ``depth`` for every keypoint.
     """
@@ -180,7 +180,7 @@ def guided_pair_matches(rec, a: int, b: int, desc_a: np.ndarray, desc_b: np.ndar
     ra = np.asarray(ca.cam_ray_from_img(ka), float) @ Ra          # world rays (rows): R^T r
     rb = np.asarray(cb.cam_ray_from_img(kb), float) @ Rb
     lo_a, hi_a = np.full(len(ka), float(dmin)), np.full(len(ka), float(dmax))
-    if local is not None:                                          # v0p65: the depth window of each keypoint
+    if local is not None:                                          # the depth window of each keypoint
         lo, hi = local_depths(rec, a, ka, int(local.get("k", 8)), int(local.get("min", 3)),
                               float(local.get("radius", 0.08)), float(local.get("factor", 1.4)))
         has = np.isfinite(lo)

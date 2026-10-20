@@ -1,7 +1,7 @@
 """
 Building a mask training set (``images/`` from PDS, ``masks/`` and ``images_variable/``).
 
-v0p6: :func:`regenerate_images_from_pds` rebuilds ``images/`` from the original
+:func:`regenerate_images_from_pds` rebuilds ``images/`` from the original
 PDS products for every mask in ``masks/`` (MPPP 8-bit, linear, padded to the
 detector frame — the exact input the network gets at inference).
 

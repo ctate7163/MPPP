@@ -36,7 +36,7 @@ PathLike = Union[str, Path]
 
 def native_reconstruction(rec, project: SfmProject, observed_only: bool = True):
     """
-    ``rec`` in each image's NATIVE pixels, as a complete COLMAP 4 model (v0p14.5):
+    ``rec`` in each image's NATIVE pixels, as a complete COLMAP 4 model:
     one camera per (camera, downsample scale) with f and c scaled, a trivial rig
     and one frame per image, keypoints scaled back, the 3-D points with their
     mean native residual as ``error``.  ``observed_only``: keep only keypoints
@@ -111,7 +111,7 @@ def write_native_text_model(rec, project: SfmProject, out_dir: PathLike) -> Dict
 def point_colors_from_tracks(nat, images_dir: PathLike, invalid_black: bool = True) -> Dict[str, Any]:
     """
     Colour every 3-D point of the native-pixel model ``nat`` with the mean of
-    the image pixels of all its observations (v0p30).  COLMAP's own
+    the image pixels of all its observations.  COLMAP's own
     ``extract_colors_for_all_images`` leaves a point black when the image it
     happens to take the colour from cannot be read or the keypoint falls on an
     invalid (black, masked) pixel; here every observation contributes, black
@@ -163,7 +163,7 @@ def point_colors_from_tracks(nat, images_dir: PathLike, invalid_black: bool = Tr
 
 def write_gui_native(project: SfmProject, rec, out_dir: Optional[PathLike] = None, colors: bool = True) -> Dict[str, Any]:
     """
-    A copy of the project for LOOKING at it in the COLMAP GUI (v0p14.5), in
+    A copy of the project for LOOKING at it in the COLMAP GUI, in
     ``<project>/gui_native/``: the refined model and a database in each image's
     native pixels (one camera per camera and resolution), so keypoints, tie
     points and matches line up with the image files.  ``sparse/`` is the model
@@ -181,7 +181,7 @@ def write_gui_native(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
     color_report = None
     if colors:
         try:
-            color_report = point_colors_from_tracks(nat, project.images_dir)      # v0p30: mean over the track
+            color_report = point_colors_from_tracks(nat, project.images_dir)      # mean over the track
         except Exception as e:                               # noqa: BLE001  (colours are cosmetic)
             color_report = {"error": f"{type(e).__name__}: {e}"}
     nat.write(str(out / "sparse"))
@@ -298,7 +298,7 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
                        min_observations: int = 30, ncols: int = 4, station_panels: bool = False):
     """
     Top-down view of how far each camera moved from its reference (its CAHV +
-    waypoint prior) in the refinement (v0p14.4).  Stations are tens of metres
+    waypoint prior) in the refinement.  Stations are tens of metres
     apart while the cameras of one station lie within a metre, so:
 
     * top left - overview: every station's median shift, prior -> refined, as an
@@ -370,7 +370,7 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
         gs = fig.add_gridspec(1 + n_rows, ncols, height_ratios=[1.45] + [1.0] * n_rows)
         ax0 = fig.add_subplot(gs[0, : ncols // 2])
         ax1 = fig.add_subplot(gs[0, ncols // 2:])
-    else:                                                   # v0p35.1: the two overview panels only
+    else:                                                   # the two overview panels only
         fig = plt.figure(figsize=(15.0, 6.6))
         gs = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.25])
         ax0 = fig.add_subplot(gs[0, 0])
@@ -538,7 +538,7 @@ def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
             rigs_after[str(rid)] = {"sensor_camera_id": sid.id, "R": T.rotation.matrix().tolist(),
                                     "t": np.asarray(T.translation).tolist(),
                                     "baseline_m": float(np.linalg.norm(T.translation))}
-    for fam, v in (project.settings.get("zcam_virtual_rig") or {}).items():      # v0p53: the Mastcam-Z rigs
+    for fam, v in (project.settings.get("zcam_virtual_rig") or {}).items():      # the Mastcam-Z rigs
         R1, t1 = v.get("R_refined", v["R_sensor_from_ref"]), v.get("t_refined", v["t_sensor_from_ref"])
         rigs_after[fam] = {"R": R1, "t": list(t1), "baseline_m": float(np.linalg.norm(t1)), "virtual": True,
                            "held": bool(v.get("hold")), "rotation_source": v.get("rotation_source")}

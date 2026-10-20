@@ -8,7 +8,7 @@ into the user cache (``mppp.paths.cache_dir()``), which is then used by
 default.  The SHA-256 of the file used is recorded in every run manifest.
 
 The error model's ``waypoints`` module builds stations from the same file
-(v0p13: one loader for both).
+(one loader for both).
 """
 from __future__ import annotations
 
@@ -162,7 +162,7 @@ def stations_near(data: Dict[str, Any], stations: Iterable[Tuple[int, int]], rad
     drive) of the table, anchors included: ``site``, ``drive``, ``sol``,
     ``distance_m`` (to the nearest anchor), ``nearest`` (that anchor) and
     ``anchor`` (True for the given stations).  Used to add the images of later
-    or earlier visits to the same spot (v0p22.2).
+    or earlier visits to the same spot.
     """
     anchors = []
     for sd in {(int(a), int(b)) for a, b in stations}:

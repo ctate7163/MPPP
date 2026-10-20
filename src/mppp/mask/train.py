@@ -318,7 +318,7 @@ class TrainConfig:
     # instead of the 448 px of a 1648 square (-24 % pixels).  None = square input_size.
     canvas: Optional[Tuple[int, int]] = (1664, 1248)
     fpn_width: int = 256
-    stride4: bool = True                  # v0p6: stride-4 skip in the decoder (sharper boundaries)
+    stride4: bool = True                  # stride-4 skip in the decoder (sharper boundaries)
     # v0p6 option, OFF by default: frames with a long side > quad_split_above px are trained -
     # and inferred - as four quadrants overlapping by quad_overlap px.  4000 would split only the
     # 5120 px Navcam/Hazcam frames (whole: 0.32x on the canvas; quadrants: 0.63x, the scale 2560 px
@@ -341,13 +341,13 @@ class TrainConfig:
     dilate_kernel: int = 3
     val_ratio: float = 0.1
     seed: int = 42
-    hflip: bool = True                    # v0p10: random left-right flip of training frames
-    num_workers: int = 2                  # v0p10: background image loading (0 = in this process)
+    hflip: bool = True                    # random left-right flip of training frames
+    num_workers: int = 2                  # background image loading (0 = in this process)
     print_every: int = 50
     val_preview_every: int = 200          # iterations; 0 disables the held-out preview
     n_val_preview: int = 10               # fixed held-out frames shown every time
     pretrained: bool = True               # ImageNet-22k backbone (pretrained_file, hub, or local HF cache)
-    # local timm model.safetensors for offline machines.  "auto" (v0p10) = checkpoints/<backbone>.fb_in22k.safetensors
+    # local timm model.safetensors for offline machines.  "auto" = checkpoints/<backbone>.fb_in22k.safetensors
     # if that file exists (e.g. checkpoints/convnext_tiny.fb_in22k.safetensors), else the hub / HF cache.
     pretrained_file: Optional[str] = "auto"
     # Start from an existing ConvNeXtSeg checkpoint instead: every tensor whose name and

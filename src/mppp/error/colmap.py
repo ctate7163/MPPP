@@ -288,7 +288,7 @@ def measure_theta_c(model: ColmapModel, n_bins: int = 14,
     Returns the binned correlation curve; fit it yourself so you can see the
     scatter rather than trusting a single number.
 
-    v0p14.7: the pair triangulations use the OBSERVED keypoint rays
+    the pair triangulations use the OBSERVED keypoint rays
     (:func:`observed_rays`).  Before, the rays were the directions from each
     camera to the fitted point itself, so every pair triangulated exactly to
     that point, the residuals were rounding noise and rho was meaningless.

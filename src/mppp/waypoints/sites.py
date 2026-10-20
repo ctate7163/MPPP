@@ -26,7 +26,7 @@ SITES_FILE = Path(__file__).resolve().parents[1] / "data" / "sites.json"     # t
 
 def sol_ranges(sols: Any) -> List[Tuple[int, int]]:
     """
-    v0p75: the sol ranges of a site's ``"sols"`` entry as a list of (first, last): ``[a, b]`` is one range,
+    the sol ranges of a site's ``"sols"`` entry as a list of (first, last): ``[a, b]`` is one range,
     ``[[a, b], [c, d], ...]`` several - the visits of a site the rover left and came back to (Chal Rocks Sid: sols
     361-378 and 91-101).  **The first range is the main visit**: it names the WORK folder (``mars2020_sol_<its first
     sol>_...``) and is the block's sol range for everything that wants one number; the others are the other visits,
@@ -43,7 +43,7 @@ def sol_ranges(sols: Any) -> List[Tuple[int, int]]:
 
 
 def sol_span(sols: Any) -> Tuple[int, int]:
-    """v0p75: (first sol of the main visit, last sol of all visits) of a ``"sols"`` entry - what the older code
+    """(first sol of the main visit, last sol of all visits) of a ``"sols"`` entry - what the older code
     (``SITES[name]``, the folder name, ``work_folder``) wants as one range.  The first sol is the **main visit's**
     (the first range listed), so a site that gained an earlier visit keeps its folder name."""
     rs = sol_ranges(sols)
@@ -51,21 +51,21 @@ def sol_span(sols: Any) -> Tuple[int, int]:
 
 
 def in_sol_ranges(sol: int, sols: Any) -> bool:
-    """v0p75: is ``sol`` in any range of a ``"sols"`` entry (or a list of (first, last))?"""
+    """is ``sol`` in any range of a ``"sols"`` entry (or a list of (first, last))?"""
     return any(int(a) <= int(sol) <= int(b) for a, b in sol_ranges(sols))
 
 
 def site_sol_ranges(table: Dict[str, Any], site: str) -> List[Tuple[int, int]]:
-    """v0p75: the sol ranges of ``site`` in a site table (:func:`load_site_table`), main visit first."""
+    """the sol ranges of ``site`` in a site table (:func:`load_site_table`), main visit first."""
     v = table["sites"][site]
     return sol_ranges(v.get("sols") if isinstance(v, dict) else v)
 
 
 def load_site_table(path: Optional[PathLike] = None) -> Dict[str, Any]:
-    """v0p43: the site definitions file (``mppp/data/sites.json`` by default): ``{"sites": {name: {"sols": [a, b],
+    """the site definitions file (``mppp/data/sites.json`` by default): ``{"sites": {name: {"sols": [a, b],
     "label", "zcam", "note", "no_mask_inference_at", "settings"}}, "groups": {name: [site, ...]}}``.  ``zcam``
     (v0p53, a list of Mastcam-Z zooms in mm, 34 / 48 / 63 / 79 / 110; before: ``"zcam34": true``): the site also has a Navcam +
-    Mastcam-Z block with those zooms (``mars2020_sol_<sol>_<site>_zcam``).  v0p75: ``"sols"`` may be a list of
+    Mastcam-Z block with those zooms (``mars2020_sol_<sol>_<site>_zcam``).  ``"sols"`` may be a list of
     ranges, ``[[361, 378], [91, 101]]`` (:func:`sol_ranges`; the first names the folder)."""
     f = Path(path) if path else SITES_FILE
     d = json.loads(f.read_text(encoding="utf-8"))
@@ -81,7 +81,7 @@ def load_site_table(path: Optional[PathLike] = None) -> Dict[str, Any]:
 
 
 def load_sites(path: Optional[PathLike] = None) -> Dict[str, Tuple[int, int]]:
-    """v0p43: name -> (first sol, last sol) from the site definitions file (notebook 03 ``SITES``).  v0p75: for a site
+    """name -> (first sol, last sol) from the site definitions file (notebook 03 ``SITES``).  for a site
     with several visits this is :func:`sol_span` (first sol of the main visit, last sol of all); the visits themselves
     are :func:`load_site_ranges`."""
     d = load_site_table(path)
@@ -93,16 +93,16 @@ def load_sites(path: Optional[PathLike] = None) -> Dict[str, Tuple[int, int]]:
 
 
 def load_site_ranges(path: Optional[PathLike] = None) -> Dict[str, List[Tuple[int, int]]]:
-    """v0p75: name -> [(first, last), ...] (main visit first) from the site definitions file."""
+    """name -> [(first, last), ...] (main visit first) from the site definitions file."""
     d = load_site_table(path)
     return {k: sol_ranges(v.get("sols") if isinstance(v, dict) else v) for k, v in d["sites"].items()}
 
 
-ZCAM_ZOOMS = (34, 48, 63, 79, 110) # v0p53: the Mastcam-Z zooms (mm) MPPP aligns
+ZCAM_ZOOMS = (34, 48, 63, 79, 110) # the Mastcam-Z zooms (mm) MPPP aligns
 
 
 def site_zooms(v: Any) -> List[int]:
-    """v0p53: the Mastcam-Z zooms of one site definition: ``"zcam": [34, 48]``; the older ``"zcam34": true``
+    """the Mastcam-Z zooms of one site definition: ``"zcam": [34, 48]``; the older ``"zcam34": true``
     (``"zcam48"``, ``"zcam63"``) is still read."""
     if not isinstance(v, dict):
         return []
@@ -114,18 +114,18 @@ def site_zooms(v: Any) -> List[int]:
 
 def zcam_sites(table: Optional[Dict[str, Any]] = None, path: Optional[PathLike] = None,
                zoom: Optional[int] = None) -> List[str]:
-    """v0p53: the sites with a Navcam + Mastcam-Z block (any zoom, or ``zoom``), in file order."""
+    """the sites with a Navcam + Mastcam-Z block (any zoom, or ``zoom``), in file order."""
     t = table if table is not None else load_site_table(path)
     return [k for k, v in t["sites"].items() if site_zooms(v) and (zoom is None or int(zoom) in site_zooms(v))]
 
 
 def zcam34_sites(table: Optional[Dict[str, Any]] = None, path: Optional[PathLike] = None) -> List[str]:
-    """v0p50: the sites with Mastcam-Z 34 mm (v0p53: :func:`zcam_sites` with ``zoom=34``)."""
+    """the sites with Mastcam-Z 34 mm (:func:`zcam_sites` with ``zoom=34``)."""
     return zcam_sites(table, path, 34)
 
 
 def site_group(name: str, path: Optional[PathLike] = None) -> List[str]:
-    """v0p43: the sites of a group in the site definitions file (e.g. ``"navcam_consensus"``); v0p53: a site listed
+    """the sites of a group in the site definitions file (e.g. ``"navcam_consensus"``); a site listed
     twice is used once."""
     groups = load_site_table(path).get("groups", {})
     if name not in groups:
@@ -135,7 +135,7 @@ def site_group(name: str, path: Optional[PathLike] = None) -> List[str]:
 
 def validate_site_table(path: Optional[PathLike] = None,
                         known_settings: Optional[Iterable[str]] = None) -> Tuple[List[str], List[str]]:
-    """v0p43.3: (errors, warnings) of a site definitions file - what ``scripts/check_sites.py`` prints.  Errors stop
+    """(errors, warnings) of a site definitions file - what ``scripts/check_sites.py`` prints.  Errors stop
     the runs (bad JSON, missing or reversed sol ranges, unknown sites in groups, unreadable stations); warnings do not
     (overlapping sol ranges, settings that are not pipeline settings, odd site names)."""
     import re
@@ -182,7 +182,7 @@ def validate_site_table(path: Optional[PathLike] = None,
         bad = [r for r in rs if r[1] < r[0]]
         if bad:
             err.append(f"site {name!r}: sols {bad[0]} end before they start")
-        for i, r1 in enumerate(rs):                       # v0p75: the visits of one site must not overlap
+        for i, r1 in enumerate(rs):                       # the visits of one site must not overlap
             for r2 in rs[i + 1:]:
                 if r1[0] <= r2[1] and r2[0] <= r1[1]:
                     err.append(f"site {name!r}: its sol ranges {list(r1)} and {list(r2)} overlap")
@@ -196,15 +196,15 @@ def validate_site_table(path: Optional[PathLike] = None,
         for old in ("zcam34", "zcam48", "zcam63", "zcam79", "zcam110"):
             if old in v:
                 if not isinstance(v[old], bool):
-                    err.append(f"site {name!r}: '{old}' must be true or false, not {v[old]!r} (v0p53: use 'zcam': [34, ...])")
+                    err.append(f"site {name!r}: '{old}' must be true or false, not {v[old]!r} (use 'zcam': [34, ...])")
                 else:
-                    warn.append(f"site {name!r}: '{old}' is read but is replaced by 'zcam': [34, 48, 63] (v0p53)")
+                    warn.append(f"site {name!r}: '{old}' is read but is replaced by 'zcam': [34, 48, 63]")
         if "z34" in v:
-            err.append(f"site {name!r}: 'z34' is now 'zcam': [34] (v0p53)")
+            err.append(f"site {name!r}: 'z34' is now 'zcam': [34]")
         unknown = set(v) - {"sols", "label", "zcam", "zcam34", "zcam48", "zcam63", "zcam79", "zcam110", "z34", "note",
                             "no_mask_inference_at", "settings", "block", "notes", "official_blocks",
                             "max_waypoint_separation_m", "n_waypoints", "rover_sites"}
-        if ver is not None and isinstance(ver, int) and ver >= 5:     # v0p81: sites file version 5
+        if ver is not None and isinstance(ver, int) and ver >= 5:     # sites file version 5
             if not (isinstance(sols, list) and sols and all(isinstance(r, list) for r in sols)):
                 err.append(f"site {name!r}: version 5: 'sols' must be a list of ranges, [[first, last]] for one visit, "
                            f"not {sols!r}")
@@ -219,7 +219,7 @@ def validate_site_table(path: Optional[PathLike] = None,
                 err.append(f"site {name!r}: official_blocks {ob}: not all are in the 'official_blocks' table")
             if "block" in v:
                 warn.append(f"site {name!r}: the 'block' record is the 'official_blocks' table since version 5")
-        if "block" in v:                                   # v0p80: the block-of-stations record (mppp.maps)
+        if "block" in v:                                   # the block-of-stations record (mppp.maps)
             err.extend(f"site {name!r}: {e}" for e in check_block_record(v["block"]))
         if unknown:
             warn.append(f"site {name!r}: unknown fields {sorted(unknown)} are ignored")
@@ -235,7 +235,7 @@ def validate_site_table(path: Optional[PathLike] = None,
             if bad:
                 warn.append(f"site {name!r}: settings {bad} are not pipeline settings (typo?) - they would be set "
                             f"but not used")
-    ob = d.get("official_blocks")                         # v0p81: version 5, the official numbered blocks
+    ob = d.get("official_blocks")                         # version 5, the official numbered blocks
     if ob is not None:
         if not isinstance(ob, dict):
             err.append("'official_blocks' must be an object {\"1\": {...}, ...}")
@@ -278,11 +278,11 @@ def validate_site_table(path: Optional[PathLike] = None,
     names = sorted(ranges, key=lambda k: ranges[k][0][0])
     for i, a in enumerate(names):
         for b in names[i + 1:]:
-            if sorted(ranges[a]) == sorted(ranges[b]):     # v0p50: e.g. rockytop / rockytop_skinner
+            if sorted(ranges[a]) == sorted(ranges[b]):     # e.g. rockytop / rockytop_skinner
                 warn.append(f"sites {a!r} and {b!r} have the same sols {ranges[a]}: they select the same images "
                             f"(a site is defined by its sol ranges only)")
                 continue
-            # v0p75: every pair of visits: inside one another is a larger / smaller block, a partial overlap a warning
+            # every pair of visits: inside one another is a larger / smaller block, a partial overlap a warning
             partial = []
             for (a0, a1) in ranges[a]:
                 for (b0, b1) in ranges[b]:
@@ -296,12 +296,12 @@ def validate_site_table(path: Optional[PathLike] = None,
     return err, warn
 
 
-SITES_FILE_VERSION = 5          # v0p75/v0p80: "sols" as a list of visits (longest / main first), the "block" record;
+SITES_FILE_VERSION = 5          # "sols" as a list of visits (longest / main first), the "block" record;
                                 # v0p81 (5): the "official_blocks" table, per site "official_blocks", "notes", waypoint fields
 
 
 def check_block_record(b: Any) -> List[str]:
-    """v0p80: problems of a site's ``"block"`` record (the block of rover stations it was made from, written by
+    """problems of a site's ``"block"`` record (the block of rover stations it was made from, written by
     :mod:`mppp.maps`): an object with ``number`` (int), ``half_size_m`` (> 0), ``centre`` ({"lon", "lat"} and/or
     {"easting_m", "northing_m"}), and optionally ``region``, ``kind``, ``legacy_site``, ``end_of_drive_sols``,
     ``navcam_360s``, ``zcam_360s``.  Unknown fields are allowed (later versions may add some)."""
@@ -325,7 +325,7 @@ def check_block_record(b: Any) -> List[str]:
 
 
 def site_block(site: str, table: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-    """v0p80: the block record of a site (None for a site without one).  v0p81 (version 5): the record of the
+    """the block record of a site (None for a site without one).  v0p81 (version 5): the record of the
     official block the site runs (``official_blocks[n]["site"] == site``) with its ``"number"``, else of the first
     block it lists; a version-4 ``"block"`` record is still read."""
     t = table if table is not None else load_site_table()
@@ -341,7 +341,7 @@ def site_block(site: str, table: Optional[Dict[str, Any]] = None) -> Optional[Di
 
 
 def block_sites(table: Optional[Dict[str, Any]] = None) -> List[str]:
-    """v0p80: the sites that run the blocks of rover stations, by block number (v0p81: the ``"site"`` of each
+    """the sites that run the blocks of rover stations, by block number (the ``"site"`` of each
     official block; version 4: the sites with a ``"block"`` record)."""
     t = table if table is not None else load_site_table()
     ob = t.get("official_blocks")
@@ -353,13 +353,13 @@ def block_sites(table: Optional[Dict[str, Any]] = None) -> List[str]:
 
 
 _WORDS = {"threeforks": "Three Forks", "seitah": "Seitah"}
-FOLDER_PREFIX = "mars2020_sol_"              # v0p85: mars2020_sol_<first sol, 4 digits>_<site>[_zcam]
+FOLDER_PREFIX = "mars2020_sol_"              # mars2020_sol_<first sol, 4 digits>_<site>[_zcam]
 ZCAM_SUFFIX = "_zcam"                        # v0p85 (Navcam is in every block; any Mastcam-Z zoom); v0p53-v0p82 _colmap_zcam
 NAV_SUFFIX = ""                              # v0p85 (Christian): no "_colmap"; v0p53-v0p82 _colmap
 OLD_NAV_SUFFIX = "_colmap"                   # v0p53-v0p82 names: still read (parse_work_folder, scan_scapes)
 OLD_ZCAM_SUFFIX = "_colmap_zcam"
 DEFAULT_SCAPES_ROOT = os.environ.get("MPPP_SCAPES", "")   # the block folders' root; set MPPP_SCAPES or pass --root
-_OLD_ZCAM_SUFFIXES = ("_colmap_zcam34", "_colmap_nav_zcam34")   # before v0p53: read by parse_work_folder only
+_OLD_ZCAM_SUFFIXES = ("_colmap_zcam34", "_colmap_nav_zcam34")   # before read by parse_work_folder only
 
 
 def site_label(name: str) -> str:
@@ -368,7 +368,7 @@ def site_label(name: str) -> str:
 
 
 def check_sites(sites: Dict[str, Any]) -> List[str]:
-    """Problems of a site list: a sol range whose end is before its start (it selects nothing).  v0p75: a site may
+    """Problems of a site list: a sol range whose end is before its start (it selects nothing).  a site may
     hold several ranges."""
     out = []
     for k, v in sites.items():
@@ -384,25 +384,24 @@ def check_sites(sites: Dict[str, Any]) -> List[str]:
 
 
 def folder_name(site: str, first_sol: int, zcam: bool = False) -> str:
-    """v0p85: ``mars2020_sol_1451_bell_island`` (``..._zcam`` with Mastcam-Z; v0p53-v0p82 ``..._colmap[_zcam]``)."""
+    """``mars2020_sol_1451_bell_island`` (``..._zcam`` with Mastcam-Z; v0p53-v0p82 ``..._colmap[_zcam]``)."""
     return f"{FOLDER_PREFIX}{int(first_sol):04d}_{site}" + (ZCAM_SUFFIX if zcam else NAV_SUFFIX)
 
 
 def work_folder(root: PathLike, site: str, zcam: bool = False,
                 sols: Optional[Sequence[int]] = None) -> Path:
-    """Notebook 03's WORK folder of a site (v0p53): ``<root>/mars2020_sol_<first sol>_<site>`` (v0p85) or
+    """Notebook 03's WORK folder of a site: ``<root>/mars2020_sol_<first sol>_<site>`` or
     ``..._zcam``.  ``sols``: the site's sol range (default: from the site definitions file)."""
     if sols is None:
         table = load_sites()
         if site not in table:
             raise KeyError(f"site {site!r} is not in the site definitions ({SITES_FILE}); give sols=(first, last)")
         sols = table[site]
-    return Path(root) / folder_name(site, sol_span(sols)[0], zcam)      # v0p75: the main visit's first sol
+    return Path(root) / folder_name(site, sol_span(sols)[0], zcam)      # the main visit's first sol
 
 
 def parse_work_folder(folder: PathLike) -> Tuple[Optional[str], bool]:
-    """v0p43: ``(site, with Mastcam-Z)`` from a WORK folder name; ``(None, False)`` for another name.  v0p53:
-    ``mars2020_sol_<sol>_<site>[_zcam]``; the names before v0p53 (``<site>_colmap``, ``<site>_colmap_zcam34``)
+    """``(site, with Mastcam-Z)`` from a WORK folder name; ``(None, False)`` for another name.  ``mars2020_sol_<sol>_<site>[_zcam]``; the names before v0p53 (``<site>_colmap``, ``<site>_colmap_zcam34``)
     are still read here, for a WORK_DIR given by hand."""
     site, z = _site_of_folder(Path(folder))
     if site is not None:
@@ -432,7 +431,7 @@ def _site_of_folder(folder: Path) -> Tuple[Optional[str], bool]:
 
 
 def _in_range(s: int, r: Any) -> bool:
-    return in_sol_ranges(s, r)                              # v0p75: r may hold several visits
+    return in_sol_ranges(s, r)                              # r may hold several visits
 
 
 def scan_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = None,
@@ -528,7 +527,7 @@ def discover_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = 
     ``verbose`` prints the table of all folders with the reasons for the ones left out.
     """
     rows = scan_scapes(root, sites, require_error_input, include_zcam, exclude, min_images)
-    # v0p71: two sites with the same label (e.g. bell_island and bell_island_large, both "Bell Island") stay apart:
+    # two sites with the same label (e.g. bell_island and bell_island_large, both "Bell Island") stay apart:
     # the later one is labelled with its site name (before, one silently replaced the other)
     seen: Dict[str, int] = {}
     for r in rows:
