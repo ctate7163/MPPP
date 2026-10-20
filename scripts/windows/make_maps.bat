@@ -28,6 +28,9 @@ if not defined M20_DPI set "M20_DPI=300"
 
 set "DEMROOT=D:\scapes\dem"
 if defined MPPP_SCAPES if exist "%MPPP_SCAPES%\dem" set "DEMROOT=%MPPP_SCAPES%\dem"
+REM the files under DEMROOT win over an M20_DEMS / M20_ORTHOS left in the environment (a placeholder broke the 20 Oct run)
+if exist "%DEMROOT%\msr_trn\*DTM*.tif" set "M20_DEMS="
+if exist "%DEMROOT%\msr_trn\*Orthomosaic*.tif" set "M20_ORTHOS="
 if not defined M20_DEMS (
   for %%F in ("%DEMROOT%\msr_trn\*DTM*.tif" "%DEMROOT%\m2020_trn\*DTM*.tif") do (
     if defined M20_DEMS ( set "M20_DEMS=!M20_DEMS!;%%~fF" ) else ( set "M20_DEMS=%%~fF" )

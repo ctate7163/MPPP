@@ -14,7 +14,16 @@ except Exception:
     rasterio = None
 
 def _env_paths(var):
-    return [p for p in os.environ.get(var, '').split(os.pathsep) if p]
+    """Existing GeoTIFF paths listed in the variable; a missing one (e.g. a placeholder left in the environment) is
+    reported once and skipped."""
+    out = []
+    for p in os.environ.get(var, '').split(os.pathsep):
+        if not p: continue
+        if os.path.isfile(p): out.append(p)
+        elif p not in _warned:
+            _warned.add(p); print(f'{var}: {p} not found - skipped', flush=True)
+    return out
+_warned = set()
 
 def _found(test):
     found = sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dem', '**', '*.tif'), recursive=True))
@@ -33,11 +42,10 @@ def ortho_paths():
     return _msr_first(_env_paths('M20_ORTHOS') + _found(lambda b: 'ORTHO' in b))
 
 def dem_paths():
-    env = os.environ.get('M20_DEMS', '')
     found = sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dem', '**', '*.tif'), recursive=True))
     # the USGS zips also hold orthoimages and confidence maps: keep elevation rasters only
     found = [p for p in found if any(t in os.path.basename(p).upper() for t in ('DTM', 'DEM')) and not any(t in os.path.basename(p).upper() for t in ('ORTHO', 'CONF', 'FOM'))]
-    paths = [p for p in env.split(os.pathsep) if p] + found
+    paths = _env_paths('M20_DEMS') + found
     # MSR first (name contains MSR), then the rest
     return sorted(set(paths), key=lambda p: (0 if 'MSR' in os.path.basename(p).upper() else 1, p))
 

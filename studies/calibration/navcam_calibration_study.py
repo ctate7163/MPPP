@@ -491,11 +491,29 @@ def cmd_all(a, scapes_cfg, samples):
 
 
 def cmd_consensus(a, scapes_cfg, samples):
-    """v0p60: the Navcam consensus in the form in use (mppp.sfm.navcal_consensus: k4 = 0, one rig yaw, no rig
-    temperature term, the thermal slopes of the cameras in use) - OUT/navcam_joint, ready for promote_cmods.py."""
+    """The Navcam consensus - OUT/navcam_joint, ready for promote_cmods.py.  0.91 (``--joint tied``, the default):
+    one adjustment of every term (mppp.calib.tied.fit_tied) with the diagnostic pass as the gate; ``--joint
+    profiles``: the sequential profile joint of 0.60-0.90 (mppp.calib.fit.fit_navcam) with the leave-one-out."""
     from navcal_consensus import fit_consensus, write_consensus
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    if getattr(a, "joint", "tied") == "tied":
+        from mppp.calib import tied as TJ
+        res = TJ.fit_tied(scapes_cfg, start_dir=a.start_cameras, points=a.points if a.points < 8000 else TJ.POINTS_PER_BLOCK,
+                          bin_deg=a.bin_deg, max_span=a.max_span, hold=tuple(a.hold or TJ.HOLD_DEFAULT),
+                          knot_sol=getattr(a, "knot", None), diagnostics=True)
+        d = TJ.write_tied(res, out / "navcam_joint")
+        print(f"candidate (tied joint): {d}", flush=True)
+        if getattr(a, "previous", None):
+            from navcal_consensus import consensus_change
+            ch = consensus_change(a.previous, d)
+            (out / "pass_change.json").write_text(json.dumps(jsonable(ch), indent=1), encoding="utf-8")
+            w = ch["worst"]
+            print(f"change from {a.previous}: f {w['f_ppm']:.1f} ppm, pp {w['pp_px']:.3f} px, corners {w['corner_px']:.3f} px, "
+                  f"rig {w['rig_mdeg']:.2f} mdeg -> " + ("converged" if ch["converged"] else "not converged"), flush=True)
+        if getattr(a, "promote_if_ok", False):
+            cmd_check(a, scapes_cfg, samples, promote=True)
+        return
     tr = None
     if a.translation_min_span is not None and a.translation_min_span > 0:          # v0p62: rig translation, large blocks
         from navcal_consensus import large_blocks
@@ -535,15 +553,15 @@ def cmd_consensus(a, scapes_cfg, samples):
 
 
 def cmd_tied(a, scapes_cfg, samples):
-    """v0p83: the tied joint (mppp.sfm.navcal_tied) - temperature-bin cameras and epoch rigs tied to global thermal,
-    distortion, early-mission and drift parameters, all estimated in one adjustment over thinned blocks."""
-    from navcal_tied import fit_tied
+    """The tied joint alone (mppp.calib.tied, 0.91: the v0p83 prototype in the package) - OUT/navcam_joint without
+    the check; ``consensus`` (the default --joint tied) is the same with the gate and the promotion."""
+    from mppp.calib import tied as TJ
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    res = fit_tied(scapes_cfg, start_dir=a.start_cameras, points=a.points, bin_deg=a.bin_deg, max_span=a.max_span,
-                   hold=tuple(a.hold or ()), tie_rigs=not a.free_rigs)
-    (out / "tied_joint.json").write_text(json.dumps(jsonable(res), indent=1), encoding="utf-8")
-    print(f"-> {out / 'tied_joint.json'}", flush=True)
+    res = TJ.fit_tied(scapes_cfg, start_dir=a.start_cameras, points=a.points, bin_deg=a.bin_deg, max_span=a.max_span,
+                      hold=tuple(a.hold or TJ.HOLD_DEFAULT), knot_sol=getattr(a, "knot", None), diagnostics=not a.free_rigs)
+    d = TJ.write_tied(res, out / "navcam_joint")
+    print(f"-> {d}", flush=True)
 
 
 def cmd_check(a, scapes_cfg, samples, promote: Optional[bool] = None):
@@ -628,7 +646,10 @@ def main(argv=None):
                          "refitting them (a side study on the same blocks)")
     ap.add_argument("--bin-deg", type=float, default=2.0, help="tied (v0p83): temperature bin width, degC")
     ap.add_argument("--max-span", type=float, default=25.0, help="tied (v0p83): longest rig epoch, sols")
-    ap.add_argument("--hold", nargs="*", help="tied (v0p83): global terms held, e.g. S_NL_cy S_NR_cy E D_pre_roll")
+    ap.add_argument("--hold", nargs="*", help="tied: global terms held, e.g. Q0_yaw (default) S_NL_cy E_NR H")
+    ap.add_argument("--joint", choices=["tied", "profiles"], default="tied",
+                    help="consensus (0.91): tied = one adjustment of every term (default); profiles = the 0.90 joint")
+    ap.add_argument("--knot", type=float, help="tied: the pitch hinge sol (default: the rig file's, else 250)")
     ap.add_argument("--free-rigs", action="store_true", help="tied (v0p83): epoch rigs free (not tied to the drift)")
     ap.add_argument("--promote-if-ok", action="store_true",
                     help="consensus/check (v0p72): promote OUT/navcam_joint if every check passes")

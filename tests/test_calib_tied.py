@@ -1,0 +1,88 @@
+"""The one-adjustment Navcam joint (mppp.calib.tied) on a synthetic block: units, ties, result, files."""
+import json
+
+import numpy as np
+import pytest
+
+pycolmap = pytest.importorskip("pycolmap")
+
+
+def _tied_setup(tmp_path):
+    from helpers import _build_rec, _synthetic
+    from mppp.calib import tied as T
+    proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
+    rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=False)
+    # sols: the first station early in the mission (before the knot), the second late; temperatures in two bins
+    temps = {}
+    for r in proj.images:
+        r["sol"] = 120 if r["station"] == "S001D0000" else 900
+        temps[r["name"]] = -31.0 if int(r["sclk_key"][:10]) % 2 else -9.0
+    idx = {"scape_of_image": {int(r["image_id"]): "blk" for r in proj.images},
+           "images": {"blk": [int(r["image_id"]) for r in proj.images]}, "temps": temps}
+    st = T.start_values()
+    # the synthetic cameras are FULL_OPENCV (fx fy cx cy k1 k2 p1 p2 k3 k4 ...): the ties read the same indices
+    for eye, cid in (("NL", 1), ("NR", 2)):
+        st["G"][eye] = np.asarray(rec.cameras[cid].params, float)[:10].copy()
+        st["S"][eye] = np.array([1e-6 * st["G"][eye][0] * 40.0, 1e-6 * st["G"][eye][1] * 45.0, 0.01, 0.0, 0.0])
+        st["E"][eye] = np.zeros(4)
+    st["Q0"] = T.q_xyz(rigT[0]) - 0.5 * T._MDEG * (st["D"] * 0 + st["H"] * 0) / 1000.0
+    st["R"], st["t"] = rigT
+    return proj, rec, idx, st, T
+
+
+def test_tied_units_and_law(tmp_path):
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    eyes = {(u["eye"], u["early"]) for u in units["cameras"].values()}
+    assert ("NL", True) in eyes and ("NR", False) in eyes              # both eras present
+    assert len(units["cameras"]) == 8                                   # 2 eyes x 2 bins x 2 eras
+    assert len(units["rigs"]) == 4                                      # 2 epochs x 2 bins (one era each)
+    for u in units["rigs"].values():
+        assert u["frames"] >= 1 and u["stations"] == 1
+    # every unit starts at the law
+    for cid, u in units["cameras"].items():
+        p = np.asarray(rec2.cameras[cid].params)
+        assert np.allclose(p[:10], T.camera_params(st, u["eye"], u["T"], u["early"])[:10])
+    rows = T.unit_rows(rec2, proj2, idx, units, st, T.make_ties(st, units)[1])
+    assert all(abs(r["dfx_ppm"]) < 1e-6 for r in rows["cameras"])
+    assert all(abs(r["dpitch_mdeg"]) < 1e-6 for r in rows["rigs"])
+
+
+def test_tied_adjust_and_files(tmp_path):
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, stats = T.adjust_tied(rec2, proj2, idx, st, units, iterations=20, covariance=True, passes=2, verbose=False)
+    assert np.isfinite(ba["final_cost"]) and stats["median_px"] < 2.0
+    held = (ba.get("extra") or {}).get("held") or {}
+    assert held.get("Q0") == [1] and held.get("H") == [0, 1, 2]         # yaw held; two sols only: no hinge
+    # the bin cameras follow the law of the global terms (the ties are effectively exact)
+    rows = T.unit_rows(rec2, proj2, idx, units, st, g)
+    assert max(abs(r["dfx_ppm"]) for r in rows["cameras"]) < 5.0
+    assert max(abs(r["dcx_px"]) for r in rows["cameras"]) < 0.02
+    assert max(abs(r["dpitch_mdeg"]) for r in rows["rigs"]) < 0.05
+    res = T.globals_result(st, g, ba, units)
+    res.update({"blocks": ["blk"], "residuals": stats, "final_cost": ba["final_cost"], "iterations": ba["iterations"],
+                "seconds": 0.0, "units": rows})
+    assert np.isfinite(res["NL"]["fx_ppm_per_degC"]) and res["rig"]["rate_mdeg_per_1000sol"]["yaw"] == pytest.approx(float(st["D"][1]), abs=50)
+    # one normal matrix: the global terms have finite sd (the 0.83 prototype's came out infinite)
+    assert res["covariance_error"] is None
+    assert 0 < res["NL"]["sd"]["fx_ppm_per_degC"] < 5 and 0 < res["NR"]["early_mission"]["sd_px"]["cx"] < 0.1
+    assert 0 < res["rig"]["sd_rate"]["yaw"] < 5 and np.isnan(res["rig"]["sd_sol0_mdeg"]["yaw"])
+    assert T.describe_result(res)
+    out = T.write_tied(res, tmp_path / "cand", note="test")
+    from mppp.calib import forms
+    nl = json.loads((out / "M2020_NL_fisheye_tangential.json").read_text())
+    rig = json.loads((out / "M2020_N_rig.json").read_text())
+    assert nl["early_mission"]["per_eye"] and "dfx_px" in nl["early_mission"]
+    assert rig["drift"]["sol0"] == 0.0 and rig["drift"]["knot_ref"] == 0.0 and "roll_mdeg_per_sol" in rig["drift"]
+    assert not forms.validate_rig(rig)
+    assert (out / "tied_joint.json").exists() and (out / "consensus.json").exists()
+    from mppp.calib.fit import check_navcam
+    rep = check_navcam(out)
+    names = [c["check"] for c in rep["checks"]]
+    assert "block agreement" in names and "leave-one-block-out" not in names
+    # the diagnostic pass: per-block units, globals held, no ties
+    diag = T.diagnostic_pass(rec, proj, idx, st, g, bin_deg=10.0, iterations=10, verbose=False)
+    assert diag["cameras"] and all(c["scape"] == "blk" for c in diag["cameras"])
+    assert diag["rigs"] and all("dpitch_mdeg" in r for r in diag["rigs"])

@@ -1159,7 +1159,17 @@ def check_navcam(candidate_dir: PathLike, current_dir: Optional[PathLike] = None
     add("form", FORM_ID if fm["ok"] else "not in the form", "THIN_PRISM_FISHEYE, sx1 = sy1 = 0, NL reference, no rig "
         "temperature term", fm["ok"], "; ".join(fm["errors"] + fm["warnings"]) or "ok")
     lo = res.get("leave_one_out")
-    if lo and (lo.get("max") or {}).get("centre_px") is not None:
+    ag = res.get("block_agreement")
+    if res.get("method") == "tied":
+        # the tied joint (0.91): the blocks' agreement with the one solution in the diagnostic pass is the gate
+        if ag:
+            add("block agreement", f"cameras {ag['cameras_off']}/{ag['cameras']}, rigs {ag['rigs_off']}/{ag['rigs']} off",
+                f"<= {ag['limits']['max_share']:.0%} off ({ag['limits']['f_ppm']:g} ppm, {ag['limits']['rig_mdeg']:g} mdeg)",
+                bool(ag.get("ok")), f"worst camera {ag['worst_camera_ppm']:.0f} ppm, worst rig {ag['worst_rig_mdeg']:.1f} mdeg"
+                + (f"; blocks off: {', '.join(ag['blocks_off'])}" if ag.get("blocks_off") else ""))
+        else:
+            add("block agreement", "not run", "required", False, "run the tied joint with diagnostics")
+    elif lo and (lo.get("max") or {}).get("centre_px") is not None:
         mx = lo["max"]
         add("leave-one-block-out", f"centre {mx['centre_px']:.3f} / corners {mx['corner_px']:.3f} px",
             f"{LOO_LIMITS['centre_px']} / {LOO_LIMITS['corner_px']} px", bool(lo.get("ok")),

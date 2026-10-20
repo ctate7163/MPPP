@@ -1,0 +1,737 @@
+"""
+The Navcam joint as one bundle adjustment (MPPP 0.91; Christian, 20 Oct 2026: "one navcam set of params for all temps
+and sols ... one offset for -20 C and one slope with temp, and the bundle adjustment of that and every other
+parameter is optimized at once; afterwards, plot the per-block, per-temp-bin and per-sol values with the global
+solution").
+
+Every term of the frozen Navcam form is a parameter of one adjustment over the blocks, instead of the sequential
+profiles of :func:`mppp.calib.fit.fit_navcam`:
+
+* each eye gets one COLMAP camera per (temperature bin, era): ``bin_deg`` bins of the image temperature, era =
+  before / after ``early_sol``.  The cameras are refined by the adjustment and tied (constraint residuals of
+  :data:`TIE_SIGMA`, effectively exact) to the global parameters
+
+      fx = G.fx + S.fx (T - T0) + early * E.fx      (likewise fy, cx, cy; E per eye)
+      k1 = G.k1 + S.k1 (T - T0)
+      k2, p1, p2, k3, k4 = G                        (one distortion for every bin; sx1 = sy1 = 0)
+
+  with T the median temperature of the bin's images (within the bin each image's own temperature counts through
+  the keypoint map of the current slopes, updated once per pass);
+* each block gets one stereo rig per (rig epoch, bin, era); the epochs are the block's sol clusters cut at the
+  pitch knot and split until none spans more than ``max_span`` sols.  The rig rotations are tied to one global rig
+  and its drift referred to sol 0, the form of the rig file (``drift.sol0 = 0``, ``knot_ref = 0``):
+
+      q_xyz(s) = Q0 + 1/2 [D s + H min(s, knot)]      (mdeg per 1000 sol; D = pitch, yaw, roll rates,
+                                                       H = the early pitch rate minus D.pitch; H.yaw = H.roll = 0)
+
+  so yaw and roll are linear in sol and pitch has its early-mission hinge.  Q0's yaw is held at its start (the
+  runs hold the yaw; a constant yaw is the mirror of NR's cx), the translation (baseline) is held.
+
+The global parameters, with their covariance from the one normal matrix, go into the candidate files
+(:func:`write_tied`); :func:`diagnostic_pass` then holds them and frees one camera per (block, eye, bin, era) and one
+rig per (block, epoch), started at the law - the per-block, per-bin and per-sol values that the figures draw about
+the global solution.
+"""
+from __future__ import annotations
+
+import copy
+import datetime
+import json
+import logging
+import time
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+
+import numpy as np
+
+from . import joint as J
+from . import models as M
+from .constrain import sol_epochs, thermal_terms
+
+log = logging.getLogger("mppp.calib")
+PathLike = Union[str, Path]
+
+TIED_PARAMS = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4")     # THIN_PRISM_FISHEYE indices 0-9
+SLOPE_TERMS = ("fx", "fy", "cx", "cy", "k1")                                  # per degC (px; k1 unitless)
+EARLY_TERMS = ("fx", "fy", "cx", "cy")                                        # px, per eye
+ANGLES = ("pitch", "yaw", "roll")                                             # rotation-vector x, y, z
+TIE_SIGMA = {"fx": 1e-3, "fy": 1e-3, "cx": 1e-3, "cy": 1e-3, "k": 1e-7, "q": 1e-8}
+BIN_DEG = 2.0                    # fine bins; within a bin the images' own temperatures count (keypoint map)
+POINTS_PER_BLOCK = 3000          # ~1/3 of the profile joint's 8000: the tied joint solves everything at once
+MAX_SPAN_SOLS = 25.0
+EARLY_SOL = 380.0
+KNOT_SOL = 250.0                 # the pitch hinge (the free-knot refit of 20 Oct: 250, range 200-290)
+HOLD_DEFAULT = ("Q0_yaw",)       # the runs hold the yaw: a constant yaw mirrors NR's cx
+_IDX = {n: i for i, n in enumerate(("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1"))}
+_MDEG = np.radians(1e-3)
+
+
+# ====================================================================================== parameter blocks
+def _linear_tie_class():
+    import pyceres
+
+    class LinearTie(pyceres.CostFunction):
+        """r = (A x) / sigma over the concatenated parameter blocks (A constant)."""
+
+        def __init__(self, A: np.ndarray, sigma: np.ndarray, sizes: Sequence[int]):
+            super().__init__()
+            self.A = np.asarray(A, float) / np.asarray(sigma, float)[:, None]
+            self.sizes = list(map(int, sizes))
+            self.offsets = np.cumsum([0] + self.sizes)
+            self.set_num_residuals(self.A.shape[0])
+            self.set_parameter_block_sizes(self.sizes)
+
+        def Evaluate(self, parameters, residuals, jacobians):
+            x = np.concatenate([np.asarray(p, float) for p in parameters])
+            residuals[:] = self.A @ x
+            if jacobians is not None:
+                for j, jac in enumerate(jacobians):
+                    if jac is not None:
+                        a, b = self.offsets[j], self.offsets[j + 1]
+                        jac[:] = self.A[:, a:b].ravel()
+            return True
+
+    return LinearTie
+
+
+def q_xyz(R: np.ndarray) -> np.ndarray:
+    """The x, y, z of the unit quaternion of ``R`` (w >= 0): half the rotation vector for small angles."""
+    from scipy.spatial.transform import Rotation
+    q = Rotation.from_matrix(np.asarray(R, float)).as_quat()          # x, y, z, w
+    return (q if q[3] >= 0 else -q)[:3]
+
+
+def R_of_q(qxyz: np.ndarray) -> np.ndarray:
+    from scipy.spatial.transform import Rotation
+    q = np.asarray(qxyz, float)
+    w = np.sqrt(max(0.0, 1.0 - float(q @ q)))
+    return Rotation.from_quat([q[0], q[1], q[2], w]).as_matrix()
+
+
+def rig_q_at(Q0: np.ndarray, D: np.ndarray, H: np.ndarray, sol: float, knot: float) -> np.ndarray:
+    """The law: q_xyz(s) = Q0 + 1/2 mdeg [D s + H min(s, knot)] / 1000."""
+    s = float(sol)
+    return np.asarray(Q0, float) + 0.5 * _MDEG * (np.asarray(D, float) * s + np.asarray(H, float) * min(s, knot)) / 1000.0
+
+
+def start_values(cmods_dir: Optional[PathLike] = None, knot_sol: Optional[float] = None) -> Dict[str, Any]:
+    """The global parameters' start from a cameras folder (default the models in use): G, S, E per eye, the rig's
+    Q0 at sol 0, D (rates) and H (pitch hinge), the knot."""
+    d = M._folder(cmods_dir)
+    nl, nr, rj = M.load_camera("N", "L", d), M.load_camera("N", "R", d), M.load_rig("N", d)
+    if rj is None:
+        raise FileNotFoundError(f"no Navcam rig file in {d}")
+    out: Dict[str, Any] = {"T0": float((nl.get("thermal") or {}).get("T0_degC", -20.0)), "G": {}, "S": {}, "E": {},
+                           "model": nl["model"], "folder": str(d)}
+    for eye, j in (("NL", nl), ("NR", nr)):
+        p = np.asarray(j["params"], float)
+        th = thermal_terms(j.get("thermal"))
+        out["G"][eye] = p[:10].copy()
+        out["S"][eye] = np.array([1e-6 * p[0] * th["fx_ppm"], 1e-6 * p[1] * th["fy_ppm"], th["cx_px"], th["cy_px"], th["k1"]])
+        em = j.get("early_mission") or {}
+        out["E"][eye] = np.array([float(em.get(f"d{k}_px", 0.0)) for k in EARLY_TERMS])
+        out["early_sol"] = float(em.get("before_sol", EARLY_SOL))
+    dr = rj.get("drift") or {}
+    knot = float(knot_sol if knot_sol is not None else (dr.get("knot_sol") or KNOT_SOL))
+    D = np.array([1e3 * float(dr.get(f"{a}_mdeg_per_sol") or 0.0) for a in ANGLES])
+    early_pitch = 1e3 * float(dr.get("pitch_early_mdeg_per_sol", dr.get("pitch_mdeg_per_sol")) or 0.0)
+    H = np.array([early_pitch - D[0], 0.0, 0.0])
+    sol0 = float(dr.get("sol0") or 0.0)
+    knot_ref = float(dr.get("knot_ref") or 0.0)
+    q_file = q_xyz(np.asarray(rj["R_sensor_from_ref"], float))
+    # the file's rotation is the law at sol0 (offset rate (s - sol0) + (early - rate)(min(s, knot) - knot_ref)):
+    # refer it to sol 0 with knot_ref 0
+    q0 = q_file - 0.5 * _MDEG * (D * sol0 + H * (min(sol0, knot) - knot_ref)) / 1000.0
+    out.update({"knot": knot, "D": D, "H": H, "Q0": q0, "t": np.asarray(rj["t_sensor_from_ref_m"], float),
+                "R": np.asarray(rj["R_sensor_from_ref"], float), "cameras": {"NL": nl, "NR": nr}, "rig": rj})
+    return out
+
+
+def camera_params(st: Dict[str, Any], eye: str, T: float, early: bool) -> np.ndarray:
+    """The law's camera parameters (12, THIN_PRISM_FISHEYE) of an eye at temperature ``T`` and era."""
+    p = np.zeros(12)
+    p[:10] = st["G"][eye]
+    dT = T - st["T0"]
+    for i, k in enumerate(SLOPE_TERMS):
+        p[_IDX[k]] += st["S"][eye][i] * dT
+    if early:
+        for i, k in enumerate(EARLY_TERMS):
+            p[_IDX[k]] += st["E"][eye][i]
+    return p
+
+
+# ====================================================================================== the units
+def frame_table(rec, proj, idx: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
+    """Per registered frame of a merged reconstruction: median temperature and sol of its images, block, rig."""
+    by_id = {int(r["image_id"]): r for r in proj.images}
+    temps = idx["temps"]
+    frames = {}
+    for fid, fr in rec.frames.items():
+        ims = [d.id for d in fr.data_ids if d.id in rec.images]
+        if not ims or not fr.has_pose:
+            continue
+        T = [float(temps[rec.images[i].name]) for i in ims if rec.images[i].name in temps]
+        sols = [int(by_id[i]["sol"]) for i in ims if i in by_id and by_id[i].get("sol") is not None]
+        if not T or not sols:
+            continue
+        frames[fid] = {"T": float(np.median(T)), "sol": int(np.median(sols)), "scape": idx["scape_of_image"][ims[0]],
+                       "rig": int(fr.rig_id), "images": ims}
+    return frames
+
+
+def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_deg: float = BIN_DEG,
+                        early_sol: Optional[float] = None, max_span: float = MAX_SPAN_SOLS,
+                        gap: float = 50.0, breaks: Optional[Sequence[float]] = None, per_block: bool = False):
+    """A copy of a merged reconstruction (:func:`mppp.calib.joint.merge_scapes`: cameras 1 NL, 2 NR; rigs 1 stereo,
+    2 NR alone, 3 NL alone) with one camera per (eye, temperature bin, era) - per (block, eye, bin, era) with
+    ``per_block`` (the diagnostic pass) - and one rig per (block, rig epoch, bin, era), every unit started at the
+    law of ``st``.  Returns (rec, proj, units): units {"cameras": {cid: {...}}, "rigs": {rid: {...}}}."""
+    import pycolmap
+    from ..sfm.project import navcam_distortion_terms
+    early_sol = float(st.get("early_sol", EARLY_SOL) if early_sol is None else early_sol)
+    knot = float(st["knot"])
+    breaks = (knot,) if breaks is None else breaks
+    by_id = {int(r["image_id"]): r for r in proj.images}
+    frames = frame_table(rec, proj, idx)
+    ep_of: Dict[int, int] = {}
+    for scape in {f["scape"] for f in frames.values()}:
+        fids = [k for k, f in frames.items() if f["scape"] == scape]
+        eps = sol_epochs([frames[k]["sol"] for k in fids], gap, breaks, max_span)
+        for k in fids:
+            s = frames[k]["sol"]
+            ep_of[k] = next(i for i, (a, b) in enumerate(eps) if a <= s <= b)
+    T0 = st["T0"]
+    for k, f in frames.items():
+        f["bin"] = int(np.floor((f["T"] - T0) / bin_deg))
+        f["early"] = bool(f["sol"] < early_sol)
+        f["epoch"] = ep_of[k]
+    eye_of_cam = {1: "NL", 2: "NR"}
+
+    def cam_key(f, eye):
+        return (f["scape"] if per_block else "", eye, f["bin"], f["early"])
+
+    cam_units: Dict[tuple, Dict[str, Any]] = {}
+    for k, f in frames.items():
+        for i in f["images"]:
+            u = cam_units.setdefault(cam_key(f, eye_of_cam[int(rec.images[i].camera_id)]), {"T": [], "images": 0})
+            u["T"].append(f["T"])
+            u["images"] += 1
+    new = pycolmap.Reconstruction()
+    cam_id: Dict[tuple, int] = {}
+    newproj = copy.deepcopy(proj)
+    newproj.cameras = {}
+    db: Dict[str, int] = {}
+    units: Dict[str, Any] = {"cameras": {}, "rigs": {}, "per_block": bool(per_block)}
+    for n, (key, u) in enumerate(sorted(cam_units.items()), start=1):
+        scape, eye, b, early = key
+        T = float(np.median(u["T"]))
+        p = camera_params(st, eye, T, early)
+        base = rec.cameras[1 if eye == "NL" else 2]
+        new.add_camera(pycolmap.Camera(camera_id=n, model=base.model, width=base.width, height=base.height, params=p))
+        name = f"{eye}_t{b:+d}_{'early' if early else 'late'}" + (f"@{scape}" if per_block else "")
+        cam_id[key] = n
+        db[name] = n
+        c = {"model": base.model.name, "params": list(map(float, p)), "width": base.width, "height": base.height}
+        newproj.cameras[name] = navcam_distortion_terms(c, "refine")
+        units["cameras"][n] = {"key": name, "scape": scape or None, "eye": eye, "bin": b, "early": early, "T": T,
+                               "images": u["images"]}
+    newproj.settings = dict(newproj.settings)
+    newproj.settings["database"] = {"cameras": db}
+    newproj.settings["navcam_rig_yaw"] = "refine"
+    newproj.settings["navcam_rig_epochs_tie"] = False
+    sensor = lambda c: pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=int(c))      # noqa: E731
+    t0 = np.asarray(rec.rigs[1].sensor_from_rig(next(iter(rec.rigs[1].non_ref_sensors))).translation)
+    rig_id: Dict[tuple, int] = {}
+    rig_members: Dict[int, List[int]] = {}
+    key_frames: Dict[tuple, List[int]] = {}
+
+    def rig_key(f):
+        return (("stereo", f["scape"], f["epoch"], f["bin"], f["early"]) if f["rig"] == 1 else
+                ("mono", "NR" if f["rig"] == 2 else "NL", f["scape"] if per_block else "", f["bin"], f["early"]))
+
+    for k, f in sorted(frames.items()):
+        key_frames.setdefault(rig_key(f), []).append(k)
+    for key, mem in key_frames.items():
+        rid = len(rig_id) + 1
+        r = pycolmap.Rig(rig_id=rid)
+        if key[0] == "stereo":
+            scape, b, early = key[1], key[3], key[4]
+            s_med = float(np.median([frames[k]["sol"] for k in mem]))
+            q = rig_q_at(st["Q0"], st["D"], st["H"], s_med, knot)
+            ck = lambda eye: cam_key({"scape": scape, "bin": b, "early": early}, eye)      # noqa: E731
+            r.add_ref_sensor(sensor(cam_id[ck("NL")]))
+            r.add_sensor(sensor(cam_id[ck("NR")]), pycolmap.Rigid3d(pycolmap.Rotation3d(R_of_q(q)), t0))
+        else:
+            r.add_ref_sensor(sensor(cam_id[(key[2], key[1], key[3], key[4])]))
+        new.add_rig(r)
+        rig_id[key] = rid
+        rig_members[rid] = mem
+    for key, rid in rig_id.items():
+        if key[0] != "stereo":
+            continue
+        mem = rig_members[rid]
+        scape, b, early = key[1], key[3], key[4]
+        units["rigs"][rid] = {"scape": scape, "epoch": key[2], "bin": b, "early": early,
+                              "sol": float(np.median([frames[k]["sol"] for k in mem])),
+                              "sols": [int(min(frames[k]["sol"] for k in mem)), int(max(frames[k]["sol"] for k in mem))],
+                              "T": float(np.median([frames[k]["T"] for k in mem])), "frames": len(mem),
+                              "stations": len({str((by_id.get(frames[k]["images"][0]) or {}).get("station")
+                                                   or rec.images[frames[k]["images"][0]].name[:9]) for k in mem}),
+                              "nr_camera": cam_id[cam_key({"scape": scape, "bin": b, "early": early}, "NR")]}
+    for k, f in sorted(frames.items()):
+        nf = pycolmap.Frame(frame_id=k, rig_id=rig_id[rig_key(f)])
+        for i in f["images"]:
+            eye = eye_of_cam[int(rec.images[i].camera_id)]
+            nf.add_data_id(pycolmap.data_t(sensor_id=sensor(cam_id[cam_key(f, eye)]), id=i))
+        nf.rig_from_world = rec.frames[k].rig_from_world
+        new.add_frame(nf)
+        for i in f["images"]:
+            im = rec.images[i]
+            eye = eye_of_cam[int(im.camera_id)]
+            ni = pycolmap.Image(name=im.name, keypoints=np.array([q.xy for q in im.points2D], float).reshape(-1, 2),
+                                camera_id=cam_id[cam_key(f, eye)], image_id=i)
+            ni.frame_id = k
+            new.add_image(ni)
+            if i in by_id:
+                by_id[i]["camera_id"] = cam_id[cam_key(f, eye)]
+    for k in frames:
+        new.register_frame(k)
+    keep = set().union(*[set(f["images"]) for f in frames.values()]) if frames else set()
+    for pt in rec.points3D.values():
+        tr = pycolmap.Track()
+        for el in pt.track.elements:
+            if el.image_id in keep:
+                tr.add_element(el.image_id, el.point2D_idx)
+        if tr.length() >= 2:
+            new.add_point3D(pt.xyz, tr, pt.color)
+    newproj.images = [dict(r, camera_id=by_id[int(r["image_id"])]["camera_id"]) for r in proj.images
+                      if int(r["image_id"]) in keep]
+    units["frames"] = len(frames)
+    units["epochs_max_span_sols"] = float(max_span)
+    units["bin_deg"] = float(bin_deg)
+    units["early_sol"] = early_sol
+    units["knot"] = knot
+    return new, newproj, units
+
+
+# ====================================================================================== the ties
+_HELD_NAMES = {"S_NL": SLOPE_TERMS, "S_NR": SLOPE_TERMS, "E_NL": EARLY_TERMS, "E_NR": EARLY_TERMS,
+               "G_NL": TIED_PARAMS, "G_NR": TIED_PARAMS, "D": ANGLES, "H": ANGLES, "Q0": ANGLES}
+
+
+def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT, tie_rigs: bool = True,
+              tie_cameras: bool = True):
+    """The ``extra_residuals`` callable for :func:`mppp.sfm.reconstruction.bundle_adjust` and the global parameter
+    arrays it ties to.  ``hold``: global terms held at their start (``"E_NR"``, ``"S_NL_cy"``, ``"Q0_yaw"``, ``"H"``
+    ...).  ``H``'s yaw and roll are always held at 0 (linear yaw and roll trends); terms the data cannot see are held
+    too (the early offsets without early-mission cameras, the hinge without rig units before the knot).  With
+    ``tie_cameras`` / ``tie_rigs`` False the units stay free and the globals are held (the diagnostic pass)."""
+    import pyceres
+    LinearTie = _linear_tie_class()
+    g = {"G_NL": st["G"]["NL"].copy(), "G_NR": st["G"]["NR"].copy(), "S_NL": st["S"]["NL"].copy(),
+         "S_NR": st["S"]["NR"].copy(), "E_NL": st["E"]["NL"].copy(), "E_NR": st["E"]["NR"].copy(),
+         "Q0": st["Q0"].copy(), "D": st["D"].copy(), "H": st["H"].copy()}
+    sig = np.array([TIE_SIGMA["fx"], TIE_SIGMA["fy"], TIE_SIGMA["cx"], TIE_SIGMA["cy"]] + [TIE_SIGMA["k"]] * 6)
+    knot = float(st["knot"])
+    hold = list(hold) + ["H_yaw", "H_roll"]
+    for eye in ("NL", "NR"):
+        if not any(u["early"] and u["eye"] == eye for u in units["cameras"].values()):
+            hold.append(f"E_{eye}")
+    sols = sorted({round(float(u["sol"])) for u in units["rigs"].values()})
+    if tie_rigs and (not any(s_ < knot for s_ in sols) or len(sols) < 3):
+        hold.append("H")                                   # the hinge needs a unit before the knot and three sols
+    if not tie_rigs:
+        hold += ["Q0", "D", "H"]
+    if not tie_cameras:
+        hold += ["G_NL", "G_NR", "S_NL", "S_NR", "E_NL", "E_NR"]
+
+    def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
+        n_cam = n_rig = 0
+        if tie_cameras:
+            for cid, u in units["cameras"].items():
+                blk = cam_blocks.get(int(cid))
+                if blk is None or not prob.has_parameter_block(blk) or prob.is_parameter_block_constant(blk):
+                    continue
+                eye = u["eye"]
+                dT = u["T"] - st["T0"]
+                A = np.zeros((10, 12 + 10 + 5 + 4))
+                for i, k in enumerate(TIED_PARAMS):
+                    A[i, _IDX[k]] = 1.0                       # the bin camera
+                    A[i, 12 + i] = -1.0                        # G
+                for i, k in enumerate(SLOPE_TERMS):
+                    A[TIED_PARAMS.index(k), 22 + i] = -dT      # S
+                if u["early"]:
+                    for i, k in enumerate(EARLY_TERMS):
+                        A[TIED_PARAMS.index(k), 27 + i] = -1.0  # E (this eye)
+                prob.add_residual_block(LinearTie(A, sig, [12, 10, 5, 4]), None,
+                                        [blk, g[f"G_{eye}"], g[f"S_{eye}"], g[f"E_{eye}"]])
+                n_cam += 1
+        if tie_rigs:
+            for rid, u in units["rigs"].items():
+                blk = rig_blocks.get((int(rid), int(u["nr_camera"])))
+                if blk is None or not prob.has_parameter_block(blk) or prob.is_parameter_block_constant(blk):
+                    continue
+                s = float(u["sol"])
+                A = np.zeros((3, 7 + 3 + 3 + 3))
+                for i in range(3):
+                    A[i, i] = 1.0                                    # the rig unit's quaternion x, y, z
+                    A[i, 7 + i] = -1.0                               # Q0
+                    A[i, 10 + i] = -0.5 * _MDEG * s / 1000.0         # D (mdeg / 1000 sol)
+                    A[i, 13 + i] = -0.5 * _MDEG * min(s, knot) / 1000.0   # H
+                prob.add_residual_block(LinearTie(A, np.full(3, TIE_SIGMA["q"]), [7, 3, 3, 3]), None,
+                                        [blk, g["Q0"], g["D"], g["H"]])
+                n_rig += 1
+        held: Dict[str, set] = {}
+        for h in hold:
+            for gname in g:
+                if h == gname:
+                    held.setdefault(gname, set()).update(range(len(g[gname])))
+                elif h.startswith(gname + "_"):
+                    c = h[len(gname) + 1:]
+                    names = _HELD_NAMES.get(gname, ())
+                    if c in names:
+                        held.setdefault(gname, set()).add(names.index(c))
+        for gname, ix in held.items():
+            if not prob.has_parameter_block(g[gname]):
+                continue
+            if len(ix) == len(g[gname]):
+                prob.set_parameter_block_constant(g[gname])
+            else:
+                prob.set_manifold(g[gname], pyceres.SubsetManifold(len(g[gname]), sorted(ix)))
+        return {"cov_blocks": {k: v for k, v in g.items() if prob.has_parameter_block(v)
+                               and not prob.is_parameter_block_constant(v)},
+                "ties": {"cameras": n_cam, "rigs": n_rig}, "held": {k: sorted(v) for k, v in held.items()}}
+
+    return hook, g
+
+
+def _sd(cov: Dict[str, Any], name: str, n: int, held: Sequence[int] = ()) -> Optional[np.ndarray]:
+    c = (cov.get("blocks") or {}).get(f"extra:{name}")
+    if c is None:
+        return None
+    d = np.sqrt(np.clip(np.diag(np.asarray(c)), 0, None) * float(cov.get("variance_factor", 1.0)))
+    free = [i for i in range(n) if i not in set(held)]
+    out = np.full(n, np.nan)
+    if len(d) == len(free):
+        out[free] = d
+    return out
+
+
+def keypoint_terms(units: Dict[str, Any], proj, temps: Dict[str, float], g: Dict[str, np.ndarray]):
+    """Within a bin each image's own temperature counts: its keypoints are moved by the current slopes from the bin
+    camera's temperature to the image's (scale about the principal point; principal-point shift).  Returns
+    (keypoint_scale, keypoint_map) for :func:`bundle_adjust` and :func:`residual_stats`."""
+    T_unit = {int(cid): float(u["T"]) for cid, u in units["cameras"].items()}
+    eye_unit = {int(cid): u["eye"] for cid, u in units["cameras"].items()}
+    ks, shift = {}, {}
+    for r in proj.images:
+        iid, cid = int(r["image_id"]), int(r["camera_id"])
+        T = temps.get(r["name"])
+        if T is None or cid not in T_unit:
+            continue
+        eye, dT = eye_unit[cid], float(T) - T_unit[cid]
+        Gs, Ss = g[f"G_{eye}"], g[f"S_{eye}"]
+        ks[iid] = (1.0 + Ss[0] / Gs[0] * dT, 1.0 + Ss[1] / Gs[1] * dT)
+        shift[iid] = np.array([Ss[2] * dT, Ss[3] * dT])
+    kmap = (lambda iid, k, cam, _s=shift: k - _s[iid] if iid in _s else k)        # noqa: E731
+    return ks, kmap
+
+
+# ====================================================================================== the fits
+def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT,
+                tie_rigs: bool = True, tie_cameras: bool = True, iterations: int = 100, covariance: bool = True,
+                passes: int = 2, verbose: bool = True) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
+    """The adjustment of a tied reconstruction (``passes`` solves, the slopes of the keypoint map updated between
+    them).  Returns (ba result of the last pass, the global arrays, residual statistics)."""
+    from ..sfm.reconstruction import bundle_adjust
+    hook, g = make_ties(st, units, hold=hold, tie_rigs=tie_rigs, tie_cameras=tie_cameras)
+    temps = idx["temps"]
+    ba = None
+    n_pass = max(1, int(passes))
+    for p_ in range(n_pass):
+        ks, kmap = keypoint_terms(units, proj, temps, g)
+        ba = bundle_adjust(rec, proj, sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=True,
+                           refine_rig="rotation", max_iterations=iterations, attitude_prior_deg=5.0,
+                           covariance=covariance and p_ == n_pass - 1, navcam_aspect="free",
+                           linear_solver="sparse_schur", keypoint_scale=ks, keypoint_map=kmap, extra_residuals=hook)
+        if verbose:
+            log.info(f"  pass {p_ + 1}: {ba['brief'][:160]}")
+    ks, kmap = keypoint_terms(units, proj, temps, g)
+    stats = J.residual_stats(rec, proj, keypoint_scale=ks, keypoint_map=kmap)
+    return ba, g, stats
+
+
+def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, Any], units: Dict[str, Any]) -> Dict[str, Any]:
+    """The global parameters with their sd, in the units of the model files."""
+    cov = ba.get("covariance") or {}
+    held = (ba.get("extra") or {}).get("held") or {}
+    out: Dict[str, Any] = {"T0_degC": st["T0"], "knot_sol": st["knot"], "early_sol": units["early_sol"],
+                           "covariance_error": cov.get("error"), "covariance_damping": cov.get("damping"),
+                           "held": held, "ties": (ba.get("extra") or {}).get("ties")}
+    for eye in ("NL", "NR"):
+        G, S, E = g[f"G_{eye}"], g[f"S_{eye}"], g[f"E_{eye}"]
+        sdG, sdS = _sd(cov, f"G_{eye}", 10, held.get(f"G_{eye}", ())), _sd(cov, f"S_{eye}", 5, held.get(f"S_{eye}", ()))
+        sdE = _sd(cov, f"E_{eye}", 4, held.get(f"E_{eye}", ()))
+        out[eye] = {"params_T0": dict(zip(TIED_PARAMS, map(float, G))),
+                    "sd_params_T0": None if sdG is None else dict(zip(TIED_PARAMS, map(float, sdG))),
+                    "fx_ppm_per_degC": float(1e6 * S[0] / G[0]), "fy_ppm_per_degC": float(1e6 * S[1] / G[1]),
+                    "cx_px_per_degC": float(S[2]), "cy_px_per_degC": float(S[3]), "k1_per_degC": float(S[4]),
+                    "sd": None if sdS is None else {"fx_ppm_per_degC": float(1e6 * sdS[0] / G[0]),
+                                                    "fy_ppm_per_degC": float(1e6 * sdS[1] / G[1]),
+                                                    "cx_px_per_degC": float(sdS[2]), "cy_px_per_degC": float(sdS[3]),
+                                                    "k1_per_degC": float(sdS[4])},
+                    "early_mission": {"before_sol": units["early_sol"], "offsets_px": dict(zip(EARLY_TERMS, map(float, E))),
+                                      "sd_px": None if sdE is None else dict(zip(EARLY_TERMS, map(float, sdE)))}}
+    R0 = R_of_q(g["Q0"])
+    sdQ, sdD, sdH = (_sd(cov, "Q0", 3, held.get("Q0", ())), _sd(cov, "D", 3, held.get("D", ())),
+                     _sd(cov, "H", 3, held.get("H", ())))
+    mdeg_of_q = lambda v: None if v is None else dict(zip(ANGLES, map(float, 2.0 * np.degrees(v) * 1e3)))   # noqa: E731
+    out["rig"] = {"R_sol0": R0.tolist(), "angles_sol0_mdeg": J.rig_angles(R0), "sd_sol0_mdeg": mdeg_of_q(sdQ),
+                  "knot_sol": st["knot"], "t_m": list(map(float, st["t"])),
+                  "rate_mdeg_per_1000sol": dict(zip(ANGLES, map(float, g["D"]))),
+                  "sd_rate": None if sdD is None else dict(zip(ANGLES, map(float, sdD))),
+                  "pitch_early_mdeg_per_1000sol": float(g["D"][0] + g["H"][0]),
+                  "sd_pitch_early": None if sdH is None else float(np.hypot(sdD[0] if sdD is not None else 0.0, sdH[0]))}
+    return out
+
+
+def unit_rows(rec, proj, idx: Dict[str, Any], units: Dict[str, Any], st: Dict[str, Any], g: Dict[str, np.ndarray]) -> Dict[str, Any]:
+    """The units after an adjustment against the law: per camera unit the parameters and their difference from
+    the law at the unit's temperature (fx, fy in ppm; cx, cy in px; k1); per rig unit the angles and their
+    difference from the trend at the unit's sol (mdeg)."""
+    stl = dict(st, G={"NL": g["G_NL"], "NR": g["G_NR"]}, S={"NL": g["S_NL"], "NR": g["S_NR"]},
+               E={"NL": g["E_NL"], "NR": g["E_NR"]}, Q0=g["Q0"], D=g["D"], H=g["H"])
+    cams = []
+    for cid, u in units["cameras"].items():
+        if cid not in rec.cameras:
+            continue
+        p = np.asarray(rec.cameras[cid].params, float)
+        law = camera_params(stl, u["eye"], u["T"], u["early"])
+        cams.append(dict(u, params=list(map(float, p)),
+                         dfx_ppm=float(1e6 * (p[0] - law[0]) / law[0]), dfy_ppm=float(1e6 * (p[1] - law[1]) / law[1]),
+                         dcx_px=float(p[2] - law[2]), dcy_px=float(p[3] - law[3]), dk1=float(p[4] - law[4])))
+    rigs = []
+    for rid, u in units["rigs"].items():
+        if rid not in rec.rigs:
+            continue
+        rg = rec.rigs[rid]
+        sid = next(iter(rg.non_ref_sensors), None)
+        if sid is None:
+            continue
+        R = np.asarray(rg.sensor_from_rig(sid).rotation.matrix())
+        R_law = R_of_q(rig_q_at(g["Q0"], g["D"], g["H"], u["sol"], st["knot"]))
+        a = J.rig_angles(R, R_ref=R_law)
+        rigs.append(dict(u, **{f"d{k}": v for k, v in a.items()}, **J.rig_angles(R)))
+    return {"cameras": cams, "rigs": rigs}
+
+
+def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = None, points: int = POINTS_PER_BLOCK,
+             bin_deg: float = BIN_DEG, max_span: float = MAX_SPAN_SOLS, early_sol: Optional[float] = None,
+             knot_sol: Optional[float] = None, hold: Sequence[str] = HOLD_DEFAULT, iterations: int = 100,
+             covariance: bool = True, passes: int = 2, diagnostics: bool = True, exclude: Sequence[str] = (),
+             verbose: bool = True) -> Dict[str, Any]:
+    """The one-adjustment Navcam joint over the blocks ``{name: WORK folder}`` (module docstring), then the
+    diagnostic pass.  Returns the global terms with their sd (:func:`globals_result`), the residual statistics, the
+    units of the joint and of the diagnostic pass (:func:`unit_rows`) - what :func:`write_tied` writes."""
+    import pycolmap
+    st = start_values(start_dir, knot_sol=knot_sol)
+    cams = {k: pycolmap.Camera(model=st["cameras"][k]["model"], width=5120, height=3840,
+                               params=np.asarray(st["cameras"][k]["params"], float)) for k in ("NL", "NR")}
+    t = time.time()
+    rec0, proj0, idx = J.merge_scapes((J.load_scape(n, scapes_cfg[n]) for n in scapes_cfg), cams, (st["R"], st["t"]),
+                                      points_per_scape=points, seed=0, exclude=exclude)
+    rec, proj, units = tied_reconstruction(rec0, proj0, idx, st, bin_deg=bin_deg, early_sol=early_sol, max_span=max_span)
+    if verbose:
+        log.info(f"tied joint: {len(scapes_cfg)} blocks, {rec.num_reg_images()} images, {rec.num_points3D()} points; "
+                 f"{len(units['cameras'])} bin cameras, {len(units['rigs'])} rig units "
+                 f"(epochs <= {max_span:g} sols, {bin_deg:g} degC bins)  ({time.time() - t:.0f} s)")
+    t = time.time()
+    ba, g, stats = adjust_tied(rec, proj, idx, st, units, hold=hold, iterations=iterations, covariance=covariance,
+                               passes=passes, verbose=verbose)
+    res = globals_result(st, g, ba, units)
+    res.update({"blocks": list(scapes_cfg), "points_per_block": points, "bin_deg": bin_deg, "max_span_sols": max_span,
+                "start_dir": st["folder"], "final_cost": float(ba["final_cost"]), "iterations": ba["iterations"],
+                "brief": ba["brief"], "seconds": time.time() - t, "residuals": stats,
+                "images": {s: len(v) for s, v in idx["images"].items()}, "hold": list(hold),
+                "units": unit_rows(rec, proj, idx, units, st, g)})
+    if verbose:
+        for line in describe_result(res):
+            log.info(line)
+    if diagnostics:
+        t = time.time()
+        res["diagnostics"] = diagnostic_pass(rec0, proj0, idx, st, g, bin_deg=bin_deg, early_sol=early_sol,
+                                             max_span=max_span, iterations=iterations, verbose=verbose)
+        res["diagnostics"]["seconds"] = time.time() - t
+    return res
+
+
+def diagnostic_pass(rec0, proj0, idx: Dict[str, Any], st: Dict[str, Any], g: Dict[str, np.ndarray], bin_deg: float = BIN_DEG,
+                    early_sol: Optional[float] = None, max_span: float = MAX_SPAN_SOLS, iterations: int = 60,
+                    verbose: bool = True) -> Dict[str, Any]:
+    """With the global solution held: one camera per (block, eye, bin, era) and one rig per (block, epoch, bin, era),
+    each started at the law and refined freely (no ties) in one adjustment with the poses and points.  Returns the
+    units' values against the law (:func:`unit_rows`) - the per-block, per-bin and per-sol scatter about the
+    global solution that the figures draw."""
+    stl = dict(st, G={"NL": g["G_NL"], "NR": g["G_NR"]}, S={"NL": g["S_NL"], "NR": g["S_NR"]},
+               E={"NL": g["E_NL"], "NR": g["E_NR"]}, Q0=g["Q0"], D=g["D"], H=g["H"])
+    rec, proj, units = tied_reconstruction(rec0, proj0, idx, stl, bin_deg=bin_deg, early_sol=early_sol,
+                                           max_span=max_span, per_block=True)
+    ba, g2, stats = adjust_tied(rec, proj, idx, stl, units, hold=(), tie_rigs=False, tie_cameras=False,
+                                iterations=iterations, covariance=False, passes=1, verbose=verbose)
+    rows = unit_rows(rec, proj, idx, units, stl, g)
+    if verbose:
+        c = [r for r in rows["cameras"] if r["images"] >= 8]
+        r_ = [r for r in rows["rigs"] if r["frames"] >= 8]
+        log.info(f"diagnostic pass: {len(units['cameras'])} block-bin cameras, {len(units['rigs'])} rig units; "
+                 f"median |dfx| {np.median([abs(x['dfx_ppm']) for x in c]) if c else float('nan'):.0f} ppm, "
+                 f"|dpitch| {np.median([abs(x['dpitch_mdeg']) for x in r_]) if r_ else float('nan'):.1f} mdeg "
+                 f"(units with >= 8 images / frames)")
+    return {"cameras": rows["cameras"], "rigs": rows["rigs"], "residuals": stats, "brief": ba["brief"],
+            "final_cost": float(ba["final_cost"])}
+
+
+def describe_result(res: Dict[str, Any]) -> List[str]:
+    lines = []
+    for eye in ("NL", "NR"):
+        o = res[eye]
+        sd = o["sd"] or {}
+        nan = float("nan")
+        lines.append(f"{eye}: fx {o['fx_ppm_per_degC']:+.2f} +- {sd.get('fx_ppm_per_degC', nan):.2f}, fy "
+                     f"{o['fy_ppm_per_degC']:+.2f} +- {sd.get('fy_ppm_per_degC', nan):.2f} ppm/degC; cx "
+                     f"{o['cx_px_per_degC']:+.4f} +- {sd.get('cx_px_per_degC', nan):.4f}, cy {o['cy_px_per_degC']:+.4f} "
+                     f"+- {sd.get('cy_px_per_degC', nan):.4f} px/degC; k1 {o['k1_per_degC']:+.2e}/degC; early offsets "
+                     + ", ".join(f"{k} {v:+.3f}" for k, v in o["early_mission"]["offsets_px"].items()) + " px")
+    r = res["rig"]
+    lines.append(f"rig at sol 0: {r['angles_sol0_mdeg']}; rates mdeg/1000 sol {r['rate_mdeg_per_1000sol']} "
+                 f"(pitch before sol {r['knot_sol']:g}: {r['pitch_early_mdeg_per_1000sol']:+.2f})")
+    s = res.get("residuals") or {}
+    lines.append(f"tied joint: cost {res.get('final_cost', float('nan')):.1f}, it {res.get('iterations')}, median "
+                 f"{s.get('median_px', float('nan')):.4f} / rms {s.get('rms_px', float('nan')):.4f} px, corners "
+                 f"{s.get('corner_median_px', float('nan')):.3f} px ({res.get('seconds', 0):.0f} s); covariance "
+                 f"{'ok' if not res.get('covariance_error') else res['covariance_error']}")
+    return lines
+
+
+# ====================================================================================== the candidate files
+def write_tied(res: Dict[str, Any], out_dir: PathLike, note: str = "", template_dir: Optional[PathLike] = None) -> Path:
+    """The candidate folder of a :func:`fit_tied` result in the frozen form: the camera files (parameters at T0, the
+    thermal terms, the early-mission offsets of each eye, sd from the covariance) and the rig file (rotation at
+    sol 0, ``drift`` with ``sol0 = 0``, the three rates and the pitch hinge); ``tied_joint.json`` with everything."""
+    tdir = M._folder(template_dir)
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    blocks = sorted(res["blocks"])
+    stamp = datetime.date.today().isoformat()
+    for eye in ("NL", "NR"):
+        c = M._read(M.camera_file("N", eye[1], tdir))
+        o = res[eye]
+        p = o["params_T0"]
+        c["params"] = [float(p.get(n, 0.0)) for n in c["param_names"]]
+        c["fixed_params"] = []
+        sd = o["sd"] or {}
+        c["source"] = (f"MPPP Navcam joint, one adjustment (mppp.calib.tied.fit_tied, {stamp}): one {eye} camera "
+                       f"shared by {len(blocks)} blocks ({', '.join(blocks)}); fisheye + tangential at {res['T0_degC']:g} "
+                       f"degC, fx {o['fx_ppm_per_degC']:+.1f} / fy {o['fy_ppm_per_degC']:+.1f} ppm/degC, cx "
+                       f"{o['cx_px_per_degC']:+.4f} px/degC, k1 {o['k1_per_degC']:+.2e}/degC, early offsets per eye; "
+                       f"every term with the rig trend and the block poses in one bundle adjustment. {note}".strip())
+        c["thermal"] = {"T0_degC": float(res["T0_degC"]), "fx_ppm_per_degC": o["fx_ppm_per_degC"],
+                        "fy_ppm_per_degC": o["fy_ppm_per_degC"], "cx_px_per_degC": o["cx_px_per_degC"],
+                        "cy_px_per_degC": o["cy_px_per_degC"], "k1_per_degC": o["k1_per_degC"],
+                        "k1_source": "tied joint", "note": f"one adjustment of every term ({stamp})"}
+        for k in ("fx_ppm_per_degC", "fy_ppm_per_degC", "cx_px_per_degC", "cy_px_per_degC", "k1_per_degC"):
+            if sd.get(k) is not None and np.isfinite(sd[k]):
+                c["thermal"]["sd_" + k] = float(sd[k])
+        em = o["early_mission"]
+        c["early_mission"] = {"before_sol": float(em["before_sol"]), "per_eye": True,
+                              **{f"d{k}_px": float(v) for k, v in em["offsets_px"].items()}}
+        if em.get("sd_px"):
+            c["early_mission"]["sd_px"] = {k: float(v) for k, v in em["sd_px"].items() if np.isfinite(v)}
+        if o.get("sd_params_T0"):
+            c["sd_params"] = {k: float(v) for k, v in o["sd_params_T0"].items() if np.isfinite(v)}
+        c["fit"] = {"method": "tied joint", "blocks": blocks, "date": stamp, "residuals": res.get("residuals"),
+                    "covariance_error": res.get("covariance_error")}
+        M.write_model(out / M.camera_file("N", eye[1], tdir).name, c)
+    rj = M._read(M.rig_file("N", tdir))
+    r = res["rig"]
+    rj["R_sensor_from_ref"] = r["R_sol0"]
+    rj["t_sensor_from_ref_m"] = list(map(float, r["t_m"]))
+    rates = r["rate_mdeg_per_1000sol"]
+    rj["drift"] = {"model": "linear+hinge", "sol0": 0.0, "knot_sol": float(r["knot_sol"]), "knot_ref": 0.0,
+                   "pitch_mdeg_per_sol": rates["pitch"] / 1000.0, "yaw_mdeg_per_sol": rates["yaw"] / 1000.0,
+                   "roll_mdeg_per_sol": rates["roll"] / 1000.0,
+                   "pitch_early_mdeg_per_sol": float(r["pitch_early_mdeg_per_1000sol"]) / 1000.0,
+                   "hinge_angles": ["pitch"], "blocks": len(blocks), "blocks_names": blocks,
+                   "source": f"tied joint ({stamp}): yaw and roll linear in sol, pitch with the early hinge, all "
+                             f"fitted with the cameras in one adjustment; sd mdeg/1000 sol {r.get('sd_rate')}"}
+    a = r["angles_sol0_mdeg"]
+    rj["note"] = (f"x_NR = R x_NL + t. Navcam tied joint {stamp} ({len(blocks)} blocks): rotation at sol 0, yaw "
+                  f"{a['yaw_mdeg']:+.2f}, pitch {a['pitch_mdeg']:+.2f}, roll {a['roll_mdeg']:+.2f} mdeg; rates "
+                  f"pitch {rates['pitch']:+.2f}, yaw {rates['yaw']:+.2f}, roll {rates['roll']:+.2f} mdeg/1000 sol "
+                  f"(pitch before sol {r['knot_sol']:g}: {r['pitch_early_mdeg_per_1000sol']:+.2f}). Translation held. {note}".strip())
+    rj["source"] = f"MPPP Navcam tied joint (mppp.calib.tied.fit_tied, {stamp})"
+    M.write_model(out / M.rig_file("N", tdir).name, rj)
+    (out / "tied_joint.json").write_text(json.dumps(res, indent=1, default=_json_default), encoding="utf-8")
+    (out / "consensus.json").write_text(json.dumps(consensus_record(res), indent=1, default=_json_default), encoding="utf-8")
+    return out
+
+
+BLOCK_AGREEMENT = {"f_ppm": 150.0, "rig_mdeg": 5.0, "min_images": 8, "max_share": 0.25}
+
+
+def block_agreement(res: Dict[str, Any], limits: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+    """The promotion gate of the tied joint in place of the leave-one-block-out: in the diagnostic pass (every
+    block's bins and epochs free about the held global solution) the share of block-bin cameras with >= min_images
+    images whose fx or fy differ from the law by more than ``f_ppm``, and of rig epochs (>= min_images frames) more
+    than ``rig_mdeg`` from the trend, must be at most ``max_share`` each."""
+    lim = dict(BLOCK_AGREEMENT, **(limits or {}))
+    d = res.get("diagnostics") or {}
+    cams = [c for c in d.get("cameras") or [] if c.get("images", 0) >= lim["min_images"]]
+    rigs = [r for r in d.get("rigs") or [] if r.get("frames", 0) >= lim["min_images"]]
+    bad_c = [c for c in cams if max(abs(c["dfx_ppm"]), abs(c["dfy_ppm"])) > lim["f_ppm"]]
+    bad_r = [r for r in rigs if max(abs(r["dpitch_mdeg"]), abs(r["droll_mdeg"]), abs(r["dyaw_mdeg"])) > lim["rig_mdeg"]]
+    sc = len(bad_c) / len(cams) if cams else float("nan")
+    sr = len(bad_r) / len(rigs) if rigs else float("nan")
+    ok = bool(cams) and bool(rigs) and sc <= lim["max_share"] and sr <= lim["max_share"]
+    return {"ok": ok, "limits": lim, "cameras": len(cams), "cameras_off": len(bad_c), "share_cameras_off": sc,
+            "rigs": len(rigs), "rigs_off": len(bad_r), "share_rigs_off": sr,
+            "worst_camera_ppm": max((max(abs(c["dfx_ppm"]), abs(c["dfy_ppm"])) for c in cams), default=float("nan")),
+            "worst_rig_mdeg": max((max(abs(r["dpitch_mdeg"]), abs(r["droll_mdeg"])) for r in rigs), default=float("nan")),
+            "blocks_off": sorted({c["scape"] for c in bad_c} | {r["scape"] for r in bad_r})}
+
+
+def consensus_record(res: Dict[str, Any]) -> Dict[str, Any]:
+    """The ``consensus.json`` of the candidate folder in the shape :func:`mppp.calib.fit.check_navcam` reads."""
+    sd = {}
+    for eye in ("NL", "NR"):
+        s = res[eye].get("sd_params_T0")
+        sd[eye] = {k: float(v) for k, v in (s or {}).items()} if s else {"missing": True}
+    em = {"converged": True, "per_eye": True, "rounds": [{"positive_definite": res.get("covariance_error") is None}],
+          "offsets_px": {}, "sd_px": {}, "z": {}, "applied_terms": []}
+    for eye in ("NL", "NR"):
+        e = res[eye]["early_mission"]
+        for k, v in e["offsets_px"].items():
+            em["offsets_px"][f"{eye}_{k}"] = float(v)
+            em["applied_terms"].append(f"{eye}_{k}")
+            s = (e.get("sd_px") or {}).get(k)
+            if s is not None and np.isfinite(s) and s > 0:
+                em["sd_px"][f"{eye}_{k}"] = float(s)
+                em["z"][f"{eye}_{k}"] = float(v / s)
+    r = res["rig"]
+    return {"method": "tied", "blocks": {b: res.get("images", {}).get(b) for b in res["blocks"]},
+            "T0_degC": res["T0_degC"], "sd": sd, "iterations": res.get("iterations"), "final_cost": res.get("final_cost"),
+            "residuals": res.get("residuals"), "covariance_error": res.get("covariance_error"),
+            "covariance_damping": res.get("covariance_damping"), "early_mission": em,
+            "thermal": {"yaw_rate_mdeg_per_1000sol": r["rate_mdeg_per_1000sol"]["yaw"],
+                        "sd": {"yaw_rate": (r.get("sd_rate") or {}).get("yaw")}},
+            "block_agreement": block_agreement(res) if res.get("diagnostics") else None,
+            "rig_abs_mdeg": r["angles_sol0_mdeg"], "hold": res.get("hold"), "seconds": res.get("seconds")}
+
+
+def _json_default(o):
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    if isinstance(o, (np.floating, np.integer)):
+        return o.item()
+    if isinstance(o, Path):
+        return str(o)
+    raise TypeError(type(o).__name__)
