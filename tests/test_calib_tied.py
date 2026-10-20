@@ -86,3 +86,26 @@ def test_tied_adjust_and_files(tmp_path):
     diag = T.diagnostic_pass(rec, proj, idx, st, g, bin_deg=10.0, iterations=10, verbose=False)
     assert diag["cameras"] and all(c["scape"] == "blk" for c in diag["cameras"])
     assert diag["rigs"] and all("dpitch_mdeg" in r for r in diag["rigs"])
+
+
+def test_tied_figure_inputs_feed_the_refined_figures(tmp_path):
+    pytest.importorskip("pyceres")
+    pytest.importorskip("matplotlib")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, stats = T.adjust_tied(rec2, proj2, idx, st, units, iterations=10, covariance=False, passes=1, verbose=False)
+    res = T.globals_result(st, g, ba, units)
+    res.update({"blocks": ["blk"], "residuals": stats, "final_cost": ba["final_cost"], "iterations": ba["iterations"],
+                "seconds": 0.0, "units": T.unit_rows(rec2, proj2, idx, units, st, g)})
+    res["diagnostics"] = T.diagnostic_pass(rec, proj, idx, st, g, bin_deg=10.0, iterations=5, verbose=False)
+    fi = T.figure_inputs(res, min_images=1)
+    assert fi["bins"] and fi["rig_residuals"]["blocks"] and "pp_slopes" in fi["consensus"]["thermal"]
+    out = T.write_tied(res, tmp_path / "cand")
+    assert (out.parent / "rig_residuals.json").is_file() and (out / "thermal_bins.json").is_file()
+    from mppp.calib import constrain as C, load_camera
+    rig = json.loads((out / "M2020_N_rig.json").read_text())
+    inuse = {e: load_camera("N", e[1]) for e in ("NL", "NR")}
+    cons = json.loads((out / "consensus.json").read_text())
+    C.plot_rig_trends(fi["rig_residuals"], cons, rig["drift"], tmp_path / "rig.png", cx_inuse_px_per_degC=-0.05)
+    C.plot_intrinsics_vs_temperature(cons, inuse, fi["bins"], fi["rig_residuals"], tmp_path / "intr.png")
+    assert (tmp_path / "rig.png").stat().st_size > 1000 and (tmp_path / "intr.png").stat().st_size > 1000

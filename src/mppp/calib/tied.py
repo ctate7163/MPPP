@@ -671,7 +671,14 @@ def write_tied(res: Dict[str, Any], out_dir: PathLike, note: str = "", template_
     rj["source"] = f"MPPP Navcam tied joint (mppp.calib.tied.fit_tied, {stamp})"
     M.write_model(out / M.rig_file("N", tdir).name, rj)
     (out / "tied_joint.json").write_text(json.dumps(res, indent=1, default=_json_default), encoding="utf-8")
-    (out / "consensus.json").write_text(json.dumps(consensus_record(res), indent=1, default=_json_default), encoding="utf-8")
+    fi = figure_inputs(res)
+    cons = dict(consensus_record(res), **{k: fi["consensus"][k] for k in ("NL", "NR")})
+    cons["thermal"] = dict(cons["thermal"], **fi["consensus"]["thermal"])
+    (out / "consensus.json").write_text(json.dumps(cons, indent=1, default=_json_default), encoding="utf-8")
+    # the diagnostic pass as the figures' inputs (paper_figures.py reads <study>/rig_residuals.json next to navcam_joint/)
+    for folder in {out, out.parent}:
+        (folder / "rig_residuals.json").write_text(json.dumps(fi["rig_residuals"], indent=1, default=_json_default), encoding="utf-8")
+        (folder / "thermal_bins.json").write_text(json.dumps(fi["bins"], indent=1, default=_json_default), encoding="utf-8")
     return out
 
 
@@ -735,3 +742,50 @@ def _json_default(o):
     if isinstance(o, Path):
         return str(o)
     raise TypeError(type(o).__name__)
+
+
+# ====================================================================================== the figures
+def figure_inputs(res: Dict[str, Any], min_images: int = 8) -> Dict[str, Any]:
+    """What the refined figures take, from a :func:`fit_tied` result with its diagnostic pass: ``consensus`` (the
+    global solution in the shape of the profile joint's ``consensus.json``: ``NL``/``NR`` params, ``thermal.axis_ppm``
+    and ``pp_slopes``), ``rig_residuals`` (the diagnostic rig epochs about the trend: ``blocks`` rows with
+    yaw/pitch/roll_mdeg, ``fits`` vs T and sol) and ``bins`` (the diagnostic block-bin cameras {eye, block, T, n,
+    fx, fy, cx, cy, k1}) - the per-block, per-bin and per-sol values drawn about the one solution."""
+    from .fit import ols
+    from ..waypoints.sites import site_label
+    cons: Dict[str, Any] = {"method": "tied", "T0_degC": res["T0_degC"], "blocks": {b: None for b in res["blocks"]}}
+    for eye in ("NL", "NR"):
+        cons[eye] = dict(res[eye]["params_T0"])
+    cons["thermal"] = {"axis_ppm": {e: [res[e]["fx_ppm_per_degC"], res[e]["fy_ppm_per_degC"]] for e in ("NL", "NR")},
+                       "pp_slopes": {e: [res[e]["cx_px_per_degC"], res[e]["cy_px_per_degC"]] for e in ("NL", "NR")},
+                       "k1_slopes": {e: res[e]["k1_per_degC"] for e in ("NL", "NR")},
+                       "yaw_rate_mdeg_per_1000sol": res["rig"]["rate_mdeg_per_1000sol"]["yaw"]}
+    d = res.get("diagnostics") or {}
+    rows = []
+    for r in d.get("rigs") or []:
+        if r.get("frames", 0) < min_images or not r.get("scape"):
+            continue
+        lab = site_label(r["scape"])
+        rows.append({"block": f"{lab} [sols {r['sols'][0]}-{r['sols'][1]}]" if r.get("sols") else lab, "site": lab,
+                     "T_median_degC": r["T"], "sol_median": r["sol"], "images": 2 * r["frames"],
+                     "yaw_mdeg": r["dyaw_mdeg"], "pitch_mdeg": r["dpitch_mdeg"], "roll_mdeg": r["droll_mdeg"]})
+    fits = {}
+    for ang in ("yaw", "pitch", "roll"):
+        y = np.array([r[f"{ang}_mdeg"] for r in rows], float)
+        T = np.array([r["T_median_degC"] for r in rows], float)
+        S = np.array([r["sol_median"] for r in rows], float)
+        vt, vs = ols(T, y), ols(S / 1000.0, y)
+        for f in (vt, vs):                                     # too few epochs: no slope (0 +- nan) for the figure
+            if f.get("slope") is None:
+                f.update({"slope": 0.0, "se": float("nan"), "z": float("nan")})
+        fits[ang] = {"mean_mdeg": float(np.mean(y)) if len(y) else None, "sd_mdeg": float(np.std(y)) if len(y) > 1 else None,
+                     "vs_T": vt, "vs_sol": vs}
+    rr = {"blocks": rows, "fits": fits, "source": "tied joint diagnostic pass (globals held, epochs free)"}
+    bins = []
+    for c in d.get("cameras") or []:
+        if c.get("images", 0) < min_images or not c.get("scape"):
+            continue
+        p = c["params"]
+        bins.append({"eye": c["eye"], "block": site_label(c["scape"]), "key": c["key"], "T": c["T"], "n": c["images"],
+                     "fx": p[0], "fy": p[1], "cx": p[2], "cy": p[3], "k1": p[4]})
+    return {"consensus": cons, "rig_residuals": rr, "bins": bins}

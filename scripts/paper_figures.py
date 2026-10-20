@@ -86,8 +86,10 @@ def main(argv=None) -> int:
             C.plot_rig_trends(rr, cons, rig_new["drift"], out / f"navcam_rig_trends_{tag}.png",
                               cx_inuse_px_per_degC=th["NR"]["cx_px"] - th["NL"]["cx_px"], label=a.label,
                               model_label=f"{tag} drift model")
-            if res:
-                C.plot_intrinsics_vs_temperature(cons, inuse, F.thermal_bin_rows(res), rr,
+            tb = study / "thermal_bins.json"                 # 0.91: the tied joint's diagnostic block bins
+            bins = json.loads(tb.read_text(encoding="utf-8")) if tb.is_file() else (F.thermal_bin_rows(res) if res else [])
+            if bins:
+                C.plot_intrinsics_vs_temperature(cons, inuse, bins, rr,
                                                  out / f"navcam_intrinsics_vs_temperature_{tag}.png", label=a.label,
                                                  model_label=tag)
         else:
