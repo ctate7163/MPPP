@@ -84,6 +84,8 @@ NAVCAM_RIG_EPOCH_GAP_SOLS = calib.constrain.RIG_EPOCH_GAP_SOLS    # Navcam visit
                                                                  # apart get their own rig rotation
 NAVCAM_RIG_EPOCH_BREAKS_SOLS = calib.constrain.RIG_EPOCH_BREAK_SOLS
 NAVCAM_RIG_EPOCH_MAX_SPAN_SOLS = calib.constrain.RIG_EPOCH_MAX_SPAN_SOLS   # an epoch spanning more sols is split
+NAVCAM_RIG_EPOCH_MIN_IMAGES = 16     # 0.91: an epoch with fewer Navcam images (8 stereo frames) ...
+NAVCAM_RIG_EPOCH_MIN_STATIONS = 2    # ... or a single station gets no rig of its own: joined to the nearest epoch
 
 
 def focus_bins(counts: Sequence[Optional[float]], width: float = ZCAM_FOCUS_BIN) -> List[int]:
@@ -305,7 +307,8 @@ class SfmProject:
                navcam_distortion_fit: str = NAVCAM_DISTORTION_FIT, navcam_k4: str = "consensus",
                navcam_rig_yaw: str = "hold", navcam_rig_epoch_gap: Optional[float] = None,
                zcam_line_form: Any = None, navcam_rig_epoch_breaks: Optional[Sequence[float]] = None,
-               navcam_rig_epochs_tie: bool = True, navcam_pp: str = NAVCAM_PP) -> "SfmProject":
+               navcam_rig_epochs_tie: bool = True, navcam_pp: str = NAVCAM_PP,
+               navcam_rig_roll: str = "hold") -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP manifest; paths relative to
         ``processed_dir``), padded to the detector frame.  One COLMAP camera per Navcam eye (from the promoted
@@ -361,6 +364,8 @@ class SfmProject:
             raise ValueError("navcam_distortion_fit must be 'hold' or 'refine'")
         if navcam_rig_yaw not in NAVCAM_RIG_YAW_SETTINGS:
             raise ValueError(f"navcam_rig_yaw must be one of {NAVCAM_RIG_YAW_SETTINGS}")
+        if navcam_rig_roll not in NAVCAM_RIG_YAW_SETTINGS:
+            raise ValueError(f"navcam_rig_roll must be one of {NAVCAM_RIG_YAW_SETTINGS}")
         if navcam_k4 != "consensus":
             raise ValueError("navcam_k4: k3 and k4 come as a pair from the promoted model ('consensus'); k4 = 0 is "
                              "no longer a form")
@@ -549,6 +554,7 @@ class SfmProject:
                     "navcam_distortion_fit": navcam_distortion_fit, "navcam_k4": navcam_k4,
                     "navcam_pp": navcam_pp,
                     "navcam_rig_yaw": navcam_rig_yaw,
+                    "navcam_rig_roll": navcam_rig_roll,                 # 0.91: the roll held at the file's trend
                     "navcam_rig_thermal": False,                      # no rig temperature term
                     "navcam_cameras": {"dir": str(nav_dir), "fingerprint": navcam_cameras_fingerprint(nav_dir),
                                        "models_fingerprint": calib.models_fingerprint(nav_dir), **nav_info}})
@@ -877,7 +883,8 @@ def _align_priors_to_cameras(images: List[Dict[str, Any]], cameras: Dict[str, Di
 def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: float,
                       nav_info: Optional[Dict[str, Any]] = None,
                       cameras: Optional[Dict[str, Dict[str, Any]]] = None,
-                      breaks: Sequence[float] = (), max_span: Optional[float] = None) -> Optional[Dict[str, Any]]:
+                      breaks: Sequence[float] = (), max_span: Optional[float] = None,
+                      min_images: int = NAVCAM_RIG_EPOCH_MIN_IMAGES, min_stations: int = NAVCAM_RIG_EPOCH_MIN_STATIONS) -> Optional[Dict[str, Any]]:
     """
     Splits the Navcam rig of a block into one rig per *epoch* - the clusters of the Navcam images' sols
     separated by more than ``gap`` sols (the visits of a site the rover came back to).  With one cluster nothing
@@ -898,6 +905,7 @@ def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: fl
     if "N" not in rig or not nav:
         return None
     eps = calib.sol_epochs([int(r["sol"]) for r in nav], gap, breaks, max_span)
+    eps, merged = merge_small_epochs(eps, nav, min_images=min_images, min_stations=min_stations)
     for r in nav:
         r["rig_epoch"] = 0
     if len(eps) < 2:
@@ -943,7 +951,41 @@ def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: fl
         rig[key] = ent
         table.append(dict(ep, rig_key=key, cameras=[ent["ref"], ent["sensor"]]))
     return {"gap_sols": float(gap), "breaks_sols": [float(x) for x in breaks],
-            "max_span_sols": None if max_span is None else float(max_span), "epochs": table}
+            "max_span_sols": None if max_span is None else float(max_span), "epochs": table,
+            "merged_small_epochs": merged, "min_images": int(min_images), "min_stations": int(min_stations)}
+
+
+def merge_small_epochs(eps: List[Tuple[int, int]], nav: List[Dict[str, Any]], min_images: int = NAVCAM_RIG_EPOCH_MIN_IMAGES,
+                       min_stations: int = NAVCAM_RIG_EPOCH_MIN_STATIONS) -> Tuple[List[Tuple[int, int]], List[Dict[str, Any]]]:
+    """0.91: an epoch with fewer than ``min_images`` Navcam images or fewer than ``min_stations`` stations cannot
+    determine a rig rotation of its own (Rochette's sol-341 single station of 20 Oct: 1.5 deg off): it is joined to
+    the neighbouring epoch nearest in sol, repeatedly, until every epoch is large enough or one is left.  Returns
+    (epochs, the merges made)."""
+    eps = [tuple(e) for e in eps]
+    merged: List[Dict[str, Any]] = []
+
+    def size(e):
+        m = [r for r in nav if e[0] <= int(r["sol"]) <= e[1]]
+        return len(m), len({str(r.get("station") or r.get("site_drive") or r.get("name", "")[:9]) for r in m})
+
+    while len(eps) > 1:
+        small = [i for i, e in enumerate(eps) if size(e)[0] < min_images or size(e)[1] < min_stations]
+        if not small:
+            break
+        i = small[0]
+        e = eps[i]
+        cands = []
+        if i > 0:
+            cands.append((e[0] - eps[i - 1][1], i - 1))
+        if i + 1 < len(eps):
+            cands.append((eps[i + 1][0] - e[1], i + 1))
+        j = min(cands)[1]
+        a, b = min(e[0], eps[j][0]), max(e[1], eps[j][1])
+        merged.append({"epoch": [int(e[0]), int(e[1])], "images": size(e)[0], "stations": size(e)[1],
+                       "joined_to": [int(eps[j][0]), int(eps[j][1])]})
+        lo, hi = min(i, j), max(i, j)
+        eps = eps[:lo] + [(a, b)] + eps[hi + 1:]
+    return eps, merged
 
 
 def _rig_family(key: str) -> str:

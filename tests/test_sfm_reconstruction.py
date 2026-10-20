@@ -1016,6 +1016,26 @@ def test_navcam_rig_yaw_hold(tmp_path, mode):
     assert abs(np.array(rec.rigs[1].sensor_from_rig(sid).params)[1] - q1[1]) > 0   # refined again when asked
 
 
+def test_navcam_rig_roll_hold(tmp_path):
+    """0.91: navcam_rig_roll = "hold" keeps the start roll (quaternion z) with the yaw; the pitch still moves."""
+    pytest.importorskip("pyceres")
+    from helpers import _build_rec, _synthetic
+    from mppp.sfm.reconstruction import bundle_adjust
+    proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+    proj.settings["navcam_rig_yaw"] = "hold"
+    proj.settings["navcam_rig_roll"] = "hold"
+    rec, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
+    rig = rec.rigs[1]
+    sid = list(rig.non_ref_sensors)[0]
+    q0 = np.array(rig.sensor_from_rig(sid).params)[:4].copy()
+    bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=30)
+    q1 = np.array(rec.rigs[1].sensor_from_rig(sid).params)[:4]
+    n0 = q0 / np.linalg.norm(q0)
+    assert abs(q1[1] - n0[1]) < 1e-9 and abs(q1[2] - n0[2]) < 1e-9       # yaw and roll stay
+    assert abs(q1[0] - q0[0]) > 0                                        # the pitch moves
+
+
 def test_outlier_frame_threshold_and_reconstruct_options():
     import inspect
     from mppp.sfm import reconstruction as R

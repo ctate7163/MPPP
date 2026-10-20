@@ -850,6 +850,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     n_rig_prior = 0
     n_rig_tie = 0
     rig_yaw = str(project.settings.get("navcam_rig_yaw") or "refine")        # "refine" or "hold"
+    rig_roll = str(project.settings.get("navcam_rig_roll") or "refine")      # 0.91: likewise the roll (z)
     for key, arr in rig_blocks.items():
         if not prob.has_parameter_block(arr):
             continue
@@ -878,7 +879,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 else:
                     held_q = [3, 4, 5, 6]
             if nav_rig and rig_yaw == "hold":
-                held_q = [1] + held_q                     # the yaw stays; pitch (x) and roll (z) refined
+                held_q = [1] + held_q                     # the yaw stays; pitch (x) refined
+            if nav_rig and rig_roll == "hold":
+                held_q = sorted(set([2] + held_q))        # 0.91: the roll (z) stays too
             prob.set_manifold(arr, pyceres.SubsetManifold(7, held_q))
         else:
             prob.set_parameter_block_constant(arr)

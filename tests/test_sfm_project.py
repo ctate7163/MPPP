@@ -455,16 +455,16 @@ def test_navcam_consensus_shipped_with_mppp():
         assert cam["model"] == "THIN_PRISM_FISHEYE" and len(cam["params"]) == 12
         th = json.loads(f.read_text())["thermal"]
         # the 18 Oct 2026 pass-2 consensus (23 blocks): fx, fy per axis, ~38-41 and ~43-45 ppm/degC
-        assert 37.0 < th["fx_ppm_per_degC"] < 41.5 and 43.0 < th["fy_ppm_per_degC"] < 46.0 and th["T0_degC"] == -20
+        assert 37.0 < th["fx_ppm_per_degC"] < 41.5 and 43.0 < th["fy_ppm_per_degC"] < 47.5 and th["T0_degC"] == -20
         assert "ppm_per_degC" not in th                                          # the per-axis terms are the model
     assert (NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).is_file()
     assert calib.navcam_fingerprint(NAVCAM_CONSENSUS_DIR)
-    # the parameters of the 18 Oct 2026 pass-2 consensus of 23 blocks (the rig's fitted translation flag kept)
+    # the parameters of the 20 Oct 2026 pass-2 consensus of 16 blocks (the rig's fitted translation flag kept)
     nl = json.loads((NAVCAM_CONSENSUS_DIR / "M2020_NL_fisheye_tangential.json").read_text())
     rig = json.loads((NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).read_text())
-    assert nl["params"][0] == pytest.approx(2956.1655944938043) and nl["params"][9] == pytest.approx(-0.006617090516290966)
+    assert nl["params"][0] == pytest.approx(2956.1785734362966) and nl["params"][9] == pytest.approx(-0.0066789096026409495)
     assert rig["translation"] == "fitted" and rig["baseline_m"] == pytest.approx(0.4240102397823094)
-    assert rig["drift"]["yaw_mdeg_per_sol"] == pytest.approx(0.0025605370970143183)
+    assert rig["drift"]["yaw_mdeg_per_sol"] == pytest.approx(0.0021612675573975887)
 
 
 def test_navcam_distortion_hold_and_held_zeros():
@@ -663,7 +663,7 @@ def test_navcam_rig_epochs_split_the_visits(tmp_path):
     rf.write_text(json.dumps({"R_sensor_from_ref": np.eye(3).tolist(), "t_sensor_from_ref_m": [-0.424, 0, 0],
                               "drift": {"sol0": 932.0, "pitch_mdeg_per_sol": 0.0055, "yaw_mdeg_per_sol": 0.0,
                                         "roll_mdeg_per_sol": 0.0}, "convention": "NL reference"}))
-    info = navcam_rig_epochs(images, rig, 100.0, {"rig": {"file": str(rf)}}, cameras=cams)
+    info = navcam_rig_epochs(images, rig, 100.0, {"rig": {"file": str(rf)}}, cameras=cams, min_images=0, min_stations=0)
     assert set(rig) == {"N", "N#1"} and [e["sols"] for e in info["epochs"]] == [[91, 101], [360, 378]]
     assert info["epochs"][1] == {**info["epochs"][1], "rig_key": "N#1", "cameras": ["NL#1", "NR#1"], "images": 6}
     assert rig["N#1"]["ref"] == "NL#1" and rig["N#1"]["sensor"] == "NR#1" and rig["N"]["ref"] == "NL"
@@ -724,7 +724,7 @@ def test_navcam_rig_epochs_with_the_knot(tmp_path):
     images = [{"instrument": e, "sol": s, "camera_temperature_degC": -20.0} for s in (280, 290, 305, 310) for e in ("NL", "NR")]
     rig = {"N": {"ref": "NL", "sensor": "NR", "R_sensor_from_ref": np.eye(3).tolist(), "t_sensor_from_ref": [-0.424, 0, 0]}}
     cams = {"NL": {"params": [1.0] * 12}, "NR": {"params": [2.0] * 12}}
-    info = navcam_rig_epochs(images, rig, 50.0, cameras=cams, breaks=(300.0,))
+    info = navcam_rig_epochs(images, rig, 50.0, cameras=cams, breaks=(300.0,), min_images=0, min_stations=0)
     assert [e["sols"] for e in info["epochs"]] == [[280, 290], [305, 310]] and info["breaks_sols"] == [300.0]
     assert set(rig) == {"N", "N#1"} and "tied to NL" in cams["NL#1"]["source"]
     assert navcam_rig_epochs([dict(r, instrument=r["instrument"].split("#")[0]) for r in images],
@@ -757,3 +757,20 @@ def test_k4_consensus_keeps_a_fitted_k4():
     cam["params"][9] = 0.0021
     c = navcam_distortion_terms(cam, "hold", pp="hold")                          # k3, k4 come as a pair from the model
     assert c["params"][9] == pytest.approx(0.0021) and "k4" in c["fixed_params"] and "k3" in c["fixed_params"]
+
+
+def test_navcam_rig_epochs_small_epoch_joined():
+    """0.91: an epoch with too few images or one station gets no rig of its own - it joins the nearest epoch
+    (Rochette's sol-341 single station of 20 Oct)."""
+    from mppp.sfm.project import merge_small_epochs, navcam_rig_epochs
+    def imgs(sol, station, n):
+        return [{"instrument": e, "sol": sol, "station": station, "camera_temperature_degC": -20.0} for _ in range(n) for e in ("NL", "NR")]
+    images = imgs(174, "S003D0100", 10) + imgs(176, "S003D0200", 10) + imgs(341, "S009D1914", 3) + imgs(500, "S012D0000", 10) + imgs(505, "S012D0100", 10)
+    nav = [r for r in images]
+    eps, merged = merge_small_epochs([(174, 176), (341, 341), (500, 505)], nav)
+    assert eps == [(174, 176), (341, 505)] and merged[0]["epoch"] == [341, 341] and merged[0]["stations"] == 1
+    rig = {"N": {"ref": "NL", "sensor": "NR", "R_sensor_from_ref": np.eye(3).tolist(), "t_sensor_from_ref": [-0.424, 0, 0]}}
+    cams = {"NL": {"params": [1.0] * 12}, "NR": {"params": [2.0] * 12}}
+    info = navcam_rig_epochs(images, rig, 50.0, cameras=cams, breaks=(300.0,))
+    assert [e["sols"] for e in info["epochs"]] == [[174, 176], [341, 505]] and info["merged_small_epochs"]
+    assert {r["rig_epoch"] for r in images if r["sol"] == 341} == {1}

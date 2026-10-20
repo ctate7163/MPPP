@@ -106,6 +106,7 @@ class Settings:
     navcam_rig: str = "consensus"                 # rig rotation start: "consensus" (the promoted rig) or "cahv"; the baseline is CAHV
     navcam_rig_refine: str = "refine"             # "refine" (rotation), "auto" (strong network only), "hold", or "full" (rotation and translation, baseline studies)
     navcam_rig_yaw: str = "hold"                  # one constant rig yaw held in every block ("hold") or refined with the rig ("refine")
+    navcam_rig_roll: str = "hold"                 # 0.91: the rig roll held at the rig file's trend ("hold"; per epoch it is poorly determined) or refined ("refine")
     navcam_distortion_fit: str = "hold"           # Navcam distortion held at the models in every block ("hold") or fitted per block ("refine")
     navcam_pp: str = "hold"                       # the Navcam principal point held at the models ("hold") or refined per block ("refine")
     navcam_aspect: str = "hold"                   # every Navcam camera keeps fy / fx at its start ("hold") or refines fx, fy apart ("free")
@@ -591,6 +592,7 @@ def _rig_refine(s: Settings) -> Any:
 def _check_settings(s: Settings) -> None:
     for k, v, ok in (("navcam_distortion_fit", s.navcam_distortion_fit, ("hold", "refine")),
                      ("navcam_rig_yaw", s.navcam_rig_yaw, ("hold", "refine")),
+                     ("navcam_rig_roll", s.navcam_rig_roll, ("hold", "refine")),
                      ("navcam_pp", s.navcam_pp, ("hold", "refine")),
                      ("navcam_intrinsics", s.navcam_intrinsics, ("refine", "hold", "auto")),
                      ("source", s.source, SOURCES)):
@@ -633,7 +635,7 @@ def wanted_project_settings(s: Settings, work: Path) -> Dict[str, Any]:
             "zcam_hold_f_images": int(s.zcam_hold_f_images) if s.zcam_intrinsics == "focus_model" else None,
             "prior_R_corrected": True,
             "navcam_distortion_fit": s.navcam_distortion_fit, "navcam_k4": "consensus",
-            "navcam_rig_yaw": s.navcam_rig_yaw, "navcam_pp": s.navcam_pp,
+            "navcam_rig_yaw": s.navcam_rig_yaw, "navcam_rig_roll": s.navcam_rig_roll, "navcam_pp": s.navcam_pp,
             "prior_sigma_m": [float(s.prior_sigma_m)] * 3}
 
 
@@ -696,6 +698,7 @@ def build_project(work: PathLike, images: List[Dict[str, Any]], settings: Settin
                                  zcam_rig_fit=s.zcam_rig_fit if z else None,
                                  zcam_focus_model_file=s.zcam_focus_model,
                                  navcam_distortion_fit=s.navcam_distortion_fit, navcam_rig_yaw=s.navcam_rig_yaw,
+                                 navcam_rig_roll=s.navcam_rig_roll,
                                  navcam_rig_epoch_gap=s.navcam_rig_epoch_gap_sols,
                                  navcam_rig_epoch_breaks=s.navcam_rig_epoch_breaks_sols,
                                  zcam_line_form=s.zcam_line_form if z else None, navcam_pp=s.navcam_pp)
