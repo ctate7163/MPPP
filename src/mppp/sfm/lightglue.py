@@ -32,6 +32,7 @@ log = logging.getLogger("mppp.sfm")
 DEFAULT_MAX_KEYPOINTS = 8192
 DEFAULT_FILTER_THRESHOLD = 0.1          # LightGlue's match confidence threshold
 PROBE_PAIRS = 20                        # pairs timed before the block's LightGlue time is projected
+PROGRESS_PAIRS = 2000                   # a log line every so many pairs (the matcher is otherwise silent for an hour)
 
 
 class TooSlow(RuntimeError):
@@ -160,6 +161,11 @@ def match_pairs_lightglue(project: SfmProject, pairs: Optional[Sequence[Tuple[st
                         pairs_file.write_text("".join(lines), encoding="utf-8")
                         raise TooSlow(f"LightGlue on {device}: {1000 * (time.time() - t0) / PROBE_PAIRS:.0f} ms per "
                                       f"pair x {len(pairs)} pairs = {hours:.1f} h > {max_hours:g} h")
+                    log.info("LightGlue on %s: %.0f ms per pair x %d pairs, about %.1f h", device,
+                             1000 * (time.time() - t0) / PROBE_PAIRS, len(pairs), hours)
+                if k and k % PROGRESS_PAIRS == 0:
+                    left = (time.time() - t0) / k * (len(pairs) - k) / 60.0
+                    log.info("LightGlue: %d of %d pairs, %d matches, about %.0f min left", k, len(pairs), total, left)
                 if a not in images or b not in images or a == b:
                     continue
                 ia, ib = images[a], images[b]
