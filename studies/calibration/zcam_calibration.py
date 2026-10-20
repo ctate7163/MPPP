@@ -177,9 +177,27 @@ def cmd_calibrate(a) -> int:
                       rig_translation=getattr(a, "rig_translation", "cahv"))
     chk = check_model(model, old)
     (out / "M2020_ZCAM034_focus_model.json").write_text(json.dumps(model, indent=1, default=float), encoding="utf-8")
+    # 0.91 (Christian, 20 Oct): the calibration with and without p1, p2 - the v1-form twin and the displacement
+    from mppp.calib.fit import zcam_tangential_comparison, zcam_without_tangential
+    cmp_ = zcam_tangential_comparison(model)
+    (out / "M2020_ZCAM034_focus_model_no_tangential.json").write_text(
+        json.dumps(zcam_without_tangential(model), indent=1, default=float), encoding="utf-8")
+    (out / "tangential_comparison.json").write_text(json.dumps(cmp_, indent=1, default=float), encoding="utf-8")
     (out / "check.json").write_text(json.dumps(chk, indent=1), encoding="utf-8")
     rep = report_lines(model, grades) + ["## Checks", ""] + \
         [f"- {'ok' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}" for c in chk["checks"]]
+    rep += ["", "## With and without p1, p2 (zcam-v2 vs the v1 form)", ""]
+    for g, e in cmp_["eyes"].items():
+        if "displacement_px" not in e:
+            rep.append(f"- {g}: {e.get('note')}")
+            continue
+        d = e["displacement_px"]
+        rep.append(f"- {g}: p1 {e['p1']:+.2e}" + (f" +- {e['sd_p1']:.1e}" if e.get("sd_p1") else "")
+                   + (f" (block sd {e['tau_p1']:.1e})" if e.get("tau_p1") else "") + f", p2 {e['p2']:+.2e}"
+                   + (f" +- {e['sd_p2']:.1e}" if e.get("sd_p2") else "") + (f" (block sd {e['tau_p2']:.1e})" if e.get("tau_p2") else "")
+                   + f"; image displacement without them: rms {d.get('rms_px', float('nan')):.3f} px, corners "
+                   f"{d.get('corner_rms_px', float('nan')):.3f} px (rotation removed, focus {e['focus']:g})")
+    rep.append(f"- the v1-form twin: {out / 'M2020_ZCAM034_focus_model_no_tangential.json'}")
     # every block's lines (not only the selected), for the figure: offsets and slopes against the lens temperature
     rows = []
     for i in infos:

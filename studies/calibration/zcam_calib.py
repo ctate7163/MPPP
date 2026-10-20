@@ -406,6 +406,22 @@ def report_lines(model: Dict[str, Any], grades: Optional[Sequence[Dict[str, Any]
                                f"{', '.join(f'{x:+.1f}' for x in p['rotvec_mdeg'])} | {p['baseline_mm']:.2f} | "
                                f"{'' if sh is None else f'{sh[0]:+.2f}, {sh[1]:+.2f}'} |")
                 out.append("")
+            bc = r.get("baseline_vs_cahv")
+            if bc:
+                vs, vt = bc.get("vs_sol_per_1000") or {}, bc.get("vs_T") or {}
+                out += [f"- refined baseline minus CAHV over {bc['n']} blocks: {bc['mean_mm']:+.2f} mm"
+                        + (f" (sd {bc['sd_mm']:.2f} mm)" if bc.get("sd_mm") is not None else "")
+                        + (f"; vs sol {vs['slope']:+.2f} +- {vs['se']:.2f} mm/1000 sol" if vs.get("slope") is not None else "")
+                        + (f"; vs lens T {vt['slope']:+.3f} +- {vt['se']:.3f} mm/degC" if vt.get("slope") is not None else ""), ""]
+            fits = (r.get("residuals") or {}).get("fits") or {}
+            if fits:
+                out += ["Rotation residuals of the blocks' rigs about the mean (mdeg):", ""]
+                for ang, f in fits.items():
+                    vt, vs = f.get("vs_T") or {}, f.get("vs_sol") or {}
+                    out.append(f"- {ang}: sd {f.get('sd_mdeg') or float('nan'):.1f} mdeg"
+                               + (f"; vs lens T {vt['slope']:+.2f} +- {vt['se']:.2f} mdeg/degC (z {vt.get('z') or 0:+.1f})" if vt.get("slope") is not None else "")
+                               + (f"; vs sol {vs['slope']:+.2f} +- {vs['se']:.2f} mdeg/1000 sol (z {vs.get('z') or 0:+.1f})" if vs.get("slope") is not None else ""))
+                out.append("")
             p2r = cal.get("pp_to_rig") or {}
             if p2r.get("pp0_px"):
                 out += [f"- ZR principal point at the reference focus fixed at pp0 {p2r['pp0_px']} px; each block's offset "
