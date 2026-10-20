@@ -81,13 +81,18 @@ def station_rows(project_dir: PathLike, min_observations: int = MIN_OBSERVATIONS
 
 
 def similarity_fit(src: np.ndarray, dst: np.ndarray, w: Optional[np.ndarray] = None, huber_m: float = HUBER_M,
-                   iterations: int = 20, translation_only: bool = False) -> Dict[str, Any]:
-    """Robust (Huber, IRLS) similarity ``dst ~ s R src + t`` (Umeyama per iteration); ``w`` base weights."""
+                   iterations: int = 20, translation_only: bool = False, horizontal: bool = True) -> Dict[str, Any]:
+    """Robust (Huber, IRLS) similarity ``dst ~ s R src + t`` (Umeyama per iteration); ``w`` base weights.
+    ``horizontal`` (0.90, the default): the rotation is a yaw about the vertical axis and the scale is fitted in
+    the east-north plane - the waypoint elevations are a few decimetres rough, and a free 3-D rotation turned
+    them into a tilt that posed as scale and rotation (Enchanted Lake, 6 stations over 55 m: 1.7 deg, -4300 ppm,
+    with horizontal offsets of 0.1 m)."""
     src, dst = np.asarray(src, float), np.asarray(dst, float)
     n = len(src)
     w0 = np.ones(n) if w is None else np.asarray(w, float)
     wr = np.ones(n)
     s, R, t = 1.0, np.eye(3), np.zeros(3)
+    dims = slice(0, 2) if horizontal else slice(0, 3)
     for _ in range(iterations):
         ww = w0 * wr
         ww = ww / ww.sum()
@@ -95,15 +100,18 @@ def similarity_fit(src: np.ndarray, dst: np.ndarray, w: Optional[np.ndarray] = N
         if translation_only:
             s, R, t = 1.0, np.eye(3), md - ms
         else:
-            A, B = src - ms, dst - md
+            A, B = (src - ms)[:, dims], (dst - md)[:, dims]
             C = (B * ww[:, None]).T @ A
             U, S, Vt = np.linalg.svd(C)
-            D = np.diag([1.0, 1.0, np.sign(np.linalg.det(U @ Vt))])
-            R = U @ D @ Vt
+            D = np.eye(len(S))
+            D[-1, -1] = np.sign(np.linalg.det(U @ Vt))
+            Rd = U @ D @ Vt
             var = float(np.sum(ww * np.sum(A ** 2, 1)))
             s = float(np.trace(np.diag(S) @ D) / var) if var > 0 else 1.0
+            R = np.eye(3)
+            R[dims, dims] = Rd
             t = md - s * R @ ms
-        r = np.linalg.norm(dst - (s * src @ R.T + t), axis=1)
+        r = np.linalg.norm((dst - (s * src @ R.T + t))[:, dims], axis=1)
         wr = np.where(r <= huber_m, 1.0, huber_m / np.maximum(r, 1e-9))
         if _ >= iterations // 2:                  # second half: stations far beyond the scatter get no weight
             sd = 1.4826 * float(np.median(r))
@@ -113,7 +121,7 @@ def similarity_fit(src: np.ndarray, dst: np.ndarray, w: Optional[np.ndarray] = N
     rot = np.degrees(np.arccos(np.clip((np.trace(R) - 1) / 2, -1, 1)))
     yaw = float(np.degrees(np.arctan2(R[1, 0], R[0, 0])))
     return {"scale": float(s), "R": R, "t": t, "rotation_deg": float(rot), "yaw_deg": yaw,
-            "translation_only": bool(translation_only)}
+            "translation_only": bool(translation_only), "horizontal": bool(horizontal)}
 
 
 def check_block(project_dir: PathLike, name: Optional[str] = None, abs_m: float = FLAG_ABS_M, min_m: float = FLAG_MIN_M,
@@ -145,6 +153,12 @@ def check_block(project_dir: PathLike, name: Optional[str] = None, abs_m: float 
     rk = np.array([[r["residual_m"][0], r["residual_m"][1]] for r in kept])
     mad = np.median(np.abs(rk - np.median(rk, 0)), 0) * 1.4826
     scatter = float(max(np.hypot(*mad), 0.05))
+    # the scale's standard error from the scatter and the stations' horizontal spread about their centroid (the
+    # lever arm of a scale): a block whose waypoints sit in two clusters 50 m apart has a 1000-ppm-class se, and a
+    # localisation offset between rover sites then poses as scale (Enchanted Lake, 0.90)
+    hc = src[:, :2] - np.average(src[:, :2], axis=0, weights=w ** 2)
+    lever = float(np.sqrt(np.sum(hc ** 2)))
+    scale_se_ppm = float(1e6 * scatter / lever) if lever > 0 and not fit["translation_only"] else None
     for r in rows:
         rh = r["residual_h_m"]
         r["flag"] = bool(r.get("surveyed", True) and (rh > abs_m or (rh > min_m and rh > k * scatter)))
@@ -152,7 +166,8 @@ def check_block(project_dir: PathLike, name: Optional[str] = None, abs_m: float 
                             f"{rh:.2f} m > {abs_m:g} m" if rh > abs_m else
                             f"{rh:.2f} m > {min_m:g} m and > {k:g} x scatter {scatter:.2f} m" if r["flag"] else "")
     n_kept = len(kept)
-    out.update(similarity={"scale_ppm": 1e6 * (fit["scale"] - 1.0), "rotation_mdeg": 1e3 * fit["rotation_deg"],
+    out.update(similarity={"scale_ppm": 1e6 * (fit["scale"] - 1.0), "scale_se_ppm": scale_se_ppm,
+                           "rotation_mdeg": 1e3 * fit["rotation_deg"],
                            "yaw_mdeg": 1e3 * fit["yaw_deg"], "translation_m": fit["t"].tolist(),
                            "translation_only": fit["translation_only"], "stations": n_kept,
                            "unsurveyed_stations": n_unsurveyed, "extent_m": ext},
@@ -250,8 +265,9 @@ def write_flags(m: Dict[str, Any], out_dir: PathLike) -> Path:
     for b in m["blocks"]:
         s = b.get("similarity") or {}
         mo = b.get("mean_raw_offset_m")
+        se = s.get("scale_se_ppm")
         L.append(f"| {b['block']} | {s.get('stations', '-')} + {s.get('unsurveyed_stations', 0)} | "
-                 f"{s.get('scale_ppm', float('nan')):+.0f} | "
+                 f"{s.get('scale_ppm', float('nan')):+.0f}{'' if se is None else f' ± {se:.0f}'} | "
                  f"{s.get('rotation_mdeg', float('nan')):.0f} | "
                  + (" ".join(f"{x:+.2f}" for x in mo) if mo else "-")
                  + f" | {b.get('scatter_h_m') or float('nan'):.2f} | {', '.join(b.get('flagged') or []) or '-'} |")
