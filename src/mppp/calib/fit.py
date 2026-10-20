@@ -1839,3 +1839,158 @@ def block_table_markdown(rows: Sequence[Dict[str, Any]], focal_limit_ppm: float 
     L.append(f"Refined minus the joint model at each bin's temperature and the block's sol; agrees: |fx, fy| ≤ "
              f"{focal_limit_ppm:g} ppm and rig angles ≤ {rig_limit_mdeg:g} mdeg.")
     return "\n".join(L)
+
+
+# ------------------------------------------------------------------------------------------- rig drift (0.90)
+def wls_tau(y: np.ndarray, X: np.ndarray, var: np.ndarray) -> Dict[str, Any]:
+    """Weighted least squares with an additive between-block variance tau^2 (DerSimonian-Laird generalised to a
+    regression; the study's ``navcal._wls``).  Returns coef, se, p, tau, Q, cov, n_used."""
+    from scipy import stats
+    y, X, var = np.asarray(y, float), np.asarray(X, float), np.asarray(var, float)
+    ok = np.isfinite(y) & np.isfinite(var) & np.all(np.isfinite(X), axis=1)
+    if ok.sum() <= X.shape[1]:
+        nan = [float("nan")] * X.shape[1]
+        return {"coef": nan, "se": nan, "p": nan, "tau": float("nan"), "Q": float("nan"),
+                "cov": np.full((X.shape[1], X.shape[1]), np.nan), "n_used": int(ok.sum())}
+    y, X, var = y[ok], X[ok], var[ok]
+    w = 1.0 / var
+    W = np.diag(w)
+    XtWX = X.T @ W @ X
+    b = np.linalg.solve(XtWX, X.T @ W @ y)
+    r = y - X @ b
+    Q = float(np.sum(w * r ** 2))
+    k, p = X.shape
+    P = W - W @ X @ np.linalg.solve(XtWX, X.T @ W)
+    tau2 = max(0.0, (Q - (k - p)) / float(np.trace(P)))
+    w2 = 1.0 / (var + tau2)
+    A = X.T @ np.diag(w2) @ X
+    cov = np.linalg.inv(A)
+    b2 = cov @ (X.T @ (w2 * y))
+    se = np.sqrt(np.diag(cov))
+    z = b2 / se
+    pv = 2 * stats.norm.sf(np.abs(z))
+    r2 = y - X @ b2
+    return {"coef": b2.tolist(), "se": se.tolist(), "p": pv.tolist(), "tau": float(np.sqrt(tau2)), "Q": Q,
+            "Q2": float(np.sum(w2 * r2 ** 2)), "cov": cov, "n_used": int(ok.sum()), "dof": int(k - p)}
+
+
+def rig_rows(blocks: Sequence[Dict[str, Any]], sd_mdeg_at_100_images: float = 1.0) -> List[Dict[str, Any]]:
+    """One row per rig epoch of the blocks (:func:`block_navcam_results`): absolute pitch, yaw, roll (mdeg, the
+    rotation vector of right-from-left in the sensor frame, the rig file's convention), sol, T, images, and a
+    nominal sd that scales with 1/sqrt(images) (the block adjustments do not give one)."""
+    from .joint import rig_angles
+    rows = []
+    for b in blocks:
+        for key, r in (b.get("rigs") or {}).items():
+            if r.get("sol_median") is None or r.get("T_mean") is None:
+                continue
+            a = rig_angles(np.asarray(r["R"]))
+            sd = sd_mdeg_at_100_images * np.sqrt(100.0 / max(r["images"], 1))
+            rows.append({"block": b.get("site") or b["block"], "epoch": key, "sol": float(r["sol_median"]),
+                         "T": float(r["T_mean"]), "images": int(r["images"]), "sols": r.get("sols"),
+                         "pitch_mdeg": a["pitch_mdeg"], "yaw_mdeg": a["yaw_mdeg"], "roll_mdeg": a["roll_mdeg"],
+                         "sd_pitch_mdeg": sd, "sd_yaw_mdeg": sd, "sd_roll_mdeg": sd})
+    return rows
+
+
+def fit_rig_drift(rows: Sequence[Dict[str, Any]], knot_sol: Union[float, str, None] = "free",
+                  knot_angles: Sequence[str] = ("pitch",), no_drift: Sequence[str] = (),
+                  held: Sequence[str] = (), knot_grid: Sequence[float] = tuple(range(100, 1001, 10)),
+                  reference_sols: Optional[Sequence[float]] = None, sol0: Optional[float] = 0.0) -> Dict[str, Any]:
+    """
+    The rig drift model in the rig file's form (``drift``: ``rate (sol - sol0) + (early_rate - rate) (min(sol,
+    knot_sol) - knot_ref)`` per angle, :func:`mppp.calib.constrain.drift_offset_mdeg`) from rig-epoch rows
+    (:func:`rig_rows`, or the study's per-block rigs): per angle a between-block regression on camera temperature
+    and sol with weights 1 / (sd^2 + tau^2); ``knot_angles`` get a hinge whose knot is ``knot_sol`` or, with
+    ``"free"`` (0.90), the sol in ``knot_grid`` that minimises the weighted residual sum of squares (profile fit;
+    ``knot_profile`` in the result); ``no_drift`` angles keep their fit for information but get rate 0 (yaw is
+    held in the block runs); ``held`` angles get rate 0 and no hinge.  ``sol0`` and ``knot_ref`` are means over
+    ``reference_sols`` (default: the rows) so the drift averages to zero over the blocks the joint rig came from.
+    """
+    rows = [r for r in rows if all(np.isfinite(r.get(k, np.nan)) for k in ("sol", "T", "pitch_mdeg", "yaw_mdeg", "roll_mdeg"))]
+    T = np.array([r["T"] for r in rows], float)
+    sol = np.array([r["sol"] for r in rows], float)
+    ref_sol = np.array(reference_sols if reference_sols is not None else sol, float)
+    out: Dict[str, Any] = {"model": "linear", "sol0": float(ref_sol.mean()) if sol0 is None else float(sol0), "blocks": len(rows),
+                           "blocks_names": [f"{r['block']}{'' if r.get('epoch') in (None, 'N') else ' ' + str(r['epoch'])}" for r in rows],
+                           "sol_range": [float(sol.min()), float(sol.max())], "T_mean_degC": float(T.mean()),
+                           "no_drift": list(no_drift), "held": list(held)}
+
+    def _fit(ang: str, knot: Optional[float]) -> Dict[str, Any]:
+        y = np.array([r[f"{ang}_mdeg"] for r in rows], float)
+        v = np.maximum(np.array([r.get(f"sd_{ang}_mdeg", np.nan) for r in rows], float) ** 2, 1e-6)
+        cols = [np.ones(len(rows)), T - T.mean(), sol - sol.mean()]
+        if knot is not None:
+            cols.append(np.minimum(sol, knot))
+        return wls_tau(y, np.c_[tuple(cols)], v)
+
+    knot: Optional[float] = None
+    if knot_sol == "free" and knot_angles:
+        prof = []
+        for kk in knot_grid:
+            if not (sol.min() + 30 < kk < sol.max() - 30):
+                continue
+            q = sum(_fit(a, float(kk))["Q2"] for a in knot_angles if a not in held)
+            prof.append((float(kk), float(q)))
+        if prof:
+            knot = min(prof, key=lambda t: t[1])[0]
+            qs = np.array([q for _, q in prof])
+            # the 1-sigma range of the knot: where the profile is within 1 of its minimum (chi^2 with weights 1/(var+tau^2))
+            inside = [k for (k, q) in prof if q <= qs.min() + 1.0]
+            out["knot_profile"] = prof
+            out["knot_sol_range"] = [min(inside), max(inside)]
+    elif knot_sol not in (None, "free", False):
+        knot = float(knot_sol)
+    if knot is not None:
+        out["model"] = "linear+hinge"
+        out["knot_sol"] = knot
+        out["knot_ref"] = float(np.mean(np.minimum(ref_sol, knot))) if sol0 is None else 0.0
+    for ang in ("pitch", "yaw", "roll"):
+        h = knot is not None and ang in knot_angles and ang not in held
+        f = _fit(ang, knot if h else None)
+        rate, se = float(f["coef"][2]), float(f["se"][2])
+        out[f"{ang}_fit_mdeg_per_sol"] = rate
+        out[f"{ang}_se"] = se
+        out[f"{ang}_p"] = float(f["p"][2])
+        out[f"{ang}_T_mdeg_per_degC"] = float(f["coef"][1])
+        out[f"{ang}_T_se"] = float(f["se"][1])
+        out[f"{ang}_tau_mdeg"] = float(f["tau"])
+        out[f"{ang}_level_mdeg"] = float(f["coef"][0])
+        out[f"{ang}_mdeg_per_sol"] = 0.0 if (ang in no_drift or ang in held) else rate
+        if h:
+            c = np.asarray(f["cov"])
+            out[f"{ang}_early_mdeg_per_sol"] = rate + float(f["coef"][3])
+            out[f"{ang}_early_se"] = float(np.sqrt(c[2, 2] + c[3, 3] + 2 * c[2, 3]))
+        # the fitted angle at sol 0 (mean temperature): intercept minus the regressors' values at sol 0
+        at0 = float(f["coef"][0]) + rate * (0.0 - sol.mean())
+        if h:
+            at0 -= float(f["coef"][3]) * min(0.0, knot)
+        out[f"{ang}_at_sol0_mdeg"] = at0
+    return out
+
+
+def rig_with_drift(rig: Dict[str, Any], drift: Dict[str, Any], note: str = "",
+                   keep_from_file: Sequence[str] = ("yaw",)) -> Dict[str, Any]:
+    """A rig file (:func:`mppp.calib.models.load_rig`) with the drift model of :func:`fit_rig_drift` and its rotation
+    moved to the model's reference sol (``drift["sol0"]``; the fitted ``<angle>_at_sol0_mdeg`` when sol0 = 0, else the
+    rotation at sol0 of the previous model), so that :func:`mppp.calib.constrain.rig_at` reproduces the fit."""
+    from scipy.spatial.transform import Rotation
+    from .constrain import rig_at
+    out = copy.deepcopy(rig)
+    if float(drift.get("sol0", 0.0)) == 0.0 and all(f"{a}_at_sol0_mdeg" in drift for a in ("pitch", "yaw", "roll")):
+        rv = np.radians(1e-3 * np.array([drift["pitch_at_sol0_mdeg"], drift["yaw_at_sol0_mdeg"], drift["roll_at_sol0_mdeg"]]))
+        # an angle the runs hold to the model (yaw; ``keep_from_file``) keeps the file's own value at sol 0
+        R0, _t, _ = rig_at(rig, sol=0.0)
+        rv_old = Rotation.from_matrix(R0).as_rotvec()
+        for i, a in enumerate(("pitch", "yaw", "roll")):
+            if a in keep_from_file:
+                rv[i] = rv_old[i]
+        R = Rotation.from_rotvec(rv).as_matrix()
+    else:
+        R, _t, _ = rig_at(rig, sol=float(drift.get("sol0", 0.0)))
+    out["R_sensor_from_ref"] = R.tolist()
+    out["rotvec_rad"] = Rotation.from_matrix(R).as_rotvec().tolist()
+    out["drift"] = {k: v for k, v in drift.items() if k != "knot_profile"}
+    out["drift"]["note"] = (note or "rig drift refitted from the block rig epochs (mppp.calib.fit.fit_rig_drift)") + \
+        f"; sol0 = {drift.get('sol0', 0.0):g}: the rotation is the rig at that sol"
+    return out

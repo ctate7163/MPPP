@@ -303,78 +303,163 @@ def site_waypoints(sites: Dict[str, Any], waypoints: Union[PathLike, Dict[str, A
     return out
 
 
-def plot_site_map(sites: Dict[str, Any], waypoints: Union[PathLike, Dict[str, Any]], path: PathLike,
-                  terrain_dir: Optional[PathLike] = None, highlight: Sequence[str] = (),
-                  margin_deg: float = 0.004, step_deg: float = 0.0002, title: Optional[str] = None,
-                  labels: bool = True) -> Path:
+def plot_site_map(blocks: Optional[Dict[str, Any]], waypoints: Union[PathLike, Dict[str, Any]], path: PathLike,
+                  terrain_dir: Optional[PathLike] = None, panos: Sequence[Sequence[Any]] = (),
+                  samples: Sequence[Sequence[Any]] = (), highlight: Sequence[str] = (), dpi: int = 300,
+                  box_crater: Sequence[float] = (77.1, 78.1, 17.9, 18.8),
+                  box_traverse: Optional[Sequence[float]] = None, title_c: Optional[str] = None) -> Path:
     """
-    Map of the sites over the rover traverse: every waypoint as a dot joined in sol order (the traverse), each site's
-    waypoints as a square with its label, on a shaded-relief background from quantized-mesh tiles in
-    ``terrain_dir`` (:mod:`mppp.waypoints.terrain`; without tiles a plain background).  ``highlight`` names the
-    sites drawn in the warm colour (e.g. the group being run).  Longitude east, latitude north in degrees.
+    The traverse map of the site study (figure 2 of 16 Oct 2026, ``studies/m20_sites``): **A** Jezero crater with the
+    traverse and the box of B, **B** the traverse with the blocks of rover stations as orange ±30 m squares numbered
+    by first sol (white labels, spread with adjustText when installed), end-of-drive stops, the Mastcam-Z numbered
+    360s (triangles, ``panos`` rows ``(number, [sols], name, zooms)``) and sample cores (diamonds, ``samples`` rows
+    ``(..., sol)``) on the tinted hillshade of the terrain tiles in ``terrain_dir`` with 100 m contours and a scale
+    bar; **C** the block table (number, name, N× end-of-drive Navcam 360s, Z× numbered Mastcam-Z 360s, visits).
+    ``blocks`` is the site table's ``official_blocks`` (default: the shipped table); ``highlight`` names the sites
+    whose labels get the warm colour.
     """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from .table import lonlat_of
-    d = waypoints if isinstance(waypoints, dict) else json.loads(Path(waypoints).read_text(encoding="utf-8"))
-    trav = sorted((int((f.get("properties") or {}).get("sol", -1)), *lonlat_of(f)) for f in d.get("features") or []
-                  if lonlat_of(f) is not None and (f.get("properties") or {}).get("sol") is not None)
-    T = np.array(trav, float)
-    sw = site_waypoints(sites, d)
-    lon0, lon1 = T[:, 1].min() - margin_deg, T[:, 1].max() + margin_deg
-    lat0, lat1 = T[:, 2].min() - margin_deg, T[:, 2].max() + margin_deg
-    aspect = 1.0 / np.cos(np.deg2rad(T[:, 2].mean()))
-    fig = plt.figure(figsize=(14, 11 * (lat1 - lat0) * aspect / (lon1 - lon0) + 0.8))
-    ax = fig.add_axes([0.05, 0.1, 0.72, 0.82])                   # the map; the numbered list to its right
-    lst = fig.add_axes([0.78, 0.1, 0.21, 0.82]); lst.axis("off")
-    if terrain_dir and Path(terrain_dir).is_dir():
-        from .terrain import shaded_relief, terrain_grid
-        gx, gy, Z = terrain_grid(terrain_dir, (lon0, lon1, lat0, lat1), step_deg)
-        if np.isfinite(Z).any():
-            sr = shaded_relief(gx, gy, Z)
-            ax.imshow(sr["rgb"], extent=sr["extent"], origin="lower", interpolation="bilinear", aspect=aspect)
-            ax.contour(gx, gy, np.where(np.isnan(Z), np.nanmean(Z), Z), levels=np.arange(-2700, -1000, 20),
-                            colors="k", linewidths=0.25, alpha=0.2)
-    else:
-        ax.set_facecolor("#efede8")
-    ax.plot(T[:, 1], T[:, 2], color="#555555", lw=0.8, alpha=0.8, label="traverse (waypoints in sol order)")
-    ax.scatter(T[:, 1], T[:, 2], s=3, color="#333333", alpha=0.6, edgecolor="none")
-    hl = set(highlight)
-    from .sites import site_label
     import matplotlib.patheffects as pe
-    listed = []
-    for k, (name, s) in enumerate(sorted(sw.items(), key=lambda kv: kv[1]["first_sol"]), 1):
-        c = "#eb6834" if name in hl else "#2a78d6"
-        lo, la = np.array(s["lon"]), np.array(s["lat"])
-        half = 30.0 / (MARS_RADIUS_M * np.deg2rad(1.0))         # a +-30 m square in degrees of latitude
-        cx, cy = s["centre"]
-        ax.add_patch(plt.Rectangle((cx - half * aspect, cy - half), 2 * half * aspect, 2 * half, fill=False,
-                                   edgecolor=c, lw=1.2))
-        ax.scatter(lo, la, s=14, color=c, edgecolor="white", linewidth=0.4, zorder=5)
-        if labels:
-            ax.annotate(str(k), (cx + half * aspect, cy + half), fontsize=6.5, color=c, ha="left", va="bottom",
-                        xytext=(1, 1), textcoords="offset points", fontweight="bold",
-                        path_effects=[pe.withStroke(linewidth=1.5, foreground="white")])
-        listed.append((k, name, s["first_sol"], c))
-    if labels and listed:
-        ncol = 1 if len(listed) <= 30 else 2
-        per = int(np.ceil(len(listed) / ncol))
-        for j in range(ncol):
-            for i, (k, name, fs, c) in enumerate(listed[j * per:(j + 1) * per]):
-                lst.text(0.02 + 0.5 * j, 0.98 - i * (0.96 / per), f"{k:>2}  {site_label(name)} ({fs})", fontsize=6.5,
-                         color=c, transform=lst.transAxes, va="top", family="DejaVu Sans Mono" if False else None)
-    ax.set_xlim(lon0, lon1)
-    ax.set_ylim(lat0, lat1)
-    ax.set_aspect(aspect)
-    ax.set_xlabel("longitude east  °")
-    ax.set_ylabel("latitude  °")
-    ax.set_title(title or f"Sites (blocks of rover stations) along the Perseverance traverse: {len(sw)} sites, "
-                          f"{len(T)} waypoints to sol {int(T[:, 0].max())}")
-    if hl:
-        ax.scatter([], [], color="#eb6834", label="sites of the run"); ax.scatter([], [], color="#2a78d6", label="other sites")
-    ax.legend(loc="lower right", fontsize=8, frameon=True)
-    fig.savefig(path, dpi=200)
+    from .sites import load_site_table
+    from .table import lonlat_of
+    from .terrain import terrain_grid
+    try:
+        from adjustText import adjust_text
+    except ImportError:                                            # pragma: no cover - optional
+        adjust_text = None
+    C1, C2, C3, C4, INK, INK2 = "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#0b0b0b", "#52514e"
+    FS = 1.15
+    plt.rcParams.update({"font.size": 10 * FS})
+    CMAP = plt.get_cmap("gist_earth")
+    if blocks is None:
+        blocks = load_site_table()["official_blocks"]
+    d = waypoints if isinstance(waypoints, dict) else json.loads(Path(waypoints).read_text(encoding="utf-8"))
+    W = sorted(((int(p.get("sol")), *lonlat_of(f), str(p.get("final", "")).lower())
+                for f in d.get("features") or [] for p in [f.get("properties") or {}]
+                if lonlat_of(f) is not None and p.get("sol") is not None), key=lambda t: t[0])
+    S = np.array([w[0] for w in W]); lon = np.array([w[1] for w in W]); lat = np.array([w[2] for w in W])
+    F = np.array([w[3] for w in W]); isE = F == "y"
+    COS = np.cos(np.deg2rad(lat.mean()))
+    M_LON, M_LAT = np.deg2rad(1) * MARS_RADIUS_M * COS, np.deg2rad(1) * MARS_RADIUS_M
+    if box_traverse is None:
+        box_traverse = (lon.min() - 0.006, lon.max() + 0.012, lat.min() - 0.006, lat.max() + 0.006)
+    BOX_A, BOX_B = tuple(box_crater), tuple(box_traverse)
+    rows = sorted(((int(k) if str(k).isdigit() else k, v) for k, v in blocks.items()),
+                  key=lambda kv: min(min(x) for x in (kv[1].get("visits") or [[0]])))
+    hl = set(highlight)
+
+    def posll(sol):
+        w = np.where(S <= sol)[0]
+        i = w[-1] if len(w) else 0
+        return lon[i], lat[i]
+    ZP = np.array([posll(r[1][0]) for r in panos]).reshape(-1, 2)
+    SP = np.array([posll(r[-1]) for r in samples]).reshape(-1, 2)
+
+    def draw_terrain(ax, box, step, ci=100):
+        if not (terrain_dir and Path(terrain_dir).is_dir()):
+            ax.set_facecolor("#efede8")
+            return None
+        from matplotlib.colors import LightSource
+        gx, gy, Z = terrain_grid(terrain_dir, box, step)
+        if not np.isfinite(Z).any():
+            ax.set_facecolor("#efede8")
+            return None
+        norm = plt.Normalize(np.nanpercentile(Z, 1), np.nanpercentile(Z, 99))
+        dx = np.deg2rad(gx[1] - gx[0]) * MARS_RADIUS_M * COS; dy = np.deg2rad(gy[1] - gy[0]) * MARS_RADIUS_M
+        Zf = np.where(np.isnan(Z), np.nanmean(Z), Z)
+        hs = LightSource(azdeg=315, altdeg=40).hillshade(Zf[::-1], vert_exag=3, dx=dx, dy=dy)[::-1]
+        rgb = CMAP(norm(Zf))[..., :3]; rgb = 0.55 * rgb + 0.45 * 0.86
+        out = np.clip(rgb * (0.35 + 0.65 * hs)[..., None], 0, 1); out = np.where(np.isnan(Z)[..., None], 0.93, out)
+        ax.imshow(out, extent=[gx[0], gx[-1], gy[0], gy[-1]], origin="lower", interpolation="bilinear", zorder=0)
+        lev = np.arange(np.floor(np.nanmin(Zf) / ci) * ci, np.nanmax(Zf) + ci, ci)
+        ax.contour(gx, gy, Zf, levels=lev, colors="k", linewidths=0.3, alpha=0.25, zorder=1)
+        return norm
+
+    def scalebar(ax, box, metres, label):
+        dl = metres / M_LON; y0 = box[2] + 0.06 * (box[3] - box[2]); x0 = box[0] + 0.05 * (box[1] - box[0])
+        ax.plot([x0, x0 + dl], [y0, y0], color=INK, lw=3, zorder=9, solid_capstyle="butt")
+        ax.text(x0 + dl / 2, y0 + 0.025 * (box[3] - box[2]), label, ha="center", fontsize=8 * FS, zorder=9,
+                bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.7))
+
+    Wd, Ht = 18.0, 7.4
+    rect = lambda x, y, w, h: [x / Wd, y / Ht, w / Wd, h / Ht]                       # noqa: E731
+    rA = (BOX_A[1] - BOX_A[0]) * COS / (BOX_A[3] - BOX_A[2]); rB = (BOX_B[1] - BOX_B[0]) * COS / (BOX_B[3] - BOX_B[2])
+    left, gap, cbar, top = 0.85, 0.95, 1.25, Ht - 0.45
+    hh = (Wd - left - gap - cbar) / (rA + rB)
+    a = (left, top - hh, rA * hh, hh); b = (left + rA * hh + gap, top - hh, rB * hh, hh)
+    fig = plt.figure(figsize=(Wd, Ht), facecolor="#fcfcfb")
+    # ---- A: the crater
+    ax = fig.add_axes(rect(*a))
+    draw_terrain(ax, (BOX_A[0] - 0.02, BOX_A[1] + 0.02, BOX_A[2] - 0.02, BOX_A[3] + 0.02), 0.003)
+    ax.plot(lon, lat, color="white", lw=3.2); ax.plot(lon, lat, color=C1, lw=1.6)
+    ax.add_patch(plt.Rectangle((BOX_B[0], BOX_B[2]), BOX_B[1] - BOX_B[0], BOX_B[3] - BOX_B[2], fill=False, ec=INK, lw=1.2, zorder=5))
+    ax.text(BOX_B[0] + 0.01, BOX_B[3] + 0.012, "B", fontsize=11 * FS, fontweight="bold", color=INK, zorder=6)
+    ax.plot(lon[0], lat[0], marker="*", ms=13, color=C4, mec=INK, mew=0.6, zorder=7)
+    ax.annotate("Landing (OEB)", (lon[0], lat[0]), xytext=(8, -14), textcoords="offset points", fontsize=8 * FS, color=INK)
+    ax.set_xlim(BOX_A[0], BOX_A[1]); ax.set_ylim(BOX_A[2], BOX_A[3]); ax.set_aspect(1 / COS)
+    ax.set_title(f"A. Jezero crater and the Perseverance traverse (sols {S.min()}–{S.max()})", loc="left", fontsize=10 * FS, color=INK)
+    ax.set_xlabel("Longitude [°E]"); ax.set_ylabel("Latitude [°N]")
+    dl = 10000 / M_LON; x0, y0 = BOX_A[0] + 0.05, BOX_A[2] + 0.04
+    ax.plot([x0, x0 + dl], [y0, y0], color=INK, lw=3); ax.text(x0 + dl / 2, y0 + 0.015, "10 km", ha="center", fontsize=8 * FS)
+    # ---- B: the traverse with the blocks
+    ax = fig.add_axes(rect(*b))
+    nB = draw_terrain(ax, BOX_B, 0.00005)
+    ax.plot(lon, lat, color="white", lw=3.0, zorder=2); ax.plot(lon, lat, color=C1, lw=1.4, zorder=3)
+    ax.scatter(lon[isE], lat[isE], s=10, color="white", ec=C1, lw=0.7, zorder=4)
+    m = F == "m"; ax.scatter(lon[m], lat[m], s=8, marker="s", color="white", ec=C1, lw=0.6, zorder=4)
+    if len(ZP):
+        ax.scatter(ZP[:, 0], ZP[:, 1], marker="^", s=46, color=C4, ec=INK, lw=0.5, zorder=7)
+    if len(SP):
+        ax.scatter(SP[:, 0], SP[:, 1], marker="D", s=30, color=C3, ec=INK, lw=0.5, zorder=7)
+    txt = []
+    half = 30.0
+    for k, o in rows:
+        c = o.get("centre") or {}
+        lo, la = float(c.get("lon")), float(c.get("lat"))
+        if not (BOX_B[0] <= lo <= BOX_B[1] and BOX_B[2] <= la <= BOX_B[3]):
+            continue
+        hw, hh2 = float(o.get("half_size_m", half)) / M_LON, float(o.get("half_size_m", half)) / M_LAT
+        ax.add_patch(plt.Rectangle((lo - hw, la - hh2), 2 * hw, 2 * hh2, fill=False, ec=C2, lw=1.6, zorder=6))
+        ec = C2
+        txt.append(ax.text(lo, la, str(k), fontsize=8.5 * FS, fontweight="bold",
+                           color=(C2 if o.get("site") in hl else INK), zorder=8,
+                           bbox=dict(boxstyle="round,pad=0.15", fc="white", ec=ec, lw=0.8, alpha=0.92)))
+    ax.set_xlim(BOX_B[0], BOX_B[1]); ax.set_ylim(BOX_B[2], BOX_B[3]); ax.set_aspect(1 / COS)
+    if adjust_text is not None and txt:
+        adjust_text(txt, ax=ax, expand=(1.35, 1.6), arrowprops=dict(arrowstyle="-", color=INK2, lw=0.6), max_move=(60, 60))
+    h = [plt.Line2D([], [], color=C1, lw=1.4, label="Traverse"),
+         plt.Line2D([], [], marker="^", color=C4, mec=INK, ls="none", ms=7, label="Mastcam-Z numbered 360"),
+         plt.Line2D([], [], marker="D", color=C3, mec=INK, ls="none", ms=6, label="Sample core"),
+         plt.Line2D([], [], marker="s", mfc="none", mec=C2, mew=2, ls="none", ms=11, label="Block of rover stations")]
+    ax.legend(handles=h, loc="lower center", bbox_to_anchor=(0.6, 0.01), fontsize=7.6 * FS, framealpha=0.92, facecolor="white", edgecolor="#d6d5d0")
+    bg = "coarse HiRISE-DTM-based terrain, ~70 m grid" if nB is not None else "no terrain tiles"
+    ax.set_title("B. Blocks of rover stations, numbered by first sol. Background: " + bg, loc="left", fontsize=9.5 * FS, color=INK)
+    ax.set_xlabel("Longitude [°E]")
+    scalebar(ax, BOX_B, 1000, "1 km")
+    if nB is not None:
+        cax = fig.add_axes(rect(b[0] + b[2] + 0.12, b[1], 0.2, b[3]))
+        cb = fig.colorbar(plt.cm.ScalarMappable(norm=nB, cmap=CMAP), cax=cax); cb.set_label("Elevation [m] (tint)", fontsize=8 * FS)
+        cb.ax.tick_params(labelsize=7 * FS)
+    # ---- C: the table
+    ax = fig.add_axes(rect(0.85, 0.1, Wd - 1.2, a[1] - 1.05)); ax.axis("off")
+    NW = max(len(str(o.get("name", ""))) for _, o in rows)
+    lines = []
+    for k, o in rows:
+        runs = sorted((min(v), max(v)) for v in (o.get("visits") or []))
+        lab = ", ".join(f"{x}" if x == y else f"{x}–{y}" for x, y in runs) + ("+" if runs and runs[-1][1] >= S.max() else "")
+        nz = len(o.get("mastcam_z_360") or [])
+        cnt = f"N×{int(o.get('n_navcam_360') or 0):>2}" + (f", Z×{nz}" if nz else "")
+        lines.append(f"{k:>2}  {str(o.get('name', ''))[:34]:<{NW}} {cnt:<10} sols {lab}")
+    ncol, per = 3, int(np.ceil(len(lines) / 3))
+    for k in range(ncol):
+        ax.text(k / ncol, 1.0, "\n".join(lines[per * k:per * (k + 1)]), va="top", ha="left", family="DejaVu Sans Mono",
+                fontsize=7.2 * FS, color=INK, transform=ax.transAxes, linespacing=1.25)
+    ax.set_title(title_c or ("C. Blocks of rover stations: number, name, N× = end-of-drive Navcam 360s and Z× = numbered "
+                             "Mastcam-Z 360s within ±30 m of the block centre, and the sols the rover ended inside that square"),
+                 loc="left", fontsize=10 * FS, color=INK)
+    fig.savefig(path, dpi=dpi, facecolor=fig.get_facecolor())
     plt.close(fig)
     return Path(path)
 

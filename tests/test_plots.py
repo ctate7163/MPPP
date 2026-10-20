@@ -73,7 +73,7 @@ def test_site_map_and_lmst(tmp_path):
     tab = load_site_table()
     sw = B.site_waypoints(tab["sites"], snapshot_path())
     assert "rochette" in sw and sw["rochette"]["first_sol"] >= 178
-    f = B.plot_site_map(tab["sites"], snapshot_path(), tmp_path / "map.png", highlight=["rochette"])   # no terrain
+    f = B.plot_site_map(None, snapshot_path(), tmp_path / "map.png", highlight=["rochette"], dpi=80)   # no terrain
     assert f.stat().st_size > 10000
     rng = np.random.default_rng(0)
     data = {"A": {"lmst_h": rng.uniform(8, 17, 50), "T": rng.uniform(-30, -10, 50), "sol": np.arange(50) + 100},
@@ -104,3 +104,27 @@ def test_undistort_and_example(tmp_path):
     assert u["f_px"] < u["f_in_px"]                                   # fit="width" of a fisheye: a shorter pinhole
     f = plot_undistorted_example(im, model, p, 5120, tmp_path / "u.png", title="t")
     assert f.stat().st_size > 5000
+
+
+def test_rig_drift_fit_free_knot(tmp_path):
+    """fit_rig_drift recovers a hinge drift (knot, rates) from synthetic epochs; sol0 = 0 convention; the candidate
+    rig file reproduces the fit through rig_at."""
+    from mppp.calib import constrain as C, fit as F, models as M
+    from mppp.calib.joint import rig_angles
+    rng = np.random.default_rng(2)
+    rows = []
+    for sol in np.linspace(20, 2000, 30):
+        pitch = -100 + 0.006 * sol + (0.02 - 0.006) * min(sol, 400)
+        rows.append({"block": f"b{int(sol)}", "epoch": "N", "sol": float(sol), "T": float(rng.uniform(-25, -12)), "images": 100,
+                     "pitch_mdeg": pitch + rng.normal(0, 0.3), "yaw_mdeg": 38 + 0.0025 * sol, "roll_mdeg": -58 - 0.004 * sol + rng.normal(0, 2),
+                     "sd_pitch_mdeg": 0.3, "sd_yaw_mdeg": 0.3, "sd_roll_mdeg": 0.3})
+    m = F.fit_rig_drift(rows, knot_sol="free", knot_grid=range(100, 1001, 20))
+    assert m["sol0"] == 0.0 and m["knot_ref"] == 0.0 and abs(m["knot_sol"] - 400) <= 40
+    assert m["pitch_mdeg_per_sol"] == pytest.approx(0.006, abs=0.0005) and m["pitch_early_mdeg_per_sol"] == pytest.approx(0.02, abs=0.002)
+    assert m["pitch_at_sol0_mdeg"] == pytest.approx(-100, abs=0.5) and m["roll_tau_mdeg"] > 1.0
+    rig = F.rig_with_drift(M.load_rig("N"), m, keep_from_file=())
+    a0 = rig_angles(C.rig_at(rig, sol=0.0)[0]); a1 = rig_angles(C.rig_at(rig, sol=1000.0)[0])
+    assert a0["pitch_mdeg"] == pytest.approx(m["pitch_at_sol0_mdeg"], abs=0.05)
+    assert a1["pitch_mdeg"] - a0["pitch_mdeg"] == pytest.approx(0.006 * 1000 + 0.014 * 400, abs=1.0)
+    f = C.plot_rig_drift(rows, m, tmp_path / "drift.png", old_drift=M.load_rig("N")["drift"])
+    assert f.stat().st_size > 10000

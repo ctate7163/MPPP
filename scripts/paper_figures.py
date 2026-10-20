@@ -44,6 +44,7 @@ def main(argv=None) -> int:
     ap.add_argument("--frame-model", default="NL", help="its camera: NL, NR (promoted model) or a COLMAP cameras JSON")
     ap.add_argument("--frame-mask", default=None)
     ap.add_argument("--frame-T", type=float, default=-20.0)
+    ap.add_argument("--refdata", default=None, help="folder with the site study's refdata.py (Mastcam-Z 360s, sample cores)")
     ap.add_argument("--cmods", default=None, help="a folder of camera model files instead of the package's (a candidate joint)")
     a = ap.parse_args(argv)
     out = Path(a.out)
@@ -64,11 +65,23 @@ def main(argv=None) -> int:
     C.plot_camera_vs_temperature(nl, nr, out / "navcam_cmod_vs_temperature.png", blocks=res)
     C.plot_rig_vs_sol(rig, out / "navcam_rig_vs_sol.png", blocks=res)
     if res:
+        rows = F.rig_rows(res)
+        drift = F.fit_rig_drift(rows, knot_sol="free")
+        C.plot_rig_drift(rows, drift, out / "navcam_rig_drift.png", old_drift=rig.get("drift"),
+                         labels={"fit": "refit (sol0 = 0, free knot)", "old": "rig file drift", "base": "rig epochs"})
+        (out / "rig_drift_refit.json").write_text(json.dumps(drift, indent=1, default=float), encoding="utf-8")
+        M.write_model(out / "M2020_N_rig_candidate.json", F.rig_with_drift(rig, drift))
+    if res:
         rows = F.navcam_block_table(res, nl, nr, rig)
         (out / "navcam_block_table.md").write_text(F.block_table_markdown(rows) + "\n", encoding="utf-8")
         (out / "navcam_block_table.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")
     tab = load_site_table()
-    B.plot_site_map(tab["sites"], snapshot_path(), out / "site_map.png", terrain_dir=a.terrain,
+    panos, samples = (), ()
+    if a.refdata:
+        sys.path.insert(0, str(Path(a.refdata)))
+        from refdata import PANOS, SAMPLES                                      # the site study's reference lists
+        panos, samples = PANOS, SAMPLES
+    B.plot_site_map(None, snapshot_path(), out / "site_map.png", terrain_dir=a.terrain, panos=panos, samples=samples,
                     highlight=tab["groups"].get(a.group) or [])
     data = {}
     for f in folders:

@@ -466,3 +466,87 @@ def plot_model_change(old: Dict[str, Dict[str, Any]], new: Dict[str, Dict[str, A
     fig.savefig(path, dpi=150)
     plt.close(fig)
     return Path(path)
+
+
+def plot_rig_drift(rows: Sequence[Dict[str, Any]], model: Dict[str, Any], path: PathLike, highlight: Sequence[str] = (),
+                   old_drift: Optional[Dict[str, Any]] = None, labels: Optional[Dict[str, str]] = None,
+                   title: Optional[str] = None) -> Path:
+    """
+    The rig-drift figure of the calibration study (2 x 2: pitch, yaw and roll against sol with the drift ``model``
+    (:func:`mppp.calib.fit.fit_rig_drift`) and its tau band, yaw against temperature with the between-block slope),
+    with the rows of :func:`mppp.calib.fit.rig_rows` (one point per block or rig epoch, error bars = sd, names
+    annotated).  ``highlight``: blocks drawn as open warm symbols; ``old_drift``: an earlier drift model drawn
+    dotted (a hinge model is drawn with its hinge); ``labels`` {"fit", "old", "base", "new"} for the legend.
+    """
+    plt = _plt()
+    L = {"fit": "fit", "old": "previous drift", "base": "blocks", "new": "highlighted", **(labels or {})}
+    rows = [r for r in rows if np.isfinite(r.get("sol", np.nan))]
+    sol = np.array([r["sol"] for r in rows], float)
+    T = np.array([r["T"] for r in rows], float)
+    names = [str(r.get("block", "")) for r in rows]
+    new = np.array([n in set(highlight) for n in names])
+    Tm = model["T_mean_degC"]
+    grid = np.linspace(0, max(2000.0, sol.max() + 50), 400)
+
+    def offset(m, ang, xs):
+        mm = dict(m, **{f"{ang}_mdeg_per_sol": m.get(f"{ang}_fit_mdeg_per_sol", m.get(f"{ang}_mdeg_per_sol", 0.0))})
+        return np.array([drift_offset_mdeg(mm, x)[f"{ang}_mdeg"] for x in np.atleast_1d(xs)])
+    fig, axs = plt.subplots(2, 2, figsize=(12, 8.5))
+    for ax, ang in zip((axs[0, 0], axs[0, 1], axs[1, 0]), ("pitch", "yaw", "roll")):
+        y = np.array([r[f"{ang}_mdeg"] for r in rows]) - model.get(f"{ang}_T_mdeg_per_degC", 0.0) * (T - Tm)
+        e = np.array([r.get(f"sd_{ang}_mdeg", np.nan) for r in rows], float)
+        tau = float(model.get(f"{ang}_tau_mdeg", 0.0))
+        w = 1.0 / (np.where(np.isfinite(e), e, 0.0) ** 2 + tau ** 2 + 1e-9)
+        off = offset(model, ang, sol)
+        level = float(np.sum(w * (y - off)) / np.sum(w))
+        curve = offset(model, ang, grid) + level
+        ax.fill_between(grid, curve - tau, curve + tau, color="#2a78d6", alpha=0.12, lw=0)
+        ls = "--" if ang in (model.get("no_drift") or []) + (model.get("held") or []) else "-"
+        ax.plot(grid, curve, ls, color="#2a78d6", lw=1.6,
+                label=f"{L['fit']} ({model['blocks']} {'epochs' if any(r.get('epoch') not in (None, 'N') for r in rows) else 'blocks'})"
+                      f"{' - not used: rate 0' if ls == '--' else ''}; band = tau {tau:.1f}")
+        if old_drift:
+            c = float(np.sum(w * (y - offset(old_drift, ang, sol))) / np.sum(w))
+            ax.plot(grid, c + offset(old_drift, ang, grid), ":", color="#888888", lw=1.3,
+                    label=f"{L['old']} ({old_drift.get('blocks', '?')} blocks)")
+        ax.errorbar(sol[~new], y[~new], yerr=e[~new], fmt="o", color="#1a1a1a", ms=5, capsize=2, label=L["base"])
+        if new.any():
+            ax.errorbar(sol[new], y[new], yerr=e[new], fmt="o", mfc="white", mec="#eb6834", color="#eb6834", ms=7,
+                        capsize=2, label=L["new"])
+        for x, yy, n in zip(sol, y, names):
+            ax.annotate(n, (x, yy), fontsize=6.5, xytext=(3, 3), textcoords="offset points", color="#555555")
+        ax.set_xlabel("sol (block median)")
+        ax.set_ylabel(f"{ang} [mdeg]" + (f" at {Tm:.0f} degC" if abs(model.get(f"{ang}_T_mdeg_per_degC", 0.0)) > 0.2 else ""))
+        ttl = (f"rig {ang}: {model[f'{ang}_fit_mdeg_per_sol'] * 1e3:+.1f} +- {model[f'{ang}_se'] * 1e3:.1f} mdeg / 1000 sol")
+        if model.get(f"{ang}_early_mdeg_per_sol") is not None:
+            kr = model.get("knot_sol_range")
+            ttl += (f" after sol {model['knot_sol']:.0f}" + (f" ({kr[0]:.0f}-{kr[1]:.0f})" if kr else "")
+                    + f", {model[f'{ang}_early_mdeg_per_sol'] * 1e3:+.1f} +- {model.get(f'{ang}_early_se', 0) * 1e3:.1f} before")
+        ax.set_title(ttl, fontsize=9)
+        ax.grid(alpha=0.3)
+        ax.legend(fontsize=7, loc={"pitch": "lower right", "yaw": "lower right", "roll": "upper right"}[ang], framealpha=0.7)
+    ax = axs[1, 1]
+    y = np.array([r["yaw_mdeg"] for r in rows], float)
+    e = np.array([r.get("sd_yaw_mdeg", np.nan) for r in rows], float)
+    ax.errorbar(T[~new], y[~new], yerr=e[~new], fmt="o", color="#1a1a1a", ms=5, capsize=2, label=L["base"])
+    if new.any():
+        ax.errorbar(T[new], y[new], yerr=e[new], fmt="o", mfc="white", mec="#eb6834", color="#eb6834", ms=7, capsize=2,
+                    label=L["new"])
+    tt = np.linspace(T.min() - 1, T.max() + 1, 50)
+    w = 1.0 / (np.where(np.isfinite(e), e, 0.0) ** 2 + float(model.get("yaw_tau_mdeg", 0.0)) ** 2 + 1e-9)
+    b = float(model.get("yaw_T_mdeg_per_degC", 0.0))
+    a = float(np.sum(w * (y - b * (T - Tm))) / np.sum(w))
+    ax.plot(tt, a + b * (tt - Tm), "-", color="#1baf7a", label=f"between blocks {b:+.2f} mdeg/degC")
+    for x, yy, n in zip(T, y, names):
+        ax.annotate(n, (x, yy), fontsize=6.5, xytext=(3, 3), textcoords="offset points", color="#555555")
+    ax.set_xlabel("block median camera temperature [degC]")
+    ax.set_ylabel("yaw [mdeg]")
+    ax.set_title("rig yaw against temperature (1 mdeg = 0.05 px disparity at infinity)", fontsize=9)
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=7)
+    fig.suptitle(title or "Navcam stereo rig (right camera in the left camera frame, common principal points, one label reference)",
+                 fontsize=10)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+    return Path(path)
