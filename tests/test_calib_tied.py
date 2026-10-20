@@ -125,3 +125,18 @@ def test_sd_fallback_from_the_bin_cameras(tmp_path):
     res = T.globals_result(st, g, ba, units)
     assert res.get("sd_source", {}).get("NL") and np.isfinite(res["NL"]["sd"]["fx_ppm_per_degC"]) and res["NL"]["sd"]["fx_ppm_per_degC"] > 0
     assert np.isfinite(res["NR"]["early_mission"]["sd_px"]["cx"])
+
+
+def test_pointing_pass_rigs_at_the_trend(tmp_path):
+    """The principal points per block (pointing pass): one camera per block, eye and era with fx, fy, cx, cy free,
+    the rig epochs held at the trend, a 1 px prior on NL's principal point; finite sd, the stereo rows."""
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, stats = T.adjust_tied(rec2, proj2, idx, st, units, iterations=10, covariance=False, passes=1, verbose=False)
+    stl = dict(st, G={"NL": g["G_NL"], "NR": g["G_NR"]}, S={"NL": g["S_NL"], "NR": g["S_NR"]},
+               E={"NL": g["E_NL"], "NR": g["E_NR"]}, Q0=g["Q0"], D=g["D"], H=g["H"])
+    pt = T.pointing_pass(rec, proj, idx, stl, g, iterations=10, verbose=False)
+    assert len(pt["cameras"]) == 4                                   # 2 eyes x 2 eras, one block
+    assert all(c["sd_cx_px"] is not None and 0 < c["sd_cx_px"] < 1.0 for c in pt["cameras"])
+    assert len(pt["stereo"]) == 2 and all(abs(s["dcx_stereo_px"]) < 0.5 for s in pt["stereo"])

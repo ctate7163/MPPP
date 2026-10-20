@@ -409,7 +409,8 @@ def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], dr
 
 def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, Dict[str, Any]], bins: Sequence[Dict[str, Any]],
                                    rig_residuals: Dict[str, Any], path: PathLike, early_sol: float = 380.0,
-                                   label: str = "", T0: float = NAVCAM_T0_DEGC, model_label: str = "new model") -> Path:
+                                   label: str = "", T0: float = NAVCAM_T0_DEGC, model_label: str = "new model",
+                                   pp_units: Optional[Sequence[Dict[str, Any]]] = None) -> Path:
     """
     Intrinsics against temperature 2 x 2 (fig_intr.py, 12.5 x 8.6 in, sharex): columns NL (cool) / NR (warm), rows
     focal length and principal point as the change from T0; left/right share y range and ticks.  Points: the
@@ -469,6 +470,15 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
             ax.plot(tt, 0 * tt, "-.", color=col, lw=0.8, label="cy: 0")
             y = CX2 * (Tblk - T0) + yaw / IFOV_MDEG
             ax.plot(Tblk, y, "o", color=col, ms=5, mec="white", mew=0.5, zorder=3, label="rig epoch stereo pointing as NR cx − NL cx (model + yaw residual)")
+        pu = [r for r in (pp_units or []) if r["eye"] == eye]
+        if pu:                               # 0.91: the pointing pass - one per block and era, rigs at the trend
+            sl = pp[eye]
+            for comp, mk, k in (("cx", "D", 0), ("cy", "v", 1)):
+                Tu = np.array([r["T"] for r in pu]); vu = np.array([r[f"d{comp}"] for r in pu]) + sl[k] * (Tu - T0)
+                eu = np.array([np.nan if r.get(f"sd_{comp}") is None else r[f"sd_{comp}"] for r in pu])
+                ax.errorbar(Tu, vu, yerr=np.where(np.isfinite(eu), eu, 0), fmt=mk, ms=4, color=col, mfc=col if comp == "cx" else "white",
+                            ecolor=col, elinewidth=0.6, alpha=0.75, zorder=3,
+                            label=f"{comp} per block (pointing pass: rigs at the trend{', 1 px prior' if eye == 'NL' else ''}; ± sd)")
         ax.axhline(0, color="0.6", lw=0.6)
         ax.set_title(f"{eye}: principal point", fontsize=10)
         ax.set_ylabel(f"Δ principal point from {T0:.0f} °C (full-frame px)", fontsize=8)

@@ -88,10 +88,12 @@ def main(argv=None) -> int:
                               model_label=f"{tag} drift model")
             tb = study / "thermal_bins.json"                 # 0.91: the tied joint's diagnostic block bins
             bins = json.loads(tb.read_text(encoding="utf-8")) if tb.is_file() else (F.thermal_bin_rows(res) if res else [])
+            pu = study / "pp_units.json"                     # 0.91: the pointing pass's per-block principal points
+            pp_units = json.loads(pu.read_text(encoding="utf-8")) if pu.is_file() else None
             if bins:
                 C.plot_intrinsics_vs_temperature(cons, inuse, bins, rr,
                                                  out / f"navcam_intrinsics_vs_temperature_{tag}.png", label=a.label,
-                                                 model_label=tag)
+                                                 model_label=tag, pp_units=pp_units)
         else:
             print(f"no rig_residuals.json in {study}: rig trends and intrinsics figures skipped")
     # ---- the block table against the joint the blocks were run with

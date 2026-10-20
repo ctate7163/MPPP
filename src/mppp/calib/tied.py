@@ -182,7 +182,8 @@ def frame_table(rec, proj, idx: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
 
 def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_deg: float = BIN_DEG,
                         early_sol: Optional[float] = None, max_span: float = MAX_SPAN_SOLS,
-                        gap: float = 50.0, breaks: Optional[Sequence[float]] = None, per_block: bool = False):
+                        gap: float = 50.0, breaks: Optional[Sequence[float]] = None, per_block: bool = False,
+                        pointing: bool = False):
     """A copy of a merged reconstruction (:func:`mppp.calib.joint.merge_scapes`: cameras 1 NL, 2 NR; rigs 1 stereo,
     2 NR alone, 3 NL alone) with one camera per (eye, temperature bin, era) - per (block, eye, bin, era) with
     ``per_block`` (the diagnostic pass) - and one rig per (block, rig epoch, bin, era), every unit started at the
@@ -203,7 +204,7 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
             ep_of[k] = next(i for i, (a, b) in enumerate(eps) if a <= s <= b)
     T0 = st["T0"]
     for k, f in frames.items():
-        f["bin"] = int(np.floor((f["T"] - T0) / bin_deg))
+        f["bin"] = 0 if pointing else int(np.floor((f["T"] - T0) / bin_deg))     # pointing: one unit per block, eye, era
         f["early"] = bool(f["sol"] < early_sol)
         f["epoch"] = ep_of[k]
     eye_of_cam = {1: "NL", 2: "NR"}
@@ -233,7 +234,10 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
         cam_id[key] = n
         db[name] = n
         c = {"model": base.model.name, "params": list(map(float, p)), "width": base.width, "height": base.height}
-        if per_block:              # the diagnostic bins like the block runs' thermal bins: fx, fy, k1 free, the rest held
+        if per_block and pointing:  # the pointing pass: fx, fy, cx, cy free, the distortion held
+            c = navcam_distortion_terms(c, "hold", pp="refine")
+            newproj.cameras[name] = c
+        elif per_block:            # the diagnostic bins like the block runs' thermal bins: fx, fy, k1 free, the rest held
             c = navcam_distortion_terms(c, "hold", pp="hold")
             c["fixed_params"] = [n for n in c["fixed_params"] if n != "k1"]
             c["free_params"] = sorted(set(c.get("free_params") or []) | {"fx", "fy", "k1"})
@@ -327,7 +331,7 @@ _HELD_NAMES = {"S_NL": SLOPE_TERMS, "S_NR": SLOPE_TERMS, "E_NL": EARLY_TERMS, "E
 
 
 def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT, tie_rigs: bool = True,
-              tie_cameras: bool = True):
+              tie_cameras: bool = True, pp_prior: Optional[Dict[str, float]] = None):
     """The ``extra_residuals`` callable for :func:`mppp.sfm.reconstruction.bundle_adjust` and the global parameter
     arrays it ties to.  ``hold``: global terms held at their start (``"E_NR"``, ``"S_NL_cy"``, ``"Q0_yaw"``, ``"H"``
     ...).  ``H``'s yaw and roll are always held at 0 (linear yaw and roll trends); terms the data cannot see are held
@@ -351,6 +355,8 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
         hold += ["Q0", "D", "H"]
     if not tie_cameras:
         hold += ["G_NL", "G_NR", "S_NL", "S_NR", "E_NL", "E_NR"]
+
+    keep: List[np.ndarray] = []
 
     def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
         n_cam = n_rig = 0
@@ -388,6 +394,22 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                 prob.add_residual_block(LinearTie(A, np.full(3, TIE_SIGMA["q"]), [7, 3, 3, 3]), None,
                                         [blk, g["Q0"], g["D"], g["H"]])
                 n_rig += 1
+        n_pp = 0
+        consts = []
+        for cid, u in units["cameras"].items():             # a prior on the units' principal point about the law
+            psig = (pp_prior or {}).get(u["eye"])
+            blk = cam_blocks.get(int(cid))
+            if not psig or blk is None or not prob.has_parameter_block(blk) or prob.is_parameter_block_constant(blk):
+                continue
+            law = camera_params(dict(st, G={"NL": g["G_NL"], "NR": g["G_NR"]}, S={"NL": g["S_NL"], "NR": g["S_NR"]},
+                                        E={"NL": g["E_NL"], "NR": g["E_NR"]}), u["eye"], u["T"], u["early"])
+            c0 = np.array([law[2], law[3]], float)
+            consts.append(c0)
+            A = np.zeros((2, 14)); A[0, 2] = A[1, 3] = 1.0; A[0, 12] = A[1, 13] = -1.0
+            prob.add_residual_block(LinearTie(A, np.full(2, float(psig)), [12, 2]), None, [blk, c0])
+            prob.set_parameter_block_constant(c0)
+            n_pp += 1
+        keep.extend(consts)                                  # keep the constant blocks alive through the solve
         held: Dict[str, set] = {}
         for h in hold:
             for gname in g:
@@ -407,7 +429,7 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                 prob.set_manifold(g[gname], pyceres.SubsetManifold(len(g[gname]), sorted(ix)))
         return {"cov_blocks": {k: v for k, v in g.items() if prob.has_parameter_block(v)
                                and not prob.is_parameter_block_constant(v)},
-                "ties": {"cameras": n_cam, "rigs": n_rig}, "held": {k: sorted(v) for k, v in held.items()}}
+                "ties": {"cameras": n_cam, "rigs": n_rig, "pp_priors": n_pp}, "held": {k: sorted(v) for k, v in held.items()}}
 
     return hook, g
 
@@ -447,17 +469,18 @@ def keypoint_terms(units: Dict[str, Any], proj, temps: Dict[str, float], g: Dict
 # ====================================================================================== the fits
 def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT,
                 tie_rigs: bool = True, tie_cameras: bool = True, iterations: int = 100, covariance: bool = True,
-                passes: int = 2, verbose: bool = True, refine_pp: bool = True) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
+                passes: int = 2, verbose: bool = True, refine_pp: bool = True,
+                pp_prior: Optional[Dict[str, float]] = None) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
     """The adjustment of a tied reconstruction (``passes`` solves, the slopes of the keypoint map updated between
     them).  Returns (ba result of the last pass, the global arrays, residual statistics)."""
     from ..sfm.reconstruction import bundle_adjust
-    hook, g = make_ties(st, units, hold=hold, tie_rigs=tie_rigs, tie_cameras=tie_cameras)
+    hook, g = make_ties(st, units, hold=hold, tie_rigs=tie_rigs, tie_cameras=tie_cameras, pp_prior=pp_prior)
     temps = idx["temps"]
     ba = None
     n_pass = max(1, int(passes))
     for p_ in range(n_pass):
         ks, kmap = keypoint_terms(units, proj, temps, g)
-        ba = bundle_adjust(rec, proj, sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=refine_pp,
+        ba = bundle_adjust(rec, proj, sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=False if pp_prior else refine_pp,
                            refine_principal_point=refine_pp,
                            refine_rig="rotation", max_iterations=iterations, attitude_prior_deg=5.0,
                            covariance=covariance and p_ == n_pass - 1, navcam_aspect="free",
@@ -720,8 +743,8 @@ def describe_rig_tests(res: Dict[str, Any]) -> List[str]:
 
 def diagnostic_pass(rec0, proj0, idx: Dict[str, Any], st: Dict[str, Any], g: Dict[str, np.ndarray], bin_deg: float = BIN_DEG,
                     early_sol: Optional[float] = None, max_span: float = MAX_SPAN_SOLS, iterations: int = 60,
-                    verbose: bool = True) -> Dict[str, Any]:
-    """With the global solution held: one camera per (block, eye, bin, era) and one rig per (block, epoch, bin, era),
+                    verbose: bool = True, pointing: bool = True) -> Dict[str, Any]:
+    """With the global solution held (then :func:`pointing_pass` for the principal points): one camera per (block, eye, bin, era) and one rig per (block, epoch, bin, era),
     each started at the law and refined freely (no ties) in one adjustment with the poses and points.  Returns the
     units' values against the law (:func:`unit_rows`) - the per-block, per-bin and per-sol scatter about the
     global solution that the figures draw."""
@@ -739,8 +762,68 @@ def diagnostic_pass(rec0, proj0, idx: Dict[str, Any], st: Dict[str, Any], g: Dic
                  f"median |dfx| {np.median([abs(x['dfx_ppm']) for x in c]) if c else float('nan'):.0f} ppm, "
                  f"|dpitch| {np.median([abs(x['dpitch_mdeg']) for x in r_]) if r_ else float('nan'):.1f} mdeg "
                  f"(units with >= 8 images / frames)")
-    return {"cameras": rows["cameras"], "rigs": rows["rigs"], "residuals": stats, "brief": ba["brief"],
-            "final_cost": float(ba["final_cost"])}
+    out = {"cameras": rows["cameras"], "rigs": rows["rigs"], "residuals": stats, "brief": ba["brief"],
+           "final_cost": float(ba["final_cost"])}
+    if pointing:
+        out["pointing"] = pointing_pass(rec0, proj0, idx, stl, g, early_sol=early_sol, max_span=max_span,
+                                        iterations=iterations, verbose=verbose)
+    return out
+
+
+PP_PRIOR_PX = {"NL": 1.0}        # NL's principal point slides with the frames' attitudes: a weak prior about the law
+
+
+def pointing_pass(rec0, proj0, idx: Dict[str, Any], stl: Dict[str, Any], g: Dict[str, np.ndarray],
+                  early_sol: Optional[float] = None, max_span: float = MAX_SPAN_SOLS, iterations: int = 60,
+                  pp_prior: Optional[Dict[str, float]] = None, verbose: bool = True) -> Dict[str, Any]:
+    """The principal points per block, without fitting noise (20 Oct: free bin principal points with free epoch
+    rigs were degenerate - NR cx with the rig yaw, 1 px = 18.9 mdeg; cy with the pitch):
+
+    * one camera per (block, eye, era), not per 2 degC bin: the principal point moves 0.3 px over the bins'
+      20 degC, so a block measures it once; the images' own temperatures still count through the law's slopes
+      (keypoint map);
+    * fx, fy, cx, cy free, the distortion held at the law;
+    * every rig epoch held at the global trend (tied with the globals constant): NR's principal point against NL's
+      is then the stereo pointing itself, with nothing to trade against;
+    * NL's absolute principal point still slides with the frames' attitudes (the label priors are 5 degrees): a
+      weak prior about the law (``pp_prior``, default 1 px) keeps it from wandering, and its sd says how much the
+      data itself determines it;
+    * sd from the covariance of the adjustment, per unit.
+
+    Returns rows {block, eye, era, T, images, dcx_px, dcy_px, sd_cx_px, sd_cy_px, dfx_ppm, dfy_ppm, cx, cy} and the
+    stereo rows {block, era, T, dcx_stereo_px (NR - NL x fR/fL about the law), sd}."""
+    rec, proj, units = tied_reconstruction(rec0, proj0, idx, stl, bin_deg=BIN_DEG, early_sol=early_sol,
+                                           max_span=max_span, per_block=True, pointing=True)
+    ba, _g, stats = adjust_tied(rec, proj, idx, stl, units, hold=("Q0", "D", "H"), tie_rigs=True, tie_cameras=False,
+                                iterations=iterations, covariance=True, passes=1, verbose=verbose,
+                                pp_prior=dict(PP_PRIOR_PX if pp_prior is None else pp_prior))
+    rows = unit_rows(rec, proj, idx, units, stl, g)["cameras"]
+    cov = ba.get("covariance") or {}
+    vf = float(cov.get("variance_factor", 1.0))
+    for r in rows:
+        c = (cov.get("blocks") or {}).get(f"camera:{r['key']}")
+        d = np.sqrt(np.clip(np.diag(np.asarray(c)) * vf, 0, None)) if c is not None else None
+        r["sd_cx_px"] = float(d[2]) if d is not None and len(d) > 3 else None
+        r["sd_cy_px"] = float(d[3]) if d is not None and len(d) > 3 else None
+    stereo = []
+    for (scape, early) in sorted({(r["scape"], r["early"]) for r in rows}):
+        L = next((r for r in rows if r["scape"] == scape and r["early"] == early and r["eye"] == "NL"), None)
+        R = next((r for r in rows if r["scape"] == scape and r["early"] == early and r["eye"] == "NR"), None)
+        if not (L and R):
+            continue
+        ratio = R["params"][0] / L["params"][0]
+        sd = None
+        if L.get("sd_cx_px") is not None and R.get("sd_cx_px") is not None:
+            sd = float(np.hypot(R["sd_cx_px"], ratio * L["sd_cx_px"]))
+        stereo.append({"block": scape, "early": early, "T": 0.5 * (L["T"] + R["T"]), "images": L["images"] + R["images"],
+                       "dcx_stereo_px": R["dcx_px"] - ratio * L["dcx_px"], "dcy_stereo_px": R["dcy_px"] - ratio * L["dcy_px"],
+                       "sd_px": sd})
+    if verbose:
+        v = [abs(x["dcx_stereo_px"]) for x in stereo]
+        log.info(f"pointing pass: {len(rows)} block cameras, rigs at the trend; stereo cx about the law: median "
+                 f"|{np.median(v) if v else float('nan'):.3f}| px over {len(stereo)} block-eras")
+    return {"cameras": rows, "stereo": stereo, "residuals": stats, "brief": ba["brief"],
+            "covariance_error": cov.get("error"), "pp_prior_px": dict(PP_PRIOR_PX if pp_prior is None else pp_prior)}
 
 
 def describe_result(res: Dict[str, Any]) -> List[str]:
@@ -832,6 +915,7 @@ def write_tied(res: Dict[str, Any], out_dir: PathLike, note: str = "", template_
     for folder in {out, out.parent}:
         (folder / "rig_residuals.json").write_text(json.dumps(fi["rig_residuals"], indent=1, default=_json_default), encoding="utf-8")
         (folder / "thermal_bins.json").write_text(json.dumps(fi["bins"], indent=1, default=_json_default), encoding="utf-8")
+        (folder / "pp_units.json").write_text(json.dumps(fi["pp_units"], indent=1, default=_json_default), encoding="utf-8")
     return out
 
 
@@ -941,4 +1025,11 @@ def figure_inputs(res: Dict[str, Any], min_images: int = 8) -> Dict[str, Any]:
         p = c["params"]
         bins.append({"eye": c["eye"], "block": site_label(c["scape"]), "key": c["key"], "T": c["T"], "n": c["images"],
                      "fx": p[0], "fy": p[1], "cx": p[2], "cy": p[3], "k1": p[4]})
-    return {"consensus": cons, "rig_residuals": rr, "bins": bins}
+    pp_rows = []
+    for c in (d.get("pointing") or {}).get("cameras") or []:
+        if c.get("images", 0) < min_images:
+            continue
+        pp_rows.append({"eye": c["eye"], "block": site_label(c["scape"]), "T": c["T"], "n": c["images"], "early": c["early"],
+                        "dcx": c["dcx_px"], "dcy": c["dcy_px"], "sd_cx": c.get("sd_cx_px"), "sd_cy": c.get("sd_cy_px")})
+    return {"consensus": cons, "rig_residuals": rr, "bins": bins, "pp_units": pp_rows,
+            "stereo": (d.get("pointing") or {}).get("stereo") or []}
