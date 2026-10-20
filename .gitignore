@@ -40,3 +40,5 @@ Claude outputs/
 /data/
 # v0p86: rendered JOSS paper (scripts/windows/render_paper.bat)
 paper/paper.pdf
+scripts/windows/mppp_scapes.txt
+scripts/windows/mppp_pds.txt

@@ -15,8 +15,9 @@ REM ============================================================================
 setlocal
 if not defined MPPP_HOME for %%I in ("%~dp0..\..\..") do set "MPPP_HOME=%%~fI"
 call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
-if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx MPPP_SCAPES D:\scapes & pause & exit /b 1)
+if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\scapes"
 set "ROOT=%MPPP_SCAPES%"
+echo scapes root: %ROOT%
 python -m mppp waypoints --refresh
 python -m mppp cmods list
 echo.
