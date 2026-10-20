@@ -425,8 +425,7 @@ def fit_early_offsets(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, An
         out["rounds"].append(rec_rd)
         if verbose:
             log.info(f"  early offsets, round {rd + 1}/{rounds}: centre " + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, best))
-                  + "; step " + " ".join(f"{v:+.3f}" for v in dx) + (" (positive definite)" if ok else " (not convex)"),
-                  flush=True)
+                  + "; step " + " ".join(f"{v:+.3f}" for v in dx) + (" (positive definite)" if ok else " (not convex)"))
         if ok and np.all(np.abs(dx) < 0.5 * step):
             best = best + dx
             converged = True

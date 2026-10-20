@@ -2055,8 +2055,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             project.settings["pose_guided"] = prep
             if verbose:
                 logger.info(f"stage 2, pose-guided: Navcam-Mastcam-Z tie points {before['navcam_zcam_points']} -> "
-                      f"{prep['after']['navcam_zcam_points']}, points {before['points']} -> {prep['after']['points']}",
-                      flush=True)
+                      f"{prep['after']['navcam_zcam_points']}, points {before['points']} -> {prep['after']['points']}")
         ZG.trace(rec, project, "before_final")
         if exclude_outliers:
             _exclude("stage 2, before the final adjustment")

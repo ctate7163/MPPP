@@ -110,3 +110,16 @@ def test_notebooks_compile_and_have_a_parameters_cell():
     nb2 = json.loads((ROOT / "notebooks" / "02_colmap_alignment.ipynb").read_text(encoding="utf-8"))
     src2 = "".join("".join(c["source"]) for c in nb2["cells"] if c["cell_type"] == "code")
     assert "from mppp.pipeline import align" in src2 and "health_table" in src2 and "plot_camera_shifts" in src2
+
+
+def test_no_logger_call_with_flush():
+    """print -> logging leftovers: Logger.info(..., flush=True) raises TypeError at run time (Chal Rocks, 20 Oct,
+    1.6 h into the block, after the pose-guided matching)."""
+    import re
+    src = ROOT / "src" / "mppp"
+    bad = []
+    for f in src.rglob("*.py"):
+        t = f.read_text(encoding="utf-8")
+        for m in re.finditer(r"\b(?:log|logger)\.(?:info|warning|debug|error)\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*flush=", t, re.S):
+            bad.append(f"{f.relative_to(ROOT)}:{t[:m.start()].count(chr(10)) + 1}")
+    assert not bad, bad
