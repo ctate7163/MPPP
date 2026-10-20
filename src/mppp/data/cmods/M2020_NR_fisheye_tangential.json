@@ -3,16 +3,16 @@
  "width": 5120,
  "height": 3840,
  "params": [
-  2948.689208882497,
-  2948.6718249237515,
-  2573.175458884469,
-  1950.2825986213254,
-  0.047458178316171044,
-  -0.015916747911248065,
-  3.420547940597843e-05,
-  -0.0001998464548638883,
-  0.008309571566909328,
-  -0.007703785182916757,
+  2948.6810145955583,
+  2948.7924251611926,
+  2573.149606368483,
+  1950.4043292950932,
+  0.047553124322930705,
+  -0.01635456927181456,
+  2.739343135769371e-05,
+  -0.00020038717957562046,
+  0.009002915504497964,
+  -0.00807620778826082,
   0.0,
   0.0
  ],
@@ -33,38 +33,42 @@
  "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
  "free_params": [],
  "pixel_origin": "corner of the first pixel (COLMAP)",
- "source": "MPPP Navcam consensus (2026-10-18, NL-reference form): one NR camera shared by 23 blocks (Artuby Ridge, Bell Island Large, Belva Crater Large, Bunsen Peak, Chal Rocks, Chal Rocks Large, Cheyava Falls, Enchanted Lake, Hippo Pools, Issole Seitah South, Marble Mountain, Origny Large, Pico Turquino, Rochette, Rockytop, Seitah North, South Arm, Taylorfjellet Huge, Taylorfjellet Large, Three Forks Large, Tuxedo Park, Van Zyl Overlook Large, Witch Hazel Hill); fisheye + tangential at -20 degC, fx +37.6 / fy +43.5 ppm/degC, cx -0.0525 px/degC, k4 -0.00770 (fitted with k3), one rig yaw +39.48 mdeg (rate +2.56 mdeg/1000 sol).",
+ "source": "MPPP Navcam consensus (mppp.sfm.navcal_consensus, 2026-10-20, v0p80 NL-reference form): one NR camera shared by 16 blocks (Artuby Ridge, Belva Crater Large, Bunsen Peak, Chal Rocks, Cheyava Falls, Enchanted Lake, Hippo Pools, Issole Seitah South, Marble Mountain, Oeb Landing Site, Rochette, Rockytop, Seitah North Large, South Arm, Taylorfjellet Large, Tuxedo Park); fisheye + tangential at -20 degC, fx +38.9 / fy +46.2 ppm/degC, cx -0.0414 px/degC, k4 -0.00808 (fitted with k3), one rig yaw +42.46 mdeg (rate +2.16 mdeg/1000 sol).",
  "sd": {
-  "fx": 0.02567553649122583,
-  "fy": 0.04064403322168239,
-  "cx": 0.05481366531083945,
-  "cy": 0.050920436467198585,
-  "k1": 3.995538007414893e-05,
-  "k2": 8.58287156576534e-05,
-  "p1": 4.2099866728691755e-06,
-  "p2": 1.066465004035379e-06,
-  "k3": 5.687878156464581e-05
+  "fx": 0.02883492325028092,
+  "fy": 0.041841480139076064,
+  "cx": 0.04758869867402455,
+  "cy": 0.046594657893006076,
+  "k1": 8.49494289656046e-05,
+  "k2": 0.0003102216082983447,
+  "p1": 3.90651043358711e-06,
+  "p2": 1.0660022842424618e-06,
+  "k3": 0.0004493577997636889,
+  "k4": 0.00022203340200832675
  },
  "thermal": {
   "T0_degC": -20.0,
-  "fx_ppm_per_degC": 37.612965870580204,
-  "fy_ppm_per_degC": 43.47099862514532,
-  "sd_fx_ppm_per_degC": 0.1296936889653758,
-  "sd_fy_ppm_per_degC": 0.1539262026301465,
-  "cx_px_per_degC": -0.05252470421387823,
+  "note": "v0p80: NL-reference form, refitted with the consensus (2026-10-20; profiles of NL_cx, NR_cx, NL_fx, NL_fy, NR_fx, NR_fy, yaw_rate)",
+  "cx_px_per_degC": -0.04142761746749672,
   "cy_px_per_degC": 0.0,
-  "sd_cx_px_per_degC": 0.000311421861736694,
+  "sd_cx_px_per_degC": 0.00036664475981297074,
+  "fx_ppm_per_degC": 38.924311128561804,
+  "fy_ppm_per_degC": 46.193246812385716,
+  "sd_fx_ppm_per_degC": 0.16053382194346913,
+  "sd_fy_ppm_per_degC": 0.1953475244866708,
+  "cx_px_per_degC_before_v0p80": -0.0539612398502631,
+  "yaw_T_moved_mdeg_per_degC": -0.3389244318292622,
+  "yaw_T_moved_se": 0.13374376881263672,
   "k1_per_degC": 0.0,
-  "k1_source": "temperature bins of the blocks (k1_slopes_from_blocks)",
-  "note": "NL-reference form, refitted with the consensus (2026-10-18; profiles of NR_cx, NL_fx, NL_fy, NR_fx, NR_fy, yaw_rate)"
+  "k1_source": "temperature bins of the blocks (k1_slopes_from_blocks)"
  },
  "verification": {
-  "note": "leave-one-block-out: max centre 0.011 px, corners 0.027 px over 23 blocks (ok)",
+  "note": "leave-one-block-out: max centre 0.025 px, corners 0.059 px over 16 blocks (ok)",
   "leave_one_out": {
    "max": {
-    "centre_px": 0.011419072200047148,
-    "corner_px": 0.026545217591304057,
-    "stereo_px": 0.007067016078410567
+    "centre_px": 0.02500487259387022,
+    "corner_px": 0.05893141050723832,
+    "stereo_px": 0.008144987257938677
    },
    "worst": {
     "centre_px": "Cheyava Falls",
@@ -77,49 +81,49 @@
    "ok": true
   },
   "residuals": {
-   "median_px": 0.16442159856514724,
-   "rms_px": 0.33700987826840034,
-   "p95_px": 0.6853508596830039
+   "median_px": 0.17545627096688313,
+   "rms_px": 0.3856058007889097,
+   "p95_px": 0.7643261977456534
   }
  },
+ "fixed_params": [],
  "early_mission": {
   "before_sol": 380.0,
-  "dfx_px": 0.19739867906435019,
-  "dfy_px": 0.2541892159542798,
-  "dcx_px": 0.3242573561850768,
-  "dcy_px": -0.5718610717137018,
+  "dfx_px": 0.07369862812449571,
+  "dfy_px": 0.15173883836394442,
+  "dcx_px": 0.5675854146528414,
+  "dcy_px": -0.3525700411058337,
   "sd_px": {
-   "fx": 0.014662714260957437,
-   "fy": 0.04347925521254642,
-   "cx": 0.045706036954925464,
-   "cy": 0.04926719299212328
+   "fx": 0.015139665402617328,
+   "fy": 0.04575660462792776,
+   "cx": 0.05169614710530113,
+   "cy": 0.05336898951894034
   },
   "z": {
-   "fx": 13.46262878421942,
-   "fy": 5.846218264588182,
-   "cx": 7.0944097932807875,
-   "cy": -11.607340239683019
+   "fx": 4.8679165730938,
+   "fy": 3.316217179963784,
+   "cx": 10.979259508386825,
+   "cy": -6.606271624848896
   },
   "p_value": {
-   "fx": 2.5951637057982146e-41,
-   "fy": 5.028741338949891e-09,
-   "cx": 1.2990467438822765e-12,
-   "cy": 3.7819730032466095e-31
+   "fx": 1.1278091901545203e-06,
+   "fy": 0.0009124489004217359,
+   "cx": 4.808490740236672e-28,
+   "cy": 3.9411948472787515e-11
   },
-  "p_value_all": 2.3392868065621063e-46,
+  "p_value_all": 9.44132342438963e-28,
   "applied_terms": [
    "fx",
    "fy",
    "cx",
    "cy"
   ],
-  "early_images": 905,
-  "note": "(2026-10-18): a camera with these offsets for the images before sol 380; projects apply the terms in applied_terms (|z| >= 3), weighted by the block's share of early images"
+  "early_images": 1120,
+  "note": "v0p70 (2026-10-20): a camera with these offsets for the images before sol 380; projects apply the terms in applied_terms (|z| >= 3), weighted by the block's share of early images"
  },
- "sd_source": "copied from the cameras in use (not refitted)",
+ "sd_source": "this joint (formal x variance factor)",
  "convention": "NL reference",
  "form": "navcam-v1",
  "family": "N",
- "eye": "R",
- "fixed_params": []
+ "eye": "R"
 }

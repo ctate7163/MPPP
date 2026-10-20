@@ -78,3 +78,11 @@
   - removed: the Metashape flight calibrations `*_frame.xml`, the rational Navcam cameras `M2020_N?_rational.json`,
     the `history/` folder (the git history keeps replaced models)
   - Hazcam start models are made by `mppp.calib.hazcam_start_model` until a calibrated file is promoted
+
+## 20261020-065411 - v0p86 pipeline consensus pass2 of 16 blocks (v0p80 form)
+  - `M2020_N_rig.json` 3b2f5b0638f9 from `D:\scapes\camera_analysis\navcal_v0p86_20261020_pipeline_pass2\navcam_joint\M2020_N_rig.json`
+  - `M2020_NL_fisheye_tangential.json` c54ee6cb4d5a from `D:\scapes\camera_analysis\navcal_v0p86_20261020_pipeline_pass2\navcam_joint\M2020_NL_fisheye_tangential.json`
+  - `M2020_NR_fisheye_tangential.json` b6ec31a08d2d from `D:\scapes\camera_analysis\navcal_v0p86_20261020_pipeline_pass2\navcam_joint\M2020_NR_fisheye_tangential.json`
+  - replaced files kept in `history/20261020-065411/`
+  - 0.90: the three files converted to the frozen form on adoption (`form`, `family`, `eye`; the shared
+    `ppm_per_degC` and v0p80 bookkeeping dropped from `thermal`); parameters unchanged; no history folder (git)

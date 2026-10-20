@@ -276,7 +276,11 @@ def test_promote_replaces_the_file_and_logs_it(tmp_path, monkeypatch):
 
 
 def test_shipped_navcam_models_carry_the_pass2_consensus():
-    """v0p85: in use is the 18 Oct pass-2 consensus (NR cx(T) -0.0525 px/degC); it passes the form check."""
+    """In use is the 20 Oct pass-2 consensus of 16 blocks (NR cx(T) -0.0414, NL cx(T) +0.0134 px/degC), in the frozen
+    form; it passes the form check."""
     nr = M._read(M._folder(None) / M.CAMERA_FILE[("N", "R")])
-    assert nr["thermal"]["cx_px_per_degC"] == pytest.approx(-0.0525, abs=2e-4)
+    nl = M._read(M._folder(None) / M.CAMERA_FILE[("N", "L")])
+    assert nr["thermal"]["cx_px_per_degC"] == pytest.approx(-0.0414, abs=2e-4)
+    assert nl["thermal"]["cx_px_per_degC"] == pytest.approx(0.0134, abs=2e-4)
+    assert nl["form"] == "navcam-v1" and "ppm_per_degC" not in nl["thermal"]
     assert calib.check_form()["ok"]
