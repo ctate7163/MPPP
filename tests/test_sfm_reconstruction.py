@@ -1405,3 +1405,56 @@ def test_k2_clamped_to_ten():
     assert R.K2_LIMIT == 10.0
     assert R.clamp_k2(rec) == {1: 12.5, 2: -30.0}
     assert [float(rec.cameras[c].params[5]) for c in (1, 2, 3)] == [10.0, -10.0, 2.2]
+
+
+def test_mixed_navcam_zcam_points_need_a_third_view():
+    """Two-view points with a Navcam and a Mastcam-Z image are deleted; stereo pairs of one type are kept."""
+    from types import SimpleNamespace as NS
+    from mppp.sfm.reconstruction import drop_mixed_short_tracks, drop_short_tracks, MIN_MIXED_TRACK_LENGTH
+
+    class Rec:
+        def __init__(self, tracks):
+            self.images = {1: NS(name="NLF_a.png"), 2: NS(name="NRF_a.png"), 3: NS(name="ZL0_a.png"), 4: NS(name="ZR0_a.png")}
+            self.points3D = {k: NS(track=NS(elements=[NS(image_id=i) for i in t], length=(lambda t=t: len(t))))
+                             for k, t in tracks.items()}
+
+        def delete_point3D(self, pid):
+            del self.points3D[pid]
+
+    rec = Rec({1: [1, 2], 2: [3, 4], 3: [1, 3], 4: [2, 4], 5: [1, 2, 3], 6: [1]})
+    assert MIN_MIXED_TRACK_LENGTH == 3
+    assert drop_mixed_short_tracks(rec) == 2 and sorted(rec.points3D) == [1, 2, 5, 6]
+    rec = Rec({1: [1, 2], 3: [1, 3], 6: [1]})
+    assert drop_short_tracks(rec, 2) == 2 and sorted(rec.points3D) == [1]
+    rec = Rec({3: [1, 3]})
+    assert drop_mixed_short_tracks(rec, 2) == 0
+
+
+def test_unsurveyed_stations_get_loose_priors(tmp_path):
+    """Stations without a waypoint of their own get 10 m / 3 deg priors, the others keep
+    1 m / 1 deg; the gauge is weighted by 1 / sigma^2."""
+    import numpy as np
+    import pytest
+    from mppp.sfm import reconstruction as R
+    assert R.UNSURVEYED_PRIOR_SIGMA_M == 10.0 and R.UNSURVEYED_ATTITUDE_PRIOR_DEG == 3.0
+    assert R.is_unsurveyed({"position_source": "waypoint site 6 drive 0 + label ORIGIN_OFFSET_VECTOR"})
+    assert not R.is_unsurveyed({"position_source": "waypoint site 6 drive 2666 (exact)"})
+    assert not R.is_unsurveyed({"position_source": "label ORIGIN_OFFSET_VECTOR (site frame)"}) and not R.is_unsurveyed({})
+    pytest.importorskip("pyceres")
+    from helpers import _build_rec, _synthetic
+    proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+    st = sorted({r["station"] for r in proj.images})
+    for r in proj.images:
+        r["position_source"] = ("waypoint site 1 drive 0 + label ORIGIN_OFFSET_VECTOR" if r["station"] == st[-1]
+                                else f"waypoint site 1 drive {r['station']} (exact)")
+    rec, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
+    out = R.bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, max_iterations=10)
+    assert out["frames_unsurveyed"] > 0 and out["unsurveyed_prior"] == {"sigma_m": 10.0, "attitude_deg": 3.0}
+    assert out["priors"] == len(rec.frames)
+    # the gauge: a frame with weight 1/100 hardly moves the mean
+    fid = next(iter(rec.frames))
+    T = rec.frames[fid].rig_from_world
+    C = -np.asarray(T.rotation.matrix()).T @ np.asarray(T.translation)
+    g = R.prior_gauge(rec, [(fid, C + [1.0, 0, 0], 1.0), (fid, C + [101.0, 0, 0], 0.01)], recentre=False)
+    assert abs(g["mean_residual_m"][0] - 2.01 / 1.01) < 1e-9

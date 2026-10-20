@@ -356,12 +356,12 @@ def test_shipped_focus_model_layout():
     for g in ("ZL034", "ZR034"):
         c = m["cameras"][g]
         assert c["reference_focus"] == 600.0
-        assert 0.045 < c["slope_px_per_count"] < 0.07
-        # f0 from the bins' fx over 10 blocks, ~1.4 % above the label
+        assert 0.025 < c["slope_px_per_count"] < 0.07                # the South Arm calibration: 0.0320 / 0.0485
+        # a start update: f0 from the bins' fx over 10 blocks, ~1.4 % above the label
         assert 1.006 < c["f0_px"] / c["label_f0_px"] < 1.016
         assert c["thermal"]["sensor"] == "HEAD_FPA" and c["thermal"]["f_px_per_degC"] == 0.0
         assert "trend" not in c and "trend_v0p42" not in c                    # no sol trend in the form
-        assert c["lines"]["backlash"]["fx"]["form"] == "common" and c["regular_ratio"] > 1.0
+        assert c["lines"]["backlash"]["fx"].get("form", "common") == "common" and c["regular_ratio"] > 1.0
     assert m["cameras"]["ZL034"]["pp"]["cx_px_per_count"] == 0.0
     # ZR cx constant with focus (not significant between blocks), cy keeps its small slope
     assert m["cameras"]["ZR034"]["pp"]["cx_px_per_count"] == 0.0
@@ -531,7 +531,7 @@ def test_zcam_focus_models_per_zoom(tmp_path):
     assert set(files) == {34, 48} and files[48].parent == tmp_path
     m = zcam_focus_model(tmp_path)
     assert {"ZL034", "ZR034", "ZL048"} <= set(m["cameras"]) and m["zooms"][48]["rig"]["note"] == "test"
-    assert m["state"] == "backlash"                          # the 34 mm file's top level
+    assert m["state"] == "calibrated (v0p74)"                # the 34 mm file's top level (the South Arm calibration)
     assert zcam_focus_model_fingerprint(None, tmp_path) != fp0
     cam = zcam_eye_camera("ZL048", [("FULL_OPENCV", np.array([6500.0, 6500.0, 800, 600, -0.05, 0.1, 0.001, 0, 0, 0, 0, 0]))],
                           (1648, 1200), ("p1", "p2"), m["cameras"]["ZL048"])

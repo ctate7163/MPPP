@@ -1,6 +1,6 @@
 @echo off
 REM ======================================================================================================
-REM MPPP v0p85 - Mastcam-Z 34 mm diagnostic and calibration run (Christian, 19 Oct 2026)
+REM MPPP v0p87 - Mastcam-Z 34 mm diagnostic and calibration run (Christian, 19 Oct 2026)
 REM
 REM   Rochette, South Arm and Marble Mountain (sites.json group zcam34_diag), Navcam + Mastcam-Z 34 mm, with the
 REM   Navcam models promoted in the repo (18 Oct pass 2) and the Mastcam-Z start model in use, with the ZR fix
@@ -12,7 +12,7 @@ REM   * D:\scapes\mppp_pipeline\zr_diagnosis.md: frames with tie points per eye 
 REM   * then the Mastcam-Z 34 mm calibration from these three blocks (scripts\zcam_calibration.py calibrate);
 REM     it is promoted only if every check passes (report in D:\scapes\camera_analysis\zcam34_calibration_<date>)
 REM
-REM About 3.5 to 4 h. Do not run it at the same time as run_v0p85.bat. Run claude_sync.bat first.
+REM About 3.5 to 4 h. Do not run it at the same time as run_v0p87.bat. Run claude_sync.bat first.
 REM This window stays open; to stop it use stop_mppp.bat.
 REM ======================================================================================================
 setlocal

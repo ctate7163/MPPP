@@ -38,3 +38,5 @@ notebooks/*_v0p*.ipynb
 notebooks/* - Copy*.ipynb
 Claude outputs/
 /data/
+# v0p86: rendered JOSS paper (scripts/windows/render_paper.bat)
+paper/paper.pdf

@@ -53,6 +53,19 @@ logger = logging.getLogger("mppp.sfm")
 DEFAULT_SCHEDULE = ((24.0, 10.0, 8.0), (12.0, 2.0, 4.0), (8.0, 2.0, 2.0), (8.0, 2.0, 2.0))
 ROUND1_HOLD = True            # round 1 adjusts poses and points only (cameras and rig at the promoted models)
 ATTITUDE_PRIOR_DEG = 1.0      # weak CAHV attitude prior per frame (holds the block's orientation)
+# Stations without a waypoint of their own - position = the site's drive-0 waypoint + the label's onboard
+# ORIGIN_OFFSET_VECTOR (mid-drive / approach stops) - get looser priors than surveyed stations: at Rochette a 1 m /
+# 1 deg prior held a station whose solve wanted 0.9 m and 1.5 deg of heading, and another moved 6.3 m against its
+# 1 m prior.  Project settings unsurveyed_prior_sigma_m / unsurveyed_attitude_prior_deg override these.
+UNSURVEYED_PRIOR_SIGMA_M = 10.0
+UNSURVEYED_ATTITUDE_PRIOR_DEG = 3.0
+
+
+def is_unsurveyed(row: Optional[Dict[str, Any]]) -> bool:
+    """A project image row whose position prior is not a waypoint of its own station (``position_source`` "waypoint
+    site N drive 0 + label ORIGIN_OFFSET_VECTOR", :meth:`mppp.image.MPPPImage._position`)."""
+    src = str((row or {}).get("position_source") or "")
+    return src.startswith("waypoint") and "ORIGIN_OFFSET_VECTOR" in src
 K2_LIMIT = 10.0                  # v0p85 (Christian): a camera's k2 is kept within +-10 (set to +-10 when beyond)
 BOGUS_MAX_EXTRA_PARAM = 1.0e6    # COLMAP's "bogus camera" limits off (default 1.0, 10, 0.1) - see triangulate()
 BOGUS_MAX_FOCAL_RATIO = 1.0e3
@@ -185,8 +198,11 @@ def triangulate(rec, project: SfmProject, max_reproj_px: float = 8.0, min_angle_
     opts.ba_refine_extra_params = False
     out = Path(out_dir) if out_dir else project.root / "sparse" / "_triangulation"
     out.mkdir(parents=True, exist_ok=True)
-    return pycolmap.triangulate_points(rec, str(database or project.database), str(project.images_dir), str(out),
-                                       clear_points=True, options=opts, refine_intrinsics=False)
+    rec = pycolmap.triangulate_points(rec, str(database or project.database), str(project.images_dir), str(out),
+                                      clear_points=True, options=opts, refine_intrinsics=False)
+    settings = getattr(project, "settings", None) or {}
+    drop_mixed_short_tracks(rec, int(settings.get("min_mixed_track_length") or MIN_MIXED_TRACK_LENGTH))
+    return rec
 
 
 def sync_database(rec, project: SfmProject, path: Optional[PathLike] = None) -> Path:
@@ -778,11 +794,15 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     # stations whose waypoints were flagged (mppp.sfm.waypoint_check; notebook 03 NO_POSITION_PRIOR_AT)
     flagged = {str(x) for x in (project.settings.get("no_position_prior_at") or [])}
     no_prior |= flagged
-    prior_frames: List[Tuple[int, np.ndarray]] = []
+    prior_frames: List[Tuple[int, np.ndarray, float]] = []
     n_no_prior = 0
+    n_unsurveyed = 0
     if use_priors:
         sig = np.asarray(project.settings.get("prior_sigma_m", [1.0, 1.0, 1.0]), float)
         cov3 = np.diag(sig ** 2)
+        sig_u = float(project.settings.get("unsurveyed_prior_sigma_m") or UNSURVEYED_PRIOR_SIGMA_M)
+        cov3_u = np.diag([max(sig_u, float(x)) ** 2 for x in sig])
+        att_u = float(project.settings.get("unsurveyed_attitude_prior_deg") or UNSURVEYED_ATTITUDE_PRIOR_DEG)
         by_name = {r["name"]: r for r in project.images}
         for fid, fr in work.frames.items():
             rig = rec.rigs[fr.rig_id]
@@ -794,18 +814,22 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             if pose is None or r_ref is None:             # unregistered frame, or an image the project does not know
                 continue
             C = np.asarray(r_ref["prior_C"], float)
+            unsurveyed = is_unsurveyed(r_ref)               # v0p87: no waypoint of its own - looser priors
+            n_unsurveyed += unsurveyed
             if r_ref.get("station") in no_prior:
                 n_no_prior += 1
             else:
-                prob.add_residual_block(cf.AbsolutePosePositionPriorCost(cov3, C), None, [pose])
-                prior_frames.append((fid, C))
+                c3 = cov3_u if unsurveyed else cov3
+                prob.add_residual_block(cf.AbsolutePosePositionPriorCost(c3, C), None, [pose])
+                prior_frames.append((fid, C, 1.0 / float(np.mean(np.diag(c3)))))
                 n_prior += 1
             if attitude_prior_deg:
                 # 6-DoF prior: rotation block first (checked), translation effectively free (the position
                 # prior above holds the centre)
                 ref_r = by_name[rec.images[ref[0]].name]
                 T0 = _rigid(ref_r["prior_R_w2c"], ref_r["prior_C"])
-                cov6 = np.diag([np.radians(float(attitude_prior_deg)) ** 2] * 3 + [1e8] * 3)
+                att = max(float(attitude_prior_deg), att_u) if unsurveyed else float(attitude_prior_deg)
+                cov6 = np.diag([np.radians(att) ** 2] * 3 + [1e8] * 3)
                 prob.add_residual_block(cf.AbsolutePosePriorCost(cov6, T0), None, [pose])
                 n_att += 1
 
@@ -964,7 +988,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att, "rig": rig_out, "covariance": cov_out,
             "prior_gauge": gauge, "no_position_prior_at": sorted(flagged),
             "rig_translation_priors": n_rig_prior, "rig_translation_ties": n_rig_tie,
-            "frames_without_position_prior": n_no_prior,
+            "frames_without_position_prior": n_no_prior, "frames_unsurveyed": int(n_unsurveyed),
+            "unsurveyed_prior": {"sigma_m": sig_u, "attitude_deg": att_u} if use_priors else None,
             "tied_cameras": tied, "k2_clamped": k2_clamped,
             "unlocalized_stations": unloc, "navcam_aspect": navcam_aspect, "aspect_priors": len(aspect_costs),
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
@@ -1004,15 +1029,18 @@ def prior_gauge(rec, prior_frames: Sequence[Tuple[int, Any]], recentre: bool = P
     if not prior_frames:
         return None
     d = []
-    for fid, C in prior_frames:
+    w = []
+    for item in prior_frames:
+        fid, C = item[0], item[1]
         if fid not in rec.frames:
             continue
         T = rec.frames[fid].rig_from_world
         R = np.asarray(T.rotation.matrix())
         d.append(np.asarray(C, float) - (-R.T @ np.asarray(T.translation, float)))
+        w.append(float(item[2]) if len(item) > 2 else 1.0)    # v0p87: 1 / sigma^2 (unsurveyed stations count less)
     if not d:
         return None
-    m = np.mean(np.asarray(d), axis=0)
+    m = np.average(np.asarray(d), axis=0, weights=np.asarray(w))
     out = {"frames": len(d), "mean_residual_m": m.tolist(), "shift_m": [0.0, 0.0, 0.0], "recentred": False}
     if recentre and np.all(np.isfinite(m)):
         rec.transform(pycolmap.Sim3d(1.0, pycolmap.Rotation3d(np.eye(3)), m))
@@ -1247,12 +1275,43 @@ def filter_observations(rec, project: SfmProject, max_residual_native_px: float 
     return n
 
 
-def drop_short_tracks(rec, min_track_length: int = 2) -> int:
-    """Delete 3-D points observed in fewer than ``min_track_length`` images; returns the number deleted."""
+# v0p86 (Christian, 19 Oct): a point seen by Navcam and Mastcam-Z needs a third view.  In the 19 Oct diagnostic
+# 36-47 % of the two-view Navcam + Mastcam-Z points sat more than 0.25 m off the terrain (Rochette 4 699, South Arm
+# 9 706: low reprojection error, wrong place - epipolar-consistent false matches, mostly from the pose-guided
+# Navcam-Mastcam-Z matching), against ~1 % of the two-view points of one camera type (the stereo pairs, kept)
+MIN_MIXED_TRACK_LENGTH = 3
+
+
+def drop_mixed_short_tracks(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH) -> int:
+    """Delete points whose track holds both Navcam (``N...``) and Mastcam-Z (``Z...``) images and is shorter than
+    ``min_mixed_track_length``; returns the number deleted.  Blocks of one camera type are untouched."""
+    if min_mixed_track_length <= 2:
+        return 0
+    fam: Dict[int, str] = {}
+    bad = []
+    for pid, pt in rec.points3D.items():
+        if pt.track.length() >= min_mixed_track_length:
+            continue
+        fs = set()
+        for el in pt.track.elements:
+            f = fam.get(el.image_id)
+            if f is None:
+                f = fam[el.image_id] = rec.images[el.image_id].name[:1]
+            fs.add(f)
+        if "N" in fs and "Z" in fs:
+            bad.append(int(pid))
+    for pid in bad:
+        rec.delete_point3D(pid)
+    return len(bad)
+
+
+def drop_short_tracks(rec, min_track_length: int = 2, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH) -> int:
+    """Delete 3-D points observed in fewer than ``min_track_length`` images, and Navcam + Mastcam-Z points in fewer
+    than ``min_mixed_track_length`` (v0p86); returns the number deleted."""
     short = [int(pid) for pid, pt in rec.points3D.items() if pt.track.length() < min_track_length]
     for pid in short:
         rec.delete_point3D(pid)
-    return len(short)
+    return len(short) + drop_mixed_short_tracks(rec, min_mixed_track_length)
 
 
 def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:
@@ -2151,4 +2210,12 @@ def reconstruct(project: SfmProject, *args, min_frame_observations: Optional[int
         return _reconstruct(project, *args, **kwargs)
 
 
-reconstruct.__wrapped__ = _reconstruct          # inspect.signature(reconstruct) follows _reconstruct's parameters
+def _reconstruct_signature():
+    import inspect
+    sig = inspect.signature(_reconstruct)
+    return sig.replace(parameters=list(sig.parameters.values()) + [
+        inspect.Parameter("min_frame_observations", inspect.Parameter.KEYWORD_ONLY, default=None,
+                          annotation=Optional[int])])
+
+
+reconstruct.__signature__ = _reconstruct_signature()     # _reconstruct's parameters plus the floor

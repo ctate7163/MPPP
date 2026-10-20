@@ -92,7 +92,10 @@ def test_zcam_camera_at_both_states_and_the_regular_ratio():
             bl, rl = c["lines"]["backlash"], c["lines"]["regular"]
             assert pb[0] == pytest.approx(bl["fx"]["a"] + bl["fx"]["b"] * (focus - ref))
             assert pr[0] == pytest.approx(rl["fx"]["a"] + rl["fx"]["b"] * (focus - ref))
-            assert pb[0] / pr[0] == pytest.approx(c["regular_ratio"], rel=1e-9)
+            if rl["fx"].get("derived"):                                      # regular derived from backlash
+                assert pb[0] / pr[0] == pytest.approx(c["regular_ratio"], rel=1e-9)
+            else:                                                              # regular measured on its own
+                assert pb[0] / pr[0] == pytest.approx(c["regular_ratio"], rel=2e-3)
             assert pb[4] == pytest.approx(bl["k1"]["a"]) and pb[5] == pytest.approx(bl["k2"]["a"])
             assert pb[6:] == [0.0] * 6 and pr[6:] == [0.0] * 6              # p1 = p2 = k3 = 0 held
             if g == "ZL034":                                                   # pp0 held (the reference eye)

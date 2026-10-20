@@ -29,7 +29,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
           min_num_inliers: int = 15, num_threads: int = -1, guided_matching: bool = False, block_size: int = 100,
           python: Optional[PathLike] = None, max_ratio: float = 0.8, max_distance: float = 0.7,
           cross_check: bool = True, max_keypoints: int = 8192, filter_threshold: float = 0.1,
-          device: Optional[str] = None) -> Dict[str, Any]:
+          device: Optional[str] = None, max_hours: float = 2.0) -> Dict[str, Any]:
     """Match and verify; results go into ``project.database``.  Returns a summary.
     ``python``: run in another Python environment, e.g. a conda one with a CUDA
     pycolmap (v0p11, see :mod:`mppp.sfm.gpu`).  ``max_ratio``, ``max_distance``,
@@ -38,18 +38,24 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     verified two-view geometry; ``max_error_px``: RANSAC threshold of the
     geometric verification, full-resolution pixels.  ``max_keypoints``, ``filter_threshold``, ``device``: LightGlue
     (the keypoints per image it attends over, its match confidence threshold, "cuda"/"cpu"; see
-    :mod:`mppp.sfm.lightglue`)."""
+    :mod:`mppp.sfm.lightglue`); ``max_hours``: the LightGlue time budget per block, projected from the first pairs
+    - beyond it, or without kornia/torch, the block is matched with COLMAP's SIFT matcher and the record says so
+    (``matcher`` against ``matcher_requested``), so that a later run with LightGlue available does not reuse
+    SIFT matches as LightGlue ones."""
     if mode not in ("lightglue", "exhaustive", "prior_pairs"):
         raise ValueError("mode must be 'lightglue', 'exhaustive' or 'prior_pairs'")
     if mode == "lightglue":
-        from . import lightglue as LG
-        pair_names = [(p[0], p[1]) for p in pairs] if pairs is not None else None
-        lg = LG.match_pairs_lightglue(project, pair_names, max_keypoints=max_keypoints,
-                                      filter_threshold=filter_threshold, device=device)
-        LG.verify(project, lg["pairs_file"], max_error_px=max_error_px, min_num_inliers=min_num_inliers)
-        return _finish(project, mode, max_error_px, min_num_inliers, max_num_matches, guided_matching, max_ratio,
-                       max_distance, cross_check, extra={"lightglue": lg, "max_keypoints": int(max_keypoints),
-                                                         "filter_threshold": float(filter_threshold)})
+        lg = _try_lightglue(project, pairs, max_keypoints, filter_threshold, device, max_error_px, min_num_inliers,
+                            max_hours)
+        if lg is not None:
+            return _finish(project, mode, max_error_px, min_num_inliers, max_num_matches, guided_matching, max_ratio,
+                           max_distance, cross_check, extra={"lightglue": lg, "max_keypoints": int(max_keypoints),
+                                                             "filter_threshold": float(filter_threshold),
+                                                             "matcher_requested": "lightglue", "matcher": "lightglue"})
+        # LightGlue unavailable or too slow here: COLMAP's SIFT matcher of the same pairs, recorded as such
+        requested, mode = "lightglue", ("exhaustive" if pairs is None else "prior_pairs")
+    else:
+        requested = mode
     if python is not None:
         from .gpu import run_step
         if mode == "prior_pairs" and pairs is not None:
@@ -114,7 +120,28 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
         pycolmap.match_image_pairs(db, matching_options=mo, pairing_options=po, verification_options=vo,
                                    device=device)
     return _finish(project, mode, max_error_px, min_num_inliers, max_num_matches, guided_matching, max_ratio,
-                   max_distance, cross_check)
+                   max_distance, cross_check, extra={"matcher_requested": requested, "matcher": "sift"})
+
+
+def _try_lightglue(project: SfmProject, pairs, max_keypoints: int, filter_threshold: float, device: Optional[str],
+                   max_error_px: float, min_num_inliers: int, max_hours: float) -> Optional[Dict[str, Any]]:
+    """LightGlue matching of the pairs, or None (with a logged reason) when it cannot or should not run here."""
+    try:
+        import kornia  # noqa: F401
+        import torch   # noqa: F401
+    except ImportError as e:
+        log.warning("SIFT + LightGlue not available (%s); COLMAP's SIFT matcher instead", e)
+        return None
+    from . import lightglue as LG
+    pair_names = [(p[0], p[1]) for p in pairs] if pairs is not None else None
+    try:
+        lg = LG.match_pairs_lightglue(project, pair_names, max_keypoints=max_keypoints,
+                                      filter_threshold=filter_threshold, device=device, max_hours=max_hours)
+    except LG.TooSlow as e:
+        log.warning("%s; COLMAP's SIFT matcher instead", e)
+        return None
+    LG.verify(project, lg["pairs_file"], max_error_px=max_error_px, min_num_inliers=min_num_inliers)
+    return lg
 
 
 def _finish(project: SfmProject, mode: str, max_error_px: float, min_num_inliers: int, max_num_matches: int,
@@ -139,7 +166,7 @@ def _finish(project: SfmProject, mode: str, max_error_px: float, min_num_inliers
                                                      max_ratio=max_ratio, max_distance=max_distance,
                                                      cross_check=cross_check,
                                                      **{k: v for k, v in (extra or {}).items()
-                                                        if k in ("max_keypoints", "filter_threshold")}))
+                                                        if k in ("max_keypoints", "filter_threshold", "matcher")}))
     except (OSError, KeyError, ValueError) as e:        # a missing record only means no reuse next time
         log.warning("matches record not written: %s", e)
     return summary

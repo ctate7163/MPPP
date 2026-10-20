@@ -63,6 +63,9 @@
 
 - 2026-10-19 (v0p85): M2020_N_rig.json of the promotion above edited by hand: "translation": "fitted" restored (the pass-2 writer dropped it because the new large-block fit was recorded, not applied; t and the baseline 0.42401 m are unchanged) - sha 4aa6455701fc
 
+## 20261019-155805 - v0p87: Mastcam-Z 34 mm calibration from South Arm alone (19 Oct ZR-fix diagnostic run; Christian: better than the v0p75 start in the next run). One block, so the 'blocks' check (>= 2) is waived; Rochette left out (approach-station poses), Marble Mountain failed (fixed in v0p86)
+  - `M2020_ZCAM034_focus_model.json` a043c8e52953 from `D:\scapes\mars2020_sol_1408_south_arm_zcam` (zcam_calib.calibrate on that block alone, form v0p75, regular state derived; report in docs/results/zcam34_calibration_20261019_south_arm/)
+  - replaced files kept in `history/20261019-155805/`
 ## 0.90.0 - the forms frozen (mppp.calib)
   - one form per family: Navcam / Hazcam THIN_PRISM_FISHEYE with sx1 = sy1 = 0, thermal terms on fx, fy, cx, cy, k1,
     early-mission offsets, the rig drift in sol (`"form": "navcam-v1"`); Mastcam-Z per zoom, focus lines per
