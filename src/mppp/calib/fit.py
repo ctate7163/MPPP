@@ -1387,6 +1387,65 @@ def zcam_leave_one_out(infos: Sequence[Dict[str, Any]], params: Sequence[str] = 
     return out
 
 
+def _baseline_vs_cahv(rigs: Sequence[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The blocks' refined Mastcam-Z baselines against the CAHV baselines held in the runs (mm): mean and sd of the
+    difference, and its trends with sol and lens temperature (Christian, 20 Oct)."""
+    d = [(float(np.linalg.norm(r["t"]) * 1e3) - r["baseline_cahv_mm"], r.get("sol"), r.get("T_optics_degC"))
+         for r in rigs if r.get("baseline_cahv_mm") is not None]
+    if not d:
+        return None
+    y = np.array([x[0] for x in d]); S = np.array([np.nan if x[1] is None else x[1] for x in d], float)
+    T = np.array([np.nan if x[2] is None else x[2] for x in d], float)
+    return {"n": len(d), "mean_mm": float(y.mean()), "sd_mm": float(y.std(ddof=1)) if len(y) > 1 else None,
+            "vs_sol_per_1000": ols(S / 1000.0, y), "vs_T": ols(T, y)}
+
+
+def zcam_without_tangential(model: Dict[str, Any]) -> Dict[str, Any]:
+    """The same focus model with p1, p2 dropped (zcam-v1's form) - for the with / without comparison."""
+    out = copy.deepcopy(model)
+    for g, gm in (out.get("cameras") or {}).items():
+        dist = gm.get("distortion") or {}
+        names = list(dist.get("names") or [])
+        keep = [i for i, n in enumerate(names) if n not in ("p1", "p2")]
+        if len(keep) != len(names):
+            gm["distortion"] = {"names": [names[i] for i in keep], "params": [dist["params"][i] for i in keep],
+                                "note": dist.get("note", "") + " (p1, p2 dropped for the comparison)"}
+        for st, ln in (gm.get("lines") or {}).items():
+            if isinstance(ln, dict):
+                for pn in ("p1", "p2"):
+                    ln.pop(pn, None)
+    out["form"] = "zcam-v1"
+    return out
+
+
+def zcam_tangential_comparison(model: Dict[str, Any], focus: Optional[float] = None) -> Dict[str, Any]:
+    """With and without p1, p2 (Christian, 20 Oct): per eye the fitted p1, p2 with their sd and block scatter and the
+    image displacement between the two models over the frame (:func:`mppp.calib.joint.compare`: rms and corners,
+    rotation removed) at the reference focus, backlash state."""
+    from . import constrain as C
+    out: Dict[str, Any] = {"eyes": {}}
+    without = zcam_without_tangential(model)
+    for g, gm in (model.get("cameras") or {}).items():
+        dist = gm.get("distortion") or {}
+        names = list(dist.get("names") or [])
+        if "p1" not in names:
+            out["eyes"][g] = {"p1": 0.0, "p2": 0.0, "note": "no p1, p2 in this calibration"}
+            continue
+        f = float(focus if focus is not None else gm.get("reference_focus", 600.0))
+        _, pa, _ = C.zcam_camera_at(model, g, f)
+        _, pb, _ = C.zcam_camera_at(without, g, f)
+        w, h = forms.FULL_FRAME["Z"]
+        d = J.compare(J.pycolmap_camera("FULL_OPENCV", pa, w, h), J.pycolmap_camera("FULL_OPENCV", pb, w, h))
+        e: Dict[str, Any] = {"focus": f, "displacement_px": d}
+        for pn in ("p1", "p2"):
+            i = names.index(pn)
+            e[pn] = float(dist["params"][i])
+            e[f"sd_{pn}"] = (dist.get("sd") or [None] * len(names))[i]
+            e[f"tau_{pn}"] = (dist.get("tau") or [None] * len(names))[i]
+        out["eyes"][g] = e
+    return out
+
+
 def fit_zcam(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], rig_translation: str = "cahv") -> Dict[str, Any]:
     """
     The Mastcam-Z calibration of one zoom from solved blocks (:func:`block_info`): per eye and parameter the
@@ -1546,7 +1605,9 @@ def fit_zcam(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], rig_transla
         for fam, v in (i.get("rig") or {}).items():
             if str(fam) == zoom_key and v.get("R_refined") is not None and v.get("t_refined") is not None:
                 Ra, ta = rig_adj.get(i["name"], (np.asarray(v["R_refined"], float), np.asarray(v["t_refined"], float)))
+                tcahv = v.get("t_sensor_from_ref_cahv") or v.get("t_sensor_from_ref")
                 rigs.append({"block": i["name"], "rotvec": Rotation.from_matrix(Ra).as_rotvec(), "t": ta,
+                             "baseline_cahv_mm": None if tcahv is None else float(np.linalg.norm(np.asarray(tcahv, float)) * 1e3),
                              "T_optics_degC": i.get("T_optics_degC"), "sol": i.get("sol"),
                              "pp_shift_px": [shifts[i["name"]]["dcx_px"], shifts[i["name"]]["dcy_px"]] if i["name"] in shifts else None,
                              "R0": np.asarray(v["R_sensor_from_ref"], float) if v.get("R_sensor_from_ref") is not None else None})
@@ -1590,7 +1651,11 @@ def fit_zcam(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], rig_transla
                       "blocks": [r["block"] for r in rigs],
                       "per_block": [{"block": r["block"], "rotvec_mdeg": (np.degrees(r["rotvec"]) * 1e3).tolist(),
                                      "baseline_mm": float(np.linalg.norm(r["t"]) * 1e3), "T_optics_degC": r["T_optics_degC"],
-                                     "sol": r["sol"], "pp_shift_px": r["pp_shift_px"]} for r in rigs],
+                                     "sol": r["sol"], "pp_shift_px": r["pp_shift_px"],
+                                     "baseline_cahv_mm": r.get("baseline_cahv_mm"),
+                                     "dbaseline_mm": (None if r.get("baseline_cahv_mm") is None
+                                                      else float(np.linalg.norm(r["t"]) * 1e3 - r["baseline_cahv_mm"]))} for r in rigs],
+                      "baseline_vs_cahv": _baseline_vs_cahv(rigs),
                       "note": f"mean of {len(rigs)} blocks' refined Mastcam-Z rigs (right from left; the same for every "
                               f"focus - the focus motion is the principal points'; ZR cx, cy at the reference focus = "
                               f"pp0, each block's offset moved into its rig rotation first)"}
@@ -1974,6 +2039,7 @@ def fit_rig_drift(rows: Sequence[Dict[str, Any]], knot_sol: Union[float, str, No
         out[f"{ang}_T_mdeg_per_degC"] = float(f["coef"][1])
         out[f"{ang}_T_se"] = float(f["se"][1])
         out[f"{ang}_tau_mdeg"] = float(f["tau"])
+        out[f"{ang}_Q2"] = float(f["Q2"])
         out[f"{ang}_level_mdeg"] = float(f["coef"][0])
         out[f"{ang}_mdeg_per_sol"] = 0.0 if (ang in no_drift or ang in held) else rate
         if h:

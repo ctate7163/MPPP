@@ -57,7 +57,7 @@ EARLY_TERMS = ("fx", "fy", "cx", "cy")                                        # 
 ANGLES = ("pitch", "yaw", "roll")                                             # rotation-vector x, y, z
 TIE_SIGMA = {"fx": 1e-3, "fy": 1e-3, "cx": 1e-3, "cy": 1e-3, "k": 1e-7, "q": 1e-8}
 BIN_DEG = 2.0                    # fine bins; within a bin the images' own temperatures count (keypoint map)
-POINTS_PER_BLOCK = 3000          # ~1/3 of the profile joint's 8000: the tied joint solves everything at once
+POINTS_PER_BLOCK = 8000          # Christian, 20 Oct: 8000 for the pipeline passes
 MAX_SPAN_SOLS = 25.0
 EARLY_SOL = 380.0
 KNOT_SOL = 250.0                 # the pitch hinge (the free-knot refit of 20 Oct: 250, range 200-290)
@@ -114,9 +114,10 @@ def rig_q_at(Q0: np.ndarray, D: np.ndarray, H: np.ndarray, sol: float, knot: flo
     return np.asarray(Q0, float) + 0.5 * _MDEG * (np.asarray(D, float) * s + np.asarray(H, float) * min(s, knot)) / 1000.0
 
 
-def start_values(cmods_dir: Optional[PathLike] = None, knot_sol: Optional[float] = None) -> Dict[str, Any]:
+def start_values(cmods_dir: Optional[PathLike] = None, knot_sol: Optional[float] = KNOT_SOL) -> Dict[str, Any]:
     """The global parameters' start from a cameras folder (default the models in use): G, S, E per eye, the rig's
-    Q0 at sol 0, D (rates) and H (pitch hinge), the knot."""
+    Q0 at sol 0, D (rates) and H (pitch hinge), the knot (``knot_sol``, default :data:`KNOT_SOL` = 250; None takes
+    the rig file's)."""
     d = M._folder(cmods_dir)
     nl, nr, rj = M.load_camera("N", "L", d), M.load_camera("N", "R", d), M.load_rig("N", d)
     if rj is None:
@@ -562,7 +563,101 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
         res["diagnostics"] = diagnostic_pass(rec0, proj0, idx, st, g, bin_deg=bin_deg, early_sol=early_sol,
                                              max_span=max_span, iterations=iterations, verbose=verbose)
         res["diagnostics"]["seconds"] = time.time() - t
+        res["knot_comparison"] = knot_comparison(res)
+        res["roll_profile"] = roll_profile(res)
+        if verbose:
+            for line in describe_rig_tests(res):
+                log.info(line)
     return res
+
+
+# ====================================================================================== after the BA: the rig tests
+def _epoch_rows(res: Dict[str, Any], min_frames: int = 8) -> List[Dict[str, Any]]:
+    """The diagnostic pass's rig epochs as :func:`mppp.calib.fit.fit_rig_drift` rows (absolute angles, a nominal
+    sd of 1 mdeg at 100 images)."""
+    rows = []
+    for r in (res.get("diagnostics") or {}).get("rigs") or []:
+        if r.get("frames", 0) < min_frames:
+            continue
+        sd = 1.0 * np.sqrt(100.0 / max(2 * r["frames"], 1))
+        rows.append({"block": r["scape"], "epoch": r["epoch"], "sol": float(r["sol"]), "T": float(r["T"]), "images": 2 * r["frames"],
+                     "sols": r.get("sols"), "pitch_mdeg": r["pitch_mdeg"], "yaw_mdeg": r["yaw_mdeg"], "roll_mdeg": r["roll_mdeg"],
+                     "sd_pitch_mdeg": sd, "sd_yaw_mdeg": sd, "sd_roll_mdeg": sd})
+    return rows
+
+
+def knot_comparison(res: Dict[str, Any], knots: Sequence[float] = (250.0, 300.0, 350.0)) -> Dict[str, Any]:
+    """After the BA (Christian, 20 Oct): the pitch hinge refitted on the diagnostic pass's free epochs with the knot
+    at each of ``knots`` and free, compared by the weighted residual sum of squares (Q2, with the between-epoch
+    scatter tau) - which knot looks better."""
+    from .fit import fit_rig_drift
+    rows = _epoch_rows(res)
+    out: Dict[str, Any] = {"epochs": len(rows), "knots": {}}
+    if len(rows) < 5:
+        out["note"] = "too few epochs"
+        return out
+    for k in list(knots) + ["free"]:
+        try:
+            d = fit_rig_drift(rows, knot_sol=k, knot_angles=("pitch",), no_drift=("yaw",))
+        except Exception as e:                                        # noqa: BLE001
+            out["knots"][str(k)] = {"error": f"{type(e).__name__}: {e}"}
+            continue
+        out["knots"][str(k)] = {"knot_sol": d.get("knot_sol"), "knot_sol_range": d.get("knot_sol_range"),
+                                "pitch_Q2": d.get("pitch_Q2"), "pitch_tau_mdeg": d.get("pitch_tau_mdeg"),
+                                "pitch_mdeg_per_1000sol": 1e3 * float(d.get("pitch_mdeg_per_sol") or 0.0),
+                                "pitch_early_mdeg_per_1000sol": 1e3 * float(d.get("pitch_early_mdeg_per_sol") or 0.0)}
+    fixed = [(k, v["pitch_Q2"]) for k, v in out["knots"].items() if k != "free" and v.get("pitch_Q2") is not None]
+    if fixed:
+        out["best_fixed"] = min(fixed, key=lambda t: t[1])[0]
+    return out
+
+
+def roll_profile(res: Dict[str, Any], step_sol: float = 900.0) -> Dict[str, Any]:
+    """Is the roll linear in sol or a step near ``step_sol``?  (Christian, 20 Oct.)  Three weighted fits on the
+    diagnostic pass's epochs (with the temperature term): linear, step, linear + step; Q2 and tau of each, the
+    step size with its se, and which model the residual sum of squares prefers (Q2 + 2 x parameters)."""
+    from .fit import wls_tau
+    rows = _epoch_rows(res)
+    if len(rows) < 5:
+        return {"epochs": len(rows), "note": "too few epochs"}
+    y = np.array([r["roll_mdeg"] for r in rows]); T = np.array([r["T"] for r in rows]); S = np.array([r["sol"] for r in rows])
+    v = np.array([r["sd_roll_mdeg"] for r in rows]) ** 2
+    one = np.ones(len(rows))
+    models = {"linear": np.c_[one, T - T.mean(), S - S.mean()],
+              "step": np.c_[one, T - T.mean(), (S > step_sol).astype(float)],
+              "linear+step": np.c_[one, T - T.mean(), S - S.mean(), (S > step_sol).astype(float)]}
+    out: Dict[str, Any] = {"epochs": len(rows), "step_sol": step_sol, "before": int((S <= step_sol).sum()),
+                           "after": int((S > step_sol).sum()), "models": {}}
+    for name, X in models.items():
+        f = wls_tau(y, X, v)
+        m = {"Q2": f["Q2"], "tau_mdeg": f["tau"], "dof": f["dof"], "score": f["Q2"] + 2 * X.shape[1]}
+        if "linear" in name:
+            m["rate_mdeg_per_1000sol"] = 1e3 * f["coef"][2]; m["rate_se"] = 1e3 * f["se"][2]
+        if "step" in name:
+            m["step_mdeg"] = f["coef"][-1]; m["step_se"] = f["se"][-1]; m["step_z"] = f["coef"][-1] / f["se"][-1] if f["se"][-1] else None
+        out["models"][name] = m
+    out["preferred"] = min(out["models"], key=lambda k: out["models"][k]["score"])
+    return out
+
+
+def describe_rig_tests(res: Dict[str, Any]) -> List[str]:
+    lines = []
+    kc = res.get("knot_comparison") or {}
+    if kc.get("knots"):
+        lines.append("pitch knot after the BA (diagnostic epochs): " + "; ".join(
+            f"{k}: Q2 {v.get('pitch_Q2', float('nan')):.1f}, tau {v.get('pitch_tau_mdeg', float('nan')):.2f} mdeg, early "
+            f"{v.get('pitch_early_mdeg_per_1000sol', float('nan')):+.1f} / late {v.get('pitch_mdeg_per_1000sol', float('nan')):+.1f} mdeg/1000 sol"
+            + (f" (free knot {v.get('knot_sol')}, range {v.get('knot_sol_range')})" if k == "free" else "")
+            for k, v in kc["knots"].items() if "error" not in v) + f" -> best fixed knot {kc.get('best_fixed')}")
+    rp = res.get("roll_profile") or {}
+    if rp.get("models"):
+        m = rp["models"]
+        lines.append(f"roll in sol ({rp['before']} epochs before sol {rp['step_sol']:g}, {rp['after']} after): linear "
+                     f"{m['linear']['rate_mdeg_per_1000sol']:+.2f} +- {m['linear']['rate_se']:.2f} mdeg/1000 sol (Q2 {m['linear']['Q2']:.1f}); "
+                     f"step {m['step']['step_mdeg']:+.2f} +- {m['step']['step_se']:.2f} mdeg (Q2 {m['step']['Q2']:.1f}); "
+                     f"linear+step: step {m['linear+step']['step_mdeg']:+.2f} +- {m['linear+step']['step_se']:.2f}, rate "
+                     f"{m['linear+step']['rate_mdeg_per_1000sol']:+.2f} (Q2 {m['linear+step']['Q2']:.1f}) -> preferred: {rp['preferred']}")
+    return lines
 
 
 def diagnostic_pass(rec0, proj0, idx: Dict[str, Any], st: Dict[str, Any], g: Dict[str, np.ndarray], bin_deg: float = BIN_DEG,
@@ -682,7 +777,7 @@ def write_tied(res: Dict[str, Any], out_dir: PathLike, note: str = "", template_
     return out
 
 
-BLOCK_AGREEMENT = {"f_ppm": 150.0, "rig_mdeg": 5.0, "min_images": 8, "max_share": 0.25}
+BLOCK_AGREEMENT = {"f_ppm": 150.0, "rig_mdeg": 5.0, "min_images": 8, "max_share": 1.0}   # reported, never failing, until the first real run sets the limits (Christian, 20 Oct)
 
 
 def block_agreement(res: Dict[str, Any], limits: Optional[Dict[str, float]] = None) -> Dict[str, Any]:

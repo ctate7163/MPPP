@@ -142,7 +142,7 @@ class Settings:
     max_num_features: int = 32768                 # SIFT features per image
     sift: Dict[str, Any] = field(default_factory=lambda: dict(domain_size_pooling=False, estimate_affine_shape=False,
                                                               num_octaves=None, first_octave=-1))   # num_octaves None: 6 with Mastcam-Z, else 4
-    match_mode: str = "lightglue"                 # the matcher: "lightglue" (SIFT + LightGlue, the default), "exhaustive" (COLMAP's SIFT matcher) or "prior_pairs" (quick / CPU)
+    match_mode: str = "exhaustive"                # the matcher: "exhaustive" (COLMAP's SIFT matcher, the default until the A/B test), "lightglue" (SIFT + LightGlue) or "prior_pairs" (quick / CPU)
     match: Dict[str, Any] = field(default_factory=lambda: dict(max_ratio=0.9, max_distance=1.0, cross_check=True,
                                                                guided_matching=False, max_error_px=6.0,
                                                                max_keypoints=8192, filter_threshold=0.1))   # matching options (the last two: LightGlue)
