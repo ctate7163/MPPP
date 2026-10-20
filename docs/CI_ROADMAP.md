@@ -20,7 +20,7 @@ anything that lives only on the author's PC.
 
 ## Stage 1 — now in `.github/workflows/tests.yml`
 
-* Ubuntu, Python 3.11 and 3.12, CPU torch; `pip install -e .[all]`; pyflakes; the full pytest suite on the two
+* Ubuntu, Python 3.11 and 3.12, CPU torch; `pip install -e .[all]`; flake8 (pyflakes rules); the full pytest suite on the two
   PDS products in `tests/data/m20` (processing, masks off, project build, features, LightGlue matching and
   verification, calibration forms, waypoints, the error model's physics tests). No model is downloaded: the
   mask tests use a tiny synthetic checkpoint, LightGlue's weights are fetched by kornia once and cached by the

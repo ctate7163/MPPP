@@ -14,7 +14,7 @@ git clone https://github.com/ctate7163/MPPP.git
 cd MPPP
 pip install -e ".[all]"
 pytest -q                       # ~470 tests on the two PDS products in tests/data/m20 (about 10 minutes)
-python -m pyflakes src/mppp scripts
+python -m flake8 --select F src/mppp scripts
 ```
 
 **Pull requests**: one change per request, with a test in the module's test file (`tests/test_<module>.py`) and a

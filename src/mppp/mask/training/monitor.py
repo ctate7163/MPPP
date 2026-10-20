@@ -112,7 +112,6 @@ def render_rows(rows: Sequence[tuple], title: str, threshold: float, tile_h: int
     tiles = [np.hstack([t, np.full((t.shape[0], width - t.shape[1], 3), 255, np.uint8)]) for t in tiles]
     top = np.full((head, width, 3), 255, np.uint8)
     _text(top, title, (4, 14), 0.5, INK)
-    col_w = tiles[0].shape[1]
     x = 0
     w0 = _tile_h(rows[0][0], tile_h).shape[1]
     for k, name in enumerate(("image", "truth (white = terrain)", "P(terrain)",

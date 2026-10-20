@@ -33,6 +33,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
+from scipy.spatial.transform import Rotation
+
 import numpy as np
 
 from .project import SfmProject
@@ -668,7 +670,6 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             # from the rig as refined so far in this run (R_refined, t_refined), else the start rig
             q = _Rot.from_matrix(np.asarray(v.get("R_refined") or v["R_sensor_from_ref"], float)).as_quat()
             vblocks[fam] = np.r_[q, np.asarray(v.get("t_refined") or v["t_sensor_from_ref"], float)].astype(np.float64)
-    vframes = {rec.images[i].frame_id for i in vpartner}
     n_obs = 0
     pose_blocks: Dict[int, np.ndarray] = {}
     # everything that is the same for all observations of an image is looked up once per image
@@ -856,7 +857,6 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             continue
         nav_rig = str(key_of.get(int(key[1]), "")).startswith("N") if key_of else False
         if refine_rig is True and rig_translation_sigma_m:
-            from scipy.spatial.transform import Rotation
             q0, t0 = rig_start[key][:4], rig_start[key][4:7]
             C0 = -Rotation.from_quat(q0 / np.linalg.norm(q0)).as_matrix().T @ t0     # right centre in the rig frame
             prob.add_residual_block(cf.AbsolutePosePositionPriorCost(np.eye(3) * float(rig_translation_sigma_m) ** 2, C0),
@@ -896,7 +896,6 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         elif zmode == "rotation":
             prob.set_manifold(arr, pyceres.SubsetManifold(7, [3, 4, 5, 6]))      # rotation refined, w held
         else:                                                 # rotation and translation (baseline) refined
-            from scipy.spatial.transform import Rotation as _R
             # the prior is on the start rig's right centre (CAHV or the focus model's), not on this call's start
             R0, t0 = np.asarray(vrig[fam]["R_sensor_from_ref"], float), np.asarray(vrig[fam]["t_sensor_from_ref"], float)
             C0 = -R0.T @ t0
@@ -973,12 +972,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     k2_clamped = clamp_k2(rec)                               # |k2| <= K2_LIMIT
     for (rid, cid), arr in rig_blocks.items():
         q = arr[:4] / np.linalg.norm(arr[:4])
-        from scipy.spatial.transform import Rotation
         T = pycolmap.Rigid3d(pycolmap.Rotation3d(Rotation.from_quat(q).as_matrix()), arr[4:7].copy())
         rec.rigs[rid].set_sensor_from_rig(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=cid), T)
     rig_out = {}
     for (rid, cid), arr in rig_blocks.items():
-        from scipy.spatial.transform import Rotation
         R1 = Rotation.from_quat(arr[:4] / np.linalg.norm(arr[:4])).as_matrix()
         R0 = Rotation.from_quat(rig_start[(rid, cid)][:4] / np.linalg.norm(rig_start[(rid, cid)][:4])).as_matrix()
         rig_out[f"{rid}:{cid}"] = {"baseline_m": float(np.linalg.norm(arr[4:7])),

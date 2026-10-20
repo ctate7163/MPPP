@@ -215,7 +215,6 @@ def create_backbone(backbone: str, pretrained: bool, pretrained_file: str = None
     local HF cache (used automatically when the hub is unreachable).  Fails with
     instructions rather than silently training from random weights.
     """
-    import os
     import timm
     if not pretrained:
         return timm.create_model(backbone, features_only=True, pretrained=False)

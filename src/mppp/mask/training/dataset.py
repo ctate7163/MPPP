@@ -37,7 +37,6 @@ import logging
 import csv
 import datetime as _dt
 import hashlib
-import io
 import json
 import xml.etree.ElementTree as ET
 import zipfile

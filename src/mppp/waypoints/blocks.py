@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -350,7 +350,6 @@ def plot_site_map(blocks: Optional[Dict[str, Any]], waypoints: Union[PathLike, D
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    import matplotlib.patheffects as pe
     from .sites import load_site_table
     from .table import lonlat_of
     from .terrain import terrain_grid

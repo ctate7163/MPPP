@@ -51,7 +51,6 @@ def build_exif(meta: Dict[str, Any]) -> Optional[bytes]:
         import piexif
     except ImportError:
         return None
-    intr = meta.get("intrinsics", {})
     zeroth = {
         piexif.ImageIFD.Make: "NASA/JPL Mars 2020 Perseverance",
         piexif.ImageIFD.Model: str(meta.get("camera_group", "")),

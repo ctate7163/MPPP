@@ -428,6 +428,6 @@ def focus_line_lines(lines: Dict[str, Any]) -> List[str]:
         out.append(f"      {g}: f = {r['f0_px']:.1f} + {r['slope_px_per_count']:+.4f} (focus - {r['reference_focus']:.0f}) px "
                    f"[{r['slope_source']}], {r['n_bins']} bins, rms {r['rms_px']:.1f} px"
                    + (f"; model f0 {m:.1f} ({r['f0_px'] - m:+.1f})" if m else "")
-                   + (f"; outlier bins: " + ", ".join(f"{o['camera']} ({o['residual_px']:+.1f} px)" for o in r["outliers"])
+                   + ("; outlier bins: " + ", ".join(f"{o['camera']} ({o['residual_px']:+.1f} px)" for o in r["outliers"])
                       if r["outliers"] else ""))
     return out
