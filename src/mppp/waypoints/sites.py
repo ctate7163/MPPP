@@ -203,7 +203,7 @@ def validate_site_table(path: Optional[PathLike] = None,
             err.append(f"site {name!r}: 'z34' is now 'zcam': [34]")
         unknown = set(v) - {"sols", "label", "zcam", "zcam34", "zcam48", "zcam63", "zcam79", "zcam110", "z34", "note",
                             "no_mask_inference_at", "settings", "block", "notes", "official_blocks",
-                            "max_waypoint_separation_m", "n_waypoints", "rover_sites"}
+                            "max_waypoint_separation_m", "n_waypoints", "rover_sites", "n_primary", "n_nearby"}
         if ver is not None and isinstance(ver, int) and ver >= 5:     # sites file version 5
             if not (isinstance(sols, list) and sols and all(isinstance(r, list) for r in sols)):
                 err.append(f"site {name!r}: version 5: 'sols' must be a list of ranges, [[first, last]] for one visit, "

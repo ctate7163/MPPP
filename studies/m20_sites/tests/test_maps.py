@@ -19,7 +19,7 @@ def test_maps_packaged_blocks_and_prototype(tmp_path):
     out = maps.prototype.run("export", tmp_path / "out")                 # blocks are in the package; export only
     again, _ = maps.load_blocks_file(out / "sites_blocks.json")
     # the export follows sites.json (38 blocks since 0.91, numbered by first sol), the prototype's own list has 36
-    assert len(again) == 38 and any(k.endswith("rose_river_falls") for k in again) and any(k.endswith("olifants") for k in again)
+    assert len(again) == 39 and any(k.endswith("rose_river_falls") for k in again) and any(k.endswith("olifants") for k in again)
     assert (tmp_path / "out" / "_m20_sites" / "mppp_map.py").is_file()
 
 
@@ -35,8 +35,8 @@ def test_sites_json_holds_the_official_blocks():
     assert not any(k.startswith("blk") for k in t["sites"])               # v0p81: no blk.. sites
     sites, _ = maps.load_blocks()
     ob = t["official_blocks"]
-    assert len(ob) == 38                                                        # 0.91: + Rose River Falls, Olifants
-    assert ob["12"]["site"] == "rose_river_falls" and ob["12"]["mastcam_z_360"] == [17] and ob["35"]["site"] == "olifants"
+    assert len(ob) == 39                                                        # 0.91: + Rose River Falls, Olifants, Plankeholmane
+    assert ob["12"]["site"] == "rose_river_falls" and ob["12"]["mastcam_z_360"] == [17] and ob["36"]["site"] == "olifants" and ob["33"]["site"] == "plankeholmane"
     assert ob["16"]["name"] == "Hidden Harbor" and ob["16"]["site"] == "hidden_harbor"
     by_centre = {(round(b["centre"]["easting"], 1), round(b["centre"]["northing"], 1)): (int(n), b) for n, b in ob.items()}
     for k, v in sites.items():                                            # the prototype's 36 blocks are all there

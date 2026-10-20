@@ -982,6 +982,38 @@
  },
  {
   "id": 33,
+  "key": "plankeholmane",
+  "site": "plankeholmane",
+  "name": "Plankeholmane",
+  "region": "crater_rim",
+  "kind": "sites.json",
+  "cx": 4344031.16,
+  "cy": 1093531.6,
+  "lon": 77.2647877,
+  "lat": 18.4485395,
+  "half_size_m": 30.0,
+  "runs": [
+   [
+    1646,
+    1661
+   ],
+   [
+    1668,
+    1673
+   ]
+  ],
+  "first": 1646,
+  "first_all": 1646,
+  "n360": 5,
+  "npart": 4,
+  "ninterp": 0,
+  "zpanos": [
+   48
+  ],
+  "nz": 1
+ },
+ {
+  "id": 34,
   "key": "cluster21",
   "site": "origny",
   "name": "Origny",
@@ -1009,7 +1041,7 @@
   "nz": 1
  },
  {
-  "id": 34,
+  "id": 35,
   "key": "cluster22",
   "site": "vingeanne",
   "name": "Vingeanne",
@@ -1037,7 +1069,7 @@
   "nz": 1
  },
  {
-  "id": 35,
+  "id": 36,
   "key": "olifants",
   "site": "olifants",
   "name": "Olifants",
@@ -1066,7 +1098,7 @@
   "nz": 2
  },
  {
-  "id": 36,
+  "id": 37,
   "key": "groloy",
   "site": "groloy",
   "name": "Groloy",
@@ -1098,7 +1130,7 @@
   "nz": 1
  },
  {
-  "id": 37,
+  "id": 38,
   "key": "cluster23",
   "site": "hippo_pools",
   "name": "Hippo Pools",
@@ -1128,7 +1160,7 @@
   "nz": 0
  },
  {
-  "id": 38,
+  "id": 39,
   "key": "marble_mountain",
   "site": "marble_mountain",
   "name": "Marble Mountain",
