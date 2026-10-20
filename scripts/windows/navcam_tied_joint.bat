@@ -16,7 +16,7 @@ REM   Arguments are passed through (e.g. navcam_tied_joint.bat --knot 300, --poi
 REM   Time: about an hour for 16-23 blocks (CPU only; can run beside a Mastcam-Z run).
 REM ======================================================================================================
 setlocal
-if not defined MPPP_HOME for %%I in ("%~dp0..\..\..") do set "MPPP_HOME=%%~fI"
+if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
 if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\scapes"
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY=%%d"

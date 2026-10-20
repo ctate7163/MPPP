@@ -29,7 +29,7 @@ setlocal
 if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
 python -m mppp waypoints --refresh
-python "%MPPP_HOME%\scripts\move_scapes.py" --apply || ( echo moving the block folders failed - nothing started & pause & exit /b 1 )
+python "%MPPP_HOME%\studies\calibration\move_scapes.py" --apply || ( echo moving the block folders failed - nothing started & pause & exit /b 1 )
 if /i "%~1"=="--continue" (
   call "%~dp0run_pipeline.bat" --no-baseline-study
   exit /b %ERRORLEVEL%

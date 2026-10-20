@@ -14,7 +14,7 @@ REM Keep the computer awake (no sleep, no automatic restart for updates) until i
 REM ======================================================================================================
 setlocal
 set "ROOT=D:\scapes"
-if not defined MPPP_HOME if exist "%~dp0..\run_pipeline.py" for %%I in ("%~dp0..\..\..") do set "MPPP_HOME=%%~fI"
+if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 if not defined MPPP_HOME set "MPPP_HOME=D:\code\MPPP"
 set "MPPP_WIN=%MPPP_HOME%\scripts\windows"
 if not exist "%MPPP_WIN%\mppp_env.bat" (

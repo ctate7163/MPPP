@@ -261,7 +261,7 @@ def test_run_sites_dry_run_and_finished(tmp_path):
 
 def test_experiment_scripts_live_in_studies():
     for name in ("lens_model_experiment.py", "lens_terms_experiment.py", "pair_experiment.py",
-                 "temperature_bins_experiment.py", "error_sources.py", "run_v0p22_batch.bat"):
+                 "temperature_bins_experiment.py", "error_sources.py"):
         assert not (ROOT / "scripts" / name).exists() and (ROOT / "studies" / "experiments" / name).is_file(), name
 
 

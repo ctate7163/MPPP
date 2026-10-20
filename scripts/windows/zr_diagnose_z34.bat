@@ -19,7 +19,7 @@ setlocal
 set "ROOT=D:\scapes"
 if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
-python "%MPPP_HOME%\scripts\move_scapes.py" --apply || ( echo moving the block folders failed - nothing started & pause & exit /b 1 )
+python "%MPPP_HOME%\studies\calibration\move_scapes.py" --apply || ( echo moving the block folders failed - nothing started & pause & exit /b 1 )
 set "MPPP_ZCAM_TRACE=1"
 echo %DATE% %TIME%  Mastcam-Z 34 mm diagnostic run: rochette, south_arm, marble_mountain
 python "%MPPP_HOME%\scripts\run_sites.py" --root "%ROOT%" --group zcam34_diag --zcam --set ZCAM_ZOOMS=[34] --force

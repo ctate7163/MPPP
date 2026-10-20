@@ -13,7 +13,7 @@ REM Log of the runs: %MPPP_SCAPES%\run_sites_log.txt; the calibration: %MPPP_SCA
 REM Stop with stop_mppp.bat. Expect about 1-1.5 h per block (SIFT), the calibration itself a few minutes.
 REM ======================================================================================================
 setlocal
-if not defined MPPP_HOME for %%I in ("%~dp0..\..\..") do set "MPPP_HOME=%%~fI"
+if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
 if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\scapes"
 set "ROOT=%MPPP_SCAPES%"

@@ -82,14 +82,19 @@ def test_pipeline_prepare_keeps_newer_cameras(tmp_path, monkeypatch):
 
 
 def test_bats():
+    """0.91: every .bat lives in scripts\windows (two levels below the repo), the study ones included."""
+    WIN = HERE.parents[1] / "scripts" / "windows"
     for b, needs in (("run_pipeline.bat", b"studies\\calibration\\run_pipeline.py"),
-                     ("run_v0p85.bat", b"--stop-before zcam_start"),
+                     ("run_v0p91.bat", b"--stop-before zcam_start"),
+                     ("navcam_tied_joint.bat", b"calib navcam"),
                      ("zr_diagnose_z34.bat", b"MPPP_ZCAM_TRACE=1")):
-        t = (HERE / "windows" / b).read_bytes()
+        t = (WIN / b).read_bytes()
         assert b"\r\n" in t and needs in t
-    bat = (HERE / "windows" / "run_v0p85.bat").read_text()
+        assert b'"%~dp0..\\..\\.."' not in t, b                        # the repo is two levels up, not three
+    assert not (HERE / "windows").exists()
+    bat = (WIN / "run_v0p91.bat").read_text()
     assert "--reset --from navcam_runs --no-baseline-study" in bat
-    z = (HERE / "windows" / "zr_diagnose_z34.bat").read_bytes()
+    z = (WIN / "zr_diagnose_z34.bat").read_bytes()
     assert b"--group zcam34_diag --zcam" in z
     assert b"zcam_calibration.py\" calibrate --root \"%ROOT%\" --groups zcam34_diag --n 0 --promote" in z
 

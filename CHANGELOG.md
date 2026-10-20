@@ -26,7 +26,10 @@ The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p
 - **Site maps**: the 20 Oct figure code (`studies/m20_sites`: blocks from `sites.json`, 1 m DTM and orthomosaic
   backgrounds, the table sized to the block count, `M20_TAG`) and `scripts\windows\make_maps.bat` /
   `mppp maps`; the `[maps]` extra (adjustText, rasterio, pyproj).
-- **CLI**: `mppp maps`, `mppp calib navcam`, `mppp doctor`; LightGlue logs its progress.
+- **CLI**: `mppp maps`, `mppp calib navcam`, `mppp doctor`; LightGlue logs its progress (and is off by default
+  until the A/B test: `match_mode = "exhaustive"`).
+- **One folder of batch files**: every `.bat` is in `scripts\windows` (the calibration study's moved from
+  `studies\calibration\windows`; the two forwarders and the v0p22 experiment batch are gone).
 
 ## 0.90.0 — 2026-10-19
 
