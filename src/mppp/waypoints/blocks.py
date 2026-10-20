@@ -467,67 +467,185 @@ def plot_site_map(blocks: Optional[Dict[str, Any]], waypoints: Union[PathLike, D
 MARS_RADIUS_M = 3389500.0
 
 
-def manifest_lmst_temperature(manifest: PathLike, instruments: Sequence[str] = ("NL", "NR")) -> Dict[str, np.ndarray]:
-    """(lmst_h, camera temperature, sol) of the images of a processing manifest (``mppp_manifest_<version>.json``)
-    whose camera group starts with one of ``instruments``."""
-    m = json.loads(Path(manifest).read_text(encoding="utf-8"))
-    ims = m.get("images") or []
-    ims = ims if isinstance(ims, list) else list(ims.values())
-    rows = []
-    for r in ims:
-        g = str(r.get("camera_group") or "")
-        if not any(g.startswith(i) for i in instruments):
+# ------------------------------------------------------------------------------------------- LMST histograms
+# studies/analyses/lmst_histogram.py (30 Sep 2026), ported unchanged: stepped histograms per site plus all sites,
+# Navcam and Mastcam-Z 34 mm each normalised to unit area, local noon dashed, the processing window dotted.
+LMST_NAV_C, LMST_ZC_C = "#2a78d6", "#eb6834"          # categorical slots 1 and 2 (validated: CVD dE 24.7, normal 33.6)
+LMST_FILL_ALPHA = 0.30
+LMST_XLIM = (5.0, 19.0)
+LMST_BINS = np.arange(LMST_XLIM[0], LMST_XLIM[1] + 1e-9, 0.25)
+
+
+def lmst_hours(s) -> float:
+    """``"Sol-00178M13:51:21.107"`` -> 13.86 h."""
+    m = re.search(r"M(\d+):(\d+):([\d.]+)", str(s or ""))
+    return int(m[1]) + int(m[2]) / 60 + float(m[3]) / 3600 if m else float("nan")
+
+
+def _manifest_version(p: Path):
+    m = re.search(r"mppp_manifest_v(\d+)p(\d+)(?:p(\d+))?", p.name)
+    return tuple(int(g or 0) for g in m.groups()) if m else (0, 0, 0)
+
+
+def newest_manifest(processed: PathLike) -> Optional[Path]:
+    fs = sorted(Path(processed).glob("mppp_manifest_v*.json"), key=lambda f: (_manifest_version(f), f.stat().st_mtime))
+    return fs[-1] if fs else None
+
+
+def _family(r) -> str:
+    fn = r.get("filename") or {}
+    return str(fn.get("family") or Path(str(r.get("source_product", ""))).name[:1])
+
+
+def _frame_fraction(r):
+    try:
+        s = float((r.get("filename") or {}).get("downsample_scale") or 1.0)
+        w, h = r["native_size"]
+        return float(w) * float(h) / (5120 * 3840 * s * s)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def lmst_images(roots: Sequence[PathLike], only: Optional[Sequence[str]] = None,
+                min_frame_fraction: Optional[float] = None) -> Tuple[Dict[str, Dict[str, Any]], List[tuple]]:
+    """{site: {stem: manifest record}} and [(site, folder, manifest, n images, n small tiles)] from the newest
+    processing manifest of every WORK folder under ``roots`` (a folder under several roots counts once)."""
+    from .sites import parse_work_folder
+    found = []
+    for root in map(Path, roots):
+        if not root.is_dir():
             continue
+        for d in sorted(p for p in root.iterdir() if p.is_dir()):
+            site, _ = parse_work_folder(d)
+            if not site or (only and site not in set(only)):
+                continue
+            m = newest_manifest(d / "processed")
+            if m:
+                found.append((site, d, m))
+    best: Dict[str, tuple] = {}
+    for site, d, m in found:
+        k = d.name
+        if k not in best or (_manifest_version(m), m.stat().st_mtime) > (_manifest_version(best[k][2]), best[k][2].stat().st_mtime):
+            best[k] = (site, d, m)
+    found = sorted(best.values(), key=lambda t: (_manifest_version(t[2]), t[2].stat().st_mtime))
+    images: Dict[str, Dict[str, Any]] = {}
+    used = []
+    for site, d, m in found:
+        recs = json.loads(m.read_text(encoding="utf-8")).get("images", [])
+        recs = recs if isinstance(recs, list) else list(recs.values())
+        n_small = 0
+        for r in recs:
+            if min_frame_fraction and _family(r) == "N" and (_frame_fraction(r) or 1.0) < min_frame_fraction:
+                n_small += 1
+                continue
+            images.setdefault(site, {})[Path(str(r.get("source_product", ""))).stem] = r
+        used.append((site, str(d), m.name, len(recs) - n_small, n_small))
+    return images, used
+
+
+def lmst_site_row(name: str, recs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """The per-site table row of the LMST histogram figure (``<name>_by_site.csv``)."""
+    nav = [r for r in recs if _family(r) == "N"]
+    zc = [r for r in recs if _family(r) == "Z"]
+    C: Dict[Any, list] = {}
+    for r in recs:
         try:
-            rows.append((float(r["lmst_h"]), float(r["camera_temperature_degC"]), int(r["sol"])))
-        except (KeyError, TypeError, ValueError):
-            continue
-    A = np.array(rows, float).reshape(-1, 3)
-    return {"lmst_h": A[:, 0], "T": A[:, 1], "sol": A[:, 2]}
+            C.setdefault((r.get("site"), r.get("drive")), []).append(r["pose"]["C_enu_m"])
+        except (KeyError, TypeError):
+            pass
+    cent = np.array([np.mean(v, axis=0) for v in C.values()]) if C else np.zeros((0, 3))
+    span = float(np.linalg.norm(cent[:, None, :2] - cent[None, :, :2], axis=2).max()) if len(cent) > 1 else 0.0
+    lm = np.array([lmst_hours(r.get("LMST")) for r in recs])
+    lmN = np.array([lmst_hours(r.get("LMST")) for r in nav])
+    sols = sorted({int(r["sol"]) for r in recs if r.get("sol") is not None})
+    q = lambda a, p: round(float(np.nanpercentile(a, p)), 2) if np.isfinite(a).any() else None   # noqa: E731
+    return {"site": name, "sols": f"{sols[0]}-{sols[-1]}" if sols else "", "first_sol": sols[0] if sols else 0,
+            "navcam": len(nav), "mastcam_z34": len(zc), "stations": len(C), "span_m": round(span, 1),
+            "lmst_min_h": q(lm, 0), "lmst_median_h": q(lm, 50), "lmst_max_h": q(lm, 100),
+            "navcam_lmst_iqr_h": round(q(lmN, 75) - q(lmN, 25), 2) if len(nav) else None}
 
 
-def plot_lmst_histograms(data: Dict[str, Dict[str, np.ndarray]], path: PathLike, bin_h: float = 0.5,
-                         ncols: int = 4, title: Optional[str] = None) -> Path:
-    """
-    One panel per site: the histogram of local mean solar time (LMST) of its Navcam images (bars) with the camera
-    temperature of every image against LMST on a secondary (right, warm) axis.  ``data`` = {site label:
-    :func:`manifest_lmst_temperature`}.  Temperature axes share one range so the sites compare.
-    """
+def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[str, Any]], path: PathLike,
+                         window: Optional[Sequence[float]] = None) -> Tuple[int, int]:
+    """The LMST histogram figure: one stepped panel per site (``rows`` order) and one for all sites, Navcam and
+    Mastcam-Z 34 each to unit area, local noon dashed, the processing ``window`` dotted.  Writes ``path`` (dpi 160)
+    and returns (Navcam images, Mastcam-Z images)."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    names = list(data)
-    n = len(names)
-    nrows = int(np.ceil(n / ncols))
-    fig, axs = plt.subplots(nrows, ncols, figsize=(3.4 * ncols, 2.6 * nrows + 0.5), squeeze=False, sharex=True)
-    allT = np.concatenate([d["T"] for d in data.values() if len(d["T"])]) if n else np.zeros(1)
-    Tlim = (np.floor(allT.min() / 5) * 5 - 2, np.ceil(allT.max() / 5) * 5 + 2) if len(allT) else (-40, 0)
-    edges = np.arange(6, 19 + bin_h, bin_h)
-    for k, name in enumerate(names):
-        ax = axs[k // ncols, k % ncols]
-        d = data[name]
-        ax.hist(d["lmst_h"], bins=edges, color="#2a78d6", alpha=0.75)
-        ax.set_title(f"{name}  ({len(d['lmst_h'])} images, sols {int(d['sol'].min()) if len(d['sol']) else '-'}"
-                     f"–{int(d['sol'].max()) if len(d['sol']) else '-'})", fontsize=8)
-        ax.axvline(12.0, color="k", ls="--", lw=0.7, alpha=0.5)
-        ax2 = ax.twinx()
-        ax2.scatter(d["lmst_h"], d["T"], s=5, color="#eb6834", alpha=0.6, edgecolor="none")
-        ax2.set_ylim(*Tlim)
-        ax2.tick_params(axis="y", colors="#eb6834", labelsize=7)
-        ax2.spines["right"].set_visible(True)
-        ax2.grid(False)
-        if k % ncols == ncols - 1 or k == n - 1:
-            ax2.set_ylabel("camera T  °C", color="#eb6834", fontsize=8)
-        if k % ncols == 0:
-            ax.set_ylabel("images", fontsize=8)
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    from .sites import site_label
+    XLIM, BINS, FILL_ALPHA, NAV_C, ZC_C = LMST_XLIM, LMST_BINS, LMST_FILL_ALPHA, LMST_NAV_C, LMST_ZC_C
+
+    def panel(ax, series, title, bold=False):
+        for vals, color in series:
+            v = np.asarray([x for x in vals if np.isfinite(x)])
+            if v.size:
+                ax.hist(v, bins=BINS, density=True, color=color, alpha=FILL_ALPHA)
+                ax.hist(v, bins=BINS, density=True, histtype="step", color=color, lw=1.2)
+        ax.axvline(12, color="0.35", lw=0.9, ls="--")
+        for w in (window or ()):
+            ax.axvline(w, color="0.55", lw=0.8, ls=":")
+        ax.set_xlim(*XLIM)
+        ax.set_yticks([])
+        for sp in ("top", "right", "left"):
+            ax.spines[sp].set_visible(False)
         ax.tick_params(labelsize=7)
-    for k in range(n, nrows * ncols):
-        axs[k // ncols, k % ncols].set_visible(False)
-    for ax in axs[-1]:
-        ax.set_xlabel("LMST  h", fontsize=8)
-    ax.set_xlim(6, 19)
-    fig.suptitle(title or "Local mean solar time of the Navcam images per site, with camera temperature", y=0.995)
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
+        ax.set_title(title, loc="left", fontsize=7.5, pad=2, fontweight="bold" if bold else "normal")
+
+    def outside(vals):
+        v = np.asarray([x for x in vals if np.isfinite(x)])
+        return int(np.sum((v < XLIM[0]) | (v > XLIM[1])))
+
+    names = [r["site"] for r in rows]
+    ncol = 2 if len(names) > 6 else 1
+    nrow = -(-len(names) // ncol)
+    fig = plt.figure(figsize=(7.5 * ncol / 1.35 if ncol > 1 else 7.5, 1.05 * nrow + 2.4))
+    gs = fig.add_gridspec(nrow + 2, ncol, height_ratios=[1] * nrow + [0.05, 1.7], hspace=0.95, wspace=0.08)
+    allN, allZ = [], []
+    for k, name in enumerate(names):
+        ax = fig.add_subplot(gs[k % nrow if ncol > 1 else k, k // nrow if ncol > 1 else 0])
+        recs = list(images[name].values())
+        lmN = [lmst_hours(r.get("LMST")) for r in recs if _family(r) == "N"]
+        lmZ = [lmst_hours(r.get("LMST")) for r in recs if _family(r) == "Z"]
+        allN += lmN
+        allZ += lmZ
+        r = rows[k]
+        off = outside(lmN) + outside(lmZ)
+        panel(ax, [(lmN, NAV_C), (lmZ, ZC_C)],
+              f"{site_label(name)}  sols {r['sols']}  {r['navcam']} Nav" + (f" + {r['mastcam_z34']} Z34" if r["mastcam_z34"] else "")
+              + (f"  ({off} outside 5-19 h)" if off else ""))
+        if (ncol == 1 and k < len(names) - 1) or (ncol > 1 and (k % nrow) < nrow - 1 and k + 1 < len(names)):
+            ax.set_xticklabels([])
+    ax = fig.add_subplot(gs[nrow + 1, :])
+    off = outside(allN) + outside(allZ)
+    panel(ax, [(allN, NAV_C), (allZ, ZC_C)],
+          f"All {len(names)} sites: {len(allN)} Navcam + {len(allZ)} Mastcam-Z 34 images"
+          + (f" ({off} outside 5-19 h not shown)" if off else ""), bold=True)
+    ax.set_facecolor("#f6f6f4")
+    ax.set_xticks(range(5, 20))
+    ax.set_xlabel("local mean solar time of the image [h]", fontsize=8)
+    handles = [Patch(facecolor=NAV_C, alpha=FILL_ALPHA, edgecolor=NAV_C, lw=1.2, label="Navcam"),
+               Patch(facecolor=ZC_C, alpha=FILL_ALPHA, edgecolor=ZC_C, lw=1.2, label="Mastcam-Z 34"),
+               Line2D([], [], color="0.35", lw=0.9, ls="--", label="local noon")]
+    if window:
+        handles.append(Line2D([], [], color="0.55", lw=0.8, ls=":", label=f"processing window {window[0]:g}-{window[1]:g} h"))
+    fig.legend(handles=handles, loc="upper right", fontsize=7.5, frameon=False, ncol=len(handles), bbox_to_anchor=(0.99, 0.995))
+    fig.suptitle("Time of day of the processed images, per site (each camera normalised to unit area)",
+                 fontsize=9.5, x=0.01, ha="left", y=0.995)
+    fig.subplots_adjust(left=0.03, right=0.99, top=1 - 0.55 / fig.get_figheight(), bottom=0.5 / fig.get_figheight())
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=160)
     plt.close(fig)
+    return len(allN), len(allZ)
+
+
+def write_lmst_table(rows: Sequence[Dict[str, Any]], path: PathLike) -> Path:
+    """``<name>_by_site.csv`` of the LMST figure."""
+    import csv
+    with Path(path).open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, [k for k in rows[0] if k != "first_sol"], extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
     return Path(path)

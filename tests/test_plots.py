@@ -58,37 +58,47 @@ def test_block_results_and_table(tmp_path):
     assert F.block_table_markdown(rows, focal_limit_ppm=10).count("**no**") == 1
 
 
-def test_camera_and_rig_plots(tmp_path):
+def test_refined_rig_and_intrinsics_figures(tmp_path):
+    """The study's rig-trends and intrinsics-vs-temperature formats draw from a small rig_residuals / consensus
+    fixture and the block bins."""
     from mppp.calib import constrain as C, fit as F, models as M
     b = F.block_navcam_results(_fake_block(tmp_path))
-    f1 = C.plot_camera_vs_temperature(M.load_camera("N", "L"), M.load_camera("N", "R"), tmp_path / "cmod.png", blocks=[b])
-    f2 = C.plot_rig_vs_sol(M.load_rig("N"), tmp_path / "rig.png", blocks=[b])
+    rr = {"blocks": [{"block": "Fake [sols 90-110]", "site": "Fake", "sol_median": 100.0 + 10 * k, "T_median_degC": -18.0 - k,
+                      "images": 12, "yaw_mdeg": 1.0, "pitch_mdeg": -0.5, "roll_mdeg": 2.0} for k in range(3)],
+          "fits": {a: {"vs_sol": {"slope": 0.1, "se": 0.5, "z": 0.2}, "vs_T": {"slope": 0.05, "se": 0.1, "z": 0.5}}
+                   for a in ("pitch", "yaw", "roll")}}
+    nl, nr = M.load_camera("N", "L"), M.load_camera("N", "R")
+    cons = {"NL": dict(zip(nl["param_names"], nl["params"])), "NR": dict(zip(nr["param_names"], nr["params"])),
+            "thermal": {"axis_ppm": {"NL": [40.5, 46.9], "NR": [38.9, 46.2]}, "pp_slopes": {"NL": [0.013, 0.0], "NR": [-0.041, 0.0]}}}
+    f1 = C.plot_rig_trends(rr, cons, M.load_rig("N")["drift"], tmp_path / "rig.png", cx_inuse_px_per_degC=-0.05, label="test")
+    f2 = C.plot_intrinsics_vs_temperature(cons, {"NL": nl, "NR": nr}, F.thermal_bin_rows([b]), rr, tmp_path / "intr.png", label="test")
     assert f1.stat().st_size > 10000 and f2.stat().st_size > 10000
 
 
 def test_site_map_and_lmst(tmp_path):
     from mppp.waypoints import blocks as B
-    from mppp.waypoints.sites import load_site_table
     from mppp.waypoints.table import snapshot_path
+    from mppp.waypoints.sites import load_site_table
     tab = load_site_table()
     sw = B.site_waypoints(tab["sites"], snapshot_path())
     assert "rochette" in sw and sw["rochette"]["first_sol"] >= 178
     f = B.plot_site_map(None, snapshot_path(), tmp_path / "map.png", highlight=["rochette"], dpi=80)   # no terrain
     assert f.stat().st_size > 10000
-    rng = np.random.default_rng(0)
-    data = {"A": {"lmst_h": rng.uniform(8, 17, 50), "T": rng.uniform(-30, -10, 50), "sol": np.arange(50) + 100},
-            "B": {"lmst_h": rng.uniform(12, 16, 20), "T": rng.uniform(-20, -5, 20), "sol": np.arange(20) + 500}}
-    assert B.plot_lmst_histograms(data, tmp_path / "lmst.png").stat().st_size > 10000
-
-
-def test_manifest_lmst(tmp_path):
-    from mppp.waypoints.blocks import manifest_lmst_temperature
-    m = {"images": [{"camera_group": "NL0", "lmst_h": 13.5, "camera_temperature_degC": -18.0, "sol": 178},
-                    {"camera_group": "ZL034", "lmst_h": 14.0, "camera_temperature_degC": -10.0, "sol": 178},
-                    {"camera_group": "NR0", "lmst_h": None, "camera_temperature_degC": -18.0, "sol": 178}]}
-    (tmp_path / "m.json").write_text(json.dumps(m))
-    d = manifest_lmst_temperature(tmp_path / "m.json")
-    assert d["lmst_h"].tolist() == [13.5] and d["T"].tolist() == [-18.0]
+    work = tmp_path / "scapes"
+    for name, sol, hours in (("mars2020_sol_0178_rochette", 178, (13.5, 14.0, 15.2)), ("mars2020_sol_0460_rockytop", 460, (9.0, 12.5))):
+        d = work / name / "processed"
+        d.mkdir(parents=True)
+        recs = [{"source_product": f"NLF_{sol}_{i}.IMG", "filename": {"family": "N", "downsample_scale": 1.0}, "native_size": [5120, 3840],
+                 "LMST": f"Sol-{sol:05d}M{int(h):02d}:{int((h % 1) * 60):02d}:00.000", "sol": sol, "site": 6, "drive": 100 + i,
+                 "pose": {"C_enu_m": [i * 3.0, 0.0, 0.0]}} for i, h in enumerate(hours)]
+        (d / "mppp_manifest_v0p90.json").write_text(json.dumps({"images": recs}))
+    images, used = B.lmst_images([work])
+    assert set(images) == {"rochette", "rockytop"} and len(used) == 2
+    rows = sorted((B.lmst_site_row(k, list(v.values())) for k, v in images.items()), key=lambda r: r["first_sol"])
+    assert rows[0]["site"] == "rochette" and rows[0]["navcam"] == 3 and rows[0]["stations"] == 3
+    nN, nZ = B.plot_lmst_histograms(images, rows, tmp_path / "lmst.png", window=(6, 18))
+    assert (nN, nZ) == (5, 0) and (tmp_path / "lmst.png").stat().st_size > 10000
+    assert B.write_lmst_table(rows, tmp_path / "lmst.csv").read_text().startswith("site,")
 
 
 def test_undistort_and_example(tmp_path):
@@ -126,5 +136,3 @@ def test_rig_drift_fit_free_knot(tmp_path):
     a0 = rig_angles(C.rig_at(rig, sol=0.0)[0]); a1 = rig_angles(C.rig_at(rig, sol=1000.0)[0])
     assert a0["pitch_mdeg"] == pytest.approx(m["pitch_at_sol0_mdeg"], abs=0.05)
     assert a1["pitch_mdeg"] - a0["pitch_mdeg"] == pytest.approx(0.006 * 1000 + 0.014 * 400, abs=1.0)
-    f = C.plot_rig_drift(rows, m, tmp_path / "drift.png", old_drift=M.load_rig("N")["drift"])
-    assert f.stat().st_size > 10000

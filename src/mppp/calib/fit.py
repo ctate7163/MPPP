@@ -1994,3 +1994,18 @@ def rig_with_drift(rig: Dict[str, Any], drift: Dict[str, Any], note: str = "",
     out["drift"]["note"] = (note or "rig drift refitted from the block rig epochs (mppp.calib.fit.fit_rig_drift)") + \
         f"; sol0 = {drift.get('sol0', 0.0):g}: the rotation is the rig at that sol"
     return out
+
+
+def thermal_bin_rows(blocks: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The per-temperature-bin cameras of the blocks (:func:`block_navcam_results`) as the rows the intrinsics
+    figure takes: {eye, block, T, n, fx, fy, cx, cy, k1} (full-frame px)."""
+    from ..waypoints.sites import site_label
+    rows = []
+    for b in blocks:
+        for key, c in b["cameras"].items():
+            if not c["bin"] or c.get("T_mean") is None:
+                continue
+            p = c["params"]
+            rows.append({"eye": c["eye"], "block": site_label(b.get("site") or b["block"]), "key": key,
+                         "T": c["T_mean"], "n": c["images"], "fx": p[0], "fy": p[1], "cx": p[2], "cy": p[3], "k1": p[4]})
+    return rows

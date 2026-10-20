@@ -306,247 +306,181 @@ def label_camera(meta: Dict[str, Any]) -> Tuple[str, List[float], str]:
 
 
 # ------------------------------------------------------------------------------------------- plots (0.90)
-PLOT_COLORS = {"NL": "#2a78d6", "NR": "#eb6834", "grey": "#8a8a8a"}     # left eye cool, right eye warm
+# The refined formats of the calibration study, ported unchanged (project doc "plot formats", 20 Oct 2026):
+# docs/history/results/figures_20261018/fig_rig.py (+ fig_rig_trends_20oct.py) and fig_intr.py.
+IFOV_MDEG = 18.9          # one Navcam pixel, 0.33 mrad
+EYE_COLORS = {"NL": "C0", "NR": "C3"}        # left eye cool, right eye warm
 
 
 def _plt():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False,
-                         "axes.grid": True, "grid.alpha": 0.25, "figure.dpi": 110})
     return plt
 
 
-def plot_camera_vs_temperature(nl: Dict[str, Any], nr: Dict[str, Any], path: PathLike,
-                               blocks: Optional[Sequence[Dict[str, Any]]] = None,
-                               T_range: Optional[Tuple[float, float]] = None, sol: Optional[float] = 1000.0,
-                               title: Optional[str] = None) -> Path:
+def drift_offset_rel(drift: Dict[str, Any], angle: str, sols, sol_ref: float = 0.0) -> np.ndarray:
+    """The drift offset of ``angle`` at ``sols`` relative to the model at ``sol_ref`` (:func:`drift_offset_mdeg`),
+    so that every run's angles are referred to the rig at sol 0 whatever the fit's own reference."""
+    s = np.atleast_1d(np.asarray(sols, float))
+    v = np.array([drift_offset_mdeg(drift, x)[f"{angle}_mdeg"] for x in s])
+    return v - drift_offset_mdeg(drift, float(sol_ref))[f"{angle}_mdeg"]
+
+
+def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], drift: Dict[str, Any], path: PathLike,
+                    cx_inuse_px_per_degC: Optional[float] = None, label: str = "", sol_ref: float = 0.0,
+                    T0: float = NAVCAM_T0_DEGC, model_label: str = "drift model") -> Path:
     """
-    The Navcam camera models against camera temperature (``cmod vs temp``): fx, fy (ppm about their value at T0),
-    cx, cy (px about T0) and k1 of the frozen form (:func:`camera_at`) for the left (cool) and right (warm) eye,
-    with the per-block temperature-bin cameras of ``blocks`` (:func:`mppp.calib.fit.block_navcam_results`) as
-    points sized by their images (a bin before the early-mission sol is shown without the early offsets, so that it
-    compares with the line).  Rows share their y range between the eyes; T0 is the dashed line.  ``T_range``
-    defaults to the bins' range (else -30..0 °C).
+    Rig trends 2 x 2 (fig_rig.py, 12.5 x 8.2 in, dpi 130): pitch (UL), yaw with its temperature slope removed
+    to T0 (UR) and roll (LL) of every block rig epoch against its median sol, each relative to the joint rig at
+    ``sol_ref`` (= 0), with the ``drift`` model line, dashed lines at the knot, the residual-trend statistics in the
+    titles and a secondary IFOV axis; LR: the stereo pointing NR cx − NL cx against epoch temperature with the
+    model slope (dashed), the slope in use for the block runs (dotted) and the slope with the yaw residual folded
+    in (solid, ± se band).  ``rig_residuals`` is the study's ``rig_residuals.json`` (rig rotation free, cameras
+    held), ``consensus`` its ``consensus.json``.
     """
     plt = _plt()
-    T0 = thermal_terms(nl.get("thermal"))["T0"]
-    if T_range is None:
-        Tb = [c["T_mean"] for b in (blocks or []) for c in b["cameras"].values() if c["bin"] and c.get("T_mean") is not None]
-        T_range = (min(-30.0, np.floor(min(Tb)) - 1), max(0.0, np.ceil(max(Tb)) + 1)) if Tb else (-30.0, 0.0)
-    Ts = np.linspace(T_range[0], T_range[1], 121)
-    rows = [("fx", "fx − fx(T0)  ppm"), ("fy", "fy − fy(T0)  ppm"), ("cx", "cx − cx(T0)  px"), ("cy", "cy − cy(T0)  px"),
-            ("k1", "k1")]
-    fig, axs = plt.subplots(len(rows), 2, figsize=(10, 11), sharex=True)
-    for j, (eye, m) in enumerate((("NL", nl), ("NR", nr))):
-        _n, p0, _ = camera_at(m, T_degC=T0, sol=sol)
-        curves = np.array([camera_at(m, T_degC=T, sol=sol)[1][:5] for T in Ts])
-        for i, (name, lab) in enumerate(rows):
-            ax = axs[i, j]
-            k = ["fx", "fy", "cx", "cy", "k1"].index(name)
-            if name in ("fx", "fy"):
-                y = 1e6 * (curves[:, k] / p0[k] - 1)
-            elif name in ("cx", "cy"):
-                y = curves[:, k] - p0[k]
-            else:
-                y = curves[:, k]
-            ax.plot(Ts, y, color=PLOT_COLORS[eye], lw=1.8, label=f"{eye} joint model")
-            if blocks:
-                xs, ys, ss = [], [], []
-                for b in blocks:
-                    for key, c in b["cameras"].items():
-                        if c["eye"] != eye or not c["bin"] or c.get("T_mean") is None:
-                            continue
-                        v = c["params"][k]
-                        early = camera_at(m, T_degC=T0, sol=c.get("sol_median"))[1][k] - p0[k]   # early offsets out
-                        v = v - early if name in ("cx", "cy") else v / (1 + early / p0[k]) if name in ("fx", "fy") else v
-                        if name in ("fx", "fy"):
-                            v = 1e6 * (v / p0[k] - 1)
-                        elif name in ("cx", "cy"):
-                            v = v - p0[k]
-                        xs.append(c["T_mean"]); ys.append(v); ss.append(c["images"])
-                if xs:
-                    ax.scatter(xs, ys, s=8 + 0.6 * np.sqrt(ss) * 4, color=PLOT_COLORS[eye], alpha=0.35,
-                               edgecolor="none", label="block temperature bins")
-            ax.axvline(T0, color="k", ls="--", lw=0.8, alpha=0.6)
-            if j == 0:
-                ax.set_ylabel(lab)
-            if i == 0:
-                ax.set_title(f"{eye}  ({'left' if eye == 'NL' else 'right'} eye)")
-                ax.legend(loc="upper left", fontsize=8, frameon=False)
-    for i in range(len(rows)):                                   # the eyes share each row's y range
-        lo = min(ax.get_ylim()[0] for ax in axs[i]); hi = max(ax.get_ylim()[1] for ax in axs[i])
-        for ax in axs[i]:
-            ax.set_ylim(lo, hi)
-    for ax in axs[-1]:
-        ax.set_xlabel("camera temperature  °C")
-    fig.suptitle(title or f"Navcam camera model against temperature (T0 = {T0:g} °C)", y=0.995)
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
+    rr, cons = rig_residuals, consensus
+    B = rr["blocks"]; names = [b["block"] for b in B]
+    sol = np.array([b["sol_median"] for b in B], float); T = np.array([b["T_median_degC"] for b in B], float)
+    ppl = cons["thermal"]["pp_slopes"]
+    CX_T = ppl["NR"][0] - ppl["NL"][0]
+    CX0 = cons["NR"]["cx"] - cons["NL"]["cx"]
+
+    def annotate(ax, x, y, nm):
+        for xx, yy, n in zip(x, y, nm):
+            ax.annotate(n.replace(" [sols ", " [")[:22], (xx, yy), fontsize=5.5, alpha=0.6, xytext=(3, 3), textcoords="offset points")
+    fig, axs = plt.subplots(2, 2, figsize=(12.5, 8.2))
+    ss = np.linspace(0, 2050, 400)
+    panels = {"pitch": axs[0][0], "yaw": axs[0][1], "roll": axs[1][0]}
+    yaw_T = rr["fits"]["yaw"]["vs_T"]
+    for ang, ax in panels.items():
+        tot = np.array([b[f"{ang}_mdeg"] for b in B]) + drift_offset_rel(drift, ang, sol, sol_ref)
+        if ang == "yaw":
+            tot = tot - yaw_T["slope"] * (T - T0)
+            lab = f"block rig epoch, {yaw_T['slope']:+.3f} ± {yaw_T['se']:.3f} mdeg/°C removed (to {T0:.0f} °C)"
+        else:
+            lab = "block rig epoch (rig rotation free, cameras held)"
+        ax.plot(sol, tot, "o", color="C0", label=lab)
+        ax.plot(ss, drift_offset_rel(drift, ang, ss, sol_ref), "-", color="C3", label=model_label)
+        annotate(ax, sol, tot, names)
+        r = tot - drift_offset_rel(drift, ang, sol, sol_ref)
+        rate = 1000 * (drift.get(f"{ang}_mdeg_per_sol") or 0.0)
+        f = rr["fits"][ang]["vs_sol"]
+        extra = (f"; {1000 * drift['pitch_early_mdeg_per_sol']:+.1f} before sol {drift['knot_sol']:.0f}"
+                 if ang == "pitch" and drift.get("pitch_early_mdeg_per_sol") is not None else "")
+        ax.set_title(f"{ang}: drift {rate:+.2f} mdeg/1000 sol{extra}; residual trend {f['slope']:+.2f} ± {f['se']:.2f} (z {f['z']:+.1f})\n"
+                     f"epoch sd about the model {r.std(ddof=1):.2f} mdeg = {r.std(ddof=1) / IFOV_MDEG:.3f} px", fontsize=9)
+        ax.axhline(0, color="0.6", lw=0.8)
+        if drift.get("knot_sol"):
+            ax.axvline(drift["knot_sol"], color="0.4", ls="--", lw=0.8)
+        ax.set_xlabel("median sol of the rig epoch", fontsize=8)
+        ax.set_ylabel(f"{ang} relative to the joint rig at sol {sol_ref:.0f} (mdeg)", fontsize=8)
+        ax.grid(alpha=0.3); ax.legend(fontsize=7, loc="lower right")
+    lo = min(a.get_ylim()[0] for a in panels.values()); hi = max(a.get_ylim()[1] for a in panels.values())
+    for a in panels.values():
+        a.set_ylim(lo, hi); a.set_xlim(0, 2050)
+        a.secondary_yaxis("right", functions=(lambda m: m / IFOV_MDEG, lambda p: p * IFOV_MDEG)).set_ylabel("Navcam IFOV equivalent (px)", fontsize=8)
+    ax = axs[1][1]
+    yaw_px = np.array([b["yaw_mdeg"] for b in B]) / IFOV_MDEG
+    cx_blk = CX0 + CX_T * (T - T0) + yaw_px
+    corr = CX_T + yaw_T["slope"] / IFOV_MDEG
+    tt = np.linspace(np.nanmin(T) - 2, np.nanmax(T) + 2, 2)
+    ax.plot(T, cx_blk, "o", color="C3", label="epoch stereo pointing as NR cx − NL cx (model + rig-yaw residual)")
+    ax.plot(tt, CX0 + CX_T * (tt - T0), "--", color="0.4", label=f"{model_label}: {CX_T:+.4f} px/°C (NR {ppl['NR'][0]:+.4f}, NL {ppl['NL'][0]:+.4f})")
+    if cx_inuse_px_per_degC is not None:
+        ax.plot(tt, CX0 + cx_inuse_px_per_degC * (tt - T0), ":", color="0.6", label=f"in use for these blocks: {cx_inuse_px_per_degC:+.4f} px/°C")
+    ax.fill_between(tt, CX0 + (corr - yaw_T["se"] / IFOV_MDEG) * (tt - T0), CX0 + (corr + yaw_T["se"] / IFOV_MDEG) * (tt - T0), color="C3", alpha=0.12, lw=0)
+    ax.plot(tt, CX0 + corr * (tt - T0), "-", color="C3", label=f"with the yaw residual folded in: {corr:+.4f} ± {yaw_T['se'] / IFOV_MDEG:.4f} px/°C")
+    annotate(ax, T, cx_blk, names)
+    ax.axvline(T0, color="0.4", ls="--", lw=0.8)
+    ax.set_xlabel("epoch median Navcam temperature (°C)", fontsize=8); ax.set_ylabel("NR cx − NL cx (px)", fontsize=8)
+    ax.set_title(f"stereo cx against temperature: yaw residual vs T {yaw_T['slope']:+.2f} ± {yaw_T['se']:.2f} mdeg/°C (z {yaw_T['z']:+.1f})\n"
+                 f"(scatter about the line {np.std(cx_blk - (CX0 + corr * (T - T0)), ddof=2):.3f} px)", fontsize=9)
+    ax.grid(alpha=0.3); ax.legend(fontsize=7, loc="lower left")
+    ax.secondary_yaxis("right", functions=(lambda p: (p - CX0) * IFOV_MDEG, lambda m: CX0 + m / IFOV_MDEG)).set_ylabel(f"yaw equivalent about cx at {T0:.0f} °C (mdeg)", fontsize=8)
+    nb = len({b.get("site") or b["block"] for b in B})
+    fig.suptitle(f"Navcam rig trends{(' ' + label) if label else ''} ({nb} blocks, {len(B)} rig epochs; drift referred to sol {sol_ref:.0f}; "
+                 f"right axes in Navcam IFOV, 0.33 mrad = {IFOV_MDEG} mdeg)", fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.97)); fig.savefig(path, dpi=130)
     plt.close(fig)
     return Path(path)
 
 
-def plot_rig_vs_sol(rig: Dict[str, Any], path: PathLike, blocks: Optional[Sequence[Dict[str, Any]]] = None,
-                    sol_range: Tuple[float, float] = (0.0, 2100.0), title: Optional[str] = None) -> Path:
+def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, Dict[str, Any]], bins: Sequence[Dict[str, Any]],
+                                   rig_residuals: Dict[str, Any], path: PathLike, early_sol: float = 380.0,
+                                   label: str = "", T0: float = NAVCAM_T0_DEGC, model_label: str = "new model") -> Path:
     """
-    The Navcam stereo rig against sol: pitch, yaw and roll of the right-from-left rotation relative to the rig
-    file's rotation (its drift model, :func:`rig_at`), with the per-block rig epochs of ``blocks``
-    (:func:`mppp.calib.fit.block_navcam_results`) as points; the pitch knot is the dashed line.
-    """
-    plt = _plt()
-    from .joint import rig_angles
-    R0 = np.asarray(rig["R_sensor_from_ref"], float)
-    sols = np.linspace(sol_range[0], sol_range[1], 300)
-    model = np.array([[rig_angles(rig_at(rig, sol=s)[0], R0)[f"{a}_mdeg"] for a in ("pitch", "yaw", "roll")] for s in sols])
-    fig, axs = plt.subplots(3, 1, figsize=(9, 7.5), sharex=True)
-    knot = (rig.get("drift") or {}).get("knot_sol")
-    for i, a in enumerate(("pitch", "yaw", "roll")):
-        ax = axs[i]
-        ax.plot(sols, model[:, i], color=PLOT_COLORS["NL"], lw=1.8, label="rig drift model")
-        if blocks:
-            xs, ys, ss = [], [], []
-            for b in blocks:
-                for key, r in (b.get("rigs") or {}).items():
-                    if r.get("sol_median") is None:
-                        continue
-                    xs.append(r["sol_median"]); ys.append(rig_angles(np.asarray(r["R"]), R0)[f"{a}_mdeg"]); ss.append(r["images"])
-            if xs:
-                ax.scatter(xs, ys, s=8 + 2.4 * np.sqrt(ss), color=PLOT_COLORS["NR"], alpha=0.6, edgecolor="none",
-                           label="block rig epochs")
-        if knot:
-            ax.axvline(float(knot), color="k", ls="--", lw=0.8, alpha=0.6)
-        ax.set_ylabel(f"{a}  mdeg")
-        if i == 0:
-            ax.legend(loc="upper left", fontsize=8, frameon=False)
-    axs[-1].set_xlabel("sol")
-    fig.suptitle(title or "Navcam stereo rig rotation against sol (relative to the promoted rig)", y=0.995)
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-    return Path(path)
-
-
-def plot_model_change(old: Dict[str, Dict[str, Any]], new: Dict[str, Dict[str, Any]], path: PathLike,
-                      T_range: Tuple[float, float] = (-40.0, 0.0), sols: Sequence[float] = (100.0, 1000.0),
-                      labels: Tuple[str, str] = ("in use", "candidate"), title: Optional[str] = None) -> Path:
-    """
-    What a candidate joint changes against the model in use, over temperature: fx, fy (ppm), cx, cy (px) and k1
-    of ``new`` minus ``old`` per eye (``old``/``new`` = {"NL": model, "NR": model}), one line per sol in ``sols``
-    (before and after the early-mission sol, so the early offsets show as the gap between the lines); the
-    distortion change at the frame corners in the title.
+    Intrinsics against temperature 2 x 2 (fig_intr.py, 12.5 x 8.6 in, sharex): columns NL (cool) / NR (warm), rows
+    focal length and principal point as the change from T0; left/right share y range and ticks.  Points: the
+    per-temperature-bin cameras of the block runs (``bins`` rows {eye, block, T, n, fx, fy}, size ~ sqrt images,
+    blocks before ``early_sol`` hollow), solid lines the ``consensus`` model, dotted grey the model ``inuse``
+    ({"NL": model, "NR": model}, what the block runs started from); the stereo cx of the rig epochs on the NR
+    principal-point panel.  Secondary axes in ppm of f and pointing mdeg; T0 dashed; grey band = bin temperatures.
     """
     plt = _plt()
-    Ts = np.linspace(T_range[0], T_range[1], 81)
-    rows = [("fx", "Δfx  ppm"), ("fy", "Δfy  ppm"), ("cx", "Δcx  px"), ("cy", "Δcy  px"), ("k1", "Δk1 ×1e3")]
-    fig, axs = plt.subplots(len(rows), 2, figsize=(10, 10), sharex=True)
+    cons, rr = consensus, rig_residuals
+    sols: Dict[str, List[float]] = {}
+    for b in rr["blocks"]:
+        sols.setdefault(b.get("site") or b["block"], []).append(b["sol_median"])
+    early_blk = {k for k, v in sols.items() if min(v) < early_sol}
+    ax_ppm = cons["thermal"]["axis_ppm"]; pp = cons["thermal"]["pp_slopes"]
+    yawT = rr["fits"]["yaw"]["vs_T"]
+    CX2 = pp["NR"][0] - pp["NL"][0]; CX_ALL = CX2 + yawT["slope"] / IFOV_MDEG; CX_ALL_SE = yawT["se"] / IFOV_MDEG
+    B = rr["blocks"]; Tblk = np.array([b["T_median_degC"] for b in B]); yaw = np.array([b["yaw_mdeg"] for b in B])
+    tt = np.linspace(-60, 0, 121)
+    fig, axs = plt.subplots(2, 2, figsize=(12.5, 8.6), sharex=True)
     for j, eye in enumerate(("NL", "NR")):
-        for s, ls in zip(sols, ("--", "-")):
-            o = np.array([camera_at(old[eye], T_degC=T, sol=s)[1][:5] for T in Ts])
-            n = np.array([camera_at(new[eye], T_degC=T, sol=s)[1][:5] for T in Ts])
-            for i, (name, lab) in enumerate(rows):
-                k = i
-                d = (1e6 * (n[:, k] / o[:, k] - 1) if name in ("fx", "fy") else
-                     1e3 * (n[:, k] - o[:, k]) if name == "k1" else n[:, k] - o[:, k])
-                axs[i, j].plot(Ts, d, color=PLOT_COLORS[eye], ls=ls, lw=1.6, label=f"sol {s:g}")
-                axs[i, j].axhline(0, color="k", lw=0.6, alpha=0.5)
-                if j == 0:
-                    axs[i, j].set_ylabel(lab)
-        axs[0, j].set_title(f"{eye}: {labels[1]} − {labels[0]}")
-        axs[0, j].legend(fontsize=8, frameon=False)
-    for i in range(len(rows)):
-        lo = min(ax.get_ylim()[0] for ax in axs[i]); hi = max(ax.get_ylim()[1] for ax in axs[i])
-        for ax in axs[i]:
-            ax.set_ylim(lo, hi)
-    for ax in axs[-1]:
-        ax.set_xlabel("camera temperature  °C")
-    fig.suptitle(title or "Change of the Navcam joint model", y=0.995)
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-    return Path(path)
-
-
-def plot_rig_drift(rows: Sequence[Dict[str, Any]], model: Dict[str, Any], path: PathLike, highlight: Sequence[str] = (),
-                   old_drift: Optional[Dict[str, Any]] = None, labels: Optional[Dict[str, str]] = None,
-                   title: Optional[str] = None) -> Path:
-    """
-    The rig-drift figure of the calibration study (2 x 2: pitch, yaw and roll against sol with the drift ``model``
-    (:func:`mppp.calib.fit.fit_rig_drift`) and its tau band, yaw against temperature with the between-block slope),
-    with the rows of :func:`mppp.calib.fit.rig_rows` (one point per block or rig epoch, error bars = sd, names
-    annotated).  ``highlight``: blocks drawn as open warm symbols; ``old_drift``: an earlier drift model drawn
-    dotted (a hinge model is drawn with its hinge); ``labels`` {"fit", "old", "base", "new"} for the legend.
-    """
-    plt = _plt()
-    L = {"fit": "fit", "old": "previous drift", "base": "blocks", "new": "highlighted", **(labels or {})}
-    rows = [r for r in rows if np.isfinite(r.get("sol", np.nan))]
-    sol = np.array([r["sol"] for r in rows], float)
-    T = np.array([r["T"] for r in rows], float)
-    names = [str(r.get("block", "")) for r in rows]
-    new = np.array([n in set(highlight) for n in names])
-    Tm = model["T_mean_degC"]
-    grid = np.linspace(0, max(2000.0, sol.max() + 50), 400)
-
-    def offset(m, ang, xs):
-        mm = dict(m, **{f"{ang}_mdeg_per_sol": m.get(f"{ang}_fit_mdeg_per_sol", m.get(f"{ang}_mdeg_per_sol", 0.0))})
-        return np.array([drift_offset_mdeg(mm, x)[f"{ang}_mdeg"] for x in np.atleast_1d(xs)])
-    fig, axs = plt.subplots(2, 2, figsize=(12, 8.5))
-    for ax, ang in zip((axs[0, 0], axs[0, 1], axs[1, 0]), ("pitch", "yaw", "roll")):
-        y = np.array([r[f"{ang}_mdeg"] for r in rows]) - model.get(f"{ang}_T_mdeg_per_degC", 0.0) * (T - Tm)
-        e = np.array([r.get(f"sd_{ang}_mdeg", np.nan) for r in rows], float)
-        tau = float(model.get(f"{ang}_tau_mdeg", 0.0))
-        w = 1.0 / (np.where(np.isfinite(e), e, 0.0) ** 2 + tau ** 2 + 1e-9)
-        off = offset(model, ang, sol)
-        level = float(np.sum(w * (y - off)) / np.sum(w))
-        curve = offset(model, ang, grid) + level
-        ax.fill_between(grid, curve - tau, curve + tau, color="#2a78d6", alpha=0.12, lw=0)
-        ls = "--" if ang in (model.get("no_drift") or []) + (model.get("held") or []) else "-"
-        ax.plot(grid, curve, ls, color="#2a78d6", lw=1.6,
-                label=f"{L['fit']} ({model['blocks']} {'epochs' if any(r.get('epoch') not in (None, 'N') for r in rows) else 'blocks'})"
-                      f"{' - not used: rate 0' if ls == '--' else ''}; band = tau {tau:.1f}")
-        if old_drift:
-            c = float(np.sum(w * (y - offset(old_drift, ang, sol))) / np.sum(w))
-            ax.plot(grid, c + offset(old_drift, ang, grid), ":", color="#888888", lw=1.3,
-                    label=f"{L['old']} ({old_drift.get('blocks', '?')} blocks)")
-        ax.errorbar(sol[~new], y[~new], yerr=e[~new], fmt="o", color="#1a1a1a", ms=5, capsize=2, label=L["base"])
-        if new.any():
-            ax.errorbar(sol[new], y[new], yerr=e[new], fmt="o", mfc="white", mec="#eb6834", color="#eb6834", ms=7,
-                        capsize=2, label=L["new"])
-        for x, yy, n in zip(sol, y, names):
-            ax.annotate(n, (x, yy), fontsize=6.5, xytext=(3, 3), textcoords="offset points", color="#555555")
-        ax.set_xlabel("sol (block median)")
-        ax.set_ylabel(f"{ang} [mdeg]" + (f" at {Tm:.0f} degC" if abs(model.get(f"{ang}_T_mdeg_per_degC", 0.0)) > 0.2 else ""))
-        ttl = (f"rig {ang}: {model[f'{ang}_fit_mdeg_per_sol'] * 1e3:+.1f} +- {model[f'{ang}_se'] * 1e3:.1f} mdeg / 1000 sol")
-        if model.get(f"{ang}_early_mdeg_per_sol") is not None:
-            kr = model.get("knot_sol_range")
-            ttl += (f" after sol {model['knot_sol']:.0f}" + (f" ({kr[0]:.0f}-{kr[1]:.0f})" if kr else "")
-                    + f", {model[f'{ang}_early_mdeg_per_sol'] * 1e3:+.1f} +- {model.get(f'{ang}_early_se', 0) * 1e3:.1f} before")
-        ax.set_title(ttl, fontsize=9)
-        ax.grid(alpha=0.3)
-        ax.legend(fontsize=7, loc={"pitch": "lower right", "yaw": "lower right", "roll": "upper right"}[ang], framealpha=0.7)
-    ax = axs[1, 1]
-    y = np.array([r["yaw_mdeg"] for r in rows], float)
-    e = np.array([r.get("sd_yaw_mdeg", np.nan) for r in rows], float)
-    ax.errorbar(T[~new], y[~new], yerr=e[~new], fmt="o", color="#1a1a1a", ms=5, capsize=2, label=L["base"])
-    if new.any():
-        ax.errorbar(T[new], y[new], yerr=e[new], fmt="o", mfc="white", mec="#eb6834", color="#eb6834", ms=7, capsize=2,
-                    label=L["new"])
-    tt = np.linspace(T.min() - 1, T.max() + 1, 50)
-    w = 1.0 / (np.where(np.isfinite(e), e, 0.0) ** 2 + float(model.get("yaw_tau_mdeg", 0.0)) ** 2 + 1e-9)
-    b = float(model.get("yaw_T_mdeg_per_degC", 0.0))
-    a = float(np.sum(w * (y - b * (T - Tm))) / np.sum(w))
-    ax.plot(tt, a + b * (tt - Tm), "-", color="#1baf7a", label=f"between blocks {b:+.2f} mdeg/degC")
-    for x, yy, n in zip(T, y, names):
-        ax.annotate(n, (x, yy), fontsize=6.5, xytext=(3, 3), textcoords="offset points", color="#555555")
-    ax.set_xlabel("block median camera temperature [degC]")
-    ax.set_ylabel("yaw [mdeg]")
-    ax.set_title("rig yaw against temperature (1 mdeg = 0.05 px disparity at infinity)", fontsize=9)
-    ax.grid(alpha=0.3)
-    ax.legend(fontsize=7)
-    fig.suptitle(title or "Navcam stereo rig (right camera in the left camera frame, common principal points, one label reference)",
-                 fontsize=10)
-    fig.tight_layout()
-    fig.savefig(path, dpi=130)
+        col = EYE_COLORS[eye]; f2 = cons[eye]; iu = inuse[eye]; th_iu = thermal_terms(iu.get("thermal")); p_iu = iu["params"]
+        rows = [r for r in bins if r["eye"] == eye]
+        ax = axs[0][j]
+        for k, (p, ls, mk, alpha) in enumerate((("fx", "-", "o", 0.8), ("fy", "--", "s", 0.35))):
+            ppm2 = ax_ppm[eye][k]; ppm_iu = th_iu[f"{p}_ppm"]
+            ax.plot(tt, f2[p] * 1e-6 * ppm2 * (tt - T0), ls, color=col, lw=1.4, label=f"{p} {model_label}: {ppm2:+.1f} ppm/°C ({f2[p] * 1e-6 * ppm2:+.4f} px/°C)")
+            if k == 0:
+                ax.plot(tt, p_iu[k] * 1e-6 * ppm_iu * (tt - T0), ":", color="0.4", lw=1.1, label=f"fx in use for the block runs: {ppm_iu:+.1f} ppm/°C")
+            for early, mfc in ((False, None), (True, "white")):
+                rs = [r for r in rows if (r["block"] in early_blk) == early]
+                if not rs:
+                    continue
+                Tb = np.array([r["T"] for r in rs]); nb = np.array([r["n"] for r in rs])
+                v = np.array([r[p] for r in rs]) - p_iu[k]
+                ax.scatter(Tb, v, s=6 + 1.5 * np.sqrt(nb * 10), marker=mk, facecolors=mfc or col, edgecolors=col, alpha=alpha, zorder=3,
+                           label=(f"{p} per temperature bin of the block runs (size ~ images)" if not early else
+                                  f"{p}, blocks before sol {early_sol:.0f} (early-mission offset not removed)") if p == "fx" else None)
+        ax.set_title(f"{eye}: focal length", fontsize=10)
+        ax.set_ylabel(f"Δf from {T0:.0f} °C (full-frame px)", fontsize=8)
+        ax.secondary_yaxis("right", functions=(lambda d, f=f2["fx"]: 1e6 * d / f, lambda q, f=f2["fx"]: q * f / 1e6)).set_ylabel("ppm of f", fontsize=8)
+        ax.legend(fontsize=6.5, loc="upper left")
+        ax = axs[1][j]
+        cx_iu = th_iu["cx_px"]
+        if eye == "NL":
+            ax.plot(tt, cx_iu * (tt - T0), ":", color="0.4", lw=1.2, label=f"cx in use for the block runs: {cx_iu:+.4f} px/°C")
+            ax.plot(tt, pp["NL"][0] * (tt - T0), "-", color=col, lw=1.3, label=f"cx {model_label}: {pp['NL'][0]:+.4f} px/°C; cy: 0")
+        else:
+            ax.plot(tt, cx_iu * (tt - T0), ":", color="0.4", lw=1.2, label=f"cx in use for the block runs: {cx_iu:+.4f} px/°C")
+            ax.plot(tt, pp["NR"][0] * (tt - T0), "--", color=col, lw=1.2, label=f"cx {model_label}: {pp['NR'][0]:+.4f} px/°C")
+            ax.fill_between(tt, (CX_ALL - CX_ALL_SE) * (tt - T0), (CX_ALL + CX_ALL_SE) * (tt - T0), color=col, alpha=0.12, lw=0)
+            ax.plot(tt, CX_ALL * (tt - T0), "-", color=col, lw=1.6, label=f"stereo cx (NR − NL) with the yaw residual folded in: {CX_ALL:+.4f} ± {CX_ALL_SE:.4f} px/°C")
+            ax.plot(tt, 0 * tt, "-.", color=col, lw=0.8, label="cy: 0")
+            y = CX2 * (Tblk - T0) + yaw / IFOV_MDEG
+            ax.plot(Tblk, y, "o", color=col, ms=5, mec="white", mew=0.5, zorder=3, label="rig epoch stereo pointing as NR cx − NL cx (model + yaw residual)")
+        ax.set_title(f"{eye}: principal point", fontsize=10)
+        ax.set_ylabel(f"Δ principal point from {T0:.0f} °C (full-frame px)", fontsize=8)
+        ax.set_xlabel("Navcam camera temperature (°C)", fontsize=9)
+        ax.secondary_yaxis("right", functions=(lambda d: d * IFOV_MDEG, lambda m: m / IFOV_MDEG)).set_ylabel(f"pointing equivalent (mdeg; 1 px = {IFOV_MDEG} mdeg)", fontsize=8)
+        ax.legend(fontsize=6.5, loc="upper right" if eye == "NR" else "upper left")
+    Tb_all = np.array([r["T"] for r in bins]) if bins else np.array([T0])
+    for r in range(2):
+        lo = min(axs[r][0].get_ylim()[0], axs[r][1].get_ylim()[0]); hi = max(axs[r][0].get_ylim()[1], axs[r][1].get_ylim()[1])
+        for a in axs[r]:
+            a.set_ylim(lo, hi)
+        axs[r][1].set_yticks(axs[r][0].get_yticks()); axs[r][1].set_ylim(lo, hi)
+    for a in axs.flat:
+        a.axvline(T0, color="0.4", ls="--", lw=0.8); a.axhline(0, color="0.6", lw=0.6)
+        a.axvspan(Tb_all.min(), Tb_all.max(), color="0.85", alpha=0.35, lw=0, zorder=0); a.grid(alpha=0.3); a.set_xlim(-60, 0)
+    nb = len(sols)
+    fig.suptitle(f"Navcam intrinsic temperature dependence{(' ' + label) if label else ''} ({nb} blocks; T0 = {T0:.0f} °C; grey band: temperatures of the bins)", fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.97)); fig.savefig(path, dpi=140)
     plt.close(fig)
     return Path(path)
