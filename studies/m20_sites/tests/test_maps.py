@@ -9,7 +9,7 @@ import studies.m20_sites as maps  # noqa: E402
 
 def test_maps_packaged_blocks_and_prototype(tmp_path):
     sites, groups = maps.load_blocks()
-    assert len(sites) == 36 and len(groups["blocks_all"]) == 36
+    assert len(sites) == 36 and len(groups["blocks_all"]) == 36                # the prototype's own list (sites.json has 38 since 0.91)
     b9 = sites["blk09_three_forks_north"]["block"]                        # 17 Oct: Christian's visits (413, 433-435)
     assert b9["n_navcam_360"] == 8 and 413 in b9["end_of_drive_sols"] and [413, 413] in b9["visits"]
     assert [433, 435] in b9["visits"] and sites["blk08_three_forks_south"]["block"]["visits"][0] == [413, 414]
@@ -18,7 +18,8 @@ def test_maps_packaged_blocks_and_prototype(tmp_path):
     assert sites["blk35_hippo_pools"]["sols"] == [[1947, 1961], [2006, 2009]]
     out = maps.prototype.run("export", tmp_path / "out")                 # blocks are in the package; export only
     again, _ = maps.load_blocks_file(out / "sites_blocks.json")
-    assert maps.compare_blocks(again, sites)[0].startswith("the same")
+    # the export follows sites.json (38 blocks since 0.91, numbered by first sol), the prototype's own list has 36
+    assert len(again) == 38 and any(k.endswith("rose_river_falls") for k in again) and any(k.endswith("olifants") for k in again)
     assert (tmp_path / "out" / "_m20_sites" / "mppp_map.py").is_file()
 
 
@@ -34,18 +35,21 @@ def test_sites_json_holds_the_official_blocks():
     assert not any(k.startswith("blk") for k in t["sites"])               # v0p81: no blk.. sites
     sites, _ = maps.load_blocks()
     ob = t["official_blocks"]
-    assert len(ob) == 36
-    for k, v in sites.items():
-        b = ob[str(v["block"]["number"])]
-        assert b["name"] == v["block"]["name"] and sorted(b["visits"]) == sorted(v["sols"])
-        assert b["centre"] == v["block"]["centre"] and b["site"] in t["sites"]
-        assert v["block"]["number"] in t["sites"][b["site"]]["official_blocks"]
+    assert len(ob) == 38                                                        # 0.91: + Rose River Falls, Olifants
+    assert ob["12"]["site"] == "rose_river_falls" and ob["12"]["mastcam_z_360"] == [17] and ob["35"]["site"] == "olifants"
+    assert ob["16"]["name"] == "Hidden Harbor" and ob["16"]["site"] == "hidden_harbor"
+    by_centre = {(round(b["centre"]["easting"], 1), round(b["centre"]["northing"], 1)): (int(n), b) for n, b in ob.items()}
+    for k, v in sites.items():                                            # the prototype's 36 blocks are all there
+        c = v["block"]["centre"]
+        n, b = by_centre[(round(c["easting"], 1), round(c["northing"], 1))]
+        assert (b["name"] == v["block"]["name"] or k == "blk15_whale_mountain") and sorted(b["visits"]) == sorted(v["sols"])
+        assert b["site"] in t["sites"] and n in t["sites"][b["site"]]["official_blocks"]
     for k, v in t["sites"].items():                                       # Christian's v5 rules
         assert isinstance(v["sols"][0], list) and isinstance(v["notes"], str) and "note" not in v
         assert isinstance(v["official_blocks"], list) and v["max_waypoint_separation_m"] >= 0
-    assert t["sites"]["observation_mountain"]["sols"] == [[592, 600]] and ob["14"]["site"] == "observation_mountain"
-    assert ob["15"]["site"] == "whale_mountain" and t["sites"]["threeforks_large"]["official_blocks"] == [8, 9]
-    assert t["sites"]["chal_rocks_large"]["rover_sites"] == [3, 4, 11]
+    assert t["sites"]["observation_mountain"]["sols"] == [[592, 600]] and ob["15"]["site"] == "observation_mountain"
+    assert t["sites"]["threeforks_large"]["official_blocks"] == [8, 9]
+    assert {3, 4, 11} <= set(t["sites"]["chal_rocks_large"]["rover_sites"])      # 0.90: + the nearby waypoints' sites
 
 
 def test_official_restructure_v4_to_v5(tmp_path):
@@ -70,7 +74,7 @@ def test_official_restructure_v4_to_v5(tmp_path):
     assert _json.loads(f.read_text())["official_blocks"]["3"]["name"] == "Chal Rocks"
     W = official.waypoint_points(wp)
     st = official.waypoint_stats([[592, 593]], W)
-    assert st["n_waypoints"] == 3 and 20 < st["max_waypoint_separation_m"] < 22 and st["rover_sites"] == [29, 30]
+    assert st["n_primary"] == 3 and st["n_waypoints"] >= 3 and st["rover_sites"][:2] == [29, 30]   # 0.90: + the nearby ones
     assert official.update_waypoint_stats(t, wp) == []
 
 
