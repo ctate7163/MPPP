@@ -35,8 +35,7 @@ git push origin --tags >> "%LOG%" 2>&1 || echo some tags were not pushed (see ab
 git bundle create "_transfer\mppp_pc.bundle" main --tags >> "%LOG%" 2>&1
 echo SYNC DONE >> "%LOG%"
 type "%LOG%"
-REM v0p86: the JOSS paper (paper\paper.md -> paper\paper.pdf) is rendered after every sync
-if exist "%MPPP_HOME%\scripts\windows\render_paper.bat" call "%MPPP_HOME%\scripts\windows\render_paper.bat" --quiet
+REM 20 Oct: the paper is no longer rendered after every sync - run render_paper.bat when it is wanted
 if "%~1"=="" (timeout /t 20 & exit /b 0)
 set "NEXT=%~1"
 shift
