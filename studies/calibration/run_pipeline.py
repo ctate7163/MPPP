@@ -78,6 +78,7 @@ STAGES = ("wait", "prepare", "navcam_consensus", "navcam_runs", "navcam_consensu
           "zcam_final_runs", "pointclouds", "report")      # v0p80: Navcam first; v0p82: the baseline before Mastcam-Z
 CONSENSUS_FORM = "v0p80"
 ZCAM_GROUP, NAVCAM_GROUP = "zcam34_consensus", "navcam_consensus"     # --zcam-group overrides the first (v0p75)
+JOINT = "tied"                                                         # 0.91: the one-adjustment joint ("profiles": 0.90's)
 BASELINE_GROUP = "navcam_baseline"                                     # v0p82
 ZCAM_SET = ["--set", "ZCAM_ZOOMS=[34]"]
 EARLY_START = ("0.197", "0.254", "0.324", "-0.572")          # v0p85: the 18 Oct pass-2 offsets (z 5.8-13.5)
@@ -223,8 +224,9 @@ class Pipeline:
         # v0p80: the recipe's joint - k4 free, k1(T) from the bins, leave-one-block-out as a promotion gate
         # v0p82: the joint holds the rig translation (the baseline stage carries it); the large blocks' translation
         # with the cameras held is still fitted and reported (--translation-min-span), not applied
+        # 0.91: the joint is one adjustment of every term (mppp.calib.tied; --joint profiles gives the 0.90 joint)
         cmd = [PY, HERE / "navcam_calibration_study.py", "consensus", out,
-               out / "scapes.json", "--points", "8000", "--translation-min-span", "30",
+               out / "scapes.json", "--joint", JOINT, "--points", "8000", "--translation-min-span", "30",
                "--refit-thermal",
                "--thermal-rounds", "2",
                "--form", CONSENSUS_FORM, "--k1-from-bins", "--leave-one-out",
