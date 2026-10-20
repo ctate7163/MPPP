@@ -1,5 +1,5 @@
 """
-Training monitor for ``mppp.mask.train``: debug PNGs + CSV, optional live window.
+Training monitor for ``mppp.mask.training.train``: debug PNGs + CSV, optional live window.
 
 Written to ``<debug_dir>/``:
 
@@ -25,7 +25,7 @@ interpolation modes — and ``curves.png`` is rendered by a separate Python
 process running this file, so a plotting crash cannot stop training.  The
 same renderer can be run by hand on any debug folder::
 
-    python -m mppp.mask.monitor curves checkpoints/<name>_debug
+    python -m mppp.mask.training.monitor curves checkpoints/<name>_debug
 
 This file must stay importable as a plain script: numpy / csv / stdlib only at
 module level, no package-relative imports.
@@ -238,7 +238,7 @@ def watch(debug_dir: PathLike, interval_s: float = 5.0) -> None:
     left, newest held-out panel on the right, refreshed every ``interval_s``.
     Run by ``train(..., live=True)``, or by hand from any terminal::
 
-        python -m mppp.mask.monitor watch checkpoints/<name>_debug
+        python -m mppp.mask.training.monitor watch checkpoints/<name>_debug
     """
     import matplotlib.pyplot as plt
     import matplotlib.image as mpimg

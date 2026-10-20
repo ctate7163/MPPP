@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mppp"
 dynamic = ["version"]      # from mppp.__version__ (the single source)
-description = "Mars Photogrammetry Preprocessing Pipeline: Mars 2020 Navcam and Mastcam-Z PDS images -> Metashape and COLMAP inputs"
+description = "Mars Photogrammetry Preprocessing Pipeline: Mars 2020 PDS images to COLMAP and Metashape, with rover masks, camera models and pose priors"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
@@ -15,10 +15,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mask = ["torch", "timm", "safetensors"]
-error = ["matplotlib", "pillow"]
-sfm  = ["pycolmap>=4.2,<4.3", "pyceres>=2.6,<2.7"]   # a matching pair (see README: GPU on Windows)
-dev  = ["pytest", "nbformat", "pillow"]
+mask    = ["torch", "timm", "safetensors"]                                   # mask inference (the model comes from Hugging Face)
+sfm     = ["pycolmap>=4.2,<4.3", "pyceres>=2.6,<2.7", "torch", "kornia>=0.7"]   # COLMAP pipeline; kornia: SIFT + LightGlue matching
+error   = ["matplotlib", "pillow"]                                            # the error model (under development)
+plots   = ["matplotlib", "pillow"]                                            # health and camera plots
+notebooks = ["jupyterlab", "matplotlib", "pillow"]
+release = ["huggingface_hub"]                                                 # scripts/release_mask_model.py
+dev     = ["pytest", "pyflakes", "nbformat", "pillow"]
+all     = ["mppp[mask,sfm,error,plots,notebooks,dev]"]
 
 [tool.setuptools.dynamic]
 version = { attr = "mppp.__version__" }

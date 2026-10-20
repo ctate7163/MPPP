@@ -1,4 +1,4 @@
-"""Mask training data (mppp.mask.dataset). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Mask training data (mppp.mask.training.dataset). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import json
 import zipfile
 import cv2
@@ -45,7 +45,7 @@ def tset(tmp_path):
 
 
 def test_export_masks_from_psx(tset):
-    from mppp.mask.dataset import export_masks_from_psx
+    from mppp.mask.training.dataset import export_masks_from_psx
     r, psx = tset
     (r / "masks").mkdir()
     (r / "masks" / "old.png").write_bytes(b"x")
@@ -59,7 +59,7 @@ def test_export_masks_from_psx(tset):
 
 
 def test_build_training_set_reuses_originals_and_synthesizes_the_rest(tset, tmp_path):
-    from mppp.mask.dataset import build_training_set
+    from mppp.mask.training.dataset import build_training_set
     r, psx = tset
     old = tmp_path / "v6_images_variable"
     old.mkdir()
@@ -83,7 +83,7 @@ def test_build_training_set_reuses_originals_and_synthesizes_the_rest(tset, tmp_
 
 
 def test_make_variable_is_deterministic_and_in_measured_range():
-    from mppp.mask.dataset import VariableRecipe, make_variable
+    from mppp.mask.training.dataset import VariableRecipe, make_variable
     rgb = np.random.default_rng(1).integers(0, 256, (30, 30, 3), dtype=np.uint8)
     valid = np.ones((30, 30), bool)
     a, pa = make_variable(rgb, valid, "X.png")
@@ -98,7 +98,7 @@ def test_make_variable_is_deterministic_and_in_measured_range():
 def test_regenerate_images_from_pds(tmp_path, waypoints):
     import shutil
     from mppp import MPPPImage
-    from mppp.mask.dataset import regen_config, regenerate_images_from_pds
+    from mppp.mask.training.dataset import regen_config, regenerate_images_from_pds
     root, pds = tmp_path / "set", tmp_path / "pds" / "00709" / "ids"
     (root / "masks").mkdir(parents=True)
     pds.mkdir(parents=True)
@@ -128,7 +128,7 @@ def test_regenerate_images_from_pds(tmp_path, waypoints):
 
 
 def test_find_pds_versions():
-    from mppp.mask.dataset import find_pds
+    from mppp.mask.training.dataset import find_pds
     idx = {"NLF_1408_0791940746_034RAD_N0680000NCAM13408_0A0195J02": Path("a"),
            "NLF_1408_0791940746_034RAD_N0680000NCAM13408_0A0195J03": Path("b")}
     assert find_pds("NLF_1408_0791940746_034RAD_N0680000NCAM13408_0A0195J03", idx) == (Path("b"), "ok")
@@ -151,7 +151,7 @@ def test_regenerate_with_spawned_workers(tmp_path):
         sys.path.insert(0, {str(ROOT / 'src')!r})
         if __name__ == "__main__":
             mp.set_start_method("spawn", force=True)
-            from mppp.mask.dataset import regenerate_images_from_pds
+            from mppp.mask.training.dataset import regenerate_images_from_pds
             r = regenerate_images_from_pds({str(root)!r}, {str(pds)!r}, workers=2)
             print("COUNTS", r["counts"])
     """))
@@ -162,7 +162,7 @@ def test_regenerate_with_spawned_workers(tmp_path):
 
 def test_variable_refuses_empty_images_and_leaves_existing_untouched(tmp_path):
     """23 Sep: run before images/ was regenerated, v0p7 archived images_variable/ and wrote nothing."""
-    from mppp.mask.dataset import build_variable_images
+    from mppp.mask.training.dataset import build_variable_images
     r = tmp_path / "set"
     for d in ("images", "masks", "images_variable"):
         (r / d).mkdir(parents=True)

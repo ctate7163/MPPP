@@ -196,7 +196,7 @@ def build_variable_images(root: PathLike, reuse_from: Sequence[PathLike] = (),
     if not names:
         raise FileNotFoundError(
             f"{img_dir} has no images, so images_variable/ was left untouched.  Regenerate images/ first "
-            f"(notebook 02, step 1: mppp.mask.dataset.regenerate_images_from_pds).")
+            f"(notebook 02, step 1: mppp.mask.training.dataset.regenerate_images_from_pds).")
     with_mask = [n for n in names if (msk_dir / n).is_file()]
     if not with_mask:
         raise FileNotFoundError(f"none of the {len(names)} images in {img_dir} has a mask in {msk_dir}; "
@@ -310,7 +310,7 @@ def regen_config(config: Optional[Union[PathLike, Dict]] = None) -> Dict:
     network) with the geometry of the Metashape masks — padded to the full
     detector frame, not undistorted — and no mask inference (no circularity).
     """
-    from ..config import load_config
+    from ...config import load_config
     cfg = load_config(config)
     cfg["masking"]["infer_mask"] = False
     cfg["masking"]["static_masks_dir"] = None
@@ -354,7 +354,7 @@ def _regen_one(task: Tuple[str, str, str, str, Optional[str]]) -> Dict[str, obje
     """Worker: one mask -> one 8-bit image.  Never raises (the error goes into the log)."""
     import time
     import warnings
-    from ..image import MPPPImage
+    from ...image import MPPPImage
     mask_path, img_path, out_path, status, alpha = task
     t = time.time()
     rec = {"name": Path(mask_path).name, "status": status, "source": img_path, "width": "", "height": "",
@@ -413,8 +413,8 @@ def regenerate_images_from_pds(root: PathLike, pds_dir: PathLike, masks_dir: str
     """
     import time
     from concurrent.futures import ProcessPoolExecutor
-    from .. import VERSION_TAG
-    from ..waypoints import load_waypoints
+    from ... import VERSION_TAG
+    from ...waypoints import load_waypoints
 
     root = Path(root)
     mdir, odir = root / masks_dir, root / images_dir

@@ -150,7 +150,7 @@ def audit_frames(items: Sequence, checkpoint: PathLike, out_csv: Optional[PathLi
     size mismatch is kept with ``status`` set and ranked first (IoU -1).
     """
     import torch
-    from .infer import get_model, predict_probability
+    from ..infer import get_model, predict_probability
 
     if which not in ("all", "train", "val"):
         raise ValueError("which must be 'all', 'train' or 'val'")
@@ -291,7 +291,7 @@ def render_worst(rows: Sequence[Dict[str, Any]], checkpoint: PathLike, n: int = 
     (see :func:`rank_rows`); ``sort_by`` only labels the title.  Returns the PNG paths.
     """
     import torch
-    from .infer import get_model, predict_probability
+    from ..infer import get_model, predict_probability
     from .monitor import render_rows
     ckpt = Path(checkpoint)
     odir = ckpt.parent / f"{ckpt.stem}_debug" if out_dir == "auto" else Path(out_dir)

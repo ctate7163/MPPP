@@ -3,9 +3,9 @@ mppp.mask — reconstruction masks (terrain vs rover hardware, rover shadows and
 
 Inference with the released model (``infer_mask``; the model is downloaded
 once, see :mod:`mppp.mask.hub`) or with any ConvNeXtSeg checkpoint and its
-model card.  Training (``mask.train``), dataset tools (``mask.dataset``),
-progress plots (``mask.monitor``) and the label audit (``mask.audit``) are
-included for completeness; they are not needed to process images.
+model card.  Retraining (:mod:`mppp.mask.training`: the data set, the training
+loop, progress plots and the label audit) is included for completeness; it is
+not needed to process images.
 
 torch / timm are only imported when this sub-package is used.
 """

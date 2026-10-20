@@ -53,7 +53,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
-from .model import DEFAULT_CARD, ConvNeXtSeg, canvas_of, fit_to_canvas, needs_quad_split, quad_boxes, write_card
+from ..model import DEFAULT_CARD, ConvNeXtSeg, canvas_of, fit_to_canvas, needs_quad_split, quad_boxes, write_card
 
 log = logging.getLogger("mppp.mask")
 
@@ -364,7 +364,7 @@ def resolve_pretrained_file(pretrained_file: Optional[PathLike], backbone: str) 
     if str(pretrained_file) != "auto":
         return str(pretrained_file)
     try:
-        from ..paths import checkpoints_dir
+        from ...paths import checkpoints_dir
         f = checkpoints_dir() / f"{backbone}.fb_in22k.safetensors"
     except FileNotFoundError:
         return None
@@ -400,7 +400,7 @@ def promote_checkpoint(checkpoint: PathLike, best_name: Optional[str] = None, fo
     Returns a report dict (``promoted``: bool, ``reason``, paths).
     """
     import shutil
-    from .model import card_path, read_card
+    from ..model import card_path, read_card
     src = Path(checkpoint)
     if not src.is_file():
         raise FileNotFoundError(f"checkpoint not found: {src}")
@@ -458,7 +458,7 @@ def init_from_checkpoint(model: ConvNeXtSeg, checkpoint: PathLike) -> Dict[str, 
     exactly as ``pretrained_file=`` would (v0p6; before, a .safetensors here
     failed with "UnpicklingError: invalid load key").
     """
-    from .model import load_backbone_weights, read_state_dict
+    from ..model import load_backbone_weights, read_state_dict
     src = read_state_dict(checkpoint)
     if not any(k.startswith("bb.") for k in src):
         rep = load_backbone_weights(model.bb, model.backbone_name, checkpoint)

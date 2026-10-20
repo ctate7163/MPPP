@@ -1,4 +1,4 @@
-"""Mask audit (mppp.mask.audit). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Mask audit (mppp.mask.training.audit). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import cv2
 import numpy as np
 import pytest
@@ -7,7 +7,7 @@ from helpers import _make_dataset
 
 @pytest.fixture(scope="module")
 def trained(tmp_path_factory):
-    from mppp.mask.train import TrainConfig, scan_dataset, train
+    from mppp.mask.training.train import TrainConfig, scan_dataset, train
     root = tmp_path_factory.mktemp("v0p10")
     _make_dataset(root / "ds", n_scenes=8)
     m = cv2.imread(str(root / "ds" / "masks" / "scene3.png"), cv2.IMREAD_GRAYSCALE)
@@ -20,7 +20,7 @@ def trained(tmp_path_factory):
 
 
 def test_audit_ranks_the_wrong_label_first_and_writes_csv(trained):
-    from mppp.mask.audit import audit_frames, read_audit_csv, render_worst, summarize, worst_table
+    from mppp.mask.training.audit import audit_frames, read_audit_csv, render_worst, summarize, worst_table
     root, items, ck = trained
     rows = audit_frames(items, ck, device="cpu", progress_every=0)
     assert len(rows) == 8 and all(r["variant"] == "images" for r in rows)      # images/ only by default
@@ -43,8 +43,8 @@ def test_audit_ranks_the_wrong_label_first_and_writes_csv(trained):
 
 def test_audit_reports_size_mismatch(trained, tmp_path):
     import shutil
-    from mppp.mask.audit import audit_frames
-    from mppp.mask.train import scan_dataset
+    from mppp.mask.training.audit import audit_frames
+    from mppp.mask.training.train import scan_dataset
     root, _, ck = trained
     ds = tmp_path / "ds"
     shutil.copytree(root / "ds", ds)
@@ -60,8 +60,8 @@ def _frame(h=400, w=600):
 
 
 def test_empty_truth_and_empty_prediction_is_perfect():
-    from mppp.mask.audit import frame_stats
-    from mppp.mask.monitor import panel_stats
+    from mppp.mask.training.audit import frame_stats
+    from mppp.mask.training.monitor import panel_stats
     t = np.zeros((100, 120), bool)
     assert panel_stats(t, np.zeros(t.shape, np.float32), 0.5)[0] == 1.0
     s = frame_stats(t, np.zeros(t.shape, np.float32), 0.5)
@@ -72,7 +72,7 @@ def test_empty_truth_and_empty_prediction_is_perfect():
 
 
 def test_boundary_jitter_is_not_interior_error_but_a_missed_region_is():
-    from mppp.mask.audit import frame_stats
+    from mppp.mask.training.audit import frame_stats
     t = _frame()
     p = np.full(t.shape, 0.05, np.float32); p[153:, :] = 0.8   # horizon 3 px low: boundary jitter,
     p[150:153, :] = 0.3                                        # and the model is unsure there
@@ -86,7 +86,7 @@ def test_boundary_jitter_is_not_interior_error_but_a_missed_region_is():
 
 
 def test_rank_rows():
-    from mppp.mask.audit import rank_rows, worst_table
+    from mppp.mask.training.audit import rank_rows, worst_table
     rows = [dict(name=f"f{k}", split=sp, status="ok", iou=iou, error_pct=e, interior_error_pct=i,
                  confident_error_pct=c, missed_pct=e, false_pct=0.0, terrain_truth_pct=tt)
             for k, (sp, iou, e, i, c, tt) in enumerate([

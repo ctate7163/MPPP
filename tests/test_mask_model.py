@@ -89,7 +89,7 @@ def test_quad_inference_stitches_cores(monkeypatch):
 
 
 def test_pretrained_file_auto(tmp_path, monkeypatch):
-    from mppp.mask import train as T
+    from mppp.mask.training import train as T
     monkeypatch.setattr("mppp.paths.checkpoints_dir", lambda: tmp_path)
     assert T.resolve_pretrained_file("auto", "convnext_tiny") is None             # -> hub / HF cache
     (tmp_path / "convnext_tiny.fb_in22k.safetensors").write_bytes(b"x")
@@ -259,6 +259,16 @@ def test_default_mask_model_is_v3():
     assert isinstance(local_candidates("mppp_mask_v3"), list)     # the .pt in checkpoints/ stands in until the release is published
 
 
+def _release():
+    """The maintainers' release script (scripts/release_mask_model.py), loaded as a module."""
+    import importlib.util
+    f = Path(__file__).resolve().parents[1] / "scripts" / "release_mask_model.py"
+    spec = importlib.util.spec_from_file_location("release_mask_model", f)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _registry(tmp_path, monkeypatch, sha, urls):
     from mppp.mask import hub
     reg = {"default": "m1", "models": {"m1": {"file": "m1.safetensors", "sha256": sha, "urls": urls,
@@ -339,13 +349,14 @@ def test_upload_checks_sha_and_uploads_file_and_card(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(HfApi=FakeApi))
     card = tmp_path / "card.md"
     card.write_text("# card")
-    assert hub.upload_model("m1", card=card) == url                   # exported from source_checkpoint first
+    rel = _release()
+    assert rel.upload_model("m1", card=card) == url                   # exported from source_checkpoint first
     assert (tmp_path / "m1.safetensors").is_file()
     assert calls == [("create", "me/mask", False), ("upload", "m1.safetensors", "m1.safetensors", "me/mask"),
                      ("upload", "card.md", "README.md", "me/mask")]
     (tmp_path / "m1.safetensors").write_bytes(b"other")
     with pytest.raises(ValueError, match="not uploading"):
-        hub.upload_model("m1", card=card)
+        rel.upload_model("m1", card=card)
 
 
 def test_verify_reports_each_url(tmp_path, monkeypatch):
@@ -354,7 +365,7 @@ def test_verify_reports_each_url(tmp_path, monkeypatch):
     rel = h.export_safetensors(ck, out=tmp_path / "remote" / "m1.safetensors")
     hub = _registry(tmp_path, monkeypatch, rel["sha256"],
                     [Path(rel["path"]).as_uri(), (tmp_path / "missing.safetensors").as_uri()])
-    res = hub.verify_model("m1")
+    res = _release().verify_model("m1")
     assert [r["ok"] for r in res] == [True, False]
 
 

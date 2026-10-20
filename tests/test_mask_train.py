@@ -1,4 +1,4 @@
-"""Mask training and its monitor (mppp.mask.train, monitor). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Mask training and its monitor (mppp.mask.training.train, monitor). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import json
 import cv2
 import numpy as np
@@ -24,7 +24,7 @@ def _make_dataset(root, n_scenes=6, size=64):
 
 
 def test_grouped_split_keeps_variants_together(tmp_path):
-    from mppp.mask.train import grouped_split, scan_dataset
+    from mppp.mask.training.train import grouped_split, scan_dataset
     _make_dataset(tmp_path, n_scenes=20)
     items = scan_dataset(tmp_path)
     assert len(items) == 40
@@ -34,7 +34,7 @@ def test_grouped_split_keeps_variants_together(tmp_path):
 
 
 def test_scan_requires_masks(tmp_path):
-    from mppp.mask.train import scan_dataset
+    from mppp.mask.training.train import scan_dataset
     _make_dataset(tmp_path, 2)
     (tmp_path / "masks" / "scene0.png").unlink()
     with pytest.raises(FileNotFoundError, match="no mask"):
@@ -42,7 +42,7 @@ def test_scan_requires_masks(tmp_path):
 
 
 def test_letterbox_matches_inference_geometry():
-    from mppp.mask.train import letterbox
+    from mppp.mask.training.train import letterbox
     im = np.full((120, 160, 3), 200, np.uint8)
     ms = np.full((120, 160), 255, np.uint8)
     a, m = letterbox(im, ms, 80)
@@ -51,14 +51,14 @@ def test_letterbox_matches_inference_geometry():
 
 
 def test_precision_policy():
-    from mppp.mask.train import resolve_precision
+    from mppp.mask.training.train import resolve_precision
     assert resolve_precision("auto", "cpu") == "fp32"
     with pytest.raises(ValueError):
         resolve_precision("fp16", "cuda")                             # plain fp16 is no longer offered
 
 
 def test_loss_is_fp32_even_for_half_logits():
-    from mppp.mask.train import bce_tversky_loss
+    from mppp.mask.training.train import bce_tversky_loss
     logits = torch.full((1, 1, 8, 8), 30.0, dtype=torch.float16)
     gt = torch.ones(1, 8, 8)
     loss, _, _ = bce_tversky_loss(logits, gt)
@@ -72,7 +72,7 @@ def test_training_process_never_imports_matplotlib(tmp_path):
     _make_dataset(tmp_path / "ds", n_scenes=4)
     code = textwrap.dedent(f"""
         import sys; sys.path.insert(0, {str(ROOT / 'src')!r})
-        from mppp.mask.train import TrainConfig, scan_dataset, train
+        from mppp.mask.training.train import TrainConfig, scan_dataset, train
         cfg = TrainConfig(backbone="convnext_tiny", canvas=None, input_size=64, epochs=1, batch_size=2, print_every=1, val_preview_every=1,
                           n_val_preview=1, pretrained=False, val_ratio=0.25)
         train(scan_dataset({str(tmp_path / 'ds')!r}), {str(tmp_path / 'm.pt')!r}, cfg, device="cpu")
@@ -88,7 +88,7 @@ def test_training_process_never_imports_matplotlib(tmp_path):
 
 def test_smoke_train_writes_checkpoint_and_card_and_reloads(tmp_path):
     from mppp.mask.model import load_model
-    from mppp.mask.train import TrainConfig, scan_dataset, train
+    from mppp.mask.training.train import TrainConfig, scan_dataset, train
     _make_dataset(tmp_path / "ds", n_scenes=6)
     cfg = TrainConfig(backbone="convnext_tiny", canvas=None, input_size=64, epochs=1, batch_size=4, print_every=1, val_preview_every=1,
                       n_val_preview=2, pretrained=False, val_ratio=0.34)
@@ -109,7 +109,7 @@ def test_smoke_train_writes_checkpoint_and_card_and_reloads(tmp_path):
 
 
 def test_nonfinite_loss_stops_training(tmp_path, monkeypatch):
-    from mppp.mask import train as T
+    from mppp.mask.training import train as T
     _make_dataset(tmp_path / "ds", n_scenes=4)
     real = T.forward
     monkeypatch.setattr(T, "forward", lambda *a: real(*a) * float("inf"))
@@ -129,7 +129,7 @@ def test_reproduces_fp16_overflow_and_fix():
     the fp16-backbone / fp32-decoder path reproduces the fp32 result.
     """
     from mppp.mask.model import load_model
-    from mppp.mask.train import forward
+    from mppp.mask.training.train import forward
     model, _ = load_model(LEGACY_CKPT, "cpu")   # a v0p10 default (peak ~44) never overflows
     x = torch.randn(2, 3, 256, 320) * 2
     model.train()
@@ -153,7 +153,7 @@ def test_reproduces_fp16_overflow_and_fix():
 
 def test_new_run_archives_previous_debug_folder(tmp_path):
     """Restarted runs appended to one log.csv (seen on the 22 Sep GPU run); now each run starts clean."""
-    from mppp.mask.monitor import TrainingMonitor, latest_images
+    from mppp.mask.training.monitor import TrainingMonitor, latest_images
     d = tmp_path / "x_debug"
     (d / "val").mkdir(parents=True)
     (d / "log.csv").write_text("epoch,iter\n1,50\n")
@@ -166,7 +166,7 @@ def test_new_run_archives_previous_debug_folder(tmp_path):
 
 
 def test_latest_images_ignores_partial_writes(tmp_path):
-    from mppp.mask.monitor import latest_images
+    from mppp.mask.training.monitor import latest_images
     (tmp_path / "val").mkdir()
     (tmp_path / "batch").mkdir()
     for n in ("ep1_it00250.png", "ep1_it01000.png", "ep2_it00250.png", "ep2_it00500.tmp.png"):
@@ -183,7 +183,7 @@ def test_viewer_process_runs(tmp_path):
         (tmp_path / sub).mkdir()
         cv2.imwrite(str(tmp_path / sub / "ep1_it00050.png"), np.full((40, 60, 3), 200, np.uint8))
     env = dict(os.environ, MPLBACKEND="Agg")
-    p = subprocess.Popen([sys.executable, str(ROOT / "src/mppp/mask/monitor.py"), "watch", str(tmp_path)],
+    p = subprocess.Popen([sys.executable, str(ROOT / "src/mppp/mask/training/monitor.py"), "watch", str(tmp_path)],
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     time.sleep(6)
     alive = p.poll() is None
@@ -193,7 +193,7 @@ def test_viewer_process_runs(tmp_path):
 
 
 def test_canvas_geometry():
-    from mppp.mask.train import letterbox
+    from mppp.mask.training.train import letterbox
     from mppp.mask.model import canvas_of, fit_to_canvas
     z = np.full((1200, 1648, 3), 100, np.uint8)
     a, m = letterbox(z, np.full((1200, 1648), 255, np.uint8), 1648, (1664, 1248))
@@ -204,12 +204,12 @@ def test_canvas_geometry():
     assert canvas_of({"input_size": 1648}) == (1648, 1648)                       # old cards unchanged
     assert canvas_of({"input_size": 1648, "canvas": [1664, 1248]}) == (1664, 1248)
     with pytest.raises(ValueError, match="multiples of 32"):
-        from mppp.mask.train import TrainConfig, train
+        from mppp.mask.training.train import TrainConfig, train
         train([], "x.pt", TrainConfig(canvas=(1648, 1200)), device="cpu")
 
 
 def test_defaults_requested_22sep_to_24sep():
-    from mppp.mask.train import TrainConfig
+    from mppp.mask.training.train import TrainConfig
     c = TrainConfig()
     assert (c.backbone, c.epochs, c.batch_size, c.lr, c.weight_decay, c.threshold, c.input_size) == \
            ("convnext_tiny", 6, 4, 5e-5, 5e-3, 0.5, 1648)                     # v0p10 (24 Sep)
@@ -222,7 +222,7 @@ def test_defaults_requested_22sep_to_24sep():
 def test_rectangular_canvas_train_and_infer(tmp_path):
     from mppp.mask.model import load_model
     from mppp.mask.infer import predict_probability
-    from mppp.mask.train import TrainConfig, scan_dataset, train
+    from mppp.mask.training.train import TrainConfig, scan_dataset, train
     _make_dataset(tmp_path / "ds", n_scenes=4)
     cfg = TrainConfig(backbone="convnext_tiny", input_size=96, canvas=(96, 96 - 32), epochs=1, batch_size=2,
                       pretrained=False, val_ratio=0.25, val_preview_every=0)
@@ -235,7 +235,7 @@ def test_rectangular_canvas_train_and_infer(tmp_path):
 
 def test_init_from_checkpoint_backbone_only_when_decoder_differs(tmp_path):
     from mppp.mask.model import ConvNeXtSeg
-    from mppp.mask.train import init_from_checkpoint
+    from mppp.mask.training.train import init_from_checkpoint
     src = ConvNeXtSeg("convnext_tiny", fpn_width=192)
     torch.save({"model": src.state_dict()}, tmp_path / "old.pt")
     dst = ConvNeXtSeg("convnext_tiny", fpn_width=256)
@@ -256,7 +256,7 @@ def test_dataloader_workers_with_spawn_like_windows(tmp_path):
     train() under spawn in a child process to reproduce that here."""
     import pickle, subprocess, sys, textwrap
     from conftest import ROOT
-    from mppp.mask.train import make_collate
+    from mppp.mask.training.train import make_collate
     from mppp.mask.model import DEFAULT_CARD
     pickle.loads(pickle.dumps(make_collate(DEFAULT_CARD)))
     _make_dataset(tmp_path / "ds", n_scenes=6)
@@ -265,7 +265,7 @@ def test_dataloader_workers_with_spawn_like_windows(tmp_path):
         sys.path.insert(0, {str(ROOT / 'src')!r})
         if __name__ == "__main__":
             mp.set_start_method("spawn", force=True)
-            from mppp.mask.train import TrainConfig, scan_dataset, train
+            from mppp.mask.training.train import TrainConfig, scan_dataset, train
             cfg = TrainConfig(input_size=64, canvas=(64, 64), epochs=2, batch_size=2, pretrained=False,
                               val_ratio=0.34, val_preview_every=0, num_workers=2)
             out = train(scan_dataset({str(tmp_path / 'ds')!r}), {str(tmp_path / 'w.pt')!r}, cfg,
@@ -294,7 +294,7 @@ def _big_dataset(root, h=120, w=200, n=4):
 
 def test_init_from_pre_v0p6_checkpoint_keeps_old_decoder(tmp_path):
     from mppp.mask.model import ConvNeXtSeg
-    from mppp.mask.train import init_from_checkpoint
+    from mppp.mask.training.train import init_from_checkpoint
     src = ConvNeXtSeg("convnext_tiny", stride4=False)
     torch.save({"model": src.state_dict()}, tmp_path / "old.pt")
     dst = ConvNeXtSeg("convnext_tiny", stride4=True)
@@ -306,7 +306,7 @@ def test_init_from_pre_v0p6_checkpoint_keeps_old_decoder(tmp_path):
 
 
 def test_expand_quads_and_dataset_crop(tmp_path):
-    from mppp.mask.train import MaskDataset, expand_quads, scan_dataset
+    from mppp.mask.training.train import MaskDataset, expand_quads, scan_dataset
     _big_dataset(tmp_path)
     items = scan_dataset(tmp_path, image_dirs=("images",))
     q, n = expand_quads(items, 150, overlap=8)
@@ -322,7 +322,7 @@ def test_expand_quads_and_dataset_crop(tmp_path):
 def test_train_with_quads_writes_card_and_infers(tmp_path):
     from mppp.mask.infer import predict_probability
     from mppp.mask.model import load_model
-    from mppp.mask.train import TrainConfig, scan_dataset, train
+    from mppp.mask.training.train import TrainConfig, scan_dataset, train
     _big_dataset(tmp_path / "ds", n=6)
     cfg = TrainConfig(input_size=64, canvas=(64, 64), epochs=1, batch_size=2, pretrained=False,
                       val_ratio=0.3, val_preview_every=0, quad_split_above=150, quad_overlap=8)
@@ -337,7 +337,7 @@ def test_train_with_quads_writes_card_and_infers(tmp_path):
 
 
 def test_scan_dataset_missing_skip(tmp_path):
-    from mppp.mask.train import scan_dataset
+    from mppp.mask.training.train import scan_dataset
     _big_dataset(tmp_path)
     (tmp_path / "masks" / "s1.png").unlink()
     with pytest.raises(FileNotFoundError, match="missing='skip'"):
@@ -357,7 +357,7 @@ def test_curves_axes_start_at_zero(tmp_path):
         for k in range(1, 6):
             w.writerow([1, k * 10, 50, 0.5 / k, 0.9, 0.5 / k, 0.9 + k / 100, 1, 1e-4, 3, k, k * 10])
     code = (f"import sys; sys.path.insert(0, {str(ROOT / 'src')!r});"
-            "import mppp.mask.monitor as M, matplotlib.figure as F;"
+            "import mppp.mask.training.monitor as M, matplotlib.figure as F;"
             "lims=[];orig=F.Figure.savefig\n"
             "def sv(self,*a,**k):\n lims.extend(float(ax.get_ylim()[0]) for ax in self.axes[:2]); return orig(self,*a,**k)\n"
             f"F.Figure.savefig=sv; M.plot_curves_file({str(d)!r}); print(lims)")
@@ -371,7 +371,7 @@ def test_imagenet_safetensors_via_init_from_or_pretrained_file(tmp_path):
     import timm
     from safetensors.torch import save_file
     from mppp.mask.model import ConvNeXtSeg
-    from mppp.mask.train import init_from_checkpoint
+    from mppp.mask.training.train import init_from_checkpoint
     ref = timm.create_model("convnext_tiny", pretrained=False, num_classes=21841)      # in22k-shaped head
     f = tmp_path / "convnext_tiny_model.safetensors"
     save_file({k: v.contiguous() for k, v in ref.state_dict().items()}, str(f))
@@ -391,7 +391,7 @@ def test_imagenet_safetensors_via_init_from_or_pretrained_file(tmp_path):
 
 @pytest.fixture(scope="module")
 def trained(tmp_path_factory):
-    from mppp.mask.train import TrainConfig, scan_dataset, train
+    from mppp.mask.training.train import TrainConfig, scan_dataset, train
     root = tmp_path_factory.mktemp("v0p10")
     _make_dataset(root / "ds", n_scenes=8)
     m = cv2.imread(str(root / "ds" / "masks" / "scene3.png"), cv2.IMREAD_GRAYSCALE)
@@ -406,7 +406,7 @@ def trained(tmp_path_factory):
 def test_promote_checkpoint(trained, tmp_path):
     import shutil
     from mppp.mask.model import load_model
-    from mppp.mask.train import promote_checkpoint
+    from mppp.mask.training.train import promote_checkpoint
     _, _, ck0 = trained
     ck = tmp_path / ck0.name
     shutil.copy2(ck0, ck)
@@ -443,7 +443,7 @@ def test_promote_checkpoint(trained, tmp_path):
 def test_default_checkpoint_name_and_preflight(tmp_path, monkeypatch):
     import mppp
     from mppp.process import check_mask_checkpoint, process_images
-    from mppp.mask.train import best_checkpoint_name
+    from mppp.mask.training.train import best_checkpoint_name
     cfg = mppp.default_config()
     assert cfg["masking"]["checkpoint"] == "mppp_mask_v3"                         # v0p22.4: the released default
     assert best_checkpoint_name({"backbone": "convnext_tiny", "stride4": True}) == "convnext_tiny_s4_seg_best.pt"
@@ -459,7 +459,7 @@ def test_default_checkpoint_name_and_preflight(tmp_path, monkeypatch):
 def test_training_labels_come_from_masks_folder_not_alpha(tmp_path):
     import cv2
     import numpy as np
-    from mppp.mask.train import MaskDataset, read_pair, scan_dataset
+    from mppp.mask.training.train import MaskDataset, read_pair, scan_dataset
     for d in ("images", "images_variable", "masks"):
         (tmp_path / d).mkdir()
     h, w = 64, 96
