@@ -10,7 +10,11 @@ state (the lower focal length, the label's) - :func:`focus_state`.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+
+PathLike = Union[str, "Path"]
+
+from pathlib import Path
 
 import numpy as np
 
@@ -299,3 +303,126 @@ def label_camera(meta: Dict[str, Any]) -> Tuple[str, List[float], str]:
         full[6] = full[7] = 0.0
         return "FULL_OPENCV", full, "label CAHVOR (k1, k2; p1 = p2 = k3 = 0)"
     return "PINHOLE", full[:4], "label CAHV (pinhole)"
+
+
+# ------------------------------------------------------------------------------------------- plots (0.90)
+PLOT_COLORS = {"NL": "#2a78d6", "NR": "#eb6834", "grey": "#8a8a8a"}     # left eye cool, right eye warm
+
+
+def _plt():
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False,
+                         "axes.grid": True, "grid.alpha": 0.25, "figure.dpi": 110})
+    return plt
+
+
+def plot_camera_vs_temperature(nl: Dict[str, Any], nr: Dict[str, Any], path: PathLike,
+                               blocks: Optional[Sequence[Dict[str, Any]]] = None,
+                               T_range: Optional[Tuple[float, float]] = None, sol: Optional[float] = 1000.0,
+                               title: Optional[str] = None) -> Path:
+    """
+    The Navcam camera models against camera temperature (``cmod vs temp``): fx, fy (ppm about their value at T0),
+    cx, cy (px about T0) and k1 of the frozen form (:func:`camera_at`) for the left (cool) and right (warm) eye,
+    with the per-block temperature-bin cameras of ``blocks`` (:func:`mppp.calib.fit.block_navcam_results`) as
+    points sized by their images (a bin before the early-mission sol is shown without the early offsets, so that it
+    compares with the line).  Rows share their y range between the eyes; T0 is the dashed line.  ``T_range``
+    defaults to the bins' range (else -30..0 °C).
+    """
+    plt = _plt()
+    T0 = thermal_terms(nl.get("thermal"))["T0"]
+    if T_range is None:
+        Tb = [c["T_mean"] for b in (blocks or []) for c in b["cameras"].values() if c["bin"] and c.get("T_mean") is not None]
+        T_range = (min(-30.0, np.floor(min(Tb)) - 1), max(0.0, np.ceil(max(Tb)) + 1)) if Tb else (-30.0, 0.0)
+    Ts = np.linspace(T_range[0], T_range[1], 121)
+    rows = [("fx", "fx − fx(T0)  ppm"), ("fy", "fy − fy(T0)  ppm"), ("cx", "cx − cx(T0)  px"), ("cy", "cy − cy(T0)  px"),
+            ("k1", "k1")]
+    fig, axs = plt.subplots(len(rows), 2, figsize=(10, 11), sharex=True)
+    for j, (eye, m) in enumerate((("NL", nl), ("NR", nr))):
+        _n, p0, _ = camera_at(m, T_degC=T0, sol=sol)
+        curves = np.array([camera_at(m, T_degC=T, sol=sol)[1][:5] for T in Ts])
+        for i, (name, lab) in enumerate(rows):
+            ax = axs[i, j]
+            k = ["fx", "fy", "cx", "cy", "k1"].index(name)
+            if name in ("fx", "fy"):
+                y = 1e6 * (curves[:, k] / p0[k] - 1)
+            elif name in ("cx", "cy"):
+                y = curves[:, k] - p0[k]
+            else:
+                y = curves[:, k]
+            ax.plot(Ts, y, color=PLOT_COLORS[eye], lw=1.8, label=f"{eye} joint model")
+            if blocks:
+                xs, ys, ss = [], [], []
+                for b in blocks:
+                    for key, c in b["cameras"].items():
+                        if c["eye"] != eye or not c["bin"] or c.get("T_mean") is None:
+                            continue
+                        v = c["params"][k]
+                        early = camera_at(m, T_degC=T0, sol=c.get("sol_median"))[1][k] - p0[k]   # early offsets out
+                        v = v - early if name in ("cx", "cy") else v / (1 + early / p0[k]) if name in ("fx", "fy") else v
+                        if name in ("fx", "fy"):
+                            v = 1e6 * (v / p0[k] - 1)
+                        elif name in ("cx", "cy"):
+                            v = v - p0[k]
+                        xs.append(c["T_mean"]); ys.append(v); ss.append(c["images"])
+                if xs:
+                    ax.scatter(xs, ys, s=8 + 0.6 * np.sqrt(ss) * 4, color=PLOT_COLORS[eye], alpha=0.35,
+                               edgecolor="none", label="block temperature bins")
+            ax.axvline(T0, color="k", ls="--", lw=0.8, alpha=0.6)
+            if j == 0:
+                ax.set_ylabel(lab)
+            if i == 0:
+                ax.set_title(f"{eye}  ({'left' if eye == 'NL' else 'right'} eye)")
+                ax.legend(loc="upper left", fontsize=8, frameon=False)
+    for i in range(len(rows)):                                   # the eyes share each row's y range
+        lo = min(ax.get_ylim()[0] for ax in axs[i]); hi = max(ax.get_ylim()[1] for ax in axs[i])
+        for ax in axs[i]:
+            ax.set_ylim(lo, hi)
+    for ax in axs[-1]:
+        ax.set_xlabel("camera temperature  °C")
+    fig.suptitle(title or f"Navcam camera model against temperature (T0 = {T0:g} °C)", y=0.995)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return Path(path)
+
+
+def plot_rig_vs_sol(rig: Dict[str, Any], path: PathLike, blocks: Optional[Sequence[Dict[str, Any]]] = None,
+                    sol_range: Tuple[float, float] = (0.0, 2100.0), title: Optional[str] = None) -> Path:
+    """
+    The Navcam stereo rig against sol: pitch, yaw and roll of the right-from-left rotation relative to the rig
+    file's rotation (its drift model, :func:`rig_at`), with the per-block rig epochs of ``blocks``
+    (:func:`mppp.calib.fit.block_navcam_results`) as points; the pitch knot is the dashed line.
+    """
+    plt = _plt()
+    from .joint import rig_angles
+    R0 = np.asarray(rig["R_sensor_from_ref"], float)
+    sols = np.linspace(sol_range[0], sol_range[1], 300)
+    model = np.array([[rig_angles(rig_at(rig, sol=s)[0], R0)[f"{a}_mdeg"] for a in ("pitch", "yaw", "roll")] for s in sols])
+    fig, axs = plt.subplots(3, 1, figsize=(9, 7.5), sharex=True)
+    knot = (rig.get("drift") or {}).get("knot_sol")
+    for i, a in enumerate(("pitch", "yaw", "roll")):
+        ax = axs[i]
+        ax.plot(sols, model[:, i], color=PLOT_COLORS["NL"], lw=1.8, label="rig drift model")
+        if blocks:
+            xs, ys, ss = [], [], []
+            for b in blocks:
+                for key, r in (b.get("rigs") or {}).items():
+                    if r.get("sol_median") is None:
+                        continue
+                    xs.append(r["sol_median"]); ys.append(rig_angles(np.asarray(r["R"]), R0)[f"{a}_mdeg"]); ss.append(r["images"])
+            if xs:
+                ax.scatter(xs, ys, s=8 + 2.4 * np.sqrt(ss), color=PLOT_COLORS["NR"], alpha=0.6, edgecolor="none",
+                           label="block rig epochs")
+        if knot:
+            ax.axvline(float(knot), color="k", ls="--", lw=0.8, alpha=0.6)
+        ax.set_ylabel(f"{a}  mdeg")
+        if i == 0:
+            ax.legend(loc="upper left", fontsize=8, frameon=False)
+    axs[-1].set_xlabel("sol")
+    fig.suptitle(title or "Navcam stereo rig rotation against sol (relative to the promoted rig)", y=0.995)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return Path(path)

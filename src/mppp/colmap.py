@@ -437,3 +437,98 @@ def read_colmap(path: str) -> ColmapModel:
             "file was probably generated or edited by hand.")
 
     return ColmapModel(cameras, images, points)
+
+
+# ------------------------------------------------------------------------------------------- undistortion (0.90)
+def undistort_image(image: np.ndarray, model: str, params: Sequence[float], width: int,
+                    mask: Optional[np.ndarray] = None, fit: str = "width") -> Dict[str, Any]:
+    """
+    Resample ``image`` (the full frame at any downsample scale) through its COLMAP camera (``model``, ``params`` for
+    the full frame of ``width`` px) to a pinhole camera of the same size and principal point.  ``fit``: ``"width"``
+    keeps the whole horizontal field at the principal point's height (corners are cut), ``"height"`` the vertical
+    one, ``"same"`` keeps the focal length.  The mask is resampled with nearest neighbour.  Returns {"image",
+    "mask", "f_px", "f_in_px", "scale", "principal_point_px", "field_deg"}.
+    """
+    import cv2
+    h, w = image.shape[:2]
+    s = w / float(width)
+    p = scale_camera_params(model, params, s)
+    cx, cy = float(p[2]), float(p[3])
+    if fit == "same":
+        f = float(np.sqrt(p[0] * p[1]))
+    else:
+        k = 0 if fit == "width" else 1
+        edge = np.array([[0.0, cy], [w, cy]]) if k == 0 else np.array([[cx, 0.0], [cx, h]])
+        xy = unproject_camera(model, p, edge)
+        c, size = (cx, w) if k == 0 else (cy, h)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            fs = np.array([c, size - c]) / np.abs(xy[:, k])
+        f = float(np.nanmin(fs)) if np.any(np.isfinite(fs)) else float(np.sqrt(p[0] * p[1]))
+    mx, my = np.empty((h, w), np.float32), np.empty((h, w), np.float32)
+    xs = (np.arange(w) + 0.5 - cx) / f
+    for y0 in range(0, h, 256):                               # in bands: a full frame at once needs GBs
+        ys = (np.arange(y0, min(h, y0 + 256)) + 0.5 - cy) / f
+        X, Y = np.meshgrid(xs, ys)
+        src = project_camera(model, p, np.stack([X, Y, np.ones_like(X)], axis=-1)) - 0.5   # cv2: centre origin
+        src[~np.isfinite(src)] = -1e4
+        mx[y0:y0 + len(ys)], my[y0:y0 + len(ys)] = src[..., 0], src[..., 1]
+    out = cv2.remap(image, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    om = None
+    if mask is not None:
+        m = mask if mask.shape[:2] == (h, w) else cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+        om = cv2.remap(m, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    return {"image": out, "mask": om, "f_px": f, "f_in_px": float(np.sqrt(p[0] * p[1])), "scale": s,
+            "principal_point_px": (cx, cy), "field_deg": float(np.degrees(np.arctan(cx / f) + np.arctan((w - cx) / f)))}
+
+
+def plot_undistorted_example(image: np.ndarray, model: str, params: Sequence[float], width: int, path: PathLike,
+                             mask: Optional[np.ndarray] = None, title: str = "", lens: str = "", fit: str = "width",
+                             grid: bool = True, alpha: float = 0.3) -> Path:
+    """
+    The frame as recorded through its lens (left) and resampled through its camera model to a pinhole (right),
+    the mask screened white (opacity ``alpha``), with a line grid drawn straight on the right and through the lens
+    model on the left to show the distortion (the JOSS paper's figure 2).  Writes ``path``.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    und = undistort_image(image, model, params, width, mask, fit=fit)
+    h, w = image.shape[:2]
+
+    def screen(im, m):
+        if m is None:
+            return im
+        out = im.astype(np.float32)
+        sel = (m == 0) & (im.max(axis=2) > 0 if im.ndim == 3 else im > 0)
+        out[sel] = (1 - alpha) * out[sel] + alpha * 255.0
+        return out.round().clip(0, 255).astype(np.uint8)
+    fig, ax = plt.subplots(1, 2, figsize=(15, 15 * h / w / 2 + 0.9))
+    ax[0].imshow(screen(image, mask))
+    ax[1].imshow(screen(und["image"], und["mask"]))
+    if grid:
+        p = scale_camera_params(model, params, und["scale"])
+        f = und["f_px"]
+        cx, cy = und["principal_point_px"]
+        t = np.linspace(-1, 1, 400)
+        for k in np.linspace(-1, 1, 9):
+            for xs, ys in ((np.full_like(t, k * w / 2) + w / 2, t * h / 2 + h / 2),
+                           (t * w / 2 + w / 2, np.full_like(t, k * h / 2) + h / 2)):
+                ax[1].plot(xs - 0.5, ys - 0.5, color="#00e5ff", lw=0.6, alpha=0.7)
+                X = np.c_[(xs - cx) / f, (ys - cy) / f, np.ones_like(xs)]
+                uv = project_camera(model, p, X)
+                ok = np.all(np.isfinite(uv), axis=1) & (uv[:, 0] > -w * 0.05) & (uv[:, 0] < w * 1.05) & \
+                    (uv[:, 1] > -h * 0.05) & (uv[:, 1] < h * 1.05)
+                uv[~ok] = np.nan
+                ax[0].plot(uv[:, 0] - 0.5, uv[:, 1] - 0.5, color="#00e5ff", lw=0.6, alpha=0.7)
+    ax[0].set_title(f"{title}\nas recorded ({lens or model}, f = {und['f_in_px']:.0f} px)", fontsize=9)
+    ax[1].set_title(f"resampled to a pinhole, f = {und['f_px']:.0f} px, horizontal field {und['field_deg']:.1f}°",
+                    fontsize=9)
+    for a in ax:
+        a.set_xlim(-0.5, w - 0.5)
+        a.set_ylim(h - 0.5, -0.5)
+        a.set_xticks([])
+        a.set_yticks([])
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return Path(path)

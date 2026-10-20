@@ -272,3 +272,177 @@ def block_runs(table: Optional[Dict[str, Any]] = None) -> List[Tuple[int, str]]:
     from .sites import load_site_table
     t = table if table is not None else load_site_table()
     return [(int(n), b.get("site")) for n, b in sorted((t.get("official_blocks") or {}).items(), key=lambda x: int(x[0]))]
+
+
+# ------------------------------------------------------------------------------------------- plots (0.90)
+def site_waypoints(sites: Dict[str, Any], waypoints: Union[PathLike, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Per site: its end-of-drive waypoints (lon, lat, sol) within its sol ranges and their centre.  ``sites`` is
+    the ``sites`` entry of the site table ({name: {"sols": ...}})."""
+    from .sites import sol_ranges
+    from .table import lonlat_of
+    d = waypoints if isinstance(waypoints, dict) else json.loads(Path(waypoints).read_text(encoding="utf-8"))
+    feats = []
+    for f in d.get("features") or []:
+        p = f.get("properties") or {}
+        ll = lonlat_of(f)
+        if ll is None or p.get("sol") is None:
+            continue
+        feats.append((int(p["sol"]), ll[0], ll[1], str(p.get("final", "")).lower() == "y"))
+    out = {}
+    for name, v in sites.items():
+        try:
+            rs = sol_ranges(v.get("sols", v) if isinstance(v, dict) else v)
+        except (ValueError, TypeError):
+            continue
+        pts = [(s, lo, la) for s, lo, la, eod in feats if any(a <= s <= b for a, b in rs)]
+        if not pts:
+            continue
+        A = np.array(pts, float)
+        out[name] = {"sols": A[:, 0].astype(int).tolist(), "lon": A[:, 1].tolist(), "lat": A[:, 2].tolist(),
+                     "centre": [float(np.median(A[:, 1])), float(np.median(A[:, 2]))], "first_sol": int(A[:, 0].min())}
+    return out
+
+
+def plot_site_map(sites: Dict[str, Any], waypoints: Union[PathLike, Dict[str, Any]], path: PathLike,
+                  terrain_dir: Optional[PathLike] = None, highlight: Sequence[str] = (),
+                  margin_deg: float = 0.004, step_deg: float = 0.0002, title: Optional[str] = None,
+                  labels: bool = True) -> Path:
+    """
+    Map of the sites over the rover traverse: every waypoint as a dot joined in sol order (the traverse), each site's
+    waypoints as a square with its label, on a shaded-relief background from quantized-mesh tiles in
+    ``terrain_dir`` (:mod:`mppp.waypoints.terrain`; without tiles a plain background).  ``highlight`` names the
+    sites drawn in the warm colour (e.g. the group being run).  Longitude east, latitude north in degrees.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from .table import lonlat_of
+    d = waypoints if isinstance(waypoints, dict) else json.loads(Path(waypoints).read_text(encoding="utf-8"))
+    trav = sorted((int((f.get("properties") or {}).get("sol", -1)), *lonlat_of(f)) for f in d.get("features") or []
+                  if lonlat_of(f) is not None and (f.get("properties") or {}).get("sol") is not None)
+    T = np.array(trav, float)
+    sw = site_waypoints(sites, d)
+    lon0, lon1 = T[:, 1].min() - margin_deg, T[:, 1].max() + margin_deg
+    lat0, lat1 = T[:, 2].min() - margin_deg, T[:, 2].max() + margin_deg
+    aspect = 1.0 / np.cos(np.deg2rad(T[:, 2].mean()))
+    fig = plt.figure(figsize=(14, 11 * (lat1 - lat0) * aspect / (lon1 - lon0) + 0.8))
+    ax = fig.add_axes([0.05, 0.1, 0.72, 0.82])                   # the map; the numbered list to its right
+    lst = fig.add_axes([0.78, 0.1, 0.21, 0.82]); lst.axis("off")
+    if terrain_dir and Path(terrain_dir).is_dir():
+        from .terrain import shaded_relief, terrain_grid
+        gx, gy, Z = terrain_grid(terrain_dir, (lon0, lon1, lat0, lat1), step_deg)
+        if np.isfinite(Z).any():
+            sr = shaded_relief(gx, gy, Z)
+            ax.imshow(sr["rgb"], extent=sr["extent"], origin="lower", interpolation="bilinear", aspect=aspect)
+            ax.contour(gx, gy, np.where(np.isnan(Z), np.nanmean(Z), Z), levels=np.arange(-2700, -1000, 20),
+                            colors="k", linewidths=0.25, alpha=0.2)
+    else:
+        ax.set_facecolor("#efede8")
+    ax.plot(T[:, 1], T[:, 2], color="#555555", lw=0.8, alpha=0.8, label="traverse (waypoints in sol order)")
+    ax.scatter(T[:, 1], T[:, 2], s=3, color="#333333", alpha=0.6, edgecolor="none")
+    hl = set(highlight)
+    from .sites import site_label
+    import matplotlib.patheffects as pe
+    listed = []
+    for k, (name, s) in enumerate(sorted(sw.items(), key=lambda kv: kv[1]["first_sol"]), 1):
+        c = "#eb6834" if name in hl else "#2a78d6"
+        lo, la = np.array(s["lon"]), np.array(s["lat"])
+        half = 30.0 / (MARS_RADIUS_M * np.deg2rad(1.0))         # a +-30 m square in degrees of latitude
+        cx, cy = s["centre"]
+        ax.add_patch(plt.Rectangle((cx - half * aspect, cy - half), 2 * half * aspect, 2 * half, fill=False,
+                                   edgecolor=c, lw=1.2))
+        ax.scatter(lo, la, s=14, color=c, edgecolor="white", linewidth=0.4, zorder=5)
+        if labels:
+            ax.annotate(str(k), (cx + half * aspect, cy + half), fontsize=6.5, color=c, ha="left", va="bottom",
+                        xytext=(1, 1), textcoords="offset points", fontweight="bold",
+                        path_effects=[pe.withStroke(linewidth=1.5, foreground="white")])
+        listed.append((k, name, s["first_sol"], c))
+    if labels and listed:
+        ncol = 1 if len(listed) <= 30 else 2
+        per = int(np.ceil(len(listed) / ncol))
+        for j in range(ncol):
+            for i, (k, name, fs, c) in enumerate(listed[j * per:(j + 1) * per]):
+                lst.text(0.02 + 0.5 * j, 0.98 - i * (0.96 / per), f"{k:>2}  {site_label(name)} ({fs})", fontsize=6.5,
+                         color=c, transform=lst.transAxes, va="top", family="DejaVu Sans Mono" if False else None)
+    ax.set_xlim(lon0, lon1)
+    ax.set_ylim(lat0, lat1)
+    ax.set_aspect(aspect)
+    ax.set_xlabel("longitude east  °")
+    ax.set_ylabel("latitude  °")
+    ax.set_title(title or f"Sites (blocks of rover stations) along the Perseverance traverse: {len(sw)} sites, "
+                          f"{len(T)} waypoints to sol {int(T[:, 0].max())}")
+    if hl:
+        ax.scatter([], [], color="#eb6834", label="sites of the run"); ax.scatter([], [], color="#2a78d6", label="other sites")
+    ax.legend(loc="lower right", fontsize=8, frameon=True)
+    fig.savefig(path, dpi=200)
+    plt.close(fig)
+    return Path(path)
+
+
+MARS_RADIUS_M = 3389500.0
+
+
+def manifest_lmst_temperature(manifest: PathLike, instruments: Sequence[str] = ("NL", "NR")) -> Dict[str, np.ndarray]:
+    """(lmst_h, camera temperature, sol) of the images of a processing manifest (``mppp_manifest_<version>.json``)
+    whose camera group starts with one of ``instruments``."""
+    m = json.loads(Path(manifest).read_text(encoding="utf-8"))
+    ims = m.get("images") or []
+    ims = ims if isinstance(ims, list) else list(ims.values())
+    rows = []
+    for r in ims:
+        g = str(r.get("camera_group") or "")
+        if not any(g.startswith(i) for i in instruments):
+            continue
+        try:
+            rows.append((float(r["lmst_h"]), float(r["camera_temperature_degC"]), int(r["sol"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+    A = np.array(rows, float).reshape(-1, 3)
+    return {"lmst_h": A[:, 0], "T": A[:, 1], "sol": A[:, 2]}
+
+
+def plot_lmst_histograms(data: Dict[str, Dict[str, np.ndarray]], path: PathLike, bin_h: float = 0.5,
+                         ncols: int = 4, title: Optional[str] = None) -> Path:
+    """
+    One panel per site: the histogram of local mean solar time (LMST) of its Navcam images (bars) with the camera
+    temperature of every image against LMST on a secondary (right, warm) axis.  ``data`` = {site label:
+    :func:`manifest_lmst_temperature`}.  Temperature axes share one range so the sites compare.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    names = list(data)
+    n = len(names)
+    nrows = int(np.ceil(n / ncols))
+    fig, axs = plt.subplots(nrows, ncols, figsize=(3.4 * ncols, 2.6 * nrows + 0.5), squeeze=False, sharex=True)
+    allT = np.concatenate([d["T"] for d in data.values() if len(d["T"])]) if n else np.zeros(1)
+    Tlim = (np.floor(allT.min() / 5) * 5 - 2, np.ceil(allT.max() / 5) * 5 + 2) if len(allT) else (-40, 0)
+    edges = np.arange(6, 19 + bin_h, bin_h)
+    for k, name in enumerate(names):
+        ax = axs[k // ncols, k % ncols]
+        d = data[name]
+        ax.hist(d["lmst_h"], bins=edges, color="#2a78d6", alpha=0.75)
+        ax.set_title(f"{name}  ({len(d['lmst_h'])} images, sols {int(d['sol'].min()) if len(d['sol']) else '-'}"
+                     f"–{int(d['sol'].max()) if len(d['sol']) else '-'})", fontsize=8)
+        ax.axvline(12.0, color="k", ls="--", lw=0.7, alpha=0.5)
+        ax2 = ax.twinx()
+        ax2.scatter(d["lmst_h"], d["T"], s=5, color="#eb6834", alpha=0.6, edgecolor="none")
+        ax2.set_ylim(*Tlim)
+        ax2.tick_params(axis="y", colors="#eb6834", labelsize=7)
+        ax2.spines["right"].set_visible(True)
+        ax2.grid(False)
+        if k % ncols == ncols - 1 or k == n - 1:
+            ax2.set_ylabel("camera T  °C", color="#eb6834", fontsize=8)
+        if k % ncols == 0:
+            ax.set_ylabel("images", fontsize=8)
+        ax.tick_params(labelsize=7)
+    for k in range(n, nrows * ncols):
+        axs[k // ncols, k % ncols].set_visible(False)
+    for ax in axs[-1]:
+        ax.set_xlabel("LMST  h", fontsize=8)
+    ax.set_xlim(6, 19)
+    fig.suptitle(title or "Local mean solar time of the Navcam images per site, with camera temperature", y=0.995)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    return Path(path)

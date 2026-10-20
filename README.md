@@ -1,21 +1,41 @@
 # MPPP — Mars Photogrammetry Preprocessing Pipeline
 
-MPPP turns Mars 2020 Perseverance **Navcam** and **Mastcam-Z** PDS image products (`*.IMG`, RAD) into aligned
-structure-from-motion blocks and into inputs for **Agisoft Metashape** and **COLMAP**:
+*Beyond the stereo baseline with Mars rover images.*
 
-* radiometrically linear 16-bit images (and 8-bit previews) that keep their PDS file names and are traceable, count
-  for count, to the PDS radiance;
-* reconstruction masks of rover hardware, rover shadows and other artificial objects (the sky is not masked), from a
-  segmentation model that is downloaded on first use;
-* per-image camera models from the promoted, temperature-, sol- and focus-aware calibrations (`mppp.calib`), with
-  the label CAHVOR/CAHVORE models as the fallback;
-* pose priors in a local East–North–Up frame (metres, origin at the landing site) from the rover waypoints, plus Mars
-  longitude/latitude;
-* a COLMAP project with stereo rigs, SIFT features matched by LightGlue, and a prior-weighted bundle adjustment,
-  with an alignment health report and the exports for the error analysis.
+Every time a Mars rover stops, it looks around from a new viewpoint. The Mars 2020 Perseverance rover captures the
+Martian landscape in stereo, often in 360° panoramas, and the images and their metadata are public in NASA's
+Planetary Data System (PDS) — but in a format that common 3D reconstruction software cannot use. MPPP is the
+PDS-to-SfM pipeline that fills this gap: it turns **Navcam** and **Mastcam-Z** PDS products (`*.IMG`, RAD) into
+aligned structure-from-motion blocks in **COLMAP**, and into inputs for **Agisoft Metashape**.
 
-Version **0.90.0** (`v0p90`), a beta for the JOSS submission. Versions before 1.0 are development releases; see
-[CHANGELOG.md](CHANGELOG.md).
+Fixed-baseline stereo gives each rover stop its own range map; MPPP lets the images from *nearby* stops triangulate
+together. A **block** is a set of rover stations within a few tens of metres of each other — Perseverance is
+parked within 10 m of three or more earlier or later stops on about 20 % of sols — and several dozen blocks of
+four or more panoramas have accumulated over the first 2,000 sols.
+
+Five processes take a block from PDS inputs to SfM outputs:
+
+1. **Images** — radiometrically linear 16-bit images (and 8-bit previews) that keep their PDS file names and are
+   traceable, count for count, to the PDS radiance, with colours harmonised between instruments and brightness
+   between times of day;
+2. **Masks** — rover hardware and rover shadows (the sky is not masked), from a fine-tuned ConvNeXt-tiny
+   segmentation model downloaded on first use, so that the matcher ties images together on the terrain, not on the
+   rover;
+3. **Cameras and stations** — the label CAHV/CAHVOR/CAHVORE models converted to COLMAP cameras, or the promoted
+   temperature-, sol- and focus-aware calibrations of `mppp.calib`; each station placed in a local East–North–Up
+   frame (metres) from the rover waypoints, which with the stereo baseline fixes the scale;
+4. **Alignment** — a COLMAP project with stereo rigs, SIFT features matched by LightGlue, and a prior-weighted
+   bundle adjustment on pyceres;
+5. **Health and exports** — an alignment health report, and the measurements for the 3D reconstruction error
+   analysis (`mppp.error`, under development).
+
+The same alignments are measurements of the cameras: each block refines focal lengths, principal points,
+distortion and the stereo rig to about 0.2 px, so the blocks across the mission form a calibration data set that
+no single sol can provide. MPPP versions those refined models, checks them across blocks, and feeds them back as
+the default cameras for the next run.
+
+Version **0.90.0** (`v0p90`), a beta for the JOSS submission (`paper/paper.md`). Versions before 1.0 are
+development releases; see [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 

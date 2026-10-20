@@ -1652,3 +1652,190 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
             ang = 1e-3 * J.rotation_mdeg(orig["R_sensor_from_ref"], rig["R_sensor_from_ref"])
             add("rig change", ang <= lim["max_rig_change_deg"], f"{ang:.3f} deg from the rig in use")
     return {"ok": all(c["ok"] for c in checks), "checks": checks}
+
+
+# ------------------------------------------------------------------------------------------- block results vs the joint
+def read_rigs_bin(path: PathLike) -> Dict[int, Dict[str, Any]]:
+    """{rig id: {"ref_camera", "sensors": {camera id: {"R", "t"}}}} of a COLMAP 4 ``rigs.bin`` (the sensor pose is
+    x_sensor = R x_ref + t)."""
+    import struct
+    from scipy.spatial.transform import Rotation
+    b = Path(path).read_bytes()
+    o = 0
+    (n,) = struct.unpack_from("<Q", b, o)
+    o += 8
+    out: Dict[int, Dict[str, Any]] = {}
+    for _ in range(n):
+        rid, ns = struct.unpack_from("<II", b, o)
+        o += 8
+        _t, ref = struct.unpack_from("<iI", b, o)
+        o += 8
+        rig: Dict[str, Any] = {"ref_camera": int(ref), "sensors": {}}
+        for _ in range(ns - 1):
+            _t, cid = struct.unpack_from("<iI", b, o)
+            o += 8
+            (hp,) = struct.unpack_from("<B", b, o)
+            o += 1
+            if hp:
+                q = struct.unpack_from("<4d", b, o)
+                o += 32
+                t = struct.unpack_from("<3d", b, o)
+                o += 24
+                rig["sensors"][int(cid)] = {"R": Rotation.from_quat([q[1], q[2], q[3], q[0]]).as_matrix(),
+                                            "t": np.array(t)}
+            else:
+                rig["sensors"][int(cid)] = None
+        out[int(rid)] = rig
+    return out
+
+
+def block_navcam_results(folder: PathLike, model: str = "cahv_ba") -> Dict[str, Any]:
+    """
+    What one aligned block measured of the Navcam (0.90, for the parameter plots and the block table): per camera
+    key (eye, rig-epoch copy ``NL#1`` and temperature bin ``NL_T-020-017.5``) the refined parameters and the start,
+    the images' mean temperature and sols; per rig epoch the right-from-left rotation.  From ``colmap/project.json``,
+    ``colmap/sparse/<model>/cameras.bin`` and ``rigs.bin``.  ``sol_median`` and ``T_median`` are over the Navcam images.
+    """
+    from ..sfm.thermal import eye_key
+    pdir = Path(folder)
+    pdir = pdir / "colmap" if (pdir / "colmap" / "project.json").is_file() else pdir
+    P = json.loads((pdir / "project.json").read_text(encoding="utf-8"))
+    cams = read_cameras_bin(pdir / "sparse" / model / "cameras.bin")
+    rigs = read_rigs_bin(pdir / "sparse" / model / "rigs.bin") if (pdir / "sparse" / model / "rigs.bin").is_file() else {}
+    db = (P.get("settings") or {}).get("database") or {}
+    id_of_key = {str(k): int(v) for k, v in (db.get("cameras") or {}).items()}
+    key_of_id = {v: k for k, v in id_of_key.items()}
+    by_key: Dict[str, List[Dict[str, Any]]] = {}
+    nav = []
+    for r in P.get("images") or []:
+        k = str(r.get("instrument") or "")
+        if not k.startswith("N"):
+            continue
+        nav.append(r)
+        by_key.setdefault(k, []).append(r)
+    def _f(x):
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+    T_all = [t for t in (_f(r.get("camera_temperature_degC")) for r in nav) if t is not None]
+    sols_all = [int(r["sol"]) for r in nav if r.get("sol") is not None]
+    import re
+    name = pdir.parent.name
+    out: Dict[str, Any] = {"block": name, "site": re.sub(r"^mars2020_sol_\d+_", "", name).replace("_zcam", ""),
+                           "project": str(pdir), "model": model,
+                           "sol_median": float(np.median(sols_all)) if sols_all else None,
+                           "T_median": float(np.median(T_all)) if T_all else None,
+                           "navcam_images": len(nav), "cameras": {}, "rigs": {}}
+    for key, rows in by_key.items():
+        cid = id_of_key.get(key)
+        if cid is None or cid not in cams:
+            continue
+        T = [t for t in (_f(r.get("camera_temperature_degC")) for r in rows) if t is not None]
+        sols = [int(r["sol"]) for r in rows if r.get("sol") is not None]
+        start = ((P.get("cameras") or {}).get(key) or {}).get("params")
+        out["cameras"][key] = {"eye": eye_key(key), "camera_id": int(cid), "images": len(rows),
+                               "T_mean": float(np.mean(T)) if T else None, "T_range": [min(T), max(T)] if T else None,
+                               "sols": [min(sols), max(sols)] if sols else None,
+                               "sol_median": float(np.median(sols)) if sols else None,
+                               "params": [float(v) for v in cams[cid]],
+                               "start": [float(v) for v in start] if start else None,
+                               "bin": "_T" in key}
+    for rkey, rid in (db.get("rig_ids") or {}).items():
+        rig = rigs.get(int(rid))
+        if not rig:
+            continue
+        ref_key = key_of_id.get(rig["ref_camera"])
+        for cid, s in rig["sensors"].items():
+            if s is None:
+                continue
+            sk = key_of_id.get(cid)
+            epoch = int(str(rkey).split("#", 1)[1]) if "#" in str(rkey) else 0     # "N" -> epoch 0, "N#1" -> 1
+            rows = [r for r in nav if int(r.get("rig_epoch") or 0) == epoch]
+            sols = [int(r["sol"]) for r in rows if r.get("sol") is not None]
+            T = [t for t in (_f(r.get("camera_temperature_degC")) for r in rows) if t is not None]
+            out["rigs"][str(rkey)] = {"rig_id": int(rid), "ref": ref_key, "sensor": sk, "R": s["R"].tolist(),
+                                      "t": s["t"].tolist(), "baseline_m": float(np.linalg.norm(s["t"])),
+                                      "images": len(rows), "sol_median": float(np.median(sols)) if sols else None,
+                                      "sols": [min(sols), max(sols)] if sols else None,
+                                      "T_mean": float(np.mean(T)) if T else None}
+    return out
+
+
+def navcam_block_table(results: Sequence[Dict[str, Any]], nl: Dict[str, Any], nr: Dict[str, Any],
+                       rig: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """
+    Each block's Navcam parameters against the joint (promoted) model evaluated at the block's temperature and sol
+    (:func:`mppp.calib.constrain.camera_at`, :func:`rig_at`): one row per block with, per eye, the image-weighted
+    mean over its temperature bins of fx, fy (ppm), cx, cy (px) and k1 (x 1e3) refined minus joint, and the rig
+    yaw / pitch / roll (mdeg) of the block's epochs minus the drift model.  ``rows[i]["agreement"]`` is the largest
+    |fx, fy| in ppm and the largest rig angle in mdeg - the two numbers that say whether the block agrees.
+    """
+    from .constrain import camera_at, rig_at
+    from .joint import rig_angles
+    models = {"NL": nl, "NR": nr}
+    rows = []
+    for b in results:
+        row: Dict[str, Any] = {"block": b.get("site") or b["block"], "sol": b.get("sol_median"), "T": b.get("T_median"),
+                               "images": b.get("navcam_images"), "bins": 0}
+        for eye in ("NL", "NR"):
+            cams = [c for k, c in b["cameras"].items() if c["eye"] == eye and c["bin"] and c.get("T_mean") is not None]
+            if not cams:                                       # no temperature bins: the eye camera itself
+                cams = [c for k, c in b["cameras"].items() if c["eye"] == eye and c.get("T_mean") is not None and "#" not in k]
+            d = {"fx_ppm": [], "fy_ppm": [], "cx_px": [], "cy_px": [], "k1_1e3": [], "w": []}
+            for c in cams:
+                _m, pj, _a = camera_at(models[eye], T_degC=c["T_mean"], sol=c.get("sol_median"))
+                p = c["params"]
+                d["fx_ppm"].append(1e6 * (p[0] / pj[0] - 1))
+                d["fy_ppm"].append(1e6 * (p[1] / pj[1] - 1))
+                d["cx_px"].append(p[2] - pj[2])
+                d["cy_px"].append(p[3] - pj[3])
+                d["k1_1e3"].append(1e3 * (p[4] - pj[4]))
+                d["w"].append(c["images"])
+            w = np.array(d.pop("w"), float)
+            row["bins"] += len(cams)
+            for k, v in d.items():
+                row[f"{eye}_{k}"] = float(np.average(v, weights=w)) if len(v) else None
+        if rig and b.get("rigs"):
+            angs = []
+            for rk, r in b["rigs"].items():
+                Rj, _t, _a = rig_at(rig, sol=r.get("sol_median"))
+                a = rig_angles(np.asarray(r["R"]), Rj)
+                angs.append((r["images"], a))
+            w = np.array([x[0] for x in angs], float)
+            for a in ("yaw", "pitch", "roll"):
+                row[f"rig_{a}_mdeg"] = float(np.average([x[1][f"{a}_mdeg"] for x in angs], weights=w))
+            row["rig_epochs"] = len(angs)
+        f = [abs(row.get(k) or 0.0) for k in ("NL_fx_ppm", "NL_fy_ppm", "NR_fx_ppm", "NR_fy_ppm")]
+        g = [abs(row.get(k) or 0.0) for k in ("rig_yaw_mdeg", "rig_pitch_mdeg", "rig_roll_mdeg")]
+        row["agreement"] = {"focal_ppm": max(f) if f else None, "rig_mdeg": max(g) if g else None}
+        rows.append(row)
+    return sorted(rows, key=lambda r: (r["sol"] is None, r["sol"] or 0))
+
+
+def block_table_markdown(rows: Sequence[Dict[str, Any]], focal_limit_ppm: float = 100.0,
+                         rig_limit_mdeg: float = 5.0) -> str:
+    """The block table (:func:`navcam_block_table`) as Markdown: refined minus joint per block; a block beyond the
+    limits is marked."""
+    L = ["| block | sol | T °C | images | bins | NL fx fy ppm | NL cx cy px | NL k1 ×1e3 | NR fx fy ppm | NR cx cy px | "
+         "NR k1 ×1e3 | rig yaw pitch roll mdeg | agrees |",
+         "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    def _p(r, a, b, fmt):
+        x, y = r.get(a), r.get(b)
+        return "-" if x is None else f"{x:{fmt}} {y:{fmt}}"
+    for r in rows:
+        ag = r["agreement"]
+        ok = (ag["focal_ppm"] is None or ag["focal_ppm"] <= focal_limit_ppm) and \
+             (ag["rig_mdeg"] is None or ag["rig_mdeg"] <= rig_limit_mdeg)
+        rigs = ("-" if r.get("rig_yaw_mdeg") is None else
+                f"{r['rig_yaw_mdeg']:+.1f} {r['rig_pitch_mdeg']:+.1f} {r['rig_roll_mdeg']:+.1f}")
+        L.append(f"| {r['block']} | {r['sol']:.0f} | {r['T']:+.1f} | {r['images']} | {r['bins']} | "
+                 f"{_p(r, 'NL_fx_ppm', 'NL_fy_ppm', '+.0f')} | {_p(r, 'NL_cx_px', 'NL_cy_px', '+.2f')} | "
+                 f"{'-' if r.get('NL_k1_1e3') is None else f'{r['NL_k1_1e3']:+.3f}'} | "
+                 f"{_p(r, 'NR_fx_ppm', 'NR_fy_ppm', '+.0f')} | {_p(r, 'NR_cx_px', 'NR_cy_px', '+.2f')} | "
+                 f"{'-' if r.get('NR_k1_1e3') is None else f'{r['NR_k1_1e3']:+.3f}'} | {rigs} | "
+                 f"{'yes' if ok else '**no**'} |")
+    L.append("")
+    L.append(f"Refined minus the joint model at each bin's temperature and the block's sol; agrees: |fx, fy| ≤ "
+             f"{focal_limit_ppm:g} ppm and rig angles ≤ {rig_limit_mdeg:g} mdeg.")
+    return "\n".join(L)
