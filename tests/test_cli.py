@@ -134,3 +134,13 @@ def test_align_scape_script_wraps_the_cli(tmp_path, capsys, clean_env):
     assert m.main([str(work), "--is-running"]) == 1
     assert m.main([str(work), "--status"]) == 1
     assert m.main([str(work)]) == 2                       # no processed/
+
+
+def test_cli_doctor_and_maps_help(capsys):
+    from mppp.cli import main
+    rc = main(["doctor"])
+    out = capsys.readouterr().out
+    assert rc in (0, 1) and "camera models" in out and "pycolmap" in out
+    assert main(["maps", "nonsense"]) == 2
+    with pytest.raises(SystemExit):
+        main(["calib", "navcam", "--blocks", "oops"])

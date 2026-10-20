@@ -14,7 +14,7 @@ REM orthomosaic is found, tag "ortho".  Arguments: make_maps.bat [dtm|ortho|both
 REM
 REM Needs in the MPPP environment: matplotlib scipy pillow adjustText rasterio pyproj  (pip install -e ".[maps]").
 REM DTM / orthomosaic paths: M20_DEMS / M20_ORTHOS if set, otherwise the files under D:\scapes\dem (below).
-REM The figures are the study of studies\m20_sites\m20_sites (mppp_map.py there); each step is its own process.
+REM One line over the CLI: mppp maps (the figures are the study of studies\m20_sites\m20_sites, one process per step).
 REM ======================================================================================================
 setlocal EnableExtensions EnableDelayedExpansion
 for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
@@ -44,33 +44,25 @@ if not defined M20_ORTHOS (
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY=%%d"
 set "OUT=%MPPP_HOME%\Claude outputs\maps_%TODAY%"
 set "M20_SITES_FILE=%MPPP_HOME%\src\mppp\data\sites.json"
-set "STUDY=%MPPP_HOME%\studies\m20_sites\m20_sites"
 
 echo make_maps: sites   %M20_SITES_FILE%
 echo make_maps: DTMs    %M20_DEMS%
 echo make_maps: orthos  %M20_ORTHOS%
 echo make_maps: out     %OUT%  (%M20_DPI% dpi, %WHICH%)
 if not exist "%OUT%" mkdir "%OUT%"
-pushd "%STUDY%"
 if /i not "%WHICH%"=="ortho" (
-  set "M20_BACKGROUND=dtm"
-  set "M20_TAG=dtm"
-  python mppp_map.py all "%OUT%"
+  python -m mppp maps all --out "%OUT%" --background dtm --tag dtm --dpi %M20_DPI%
   if errorlevel 1 goto :fail
 )
 if /i not "%WHICH%"=="dtm" if defined M20_ORTHOS (
-  set "M20_BACKGROUND=ortho"
-  set "M20_TAG=ortho"
-  python mppp_map.py all "%OUT%"
+  python -m mppp maps all --out "%OUT%" --background ortho --tag ortho --dpi %M20_DPI%
   if errorlevel 1 goto :fail
 )
-popd
 echo make_maps: done - %OUT%
 pause
 exit /b 0
 
 :fail
-popd
 echo make_maps: FAILED (see above)
 pause
 exit /b 1

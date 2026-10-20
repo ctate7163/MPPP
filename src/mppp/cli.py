@@ -9,6 +9,9 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp sites [list | check | folder SITE]   the site definitions (mppp/data/sites.json)
     mppp cmods [list | promote PATH ... --note TEXT]   the camera models in use
     mppp mask [list | fetch [NAME] | install FILE]      the terrain mask model
+    mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
+    mppp calib navcam [--root DIR] [--group navcam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
+    mppp doctor                               what is set, what is missing (environment, dependencies, models)
     mppp version
 
 ``-v`` / ``-q`` set the logging level, ``--log FILE`` tees the log to a file.  ``process``, ``align`` and ``run``
@@ -93,6 +96,29 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("waypoints", help="the Mars 2020 waypoint table in use (cached download or packaged snapshot)")
     p.add_argument("--refresh", action="store_true", help="download the current table now (every sync should)")
 
+    p = sub.add_parser("maps", help="the M20 site-map figures (studies/m20_sites) from the official blocks of sites.json")
+    p.add_argument("what", nargs="*", default=["all"], help="all (default) | zooms | figures [2 3 4 5 6]")
+    p.add_argument("--out", default=None, metavar="DIR", help="output folder (default <repo>/Claude outputs/maps_<yyyymmdd>)")
+    p.add_argument("--dpi", type=int, default=None)
+    p.add_argument("--background", choices=["dtm", "ortho"], default=None)
+    p.add_argument("--tag", default=None, help="appended to every figure name")
+    p.add_argument("--sites-file", default=None, metavar="FILE")
+    p.add_argument("--dems", default=None, help="1 m DTM GeoTIFFs, os.pathsep-separated (M20_DEMS)")
+    p.add_argument("--orthos", default=None, help="orthomosaic GeoTIFFs (M20_ORTHOS)")
+    p = sub.add_parser("calib", help="the camera calibrations (0.91: the Navcam tied joint)")
+    p.add_argument("which", choices=["navcam"], help="navcam: the one-adjustment joint over the finished Navcam blocks")
+    p.add_argument("--root", default=None, metavar="DIR", help="the scapes root (default: MPPP_SCAPES)")
+    p.add_argument("--group", default="navcam_consensus", help="site group of the blocks (default navcam_consensus)")
+    p.add_argument("--blocks", nargs="*", default=None, metavar="NAME=WORK", help="blocks given explicitly instead")
+    p.add_argument("--sites-file", default=None, metavar="FILE")
+    p.add_argument("--out", default=None, metavar="DIR", help="the study folder (default <root>/camera_analysis/navcal_tied_<date>)")
+    p.add_argument("--points", type=int, default=None, help="points per block (default 3000)")
+    p.add_argument("--hold", nargs="*", default=None, help="global terms held (default Q0_yaw)")
+    p.add_argument("--knot", type=float, default=None, help="the pitch hinge sol (default the rig file's)")
+    p.add_argument("--no-diagnostics", action="store_true", help="skip the per-block diagnostic pass (no gate then)")
+    p.add_argument("--promote-if-ok", action="store_true", help="promote the candidate when every check passes")
+    p.add_argument("--note", default="", help="promotion note")
+    sub.add_parser("doctor", help="what is set, what is missing: environment variables, dependencies, models, waypoints")
     sub.add_parser("version", help="the MPPP version")
     return ap
 
@@ -324,6 +350,142 @@ def cmd_waypoints(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_maps(a: argparse.Namespace) -> int:
+    """The six site-map figures: the study scripts of ``studies/m20_sites/m20_sites`` (``mppp_map.py``), one process
+    per step, with the settings passed through the ``M20_*`` environment (the figures' module-level code reads it)."""
+    import datetime
+    import subprocess
+    from .paths import source_root
+    root = source_root()
+    study = root / "studies" / "m20_sites" / "m20_sites" if root else None
+    if study is None or not (study / "mppp_map.py").is_file():
+        print("ERROR: the site-map study (studies/m20_sites/m20_sites) is only in a source checkout", file=sys.stderr)
+        return 2
+    env = dict(os.environ)
+    env["M20_SITES_FILE"] = str(a.sites_file or (root / "src" / "mppp" / "data" / "sites.json"))
+    for key, val in (("M20_DPI", a.dpi), ("M20_BACKGROUND", a.background), ("M20_TAG", a.tag), ("M20_DEMS", a.dems),
+                     ("M20_ORTHOS", a.orthos)):
+        if val is not None:
+            env[key] = str(val)
+    if a.tag is None and a.background:
+        env["M20_TAG"] = a.background
+    out = Path(a.out) if a.out else root / "Claude outputs" / f"maps_{datetime.date.today():%Y%m%d}"
+    out.mkdir(parents=True, exist_ok=True)
+    what = list(a.what) or ["all"]
+    cmd, rest = what[0], what[1:]
+    if cmd not in ("all", "zooms", "figures", "sites"):
+        print(f"ERROR: maps {cmd}: use all, zooms, figures [2 3 4 5 6] or sites", file=sys.stderr)
+        return 2
+    if cmd in ("zooms", "figures"):                       # the block list first (from sites.json)
+        subprocess.run([sys.executable, "mppp_map.py", "sites"], cwd=str(study), env=env, check=True)
+    args = [sys.executable, "mppp_map.py", cmd] + ([str(out)] if cmd != "sites" else []) + rest
+    r = subprocess.run(args, cwd=str(study), env=env)
+    if r.returncode == 0:
+        print(f"maps: {out}")
+    return int(r.returncode != 0)
+
+
+def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
+    """{name: WORK} of the finished Navcam-only blocks of the group under the scapes root (run_done.json there)."""
+    from .pipeline import run_done
+    from .waypoints.sites import load_site_table, work_folder
+    if a.blocks:
+        out = {}
+        for b in a.blocks:
+            name, _, work = b.partition("=")
+            if not work:
+                raise SystemExit(f"--blocks takes NAME=WORK, got {b!r}")
+            out[name] = Path(work)
+        return out
+    root = Path(a.root or os.environ.get("MPPP_SCAPES") or "")
+    if not str(root):
+        raise SystemExit("--root (or MPPP_SCAPES) is required")
+    table = load_site_table(a.sites_file)
+    names = table.get("groups", {}).get(a.group)
+    if not names:
+        raise SystemExit(f"no group {a.group!r} in the site definitions")
+    out, skipped = {}, []
+    for n in dict.fromkeys(names):
+        site = table["sites"].get(n)
+        if not site:
+            skipped.append(f"{n} (not a site)")
+            continue
+        work = work_folder(root, n, False, site["sols"])
+        if run_done(work, "") is None:
+            skipped.append(f"{n} (not finished)")
+            continue
+        out[n] = work
+    if skipped:
+        log.info("calib navcam: left out: %s", ", ".join(skipped))
+    return out
+
+
+def cmd_calib(a: argparse.Namespace) -> int:
+    """``calib navcam``: the one-adjustment Navcam joint (:mod:`mppp.calib.tied`) over the finished blocks, the
+    candidate folder, the promotion check and, with ``--promote-if-ok``, the promotion."""
+    import datetime
+    from .calib import tied as TJ
+    from .calib.fit import check_lines, check_navcam, promote_navcam
+    blocks = _navcam_blocks(a)
+    if len(blocks) < 2:
+        print(f"ERROR: {len(blocks)} finished block(s); the joint needs several", file=sys.stderr)
+        return 1
+    root = Path(a.root or os.environ.get("MPPP_SCAPES") or next(iter(blocks.values())).parent)
+    out = Path(a.out) if a.out else root / "camera_analysis" / f"navcal_tied_{datetime.date.today():%Y%m%d}"
+    out.mkdir(parents=True, exist_ok=True)
+    log.info("calib navcam: %d blocks -> %s", len(blocks), out)
+    res = TJ.fit_tied(blocks, points=a.points or TJ.POINTS_PER_BLOCK, hold=tuple(a.hold) if a.hold is not None else TJ.HOLD_DEFAULT,
+                      knot_sol=a.knot, diagnostics=not a.no_diagnostics)
+    cand = TJ.write_tied(res, out / "navcam_joint", note=a.note)
+    rep = check_navcam(cand)
+    (out / "promotion_check.json").write_text(json.dumps(rep, indent=1, default=str), encoding="utf-8")
+    print("\n".join(check_lines(rep)))
+    if a.promote_if_ok and rep["ok"]:
+        pr = promote_navcam(cand, a.note or f"tied joint of {len(blocks)} blocks", check=False)
+        print(f"promoted into {pr['folder']} ({pr['stamp']})")
+    elif a.promote_if_ok:
+        print("not promoted: a check failed (the models in use stay)")
+    return 0
+
+
+def cmd_doctor(a: argparse.Namespace) -> int:
+    """What is set and what is missing: the environment, the dependencies, the camera models, the waypoint table."""
+    import importlib
+    from . import __version__
+    from .calib import check_form, models_fingerprint
+    from .paths import cmods_dir, source_root
+    from .waypoints.table import waypoints_age_days
+    lines = [f"mppp {__version__}", f"python {sys.version.split()[0]} ({sys.executable})",
+             f"source checkout: {source_root() or 'no (installed package)'}"]
+    missing = 0
+    for var, what in (("MPPP_SCAPES", "the scapes root (WORK folders)"), ("MPPP_PDS", "the PDS archive"),
+                      ("MPPP_GPU_PYTHON", "the GPU python for SIFT (optional)"), ("COLMAP_BAT", "COLMAP (optional, GUI)")):
+        v = os.environ.get(var)
+        ok = v and Path(v).exists()
+        if not v:
+            txt = "not set"
+            if var in ("MPPP_SCAPES", "MPPP_PDS"):
+                missing += 1
+        else:
+            txt = f"{v}" + ("" if ok else "  (MISSING on disk)")
+        lines.append(f"{var:<16} {txt}   - {what}")
+    for mod, what in (("pycolmap", "the COLMAP pipeline"), ("pyceres", "the weighted bundle adjustment"),
+                      ("torch", "LightGlue / mask inference"), ("kornia", "SIFT + LightGlue matching"),
+                      ("matplotlib", "figures"), ("rasterio", "1 m DTM map backgrounds (optional)"),
+                      ("adjustText", "map labels (optional)")):
+        try:
+            m = importlib.import_module(mod)
+            lines.append(f"{mod:<16} {getattr(m, '__version__', 'ok')}   - {what}")
+        except Exception as e:                                        # noqa: BLE001
+            lines.append(f"{mod:<16} MISSING ({type(e).__name__})   - {what}")
+    fm = check_form()
+    lines.append(f"camera models    {cmods_dir()} fingerprint {models_fingerprint()} form {'ok' if fm['ok'] else 'NOT OK: ' + '; '.join(fm['errors'])}")
+    age = waypoints_age_days()
+    lines.append(f"waypoints        {'packaged snapshot (mppp waypoints --refresh)' if age is None else f'downloaded copy {age:.1f} days old'}")
+    print("\n".join(lines))
+    return 1 if missing else 0
+
+
 def cmd_version(a: argparse.Namespace) -> int:
     from . import __file__ as where, __version__
     print(f"mppp {__version__} ({Path(where).parent})")
@@ -331,7 +493,8 @@ def cmd_version(a: argparse.Namespace) -> int:
 
 
 COMMANDS = {"process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
-            "mask": cmd_mask, "waypoints": cmd_waypoints, "version": cmd_version}
+            "mask": cmd_mask, "waypoints": cmd_waypoints, "maps": cmd_maps, "calib": cmd_calib, "doctor": cmd_doctor,
+            "version": cmd_version}
 
 
 def main(argv: Optional[List[str]] = None) -> int:
