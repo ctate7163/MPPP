@@ -5,9 +5,9 @@ One folder, `scripts\windows\` (0.91: the calibration study's wrappers moved her
 
 | group | files |
 |---|---|
-| environment | `mppp_env.bat` (finds the Python with mppp, pycolmap, pyceres; reads `mppp_python.txt`, `mppp_scapes.txt`, `mppp_pds.txt`), `install_lightglue.bat`, `claude_sync.bat`, `render_paper.bat` |
-| the package over a site group | `process_sites.bat`, `run_sites.bat`, `run_sites_zcam.bat`, `run_sites_zcam34.bat`, `align_here.bat`, `sites_status.bat`, `stop_mppp.bat`, `check_sites.bat`, `make_maps.bat` |
-| the calibration study (`studies\calibration\*.py`) | `run_pipeline.bat` (the stage runner), the named runs `run_v0p91.bat`, `run_v0p87.bat`, `run_z34.bat`, `zr_diagnose_z34.bat`, `navcam_tied_joint.bat` (the one-adjustment joint on the finished blocks), `move_scapes.bat` |
+| environment | `mppp_env.bat` (finds the Python with mppp, pycolmap, pyceres; reads `mppp_python.txt`, `mppp_scapes.txt`, `mppp_pds.txt`), `install_lightglue.bat`, `claude_sync.bat` (uncommitted edits stashed before the merge and popped after it), `render_paper.bat` (on demand) |
+| the package over a site group | `process_sites.bat`, `run_sites.bat`, `run_sites_zcam.bat`, `run_sites_zcam34.bat`, `align_here.bat`, `sites_status.bat`, `stop_mppp.bat`, `check_sites.bat`, `make_maps.bat`, `make_figures.bat` (the standard figures at 200 dpi), `m20_dem_env.bat` (the DTM / orthomosaic paths for both) |
+| the calibration study (`studies\calibration\*.py`) | `run_pipeline.bat` (the stage runner), the named runs `run_v0p91.bat`, `run_v0p87.bat`, `run_z34.bat`, `navcam_tied_joint.bat` (the one-adjustment Navcam joint on the finished blocks), `zcam_tied_joint.bat` (the Mastcam-Z joint: Navcam held at the models in use, the focus model fitted), `move_scapes.bat` |
 
 The package wrappers are what a user of `mppp` runs, the study wrappers are the named experiments of the paper. Every wrapper takes its folders from the environment — `MPPP_SCAPES` (the block
 folders), `MPPP_PDS` (the PDS products), optionally `MPPP_GPU_PYTHON` and `COLMAP_BAT` — set once with

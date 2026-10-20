@@ -186,11 +186,14 @@ def frame_table(rec, proj, idx: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
 def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_deg: float = BIN_DEG,
                         early_sol: Optional[float] = None, max_span: float = MAX_SPAN_SOLS,
                         gap: float = 50.0, breaks: Optional[Sequence[float]] = None, per_block: bool = False,
-                        pointing: bool = False):
+                        pointing: bool = False, passthrough: bool = False):
     """A copy of a merged reconstruction (:func:`mppp.calib.joint.merge_scapes`: cameras 1 NL, 2 NR; rigs 1 stereo,
     2 NR alone, 3 NL alone) with one camera per (eye, temperature bin, era) - per (block, eye, bin, era) with
     ``per_block`` (the diagnostic pass) - and one rig per (block, rig epoch, bin, era), every unit started at the
-    law of ``st``.  Returns (rec, proj, units): units {"cameras": {cid: {...}}, "rigs": {rid: {...}}}."""
+    law of ``st``.  Returns (rec, proj, units): units {"cameras": {cid: {...}}, "rigs": {rid: {...}}}.
+    ``passthrough`` (the Mastcam-Z joint): the frames of other cameras (merged with ``include_zcam``) are copied as
+    they are - their cameras renumbered after the Navcam units (``units["passthrough_cameras"]`` {old: new}), one
+    rig each, the same image ids, their observations kept in the points."""
     import pycolmap
     from ..sfm.project import navcam_distortion_terms
     early_sol = float(st.get("early_sol", EARLY_SOL) if early_sol is None else early_sol)
@@ -198,6 +201,8 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
     breaks = (knot,) if breaks is None else breaks
     by_id = {int(r["image_id"]): r for r in proj.images}
     frames = frame_table(rec, proj, idx)
+    if passthrough:
+        frames = {k: f for k, f in frames.items() if f["rig"] in (1, 2, 3)}
     ep_of: Dict[int, int] = {}
     for scape in {f["scape"] for f in frames.values()}:
         fids = [k for k, f in frames.items() if f["scape"] == scape]
@@ -311,6 +316,45 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
     for k in frames:
         new.register_frame(k)
     keep = set().union(*[set(f["images"]) for f in frames.values()]) if frames else set()
+    units["passthrough_cameras"] = {}
+    if passthrough:
+        cmap: Dict[int, int] = {}
+        next_c = max(cam_id.values(), default=0) + 1
+        next_r = max(rig_id.values(), default=0) + 1
+        for cid in sorted(c for c in rec.cameras if c not in (1, 2)):
+            c = rec.cameras[cid]
+            new.add_camera(pycolmap.Camera(camera_id=next_c, model=c.model, width=c.width, height=c.height,
+                                           params=np.array(c.params, float)))
+            zr = pycolmap.Rig(rig_id=next_r)
+            zr.add_ref_sensor(sensor(next_c))
+            new.add_rig(zr)
+            cmap[cid] = (next_c, next_r)
+            next_c += 1
+            next_r += 1
+        reg = set(rec.reg_image_ids())
+        for fid, fr in sorted(rec.frames.items()):
+            if fid in frames or not fr.has_pose:
+                continue
+            ims = [d.id for d in fr.data_ids if d.id in reg]
+            if not ims or any(int(rec.images[i].camera_id) not in cmap for i in ims):
+                continue
+            nc, nr_ = cmap[int(rec.images[ims[0]].camera_id)]
+            nf = pycolmap.Frame(frame_id=fid, rig_id=nr_)
+            for i in ims:
+                nf.add_data_id(pycolmap.data_t(sensor_id=sensor(cmap[int(rec.images[i].camera_id)][0]), id=i))
+            nf.rig_from_world = fr.rig_from_world
+            new.add_frame(nf)
+            for i in ims:
+                im = rec.images[i]
+                ni = pycolmap.Image(name=im.name, keypoints=np.array([q.xy for q in im.points2D], float).reshape(-1, 2),
+                                    camera_id=cmap[int(im.camera_id)][0], image_id=i)
+                ni.frame_id = fid
+                new.add_image(ni)
+                if i in by_id:
+                    by_id[i]["camera_id"] = cmap[int(im.camera_id)][0]
+                keep.add(i)
+            new.register_frame(fid)
+        units["passthrough_cameras"] = {int(k): int(v[0]) for k, v in cmap.items()}
     for pt in rec.points3D.values():
         tr = pycolmap.Track()
         for el in pt.track.elements:

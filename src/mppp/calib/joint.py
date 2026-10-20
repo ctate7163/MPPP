@@ -62,10 +62,12 @@ def align_project_to_model(project, rec) -> int:
 
 
 def load_scape(name: str, root: PathLike, samples: Optional[Dict[str, Dict[str, Any]]] = None,
-               model: str = "cahv_ba") -> Scape:
+               model: str = "cahv_ba", single: bool = True) -> Scape:
     """A solved block with its camera temperatures (project records, else label ``samples``).  A block solved with
     thermal bins is loaded from its one-camera-per-eye model ``sparse/<model>_single`` (the solution before the
-    thermal stage) with the bins stripped from the project, so that every block enters the joint the same way."""
+    thermal stage) with the bins stripped from the project, so that every block enters the joint the same way.
+    ``single`` False: the final model as it is (the Mastcam-Z joint: the Mastcam-Z frames are added after the
+    thermal stage; the Navcam bins are mapped to their eye by :func:`merge_scapes`)."""
     import pycolmap
     from ..sfm.project import SfmProject
     from ..sfm.thermal import image_temperatures, strip_thermal_bins
@@ -73,7 +75,7 @@ def load_scape(name: str, root: PathLike, samples: Optional[Dict[str, Dict[str, 
     if (root / "colmap").is_dir():
         root = root / "colmap"
     project = SfmProject.load(root)
-    if any(c.get("thermal_bin") for c in project.cameras.values()) and (root / "sparse" / f"{model}_single").is_dir():
+    if single and any(c.get("thermal_bin") for c in project.cameras.values()) and (root / "sparse" / f"{model}_single").is_dir():
         strip_thermal_bins(project)
         model = f"{model}_single"
     rec = pycolmap.Reconstruction(str(root / "sparse" / model))
@@ -154,7 +156,8 @@ def progress(done: int, total: int, t0: float, label: str = "") -> str:
 
 
 def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndarray],
-                 points_per_scape: Optional[int] = 25000, seed: int = 0, exclude: Sequence[str] = ()) -> Tuple[Any, Any, Dict[str, Any]]:
+                 points_per_scape: Optional[int] = 25000, seed: int = 0, exclude: Sequence[str] = (),
+                 include_zcam: bool = False, zcam_points_per_scape: Optional[int] = 8000) -> Tuple[Any, Any, Dict[str, Any]]:
     """
     One reconstruction holding every block: camera 1 = NL, camera 2 = NR (``cameras``: {"NL", "NR"} ->
     pycolmap.Camera, shared by all blocks), rig 1 = the stereo pair (``rig`` = (R, t) of NR from NL), rig 2 / 3 =
@@ -163,6 +166,13 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
     (rec, project, index) with ``index`` = {"scape_of_image": {image_id: scape}, "images": {scape: [image_id]},
     "frames": {scape: [frame_id]}, "temps", "duplicates"}.  An image that is in more than one block enters once per
     block, renamed ``<name>@<block>`` after its first block, with the same temperature.
+
+    ``include_zcam`` (the Mastcam-Z joint, 20 Oct): each block's registered Mastcam-Z images enter too, one camera
+    per block focus-bin camera (ids after the Navcam ones; ``index["zcams"]`` {camera_id: {"scape", "key", "spec"}}),
+    one rig and frame per image, their project rows with ``sclk_key`` made unique per block (``<sclk>@<block>``: the
+    Mastcam-Z rig pairs a right image with the left one of the same exposure); the points keep their Mastcam-Z
+    observations, and every Navcam-Mastcam-Z point with a third look is kept besides ``points_per_scape``, plus
+    up to ``zcam_points_per_scape`` points of Mastcam-Z images only.
     """
     import pycolmap
     from ..sfm.thermal import eye_key
@@ -185,8 +195,9 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
     proj = None
     seen_names = set()
     idx: Dict[str, Any] = {"scape_of_image": {}, "images": {}, "frames": {}, "points": {}, "temps": {},
-                           "duplicates": {}}
+                           "duplicates": {}, "zcams": {}, "zimages": {}}
     next_img, next_frame = 1, 1
+    next_cam, next_rig = 3, 4
     for sc in scapes:
         if sc.name in exclude:
             continue
@@ -251,9 +262,69 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
                 new.add_image(ni)
             idx["frames"][sc.name].append(next_frame)
             next_frame += 1
+        if include_zcam:
+            zcam_of: Dict[str, int] = {}
+            idx["zimages"][sc.name] = []
+            for fid, fr in rec.frames.items():
+                if not fr.has_pose:
+                    continue
+                for d in fr.data_ids:
+                    i = d.id
+                    if i not in reg or rec.images[i].name not in by_name:
+                        continue
+                    key = key_of.get(int(rec.images[i].camera_id), "")
+                    if not str(key).startswith("Z"):
+                        continue
+                    im = rec.images[i]
+                    if key not in zcam_of:
+                        c = rec.cameras[im.camera_id]
+                        new.add_camera(pycolmap.Camera(camera_id=next_cam, model=c.model, width=c.width, height=c.height,
+                                                       params=np.array(c.params, float)))
+                        zr = pycolmap.Rig(rig_id=next_rig)
+                        zr.add_ref_sensor(sensor(next_cam))
+                        new.add_rig(zr)
+                        zcam_of[key] = next_cam
+                        idx["zcams"][next_cam] = {"scape": sc.name, "key": key, "rig_id": next_rig,
+                                                  "spec": copy.deepcopy(sc.project.cameras.get(key) or {})}
+                        next_cam += 1
+                        next_rig += 1
+                    cid = zcam_of[key]
+                    name = im.name if im.name not in seen_names else f"{im.name}@{sc.name}"
+                    seen_names.add(name)
+                    nf = pycolmap.Frame(frame_id=next_frame, rig_id=idx["zcams"][cid]["rig_id"])
+                    nf.add_data_id(pycolmap.data_t(sensor_id=sensor(cid), id=next_img))
+                    nf.rig_from_world = im.cam_from_world()
+                    ni = pycolmap.Image(name=name, keypoints=np.array([q.xy for q in im.points2D], float).reshape(-1, 2),
+                                        camera_id=cid, image_id=next_img)
+                    ni.frame_id = next_frame
+                    new.add_frame(nf)
+                    new.add_image(ni)
+                    r = dict(by_name[im.name])
+                    r.update({"name": name, "image_id": next_img, "camera_id": cid, "frame_id": next_frame,
+                              "scape": sc.name, "sclk_key": f"{r.get('sclk_key')}@{sc.name}"})
+                    if name != im.name:
+                        r["source_name"] = im.name
+                    proj.images.append(r)
+                    img_map[i] = next_img
+                    idx["scape_of_image"][next_img] = sc.name
+                    idx["zimages"][sc.name].append(next_img)
+                    idx["frames"][sc.name].append(next_frame)
+                    next_img += 1
+                    next_frame += 1
         for fid in idx["frames"][sc.name]:
             new.register_frame(fid)
         keep = _subsample_points(rec, points_per_scape, seed=seed)
+        if include_zcam:
+            fam = {int(i): rec.images[i].name[:1] for i in rec.reg_image_ids()}
+            mixed, zonly = [], []
+            for pid, pt in rec.points3D.items():
+                fs = {fam.get(int(el.image_id)) for el in pt.track.elements}
+                if "Z" in fs:
+                    (mixed if ("N" in fs and pt.track.length() >= 3) else zonly).append(pid)
+            rz = np.random.default_rng(seed + 1)
+            if zcam_points_per_scape is not None and len(zonly) > zcam_points_per_scape:
+                zonly = [zonly[k] for k in sorted(rz.choice(len(zonly), zcam_points_per_scape, replace=False))]
+            keep = sorted(set(keep) | set(mixed) | set(zonly))
         n_pts = 0
         for pid in keep:
             pt = rec.points3D[pid]

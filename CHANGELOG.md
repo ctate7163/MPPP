@@ -26,6 +26,22 @@ The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p
   all panels (a grey mosaic tinted by the DTM height); figure 3's regional titles as figure 6's; Three Forks
   North's sol 413 left out of the figures' ranges.  `zr_diagnose_z34.bat` removed.
 - **Sites**: plateau_point and vingeanne in navcam_consensus (26); olifants in zcam34_consensus (12).
+- **Mastcam-Z joint** (`mppp.calib.ztied`, `mppp calib zcam`, `zcam_tied_joint.bat`): one bundle adjustment over
+  the finished Navcam + Mastcam-Z blocks of a zoom with the Navcam held at the models in use (the promoted law per
+  temperature bin and era, the rig on its sol trend) and the zcam-v2 focus model fitted: every block's focus-bin
+  camera tied to fx, fy = a[state] + b (focus − ref) (one slope per eye), k1, k2, p1, p2 per eye, ZR's cy with its
+  focus slope, one Mastcam-Z rig (rotation refined, CAHV baseline held); a diagnostic pass frees each block's bins
+  and rig - the per-block focus lines and the rig's sol / lens-temperature trends.  Writes the candidate focus
+  model, its check against the one in use (`check_zcam`), `report.md`, the figures; `--promote-if-ok`.
+  `merge_scapes(include_zcam=True)`, `tied_reconstruction(passthrough=True)`, `load_scape(single=False)`;
+  `bundle_adjust` drops the residual-less pose blocks of right Mastcam-Z frames posed through the rig (the
+  covariance was rank-deficient).
+- **Cluster zooms**: only the block's own waypoints (its primary sols plus every waypoint within 10 m, the site's
+  NEARBY_FROM_FIRST_SOL respected) in colour and in the N× / Z× counts; the other waypoints in the square in grey;
+  thicker 10 m circles.
+- **claude_sync.bat**: the paper is no longer rendered after every sync; uncommitted edits are stashed before the
+  merge and popped right after it (they were left in the stash - paper.md, 20 Oct).  The bundles carry
+  `refs/heads/main` again.
 
 - **Navcam joint in one adjustment** (`mppp.calib.tied`): every term of the frozen form is a parameter of one
   bundle adjustment over the blocks - the intrinsics at −20 °C with one slope each in temperature (fx, fy, cx, cy,

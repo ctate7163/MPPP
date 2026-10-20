@@ -105,14 +105,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sites-file", default=None, metavar="FILE")
     p.add_argument("--dems", default=None, help="1 m DTM GeoTIFFs, os.pathsep-separated (M20_DEMS)")
     p.add_argument("--orthos", default=None, help="orthomosaic GeoTIFFs (M20_ORTHOS)")
-    p = sub.add_parser("calib", help="the camera calibrations (0.91: the Navcam tied joint)")
-    p.add_argument("which", choices=["navcam"], help="navcam: the one-adjustment joint over the finished Navcam blocks")
+    p = sub.add_parser("calib", help="the camera calibrations (0.91: the Navcam tied joint, the Mastcam-Z joint)")
+    p.add_argument("which", choices=["navcam", "zcam"],
+                   help="navcam: the one-adjustment joint over the finished Navcam blocks; zcam: the Mastcam-Z joint "
+                        "over the finished Navcam + Mastcam-Z blocks, the Navcam held at the models in use")
     p.add_argument("--root", default=None, metavar="DIR", help="the scapes root (default: MPPP_SCAPES)")
-    p.add_argument("--group", default="navcam_consensus", help="site group of the blocks (default navcam_consensus)")
+    p.add_argument("--group", default=None, help="site group of the blocks (default navcam_consensus / zcam34_consensus)")
+    p.add_argument("--zoom", type=int, default=34, help="zcam: the Mastcam-Z zoom (default 34)")
     p.add_argument("--blocks", nargs="*", default=None, metavar="NAME=WORK", help="blocks given explicitly instead")
     p.add_argument("--sites-file", default=None, metavar="FILE")
     p.add_argument("--out", default=None, metavar="DIR", help="the study folder (default <root>/camera_analysis/navcal_tied_<date>)")
-    p.add_argument("--points", type=int, default=None, help="points per block (default 3000)")
+    p.add_argument("--points", type=int, default=None, help="Navcam points per block (default 8000)")
+    p.add_argument("--zpoints", type=int, default=None, help="zcam: Mastcam-Z-only points per block (default 8000; "
+                   "every Navcam-Mastcam-Z point with a third look is kept besides)")
     p.add_argument("--hold", nargs="*", default=None, help="global terms held (default Q0_yaw)")
     p.add_argument("--knot", type=float, default=None, help="the pitch hinge sol (default the rig file's)")
     p.add_argument("--aniso-f", action="store_true",
@@ -403,6 +408,8 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
     if not str(root):
         raise SystemExit("--root (or MPPP_SCAPES) is required")
     table = load_site_table(a.sites_file)
+    zcam = getattr(a, "which", "navcam") == "zcam"
+    a.group = a.group or (f"zcam{int(getattr(a, 'zoom', 34))}_consensus" if zcam else "navcam_consensus")
     names = table.get("groups", {}).get(a.group)
     if not names:
         raise SystemExit(f"no group {a.group!r} in the site definitions")
@@ -412,13 +419,13 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
         if not site:
             skipped.append(f"{n} (not a site)")
             continue
-        work = work_folder(root, n, False, site["sols"])
+        work = work_folder(root, n, zcam, site["sols"])
         if run_done(work, "") is None:
             skipped.append(f"{n} (not finished)")
             continue
         out[n] = work
     if skipped:
-        log.info("calib navcam: left out: %s", ", ".join(skipped))
+        log.info("calib %s: left out: %s", "zcam" if zcam else "navcam", ", ".join(skipped))
     return out
 
 
@@ -428,6 +435,8 @@ def cmd_calib(a: argparse.Namespace) -> int:
     import datetime
     from .calib import tied as TJ
     from .calib.fit import check_lines, check_navcam, promote_navcam
+    if a.which == "zcam":
+        return _calib_zcam(a)
     blocks = _navcam_blocks(a)
     if len(blocks) < 2:
         print(f"ERROR: {len(blocks)} finished block(s); the joint needs several", file=sys.stderr)
@@ -447,6 +456,35 @@ def cmd_calib(a: argparse.Namespace) -> int:
         print(f"promoted into {pr['folder']} ({pr['stamp']})")
     elif a.promote_if_ok:
         print("not promoted: a check failed (the models in use stay)")
+    return 0
+
+
+def _calib_zcam(a: argparse.Namespace) -> int:
+    """``calib zcam``: the Mastcam-Z joint (:mod:`mppp.calib.ztied`) over the finished Navcam + Mastcam-Z blocks, the
+    Navcam held at the models in use; the candidate focus model, its check and, with ``--promote-if-ok``, the
+    promotion."""
+    import datetime
+    from .calib import models as M
+    from .calib import ztied as Z
+    blocks = _navcam_blocks(a)
+    if len(blocks) < 2:
+        print(f"ERROR: {len(blocks)} finished Mastcam-Z block(s); the joint needs several", file=sys.stderr)
+        return 1
+    root = Path(a.root or os.environ.get("MPPP_SCAPES") or next(iter(blocks.values())).parent)
+    out = Path(a.out) if a.out else root / "camera_analysis" / f"zcam{a.zoom}_joint_{datetime.date.today():%Y%m%d}"
+    out.mkdir(parents=True, exist_ok=True)
+    log.info("calib zcam: %d blocks -> %s", len(blocks), out)
+    res = Z.fit_zjoint(blocks, zoom=a.zoom, nav_points=a.points or Z.NAV_POINTS_PER_BLOCK,
+                       z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, diagnostics=not a.no_diagnostics)
+    w = Z.write_zjoint(res, out)
+    for c in w["check"]["checks"]:
+        print(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}")
+    print(f"=> {'every check passes' if w['check']['ok'] else 'a check failed'}; {out / 'report.md'}")
+    if a.promote_if_ok and w["check"]["ok"]:
+        pr = M.promote([Path(w["model"])], note=a.note or f"Mastcam-Z {a.zoom} mm joint of {len(blocks)} blocks")
+        print(f"promoted into {pr['folder']} ({pr['stamp']})")
+    elif a.promote_if_ok:
+        print("not promoted: a check failed (the model in use stays)")
     return 0
 
 

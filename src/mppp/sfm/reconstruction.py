@@ -903,6 +903,12 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 np.eye(3) * float(zcam_rig_translation_sigma_m) ** 2, C0), None, [arr])
             prob.set_manifold(arr, pyceres.SubsetManifold(7, [3]))
 
+    # a right Mastcam-Z image posed through the rig: its own frame's pose block (from COLMAP's adjuster) has no
+    # residuals left - out of the problem, or the covariance is rank-deficient (the Mastcam-Z joint, 20 Oct)
+    for iid in vpartner:
+        arr_ = work.frames[rec.images[iid].frame_id].rig_from_world.params
+        if prob.has_parameter_block(arr_) and int(rec.images[iid].frame_id) not in pose_blocks:
+            prob.remove_parameter_block(arr_)
     extra_info = None
     if extra_residuals is not None:                          # e.g. the tied joint's thermal / drift ties
         extra_info = extra_residuals(prob, cam_blocks=cam_blocks, rig_blocks=rig_blocks, key_of=key_of, work=work)

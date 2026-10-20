@@ -42,6 +42,7 @@ if not "%STUDY%"=="-" if not "%STUDY%"=="" (
   for %%F in ("%STUDY%") do set "TAG=%%~nxF"
 )
 if not "%ZCAM%"=="-" if not "%ZCAM%"=="" set "ARGS=!ARGS! --zcam "%ZCAM%""
+if not defined TAG if not "%ZCAM%"=="-" if not "%ZCAM%"=="" for %%F in ("%ZCAM%") do set "TAG=%%~nxF"
 if defined TAG set "ARGS=!ARGS! --tag !TAG!"
 
 echo make_figures: Navcam joint  %STUDY%

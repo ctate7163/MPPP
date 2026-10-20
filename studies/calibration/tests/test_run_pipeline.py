@@ -88,7 +88,8 @@ def test_bats():
                      ("run_v0p91.bat", b"--stop-before zcam_start"),
                      ("navcam_tied_joint.bat", b"calib navcam"),
                      ("make_figures.bat", b"paper_figures.py"), ("m20_dem_env.bat", b"M20_ORTHOS"),
-                     ("make_maps.bat", b"m20_dem_env.bat"), ("run_z34.bat", b"--group zcam34_consensus --zcam")):
+                     ("make_maps.bat", b"m20_dem_env.bat"), ("run_z34.bat", b"--group zcam34_consensus --zcam"),
+                     ("zcam_tied_joint.bat", b"calib zcam")):
         t = (WIN / b).read_bytes()
         assert b"\r\n" in t and needs in t
         assert b'"%~dp0..\\..\\.."' not in t, b                        # the repo is two levels up, not three
