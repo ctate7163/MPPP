@@ -436,21 +436,25 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
         ax = axs[0][j]
         for k, (p, ls, mk, alpha) in enumerate((("fx", "-", "o", 0.8), ("fy", "--", "s", 0.35))):
             ppm2 = ax_ppm[eye][k]; ppm_iu = th_iu[f"{p}_ppm"]
-            ax.plot(tt, f2[p] * 1e-6 * ppm2 * (tt - T0), ls, color=col, lw=1.4, label=f"{p} {model_label}: {ppm2:+.1f} ppm/°C ({f2[p] * 1e-6 * ppm2:+.4f} px/°C)")
+            ax.plot(tt, f2[p] * (1 + 1e-6 * ppm2 * (tt - T0)), ls, color=col, lw=1.4,
+                    label=f"{p} {model_label}: {f2[p]:.2f} px at {T0:.0f} °C, {ppm2:+.1f} ppm/°C ({f2[p] * 1e-6 * ppm2:+.4f} px/°C)")
             if k == 0:
-                ax.plot(tt, p_iu[k] * 1e-6 * ppm_iu * (tt - T0), ":", color="0.4", lw=1.1, label=f"fx in use for the block runs: {ppm_iu:+.1f} ppm/°C")
+                ax.plot(tt, p_iu[k] * (1 + 1e-6 * ppm_iu * (tt - T0)), ":", color="0.4", lw=1.1,
+                        label=f"fx in use for the block runs: {p_iu[k]:.2f} px, {ppm_iu:+.1f} ppm/°C")
             for early, mfc in ((False, None), (True, "white")):
                 rs = [r for r in rows if (r["block"] in early_blk) == early]
                 if not rs:
                     continue
                 Tb = np.array([r["T"] for r in rs]); nb = np.array([r["n"] for r in rs])
-                v = np.array([r[p] for r in rs]) - p_iu[k]
+                v = np.array([r[p] for r in rs])                           # the bin's focal length itself (px)
                 ax.scatter(Tb, v, s=6 + 1.5 * np.sqrt(nb * 10), marker=mk, facecolors=mfc or col, edgecolors=col, alpha=alpha, zorder=3,
                            label=(f"{p} per temperature bin of the block runs (size ~ images)" if not early else
                                   f"{p}, blocks before sol {early_sol:.0f} (early-mission offset not removed)") if p == "fx" else None)
+        ax.axhline(f2["fx"], color="0.6", lw=0.6)
         ax.set_title(f"{eye}: focal length", fontsize=10)
-        ax.set_ylabel(f"Δf from {T0:.0f} °C (full-frame px)", fontsize=8)
-        ax.secondary_yaxis("right", functions=(lambda d, f=f2["fx"]: 1e6 * d / f, lambda q, f=f2["fx"]: q * f / 1e6)).set_ylabel("ppm of f", fontsize=8)
+        ax.set_ylabel("focal length (full-frame px)", fontsize=8)
+        ax.secondary_yaxis("right", functions=(lambda f, f0=f2["fx"]: f - f0, lambda d, f0=f2["fx"]: d + f0)).set_ylabel(
+            f"Δf from {T0:.0f} °C (px; {model_label} fx)", fontsize=8)
         ax.legend(fontsize=6.5, loc="upper left")
         ax = axs[1][j]
         cx_iu = th_iu["cx_px"]
@@ -465,19 +469,27 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
             ax.plot(tt, 0 * tt, "-.", color=col, lw=0.8, label="cy: 0")
             y = CX2 * (Tblk - T0) + yaw / IFOV_MDEG
             ax.plot(Tblk, y, "o", color=col, ms=5, mec="white", mew=0.5, zorder=3, label="rig epoch stereo pointing as NR cx − NL cx (model + yaw residual)")
+        ax.axhline(0, color="0.6", lw=0.6)
         ax.set_title(f"{eye}: principal point", fontsize=10)
         ax.set_ylabel(f"Δ principal point from {T0:.0f} °C (full-frame px)", fontsize=8)
         ax.set_xlabel("Navcam camera temperature (°C)", fontsize=9)
         ax.secondary_yaxis("right", functions=(lambda d: d * IFOV_MDEG, lambda m: m / IFOV_MDEG)).set_ylabel(f"pointing equivalent (mdeg; 1 px = {IFOV_MDEG} mdeg)", fontsize=8)
         ax.legend(fontsize=6.5, loc="upper right" if eye == "NR" else "upper left")
     Tb_all = np.array([r["T"] for r in bins]) if bins else np.array([T0])
-    for r in range(2):
-        lo = min(axs[r][0].get_ylim()[0], axs[r][1].get_ylim()[0]); hi = max(axs[r][0].get_ylim()[1], axs[r][1].get_ylim()[1])
-        for a in axs[r]:
-            a.set_ylim(lo, hi)
-        axs[r][1].set_yticks(axs[r][0].get_yticks()); axs[r][1].set_ylim(lo, hi)
+    # the focal row shows each eye's own f (px): the two panels share the span and tick spacing about their own
+    # f(T0); the principal-point row shares its limits and ticks outright
+    f0 = {eye: cons[eye]["fx"] for eye in ("NL", "NR")}
+    half = max(max(abs(a.get_ylim()[0] - f0[e]), abs(a.get_ylim()[1] - f0[e])) for a, e in zip(axs[0], ("NL", "NR")))
+    step = float(np.diff(axs[0][0].get_yticks()[:2])[0]) if len(axs[0][0].get_yticks()) > 1 else 2.0
+    for a, e in zip(axs[0], ("NL", "NR")):
+        a.set_ylim(f0[e] - half, f0[e] + half)
+        a.set_yticks(np.arange(np.ceil((f0[e] - half) / step) * step, f0[e] + half, step))
+    lo = min(axs[1][0].get_ylim()[0], axs[1][1].get_ylim()[0]); hi = max(axs[1][0].get_ylim()[1], axs[1][1].get_ylim()[1])
+    for a in axs[1]:
+        a.set_ylim(lo, hi)
+    axs[1][1].set_yticks(axs[1][0].get_yticks()); axs[1][1].set_ylim(lo, hi)
     for a in axs.flat:
-        a.axvline(T0, color="0.4", ls="--", lw=0.8); a.axhline(0, color="0.6", lw=0.6)
+        a.axvline(T0, color="0.4", ls="--", lw=0.8)
         a.axvspan(Tb_all.min(), Tb_all.max(), color="0.85", alpha=0.35, lw=0, zorder=0); a.grid(alpha=0.3); a.set_xlim(-60, 0)
     nb = len(sols)
     fig.suptitle(f"Navcam intrinsic temperature dependence{(' ' + label) if label else ''} ({nb} blocks; T0 = {T0:.0f} °C; grey band: temperatures of the bins)", fontsize=10)

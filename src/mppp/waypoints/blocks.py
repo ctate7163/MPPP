@@ -69,19 +69,46 @@ def waypoint_points(waypoints: Union[PathLike, Dict[str, Any]]) -> np.ndarray:
     return np.array(rows, float).reshape(-1, 5)
 
 
-def waypoint_stats(ranges: Sequence[Sequence[int]], W: np.ndarray) -> Dict[str, Any]:
-    """``max_waypoint_separation_m`` (largest horizontal distance between two waypoints on the sols of ``ranges``,
-    m, 0.1 m), ``n_waypoints`` and ``rover_sites`` (sorted) of the waypoint rows ``W`` (:func:`waypoint_points`)."""
+NEARBY_RADIUS_M = 10.0      # the block-building rule (Settings.add_nearby_waypoints): every waypoint within this many
+                            # metres of a waypoint of the sol ranges joins the block, whatever its sol
+
+
+def waypoint_stats(ranges: Sequence[Sequence[int]], W: np.ndarray, radius_m: float = NEARBY_RADIUS_M,
+                   min_sol: Optional[int] = None) -> Dict[str, Any]:
+    """
+    The waypoint statistics of a site, by the rules that build its block (0.90, Christian): the primary
+    waypoints are those on the sols of ``ranges``; every other waypoint within ``radius_m`` (planar E-N) of a
+    primary one joins (any sol, as ``find_imgs_near`` adds their stations; none before ``min_sol`` when the site has
+    ``NEARBY_FROM_FIRST_SOL``).  ``max_waypoint_separation_m`` is the largest horizontal distance between two of
+    them (0.1 m), ``n_waypoints`` their count (``n_primary`` + ``n_nearby``), ``rover_sites`` sorted.
+    ``W``: :func:`waypoint_points` rows (sol, site, easting, northing, eod).
+    """
     m = np.zeros(len(W), bool)
     for a, b in ranges:
         m |= (W[:, 0] >= a) & (W[:, 0] <= b)
-    P = W[m]
+    if radius_m and m.any():
+        xy = W[:, 2:4]
+        d = np.sqrt(((xy[:, None, :] - xy[None, m, :]) ** 2).sum(-1)).min(axis=1)
+        near = (d <= float(radius_m)) & ~m
+        if min_sol is not None:
+            near &= W[:, 0] >= int(min_sol)
+    else:
+        near = np.zeros(len(W), bool)
+    P = W[m | near]
     sep = 0.0
     if len(P) > 1:
         xy = P[:, 2:4]
         sep = float(np.sqrt(((xy[:, None, :] - xy[None, :, :]) ** 2).sum(-1)).max())
-    return {"max_waypoint_separation_m": round(sep, 1), "n_waypoints": int(len(P)),
-            "rover_sites": sorted({int(s) for s in P[:, 1]})}
+    return {"max_waypoint_separation_m": round(sep, 1), "n_waypoints": int(len(P)), "n_primary": int(m.sum()),
+            "n_nearby": int(near.sum()), "rover_sites": sorted({int(s) for s in P[:, 1]})}
+
+
+def site_waypoint_stats(site: Dict[str, Any], W: np.ndarray, radius_m: float = NEARBY_RADIUS_M) -> Dict[str, Any]:
+    """:func:`waypoint_stats` of a site record (its ``sols`` and, with ``NEARBY_FROM_FIRST_SOL`` in its settings, no
+    nearby waypoint before its first sol)."""
+    rs = _ranges(site["sols"])
+    first = (site.get("settings") or {}).get("NEARBY_FROM_FIRST_SOL")
+    return waypoint_stats(rs, W, radius_m, min_sol=min(a for a, _ in rs) if first and rs else None)
 
 
 # --- official blocks -------------------------------------------------------------------------------------------------
@@ -225,11 +252,13 @@ def update_waypoint_stats(table: Dict[str, Any], waypoints: Union[PathLike, Dict
     out = []
     for kind, items in (("site", table["sites"].items()), ("block", (table.get("official_blocks") or {}).items())):
         for k, v in items:
-            new = waypoint_stats(_ranges(v["sols"] if kind == "site" else v["visits"]), W)
+            new = site_waypoint_stats(v, W) if kind == "site" else waypoint_stats(_ranges(v["visits"]), W)
             old = {f: v.get(f) for f in new}
             if old != new:
-                out.append(f"{kind} {k}: {old['max_waypoint_separation_m']} -> {new['max_waypoint_separation_m']} m, "
-                           f"{old['n_waypoints']} -> {new['n_waypoints']} waypoints")
+                if (old["max_waypoint_separation_m"], old["n_waypoints"]) != (new["max_waypoint_separation_m"], new["n_waypoints"]):
+                    out.append(f"{kind} {k}: {old['max_waypoint_separation_m']} -> {new['max_waypoint_separation_m']} m, "
+                               f"{old['n_waypoints']} -> {new['n_waypoints']} waypoints"
+                               + (f" ({new['n_primary']} + {new['n_nearby']} within {NEARBY_RADIUS_M:g} m)" if new.get("n_nearby") else ""))
                 v.update(new)
     return out
 
