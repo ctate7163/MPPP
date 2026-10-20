@@ -28,5 +28,5 @@ def test_blocks_from_sites_fixture(tmp_path):
     p = tmp_path / "sites.json"; p.write_text(json.dumps(doc))
     _, blocks = blocks_from_sites(str(p))
     assert [b["id"] for b in blocks] == [1, 2]
-    assert blocks[1]["runs"] == [[100, 120], [300, 310]] and blocks[1]["first"] == 100 and blocks[1]["nz"] == 2
+    assert blocks[1]["runs"] == [[100, 120], [300, 310]] and blocks[1]["first"] == 100 and blocks[1]["nz_sites_json"] == 2 and "members" in blocks[1]   # nz: counted from the block's waypoints (20 Oct)
     assert blocks[0]["key"] == "a" and blocks[0]["n360"] == 0
