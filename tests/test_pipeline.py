@@ -188,7 +188,7 @@ def test_processing_config_and_project_settings(tmp_path, clean_env):
     s = Settings()
     assert _zero_terms(s) == (("b1", "b2"), None) and _refine_tangential(s) is True   # zcam-v2: p1, p2 refined like the Navcam
     assert _zero_terms(s.replace(zcam_tangential="zero")) == (("b1", "b2"), ("p1", "p2", "b1", "b2"))
-    assert _zero_terms(s.replace(zcam_k3="zero"))[1] == ("p1", "p2", "b1", "b2", "k3")
+    assert _zero_terms(s.replace(zcam_k3="zero"))[1] == ("b1", "b2", "k3")
     w = wanted_project_settings(s, tmp_path)
     assert w["zcam_zero_terms"] is None and w["navcam_distortion"] == "fisheye_tangential"
     wz = wanted_project_settings(s.replace(include_zcam=True), tmp_path)
