@@ -129,8 +129,8 @@ def test_zcam_label_temperature(tmp_path):
 def test_thermal_stage_has_no_rig_temperature_term():
     import inspect
     from mppp.sfm import thermal as TH
-    from mppp.sfm.reconstruction import reconstruct
-    src = inspect.getsource(reconstruct)
+    from mppp.sfm.reconstruction import _reconstruct
+    src = inspect.getsource(_reconstruct)
     assert 'refine_rig == "auto"' in src and "rig_slopes" not in src
     assert "rig_slopes" not in inspect.signature(TH.thermal_stage).parameters
     assert "rig_slopes" not in inspect.signature(TH.split_by_temperature).parameters

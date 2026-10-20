@@ -76,7 +76,7 @@ def _run(python: PathLike, args, echo: bool = True) -> str:
     for line in proc.stdout:                                   # stream COLMAP's log into the notebook
         out.append(line)
         if echo:
-            log.info(line, end="")
+            print(line, end="", flush=True)                  # COLMAP's own log, streamed through
     if proc.wait() != 0:
         tail = "".join(out[-30:])
         raise RuntimeError(f"GPU step failed in {python} (exit {proc.returncode}):\n{tail}")
@@ -145,13 +145,13 @@ def run_step(python: PathLike, step: str, project, **kwargs: Any) -> Dict[str, A
 def _main(argv) -> None:
     import pycolmap
     if argv[0] == "check":
-        log.info(json.dumps({"pycolmap": pycolmap.__version__, "has_cuda": bool(getattr(pycolmap, "has_cuda", False)),
+        print(json.dumps({"pycolmap": pycolmap.__version__, "has_cuda": bool(getattr(pycolmap, "has_cuda", False)),
                           "python": sys.executable}))
         return
     from .project import SfmProject
     step, root, kwargs = argv[0], argv[1], json.loads(argv[2])
     proj = SfmProject.load(root)
-    log.info(f"[mppp.sfm.gpu] {step} in {sys.executable} (pycolmap {pycolmap.__version__}, "
+    print(f"[mppp.sfm.gpu] {step} in {sys.executable} (pycolmap {pycolmap.__version__}, "
           f"CUDA {getattr(pycolmap, 'has_cuda', False)})")
     if step == "extract_features":
         from .database import extract_features
@@ -159,4 +159,4 @@ def _main(argv) -> None:
     else:
         from .matching import match
         res = match(proj, **kwargs)
-    log.info("MPPP_RESULT " + json.dumps(res, default=str))
+    print("MPPP_RESULT " + json.dumps(res, default=str), flush=True)   # the protocol: the parent reads this line

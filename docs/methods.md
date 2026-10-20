@@ -1,5 +1,13 @@
 # MPPP — Methods
 
+> **Read with 0.90.0.** This document grew with the versions and still describes, as history, the Navcam
+> *rational* and *polynomial* models, the Metashape XML calibrations and the notebook-based workflow, which 0.90
+> no longer ships. What is current: the frozen forms and the promoted models are in `mppp.calib` (README, *Camera
+> models*), the pipeline is `mppp.pipeline` / the `mppp` command, matching is SIFT + LightGlue by default, and the
+> calibration campaigns are in `studies/calibration/` with `docs/HANDOFF_v0p87.md` as their status. The
+> conventions, equations and flagged assumptions below still hold.
+
+
 *Status: the v0p1 text with later notes inline (version tags mark when something was added). A clean rewrite is planned for 1.0. Since v0p13 the calibration files and tables are package data in `src/mppp/data/` (formerly `params/`).*
 
 Supplementary description of the Mars Photogrammetry Preprocessing Pipeline, version v0p1 (21 September 2026). It documents what the code does, in the order it does it, with every convention and every unverified assumption stated. Section 8 lists the assumptions; section 9 the verification performed.
