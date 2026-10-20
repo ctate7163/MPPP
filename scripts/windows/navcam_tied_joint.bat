@@ -15,19 +15,23 @@ REM           D:\code\MPPP\Claude outputs\v0p91\navcam_*_tied_<yyyymmdd>.png / .
 REM   Arguments are passed through (e.g. navcam_tied_joint.bat --knot 300, --points 3000, --promote-if-ok).
 REM   Time: about an hour for 16-23 blocks (CPU only; can run beside a Mastcam-Z run).
 REM ======================================================================================================
-setlocal
+setlocal EnableDelayedExpansion
 if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
 if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\scapes"
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY=%%d"
 set "OUT=%MPPP_SCAPES%\camera_analysis\navcal_tied_%TODAY%"
+set "N=1"
+:next
+if exist "%OUT%\navcam_joint\tied_joint.json" ( set /a N+=1 & set "OUT=%MPPP_SCAPES%\camera_analysis\navcal_tied_%TODAY%_!N!" & goto :next )
+for %%F in ("%OUT%") do set "TAG=%%~nxF"
 set "FIG=%MPPP_HOME%\Claude outputs\v0p91"
 if not exist "%FIG%" mkdir "%FIG%"
 echo tied joint: blocks under %MPPP_SCAPES% (group navcam_consensus) -^> %OUT%
 python -m mppp --log "%OUT%_log.txt" calib navcam --root "%MPPP_SCAPES%" --out "%OUT%" --knot 250 --points 8000 %*
 if errorlevel 1 ( echo tied joint FAILED (see %OUT%_log.txt) & pause & exit /b 1 )
 echo figures -^> %FIG%
-python "%MPPP_HOME%\scripts\paper_figures.py" --root "%MPPP_SCAPES%" --study "%OUT%" --out "%FIG%" --tag tied_%TODAY%
+python "%MPPP_HOME%\scripts\paper_figures.py" --root "%MPPP_SCAPES%" --study "%OUT%" --out "%FIG%" --tag !TAG!
 echo done: %OUT%  and  %FIG%
 pause
 exit /b 0
