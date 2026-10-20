@@ -594,11 +594,16 @@ def lmst_site_row(name: str, recs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
             "navcam_lmst_iqr_h": round(q(lmN, 75) - q(lmN, 25), 2) if len(nav) else None}
 
 
+LMST_T_C = "#8a8a8a"       # the camera temperature points on the secondary axis (grey, so the histograms keep their colours)
+
+
 def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[str, Any]], path: PathLike,
-                         window: Optional[Sequence[float]] = None) -> Tuple[int, int]:
+                         window: Optional[Sequence[float]] = None, temperature: bool = True) -> Tuple[int, int]:
     """The LMST histogram figure: one stepped panel per site (``rows`` order) and one for all sites, Navcam and
-    Mastcam-Z 34 each to unit area, local noon dashed, the processing ``window`` dotted.  Writes ``path`` (dpi 160)
-    and returns (Navcam images, Mastcam-Z images)."""
+    Mastcam-Z 34 each to unit area, local noon dashed, the processing ``window`` dotted.  ``temperature`` (0.90,
+    Christian): every panel gets a secondary right axis with the Navcam camera temperature of each image against
+    its LMST (grey dots, one temperature range for all panels).  Writes ``path`` (dpi 160) and returns (Navcam
+    images, Mastcam-Z images)."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -627,6 +632,34 @@ def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[
         v = np.asarray([x for x in vals if np.isfinite(x)])
         return int(np.sum((v < XLIM[0]) | (v > XLIM[1])))
 
+    def temps(recs):
+        out = []
+        for r in recs:
+            if _family(r) != "N":
+                continue
+            try:
+                out.append((lmst_hours(r.get("LMST")), float(r["camera_temperature_degC"])))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return np.array([t for t in out if np.isfinite(t[0])], float).reshape(-1, 2)
+
+    allT = np.concatenate([temps(list(v.values()))[:, 1] for v in images.values()]) if temperature and images else np.zeros(0)
+    Tlim = (np.floor(allT.min() / 5) * 5 - 2, np.ceil(allT.max() / 5) * 5 + 2) if len(allT) else None
+
+    def temperature_axis(ax, tv, label=False):
+        ax2 = ax.twinx()
+        if len(tv):
+            ax2.scatter(tv[:, 0], tv[:, 1], s=4, color=LMST_T_C, alpha=0.45, edgecolor="none", zorder=1)
+        ax2.set_ylim(*Tlim)
+        ax2.set_xlim(*XLIM)
+        for sp in ("top", "left"):
+            ax2.spines[sp].set_visible(False)
+        ax2.spines["right"].set_color(LMST_T_C)
+        ax2.tick_params(axis="y", colors=LMST_T_C, labelsize=6)
+        if label:
+            ax2.set_ylabel("Navcam camera temperature [°C]", color=LMST_T_C, fontsize=7)
+        return ax2
+
     names = [r["site"] for r in rows]
     ncol = 2 if len(names) > 6 else 1
     nrow = -(-len(names) // ncol)
@@ -645,6 +678,8 @@ def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[
         panel(ax, [(lmN, NAV_C), (lmZ, ZC_C)],
               f"{site_label(name)}  sols {r['sols']}  {r['navcam']} Nav" + (f" + {r['mastcam_z34']} Z34" if r["mastcam_z34"] else "")
               + (f"  ({off} outside 5-19 h)" if off else ""))
+        if Tlim:
+            temperature_axis(ax, temps(recs))
         if (ncol == 1 and k < len(names) - 1) or (ncol > 1 and (k % nrow) < nrow - 1 and k + 1 < len(names)):
             ax.set_xticklabels([])
     ax = fig.add_subplot(gs[nrow + 1, :])
@@ -655,15 +690,19 @@ def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[
     ax.set_facecolor("#f6f6f4")
     ax.set_xticks(range(5, 20))
     ax.set_xlabel("local mean solar time of the image [h]", fontsize=8)
+    if Tlim:
+        temperature_axis(ax, np.concatenate([temps(list(images[n].values())) for n in names]) if names else np.zeros((0, 2)), label=True)
     handles = [Patch(facecolor=NAV_C, alpha=FILL_ALPHA, edgecolor=NAV_C, lw=1.2, label="Navcam"),
                Patch(facecolor=ZC_C, alpha=FILL_ALPHA, edgecolor=ZC_C, lw=1.2, label="Mastcam-Z 34"),
                Line2D([], [], color="0.35", lw=0.9, ls="--", label="local noon")]
+    if Tlim:
+        handles.append(Line2D([], [], marker="o", ms=3, ls="none", color=LMST_T_C, label="Navcam camera temperature (right axis)"))
     if window:
         handles.append(Line2D([], [], color="0.55", lw=0.8, ls=":", label=f"processing window {window[0]:g}-{window[1]:g} h"))
     fig.legend(handles=handles, loc="upper right", fontsize=7.5, frameon=False, ncol=len(handles), bbox_to_anchor=(0.99, 0.995))
     fig.suptitle("Time of day of the processed images, per site (each camera normalised to unit area)",
                  fontsize=9.5, x=0.01, ha="left", y=0.995)
-    fig.subplots_adjust(left=0.03, right=0.99, top=1 - 0.55 / fig.get_figheight(), bottom=0.5 / fig.get_figheight())
+    fig.subplots_adjust(left=0.03, right=0.96 if Tlim else 0.99, top=1 - 0.55 / fig.get_figheight(), bottom=0.5 / fig.get_figheight())
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=160)
     plt.close(fig)
