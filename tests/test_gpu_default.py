@@ -43,3 +43,14 @@ def test_gpu_python_from_the_conda_envs_folder(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
     assert gpu.conda_env_python() == str(other)
     assert Settings().gpu_python == str(other)
+
+
+def test_big_blocks_match_prior_pairs_and_keep_their_run_key():
+    """21 Oct: exhaustive matching over more than max_exhaustive_images images matches the prior-overlap pairs; the
+    threshold is not in the run key (finished blocks stay finished)."""
+    from mppp.pipeline import effective_match_mode, run_key
+    s = Settings()
+    assert effective_match_mode(s, 347) == "exhaustive" and effective_match_mode(s, 2713) == "prior_pairs"
+    assert effective_match_mode(Settings(max_exhaustive_images=0), 2713) == "exhaustive"
+    assert effective_match_mode(Settings(match_mode="lightglue"), 2713) == "lightglue"
+    assert run_key(Settings(max_exhaustive_images=5)) == run_key(Settings())

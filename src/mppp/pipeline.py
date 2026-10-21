@@ -156,6 +156,7 @@ class Settings:
     sift: Dict[str, Any] = field(default_factory=lambda: dict(domain_size_pooling=False, estimate_affine_shape=False,
                                                               num_octaves=None, first_octave=-1))   # num_octaves None: 6 with Mastcam-Z, else 4
     match_mode: str = "exhaustive"                # the matcher: "exhaustive" (COLMAP's SIFT matcher, the default until the A/B test), "lightglue" (SIFT + LightGlue) or "prior_pairs" (quick / CPU)
+    max_exhaustive_images: int = 1000             # 21 Oct: above this many images "exhaustive" matches the prior-overlap pairs instead (Issole Z34: 2713 images, 3.7 M pairs, > 9 h); 0 = never (not in the run key)
     match: Dict[str, Any] = field(default_factory=lambda: dict(max_ratio=0.9, max_distance=1.0, cross_check=True,
                                                                guided_matching=False, max_error_px=6.0,
                                                                max_keypoints=8192, filter_threshold=0.1))   # matching options (the last two: LightGlue)
@@ -207,7 +208,7 @@ class Settings:
 PATH_FIELDS = {"pds_dir", "scapes_root", "sites_file", "navcam_cameras", "zcam_focus_model"}
 TUPLE_FIELDS = {"sequence_prefixes", "subframe_families", "hold_cameras", "thermal_free", "navcam_rig_epoch_breaks_sols"}
 NOT_IN_KEY = {"pds_dir", "scapes_root", "gpu_python", "colmap_bat", "workers", "gui_files", "sites_file",
-              "source", "variant"}
+              "source", "variant", "max_exhaustive_images"}
 SETTING_NAMES = tuple(f.name for f in fields(Settings))
 
 
@@ -276,6 +277,14 @@ work_settings = load_settings
 
 
 # ----------------------------------------------------------------------------------------------------- run keys
+def effective_match_mode(s: "Settings", n_images: int) -> str:
+    """The matcher a block gets: ``match_mode``, except that "exhaustive" over more than ``max_exhaustive_images``
+    images matches the prior-overlap pairs (n^2 / 2 pairs: 3.7 million at 2713 images)."""
+    if s.match_mode == "exhaustive" and s.max_exhaustive_images and n_images > int(s.max_exhaustive_images):
+        return "prior_pairs"
+    return s.match_mode
+
+
 def run_key(settings: Union[Settings, Dict[str, Any]], source: Optional[str] = None, variant: Optional[str] = None
             ) -> str:
     """A short hash of what decides a run's result: the settings (as :func:`resolve_site` returns them, so the
@@ -777,8 +786,9 @@ def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] =
     out: Dict[str, Any] = {}
     if stop_after == "features":
         return out
+    mode = effective_match_mode(s, len(proj.images))
     db = build_database(proj, reuse_matches_from=list(reuse_from),
-                        matching=match_settings(s.match_mode, **s.match) if s.reuse_matches else None)
+                        matching=match_settings(mode, **s.match) if s.reuse_matches else None)
     if db.get("reused_matches"):
         log.info("matches reused: %s %s", {k: db["reused_matches"][k] for k in ("matches", "geometries")},
                  [x.get("skipped") or "used" for x in db["reused_matches"]["sources"]])
@@ -787,18 +797,20 @@ def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] =
     if stop_after == "database":
         return out
     pairs = None
-    if s.match_mode == "prior_pairs":
+    if mode == "prior_pairs":
         pairs = prior_overlap_pairs(proj, min_overlap=0.05)
-        log.info("%d prior pairs", len(pairs))
+        n = len(proj.images)
+        log.info("%d prior pairs%s", len(pairs), f" (instead of {n * (n - 1) // 2} exhaustive: {n} images > "
+                 f"max_exhaustive_images {s.max_exhaustive_images})" if mode != s.match_mode else "")
     kw = dict(use_gpu=gpu, block_size=s.match_block_size, **s.match)
-    if s.match_mode != "lightglue":
+    if mode != "lightglue":
         # COLMAP's matcher runs in a child process: the CUDA environment, else this python on the CPU - a COLMAP
         # abort (glog "Check failed") then fails the step with its message instead of killing the run unseen, and
         # the calibrated-verification fallback of mppp.sfm.matching can take over
         kw["python"] = s.gpu_python or sys.executable
     if pairs is not None:
         kw["pairs"] = pairs
-    out["match"] = match(proj, mode=s.match_mode, **kw)
+    out["match"] = match(proj, mode=mode, **kw)
     log.info("matching: %s", out["match"])
     return out
 

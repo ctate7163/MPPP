@@ -251,7 +251,7 @@ def test_shipped_sites_v0p75():
     assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
     assert "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
     assert len(g["navcam_consensus"]) == 27 and {"plateau_point", "vingeanne", "hans_amundsen_workspace"} <= set(g["navcam_consensus"]) and "navcam_consensus_v0p82" not in g
-    assert len(g["zcam34_consensus"]) == 11 and "olifants" not in g["zcam34_consensus"] and g["zcam34_consensus"][:2] == ["chal_rocks", "rochette"]   # 21 Oct (Christian): olifants out again (11 blocks)
+    assert len(g["zcam34_consensus"]) == 11 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" not in g["zcam34_consensus"] and g["zcam34_consensus"][:2] == ["chal_rocks", "rochette"]   # 21 Oct (Christian): Issole out (2713 images, 3.7 M exhaustive pairs), olifants back (11 blocks)
 
 
 def test_zcam34_dev_group_sites_have_the_zoom():
