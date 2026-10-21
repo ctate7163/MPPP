@@ -40,7 +40,8 @@ The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p
   NEARBY_FROM_FIRST_SOL respected) in colour and in the N× / Z× counts; the other waypoints in the square in grey;
   thicker 10 m circles.
 - **Example data** (`mppp.example`, `mppp example fetch | build`, `build_example_data.bat`): Rockytop sols 461-464 -
-  the main Navcam images, the front Hazcams at the same waypoints, the eight Mastcam-Z 34 mm frames of ZCAM03381 -
+  the 32 main Navcam images, one front Hazcam pair on each of sols 461 and 464, the eight Mastcam-Z 34 mm frames of
+  ZCAM03381 (an explicit list, `mppp.example.EXAMPLE_FILES`) -
   zipped in the archive layout with a manifest, for the GitHub release `example-data-v1`; site `rockytop_example`.
 - **Sites**: Seitah Overlook and Hans Amundsen Memorial Workspace are official blocks (41, renumbered by first sol).
   Maps: "Octavia E. Butler Landing Site"; cluster zooms with the legend in two columns beside the title, the

@@ -57,7 +57,7 @@ folders go) and, optionally, `MPPP_GPU_PYTHON` (see *GPU on Windows*).
 
 ## Example data
 
-A small Mars 2020 set to try the pipeline on: Rockytop (sols 461-464) - the main Navcam images, the front Hazcams
+A small Mars 2020 set to try the pipeline on: Rockytop (sols 461-464) - the main Navcam images, one front Hazcam pair
 at the same waypoints and eight Mastcam-Z 34 mm frames (ZCAM03381, sol 464), in the layout of a local PDS archive.
 
 ```bash
