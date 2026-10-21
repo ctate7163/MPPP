@@ -45,3 +45,4 @@ Homepage = "https://github.com/ctate7163/MPPP"
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
 markers = ["slow: tests that take more than a few seconds (error-model physics, mask training)"]
+tmp_path_retention_policy = "failed"     # a full run left ~5.5 GB of temporary folders

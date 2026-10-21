@@ -6,6 +6,11 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p1, p2, the site maps and the CLI.
 
+- **20 Oct, evening - mask retraining without the notebook:** `scripts/train_mask.py` (headless training on a GPU
+  machine, `--regen` from the PDS, `--tag`, the frame audit afterwards; never promotes or releases; `--smoke` checks
+  it on synthetic data) and `scripts/make_mask_figure.py` (the paper's mask figure: held-out frames per camera with
+  the predicted exclusion and the label's boundary, metrics per camera).  pytest keeps temporary folders only of
+  failed tests.
 - **20 Oct, 20:00 - `run_sites_zcam34.bat` runs the Mastcam-Z joint after the blocks** (`zcam_tied_joint.bat`, which
   promotes only when every check passes; `set MPPP_THEN=none` aligns only, `set MPPP_THEN_ARGS=--no-promote`).
   `_run_sites.bat` calls `MPPP_THEN` when the batch ran (exit 0 or 1).  The run_sites / process_sites /
