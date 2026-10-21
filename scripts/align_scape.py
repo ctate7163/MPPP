@@ -54,6 +54,10 @@ def show_status(work: Path) -> int:
     return 0
 
 
+SKIP_FILE = "SKIP"          # a file of that name in a WORK folder: run_sites and align_scape leave the block out
+SKIP_EXIT = 5
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("work", help="the WORK folder (the one holding processed/)")
@@ -74,6 +78,9 @@ def main(argv=None) -> int:
         return 0 if st and st.get("alive") else 1
     if a.status:
         return show_status(work)
+    if (work / SKIP_FILE).is_file():                  # 21 Oct: a block taken out of a batch that is already running
+        print(f"{work.name}: skipped - {work / SKIP_FILE} exists (delete it to align this block again)")
+        return SKIP_EXIT
     from mppp.cli import main as cli
     cmd = ["align" if a.source == "processed" else "run", str(work), "--variant", a.variant]
     if a.settings:

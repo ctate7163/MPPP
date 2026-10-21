@@ -137,6 +137,9 @@ def main(argv=None) -> int:
     while queue or running:
         while queue and len(running) < max(1, a.jobs):
             s, work = queue.pop(0)
+            if (work / "SKIP").is_file():                                    # 21 Oct: a block taken out by hand
+                log(f"site {s}: skipped - {work / 'SKIP'} exists")
+                continue
             cur = read_status(work / STATUS_FILE)
             if cur and cur.get("alive"):                                 # e.g. align_here.bat there
                 log(f"site {s}: skipped - a run of {work.name} is going on (pid {cur.get('pid')})")
@@ -150,6 +153,9 @@ def main(argv=None) -> int:
             s, work, t0, p = item
             if p.poll() is not None:
                 running.remove(item)
+                if p.returncode == 5:                                        # align_scape: SKIP file
+                    log(f"site {s}: skipped - {work / 'SKIP'} exists")
+                    continue
                 results[s] = p.returncode == 0
                 log(f"site {s}: {'finished' if p.returncode == 0 else 'FAILED (see its log)'} after "
                     f"{(time.time() - t0) / 3600:.2f} h")

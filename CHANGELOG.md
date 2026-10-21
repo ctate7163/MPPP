@@ -6,6 +6,9 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p1, p2, the site maps and the CLI.
 
+- **21 Oct - Olifants out of `zcam34_consensus` (11 blocks); a `SKIP` file in a WORK folder leaves the block out**
+  of `run_sites` - also of a batch already running, since each block's `align_scape.py` exits (code 5) before doing
+  anything.  Delete the file to align the block again.
 - **20 Oct, evening - mask retraining without the notebook:** `scripts/train_mask.py` (headless training on a GPU
   machine, `--regen` from the PDS, `--tag`, the frame audit afterwards; never promotes or releases; `--smoke` checks
   it on synthetic data) and `scripts/make_mask_figure.py` (the paper's mask figure: held-out frames per camera with

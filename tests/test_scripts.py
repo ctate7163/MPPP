@@ -296,3 +296,18 @@ def test_stop_runs_knows_the_pipeline(tmp_path):
     (d / "pipeline_status.json").write_text(json.dumps({"state": "running", "pid": 10, "host": "x"}))
     assert mark_stopped(tmp_path, [10]) == [str(d / "pipeline_status.json")]
     assert json.loads((d / "pipeline_status.json").read_text())["state"] == "stopped"
+
+
+def test_skip_file_leaves_a_block_out(tmp_path):
+    """21 Oct: a SKIP file in a WORK folder takes the block out of a batch, also of one already running (its
+    align_scape child exits 5 before doing anything)."""
+    import subprocess
+    import sys
+    work = tmp_path / "mars2020_sol_1880_olifants_zcam"
+    work.mkdir()
+    (work / "SKIP").write_text("taken out 21 Oct")
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "align_scape.py"), str(work)], capture_output=True,
+                       text=True, timeout=120)
+    assert r.returncode == 5 and "skipped" in r.stdout
+    src = (ROOT / "scripts" / "run_sites.py").read_text()
+    assert '(work / "SKIP").is_file()' in src and "p.returncode == 5" in src
