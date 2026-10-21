@@ -13,8 +13,6 @@ REM
 REM Edit the settings below (or run scripts\run_sites.py from a prompt; --help lists every option).
 REM ======================================================================================================
 setlocal
-if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx MPPP_SCAPES D:\scapes & exit /b 1)
-set "ROOT=%MPPP_SCAPES%"
 REM which sites: --group zcam_consensus (default) or --sites a b
 set "WHICH=--group zcam_consensus"
 REM more options, e.g. --jobs 2   (two sites at a time)
@@ -32,6 +30,10 @@ if not exist "%MPPP_WIN%\mppp_env.bat" (
   exit /b 1
 )
 call "%MPPP_WIN%\mppp_env.bat" || ( pause & exit /b 1 )
+REM 20 Oct: MPPP_SCAPES after mppp_env.bat (it may come from mppp_scapes.txt), else D:\scapes when it exists
+if not defined MPPP_SCAPES if exist "D:\scapes" set "MPPP_SCAPES=D:\scapes"
+if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx MPPP_SCAPES D:\scapes & pause & exit /b 1)
+set "ROOT=%MPPP_SCAPES%"
 start "MPPP run_sites zcam - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% --zcam %EXTRA% %*
 echo MPPP run_sites started in a minimised window. Log: "%ROOT%\run_sites_log.txt"
 echo Status of every site: sites_status.bat
