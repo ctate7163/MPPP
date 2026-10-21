@@ -154,6 +154,13 @@ def test_run_sites_bat_files_navcam_and_zcam34():
     z = (w / "run_sites_zcam34.bat").read_bytes()
     assert b"\r\n" in nav and b"\r\n" in z
     assert b"--zcam" not in nav.split(b"start ")[-1] and b"%WHICH% --zcam" in z
+    # 20 Oct: the Mastcam-Z joint after the Z34 blocks (MPPP_THEN, run by _run_sites.bat when the batch ran)
+    assert b'set "MPPP_THEN=zcam_tied_joint.bat"' in z and b"MPPP_THEN" not in nav
+    r = (w / "_run_sites.bat").read_bytes()
+    assert b"if defined MPPP_THEN if %RC% LEQ 1" in r and b"%MPPP_THEN_ARGS%" in r
+    # the scapes root is checked after mppp_env.bat (mppp_scapes.txt), with D:\scapes as the fallback
+    for f in (nav, z, (w / "stop_mppp.bat").read_bytes()):
+        assert f.index(b'mppp_env.bat"') < f.index(b"if not defined MPPP_SCAPES if exist")
 
 
 def test_filter_zcam_and_consensus_bats(tmp_path):

@@ -36,7 +36,11 @@ REM 20 Oct: MPPP_SCAPES after mppp_env.bat (it may come from mppp_scapes.txt), e
 if not defined MPPP_SCAPES if exist "D:\scapes" set "MPPP_SCAPES=D:\scapes"
 if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx MPPP_SCAPES D:\scapes & pause & exit /b 1)
 set "ROOT=%MPPP_SCAPES%"
+REM 20 Oct: then the Mastcam-Z joint over the finished blocks (it promotes only if every check passes;
+REM "set MPPP_THEN=none" before calling this file aligns only; "set MPPP_THEN_ARGS=--no-promote" never promotes)
+if not defined MPPP_THEN set "MPPP_THEN=zcam_tied_joint.bat"
+if /i "%MPPP_THEN%"=="none" set "MPPP_THEN="
 start "MPPP run_sites zcam34 - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% --zcam %EXTRA% %*
-echo MPPP run_sites started in a minimised window. Log: "%ROOT%\run_sites_log.txt"
+echo MPPP run_sites started in a minimised window, then %MPPP_THEN%. Log: "%ROOT%\run_sites_log.txt"
 echo Status of every site: sites_status.bat
 timeout /t 10

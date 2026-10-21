@@ -6,6 +6,11 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p1, p2, the site maps and the CLI.
 
+- **20 Oct, 20:00 - `run_sites_zcam34.bat` runs the Mastcam-Z joint after the blocks** (`zcam_tied_joint.bat`, which
+  promotes only when every check passes; `set MPPP_THEN=none` aligns only, `set MPPP_THEN_ARGS=--no-promote`).
+  `_run_sites.bat` calls `MPPP_THEN` when the batch ran (exit 0 or 1).  The run_sites / process_sites /
+  sites_status / stop_mppp .bat files check the scapes root after `mppp_env.bat` (`mppp_scapes.txt`), with
+  `D:\scapes` as the fallback - before, they closed at once when MPPP_SCAPES was not in the environment.
 - **20 Oct, 19:40 - Mastcam-Z joint gate; 40 official blocks.**  The first real joint (4 blocks, 10 min) was promoted
   with its Mastcam-Z residuals NaN (points behind a camera or outside the lens model) and four blocks aligned with
   older camera models: the residual statistics are now finite-only with the non-finite count, and the joint's
