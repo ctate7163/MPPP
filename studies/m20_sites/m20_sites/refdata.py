@@ -34,7 +34,7 @@ SAMPLES = [
  (12,"Hazeltop","Wildcat Ridge",509),(13,"Bearwallow","Wildcat Ridge",516),(14,"Shuyak","Amalik",575),
  (15,"Mageik","Amalik",619),(16,"Kukaklek","Hidden Harbor",631),(17,"Atmo Mountain (regolith)","Observation Mountain",634),
  (18,"Crosswind Lake (regolith)","Observation Mountain",639),(19,"Melyn","Berea",749),(20,"Otis Peak","Emerald Lake",832),
- (21,"Pilot Mountain","Dream Lake",913),(22,"Pelican Point","Hans Amundsen Memorial Workspace",923),
+ (21,"Pilot Mountain","Dream Lake",913),(22,"Pelican Point","Hans Amundsen Memorial",923),
  (23,"Lefroy Bay","Turquoise Bay",949),(24,"Comet Geyser","Bunsen Peak",1088),(25,"Sapphire Canyon","Cheyava Falls / Bright Angel",1215),
  (26,"Silver Mountain","Shallow Bay",1401),(27,"Green Gardens","Tablelands",1433),(28,"Main River","Broom Point",1441),
  (29,"Bell Island","Pine Pond",1489),(30,"Gallants","Salmon Point (Krokodillen)",1551),

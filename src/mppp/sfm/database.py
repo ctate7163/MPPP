@@ -351,15 +351,22 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
                "single_eye_images": sorted(r["name"] for (rid, _), rs in groups.items() if rid in solo_rig.values()
                                            for r in rs)}
     if keep_matches and matching is not None:              # matches of the previous / base databases
-        sources = ([prev] if prev else []) + [Path(x) for x in reuse_matches_from if x and Path(x) != out]
+        lib = matches_library(out)
+        sources = (([prev] if prev else []) + [Path(x) for x in reuse_matches_from if x and Path(x) != out]
+                   + (sorted(lib.glob("*.db")) if lib.is_dir() else []))
         reused = reuse_matches(project, [x for x in sources if x.is_file()], database=out,
                                matching=matching) if sources else None
         if reused:
             summary["reused_matches"] = reused
+        entries = {Path(e["database"]): e for e in (reused or {}).get("sources", [])}
         if prev and prev.exists():
-            if matches_record_path(prev).is_file():
-                matches_record_path(prev).unlink()
-            prev.unlink()
+            if entries.get(prev, {}).get("skipped") == "other matching settings":
+                summary["matches_kept"] = str(archive_matches(prev, lib))   # the other matcher's, for an A/B
+            else:
+                _remove_db(prev)
+        for src, e in entries.items():                      # the library: copied in now, or of other features
+            if src.parent == lib and src.exists() and (e.get("matches", 0) > 0 or e.get("skipped") == "other features"):
+                _remove_db(src)
     project.settings["database"] = summary
     project.save()
     if project.settings.get("gui_files"):                 # opt-in (``--gui``): files to open the project in the COLMAP GUI
@@ -381,6 +388,39 @@ def matches_record_path(database: PathLike) -> Path:
     """``database_matches.json`` beside a ``database.db``: what its matches were made from."""
     d = Path(database)
     return d.with_name(d.stem + "_matches.json")
+
+
+def matches_library(database: PathLike) -> Path:
+    """0.91: ``matches/`` beside ``database.db`` - the matches of the other matchers / matching settings of this
+    project (one database each, ``database_<matcher>_<key>.db`` with its record).  When the matcher changes (SIFT
+    against LightGlue) the replaced database moves there instead of being deleted, and a later run with those
+    settings again copies its matches back (:func:`build_database`): an A/B of the matchers on the same features
+    matches each block once per matcher."""
+    return Path(database).parent / "matches"
+
+
+def archive_matches(database: PathLike, library: Optional[PathLike] = None) -> Path:
+    """Move ``database`` (and its matches record) into the matches library; returns the new path."""
+    import hashlib
+    src = Path(database)
+    lib = Path(library) if library else matches_library(src)
+    lib.mkdir(parents=True, exist_ok=True)
+    rec = json.loads(matches_record_path(src).read_text(encoding="utf-8"))
+    m = rec.get("matching", {})
+    tag = "".join(c if c.isalnum() else "_" for c in str(m.get("matcher") or m.get("mode") or "matches"))
+    key = hashlib.sha256(json.dumps(m, sort_keys=True).encode()).hexdigest()[:8]
+    dst = lib / f"database_{tag}_{key}.db"
+    _remove_db(dst)
+    os.replace(matches_record_path(src), matches_record_path(dst))
+    os.replace(src, dst)
+    return dst
+
+
+def _remove_db(path: PathLike) -> None:
+    p = Path(path)
+    for f in (matches_record_path(p), p, p.with_name(p.name + "-wal"), p.with_name(p.name + "-shm")):
+        if f.is_file():
+            f.unlink()
 
 
 def features_key(project: SfmProject) -> Optional[str]:

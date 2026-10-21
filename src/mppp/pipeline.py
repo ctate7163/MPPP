@@ -770,7 +770,9 @@ def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] =
     from .sfm.matching import match_settings
     s = settings
     gpu = True if s.gpu_python else None
-    extract_features(proj, max_num_features=s.max_num_features, use_gpu=gpu, python=s.gpu_python,
+    # in a child process like the matching (Issole Z34, 20 Oct: 2713 images extracted on the CPU inside the run's
+    # process, which died with no message)
+    extract_features(proj, max_num_features=s.max_num_features, use_gpu=gpu, python=s.gpu_python or sys.executable,
                      overwrite=bool(s.reprocess_all), **s.sift)
     out: Dict[str, Any] = {}
     if stop_after == "features":

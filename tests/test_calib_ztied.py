@@ -244,3 +244,18 @@ def test_zcam_joint_recovers_the_focus_law_and_the_rig(tmp_path):
     assert new["cameras"]["ZR034"]["lines"]["backlash"]["cy"]["form"] == "pinned_slope"
     assert out["check"]["checks"] and (tmp_path / "cand" / "report.md").is_file()
     assert Z.block_line_rows(res)
+
+
+def test_joint_gate_residuals_and_block_models():
+    """20 Oct, first real joint: NaN Mastcam-Z residuals and blocks aligned with older models were promoted."""
+    from mppp.calib import ztied as Z
+    base = {"ok": True, "checks": [{"check": "form", "ok": True, "note": ""}]}
+    good = {"zcam": {"zcam_median_px": 0.3, "zcam_nonfinite_share": 0.0, "zcam_observations": 10},
+            "models_fingerprint": "abc", "block_runs": {"a": {"camera_models": {"fingerprint": "abc"}}}}
+    assert Z.joint_checks(good, base)["ok"]
+    nan = dict(good, zcam={"zcam_median_px": None, "zcam_nonfinite_share": 0.3, "zcam_observations": 10})
+    assert not Z.joint_checks(nan, base)["ok"]
+    old = dict(good, block_runs={"a": {"camera_models": {"fingerprint": "abc"}},
+                                 "b": {"camera_models": {"fingerprint": "old"}}})
+    c = Z.joint_checks(old, base)
+    assert not c["ok"] and "b aligned with other camera models" in c["checks"][-1]["note"]

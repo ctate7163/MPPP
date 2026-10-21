@@ -505,6 +505,10 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     log.info("calib zcam: %d blocks -> %s", len(blocks), out)
     res = Z.fit_zjoint(blocks, zoom=a.zoom, nav_points=a.points or Z.NAV_POINTS_PER_BLOCK,
                        z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, diagnostics=not a.no_diagnostics)
+    from .calib import models_fingerprint
+    from .pipeline import run_done
+    res["models_fingerprint"] = models_fingerprint()
+    res["block_runs"] = {n: run_done(w, "") for n, w in blocks.items()}
     w = Z.write_zjoint(res, out)
     for c in w["check"]["checks"]:
         print(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}")

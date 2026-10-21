@@ -34,6 +34,9 @@ findstr /c:"No local changes to save" "%LOG%" >nul 2>&1 || (git stash pop >> "%L
 echo after: >> "%LOG%"
 git log --oneline -3 >> "%LOG%" 2>&1
 git push origin main >> "%LOG%" 2>&1 || echo PUSH OF MAIN FAILED >> "%LOG%"
+REM 20 Oct: Claude's working branch too (the bundle's other heads, e.g. v0p91), so that GitHub has it
+git fetch "%BUNDLE%" "+refs/heads/*:refs/remotes/claude/*" >> "%LOG%" 2>&1
+for /f "tokens=4 delims=/ " %%B in ('git bundle list-heads "%BUNDLE%"') do if /i not "%%B"=="main" (git push origin "refs/remotes/claude/%%B:refs/heads/%%B" >> "%LOG%" 2>&1 || echo PUSH OF %%B FAILED >> "%LOG%")
 git push origin --tags >> "%LOG%" 2>&1 || echo some tags were not pushed (see above) >> "%LOG%"
 git bundle create "_transfer\mppp_pc.bundle" main --tags >> "%LOG%" 2>&1
 echo SYNC DONE >> "%LOG%"

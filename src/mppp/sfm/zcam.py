@@ -195,7 +195,7 @@ def refit_focus_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
 
 
 # ------------------------------------------------------------------ fx, fy, cx, cy, k1, k2 lines per focus state
-PARAM_INDEX = {"fx": 0, "fy": 1, "cx": 2, "cy": 3, "k1": 4, "k2": 5}     # FULL_OPENCV
+PARAM_INDEX = {"fx": 0, "fy": 1, "cx": 2, "cy": 3, "k1": 4, "k2": 5, "p1": 6, "p2": 7}     # FULL_OPENCV (p1, p2: zcam-v2)
 LINE_PARAMS = forms.ZCAM_LINE_PARAMS                 # the parameters each eye puts on lines (ZL's principal point: the reference)
 LINE_STATES = forms.ZCAM_STATES
 LINE_FORM = forms.ZCAM_LINE_FORM                     # the form of each line (see mppp.calib.forms)
@@ -278,7 +278,8 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
         pp = gm.get("pp") or {}
         model_slope = {"fx": float(f_slope) / np.sqrt(aspect), "fy": float(f_slope) * np.sqrt(aspect),
                        "cx": float(pp.get("cx_px_per_count") or 0.0) if g[:2] == "ZR" else 0.0,
-                       "cy": float(pp.get("cy_px_per_count") or 0.0) if g[:2] == "ZR" else 0.0, "k1": 0.0, "k2": 0.0}
+                       "cy": float(pp.get("cy_px_per_count") or 0.0) if g[:2] == "ZR" else 0.0, "k1": 0.0, "k2": 0.0,
+                       "p1": 0.0, "p2": 0.0}
         for _st, _ln in ((gm.get("lines") or {}).items() if isinstance(gm.get("lines"), dict) else []):
             if _st == "backlash" and isinstance(_ln, dict):          # a calibrated model's slopes
                 for _pn, _e in _ln.items():
@@ -315,7 +316,7 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                 y = np.array([r["p"][k] for r in use], float)
                 fm = form.get(pn, "free")
                 bl = (res["lines"].get("backlash") or {}).get(pn) if st == "regular" else None
-                slope0 = bl["b"] if (bl and "b" in bl) else model_slope[pn]
+                slope0 = bl["b"] if (bl and "b" in bl) else model_slope.get(pn, 0.0)
                 src0 = "backlash state" if (bl and "b" in bl) else ("focus model" if gm else "labels")
                 fit_b, held_b, src_b = fit_slope, None, None
                 if fm == "constant" or fm == "pinned":

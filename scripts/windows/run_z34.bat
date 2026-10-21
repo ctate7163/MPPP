@@ -2,7 +2,7 @@
 REM ======================================================================================================
 REM MPPP 0.91 - the long Mastcam-Z 34 mm run and calibration (Christian, 20 Oct 2026): the 11 blocks of the
 REM zcam34_consensus group of sites.json (chal_rocks, rochette, issole_seitah_south, threeforks_north,
-REM enchanted_lake, rockytop, belva_crater, bunsen_peak, south_arm, taylorfjellet_large, marble_mountain), each
+REM enchanted_lake, rockytop, belva_crater, bunsen_peak, south_arm, taylorfjellet, marble_mountain), each
 REM aligned as Navcam + Mastcam-Z 34 mm with the Navcam models in use - the tied joint navcal_tied_20261020_2,
 REM promoted 20 Oct (src\mppp\data\cmods\CHANGES.md) - and the Mastcam-Z 34 mm start model in use; then
 REM zcam_calibration.py calibrate over the finished blocks (zcam-v2: p1, p2 refined, with the no-tangential twin,

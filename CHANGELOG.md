@@ -6,6 +6,22 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p1, p2, the site maps and the CLI.
 
+- **20 Oct, 19:40 - Mastcam-Z joint gate; 40 official blocks.**  The first real joint (4 blocks, 10 min) was promoted
+  with its Mastcam-Z residuals NaN (points behind a camera or outside the lens model) and four blocks aligned with
+  older camera models: the residual statistics are now finite-only with the non-finite count, and the joint's
+  check adds the Mastcam-Z median (<= 0.6 px), the non-finite share (<= 0.5 %) and "blocks aligned with the models
+  in use" (their `run_done.json` fingerprint).  Seitah Overlook is no longer an official block (40, renumbered:
+  Artuby Ridge 4 ... Hans Amundsen Memorial 21 ... Marble Mountain 40); "Hans Amundsen Memorial Workspace" is
+  now "Hans Amundsen Memorial", and it joins `navcam_consensus` (27).  `taylorfjellet_large` is now `taylorfjellet`
+  (official block 33, `zcam34_consensus`, `zcam_consensus`; its WORK folder becomes `mars2020_sol_1601_taylorfjellet*`).
+- **20 Oct, 19:30 - the Z34 run's failures.**  Rochette: `KeyError: 'p1'` after stage 2 round 1 - zcam-v2 put
+  p1, p2 on the focus lines but `mppp.sfm.zcam.refit_param_lines` had no index or model slope for them (the staged
+  N+Z test now uses the pipeline's line parameters).  Issole: died unseen in the CPU feature extraction of 2713
+  images - extraction, like matching, now always runs in a child process.  Matches of another matcher are kept:
+  the replaced `database.db` moves to `colmap/matches/database_<matcher>_<key>.db` (with its record) instead of
+  being deleted, and a run with those settings again copies them back (`mppp.sfm.database.matches_library`) - an
+  A/B of SIFT against LightGlue matches each block once per matcher.  `claude_sync.bat` also pushes the bundle's
+  working branch (e.g. `v0p91`) to GitHub.
 - **20 Oct, 18:30 - batch runs use the GPU environment again.**  `run_sites` / `align_scape` looked only at
   `MPPP_GPU_PYTHON`; the notebook also read `MPPP_GPU_PY` and `%LOCALAPPDATA%\mppp\gpu_python.txt` (from
   `install_lightglue.bat`).  With LightGlue off by default, Chal Rocks Z34 then matched 60031 pairs (32768 features)

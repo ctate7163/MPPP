@@ -239,9 +239,13 @@ def _zstats(rec, zunits) -> Dict[str, Any]:
                 uv = cam.img_from_cam(np.atleast_2d(im.cam_from_world() * pt.xyz))
                 res.append(float(np.linalg.norm(np.asarray(uv)[0] - im.points2D[el.point2D_idx].xy)))
     r = np.asarray(res, float)
+    ok = np.isfinite(r)                  # NaN: the point behind the camera / outside the lens model (20 Oct joint)
+    f = r[ok]
     return {"zcam_observations": int(r.size), "navcam_zcam_points": int(mixed),
-            "zcam_median_px": float(np.median(r)) if r.size else None,
-            "zcam_rms_px": float(np.sqrt(np.mean(r ** 2))) if r.size else None}
+            "zcam_nonfinite": int((~ok).sum()), "zcam_nonfinite_share": float((~ok).mean()) if r.size else 0.0,
+            "zcam_median_px": float(np.median(f)) if f.size else None,
+            "zcam_rms_px": float(np.sqrt(np.mean(f ** 2))) if f.size else None,
+            "zcam_p95_px": float(np.percentile(f, 95)) if f.size else None}
 
 
 def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
@@ -428,7 +432,8 @@ def describe(res: Dict[str, Any]) -> List[str]:
     z = res.get("zcam") or {}
     out.append(f"Mastcam-Z rig: {r.get('change_mdeg', float('nan')):.1f} mdeg from the rig in use, baseline "
                f"{1e3 * r.get('baseline_m', float('nan')):.1f} mm (held); Mastcam-Z residuals median "
-               f"{z.get('zcam_median_px') or float('nan'):.3f} / rms {z.get('zcam_rms_px') or float('nan'):.3f} px, "
+               f"{z.get('zcam_median_px') or float('nan'):.3f} / rms {z.get('zcam_rms_px') or float('nan'):.3f} px "
+               f"({z.get('zcam_nonfinite', 0)} of {z.get('zcam_observations', 0)} not finite), "
                f"{z.get('navcam_zcam_points')} Navcam-Mastcam-Z points; covariance "
                f"{'ok' if not res.get('covariance_error') else res['covariance_error']}")
     d = res.get("diagnostics") or {}
@@ -524,6 +529,34 @@ def block_line_rows(res: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
+# the joint's own gate (20 Oct, first real run: Z residuals NaN and four blocks aligned with older models, promoted)
+ZJOINT_LIMITS = {"max_zcam_median_px": 0.6, "max_zcam_nonfinite_share": 0.005}
+
+
+def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """``check_zcam``'s checks plus the joint's: the Mastcam-Z residuals finite and small, and every block aligned
+    with the camera models in use (``res["block_runs"]``, from the blocks' ``run_done.json``) - a block aligned with
+    other models (older Navcam models, other tie rules) is not what the joint assumes."""
+    lim = dict(ZJOINT_LIMITS, **(limits or {}))
+    checks = list(chk.get("checks") or [])
+    z = res.get("zcam") or {}
+    med, share = z.get("zcam_median_px"), float(z.get("zcam_nonfinite_share") or 0.0)
+    okm = med is not None and np.isfinite(med) and med <= lim["max_zcam_median_px"]
+    checks.append({"check": "Mastcam-Z residuals", "ok": bool(okm),
+                   "note": (f"median {med:.3f} px" if med is not None else "none") + f" (<= {lim['max_zcam_median_px']:g})"})
+    checks.append({"check": "Mastcam-Z residuals finite", "ok": share <= lim["max_zcam_nonfinite_share"],
+                   "note": f"{int(z.get('zcam_nonfinite') or 0)} of {int(z.get('zcam_observations') or 0)} not finite "
+                           f"({100 * share:.2f} %)"})
+    runs = res.get("block_runs")
+    if runs is not None:
+        cur = res.get("models_fingerprint")
+        other = sorted(n for n, r in runs.items() if not r or (cur and (r.get("camera_models") or {}).get("fingerprint") != cur))
+        checks.append({"check": "blocks aligned with the models in use", "ok": not other,
+                       "note": ("all " + str(len(runs))) if not other else
+                       f"{', '.join(other)} aligned with other camera models (run them again first)"})
+    return {"ok": all(c["ok"] for c in checks), "checks": checks}
+
+
 def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The candidate folder: ``M2020_ZCAM034_focus_model.json`` (the joint's model), its check against the model in
     use (``check.json``), ``zcam_joint.json`` (everything), ``block_lines.json``, the figures and ``report.md``."""
@@ -537,6 +570,7 @@ def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[st
     name = f"M2020_ZCAM{int(res['zoom']):03d}_focus_model.json"
     (out / name).write_text(json.dumps(new, indent=1, default=float), encoding="utf-8")
     chk = check_zcam(new, old)
+    chk = joint_checks(res, chk)
     (out / "check.json").write_text(json.dumps(chk, indent=1, default=float), encoding="utf-8")
     (out / "zcam_joint.json").write_text(json.dumps(res, indent=1, default=float), encoding="utf-8")
     rows = block_line_rows(res)

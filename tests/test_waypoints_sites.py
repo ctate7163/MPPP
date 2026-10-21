@@ -65,7 +65,7 @@ def test_sites_json_is_the_site_list():
         assert (members or g in ("zcam79_consensus", "zcam110_consensus")) and all(m in t["sites"] for m in members), g
     for k, v in t["sites"].items():
         assert all(a <= b for a, b in S.sol_ranges(v["sols"])) and isinstance(v.get("settings", {}), dict), k
-    assert {"rockytop", "south_arm", "taylorfjellet_large"} <= set(S.zcam34_sites(t)) and "van_zyl_overlook" not in S.zcam34_sites(t)
+    assert {"rockytop", "south_arm", "taylorfjellet"} <= set(S.zcam34_sites(t)) and "van_zyl_overlook" not in S.zcam34_sites(t)
     assert all(isinstance(v.get("zcam"), list) and set(v["zcam"]) <= {34, 48, 63, 79, 110} for v in t["sites"].values())
     assert 34 in S.site_zooms(t["sites"]["chal_rocks"]) and "bright_angle" in S.zcam_sites(t, zoom=63)
     zc = set(t["groups"]["zcam_consensus"])
@@ -250,7 +250,7 @@ def test_shipped_sites_v0p75():
     assert "olifants" not in g["navcam_consensus"] and "cheyava_falls" in g["navcam_consensus"]
     assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
     assert "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
-    assert len(g["navcam_consensus"]) == 26 and {"plateau_point", "vingeanne"} <= set(g["navcam_consensus"]) and "navcam_consensus_v0p82" not in g
+    assert len(g["navcam_consensus"]) == 27 and {"plateau_point", "vingeanne", "hans_amundsen_workspace"} <= set(g["navcam_consensus"]) and "navcam_consensus_v0p82" not in g
     assert len(g["zcam34_consensus"]) == 12 and "olifants" in g["zcam34_consensus"] and g["zcam34_consensus"][:2] == ["chal_rocks", "rochette"]   # 20 Oct (Christian): 12 blocks, olifants added
 
 
@@ -269,9 +269,9 @@ def test_sites_block_record_and_groups():
     t = load_site_table()
     assert t["version"] == 5                                              # v0p81: the official_blocks table
     b = block_sites(t)
-    assert len(b) == 41 and b[0] == "oeb_landing_site" and b[-1] == "marble_mountain"   # 0.91: + Rose River Falls, Olifants
+    assert len(b) == 40 and b[0] == "oeb_landing_site" and b[-1] == "marble_mountain"   # 0.91: + Rose River Falls, Olifants
     assert site_block("chal_rocks_large", t)["number"] == 3 and site_block("chal_rocks", t)["number"] == 3
-    assert len(site_group("blocks_all")) == 41
+    assert len(site_group("blocks_all")) == 40
     assert "chal_rocks_large" in site_group("navcam_baseline")
     err, _ = validate_site_table()
     assert not err
@@ -347,6 +347,6 @@ def test_sites_19_oct_afternoon():
     assert S["van_zyl_overlook_huge"]["sols"] == [[15, 99], [361, 378]]
     nc = set(G["navcam_consensus"])
     assert {"seitah_north_large", "marble_mountain", "hippo_pools", "cheyava_falls", "bunsen_peak", "tuxedo_park",
-            "belva_crater_large", "oeb_landing_site", "van_zyl_overlook_huge", "origny_large"} <= nc and len(nc) == 26 and "knob_mountain_large" in nc
+            "belva_crater_large", "oeb_landing_site", "van_zyl_overlook_huge", "origny_large"} <= nc and len(nc) == 27 and "knob_mountain_large" in nc
     assert "seitah_north_large" in G["navcam_baseline"] and "van_zyl_overlook_huge" in G["navcam_baseline"]
     assert not any(s in ("butler_landing_large", "van_zyl_overlook_large") for g in G.values() for s in g)

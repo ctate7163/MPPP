@@ -392,3 +392,58 @@ def test_database_puts_epoch_frames_on_their_own_rig(tmp_path):
     # the consensus sees the epoch cameras as their eyes
     from mppp.sfm.thermal import eye_key
     assert {eye_key(k) for k in summary["cameras"] if k.startswith("N")} == {"NL", "NR"}
+
+
+def test_other_matchers_matches_kept_for_an_ab(tmp_path):
+    """0.91: switching the matcher (SIFT <-> LightGlue) keeps the replaced matches in colmap/matches/ and a later run
+    with those settings copies them back."""
+    import sqlite3
+    import pycolmap
+    from helpers import _synthetic
+    from mppp.sfm import database as D
+    proj, *_ = _synthetic(tmp_path)
+    fdb = pycolmap.Database.open(str(proj.features_db))
+    cam = fdb.write_camera(pycolmap.Camera(model="PINHOLE", width=100, height=100, params=[100, 100, 50, 50]))
+    rng = np.random.default_rng(1)
+    for r in proj.images:
+        iid = fdb.write_image(pycolmap.Image(name=r["name"], camera_id=cam))
+        fdb.write_keypoints(iid, rng.uniform(0, 100, (20, 2)).astype(np.float32))
+        fdb.write_descriptors(iid, pycolmap.FeatureDescriptors(pycolmap.FeatureExtractorType.SIFT,
+                                                             rng.integers(0, 255, (20, 128)).astype(np.uint8)))
+    fdb.close()
+    D._features_record(proj).write_text('{"k": 1}')
+    sift = {"mode": "exhaustive", "matcher": "sift", "max_ratio": 0.9}
+    lg = {"mode": "lightglue", "matcher": "lightglue", "max_ratio": 0.9}
+
+    def fill(n):
+        d = pycolmap.Database.open(str(proj.database))
+        ids = sorted(int(im.image_id) for im in d.read_all_images())
+        for a, b in list(zip(ids, ids[1:]))[:n]:
+            d.write_matches(a, b, np.array([[0, 0], [1, 1], [2, 2]], np.uint32))
+        d.close()
+
+    def n_matches():
+        con = sqlite3.connect(str(proj.database))
+        n = con.execute("SELECT COUNT(*) FROM matches").fetchone()[0]
+        con.close()
+        return n
+
+    D.build_database(proj, matching=sift)
+    fill(3)
+    D.write_matches_record(proj, sift)
+    s = D.build_database(proj, matching=lg)                       # LightGlue now: the SIFT matches go to the library
+    lib = D.matches_library(proj.database)
+    kept = sorted(lib.glob("*.db"))
+    assert len(kept) == 1 and kept[0].name.startswith("database_sift_") and s["matches_kept"] == str(kept[0])
+    assert D.matches_record_path(kept[0]).is_file() and n_matches() == 0
+    fill(2)
+    D.write_matches_record(proj, lg)
+    s = D.build_database(proj, matching=sift)                     # back to SIFT: copied back, LightGlue's kept
+    assert s["reused_matches"]["matches"] == 3 and n_matches() == 3
+    assert [p.name[:18] for p in sorted(lib.glob("*.db"))] == ["database_lightglue"]
+    D.write_matches_record(proj, sift)
+    s = D.build_database(proj, matching=lg)
+    assert s["reused_matches"]["matches"] == 2 and [p.name[:13] for p in sorted(lib.glob("*.db"))] == ["database_sift"]
+    D._features_record(proj).write_text('{"k": 2}')                # new features: the library is of no use
+    D.build_database(proj, matching=lg)
+    assert not list(lib.glob("*.db"))

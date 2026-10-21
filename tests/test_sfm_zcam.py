@@ -598,7 +598,9 @@ def _nz_block(tmp_path):
     R_rel, t_rel = rigT
     proj.settings.update({
         "database": {"cameras": db}, "zcam_rig_fit": "full",
-        "zcam_line_params": {"ZL": ["fx", "fy", "k1", "k2"], "ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]},
+        # 0.91: the pipeline's default (zcam-v2, p1 and p2 constant lines) - Rochette Z34 failed with KeyError 'p1'
+        "zcam_line_params": {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"],
+                             "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]},
         "zcam_virtual_rig": {"Z034": {"ref": "ZL034", "sensor": "ZR034", "R_sensor_from_ref": np.asarray(R_rel).tolist(),
                                       "t_sensor_from_ref": (np.asarray(t_rel) + [0.003, 0, 0]).tolist(), "hold": True}},
         "zcam_low_backlash": {"found_file": str(tmp_path / "zcam_low_backlash_found.csv")},
@@ -638,8 +640,8 @@ def test_staged_nz_reconstruct_v0p74(tmp_path, monkeypatch):
     st = proj.settings
     lines = st["zcam_focus_lines"]
     assert set(lines) == {"ZL034", "ZR034"}
-    assert set(lines["ZR034"]["lines"]["backlash"]) == {"fx", "fy", "cx", "cy", "k1", "k2"}
-    assert set(lines["ZL034"]["lines"]["backlash"]) == {"fx", "fy", "k1", "k2"}
+    assert set(lines["ZR034"]["lines"]["backlash"]) == {"fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"}
+    assert set(lines["ZL034"]["lines"]["backlash"]) == {"fx", "fy", "k1", "k2", "p1", "p2"}
     v = st["zcam_virtual_rig"]["Z034"]
     assert v.get("R_refined") is not None and v.get("t_refined") is not None
     assert not np.allclose(v["t_refined"], v["t_sensor_from_ref"])           # the baseline moved (held flag overridden)
