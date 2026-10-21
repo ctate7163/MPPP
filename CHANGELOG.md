@@ -6,6 +6,14 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p1, p2, the site maps and the CLI.
 
+- **20 Oct, 18:30 - batch runs use the GPU environment again.**  `run_sites` / `align_scape` looked only at
+  `MPPP_GPU_PYTHON`; the notebook also read `MPPP_GPU_PY` and `%LOCALAPPDATA%\mppp\gpu_python.txt` (from
+  `install_lightglue.bat`).  With LightGlue off by default, Chal Rocks Z34 then matched 60031 pairs (32768 features)
+  with COLMAP's SIFT on the CPU inside the run's own process, silently for 80 min, until the process died with no
+  traceback and the status left at "running" (07:00 the same block took 9 min on the GPU).  `Settings.gpu_python` now
+  looks in the same places, the log warns when there is none, and COLMAP's matcher always runs in a child process
+  (the CUDA environment, else this python): a COLMAP abort fails the step with its message, and the calibrated
+  verification fallback can take over.
 - **20 Oct, evening - the Navcam models in use are the tied joint `navcal_tied_20261020_2`** (22 blocks, every
   check passed; `src/mppp/data/cmods/CHANGES.md`).  `write_tied` now lists `early_mission.applied_terms` (fx, fy,
   cx, cy of each eye): without it the projects dropped the early-mission offsets.  Gate of the tied joint from the

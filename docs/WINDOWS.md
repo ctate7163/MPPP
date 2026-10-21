@@ -10,7 +10,7 @@ One folder, `scripts\windows\` (0.91: the calibration study's wrappers moved her
 | the calibration study (`studies\calibration\*.py`) | `run_pipeline.bat` (the stage runner), the named runs `run_v0p91.bat`, `run_v0p87.bat`, `run_z34.bat`, `navcam_tied_joint.bat` (the one-adjustment Navcam joint on the finished blocks), `zcam_tied_joint.bat` (the Mastcam-Z joint: Navcam held at the models in use, the focus model fitted), `move_scapes.bat` |
 
 The package wrappers are what a user of `mppp` runs, the study wrappers are the named experiments of the paper. Every wrapper takes its folders from the environment — `MPPP_SCAPES` (the block
-folders), `MPPP_PDS` (the PDS products), optionally `MPPP_GPU_PYTHON` and `COLMAP_BAT` — set once with
+folders), `MPPP_PDS` (the PDS products), optionally `MPPP_GPU_PYTHON` (else `%LOCALAPPDATA%\mppp\gpu_python.txt`, written by `install_lightglue.bat`) and `COLMAP_BAT` — set once with
 `setx MPPP_SCAPES D:\scapes` (new windows see it), or written one per line into `scripts\windows\mppp_scapes.txt`
 and `mppp_pds.txt` (git-ignored). `run_pipeline.bat` and `run_z34.bat` fall back to `D:\scapes`.
 

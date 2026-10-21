@@ -53,6 +53,18 @@ def gpu_python(default: Optional[PathLike] = None) -> Optional[str]:
     return None if default is None else str(default)
 
 
+def conda_env_python(name: str = "mppp_gpu") -> Optional[str]:
+    """The python.exe of the conda environment ``name`` next to this one (``<conda>/envs/<name>``), the place
+    the usual place - the old notebook's fallback (``...\\miniconda3\\envs\\mppp_gpu\\python.exe``)."""
+    here = Path(sys.executable).resolve().parent
+    bases = [here, here.parent, here.parent.parent]                  # base python, Scripts/, envs/<x>/
+    for b in bases:
+        for c in (b / "envs" / name / "python.exe", b / "envs" / name / "bin" / "python"):
+            if c.is_file() and c.resolve() != Path(sys.executable).resolve():
+                return str(c)
+    return None
+
+
 def _env_for(python: Path) -> Dict[str, str]:
     """Environment for a conda python run without ``conda activate``: its DLL folders on PATH."""
     env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "PYTHONHOME", "CONDA_PREFIX")}

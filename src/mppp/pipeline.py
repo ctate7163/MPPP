@@ -29,6 +29,7 @@ import hashlib
 import json
 import logging
 import os
+import sys
 from collections import Counter
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -60,6 +61,18 @@ def _env_str(name: str) -> Optional[str]:
     return os.environ.get(name) or None
 
 
+def _default_gpu_python() -> Optional[str]:
+    """0.91: the batch runs (run_sites, align_scape) found the GPU environment only through MPPP_GPU_PYTHON, the
+    notebook through the pointer file - Chal Rocks Z34 (20 Oct) then matched 60031 pairs with COLMAP's SIFT on the
+    CPU inside the run's own process for 80 min until COLMAP aborted and took the run with it (no traceback, the
+    status left 'running').  Both now look in the same places."""
+    v = _env_str("MPPP_GPU_PYTHON")
+    if v:
+        return v
+    from .sfm.gpu import conda_env_python, gpu_python
+    return gpu_python() or conda_env_python("mppp_gpu")
+
+
 @dataclass
 class Settings:
     """Every setting of a run.  Paths may be strings; ``None`` paths come from the environment where noted."""
@@ -67,7 +80,7 @@ class Settings:
     # --- data and output ---------------------------------------------------------------------------------------
     pds_dir: Optional[Path] = field(default_factory=lambda: _env_path("MPPP_PDS"))        # the local PDS archive (MPPP_PDS)
     scapes_root: Optional[Path] = field(default_factory=lambda: _env_path("MPPP_SCAPES"))  # one WORK folder per site below it (MPPP_SCAPES)
-    gpu_python: Optional[str] = field(default_factory=lambda: _env_str("MPPP_GPU_PYTHON"))  # python.exe of a CUDA pycolmap environment for features and matching; None: this process, CPU (MPPP_GPU_PYTHON)
+    gpu_python: Optional[str] = field(default_factory=lambda: _default_gpu_python())  # python.exe of a CUDA pycolmap environment for features and matching (MPPP_GPU_PYTHON, else MPPP_GPU_PY, %LOCALAPPDATA%\mppp\gpu_python.txt from install_lightglue.bat, <conda>\envs\mppp_gpu); None: the CPU
     colmap_bat: Optional[str] = field(default_factory=lambda: _env_str("COLMAP_BAT"))      # COLMAP.bat for open_in_colmap.bat; None: search the usual places (COLMAP_BAT)
     workers: int = 4                              # image-processing worker processes
     gui_files: bool = False                       # write colmap_gui.ini and open_in_colmap.bat into the project
@@ -777,7 +790,10 @@ def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] =
         log.info("%d prior pairs", len(pairs))
     kw = dict(use_gpu=gpu, block_size=s.match_block_size, **s.match)
     if s.match_mode != "lightglue":
-        kw["python"] = s.gpu_python                     # COLMAP's matcher may run in the CUDA environment
+        # COLMAP's matcher runs in a child process: the CUDA environment, else this python on the CPU - a COLMAP
+        # abort (glog "Check failed") then fails the step with its message instead of killing the run unseen, and
+        # the calibrated-verification fallback of mppp.sfm.matching can take over
+        kw["python"] = s.gpu_python or sys.executable
     if pairs is not None:
         kw["pairs"] = pairs
     out["match"] = match(proj, mode=s.match_mode, **kw)
@@ -934,6 +950,10 @@ def align(work: PathLike, settings: Settings, stop_after: Optional[str] = None) 
     if s.gpu_python:
         from .sfm import check_gpu_python
         log.info("GPU env: %s", check_gpu_python(s.gpu_python))
+    else:
+        log.warning("no GPU environment (MPPP_GPU_PYTHON, MPPP_GPU_PY, %%LOCALAPPDATA%%\\mppp\\gpu_python.txt or "
+                    "<conda>\\envs\\mppp_gpu): "
+                    "SIFT extraction and matching on the CPU - hours on a large block")
     images = load_images(work, s, st.zooms)
     if stop_after == "manifest":
         return {"images": len(images)}
