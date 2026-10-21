@@ -217,4 +217,4 @@ mmap.sites_json(blocks, out="out/sites_blocks.json")
 - `end_of_drive_sols` includes sols hidden from the visit listing (413 at Three Forks North).
 - Tuxedo Park is shifted 20 m west, the side where the sol 905 and 907 stops actually lie.
 - Plateau Point uses the standard spelling.
-- Figures 2–4 keep the original crater box (17.9–18.8 N), the "Landing (OEB)" label and their layouts; the square crater, 2:1 traverse and white place names are used only in figures 5–6.
+- Figures 2–4 keep the original crater box (17.9–18.8 N), the "Octavia E. Butler Landing Site" label and their layouts; the square crater, 2:1 traverse and white place names are used only in figures 5–6.

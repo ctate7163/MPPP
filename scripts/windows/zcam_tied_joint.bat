@@ -8,11 +8,14 @@ REM   fx, fy = a[state] + b (focus - 600) per eye (one slope for fx and fy), k1,
 REM   point and ZR's cx pinned, ZR's cy with its focus slope, one Mastcam-Z rig (rotation refined, CAHV baseline);
 REM   then a diagnostic pass: each block's focus lines and its own rig about the joint (the sol / temperature trends).
 REM
-REM   zcam_tied_joint.bat                       the joint, the candidate, the check, the figures (no promotion)
-REM   zcam_tied_joint.bat --promote-if-ok       ... and promote the focus model when every check passes
+REM   zcam_tied_joint.bat                       the joint, the candidate, the check, the figures, and the promotion
+REM                                             of the focus model when every check passes (20 Oct: by default)
+REM   zcam_tied_joint.bat --no-promote          the same without the promotion
 REM   zcam_tied_joint.bat --zpoints 12000       more Mastcam-Z points per block (default 8000; every Navcam-Mastcam-Z
 REM                                             point with a third look is kept anyway)
 REM
+REM A block of the group that is not there or not finished (no colmap\run_done.json) is left out and named in the
+REM log ("calib zcam: left out: ..."); the joint needs at least two finished blocks.
 REM Writes %MPPP_SCAPES%\camera_analysis\zcam34_joint_<date>[_N]\ (report.md, check.json, the candidate
 REM M2020_ZCAM034_focus_model.json, zcam_joint.json, block_lines.json, zcam_rig_trends.png) and the figures into
 REM "Claude outputs\figures_<date>". Expect well under an hour for 12 blocks.
@@ -28,7 +31,7 @@ set "N=1"
 if exist "%OUT%\zcam_joint.json" ( set /a N+=1 & set "OUT=%MPPP_SCAPES%\camera_analysis\zcam34_joint_%TODAY%_!N!" & goto :next )
 echo Mastcam-Z joint: blocks of zcam34_consensus under %MPPP_SCAPES% -^> %OUT%
 python -m mppp cmods list
-python -m mppp --log "%OUT%_log.txt" calib zcam --root "%MPPP_SCAPES%" --out "%OUT%" %*
+python -m mppp --log "%OUT%_log.txt" calib zcam --root "%MPPP_SCAPES%" --out "%OUT%" --promote-if-ok %*
 if errorlevel 1 ( echo Mastcam-Z joint FAILED - see %OUT%_log.txt & pause & exit /b 1 )
 set "MPPP_NOPAUSE=1"
 call "%MPPP_HOME%\scripts\windows\make_figures.bat" - "%OUT%"

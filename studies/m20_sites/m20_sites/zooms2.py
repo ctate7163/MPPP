@@ -12,15 +12,17 @@ OUTG = '#9d9b96'     # 20 Oct: waypoints that are not the block's (not in its so
 last_sol = int(S.max())
 def posi(s):
     w = np.where(S <= s)[0]; return w[-1] if len(w) else 0
-ncol = int(__import__('os').environ.get('M20_ZOOM_COLS', 6)); nrow = -(-(len(sites) + 1) // ncol)   # 6 columns (20 Oct): the blocks + the legend
+ncol = int(__import__('os').environ.get('M20_ZOOM_COLS', 6)); nrow = -(-len(sites) // ncol)   # 6 columns; the legend in the title band
 CONTOURS = __import__('os').environ.get('M20_ZOOM_CONTOURS', '0') == '1'   # 20 Oct: no contour lines by default
-assert len(sites) + 1 <= ncol*nrow
+assert len(sites) <= ncol*nrow
 fig, axs = plt.subplots(nrow, ncol, figsize=(3.45*ncol, 3.6*nrow), facecolor='#fcfcfb')
 dem_used = set(); ortho_used = set(); BACKGROUND = background_mode()   # M20_BACKGROUND: 'dtm' (default) or 'ortho'
-# 20 Oct: the orthomosaic panels in colour with ONE gentle stretch for all blocks (was: grey, 0.5-99.5 % per panel).
-# A colour mosaic is shown as it is; a grey one (the TRN mosaic) is tinted by the DTM's height about the block's
-# median (gist_earth over +-ZOOM_TINT_M), so the panels read alike.
-ZOOM_TINT_M = float(__import__('os').environ.get('M20_ZOOM_TINT_M', 3.0))
+if BACKGROUND == 'white':
+    fig.set_facecolor('white')
+# 20 Oct: ONE gentle stretch for the whole traverse (was 0.5-99.5 % per panel).  A colour mosaic (3 bands, e.g. a
+# HiRISE IRB colour orthomosaic listed first in M20_ORTHOS) is shown in colour; a grey one (the TRN mosaic) in grey -
+# M20_ZOOM_TINT_M > 0 tints it by the DTM height about the block's median (gist_earth over +-that many metres).
+ZOOM_TINT_M = float(__import__('os').environ.get('M20_ZOOM_TINT_M', 0.0))
 TINT = plt.get_cmap('gist_earth')
 g = np.linspace(-HALF, HALF, 121); GE, GN = np.meshgrid(g, g)
 go = np.linspace(-HALF, HALF, 241); GEo, GNo = np.meshgrid(go, go)
@@ -44,7 +46,7 @@ for k, (ax, o) in enumerate(zip(axs.flat, sites)):
             rgb = np.where(np.isfinite(img), img, 0.93)
         else:
             gimg = np.where(np.isfinite(img), img, 0.93)
-            if np.isfinite(z).any():   # the height tint on the ortho grid (nearest DTM sample, 0.5 m)
+            if ZOOM_TINT_M > 0 and np.isfinite(z).any():   # the height tint on the ortho grid (nearest DTM sample)
                 zr_ = z - np.nanmedian(z)
                 zi = zr_[np.clip(np.round((GNo + HALF) / (g[1] - g[0])).astype(int), 0, len(g) - 1),
                          np.clip(np.round((GEo + HALF) / (g[1] - g[0])).astype(int), 0, len(g) - 1)]
@@ -59,7 +61,7 @@ for k, (ax, o) in enumerate(zip(axs.flat, sites)):
         dem_used.update(used)
         hs = hillshade(z, g[1]-g[0], g[1]-g[0])
         zr = z - np.nanmedian(z)
-        if not shown:
+        if not shown and BACKGROUND != 'white':
             ax.imshow(hs, extent=[-HALF, HALF, -HALF, HALF], origin='lower', cmap='gray', vmin=0, vmax=1, alpha=0.9, zorder=0)
         lev = np.arange(np.floor(np.nanmin(zr)), np.ceil(np.nanmax(zr)) + 0.5, 0.5)
         if CONTOURS and len(lev) > 1:
@@ -70,9 +72,10 @@ for k, (ax, o) in enumerate(zip(axs.flat, sites)):
     # colour; the other waypoints in the square in grey - not in the block, nor in its N and Z counts
     mem = set(o.get('members') or inb.tolist())
     own = np.array([i for i in inb if i in mem], int); oth = np.array([i for i in inb if i not in mem], int)
-    # traverse polyline (all waypoints, clipped by axes)
-    ax.plot(X - cx, Y - cy, color=MUT, lw=0.8, zorder=2)
-    for i in own:
+    # traverse polyline (all waypoints, clipped by axes), blue with a white casing as in the maps
+    ax.plot(X - cx, Y - cy, color='white', lw=2.4, zorder=2)
+    ax.plot(X - cx, Y - cy, color=C1, lw=1.1, zorder=2)
+    for i in (own if BACKGROUND != 'ortho' else []):           # the 10 m circles: not on the orthomosaic panels
         if F[i] == 'y':
             ax.add_patch(plt.Circle((X[i]-cx, Y[i]-cy), 10, fill=False, ec=C2, lw=1.0, alpha=0.45, zorder=2))
     for ids, col, ec_, z in ((oth, OUTG, OUTG, 3), (own, C1, C1, 4)):
@@ -106,26 +109,33 @@ for k, (ax, o) in enumerate(zip(axs.flat, sites)):
     for sp in ax.spines.values(): sp.set_color(C2); sp.set_linewidth(1.6)   # orange border = block of rover stations
 rest = list(axs.flat)[len(sites):]
 for ax in rest: ax.axis('off')
-lg = rest[0] if rest else axs.flat[-1]
-lg.scatter([], [], s=42, color=C1, ec='white', label='End-of-drive waypoint: Navcam 360')
-lg.scatter([], [], marker='s', s=20, facecolor='white', ec=C1, lw=1.0, label='Mid-drive waypoint: partial Navcam')
-lg.scatter([], [], marker='x', s=18, color=INK2, label='Interpolated position (no images)')
-lg.plot([], [], color=MUT, lw=0.8, label='Traverse')
-lg.plot([], [], marker='o', ms=12, mfc='none', mec=C2, mew=1.0, ls='none', alpha=0.6, label='10 m radius around each 360 of the block')
-lg.scatter([], [], s=42, color=OUTG, ec='white', lw=0.8, label='Waypoint not in the block (not counted)')
-lg.scatter([], [], marker='D', s=44, facecolor='none', ec=C3, lw=1.6, label='Sample core (rover position)')
-lg.scatter([], [], marker='^', s=74, facecolor='none', ec=C4, lw=1.6, label='Mastcam-Z numbered 360 (rover position)')
+# the legend: two columns in the upper right, next to the title (20 Oct)
+H_ = [plt.Line2D([], [], marker='o', ms=7, color=C1, mec='white', ls='none', label='End-of-drive waypoint: Navcam 360'),
+      plt.Line2D([], [], marker='s', ms=5, mfc='white', mec=C1, mew=1.0, ls='none', label='Mid-drive waypoint: partial Navcam'),
+      plt.Line2D([], [], marker='x', ms=5, color=INK2, ls='none', label='Interpolated position (no images)'),
+      plt.Line2D([], [], marker='o', ms=7, color=OUTG, mec='white', ls='none', label='Waypoint not in the block (not counted)'),
+      plt.Line2D([], [], color=C1, lw=1.4, path_effects=None, label='Rover Traverse')]
+if BACKGROUND != 'ortho':
+    H_.append(plt.Line2D([], [], marker='o', ms=12, mfc='none', mec=C2, mew=1.0, ls='none', alpha=0.6,
+                         label='10 m radius around each 360 of the block'))
+H_ += [plt.Line2D([], [], marker='D', ms=6, mfc='none', mec=C3, mew=1.6, ls='none', label='Sample Core Acquired (rover position)'),
+       plt.Line2D([], [], marker='^', ms=8, mfc='none', mec=C4, mew=1.6, ls='none', label='Mastcam-Z 360° (rover position)')]
 if dem_used and CONTOURS:
-    lg.plot([], [], color='#7a5c3a', lw=0.6, label='DEM contours, 0.5 m')
-lg.legend(loc='center', fontsize=9.6, frameon=False)
+    H_.append(plt.Line2D([], [], color='#7a5c3a', lw=0.6, label='DEM contours, 0.5 m'))
 bg = 'HiRISE DTM hillshade' if dem_used else 'no 1 m DTM background (set M20_DEMS to the HiRISE DTM files)'
+if BACKGROUND == 'white':
+    bg = 'white background'
 if ortho_used:
     bg = ('HiRISE orthomosaic' + (' (one stretch for all panels)' if STRETCH else '')
-          + (f', tinted by the DTM height about each block\'s median (±{ZOOM_TINT_M:g} m)' if dem_used and raw and next(iter(raw.values())).ndim == 2 else '')
+          + (f', tinted by the DTM height about each block\'s median (±{ZOOM_TINT_M:g} m)' if ZOOM_TINT_M > 0 and dem_used and raw and next(iter(raw.values())).ndim == 2 else '')
           + ('; 0.5 m DTM contours' if dem_used and CONTOURS else ''))
 fig.suptitle_text = (f'M2020 blocks of rover stations, ordered by first sol, ±30 m around each block centre: the block\'s waypoints (its sols and every waypoint within 10 m of them) in colour, other waypoints in grey; N× Navcam 360s and Z× Mastcam-Z 360s of the block (local metres, north up; '
              f'labels = sol; title sols = the block\'s sols). {bg}.')
-fig.suptitle('\n'.join(textwrap.wrap(fig.suptitle_text, 140)), x=0.01, ha='left', fontsize=12.5, color=INK)
-fig.tight_layout(rect=(0, 0, 1, 0.975))
+FIG_H = fig.get_size_inches()[1]
+top = 1.0 - 1.0 / FIG_H                                   # the title band: four lines of title, the legend beside it
+fig.suptitle('\n'.join(textwrap.wrap(fig.suptitle_text, 112)[:5]), x=0.01, y=0.997, ha='left', va='top', fontsize=12.5, color=INK)
+fig.legend(handles=H_, loc='upper right', bbox_to_anchor=(0.995, 0.997), ncol=2, fontsize=10.0, frameon=False,
+           columnspacing=1.6, handletextpad=0.5)
+fig.tight_layout(rect=(0, 0, 1, top))
 out_png = save_figure(fig, out_png, dpi=int(__import__('os').environ.get('M20_DPI', 300)), facecolor=fig.get_facecolor())
 print('saved', out_png, 'DEM:', sorted(dem_used) or 'none')

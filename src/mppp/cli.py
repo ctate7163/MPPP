@@ -9,6 +9,7 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp sites [list | check | folder SITE]   the site definitions (mppp/data/sites.json)
     mppp cmods [list | promote PATH ... --note TEXT]   the camera models in use
     mppp mask [list | fetch [NAME] | install FILE]      the terrain mask model
+    mppp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
     mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
     mppp calib navcam [--root DIR] [--group navcam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
     mppp doctor                               what is set, what is missing (environment, dependencies, models)
@@ -93,6 +94,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name", default=None, help="install: the registry name")
     p.add_argument("--force", action="store_true", help="fetch: download again")
 
+    p = sub.add_parser("example", help="the Mars 2020 example data (Rockytop, sols 461-464): fetch or build")
+    p.add_argument("what", choices=("fetch", "build"), help="fetch: download the release asset and unpack it; "
+                   "build: zip it from a local PDS archive (for the release)")
+    p.add_argument("--dest", default=None, metavar="DIR", help="fetch: where to unpack (default ~/mppp_example)")
+    p.add_argument("--force", action="store_true", help="fetch: download again")
+    p.add_argument("--pds", default=None, metavar="DIR", help="build: the PDS archive (default MPPP_PDS)")
+    p.add_argument("--zcam", default=None, metavar="DIR", help="build: the Mastcam-Z folder (default <PDS>/../zcam)")
+    p.add_argument("--out", default=".", metavar="DIR", help="build: where to write the zip")
+
     p = sub.add_parser("waypoints", help="the Mars 2020 waypoint table in use (cached download or packaged snapshot)")
     p.add_argument("--refresh", action="store_true", help="download the current table now (every sync should)")
 
@@ -100,7 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("what", nargs="*", default=["all"], help="all (default) | zooms | figures [2 3 4 5 6]")
     p.add_argument("--out", default=None, metavar="DIR", help="output folder (default <repo>/Claude outputs/maps_<yyyymmdd>)")
     p.add_argument("--dpi", type=int, default=None)
-    p.add_argument("--background", choices=["dtm", "ortho"], default=None)
+    p.add_argument("--background", choices=["dtm", "ortho", "white"], default=None)
     p.add_argument("--tag", default=None, help="appended to every figure name")
     p.add_argument("--sites-file", default=None, metavar="FILE")
     p.add_argument("--dems", default=None, help="1 m DTM GeoTIFFs, os.pathsep-separated (M20_DEMS)")
@@ -124,6 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="separate fx and fy thermal slopes (default: one ppm/degC per eye, fy tied to fx)")
     p.add_argument("--no-diagnostics", action="store_true", help="skip the per-block diagnostic pass (no gate then)")
     p.add_argument("--promote-if-ok", action="store_true", help="promote the candidate when every check passes")
+    p.add_argument("--no-promote", action="store_true", help="never promote (overrides --promote-if-ok)")
     p.add_argument("--note", default="", help="promotion note")
     sub.add_parser("doctor", help="what is set, what is missing: environment variables, dependencies, models, waypoints")
     sub.add_parser("version", help="the MPPP version")
@@ -322,6 +333,24 @@ def cmd_cmods(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_example(a: argparse.Namespace) -> int:
+    """``example fetch`` / ``example build``: the Mars 2020 example data set (:mod:`mppp.example`)."""
+    from . import example as E
+    if a.what == "fetch":
+        d = E.fetch_example(a.dest, force=a.force)
+        print(f"example data in {d}\n  set MPPP_PDS={d / 'datadrive'} (the Mastcam-Z frames are in {d / 'zcam'})")
+        return 0
+    pds = a.pds or os.environ.get("MPPP_PDS")
+    if not pds:
+        print("ERROR: --pds (or MPPP_PDS) is required", file=sys.stderr)
+        return 2
+    zc = a.zcam or str(Path(pds).parent / "zcam")
+    man = E.build_example(pds, zc, a.out)
+    print(f"{man['zip']}: {man['zip_bytes'] / 1e6:.0f} MB ({man['counts']}), SHA-256 {man['zip_sha256']}\n"
+          f"  upload it and {Path(man['zip']).stem}.sha256 as assets of the GitHub release '{E.EXAMPLE_TAG}'")
+    return 0
+
+
 def cmd_mask(a: argparse.Namespace) -> int:
     from .mask import hub
     if a.what == "fetch":
@@ -451,7 +480,7 @@ def cmd_calib(a: argparse.Namespace) -> int:
     rep = check_navcam(cand)
     (out / "promotion_check.json").write_text(json.dumps(rep, indent=1, default=str), encoding="utf-8")
     print("\n".join(check_lines(rep)))
-    if a.promote_if_ok and rep["ok"]:
+    if a.promote_if_ok and not a.no_promote and rep["ok"]:
         pr = promote_navcam(cand, a.note or f"tied joint of {len(blocks)} blocks", check=False)
         print(f"promoted into {pr['folder']} ({pr['stamp']})")
     elif a.promote_if_ok:
@@ -480,10 +509,11 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     for c in w["check"]["checks"]:
         print(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}")
     print(f"=> {'every check passes' if w['check']['ok'] else 'a check failed'}; {out / 'report.md'}")
-    if a.promote_if_ok and w["check"]["ok"]:
+    promote = a.promote_if_ok and not a.no_promote
+    if promote and w["check"]["ok"]:
         pr = M.promote([Path(w["model"])], note=a.note or f"Mastcam-Z {a.zoom} mm joint of {len(blocks)} blocks")
         print(f"promoted into {pr['folder']} ({pr['stamp']})")
-    elif a.promote_if_ok:
+    elif promote:
         print("not promoted: a check failed (the model in use stays)")
     return 0
 
@@ -533,7 +563,7 @@ def cmd_version(a: argparse.Namespace) -> int:
 
 
 COMMANDS = {"process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
-            "mask": cmd_mask, "waypoints": cmd_waypoints, "maps": cmd_maps, "calib": cmd_calib, "doctor": cmd_doctor,
+            "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "maps": cmd_maps, "calib": cmd_calib, "doctor": cmd_doctor,
             "version": cmd_version}
 
 

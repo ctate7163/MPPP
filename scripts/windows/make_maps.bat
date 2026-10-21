@@ -9,6 +9,8 @@ REM   m20_jezero_traverse_sites_regions_<tag>.png       figure 3   + six regiona
 REM   m20_jezero_traverse_sites_regions_wide_<tag>.png  figure 4
 REM   m20_mars_to_rover_sites_<tag>.png                 figure 5   Mars -> Isidis -> Jezero -> traverse -> regions
 REM   m20_mars_to_rover_sites_no_I_<tag>.png            figure 6   figure 5 with the block list instead of panel I
+REM   m20_traverse_banner_<tag>.png                     figure 7   the GitHub banner (the traverse, the title)
+REM   m20_cluster_zooms_white.png                       the zooms on white (with dtm / both)
 REM One set per background: tag "dtm" (1 m HiRISE DTM where it covers, ~70 m tiles elsewhere) and, when an
 REM orthomosaic is found, tag "ortho".  Arguments: make_maps.bat [dtm|ortho|both] [DPI]   (default: both 200).
 REM
@@ -38,6 +40,10 @@ echo make_maps: out     %OUT%  (%M20_DPI% dpi, %WHICH%)
 if not exist "%OUT%" mkdir "%OUT%"
 if /i not "%WHICH%"=="ortho" (
   python -m mppp maps all --out "%OUT%" --background dtm --tag dtm --dpi %M20_DPI%
+  if errorlevel 1 goto :fail
+)
+if /i not "%WHICH%"=="ortho" (
+  python -m mppp maps zooms --out "%OUT%" --background white --tag white --dpi %M20_DPI%
   if errorlevel 1 goto :fail
 )
 if /i not "%WHICH%"=="dtm" if defined M20_ORTHOS (

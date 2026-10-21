@@ -19,7 +19,7 @@ def test_maps_packaged_blocks_and_prototype(tmp_path):
     out = maps.prototype.run("export", tmp_path / "out")                 # blocks are in the package; export only
     again, _ = maps.load_blocks_file(out / "sites_blocks.json")
     # the export follows sites.json (38 blocks since 0.91, numbered by first sol), the prototype's own list has 36
-    assert len(again) == 39 and any(k.endswith("rose_river_falls") for k in again) and any(k.endswith("olifants") for k in again)
+    assert len(again) == 41 and any(k.endswith("rose_river_falls") for k in again) and any(k.endswith("olifants") for k in again)
     assert (tmp_path / "out" / "_m20_sites" / "mppp_map.py").is_file()
 
 
@@ -35,9 +35,10 @@ def test_sites_json_holds_the_official_blocks():
     assert not any(k.startswith("blk") for k in t["sites"])               # v0p81: no blk.. sites
     sites, _ = maps.load_blocks()
     ob = t["official_blocks"]
-    assert len(ob) == 39                                                        # 0.91: + Rose River Falls, Olifants, Plankeholmane
-    assert ob["12"]["site"] == "rose_river_falls" and ob["12"]["mastcam_z_360"] == [17] and ob["36"]["site"] == "olifants" and ob["33"]["site"] == "plankeholmane"
-    assert ob["16"]["name"] == "Hidden Harbor" and ob["16"]["site"] == "hidden_harbor"
+    assert len(ob) == 41                                     # 0.91: + Rose River Falls, Olifants, Plankeholmane, Seitah Overlook, Hans Amundsen
+    assert ob["13"]["site"] == "rose_river_falls" and ob["13"]["mastcam_z_360"] == [17] and ob["38"]["site"] == "olifants" and ob["35"]["site"] == "plankeholmane"
+    assert ob["17"]["name"] == "Hidden Harbor" and ob["17"]["site"] == "hidden_harbor"
+    assert ob["4"]["site"] == "seitah_overlook" and ob["22"]["site"] == "hans_amundsen_workspace"
     by_centre = {(round(b["centre"]["easting"], 1), round(b["centre"]["northing"], 1)): (int(n), b) for n, b in ob.items()}
     for k, v in sites.items():                                            # the prototype's 36 blocks are all there
         c = v["block"]["centre"]
@@ -47,8 +48,8 @@ def test_sites_json_holds_the_official_blocks():
     for k, v in t["sites"].items():                                       # Christian's v5 rules
         assert isinstance(v["sols"][0], list) and isinstance(v["notes"], str) and "note" not in v
         assert isinstance(v["official_blocks"], list) and v["max_waypoint_separation_m"] >= 0
-    assert t["sites"]["observation_mountain"]["sols"] == [[592, 600]] and ob["15"]["site"] == "observation_mountain"
-    assert t["sites"]["threeforks_large"]["official_blocks"] == [8, 9]
+    assert t["sites"]["observation_mountain"]["sols"] == [[592, 600]] and ob["16"]["site"] == "observation_mountain"
+    assert t["sites"]["threeforks_large"]["official_blocks"] == [9, 10]
     assert {3, 4, 11} <= set(t["sites"]["chal_rocks_large"]["rover_sites"])      # 0.90: + the nearby waypoints' sites
 
 

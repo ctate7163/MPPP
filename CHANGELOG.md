@@ -39,6 +39,18 @@ The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p
 - **Cluster zooms**: only the block's own waypoints (its primary sols plus every waypoint within 10 m, the site's
   NEARBY_FROM_FIRST_SOL respected) in colour and in the N× / Z× counts; the other waypoints in the square in grey;
   thicker 10 m circles.
+- **Example data** (`mppp.example`, `mppp example fetch | build`, `build_example_data.bat`): Rockytop sols 461-464 -
+  the main Navcam images, the front Hazcams at the same waypoints, the eight Mastcam-Z 34 mm frames of ZCAM03381 -
+  zipped in the archive layout with a manifest, for the GitHub release `example-data-v1`; site `rockytop_example`.
+- **Sites**: Seitah Overlook and Hans Amundsen Memorial Workspace are official blocks (41, renumbered by first sol).
+  Maps: "Octavia E. Butler Landing Site"; cluster zooms with the legend in two columns beside the title, the
+  traverse blue as in the maps, no 10 m circles on the orthomosaic panels, a grey mosaic in grey (one stretch for
+  the traverse; a 3-band colour mosaic is shown in colour).  `zcam_tied_joint.bat` promotes by default
+  (`--no-promote` to only check).
+- **Maps**: figure 7, the GitHub banner (`m20_traverse_banner_<tag>.png`: the traverse panel wider and shorter, the
+  title in the middle, the legend lower right, the landing site starred; `M20_BANNER_BOX`, `M20_BANNER_TEXT_Y`);
+  the cluster zooms on white (`--background white`, made by `make_maps.bat`); legends: "Rover Traverse",
+  "Mastcam-Z 360°", "Sample Core Acquired".
 - **claude_sync.bat**: the paper is no longer rendered after every sync; uncommitted edits are stashed before the
   merge and popped right after it (they were left in the stash - paper.md, 20 Oct).  The bundles carry
   `refs/heads/main` again.

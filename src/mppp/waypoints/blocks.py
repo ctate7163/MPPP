@@ -425,7 +425,7 @@ def plot_site_map(blocks: Optional[Dict[str, Any]], waypoints: Union[PathLike, D
     ax.add_patch(plt.Rectangle((BOX_B[0], BOX_B[2]), BOX_B[1] - BOX_B[0], BOX_B[3] - BOX_B[2], fill=False, ec=INK, lw=1.2, zorder=5))
     ax.text(BOX_B[0] + 0.01, BOX_B[3] + 0.012, "B", fontsize=11 * FS, fontweight="bold", color=INK, zorder=6)
     ax.plot(lon[0], lat[0], marker="*", ms=13, color=C4, mec=INK, mew=0.6, zorder=7)
-    ax.annotate("Landing (OEB)", (lon[0], lat[0]), xytext=(8, -14), textcoords="offset points", fontsize=8 * FS, color=INK)
+    ax.annotate("Octavia E. Butler Landing Site", (lon[0], lat[0]), xytext=(8, -14), textcoords="offset points", fontsize=8 * FS, color=INK)
     ax.set_xlim(BOX_A[0], BOX_A[1]); ax.set_ylim(BOX_A[2], BOX_A[3]); ax.set_aspect(1 / COS)
     ax.set_title(f"A. Jezero crater and the Perseverance traverse (sols {S.min()}–{S.max()})", loc="left", fontsize=10 * FS, color=INK)
     ax.set_xlabel("Longitude [°E]"); ax.set_ylabel("Latitude [°N]")
@@ -457,9 +457,9 @@ def plot_site_map(blocks: Optional[Dict[str, Any]], waypoints: Union[PathLike, D
     ax.set_xlim(BOX_B[0], BOX_B[1]); ax.set_ylim(BOX_B[2], BOX_B[3]); ax.set_aspect(1 / COS)
     if adjust_text is not None and txt:
         adjust_text(txt, ax=ax, expand=(1.35, 1.6), arrowprops=dict(arrowstyle="-", color=INK2, lw=0.6), max_move=(60, 60))
-    h = [plt.Line2D([], [], color=C1, lw=1.4, label="Traverse"),
-         plt.Line2D([], [], marker="^", color=C4, mec=INK, ls="none", ms=7, label="Mastcam-Z numbered 360"),
-         plt.Line2D([], [], marker="D", color=C3, mec=INK, ls="none", ms=6, label="Sample core"),
+    h = [plt.Line2D([], [], color=C1, lw=1.4, label="Rover Traverse"),
+         plt.Line2D([], [], marker="^", color=C4, mec=INK, ls="none", ms=7, label="Mastcam-Z 360°"),
+         plt.Line2D([], [], marker="D", color=C3, mec=INK, ls="none", ms=6, label="Sample Core Acquired"),
          plt.Line2D([], [], marker="s", mfc="none", mec=C2, mew=2, ls="none", ms=11, label="Block of rover stations")]
     ax.legend(handles=h, loc="lower center", bbox_to_anchor=(0.6, 0.01), fontsize=7.6 * FS, framealpha=0.92, facecolor="white", edgecolor="#d6d5d0")
     bg = "coarse HiRISE-DTM-based terrain, ~70 m grid" if nB is not None else "no terrain tiles"

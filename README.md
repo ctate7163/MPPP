@@ -55,6 +55,17 @@ file.
 Set three environment variables once: `MPPP_PDS` (the folder of PDS products), `MPPP_SCAPES` (where the block
 folders go) and, optionally, `MPPP_GPU_PYTHON` (see *GPU on Windows*).
 
+## Example data
+
+A small Mars 2020 set to try the pipeline on: Rockytop (sols 461-464) - the main Navcam images, the front Hazcams
+at the same waypoints and eight Mastcam-Z 34 mm frames (ZCAM03381, sol 464), in the layout of a local PDS archive.
+
+```bash
+mppp example fetch               # downloads the release asset (example-data-v1), checks it, unpacks to ~/mppp_example
+export MPPP_PDS=~/mppp_example/datadrive
+mppp run rockytop_example --zcam
+```
+
 ## Use
 
 A **site** is a block of rover stations — where Perseverance ended its drives repeatedly within a few tens of
@@ -63,7 +74,7 @@ metres — defined by its sol ranges in `src/mppp/data/sites.json` (`mppp sites 
 
 ```bash
 mppp process rockytop            # select the site's products, process them into <WORK>/processed/
-mppp align  <WORK>               # COLMAP project, features, LightGlue matching, bundle adjustment, health report
+mppp align  <WORK>               # COLMAP project, features, exhaustive matching, bundle adjustment, health report
 mppp run    rockytop --zcam      # both, with the Mastcam-Z 34 mm frames of the same sols
 mppp align  <WORK> --set attitude_prior_deg=1 --variant tight      # another setting, into <WORK>/colmap_tight/
 mppp cmods list                  # the camera models in use

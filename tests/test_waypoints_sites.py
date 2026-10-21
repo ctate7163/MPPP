@@ -269,9 +269,9 @@ def test_sites_block_record_and_groups():
     t = load_site_table()
     assert t["version"] == 5                                              # v0p81: the official_blocks table
     b = block_sites(t)
-    assert len(b) == 39 and b[0] == "oeb_landing_site" and b[-1] == "marble_mountain"   # 0.91: + Rose River Falls, Olifants
+    assert len(b) == 41 and b[0] == "oeb_landing_site" and b[-1] == "marble_mountain"   # 0.91: + Rose River Falls, Olifants
     assert site_block("chal_rocks_large", t)["number"] == 3 and site_block("chal_rocks", t)["number"] == 3
-    assert len(site_group("blocks_all")) == 39
+    assert len(site_group("blocks_all")) == 41
     assert "chal_rocks_large" in site_group("navcam_baseline")
     err, _ = validate_site_table()
     assert not err

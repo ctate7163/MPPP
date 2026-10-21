@@ -33,9 +33,9 @@ def _msr_first(paths):
     return sorted(set(paths), key=lambda p: (0 if 'MSR' in os.path.basename(p).upper() else 1, p))
 
 def background_mode():
-    """'dtm' (default) or 'ortho', from M20_BACKGROUND."""
+    """'dtm' (default), 'ortho' or 'white' (the cluster zooms on white, no terrain), from M20_BACKGROUND."""
     m = os.environ.get('M20_BACKGROUND', 'dtm').strip().lower()
-    return 'ortho' if m.startswith('ortho') else 'dtm'
+    return 'ortho' if m.startswith('ortho') else ('white' if m.startswith('white') else 'dtm')
 
 def ortho_paths():
     """Orthomosaic GeoTIFFs: M20_ORTHOS in its order (make_maps.bat: the Mars 2020 TRN mosaic first - it covers the

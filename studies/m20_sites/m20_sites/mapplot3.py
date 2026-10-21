@@ -119,7 +119,7 @@ def panel_A(ax, letter='A', box_label='B', bbox=None, crater=None, scalebar_righ
         ax.text(77.66, 18.24, 'Jezero crater', ha='center', va='center', fontsize=12*FS, fontweight='bold', style='italic',
                 color='white', zorder=8, path_effects=halo)
     else:
-        ax.annotate('Landing (OEB)', (lon[0], lat[0]), xytext=(8, -14), textcoords='offset points', fontsize=8*FS, color=INK)
+        ax.annotate('Octavia E. Butler Landing Site', (lon[0], lat[0]), xytext=(8, -14), textcoords='offset points', fontsize=8*FS, color=INK)
     ax.set_xlim(CA[0], CA[1]); ax.set_ylim(CA[2], CA[3]); ax.set_aspect(1/COS)
     ax.set_title(f'{letter}. Jezero crater and the Perseverance traverse (sols {S.min()}–{S.max()})', loc='left', fontsize=10*FS, color=INK)
     ax.set_xlabel('Longitude [°E]'); ax.set_ylabel('Latitude [°N]')
@@ -135,9 +135,9 @@ def panel_B(ax, insets=None, letter='B', bbox=None, bg_in_title=True, landing_la
         for lab, b in insets.items():
             ax.add_patch(plt.Rectangle((b[0], b[2]), b[1]-b[0], b[3]-b[2], fill=False, ec=INK, lw=1.1, zorder=9))
             ax.text(b[0], b[3]+0.0012, lab, fontsize=10*FS, fontweight='bold', color=INK, zorder=10)
-    h = [plt.Line2D([], [], color=C1, lw=1.4, label='Traverse'),
-         plt.Line2D([], [], marker='^', color=C4, mec=INK, ls='none', ms=7, label='Mastcam-Z numbered 360'),
-         plt.Line2D([], [], marker='D', color=C3, mec=INK, ls='none', ms=6, label='Sample core'),
+    h = [plt.Line2D([], [], color=C1, lw=1.4, label='Rover Traverse'),
+         plt.Line2D([], [], marker='^', color=C4, mec=INK, ls='none', ms=7, label='Mastcam-Z 360°'),
+         plt.Line2D([], [], marker='D', color=C3, mec=INK, ls='none', ms=6, label='Sample Core Acquired'),
          plt.Line2D([], [], marker='s', mfc='none', mec=C2, mew=2, ls='none', ms=11, label='Block of rover stations')]
     ax.legend(handles=h, loc='lower center', bbox_to_anchor=(0.6, 0.01), fontsize=7.6*FS, framealpha=0.92, facecolor='white', edgecolor='#d6d5d0')
     bg = 'HiRISE DTM where available, coarse HiRISE+MOLA terrain elsewhere' if hasdtm else 'coarse HiRISE-DTM-based terrain, ~70 m grid (HiRISE DTM not yet connected)'
@@ -188,6 +188,41 @@ def fig2(out):
     colorbar(fig, rect(b[0]+b[2]+0.12, b[1], 0.2, b[3]), nB, 'Elevation [m] (tint)')
     axC = fig.add_axes(rect(0.85, 0.1, W-1.2, a[1]-1.05)); panel_C(axC, per=per)
     out = save_figure(fig, out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out)
+
+# the GitHub banner (20 Oct): figure 2's traverse panel wider on both sides and shorter at the bottom, the title in the
+# middle, the legend lower right, the landing site starred; M20_BANNER_BOX "lon0,lon1,lat0,lat1" and M20_BANNER_TEXT_Y
+# (axes fraction) override the frame and the title height
+BOX_BANNER = tuple(float(v) for v in os.environ.get('M20_BANNER_BOX', '').split(',')) if os.environ.get('M20_BANNER_BOX') \
+    else (BOX_B[0] - 0.045, BOX_B[1] + 0.06, BOX_B[2] + 0.022, BOX_B[3])
+
+def fig7(out):
+    bb = BOX_BANNER
+    gx, gy, Z, hasdtm = terrain(bb, 0.00005, [12, 13])
+    nB = plt.Normalize(np.nanpercentile(Z, 1), np.nanpercentile(Z, 99))
+    W = 20.0
+    H = W * (bb[3] - bb[2]) / ((bb[1] - bb[0]) * COS)
+    fig = plt.figure(figsize=(W, H), facecolor='white')
+    ax = fig.add_axes([0, 0, 1, 1])
+    draw_terrain(ax, gx, gy, Z, nB, 100)
+    overlay(ax, bb)
+    ax.plot(lon[0], lat[0], marker='*', ms=24, color=C4, mec=INK, mew=0.9, zorder=12)
+    ax.annotate('Octavia E. Butler\nLanding Site', (lon[0], lat[0]), xytext=(16, -4), textcoords='offset points',
+                ha='left', va='center', fontsize=12.5, fontweight='bold', color='white', zorder=12, linespacing=1.05,
+                path_effects=[pe.withStroke(linewidth=2.6, foreground=INK)])
+    ty = float(os.environ.get('M20_BANNER_TEXT_Y', 0.20))
+    ax.text(0.5, ty, 'Mars 2020 Perseverance Rover Traverse', transform=ax.transAxes, ha='center', va='center',
+            fontsize=34, fontweight='bold', color='white', zorder=13,
+            path_effects=[pe.withStroke(linewidth=4.5, foreground=INK)])
+    h = [plt.Line2D([], [], color=C1, lw=2.0, label='Rover Traverse'),
+         plt.Line2D([], [], marker='*', color=C4, mec=INK, ls='none', ms=14, label='Octavia E. Butler Landing Site'),
+         plt.Line2D([], [], marker='^', color=C4, mec=INK, ls='none', ms=9, label='Mastcam-Z 360°'),
+         plt.Line2D([], [], marker='D', color=C3, mec=INK, ls='none', ms=8, label='Sample Core Acquired'),
+         plt.Line2D([], [], marker='s', mfc='none', mec=C2, mew=2, ls='none', ms=13, label='Block of rover stations')]
+    ax.legend(handles=h, loc='lower right', fontsize=12, framealpha=0.92, facecolor='white', edgecolor='#d6d5d0',
+              borderaxespad=0.8)
+    scalebar(ax, bb, 1000, '1 km')
+    ax.set_xlim(bb[0], bb[1]); ax.set_ylim(bb[2], bb[3]); ax.axis('off')
+    out = save_figure(fig, out, dpi=DPI, facecolor='white'); print('saved', out, 'DTM files:', sorted(used_all) or 'none')
 
 REGION_KEYS = {
  'rimw':   ['cluster21', 'cluster22', 'groloy', 'cluster23', 'marble_mountain'],
@@ -299,7 +334,7 @@ def fig3(out):
         if yt == y2: ax.set_xlabel('Longitude [°E]')                 # the bottom row
         if cl: colorbar(fig, rect(x + w + 0.12, yt-sh, 0.18, sh), norms[r], cl)
     fig.text(0.85/W, 0.25/Htot, 'D–I: squares = blocks of rover stations (±30 m, as in the block panels); '
-             'dots = end-of-drive Navcam 360; small squares = mid-drive partial Navcam; triangles = Mastcam-Z numbered 360s; diamonds = sample cores.',
+             'dots = end-of-drive Navcam 360; small squares = mid-drive partial Navcam; triangles = Mastcam-Z 360°s; diamonds = sample cores acquired.',
              fontsize=8.5*FS, color=INK2)
     out = save_figure(fig, out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out, 'DTM files:', sorted(used_all) or 'none')
 
@@ -373,7 +408,7 @@ def fig4(out):
         ax.set_xlabel('Longitude [°E]')
         x += w + gap
     fig.text(left/W, 0.22/Htot, f'D–I share one scale ({BH/1000:.1f} km tall; elevation tint as in B). Squares = blocks of rover stations (±30 m); dots = end-of-drive Navcam 360; '
-             'small squares = mid-drive partial Navcam; triangles = Mastcam-Z numbered 360s; diamonds = sample cores.', fontsize=8.5*FS, color=INK2)
+             'small squares = mid-drive partial Navcam; triangles = Mastcam-Z 360°s; diamonds = sample cores acquired.', fontsize=8.5*FS, color=INK2)
     out = save_figure(fig, out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out)
 
 ISIDIS_LATC = 14.0
@@ -518,7 +553,7 @@ def fig5(out, with_I=True):
                else ' Background C–I: 1 m HiRISE DTM (' + ', '.join(sorted(used_all)) + ') where available, ~70 m terrain elsewhere.')
     if ortho_used: bg_note += ' HiRISE orthomosaic (' + ', '.join(sorted(ortho_used)) + ') in grey where available.'
     fig.text(left/W, 0.1/Htot, scale_note + bg_note + '\nSquares = blocks of rover stations (±30 m, numbered by first sol); dots = end-of-drive Navcam 360; '
-             'small squares = mid-drive partial Navcam; triangles = Mastcam-Z numbered 360s; diamonds = sample cores.', fontsize=8.5*FS, color=INK2)
+             'small squares = mid-drive partial Navcam; triangles = Mastcam-Z 360°s; diamonds = sample cores acquired.', fontsize=8.5*FS, color=INK2)
     out = save_figure(fig, out, dpi=dpi5, facecolor=fig.get_facecolor()); print('saved', out, dpi5, 'dpi')
 
 def fig6(out):
@@ -530,7 +565,7 @@ if __name__ == '__main__':
     which = sys.argv[2:] or ['2', '3', '4', '5', '6']
     names = {'2': (fig2, 'm20_jezero_traverse_clusters_map.png'), '3': (fig3, 'm20_jezero_traverse_sites_regions.png'),
              '4': (fig4, 'm20_jezero_traverse_sites_regions_wide.png'), '5': (fig5, 'm20_mars_to_rover_sites.png'),
-             '6': (fig6, 'm20_mars_to_rover_sites_no_I.png')}
+             '6': (fig6, 'm20_mars_to_rover_sites_no_I.png'), '7': (fig7, 'm20_traverse_banner.png')}
     if len(which) > 1:   # one process per figure keeps peak memory down at 300 dpi
         import subprocess
         for w in which: subprocess.run([sys.executable, __file__, od, w], check=True)
