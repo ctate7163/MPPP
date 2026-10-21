@@ -6,6 +6,8 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p1, p2, the site maps and the CLI.
 
+- **21 Oct, 08:30 - Issole / South Seitah back in `zcam34_consensus` (12 blocks)** without its Mastcam-Z 34 mm video
+  (sequence ZCAM05093: the site's `settings` carry `EXCLUDE: ["seq:ZCAM05093"]`).
 - **21 Oct - Issole / South Seitah out of `zcam34_consensus` (11 blocks; 2713 images, 2585 of them Mastcam-Z 34 mm: 3.7 million
   exhaustive pairs, over 9 h of matching), Olifants kept.  `max_exhaustive_images` (1000, not in the run key):
   "exhaustive" over more images matches the prior-overlap pairs instead, and the log says so.  A `SKIP` file in a WORK folder leaves the block out**

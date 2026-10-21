@@ -251,7 +251,7 @@ def test_shipped_sites_v0p75():
     assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
     assert "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
     assert len(g["navcam_consensus"]) == 27 and {"plateau_point", "vingeanne", "hans_amundsen_workspace"} <= set(g["navcam_consensus"]) and "navcam_consensus_v0p82" not in g
-    assert len(g["zcam34_consensus"]) == 11 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" not in g["zcam34_consensus"] and g["zcam34_consensus"][:2] == ["chal_rocks", "rochette"]   # 21 Oct (Christian): Issole out (2713 images, 3.7 M exhaustive pairs), olifants back (11 blocks)
+    assert len(g["zcam34_consensus"]) == 12 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:2] == ["chal_rocks", "rochette"]   # 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back (12 blocks)
 
 
 def test_zcam34_dev_group_sites_have_the_zoom():
@@ -350,3 +350,9 @@ def test_sites_19_oct_afternoon():
             "belva_crater_large", "oeb_landing_site", "van_zyl_overlook_huge", "origny_large"} <= nc and len(nc) == 27 and "knob_mountain_large" in nc
     assert "seitah_north_large" in G["navcam_baseline"] and "van_zyl_overlook_huge" in G["navcam_baseline"]
     assert not any(s in ("butler_landing_large", "van_zyl_overlook_large") for g in G.values() for s in g)
+
+
+def test_issole_leaves_out_its_video_sequence():
+    """21 Oct: Issole's Mastcam-Z 34 mm video (sequence ZCAM05093, about 2000 frames at one pointing) is excluded."""
+    from mppp.pipeline import load_settings
+    assert "seq:ZCAM05093" in load_settings(site="issole_seitah_south").exclude
