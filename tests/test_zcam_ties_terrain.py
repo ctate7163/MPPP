@@ -69,3 +69,28 @@ def test_zcam_points_above_and_below_the_navcam_terrain():
     assert low["zcam"]["median_dz_m"] < 0
     assert "below" in zcam_terrain_line(low)
     assert zcam_terrain(_Rec({1: _Image("NLF_a", [0, 0, 1.9])}, [([0, 0, 0], [1])])).get("note")
+
+
+def _zname(eye, zoom, k):
+    """a PDS-length Mastcam-Z name with the zoom at characters 45-48"""
+    return f"Z{eye}0_0600_0700000000_000RAD_N0000000ZCAM0000{k}_{zoom:03d}0LUA03"
+
+
+def test_zoom_ladder_63_to_110_tie_through_wider_zooms():
+    """21 Oct (Christian): 34 and 48 mm need 10 ties with Navcam; 63-110 mm need 10 ties with Navcam or with a
+    Mastcam-Z image at a wider zoom."""
+    from mppp.sfm.reconstruction import _zoom_of, navcam_tie_counts
+    images = {1: _Image("NLF_a", [0, 0, 1.9]), 2: _Image("NRF_a", [0.42, 0, 1.9]),
+              20: _Image(_zname("L", 34, 1), [0, 0, 2]), 21: _Image(_zname("R", 34, 1), [0, 0, 2]),
+              30: _Image(_zname("L", 48, 2), [0, 0, 2]), 31: _Image(_zname("R", 48, 2), [0, 0, 2]),
+              40: _Image(_zname("L", 110, 3), [0, 0, 2]), 41: _Image(_zname("R", 110, 3), [0, 0, 2])}
+    assert _zoom_of(images[40].name) == 110 and _zoom_of("NLF_a") is None
+    pts = [([0, 0, 0], [20, 21, 1])] * 12              # Z34 tied to Navcam
+    pts += [([0, 0, 0], [30, 31, 20])] * 15            # Z48 tied only to Z34: not enough for 48 mm
+    pts += [([0, 0, 0], [40, 41, 30])] * 11            # Z110 tied to Z48: counts (a wider zoom)
+    pts += [([0, 0, 0], [40, 41])] * 50                # Z110 stereo only, two views: never counts
+    c = navcam_tie_counts(_Rec(images, pts))
+    assert c[20] == 12 and c[30] == 0 and c[31] == 0
+    assert c[40] == 11 and c[41] == 11
+    c0 = navcam_tie_counts(_Rec(images, pts), navcam_only_max_zoom=None)       # the 20 Oct rule: Navcam only
+    assert c0[40] == 0

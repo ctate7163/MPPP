@@ -142,7 +142,7 @@ def _navcam_globals(st: Dict[str, Any]) -> Dict[str, np.ndarray]:
 
 
 def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool = True,
-               hold: Sequence[str] = ()):
+               hold: Union[Sequence[str], Dict[str, Sequence[str]]] = ()):
     """The ``extra_residuals`` hook tying each Mastcam-Z bin camera to its eye's global terms (``tie`` False: no
     ties, the globals out of the problem - the diagnostic pass).  Returns (hook, g) with g {eye group: array}."""
     import pyceres
@@ -187,7 +187,7 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 ix |= {2, 3}                                 # no regular-state bin: the regular offsets stay
             if not eye.startswith("ZR"):
                 ix.add(9)                                    # ZL: its principal point is the reference (pinned)
-            for h in hold:
+            for h in (hold.get(eye, ()) if isinstance(hold, dict) else hold):     # {eye: terms} or terms for both
                 if h in GLOBAL_TERMS:
                     ix.add(GLOBAL_TERMS.index(h))
             held[eye] = sorted(ix)
@@ -203,11 +203,12 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
 
 
 def adjust_z(rec, proj, idx, st, units, zunits, sg, iterations: int = 100, covariance: bool = True, passes: int = 2,
-             tie: bool = True, refine_zcam_rig: str = "rotation", verbose: bool = True):
+             tie: bool = True, refine_zcam_rig: str = "rotation", verbose: bool = True,
+             hold: Union[Sequence[str], Dict[str, Sequence[str]]] = ()):
     """The Mastcam-Z joint's adjustment: Navcam cameras and rigs held (the promoted law), frame poses free, the
     Mastcam-Z bins tied to the global terms (:func:`make_zties`), the Mastcam-Z rig rotation refined."""
     from ..sfm.reconstruction import bundle_adjust
-    hook, g = make_zties(sg, zunits, tie=tie)
+    hook, g = make_zties(sg, zunits, tie=tie, hold=hold)
     navkeys = [k for k in proj.settings["database"]["cameras"] if str(k).startswith("N")]
     ks, kmap = T.keypoint_terms(units, proj, idx["temps"], _navcam_globals(st))
     ba = None
@@ -389,12 +390,13 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
 def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = None, navcam_dir: Optional[PathLike] = None,
                zoom: int = ZOOM, nav_points: int = NAV_POINTS_PER_BLOCK, z_points: int = Z_POINTS_PER_BLOCK,
                iterations: int = 100, passes: int = 2, diagnostics: bool = True, verbose: bool = True,
-               scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the diagnostic pass.  ``model``: the focus
-    model to start from (default: the one in use)."""
+               scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None,
+               k_tests: bool = True) -> Dict[str, Any]:
+    """The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the distortion tests (:func:`distortion_tests`,
+    ``k_tests``), the diagnostic pass.  ``model``: the focus model to start from (default: the one in use)."""
     from ..sfm.project import zcam_focus_model_path
     if model is None:
-        model = json.loads(zcam_focus_model_path().read_text(encoding="utf-8"))
+        model = json.loads(zcam_focus_model_path(zoom=zoom).read_text(encoding="utf-8"))
     t = time.time()
     rec, proj, idx, st, units, zunits, sg = build(blocks, model, navcam_dir, zoom, nav_points, z_points, scapes=scapes, st=st)
     if verbose:
@@ -410,6 +412,10 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
                 "zcam": _zstats(rec, zunits), "rig": rig_result(proj, sg, zoom), "final_cost": float(ba["final_cost"]),
                 "iterations": ba["iterations"], "brief": ba["brief"], "seconds": time.time() - t,
                 "navcam_models": str(st["folder"]), "points": {"navcam_per_block": nav_points, "zcam_per_block": z_points}})
+    res["distortion"] = distortion_curves(res, ba, zunits=zunits)
+    if k_tests:
+        res["distortion"]["tests"] = distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba,
+                                                      iterations=iterations, verbose=verbose)
     if verbose:
         for line in describe(res):
             log.info(line)
@@ -417,6 +423,179 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
         res["diagnostics"] = diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks=blocks, zoom=zoom,
                                              verbose=verbose)
     return res
+
+
+# ====================================================================================== k1, k2: curves and tests
+FRAME_PX = (1648, 1200)                     # the Mastcam-Z frame (full detector)
+CURVE_FRACTIONS = (0.25, 0.5, 0.75, 1.0)    # radii as a fraction of the corner radius
+
+
+def _bin_k_cov(cov: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], eye: str) -> Optional[np.ndarray]:
+    """The 2x2 covariance of an eye's (k1, k2) combined from its bin cameras' covariances (inverse-variance sum,
+    correlations between bins ignored) - the fallback when the problem's covariance of the global terms is not
+    finite (exact ties: 20 Oct)."""
+    blocks = cov.get("blocks") or {}
+    vf = float(cov.get("variance_factor", 1.0))
+    info = np.zeros((2, 2))
+    n = 0
+    for u in zunits.values():
+        c = blocks.get(f"camera:{u['key']}")
+        if u["group"] != eye or c is None:
+            continue
+        c = np.asarray(c, float)
+        if c.shape[0] <= _K2:
+            continue
+        ck = c[np.ix_([_K1, _K2], [_K1, _K2])] * vf
+        if not np.all(np.isfinite(ck)) or np.linalg.det(ck) <= 0:
+            continue
+        info += np.linalg.inv(ck)
+        n += 1
+    if not n:
+        return None
+    try:
+        return np.linalg.inv(info)
+    except np.linalg.LinAlgError:
+        return None
+
+
+def distortion_curves(res: Dict[str, Any], ba: Optional[Dict[str, Any]] = None, zunits=None,
+                      frame_px: Tuple[int, int] = FRAME_PX) -> Dict[str, Any]:
+    """The radial distortion of each eye as a displacement (px) at :data:`CURVE_FRACTIONS` of the corner radius,
+    d(r) = f r (k1 r^2 + k2 r^4) with r the normalized radius - what the images see - and the right-minus-left
+    difference.  k1 and k2 are nearly collinear over the frame (r^3 and r^5 correlate 0.98 at 34 mm), so two eyes'
+    coefficients can differ a lot while their curves agree: compare curves, not coefficients.  With a covariance of
+    (k1, k2) (the global terms', else :func:`_bin_k_cov`): the sd of each curve point, the k1-k2 correlation and
+    the z of k1 and k2."""
+    eyes = res["eyes"]
+    cov = (ba or {}).get("covariance") or {}
+    out: Dict[str, Any] = {"fractions": list(CURVE_FRACTIONS), "eyes": {}}
+    W, H = frame_px
+    curves = {}
+    for eye, e in eyes.items():
+        tm, sd = e["terms"], e.get("sd") or {}
+        f = 0.5 * (tm["a_fx_backlash"] + tm["a_fy_backlash"])
+        rmax = float(np.hypot(W / 2.0, H / 2.0) / f)
+        r = np.array(CURVE_FRACTIONS) * rmax
+        J_ = np.stack([f * r ** 3, f * r ** 5], axis=1)              # d(displacement)/d(k1, k2)
+        d = J_ @ np.array([tm["k1"], tm["k2"]])
+        C = None
+        src = None
+        if sd and np.isfinite(sd.get("k1", np.nan)) and np.isfinite(sd.get("k2", np.nan)):
+            C, src = np.diag([sd["k1"] ** 2, sd["k2"] ** 2]), "global terms (correlation not available)"
+        if C is None and zunits:
+            C = _bin_k_cov(cov, zunits, eye)
+            src = "bin cameras (correlations between bins ignored)" if C is not None else None
+        # the collinearity over the frame (pixels spread uniformly over the frame area: density ~ r)
+        rr = np.linspace(0, rmax, 400)
+        w = rr / rr.sum()
+        a3, a5 = rr ** 3, rr ** 5
+        corr_basis = float((w * a3 * a5).sum() / np.sqrt((w * a3 * a3).sum() * (w * a5 * a5).sum()))
+        rec_e: Dict[str, Any] = {"f_px": f, "corner_radius_norm": rmax, "displacement_px": d.tolist(),
+                                 "k1": tm["k1"], "k2": tm["k2"], "r3_r5_correlation": corr_basis}
+        if C is not None:
+            rec_e.update({"cov_source": src, "sd_k1": float(np.sqrt(C[0, 0])), "sd_k2": float(np.sqrt(C[1, 1])),
+                          "corr_k1_k2": float(C[0, 1] / np.sqrt(C[0, 0] * C[1, 1])) if C[0, 1] else None,
+                          "z_k1": float(tm["k1"] / np.sqrt(C[0, 0])), "z_k2": float(tm["k2"] / np.sqrt(C[1, 1])),
+                          "sd_displacement_px": np.sqrt(np.einsum("ij,jk,ik->i", J_, C, J_)).tolist()})
+        out["eyes"][eye] = rec_e
+        curves[eye] = (d, rec_e.get("sd_displacement_px"))
+    ks = sorted(curves)
+    if len(ks) == 2:
+        (dl, sl), (dr, sr) = curves[ks[0]], curves[ks[1]]
+        diff = np.asarray(dr) - np.asarray(dl)
+        out["difference_px"] = diff.tolist()
+        out["difference_of"] = f"{ks[1]} - {ks[0]}"
+        if sl is not None and sr is not None:
+            sdd = np.hypot(sl, sr)
+            out["difference_sd_px"] = sdd.tolist()
+            out["difference_z"] = (diff / np.where(sdd > 0, sdd, np.nan)).tolist()
+    return out
+
+
+def distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba, iterations: int = 60,
+                     verbose: bool = True) -> List[Dict[str, Any]]:
+    """Likelihood-ratio tests of the distortion terms: the joint again from its solution with a term held, and the
+    rise of the cost against the full model, as delta chi^2 = 2 (cost - cost_full) / variance factor (1 degree of
+    freedom per held term).  (1) k2 = 0 in both eyes (is k2 needed at all?); (2) ZR's k1 and k2 held at ZL's (do
+    the eyes differ?).  Each also gives the largest change of the distortion curve it causes (px) - with a million
+    observations a tiny effect is "significant", so read the two together - and the eyes' curve difference with its
+    sd (:func:`distortion_curves`) is the direct test of (2)."""
+    from scipy.stats import chi2
+    cov = ba.get("covariance") or {}
+    vf = float(cov.get("variance_factor") or 0.0)
+    cost0 = float(ba["final_cost"])
+    eyes = sorted(g)
+    if len(eyes) != 2 or not vf:
+        return [{"test": "skipped", "note": "two eyes and a variance factor (covariance) are needed"}]
+    zl, zr = eyes
+    base = {e: g[e].copy() for e in eyes}
+    # (a "ZR k2 = ZL k2, k1 free" case was dropped: the step it needs in k1 is ~1e-4, which the exactly tied
+    # problem does not take in one pass, so its delta chi2 came out larger than the stricter case's - a variant
+    # that has not converged overstates delta chi2)
+    cases = [("k2 = 0 (both eyes)", {zl: {"k2": 0.0}, zr: {"k2": 0.0}}),
+             (f"{zr} k1, k2 = {zl} k1, k2", {zr: {"k1": float(base[zl][5]), "k2": float(base[zl][6])}})]
+    out = []
+    for name, fix in cases:
+        t = time.time()
+        sgv = copy.deepcopy(sg)
+        for e in eyes:
+            G = base[e].copy()
+            for term, v in fix.get(e, {}).items():
+                G[GLOBAL_TERMS.index(term)] = v
+            sgv["eyes"][e]["G"] = G
+        hold = {e: list(fix.get(e, {})) for e in eyes}
+        try:
+            bav, gv, _ = adjust_z(copy.deepcopy(rec), copy.deepcopy(proj), idx, st, units, zunits, sgv,
+                                  iterations=iterations, covariance=False, passes=1, verbose=False, hold=hold)
+        except Exception as ex:                                       # noqa: BLE001
+            out.append({"test": name, "error": f"{type(ex).__name__}: {ex}"})
+            continue
+        dof = sum(len(v) for v in fix.values())
+        dchi2 = 2.0 * (float(bav["final_cost"]) - cost0) / vf
+        resv = {"eyes": {e: {"terms": dict(zip(GLOBAL_TERMS, map(float, gv[e])))} for e in eyes}}
+        resb = {"eyes": {e: {"terms": dict(zip(GLOBAL_TERMS, map(float, base[e])))} for e in eyes}}
+        cv, cb = distortion_curves(resv), distortion_curves(resb)
+        change = max(abs(a - b) for e in eyes for a, b in zip(cv["eyes"][e]["displacement_px"],
+                                                              cb["eyes"][e]["displacement_px"]))
+        p = float(chi2.sf(max(dchi2, 0.0), dof))
+        rec_t = {"test": name, "dof": dof, "delta_chi2": dchi2, "p": p, "significant": bool(p < 0.001),
+                 "z_equivalent": float(np.sqrt(max(dchi2, 0.0))) if dof == 1 else None,
+                 "max_curve_change_px": float(change), "seconds": time.time() - t,
+                 "refit_terms": {e: {k: float(gv[e][GLOBAL_TERMS.index(k)]) for k in ("k1", "k2")} for e in eyes}}
+        out.append(rec_t)
+        if verbose:
+            log.info(f"  distortion test {name}: delta chi2 {dchi2:.1f} ({dof} dof, p {p:.2g}), curve change "
+                     f"<= {change:.2f} px ({time.time() - t:.0f} s)")
+    return out
+
+
+def distortion_lines(dist: Dict[str, Any]) -> List[str]:
+    """Report lines of :func:`distortion_curves` and its tests."""
+    if not dist:
+        return []
+    out = []
+    fr = dist["fractions"]
+    for eye, e in dist["eyes"].items():
+        pts = ", ".join(f"{d:+.2f}" for d in e["displacement_px"])
+        extra = ""
+        if e.get("sd_k1") is not None:
+            extra = (f"; k1 {e['k1']:+.4f} +- {e['sd_k1']:.4f} (z {e['z_k1']:.1f}), k2 {e['k2']:+.4f} +- "
+                     f"{e['sd_k2']:.4f} (z {e['z_k2']:.1f})" + (f", corr {e['corr_k1_k2']:+.3f}" if e.get("corr_k1_k2") is not None else "")
+                     + f" [{e['cov_source']}]")
+        out.append(f"{eye} radial displacement at {', '.join(f'{x:g}' for x in fr)} of the corner radius: {pts} px"
+                   f" (r^3, r^5 correlate {e['r3_r5_correlation']:.3f} over the frame){extra}")
+    if "difference_px" in dist:
+        z = dist.get("difference_z")
+        out.append(f"{dist['difference_of']}: " + ", ".join(f"{d:+.2f}" for d in dist["difference_px"]) + " px"
+                   + (" (z " + ", ".join(f"{v:.1f}" for v in z) + ")" if z else ""))
+    for t in dist.get("tests") or []:
+        if "delta_chi2" in t:
+            out.append(f"test {t['test']}: delta chi2 {t['delta_chi2']:.1f} ({t['dof']} dof, p {t['p']:.2g}, "
+                       f"{'significant' if t['significant'] else 'not significant'} at 0.001); the curve moves "
+                       f"<= {t['max_curve_change_px']:.2f} px")
+        else:
+            out.append(f"test {t.get('test')}: {t.get('error') or t.get('note')}")
+    return out
 
 
 def describe(res: Dict[str, Any]) -> List[str]:
@@ -436,6 +615,7 @@ def describe(res: Dict[str, Any]) -> List[str]:
                f"({z.get('zcam_nonfinite', 0)} of {z.get('zcam_observations', 0)} not finite), "
                f"{z.get('navcam_zcam_points')} Navcam-Mastcam-Z points; covariance "
                f"{'ok' if not res.get('covariance_error') else res['covariance_error']}")
+    out += distortion_lines(res.get("distortion") or {})
     d = res.get("diagnostics") or {}
     for ang, fz in (d.get("fits") or {}).items():
         a, b = fz.get("vs_sol_per_1000") or {}, fz.get("vs_T") or {}
@@ -565,7 +745,7 @@ def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[st
     from .fit import check_zcam
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    old = model if model is not None else json.loads(zcam_focus_model_path().read_text(encoding="utf-8"))
+    old = model if model is not None else json.loads(zcam_focus_model_path(zoom=int(res.get("zoom", ZOOM))).read_text(encoding="utf-8"))
     new = candidate_model(res, old)
     name = f"M2020_ZCAM{int(res['zoom']):03d}_focus_model.json"
     (out / name).write_text(json.dumps(new, indent=1, default=float), encoding="utf-8")

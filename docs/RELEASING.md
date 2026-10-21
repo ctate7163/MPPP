@@ -6,6 +6,8 @@ This covers three things:
 2. the released mask model, exported to **safetensors** and attached to a **GitHub release**;
 3. the same model on **Hugging Face**.
 
+Section 7 covers the documentation site, the Zenodo DOI and the JOSS submission.
+
 MPPP downloads the model from the URLs in `src/mppp/data/models.json` and checks the SHA-256 against the value stored there. From 0.31.2 the default model, `mppp_mask_v3`, has one URL, on Hugging Face (`ctate7163/mppp-mask`), and a registry name always means that released file: a cached copy with another SHA-256 is downloaded again, and a local checkpoint stands in only with `MPPP_MASK_LOCAL_FALLBACK=1`. Older models (v1, v2) keep their Hugging Face and GitHub-release URLs. The model is not stored in git, for two reasons: GitHub rejects files over 100 MB, and a large file in history makes every clone slower forever.
 
 Commands are for Windows (Anaconda Prompt or PowerShell). On Linux and macOS the same commands work with `/` paths.
@@ -139,3 +141,67 @@ python -m mppp.mask.hub list
 Users who want the old model can set `config["masking"]["checkpoint"] = "mppp_mask_v1"`.
 
 `mppp_mask_v2` (0.14.7) was released this way; for it the registry entry was created by hand with the file name `mppp_mask_convnext_tiny_s4_v2.safetensors`. `mppp_mask_v1` stays in the registry with its own URLs (`mask-v1`); if you already uploaded it, leave it there.
+
+## 7. Zenodo DOI and JOSS
+
+JOSS needs a documentation page and an archived release with a DOI. The documentation site
+(`mkdocs.yml`, `docs/`) is built and deployed by `.github/workflows/docs.yml`; the archive metadata is in
+`.zenodo.json` and `CITATION.cff`. The steps below are done by hand on github.com and zenodo.org; they cannot be
+automated from the repository.
+
+### One-time setup
+
+1. **Make the repository public.** GitHub: *Settings > General > Danger Zone > Change repository visibility*. JOSS
+   requires a repository that can be cloned without registration and an issue tracker readable without
+   registration [1].
+2. **Enable GitHub Pages.** GitHub: *Settings > Pages > Build and deployment > Source: GitHub Actions*. The next push
+   to `main` runs the `docs` workflow and publishes <https://ctate7163.github.io/MPPP/>. Check the run under
+   *Actions > docs*.
+3. **Log in to Zenodo with GitHub.** Open <https://zenodo.org>, *Log in > Log in with GitHub*, and authorise the
+   Zenodo application.
+4. **Enable the repository in Zenodo.** In Zenodo, profile menu > *GitHub*, click *Sync now*, find
+   `ctate7163/MPPP` and switch it on. From then on every GitHub release is archived automatically [2].
+5. **Optional: add your ORCID.** JSON has no comments, so `.zenodo.json` has no ORCID placeholder. Add
+   `"orcid": "0000-0000-0000-0000"` to the creator in `.zenodo.json`, and uncomment and fill the `orcid:` line in
+   `CITATION.cff`. Validate with `pip install cffconvert` and `cffconvert --validate -i CITATION.cff`.
+
+### Release 0.92.0 and get the DOI
+
+6. Check that `src/mppp/__init__.py` (`__version__`), `CITATION.cff` (`version`, `date-released`) and
+   `CHANGELOG.md` all say 0.92.0. Commit and push to `main`.
+7. **Create the GitHub release** with the tag `v0.92.0`:
+
+   ```bat
+   git tag v0.92.0
+   git push origin v0.92.0
+   gh release create v0.92.0 --repo ctate7163/MPPP --title "MPPP 0.92.0" --notes "See CHANGELOG.md"
+   ```
+
+   Or on the web: *Releases > Draft a new release*, tag `v0.92.0`, *Publish release*. Zenodo archives the release
+   and mints two DOIs: a **version DOI** for 0.92.0 and a **concept DOI** that always resolves to the latest
+   version. Processing can take some time [3]. Zenodo reads `.zenodo.json`; when both files are present, the
+   `CITATION.cff` metadata is ignored by Zenodo [4] (GitHub still uses `CITATION.cff` for "Cite this repository").
+8. On the Zenodo record, check the title, creator, license and keywords.
+9. **Copy the concept DOI** (`10.5281/zenodo.NNNNNNN`) into:
+   * `README.md`: replace `XXXXXXX` in the DOI badge (the badge snippet is also on the Zenodo record, under the DOI);
+   * `CITATION.cff`: uncomment the `doi:` line and set the concept DOI;
+   * `docs/citing.md`: replace `XXXXXXX`.
+
+   Commit and push. These edits come after the tag, so they are in the next release, not in 0.92.0.
+
+### JOSS submission
+
+10. Submit at <https://joss.theoj.org/papers/new> with the repository URL `https://github.com/ctate7163/MPPP`, the
+    version (`0.92.0`) and the archive DOI from step 9. The paper (`paper/paper.md`, `paper/paper.bib`) must be in
+    the same repository [1].
+11. **At acceptance**, JOSS asks for a tagged release of the reviewed software and its archive DOI [1]. Make the
+    release with any changes from the review (for example `v0.93.0` or `v1.0.0`, with `__version__`,
+    `CITATION.cff` and `CHANGELOG.md` updated), let Zenodo archive it, and post that version's DOI (the version
+    DOI, not the concept DOI) and the version number in the review issue.
+
+References:
+
+1. JOSS, *Submitting a paper to JOSS*: <https://joss.readthedocs.io/en/latest/submitting.html>
+2. Zenodo, *Enable a repository*: <https://help.zenodo.org/docs/github/enable-repository/>
+3. Zenodo, *Archive a release from GitHub*: <https://help.zenodo.org/docs/github/archive-software/github-upload/>
+4. Zenodo, *Describe your software*: <https://help.zenodo.org/docs/github/describe-software/>

@@ -156,6 +156,8 @@ def test_run_sites_bat_files_navcam_and_zcam34():
     assert b"--zcam" not in nav.split(b"start ")[-1] and b"%WHICH% --zcam" in z
     # 20 Oct: the Mastcam-Z joint after the Z34 blocks (MPPP_THEN, run by _run_sites.bat when the batch ran)
     assert b'set "MPPP_THEN=zcam_tied_joint.bat"' in z and b"MPPP_THEN" not in nav
+    j = (w / "zcam_tied_joint.bat").read_bytes()                       # 21 Oct: the combined N+Z check last
+    assert j.index(b"calib zcam") < j.index(b"calib nz") and b"--promote" not in j.split(b"calib nz")[1]
     r = (w / "_run_sites.bat").read_bytes()
     assert b"if defined MPPP_THEN if %RC% LEQ 1" in r and b"%MPPP_THEN_ARGS%" in r
     # the scapes root is checked after mppp_env.bat (mppp_scapes.txt), with D:\scapes as the fallback

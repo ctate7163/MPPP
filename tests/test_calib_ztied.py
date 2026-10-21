@@ -233,6 +233,15 @@ def test_zcam_joint_recovers_the_focus_law_and_the_rig(tmp_path):
     assert res["rig"]["change_mdeg"] == pytest.approx(20.0, abs=4.0)        # back to the truth from 20 mdeg off
     assert res["zcam"]["zcam_median_px"] < 0.2 and res["zcam"]["navcam_zcam_points"] > 100
     assert res["covariance_error"] is None and res["eyes"]["ZL034"]["sd"]["b"] > 0
+    # 21 Oct: the distortion as curves and the likelihood-ratio tests (truth: the same k1, k2 = -0.30, 0.40 in both eyes)
+    dist = res["distortion"]
+    assert len(dist["eyes"]["ZL034"]["displacement_px"]) == 4 and dist["eyes"]["ZL034"]["r3_r5_correlation"] > 0.95
+    assert abs(dist["difference_px"][-1]) < 0.5                       # the eyes' curves agree at the corner
+    tests = {t["test"]: t for t in dist["tests"]}
+    assert tests["k2 = 0 (both eyes)"]["significant"]                 # k2 = 0.40 is real
+    assert not tests["ZR034 k1, k2 = ZL034 k1, k2"]["significant"]    # the eyes do not differ
+    assert max(abs(z) for z in dist["difference_z"]) < 3               # nor do their curves
+    assert any("radial displacement" in x for x in Z.describe(res))
     d = res["diagnostics"]
     assert {r["block"] for r in d["blocks"]} == {"blk_a", "blk_b"}
     assert all(abs(r["yaw_mdeg"]) < 5 for r in d["blocks"])
@@ -259,3 +268,28 @@ def test_joint_gate_residuals_and_block_models():
                                  "b": {"camera_models": {"fingerprint": "old"}}})
     c = Z.joint_checks(old, base)
     assert not c["ok"] and "b aligned with other camera models" in c["checks"][-1]["note"]
+
+
+def test_nz_joint_agrees_with_the_navcam_law_and_sees_a_wrong_one(tmp_path):
+    """21 Oct (Christian): the combined Navcam + Mastcam-Z joint - both laws free - compared with the Navcam-only law.
+    On blocks made with the law it agrees; with the law's NL fx 3 px off it pulls fx back and says so."""
+    from mppp.calib import nzjoint as NZ
+    rng = np.random.default_rng(3)
+    truth = _truth_model()
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500)
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900)
+    st = _navcam_law(cams, rigT)
+    res = NZ.fit_nzjoint({}, model=truth, scapes=[a, b], st=copy.deepcopy(st), nav_points=None, z_points=None,
+                         iterations=40, passes=1, verbose=False)
+    c = res["comparison"]
+    assert c["agree"], NZ.describe(res)
+    assert abs(c["navcam"]["NL"]["fx"]["change"]) < 0.5
+    assert set(c["residuals"]["both_free"]) == {"navcam", "zcam"}
+    bad = copy.deepcopy(st)
+    bad["G"]["NL"][0] += 3.0
+    res2 = NZ.fit_nzjoint({}, model=truth, scapes=[a, b], st=bad, nav_points=None, z_points=None, iterations=40,
+                          passes=1, verbose=False)
+    assert res2["comparison"]["navcam"]["NL"]["fx"]["change"] == pytest.approx(-3.0, abs=1.0)
+    assert not res2["comparison"]["agree"] and "NL fx" in res2["comparison"]["beyond_limits"][0]
+    out = NZ.write_nzjoint(res2, tmp_path / "nz")
+    assert (tmp_path / "nz" / "report.md").is_file() and "Navcam NL" in (tmp_path / "nz" / "report.md").read_text()

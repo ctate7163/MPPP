@@ -1339,9 +1339,12 @@ OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.6,   # 1.6 px (
                     "shift_mad_factor": 5.0, "min_shift_m": 0.25,
                     "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None,
                     "min_navcam_ties": None}
-# a Mastcam-Z frame needs at least this many valid tie points with Navcam (points seen by the frame and by a Navcam
-# image with a third look, MIN_MIXED_TRACK_LENGTH) - fewer, and it is excluded like an outlier (Christian, 20 Oct)
+# a Mastcam-Z frame needs at least this many valid tie points with an anchor camera (points seen by the frame and by an
+# anchor image with a third look, MIN_MIXED_TRACK_LENGTH) - fewer, and it is excluded like an outlier (Christian,
+# 20 Oct).  The anchors (21 Oct): Navcam for 34 and 48 mm; Navcam or a Mastcam-Z image at a wider zoom (shorter focal
+# length) for 63 mm and longer, whose pixels are 5-10x finer than Navcam's and rarely match it directly
 ZCAM_MIN_NAVCAM_TIES = 10
+ZCAM_NAVCAM_ONLY_MAX_ZOOM = 48
 # a frame with fewer tie-point observations than this is held at its prior in the bundle adjustment and
 # flagged by the outlier test (was 30; good frames with 20-29 observations were being dropped).  Notebook 03:
 # MIN_FRAME_OBSERVATIONS; reconstruct(min_frame_observations=) sets it for every stage of one run.
@@ -1362,20 +1365,42 @@ def _zcam_terrain_line(t: Dict[str, Any]) -> str:
     return zcam_terrain_line(t)
 
 
-def navcam_tie_counts(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH) -> Dict[int, int]:
-    """Per registered Mastcam-Z image, its valid tie points with Navcam: 3-D points it observes whose track also
-    holds a Navcam image and is at least ``min_mixed_track_length`` long (the third look)."""
+def _zoom_of(name: str) -> Optional[int]:
+    """The Mastcam-Z zoom (mm) in a PDS image name (``..._0340LUA03``: 34), None for other cameras or names."""
+    s = Path(name).stem.upper()
+    if not s.startswith("Z") or len(s) < 54:
+        return None
+    try:
+        return int(s[45:48])
+    except ValueError:
+        return None
+
+
+def navcam_tie_counts(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH,
+                      navcam_only_max_zoom: Optional[int] = ZCAM_NAVCAM_ONLY_MAX_ZOOM) -> Dict[int, int]:
+    """Per registered Mastcam-Z image, its valid tie points with an anchor: 3-D points it observes whose track also
+    holds an anchor image and is at least ``min_mixed_track_length`` long (the third look).  The anchors are the
+    Navcam images; for a zoom above ``navcam_only_max_zoom`` (48 mm) also the Mastcam-Z images at a shorter zoom (a
+    63 mm frame ties through 34 or 48 mm, a 110 mm frame through 34-79 mm).  ``navcam_only_max_zoom=None``: Navcam
+    only for every zoom."""
     fam = {int(i): rec.images[i].name[:1] for i in rec.reg_image_ids()}
-    out = {i: 0 for i, f in fam.items() if f == "Z"}
+    zoom = {i: _zoom_of(rec.images[i].name) for i, f in fam.items() if f == "Z"}
+    out = {i: 0 for i in zoom}
     for pt in rec.points3D.values():
         if pt.track.length() < min_mixed_track_length:
             continue
         ids = {int(el.image_id) for el in pt.track.elements}
-        if not any(fam.get(i) == "N" for i in ids):
+        zs = [i for i in ids if i in zoom]
+        if not zs:
             continue
-        for i in ids:
-            if fam.get(i) == "Z":
+        has_nav = any(fam.get(i) == "N" for i in ids)
+        widest = min((zoom[i] for i in zs if zoom[i] is not None), default=None)
+        for i in zs:
+            if has_nav:
                 out[i] += 1
+            elif (navcam_only_max_zoom is not None and zoom[i] is not None and widest is not None
+                  and zoom[i] > navcam_only_max_zoom and widest < zoom[i]):
+                out[i] += 1                                   # tied through a wider Mastcam-Z zoom
     return out
 
 
@@ -1398,7 +1423,8 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
       attitude is one mast pointing, whose error is per image;
     * (a Mastcam-Z frame, Navcam images registered) it has fewer than
       ``min_navcam_ties`` (:data:`ZCAM_MIN_NAVCAM_TIES`, 10) valid tie points
-      with Navcam (:func:`navcam_tie_counts`: a third look on each).
+      with an anchor (:func:`navcam_tie_counts`: Navcam for 34 and 48 mm, Navcam or a
+      wider Mastcam-Z zoom for 63-110 mm; a third look on each).
 
     Returns one record per flagged frame: frame id, images, station, reasons,
     and ``kind``: ``"unconstrained"`` for a frame with no tie points at all
@@ -1452,7 +1478,9 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
             n = sum(ties.get(int(d.id), 0) for d in rec.frames[fid].data_ids)
             f["navcam_ties"] = n
             if n < int(th["min_navcam_ties"]):
-                f["reasons"].append(f"{n} tie points with Navcam < {int(th['min_navcam_ties'])}")
+                z = _zoom_of(f["images"][0])
+                anchor = "Navcam" if z is None or z <= ZCAM_NAVCAM_ONLY_MAX_ZOOM else "Navcam or a wider zoom"
+                f["reasons"].append(f"{n} tie points with {anchor} < {int(th['min_navcam_ties'])}")
     all_med = np.median([f["median_residual_px"] for f in frames.values() if np.isfinite(f["median_residual_px"])])
     lim = max(th["residual_factor"] * all_med, th["min_residual_px"])
     for f in frames.values():

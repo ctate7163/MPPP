@@ -1,0 +1,115 @@
+# Camera models and calibration
+
+`mppp.calib` defines one frozen model form per camera family and ships the promoted models in
+`src/mppp/data/cmods/`. `mppp cmods list` prints the models in use; `MPPP_CMODS` points at another folder, whose
+missing files fall back to the package copies.
+
+## Model forms
+
+**Navcam** (eyes NL, NR). COLMAP `THIN_PRISM_FISHEYE` at the full 5120 x 3840 frame, with sx1 = sy1 = 0 held. The
+focal lengths, the principal point and k1 are linear in the camera temperature about a reference temperature T0;
+fx, fy, cx, cy carry offsets for the images before the early-mission sol. NL is the rig reference. The stereo rig
+(NR from NL) has one yaw for every temperature and a rotation drift linear in sol, with a hinge in the pitch rate.
+
+**Hazcam** (front and rear). The same form, shipped as start models (f = 2130 px, k1 = -0.25, k2 = +0.08). They are
+not calibrated: a Hazcam product is processed with a warning.
+
+**Mastcam-Z** (zooms 34, 48, 63, 79, 110 mm). One calibration per zoom, `FULL_OPENCV` at 1648 x 1200, a function of
+the focus count and the focus-motor backlash state only: fx and fy are lines in focus count per eye and state, k1
+and k2 are constant per eye, and there is no temperature term. 34 mm is calibrated; the other zooms start from the
+label CAHVOR of each image.
+
+## The calibration loop
+
+The block alignments refine the cameras (see [Pipeline](pipeline.md)). The joint adjustments below combine many
+finished blocks into one candidate model, check it against the model in use, and promote it on request. A promotion
+changes the run key, so the next batch run realigns every block with the new cameras.
+
+```text
+finished blocks  ->  mppp calib navcam   ->  Navcam candidate        ->  check  ->  promote
+                 ->  mppp calib zcam     ->  Mastcam-Z focus model   ->  check  ->  promote
+                 ->  mppp calib nz       ->  report only (never promoted)
+```
+
+The blocks come from a site group of the site definitions (`--group`, default `navcam_consensus` for Navcam and
+`zcam34_consensus` for Mastcam-Z) under the scapes root, or are listed with `--blocks NAME=WORK ...`. Each joint
+needs at least two finished blocks. Results go to `<root>/camera_analysis/<name>_<date>/` unless `--out` is given.
+
+### Navcam tied joint: `mppp calib navcam`
+
+Module [`mppp.calib.tied`](api.md#mppp.calib.tied). Every term of the Navcam form is a parameter of one bundle
+adjustment over the finished Navcam blocks:
+
+- each eye gets one COLMAP camera per (temperature bin, era), where the era is before or after the early-mission
+  sol. The cameras are tied by constraint residuals to global parameters:
+  `fx = G.fx + S.fx (T - T0) + early * E.fx` (likewise fy, cx, cy), `k1 = G.k1 + S.k1 (T - T0)`, and one set of
+  k2, p1, p2, k3, k4 for all bins;
+- each block gets one stereo rig per (rig epoch, bin, era). The rig rotations are tied to one global rig and its
+  drift in sol, with the early-mission hinge in pitch. The yaw of the global rig and the baseline are held.
+
+The global parameters and their covariance go into a candidate folder (`navcam_joint/`). A diagnostic pass then
+holds the global law and frees one camera per (block, eye, bin, era) and one rig per (block, epoch), to show the
+per-block, per-bin and per-sol values about the global solution. The candidate is checked against the models in use
+(`promotion_check.json`): convergence, residuals, camera and rig changes, thermal slopes, the early-mission fit and
+leave-one-block-out limits.
+
+```bash
+mppp calib navcam                          # blocks of the navcam_consensus group under MPPP_SCAPES
+mppp calib navcam --promote-if-ok --note "tied joint of the consensus blocks"
+```
+
+### Mastcam-Z joint: `mppp calib zcam`
+
+Module [`mppp.calib.ztied`](api.md#mppp.calib.ztied). One bundle adjustment over the finished Navcam + Mastcam-Z
+blocks of one zoom (`--zoom`, default 34):
+
+- **Navcam held** at the promoted law (camera per eye, temperature bin and era; rig on its sol trend). The Navcam
+  fixes the scale and the directions that the Mastcam-Z is fitted against. Frame poses are free, with the same
+  priors as the block runs.
+- **Mastcam-Z fitted**: every block's focus-bin camera is tied to the global focus law of its eye (zcam-v2 form):
+  fx and fy lines in focus count per backlash state with one slope per eye; k1, k2, p1, p2 one value per eye; one
+  Mastcam-Z rig for all blocks, rotation refined, baseline held.
+- **Diagnostic pass**: the global law held, each block's bins and rig free.
+
+The result is a candidate focus model, checked against the one in use (`report.md`). `--no-k-tests` skips the
+k1/k2 likelihood-ratio tests.
+
+```bash
+mppp calib zcam --zoom 34
+mppp calib zcam --zoom 34 --promote-if-ok
+```
+
+### Combined check: `mppp calib nz`
+
+Module [`mppp.calib.nzjoint`](api.md#mppp.calib.nzjoint). One adjustment of the finished Navcam + Mastcam-Z blocks
+in which the Navcam law and the Mastcam-Z focus law are both free, starting from the promoted laws. It compares the
+result with the Navcam-only law: how far each Navcam term moved in units of its standard deviation, the Navcam and
+Mastcam-Z residuals before and after, and the rig.
+
+The two solutions agree when no Navcam term moves by more than 3 sd, no focal length by more than 100 ppm, no
+principal point by more than 0.3 px, and the Navcam residual median rises by no more than 5 %. If they disagree, the
+Mastcam-Z frames pull on the Navcam scale or pointing.
+
+`calib nz` is a check, not a calibration: it writes `nz_joint.json` and `report.md` and never promotes anything. It
+exits with 0 whether or not the solutions agree.
+
+```bash
+mppp calib nz --zoom 34
+```
+
+## Promotion: `mppp cmods`
+
+A candidate becomes the model in use when it is promoted, either by `--promote-if-ok` above (only when every check
+passes) or by hand:
+
+```bash
+mppp cmods list                                         # the models in use and their form check
+mppp cmods promote <candidate folder or files> --note "why" --dry-run   # check and show, copy nothing
+mppp cmods promote <candidate folder or files> --note "why"
+```
+
+`promote` validates each file against the form, copies it into the models folder and appends the note to
+`cmods/CHANGES.md`; the replaced files stay in the git history. `scripts/promote_cmods.py` does the same from a
+script. Commit `src/mppp/data/cmods` after a promotion.
+
+Camera models and site definitions are the author's decisions; open an issue before proposing a change to them.

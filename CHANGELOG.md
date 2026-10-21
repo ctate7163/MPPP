@@ -2,7 +2,34 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
-## 0.91.0 — 2026-10-20 (in development)
+## 0.92.0 — 2026-10-21
+
+The combined Navcam + Mastcam-Z check, the zoom tie ladder, k1/k2 tests, the documentation site and the Zenodo setup.
+
+- **Combined Navcam + Mastcam-Z joint** (`mppp.calib.nzjoint`, `mppp calib nz`): from the merged finished blocks, the
+  Mastcam-Z joint with the Navcam held (the reference), then one adjustment with both laws free (Navcam bins tied to
+  the Navcam law, Mastcam-Z bins to the focus law, both rigs refined), and its comparison with the Navcam-only law:
+  each Navcam term's change at the reference temperature (px, ppm, in sd), the thermal slopes, the Navcam and
+  Mastcam-Z residuals before and after.  "Agrees" when no term moves beyond 3 sd, 100 ppm (f) or 0.3 px (cx, cy) and
+  the Navcam residual median rises less than 5 %.  A check, never promoted; `zcam_tied_joint.bat` runs it last
+  (`nz34_joint_<date>/report.md`; `set MPPP_NZ=none` skips it), so `run_sites_zcam34.bat` ends with it.
+- **The tie rule by zoom**: 34 and 48 mm frames need 10 valid tie points with Navcam (as before); 63-110 mm frames need
+  10 with Navcam or with a Mastcam-Z image at a wider zoom (`reconstruction.navcam_tie_counts`,
+  `ZCAM_NAVCAM_ONLY_MAX_ZOOM = 48`): a long-zoom frame ties through 34 or 48 mm, whose pixels are close to its own.
+- **k1, k2 of Mastcam-Z as curves, with tests** (`ztied.distortion_curves`, `distortion_tests`): each eye's radial
+  displacement at 1/4, 1/2, 3/4 and 1 of the corner radius, the right-minus-left difference with its sd, and two
+  likelihood-ratio tests from the joint's solution - k2 = 0 in both eyes, and ZR's k1, k2 = ZL's - each with the
+  largest change of the curve it causes.  Over the 34 mm frame r^3 and r^5 correlate 0.98, so the eyes' different k1,
+  k2 (20 Oct: ZL -0.46/0.55, ZR -0.48/0.95) give curves within 0.1-0.2 px of each other.  `--no-k-tests` skips the two
+  extra adjustments.
+- **Zoom plumbing**: `fit_zjoint` / `write_zjoint` load the focus model of the zoom asked for (they always loaded 34 mm).
+- **Documentation site** (MkDocs Material + mkdocstrings, `mkdocs.yml`, `docs/*.md`, `.github/workflows/docs.yml` to
+  GitHub Pages; `pip install -e ".[docs]"`), **Zenodo** (`.zenodo.json`; `CITATION.cff` valid: cff-version 1.2.0) and
+  the release steps for the DOI in `docs/RELEASING.md`.
+- The example data: `MPPP_PDS` is the unpacked folder (it holds `datadrive/` and `zcam/`); `mppp example fetch` said
+  `datadrive/`, which hides the Mastcam-Z frames.  The matcher docstrings say what the default is (exhaustive SIFT).
+
+## 0.91.0 — 2026-10-20
 
 The joint as one bundle adjustment, the rig fitted for yaw and roll, Mastcam-Z p1, p2, the site maps and the CLI.
 

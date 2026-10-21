@@ -1,0 +1,87 @@
+site_name: MPPP
+site_description: "Mars Photogrammetry Preprocessing Pipeline: Mars 2020 PDS images to COLMAP and Metashape"
+site_author: Christian Tate
+site_url: https://ctate7163.github.io/MPPP/
+repo_url: https://github.com/ctate7163/MPPP
+repo_name: ctate7163/MPPP
+edit_uri: ""
+copyright: "Copyright 2026 Christian Tate, Malin Space Science Systems. Apache-2.0."
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Light mode
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Quick start: quickstart.md
+  - Pipeline: pipeline.md
+  - Camera models and calibration: calibration.md
+  - Command line: cli.md
+  - Windows batch files: WINDOWS.md
+  - API reference: api.md
+  - Methods: methods.md
+  - Contributing: contributing.md
+  - Citing: citing.md
+
+# Working notes kept in docs/ for the author; not part of the site.
+exclude_docs: |
+  AUDIT_v0p90.md
+  PLAN_v0p91.md
+  DELIVERY_v0p91.md
+  HANDOFF_v0p87.md
+  CI_ROADMAP.md
+  hf_model_card.md
+  history/
+
+# Built and linkable, but not in the navigation.
+not_in_nav: |
+  RELEASING.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: sphinx
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: true
+            heading_level: 2
+            members_order: source
+            filters: ["!^_"]
+            show_if_no_docstring: false
+            merge_init_into_class: true
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn

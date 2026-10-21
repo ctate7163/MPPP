@@ -1,0 +1,32 @@
+{
+  "title": "MPPP: Mars Photogrammetry Preprocessing Pipeline",
+  "description": "MPPP turns Mars 2020 Perseverance Navcam and Mastcam-Z PDS image products into aligned structure-from-motion blocks in COLMAP and into inputs for Agisoft Metashape, with rover masks, camera models and pose priors.",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Tate, Christian",
+      "affiliation": "Malin Space Science Systems"
+    }
+  ],
+  "license": "Apache-2.0",
+  "keywords": [
+    "Mars 2020",
+    "Perseverance",
+    "photogrammetry",
+    "COLMAP",
+    "Metashape"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/ctate7163/MPPP",
+      "relation": "isSupplementTo",
+      "scheme": "url",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "https://ctate7163.github.io/MPPP/",
+      "relation": "isDocumentedBy",
+      "scheme": "url"
+    }
+  ]
+}

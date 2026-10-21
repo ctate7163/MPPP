@@ -35,6 +35,13 @@ python -m mppp --log "%OUT%_log.txt" calib zcam --root "%MPPP_SCAPES%" --out "%O
 if errorlevel 1 ( echo Mastcam-Z joint FAILED - see %OUT%_log.txt & pause & exit /b 1 )
 set "MPPP_NOPAUSE=1"
 call "%MPPP_HOME%\scripts\windows\make_figures.bat" - "%OUT%"
+REM 21 Oct: last, the combined Navcam + Mastcam-Z joint (both laws free) against the Navcam-only law - a check, never
+REM promoted (report in nz34_joint_<date>; set MPPP_NZ=none to skip it)
+if /i not "%MPPP_NZ%"=="none" (
+  echo Navcam + Mastcam-Z combined joint ^(a check, nothing promoted^)
+  python -m mppp --log "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt" calib nz --root "%MPPP_SCAPES%" --out "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%"
+  if errorlevel 1 echo the combined joint FAILED - see %MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt
+)
 echo done: %OUT%
 pause
 exit /b 0

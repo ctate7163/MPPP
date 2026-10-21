@@ -42,3 +42,5 @@ Claude outputs/
 paper/paper.pdf
 scripts/windows/mppp_scapes.txt
 scripts/windows/mppp_pds.txt
+# documentation site built by mkdocs (mkdocs.yml; deployed by .github/workflows/docs.yml)
+site/

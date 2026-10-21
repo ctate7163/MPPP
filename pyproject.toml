@@ -22,6 +22,7 @@ plots   = ["matplotlib", "pillow"]                                            # 
 maps    = ["matplotlib", "scipy", "pillow", "adjustText", "rasterio", "pyproj"]   # the M20 site-map figures (make_maps.bat)
 notebooks = ["jupyterlab", "matplotlib", "pillow"]
 release = ["huggingface_hub"]                                                 # scripts/release_mask_model.py
+docs    = ["mkdocs>=1.6.1,<2", "mkdocs-material>=9.7", "mkdocstrings[python]>=1.0"]     # the documentation site (mkdocs.yml)
 dev     = ["pytest", "flake8", "nbformat", "pillow"]
 all     = ["mppp[mask,sfm,error,plots,maps,notebooks,dev]"]
 

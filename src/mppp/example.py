@@ -130,7 +130,7 @@ def build_example(pds: PathLike, zcam: Optional[PathLike], out_dir: PathLike, na
         man = {"name": name, "sols": list(sols), "waypoints": ["26/630", "26/756"], "zcam_sequence": ZCAM_SEQUENCE,
                "counts": {k: len(sel[k]) for k in ("navcam", "hazcam", "zcam")},
                "bytes": sum(f["bytes"] for f in files), "files": files,
-               "use": "unzip, then MPPP_PDS=<folder>/datadrive and the Mastcam-Z frames in <folder>/zcam"}
+               "use": "unzip, then MPPP_PDS=<folder> (it holds datadrive/ and zcam/)"}
         zf.writestr("example_manifest.json", json.dumps(man, indent=1))
     man.update({"zip": str(zp), "zip_bytes": zp.stat().st_size, "zip_sha256": _sha256(zp)})
     (out / f"{name}.sha256").write_text(f"{man['zip_sha256']}  {zp.name}\n", encoding="utf-8")

@@ -1,4 +1,4 @@
-cff-version: 0.90.0
+cff-version: 1.2.0
 message: "If you use MPPP, please cite it as below."
 title: "MPPP: Mars Photogrammetry Preprocessing Pipeline"
 type: software
@@ -6,10 +6,13 @@ authors:
   - family-names: Tate
     given-names: Christian
     affiliation: "Malin Space Science Systems"
-version: 0.91.0
-date-released: 2026-10-19
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   (add the author's ORCID; see docs/RELEASING.md)
+version: 0.92.0
+date-released: 2026-10-21
+# doi: 10.5281/zenodo.XXXXXXX   (the Zenodo concept DOI, after the first archived release; see docs/RELEASING.md)
 license: Apache-2.0
 repository-code: "https://github.com/ctate7163/MPPP"
+url: "https://ctate7163.github.io/MPPP/"
 keywords:
   - Mars 2020
   - Perseverance

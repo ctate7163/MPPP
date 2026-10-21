@@ -1,5 +1,11 @@
 # MPPP — Mars Photogrammetry Preprocessing Pipeline
 
+[![docs](https://github.com/ctate7163/MPPP/actions/workflows/docs.yml/badge.svg)](https://ctate7163.github.io/MPPP/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
+
+Documentation: <https://ctate7163.github.io/MPPP/>
+<!-- DOI badge: replace XXXXXXX with the Zenodo concept DOI after the first archived release (docs/RELEASING.md) -->
+
 *Beyond the stereo baseline with Mars rover images.*
 
 Every time a Mars rover stops, it looks around from a new viewpoint. The Mars 2020 Perseverance rover captures the
@@ -62,7 +68,7 @@ at each of the two waypoints (sols 461 and 464) and eight Mastcam-Z 34 mm frames
 
 ```bash
 mppp example fetch               # downloads the release asset (example-data-v1), checks it, unpacks to ~/mppp_example
-export MPPP_PDS=~/mppp_example/datadrive
+export MPPP_PDS=~/mppp_example          # the folder holding datadrive/ and zcam/
 mppp run rockytop_example --zcam
 ```
 

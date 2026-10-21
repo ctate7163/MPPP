@@ -116,9 +116,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dems", default=None, help="1 m DTM GeoTIFFs, os.pathsep-separated (M20_DEMS)")
     p.add_argument("--orthos", default=None, help="orthomosaic GeoTIFFs (M20_ORTHOS)")
     p = sub.add_parser("calib", help="the camera calibrations (0.91: the Navcam tied joint, the Mastcam-Z joint)")
-    p.add_argument("which", choices=["navcam", "zcam"],
+    p.add_argument("which", choices=["navcam", "zcam", "nz"],
                    help="navcam: the one-adjustment joint over the finished Navcam blocks; zcam: the Mastcam-Z joint "
-                        "over the finished Navcam + Mastcam-Z blocks, the Navcam held at the models in use")
+                        "over the finished Navcam + Mastcam-Z blocks, the Navcam held at the models in use; nz: the "
+                        "combined joint (both laws free) compared with the Navcam-only law - a check, never promoted")
     p.add_argument("--root", default=None, metavar="DIR", help="the scapes root (default: MPPP_SCAPES)")
     p.add_argument("--group", default=None, help="site group of the blocks (default navcam_consensus / zcam34_consensus)")
     p.add_argument("--zoom", type=int, default=34, help="zcam: the Mastcam-Z zoom (default 34)")
@@ -133,6 +134,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--aniso-f", action="store_true",
                    help="separate fx and fy thermal slopes (default: one ppm/degC per eye, fy tied to fx)")
     p.add_argument("--no-diagnostics", action="store_true", help="skip the per-block diagnostic pass (no gate then)")
+    p.add_argument("--no-k-tests", action="store_true", help="zcam: skip the k1/k2 likelihood-ratio tests (2 more "
+                   "adjustments)")
     p.add_argument("--promote-if-ok", action="store_true", help="promote the candidate when every check passes")
     p.add_argument("--no-promote", action="store_true", help="never promote (overrides --promote-if-ok)")
     p.add_argument("--note", default="", help="promotion note")
@@ -338,7 +341,7 @@ def cmd_example(a: argparse.Namespace) -> int:
     from . import example as E
     if a.what == "fetch":
         d = E.fetch_example(a.dest, force=a.force)
-        print(f"example data in {d}\n  set MPPP_PDS={d / 'datadrive'} (the Mastcam-Z frames are in {d / 'zcam'})")
+        print(f"example data in {d}\n  set MPPP_PDS={d} (it holds datadrive/ and zcam/)")
         return 0
     pds = a.pds or os.environ.get("MPPP_PDS")
     if not pds:
@@ -437,7 +440,7 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
     if not str(root):
         raise SystemExit("--root (or MPPP_SCAPES) is required")
     table = load_site_table(a.sites_file)
-    zcam = getattr(a, "which", "navcam") == "zcam"
+    zcam = getattr(a, "which", "navcam") in ("zcam", "nz")
     a.group = a.group or (f"zcam{int(getattr(a, 'zoom', 34))}_consensus" if zcam else "navcam_consensus")
     names = table.get("groups", {}).get(a.group)
     if not names:
@@ -466,6 +469,8 @@ def cmd_calib(a: argparse.Namespace) -> int:
     from .calib.fit import check_lines, check_navcam, promote_navcam
     if a.which == "zcam":
         return _calib_zcam(a)
+    if a.which == "nz":
+        return _calib_nz(a)
     blocks = _navcam_blocks(a)
     if len(blocks) < 2:
         print(f"ERROR: {len(blocks)} finished block(s); the joint needs several", file=sys.stderr)
@@ -504,7 +509,8 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
     log.info("calib zcam: %d blocks -> %s", len(blocks), out)
     res = Z.fit_zjoint(blocks, zoom=a.zoom, nav_points=a.points or Z.NAV_POINTS_PER_BLOCK,
-                       z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, diagnostics=not a.no_diagnostics)
+                       z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, diagnostics=not a.no_diagnostics,
+                       k_tests=not a.no_k_tests)
     from .calib import models_fingerprint
     from .pipeline import run_done
     res["models_fingerprint"] = models_fingerprint()
@@ -519,6 +525,29 @@ def _calib_zcam(a: argparse.Namespace) -> int:
         print(f"promoted into {pr['folder']} ({pr['stamp']})")
     elif promote:
         print("not promoted: a check failed (the model in use stays)")
+    return 0
+
+
+def _calib_nz(a: argparse.Namespace) -> int:
+    """``calib nz``: the combined Navcam + Mastcam-Z joint (:mod:`mppp.calib.nzjoint`) over the finished Navcam +
+    Mastcam-Z blocks - both laws free - and its comparison with the Navcam-only law.  Writes a report; promotes
+    nothing.  Exit 0 whether or not they agree (the report says which)."""
+    import datetime
+    from .calib import nzjoint as NZ
+    from .calib import ztied as Z
+    blocks = _navcam_blocks(a)
+    if len(blocks) < 2:
+        print(f"ERROR: {len(blocks)} finished Mastcam-Z block(s); the joint needs several", file=sys.stderr)
+        return 1
+    root = Path(a.root or os.environ.get("MPPP_SCAPES") or next(iter(blocks.values())).parent)
+    out = Path(a.out) if a.out else root / "camera_analysis" / f"nz{a.zoom}_joint_{datetime.date.today():%Y%m%d}"
+    log.info("calib nz: %d blocks -> %s", len(blocks), out)
+    res = NZ.fit_nzjoint(blocks, zoom=a.zoom, nav_points=a.points or Z.NAV_POINTS_PER_BLOCK,
+                         z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK)
+    w = NZ.write_nzjoint(res, out)
+    for line in NZ.describe(res):
+        print("  " + line)
+    print(f"=> {'agrees with' if w['agree'] else 'DIFFERS from'} the Navcam-only law; {out / 'report.md'} (nothing promoted)")
     return 0
 
 

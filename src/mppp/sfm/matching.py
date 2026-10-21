@@ -1,7 +1,7 @@
 """
 Feature matching on ``database.db`` (full-resolution keypoints).
 
-``mode="lightglue"`` (the default of the pipeline) matches COLMAP's SIFT features with LightGlue
+``mode="lightglue"`` (optional; the pipeline's default is COLMAP's exhaustive SIFT matcher since 0.91) matches COLMAP's SIFT features with LightGlue
 (:mod:`mppp.sfm.lightglue`), all pairs, or only ``pairs`` when given.  ``mode="exhaustive"`` is COLMAP's own
 nearest-neighbour SIFT matching of all pairs (ratio test, cross check; use a GPU); ``mode="prior_pairs"`` matches
 only the pairs from :func:`mppp.sfm.prior_overlap_pairs` with it - for CPU runs and quick tests; it biases

@@ -1,5 +1,5 @@
 """
-SIFT + LightGlue matching on ``database.db`` - the default matcher of MPPP.
+SIFT + LightGlue matching on ``database.db`` - an optional matcher (``MATCH_MODE="lightglue"``; the default is COLMAP's exhaustive SIFT since 0.91).
 
 COLMAP's SIFT keypoints and descriptors (``extract_features`` / ``build_database``) are matched with LightGlue
 (Lindenberger et al., ICCV 2023; the ``sift`` weights, through ``kornia``), a learned matcher that is far more
