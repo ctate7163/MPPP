@@ -91,3 +91,6 @@
   - `M2020_NL_fisheye_tangential.json` 3a929587a1cc from `D:\scapes\camera_analysis\navcal_tied_20261020_2\navcam_joint\M2020_NL_fisheye_tangential.json` (rewritten with applied_terms) (THIN_PRISM_FISHEYE 5120x3840, fx 2956.17 at -20.0 degC)
   - `M2020_NR_fisheye_tangential.json` eb9633c261ff from `D:\scapes\camera_analysis\navcal_tied_20261020_2\navcam_joint\M2020_NR_fisheye_tangential.json` (rewritten with applied_terms) (THIN_PRISM_FISHEYE 5120x3840, fx 2948.69 at -20.0 degC)
   - `M2020_N_rig.json` cf7cd2204615 from `D:\scapes\camera_analysis\navcal_tied_20261020_2\navcam_joint\M2020_N_rig.json` (rewritten with applied_terms) (rig, baseline 0.4240102397823094 m)
+
+## 20261022-110217 - Mastcam-Z 34 mm joint of 6 blocks
+  - `M2020_ZCAM034_focus_model.json` e82c2e0da6d6 from `D:\scapes\camera_analysis\zcam34_joint_20261022\M2020_ZCAM034_focus_model.json` (focus model for ['ZL034', 'ZR034'] and rig)
