@@ -8,6 +8,10 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
   `COLMAP_BAT_CANDIDATES`, so the GUI files of blocks run since then said "COLMAP.bat not found" unless `COLMAP_BAT`
   was set. The candidates now include the official release zips unpacked in `C:\tools` or `D:\tools`
   (`colmap-x64-windows-nocuda`, `colmap-x64-windows-cuda`, `COLMAP`). `mppp gui` rewrites the files of finished blocks.
+- **chal_rocks: sol 91 first** (Christian): `"sols": [[91, 101], [361, 378]]`, so the block folders are
+  `mars2020_sol_0091_chal_rocks[_zcam]` (were `0361`). `move_scapes.bat` (`studies/calibration/move_scapes.py
+  --apply`) renames the existing `mars2020_sol_0361_chal_rocks_zcam` and rewrites its project paths, so the next run
+  reuses its processed images.
 - **Residual summary**: `residual_rms_native_px` and the median use the finite residuals only (`residual_nonfinite`
   counts the others: a point behind a camera or outside a lens model's domain). The 22 Oct chal_rocks block reported
   an RMS of Infinity.

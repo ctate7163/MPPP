@@ -77,7 +77,7 @@ def test_sites_json_is_the_site_list():
     assert S.parse_work_folder("D:/x/mars2020_sol_0361_sid_chal_rocks_colmap") == ("sid_chal_rocks", False)
     assert S.parse_work_folder("D:/x/south_arm_colmap_zcam34") == ("south_arm", True)     # before v0p53 (by hand)
     assert S.parse_work_folder("D:/x/sid_colmap") == ("sid", False)
-    assert S.work_folder("D:/r", "chal_rocks", True).name == "mars2020_sol_0361_chal_rocks_zcam"   # v0p85
+    assert S.work_folder("D:/r", "chal_rocks", True).name == "mars2020_sol_0091_chal_rocks_zcam"   # 0.93.3: sol 91 first (was 0361)
     assert S.work_folder("D:/r", "x", False, (7, 9)).name == "mars2020_sol_0007_x"
 
 
@@ -244,8 +244,8 @@ def test_shipped_sites_v0p75():
     from mppp.waypoints import sites as S
     t = S.load_site_table()
     r = S.load_site_ranges()
-    assert r["chal_rocks"] == [(361, 378), (91, 101)] and r["threeforks_large"][0] == (652, 693)
-    assert r["enchanted_lake"] == [(556, 590), (421, 423)] and S.load_sites()["chal_rocks"] == (361, 378)
+    assert r["chal_rocks"] == [(91, 101), (361, 378)] and r["threeforks_large"][0] == (652, 693)
+    assert r["enchanted_lake"] == [(556, 590), (421, 423)] and S.load_sites()["chal_rocks"] == (91, 378)
     g = t["groups"]
     assert "olifants" not in g["navcam_consensus"] and "cheyava_falls" in g["navcam_consensus"]
     assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
