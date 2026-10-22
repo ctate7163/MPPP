@@ -2,6 +2,15 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.92.1 — 2026-10-22
+
+- **Mastcam-Z movies are left out** (`pipeline.drop_zcam_movies`, `Settings.zcam_video_max_dt_s` = 5 s, not in the run
+  key): a sequence whose frames of one eye number >= 20 with a median spacing <= 5 s.  The Z34 run of 21-22 Oct had
+  four: Issole ZCAM05093 (~2000 frames), Bunsen Peak ZCAM05179 (1088, 0.44 s) and ZCAM05180 (416, 1.8 s), Rockytop
+  ZCAM05114 (144, 1.0 s) - one eye, no tie points, hours of matching, and the health check FAILed (Bunsen: 576
+  images without tie points; Rockytop: 21 % excluded).  Mosaics are 13-60 s per frame and stay.  Rockytop and Bunsen
+  Peak also exclude their movies by name (`EXCLUDE` in sites.json), which changes their run key: they run again.
+
 ## 0.92.0 — 2026-10-21
 
 The combined Navcam + Mastcam-Z check, the zoom tie ladder, k1/k2 tests, the documentation site and the Zenodo setup.

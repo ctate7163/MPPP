@@ -54,3 +54,17 @@ def test_big_blocks_match_prior_pairs_and_keep_their_run_key():
     assert effective_match_mode(Settings(max_exhaustive_images=0), 2713) == "exhaustive"
     assert effective_match_mode(Settings(match_mode="lightglue"), 2713) == "lightglue"
     assert run_key(Settings(max_exhaustive_images=5)) == run_key(Settings())
+
+
+def test_zcam_movies_are_left_out():
+    """22 Oct: Mastcam-Z movies (one eye, frames 0.4-2 s apart: Bunsen Peak ZCAM05179) go; mosaics (15-30 s) stay."""
+    from mppp.pipeline import drop_zcam_movies, run_key
+    def im(eye, seq, sclk, fam="Z"):
+        return {"filename": {"family": fam, "eye": eye, "sequence": seq, "sclk": sclk}}
+    movie = [im("L", "ZCAM05179", 761484524.0 + 0.44 * k) for k in range(30)]
+    mosaic = [im(e, "ZCAM09097", 761400000.0 + 18.0 * k) for k in range(45) for e in ("L", "R")]
+    short = [im("L", "ZCAM07000", 761300000.0 + 0.5 * k) for k in range(5)]        # a focus stack: too few
+    nav = [im("L", "NCAM00500", 761484524.0 + 0.1 * k, fam="N") for k in range(30)]
+    keep, movies = drop_zcam_movies(movie + mosaic + short + nav)
+    assert movies == {("ZCAM05179", "L"): 30} and len(keep) == 90 + 5 + 30
+    assert run_key(Settings(zcam_video_max_dt_s=0)) == run_key(Settings())       # not in the run key

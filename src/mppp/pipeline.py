@@ -157,6 +157,7 @@ class Settings:
                                                               num_octaves=None, first_octave=-1))   # num_octaves None: 6 with Mastcam-Z, else 4
     match_mode: str = "exhaustive"                # the matcher: "exhaustive" (COLMAP's SIFT matcher, the default until the A/B test), "lightglue" (SIFT + LightGlue) or "prior_pairs" (quick / CPU)
     max_exhaustive_images: int = 1000             # 21 Oct: above this many images "exhaustive" matches the prior-overlap pairs instead (Issole Z34: 2713 images, 3.7 M pairs, > 9 h); 0 = never (not in the run key)
+    zcam_video_max_dt_s: float = 5.0              # 22 Oct: a Mastcam-Z sequence whose frames of one eye come this close (median spacing) and number >= 20 is a movie (Issole ZCAM05093, Bunsen Peak ZCAM05179/05180, Rockytop ZCAM05114: 0.4-1.8 s, one eye, no tie points) and is left out; 0 = keep (not in the run key)
     match: Dict[str, Any] = field(default_factory=lambda: dict(max_ratio=0.9, max_distance=1.0, cross_check=True,
                                                                guided_matching=False, max_error_px=6.0,
                                                                max_keypoints=8192, filter_threshold=0.1))   # matching options (the last two: LightGlue)
@@ -208,7 +209,7 @@ class Settings:
 PATH_FIELDS = {"pds_dir", "scapes_root", "sites_file", "navcam_cameras", "zcam_focus_model"}
 TUPLE_FIELDS = {"sequence_prefixes", "subframe_families", "hold_cameras", "thermal_free", "navcam_rig_epoch_breaks_sols"}
 NOT_IN_KEY = {"pds_dir", "scapes_root", "gpu_python", "colmap_bat", "workers", "gui_files", "sites_file",
-              "source", "variant", "max_exhaustive_images"}
+              "source", "variant", "max_exhaustive_images", "zcam_video_max_dt_s"}
 SETTING_NAMES = tuple(f.name for f in fields(Settings))
 
 
@@ -277,6 +278,37 @@ work_settings = load_settings
 
 
 # ----------------------------------------------------------------------------------------------------- run keys
+ZCAM_MOVIE_MIN_FRAMES = 20
+
+
+def drop_zcam_movies(images: List[Dict[str, Any]], max_dt_s: float = 5.0, min_frames: int = ZCAM_MOVIE_MIN_FRAMES
+                     ) -> Tuple[List[Dict[str, Any]], Dict[Tuple[str, str], int]]:
+    """Leave out Mastcam-Z movies: a sequence whose frames of one eye number at least ``min_frames`` with a median
+    spacing (SCLK) of at most ``max_dt_s``.  A mosaic's frames of one eye are 10-60 s apart (the mast moves between
+    them); a movie's 0.4-2 s, one eye only, the same pointing - they find no tie points and cost hours of matching
+    (Issole: 2000 frames).  Returns (images kept, {(sequence, eye): frames left out})."""
+    groups: Dict[Tuple[str, str], List[float]] = {}
+    for m in images:
+        f = m.get("filename") or {}
+        if f.get("family") != "Z" or f.get("sclk") is None or not f.get("sequence"):
+            continue
+        groups.setdefault((str(f["sequence"]), str(f.get("eye"))), []).append(float(f["sclk"]))
+    movies: Dict[Tuple[str, str], int] = {}
+    for k, t in groups.items():
+        if len(t) < min_frames:
+            continue
+        t = sorted(t)
+        dt = sorted(b - a for a, b in zip(t, t[1:]))
+        if dt[len(dt) // 2] <= max_dt_s:
+            movies[k] = len(t)
+    if not movies:
+        return images, movies
+    keep = [m for m in images if (str((m.get("filename") or {}).get("sequence")),
+                                  str((m.get("filename") or {}).get("eye"))) not in movies
+            or (m.get("filename") or {}).get("family") != "Z"]
+    return keep, movies
+
+
 def effective_match_mode(s: "Settings", n_images: int) -> str:
     """The matcher a block gets: ``match_mode``, except that "exhaustive" over more than ``max_exhaustive_images``
     images matches the prior-overlap pairs (n^2 / 2 pairs: 3.7 million at 2713 images)."""
@@ -569,6 +601,11 @@ def load_images(work: PathLike, settings: Settings, zooms: Sequence[int] = ()) -
             ims = [x for x in ims if x]
             log.info("excluded by %r: %d images%s", e, len(ims), "" if ims else "  <- matches no image (typo?)")
         log.info("%d images after the exclusions", len(images))
+    if settings.zcam_video_max_dt_s:
+        images, movies = drop_zcam_movies(images, settings.zcam_video_max_dt_s)
+        for (seq, eye), n in sorted(movies.items()):
+            log.info("Mastcam-Z movie left out: %s %s, %d frames (median spacing <= %g s)", seq, eye, n,
+                     settings.zcam_video_max_dt_s)
     images, small = filter_included_fraction(images, settings.min_included_fraction)
     if small:
         log.info("%d images with less than %.3f of the image unmasked left out, e.g. %s", len(small),
