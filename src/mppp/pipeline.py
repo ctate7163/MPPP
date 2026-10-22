@@ -47,7 +47,7 @@ RUN_SETTINGS = "run_settings.json"
 
 # Bumped when the alignment code changes its results under unchanged settings (a default changed in the code, not
 # in the settings), so that the batch scripts align every site again instead of skipping it as done.
-ALIGN_RULES = 86
+ALIGN_RULES = 87                 # 0.93: Hazcams in the blocks, the Mastcam-Z fixed distortion terms
 # Likewise for the selection and processing rules (process_done.json).
 PROCESS_RULES = 4
 
@@ -128,9 +128,9 @@ class Settings:
     tangential: str = "refine"                    # Navcam p1, p2 when the distortion is refined: "refine" or "zero"
     zcam_k3: str = "label"                        # Mastcam-Z k3: "label" (the start camera's, held) or "zero"
     zcam_tangential: Optional[str] = "refine"     # Mastcam-Z p1, p2: "refine" (0.91, zcam-v2: per eye, constant over focus), "zero" (zcam-v1), or None (as tangential)
-    hazcams: Tuple[str, ...] = ()                 # 0.93: add the Hazcam frames of the block's stations: "F" (front), "R" (rear), or both; results in WORK/colmap_hazcam unless a variant is given
+    hazcams: Tuple[str, ...] = ("F", "R")         # 0.93: the Hazcam frames of the block's stations: "F" (front), "R" (rear); () = Navcam only (Christian 22 Oct: in every Navcam block)
     hazcam_intrinsics: str = "radial"             # what a block refines of each Hazcam eye: "radial" (fx, fy, k1, k2), "focal", "all" or "hold" (the start is the label CAHVORE fit)
-    hazcam_rig_refine: str = "hold"               # the Hazcam stereo rigs: "hold" (CAHV) or "rotation" (refined when the Hazcams come in)
+    hazcam_rig_refine: str = "rotation"           # the Hazcam stereo rigs: "rotation" (refined when the Hazcams come in; a pair of weak eyes stays at its start) or "hold"
     include_zcam: bool = False                    # add the Mastcam-Z frames of the same sols (folder ..._zcam)
     zcam_zooms: Any = None                        # their zooms (mm), e.g. [34, 48]; None: the site's "zcam" list ([34] without one); "all": every zoom
     zcam_intrinsics: str = "focus_model"          # Mastcam-Z start: "focus_model" (the promoted model) or "label"
@@ -196,8 +196,6 @@ class Settings:
             if f.name in TUPLE_FIELDS and isinstance(v, list):
                 setattr(self, f.name, tuple(v))
         self.hazcams = hazcam_families(self.hazcams)
-        if self.hazcams and not self.variant:          # 0.93: a Hazcam run goes to colmap_hazcam unless named
-            self.variant = HAZCAM_VARIANT
 
     def replace(self, **changes: Any) -> "Settings":
         """A copy with ``changes`` (case-insensitive names) applied."""
@@ -224,7 +222,7 @@ HAZCAM_FIELDS = ("hazcams", "hazcam_intrinsics", "hazcam_rig_refine")
 # the Hazcam products of a family: camera codes and the sequences kept (Hazcam frames come in FHAZ / RHAZ sequences)
 HAZCAM_CODES = {"F": ("FLF", "FRF"), "R": ("RLF", "RRF")}
 HAZCAM_SEQUENCES = {"F": ("FHAZ",), "R": ("RHAZ",)}
-HAZCAM_VARIANT = "hazcam"
+HAZCAM_VARIANT = "hazcam"                         # run_hazcam.bat's variant (the Navcam held)
 
 
 def hazcam_families(v: Any) -> Tuple[str, ...]:

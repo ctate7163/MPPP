@@ -43,9 +43,8 @@ def _common(ap: argparse.ArgumentParser, root: bool = True) -> None:
         ap.add_argument("--root", default=None, metavar="DIR", help="the scapes root (default: MPPP_SCAPES)")
         ap.add_argument("--pds", default=None, metavar="DIR", help="the PDS archive (default: MPPP_PDS)")
         ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z block of the site (..._zcam)")
-    ap.add_argument("--hazcam", default=None, choices=("front", "rear", "both"),
-                    help="add the front / rear Hazcam frames of the block's stations (results in colmap_hazcam unless "
-                         "--variant names another folder)")
+    ap.add_argument("--hazcam", default=None, choices=("front", "rear", "both", "none"),
+                    help="the Hazcam frames of the block's stations: front, rear, both (the default since 0.93.1) or none")
     ap.add_argument("--force", action="store_true", help="start even if the status file says a run is alive")
     ap.add_argument("--no-echo", action="store_true", help="log to the file only")
 
@@ -125,13 +124,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dems", default=None, help="1 m DTM GeoTIFFs, os.pathsep-separated (M20_DEMS)")
     p.add_argument("--orthos", default=None, help="orthomosaic GeoTIFFs (M20_ORTHOS)")
     p = sub.add_parser("calib", help="the camera calibrations (0.91: the Navcam tied joint, the Mastcam-Z joint)")
-    p.add_argument("which", choices=["navcam", "zcam", "nz"],
+    p.add_argument("which", choices=["navcam", "zcam", "nz", "hazcam"],
                    help="navcam: the one-adjustment joint over the finished Navcam blocks; zcam: the Mastcam-Z joint "
                         "over the finished Navcam + Mastcam-Z blocks, the Navcam held at the models in use; nz: the "
-                        "combined joint (both laws free) compared with the Navcam-only law - a check, never promoted")
+                        "combined joint (both laws free) compared with the Navcam-only law - a check, never promoted; "
+                        "hazcam: the Hazcam law (Navcam form) from the finished blocks with Hazcams (0.93)")
+    p.add_argument("--variant", default="", help="the blocks' project colmap_<variant> (default colmap; run_hazcam.bat: "
+                   "hazcam)")
     p.add_argument("--root", default=None, metavar="DIR", help="the scapes root (default: MPPP_SCAPES)")
-    p.add_argument("--group", default=None, help="site group of the blocks (default navcam_consensus / zcam34_consensus)")
+    p.add_argument("--group", default=None, help="site group(s) of the blocks, comma-separated (default navcam_consensus / "
+                   "zcam<zoom>_joint, else zcam<zoom>_consensus); zcam / nz take the sites whose \"zcam\" list has the zoom")
     p.add_argument("--zoom", type=int, default=34, help="zcam: the Mastcam-Z zoom (default 34)")
+    p.add_argument("--navcam-group", default=None,
+                   help="nz: also the finished Navcam-only blocks of this group (e.g. navcam_consensus), "
+                        "3000 points each, so the combined Navcam law is held by every Navcam block")
     p.add_argument("--blocks", nargs="*", default=None, metavar="NAME=WORK", help="blocks given explicitly instead")
     p.add_argument("--sites-file", default=None, metavar="FILE")
     p.add_argument("--out", default=None, metavar="DIR", help="the study folder (default <root>/camera_analysis/navcal_tied_<date>)")
@@ -484,18 +490,25 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
     zcam = getattr(a, "which", "navcam") in ("zcam", "nz")
     a.group = a.group or (f"zcam{int(getattr(a, 'zoom', 34))}_joint" if zcam and f"zcam{int(getattr(a, 'zoom', 34))}_joint"
                           in table.get("groups", {}) else f"zcam{int(getattr(a, 'zoom', 34))}_consensus" if zcam
-                          else "navcam_consensus")
-    names = table.get("groups", {}).get(a.group)
-    if not names:
-        raise SystemExit(f"no group {a.group!r} in the site definitions")
+                          else "hazcam_consensus" if getattr(a, "which", "") == "hazcam" else "navcam_consensus")
+    names: List[str] = []
+    for grp in str(a.group).split(","):                 # 0.93: several groups, comma-separated
+        g_names = table.get("groups", {}).get(grp.strip())
+        if not g_names:
+            raise SystemExit(f"no group {grp.strip()!r} in the site definitions")
+        names += list(g_names)
     out, skipped = {}, []
+    zoom = int(getattr(a, "zoom", 34) or 34)
     for n in dict.fromkeys(names):
         site = table["sites"].get(n)
         if not site:
             skipped.append(f"{n} (not a site)")
             continue
+        if zcam and site.get("zcam") and zoom not in [int(z) for z in site["zcam"]]:
+            skipped.append(f"{n} (no {zoom} mm in its \"zcam\" list)")
+            continue
         work = work_folder(root, n, zcam, site["sols"])
-        done = run_done(work, "")
+        done = run_done(work, getattr(a, "variant", "") or "")
         if done is None:
             skipped.append(f"{n} (not finished)")
             continue
@@ -518,6 +531,8 @@ def cmd_calib(a: argparse.Namespace) -> int:
         return _calib_zcam(a)
     if a.which == "nz":
         return _calib_nz(a)
+    if a.which == "hazcam":
+        return _calib_hazcam(a)
     blocks = _navcam_blocks(a)
     if len(blocks) < 2:
         print(f"ERROR: {len(blocks)} finished block(s); the joint needs several", file=sys.stderr)
@@ -548,8 +563,8 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     from .calib import models as M
     from .calib import ztied as Z
     blocks = _navcam_blocks(a)
-    if len(blocks) < 2:
-        print(f"ERROR: {len(blocks)} finished Mastcam-Z block(s); the joint needs several", file=sys.stderr)
+    if not blocks:
+        print(f"no finished Mastcam-Z {a.zoom} mm block: no joint", file=sys.stderr)
         return 1
     root = Path(a.root or os.environ.get("MPPP_SCAPES") or next(iter(blocks.values())).parent)
     out = Path(a.out) if a.out else root / "camera_analysis" / f"zcam{a.zoom}_joint_{datetime.date.today():%Y%m%d}"
@@ -562,6 +577,17 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     from .pipeline import run_done
     res["models_fingerprint"] = models_fingerprint()
     res["block_runs"] = {n: run_done(w, "") for n, w in blocks.items()}
+    # 0.93: the joint holds the Navcam: a block must have been aligned with the Navcam models in use (a block aligned
+    # with an earlier Mastcam-Z model is fine - the joint refits the Mastcam-Z law from its bins)
+    from .calib import navcam_fingerprint
+    res["navcam_fingerprint"] = navcam_fingerprint(None)
+    res["block_navcam_fingerprints"] = {}
+    for n, w in blocks.items():
+        try:
+            pj = json.loads((Path(w) / "colmap" / "project.json").read_text(encoding="utf-8"))
+            res["block_navcam_fingerprints"][n] = ((pj.get("settings") or {}).get("navcam_cameras") or {}).get("fingerprint")
+        except (OSError, ValueError):
+            res["block_navcam_fingerprints"][n] = None
     w = Z.write_zjoint(res, out)
     for c in w["check"]["checks"]:
         print(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}")
@@ -572,6 +598,38 @@ def _calib_zcam(a: argparse.Namespace) -> int:
         print(f"promoted into {pr['folder']} ({pr['stamp']})")
     elif promote:
         print("not promoted: a check failed (the model in use stays)")
+    return 0
+
+
+def _calib_hazcam(a: argparse.Namespace) -> int:
+    """``calib hazcam``: the Hazcam law (:mod:`mppp.calib.hazfit`) from the finished blocks with Hazcams; the
+    candidate files of the eyes and pairs that pass their checks, promoted with ``--promote-if-ok``."""
+    import datetime
+    from .calib import hazfit as H
+    from .calib import models as M
+    from .sfm.workdir import project_dir
+    blocks = _navcam_blocks(a)
+    if not blocks:
+        print("no finished block: no Hazcam fit", file=sys.stderr)
+        return 1
+    blocks = {n: project_dir(w, a.variant or None) for n, w in blocks.items()}
+    root = Path(a.root or os.environ.get("MPPP_SCAPES") or ".")
+    out = Path(a.out) if a.out else root / "camera_analysis" / f"hazcam_fit_{datetime.date.today():%Y%m%d}"
+    log.info("calib hazcam: %d blocks -> %s", len(blocks), out)
+    res = H.fit_hazcam(blocks)
+    w = H.write_hazcam(res, out)
+    for line in H.describe(res):
+        print("  " + line)
+    for c in w["check"]["checks"]:
+        print(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}")
+    promote = a.promote_if_ok and not a.no_promote
+    if promote and w["files"]:
+        pr = M.promote([Path(f) for f in w["files"]], note=a.note or f"Hazcam fit of {len(res['blocks'])} blocks "
+                       f"({', '.join(res['blocks'])})")
+        print(f"promoted {', '.join(Path(f).name for f in w['files'])} into {pr['folder']} ({pr['stamp']})")
+    elif promote:
+        print("not promoted: no eye or pair passed its checks")
+    print(f"=> {out / 'report.md'}")
     return 0
 
 
@@ -589,8 +647,14 @@ def _calib_nz(a: argparse.Namespace) -> int:
     root = Path(a.root or os.environ.get("MPPP_SCAPES") or next(iter(blocks.values())).parent)
     out = Path(a.out) if a.out else root / "camera_analysis" / f"nz{a.zoom}_joint_{datetime.date.today():%Y%m%d}"
     log.info("calib nz: %d blocks -> %s", len(blocks), out)
+    extra = {}
+    if getattr(a, "navcam_group", None):
+        import copy as _copy
+        b = _copy.copy(a)
+        b.which, b.group, b.blocks = "navcam", a.navcam_group, None
+        extra = _navcam_blocks(b)
     res = NZ.fit_nzjoint(blocks, zoom=a.zoom, nav_points=a.points or Z.NAV_POINTS_PER_BLOCK,
-                         z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK)
+                         z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, navcam_blocks=extra)
     w = NZ.write_nzjoint(res, out)
     for line in NZ.describe(res):
         print("  " + line)

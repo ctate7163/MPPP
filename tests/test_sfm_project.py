@@ -48,7 +48,10 @@ def test_project_with_navcam_and_mastcamz34(processed_pair, tmp_path):
     assert abs(z["params"][2] - (K[0, 2] + 0.5)) < 10
     # the distortion is the focus model's, not the label's
     assert np.isclose(z["params"][4], zcam_focus_model()["cameras"]["ZL034"]["distortion"]["params"][0])
-    assert z["params"][6] == z["params"][7] == 0.0
+    dist = zcam_focus_model()["cameras"]["ZL034"]["distortion"]
+    dd = dict(zip(dist["names"], dist["params"]))
+    assert z["params"][5] == 0.5                                         # 0.93.1: ZL034 k2 fixed (forms.ZCAM_FIXED_TERMS)
+    assert z["params"][6] == pytest.approx(dd.get("p1", 0.0)) and z["params"][7] == pytest.approx(dd.get("p2", 0.0))
     assert {r["instrument"] for r in proj.images} == {"NL", "ZL034"} and proj.rig == {}
     assert camera_key({"family": "Z", "camera_group": "ZR034", "instrument": "ZR"}) == "ZR034"
     # the Navcam eye: the promoted model at the block's (one image's) temperature and the early-mission share
@@ -103,7 +106,7 @@ def test_focus_bins_greedy_and_tags():
 
 
 def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
-    from mppp.sfm.project import ZCAM_BIN_HELD, SfmProject
+    from mppp.sfm.project import FULL_OPENCV_NAMES, ZCAM_BIN_HELD, SfmProject
     man, out = processed_pair
     zmeta = [m for m in man["images"] if m["filename"]["family"] == "Z"][0]
     fc = float(zmeta["focus_position_count"])
@@ -120,13 +123,14 @@ def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     assert set(proj.cameras) == {"NL", key} and proj.settings["zcam_low_backlash_sha256"] is None
     z = proj.cameras[key]
     assert z["group"] == "ZL034" and z["focus_count_median"] == fc and z["n_images"] == 1
-    assert z["fixed_params"] == list(ZCAM_BIN_HELD) and "focus bin" in z["source"]
+    assert z["fixed_params"] == [n for n in FULL_OPENCV_NAMES if n in set(ZCAM_BIN_HELD) | {"k2"}]   # + Z34 k2 fixed
+    assert "focus bin" in z["source"] and z["fixed_terms"] == {"k2": 0.5}
     r = [r for r in proj.images if r["camera_group"] == "ZL034"][0]
     assert r["instrument"] == key and r["focus_count"] == fc and abs(r["label_f_px"] - z["params"][0]) < 1e-9
     assert proj.settings["zcam_focus_bin"] == 30.0 and proj.settings["zcam_bin_refine"] == "focal"
     pa = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_bin_refine="all",
                            zcam_intrinsics="label", zcam_low_backlash=False)
-    assert pa.cameras[key]["fixed_params"] == []
+    assert pa.cameras[key]["fixed_params"] == ["k2"]                  # the zoom's fixed term stays held
     # default: f from the focus model; a one-image bin holds it
     pm = SfmProject.create(man["images"], out, tmp_path / "m", link=False, zcam_low_backlash=False)
     zm = pm.cameras[key]
@@ -368,8 +372,8 @@ def test_shipped_focus_model_layout():
     assert m["cameras"]["ZL034"]["pp"]["cx_px_per_count"] == 0.0
     # ZR cx constant with focus (not significant between blocks), cy keeps its small slope
     assert m["cameras"]["ZR034"]["pp"]["cx_px_per_count"] == 0.0
-    assert 0.001 < m["cameras"]["ZR034"]["pp"]["cy_px_per_count"] < 0.004
-    assert m.get("form") == "zcam-v1" and m["cameras"]["ZL034"]["pp0_px"] and m["cameras"]["ZR034"]["pp0_px"]
+    assert 0.0 <= m["cameras"]["ZR034"]["pp"]["cy_px_per_count"] < 0.004   # 22 Oct joint: 0.0003
+    assert m.get("form") in ("zcam-v1", "zcam-v2") and m["cameras"]["ZL034"]["pp0_px"] and m["cameras"]["ZR034"]["pp0_px"]
 
 
 def test_model_focal_terms_and_sol_clamp():
@@ -534,7 +538,7 @@ def test_zcam_focus_models_per_zoom(tmp_path):
     assert set(files) == {34, 48} and files[48].parent == tmp_path
     m = zcam_focus_model(tmp_path)
     assert {"ZL034", "ZR034", "ZL048"} <= set(m["cameras"]) and m["zooms"][48]["rig"]["note"] == "test"
-    assert m["state"] == "calibrated (v0p74)"                # the 34 mm file's top level (the South Arm calibration)
+    assert m["state"].startswith("calibrated")              # the 34 mm file's top level (22 Oct: the Z34 joint)
     assert zcam_focus_model_fingerprint(None, tmp_path) != fp0
     cam = zcam_eye_camera("ZL048", [("FULL_OPENCV", np.array([6500.0, 6500.0, 800, 600, -0.05, 0.1, 0.001, 0, 0, 0, 0, 0]))],
                           (1648, 1200), ("p1", "p2"), m["cameras"]["ZL048"])
@@ -712,14 +716,14 @@ def test_split_by_focus_holds_pinned_params():
 def test_shipped_zcam_focus_model_lines():
     from mppp.sfm.project import zcam_focus_model
     m = zcam_focus_model()
-    assert m.get("form") == "zcam-v1" and m["rig"]["translation_source"].startswith("CAHV")
+    assert m.get("form") in ("zcam-v1", "zcam-v2") and m["rig"]["translation_source"]
     for eye in ("ZL034", "ZR034"):
         c = m["cameras"][eye]
         bk = c["lines"]["backlash"]
         assert bk["fx"]["b"] == bk["fy"]["b"] and bk["k1"]["b"] == 0.0 and len(c["pp0_px"]) == 2
         assert c["lines"]["regular"]["fx"]["a"] < bk["fx"]["a"]
     assert m["cameras"]["ZR034"]["lines"]["backlash"]["cx"]["b"] == 0.0
-    assert 0.001 < m["cameras"]["ZR034"]["lines"]["backlash"]["cy"]["b"] < 0.003
+    assert 0.0 <= m["cameras"]["ZR034"]["lines"]["backlash"]["cy"]["b"] < 0.003      # 22 Oct joint: 0.0003
 
 
 def test_navcam_rig_epochs_with_the_knot(tmp_path):

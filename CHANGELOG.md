@@ -2,6 +2,71 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.93.1 — 2026-10-22
+
+- **Hazcams in every block** (Christian, 22 Oct): `hazcams` defaults to both pairs (`("F", "R")`), so the front and
+  rear Hazcam frames of a block's stations are selected, processed and aligned with the Navcam (stage 2, Navcam held,
+  as in 0.93.0). A Hazcam run no longer goes to `colmap_hazcam` by itself: the results are in `colmap/` like any
+  block. `--hazcam none` (new choice; `--set HAZCAMS=none`) leaves them out. The Hazcam rig rotations are refined by
+  default (`hazcam_rig_refine = "rotation"`); a pair whose two eyes are held as weak (< 1000 observations) keeps its
+  start rig (`settings["hazcam"]["rig_hold"]`, log `hazcam_rig_held`). `ALIGN_RULES` 87: **every block realigns**
+  (and reprocesses to add the Hazcam products; the Navcam images already processed are reused).
+- **Hazcam law in the Navcam form** (`mppp calib hazcam`, `mppp.calib.hazfit`, new): from the finished blocks'
+  refined Hazcam cameras and rigs, per eye fx and fy with one ppm/degC slope about T0 = -20 degC, an early-mission
+  offset (before sol 380) on fx, fy, k1 linear in temperature, k2 the blocks' mean (cx, cy, p1, p2, k3, k4 the label
+  fits' median); per pair the rig rotation at sol 0 with a linear drift in sol (>= 3 blocks with a refined rig).
+  Weak eyes are left out. Each eye and pair is checked on its own (`HAZCAM_LIMITS`) and the passing files
+  (`M2020_FL.json` ..., `M2020_F_rig.json`, `M2020_R_rig.json`) are promoted with `--promote-if-ok`. A block reads
+  them as it reads the Navcam's (thermal law at the block's median temperature, rig at its median sol).
+- **`run_hazcam.bat`** (new): aligns the `hazcam_consensus` group (new: chal_rocks_large, threeforks_north,
+  belva_crater, bell_island, marble_mountain) with both Hazcam pairs and the Navcam held at its promoted law
+  (`NAVCAM_INTRINSICS=hold`, variant `hazcam` -> `colmap_hazcam/`), then `hazcam_calibration.bat` (the fit,
+  promoted if it passes).
+- **`run_sites_zcam.bat` now ends in the joints**: it aligns `zcam_consensus` (now chal_rocks and marble_mountain;
+  chal_rocks_large, taylorfjellet and olifants out; `zcam34_consensus` has chal_rocks_large in place of chal_rocks) at every zoom of each site, then `zcam_joints.bat` (new) runs
+  `mppp calib zcam --promote-if-ok` for 34, 48, 63, 79 and 110 mm (`MPPP_ZOOMS`; 34 over
+  `zcam34_joint,zcam_consensus`, the others over `zcam_consensus`), the Z34 figures and `mppp calib nz` with
+  `--navcam-group navcam_consensus` (`MPPP_NZ=none` skips it; `MPPP_THEN=none` stops after the alignment).
+- **Fixed: weak Hazcam eyes drifted in Mastcam-Z blocks.** An eye with too few ties was held in the stage-2 rounds
+  only; the pose-guided adjustment and the Mastcam-Z backlash split (both only with Mastcam-Z frames) refined it
+  (FL, FR +1.2 % in a sol 709-711 Navcam + Mastcam-Z + front Hazcam test block), and it was then held at the
+  drifted value. A weak eye is now put back to its start camera and held in every later adjustment
+  (`reconstruction.reset_cameras_to_start`, `backlash_stage(hold_cameras=...)`), and the Hazcam rigs are held in
+  round 1 with the eyes. The test block afterwards: FL, FR 0 % change, F rig 0 deg; all Mastcam-Z zooms (34, 63,
+  110) and the front Hazcams registered together (Z48 had no tie points).
+- **Fixed Mastcam-Z distortion terms per zoom** (`forms.ZCAM_FIXED_TERMS`): Z34 k2 = 0.5 (ZL), 0.6 (ZR), p1, p2 free;
+  Z48 k2, p1, p2 free; Z63, Z79, Z110 k2 = p1 = p2 = 0. The block BA holds them in the bin cameras, the joint holds
+  the global terms at them (`ztied.fixed_globals`) and its likelihood-ratio tests add "the fixed terms free"; the
+  per-image prior keeps the promoted model's own values (its k1 belongs to its k2).
+- **Mastcam-Z joints for new zooms**: a zoom without a focus model starts from the blocks
+  (`ztied.start_model_from_blocks`: per eye the median bin camera with one focus slope, the median rig); its first
+  calibration needs 2 blocks (`min_blocks_start`), later ones 3. The joint accepts blocks aligned with an older
+  Mastcam-Z model (the check is now "aligned with the Navcam models in use"). `--group` takes comma-separated
+  groups; zcam / nz keep the sites whose `zcam` list has the zoom. Zooms with one block run but are not promoted.
+- **`mppp calib nz --navcam-group G`** (new): adds the Navcam-only blocks of group G (3000 points each) so the
+  combined Navcam law is held by every Navcam block, for comparing the Navcam-only and Navcam + Mastcam-Z fits.
+- **Z34 joint review (22 Oct, chal_rocks, enchanted_lake, marble_mountain, rochette, south_arm, taylorfjellet;
+  promoted on the PC at 11:02 and committed here unchanged)**: k2 0.484 +- 0.010 (ZL), 0.615 +- 0.009 (ZR), k1-k2
+  correlation 0.98, ZL and ZR curves within 0.06 px - hence the fixed values; the k2 = 0 test is significant but
+  moves the curve by <= 0.27 px; ZL p1 = +3.1e-3 (near the 5e-3 limit); f0 +0.16-0.19 %; Mastcam-Z fy / fx
+  1.0008-1.0010 in both eyes (suspicious for square pixels: an aspect term may be absorbing a principal-point or
+  attitude effect); rig yaw +6.4 +- 2.1 mdeg / 1000 sol (3 sd), roll -2.6 +- 1.0, no temperature term. The combined
+  N+Z check moved NL cx by -1.3 px (38 sd), NL and NR fy by about +250 ppm and the thermal slope from 36 to 41
+  ppm/degC while the Navcam residual changed by only -0.7 %: the six blocks alone do not pin the Navcam principal
+  point against attitude - `--navcam-group` is the test.
+- **Official blocks run by the plain sites** (Christian): block 3 Chal Rocks by `chal_rocks` (was
+  `chal_rocks_large`), block 18 Belva Crater by `belva_crater` (was `belva_crater_large`); `blocks_all` and the region
+  groups follow. `waypoints.blocks.restructure` prefers the plain site over its `_large` / `_huge` form when both
+  list the block.
+- **Shipped exclusions** (`mppp/data/exclude_images.txt`, Christian): `seq:ZCAM05060`, `seq:ZCAM03017` and the sol 76
+  exposure `*_0076_0673685057_000*` (every camera at that SCLK); `seq:ZCAM05062` was already listed.
+- **Figures**: the LMST histograms are laid out in reading order (first row = the first two blocks), lettered A, B,
+  ..., with the legend just above the bottom all-sites panel. The map banner (figure 7) is the terrain with "Mars
+  Photogrammetry Preprocessing Pipeline" centred, without traverse, markers, labels or legend (`M20_BANNER_TEXT`,
+  `M20_BANNER_TEXT_Y`, `M20_BANNER_SCALEBAR=1`).
+- Tests: `tests/test_hazfit_zfixed.py` (fixed terms, joint globals, the Hazcam fit, check, files and `camera_at` of
+  the result, scripts, groups, CLI); Hazcam default and Z34 tests updated.
+
 ## 0.93.0 — 2026-10-22
 
 - **Front and rear Hazcams in the alignment** (`hazcams` setting; `mppp process|align|run --hazcam front|rear|both`,

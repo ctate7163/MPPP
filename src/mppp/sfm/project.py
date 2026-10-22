@@ -475,7 +475,8 @@ class SfmProject:
             zt = tuple(zcam_zero_terms) if (fam == "Z" and zcam_zero_terms is not None) else tuple(zero_terms)
             if fam == "Z":
                 gm = _zcam_fmodel().get("cameras", {}).get(instr) if zcam_intrinsics == "focus_model" else None
-                cameras[instr] = zcam_eye_camera(instr, label_params[instr], FULL_FRAME[fam], zt, gm)
+                cameras[instr] = forms.apply_zcam_fixed_terms(
+                    zcam_eye_camera(instr, label_params[instr], FULL_FRAME[fam], zt, gm), instr)
                 if "k3" in zt:
                     cameras[instr]["fixed_params"] = sorted(set(cameras[instr].get("fixed_params") or []) | {"k3"},
                                                             key=FULL_OPENCV_NAMES.index)
@@ -870,6 +871,7 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
             cam.pop("label_f_spread_px", None)
             if len(fl) > 1:
                 cam["label_f_spread_px"] = float(np.ptp(fl))
+            forms.apply_zcam_fixed_terms(cam, group)        # 0.93: the zoom's fixed distortion terms
             out[key] = cam
             for r in members:
                 r["instrument"] = key

@@ -97,7 +97,10 @@ def test_zcam_camera_at_both_states_and_the_regular_ratio():
             else:                                                              # regular measured on its own
                 assert pb[0] / pr[0] == pytest.approx(c["regular_ratio"], rel=2e-3)
             assert pb[4] == pytest.approx(bl["k1"]["a"]) and pb[5] == pytest.approx(bl["k2"]["a"])
-            assert pb[6:] == [0.0] * 6 and pr[6:] == [0.0] * 6              # p1 = p2 = k3 = 0 held
+            dist = dict(zip(c.get("distortion", {}).get("names") or [], c.get("distortion", {}).get("params") or []))
+            for i, pn in ((6, "p1"), (7, "p2")):                              # p1, p2: the model's (0.93: free at Z34)
+                assert pb[i] == pytest.approx(dist.get(pn, 0.0)) and pr[i] == pytest.approx(dist.get(pn, 0.0))
+            assert pb[8:] == [0.0] * 4 and pr[8:] == [0.0] * 4              # k3 .. k6 = 0 held
             if g == "ZL034":                                                   # pp0 held (the reference eye)
                 assert pb[2:4] == pytest.approx(c["pp0_px"])
             else:

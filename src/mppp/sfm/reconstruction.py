@@ -865,7 +865,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             continue
         nav_rig = str(key_of.get(int(key[1]), "")).startswith("N") if key_of else False
         if key_of and str(key_of.get(int(key[1]), ""))[:1] in ("F", "R"):      # a Hazcam pair (0.93)
-            if hz_mode == "rotation":
+            fam_h = str(key_of.get(int(key[1]), ""))[:1]
+            if hz_mode == "rotation" and fam_h not in set((project.settings.get("hazcam") or {}).get("rig_hold") or ()):
                 prob.set_manifold(arr, pyceres.SubsetManifold(7, [3, 4, 5, 6]))
             else:
                 prob.set_parameter_block_constant(arr)
@@ -1393,6 +1394,23 @@ HAZCAM_MIN_REFINE_OBSERVATIONS = 1000
 def hazcam_weak_eyes(cov: Dict[str, Any], min_observations: int = HAZCAM_MIN_REFINE_OBSERVATIONS) -> List[str]:
     """The Hazcam eyes of :func:`hazcam_coverage` with fewer than ``min_observations`` tie-point observations."""
     return sorted(e for e, v in ((cov or {}).get("eyes") or {}).items() if v["observations"] < int(min_observations))
+
+
+def reset_cameras_to_start(rec, project: SfmProject, keys) -> List[str]:
+    """Put the cameras ``keys`` of ``rec`` back to their project start parameters (a weak Hazcam eye held at its
+    start, 0.93.1); returns the keys reset."""
+    db = (project.settings.get("database") or {}).get("cameras") or {}
+    out = []
+    for k in sorted(keys):
+        cid, spec = db.get(k), project.cameras.get(k)
+        if cid is None or spec is None or int(cid) not in rec.cameras:
+            continue
+        cam = rec.cameras[int(cid)]
+        p = np.asarray(spec["params"], float)
+        if len(p) == len(cam.params):
+            cam.params = p
+            out.append(k)
+    return out
 
 
 # a Hazcam frame is fixed to the rover body: in stage 2 its position prior moves with the shift the Navcam block found
@@ -1965,6 +1983,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         hold |= {k for k in project.cameras if str(k).startswith("N")}
     network["navcam_intrinsics"] = "hold" if any(str(k).startswith("N") for k in hold) else "refine"
     hazkeys = {k for k in project.cameras if str(k)[:1] in HAZCAM_FAMILIES}       # 0.93: the Hazcam eyes
+    if project.settings.get("hazcam") is not None:
+        project.settings["hazcam"]["rig_hold"] = []
     if hazkeys and (project.settings.get("hazcam") or {}).get("intrinsics") == "hold":
         hold |= hazkeys
     if refine_rig == "auto":                                # the rig follows the intrinsics' network verdict
@@ -2177,11 +2197,18 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             hold_k = hold if zfree else (hold | zkeys)
             if k == 0 and h_frames and round1_hold and len(schedule) > 1:
                 hold_k = hold_k | hazkeys                   # 0.93: the Hazcam frames are posed before their cameras move
+                if project.settings.get("hazcam") is not None:      # 0.93.1: and before their rigs move
+                    project.settings["hazcam"]["rig_hold"] = sorted({e[0] for e in hazkeys})
             elif h_frames:
                 weak_h = set(hazcam_weak_eyes(hazcam_coverage(rec, project))) & hazkeys
                 if weak_h:                                  # too few ties to refine a camera: held at the label fit
+                    reset_cameras_to_start(rec, project, weak_h - hazcam_weak_held)
                     hold_k = hold_k | weak_h
+                    hold |= weak_h                          # 0.93.1: and in every later adjustment (pose-guided too)
                     hazcam_weak_held.update(weak_h)
+                if project.settings.get("hazcam") is not None:
+                    project.settings["hazcam"]["rig_hold"] = sorted(
+                        {e[0] for e in hazcam_weak_held if {e[0] + "L", e[0] + "R"} & hazkeys <= hazcam_weak_held})
             ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
                                attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold_k), linear_solver=linear_solver,
@@ -2304,10 +2331,16 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 log.append({"excluded_frames": weak, "when": "stage 2, Navcam ties"})
         if h_frames:
             weak_h = set(hazcam_weak_eyes(hazcam_coverage(rec, project))) & hazkeys
+            reset_cameras_to_start(rec, project, weak_h - hazcam_weak_held)     # 0.93.1: held at the start
             hazcam_weak_held.update(weak_h)
             hold |= weak_h
             if hazcam_weak_held:
-                log.append({"stage": 2, "hazcam_held_weak": sorted(hazcam_weak_held),
+                # a pair whose two eyes are weak keeps its rig at the start too
+                rh = sorted({e[0] for e in hazcam_weak_held if {e[0] + "L", e[0] + "R"} & hazkeys
+                             <= hazcam_weak_held})
+                if project.settings.get("hazcam") is not None:
+                    project.settings["hazcam"]["rig_hold"] = rh
+                log.append({"stage": 2, "hazcam_held_weak": sorted(hazcam_weak_held), "hazcam_rig_held": rh,
                             "min_observations": HAZCAM_MIN_REFINE_OBSERVATIONS})
                 if verbose:
                     logger.info(f"stage 2: Hazcam eyes held at their start (fewer than "
@@ -2330,7 +2363,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                        attitude_prior_deg=attitude_prior_deg, linear_solver=linear_solver,
                                        refine_tangential=refine_tangential,
                                        hold_f_images=int(project.settings.get("zcam_hold_f_images") or 0),
-                                       z_min=zcam_backlash_z, verbose=verbose)
+                                       z_min=zcam_backlash_z, verbose=verbose,
+                                       hold_cameras=sorted(k for k in hold if not str(k).startswith("Z")))
         if backlash.get("cameras"):
             n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)
             backlash["filtered_after"] = n_bad

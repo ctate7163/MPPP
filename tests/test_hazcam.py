@@ -107,12 +107,11 @@ def test_block_camera_and_hazcam_start_camera():
 def test_hazcam_settings_keep_the_other_run_keys():
     from mppp.pipeline import HAZCAM_FIELDS, Settings, hazcam_families, run_key
     s = Settings(pds_dir=None, scapes_root=None, gpu_python=None)
-    assert s.hazcams == () and s.variant == ""
-    assert not set(HAZCAM_FIELDS) & set(s.key_dict())                      # the keys of every other run stay
-    h = s.replace(hazcams="both")
-    assert h.hazcams == ("F", "R") and h.variant == "hazcam" and h.replace(variant="").variant == "hazcam"
-    assert set(HAZCAM_FIELDS) <= set(h.key_dict()) and run_key(h) != run_key(s)
-    assert s.replace(hazcams="rear", variant="x").variant == "x"
+    assert s.hazcams == ("F", "R") and s.variant == ""                    # 0.93.1: Hazcams in every block by default
+    assert set(HAZCAM_FIELDS) <= set(s.key_dict())
+    n = s.replace(hazcams="none")
+    assert n.hazcams == () and not set(HAZCAM_FIELDS) & set(n.key_dict())  # without them, no Hazcam keys
+    assert run_key(n) != run_key(s) and s.replace(hazcams="rear").variant == ""   # no automatic variant
     for v, want in (("F", ("F",)), ("front", ("F",)), ("FR", ("F", "R")), (["rear", "front"], ("F", "R")),
                     ("F,R", ("F", "R")), (None, ()), ("none", ()), ([], ())):
         assert hazcam_families(v) == want
@@ -131,9 +130,10 @@ def test_load_images_leaves_out_hazcams_not_asked_for(tmp_path):
     ims = [meta(c, k) for k, c in enumerate(("NLF", "NRF", "FLF", "FRF", "RLF", "RRF"))]
     (tmp_path / "processed").mkdir()
     (tmp_path / "processed" / "mppp_manifest_v0p93.json").write_text(json.dumps({"images": ims}))
-    base = Settings(exclude_list=False)
+    base = Settings(exclude_list=False, hazcams=())
     fam = lambda s: sorted(m["filename"]["family"] for m in load_images(tmp_path, s))     # noqa: E731
     assert fam(base) == ["N", "N"]
+    assert fam(Settings(exclude_list=False)) == ["F", "F", "N", "N", "R", "R"]          # the default: both
     assert fam(base.replace(hazcams="front")) == ["F", "F", "N", "N"]
     assert fam(base.replace(hazcams="both")) == ["F", "F", "N", "N", "R", "R"]
 
@@ -147,7 +147,9 @@ def test_hazcams_in_scope_and_cli():
     assert CAMERA_HEIGHT_BY_FAMILY_M["F"] < 1.0 and CAMERA_HEIGHT_BY_FAMILY_M["R"] < 1.0
     a = build_parser().parse_args(["run", "rockytop", "--hazcam", "rear"])
     s = _settings(a, "rockytop")
-    assert s.hazcams == ("R",) and s.variant == "hazcam"
+    assert s.hazcams == ("R",) and s.variant == ""
+    s = _settings(build_parser().parse_args(["run", "rockytop", "--hazcam", "none"]), "rockytop")
+    assert s.hazcams == ()
 
 
 def _hazcam_block(tmp_path, monkeypatch, rig_refine="hold", intrinsics="radial"):

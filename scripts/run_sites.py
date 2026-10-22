@@ -47,8 +47,8 @@ def main(argv=None) -> int:
     ap.add_argument("--source", choices=("pds", "processed"), default="pds",
                     help="pds (default): select and process, then align; processed: align what is processed")
     ap.add_argument("--variant", default="", help="results in <WORK>/colmap_<variant>")
-    ap.add_argument("--hazcam", default=None, choices=("front", "rear", "both"),
-                    help="add the front / rear Hazcam frames (0.93; results in colmap_hazcam unless --variant)")
+    ap.add_argument("--hazcam", default=None, choices=("front", "rear", "both", "none"),
+                    help="the Hazcam frames: front, rear, both (the default since 0.93.1) or none")
     ap.add_argument("--settings", default=None, help="a JSON file of settings for every site")
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="a pipeline setting")
     ap.add_argument("--sites-file", default=None, help="site definitions (default mppp/data/sites.json)")

@@ -156,7 +156,7 @@ def progress(done: int, total: int, t0: float, label: str = "") -> str:
 
 
 def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndarray],
-                 points_per_scape: Optional[int] = 25000, seed: int = 0, exclude: Sequence[str] = (),
+                 points_per_scape: Any = 25000, seed: int = 0, exclude: Sequence[str] = (),
                  include_zcam: bool = False, zcam_points_per_scape: Optional[int] = 8000) -> Tuple[Any, Any, Dict[str, Any]]:
     """
     One reconstruction holding every block: camera 1 = NL, camera 2 = NR (``cameras``: {"NL", "NR"} ->
@@ -313,7 +313,9 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
                     next_frame += 1
         for fid in idx["frames"][sc.name]:
             new.register_frame(fid)
-        keep = _subsample_points(rec, points_per_scape, seed=seed)
+        n_pts = points_per_scape.get(sc.name, points_per_scape.get("*")) if isinstance(points_per_scape, dict) \
+            else points_per_scape                       # 0.93: {block: points} ("*": the rest)
+        keep = _subsample_points(rec, n_pts, seed=seed)
         if include_zcam:
             fam = {int(i): rec.images[i].name[:1] for i in rec.reg_image_ids()}
             mixed, zonly = [], []

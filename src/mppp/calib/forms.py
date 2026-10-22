@@ -91,6 +91,52 @@ ZCAM_FORM_ID = "zcam-v2"                 # 0.91: p1, p2 refined (zcam-v1 held th
 ZCAM_LINE_FORMS = ("free", "common", "constant", "pinned", "pinned_slope")
 ZCAM_MAX_P = 5e-3                        # |p1|, |p2| beyond this is not a lens (Rochette 20 Oct: 7.5e-4, 4.2e-4)
 
+# 0.93 (Christian, 22 Oct): Mastcam-Z distortion terms held at fixed values per zoom and eye, in the blocks, the
+# image priors and the Mastcam-Z joint.  34 mm: k2 (ZL +0.5, ZR +0.6 - the 22 Oct joint fitted +0.484 +- 0.010 and
+# +0.615 +- 0.009, k1 and k2 correlating 0.98 over the frame); p1, p2 vary at 34 and 48 mm.  63, 79, 110 mm: k2, p1,
+# p2 = 0 (the narrow fields cannot separate them from k1, the principal point and the rig).
+_NARROW_FIXED = {"k2": 0.0, "p1": 0.0, "p2": 0.0}
+ZCAM_FIXED_TERMS: Dict[int, Dict[str, Dict[str, float]]] = {
+    34: {"ZL": {"k2": 0.5}, "ZR": {"k2": 0.6}},
+    48: {},
+    63: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},
+    79: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},
+    110: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},
+}
+
+
+def zcam_fixed_terms(group: str) -> Dict[str, float]:
+    """The distortion terms held at fixed values for a Mastcam-Z camera key (``ZL034``, ``ZR110_F02312_reg`` ...):
+    {name: value}, {} when none (:data:`ZCAM_FIXED_TERMS`)."""
+    g = str(group)
+    if not g.startswith("Z") or len(g) < 5:
+        return {}
+    try:
+        zoom = int(g[2:5])
+    except ValueError:
+        return {}
+    return dict((ZCAM_FIXED_TERMS.get(zoom) or {}).get(g[:2]) or {})
+
+
+def apply_zcam_fixed_terms(cam: Dict[str, Any], group: str) -> Dict[str, Any]:
+    """Set a Mastcam-Z ``project.cameras`` dict's fixed terms (:func:`zcam_fixed_terms`) to their values and add them
+    to its ``fixed_params`` (changed in place and returned)."""
+    fx = zcam_fixed_terms(group)
+    if not fx:
+        return cam
+    names = list(PARAM_NAMES.get(str(cam.get("model")), FULL_OPENCV_PARAMS))
+    p = list(map(float, cam["params"]))
+    for n, v in fx.items():
+        if n in names and names.index(n) < len(p):
+            p[names.index(n)] = float(v)
+    fixed = set(cam.get("fixed_params") or []) | set(fx)
+    cam["params"] = p
+    cam["fixed_params"] = [n for n in names if n in fixed]
+    cam["free_params"] = [n for n in (cam.get("free_params") or []) if n not in fx]
+    cam["fixed_terms"] = fx
+    return cam
+
+
 FORMS = {"navcam": NAVCAM, "hazcam": HAZCAM, "zcam": ZCAM}
 
 

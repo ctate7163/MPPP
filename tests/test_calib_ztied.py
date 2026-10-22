@@ -200,8 +200,10 @@ def _navcam_law(cams, rigT):
     return st
 
 
-def test_zcam_joint_recovers_the_focus_law_and_the_rig(tmp_path):
+def test_zcam_joint_recovers_the_focus_law_and_the_rig(tmp_path, monkeypatch):
+    from mppp.calib import forms
     from mppp.calib import ztied as Z
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})       # the truth has k2 = 0.40: no fixed terms (0.93.1) here
     rng = np.random.default_rng(3)
     truth = _truth_model()
     a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500)

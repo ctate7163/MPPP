@@ -196,7 +196,11 @@ def restructure(table: Dict[str, Any], blocks: Dict[str, Any], waypoints: Union[
         cand = [k for k, v in sites.items() if (v["official_blocks"] == [int(n)] and (covers(k) or jac(k) >= MATCH_JACCARD))
                 or sorted(v["sols"]) == sorted(b["visits"])]             # (or a site made from this block)
         if cand:
-            b["site"] = max(cand, key=lambda k: (jac(k), -len(k)))
+            best = max(cand, key=lambda k: (jac(k), -len(k)))
+            plain = re.sub(r"_(large|huge)$", "", best)
+            if plain != best and plain in sites and int(n) in (sites[plain].get("official_blocks") or []):
+                best = plain              # 0.93.1 (Christian): the plain site runs the block, not its _large / _huge form
+            b["site"] = best
             continue
         key = slug(b["name"])
         while key in sites:
@@ -662,11 +666,18 @@ def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[
     names = [r["site"] for r in rows]
     ncol = 2 if len(names) > 6 else 1
     nrow = -(-len(names) // ncol)
-    fig = plt.figure(figsize=(7.5 * ncol / 1.35 if ncol > 1 else 7.5, 1.05 * nrow + 2.4))
-    gs = fig.add_gridspec(nrow + 2, ncol, height_ratios=[1] * nrow + [0.05, 1.7], hspace=0.95, wspace=0.08)
+    fig = plt.figure(figsize=(7.5 * ncol / 1.35 if ncol > 1 else 7.5, 1.05 * nrow + 2.5))
+    # 0.93 (Christian, 22 Oct): the blocks in reading order (left to right, then down: the first row holds the first
+    # two blocks), a letter on every panel, and the legend just above the bottom panel (all sites in one histogram)
+    gs = fig.add_gridspec(nrow + 2, ncol, height_ratios=[1] * nrow + [0.2, 1.7], hspace=0.95, wspace=0.08)
+    letter = iter("ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "".join(f"A{c}" for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+
+    def tag(ax):
+        ax.text(-0.012, 1.0, next(letter), transform=ax.transAxes, ha="right", va="bottom", fontsize=9,
+                fontweight="bold")
     allN, allZ = [], []
     for k, name in enumerate(names):
-        ax = fig.add_subplot(gs[k % nrow if ncol > 1 else k, k // nrow if ncol > 1 else 0])
+        ax = fig.add_subplot(gs[k // ncol, k % ncol])
         recs = list(images[name].values())
         lmN = [lmst_hours(r.get("LMST")) for r in recs if _family(r) == "N"]
         lmZ = [lmst_hours(r.get("LMST")) for r in recs if _family(r) == "Z"]
@@ -677,11 +688,13 @@ def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[
         panel(ax, [(lmN, NAV_C), (lmZ, ZC_C)],
               f"{site_label(name)}  sols {r['sols']}  {r['navcam']} Nav" + (f" + {r['mastcam_z34']} Z34" if r["mastcam_z34"] else "")
               + (f"  ({off} outside 5-19 h)" if off else ""))
+        tag(ax)
         if Tlim:
             temperature_axis(ax, temps(recs))
-        if (ncol == 1 and k < len(names) - 1) or (ncol > 1 and (k % nrow) < nrow - 1 and k + 1 < len(names)):
+        if k + ncol < len(names):                     # a panel below it in the same column
             ax.set_xticklabels([])
     ax = fig.add_subplot(gs[nrow + 1, :])
+    tag(ax)
     off = outside(allN) + outside(allZ)
     panel(ax, [(allN, NAV_C), (allZ, ZC_C)],
           f"All {len(names)} sites: {len(allN)} Navcam + {len(allZ)} Mastcam-Z 34 images"
@@ -698,7 +711,8 @@ def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[
         handles.append(Line2D([], [], marker="o", ms=3, ls="none", color=LMST_T_C, label="Navcam camera temperature (right axis)"))
     if window:
         handles.append(Line2D([], [], color="0.55", lw=0.8, ls=":", label=f"processing window {window[0]:g}-{window[1]:g} h"))
-    fig.legend(handles=handles, loc="upper right", fontsize=7.5, frameon=False, ncol=len(handles), bbox_to_anchor=(0.99, 0.995))
+    ax.legend(handles=handles, loc="lower center", fontsize=7.5, frameon=False, ncol=len(handles),
+              bbox_to_anchor=(0.5, 1.13), borderaxespad=0.0)
     fig.suptitle("Time of day of the processed images, per site (each camera normalised to unit area)",
                  fontsize=9.5, x=0.01, ha="left", y=0.995)
     fig.subplots_adjust(left=0.03, right=0.96 if Tlim else 0.99, top=1 - 0.55 / fig.get_figheight(), bottom=0.5 / fig.get_figheight())

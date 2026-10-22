@@ -11,14 +11,17 @@ focal lengths, the principal point and k1 are linear in the camera temperature a
 fx, fy, cx, cy carry offsets for the images before the early-mission sol. NL is the rig reference. The stereo rig
 (NR from NL) has one yaw for every temperature and a rotation drift linear in sol, with a hinge in the pitch rate.
 
-**Hazcam** (front FL, FR and rear RL, RR). The same form, not calibrated yet (no `M2020_FL.json` ...). Each image
+**Hazcam** (front FL, FR and rear RL, RR). The same form as the Navcam: fx, fy and k1 linear in temperature, an
+early-mission offset on fx, fy and a rig rotation drifting linearly with sol (`mppp calib hazcam`, below; no
+`M2020_FL.json` ... promoted yet). Without a model each image
 starts from the `THIN_PRISM_FISHEYE` fitted by least squares to its own label CAHVORE over the whole frame
 (`mppp.calib.labelfit`, 0.93), in the label model's own camera frame so the pose prior is unchanged. The front
 Hazcams are central (E about 1e-7 m): 0.13-0.19 px rms. The rear Hazcams carry entrance-pupil terms of 3-9 mm; a
 central camera cannot follow them, so the fit uses points at 2, 5 and 20 m and is good to 2-4 px rms (full-frame
 pixels; the rear products are usually quarter resolution, so 0.5-1 px in the image). In a block each eye starts from
 the median of its images' fits and refines fx, fy, k1, k2 (`hazcam_intrinsics = "radial"`; "focal", "all",
-"hold"); the stereo rig of each pair is the CAHV one (`hazcam_rig_refine = "hold"`, or "rotation"). The front
+"hold"); the rig rotation of each pair is refined (`hazcam_rig_refine = "rotation"`, 0.93.1; a pair whose eyes are
+both weak stays at the CAHV rig; or "hold"). The front
 baseline is 0.25 m, the rear 0.93 m. The generic start model of 0.92 (f = 2130 px, k1 = -0.25, k2 = +0.08) was
 330 px rms from the flight calibration and is replaced (f = 2148 px, k1 = +0.0145, k2 = -0.0083; used only
 without a label model).
@@ -83,10 +86,28 @@ blocks of one zoom (`--zoom`, default 34):
 The result is a candidate focus model, checked against the one in use (`report.md`). `--no-k-tests` skips the
 k1/k2 likelihood-ratio tests.
 
+**Fixed terms per zoom** (0.93.1, `mppp.calib.forms.ZCAM_FIXED_TERMS`): at 34 mm k2 is held at 0.5 (ZL) and 0.6
+(ZR), with p1 and p2 free; at 48 mm k2, p1 and p2 are free; at 63, 79 and 110 mm k2 = p1 = p2 = 0. The block runs
+hold these values in their bin cameras and the joint holds the global terms at them; the likelihood-ratio tests then
+include "the fixed terms free" against the fixed values. The per-image prior camera keeps the promoted model's own
+values (its k1 was fitted with its k2). The 22 Oct Z34 joint gave k2 = 0.484 +- 0.010 (ZL) and 0.615 +- 0.009 (ZR)
+with k1 and k2 correlated 0.98, so fixing k2 costs little.
+
+**A zoom without a model** starts from the blocks: per eye the median refined bin camera with one focus slope, and
+the median Mastcam-Z rig (`ztied.start_model_from_blocks`). A first calibration may be promoted from 2 blocks
+(`min_blocks_start`); later ones need 3. The joint accepts blocks aligned with an older Mastcam-Z model: the check
+is that they were aligned with the Navcam models in use. `--group` takes comma-separated groups (their union),
+filtered to the sites whose `zcam` list has the zoom.
+
 ```bash
 mppp calib zcam --zoom 34
 mppp calib zcam --zoom 34 --promote-if-ok
+mppp calib zcam --zoom 63 --group zcam_consensus --promote-if-ok
 ```
+
+`scripts/windows/run_sites_zcam.bat` aligns the `zcam_consensus` blocks (every zoom of each site) and then runs
+`zcam_joints.bat`: one joint per zoom (34 over `zcam34_joint,zcam_consensus`, the others over `zcam_consensus`),
+each promoted if its checks pass, the Z34 figures, and the combined check below.
 
 ### Combined check: `mppp calib nz`
 
@@ -102,9 +123,43 @@ Mastcam-Z frames pull on the Navcam scale or pointing.
 `calib nz` is a check, not a calibration: it writes `nz_joint.json` and `report.md` and never promotes anything. It
 exits with 0 whether or not the solutions agree.
 
+`--navcam-group` (0.93.1) adds Navcam-only blocks (those not already in `--group`, 3000 points each) so that the
+Navcam law is held by more than the Mastcam-Z blocks; compare the result with the Navcam-only joint. The 22 Oct
+check over the six Z34 blocks alone moved NL cx by -1.3 px and both focal lengths by about +250 ppm while the Navcam
+residual changed by -0.7 %: a principal-point / attitude degeneracy that the extra blocks should pin.
+
 ```bash
 mppp calib nz --zoom 34
+mppp calib nz --zoom 34 --group zcam34_joint,zcam_consensus --navcam-group navcam_consensus
 ```
+
+### Hazcam fit: `mppp calib hazcam`
+
+Module [`mppp.calib.hazfit`](api.md#mppp.calib.hazfit) (0.93.1). The Hazcam law in the Navcam form, fitted from the
+finished blocks' refined Hazcam cameras and rigs (`sparse/cahv_ba` of each block's project; `--variant` picks the
+project folder, `hazcam` for `run_hazcam.bat`):
+
+- per eye, fx and fy with their own intercepts and one shared slope in ppm per degC about T0 = -20 degC (fitted when
+  the blocks' median temperatures span at least 5 degC), an early-mission offset on fx and fy (fitted with at least
+  two blocks on each side of sol 380), k1 linear in temperature and k2 the weighted mean; cx, cy, p1, p2, k3, k4 the
+  median of the label fits (the blocks hold them). Blocks are weighted by their tie-point observations; an eye held
+  as weak in a block is left out of that eye's fit;
+- per pair, the rig rotation at sol 0 and a linear drift in sol (pitch, yaw, roll, mdeg per sol) from at least three
+  blocks with a refined rig, otherwise the median rotation; the translation stays the CAHV one.
+
+Each eye and pair is checked on its own (`hazfit.HAZCAM_LIMITS`: at least 3 blocks, |slope| <= 100 ppm/degC, f0
+within 1 % of the label fits, aspect within 1 %, block scatter <= 600 ppm, rig within 0.5 deg of CAHV); the passing
+files go to `candidate/` and `--promote-if-ok` promotes them. The block temperature is the median of the eye's
+images (the rear Hazcam labels carry stale temperature sensors, so their slope may come out unfitted).
+
+```bash
+mppp calib hazcam --group hazcam_consensus --variant hazcam
+mppp calib hazcam --group hazcam_consensus --variant hazcam --promote-if-ok
+```
+
+`scripts/windows/run_hazcam.bat` aligns the `hazcam_consensus` blocks with both Hazcam pairs and the Navcam held at
+its promoted law (`NAVCAM_INTRINSICS=hold`, into `colmap_hazcam/`), then runs `hazcam_calibration.bat` (this fit,
+promoted if it passes).
 
 ## Promotion: `mppp cmods`
 

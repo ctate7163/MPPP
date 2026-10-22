@@ -25,12 +25,11 @@ also adds every waypoint station within 10 m of a station of the sol range, from
 than a third of the detector are dropped, and only `NCAM` sequences are kept (plus `ZCAM` with Mastcam-Z). The
 mission waypoint table is downloaded and cached for a day; without a connection the packaged snapshot is used.
 
-With `hazcams` (0.93; `--hazcam front|rear|both`, or `--set HAZCAMS=F`), the front (`FLF` / `FRF`, `FHAZ` sequences)
-and / or rear (`RLF` / `RRF`, `RHAZ` sequences) Hazcam products of the same stations are added, under the same
-one-product-per-exposure and one-third-of-the-frame rules. The run goes to `<WORK>/colmap_hazcam` unless a variant
-is named, so the Navcam (+ Mastcam-Z) result in `colmap/` stays; a run without `hazcams` leaves out any Hazcam images
-in `processed/`. The Hazcam settings enter the run key only when `hazcams` is set: the keys of every other run are
-unchanged.
+The front (`FLF` / `FRF`, `FHAZ` sequences) and rear (`RLF` / `RRF`, `RHAZ` sequences) Hazcam products of the
+same stations are added under the same one-product-per-exposure and one-third-of-the-frame rules (`hazcams`, by
+default both since 0.93.1; `--hazcam front|rear|both|none`, or `--set HAZCAMS=F`). The results go to `colmap/` like
+any block; `--variant` keeps them apart (`run_hazcam.bat` uses `colmap_hazcam/`). A run with `--hazcam none` leaves
+out any Hazcam images in `processed/`, and its run key leaves out the Hazcam settings.
 
 ## 2. Process the images
 
@@ -102,7 +101,8 @@ With `staged` (default), the adjustment runs in two stages:
    from the median of its images' label CAHVORE fits) are held in the first round and then refine fx, fy, k1, k2
    (`hazcam_intrinsics`; an eye with fewer than 1000 tie-point observations stays at its start); their position
    priors follow their station's Navcam solution to 0.1 m (the cameras are fixed to the rover body); their stereo
-   rigs keep the CAHV values (`hazcam_rig_refine = "hold"`, or "rotation"). The
+   rig rotations are refined (`hazcam_rig_refine = "rotation"`, 0.93.1; a pair whose eyes are both held as weak stays
+   at its CAHV rig; or "hold"). The
    log reports, per round, the Hazcam frames with tie points and the Navcam-Hazcam tie points
    (`settings["reconstruction"]["hazcam"]`).
 

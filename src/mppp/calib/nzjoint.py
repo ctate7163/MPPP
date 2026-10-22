@@ -35,6 +35,7 @@ PathLike = Union[str, Path]
 # the combined solution agrees with the Navcam-only one when no Navcam term moves by more than this many of its sd
 # and the Navcam residuals do not get worse by more than this fraction
 AGREE_MAX_Z = 3.0
+NAVCAM_ONLY_POINTS_PER_BLOCK = 3000      # points per added Navcam-only block (the tied joint's thinning)
 AGREE_MAX_NAV_RESIDUAL_RISE = 0.05
 # ... and when no term moves more than these (also the test when the covariance fails: exact ties): the Navcam
 # block-agreement scale (median 77 ppm between blocks, 20 Oct)
@@ -52,12 +53,13 @@ def _hold_z_pp(proj) -> None:
 
 
 def adjust_nz(rec, proj, idx, st, units, zunits, sg, hold: Sequence[str] = T.HOLD_DEFAULT, iterations: int = 100,
-              passes: int = 2, covariance: bool = True, verbose: bool = True, iso_f: bool = T.ISO_F):
+              passes: int = 2, covariance: bool = True, verbose: bool = True, iso_f: bool = T.ISO_F,
+              zhold: Optional[Dict[str, Sequence[str]]] = None):
     """Navcam bins tied to the Navcam law and Mastcam-Z bins tied to the focus law, both laws free, the Navcam rig
     on its trend and the Mastcam-Z rig rotation refined.  Returns (ba, Navcam globals, Mastcam-Z globals)."""
     from ..sfm.reconstruction import bundle_adjust
     hook_n, gn = T.make_ties(st, units, hold=hold, iso_f=iso_f)
-    hook_z, gz = Z.make_zties(sg, zunits)
+    hook_z, gz = Z.make_zties(sg, zunits, hold=zhold or ())
 
     def hook(prob, **kw):
         a = hook_n(prob, **kw) or {}
@@ -159,15 +161,33 @@ def navcam_only_law(st: Dict[str, Any]) -> Dict[str, Any]:
 def fit_nzjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = None,
                 navcam_dir: Optional[PathLike] = None, zoom: int = Z.ZOOM, nav_points: int = Z.NAV_POINTS_PER_BLOCK,
                 z_points: int = Z.Z_POINTS_PER_BLOCK, iterations: int = 100, passes: int = 2, verbose: bool = True,
-                scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None,
+                navcam_blocks: Optional[Dict[str, PathLike]] = None,
+                navcam_points: int = NAVCAM_ONLY_POINTS_PER_BLOCK) -> Dict[str, Any]:
     """The Mastcam-Z joint first (Navcam held: the reference), then from the same merged blocks the combined
-    adjustment (both laws free), and their comparison (:func:`compare`)."""
+    adjustment (both laws free), and their comparison (:func:`compare`).  ``navcam_blocks`` (0.93): finished
+    Navcam-only blocks {name: WORK} added to both adjustments with ``navcam_points`` points each, so the combined
+    Navcam law is held by every Navcam block, not only by the Mastcam-Z blocks' Navcam frames (a block whose name is
+    one of ``blocks`` is left out: its Navcam frames are there already)."""
     from ..sfm.project import zcam_focus_model_path
     if model is None:
         model = json.loads(zcam_focus_model_path(zoom=zoom).read_text(encoding="utf-8"))
     t = time.time()
-    rec, proj, idx, st, units, zunits, sg = Z.build(blocks, model, navcam_dir, zoom, nav_points, z_points,
+    extra = {n: w for n, w in (navcam_blocks or {}).items() if n not in (blocks or {})}
+    pts: Any = nav_points
+    if extra:
+        if scapes is None:
+            scapes = [J.load_scape(n, w, single=False) for n, w in blocks.items()]
+        scapes = list(scapes) + [J.load_scape(n, w, single=False) for n, w in extra.items()]
+        pts = {n: int(navcam_points) for n in extra}
+        pts["*"] = nav_points
+        if verbose:
+            log.info(f"N+Z joint: {len(extra)} Navcam-only blocks added ({navcam_points} points each): "
+                     f"{', '.join(sorted(extra))}")
+    rec, proj, idx, st, units, zunits, sg = Z.build(blocks, model, navcam_dir, zoom, pts, z_points,
                                                     scapes=scapes, st=st)
+    fixed = Z.fixed_globals(sg)                     # 0.93: the zoom's fixed Mastcam-Z terms, held in both steps
+    zhold = {e: sorted(v) for e, v in fixed.items()}
     if not zunits:
         raise ValueError(f"no Mastcam-Z {zoom} mm bins in the blocks")
     if verbose:
@@ -178,7 +198,7 @@ def fit_nzjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = N
     t = time.time()
     rec_h, proj_h = copy.deepcopy(rec), copy.deepcopy(proj)
     ba_h, gz_h, _ = Z.adjust_z(rec_h, proj_h, idx, st, units, zunits, sg, iterations=iterations, passes=passes,
-                               covariance=False, verbose=verbose)
+                               covariance=False, verbose=verbose, hold=zhold)
     gn0 = {"G_NL": st["G"]["NL"], "G_NR": st["G"]["NR"], "S_NL": st["S"]["NL"], "S_NR": st["S"]["NR"],
            "E_NL": st["E"]["NL"], "E_NR": st["E"]["NR"], "Q0": st["Q0"], "D": st["D"], "H": st["H"]}
     held_stats = family_stats(rec_h, proj_h, units, idx, gn0)
@@ -190,11 +210,12 @@ def fit_nzjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = N
     for eye, arr in gz_h.items():
         sg2["eyes"][eye]["G"] = arr.copy()
     ba, gn, gz = adjust_nz(rec_h, proj_h, idx, st, units, zunits, sg2, iterations=iterations, passes=passes,
-                           verbose=verbose)
+                           verbose=verbose, zhold=zhold)
     nz_stats = family_stats(rec_h, proj_h, units, idx, gn)
     nav_res = T.globals_result(st, gn, ba, units)
     z_res = Z.globals_result(sg2, gz, ba, zunits)
     res: Dict[str, Any] = {"zoom": zoom, "blocks": sorted({u["scape"] for u in zunits.values()}),
+                           "navcam_only_blocks": sorted(extra), "fixed_terms": fixed,
                            "navcam": nav_res, "zcam": z_res, "zcam_navcam_held": {e: dict(zip(Z.GLOBAL_TERMS, map(float, a)))
                                                                                  for e, a in gz_h.items()},
                            "rig_zcam": Z.rig_result(proj_h, sg, zoom), "final_cost": float(ba["final_cost"]),
@@ -246,7 +267,9 @@ def write_nzjoint(res: Dict[str, Any], out_dir: PathLike) -> Dict[str, Any]:
     (out / "nz_joint.json").write_text(json.dumps(res, indent=1, default=T._json_default), encoding="utf-8")
     lines = [f"# Navcam + Mastcam-Z {int(res['zoom'])} mm combined joint ({datetime.date.today().isoformat()})", "",
              f"Blocks: {', '.join(res['blocks'])}; started from the Navcam law in `{res.get('navcam_models')}`. "
-             "A check of the Navcam-only law against the Mastcam-Z frames: nothing is promoted.", ""]
+             + (f"Navcam-only blocks added ({len(res['navcam_only_blocks'])}): {', '.join(res['navcam_only_blocks'])}. "
+                if res.get("navcam_only_blocks") else "")
+             + "A check of the Navcam-only law against the Mastcam-Z frames: nothing is promoted.", ""]
     lines += [f"- {x}" for x in describe(res)]
     (out / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return {"folder": str(out), "agree": res["comparison"]["agree"]}

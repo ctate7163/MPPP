@@ -111,11 +111,12 @@ the package copies):
 * **Navcam** — COLMAP `THIN_PRISM_FISHEYE` at the full 5120 × 3840 frame (sx1 = sy1 = 0 held); focal lengths,
   principal point and k1 linear in camera temperature, offsets for the early mission, and a stereo rig whose
   rotation drifts linearly with sol. NL is the rig reference.
-* **Hazcam** (front and rear) — the same form, not calibrated yet: each image starts from a least-squares fit of the
-  fisheye to its own label CAHVORE (0.13–0.19 px rms for the front pair; 2–4 px for the rear pair, whose models carry
-  several mm of entrance-pupil movement), and a block refines fx, fy, k1, k2 (`hazcam_intrinsics`). Hazcam frames
-  join an alignment with `--hazcam front|rear|both` (results in `colmap_hazcam/`); they come in after the Navcam
-  block, with the Navcam cameras and rig held.
+* **Hazcam** (front and rear) — the same form, with fx, fy and k1 linear in temperature, an early-mission offset and
+  a rig drift in sol (`mppp calib hazcam`, fitted from the blocks; not promoted yet). Without a model each image
+  starts from a least-squares fit of the fisheye to its own label CAHVORE (0.13–0.19 px rms for the front pair; 2–4
+  px for the rear pair, whose models carry several mm of entrance-pupil movement), and a block refines fx, fy, k1, k2
+  (`hazcam_intrinsics`) and the rig rotation. Since 0.93.1 the Hazcam frames of a block's stations are in every
+  block (`--hazcam none` leaves them out); they come in after the Navcam block, with the Navcam cameras and rig held.
 * **Mastcam-Z** — one model per zoom, a function of the focus count and the focus-motor backlash state only
   (lines in focus per eye and state; p1 = p2 = k3 = 0 held). 34 mm is calibrated; the other zooms start from the
   label CAHVOR. An image is in the high-focal-length state unless the low-backlash list or its own focal fit says

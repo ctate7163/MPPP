@@ -12,7 +12,8 @@ seq:ZCAM05179        # Bunsen Peak, sol 1065: 1088 frames, 0.44 s apart
 seq:ZCAM05180        # Bunsen Peak: 416 frames, 1.8 s apart
 seq:ZCAM05114        # Rockytop: 144 frames, 1.0 s apart
 seq:ZCAM05093        # Issole: ~2000 frames
-seq:ZCAM05062
+seq:ZCAM05060        # Christian, 22 Oct
+seq:ZCAM05062        # Christian, 22 Oct
 
 # Mastcam-Z ZCAM00xxx and ZCAM01xxx sequences
 seq:ZCAM00*
@@ -22,9 +23,13 @@ seq:ZCAM01*
 
 # other Mastcam-Z observations
 seq:ZCAM08512        # Rockytop: 74 stereo frames
+seq:ZCAM03017        # Christian, 22 Oct
 
 # Navcam stereo pairs (both eyes, every product type)
 N*_0693_0728460284_145*
 N*_0684_0727665222_395*
 N*_0693_0728460255_160*
 N*_0681_0727400691_868*
+
+# single exposures (every camera of that SCLK)
+*_0076_0673685057_000*   # sol 76 (Christian, 22 Oct)

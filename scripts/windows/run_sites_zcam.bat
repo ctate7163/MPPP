@@ -10,6 +10,10 @@ REM   batch log     %ROOT%\run_sites_log.txt
 REM   per site      %ROOT%\mars2020_sol_<sol>_<site>_zcam\runs\<date-time>\log.txt and mppp_status.json
 REM   status        sites_status.bat
 REM
+REM 0.93 (Christian, 22 Oct): then zcam_joints.bat - the Mastcam-Z joint of every zoom over the good blocks, a new
+REM version of each zoom's focus model, promoted when every check passes ("set MPPP_THEN=none" before calling this
+REM file aligns only; "set MPPP_THEN_ARGS=--no-promote" never promotes).
+REM
 REM Edit the settings below (or run scripts\run_sites.py from a prompt; --help lists every option).
 REM ======================================================================================================
 setlocal
@@ -34,7 +38,9 @@ REM 20 Oct: MPPP_SCAPES after mppp_env.bat (it may come from mppp_scapes.txt), e
 if not defined MPPP_SCAPES if exist "D:\scapes" set "MPPP_SCAPES=D:\scapes"
 if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx MPPP_SCAPES D:\scapes & pause & exit /b 1)
 set "ROOT=%MPPP_SCAPES%"
+if not defined MPPP_THEN set "MPPP_THEN=zcam_joints.bat"
+if /i "%MPPP_THEN%"=="none" set "MPPP_THEN="
 start "MPPP run_sites zcam - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% --zcam %EXTRA% %*
-echo MPPP run_sites started in a minimised window. Log: "%ROOT%\run_sites_log.txt"
+echo MPPP run_sites started in a minimised window, then %MPPP_THEN%. Log: "%ROOT%\run_sites_log.txt"
 echo Status of every site: sites_status.bat
 timeout /t 10

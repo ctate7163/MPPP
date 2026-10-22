@@ -8,13 +8,13 @@ fields of `mppp.pipeline.Settings` (see the [API reference](api.md)); `--set NAM
 
 ```text
 usage: mppp [-h] [-v | -q] [--log FILE]
-            {process,align,run,sites,cmods,mask,example,waypoints,maps,calib,doctor,version} ...
+            {process,align,run,sites,gui,cmods,mask,example,waypoints,maps,calib,doctor,version} ...
 
 The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping from the shell.
 
 ::
 
-    mppp process SITE|WORK [--root DIR] [--pds DIR] [--zcam] [--hazcam front|rear|both] [--set NAME=VALUE ...]
+    mppp process SITE|WORK [--root DIR] [--pds DIR] [--zcam] [--hazcam front|rear|both|none] [--set NAME=VALUE ...]
                  [--settings FILE] [--dry-run]
     mppp align WORK [--variant NAME] [--set ...] [--settings FILE] [--gui] [--stop-after STEP] [--force] [--status]
     mppp run SITE|WORK [...]                  process, then align
@@ -24,6 +24,7 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
     mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
     mppp calib navcam [--root DIR] [--group navcam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
+    mppp calib zcam|nz|hazcam [--zoom Z] [--group G1,G2] [--navcam-group G] [--variant V] [--promote-if-ok]
     mppp doctor                               what is set, what is missing (environment, dependencies, models)
     mppp version
 
@@ -32,11 +33,12 @@ write ``<WORK>/runs/<time>/log.txt`` and ``<WORK>/mppp_status.json`` as well (:f
 Every subcommand returns an exit code (0 ok, 1 failed, 2 bad arguments, 3 a run is already going on).
 
 positional arguments:
-  {process,align,run,sites,cmods,mask,example,waypoints,maps,calib,doctor,version}
+  {process,align,run,sites,gui,cmods,mask,example,waypoints,maps,calib,doctor,version}
     process             select the PDS products of a site and process them into <WORK>/processed
     align               align the images processed in a WORK folder
     run                 process, then align a site
     sites               the site definitions
+    gui                 write the COLMAP GUI files (open_in_colmap.bat ...) into finished projects
     cmods               the camera models in use
     mask                the terrain mask model
     example             the Mars 2020 example data (Rockytop, sols 461-464): fetch or build
@@ -59,7 +61,7 @@ options:
 
 ```text
 usage: mppp process [-h] [--set NAME=VALUE] [--settings FILE] [--sites-file FILE] [--root DIR]
-                    [--pds DIR] [--zcam] [--hazcam {front,rear,both}] [--force] [--no-echo]
+                    [--pds DIR] [--zcam] [--hazcam {front,rear,both,none}] [--force] [--no-echo]
                     [--dry-run]
                     SITE|WORK
 
@@ -75,9 +77,9 @@ options:
   --root DIR            the scapes root (default: MPPP_SCAPES)
   --pds DIR             the PDS archive (default: MPPP_PDS)
   --zcam                the Navcam + Mastcam-Z block of the site (..._zcam)
-  --hazcam {front,rear,both}
-                        add the front / rear Hazcam frames of the block's stations (results in
-                        colmap_hazcam unless --variant names another folder)
+  --hazcam {front,rear,both,none}
+                        the Hazcam frames of the block's stations: front, rear, both (the default
+                        since 0.93.1) or none
   --force               start even if the status file says a run is alive
   --no-echo             log to the file only
   --dry-run             select only: list what would be processed
@@ -87,8 +89,8 @@ options:
 
 ```text
 usage: mppp align [-h] [--variant VARIANT] [--set NAME=VALUE] [--settings FILE]
-                  [--sites-file FILE] [--hazcam {front,rear,both}] [--force] [--no-echo] [--gui]
-                  [--stop-after STEP] [--status]
+                  [--sites-file FILE] [--hazcam {front,rear,both,none}] [--force] [--no-echo]
+                  [--gui] [--stop-after STEP] [--status]
                   WORK
 
 positional arguments:
@@ -101,9 +103,9 @@ options:
                         Python; repeatable
   --settings FILE       a JSON file of settings {NAME: value}
   --sites-file FILE     site definitions (default mppp/data/sites.json)
-  --hazcam {front,rear,both}
-                        add the front / rear Hazcam frames of the block's stations (results in
-                        colmap_hazcam unless --variant names another folder)
+  --hazcam {front,rear,both,none}
+                        the Hazcam frames of the block's stations: front, rear, both (the default
+                        since 0.93.1) or none
   --force               start even if the status file says a run is alive
   --no-echo             log to the file only
   --gui                 write the COLMAP GUI files (colmap_gui.ini, open_in_colmap.bat)
@@ -116,7 +118,7 @@ options:
 
 ```text
 usage: mppp run [-h] [--variant VARIANT] [--set NAME=VALUE] [--settings FILE] [--sites-file FILE]
-                [--root DIR] [--pds DIR] [--zcam] [--hazcam {front,rear,both}] [--force]
+                [--root DIR] [--pds DIR] [--zcam] [--hazcam {front,rear,both,none}] [--force]
                 [--no-echo] [--gui] [--stop-after STEP]
                 SITE|WORK
 
@@ -133,9 +135,9 @@ options:
   --root DIR            the scapes root (default: MPPP_SCAPES)
   --pds DIR             the PDS archive (default: MPPP_PDS)
   --zcam                the Navcam + Mastcam-Z block of the site (..._zcam)
-  --hazcam {front,rear,both}
-                        add the front / rear Hazcam frames of the block's stations (results in
-                        colmap_hazcam unless --variant names another folder)
+  --hazcam {front,rear,both,none}
+                        the Hazcam frames of the block's stations: front, rear, both (the default
+                        since 0.93.1) or none
   --force               start even if the status file says a run is alive
   --no-echo             log to the file only
   --gui                 write the COLMAP GUI files
@@ -240,23 +242,34 @@ options:
 ## mppp calib
 
 ```text
-usage: mppp calib [-h] [--root DIR] [--group GROUP] [--zoom ZOOM] [--blocks [NAME=WORK ...]]
-                  [--sites-file FILE] [--out DIR] [--points POINTS] [--zpoints ZPOINTS]
-                  [--hold [HOLD ...]] [--knot KNOT] [--aniso-f] [--no-diagnostics] [--no-k-tests]
+usage: mppp calib [-h] [--variant VARIANT] [--root DIR] [--group GROUP] [--zoom ZOOM]
+                  [--navcam-group NAVCAM_GROUP] [--blocks [NAME=WORK ...]] [--sites-file FILE]
+                  [--out DIR] [--points POINTS] [--zpoints ZPOINTS] [--hold [HOLD ...]]
+                  [--knot KNOT] [--aniso-f] [--no-diagnostics] [--include-failed] [--no-k-tests]
                   [--promote-if-ok] [--no-promote] [--note NOTE]
-                  {navcam,zcam,nz}
+                  {navcam,zcam,nz,hazcam}
 
 positional arguments:
-  {navcam,zcam,nz}      navcam: the one-adjustment joint over the finished Navcam blocks; zcam:
+  {navcam,zcam,nz,hazcam}
+                        navcam: the one-adjustment joint over the finished Navcam blocks; zcam:
                         the Mastcam-Z joint over the finished Navcam + Mastcam-Z blocks, the
                         Navcam held at the models in use; nz: the combined joint (both laws free)
-                        compared with the Navcam-only law - a check, never promoted
+                        compared with the Navcam-only law - a check, never promoted; hazcam: the
+                        Hazcam law (Navcam form) from the finished blocks with Hazcams (0.93)
 
 options:
   -h, --help            show this help message and exit
+  --variant VARIANT     the blocks' project colmap_<variant> (default colmap; run_hazcam.bat:
+                        hazcam)
   --root DIR            the scapes root (default: MPPP_SCAPES)
-  --group GROUP         site group of the blocks (default navcam_consensus / zcam34_consensus)
+  --group GROUP         site group(s) of the blocks, comma-separated (default navcam_consensus /
+                        zcam<zoom>_joint, else zcam<zoom>_consensus); zcam / nz take the sites
+                        whose "zcam" list has the zoom
   --zoom ZOOM           zcam: the Mastcam-Z zoom (default 34)
+  --navcam-group NAVCAM_GROUP
+                        nz: also the finished Navcam-only blocks of this group (e.g.
+                        navcam_consensus), 3000 points each, so the combined Navcam law is held by
+                        every Navcam block
   --blocks [NAME=WORK ...]
                         blocks given explicitly instead
   --sites-file FILE
@@ -269,6 +282,7 @@ options:
   --aniso-f             separate fx and fy thermal slopes (default: one ppm/degC per eye, fy tied
                         to fx)
   --no-diagnostics      skip the per-block diagnostic pass (no gate then)
+  --include-failed      also blocks whose alignment health is FAIL (left out by default)
   --no-k-tests          zcam: skip the k1/k2 likelihood-ratio tests (2 more adjustments)
   --promote-if-ok       promote the candidate when every check passes
   --no-promote          never promote (overrides --promote-if-ok)

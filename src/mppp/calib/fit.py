@@ -1704,7 +1704,10 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
     add("form", not bad, "; ".join(bad) or forms.ZCAM_FORM_ID)
     cal, su = new.get("calibration"), new.get("start_update")
     nb = len(((cal or su or {}).get("blocks")) or [])
-    add("blocks", nb >= (lim["min_blocks"] if cal is not None else lim["min_blocks_start"]), f"{nb} blocks")
+    # 0.93: the first calibration of a zoom (no model in use: its start came from the blocks) needs min_blocks_start
+    first = cal is not None and not (old.get("cameras") and old.get("state") != "start (block results)")
+    need = lim["min_blocks_start"] if (cal is None or first) else lim["min_blocks"]
+    add("blocks", nb >= need, f"{nb} blocks (>= {need}" + (", a first calibration of the zoom" if first else "") + ")")
     for g, c in (new.get("cameras") or {}).items():
         o = (old.get("cameras") or {}).get(g) or {}
         e = ((cal or {}).get("eyes") or {}).get(g) or {}

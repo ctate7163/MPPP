@@ -202,6 +202,77 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
     return hook, g
 
 
+def start_model_from_blocks(scapes: Sequence[Any], zoom: int) -> Dict[str, Any]:
+    """A start focus model (zcam-v2 layout) for a zoom without one, from the blocks' refined focus-bin cameras
+    (:func:`mppp.calib.joint.load_scape` scapes): per eye the median fx, fy at the median focus with one slope fitted
+    over the bins (0 when the focus spans under 50 counts), the median k1, k2, p1, p2 and principal point (the pin),
+    the regular state at the backlash lines (ratio 1, held by the joint without regular bins); the rig the median of
+    the blocks' Mastcam-Z rigs.  The fixed terms of the zoom are set by the joint."""
+    from scipy.spatial.transform import Rotation
+    rows: Dict[str, List[Tuple[float, np.ndarray, float]]] = {}
+    rigs, ts = [], []
+    for sc in scapes:
+        db = (sc.project.settings.get("database") or {}).get("cameras") or {}
+        for key, spec in sc.project.cameras.items():
+            g = str(spec.get("group") or key)[:5]
+            if g not in zoom_groups(zoom) or spec.get("focus_count_median") is None:
+                continue
+            cid = db.get(key)
+            if cid is None or int(cid) not in sc.rec.cameras:
+                continue
+            p = np.asarray(sc.rec.cameras[int(cid)].params, float)
+            rows.setdefault(g, []).append((float(spec["focus_count_median"]), p, float(spec.get("n_images") or 1)))
+        v = (sc.project.settings.get("zcam_virtual_rig") or {}).get(f"Z{zoom:03d}") or {}
+        if v.get("R_sensor_from_ref"):
+            rigs.append(Rotation.from_matrix(np.asarray(v.get("R_refined") or v["R_sensor_from_ref"], float)).as_rotvec())
+            ts.append(np.asarray(v.get("t_refined") or v["t_sensor_from_ref"], float))
+    cams: Dict[str, Any] = {}
+    for g, rr in rows.items():
+        F = np.array([r[0] for r in rr])
+        P = np.array([r[1] for r in rr])
+        ref = float(np.median(F))
+        b = 0.0
+        if np.ptp(F) >= 50.0 and len(rr) >= 3:
+            b = float(np.polyfit(np.r_[F, F], np.r_[P[:, _FX], P[:, _FY]], 1)[0])
+        fx = float(np.median(P[:, _FX] - b * (F - ref)))
+        fy = float(np.median(P[:, _FY] - b * (F - ref)))
+        k = [float(np.median(P[:, i])) for i in (_K1, _K2, _P1, _P2)]
+        cams[g] = {"f0_px": float(np.sqrt(fx * fy)), "slope_px_per_count": b, "aspect": fy / fx, "reference_focus": ref,
+                   "focus_range": [float(F.min()), float(F.max())], "regular_ratio": 1.0,
+                   "pp0_px": [float(np.median(P[:, _CX])), float(np.median(P[:, _CY]))],
+                   "lines": {"reference_focus": ref, "backlash": {"fx": {"a": fx, "b": b, "form": "common"},
+                                                                  "fy": {"a": fy, "b": b, "form": "common"}}},
+                   "distortion": {"names": ["k1", "k2", "p1", "p2"], "params": k,
+                                  "note": "start: the median of the blocks' bins"},
+                   "pp": {"cx_px_per_count": 0.0, "cy_px_per_count": 0.0},
+                   "thermal": {"T0_degC": -15.0, "sensor": "HEAD_FPA", "f_px_per_degC": 0.0, "note": "no temperature term"},
+                   "n_bins": len(rr)}
+    if not cams:
+        raise ValueError(f"no Mastcam-Z {zoom} mm bins in the blocks")
+    rig: Dict[str, Any] = {}
+    if rigs:
+        R = Rotation.from_rotvec(np.median(np.asarray(rigs), axis=0)).as_matrix()
+        t = np.median(np.asarray(ts), axis=0)
+        rig = {"R_sensor_from_ref": R.tolist(), "t_sensor_from_ref": t.tolist(), "baseline_m": float(np.linalg.norm(t)),
+               "note": f"start: the median of {len(rigs)} blocks' Mastcam-Z rigs"}
+    return {"cameras": cams, "rig": rig, "form": "zcam-v2", "state": "start (block results)", "pixel_mm": 0.0074,
+            "source": f"start model of {zoom} mm from {len(scapes)} blocks' refined focus bins (mppp.calib.ztied)"}
+
+
+def fixed_globals(sg: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
+    """Set the zoom's fixed distortion terms (:data:`mppp.calib.forms.ZCAM_FIXED_TERMS`) in the start globals ``sg``
+    (changed in place); returns {eye group: {term: value}} of the terms to hold."""
+    from .forms import zcam_fixed_terms
+    out: Dict[str, Dict[str, float]] = {}
+    for eye, e in sg["eyes"].items():
+        fx = {k: float(v) for k, v in zcam_fixed_terms(eye).items() if k in GLOBAL_TERMS}
+        for k, v in fx.items():
+            e["G"][GLOBAL_TERMS.index(k)] = v
+        if fx:
+            out[eye] = fx
+    return out
+
+
 def adjust_z(rec, proj, idx, st, units, zunits, sg, iterations: int = 100, covariance: bool = True, passes: int = 2,
              tie: bool = True, refine_zcam_rig: str = "rotation", verbose: bool = True,
              hold: Union[Sequence[str], Dict[str, Sequence[str]]] = ()):
@@ -395,8 +466,18 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     """The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the distortion tests (:func:`distortion_tests`,
     ``k_tests``), the diagnostic pass.  ``model``: the focus model to start from (default: the one in use)."""
     from ..sfm.project import zcam_focus_model_path
+    start_from_blocks = False
     if model is None:
-        model = json.loads(zcam_focus_model_path(zoom=zoom).read_text(encoding="utf-8"))
+        f = zcam_focus_model_path(zoom=zoom)
+        if f.is_file():
+            model = json.loads(f.read_text(encoding="utf-8"))
+        else:                                         # 0.93: a zoom without a model starts from its blocks
+            if scapes is None:
+                scapes = [J.load_scape(n, w, single=False) for n, w in blocks.items()]
+            model = start_model_from_blocks(scapes, zoom)
+            start_from_blocks = True
+            if verbose:
+                log.info(f"Mastcam-Z joint: no {zoom} mm focus model in use - started from the blocks' refined bins")
     t = time.time()
     rec, proj, idx, st, units, zunits, sg = build(blocks, model, navcam_dir, zoom, nav_points, z_points, scapes=scapes, st=st)
     if verbose:
@@ -405,9 +486,18 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
                  f"cameras (held) ({time.time() - t:.0f} s)")
     if not zunits:
         raise ValueError(f"no Mastcam-Z {zoom} mm bins in the blocks")
+    fixed = fixed_globals(sg)                       # 0.93: the zoom's fixed distortion terms, held
+    hold = {e: sorted(v) for e, v in fixed.items()}
+    if verbose and fixed:
+        log.info("Mastcam-Z joint: held at fixed values " + "; ".join(
+            f"{e} " + ", ".join(f"{k} {v:+g}" for k, v in sorted(fx.items())) for e, fx in sorted(fixed.items())))
     t = time.time()
-    ba, g, stats = adjust_z(rec, proj, idx, st, units, zunits, sg, iterations=iterations, passes=passes, verbose=verbose)
+    ba, g, stats = adjust_z(rec, proj, idx, st, units, zunits, sg, iterations=iterations, passes=passes,
+                            verbose=verbose, hold=hold)
     res = globals_result(sg, g, ba, zunits)
+    res["fixed_terms"] = fixed
+    if start_from_blocks:
+        res["start_model"] = model
     res.update({"zoom": zoom, "blocks": sorted({u["scape"] for u in zunits.values()}), "residuals": stats,
                 "zcam": _zstats(rec, zunits), "rig": rig_result(proj, sg, zoom), "final_cost": float(ba["final_cost"]),
                 "iterations": ba["iterations"], "brief": ba["brief"], "seconds": time.time() - t,
@@ -415,7 +505,7 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     res["distortion"] = distortion_curves(res, ba, zunits=zunits)
     if k_tests:
         res["distortion"]["tests"] = distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba,
-                                                      iterations=iterations, verbose=verbose)
+                                                      iterations=iterations, verbose=verbose, fixed=fixed)
     if verbose:
         for line in describe(res):
             log.info(line)
@@ -513,13 +603,16 @@ def distortion_curves(res: Dict[str, Any], ba: Optional[Dict[str, Any]] = None, 
 
 
 def distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba, iterations: int = 60,
-                     verbose: bool = True) -> List[Dict[str, Any]]:
+                     verbose: bool = True, fixed: Optional[Dict[str, Dict[str, float]]] = None
+                     ) -> List[Dict[str, Any]]:
     """Likelihood-ratio tests of the distortion terms: the joint again from its solution with a term held, and the
     rise of the cost against the full model, as delta chi^2 = 2 (cost - cost_full) / variance factor (1 degree of
     freedom per held term).  (1) k2 = 0 in both eyes (is k2 needed at all?); (2) ZR's k1 and k2 held at ZL's (do
     the eyes differ?).  Each also gives the largest change of the distortion curve it causes (px) - with a million
     observations a tiny effect is "significant", so read the two together - and the eyes' curve difference with its
-    sd (:func:`distortion_curves`) is the direct test of (2)."""
+    sd (:func:`distortion_curves`) is the direct test of (2).  With terms held at fixed values (``fixed``, 0.93:
+    34 mm k2), the tests are instead (1) those terms freed - how much the fixed values cost (delta chi2 of the
+    fixed against the free model) - and (2) as before, with the fixed terms held."""
     from scipy.stats import chi2
     cov = ba.get("covariance") or {}
     vf = float(cov.get("variance_factor") or 0.0)
@@ -532,10 +625,19 @@ def distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba, iterations: i
     # (a "ZR k2 = ZL k2, k1 free" case was dropped: the step it needs in k1 is ~1e-4, which the exactly tied
     # problem does not take in one pass, so its delta chi2 came out larger than the stricter case's - a variant
     # that has not converged overstates delta chi2)
-    cases = [("k2 = 0 (both eyes)", {zl: {"k2": 0.0}, zr: {"k2": 0.0}}),
-             (f"{zr} k1, k2 = {zl} k1, k2", {zr: {"k1": float(base[zl][5]), "k2": float(base[zl][6])}})]
+    fixed = fixed or {}
+    cases = []                                   # (name, terms held at a value, held terms freed)
+    if any(fixed.values()):
+        terms = sorted({k for v in fixed.values() for k in v})
+        cases.append((f"{', '.join(terms)} free (vs the fixed values)", {}, {e: list(v) for e, v in fixed.items()}))
+    if not any("k2" in fixed.get(e, {}) for e in eyes):
+        cases.append(("k2 = 0 (both eyes)", {zl: {"k2": 0.0}, zr: {"k2": 0.0}}, {}))
+    if not any(k in fixed.get(zr, {}) for k in ("k1", "k2")):
+        cases.append((f"{zr} k1, k2 = {zl} k1, k2", {zr: {"k1": float(base[zl][5]), "k2": float(base[zl][6])}}, {}))
+    elif "k1" not in fixed.get(zr, {}):
+        cases.append((f"{zr} k1 = {zl} k1", {zr: {"k1": float(base[zl][5])}}, {}))
     out = []
-    for name, fix in cases:
+    for name, fix, free in cases:
         t = time.time()
         sgv = copy.deepcopy(sg)
         for e in eyes:
@@ -543,15 +645,15 @@ def distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba, iterations: i
             for term, v in fix.get(e, {}).items():
                 G[GLOBAL_TERMS.index(term)] = v
             sgv["eyes"][e]["G"] = G
-        hold = {e: list(fix.get(e, {})) for e in eyes}
+        hold = {e: sorted((set(fixed.get(e, {})) | set(fix.get(e, {}))) - set(free.get(e, []))) for e in eyes}
         try:
             bav, gv, _ = adjust_z(copy.deepcopy(rec), copy.deepcopy(proj), idx, st, units, zunits, sgv,
                                   iterations=iterations, covariance=False, passes=1, verbose=False, hold=hold)
         except Exception as ex:                                       # noqa: BLE001
             out.append({"test": name, "error": f"{type(ex).__name__}: {ex}"})
             continue
-        dof = sum(len(v) for v in fix.values())
-        dchi2 = 2.0 * (float(bav["final_cost"]) - cost0) / vf
+        dof = sum(len(v) for v in fix.values()) + sum(len(v) for v in free.values())
+        dchi2 = 2.0 * abs(float(bav["final_cost"]) - cost0) / vf     # freed terms lower the cost
         resv = {"eyes": {e: {"terms": dict(zip(GLOBAL_TERMS, map(float, gv[e])))} for e in eyes}}
         resb = {"eyes": {e: {"terms": dict(zip(GLOBAL_TERMS, map(float, base[e])))} for e in eyes}}
         cv, cb = distortion_curves(resv), distortion_curves(resb)
@@ -727,7 +829,15 @@ def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict
     checks.append({"check": "Mastcam-Z residuals finite", "ok": share <= lim["max_zcam_nonfinite_share"],
                    "note": f"{int(z.get('zcam_nonfinite') or 0)} of {int(z.get('zcam_observations') or 0)} not finite "
                            f"({100 * share:.2f} %)"})
-    runs = res.get("block_runs")
+    navfp, bfp = res.get("navcam_fingerprint"), res.get("block_navcam_fingerprints")
+    if navfp and bfp:                                  # 0.93: the Navcam models are what the joint holds
+        other = sorted(n for n, f in bfp.items() if f != navfp)
+        checks.append({"check": "blocks aligned with the Navcam models in use", "ok": not other,
+                       "note": ("all " + str(len(bfp))) if not other else
+                       f"{', '.join(other)} aligned with other Navcam models (run them again first)"})
+        runs = None
+    else:
+        runs = res.get("block_runs")
     if runs is not None:
         cur = res.get("models_fingerprint")
         other = sorted(n for n, r in runs.items() if not r or (cur and (r.get("camera_models") or {}).get("fingerprint") != cur))
@@ -745,6 +855,8 @@ def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[st
     from .fit import check_zcam
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    if model is None and res.get("start_model"):              # a zoom without a model: the start from the blocks
+        model = res["start_model"]
     old = model if model is not None else json.loads(zcam_focus_model_path(zoom=int(res.get("zoom", ZOOM))).read_text(encoding="utf-8"))
     new = candidate_model(res, old)
     name = f"M2020_ZCAM{int(res['zoom']):03d}_focus_model.json"

@@ -740,6 +740,7 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
                    loss_scale: float = 2.0, max_iterations: int = 100, attitude_prior_deg: Optional[float] = None,
                    linear_solver: str = "auto", refine_tangential: Any = True, hold_f_images: int = 0,
                    z_min: float = 3.0, min_observations: int = 20, verbose: bool = True,
+                   hold_cameras: Sequence[str] = (),
                    sequence_rule: bool = True, measured_ratio: bool = True, bin_fallback: bool = True):
     """
     Classify the Mastcam-Z focus groups of a solved block into the backlash and the regular state and (``mode``
@@ -818,7 +819,8 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
         return rec, report
     rec2, rows = split_by_state(rec, project, regular, hold_f_images=hold_f_images)
     report["cameras"] = rows
-    held = [k for k in project.cameras if str(k).startswith("N")]
+    # the Navcam, and the block's other held cameras (0.93.1: a weak Hazcam eye stays at its start)
+    held = sorted({k for k in project.cameras if str(k).startswith("N")} | set(hold_cameras))
     kw = {} if attitude_prior_deg is None else {"attitude_prior_deg": attitude_prior_deg}
     ba = bundle_adjust(rec2, project, sigma_px=sigma_px, loss_scale=loss_scale, refine_rig=False,
                        max_iterations=max_iterations, hold_cameras=held, linear_solver=linear_solver,

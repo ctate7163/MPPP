@@ -266,6 +266,8 @@ def zcam_camera_at(zoom_model: Dict[str, Any], group: str, focus: float, state: 
             p[forms.FULL_OPENCV_PARAMS.index(pn)] = vals[pn]
     for n in forms.ZCAM.held_zero:
         p[forms.FULL_OPENCV_PARAMS.index(n)] = 0.0
+    # the zoom's fixed distortion terms (forms.ZCAM_FIXED_TERMS) are not forced here: the promoted model's own k1, k2
+    # belong together (k1 and k2 correlate 0.98); the block BA holds the fixed values and the joint fits with them
     return forms.ZCAM.colmap_model, p, {"source": f"{group} at focus {float(focus):g} ({src})", "lines": sorted(vals)}
 
 
