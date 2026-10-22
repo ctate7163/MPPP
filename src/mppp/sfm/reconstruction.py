@@ -502,8 +502,12 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   navcam_aspect: Optional[str] = None,
                   aspect_sigma: float = NAVCAM_ASPECT_SIGMA, refine_zcam_rig: Optional[str] = None,
                   zcam_rig_translation_sigma_m: float = ZCAM_RIG_TRANSLATION_SIGMA_M,
-                  extra_residuals=None) -> Dict[str, Any]:
+                  extra_residuals=None, refine_hazcam_rig: Optional[str] = None) -> Dict[str, Any]:
     """
+    ``refine_hazcam_rig`` (0.93) - the stereo rigs of the Hazcam pairs (sensor FR, RR): "rotation" refines their
+    rotation, "hold" holds them, whatever ``refine_rig`` says; None: ``project.settings["hazcam"]["rig_refine"]``
+    ("hold" without it).
+
     ``extra_residuals`` - a callable ``f(prob, cam_blocks=..., rig_blocks=..., key_of=..., work=...)`` called
     once the problem is built (before the solve) to add residuals of its own, e.g. ties of temperature-bin cameras
     and epoch rigs to global thermal and drift parameters (:mod:`mppp.sfm.navcal_tied`); it returns a dict, kept in
@@ -763,8 +767,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         for cid, cam in work.cameras.items():
             key = key_of.get(int(cid), "")
             pc = project.cameras.get(key, {})
-            if not str(pc.get("group") or key).startswith("N") or key in set(hold_cameras):
-                continue
+            if not str(pc.get("group") or key).startswith(("N", "F", "R")) or key in set(hold_cameras):
+                continue                                  # 0.93: the Hazcam eyes keep their pixel aspect too
             blk = cam_blocks[int(cid)]
             if not prob.has_parameter_block(blk) or prob.is_parameter_block_constant(blk):
                 continue
@@ -821,6 +825,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 n_no_prior += 1
             else:
                 c3 = cov3_u if unsurveyed else cov3
+                if r_ref.get("prior_sigma_m"):              # 0.93: a Hazcam frame placed on its station's Navcam
+                    c3 = np.diag(np.broadcast_to(np.asarray(r_ref["prior_sigma_m"], float), 3) ** 2)
                 prob.add_residual_block(cf.AbsolutePosePositionPriorCost(c3, C), None, [pose])
                 prior_frames.append((fid, C, 1.0 / float(np.mean(np.diag(c3)))))
                 n_prior += 1
@@ -852,10 +858,18 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     n_rig_tie = 0
     rig_yaw = str(project.settings.get("navcam_rig_yaw") or "refine")        # "refine" or "hold"
     rig_roll = str(project.settings.get("navcam_rig_roll") or "refine")      # 0.91: likewise the roll (z)
+    hz_mode = refine_hazcam_rig if refine_hazcam_rig is not None else (
+        (project.settings.get("hazcam") or {}).get("rig_refine") or "hold")
     for key, arr in rig_blocks.items():
         if not prob.has_parameter_block(arr):
             continue
         nav_rig = str(key_of.get(int(key[1]), "")).startswith("N") if key_of else False
+        if key_of and str(key_of.get(int(key[1]), ""))[:1] in ("F", "R"):      # a Hazcam pair (0.93)
+            if hz_mode == "rotation":
+                prob.set_manifold(arr, pyceres.SubsetManifold(7, [3, 4, 5, 6]))
+            else:
+                prob.set_parameter_block_constant(arr)
+            continue
         if refine_rig is True and rig_translation_sigma_m:
             q0, t0 = rig_start[key][:4], rig_start[key][4:7]
             C0 = -Rotation.from_quat(q0 / np.linalg.norm(q0)).as_matrix().T @ t0     # right centre in the rig frame
@@ -1333,6 +1347,94 @@ def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:
             "mean_track_length": float(np.mean(lens)) if lens else 0.0,
             "two_view_points": int((lens_a == 2).sum()), "two_view_fraction": float((lens_a == 2).mean()) if lens else 0.0,
             "observations": int(np.sum(lens)) if lens else 0}
+
+
+HAZCAM_FAMILIES = ("F", "R")
+
+
+def hazcam_coverage(rec, project: SfmProject) -> Dict[str, Any]:
+    """The Hazcam frames in a solution (0.93): per eye (FL, FR, RL, RR) the project images, the registered ones, the
+    ones with tie points and their observations, and the tie points shared with Navcam ({} without Hazcams)."""
+    by_name = {r["name"]: r for r in project.images}
+    fam = {int(i): str((by_name.get(im.name) or {}).get("instrument", "?"))[:1] for i, im in rec.images.items()}
+    eye_of = {int(i): str((by_name.get(im.name) or {}).get("instrument", ""))[:2] for i, im in rec.images.items()}
+    eyes = sorted({str(r["instrument"])[:2] for r in project.images if str(r["instrument"])[:1] in HAZCAM_FAMILIES})
+    if not eyes:
+        return {}
+    out: Dict[str, Any] = {e: {"images": sum(1 for r in project.images if str(r["instrument"])[:2] == e),
+                               "registered": 0, "with_points": 0, "observations": 0} for e in eyes}
+    reg = set(int(i) for i in rec.reg_image_ids())
+    n_obs: Dict[int, int] = {}
+    nav_haz = 0
+    for pt in rec.points3D.values():
+        fs = set()
+        for el in pt.track.elements:
+            iid = int(el.image_id)
+            fs.add(fam.get(iid))
+            if fam.get(iid) in HAZCAM_FAMILIES:
+                n_obs[iid] = n_obs.get(iid, 0) + 1
+        nav_haz += ("N" in fs) and bool(fs & set(HAZCAM_FAMILIES))
+    for iid, e in eye_of.items():
+        if e not in out:
+            continue
+        out[e]["registered"] += iid in reg
+        out[e]["with_points"] += n_obs.get(iid, 0) > 0
+        out[e]["observations"] += n_obs.get(iid, 0)
+    return {"eyes": out, "navcam_hazcam_points": int(nav_haz)}
+
+
+# a Hazcam eye refines its intrinsics (hazcam_intrinsics) only with at least this many tie-point observations in the
+# block; fewer, and it is held at its start (the label fit).  Rockytop (22 Oct, the example set): the front eyes had
+# 3000-5000 observations and refined f by 0.25 %; the rear eyes 60-300 (quarter-resolution frames looking at the
+# rover's shadow) and, refined, moved fx 2.3 % and fy 4.6 %, and one rear frame 1 m from its station
+HAZCAM_MIN_REFINE_OBSERVATIONS = 1000
+
+
+def hazcam_weak_eyes(cov: Dict[str, Any], min_observations: int = HAZCAM_MIN_REFINE_OBSERVATIONS) -> List[str]:
+    """The Hazcam eyes of :func:`hazcam_coverage` with fewer than ``min_observations`` tie-point observations."""
+    return sorted(e for e, v in ((cov or {}).get("eyes") or {}).items() if v["observations"] < int(min_observations))
+
+
+# a Hazcam frame is fixed to the rover body: in stage 2 its position prior moves with the shift the Navcam block found
+# for its station (the rover's localisation error) and tightens to this sigma per axis.  Rockytop (22 Oct): with the
+# 1 m waypoint prior, a rear Hazcam pair tied by 48 points slid 1.3 m from its station (0.12 m for the Navcam frames)
+HAZCAM_STATION_PRIOR_SIGMA_M = 0.1
+
+
+def hazcam_station_priors(rec, project: SfmProject, sigma_m: float = HAZCAM_STATION_PRIOR_SIGMA_M
+                          ) -> Dict[str, np.ndarray]:
+    """Move the position prior of every Hazcam image of ``project`` by its station's median Navcam shift (solved
+    minus prior centre of the registered Navcam images of ``rec``) and give it ``sigma_m`` (``prior_sigma_m``); the
+    label prior stays in ``prior_C_label``.  Stations without registered Navcam images keep the waypoint prior.
+    Returns {station: shift (3,)}."""
+    by_name = {r["name"]: r for r in project.images}
+    d: Dict[str, List[np.ndarray]] = {}
+    for iid in rec.reg_image_ids():
+        im = rec.images[iid]
+        r = by_name.get(im.name)
+        if r is None or not str(r.get("instrument", "")).startswith("N") or r.get("prior_C") is None:
+            continue
+        d.setdefault(r["station"], []).append(np.asarray(im.projection_center(), float) - np.asarray(r["prior_C"], float))
+    shifts = {st: np.median(np.asarray(v), axis=0) for st, v in d.items()}
+    out: Dict[str, np.ndarray] = {}
+    for r in project.images:
+        if str(r.get("instrument", ""))[:1] not in HAZCAM_FAMILIES or r.get("station") not in shifts:
+            continue
+        r.setdefault("prior_C_label", list(r["prior_C"]))
+        r["prior_C"] = (np.asarray(r["prior_C_label"], float) + shifts[r["station"]]).tolist()
+        r["prior_sigma_m"] = float(sigma_m)
+        r["prior_station_shift_m"] = shifts[r["station"]].tolist()
+        out[r["station"]] = shifts[r["station"]]
+    return out
+
+
+def hazcam_line(cov: Dict[str, Any]) -> str:
+    """One log line of :func:`hazcam_coverage`."""
+    if not cov:
+        return "no Hazcam frames"
+    return ("Hazcam frames with tie points " + ", ".join(f"{e} {v['with_points']}/{v['images']} ({v['observations']} obs)"
+                                                          for e, v in cov["eyes"].items())
+            + f"; Navcam-Hazcam tie points {cov['navcam_hazcam_points']}")
 
 
 OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.6,   # 1.6 px (v0p50 1.2, before 1.0)
@@ -1862,6 +1964,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     if navcam_intrinsics == "hold" or (navcam_intrinsics == "auto" and network["verdict"] == "weak"):
         hold |= {k for k in project.cameras if str(k).startswith("N")}
     network["navcam_intrinsics"] = "hold" if any(str(k).startswith("N") for k in hold) else "refine"
+    hazkeys = {k for k in project.cameras if str(k)[:1] in HAZCAM_FAMILIES}       # 0.93: the Hazcam eyes
+    if hazkeys and (project.settings.get("hazcam") or {}).get("intrinsics") == "hold":
+        hold |= hazkeys
     if refine_rig == "auto":                                # the rig follows the intrinsics' network verdict
         refine_rig = "rotation" if network["verdict"] == "strong" else False
     network["navcam_rig"] = "rotation" if refine_rig else "hold"
@@ -1870,11 +1975,16 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
               f"Navcam intrinsics {network['navcam_intrinsics']}" + (f", holding {sorted(hold)}" if hold else ""))
     log.append({"navcam_network": network})
     z_frames = _frames_of_family(rec, project, "Z")
-    staged = bool(staged and z_frames and len(z_frames) < len(rec.frames))
+    # 0.93: the Hazcam frames come in with the Mastcam-Z ones in stage 2 (Navcam held) - their start cameras are the
+    # label fits, not a calibration, and must not pull the Navcam block
+    h_frames = [f for fam_ in HAZCAM_FAMILIES for f in _frames_of_family(rec, project, fam_)]
+    late = z_frames + h_frames
+    staged = bool(staged and late and len(late) < len(rec.frames))
     if staged:
-        exclude_frames(rec, z_frames)
+        exclude_frames(rec, late)
         if verbose:
-            logger.info(f"stage 1: Navcam only ({len(z_frames)} Mastcam-Z frames set aside)")
+            logger.info(f"stage 1: Navcam only ({len(z_frames)} Mastcam-Z frames"
+                        + (f", {len(h_frames)} Hazcam frames" if h_frames else "") + " set aside)")
     if register:
         rec = triangulate(rec, project, max_reproj_px=8.0)
         reg = register_stations(rec, project, verbose=verbose)
@@ -1981,20 +2091,41 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             thermal_early["single_camera_model"] = str(single.relative_to(project.root))
             thermal_early["when"] = "end of stage 1 (Navcam only)"
             navcam_stage["thermal"] = {k: v for k, v in thermal_early.items() if k != "rows"}
-        log = [{"stage": 2, "note": "Mastcam-Z frames added at their priors; Navcam cameras and rig held"}]
-        n_restored = restore_frames(rec, init, z_frames)      # pycolmap 4 dropped them in stage 1
+        log = [{"stage": 2, "note": "Mastcam-Z" + (" and Hazcam" if h_frames else "")
+                + " frames added at their priors; Navcam cameras and rig held"}]
+        n_restored = restore_frames(rec, init, late)          # pycolmap 4 dropped them in stage 1
         if n_restored:
             log[0]["frames_restored"] = n_restored
-        for fid in z_frames:
-            rec.frames[fid].rig_from_world = init.frames[fid].rig_from_world
+        shifts = hazcam_station_priors(rec, project) if h_frames else {}
+        if shifts:
+            log[0]["hazcam_station_shifts_m"] = {st: [round(float(x), 4) for x in v] for st, v in shifts.items()}
+            if verbose:
+                logger.info("stage 2: Hazcam priors moved with their stations' Navcam solution (+-"
+                            f"{HAZCAM_STATION_PRIOR_SIGMA_M:g} m): " + ", ".join(
+                                f"{st} {np.linalg.norm(v):.2f} m" for st, v in sorted(shifts.items())))
+        by_name_ = {r["name"]: r for r in project.images}
+        for fid in late:
+            T0 = init.frames[fid].rig_from_world
+            names_ = [init.images[d.id].name for d in init.frames[fid].data_ids if d.id in init.images]
+            st_ = (by_name_.get(names_[0]) or {}).get("station") if names_ else None
+            if st_ in shifts and str((by_name_.get(names_[0]) or {}).get("instrument", ""))[:1] in HAZCAM_FAMILIES:
+                import pycolmap as _pc
+                R0 = np.asarray(T0.rotation.matrix())
+                C0 = -R0.T @ np.asarray(T0.translation) + shifts[st_]
+                T0 = _pc.Rigid3d(T0.rotation, -R0 @ C0)
+            rec.frames[fid].rig_from_world = T0
             rec.register_frame(fid)
         # the Navcam frames now sit on temperature-bin rigs: triangulate against a database copy that has them
         db2 = sync_database(rec, project) if (navcam_stage.get("thermal") and project.database.is_file()) else None
         topts2 = dict(topts, database=db2) if db2 is not None else topts
         hold |= {k for k in project.cameras if str(k).startswith("N")}
         refine_rig = False
+        hazcam_weak_held: set = set()
         if verbose:
-            logger.info(f"stage 2: {len(z_frames)} Mastcam-Z frames added; Navcam cameras and rig held")
+            logger.info(f"stage 2: {len(z_frames)} Mastcam-Z frames"
+                        + (f" and {len(h_frames)} Hazcam frames" if h_frames else "")
+                        + " added; Navcam cameras and rig held"
+                        + (f"; Hazcam eyes {sorted(hazkeys)} start at their label fits, held in round 1" if h_frames else ""))
         zkeys = {k for k in project.cameras if str(k).startswith("Z")}
         cycles = max(0, min(int(zcam_line_cycles), len(schedule) - 1)) if zcam_focus_line else 0
         # the Mastcam-Z rig (rotation, and with "full" the baseline) is refined while the Mastcam-Z cameras are
@@ -2044,6 +2175,13 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             # free (each followed by the refit of one line per eye and zoom), then held on the line
             zfree = (not zcam_focus_line) or (1 <= k <= cycles)
             hold_k = hold if zfree else (hold | zkeys)
+            if k == 0 and h_frames and round1_hold and len(schedule) > 1:
+                hold_k = hold_k | hazkeys                   # 0.93: the Hazcam frames are posed before their cameras move
+            elif h_frames:
+                weak_h = set(hazcam_weak_eyes(hazcam_coverage(rec, project))) & hazkeys
+                if weak_h:                                  # too few ties to refine a camera: held at the label fit
+                    hold_k = hold_k | weak_h
+                    hazcam_weak_held.update(weak_h)
             ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
                                attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold_k), linear_solver=linear_solver,
@@ -2052,7 +2190,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             cov_prev = ZG.group_coverage(rec, project)              # after the adjustment, before any line
             poses_prev, cams_prev = ZG.frame_poses(rec, project), ZG.snapshot(rec, project)
             reg_prev = set(int(f) for f in rec.reg_frame_ids())
-            if zcam_focus_line and zfree:
+            if zcam_focus_line and zfree and zkeys:
                 from .zcam import focus_line_lines, refit_focus_lines
                 line_snap = ZG.snapshot(rec, project)
                 lines = refit_focus_lines(rec, project)
@@ -2069,6 +2207,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             res = native_residuals(rec, project)["residual_native_px"]
             entry = {"round": k + 1, "stage": 2, "triangulation_px_full": tpx, "cauchy_scale_sigma": loss, "ba": ba["brief"],
                      "filtered_observations": n_bad, "tracks": st, "zcam_coverage": ZG.group_coverage(rec, project),
+                     "hazcam_coverage": hazcam_coverage(rec, project) if h_frames else None,
                      "zcam_terrain": _zcam_terrain(rec),
                      "rms_native_px": float(np.sqrt(np.mean(res ** 2))) if res.size else float("nan"),
                      "median_native_px": float(np.median(res)) if res.size else float("nan"),
@@ -2076,9 +2215,12 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             log.append(entry)
             if verbose:
                 logger.info(f"stage 2 round {k + 1}: {st['points']} points, median {entry['median_native_px']:.3f} / "
-                      f"rms {entry['rms_native_px']:.3f} native px, {n_bad} obs filtered, {entry['elapsed_s']:.0f} s; "
-                      f"Mastcam-Z frames with tie points {ZG.brief(entry['zcam_coverage'])}")
-                logger.info(f"stage 2 round {k + 1}: {_zcam_terrain_line(entry['zcam_terrain'])}")
+                      f"rms {entry['rms_native_px']:.3f} native px, {n_bad} obs filtered, {entry['elapsed_s']:.0f} s"
+                      + (f"; Mastcam-Z frames with tie points {ZG.brief(entry['zcam_coverage'])}" if z_frames else ""))
+                if z_frames:
+                    logger.info(f"stage 2 round {k + 1}: {_zcam_terrain_line(entry['zcam_terrain'])}")
+                if h_frames:
+                    logger.info(f"stage 2 round {k + 1}: {hazcam_line(entry['hazcam_coverage'])}")
             ZG.trace(rec, project, f"r{k + 1}_filtered", {"filtered": n_bad})
             if exclude_outliers and k + 1 == min(int(exclude_after_round), len(schedule)):
                 _exclude(f"stage 2, after round {k + 1}")
@@ -2160,6 +2302,16 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                     f["when"] = "stage 2, before the final adjustment (Navcam ties)"
                 excluded.extend(weak)
                 log.append({"excluded_frames": weak, "when": "stage 2, Navcam ties"})
+        if h_frames:
+            weak_h = set(hazcam_weak_eyes(hazcam_coverage(rec, project))) & hazkeys
+            hazcam_weak_held.update(weak_h)
+            hold |= weak_h
+            if hazcam_weak_held:
+                log.append({"stage": 2, "hazcam_held_weak": sorted(hazcam_weak_held),
+                            "min_observations": HAZCAM_MIN_REFINE_OBSERVATIONS})
+                if verbose:
+                    logger.info(f"stage 2: Hazcam eyes held at their start (fewer than "
+                                f"{HAZCAM_MIN_REFINE_OBSERVATIONS} tie-point observations): {sorted(hazcam_weak_held)}")
         ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                            refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential, refine_rig=False,
                            max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
@@ -2235,6 +2387,11 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         project.settings["thermal"] = thermal
     elif thermal_bins_deg and verbose:
         logger.info("thermal stage skipped: no image temperatures")
+    hz_cov = hazcam_coverage(rec, project) if hazkeys else None
+    if hz_cov:
+        log.append({"hazcam": hz_cov})
+        if verbose:
+            logger.info(f"final: {hazcam_line(hz_cov)}")
     out = project.root / "sparse" / out_name
     out.mkdir(parents=True, exist_ok=True)
     rec.write(str(out))
@@ -2271,7 +2428,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "localize_min_images": int(localize_min_images or 0),
                                           "unlocalized_stations": sorted(st for st, v in final_unloc.items()
                                                                          if v["prior"] == "dropped"),
-                                          "unlocalized": final_unloc, "unlocalized_registration": unloc_reg}
+                                          "unlocalized": final_unloc, "unlocalized_registration": unloc_reg,
+                                          "hazcam": hz_cov}
     project.save()
     if gui_native:
         try:

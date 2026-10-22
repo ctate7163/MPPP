@@ -399,7 +399,19 @@ class MPPPImage:
         name = params = None
         src = ""
         try:
-            if fam in ("N", "F", "R"):
+            if fam in ("F", "R") and not calib.models.has_camera_file(fam, eye):
+                # 0.93: no promoted Hazcam model - the start camera is the fit to this product's own label CAHVORE
+                from .calib.labelfit import label_fisheye
+                full, rep = label_fisheye(self.camera_model_label.to_label_dict(12), s, self.padding["left"],
+                                          self.padding["top"], fam)
+                name, params = "THIN_PRISM_FISHEYE", full
+                src = (f"label CAHVORE fit (rms {rep['rms_px']:.2f} px full frame"
+                       + ("" if rep["central"] else f" over {', '.join(f'{d:g}' for d in rep['depths_m'])} m, non-central")
+                       + f"; closed form {rep['closed_form_rms_px']:.2f} px) at {self.camera_temperature_degC} degC, "
+                       f"sol {self.sol}")
+                self._say(f"{fam}{eye}: no calibrated model, start camera fitted to the label CAHVORE "
+                          f"({rep['rms_px']:.2f} px rms)")
+            elif fam in ("N", "F", "R"):
                 model = calib.load_camera(fam, eye)
                 name, params, applied = calib.camera_at(model, self.camera_temperature_degC, self.sol)
                 src = (Path(model["file"]).name if model.get("file") else model.get("source", "start model")) \

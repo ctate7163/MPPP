@@ -358,12 +358,17 @@ def coverage_by_radius(rec, project: SfmProject, edges: Sequence[float] = RADIUS
     return out
 
 
-def _corner_ratio(cov: Dict[str, Any], inner: float = 0.6, outer: float = 0.85, min_keypoints: int = 200):
-    """(worst camera, ratio): triangulated fraction beyond ``outer`` over that inside ``inner``."""
+def _corner_ratio(cov: Dict[str, Any], inner: float = 0.6, outer: float = 0.85, min_keypoints: int = 200,
+                  skip_families: Tuple[str, ...] = ("F", "R")):
+    """(worst camera, ratio): triangulated fraction beyond ``outer`` over that inside ``inner``.  The Hazcams
+    (``skip_families``, 0.93) are left out: the corners of their 136-degree fisheye frames are sky, horizon and
+    rover deck, which no distortion model makes into tie points (Rockytop 22 Oct: FL 14 % vs 48 %)."""
     e = np.asarray(cov["edges"])
     lo, hi = e[:-1], e[1:]
     worst = None
     for grp, c in cov["cameras"].items():
+        if str(grp)[:1] in skip_families:
+            continue
         kp, tr = np.asarray(c["keypoints"], float), np.asarray([v or 0.0 for v in c["triangulated_fraction"]])
         i_in, i_out = hi <= inner + 1e-9, lo >= outer - 1e-9
         if kp[i_out].sum() < min_keypoints or kp[i_in].sum() == 0:

@@ -9,8 +9,8 @@ The forms (:mod:`mppp.calib.forms`):
   (per degC); fx, fy, cx, cy carry offsets for the images before the early-mission sol.  NL is the rig reference
   (it keeps the label CAHVORE pointing and position); the stereo rig (NR from NL) has one yaw for every temperature
   and a rotation drift linear in sol (with the knot of the pitch rate).
-* **Hazcam** (families F and R): the same form; shipped as start models (f = 2130 px, principal point at the frame
-  centre, k1 = -0.25, k2 = +0.08, no thermal term), not calibrated - a Hazcam product is processed with a warning.
+* **Hazcam** (families F and R): the same form, not calibrated yet; each image starts from the fisheye fitted to its
+  own label CAHVORE (:mod:`mppp.calib.labelfit`, 0.93), a block from the median of its images' fits.
 * **Mastcam-Z** (family Z, zooms 34, 48, 63, 79, 110 mm): one calibration per zoom, ``FULL_OPENCV`` at 1648 x 1200
   with p1 = p2 = k3 = 0 held, a function of the focus count and the backlash state only: fx and fy are lines in
   focus count per eye and state, the principal point follows the ``pp`` terms about ``pp0_px``, k1 and k2 are
@@ -28,6 +28,7 @@ from .forms import (FULL_FRAME, FULL_OPENCV_PARAMS, HAZCAM, INTRINSIC_CORE, NAVC
 from .models import (NAVCAM_FILES, check_form, describe, hazcam_start_model, load_camera, load_rig, load_zcam,  # noqa: F401
                      load_zcam_all, models_fingerprint, navcam_fingerprint, promote, write_model, zcam_files,
                      zcam_fingerprint)
+from . import labelfit  # noqa: F401,E402  (the Navcam / Hazcam label CAHVORE fit, 0.93)
 from .constrain import (camera_at, drift_offset_mdeg, early_share, focus_state, label_camera, rig_at, scaled,  # noqa: F401
                         sol_epochs, thermal_scale, thermal_terms, zcam_camera_at, zcam_line_value, zcam_lines_at)
 

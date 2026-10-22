@@ -34,9 +34,15 @@ def _valid_grid(project: SfmProject, r: Dict[str, Any], grid: Tuple[int, int]) -
     return cv2.resize(m, (gw, gh), interpolation=cv2.INTER_AREA) > 127
 
 
+# 0.93: the Hazcams sit about 0.8 m above the ground (label C at -0.73 m in the rover navigation frame, the Navcam at
+# -1.88 m for its 1.95 m), not at the mast's 1.95 m
+CAMERA_HEIGHT_BY_FAMILY_M = {"F": 0.8, "R": 0.8}
+
+
 def footprints(project: SfmProject, grid: Tuple[int, int] = (32, 24), max_range_m: float = 40.0,
                camera_height_m: float = 1.95) -> Dict[str, Dict[str, Any]]:
-    """Per image: camera, pose, validity grid and the 3-D footprint points."""
+    """Per image: camera, pose, validity grid and the 3-D footprint points.  ``camera_height_m`` is the mast cameras'
+    height above the local ground; the Hazcams use :data:`CAMERA_HEIGHT_BY_FAMILY_M`."""
     import pycolmap
     cams = {k: pycolmap.Camera(model=c["model"], width=c["width"], height=c["height"], params=c["params"])
             for k, c in project.cameras.items()}
@@ -59,7 +65,8 @@ def footprints(project: SfmProject, grid: Tuple[int, int] = (32, 24), max_range_
         d /= np.linalg.norm(d, axis=1, keepdims=True)
         t = np.full(len(d), max_range_m)
         down = d[:, 2] < -1e-3
-        t[down] = np.minimum(max_range_m, -camera_height_m / d[down, 2])
+        h = CAMERA_HEIGHT_BY_FAMILY_M.get(str(r["instrument"])[:1], camera_height_m)
+        t[down] = np.minimum(max_range_m, -h / d[down, 2])
         pts = C + d * t[:, None]
         # the undistorted field of view of this camera (to reject folded projections)
         t_ = np.linspace(0, 1, 41)

@@ -47,6 +47,8 @@ def main(argv=None) -> int:
     ap.add_argument("--source", choices=("pds", "processed"), default="pds",
                     help="pds (default): select and process, then align; processed: align what is processed")
     ap.add_argument("--variant", default="", help="results in <WORK>/colmap_<variant>")
+    ap.add_argument("--hazcam", default=None, choices=("front", "rear", "both"),
+                    help="add the front / rear Hazcam frames (0.93; results in colmap_hazcam unless --variant)")
     ap.add_argument("--settings", default=None, help="a JSON file of settings for every site")
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="a pipeline setting")
     ap.add_argument("--sites-file", default=None, help="site definitions (default mppp/data/sites.json)")
@@ -75,6 +77,9 @@ def main(argv=None) -> int:
         return 2
     sites, not_z = filter_zcam(sites, table, a.zcam, bool(a.sites))
     sets = parse_set(a.set)
+    if a.hazcam:
+        sets["hazcams"] = a.hazcam
+        a.set = list(a.set) + [f"hazcams={a.hazcam}"]          # passed on to align_scape.py
     root.mkdir(parents=True, exist_ok=True)
     log = Log(root / "run_sites_log.txt")
     if not_z:
@@ -104,7 +109,7 @@ def main(argv=None) -> int:
             log(f"  {s}: skipped - {work} has no processed/ (use --source pds)")
             continue
         key = run_key(settings)
-        fin, why = finished(work, a.variant, key)
+        fin, why = finished(work, settings.variant, key)      # 0.93: a Hazcam run's own variant (colmap_hazcam)
         if fin and not a.force:
             log(f"  {s}: skipped - {why}")
             continue

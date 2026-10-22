@@ -111,8 +111,11 @@ the package copies):
 * **Navcam** — COLMAP `THIN_PRISM_FISHEYE` at the full 5120 × 3840 frame (sx1 = sy1 = 0 held); focal lengths,
   principal point and k1 linear in camera temperature, offsets for the early mission, and a stereo rig whose
   rotation drifts linearly with sol. NL is the rig reference.
-* **Hazcam** (front and rear) — the same form, shipped as a start model (f = 2130 px, k1 = −0.25, k2 = +0.08; not
-  calibrated: a Hazcam product is processed with a warning).
+* **Hazcam** (front and rear) — the same form, not calibrated yet: each image starts from a least-squares fit of the
+  fisheye to its own label CAHVORE (0.13–0.19 px rms for the front pair; 2–4 px for the rear pair, whose models carry
+  several mm of entrance-pupil movement), and a block refines fx, fy, k1, k2 (`hazcam_intrinsics`). Hazcam frames
+  join an alignment with `--hazcam front|rear|both` (results in `colmap_hazcam/`); they come in after the Navcam
+  block, with the Navcam cameras and rig held.
 * **Mastcam-Z** — one model per zoom, a function of the focus count and the focus-motor backlash state only
   (lines in focus per eye and state; p1 = p2 = k3 = 0 held). 34 mm is calibrated; the other zooms start from the
   label CAHVOR. An image is in the high-focal-length state unless the low-backlash list or its own focal fit says
@@ -147,8 +150,8 @@ time exceeds the per-block budget. `mppp align --gui` writes the files that open
 
 ## Scope and limits
 
-Calibrated models exist for Navcam and Mastcam-Z at 34 mm; the Hazcams and the other Mastcam-Z zooms are processed
-with start models and are not part of the tested scope. Scale comes from the Navcam stereo baseline together with
+Calibrated models exist for Navcam and Mastcam-Z at 34 mm; the Hazcams (label-fit start cameras, refined per block)
+and the other Mastcam-Z zooms are processed with start models and are not part of the tested scope yet. Scale comes from the Navcam stereo baseline together with
 the waypoint position priors (1 m; 10 m for stations without a waypoint of their own); orientation from a weak
 attitude prior per frame. The alignment-health thresholds are provisional. See `docs/methods.md` for the flagged
 assumptions and `docs/HANDOFF_v0p87.md` for the open calibration questions.

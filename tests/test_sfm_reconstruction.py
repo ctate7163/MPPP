@@ -488,7 +488,7 @@ def test_reconstruct_staged_solves_navcam_first(tmp_path, monkeypatch):
     z = R._frames_of_family(rec0, proj, "N")[len(rec0.frames) // 2:]
     real = R._frames_of_family
     monkeypatch.setattr(R, "_frames_of_family", lambda rec, project, fam: z if fam == "Z" else
-                        [f for f in real(rec, project, "N") if f not in z])
+                        [] if fam in ("F", "R") else [f for f in real(rec, project, "N") if f not in z])
     rec = R.reconstruct(proj, sigma_px=noise, schedule=((24.0, 10.0, 8.0),), max_iterations=5, verbose=False,
                         navcam_intrinsics="refine", staged=True, out_name="cahv_ba")
     rs = proj.settings["reconstruction"]

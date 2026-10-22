@@ -3,7 +3,8 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
 
 ::
 
-    mppp process SITE|WORK [--root DIR] [--pds DIR] [--zcam] [--set NAME=VALUE ...] [--settings FILE] [--dry-run]
+    mppp process SITE|WORK [--root DIR] [--pds DIR] [--zcam] [--hazcam front|rear|both] [--set NAME=VALUE ...]
+                 [--settings FILE] [--dry-run]
     mppp align WORK [--variant NAME] [--set ...] [--settings FILE] [--gui] [--stop-after STEP] [--force] [--status]
     mppp run SITE|WORK [...]                  process, then align
     mppp sites [list | check | folder SITE]   the site definitions (mppp/data/sites.json)
@@ -42,6 +43,9 @@ def _common(ap: argparse.ArgumentParser, root: bool = True) -> None:
         ap.add_argument("--root", default=None, metavar="DIR", help="the scapes root (default: MPPP_SCAPES)")
         ap.add_argument("--pds", default=None, metavar="DIR", help="the PDS archive (default: MPPP_PDS)")
         ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z block of the site (..._zcam)")
+    ap.add_argument("--hazcam", default=None, choices=("front", "rear", "both"),
+                    help="add the front / rear Hazcam frames of the block's stations (results in colmap_hazcam unless "
+                         "--variant names another folder)")
     ap.add_argument("--force", action="store_true", help="start even if the status file says a run is alive")
     ap.add_argument("--no-echo", action="store_true", help="log to the file only")
 
@@ -181,6 +185,8 @@ def _settings(a: argparse.Namespace, target: Optional[str] = None, extra: Option
         base = base.replace(pds_dir=Path(a.pds))
     if getattr(a, "zcam", False):
         base = base.replace(include_zcam=True)
+    if getattr(a, "hazcam", None):
+        sets = dict(sets, hazcams=a.hazcam)
     site, work = None, None
     if target is not None:
         if any(c in target for c in "/\\") or Path(target).is_dir():

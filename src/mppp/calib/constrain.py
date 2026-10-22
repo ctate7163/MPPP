@@ -270,12 +270,16 @@ def zcam_camera_at(zoom_model: Dict[str, Any], group: str, focus: float, state: 
 
 
 # -------------------------------------------------------------------------------------------- label fallback
+FIT_STEP_FRACTION = 80.0 / 5120.0       # the label fit's grid step as a share of the frame (80 px at full frame)
+
+
 def label_camera(meta: Dict[str, Any]) -> Tuple[str, List[float], str]:
     """
     The start camera of an image from its PDS label where no promoted model applies: a Mastcam-Z (or any
     CAHVOR) label gives FULL_OPENCV from the pinhole intrinsics with the label's k1, k2 and p1 = p2 = k3 = 0; a
-    Navcam / Hazcam CAHVORE fisheye label (type 2) gives THIN_PRISM_FISHEYE exactly - f (1 + r0), k1 = r1 / (1 + r0),
-    k2 = r2 / (1 + r0), the other terms 0.  ``meta``: an ``MPPPImage.meta`` dict (``intrinsics_label`` /
+    Navcam / Hazcam CAHVORE label gives the THIN_PRISM_FISHEYE fitted to it over the frame
+    (:func:`mppp.calib.labelfit.fisheye_from_cahvore`; 0.93), or when that fails, for type 2, the closed form
+    f (1 + r0), k1 = r1 / (1 + r0), k2 = r2 / (1 + r0), the other terms 0.  ``meta``: an ``MPPPImage.meta`` dict (``intrinsics_label`` /
     ``intrinsics``, ``camera_model_label``) - the result is at the image's padded resolution.  Returns (model
     name, params, source).
     """
@@ -284,6 +288,20 @@ def label_camera(meta: Dict[str, Any]) -> Tuple[str, List[float], str]:
     fam = str((meta.get("filename") or {}).get("family") or meta.get("source_product", "")[:1]).upper()
     cm = meta.get("camera_model_label") or {}
     if fam in ("N", "F", "R") and str(cm.get("MODEL_TYPE", "")).upper() == "CAHVORE":
+        # 0.93: the least-squares fit over the frame (mppp.calib.labelfit; 0.13-0.2 px rms where the closed form
+        # below misses by 1.4-2.5 px: the O tilt, and the rear Hazcams' entrance-pupil terms)
+        try:
+            from ..cmod import CameraModel
+            from .labelfit import fisheye_from_cahvore
+            K = np.asarray(intr["K"], float)
+            m0 = CameraModel.from_label(cm)
+            _, lin = m0.decompose()
+            W, H = int(intr["width"]), int(intr["height"])
+            mp = m0.rescaled(1.0, float(K[0, 2]) - lin["hc"], float(K[1, 2]) - lin["vc"], W, H)
+            p, rep = fisheye_from_cahvore(mp, W, H, step=max(8.0, FIT_STEP_FRACTION * max(W, H)))
+            return "THIN_PRISM_FISHEYE", p, f"label CAHVORE fit ({rep['rms_px']:.2f} px rms over the frame)"
+        except Exception:                                   # noqa: BLE001 - the closed form below
+            pass
         R = cm.get("MODEL_COMPONENT_6") or [0.0, 0.0, 0.0]
         mtype = int(round(float(cm.get("MODEL_COMPONENT_8", 2))))
         if mtype == 2:

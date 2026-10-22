@@ -8,8 +8,8 @@ Files (one folder, ``src/mppp/data/cmods`` unless ``MPPP_CMODS`` points elsewher
     M2020_NL_fisheye_tangential.json   Navcam left camera (the rig reference eye)
     M2020_NR_fisheye_tangential.json   Navcam right camera
     M2020_N_rig.json                   Navcam stereo rig (NR from NL) with its drift in sol
-    M2020_FL.json, M2020_FR.json       front Hazcam start models (not calibrated)
-    M2020_RL.json, M2020_RR.json       rear Hazcam start models (not calibrated)
+    M2020_FL.json, M2020_FR.json       front Hazcam models, when calibrated (none yet: the start camera is the
+    M2020_RL.json, M2020_RR.json       rear Hazcam models   fit to each image's label, mppp.calib.labelfit)
     M2020_ZCAM<zoom>_focus_model.json  Mastcam-Z calibration of one zoom (034; a zoom without a file starts
                                        from the labels)
 """
@@ -38,8 +38,11 @@ RIG_FILE = {"N": "M2020_N_rig.json", "F": "M2020_F_rig.json", "R": "M2020_R_rig.
 ZCAM_FILE_PATTERN = "M2020_ZCAM{zoom:03d}_focus_model.json"
 _ZCAM_RE = re.compile(r"M2020_ZCAM(\d{3})_focus_model.*\.json")
 CHANGES = "CHANGES.md"
-# the Hazcam start model: f = 2130 px, principal point at the detector centre, k1 = -0.25, k2 = +0.08
-HAZCAM_START = {"f_px": 2130.0, "k1": -0.25, "k2": 0.08}
+# the generic Hazcam start model, for a product without a label model only (0.93: the label CAHVORE fit,
+# mppp.calib.labelfit, is the start camera).  Fisheye theta polynomial - the 0.92 values (f 2130 px, k1 = -0.25,
+# k2 = +0.08, an OpenCV-pinhole guess) were 330 px rms (550 px in the corners) from the flight calibration; these are
+# the means of the label fits of sol 461 (FL, FR, RL, RR: f 2141-2158 px, k1 +0.009 to +0.022, k2 -0.006 to -0.011)
+HAZCAM_START = {"f_px": 2148.0, "k1": 0.0145, "k2": -0.0083}
 
 
 def sha12(f: PathLike) -> str:
@@ -73,10 +76,19 @@ def camera_file(family: str, eye: str, folder: Optional[PathLike] = None) -> Pat
     return _resolve(folder, CAMERA_FILE[key])
 
 
+def has_camera_file(family: str, eye: str, folder: Optional[PathLike] = None) -> bool:
+    """True when the family (N, F, R) and eye (L, R) has a promoted camera file (the Hazcams have none yet)."""
+    try:
+        return camera_file(family, eye, folder).is_file()
+    except ValueError:
+        return False
+
+
 def hazcam_start_model(family: str, eye: str) -> Dict[str, Any]:
-    """The start model of a Hazcam eye in the Navcam form: f = 2130 px (fx = fy), the principal point at the
-    centre of the full frame, k1 = -0.25, k2 = +0.08, every other distortion term 0, no thermal or early-mission
-    term.  Not calibrated: processing a Hazcam product starts from it with a warning."""
+    """The generic start model of a Hazcam eye in the Navcam form (:data:`HAZCAM_START`: f = 2148 px, fx = fy, the
+    principal point at the centre of the full frame, k1 = +0.0145, k2 = -0.0083 on the fisheye theta polynomial,
+    every other term 0, no thermal or early-mission term).  Only a fallback: a Hazcam product starts from the fit to
+    its own label model (:func:`mppp.calib.labelfit.label_fisheye`)."""
     fam = str(family)[:1].upper()
     if fam not in ("F", "R"):
         raise ValueError(f"{family!r} is not a Hazcam family (F or R)")
@@ -88,7 +100,7 @@ def hazcam_start_model(family: str, eye: str) -> Dict[str, Any]:
             "form": "navcam-v1", "convention": f"{fam}L reference",
             "pixel_origin": "corner of the first pixel (COLMAP)",
             "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
-            "source": "start model (not calibrated)",
+            "source": "generic Hazcam start model (not calibrated)",
             "thermal": {"T0_degC": -20.0, "fx_ppm_per_degC": 0.0, "fy_ppm_per_degC": 0.0, "ppm_per_degC": 0.0,
                         "cx_px_per_degC": 0.0, "cy_px_per_degC": 0.0, "k1_per_degC": 0.0,
                         "note": "no temperature term (start model)"},

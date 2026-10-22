@@ -25,6 +25,13 @@ also adds every waypoint station within 10 m of a station of the sol range, from
 than a third of the detector are dropped, and only `NCAM` sequences are kept (plus `ZCAM` with Mastcam-Z). The
 mission waypoint table is downloaded and cached for a day; without a connection the packaged snapshot is used.
 
+With `hazcams` (0.93; `--hazcam front|rear|both`, or `--set HAZCAMS=F`), the front (`FLF` / `FRF`, `FHAZ` sequences)
+and / or rear (`RLF` / `RRF`, `RHAZ` sequences) Hazcam products of the same stations are added, under the same
+one-product-per-exposure and one-third-of-the-frame rules. The run goes to `<WORK>/colmap_hazcam` unless a variant
+is named, so the Navcam (+ Mastcam-Z) result in `colmap/` stays; a run without `hazcams` leaves out any Hazcam images
+in `processed/`. The Hazcam settings enter the run key only when `hazcams` is set: the keys of every other run are
+unchanged.
+
 ## 2. Process the images
 
 `process_site` writes `<WORK>/processed/`. For each product:
@@ -91,7 +98,13 @@ With `staged` (default), the adjustment runs in two stages:
    camera-temperature bin.
 2. **Mastcam-Z**: the Mastcam-Z frames join with the Navcam cameras and rig held. The Mastcam-Z focus-bin cameras are
    put on lines in focus count per eye, the Mastcam-Z rig rotation is refined, and pose-guided matching adds tie
-   points between images whose poses are known.
+   points between images whose poses are known. The Hazcam frames (0.93) join here too: their cameras (each eye
+   from the median of its images' label CAHVORE fits) are held in the first round and then refine fx, fy, k1, k2
+   (`hazcam_intrinsics`; an eye with fewer than 1000 tie-point observations stays at its start); their position
+   priors follow their station's Navcam solution to 0.1 m (the cameras are fixed to the rover body); their stereo
+   rigs keep the CAHV values (`hazcam_rig_refine = "hold"`, or "rotation"). The
+   log reports, per round, the Hazcam frames with tie points and the Navcam-Hazcam tie points
+   (`settings["reconstruction"]["hazcam"]`).
 
 The Navcam-only stage is exported as well (`error_input_navcam/`).
 

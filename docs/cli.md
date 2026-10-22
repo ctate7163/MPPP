@@ -14,7 +14,8 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
 
 ::
 
-    mppp process SITE|WORK [--root DIR] [--pds DIR] [--zcam] [--set NAME=VALUE ...] [--settings FILE] [--dry-run]
+    mppp process SITE|WORK [--root DIR] [--pds DIR] [--zcam] [--hazcam front|rear|both] [--set NAME=VALUE ...]
+                 [--settings FILE] [--dry-run]
     mppp align WORK [--variant NAME] [--set ...] [--settings FILE] [--gui] [--stop-after STEP] [--force] [--status]
     mppp run SITE|WORK [...]                  process, then align
     mppp sites [list | check | folder SITE]   the site definitions (mppp/data/sites.json)
@@ -58,76 +59,87 @@ options:
 
 ```text
 usage: mppp process [-h] [--set NAME=VALUE] [--settings FILE] [--sites-file FILE] [--root DIR]
-                    [--pds DIR] [--zcam] [--force] [--no-echo] [--dry-run]
+                    [--pds DIR] [--zcam] [--hazcam {front,rear,both}] [--force] [--no-echo]
+                    [--dry-run]
                     SITE|WORK
 
 positional arguments:
-  SITE|WORK          a site of the site definitions, or its WORK folder
+  SITE|WORK             a site of the site definitions, or its WORK folder
 
 options:
-  -h, --help         show this help message and exit
-  --set NAME=VALUE   a pipeline setting (mppp.pipeline.Settings field), VALUE as JSON or Python;
-                     repeatable
-  --settings FILE    a JSON file of settings {NAME: value}
-  --sites-file FILE  site definitions (default mppp/data/sites.json)
-  --root DIR         the scapes root (default: MPPP_SCAPES)
-  --pds DIR          the PDS archive (default: MPPP_PDS)
-  --zcam             the Navcam + Mastcam-Z block of the site (..._zcam)
-  --force            start even if the status file says a run is alive
-  --no-echo          log to the file only
-  --dry-run          select only: list what would be processed
+  -h, --help            show this help message and exit
+  --set NAME=VALUE      a pipeline setting (mppp.pipeline.Settings field), VALUE as JSON or
+                        Python; repeatable
+  --settings FILE       a JSON file of settings {NAME: value}
+  --sites-file FILE     site definitions (default mppp/data/sites.json)
+  --root DIR            the scapes root (default: MPPP_SCAPES)
+  --pds DIR             the PDS archive (default: MPPP_PDS)
+  --zcam                the Navcam + Mastcam-Z block of the site (..._zcam)
+  --hazcam {front,rear,both}
+                        add the front / rear Hazcam frames of the block's stations (results in
+                        colmap_hazcam unless --variant names another folder)
+  --force               start even if the status file says a run is alive
+  --no-echo             log to the file only
+  --dry-run             select only: list what would be processed
 ```
 
 ## mppp align
 
 ```text
 usage: mppp align [-h] [--variant VARIANT] [--set NAME=VALUE] [--settings FILE]
-                  [--sites-file FILE] [--force] [--no-echo] [--gui] [--stop-after STEP] [--status]
+                  [--sites-file FILE] [--hazcam {front,rear,both}] [--force] [--no-echo] [--gui]
+                  [--stop-after STEP] [--status]
                   WORK
 
 positional arguments:
-  WORK               the WORK folder (the one holding processed/)
+  WORK                  the WORK folder (the one holding processed/)
 
 options:
-  -h, --help         show this help message and exit
-  --variant VARIANT  results in <WORK>/colmap_<variant> instead of colmap/
-  --set NAME=VALUE   a pipeline setting (mppp.pipeline.Settings field), VALUE as JSON or Python;
-                     repeatable
-  --settings FILE    a JSON file of settings {NAME: value}
-  --sites-file FILE  site definitions (default mppp/data/sites.json)
-  --force            start even if the status file says a run is alive
-  --no-echo          log to the file only
-  --gui              write the COLMAP GUI files (colmap_gui.ini, open_in_colmap.bat)
-  --stop-after STEP  stop after this step: manifest, project, features, database, match,
-                     reconstruct, health
-  --status           print the folder's run status and exit
+  -h, --help            show this help message and exit
+  --variant VARIANT     results in <WORK>/colmap_<variant> instead of colmap/
+  --set NAME=VALUE      a pipeline setting (mppp.pipeline.Settings field), VALUE as JSON or
+                        Python; repeatable
+  --settings FILE       a JSON file of settings {NAME: value}
+  --sites-file FILE     site definitions (default mppp/data/sites.json)
+  --hazcam {front,rear,both}
+                        add the front / rear Hazcam frames of the block's stations (results in
+                        colmap_hazcam unless --variant names another folder)
+  --force               start even if the status file says a run is alive
+  --no-echo             log to the file only
+  --gui                 write the COLMAP GUI files (colmap_gui.ini, open_in_colmap.bat)
+  --stop-after STEP     stop after this step: manifest, project, features, database, match,
+                        reconstruct, health
+  --status              print the folder's run status and exit
 ```
 
 ## mppp run
 
 ```text
 usage: mppp run [-h] [--variant VARIANT] [--set NAME=VALUE] [--settings FILE] [--sites-file FILE]
-                [--root DIR] [--pds DIR] [--zcam] [--force] [--no-echo] [--gui]
-                [--stop-after STEP]
+                [--root DIR] [--pds DIR] [--zcam] [--hazcam {front,rear,both}] [--force]
+                [--no-echo] [--gui] [--stop-after STEP]
                 SITE|WORK
 
 positional arguments:
-  SITE|WORK          a site of the site definitions, or its WORK folder
+  SITE|WORK             a site of the site definitions, or its WORK folder
 
 options:
-  -h, --help         show this help message and exit
-  --variant VARIANT  results in <WORK>/colmap_<variant> instead of colmap/
-  --set NAME=VALUE   a pipeline setting (mppp.pipeline.Settings field), VALUE as JSON or Python;
-                     repeatable
-  --settings FILE    a JSON file of settings {NAME: value}
-  --sites-file FILE  site definitions (default mppp/data/sites.json)
-  --root DIR         the scapes root (default: MPPP_SCAPES)
-  --pds DIR          the PDS archive (default: MPPP_PDS)
-  --zcam             the Navcam + Mastcam-Z block of the site (..._zcam)
-  --force            start even if the status file says a run is alive
-  --no-echo          log to the file only
-  --gui              write the COLMAP GUI files
-  --stop-after STEP  stop the alignment after this step
+  -h, --help            show this help message and exit
+  --variant VARIANT     results in <WORK>/colmap_<variant> instead of colmap/
+  --set NAME=VALUE      a pipeline setting (mppp.pipeline.Settings field), VALUE as JSON or
+                        Python; repeatable
+  --settings FILE       a JSON file of settings {NAME: value}
+  --sites-file FILE     site definitions (default mppp/data/sites.json)
+  --root DIR            the scapes root (default: MPPP_SCAPES)
+  --pds DIR             the PDS archive (default: MPPP_PDS)
+  --zcam                the Navcam + Mastcam-Z block of the site (..._zcam)
+  --hazcam {front,rear,both}
+                        add the front / rear Hazcam frames of the block's stations (results in
+                        colmap_hazcam unless --variant names another folder)
+  --force               start even if the status file says a run is alive
+  --no-echo             log to the file only
+  --gui                 write the COLMAP GUI files
+  --stop-after STEP     stop the alignment after this step
 ```
 
 ## mppp sites

@@ -121,8 +121,9 @@ def test_hazcam_start_model_and_loader_warning(caplog):
         for eye in ("L", "R"):
             h = calib.hazcam_start_model(fam, eye)
             assert h["model"] == "THIN_PRISM_FISHEYE" and (h["width"], h["height"]) == (5120, 3840)
-            assert h["params"][:6] == [2130.0, 2130.0, 2560.0, 1920.0, -0.25, 0.08] and h["params"][6:] == [0.0] * 6
-            assert h["source"] == "start model (not calibrated)" and forms.validate(h) == []
+            # 0.93: the fisheye theta polynomial of the label fits (0.92 had f 2130, k1 -0.25, k2 +0.08: 330 px off)
+            assert h["params"][:6] == [2148.0, 2148.0, 2560.0, 1920.0, 0.0145, -0.0083] and h["params"][6:] == [0.0] * 6
+            assert h["source"] == "generic Hazcam start model (not calibrated)" and forms.validate(h) == []
             assert calib.thermal_terms(h["thermal"]) == {"fx_ppm": 0.0, "fy_ppm": 0.0, "cx_px": 0.0, "cy_px": 0.0,
                                                          "k1": 0.0, "T0": -20.0}
     with caplog.at_level(logging.WARNING, logger="mppp.calib"):
@@ -235,8 +236,9 @@ def test_navcam_label_fallback_is_the_cahvore_fisheye():
     name, p, src = calib.label_camera(meta)
     R = meta["camera_model_label"]["MODEL_COMPONENT_6"]
     K = np.asarray(meta["intrinsics_label"]["K"])
-    assert name == "THIN_PRISM_FISHEYE" and "CAHVORE" in src
-    assert p[0] == pytest.approx(K[0, 0] * (1 + R[0])) and p[4] == pytest.approx(R[1] / (1 + R[0]))
+    # 0.93: the least-squares fit over the frame, close to the closed form f (1 + r0), k1 = r1 / (1 + r0)
+    assert name == "THIN_PRISM_FISHEYE" and "CAHVORE fit" in src
+    assert p[0] == pytest.approx(K[0, 0] * (1 + R[0]), rel=2e-3) and p[4] == pytest.approx(R[1] / (1 + R[0]), abs=3e-3)
     assert p[10] == p[11] == 0.0
     # the prior camera of the processed image: the promoted NL model at the label temperature, scaled to the tile
     c = meta["colmap_camera"]

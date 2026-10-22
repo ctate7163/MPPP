@@ -11,8 +11,17 @@ focal lengths, the principal point and k1 are linear in the camera temperature a
 fx, fy, cx, cy carry offsets for the images before the early-mission sol. NL is the rig reference. The stereo rig
 (NR from NL) has one yaw for every temperature and a rotation drift linear in sol, with a hinge in the pitch rate.
 
-**Hazcam** (front and rear). The same form, shipped as start models (f = 2130 px, k1 = -0.25, k2 = +0.08). They are
-not calibrated: a Hazcam product is processed with a warning.
+**Hazcam** (front FL, FR and rear RL, RR). The same form, not calibrated yet (no `M2020_FL.json` ...). Each image
+starts from the `THIN_PRISM_FISHEYE` fitted by least squares to its own label CAHVORE over the whole frame
+(`mppp.calib.labelfit`, 0.93), in the label model's own camera frame so the pose prior is unchanged. The front
+Hazcams are central (E about 1e-7 m): 0.13-0.19 px rms. The rear Hazcams carry entrance-pupil terms of 3-9 mm; a
+central camera cannot follow them, so the fit uses points at 2, 5 and 20 m and is good to 2-4 px rms (full-frame
+pixels; the rear products are usually quarter resolution, so 0.5-1 px in the image). In a block each eye starts from
+the median of its images' fits and refines fx, fy, k1, k2 (`hazcam_intrinsics = "radial"`; "focal", "all",
+"hold"); the stereo rig of each pair is the CAHV one (`hazcam_rig_refine = "hold"`, or "rotation"). The front
+baseline is 0.25 m, the rear 0.93 m. The generic start model of 0.92 (f = 2130 px, k1 = -0.25, k2 = +0.08) was
+330 px rms from the flight calibration and is replaced (f = 2148 px, k1 = +0.0145, k2 = -0.0083; used only
+without a label model).
 
 **Mastcam-Z** (zooms 34, 48, 63, 79, 110 mm). One calibration per zoom, `FULL_OPENCV` at 1648 x 1200, a function of
 the focus count and the focus-motor backlash state only: fx and fy are lines in focus count per eye and state, k1

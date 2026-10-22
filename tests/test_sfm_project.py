@@ -180,7 +180,7 @@ def test_project_scope_is_checked_first(processed_pair, tmp_path):  # noqa: F811
     assert set(nl["fixed_params"]) == {"sx1", "sy1", "cx", "cy"}            # the held zeros and the principal point
     # out of scope: rejected before any file is linked into the project
     bad = json.loads(json.dumps(man["images"], default=str))
-    bad[0]["filename"]["camera_code"] = "FLF"
+    bad[0]["filename"]["camera_code"] = "CCF"           # Cachecam (the Hazcams are in scope from 0.93)
     with pytest.raises(ValueError, match="outside MPPP's scope"):
         SfmProject.create(bad, out, tmp_path / "r", link=False, zcam_focus_bin=None)
     assert not any((tmp_path / "r" / "images").glob("*"))

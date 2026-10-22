@@ -2,6 +2,56 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.93.0 — 2026-10-22
+
+- **Front and rear Hazcams in the alignment** (`hazcams` setting; `mppp process|align|run --hazcam front|rear|both`,
+  `run_sites.py --hazcam ...`, or `--set HAZCAMS=F`).  The selection adds the `FLF` / `FRF` (`FHAZ` sequences) and / or
+  `RLF` / `RRF` (`RHAZ`) products of the block's stations (the same nearby-waypoint rule as Mastcam-Z; the 1/3
+  sub-frame rule holds for them too).  The run goes to `<WORK>/colmap_hazcam` unless a variant is named, so
+  `colmap/` keeps the Navcam (+ Mastcam-Z) result; a run without `hazcams` leaves out Hazcam images found in
+  `processed/`.  `FLF`, `FRF`, `RLF`, `RRF` are in the processing and project scope.
+- **The Hazcam frames come in at stage 2**, with the Mastcam-Z frames: the Navcam cameras and rig are held (stage 1 is
+  Navcam only, as before), the Hazcam cameras are held in the first stage-2 round and then refine fx, fy, k1, k2
+  (`hazcam_intrinsics`: "radial" default, "focal", "all", "hold"); the stereo rig of each pair stays at its CAHV
+  value (`hazcam_rig_refine`: "hold" default, or "rotation").  Each round logs the Hazcam frames with tie points and
+  the Navcam-Hazcam tie points (`settings["reconstruction"]["hazcam"]`, `mppp.sfm.reconstruction.hazcam_coverage`).
+  Prior-overlap pairs put the Hazcam ground 0.8 m below the camera (`pairs.CAMERA_HEIGHT_BY_FAMILY_M`), not the
+  mast's 1.95 m.
+- **Hazcam frames ride on their station** (stage 2): a Hazcam camera is fixed to the rover body, so its position
+  prior moves by the shift the Navcam block found for its station (the rover's localisation error) and tightens to
+  0.1 m per axis (`HAZCAM_STATION_PRIOR_SIGMA_M`; the label prior stays in `prior_C_label`).  A Hazcam eye with
+  fewer than 1000 tie-point observations is held at its start camera (`HAZCAM_MIN_REFINE_OBSERVATIONS`), and the
+  Hazcam eyes keep their pixel aspect fy / fx like the Navcam (`navcam_aspect = "hold"`).  The corner-coverage health
+  check leaves the Hazcams out (their 136-degree corners are sky, horizon and rover deck).
+- **Tested end to end on the Rockytop example set** (sols 461 and 464, 32 Navcam images, the FHAZ02008 and
+  RHAZ02419 pairs; CPU, 5 min): all 40 images registered.  Front Hazcams: 9500 observations per eye, median
+  residual 0.29-0.33 px, f refined by 0.3-0.4 %, frames within 1-3 cm and 0.1 deg of their station-shifted priors.
+  Rear Hazcams: 150-250 observations per eye (quarter-resolution frames, about half of each masked as rover
+  shadow), held at the label fits, median residual 1.2-2.9 px full frame (0.3-0.7 px in the image), within 5 cm.
+  Before the station priors and the weak-eye hold, the rear eyes refined fx by 2.3 % and fy by 4.6 % and one rear
+  pair slid 1.0-1.3 m from its station and was excluded as an outlier.
+- **Hazcam start cameras from the labels** (`mppp.calib.labelfit`, new): the `THIN_PRISM_FISHEYE` fitted by least
+  squares to each product's own label CAHVORE over the whole full frame, in the label model's camera frame (the pose
+  prior is unchanged).  Sol 461 labels: front Hazcams 0.13 / 0.19 px rms (the closed form f (1 + r0), r1, r2: 1.4 /
+  2.5 px - it ignores the 0.05-0.1 deg O tilt); rear Hazcams 2.3 / 3.9 px rms over 2, 5 and 20 m (closed form 6.0 /
+  6.5 px) - their CAHVOREs carry entrance-pupil terms of 3-9 mm, which no central camera follows.  The processed
+  image's COLMAP prior camera is this fit; a block starts each eye from the median of its images' fits
+  (`labelfit.block_camera`, `start_cameras.hazcam_start_camera`).  `calib.label_camera` (the fallback for any
+  Navcam / Hazcam product without a promoted model) uses the fit too.  Baselines from the CAHV pairs: front 0.249 m,
+  rear 0.934 m.
+- **Fixed: the generic Hazcam start model** (`calib.hazcam_start_model`, used now only without a label model) had
+  f = 2130 px, k1 = -0.25, k2 = +0.08 - an OpenCV-pinhole guess on the fisheye theta polynomial, 330 px rms (550 px in
+  the corners) from the flight calibration.  It is f = 2148 px, k1 = +0.0145, k2 = -0.0083 (the mean of the four sol
+  461 label fits).  Any Hazcam image processed before 0.93 has the old prior camera in its manifest; the COLMAP
+  project does not use it (the block start comes from the labels).
+- **Run keys unchanged**: the Hazcam settings enter `Settings.key_dict` only when `hazcams` is set, so every Navcam and
+  Mastcam-Z block keeps its run key (checked against 0.92.3: default, Z34 and variant keys identical) and nothing
+  realigns.  `ALIGN_RULES` and `PROCESS_RULES` are unchanged.
+- `run_sites.py` checks a block's finished state in the run's own variant (a Hazcam run's `colmap_hazcam`).
+- Stage 2 without Mastcam-Z frames no longer logs empty Mastcam-Z coverage, terrain and focus-line lines.
+- Tests: `tests/test_hazcam.py` (label fits on the sol 461 FLF / RLF models, start cameras, settings and run keys,
+  selection filter, CLI, the staged alignment with a Hazcam rig held and refined, and with the Hazcam cameras held).
+
 ## 0.92.3 — 2026-10-22
 
 - **Figures** (Christian, 22 Oct): every subplot of the Navcam and Mastcam-Z figures is lettered A, B, C ...

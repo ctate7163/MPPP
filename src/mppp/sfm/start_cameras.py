@@ -1,8 +1,9 @@
 """
-The start cameras and rig of a block from the promoted models (:mod:`mppp.calib`): the Navcam (or Hazcam) eye
-camera at the block's median temperature and sol, the stereo rig at the block's median sol, and the Mastcam-Z eye
-camera from the zoom's model (or the labels).  ``SfmProject.create`` calls these; the per-focus-bin cameras are
-made in :mod:`mppp.sfm.project`.
+The start cameras and rig of a block from the promoted models (:mod:`mppp.calib`): the Navcam eye camera at the
+block's median temperature and sol, the stereo rig at the block's median sol, the Hazcam eye camera from the
+images' labels (no Hazcam model is promoted yet: :func:`hazcam_start_camera`), and the Mastcam-Z eye camera from the
+zoom's model (or the labels).  ``SfmProject.create`` calls these; the per-focus-bin cameras are made in
+:mod:`mppp.sfm.project`.
 """
 from __future__ import annotations
 
@@ -69,6 +70,45 @@ def navcam_start_camera(instrument: str, images: Sequence[Dict[str, Any]], folde
     if not model.get("file"):
         log.warning("%s: no calibrated model, the %s start model is used (f = %g px, not calibrated)", instrument,
                     fam, params[0])
+    return cam, info
+
+
+# what a block refines of a Hazcam eye (0.93, setting ``hazcam_intrinsics``); every other parameter is held at the
+# start camera (the label fit).  "hold": the camera is held entirely (a hold_cameras key in the adjustment).
+HAZCAM_INTRINSICS = {"hold": (), "focal": ("fx", "fy"), "radial": ("fx", "fy", "k1", "k2"),
+                     "all": ("fx", "fy", "cx", "cy", "k1", "k2", "k3", "k4", "p1", "p2")}
+HAZCAM_INTRINSICS_DEFAULT = "radial"
+
+
+def hazcam_start_camera(instrument: str, images: Sequence[Dict[str, Any]], metas: Sequence[Dict[str, Any]],
+                        folder: Optional[PathLike] = None, intrinsics: str = HAZCAM_INTRINSICS_DEFAULT
+                        ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    The start camera of a Hazcam eye (``instrument`` FL, FR, RL, RR) for a block: a promoted model when there is one
+    (the Navcam form, :func:`navcam_start_camera`), else the median of the fits to the block's label CAHVOREs
+    (:func:`mppp.calib.labelfit.block_camera`; ``metas`` are the manifest entries of that eye).  ``intrinsics``
+    (:data:`HAZCAM_INTRINSICS`) says which parameters the block refines: they are the camera's free parameters,
+    every other one goes into ``fixed_params``.  Returns (camera, info) as :func:`navcam_start_camera`.
+    """
+    from ..calib import labelfit
+    if intrinsics not in HAZCAM_INTRINSICS:
+        raise ValueError(f"hazcam_intrinsics must be one of {tuple(HAZCAM_INTRINSICS)}")
+    fam, eye = str(instrument)[0], str(instrument)[1]
+    if fam not in ("F", "R"):
+        raise ValueError(f"{instrument!r} is not a Hazcam eye (FL, FR, RL, RR)")
+    if calib.models.has_camera_file(fam, eye, folder):
+        cam, info = navcam_start_camera(instrument, images, folder)
+    else:
+        cam, info = labelfit.block_camera(instrument, metas)
+    names = list(forms.PARAM_NAMES[cam["model"]])
+    free = [n for n in HAZCAM_INTRINSICS[intrinsics] if n in names]
+    params = list(map(float, cam["params"]))
+    for n in forms.HAZCAM.held_zero:
+        params[names.index(n)] = 0.0
+    cam = dict(cam, params=params, fixed_params=[n for n in names if n not in free], free_params=[],
+               hazcam_intrinsics=intrinsics,
+               source=f"{cam.get('source', '')}; refined per block: {', '.join(free) if free else 'nothing (held)'}")
+    info = dict(info, intrinsics=intrinsics, refined=free)
     return cam, info
 
 

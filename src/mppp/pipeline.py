@@ -128,6 +128,9 @@ class Settings:
     tangential: str = "refine"                    # Navcam p1, p2 when the distortion is refined: "refine" or "zero"
     zcam_k3: str = "label"                        # Mastcam-Z k3: "label" (the start camera's, held) or "zero"
     zcam_tangential: Optional[str] = "refine"     # Mastcam-Z p1, p2: "refine" (0.91, zcam-v2: per eye, constant over focus), "zero" (zcam-v1), or None (as tangential)
+    hazcams: Tuple[str, ...] = ()                 # 0.93: add the Hazcam frames of the block's stations: "F" (front), "R" (rear), or both; results in WORK/colmap_hazcam unless a variant is given
+    hazcam_intrinsics: str = "radial"             # what a block refines of each Hazcam eye: "radial" (fx, fy, k1, k2), "focal", "all" or "hold" (the start is the label CAHVORE fit)
+    hazcam_rig_refine: str = "hold"               # the Hazcam stereo rigs: "hold" (CAHV) or "rotation" (refined when the Hazcams come in)
     include_zcam: bool = False                    # add the Mastcam-Z frames of the same sols (folder ..._zcam)
     zcam_zooms: Any = None                        # their zooms (mm), e.g. [34, 48]; None: the site's "zcam" list ([34] without one); "all": every zoom
     zcam_intrinsics: str = "focus_model"          # Mastcam-Z start: "focus_model" (the promoted model) or "label"
@@ -192,6 +195,9 @@ class Settings:
                 setattr(self, f.name, Path(v))
             if f.name in TUPLE_FIELDS and isinstance(v, list):
                 setattr(self, f.name, tuple(v))
+        self.hazcams = hazcam_families(self.hazcams)
+        if self.hazcams and not self.variant:          # 0.93: a Hazcam run goes to colmap_hazcam unless named
+            self.variant = HAZCAM_VARIANT
 
     def replace(self, **changes: Any) -> "Settings":
         """A copy with ``changes`` (case-insensitive names) applied."""
@@ -202,12 +208,47 @@ class Settings:
         return json.loads(json.dumps(dataclasses.asdict(self), default=str))
 
     def key_dict(self) -> Dict[str, Any]:
-        """The fields that decide a run's result (machine paths and bookkeeping left out)."""
-        return {k: v for k, v in self.to_dict().items() if k not in NOT_IN_KEY}
+        """The fields that decide a run's result (machine paths and bookkeeping left out).  The Hazcam settings
+        (0.93) count only for a run with Hazcams, so the keys of every other run stay what they were."""
+        d = {k: v for k, v in self.to_dict().items() if k not in NOT_IN_KEY}
+        if not d.get("hazcams"):
+            for k in HAZCAM_FIELDS:
+                d.pop(k, None)
+        return d
 
 
 PATH_FIELDS = {"pds_dir", "scapes_root", "sites_file", "navcam_cameras", "zcam_focus_model"}
-TUPLE_FIELDS = {"sequence_prefixes", "subframe_families", "hold_cameras", "thermal_free", "navcam_rig_epoch_breaks_sols"}
+TUPLE_FIELDS = {"sequence_prefixes", "subframe_families", "hold_cameras", "thermal_free", "navcam_rig_epoch_breaks_sols",
+                "hazcams"}
+HAZCAM_FIELDS = ("hazcams", "hazcam_intrinsics", "hazcam_rig_refine")
+# the Hazcam products of a family: camera codes and the sequences kept (Hazcam frames come in FHAZ / RHAZ sequences)
+HAZCAM_CODES = {"F": ("FLF", "FRF"), "R": ("RLF", "RRF")}
+HAZCAM_SEQUENCES = {"F": ("FHAZ",), "R": ("RHAZ",)}
+HAZCAM_VARIANT = "hazcam"
+
+
+def hazcam_families(v: Any) -> Tuple[str, ...]:
+    """The ``hazcams`` setting as a tuple of families ("F", "R"): accepts "F", "R", "FR", "F,R", "front", "rear",
+    "both", "all", a list of these, or nothing (``()``, None, False, "", "none")."""
+    if v is None or v is False or v == "":
+        return ()
+    items = [v] if isinstance(v, str) else list(v)
+    out = set()
+    for it in items:
+        t = str(it).strip().lower()
+        if t in ("", "none", "no", "false", "0"):
+            continue
+        if t in ("both", "all", "true", "1", "fr", "rf", "f,r", "r,f", "front,rear", "rear,front"):
+            out |= {"F", "R"}
+        elif t in ("f", "front", "fhaz", "fcam", "front_hazcam"):
+            out.add("F")
+        elif t in ("r", "rear", "rhaz", "rcam", "rear_hazcam"):
+            out.add("R")
+        elif "," in t:
+            out |= set(hazcam_families(t.split(",")))
+        else:
+            raise ValueError(f"hazcams = {v!r}: use 'F' (front), 'R' (rear) or both")
+    return tuple(f for f in ("F", "R") if f in out)
 NOT_IN_KEY = {"pds_dir", "scapes_root", "gpu_python", "colmap_bat", "workers", "gui_files", "sites_file",
               "source", "variant", "max_exhaustive_images", "exclude_list"}
 SETTING_NAMES = tuple(f.name for f in fields(Settings))
@@ -480,9 +521,22 @@ def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Pa
         paths += zp
     if st.zooms:
         prefixes += ("ZCAM",)
+    sub_fams = tuple(settings.subframe_families)
+    for fam in hazcam_families(settings.hazcams):    # 0.93: the Hazcam frames of the same stations
+        if radius:
+            hp, hnear = find_imgs_near(pds, list(HAZCAM_CODES[fam]), ranges, waypoints, radius_m=radius,
+                                       anchor_stations=near["stations_in_range"], min_sol=min_sol)
+            log.info("%s Hazcam: %d in range + %d from other visits", "front" if fam == "F" else "rear",
+                     hnear["n_in_range"], hnear["n_added"])
+        else:
+            hp = find_imgs(pds, list(HAZCAM_CODES[fam]), sol_range=ranges)
+            log.info("%s Hazcam: %d products", "front" if fam == "F" else "rear", len(hp))
+        paths += hp
+        prefixes += HAZCAM_SEQUENCES[fam]
+        sub_fams += (fam,)                           # the 1/3 rule holds for the Hazcam sub-frames too
     paths, sel = select_best_products(paths, sequence_prefix=prefixes,
                                       min_frame_fraction=settings.navcam_min_frame_fraction,
-                                      frame_fraction_families=settings.subframe_families)
+                                      frame_fraction_families=sub_fams)
     log.info("selection: %s", json.dumps({k: v for k, v in sel.items() if k != "dropped_subframes"}))
     if sel.get("n_dropped_subframes"):
         log.info("%d Navcam tiles / sub-frames below %s of the frame left out, e.g. %s", sel["n_dropped_subframes"],
@@ -598,6 +652,12 @@ def load_images(work: PathLike, settings: Settings, zooms: Sequence[int] = ()) -
               or m["filename"].get("zoom_mm") in list(zooms)]
     if len(images) < n:
         log.info("%d Mastcam-Z images of other zooms than %s left out", n - len(images), list(zooms))
+    n = len(images)
+    fams = hazcam_families(settings.hazcams)
+    images = [m for m in images if "failed" in m or (m.get("filename") or {}).get("family") not in ("F", "R")
+              or m["filename"]["family"] in fams]
+    if len(images) < n:
+        log.info("%d Hazcam images left out (hazcams = %s)", n - len(images), list(fams) or "none")
     return images
 
 
@@ -636,6 +696,8 @@ def _check_settings(s: Settings) -> None:
                      ("navcam_rig_roll", s.navcam_rig_roll, ("hold", "refine")),
                      ("navcam_pp", s.navcam_pp, ("hold", "refine")),
                      ("navcam_intrinsics", s.navcam_intrinsics, ("refine", "hold", "auto")),
+                     ("hazcam_intrinsics", s.hazcam_intrinsics, ("radial", "focal", "all", "hold")),
+                     ("hazcam_rig_refine", s.hazcam_rig_refine, ("hold", "rotation")),
                      ("source", s.source, SOURCES)):
         if v not in ok:
             raise ValueError(f"{k} = {v!r}: use one of {ok}")
@@ -678,6 +740,14 @@ def wanted_project_settings(s: Settings, work: Path) -> Dict[str, Any]:
             "navcam_distortion_fit": s.navcam_distortion_fit, "navcam_k4": "consensus",
             "navcam_rig_yaw": s.navcam_rig_yaw, "navcam_rig_roll": s.navcam_rig_roll, "navcam_pp": s.navcam_pp,
             "prior_sigma_m": [float(s.prior_sigma_m)] * 3}
+
+
+def _hazcam_settings_changed(proj, s: Settings) -> bool:
+    """A project with Hazcam images built with other Hazcam settings (0.93)."""
+    h = proj.settings.get("hazcam") if proj is not None else None
+    if not h:
+        return False
+    return h.get("intrinsics") != s.hazcam_intrinsics or h.get("rig_refine") != s.hazcam_rig_refine
 
 
 def check_camera_models(s: Settings) -> Dict[str, Any]:
@@ -726,7 +796,8 @@ def build_project(work: PathLike, images: List[Dict[str, Any]], settings: Settin
     rebuild = (s.reprocess_all or proj is None or names != {r["stem"] for r in proj.images}
                or any(proj.settings.get(k) != v for k, v in wanted.items())
                or have.get("dir") != str(nav_dir)
-               or have.get("fingerprint") != navcam_fingerprint(nav_dir))     # rewritten models rebuild the project
+               or have.get("fingerprint") != navcam_fingerprint(nav_dir)      # rewritten models rebuild the project
+               or _hazcam_settings_changed(proj, s))
     if rebuild:
         proj = SfmProject.create(images, work / "processed", root, prior_sigma_m=(s.prior_sigma_m,) * 3,
                                  zcam_intrinsics=s.zcam_intrinsics, zero_terms=zero,
@@ -742,7 +813,8 @@ def build_project(work: PathLike, images: List[Dict[str, Any]], settings: Settin
                                  navcam_rig_roll=s.navcam_rig_roll,
                                  navcam_rig_epoch_gap=s.navcam_rig_epoch_gap_sols,
                                  navcam_rig_epoch_breaks=s.navcam_rig_epoch_breaks_sols,
-                                 zcam_line_form=s.zcam_line_form if z else None, navcam_pp=s.navcam_pp)
+                                 zcam_line_form=s.zcam_line_form if z else None, navcam_pp=s.navcam_pp,
+                                 hazcam_intrinsics=s.hazcam_intrinsics, hazcam_rig_refine=s.hazcam_rig_refine)
         info["created"] = True
     else:
         from .sfm.thermal import strip_thermal_bins
@@ -900,6 +972,10 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
         log.info("%s (%d images)%s: %s", r["camera"], r["images"],
                  "  [temperature bin]" if r["thermal_bin"] else "", " ".join(
                      f"{n} {a:.4g}->{b:.4g}" for n, a, b in zip(r["names"][:10], r["start"], r["refined"])))
+    hz = (proj.settings.get("reconstruction") or {}).get("hazcam")
+    if hz:
+        from .sfm.reconstruction import hazcam_line
+        log.info("Hazcam: %s", hazcam_line(hz))
     bl = proj.settings.get("zcam_backlash")
     if bl:
         log.info("Mastcam-Z focus groups: %s | f / label f: %s", bl["group_counts"],
@@ -1057,7 +1133,7 @@ def _now() -> str:
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
-__all__ = ["Settings", "Site", "ALIGN_RULES", "PROCESS_RULES", "STEPS", "load_settings", "work_settings", "normalize",
+__all__ = ["Settings", "Site", "hazcam_families", "ALIGN_RULES", "PROCESS_RULES", "STEPS", "load_settings", "work_settings", "normalize",
            "setting_names", "run_key", "process_key", "processed_done", "run_done", "resolve_site", "select_images",
            "select_products", "process_site", "processing_config", "load_images", "build_project", "extract_and_match",
            "reconstruct_project", "health", "finish", "align", "run_site", "load_results"]

@@ -38,8 +38,8 @@ them as the default cameras for the next run (see [Camera models and calibration
 
 ## Scope
 
-Calibrated models exist for Navcam and Mastcam-Z at 34 mm. The Hazcams and the other Mastcam-Z zooms are processed
-with start models and are not part of the tested scope. Scale comes from the Navcam stereo baseline together with the
+Calibrated models exist for Navcam and Mastcam-Z at 34 mm. The Hazcams (label-fit start cameras, refined per block;
+0.93) and the other Mastcam-Z zooms are processed with start models and are not part of the tested scope yet. Scale comes from the Navcam stereo baseline together with the
 waypoint position priors. The alignment-health thresholds are provisional.
 
 ## License and data

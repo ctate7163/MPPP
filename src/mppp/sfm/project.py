@@ -39,9 +39,12 @@ log = logging.getLogger("mppp.sfm")
 PathLike = Union[str, Path]
 
 FULL_FRAME = forms.FULL_FRAME                      # full detector frame (width, height) at scale 1, by family
-SCOPE = "Navcam (NLF/NRF) and Mastcam-Z at 34, 48, 63, 79, 110 mm (ZL0/ZR0 _034, _048, _063, _079, _110)"
+SCOPE = ("Navcam (NLF/NRF), the front and rear Hazcams (FLF/FRF, RLF/RRF) and Mastcam-Z at 34, 48, 63, 79, 110 mm "
+         "(ZL0/ZR0 _034, _048, _063, _079, _110)")
 SCOPE_ZCAM_ZOOMS = forms.ZCAM_ZOOMS
-SCOPE_CAMERA_CODES = ("NLF", "NRF", "ZL0", "ZR0")
+HAZCAM_CAMERA_CODES = ("FLF", "FRF", "RLF", "RRF")          # 0.93
+SCOPE_CAMERA_CODES = ("NLF", "NRF", "ZL0", "ZR0") + HAZCAM_CAMERA_CODES
+HAZCAM_FAMILIES = ("F", "R")
 PARAM_NAMES = forms.PARAM_NAMES                    # parameter names per COLMAP model
 INTRINSIC_CORE = forms.INTRINSIC_CORE              # focal length and principal point; everything else is distortion
 FULL_OPENCV_NAMES = forms.FULL_OPENCV_PARAMS
@@ -308,7 +311,8 @@ class SfmProject:
                navcam_rig_yaw: str = "hold", navcam_rig_epoch_gap: Optional[float] = None,
                zcam_line_form: Any = None, navcam_rig_epoch_breaks: Optional[Sequence[float]] = None,
                navcam_rig_epochs_tie: bool = True, navcam_pp: str = NAVCAM_PP,
-               navcam_rig_roll: str = "hold") -> "SfmProject":
+               navcam_rig_roll: str = "hold", hazcam_intrinsics: str = "radial",
+               hazcam_rig_refine: str = "hold") -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP manifest; paths relative to
         ``processed_dir``), padded to the detector frame.  One COLMAP camera per Navcam eye (from the promoted
@@ -347,7 +351,12 @@ class SfmProject:
         module constants; ``navcam_distortion`` is ``"fisheye_tangential"`` (the only form).
         ``zcam_line_form``: the form of each Mastcam-Z focus line (default :data:`mppp.calib.ZCAM_LINE_FORM`; a dict
         {eye: {param: form}} overrides it for a study).
-        Scope: Navcam and Mastcam-Z at 34, 48, 63, 79 and 110 mm; anything else raises.
+        ``hazcam_intrinsics`` (0.93): what a block refines of each Hazcam eye - "radial" (fx, fy, k1, k2; the
+        default), "focal", "all" or "hold" (:data:`mppp.sfm.start_cameras.HAZCAM_INTRINSICS`); the eyes start from
+        the fit to their label CAHVOREs (no Hazcam model is promoted yet).  ``hazcam_rig_refine``: "hold" (the CAHV
+        stereo rig of each Hazcam pair) or "rotation" (refined in the adjustments that bring the Hazcams in).
+        Both are recorded in ``settings["hazcam"]`` only when the block has Hazcam images.
+        Scope: Navcam, the front and rear Hazcams, and Mastcam-Z at 34, 48, 63, 79 and 110 mm; anything else raises.
         """
         if navcam_rig not in ("consensus", "cahv"):
             raise ValueError("navcam_rig must be 'consensus' or 'cahv'")
@@ -371,7 +380,12 @@ class SfmProject:
                              "no longer a form")
         if navcam_pp not in NAVCAM_PP_SETTINGS:
             raise ValueError(f"navcam_pp must be one of {NAVCAM_PP_SETTINGS}")
-        from .start_cameras import navcam_start_camera, navcam_start_rig, zcam_eye_camera
+        if hazcam_rig_refine not in ("hold", "rotation"):
+            raise ValueError("hazcam_rig_refine must be 'hold' or 'rotation'")
+        from .start_cameras import (HAZCAM_INTRINSICS, hazcam_start_camera, navcam_start_camera, navcam_start_rig,
+                                    zcam_eye_camera)
+        if hazcam_intrinsics not in HAZCAM_INTRINSICS:
+            raise ValueError(f"hazcam_intrinsics must be one of {tuple(HAZCAM_INTRINSICS)}")
         processed_dir, root = Path(processed_dir), Path(root)
         nav_dir = Path(navcam_cameras) if navcam_cameras else cmods_dir()
         (root / "images").mkdir(parents=True, exist_ok=True)
@@ -466,6 +480,14 @@ class SfmProject:
                     cameras[instr]["fixed_params"] = sorted(set(cameras[instr].get("fixed_params") or []) | {"k3"},
                                                             key=FULL_OPENCV_NAMES.index)
                 continue
+            if fam in HAZCAM_FAMILIES:
+                cam, nav_info[instr] = hazcam_start_camera(
+                    instr, images, [m for m in metas if camera_key(m["filename"]) == instr], nav_dir, hazcam_intrinsics)
+                if (cam["width"], cam["height"]) != FULL_FRAME[fam]:
+                    raise ValueError(f"{instr}: the camera is {cam['width']}x{cam['height']}, expected the full frame "
+                                     f"{FULL_FRAME[fam]}")
+                cameras[instr] = cam
+                continue
             cam, nav_info[instr] = navcam_start_camera(instr, images, nav_dir, zt)
             if (cam["width"], cam["height"]) != FULL_FRAME[fam]:
                 raise ValueError(f"{instr}: the model is {cam['width']}x{cam['height']}, expected the full frame {FULL_FRAME[fam]}")
@@ -558,6 +580,13 @@ class SfmProject:
                     "navcam_rig_thermal": False,                      # no rig temperature term
                     "navcam_cameras": {"dir": str(nav_dir), "fingerprint": navcam_cameras_fingerprint(nav_dir),
                                        "models_fingerprint": calib.models_fingerprint(nav_dir), **nav_info}})
+        haz = sorted(k for k, f in instruments.items() if f in HAZCAM_FAMILIES)
+        if haz:                                       # 0.93: recorded only for a block with Hazcam images
+            proj.settings["hazcam"] = {
+                "intrinsics": hazcam_intrinsics, "rig_refine": hazcam_rig_refine, "cameras": haz,
+                "rigs": sorted(k for k in rig if k in HAZCAM_FAMILIES),
+                "images": {k: sum(1 for r in images if r["instrument"] == k) for k in haz},
+                "start": {k: nav_info.get(k) for k in haz}}
         proj.save()
         return proj
 
