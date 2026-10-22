@@ -9,7 +9,13 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
   `studies/calibration/zcam_lines.py`).  Navcam rig trends: pitch -10 to +30, yaw and roll -20 to +20 mdeg
   (`RIG_TREND_YLIMS`), the stereo cx panel's primary axis -20 to -17 px (`STEREO_CX_YLIM`); points outside an axis
   are counted on the panel.  `make_figures` also writes `navcam_rig_trends_<tag>_nolabels.png` and
-  `zcam_rig_trends_<tag>_nolabels.png` (no block name at the points; `point_labels=False`).
+  `zcam_rig_trends_<tag>_nolabels.png` (no block name at the points; `point_labels=False`).  Rig trends layout: pitch (A), roll (B, upper right), yaw (C), stereo cx (D); the sol axes read "sol epoch".
+- **Sites** (unofficial blocks, Christian 22 Oct): `tatarka` (sols 1690-1697, S081D3608) and `crocodile_bridge`
+  (1704-1706, S082D2786-D2866), both with a Mastcam-Z 34 mm 360 (`zcam: [34]`); `seitah_huge` (201-340 without the
+  sol 340 waypoint S009D1064, site setting `EXCLUDE`; 20 waypoints, 193 m); `delta_front_huge` (408-708, 127
+  waypoints over 843 m, Navcam only); `turtle_rock` (1280-1282, 4 waypoints, 14 m) and `curtis_ridge` (1298-1302,
+  6 waypoints, 28 m); `bessieres_island` (1018-1023, Mastcam-Z 34 mm 360).  None of these is in a group yet.  Pico Turquino joins `navcam_consensus` (28 blocks;
+  Hippo Pools was already in it).
 - **More cold points in the intrinsics figure.**  No bin camera below -30 °C was drawn: the cold morning images
   are spread 1-3 per 2 °C bin of a block, and the figure took bins of >= 8 images (2 of 106 cold bin cameras).
   The figure now takes bins of >= 4 images (`tied.FIG_BIN_MIN_IMAGES`; `make_figures` re-cuts them from the
