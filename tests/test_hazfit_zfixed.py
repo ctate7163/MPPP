@@ -230,3 +230,21 @@ def test_rochette_excludes_s006d2594():
     from mppp.pipeline import load_settings
     s = load_settings(site="rochette")
     assert s.exclude == ["S006D2594"] and s.nearby_from_first_sol
+
+
+def test_block_station_images_on_other_sols_are_selected(tmp_path):
+    """0.93.3 (Christian): Chal Rocks' sol 102 Mastcam-Z sequence ZCAM08062 at S004D0218 - the block's own sol 99
+    station, the rover not yet moved - comes in although sol 102 is outside the block's sols (91-101)."""
+    from mppp import load_waypoints
+    from mppp.select import find_imgs_near
+    for sol, drive, code, seq in ((99, 218, "NLF", "NCAM00599"), (102, 218, "ZL0", "ZCAM08062"),
+                                  (102, 372, "ZL0", "ZCAM08070"), (102, 218, "NLF", "NCAM00502")):
+        (tmp_path / f"{code}_{sol:04d}_0700000000_000RAD_N004{drive:04d}{seq}_034085A03.IMG").write_bytes(b"")
+    wp = load_waypoints(refresh="never")
+    nav, rep = find_imgs_near(tmp_path, ["NLF"], [[91, 101]], wp, radius_m=10.0)
+    assert {p.name[:8] for p in nav} == {"NLF_0099", "NLF_0102"}
+    assert rep["own_station_other_sols"] == [{"station": "S004D0218", "images": 1, "sols": [102]}]
+    z, zr = find_imgs_near(tmp_path, ["ZL0"], [[91, 101]], wp, radius_m=10.0, anchor_stations=rep["stations_in_range"])
+    assert [p.name for p in z] == ["ZL0_0102_0700000000_000RAD_N0040218ZCAM08062_034085A03.IMG"]   # not S004D0372
+    _, r2 = find_imgs_near(tmp_path, ["NLF"], [[91, 101]], wp, radius_m=10.0, min_sol=103)
+    assert r2["own_station_other_sols"] == []                                                  # min_sol holds

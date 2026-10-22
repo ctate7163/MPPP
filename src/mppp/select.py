@@ -93,6 +93,11 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
 
     ``exclude_stations``: stations ``"S###D####"`` left out entirely (0.93.1, a site's ``EXCLUDE``): no image of
     theirs is selected and the nearby search does not start from them.
+
+    The block's own stations on other sols (0.93.3): an image taken at one of the stations the search starts from,
+    on a sol outside ``sol_range`` (the rover had not moved yet - e.g. Chal Rocks' sol 102 Mastcam-Z sequences at the
+    sol 99 station S004D0218), is added too (``min_sol`` still applies); the report lists them in
+    ``own_station_other_sols``.
     """
     from .waypoints import stations_near
     codes = tuple(c.upper() for c in camera_codes)
@@ -126,7 +131,17 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
                               "stations_excluded": [f"S{a:03d}D{b:04d}" for a, b in sorted(drop)],
                               "stations_in_range": [f"S{a:03d}D{b:04d}" for a, b in stations], "stations_added": []}
     paths = [fp for fp, _ in in_range]
+    report["own_station_other_sols"] = []
     if radius_m and stations:
+        own_st = set(stations)
+        own = [(fp, fn) for fp, fn in cands if (fn.site, fn.drive) in own_st and not in_sol_range(fn.sol, sol_range)
+               and (min_sol is None or fn.sol >= int(min_sol))]
+        oc: Dict[Tuple[int, int], List[int]] = {}
+        for _, fn in own:
+            oc.setdefault((fn.site, fn.drive), []).append(fn.sol)
+        report["own_station_other_sols"] = [{"station": f"S{k[0]:03d}D{k[1]:04d}", "images": len(v),
+                                             "sols": sorted(set(v))} for k, v in sorted(oc.items())]
+        paths += [fp for fp, _ in own]
         near = {(r["site"], r["drive"]): r for r in stations_near(waypoints, stations, radius_m)}
         added = {k: r for k, r in near.items() if k not in set(stations)}
         extra = [(fp, fn) for fp, fn in cands if (fn.site, fn.drive) in added and not in_sol_range(fn.sol, sol_range)

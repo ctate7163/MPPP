@@ -12,6 +12,11 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
   `mars2020_sol_0091_chal_rocks[_zcam]` (were `0361`). `move_scapes.bat` (`studies/calibration/move_scapes.py
   --apply`) renames the existing `mars2020_sol_0361_chal_rocks_zcam` and rewrites its project paths, so the next run
   reuses its processed images.
+- **A block's own stations on other sols are selected** (Christian): an image taken at one of the block's stations on
+  a sol outside its sol ranges (the rover had not moved yet) was left out - the nearby-waypoint search adds only
+  other stations. Chal Rocks lost its sol 102 Mastcam-Z sequences at the sol 99 station S004D0218 (ZCAM08062, 8 Z34
+  pairs; ZCAM08061, 75 Z110 pairs). `find_imgs_near` now adds them (`own_station_other_sols` in the report; the log
+  lists them; `NEARBY_FROM_FIRST_SOL` still applies), for the Navcam, Mastcam-Z and Hazcam selection.
 - **Residual summary**: `residual_rms_native_px` and the median use the finite residuals only (`residual_nonfinite`
   counts the others: a point behind a camera or outside a lens model's domain). The 22 Oct chal_rocks block reported
   an RMS of Infinity.

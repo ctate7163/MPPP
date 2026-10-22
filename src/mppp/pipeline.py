@@ -478,6 +478,16 @@ def resolve_site(site_or_work: PathLike, settings: Settings) -> Tuple[Site, Sett
 
 
 # ------------------------------------------------------------------------------------------- 1. select the products
+def _own_note(rep: Dict[str, Any]) -> str:
+    """" (n of them at the block's own stations on sols ...)" for a nearby-search report (0.93.3)."""
+    own = rep.get("own_station_other_sols") or []
+    if not own:
+        return ""
+    n = sum(a["images"] for a in own)
+    sols = sorted({s for a in own for s in a["sols"]})
+    return f" ({n} of them at the block's own stations on sols {', '.join(map(str, sols))})"
+
+
 def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Path], Dict[str, Any]]:
     """One PDS product per exposure of the site's sol ranges (and the nearby stations), with the selection
     report (``provenance`` of the manifest).  :func:`select_images` returns the paths alone."""
@@ -510,6 +520,9 @@ def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Pa
         for a in near["stations_added"]:
             log.info("   %s (%s m from %s): %s images, sols %s-%s", a["station"], a["distance_m"], a["nearest"],
                      a["images"], a["sols"][0], a["sols"][1])
+        for a in near.get("own_station_other_sols") or []:            # 0.93.3
+            log.info("   %s (a block station, the rover not yet moved): %s images on sols %s", a["station"],
+                     a["images"], ", ".join(map(str, a["sols"])))
     else:
         paths = find_imgs(pds, ["NLF", "NRF"], sol_range=ranges)
         log.info("Navcam: %d products in sols %s", len(paths), st.sols_text)
@@ -520,7 +533,8 @@ def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Pa
             zp, znear = find_imgs_near(pds, ["ZL0", "ZR0"], ranges, waypoints, radius_m=radius,
                                        sequ_id=f"_{zoom:03d}", anchor_stations=near["stations_in_range"], min_sol=min_sol,
                                        exclude_stations=ex_st)
-            log.info("Mastcam-Z %d: %d in range + %d from other visits", zoom, znear["n_in_range"], znear["n_added"])
+            log.info("Mastcam-Z %d: %d in range + %d from other visits%s", zoom, znear["n_in_range"], znear["n_added"],
+                     _own_note(znear))
         else:
             zp = find_imgs(pds, ["ZL0", "ZR0"], sol_range=ranges, sequ_id=f"_{zoom:03d}")
             log.info("Mastcam-Z %d: %d products", zoom, len(zp))
@@ -533,8 +547,8 @@ def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Pa
             hp, hnear = find_imgs_near(pds, list(HAZCAM_CODES[fam]), ranges, waypoints, radius_m=radius,
                                        anchor_stations=near["stations_in_range"], min_sol=min_sol,
                                        exclude_stations=ex_st)
-            log.info("%s Hazcam: %d in range + %d from other visits", "front" if fam == "F" else "rear",
-                     hnear["n_in_range"], hnear["n_added"])
+            log.info("%s Hazcam: %d in range + %d from other visits%s", "front" if fam == "F" else "rear",
+                     hnear["n_in_range"], hnear["n_added"], _own_note(hnear))
         else:
             hp = find_imgs(pds, list(HAZCAM_CODES[fam]), sol_range=ranges)
             log.info("%s Hazcam: %d products", "front" if fam == "F" else "rear", len(hp))
