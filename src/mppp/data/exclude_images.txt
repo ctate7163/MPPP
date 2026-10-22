@@ -14,6 +14,9 @@ seq:ZCAM05114        # Rockytop: 144 frames, 1.0 s apart
 seq:ZCAM05093        # Issole: ~2000 frames
 seq:ZCAM05060        # Christian, 22 Oct
 seq:ZCAM05062        # Christian, 22 Oct
+seq:ZCAM05069        # Christian, 22 Oct (13:08)
+seq:ZCAM05070        # Christian, 22 Oct (13:08)
+seq:ZCAM05071        # Christian, 22 Oct (13:08)
 
 # Mastcam-Z ZCAM00xxx and ZCAM01xxx sequences
 seq:ZCAM00*

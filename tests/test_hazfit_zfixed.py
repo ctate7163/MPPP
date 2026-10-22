@@ -147,7 +147,7 @@ def test_new_windows_scripts_exist_crlf():
 def test_groups_and_block_sites():
     t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
     g = t["groups"]
-    assert g["zcam_consensus"] == ["chal_rocks", "marble_mountain"]
+    assert g["zcam_consensus"] == ["seitah_overlook", "chal_rocks", "marble_mountain"]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "threeforks_north", "belva_crater", "bell_island", "marble_mountain"]
     assert all(s in t["sites"] for s in g["hazcam_consensus"])
     ob = t["official_blocks"]
@@ -168,7 +168,8 @@ def test_cli_calib_hazcam_and_navcam_group():
 def test_shipped_exclusions_22_oct():
     from mppp.pipeline import shipped_exclusions
     ex = shipped_exclusions()
-    assert {"seq:ZCAM05060", "seq:ZCAM05062", "seq:ZCAM03017", "*_0076_0673685057_000*"} <= set(ex)
+    assert {"seq:ZCAM05060", "seq:ZCAM05062", "seq:ZCAM03017", "*_0076_0673685057_000*", "seq:ZCAM05114",
+            "seq:ZCAM05069", "seq:ZCAM05070", "seq:ZCAM05071"} <= set(ex)
 
 
 def test_reset_cameras_to_start_and_backlash_hold():
@@ -201,3 +202,25 @@ def test_sites_duplicate_keys_are_errors(tmp_path):
     f.write_text('{"sites": {"a": {"sols": [[1, 2]]}, "a": {"sols": [[3, 4]]}}, "groups": {}}', encoding="utf-8")
     err, _ = validate_site_table(f)
     assert any("'a' appears more than once" in e for e in err)
+
+
+def test_excluded_station_is_not_selected_nor_an_anchor(tmp_path):
+    """0.93.1 (Christian): rockytop without S026D0282 (sol 460, mid-drive) - its images are not selected and the two
+    sol 456 waypoints within 10 m of it (S026D0218, S026D0160) are not added through it."""
+    from mppp import load_waypoints
+    from mppp.pipeline import load_settings
+    from mppp.select import find_imgs_near
+    from mppp.waypoints import blocks as B
+    for sol, drive in ((460, 282), (461, 630), (456, 218)):
+        for eye in ("NLF", "NRF"):
+            (tmp_path / f"{eye}_{sol:04d}_0700000000_000RAD_N026{drive:04d}NCAM00200_0A0195J01.IMG").write_bytes(b"")
+    wp = load_waypoints(refresh="never")
+    _, rep = find_imgs_near(tmp_path, ["NLF", "NRF"], [[460, 530]], wp, radius_m=10.0)
+    assert "S026D0218" in {a["station"] for a in rep["stations_added"]}           # through S026D0282
+    paths, rep = find_imgs_near(tmp_path, ["NLF", "NRF"], [[460, 530]], wp, radius_m=10.0, exclude_stations=["S026D0282"])
+    assert rep["stations_added"] == [] and rep["stations_in_range"] == ["S026D0630"]
+    assert rep["stations_excluded"] == ["S026D0282"] and all("N0260630" in p.name for p in paths)
+    assert load_settings(site="rockytop").exclude == ["S026D0282"]
+    st = B.site_waypoint_stats({"sols": [[460, 530]], "settings": {"EXCLUDE": ["S026D0282"]}},
+                               B.waypoint_points(ROOT / "src" / "mppp" / "data" / "M20_waypoints.json"))
+    assert st["n_nearby"] == 0 and st["max_waypoint_separation_m"] < 30

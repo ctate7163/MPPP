@@ -61,6 +61,13 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 - **sites.json**: `delta_front_huge` was defined twice (the same sols, two notes; JSON kept the second silently) -
   the second copy is removed. `mppp sites check` (`validate_site_table`) now reports a key defined twice in one
   object as an error.
+- **Excluded stations leave the selection** (Christian, 13:08): rockytop drops the sol 460 mid-drive waypoint
+  S026D0282 (site setting `EXCLUDE`, as seitah_huge's S009D1064). A station in `exclude` (`S###D####`) is now left
+  out of the product selection and does not anchor the nearby-waypoint search (`find_imgs_near(exclude_stations=)`),
+  so the two sol 456 waypoints within 10 m of S026D0282 (S026D0218, S026D0160) no longer join rockytop; the waypoint
+  fields honour it too (rockytop 58.7 -> 23.0 m, 13 -> 10 waypoints). `zcam_consensus` gains seitah_overlook
+  (zooms 34, 48, 63, 79, 110: a second block for Z48, Z79 and Z110, so their first calibrations can be promoted).
+  Shipped exclusions: `seq:ZCAM05069`, `seq:ZCAM05070`, `seq:ZCAM05071` (`seq:ZCAM05114` was already listed).
 - **Shipped exclusions** (`mppp/data/exclude_images.txt`, Christian): `seq:ZCAM05060`, `seq:ZCAM03017` and the sol 76
   exposure `*_0076_0673685057_000*` (every camera at that SCLK); `seq:ZCAM05062` was already listed.
 - **Figures**: the LMST histograms are laid out in reading order (first row = the first two blocks), lettered A, B,

@@ -69,7 +69,8 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
                    waypoints: Dict[str, Any], radius_m: Optional[float] = 5.0, sequ_id: Optional[str] = None,
                    product_type: Optional[str] = "RAD", include_thumbnails: bool = False,
                    anchor_stations: Optional[Sequence[Any]] = None,
-                   min_sol: Optional[int] = None) -> Tuple[List[Path], Dict[str, Any]]:
+                   min_sol: Optional[int] = None,
+                   exclude_stations: Sequence[str] = ()) -> Tuple[List[Path], Dict[str, Any]]:
     """
     The products of ``sol_range`` plus, for sites the rover visited more than
     once, the products of every other waypoint station within ``radius_m``
@@ -89,6 +90,9 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
 
     ``min_sol``: the nearby visits add no image from before this sol (notebook 03 ``NEARBY_FROM_FIRST_SOL``:
     the block's first sol, so e.g. Rochette starts at sol 178, not with the sol-175 station 9 m away).
+
+    ``exclude_stations``: stations ``"S###D####"`` left out entirely (0.93.1, a site's ``EXCLUDE``): no image of
+    theirs is selected and the nearby search does not start from them.
     """
     from .waypoints import stations_near
     codes = tuple(c.upper() for c in camera_codes)
@@ -104,6 +108,10 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
         if sequ_id and sequ_id.upper() not in name[35:]:
             continue
         cands.append((fp, fn))
+    drop = {(int(str(x)[1:4]), int(str(x)[5:9])) for x in exclude_stations
+            if len(str(x)) == 9 and str(x)[0].upper() == "S" and str(x)[4].upper() == "D"}
+    if drop:
+        cands = [(fp, fn) for fp, fn in cands if (fn.site, fn.drive) not in drop]
     in_range = [(fp, fn) for fp, fn in cands if in_sol_range(fn.sol, sol_range)]      # several visits
     stations = sorted({(fn.site, fn.drive) for _, fn in in_range})
     if anchor_stations is not None:
@@ -113,8 +121,9 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
                 anc.add((int(st[1:4]), int(st[5:9])))
             else:
                 anc.add((int(st[0]), int(st[1])))
-        stations = sorted(anc)
+        stations = sorted(anc - drop)
     report: Dict[str, Any] = {"sol_range": [list(r) for r in sol_ranges(sol_range)], "radius_m": radius_m, "min_sol": min_sol,
+                              "stations_excluded": [f"S{a:03d}D{b:04d}" for a, b in sorted(drop)],
                               "stations_in_range": [f"S{a:03d}D{b:04d}" for a, b in stations], "stations_added": []}
     paths = [fp for fp, _ in in_range]
     if radius_m and stations:

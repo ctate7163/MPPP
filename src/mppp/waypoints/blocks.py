@@ -56,17 +56,17 @@ def slug(name: str) -> str:
 # --- waypoints -------------------------------------------------------------------------------------------------------
 
 def waypoint_points(waypoints: Union[PathLike, Dict[str, Any]]) -> np.ndarray:
-    """Rows (sol, rover site, easting, northing, end of drive 1/0) of a waypoint GeoJSON (file or dict)."""
+    """Rows (sol, rover site, easting, northing, end of drive 1/0, drive) of a waypoint GeoJSON (file or dict)."""
     d = waypoints if isinstance(waypoints, dict) else json.loads(Path(waypoints).read_text(encoding="utf-8"))
     rows = []
     for f in d.get("features") or []:
         p = f.get("properties") or {}
         try:
             rows.append((int(p["sol"]), int(p.get("site", -1)), float(p["easting"]), float(p["northing"]),
-                         1.0 if p.get("final") == "y" else 0.0))
+                         1.0 if p.get("final") == "y" else 0.0, int(p.get("drive", -1))))
         except (KeyError, TypeError, ValueError):
             continue
-    return np.array(rows, float).reshape(-1, 5)
+    return np.array(rows, float).reshape(-1, 6)
 
 
 NEARBY_RADIUS_M = 10.0      # the block-building rule (Settings.add_nearby_waypoints): every waypoint within this many
@@ -74,15 +74,19 @@ NEARBY_RADIUS_M = 10.0      # the block-building rule (Settings.add_nearby_waypo
 
 
 def waypoint_stats(ranges: Sequence[Sequence[int]], W: np.ndarray, radius_m: float = NEARBY_RADIUS_M,
-                   min_sol: Optional[int] = None) -> Dict[str, Any]:
+                   min_sol: Optional[int] = None, exclude_stations: Sequence[str] = ()) -> Dict[str, Any]:
     """
     The waypoint statistics of a site, by the rules that build its block (0.90, Christian): the primary
     waypoints are those on the sols of ``ranges``; every other waypoint within ``radius_m`` (planar E-N) of a
     primary one joins (any sol, as ``find_imgs_near`` adds their stations; none before ``min_sol`` when the site has
     ``NEARBY_FROM_FIRST_SOL``).  ``max_waypoint_separation_m`` is the largest horizontal distance between two of
     them (0.1 m), ``n_waypoints`` their count (``n_primary`` + ``n_nearby``), ``rover_sites`` sorted.
-    ``W``: :func:`waypoint_points` rows (sol, site, easting, northing, eod).
+    ``W``: :func:`waypoint_points` rows (sol, site, easting, northing, eod, drive).  ``exclude_stations``: stations
+    ``S###D####`` left out (a site's ``EXCLUDE`` setting; 0.93.1).
     """
+    if len(exclude_stations) and W.shape[1] > 5:
+        drop = {str(x).upper() for x in exclude_stations}
+        W = W[[f"S{int(r[1]):03d}D{int(r[5]):04d}" not in drop for r in W]]
     m = np.zeros(len(W), bool)
     for a, b in ranges:
         m |= (W[:, 0] >= a) & (W[:, 0] <= b)
@@ -107,8 +111,10 @@ def site_waypoint_stats(site: Dict[str, Any], W: np.ndarray, radius_m: float = N
     """:func:`waypoint_stats` of a site record (its ``sols`` and, with ``NEARBY_FROM_FIRST_SOL`` in its settings, no
     nearby waypoint before its first sol)."""
     rs = _ranges(site["sols"])
-    first = (site.get("settings") or {}).get("NEARBY_FROM_FIRST_SOL")
-    return waypoint_stats(rs, W, radius_m, min_sol=min(a for a, _ in rs) if first and rs else None)
+    st = site.get("settings") or {}
+    first = st.get("NEARBY_FROM_FIRST_SOL")
+    ex = [str(x) for x in (st.get("EXCLUDE") or st.get("exclude") or []) if re.fullmatch(r"S\d{3}D\d{4}", str(x).upper())]
+    return waypoint_stats(rs, W, radius_m, min_sol=min(a for a, _ in rs) if first and rs else None, exclude_stations=ex)
 
 
 # --- official blocks -------------------------------------------------------------------------------------------------

@@ -29,6 +29,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass, field, fields
@@ -495,9 +496,15 @@ def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Pa
     src = waypoints["_mppp_source"]
     log.info("waypoints: %d features, %s%s", src["n_features"], src["file_time"],
              " (packaged snapshot: no download possible - new stations get the onboard estimate)" if src["packaged_snapshot"] else "")
+    # 0.93.1: stations excluded by the settings (a site's EXCLUDE "S026D0282") are not selected and do not anchor
+    # the nearby-waypoint search
+    ex_st = [str(e).upper() for e in (settings.exclude or []) if re.fullmatch(r"S\d{3}D\d{4}", str(e).strip().upper())]
     if radius:
         min_sol = min(int(r[0]) for r in sol_ranges(ranges)) if settings.nearby_from_first_sol else None
-        paths, near = find_imgs_near(pds, ["NLF", "NRF"], ranges, waypoints, radius_m=radius, min_sol=min_sol)
+        paths, near = find_imgs_near(pds, ["NLF", "NRF"], ranges, waypoints, radius_m=radius, min_sol=min_sol,
+                                     exclude_stations=ex_st)
+        if ex_st:
+            log.info("stations excluded from the selection and the nearby search: %s", ", ".join(ex_st))
         log.info("Navcam: %d in sols %s + %d from other visits within %g m%s", near["n_in_range"], st.sols_text,
                  near["n_added"], radius, f" (none before sol {min_sol})" if min_sol is not None else "")
         for a in near["stations_added"]:
@@ -511,7 +518,8 @@ def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Pa
         if radius:
             # from the Navcam block's stations, so every zoom gets the same visits
             zp, znear = find_imgs_near(pds, ["ZL0", "ZR0"], ranges, waypoints, radius_m=radius,
-                                       sequ_id=f"_{zoom:03d}", anchor_stations=near["stations_in_range"], min_sol=min_sol)
+                                       sequ_id=f"_{zoom:03d}", anchor_stations=near["stations_in_range"], min_sol=min_sol,
+                                       exclude_stations=ex_st)
             log.info("Mastcam-Z %d: %d in range + %d from other visits", zoom, znear["n_in_range"], znear["n_added"])
         else:
             zp = find_imgs(pds, ["ZL0", "ZR0"], sol_range=ranges, sequ_id=f"_{zoom:03d}")
@@ -523,7 +531,8 @@ def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Pa
     for fam in hazcam_families(settings.hazcams):    # 0.93: the Hazcam frames of the same stations
         if radius:
             hp, hnear = find_imgs_near(pds, list(HAZCAM_CODES[fam]), ranges, waypoints, radius_m=radius,
-                                       anchor_stations=near["stations_in_range"], min_sol=min_sol)
+                                       anchor_stations=near["stations_in_range"], min_sol=min_sol,
+                                       exclude_stations=ex_st)
             log.info("%s Hazcam: %d in range + %d from other visits", "front" if fam == "F" else "rear",
                      hnear["n_in_range"], hnear["n_added"])
         else:
