@@ -14,7 +14,8 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
   (1704-1706, S082D2786-D2866), both with a Mastcam-Z 34 mm 360 (`zcam: [34]`); `seitah_huge` (201-340 without the
   sol 340 waypoint S009D1064, site setting `EXCLUDE`; 20 waypoints, 193 m); `delta_front_huge` (408-708, 127
   waypoints over 843 m, Navcam only); `turtle_rock` (1280-1282, 4 waypoints, 14 m) and `curtis_ridge` (1298-1302,
-  6 waypoints, 28 m); `bessieres_island` (1018-1023, Mastcam-Z 34 mm 360).  None of these is in a group yet.  Pico Turquino joins `navcam_consensus` (28 blocks;
+  6 waypoints, 28 m); `bessieres_island` (1018-1023, Mastcam-Z 34 mm 360);
+  `la_orotava_crater` (384-385, 2 waypoints, 14 m).  None of these is in a group yet.  Pico Turquino joins `navcam_consensus` (28 blocks;
   Hippo Pools was already in it).
 - **More cold points in the intrinsics figure.**  No bin camera below -30 °C was drawn: the cold morning images
   are spread 1-3 per 2 °C bin of a block, and the figure took bins of >= 8 images (2 of 106 cold bin cameras).
