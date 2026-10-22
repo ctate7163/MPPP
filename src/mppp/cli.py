@@ -134,6 +134,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--aniso-f", action="store_true",
                    help="separate fx and fy thermal slopes (default: one ppm/degC per eye, fy tied to fx)")
     p.add_argument("--no-diagnostics", action="store_true", help="skip the per-block diagnostic pass (no gate then)")
+    p.add_argument("--include-failed", action="store_true", help="also blocks whose alignment health is FAIL "
+                   "(left out by default)")
     p.add_argument("--no-k-tests", action="store_true", help="zcam: skip the k1/k2 likelihood-ratio tests (2 more "
                    "adjustments)")
     p.add_argument("--promote-if-ok", action="store_true", help="promote the candidate when every check passes")
@@ -441,7 +443,9 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
         raise SystemExit("--root (or MPPP_SCAPES) is required")
     table = load_site_table(a.sites_file)
     zcam = getattr(a, "which", "navcam") in ("zcam", "nz")
-    a.group = a.group or (f"zcam{int(getattr(a, 'zoom', 34))}_consensus" if zcam else "navcam_consensus")
+    a.group = a.group or (f"zcam{int(getattr(a, 'zoom', 34))}_joint" if zcam and f"zcam{int(getattr(a, 'zoom', 34))}_joint"
+                          in table.get("groups", {}) else f"zcam{int(getattr(a, 'zoom', 34))}_consensus" if zcam
+                          else "navcam_consensus")
     names = table.get("groups", {}).get(a.group)
     if not names:
         raise SystemExit(f"no group {a.group!r} in the site definitions")
@@ -452,8 +456,12 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
             skipped.append(f"{n} (not a site)")
             continue
         work = work_folder(root, n, zcam, site["sols"])
-        if run_done(work, "") is None:
+        done = run_done(work, "")
+        if done is None:
             skipped.append(f"{n} (not finished)")
+            continue
+        if str(done.get("verdict")) == "fail" and not getattr(a, "include_failed", False):
+            skipped.append(f"{n} (alignment health FAIL; --include-failed takes it)")    # 22 Oct
             continue
         out[n] = work
     if skipped:

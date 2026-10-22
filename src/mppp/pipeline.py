@@ -157,7 +157,8 @@ class Settings:
                                                               num_octaves=None, first_octave=-1))   # num_octaves None: 6 with Mastcam-Z, else 4
     match_mode: str = "exhaustive"                # the matcher: "exhaustive" (COLMAP's SIFT matcher, the default until the A/B test), "lightglue" (SIFT + LightGlue) or "prior_pairs" (quick / CPU)
     max_exhaustive_images: int = 1000             # 21 Oct: above this many images "exhaustive" matches the prior-overlap pairs instead (Issole Z34: 2713 images, 3.7 M pairs, > 9 h); 0 = never (not in the run key)
-    zcam_video_max_dt_s: float = 5.0              # 22 Oct: a Mastcam-Z sequence whose frames of one eye come this close (median spacing) and number >= 20 is a movie (Issole ZCAM05093, Bunsen Peak ZCAM05179/05180, Rockytop ZCAM05114: 0.4-1.8 s, one eye, no tie points) and is left out; 0 = keep (not in the run key)
+    zcam_movie_min_frames: int = 20               # 22 Oct: a Mastcam-Z sequence with this many frames of one eye at one pointing (within zcam_movie_pointing_deg) is a movie (Issole ZCAM05093, Bunsen Peak ZCAM05179/05180, Rockytop ZCAM05114) and is left out; 0 = keep (not in the run key)
+    zcam_movie_pointing_deg: float = 0.05         # "one pointing": label boresights within this angle
     match: Dict[str, Any] = field(default_factory=lambda: dict(max_ratio=0.9, max_distance=1.0, cross_check=True,
                                                                guided_matching=False, max_error_px=6.0,
                                                                max_keypoints=8192, filter_threshold=0.1))   # matching options (the last two: LightGlue)
@@ -209,7 +210,8 @@ class Settings:
 PATH_FIELDS = {"pds_dir", "scapes_root", "sites_file", "navcam_cameras", "zcam_focus_model"}
 TUPLE_FIELDS = {"sequence_prefixes", "subframe_families", "hold_cameras", "thermal_free", "navcam_rig_epoch_breaks_sols"}
 NOT_IN_KEY = {"pds_dir", "scapes_root", "gpu_python", "colmap_bat", "workers", "gui_files", "sites_file",
-              "source", "variant", "max_exhaustive_images", "zcam_video_max_dt_s"}
+              "source", "variant", "max_exhaustive_images", "zcam_movie_min_frames",
+              "zcam_movie_pointing_deg"}
 SETTING_NAMES = tuple(f.name for f in fields(Settings))
 
 
@@ -278,35 +280,49 @@ work_settings = load_settings
 
 
 # ----------------------------------------------------------------------------------------------------- run keys
-ZCAM_MOVIE_MIN_FRAMES = 20
+def _unit(az_deg: float, el_deg: float):
+    import math
+    a, e = math.radians(az_deg), math.radians(el_deg)
+    return (math.cos(e) * math.sin(a), math.cos(e) * math.cos(a), math.sin(e))
 
 
-def drop_zcam_movies(images: List[Dict[str, Any]], max_dt_s: float = 5.0, min_frames: int = ZCAM_MOVIE_MIN_FRAMES
+def drop_zcam_movies(images: List[Dict[str, Any]], min_frames: int = 20, pointing_deg: float = 0.05
                      ) -> Tuple[List[Dict[str, Any]], Dict[Tuple[str, str], int]]:
-    """Leave out Mastcam-Z movies: a sequence whose frames of one eye number at least ``min_frames`` with a median
-    spacing (SCLK) of at most ``max_dt_s``.  A mosaic's frames of one eye are 10-60 s apart (the mast moves between
-    them); a movie's 0.4-2 s, one eye only, the same pointing - they find no tie points and cost hours of matching
-    (Issole: 2000 frames).  Returns (images kept, {(sequence, eye): frames left out})."""
-    groups: Dict[Tuple[str, str], List[float]] = {}
-    for m in images:
+    """Leave out Mastcam-Z movies: ``min_frames`` or more frames of one sequence and eye at one pointing (label
+    boresights within ``pointing_deg``).  A mosaic moves the mast between frames (one frame per eye per pointing; a
+    focus stack a few); a movie keeps the pointing for tens to thousands of frames, which find no tie points and
+    cost hours of matching (Issole: 2000 frames).  Frames without a label boresight are kept.  Returns (images
+    kept, {(sequence, eye): frames left out})."""
+    import math
+    cos_tol = math.cos(math.radians(pointing_deg))
+    groups: Dict[Tuple[str, str], List[Tuple[int, Tuple[float, float, float]]]] = {}
+    for k, m in enumerate(images):
         f = m.get("filename") or {}
-        if f.get("family") != "Z" or f.get("sclk") is None or not f.get("sequence"):
+        po = m.get("pose") or {}
+        az, el = po.get("boresight_azimuth_deg"), po.get("boresight_elevation_deg")
+        if f.get("family") != "Z" or not f.get("sequence") or az is None or el is None:
             continue
-        groups.setdefault((str(f["sequence"]), str(f.get("eye"))), []).append(float(f["sclk"]))
+        groups.setdefault((str(f["sequence"]), str(f.get("eye"))), []).append((k, _unit(float(az), float(el))))
+    drop: set = set()
     movies: Dict[Tuple[str, str], int] = {}
-    for k, t in groups.items():
-        if len(t) < min_frames:
+    for key, rows in groups.items():
+        if len(rows) < min_frames:
             continue
-        t = sorted(t)
-        dt = sorted(b - a for a, b in zip(t, t[1:]))
-        if dt[len(dt) // 2] <= max_dt_s:
-            movies[k] = len(t)
-    if not movies:
+        clusters: List[Tuple[Tuple[float, float, float], List[int]]] = []      # (first pointing, members)
+        for k, u in rows:
+            for c, members in clusters:
+                if u[0] * c[0] + u[1] * c[1] + u[2] * c[2] >= cos_tol:
+                    members.append(k)
+                    break
+            else:
+                clusters.append((u, [k]))
+        for _, members in clusters:
+            if len(members) >= min_frames:
+                drop.update(members)
+                movies[key] = movies.get(key, 0) + len(members)
+    if not drop:
         return images, movies
-    keep = [m for m in images if (str((m.get("filename") or {}).get("sequence")),
-                                  str((m.get("filename") or {}).get("eye"))) not in movies
-            or (m.get("filename") or {}).get("family") != "Z"]
-    return keep, movies
+    return [m for k, m in enumerate(images) if k not in drop], movies
 
 
 def effective_match_mode(s: "Settings", n_images: int) -> str:
@@ -601,11 +617,10 @@ def load_images(work: PathLike, settings: Settings, zooms: Sequence[int] = ()) -
             ims = [x for x in ims if x]
             log.info("excluded by %r: %d images%s", e, len(ims), "" if ims else "  <- matches no image (typo?)")
         log.info("%d images after the exclusions", len(images))
-    if settings.zcam_video_max_dt_s:
-        images, movies = drop_zcam_movies(images, settings.zcam_video_max_dt_s)
+    if settings.zcam_movie_min_frames:
+        images, movies = drop_zcam_movies(images, settings.zcam_movie_min_frames, settings.zcam_movie_pointing_deg)
         for (seq, eye), n in sorted(movies.items()):
-            log.info("Mastcam-Z movie left out: %s %s, %d frames (median spacing <= %g s)", seq, eye, n,
-                     settings.zcam_video_max_dt_s)
+            log.info("Mastcam-Z movie left out: %s %s, %d frames at one pointing", seq, eye, n)
     images, small = filter_included_fraction(images, settings.min_included_fraction)
     if small:
         log.info("%d images with less than %.3f of the image unmasked left out, e.g. %s", len(small),

@@ -313,3 +313,9 @@ def test_skip_file_leaves_a_block_out(tmp_path):
     assert r.returncode == 5 and "skipped" in r.stdout
     src = (ROOT / "scripts" / "run_sites.py").read_text()
     assert '(work / "SKIP").is_file()' in src and "p.returncode == 5" in src
+
+
+def test_multizoom_test_bat():
+    """22 Oct: the multi-zoom test block (Taylorfjellet, all five zooms) in its own variant."""
+    b = (ROOT / "scripts" / "windows" / "run_multizoom_test.bat").read_bytes()
+    assert b"\r\n" in b and b"--variant multizoom" in b and b"ZCAM_ZOOMS=[34,48,63,79,110]" in b

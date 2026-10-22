@@ -29,7 +29,7 @@ set "OUT=%MPPP_SCAPES%\camera_analysis\zcam34_joint_%TODAY%"
 set "N=1"
 :next
 if exist "%OUT%\zcam_joint.json" ( set /a N+=1 & set "OUT=%MPPP_SCAPES%\camera_analysis\zcam34_joint_%TODAY%_!N!" & goto :next )
-echo Mastcam-Z joint: blocks of zcam34_consensus under %MPPP_SCAPES% -^> %OUT%
+echo Mastcam-Z joint: the finished blocks of zcam34_joint ^(health not FAIL^) under %MPPP_SCAPES% -^> %OUT%
 python -m mppp cmods list
 python -m mppp --log "%OUT%_log.txt" calib zcam --root "%MPPP_SCAPES%" --out "%OUT%" --promote-if-ok %*
 if errorlevel 1 ( echo Mastcam-Z joint FAILED - see %OUT%_log.txt & pause & exit /b 1 )

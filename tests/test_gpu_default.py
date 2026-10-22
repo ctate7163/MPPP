@@ -57,14 +57,18 @@ def test_big_blocks_match_prior_pairs_and_keep_their_run_key():
 
 
 def test_zcam_movies_are_left_out():
-    """22 Oct: Mastcam-Z movies (one eye, frames 0.4-2 s apart: Bunsen Peak ZCAM05179) go; mosaics (15-30 s) stay."""
+    """22 Oct (Christian): Mastcam-Z movies are found by their fixed pointing - 20 or more frames of one sequence and eye
+    at one boresight (Bunsen Peak ZCAM05179) go; a mosaic (one frame per pointing) and a short focus stack stay."""
     from mppp.pipeline import drop_zcam_movies, run_key
-    def im(eye, seq, sclk, fam="Z"):
-        return {"filename": {"family": fam, "eye": eye, "sequence": seq, "sclk": sclk}}
-    movie = [im("L", "ZCAM05179", 761484524.0 + 0.44 * k) for k in range(30)]
-    mosaic = [im(e, "ZCAM09097", 761400000.0 + 18.0 * k) for k in range(45) for e in ("L", "R")]
-    short = [im("L", "ZCAM07000", 761300000.0 + 0.5 * k) for k in range(5)]        # a focus stack: too few
-    nav = [im("L", "NCAM00500", 761484524.0 + 0.1 * k, fam="N") for k in range(30)]
-    keep, movies = drop_zcam_movies(movie + mosaic + short + nav)
-    assert movies == {("ZCAM05179", "L"): 30} and len(keep) == 90 + 5 + 30
-    assert run_key(Settings(zcam_video_max_dt_s=0)) == run_key(Settings())       # not in the run key
+    def im(eye, seq, az, el, fam="Z"):
+        return {"filename": {"family": fam, "eye": eye, "sequence": seq},
+                "pose": {"boresight_azimuth_deg": az, "boresight_elevation_deg": el}}
+    movie = [im("L", "ZCAM05179", 120.0 + 1e-4 * k, -10.0) for k in range(30)]
+    mosaic = [im(e, "ZCAM09097", 100.0 + 3.0 * k, -12.0) for k in range(45) for e in ("L", "R")]
+    stack = [im("L", "ZCAM07000", 200.0, -20.0) for _ in range(8)]                     # a focus stack: too few
+    mixed = [im("R", "ZCAM05180", 50.0, -5.0) for _ in range(25)] + [im("R", "ZCAM05180", 60.0 + k, -5.0) for k in range(10)]
+    nav = [im("L", "NCAM00500", 10.0, 0.0, fam="N") for _ in range(30)]
+    keep, movies = drop_zcam_movies(movie + mosaic + stack + mixed + nav)
+    assert movies == {("ZCAM05179", "L"): 30, ("ZCAM05180", "R"): 25}
+    assert len(keep) == 90 + 8 + 10 + 30
+    assert run_key(Settings(zcam_movie_min_frames=0)) == run_key(Settings())          # not in the run key

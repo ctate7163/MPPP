@@ -4,12 +4,21 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.92.1 — 2026-10-22
 
-- **Mastcam-Z movies are left out** (`pipeline.drop_zcam_movies`, `Settings.zcam_video_max_dt_s` = 5 s, not in the run
-  key): a sequence whose frames of one eye number >= 20 with a median spacing <= 5 s.  The Z34 run of 21-22 Oct had
-  four: Issole ZCAM05093 (~2000 frames), Bunsen Peak ZCAM05179 (1088, 0.44 s) and ZCAM05180 (416, 1.8 s), Rockytop
-  ZCAM05114 (144, 1.0 s) - one eye, no tie points, hours of matching, and the health check FAILed (Bunsen: 576
-  images without tie points; Rockytop: 21 % excluded).  Mosaics are 13-60 s per frame and stay.  Rockytop and Bunsen
+- **Mastcam-Z movies are left out by their fixed pointing** (`pipeline.drop_zcam_movies`; `zcam_movie_min_frames` 20,
+  `zcam_movie_pointing_deg` 0.05, not in the run key): 20 or more frames of one sequence and eye whose label
+  boresights lie within 0.05 deg.  The Z34 run of 21-22 Oct had four: Issole ZCAM05093 (~2000 frames), Bunsen Peak
+  ZCAM05179 (1088 frames at 2 pointings) and ZCAM05180 (416 at one), Rockytop ZCAM05114 (144 at one) - one eye, no
+  tie points, hours of matching, and the health check FAILed (Bunsen: 576 images without tie points; Rockytop: 21 %
+  excluded).  A mosaic has one frame per eye per pointing (checked on four blocks) and stays.  Rockytop and Bunsen
   Peak also exclude their movies by name (`EXCLUDE` in sites.json), which changes their run key: they run again.
+- **Low-backlash lists corrected**: the left-eye images of Three Forks North's ZCAM07114 (sols 413, 679-693), ZCAM08692
+  (sol 690) and ZCAM05086 (sol 692), and Belva Crater's ZCAM08808 (sol 789, both eyes) are taken off (commented out,
+  with the reason) - their "regular" bins refined 1.0-1.2 % in f, the backlash state.  8 entries in the shipped list,
+  98 in the PC's `zcam_low_backlash_found.csv`.  Those two blocks must be aligned again for it to count.
+- **The Mastcam-Z joint on the good blocks**: group `zcam34_joint` (Chal Rocks, Rochette, Enchanted Lake, South Arm,
+  Taylorfjellet, Olifants, Marble Mountain) is the joints' default (`calib zcam` / `calib nz`, so
+  `zcam_tied_joint.bat`), and a block whose alignment health is FAIL is left out unless `--include-failed`.
+- `run_multizoom_test.bat`: Taylorfjellet with all five Mastcam-Z zooms in one alignment (variant `multizoom`).
 
 ## 0.92.0 — 2026-10-21
 

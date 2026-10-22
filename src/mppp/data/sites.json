@@ -104,6 +104,7 @@
  "groups": {
   "navcam_consensus":                  ["oeb_landing_site", "van_zyl_overlook_huge", "chal_rocks_large", "chal_rocks", "artuby_ridge", "rochette", "issole_seitah_south", "seitah_north_large", "threeforks_large", "enchanted_lake", "knob_mountain_large", "rockytop", "belva_crater_large", "tuxedo_park", "hans_amundsen_workspace", "bunsen_peak", "cheyava_falls", "plateau_point", "south_arm", "witch_hazel_hill", "bell_island_large", "taylorfjellet", "taylorfjellet_huge", "origny_large", "vingeanne", "hippo_pools", "marble_mountain"],
   "zcam34_consensus":                  ["chal_rocks", "rochette", "issole_seitah_south", "threeforks_north", "enchanted_lake", "rockytop", "belva_crater", "bunsen_peak", "south_arm", "taylorfjellet", "olifants", "marble_mountain"],
+  "zcam34_joint":                      ["chal_rocks", "rochette", "enchanted_lake", "south_arm", "taylorfjellet", "olifants", "marble_mountain"],
   "zcam34_dev":                        ["chal_rocks", "threeforks_north", "rochette", "enchanted_lake", "south_arm", "marble_mountain"],
   "navcam_baseline":                   ["van_zyl_overlook_huge", "chal_rocks_large", "seitah_north_large", "threeforks_large", "belva_crater_large", "bell_island_large", "taylorfjellet_huge", "origny_large"],
   "zcam48_consensus":                  ["chal_rocks_large", "overlook_mountain", "pico_turquino"],
