@@ -15,7 +15,8 @@ run and ``colmap_<variant>/`` for experiments (other SfM settings or camera mode
   - ``sol:658`` or ``sol:654-693``: a sol or a sol range;
   - ``seq:NCAM08111``: a sequence (``seq:ZCAM01*``: every sequence starting so);
   - anything else: a file-name pattern (``*`` and ``?``), matched against the product name without extension,
-    e.g. ``NLF_0658_0725353794_270RAD_N0320274NCAM08111_0A0095J01`` or ``ZR0_0690_*``.
+    e.g. ``NLF_0658_0725353794_270RAD_N0320274NCAM08111_0A0095J01`` or ``ZR0_0690_*``;
+  - ``!`` before any entry: those images are always kept, whatever else matches them (``!seq:ZCAM00033``).
 
 - :func:`seed_variant`: a new variant starts from the default project's features (the images are hard links of
   the same processed files, so the features stay valid) and reuses its matches
@@ -99,8 +100,13 @@ def apply_exclusions(metas: Sequence[Dict[str, Any]], entries: Sequence[str]
                      ) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
     """``(kept, removed)``; ``removed`` lists ``{"image", "entry"}`` (the first entry that selected it).  Entries
     that select nothing are reported as ``{"image": None, "entry"}`` so a typo is visible."""
+    keep_entries = [e.strip()[1:] for e in entries if e.strip().startswith("!")]      # "!seq:ZCAM00033": always kept
+    entries = [e for e in entries if not e.strip().startswith("!")]
     kept, removed, used = [], [], set()
     for m in metas:
+        if any(exclusion_matches(m, k) for k in keep_entries):
+            kept.append(m)
+            continue
         hit = next((e for e in entries if exclusion_matches(m, e)), None)
         if hit is None:
             kept.append(m)

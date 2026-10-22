@@ -71,9 +71,12 @@ def test_shipped_exclusion_list():
            im("ZL0_1058_0760874769_848RAD_N0501254ZCAM09097_034050A01", "ZCAM09097"),
            im("NLF_0693_0728460284_145RAD_N0321184NCAM00500_0A0095J01", "NCAM00500"),
            im("NRG_0693_0728460284_145EBY_N0321184NCAM00500_0A0095J01", "NCAM00500"),
-           im("NLF_0693_0728460300_145RAD_N0321184NCAM00500_0A0095J01", "NCAM00500")]
+           im("NLF_0693_0728460300_145RAD_N0321184NCAM00500_0A0095J01", "NCAM00500"),
+           im("ZR0_0092_0675116815_348RAD_N0040136ZCAM00033_0340LUA03", "ZCAM00033"),      # Chal Rocks: kept
+           im("ZL0_0093_0675176651_519RAD_N0040136ZCAM00034_0340LUA03", "ZCAM00034"),      # kept
+           im("ZL0_0100_0675800000_000RAD_N0040136ZCAM00040_0340LUA03", "ZCAM00040")]      # ZCAM00*: out
     keep, removed = apply_exclusions(ims, e)
-    assert [m["filename"]["stem"][:8] for m in keep] == ["ZL0_1058", "NLF_0693"]
+    assert [m["filename"]["stem"][:8] for m in keep] == ["ZL0_1058", "NLF_0693", "ZR0_0092", "ZL0_0093"]
     assert keep[1]["filename"]["stem"].startswith("NLF_0693_0728460300")
     assert Settings().exclude_list and run_key(Settings(exclude_list=False)) == run_key(Settings())
     assert Settings().max_exhaustive_images == 300

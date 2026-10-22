@@ -4,6 +4,7 @@
 #   seq:ZCAM05179        a sequence (seq:ZCAM01* - any sequence starting ZCAM01)
 #   S032D1184            a station (site 32, drive 1184);  sol:658 or sol:654-693  a sol or sol range
 #   N*_0693_0728460284_145*   a file-name pattern (* and ?) against the product name without extension
+#   !seq:ZCAM00033       '!' first: always kept, whatever else matches
 # Christian, 22 Oct 2026.
 
 # Mastcam-Z movies (one eye, hundreds of frames at one pointing: no tie points, hours of matching)
@@ -16,6 +17,8 @@ seq:ZCAM05062
 # Mastcam-Z ZCAM00xxx and ZCAM01xxx sequences
 seq:ZCAM00*
 seq:ZCAM01*
+!seq:ZCAM00033       # Chal Rocks (sols 91-93): kept (Christian, 22 Oct)
+!seq:ZCAM00034       # Chal Rocks: kept
 
 # other Mastcam-Z observations
 seq:ZCAM08512        # Rockytop: 74 stereo frames
