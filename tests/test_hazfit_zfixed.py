@@ -190,3 +190,14 @@ def test_reset_cameras_to_start_and_backlash_hold():
     assert R.reset_cameras_to_start(rec, P, {"FL"}) == ["FL"]
     assert rec.cameras[1].params[0] == pytest.approx(2147.6) and rec.cameras[2].params[0] == pytest.approx(2145.4 * 1.012)
     assert "hold_cameras" in inspect.signature(backlash.backlash_stage).parameters
+
+
+def test_sites_duplicate_keys_are_errors(tmp_path):
+    from mppp.waypoints.sites import validate_site_table
+    t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
+    assert "delta_front_huge" in t["sites"]
+    assert not validate_site_table(ROOT / "src" / "mppp" / "data" / "sites.json")[0]
+    f = tmp_path / "sites.json"
+    f.write_text('{"sites": {"a": {"sols": [[1, 2]]}, "a": {"sols": [[3, 4]]}}, "groups": {}}', encoding="utf-8")
+    err, _ = validate_site_table(f)
+    assert any("'a' appears more than once" in e for e in err)

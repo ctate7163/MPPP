@@ -58,6 +58,9 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
   `chal_rocks_large`), block 18 Belva Crater by `belva_crater` (was `belva_crater_large`); `blocks_all` and the region
   groups follow. `waypoints.blocks.restructure` prefers the plain site over its `_large` / `_huge` form when both
   list the block.
+- **sites.json**: `delta_front_huge` was defined twice (the same sols, two notes; JSON kept the second silently) -
+  the second copy is removed. `mppp sites check` (`validate_site_table`) now reports a key defined twice in one
+  object as an error.
 - **Shipped exclusions** (`mppp/data/exclude_images.txt`, Christian): `seq:ZCAM05060`, `seq:ZCAM03017` and the sol 76
   exposure `*_0076_0673685057_000*` (every camera at that SCLK); `seq:ZCAM05062` was already listed.
 - **Figures**: the LMST histograms are laid out in reading order (first row = the first two blocks), lettered A, B,

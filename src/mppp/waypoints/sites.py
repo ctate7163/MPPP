@@ -143,8 +143,17 @@ def validate_site_table(path: Optional[PathLike] = None,
     f = Path(path) if path else SITES_FILE
     err: List[str] = []
     warn: List[str] = []
+    dup: List[str] = []
+
+    def _pairs(pairs):                     # JSON keeps the last of two equal keys silently (0.93.1: an error)
+        seen = set()
+        for k, _ in pairs:
+            if k in seen:
+                dup.append(k)
+            seen.add(k)
+        return dict(pairs)
     try:
-        d = json.loads(f.read_text(encoding="utf-8"))
+        d = json.loads(f.read_text(encoding="utf-8"), object_pairs_hook=_pairs)
     except FileNotFoundError:
         return [f"{f} does not exist"], []
     except json.JSONDecodeError as e:
@@ -154,9 +163,11 @@ def validate_site_table(path: Optional[PathLike] = None,
         hint = (" (a comma missing at the end of the line before, or one too many after the last site?)"
                 if "delimiter" in e.msg or "double quotes" in e.msg else "")
         return [f"not valid JSON at line {e.lineno}, column {e.colno}: {e.msg}{hint}{show}"], []
+    for k in sorted(set(dup)):
+        err.append(f"{k!r} appears more than once in one object (a site or group defined twice): only the last counts")
     sites = d.get("sites")
     if not isinstance(sites, dict) or not sites:
-        return ["no 'sites' object"], []
+        return err + ["no 'sites' object"], []
     ver = d.get("version")
     if ver is not None and (not isinstance(ver, int) or ver > SITES_FILE_VERSION):
         warn.append(f"file version {ver!r}: this MPPP reads site files up to version {SITES_FILE_VERSION}")
