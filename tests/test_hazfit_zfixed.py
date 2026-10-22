@@ -224,3 +224,9 @@ def test_excluded_station_is_not_selected_nor_an_anchor(tmp_path):
     st = B.site_waypoint_stats({"sols": [[460, 530]], "settings": {"EXCLUDE": ["S026D0282"]}},
                                B.waypoint_points(ROOT / "src" / "mppp" / "data" / "M20_waypoints.json"))
     assert st["n_nearby"] == 0 and st["max_waypoint_separation_m"] < 30
+
+
+def test_rochette_excludes_s006d2594():
+    from mppp.pipeline import load_settings
+    s = load_settings(site="rochette")
+    assert s.exclude == ["S006D2594"] and s.nearby_from_first_sol
