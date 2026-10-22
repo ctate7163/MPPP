@@ -9,12 +9,14 @@ calibration folder and the finished blocks, at 200 dpi by default:
                                     [--site-map maps|simple|none] [--blocks folder ...] [--frame image.png ...]
 
 Writes, into ``--out`` (default ``<MPPP>/Claude outputs``):
-  navcam_rig_trends_<tag>.png            rig trends 2x2 (mppp.calib.constrain.plot_rig_trends) - needs --study
+  navcam_rig_trends_<tag>.png            rig trends 2x2 (mppp.calib.constrain.plot_rig_trends) - needs --study;
+                                         _nolabels.png: the same without the block name at each point
   navcam_intrinsics_vs_temperature_<tag>.png   (plot_intrinsics_vs_temperature) - needs --study and the blocks
   lmst_histogram_<tag>.png + _by_site.csv      (mppp.waypoints.blocks.plot_lmst_histograms)
   station_maps_<tag>/<block>.png         the blocks' health/station_map.png (mppp.sfm.export.plot_camera_shifts)
   navcam_block_table_<tag>.md/.json      each block against the joint (mppp.calib.fit.navcam_block_table)
   zcam_rig_trends_<tag>.png              Mastcam-Z rig rotations and baseline vs sol and lens temperature - --zcam
+                                         (+ _nolabels.png)
   zcam_focus_lines_vs_temperature_<tag>.png   the blocks' focus lines vs lens temperature - --zcam
   site_map_<tag>.png                     the traverse map: figure 2 of ``mppp maps`` (crater | traverse, block table,
                                          1 m DTM where M20_DEMS has it); --site-map simple: plot_site_map
@@ -108,11 +110,17 @@ def main(argv=None) -> int:
         if rrf.is_file():
             rr = json.loads(rrf.read_text(encoding="utf-8"))
             th = {e: C.thermal_terms(inuse[e].get("thermal")) for e in ("NL", "NR")}
-            C.plot_rig_trends(rr, cons, rig_new["drift"], out / f"navcam_rig_trends_{tag}.png",
-                              cx_inuse_px_per_degC=th["NR"]["cx_px"] - th["NL"]["cx_px"], label=a.label,
-                              model_label=f"{tag} drift model", dpi=a.dpi)
+            for suffix, labels in (("", True), ("_nolabels", False)):     # 22 Oct: also without the block names
+                C.plot_rig_trends(rr, cons, rig_new["drift"], out / f"navcam_rig_trends_{tag}{suffix}.png",
+                                  cx_inuse_px_per_degC=th["NR"]["cx_px"] - th["NL"]["cx_px"], label=a.label,
+                                  model_label=f"{tag} drift model", dpi=a.dpi, point_labels=labels)
             tb = study / "thermal_bins.json"                 # 0.91: the tied joint's diagnostic block bins
-            bins = json.loads(tb.read_text(encoding="utf-8")) if tb.is_file() else (F.thermal_bin_rows(res) if res else [])
+            tj = study / "navcam_joint" / "tied_joint.json"  # 22 Oct: re-cut from the joint (>= 4 images, more cold bins)
+            if tj.is_file():
+                from mppp.calib.tied import figure_inputs
+                bins = figure_inputs(json.loads(tj.read_text(encoding="utf-8")))["bins"]
+            else:
+                bins = json.loads(tb.read_text(encoding="utf-8")) if tb.is_file() else (F.thermal_bin_rows(res) if res else [])
             pu = study / "pp_units.json"                     # 0.91: the pointing pass's per-block principal points
             pp_units = json.loads(pu.read_text(encoding="utf-8")) if pu.is_file() else None
             if bins:
@@ -154,8 +162,10 @@ def main(argv=None) -> int:
         zd = Path(a.zcam)
         zm = zd / "M2020_ZCAM034_focus_model.json"
         if zm.is_file():
-            C.plot_zcam_rig_trends(json.loads(zm.read_text(encoding="utf-8")), out / f"zcam_rig_trends_{tag}.png",
-                                   dpi=a.dpi, label=zd.name)
+            zmodel = json.loads(zm.read_text(encoding="utf-8"))
+            for suffix, labels in (("", True), ("_nolabels", False)):
+                C.plot_zcam_rig_trends(zmodel, out / f"zcam_rig_trends_{tag}{suffix}.png", dpi=a.dpi, label=zd.name,
+                                       point_labels=labels)
         bl = zd / "block_lines.json"
         if bl.is_file():
             sys.path.insert(0, str(HERE / "studies" / "calibration"))

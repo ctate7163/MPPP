@@ -57,6 +57,10 @@ EARLY_TERMS = ("fx", "fy", "cx", "cy")                                        # 
 ANGLES = ("pitch", "yaw", "roll")                                             # rotation-vector x, y, z
 TIE_SIGMA = {"fx": 1e-3, "fy": 1e-3, "cx": 1e-3, "cy": 1e-3, "k": 1e-7, "q": 1e-8}
 BIN_DEG = 2.0                    # fine bins; within a bin the images' own temperatures count (keypoint map)
+DIAG_BIN_MIN_IMAGES = 8          # 22 Oct: the diagnostic pass merges a block's adjacent fine bins (per era) until
+DIAG_BIN_MAX_DEG = 10.0          #   each eye has this many images, at most this wide - the cold morning images
+                                 #   (below -30 degC) are spread 1-3 per 2 degC bin and were all under the figure cut
+FIG_BIN_MIN_IMAGES = 4           # the bin cameras drawn in the intrinsics figure (the rig epochs keep 8)
 POINTS_PER_BLOCK = 8000          # Christian, 20 Oct: 8000 for the pipeline passes
 MAX_SPAN_SOLS = 50.0                 # rig epochs of the joint: at most 50 sols (doubled 20 Oct; was 25)
 KNOTS_TESTED = tuple(float(k) for k in np.linspace(200.0, 400.0, 25))   # the pitch transitions after the BA (20 Oct)
@@ -183,17 +187,65 @@ def frame_table(rec, proj, idx: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
     return frames
 
 
+def merge_bins(frames: Dict[Any, Dict[str, Any]], eye_counts: Dict[Any, Dict[str, int]], min_images: int,
+               max_deg: float, bin_deg: float = BIN_DEG) -> int:
+    """Relabel ``frames[k]["bin"]`` so that, within each (scape, era), adjacent fine bins (ascending temperature)
+    are merged until every eye with images in the group has ``min_images`` (``eye_counts[k]``: {eye: images} of
+    frame k), a group spanning at most ``max_deg``; a short remainder joins the group below it when that stays
+    within ``max_deg`` (so does a thin group cut short by the width).  A merged group keeps the label of its coldest fine bin.  Returns the number of fine bins
+    folded into another."""
+    groups: Dict[tuple, Dict[int, List[Any]]] = {}
+    for k, f in frames.items():
+        groups.setdefault((f["scape"], f["early"]), {}).setdefault(f["bin"], []).append(k)
+    width = max(1, int(round(max_deg / bin_deg)))
+    folded = 0
+
+    def enough(ks):
+        c: Dict[str, int] = {}
+        for k in ks:
+            for e, n in eye_counts[k].items():
+                c[e] = c.get(e, 0) + n
+        return bool(c) and min(c.values()) >= min_images
+
+    for bins in groups.values():
+        out: List[List[int]] = []
+        cur: List[int] = []
+        for b in sorted(bins):
+            if cur and b - cur[0] + 1 > width:               # too wide: a thin group joins the one below if it fits
+                if out and not enough([k for x in cur for k in bins[x]]) and cur[-1] - out[-1][0] + 1 <= width:
+                    out[-1] += cur
+                else:
+                    out.append(cur)
+                cur = []
+            cur.append(b)
+            if enough([k for x in cur for k in bins[x]]):
+                out.append(cur); cur = []
+        if cur:
+            if out and cur[-1] - out[-1][0] + 1 <= width:
+                out[-1] += cur
+            else:
+                out.append(cur)
+        for grp in out:
+            for b in grp:
+                for k in bins[b]:
+                    frames[k]["bin"] = grp[0]
+            folded += len(grp) - 1
+    return folded
+
+
 def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_deg: float = BIN_DEG,
                         early_sol: Optional[float] = None, max_span: float = MAX_SPAN_SOLS,
                         gap: float = 50.0, breaks: Optional[Sequence[float]] = None, per_block: bool = False,
-                        pointing: bool = False, passthrough: bool = False):
+                        pointing: bool = False, passthrough: bool = False, merge_min_images: int = 0,
+                        merge_max_deg: float = DIAG_BIN_MAX_DEG):
     """A copy of a merged reconstruction (:func:`mppp.calib.joint.merge_scapes`: cameras 1 NL, 2 NR; rigs 1 stereo,
     2 NR alone, 3 NL alone) with one camera per (eye, temperature bin, era) - per (block, eye, bin, era) with
     ``per_block`` (the diagnostic pass) - and one rig per (block, rig epoch, bin, era), every unit started at the
     law of ``st``.  Returns (rec, proj, units): units {"cameras": {cid: {...}}, "rigs": {rid: {...}}}.
     ``passthrough`` (the Mastcam-Z joint): the frames of other cameras (merged with ``include_zcam``) are copied as
     they are - their cameras renumbered after the Navcam units (``units["passthrough_cameras"]`` {old: new}), one
-    rig each, the same image ids, their observations kept in the points."""
+    rig each, the same image ids, their observations kept in the points.  ``merge_min_images`` (the diagnostic
+    pass): a block's thin adjacent bins merged (:func:`merge_bins`, at most ``merge_max_deg`` wide)."""
     import pycolmap
     from ..sfm.project import navcam_distortion_terms
     early_sol = float(st.get("early_sol", EARLY_SOL) if early_sol is None else early_sol)
@@ -216,6 +268,15 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
         f["early"] = bool(f["sol"] < early_sol)
         f["epoch"] = ep_of[k]
     eye_of_cam = {1: "NL", 2: "NR"}
+    if merge_min_images and per_block and not pointing:
+        counts = {k: {} for k in frames}
+        for k, f in frames.items():
+            for i in f["images"]:
+                e = eye_of_cam[int(rec.images[i].camera_id)]
+                counts[k][e] = counts[k].get(e, 0) + 1
+        nf = merge_bins(frames, counts, merge_min_images, merge_max_deg, bin_deg)
+        log.info(f"diagnostic bins: {nf} thin {bin_deg:g} degC bins merged into their neighbours "
+                 f"(>= {merge_min_images} images per eye, <= {merge_max_deg:g} degC)")
 
     def cam_key(f, eye):
         return (f["scape"] if per_block else "", eye, f["bin"], f["early"])
@@ -839,7 +900,7 @@ def diagnostic_pass(rec0, proj0, idx: Dict[str, Any], st: Dict[str, Any], g: Dic
     stl = dict(st, G={"NL": g["G_NL"], "NR": g["G_NR"]}, S={"NL": g["S_NL"], "NR": g["S_NR"]},
                E={"NL": g["E_NL"], "NR": g["E_NR"]}, Q0=g["Q0"], D=g["D"], H=g["H"])
     rec, proj, units = tied_reconstruction(rec0, proj0, idx, stl, bin_deg=bin_deg, early_sol=early_sol,
-                                           max_span=max_span, per_block=True)
+                                           max_span=max_span, per_block=True, merge_min_images=DIAG_BIN_MIN_IMAGES)
     ba, g2, stats = adjust_tied(rec, proj, idx, stl, units, hold=(), tie_rigs=False, tie_cameras=False,
                                 iterations=iterations, covariance=False, passes=1, verbose=verbose, refine_pp=False)
     rows = unit_rows(rec, proj, idx, units, stl, g)
@@ -1108,12 +1169,14 @@ def _json_default(o):
 
 
 # ====================================================================================== the figures
-def figure_inputs(res: Dict[str, Any], min_images: int = 8) -> Dict[str, Any]:
+def figure_inputs(res: Dict[str, Any], min_images: int = 8, bin_min_images: Optional[int] = None) -> Dict[str, Any]:
     """What the refined figures take, from a :func:`fit_tied` result with its diagnostic pass: ``consensus`` (the
     global solution in the shape of the profile joint's ``consensus.json``: ``NL``/``NR`` params, ``thermal.axis_ppm``
     and ``pp_slopes``), ``rig_residuals`` (the diagnostic rig epochs about the trend: ``blocks`` rows with
     yaw/pitch/roll_mdeg, ``fits`` vs T and sol) and ``bins`` (the diagnostic block-bin cameras {eye, block, T, n,
-    fx, fy, cx, cy, k1}) - the per-block, per-bin and per-sol values drawn about the one solution."""
+    fx, fy, cx, cy, k1}; >= ``bin_min_images`` images, default the smaller of :data:`FIG_BIN_MIN_IMAGES` and
+    ``min_images``; the rig epochs and pointing units >= ``min_images``) - the
+    per-block, per-bin and per-sol values drawn about the one solution."""
     from .fit import ols
     from ..waypoints.sites import site_label
     cons: Dict[str, Any] = {"method": "tied", "T0_degC": res["T0_degC"], "blocks": {b: None for b in res["blocks"]}}
@@ -1145,8 +1208,9 @@ def figure_inputs(res: Dict[str, Any], min_images: int = 8) -> Dict[str, Any]:
                      "vs_T": vt, "vs_sol": vs}
     rr = {"blocks": rows, "fits": fits, "source": "tied joint diagnostic pass (globals held, epochs free)"}
     bins = []
+    bin_min_images = min(min_images, FIG_BIN_MIN_IMAGES) if bin_min_images is None else bin_min_images
     for c in d.get("cameras") or []:
-        if c.get("images", 0) < min_images or not c.get("scape"):
+        if c.get("images", 0) < bin_min_images or not c.get("scape"):
             continue
         p = c["params"]
         bins.append({"eye": c["eye"], "block": site_label(c["scape"]), "key": c["key"], "T": c["T"], "n": c["images"],

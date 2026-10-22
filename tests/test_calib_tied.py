@@ -172,3 +172,20 @@ def test_isotropic_focal_slope(tmp_path):
     res3 = T.globals_result(st, g3, ba3, units3)
     assert not res3["isotropic_f_slope"]
     assert 1 not in ((ba3.get("extra") or {}).get("held") or {}).get("S_NL", [])
+
+
+def test_diagnostic_bins_merge_thin_cold_bins():
+    """22 Oct (Christian): the cold morning images (1-3 per 2 degC bin of a block) were all below the figure cut;
+    the diagnostic pass merges a block's adjacent thin bins until each eye has 8 images, at most 10 degC wide."""
+    from mppp.calib.tied import merge_bins
+    frames, counts = {}, {}
+    k = 0
+    for b, n in ((-14, 2), (-13, 1), (-12, 3), (-11, 2), (-10, 9), (-9, 1), (-2, 10), (0, 3)):
+        for _ in range(n):
+            frames[k] = {"scape": "a", "early": False, "bin": b}; counts[k] = {"NL": 1, "NR": 1}; k += 1
+    frames[k] = {"scape": "b", "early": False, "bin": -14}; counts[k] = {"NL": 1}
+    merge_bins(frames, counts, 8, 10.0, 2.0)
+    lab = [f["bin"] for f in frames.values() if f["scape"] == "a"]
+    assert set(lab) == {-14, -10, -2}                    # -14..-11 (8 images), -10..-9, then -2 and 0 together
+    assert lab.count(-14) == 8 and lab.count(-10) == 10 and lab.count(-2) == 13
+    assert frames[k]["bin"] == -14                       # other blocks are untouched

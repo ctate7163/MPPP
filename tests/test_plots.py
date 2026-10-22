@@ -136,3 +136,38 @@ def test_rig_drift_fit_free_knot(tmp_path):
     a0 = rig_angles(C.rig_at(rig, sol=0.0)[0]); a1 = rig_angles(C.rig_at(rig, sol=1000.0)[0])
     assert a0["pitch_mdeg"] == pytest.approx(m["pitch_at_sol0_mdeg"], abs=0.05)
     assert a1["pitch_mdeg"] - a0["pitch_mdeg"] == pytest.approx(0.006 * 1000 + 0.014 * 400, abs=1.0)
+
+
+def test_panel_letters_limits_and_unlabelled_versions(tmp_path, monkeypatch):
+    """22 Oct (Christian): every Navcam and Mastcam-Z subplot lettered A, B ...; rig trends pitch -10..30, yaw and
+    roll -20..20 mdeg, the stereo cx panel -20..-17 px; make_figures also writes the plots without point labels."""
+    from mppp.calib import constrain as C, fit as F, models as M
+    seen = []
+    orig = C.panel_letters
+    def spy(axs, **kw):
+        orig(axs, **kw)
+        seen.append([(t.get_text(), ax.get_ylim(), len(ax.texts)) for ax in np.ravel(axs) if ax.axison
+                     for t in ax.texts if t.get_fontweight() == "bold"])
+    monkeypatch.setattr(C, "panel_letters", spy)
+    rr = {"blocks": [{"block": f"Fake{k} [sols 90-110]", "site": f"Fake{k}", "sol_median": 100.0 + 300 * k,
+                      "T_median_degC": -18.0 - 3 * k, "images": 12, "yaw_mdeg": 1.0 + k, "pitch_mdeg": -0.5, "roll_mdeg": 2.0}
+                     for k in range(4)],
+          "fits": {a: {"vs_sol": {"slope": 0.1, "se": 0.5, "z": 0.2}, "vs_T": {"slope": 0.05, "se": 0.1, "z": 0.5}}
+                   for a in ("pitch", "yaw", "roll")}}
+    nl, nr = M.load_camera("N", "L"), M.load_camera("N", "R")
+    cons = {"NL": dict(zip(nl["param_names"], nl["params"])), "NR": dict(zip(nr["param_names"], nr["params"])),
+            "thermal": {"axis_ppm": {"NL": [40.5, 46.9], "NR": [38.9, 46.2]}, "pp_slopes": {"NL": [0.013, 0.0], "NR": [-0.041, 0.0]}}}
+    drift = M.load_rig("N")["drift"]
+    a = C.plot_rig_trends(rr, cons, drift, tmp_path / "rig.png")
+    b = C.plot_rig_trends(rr, cons, drift, tmp_path / "rig_nolabels.png", point_labels=False)
+    assert a.stat().st_size != b.stat().st_size
+    lab, nolab = seen
+    assert [x[0] for x in lab] == list("ABCD")
+    assert [x[1] for x in lab] == [(-10.0, 30.0), (-20.0, 20.0), (-20.0, 20.0), (-20.0, -17.0)]   # pitch, roll, yaw, stereo cx
+    assert all(n1 > n2 for (_, _, n1), (_, _, n2) in zip(lab, nolab))      # the block names are gone
+    rows = [{"block": f"mars2020_blk{k}", "sol": 100.0 + 200 * k, "T_optics_degC": -10.0 + 4 * k, "yaw_mdeg": 0.3 * k,
+             "pitch_mdeg": -0.2 * k, "roll_mdeg": 0.1, "dbaseline_mm": 0.05 * k} for k in range(4)]
+    zm = {"rig": {"residuals": {"per_block": rows}, "per_block": [], "baseline_m": 0.2428}}
+    C.plot_zcam_rig_trends(zm, tmp_path / "z.png")
+    C.plot_zcam_rig_trends(zm, tmp_path / "z_nolabels.png", point_labels=False)
+    assert [x[0] for x in seen[2]] == list("ABCDEFGH") and len(seen[3]) == 8

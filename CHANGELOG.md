@@ -2,6 +2,28 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.92.3 — 2026-10-22
+
+- **Figures** (Christian, 22 Oct): every subplot of the Navcam and Mastcam-Z figures is lettered A, B, C ...
+  (`constrain.panel_letters`: rig trends, intrinsics vs temperature, Mastcam-Z rig trends; the focus lines in
+  `studies/calibration/zcam_lines.py`).  Navcam rig trends: pitch -10 to +30, yaw and roll -20 to +20 mdeg
+  (`RIG_TREND_YLIMS`), the stereo cx panel's primary axis -20 to -17 px (`STEREO_CX_YLIM`); points outside an axis
+  are counted on the panel.  `make_figures` also writes `navcam_rig_trends_<tag>_nolabels.png` and
+  `zcam_rig_trends_<tag>_nolabels.png` (no block name at the points; `point_labels=False`).
+- **More cold points in the intrinsics figure.**  No bin camera below -30 °C was drawn: the cold morning images
+  are spread 1-3 per 2 °C bin of a block, and the figure took bins of >= 8 images (2 of 106 cold bin cameras).
+  The figure now takes bins of >= 4 images (`tied.FIG_BIN_MIN_IMAGES`; `make_figures` re-cuts them from the
+  study's `navcam_joint/tied_joint.json`, so the promoted 20 Oct joint gives 263 bins, 24 below -30 °C, down to
+  -47 °C, without a rerun), and the next joint's diagnostic pass merges a block's adjacent thin 2 °C bins until each
+  eye has 8 images, at most 10 °C wide (`tied.merge_bins`, `DIAG_BIN_MIN_IMAGES`, `DIAG_BIN_MAX_DEG`; simulated on
+  the 20 Oct joint: about 42 bins below -30 °C).  The global fit's bins are unchanged.
+- **Navcam rig trends layout:** pitch (A), roll (B, upper right), yaw (C), stereo cx (D); the sol axes read
+  "sol epoch".
+- **New unofficial blocks in `sites.json`** (Christian, 22 Oct): `tatarka` (sols 1690-1697, S081D3608) and
+  `crocodile_bridge` (sols 1704-1706, S082D2786-D2866), both with a Mastcam-Z 34 mm 360 (`zcam: [34]`);
+  `seitah_huge` (sols 201-340 without the waypoint S009D1064: site setting `EXCLUDE`); `delta_front_huge` (sols
+  408-708, 127 waypoints, 843 m across: prior-overlap pairs).  None is in a group yet.
+
 ## 0.92.2 — 2026-10-22
 
 - **One shipped exclusion list instead of movie filters** (`src/mppp/data/exclude_images.txt`, read by

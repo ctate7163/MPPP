@@ -187,9 +187,10 @@ def consensus_lines(cons: Sequence[Dict[str, Any]]) -> List[str]:
 
 
 def plot_block_lines(rows: Sequence[Dict[str, Any]], out: Optional[PathLike] = None, temperature: str = "T_optics_degC",
-                     figsize=(13, 9), dpi: int = 200):
+                     figsize=(13, 9), dpi: int = 200, point_labels: bool = True):
     """Offset a (top) and slope b (bottom) of every focus line against the block lens temperature, one column per
-    parameter, one colour per eye and zoom, filled for the backlash state, open for the regular state."""
+    parameter, one colour per eye and zoom, filled for the backlash state, open for the regular state.  Panels
+    lettered A, B ...; ``point_labels=False`` leaves out the block name at every point."""
     import matplotlib.pyplot as plt
     fig, axs = plt.subplots(2, len(PARAMS), figsize=figsize, squeeze=False)
     groups = sorted({r["group"] for r in rows})
@@ -205,8 +206,9 @@ def plot_block_lines(rows: Sequence[Dict[str, Any]], out: Optional[PathLike] = N
                 ax.errorbar(r[temperature], r[k], yerr=sd if sd else None, fmt="o",
                             mfc=colours[r["group"]] if fill else "none", mec=colours[r["group"]], ecolor=colours[r["group"]],
                             ms=6, alpha=0.9)
-                ax.annotate(r["block"][:10], (r[temperature], r[k]), fontsize=6, alpha=0.6, xytext=(3, 3),
-                            textcoords="offset points")
+                if point_labels:
+                    ax.annotate(r["block"][:10], (r[temperature], r[k]), fontsize=6, alpha=0.6, xytext=(3, 3),
+                                textcoords="offset points")
             ax.set_title(f"{pn}: {'offset at the reference focus (px)' if k == 'a' else 'slope (px / count)'}", fontsize=9)
             ax.set_xlabel({"T_optics_degC": "block Mastcam-Z lens temperature (HEAD_HTR) degC",
                            "T_fpa_degC": "block focal-plane temperature degC",
@@ -215,6 +217,8 @@ def plot_block_lines(rows: Sequence[Dict[str, Any]], out: Optional[PathLike] = N
     handles = [plt.Line2D([], [], marker="o", ls="", color=colours[g], label=g) for g in groups]
     handles += [plt.Line2D([], [], marker="o", ls="", mfc="k", mec="k", label="backlash state"),
                 plt.Line2D([], [], marker="o", ls="", mfc="none", mec="k", label="regular state")]
+    for n, ax in enumerate(axs.ravel()):           # panel letters A, B ... (Christian, 22 Oct)
+        ax.text(-0.02, 1.0, chr(ord("A") + n), transform=ax.transAxes, ha="right", va="bottom", fontsize=12, fontweight="bold")
     fig.legend(handles=handles, loc="upper center", ncol=min(len(handles), 6), fontsize=8)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     if out:
