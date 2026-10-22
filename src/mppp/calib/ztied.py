@@ -12,6 +12,10 @@ blocks of a zoom, with the Navcam held at the models in use and the Mastcam-Z fo
   b (focus - ref) with one slope b per eye (the regular state's slope b / regular ratio), k1, k2, p1, p2 one value
   per eye, ZL's principal point and ZR's cx held (pinned), ZR's cy = its pin + b_cy (focus - ref).  One Mastcam-Z
   rig (right from left) for all blocks: its rotation refined, its translation (the CAHV baseline) held.
+* **Backlash states** (0.93.2) - each state its own camera with the pose shared: the regular-state bins get the
+  principal point pin + (d_cx_regular, d_cy_regular) per eye, so the state's boresight change goes into the camera,
+  not into the frame rotation or the rig (chal_rocks, 22 Oct: the only block with regular images, and the outlier
+  of the per-block rigs, pitch -29 / yaw -12 mdeg).
 * **Diagnostic pass** - the global law held, each block's bins (fx, fy) and its own rig free: the per-block focus
   lines and the per-block rig rotations about the joint - the sol and temperature trends of the rig.
 
@@ -37,7 +41,14 @@ log = logging.getLogger("mppp.calib")
 PathLike = Union[str, Path]
 
 ZOOM = 34
-GLOBAL_TERMS = ("a_fx_backlash", "a_fy_backlash", "a_fx_regular", "a_fy_regular", "b", "k1", "k2", "p1", "p2", "b_cy")
+GLOBAL_TERMS = ("a_fx_backlash", "a_fy_backlash", "a_fx_regular", "a_fy_regular", "b", "k1", "k2", "p1", "p2", "b_cy",
+                "d_cx_regular", "d_cy_regular")
+NG = len(GLOBAL_TERMS)
+# 0.93.2 (Christian, 22 Oct): each backlash state is its own camera - the regular state has its own principal point
+# (d_cx_regular, d_cy_regular from the backlash state's) - with the pose shared, so that the state does not move the
+# frame rotation or the Mastcam-Z rig.  The offset is observable through the exposures in which this eye is regular
+# and the other eye in the backlash state (the other eye and the rig fix the pose); with fewer it is held
+MIN_MIXED_EXPOSURES = 5
 TIE_SIGMA_Z = {"f": 1e-3, "k": 1e-7, "p": 1e-8, "cy": 1e-3}       # px; unitless - the ties are effectively exact
 NAV_POINTS_PER_BLOCK = 8000
 Z_POINTS_PER_BLOCK = 8000
@@ -53,7 +64,7 @@ def _state(spec: Dict[str, Any], key: str) -> str:
 
 
 def start_globals(model: Dict[str, Any], zoom: int = ZOOM) -> Dict[str, Any]:
-    """The global terms at the focus model in use: per eye the 10 :data:`GLOBAL_TERMS`, the reference focus, the
+    """The global terms at the focus model in use: per eye the :data:`GLOBAL_TERMS`, the reference focus, the
     regular ratio, pp0, and the rig (R, t right from left)."""
     out: Dict[str, Any] = {"eyes": {}}
     for g in zoom_groups(zoom):
@@ -72,7 +83,8 @@ def start_globals(model: Dict[str, Any], zoom: int = ZOOM) -> Dict[str, Any]:
         dn, dp = list(dist.get("names") or []), list(dist.get("params") or [])
         dv = {n: float(dp[dn.index(n)]) if n in dn else 0.0 for n in ("k1", "k2", "p1", "p2")}
         bcy = float((gm.get("pp") or {}).get("cy_px_per_count") or 0.0) if g.startswith("ZR") else 0.0
-        out["eyes"][g] = {"G": np.array([afx, afy, rfx, rfy, b, dv["k1"], dv["k2"], dv["p1"], dv["p2"], bcy], float),
+        off = [float(x) for x in (gm.get("regular_pp_offset_px") or [0.0, 0.0])][:2]
+        out["eyes"][g] = {"G": np.array([afx, afy, rfx, rfy, b, dv["k1"], dv["k2"], dv["p1"], dv["p2"], bcy] + off, float),
                           "ref": float(gm.get("reference_focus", ln.get("reference_focus", 600.0))), "ratio": ratio,
                           "pp0": list(gm.get("pp0_px") or [])}
     rig = model.get("rig") or {}
@@ -115,13 +127,25 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
         e = sg["eyes"][g]
         dF = (float(foc) - e["ref"]) if foc is not None else 0.0
         p = np.asarray(rec.cameras[new].params, float)
-        zunits[new] = {"key": name, "scape": z["scape"], "group": g, "eye": g[:2], "state": _state(spec, z["key"]),
+        stt = _state(spec, z["key"])
+        reg = stt == "regular"
+        G = e["G"]
+        zunits[new] = {"key": name, "scape": z["scape"], "group": g, "eye": g[:2], "state": stt,
                        "focus": None if foc is None else float(foc), "dF": dF,
-                       # ZR cy's pin: the model's pp0 (full-frame pixels, as the padded frames), else from the bin
-                       "c_cy": float(e["pp0"][1]) if len(e["pp0"]) == 2 else float(p[_CY] - e["G"][9] * dF)}
-        held = ["cx", "cy", "k3", "k4", "k5", "k6"]
+                       # the pins: the model's pp0 (full-frame pixels, as the padded frames), else from the bin
+                       "c_cx": float(e["pp0"][0]) if len(e["pp0"]) == 2 else float(p[_CX] - (G[10] if reg else 0.0)),
+                       "c_cy": float(e["pp0"][1]) if len(e["pp0"]) == 2 else float(p[_CY] - G[9] * dF
+                                                                                    - (G[11] if reg else 0.0))}
+        if reg:                                              # 0.93.2: the regular state's own principal point
+            u = zunits[new]
+            p[_CX] = u["c_cx"] + G[10]
+            p[_CY] = u["c_cy"] + G[9] * dF + G[11]
+            rec.cameras[new].params = p
+            held, free = ["k3", "k4", "k5", "k6"], ["cx", "cy"]
+        else:
+            held, free = ["cx", "cy", "k3", "k4", "k5", "k6"], (["cy"] if g.startswith("ZR") else [])
         spec.update({"model": rec.cameras[new].model.name, "params": list(map(float, p)), "group": g,
-                     "fixed_params": held, "free_params": ["cy"] if g.startswith("ZR") else []})
+                     "fixed_params": held, "free_params": free})
         proj.cameras[name] = spec
         db[name] = int(new)
     proj.settings = dict(proj.settings)
@@ -129,12 +153,31 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
     proj.settings["zcam_virtual_rig"] = {f"Z{zoom:03d}": {"R_sensor_from_ref": sg["rig"]["R"].tolist(),
                                                           "t_sensor_from_ref": sg["rig"]["t"].tolist(), "hold": False}}
     zcams = set(zunits)
+    sg["mixed"] = mixed_exposures(proj.images, zunits)
     for r in proj.images:                        # rows of other zooms / cameras out of the problem: deregistered
         if int(r.get("camera_id", 0)) in units["passthrough_cameras"].values() and int(r["camera_id"]) not in zcams:
             fid = rec.images[int(r["image_id"])].frame_id
             if fid in rec.frames and rec.frames[fid].has_pose:
                 rec.deregister_frame(fid)
     return rec, proj, idx, st, units, zunits, sg
+
+
+def mixed_exposures(images: Sequence[Dict[str, Any]], zunits: Dict[int, Dict[str, Any]]) -> Dict[str, int]:
+    """Per eye group, the exposures (block, SCLK) in which this eye is in the regular state and the other eye of the
+    same zoom in the backlash state - what makes the regular state's principal point observable (0.93.2)."""
+    ex: Dict[Tuple[Any, Any], Dict[str, str]] = {}
+    for r in images:
+        u = zunits.get(int(r.get("camera_id", -1)))
+        if u is None:
+            continue
+        ex.setdefault((u["scape"], r.get("sclk_key")), {})[u["group"]] = u["state"]
+    out = {g: 0 for g in {u["group"] for u in zunits.values()}}
+    for v in ex.values():
+        for g, st in v.items():
+            other = ("ZR" if g.startswith("ZL") else "ZL") + g[2:]
+            if st == "regular" and v.get(other) == "backlash":
+                out[g] += 1
+    return out
 
 
 def _navcam_globals(st: Dict[str, Any]) -> Dict[str, np.ndarray]:
@@ -164,17 +207,26 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 ratio = float(sg["eyes"][eye]["ratio"]) if reg else 1.0
                 rows, sig = [], []
                 for pi, gi in ((_FX, 2 if reg else 0), (_FY, 3 if reg else 1)):
-                    a = np.zeros(12 + 10); a[pi] = 1.0; a[12 + gi] = -1.0; a[12 + 4] = -u["dF"] / ratio
+                    a = np.zeros(12 + NG); a[pi] = 1.0; a[12 + gi] = -1.0; a[12 + 4] = -u["dF"] / ratio
                     rows.append(a); sig.append(TIE_SIGMA_Z["f"])
                 for pi, gi, s_ in ((_K1, 5, "k"), (_K2, 6, "k"), (_P1, 7, "p"), (_P2, 8, "p")):
-                    a = np.zeros(12 + 10); a[pi] = 1.0; a[12 + gi] = -1.0
+                    a = np.zeros(12 + NG); a[pi] = 1.0; a[12 + gi] = -1.0
                     rows.append(a); sig.append(TIE_SIGMA_Z[s_])
-                prob.add_residual_block(LinearTie(np.array(rows), np.array(sig), [12, 10]), None, [blk, g[eye]])
-                if eye.startswith("ZR"):                     # cy = its pin + b_cy (focus - ref)
+                prob.add_residual_block(LinearTie(np.array(rows), np.array(sig), [12, NG]), None, [blk, g[eye]])
+                if reg:                                      # 0.93.2: cx = pin + d_cx, cy = pin + b_cy dF + d_cy
+                    c0 = np.array([u["c_cx"], u["c_cy"]], float)
+                    keep.append(c0)
+                    a = np.zeros((2, 12 + NG + 2))
+                    a[0, _CX] = 1.0; a[0, 12 + 10] = -1.0; a[0, 12 + NG] = -1.0
+                    a[1, _CY] = 1.0; a[1, 12 + 9] = -u["dF"]; a[1, 12 + 11] = -1.0; a[1, 12 + NG + 1] = -1.0
+                    prob.add_residual_block(LinearTie(a, np.array([TIE_SIGMA_Z["cy"]] * 2), [12, NG, 2]), None,
+                                            [blk, g[eye], c0])
+                    prob.set_parameter_block_constant(c0)
+                elif eye.startswith("ZR"):                   # cy = its pin + b_cy (focus - ref)
                     c0 = np.array([u["c_cy"]], float)
                     keep.append(c0)
-                    a = np.zeros((1, 12 + 10 + 1)); a[0, _CY] = 1.0; a[0, 12 + 9] = -u["dF"]; a[0, 22] = -1.0
-                    prob.add_residual_block(LinearTie(a, np.array([TIE_SIGMA_Z["cy"]]), [12, 10, 1]), None,
+                    a = np.zeros((1, 12 + NG + 1)); a[0, _CY] = 1.0; a[0, 12 + 9] = -u["dF"]; a[0, 12 + NG] = -1.0
+                    prob.add_residual_block(LinearTie(a, np.array([TIE_SIGMA_Z["cy"]]), [12, NG, 1]), None,
                                             [blk, g[eye], c0])
                     prob.set_parameter_block_constant(c0)
                 n += 1
@@ -184,7 +236,9 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 continue
             ix = set()
             if not has_reg[eye]:
-                ix |= {2, 3}                                 # no regular-state bin: the regular offsets stay
+                ix |= {2, 3, 10, 11}                         # no regular-state bin: the regular offsets stay
+            elif int((sg.get("mixed") or {}).get(eye, 0)) < MIN_MIXED_EXPOSURES:
+                ix |= {10, 11}                               # 0.93.2: the regular pp not observable apart from the pose
             if not eye.startswith("ZR"):
                 ix.add(9)                                    # ZL: its principal point is the reference (pinned)
             for h in (hold.get(eye, ()) if isinstance(hold, dict) else hold):     # {eye: terms} or terms for both
@@ -332,6 +386,7 @@ def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
                             "sd": None if sd is None else dict(zip(GLOBAL_TERMS, map(float, sd))),
                             "held": [GLOBAL_TERMS[i] for i in held.get(eye, [])], "reference_focus": e["ref"],
                             "ratio_start": e["ratio"], "pp0_px": e["pp0"],
+                            "mixed_exposures": int((sg.get("mixed") or {}).get(eye, 0)),
                             "bins": sum(1 for u in zunits.values() if u["group"] == eye),
                             "regular_bins": sum(1 for u in zunits.values() if u["group"] == eye and u["state"] == "regular")}
     return out
@@ -388,7 +443,10 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
         p[_FX] = G[2 if reg else 0] + G[4] * u["dF"] / ratio
         p[_FY] = G[3 if reg else 1] + G[4] * u["dF"] / ratio
         p[_K1], p[_K2], p[_P1], p[_P2] = G[5], G[6], G[7], G[8]
-        if u["group"].startswith("ZR"):
+        if reg:                                         # 0.93.2: the regular state's principal point
+            p[_CX] = u["c_cx"] + G[10]
+            p[_CY] = u["c_cy"] + G[9] * u["dF"] + G[11]
+        elif u["group"].startswith("ZR"):
             p[_CY] = u["c_cy"] + G[9] * u["dF"]
         rec.cameras[cid].params = p
         spec = proj.cameras[u["key"]]
@@ -708,7 +766,10 @@ def describe(res: Dict[str, Any]) -> List[str]:
         out.append(f"{eye}: fx {f('a_fx_backlash')}, fy {f('a_fy_backlash')} px at focus {e['reference_focus']:g} "
                    f"(backlash), slope {f('b', 5)} px/count; k1 {f('k1', 4)}, k2 {f('k2', 4)}, p1 {tm['p1']:+.2e}, "
                    f"p2 {tm['p2']:+.2e}" + (f"; cy slope {f('b_cy', 5)} px/count" if eye.startswith("ZR") else "")
-                   + f"; {e['bins']} bins ({e['regular_bins']} regular)")
+                   + f"; {e['bins']} bins ({e['regular_bins']} regular)"
+                   + ("" if "d_cx_regular" in e.get("held", []) else
+                      f"; regular-state principal point {f('d_cx_regular')}, {f('d_cy_regular')} px from the backlash "
+                      f"state's ({e.get('mixed_exposures', 0)} exposures with the other eye in backlash)"))
     r = res.get("rig") or {}
     z = res.get("zcam") or {}
     out.append(f"Mastcam-Z rig: {r.get('change_mdeg', float('nan')):.1f} mdeg from the rig in use, baseline "
@@ -755,6 +816,20 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
             bk["cy"] = {"a": float(pp0[1]), "b": tm["b_cy"], "sd_b": sdv("b_cy"), "form": "pinned_slope"}
         reg = {pn: {"a": v["a"] / (ratio if pn in ("fx", "fy") else 1.0), "b": v["b"] / (ratio if pn in ("fx", "fy") else 1.0),
                     "derived": f"backlash / {ratio:.5f}" if pn in ("fx", "fy") else "backlash"} for pn, v in bk.items()}
+        # 0.93.2: the regular state's own principal point (pp0 + the offset; the pose is shared with the backlash state)
+        doff = [float(tm.get("d_cx_regular", 0.0)), float(tm.get("d_cy_regular", 0.0))]
+        off_held = "d_cx_regular" in e["held"]
+        if len(pp0) == 2:
+            reg["cx"] = {"a": float(pp0[0]) + doff[0], "b": 0.0, "derived": "pp0 + the regular-state offset"}
+            reg["cy"] = {"a": float(pp0[1]) + doff[1], "b": float(tm["b_cy"]) if eye.startswith("ZR") else 0.0,
+                         "derived": "pp0 + the regular-state offset" + (" (and the cy slope)" if eye.startswith("ZR") else "")}
+        gm["regular_pp_offset_px"] = doff
+        gm["regular_pp_offset"] = {"sd_px": [sdv("d_cx_regular"), sdv("d_cy_regular")], "held": off_held,
+                                   "mixed_exposures": int(e.get("mixed_exposures") or 0),
+                                   "note": ("held: fewer than %d exposures with this eye regular and the other in the "
+                                            "backlash state" % MIN_MIXED_EXPOSURES) if off_held else
+                                           "fitted: the regular state's principal point minus the backlash state's "
+                                           "(the pose shared: the other eye and the rig fix it)"}
         gm["lines"] = {"backlash": {pn: {k: v for k, v in x.items() if k in ("a", "b", "form")} for pn, x in bk.items()},
                        "regular": {pn: {k: v for k, v in x.items() if k in ("a", "b", "derived")} for pn, x in reg.items()},
                        "reference_focus": ref}

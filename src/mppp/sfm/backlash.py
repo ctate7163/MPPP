@@ -614,13 +614,27 @@ def image_states(groups: Sequence[Dict[str, Any]]) -> Dict[str, str]:
     return out
 
 
-def split_by_state(rec, project, regular: Iterable[str], hold_f_images: int = 0):
+def regular_pp_offsets(model: Optional[Dict[str, Any]]) -> Dict[str, List[float]]:
+    """{eye group: [dcx, dcy]} - the regular state's principal point minus the backlash state's in a focus model
+    (``regular_pp_offset_px``, 0.93.2; a model without it: none)."""
+    out = {}
+    for g, gm in ((model or {}).get("cameras") or {}).items():
+        off = gm.get("regular_pp_offset_px")
+        if off and any(float(x) for x in off[:2]):
+            out[g] = [float(off[0]), float(off[1])]
+    return out
+
+
+def split_by_state(rec, project, regular: Iterable[str], hold_f_images: int = 0,
+                   pp_offsets: Optional[Dict[str, Sequence[float]]] = None):
     """
     A copy of ``rec`` in which the ``regular`` images (names) of every Mastcam-Z camera move to a new camera
     ``<camera>_reg`` (start f = the median label f of those images, the camera's fy/fx kept; f held when it has at
     most ``hold_f_images`` images), with their frames on new rigs of the new cameras.  ``project`` is updated in place
     (cameras, database ids, each moved image's ``instrument``, with the old one in ``base_instrument`` and its
-    ``backlash_state``).  Returns (rec, rows) with one row per new camera.
+    ``backlash_state``).  ``pp_offsets``: {eye group: [dcx, dcy]} (:func:`regular_pp_offsets`) - the new camera's
+    principal point is the old one's plus its eye's offset (0.93.2: each state its own camera, the pose shared).
+    Returns (rec, rows) with one row per new camera.
     """
     import pycolmap
     from .project import FULL_OPENCV_NAMES
@@ -647,6 +661,11 @@ def split_by_state(rec, project, regular: Iterable[str], hold_f_images: int = 0)
         fm = 0.5 * (p[0] + p[1])
         if lf:
             p[0:2] *= float(np.median(lf)) / fm
+        pc0 = project.cameras.get(old_key, {})
+        off = (pp_offsets or {}).get(str(pc0.get("group") or old_key)[:5])
+        if off:
+            p[2] += float(off[0])
+            p[3] += float(off[1])
         new.add_camera(pycolmap.Camera(camera_id=next_cid, model=base.model, width=base.width, height=base.height,
                                        params=p))
         key = f"{old_key}{REGULAR_SUFFIX}"
@@ -658,7 +677,8 @@ def split_by_state(rec, project, regular: Iterable[str], hold_f_images: int = 0)
         pc.update({"params": p.tolist(), "fixed_params": fixed, "n_images": len(iids), "backlash_state": "regular",
                    "state_split": True, "base_camera": old_key,
                    "source": f"{pc.get('source', old_key)}; regular focus state (not backlash): f from the median "
-                             f"label f of its {len(iids)} images" + ("; f held" if held_f else "")})
+                             f"label f of its {len(iids)} images" + ("; f held" if held_f else "")
+                             + (f"; principal point {off[0]:+.2f}, {off[1]:+.2f} px (the regular state's)" if off else "")})
         project.cameras[key] = pc
         if old_key in project.cameras:
             project.cameras[old_key]["backlash_state"] = "backlash"
@@ -817,7 +837,8 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
               f"{(b['regular']['ratio_median'] or float('nan')):.4f} (regular)")
     if mode == "report" or not regular:
         return rec, report
-    rec2, rows = split_by_state(rec, project, regular, hold_f_images=hold_f_images)
+    rec2, rows = split_by_state(rec, project, regular, hold_f_images=hold_f_images,
+                                pp_offsets=regular_pp_offsets(model))
     report["cameras"] = rows
     # the Navcam, and the block's other held cameras (0.93.1: a weak Hazcam eye stays at its start)
     held = sorted({k for k in project.cameras if str(k).startswith("N")} | set(hold_cameras))

@@ -86,6 +86,20 @@ blocks of one zoom (`--zoom`, default 34):
 The result is a candidate focus model, checked against the one in use (`report.md`). `--no-k-tests` skips the
 k1/k2 likelihood-ratio tests.
 
+**Backlash states: each its own camera, the pose shared** (0.93.2). The two focus states of an eye are two
+cameras: the regular (low-backlash) state has its own focal length (the regular ratio) and its own principal point,
+`regular_pp_offset_px` = (d_cx_regular, d_cy_regular) from the backlash state's, stored in the model as the regular
+state's cx, cy lines. Both states use the same exposure pose and the same Mastcam-Z rig, so the state cannot move
+the frame rotation or the rig. The state is per eye: an exposure can have ZL regular and ZR backlash (Three Forks:
+96 ZL images regular, their ZR partners backlash), and those mixed exposures make the offset observable - the
+backlash eye and the rig fix the pose. The joint fits the offset per eye when it has at least 5 such exposures
+(`ztied.MIN_MIXED_EXPOSURES`), else holds it; the blocks start the regular cameras at it and hold it. Before 0.93.2
+both states shared pp0 and a boresight change of the regular state went into the rig: in the 22 Oct Z34 joint
+chal_rocks, the one block with regular images (8 % of the observations), was the outlier of the per-block rigs
+(pitch -29, yaw -12 mdeg; the others within +-7) and anchored the rig's yaw trend. In a synthetic joint, a (+6, -4) px
+regular offset in a third of the ZL images moved the rig by (-18, -22, +9) mdeg with the old form and by < 0.1
+mdeg with the offset fitted.
+
 **Fixed terms per zoom** (0.93.1, `mppp.calib.forms.ZCAM_FIXED_TERMS`): at 34 mm k2 is held at 0.5 (ZL) and 0.6
 (ZR), with p1 and p2 free; at 48 mm k2, p1 and p2 are free; at 63, 79 and 110 mm k2 = p1 = p2 = 0. The block runs
 hold these values in their bin cameras and the joint holds the global terms at them; the likelihood-ratio tests then

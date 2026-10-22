@@ -2,6 +2,34 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.93.2 — 2026-10-22
+
+- **Each backlash state its own camera, the pose shared** (Christian): the Mastcam-Z regular (low-backlash) state
+  gets its own principal point - `d_cx_regular`, `d_cy_regular` per eye in the Mastcam-Z joint (`ztied.GLOBAL_TERMS`,
+  now 12), tied to every regular-state bin (cx = pin + d_cx, cy = pin + b_cy (focus - ref) + d_cy) - with the exposure
+  pose and the Mastcam-Z rig shared by both states, so the state no longer moves the frame rotation or the rig. The
+  state is per eye (Three Forks North: 96 ZL images regular, their ZR partners backlash); the exposures with one eye
+  regular and the other in backlash make the offset observable, and it is fitted when an eye has at least 5 of them
+  (`MIN_MIXED_EXPOSURES`, `mixed_exposures` in the result), else held. The candidate model writes it as the regular
+  state's cx, cy lines (pp0 + the offset, both eyes) and `regular_pp_offset_px` (with sd, held flag and the
+  exposure count); `zcam_camera_at` and the block bins read the regular state's principal point from those lines, the
+  backlash split (`split_by_state(pp_offsets=)`) starts a new regular camera at it, and `check_zcam` adds
+  "regular principal point" (|offset| <= 10 px). Models without it behave as before (offset 0).
+- **Why**: in the 22 Oct Z34 joint, chal_rocks - the only block with regular-state images (8 % of the observations
+  in each eye) - was the outlier of the per-block rigs (pitch -28.7, yaw -11.9 mdeg; the other five -3.5..+5.3 and
+  -6.5..+2.9) and anchors the rig's yaw trend (+6.4 +- 2.1 mdeg / 1000 sol): with one principal point for both
+  states, a boresight change of the regular state can only go into the rig. Within a block the state does not change
+  the frames' world attitude (Three Forks North, the same sequence: regular - backlash (+14, +17, -18) +- (19, 24, 18)
+  mdeg). In a synthetic joint (`test_zcam_joint_gives_the_regular_state_its_own_principal_point`) a (+6, -4) px
+  regular offset in a third of the ZL images moved the rig by (-18, -22, +9) mdeg and left 0.57 px residuals with the
+  old form; with the offset fitted it is recovered to 0.01 px and the rig to 0.03 mdeg (0.055 px residuals).
+- **Measured on Three Forks North** (block re-adjusted from its result with every bin's principal point held, then
+  with the ZL regular bins' free): the four regular bins with 17-22 images each move cx +0.5..+1.1 px, cy 0..-0.4
+  px, all the same way, and the block's Mastcam-Z rig yaw moves by ~8 mdeg with them (0.8 px at f 4700 px) - the
+  size of chal_rocks' -12 mdeg. A 4-image regular bin runs away with its own principal point free (+71, +34 px),
+  which is why the joint fits one offset per eye from all regular bins.
+- The run keys change only with a promoted model that carries the offset (the next Z34 joint).
+
 ## 0.93.1 — 2026-10-22
 
 - **Hazcams in every block** (Christian, 22 Oct): `hazcams` defaults to both pairs (`("F", "R")`), so the front and

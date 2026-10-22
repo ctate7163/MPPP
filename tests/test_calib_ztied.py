@@ -54,9 +54,11 @@ def _truth_model():
     return m
 
 
-def _block(tmp_path, name, shift, model, rng, sol):
+def _block(tmp_path, name, shift, model, rng, sol, reg=None):
     """One block: the synthetic Navcam stations (helpers._synthetic) plus Mastcam-Z 34 mm stereo frames at each
-    station (three pointings x three focus counts), every image seeing dense terrain patches."""
+    station (three pointings x three focus counts), every image seeing dense terrain patches.  ``reg``
+    {"eye": "L", "F": 950.0, "offset": (dcx, dcy)}: that eye's images at that focus are in the regular state (f /
+    regular ratio, the principal point moved by the offset; the other eye in backlash)."""
     from helpers import _synthetic
     from mppp.calib.joint import Scape
     from scipy.spatial.transform import Rotation
@@ -79,7 +81,8 @@ def _block(tmp_path, name, shift, model, rng, sol):
                 sclk = f"{7000 + k:010d}_000"
                 for eye, R, C in (("L", RL, CL), ("R", RR, CR)):
                     nm = f"Z{eye}0_{sol:04d}_{k:04d}.png"
-                    zimgs.append({"name": nm, "stem": nm[:-4], "instrument": f"Z{eye}", "eye": eye, "sclk_key": sclk,
+                    is_reg = bool(reg) and eye == reg["eye"] and F == reg["F"]
+                    zimgs.append({"_reg": is_reg, "name": nm, "stem": nm[:-4], "instrument": f"Z{eye}", "eye": eye, "sclk_key": sclk,
                                   "sol": sol, "site": 1, "drive": int(st[-4:]), "station": st, "sequence": "ZCAM00000",
                                   "downsample_scale": 1.0, "native_size": [ZW, ZH], "prior_C": C.tolist(),
                                   "prior_R_w2c": R.tolist(), "has_mask": False, "camera_group": f"Z{eye}034",
@@ -98,13 +101,16 @@ def _block(tmp_path, name, shift, model, rng, sol):
     db = {"NL": 1, "NR": 2}
     zcid, nid = {}, 3
     for r in zimgs:
-        key = f"{r['camera_group']}_f{int(r['focus_count'])}"
+        key = f"{r['camera_group']}_f{int(r['focus_count'])}" + ("_reg" if r["_reg"] else "")
         if key not in zcid:
-            p = _law(model, r["camera_group"], r["focus_count"])
+            p = _law(model, r["camera_group"], r["focus_count"], "regular" if r["_reg"] else "backlash")
+            if r["_reg"]:
+                p[2] += reg["offset"][0]
+                p[3] += reg["offset"][1]
             rec.add_camera(pycolmap.Camera(camera_id=nid, model="FULL_OPENCV", width=ZW, height=ZH, params=p))
             proj.cameras[key] = {"model": "FULL_OPENCV", "params": p.tolist(), "width": ZW, "height": ZH,
                                  "group": r["camera_group"], "focus_count_median": float(r["focus_count"]),
-                                 "backlash_state": "backlash", "fixed_params": ["cx", "cy"]}
+                                 "backlash_state": "regular" if r["_reg"] else "backlash", "fixed_params": ["cx", "cy"]}
             zcid[key] = nid
             db[key] = nid
             nid += 1
@@ -295,3 +301,47 @@ def test_nz_joint_agrees_with_the_navcam_law_and_sees_a_wrong_one(tmp_path):
     assert not res2["comparison"]["agree"] and "NL fx" in res2["comparison"]["beyond_limits"][0]
     out = NZ.write_nzjoint(res2, tmp_path / "nz")
     assert (tmp_path / "nz" / "report.md").is_file() and "Navcam NL" in (tmp_path / "nz" / "report.md").read_text()
+
+
+def test_zcam_joint_gives_the_regular_state_its_own_principal_point(tmp_path, monkeypatch):
+    """0.93.2 (Christian): each backlash state its own camera with the pose shared - the regular ZL state's principal
+    point (truth +6, -4 px from the backlash state's) is fitted from the exposures with ZR in backlash, and the rig
+    stays at the truth; with the offset held at 0 (the old form) the rig takes it up."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    from scipy.spatial.transform import Rotation
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    rng = np.random.default_rng(5)
+    truth = _truth_model()
+    reg = {"eye": "L", "F": 950.0, "offset": (6.0, -4.0)}
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500, reg=reg)
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900, reg=reg)
+    st = _navcam_law(cams, rigT)
+    Rt = np.asarray(truth["rig"]["R_sensor_from_ref"])
+
+    def run(model):
+        res = Z.fit_zjoint({}, model=copy.deepcopy(model), scapes=[copy.deepcopy(a), copy.deepcopy(b)], st=st,
+                           nav_points=None, z_points=None, iterations=60, passes=2, verbose=False, diagnostics=False,
+                           k_tests=False)
+        R = np.asarray(res["rig"]["R_sensor_from_ref"])
+        return res, float(np.degrees(np.linalg.norm(Rotation.from_matrix(R @ Rt.T).as_rotvec())) * 1e3)
+
+    res, rig_err = run(truth)
+    e = res["eyes"]["ZL034"]
+    assert e["mixed_exposures"] == 12 and res["eyes"]["ZR034"]["mixed_exposures"] == 0
+    assert "d_cx_regular" not in e["held"] and "d_cx_regular" in res["eyes"]["ZR034"]["held"]
+    assert e["terms"]["d_cx_regular"] == pytest.approx(6.0, abs=0.3)
+    assert e["terms"]["d_cy_regular"] == pytest.approx(-4.0, abs=0.3)
+    assert rig_err < 3.0                                                     # mdeg: the rig not moved by the state
+    cand = Z.candidate_model(res, truth)
+    gm = cand["cameras"]["ZL034"]
+    assert gm["regular_pp_offset_px"] == pytest.approx([6.0, -4.0], abs=0.3) and not gm["regular_pp_offset"]["held"]
+    from mppp import calib
+    _, pr, _ = calib.zcam_camera_at(cand, "ZL034", 950.0, "regular")
+    _, pb, _ = calib.zcam_camera_at(cand, "ZL034", 950.0, "backlash")
+    assert pr[2] - pb[2] == pytest.approx(6.0, abs=0.3) and pr[3] - pb[3] == pytest.approx(-4.0, abs=0.3)
+    assert any("regular-state principal point" in x for x in Z.describe(res))
+    # the old form: the regular state shares the backlash principal point - the rig takes the offset up
+    monkeypatch.setattr(Z, "MIN_MIXED_EXPOSURES", 10 ** 6)
+    res0, rig_err0 = run(truth)
+    assert "d_cx_regular" in res0["eyes"]["ZL034"]["held"] and rig_err0 > 3 * max(rig_err, 1.0)

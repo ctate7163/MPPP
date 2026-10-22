@@ -772,3 +772,40 @@ def test_append_found_survives_a_group_without_a_fit(tmp_path):
                           "sequence_z": -4.0, "sequence_state": "regular", "own_state": "undecided"}], site="s")
     txt = f.read_text()
     assert n == 1 and "by its sequence" in txt and "z -4.0" in txt
+
+
+def test_split_starts_the_regular_camera_at_its_own_principal_point(tmp_path):
+    """0.93.2: each backlash state its own camera - the split regular camera starts at the backlash camera's
+    principal point plus the model's regular-state offset (regular_pp_offset_px); a model without one: unchanged."""
+    pytest.importorskip("scipy")
+    from mppp.sfm.backlash import classify_groups, image_focal_fits, image_states, regular_pp_offsets, split_by_state
+    proj, rec, model, truth = _zcam_block(tmp_path)
+    reg = [n for n, s in image_states(classify_groups(proj, image_focal_fits(rec, proj), model)).items() if s == "regular"]
+    base = np.array(rec.cameras[proj.settings["database"]["cameras"]["ZL034_F00600"]].params, float)
+    assert regular_pp_offsets(model) == {}
+    model2 = {"cameras": {"ZL034": dict(model["cameras"]["ZL034"], regular_pp_offset_px=[2.5, -1.5]),
+                          "ZR034": {"regular_pp_offset_px": [0.0, 0.0]}}}
+    assert regular_pp_offsets(model2) == {"ZL034": [2.5, -1.5]}
+    new, rows = split_by_state(rec, proj, reg, hold_f_images=3, pp_offsets=regular_pp_offsets(model2))
+    p = np.array(new.cameras[rows[0]["camera_id"]].params, float)
+    assert p[2] - base[2] == pytest.approx(2.5) and p[3] - base[3] == pytest.approx(-1.5)
+    assert "principal point +2.50, -1.50 px" in proj.cameras["ZL034_F00600_reg"]["source"]
+
+
+def test_zcam_camera_at_regular_principal_point_from_its_lines():
+    """0.93.2: a model whose regular lines carry cx, cy (pp0 + the offset) gives the regular state its own principal
+    point; the backlash state keeps pp0."""
+    import copy
+    from mppp import calib
+    zm = calib.load_zcam(34)
+    if zm is None:
+        pytest.skip("no Z34 focus model")
+    m = copy.deepcopy(zm)
+    gm = m["cameras"]["ZL034"]
+    pp0 = gm["pp0_px"]
+    gm["lines"]["regular"]["cx"] = {"a": pp0[0] + 3.0, "b": 0.0, "derived": "pp0 + the regular-state offset"}
+    gm["lines"]["regular"]["cy"] = {"a": pp0[1] - 2.0, "b": 0.0, "derived": "pp0 + the regular-state offset"}
+    _, pr, _ = calib.zcam_camera_at(m, "ZL034", 700.0, "regular")
+    _, pb, _ = calib.zcam_camera_at(m, "ZL034", 700.0, "backlash")
+    assert pr[2] == pytest.approx(pp0[0] + 3.0) and pr[3] == pytest.approx(pp0[1] - 2.0)
+    assert pb[2] == pytest.approx(pp0[0]) and pb[3] == pytest.approx(pp0[1])

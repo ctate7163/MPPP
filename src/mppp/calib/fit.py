@@ -1262,7 +1262,8 @@ ZCAM_MODEL_LIMITS = {"max_f0_change_pct": 1.5, "max_aspect_dev": 0.01, "max_k1":
                      "max_tau_f_px": 10.0, "min_blocks": 3,
                      "max_p": forms.ZCAM_MAX_P, "max_tau_p": 1e-3,     # zcam-v2: |p1|, |p2| and their block scatter
                      "max_offset_scatter_pct": 0.5,     # a start update: the blocks' f offsets about the model's f0
-                     "min_blocks_start": 2}
+                     "min_blocks_start": 2,
+                     "max_regular_pp_offset_px": 10.0}   # 0.93.2: the regular state's principal point from the backlash's
 REGULAR_RATIO_DEFAULT = 1.0095          # backlash / regular focal length when the blocks do not measure it
 
 
@@ -1727,6 +1728,14 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
             add(f"{g} f0", d <= lim["max_f0_change_pct"], f"{o['f0_px']:.1f} -> {c['f0_px']:.1f} px ({d:.2f} %)")
         if c.get("aspect"):
             add(f"{g} aspect", abs(c["aspect"] - 1.0) <= lim["max_aspect_dev"], f"{c['aspect']:.5f}")
+        rp = c.get("regular_pp_offset") or {}
+        if c.get("regular_pp_offset_px") and not rp.get("held"):
+            off = [float(x) for x in c["regular_pp_offset_px"]]
+            sd = rp.get("sd_px") or [None, None]
+            add(f"{g} regular principal point", float(np.hypot(*off)) <= lim["max_regular_pp_offset_px"],
+                f"{off[0]:+.2f}, {off[1]:+.2f} px from the backlash state's"
+                + (f" (sd {sd[0]:.2f}, {sd[1]:.2f})" if sd[0] is not None and sd[1] is not None else "")
+                + f", {rp.get('mixed_exposures', 0)} exposures with the other eye in backlash")
         dist = c.get("distortion") or {}
         if "k1" in (dist.get("names") or []):
             k1 = dist["params"][dist["names"].index("k1")]
