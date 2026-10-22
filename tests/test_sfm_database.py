@@ -178,7 +178,7 @@ def test_colmap_gui_project_files(tmp_path):
     assert f"image_path={tmp_path.resolve() / 'images'}" in ini and "[ImageReader]" in ini
     bat = Path(out["bat"]).read_bytes()
     assert b"\r\n" in bat and b"--import_path \"%MODEL%\"" in bat and b"sparse\\cahv_ba" in bat
-    assert b"%COLMAP_BAT%" in bat
+    assert b"%COLMAP_BAT%" in bat and rb"D:\tools\colmap-x64-windows-nocuda\COLMAP.bat" in bat   # 0.93.3
 
 
 def test_feature_extraction_default_is_native_resolution():

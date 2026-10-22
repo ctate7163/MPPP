@@ -558,8 +558,10 @@ def reuse_matches(project: SfmProject, sources: Sequence[PathLike], database: Op
 
 
 # the usual COLMAP install folders on Windows; COLMAP_BAT (environment) or the PATH come first
+# (0.93.3: and the official release zips unpacked in C:\tools or D:\tools, as on the MPPP PC - dropped in 0.90)
 COLMAP_BAT_CANDIDATES = (r"C:\Program Files\COLMAP\COLMAP.bat", r"%LOCALAPPDATA%\COLMAP\COLMAP.bat",
-                         r"%LOCALAPPDATA%\Programs\COLMAP\COLMAP.bat")
+                         r"%LOCALAPPDATA%\Programs\COLMAP\COLMAP.bat") + tuple(
+    rf"{d}:\tools\{z}\COLMAP.bat" for d in "DC" for z in ("colmap-x64-windows-nocuda", "colmap-x64-windows-cuda", "COLMAP"))
 
 
 def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba",

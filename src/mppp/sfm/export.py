@@ -564,11 +564,12 @@ def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
     for r in rows:
         if r["observations"] >= 30:
             by_station.setdefault(r["station"], []).append(r["dC_m"])
-    summary = {"native_model": native, "tracks": track_statistics(rec, project),
-               "residual_rms_native_px": float(np.sqrt(np.mean(res["residual_native_px"] ** 2)))
-               if res["residual_native_px"].size else None,
-               "residual_median_native_px": float(np.median(res["residual_native_px"]))
-               if res["residual_native_px"].size else None,
+    rn = np.asarray(res["residual_native_px"], float)
+    fin = rn[np.isfinite(rn)]              # 0.93.3: a point behind a camera or outside a lens model's domain is not
+    summary = {"native_model": native, "tracks": track_statistics(rec, project),     # an RMS of Infinity
+               "residual_rms_native_px": float(np.sqrt(np.mean(fin ** 2))) if fin.size else None,
+               "residual_median_native_px": float(np.median(fin)) if fin.size else None,
+               "residual_nonfinite": int(rn.size - fin.size),
                "registered_images": len(rows), "project_images": len(project.images),
                "prior_offset_median_m": float(np.median(dC)) if dC.size else None,
                "prior_offset_by_station_median_m": {k: float(np.median(v)) for k, v in sorted(by_station.items())},

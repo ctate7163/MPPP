@@ -2,6 +2,16 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.93.3 — 2026-10-22
+
+- **`open_in_colmap.bat` finds COLMAP again on the MPPP PC**: the 0.90 cleanup dropped the `D:\tools` folders from
+  `COLMAP_BAT_CANDIDATES`, so the GUI files of blocks run since then said "COLMAP.bat not found" unless `COLMAP_BAT`
+  was set. The candidates now include the official release zips unpacked in `C:\tools` or `D:\tools`
+  (`colmap-x64-windows-nocuda`, `colmap-x64-windows-cuda`, `COLMAP`). `mppp gui` rewrites the files of finished blocks.
+- **Residual summary**: `residual_rms_native_px` and the median use the finite residuals only (`residual_nonfinite`
+  counts the others: a point behind a camera or outside a lens model's domain). The 22 Oct chal_rocks block reported
+  an RMS of Infinity.
+
 ## 0.93.2 — 2026-10-22
 
 - **Each backlash state its own camera, the pose shared** (Christian): the Mastcam-Z regular (low-backlash) state
