@@ -1,0 +1,27 @@
+# Images MPPP leaves out of every alignment (pipeline.Settings.exclude_list; EXCLUDE_LIST=false turns it off):
+# Mastcam-Z movies and other observations that do not work for photogrammetry.  One entry per line, '#' starts a
+# comment; the syntax of a WORK folder's exclude_images.txt (mppp.sfm.workdir):
+#   seq:ZCAM05179        a sequence (seq:ZCAM01* - any sequence starting ZCAM01)
+#   S032D1184            a station (site 32, drive 1184);  sol:658 or sol:654-693  a sol or sol range
+#   N*_0693_0728460284_145*   a file-name pattern (* and ?) against the product name without extension
+# Christian, 22 Oct 2026.
+
+# Mastcam-Z movies (one eye, hundreds of frames at one pointing: no tie points, hours of matching)
+seq:ZCAM05179        # Bunsen Peak, sol 1065: 1088 frames, 0.44 s apart
+seq:ZCAM05180        # Bunsen Peak: 416 frames, 1.8 s apart
+seq:ZCAM05114        # Rockytop: 144 frames, 1.0 s apart
+seq:ZCAM05093        # Issole: ~2000 frames
+seq:ZCAM05062
+
+# Mastcam-Z ZCAM00xxx and ZCAM01xxx sequences
+seq:ZCAM00*
+seq:ZCAM01*
+
+# other Mastcam-Z observations
+seq:ZCAM08512        # Rockytop: 74 stereo frames
+
+# Navcam stereo pairs (both eyes, every product type)
+N*_0693_0728460284_145*
+N*_0684_0727665222_395*
+N*_0693_0728460255_160*
+N*_0681_0727400691_868*

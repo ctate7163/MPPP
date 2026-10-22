@@ -82,6 +82,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--root", default=None, metavar="DIR", help="folder: the scapes root (default: MPPP_SCAPES)")
     p.add_argument("--zcam", action="store_true", help="folder: the Navcam + Mastcam-Z block")
 
+    p = sub.add_parser("gui", help="write the COLMAP GUI files (open_in_colmap.bat ...) into finished projects")
+    p.add_argument("works", nargs="*", help="WORK folders (default: every WORK folder under --root with a model)")
+    p.add_argument("--root", default=None, metavar="DIR", help="the scapes root (default: MPPP_SCAPES)")
+    p.add_argument("--variant", default="", help="the project colmap_<variant> instead of colmap")
+
     p = sub.add_parser("cmods", help="the camera models in use")
     p.add_argument("what", nargs="?", default="list", choices=("list", "promote"))
     p.add_argument("paths", nargs="*", help="promote: folders or files with the new models")
@@ -244,7 +249,7 @@ def cmd_align(a: argparse.Namespace) -> int:
     if a.stop_after and a.stop_after not in STEPS:
         print(f"ERROR: --stop-after {a.stop_after!r}: use one of {', '.join(STEPS)}", file=sys.stderr)
         return 2
-    s = _settings(a, str(work), {"variant": a.variant, "source": "processed", "gui_files": bool(a.gui)})
+    s = _settings(a, str(work), {"variant": a.variant, "source": "processed", **({"gui_files": True} if a.gui else {})})
     st, s = resolve_site(work, s)
     return _run(align, work, s, a, "align", run_key(s), stop_after=a.stop_after, info={"site": st.name})
 
@@ -254,7 +259,7 @@ def cmd_run(a: argparse.Namespace) -> int:
     if a.stop_after and a.stop_after not in STEPS:
         print(f"ERROR: --stop-after {a.stop_after!r}: use one of {', '.join(STEPS)}", file=sys.stderr)
         return 2
-    s = _settings(a, a.target, {"variant": a.variant, "source": "pds", "gui_files": bool(a.gui)})
+    s = _settings(a, a.target, {"variant": a.variant, "source": "pds", **({"gui_files": True} if a.gui else {})})
     st, s = resolve_site(a.target, s)
     return _run(run_site, st.work, s, a, "run", run_key(s), stop_after=a.stop_after, info={"site": st.name})
 
@@ -304,6 +309,34 @@ def cmd_sites(a: argparse.Namespace) -> int:
     groups = table.get("groups") or {}
     if groups:
         print("groups: " + ", ".join(f"{g} ({len(m)})" for g, m in groups.items()))
+    return 0
+
+
+def cmd_gui(a: argparse.Namespace) -> int:
+    """``gui``: ``open_in_colmap.bat``, ``open_in_colmap_fullres.bat`` and ``colmap_gui.ini`` for projects aligned
+    without ``--gui`` (batch runs before 0.92.2 did not write them)."""
+    from .sfm.database import write_gui_project
+    from .sfm.project import SfmProject
+    from .sfm.workdir import project_dir
+    works = [Path(w) for w in a.works]
+    if not works:
+        root = Path(a.root or os.environ.get("MPPP_SCAPES") or "")
+        if not str(root) or not root.is_dir():
+            print("ERROR: give WORK folders or --root (or MPPP_SCAPES)", file=sys.stderr)
+            return 1
+        works = sorted(p for p in root.iterdir() if p.is_dir() and p.name.startswith("mars2020_sol_"))
+    n = 0
+    for w in works:
+        pd = project_dir(w, a.variant)
+        if not (pd / "project.json").is_file():
+            continue
+        proj = SfmProject.load(pd)
+        model = "cahv_ba" if (pd / "sparse" / "cahv_ba").is_dir() else None
+        out = write_gui_project(proj, model=model)
+        proj.save()
+        n += 1
+        print(f"  {w.name}: {Path(out.get('bat', pd)).name if isinstance(out, dict) else 'written'}")
+    print(f"{n} project(s) with COLMAP GUI files")
     return 0
 
 
@@ -603,7 +636,7 @@ def cmd_version(a: argparse.Namespace) -> int:
     return 0
 
 
-COMMANDS = {"process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
+COMMANDS = {"gui": cmd_gui, "process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
             "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "maps": cmd_maps, "calib": cmd_calib, "doctor": cmd_doctor,
             "version": cmd_version}
 

@@ -352,20 +352,6 @@ def test_sites_19_oct_afternoon():
     assert not any(s in ("butler_landing_large", "van_zyl_overlook_large") for g in G.values() for s in g)
 
 
-def test_issole_leaves_out_its_video_sequence():
-    """21 Oct: Issole's Mastcam-Z 34 mm video (sequence ZCAM05093, about 2000 frames at one pointing) is excluded."""
-    from mppp.pipeline import load_settings
-    assert "seq:ZCAM05093" in load_settings(site="issole_seitah_south").exclude
-
-
-def test_movies_excluded_by_site():
-    """22 Oct: the Mastcam-Z 34 mm movies of Rockytop and Bunsen Peak are excluded by name too (so those two blocks,
-    which failed their health check with the movies in, run again)."""
-    from mppp.pipeline import load_settings
-    assert "seq:ZCAM05114" in load_settings(site="rockytop").exclude
-    assert {"seq:ZCAM05179", "seq:ZCAM05180"} <= set(load_settings(site="bunsen_peak").exclude)
-
-
 def test_zcam34_joint_group_is_the_joint_default(tmp_path):
     """22 Oct: the joints take zcam34_joint (the good blocks) by default and leave out FAIL blocks."""
     import argparse, json as _json

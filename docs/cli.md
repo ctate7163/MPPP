@@ -280,3 +280,20 @@ usage: mppp version [-h]
 options:
   -h, --help  show this help message and exit
 ```
+
+## mppp gui
+
+Writes `open_in_colmap.bat`, `open_in_colmap_fullres.bat` and `colmap_gui.ini` into finished projects.
+
+```text
+usage: mppp gui [-h] [--root DIR] [--variant VARIANT] [works ...]
+
+positional arguments:
+  works              WORK folders (default: every WORK folder under --root
+                     with a model)
+
+options:
+  -h, --help         show this help message and exit
+  --root DIR         the scapes root (default: MPPP_SCAPES)
+  --variant VARIANT  the project colmap_<variant> instead of colmap
+```

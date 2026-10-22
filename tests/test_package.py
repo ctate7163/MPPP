@@ -27,7 +27,7 @@ def test_package_data_and_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("MPPP_CHECKPOINTS", str(tmp_path / "k"))
     assert paths.checkpoints_dir() == tmp_path / "k"
     pyproject = (ROOT / "pyproject.toml").read_text()
-    assert '"data/*.json", "data/*.csv", "data/cmods/*.json", "data/cmods/*.md"' in pyproject
+    assert '"data/*.json", "data/*.csv", "data/*.txt", "data/cmods/*.json", "data/cmods/*.md"' in pyproject
     assert "history" not in pyproject and "m20_sites" not in pyproject
 
 
@@ -81,7 +81,7 @@ def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
 
 def test_version():
     import mppp
-    assert mppp.__version__ == "0.92.1" and mppp.VERSION_TAG == "v0p92"
+    assert mppp.__version__ == "0.92.2" and mppp.VERSION_TAG == "v0p92"
     cff = (ROOT / "CITATION.cff").read_text()
     assert f"version: {mppp.__version__}" in cff
     assert f"## {mppp.__version__}" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")

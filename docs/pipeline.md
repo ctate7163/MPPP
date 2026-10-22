@@ -58,12 +58,20 @@ counts by default), and stereo rigs (Navcam left is the rig reference).
 | `prior_pairs` | the same matcher over the pairs that the prior poses predict to overlap (`prior_overlap_pairs`) |
 | `lightglue` | SIFT features matched by LightGlue (kornia); optional, best on a GPU |
 
-Above `max_exhaustive_images` (1000) images, `exhaustive` matches the prior-overlap pairs instead: exhaustive
-matching grows as n²/2 pairs (3.7 million at 2713 images). Geometric verification runs in full-resolution pixels
+Above `max_exhaustive_images` (300) images, `exhaustive` matches the prior-overlap pairs instead: exhaustive
+matching grows as n²/2 pairs (3.7 million at 2713 images). A pair is kept when at least 5 % of either image's
+ground footprint (its valid pixels on a 32 × 24 grid, cast onto flat ground 1.95 m below the camera, at most 40 m
+out) falls inside the other image, so a narrow zoom inside a wide Navcam frame counts as nearly 100 %; stereo
+partners are always kept. The pairs only choose which images are compared: the matcher still compares all of the
+features of both images. Geometric verification runs in full-resolution pixels
 (6 px threshold). Features and matches are reused while the images and matching settings are unchanged.
 
 COLMAP's matcher runs in a child process: the CUDA environment named by `MPPP_GPU_PYTHON` when set, otherwise the
 current Python on the CPU.
+
+Before any of this, the images of the shipped exclusion list `src/mppp/data/exclude_images.txt` are left out
+(Mastcam-Z movies, ZCAM01* sequences, a few Navcam stereo pairs that do not work for photogrammetry);
+`EXCLUDE_LIST=false` keeps them. A WORK folder's own `exclude_images.txt` and the site's `EXCLUDE` setting add to it.
 
 ## 4. Staged bundle adjustment
 

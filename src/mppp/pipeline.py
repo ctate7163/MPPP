@@ -83,7 +83,7 @@ class Settings:
     gpu_python: Optional[str] = field(default_factory=lambda: _default_gpu_python())  # python.exe of a CUDA pycolmap environment for features and matching (MPPP_GPU_PYTHON, else MPPP_GPU_PY, %LOCALAPPDATA%\mppp\gpu_python.txt from install_lightglue.bat, <conda>\envs\mppp_gpu); None: the CPU
     colmap_bat: Optional[str] = field(default_factory=lambda: _env_str("COLMAP_BAT"))      # COLMAP.bat for open_in_colmap.bat; None: search the usual places (COLMAP_BAT)
     workers: int = 4                              # image-processing worker processes
-    gui_files: bool = False                       # write colmap_gui.ini and open_in_colmap.bat into the project
+    gui_files: bool = True                        # write colmap_gui.ini and open_in_colmap.bat into the project (22 Oct: on by default - batch runs had none)
 
     # --- site ----------------------------------------------------------------------------------------------------
     sites_file: Optional[Path] = None             # the site definitions (name -> sols); None: mppp/data/sites.json
@@ -156,9 +156,8 @@ class Settings:
     sift: Dict[str, Any] = field(default_factory=lambda: dict(domain_size_pooling=False, estimate_affine_shape=False,
                                                               num_octaves=None, first_octave=-1))   # num_octaves None: 6 with Mastcam-Z, else 4
     match_mode: str = "exhaustive"                # the matcher: "exhaustive" (COLMAP's SIFT matcher, the default until the A/B test), "lightglue" (SIFT + LightGlue) or "prior_pairs" (quick / CPU)
-    max_exhaustive_images: int = 1000             # 21 Oct: above this many images "exhaustive" matches the prior-overlap pairs instead (Issole Z34: 2713 images, 3.7 M pairs, > 9 h); 0 = never (not in the run key)
-    zcam_movie_min_frames: int = 20               # 22 Oct: a Mastcam-Z sequence with this many frames of one eye at one pointing (within zcam_movie_pointing_deg) is a movie (Issole ZCAM05093, Bunsen Peak ZCAM05179/05180, Rockytop ZCAM05114) and is left out; 0 = keep (not in the run key)
-    zcam_movie_pointing_deg: float = 0.05         # "one pointing": label boresights within this angle
+    max_exhaustive_images: int = 300              # 21-22 Oct: above this many images "exhaustive" matches the prior-overlap pairs instead (Issole Z34: 2713 images, 3.7 M pairs, > 9 h; 300 from 22 Oct, Christian); 0 = never (not in the run key)
+    exclude_list: bool = True                     # 22 Oct: leave out the images of mppp/data/exclude_images.txt (Mastcam-Z movies and other observations unfit for photogrammetry); False: keep them (not in the run key)
     match: Dict[str, Any] = field(default_factory=lambda: dict(max_ratio=0.9, max_distance=1.0, cross_check=True,
                                                                guided_matching=False, max_error_px=6.0,
                                                                max_keypoints=8192, filter_threshold=0.1))   # matching options (the last two: LightGlue)
@@ -210,8 +209,7 @@ class Settings:
 PATH_FIELDS = {"pds_dir", "scapes_root", "sites_file", "navcam_cameras", "zcam_focus_model"}
 TUPLE_FIELDS = {"sequence_prefixes", "subframe_families", "hold_cameras", "thermal_free", "navcam_rig_epoch_breaks_sols"}
 NOT_IN_KEY = {"pds_dir", "scapes_root", "gpu_python", "colmap_bat", "workers", "gui_files", "sites_file",
-              "source", "variant", "max_exhaustive_images", "zcam_movie_min_frames",
-              "zcam_movie_pointing_deg"}
+              "source", "variant", "max_exhaustive_images", "exclude_list"}
 SETTING_NAMES = tuple(f.name for f in fields(Settings))
 
 
@@ -280,49 +278,14 @@ work_settings = load_settings
 
 
 # ----------------------------------------------------------------------------------------------------- run keys
-def _unit(az_deg: float, el_deg: float):
-    import math
-    a, e = math.radians(az_deg), math.radians(el_deg)
-    return (math.cos(e) * math.sin(a), math.cos(e) * math.cos(a), math.sin(e))
+EXCLUDE_LIST_FILE = "exclude_images.txt"
 
 
-def drop_zcam_movies(images: List[Dict[str, Any]], min_frames: int = 20, pointing_deg: float = 0.05
-                     ) -> Tuple[List[Dict[str, Any]], Dict[Tuple[str, str], int]]:
-    """Leave out Mastcam-Z movies: ``min_frames`` or more frames of one sequence and eye at one pointing (label
-    boresights within ``pointing_deg``).  A mosaic moves the mast between frames (one frame per eye per pointing; a
-    focus stack a few); a movie keeps the pointing for tens to thousands of frames, which find no tie points and
-    cost hours of matching (Issole: 2000 frames).  Frames without a label boresight are kept.  Returns (images
-    kept, {(sequence, eye): frames left out})."""
-    import math
-    cos_tol = math.cos(math.radians(pointing_deg))
-    groups: Dict[Tuple[str, str], List[Tuple[int, Tuple[float, float, float]]]] = {}
-    for k, m in enumerate(images):
-        f = m.get("filename") or {}
-        po = m.get("pose") or {}
-        az, el = po.get("boresight_azimuth_deg"), po.get("boresight_elevation_deg")
-        if f.get("family") != "Z" or not f.get("sequence") or az is None or el is None:
-            continue
-        groups.setdefault((str(f["sequence"]), str(f.get("eye"))), []).append((k, _unit(float(az), float(el))))
-    drop: set = set()
-    movies: Dict[Tuple[str, str], int] = {}
-    for key, rows in groups.items():
-        if len(rows) < min_frames:
-            continue
-        clusters: List[Tuple[Tuple[float, float, float], List[int]]] = []      # (first pointing, members)
-        for k, u in rows:
-            for c, members in clusters:
-                if u[0] * c[0] + u[1] * c[1] + u[2] * c[2] >= cos_tol:
-                    members.append(k)
-                    break
-            else:
-                clusters.append((u, [k]))
-        for _, members in clusters:
-            if len(members) >= min_frames:
-                drop.update(members)
-                movies[key] = movies.get(key, 0) + len(members)
-    if not drop:
-        return images, movies
-    return [m for k, m in enumerate(images) if k not in drop], movies
+def shipped_exclusions() -> List[str]:
+    """The entries of the shipped exclusion list (``mppp/data/exclude_images.txt``): Mastcam-Z movies and other
+    observations that do not work for photogrammetry, left out of every alignment unless ``exclude_list`` is False."""
+    from .sfm.workdir import read_exclusions
+    return read_exclusions(Path(__file__).resolve().parent / "data" / EXCLUDE_LIST_FILE)
 
 
 def effective_match_mode(s: "Settings", n_images: int) -> str:
@@ -617,10 +580,14 @@ def load_images(work: PathLike, settings: Settings, zooms: Sequence[int] = ()) -
             ims = [x for x in ims if x]
             log.info("excluded by %r: %d images%s", e, len(ims), "" if ims else "  <- matches no image (typo?)")
         log.info("%d images after the exclusions", len(images))
-    if settings.zcam_movie_min_frames:
-        images, movies = drop_zcam_movies(images, settings.zcam_movie_min_frames, settings.zcam_movie_pointing_deg)
-        for (seq, eye), n in sorted(movies.items()):
-            log.info("Mastcam-Z movie left out: %s %s, %d frames at one pointing", seq, eye, n)
+    if settings.exclude_list:
+        images, removed = apply_exclusions(images, shipped_exclusions())
+        by: Dict[str, int] = {}
+        for r in removed:
+            if r["image"]:
+                by[r["entry"]] = by.get(r["entry"], 0) + 1
+        for e, n in by.items():
+            log.info("excluded by the shipped list (mppp/data/exclude_images.txt) %r: %d images", e, n)
     images, small = filter_included_fraction(images, settings.min_included_fraction)
     if small:
         log.info("%d images with less than %.3f of the image unmasked left out, e.g. %s", len(small),

@@ -2,6 +2,21 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.92.2 — 2026-10-22
+
+- **One shipped exclusion list instead of movie filters** (`src/mppp/data/exclude_images.txt`, read by
+  `pipeline.shipped_exclusions`; on by default, `EXCLUDE_LIST=false` keeps the images; not in the run key): the
+  Mastcam-Z movies ZCAM05179, ZCAM05180 (Bunsen Peak), ZCAM05114 (Rockytop), ZCAM05093 (Issole), ZCAM05062; every
+  ZCAM01* sequence; the Navcam stereo pairs 0693_0728460284_145, 0684_0727665222_395, 0693_0728460255_160 and
+  0681_0727400691_868 (Three Forks North); ZCAM00* and ZCAM08512 (Rockytop).  The fixed-pointing movie filter and the sites' movie `EXCLUDE` entries of
+  0.92.1 are gone.  `seq:` entries take wildcards (`seq:ZCAM01*`).  The log names each entry that removed images.
+- **COLMAP GUI files by default**: `open_in_colmap.bat`, `open_in_colmap_fullres.bat` and `colmap_gui.ini` are written
+  into every project (`gui_files` on; it was only `--gui`, so batch runs had none).  `mppp gui [--root DIR | WORK ...]`
+  writes them for projects already aligned.
+- **Prior-overlap pairs from 300 images** (`max_exhaustive_images` 300, was 1000; not in the run key).
+- Because neither is in the run key, finished blocks the list touches keep their results until aligned again
+  (`--force`): Three Forks North, Belva Crater (low-backlash list), Rockytop, Bunsen Peak; Issole is not finished.
+
 ## 0.92.1 — 2026-10-22
 
 - **Mastcam-Z movies are left out by their fixed pointing** (`pipeline.drop_zcam_movies`; `zcam_movie_min_frames` 20,

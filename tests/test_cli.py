@@ -144,3 +144,18 @@ def test_cli_doctor_and_maps_help(capsys):
     assert main(["maps", "nonsense"]) == 2
     with pytest.raises(SystemExit):
         main(["calib", "navcam", "--blocks", "oops"])
+
+
+def test_gui_command_writes_open_in_colmap(tmp_path):
+    """22 Oct: batch runs had no open_in_colmap.bat; GUI files are now on by default and `mppp gui` writes them for
+    finished projects."""
+    from mppp.cli import main
+    from mppp.pipeline import Settings
+    from mppp.sfm.project import SfmProject
+    assert Settings().gui_files
+    w = tmp_path / "mars2020_sol_0460_rockytop_zcam"
+    pd = w / "colmap"
+    pd.mkdir(parents=True)
+    SfmProject(pd, [], {}, {}, [0, 0, 0], {}).save()
+    assert main(["gui", "--root", str(tmp_path)]) == 0
+    assert (pd / "open_in_colmap.bat").is_file() and (pd / "colmap_gui.ini").is_file()

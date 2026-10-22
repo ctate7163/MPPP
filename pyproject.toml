@@ -34,7 +34,7 @@ where = ["src"]
 include = ["mppp*"]
 
 [tool.setuptools.package-data]
-mppp = ["data/*.json", "data/*.csv", "data/cmods/*.json", "data/cmods/*.md"]
+mppp = ["data/*.json", "data/*.csv", "data/*.txt", "data/cmods/*.json", "data/cmods/*.md"]
 
 [project.scripts]
 mppp = "mppp.cli:main"

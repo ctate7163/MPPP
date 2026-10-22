@@ -13,7 +13,7 @@ run and ``colmap_<variant>/`` for experiments (other SfM settings or camera mode
 
   - ``S032D1184``: every image of a station (site 32, drive 1184);
   - ``sol:658`` or ``sol:654-693``: a sol or a sol range;
-  - ``seq:NCAM08111``: a sequence;
+  - ``seq:NCAM08111``: a sequence (``seq:ZCAM01*``: every sequence starting so);
   - anything else: a file-name pattern (``*`` and ``?``), matched against the product name without extension,
     e.g. ``NLF_0658_0725353794_270RAD_N0320274NCAM08111_0A0095J01`` or ``ZR0_0690_*``.
 
@@ -89,7 +89,7 @@ def exclusion_matches(meta: Dict[str, Any], entry: str) -> bool:
         lo, hi = int(a), int(b or a)
         return f["sol"] is not None and lo <= int(f["sol"]) <= hi
     if low.startswith("seq:"):
-        return str(f["sequence"] or "").upper() == e[4:].strip().upper()
+        return fnmatch.fnmatchcase(str(f["sequence"] or "").upper(), e[4:].strip().upper())   # seq:ZCAM01* too
     stem = f["stem"].upper()
     pat = re.sub(r"\.(img|png|png\.png)$", "", e, flags=re.I).upper()
     return fnmatch.fnmatchcase(stem, pat)
