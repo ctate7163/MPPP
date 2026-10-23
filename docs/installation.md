@@ -1,6 +1,12 @@
 # Installation
 
-MPPP needs Python 3.10 or later.
+MPPP needs Python 3.10 or later. From PyPI (<https://pypi.org/project/mppp/>, 0.94.4 onwards):
+
+```bash
+pip install "mppp[mask,sfm,plots]"
+```
+
+From the repository (the tests, studies, notebooks and Windows scripts are only there):
 
 ```bash
 git clone https://github.com/ctate7163/MPPP.git
@@ -28,7 +34,8 @@ The base install reads and processes PDS products. The other parts of the pipeli
 | `docs` | mkdocs, mkdocs-material, mkdocstrings | this documentation site |
 | `all` | mask, sfm, error, plots, maps, notebooks, dev | everything except `release` and `docs` |
 
-For example, `pip install -e ".[mask,sfm,plots]"` installs what `mppp run` needs.
+For example, `pip install "mppp[mask,sfm,plots]"` (or `pip install -e ".[mask,sfm,plots]"` in a clone) installs what
+`mppp run` needs.
 
 ## Models downloaded on first use
 

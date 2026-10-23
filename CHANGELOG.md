@@ -17,6 +17,15 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **PyPI** (Christian: <https://pypi.org/project/mppp/> for the JOSS submission): the project metadata PyPI shows
+  (SPDX license with LICENSE and NOTICE, author, keywords, classifiers, documentation / repository / issues /
+  changelog links; setuptools 77), `MANIFEST.in` (the sdist: package, data, tests and their two PDS products; not
+  the studies, notebooks, Windows scripts, paper or documentation site), `.github/workflows/publish.yml` (on a
+  published GitHub release: build, `twine check --strict`, the version against the tag, a clean install of the
+  wheel, then the upload with PyPI trusted publishing - no token; "Run workflow" rehearses on TestPyPI),
+  `docs/RELEASING.md` section 8 (the one-time pending-publisher setup), `pip install mppp` in the README and the
+  installation page (absolute links: relative ones break on PyPI), `mppp --version`. Built and checked here: wheel
+  760 KB, sdist 12 MB, both pass `twine check --strict`, the wheel installs and runs in a clean environment.
 - **Two crashes of the 23 Oct afternoon run fixed** (run_sites_zcam, two blocks at once): LightGlue's SIFT fallback
   (Chal Rocks Large Mastcam-Z: 152,059 prior pairs projected at 3.0 h) ran COLMAP's CPU matcher inside the alignment
   process, where OpenBLAS overflowed its thread table on the many-core PC ("precompiled NUM_THREADS exceeded") and

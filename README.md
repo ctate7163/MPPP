@@ -40,10 +40,19 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. MPPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.90.0** (`v0p90`), a beta for the JOSS submission (`paper/paper.md`). Versions before 1.0 are
-development releases; see [CHANGELOG.md](CHANGELOG.md).
+Version **0.94.4** (`v0p94`), a beta for the JOSS submission (`paper/paper.md`). Versions before 1.0 are
+development releases; see [CHANGELOG.md](https://github.com/ctate7163/MPPP/blob/main/CHANGELOG.md).
 
 ## Install
+
+From PyPI (<https://pypi.org/project/mppp/>):
+
+```bash
+pip install "mppp[mask,sfm,plots]"     # what `mppp run` needs; plain `pip install mppp` reads and processes PDS products
+mppp doctor                            # what is installed, which camera models are in use
+```
+
+From the repository, with the tests, studies, notebooks and Windows scripts:
 
 ```bash
 git clone https://github.com/ctate7163/MPPP.git
@@ -167,5 +176,5 @@ waypoint table. The package contains no sensitive or non-public data.
 
 ## License and citation
 
-Apache-2.0 (see [LICENSE](LICENSE) and [NOTICE](NOTICE)); released as open source with the approval of Malin Space
-Science Systems. If you use MPPP, please cite it as described in [CITATION.cff](CITATION.cff).
+Apache-2.0 (see [LICENSE](https://github.com/ctate7163/MPPP/blob/main/LICENSE) and [NOTICE](https://github.com/ctate7163/MPPP/blob/main/NOTICE)); released as open source with the approval of Malin Space
+Science Systems. If you use MPPP, please cite it as described in [CITATION.cff](https://github.com/ctate7163/MPPP/blob/main/CITATION.cff).

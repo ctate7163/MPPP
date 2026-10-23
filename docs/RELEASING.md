@@ -1,10 +1,11 @@
 # Releasing MPPP: code on GitHub, the mask model as safetensors
 
-This covers three things:
+This covers four things:
 
 1. the code, pushed to `https://github.com/ctate7163/MPPP`;
 2. the released mask model, exported to **safetensors** and attached to a **GitHub release**;
-3. the same model on **Hugging Face**.
+3. the same model on **Hugging Face**;
+4. the package on **PyPI**, <https://pypi.org/project/mppp/> (section 8).
 
 Section 7 covers the documentation site, the Zenodo DOI and the JOSS submission.
 
@@ -205,3 +206,53 @@ References:
 2. Zenodo, *Enable a repository*: <https://help.zenodo.org/docs/github/enable-repository/>
 3. Zenodo, *Archive a release from GitHub*: <https://help.zenodo.org/docs/github/archive-software/github-upload/>
 4. Zenodo, *Describe your software*: <https://help.zenodo.org/docs/github/describe-software/>
+
+## 8. PyPI (`pip install mppp`)
+
+`.github/workflows/publish.yml` builds the sdist and the wheel, checks them (`twine check --strict`, the version
+against the release tag, a clean install of the wheel) and uploads them to PyPI when a GitHub release is published.
+It uses PyPI **trusted publishing**: GitHub proves to PyPI which repository and workflow is uploading, so no API
+token is stored anywhere [5]. The same GitHub release also goes to Zenodo (section 7), so one release does both.
+
+### One-time setup (on pypi.org and github.com, by hand)
+
+1. Create an account on <https://pypi.org> (and, for rehearsals, <https://test.pypi.org> - a separate account) and
+   turn on two-factor authentication (PyPI requires it to publish).
+2. **Add a pending publisher** - the project `mppp` does not exist on PyPI yet, and this reserves the name for
+   this repository [6]: PyPI, *Your account > Publishing > Add a new pending publisher > GitHub*:
+   * PyPI project name: `mppp`
+   * Owner: `ctate7163`
+   * Repository name: `MPPP`
+   * Workflow name: `publish.yml`
+   * Environment name: `pypi`
+
+   On TestPyPI the same, with the environment name `testpypi`.
+3. GitHub: *Settings > Environments > New environment*: `pypi` (optionally with *Required reviewers* = you, so a
+   release waits for your click before uploading) and `testpypi`.
+
+### Each release
+
+4. Before the release, the camera models in use must be committed: models promoted on the PC
+   (`src/mppp/data/cmods/`, for example `M2020_FR.json`, `M2020_RL.json`, `M2020_RR.json` of 23 Oct) are untracked
+   files until they are added - `git status src/mppp/data/cmods`, then `git add` and commit them - otherwise the
+   wheel ships without them.
+5. Check the version in `src/mppp/__init__.py`, `CITATION.cff` and `CHANGELOG.md`, then build locally once:
+
+   ```bat
+   pip install build twine
+   python -m build
+   python -m twine check --strict dist\*
+   ```
+
+6. Rehearsal (optional): GitHub, *Actions > publish > Run workflow*: it builds and uploads to TestPyPI only. Then
+   `pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ mppp` in a fresh
+   environment.
+7. Publish the GitHub release `vX.Y.Z` (section 7, step 7). The workflow uploads to PyPI; the project page is
+   <https://pypi.org/project/mppp/>. A version can be uploaded only once - a fix needs a new version number.
+
+The wheel holds the package and its data (site definitions, camera models in use, lists, waypoint snapshot,
+790 KB); the sdist adds the tests and their two PDS products (12 MB). The studies, notebooks, Windows scripts,
+paper and documentation site stay in the repository (`MANIFEST.in`).
+
+5. PyPI, *Trusted publishers*: <https://docs.pypi.org/trusted-publishers/>
+6. PyPI, *Creating a PyPI project with a trusted publisher*: <https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/>

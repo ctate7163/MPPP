@@ -1,0 +1,15 @@
+# The source distribution on PyPI (0.94.4): the package, its data, the tests and their two PDS products, and the
+# documents a reviewer looks for. The studies, notebooks, Windows scripts, paper and documentation site stay in the
+# git repository (https://github.com/ctate7163/MPPP).
+include LICENSE NOTICE README.md CHANGELOG.md CITATION.cff CONTRIBUTING.md CODE_OF_CONDUCT.md pyproject.toml
+graft src/mppp/data
+recursive-include tests *.py
+graft tests/data
+global-exclude __pycache__ *.py[cod] .DS_Store
+prune studies
+prune notebooks
+prune paper
+prune docs
+prune scripts
+prune envs
+prune "Claude outputs"

@@ -55,6 +55,8 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("-v", "--verbose", action="store_true", help="debug messages")
     v.add_argument("-q", "--quiet", action="store_true", help="warnings only")
     ap.add_argument("--log", default=None, metavar="FILE", help="also write the log to this file")
+    from . import __version__
+    ap.add_argument("--version", action="version", version=f"mppp {__version__}")
     sub = ap.add_subparsers(dest="cmd")
 
     p = sub.add_parser("process", help="select the PDS products of a site and process them into <WORK>/processed")

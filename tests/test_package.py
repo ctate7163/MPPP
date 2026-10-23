@@ -123,3 +123,41 @@ def test_no_logger_call_with_flush():
         for m in re.finditer(r"\b(?:log|logger)\.(?:info|warning|debug|error)\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*flush=", t, re.S):
             bad.append(f"{f.relative_to(ROOT)}:{t[:m.start()].count(chr(10)) + 1}")
     assert not bad, bad
+
+
+def test_pypi_packaging():
+    """0.94.4 (Christian: https://pypi.org/project/mppp/ for the JOSS submission): the metadata PyPI shows, the
+    sdist contents, the trusted-publishing workflow and `mppp --version`."""
+    import subprocess
+    import sys
+    try:
+        import tomllib
+    except ImportError:                                    # Python 3.10
+        import tomli as tomllib
+    root = Path(__file__).resolve().parents[1]
+    pp = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    pr = pp["project"]
+    assert pr["name"] == "mppp" and pr["license"] == "Apache-2.0" and set(pr["license-files"]) == {"LICENSE", "NOTICE"}
+    assert pr["authors"][0]["name"] == "Christian Tate" and "Programming Language :: Python :: 3" in pr["classifiers"]
+    assert {"Homepage", "Documentation", "Repository", "Issues", "Changelog"} <= set(pr["urls"])
+    assert pr["scripts"]["mppp"] == "mppp.cli:main"
+    # every data file is in the wheel's package data
+    import fnmatch
+    pats = pp["tool"]["setuptools"]["package-data"]["mppp"]
+    data = root / "src" / "mppp" / "data"
+    for f in data.rglob("*"):
+        if f.is_file() and "__pycache__" not in f.parts:
+            rel = "data/" + f.relative_to(data).as_posix()
+            assert any(fnmatch.fnmatch(rel, p) for p in pats), rel
+    man = (root / "MANIFEST.in").read_text(encoding="utf-8")
+    assert "graft tests/data" in man and "prune studies" in man and "prune paper" in man
+    wf = (root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    assert "pypa/gh-action-pypi-publish@release/v1" in wf and "id-token: write" in wf and "environment:" in wf
+    assert "release:" in wf and "twine check --strict" in wf
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert "pip install \"mppp[mask,sfm,plots]\"" in readme
+    import re
+    assert not re.findall(r"\]\((?!https?://|#|mailto:)[^)]+\)", readme)       # relative links break on PyPI
+    r = subprocess.run([sys.executable, "-m", "mppp", "--version"], capture_output=True, text=True, timeout=120)
+    import mppp
+    assert r.returncode == 0 and r.stdout.strip() == f"mppp {mppp.__version__}"

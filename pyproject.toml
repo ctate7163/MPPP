@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77.0.3"]          # 77: the SPDX license expression and license-files (PEP 639)
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,25 @@ dynamic = ["version"]      # from mppp.__version__ (the single source)
 description = "Mars Photogrammetry Preprocessing Pipeline: Mars 2020 PDS images to COLMAP and Metashape, with rover masks, camera models and pose priors"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Christian Tate", email = "ctate7163@gmail.com" }]
+maintainers = [{ name = "Christian Tate", email = "ctate7163@gmail.com" }]
+keywords = ["Mars 2020", "Perseverance", "photogrammetry", "structure from motion", "COLMAP", "Metashape",
+            "Navcam", "Mastcam-Z", "Hazcam", "PDS", "camera calibration"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Astronomy",
+  "Topic :: Scientific/Engineering :: Image Processing",
+]
 dependencies = [
   "numpy", "scipy", "opencv-python-headless", "pdr>=1.4", "pvl",
   "colour-demosaicing", "tifffile", "piexif",
@@ -41,6 +59,10 @@ mppp = "mppp.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/ctate7163/MPPP"
+Documentation = "https://ctate7163.github.io/MPPP/"
+Repository = "https://github.com/ctate7163/MPPP"
+Issues = "https://github.com/ctate7163/MPPP/issues"
+Changelog = "https://github.com/ctate7163/MPPP/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
