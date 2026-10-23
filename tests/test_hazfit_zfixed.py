@@ -485,7 +485,7 @@ def test_0940_exclusions_before_processing_and_exposure_mask_off():
     from mppp.waypoints.sites import load_site_table
     t = load_site_table()["sites"]
     for s in ("chal_rocks", "chal_rocks_large", "chal_rocks_tiny"):
-        assert t[s]["no_mask_inference_at"] == ["0093_0675176765_000", "0360_0698912834_738", "ZCAM00034", "ZCAM08060",
+        assert t[s]["no_mask_inference_at"] == ["0093_0675176765_000", "0093_0675177115_000", "0360_0698912834_738", "ZCAM00034", "ZCAM08060",
                                                 "RHAZ0*"]
 
 

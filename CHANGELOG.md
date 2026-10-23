@@ -17,6 +17,8 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **Chal Rocks (all three blocks): no mask inference on exposure `0093_0675177115_000`** (Christian: the model
+  masked a rock there), next to `0093_0675176765_000`.
 - **Eight image-processing workers by default** (Christian; were 4): `Settings.workers` (`WORKERS`, not in the run
   key), `process_images`, and `train_mask.py --regen`. With two sites at a time that is up to 16 worker processes.
 - **`seq:FHAZ00206` on the exclude list** (Christian): its front Hazcam frames are left out of every alignment.
