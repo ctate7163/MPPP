@@ -293,7 +293,8 @@ def test_start_rig_from_the_promoted_rig():
     assert info["drift"]["sol_median"] == 1400.0 and info["T_median_degC"] == -9.25
     assert ent["t_sensor_from_ref"] == rig["t_sensor_from_ref_m"] and "fitted" in ent["rotation_source"]
     assert ent["R_sensor_from_ref_cahv"] == np.eye(3).tolist()
-    assert navcam_start_rig(dict(ent), images, "F") is None                 # no Hazcam rig file: CAHV stays
+    hz = navcam_start_rig(dict(ent), images, "F")                          # 0.93.9: the promoted Hazcam rig
+    assert hz is not None and str(hz["file"]).endswith("M2020_F_rig.json")
 
 
 def test_project_camera_fallback_for_fisheye_tangential():

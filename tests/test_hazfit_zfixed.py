@@ -147,7 +147,9 @@ def test_new_windows_scripts_exist_crlf():
 def test_groups_and_block_sites():
     t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
     g = t["groups"]
-    assert g["zcam_consensus"] == ["seitah_overlook", "chal_rocks", "threeforks_north", "belva_crater", "south_arm", "marble_mountain"]
+    assert g["zcam_consensus"] == ["seitah_overlook", "chal_rocks_large", "threeforks_north", "belva_crater", "south_arm",
+                                   "marble_mountain", "taylorfjellet"]                      # 23 Oct
+    assert "chal_rocks" not in g["zcam34_joint"] and "chal_rocks_large" in g["zcam34_joint"]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "threeforks_north", "belva_crater", "bell_island", "marble_mountain"]
     assert all(s in t["sites"] for s in g["hazcam_consensus"])
     ob = t["official_blocks"]
@@ -358,3 +360,82 @@ def test_promote_waits_for_a_held_file(tmp_path, monkeypatch):
     assert dst.read_text() == '{"x": 1}' and calls["n"] == 3 and not (dst.parent / "b.json.promote_tmp").exists()
     bat = (Path(__file__).resolve().parents[1] / "scripts" / "windows" / "zcam_joints.bat").read_bytes()
     assert b"zcam_joints.lock" in bat and b'rmdir "%LOCK%"' in bat
+
+
+def test_error_analysis_batch_and_pipeline_report(tmp_path, monkeypatch):
+    """0.93.9: the pipeline's error_analysis stage - the batch over blocks (a failing block does not stop it) and
+    its report.md; the new stage list."""
+    import copy
+    import importlib.util
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT / "tests"))
+    from helpers import _synthetic_model
+    from mppp.error import alignment as A
+    model, X = _synthetic_model(noise_px=0.2)
+    e = tmp_path / "work" / "colmap" / "error_input"
+    (e / "native").mkdir(parents=True)
+    (e / "stations.csv").write_text("name,station,instrument\n" + "".join(
+        f"img{k}.png,{'A' if k <= 3 else 'B'},NL\n" for k in range(1, 7)))
+    monkeypatch.setattr(A, "read_colmap", lambda path: copy.deepcopy(model))
+    spec = importlib.util.spec_from_file_location("eab", ROOT / "studies" / "analyses" / "error_analysis_batch.py")
+    eab = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(eab)
+    out = tmp_path / "ea"
+    eab.main([str(out), f"good={tmp_path / 'work'}", f"missing={tmp_path / 'nothing'}", "--n-points", "300",
+              "--n-boot", "0"])
+    res = json.loads((out / "error_analysis_batch.json").read_text())
+    assert "good" in res["alignments"] or "good" in (res.get("failed") or {})
+    spec = importlib.util.spec_from_file_location("rp", ROOT / "studies" / "calibration" / "run_pipeline.py")
+    rp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rp)
+    md = rp.error_report(res)
+    assert md.startswith("# Error analysis on the SfM points")
+    assert rp.STAGES == ("wait", "navcam_runs", "navcam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report")
+
+
+def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
+    """0.93.9: Chal Rocks tiny (sols 91-98) and the A/B report from two finished alignments."""
+    import importlib.util
+    from mppp.waypoints.sites import load_site_table
+    t = load_site_table()["sites"]
+    assert t["chal_rocks_tiny"]["sols"] == [[91, 98]] and t["chal_rocks_tiny"]["zcam"] == t["chal_rocks"]["zcam"]
+    for s in ("chal_rocks", "chal_rocks_large", "chal_rocks_tiny"):
+        assert t[s]["no_mask_inference_at"] == ["NCAM00699", "ZCAM00034", "ZCAM08060", "RHAZ0*"]
+    assert t["bell_island"]["no_mask_inference_at"] == ["RHAZ0*"] == t["bell_island_large"]["no_mask_inference_at"]
+    from mppp.config import mask_inference_skipped
+    assert mask_inference_skipped(["RHAZ0*"], 1, 1, name="RLF_0093_0675031997_228RAS_N0040100RHAZ00102_0A0095J01")
+    assert not mask_inference_skipped(["RHAZ0*"], 1, 1, name="RLF_0093_0675031997_228RAS_N0040100RHAZ10102_0A0095J01")
+    assert mask_inference_skipped(["RHAZ0"], 1, 1, sequence="RHAZ01234")
+    spec = importlib.util.spec_from_file_location("lab", ROOT / "scripts" / "lightglue_ab.py")
+    lab = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lab)
+    work = tmp_path / "w"
+    for v, m in (("sift", "sift"), ("lightglue", "lightglue")):
+        c = work / f"colmap_{v}"
+        (c / "health").mkdir(parents=True)
+        (c / "run_done.json").write_text(json.dumps({"images": 300, "registered_images": 290 + (v == "lightglue") * 5,
+                                                      "residual_rms_native_px": 0.31}))
+        (c / "project.json").write_text(json.dumps({"settings": {"matching": {"matcher": m, "matched_pairs": 1000,
+                                                                              "verified_pairs": 900, "inlier_matches": 5}}}))
+        (c / "health" / "health.json").write_text(json.dumps({"verdict": "warn", "checks": [
+            {"check": "cross_station_fraction", "value": 0.02 if v == "sift" else 0.04, "status": "pass", "note": ""}]}))
+    log = work / "runs" / "x" / "log.txt"
+    log.parent.mkdir(parents=True)
+    log.write_text("2026-10-23T10:00:00      | database: {}\n2026-10-23T10:12:00      | matching: {}\n")
+    assert lab.matching_seconds(log) == 720
+    res = {"when": "now", "gpu": {"cuda": True}, "variants": {v: lab.summary(work, v, {"log": str(log), "seconds": 3600})
+                                                             for v in ("sift", "lightglue")}}
+    md = lab.report(work, res)
+    assert "| matcher that ran | sift | lightglue |" in md and "cross_station_fraction" in md and "| 12 |" in md
+    bat = (ROOT / "scripts" / "windows" / "test_lightglue.bat").read_bytes()
+    assert b"lightglue_ab.py" in bat and b"\r\n" in bat
+
+
+def test_check_zcam_rig_scatter_of_too_few_blocks():
+    """0.93.9 (Z48 of 23 Oct): a rig scatter that could not be measured (one block per angle: None) is no crash."""
+    from mppp.calib.fit import check_zcam
+    ln = {"fx": {"a": 6700.0, "b": 0.0}, "fy": {"a": 6702.0, "b": 0.0}}
+    new = {"cameras": {"ZL048": {"f0_px": 6701.0, "aspect": 1.0003, "lines": {"backlash": ln}}},
+           "rig": {"baseline_m": 0.2436, "sd_rotvec_mdeg": [None, None, None], "blocks": ["a"]}}
+    c = {x["check"]: x for x in check_zcam(new, {"cameras": {}})["checks"]}
+    assert c["rig scatter"]["ok"] and "not measured" in c["rig scatter"]["note"]

@@ -1,8 +1,6 @@
 """
-The whole calibration and alignment run, unattended, in one command (several days).  v0p80: the camera-model recipe
-of 14 Oct 2026 - Navcam first and iterated (blocks -> joint -> promote -> blocks -> joint), v0p82: then the waypoint
-check and the Navcam baseline (promoted if significant, confirmed on the blocks, the joint refitted), then Mastcam-Z
-with the promoted Navcam:
+The whole alignment, calibration and error-analysis run, unattended, in one command (0.93.9, Christian 23 Oct 2026:
+run_sites plus run_sites_zcam, then an error analysis on the SfM points):
 
     python studies\\calibration\\run_pipeline.py                  (run_pipeline.bat)
     python studies\\calibration\\run_pipeline.py --status         what is done, what is running
@@ -11,49 +9,28 @@ with the promoted Navcam:
 Stages (each logged in ``<root>\\mppp_pipeline\\<stage>.log``, the pipeline in ``pipeline_log.txt``, the state in
 ``state.json``; started again, the pipeline continues after the last finished stage):
 
- 1. ``wait``             - waits while another run_sites / process_sites batch runs on ROOT (at most --wait-h hours)
- 2. ``prepare``          - prepare_next_run.py: the v0p72 consensus in the v0p73 form must be in use (promoted if
-                           not) and the form OK - otherwise the pipeline stops here
- 3. ``navcam_consensus`` - pass 1 of the Navcam consensus in the v0p80 form (the v0p73 NL-reference form - fx, fy per
-                           eye and NR cx against temperature, the rig yaw sol rate, early-mission offsets, the rig
-                           translation held (v0p82), 2 rounds of thermal profiles - with k4 free and k1 against temperature from the
-                           blocks' temperature bins) over the Navcam-only blocks of the navcam_consensus group that pass
-                           screening, leave-one-block-out, checked and promoted if every check passes; rig residuals
- 4. ``navcam_runs``      - run_sites.py --group navcam_consensus with the promoted models and the v0p80 block recipe
-                           (round 1 held, principal point held, fx fy k1 per temperature bin, rig pitch/roll per
-                           epoch); ``--no-navcam-runs`` skips it; failed ones once more
- 5. ``navcam_consensus_2`` - pass 2 of the consensus on those blocks; the change from pass 1 says whether the iteration
-                           has converged (below 20 ppm in f, 0.05 px pp, 0.02 px corner distortion, 1 mdeg rig);
-                           promoted if every check passes
- 6. ``waypoint_check``   - v0p82: the waypoint localisation check over the Navcam blocks (navcam_consensus and
-                           navcam_baseline groups): each block's stations against their waypoints after a robust
-                           similarity; flagged (> 1 m, or > 0.5 m and > 3x the block's scatter) ->
-                           camera_analysis/waypoint_flags_<date>
- 7. ``baseline_study``   - v0p82: the Navcam baseline from the navcam_baseline sites with > 4 waypoints over > 30 m:
-                           cameras held, rig translation free, flagged waypoints without prior, priors at 0.5 m;
-                           combined (between-block term), with the block scale against the waypoints now / free /
-                           predicted and an east-north isotropy test; promoted if > 3 sigma, the blocks agree, the scale
-                           agreement improves and the scales are isotropic - and only when pass 2 converged (or with
-                           ``--baseline-study``); the joint holds the translation in every pass (no --apply-translation)
- 8. ``baseline_confirm`` - v0p82: after a promotion the same blocks with the new baseline held; if the scale agreement is
-                           not better, the previous rig is promoted back
- 9. ``navcam_consensus_3`` - v0p82: with a confirmed new baseline, the joint once more (the baseline held)
-10. ``zcam_start``       - v0p82: the found list cleaned (clean-found), then the current Navcam + Mastcam-Z blocks: their
-                           low-backlash groups into the found list, a start focus model written as a candidate - the
-                           promoted v0p75 start model stays (``--zcam-start-promote`` promotes the candidate)
-11. ``zcam_runs``        - run_sites.py --group zcam34_consensus --zcam --set ZCAM_ZOOMS=[34] (every site: the camera
-                           models are in the run key), failed sites tried once more
-12. ``zcam_calibrate``   - grade the N+Z blocks, every passing one gives the Mastcam-Z 34 mm calibration (lines per eye
-                           and focus state; rig rotation) - checked, promoted, report
-13. ``zcam_final_runs``  - only if the calibration was promoted: every N+Z block again from it
-14. ``pointclouds``      - a PLY per finished block
-15. ``report``           - ``<root>\\mppp_pipeline\\REPORT.md``
+ 1. ``wait``           - waits while another run_sites / process_sites batch runs on ROOT (at most --wait-h hours)
+ 2. ``navcam_runs``    - run_sites.py --group navcam_consensus (run_sites.bat): every Navcam block (with its
+                         Hazcams) with the camera models in use; sites that failed once more
+ 3. ``navcam_joint``   - mppp calib navcam (navcam_tied_joint.bat): the Navcam tied joint over those blocks,
+                         promoted when every check passes (--no-promote: never)
+ 4. ``zcam_runs``      - run_sites.py --zcam over the zcam_consensus sites and the other zcam34_joint sites
+                         (run_sites_zcam.bat): the Navcam + Mastcam-Z + Hazcam blocks at every zoom of each site's
+                         "zcam" list, with the Navcam models just promoted
+ 5. ``zcam_joints``    - as zcam_joints.bat: the Hazcam fit over the zcam_consensus blocks, then the Mastcam-Z joint
+                         of each zoom (34 over zcam34_joint + zcam_consensus, 48 / 63 / 79 / 110 over
+                         zcam_consensus), each promoted when its checks pass, then the Navcam + Mastcam-Z check
+                         (never promoted)
+ 6. ``error_analysis`` - studies/analyses/error_analysis_batch.py over every finished block of both groups
+                         (``<WORK>/colmap/error_input``): epsilon intra / cross station, by range and by angle, the
+                         cross-station gate, the decorrelation rho(theta), the view graph, the registration against
+                         the priors -> camera_analysis/error_analysis_<date>/ (json and report.md)
+ 7. ``report``         - ``<root>\\mppp_pipeline\\REPORT.md``
 
-v0p82 alignments (every run): images whose mask keeps less than 1/3 of the image are left out
-(MIN_INCLUDED_FRACTION), and the block is moved onto its position priors after each adjustment (PRIOR_GAUGE_RECENTRE).
-
-A stage that fails is logged and the pipeline goes on where that makes sense (only ``prepare`` stops it). Exit code 0
-when every stage ran (whatever it found), 1 when the pipeline stopped.
+A stage that fails is logged and the pipeline goes on (the next stage works with what there is).  Exit code 0 when
+every stage ran (whatever it found).  The pipeline before 0.93.9 (consensus passes, baseline study, the Z34-only
+Mastcam-Z calibration from per-block lines) is in the git history; its state file is kept aside as
+``state_before_<tag>.json``.
 """
 from __future__ import annotations
 
@@ -72,31 +49,33 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))        # _batch (batch lock, process control)
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
 PY = sys.executable
-STAGES = ("wait", "prepare", "navcam_consensus", "navcam_runs", "navcam_consensus_2", "waypoint_check",
-          "baseline_study", "baseline_confirm", "navcam_consensus_3", "zcam_start", "zcam_runs", "zcam_calibrate",
-          "zcam_final_runs", "pointclouds", "report")      # v0p80: Navcam first; v0p82: the baseline before Mastcam-Z
-CONSENSUS_FORM = "v0p80"
-ZCAM_GROUP, NAVCAM_GROUP = "zcam34_consensus", "navcam_consensus"     # --zcam-group overrides the first (v0p75)
-JOINT = "tied"                                                         # 0.91: the one-adjustment joint ("profiles": 0.90's)
-BASELINE_GROUP = "navcam_baseline"                                     # v0p82
-ZCAM_SET = ["--set", "ZCAM_ZOOMS=[34]"]
-EARLY_START = ("0.197", "0.254", "0.324", "-0.572")          # v0p85: the 18 Oct pass-2 offsets (z 5.8-13.5)
-EARLY_ROUNDS = "1"            # v0p85: one round around the pass-2 optimum (was 3 from a poorer start)
-EARLY_ROUNDS_V0P82 = "3"            # a round is ~35 min; the cx direction is flat (the 20261003 run needed 3 from a poor start)
+STAGES = ("wait", "navcam_runs", "navcam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report")
+STATE_TAG = "v0939"                              # the stage set of the state file
+STOP_ON_FAIL = ()                                # every stage goes on to the next
+ZCAM_GROUP, NAVCAM_GROUP, ZCAM34_JOINT = "zcam_consensus", "navcam_consensus", "zcam34_joint"
+ZOOMS = (34, 48, 63, 79, 110)
 
 
 class Pipeline:
     def __init__(self, a):
         from mppp.runner import Log
         self.a = a
-        self.zcam_group = getattr(self.a, "zcam_group", None) or ZCAM_GROUP    # v0p75: a smaller group for iterating
+        self.zcam_group = getattr(self.a, "zcam_group", None) or ZCAM_GROUP
         self.root = Path(a.root)
         self.dir = self.root / "mppp_pipeline"
         self.dir.mkdir(parents=True, exist_ok=True)
         self.log = Log(self.dir / ("dry_run_log.txt" if a.dry_run else "pipeline_log.txt"))
         self.state_file = self.dir / "state.json"
         self.state = json.loads(self.state_file.read_text(encoding="utf-8")) if self.state_file.is_file() else {}
+        if self.state and self.state.get("_stages") != STATE_TAG:
+            # the state of the pipeline before 0.93.9 (other stages, some with the same names): kept aside, not used
+            if not a.dry_run:
+                self.state_file.replace(self.dir / f"state_before_{STATE_TAG}.json")
+            self.state = {}
+        self.state["_stages"] = STATE_TAG
 
     # ---------------------------------------------------------------- bookkeeping
     def save(self):
@@ -152,231 +131,23 @@ class Pipeline:
                 return "done", "dry run"
             time.sleep(600)
 
-    def s_prepare(self):
-        from mppp.calib.models import check_form
-        # cameras already in the frozen form (e.g. a consensus this pipeline promoted, then restarted with --reset):
-        # only checked - an older candidate is never promoted over them
-        keep = check_form()["ok"]
-        cmd = [PY, HERE / "prepare_next_run.py", "--root", self.root, "--groups", NAVCAM_GROUP, self.zcam_group] \
-            + (["--keep"] if keep else [])
-        rc = self.run("prepare", cmd)
-        if keep:
-            return "done", ("cameras in use: the v0p72 consensus in the v0p73 form" if rc == 0 else
-                            "cameras in use are in the v0p73 form (not the v0p72 candidate: kept)")
-        if rc == 0:
-            return "done", "the v0p72 consensus in the v0p73 form promoted and checked"
-        return "failed", f"prepare_next_run.py exit {rc}: the camera models are not right - stopping"
-
-    def navcam_blocks(self):
-        """{label: WORK folder} of the Navcam-only blocks on disk for the consensus: finished (run_done), one folder
-        per site (the site's own WORK folder when it has one), screening not FAIL.  v0p75: the sites of the
-        ``navcam_consensus`` group only (``--all-navcam-blocks`` takes every Navcam block on disk, as before)."""
-        from mppp.sfm.health import screen_blocks
-        from mppp.waypoints.sites import discover_scapes, load_site_table, parse_work_folder, site_group, work_folder
-        table = load_site_table()
-        found = discover_scapes(self.root, include_zcam=False, verbose=False)
-        members = None
-        if not getattr(self.a, "all_navcam_blocks", False):
-            try:
-                members = set(site_group(NAVCAM_GROUP))
-            except KeyError:                                   # a site table without the group: every block
-                members = None
-        out = {}
-        skipped = []
-        for label, w in found.items():
-            site, zc = parse_work_folder(w)
-            if zc or not (w / "colmap" / "run_done.json").is_file():
-                continue
-            if members is not None and site not in members:
-                skipped.append(site)
-                continue
-            if site in table["sites"]:
-                own = work_folder(self.root, site, False, table["sites"][site]["sols"])
-                if own != w and (own / "colmap" / "run_done.json").is_file():
-                    continue                                   # a stale folder of a site that has its own
-            out[label] = w
-        if skipped:
-            self.log(f"  navcam_consensus: blocks on disk not in the {NAVCAM_GROUP} group, left out: {', '.join(sorted(set(skipped)))}")
-        scr = screen_blocks({k: str(v) for k, v in out.items()}, verbose=False)
-        # v0p74.5: a block matched with COLMAP guided matching (epipolar-consistent false matches) is a WARN for a
-        # single alignment but must not shape the shared cameras: left out of the consensus like a FAIL
-        bad = sorted(k for k, r in scr.items() if r.get("verdict") == "fail" or r.get("guided_matching"))
-        return {k: v for k, v in out.items() if k not in bad}, scr, bad
-
-    def s_navcam_consensus(self, stage="navcam_consensus", previous=None):
-        from mppp import VERSION_TAG
-        blocks, scr, bad = self.navcam_blocks()
-        if len(blocks) < 8:
-            return "failed", f"only {len(blocks)} Navcam blocks pass screening (left out: {', '.join(bad)})"
-        tag = {"navcam_consensus": "pipeline", "navcam_consensus_2": "pipeline_pass2"}.get(stage, "pipeline_pass3")
-        out = self.root / "camera_analysis" / f"navcal_{VERSION_TAG}_{datetime.date.today():%Y%m%d}_{tag}"
-        n = 1
-        base = out
-        while out.exists() and (out / "navcam_joint" / "consensus.json").is_file():
+    def _out(self, name: str, marker: str) -> Path:
+        """``<root>/camera_analysis/<name>_<date>[_N]``: the first one without ``marker`` in it."""
+        base = self.root / "camera_analysis" / f"{name}_{datetime.date.today():%Y%m%d}"
+        out, n = base, 1
+        while (out / marker).exists():
             n += 1
             out = base.with_name(f"{base.name}_{n}")
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "scapes.json").write_text(json.dumps({k: str(v) for k, v in blocks.items()}, indent=1), encoding="utf-8")
-        (out / "block_screening.json").write_text(json.dumps(scr, indent=1, default=str), encoding="utf-8")
-        self.log(f"  {stage}: {len(blocks)} blocks -> {out}" + (f" (screening FAIL left out: {', '.join(bad)})" if bad else ""))
-        self.state.setdefault(stage, {})["study"] = str(out)
-        self.save()
-        # v0p80: the recipe's joint - k4 free, k1(T) from the bins, leave-one-block-out as a promotion gate
-        # v0p82: the joint holds the rig translation (the baseline stage carries it); the large blocks' translation
-        # with the cameras held is still fitted and reported (--translation-min-span), not applied
-        # 0.91: the joint is one adjustment of every term (mppp.calib.tied; --joint profiles gives the 0.90 joint)
-        cmd = [PY, HERE / "navcam_calibration_study.py", "consensus", out,
-               out / "scapes.json", "--joint", JOINT, "--points", "8000", "--translation-min-span", "30",
-               "--refit-thermal",
-               "--thermal-rounds", "2",
-               "--form", CONSENSUS_FORM, "--k1-from-bins", "--leave-one-out",
-               "--early-mission-sol", "380", "--early-rounds", EARLY_ROUNDS,
-               "--early-start", *EARLY_START, "--promote-if-ok",
-               "--promote-note", f"{VERSION_TAG} pipeline consensus {tag.replace('pipeline_', '') + ' ' if previous else ''}of "
-                                 f"{len(blocks)} blocks ({CONSENSUS_FORM} form)"]
-        if previous:
-            cmd += ["--previous", previous]
-        rc = self.run(stage, cmd, timeout_h=self.a.stage_timeout_h)
-        chk = out / "promotion_check.json"
-        rep = json.loads(chk.read_text(encoding="utf-8")) if chk.is_file() else {}
-        promoted = bool(rep.get("ok")) and rc == 0
-        # the rig residuals with the candidate (or the cameras in use) - best effort
-        cams = out / "navcam_joint" if (out / "navcam_joint" / "M2020_N_rig.json").is_file() else None
-        code = ("import json,sys; sys.path.insert(0,r'%s'); import matplotlib; matplotlib.use('Agg');"
-                "import navcal_consensus as N;"
-                "b=json.load(open(r'%s'));"
-                "r=N.rig_residuals(b, cameras_dir=%s, points=8000);"
-                "json.dump(r, open(r'%s','w'), indent=1, default=float);"
-                "N.plot_rig_residuals(r, r'%s')") % (HERE, out / "scapes.json",
-                                                    f"r'{cams}'" if cams else "None", out / "rig_residuals.json",
-                                                    out / "navcam_rig_residuals.png")
-        self.run(stage, [PY, "-c", code], timeout_h=self.a.stage_timeout_h)
-        if rc != 0 and not rep:
-            return "failed", f"the consensus failed (exit {rc}); the cameras in use stay"
-        conv = ""
-        pc = out / "pass_change.json"
-        if pc.is_file():                                   # v0p80: pass 2 - has the iteration converged?
-            ch = json.loads(pc.read_text(encoding="utf-8"))
-            self.state.setdefault(stage, {})["converged"] = bool(ch.get("converged"))
-            self.save()
-            w = ch.get("worst") or {}
-            conv = (f"; change from pass 1: f {w.get('f_ppm', 0):.1f} ppm, pp {w.get('pp_px', 0):.3f} px, corners "
-                    f"{w.get('corner_px', 0):.3f} px, rig {w.get('rig_mdeg', 0):.2f} mdeg -> "
-                    + ("converged" if ch.get("converged") else "NOT converged (another navcam_runs + consensus pass)"))
-        return "done", ("promoted" if promoted else "not promoted (a check failed; the cameras in use stay): "
-                        + ", ".join(c["check"] for c in rep.get("checks", []) if not c.get("ok"))) + conv
+        return out
 
-    def s_navcam_consensus_2(self):
-        """v0p80: pass 2 of the joint over the blocks rerun with pass 1's models."""
-        if (self.state.get("navcam_runs") or {}).get("status") != "done":
-            return "skipped", "no navcam_runs this time (pass 2 needs the blocks rerun with pass 1's models)"
-        st = (self.state.get("navcam_consensus") or {}).get("study")
-        prev = str(Path(st) / "navcam_joint") if st and (Path(st) / "navcam_joint" / "M2020_N_rig.json").is_file() else None
-        if prev is None:
-            from mppp.paths import cmods_dir
-            prev = str(cmods_dir())
-        return self.s_navcam_consensus("navcam_consensus_2", previous=prev)
+    def _mppp(self, stage, out: Path, args, timeout_h=None):
+        """``python -m mppp --log <out>_log.txt <args>``; returns the exit code."""
+        return self.run(stage, [PY, "-m", "mppp", "--log", f"{out}_log.txt", *map(str, args)], timeout_h=timeout_h)
 
-    def s_waypoint_check(self):
-        """v0p82: the waypoint localisation check over the Navcam blocks (navcam_consensus and navcam_baseline groups,
-        the production runs): flagged stations go into the baseline stage without their position prior."""
-        out = self.root / "camera_analysis" / f"waypoint_flags_{datetime.date.today():%Y%m%d}"
-        rc = self.run("waypoint_check", [PY, ROOT / "scripts" / "waypoint_check.py", "--root", self.root, "--groups",
-                                         NAVCAM_GROUP, BASELINE_GROUP, "--out", out], timeout_h=2)
-        js = out / "waypoint_flags.json"
-        if rc != 0 or not js.is_file():
-            return "done", f"no flags (exit {rc}); the baseline stage keeps every prior"
-        self.state.setdefault("waypoint_check", {})["flags"] = str(js)
-        self.save()
-        fl = json.loads(js.read_text(encoding="utf-8")).get("flagged") or []
-        return "done", f"{len(fl)} flagged stations: {', '.join(fl) or 'none'} ({out / 'waypoint_flags.md'})"
-
-    def s_baseline_study(self):
-        """v0p80/v0p82: the baseline from the large blocks (the navcam_baseline sites with > 4 waypoints over > 30 m),
-        flagged waypoints without prior; promoted if significant and the block scale agreement improves - only once
-        the Navcam consensus has converged (pass 2) or with --baseline-study; otherwise studied, not promoted."""
-        if getattr(self.a, "no_baseline_study", False):
-            return "skipped", "--no-baseline-study"
-        conv = bool((self.state.get("navcam_consensus_2") or {}).get("converged"))
-        promote = conv or getattr(self.a, "baseline_study", False)
-        out = self.root / "camera_analysis" / f"navcam_baseline_{datetime.date.today():%Y%m%d}"
-        self.state.setdefault("baseline_study", {})["study"] = str(out)
-        self.save()
-        cmd = [PY, HERE / "navcam_baseline_study.py", "all", "--root", self.root, "--out", out,
-               "--write-rig", out / "candidate_rig"]
-        fl = (self.state.get("waypoint_check") or {}).get("flags")
-        if fl:
-            cmd += ["--flags", fl]
-        if promote:
-            cmd.append("--promote")
-        rc = self.run("baseline_study", cmd, timeout_h=self.a.sites_timeout_h)
-        js = out / "baseline_study.json"
-        if not js.is_file():
-            return "done", f"no result (exit {rc})"
-        rep = json.loads(js.read_text(encoding="utf-8"))
-        verdict = rep["combined"].get("verdict")
-        promoted = bool((rep.get("promoted") or {}).get("returncode") == 0)
-        self.state["baseline_study"]["promoted"] = promoted
-        self.save()
-        return "done", (f"{verdict}; " + ("PROMOTED" if promoted else
-                                          "not promoted" + ("" if promote else " (the consensus has not converged)")))
-
-    def s_baseline_confirm(self):
-        """v0p82: the study's blocks again with the promoted baseline held; reverted if the scale agreement with the
-        waypoints is not better."""
-        st = self.state.get("baseline_study") or {}
-        if not st.get("promoted"):
-            return "skipped", "no baseline promoted"
-        cmd = [PY, HERE / "navcam_baseline_study.py", "confirm", "--root", self.root, "--out", st["study"]]
-        fl = (self.state.get("waypoint_check") or {}).get("flags")
-        if fl:
-            cmd += ["--flags", fl]
-        rc = self.run("baseline_confirm", cmd, timeout_h=self.a.sites_timeout_h)
-        self.state["baseline_confirm"] = dict(self.state.get("baseline_confirm") or {}, confirmed=(rc == 0))
-        self.save()
-        return "done", {0: "confirmed: the block scale agreement improved", 1: "NOT better: the previous rig promoted "
-                        "back"}.get(rc, f"exit {rc} (see baseline_confirm.log)")
-
-    def s_navcam_consensus_3(self):
-        """v0p82: the joint refitted once with the new baseline held (recipe section 4), before Mastcam-Z."""
-        if not (self.state.get("baseline_confirm") or {}).get("confirmed"):
-            return "skipped", "no new baseline in use"
-        prev = None
-        for stg in ("navcam_consensus_2", "navcam_consensus"):
-            stp = (self.state.get(stg) or {}).get("study")
-            if stp and (Path(stp) / "navcam_joint" / "M2020_N_rig.json").is_file():
-                prev = str(Path(stp) / "navcam_joint")
-                break
-        if prev is None:
-            from mppp.paths import cmods_dir
-            prev = str(cmods_dir())
-        return self.s_navcam_consensus("navcam_consensus_3", previous=prev)
-
-    def s_zcam_start(self):
-        """v0p82: the found list cleaned (one focus state per sequence), then the start update from the Mastcam-Z
-        blocks on disk - a candidate and new low-backlash groups only: the promoted v0p75 start model stays unless
-        ``--zcam-start-promote`` (the blocks on disk are the 5-6 Oct runs, made with the Navcam and focus models
-        that are being replaced)."""
-        self.run("zcam_start", [PY, HERE / "zcam_calibration.py", "clean-found", "--root", self.root,
-                                "--groups", self.zcam_group], timeout_h=2)
-        cmd = [PY, HERE / "zcam_calibration.py", "start-update", "--root", self.root, "--groups",
-               self.zcam_group]
-        promote = bool(getattr(self.a, "zcam_start_promote", False))
-        if promote:
-            cmd.append("--promote")
-        rc = self.run("zcam_start", cmd, timeout_h=6)
-        if not promote:
-            return "done", (f"found list cleaned and updated; start candidate written (exit {rc}), not promoted: the "
-                            f"v0p75 start model stays (--zcam-start-promote to promote)")
-        return ("done", {0: "start model promoted, found list updated", 1: "start model not promoted (a check failed); "
-                         "found list updated"}.get(rc, f"error (exit {rc}); the focus model in use stays"))
-
-    def _sites(self, stage, group, zcam, variant=""):
-        cmd = [PY, ROOT / "scripts" / "run_sites.py", "--root", self.root, "--group", group]
+    def _sites(self, stage, sites_args, zcam):
+        cmd = [PY, ROOT / "scripts" / "run_sites.py", "--root", self.root, *sites_args]
         if zcam:
-            cmd += ["--zcam", *ZCAM_SET]
-        if variant:                       # v0p74.9: results in <WORK>/colmap_<variant>, the first runs kept
-            cmd += ["--variant", variant]
+            cmd.append("--zcam")
         rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
         for _ in range(3):
             if rc == 3 and not self.a.dry_run:                 # another batch started meanwhile: wait for it
@@ -386,104 +157,132 @@ class Pipeline:
                 rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
             else:
                 break
-        if rc == 4:
-            return "failed", "run_sites refused: the camera models are not in the v0p73 form"
         if rc == 1 and not self.a.dry_run:                     # a failed site once more (finished ones are skipped)
             self.log(f"  {stage}: some sites failed - once more")
             rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
         return ("done", "every site finished") if rc == 0 else ("done", f"finished with failed sites (exit {rc}; see run_sites_log.txt)")
 
-    def s_zcam_runs(self):
-        return self._sites("zcam_runs", self.zcam_group, True)
-
     def s_navcam_runs(self):
         if self.a.no_navcam_runs:
             return "skipped", "--no-navcam-runs"
-        return self._sites("navcam_runs", NAVCAM_GROUP, False)
+        return self._sites("navcam_runs", ["--group", NAVCAM_GROUP], False)
 
-    def s_zcam_calibrate(self):
-        rc = self.run("zcam_calibrate", [PY, HERE / "zcam_calibration.py", "calibrate", "--root", self.root,
-                                         "--groups", self.zcam_group, "--n", str(self.a.n), "--promote"], timeout_h=6)
-        self.state.setdefault("zcam_calibrate", {})["promoted"] = rc == 0 and not self.a.dry_run
+    def s_navcam_joint(self):
+        out = self._out("navcal_tied", "navcam_joint/tied_joint.json")
+        self.state.setdefault("navcam_joint", {})["study"] = str(out)
         self.save()
-        return "done", {0: "calibration promoted", 1: "calibration not promoted (too few passing blocks or a check "
-                        "failed; see camera_analysis/zcam34_calibration_*)"}.get(rc, f"error (exit {rc})")
+        args = ["calib", "navcam", "--root", self.root, "--group", NAVCAM_GROUP, "--out", out, "--knot", "250",
+                "--points", "8000"] + ([] if self.a.no_promote else ["--promote-if-ok"])
+        rc = self._mppp("navcam_joint", out, args, timeout_h=self.a.stage_timeout_h)
+        chk = out / "promotion_check.json"
+        rep = json.loads(chk.read_text(encoding="utf-8")) if chk.is_file() else {}
+        if rc != 0 and not rep:
+            return "failed", f"the Navcam joint failed (exit {rc}; {out}_log.txt); the cameras in use stay"
+        ok = bool(rep.get("ok"))
+        return "done", ("checks passed" + ("" if self.a.no_promote else ", promoted") if ok else
+                        "not promoted (a check failed): " + ", ".join(c.get("check", "?") for c in rep.get("checks", [])
+                                                                    if not c.get("ok"))) + f" ({out})"
 
-    def s_zcam_final_runs(self):
-        if not (self.state.get("zcam_calibrate") or {}).get("promoted"):
-            return "skipped", "no new calibration promoted"
-        # v0p74.9: the final runs go to <WORK>/colmap_<final_variant> (default "cal"; features and matches seeded from
-        # the first run's): on 5-6 Oct they overwrote the first runs in place, and with the promoted model the right
-        # Mastcam-Z eye lost every tie point in Chal Rocks, Enchanted Lake and Three Forks North
-        return self._sites("zcam_final_runs", self.zcam_group, True, variant=self.a.final_variant)
+    def zcam_sites(self):
+        """The sites of the Mastcam-Z stages: zcam_consensus, then the other zcam34_joint sites (the Z34 joint takes
+        both groups, and its blocks must be aligned with the Navcam models in use)."""
+        from mppp.waypoints.sites import load_site_table
+        groups = load_site_table().get("groups", {})
+        names = list(groups.get(self.zcam_group) or [])
+        names += [n for n in groups.get(ZCAM34_JOINT) or [] if n not in names]
+        return names
 
-    def s_pointclouds(self):
-        rc = self.run("pointclouds", [PY, HERE / "zcam_calibration.py", "pointclouds", "--root", self.root,
-                                      "--groups", self.zcam_group, NAVCAM_GROUP], timeout_h=6)
-        return ("done", "point clouds written") if rc == 0 else ("done", f"exit {rc}")
+    def s_zcam_runs(self):
+        names = self.zcam_sites()
+        if not names:
+            return "failed", f"no sites in {self.zcam_group} / {ZCAM34_JOINT}"
+        return self._sites("zcam_runs", ["--sites", *names], True)
+
+    def s_zcam_joints(self):
+        notes = []
+        promote = [] if self.a.no_promote else ["--promote-if-ok"]
+        if not self.a.no_hazcam_fit:
+            out = self._out("hazcam_fit_zcam", "hazcam_fit.json")
+            rc = self._mppp("zcam_joints", out, ["calib", "hazcam", "--zcam-blocks", "--group", self.zcam_group,
+                                                 "--root", self.root, "--out", out, *promote], timeout_h=6)
+            notes.append(f"Hazcam fit exit {rc}")
+        for z in self.a.zooms:
+            group = f"{ZCAM34_JOINT},{self.zcam_group}" if z == 34 else self.zcam_group
+            out = self._out(f"zcam{z}_joint", "zcam_joint.json")
+            rc = self._mppp("zcam_joints", out, ["calib", "zcam", "--zoom", z, "--group", group, "--root", self.root,
+                                                 "--out", out, *promote], timeout_h=self.a.stage_timeout_h)
+            ck = out / "check.json"
+            ok = json.loads(ck.read_text(encoding="utf-8")).get("ok") if ck.is_file() else None
+            notes.append(f"Z{z}: " + ("not run / failed" if rc != 0 and ok is None else
+                                      "checks passed" if ok else "a check failed"))
+        if not self.a.no_nz:
+            out = self._out("nz34_joint", "nz_joint.json")
+            rc = self._mppp("zcam_joints", out, ["calib", "nz", "--group", f"{ZCAM34_JOINT},{self.zcam_group}",
+                                                 "--navcam-group", NAVCAM_GROUP, "--root", self.root, "--out", out],
+                            timeout_h=self.a.stage_timeout_h)
+            notes.append(f"N+Z check exit {rc}")
+        return "done", "; ".join(notes)
+
+    def error_blocks(self):
+        """{name: WORK} of every finished block of the Navcam and the Mastcam-Z stages with an error_input folder."""
+        from mppp.waypoints.sites import load_site_table, work_folder
+        table = load_site_table()
+        out = {}
+        for names, zcam in ((list(table.get("groups", {}).get(NAVCAM_GROUP) or []), False), (self.zcam_sites(), True)):
+            for n in names:
+                site = table["sites"].get(n)
+                if not site or (zcam and not site.get("zcam")):
+                    continue
+                w = work_folder(self.root, n, zcam, site["sols"])
+                if (w / "colmap" / "run_done.json").is_file() and (w / "colmap" / "error_input").is_dir():
+                    out[f"{n}_zcam" if zcam else n] = w
+        return out
+
+    def s_error_analysis(self):
+        blocks = self.error_blocks()
+        if not blocks and not self.a.dry_run:
+            return "failed", "no finished block with an error_input folder"
+        out = self._out("error_analysis", "error_analysis_batch.json")
+        self.state.setdefault("error_analysis", {})["study"] = str(out)
+        self.save()
+        cmd = [PY, ROOT / "studies" / "analyses" / "error_analysis_batch.py", out,
+               *[f"{k}={v}" for k, v in blocks.items()], "--min-track", "3", "--n-boot", str(self.a.n_boot)]
+        rc = self.run("error_analysis", cmd, timeout_h=self.a.stage_timeout_h)
+        js = out / "error_analysis_batch.json"
+        if not js.is_file():
+            return "failed", f"no result (exit {rc}; see error_analysis.log)"
+        md = error_report(json.loads(js.read_text(encoding="utf-8")))
+        (out / "report.md").write_text(md, encoding="utf-8")
+        return "done", f"{len(blocks)} blocks -> {out / 'report.md'}"
 
     def s_report(self):
-        from mppp.calib.models import check_form, describe
+        from mppp.calib.models import describe
         lines = [f"# MPPP {__import__('mppp').__version__} pipeline report ({datetime.datetime.now():%Y-%m-%d %H:%M})", "",
                  "## Stages", "", "| stage | status | note | started | ended |", "|---|---|---|---|---|"]
         for s in STAGES:
             e = self.state.get(s) or {}
             lines.append(f"| {s} | {e.get('status', '-')} | {e.get('note', '')} | {e.get('started', '')} | {e.get('ended', '')} |")
         lines += ["", "## Camera models in use", ""] + [f"    {ln}" for ln in describe()]
-        f = check_form()
-        lines += ["", f"form v0p73: {'OK' if f['ok'] else 'NOT OK: ' + '; '.join(f['errors'])}", ""]
-        for stage_name in ("navcam_consensus", "navcam_consensus_2", "navcam_consensus_3"):       # v0p80: every pass
-            st = (self.state.get(stage_name) or {}).get("study")
-            if st:
-                lines += [f"## Navcam consensus (pass {({'navcam_consensus': 1, 'navcam_consensus_2': 2}).get(stage_name, 3)})", "",
-                          f"study: `{st}`"]
-                pc = Path(st) / "pass_change.json"
-                if pc.is_file():
-                    ch = json.loads(pc.read_text(encoding="utf-8"))
-                    lines.append(f"- change from pass 1: {ch.get('worst')} -> {'converged' if ch.get('converged') else 'NOT converged'}")
-                for name in ("promotion_check.json", "rig_residuals.json"):
-                    p = Path(st) / name
-                    if p.is_file():
-                        d = json.loads(p.read_text(encoding="utf-8"))
-                        if name == "promotion_check.json":
-                            lines += [f"- {'ok' if c['ok'] else 'FAIL'} {c['check']}: {c['value']} ({c.get('note', '')})"
-                                      for c in d.get("checks", [])]
-                        else:
-                            for ang, ft in (d.get("fits") or {}).items():
-                                vt, vs = ft.get("vs_T") or {}, ft.get("vs_sol") or {}
-                                if vt.get("slope") is not None:
-                                    lines.append(f"- rig {ang} residual: vs block temperature {vt['slope']:+.3f} +- {vt['se']:.3f} "
-                                                 f"mdeg/degC (z {vt['z']:+.1f}); vs sol {vs['slope']:+.2f} +- {vs['se']:.2f} "
-                                                 f"mdeg/1000 sol (z {vs['z']:+.1f})")
-                lines.append("")
-        # v0p82: waypoint flags, baseline study and its confirmation
-        for key, files in (("waypoint_check", ("waypoint_flags.md",)), ("baseline_study", ("baseline_study.md",
-                                                                                            "baseline_confirm.md"))):
-            e = self.state.get(key) or {}
-            d = Path(e["flags"]).parent if e.get("flags") else (Path(e["study"]) if e.get("study") else None)
-            for f in files:
-                if d is not None and (d / f).is_file():
-                    lines += [(d / f).read_text(encoding="utf-8"), ""]
-        # every block's last run
-        lines += ["## Blocks", "", "| block | mppp | verdict | registered | rms px | camera models |", "|---|---|---|---|---|---|"]
-        for w in sorted(p for p in self.root.glob("mars2020_sol_*") if p.is_dir()):      # v0p85: no _colmap
+        lines += ["", "## Blocks", "", "| block | mppp | verdict | registered | rms px | camera models |",
+                  "|---|---|---|---|---|---|"]
+        for w in sorted(p for p in self.root.glob("mars2020_sol_*") if p.is_dir()):
             rd = w / "colmap" / "run_done.json"
             if rd.is_file():
                 d = json.loads(rd.read_text(encoding="utf-8"))
                 lines.append(f"| {w.name} | {d.get('mppp')} | {d.get('verdict')} | {d.get('registered_images')}/{d.get('images')} | "
                              f"{(d.get('residual_rms_native_px') or float('nan')):.3f} | "
                              f"{(d.get('camera_models') or {}).get('fingerprint', '-')} |")
-        cal = sorted((self.root / "camera_analysis").glob("zcam34_calibration_*"))
-        if cal:
-            lines += ["", "## Mastcam-Z 34 mm calibration", "", f"latest: `{cal[-1]}` (report.md there)"]
-            rp = cal[-1] / "report.md"
-            if rp.is_file():
-                lines += ["", rp.read_text(encoding="utf-8")]
-        idx = self.root / "pointclouds" / "index.json"
-        if idx.is_file():
-            pcs = json.loads(idx.read_text(encoding="utf-8"))
-            lines += ["", "## Point clouds", ""] + [f"- {p['block']}: {p['points']} points, `{p['ply']}` ({p.get('verdict')})"
-                                                    for p in pcs]
+        ca = self.root / "camera_analysis"
+        today = f"{datetime.date.today():%Y%m%d}"
+        for pat, title in (("navcal_tied_*", "Navcam joint"), ("hazcam_fit_zcam_*", "Hazcam fit"),
+                           *[(f"zcam{z}_joint_*", f"Mastcam-Z {z} mm joint") for z in ZOOMS],
+                           ("nz34_joint_*", "Navcam + Mastcam-Z check"), ("error_analysis_*", "Error analysis")):
+            found = sorted(p for p in ca.glob(pat) if p.is_dir()) if ca.is_dir() else []
+            if found:
+                rp = found[-1] / "report.md"
+                lines += ["", f"## {title}", "", f"latest: `{found[-1]}`" + ("" if today in found[-1].name else " (not from today)")]
+                if rp.is_file():
+                    lines += ["", rp.read_text(encoding="utf-8")]
         (self.dir / "REPORT.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
         return "done", str(self.dir / "REPORT.md")
 
@@ -527,7 +326,7 @@ class Pipeline:
                 st, note = "failed", f"{type(e).__name__}: {e}"
             self.mark(s, st, note=note)
             self.log(f"{s}: {st} - {note}")
-            if st == "failed" and s in ("prepare",):
+            if st == "failed" and s in STOP_ON_FAIL:
                 self.log("pipeline stopped: fix the above and start it again (it continues from here)")
                 rc = 1
                 break
@@ -537,35 +336,53 @@ class Pipeline:
         return rc
 
 
+def error_report(res) -> str:
+    """report.md of an error_analysis_batch.json: the parameter row of every block, then the pooled gate."""
+    rows = res.get("summary") or []
+    lines = ["# Error analysis on the SfM points", "",
+             "Per block (`mppp.error.alignment.parameters`): image-measurement precision epsilon (px) on tracks of "
+             "one station and across stations, the cross-station gate and the decorrelation; sparse tie points are "
+             "biased to well-matched terrain, so epsilon is a lower bound.", ""]
+    if rows:
+        keys = [k for k in rows[0] if not isinstance(rows[0][k], (dict, list))][:14]
+        lines += ["| " + " | ".join(keys) + " |", "|" + "---|" * len(keys)]
+        for r in rows:
+            lines.append("| " + " | ".join((f"{r.get(k):.4g}" if isinstance(r.get(k), float) else str(r.get(k, "")))
+                                            for k in keys) + " |")
+    pooled = [g for g in res.get("gate_fits") or [] if g.get("alignment") == "pooled"]
+    if pooled:
+        g = pooled[0]
+        keys = [k for k in g if not isinstance(g[k], (dict, list))][:16]
+        lines += ["", "## Pooled cross-station gate (Navcam-Navcam)", ""] + \
+                 [f"- {k}: {g[k]:.4g}" if isinstance(g[k], float) else f"- {k}: {g[k]}" for k in keys]
+    eps = res.get("eps") or []
+    if eps:
+        keys = [k for k in eps[0] if not isinstance(eps[0][k], (dict, list))][:10]
+        lines += ["", "## Epsilon by instrument and track kind", "", "| " + " | ".join(keys) + " |",
+                  "|" + "---|" * len(keys)]
+        for r in eps:
+            lines.append("| " + " | ".join((f"{r.get(k):.4g}" if isinstance(r.get(k), float) else str(r.get(k, "")))
+                                            for k in keys) + " |")
+    return "\n".join(lines) + "\n"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"))
-    ap.add_argument("--n", type=int, default=0,
-                    help="the number of graded N+Z blocks for the calibration (v0p74.9: 0 = every passing block)")
-    ap.add_argument("--final-variant", default="cal",
-                    help="v0p74.9: zcam_final_runs write to <WORK>/colmap_<this> ('' = in place, over the first runs)")
-    ap.add_argument("--no-navcam-runs", action="store_true", help="skip the Navcam-only reruns (and so pass 2)")
-    ap.add_argument("--baseline-study", action="store_true",
-                    help="v0p80/v0p82: promote a significant baseline even if pass 2 of the Navcam consensus has not "
-                         "converged (it is always studied)")
-    ap.add_argument("--no-baseline-study", action="store_true", help="v0p82: skip the baseline stages")
-    ap.add_argument("--zcam-start-promote", action="store_true",
-                    help="v0p82: let zcam_start promote its start model (default: candidate only, the v0p75 start "
-                         "model in use stays)")
-    ap.add_argument("--zcam-group", default=None,
-                    help="v0p75: the sites.json group of the Mastcam-Z stages (default zcam34_consensus; e.g. zcam34_dev "
-                         "for a quick set while the form is being settled)")
-    ap.add_argument("--all-navcam-blocks", action="store_true",
-                    help="v0p75: the Navcam consensus takes every finished Navcam block on disk (default: the sites of "
-                         "the navcam_consensus group only)")
+    ap.add_argument("--no-navcam-runs", action="store_true", help="skip the Navcam block runs")
+    ap.add_argument("--no-promote", action="store_true", help="the joints and the Hazcam fit promote nothing")
+    ap.add_argument("--no-hazcam-fit", action="store_true", help="zcam_joints without the Hazcam fit")
+    ap.add_argument("--no-nz", action="store_true", help="zcam_joints without the Navcam + Mastcam-Z check")
+    ap.add_argument("--zooms", type=int, nargs="*", default=list(ZOOMS), help="the Mastcam-Z joints (default all)")
+    ap.add_argument("--zcam-group", default=None, help="the Mastcam-Z sites (default zcam_consensus)")
+    ap.add_argument("--n-boot", type=int, default=50, help="error_analysis: bootstrap rounds of the gate fit")
     ap.add_argument("--wait-h", type=float, default=36.0, help="how long to wait for a running batch")
-    ap.add_argument("--stage-timeout-h", type=float, default=30.0, help="the consensus stage's time limit")
+    ap.add_argument("--stage-timeout-h", type=float, default=30.0, help="the time limit of a joint or the analysis")
     ap.add_argument("--sites-timeout-h", type=float, default=72.0,
-                    help="time limit of one run_sites call (a hung alignment is stopped with its kernel)")
+                    help="time limit of one run_sites call (a hung alignment is stopped with its process tree)")
     ap.add_argument("--from", dest="start", choices=STAGES, help="start at this stage (the ones before: skipped)")
     ap.add_argument("--redo", nargs="*", choices=STAGES, help="run these stages again even if done")
-    ap.add_argument("--stop-before", choices=STAGES, default=None,
-                    help="v0p85: stop before this stage (e.g. zcam_start: the Navcam part only); start again without it to go on")
+    ap.add_argument("--stop-before", choices=STAGES, default=None, help="stop before this stage; start again to go on")
     ap.add_argument("--reset", action="store_true", help="forget the state (every stage runs again)")
     ap.add_argument("--status", action="store_true", help="show the state and exit")
     ap.add_argument("--dry-run", action="store_true", help="show the commands, run nothing")
@@ -577,10 +394,10 @@ def main(argv=None) -> int:
         print(f"pipeline: {(cur or {}).get('state', 'not started')}" + (f", stage {cur.get('stage')}" if cur else ""))
         for s in STAGES:
             e = p.state.get(s) or {}
-            print(f"  {s:18s} {e.get('status', '-'):8s} {e.get('note', '')}")
+            print(f"  {s:16s} {e.get('status', '-'):8s} {e.get('note', '')}")
         return 0
     if a.reset and not a.dry_run:
-        p.state = {}
+        p.state = {"_stages": STATE_TAG}
         p.save()
     return p.go()
 

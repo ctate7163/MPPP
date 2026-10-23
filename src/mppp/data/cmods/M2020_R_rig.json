@@ -1,0 +1,40 @@
+{
+ "ref": "RL",
+ "sensor": "RR",
+ "R_sensor_from_ref": [
+  [
+   0.9999939738353779,
+   0.00017281418542831095,
+   0.003467337333878454
+  ],
+  [
+   -0.00017160335408578892,
+   0.9999999241992067,
+   -0.00034950517830798357
+  ],
+  [
+   -0.003467397470504226,
+   0.00034890806541600235,
+   0.9999939276905352
+  ]
+ ],
+ "t_sensor_from_ref_m": [
+  -0.9335289802077983,
+  -0.0009384219540038569,
+  -0.0012658825080243546
+ ],
+ "baseline_m": 0.9335303101571474,
+ "translation": "cahv",
+ "family": "R",
+ "form": "navcam-v1",
+ "convention": "RL reference",
+ "source": "MPPP Hazcam fit (mppp.calib.hazfit, 2026-10-23): rotation at sol 0 and a linear drift",
+ "drift": {
+  "model": "linear",
+  "sol0": 0.0,
+  "pitch_mdeg_per_sol": -0.006824219703965396,
+  "yaw_mdeg_per_sol": -0.013554538108561165,
+  "roll_mdeg_per_sol": -0.006122056045949015,
+  "blocks": 5
+ }
+}

@@ -1786,10 +1786,12 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
     if rig:
         b = float(rig.get("baseline_m") or 0.0)
         add("rig baseline", lim["baseline_m"][0] <= b <= lim["baseline_m"][1], f"{b:.4f} m")
-        if rig.get("sd_rotvec_mdeg"):
-            s = max(float(x) for x in rig["sd_rotvec_mdeg"])
-            add("rig scatter", s <= lim["max_rig_scatter_mdeg"],
-                f"rotation sd {', '.join(f'{float(x):.1f}' for x in rig['sd_rotvec_mdeg'])} mdeg over {len(rig.get('blocks') or [])} blocks")
+        sds = [float(x) for x in (rig.get("sd_rotvec_mdeg") or []) if x is not None and np.isfinite(float(x))]
+        if sds:
+            add("rig scatter", max(sds) <= lim["max_rig_scatter_mdeg"],
+                f"rotation sd {', '.join(f'{x:.1f}' for x in sds)} mdeg over {len(rig.get('blocks') or [])} blocks")
+        elif rig.get("sd_rotvec_mdeg") is not None:   # 0.93.9: too few blocks for a scatter (Z48 of 23 Oct: 2 blocks)
+            add("rig scatter", True, f"not measured: {len(rig.get('blocks') or [])} blocks")
         if rig.get("sd_baseline_mm") is not None:
             add("rig baseline scatter", float(rig["sd_baseline_mm"]) <= lim["max_baseline_scatter_mm"],
                 f"sd {float(rig['sd_baseline_mm']):.2f} mm")

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 
 def _j(o):
@@ -54,36 +54,50 @@ def main(argv=None):
         except FileNotFoundError as e:
             print(f"{name}: skipped ({e})", flush=True)
             continue
-        res["alignments"][name] = {"path": str(al.root), "images": len(al.model.images), "points": len(al.model.points),
-                                   "points_all": al.points_before_track_filter, "stations": len(al.stations),
-                                   "summary_tracks": al.summary.get("tracks"),
-                                   "residual_rms_native_px": al.summary.get("residual_rms_native_px")}
-        res["eps"] += EA.eps_table(al)
-        res["eps_by_angle"] += EA.eps_by_angle(al)
-        er = EA.eps_by_range(al, family="Navcam")
-        res["eps_by_range"][name] = {k: v for k, v in er.items()}
-        p = EA.pair_survival(al, n_points=a.n_points, seed=a.seed)
-        pairs[name] = p
-        g = EA.fit_gate(p, families=None, fit_tau=True, theta_max_deg=a.theta_max, n_boot=a.n_boot, seed=a.seed,
-                        form=a.form, illumination=a.illumination)
-        g = dict(g, alignment=name)
-        res["gate_fits"].append(g)
-        r = EA.decorrelation(al, n_points=min(a.n_points, 6000), seed=a.seed, n_boot=a.n_boot or 100)
-        fr = EA.fit_rho(r)
-        res["rho"][name] = {k: r[k] for k in ("theta_deg", "rho", "n", "se") if k in r}
-        res["rho_fits"].append({"alignment": name, "n_tracks": r["n_tracks"], "first_bin": fr["first_bin"],
-                                "gaussian": fr["gaussian"], "exponential": fr["exponential"]})
-        vg = EA.view_graph(al)
-        res["view_graph"][name] = graph_report(vg)
-        res["registration"] += EA.registration(al)
-        res["summary"].append(EA.parameters(al, g, r))
-        print(f"{name}: {len(al.model.images)} images, {len(al.model.points)} points, eps "
-              f"{res['summary'][-1]['eps_intra_px']:.3f}/{res['summary'][-1]['eps_cross_px']:.3f} px, gate A "
-              f"{g.get('A', float('nan')):.3f} theta_half {g.get('theta_half_deg', float('nan')):.2f}, "
-              f"{time.time() - t:.0f} s", flush=True)
-        del al, r, vg
+        try:
+            _one(EA, graph_report, a, name, al, res, pairs, out, t)
+        except Exception as e:                                           # noqa: BLE001  (0.93.9: the next block)
+            import traceback
+            traceback.print_exc()
+            res.setdefault("failed", {})[name] = f"{type(e).__name__}: {e}"
+            print(f"{name}: FAILED ({type(e).__name__}: {e}) - the next block", flush=True)
+        del al
         gc.collect()
-        (out / "error_analysis_batch.json").write_text(json.dumps(res, indent=1, default=_j), encoding="utf-8")
+    _pooled(EA, a, res, pairs, out)
+
+
+def _one(EA, graph_report, a, name, al, res, pairs, out, t):
+    res["alignments"][name] = {"path": str(al.root), "images": len(al.model.images), "points": len(al.model.points),
+                               "points_all": al.points_before_track_filter, "stations": len(al.stations),
+                               "summary_tracks": al.summary.get("tracks"),
+                               "residual_rms_native_px": al.summary.get("residual_rms_native_px")}
+    res["eps"] += EA.eps_table(al)
+    res["eps_by_angle"] += EA.eps_by_angle(al)
+    er = EA.eps_by_range(al, family="Navcam")
+    res["eps_by_range"][name] = {k: v for k, v in er.items()}
+    p = EA.pair_survival(al, n_points=a.n_points, seed=a.seed)
+    pairs[name] = p
+    g = EA.fit_gate(p, families=None, fit_tau=True, theta_max_deg=a.theta_max, n_boot=a.n_boot, seed=a.seed,
+                    form=a.form, illumination=a.illumination)
+    g = dict(g, alignment=name)
+    res["gate_fits"].append(g)
+    r = EA.decorrelation(al, n_points=min(a.n_points, 6000), seed=a.seed, n_boot=a.n_boot or 100)
+    fr = EA.fit_rho(r)
+    res["rho"][name] = {k: r[k] for k in ("theta_deg", "rho", "n", "se") if k in r}
+    res["rho_fits"].append({"alignment": name, "n_tracks": r["n_tracks"], "first_bin": fr["first_bin"],
+                            "gaussian": fr["gaussian"], "exponential": fr["exponential"]})
+    vg = EA.view_graph(al)
+    res["view_graph"][name] = graph_report(vg)
+    res["registration"] += EA.registration(al)
+    res["summary"].append(EA.parameters(al, g, r))
+    print(f"{name}: {len(al.model.images)} images, {len(al.model.points)} points, eps "
+          f"{res['summary'][-1]['eps_intra_px']:.3f}/{res['summary'][-1]['eps_cross_px']:.3f} px, gate A "
+          f"{g.get('A', float('nan')):.3f} theta_half {g.get('theta_half_deg', float('nan')):.2f}, "
+          f"{time.time() - t:.0f} s", flush=True)
+    (out / "error_analysis_batch.json").write_text(json.dumps(res, indent=1, default=_j), encoding="utf-8")
+
+
+def _pooled(EA, a, res, pairs, out):
     if len(pairs) > 1:
         pooled = EA.combine_pairs(list(pairs.values()))
         g = EA.fit_gate(pooled, families="Navcam-Navcam", fit_tau=True, theta_max_deg=a.theta_max, n_boot=a.n_boot,
@@ -96,6 +110,7 @@ def main(argv=None):
     res["model_defaults"] = EA.model_defaults()
     (out / "error_analysis_batch.json").write_text(json.dumps(res, indent=1, default=_j), encoding="utf-8")
     print("wrote", out / "error_analysis_batch.json")
+
 
 
 if __name__ == "__main__":

@@ -94,3 +94,9 @@
 
 ## 20261022-110217 - Mastcam-Z 34 mm joint of 6 blocks
   - `M2020_ZCAM034_focus_model.json` e82c2e0da6d6 from `D:\scapes\camera_analysis\zcam34_joint_20261022\M2020_ZCAM034_focus_model.json` (focus model for ['ZL034', 'ZR034'] and rig)
+
+## 20261023-085533 - Hazcam fit of 6 blocks (belva_crater, chal_rocks, marble_mountain, seitah_overlook, south_arm, threeforks_north)
+  - `M2020_FR.json` b2d331b50421 from `D:\scapes\camera_analysis\hazcam_fit_zcam_20261023\candidate\M2020_FR.json` (THIN_PRISM_FISHEYE 5120x3840, fx 2139.08 at -20.0 degC)
+
+## 20261023-100444 - Mastcam-Z 34 mm joint of 8 blocks
+  - `M2020_ZCAM034_focus_model.json` f732cdadf193 from `D:\scapes\camera_analysis\zcam34_joint_20261023\M2020_ZCAM034_focus_model.json` (focus model for ['ZL034', 'ZR034'] and rig)

@@ -133,12 +133,13 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any], path: str = "") -> D
     return base
 
 
-SEQUENCE_ID = r"(?:seq:)?\s*([A-Z]{4}\d{5})"
+SEQUENCE_ID = r"(?:seq:)?\s*([A-Z]{4}\d{0,5}\*?)"   # 0.93.9: a prefix too (RHAZ0*, RHAZ0)
 
 
 def parse_sequences(spec: Any) -> set:
     """``masking.skip_inference_at`` -> {sequence id}: the entries that name a sequence ("NCAM00699", "ZCAM00034",
-    also "seq:NCAM00699"; 0.93.8, Christian 23 Oct) - the mask model is off for every image of it."""
+    also "seq:NCAM00699"; 0.93.8, Christian 23 Oct) - the mask model is off for every image of it.  An entry shorter
+    than a sequence id, or ending in ``*``, is a prefix ("RHAZ0*" or "RHAZ0": every RHAZ0xxxx sequence; 0.93.9)."""
     import re
     return {m.group(1).upper() for item in spec or [] if isinstance(item, str)
             for m in [re.fullmatch(r"\s*" + SEQUENCE_ID + r"\s*", item, re.I)] if m}
@@ -163,7 +164,9 @@ def mask_inference_skipped(spec: Any, site: Any, drive: Any, sequence: Any = Non
     if not seqs:
         return False
     seq = (str(sequence).upper() if sequence else None) or sequence_of(name)
-    return bool(seq) and seq in seqs
+    if not seq:
+        return False
+    return any(seq == e or ((e.endswith("*") or len(e) < 9) and seq.startswith(e.rstrip("*"))) for e in seqs)
 
 
 def parse_stations(spec: Any) -> set:

@@ -1006,10 +1006,15 @@ def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[st
     new = candidate_model(res, old)
     name = f"M2020_ZCAM{int(res['zoom']):03d}_focus_model.json"
     (out / name).write_text(json.dumps(new, indent=1, default=float), encoding="utf-8")
-    chk = check_zcam(new, old)
-    chk = joint_checks(res, chk)
-    (out / "check.json").write_text(json.dumps(chk, indent=1, default=float), encoding="utf-8")
+    # 0.93.9: the result first - a check that fails to run (Z48 of 23 Oct: a rig scatter of one block) must not lose
+    # hours of adjustment; it is then a failed check, nothing is promoted
     (out / "zcam_joint.json").write_text(json.dumps(res, indent=1, default=float), encoding="utf-8")
+    try:
+        chk = joint_checks(res, check_zcam(new, old))
+    except Exception as e:                                   # noqa: BLE001
+        log.exception("Mastcam-Z joint: the checks did not run")
+        chk = {"ok": False, "checks": [{"check": "checks ran", "ok": False, "note": f"{type(e).__name__}: {e}"}]}
+    (out / "check.json").write_text(json.dumps(chk, indent=1, default=float), encoding="utf-8")
     rows = block_line_rows(res)
     (out / "block_lines.json").write_text(json.dumps(rows, indent=1, default=float), encoding="utf-8")
     figs = []

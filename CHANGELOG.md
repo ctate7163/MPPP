@@ -2,6 +2,46 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.93.9 — 2026-10-23
+
+- **LightGlue is the matcher** (Christian, 23 Oct): `match_mode` "lightglue" (SIFT + LightGlue on the GPU through
+  kornia; COLMAP's SIFT matcher when torch / kornia are missing or the block's projected time is over 2 h; the
+  prior-overlap pairs above `max_exhaustive_images`). The run key changes: every block aligns again.
+- **`test_lightglue.bat`** (`scripts/lightglue_ab.py`): the A/B test on **Chal Rocks tiny** (`chal_rocks_tiny`, sols
+  91-98 only, Navcam + Mastcam-Z + Hazcams; in no group): a GPU check (torch, kornia, CUDA), the block processed once
+  and aligned twice - COLMAP's SIFT matcher into `colmap_sift`, SIFT + LightGlue into `colmap_lightglue` - then
+  `<WORK>/lightglue_ab.md`: the matcher that ran, pairs, inlier matches, matching and total time, registered images,
+  residuals and every health check side by side.
+- **`run_pipeline.bat` is the whole run again** (Christian): wait, `navcam_runs` (run_sites over navcam_consensus),
+  `navcam_joint` (the tied joint, promoted when its checks pass), `zcam_runs` (run_sites --zcam over zcam_consensus
+  and the other zcam34_joint sites), `zcam_joints` (the Hazcam fit, the Mastcam-Z joint of every zoom, the N+Z
+  check), `error_analysis` (studies/analyses/error_analysis_batch.py over every finished block: epsilon intra /
+  cross station, by range and angle, the cross-station gate, rho(theta), the view graph, the registration ->
+  `camera_analysis/error_analysis_<date>/report.md`), report. The old stages (consensus passes, baseline study,
+  Z34-only calibration from per-block lines, found list) are gone; the old state file is kept aside. Options:
+  `--no-promote`, `--no-hazcam-fit`, `--no-nz`, `--zooms`, `--from`, `--stop-before`, `--redo`. The error-analysis
+  batch goes on past a block that fails. `run_v0p91.bat` (the old pipeline's options) removed.
+- **Mask inference off** for `ZCAM08060` too at Chal Rocks, Chal Rocks Large and Chal Rocks tiny (with NCAM00699,
+  ZCAM00034), and for every `RHAZ0*` sequence (rear Hazcams) there and at Bell Island and Bell Island Large
+  (Christian, for now). A `no_mask_inference_at` entry may be a sequence prefix: `RHAZ0*` (or `RHAZ0`).
+- `zcam_consensus` (Christian): chal_rocks_large in place of chal_rocks, and taylorfjellet added; `zcam34_joint` too
+  takes chal_rocks_large (so the Z34 joint does not hold the same Chal Rocks frames twice).
+- sites.json (Christian): `crocodile_bridge` has a Mastcam-Z **110 mm** 360, not 34 mm (`"zcam": [110]`);
+  `observation_mountain`'s label "Observation Mountain" (was "Hidden Harbor Observation Mountain"); Origny and
+  Origny Large stay Navcam only (no Mastcam-Z 34 mm 360, 22 Oct).
+- **Models in use** (Christian: promote what is available): the PC's promotions of this morning, byte-identical -
+  the Mastcam-Z 34 mm joint of 8 blocks (`zcam34_joint_20261023`, every check passed; low-state ratio 1.0146 ZL /
+  1.0139 ZR, rig 1.8 mdeg from the one before) and `CHANGES.md`; and the Hazcam **front and rear rigs** of the Hazcam
+  fit of 6 blocks (`hazcam_fit_zcam_20261023`; each passed its own check: rear 0.267 deg from the CAHV rig, front
+  0.026 deg). Not in the repository: `M2020_FR.json` (promoted on the PC at 08:55, kept there untracked - a tracked copy
+  would stop the sync's fast-forward); FL, RL, RR failed their checks; the 48 mm joint had one bin per eye (89
+  observations) and is not usable; 63, 79, 110 mm were still running.
+- **The Mastcam-Z joint keeps its result when a check cannot run** (`zcam_joint.json` first; the check is then a failed
+  check) and the rig-scatter check takes a scatter that could not be measured (Z48, 23 Oct: a crash after the
+  adjustment).
+- **Excluded** (bad colours, Three Forks North front Hazcams): `*_0681_0727400287_565*`, `*_0684_0727664729_880*`,
+  `*_0693_0728459809_940*`.
+
 ## 0.93.8 — 2026-10-23
 
 - **`no_mask_inference_at` takes sequence ids** (Christian): besides stations (`S032D1184`) an entry can name a

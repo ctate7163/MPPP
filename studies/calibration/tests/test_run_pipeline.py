@@ -29,24 +29,28 @@ def _script(name):
 
 
 def test_pipeline_dry_run_and_state(tmp_path):
+    """0.93.9: run_sites, the Navcam joint, run_sites_zcam, the joints, the error analysis, the report."""
     r = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path), "--dry-run"],
                        capture_output=True, text=True, timeout=600)
     out = r.stdout + r.stderr
-    for s in ("wait", "prepare", "navcam_consensus", "zcam_start", "zcam_runs", "navcam_runs", "zcam_calibrate",
-              "zcam_final_runs", "pointclouds", "report"):
+    for s in ("wait", "navcam_runs", "navcam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report"):
         assert f"{s}: start" in out, (s, out[-3000:])
-    assert "run_sites.py" in out and "ZCAM_ZOOMS=[34]" in out
-    assert "zcam_final_runs: skipped" in out                              # nothing promoted in a dry run
+    assert "run_sites.py" in out and "--group navcam_consensus" in out and "calib navcam" in out
+    assert "--sites seitah_overlook chal_rocks_large" in out and "--zcam" in out and "olifants" in out
+    assert "calib hazcam --zcam-blocks" in out and "calib zcam --zoom 110" in out and "calib nz" in out
+    assert "error_analysis_batch.py" in out
     assert not (tmp_path / "mppp_pipeline" / "state.json").exists()      # a dry run leaves no state
     assert (tmp_path / "mppp_pipeline" / "REPORT.md").is_file()
     r2 = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path), "--status"],
                         capture_output=True, text=True, timeout=120)
-    assert "navcam_consensus" in r2.stdout
+    assert "zcam_joints" in r2.stdout
 
 
 def test_pipeline_stage_logic(tmp_path, monkeypatch):
-    """The driver: prepare failing stops it; a rerun continues after the finished stages; --from skips."""
+    """The driver: a rerun continues after the finished stages; --redo; the state of the old pipeline is set aside."""
     rp = _script("run_pipeline")
+    (tmp_path / "mppp_pipeline").mkdir()
+    (tmp_path / "mppp_pipeline" / "state.json").write_text(json.dumps({"navcam_runs": {"status": "done"}}))
     calls = []
 
     def fake(name, result):
@@ -56,36 +60,22 @@ def test_pipeline_stage_logic(tmp_path, monkeypatch):
         return f
     for s in rp.STAGES:
         monkeypatch.setattr(rp.Pipeline, "s_" + s, fake(s, ("done", "ok")))
-    monkeypatch.setattr(rp.Pipeline, "s_prepare", fake("prepare", ("failed", "bad cameras")))
-    a = SimpleNamespace(root=str(tmp_path), dry_run=False, start=None, redo=None, n=3, no_navcam_runs=False, wait_h=1,
+    a = SimpleNamespace(root=str(tmp_path), dry_run=False, start=None, redo=None, no_navcam_runs=False, wait_h=1,
                         stage_timeout_h=1)
-    assert rp.Pipeline(a).go() == 1 and calls == ["wait", "prepare"]
-    monkeypatch.setattr(rp.Pipeline, "s_prepare", fake("prepare", ("done", "ok")))
-    calls.clear()
     assert rp.Pipeline(a).go() == 0
-    assert calls[0] == "prepare" and calls[-1] == "report" and "wait" not in calls      # wait was done before
+    assert calls == list(rp.STAGES)                          # the old state's "navcam_runs: done" does not count
+    assert (tmp_path / "mppp_pipeline" / f"state_before_{rp.STATE_TAG}.json").is_file()
     calls.clear()
-    assert rp.Pipeline(a).go() == 0 and calls == ["report"]                               # all done: only the report
-    a.redo = ["zcam_calibrate"]
+    assert rp.Pipeline(a).go() == 0 and calls == ["report"]  # all done: only the report
+    a.redo = ["zcam_joints"]
     calls.clear()
-    assert rp.Pipeline(a).go() == 0 and calls == ["zcam_calibrate", "report"]
-
-
-def test_pipeline_prepare_keeps_newer_cameras(tmp_path, monkeypatch):
-    rp = _script("run_pipeline")
-    seen = {}
-    monkeypatch.setattr(rp.Pipeline, "run", lambda self, stage, cmd, timeout_h=None: seen.setdefault("cmd", cmd) and 1)
-    a = SimpleNamespace(root=str(tmp_path), dry_run=False, start=None, redo=None, n=3, no_navcam_runs=False, wait_h=1,
-                        stage_timeout_h=1)
-    st, note = rp.Pipeline(a).s_prepare()
-    assert "--keep" in seen["cmd"] and st == "done"                       # the cameras in use are in the form
+    assert rp.Pipeline(a).go() == 0 and calls == ["zcam_joints", "report"]
 
 
 def test_bats():
-    """0.91: every .bat lives in scripts\windows (two levels below the repo), the study ones included."""
+    r"""0.91: every .bat lives in scripts\windows (two levels below the repo), the study ones included."""
     WIN = HERE.parents[1] / "scripts" / "windows"
     for b, needs in (("run_pipeline.bat", b"studies\\calibration\\run_pipeline.py"),
-                     ("run_v0p91.bat", b"--stop-before zcam_start"),
                      ("navcam_tied_joint.bat", b"calib navcam"),
                      ("make_figures.bat", b"paper_figures.py"), ("m20_dem_env.bat", b"M20_ORTHOS"),
                      ("make_maps.bat", b"m20_dem_env.bat"), ("run_z34.bat", b"--group zcam34_consensus --zcam"),
@@ -94,8 +84,6 @@ def test_bats():
         assert b"\r\n" in t and needs in t
         assert b'"%~dp0..\\..\\.."' not in t, b                        # the repo is two levels up, not three
     assert not (HERE / "windows").exists()
-    bat = (WIN / "run_v0p91.bat").read_text()
-    assert "--reset --from navcam_runs --no-baseline-study" in bat
     assert not (WIN / "zr_diagnose_z34.bat").exists()                     # removed 20 Oct
 
 
@@ -117,77 +105,16 @@ def test_pipeline_run_timeout_stops_the_tree(tmp_path):
     assert "TIMEOUT" in (tmp_path / "mppp_pipeline" / "x.log").read_text()
 
 
-def test_pipeline_consensus_leaves_out_guided_matched_blocks(tmp_path, monkeypatch):
+def test_pipeline_zcam_sites_and_stop_before(tmp_path):
     rp = _script("run_pipeline")
-    from mppp.sfm import health as H
-    from mppp.waypoints import sites as S
-    found = {"A": tmp_path / "mars2020_sol_0100_a_colmap", "B": tmp_path / "mars2020_sol_0200_b_colmap"}
-    for w in found.values():
-        (w / "colmap").mkdir(parents=True)
-        (w / "colmap" / "run_done.json").write_text("{}")
-    monkeypatch.setattr(S, "discover_scapes", lambda root, include_zcam=False, verbose=False: found)
-    monkeypatch.setattr(S, "load_site_table", lambda path=None: {"sites": {}, "groups": {}})
-    monkeypatch.setattr(S, "parse_work_folder", lambda w: (w.name.split("_")[3], False))
-    monkeypatch.setattr(H, "screen_blocks", lambda d, verbose=False: {
-        "A": {"verdict": "pass", "guided_matching": False}, "B": {"verdict": "warn", "guided_matching": True}})
     p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True))
-    blocks, scr, bad = p.navcam_blocks()
-    assert list(blocks) == ["A"] and bad == ["B"]
-
-
-def test_pipeline_consensus_takes_the_group_only(tmp_path, monkeypatch):
-    rp = _script("run_pipeline")
-    from mppp.sfm import health as H
-    from mppp.waypoints import sites as S
-    found = {"A": tmp_path / "mars2020_sol_0100_a_colmap", "B": tmp_path / "mars2020_sol_0200_b_colmap",
-             "Olifants": tmp_path / "mars2020_sol_1880_olifants_colmap"}
-    for w in found.values():
-        (w / "colmap").mkdir(parents=True)
-        (w / "colmap" / "run_done.json").write_text("{}")
-    monkeypatch.setattr(S, "discover_scapes", lambda root, include_zcam=False, verbose=False: found)
-    monkeypatch.setattr(S, "load_site_table", lambda path=None: {"sites": {}, "groups": {"navcam_consensus": ["a", "b"]}})
-    monkeypatch.setattr(S, "parse_work_folder", lambda w: (w.name.split("_")[3], False))
-    monkeypatch.setattr(H, "screen_blocks", lambda d, verbose=False: {k: {"verdict": "pass", "guided_matching": False} for k in d})
-    p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True))
-    blocks, scr, bad = p.navcam_blocks()
-    assert sorted(blocks) == ["A", "B"] and not bad
-    p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, all_navcam_blocks=True))
-    blocks, _, _ = p.navcam_blocks()
-    assert sorted(blocks) == ["A", "B", "Olifants"]
-
-
-def test_pipeline_zcam_group_option(tmp_path):
-    rp = _script("run_pipeline")
-    assert rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True)).zcam_group == "zcam34_consensus"
-    assert rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, zcam_group="zcam34_dev")).zcam_group == "zcam34_dev"
-
-
-def test_pipeline_order_and_options():
-    rp = _script("run_pipeline")
-    s = list(rp.STAGES)
-    assert s.index("navcam_consensus") < s.index("navcam_runs") < s.index("navcam_consensus_2") < s.index("zcam_start")
-    assert s.index("navcam_consensus_2") < s.index("waypoint_check") < s.index("baseline_study") \
-        < s.index("baseline_confirm") < s.index("navcam_consensus_3") < s.index("zcam_start") < s.index("report")
-    src = RP.read_text()
-    assert '"--apply-translation", "--joint-translation"' not in src
-    assert '"--final-variant", default="cal"' in src and 'variant=self.a.final_variant' in src
-    assert '"--n", type=int, default=0' in src
-    assert 'EARLY_ROUNDS = "1"' in src and '"0.197", "0.254", "0.324", "-0.572"' in src
-    from mppp.sfm.matching import CALIBRATED_ABORT_SIGNS
-    msg = "E20261006 09:27:36 homography_matrix.cc:167] Check failed: cam_rays1.size() >= 4 (3 vs. 4)"
-    assert any(k in msg for k in CALIBRATED_ABORT_SIGNS)
-
-
-def test_pipeline_dry_run_log_and_stop_before(tmp_path):
-    rp = _script("run_pipeline")
-    assert rp.main(["--root", str(tmp_path), "--dry-run"]) == 0
-    log = (tmp_path / "mppp_pipeline" / "dry_run_log.txt").read_text()
-    assert "waypoint_check.py" in log and "navcam_baseline_study.py all" in log
-    out = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path / "b"), "--dry-run", "--from", "navcam_runs",
-                          "--stop-before", "zcam_start", "--no-baseline-study"],
-                         capture_output=True, text=True, timeout=120)
+    names = p.zcam_sites()
+    assert names[:7] == ["seitah_overlook", "chal_rocks_large", "threeforks_north", "belva_crater", "south_arm",
+                         "marble_mountain", "taylorfjellet"] and "rochette" in names and len(names) == len(set(names))
+    out = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path / "b"), "--dry-run", "--from", "navcam_joint",
+                          "--stop-before", "zcam_runs"], capture_output=True, text=True, timeout=120)
     log = out.stdout + out.stderr
-    assert "stopped before zcam_start" in log, log[-2000:]
+    assert "stopped before zcam_runs" in log and "calib navcam" in log and "run_sites.py" not in log, log[-2000:]
 
 
 # ------------------------------------------------------------------------------------------- the study scripts

@@ -164,7 +164,7 @@ class Settings:
     max_num_features: int = 32768                 # SIFT features per image
     sift: Dict[str, Any] = field(default_factory=lambda: dict(domain_size_pooling=False, estimate_affine_shape=False,
                                                               num_octaves=None, first_octave=-1))   # num_octaves None: 6 with Mastcam-Z, else 4
-    match_mode: str = "exhaustive"                # the matcher: "exhaustive" (COLMAP's SIFT matcher, the default until the A/B test), "lightglue" (SIFT + LightGlue) or "prior_pairs" (quick / CPU)
+    match_mode: str = "lightglue"                 # the matcher (0.93.9, Christian 23 Oct: LightGlue on): "lightglue" (SIFT + LightGlue on the GPU; COLMAP's SIFT matcher when torch / kornia are missing or it would take over 2 h), "exhaustive" (COLMAP's SIFT matcher) or "prior_pairs" (quick / CPU); over max_exhaustive_images images the prior-overlap pairs
     max_exhaustive_images: int = 300              # 21-22 Oct: above this many images "exhaustive" matches the prior-overlap pairs instead (Issole Z34: 2713 images, 3.7 M pairs, > 9 h; 300 from 22 Oct, Christian); 0 = never (not in the run key)
     exclude_list: bool = True                     # 22 Oct: leave out the images of mppp/data/exclude_images.txt (Mastcam-Z movies and other observations unfit for photogrammetry); False: keep them (not in the run key)
     match: Dict[str, Any] = field(default_factory=lambda: dict(max_ratio=0.9, max_distance=1.0, cross_check=True,
