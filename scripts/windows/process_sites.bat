@@ -15,7 +15,7 @@ REM
 REM Edit the settings below (or run scripts\process_sites.py from a prompt; --help lists every option).
 REM ======================================================================================================
 setlocal
-REM which sites: --all, --group navcam_consensus, or --sites rockytop sid_chal_rocks south_arm
+REM which sites: --all, --group ecam_consensus, or --sites rockytop sid_chal_rocks south_arm
 set "WHICH=--all"
 REM the Navcam + Mastcam-Z blocks of the sites with a "zcam" list (folders ..._zcam): set ZCAM=--zcam
 set "ZCAM="

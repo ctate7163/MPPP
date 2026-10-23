@@ -138,7 +138,7 @@ def test_new_windows_scripts_exist_crlf():
         b = (ROOT / "scripts" / "windows" / name).read_bytes()
         assert b.count(b"\r\n") == b.count(b"\n") > 5, name
     z = (ROOT / "scripts" / "windows" / "zcam_joints.bat").read_text()
-    assert "calib zcam" in z and "--promote-if-ok" in z and "--navcam-group navcam_consensus" in z
+    assert "calib zcam" in z and "--promote-if-ok" in z and "--navcam-group ecam_consensus" in z
     h = (ROOT / "scripts" / "windows" / "run_hazcam.bat").read_text()
     assert "hazcam_consensus" in h and "NAVCAM_INTRINSICS=hold" in h and "hazcam_calibration.bat" in h
     assert "zcam_joints.bat" in (ROOT / "scripts" / "windows" / "run_sites_zcam.bat").read_text()
@@ -163,8 +163,8 @@ def test_cli_calib_hazcam_and_navcam_group():
     a = build_parser().parse_args(["calib", "hazcam", "--variant", "hazcam", "--promote-if-ok"])
     assert a.which == "hazcam" and a.variant == "hazcam"
     a = build_parser().parse_args(["calib", "nz", "--group", "zcam34_joint,zcam_consensus",
-                                   "--navcam-group", "navcam_consensus"])
-    assert a.navcam_group == "navcam_consensus" and a.group == "zcam34_joint,zcam_consensus"
+                                   "--navcam-group", "ecam_consensus"])
+    assert a.navcam_group == "ecam_consensus" and a.group == "zcam34_joint,zcam_consensus"
 
 
 def test_shipped_exclusions_22_oct():
@@ -390,7 +390,7 @@ def test_error_analysis_batch_and_pipeline_report(tmp_path, monkeypatch):
     spec.loader.exec_module(rp)
     md = rp.error_report(res)
     assert md.startswith("# Error analysis on the SfM points")
-    assert rp.STAGES == ("wait", "navcam_runs", "navcam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report")
+    assert rp.STAGES == ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report")
 
 
 def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):

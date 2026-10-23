@@ -12,7 +12,7 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp mask [list | fetch [NAME] | install FILE]      the terrain mask model
     mppp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
     mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
-    mppp calib navcam [--root DIR] [--group navcam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
+    mppp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
     mppp doctor                               what is set, what is missing (environment, dependencies, models)
     mppp version
 
@@ -132,14 +132,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--variant", default="", help="the blocks' project colmap_<variant> (default colmap; run_hazcam.bat: "
                    "hazcam)")
     p.add_argument("--root", default=None, metavar="DIR", help="the scapes root (default: MPPP_SCAPES)")
-    p.add_argument("--group", default=None, help="site group(s) of the blocks, comma-separated (default navcam_consensus / "
+    p.add_argument("--group", default=None, help="site group(s) of the blocks, comma-separated (default ecam_consensus / "
                    "zcam<zoom>_joint, else zcam<zoom>_consensus); zcam / nz take the sites whose \"zcam\" list has the zoom")
     p.add_argument("--zoom", type=int, default=34, help="zcam: the Mastcam-Z zoom (default 34)")
     p.add_argument("--zcam-blocks", action="store_true",
                    help="hazcam: the sites' Navcam + Mastcam-Z blocks (..._zcam folders, every zoom) - 0.93.6, "
                         "zcam_joints.bat fits the Hazcams of the run_sites_zcam blocks")
     p.add_argument("--navcam-group", default=None,
-                   help="nz: also the finished Navcam-only blocks of this group (e.g. navcam_consensus), "
+                   help="nz: also the finished Navcam-only blocks of this group (e.g. ecam_consensus), "
                         "3000 points each, so the combined Navcam law is held by every Navcam block")
     p.add_argument("--blocks", nargs="*", default=None, metavar="NAME=WORK", help="blocks given explicitly instead")
     p.add_argument("--sites-file", default=None, metavar="FILE")
@@ -499,7 +499,7 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
     zfolders = zcam or bool(getattr(a, "zcam_blocks", False))     # 0.93.6: calib hazcam --zcam-blocks
     a.group = a.group or (f"zcam{int(getattr(a, 'zoom', 34))}_joint" if zcam and f"zcam{int(getattr(a, 'zoom', 34))}_joint"
                           in table.get("groups", {}) else f"zcam{int(getattr(a, 'zoom', 34))}_consensus" if zcam
-                          else "hazcam_consensus" if getattr(a, "which", "") == "hazcam" else "navcam_consensus")
+                          else "hazcam_consensus" if getattr(a, "which", "") == "hazcam" else "ecam_consensus")
     names: List[str] = []
     for grp in str(a.group).split(","):                 # 0.93: several groups, comma-separated
         g_names = table.get("groups", {}).get(grp.strip())

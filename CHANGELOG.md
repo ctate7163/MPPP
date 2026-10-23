@@ -17,6 +17,15 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **`navcam_consensus` is now `ecam_consensus`** (Christian): the engineering-camera blocks - Navcam with the front
+  and rear Hazcams. The old name still works everywhere (`waypoints.sites.GROUP_ALIASES`); the file has the new one.
+- **`run_pipeline` fits the Navcam, the front and the rear Hazcams before the Mastcam-Z runs** (Christian): the
+  stages `navcam_runs` / `navcam_joint` are `ecam_runs` / `ecam_joint` (the old names still work for `--from`,
+  `--redo`, `--stop-before`); `ecam_joint` runs the Navcam tied joint and then the Hazcam fit (FL, FR, RL, RR and the
+  F and R rigs, `calib hazcam --group ecam_consensus`) over the same blocks, each promoted when its checks pass, so
+  the Mastcam-Z blocks start from both. `zcam_joints` no longer fits the Hazcams again (the Mastcam-Z blocks hold
+  the Hazcam frames of the ecam blocks of the same sols, which would count twice); `--zcam-hazcam-fit` does it anyway.
+  The state file starts afresh (`state_before_v0944.json`).
 - **LightGlue's time budget per block is 3 h** (Christian; was 2 h): a block whose LightGlue matching is projected
   (from its first 20 pairs) to take longer falls back to SIFT (`lightglue`) or keeps its SIFT matches alone
   (`sift+lightglue`). Not in the run key.

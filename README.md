@@ -98,7 +98,7 @@ Metashape *Import Reference*, `colmap/sparse_prior/` (cameras, poses, rig), `mpp
 `mppp_config_<version>.json` for provenance. Outputs of `align`: `colmap/sparse/cahv_ba/` (the refined block),
 `health.json`, `summary.json`, `error_input/` (the exports for the error analysis), `runs/<time>/log.txt`.
 
-For many sites at once, `scripts/run_sites.py --group navcam_consensus` and `scripts/process_sites.py --all`
+For many sites at once, `scripts/run_sites.py --group ecam_consensus` and `scripts/process_sites.py --all`
 (Windows: `scripts\windows\run_sites.bat`, `process_sites.bat`, `align_here.bat`, `sites_status.bat`,
 `stop_mppp.bat`) run the command site after site with logs and status files.
 

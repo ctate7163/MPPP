@@ -10,17 +10,20 @@ Stages (each logged in ``<root>\\mppp_pipeline\\<stage>.log``, the pipeline in `
 ``state.json``; started again, the pipeline continues after the last finished stage):
 
  1. ``wait``           - waits while another run_sites / process_sites batch runs on ROOT (at most --wait-h hours)
- 2. ``navcam_runs``    - run_sites.py --group navcam_consensus (run_sites.bat): every Navcam block (with its
-                         Hazcams) with the camera models in use; sites that failed once more
- 3. ``navcam_joint``   - mppp calib navcam (navcam_tied_joint.bat): the Navcam tied joint over those blocks,
-                         promoted when every check passes (--no-promote: never)
+ 2. ``ecam_runs``      - run_sites.py --group ecam_consensus (run_sites.bat): every engineering-camera block -
+                         Navcam with the front and rear Hazcams - with the camera models in use; sites that failed
+                         once more
+ 3. ``ecam_joint``     - the engineering cameras fitted over those blocks (0.94.4, Christian): the Navcam tied joint
+                         (mppp calib navcam) and the Hazcam fit of both pairs, FL / FR / RL / RR and the F and R rigs
+                         (mppp calib hazcam), each promoted when its checks pass (--no-promote: never), so the
+                         Mastcam-Z blocks start from them
  4. ``zcam_runs``      - run_sites.py --zcam over the zcam_consensus sites and the other zcam34_joint sites
                          (run_sites_zcam.bat): the Navcam + Mastcam-Z + Hazcam blocks at every zoom of each site's
-                         "zcam" list, with the Navcam models just promoted
- 5. ``zcam_joints``    - as zcam_joints.bat: the Hazcam fit over the zcam_consensus blocks, then the Mastcam-Z joint
-                         of each zoom (34 over zcam34_joint + zcam_consensus, 48 / 63 / 79 / 110 over
-                         zcam_consensus), each promoted when its checks pass, then the Navcam + Mastcam-Z check
-                         (never promoted)
+                         "zcam" list, with the Navcam and Hazcam models just promoted
+ 5. ``zcam_joints``    - the Mastcam-Z joint of each zoom (34 over zcam34_joint + zcam_consensus, 48 / 63 / 79 / 110
+                         over zcam_consensus), each promoted when its checks pass, then the Navcam + Mastcam-Z check
+                         (never promoted).  No second Hazcam fit: the Mastcam-Z blocks hold the same Hazcam frames
+                         as the ecam blocks of their sols (--zcam-hazcam-fit fits them anyway)
  6. ``error_analysis`` - studies/analyses/error_analysis_batch.py over every finished block of both groups
                          (``<WORK>/colmap/error_input``): epsilon intra / cross station, by range and by angle, the
                          cross-station gate, the decorrelation rho(theta), the view graph, the registration against
@@ -52,10 +55,12 @@ if str(ROOT / "scripts") not in sys.path:
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 PY = sys.executable
-STAGES = ("wait", "navcam_runs", "navcam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report")
-STATE_TAG = "v0939"                              # the stage set of the state file
+STAGES = ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report")
+STATE_TAG = "v0944"                              # the stage set of the state file (0.94.4: ecam stages)
+STAGE_ALIASES = {"navcam_runs": "ecam_runs", "navcam_joint": "ecam_joint"}     # the names before 0.94.4
 STOP_ON_FAIL = ()                                # every stage goes on to the next
-ZCAM_GROUP, NAVCAM_GROUP, ZCAM34_JOINT = "zcam_consensus", "navcam_consensus", "zcam34_joint"
+ZCAM_GROUP, ECAM_GROUP, ZCAM34_JOINT = "zcam_consensus", "ecam_consensus", "zcam34_joint"
+NAVCAM_GROUP = ECAM_GROUP                        # the name before 0.94.4
 ZOOMS = (34, 48, 63, 79, 110)
 
 
@@ -163,26 +168,39 @@ class Pipeline:
             rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
         return ("done", "every site finished") if rc == 0 else ("done", f"finished with failed sites (exit {rc}; see run_sites_log.txt)")
 
-    def s_navcam_runs(self):
-        if self.a.no_navcam_runs:
-            return "skipped", "--no-navcam-runs"
-        return self._sites("navcam_runs", ["--group", NAVCAM_GROUP], False)
+    def s_ecam_runs(self):
+        if self.a.no_ecam_runs:
+            return "skipped", "--no-ecam-runs"
+        return self._sites("ecam_runs", ["--group", ECAM_GROUP], False)
 
-    def s_navcam_joint(self):
+    def s_ecam_joint(self):
+        """The Navcam joint, then the Hazcam fit, over the ecam_consensus blocks - both before the Mastcam-Z runs."""
+        promote = [] if self.a.no_promote else ["--promote-if-ok"]
         out = self._out("navcal_tied", "navcam_joint/tied_joint.json")
-        self.state.setdefault("navcam_joint", {})["study"] = str(out)
+        self.state.setdefault("ecam_joint", {})["study"] = str(out)
         self.save()
-        args = ["calib", "navcam", "--root", self.root, "--group", NAVCAM_GROUP, "--out", out, "--knot", "250",
-                "--points", "8000"] + ([] if self.a.no_promote else ["--promote-if-ok"])
-        rc = self._mppp("navcam_joint", out, args, timeout_h=self.a.stage_timeout_h)
+        args = ["calib", "navcam", "--root", self.root, "--group", ECAM_GROUP, "--out", out, "--knot", "250",
+                "--points", "8000", *promote]
+        rc = self._mppp("ecam_joint", out, args, timeout_h=self.a.stage_timeout_h)
         chk = out / "promotion_check.json"
         rep = json.loads(chk.read_text(encoding="utf-8")) if chk.is_file() else {}
         if rc != 0 and not rep:
-            return "failed", f"the Navcam joint failed (exit {rc}; {out}_log.txt); the cameras in use stay"
-        ok = bool(rep.get("ok"))
-        return "done", ("checks passed" + ("" if self.a.no_promote else ", promoted") if ok else
-                        "not promoted (a check failed): " + ", ".join(c.get("check", "?") for c in rep.get("checks", [])
-                                                                    if not c.get("ok"))) + f" ({out})"
+            nav = f"Navcam joint failed (exit {rc}; {out}_log.txt), the Navcam models in use stay"
+        elif rep.get("ok"):
+            nav = "Navcam: checks passed" + ("" if self.a.no_promote else ", promoted") + f" ({out})"
+        else:
+            nav = ("Navcam: not promoted (a check failed): " + ", ".join(
+                c.get("check", "?") for c in rep.get("checks", []) if not c.get("ok")) + f" ({out})")
+        notes = [nav]
+        if not self.a.no_hazcam_fit:
+            hout = self._out("hazcam_fit_ecam", "hazcam_fit.json")
+            self.state["ecam_joint"]["hazcam_study"] = str(hout)
+            self.save()
+            hrc = self._mppp("ecam_joint", hout, ["calib", "hazcam", "--group", ECAM_GROUP, "--root", self.root,
+                                                  "--out", hout, *promote], timeout_h=6)
+            notes.append(f"Hazcam fit: exit {hrc} ({hout}; promoted: the eyes and rigs whose checks passed)")
+        failed = rc != 0 and not rep
+        return ("failed" if failed else "done"), "; ".join(notes)
 
     def zcam_sites(self):
         """The sites of the Mastcam-Z stages: zcam_consensus, then the other zcam34_joint sites (the Z34 joint takes
@@ -202,7 +220,7 @@ class Pipeline:
     def s_zcam_joints(self):
         notes = []
         promote = [] if self.a.no_promote else ["--promote-if-ok"]
-        if not self.a.no_hazcam_fit:
+        if self.a.zcam_hazcam_fit:                   # 0.94.4: off by default (the ecam_joint stage fits them)
             out = self._out("hazcam_fit_zcam", "hazcam_fit.json")
             rc = self._mppp("zcam_joints", out, ["calib", "hazcam", "--zcam-blocks", "--group", self.zcam_group,
                                                  "--root", self.root, "--out", out, *promote], timeout_h=6)
@@ -219,7 +237,7 @@ class Pipeline:
         if not self.a.no_nz:
             out = self._out("nz34_joint", "nz_joint.json")
             rc = self._mppp("zcam_joints", out, ["calib", "nz", "--group", f"{ZCAM34_JOINT},{self.zcam_group}",
-                                                 "--navcam-group", NAVCAM_GROUP, "--root", self.root, "--out", out],
+                                                 "--navcam-group", ECAM_GROUP, "--root", self.root, "--out", out],
                             timeout_h=self.a.stage_timeout_h)
             notes.append(f"N+Z check exit {rc}")
         return "done", "; ".join(notes)
@@ -275,7 +293,8 @@ class Pipeline:
                              f"{(d.get('camera_models') or {}).get('fingerprint', '-')} |")
         ca = self.root / "camera_analysis"
         today = f"{datetime.date.today():%Y%m%d}"
-        for pat, title in (("navcal_tied_*", "Navcam joint"), ("hazcam_fit_zcam_*", "Hazcam fit"),
+        for pat, title in (("navcal_tied_*", "Navcam joint"), ("hazcam_fit_ecam_*", "Hazcam fit (ecam blocks)"),
+                           ("hazcam_fit_zcam_*", "Hazcam fit (Mastcam-Z blocks)"),
                            *[(f"zcam{z}_joint_*", f"Mastcam-Z {z} mm joint") for z in ZOOMS],
                            ("nz34_joint_*", "Navcam + Mastcam-Z check"), ("error_analysis_*", "Error analysis")):
             found = sorted(p for p in ca.glob(pat) if p.is_dir()) if ca.is_dir() else []
@@ -370,26 +389,33 @@ def error_report(res) -> str:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"))
-    ap.add_argument("--no-navcam-runs", action="store_true", help="skip the Navcam block runs")
+    ap.add_argument("--no-ecam-runs", "--no-navcam-runs", dest="no_ecam_runs", action="store_true",
+                    help="skip the engineering-camera (Navcam + Hazcam) block runs")
     ap.add_argument("--no-promote", action="store_true", help="the joints and the Hazcam fit promote nothing")
-    ap.add_argument("--no-hazcam-fit", action="store_true", help="zcam_joints without the Hazcam fit")
+    ap.add_argument("--no-hazcam-fit", action="store_true", help="ecam_joint without the Hazcam fit")
+    ap.add_argument("--zcam-hazcam-fit", action="store_true",
+                    help="zcam_joints also fits the Hazcams over the Mastcam-Z blocks (off since 0.94.4)")
     ap.add_argument("--no-nz", action="store_true", help="zcam_joints without the Navcam + Mastcam-Z check")
     ap.add_argument("--zooms", type=int, nargs="*", default=list(ZOOMS), help="the Mastcam-Z joints (default all)")
     ap.add_argument("--zcam-group", default=None, help="the Mastcam-Z sites (default zcam_consensus)")
     ap.add_argument("--n-boot", type=int, default=50, help="error_analysis: bootstrap rounds of the gate fit")
     ap.add_argument("--jobs", type=int, default=int(os.environ.get("MPPP_JOBS", "2") or 2),
-                    help="navcam_runs / zcam_runs: sites aligned at the same time (default 2, or MPPP_JOBS; 0.94.3)")
+                    help="ecam_runs / zcam_runs: sites aligned at the same time (default 2, or MPPP_JOBS; 0.94.3)")
     ap.add_argument("--wait-h", type=float, default=36.0, help="how long to wait for a running batch")
     ap.add_argument("--stage-timeout-h", type=float, default=30.0, help="the time limit of a joint or the analysis")
     ap.add_argument("--sites-timeout-h", type=float, default=72.0,
                     help="time limit of one run_sites call (a hung alignment is stopped with its process tree)")
-    ap.add_argument("--from", dest="start", choices=STAGES, help="start at this stage (the ones before: skipped)")
-    ap.add_argument("--redo", nargs="*", choices=STAGES, help="run these stages again even if done")
-    ap.add_argument("--stop-before", choices=STAGES, default=None, help="stop before this stage; start again to go on")
+    names = list(STAGES) + list(STAGE_ALIASES)       # the old names still work
+    ap.add_argument("--from", dest="start", choices=names, help="start at this stage (the ones before: skipped)")
+    ap.add_argument("--redo", nargs="*", choices=names, help="run these stages again even if done")
+    ap.add_argument("--stop-before", choices=names, default=None, help="stop before this stage; start again to go on")
     ap.add_argument("--reset", action="store_true", help="forget the state (every stage runs again)")
     ap.add_argument("--status", action="store_true", help="show the state and exit")
     ap.add_argument("--dry-run", action="store_true", help="show the commands, run nothing")
     a = ap.parse_args(argv)
+    a.start = STAGE_ALIASES.get(a.start, a.start)
+    a.stop_before = STAGE_ALIASES.get(a.stop_before, a.stop_before)
+    a.redo = [STAGE_ALIASES.get(x, x) for x in a.redo] if a.redo else a.redo
     p = Pipeline(a)
     if a.status:
         from mppp.runner import read_status

@@ -11,7 +11,7 @@ in ``<WORK>/mppp_status.json``; this script's own log is ``<root>/run_sites_log.
 Examples::
 
     python scripts/run_sites.py --all                                  # every site, Navcam only
-    python scripts/run_sites.py --group navcam_consensus               # what run_sites.bat runs
+    python scripts/run_sites.py --group ecam_consensus               # what run_sites.bat runs
     python scripts/run_sites.py --group zcam34_consensus --zcam        # the Navcam + Mastcam-Z blocks
     python scripts/run_sites.py --sites rockytop sid --source processed --variant tight --set attitude_prior_deg=1.0
     python scripts/run_sites.py --status                               # every WORK folder under --root
@@ -97,7 +97,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--all", action="store_true", help="every site in the site definitions")
-    g.add_argument("--group", help="a site group of the site definitions (e.g. navcam_consensus)")
+    g.add_argument("--group", help="a site group of the site definitions (e.g. ecam_consensus)")
     g.add_argument("--sites", nargs="+", help="site names")
     ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the scapes root: the WORK folders go below it (default: MPPP_SCAPES)")
     ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z blocks (..._zcam) of the sites with a \"zcam\" list")

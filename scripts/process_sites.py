@@ -45,7 +45,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--all", action="store_true", help="every site in the site definitions")
-    g.add_argument("--group", help="a site group of the site definitions (e.g. navcam_consensus)")
+    g.add_argument("--group", help="a site group of the site definitions (e.g. ecam_consensus)")
     g.add_argument("--sites", nargs="+", help="site names")
     ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the WORK folders go below it (default: MPPP_SCAPES)")
     ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z blocks (..._zcam) of the sites with a \"zcam\" list")

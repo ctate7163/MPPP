@@ -70,7 +70,7 @@ def main(argv=None) -> int:
     ap.add_argument("--check-only", action="store_true", help="check and show; change nothing")
     ap.add_argument("--keep", action="store_true", help="keep the cameras in use even if they are not the candidate")
     ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="SCAPES_ROOT (for --groups)")
-    ap.add_argument("--groups", nargs="*", default=["navcam_consensus", "zcam34_consensus"],
+    ap.add_argument("--groups", nargs="*", default=["ecam_consensus", "zcam34_consensus"],
                     help="site groups to list (a dry run of run_sites.py; zcam groups with --zcam)")
     a = ap.parse_args(argv)
     from mppp.paths import cmods_dir

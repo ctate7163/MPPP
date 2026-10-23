@@ -9,7 +9,7 @@ REM   48, 63, 79, 110  the blocks of zcam_consensus (no model yet: the joint sta
 REM                    bins; a first calibration needs >= 2 blocks to be promoted)
 REM Held at fixed values in every joint (mppp.calib.forms.ZCAM_FIXED_TERMS): 34 mm k2 (ZL +0.5, ZR +0.6); 63, 79,
 REM 110 mm k2 = p1 = p2 = 0.  p1, p2 vary at 34 and 48 mm.
-REM Last, the Navcam + Mastcam-Z 34 mm combined joint with every finished navcam_consensus block added (a check of
+REM Last, the Navcam + Mastcam-Z 34 mm combined joint with every finished ecam_consensus block added (a check of
 REM the Navcam law against the Mastcam-Z frames, never promoted; about an hour; set MPPP_NZ=none to skip it).
 REM
 REM   zcam_joints.bat                 the joints and the promotions
@@ -65,8 +65,8 @@ set "MPPP_NOPAUSE=1"
 if exist "%MPPP_SCAPES%\camera_analysis\zcam34_joint_%TODAY%\zcam_joint.json" call "%MPPP_HOME%\scripts\windows\make_figures.bat" - "%MPPP_SCAPES%\camera_analysis\zcam34_joint_%TODAY%"
 if /i not "%MPPP_NZ%"=="none" (
   echo.
-  echo %DATE% %TIME%  Navcam + Mastcam-Z 34 mm combined joint with the navcam_consensus blocks ^(a check, nothing promoted^)
-  python -m mppp --log "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt" calib nz --group "zcam34_joint,zcam_consensus" --navcam-group navcam_consensus --root "%MPPP_SCAPES%" --out "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%"
+  echo %DATE% %TIME%  Navcam + Mastcam-Z 34 mm combined joint with the ecam_consensus blocks ^(a check, nothing promoted^)
+  python -m mppp --log "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt" calib nz --group "zcam34_joint,zcam_consensus" --navcam-group ecam_consensus --root "%MPPP_SCAPES%" --out "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%"
   if errorlevel 1 echo the combined joint FAILED - see %MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt
 )
 echo %DATE% %TIME%  done

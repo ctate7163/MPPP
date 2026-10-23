@@ -81,9 +81,9 @@ def main(argv=None) -> int:
         print(f"{len(err)} error(s): fix them before running (the file is unchanged).")
         return 1
     d = load_site_table(f)
-    from mppp.waypoints.sites import site_zooms, zcam_sites
+    from mppp.waypoints.sites import GROUP_ALIASES, site_zooms, zcam_sites
     print(f"OK: {len(d['sites'])} sites ({len(zcam_sites(d))} with Mastcam-Z), groups: " +
-          ", ".join(f"{g} ({len(m)})" for g, m in (d.get("groups") or {}).items()))
+          ", ".join(f"{g} ({len(m)})" for g, m in (d.get("groups") or {}).items() if g not in GROUP_ALIASES))
     root = Path(a.root) if a.root and Path(a.root).is_dir() else None
     if root:
         print(f"last runs under {root}: Navcam block | Navcam + Mastcam-Z block (finished, MPPP version, variant, verdict)")

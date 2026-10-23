@@ -27,7 +27,7 @@ if exist "%OUT%\navcam_joint\tied_joint.json" ( set /a N+=1 & set "OUT=%MPPP_SCA
 for %%F in ("%OUT%") do set "TAG=%%~nxF"
 set "FIG=%MPPP_HOME%\Claude outputs\v0p91"
 if not exist "%FIG%" mkdir "%FIG%"
-echo tied joint: blocks under %MPPP_SCAPES% (group navcam_consensus) -^> %OUT%
+echo tied joint: blocks under %MPPP_SCAPES% (group ecam_consensus) -^> %OUT%
 python -m mppp --log "%OUT%_log.txt" calib navcam --root "%MPPP_SCAPES%" --out "%OUT%" --knot 250 --points 8000 %*
 if errorlevel 1 ( echo tied joint FAILED - see %OUT%_log.txt & pause & exit /b 1 )
 echo figures -^> %FIG%

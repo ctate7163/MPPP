@@ -136,6 +136,6 @@ the key and realigns every block.
 
 ## Batch runs
 
-`scripts/run_sites.py --group navcam_consensus` and `scripts/process_sites.py --all` run site after site with logs
+`scripts/run_sites.py --group ecam_consensus` and `scripts/process_sites.py --all` run site after site with logs
 and status files. On Windows the same runs are double-click batch files; see
 [Windows batch files](WINDOWS.md).

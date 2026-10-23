@@ -1,6 +1,6 @@
 @echo off
 REM ======================================================================================================
-REM MPPP - process and align the Navcam block of every site of the navcam_consensus group of
+REM MPPP - process and align the Navcam block of every site of the ecam_consensus group of
 REM src\mppp\data\sites.json (v0p53) into its own WORK folder mars2020_sol_<sol>_<site> under ROOT
 REM (Navcam only; the Mastcam-Z blocks: run_sites_zcam.bat, run_sites_zcam34.bat ... _zcam110),
 REM one site after the other, in the background (a minimised window; closing it stops the batch).
@@ -13,8 +13,8 @@ REM
 REM Edit the settings below (or run scripts\run_sites.py from a prompt; --help lists every option).
 REM ======================================================================================================
 setlocal
-REM which sites: --group navcam_consensus (default) or --sites rockytop sid_chal_rocks
-set "WHICH=--group navcam_consensus"
+REM which sites: --group ecam_consensus (default) or --sites rockytop sid_chal_rocks
+set "WHICH=--group ecam_consensus"
 REM more options, e.g. --jobs 1   (one site at a time; two is the default since 0.94.3)
 REM                    --source processed --variant tight --set ATTITUDE_PRIOR_DEG=1.0
 set "EXTRA="

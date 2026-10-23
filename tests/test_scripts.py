@@ -177,7 +177,7 @@ def test_filter_zcam_and_consensus_bats(tmp_path):
     assert run_sites.filter_zcam(["b"], table, True, True) == (["b"], [])
     assert not (ROOT / "scripts" / "rename_zcam34_folders.py").exists()                 # v0p53: no renaming
     win = ROOT / "scripts" / "windows"
-    assert 'set "WHICH=--group navcam_consensus"' in (win / "run_sites.bat").read_text()
+    assert 'set "WHICH=--group ecam_consensus"' in (win / "run_sites.bat").read_text()
     t = (win / "run_sites_zcam.bat").read_text()           # v0p53: every Mastcam-Z consensus block
     assert 'set "WHICH=--group zcam_consensus"' in t and "--zcam" in t
     assert 'set "EXTRA="' in t and "ZCAM_ZOOMS" not in t               # v0p53.1: the sites' own zoom lists

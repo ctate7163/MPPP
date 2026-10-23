@@ -77,7 +77,16 @@ def load_site_table(path: Optional[PathLike] = None) -> Dict[str, Any]:
             sol_ranges(sols)
         except ValueError as e:
             raise ValueError(f"{f}: site {k!r}: {e}") from None
+    groups = d.setdefault("groups", {})
+    for old, new in GROUP_ALIASES.items():          # an old group name still names its group
+        if old not in groups and new in groups:
+            groups[old] = groups[new]
     return d
+
+
+# 0.94.4 (Christian, 23 Oct 2026): the Navcam consensus blocks are the engineering-camera blocks - Navcam and both
+# Hazcam pairs, fitted together before the Mastcam-Z runs; the old name still works
+GROUP_ALIASES = {"navcam_consensus": "ecam_consensus"}
 
 
 def load_sites(path: Optional[PathLike] = None) -> Dict[str, Tuple[int, int]]:
@@ -125,7 +134,7 @@ def zcam34_sites(table: Optional[Dict[str, Any]] = None, path: Optional[PathLike
 
 
 def site_group(name: str, path: Optional[PathLike] = None) -> List[str]:
-    """the sites of a group in the site definitions file (e.g. ``"navcam_consensus"``); a site listed
+    """the sites of a group in the site definitions file (e.g. ``"ecam_consensus"``); a site listed
     twice is used once."""
     groups = load_site_table(path).get("groups", {})
     if name not in groups:

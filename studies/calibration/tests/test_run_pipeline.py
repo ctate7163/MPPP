@@ -33,11 +33,14 @@ def test_pipeline_dry_run_and_state(tmp_path):
     r = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path), "--dry-run"],
                        capture_output=True, text=True, timeout=600)
     out = r.stdout + r.stderr
-    for s in ("wait", "navcam_runs", "navcam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report"):
+    for s in ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report"):
         assert f"{s}: start" in out, (s, out[-3000:])
-    assert "run_sites.py" in out and "--group navcam_consensus" in out and "calib navcam" in out
+    assert "run_sites.py" in out and "--group ecam_consensus" in out and "calib navcam" in out
     assert "--sites seitah_overlook chal_rocks_large" in out and "--zcam" in out and "olifants" in out
-    assert "calib hazcam --zcam-blocks" in out and "calib zcam --zoom 110" in out and "calib nz" in out
+    # 0.94.4: the Hazcams are fitted over the ecam blocks before the Mastcam-Z runs, not over the Mastcam-Z blocks
+    assert "calib hazcam --group ecam_consensus" in out and "calib hazcam --zcam-blocks" not in out
+    assert out.index("calib hazcam --group ecam_consensus") < out.index("zcam_runs: start")
+    assert "calib zcam --zoom 110" in out and "calib nz" in out
     assert "error_analysis_batch.py" in out
     assert out.count("--jobs 2") >= 2                                    # 0.94.3: two sites at a time by default
     assert not (tmp_path / "mppp_pipeline" / "state.json").exists()      # a dry run leaves no state
@@ -61,7 +64,7 @@ def test_pipeline_stage_logic(tmp_path, monkeypatch):
         return f
     for s in rp.STAGES:
         monkeypatch.setattr(rp.Pipeline, "s_" + s, fake(s, ("done", "ok")))
-    a = SimpleNamespace(root=str(tmp_path), dry_run=False, start=None, redo=None, no_navcam_runs=False, wait_h=1,
+    a = SimpleNamespace(root=str(tmp_path), dry_run=False, start=None, redo=None, no_ecam_runs=False, wait_h=1,
                         stage_timeout_h=1)
     assert rp.Pipeline(a).go() == 0
     assert calls == list(rp.STAGES)                          # the old state's "navcam_runs: done" does not count
@@ -116,6 +119,7 @@ def test_pipeline_zcam_sites_and_stop_before(tmp_path):
                           "--stop-before", "zcam_runs"], capture_output=True, text=True, timeout=120)
     log = out.stdout + out.stderr
     assert "stopped before zcam_runs" in log and "calib navcam" in log and "run_sites.py" not in log, log[-2000:]
+    assert "calib hazcam --group ecam_consensus" in log                # the old stage name names ecam_joint
 
 
 # ------------------------------------------------------------------------------------------- the study scripts

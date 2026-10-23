@@ -4,7 +4,7 @@ Mastcam-Z 34 mm calibration from the solved Navcam + Mastcam-Z blocks (MPPP v0p7
     python scripts\\zcam_calibration.py start-update --root D:\\scapes --promote
     python scripts\\zcam_calibration.py calibrate    --root D:\\scapes --n 3 --promote
     python scripts\\zcam_calibration.py grade        --root D:\\scapes
-    python scripts\\zcam_calibration.py pointclouds  --root D:\\scapes --groups zcam34_consensus navcam_consensus
+    python scripts\\zcam_calibration.py pointclouds  --root D:\\scapes --groups zcam34_consensus ecam_consensus
 
 * ``start-update``: from the blocks as they are (also those solved before v0p74), (1) the focus groups they
   classified low-backlash go into ``<root>\\zcam_low_backlash_found.csv`` (every later run reads it), (2) a start focus

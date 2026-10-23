@@ -23,7 +23,7 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp mask [list | fetch [NAME] | install FILE]      the terrain mask model
     mppp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
     mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
-    mppp calib navcam [--root DIR] [--group navcam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
+    mppp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
     mppp calib zcam|nz|hazcam [--zoom Z] [--group G1,G2] [--navcam-group G] [--variant V] [--promote-if-ok]
     mppp doctor                               what is set, what is missing (environment, dependencies, models)
     mppp version
@@ -262,13 +262,13 @@ options:
   --variant VARIANT     the blocks' project colmap_<variant> (default colmap; run_hazcam.bat:
                         hazcam)
   --root DIR            the scapes root (default: MPPP_SCAPES)
-  --group GROUP         site group(s) of the blocks, comma-separated (default navcam_consensus /
+  --group GROUP         site group(s) of the blocks, comma-separated (default ecam_consensus /
                         zcam<zoom>_joint, else zcam<zoom>_consensus); zcam / nz take the sites
                         whose "zcam" list has the zoom
   --zoom ZOOM           zcam: the Mastcam-Z zoom (default 34)
   --navcam-group NAVCAM_GROUP
                         nz: also the finished Navcam-only blocks of this group (e.g.
-                        navcam_consensus), 3000 points each, so the combined Navcam law is held by
+                        ecam_consensus), 3000 points each, so the combined Navcam law is held by
                         every Navcam block
   --blocks [NAME=WORK ...]
                         blocks given explicitly instead

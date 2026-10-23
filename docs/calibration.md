@@ -51,7 +51,7 @@ finished blocks  ->  mppp calib navcam   ->  Navcam candidate        ->  check  
                  ->  mppp calib nz       ->  report only (never promoted)
 ```
 
-The blocks come from a site group of the site definitions (`--group`, default `navcam_consensus` for Navcam and
+The blocks come from a site group of the site definitions (`--group`, default `ecam_consensus` for Navcam and
 `zcam34_consensus` for Mastcam-Z) under the scapes root, or are listed with `--blocks NAME=WORK ...`. Each joint
 needs at least two finished blocks. Results go to `<root>/camera_analysis/<name>_<date>/` unless `--out` is given.
 
@@ -74,7 +74,7 @@ per-block, per-bin and per-sol values about the global solution. The candidate i
 leave-one-block-out limits.
 
 ```bash
-mppp calib navcam                          # blocks of the navcam_consensus group under MPPP_SCAPES
+mppp calib navcam                          # blocks of the ecam_consensus group under MPPP_SCAPES
 mppp calib navcam --promote-if-ok --note "tied joint of the consensus blocks"
 ```
 
@@ -152,7 +152,7 @@ residual changed by -0.7 %: a principal-point / attitude degeneracy that the ext
 
 ```bash
 mppp calib nz --zoom 34
-mppp calib nz --zoom 34 --group zcam34_joint,zcam_consensus --navcam-group navcam_consensus
+mppp calib nz --zoom 34 --group zcam34_joint,zcam_consensus --navcam-group ecam_consensus
 ```
 
 ### Hazcam fit: `mppp calib hazcam`

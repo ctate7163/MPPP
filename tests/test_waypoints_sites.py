@@ -70,9 +70,9 @@ def test_sites_json_is_the_site_list():
     assert 34 in S.site_zooms(t["sites"]["chal_rocks"]) and "bright_angle" in S.zcam_sites(t, zoom=63)
     zc = set(t["groups"]["zcam_consensus"])
     assert all(S.site_zooms(t["sites"][m]) for m in zc)
-    for g in ("navcam_consensus", "zcam34_consensus", "zcam48_consensus", "zcam63_consensus"):
+    for g in ("ecam_consensus", "zcam34_consensus", "zcam48_consensus", "zcam63_consensus"):
         assert g in t["groups"]
-    assert len(S.site_group("navcam_consensus")) == len(set(t["groups"]["navcam_consensus"]))
+    assert len(S.site_group("ecam_consensus")) == len(set(t["groups"]["ecam_consensus"]))
     assert S.parse_work_folder("D:/x/mars2020_sol_1408_south_arm_colmap_zcam") == ("south_arm", True)
     assert S.parse_work_folder("D:/x/mars2020_sol_0361_sid_chal_rocks_colmap") == ("sid_chal_rocks", False)
     assert S.parse_work_folder("D:/x/south_arm_colmap_zcam34") == ("south_arm", True)     # before v0p53 (by hand)
@@ -213,7 +213,7 @@ def test_site_table_with_visits(tmp_path):
     f.write_text(json.dumps({"sites": {
         "sid": {"sols": [[361, 378], [91, 101]], "zcam": [34], "settings": {}},
         "one": {"sols": [700, 712], "zcam": [], "settings": {}}},
-        "groups": {"navcam_consensus": ["sid", "one"]}}))
+        "groups": {"ecam_consensus": ["sid", "one"]}}))
     assert S.load_sites(f) == {"sid": (361, 378), "one": (700, 712)}
     assert S.load_site_ranges(f) == {"sid": [(361, 378), (91, 101)], "one": [(700, 712)]}
     assert S.work_folder(tmp_path, "sid", True, [[361, 378], [91, 101]]).name == "mars2020_sol_0361_sid_zcam"
@@ -247,10 +247,10 @@ def test_shipped_sites_v0p75():
     assert r["chal_rocks"] == [(91, 101), (361, 378)] and r["threeforks_large"][0] == (652, 693)
     assert r["enchanted_lake"] == [(556, 590), (421, 423)] and S.load_sites()["chal_rocks"] == (91, 378)
     g = t["groups"]
-    assert "olifants" not in g["navcam_consensus"] and "cheyava_falls" in g["navcam_consensus"]
-    assert "threeforks_large" in g["navcam_consensus"] and "threeforks_north" not in g["navcam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
+    assert "olifants" not in g["ecam_consensus"] and "cheyava_falls" in g["ecam_consensus"]
+    assert "threeforks_large" in g["ecam_consensus"] and "threeforks_north" not in g["ecam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
     assert "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
-    assert len(g["navcam_consensus"]) == 29 and "seitah_overlook" in g["navcam_consensus"] and {"plateau_point", "vingeanne", "hans_amundsen_workspace", "pico_turquino", "hippo_pools"} <= set(g["navcam_consensus"]) and "navcam_consensus_v0p82" not in g
+    assert len(g["ecam_consensus"]) == 29 and "seitah_overlook" in g["ecam_consensus"] and {"plateau_point", "vingeanne", "hans_amundsen_workspace", "pico_turquino", "hippo_pools"} <= set(g["ecam_consensus"]) and "navcam_consensus_v0p82" not in g
     assert len(g["zcam34_consensus"]) == 12 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:2] == ["chal_rocks_large", "rochette"]   # 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back (12 blocks)
 
 
@@ -345,7 +345,7 @@ def test_sites_19_oct_afternoon():
     assert S["seitah_overlook"]["sols"] == [[113, 125]] and S["butler_landing"]["sols"] == [[1, 14], [32, 44]]
     assert "butler_landing_large" not in S and "van_zyl_overlook_large" not in S
     assert S["van_zyl_overlook_huge"]["sols"] == [[15, 99], [361, 378]]
-    nc = set(G["navcam_consensus"])
+    nc = set(G["ecam_consensus"])
     assert {"seitah_north_large", "marble_mountain", "hippo_pools", "cheyava_falls", "bunsen_peak", "tuxedo_park",
             "belva_crater_large", "oeb_landing_site", "van_zyl_overlook_huge", "origny_large"} <= nc and len(nc) == 29 and "knob_mountain_large" in nc
     assert "seitah_north_large" in G["navcam_baseline"] and "van_zyl_overlook_huge" in G["navcam_baseline"]
@@ -369,3 +369,13 @@ def test_zcam34_joint_group_is_the_joint_default(tmp_path):
     a2 = argparse.Namespace(blocks=None, root=str(tmp_path), sites_file=None, which="zcam", zoom=34, group=None,
                             include_failed=True)
     assert set(_navcam_blocks(a2)) == {"chal_rocks_large", "rochette"}
+
+
+def test_ecam_consensus_and_the_old_group_name():
+    """0.94.4 (Christian): navcam_consensus is ecam_consensus (Navcam + both Hazcam pairs); the old name still works."""
+    from mppp.waypoints import sites as S
+    t = S.load_site_table()
+    assert "ecam_consensus" in t["groups"] and S.GROUP_ALIASES == {"navcam_consensus": "ecam_consensus"}
+    assert S.site_group("navcam_consensus") == S.site_group("ecam_consensus") and "seitah_overlook" in S.site_group("ecam_consensus")
+    raw = json.loads(S.SITES_FILE.read_text(encoding="utf-8"))
+    assert "navcam_consensus" not in raw["groups"]                    # only the new name in the file

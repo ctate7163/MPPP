@@ -35,7 +35,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 
 
-def finished_blocks(root: Path, group: str = "navcam_consensus"):
+def finished_blocks(root: Path, group: str = "ecam_consensus"):
     """The block folders of a site group under ``root`` whose alignment finished (``colmap/run_done.json``)."""
     from mppp.waypoints.sites import load_site_table
     tab = load_site_table()
@@ -68,7 +68,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the scapes root (default MPPP_SCAPES)")
     ap.add_argument("--blocks", nargs="*", default=None, help="block folders instead of the group under --root")
-    ap.add_argument("--group", default="navcam_consensus")
+    ap.add_argument("--group", default="ecam_consensus")
     ap.add_argument("--study", default=None, help="a consensus study folder (consensus.json, rig_residuals.json, navcam_joint/)")
     ap.add_argument("--cmods", default=None, help="the camera models the blocks were run with (default: the package's)")
     ap.add_argument("--out", default=str(HERE / "Claude outputs"))
