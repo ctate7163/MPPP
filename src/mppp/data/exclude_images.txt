@@ -23,6 +23,7 @@ seq:ZCAM00*
 seq:ZCAM01*
 !seq:ZCAM00033       # Chal Rocks (sols 91-93): kept (Christian, 22 Oct)
 !seq:ZCAM00034       # Chal Rocks: kept
+!seq:ZCAM00015       # kept (Christian, 22 Oct)
 
 # other Mastcam-Z observations
 seq:ZCAM08512        # Rockytop: 74 stereo frames

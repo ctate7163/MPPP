@@ -248,3 +248,12 @@ def test_block_station_images_on_other_sols_are_selected(tmp_path):
     assert [p.name for p in z] == ["ZL0_0102_0700000000_000RAD_N0040218ZCAM08062_034085A03.IMG"]   # not S004D0372
     _, r2 = find_imgs_near(tmp_path, ["NLF"], [[91, 101]], wp, radius_m=10.0, min_sol=103)
     assert r2["own_station_other_sols"] == []                                                  # min_sol holds
+
+
+def test_zcam00015_kept_and_origny_navcam_only():
+    """22 Oct (Christian): ZCAM00015 is kept (not caught by seq:ZCAM00*); Origny has no Mastcam-Z 34 mm 360."""
+    from mppp.pipeline import shipped_exclusions
+    assert "!seq:ZCAM00015" in shipped_exclusions()
+    t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
+    assert t["sites"]["origny"]["zcam"] == [] and t["sites"]["origny_large"]["zcam"] == []
+    assert t["official_blocks"]["35"]["mastcam_z_360"] == []

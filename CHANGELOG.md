@@ -23,6 +23,10 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
   0.3 deg (`rig_rotation_change_deg`, was 0.2; the rear Hazcam rig moved 0.26 deg at Chal Rocks). `ALIGN_RULES` 88
   and `PROCESS_RULES` 5 (the own-station selection): every block selects and aligns again (processed images reused).
 - `zcam_consensus`: seitah_overlook, chal_rocks, threeforks_north, belva_crater, south_arm, marble_mountain.
+- **Kept**: `!seq:ZCAM00015` (the `seq:ZCAM00*` exclusion no longer drops it). **Origny** has no Mastcam-Z 34 mm
+  360 (Christian): `origny` and `origny_large` are Navcam only (`"zcam": []`) and official block 35 no longer lists
+  360 #51 (the maps' 360 table, `studies/m20_sites/m20_sites/refdata.py`, dates #51 "Olifants" sol 1775, inside
+  Origny's square - its sol is probably wrong).
 - **Residual summary**: `residual_rms_native_px` and the median use the finite residuals only (`residual_nonfinite`
   counts the others: a point behind a camera or outside a lens model's domain). The 22 Oct chal_rocks block reported
   an RMS of Infinity.
