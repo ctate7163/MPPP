@@ -400,7 +400,7 @@ def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
     t = load_site_table()["sites"]
     assert t["chal_rocks_tiny"]["sols"] == [[91, 98]] and t["chal_rocks_tiny"]["zcam"] == t["chal_rocks"]["zcam"]
     for s in ("chal_rocks", "chal_rocks_large", "chal_rocks_tiny"):
-        assert t[s]["no_mask_inference_at"] == ["NCAM00699", "ZCAM00034", "ZCAM08060", "RHAZ0*"]
+        assert t[s]["no_mask_inference_at"][-3:] == ["ZCAM00034", "ZCAM08060", "RHAZ0*"]
     assert t["bell_island"]["no_mask_inference_at"] == ["RHAZ0*"] == t["bell_island_large"]["no_mask_inference_at"]
     from mppp.config import mask_inference_skipped
     assert mask_inference_skipped(["RHAZ0*"], 1, 1, name="RLF_0093_0675031997_228RAS_N0040100RHAZ00102_0A0095J01")
@@ -439,3 +439,68 @@ def test_check_zcam_rig_scatter_of_too_few_blocks():
            "rig": {"baseline_m": 0.2436, "sd_rotvec_mdeg": [None, None, None], "blocks": ["a"]}}
     c = {x["check"]: x for x in check_zcam(new, {"cameras": {}})["checks"]}
     assert c["rig scatter"]["ok"] and "not measured" in c["rig scatter"]["note"]
+
+
+def test_hazcam_athermal_fallback():
+    """0.93.10 (Christian): an eye whose temperature law fails its thermal check gets the athermal law (fx, fy, k1
+    constant) when that passes every check; else the temperature law stays, with the attempt recorded."""
+    from mppp.calib import hazfit as H
+    rng = np.random.default_rng(1)
+    start = [2147.0, 2147.0, 2560.0, 1920.0, 0.01, -0.006, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    def rows(slope_ppm, noise_ppm):
+        out = []
+        for k, T in enumerate((-23.0, -21.5, -20.0, -18.5, -17.0)):        # a 6 degC span
+            f = 2141.0 * (1 + 1e-6 * slope_ppm * (T + 20) + 1e-6 * noise_ppm * rng.normal())
+            p = list(start); p[0] = p[1] = f
+            out.append({"block": f"b{k}", "T": T, "sol": 600 + k, "params": p, "start": start, "observations": 5000,
+                        "weak": False, "early_share": 0.0})
+        return out
+    e = H.fit_eye_with_fallback(rows(150.0, 30.0), "FL")               # a slope beyond 100 ppm/degC, small scatter
+    assert e["athermal"] and e["ppm_per_degC"] == 0.0 and e["k1_per_degC"] == 0.0 and "athermal" in e["fallback"]
+    assert all(o for _, o, _ in H.eye_checks(e, "FL"))
+    assert "athermal fallback" in H.camera_file(e, "x")["source"] and H.camera_file(e, "x")["thermal"]["fx_ppm_per_degC"] == 0.0
+    e2 = H.fit_eye_with_fallback(rows(400.0, 30.0), "RL")              # constant f would scatter beyond 600 ppm
+    assert not e2.get("athermal") and e2["athermal_tried"]["failed"]
+    e3 = H.fit_eye_with_fallback(rows(40.0, 30.0), "FR")               # a good temperature law stays
+    assert not e3.get("athermal") and "athermal_tried" not in e3
+
+
+def test_0940_exclusions_before_processing_and_exposure_mask_off():
+    """0.94.0: the shipped exclusion list applies to the selected products; no_mask_inference_at by exposure."""
+    from mppp.pipeline import PROCESS_RULES, exclude_products, product_meta, shipped_exclusions
+    assert PROCESS_RULES == 6
+    ps = ["/x/ZL0_0091_0675031997_228RAD_N0040100ZCAM03017_034085A03.IMG",
+          "/x/ZL0_0091_0675031997_228RAD_N0040100ZCAM00034_034085A03.IMG",
+          "/x/NLF_0093_0675176765_000RAS_N0040100NCAM00699_01_295J01.IMG"]
+    assert product_meta(ps[0])["filename"] == {"stem": Path(ps[0]).stem, "sol": 91, "site": 4, "drive": 100,
+                                               "sequence": "ZCAM03017"}
+    kept, ex = exclude_products(ps, shipped_exclusions())
+    assert [Path(k).name for k in kept] == [Path(ps[1]).name, Path(ps[2]).name] and len(ex) == 1
+    from mppp.config import mask_inference_skipped, parse_stations
+    spec = ["0093_0675176765_000", "S032D1184"]
+    assert parse_stations(spec) == {(32, 1184)}
+    assert mask_inference_skipped(spec, 4, 100, name=Path(ps[2]).stem)
+    assert not mask_inference_skipped(spec, 4, 100, name="NLF_0093_0675176999_000RAS_N0040100NCAM00699_01_295J01")
+    from mppp.waypoints.sites import load_site_table
+    t = load_site_table()["sites"]
+    for s in ("chal_rocks", "chal_rocks_large", "chal_rocks_tiny"):
+        assert t[s]["no_mask_inference_at"] == ["0093_0675176765_000", "0360_0698912834_738", "ZCAM00034", "ZCAM08060",
+                                                "RHAZ0*"]
+
+
+def test_0940_models_in_use_and_first_calibration_ratio():
+    """0.94.0: Z63 and FL (athermal) in use; a 110 mm model needs no low-state lines; the start of a new zoom has the
+    default high / low ratio."""
+    from mppp import calib
+    from mppp.calib import forms
+    z63 = calib.load_zcam(63)
+    assert z63 is not None and all(abs(gm["regular_ratio"] - 1.0095) < 1e-9 for gm in z63["cameras"].values())
+    fl = json.loads((ROOT / "src" / "mppp" / "data" / "cmods" / "M2020_FL.json").read_text())
+    assert fl["thermal"]["fx_ppm_per_degC"] == 0.0 and fl["thermal"]["k1_per_degC"] == 0.0 and "athermal" in fl["source"]
+    m = {"cameras": {"ZL110": {"lines": {"backlash": {"fx": {"a": 1.0}, "fy": {"a": 1.0}}}, "pp0_px": [1, 2]}}}
+    assert not forms.validate_zcam(m)
+    m["cameras"]["ZL063"] = {"lines": {"backlash": {"fx": {"a": 1.0}, "fy": {"a": 1.0}}}, "pp0_px": [1, 2]}
+    assert any("ZL063: no regular line" in x for x in forms.validate_zcam(m))
+    from mppp.pipeline import load_settings
+    assert load_settings(None, "chal_rocks_tiny").exclude == ["S004D0218", "seq:ZCAM08390"]

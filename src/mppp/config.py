@@ -134,6 +134,14 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any], path: str = "") -> D
 
 
 SEQUENCE_ID = r"(?:seq:)?\s*([A-Z]{4}\d{0,5}\*?)"   # 0.93.9: a prefix too (RHAZ0*, RHAZ0)
+EXPOSURE_ID = r"\s*(\d{4}_\d{10}_\d{3})\s*"            # 0.94.0: one exposure, every camera (0093_0675176765_000)
+
+
+def parse_exposures(spec: Any) -> set:
+    """``masking.skip_inference_at`` -> {"SSSS_CCCCCCCCCC_FFF"}: the entries that name one exposure by sol and
+    spacecraft clock (0.94.0, Christian 23 Oct: one Navcam stereo pair) - matched in the product name."""
+    import re
+    return {m.group(1) for item in spec or [] if isinstance(item, str) for m in [re.fullmatch(EXPOSURE_ID, item)] if m}
 
 
 def parse_sequences(spec: Any) -> set:
@@ -161,6 +169,8 @@ def mask_inference_skipped(spec: Any, site: Any, drive: Any, sequence: Any = Non
     except (TypeError, ValueError):
         pass
     seqs = parse_sequences(spec)
+    if name and any(x in str(name) for x in parse_exposures(spec)):
+        return True
     if not seqs:
         return False
     seq = (str(sequence).upper() if sequence else None) or sequence_of(name)
@@ -179,8 +189,9 @@ def parse_stations(spec: Any) -> set:
     import re
     out = set()
     for item in spec or []:
-        if isinstance(item, str) and re.fullmatch(r"\s*" + SEQUENCE_ID + r"\s*", item, re.I):
-            continue                                     # a sequence (parse_sequences)
+        if isinstance(item, str) and (re.fullmatch(r"\s*" + SEQUENCE_ID + r"\s*", item, re.I)
+                                      or re.fullmatch(EXPOSURE_ID, item)):
+            continue                                     # a sequence (parse_sequences) or an exposure (parse_exposures)
         if isinstance(item, str):
             m = re.search(r"S0*(\d+)\s*D0*(\d+)", item, re.I) or re.fullmatch(r"\s*(\d+)\s*[/,:]\s*(\d+)\s*", item)
             if not m:

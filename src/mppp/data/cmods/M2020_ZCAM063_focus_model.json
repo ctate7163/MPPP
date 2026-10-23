@@ -1,0 +1,777 @@
+{
+ "cameras": {
+  "ZL063": {
+   "f0_px": 8624.732786644916,
+   "slope_px_per_count": -0.0013270575393540339,
+   "aspect": 1.000025425112275,
+   "reference_focus": 2523.0,
+   "focus_range": [
+    2166.0,
+    2916.0
+   ],
+   "regular_ratio": 1.0095,
+   "pp0_px": [
+    900.9760350933857,
+    506.324030250197
+   ],
+   "lines": {
+    "backlash": {
+     "fx": {
+      "a": 8624.623146335904,
+      "b": -0.0013270575393540339,
+      "form": "common"
+     },
+     "fy": {
+      "a": 8624.842428347729,
+      "b": -0.0013270575393540339,
+      "form": "common"
+     },
+     "k1": {
+      "a": -0.3534095675916857,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     }
+    },
+    "regular": {
+     "fx": {
+      "a": 8543.460273735416,
+      "b": -0.001314569132594387,
+      "derived": "backlash / 1.00950"
+     },
+     "fy": {
+      "a": 8543.677492172093,
+      "b": -0.001314569132594387,
+      "derived": "backlash / 1.00950"
+     },
+     "k1": {
+      "a": -0.3534095675916857,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "cx": {
+      "a": 900.9760350933857,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     },
+     "cy": {
+      "a": 506.324030250197,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     }
+    },
+    "reference_focus": 2523.0
+   },
+   "distortion": {
+    "names": [
+     "k1",
+     "k2",
+     "p1",
+     "p2"
+    ],
+    "params": [
+     -0.3534095675916857,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "sd": [
+     null,
+     null,
+     null,
+     null
+    ],
+    "note": "k1, k2, p1, p2 constant with focus (the Mastcam-Z joint; k3 = 0 held)"
+   },
+   "pp": {
+    "cx_px_per_count": 0.0,
+    "cy_px_per_count": 0.0
+   },
+   "thermal": {
+    "T0_degC": -15.0,
+    "sensor": "HEAD_FPA",
+    "f_px_per_degC": 0.0,
+    "note": "no temperature term"
+   },
+   "n_bins": 12,
+   "regular_pp_offset_px": [
+    0.0,
+    0.0
+   ],
+   "regular_pp_offset": {
+    "sd_px": [
+     null,
+     null
+    ],
+    "held": true,
+    "mixed_exposures": 0,
+    "note": "held: fewer than 5 exposures with this eye regular and the other in the backlash state"
+   },
+   "regular_ratio_note": "no low-state bins in the blocks: the default high / low ratio 1.0095 (no measurement); set 23 Oct (0.94.0) on the joint zcam63_joint_20261023, which wrote 1.0000"
+  },
+  "ZR063": {
+   "f0_px": 8623.736529353022,
+   "slope_px_per_count": 0.009296853761658664,
+   "aspect": 1.0002334759754443,
+   "reference_focus": 2514.0,
+   "focus_range": [
+    2112.0,
+    2880.0
+   ],
+   "regular_ratio": 1.0095,
+   "pp0_px": [
+    892.5272836517023,
+    537.2673861988089
+   ],
+   "lines": {
+    "backlash": {
+     "fx": {
+      "a": 8622.729987952936,
+      "b": 0.009296853761658664,
+      "form": "common"
+     },
+     "fy": {
+      "a": 8624.743188247867,
+      "b": 0.009296853761658664,
+      "form": "common"
+     },
+     "k1": {
+      "a": -0.3199478327236099,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "cx": {
+      "a": 892.5272836517023,
+      "b": 0.0,
+      "form": "pinned"
+     },
+     "cy": {
+      "a": 537.2673861988089,
+      "b": -0.001676145365283484,
+      "form": "pinned_slope"
+     }
+    },
+    "regular": {
+     "fx": {
+      "a": 8541.584931107416,
+      "b": 0.009209364796095753,
+      "derived": "backlash / 1.00950"
+     },
+     "fy": {
+      "a": 8543.579185981047,
+      "b": 0.009209364796095753,
+      "derived": "backlash / 1.00950"
+     },
+     "k1": {
+      "a": -0.3199478327236099,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "cx": {
+      "a": 892.5272836517023,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     },
+     "cy": {
+      "a": 537.2673861988089,
+      "b": -0.001676145365283484,
+      "derived": "pp0 + the regular-state offset (and the cy slope)"
+     }
+    },
+    "reference_focus": 2514.0
+   },
+   "distortion": {
+    "names": [
+     "k1",
+     "k2",
+     "p1",
+     "p2"
+    ],
+    "params": [
+     -0.3199478327236099,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "sd": [
+     null,
+     null,
+     null,
+     null
+    ],
+    "note": "k1, k2, p1, p2 constant with focus (the Mastcam-Z joint; k3 = 0 held)"
+   },
+   "pp": {
+    "cx_px_per_count": 0.0,
+    "cy_px_per_count": -0.001676145365283484,
+    "note": "ZR principal point: cx pinned at pp0, cy pinned with its focus slope (the joint)"
+   },
+   "thermal": {
+    "T0_degC": -15.0,
+    "sensor": "HEAD_FPA",
+    "f_px_per_degC": 0.0,
+    "note": "no temperature term"
+   },
+   "n_bins": 14,
+   "regular_pp_offset_px": [
+    0.0,
+    0.0
+   ],
+   "regular_pp_offset": {
+    "sd_px": [
+     null,
+     null
+    ],
+    "held": true,
+    "mixed_exposures": 0,
+    "note": "held: fewer than 5 exposures with this eye regular and the other in the backlash state"
+   },
+   "regular_ratio_note": "no low-state bins in the blocks: the default high / low ratio 1.0095 (no measurement); set 23 Oct (0.94.0) on the joint zcam63_joint_20261023, which wrote 1.0000"
+  }
+ },
+ "rig": {
+  "R_sensor_from_ref": [
+   [
+    0.9990537321840648,
+    0.011268732690881612,
+    0.04200780728188836
+   ],
+   [
+    -0.011223915261014638,
+    0.9999361614572284,
+    -0.0013025883452140673
+   ],
+   [
+    -0.04201980408455493,
+    0.0008298636785526304,
+    0.9991164333504732
+   ]
+  ],
+  "t_sensor_from_ref": [
+   -0.24430233179713712,
+   0.0008267078503317003,
+   0.0012455389668092273
+  ],
+  "baseline_m": 0.24430690562222368,
+  "note": "the Mastcam-Z joint: one rig for every block and focus (rotation refined, translation held); per_block / residuals from the diagnostic pass (each block's own rig)",
+  "translation_source": "held (the rig in use)",
+  "blocks": [
+   "chal_rocks",
+   "marble_mountain"
+  ],
+  "sd_rotvec_mdeg": [
+   3.628942532774787,
+   14.998146491367645,
+   0.6500071919825361
+  ],
+  "residuals": {
+   "per_block": [
+    {
+     "block": "chal_rocks",
+     "sol": 363.0,
+     "T_optics_degC": -13.96730585685484,
+     "yaw_mdeg": 21.0551466383407,
+     "pitch_mdeg": -5.1295078084587304,
+     "roll_mdeg": 1.1783266498869363
+    },
+    {
+     "block": "marble_mountain",
+     "sol": 1968.0,
+     "T_optics_degC": -16.915787067099565,
+     "yaw_mdeg": -0.15543554020987432,
+     "pitch_mdeg": 0.002591938463943055,
+     "roll_mdeg": 0.2590776633451815
+    }
+   ],
+   "fits": {
+    "yaw": {
+     "sd_mdeg": 14.998146491367645,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    },
+    "pitch": {
+     "sd_mdeg": 3.628942532774787,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    },
+    "roll": {
+     "sd_mdeg": 0.6500071919825361,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    }
+   }
+  },
+  "per_block": [
+   {
+    "block": "chal_rocks",
+    "sol": 363.0,
+    "T_optics_degC": -13.96730585685484
+   },
+   {
+    "block": "marble_mountain",
+    "sol": 1968.0,
+    "T_optics_degC": -16.915787067099565
+   }
+  ]
+ },
+ "form": "zcam-v2",
+ "state": "calibrated",
+ "pixel_mm": 0.0074,
+ "source": "MPPP Mastcam-Z joint (mppp.calib.ztied, 2026-10-23): one adjustment over 2 blocks (chal_rocks, marble_mountain), the Navcam held at the models in use",
+ "calibration": {
+  "method": "zcam tied joint (mppp.calib.ztied)",
+  "when": "2026-10-23",
+  "blocks": [
+   "chal_rocks",
+   "marble_mountain"
+  ],
+  "eyes": {
+   "ZL063": {
+    "backlash": {
+     "fx": {
+      "a": 8624.623146335904,
+      "b": -0.0013270575393540339,
+      "sd_a": null,
+      "sd_b": null,
+      "form": "common"
+     },
+     "fy": {
+      "a": 8624.842428347729,
+      "b": -0.0013270575393540339,
+      "sd_a": null,
+      "sd_b": null,
+      "form": "common"
+     },
+     "k1": {
+      "a": -0.3534095675916857,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     }
+    },
+    "regular": {
+     "fx": {
+      "a": 8624.623146335904,
+      "b": -0.0013270575393540339,
+      "derived": "backlash / 1.00000"
+     },
+     "fy": {
+      "a": 8624.842428347729,
+      "b": -0.0013270575393540339,
+      "derived": "backlash / 1.00000"
+     },
+     "k1": {
+      "a": -0.3534095675916857,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "cx": {
+      "a": 900.9760350933857,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     },
+     "cy": {
+      "a": 506.324030250197,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     }
+    },
+    "reference_focus": 2523.0,
+    "bins": 12,
+    "regular_bins": 0,
+    "held": [
+     "a_fx_regular",
+     "a_fy_regular",
+     "k2",
+     "p1",
+     "p2",
+     "b_cy",
+     "d_cx_regular",
+     "d_cy_regular"
+    ]
+   },
+   "ZR063": {
+    "backlash": {
+     "fx": {
+      "a": 8622.729987952936,
+      "b": 0.009296853761658664,
+      "sd_a": null,
+      "sd_b": null,
+      "form": "common"
+     },
+     "fy": {
+      "a": 8624.743188247867,
+      "b": 0.009296853761658664,
+      "sd_a": null,
+      "sd_b": null,
+      "form": "common"
+     },
+     "k1": {
+      "a": -0.3199478327236099,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "cx": {
+      "a": 892.5272836517023,
+      "b": 0.0,
+      "form": "pinned"
+     },
+     "cy": {
+      "a": 537.2673861988089,
+      "b": -0.001676145365283484,
+      "sd_b": null,
+      "form": "pinned_slope"
+     }
+    },
+    "regular": {
+     "fx": {
+      "a": 8622.729987952936,
+      "b": 0.009296853761658664,
+      "derived": "backlash / 1.00000"
+     },
+     "fy": {
+      "a": 8624.743188247867,
+      "b": 0.009296853761658664,
+      "derived": "backlash / 1.00000"
+     },
+     "k1": {
+      "a": -0.3199478327236099,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "cx": {
+      "a": 892.5272836517023,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     },
+     "cy": {
+      "a": 537.2673861988089,
+      "b": -0.001676145365283484,
+      "derived": "pp0 + the regular-state offset (and the cy slope)"
+     }
+    },
+    "reference_focus": 2514.0,
+    "bins": 14,
+    "regular_bins": 0,
+    "held": [
+     "a_fx_regular",
+     "a_fy_regular",
+     "k2",
+     "p1",
+     "p2",
+     "d_cx_regular",
+     "d_cy_regular"
+    ]
+   }
+  },
+  "residuals": {
+   "observations": 725474,
+   "median_px": 0.18601620665236512,
+   "rms_px": 0.4070532740962205,
+   "corner_median_px": 0.23671797078435533,
+   "p95_px": 0.8371854421883953
+  },
+  "zcam": {
+   "zcam_observations": 82150,
+   "navcam_zcam_points": 28831,
+   "zcam_nonfinite": 0,
+   "zcam_nonfinite_share": 0.0,
+   "zcam_median_px": 0.22131888661079047,
+   "zcam_rms_px": 0.4909855340470916,
+   "zcam_p95_px": 0.8686709825973782
+  },
+  "navcam_models": "D:\\code\\MPPP\\src\\mppp\\data\\cmods",
+  "diagnostics": {
+   "blocks": [
+    {
+     "block": "chal_rocks",
+     "sol": 363.0,
+     "T_optics_degC": -13.96730585685484,
+     "pitch_mdeg": -5.1295078084587304,
+     "yaw_mdeg": 21.0551466383407,
+     "roll_mdeg": 1.1783266498869363,
+     "lines": {
+      "ZL063": {
+       "backlash": {
+        "fx": {
+         "a": 8615.282181444181,
+         "b": -0.0013270575393540339,
+         "bins": 1,
+         "observations": 12
+        },
+        "fy": {
+         "a": 8561.37319448654,
+         "b": -0.0013270575393540339,
+         "bins": 1,
+         "observations": 12
+        }
+       }
+      },
+      "ZR063": {
+       "backlash": {
+        "fx": {
+         "a": 8594.778063029247,
+         "b": 0.009296853761658664,
+         "bins": 1,
+         "observations": 15
+        },
+        "fy": {
+         "a": 8550.724633459527,
+         "b": 0.009296853761658664,
+         "bins": 1,
+         "observations": 15
+        }
+       }
+      }
+     }
+    },
+    {
+     "block": "marble_mountain",
+     "sol": 1968.0,
+     "T_optics_degC": -16.915787067099565,
+     "pitch_mdeg": 0.002591938463943055,
+     "yaw_mdeg": -0.15543554020987432,
+     "roll_mdeg": 0.2590776633451815,
+     "lines": {
+      "ZL063": {
+       "backlash": {
+        "fx": {
+         "a": 8625.009076115159,
+         "b": 0.0016694873922286557,
+         "bins": 11,
+         "observations": 40557
+        },
+        "fy": {
+         "a": 8626.323186626447,
+         "b": 0.0004551990625778902,
+         "bins": 11,
+         "observations": 40557
+        }
+       }
+      },
+      "ZR063": {
+       "backlash": {
+        "fx": {
+         "a": 8623.22802355326,
+         "b": 0.012945290672934805,
+         "bins": 13,
+         "observations": 41566
+        },
+        "fy": {
+         "a": 8626.282636839067,
+         "b": 0.011484449717324948,
+         "bins": 13,
+         "observations": 41566
+        }
+       }
+      }
+     }
+    }
+   ],
+   "fits": {
+    "yaw": {
+     "sd_mdeg": 14.998146491367645,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    },
+    "pitch": {
+     "sd_mdeg": 3.628942532774787,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    },
+    "roll": {
+     "sd_mdeg": 0.6500071919825361,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    }
+   }
+  }
+ },
+ "note": " | 0.94.0: regular_ratio set to the default (the joint had no low-state bins)"
+}

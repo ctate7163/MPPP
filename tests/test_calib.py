@@ -130,7 +130,7 @@ def test_hazcam_start_model_and_loader_warning(caplog):
             assert calib.thermal_terms(h["thermal"]) == {"fx_ppm": 0.0, "fy_ppm": 0.0, "cx_px": 0.0, "cy_px": 0.0,
                                                          "k1": 0.0, "T0": -20.0}
     with caplog.at_level(logging.WARNING, logger="mppp.calib"):
-        m = calib.load_camera("F", "L")
+        m = calib.load_camera("R", "L")                 # 0.94.0: FL is in use; RL has no file
     assert m["file"] is None and "start model" in caplog.text
     name, p, applied = calib.camera_at(m, -30.0, sol=10)
     assert p == m["params"] and applied["thermal"]["sx"] == 1.0           # no thermal, no early term

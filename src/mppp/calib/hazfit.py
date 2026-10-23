@@ -22,7 +22,7 @@ import datetime
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -116,8 +116,9 @@ def _wls(X: np.ndarray, y: np.ndarray, w: np.ndarray):
     return beta, cov, r
 
 
-def fit_eye(rows: List[Dict[str, Any]], eye: str) -> Dict[str, Any]:
-    """The law of one eye from its block rows (:func:`block_rows`; weak eyes left out)."""
+def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False) -> Dict[str, Any]:
+    """The law of one eye from its block rows (:func:`block_rows`; weak eyes left out).  ``athermal`` (0.93.10): no
+    temperature terms - fx, fy and k1 constant (the fallback when the temperature slope fails its check)."""
     use = [r for r in rows if not r["weak"] and r["T"] is not None and r["observations"] > 0]
     starts = np.array([r["start"] for r in rows], float) if rows else np.zeros((0, 12))
     out: Dict[str, Any] = {"eye": eye, "blocks": [r["block"] for r in use], "weak_blocks": [r["block"] for r in rows if r["weak"]]}
@@ -129,7 +130,7 @@ def fit_eye(rows: List[Dict[str, Any]], eye: str) -> Dict[str, Any]:
     w = np.array([max(r["observations"], 1) for r in use], float)
     early = np.array([r["early_share"] for r in use], float)
     n_early, n_late = int(np.sum(early > 0.5)), int(np.sum(early <= 0.5))
-    fit_slope = float(np.ptp(T)) >= MIN_T_SPAN_DEGC
+    fit_slope = float(np.ptp(T)) >= MIN_T_SPAN_DEGC and not athermal
     fit_early = n_early >= MIN_EARLY_BLOCKS and n_late >= MIN_EARLY_BLOCKS
     # fx, fy: separate intercepts, one slope g (px/degC) shared by both, an early offset per axis
     nrow = len(use)
@@ -164,7 +165,7 @@ def fit_eye(rows: List[Dict[str, Any]], eye: str) -> Dict[str, Any]:
                 "early_mission": {"dfx_px": float(v.get("ex", 0.0)), "dfy_px": float(v.get("ey", 0.0)),
                                   "fitted": fit_early, "blocks_early": n_early, "blocks_late": n_late},
                 "sd": {"fx": float(s["ax"]), "fy": float(s["ay"])}, "scatter_ppm": scatter_ppm,
-                "slope_fitted": fit_slope, "T_span_degC": float(np.ptp(T)),
+                "slope_fitted": fit_slope, "T_span_degC": float(np.ptp(T)), "athermal": bool(athermal),
                 "label_start": [float(x) for x in held[:6]],
                 "rows": [{"block": r_["block"], "T": r_["T"], "sol": r_["sol"], "fx": r_["params"][0], "fy": r_["params"][1],
                           "k1": r_["params"][4], "observations": r_["observations"]} for r_ in use]})
@@ -217,8 +218,32 @@ def fit_hazcam(blocks: Dict[str, PathLike], model: str = "cahv_ba") -> Dict[str,
     per_fam = {f: [dict(r["rigs"][f], block=r["block"]) for r in rows if f in r["rigs"]] for f in ("F", "R")}
     return {"when": datetime.date.today().isoformat(), "blocks": sorted(r["block"] for r in rows if r["eyes"]),
             "T0_degC": T0_DEGC, "early_mission_sol": EARLY_MISSION_SOL,
-            "eyes": {e: fit_eye(rs, e) for e, rs in per_eye.items() if rs},
+            "eyes": {e: fit_eye_with_fallback(rs, e) for e, rs in per_eye.items() if rs},
             "rigs": {f: fit_rig(rs, f) for f, rs in per_fam.items() if rs}}
+
+
+def fit_eye_with_fallback(rows: List[Dict[str, Any]], eye: str,
+                          limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """0.93.10 (Christian, 23 Oct): the eye's law with its temperature terms; when that law fails its thermal check
+    (FL of 23 Oct: +151 ppm/degC), the athermal law (fx, fy, k1 constant) instead if it passes every check - else the
+    temperature law, with the athermal attempt recorded (``athermal_tried``)."""
+    e = fit_eye(rows, eye)
+    if e.get("skipped") or not e.get("slope_fitted"):
+        return e
+    checks = eye_checks(e, eye, limits)
+    if dict((n, o) for n, o, _ in checks).get(f"{eye} thermal", True):
+        return e
+    a = fit_eye(rows, eye, athermal=True)
+    ca = eye_checks(a, eye, limits)
+    th = f"{e['ppm_per_degC']:+.1f} ppm/degC"
+    if all(o for _, o, _ in ca):
+        a["fallback"] = (f"athermal: the temperature law failed its thermal check ({th}); fx, fy, k1 constant, "
+                         f"block scatter {a['scatter_ppm']:.0f} ppm")
+        a["thermal_fit"] = {k: e.get(k) for k in ("ppm_per_degC", "sd_ppm_per_degC", "k1_per_degC", "scatter_ppm")}
+        return a
+    e["athermal_tried"] = {"scatter_ppm": a.get("scatter_ppm"),
+                           "failed": [n for n, o, _ in ca if not o]}
+    return e
 
 
 def camera_file(eye_res: Dict[str, Any], stamp: str) -> Dict[str, Any]:
@@ -241,8 +266,10 @@ def camera_file(eye_res: Dict[str, Any], stamp: str) -> Dict[str, Any]:
                               "note": "Hazcam fit: focal-length offsets of the images before before_sol"},
             "sd": e.get("sd"),
             "source": (f"MPPP Hazcam fit (mppp.calib.hazfit, {stamp}) over {len(e['blocks'])} blocks "
-                       f"({', '.join(e['blocks'])}): fx, fy, k1 linear in temperature, k2 the blocks' mean; cx, cy, "
-                       f"p1, p2, k3, k4 the label fits' median"),
+                       f"({', '.join(e['blocks'])}): "
+                       + ("athermal fallback - fx, fy, k1 constant (the temperature law failed its thermal check)"
+                          if e.get("athermal") else "fx, fy, k1 linear in temperature")
+                       + "; k2 the blocks' mean; cx, cy, p1, p2, k3, k4 the label fits' median"),
             "fit": {"method": "hazcam fit from the blocks", "blocks": e["blocks"], "scatter_ppm": e["scatter_ppm"],
                     "T_span_degC": e["T_span_degC"], "rows": e["rows"]}}
 
@@ -258,6 +285,32 @@ def rig_file(rig_res: Dict[str, Any], stamp: str) -> Dict[str, Any]:
     return d
 
 
+def eye_checks(e: Dict[str, Any], eye: str, limits: Optional[Dict[str, Any]] = None) -> List[Tuple[str, bool, str]]:
+    """The checks of one eye's law: [(name, ok, note)]."""
+    lim = dict(HAZCAM_LIMITS, **(limits or {}))
+    c: List[Tuple[str, bool, str]] = []
+    if e.get("skipped"):
+        return [(f"{eye} blocks", False, e["skipped"])]
+    c.append((f"{eye} blocks", len(e["blocks"]) >= lim["min_blocks"], f"{len(e['blocks'])} blocks"))
+    if e.get("athermal"):
+        c.append((f"{eye} thermal", True, "athermal (fallback): " + str(e.get("fallback") or "no temperature terms")))
+    else:
+        c.append((f"{eye} thermal", abs(e["ppm_per_degC"]) <= lim["max_ppm_per_degC"],
+                  f"{e['ppm_per_degC']:+.1f} ppm/degC" + (f" +- {e['sd_ppm_per_degC']:.1f}" if e.get("sd_ppm_per_degC") else "")
+                  + ("" if e["slope_fitted"] else " (not fitted: temperature span under 5 degC)")
+                  + (f"; the athermal law failed too ({', '.join(e['athermal_tried']['failed'])}; scatter "
+                     f"{e['athermal_tried']['scatter_ppm']:.0f} ppm)" if e.get("athermal_tried") else "")))
+    f0 = 0.5 * (e["params"][0] + e["params"][1])
+    fl = 0.5 * (e["label_start"][0] + e["label_start"][1])
+    d = 100 * abs(f0 / fl - 1.0)
+    c.append((f"{eye} f0", d <= lim["max_f0_change_pct"], f"{fl:.1f} -> {f0:.1f} px ({d:.2f} % from the label fits)"))
+    a = e["params"][1] / e["params"][0]
+    c.append((f"{eye} aspect", abs(a - 1.0) <= lim["max_aspect_dev"], f"{a:.5f}"))
+    c.append((f"{eye} block scatter", e["scatter_ppm"] <= lim["max_scatter_ppm"],
+              f"{e['scatter_ppm']:.0f} ppm about the law"))
+    return c
+
+
 def check_hazcam(res: Dict[str, Any], limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Sanity limits per eye and pair (:data:`HAZCAM_LIMITS`); an eye or pair passes or fails on its own:
     {"ok" (all), "eyes": {eye: ok}, "rigs": {fam: ok}, "checks": [...]}."""
@@ -265,22 +318,7 @@ def check_hazcam(res: Dict[str, Any], limits: Optional[Dict[str, Any]] = None) -
     checks: List[Dict[str, Any]] = []
     ok_e: Dict[str, bool] = {}
     for eye, e in (res.get("eyes") or {}).items():
-        c = []
-        if e.get("skipped"):
-            c.append((f"{eye} blocks", False, e["skipped"]))
-        else:
-            c.append((f"{eye} blocks", len(e["blocks"]) >= lim["min_blocks"], f"{len(e['blocks'])} blocks"))
-            c.append((f"{eye} thermal", abs(e["ppm_per_degC"]) <= lim["max_ppm_per_degC"],
-                      f"{e['ppm_per_degC']:+.1f} ppm/degC" + (f" +- {e['sd_ppm_per_degC']:.1f}" if e.get("sd_ppm_per_degC") else "")
-                      + ("" if e["slope_fitted"] else " (not fitted: temperature span under 5 degC)")))
-            f0 = 0.5 * (e["params"][0] + e["params"][1])
-            fl = 0.5 * (e["label_start"][0] + e["label_start"][1])
-            d = 100 * abs(f0 / fl - 1.0)
-            c.append((f"{eye} f0", d <= lim["max_f0_change_pct"], f"{fl:.1f} -> {f0:.1f} px ({d:.2f} % from the label fits)"))
-            a = e["params"][1] / e["params"][0]
-            c.append((f"{eye} aspect", abs(a - 1.0) <= lim["max_aspect_dev"], f"{a:.5f}"))
-            c.append((f"{eye} block scatter", e["scatter_ppm"] <= lim["max_scatter_ppm"],
-                      f"{e['scatter_ppm']:.0f} ppm about the law"))
+        c = eye_checks(e, eye, lim)
         ok_e[eye] = all(x[1] for x in c)
         checks += [{"check": n, "ok": bool(o), "note": t} for n, o, t in c]
     ok_r: Dict[str, bool] = {}
@@ -350,7 +388,8 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    f"{p[4]:+.5f} ({e['k1_per_degC']:+.2e}/degC), k2 {p[5]:+.5f}; early offsets "
                    f"{e['early_mission']['dfx_px']:+.2f}, {e['early_mission']['dfy_px']:+.2f} px"
                    + ("" if e["early_mission"]["fitted"] else " (not fitted)")
-                   + f"; {len(e['blocks'])} blocks over {e['T_span_degC']:.1f} degC, scatter {e['scatter_ppm']:.0f} ppm")
+                   + f"; {len(e['blocks'])} blocks over {e['T_span_degC']:.1f} degC, scatter {e['scatter_ppm']:.0f} ppm"
+                   + (f" - {e['fallback']}" if e.get("fallback") else ""))
     for fam, r in (res.get("rigs") or {}).items():
         if r.get("skipped"):
             out.append(f"{fam} rig: skipped - {r['skipped']}")

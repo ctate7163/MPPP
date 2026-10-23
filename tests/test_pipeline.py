@@ -241,7 +241,7 @@ def test_selection_defaults_v0p65p1():
     from mppp.config import default_config
     sel = default_config()["selection"]
     assert sel["lmst_window_h"] == [6.0, 18.0] and sel["max_saturated_fraction"] == 0.2
-    assert NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3) and PROCESS_RULES == 5     # v0p85: 1/3; 0.93.3: 5
+    assert NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3) and PROCESS_RULES == 6     # v0p85: 1/3; 0.94.0: 6
     s = Settings()
     assert s.lmst_window_h == (6.0, 18.0) and s.max_saturated_fraction == 0.2
     assert s.navcam_min_frame_fraction == pytest.approx(1 / 3)

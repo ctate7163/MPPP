@@ -165,7 +165,7 @@ def test_quarter_frame_rule(tmp_path, monkeypatch):
     kept, rep = P.select_best_products(paths, sizes={n: 1 for n in names.values()}, min_frame_fraction=0.2)
     assert {p.name for p in kept} == {names["c"], names["d"]} and rep["n_dropped_subframes"] == 2
     from mppp.pipeline import PROCESS_RULES
-    assert PROCESS_RULES == 5
+    assert PROCESS_RULES == 6                                   # 0.94.0
 
 
 def test_find_imgs_over_several_visits(tmp_path):

@@ -51,7 +51,7 @@ RUN_SETTINGS = "run_settings.json"
 ZCAM_RULES = 1                   # 0.93.4: Mastcam-Z blocks only (a partly listed focus group, unique _reg names)
 ALIGN_RULES = 89                 # 0.93.5: a Hazcam eye refines from 500 tie-point observations (88: residual cut 2.0 px)
 # Likewise for the selection and processing rules (process_done.json).
-PROCESS_RULES = 5                # 0.93.3: a block's own stations on other sols are selected
+PROCESS_RULES = 6                # 0.94.0: the shipped exclusion list before the processing (5: own stations on other sols)
 
 
 def _env_path(name: str) -> Optional[Path]:
@@ -575,6 +575,27 @@ def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Pa
     return paths, sel
 
 
+_PRODUCT = re.compile(r"^[A-Z0-9]{3}_(\d{4})_\d{10}_\d{3}[A-Z0-9]{3}_[A-Z](\d{3})(\d{4})([A-Z]{4}\d{5})_", re.I)
+
+
+def product_meta(path: PathLike) -> Dict[str, Any]:
+    """{stem, sol, site, drive, sequence} of a PDS product from its file name (as the manifest records them)."""
+    stem = Path(path).stem
+    m = _PRODUCT.match(stem)
+    if not m:
+        return {"filename": {"stem": stem}}
+    return {"filename": {"stem": stem, "sol": int(m.group(1)), "site": int(m.group(2)), "drive": int(m.group(3)),
+                         "sequence": m.group(4).upper()}}
+
+
+def exclude_products(paths: Sequence[PathLike], entries: Sequence[str]) -> Tuple[List[Path], List[str]]:
+    """(kept, excluded stems) of PDS products under exclusion entries (``mppp.sfm.workdir`` syntax)."""
+    from .sfm.workdir import apply_exclusions
+    metas = [dict(product_meta(p), _path=p) for p in paths]
+    kept, removed = apply_exclusions(metas, entries)
+    return [m["_path"] for m in kept], [r["image"] for r in removed if r["image"]]
+
+
 def select_images(site: Union[str, Site], settings: Settings) -> List[Path]:
     """The PDS products of a site (section 1 of the pipeline): see :func:`select_products`."""
     return select_products(site, settings)[0]
@@ -609,6 +630,14 @@ def process_site(site_or_work: PathLike, settings: Settings) -> Path:
     from . import load_waypoints, process_images
     st, s = resolve_site(site_or_work, settings)
     paths, sel = select_products(st, s)
+    if s.exclude_list:
+        # 0.94.0 (Christian, 23 Oct): the shipped exclusion list also keeps its images out of the processing (they
+        # were processed, then left out of the alignment: Mastcam-Z movies of a thousand frames)
+        # (with the site's / run's EXCLUDE entries: "seq:ZCAM08390" for one block)
+        paths, ex = exclude_products(paths, shipped_exclusions() + [str(e) for e in (s.exclude or [])])
+        if ex:
+            log.info("not processed (the shipped exclusion list): %d products, e.g. %s", len(ex), ex[0])
+            sel["excluded_before_processing"] = len(ex)
     processed = st.work / "processed"
     processed.mkdir(parents=True, exist_ok=True)
     cfg = processing_config(s)

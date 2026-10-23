@@ -2,6 +2,44 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.94.0 — 2026-10-23
+
+The release of the 22-23 Oct work (0.93.1-0.93.10 below): Hazcams in every block with their own law, the
+Mastcam-Z backlash states from the low-state list only, Z110 single-state, the joints of every zoom, LightGlue on,
+`run_pipeline.bat` as the whole run with the error analysis.  New in 0.94.0:
+
+- **The shipped exclusion list keeps its images out of the processing too** (Christian: ZCAM03017 - already on the
+  list since 22 Oct, it was processed and then left out of the alignment; so were the Mastcam-Z movies of a thousand
+  frames). `pipeline.exclude_products` reads sol, site, drive and sequence from the product name. `PROCESS_RULES` 6:
+  every block selects again (processed images reused).
+- **`no_mask_inference_at` takes single exposures** by sol and spacecraft clock (`0093_0675176765_000`: every camera
+  of that exposure, e.g. one Navcam stereo pair; `config.parse_exposures`). Chal Rocks, Chal Rocks Large and Chal
+  Rocks tiny: `0093_0675176765_000` in place of `NCAM00699` (only that stereo pair unmasked), `0360_0698912834_738`
+  added; ZCAM00034, ZCAM08060, RHAZ0* stay.
+- `VERSION_TAG` v0p94 (the processing manifests of v0p93 are read and reused).
+- **Chal Rocks tiny** without station S004D0218 and sequence ZCAM08390 (site `EXCLUDE`, this block only); a site's or
+  run's `EXCLUDE` entries now keep their images out of the processing too.
+- **A first Mastcam-Z calibration without low-state bins gets the default high / low ratio** (1.0095), not 1.0000
+  (`ztied.candidate_model`, `start_model_from_blocks`): the Z63 joint of 23 Oct failed only its ratio check on that.
+  A 110 mm model needs no low-state lines in its form (`forms.validate_zcam`: the Z110 joint failed "form").
+- **Models in use** (Christian: promote what is available):
+  - Mastcam-Z **63 mm** (first calibration): the joint `zcam63_joint_20261023` (chal_rocks, marble_mountain; 12 / 14
+    bins; f0 8624.7 / 8623.7 px, aspect 1.00003 / 1.00023, rig 21.7 mdeg from the start, residual median 0.22 px),
+    its low-state ratio set to the default 1.0095; every check passes.
+  - Hazcam **FL athermal**: fx 2141.07, fy 2140.44 px, k1 +0.0105 constant over the 4 blocks of
+    `hazcam_fit_zcam_20261023` (block scatter 538 ppm), every check passes.
+  - Not promoted: Z48 (one bin per eye), Z79 (2 bins per eye, rig 0.70 deg from the start, fy / fx 0.992), Z110
+    (fy / fx 0.982 - beyond the 1 % aspect limit; two blocks), RL / RR (scatter 1600-2500 ppm, athermal too).
+
+## 0.93.10 — 2026-10-23
+
+- **Hazcam eyes fall back to an athermal law** (Christian): when an eye's temperature law fails its thermal check,
+  the fit is made again with no temperature terms (fx, fy and k1 constant; `athermal`, `fallback`, the temperature
+  fit kept in `thermal_fit`) and that law is the candidate if it passes every check - promoted with the others. If it
+  fails too, the temperature law stays (failed) and the attempt is recorded (`athermal_tried`). Replayed on the fit of
+  23 Oct 08:49: FL (+151 ppm/degC) passes athermal with a block scatter of 538 ppm (limit 600); RL and RR fail
+  athermal too (scatter 2541 / 1874 ppm); FR keeps its temperature law (+67 ppm/degC).
+
 ## 0.93.9 — 2026-10-23
 
 - **LightGlue is the matcher** (Christian, 23 Oct): `match_mode` "lightglue" (SIFT + LightGlue on the GPU through

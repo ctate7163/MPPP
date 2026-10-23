@@ -445,8 +445,9 @@ def test_focus_model_fingerprint(tmp_path):
     from mppp.sfm.project import ZCAM_FOCUS_MODEL, zcam_focus_model_fingerprint
     shipped = data_dir() / "cmods" / ZCAM_FOCUS_MODEL
     h = hashlib.sha256()                                   # over every zoom's file (name + content)
-    h.update(shipped.name.encode())
-    h.update(shipped.read_bytes())
+    for f in sorted(shipped.parent.glob("M2020_ZCAM*_focus_model.json")):     # 0.94.0: 34 and 63 in use
+        h.update(f.name.encode())
+        h.update(f.read_bytes())
     assert zcam_focus_model_fingerprint() == h.hexdigest()
     alt = tmp_path / "m.json"
     m = json.loads(shipped.read_text())
@@ -536,7 +537,7 @@ def test_zcam_focus_models_per_zoom(tmp_path):
            "rig": {"R_sensor_from_ref": np.eye(3).tolist(), "note": "test"}}
     (tmp_path / "M2020_ZCAM048_focus_model.json").write_text(json.dumps(m48))
     files = zcam_focus_model_files(tmp_path)
-    assert set(files) == {34, 48} and files[48].parent == tmp_path
+    assert set(files) >= {34, 48} and files[48].parent == tmp_path       # (63 in use since 0.94.0)
     m = zcam_focus_model(tmp_path)
     assert {"ZL034", "ZR034", "ZL048"} <= set(m["cameras"]) and m["zooms"][48]["rig"]["note"] == "test"
     assert m["state"].startswith("calibrated")              # the 34 mm file's top level (22 Oct: the Z34 joint)
@@ -550,8 +551,8 @@ def test_zcam_focus_models_per_zoom(tmp_path):
     c = next(iter(out.values()))
     assert abs(c["params"][0] - (6600.0 + 0.1 * 200)) < 1e-6 and {"fx", "fy"} <= set(c["fixed_params"])
     assert abs(c["params"][2] - (820.0 + 0.01 * 200)) < 1e-9                # pp linear in focus about pp0's focus
-    rows63 = [{"camera_group": "ZL063", "focus_count": 700, "label_f_px": 6500.0} for _ in range(4)]
-    lab = _split_by_focus(rows63, {"ZL063": dict(base)}, {"ZL063": "Z"}, 30.0, "focal", model=m)   # no 63 mm model
+    rows63 = [{"camera_group": "ZL079", "focus_count": 700, "label_f_px": 6500.0} for _ in range(4)]
+    lab = _split_by_focus(rows63, {"ZL079": dict(base)}, {"ZL079": "Z"}, 30.0, "focal", model=m)   # no 79 mm model
     assert abs(next(iter(lab.values()))["params"][0] - 6500.0) < 1e-6
 
 

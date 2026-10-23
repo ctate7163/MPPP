@@ -269,7 +269,7 @@ def validate_zcam(model: Dict[str, Any]) -> List[str]:
                 if isinstance(e, dict) and abs(float(e.get("b") or 0.0)) > TOL:
                     out.append(f"{g}: {st} line for {n} has a focus slope, the form keeps it constant")
             for n in ("fx", "fy"):
-                if lines and n not in ln:
+                if lines and n not in ln and not (st == "regular" and is_single_state(g)):   # 0.94.0: 110 mm
                     out.append(f"{g}: no {st} line for {n}")
         th = c.get("thermal") or {}
         if float(th.get("f_px_per_degC") or 0.0):

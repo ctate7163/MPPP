@@ -100,3 +100,9 @@
 
 ## 20261023-100444 - Mastcam-Z 34 mm joint of 8 blocks
   - `M2020_ZCAM034_focus_model.json` f732cdadf193 from `D:\scapes\camera_analysis\zcam34_joint_20261023\M2020_ZCAM034_focus_model.json` (focus model for ['ZL034', 'ZR034'] and rig)
+
+## 20261023-110006 - Mastcam-Z 63 mm joint of 2 blocks (zcam63_joint_20261023, chal_rocks and marble_mountain; a first calibration): every check passed except the low-state ratio, which the joint wrote as 1.0000 for want of low-state bins - set to the default 1.0095 (0.94.0)
+  - `M2020_ZCAM063_focus_model.json` 80abe5bb1562 from `/tmp/claude-0/-home-claude/3f5549f9-2d32-5ba5-952a-af5a6dabd550/scratchpad/z63/M2020_ZCAM063_focus_model.json` (focus model for ['ZL063', 'ZR063'] and rig)
+
+## 20261023-110047 - Hazcam FL athermal law (0.94.0 fallback; Christian 23 Oct): the temperature law of hazcam_fit_zcam_20261023 failed its thermal check (+150.8 ppm/degC); fx, fy, k1 constant over the same 4 blocks, block scatter 538 ppm, every check passed
+  - `M2020_FL.json` e449940994af from `/tmp/claude-0/-home-claude/3f5549f9-2d32-5ba5-952a-af5a6dabd550/scratchpad/fl/M2020_FL.json` (THIN_PRISM_FISHEYE 5120x3840, fx 2141.07 at -20.0 degC)
