@@ -17,6 +17,14 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **Two crashes of the 23 Oct afternoon run fixed** (run_sites_zcam, two blocks at once): LightGlue's SIFT fallback
+  (Chal Rocks Large Mastcam-Z: 152,059 prior pairs projected at 3.0 h) ran COLMAP's CPU matcher inside the alignment
+  process, where OpenBLAS overflowed its thread table on the many-core PC ("precompiled NUM_THREADS exceeded") and
+  the process died; the matcher now always runs in the CUDA environment's child process, as for "exhaustive". The
+  alignments get `OPENBLAS_NUM_THREADS` / `OMP_NUM_THREADS` 8 unless set (run_sites, lightglue_ab). Seitah Overlook
+  Mastcam-Z died in native code at the start of stage-2 round 3 with no message (2.5 min after, while Three Forks
+  North started processing beside it). **`run_sites` runs a failed site once more, on its own, when the others are
+  done** (`--retries`, default 1).
 - **A Hazcam + Mastcam-Z point needs a Navcam look** (Christian's question, 14:50: the third-look rule covered only
   Navcam + Mastcam-Z tracks; `reconstruction.HAZCAM_ZCAM_NEED_NAVCAM`, ALIGN_RULES 92): a point whose track holds a
   Hazcam and a Mastcam-Z image but no Navcam image is deleted, whatever its length. Those points were most of the

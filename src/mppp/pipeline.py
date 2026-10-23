@@ -962,11 +962,12 @@ def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] =
     kw = dict(use_gpu=gpu, block_size=s.match_block_size, **s.match)
     if s.lightglue_keypoints not in (None, "largest"):
         kw["keypoint_selection"] = str(s.lightglue_keypoints)
-    if mode != "lightglue":
-        # COLMAP's matcher runs in a child process: the CUDA environment, else this python on the CPU - a COLMAP
-        # abort (glog "Check failed") then fails the step with its message instead of killing the run unseen, and
-        # the calibrated-verification fallback of mppp.sfm.matching can take over
-        kw["python"] = s.gpu_python or sys.executable
+    # COLMAP's matcher runs in a child process: the CUDA environment, else this python on the CPU - a COLMAP
+    # abort (glog "Check failed") then fails the step with its message instead of killing the run unseen, and
+    # the calibrated-verification fallback of mppp.sfm.matching can take over.  0.94.4: for "lightglue" too - its
+    # SIFT fallback (over the time budget) ran COLMAP's CPU matcher inside the run, where OpenBLAS overflowed its
+    # thread table on the 23 Oct PC and the process died (Chal Rocks Large Mastcam-Z, 152,059 pairs)
+    kw["python"] = s.gpu_python or sys.executable
     if pairs is not None:
         kw["pairs"] = pairs
     out["match"] = match(proj, mode=mode, **kw)

@@ -104,7 +104,10 @@ def run_variant(site: str, root: str, zcam: bool, variant: str, extra) -> Dict[s
         cmd.insert(5, "--zcam")
     print(f"\n{datetime.datetime.now():%H:%M:%S}  {variant}: {' '.join(cmd)}", flush=True)
     t0 = time.time()
-    rc = subprocess.call(cmd, cwd=str(ROOT))
+    env = dict(os.environ)
+    for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):     # 0.94.4: as run_sites (OpenBLAS thread table)
+        env.setdefault(k, "8")
+    rc = subprocess.call(cmd, cwd=str(ROOT), env=env)
     dt = time.time() - t0
     log = _newest_log(work, t0)
     print(f"{datetime.datetime.now():%H:%M:%S}  {variant}: exit {rc} after {dt / 3600:.2f} h (log {log})", flush=True)

@@ -87,6 +87,15 @@ def prefetch(log, sets) -> None:
             log(f"  LightGlue weights not loaded ({type(e).__name__}: {e}); each alignment tries itself")
 
 
+def child_env():
+    """The environment of an alignment: OpenBLAS limited to 8 threads unless set (0.94.4: on a PC with more cores
+    than OpenBLAS was built for, calls from many threads at once may crash it - "precompiled NUM_THREADS exceeded")."""
+    env = dict(os.environ)
+    for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):
+        env.setdefault(k, "8")
+    return env
+
+
 def console_file(work: Path) -> Path:
     p = work / "runs" / f"console_{time.strftime('%Y%m%d_%H%M%S')}.txt"
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -114,6 +123,8 @@ def main(argv=None) -> int:
                     help="start even if the batch file says another batch is running on --root")
     ap.add_argument("--jobs", type=int, default=default_jobs(),
                     help="sites aligned at the same time (default 2, or MPPP_JOBS; 0.94.3)")
+    ap.add_argument("--retries", type=int, default=1,
+                    help="a site that failed runs again once the others are done, on its own (default 1 time; 0.94.4)")
     ap.add_argument("--dry-run", action="store_true", help="list what would run")
     ap.add_argument("--status", action="store_true", help="the run status of every WORK folder under --root")
     a = ap.parse_args(argv)
@@ -187,6 +198,7 @@ def main(argv=None) -> int:
         prefetch(log, sets)
     running = []
     results = {}
+    retry, tries = [], {}
     queue = list(todo)
     while queue or running:
         while queue and len(running) < jobs:
@@ -206,7 +218,8 @@ def main(argv=None) -> int:
                 fh = open(cf, "w", encoding="utf-8", errors="replace")
                 log(f"site {s}: console output in {cf}")
             try:
-                p = subprocess.Popen(child_cmd(a, work), stdout=fh, stderr=subprocess.STDOUT if fh else None)
+                p = subprocess.Popen(child_cmd(a, work), stdout=fh, stderr=subprocess.STDOUT if fh else None,
+                                     env=child_env())
             except OSError as e:
                 if fh:
                     fh.close()
@@ -225,8 +238,16 @@ def main(argv=None) -> int:
                     log(f"site {s}: skipped - {work / 'SKIP'} exists")
                     continue
                 results[s] = p.returncode == 0
-                log(f"site {s}: {'finished' if p.returncode == 0 else 'FAILED (see its log)'} after "
-                    f"{(time.time() - t0) / 3600:.2f} h")
+                log(f"site {s}: {'finished' if p.returncode == 0 else f'FAILED, exit {p.returncode} (see its log)'} "
+                    f"after {(time.time() - t0) / 3600:.2f} h")
+                if p.returncode != 0 and tries.get(s, 0) < max(0, a.retries):
+                    tries[s] = tries.get(s, 0) + 1
+                    retry.append((s, work))
+                    log(f"site {s}: will run again on its own when the others are done "
+                        f"(try {tries[s] + 1} of {a.retries + 1})")
+        if not queue and not running and retry:          # 0.94.4: the failed sites again, one at a time
+            queue, retry = retry, []
+            jobs = 1
 
     n_bad = sum(not v for v in results.values())
     batch.stop("finished" if n_bad == 0 else "failed", site=None)

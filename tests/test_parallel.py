@@ -314,7 +314,7 @@ def test_run_sites_runs_two_sites_at_once(tmp_path, monkeypatch):
     monkeypatch.setattr(rs, "prefetch", lambda log, sets: fetched.append(1))
     root = tmp_path / "scapes"
     t0 = time.time()
-    rc = rs.main(["--sites", "rockytop", "rochette", "--root", str(root)])
+    rc = rs.main(["--sites", "rockytop", "rochette", "--root", str(root), "--retries", "0"])
     took = time.time() - t0
     assert rc == 1                                                 # rochette failed
     log = (root / "run_sites_log.txt").read_text()
@@ -331,7 +331,7 @@ def test_run_sites_runs_two_sites_at_once(tmp_path, monkeypatch):
         c.unlink()
     for p in root.glob("*/stub.json"):
         p.unlink()
-    assert rs.main(["--sites", "rockytop", "rochette", "--root", str(root), "--jobs", "1"]) == 1
+    assert rs.main(["--sites", "rockytop", "rochette", "--root", str(root), "--jobs", "1", "--retries", "0"]) == 1
     w = [json.loads(p.read_text()) for p in root.glob("*/stub.json")]
     assert len(w) == 2 and (w[0]["t1"] <= w[1]["t0"] or w[1]["t1"] <= w[0]["t0"])
     assert not list(root.glob("*/runs/console_*.txt")) and fetched == [1]
@@ -382,3 +382,32 @@ def test_epipolar_candidates_memory_is_bounded_driving_toward_the_scene():
     i2, j2 = epipolar_candidates(A, B, base, n, tol, max_candidates=5000)
     assert np.array_equal(i1, i2) and np.array_equal(j1, j2) and len(i1) > 10000
     assert peak < 600e6, peak / 1e6
+
+
+def test_run_sites_runs_a_failed_site_again_on_its_own(tmp_path, monkeypatch):
+    """0.94.4: a site that failed (23 Oct: two native crashes while two blocks ran) runs once more, alone, after the
+    others; OpenBLAS is held to 8 threads in the alignments."""
+    rs = _run_sites()
+    stub = tmp_path / "stub.py"
+    stub.write_text(textwrap.dedent("""
+        import sys, os, pathlib, time
+        work = pathlib.Path(sys.argv[1])
+        n = len(list(work.glob("try_*")))
+        (work / f"try_{n}").write_text(os.environ.get("OPENBLAS_NUM_THREADS", "-") + " " + str(time.time()))
+        time.sleep(1)
+        sys.exit(1 if ("rochette" in work.name and n == 0) else 0)
+    """))
+    monkeypatch.delenv("OPENBLAS_NUM_THREADS", raising=False)
+    monkeypatch.setattr(rs, "child_cmd", lambda a, work: [sys.executable, str(stub), str(work)])
+    monkeypatch.setattr(rs, "prefetch", lambda log, sets: None)
+    root = tmp_path / "scapes"
+    assert rs.main(["--sites", "rockytop", "rochette", "--root", str(root)]) == 0
+    log = (root / "run_sites_log.txt").read_text()
+    assert "site rochette: FAILED, exit 1" in log and "will run again on its own" in log and "2 ok, 0 failed" in log
+    tries = sorted(next(root.glob("*rochette*")).glob("try_*"))
+    assert len(tries) == 2 and tries[0].read_text().split()[0] == "8"
+    # --retries 0: no second try
+    for t in root.glob("*/try_*"):
+        t.unlink()
+    assert rs.main(["--sites", "rochette", "--root", str(root), "--retries", "0", "--force"]) == 1
+    assert len(list(next(root.glob("*rochette*")).glob("try_*"))) == 1
