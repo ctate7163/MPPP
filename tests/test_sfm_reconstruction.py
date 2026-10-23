@@ -541,7 +541,7 @@ def test_bundle_adjust_solver_choice_and_block_rotation(tmp_path):
 
 def test_outlier_residual_floor():
     from mppp.sfm.reconstruction import OUTLIER_DEFAULTS
-    assert OUTLIER_DEFAULTS["min_residual_px"] == 1.6                    # v0p61 (1.2 before)
+    assert OUTLIER_DEFAULTS["min_residual_px"] == 2.0                    # 22 Oct 2026 (1.6 since v0p61)
 
 
 def _rec():
@@ -1039,7 +1039,7 @@ def test_navcam_rig_roll_hold(tmp_path):
 def test_outlier_frame_threshold_and_reconstruct_options():
     import inspect
     from mppp.sfm import reconstruction as R
-    assert R.OUTLIER_DEFAULTS["min_residual_px"] == 1.6
+    assert R.OUTLIER_DEFAULTS["min_residual_px"] == 2.0
     sig = inspect.signature(R._reconstruct).parameters
     assert sig["zcam_focus_line"].default is True and sig["zcam_line_cycles"].default == 2
     assert sig["thermal_after_stage1"].default is True

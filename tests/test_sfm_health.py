@@ -32,7 +32,7 @@ def test_alignment_health_on_synthetic_block(tmp_path):
     from scipy.spatial.transform import Rotation
     sid = pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=2)
     T = rec.rigs[1].sensor_from_rig(sid)
-    bad = pycolmap.Rigid3d(pycolmap.Rotation3d(Rotation.from_rotvec(np.radians([0.3, 0, 0])).as_matrix()
+    bad = pycolmap.Rigid3d(pycolmap.Rotation3d(Rotation.from_rotvec(np.radians([0.5, 0, 0])).as_matrix()
                                                @ T.rotation.matrix()), T.translation)
     rec.rigs[1].set_sensor_from_rig(sid, bad)
     by = {c["check"]: c for c in assess_alignment(proj, rec)["checks"]}
@@ -56,7 +56,8 @@ def test_weak_image_causes():
 def test_health_lists_weak_images_with_advice(tmp_path):
     from helpers import _build_rec, _synthetic
     from mppp.sfm.health import DEFAULT_THRESHOLDS, assess_alignment, health_table
-    assert DEFAULT_THRESHOLDS["rig_rotation_change_deg"][:2] == (0.06, 0.2)            # doubled (v0p14.2)
+    assert DEFAULT_THRESHOLDS["rig_rotation_change_deg"][:2] == (0.06, 0.3)            # 22 Oct 2026 (0.2 before)
+    assert DEFAULT_THRESHOLDS["excluded_fraction"][:2] == (0.05, 0.30)
     assert DEFAULT_THRESHOLDS["outlier_image_fraction"][:2] == (0.04, 0.20)
     assert DEFAULT_THRESHOLDS["ray_displacement_max_px"][:2] == (20.0, 60.0)
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)

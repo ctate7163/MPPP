@@ -1455,7 +1455,7 @@ def hazcam_line(cov: Dict[str, Any]) -> str:
             + f"; Navcam-Hazcam tie points {cov['navcam_hazcam_points']}")
 
 
-OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 1.6,   # 1.6 px (v0p50 1.2, before 1.0)
+OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 2.0,   # 2.0 px (Christian, 22 Oct 2026; 1.6 since v0p61, v0p50 1.2)
                     "shift_mad_factor": 5.0, "min_shift_m": 0.25,
                     "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None,
                     "min_navcam_ties": None}

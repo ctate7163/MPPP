@@ -17,6 +17,12 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
   other stations. Chal Rocks lost its sol 102 Mastcam-Z sequences at the sol 99 station S004D0218 (ZCAM08062, 8 Z34
   pairs; ZCAM08061, 75 Z110 pairs). `find_imgs_near` now adds them (`own_station_other_sols` in the report; the log
   lists them; `NEARBY_FROM_FIRST_SOL` still applies), for the Navcam, Mastcam-Z and Hazcam selection.
+- **Thresholds** (Christian, 22 Oct): a frame is an outlier when its median residual exceeds 3 x the block's and
+  2.0 px (`OUTLIER_DEFAULTS["min_residual_px"]`, was 1.6 - Chal Rocks lost 17 Z79 frames at 1.6-1.9 px); the health
+  check fails a block at 30 % frames excluded (`excluded_fraction`, was 20 %) and at a stereo-rig rotation change of
+  0.3 deg (`rig_rotation_change_deg`, was 0.2; the rear Hazcam rig moved 0.26 deg at Chal Rocks). `ALIGN_RULES` 88
+  and `PROCESS_RULES` 5 (the own-station selection): every block selects and aligns again (processed images reused).
+- `zcam_consensus`: seitah_overlook, chal_rocks, threeforks_north, belva_crater, south_arm, marble_mountain.
 - **Residual summary**: `residual_rms_native_px` and the median use the finite residuals only (`residual_nonfinite`
   counts the others: a point behind a camera or outside a lens model's domain). The 22 Oct chal_rocks block reported
   an RMS of Infinity.

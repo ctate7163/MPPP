@@ -147,7 +147,7 @@ def test_new_windows_scripts_exist_crlf():
 def test_groups_and_block_sites():
     t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
     g = t["groups"]
-    assert g["zcam_consensus"] == ["seitah_overlook", "chal_rocks", "marble_mountain"]
+    assert g["zcam_consensus"] == ["seitah_overlook", "chal_rocks", "threeforks_north", "belva_crater", "south_arm", "marble_mountain"]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "threeforks_north", "belva_crater", "bell_island", "marble_mountain"]
     assert all(s in t["sites"] for s in g["hazcam_consensus"])
     ob = t["official_blocks"]

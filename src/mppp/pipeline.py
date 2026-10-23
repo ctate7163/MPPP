@@ -48,9 +48,9 @@ RUN_SETTINGS = "run_settings.json"
 
 # Bumped when the alignment code changes its results under unchanged settings (a default changed in the code, not
 # in the settings), so that the batch scripts align every site again instead of skipping it as done.
-ALIGN_RULES = 87                 # 0.93: Hazcams in the blocks, the Mastcam-Z fixed distortion terms
+ALIGN_RULES = 88                 # 0.93.3: outlier residual cut 2.0 px (87: 0.93 Hazcams in the blocks, Z fixed terms)
 # Likewise for the selection and processing rules (process_done.json).
-PROCESS_RULES = 4
+PROCESS_RULES = 5                # 0.93.3: a block's own stations on other sols are selected
 
 
 def _env_path(name: str) -> Optional[Path]:

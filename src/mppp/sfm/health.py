@@ -54,7 +54,7 @@ PathLike = Union[str, Path]
 # name: (warn, fail, direction) - "above": bad when value > threshold; "below": bad when value < threshold
 DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "registered_fraction": (0.98, 0.90, "below"),
-    "excluded_fraction": (0.05, 0.20, "above"),
+    "excluded_fraction": (0.05, 0.30, "above"),        # fail 0.30 (Christian, 22 Oct 2026; was 0.20)
     "unconstrained_fraction": (0.25, 0.60, "above"),
     "held_frame_fraction": (0.02, 0.10, "above"),
     "obs_per_image_p05": (200, 50, "below"),
@@ -68,7 +68,7 @@ DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "focal_change_pct": (0.5, 2.0, "above"),
     "principal_point_change_px": (20.0, 60.0, "above"),
     "ray_displacement_max_px": (20.0, 60.0, "above"),      # doubled in v0p14.2
-    "rig_rotation_change_deg": (0.06, 0.2, "above"),       # doubled in v0p14.2
+    "rig_rotation_change_deg": (0.06, 0.3, "above"),       # fail 0.3 deg (Christian, 22 Oct 2026; 0.2 since v0p14.2)
     "rig_cahv_spread_deg": (0.02, 0.1, "above"),
     "station_shift_median_m": (2.0, 6.0, "above"),          # doubled in v0p20 (user request)
     # attitude_change_p95_deg (block rotation + per-frame scatter) is reported without a verdict; the
