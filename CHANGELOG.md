@@ -2,6 +2,15 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.94.2 — 2026-10-23
+
+- **Pose-guided matching in threads** (Christian: run the blocks faster): the pairs are matched by up to 8 threads
+  (`GUIDED_DEFAULTS["workers"]`, 0 = min(8, CPU count); numpy releases the GIL in the array work), the database written
+  by the main thread in pair order - the same matches as one thread (test). It took 23-83 min of a Mastcam-Z block on
+  22-23 Oct, single-threaded.
+- `run_pipeline.bat --jobs N`: the Navcam and Mastcam-Z block runs align N sites at the same time (`run_sites --jobs`;
+  each WORK folder is its own, the shared files are read-only; memory is the limit - default 1).
+
 ## 0.94.1 — 2026-10-23
 
 - **Seitah Overlook tiny** (`seitah_overlook_tiny`, sols 116-121, every zoom; in no group) next to Chal Rocks tiny.

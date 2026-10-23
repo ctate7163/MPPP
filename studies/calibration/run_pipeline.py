@@ -146,6 +146,8 @@ class Pipeline:
 
     def _sites(self, stage, sites_args, zcam):
         cmd = [PY, ROOT / "scripts" / "run_sites.py", "--root", self.root, *sites_args]
+        if int(getattr(self.a, "jobs", 1) or 1) > 1:       # 0.94.2: sites aligned at the same time
+            cmd += ["--jobs", str(int(self.a.jobs))]
         if zcam:
             cmd.append("--zcam")
         rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
@@ -376,6 +378,8 @@ def main(argv=None) -> int:
     ap.add_argument("--zooms", type=int, nargs="*", default=list(ZOOMS), help="the Mastcam-Z joints (default all)")
     ap.add_argument("--zcam-group", default=None, help="the Mastcam-Z sites (default zcam_consensus)")
     ap.add_argument("--n-boot", type=int, default=50, help="error_analysis: bootstrap rounds of the gate fit")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="navcam_runs / zcam_runs: sites aligned at the same time (run_sites --jobs; 0.94.2)")
     ap.add_argument("--wait-h", type=float, default=36.0, help="how long to wait for a running batch")
     ap.add_argument("--stage-timeout-h", type=float, default=30.0, help="the time limit of a joint or the analysis")
     ap.add_argument("--sites-timeout-h", type=float, default=72.0,

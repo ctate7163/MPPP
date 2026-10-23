@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 
 import shutil
+import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -40,7 +41,10 @@ GUIDED_DEFAULTS = {"families": ("Z",), "max_px": 3.0, "max_ratio": 0.85, "max_di
                    "min_points": 20, "max_baseline_m": 50.0, "depth_margin": (0.5, 3.0),
                    # the local depth window
                    "depth": "local", "local_k": 8, "local_min": 3, "local_radius": 0.08, "local_factor": 1.4,
-                   "local_fallback": "skip"}
+                   "local_fallback": "skip",
+                   # 0.94.2: the pairs matched by this many threads (numpy releases the GIL in its array work); the
+                   # database is written by the main thread in pair order, so the result does not depend on it
+                   "workers": 0}                     # 0: min(8, CPU count)
 
 
 def _pose(im) -> Tuple[np.ndarray, np.ndarray]:
@@ -291,8 +295,10 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
     desc: Dict[int, np.ndarray] = {}
     depth: Dict[int, Tuple[float, float]] = {}
     n_new, by_fam, n_pairs_used, n_nodesc = 0, {}, 0, 0
+    workers = int(o.get("workers") or 0) or min(8, os.cpu_count() or 1)
     try:
-        for a, b, _ in pairs:
+        todo = []
+        for a, b, _ in pairs:                                   # descriptors and depth ranges in the main thread
             for i in (a, b):
                 if i not in desc:
                     d = db.read_descriptors(int(i))
@@ -302,8 +308,21 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
                 continue
             if a not in depth:
                 depth[a] = _depth_range(rec, a, tuple(o["depth_margin"]))
-            m = guided_pair_matches(rec, a, b, desc[a], desc[b], scale.get(a, 1.0), scale.get(b, 1.0), depth[a],
-                                    float(o["max_px"]), float(o["max_ratio"]), float(o["max_distance"]), local=local)
+            todo.append((a, b))
+
+        def one(ab):
+            a_, b_ = ab
+            return guided_pair_matches(rec, a_, b_, desc[a_], desc[b_], scale.get(a_, 1.0), scale.get(b_, 1.0),
+                                       depth[a_], float(o["max_px"]), float(o["max_ratio"]), float(o["max_distance"]),
+                                       local=local)
+        if workers > 1 and len(todo) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                results = ex.map(one, todo)                      # in pair order
+                found = list(zip(todo, results))
+        else:
+            found = [(ab, one(ab)) for ab in todo]
+        for (a, b), m in found:
             if not len(m):
                 continue
             i1, i2 = (a, b) if a < b else (b, a)
@@ -330,7 +349,7 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
     rep = {"database": str(out), "pairs": len(pairs), "pairs_with_new_matches": n_pairs_used, "new_matches": int(n_new),
            "pairs_without_descriptors": n_nodesc,
            "new_matches_by_family": by_fam, "options": {k: (list(v) if isinstance(v, tuple) else v) for k, v in o.items()},
-           "seconds": round(time.time() - t0, 1)}
+           "seconds": round(time.time() - t0, 1), "workers": workers}
     if verbose:
         log.info(f"pose-guided matching: {len(pairs)} pairs, {n_new} new matches ({by_fam}) in {n_pairs_used} pairs, "
               f"{rep['seconds']:.0f} s -> {out.name}")

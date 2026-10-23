@@ -151,3 +151,31 @@ def test_set_prior_focal(tmp_path):
     assert "kMinNumSamples" in CALIBRATED_ABORT_SIGNS
     msg = "E20261006 09:27:36 homography_matrix.cc:167] Check failed: cam_rays1.size() >= 4 (3 vs. 4)"
     assert any(k in msg for k in CALIBRATED_ABORT_SIGNS)                                   # v0p74.9
+
+
+def test_pose_guided_threads_give_the_same_matches(tmp_path):
+    """0.94.2: the pairs matched in threads write the same database as one thread."""
+    pytest.importorskip("pyceres")
+    import pycolmap
+    from helpers import _block_without_navcam_zcam_matches
+    from mppp.sfm import reconstruction as R
+    from mppp.sfm.guided import pose_guided_matching
+    proj, rec, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
+    rec = R.triangulate(rec, proj, max_reproj_px=8.0)
+    _, r1 = pose_guided_matching(rec, proj, proj.database, out_database=tmp_path / "w1.db", verbose=False, workers=1)
+    _, r4 = pose_guided_matching(rec, proj, proj.database, out_database=tmp_path / "w4.db", verbose=False, workers=4)
+    assert r1["workers"] == 1 and r4["workers"] == 4
+    assert r1["new_matches"] == r4["new_matches"] > 0 and r1["new_matches_by_family"] == r4["new_matches_by_family"]
+
+    def inliers(p):
+        db = pycolmap.Database.open(str(p))
+        try:
+            out = {}
+            for a in rec.reg_image_ids():
+                for b in rec.reg_image_ids():
+                    if a < b and db.exists_two_view_geometry(int(a), int(b)):
+                        out[(a, b)] = np.asarray(db.read_two_view_geometry(int(a), int(b)).inlier_matches).tolist()
+            return out
+        finally:
+            db.close()
+    assert inliers(tmp_path / "w1.db") == inliers(tmp_path / "w4.db")
