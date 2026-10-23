@@ -24,7 +24,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
-from ..paths import cache_dir, data_dir
+from ..paths import atomic_write_bytes, cache_dir, data_dir
 
 PathLike = Union[str, Path]
 
@@ -76,8 +76,8 @@ def load_waypoints(path: Optional[PathLike] = None, refresh: Union[bool, str] = 
             with urllib.request.urlopen(url, timeout=timeout) as r:
                 raw = r.read()
             json.loads(raw.decode("utf-8"))                       # validate before caching
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(raw)
+            if not atomic_write_bytes(target, raw):              # 0.94.3: two alignments may refresh at once
+                warnings.warn(f"the waypoint cache {target} is in use; the existing copy is kept")
         except Exception as e:                                     # noqa: BLE001
             warnings.warn(f"could not download the waypoints from {url} ({type(e).__name__}: {e}); "
                           f"using the existing copy")

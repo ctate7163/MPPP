@@ -96,3 +96,31 @@ def resolve_resource(name: PathLike, base: Path) -> Path:
     if p.is_absolute() or p.exists():
         return p
     return base / p
+
+
+def replace_retry(tmp: PathLike, dst: PathLike, tries: int = 20, wait_s: float = 0.5) -> bool:
+    """``os.replace(tmp, dst)``, again while Windows refuses because another process has ``dst`` open (two
+    alignments at once, 0.94.3).  False (and ``tmp`` removed) when it never succeeded: ``dst`` is unchanged."""
+    import time
+    for k in range(max(1, tries)):
+        try:
+            os.replace(tmp, dst)
+            return True
+        except PermissionError:
+            if k + 1 < tries:
+                time.sleep(wait_s)
+    try:
+        os.remove(tmp)
+    except OSError:
+        pass
+    return False
+
+
+def atomic_write_bytes(path: PathLike, data: bytes) -> bool:
+    """Write ``path`` so that a reader in another process sees the old or the new file, never half of one: a
+    temporary file of this process next to it, then :func:`replace_retry`."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_bytes(data)
+    return replace_retry(tmp, path)

@@ -157,6 +157,127 @@ def _unit(d: np.ndarray) -> np.ndarray:
     return d / np.where(n > 0, n, 1.0)
 
 
+def epipolar_dense(A: np.ndarray, B: np.ndarray, n: np.ndarray, tol: float, chunk: int = 2048,
+                   rows: Optional[np.ndarray] = None, cols: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
+    """(i, j), sorted, with ``|n_i . B_j| < tol`` by testing every pair (of ``rows`` x ``cols`` when given).
+    Memory is bounded: at most about 2**21 products at a time."""
+    rows = np.arange(len(A)) if rows is None else np.asarray(rows, int)
+    cols = np.arange(len(B)) if cols is None else np.asarray(cols, int)
+    if not len(rows) or not len(cols):
+        return np.zeros(0, int), np.zeros(0, int)
+    Bc = B[cols].T
+    step = max(1, min(int(chunk), (1 << 21) // max(1, len(cols))))
+    I, J = [], []
+    for s in range(0, len(rows), step):
+        r = rows[s:s + step]
+        m = n[r] @ Bc
+        np.abs(m, out=m)
+        ii, jj = np.nonzero(m < tol)
+        if len(ii):
+            I.append(r[ii])
+            J.append(cols[jj])
+    if not I:
+        return np.zeros(0, int), np.zeros(0, int)
+    i, j = np.concatenate(I), np.concatenate(J)
+    o = np.lexsort((j, i))
+    return i[o], j[o]
+
+
+def epipolar_candidates(A: np.ndarray, B: np.ndarray, base: np.ndarray, n: np.ndarray, tol: float,
+                        chunk: int = 2048, max_window: float = 0.5,
+                        max_candidates: int = 1 << 20) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    The same (i, j) as :func:`epipolar_dense` (rays ``B_j`` within ``tol`` of the epipolar plane of ``A_i``, normal
+    ``n_i``), sorted by (i, j), without testing every pair (0.94.3).  Every epipolar plane contains the baseline, so
+    a ray's plane is an angle ``phi`` about it: ``|n_i . B_j| = s_j |sin(phi_j - phi_i)|`` with ``s_j`` the size of
+    ``B_j`` across the baseline.  The rays of B are grouped by ``s`` (halving from 1) and sorted by ``phi``; a group
+    with ``s >= s_lo`` can only hold candidates within ``asin(tol / s_lo)`` of ``phi_i`` or ``phi_i + pi``, found by
+    binary search, then tested exactly.  Rays almost along the baseline (either side; window above ``max_window``)
+    are tested against every ray.  At most about ``max_candidates`` pairs are gathered at once (more only when one
+    row alone has more), so a thread needs a few hundred MB at most whatever the geometry.
+    """
+    if not len(A) or not len(B):
+        return np.zeros(0, int), np.zeros(0, int)
+    e = np.asarray(base, float) / np.linalg.norm(base)
+    p = np.cross(e, [1.0, 0.0, 0.0] if abs(e[0]) < 0.9 else [0.0, 1.0, 0.0])
+    p /= np.linalg.norm(p)
+    q = np.cross(e, p)
+    two_pi = 2.0 * np.pi
+
+    def plane(X):
+        x, y = X @ p, X @ q
+        return np.hypot(x, y), np.mod(np.arctan2(y, x), two_pi)
+
+    sa, fa = plane(A)
+    sb, fb = plane(B)
+    good_a = np.isfinite(n).all(axis=1)
+    near_a = np.where(good_a & (sa < 1e-3))[0]                 # rays of A almost along the baseline
+    reg_a = np.where(good_a & (sa >= 1e-3))[0]
+    I, J = [], []
+    if len(near_a):
+        i, j = epipolar_dense(A, B, n, tol, chunk, rows=near_a)
+        I.append(i)
+        J.append(j)
+    hi = np.inf
+    s_lo = 1.0
+    while True:
+        last = tol / s_lo > np.sin(max_window)
+        grp = np.where((sb >= (0.0 if last else s_lo)) & (sb < hi))[0]
+        if len(grp) and len(reg_a):
+            if last:
+                i, j = epipolar_dense(A, B, n, tol, chunk, rows=reg_a, cols=grp)
+            else:
+                d = float(np.arcsin(min(1.0, tol / s_lo))) * 1.001 + 1e-9    # the window, with a margin
+                o = np.argsort(fb[grp], kind="stable")
+                S = fb[grp][o]
+                S2 = np.concatenate([S, S + two_pi])
+                idx2 = np.concatenate([grp[o], grp[o]])
+                step = max(256, int(chunk) * 4)
+                for s in range(0, len(reg_a), step):
+                    r = reg_a[s:s + step]
+                    win = []
+                    for c in (fa[r], fa[r] + np.pi):
+                        lo = np.mod(c - d, two_pi)
+                        st = np.searchsorted(S2, lo, "left")
+                        win.append((st, np.searchsorted(S2, lo + 2.0 * d, "right") - st))
+                    per_row = win[0][1] + win[1][1]
+                    # at most about max_candidates gathered at once (memory per thread; 0.94.3)
+                    cut = np.searchsorted(np.cumsum(per_row), np.arange(1, 1 + int(per_row.sum()) // max_candidates)
+                                          * max_candidates, "left")
+                    bounds = np.unique(np.r_[0, np.minimum(cut + 1, len(r)), len(r)])
+                    for r0, r1 in zip(bounds[:-1], bounds[1:]):
+                        cand_i, cand_j = [], []
+                        for st, cnt in win:
+                            st, cnt = st[r0:r1], cnt[r0:r1]
+                            tot = int(cnt.sum())
+                            if not tot:
+                                continue
+                            rep = np.repeat(np.arange(r1 - r0), cnt)
+                            off = np.arange(tot) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+                            cand_i.append(r[r0:r1][rep])
+                            cand_j.append(idx2[st[rep] + off])
+                        if not cand_i:
+                            continue
+                        ci, cj = np.concatenate(cand_i), np.concatenate(cand_j)
+                        keep = np.abs(np.einsum("ij,ij->i", n[ci], B[cj])) < tol
+                        I.append(ci[keep])
+                        J.append(cj[keep])
+                i = j = None
+            if i is not None:
+                I.append(i)
+                J.append(j)
+        if last:
+            break
+        hi, s_lo = s_lo, s_lo / 2.0
+    I = [x for x in I if len(x)]
+    J = [x for x in J if len(x)]
+    if not I:
+        return np.zeros(0, int), np.zeros(0, int)
+    i, j = np.concatenate(I), np.concatenate(J)
+    o = np.lexsort((j, i))
+    return i[o], j[o]
+
+
 def guided_pair_matches(rec, a: int, b: int, desc_a: np.ndarray, desc_b: np.ndarray, scale_a: float = 1.0,
                         scale_b: float = 1.0, depth: Optional[Tuple[float, float]] = None, max_px: float = 3.0,
                         max_ratio: float = 0.85, max_distance: float = 0.7, chunk: int = 2048,
@@ -211,33 +332,29 @@ def guided_pair_matches(rec, a: int, b: int, desc_a: np.ndarray, desc_b: np.ndar
     A, B = ra[ia_idx], rb[ib_idx]
     LO, HI = lo_a[ia_idx], hi_a[ia_idx]
     n = np.cross(A, base)
-    n /= np.linalg.norm(n, axis=1, keepdims=True)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        n /= np.linalg.norm(n, axis=1, keepdims=True)
     da, db = _unit(desc_a[ia_idx]), _unit(desc_b[ib_idx])
     w = Ca - Cb
-    rows, cols, ang = [], [], []
-    for s in range(0, len(A), chunk):
-        e = slice(s, s + chunk)
-        on = np.abs(n[e] @ B.T) < tol                                   # on the epipolar plane
-        i, j = np.nonzero(on)
-        if not len(i):
-            continue
-        a_, b_ = A[e][i], B[j]
-        c = np.einsum("ij,ij->i", a_, b_)
-        d1, e1 = a_ @ w, b_ @ w
-        den = np.maximum(1.0 - c * c, 1e-12)
-        t = (c * e1 - d1) / den                                          # range along A's ray
-        u = (e1 - c * d1) / den                                          # along B's ray
-        ok = (t >= LO[e][i]) & (t <= HI[e][i]) & (u > 0)
+    i, j = epipolar_candidates(A, B, base, n, tol, chunk=chunk)        # 0.94.3: sorted windows, not every pair
+    if len(i):
+        ok = np.zeros(len(i), bool)
+        for s in range(0, len(i), 1 << 20):                              # bounded memory per thread (0.94.3)
+            e = slice(s, s + (1 << 20))
+            a_, b_ = A[i[e]], B[j[e]]
+            c = np.einsum("ij,ij->i", a_, b_)
+            d1, e1 = a_ @ w, b_ @ w
+            den = np.maximum(1.0 - c * c, 1e-12)
+            t = (c * e1 - d1) / den                                      # range along A's ray
+            u = (e1 - c * d1) / den                                      # along B's ray
+            ok[e] = (t >= LO[i[e]]) & (t <= HI[i[e]]) & (u > 0)
         i, j = i[ok], j[ok]
-        if not len(i):
-            continue
-        cosd = np.clip(np.einsum("ij,ij->i", da[e][i], db[j]), -1.0, 1.0)
-        rows.append(i + s)
-        cols.append(j)
-        ang.append(np.arccos(cosd))
-    if not rows:
+    if not len(i):
         return np.zeros((0, 2), int)
-    i, j, g = np.concatenate(rows), np.concatenate(cols), np.concatenate(ang)
+    g = np.empty(len(i))
+    for s in range(0, len(i), 1 << 16):                                  # descriptor angles, bounded memory
+        e = slice(s, s + (1 << 16))
+        g[e] = np.arccos(np.clip(np.einsum("ij,ij->i", da[i[e]], db[j[e]]), -1.0, 1.0))
 
     def best_two(key, other, g):
         o = np.lexsort((g, key))

@@ -133,12 +133,26 @@ def _try_lightglue(project: SfmProject, pairs, max_keypoints: int, filter_thresh
         log.warning("SIFT + LightGlue not available (%s); COLMAP's SIFT matcher instead", e)
         return None
     from . import lightglue as LG
+    from .gpu import gpu_lock
     pair_names = [(p[0], p[1]) for p in pairs] if pairs is not None else None
+    dev = LG.pick_device(device)
     try:
-        lg = LG.match_pairs_lightglue(project, pair_names, max_keypoints=max_keypoints,
-                                      filter_threshold=filter_threshold, device=device, max_hours=max_hours)
+        with gpu_lock(f"LightGlue ({project.root.parent.name})", enabled=dev.startswith("cuda")):
+            lg = LG.match_pairs_lightglue(project, pair_names, max_keypoints=max_keypoints,
+                                          filter_threshold=filter_threshold, device=dev, max_hours=max_hours)
     except LG.TooSlow as e:
         log.warning("%s; COLMAP's SIFT matcher instead", e)
+        return None
+    except RuntimeError as e:                       # 0.94.3: e.g. CUDA out of memory - the SIFT matcher finishes
+        if "out of memory" not in str(e).lower() and "cuda" not in str(e).lower():
+            raise
+        log.warning("LightGlue stopped (%s); COLMAP's SIFT matcher for the pairs not matched yet",
+                    str(e).splitlines()[0][:200])
+        try:
+            import torch
+            torch.cuda.empty_cache()
+        except Exception:                           # noqa: BLE001
+            pass
         return None
     LG.verify(project, lg["pairs_file"], max_error_px=max_error_px, min_num_inliers=min_num_inliers)
     return lg

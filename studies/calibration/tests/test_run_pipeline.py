@@ -39,6 +39,7 @@ def test_pipeline_dry_run_and_state(tmp_path):
     assert "--sites seitah_overlook chal_rocks_large" in out and "--zcam" in out and "olifants" in out
     assert "calib hazcam --zcam-blocks" in out and "calib zcam --zoom 110" in out and "calib nz" in out
     assert "error_analysis_batch.py" in out
+    assert out.count("--jobs 2") >= 2                                    # 0.94.3: two sites at a time by default
     assert not (tmp_path / "mppp_pipeline" / "state.json").exists()      # a dry run leaves no state
     assert (tmp_path / "mppp_pipeline" / "REPORT.md").is_file()
     r2 = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path), "--status"],

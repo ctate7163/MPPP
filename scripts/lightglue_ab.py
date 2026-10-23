@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -69,6 +69,20 @@ def matching_seconds(log: Optional[Path]) -> Optional[float]:
     return (t1 - t0).total_seconds() if t0 and t1 else None
 
 
+def after_features_seconds(log: Optional[Path]) -> Optional[float]:
+    """From the alignment log: the database line to the export line - matching and adjustment, without the image
+    processing and feature extraction that the second variant reuses from the first (0.94.3)."""
+    if log is None or not log.is_file():
+        return None
+    t0 = t1 = None
+    for ln in log.read_text(encoding="utf-8", errors="replace").splitlines():
+        if "| database:" in ln:
+            t0 = t0 or _ts(ln)
+        if "| export:" in ln:
+            t1 = _ts(ln)
+    return (t1 - t0).total_seconds() if t0 and t1 else None
+
+
 def run_variant(site: str, root: str, zcam: bool, variant: str, extra) -> Dict[str, Any]:
     from mppp.waypoints.sites import load_site_table, work_folder
     table = load_site_table()
@@ -101,12 +115,50 @@ def summary(work: Path, variant: str, run: Optional[Dict[str, Any]] = None) -> D
     if hj.is_file():
         h = json.loads(hj.read_text(encoding="utf-8"))
         out["verdict"] = h.get("verdict")
-        out["checks"] = {f"{c.get('check')}|{str(c.get('note', ''))[:24]}": {"value": c.get("value"), "status": c.get("status")}
-                         for c in h.get("checks") or [] if isinstance(c, dict)}
+        out["checks"] = check_table(h.get("checks") or [])
     log = Path(run["log"]) if run and run.get("log") else None
     out["matching_seconds"] = matching_seconds(log)
+    out["after_features_seconds"] = after_features_seconds(log)
     out["alignment_seconds"] = (run or {}).get("seconds")
     return out
+
+
+def check_table(checks) -> Dict[str, Dict[str, Any]]:
+    """Health checks keyed by the check name - with the camera or rig (the note) only for a check made once per
+    camera - so the two variants line up (0.94.3: the notes hold the numbers, which differ)."""
+    cs = [c for c in checks if isinstance(c, dict) and c.get("check")]
+    count: Dict[str, int] = {}
+    for c in cs:
+        count[c["check"]] = count.get(c["check"], 0) + 1
+    out: Dict[str, Dict[str, Any]] = {}
+    for c in cs:
+        note = str(c.get("note") or "")
+        key = c["check"] if count[c["check"]] == 1 else f"{c['check']}|{note.split(':')[0].split(' ')[0][:24]}"
+        out[key] = {"value": c.get("value"), "status": c.get("status"), "note": note[:120]}
+    return out
+
+
+QUALITY = (("points", "3-D tie points"), ("mean_track_length", "observations per point"),
+           ("two_view_fraction", "points seen by only 2 images"), ("obs_per_image_p05", "observations, weakest 5 % of images"),
+           ("cross_station_fraction", "points tying different stations"), ("tied_block_fraction", "largest tied block"),
+           ("residual_median_px", "residual median (px)"), ("residual_p95_px", "residual p95 (px)"),
+           ("outlier_image_fraction", "images with outlying residuals"), ("beyond_ground_fraction", "points beyond the ground"),
+           ("zcam_below_terrain_fraction", "Mastcam-Z points below the Navcam terrain"),
+           ("zcam_above_terrain_fraction", "Mastcam-Z points above the Navcam terrain"),
+           ("station_shift_median_m", "station shift from the prior (m)"), ("attitude_residual_p95_deg", "attitude residual p95 (deg)"))
+
+
+def quality_rows(a: Dict[str, Any], b: Dict[str, Any]) -> List[str]:
+    """The tie-point and alignment-quality rows of the comparison."""
+    ca, cb = a.get("checks") or {}, b.get("checks") or {}
+    rows = []
+    for k, label in QUALITY:
+        if k in ca or k in cb:
+            rows.append(f"| {label} | {_f((ca.get(k) or {}).get('value'))} | {_f((cb.get(k) or {}).get('value'))} |")
+    pa, pb = a.get("pose_guided") or {}, b.get("pose_guided") or {}
+    rows.append(f"| pose-guided matches added | {_f(pa.get('new_matches'))} | {_f(pb.get('new_matches'))} |")
+    rows.append(f"| observations filtered after it | {_f(pa.get('filtered'))} | {_f(pb.get('filtered'))} |")
+    return rows
 
 
 def _f(v) -> str:
@@ -130,17 +182,23 @@ def report(work: Path, res: Dict[str, Any]) -> str:
              f"| inlier matches | {_f(ma.get('inlier_matches'))} | {_f(mb.get('inlier_matches'))} |",
              f"| matching time (min) | {_f((a.get('matching_seconds') or 0) / 60 or None)} | "
              f"{_f((b.get('matching_seconds') or 0) / 60 or None)} |",
-             f"| whole alignment (h) | {_f((a.get('alignment_seconds') or 0) / 3600 or None)} | "
+             f"| matching + adjustment, database to export (min) | "
+             f"{_f((a.get('after_features_seconds') or 0) / 60 or None)} | "
+             f"{_f((b.get('after_features_seconds') or 0) / 60 or None)} |",
+             f"| whole run (h; the second reuses the first's processed images and features) | "
+             f"{_f((a.get('alignment_seconds') or 0) / 3600 or None)} | "
              f"{_f((b.get('alignment_seconds') or 0) / 3600 or None)} |",
              f"| registered / images | {_f(ra.get('registered_images'))} / {_f(ra.get('images'))} | "
              f"{_f(rb.get('registered_images'))} / {_f(rb.get('images'))} |",
              f"| residual rms (native px) | {_f(ra.get('residual_rms_native_px'))} | {_f(rb.get('residual_rms_native_px'))} |",
              f"| health | {a.get('verdict')} | {b.get('verdict')} |", "",
+             "## Tie points and alignment quality", "", "| | SIFT | LightGlue |", "|---|---|---|",
+             *quality_rows(a, b), "",
              "## Every health check", "", "| check | SIFT | LightGlue |", "|---|---|---|"]
     keys = list(dict.fromkeys(list((a.get("checks") or {})) + list((b.get("checks") or {}))))
     for k in keys:
         ca, cb = (a.get("checks") or {}).get(k) or {}, (b.get("checks") or {}).get(k) or {}
-        lines.append(f"| {k.replace('|', ' - ')} | {_f(ca.get('value'))} ({ca.get('status', '-')}) | "
+        lines.append(f"| {k.replace('|', ' ')} | {_f(ca.get('value'))} ({ca.get('status', '-')}) | "
                      f"{_f(cb.get('value'))} ({cb.get('status', '-')}) |")
     lines += ["", "What to look at: cross_station_fraction (more points seen from more than one station), the "
               "registered images, the residuals (LightGlue's extra matches should not raise them) and the time."]

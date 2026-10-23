@@ -142,13 +142,125 @@ def check_ba_environment() -> Dict[str, Any]:
     return info
 
 
+
+# ------------------------------------------------------------------ one GPU user at a time (0.94.3)
+
+GPU_LOCK_MAX_WAIT_H = 4.0          # after this long the step runs anyway (a hung holder must not stop the batch)
+_HELD = {"depth": 0}               # this process holds the lock already: a nested step does not wait for itself
+
+
+class gpu_lock:
+    """
+    Context manager: the GPU steps of two alignments running at once (``run_sites --jobs 2``) take turns - COLMAP's
+    GPU SIFT extraction and matching, LightGlue.  An OS file lock on ``<cache>/gpu.lock`` (released by the OS if
+    the holder dies); a waiter logs once who holds it.  Two users at once could run out of GPU memory, and
+    LightGlue's time projection (its 2 h budget) would be skewed by the other job.  ``MPPP_GPU_LOCK=0`` turns it
+    off; ``enabled=False`` (a CPU step) does nothing.
+    """
+
+    def __init__(self, what: str, enabled: bool = True, max_wait_h: Optional[float] = None,
+                 path: Optional[PathLike] = None, poll_s: float = 5.0):
+        self.what = what
+        self.enabled = bool(enabled) and os.environ.get("MPPP_GPU_LOCK", "1").strip() not in ("0", "false", "no")
+        self.max_wait_s = 3600.0 * (GPU_LOCK_MAX_WAIT_H if max_wait_h is None else float(max_wait_h))
+        self.path = Path(path) if path is not None else None
+        self.poll_s = float(poll_s)
+        self.fh = None
+        self.waited_s = 0.0
+
+    def _try(self) -> bool:
+        try:
+            if sys.platform.startswith("win"):
+                import msvcrt
+                self.fh.seek(0)
+                msvcrt.locking(self.fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError:
+            return False
+
+    def __enter__(self) -> "gpu_lock":
+        if not self.enabled:
+            return self
+        if _HELD["depth"] > 0:
+            _HELD["depth"] += 1
+            self.nested = True
+            return self
+        self.nested = False
+        import time
+        from ..paths import cache_dir
+        p = self.path or (cache_dir() / "gpu.lock")
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            self.fh = open(p, "a+b")
+            if self.fh.seek(0, 2) == 0:
+                self.fh.write(b"\0")                    # one byte to lock (msvcrt locks a byte range)
+                self.fh.flush()
+        except OSError as e:
+            log.warning("GPU lock %s not usable (%s); %s without it", p, e, self.what)
+            self.fh = None
+            return self
+        info = p.with_suffix(".holder")
+        t0 = time.time()
+        said = False
+        while not self._try():
+            if not said:
+                try:
+                    who = info.read_text(encoding="utf-8").strip()
+                except OSError:
+                    who = "another process"
+                log.info("%s: waiting for the GPU (in use by %s)", self.what, who)
+                said = True
+            if time.time() - t0 > self.max_wait_s:
+                log.warning("%s: the GPU has been busy for %.1f h; going ahead anyway", self.what,
+                            (time.time() - t0) / 3600)
+                self.fh.close()
+                self.fh = None
+                return self
+            time.sleep(self.poll_s)
+        self.waited_s = time.time() - t0
+        _HELD["depth"] = 1
+        if said:
+            log.info("%s: GPU free after %.0f min", self.what, self.waited_s / 60)
+        try:
+            info.write_text(f"pid {os.getpid()} ({self.what}, {Path.cwd().name}, since {time.strftime('%H:%M')})",
+                            encoding="utf-8")
+        except OSError:
+            pass
+        return self
+
+    def __exit__(self, *exc) -> None:
+        if getattr(self, "nested", False):
+            _HELD["depth"] -= 1
+            return
+        if self.fh is None:
+            return
+        _HELD["depth"] = 0
+        try:
+            if sys.platform.startswith("win"):
+                import msvcrt
+                self.fh.seek(0)
+                msvcrt.locking(self.fh.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.fh.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        finally:
+            self.fh.close()
+            self.fh = None
+
+
 def run_step(python: PathLike, step: str, project, **kwargs: Any) -> Dict[str, Any]:
     """Run ``extract_features`` or ``match`` on ``project`` in ``python``; reloads the project settings."""
     from .project import SfmProject
     if step not in ("extract_features", "match"):
         raise ValueError(step)
     project.save()                                            # the subprocess reads project.json
-    out = _run(python, [step, str(project.root), json.dumps(kwargs)])
+    with gpu_lock(f"{step} ({project.root.parent.name})", enabled=bool(kwargs.get("use_gpu", True))):
+        out = _run(python, [step, str(project.root), json.dumps(kwargs)])
     project.settings = SfmProject.load(project.root).settings  # what the subprocess recorded
     last = [ln for ln in out.strip().splitlines() if ln.startswith("MPPP_RESULT ")]
     return json.loads(last[-1][len("MPPP_RESULT "):]) if last else {}

@@ -7,8 +7,8 @@ authors:
     given-names: Christian
     affiliation: "Malin Space Science Systems"
     # orcid: "https://orcid.org/0000-0000-0000-0000"   (add the author's ORCID; see docs/RELEASING.md)
-version: 0.94.2
-date-released: 2026-10-22
+version: 0.94.3
+date-released: 2026-10-23
 # doi: 10.5281/zenodo.XXXXXXX   (the Zenodo concept DOI, after the first archived release; see docs/RELEASING.md)
 license: Apache-2.0
 repository-code: "https://github.com/ctate7163/MPPP"

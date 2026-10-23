@@ -197,7 +197,7 @@ def _headers(url: str) -> Dict[str, str]:
 
 
 def _download(url: str, dst: Path, timeout: float = 60.0) -> None:
-    tmp = dst.with_suffix(dst.suffix + ".part")
+    tmp = dst.with_suffix(dst.suffix + f".{os.getpid()}.part")        # 0.94.3: one per process
     req = urllib.request.Request(url, headers=_headers(url))
     with urllib.request.urlopen(req, timeout=timeout) as r, open(tmp, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
@@ -211,7 +211,9 @@ def _download(url: str, dst: Path, timeout: float = 60.0) -> None:
             if total and done * 10 // total > step:
                 step = done * 10 // total
                 print(f"  {done / 2**20:.0f} / {total / 2**20:.0f} MB", flush=True)
-    tmp.replace(dst)
+    from ..paths import replace_retry
+    if not replace_retry(tmp, dst) and not dst.is_file():
+        raise OSError(f"could not move the download into {dst}")
 
 
 def local_candidates(name: str) -> List[Path]:

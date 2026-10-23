@@ -15,7 +15,7 @@ REM ============================================================================
 setlocal
 REM which sites: --group navcam_consensus (default) or --sites rockytop sid_chal_rocks
 set "WHICH=--group navcam_consensus"
-REM more options, e.g. --jobs 2   (two sites at a time)
+REM more options, e.g. --jobs 1   (one site at a time; two is the default since 0.94.3)
 REM                    --source processed --variant tight --set ATTITUDE_PRIOR_DEG=1.0
 set "EXTRA="
 

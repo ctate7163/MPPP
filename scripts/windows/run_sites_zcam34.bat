@@ -17,7 +17,7 @@ REM which sites: --group zcam34_consensus (default) or --sites a b
 set "WHICH=--group zcam34_consensus"
 REM v0p61: only the 34 mm frames. The results go to <WORK>\colmap like run_sites_zcam.bat (the last run wins);
 REM add --variant z34 to keep them apart in <WORK>\colmap_z34 (notebook 04 reads <WORK>\colmap only).
-REM more options, e.g. --jobs 2   (two sites at a time)
+REM more options, e.g. --jobs 1   (one site at a time; two is the default since 0.94.3)
 REM                    --source processed --set ATTITUDE_PRIOR_DEG=1.0
 set "EXTRA=--set ZCAM_ZOOMS=[34]"
 

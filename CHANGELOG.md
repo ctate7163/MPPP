@@ -2,6 +2,30 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.94.3 — 2026-10-23
+
+- **Pose-guided matching 3.5x faster on one thread, and memory-bounded** (Christian: run the blocks faster, test it
+  for robustness): the epipolar candidates are found by sorting the rays of B by their epipolar-plane angle about the
+  baseline and searching windows (`guided.epipolar_candidates`), not by testing every keypoint pair (a 20k x 20k
+  product per pair) - the same matches (test against the old every-pair test, 16 of 16 pairs of a 20k-keypoint
+  synthetic block identical; random geometry with rays along the baseline). Every stage is chunked, so a thread needs
+  about 230 MB whatever the geometry (the old every-pair test needed about 1.1 GB per thread, 9 GB at 8 threads).
+  Threads scale 1.6-1.8x on 2 cores (the old dense test hardly scaled: OpenBLAS serialised it).
+- **Two sites at a time by default** (`run_sites`, `run_pipeline`; `--jobs 1` or `MPPP_JOBS` to change):
+  - the GPU steps (COLMAP GPU SIFT extraction and matching, LightGlue) take turns through an OS file lock
+    (`mppp.sfm.gpu.gpu_lock`, `<cache>/gpu.lock`, freed if its holder dies; gives up waiting after 4 h;
+    `MPPP_GPU_LOCK=0` off), so two alignments neither run out of GPU memory nor skew LightGlue's 2 h projection;
+  - LightGlue out of GPU memory falls back to COLMAP's SIFT matcher for the pairs not matched yet;
+  - the shared downloads (waypoint table, mask model, LightGlue weights) are fetched once before the sites start, and
+    the waypoint cache and mask download are written atomically (`paths.atomic_write_bytes`, `replace_retry`) - two
+    processes refreshing at once could leave a half-written table;
+  - each site's console output goes to `<WORK>/runs/console_<time>.txt` (was thrown away with more than one job);
+    a site that cannot start is logged as failed instead of stopping the batch.
+- `lightglue_ab.py`: the health checks line up by check name (the notes hold numbers, so most rows were split), and a
+  "Tie points and alignment quality" table (points, track length, cross-station ties, weakest images, residuals,
+  points off the terrain, pose-guided matches and filtered observations).
+- Tests: `tests/test_parallel.py` (15).
+
 ## 0.94.2 — 2026-10-23
 
 - **Pose-guided matching in threads** (Christian: run the blocks faster): the pairs are matched by up to 8 threads
@@ -9,7 +33,7 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
   by the main thread in pair order - the same matches as one thread (test). It took 23-83 min of a Mastcam-Z block on
   22-23 Oct, single-threaded.
 - `run_pipeline.bat --jobs N`: the Navcam and Mastcam-Z block runs align N sites at the same time (`run_sites --jobs`;
-  each WORK folder is its own, the shared files are read-only; memory is the limit - default 1).
+  each WORK folder is its own, the shared files are read-only; memory is the limit - default 1; 2 since 0.94.3).
 
 ## 0.94.1 — 2026-10-23
 
