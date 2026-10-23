@@ -17,14 +17,18 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
-- **Isolated points deleted before the final stage-2 adjustment** (Christian: "a few points scattered above and
-  below the terrain"; `Settings.isolated_points_factor` 4.0, 0 = off; `reconstruction.drop_isolated_points`;
-  ALIGN_RULES 90). A point whose mean distance to its 8 nearest points, divided by its range, is more than 4x the
-  block's median is deleted. On the Chal Rocks tiny and Seitah Overlook tiny SIFT blocks the scattered points are
-  false matches at the wrong range (mostly from pose-guided matching; 73-94 % two-view, median isolation 9-16x
-  against 0.5x for the others): the Mastcam-Z points above / below the Navcam terrain go from 2.8 / 1.6 % to
-  0.0 / 0.0 % (Chal Rocks, 9.5 % of the points deleted, 1.1 % of the Navcam - Mastcam-Z points) and from 1.3 / 0.4 %
-  to 0.1 / 0.0 % (Seitah Overlook, 8.7 %). Pose-guided matching itself was checked on the real blocks: the 0.94.3
+- **Isolated two-view points deleted before the final stage-2 adjustment** (Christian: "a few points scattered
+  above and below the terrain"; `Settings.isolated_points_factor` 4.0, 0 = off; `reconstruction.drop_isolated_points`;
+  ALIGN_RULES 91). A two-view point whose mean distance to its 8 nearest points, divided by its range, is more than
+  4x the median of the points at a similar range (range bins of 1.5x) is deleted; a point a third image confirms
+  stays, so no Navcam - Mastcam-Z point (three images at least) is deleted. The scattered points are false matches at
+  the wrong range (mostly from pose-guided matching; 73-94 % two-view, median isolation 9-16x against 0.5x for the
+  others). On the Chal Rocks tiny / Seitah Overlook tiny SIFT blocks the Mastcam-Z points above / below the Navcam
+  terrain go from 2.81 / 1.60 % to 0.29 / 0.21 % and from 1.30 / 0.37 % to 0.58 / 0.10 %, deleting 5.6 / 3.7 % of
+  the points and 1.3 / 6.2 % of those beyond 40 m. Only points within 1.5 radii of the cameras' bounding sphere are
+  judged (Christian, 14:39; `ISOLATED_POINTS_RADII`): 0.33 / 0.24 % and 0.76 / 0.17 %, deleting 5.3 / 0.5 % of the
+  points and none beyond 40 m - the default. (First version, one block-wide median over all points: it
+  deleted 40 / 28 % of the points beyond 40 m and up to 732 Navcam - Mastcam-Z points - Christian's question, 14:36.) Pose-guided matching itself was checked on the real blocks: the 0.94.3
   candidate search and its threads give the same matches as before (131,930 at Chal Rocks tiny); stricter match
   settings (both images' depth windows) removed far fewer of the false matches than the filter.
 - **`run_weekend.bat`: several days unattended** (Christian): waits until nothing else runs, the A/B on Chal Rocks

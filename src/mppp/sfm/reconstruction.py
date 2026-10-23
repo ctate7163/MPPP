@@ -385,8 +385,9 @@ def unlocalized_stations(project: SfmProject, min_images: int, rec=None,
 
 
 POSE_GUIDED_MAX_BEYOND_GROUND_RISE = 0.02    # undo the pose-guided stage above this rise (fraction of points)
-ISOLATED_POINTS_FACTOR = 4.0     # 0.94.4: before the final stage-2 adjustment, points this many times the block's median
-ISOLATED_POINTS_K = 8            # neighbour spacing (mean distance to the K nearest points / range) apart are dropped
+ISOLATED_POINTS_FACTOR = 4.0     # 0.94.4: before the final stage-2 adjustment, two-view points this many times the median
+ISOLATED_POINTS_K = 8            # neighbour spacing at their range (mean distance to the K nearest points / range) are dropped
+ISOLATED_POINTS_RADII = 1.5      # ... only within this many radii of the cameras' bounding sphere (Christian, 23 Oct)
 NAVCAM_ASPECT_SIGMA = 2e-5      # 1-sigma of the fy / fx prior (relative; 0.03 px of a 1500 px focal length)
 
 
@@ -1329,19 +1330,30 @@ def drop_mixed_short_tracks(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_L
 
 
 def drop_isolated_points(rec, factor: float = ISOLATED_POINTS_FACTOR, k: int = ISOLATED_POINTS_K,
-                         min_points: int = 1000) -> Dict[str, Any]:
+                         min_points: int = 1000, two_view_only: bool = True, range_bin_ratio: float = 1.5,
+                         min_bin_points: int = 200, within_radii: float = ISOLATED_POINTS_RADII) -> Dict[str, Any]:
     """
     Delete the 3-D points far from every other point (0.94.4, Christian 23 Oct: "a few points scattered above and
     below the terrain").  Isolation is the mean distance to the ``k`` nearest points divided by the point's range
-    (from the nearest camera that sees it), so near and far ground count alike; a point more than ``factor`` x the
-    block's median isolation is deleted.  A false match that agrees with the epipolar geometry - pose-guided above
-    all, LightGlue too - lands at the wrong range along its ray, off the surface the other points make: on Chal Rocks
-    tiny (SIFT) the Mastcam-Z points above / below the Navcam terrain were 2.8 / 1.6 % before and 0.0 / 0.0 % after,
-    for 9.5 % of the points (median isolation of the off-terrain points 9x, of the others 0.5x; 90 % two-view);
-    Seitah Overlook tiny 1.3 / 0.4 % -> 0.1 / 0.0 % for 8.7 %.  Returns {"deleted", "points", "median_isolation",
-    "threshold"}; nothing is done with fewer than ``min_points`` points or ``factor`` <= 0.
+    (from the nearest camera that sees it), compared with the median isolation of the points at a similar range
+    (bins of ``range_bin_ratio`` in range; a bin of fewer than ``min_bin_points`` takes its neighbours too): ground
+    seen at a grazing angle thins out faster than the range, so one block-wide median deleted a third of the points
+    beyond 40 m (Christian's question, 14:36).  A point more than ``factor`` x its range bin's median isolation is
+    deleted - only a two-view point with ``two_view_only`` (a point that a third image confirms stays, so no
+    Navcam - Mastcam-Z point, which needs three, is ever deleted).  Only points within ``within_radii`` x the radius
+    of the cameras' bounding sphere (centred on the mean camera centre) are judged (Christian, 14:39: the false points
+    are near the rover, the far ground is left alone); 0 = everywhere.
+
+    The scattered points are false matches at the wrong range along their rays (pose-guided matching above all;
+    73-94 % two-view, median isolation 9-16x the others').  On the Chal Rocks tiny / Seitah Overlook tiny SIFT blocks
+    the Mastcam-Z points above / below the Navcam terrain go from 2.81 / 1.60 % to 0.29 / 0.21 % and from 1.30 / 0.37 %
+    to 0.58 / 0.10 %, deleting 5.6 / 3.7 % of the points, none of the Navcam - Mastcam-Z points and 1.3 / 6.2 % of the
+    points beyond 40 m; within 1.5 radii of the camera sphere (4.5 / 4.8 m there): 0.33 / 0.24 % and 0.76 / 0.17 %,
+    deleting 5.3 / 0.5 % of the points and none beyond 40 m.  Returns {"deleted", "points", "factor", "k", ...}; nothing is done with fewer than
+    ``min_points`` points or ``factor`` <= 0.
     """
-    out: Dict[str, Any] = {"deleted": 0, "points": int(len(rec.points3D)), "factor": float(factor), "k": int(k)}
+    out: Dict[str, Any] = {"deleted": 0, "points": int(len(rec.points3D)), "factor": float(factor), "k": int(k),
+                           "two_view_only": bool(two_view_only)}
     if not factor or factor <= 0 or len(rec.points3D) < max(int(min_points), k + 2):
         return out
     from scipy.spatial import cKDTree
@@ -1349,21 +1361,39 @@ def drop_isolated_points(rec, factor: float = ISOLATED_POINTS_FACTOR, k: int = I
     pids = np.fromiter((int(p) for p in rec.points3D), np.int64, len(rec.points3D))
     X = np.empty((len(pids), 3))
     rng = np.empty(len(pids))
+    tl = np.empty(len(pids), int)
     for n, pid in enumerate(pids):
         pt = rec.points3D[int(pid)]
         X[n] = pt.xyz
+        tl[n] = pt.track.length()
         cs = [centres[int(e.image_id)] for e in pt.track.elements if int(e.image_id) in centres]
         rng[n] = min(float(np.linalg.norm(pt.xyz - c)) for c in cs) if cs else np.nan
     ok = np.isfinite(rng)
-    d, _ = cKDTree(X).query(X, k=k + 1)
-    iso = d[:, 1:].mean(axis=1) / np.maximum(rng, 0.5)
-    med = float(np.median(iso[ok])) if ok.any() else 0.0
-    if med <= 0:
+    if ok.sum() < k + 2:
         return out
-    bad = ok & (iso > factor * med)
+    d, _ = cKDTree(X).query(X, k=k + 1)
+    iso = d[:, 1:].mean(axis=1) / np.maximum(np.where(ok, rng, 1.0), 0.5)
+    b = np.floor(np.log(np.maximum(np.where(ok, rng, 1.0), 0.5)) / np.log(range_bin_ratio)).astype(int)
+    med = np.full(len(iso), np.nan)
+    for v in np.unique(b[ok]):
+        sel = ok & (b == v)
+        src = sel if sel.sum() >= min_bin_points else ok & (np.abs(b - v) <= 1)
+        if src.sum() >= max(k + 2, 20):
+            med[sel] = np.median(iso[src])
+    bad = ok & np.isfinite(med) & (iso > factor * med)
+    if two_view_only:
+        bad &= tl == 2
+    if within_radii and within_radii > 0 and centres:
+        C = np.array(list(centres.values()))
+        c0 = C.mean(axis=0)
+        radius = float(np.max(np.linalg.norm(C - c0, axis=1)))
+        bad &= np.linalg.norm(X - c0, axis=1) <= within_radii * radius
+        out.update(camera_sphere_radius_m=radius, within_m=within_radii * radius)
     for pid in pids[bad]:
         rec.delete_point3D(int(pid))
-    out.update(deleted=int(bad.sum()), median_isolation=med, threshold=float(factor * med))
+    far = ok & (rng >= 40.0)
+    out.update(deleted=int(bad.sum()), median_isolation=float(np.nanmedian(med)) if np.isfinite(med).any() else None,
+               deleted_beyond_40m=int((bad & far).sum()), points_beyond_40m=int(far.sum()))
     return out
 
 
@@ -2363,8 +2393,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             log.append({"stage": 2, "isolated_points": iso})
             project.settings["isolated_points"] = {k: v for k, v in iso.items() if k != "zcam_terrain_after"}
             if verbose:
-                logger.info(f"stage 2: {iso['deleted']} isolated points deleted of {iso['points']} (more than "
-                            f"{iso['factor']:g} x the median spacing to their {iso['k']} nearest points)"
+                logger.info(f"stage 2: {iso['deleted']} isolated two-view points deleted of {iso['points']} (more than "
+                            f"{iso['factor']:g} x the median spacing to their {iso['k']} nearest points at their range, within "
+                            f"{iso.get('within_m', float('nan')):.1f} m of the cameras' centre; "
+                            f"{iso.get('deleted_beyond_40m', 0)} of {iso.get('points_beyond_40m', 0)} beyond 40 m)"
                             + (f"; {_zcam_terrain_line(iso['zcam_terrain_after'])}" if iso.get("zcam_terrain_after")
                                else ""))
         ZG.trace(rec, project, "before_final")

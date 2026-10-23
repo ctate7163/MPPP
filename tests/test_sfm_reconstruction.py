@@ -1496,7 +1496,7 @@ def test_drop_isolated_points():
         fr.add_data_id(pycolmap.data_t(sensor_id=pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=1), id=iid))
         fr.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(), np.array([0.5 * iid, 0.0, 10.0]))
         rec.add_frame(fr)
-        im = pycolmap.Image(name=f"i{iid}.png", keypoints=np.zeros((3000, 2)), camera_id=1, image_id=iid)
+        im = pycolmap.Image(name=f"i{iid}.png", keypoints=np.zeros((6000, 2)), camera_id=1, image_id=iid)
         im.frame_id = iid
         rec.add_image(im)
         rec.register_frame(iid)
@@ -1507,9 +1507,29 @@ def test_drop_isolated_points():
         tr.add_element(1, n)
         tr.add_element(2, n)
         rec.add_point3D(xyz, tr, np.zeros(3, np.uint8))
-    out = drop_isolated_points(rec, 4.0)
+    assert drop_isolated_points(rec, 4.0, within_radii=1.5)["deleted"] == 0     # both cameras 0.25 m from their centre
+    out = drop_isolated_points(rec, 4.0, within_radii=0)
     left = np.array([p.xyz for p in rec.points3D.values()])
     assert out["deleted"] >= 18 and out["deleted"] <= 40 and np.abs(left[:, 2]).max() < 1.0
     assert drop_isolated_points(rec, 0)["deleted"] == 0                  # off
+    # 14:36 (Christian): far ground is sparser; it is judged against the points at its range, not the near ones
+    far = np.c_[rng.uniform(-60, 60, (300, 1)), rng.uniform(80, 120, (300, 1)), rng.normal(0, 0.05, 300)]
+    n0 = 5000
+    for n, xyz in enumerate(far):
+        tr = pycolmap.Track()
+        tr.add_element(1, n0 + n)
+        tr.add_element(2, n0 + n)
+        rec.add_point3D(xyz, tr, np.zeros(3, np.uint8))
+    out = drop_isolated_points(rec, 4.0, within_radii=0)
+    assert out["points_beyond_40m"] >= 300 and out["deleted_beyond_40m"] <= 15      # not a third of them
+    # a point a third image confirms stays (two_view_only)
+    tr = pycolmap.Track()
+    for iid in (1, 2):
+        tr.add_element(iid, 2990)
+    tr.add_element(1, 2991)
+    pid = rec.add_point3D(np.array([0.0, 0.0, 3.0]), tr, np.zeros(3, np.uint8))
+    drop_isolated_points(rec, 4.0, within_radii=0)
+    assert pid in rec.points3D
+    assert drop_isolated_points(rec, 4.0, two_view_only=False, within_radii=0)["deleted"] >= 1 and pid not in rec.points3D
     from mppp.pipeline import Settings
     assert Settings().isolated_points_factor == 4.0
