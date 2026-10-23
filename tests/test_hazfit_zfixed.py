@@ -280,3 +280,31 @@ def test_corner_check_skips_uncalibrated_zooms_and_rejudge():
     if "ZR063" in uncal:
         assert v in ("pass", "warn") and len(changed) == 3
     assert H.rejudge({"checks": [{"check": "excluded_fraction", "value": 0.35, "status": "fail"}]})[0] == "fail"
+
+
+def test_0936_defaults_and_hazcam_over_zcam_blocks(tmp_path):
+    """0.93.6 (Christian, 23 Oct): a frame is high unless it is on the low-state list - the blocks split nothing off
+    by their focal fits and the found list is not read; calib hazcam --zcam-blocks takes the _zcam folders;
+    zcam_joints.bat fits the Hazcams first."""
+    from mppp import cli
+    from mppp.pipeline import Settings
+    s = Settings()
+    assert s.zcam_backlash == "list" and s.zcam_low_backlash_found is None
+    ap = cli.build_parser() if hasattr(cli, "build_parser") else None
+    if ap is not None:
+        a = ap.parse_args(["calib", "hazcam", "--zcam-blocks", "--group", "zcam_consensus", "--root", str(tmp_path)])
+        assert a.zcam_blocks
+    bat = (Path(__file__).resolve().parents[1] / "scripts" / "windows" / "zcam_joints.bat").read_bytes()
+    assert b"calib hazcam --zcam-blocks --group zcam_consensus" in bat and b"\r\n" in bat
+
+
+def test_hazcam_rig_change_judged_at_its_own_limit():
+    """0.93.6: a Hazcam rig's change from its (label) start fails at 0.5 deg, the Navcam / Mastcam-Z rigs at 0.3 -
+    Marble Mountain's rear rig 0.304 deg (23 Oct) no longer fails the block, also in a report from before."""
+    from mppp.sfm.health import DEFAULT_THRESHOLDS, rejudge
+    assert DEFAULT_THRESHOLDS["hazcam_rig_rotation_change_deg"][:2] == (0.06, 0.5)
+    rep = {"checks": [{"check": "rig_rotation_change_deg", "value": 0.304, "status": "fail",
+                       "note": "R: baseline 0.93353 -> 0.93353 m"}]}
+    assert rejudge(rep)[0] == "warn"
+    rep["checks"][0]["note"] = "N: baseline 0.42 -> 0.42 m"
+    assert rejudge(rep)[0] == "fail"

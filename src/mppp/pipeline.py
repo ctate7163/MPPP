@@ -142,9 +142,13 @@ class Settings:
     zcam_line_params: Dict[str, List[str]] = field(default_factory=lambda: {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"],
                                                                             "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]})   # the focus parameters stage 2 puts on a line per eye
     zcam_hold_f_images: int = 2                   # focus bins with at most this many images hold f at the focus model
-    zcam_backlash: Optional[str] = "list_split"   # focus backlash states: "list_split", "list", "split", "report" or None
+    # 0.93.6 (Christian, 23 Oct): a frame is in the high backlash state unless it is on the low-state list - the
+    # list's frames get their own (low-state) cameras; a block's focal fits only report groups that look low
+    zcam_backlash: Optional[str] = "list"         # focus backlash states: "list", "list_split", "split", "report" or None
     zcam_low_backlash: Any = None                 # the low-backlash observation list; None: the shipped CSV; False: none
-    zcam_low_backlash_found: Any = "auto"         # the low-backlash observations found by runs: "auto" = <scapes_root>/zcam_low_backlash_found.csv; None: off
+    # 0.93.6: off - the found list (written by runs' focal fits, "list_split") held Seitah Overlook's high-state
+    # pointings 2 and 4 of ZCAM08114 (22 Oct); "auto" = <scapes_root>/zcam_low_backlash_found.csv
+    zcam_low_backlash_found: Any = None
     zcam_focus_line: bool = True                  # stage 2 puts the focus-bin cameras on lines in focus count (False: f per bin)
     zcam_line_cycles: int = 2                     # rounds of freeing the bins and refitting the lines
     zcam_line_form: Optional[Dict[str, Any]] = None   # the form of each focus line {eye: {param: form}} for a study; None: the shipped form

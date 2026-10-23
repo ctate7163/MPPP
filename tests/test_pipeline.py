@@ -204,7 +204,7 @@ def test_processing_config_and_project_settings(tmp_path, clean_env):
 def test_pipeline_defaults_v0p61():
     from mppp.pipeline import Settings
     s = Settings()
-    assert s.store_mask_in_alpha == 0.5 and s.zcam_k3 == "label" and s.zcam_backlash == "list_split"
+    assert s.store_mask_in_alpha == 0.5 and s.zcam_k3 == "label" and s.zcam_backlash == "list"
     assert s.zcam_low_backlash is None and s.zcam_focus_line is True and s.thermal_after_stage1 is True
     assert s.no_mask_inference_at == ["S032D1184"]
 
@@ -262,9 +262,9 @@ def test_run_key_holds_the_camera_models(monkeypatch):
 def test_pipeline_settings_v0p73():
     from mppp.pipeline import Settings
     s = Settings()
-    assert s.zcam_bin_refine == "focal_pp" and s.zcam_backlash == "list_split"
+    assert s.zcam_bin_refine == "focal_pp" and s.zcam_backlash == "list"
     assert s.zcam_line_params == {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"], "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]}
-    assert s.zcam_low_backlash_found == "auto"
+    assert s.zcam_low_backlash_found is None                      # 0.93.6: the found list off
 
 
 def test_resolved_site_carries_the_visits(tmp_path):

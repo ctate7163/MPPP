@@ -15,6 +15,7 @@ REM
 REM   zcam_joints.bat                 the joints and the promotions
 REM   zcam_joints.bat --no-promote    the joints only (arguments go to every "mppp calib zcam")
 REM   set MPPP_ZOOMS=34 63            only these zooms
+REM   set MPPP_HAZ=none               no Hazcam fit (0.93.6: it runs first, over the zcam_consensus blocks)
 REM
 REM Writes %MPPP_SCAPES%\camera_analysis\zcam<zoom>_joint_<date>[_N]\ (report.md, check.json, the candidate model,
 REM zcam_joint.json, block_lines.json, zcam_rig_trends.png) and nz34_joint_<date>\.
@@ -26,6 +27,17 @@ if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\scapes"
 if not defined MPPP_ZOOMS set "MPPP_ZOOMS=34 48 63 79 110"
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY=%%d"
 python -m mppp cmods list
+REM 0.93.6 (Christian, 23 Oct): first the Hazcam law from the same blocks (their Hazcam cameras and rigs), promoted
+REM when its checks pass (set MPPP_HAZ=none to skip it)
+if /i not "%MPPP_HAZ%"=="none" (
+  set "HOUT=%MPPP_SCAPES%\camera_analysis\hazcam_fit_zcam_%TODAY%"
+  set "HN=1"
+  call :freehaz
+  echo.
+  echo %DATE% %TIME%  Hazcam fit over the zcam_consensus blocks -^> !HOUT!
+  python -m mppp --log "!HOUT!_log.txt" calib hazcam --zcam-blocks --group zcam_consensus --root "%MPPP_SCAPES%" --out "!HOUT!" --promote-if-ok
+  if errorlevel 1 echo Hazcam fit: not run or FAILED - see !HOUT!_log.txt
+)
 for %%Z in (%MPPP_ZOOMS%) do (
   set "GROUP=zcam_consensus"
   if "%%Z"=="34" set "GROUP=zcam34_joint,zcam_consensus"
@@ -47,6 +59,14 @@ if /i not "%MPPP_NZ%"=="none" (
 )
 echo %DATE% %TIME%  done
 if not defined MPPP_NOPAUSE_END pause
+exit /b 0
+
+:freehaz
+if exist "!HOUT!\hazcam_fit.json" (
+  set /a HN+=1
+  set "HOUT=%MPPP_SCAPES%\camera_analysis\hazcam_fit_zcam_%TODAY%_!HN!"
+  goto :freehaz
+)
 exit /b 0
 
 :freeout

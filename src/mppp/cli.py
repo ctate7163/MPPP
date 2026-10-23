@@ -135,6 +135,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--group", default=None, help="site group(s) of the blocks, comma-separated (default navcam_consensus / "
                    "zcam<zoom>_joint, else zcam<zoom>_consensus); zcam / nz take the sites whose \"zcam\" list has the zoom")
     p.add_argument("--zoom", type=int, default=34, help="zcam: the Mastcam-Z zoom (default 34)")
+    p.add_argument("--zcam-blocks", action="store_true",
+                   help="hazcam: the sites' Navcam + Mastcam-Z blocks (..._zcam folders, every zoom) - 0.93.6, "
+                        "zcam_joints.bat fits the Hazcams of the run_sites_zcam blocks")
     p.add_argument("--navcam-group", default=None,
                    help="nz: also the finished Navcam-only blocks of this group (e.g. navcam_consensus), "
                         "3000 points each, so the combined Navcam law is held by every Navcam block")
@@ -488,6 +491,7 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
         raise SystemExit("--root (or MPPP_SCAPES) is required")
     table = load_site_table(a.sites_file)
     zcam = getattr(a, "which", "navcam") in ("zcam", "nz")
+    zfolders = zcam or bool(getattr(a, "zcam_blocks", False))     # 0.93.6: calib hazcam --zcam-blocks
     a.group = a.group or (f"zcam{int(getattr(a, 'zoom', 34))}_joint" if zcam and f"zcam{int(getattr(a, 'zoom', 34))}_joint"
                           in table.get("groups", {}) else f"zcam{int(getattr(a, 'zoom', 34))}_consensus" if zcam
                           else "hazcam_consensus" if getattr(a, "which", "") == "hazcam" else "navcam_consensus")
@@ -507,7 +511,10 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
         if zcam and site.get("zcam") and zoom not in [int(z) for z in site["zcam"]]:
             skipped.append(f"{n} (no {zoom} mm in its \"zcam\" list)")
             continue
-        work = work_folder(root, n, zcam, site["sols"])
+        if zfolders and not zcam and not site.get("zcam"):
+            skipped.append(f"{n} (no Mastcam-Z block)")
+            continue
+        work = work_folder(root, n, zfolders, site["sols"])
         done = run_done(work, getattr(a, "variant", "") or "")
         if done is None:
             skipped.append(f"{n} (not finished)")

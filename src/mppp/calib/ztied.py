@@ -118,6 +118,7 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
     sg = start_globals(model, zoom)
     groups = zoom_groups(zoom)
     zunits: Dict[int, Dict[str, Any]] = {}
+    split_out: List[str] = []
     db = dict(proj.settings["database"]["cameras"])
     for old, new in units["passthrough_cameras"].items():
         z = idx["zcams"].get(int(old))
@@ -126,6 +127,12 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
         spec = dict(z["spec"])
         g = str(spec.get("group") or z["key"])[:5]
         if g not in groups:                                  # another zoom of the block: left out
+            continue
+        if spec.get("state_split"):
+            # 0.93.6: a camera a block split off by its focal fits ("list_split", before 0.93.6) is left out - its
+            # state is not the list's (a frame is high unless listed) and before 0.93.4 it could hold high-state
+            # frames under a low-state name (Seitah Overlook ZCAM08114)
+            split_out.append(f"{z['key']}@{z['scape']}")
             continue
         name = f"{z['key']}@{z['scape']}"
         foc = spec.get("focus_count_median")
@@ -159,6 +166,10 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
                                                           "t_sensor_from_ref": sg["rig"]["t"].tolist(), "hold": False}}
     zcams = set(zunits)
     sg["mixed"] = mixed_exposures(proj.images, zunits)
+    sg["split_cameras_left_out"] = split_out
+    if split_out:
+        log.info("Mastcam-Z joint: %d cameras split off by the blocks' focal fits left out (%s)", len(split_out),
+                 ", ".join(split_out[:12]) + (" ..." if len(split_out) > 12 else ""))
     for r in proj.images:                        # rows of other zooms / cameras out of the problem: deregistered
         if int(r.get("camera_id", 0)) in units["passthrough_cameras"].values() and int(r["camera_id"]) not in zcams:
             fid = rec.images[int(r["image_id"])].frame_id
@@ -569,6 +580,7 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     res["fixed_terms"] = fixed
     if start_from_blocks:
         res["start_model"] = model
+    res["split_cameras_left_out"] = list(sg.get("split_cameras_left_out") or [])
     res.update({"zoom": zoom, "blocks": sorted({u["scape"] for u in zunits.values()}), "residuals": stats,
                 "zcam": _zstats(rec, zunits), "rig": rig_result(proj, sg, zoom), "final_cost": float(ba["final_cost"]),
                 "iterations": ba["iterations"], "brief": ba["brief"], "seconds": time.time() - t,
@@ -776,13 +788,18 @@ def describe(res: Dict[str, Any]) -> List[str]:
     for eye, e in res["eyes"].items():
         tm, sd = e["terms"], e.get("sd") or {}
         f = lambda k, n=2: f"{tm[k]:.{n}f}" + (f" +- {sd[k]:.{n}f}" if k in sd and np.isfinite(sd[k]) else "")   # noqa: E731
+        lo = ("" if "a_fx_regular" in e.get("held", []) else
+              f"; low backlash state fx {f('a_fx_regular')} px (high / low {tm['a_fx_backlash'] / tm['a_fx_regular']:.4f})")
         out.append(f"{eye}: fx {f('a_fx_backlash')}, fy {f('a_fy_backlash')} px at focus {e['reference_focus']:g} "
-                   f"(backlash), slope {f('b', 5)} px/count; k1 {f('k1', 4)}, k2 {f('k2', 4)}, p1 {tm['p1']:+.2e}, "
+                   f"(high backlash state), slope {f('b', 5)} px/count; k1 {f('k1', 4)}, k2 {f('k2', 4)}, p1 {tm['p1']:+.2e}, "
                    f"p2 {tm['p2']:+.2e}" + (f"; cy slope {f('b_cy', 5)} px/count" if eye.startswith("ZR") else "")
-                   + f"; {e['bins']} bins ({e['regular_bins']} regular)"
+                   + f"; {e['bins']} bins ({e['regular_bins']} in the low backlash state)" + lo
                    + ("" if "d_cx_regular" in e.get("held", []) else
-                      f"; regular-state principal point {f('d_cx_regular')}, {f('d_cy_regular')} px from the backlash "
-                      f"state's ({e.get('mixed_exposures', 0)} exposures with the other eye in backlash)"))
+                      f"; low-state principal point {f('d_cx_regular')}, {f('d_cy_regular')} px from the high "
+                      f"state's ({e.get('mixed_exposures', 0)} exposures with the other eye in the high state)"))
+    if res.get("split_cameras_left_out"):
+        out.append(f"left out: {len(res['split_cameras_left_out'])} cameras the blocks split off by their focal fits "
+                   f"(a frame is in the high state unless it is on the low-state list)")
     r = res.get("rig") or {}
     z = res.get("zcam") or {}
     out.append(f"Mastcam-Z rig: {r.get('change_mdeg', float('nan')):.1f} mdeg from the rig in use, baseline "

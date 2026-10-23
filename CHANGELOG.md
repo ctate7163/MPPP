@@ -2,6 +2,28 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.93.6 — 2026-10-23
+
+- **A frame is in the high backlash state unless it is on the low-state list** (Christian, 23 Oct): the default
+  `zcam_backlash` is `"list"` (was `"list_split"`) - the list's frames get their own low-state cameras at the start,
+  and a block's focal fits only report groups that look low; nothing is split off or written to the found list. The
+  found list is no longer read (`zcam_low_backlash_found` None, was "auto"): since 22 Oct it held the five Z34 left
+  pointings of Seitah Overlook ZCAM08114, two of them high-state frames. Entries worth keeping belong in the shipped
+  list.
+- **The Mastcam-Z joints are safe on blocks run before this version**: cameras a block split off by its focal fits
+  (`state_split`) are left out (`split_cameras_left_out`) - before 0.93.4 they could hold high-state frames under a
+  low-state name. With 0.93.4-0.93.5 (seitah_overlook and chal_rocks judged again to WARN, the low state's aspect
+  tied and its ratio bounded, 110 mm single-state) the joints can run on the 22-23 Oct blocks.
+- **`zcam_joints.bat` fits the Hazcams first**: `mppp calib hazcam --zcam-blocks --group zcam_consensus` (the
+  sites' `_zcam` blocks, whose Hazcams and rigs are refined), promoted when its checks pass (`MPPP_HAZ=none` skips
+  it). The rear Hazcam rig moved 0.27-0.28 deg from its start in all six blocks (22-23 Oct).
+- **A Hazcam rig is judged against its own limit**: `hazcam_rig_rotation_change_deg` warns at 0.06 and fails at
+  0.5 deg (the Hazcam fit's limit); the Navcam and Mastcam-Z rigs keep 0.3. Its start is the label CAHV rig until
+  the Hazcam law is promoted - Marble Mountain's rear rig moved 0.304 deg and failed the block (23 Oct), which kept it
+  out of the joints. Reports from before are judged again the same way at the joint gate: all six blocks of 22-23
+  Oct enter the joints (chal_rocks, seitah_overlook and marble_mountain were FAIL).
+- Joint reports say "high backlash state" and "low backlash state".
+
 ## 0.93.5 — 2026-10-22
 
 - **110 mm has no focus state** (Christian): its images and cameras are `"single"` everywhere -

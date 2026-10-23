@@ -69,6 +69,9 @@ DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "principal_point_change_px": (20.0, 60.0, "above"),
     "ray_displacement_max_px": (20.0, 60.0, "above"),      # doubled in v0p14.2
     "rig_rotation_change_deg": (0.06, 0.3, "above"),       # fail 0.3 deg (Christian, 22 Oct 2026; 0.2 since v0p14.2)
+    # 0.93.6: a Hazcam rig from its start - the label CAHV rig until the Hazcam law is promoted; the rear rig moved
+    # 0.27-0.30 deg in all six blocks of 22-23 Oct (Marble Mountain 0.304 failed the block): the Hazcam fit's limit
+    "hazcam_rig_rotation_change_deg": (0.06, 0.5, "above"),
     "rig_cahv_spread_deg": (0.02, 0.1, "above"),
     "station_shift_median_m": (2.0, 6.0, "above"),          # doubled in v0p20 (user request)
     # attitude_change_p95_deg (block rotation + per-frame scatter) is reported without a verdict; the
@@ -686,7 +689,8 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
                                 "baseline_refined_m": float(np.linalg.norm(t1)),
                                 "cahv_pairs": r0.get("n_pairs"), "cahv_rot_spread_deg": r0.get("rot_spread_deg"),
                                 "cahv_t_spread_m": r0.get("t_spread_m")}
-                check("stereo rig", "rig_rotation_change_deg", rig_out[fam]["rotation_change_deg"],
+                check("stereo rig", "hazcam_rig_rotation_change_deg" if fam in ("F", "R") else "rig_rotation_change_deg",
+                      rig_out[fam]["rotation_change_deg"],
                       f"{fam}: baseline {rig_out[fam]['baseline_initial_m']:.5f} -> "
                       f"{rig_out[fam]['baseline_refined_m']:.5f} m", "deg")
                 check("stereo rig", "rig_cahv_spread_deg", r0.get("rot_spread_deg"),
@@ -907,6 +911,8 @@ def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = Non
     changed, statuses = [], []
     for c in report.get("checks") or []:
         name, st0, v = c.get("check"), c.get("status"), c.get("value")
+        if name == "rig_rotation_change_deg" and str(c.get("note", ""))[:2] in ("F:", "R:"):
+            name = "hazcam_rig_rotation_change_deg"   # 0.93.6: a Hazcam rig (reports before 0.93.6)
         if name == "corner_triangulated_ratio" and report.get("coverage_by_radius"):
             wc = _corner_ratio(report["coverage_by_radius"])
             v = wc[1] if wc else None
