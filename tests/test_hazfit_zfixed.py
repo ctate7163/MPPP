@@ -134,7 +134,7 @@ def test_hazcam_write_check_and_camera_at(tmp_path):
 
 # ------------------------------------------------------------------------------------------ scripts and groups
 def test_new_windows_scripts_exist_crlf():
-    for name in ("zcam_joints.bat", "run_hazcam.bat", "hazcam_calibration.bat"):
+    for name in ("zcam_joints.bat", "run_hazcam.bat", "hazcam_calibration.bat", "promote_models.bat"):
         b = (ROOT / "scripts" / "windows" / name).read_bytes()
         assert b.count(b"\r\n") == b.count(b"\n") > 5, name
     z = (ROOT / "scripts" / "windows" / "zcam_joints.bat").read_text()
@@ -308,3 +308,53 @@ def test_hazcam_rig_change_judged_at_its_own_limit():
     assert rejudge(rep)[0] == "warn"
     rep["checks"][0]["note"] = "N: baseline 0.42 -> 0.42 m"
     assert rejudge(rep)[0] == "fail"
+
+
+def test_mask_inference_off_by_sequence():
+    """0.93.8 (Christian, 23 Oct): no_mask_inference_at takes sequence ids as well as stations."""
+    from mppp.config import mask_inference_skipped, parse_sequences, parse_stations, sequence_of
+    spec = ["S032D1184", "NCAM00699", "seq:ZCAM00034"]
+    assert parse_stations(spec) == {(32, 1184)} and parse_sequences(spec) == {"NCAM00699", "ZCAM00034"}
+    assert sequence_of("FLF_0681_0727400287_565RAD_N0320908FHAZ08111_0A0095J01") == "FHAZ08111"
+    assert mask_inference_skipped(spec, 32, 1184)
+    assert mask_inference_skipped(spec, 4, 100, sequence="NCAM00699")
+    assert mask_inference_skipped(spec, 4, 100, name="NLF_0093_0675031997_228RAS_N0040100NCAM00699_01_295J01")
+    assert not mask_inference_skipped(spec, 4, 100, name="NLF_0093_0675031997_228RAS_N0040100NCAM00700_01_295J01")
+    from mppp.waypoints.sites import validate_site_table
+    err, _ = validate_site_table()
+    assert not err, err
+
+
+def test_zcam01023_01025_kept_and_lightglue_prior_pairs():
+    """0.93.8: ZCAM01023 / ZCAM01025 kept despite seq:ZCAM01*; LightGlue on a big block gets the prior pairs."""
+    from mppp.pipeline import shipped_exclusions
+    from mppp.sfm.workdir import apply_exclusions
+    metas = [{"stem": f"ZL0_0682_0727400000_000RAD_N0320908{q}_034085A01", "sequence": q, "sol": 682, "site": 32,
+              "drive": 908} for q in ("ZCAM01023", "ZCAM01025", "ZCAM01024")]
+    kept, dropped = apply_exclusions(metas, shipped_exclusions())
+    assert sorted(m["sequence"] for m in kept) == ["ZCAM01023", "ZCAM01025"]
+    import inspect
+    from mppp import pipeline
+    assert 'mode == "lightglue" and big' in inspect.getsource(pipeline)
+
+
+def test_promote_waits_for_a_held_file(tmp_path, monkeypatch):
+    """0.93.8: a model file held by another process for a moment is copied once it is free."""
+    from mppp.calib import models as M
+    src = tmp_path / "a.json"
+    src.write_text('{"x": 1}')
+    dst = tmp_path / "out" / "b.json"
+    dst.parent.mkdir()
+    calls = {"n": 0}
+    real = M.os.replace
+
+    def flaky(a, b):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PermissionError(32, "being used by another process")
+        return real(a, b)
+    monkeypatch.setattr(M.os, "replace", flaky)
+    M._copy_retry(src, dst, tries=5, wait_s=0.01)
+    assert dst.read_text() == '{"x": 1}' and calls["n"] == 3 and not (dst.parent / "b.json.promote_tmp").exists()
+    bat = (Path(__file__).resolve().parents[1] / "scripts" / "windows" / "zcam_joints.bat").read_bytes()
+    assert b"zcam_joints.lock" in bat and b'rmdir "%LOCK%"' in bat

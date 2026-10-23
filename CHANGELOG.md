@@ -2,6 +2,28 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.93.8 — 2026-10-23
+
+- **`no_mask_inference_at` takes sequence ids** (Christian): besides stations (`S032D1184`) an entry can name a
+  sequence (`NCAM00699`, `ZCAM00034`, also `seq:NCAM00699`); the mask model is off for every image of it
+  (`config.mask_inference_skipped`, `parse_sequences`; the processing reuse check follows it, so only those images
+  are processed again). Chal Rocks and Chal Rocks Large: `["NCAM00699", "ZCAM00034"]`; Three Forks North:
+  `["ZCAM05086", "ZCAM08692", "NCAM02688"]` (was `["S032D1184"]`). The global default is now empty (it was
+  `["S032D1184"]` for every site).
+- **Kept**: `!seq:ZCAM01023`, `!seq:ZCAM01025` (the `seq:ZCAM01*` exclusion no longer drops them).
+- **`zcam_joints.bat` runs one copy at a time** (a lock folder `camera_analysis\zcam_joints.lock`): on 23 Oct two
+  copies started 2 s apart ran the Hazcam fit and the Z34 joint twice into the same folders; the second promotion
+  failed with "WinError 32 ... being used by another process". `set MPPP_ZOOMS=none` runs only the Hazcam fit (and
+  the N+Z check unless `MPPP_NZ=none`). A promotion copy now waits out a file held for a moment (20 tries), writes
+  through a temporary file, and a failed Hazcam promotion says so instead of a traceback.
+- **A Hazcam rig is promoted on its own checks**: the rear rig (0.267 deg from the CAHV rig, five blocks) was held
+  back because the rear eyes' laws failed (thermal slope, block scatter 1600-2500 ppm). The blocks hold the
+  principal points at their start, so the rig rotation does not depend on the eyes' focal laws.
+- `promote_models.bat`: drag model files or a candidate folder onto it (`mppp cmods promote`).
+- **LightGlue on a big block gets the prior-overlap pairs** (`match_mode="lightglue"` with more than
+  `max_exhaustive_images` images): it matched every pair (564,453 at Marble Mountain's 1063 images), which is over
+  its 2 h budget, and then fell back to COLMAP over every pair.
+
 ## 0.93.7 — 2026-10-23
 
 - **The Mastcam-Z joints take the low backlash state from the shipped low-state list only** (Christian, 23 Oct): a

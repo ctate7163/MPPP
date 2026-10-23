@@ -19,6 +19,7 @@ import datetime
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 from pathlib import Path
@@ -380,6 +381,36 @@ def write_model(path: PathLike, model: Dict[str, Any]) -> Path:
     return p
 
 
+def _copy_retry(src: PathLike, dst: PathLike, tries: int = 20, wait_s: float = 1.5) -> None:
+    """``shutil.copy2`` that waits out a file held by another process (0.93.8, the PC 23 Oct: "WinError 32 ... being
+    used by another process" when the Hazcam fit promoted the files it had just written - a virus scanner or the
+    search indexer holds a new file for a moment).  The bytes go to a temporary file next to ``dst`` first, then
+    replace it, so a reader never sees half a model.  After ``tries`` the last error is raised."""
+    import time
+    src, dst = Path(src), Path(dst)
+    tmp = dst.with_name(dst.name + ".promote_tmp")
+    err: Optional[BaseException] = None
+    for k in range(max(int(tries), 1)):
+        try:
+            tmp.write_bytes(src.read_bytes())
+            os.replace(tmp, dst)
+            try:
+                shutil.copystat(src, dst)
+            except OSError:
+                pass
+            return
+        except PermissionError as e:                  # held by another process: wait and try again
+            err = e
+            log.info("promote: %s is held by another process (%s) - trying again in %.1f s (%d/%d)", dst.name, e,
+                     wait_s, k + 1, tries)
+            time.sleep(wait_s)
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+    raise err  # type: ignore[misc]
+
+
 def promote(sources: Sequence[PathLike], note: str = "", folder: Optional[PathLike] = None,
             dry_run: bool = False) -> Dict[str, Any]:
     """
@@ -399,7 +430,7 @@ def promote(sources: Sequence[PathLike], note: str = "", folder: Optional[PathLi
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     lines, shas = [], {}
     for name, f in todo.items():
-        shutil.copy2(f, dst / name)
+        _copy_retry(f, dst / name)
         shas[name] = sha12(dst / name)
         lines.append(f"  - `{name}` {shas[name]} from `{f}` ({desc[name]})")
     with (dst / CHANGES).open("a", encoding="utf-8") as fh:

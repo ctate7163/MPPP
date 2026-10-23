@@ -647,8 +647,12 @@ def _calib_hazcam(a: argparse.Namespace) -> int:
         print(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}")
     promote = a.promote_if_ok and not a.no_promote
     if promote and w["files"]:
-        pr = M.promote([Path(f) for f in w["files"]], note=a.note or f"Hazcam fit of {len(res['blocks'])} blocks "
-                       f"({', '.join(res['blocks'])})")
+        try:
+            pr = M.promote([Path(f) for f in w["files"]], note=a.note or f"Hazcam fit of {len(res['blocks'])} blocks "
+                           f"({', '.join(res['blocks'])})")
+        except OSError as e:                          # 0.93.8: say so instead of a traceback; the candidate stays
+            print(f"NOT promoted: {e} - promote later with: mppp cmods promote {w['candidate']}", file=sys.stderr)
+            return 1
         print(f"promoted {', '.join(Path(f).name for f in w['files'])} into {pr['folder']} ({pr['stamp']})")
     elif promote:
         print("not promoted: no eye or pair passed its checks")

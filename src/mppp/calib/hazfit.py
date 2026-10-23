@@ -322,7 +322,10 @@ def write_hazcam(res: Dict[str, Any], out_dir: PathLike) -> Dict[str, Any]:
             continue
         name = RIG_FILE[fam]
         (out / name).write_text(json.dumps(rig_file(r, stamp), indent=1), encoding="utf-8")
-        if chk["rigs"].get(fam) and chk["eyes"].get(f"{fam}L") and chk["eyes"].get(f"{fam}R"):
+        # 0.93.8: a rig that passes its own checks is a candidate whatever its eyes' laws do (23 Oct: the rear rig,
+        # 0.267 deg from the CAHV rig in all blocks, was held back by the rear eyes' thermal fits) - the blocks hold
+        # the principal points at their start, so the rig rotation does not depend on the eyes' focal laws
+        if chk["rigs"].get(fam):
             (cand / name).write_text(json.dumps(rig_file(r, stamp), indent=1), encoding="utf-8")
             files.append(str(cand / name))
     (out / "hazcam_fit.json").write_text(json.dumps(res, indent=1, default=float), encoding="utf-8")

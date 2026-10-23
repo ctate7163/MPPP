@@ -133,20 +133,56 @@ def _deep_merge(base: Dict[str, Any], over: Dict[str, Any], path: str = "") -> D
     return base
 
 
+SEQUENCE_ID = r"(?:seq:)?\s*([A-Z]{4}\d{5})"
+
+
+def parse_sequences(spec: Any) -> set:
+    """``masking.skip_inference_at`` -> {sequence id}: the entries that name a sequence ("NCAM00699", "ZCAM00034",
+    also "seq:NCAM00699"; 0.93.8, Christian 23 Oct) - the mask model is off for every image of it."""
+    import re
+    return {m.group(1).upper() for item in spec or [] if isinstance(item, str)
+            for m in [re.fullmatch(r"\s*" + SEQUENCE_ID + r"\s*", item, re.I)] if m}
+
+
+def sequence_of(name: Any) -> Optional[str]:
+    """The sequence id in a PDS product name (``..._N0320908FHAZ08111_0A0095J01`` -> "FHAZ08111"), else None."""
+    import re
+    m = re.search(r"N\d{7}([A-Z]{4}\d{5})_", str(name or ""), re.I)
+    return m.group(1).upper() if m else None
+
+
+def mask_inference_skipped(spec: Any, site: Any, drive: Any, sequence: Any = None, name: Any = None) -> bool:
+    """Whether ``masking.skip_inference_at`` turns the mask model off for an image: its station (site, drive) or its
+    sequence (``sequence``, else read from the product ``name``) is listed."""
+    try:
+        if (int(site), int(drive)) in parse_stations(spec):
+            return True
+    except (TypeError, ValueError):
+        pass
+    seqs = parse_sequences(spec)
+    if not seqs:
+        return False
+    seq = (str(sequence).upper() if sequence else None) or sequence_of(name)
+    return bool(seq) and seq in seqs
+
+
 def parse_stations(spec: Any) -> set:
     """
     ``masking.skip_inference_at`` -> {(site, drive)}.  Accepts [site, drive]
     pairs and strings "S032D1184", "32/1184", "32,1184" or a station label
-    such as "Sol0686-0688 S032D1184".
+    such as "Sol0686-0688 S032D1184".  Sequence ids ("NCAM00699", 0.93.8) are not stations: see
+    :func:`parse_sequences`.
     """
     import re
     out = set()
     for item in spec or []:
+        if isinstance(item, str) and re.fullmatch(r"\s*" + SEQUENCE_ID + r"\s*", item, re.I):
+            continue                                     # a sequence (parse_sequences)
         if isinstance(item, str):
             m = re.search(r"S0*(\d+)\s*D0*(\d+)", item, re.I) or re.fullmatch(r"\s*(\d+)\s*[/,:]\s*(\d+)\s*", item)
             if not m:
-                raise ValueError(f"masking.skip_inference_at: cannot read a site and drive from {item!r} "
-                                 f"(use [32, 1184], \"S032D1184\" or \"32/1184\")")
+                raise ValueError(f"masking.skip_inference_at: cannot read a site and drive or a sequence from {item!r} "
+                                 f"(use [32, 1184], \"S032D1184\", \"32/1184\" or a sequence \"NCAM00699\")")
             out.add((int(m.group(1)), int(m.group(2))))
         else:
             try:

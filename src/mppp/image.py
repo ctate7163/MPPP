@@ -120,11 +120,12 @@ class MPPPImage:
         self.mask_card: Optional[Dict[str, Any]] = None
         self.mask_inference_skipped = False
         if cfg["masking"]["infer_mask"]:
-            from .config import parse_stations
-            if (self.site, self.drive) in parse_stations(cfg["masking"].get("skip_inference_at")):
+            from .config import mask_inference_skipped
+            if mask_inference_skipped(cfg["masking"].get("skip_inference_at"), self.site, self.drive,
+                                      getattr(self.fn, "sequence", None), self.fn.stem):
                 self.mask_inference_skipped = True
-                self._say(f"mask inference off at site {self.site} drive {self.drive} (masking.skip_inference_at): "
-                          f"only invalid pixels are masked")
+                self._say(f"mask inference off at site {self.site} drive {self.drive} / sequence "
+                          f"{getattr(self.fn, 'sequence', None)} (masking.skip_inference_at): only invalid pixels are masked")
             else:
                 self._infer_mask(rad)
         if not cfg["masking"]["mask_invalid"]:

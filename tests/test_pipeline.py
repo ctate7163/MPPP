@@ -62,7 +62,8 @@ def test_settings_merge_json_and_set(tmp_path, clean_env):
     assert load_settings(work, "rockytop").thermal_bins_deg is None
     assert Settings().nearby_from_first_sol is False
     assert load_settings(None, "rochette").nearby_from_first_sol is True       # the site's settings in sites.json
-    assert load_settings(None, "rockytop").no_mask_inference_at == ["S032D1184"]
+    assert load_settings(None, "rockytop").no_mask_inference_at == []               # 0.93.8: no global default
+    assert load_settings(None, "threeforks_north").no_mask_inference_at == ["ZCAM05086", "ZCAM08692", "NCAM02688"]
     with pytest.raises(KeyError, match="unknown setting"):
         normalize({"NAVCAM_DISTORTION": "rational"})
     assert Settings().replace(INCLUDE_ZCAM34=True).include_zcam is True
@@ -182,7 +183,7 @@ def test_processing_config_and_project_settings(tmp_path, clean_env):
     from mppp.pipeline import Settings, processing_config, wanted_project_settings, _zero_terms, _refine_tangential
     cfg = processing_config(Settings())
     assert cfg["export"]["formats"] == ["PNG8"] and cfg["export"]["store_mask_in_alpha"] == 0.5
-    assert cfg["masking"]["skip_inference_at"] == ["S032D1184"] and cfg["masking"]["infer_mask"] is True
+    assert cfg["masking"]["skip_inference_at"] == [] and cfg["masking"]["infer_mask"] is True
     assert cfg["selection"]["lmst_window_h"] == [6.0, 18.0] and cfg["color"]["brightness_by_family"] == {"N": 0.9}
     assert processing_config(Settings(infer_mask=False, mask_checkpoint="x.pt"))["masking"]["checkpoint"] == "x.pt"
     s = Settings()
@@ -206,7 +207,7 @@ def test_pipeline_defaults_v0p61():
     s = Settings()
     assert s.store_mask_in_alpha == 0.5 and s.zcam_k3 == "label" and s.zcam_backlash == "list"
     assert s.zcam_low_backlash is None and s.zcam_focus_line is True and s.thermal_after_stage1 is True
-    assert s.no_mask_inference_at == ["S032D1184"]
+    assert s.no_mask_inference_at == []
 
 
 def test_pipeline_and_script_defaults_v0p64(tmp_path):

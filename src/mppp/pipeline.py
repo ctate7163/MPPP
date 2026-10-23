@@ -110,7 +110,7 @@ class Settings:
     max_exposure_ms: Optional[float] = 40.0       # Navcam frames with a longer exposure are not processed (the long member of the exposure brackets)
     max_centre_tint: Optional[float] = 1.2        # nor frames whose centre is bluer than the edge by more than this (B/R ratio)
     navcam_brightness: float = 0.9                # brightness factor for Navcam
-    no_mask_inference_at: List[str] = field(default_factory=lambda: ["S032D1184"])   # stations where the mask model is off (the rover stays in the images)
+    no_mask_inference_at: List[str] = field(default_factory=list)   # stations (S032D1184) or sequences (NCAM00699; 0.93.8) where the mask model is off (the rover stays in the images); per site in sites.json
     store_mask_in_alpha: Any = 0.5                # the mask in the PNG alpha channel: 1 = masked pixels transparent, 0.5 = half, 0 = no alpha
     infer_mask: bool = True                       # run the mask model (False: no terrain masks)
     mask_checkpoint: Optional[str] = None         # a mask model or checkpoint file; None: the released default
@@ -916,11 +916,14 @@ def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] =
     if stop_after == "database":
         return out
     pairs = None
-    if mode == "prior_pairs":
+    big = bool(s.max_exhaustive_images) and len(proj.images) > int(s.max_exhaustive_images)
+    if mode == "prior_pairs" or (mode == "lightglue" and big):
+        # 0.93.8: LightGlue on a big block gets the prior-overlap pairs too (it matched every pair: 564,453 at
+        # Marble Mountain's 1063 images, over its time budget, and then fell back to COLMAP over every pair)
         pairs = prior_overlap_pairs(proj, min_overlap=0.05)
         n = len(proj.images)
         log.info("%d prior pairs%s", len(pairs), f" (instead of {n * (n - 1) // 2} exhaustive: {n} images > "
-                 f"max_exhaustive_images {s.max_exhaustive_images})" if mode != s.match_mode else "")
+                 f"max_exhaustive_images {s.max_exhaustive_images})" if big else "")
     kw = dict(use_gpu=gpu, block_size=s.match_block_size, **s.match)
     if mode != "lightglue":
         # COLMAP's matcher runs in a child process: the CUDA environment, else this python on the CPU - a COLMAP

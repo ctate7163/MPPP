@@ -221,15 +221,16 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[
     if diff:
         rep.update(reason="configuration changed", config_changed=diff)
         return {}, rep
-    from .config import parse_stations
-    skip = parse_stations(cfg["masking"].get("skip_inference_at"))
+    from .config import mask_inference_skipped
+    skip_spec = cfg["masking"].get("skip_inference_at")
     infer = bool(cfg["masking"].get("infer_mask"))
     rep["mask_inference_changed"] = []
     have: Dict[str, Dict[str, Any]] = {}
     for m in json.loads(man_p.read_text(encoding="utf-8")).get("images", []):
         outs = [out_dir / v for v in (m.get("outputs") or {}).values()]
         stem = Path(m["source_product"]).stem
-        want_inferred = infer and (m.get("site"), m.get("drive")) not in skip
+        want_inferred = infer and not mask_inference_skipped(skip_spec, m.get("site"), m.get("drive"),
+                                                             (m.get("filename") or {}).get("sequence"), stem)
         if _exposure_rule(cfg, m):                                        # now left out by the rules
             rep.setdefault("exposure_rule", []).append(stem)
         elif bool((m.get("mask") or {}).get("inferred")) != want_inferred:

@@ -16,6 +16,8 @@ REM   zcam_joints.bat                 the joints and the promotions
 REM   zcam_joints.bat --no-promote    the joints only (arguments go to every "mppp calib zcam")
 REM   set MPPP_ZOOMS=34 63            only these zooms
 REM   set MPPP_HAZ=none               no Hazcam fit (0.93.6: it runs first, over the zcam_consensus blocks)
+REM   set MPPP_ZOOMS=none             no Mastcam-Z joint (the Hazcam fit, and the N+Z check unless MPPP_NZ=none)
+REM   one copy at a time: %MPPP_SCAPES%\camera_analysis\zcam_joints.lock (a folder) while it runs
 REM
 REM Writes %MPPP_SCAPES%\camera_analysis\zcam<zoom>_joint_<date>[_N]\ (report.md, check.json, the candidate model,
 REM zcam_joint.json, block_lines.json, zcam_rig_trends.png) and nz34_joint_<date>\.
@@ -26,6 +28,15 @@ call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
 if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\scapes"
 if not defined MPPP_ZOOMS set "MPPP_ZOOMS=34 48 63 79 110"
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY=%%d"
+REM 0.93.8: one zcam_joints at a time (23 Oct: two copies ran the same joints into the same folders and promoted twice)
+set "LOCK=%MPPP_SCAPES%\camera_analysis\zcam_joints.lock"
+if not exist "%MPPP_SCAPES%\camera_analysis" mkdir "%MPPP_SCAPES%\camera_analysis"
+mkdir "%LOCK%" 2>nul || (
+  echo zcam_joints.bat is already running ^(%LOCK% exists^). Wait for it to finish, or - if no other zcam_joints
+  echo window is open - delete that folder and start again.
+  if not defined MPPP_NOPAUSE_END pause
+  exit /b 1
+)
 python -m mppp cmods list
 REM 0.93.6 (Christian, 23 Oct): first the Hazcam law from the same blocks (their Hazcam cameras and rigs), promoted
 REM when its checks pass (set MPPP_HAZ=none to skip it)
@@ -38,6 +49,7 @@ if /i not "%MPPP_HAZ%"=="none" (
   python -m mppp --log "!HOUT!_log.txt" calib hazcam --zcam-blocks --group zcam_consensus --root "%MPPP_SCAPES%" --out "!HOUT!" --promote-if-ok
   if errorlevel 1 echo Hazcam fit: not run or FAILED - see !HOUT!_log.txt
 )
+if /i "%MPPP_ZOOMS%"=="none" set "MPPP_ZOOMS="
 for %%Z in (%MPPP_ZOOMS%) do (
   set "GROUP=zcam_consensus"
   if "%%Z"=="34" set "GROUP=zcam34_joint,zcam_consensus"
@@ -58,6 +70,7 @@ if /i not "%MPPP_NZ%"=="none" (
   if errorlevel 1 echo the combined joint FAILED - see %MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt
 )
 echo %DATE% %TIME%  done
+rmdir "%LOCK%" 2>nul
 if not defined MPPP_NOPAUSE_END pause
 exit /b 0
 
