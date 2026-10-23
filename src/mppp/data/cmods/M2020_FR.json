@@ -1,0 +1,119 @@
+{
+ "model": "THIN_PRISM_FISHEYE",
+ "width": 5120,
+ "height": 3840,
+ "params": [
+  2139.079659163489,
+  2138.3442535607887,
+  2565.4204665994785,
+  1926.7946247362352,
+  0.010953281120695615,
+  -0.006740897535842122,
+  0.0004255245996517224,
+  0.0003788749637935613,
+  2.2987955534271115e-06,
+  -5.812494456077247e-07,
+  0.0,
+  0.0
+ ],
+ "param_names": [
+  "fx",
+  "fy",
+  "cx",
+  "cy",
+  "k1",
+  "k2",
+  "p1",
+  "p2",
+  "k3",
+  "k4",
+  "sx1",
+  "sy1"
+ ],
+ "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
+ "free_params": [],
+ "fixed_params": [],
+ "pixel_origin": "corner of the first pixel (COLMAP)",
+ "form": "navcam-v1",
+ "convention": "FL reference",
+ "family": "F",
+ "eye": "R",
+ "thermal": {
+  "T0_degC": -20.0,
+  "fx_ppm_per_degC": 66.69295737822405,
+  "fy_ppm_per_degC": 66.69295737822405,
+  "cx_px_per_degC": 0.0,
+  "cy_px_per_degC": 0.0,
+  "k1_per_degC": 2.7179833082512895e-05,
+  "sd_ppm_per_degC": 32.26574795506624,
+  "sd_k1_per_degC": 3.169890101316136e-05,
+  "note": "one ppm/degC for fx and fy; the principal point held (the blocks hold it)"
+ },
+ "early_mission": {
+  "before_sol": 380.0,
+  "per_eye": true,
+  "dfx_px": -2.6730077578272065,
+  "dfy_px": -1.904974717540972,
+  "dcx_px": 0.0,
+  "dcy_px": 0.0,
+  "applied_terms": [
+   "fx",
+   "fy"
+  ],
+  "note": "Hazcam fit: focal-length offsets of the images before before_sol"
+ },
+ "sd": {
+  "fx": 0.7468635015769208,
+  "fy": 0.7468635015769208
+ },
+ "source": "MPPP Hazcam fit (mppp.calib.hazfit, 2026-10-23) over 4 blocks (seitah_overlook, chal_rocks, threeforks_north, south_arm): fx, fy, k1 linear in temperature, k2 the blocks' mean; cx, cy, p1, p2, k3, k4 the label fits' median",
+ "fit": {
+  "method": "hazcam fit from the blocks",
+  "blocks": [
+   "seitah_overlook",
+   "chal_rocks",
+   "threeforks_north",
+   "south_arm"
+  ],
+  "scatter_ppm": 303.90362852808965,
+  "T_span_degC": 26.55855,
+  "rows": [
+   {
+    "block": "seitah_overlook",
+    "T": -21.1195,
+    "sol": 124.5,
+    "fx": 2138.321240065332,
+    "fy": 2137.351350448889,
+    "k1": 0.010269953229976883,
+    "observations": 21965
+   },
+   {
+    "block": "chal_rocks",
+    "T": 5.43905,
+    "sol": 367.0,
+    "fx": 2139.8621969295673,
+    "fy": 2139.9784394658686,
+    "k1": 0.011502835285104254,
+    "observations": 263353
+   },
+   {
+    "block": "threeforks_north",
+    "T": -13.2675,
+    "sol": 684.0,
+    "fx": 2140.8829499406606,
+    "fy": 2140.1227053119637,
+    "k1": 0.011997294020103348,
+    "observations": 156526
+   },
+   {
+    "block": "south_arm",
+    "T": -20.3259,
+    "sol": 1409.0,
+    "fx": 2138.31754325184,
+    "fy": 2137.603224053368,
+    "k1": 0.010493898761332091,
+    "observations": 184382
+   }
+  ]
+ }
+}

@@ -109,3 +109,7 @@
 
 ## 20261023-113000 - Mastcam-Z 110 mm joint of 2 blocks (zcam110_joint_20261023; a first calibration, single state): it failed only the form (no low-state lines - not needed at 110 mm since 0.94.0) and the aspect at the 1 % limit (fy / fx 0.982); every check passes with the 2 % limit of 0.94.1 (Christian)
   - `M2020_ZCAM110_focus_model.json` cf9de96f5f94 from `/mnt/user-data/uploads/camera_analysis/zcam110_joint_20261023/M2020_ZCAM110_focus_model.json` (focus model for ['ZL110', 'ZR110'] and rig)
+
+## 20261023-142018 - Hazcam fit of 2 blocks (chal_rocks_tiny, seitah_overlook_tiny)
+  - `M2020_RL.json` 65c4a274490e from `D:\scapes\camera_analysis\hazcam_fit_tiny_20261023\candidate\M2020_RL.json` (THIN_PRISM_FISHEYE 5120x3840, fx 2156.86 at -20.0 degC)
+  - `M2020_RR.json` 5b5342f5a8b0 from `D:\scapes\camera_analysis\hazcam_fit_tiny_20261023\candidate\M2020_RR.json` (THIN_PRISM_FISHEYE 5120x3840, fx 2148.31 at -20.0 degC)

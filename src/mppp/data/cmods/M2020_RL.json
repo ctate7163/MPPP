@@ -1,0 +1,86 @@
+{
+ "model": "THIN_PRISM_FISHEYE",
+ "width": 5120,
+ "height": 3840,
+ "params": [
+  2156.8631283702175,
+  2169.6412237803215,
+  2570.377570863896,
+  1935.9568439135187,
+  0.018626100703770486,
+  -0.011911120251243608,
+  0.0014078635891324898,
+  -2.8213319664999934e-05,
+  0.0005023234397215361,
+  -0.00010045371208682258,
+  0.0,
+  0.0
+ ],
+ "param_names": [
+  "fx",
+  "fy",
+  "cx",
+  "cy",
+  "k1",
+  "k2",
+  "p1",
+  "p2",
+  "k3",
+  "k4",
+  "sx1",
+  "sy1"
+ ],
+ "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
+ "free_params": [],
+ "fixed_params": [],
+ "pixel_origin": "corner of the first pixel (COLMAP)",
+ "form": "navcam-v1",
+ "convention": "RL reference",
+ "family": "R",
+ "eye": "L",
+ "thermal": {
+  "T0_degC": -20.0,
+  "fx_ppm_per_degC": 0.0,
+  "fy_ppm_per_degC": 0.0,
+  "cx_px_per_degC": 0.0,
+  "cy_px_per_degC": 0.0,
+  "k1_per_degC": 0.0,
+  "sd_ppm_per_degC": null,
+  "sd_k1_per_degC": null,
+  "note": "one ppm/degC for fx and fy; the principal point held (the blocks hold it)"
+ },
+ "early_mission": {
+  "before_sol": 380.0,
+  "per_eye": true,
+  "dfx_px": 0.0,
+  "dfy_px": 0.0,
+  "dcx_px": 0.0,
+  "dcy_px": 0.0,
+  "applied_terms": [],
+  "note": "Hazcam fit: focal-length offsets of the images before before_sol"
+ },
+ "sd": {
+  "fx": 1.0,
+  "fy": 1.0
+ },
+ "source": "MPPP Hazcam fit (mppp.calib.hazfit, 2026-10-23) over 1 blocks (chal_rocks_tiny): fx, fy, k1 linear in temperature; k2 the blocks' mean; cx, cy, p1, p2, k3, k4 the label fits' median",
+ "fit": {
+  "method": "hazcam fit from the blocks",
+  "blocks": [
+   "chal_rocks_tiny"
+  ],
+  "scatter_ppm": 1.4864422146188506e-10,
+  "T_span_degC": 0.0,
+  "rows": [
+   {
+    "block": "chal_rocks_tiny",
+    "T": 1.68609,
+    "sol": 93.0,
+    "fx": 2156.863128370218,
+    "fy": 2169.6412237803215,
+    "k1": 0.018626100703770486,
+    "observations": 3921
+   }
+  ]
+ }
+}
