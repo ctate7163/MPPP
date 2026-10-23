@@ -17,6 +17,8 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **OEB Landing Site without sols 15-31** (`EXCLUDE ["sol:15-31"]`) and **Van Zyl Overlook Huge without the first three
+  site-3 waypoints** (`EXCLUDE ["S003D0000", "S003D0008", "S003D0110"]`) (Christian).
 - **Isolated two-view points deleted before the final stage-2 adjustment** (Christian: "a few points scattered
   above and below the terrain"; `Settings.isolated_points_factor` 4.0, 0 = off; `reconstruction.drop_isolated_points`;
   ALIGN_RULES 91). A two-view point whose mean distance to its 8 nearest points, divided by its range, is more than
