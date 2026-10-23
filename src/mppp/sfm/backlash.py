@@ -562,6 +562,10 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
                 row.update({"ratio": None, "sd": None})
         else:
             row.update({"ratio": None, "sd": None})
+        fl = [fits[n] for n in listed if n in fits and fits[n].get("ratio_label")]
+        if fl:                                               # 0.93.4: the listed (regular) images' own ratio
+            ml, sl, _ = stats(fl)
+            row.update({"ratio_listed": ml, "sd_listed": sl})
         if fu:
             mu, su, _ = stats(fu)
             row.update({"ratio_fit": mu, "sd_fit": su})
@@ -589,6 +593,8 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
         state = "undecided" if implausible else ("regular" if z < -z_min else ("backlash" if z > z_min else "undecided"))
         row.update({"z": float(z), "state": state, "decided": state != "undecided", "implausible": bool(implausible)})
     seqs = apply_sequence_states(rows, z_min=z_min) if sequence_rule else {}
+    for row in rows:
+        mixed_group_state(row, z_min=z_min)
     if report is not None:
         report["backlash_lines"] = lines
         report["sequences"] = seqs
@@ -596,6 +602,40 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
                                                                 "sequence_z", "ratio_fit", "threshold_ratio")}
                                         for r in rows if r.get("conflict")]
     return rows
+
+
+def mixed_group_state(row: Dict[str, Any], z_min: float = 3.0) -> Optional[str]:
+    """0.93.4 (Christian, Seitah Overlook ZCAM08114): a focus group in which only some images are on the low-backlash
+    list holds both states - the list marks the regular exceptions, e.g. pointings 2 and 4 of a five-pointing
+    mosaic at one focus count.  Its unlisted images are judged against the listed ones of the same group, not against
+    the absolute threshold (uncalibrated zooms put both states below it): backlash unless they fit clearly on the
+    listed side of the midpoint (the listed ratio + half the block's state gap) - then the group keeps its own call
+    (the rule never makes a group regular; ZCAM05086 at Three Forks has a listed image at the backlash ratio).  Sets
+    and returns the group's state (for its unlisted images)."""
+    listed = row.get("listed_names") or []
+    if not listed or row.get("all_listed") or row.get("state") == "single" or row.get("implausible"):
+        return None                                      # (implausible: a failed bin, neither state - left as it was)
+    ml, sl, mu, su = row.get("ratio_listed"), row.get("sd_listed"), row.get("ratio_fit"), row.get("sd_fit")
+    if ml is None or mu is None:
+        st, z = "backlash", None
+        note = "the list marks the group's regular images; the unlisted ones, without a fit to compare, backlash"
+    else:
+        # the midpoint between the listed images' ratio and that ratio plus the block's state gap: an unlisted image
+        # clearly on the listed side is regular too, anything else backlash (undecided counts as backlash)
+        ns, rb = float(row.get("nav_scale") or 1.0), row.get("backlash_ratio")
+        gap = (float(rb) - ns) if rb is not None else (DEFAULT_BACKLASH_RATIO - 1.0) * ns
+        z = (mu - (ml + 0.5 * gap)) / max(float(np.hypot(sl or 0.0, su or 0.0)), 1e-6)
+        st = "regular" if z < -z_min else "backlash"
+        note = (f"the unlisted images fit {100 * (mu - ml):+.2f} % from the listed (regular) ones of the same group "
+                f"(state gap {100 * gap:.2f} %, z {z:+.1f}): {st}")
+    if st == "regular":                                  # the rule only takes images out of the regular state: a
+        row.update({"mixed_group": True, "mixed_z": z,   # group it finds like its listed images keeps its own call
+                    "mixed_note": note + f" - kept {row.get('state')}"})
+        return row.get("state")
+    if row.get("state") != st:
+        row["state_before_mixed_rule"] = row.get("state")
+    row.update({"state": st, "decided": True, "mixed_group": True, "mixed_z": z, "mixed_note": note})
+    return st
 
 
 def image_states(groups: Sequence[Dict[str, Any]]) -> Dict[str, str]:
@@ -669,6 +709,10 @@ def split_by_state(rec, project, regular: Iterable[str], hold_f_images: int = 0,
         new.add_camera(pycolmap.Camera(camera_id=next_cid, model=base.model, width=base.width, height=base.height,
                                        params=p))
         key = f"{old_key}{REGULAR_SUFFIX}"
+        k_ = 2
+        while key in project.cameras or key in db:          # 0.93.4: the list's own regular bin has this name
+            key = f"{old_key}_{k_}{REGULAR_SUFFIX}"
+            k_ += 1
         pc = copy.deepcopy(project.cameras.get(old_key, {}))
         fixed = list(pc.get("fixed_params") or [])
         held_f = len(iids) <= int(hold_f_images or 0)

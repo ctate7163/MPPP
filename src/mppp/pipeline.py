@@ -48,6 +48,7 @@ RUN_SETTINGS = "run_settings.json"
 
 # Bumped when the alignment code changes its results under unchanged settings (a default changed in the code, not
 # in the settings), so that the batch scripts align every site again instead of skipping it as done.
+ZCAM_RULES = 1                   # 0.93.4: Mastcam-Z blocks only (a partly listed focus group, unique _reg names)
 ALIGN_RULES = 88                 # 0.93.3: outlier residual cut 2.0 px (87: 0.93 Hazcams in the blocks, Z fixed terms)
 # Likewise for the selection and processing rules (process_done.json).
 PROCESS_RULES = 5                # 0.93.3: a block's own stations on other sols are selected
@@ -349,6 +350,8 @@ def run_key(settings: Union[Settings, Dict[str, Any]], source: Optional[str] = N
         d = {"settings": settings, "source": source or "pds", "variant": variant or ""}
     if not str(d["source"]).startswith("process:"):
         d["rules"] = ALIGN_RULES
+        if isinstance(d["settings"], dict) and d["settings"].get("include_zcam"):
+            d["zcam_rules"] = ZCAM_RULES             # a Mastcam-Z block's own rules: the Navcam-only keys stay
         try:
             from .calib import models_fingerprint
             d["cmods"] = models_fingerprint()
@@ -1154,7 +1157,7 @@ def _now() -> str:
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
-__all__ = ["Settings", "Site", "hazcam_families", "ALIGN_RULES", "PROCESS_RULES", "STEPS", "load_settings", "work_settings", "normalize",
+__all__ = ["Settings", "Site", "hazcam_families", "ALIGN_RULES", "ZCAM_RULES", "PROCESS_RULES", "STEPS", "load_settings", "work_settings", "normalize",
            "setting_names", "run_key", "process_key", "processed_done", "run_done", "resolve_site", "select_images",
            "select_products", "process_site", "processing_config", "load_images", "build_project", "extract_and_match",
            "reconstruct_project", "health", "finish", "align", "run_site", "load_results"]

@@ -809,3 +809,42 @@ def test_zcam_camera_at_regular_principal_point_from_its_lines():
     _, pb, _ = calib.zcam_camera_at(m, "ZL034", 700.0, "backlash")
     assert pr[2] == pytest.approx(pp0[0] + 3.0) and pr[3] == pytest.approx(pp0[1] - 2.0)
     assert pb[2] == pytest.approx(pp0[0]) and pb[3] == pytest.approx(pp0[1])
+
+
+def test_mixed_focus_group_unlisted_images_are_backlash():
+    """0.93.3 (Seitah Overlook ZCAM08114): one focus count, five pointings, 1/3/5 listed regular (f/label 0.994),
+    2/4 not (1.000) - the absolute threshold (1.0047) called the group regular; the listed images now set the
+    reference, so the unlisted ones are backlash.  Unlisted images that fit like the listed ones stay regular."""
+    from mppp.sfm.backlash import image_states, mixed_group_state
+    base = {"names": ["p1", "p2", "p3", "p4", "p5"], "listed_names": ["p1", "p3", "p5"], "all_listed": False,
+            "nav_scale": 1.0, "backlash_ratio": 1.0095, "state": "regular", "decided": True}
+    row = dict(base, ratio_listed=0.994, sd_listed=0.0004, ratio_fit=1.000, sd_fit=0.0005)
+    assert mixed_group_state(row) == "backlash" and row["state_before_mixed_rule"] == "regular"
+    assert image_states([row]) == {"p1": "regular", "p2": "backlash", "p3": "regular", "p4": "backlash",
+                                   "p5": "regular"}
+    same = dict(base, ratio_listed=0.994, sd_listed=0.0004, ratio_fit=0.9942, sd_fit=0.0005)
+    assert mixed_group_state(same) == "regular"
+    assert mixed_group_state(dict(same, state="backlash")) == "backlash"          # never made regular by the rule
+    nofit = dict(base, ratio_listed=None, ratio_fit=None)
+    assert mixed_group_state(nofit) == "backlash"
+    for r in (dict(base, all_listed=True), dict(base, listed_names=[]), dict(base, state="single"),
+              dict(base, implausible=True, state="backlash")):
+        st = r["state"]
+        assert mixed_group_state(r) is None and r["state"] == st
+
+
+def test_split_never_overwrites_the_listed_regular_bin(tmp_path):
+    """0.93.4: a <bin>_reg camera that already exists (the list's own regular bin) is kept; the split's new camera
+    gets a unique name that still ends in _reg."""
+    pytest.importorskip("scipy")
+    from mppp.sfm.backlash import classify_groups, image_focal_fits, image_states, split_by_state
+    proj, rec, model, truth = _zcam_block(tmp_path)
+    reg = [n for n, s in image_states(classify_groups(proj, image_focal_fits(rec, proj), model)).items() if s == "regular"]
+    db = proj.settings["database"]["cameras"]
+    proj.cameras["ZL034_F00600_reg"] = {"group": "ZL034", "backlash_state": "regular", "n_images": 2, "source": "list"}
+    db["ZL034_F00600_reg"] = 7
+    new, rows = split_by_state(rec, proj, reg, hold_f_images=3)
+    assert rows[0]["camera"] == "ZL034_F00600_2_reg" and rows[0]["camera_id"] == 8
+    assert proj.cameras["ZL034_F00600_reg"]["source"] == "list" and db["ZL034_F00600_reg"] == 7
+    assert db["ZL034_F00600_2_reg"] == 8 and proj.cameras["ZL034_F00600_2_reg"]["backlash_state"] == "regular"
+    assert {r["instrument"] for r in proj.images if r["sequence"] == "zcam3"} == {"ZL034_F00600_2_reg"}

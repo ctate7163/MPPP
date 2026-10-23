@@ -2,6 +2,24 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.93.4 — 2026-10-22
+
+- **A partly listed Mastcam-Z focus group holds both states** (Christian, Seitah Overlook ZCAM08114, sol 121): a
+  five-pointing mosaic with one stereo pair per zoom at one focus count, pointings 1, 3 and 5 in the low-backlash
+  (regular) state and on the list, 2 and 4 in the backlash state. All five form one focus group; its unlisted images
+  fit f / label f 1.000 against 0.994 for the listed ones, below the absolute midpoint (1.0047), so the group was
+  called regular and 2 and 4 were moved into a regular camera. The list now marks the group's regular exceptions:
+  the unlisted images are judged against the listed ones of the same group (midpoint = listed ratio + half the
+  block's state gap) and are backlash unless they clearly fit like the listed ones, in which case the group keeps its
+  own call - the rule never makes a group regular (`mixed_group_state`; `ratio_listed`, `mixed_group`, `mixed_note`
+  in the group rows). Replayed on the Seitah block: all 8 groups (Z34, Z48, Z63, Z79, both eyes) become backlash.
+- **The state split never overwrites a camera**: the new regular camera of a split was always `<bin>_reg`, the name
+  the selection already gives the list's own regular bin, so the split replaced that camera's entry and database id
+  (7 cameras at Seitah Overlook, 2 Z79 cameras in the 0.93.1 Chal Rocks block). A taken name now gets
+  `<bin>_2_reg`, `<bin>_3_reg`, ... (still ending in `_reg`).
+- `ZCAM_RULES` 1: a new part of the run key of the Mastcam-Z blocks only, so every `_zcam` block aligns again and
+  the Navcam-only blocks keep their keys.
+
 ## 0.93.3 — 2026-10-22
 
 - **`open_in_colmap.bat` finds COLMAP again on the MPPP PC**: the 0.90 cleanup dropped the `D:\tools` folders from
