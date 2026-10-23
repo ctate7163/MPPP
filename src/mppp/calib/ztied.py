@@ -50,6 +50,7 @@ NG = len(GLOBAL_TERMS)
 # frame rotation or the Mastcam-Z rig.  The offset is observable through the exposures in which this eye is regular
 # and the other eye in the backlash state (the other eye and the rig fix the pose); with fewer it is held
 MIN_MIXED_EXPOSURES = 5
+LOW_LIST_CHECK = True                  # 0.93.7: a low-state camera enters only when its frames are on the shipped list
 REGULAR_RATIO_RANGE = (1.004, 1.016)   # 0.93.5: backlash / regular f of a fitted regular state (the states ~0.95 % apart)
 TIE_SIGMA_Z = {"f": 1e-3, "k": 1e-7, "p": 1e-8, "cy": 1e-3}       # px; unitless - the ties are effectively exact
 NAV_POINTS_PER_BLOCK = 8000
@@ -119,6 +120,16 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
     groups = zoom_groups(zoom)
     zunits: Dict[int, Dict[str, Any]] = {}
     split_out: List[str] = []
+    off_list: List[str] = []
+    # 0.93.7 (Christian, 23 Oct): a frame is in the low state only when it is on the shipped low-state list - a
+    # block's low-state camera whose frames are not all on it (the machine-made found list, read by the blocks before
+    # 0.93.6) is left out
+    from ..sfm.backlash import is_low_backlash, load_low_backlash
+    shipped = load_low_backlash(None)
+    by_cam: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for sc in scapes:
+        for r in sc.project.images:
+            by_cam.setdefault((sc.name, str(r.get("instrument"))), []).append(r)
     db = dict(proj.settings["database"]["cameras"])
     for old, new in units["passthrough_cameras"].items():
         z = idx["zcams"].get(int(old))
@@ -134,6 +145,11 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
             # frames under a low-state name (Seitah Overlook ZCAM08114)
             split_out.append(f"{z['key']}@{z['scape']}")
             continue
+        if LOW_LIST_CHECK and _state(spec, z["key"]) == "regular":
+            mem = by_cam.get((z["scape"], str(z["key"]))) or []
+            if not mem or not all(is_low_backlash(r, shipped) for r in mem):
+                off_list.append(f"{z['key']}@{z['scape']}")
+                continue
         name = f"{z['key']}@{z['scape']}"
         foc = spec.get("focus_count_median")
         e = sg["eyes"][g]
@@ -167,6 +183,10 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
     zcams = set(zunits)
     sg["mixed"] = mixed_exposures(proj.images, zunits)
     sg["split_cameras_left_out"] = split_out
+    sg["low_cameras_not_on_list"] = off_list
+    if off_list:
+        log.info("Mastcam-Z joint: %d low-state cameras with frames not on the shipped low-state list left out (%s)",
+                 len(off_list), ", ".join(off_list[:12]) + (" ..." if len(off_list) > 12 else ""))
     if split_out:
         log.info("Mastcam-Z joint: %d cameras split off by the blocks' focal fits left out (%s)", len(split_out),
                  ", ".join(split_out[:12]) + (" ..." if len(split_out) > 12 else ""))
@@ -581,6 +601,7 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     if start_from_blocks:
         res["start_model"] = model
     res["split_cameras_left_out"] = list(sg.get("split_cameras_left_out") or [])
+    res["low_cameras_not_on_list"] = list(sg.get("low_cameras_not_on_list") or [])
     res.update({"zoom": zoom, "blocks": sorted({u["scape"] for u in zunits.values()}), "residuals": stats,
                 "zcam": _zstats(rec, zunits), "rig": rig_result(proj, sg, zoom), "final_cost": float(ba["final_cost"]),
                 "iterations": ba["iterations"], "brief": ba["brief"], "seconds": time.time() - t,
@@ -797,6 +818,9 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    + ("" if "d_cx_regular" in e.get("held", []) else
                       f"; low-state principal point {f('d_cx_regular')}, {f('d_cy_regular')} px from the high "
                       f"state's ({e.get('mixed_exposures', 0)} exposures with the other eye in the high state)"))
+    if res.get("low_cameras_not_on_list"):
+        out.append(f"left out: {len(res['low_cameras_not_on_list'])} low-state cameras with frames not on the shipped "
+                   f"low-state list (the found list)")
     if res.get("split_cameras_left_out"):
         out.append(f"left out: {len(res['split_cameras_left_out'])} cameras the blocks split off by their focal fits "
                    f"(a frame is in the high state unless it is on the low-state list)")

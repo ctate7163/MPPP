@@ -311,6 +311,7 @@ def test_zcam_joint_gives_the_regular_state_its_own_principal_point(tmp_path, mo
     from mppp.calib import ztied as Z
     from scipy.spatial.transform import Rotation
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    monkeypatch.setattr(Z, "LOW_LIST_CHECK", False)          # synthetic low-state frames: not on the shipped list
     rng = np.random.default_rng(5)
     truth = _truth_model()
     reg = {"eye": "L", "F": 950.0, "offset": (6.0, -4.0)}
@@ -347,6 +348,12 @@ def test_zcam_joint_gives_the_regular_state_its_own_principal_point(tmp_path, mo
     _, pb, _ = calib.zcam_camera_at(cand, "ZL034", 950.0, "backlash")
     assert pr[2] - pb[2] == pytest.approx(6.0, abs=0.3) and pr[3] - pb[3] == pytest.approx(-4.0, abs=0.3)
     assert any("low-state principal point" in x for x in Z.describe(res))
+    # 0.93.7: with the shipped-list check the synthetic low-state cameras (not on the list) are left out
+    monkeypatch.setattr(Z, "LOW_LIST_CHECK", True)
+    rl, _ = run(truth)
+    assert rl["eyes"]["ZL034"]["regular_bins"] == 0 and rl["low_cameras_not_on_list"]
+    assert any("not on the shipped" in x for x in Z.describe(rl))
+    monkeypatch.setattr(Z, "LOW_LIST_CHECK", False)
     # the old form: the regular state shares the backlash principal point - the rig takes the offset up
     monkeypatch.setattr(Z, "MIN_MIXED_EXPOSURES", 10 ** 6)
     res0, rig_err0 = run(truth)

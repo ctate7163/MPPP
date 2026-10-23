@@ -2,6 +2,16 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.93.7 — 2026-10-23
+
+- **The Mastcam-Z joints take the low backlash state from the shipped low-state list only** (Christian, 23 Oct): a
+  joint does not judge states again - it takes each camera's state from its block - and the blocks run before
+  0.93.6 also put the found list's frames in low-state cameras. A low-state camera now enters a joint only when every
+  one of its frames is on the shipped list (`low_cameras_not_on_list` in the result and the report; `ztied.
+  LOW_LIST_CHECK`). With the split cameras left out (0.93.6), the 22-23 Oct blocks give the joints only listed
+  frames in the low state; every other frame is in the high state. Seitah Overlook: of its nine low-state cameras
+  only ZR034_F01296_reg (3 listed frames) enters.
+
 ## 0.93.6 — 2026-10-23
 
 - **A frame is in the high backlash state unless it is on the low-state list** (Christian, 23 Oct): the default
