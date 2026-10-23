@@ -17,6 +17,8 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **Seitah Overlook in `navcam_consensus`** (Christian): its Navcam block (`mars2020_sol_0113_seitah_overlook`) runs
+  with the other Navcam blocks and enters the Navcam joint.
 - **Belva Crater gets Mastcam-Z 110 mm** (`belva_crater` zcam [34, 110]; Christian): its zcam block (in
   zcam_consensus) aligns the 110 mm frames too, so the next 110 mm joint has a third block.
 - **`test_lightglue.bat` runs four variants per tiny block**: `sift`, `lightglue`, `lightglue_octaves`,
