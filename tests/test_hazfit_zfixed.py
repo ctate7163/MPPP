@@ -337,7 +337,7 @@ def test_zcam01023_01025_kept_and_lightglue_prior_pairs():
     assert sorted(m["sequence"] for m in kept) == ["ZCAM01023", "ZCAM01025"]
     import inspect
     from mppp import pipeline
-    assert 'mode == "lightglue" and big' in inspect.getsource(pipeline)
+    assert '("lightglue", "sift+lightglue") and big' in inspect.getsource(pipeline)
 
 
 def test_promote_waits_for_a_held_file(tmp_path, monkeypatch):
@@ -536,3 +536,38 @@ def test_0941_tiny_sites_and_joint_commands(tmp_path, monkeypatch):
     from mppp.cli import build_parser
     a = build_parser().parse_args(["calib", "zcam", "--zoom", "48", "--min-blocks", "1", "--promote-new-only"])
     assert a.min_blocks == 1 and a.promote_new_only
+
+
+def test_lightglue_ab_four_variants_and_the_joint_variant(tmp_path):
+    """0.94.4: the A/B runs four variants (their settings), reports them side by side with the Navcam-Mastcam-Z
+    tie points, and the tiny joint takes the variant with the most of them."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("lab", ROOT / "scripts" / "lightglue_ab.py")
+    lab = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lab)
+    assert list(lab.VARIANTS) == ["sift", "lightglue", "lightglue_octaves", "sift_lightglue"]
+    assert "MATCH_MODE=sift+lightglue" in lab.VARIANTS["sift_lightglue"]
+    assert "LIGHTGLUE_KEYPOINTS=octaves" in lab.VARIANTS["lightglue_octaves"]
+    nz = {"sift": 13512, "lightglue": 3786, "lightglue_octaves": 9000, "sift_lightglue": 15000}
+    work = tmp_path / "w"
+    for v, n in nz.items():
+        c = work / f"colmap_{v}"
+        (c / "health").mkdir(parents=True)
+        (c / "run_done.json").write_text(json.dumps({"images": 110, "registered_images": 106, "mppp": "0.94.4"}))
+        (c / "project.json").write_text(json.dumps({"settings": {
+            "matching": {"matcher": v, "lightglue": {"added_inliers": 99} if v == "sift_lightglue" else None},
+            "pose_guided": {"before": {"navcam_zcam_points": n - 1000}, "after": {"navcam_zcam_points": n},
+                            "new_matches": 5, "filtered": 6}}}))
+        (c / "health" / "health.json").write_text(json.dumps({"verdict": "warn", "checks": [
+            {"check": "points", "value": 1000.0, "status": "info", "note": f"{n} observations"},
+            {"check": "focal_change_pct", "value": 0.1, "status": "pass", "note": "FL"},
+            {"check": "focal_change_pct", "value": 0.2, "status": "pass", "note": "FR"}]}))
+    res = {"when": "now", "gpu": {}, "variants": {v: lab.summary(work, v) for v in nz}}
+    md = lab.report(work, res)
+    assert "| | SIFT | LightGlue | LightGlue, every octave | SIFT + LightGlue |" in md
+    assert "| Navcam-Mastcam-Z tie points | 13512 | 3786 | 9000 | 15000 |" in md
+    assert "| LightGlue inliers added to SIFT's | - | - | - | 99 |" in md
+    assert "| points | 1000 (info) | 1000 (info) | 1000 (info) | 1000 (info) |" in md      # lined up by check
+    assert "| focal_change_pct FL |" in md and "| focal_change_pct FR |" in md
+    assert lab.best_variant({"a": work}) == "sift_lightglue"
+    assert lab.best_variant({"a": work}, ["sift", "lightglue"]) == "sift"

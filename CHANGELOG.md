@@ -2,6 +2,28 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.94.4 — 2026-10-23
+
+- **Two new matchers for the LightGlue test** (Christian; the Chal Rocks tiny A/B: LightGlue had 3.6x fewer
+  Navcam - Mastcam-Z tie points than SIFT, 13,512 vs 3,786, and higher residuals, 0.35 vs 0.21 px median):
+  - **LightGlue on keypoints of every octave** (`LIGHTGLUE_KEYPOINTS=octaves`; `lightglue.select_keypoints`): the
+    8192 keypoints are an equal share of every octave of scale (small octaves keep all theirs), not the 8192 largest.
+    The largest-scale keypoints are the least precisely located, and a Navcam frame loses exactly the fine keypoints
+    that meet a Mastcam-Z frame of 3-10x finer ground resolution.
+  - **SIFT and LightGlue together** (`MATCH_MODE=sift+lightglue`): COLMAP's SIFT matcher as "exhaustive" (or the
+    prior pairs of a big block), then LightGlue over the same pairs in a copy of the database, verified there, its
+    inliers added to each pair's SIFT inliers (`matching.merge_inliers`; the SIFT match wins where both use a
+    keypoint; a pair SIFT did not verify gets LightGlue's geometry). Without LightGlue (or over its 2 h budget) the
+    SIFT matches stand, recorded as such.
+  - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
+    and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **`test_lightglue.bat` runs four variants per tiny block**: `sift`, `lightglue`, `lightglue_octaves`,
+  `sift_lightglue` (a variant already finished is not run again; `--rerun`, `--variants`), compared side by side
+  with the Navcam - Mastcam-Z tie points (before and after pose-guided matching), the LightGlue inliers added, the
+  time from the database to the export (the image processing and feature extraction are done once, by the first
+  variant), and the MPPP version and camera models of each run. The tiny joint uses the variant with the most
+  Navcam - Mastcam-Z tie points over the blocks (`--joint-variant`).
+
 ## 0.94.3 — 2026-10-23
 
 - **Pose-guided matching 3.5x faster on one thread, and memory-bounded** (Christian: run the blocks faster, test it

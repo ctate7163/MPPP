@@ -50,14 +50,41 @@ def keypoint_scale_ori(kp: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return np.ones(len(kp)), np.zeros(len(kp))
 
 
-def select_keypoints(kp: np.ndarray, max_keypoints: int) -> np.ndarray:
-    """Indices of the keypoints to match: all of them, or the ``max_keypoints`` largest-scale ones (sorted)."""
+KEYPOINT_SELECTIONS = ("largest", "octaves")
+
+
+def select_keypoints(kp: np.ndarray, max_keypoints: int, selection: str = "largest") -> np.ndarray:
+    """
+    Indices of the keypoints to match (sorted): all of them, or ``max_keypoints`` of them -
+
+    * ``"largest"``: the largest-scale ones (the default until 0.94.3);
+    * ``"octaves"`` (0.94.4): an equal share of every octave of scale (``floor(log2 scale)``), an octave with fewer
+      keypoints than its share giving the rest to the others, a spatially even (seeded random) subset within an
+      octave.  The fine scales stay: they are the precisely located keypoints, and the ones a Navcam frame needs to
+      meet a Mastcam-Z frame of 3-10x finer ground resolution (whose large-scale keypoints are those features).
+    """
     n = len(kp)
     if max_keypoints <= 0 or n <= max_keypoints:
         return np.arange(n)
     scale, _ = keypoint_scale_ori(kp)
-    keep = np.argsort(-scale, kind="stable")[:max_keypoints]
-    return np.sort(keep)
+    if selection == "largest":
+        return np.sort(np.argsort(-scale, kind="stable")[:max_keypoints])
+    if selection != "octaves":
+        raise ValueError(f"keypoint selection must be one of {KEYPOINT_SELECTIONS}")
+    octave = np.floor(np.log2(np.maximum(scale, 1e-6))).astype(int)
+    bins, counts = np.unique(octave, return_counts=True)
+    quota = dict.fromkeys(bins.tolist(), 0)
+    left = int(max_keypoints)
+    for k, (b, c) in enumerate(sorted(zip(bins.tolist(), counts.tolist()), key=lambda t: t[1])):
+        q = min(c, left // (len(bins) - k))                  # water-filling: small octaves keep all they have
+        quota[b] = q
+        left -= q
+    rng = np.random.default_rng(0)
+    keep = []
+    for b in bins.tolist():
+        idx = np.where(octave == b)[0]
+        keep.append(idx if quota[b] >= len(idx) else rng.choice(idx, quota[b], replace=False))
+    return np.sort(np.concatenate(keep))
 
 
 def _descriptors_float(desc: np.ndarray) -> np.ndarray:
@@ -93,14 +120,15 @@ def pick_device(device: Optional[str] = None) -> str:
 class _Features:
     """Per-image tensors for LightGlue, read from the database once."""
 
-    def __init__(self, db, image_id: int, width: int, height: int, max_keypoints: int, device: str):
+    def __init__(self, db, image_id: int, width: int, height: int, max_keypoints: int, device: str,
+                 selection: str = "largest"):
         import torch
         kp = np.asarray(db.read_keypoints(image_id), dtype=np.float32)
         desc = db.read_descriptors(image_id)
         desc = np.asarray(getattr(desc, "data", desc))                 # pycolmap FeatureDescriptors -> its array
         if len(kp) != len(desc):
             raise ValueError(f"image {image_id}: {len(kp)} keypoints but {len(desc)} descriptors")
-        self.index = select_keypoints(kp, max_keypoints)
+        self.index = select_keypoints(kp, max_keypoints, selection)
         kp = kp[self.index]
         scale, ori = keypoint_scale_ori(kp)
         self.n = len(kp)
@@ -119,7 +147,7 @@ def _image_sizes(db) -> Dict[int, Tuple[int, int]]:
 def match_pairs_lightglue(project: SfmProject, pairs: Optional[Sequence[Tuple[str, str]]] = None,
                           max_keypoints: int = DEFAULT_MAX_KEYPOINTS, filter_threshold: float = DEFAULT_FILTER_THRESHOLD,
                           device: Optional[str] = None, cache_images: int = 64,
-                          max_hours: Optional[float] = None) -> Dict[str, Any]:
+                          max_hours: Optional[float] = None, keypoint_selection: str = "largest") -> Dict[str, Any]:
     """Match the pairs (image names; all pairs when None) with LightGlue and write the matches into the database.
     Returns {"pairs": n, "matches": total, "pairs_file": path} - the pairs file is what the verification reads.
     ``max_hours``: after :data:`PROBE_PAIRS` pairs the block's time is projected; beyond the budget
@@ -143,7 +171,7 @@ def match_pairs_lightglue(project: SfmProject, pairs: Optional[Sequence[Tuple[st
             f = feats.get(iid)
             if f is None:
                 w, h = sizes[iid]
-                f = feats[iid] = _Features(db, iid, w, h, max_keypoints, device)
+                f = feats[iid] = _Features(db, iid, w, h, max_keypoints, device, keypoint_selection)
                 order.append(iid)
                 if len(order) > cache_images:                       # bounded memory on long pair lists
                     feats.pop(order.pop(0), None)
@@ -186,8 +214,8 @@ def match_pairs_lightglue(project: SfmProject, pairs: Optional[Sequence[Tuple[st
         pairs_file.write_text("".join(lines), encoding="utf-8")
     finally:
         db.close()
-    log.info("LightGlue: %d pairs matched, %d matches (%s, <= %d keypoints per image)", len(lines), total, device,
-             max_keypoints)
+    log.info("LightGlue: %d pairs matched, %d matches (%s, <= %d keypoints per image, %s)", len(lines), total, device,
+             max_keypoints, keypoint_selection)
     return {"pairs": len(lines), "matches": total, "pairs_file": str(pairs_file), "device": device}
 
 

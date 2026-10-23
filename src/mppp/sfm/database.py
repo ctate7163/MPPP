@@ -381,7 +381,8 @@ def build_database(project: SfmProject, features_db: Optional[PathLike] = None,
 # --- match reuse -------------------------------------------------------------------------------------------
 MAX_NUM_IMAGES = 2147483647                                   # COLMAP kMaxNumImages (pair_id = id1 * this + id2)
 MATCH_KEYS = ("mode", "max_ratio", "max_distance", "cross_check", "guided_matching", "max_error_px",
-              "min_num_inliers", "max_num_matches", "max_keypoints", "filter_threshold", "matcher")
+              "min_num_inliers", "max_num_matches", "max_keypoints", "filter_threshold", "matcher",
+              "keypoint_selection")                  # 0.94.4: only when not "largest" (old records stay valid)
 
 
 def matches_record_path(database: PathLike) -> Path:

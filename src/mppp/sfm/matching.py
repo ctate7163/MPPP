@@ -14,6 +14,8 @@ is 1.5 px at quarter resolution, 3 px at half and 6 px at full resolution.
 from __future__ import annotations
 
 from pathlib import Path
+
+import numpy as np
 from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
 from .project import SfmProject
@@ -29,7 +31,8 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
           min_num_inliers: int = 15, num_threads: int = -1, guided_matching: bool = False, block_size: int = 100,
           python: Optional[PathLike] = None, max_ratio: float = 0.8, max_distance: float = 0.7,
           cross_check: bool = True, max_keypoints: int = 8192, filter_threshold: float = 0.1,
-          device: Optional[str] = None, max_hours: float = 2.0) -> Dict[str, Any]:
+          device: Optional[str] = None, max_hours: float = 2.0,
+          keypoint_selection: str = "largest") -> Dict[str, Any]:
     """Match and verify; results go into ``project.database``.  Returns a summary.
     ``python``: run in another Python environment, e.g. a conda one with a CUDA
     pycolmap (v0p11, see :mod:`mppp.sfm.gpu`).  ``max_ratio``, ``max_distance``,
@@ -41,17 +44,39 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     :mod:`mppp.sfm.lightglue`); ``max_hours``: the LightGlue time budget per block, projected from the first pairs
     - beyond it, or without kornia/torch, the block is matched with COLMAP's SIFT matcher and the record says so
     (``matcher`` against ``matcher_requested``), so that a later run with LightGlue available does not reuse
-    SIFT matches as LightGlue ones."""
-    if mode not in ("lightglue", "exhaustive", "prior_pairs"):
-        raise ValueError("mode must be 'lightglue', 'exhaustive' or 'prior_pairs'")
+    SIFT matches as LightGlue ones.
+
+    ``mode="sift+lightglue"`` (0.94.4): COLMAP's SIFT matcher (every pair, or ``pairs``) as "exhaustive", then
+    LightGlue over the same pairs, verified on their own, its inliers added to each pair's SIFT inliers (the SIFT
+    ones win where both use a keypoint) - SIFT's many precise matches (above all Navcam - Mastcam-Z) and LightGlue's
+    wide-baseline (cross-station) ones.  ``keypoint_selection``: which ``max_keypoints`` keypoints LightGlue sees
+    ("largest" scales, or "octaves": a share of every octave; :func:`mppp.sfm.lightglue.select_keypoints`)."""
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {MODES}")
+    sel = {"keypoint_selection": keypoint_selection} if keypoint_selection != "largest" else {}
+    if mode == "sift+lightglue":
+        sift_mode = "exhaustive" if pairs is None else "prior_pairs"
+        sift = match(project, mode=sift_mode, pairs=pairs, use_gpu=use_gpu, max_num_matches=max_num_matches,
+                     max_error_px=max_error_px, min_num_inliers=min_num_inliers, num_threads=num_threads,
+                     guided_matching=guided_matching, block_size=block_size, python=python, max_ratio=max_ratio,
+                     max_distance=max_distance, cross_check=cross_check)
+        add = add_lightglue(project, pairs, max_keypoints, filter_threshold, device, max_error_px, min_num_inliers,
+                            max_hours, keypoint_selection)
+        return _finish(project, mode, max_error_px, min_num_inliers, max_num_matches, guided_matching, max_ratio,
+                       max_distance, cross_check,
+                       extra={"sift": {k: sift.get(k) for k in ("matcher", "verified_pairs", "inlier_matches")},
+                              "lightglue": add, "max_keypoints": int(max_keypoints),
+                              "filter_threshold": float(filter_threshold), "matcher_requested": "sift+lightglue",
+                              "matcher": "sift+lightglue" if add else "sift", **sel})
     if mode == "lightglue":
         lg = _try_lightglue(project, pairs, max_keypoints, filter_threshold, device, max_error_px, min_num_inliers,
-                            max_hours)
+                            max_hours, keypoint_selection)
         if lg is not None:
             return _finish(project, mode, max_error_px, min_num_inliers, max_num_matches, guided_matching, max_ratio,
                            max_distance, cross_check, extra={"lightglue": lg, "max_keypoints": int(max_keypoints),
                                                              "filter_threshold": float(filter_threshold),
-                                                             "matcher_requested": "lightglue", "matcher": "lightglue"})
+                                                             "matcher_requested": "lightglue", "matcher": "lightglue",
+                                                             **sel})
         # LightGlue unavailable or too slow here: COLMAP's SIFT matcher of the same pairs, recorded as such
         requested, mode = "lightglue", ("exhaustive" if pairs is None else "prior_pairs")
     else:
@@ -123,8 +148,90 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
                    max_distance, cross_check, extra={"matcher_requested": requested, "matcher": "sift"})
 
 
+MODES = ("lightglue", "exhaustive", "prior_pairs", "sift+lightglue")
+
+
+def add_lightglue(project: SfmProject, pairs, max_keypoints: int, filter_threshold: float, device: Optional[str],
+                  max_error_px: float, min_num_inliers: int, max_hours: float,
+                  keypoint_selection: str = "largest") -> Optional[Dict[str, Any]]:
+    """LightGlue's verified inliers added to the SIFT inliers already in ``project.database`` (0.94.4): LightGlue
+    matches and verifies in a copy of the database without matches, then :func:`merge_inliers`.  None (the SIFT
+    matches alone, logged) when LightGlue cannot run."""
+    import shutil
+    import pycolmap
+    from types import SimpleNamespace
+    tmp = Path(project.root) / "database_lightglue_add.db"
+    if tmp.exists():
+        tmp.unlink()
+    shutil.copyfile(project.database, tmp)
+    try:
+        d = pycolmap.Database.open(str(tmp))
+        try:
+            d.clear_two_view_geometries()
+            d.clear_matches()
+        finally:
+            d.close()
+        lg = _try_lightglue(SimpleNamespace(root=Path(project.root), database=tmp), pairs, max_keypoints,
+                            filter_threshold, device, max_error_px, min_num_inliers, max_hours, keypoint_selection)
+        if lg is None:
+            log.warning("sift+lightglue: the SIFT matches alone")
+            return None
+        lg = dict(lg, **merge_inliers(tmp, project.database))
+        log.info("sift+lightglue: %d LightGlue inliers added (%d pairs, %d of them new), %d left out for keypoints "
+                 "the SIFT inliers already use", lg["added_inliers"], lg["pairs_added_to"], lg["new_pairs"],
+                 lg["conflicts"])
+        return lg
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def merge_inliers(src: PathLike, dst: PathLike) -> Dict[str, int]:
+    """The two-view inliers of database ``src`` added to those of ``dst`` pair by pair: a match whose keypoint (in
+    either image) an inlier of ``dst`` already uses is left out; a pair ``dst`` lacks gets ``src``'s geometry."""
+    import pycolmap
+    s = pycolmap.Database.open(str(src))
+    try:
+        ids, geoms = s.read_two_view_geometries()
+        found = [(pycolmap.pair_id_to_image_pair(int(pid)), g) for pid, g in zip(ids, geoms)]
+    finally:
+        s.close()
+    d = pycolmap.Database.open(str(dst))
+    added = pairs = new = conflicts = 0
+    try:
+        for (i1, i2), g in found:
+            i1, i2 = int(i1), int(i2)
+            m = np.asarray(g.inlier_matches, np.int64).reshape(-1, 2)
+            if not len(m):
+                continue
+            if d.exists_two_view_geometry(i1, i2):
+                tvg = d.read_two_view_geometry(i1, i2)
+                old = np.asarray(tvg.inlier_matches, np.int64).reshape(-1, 2)
+                used1, used2 = set(old[:, 0].tolist()), set(old[:, 1].tolist())
+                ok = np.array([a not in used1 and b not in used2 for a, b in m.tolist()], bool)
+                if not ok.any():
+                    conflicts += len(m)
+                    continue
+                d.delete_two_view_geometry(i1, i2)
+                tvg.inlier_matches = np.vstack([old, m[ok]]).astype(np.uint32)
+                d.write_two_view_geometry(i1, i2, tvg)
+                conflicts += int((~ok).sum())
+                added += int(ok.sum())
+            else:
+                d.write_two_view_geometry(i1, i2, g)
+                added += len(m)
+                new += 1
+            pairs += 1
+    finally:
+        d.close()
+    return {"added_inliers": added, "pairs_added_to": pairs, "new_pairs": new, "conflicts": conflicts}
+
+
 def _try_lightglue(project: SfmProject, pairs, max_keypoints: int, filter_threshold: float, device: Optional[str],
-                   max_error_px: float, min_num_inliers: int, max_hours: float) -> Optional[Dict[str, Any]]:
+                   max_error_px: float, min_num_inliers: int, max_hours: float,
+                   keypoint_selection: str = "largest") -> Optional[Dict[str, Any]]:
     """LightGlue matching of the pairs, or None (with a logged reason) when it cannot or should not run here."""
     try:
         import kornia  # noqa: F401
@@ -139,7 +246,8 @@ def _try_lightglue(project: SfmProject, pairs, max_keypoints: int, filter_thresh
     try:
         with gpu_lock(f"LightGlue ({project.root.parent.name})", enabled=dev.startswith("cuda")):
             lg = LG.match_pairs_lightglue(project, pair_names, max_keypoints=max_keypoints,
-                                          filter_threshold=filter_threshold, device=dev, max_hours=max_hours)
+                                          filter_threshold=filter_threshold, device=dev, max_hours=max_hours,
+                                          keypoint_selection=keypoint_selection)
     except LG.TooSlow as e:
         log.warning("%s; COLMAP's SIFT matcher instead", e)
         return None
@@ -180,7 +288,7 @@ def _finish(project: SfmProject, mode: str, max_error_px: float, min_num_inliers
                                                      max_ratio=max_ratio, max_distance=max_distance,
                                                      cross_check=cross_check,
                                                      **{k: v for k, v in (extra or {}).items()
-                                                        if k in ("max_keypoints", "filter_threshold", "matcher")}))
+                                                        if k in ("max_keypoints", "filter_threshold", "matcher", "keypoint_selection")}))
     except (OSError, KeyError, ValueError) as e:        # a missing record only means no reuse next time
         log.warning("matches record not written: %s", e)
     return summary
@@ -221,5 +329,7 @@ def match_settings(mode: str = "exhaustive", **kwargs: Any) -> Dict[str, Any]:
         if k == "mode":
             continue
         v = kwargs.get(k, sig[k].default if k in sig else None)
+        if k == "keypoint_selection" and v in (None, "largest"):
+            continue                                 # 0.94.4: the default is not recorded (old records match)
         out[k] = float(v) if isinstance(v, float) or k in ("max_ratio", "max_distance", "max_error_px") else v
     return out

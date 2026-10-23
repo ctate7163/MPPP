@@ -1,7 +1,8 @@
 """
-LightGlue A/B test (0.93.9, Christian 23 Oct 2026): one block aligned twice from the same processed images - COLMAP's
-SIFT matcher and SIFT + LightGlue - into ``<WORK>/colmap_sift`` and ``<WORK>/colmap_lightglue``, then the two
-compared: the matcher actually used, pairs and inlier matches, registered images, tie points, cross-station points,
+LightGlue A/B test (0.93.9, Christian 23 Oct 2026): one block aligned from the same processed images with each
+matcher - COLMAP's SIFT (``colmap_sift``), SIFT + LightGlue on the largest-scale keypoints (``colmap_lightglue``),
+LightGlue on keypoints of every octave (``colmap_lightglue_octaves``, 0.94.4) and SIFT and LightGlue together
+(``colmap_sift_lightglue``, 0.94.4) - a variant already finished is not run again (``--rerun``), then compared: the matcher actually used, pairs and inlier matches, registered images, tie points, cross-station points,
 residuals, every health check, and the time of the matching and of the whole alignment.
 
     python scripts/lightglue_ab.py                      (test_lightglue.bat: Chal Rocks tiny, sols 91-98, and Seitah Overlook tiny, 116-121; then the tiny joint)
@@ -27,7 +28,13 @@ from typing import Any, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-VARIANTS = {"sift": "exhaustive", "lightglue": "lightglue"}
+# the variants: their settings (0.94.4: LightGlue on keypoints of every octave, and SIFT + LightGlue together)
+VARIANTS = {"sift": ["MATCH_MODE=exhaustive"],
+            "lightglue": ["MATCH_MODE=lightglue"],
+            "lightglue_octaves": ["MATCH_MODE=lightglue", "LIGHTGLUE_KEYPOINTS=octaves"],
+            "sift_lightglue": ["MATCH_MODE=sift+lightglue", "LIGHTGLUE_KEYPOINTS=octaves"]}
+LABELS = {"sift": "SIFT", "lightglue": "LightGlue", "lightglue_octaves": "LightGlue, every octave",
+          "sift_lightglue": "SIFT + LightGlue"}
 
 
 def gpu_check() -> Dict[str, Any]:
@@ -88,7 +95,7 @@ def run_variant(site: str, root: str, zcam: bool, variant: str, extra) -> Dict[s
     table = load_site_table()
     work = work_folder(Path(root), site, zcam, table["sites"][site]["sols"])
     cmd = [sys.executable, "-m", "mppp", "run", site, "--root", root, "--variant", variant,
-           "--set", f"MATCH_MODE={VARIANTS[variant]}", *extra]
+           *[x for v in VARIANTS[variant] for x in ("--set", v)], *extra]
     if zcam:
         cmd.insert(5, "--zcam")
     print(f"\n{datetime.datetime.now():%H:%M:%S}  {variant}: {' '.join(cmd)}", flush=True)
@@ -110,7 +117,10 @@ def summary(work: Path, variant: str, run: Optional[Dict[str, Any]] = None) -> D
     if pj.is_file():
         st = (json.loads(pj.read_text(encoding="utf-8")).get("settings") or {})
         out["matching"] = st.get("matching") or {}
-        out["pose_guided"] = {k: v for k, v in (st.get("pose_guided") or {}).items() if not isinstance(v, (list, dict))}
+        pg = st.get("pose_guided") or {}
+        out["pose_guided"] = {k: v for k, v in pg.items() if not isinstance(v, (list, dict))}
+        out["navcam_zcam_points"] = {"before": (pg.get("before") or {}).get("navcam_zcam_points"),
+                                     "after": (pg.get("after") or {}).get("navcam_zcam_points")}
     hj = col / "health" / "health.json"
     if hj.is_file():
         h = json.loads(hj.read_text(encoding="utf-8"))
@@ -148,16 +158,17 @@ QUALITY = (("points", "3-D tie points"), ("mean_track_length", "observations per
            ("station_shift_median_m", "station shift from the prior (m)"), ("attitude_residual_p95_deg", "attitude residual p95 (deg)"))
 
 
-def quality_rows(a: Dict[str, Any], b: Dict[str, Any]) -> List[str]:
-    """The tie-point and alignment-quality rows of the comparison."""
-    ca, cb = a.get("checks") or {}, b.get("checks") or {}
-    rows = []
+def quality_rows(vs: List[Dict[str, Any]]) -> List[str]:
+    """The tie-point and alignment-quality rows of the comparison, one column per variant."""
+    def row(label, vals):
+        return f"| {label} | " + " | ".join(_f(v) for v in vals) + " |"
+    rows = [row("Navcam-Mastcam-Z tie points", [(v.get("navcam_zcam_points") or {}).get("after") for v in vs]),
+            row("... before pose-guided matching", [(v.get("navcam_zcam_points") or {}).get("before") for v in vs])]
     for k, label in QUALITY:
-        if k in ca or k in cb:
-            rows.append(f"| {label} | {_f((ca.get(k) or {}).get('value'))} | {_f((cb.get(k) or {}).get('value'))} |")
-    pa, pb = a.get("pose_guided") or {}, b.get("pose_guided") or {}
-    rows.append(f"| pose-guided matches added | {_f(pa.get('new_matches'))} | {_f(pb.get('new_matches'))} |")
-    rows.append(f"| observations filtered after it | {_f(pa.get('filtered'))} | {_f(pb.get('filtered'))} |")
+        if any(k in (v.get("checks") or {}) for v in vs):
+            rows.append(row(label, [((v.get("checks") or {}).get(k) or {}).get("value") for v in vs]))
+    rows.append(row("pose-guided matches added", [(v.get("pose_guided") or {}).get("new_matches") for v in vs]))
+    rows.append(row("observations filtered after it", [(v.get("pose_guided") or {}).get("filtered") for v in vs]))
     return rows
 
 
@@ -170,39 +181,52 @@ def _f(v) -> str:
 
 
 def report(work: Path, res: Dict[str, Any]) -> str:
-    a, b = res["variants"]["sift"], res["variants"]["lightglue"]
-    ma, mb = a.get("matching") or {}, b.get("matching") or {}
-    ra, rb = a.get("run_done") or {}, b.get("run_done") or {}
+    names = [v for v in VARIANTS if v in res["variants"]]
+    vs = [res["variants"][v] for v in names]
+    head = "| | " + " | ".join(LABELS.get(v, v) for v in names) + " |"
+    sep = "|---|" + "---|" * len(names)
+
+    def row(label, f):
+        return f"| {label} | " + " | ".join(f(v) for v in vs) + " |"
+    m = lambda v: v.get("matching") or {}                      # noqa: E731
+    r = lambda v: v.get("run_done") or {}                      # noqa: E731
     lines = [f"# LightGlue A/B: {work.name} ({res['when']})", "",
-             f"GPU check: {json.dumps(res.get('gpu'))}", "",
-             "| | SIFT (COLMAP) | SIFT + LightGlue |", "|---|---|---|",
-             f"| matcher that ran | {ma.get('matcher', ma.get('mode'))} | {mb.get('matcher', mb.get('mode'))} |",
-             f"| matched / verified pairs | {_f(ma.get('matched_pairs'))} / {_f(ma.get('verified_pairs'))} | "
-             f"{_f(mb.get('matched_pairs'))} / {_f(mb.get('verified_pairs'))} |",
-             f"| inlier matches | {_f(ma.get('inlier_matches'))} | {_f(mb.get('inlier_matches'))} |",
-             f"| matching time (min) | {_f((a.get('matching_seconds') or 0) / 60 or None)} | "
-             f"{_f((b.get('matching_seconds') or 0) / 60 or None)} |",
-             f"| matching + adjustment, database to export (min) | "
-             f"{_f((a.get('after_features_seconds') or 0) / 60 or None)} | "
-             f"{_f((b.get('after_features_seconds') or 0) / 60 or None)} |",
-             f"| whole run (h; the second reuses the first's processed images and features) | "
-             f"{_f((a.get('alignment_seconds') or 0) / 3600 or None)} | "
-             f"{_f((b.get('alignment_seconds') or 0) / 3600 or None)} |",
-             f"| registered / images | {_f(ra.get('registered_images'))} / {_f(ra.get('images'))} | "
-             f"{_f(rb.get('registered_images'))} / {_f(rb.get('images'))} |",
-             f"| residual rms (native px) | {_f(ra.get('residual_rms_native_px'))} | {_f(rb.get('residual_rms_native_px'))} |",
-             f"| health | {a.get('verdict')} | {b.get('verdict')} |", "",
-             "## Tie points and alignment quality", "", "| | SIFT | LightGlue |", "|---|---|---|",
-             *quality_rows(a, b), "",
-             "## Every health check", "", "| check | SIFT | LightGlue |", "|---|---|---|"]
-    keys = list(dict.fromkeys(list((a.get("checks") or {})) + list((b.get("checks") or {}))))
+             f"GPU check: {json.dumps(res.get('gpu'))}", "", head, sep,
+             row("matcher that ran", lambda v: str(m(v).get("matcher", m(v).get("mode", "-")))),
+             row("matched / verified pairs", lambda v: f"{_f(m(v).get('matched_pairs'))} / {_f(m(v).get('verified_pairs'))}"),
+             row("inlier matches", lambda v: _f(m(v).get("inlier_matches"))),
+             row("LightGlue inliers added to SIFT's", lambda v: _f((m(v).get("lightglue") or {}).get("added_inliers"))),
+             row("matching time (min)", lambda v: _f((v.get("matching_seconds") or 0) / 60 or None)),
+             row("matching + adjustment, database to export (min)",
+                 lambda v: _f((v.get("after_features_seconds") or 0) / 60 or None)),
+             row("whole run (h; a later variant reuses the processed images and features)",
+                 lambda v: _f((v.get("alignment_seconds") or 0) / 3600 or None)),
+             row("registered / images", lambda v: f"{_f(r(v).get('registered_images'))} / {_f(r(v).get('images'))}"),
+             row("residual rms (native px)", lambda v: _f(r(v).get("residual_rms_native_px"))),
+             row("health", lambda v: str(v.get("verdict"))),
+             row("MPPP / camera models", lambda v: f"{r(v).get('mppp', '-')} / "
+                 f"{(r(v).get('camera_models') or {}).get('fingerprint', '-')}"), "",
+             "## Tie points and alignment quality", "", head, sep, *quality_rows(vs), "",
+             "## Every health check", "", head, sep]
+    keys = list(dict.fromkeys(k for v in vs for k in (v.get("checks") or {})))
     for k in keys:
-        ca, cb = (a.get("checks") or {}).get(k) or {}, (b.get("checks") or {}).get(k) or {}
-        lines.append(f"| {k.replace('|', ' ')} | {_f(ca.get('value'))} ({ca.get('status', '-')}) | "
-                     f"{_f(cb.get('value'))} ({cb.get('status', '-')}) |")
-    lines += ["", "What to look at: cross_station_fraction (more points seen from more than one station), the "
-              "registered images, the residuals (LightGlue's extra matches should not raise them) and the time."]
+        lines.append(f"| {k.replace('|', ' ')} | " + " | ".join(
+            f"{_f(((v.get('checks') or {}).get(k) or {}).get('value'))} "
+            f"({((v.get('checks') or {}).get(k) or {}).get('status', '-')})" for v in vs) + " |")
+    lines += ["", "What to look at: the Navcam-Mastcam-Z tie points (what the Mastcam-Z joints fit), the points tying "
+              "different stations, the residuals, the Mastcam-Z points off the terrain, and the time."]
     return "\n".join(lines) + "\n"
+
+
+def best_variant(works: Dict[str, Path], names=None) -> Optional[str]:
+    """The finished variant with the most Navcam-Mastcam-Z tie points over the blocks (what the joints fit)."""
+    score: Dict[str, int] = {}
+    for w in works.values():
+        for v in (names or VARIANTS):
+            s = summary(w, v)
+            if "run_done" in s:
+                score[v] = score.get(v, 0) + int((s.get("navcam_zcam_points") or {}).get("after") or 0)
+    return max(score, key=score.get) if score else None
 
 
 TINY_SITES = ("chal_rocks_tiny", "seitah_overlook_tiny")
@@ -221,10 +245,14 @@ def ab_site(a, site: str) -> Path:
         res["runs"] = (json.loads(prev.read_text(encoding="utf-8")).get("runs") or {})
     extra = [x for s in a.set for x in ("--set", s)]
     if not a.compare_only:
-        for v in ([a.only] if a.only else list(VARIANTS)):
+        for v in a.variants:
+            if (work / f"colmap_{v}" / "run_done.json").is_file() and not a.rerun:
+                print(f"{v}: finished already ({work / f'colmap_{v}'}); --rerun runs it again", flush=True)
+                continue
             res["runs"][v] = run_variant(site, a.root, a.zcam, v, extra)
     for v in VARIANTS:
-        res["variants"][v] = summary(work, v, res["runs"].get(v))
+        if v in a.variants or (work / f"colmap_{v}" / "run_done.json").is_file():
+            res["variants"][v] = summary(work, v, res["runs"].get(v))
     work.mkdir(parents=True, exist_ok=True)
     (work / "lightglue_ab.json").write_text(json.dumps(res, indent=1, default=str), encoding="utf-8")
     md = report(work, res)
@@ -274,13 +302,21 @@ def main(argv=None) -> int:
     ap.add_argument("--navcam-only", dest="zcam", action="store_false")
     ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES") or "D:\\scapes")
     ap.add_argument("--compare-only", action="store_true")
+    ap.add_argument("--variants", nargs="+", choices=list(VARIANTS), default=list(VARIANTS),
+                    help="the variants (default all four: sift, lightglue, lightglue_octaves, sift_lightglue)")
     ap.add_argument("--only", choices=list(VARIANTS), default=None, help="run one variant only")
+    ap.add_argument("--rerun", action="store_true", help="run variants again that have finished")
+    ap.add_argument("--joint-variant", default="auto",
+                    help="the alignments the tiny joint uses (default auto: the variant with the most "
+                         "Navcam-Mastcam-Z tie points over the blocks)")
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="more settings for both")
     ap.add_argument("--no-joint", dest="joint", action="store_false",
                     help="skip the tiny joint (the Hazcam fit and the Mastcam-Z joints over the sites' blocks)")
     ap.add_argument("--no-promote", dest="promote", action="store_false", help="the tiny joint promotes nothing")
     ap.add_argument("--joint-only", action="store_true", help="only the tiny joint (the alignments are done)")
     a = ap.parse_args(argv)
+    if a.only:
+        a.variants = [a.only]
     a.gpu = gpu_check()
     print("GPU check:", json.dumps(a.gpu), flush=True)
     from mppp.waypoints.sites import load_site_table, work_folder
@@ -292,7 +328,11 @@ def main(argv=None) -> int:
         else:
             works[site] = ab_site(a, site)
     if a.joint and a.zcam:
-        tiny_joint(a, works)
+        jv = best_variant(works) if a.joint_variant == "auto" else a.joint_variant
+        print(f"\ntiny joint over the {jv} alignments" + (" (the most Navcam-Mastcam-Z tie points)"
+                                                           if a.joint_variant == "auto" else ""), flush=True)
+        if jv:
+            tiny_joint(a, works, jv)
     return 0
 
 

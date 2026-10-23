@@ -164,12 +164,13 @@ class Settings:
     max_num_features: int = 32768                 # SIFT features per image
     sift: Dict[str, Any] = field(default_factory=lambda: dict(domain_size_pooling=False, estimate_affine_shape=False,
                                                               num_octaves=None, first_octave=-1))   # num_octaves None: 6 with Mastcam-Z, else 4
-    match_mode: str = "lightglue"                 # the matcher (0.93.9, Christian 23 Oct: LightGlue on): "lightglue" (SIFT + LightGlue on the GPU; COLMAP's SIFT matcher when torch / kornia are missing or it would take over 2 h), "exhaustive" (COLMAP's SIFT matcher) or "prior_pairs" (quick / CPU); over max_exhaustive_images images the prior-overlap pairs
+    match_mode: str = "lightglue"                 # the matcher (0.93.9, Christian 23 Oct: LightGlue on): "lightglue" (SIFT + LightGlue on the GPU; COLMAP's SIFT matcher when torch / kornia are missing or it would take over 2 h), "exhaustive" (COLMAP's SIFT matcher), "sift+lightglue" (0.94.4: both, LightGlue's inliers added to SIFT's) or "prior_pairs" (quick / CPU); over max_exhaustive_images images the prior-overlap pairs
     max_exhaustive_images: int = 300              # 21-22 Oct: above this many images "exhaustive" matches the prior-overlap pairs instead (Issole Z34: 2713 images, 3.7 M pairs, > 9 h; 300 from 22 Oct, Christian); 0 = never (not in the run key)
     exclude_list: bool = True                     # 22 Oct: leave out the images of mppp/data/exclude_images.txt (Mastcam-Z movies and other observations unfit for photogrammetry); False: keep them (not in the run key)
     match: Dict[str, Any] = field(default_factory=lambda: dict(max_ratio=0.9, max_distance=1.0, cross_check=True,
                                                                guided_matching=False, max_error_px=6.0,
                                                                max_keypoints=8192, filter_threshold=0.1))   # matching options (the last two: LightGlue)
+    lightglue_keypoints: str = "largest"          # 0.94.4: which max_keypoints keypoints LightGlue sees: "largest" scales, or "octaves" (a share of every octave; in the run key only when not "largest")
     match_block_size: int = 100                   # images per exhaustive-matching block
 
     # --- reconstruction ------------------------------------------------------------------------------------------
@@ -218,6 +219,8 @@ class Settings:
         if not d.get("hazcams"):
             for k in HAZCAM_FIELDS:
                 d.pop(k, None)
+        if d.get("lightglue_keypoints") in (None, "largest"):
+            d.pop("lightglue_keypoints", None)       # 0.94.4: the keys of every run before it stay what they were
         return d
 
 
@@ -936,7 +939,9 @@ def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] =
         return out
     mode = effective_match_mode(s, len(proj.images))
     db = build_database(proj, reuse_matches_from=list(reuse_from),
-                        matching=match_settings(mode, **s.match) if s.reuse_matches else None)
+                        matching=match_settings(mode, **s.match, **({"keypoint_selection": str(s.lightglue_keypoints)}
+                                                                    if s.lightglue_keypoints not in (None, "largest")
+                                                                    else {})) if s.reuse_matches else None)
     if db.get("reused_matches"):
         log.info("matches reused: %s %s", {k: db["reused_matches"][k] for k in ("matches", "geometries")},
                  [x.get("skipped") or "used" for x in db["reused_matches"]["sources"]])
@@ -946,7 +951,7 @@ def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] =
         return out
     pairs = None
     big = bool(s.max_exhaustive_images) and len(proj.images) > int(s.max_exhaustive_images)
-    if mode == "prior_pairs" or (mode == "lightglue" and big):
+    if mode == "prior_pairs" or (mode in ("lightglue", "sift+lightglue") and big):
         # 0.93.8: LightGlue on a big block gets the prior-overlap pairs too (it matched every pair: 564,453 at
         # Marble Mountain's 1063 images, over its time budget, and then fell back to COLMAP over every pair)
         pairs = prior_overlap_pairs(proj, min_overlap=0.05)
@@ -954,6 +959,8 @@ def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] =
         log.info("%d prior pairs%s", len(pairs), f" (instead of {n * (n - 1) // 2} exhaustive: {n} images > "
                  f"max_exhaustive_images {s.max_exhaustive_images})" if big else "")
     kw = dict(use_gpu=gpu, block_size=s.match_block_size, **s.match)
+    if s.lightglue_keypoints not in (None, "largest"):
+        kw["keypoint_selection"] = str(s.lightglue_keypoints)
     if mode != "lightglue":
         # COLMAP's matcher runs in a child process: the CUDA environment, else this python on the CPU - a COLMAP
         # abort (glog "Check failed") then fails the step with its message instead of killing the run unseen, and

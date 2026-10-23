@@ -1,5 +1,6 @@
 """SIFT + LightGlue matching (mppp.sfm.lightglue): keypoint geometry, keypoint selection, and the end-to-end match
 and verification on the two test products."""
+import json
 import shutil
 
 import numpy as np
@@ -81,5 +82,129 @@ def test_lightglue_matches_and_verifies(tmp_path, monkeypatch):
     try:
         raw = db.read_matches(src, dst)
         assert raw.shape[1] == 2 and len(raw) == m["lightglue"]["matches"]
+        db.clear_two_view_geometries()
+        db.clear_matches()
     finally:
         db.close()
+    # 0.94.4: SIFT and LightGlue together, for real (COLMAP's SIFT matcher in this python, LightGlue on the CPU,
+    # keypoints of every octave): the SIFT inliers stand, LightGlue's are added where they use other keypoints
+    m2 = match(proj, mode="sift+lightglue", max_keypoints=512, filter_threshold=0.1, device="cpu", max_error_px=6.0,
+               min_num_inliers=15, keypoint_selection="octaves", use_gpu=False)
+    assert m2["mode"] == "sift+lightglue" and m2["matcher"] == "sift+lightglue"
+    assert m2["sift"]["inlier_matches"] >= 15 and m2["lightglue"]["added_inliers"] >= 0
+    assert m2["inlier_matches"] == m2["sift"]["inlier_matches"] + m2["lightglue"]["added_inliers"]
+    assert m2["keypoint_selection"] == "octaves" and not (work / "colmap" / "database_lightglue_add.db").exists()
+    rec = json.loads((work / "colmap" / "database_matches.json").read_text())
+    assert rec["matching"]["mode"] == "sift+lightglue" and rec["matching"]["keypoint_selection"] == "octaves"
+
+
+def test_keypoints_of_every_octave():
+    """0.94.4: "octaves" keeps a share of every octave of scale (the fine ones too), "largest" the coarse ones."""
+    from mppp.sfm.lightglue import select_keypoints
+    rng = np.random.default_rng(0)
+    # most keypoints fine (as SIFT finds them): 20000 at scale ~1-2, 6000 at 2-4, 2000 at 4-8, 500 at 8-16, 50 above
+    scales = np.concatenate([rng.uniform(1, 2, 20000), rng.uniform(2, 4, 6000), rng.uniform(4, 8, 2000),
+                             rng.uniform(8, 16, 500), rng.uniform(16, 64, 50)])
+    kp = np.c_[rng.uniform(0, 5000, (len(scales), 2)), scales, np.zeros(len(scales))]
+    big = select_keypoints(kp, 8192, "largest")
+    oct_ = select_keypoints(kp, 8192, "octaves")
+    assert len(big) == len(oct_) == 8192 and np.all(np.diff(oct_) > 0)
+    assert scales[big].min() >= 2.0                                        # "largest" drops every fine keypoint
+    o = np.floor(np.log2(scales[oct_])).astype(int)
+    counts = {b: int((o == b).sum()) for b in np.unique(o)}
+    assert counts[0] >= 1800 and counts[1] >= 1800                        # the fine octaves are kept
+    assert counts[3] == 500 and sum(v for b, v in counts.items() if b >= 4) == 50     # small octaves keep all
+    assert np.array_equal(oct_, select_keypoints(kp, 8192, "octaves"))   # deterministic
+    assert len(select_keypoints(kp[:100], 8192, "octaves")) == 100
+    with pytest.raises(ValueError):
+        select_keypoints(kp, 10, "x")
+
+
+def _db_with_images(path, n=3):
+    import pycolmap
+    db = pycolmap.Database.open(str(path))
+    cid = db.write_camera(pycolmap.Camera(model="SIMPLE_PINHOLE", width=100, height=100, params=[100.0, 50, 50]))
+    ids = [db.write_image(pycolmap.Image(name=f"i{k}.png", camera_id=cid)) for k in range(n)]
+    for i in ids:
+        db.write_keypoints(i, np.random.default_rng(i).uniform(0, 100, (50, 2)).astype(np.float32))
+    db.close()
+    return ids
+
+
+def test_merge_inliers_adds_lightglue_to_sift(tmp_path):
+    """0.94.4: LightGlue's inliers join the SIFT inliers of a pair; a keypoint SIFT uses keeps its SIFT match;
+    a pair SIFT did not verify gets LightGlue's geometry."""
+    import pycolmap
+    from mppp.sfm.matching import merge_inliers
+    dst, src = tmp_path / "sift.db", tmp_path / "lg.db"
+    ids = _db_with_images(dst)
+    import shutil
+    shutil.copyfile(dst, src)
+
+    def tvg(m):
+        g = pycolmap.TwoViewGeometry()
+        g.config = 2
+        g.inlier_matches = np.asarray(m, np.uint32)
+        return g
+    d = pycolmap.Database.open(str(dst))
+    d.write_two_view_geometry(ids[0], ids[1], tvg([[0, 0], [1, 1], [2, 2]]))
+    d.close()
+    s = pycolmap.Database.open(str(src))
+    s.write_two_view_geometry(ids[0], ids[1], tvg([[0, 5], [3, 3], [4, 4], [6, 2]]))   # 2 conflicts, 2 new
+    s.write_two_view_geometry(ids[1], ids[2], tvg([[7, 7], [8, 8]]))                   # a pair SIFT lacks
+    s.close()
+    st = merge_inliers(src, dst)
+    assert st == {"added_inliers": 4, "pairs_added_to": 2, "new_pairs": 1, "conflicts": 2}
+    d = pycolmap.Database.open(str(dst))
+    try:
+        m01 = np.asarray(d.read_two_view_geometry(ids[0], ids[1]).inlier_matches).tolist()
+        m12 = np.asarray(d.read_two_view_geometry(ids[1], ids[2]).inlier_matches).tolist()
+    finally:
+        d.close()
+    assert m01 == [[0, 0], [1, 1], [2, 2], [3, 3], [4, 4]] and m12 == [[7, 7], [8, 8]]
+
+
+def test_sift_plus_lightglue_mode(monkeypatch, tmp_path):
+    """0.94.4: "sift+lightglue" runs the SIFT matcher, then LightGlue in a copy, merged; the record says so; without
+    LightGlue the SIFT matches stand alone."""
+    from types import SimpleNamespace
+    from mppp.sfm import matching as M
+    calls = []
+    real_match = M.match
+
+    def fake_match(project, mode="exhaustive", **kw):
+        if mode == "sift+lightglue":
+            return real_match(project, mode=mode, **kw)
+        calls.append(("sift", mode, kw.get("pairs")))
+        return {"matcher": "sift", "verified_pairs": 3, "inlier_matches": 30}
+    monkeypatch.setattr(M, "match", fake_match)
+    monkeypatch.setattr(M, "add_lightglue", lambda *a: calls.append(("lg", a[-1])) or
+                        {"added_inliers": 7, "pairs_added_to": 2, "new_pairs": 1, "conflicts": 0})
+    finished = {}
+    monkeypatch.setattr(M, "_finish", lambda project, mode, *a, extra=None: finished.update(mode=mode, **extra) or finished)
+    out = real_match(SimpleNamespace(), mode="sift+lightglue", keypoint_selection="octaves", python="py")
+    assert calls == [("sift", "exhaustive", None), ("lg", "octaves")]
+    assert out["mode"] == "sift+lightglue" and out["matcher"] == "sift+lightglue"
+    assert out["lightglue"]["added_inliers"] == 7 and out["sift"]["inlier_matches"] == 30
+    assert out["keypoint_selection"] == "octaves"
+    calls.clear()
+    finished.clear()
+    monkeypatch.setattr(M, "add_lightglue", lambda *a: None)
+    out = real_match(SimpleNamespace(), mode="sift+lightglue", pairs=[("a", "b", 1)])
+    assert calls == [("sift", "prior_pairs", [("a", "b", 1)])] and out["matcher"] == "sift"
+    assert "keypoint_selection" not in out
+    with pytest.raises(ValueError):
+        real_match(SimpleNamespace(), mode="nope")
+
+
+def test_keypoint_selection_keeps_old_run_keys_and_records():
+    """0.94.4: the default ("largest") is in neither the run key nor the matches record, so finished runs and
+    their matches stay valid; "octaves" is in both."""
+    from mppp.pipeline import Settings, run_key
+    from mppp.sfm.matching import match_settings
+    s = Settings()
+    assert s.lightglue_keypoints == "largest" and "lightglue_keypoints" not in s.key_dict()
+    o = s.replace(lightglue_keypoints="octaves")
+    assert o.key_dict()["lightglue_keypoints"] == "octaves" and run_key(o) != run_key(s)
+    assert "keypoint_selection" not in match_settings("lightglue", **s.match)
+    assert match_settings("lightglue", keypoint_selection="octaves", **s.match)["keypoint_selection"] == "octaves"
