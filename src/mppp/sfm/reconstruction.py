@@ -1388,7 +1388,7 @@ def hazcam_coverage(rec, project: SfmProject) -> Dict[str, Any]:
 # block; fewer, and it is held at its start (the label fit).  Rockytop (22 Oct, the example set): the front eyes had
 # 3000-5000 observations and refined f by 0.25 %; the rear eyes 60-300 (quarter-resolution frames looking at the
 # rover's shadow) and, refined, moved fx 2.3 % and fy 4.6 %, and one rear frame 1 m from its station
-HAZCAM_MIN_REFINE_OBSERVATIONS = 1000
+HAZCAM_MIN_REFINE_OBSERVATIONS = 500           # 0.93.5 (Christian, 22 Oct): was 1000
 
 
 def hazcam_weak_eyes(cov: Dict[str, Any], min_observations: int = HAZCAM_MIN_REFINE_OBSERVATIONS) -> List[str]:

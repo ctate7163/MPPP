@@ -49,7 +49,7 @@ RUN_SETTINGS = "run_settings.json"
 # Bumped when the alignment code changes its results under unchanged settings (a default changed in the code, not
 # in the settings), so that the batch scripts align every site again instead of skipping it as done.
 ZCAM_RULES = 1                   # 0.93.4: Mastcam-Z blocks only (a partly listed focus group, unique _reg names)
-ALIGN_RULES = 88                 # 0.93.3: outlier residual cut 2.0 px (87: 0.93 Hazcams in the blocks, Z fixed terms)
+ALIGN_RULES = 89                 # 0.93.5: a Hazcam eye refines from 500 tie-point observations (88: residual cut 2.0 px)
 # Likewise for the selection and processing rules (process_done.json).
 PROCESS_RULES = 5                # 0.93.3: a block's own stations on other sols are selected
 

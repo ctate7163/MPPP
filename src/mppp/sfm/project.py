@@ -466,7 +466,7 @@ class SfmProject:
         n_low = 0
         for r in images:
             if instruments.get(r["camera_group"]) == "Z":
-                r["focus_state"] = calib.focus_state(is_low_backlash(r, _lb))
+                r["focus_state"] = calib.focus_state(is_low_backlash(r, _lb), r.get("camera_group"))
                 n_low += r["focus_state"] == "regular"
 
         cameras = {}
@@ -571,6 +571,7 @@ class SfmProject:
                     "zcam_low_backlash_sha256": (low_backlash_fingerprint(zcam_low_backlash, zcam_low_backlash_found)
                                                  if any(f == "Z" for f in instruments.values()) else None),
                     "zcam_low_backlash": {"file": _lb["file"], "images": int(n_low),
+                                          "disabled": zcam_low_backlash is False,     # 0.93.5: no list at all
                                           "entries": len(_lb["entries"]) + len(_lb["sol_sequences"]),
                                           "found_file": _lb.get("found_file"), "found": _lb.get("found", 0)},
                     "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
@@ -865,6 +866,8 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                 if refine != "focal_pp" or len(members) <= hold_f_images:   # free, then set on its own line
                     fixed = sorted(set(fixed) | {"fx", "fy"}, key=FULL_OPENCV_NAMES.index)
                 extra = dict(extra, backlash_state="regular", state_source="list")
+            if not regular:                          # 0.93.5: every bin carries its state; 110 mm "single"
+                extra = dict(extra, backlash_state=("single" if forms.is_single_state(group) else "backlash"))
             cam = dict(base, params=params, group=group, focus_count_median=med,
                        focus_count_range=[min(counts), max(counts)] if counts else None, n_images=len(members),
                        fixed_params=fixed, source=src, temperature_median_degC=Tb, sol_median=Sb, **extra)

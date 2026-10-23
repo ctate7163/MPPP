@@ -2,6 +2,47 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.93.5 — 2026-10-22
+
+- **110 mm has no focus state** (Christian): its images and cameras are `"single"` everywhere -
+  `calib.focus_state(listed, group)`, the selection's bins (`backlash_state`), the block reports, the joints and the
+  checks. The low-backlash lists never apply to it, no regular ratio, regular lines or regular principal point are
+  derived or written for it (`fit.regular_ratio` returns none; the joint's candidate has one set of lines, its bins on
+  the backlash terms), and `check_zcam` fails a 110 mm model with a regular state. Its frames enter every block
+  without a state of their own and so anchor the per-state corrections of the other zooms.
+- **One rule for a camera's state** (`calib.zcam_state`): single at 110 mm, else the camera's own `backlash_state`,
+  else `_reg` at the end of the key (also `<bin>_2_reg`). It replaces four copies that disagreed (an explicit
+  "backlash" beat a `_reg` key in one, not in the others). Every selection bin now records its state.
+- **The shipped Z34 model's regular state repaired**: the 22 Oct joint (8 ZL / 3 ZR regular bins, mislabelled
+  states) wrote a regular ratio of 1.024 (regular fy / fx 0.984: fx and fy of the regular state were free on their
+  own). The model before it had 1.009 (ZL) / 1.0109 (ZR); those are restored and the regular lines are the backlash
+  lines divided by them (`regular_ratio_note`). Blocks start their listed `_reg` bins on these lines, and bins of up
+  to 2 images hold f there.
+- **The joint's regular state scales f only**: `a_fy_regular` is tied to `a_fx_regular` times the backlash aspect;
+  the ratio is fx-based and kept at the start value when the fit leaves 1.004–1.016 (`regular_ratio_note`).
+  `check_zcam` adds "regular ratio" and "regular aspect" (within 5e-4 of the backlash aspect).
+- **Bugs found in a sweep of the state code**:
+  - `split_by_state` split cameras already in the regular state: in `split` mode the listed `_reg` bins moved to a
+    `_reg_reg` camera, the `_reg` bin was marked backlash with 0 images and the principal-point offset added twice.
+    Only backlash-state cameras are split now.
+  - A project built without a list (`zcam_low_backlash=False`) got the shipped list back when its groups were
+    classified; the project now records `"disabled"`.
+  - The sequence rule gave a failed (implausible) group its sequence's state; such a group could then be split and
+    written to the found list. It keeps its own state now.
+  - After a split every other Mastcam-Z image was labelled "backlash" (the listed regular images and 110 mm too):
+    each now takes its camera's state.
+  - `strip_thermal_bins` left a split's base camera with its reduced image count and state, so each rerun lowered
+    it again: the values before the split are kept (`pre_split`) and restored.
+  - The measured regular ratio (`fit.regular_ratio`) counted groups the sequence rule had moved and partly listed
+    groups; it now uses groups in the state of their own fit and the listed images' own ratio.
+  - `refit_focus_lines(apply=True)`: a regular bin set on the backlash lines lost the regular principal point.
+  - The start model of a new zoom (`ztied.start_model_from_blocks`) averaged regular bins into the backlash lines.
+  - A split regular camera kept its base's held f; its f starts at the labels and is now free (unless it has at most
+    `hold_f_images` images). The bin fallback takes the group's backlash-state camera, not the first by name.
+- **A Hazcam eye refines its intrinsics from 500 tie-point observations** (Christian; was 1000:
+  `HAZCAM_MIN_REFINE_OBSERVATIONS`).
+- `ALIGN_RULES` 89; with the model repair every block aligns again.
+
 ## 0.93.4 — 2026-10-22
 
 - **A partly listed Mastcam-Z focus group holds both states** (Christian, Seitah Overlook ZCAM08114, sol 121): a

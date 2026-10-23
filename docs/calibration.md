@@ -31,6 +31,14 @@ the focus count and the focus-motor backlash state only: fx and fy are lines in 
 and k2 are constant per eye, and there is no temperature term. 34 mm is calibrated; the other zooms start from the
 label CAHVOR of each image.
 
+The two backlash states are "backlash" (the default, about 0.95 % above the label focal length) and "regular" (low
+backlash, near the label; the images on the low-backlash list and those a block's focal fits find). The regular
+state scales the focal length only: its fx and fy are the backlash lines divided by one ratio per eye (checked to lie
+in 1.004–1.016), and it has its own principal point. **110 mm has no state** ("single"): the low-backlash lists never
+apply to it, no regular ratio is derived or checked for it, and its model has the one set of lines. Its frames tie
+to the other zooms through the block's points without a state of their own, so they anchor the other zooms'
+per-state corrections.
+
 ## The calibration loop
 
 The block alignments refine the cameras (see [Pipeline](pipeline.md)). The joint adjustments below combine many

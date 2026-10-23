@@ -848,3 +848,103 @@ def test_split_never_overwrites_the_listed_regular_bin(tmp_path):
     assert proj.cameras["ZL034_F00600_reg"]["source"] == "list" and db["ZL034_F00600_reg"] == 7
     assert db["ZL034_F00600_2_reg"] == 8 and proj.cameras["ZL034_F00600_2_reg"]["backlash_state"] == "regular"
     assert {r["instrument"] for r in proj.images if r["sequence"] == "zcam3"} == {"ZL034_F00600_2_reg"}
+
+
+def test_single_state_zoom_and_one_state_rule():
+    """0.93.5 (Christian): 110 mm has no state - "single" everywhere; one rule for a camera's state."""
+    from mppp import calib
+    assert calib.zcam_state("ZL110_F01234") == "single" and calib.zcam_state("ZR110_F00900_reg") == "single"
+    assert calib.zcam_state("ZL034_F01254_2_reg") == "regular" and calib.zcam_state("ZL034_F01254_reg@chal") == "regular"
+    assert calib.zcam_state("ZL034_F01254_reg", {"backlash_state": "backlash"}) == "backlash"
+    assert calib.zcam_state("ZL034_F01254") == "backlash"
+    assert calib.focus_state(True, "ZL110") == "single" and calib.focus_state(True, "ZL034") == "regular"
+    assert calib.focus_state(False) == "backlash"
+    m = {"cameras": {"ZL110": {"f0_px": 15000.0, "reference_focus": 600.0, "regular_ratio": 1.0095,
+                               "pp0_px": [824.0, 600.0], "aspect": 1.0,
+                               "lines": {"reference_focus": 600.0, "backlash": {"fx": {"a": 15000.0, "b": 0.0},
+                                                                               "fy": {"a": 15001.0, "b": 0.0}},
+                                         "regular": {"fx": {"a": 14000.0, "b": 0.0}, "fy": {"a": 14001.0, "b": 0.0}}}}}}
+    _, p, _ = calib.zcam_camera_at(m, "ZL110", 600.0, "regular")
+    assert p[0] == pytest.approx(15000.0) and p[1] == pytest.approx(15001.0)        # the one state's lines
+    from mppp.calib.fit import regular_ratio
+    assert regular_ratio([], "ZL110")["ratio"] is None
+    from mppp.sfm.reconstruction import HAZCAM_MIN_REFINE_OBSERVATIONS
+    assert HAZCAM_MIN_REFINE_OBSERVATIONS == 500                                     # Christian, 22 Oct
+
+
+def test_check_zcam_regular_state_limits():
+    """0.93.5: a fitted regular ratio outside 1.004..1.016 or a regular aspect apart from the backlash one fails; a
+    110 mm model with a regular state fails."""
+    from mppp.calib.fit import check_zcam
+    ln = lambda fx, fy: {"fx": {"a": fx, "b": 0.0}, "fy": {"a": fy, "b": 0.0}}           # noqa: E731
+    new = {"cameras": {"ZL034": {"f0_px": 4733.0, "aspect": 1.0008, "regular_ratio": 1.0238,
+                                 "lines": {"backlash": ln(4731.7, 4735.3), "regular": ln(4659.9, 4587.0)}},
+                       "ZL110": {"f0_px": 15000.0, "aspect": 1.0, "regular_ratio": 1.0095,
+                                 "lines": {"backlash": ln(15000.0, 15000.0), "regular": ln(14860.0, 14860.0)}}}}
+    c = {x["check"]: x for x in check_zcam(new, {"cameras": {}})["checks"]}
+    assert not c["ZL034 regular ratio"]["ok"] and not c["ZL034 regular aspect"]["ok"]
+    assert not c["ZL110 single state"]["ok"]
+    new["cameras"]["ZL034"].update(regular_ratio=1.009, lines={"backlash": ln(4731.7, 4735.3),
+                                                               "regular": ln(4731.7 / 1.009, 4735.3 / 1.009)})
+    new["cameras"]["ZL110"] = {"f0_px": 15000.0, "aspect": 1.0, "lines": {"backlash": ln(15000.0, 15000.0)}}
+    c = {x["check"]: x for x in check_zcam(new, {"cameras": {}})["checks"]}
+    assert c["ZL034 regular ratio"]["ok"] and c["ZL034 regular aspect"]["ok"] and c["ZL110 single state"]["ok"]
+
+
+def test_shipped_z34_regular_state_is_a_focus_state():
+    """0.93.5: the shipped Z34 model's regular ratio is a focus state's (the 22 Oct joint wrote 1.024)."""
+    from mppp import calib
+    zm = calib.load_zcam(34)
+    if zm is None:
+        pytest.skip("no Z34 focus model")
+    for g, gm in zm["cameras"].items():
+        assert 1.004 <= float(gm["regular_ratio"]) <= 1.016, (g, gm["regular_ratio"])
+
+
+def test_split_leaves_regular_cameras_and_strip_restores_the_base(tmp_path):
+    """0.93.5: images already in a regular camera (the list's _reg bins) are not split again; strip_thermal_bins
+    gives the base camera back its image count and state."""
+    pytest.importorskip("scipy")
+    from mppp.sfm.backlash import classify_groups, image_focal_fits, image_states, split_by_state
+    from mppp.sfm.thermal import strip_thermal_bins
+    proj, rec, model, truth = _zcam_block(tmp_path)
+    states = image_states(classify_groups(proj, image_focal_fits(rec, proj), model))
+    allreg = list(states)                                     # every image asked to be regular
+    cam = proj.cameras["ZL034_F00600"]
+    cam["backlash_state"] = "regular"                         # as a list _reg bin
+    new, rows = split_by_state(rec, proj, allreg)
+    assert rows == [] and cam["backlash_state"] == "regular"
+    cam["backlash_state"] = "backlash"
+    n0 = cam["n_images"]
+    reg = [n for n, s in states.items() if s == "regular"]
+    new, rows = split_by_state(rec, proj, reg, hold_f_images=0)
+    assert rows and "fx" not in proj.cameras[rows[0]["camera"]]["fixed_params"]   # its f free (more than 0 images)
+    assert cam["n_images"] == n0 - len(reg)
+    assert {r["backlash_state"] for r in proj.images if r["name"] not in reg} == {"backlash"}
+    strip_thermal_bins(proj)
+    assert cam["n_images"] == n0 and cam["backlash_state"] == "backlash" and "pre_split" not in cam
+
+
+def test_sequence_rule_skips_implausible_and_disabled_list(tmp_path):
+    """0.93.5: a failed bin (implausible) keeps its own state under the sequence rule; a project built without a
+    list keeps none when it is classified."""
+    from mppp.sfm.backlash import apply_sequence_states, classify_groups, image_focal_fits
+    rows = [{"sol": 1, "sequence": "ZCAM1", "group_key": f"g{i}", "state": "regular", "z": -9.0, "ratio_fit": 0.999,
+             "sd_fit": 0.0005, "threshold_ratio": 1.0047} for i in range(3)]
+    rows.append({"sol": 1, "sequence": "ZCAM1", "group_key": "bad", "state": "undecided", "z": 30.0,
+                 "ratio_fit": 1.022, "sd_fit": 0.0005, "threshold_ratio": 1.0047, "implausible": True})
+    apply_sequence_states(rows)
+    assert [r["state"] for r in rows] == ["regular"] * 3 + ["undecided"]
+    pytest.importorskip("scipy")
+    proj, rec, model, truth = _zcam_block(tmp_path)
+    lst = tmp_path / "list.csv"
+    lst.write_text("zcam3\n", encoding="utf-8")                # not a real token: use the image names
+    names = [r["name"] for r in proj.images if r["sequence"] == "zcam3"]
+    lst.write_text("\n".join(n[:-4] for n in names) + "\n", encoding="utf-8")
+    fits = image_focal_fits(rec, proj)
+    proj.settings["zcam_low_backlash"] = {"file": str(lst)}
+    g = [r for r in classify_groups(proj, fits, model) if r["sequence"] == "zcam3"][0]
+    assert sorted(g["listed_names"]) == sorted(names)
+    proj.settings["zcam_low_backlash"] = {"file": str(lst), "disabled": True}
+    g = [r for r in classify_groups(proj, fits, model) if r["sequence"] == "zcam3"][0]
+    assert g["listed_names"] == []

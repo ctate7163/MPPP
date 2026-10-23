@@ -99,7 +99,7 @@ With `staged` (default), the adjustment runs in two stages:
    put on lines in focus count per eye, the Mastcam-Z rig rotation is refined, and pose-guided matching adds tie
    points between images whose poses are known. The Hazcam frames (0.93) join here too: their cameras (each eye
    from the median of its images' label CAHVORE fits) are held in the first round and then refine fx, fy, k1, k2
-   (`hazcam_intrinsics`; an eye with fewer than 1000 tie-point observations stays at its start); their position
+   (`hazcam_intrinsics`; an eye with fewer than 500 tie-point observations stays at its start); their position
    priors follow their station's Navcam solution to 0.1 m (the cameras are fixed to the rover body); their stereo
    rig rotations are refined (`hazcam_rig_refine = "rotation"`, 0.93.1; a pair whose eyes are both held as weak stays
    at its CAHV rig; or "hold"). The

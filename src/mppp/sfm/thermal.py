@@ -499,6 +499,14 @@ def strip_thermal_bins(project) -> int:
     for r in project.images:
         if "base_instrument" in r:
             r["instrument"] = r.pop("base_instrument")
+    for c in project.cameras.values():              # 0.93.5: a split's base camera back to its own count and state
+        pre = c.pop("pre_split", None)
+        if isinstance(pre, dict):
+            c["n_images"] = pre.get("n_images", c.get("n_images"))
+            if pre.get("backlash_state") is None:
+                c.pop("backlash_state", None)
+            else:
+                c["backlash_state"] = pre["backlash_state"]
     for k in [k for k, c in project.cameras.items() if c.get("thermal_bin") or c.get("state_split")]:
         # also the regular-focus-state Mastcam-Z cameras (mppp.sfm.backlash.split_by_state)
         project.cameras.pop(k)

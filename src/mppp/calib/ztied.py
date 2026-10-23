@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 
 from . import joint as J
+from .forms import is_single_state
 from . import tied as T
 
 log = logging.getLogger("mppp.calib")
@@ -49,6 +50,7 @@ NG = len(GLOBAL_TERMS)
 # frame rotation or the Mastcam-Z rig.  The offset is observable through the exposures in which this eye is regular
 # and the other eye in the backlash state (the other eye and the rig fix the pose); with fewer it is held
 MIN_MIXED_EXPOSURES = 5
+REGULAR_RATIO_RANGE = (1.004, 1.016)   # 0.93.5: backlash / regular f of a fitted regular state (the states ~0.95 % apart)
 TIE_SIGMA_Z = {"f": 1e-3, "k": 1e-7, "p": 1e-8, "cy": 1e-3}       # px; unitless - the ties are effectively exact
 NAV_POINTS_PER_BLOCK = 8000
 Z_POINTS_PER_BLOCK = 8000
@@ -60,7 +62,10 @@ def zoom_groups(zoom: int = ZOOM) -> Tuple[str, str]:
 
 
 def _state(spec: Dict[str, Any], key: str) -> str:
-    return "regular" if (spec.get("backlash_state") == "regular" or str(key).endswith("_reg")) else "backlash"
+    """The state whose terms a bin is tied to: ``regular`` or ``backlash`` - a single-state (110 mm) bin is on the
+    zoom's one line, kept in the backlash terms (0.93.5: :func:`mppp.calib.forms.zcam_state`)."""
+    from .forms import zcam_state
+    return "regular" if zcam_state(key, spec) == "regular" else "backlash"
 
 
 def start_globals(model: Dict[str, Any], zoom: int = ZOOM) -> Dict[str, Any]:
@@ -206,8 +211,12 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 has_reg[eye] |= reg
                 ratio = float(sg["eyes"][eye]["ratio"]) if reg else 1.0
                 rows, sig = [], []
-                for pi, gi in ((_FX, 2 if reg else 0), (_FY, 3 if reg else 1)):
-                    a = np.zeros(12 + NG); a[pi] = 1.0; a[12 + gi] = -1.0; a[12 + 4] = -u["dF"] / ratio
+                G0 = sg["eyes"][eye]["G"]
+                for pi, gi in ((_FX, 2 if reg else 0), (_FY, 2 if reg else 1)):
+                    a = np.zeros(12 + NG); a[pi] = 1.0; a[12 + 4] = -u["dF"] / ratio
+                    # 0.93.5: the regular state scales f, not the pixel aspect - its fy is a_fx_regular x the
+                    # backlash aspect at the start (22 Oct Z34: a free a_fy_regular gave a regular fy / fx of 0.984)
+                    a[12 + gi] = -(float(G0[1] / G0[0]) if (reg and pi == _FY) else 1.0)
                     rows.append(a); sig.append(TIE_SIGMA_Z["f"])
                 for pi, gi, s_ in ((_K1, 5, "k"), (_K2, 6, "k"), (_P1, 7, "p"), (_P2, 8, "p")):
                     a = np.zeros(12 + NG); a[pi] = 1.0; a[12 + gi] = -1.0
@@ -234,7 +243,7 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
         for eye, arr in g.items():
             if not prob.has_parameter_block(arr):
                 continue
-            ix = set()
+            ix = {3}                                         # a_fy_regular: a_fx_regular x the aspect (0.93.5)
             if not has_reg[eye]:
                 ix |= {2, 3, 10, 11}                         # no regular-state bin: the regular offsets stay
             elif int((sg.get("mixed") or {}).get(eye, 0)) < MIN_MIXED_EXPOSURES:
@@ -270,6 +279,8 @@ def start_model_from_blocks(scapes: Sequence[Any], zoom: int) -> Dict[str, Any]:
         for key, spec in sc.project.cameras.items():
             g = str(spec.get("group") or key)[:5]
             if g not in zoom_groups(zoom) or spec.get("focus_count_median") is None:
+                continue
+            if _state(spec, key) == "regular":               # 0.93.5: the start lines are the backlash state's
                 continue
             cid = db.get(key)
             if cid is None or int(cid) not in sc.rec.cameras:
@@ -382,6 +393,8 @@ def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
     for eye, arr in g.items():
         sd = T._sd(cov, eye, len(arr), held.get(eye, ()))
         e = sg["eyes"][eye]
+        if 3 in set(held.get(eye, ())):              # 0.93.5: a_fy_regular follows a_fx_regular x the start aspect
+            arr[3] = arr[2] * float(e["G"][1] / e["G"][0])
         out["eyes"][eye] = {"terms": dict(zip(GLOBAL_TERMS, map(float, arr))),
                             "sd": None if sd is None else dict(zip(GLOBAL_TERMS, map(float, sd))),
                             "held": [GLOBAL_TERMS[i] for i in held.get(eye, [])], "reference_focus": e["ref"],
@@ -802,10 +815,17 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
         tm, sd = e["terms"], e.get("sd") or {}
         ref = float(e["reference_focus"])
         sdv = lambda k: float(sd[k]) if k in sd and np.isfinite(sd[k]) else None      # noqa: E731
+        single = is_single_state(eye)
+        ratio_note = None
         if "a_fx_regular" in e["held"]:
             ratio = float(e["ratio_start"])
-        else:
-            ratio = float(np.sqrt(tm["a_fx_backlash"] * tm["a_fy_backlash"] / (tm["a_fx_regular"] * tm["a_fy_regular"])))
+        else:                                         # 0.93.5: fx only (fy follows the aspect)
+            ratio = float(tm["a_fx_backlash"] / tm["a_fx_regular"])
+            lo, hi = REGULAR_RATIO_RANGE
+            if not lo <= ratio <= hi:                 # not a focus state: the start ratio kept
+                ratio_note = (f"fitted regular ratio {ratio:.4f} outside {lo:g}..{hi:g} (the states are ~0.95 % apart): "
+                              f"the start ratio {float(e['ratio_start']):.4f} kept")
+                ratio = float(e["ratio_start"])
         bk = {"fx": {"a": tm["a_fx_backlash"], "b": tm["b"], "sd_a": sdv("a_fx_backlash"), "sd_b": sdv("b"), "form": "common"},
               "fy": {"a": tm["a_fy_backlash"], "b": tm["b"], "sd_a": sdv("a_fy_backlash"), "sd_b": sdv("b"), "form": "common"}}
         for k in ("k1", "k2", "p1", "p2"):
@@ -833,11 +853,20 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
         gm["lines"] = {"backlash": {pn: {k: v for k, v in x.items() if k in ("a", "b", "form")} for pn, x in bk.items()},
                        "regular": {pn: {k: v for k, v in x.items() if k in ("a", "b", "derived")} for pn, x in reg.items()},
                        "reference_focus": ref}
+        gm.pop("regular_ratio_note", None)                # (a note of the model in use is not this fit's)
+        if ratio_note:
+            gm["regular_ratio_note"] = ratio_note
         gm["f0_px"] = float(np.sqrt(tm["a_fx_backlash"] * tm["a_fy_backlash"]))
         gm["slope_px_per_count"] = float(tm["b"])
         gm["aspect"] = float(tm["a_fy_backlash"] / tm["a_fx_backlash"])
         gm["reference_focus"] = ref
         gm["regular_ratio"] = ratio
+        if single:                                    # 0.93.5: 110 mm has one state - no regular state at all
+            gm["lines"].pop("regular", None)
+            for k_ in ("regular_ratio", "regular_pp_offset_px", "regular_pp_offset", "regular_ratio_note"):
+                gm.pop(k_, None)
+            gm["focus_state"] = "single"
+            reg = {}
         gm["distortion"] = {"names": ["k1", "k2", "p1", "p2"], "params": [tm["k1"], tm["k2"], tm["p1"], tm["p2"]],
                             "sd": [sdv(k) for k in ("k1", "k2", "p1", "p2")],
                             "note": "k1, k2, p1, p2 constant with focus (the Mastcam-Z joint; k3 = 0 held)"}

@@ -425,7 +425,7 @@ class MPPPImage:
                     from .sfm.backlash import is_low_backlash, load_low_backlash
                     listed = is_low_backlash({"stem": self.fn.stem, "sequence": self.fn.sequence, "sol": self.sol,
                                               "camera_group": self.fn.camera_group}, load_low_backlash())
-                    state = calib.focus_state(listed)
+                    state = calib.focus_state(listed, self.fn.camera_group)
                     name, params, info = calib.zcam_camera_at(zm, self.fn.camera_group, focus, state)
                     src = f"{Path(zm['file']).name}: {info['source']}, {state} state"
         except FileNotFoundError as e:

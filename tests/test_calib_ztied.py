@@ -336,6 +336,12 @@ def test_zcam_joint_gives_the_regular_state_its_own_principal_point(tmp_path, mo
     cand = Z.candidate_model(res, truth)
     gm = cand["cameras"]["ZL034"]
     assert gm["regular_pp_offset_px"] == pytest.approx([6.0, -4.0], abs=0.3) and not gm["regular_pp_offset"]["held"]
+    # 0.93.5: the regular state scales f only - its aspect is the backlash one, its ratio the truth's
+    assert "a_fy_regular" in e["held"]
+    t = e["terms"]
+    assert t["a_fy_regular"] / t["a_fx_regular"] == pytest.approx(t["a_fy_backlash"] / t["a_fx_backlash"], abs=2e-4)
+    assert gm["regular_ratio"] == pytest.approx(float(truth["cameras"]["ZL034"]["regular_ratio"]), abs=1e-3)
+    assert "regular_ratio_note" not in gm
     from mppp import calib
     _, pr, _ = calib.zcam_camera_at(cand, "ZL034", 950.0, "regular")
     _, pb, _ = calib.zcam_camera_at(cand, "ZL034", 950.0, "backlash")

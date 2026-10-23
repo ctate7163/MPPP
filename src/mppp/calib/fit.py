@@ -1263,7 +1263,9 @@ ZCAM_MODEL_LIMITS = {"max_f0_change_pct": 1.5, "max_aspect_dev": 0.01, "max_k1":
                      "max_p": forms.ZCAM_MAX_P, "max_tau_p": 1e-3,     # zcam-v2: |p1|, |p2| and their block scatter
                      "max_offset_scatter_pct": 0.5,     # a start update: the blocks' f offsets about the model's f0
                      "min_blocks_start": 2,
-                     "max_regular_pp_offset_px": 10.0}   # 0.93.2: the regular state's principal point from the backlash's
+                     "max_regular_pp_offset_px": 10.0,   # 0.93.2: the regular state's principal point from the backlash's
+                     "regular_ratio_range": (1.004, 1.016),   # 0.93.5: backlash / regular f (the states ~0.95 % apart)
+                     "max_regular_aspect_diff": 5e-4}     # 0.93.5: the state scales f, not the pixel aspect
 REGULAR_RATIO_DEFAULT = 1.0095          # backlash / regular focal length when the blocks do not measure it
 
 
@@ -1296,7 +1298,7 @@ def block_info(work: PathLike, model: str = "cahv_ba") -> Dict[str, Any]:
             nav.append((float(np.sqrt(p[0] * p[1]) / np.sqrt(p0[0] * p0[1])), int(cam.get("n_images") or 1)))
         if str(key).startswith("Z") and cam.get("group"):
             bins.append({"camera": key, "group": cam["group"], "focus": cam.get("focus_count_median"),
-                         "state": "regular" if (cam.get("backlash_state") == "regular" or key.endswith("_reg")) else "backlash",
+                         "state": forms.zcam_state(key, cam),          # 0.93.5: one rule; 110 mm "single"
                          "params": [float(x) for x in p], "start": [float(x) for x in cam["params"]],
                          "fixed": list(cam.get("fixed_params") or []), "n_images": int(cam.get("n_images") or 1)})
     ns = (sum(r * w_ for r, w_ in nav) / sum(w_ for _, w_ in nav)) if nav else None
@@ -1357,12 +1359,19 @@ def regular_ratio(infos: Sequence[Dict[str, Any]], group: str, min_regular_group
     regular and 3 backlash groups of (backlash ratio at the group's focus / regular ratio); else
     :data:`REGULAR_RATIO_DEFAULT`."""
     from ..sfm.backlash import backlash_ratio_at, measured_backlash_lines
+    if forms.is_single_state(group):                  # 0.93.5: 110 mm has no regular state
+        return {"ratio": None, "n_blocks": 0, "per_block": [], "source": "single-state zoom (no regular state)"}
     per = []
     for i in infos:
         gs = [g for g in (i.get("backlash_groups") or []) if g.get("camera_group") == group and g.get("ratio") is not None
               and not g.get("implausible")]
-        b = [g for g in gs if g.get("state") == "backlash" and g.get("decided")]
-        r = [g for g in gs if g.get("state") == "regular" and g.get("decided")]
+        # 0.93.5: a group only in the state its own fit gives (not one the sequence rule moved), and a partly listed
+        # group neither way (its ratio mixes the two states; its listed images' own ratio is used for the regular)
+        clean = [g for g in gs if not g.get("conflict")]
+        b = [g for g in clean if g.get("state") == "backlash" and g.get("decided") and not g.get("listed_names")]
+        r = [dict(g, ratio=g.get("ratio_listed", g["ratio"])) for g in clean
+             if g.get("decided") and (g.get("state") == "regular" or g.get("mixed_group"))
+             and (g.get("state") == "regular" or g.get("ratio_listed") is not None)]
         if len(r) >= min_regular_groups and len(b) >= 3:
             rows = [dict(g, ratio_fit=g.get("ratio_fit", g["ratio"]), fitted_unlisted=g.get("fitted_unlisted", g.get("fitted")))
                     for g in b]
@@ -1584,14 +1593,20 @@ def fit_zcam(infos: Sequence[Dict[str, Any]], model: Dict[str, Any], rig_transla
         ref = float(ref if ref is not None else gm.get("reference_focus", 600.0))
         rr = regular_ratio(infos, g)
         reg = {}
-        for pn, e in pars.items():
+        for pn, e in (pars.items() if rr["ratio"] is not None else ()):    # 110 mm: no regular state
             k = rr["ratio"] if pn in ("fx", "fy") else 1.0
             reg[pn] = {"a": e["a"] / k, "b": e["b"] / k, "sd_a": e["sd_a"] / k, "sd_b": e["sd_b"] / k,
                        "tau_a": e.get("tau_a", 0.0), "chi2_dof_a": e.get("chi2_dof_a", float("nan")),
                        "n_blocks": e.get("n_blocks"), "derived": f"backlash / {k:.5f}" if k != 1.0 else "backlash"}
         lines = {"backlash": pars, "regular": reg, "reference_focus": ref}
         cal.setdefault("regular_ratio", {})[g] = rr
-        gm["regular_ratio"] = float(rr["ratio"])
+        gm.pop("regular_ratio_note", None)
+        if rr["ratio"] is None:
+            lines.pop("regular")
+            gm.pop("regular_ratio", None)
+            gm["focus_state"] = "single"
+        else:
+            gm["regular_ratio"] = float(rr["ratio"])
         bk = pars
         if "fx" in bk and "fy" in bk:
             gm["f0_px"] = float(np.sqrt(bk["fx"]["a"] * bk["fy"]["a"]))
@@ -1728,6 +1743,21 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
             add(f"{g} f0", d <= lim["max_f0_change_pct"], f"{o['f0_px']:.1f} -> {c['f0_px']:.1f} px ({d:.2f} %)")
         if c.get("aspect"):
             add(f"{g} aspect", abs(c["aspect"] - 1.0) <= lim["max_aspect_dev"], f"{c['aspect']:.5f}")
+        regl = (c.get("lines") or {}).get("regular") or {}
+        if forms.is_single_state(g):                  # 0.93.5: 110 mm - no regular state written
+            add(f"{g} single state", not regl and not c.get("regular_ratio") and not c.get("regular_pp_offset_px"),
+                "no regular state (110 mm)" if not regl else "a regular state was written for a single-state zoom")
+        elif c.get("regular_ratio"):
+            lo, hi = lim["regular_ratio_range"]
+            rr_ = float(c["regular_ratio"])
+            add(f"{g} regular ratio", lo <= rr_ <= hi, f"backlash / regular f {rr_:.4f} ({lo:g}..{hi:g})"
+                + (f"; {c['regular_ratio_note']}" if c.get("regular_ratio_note") else ""))
+            bkl = (c.get("lines") or {}).get("backlash") or {}
+            if all(isinstance(x.get(pn), dict) and x[pn].get("a") for x in (regl, bkl) for pn in ("fx", "fy")):
+                da = regl["fy"]["a"] / regl["fx"]["a"] - bkl["fy"]["a"] / bkl["fx"]["a"]
+                add(f"{g} regular aspect", abs(da) <= lim["max_regular_aspect_diff"],
+                    f"regular fy / fx {regl['fy']['a'] / regl['fx']['a']:.5f} vs backlash "
+                    f"{bkl['fy']['a'] / bkl['fx']['a']:.5f}")
         rp = c.get("regular_pp_offset") or {}
         if c.get("regular_pp_offset_px") and not rp.get("held"):
             off = [float(x) for x in c["regular_pp_offset_px"]]

@@ -31,6 +31,37 @@ ZCAM_ZOOMS = (34, 48, 63, 79, 110)
 # low-backlash list or its own focal fit puts it in the "regular" (low-focal-length, label-like) state
 ZCAM_STATES = ("backlash", "regular")
 ZCAM_DEFAULT_STATE = "backlash"
+# 0.93.5 (Christian, 22 Oct): 110 mm (the end of the zoom's mechanical range) has no backlash state - its images are
+# "single": the low-backlash lists never apply, no regular state is derived or checked, its frames anchor the
+# per-state corrections of the other zooms (they tie to them through the block's points without a state of their own)
+ZCAM_SINGLE_STATE_ZOOMS = (110,)
+ZCAM_SINGLE_STATE = "single"
+
+
+def zcam_key_zoom(key: Any) -> Optional[int]:
+    """``"ZL034"`` / ``"ZR110_F01234_2_reg@block"`` -> 34 / 110; None for a key that is not a Mastcam-Z camera."""
+    k = str(key)
+    try:
+        return int(k[2:5]) if k.startswith("Z") and k[1:2] in ("L", "R") else None
+    except ValueError:
+        return None
+
+
+def is_single_state(key: Any) -> bool:
+    """Whether a Mastcam-Z camera key or eye group (``ZL110``) is of a zoom without backlash states."""
+    return zcam_key_zoom(key) in ZCAM_SINGLE_STATE_ZOOMS
+
+
+def zcam_state(key: Any, spec: Optional[Dict[str, Any]] = None) -> str:
+    """The focus state of a Mastcam-Z camera (one rule for the block reports, the joints and the checks, 0.93.5):
+    ``"single"`` at a single-state zoom (110 mm), else the camera's own ``backlash_state`` when it has one, else
+    ``"regular"`` for a key ending in ``_reg`` (``<bin>_reg``, ``<bin>_2_reg``), else ``"backlash"``."""
+    if is_single_state((spec or {}).get("group") or key):
+        return ZCAM_SINGLE_STATE
+    st = (spec or {}).get("backlash_state")
+    if st in ZCAM_STATES:
+        return st
+    return "regular" if str(key).split("@", 1)[0].endswith("_reg") else ZCAM_DEFAULT_STATE
 TOL = 1e-12
 
 

@@ -183,10 +183,13 @@ def sol_epochs(sols: Sequence[int], gap: float = RIG_EPOCH_GAP_SOLS, breaks: Seq
 
 
 # -------------------------------------------------------------------------------------------------- Mastcam-Z
-def focus_state(listed: bool) -> str:
-    """The backlash state of a Mastcam-Z image: ``"regular"`` (the low-focal-length state) when the low-backlash
-    list, the found list or its own focal fit says so, else the default ``"backlash"`` (the high-focal-length
-    state)."""
+def focus_state(listed: bool, group: Any = None) -> str:
+    """The backlash state of a Mastcam-Z image: ``"single"`` at a zoom without states (110 mm, ``group`` its eye
+    group or camera key; the lists never apply there), ``"regular"`` (the low-focal-length state) when the
+    low-backlash list, the found list or its own focal fit says so, else the default ``"backlash"`` (the
+    high-focal-length state)."""
+    if group is not None and forms.is_single_state(group):
+        return forms.ZCAM_SINGLE_STATE
     return "regular" if listed else ZCAM_DEFAULT_STATE
 
 
@@ -206,6 +209,8 @@ def zcam_lines_at(gm: Dict[str, Any], focus: float, state: str = ZCAM_DEFAULT_ST
     source note)."""
     lmodel = gm.get("lines") or {}
     ref = float(lmodel.get("reference_focus", gm.get("reference_focus", focus)))
+    if state == forms.ZCAM_SINGLE_STATE:                # 110 mm: its one state's lines (stored as the backlash lines)
+        state = "backlash"
     own = lmodel.get(state) or {}
     other = "backlash" if state == "regular" else "regular"
     src = state
@@ -236,6 +241,8 @@ def zcam_camera_at(zoom_model: Dict[str, Any], group: str, focus: float, state: 
     gm = cams.get(group)
     if gm is None:
         raise KeyError(f"{group} is not in the zoom model ({sorted(cams)})")
+    if forms.is_single_state(group) or state == forms.ZCAM_SINGLE_STATE:
+        state = "backlash"                              # 0.93.5: 110 mm has one state, its lines are the backlash ones
     if state not in forms.ZCAM_STATES:
         raise ValueError(f"state {state!r}: use one of {forms.ZCAM_STATES}")
     ref = float(gm.get("reference_focus", 600.0))

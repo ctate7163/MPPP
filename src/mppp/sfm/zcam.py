@@ -57,7 +57,7 @@ def focus_breathing_table(project: SfmProject, rec) -> List[Dict[str, Any]]:
                      "fx_refined_px": float(p1[0]) if p1 is not None else None,
                      "fy_refined_px": float(p1[1]) if p1 is not None else None,
                      "refined": bool(p1 is not None and obs > 0),
-                     "state": cam.get("backlash_state") or ("regular" if str(key).endswith("_reg") else calib.ZCAM_DEFAULT_STATE),
+                     "state": calib.zcam_state(key, cam),          # 0.93.5: one rule; 110 mm "single"
                      "held_params": ",".join(cam.get("fixed_params") or [])})
     return rows
 
@@ -259,7 +259,9 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
         groups.setdefault(c["group"], []).append({
             "camera": key, "camera_id": int(cid), "focus": c.get("focus_count_median"), "p": p,
             "observations": int(obs.get(int(cid), 0)),
-            "state": "regular" if (c.get("backlash_state") == "regular" or str(key).endswith("_reg")) else "backlash"})
+            # the lines of a state: a single-state (110 mm) bin is on the zoom's one line, stored as the backlash one
+            "state": "regular" if calib.zcam_state(key, c) == "regular" else "backlash",
+            "focus_state": calib.zcam_state(key, c)})
     out: Dict[str, Any] = {}
     for g, rows in sorted(groups.items()):
         gm = (model.get("cameras") or {}).get(g) or {}
@@ -399,6 +401,10 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                     v = ln[pn]["a"] + ln[pn]["b"] * (fc - ref)
                     if rr["state"] == "regular" and not own and pn in ("fx", "fy"):
                         v /= ratio                           # the regular state sits at the label
+                    if rr["state"] == "regular" and not own and pn in ("cx", "cy"):
+                        # 0.93.5: on the backlash lines, a regular bin keeps the regular state's principal point
+                        off = gm.get("regular_pp_offset_px") or [0.0, 0.0]
+                        v += float(off[0 if pn == "cx" else 1])
                     if pn == "k2":                           # |k2| <= K2_LIMIT
                         from .reconstruction import K2_LIMIT
                         v = float(np.clip(v, -K2_LIMIT, K2_LIMIT))

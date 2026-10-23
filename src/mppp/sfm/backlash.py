@@ -42,7 +42,7 @@ log = logging.getLogger("mppp.sfm")
 STATES = calib.ZCAM_STATES
 REGULAR_SUFFIX = "_reg"
 DEFAULT_BACKLASH_RATIO = 1.0095      # f / label f in the backlash state when no focus model is at hand
-SINGLE_STATE_ZOOMS = (110,)          # no backlash state at the end of the zoom's mechanical range
+SINGLE_STATE_ZOOMS = calib.ZCAM_SINGLE_STATE_ZOOMS   # (110,): no backlash state at the end of the zoom's range
 
 
 LOW_BACKLASH_FILE = "mars2020_mastcam-z_low_backlash_observations.csv"   # in mppp/data
@@ -439,7 +439,7 @@ def apply_sequence_states(rows: List[Dict[str, Any]], z_min: float = 3.0) -> Dic
         for r in rs:
             r["own_state"], r["own_z"] = r.get("state"), r.get("z")
             r["sequence_z"], r["sequence_state"] = (float(z) if z is not None else None), st
-            if st is None:
+            if st is None or r.get("implausible"):       # 0.93.5: a failed bin (neither state) is not voted in
                 continue
             if r.get("state") in STATES and r["state"] != st and not r.get("all_listed"):
                 r["conflict"] = True
@@ -505,8 +505,9 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
     ns = float(nav_scale) if nav_scale else 1.0
     if isinstance(known, dict):
         lst = known
-    elif known is False:
-        lst = load_low_backlash(False)
+    elif known is False or (known is None and ((getattr(project, "settings", None) or {}).get("zcam_low_backlash")
+                                                or {}).get("disabled")):
+        lst = load_low_backlash(False)                   # 0.93.5: a project built without a list keeps none
     else:
         f = known if known is not None else ((getattr(project, "settings", None) or {}).get("zcam_low_backlash") or {}).get("file")
         try:
@@ -548,7 +549,8 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
         elif bin_fallback and not listed:
             # no per-image fit - the group's bin camera (its own, not shared with another sequence at the
             # same focus count) stands in: refined f / the group's median label f, with a wide sd
-            cams = [c for c in base["cameras"] if c in bin_fallback]
+            cams = sorted((c for c in base["cameras"] if c in bin_fallback),
+                          key=lambda c: calib.zcam_state(c, (getattr(project, "cameras", None) or {}).get(c)) == "regular")
             same = [m for m in members if m.get("label_f_px")]
             shared = any(r.get("instrument") in cams and r["name"] not in set(base["names"])
                          for r in project.images if r.get("camera_group") == g)
@@ -684,7 +686,10 @@ def split_by_state(rec, project, regular: Iterable[str], hold_f_images: int = 0,
     key_of = {int(v): k for k, v in db.items()}
     moved: Dict[int, List[int]] = {}                             # old camera id -> image ids
     for iid, im in rec.images.items():
-        if im.name in regular and str(key_of.get(int(im.camera_id), "")).startswith("Z"):
+        k0 = str(key_of.get(int(im.camera_id), ""))
+        # 0.93.5: only a backlash-state camera is split - an image already in a regular camera (the list's _reg
+        # bins) stays, and a single-state (110 mm) camera has nothing to split
+        if im.name in regular and k0.startswith("Z") and calib.zcam_state(k0, project.cameras.get(k0)) == "backlash":
             moved.setdefault(int(im.camera_id), []).append(int(iid))
     new = pycolmap.Reconstruction()
     for cam in rec.cameras.values():
@@ -718,6 +723,8 @@ def split_by_state(rec, project, regular: Iterable[str], hold_f_images: int = 0,
         held_f = len(iids) <= int(hold_f_images or 0)
         if held_f:
             fixed = [n for n in FULL_OPENCV_NAMES if n in set(fixed) | {"fx", "fy"}]
+        else:                                            # 0.93.5: its f starts at the labels - free to find its state
+            fixed = [n for n in fixed if n not in ("fx", "fy")]
         pc.update({"params": p.tolist(), "fixed_params": fixed, "n_images": len(iids), "backlash_state": "regular",
                    "state_split": True, "base_camera": old_key,
                    "source": f"{pc.get('source', old_key)}; regular focus state (not backlash): f from the median "
@@ -725,8 +732,10 @@ def split_by_state(rec, project, regular: Iterable[str], hold_f_images: int = 0,
                              + (f"; principal point {off[0]:+.2f}, {off[1]:+.2f} px (the regular state's)" if off else "")})
         project.cameras[key] = pc
         if old_key in project.cameras:
-            project.cameras[old_key]["backlash_state"] = "backlash"
-            project.cameras[old_key]["n_images"] = max(int(project.cameras[old_key].get("n_images", 0)) - len(iids), 0)
+            oc = project.cameras[old_key]
+            oc.setdefault("pre_split", {"n_images": oc.get("n_images"), "backlash_state": oc.get("backlash_state")})
+            oc["backlash_state"] = "backlash"
+            oc["n_images"] = max(int(oc.get("n_images", 0)) - len(iids), 0)
         db[key] = next_cid
         cam_map[cid] = next_cid
         rows.append({"camera": key, "base_camera": old_key, "camera_id": next_cid, "images": len(iids),
@@ -777,8 +786,8 @@ def split_by_state(rec, project, regular: Iterable[str], hold_f_images: int = 0,
             r.setdefault("base_instrument", r["instrument"])
             r["instrument"] = new_key[cid]
             r["backlash_state"] = "regular"
-        elif r is not None and str(r.get("instrument", "")).startswith("Z"):
-            r["backlash_state"] = "backlash"
+        elif r is not None and str(r.get("instrument", "")).startswith("Z"):   # 0.93.5: its camera's state
+            r["backlash_state"] = calib.zcam_state(r["instrument"], project.cameras.get(r["instrument"]))
     for fid in rec.reg_frame_ids():
         if new.frames[fid].has_pose:
             new.register_frame(fid)
@@ -846,7 +855,8 @@ def backlash_stage(rec, project, model: Optional[Dict[str, Any]] = None, mode: s
         # the groups the list already had (their images start in _reg cameras) are not split again; groups
         # classified regular that the list did not have are the new ones (flagged, split, and for the found list)
         listed = {r["name"] for r in project.images if r.get("focus_state") == "regular"}
-        new_groups = [g for g in groups if g["state"] == "regular" and not set(g.get("names") or []) <= listed]
+        new_groups = [g for g in groups if g["state"] == "regular" and not g.get("implausible")
+                      and not set(g.get("names") or []) <= listed]
         # an image on the list (or the found list) whose group the fit and its sequence call backlash -
         # the shipped list's images are the known exceptions (kept regular); found-list ones are contradicted
         disagree = [g for g in groups if g["state"] == "backlash"

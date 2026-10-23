@@ -74,14 +74,14 @@
     },
     "regular": {
      "fx": {
-      "a": 4621.507790648431,
-      "b": 0.02474164571532903,
-      "derived": "backlash / 1.02384"
+      "a": 4689.476182972861,
+      "b": 0.025105520441697414,
+      "derived": "backlash / 1.00900"
      },
      "fy": {
-      "a": 4625.0718536564145,
-      "b": 0.02474164571532903,
-      "derived": "backlash / 1.02384"
+      "a": 4693.092662560838,
+      "b": 0.025105520441697414,
+      "derived": "backlash / 1.00900"
      },
      "k1": {
       "a": -0.4624296858551199,
@@ -110,13 +110,14 @@
     876.68,
     559.09
    ],
-   "regular_ratio": 1.0238393361997833,
+   "regular_ratio": 1.009,
    "thermal": {
     "T0_degC": -15.0,
     "sensor": "HEAD_FPA",
     "f_px_per_degC": 0.0,
     "note": "no temperature term"
-   }
+   },
+   "regular_ratio_note": "0.93.5 repair (22 Oct): the 22 Oct joint fitted 1.0238 from a free regular fy (regular fy / fx 0.984, 8 ZL / 3 ZR regular bins, mislabelled focus states); the ratio of the model before it (1.0090) restored, the regular lines = the backlash lines / it"
   },
   "ZR034": {
    "f0_px": 4740.542659531844,
@@ -206,14 +207,14 @@
     },
     "regular": {
      "fx": {
-      "a": 4629.390326013506,
-      "b": 0.03519065711507538,
-      "derived": "backlash / 1.02350"
+      "a": 4687.11187456238,
+      "b": 0.03562943178735145,
+      "derived": "backlash / 1.01090"
      },
      "fy": {
-      "a": 4633.966454779024,
-      "b": 0.03519065711507538,
-      "derived": "backlash / 1.02350"
+      "a": 4691.745060784734,
+      "b": 0.03562943178735145,
+      "derived": "backlash / 1.01090"
      },
      "k1": {
       "a": -0.470373173126929,
@@ -248,13 +249,14 @@
     },
     "reference_focus": 600.0
    },
-   "regular_ratio": 1.0235044056169063,
+   "regular_ratio": 1.0109,
    "thermal": {
     "T0_degC": -15.0,
     "sensor": "HEAD_FPA",
     "f_px_per_degC": 0.0,
     "note": "no temperature term"
-   }
+   },
+   "regular_ratio_note": "0.93.5 repair (22 Oct): the 22 Oct joint fitted 1.0235 from a free regular fy (regular fy / fx 0.984, 8 ZL / 3 ZR regular bins, mislabelled focus states); the ratio of the model before it (1.0109) restored, the regular lines = the backlash lines / it"
   }
  },
  "state": "calibrated",
@@ -493,7 +495,7 @@
   "note": "the Mastcam-Z joint: one rig for every block and focus (rotation refined, translation held); per_block / residuals from the diagnostic pass (each block's own rig)"
  },
  "form": "zcam-v2",
- "note": "v0p75 start model (8 Oct 2026): initial values from the 4-5 Oct first runs; to be refined by the next pipeline run",
+ "note": "v0p75 start model (8 Oct 2026): initial values from the 4-5 Oct first runs; to be refined by the next pipeline run | 0.93.5: regular_ratio repaired (see regular_ratio_note)",
  "start_note": {
   "when": "2026-10-08",
   "note": "written by Claude from the archived first runs (block_lines of 5 Oct, 8-block candidate of 6 Oct): one df/dfocus per eye, ZL pp0 fixed, ZR pp0 pinned with a cy slope, k1/k2 constant, rig mean of 3 blocks"
