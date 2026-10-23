@@ -513,12 +513,28 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
             skipped.append(f"{n} (not finished)")
             continue
         if str(done.get("verdict")) == "fail" and not getattr(a, "include_failed", False):
-            skipped.append(f"{n} (alignment health FAIL; --include-failed takes it)")    # 22 Oct
-            continue
+            # 0.93.3: judged again under the current thresholds and rules (a block run before a rule changed)
+            v2, changed = _rejudged(work, getattr(a, "variant", "") or "")
+            if v2 == "fail" or v2 is None:
+                skipped.append(f"{n} (alignment health FAIL; --include-failed takes it)")    # 22 Oct
+                continue
+            log.info("calib: %s was FAIL under the rules of its run, %s under the current ones (%s)", n, v2.upper(),
+                     "; ".join(changed) or "-")
         out[n] = work
     if skipped:
         log.info("calib %s: left out: %s", "zcam" if zcam else "navcam", ", ".join(skipped))
     return out
+
+
+def _rejudged(work, variant: str = ""):
+    """(verdict, changed checks) of a block's saved health report under the current rules; (None, []) without one."""
+    from .sfm.health import rejudge
+    from .sfm.workdir import project_dir
+    try:
+        h = json.loads((project_dir(work, variant) / "health" / "health.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, []
+    return rejudge(h)
 
 
 def cmd_calib(a: argparse.Namespace) -> int:

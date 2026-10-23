@@ -358,16 +358,43 @@ def coverage_by_radius(rec, project: SfmProject, edges: Sequence[float] = RADIUS
     return out
 
 
+def zcam_uncalibrated_groups(groups) -> set:
+    """The Mastcam-Z camera groups (ZL063, ZR079_F... ) of zooms without a promoted focus model (0.93.3)."""
+    from .. import calib
+    out, known = set(), {}
+    for g in groups:
+        g = str(g)
+        if not g.startswith("Z") or len(g) < 5:
+            continue
+        try:
+            z = int(g[2:5])
+        except ValueError:
+            continue
+        if z not in known:
+            try:
+                known[z] = calib.load_zcam(z) is not None
+            except Exception:                                          # noqa: BLE001
+                known[z] = False
+        if not known[z]:
+            out.add(g)
+    return out
+
+
 def _corner_ratio(cov: Dict[str, Any], inner: float = 0.6, outer: float = 0.85, min_keypoints: int = 200,
-                  skip_families: Tuple[str, ...] = ("F", "R")):
+                  skip_families: Tuple[str, ...] = ("F", "R"), skip_groups=None):
     """(worst camera, ratio): triangulated fraction beyond ``outer`` over that inside ``inner``.  The Hazcams
     (``skip_families``, 0.93) are left out: the corners of their 136-degree fisheye frames are sky, horizon and
-    rover deck, which no distortion model makes into tie points (Rockytop 22 Oct: FL 14 % vs 48 %)."""
+    rover deck, which no distortion model makes into tie points (Rockytop 22 Oct: FL 14 % vs 48 %).  So are the
+    Mastcam-Z zooms without a calibrated focus model (``skip_groups``, default :func:`zcam_uncalibrated_groups`;
+    0.93.3): their distortion is the label start and their few-frame mosaics barely overlap at the corners
+    (Seitah Overlook 22 Oct: ZR063, 5 images, the only FAIL of the block)."""
+    if skip_groups is None:
+        skip_groups = zcam_uncalibrated_groups(cov["cameras"])
     e = np.asarray(cov["edges"])
     lo, hi = e[:-1], e[1:]
     worst = None
     for grp, c in cov["cameras"].items():
-        if str(grp)[:1] in skip_families:
+        if str(grp)[:1] in skip_families or str(grp) in skip_groups:
             continue
         kp, tr = np.asarray(c["keypoints"], float), np.asarray([v or 0.0 for v in c["triangulated_fraction"]])
         i_in, i_out = hi <= inner + 1e-9, lo >= outer - 1e-9
@@ -872,6 +899,24 @@ def plot_health(report: Dict[str, Any], rec, project: SfmProject, path: PathLike
 
 
 # ----------------------------------------------------------------------------------------------------- block screening
+def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = None) -> Tuple[str, List[str]]:
+    """The verdict of a saved health report (``health/health.json``) under the current thresholds and rules (0.93.3):
+    every check's value judged again, the corner check recomputed from ``coverage_by_radius``.  Returns (verdict,
+    the checks whose status changed)."""
+    thr = dict(DEFAULT_THRESHOLDS, **(thresholds or {}))
+    changed, statuses = [], []
+    for c in report.get("checks") or []:
+        name, st0, v = c.get("check"), c.get("status"), c.get("value")
+        if name == "corner_triangulated_ratio" and report.get("coverage_by_radius"):
+            wc = _corner_ratio(report["coverage_by_radius"])
+            v = wc[1] if wc else None
+        st = _status(name, v, thr) if name in thr else st0
+        if st != st0:
+            changed.append(f"{name}: {st0} -> {st}" + (f" ({c.get('note', '')[:60]})" if c.get("note") else ""))
+        statuses.append(st)
+    return max(statuses, key=lambda s: _RANK.get(s, 0), default="pass"), changed
+
+
 def screen_block(work: PathLike, model: str = "cahv_ba", thresholds: Optional[Dict[str, tuple]] = None,
                  sample: Optional[int] = 100000) -> Dict[str, Any]:
     """

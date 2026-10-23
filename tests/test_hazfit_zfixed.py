@@ -257,3 +257,26 @@ def test_zcam00015_kept_and_origny_navcam_only():
     t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
     assert t["sites"]["origny"]["zcam"] == [] and t["sites"]["origny_large"]["zcam"] == []
     assert t["official_blocks"]["35"]["mastcam_z_360"] == []
+
+
+def test_corner_check_skips_uncalibrated_zooms_and_rejudge():
+    """0.93.3: the corner check leaves out the Mastcam-Z zooms without a calibrated focus model (Seitah Overlook,
+    22 Oct: ZR063 the only FAIL); a saved FAIL report is judged again under the current rules at the joint gate."""
+    from mppp.sfm import health as H
+    from mppp import calib
+    edges = [0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0]
+    good = {"keypoints": [100] * 9, "triangulated_fraction": [0.5] * 9}
+    bad = {"keypoints": [100] * 9, "triangulated_fraction": [0.5, 0.5, 0.5, 0.4, 0.3, 0.2, 0.02, 0.02, 0.02]}
+    cov = {"edges": edges, "cameras": {"NL": good, "ZR063": bad, "ZL034": good}}
+    uncal = H.zcam_uncalibrated_groups(cov["cameras"])
+    assert ("ZR063" in uncal) == (calib.load_zcam(63) is None) and "ZL034" not in uncal and "NL" not in uncal
+    assert H._corner_ratio(cov, skip_groups=set())[0] == "ZR063"
+    assert H._corner_ratio(cov, skip_groups={"ZR063"})[0] in ("NL", "ZL034")
+    report = {"verdict": "fail", "coverage_by_radius": cov, "checks": [
+        {"check": "corner_triangulated_ratio", "value": 0.04, "status": "fail"},
+        {"check": "excluded_fraction", "value": 0.25, "status": "fail"},
+        {"check": "rig_rotation_change_deg", "value": 0.27, "status": "fail"}]}
+    v, changed = H.rejudge(report)
+    if "ZR063" in uncal:
+        assert v in ("pass", "warn") and len(changed) == 3
+    assert H.rejudge({"checks": [{"check": "excluded_fraction", "value": 0.35, "status": "fail"}]})[0] == "fail"

@@ -27,6 +27,13 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
   360 (Christian): `origny` and `origny_large` are Navcam only (`"zcam": []`) and official block 35 no longer lists
   360 #51 (the maps' 360 table, `studies/m20_sites/m20_sites/refdata.py`, dates #51 "Olifants" sol 1775, inside
   Origny's square - its sol is probably wrong).
+- **Corner check without the uncalibrated Mastcam-Z zooms; FAIL blocks judged again at the joint gate**: the
+  corner-coverage health check (keypoints beyond 0.85 of the corner radius that become tie points) leaves out the
+  Mastcam-Z zooms without a promoted focus model, as it does the Hazcams - their distortion is the label start and
+  their few-frame mosaics barely overlap at the corners (Seitah Overlook, 22 Oct: ZR063 with 5 images was the
+  block's only FAIL, which would have kept it out of every joint). `mppp calib` judges a block whose run recorded
+  FAIL again from its `health/health.json` under the current thresholds and rules (`health.rejudge`) and takes it
+  when it no longer fails (logged); `--include-failed` still takes every block.
 - **Residual summary**: `residual_rms_native_px` and the median use the finite residuals only (`residual_nonfinite`
   counts the others: a point behind a camera or outside a lens model's domain). The 22 Oct chal_rocks block reported
   an RMS of Infinity.
