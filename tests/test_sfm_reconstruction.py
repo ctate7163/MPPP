@@ -1448,6 +1448,15 @@ def test_mixed_navcam_zcam_points_need_a_third_view():
     assert drop_short_tracks(rec, 2) == 2 and sorted(rec.points3D) == [1]
     rec = Rec({3: [1, 3]})
     assert drop_mixed_short_tracks(rec, 2) == 0
+    # 0.94.4: a Hazcam + Mastcam-Z point needs a Navcam look, however long its track
+    class RecH(Rec):
+        def __init__(self, tracks):
+            super().__init__(tracks)
+            self.images.update({5: NS(name="FLF_a.png"), 6: NS(name="FRF_a.png"), 7: NS(name="RLF_a.png")})
+    rec = RecH({1: [5, 3], 2: [5, 6, 3, 4], 3: [5, 1, 3], 4: [5, 6], 5: [7, 3, 4], 6: [5, 1]})
+    assert drop_mixed_short_tracks(rec) == 3 and sorted(rec.points3D) == [3, 4, 6]
+    rec = RecH({1: [5, 3], 2: [5, 6, 3, 4]})
+    assert drop_mixed_short_tracks(rec, hazcam_zcam_need_navcam=False) == 0
 
 
 def test_unsurveyed_stations_get_loose_priors(tmp_path):

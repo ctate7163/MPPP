@@ -1304,17 +1304,25 @@ def filter_observations(rec, project: SfmProject, max_residual_native_px: float 
 # 9 706: low reprojection error, wrong place - epipolar-consistent false matches, mostly from the pose-guided
 # Navcam-Mastcam-Z matching), against ~1 % of the two-view points of one camera type (the stereo pairs, kept)
 MIN_MIXED_TRACK_LENGTH = 3
+HAZCAM_ZCAM_NEED_NAVCAM = True   # 0.94.4: a Hazcam + Mastcam-Z point needs a Navcam image in its track too
 
 
-def drop_mixed_short_tracks(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH) -> int:
+def drop_mixed_short_tracks(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH,
+                            hazcam_zcam_need_navcam: bool = HAZCAM_ZCAM_NEED_NAVCAM) -> int:
     """Delete points whose track holds both Navcam (``N...``) and Mastcam-Z (``Z...``) images and is shorter than
-    ``min_mixed_track_length``; returns the number deleted.  Blocks of one camera type are untouched."""
-    if min_mixed_track_length <= 2:
+    ``min_mixed_track_length`` (the third look, v0p86), and - ``hazcam_zcam_need_navcam``, 0.94.4 - points whose
+    track holds a Hazcam (``F`` / ``R``) and a Mastcam-Z image but no Navcam image, whatever its length.  On Chal Rocks
+    tiny those Hazcam + Mastcam-Z points were 46 % above and 23 % below the Navcam terrain (two-view; 7 / 5 % with
+    three looks or more), Seitah Overlook tiny 67 / 24 % - most of the scattered Mastcam-Z points - while the same
+    points with a Navcam look too were on it (0.1 / 0.0 %).  Returns the number deleted.  Blocks of one camera type
+    are untouched."""
+    if min_mixed_track_length <= 2 and not hazcam_zcam_need_navcam:
         return 0
     fam: Dict[int, str] = {}
     bad = []
     for pid, pt in rec.points3D.items():
-        if pt.track.length() >= min_mixed_track_length:
+        short = pt.track.length() < min_mixed_track_length
+        if not short and not hazcam_zcam_need_navcam:
             continue
         fs = set()
         for el in pt.track.elements:
@@ -1322,7 +1330,10 @@ def drop_mixed_short_tracks(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_L
             if f is None:
                 f = fam[el.image_id] = rec.images[el.image_id].name[:1]
             fs.add(f)
-        if "N" in fs and "Z" in fs:
+        if "Z" not in fs:
+            continue
+        if ("N" in fs and short and min_mixed_track_length > 2) or \
+                (hazcam_zcam_need_navcam and "N" not in fs and fs & {"F", "R"}):
             bad.append(int(pid))
     for pid in bad:
         rec.delete_point3D(pid)

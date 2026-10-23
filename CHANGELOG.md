@@ -17,6 +17,13 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **A Hazcam + Mastcam-Z point needs a Navcam look** (Christian's question, 14:50: the third-look rule covered only
+  Navcam + Mastcam-Z tracks; `reconstruction.HAZCAM_ZCAM_NEED_NAVCAM`, ALIGN_RULES 92): a point whose track holds a
+  Hazcam and a Mastcam-Z image but no Navcam image is deleted, whatever its length. Those points were most of the
+  scattered Mastcam-Z points: Chal Rocks tiny 46 / 23 % above / below the Navcam terrain (two-view; 7 / 5 % with
+  three looks or more), Seitah Overlook tiny 67 / 24 %; with a Navcam look too they are on it (0.1 / 0.0 %). With the
+  isolated-point filter after it: Mastcam-Z above / below 2.85 / 1.62 -> 0.17 / 0.14 % (Chal Rocks tiny, 6.4 % of the
+  points deleted) and 1.30 / 0.38 -> 0.58 / 0.14 % (Seitah Overlook tiny, 0.7 %); no Navcam - Mastcam-Z point deleted.
 - **OEB Landing Site without sols 15-31** (`EXCLUDE ["sol:15-31"]`) and **Van Zyl Overlook Huge without the first three
   site-3 waypoints** (`EXCLUDE ["S003D0000", "S003D0008", "S003D0110"]`) (Christian).
 - **Isolated two-view points deleted before the final stage-2 adjustment** (Christian: "a few points scattered
