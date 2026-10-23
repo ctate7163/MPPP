@@ -17,6 +17,11 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **Pose-guided matching runs in one thread by default** (`GUIDED_DEFAULTS["workers"]` 1; 0 = min(8, CPU count)):
+  the Chal Rocks tiny SIFT + LightGlue run of 14:55 stopped writing at this step (15:11) and seems to have held its
+  `database_guided.db` open, so the 16:05 run failed on it (WinError 32); on the tiny blocks the threads saved
+  nothing (120 s either way). A `database_guided.db` held by another process is now left alone and the step writes
+  `database_guided_<pid>.db`.
 - **PyPI** (Christian: <https://pypi.org/project/mppp/> for the JOSS submission): the project metadata PyPI shows
   (SPDX license with LICENSE and NOTICE, author, keywords, classifiers, documentation / repository / issues /
   changelog links; setuptools 77), `MANIFEST.in` (the sdist: package, data, tests and their two PDS products; not

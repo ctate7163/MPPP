@@ -95,6 +95,7 @@ def test_local_depths_bracket_the_true_depth(tmp_path):
 def test_guided_defaults_v0p65_and_options():
     from mppp.sfm.guided import GUIDED_DEFAULTS
     assert GUIDED_DEFAULTS["depth"] == "local" and GUIDED_DEFAULTS["local_factor"] == 1.4
+    assert GUIDED_DEFAULTS["workers"] == 1                                    # 0.94.4: one thread unless asked
     assert GUIDED_DEFAULTS["local_fallback"] == "skip"
 
 
@@ -179,3 +180,24 @@ def test_pose_guided_threads_give_the_same_matches(tmp_path):
         finally:
             db.close()
     assert inliers(tmp_path / "w1.db") == inliers(tmp_path / "w4.db")
+
+
+def test_pose_guided_writes_elsewhere_when_its_database_is_held(tmp_path, monkeypatch):
+    """0.94.4 (23 Oct 16:20, WinError 32): database_guided.db held by another process - a fresh name instead."""
+    pytest.importorskip("pyceres")
+    from helpers import _block_without_navcam_zcam_matches
+    from mppp.sfm import reconstruction as R
+    from mppp.sfm import guided as G
+    proj, rec, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
+    rec = R.triangulate(rec, proj, max_reproj_px=8.0)
+    held = proj.root / "database_guided.db"
+    held.write_bytes(b"old")
+    real = Path.unlink
+
+    def unlink(self, *a, **k):
+        if self == held:
+            raise PermissionError(32, "in use by another process")
+        return real(self, *a, **k)
+    monkeypatch.setattr(Path, "unlink", unlink)
+    out, rep = G.pose_guided_matching(rec, proj, proj.database, verbose=False)
+    assert out != held and out.name.startswith("database_guided_") and out.is_file() and rep["new_matches"] > 0

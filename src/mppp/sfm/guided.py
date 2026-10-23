@@ -43,8 +43,11 @@ GUIDED_DEFAULTS = {"families": ("Z",), "max_px": 3.0, "max_ratio": 0.85, "max_di
                    "depth": "local", "local_k": 8, "local_min": 3, "local_radius": 0.08, "local_factor": 1.4,
                    "local_fallback": "skip",
                    # 0.94.2: the pairs matched by this many threads (numpy releases the GIL in its array work); the
-                   # database is written by the main thread in pair order, so the result does not depend on it
-                   "workers": 0}                     # 0: min(8, CPU count)
+                   # database is written by the main thread in pair order, so the result does not depend on it.
+                   # 0.94.4: 1 by default - on the PC (more cores than OpenBLAS was built for) a run stopped for good
+                   # at this step (Chal Rocks tiny, 23 Oct 15:11), and the threads saved nothing on the tiny blocks
+                   # (120 s either way): the time is in the pair selection and the database, not the matching
+                   "workers": 1}                     # 0: min(8, CPU count)
 
 
 def _pose(im) -> Tuple[np.ndarray, np.ndarray]:
@@ -398,7 +401,13 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
     out = Path(out_database) if out_database else project.root / "database_guided.db"
     if Path(database).resolve() != out.resolve():
         if out.exists():
-            out.unlink()
+            try:
+                out.unlink()
+            except PermissionError:                    # 0.94.4: held by another process (a run that hung)
+                alt = out.with_name(f"{out.stem}_{os.getpid()}{out.suffix}")
+                log.warning("pose-guided matching: %s is in use by another process; writing %s instead", out.name,
+                            alt.name)
+                out = alt
         shutil.copyfile(database, out)
     pairs = select_pairs(rec, project, tuple(o["families"]), int(o["max_pairs"]), int(o["min_points"]),
                          o.get("max_baseline_m"))
