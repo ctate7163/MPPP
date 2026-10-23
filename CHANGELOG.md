@@ -17,6 +17,25 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **Isolated points deleted before the final stage-2 adjustment** (Christian: "a few points scattered above and
+  below the terrain"; `Settings.isolated_points_factor` 4.0, 0 = off; `reconstruction.drop_isolated_points`;
+  ALIGN_RULES 90). A point whose mean distance to its 8 nearest points, divided by its range, is more than 4x the
+  block's median is deleted. On the Chal Rocks tiny and Seitah Overlook tiny SIFT blocks the scattered points are
+  false matches at the wrong range (mostly from pose-guided matching; 73-94 % two-view, median isolation 9-16x
+  against 0.5x for the others): the Mastcam-Z points above / below the Navcam terrain go from 2.8 / 1.6 % to
+  0.0 / 0.0 % (Chal Rocks, 9.5 % of the points deleted, 1.1 % of the Navcam - Mastcam-Z points) and from 1.3 / 0.4 %
+  to 0.1 / 0.0 % (Seitah Overlook, 8.7 %). Pose-guided matching itself was checked on the real blocks: the 0.94.3
+  candidate search and its threads give the same matches as before (131,930 at Chal Rocks tiny); stricter match
+  settings (both images' depth windows) removed far fewer of the false matches than the filter.
+- **`run_weekend.bat`: several days unattended** (Christian): waits until nothing else runs, the A/B on Chal Rocks
+  tiny (every variant again: its masks changed) and Seitah Overlook tiny - SIFT, LightGlue, LightGlue on every
+  octave, SIFT + LightGlue, SIFT without pose-guided matching, SIFT without the isolated-point filter - then the whole
+  `run_pipeline` with SIFT (`--set MATCH_MODE=exhaustive`), then `WEEKEND.md`. Restartable (state in
+  `weekend_state.json`: the pipeline is reset only the first time; the A/B keeps the variants done since), restarted
+  after a crash by its loop (at most 20 times, never after `stop_mppp.bat`), the computer kept awake.
+  `run_pipeline --set NAME=VALUE` passes block settings to every run.
+- **`--set MATCH_MODE=sift+lightglue` works** (the `+` made it Python source; the A/B's SIFT + LightGlue variant
+  failed at once).
 - **`navcam_consensus` is now `ecam_consensus`** (Christian): the engineering-camera blocks - Navcam with the front
   and rear Hazcams. The old name still works everywhere (`waypoints.sites.GROUP_ALIASES`); the file has the new one.
 - **`run_pipeline` fits the Navcam, the front and the rear Hazcams before the Mastcam-Z runs** (Christian): the

@@ -545,7 +545,9 @@ def test_lightglue_ab_four_variants_and_the_joint_variant(tmp_path):
     spec = importlib.util.spec_from_file_location("lab", ROOT / "scripts" / "lightglue_ab.py")
     lab = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(lab)
-    assert list(lab.VARIANTS) == ["sift", "lightglue", "lightglue_octaves", "sift_lightglue"]
+    assert list(lab.VARIANTS)[:4] == ["sift", "lightglue", "lightglue_octaves", "sift_lightglue"]
+    assert lab.DEFAULT_VARIANTS == ("sift", "lightglue", "lightglue_octaves", "sift_lightglue")
+    assert "POSE_GUIDED=false" in lab.VARIANTS["sift_pg_off"] and "ISOLATED_POINTS_FACTOR=0" in lab.VARIANTS["sift_iso_off"]
     assert "MATCH_MODE=sift+lightglue" in lab.VARIANTS["sift_lightglue"]
     assert "LIGHTGLUE_KEYPOINTS=octaves" in lab.VARIANTS["lightglue_octaves"]
     nz = {"sift": 13512, "lightglue": 3786, "lightglue_octaves": 9000, "sift_lightglue": 15000}

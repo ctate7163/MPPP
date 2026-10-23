@@ -1478,3 +1478,38 @@ def test_unsurveyed_stations_get_loose_priors(tmp_path):
     C = -np.asarray(T.rotation.matrix()).T @ np.asarray(T.translation)
     g = R.prior_gauge(rec, [(fid, C + [1.0, 0, 0], 1.0), (fid, C + [101.0, 0, 0], 0.01)], recentre=False)
     assert abs(g["mean_residual_m"][0] - 2.01 / 1.01) < 1e-9
+
+
+def test_drop_isolated_points():
+    """0.94.4: a point far from every other point (a false match at the wrong range) is deleted, the surface stays."""
+    import pycolmap
+    from mppp.sfm.reconstruction import drop_isolated_points
+    rng = np.random.default_rng(0)
+    rec = pycolmap.Reconstruction()
+    cam = pycolmap.Camera(model="SIMPLE_PINHOLE", width=1000, height=1000, params=[800.0, 500, 500], camera_id=1)
+    rec.add_camera(cam)
+    rig = pycolmap.Rig(rig_id=1)
+    rig.add_ref_sensor(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=1))
+    rec.add_rig(rig)
+    for iid in (1, 2):
+        fr = pycolmap.Frame(frame_id=iid, rig_id=1)
+        fr.add_data_id(pycolmap.data_t(sensor_id=pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=1), id=iid))
+        fr.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(), np.array([0.5 * iid, 0.0, 10.0]))
+        rec.add_frame(fr)
+        im = pycolmap.Image(name=f"i{iid}.png", keypoints=np.zeros((3000, 2)), camera_id=1, image_id=iid)
+        im.frame_id = iid
+        rec.add_image(im)
+        rec.register_frame(iid)
+    ground = np.c_[rng.uniform(-5, 5, (2000, 2)), rng.normal(0, 0.01, 2000)]       # a flat surface, 10 m away
+    stray = np.c_[rng.uniform(-5, 5, (20, 2)), rng.choice([-3.0, 3.0], 20)]         # 3 m above or below it
+    for n, xyz in enumerate(np.vstack([ground, stray])):
+        tr = pycolmap.Track()
+        tr.add_element(1, n)
+        tr.add_element(2, n)
+        rec.add_point3D(xyz, tr, np.zeros(3, np.uint8))
+    out = drop_isolated_points(rec, 4.0)
+    left = np.array([p.xyz for p in rec.points3D.values()])
+    assert out["deleted"] >= 18 and out["deleted"] <= 40 and np.abs(left[:, 2]).max() < 1.0
+    assert drop_isolated_points(rec, 0)["deleted"] == 0                  # off
+    from mppp.pipeline import Settings
+    assert Settings().isolated_points_factor == 4.0

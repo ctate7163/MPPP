@@ -152,6 +152,8 @@ class Pipeline:
     def _sites(self, stage, sites_args, zcam):
         cmd = [PY, ROOT / "scripts" / "run_sites.py", "--root", self.root, *sites_args]
         cmd += ["--jobs", str(max(1, int(getattr(self.a, "jobs", 2) or 1)))]   # 0.94.3: two at a time by default
+        for x in getattr(self.a, "set", None) or []:     # 0.94.4: pipeline settings for every block run
+            cmd += ["--set", x]
         if zcam:
             cmd.append("--zcam")
         rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
@@ -401,6 +403,8 @@ def main(argv=None) -> int:
     ap.add_argument("--n-boot", type=int, default=50, help="error_analysis: bootstrap rounds of the gate fit")
     ap.add_argument("--jobs", type=int, default=int(os.environ.get("MPPP_JOBS", "2") or 2),
                     help="ecam_runs / zcam_runs: sites aligned at the same time (default 2, or MPPP_JOBS; 0.94.3)")
+    ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE",
+                    help="a pipeline setting for every block run (run_sites --set), e.g. MATCH_MODE=exhaustive")
     ap.add_argument("--wait-h", type=float, default=36.0, help="how long to wait for a running batch")
     ap.add_argument("--stage-timeout-h", type=float, default=30.0, help="the time limit of a joint or the analysis")
     ap.add_argument("--sites-timeout-h", type=float, default=72.0,

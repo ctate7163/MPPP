@@ -32,9 +32,13 @@ sys.path.insert(0, str(ROOT / "src"))
 VARIANTS = {"sift": ["MATCH_MODE=exhaustive"],
             "lightglue": ["MATCH_MODE=lightglue"],
             "lightglue_octaves": ["MATCH_MODE=lightglue", "LIGHTGLUE_KEYPOINTS=octaves"],
-            "sift_lightglue": ["MATCH_MODE=sift+lightglue", "LIGHTGLUE_KEYPOINTS=octaves"]}
+            "sift_lightglue": ["MATCH_MODE=sift+lightglue", "LIGHTGLUE_KEYPOINTS=octaves"],
+            # 0.94.4: what pose-guided matching and the isolated-point filter each do (SIFT; the run_weekend set)
+            "sift_pg_off": ["MATCH_MODE=exhaustive", "POSE_GUIDED=false"],
+            "sift_iso_off": ["MATCH_MODE=exhaustive", "ISOLATED_POINTS_FACTOR=0"]}
+DEFAULT_VARIANTS = ("sift", "lightglue", "lightglue_octaves", "sift_lightglue")   # test_lightglue.bat
 LABELS = {"sift": "SIFT", "lightglue": "LightGlue", "lightglue_octaves": "LightGlue, every octave",
-          "sift_lightglue": "SIFT + LightGlue"}
+          "sift_lightglue": "SIFT + LightGlue", "sift_pg_off": "SIFT, no pose-guided", "sift_iso_off": "SIFT, no isolated filter"}
 
 
 def gpu_check() -> Dict[str, Any]:
@@ -117,6 +121,7 @@ def summary(work: Path, variant: str, run: Optional[Dict[str, Any]] = None) -> D
     if pj.is_file():
         st = (json.loads(pj.read_text(encoding="utf-8")).get("settings") or {})
         out["matching"] = st.get("matching") or {}
+        out["isolated_points"] = st.get("isolated_points") or {}
         pg = st.get("pose_guided") or {}
         out["pose_guided"] = {k: v for k, v in pg.items() if not isinstance(v, (list, dict))}
         out["navcam_zcam_points"] = {"before": (pg.get("before") or {}).get("navcam_zcam_points"),
@@ -169,6 +174,7 @@ def quality_rows(vs: List[Dict[str, Any]]) -> List[str]:
             rows.append(row(label, [((v.get("checks") or {}).get(k) or {}).get("value") for v in vs]))
     rows.append(row("pose-guided matches added", [(v.get("pose_guided") or {}).get("new_matches") for v in vs]))
     rows.append(row("observations filtered after it", [(v.get("pose_guided") or {}).get("filtered") for v in vs]))
+    rows.append(row("isolated points deleted", [(v.get("isolated_points") or {}).get("deleted") for v in vs]))
     return rows
 
 
@@ -302,8 +308,9 @@ def main(argv=None) -> int:
     ap.add_argument("--navcam-only", dest="zcam", action="store_false")
     ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES") or "D:\\scapes")
     ap.add_argument("--compare-only", action="store_true")
-    ap.add_argument("--variants", nargs="+", choices=list(VARIANTS), default=list(VARIANTS),
-                    help="the variants (default all four: sift, lightglue, lightglue_octaves, sift_lightglue)")
+    ap.add_argument("--variants", nargs="+", choices=list(VARIANTS), default=list(DEFAULT_VARIANTS),
+                    help="the variants (default the four matchers: sift, lightglue, lightglue_octaves, "
+                         "sift_lightglue; also sift_pg_off, sift_iso_off)")
     ap.add_argument("--only", choices=list(VARIANTS), default=None, help="run one variant only")
     ap.add_argument("--rerun", action="store_true", help="run variants again that have finished")
     ap.add_argument("--joint-variant", default="auto",

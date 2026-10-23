@@ -385,6 +385,8 @@ def unlocalized_stations(project: SfmProject, min_images: int, rec=None,
 
 
 POSE_GUIDED_MAX_BEYOND_GROUND_RISE = 0.02    # undo the pose-guided stage above this rise (fraction of points)
+ISOLATED_POINTS_FACTOR = 4.0     # 0.94.4: before the final stage-2 adjustment, points this many times the block's median
+ISOLATED_POINTS_K = 8            # neighbour spacing (mean distance to the K nearest points / range) apart are dropped
 NAVCAM_ASPECT_SIGMA = 2e-5      # 1-sigma of the fy / fx prior (relative; 0.03 px of a 1500 px focal length)
 
 
@@ -1326,6 +1328,45 @@ def drop_mixed_short_tracks(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_L
     return len(bad)
 
 
+def drop_isolated_points(rec, factor: float = ISOLATED_POINTS_FACTOR, k: int = ISOLATED_POINTS_K,
+                         min_points: int = 1000) -> Dict[str, Any]:
+    """
+    Delete the 3-D points far from every other point (0.94.4, Christian 23 Oct: "a few points scattered above and
+    below the terrain").  Isolation is the mean distance to the ``k`` nearest points divided by the point's range
+    (from the nearest camera that sees it), so near and far ground count alike; a point more than ``factor`` x the
+    block's median isolation is deleted.  A false match that agrees with the epipolar geometry - pose-guided above
+    all, LightGlue too - lands at the wrong range along its ray, off the surface the other points make: on Chal Rocks
+    tiny (SIFT) the Mastcam-Z points above / below the Navcam terrain were 2.8 / 1.6 % before and 0.0 / 0.0 % after,
+    for 9.5 % of the points (median isolation of the off-terrain points 9x, of the others 0.5x; 90 % two-view);
+    Seitah Overlook tiny 1.3 / 0.4 % -> 0.1 / 0.0 % for 8.7 %.  Returns {"deleted", "points", "median_isolation",
+    "threshold"}; nothing is done with fewer than ``min_points`` points or ``factor`` <= 0.
+    """
+    out: Dict[str, Any] = {"deleted": 0, "points": int(len(rec.points3D)), "factor": float(factor), "k": int(k)}
+    if not factor or factor <= 0 or len(rec.points3D) < max(int(min_points), k + 2):
+        return out
+    from scipy.spatial import cKDTree
+    centres = {int(i): np.asarray(im.projection_center(), float) for i, im in rec.images.items() if im.has_pose}
+    pids = np.fromiter((int(p) for p in rec.points3D), np.int64, len(rec.points3D))
+    X = np.empty((len(pids), 3))
+    rng = np.empty(len(pids))
+    for n, pid in enumerate(pids):
+        pt = rec.points3D[int(pid)]
+        X[n] = pt.xyz
+        cs = [centres[int(e.image_id)] for e in pt.track.elements if int(e.image_id) in centres]
+        rng[n] = min(float(np.linalg.norm(pt.xyz - c)) for c in cs) if cs else np.nan
+    ok = np.isfinite(rng)
+    d, _ = cKDTree(X).query(X, k=k + 1)
+    iso = d[:, 1:].mean(axis=1) / np.maximum(rng, 0.5)
+    med = float(np.median(iso[ok])) if ok.any() else 0.0
+    if med <= 0:
+        return out
+    bad = ok & (iso > factor * med)
+    for pid in pids[bad]:
+        rec.delete_point3D(int(pid))
+    out.update(deleted=int(bad.sum()), median_isolation=med, threshold=float(factor * med))
+    return out
+
+
 def drop_short_tracks(rec, min_track_length: int = 2, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH) -> int:
     """Delete 3-D points observed in fewer than ``min_track_length`` images, and Navcam + Mastcam-Z points in fewer
     than ``min_mixed_track_length`` (v0p86); returns the number deleted."""
@@ -1836,6 +1877,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 zcam_backlash: Optional[str] = None, zcam_backlash_z: float = 3.0,
                 zcam_focus_line: bool = True, zcam_line_cycles: int = 2, thermal_after_stage1: bool = True,
                 pose_guided: Union[bool, Dict[str, Any]] = True, navcam_aspect: str = "hold",
+                isolated_points_factor: float = ISOLATED_POINTS_FACTOR,
                 round1_hold: bool = ROUND1_HOLD):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
@@ -2315,6 +2357,16 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             if verbose:
                 logger.info(f"stage 2, pose-guided: Navcam-Mastcam-Z tie points {before['navcam_zcam_points']} -> "
                       f"{prep['after']['navcam_zcam_points']}, points {before['points']} -> {prep['after']['points']}")
+        if isolated_points_factor and isolated_points_factor > 0:     # 0.94.4: the scattered false points
+            iso = drop_isolated_points(rec, float(isolated_points_factor))
+            iso["zcam_terrain_after"] = _zcam_terrain(rec) if z_frames else None
+            log.append({"stage": 2, "isolated_points": iso})
+            project.settings["isolated_points"] = {k: v for k, v in iso.items() if k != "zcam_terrain_after"}
+            if verbose:
+                logger.info(f"stage 2: {iso['deleted']} isolated points deleted of {iso['points']} (more than "
+                            f"{iso['factor']:g} x the median spacing to their {iso['k']} nearest points)"
+                            + (f"; {_zcam_terrain_line(iso['zcam_terrain_after'])}" if iso.get("zcam_terrain_after")
+                               else ""))
         ZG.trace(rec, project, "before_final")
         if exclude_outliers:
             _exclude("stage 2, before the final adjustment", navcam_ties=True)

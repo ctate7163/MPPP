@@ -90,3 +90,12 @@ def test_run_logged_writes_log_status_and_runs_txt(tmp_path):
     with pytest.raises(RunAlive, match="still alive"):
         run_logged(step, work, None, echo=False)
     assert run_logged(step, work, None, echo=False, force=True)["state"] == "finished"
+
+
+def test_set_value_with_a_plus_is_a_word():
+    """0.94.4: --set MATCH_MODE=sift+lightglue is the string, not Python source (the A/B variant failed at once)."""
+    from mppp.runner import parse_set
+    d = parse_set(["MATCH_MODE=sift+lightglue", "PG=dict(max_ratio=0.8)"])
+    assert d["MATCH_MODE"] == "sift+lightglue" and d["PG"] == "py:dict(max_ratio=0.8)"
+    from mppp.pipeline import Settings, normalize
+    assert Settings().replace(**normalize({"match_mode": d["MATCH_MODE"]})).match_mode == "sift+lightglue"

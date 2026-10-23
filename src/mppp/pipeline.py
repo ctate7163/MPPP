@@ -49,7 +49,7 @@ RUN_SETTINGS = "run_settings.json"
 # Bumped when the alignment code changes its results under unchanged settings (a default changed in the code, not
 # in the settings), so that the batch scripts align every site again instead of skipping it as done.
 ZCAM_RULES = 1                   # 0.93.4: Mastcam-Z blocks only (a partly listed focus group, unique _reg names)
-ALIGN_RULES = 89                 # 0.93.5: a Hazcam eye refines from 500 tie-point observations (88: residual cut 2.0 px)
+ALIGN_RULES = 90                 # 0.94.4: isolated points deleted before the final stage-2 adjustment (89: Hazcam eye from 500 observations)
 # Likewise for the selection and processing rules (process_done.json).
 PROCESS_RULES = 6                # 0.94.0: the shipped exclusion list before the processing (5: own stations on other sols)
 
@@ -156,6 +156,7 @@ class Settings:
     zcam_rig_fit: Optional[str] = "rotation"      # the Mastcam-Z rig refined in stage 2: "rotation", "full" (and translation), None
     zcam_rig_refine: str = "refine"               # "refine" (from the model's rig), "auto" (held when the model has one), "hold"
     pose_guided: Any = True                       # after the stage-2 rounds, match again guided by the poses (a dict overrides mppp.sfm.guided.GUIDED_DEFAULTS)
+    isolated_points_factor: float = 4.0           # 0.94.4: before the final stage-2 adjustment, delete the points more than this x the median spacing from their 8 nearest points (the scattered false points above and below the terrain); 0 = off
     thermal_after_stage1: bool = True             # the Navcam temperature bins are fitted at the end of stage 1, before Mastcam-Z comes in
     navcam_rig_epoch_gap_sols: float = 50         # Navcam visits more than this many sols apart get their own rig rotation
     navcam_rig_epoch_breaks_sols: Tuple[float, ...] = (300,)   # images on both sides of these sols get separate rig rotations
@@ -1003,6 +1004,7 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
                       thermal_fine_deg=s.thermal_fine_deg, localize_min_images=s.localize_min_images,
                       zcam_backlash=s.zcam_backlash if z else None, zcam_focus_line=bool(s.zcam_focus_line),
                       zcam_line_cycles=int(s.zcam_line_cycles), pose_guided=s.pose_guided,
+                      isolated_points_factor=float(s.isolated_points_factor or 0),
                       navcam_aspect=s.navcam_aspect, thermal_after_stage1=bool(s.thermal_after_stage1),
                       round1_hold=bool(s.round1_hold),
                       rig_translation_sigma_m=s.rig_translation_sigma_m if rig_refine is True else None)

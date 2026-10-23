@@ -228,6 +228,8 @@ def _setting_value(v: str) -> Any:
         pass
     if re.fullmatch(r"[A-Za-z0-9_.:\\/-]+", v) and v not in ("True", "False", "None"):
         return v
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(\+[A-Za-z][A-Za-z0-9_]*)+", v):
+        return v                                     # 0.94.4: a word joined by "+" (MATCH_MODE=sift+lightglue)
     return "py:" + v
 
 

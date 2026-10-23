@@ -96,7 +96,8 @@ def mark_stopped(root: PathLike, pids) -> List[str]:
     run was one of ``pids`` or whose process is gone; returns the files changed."""
     root = Path(root)
     changed = []
-    files = [root / BATCH_FILE, root / "mppp_pipeline" / "pipeline_status.json"] + sorted(root.glob(f"*/{STATUS_FILE}"))
+    files = [root / BATCH_FILE, root / "mppp_pipeline" / "pipeline_status.json",
+             root / "mppp_pipeline" / "weekend_status.json"] + sorted(root.glob(f"*/{STATUS_FILE}"))
     for f in files:
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
