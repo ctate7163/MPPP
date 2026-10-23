@@ -17,6 +17,10 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **`check_sites.bat` shows each block's last run** (Christian): per site, when its Navcam block and its Navcam +
+  Mastcam-Z block last finished, the MPPP version, variant and verdict (the newest `colmap*/run_done.json`), or
+  "running since"; `--root` or `MPPP_SCAPES`.
+- **Pico Turquino in `zcam_consensus`** (Christian; Mastcam-Z 48 mm): a second 48 mm block for the Z48 joint.
 - **Chal Rocks (all three blocks): no mask inference on exposure `0093_0675177115_000`** (Christian: the model
   masked a rock there), next to `0093_0675176765_000`.
 - **Eight image-processing workers by default** (Christian; were 4): `Settings.workers` (`WORKERS`, not in the run

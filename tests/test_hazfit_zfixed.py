@@ -148,7 +148,7 @@ def test_groups_and_block_sites():
     t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
     g = t["groups"]
     assert g["zcam_consensus"] == ["seitah_overlook", "chal_rocks_large", "threeforks_north", "belva_crater", "south_arm",
-                                   "marble_mountain", "taylorfjellet"]                      # 23 Oct
+                                   "marble_mountain", "taylorfjellet", "pico_turquino"]                      # 23 Oct
     assert "chal_rocks" not in g["zcam34_joint"] and "chal_rocks_large" in g["zcam34_joint"]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "threeforks_north", "belva_crater", "bell_island", "marble_mountain"]
     assert all(s in t["sites"] for s in g["hazcam_consensus"])

@@ -121,7 +121,7 @@
   "zcam63_consensus":                  ["chal_rocks_large", "bright_angle"],
   "zcam79_consensus":                  ["chal_rocks_large"],
   "zcam110_consensus":                 ["chal_rocks_large"],
-  "zcam_consensus":                    ["seitah_overlook", "chal_rocks_large", "threeforks_north", "belva_crater", "south_arm", "marble_mountain", "taylorfjellet"],
+  "zcam_consensus":                    ["seitah_overlook", "chal_rocks_large", "threeforks_north", "belva_crater", "south_arm", "marble_mountain", "taylorfjellet", "pico_turquino"],
   "hazcam_consensus":                  ["chal_rocks_large", "threeforks_north", "belva_crater", "bell_island", "marble_mountain"],
   "zcam34_diag":                       ["chal_rocks", "rochette", "south_arm", "marble_mountain"],
   "blocks_all":                        ["oeb_landing_site", "van_zyl_overlook", "chal_rocks", "artuby_ridge", "rochette", "issole_seitah_south", "seitah_north", "threeforks_south", "threeforks_north", "enchanted_lake", "delta_front_ascent", "rose_river_falls", "rockytop", "knob_mountain", "observation_mountain", "hidden_harbor", "tenby_berea", "belva_crater", "wild_basin_lake", "tuxedo_park", "hans_amundsen_workspace", "airey_hill", "bunsen_peak", "overlook_mountain", "bright_angel", "cheyava_falls", "plateau_point", "pico_turquino", "rio_chiquito", "south_arm", "witch_hazel_hill", "bell_island", "taylorfjellet", "plankeholmane", "origny", "vingeanne", "olifants", "groloy", "hippo_pools", "marble_mountain"],

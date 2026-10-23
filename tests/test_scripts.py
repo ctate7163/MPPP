@@ -1,5 +1,6 @@
 """Command-line scripts and Windows .bat files (scripts/). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 from pathlib import Path
+import os
 import numpy as np
 import pytest
 import sys
@@ -319,3 +320,30 @@ def test_multizoom_test_bat():
     """22 Oct: the multi-zoom test block (Taylorfjellet, all five zooms) in its own variant."""
     b = (ROOT / "scripts" / "windows" / "run_multizoom_test.bat").read_bytes()
     assert b"\r\n" in b and b"--variant multizoom" in b and b"ZCAM_ZOOMS=[34,48,63,79,110]" in b
+
+
+def test_check_sites_shows_the_last_runs(tmp_path, capsys):
+    """0.94.4 (Christian): check_sites lists when each block last finished and with which MPPP version."""
+    import importlib.util
+    import json
+    spec = importlib.util.spec_from_file_location("check_sites", ROOT / "scripts" / "check_sites.py")
+    cs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cs)
+    from mppp.waypoints.sites import load_site_table, work_folder
+    t = load_site_table()["sites"]
+    n = work_folder(tmp_path, "rockytop", False, t["rockytop"]["sols"])
+    z = work_folder(tmp_path, "rockytop", True, t["rockytop"]["sols"])
+    for col, when, ver in (("colmap", "2026-10-21T09:00:00", "0.93.4"), ("colmap_lightglue", "2026-10-23T11:55:55", "0.94.0")):
+        (z / col).mkdir(parents=True)
+        (z / col / "run_done.json").write_text(json.dumps({"finished": when, "mppp": ver, "verdict": "warn"}))
+    (n / "colmap").mkdir(parents=True)
+    assert cs.last_run(n) == "not finished"
+    assert cs.last_run(z) == "23 Oct 11:55 0.94.0 lightglue warn"          # the newest of the variants
+    assert cs.last_run(tmp_path / "nothing") == "-"
+    (n / "mppp_status.json").write_text(json.dumps({"state": "running", "pid": os.getpid(),
+                                                    "started": "2026-10-23T12:10:16", "mppp": "0.94.4"}))
+    assert cs.last_run(n) == "running since 10-23 12:10 (0.94.4)"
+    assert cs.main(["--root", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    line = [ln for ln in out.splitlines() if ln.strip().startswith("rockytop ")][0]
+    assert "N: running since" in line and "Z: 23 Oct 11:55 0.94.0 lightglue warn" in line
