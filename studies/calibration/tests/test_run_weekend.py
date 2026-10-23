@@ -101,3 +101,12 @@ def test_weekend_dry_run_cli(tmp_path):
     log = (tmp_path / "mppp_pipeline" / "weekend_dry_run_log.txt").read_text()
     assert "lightglue_ab.py" in log and "run_pipeline.py" in log and "--reset" in log
     assert not (tmp_path / "mppp_pipeline" / "weekend_state.json").exists()
+
+
+def test_stop_mppp_stops_the_weekend_loop():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from _batch import mppp_processes
+    rows = [{"pid": 10, "ppid": 1, "cmd": 'cmd /c call "D:\\code\\MPPP\\scripts\\windows\\_run_weekend_loop.bat" "D:\\scapes"'},
+            {"pid": 11, "ppid": 10, "cmd": "python studies/calibration/run_weekend.py --root D:/scapes"},
+            {"pid": 12, "ppid": 11, "cmd": "python studies/calibration/run_pipeline.py --root D:/scapes"}]
+    assert [r["pid"] for r in mppp_processes(rows)] == [10]           # the loop window: /T takes the rest

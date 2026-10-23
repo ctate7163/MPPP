@@ -39,7 +39,8 @@ def batch_lock(root: PathLike, kind: str, argv=None, force: bool = False) -> Run
 
 # --- finding and stopping MPPP runs ----------------------------------------------------------------------------
 RUN_MARKERS = ("_run_process.bat", "_run_sites.bat", "_run_align.bat", "process_sites.py", "run_sites.py",
-               "align_scape.py", "run_scapes.py", "run_pipeline.py", "mppp align", "mppp run", "mppp process")
+               "align_scape.py", "run_scapes.py", "run_pipeline.py", "mppp align", "mppp run", "mppp process",
+               "_run_weekend_loop.bat", "run_weekend.py", "lightglue_ab.py")      # 0.94.4: the weekend run
 
 
 def mppp_processes(rows) -> List[Dict[str, Any]]:
