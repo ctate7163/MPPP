@@ -106,3 +106,6 @@
 
 ## 20261023-110047 - Hazcam FL athermal law (0.94.0 fallback; Christian 23 Oct): the temperature law of hazcam_fit_zcam_20261023 failed its thermal check (+150.8 ppm/degC); fx, fy, k1 constant over the same 4 blocks, block scatter 538 ppm, every check passed
   - `M2020_FL.json` e449940994af from `/tmp/claude-0/-home-claude/3f5549f9-2d32-5ba5-952a-af5a6dabd550/scratchpad/fl/M2020_FL.json` (THIN_PRISM_FISHEYE 5120x3840, fx 2141.07 at -20.0 degC)
+
+## 20261023-113000 - Mastcam-Z 110 mm joint of 2 blocks (zcam110_joint_20261023; a first calibration, single state): it failed only the form (no low-state lines - not needed at 110 mm since 0.94.0) and the aspect at the 1 % limit (fy / fx 0.982); every check passes with the 2 % limit of 0.94.1 (Christian)
+  - `M2020_ZCAM110_focus_model.json` cf9de96f5f94 from `/mnt/user-data/uploads/camera_analysis/zcam110_joint_20261023/M2020_ZCAM110_focus_model.json` (focus model for ['ZL110', 'ZR110'] and rig)

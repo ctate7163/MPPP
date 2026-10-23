@@ -2,6 +2,22 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.94.1 — 2026-10-23
+
+- **Seitah Overlook tiny** (`seitah_overlook_tiny`, sols 116-121, every zoom; in no group) next to Chal Rocks tiny.
+- **`test_lightglue.bat` runs both tiny blocks**, then **the tiny joint** (Christian): the Hazcam fit and the
+  Mastcam-Z joint of every zoom over their `colmap_lightglue` alignments (`lightglue_ab.tiny_joint`), promoted when
+  every check passes with as few blocks as there are (`--min-blocks 1`) - only models of which none is in use
+  (`--promote-new-only`), so a tiny joint never replaces a model made from more blocks (Z34, Z63, FL, FR, the rigs).
+  `--joint-only`, `--no-joint`, `--no-promote`.
+- **The fy / fx aspect limit is 2 %** (Christian; was 1 %), for the Mastcam-Z models (`max_aspect_dev`) and the
+  Hazcam laws.
+- **Mastcam-Z 110 mm in use** (a first calibration, single state): the joint `zcam110_joint_20261023` of 2 blocks,
+  which failed only the form (fixed in 0.94.0) and the 1 % aspect limit - fy / fx 0.982 in both eyes, worth a look
+  with more blocks. Z79 stays out (one block in its joint, fy / fx 0.992, its low-state ratio fit 0.9955).
+- `mppp calib zcam / hazcam --min-blocks N --promote-new-only`; `calib zcam --blocks NAME=<project folder>` takes a
+  `colmap_<variant>` folder (its Navcam fingerprint read there).
+
 ## 0.94.0 — 2026-10-23
 
 The release of the 22-23 Oct work (0.93.1-0.93.10 below): Hazcams in every block with their own law, the

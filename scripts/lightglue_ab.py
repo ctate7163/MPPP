@@ -4,7 +4,7 @@ SIFT matcher and SIFT + LightGlue - into ``<WORK>/colmap_sift`` and ``<WORK>/col
 compared: the matcher actually used, pairs and inlier matches, registered images, tie points, cross-station points,
 residuals, every health check, and the time of the matching and of the whole alignment.
 
-    python scripts/lightglue_ab.py                      (test_lightglue.bat: site chal_rocks_tiny, sols 91-98)
+    python scripts/lightglue_ab.py                      (test_lightglue.bat: Chal Rocks tiny, sols 91-98, and Seitah Overlook tiny, 116-121; then the tiny joint)
     python scripts/lightglue_ab.py --site rockytop --zcam
     python scripts/lightglue_ab.py --compare-only       the report again from the two finished alignments
 
@@ -147,29 +147,24 @@ def report(work: Path, res: Dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--site", default="chal_rocks_tiny")
-    ap.add_argument("--zcam", action="store_true", default=True, help="the Navcam + Mastcam-Z block (default)")
-    ap.add_argument("--navcam-only", dest="zcam", action="store_false")
-    ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES") or "D:\\scapes")
-    ap.add_argument("--compare-only", action="store_true")
-    ap.add_argument("--only", choices=list(VARIANTS), default=None, help="run one variant only")
-    ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="more settings for both")
-    a = ap.parse_args(argv)
+TINY_SITES = ("chal_rocks_tiny", "seitah_overlook_tiny")
+ZOOMS = (34, 48, 63, 79, 110)
+
+
+def ab_site(a, site: str) -> Path:
+    """The A/B of one site: both alignments (unless --compare-only), the comparison; returns its WORK folder."""
     from mppp.waypoints.sites import load_site_table, work_folder
     table = load_site_table()
-    work = work_folder(Path(a.root), a.site, a.zcam, table["sites"][a.site]["sols"])
-    res: Dict[str, Any] = {"site": a.site, "work": str(work), "when": f"{datetime.datetime.now():%Y-%m-%d %H:%M}",
-                           "gpu": gpu_check(), "runs": {}, "variants": {}}
-    print("GPU check:", json.dumps(res["gpu"]), flush=True)
+    work = work_folder(Path(a.root), site, a.zcam, table["sites"][site]["sols"])
+    res: Dict[str, Any] = {"site": site, "work": str(work), "when": f"{datetime.datetime.now():%Y-%m-%d %H:%M}",
+                           "gpu": a.gpu, "runs": {}, "variants": {}}
     prev = work / "lightglue_ab.json"
     if prev.is_file():
         res["runs"] = (json.loads(prev.read_text(encoding="utf-8")).get("runs") or {})
     extra = [x for s in a.set for x in ("--set", s)]
     if not a.compare_only:
         for v in ([a.only] if a.only else list(VARIANTS)):
-            res["runs"][v] = run_variant(a.site, a.root, a.zcam, v, extra)
+            res["runs"][v] = run_variant(site, a.root, a.zcam, v, extra)
     for v in VARIANTS:
         res["variants"][v] = summary(work, v, res["runs"].get(v))
     work.mkdir(parents=True, exist_ok=True)
@@ -178,6 +173,68 @@ def main(argv=None) -> int:
     (work / "lightglue_ab.md").write_text(md, encoding="utf-8")
     print("\n" + md)
     print(f"=> {work / 'lightglue_ab.md'}")
+    return work
+
+
+def tiny_joint(a, works: Dict[str, Path], variant: str = "lightglue") -> Dict[str, Any]:
+    """0.94.1 (Christian, 23 Oct): the joints over the tiny blocks (their ``colmap_<variant>`` alignments) - the
+    Hazcam fit and the Mastcam-Z joint of every zoom the blocks have - promoted when every check passes, with as few
+    blocks as there are (``--min-blocks 1``), but only for models of which none is in use (``--promote-new-only``: a
+    tiny joint does not replace a model made from more blocks)."""
+    from mppp.waypoints.sites import load_site_table
+    table = load_site_table()["sites"]
+    day = f"{datetime.date.today():%Y%m%d}"
+    out_root = Path(a.root) / "camera_analysis"
+    done = {n: w for n, w in works.items() if (w / f"colmap_{variant}" / "run_done.json").is_file()}
+    out: Dict[str, Any] = {"blocks": sorted(done), "variant": variant, "exit": {}}
+    if not done:
+        print(f"tiny joint: no finished colmap_{variant} block", flush=True)
+        return out
+    promo = ["--promote-if-ok", "--promote-new-only", "--min-blocks", "1"] if a.promote else ["--min-blocks", "1"]
+    od = out_root / f"hazcam_fit_tiny_{day}"
+    cmd = [sys.executable, "-m", "mppp", "--log", f"{od}_log.txt", "calib", "hazcam", "--variant", variant,
+           "--blocks", *[f"{n}={w}" for n, w in done.items()], "--root", a.root, "--out", od, *promo]
+    print("\n" + " ".join(map(str, cmd)), flush=True)
+    out["exit"]["hazcam"] = subprocess.call([str(c) for c in cmd], cwd=str(ROOT))
+    for z in ZOOMS:
+        bl = {n: w / f"colmap_{variant}" for n, w in done.items() if z in (table.get(n, {}).get("zcam") or [])}
+        if not bl:
+            continue
+        od = out_root / f"zcam{z}_tiny_joint_{day}"
+        cmd = [sys.executable, "-m", "mppp", "--log", f"{od}_log.txt", "calib", "zcam", "--zoom", str(z),
+               "--blocks", *[f"{n}={w}" for n, w in bl.items()], "--root", a.root, "--out", od, *promo]
+        print("\n" + " ".join(map(str, cmd)), flush=True)
+        out["exit"][f"z{z}"] = subprocess.call([str(c) for c in cmd], cwd=str(ROOT))
+    (out_root / f"tiny_joint_{day}.json").write_text(json.dumps(out, indent=1, default=str), encoding="utf-8")
+    return out
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--site", nargs="+", default=list(TINY_SITES), help="the sites (default the two tiny ones)")
+    ap.add_argument("--zcam", action="store_true", default=True, help="the Navcam + Mastcam-Z block (default)")
+    ap.add_argument("--navcam-only", dest="zcam", action="store_false")
+    ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES") or "D:\\scapes")
+    ap.add_argument("--compare-only", action="store_true")
+    ap.add_argument("--only", choices=list(VARIANTS), default=None, help="run one variant only")
+    ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="more settings for both")
+    ap.add_argument("--no-joint", dest="joint", action="store_false",
+                    help="skip the tiny joint (the Hazcam fit and the Mastcam-Z joints over the sites' blocks)")
+    ap.add_argument("--no-promote", dest="promote", action="store_false", help="the tiny joint promotes nothing")
+    ap.add_argument("--joint-only", action="store_true", help="only the tiny joint (the alignments are done)")
+    a = ap.parse_args(argv)
+    a.gpu = gpu_check()
+    print("GPU check:", json.dumps(a.gpu), flush=True)
+    from mppp.waypoints.sites import load_site_table, work_folder
+    table = load_site_table()
+    works = {}
+    for site in a.site:
+        if a.joint_only:
+            works[site] = work_folder(Path(a.root), site, a.zcam, table["sites"][site]["sols"])
+        else:
+            works[site] = ab_site(a, site)
+    if a.joint and a.zcam:
+        tiny_joint(a, works)
     return 0
 
 

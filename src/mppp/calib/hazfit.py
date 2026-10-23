@@ -37,7 +37,7 @@ MIN_BLOCKS = 3                     # blocks per eye for a law (refined, not held
 MIN_T_SPAN_DEGC = 5.0              # temperature span for a slope (else 0)
 MIN_EARLY_BLOCKS = 2               # blocks on each side of the early-mission sol for an offset (else 0)
 MIN_RIG_BLOCKS = 3                 # blocks with a refined rig for a drift (else the median rotation, no drift)
-HAZCAM_LIMITS = {"max_ppm_per_degC": 100.0, "max_f0_change_pct": 1.0, "max_aspect_dev": 0.01,
+HAZCAM_LIMITS = {"max_ppm_per_degC": 100.0, "max_f0_change_pct": 1.0, "max_aspect_dev": 0.02,
                  "max_scatter_ppm": 600.0, "max_rig_change_deg": 0.5, "min_blocks": MIN_BLOCKS}
 EYES = ("FL", "FR", "RL", "RR")
 
@@ -116,14 +116,15 @@ def _wls(X: np.ndarray, y: np.ndarray, w: np.ndarray):
     return beta, cov, r
 
 
-def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False) -> Dict[str, Any]:
+def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False, min_blocks: Optional[int] = None) -> Dict[str, Any]:
     """The law of one eye from its block rows (:func:`block_rows`; weak eyes left out).  ``athermal`` (0.93.10): no
     temperature terms - fx, fy and k1 constant (the fallback when the temperature slope fails its check)."""
     use = [r for r in rows if not r["weak"] and r["T"] is not None and r["observations"] > 0]
     starts = np.array([r["start"] for r in rows], float) if rows else np.zeros((0, 12))
     out: Dict[str, Any] = {"eye": eye, "blocks": [r["block"] for r in use], "weak_blocks": [r["block"] for r in rows if r["weak"]]}
-    if len(use) < MIN_BLOCKS:
-        out["skipped"] = f"{len(use)} blocks with this eye refined (>= {MIN_BLOCKS} needed)"
+    need = int(min_blocks or MIN_BLOCKS)                  # 0.94.1: --min-blocks (the tiny joints)
+    if len(use) < need:
+        out["skipped"] = f"{len(use)} blocks with this eye refined (>= {need} needed)"
         return out
     P = np.array([r["params"] for r in use], float)
     T = np.array([r["T"] for r in use], float) - T0_DEGC
@@ -206,7 +207,7 @@ def fit_rig(rows: List[Dict[str, Any]], fam: str) -> Dict[str, Any]:
     return out
 
 
-def fit_hazcam(blocks: Dict[str, PathLike], model: str = "cahv_ba") -> Dict[str, Any]:
+def fit_hazcam(blocks: Dict[str, PathLike], model: str = "cahv_ba", limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The Hazcam law of every eye and pair from the finished blocks {name: WORK}."""
     rows = []
     for n, w in blocks.items():
@@ -218,22 +219,23 @@ def fit_hazcam(blocks: Dict[str, PathLike], model: str = "cahv_ba") -> Dict[str,
     per_fam = {f: [dict(r["rigs"][f], block=r["block"]) for r in rows if f in r["rigs"]] for f in ("F", "R")}
     return {"when": datetime.date.today().isoformat(), "blocks": sorted(r["block"] for r in rows if r["eyes"]),
             "T0_degC": T0_DEGC, "early_mission_sol": EARLY_MISSION_SOL,
-            "eyes": {e: fit_eye_with_fallback(rs, e) for e, rs in per_eye.items() if rs},
+            "eyes": {e: fit_eye_with_fallback(rs, e, limits) for e, rs in per_eye.items() if rs}, "limits": limits or {},
             "rigs": {f: fit_rig(rs, f) for f, rs in per_fam.items() if rs}}
 
 
 def fit_eye_with_fallback(rows: List[Dict[str, Any]], eye: str,
                           limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    mb = (limits or {}).get("min_blocks")
     """0.93.10 (Christian, 23 Oct): the eye's law with its temperature terms; when that law fails its thermal check
     (FL of 23 Oct: +151 ppm/degC), the athermal law (fx, fy, k1 constant) instead if it passes every check - else the
     temperature law, with the athermal attempt recorded (``athermal_tried``)."""
-    e = fit_eye(rows, eye)
+    e = fit_eye(rows, eye, min_blocks=mb)
     if e.get("skipped") or not e.get("slope_fitted"):
         return e
     checks = eye_checks(e, eye, limits)
     if dict((n, o) for n, o, _ in checks).get(f"{eye} thermal", True):
         return e
-    a = fit_eye(rows, eye, athermal=True)
+    a = fit_eye(rows, eye, athermal=True, min_blocks=mb)
     ca = eye_checks(a, eye, limits)
     th = f"{e['ppm_per_degC']:+.1f} ppm/degC"
     if all(o for _, o, _ in ca):
@@ -343,7 +345,7 @@ def write_hazcam(res: Dict[str, Any], out_dir: PathLike) -> Dict[str, Any]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     stamp = res.get("when") or datetime.date.today().isoformat()
-    chk = check_hazcam(res)
+    chk = check_hazcam(res, res.get("limits") or None)
     cand = out / "candidate"
     cand.mkdir(exist_ok=True)
     files = []

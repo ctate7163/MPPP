@@ -159,6 +159,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--promote-if-ok", action="store_true", help="promote the candidate when every check passes")
     p.add_argument("--no-promote", action="store_true", help="never promote (overrides --promote-if-ok)")
     p.add_argument("--note", default="", help="promotion note")
+    p.add_argument("--min-blocks", type=int, default=None,
+                   help="zcam / hazcam: the blocks a candidate needs (0.94.1, the tiny joints: 1 or 2)")
+    p.add_argument("--promote-new-only", action="store_true",
+                   help="zcam / hazcam: promote only models of which none is in use (0.94.1: a tiny joint never "
+                        "replaces a model of more blocks)")
     sub.add_parser("doctor", help="what is set, what is missing: environment variables, dependencies, models, waypoints")
     sub.add_parser("version", help="the MPPP version")
     return ap
@@ -607,15 +612,22 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     res["block_navcam_fingerprints"] = {}
     for n, w in blocks.items():
         try:
-            pj = json.loads((Path(w) / "colmap" / "project.json").read_text(encoding="utf-8"))
+            pjf = Path(w) / "colmap" / "project.json"
+            if not pjf.is_file():                         # 0.94.1: a block given as its project folder (colmap_<variant>)
+                pjf = Path(w) / "project.json"
+            pj = json.loads(pjf.read_text(encoding="utf-8"))
             res["block_navcam_fingerprints"][n] = ((pj.get("settings") or {}).get("navcam_cameras") or {}).get("fingerprint")
         except (OSError, ValueError):
             res["block_navcam_fingerprints"][n] = None
-    w = Z.write_zjoint(res, out)
+    lim = {"min_blocks": a.min_blocks, "min_blocks_start": a.min_blocks} if getattr(a, "min_blocks", None) else None
+    w = Z.write_zjoint(res, out, limits=lim)
     for c in w["check"]["checks"]:
         print(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}")
     print(f"=> {'every check passes' if w['check']['ok'] else 'a check failed'}; {out / 'report.md'}")
     promote = a.promote_if_ok and not a.no_promote
+    if promote and getattr(a, "promote_new_only", False) and (M.zcam_files() or {}).get(int(a.zoom)):
+        print(f"not promoted: a {a.zoom} mm model is in use (--promote-new-only)")
+        promote = False
     if promote and w["check"]["ok"]:
         pr = M.promote([Path(w["model"])], note=a.note or f"Mastcam-Z {a.zoom} mm joint of {len(blocks)} blocks")
         print(f"promoted into {pr['folder']} ({pr['stamp']})")
@@ -639,13 +651,19 @@ def _calib_hazcam(a: argparse.Namespace) -> int:
     root = Path(a.root or os.environ.get("MPPP_SCAPES") or ".")
     out = Path(a.out) if a.out else root / "camera_analysis" / f"hazcam_fit_{datetime.date.today():%Y%m%d}"
     log.info("calib hazcam: %d blocks -> %s", len(blocks), out)
-    res = H.fit_hazcam(blocks)
+    res = H.fit_hazcam(blocks, limits={"min_blocks": a.min_blocks} if getattr(a, "min_blocks", None) else None)
     w = H.write_hazcam(res, out)
     for line in H.describe(res):
         print("  " + line)
     for c in w["check"]["checks"]:
         print(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}")
     promote = a.promote_if_ok and not a.no_promote
+    if promote and getattr(a, "promote_new_only", False):        # 0.94.1: only models of which none is in use
+        from .paths import cmods_dir
+        kept = [f for f in w["files"] if not (cmods_dir() / Path(f).name).is_file()]
+        if len(kept) < len(w["files"]):
+            print("in use, not replaced (--promote-new-only): " + ", ".join(Path(f).name for f in w["files"] if f not in kept))
+        w["files"] = kept
     if promote and w["files"]:
         try:
             pr = M.promote([Path(f) for f in w["files"]], note=a.note or f"Hazcam fit of {len(res['blocks'])} blocks "

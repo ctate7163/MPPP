@@ -504,3 +504,35 @@ def test_0940_models_in_use_and_first_calibration_ratio():
     assert any("ZL063: no regular line" in x for x in forms.validate_zcam(m))
     from mppp.pipeline import load_settings
     assert load_settings(None, "chal_rocks_tiny").exclude == ["S004D0218", "seq:ZCAM08390"]
+
+
+def test_0941_tiny_sites_and_joint_commands(tmp_path, monkeypatch):
+    """0.94.1: Seitah Overlook tiny; the tiny joint runs the Hazcam fit and a joint per zoom over the finished
+    colmap_lightglue blocks, promoting only new models with as few blocks as there are."""
+    import importlib.util
+    from types import SimpleNamespace
+    from mppp.waypoints.sites import load_site_table, work_folder
+    t = load_site_table()["sites"]
+    assert t["seitah_overlook_tiny"]["sols"] == [[116, 121]]
+    spec = importlib.util.spec_from_file_location("lab", ROOT / "scripts" / "lightglue_ab.py")
+    lab = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lab)
+    works = {}
+    for s in ("chal_rocks_tiny", "seitah_overlook_tiny"):
+        w = work_folder(tmp_path, s, True, t[s]["sols"])
+        (w / "colmap_lightglue").mkdir(parents=True)
+        (w / "colmap_lightglue" / "run_done.json").write_text("{}")
+        works[s] = w
+    calls = []
+    monkeypatch.setattr(lab.subprocess, "call", lambda cmd, cwd=None: calls.append(cmd) or 0)
+    (tmp_path / "camera_analysis").mkdir()
+    out = lab.tiny_joint(SimpleNamespace(root=str(tmp_path), promote=True), works)
+    assert out["exit"] == {"hazcam": 0, "z34": 0, "z48": 0, "z63": 0, "z79": 0, "z110": 0}
+    haz = calls[0]
+    assert "hazcam" in haz and "--variant" in haz and "--promote-new-only" in haz and "--min-blocks" in haz
+    z110 = [c for c in calls if "110" in c][0]
+    assert sum(1 for x in z110 if str(x).startswith("seitah_overlook_tiny=")) == 1 and not any(
+        str(x).startswith("chal_rocks_tiny=") for x in z110)                       # chal rocks has no 110 mm
+    from mppp.cli import build_parser
+    a = build_parser().parse_args(["calib", "zcam", "--zoom", "48", "--min-blocks", "1", "--promote-new-only"])
+    assert a.min_blocks == 1 and a.promote_new_only

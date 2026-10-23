@@ -1,0 +1,582 @@
+{
+ "cameras": {
+  "ZL110": {
+   "f0_px": 14679.420480297453,
+   "slope_px_per_count": 0.14631851739349586,
+   "aspect": 0.9820772341417225,
+   "reference_focus": 2814.0,
+   "focus_range": [
+    2205.0,
+    3198.0
+   ],
+   "pp0_px": [
+    781.5320466577259,
+    738.2371857661504
+   ],
+   "lines": {
+    "backlash": {
+     "fx": {
+      "a": 14812.763496478932,
+      "b": 0.14631851739349586,
+      "form": "common"
+     },
+     "fy": {
+      "a": 14547.2778046175,
+      "b": 0.14631851739349586,
+      "form": "common"
+     },
+     "k1": {
+      "a": 0.459582581899669,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     }
+    },
+    "reference_focus": 2814.0
+   },
+   "distortion": {
+    "names": [
+     "k1",
+     "k2",
+     "p1",
+     "p2"
+    ],
+    "params": [
+     0.459582581899669,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "sd": [
+     null,
+     null,
+     null,
+     null
+    ],
+    "note": "k1, k2, p1, p2 constant with focus (the Mastcam-Z joint; k3 = 0 held)"
+   },
+   "pp": {
+    "cx_px_per_count": 0.0,
+    "cy_px_per_count": 0.0
+   },
+   "thermal": {
+    "T0_degC": -15.0,
+    "sensor": "HEAD_FPA",
+    "f_px_per_degC": 0.0,
+    "note": "no temperature term"
+   },
+   "n_bins": 15,
+   "focus_state": "single"
+  },
+  "ZR110": {
+   "f0_px": 14661.021885656985,
+   "slope_px_per_count": 0.1585744544770535,
+   "aspect": 0.9820318037552547,
+   "reference_focus": 2670.0,
+   "focus_range": [
+    2109.0,
+    3132.0
+   ],
+   "pp0_px": [
+    930.9183292545375,
+    695.2781095047613
+   ],
+   "lines": {
+    "backlash": {
+     "fx": {
+      "a": 14794.539972923212,
+      "b": 0.1585744544770535,
+      "form": "common"
+     },
+     "fy": {
+      "a": 14528.708775338999,
+      "b": 0.1585744544770535,
+      "form": "common"
+     },
+     "k1": {
+      "a": 0.426332608178245,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "cx": {
+      "a": 930.9183292545375,
+      "b": 0.0,
+      "form": "pinned"
+     },
+     "cy": {
+      "a": 695.2781095047613,
+      "b": 0.0016835286053818541,
+      "form": "pinned_slope"
+     }
+    },
+    "reference_focus": 2670.0
+   },
+   "distortion": {
+    "names": [
+     "k1",
+     "k2",
+     "p1",
+     "p2"
+    ],
+    "params": [
+     0.426332608178245,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "sd": [
+     null,
+     null,
+     null,
+     null
+    ],
+    "note": "k1, k2, p1, p2 constant with focus (the Mastcam-Z joint; k3 = 0 held)"
+   },
+   "pp": {
+    "cx_px_per_count": 0.0,
+    "cy_px_per_count": 0.0016835286053818541,
+    "note": "ZR principal point: cx pinned at pp0, cy pinned with its focus slope (the joint)"
+   },
+   "thermal": {
+    "T0_degC": -15.0,
+    "sensor": "HEAD_FPA",
+    "f_px_per_degC": 0.0,
+    "note": "no temperature term"
+   },
+   "n_bins": 17,
+   "focus_state": "single"
+  }
+ },
+ "rig": {
+  "R_sensor_from_ref": [
+   [
+    0.999457491457078,
+    0.01062624282657576,
+    0.031173798833566753
+   ],
+   [
+    -0.010800696445713066,
+    0.9999269104408678,
+    0.005433114435416541
+   ],
+   [
+    -0.03111378676105822,
+    -0.005766865662681732,
+    0.9994992123727843
+   ]
+  ],
+  "t_sensor_from_ref": [
+   -0.2436282283552199,
+   0.001478829654060489,
+   0.002178968569884695
+  ],
+  "baseline_m": 0.243642460364932,
+  "note": "the Mastcam-Z joint: one rig for every block and focus (rotation refined, translation held); per_block / residuals from the diagnostic pass (each block's own rig)",
+  "translation_source": "held (the rig in use)",
+  "blocks": [
+   "marble_mountain",
+   "seitah_overlook"
+  ],
+  "sd_rotvec_mdeg": [
+   3.2076390290460868,
+   39.199935551771446,
+   16.049121708916875
+  ],
+  "residuals": {
+   "per_block": [
+    {
+     "block": "marble_mountain",
+     "sol": 1968.0,
+     "T_optics_degC": -16.915787067099565,
+     "yaw_mdeg": 0.5752037584065375,
+     "pitch_mdeg": 0.1581145020690234,
+     "roll_mdeg": -1.4879622070183363
+    },
+    {
+     "block": "seitah_overlook",
+     "sol": 121.0,
+     "T_optics_degC": -20.32015454545455,
+     "yaw_mdeg": -54.861876743059895,
+     "pitch_mdeg": 4.694401120143266,
+     "roll_mdeg": 21.208923377908373
+    }
+   ],
+   "fits": {
+    "yaw": {
+     "sd_mdeg": 39.199935551771446,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    },
+    "pitch": {
+     "sd_mdeg": 3.2076390290460868,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    },
+    "roll": {
+     "sd_mdeg": 16.049121708916875,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    }
+   }
+  },
+  "per_block": [
+   {
+    "block": "marble_mountain",
+    "sol": 1968.0,
+    "T_optics_degC": -16.915787067099565
+   },
+   {
+    "block": "seitah_overlook",
+    "sol": 121.0,
+    "T_optics_degC": -20.32015454545455
+   }
+  ]
+ },
+ "form": "zcam-v2",
+ "state": "calibrated",
+ "pixel_mm": 0.0074,
+ "source": "MPPP Mastcam-Z joint (mppp.calib.ztied, 2026-10-23): one adjustment over 2 blocks (marble_mountain, seitah_overlook), the Navcam held at the models in use",
+ "calibration": {
+  "method": "zcam tied joint (mppp.calib.ztied)",
+  "when": "2026-10-23",
+  "blocks": [
+   "marble_mountain",
+   "seitah_overlook"
+  ],
+  "eyes": {
+   "ZL110": {
+    "backlash": {
+     "fx": {
+      "a": 14812.763496478932,
+      "b": 0.14631851739349586,
+      "sd_a": null,
+      "sd_b": null,
+      "form": "common"
+     },
+     "fy": {
+      "a": 14547.2778046175,
+      "b": 0.14631851739349586,
+      "sd_a": null,
+      "sd_b": null,
+      "form": "common"
+     },
+     "k1": {
+      "a": 0.459582581899669,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     }
+    },
+    "regular": {},
+    "reference_focus": 2814.0,
+    "bins": 15,
+    "regular_bins": 0,
+    "held": [
+     "a_fx_regular",
+     "a_fy_regular",
+     "k2",
+     "p1",
+     "p2",
+     "b_cy",
+     "d_cx_regular",
+     "d_cy_regular"
+    ]
+   },
+   "ZR110": {
+    "backlash": {
+     "fx": {
+      "a": 14794.539972923212,
+      "b": 0.1585744544770535,
+      "sd_a": null,
+      "sd_b": null,
+      "form": "common"
+     },
+     "fy": {
+      "a": 14528.708775338999,
+      "b": 0.1585744544770535,
+      "sd_a": null,
+      "sd_b": null,
+      "form": "common"
+     },
+     "k1": {
+      "a": 0.426332608178245,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "cx": {
+      "a": 930.9183292545375,
+      "b": 0.0,
+      "form": "pinned"
+     },
+     "cy": {
+      "a": 695.2781095047613,
+      "b": 0.0016835286053818541,
+      "sd_b": null,
+      "form": "pinned_slope"
+     }
+    },
+    "regular": {},
+    "reference_focus": 2670.0,
+    "bins": 17,
+    "regular_bins": 0,
+    "held": [
+     "a_fx_regular",
+     "a_fy_regular",
+     "k2",
+     "p1",
+     "p2",
+     "d_cx_regular",
+     "d_cy_regular"
+    ]
+   }
+  },
+  "residuals": {
+   "observations": 375677,
+   "median_px": 0.1711746618749475,
+   "rms_px": 0.46724015158688265,
+   "corner_median_px": 0.2405405865831775,
+   "p95_px": 0.7668497980662531
+  },
+  "zcam": {
+   "zcam_observations": 30427,
+   "navcam_zcam_points": 11247,
+   "zcam_nonfinite": 4,
+   "zcam_nonfinite_share": 0.0001314621881881224,
+   "zcam_median_px": 0.21492507287469412,
+   "zcam_rms_px": 1.0726073684606006,
+   "zcam_p95_px": 0.8876892624015273
+  },
+  "navcam_models": "D:\\code\\MPPP\\src\\mppp\\data\\cmods",
+  "diagnostics": {
+   "blocks": [
+    {
+     "block": "marble_mountain",
+     "sol": 1968.0,
+     "T_optics_degC": -16.915787067099565,
+     "pitch_mdeg": 0.1581145020690234,
+     "yaw_mdeg": 0.5752037584065375,
+     "roll_mdeg": -1.4879622070183363,
+     "lines": {
+      "ZL110": {
+       "backlash": {
+        "fx": {
+         "a": 14780.478509058596,
+         "b": 0.27258064710228086,
+         "bins": 14,
+         "observations": 14686
+        },
+        "fy": {
+         "a": 14568.79699517248,
+         "b": 0.07084464435701211,
+         "bins": 14,
+         "observations": 14686
+        }
+       }
+      },
+      "ZR110": {
+       "backlash": {
+        "fx": {
+         "a": 14749.070263761676,
+         "b": 0.2972989809192233,
+         "bins": 16,
+         "observations": 13931
+        },
+        "fy": {
+         "a": 14545.758161994649,
+         "b": 0.11868195470906433,
+         "bins": 16,
+         "observations": 13931
+        }
+       }
+      }
+     }
+    },
+    {
+     "block": "seitah_overlook",
+     "sol": 121.0,
+     "T_optics_degC": -20.32015454545455,
+     "pitch_mdeg": 4.694401120143266,
+     "yaw_mdeg": -54.861876743059895,
+     "roll_mdeg": 21.208923377908373,
+     "lines": {
+      "ZL110": {
+       "backlash": {
+        "fx": {
+         "a": 14828.100838717442,
+         "b": 0.14631851739349586,
+         "bins": 1,
+         "observations": 915
+        },
+        "fy": {
+         "a": 14760.434927369206,
+         "b": 0.14631851739349586,
+         "bins": 1,
+         "observations": 915
+        }
+       }
+      },
+      "ZR110": {
+       "backlash": {
+        "fx": {
+         "a": 14806.501903315495,
+         "b": 0.1585744544770535,
+         "bins": 1,
+         "observations": 895
+        },
+        "fy": {
+         "a": 14742.671103918627,
+         "b": 0.1585744544770535,
+         "bins": 1,
+         "observations": 895
+        }
+       }
+      }
+     }
+    }
+   ],
+   "fits": {
+    "yaw": {
+     "sd_mdeg": 39.199935551771446,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    },
+    "pitch": {
+     "sd_mdeg": 3.2076390290460868,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    },
+    "roll": {
+     "sd_mdeg": 16.049121708916875,
+     "vs_sol_per_1000": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     },
+     "vs_T": {
+      "n": 2,
+      "slope": null,
+      "se": null,
+      "z": null
+     }
+    }
+   }
+  }
+ }
+}

@@ -1002,7 +1002,8 @@ def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict
     return {"ok": all(c["ok"] for c in checks), "checks": checks}
 
 
-def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[str, Any]] = None,
+                 limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The candidate folder: ``M2020_ZCAM034_focus_model.json`` (the joint's model), its check against the model in
     use (``check.json``), ``zcam_joint.json`` (everything), ``block_lines.json``, the figures and ``report.md``."""
     from ..sfm.project import zcam_focus_model_path
@@ -1020,7 +1021,7 @@ def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[st
     # hours of adjustment; it is then a failed check, nothing is promoted
     (out / "zcam_joint.json").write_text(json.dumps(res, indent=1, default=float), encoding="utf-8")
     try:
-        chk = joint_checks(res, check_zcam(new, old))
+        chk = joint_checks(res, check_zcam(new, old, limits))
     except Exception as e:                                   # noqa: BLE001
         log.exception("Mastcam-Z joint: the checks did not run")
         chk = {"ok": False, "checks": [{"check": "checks ran", "ok": False, "note": f"{type(e).__name__}: {e}"}]}
