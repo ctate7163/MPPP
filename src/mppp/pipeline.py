@@ -84,7 +84,7 @@ class Settings:
     scapes_root: Optional[Path] = field(default_factory=lambda: _env_path("MPPP_SCAPES"))  # one WORK folder per site below it (MPPP_SCAPES)
     gpu_python: Optional[str] = field(default_factory=lambda: _default_gpu_python())  # python.exe of a CUDA pycolmap environment for features and matching (MPPP_GPU_PYTHON, else MPPP_GPU_PY, %LOCALAPPDATA%\mppp\gpu_python.txt from install_lightglue.bat, <conda>\envs\mppp_gpu); None: the CPU
     colmap_bat: Optional[str] = field(default_factory=lambda: _env_str("COLMAP_BAT"))      # COLMAP.bat for open_in_colmap.bat; None: search the usual places (COLMAP_BAT)
-    workers: int = 4                              # image-processing worker processes
+    workers: int = 8                              # image-processing worker processes (8 since 0.94.4, Christian)
     gui_files: bool = True                        # write colmap_gui.ini and open_in_colmap.bat into the project (22 Oct: on by default - batch runs had none)
 
     # --- site ----------------------------------------------------------------------------------------------------

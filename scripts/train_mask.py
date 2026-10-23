@@ -45,7 +45,7 @@ def main(argv=None) -> int:
     ap.add_argument("--pds", default=os.environ.get("MPPP_PDS"), help="PDS archive (for --regen)")
     ap.add_argument("--regen", action="store_true", help="regenerate images/ from the PDS, then images_variable/")
     ap.add_argument("--reuse-variable", nargs="*", default=[], help="older images_variable/ folders to reuse")
-    ap.add_argument("--workers", type=int, default=4, help="--regen processes (1 if spawn gives trouble)")
+    ap.add_argument("--workers", type=int, default=8, help="--regen processes (default 8; 1 if spawn gives trouble)")
     ap.add_argument("--epochs", type=int, default=10, help="10 = the mppp_mask_v3 recipe (TrainConfig default 6)")
     ap.add_argument("--quad-split-above", type=int, default=None, help="e.g. 4000: 5120 px frames as quadrants")
     ap.add_argument("--init-from", default=None, help="start from a ConvNeXtSeg checkpoint (fine-tune)")

@@ -342,7 +342,7 @@ def test_defaults():
     assert '"max_boresight_elevation_deg": 45.0' in src
     import inspect
     from mppp.process import process_images
-    assert inspect.signature(process_images).parameters["workers"].default == 4
+    assert inspect.signature(process_images).parameters["workers"].default == 8
 
 
 @needs_data

@@ -17,6 +17,8 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **Eight image-processing workers by default** (Christian; were 4): `Settings.workers` (`WORKERS`, not in the run
+  key), `process_images`, and `train_mask.py --regen`. With two sites at a time that is up to 16 worker processes.
 - **`seq:FHAZ00206` on the exclude list** (Christian): its front Hazcam frames are left out of every alignment.
 - **Seitah Overlook in `navcam_consensus`** (Christian): its Navcam block (`mars2020_sol_0113_seitah_overlook`) runs
   with the other Navcam blocks and enters the Navcam joint.

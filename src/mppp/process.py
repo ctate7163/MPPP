@@ -264,7 +264,7 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
                    stop_on_error: bool = False, progress: bool = True,
                    provenance: Optional[Dict[str, Any]] = None,
                    only_existing: Optional[str] = None,
-                   reuse_existing: bool = False, workers: int = 4) -> Dict[str, Any]:
+                   reuse_existing: bool = False, workers: int = 8) -> Dict[str, Any]:
     """
     Returns the manifest (also written to disk).  ``provenance`` (e.g. the
     report from ``mppp.scapes.select_scape``) is stored in both the manifest
@@ -281,7 +281,7 @@ def process_images(paths: Iterable[PathLike], out_dir: PathLike,
     not exist yet, or none of the selection is in it, the filter is
     ignored for this run and everything is processed; the report says so.
 
-    ``workers`` (default 4): images are processed in that many worker
+    ``workers`` (default 8 since 0.94.4): images are processed in that many worker
     processes (``spawn``; each loads the mask model once).  1 processes them
     in this process, in order, which is what ``stop_on_error`` needs.
 
