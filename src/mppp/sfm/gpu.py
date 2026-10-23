@@ -154,7 +154,7 @@ class gpu_lock:
     Context manager: the GPU steps of two alignments running at once (``run_sites --jobs 2``) take turns - COLMAP's
     GPU SIFT extraction and matching, LightGlue.  An OS file lock on ``<cache>/gpu.lock`` (released by the OS if
     the holder dies); a waiter logs once who holds it.  Two users at once could run out of GPU memory, and
-    LightGlue's time projection (its 2 h budget) would be skewed by the other job.  ``MPPP_GPU_LOCK=0`` turns it
+    LightGlue's time projection (its 3 h budget) would be skewed by the other job.  ``MPPP_GPU_LOCK=0`` turns it
     off; ``enabled=False`` (a CPU step) does nothing.
     """
 

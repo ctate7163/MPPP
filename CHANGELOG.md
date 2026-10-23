@@ -17,6 +17,9 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
     SIFT matches stand, recorded as such.
   - The run key and the matches record carry the keypoint selection only when it is not "largest", so finished runs
     and their matches stay valid. The default matcher is unchanged (`lightglue`, largest scales).
+- **LightGlue's time budget per block is 3 h** (Christian; was 2 h): a block whose LightGlue matching is projected
+  (from its first 20 pairs) to take longer falls back to SIFT (`lightglue`) or keeps its SIFT matches alone
+  (`sift+lightglue`). Not in the run key.
 - **`check_sites.bat` shows each block's last run** (Christian): per site, when its Navcam block and its Navcam +
   Mastcam-Z block last finished, the MPPP version, variant and verdict (the newest `colmap*/run_done.json`), or
   "running since"; `--root` or `MPPP_SCAPES`.

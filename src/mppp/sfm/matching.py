@@ -31,7 +31,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
           min_num_inliers: int = 15, num_threads: int = -1, guided_matching: bool = False, block_size: int = 100,
           python: Optional[PathLike] = None, max_ratio: float = 0.8, max_distance: float = 0.7,
           cross_check: bool = True, max_keypoints: int = 8192, filter_threshold: float = 0.1,
-          device: Optional[str] = None, max_hours: float = 2.0,
+          device: Optional[str] = None, max_hours: float = 3.0,
           keypoint_selection: str = "largest") -> Dict[str, Any]:
     """Match and verify; results go into ``project.database``.  Returns a summary.
     ``python``: run in another Python environment, e.g. a conda one with a CUDA
@@ -41,7 +41,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     verified two-view geometry; ``max_error_px``: RANSAC threshold of the
     geometric verification, full-resolution pixels.  ``max_keypoints``, ``filter_threshold``, ``device``: LightGlue
     (the keypoints per image it attends over, its match confidence threshold, "cuda"/"cpu"; see
-    :mod:`mppp.sfm.lightglue`); ``max_hours``: the LightGlue time budget per block, projected from the first pairs
+    :mod:`mppp.sfm.lightglue`); ``max_hours``: the LightGlue time budget per block (3 h since 0.94.4, Christian; was 2 h), projected from the first pairs
     - beyond it, or without kornia/torch, the block is matched with COLMAP's SIFT matcher and the record says so
     (``matcher`` against ``matcher_requested``), so that a later run with LightGlue available does not reuse
     SIFT matches as LightGlue ones.

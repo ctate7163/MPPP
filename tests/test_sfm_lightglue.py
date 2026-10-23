@@ -208,3 +208,10 @@ def test_keypoint_selection_keeps_old_run_keys_and_records():
     assert o.key_dict()["lightglue_keypoints"] == "octaves" and run_key(o) != run_key(s)
     assert "keypoint_selection" not in match_settings("lightglue", **s.match)
     assert match_settings("lightglue", keypoint_selection="octaves", **s.match)["keypoint_selection"] == "octaves"
+
+
+def test_lightglue_budget_is_three_hours():
+    """0.94.4 (Christian): a block's LightGlue matching may take up to 3 h (projected) before the SIFT fallback."""
+    import inspect
+    from mppp.sfm.matching import match
+    assert inspect.signature(match).parameters["max_hours"].default == 3.0
