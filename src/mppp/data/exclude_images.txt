@@ -31,6 +31,9 @@ seq:ZCAM01*
 seq:ZCAM08512        # Rockytop: 74 stereo frames
 seq:ZCAM03017        # Christian, 22 Oct
 
+# Hazcam sequences
+seq:FHAZ00206        # Christian, 23 Oct
+
 # Navcam stereo pairs (both eyes, every product type)
 N*_0693_0728460284_145*
 N*_0684_0727665222_395*
