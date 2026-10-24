@@ -4,6 +4,7 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- Sites (Christian, 24 Oct): Enchanted Lake's second visit starts at sol 422 (NEARBY_FROM_FIRST_SOL keeps sol 421's station, 4.3 m away, out); Knob Mountain Large includes sols 440-459 and 535-537 (149 m wide, 30 waypoints). The zooms map figure's title no longer says "one stretch for all panels".
 - Health: the excluded-frames FAIL limit is 33 % (Christian, 24 Oct; was 30 %). Chal Rocks Mastcam-Z, 30.2 % excluded, is a WARN. Thresholds are not part of a run key: finished blocks are judged again where a joint picks its blocks.
 
 - A Mastcam-Z joint judges a FAIL block on its own zoom (`health.restrict_to_zoom`, `cli._rejudged(zoom=...)`): the excluded fraction counts the Navcam, Hazcam and that zoom's frames, the corner check that zoom's cameras. Chal Rocks Mastcam-Z (24 Oct): 30.2 % excluded, 180 of the 194 frames at 79 mm (too few ties to the Navcam or a wider zoom, residuals over 2 px) and the corner check failed on ZL063 - so the Z34 joint left out a block whose 34 mm frames are fine (3.4 % excluded at 34 mm).

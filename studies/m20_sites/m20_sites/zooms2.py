@@ -126,7 +126,7 @@ bg = 'HiRISE DTM hillshade' if dem_used else 'no 1 m DTM background (set M20_DEM
 if BACKGROUND == 'white':
     bg = 'white background'
 if ortho_used:
-    bg = ('HiRISE orthomosaic' + (' (one stretch for all panels)' if STRETCH else '')
+    bg = ('HiRISE orthomosaic'
           + (f', tinted by the DTM height about each block\'s median (±{ZOOM_TINT_M:g} m)' if ZOOM_TINT_M > 0 and dem_used and raw and next(iter(raw.values())).ndim == 2 else '')
           + ('; 0.5 m DTM contours' if dem_used and CONTOURS else ''))
 fig.suptitle_text = (f'M2020 blocks of rover stations, ordered by first sol, ±30 m around each block centre: the block\'s waypoints (its sols and every waypoint within 10 m of them) in colour, other waypoints in grey; N× Navcam 360s and Z× Mastcam-Z 360s of the block (local metres, north up; '

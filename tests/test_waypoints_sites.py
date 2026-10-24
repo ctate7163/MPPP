@@ -245,7 +245,7 @@ def test_shipped_sites_v0p75():
     t = S.load_site_table()
     r = S.load_site_ranges()
     assert r["chal_rocks"] == [(91, 101), (361, 378)] and r["threeforks_large"][0] == (652, 693)
-    assert r["enchanted_lake"] == [(556, 590), (421, 423)] and S.load_sites()["chal_rocks"] == (91, 378)
+    assert r["enchanted_lake"] == [(556, 590), (422, 423)] and S.load_sites()["chal_rocks"] == (91, 378)
     g = t["groups"]
     assert "olifants" not in g["ecam_consensus"] and "cheyava_falls" in g["ecam_consensus"]
     assert "threeforks_large" in g["ecam_consensus"] and "threeforks_north" not in g["ecam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
@@ -326,7 +326,7 @@ def test_site_fixes_19_oct():
     t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))["sites"]
     assert t["chal_rocks_large"]["sols"][0] == [72, 100]
     assert t["chal_rocks_large"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
-    assert [421, 423] in t["enchanted_lake"]["sols"]
+    assert [422, 423] in t["enchanted_lake"]["sols"]     # 24 Oct (Christian): from sol 422
     assert t["bell_island_large"]["sols"][0][0] == 1431
     assert t["rochette"]["sols"][0][0] == 178 and t["rochette"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
     assert t["hippo_pools"]["sols"][0][0] == 1948 and t["hippo_pools"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
@@ -379,3 +379,17 @@ def test_ecam_consensus_and_the_old_group_name():
     assert S.site_group("navcam_consensus") == S.site_group("ecam_consensus") and "seitah_overlook" in S.site_group("ecam_consensus")
     raw = json.loads(S.SITES_FILE.read_text(encoding="utf-8"))
     assert "navcam_consensus" not in raw["groups"]                    # only the new name in the file
+
+
+def test_site_fixes_24_oct():
+    """Christian 24 Oct: Enchanted Lake's second visit starts at sol 422 (sol 421's station, 4.3 m away, stays out:
+    NEARBY_FROM_FIRST_SOL); Knob Mountain Large includes sols 440-459 and 535-537.  The work folders keep their
+    names (first sol 556, 437)."""
+    from mppp.waypoints.sites import load_site_table, work_folder
+    t = load_site_table()["sites"]
+    e, k = t["enchanted_lake"], t["knob_mountain_large"]
+    assert e["sols"] == [[556, 590], [422, 423]] and e["settings"]["NEARBY_FROM_FIRST_SOL"] is True
+    assert 23 not in e["rover_sites"]
+    assert k["sols"] == [[437, 459], [535, 538], [694, 707]]
+    assert work_folder(Path("x"), "enchanted_lake", False, e["sols"]).name == "mars2020_sol_0556_enchanted_lake"
+    assert work_folder(Path("x"), "knob_mountain_large", False, k["sols"]).name == "mars2020_sol_0437_knob_mountain_large"
