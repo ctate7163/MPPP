@@ -542,13 +542,15 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
 
 def _rejudged(work, variant: str = ""):
     """(verdict, changed checks) of a block's saved health report under the current rules; (None, []) without one."""
-    from .sfm.health import rejudge
+    from .sfm.health import rejudge, restation
     from .sfm.workdir import project_dir
     try:
         h = json.loads((project_dir(work, variant) / "health" / "health.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None, []
-    return rejudge(h)
+    fixed = restation(h, project_dir(work, variant))     # 0.94.4: shifts from the label priors (moved Hazcam priors)
+    v, changed = rejudge(h)
+    return v, fixed + changed
 
 
 def cmd_calib(a: argparse.Namespace) -> int:

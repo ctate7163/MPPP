@@ -1527,6 +1527,13 @@ def reset_cameras_to_start(rec, project: SfmProject, keys) -> List[str]:
 HAZCAM_STATION_PRIOR_SIGMA_M = 0.1
 
 
+def label_prior_C(r: Dict[str, Any]) -> np.ndarray:
+    """The label (waypoint + CAHV) position prior of a project image: ``prior_C_label`` when stage 2 moved the
+    image's prior (:func:`hazcam_station_priors`), else ``prior_C``.  Shifts are measured from it (0.94.4: the moved
+    Hazcam prior made every Hazcam frame look its station's shift away from the Navcam frames)."""
+    return np.asarray(r.get("prior_C_label") or r["prior_C"], float)
+
+
 def hazcam_station_priors(rec, project: SfmProject, sigma_m: float = HAZCAM_STATION_PRIOR_SIGMA_M
                           ) -> Dict[str, np.ndarray]:
     """Move the position prior of every Hazcam image of ``project`` by its station's median Navcam shift (solved
@@ -1688,12 +1695,14 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
         R = im.cam_from_world().rotation.matrix()
         C = im.projection_center()
         r0 = by_name[im.name]
-        dC = np.asarray(C) - np.asarray(r0["prior_C"], float)
+        dC = np.asarray(C) - label_prior_C(r0)            # 0.94.4: from the label prior (a Hazcam's was moved)
         dR = Rotation.from_matrix(np.asarray(r0["prior_R_w2c"], float).T @ R).as_rotvec()   # world frame: a rover tilt is common to a station
         obs = sum(n_img.get(i, 0) for i in ims)
         meds = [med_img[i] for i in ims if i in med_img]
+        ins = str(rows[0]["instrument"])
         frames[fid] = {"frame_id": int(fid), "images": [rec.images[i].name for i in ims], "station": rows[0]["station"],
-                       "family": "Z" if str(rows[0]["instrument"]).startswith("Z") else "N", "observations": obs,
+                       "family": "Z" if ins.startswith("Z") else "H" if ins[:1] in HAZCAM_FAMILIES else "N",
+                       "observations": obs,
                        "median_residual_px": float(np.median(meds)) if meds else float("inf"), "dC": dC, "dR": dR,
                        "reasons": []}
     if not frames:
@@ -1721,14 +1730,20 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
     groups: Dict[tuple, List[Dict[str, Any]]] = {}
     for f in frames.values():
         groups.setdefault((f["station"], f["family"]), []).append(f)
-    for fs in groups.values():
-        if len(fs) < 3:
+    for (station, fam), fs in groups.items():
+        # 0.94.4: the Hazcam frames of a station (one rover pose, few frames) are tested against the station's
+        # Navcam frames when it has three or more, else among themselves; never on their attitude
+        ref = groups.get((station, "N")) if fam == "H" else None
+        ref = ref if ref is not None and len(ref) >= 3 else (fs if len(fs) >= 3 else None)
+        if ref is None:
             continue
+        D_ref = np.array([f["dC"] for f in ref])
+        med_ref = np.median(D_ref, axis=0)
+        mad = 1.4826 * np.median(np.linalg.norm(D_ref - med_ref, axis=1))
         D = np.array([f["dC"] for f in fs])
-        dev = np.linalg.norm(D - np.median(D, axis=0), axis=1)
-        mad = 1.4826 * np.median(dev)
+        dev = np.linalg.norm(D - med_ref, axis=1)
         A = np.array([f["dR"] for f in fs])
-        adev = np.degrees(np.linalg.norm(A - np.median(A, axis=0), axis=1))
+        adev = np.degrees(np.linalg.norm(A - np.median(A, axis=0), axis=1)) if len(fs) >= 3 else np.zeros(len(fs))
         amad = 1.4826 * np.median(adev)
         for f, d, a in zip(fs, dev, adev):
             if d > max(th["min_shift_m"], th["shift_mad_factor"] * mad):

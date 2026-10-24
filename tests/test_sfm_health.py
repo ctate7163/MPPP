@@ -256,3 +256,42 @@ def test_screen_block_cache(tmp_path, monkeypatch):
     (sp / "points3D.bin").write_bytes(b"xx")                  # the alignment changed: screened again
     H.screen_block(tmp_path / "w")
     assert len(calls) == 2
+
+
+def test_restation_uses_the_label_priors(tmp_path):
+    """0.94.4: a block run with moved Hazcam priors (Van Zyl Overlook Huge, 23 Oct: within_station_shift_spread_m
+    FAIL 1.06 m at a station whose Navcam moved 2.1 m) is judged again from the label priors."""
+    import csv
+    import json
+    from mppp.sfm.health import rejudge, restation
+    root = tmp_path / "colmap"
+    (root / "error_input").mkdir(parents=True)
+    shift = np.array([2.1, 0.0, 0.0])
+    imgs, rows = [], []
+    for k in range(6):                                   # 4 Navcam images, 2 Hazcam images at one station
+        name = f"{'NLF' if k < 4 else 'FLF'}_{k}.png"
+        label = np.array([float(k), 0.0, 0.0])
+        r = {"name": name, "prior_C": (label + (shift if k >= 4 else 0)).tolist()}
+        if k >= 4:
+            r["prior_C_label"] = label.tolist()
+        imgs.append(r)
+        E, N, U = label + shift + 0.01 * k
+        d = np.array([E, N, U]) - np.asarray(r["prior_C"])          # the old table: from the moved prior
+        rows.append({"name": name, "station": "S003D0834", "E_m": E, "N_m": N, "U_m": U, "dE_m": d[0], "dN_m": d[1],
+                     "dU_m": d[2], "observations": 500})
+    (root / "project.json").write_text(json.dumps({"images": imgs}))
+    with (root / "error_input" / "poses.csv").open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    report = {"checks": [{"section": "poses", "check": "within_station_shift_spread_m", "value": 1.056, "status": "fail"},
+                         {"section": "poses", "check": "station_shift_median_m", "value": 2.1, "status": "warn"}],
+              "stations": {"S003D0834": {"label": "Sol0031 S003D0834", "position_prior": True}}}
+    changed = restation(report, root)
+    assert any("within_station_shift_spread_m" in c for c in changed)
+    spread = next(c for c in report["checks"] if c["check"] == "within_station_shift_spread_m")["value"]
+    assert spread < 0.05
+    assert rejudge(report)[0] in ("pass", "warn")
+    # a block without moved priors is left alone
+    (root / "project.json").write_text(json.dumps({"images": [{"name": "NLF_0.png", "prior_C": [0, 0, 0]}]}))
+    assert restation({"checks": []}, root) == []

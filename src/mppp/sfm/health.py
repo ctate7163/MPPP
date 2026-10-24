@@ -766,7 +766,8 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         cen = {s: by_st[s] for s in comp if s in by_st and s not in unloc}
         if len(cen) < 3:
             continue
-        P0 = np.array([np.mean([project.image(x["name"])["prior_C"] for x in v], 0) for v in cen.values()])
+        P0 = np.array([np.mean([project.image(x["name"]).get("prior_C_label") or project.image(x["name"])["prior_C"]
+                                for x in v], 0) for v in cen.values()])
         P1 = np.array([np.mean([[x["E_m"], x["N_m"], x["U_m"]] for x in v], 0) for v in cen.values()])
         s_, R_, t_ = _umeyama(P0, P1)
         extent = float(np.sqrt(np.sum((P0 - P0.mean(0)) ** 2)))      # sqrt(sum |station - centroid|^2)
@@ -903,6 +904,59 @@ def plot_health(report: Dict[str, Any], rec, project: SfmProject, path: PathLike
 
 
 # ----------------------------------------------------------------------------------------------------- block screening
+def restation(report: Dict[str, Any], colmap_dir: PathLike, min_frame_observations: int = 30) -> List[str]:
+    """
+    Recompute the station shift checks of a saved health report from the label priors (0.94.4, in place).
+    Before 0.94.4 a Hazcam image's shift was measured from its prior as moved by its station's Navcam shift (stage
+    2, ``hazcam_station_priors``), so a station that moved made its Hazcam frames look that far from its Navcam
+    frames: ``within_station_shift_spread_m`` FAIL at 1.06 m in Van Zyl Overlook Huge (Navcam shift 2.1 m).  Uses
+    ``<colmap>/error_input/poses.csv`` (the refined centres) and ``project.json`` (``prior_C_label``).  Returns the
+    checks changed; nothing when the block has no moved prior.
+    """
+    import csv
+    import json as _json
+    root = Path(colmap_dir)
+    try:
+        imgs = _json.loads((root / "project.json").read_text(encoding="utf-8")).get("images") or []
+    except (OSError, ValueError):
+        return []
+    label = {r["name"]: r["prior_C_label"] for r in imgs if r.get("prior_C_label")}
+    pc = root / "error_input" / "poses.csv"
+    if not label or not pc.is_file():
+        return []
+    prior = {r["name"]: label.get(r["name"]) or r.get("prior_C") for r in imgs}
+    by_st: Dict[str, List[np.ndarray]] = {}
+    with pc.open(newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            p0 = prior.get(row.get("name"))
+            if p0 is None or float(row.get("observations") or 0) < min_frame_observations:
+                continue
+            d = np.array([float(row["E_m"]), float(row["N_m"]), float(row["U_m"])]) - np.asarray(p0, float)
+            by_st.setdefault(row["station"], []).append(d)
+    st_tab = report.get("stations") or {}
+    for st, v in by_st.items():
+        d = np.array(v)
+        e = st_tab.setdefault(st, {"label": st})
+        e.update(images=len(v), shift_median_m=float(np.median(np.linalg.norm(d, axis=1))),
+                 shift_spread_m=float(np.sqrt(np.mean(np.sum((d - np.median(d, 0)) ** 2, axis=1)))))
+    report["stations"] = st_tab
+    changed = []
+    loc = {k: v for k, v in st_tab.items() if v.get("position_prior", True) and k in by_st}
+    for c in report.get("checks") or []:
+        if c.get("check") == "station_shift_median_m" and loc:
+            k, v = max(loc.items(), key=lambda kv: kv[1]["shift_median_m"])
+            new, note = v["shift_median_m"], f"largest station median |refined - label prior| ({v.get('label', k)}; 0.94.4 recomputed)"
+        elif c.get("check") == "within_station_shift_spread_m" and by_st:
+            k, v = max(((k, st_tab[k]) for k in by_st), key=lambda kv: kv[1]["shift_spread_m"])
+            new, note = v["shift_spread_m"], f"largest RMS spread of the shifts within one station ({v.get('label', k)}; 0.94.4 recomputed)"
+        else:
+            continue
+        if abs(float(c.get("value") or 0) - new) > 1e-9:
+            changed.append(f"{c['check']}: {c.get('value'):.3f} -> {new:.3f} m (label priors)")
+            c["value"], c["note"] = new, note
+    return changed
+
+
 def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = None) -> Tuple[str, List[str]]:
     """The verdict of a saved health report (``health/health.json``) under the current thresholds and rules (0.93.3):
     every check's value judged again, the corner check recomputed from ``coverage_by_radius``.  Returns (verdict,

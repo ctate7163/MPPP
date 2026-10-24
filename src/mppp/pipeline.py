@@ -573,10 +573,32 @@ def select_products(site: Union[str, Site], settings: Settings) -> Tuple[List[Pa
     if sel.get("n_dropped_subframes"):
         log.info("%d Navcam tiles / sub-frames below %s of the frame left out, e.g. %s", sel["n_dropped_subframes"],
                  sel["min_frame_fraction"], sel["dropped_subframes"][0]["file"])
+    one_eye = one_eye_exposures(paths)
+    if one_eye:
+        # 23 Oct (Seitah Overlook, Artuby Ridge): the local archive held only the right image of some Hazcam
+        # exposures (an older J01 version) while the PDS has both eyes (J02) - download the missing eye
+        log.info("%d stereo exposures with one eye only in the PDS archive (the other eye missing - download it), "
+                 "e.g. %s", len(one_eye), ", ".join(one_eye[:3]))
+        sel["one_eye_exposures"] = one_eye
     log.info("%d products", len(paths))
     sel["site"] = st.name
     sel["sol_ranges"] = ranges
     return paths, sel
+
+
+def one_eye_exposures(paths: Sequence[PathLike]) -> List[str]:
+    """The stems of Navcam and Hazcam products whose stereo partner (the other eye, same SCLK) is not among
+    ``paths`` - in the M2020 archive both eyes of these exposures are normally there."""
+    by: Dict[str, set] = {}
+    stems: Dict[str, str] = {}
+    for p in paths:
+        stem = Path(p).stem.upper()
+        if len(stem) < 23 or stem[0] not in "NFR" or stem[1] not in "LR":
+            continue
+        k = stem[0] + stem[4:23]                        # family, sol, SCLK with its milliseconds
+        by.setdefault(k, set()).add(stem[1])
+        stems.setdefault(k, Path(p).stem)
+    return sorted(stems[k] for k, eyes in by.items() if len(eyes) == 1)
 
 
 _PRODUCT = re.compile(r"^[A-Z0-9]{3}_(\d{4})_\d{10}_\d{3}[A-Z0-9]{3}_[A-Z](\d{3})(\d{4})([A-Z]{4}\d{5})_", re.I)

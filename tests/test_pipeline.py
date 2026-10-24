@@ -305,3 +305,15 @@ def test_one_third_rule_is_about_subframes():
     assert NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3) and MIN_INCLUDED_FRACTION is None and ALIGN_RULES >= 85
     s = Settings()
     assert s.min_included_fraction is None and s.subframe_families == ("N",)
+
+
+def test_one_eye_exposures():
+    """0.94.4: the right Hazcam of an exposure whose left image is missing from the local archive is reported."""
+    from mppp.pipeline import one_eye_exposures
+    paths = ["FLF_0116_0677245019_226RAD_N0041250FHAZ02420_0A0295J01.IMG",
+             "FRF_0116_0677245019_226RAD_N0041250FHAZ02420_0A0295J01.IMG",
+             "FRF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J01.IMG",
+             "NLF_0122_0677784999_000RAD_N0041422NCAM00500_0A0295J01.IMG",
+             "ZL0_0122_0677784010_631RAD_N0041422ZCAM08000_0340LMJ01.IMG"]
+    assert one_eye_exposures(paths) == ["FRF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J01",
+                                        "NLF_0122_0677784999_000RAD_N0041422NCAM00500_0A0295J01"]

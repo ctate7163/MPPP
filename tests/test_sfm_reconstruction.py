@@ -1564,3 +1564,34 @@ def test_restore_shared_cameras_after_a_rig_was_dropped():
     rec = Rec()
     assert restore_shared_cameras(rec, {1: "FL", 2: "FR", 5: "RL"}) == [2] and rec.cameras == {1: "FL", 2: "FR"}
     assert restore_shared_cameras(rec, {1: "FL", 2: "FR"}) == []
+
+
+def test_outlier_test_hazcam_frames_against_the_label_prior(tmp_path):
+    """0.94.4 (weekend run): stage 2 moves a Hazcam frame's position prior by its station's Navcam shift
+    (``hazcam_station_priors``).  Its shift is measured from the label prior (``prior_C_label``) like the Navcam
+    frames', so a station that moved 0.4 m does not make its Hazcam frames outliers (Chal Rocks Large lost 34 Hazcam
+    images that way); a Hazcam frame that really left its station still is."""
+    from mppp.sfm.reconstruction import find_outlier_frames, label_prior_C
+    proj, rec, _ = _solved(tmp_path)
+    st = "S001D0000"
+    frames_here = [fid for fid in rec.frames
+                   if {proj.image(rec.images[d.id].name)["station"] for d in rec.frames[fid].data_ids} == {st}]
+    assert len(frames_here) >= 4
+    for r in proj.images:                      # the whole station 0.4 m off its waypoint: a consistent shift
+        if r["station"] == st:
+            r["prior_C"] = (np.asarray(r["prior_C"]) + [0.4, 0.0, 0.0]).tolist()
+    assert find_outlier_frames(rec, proj) == []
+    haz = frames_here[0]                       # one frame of the station plays a Hazcam pair with a moved prior
+    names = {rec.images[d.id].name for d in rec.frames[haz].data_ids}
+    for r in proj.images:
+        if r["name"] in names:
+            r["instrument"] = {"NL": "FL", "NR": "FR"}[r["instrument"]]
+            r["prior_C_label"] = list(r["prior_C"])
+            r["prior_C"] = (np.asarray(r["prior_C"]) - [0.4, 0.0, 0.0]).tolist()     # moved with the station
+            assert np.allclose(label_prior_C(r), r["prior_C_label"])
+    assert find_outlier_frames(rec, proj) == []
+    for r in proj.images:                      # a Hazcam frame 1 m off the rest of its station
+        if r["name"] in names:
+            r["prior_C_label"] = (np.asarray(r["prior_C_label"]) + [1.0, 0.0, 0.0]).tolist()
+    found = find_outlier_frames(rec, proj)
+    assert [f["frame_id"] for f in found] == [haz] and found[0]["family"] == "H" and "shift" in found[0]["reasons"][0]

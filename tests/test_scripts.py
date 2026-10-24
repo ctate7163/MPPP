@@ -353,3 +353,35 @@ def test_check_sites_shows_the_last_runs(tmp_path, capsys):
     out = capsys.readouterr().out
     line = [ln for ln in out.splitlines() if ln.strip().startswith("rockytop ")][0]
     assert "N: running since" in line and "Z: 23 Oct 11:55 0.94.0 lightglue warn" in line
+
+
+def test_archive_gaps_finds_and_fetches_the_missing_eye(tmp_path):
+    """0.94.4: a right Hazcam (J01) whose left image is not in the archive; the PDS has both eyes as J02."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("archive_gaps", ROOT / "scripts" / "archive_gaps.py")
+    ag = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ag)
+    d = tmp_path / "00122" / "ids" / "rdr" / "fcam"
+    d.mkdir(parents=True)
+    (d / "FRF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J01.IMG").write_bytes(b"r")
+    e = tmp_path / "00116" / "ids" / "rdr" / "fcam"
+    e.mkdir(parents=True)
+    for n in ("FLF_0116_0677245019_226RAD_N0041250FHAZ02420_0A0295J01.IMG",
+              "FRF_0116_0677245019_226RAD_N0041250FHAZ02420_0A0295J01.IMG"):
+        (e / n).write_bytes(b"x")
+    rows = ag.gaps(ag.rad_products(tmp_path))
+    assert len(rows) == 1 and rows[0]["missing"] == "FL" and rows[0]["prefix"] == "FLF_0122_0677784010_631RAD_"
+    assert ag.listing_url("F", 122).endswith("/mars2020_hazcam_ops_calibrated/data/sol/00122/ids/rdr/fcam/")
+    html = ('<a href="FLF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J02.IMG">x</a>'
+            '<a href="FLF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J02.xml">x</a>'
+            '<a href="FLF_0122_0677784010_631RASLN_N0041422FHAZ02420_0A0295J02.IMG">x</a>'
+            '<a href="FRF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J02.IMG">x</a>')
+    calls = []
+
+    def get(url):
+        calls.append(url)
+        return html.encode() if url.endswith("/") else b"IMG"
+    assert ag.download(rows, get=get, log=lambda *_: None) == 1
+    got = d / "FLF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J02.IMG"
+    assert got.read_bytes() == b"IMG" and len(calls) == 2
+    assert ag.download(rows, get=get, log=lambda *_: None) == 0          # never twice

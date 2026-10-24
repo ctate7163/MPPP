@@ -273,7 +273,7 @@ def pose_residual_table(rec, project: SfmProject) -> List[Dict[str, Any]]:
         T = rec.images[iid].cam_from_world()
         R = T.rotation.matrix()
         C = -R.T @ np.asarray(T.translation)
-        C0 = np.asarray(r["prior_C"], float)
+        C0 = np.asarray(r.get("prior_C_label") or r["prior_C"], float)    # 0.94.4: the label prior (Hazcams' was moved)
         R0 = np.asarray(r["prior_R_w2c"], float)
         dang = float(np.degrees(np.linalg.norm(Rotation.from_matrix(R @ R0.T).as_rotvec())))
         d = C - C0
@@ -552,7 +552,8 @@ def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
             cen.setdefault(r["station"], []).append(r)
         if len(cen) < 3:
             continue
-        P0 = np.array([np.mean([np.asarray(project.image(x["name"])["prior_C"]) for x in v], 0) for v in cen.values()])
+        P0 = np.array([np.mean([np.asarray(project.image(x["name"]).get("prior_C_label") or project.image(x["name"])["prior_C"])
+                                for x in v], 0) for v in cen.values()])
         P1 = np.array([np.mean([[x["E_m"], x["N_m"], x["U_m"]] for x in v], 0) for v in cen.values()])
         s_, R_, t_ = _umeyama(P0, P1)
         resid = P1 - (s_ * P0 @ R_.T + t_)

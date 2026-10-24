@@ -4,6 +4,23 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- **Fix: Hazcam frames excluded as outliers for their station's shift** (weekend run, 23 Oct).  Stage 2 moves a
+  Hazcam image's position prior by its station's Navcam shift (`hazcam_station_priors`, `prior_C_label` keeps the
+  label prior), but the outlier test measured every frame from `prior_C` and grouped the Hazcam frames with the
+  Navcam ones: a well-placed Hazcam frame then looked its station's shift (0.25-2.1 m) away and was excluded -
+  4 frames in OEB Landing Site, 17 in Chal Rocks Large, 48 in Van Zyl Overlook Huge, and the lone right Hazcam
+  frames whose exclusion crashed Seitah Overlook and Artuby Ridge.  Shifts are now measured from the label prior
+  (`reconstruction.label_prior_C`; also `poses.csv`, the station shift health checks and the prior similarity),
+  and Hazcam frames form their own group ("H"), tested against their station's Navcam frames, never on attitude.
+- **Blocks already run are judged again from the label priors** (`health.restation`, used by `calib`'s check of
+  a FAIL block): Van Zyl Overlook Huge's `within_station_shift_spread_m` FAIL (1.06 m) was this artifact, and would
+  have kept the block out of the Navcam joint and the Hazcam fit.
+- **Stereo exposures with one eye only in the local archive are reported** (`pipeline.one_eye_exposures`, a log
+  line and `one_eye_exposures` in the selection report).  The lone right Hazcams of Seitah Overlook (sols 122-124)
+  and Artuby Ridge (sol 173) are J01 products of exposures whose left and right images the PDS has as J02: the
+  local archive is incomplete, not the rover.  New `scripts/archive_gaps.py` lists every such exposure of the
+  archive (`<pds>/archive_gaps.csv`) and with `--download` fetches the missing eye from the PDS Imaging Node (the
+  highest version of the same product kind, into the folder of the eye that is there; nothing replaced).
 - **Fix: a right camera dropped by the triangulation** (weekend run, 23 Oct: Seitah Overlook crashed, Artuby Ridge
   "Camera model does not exist").  A right Hazcam exposure without its left image sits in a one-camera rig of its
   own; when stage 2 excluded that rig's last frame as an outlier, COLMAP's `triangulate_points` dropped the rig with
