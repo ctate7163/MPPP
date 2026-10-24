@@ -12,6 +12,15 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
   "exhaustive" is SIFT over the prior-overlap pairs, as before; pose-guided matching follows either way.
 - **Exclusions** (Christian, 23 Oct 16:48): `seq:FHAZ00202`, `seq:FHAZ00215`, `seq:FHAZ00216`; `ZCAM01023` is no
   longer kept (`seq:ZCAM01*` covers it).  Three Forks North: no mask inference for NCAM03688 and NCAM13688.
+- **Study 3A, the rover frame** (Christian, 23 Oct; `studies/rover_frame`, `run_pipeline.py`'s new `rover_frame`
+  stage after the error analysis): from the labels the RSM angles (encoder, resolver, requested), the RSM head frame,
+  the rover attitude and motion counters (POSE, ARM), the Navcam plate temperatures, the bogie, differential and arm
+  angles (keyword names checked on sol 709-711 labels); per Hazcam sequence and rover pose the body pose (the Hazcams
+  are body-fixed) and its residual against the telemetry; per Navcam / Mastcam-Z frame the attitude relative to that
+  body in the head frame (label kinematics removed) fitted against cos / sin el, cos / sin az and T; the camera
+  positions in the body and head frames as constants with their scatter; the body-pose changes between the
+  sequences of one station (wheel settling, the arm).  No new adjustment.  The state tag stays v0944, so after the
+  weekend run `run_pipeline.bat` runs only `rover_frame` and the report.
 - **`scripts\windows` trimmed to 19 files** (Christian, 23 Oct: "too many bat files"): removed `run_weekend.bat` and
   `_run_weekend_loop.bat`, `build_example_data.bat`, `run_multizoom_test.bat`, `run_hazcam.bat`,
   `hazcam_calibration.bat`, `test_lightglue.bat`, `navcam_tied_joint.bat`, `zcam_tied_joint.bat`,

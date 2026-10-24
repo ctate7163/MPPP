@@ -28,7 +28,10 @@ Stages (each logged in ``<root>\\mppp_pipeline\\<stage>.log``, the pipeline in `
                          (``<WORK>/colmap/error_input``): epsilon intra / cross station, by range and by angle, the
                          cross-station gate, the decorrelation rho(theta), the view graph, the registration against
                          the priors -> camera_analysis/error_analysis_<date>/ (json and report.md)
- 7. ``report``         - ``<root>\\mppp_pipeline\\REPORT.md``
+ 7. ``rover_frame``    - studies/rover_frame/run_rover_frame.py (study 3A, 0.94.4): the rover body pose per Hazcam
+                         sequence, the mast-head pointing residual against the RSM angles, the camera positions in
+                         the body and head frames -> camera_analysis/rover_frame_<date>/ (report.md)
+ 8. ``report``         - ``<root>\\mppp_pipeline\\REPORT.md``
 
 A stage that fails is logged and the pipeline goes on (the next stage works with what there is).  Exit code 0 when
 every stage ran (whatever it found).  The pipeline before 0.93.9 (consensus passes, baseline study, the Z34-only
@@ -55,8 +58,10 @@ if str(ROOT / "scripts") not in sys.path:
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 PY = sys.executable
-STAGES = ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report")
-STATE_TAG = "v0944"                              # the stage set of the state file (0.94.4: ecam stages)
+STAGES = ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame", "report")
+# the stage set of the state file (0.94.4: ecam stages).  Not changed for the rover_frame stage (added 23 Oct during
+# the weekend run): a state of this tag simply lacks it, so a rerun does rover_frame and the report only
+STATE_TAG = "v0944"
 STAGE_ALIASES = {"navcam_runs": "ecam_runs", "navcam_joint": "ecam_joint"}     # the names before 0.94.4
 STOP_ON_FAIL = ()                                # every stage goes on to the next
 ZCAM_GROUP, ECAM_GROUP, ZCAM34_JOINT = "zcam_consensus", "ecam_consensus", "zcam34_joint"
@@ -276,6 +281,20 @@ class Pipeline:
         (out / "report.md").write_text(md, encoding="utf-8")
         return "done", f"{len(blocks)} blocks -> {out / 'report.md'}"
 
+    def s_rover_frame(self):
+        """Study 3A over every finished block of both groups (no new adjustment)."""
+        out = self._out("rover_frame", "report.md")
+        self.state.setdefault("rover_frame", {})["study"] = str(out)
+        self.save()
+        cmd = [PY, ROOT / "studies" / "rover_frame" / "run_rover_frame.py", "--root", self.root, "--out", out,
+               "--groups", ECAM_GROUP, "--zcam-groups", self.zcam_group]
+        rc = self.run("rover_frame", cmd, timeout_h=6)
+        if self.a.dry_run:
+            return "done", "dry run"
+        if not (out / "report.md").is_file():
+            return "failed", f"no report (exit {rc}; see rover_frame.log)"
+        return "done", str(out / "report.md")
+
     def s_report(self):
         from mppp.calib.models import describe
         lines = [f"# MPPP {__import__('mppp').__version__} pipeline report ({datetime.datetime.now():%Y-%m-%d %H:%M})", "",
@@ -298,7 +317,8 @@ class Pipeline:
         for pat, title in (("navcal_tied_*", "Navcam joint"), ("hazcam_fit_ecam_*", "Hazcam fit (ecam blocks)"),
                            ("hazcam_fit_zcam_*", "Hazcam fit (Mastcam-Z blocks)"),
                            *[(f"zcam{z}_joint_*", f"Mastcam-Z {z} mm joint") for z in ZOOMS],
-                           ("nz34_joint_*", "Navcam + Mastcam-Z check"), ("error_analysis_*", "Error analysis")):
+                           ("nz34_joint_*", "Navcam + Mastcam-Z check"), ("error_analysis_*", "Error analysis"),
+                           ("rover_frame_*", "Rover frame (study 3A)")):
             found = sorted(p for p in ca.glob(pat) if p.is_dir()) if ca.is_dir() else []
             if found:
                 rp = found[-1] / "report.md"

@@ -33,8 +33,9 @@ def test_pipeline_dry_run_and_state(tmp_path):
     r = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path), "--dry-run"],
                        capture_output=True, text=True, timeout=600)
     out = r.stdout + r.stderr
-    for s in ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report"):
+    for s in ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame", "report"):
         assert f"{s}: start" in out, (s, out[-3000:])
+    assert "run_rover_frame.py" in out and out.index("rover_frame: start") < out.index("report: start")
     assert "run_sites.py" in out and "--group ecam_consensus" in out and "calib navcam" in out
     assert "--sites seitah_overlook chal_rocks_large" in out and "--zcam" in out and "olifants" in out
     # 0.94.4: the Hazcams are fitted over the ecam blocks before the Mastcam-Z runs, not over the Mastcam-Z blocks
@@ -74,6 +75,13 @@ def test_pipeline_stage_logic(tmp_path, monkeypatch):
     a.redo = ["zcam_joints"]
     calls.clear()
     assert rp.Pipeline(a).go() == 0 and calls == ["zcam_joints", "report"]
+    # 0.94.4 (23 Oct): a state of the same tag written before the rover_frame stage existed - only it and the report
+    st = json.loads((tmp_path / "mppp_pipeline" / "state.json").read_text())
+    st.pop("rover_frame")
+    (tmp_path / "mppp_pipeline" / "state.json").write_text(json.dumps(st))
+    a.redo = None
+    calls.clear()
+    assert rp.Pipeline(a).go() == 0 and calls == ["rover_frame", "report"]
 
 
 def test_bats():

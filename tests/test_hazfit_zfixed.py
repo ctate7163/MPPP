@@ -390,7 +390,8 @@ def test_error_analysis_batch_and_pipeline_report(tmp_path, monkeypatch):
     spec.loader.exec_module(rp)
     md = rp.error_report(res)
     assert md.startswith("# Error analysis on the SfM points")
-    assert rp.STAGES == ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "report")
+    assert rp.STAGES == ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame",
+                         "report")
 
 
 def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
