@@ -23,7 +23,7 @@ def test_settings_defaults(clean_env):
     assert s.source == "pds" and s.variant == "" and s.add_nearby_waypoints == 10 and s.include_zcam is False
     assert s.navcam_intrinsics == "auto" and s.navcam_rig_refine == "refine" and s.navcam_pp == "hold"
     assert s.schedule == ((24.0, 10.0, 8.0), (12.0, 4.0, 4.0), (8.0, 2.0, 2.0)) and s.attitude_prior_deg == 2.0
-    assert s.match_mode == "lightglue" and s.match["max_ratio"] == 0.9 and s.match["max_keypoints"] == 8192 and s.match_block_size == 100
+    assert s.match_mode == "exhaustive" and s.match["max_ratio"] == 0.9 and s.match["max_keypoints"] == 8192 and s.match_block_size == 100
     assert s.thermal_bins_deg == 5 and s.thermal_fine_range == (-25.0, -5.0)
     assert len(setting_names()) > 80 and "ATTITUDE_PRIOR_DEG" in setting_names(upper=True)
     for gone in ("navcam_distortion", "navcam_k4", "allow_old_form", "include_zcam34", "run_key", "work_dir"):
@@ -63,7 +63,8 @@ def test_settings_merge_json_and_set(tmp_path, clean_env):
     assert Settings().nearby_from_first_sol is False
     assert load_settings(None, "rochette").nearby_from_first_sol is True       # the site's settings in sites.json
     assert load_settings(None, "rockytop").no_mask_inference_at == []               # 0.93.8: no global default
-    assert load_settings(None, "threeforks_north").no_mask_inference_at == ["ZCAM05086", "ZCAM08692", "NCAM02688"]
+    assert load_settings(None, "threeforks_north").no_mask_inference_at == ["ZCAM05086", "ZCAM08692", "NCAM02688",
+                                                                                  "NCAM03688", "NCAM13688"]
     with pytest.raises(KeyError, match="unknown setting"):
         normalize({"NAVCAM_DISTORTION": "rational"})
     assert Settings().replace(INCLUDE_ZCAM34=True).include_zcam is True

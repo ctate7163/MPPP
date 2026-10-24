@@ -328,13 +328,15 @@ def test_mask_inference_off_by_sequence():
 
 
 def test_zcam01023_01025_kept_and_lightglue_prior_pairs():
-    """0.93.8: ZCAM01023 / ZCAM01025 kept despite seq:ZCAM01*; LightGlue on a big block gets the prior pairs."""
+    """0.93.8: ZCAM01025 kept despite seq:ZCAM01* (0.94.4: ZCAM01023 excluded again, and FHAZ00202/215/216);
+    LightGlue on a big block gets the prior pairs."""
     from mppp.pipeline import shipped_exclusions
     from mppp.sfm.workdir import apply_exclusions
     metas = [{"stem": f"ZL0_0682_0727400000_000RAD_N0320908{q}_034085A01", "sequence": q, "sol": 682, "site": 32,
-              "drive": 908} for q in ("ZCAM01023", "ZCAM01025", "ZCAM01024")]
+              "drive": 908} for q in ("ZCAM01023", "ZCAM01025", "ZCAM01024", "FHAZ00202", "FHAZ00215", "FHAZ00216",
+                                     "FHAZ00207")]
     kept, dropped = apply_exclusions(metas, shipped_exclusions())
-    assert sorted(m["sequence"] for m in kept) == ["ZCAM01023", "ZCAM01025"]
+    assert sorted(m["sequence"] for m in kept) == ["FHAZ00207", "ZCAM01025"]
     import inspect
     from mppp import pipeline
     assert '("lightglue", "sift+lightglue") and big' in inspect.getsource(pipeline)

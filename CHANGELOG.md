@@ -4,6 +4,17 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- **SIFT is the default matcher again** (`match_mode` "exhaustive", Christian 23 Oct; 0.93.9 had "lightglue").  The
+  finished A/B on Chal Rocks tiny: SIFT 13,604 Navcam - Mastcam-Z tie points, LightGlue 7,578, LightGlue on every
+  octave 7,043; residual median 0.22 vs 0.37 px, p95 0.94 vs 1.39 px.  LightGlue tied 3x more points across
+  stations (12 % vs 4 %) and kept the rear Hazcams steadier (RL / RR rays 4-5 px vs 27-29 px), so it stays as
+  `--set MATCH_MODE=lightglue` or `sift+lightglue` for the ecam blocks.  Above `max_exhaustive_images` (300) images
+  "exhaustive" is SIFT over the prior-overlap pairs, as before; pose-guided matching follows either way.
+- **Exclusions** (Christian, 23 Oct 16:48): `seq:FHAZ00202`, `seq:FHAZ00215`, `seq:FHAZ00216`; `ZCAM01023` is no
+  longer kept (`seq:ZCAM01*` covers it).  Three Forks North: no mask inference for NCAM03688 and NCAM13688.
+- `tests/test_calib.py`: the Hazcam start-model tests use a models folder without RL, now that FL, FR, RL and RR
+  are all in use.
+
 - **Two new matchers for the LightGlue test** (Christian; the Chal Rocks tiny A/B: LightGlue had 3.6x fewer
   Navcam - Mastcam-Z tie points than SIFT, 13,512 vs 3,786, and higher residuals, 0.35 vs 0.21 px median):
   - **LightGlue on keypoints of every octave** (`LIGHTGLUE_KEYPOINTS=octaves`; `lightglue.select_keypoints`): the

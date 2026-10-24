@@ -63,6 +63,7 @@ counts by default), and stereo rigs (Navcam left is the rig reference).
 | `exhaustive` (default) | COLMAP's SIFT matcher over all image pairs (ratio test 0.9, cross check), in blocks of 100 images |
 | `prior_pairs` | the same matcher over the pairs that the prior poses predict to overlap (`prior_overlap_pairs`) |
 | `lightglue` | SIFT features matched by LightGlue (kornia); optional, best on a GPU |
+| `sift+lightglue` | both: LightGlue's verified inliers added to SIFT's (0.94.4; opt-in) |
 
 Above `max_exhaustive_images` (300) images, `exhaustive` matches the prior-overlap pairs instead: exhaustive
 matching grows as n²/2 pairs (3.7 million at 2713 images). A pair is kept when at least 5 % of either image's

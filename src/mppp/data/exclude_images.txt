@@ -24,15 +24,18 @@ seq:ZCAM01*
 !seq:ZCAM00033       # Chal Rocks (sols 91-93): kept (Christian, 22 Oct)
 !seq:ZCAM00034       # Chal Rocks: kept
 !seq:ZCAM00015       # kept (Christian, 22 Oct)
-!seq:ZCAM01023       # kept (Christian, 23 Oct)
 !seq:ZCAM01025       # kept (Christian, 23 Oct)
 
 # other Mastcam-Z observations
 seq:ZCAM08512        # Rockytop: 74 stereo frames
 seq:ZCAM03017        # Christian, 22 Oct
+seq:ZCAM01023        # Christian, 23 Oct 16:48 (no longer kept; seq:ZCAM01* above also covers it)
 
 # Hazcam sequences
 seq:FHAZ00206        # Christian, 23 Oct
+seq:FHAZ00202        # Christian, 23 Oct 16:48
+seq:FHAZ00215        # Christian, 23 Oct 16:48
+seq:FHAZ00216        # Christian, 23 Oct 16:48
 
 # Navcam stereo pairs (both eyes, every product type)
 N*_0693_0728460284_145*

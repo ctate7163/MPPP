@@ -118,8 +118,9 @@ def test_zcam_camera_at_both_states_and_the_regular_ratio():
     assert calib.focus_state(False) == "backlash" == forms.ZCAM_DEFAULT_STATE and calib.focus_state(True) == "regular"
 
 
-def test_hazcam_start_model_and_loader_warning(caplog):
+def test_hazcam_start_model_and_loader_warning(caplog, tmp_path, monkeypatch):
     import logging
+    import shutil
     for fam in ("F", "R"):
         for eye in ("L", "R"):
             h = calib.hazcam_start_model(fam, eye)
@@ -129,8 +130,12 @@ def test_hazcam_start_model_and_loader_warning(caplog):
             assert h["source"] == "generic Hazcam start model (not calibrated)" and forms.validate(h) == []
             assert calib.thermal_terms(h["thermal"]) == {"fx_ppm": 0.0, "fy_ppm": 0.0, "cx_px": 0.0, "cy_px": 0.0,
                                                          "k1": 0.0, "T0": -20.0}
+    # 0.94.4: RL is in use since 23 Oct - a models folder without it gives the start model and a warning
+    cm = tmp_path / "cmods"
+    shutil.copytree(M._folder(None), cm)
+    (cm / "M2020_RL.json").unlink()
     with caplog.at_level(logging.WARNING, logger="mppp.calib"):
-        m = calib.load_camera("R", "L")                 # 0.94.0: FL is in use; RL has no file
+        m = calib.load_camera("R", "L", folder=cm)
     assert m["file"] is None and "start model" in caplog.text
     name, p, applied = calib.camera_at(m, -30.0, sol=10)
     assert p == m["params"] and applied["thermal"]["sx"] == 1.0           # no thermal, no early term
@@ -176,7 +181,12 @@ def test_validate_rejects_a_held_term_that_is_not_zero():
 def test_check_form_describe_and_fingerprint(tmp_path, monkeypatch):
     rep = calib.check_form()
     assert rep["ok"] and not rep["errors"] and set(M.NAVCAM_FILES) <= set(rep["files"])
-    assert any("start model" in w for w in rep["warnings"])                # no Hazcam files yet
+    # 0.94.4: all four Hazcam files are in use; a folder without one warns that its start model is used
+    cm = tmp_path / "no_rl"
+    import shutil
+    shutil.copytree(M._folder(None), cm)
+    (cm / "M2020_RL.json").unlink()
+    assert any("start model" in w for w in calib.check_form(cm)["warnings"])
     lines = calib.describe()
     assert len(lines) >= 4 and "M2020_N_rig.json" in "".join(lines)
     fp = calib.models_fingerprint()
