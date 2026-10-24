@@ -962,10 +962,18 @@ def restation(report: Dict[str, Any], colmap_dir: PathLike, min_frame_observatio
     return changed
 
 
-def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = None) -> Tuple[str, List[str]]:
+# 0.94.4 (24 Oct): checks of the labels' pointing knowledge, not of the block - Tuxedo Park (block rotation 1.62 deg:
+# eight stations' headings 1.6-1.9 deg off the solution) and Witch Hazel Hill (one site's heading 3.3 deg off) are
+# good blocks (median residual 0.12-0.15 px); the calibration joints take them (a block keeps its own frame there)
+LABEL_POINTING_CHECKS = ("block_rotation_deg", "attitude_residual_p95_deg")
+
+
+def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = None,
+            warn_only: Sequence[str] = ()) -> Tuple[str, List[str]]:
     """The verdict of a saved health report (``health/health.json``) under the current thresholds and rules (0.93.3):
-    every check's value judged again, the corner check recomputed from ``coverage_by_radius``.  Returns (verdict,
-    the checks whose status changed)."""
+    every check's value judged again, the corner check recomputed from ``coverage_by_radius``.  ``warn_only``: checks
+    that cannot fail here (a FAIL counts as WARN; the calibration joints pass :data:`LABEL_POINTING_CHECKS`).
+    Returns (verdict, the checks whose status changed)."""
     thr = dict(DEFAULT_THRESHOLDS, **(thresholds or {}))
     changed, statuses = [], []
     for c in report.get("checks") or []:
@@ -978,6 +986,8 @@ def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = Non
             wc = _corner_ratio(report["coverage_by_radius"])
             v = wc[1] if wc else None
         st = _status(name, v, thr) if name in thr else st0
+        if st == "fail" and name in warn_only:
+            st = "warn"
         if st != st0:
             changed.append(f"{name}: {st0} -> {st}" + (f" ({c.get('note', '')[:60]})" if c.get("note") else ""))
         statuses.append(st)

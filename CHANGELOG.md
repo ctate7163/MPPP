@@ -4,6 +4,8 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- The calibration joints take blocks that fail only the labels' pointing checks (`block_rotation_deg`, `attitude_residual_p95_deg`): Tuxedo Park (eight stations' headings 1.6-1.9 deg off) and Witch Hazel Hill (one site's heading 3.3 deg off) have median residuals of 0.12-0.15 px.  Their health verdict stays FAIL elsewhere (`sfm.health.LABEL_POINTING_CHECKS`, `rejudge(warn_only=...)`).
+
 - **Mastcam-Z sites for a faster run** (Christian, 24 Oct): `zcam_consensus` and `zcam34_joint` take Chal Rocks instead
   of Chal Rocks Large (1601 images); Pico Turquino left out of `zcam_consensus` (Z48 keeps Chal Rocks, Seitah
   Overlook and Taylorfjellet - the minimum of three blocks).

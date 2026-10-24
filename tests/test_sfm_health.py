@@ -310,3 +310,16 @@ def test_hazcam_eye_ratio_does_not_fail_a_block():
     assert v == "warn" and any("hazcam_residual_eye_ratio" in c for c in changed)
     rep["checks"][1].update(value=2.5, status="fail")              # a Navcam pair still fails
     assert rejudge(rep)[0] == "fail"
+
+
+def test_label_pointing_checks_do_not_keep_a_block_out_of_the_joints():
+    """0.94.4: Witch Hazel Hill (one site's heading 3.3 deg off its label) and Tuxedo Park (block rotation 1.62 deg)
+    are judged WARN for the calibration joints; elsewhere the FAIL stands."""
+    from mppp.sfm.health import LABEL_POINTING_CHECKS, rejudge
+    rep = {"checks": [{"check": "attitude_residual_p95_deg", "value": 3.363, "status": "fail"},
+                      {"check": "block_rotation_deg", "value": 1.62, "status": "fail"},
+                      {"check": "residual_median_px", "value": 0.12, "status": "pass"}]}
+    assert rejudge(rep)[0] == "fail"
+    assert rejudge(rep, warn_only=LABEL_POINTING_CHECKS)[0] == "warn"
+    rep["checks"].append({"check": "residual_median_px", "value": 1.5, "status": "fail"})
+    assert rejudge(rep, warn_only=LABEL_POINTING_CHECKS)[0] == "fail"
