@@ -122,7 +122,11 @@ def _wls(X: np.ndarray, y: np.ndarray, w: np.ndarray):
     return beta, cov, r
 
 
-def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False, min_blocks: Optional[int] = None) -> Dict[str, Any]:
+EARLY_Z_MIN = 3.0                  # 0.94.5 (Christian 24 Oct): an early-mission offset only where significant
+
+
+def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False, min_blocks: Optional[int] = None,
+            early_offsets: bool = True) -> Dict[str, Any]:
     """The law of one eye from its block rows (:func:`block_rows`; weak eyes left out).  ``athermal`` (0.93.10): no
     temperature terms - fx, fy and k1 constant (the fallback when the temperature slope fails its check)."""
     use = [r for r in rows if not r["weak"] and r["T"] is not None and r["observations"] > 0]
@@ -138,7 +142,7 @@ def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False, min_bl
     early = np.array([r["early_share"] for r in use], float)
     n_early, n_late = int(np.sum(early > 0.5)), int(np.sum(early <= 0.5))
     fit_slope = float(np.ptp(T)) >= MIN_T_SPAN_DEGC and not athermal
-    fit_early = n_early >= MIN_EARLY_BLOCKS and n_late >= MIN_EARLY_BLOCKS
+    fit_early = early_offsets and n_early >= MIN_EARLY_BLOCKS and n_late >= MIN_EARLY_BLOCKS
     # fx, fy: separate intercepts, one slope g (px/degC) shared by both, an early offset per axis
     nrow = len(use)
     cols = ["ax", "ay"] + (["g"] if fit_slope else []) + (["ex", "ey"] if fit_early else [])
@@ -166,7 +170,7 @@ def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False, min_bl
         P, T, w, early = P[keep], T[keep], w[keep], early[keep]
         n_early, n_late = int(np.sum(early > 0.5)), int(np.sum(early <= 0.5))
         fit_slope = float(np.ptp(T)) >= MIN_T_SPAN_DEGC and not athermal
-        fit_early = n_early >= MIN_EARLY_BLOCKS and n_late >= MIN_EARLY_BLOCKS
+        fit_early = early_offsets and n_early >= MIN_EARLY_BLOCKS and n_late >= MIN_EARLY_BLOCKS
         nrow = len(use)
         cols = ["ax", "ay"] + (["g"] if fit_slope else []) + (["ex", "ey"] if fit_early else [])
         X = np.zeros((2 * nrow, len(cols)))
@@ -184,6 +188,16 @@ def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False, min_bl
     sd = np.sqrt(np.clip(np.diag(cov), 0, None))
     v = dict(zip(cols, beta))
     s = dict(zip(cols, sd))
+    if fit_early:
+        # 0.94.5 (Christian 24 Oct): the early-mission offsets stay 0 until there is significant evidence for them
+        z = {k: (v[k] / s[k] if s[k] > 0 else 0.0) for k in ("ex", "ey")}
+        if max(abs(z["ex"]), abs(z["ey"])) < EARLY_Z_MIN:
+            out2 = fit_eye(rows, eye, athermal=athermal, min_blocks=min_blocks, early_offsets=False)
+            if not out2.get("skipped"):
+                out2["early_mission"].update({"tested": True, "z": {"fx": float(z["ex"]), "fy": float(z["ey"])},
+                                              "rule": f"kept only where |z| >= {EARLY_Z_MIN:g} (else 0)",
+                                              "tested_px": {"fx": float(v["ex"]), "fy": float(v["ey"])}})
+            return out2
     fbar = 0.5 * (v["ax"] + v["ay"])
     ppm = 1e6 * v.get("g", 0.0) / fbar
     # k1 linear in temperature, k2 the weighted mean
@@ -289,6 +303,7 @@ def camera_file(eye_res: Dict[str, Any], stamp: str) -> Dict[str, Any]:
     """An eye's law in the Navcam form (the ``M2020_FL.json`` layout)."""
     e = eye_res
     fam, eye = e["eye"][0], e["eye"][1]
+    joint = e.get("method") == "joint"
     return {"model": "THIN_PRISM_FISHEYE", "width": 5120, "height": 3840, "params": e["params"],
             "param_names": list(forms.NAVCAM_PARAMS),
             "distortion": "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
@@ -297,19 +312,27 @@ def camera_file(eye_res: Dict[str, Any], stamp: str) -> Dict[str, Any]:
             "thermal": {"T0_degC": T0_DEGC, "fx_ppm_per_degC": e["ppm_per_degC"], "fy_ppm_per_degC": e["ppm_per_degC"],
                         "cx_px_per_degC": 0.0, "cy_px_per_degC": 0.0, "k1_per_degC": e["k1_per_degC"],
                         "sd_ppm_per_degC": e.get("sd_ppm_per_degC"), "sd_k1_per_degC": e.get("sd_k1_per_degC"),
-                        "note": "one ppm/degC for fx and fy; the principal point held (the blocks hold it)"},
+                        "slope_source": e.get("slope_source"),
+                        "note": "one ppm/degC for fx and fy; the principal point held (the blocks hold it)"
+                                + (f"; {e.get('slope_note')}" if e.get("slope_note") else "")},
             "early_mission": {"before_sol": EARLY_MISSION_SOL, "per_eye": True,
                               "dfx_px": e["early_mission"]["dfx_px"], "dfy_px": e["early_mission"]["dfy_px"],
                               "dcx_px": 0.0, "dcy_px": 0.0,
-                              "applied_terms": ["fx", "fy"] if e["early_mission"]["fitted"] else [],
-                              "note": "Hazcam fit: focal-length offsets of the images before before_sol"},
+                              "applied_terms": list(e["early_mission"].get("applied_terms")
+                                                    or (["fx", "fy"] if e["early_mission"]["fitted"] else [])),
+                              "z": e["early_mission"].get("z"),
+                              "note": "Hazcam fit: focal-length offsets of the images before before_sol, kept only "
+                                      f"where significant (|z| >= {EARLY_Z_MIN:g}; else 0)"},
             "sd": e.get("sd"),
-            "source": (f"MPPP Hazcam fit (mppp.calib.hazfit, {stamp}) over {len(e['blocks'])} blocks "
+            "source": (f"MPPP Hazcam {'joint (mppp.calib.hazjoint' if joint else 'fit (mppp.calib.hazfit'}, {stamp}) "
+                       f"over {len(e['blocks'])} blocks "
                        f"({', '.join(e['blocks'])}): "
                        + ("athermal fallback - fx, fy, k1 constant (the temperature law failed its thermal check)"
                           if e.get("athermal") else "fx, fy, k1 linear in temperature")
                        + "; k2 the blocks' mean; cx, cy, p1, p2, k3, k4 the label fits' median"),
-            "fit": {"method": "hazcam fit from the blocks", "blocks": e["blocks"], "scatter_ppm": e["scatter_ppm"],
+            "fit": {"method": ("hazcam joint on the image observations, each frame at its own temperature; rows: the "
+                               "per-block temperature bins about the law" if joint else "hazcam fit from the blocks"),
+                    "blocks": e["blocks"], "scatter_ppm": e["scatter_ppm"],
                     "T_span_degC": e["T_span_degC"], "rows": e["rows"]}}
 
 
@@ -426,12 +449,21 @@ def describe(res: Dict[str, Any]) -> List[str]:
             out.append(f"{eye}: skipped - {e['skipped']}" + (f" (weak in {', '.join(e['weak_blocks'])})" if e.get("weak_blocks") else ""))
             continue
         p = e["params"]
+        own = (e.get("own_slope_ppm_per_degC") or {})
         out.append(f"{eye}: fx {p[0]:.2f}, fy {p[1]:.2f} px at {T0_DEGC:g} degC, {e['ppm_per_degC']:+.1f}"
-                   + (f" +- {e['sd_ppm_per_degC']:.1f}" if e.get("sd_ppm_per_degC") else "") + " ppm/degC, k1 "
+                   + (f" +- {e['sd_ppm_per_degC']:.1f}" if e.get("sd_ppm_per_degC") else "") + " ppm/degC"
+                   + (f" ({e['slope_note']})" if e.get("slope_note") and e.get("slope_source") == "FL" and eye != "FL" else "")
+                   + (f" [own slope: {own['ppm_per_degC']:+.1f}" + (f" +- {own['sd']:.1f}" if own.get("sd") else "") + "]"
+                      if own.get("ppm_per_degC") is not None else "") + ", k1 "
                    f"{p[4]:+.5f} ({e['k1_per_degC']:+.2e}/degC), k2 {p[5]:+.5f}; early offsets "
                    f"{e['early_mission']['dfx_px']:+.2f}, {e['early_mission']['dfy_px']:+.2f} px"
-                   + ("" if e["early_mission"]["fitted"] else " (not fitted)")
+                   + ("" if e["early_mission"]["fitted"] else
+                      " (set to 0: not significant, z " + ", ".join(f"{k} {v:+.1f}" for k, v in e["early_mission"]["z"].items()
+                                                                   if v is not None) + ")"
+                      if e["early_mission"].get("z") else " (not fitted)")
                    + f"; {len(e['blocks'])} blocks over {e['T_span_degC']:.1f} degC, scatter {e['scatter_ppm']:.0f} ppm"
+                   + (f" over {e['bins']} temperature bins; {e['images']} images, {e['observations']} observations, "
+                      f"median {e['median_residual_px']:.3f} px" if e.get("method") == "joint" else "")
                    + (f" - {e['fallback']}" if e.get("fallback") else ""))
     for fam, r in (res.get("rigs") or {}).items():
         if r.get("skipped"):

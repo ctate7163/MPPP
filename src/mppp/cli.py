@@ -163,6 +163,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--note", default="", help="promotion note")
     p.add_argument("--min-blocks", type=int, default=None,
                    help="zcam / hazcam: the blocks a candidate needs (0.94.1, the tiny joints: 1 or 2)")
+    p.add_argument("--hazcam-method", choices=["joint", "blocks"], default="joint",
+                   help="hazcam: joint = the law fitted on the image observations of every block, each frame at its "
+                        "own temperature (0.94.5, default); blocks = a line through one refined camera per block")
+    p.add_argument("--hazcam-slope", choices=["FL", "all", "per_eye"], default="FL",
+                   help="hazcam joint: FL = every eye takes FL's ppm/degC (default, Christian 24 Oct); all = one "
+                        "slope shared by the four eyes; per_eye = a slope per eye")
     p.add_argument("--promote-new-only", action="store_true",
                    help="zcam / hazcam: promote only models of which none is in use (0.94.1: a tiny joint never "
                         "replaces a model of more blocks)")
@@ -655,7 +661,17 @@ def _calib_hazcam(a: argparse.Namespace) -> int:
     root = Path(a.root or os.environ.get("MPPP_SCAPES") or ".")
     out = Path(a.out) if a.out else root / "camera_analysis" / f"hazcam_fit_{datetime.date.today():%Y%m%d}"
     log.info("calib hazcam: %d blocks -> %s", len(blocks), out)
-    res = H.fit_hazcam(blocks, limits={"min_blocks": a.min_blocks} if getattr(a, "min_blocks", None) else None)
+    lim = {"min_blocks": a.min_blocks} if getattr(a, "min_blocks", None) else None
+    method = getattr(a, "hazcam_method", None) or "joint"
+    res = None
+    if method == "joint":                 # 0.94.5 (Christian 24 Oct): the law fitted on the observations of every block
+        from .calib import hazjoint as HJ
+        try:
+            res = HJ.fit_hazcam_joint(blocks, slope_mode=getattr(a, "hazcam_slope", None) or "FL", limits=lim)
+        except Exception as e:                       # noqa: BLE001 - the block fit stands in
+            log.warning("hazcam joint failed (%s: %s); the block fit instead", type(e).__name__, e)
+    if res is None:
+        res = H.fit_hazcam(blocks, limits=lim)
     w = H.write_hazcam(res, out)
     for line in H.describe(res):
         print("  " + line)
