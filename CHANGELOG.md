@@ -4,6 +4,17 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- **Fix: a right camera dropped by the triangulation** (weekend run, 23 Oct: Seitah Overlook crashed, Artuby Ridge
+  "Camera model does not exist").  A right Hazcam exposure without its left image sits in a one-camera rig of its
+  own; when stage 2 excluded that rig's last frame as an outlier, COLMAP's `triangulate_points` dropped the rig with
+  its camera although the stereo rig still used the camera.  `reconstruction.triangulate` now puts such cameras
+  back (`restore_shared_cameras`; reproduced on the Rockytop test block with a forced exclusion).
+- **Fix: a right camera dropped by the triangulation** (weekend run, 23 Oct: Seitah Overlook crashed, Artuby Ridge
+  "Camera model does not exist").  A right Hazcam exposure without its left image sits in a one-camera rig of its
+  own; when stage 2 excluded that rig's last frame as an outlier, COLMAP's `triangulate_points` dropped the rig with
+  its camera although the stereo rig still used the camera.  `reconstruction.triangulate` now puts such cameras
+  back (`restore_shared_cameras`; reproduced on the Rockytop test block with a forced exclusion: "Camera with ID 2
+  does not exist" before, the block finishes after).
 - **SIFT is the default matcher again** (`match_mode` "exhaustive", Christian 23 Oct; 0.93.9 had "lightglue").  The
   finished A/B on Chal Rocks tiny: SIFT 13,604 Navcam - Mastcam-Z tie points, LightGlue 7,578, LightGlue on every
   octave 7,043; residual median 0.22 vs 0.37 px, p95 0.94 vs 1.39 px.  LightGlue tied 3x more points across

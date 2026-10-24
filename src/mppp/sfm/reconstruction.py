@@ -200,11 +200,37 @@ def triangulate(rec, project: SfmProject, max_reproj_px: float = 8.0, min_angle_
     opts.ba_refine_extra_params = False
     out = Path(out_dir) if out_dir else project.root / "sparse" / "_triangulation"
     out.mkdir(parents=True, exist_ok=True)
+    import copy as _copy
+    source_cameras = {int(c): _copy.deepcopy(cam) for c, cam in rec.cameras.items()}    # triangulate_points may
     rec = pycolmap.triangulate_points(rec, str(database or project.database), str(project.images_dir), str(out),
                                       clear_points=True, options=opts, refine_intrinsics=False)
+    restore_shared_cameras(rec, source_cameras)          # change the model it is given in place
     settings = getattr(project, "settings", None) or {}
     drop_mixed_short_tracks(rec, int(settings.get("min_mixed_track_length") or MIN_MIXED_TRACK_LENGTH))
     return rec
+
+
+def restore_shared_cameras(rec, cameras: Dict[int, Any]) -> List[int]:
+    """
+    Put back the cameras that ``triangulate_points`` dropped although ``rec`` still uses them (0.94.4, the
+    weekend run of 23 Oct: Seitah Overlook and Artuby Ridge failed).  COLMAP's tear-down removes a rig without
+    registered frames together with its sensors' cameras.  A right Hazcam (or Navcam) exposure without its left
+    image sits in a one-camera rig of its own (``database.build``), so when that rig's last frame is excluded as an
+    outlier, the right camera disappears while the stereo rig's frames still use it: "Camera with ID 2 does not exist"
+    at the next step (Linux), "Camera model does not exist" or a native crash (Windows).  ``cameras``: copies of the
+    cameras before the triangulation, {id: camera}.  Returns the camera ids put back.
+    """
+    import pycolmap
+    need = {int(rec.images[i].camera_id) for i in rec.images}
+    for rig in rec.rigs.values():
+        need |= {int(x.id) for x in rig.sensor_ids() if x.type == pycolmap.SensorType.CAMERA}
+    back = sorted(c for c in need if c not in rec.cameras and c in cameras)
+    for cid in back:
+        rec.add_camera(cameras[cid])
+    if back:
+        logger.info(f"triangulation: camera(s) {back} put back (dropped with a rig that has no registered frame "
+                    "left, still used by another rig)")
+    return back
 
 
 def sync_database(rec, project: SfmProject, path: Optional[PathLike] = None) -> Path:

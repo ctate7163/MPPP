@@ -1542,3 +1542,25 @@ def test_drop_isolated_points():
     assert drop_isolated_points(rec, 4.0, two_view_only=False, within_radii=0)["deleted"] >= 1 and pid not in rec.points3D
     from mppp.pipeline import Settings
     assert Settings().isolated_points_factor == 4.0
+
+
+def test_restore_shared_cameras_after_a_rig_was_dropped():
+    """0.94.4 (weekend run, Seitah Overlook and Artuby Ridge): triangulate_points drops a rig without registered
+    frames together with its cameras - a right Hazcam's one-camera rig (its exposure had no left image) took the
+    right camera that the stereo rig still uses.  The camera is put back."""
+    from types import SimpleNamespace as NS
+    import pycolmap
+    from mppp.sfm.reconstruction import restore_shared_cameras
+    cam = lambda i: NS(id=i, type=pycolmap.SensorType.CAMERA)          # noqa: E731
+
+    class Rec:
+        def __init__(self):
+            self.images = {10: NS(camera_id=1), 11: NS(camera_id=2)}
+            self.rigs = {1: NS(sensor_ids=lambda: [cam(1), cam(2)])}
+            self.cameras = {1: "FL"}
+
+        def add_camera(self, c):
+            self.cameras[{"FL": 1, "FR": 2}[c]] = c
+    rec = Rec()
+    assert restore_shared_cameras(rec, {1: "FL", 2: "FR", 5: "RL"}) == [2] and rec.cameras == {1: "FL", 2: "FR"}
+    assert restore_shared_cameras(rec, {1: "FL", 2: "FR"}) == []
