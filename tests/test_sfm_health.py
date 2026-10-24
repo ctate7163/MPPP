@@ -295,3 +295,18 @@ def test_restation_uses_the_label_priors(tmp_path):
     # a block without moved priors is left alone
     (root / "project.json").write_text(json.dumps({"images": [{"name": "NLF_0.png", "prior_C": [0, 0, 0]}]}))
     assert restation({"checks": []}, root) == []
+
+
+def test_hazcam_eye_ratio_does_not_fail_a_block():
+    """0.94.4: Knob Mountain Large failed on the rear Hazcams' eye ratio (RL 0.184 / RR 0.422 px = 2.29); a Hazcam
+    pair has its own check, and saved reports are judged again with it."""
+    from mppp.sfm.health import DEFAULT_THRESHOLDS, rejudge
+    assert DEFAULT_THRESHOLDS["hazcam_residual_eye_ratio"][1] > DEFAULT_THRESHOLDS["residual_eye_ratio"][1]
+    rep = {"checks": [{"check": "residual_eye_ratio", "value": 2.29, "status": "fail",
+                       "note": "median residual, worse eye / better eye: RL: 0.184, RR: 0.422"},
+                      {"check": "residual_eye_ratio", "value": 1.05, "status": "pass",
+                       "note": "median residual, worse eye / better eye: NL: 0.150, NR: 0.158"}]}
+    v, changed = rejudge(rep)
+    assert v == "warn" and any("hazcam_residual_eye_ratio" in c for c in changed)
+    rep["checks"][1].update(value=2.5, status="fail")              # a Navcam pair still fails
+    assert rejudge(rep)[0] == "fail"

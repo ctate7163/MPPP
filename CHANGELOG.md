@@ -4,6 +4,9 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- **A Hazcam pair's eye ratio no longer fails a block** (24 Oct: Knob Mountain Large FAIL on RL 0.184 / RR 0.422 px,
+  ratio 2.29 - it would have left the joints): `hazcam_residual_eye_ratio`, warn 2 / fail 10 (the Navcam and
+  Mastcam-Z pairs keep 1.3 / 2.0); saved reports are judged again with it.
 - **Fix: Hazcam frames excluded as outliers for their station's shift** (weekend run, 23 Oct).  Stage 2 moves a
   Hazcam image's position prior by its station's Navcam shift (`hazcam_station_priors`, `prior_C_label` keeps the
   label prior), but the outlier test measured every frame from `prior_C` and grouped the Hazcam frames with the

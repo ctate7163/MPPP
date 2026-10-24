@@ -63,6 +63,10 @@ DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "residual_median_px": (0.5, 1.0, "above"),
     "residual_p95_px": (2.0, 4.0, "above"),
     "residual_eye_ratio": (1.3, 2.0, "above"),
+    # 0.94.4 (24 Oct, Knob Mountain Large FAIL on RL 0.18 / RR 0.42 px): a Hazcam pair's eyes, weakly tied (the rear
+    # eyes quarter-resolution and half masked, held at their start below 500 observations), tell about a Hazcam
+    # model, not the block - warned, failed only far out
+    "hazcam_residual_eye_ratio": (2.0, 10.0, "above"),
     "outlier_image_fraction": (0.04, 0.20, "above"),       # doubled in v0p14.2 (user request)
     "edge_to_centre_residual": (1.5, 2.5, "above"),
     "focal_change_pct": (0.5, 2.0, "above"),
@@ -619,7 +623,8 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         cam_r = cam_l[0] + "R" + cam_l[2:]
         if cam_r in by_cam and by_cam[cam_l] and by_cam[cam_r]:
             a, b = float(np.median(by_cam[cam_l])), float(np.median(by_cam[cam_r]))
-            check("reprojection", "residual_eye_ratio", max(a, b) / max(min(a, b), 1e-9),
+            name = "hazcam_residual_eye_ratio" if cam_l[0] in "FR" else "residual_eye_ratio"
+            check("reprojection", name, max(a, b) / max(min(a, b), 1e-9),
                   f"median residual, worse eye / better eye: {cam_l}: {a:.3f}, {cam_r}: {b:.3f}")
     med_all = float(np.median(r)) if r.size else 0.0
     outl = sorted(((m, iid) for iid, m in img_med.items() if m > outlier_factor * med_all), reverse=True)
@@ -967,6 +972,8 @@ def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = Non
         name, st0, v = c.get("check"), c.get("status"), c.get("value")
         if name == "rig_rotation_change_deg" and str(c.get("note", ""))[:2] in ("F:", "R:"):
             name = "hazcam_rig_rotation_change_deg"   # 0.93.6: a Hazcam rig (reports before 0.93.6)
+        if name == "residual_eye_ratio" and any(f"{e}: " in str(c.get("note", "")) for e in ("FL", "RL")):
+            name = "hazcam_residual_eye_ratio"        # 0.94.4: a Hazcam pair (reports before 0.94.4)
         if name == "corner_triangulated_ratio" and report.get("coverage_by_radius"):
             wc = _corner_ratio(report["coverage_by_radius"])
             v = wc[1] if wc else None
