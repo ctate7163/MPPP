@@ -134,13 +134,11 @@ def test_hazcam_write_check_and_camera_at(tmp_path):
 
 # ------------------------------------------------------------------------------------------ scripts and groups
 def test_new_windows_scripts_exist_crlf():
-    for name in ("zcam_joints.bat", "run_hazcam.bat", "hazcam_calibration.bat", "promote_models.bat"):
+    for name in ("zcam_joints.bat", "promote_models.bat"):         # 0.94.4: run_hazcam / hazcam_calibration removed
         b = (ROOT / "scripts" / "windows" / name).read_bytes()
         assert b.count(b"\r\n") == b.count(b"\n") > 5, name
     z = (ROOT / "scripts" / "windows" / "zcam_joints.bat").read_text()
     assert "calib zcam" in z and "--promote-if-ok" in z and "--navcam-group ecam_consensus" in z
-    h = (ROOT / "scripts" / "windows" / "run_hazcam.bat").read_text()
-    assert "hazcam_consensus" in h and "NAVCAM_INTRINSICS=hold" in h and "hazcam_calibration.bat" in h
     assert "zcam_joints.bat" in (ROOT / "scripts" / "windows" / "run_sites_zcam.bat").read_text()
 
 
@@ -429,8 +427,6 @@ def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
                                                              for v in ("sift", "lightglue")}}
     md = lab.report(work, res)
     assert "| matcher that ran | sift | lightglue |" in md and "cross_station_fraction" in md and "| 12 |" in md
-    bat = (ROOT / "scripts" / "windows" / "test_lightglue.bat").read_bytes()
-    assert b"lightglue_ab.py" in bat and b"\r\n" in bat
 
 
 def test_check_zcam_rig_scatter_of_too_few_blocks():

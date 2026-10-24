@@ -108,7 +108,7 @@ Metashape *Import Reference*, `colmap/sparse_prior/` (cameras, poses, rig), `mpp
 `health.json`, `summary.json`, `error_input/` (the exports for the error analysis), `runs/<time>/log.txt`.
 
 For many sites at once, `scripts/run_sites.py --group ecam_consensus` and `scripts/process_sites.py --all`
-(Windows: `scripts\windows\run_sites.bat`, `process_sites.bat`, `align_here.bat`, `sites_status.bat`,
+(Windows: `scripts\windows\run_sites.bat`, `process_sites.bat`, `align_here.bat`, `check_sites.bat`,
 `stop_mppp.bat`) run the command site after site with logs and status files.
 
 ## Camera models

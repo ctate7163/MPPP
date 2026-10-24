@@ -259,8 +259,8 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --variant VARIANT     the blocks' project colmap_<variant> (default colmap; run_hazcam.bat:
-                        hazcam)
+  --variant VARIANT     the blocks' project colmap_<variant> (default colmap; the Hazcam-only
+                        alignments: hazcam)
   --root DIR            the scapes root (default: MPPP_SCAPES)
   --group GROUP         site group(s) of the blocks, comma-separated (default ecam_consensus /
                         zcam<zoom>_joint, else zcam<zoom>_consensus); zcam / nz take the sites

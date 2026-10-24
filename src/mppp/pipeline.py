@@ -232,7 +232,7 @@ HAZCAM_FIELDS = ("hazcams", "hazcam_intrinsics", "hazcam_rig_refine")
 # the Hazcam products of a family: camera codes and the sequences kept (Hazcam frames come in FHAZ / RHAZ sequences)
 HAZCAM_CODES = {"F": ("FLF", "FRF"), "R": ("RLF", "RRF")}
 HAZCAM_SEQUENCES = {"F": ("FHAZ",), "R": ("RHAZ",)}
-HAZCAM_VARIANT = "hazcam"                         # run_hazcam.bat's variant (the Navcam held)
+HAZCAM_VARIANT = "hazcam"                         # the Hazcam-only alignments' variant (the Navcam held)
 
 
 def hazcam_families(v: Any) -> Tuple[str, ...]:
@@ -638,9 +638,14 @@ def process_site(site_or_work: PathLike, settings: Settings) -> Path:
         # 0.94.0 (Christian, 23 Oct): the shipped exclusion list also keeps its images out of the processing (they
         # were processed, then left out of the alignment: Mastcam-Z movies of a thousand frames)
         # (with the site's / run's EXCLUDE entries: "seq:ZCAM08390" for one block)
-        paths, ex = exclude_products(paths, shipped_exclusions() + [str(e) for e in (s.exclude or [])])
+        own = [str(e) for e in (s.exclude or [])]
+        for e in own:                                     # 0.94.4: what each of the block's own entries leaves out
+            k = len(exclude_products(paths, [e])[1])
+            log.info("not processed (EXCLUDE %r): %d products%s", e, k, "" if k else "  <- matches no product (typo?)")
+        paths, ex = exclude_products(paths, shipped_exclusions() + own)
         if ex:
-            log.info("not processed (the shipped exclusion list): %d products, e.g. %s", len(ex), ex[0])
+            log.info("not processed (the shipped exclusion list%s): %d products, e.g. %s",
+                     " and EXCLUDE" if own else "", len(ex), ex[0])
             sel["excluded_before_processing"] = len(ex)
     processed = st.work / "processed"
     processed.mkdir(parents=True, exist_ok=True)
@@ -693,7 +698,9 @@ def load_images(work: PathLike, settings: Settings, zooms: Sequence[int] = ()) -
             by.setdefault(r["entry"], []).append(r["image"])
         for e, ims in by.items():
             ims = [x for x in ims if x]
-            log.info("excluded by %r: %d images%s", e, len(ims), "" if ims else "  <- matches no image (typo?)")
+            gone = settings.exclude_list and e in [str(x) for x in (settings.exclude or [])]
+            log.info("excluded by %r: %d images%s", e, len(ims), "" if ims else (
+                "  (its products were left out before the processing)" if gone else "  <- matches no image (typo?)"))
         log.info("%d images after the exclusions", len(images))
     if settings.exclude_list:
         images, removed = apply_exclusions(images, shipped_exclusions())

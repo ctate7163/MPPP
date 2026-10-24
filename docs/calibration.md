@@ -159,7 +159,7 @@ mppp calib nz --zoom 34 --group zcam34_joint,zcam_consensus --navcam-group ecam_
 
 Module [`mppp.calib.hazfit`](api.md#mppp.calib.hazfit) (0.93.1). The Hazcam law in the Navcam form, fitted from the
 finished blocks' refined Hazcam cameras and rigs (`sparse/cahv_ba` of each block's project; `--variant` picks the
-project folder, `hazcam` for `run_hazcam.bat`):
+project folder, `hazcam` for the Hazcam-only alignments):
 
 - per eye, fx and fy with their own intercepts and one shared slope in ppm per degC about T0 = -20 degC (fitted when
   the blocks' median temperatures span at least 5 degC), an early-mission offset on fx and fy (fitted with at least
@@ -179,9 +179,10 @@ mppp calib hazcam --group hazcam_consensus --variant hazcam
 mppp calib hazcam --group hazcam_consensus --variant hazcam --promote-if-ok
 ```
 
-`scripts/windows/run_hazcam.bat` aligns the `hazcam_consensus` blocks with both Hazcam pairs and the Navcam held at
-its promoted law (`NAVCAM_INTRINSICS=hold`, into `colmap_hazcam/`), then runs `hazcam_calibration.bat` (this fit,
-promoted if it passes).
+Since 0.94.4 `run_pipeline.bat` fits the Hazcams on the `ecam_consensus` blocks (Navcam with both Hazcam pairs)
+right after the Navcam joint, both promoted if they pass (`run_hazcam.bat` and `hazcam_calibration.bat`, the
+separate `hazcam_consensus` alignment with the Navcam held, were removed in 0.94.4; `run_sites.py --group
+hazcam_consensus --variant hazcam --set NAVCAM_INTRINSICS=hold` then the commands above do the same).
 
 ## Promotion: `mppp cmods`
 

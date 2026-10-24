@@ -119,7 +119,7 @@ def main(argv=None) -> int:
         p = subprocess.run(cmd, capture_output=True, text=True)
         lines = [ln for ln in (p.stdout + p.stderr).splitlines() if "would run" in ln or "skipped" in ln or "ERROR" in ln]
         print("\n".join(lines[-40:]) or (p.stdout + p.stderr)[-2000:])
-    print("\nnext: run_sites.bat (Navcam), then run_sites_zcam34.bat" if rc == 0 else "\nfix the above before the next run")
+    print("\nnext: run_pipeline.bat" if rc == 0 else "\nfix the above before the next run")
     return rc
 
 

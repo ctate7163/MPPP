@@ -2,7 +2,7 @@
 Several days unattended (0.94.4, Christian 23 Oct 2026): the matcher and pose-guided comparisons on the two tiny
 blocks, then the whole pipeline - one command, restartable, keeping Windows awake.
 
-    python studies\\calibration\\run_weekend.py               (run_weekend.bat, which restarts it after a crash)
+    python studies\\calibration\\run_weekend.py               (0.94.4: run_weekend.bat, which restarted it after a crash, was removed)
     python studies\\calibration\\run_weekend.py --status      what is done
     python studies\\calibration\\run_weekend.py --dry-run     the plan
 
@@ -10,7 +10,7 @@ Steps (state in ``<root>\\mppp_pipeline\\weekend_state.json``, log in ``weekend_
 after the last finished step - a step that failed is not repeated, ``--redo STEP`` runs it again):
 
  1. ``wait``       - until nothing else runs on ROOT: no run_sites / process_sites batch and no alignment whose
-                     status file is alive (a test_lightglue.bat going on, an align_here.bat); at most --wait-h
+                     status file is alive (a lightglue_ab.py going on, an align_here.bat); at most --wait-h
  2. ``ab_chal``    - scripts/lightglue_ab.py on Chal Rocks tiny, every variant again (--rerun: its masks changed,
                      so every variant must use the same images): SIFT, LightGlue, LightGlue on every octave,
                      SIFT + LightGlue, SIFT without pose-guided matching, SIFT without the isolated-point filter
@@ -24,7 +24,7 @@ after the last finished step - a step that failed is not repeated, ``--redo STEP
  5. ``summary``    - WEEKEND.md: what each step did, with the A/B tables and the pipeline report
 
 Windows: the machine is kept from sleeping while this runs (SetThreadExecutionState); a reboot (Windows Update)
-stops it - start run_weekend.bat again and it goes on.
+stops it - start it again and it goes on.
 """
 from __future__ import annotations
 
@@ -243,7 +243,7 @@ def main(argv=None) -> int:
         pass
     stop = threading.Event()
     threading.Thread(target=keep_awake, args=(stop,), daemon=True).start()
-    from mppp.runner import RunStatus                     # stop_mppp.bat marks it stopped: run_weekend.bat then ends
+    from mppp.runner import RunStatus                     # stop_mppp.bat marks it stopped
     status = None if a.dry_run else RunStatus(w.dir / STATUS_FILE, kind="weekend", argv=sys.argv).start()
     try:
         rc = w.go()

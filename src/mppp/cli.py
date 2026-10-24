@@ -131,8 +131,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "over the finished Navcam + Mastcam-Z blocks, the Navcam held at the models in use; nz: the "
                         "combined joint (both laws free) compared with the Navcam-only law - a check, never promoted; "
                         "hazcam: the Hazcam law (Navcam form) from the finished blocks with Hazcams (0.93)")
-    p.add_argument("--variant", default="", help="the blocks' project colmap_<variant> (default colmap; run_hazcam.bat: "
-                   "hazcam)")
+    p.add_argument("--variant", default="", help="the blocks' project colmap_<variant> (default colmap; the Hazcam-only "
+                   "alignments: hazcam)")
     p.add_argument("--root", default=None, metavar="DIR", help="the scapes root (default: MPPP_SCAPES)")
     p.add_argument("--group", default=None, help="site group(s) of the blocks, comma-separated (default ecam_consensus / "
                    "zcam<zoom>_joint, else zcam<zoom>_consensus); zcam / nz take the sites whose \"zcam\" list has the zoom")

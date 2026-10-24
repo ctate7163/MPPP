@@ -8,7 +8,7 @@ Why: the Navcam law comes from Navcam-only blocks, and the Mastcam-Z law is then
 the two instruments disagree (a Navcam scale or pointing the Mastcam-Z frames pull on), this joint shows it: it
 starts from the promoted laws, frees both, and compares the result with the Navcam-only solution - the Navcam terms
 moved in units of their sd, the Navcam and Mastcam-Z residuals before and after, the rig.  It is a check, not a
-calibration: nothing is promoted by default (``mppp calib nz``; ``zcam_tied_joint.bat`` runs it last).
+calibration: nothing is promoted by default (``mppp calib nz``; ``zcam_joints.bat`` / run_pipeline run it last).
 
     res = fit_nzjoint(blocks)            # {name: WORK folder} of finished Navcam + Mastcam-Z blocks
     write_nzjoint(res, out_dir)          # nz_joint.json, report.md

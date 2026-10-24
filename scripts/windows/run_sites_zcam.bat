@@ -2,13 +2,13 @@
 REM ======================================================================================================
 REM MPPP - process and align the Navcam + Mastcam-Z block of every site of the zcam_consensus group of
 REM src\mppp\data\sites.json into its own WORK folder mars2020_sol_<sol>_<site>_zcam under ROOT (v0p53;
-REM the block has all the Mastcam-Z zooms of the site's "zcam" list; run_sites_zcam34.bat etc. one zoom),
+REM the block has all the Mastcam-Z zooms of the site's "zcam" list),
 REM one site after the other, in the background (a minimised window; closing it stops the batch).
 REM Finished sites (same settings) are skipped, so double-clicking again continues where it stopped.
 REM
 REM   batch log     %ROOT%\run_sites_log.txt
 REM   per site      %ROOT%\mars2020_sol_<sol>_<site>_zcam\runs\<date-time>\log.txt and mppp_status.json
-REM   status        sites_status.bat
+REM   status        check_sites.bat
 REM
 REM 0.93 (Christian, 22 Oct): then zcam_joints.bat - the Mastcam-Z joint of every zoom over the good blocks, a new
 REM version of each zoom's focus model, promoted when every check passes ("set MPPP_THEN=none" before calling this
@@ -42,5 +42,5 @@ if not defined MPPP_THEN set "MPPP_THEN=zcam_joints.bat"
 if /i "%MPPP_THEN%"=="none" set "MPPP_THEN="
 start "MPPP run_sites zcam - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% --zcam %EXTRA% %*
 echo MPPP run_sites started in a minimised window, then %MPPP_THEN%. Log: "%ROOT%\run_sites_log.txt"
-echo Status of every site: sites_status.bat
+echo Status of every site: check_sites.bat
 timeout /t 10

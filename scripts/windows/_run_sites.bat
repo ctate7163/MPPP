@@ -3,7 +3,7 @@ REM MPPP: the minimised window of run_sites.bat (environment already set up by i
 title MPPP run_sites
 python "%MPPP_HOME%\scripts\run_sites.py" %*
 set "RC=%ERRORLEVEL%"
-REM 20 Oct: MPPP_THEN (set by run_sites_zcam34.bat: zcam_tied_joint.bat) runs after the batch when every block
+REM 20 Oct: MPPP_THEN (set by run_sites_zcam.bat: zcam_joints.bat) runs after the batch when every block
 REM finished or some failed (exit 0 / 1); not when the batch did not start (2 unknown sites, 3 another batch, 4 forms)
 if defined MPPP_THEN if %RC% LEQ 1 (
   echo.

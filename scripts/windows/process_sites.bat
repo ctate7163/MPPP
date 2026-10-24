@@ -8,7 +8,7 @@ REM and image processing) and the site list in src\mppp\data\sites.json.
 REM   result        %ROOT%\mars2020_sol_<sol>_<site>[_zcam]\processed\   (images, masks, manifest, process_done.json)
 REM   batch log     %ROOT%\process_sites_log.txt
 REM   per site      %ROOT%\mars2020_sol_<sol>_<site>[_zcam]\runs\<date-time>_process\log.txt and mppp_status.json
-REM   status        sites_status.bat
+REM   status        check_sites.bat
 REM Sites already processed with the same settings are skipped, so double-clicking again continues.
 REM Then align a site: copy align_here.bat into its WORK folder and double-click it.
 REM
@@ -39,5 +39,5 @@ if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx M
 set "ROOT=%MPPP_SCAPES%"
 start "MPPP process_sites - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_process.bat" --root "%ROOT%" %WHICH% %ZCAM% %EXTRA% %*
 echo MPPP process_sites started in a minimised window. Log: "%ROOT%\process_sites_log.txt"
-echo Status of every site: sites_status.bat
+echo Status of every site: check_sites.bat
 timeout /t 10

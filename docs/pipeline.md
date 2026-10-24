@@ -28,7 +28,7 @@ mission waypoint table is downloaded and cached for a day; without a connection 
 The front (`FLF` / `FRF`, `FHAZ` sequences) and rear (`RLF` / `RRF`, `RHAZ` sequences) Hazcam products of the
 same stations are added under the same one-product-per-exposure and one-third-of-the-frame rules (`hazcams`, by
 default both since 0.93.1; `--hazcam front|rear|both|none`, or `--set HAZCAMS=F`). The results go to `colmap/` like
-any block; `--variant` keeps them apart (`run_hazcam.bat` uses `colmap_hazcam/`). A run with `--hazcam none` leaves
+any block; `--variant` keeps them apart (the Hazcam-only alignments use `colmap_hazcam/`). A run with `--hazcam none` leaves
 out any Hazcam images in `processed/`, and its run key leaves out the Hazcam settings.
 
 ## 2. Process the images

@@ -11,7 +11,7 @@ REM Why a new environment: the pip pycolmap wheels (Windows) have no ONNX and no
 REM builds before build number 1 have no ONNX either.  The conda-forge colmap 4.2.1 builds "cuda_129..._1" and
 REM "cuda_134..._1" depend on onnxruntime-cpp; this file clones mppp_gpu (it stays as it is, for going back) into
 REM mppp_gpu_lg and installs that colmap, the CUDA pycolmap 4.2.1 and the CUDA onnxruntime-cpp into the clone, with
-REM the same CUDA version as mppp_gpu.  Then it tests LightGlue on synthetic images (lightglue_check.py).
+REM the same CUDA version as mppp_gpu.  Then it tests LightGlue on synthetic images (scripts\lightglue_check.py).
 REM MPPP finds the environment through %LOCALAPPDATA%\mppp\gpu_python.txt (MPPP_GPU_PY overrides it).
 REM Needs: miniconda / miniforge / anaconda, internet, ~3 GB.  About 10-20 min.  Log: _transfer\install_lightglue_log.txt
 REM ======================================================================================================
@@ -94,7 +94,7 @@ set "PATH=%ENVDIR%;%ENVDIR%\Library\mingw-w64\bin;%ENVDIR%\Library\usr\bin;%ENVD
 set "CONDA_PREFIX=%ENVDIR%"
 set "KMP_DUPLICATE_LIB_OK=TRUE"
 set "PYTHONPATH="
-"%ENVDIR%\python.exe" "%~dp0lightglue_check.py" "%MPPP_HOME%\src" > "%TEMP%\mppp_lg_check.txt" 2>&1
+"%ENVDIR%\python.exe" "%~dp0..\lightglue_check.py" "%MPPP_HOME%\src" > "%TEMP%\mppp_lg_check.txt" 2>&1
 set "RC=%ERRORLEVEL%"
 type "%TEMP%\mppp_lg_check.txt"
 type "%TEMP%\mppp_lg_check.txt" >> "%LOG%"

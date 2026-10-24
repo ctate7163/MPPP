@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_windows_bat_files():
     d = ROOT / "scripts" / "windows"
-    for n in ("align_here.bat", "run_sites.bat", "sites_status.bat", "mppp_env.bat", "_run_align.bat",
+    for n in ("align_here.bat", "run_sites.bat", "check_sites.bat", "mppp_env.bat", "_run_align.bat",
               "_run_sites.bat"):
         raw = (d / n).read_bytes()
         assert b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b""), n     # CRLF line ends for cmd.exe
@@ -60,7 +60,7 @@ def test_bat_files_work_from_any_folder_and_find_the_environment():
     import subprocess
     from pathlib import Path
     win = Path(__file__).resolve().parents[1] / "scripts" / "windows"
-    for name in ("process_sites.bat", "run_sites.bat", "sites_status.bat"):
+    for name in ("process_sites.bat", "run_sites.bat", "check_sites.bat"):
         s = (win / name).read_text()
         assert 'call "%MPPP_WIN%\\mppp_env.bat"' in s and '"%~dp0mppp_env.bat" ||' not in s, name
         assert "%~dp0_run" not in s, name
@@ -70,7 +70,7 @@ def test_bat_files_work_from_any_folder_and_find_the_environment():
         assert part in env, part
     body = env.split(":try_prefix\n")[1]
     assert "%~dp0" not in body                     # inside a call :label, %0 is the label
-    r = subprocess.run([sys.executable, str(win / "check_env.py")], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, str(win.parent / "check_env.py")], capture_output=True, text=True)   # 0.94.4: scripts\
     assert r.returncode in (0, 1) and sys.executable in r.stdout
 
 
@@ -147,18 +147,17 @@ def test_promote_cmods(monkeypatch, tmp_path, capsys):
 
 
 
-def test_run_sites_bat_files_navcam_and_zcam34():
-    """v0p50: run_sites.bat runs the Navcam blocks only, run_sites_zcam34.bat the zcam34 sites (v0p61: no "all")."""
+def test_run_sites_bat_files_navcam_and_zcam():
+    """v0p50: run_sites.bat runs the Navcam blocks only, run_sites_zcam.bat the Mastcam-Z blocks (v0p61: no "all";
+    0.94.4: run_sites_zcam34.bat and zcam_tied_joint.bat removed)."""
     w = ROOT / "scripts" / "windows"
     assert not list(w.glob("run_all_sites*.bat"))
     nav = (w / "run_sites.bat").read_bytes()
-    z = (w / "run_sites_zcam34.bat").read_bytes()
-    assert b"\r\n" in nav and b"\r\n" in z
+    z = (w / "run_sites_zcam.bat").read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")   # crlf on checkout
+    assert b"\r\n" in nav
     assert b"--zcam" not in nav.split(b"start ")[-1] and b"%WHICH% --zcam" in z
-    # 20 Oct: the Mastcam-Z joint after the Z34 blocks (MPPP_THEN, run by _run_sites.bat when the batch ran)
-    assert b'set "MPPP_THEN=zcam_tied_joint.bat"' in z and b"MPPP_THEN" not in nav
-    j = (w / "zcam_tied_joint.bat").read_bytes()                       # 21 Oct: the combined N+Z check last
-    assert j.index(b"calib zcam") < j.index(b"calib nz") and b"--promote" not in j.split(b"calib nz")[1]
+    # the Mastcam-Z joints after the Mastcam-Z blocks (MPPP_THEN, run by _run_sites.bat when the batch ran)
+    assert b'set "MPPP_THEN=zcam_joints.bat"' in z and b"MPPP_THEN" not in nav
     r = (w / "_run_sites.bat").read_bytes()
     assert b"if defined MPPP_THEN if %RC% LEQ 1" in r and b"%MPPP_THEN_ARGS%" in r
     # the scapes root is checked after mppp_env.bat (mppp_scapes.txt), with D:\scapes as the fallback
@@ -181,11 +180,7 @@ def test_filter_zcam_and_consensus_bats(tmp_path):
     t = (win / "run_sites_zcam.bat").read_text()           # v0p53: every Mastcam-Z consensus block
     assert 'set "WHICH=--group zcam_consensus"' in t and "--zcam" in t
     assert 'set "EXTRA="' in t and "ZCAM_ZOOMS" not in t               # v0p53.1: the sites' own zoom lists
-    for z in (34,):                     # v0p53: each runs its consensus group (v0p85: 48, 63, 79, 110 removed)
-        t = (win / f"run_sites_zcam{z}.bat").read_text()
-        assert f'set "WHICH=--group zcam{z}_consensus"' in t and "--zcam" in t, z
-        assert f'set "EXTRA=--set ZCAM_ZOOMS=[{z}]"' in t, z              # v0p61: only that zoom
-        assert "--all" not in t, z
+    assert not list(win.glob("run_sites_zcam[0-9]*.bat"))     # 0.94.4: the single-zoom batches removed (v0p85: 48-110)
 
 
 def test_batch_lock_refuses_a_second_batch(tmp_path):
@@ -316,10 +311,21 @@ def test_skip_file_leaves_a_block_out(tmp_path):
     assert '(work / "SKIP").is_file()' in src and "p.returncode == 5" in src
 
 
-def test_multizoom_test_bat():
-    """22 Oct: the multi-zoom test block (Taylorfjellet, all five zooms) in its own variant."""
-    b = (ROOT / "scripts" / "windows" / "run_multizoom_test.bat").read_bytes()
-    assert b"\r\n" in b and b"--variant multizoom" in b and b"ZCAM_ZOOMS=[34,48,63,79,110]" in b
+def test_windows_folder_is_short():
+    """0.94.4 (Christian, 23 Oct): at most 20 files in scripts\\windows, the removed ones gone."""
+    w = ROOT / "scripts" / "windows"
+    files = [f for f in w.iterdir() if f.is_file() and not f.name.endswith(".txt")]
+    assert len(files) <= 20, sorted(f.name for f in files)
+    for gone in ("run_weekend.bat", "build_example_data.bat", "run_multizoom_test.bat", "run_hazcam.bat",
+                 "test_lightglue.bat", "sites_status.bat", "run_sites_zcam34.bat", "zcam_tied_joint.bat"):
+        assert not (w / gone).exists(), gone
+    # every batch file a kept one calls is still there
+    import re
+    names = {f.name.lower() for f in files}
+    for f in files:
+        if f.suffix == ".bat":
+            for ref in re.findall(r"%MPPP_WIN%\\(\w+\.bat)", f.read_text(errors="replace")):
+                assert ref.lower() in names, (f.name, ref)
 
 
 def test_check_sites_shows_the_last_runs(tmp_path, capsys):

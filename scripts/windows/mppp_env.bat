@@ -11,7 +11,7 @@ REM      then every environment in their envs\ folder.
 if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 if not defined MPPP_ENV set "MPPP_ENV=base"
 set "KMP_DUPLICATE_LIB_OK=TRUE"
-set "_MPPP_CHECK=%~dp0check_env.py"
+set "_MPPP_CHECK=%~dp0..\check_env.py"
 if not defined MPPP_PYTHON if exist "%~dp0mppp_python.txt" for /f "usebackq eol=# delims=" %%L in ("%~dp0mppp_python.txt") do set "MPPP_PYTHON=%%~L"
 REM 0.90: the scapes root and the PDS folder may also come from one-line files next to this script (git-ignored),
 REM when MPPP_SCAPES / MPPP_PDS are not set in the environment (setx MPPP_SCAPES D:\scapes sets them for good)

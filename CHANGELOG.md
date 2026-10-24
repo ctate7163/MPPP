@@ -12,6 +12,14 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
   "exhaustive" is SIFT over the prior-overlap pairs, as before; pose-guided matching follows either way.
 - **Exclusions** (Christian, 23 Oct 16:48): `seq:FHAZ00202`, `seq:FHAZ00215`, `seq:FHAZ00216`; `ZCAM01023` is no
   longer kept (`seq:ZCAM01*` covers it).  Three Forks North: no mask inference for NCAM03688 and NCAM13688.
+- **`scripts\windows` trimmed to 19 files** (Christian, 23 Oct: "too many bat files"): removed `run_weekend.bat` and
+  `_run_weekend_loop.bat`, `build_example_data.bat`, `run_multizoom_test.bat`, `run_hazcam.bat`,
+  `hazcam_calibration.bat`, `test_lightglue.bat`, `navcam_tied_joint.bat`, `zcam_tied_joint.bat`,
+  `run_sites_zcam34.bat`, `run_z34.bat`, `run_v0p87.bat`, `move_scapes.bat` and `sites_status.bat` (`check_sites.bat`
+  shows the same); `check_env.py` and `lightglue_check.py` moved up to `scripts\`.  `docs/WINDOWS.md` lists what
+  is left by use and what replaces each removed file.
+- The block's own `EXCLUDE` entries are reported at the processing, where they now act (`not processed (EXCLUDE
+  'sol:15-31'): N products`, with the typo warning there); the alignment no longer calls them a typo.
 - `tests/test_calib.py`: the Hazcam start-model tests use a models folder without RL, now that FL, FR, RL and RR
   are all in use.
 

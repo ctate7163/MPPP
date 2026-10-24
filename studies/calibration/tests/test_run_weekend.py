@@ -76,14 +76,10 @@ def test_weekend_waits_for_a_live_alignment(tmp_path, monkeypatch):
     assert w.busy() is None and w.s_wait()[0] == "done"
 
 
-def test_weekend_bats_and_stop(tmp_path):
+def test_weekend_stop(tmp_path):
+    """stop_mppp marks the weekend run stopped (0.94.4: run_weekend.bat and its loop were removed)."""
     w = ROOT / "scripts" / "windows"
-    for name in ("run_weekend.bat", "_run_weekend_loop.bat"):
-        b = (w / name).read_bytes()
-        assert b.count(b"\r\n") == b.count(b"\n") > 10, name
-    loop = (w / "_run_weekend_loop.bat").read_text()
-    assert "run_weekend.py" in loop and "weekend_status.json" in loop and "'stopped'" in loop and "gtr 20" in loop
-    assert "_run_weekend_loop.bat" in (w / "run_weekend.bat").read_text()
+    assert not (w / "run_weekend.bat").exists() and not (w / "_run_weekend_loop.bat").exists()
     sys.path.insert(0, str(ROOT / "scripts"))
     from _batch import mark_stopped
     d = tmp_path / "mppp_pipeline"

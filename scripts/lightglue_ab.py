@@ -5,7 +5,7 @@ LightGlue on keypoints of every octave (``colmap_lightglue_octaves``, 0.94.4) an
 (``colmap_sift_lightglue``, 0.94.4) - a variant already finished is not run again (``--rerun``), then compared: the matcher actually used, pairs and inlier matches, registered images, tie points, cross-station points,
 residuals, every health check, and the time of the matching and of the whole alignment.
 
-    python scripts/lightglue_ab.py                      (test_lightglue.bat: Chal Rocks tiny, sols 91-98, and Seitah Overlook tiny, 116-121; then the tiny joint)
+    python scripts/lightglue_ab.py                      (Chal Rocks tiny, sols 91-98, and Seitah Overlook tiny, 116-121; then the tiny joint)
     python scripts/lightglue_ab.py --site rockytop --zcam
     python scripts/lightglue_ab.py --compare-only       the report again from the two finished alignments
 
@@ -36,7 +36,7 @@ VARIANTS = {"sift": ["MATCH_MODE=exhaustive"],
             # 0.94.4: what pose-guided matching and the isolated-point filter each do (SIFT; the run_weekend set)
             "sift_pg_off": ["MATCH_MODE=exhaustive", "POSE_GUIDED=false"],
             "sift_iso_off": ["MATCH_MODE=exhaustive", "ISOLATED_POINTS_FACTOR=0"]}
-DEFAULT_VARIANTS = ("sift", "lightglue", "lightglue_octaves", "sift_lightglue")   # test_lightglue.bat
+DEFAULT_VARIANTS = ("sift", "lightglue", "lightglue_octaves", "sift_lightglue")
 LABELS = {"sift": "SIFT", "lightglue": "LightGlue", "lightglue_octaves": "LightGlue, every octave",
           "sift_lightglue": "SIFT + LightGlue", "sift_pg_off": "SIFT, no pose-guided", "sift_iso_off": "SIFT, no isolated filter"}
 

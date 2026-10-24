@@ -2,13 +2,13 @@
 REM ======================================================================================================
 REM MPPP - process and align the Navcam block of every site of the ecam_consensus group of
 REM src\mppp\data\sites.json (v0p53) into its own WORK folder mars2020_sol_<sol>_<site> under ROOT
-REM (Navcam only; the Mastcam-Z blocks: run_sites_zcam.bat, run_sites_zcam34.bat ... _zcam110),
+REM (Navcam only; the Mastcam-Z blocks: run_sites_zcam.bat),
 REM one site after the other, in the background (a minimised window; closing it stops the batch).
 REM Finished sites (same settings) are skipped, so double-clicking again continues where it stopped.
 REM
 REM   batch log     %ROOT%\run_sites_log.txt
 REM   per site      %ROOT%\mars2020_sol_<sol>_<site>\runs\<date-time>\log.txt and mppp_status.json
-REM   status        sites_status.bat
+REM   status        check_sites.bat
 REM
 REM Edit the settings below (or run scripts\run_sites.py from a prompt; --help lists every option).
 REM ======================================================================================================
@@ -36,5 +36,5 @@ if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx M
 set "ROOT=%MPPP_SCAPES%"
 start "MPPP run_sites - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% %EXTRA% %*
 echo MPPP run_sites started in a minimised window. Log: "%ROOT%\run_sites_log.txt"
-echo Status of every site: sites_status.bat
+echo Status of every site: check_sites.bat
 timeout /t 10
