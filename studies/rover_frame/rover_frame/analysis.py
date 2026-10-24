@@ -342,4 +342,5 @@ def run(images: Sequence[Dict[str, Any]], states: Dict[str, Dict[str, Any]]) -> 
     return {"rows": rel, "groups": flat_groups, "changes": changes, "stations": station_summary(rel, groups),
             "mounts": mounts(rel), "mounts_propagated": mounts(rel, "propagated"), "mounts_telemetry": mounts(rel, "all"),
             "fits": fits, "body_sources": {k: sum(r["body"] == k for r in rel) for k in sorted({r["body"] for r in rel})},
-            "n_images": len(images), "n_used": len(rows), "left_out": reasons}
+            "n_images": len(images), "n_used": len(rows), "left_out": reasons,
+            "_rows": rows, "_groups": groups}            # with the matrices: rover_frame.estimate (not written)

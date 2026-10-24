@@ -61,5 +61,6 @@ def block_images(name: str, work: Path, model: str = MODEL) -> List[Dict[str, An
                     "R_c_w": R, "C_w": C, "prior_R_c_w": np.asarray(r["prior_R_w2c"], float),
                     "prior_C": np.asarray(r.get("prior_C_label") or r["prior_C"], float), "observations": n_obs.get(iid, 0),
                     "camera_temperature_degC": r.get("camera_temperature_degC"),
-                    "zcam_optics_temperature_degC": r.get("zcam_optics_temperature_degC")})
+                    "zcam_optics_temperature_degC": r.get("zcam_optics_temperature_degC"),
+                    "offset": list(map(float, project.offset))})   # the block's ENU offset (rover kernels)
     return out

@@ -43,6 +43,10 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default=None, help="the output folder (default <root>/camera_analysis/rover_frame_<date>)")
     ap.add_argument("--workers", type=int, default=8, help="processes reading the labels")
     ap.add_argument("--no-plots", action="store_true")
+    ap.add_argument("--no-kernels", action="store_true", help="no rover kernels (SPICE CK / SPK / FK, spiceypy)")
+    ap.add_argument("--kernels-out", default=None,
+                    help="the rover kernels' folder (default <root>/camera_analysis/rover_kernels_<date>)")
+    ap.add_argument("--naif", default=None, help="the NAIF base kernels (default MPPP_NAIF or <cache>/naif, fetched)")
     a = ap.parse_args(argv)
     from rover_frame import analysis, blocks, labels, report
     root = Path(a.root)
@@ -75,7 +79,31 @@ def main(argv=None) -> int:
             shutil.copy2(f, dst / Path(f).name)
         print(f"figures also in {dst}")
     print(f"report: {done['report']}")
+    if not a.no_kernels:
+        kout = Path(a.kernels_out) if a.kernels_out else root / "camera_analysis" / f"rover_kernels_{datetime.date.today():%Y%m%d}"
+        try:
+            kernels(res, kout, a.naif)
+        except Exception as e:                           # noqa: BLE001 - the study's report stands without them
+            print(f"rover kernels not written ({type(e).__name__}: {e})")
     return 0
+
+
+def kernels(res, out: Path, naif=None) -> dict:
+    """The rover kernels (study 3A, 0.94.5): the attitude intervals and Hazcam mounts of :mod:`rover_frame.estimate`
+    written by :mod:`rover_frame.spice` into ``out``."""
+    from rover_frame import estimate, spice
+    spice.spiceypy()                                     # a clear message when spiceypy is missing
+    ivs, gt = estimate.intervals(res["_rows"], res["_groups"])
+    if not ivs:
+        print("rover kernels: no block with a Hazcam body pose")
+        return {}
+    mounts = estimate.hazcam_mounts(res["_rows"], res["rows"], gt)
+    print(f"rover kernels: {len(ivs)} intervals over {len({iv['block'] for iv in ivs})} blocks; "
+          f"rear-to-front correction {', '.join(f'{v:.0f}' for v in gt['Q_mdeg'])} mdeg; NAIF base kernels:")
+    nk = spice.naif_kernels(Path(naif) if naif else None)
+    summary = spice.write(ivs, gt, mounts, out, nk)
+    print(f"rover kernels: {out} ({len(summary['files'])} files, meta-kernel {summary['meta_kernel']})")
+    return summary
 
 
 if __name__ == "__main__":

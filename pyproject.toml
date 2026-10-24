@@ -39,10 +39,11 @@ error   = ["matplotlib", "pillow"]                                            # 
 plots   = ["matplotlib", "pillow"]                                            # health and camera plots
 maps    = ["matplotlib", "scipy", "pillow", "adjustText", "rasterio", "pyproj"]   # the M20 site-map figures (make_maps.bat)
 notebooks = ["jupyterlab", "matplotlib", "pillow"]
+rover   = ["spiceypy>=6"]                                                     # the rover kernels (studies/rover_frame)
 release = ["huggingface_hub"]                                                 # scripts/release_mask_model.py
 docs    = ["mkdocs>=1.6.1,<2", "mkdocs-material>=9.7", "mkdocstrings[python]>=1.0"]     # the documentation site (mkdocs.yml)
 dev     = ["pytest", "flake8", "nbformat", "pillow"]
-all     = ["mppp[mask,sfm,error,plots,maps,notebooks,dev]"]
+all     = ["mppp[mask,sfm,error,plots,maps,notebooks,rover,dev]"]
 
 [tool.setuptools.dynamic]
 version = { attr = "mppp.__version__" }

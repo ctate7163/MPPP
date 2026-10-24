@@ -236,7 +236,7 @@ def write_all(res: Dict[str, Any], out: Path, blocks: Dict[str, str], plots: boo
                                        for g in res["groups"]])
     write_csv(out / "body_changes.csv", res["changes"])
     write_csv(out / "stations.csv", res["stations"])
-    js = {k: v for k, v in res.items() if k not in ("rows",)}
+    js = {k: v for k, v in res.items() if k not in ("rows",) and not k.startswith("_")}
     js["blocks"] = blocks
     (out / "rover_frame.json").write_text(json.dumps(js, indent=1, default=str), encoding="utf-8")
     made = figures(res, out) if plots else []

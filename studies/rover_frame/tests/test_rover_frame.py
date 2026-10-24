@@ -188,3 +188,178 @@ def test_other_rover_pose_is_carried_over():
         assert r["e_head_y_mdeg"] == pytest.approx(3.0 * np.cos(r["el_encoder"]), abs=1e-6)
     assert res["mounts"]["NL"]["images"] < res["mounts_propagated"]["NL"]["images"]
     assert res["fits"]["NL"]["measured"]["n"] < res["fits"]["NL"]["pooled"]["n"]
+
+
+# --- the rover kernels (0.94.5, Christian 24 Oct: estimate and save them with spiceypy) -----------------------------
+
+LSK = r"""KPL/LSK
+\begindata
+DELTET/DELTA_T_A = 32.184
+DELTET/K = 1.657D-3
+DELTET/EB = 1.671D-2
+DELTET/M = ( 6.239996D0 1.99096871D-7 )
+DELTET/DELTA_AT = ( 10, @1972-JAN-1 37, @2017-JAN-1 )
+\begintext
+"""
+
+SCLK = r"""KPL/SCLK
+\begindata
+SCLK_KERNEL_ID = ( @2026-10-24 )
+SCLK_DATA_TYPE_168 = ( 1 )
+SCLK01_TIME_SYSTEM_168 = ( 1 )
+SCLK01_N_FIELDS_168 = ( 2 )
+SCLK01_MODULI_168 = ( 4294967296 65536 )
+SCLK01_OFFSETS_168 = ( 0 0 )
+SCLK01_OUTPUT_DELIM_168 = ( 3 )
+SCLK_PARTITION_START_168 = ( 0.0 )
+SCLK_PARTITION_END_168 = ( 2.8147497671065E+14 )
+SCLK01_COEFFICIENTS_168 = ( 0.0 0.0 1.0 )
+\begintext
+"""
+
+
+PCK = r"""KPL/PCK
+\begindata
+BODY499_POLE_RA = ( 317.68143 -0.1061 0. )
+BODY499_POLE_DEC = ( 52.88650 -0.0609 0. )
+BODY499_PM = ( 176.630 350.89198226 0. )
+\begintext
+"""
+
+
+def _rear_mount_error(images, states, d_mdeg):
+    """The rear Hazcam labels off by ``d_mdeg`` (rover axes): R_label = R_true exp(d) (and the prior with them)."""
+    d = np.asarray(d_mdeg, float) / MDEG
+    for im in images:
+        if im["stem"].startswith("RLF"):
+            s = states[im["stem"].upper()]
+            R_lab = np.asarray(s["R_cam_rnav"]) @ G.exp(d)
+            R_tel = G.telemetry_rnav_from_world(s["rover"]["q_wxyz"])
+            s["R_cam_rnav"] = R_lab.tolist()
+            im["prior_R_c_w"] = R_lab @ R_tel
+
+
+def test_rover_intervals_end_of_drive_rule():
+    from rover_frame import estimate
+    rng = np.random.default_rng(3)
+    images, states, _ = scene(rng)
+    _rear_mount_error(images, states, [-1.0, -90.0, -95.0])
+    res = analysis.run(images, states)
+    ivs, gt = estimate.intervals(res["_rows"], res["_groups"])
+    # one interval per rover pose: the first (EOD) from both pairs, the later one from the front pair
+    assert len(ivs) == 2 * 3 * 2
+    assert sorted(iv["source"] for iv in ivs) == ["F+R"] * 6 + ["front"] * 6
+    assert all(iv["POSE"] == 10 for iv in ivs if iv["source"] == "F+R")
+    # the rear-to-front correction is the injected label error; the corrected rear body is the front one
+    assert gt["Q_mdeg"] == pytest.approx([-1.0, -90.0, -95.0], abs=0.05) and gt["n_eod"] == 6
+    assert max(iv["sigma_mdeg"] for iv in ivs if iv["source"] == "F+R") < 1e-3
+    # M2020_ROVER = the IMU frame on average: zero mean tilt residual over the EOD bodies, the heading untouched
+    eod = [iv for iv in ivs if iv["source"] == "F+R"]
+    assert abs(np.mean([iv["tel_residual_x_mdeg"] for iv in eod])) < 1e-6
+    assert abs(np.mean([iv["tel_residual_y_mdeg"] for iv in eod])) < 1e-6
+    assert abs(gt["alignment_mdeg"][2]) < 0.5      # tilt only (the z part: the product of two tilts)
+    # the intervals of a block are ordered and do not overlap
+    for a, b in zip(ivs, ivs[1:]):
+        if a["block"] == b["block"]:
+            assert a["sclk_start"] < a["sclk_end"] <= b["sclk_start"]
+
+
+def test_rover_intervals_propagated_and_telemetry():
+    from rover_frame import estimate
+    rng = np.random.default_rng(3)
+    images, states, _ = scene(rng)
+    # pose 11 without Hazcam frames: propagated; block b2 without any Hazcam: no kernel for it
+    keep = [im for im in images if not (im["stem"].startswith(("FLF", "RLF")) and
+                                        (states[im["stem"].upper()]["rmc"]["POSE"] == 11 or im["block"] == "b2"))]
+    res = analysis.run(keep, states)
+    ivs, gt = estimate.intervals(res["_rows"], res["_groups"])
+    assert {iv["block"] for iv in ivs} == {"b1"}
+    assert sorted(iv["source"] for iv in ivs) == ["F+R"] * 3 + ["propagated"] * 3
+
+
+def test_rover_kernels_round_trip(tmp_path):
+    """CK, SPK and FK written with spiceypy and read back: the attitude within 1e-9 rad, the position to the mm, the
+    Hazcam frames as the mounts."""
+    sp = pytest.importorskip("spiceypy")
+    from rover_frame import estimate, spice
+    rng = np.random.default_rng(3)
+    images, states, _ = scene(rng)
+    for im in images:
+        im["offset"] = [100.0, 200.0, -10.0]
+    res = analysis.run(images, states)
+    ivs, gt = estimate.intervals(res["_rows"], res["_groups"])
+    mounts = estimate.hazcam_mounts(res["_rows"], res["rows"], gt)
+    (tmp_path / "naif").mkdir()
+    (tmp_path / "naif" / "naif0012.tls").write_text(LSK)
+    (tmp_path / "naif" / "m2020_168_sclkscet_00001.tsc").write_text(SCLK)
+    (tmp_path / "naif" / "pck00010.tpc").write_text(PCK)
+    nk = spice.naif_kernels(tmp_path / "naif", fetch=False)
+    assert nk["fk"] is None and nk["lsk"].name == "naif0012.tls"
+    out = tmp_path / "k"
+    summary = spice.write(ivs, gt, mounts, out, nk, log=lambda *_: None)
+    assert set(summary["blocks"]) == {"b1", "b2"}
+    for b, info in summary["blocks"].items():
+        assert info["readback_max_rad"] < 1e-9 and info["spk"]
+    assert (out / "rover_intervals.csv").stat().st_size > 500 and (out / summary["meta_kernel"]).is_file()
+    # read back through SPICE with the stub frames: the rover attitude at each interval's middle ...
+    sp.kclear()
+    for f in ("m2020_frames_stub_mppp.tf", summary["fk"], *[i["ck"] for i in summary["blocks"].values()],
+              *[i["spk"] for i in summary["blocks"].values()]):
+        sp.furnsh(str(out / f))
+    sp.furnsh(str(tmp_path / "naif" / "naif0012.tls"))
+    sp.furnsh(str(tmp_path / "naif" / "m2020_168_sclkscet_00001.tsc"))
+    sp.furnsh(str(tmp_path / "naif" / "pck00010.tpc"))
+    try:
+        for iv in ivs:
+            et = sp.sct2e(-168, (spice.encoded_sclk(iv["sclk_start"]) + spice.encoded_sclk(iv["sclk_end"])) / 2)
+            C = sp.pxform("M2020_LOCAL_LEVEL", "M2020_ROVER", et)
+            assert G.angle_deg(np.asarray(C) @ spice.c_matrix(iv).T) < 1e-7
+            pos, _ = sp.spkpos("-168", et, "M2020_LOCAL_LEVEL", "NONE", "-168900")
+            assert np.asarray(pos) * 1000.0 == pytest.approx(spice.position_ll(iv), abs=1e-3)
+        # the meta-kernel loads the same set (long paths continued with '+')
+        sp.kclear()
+        sp.furnsh(str(out / summary["meta_kernel"]))
+        assert sp.ktotal("ALL") == 2 + 2 * 2 + 4          # stub + FK, CK + SPK of two blocks, four NAIF kernels
+        sp.furnsh(str(tmp_path / "naif" / "pck00010.tpc"))
+        # ... and the Hazcam frames relative to the rover
+        R = sp.pxform("M2020_ROVER", "MPPP_M2020_FHAZ_LEFT", 0.0)
+        assert np.allclose(R, mounts["FL"]["R_c_rover"], atol=1e-12)
+        # a camera's pose in local level through the kernels = the adjusted one
+        iv = ivs[0]
+        et = sp.sct2e(-168, (spice.encoded_sclk(iv["sclk_start"]) + spice.encoded_sclk(iv["sclk_end"])) / 2)
+        R_c_ll = np.asarray(sp.pxform("M2020_LOCAL_LEVEL", "MPPP_M2020_FHAZ_LEFT", et))
+        fl = [r for r in res["_rows"] if r["stem"].startswith("FLF") and r["block"] == iv["block"]
+              and r["station"] == iv["station"] and r["rmc"]["POSE"] == iv["POSE"]][0]
+        assert G.angle_deg(R_c_ll @ (np.asarray(fl["R_c_w"]) @ G.P_NED_ENU).T) < 1e-6
+    finally:
+        sp.kclear()
+
+
+def test_naif_kernels_newest_and_fetched(tmp_path):
+    from rover_frame import spice
+    listings = {
+        spice.BASE["lsk"][0]: '<a href="naif0011.tls">x</a><a href="naif0012.tls">x</a>',
+        spice.BASE["pck"][0]: '<a href="pck00010.tpc">x</a><a href="pck00011.tpc">x</a>',
+        spice.BASE["fk"][0]: '<a href="m2020_v03.tf">x</a><a href="m2020_v04.tf">x</a>',
+        spice.BASE["sclk"][0]: '<a href="m2020_168_sclkscet_00006.tsc">x</a><a href="m2020_168_sclkscet_00007.tsc">x</a>'
+                               '<a href="m2020_168_sclkscet_refit_v00007.tsc">x</a>'}
+    got = []
+
+    def get(url):
+        got.append(url)
+        return listings[url].encode() if url in listings else b"KPL"
+
+    nk = spice.naif_kernels(tmp_path, get=get, log=lambda *_: None)
+    assert {k: v.name for k, v in nk.items()} == {"lsk": "naif0012.tls", "pck": "pck00011.tpc", "fk": "m2020_v04.tf",
+                                                 "sclk": "m2020_168_sclkscet_refit_v00007.tsc"}
+    n = len(got)
+    nk2 = spice.naif_kernels(tmp_path, get=get, log=lambda *_: None)      # cached: only the listings again
+    assert nk2 == nk and len(got) == n + 4
+    nk3 = spice.naif_kernels(tmp_path, fetch=False)
+    assert nk3 == nk
+
+
+def test_label_sclk_encoding():
+    from rover_frame import spice
+    assert spice.encoded_sclk(729889968.787) == round(729889968.787 * 65536)
+    assert spice.encoded_sclk("729889968.5") == 729889968 * 65536 + 32768
