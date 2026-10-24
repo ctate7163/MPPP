@@ -31,7 +31,10 @@ Stages (each logged in ``<root>\\mppp_pipeline\\<stage>.log``, the pipeline in `
  7. ``rover_frame``    - studies/rover_frame/run_rover_frame.py (study 3A, 0.94.4): the rover body pose per Hazcam
                          sequence, the mast-head pointing residual against the RSM angles, the camera positions in
                          the body and head frames -> camera_analysis/rover_frame_<date>/ (report.md)
- 8. ``report``         - ``<root>\\mppp_pipeline\\REPORT.md``
+ 8. ``lightglue_ab``   - scripts/lightglue_ab.py on Chal Rocks tiny and Seitah Overlook tiny (24 Oct, Christian): SIFT,
+                         LightGlue, LightGlue on every octave and SIFT + LightGlue again with the camera models just
+                         promoted (--rerun), no tiny joint (nothing promoted) -> <WORK>/lightglue_ab.md of each
+ 9. ``report``         - ``<root>\\mppp_pipeline\\REPORT.md``
 
 A stage that fails is logged and the pipeline goes on (the next stage works with what there is).  Exit code 0 when
 every stage ran (whatever it found).  The pipeline before 0.93.9 (consensus passes, baseline study, the Z34-only
@@ -58,7 +61,8 @@ if str(ROOT / "scripts") not in sys.path:
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 PY = sys.executable
-STAGES = ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame", "report")
+STAGES = ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame", "lightglue_ab",
+          "report")
 # the stage set of the state file (0.94.4: ecam stages).  Not changed for the rover_frame stage (added 23 Oct during
 # the weekend run): a state of this tag simply lacks it, so a rerun does rover_frame and the report only
 STATE_TAG = "v0944"
@@ -67,6 +71,7 @@ STOP_ON_FAIL = ()                                # every stage goes on to the ne
 ZCAM_GROUP, ECAM_GROUP, ZCAM34_JOINT = "zcam_consensus", "ecam_consensus", "zcam34_joint"
 NAVCAM_GROUP = ECAM_GROUP                        # the name before 0.94.4
 ZOOMS = (34, 48, 63, 79, 110)
+LIGHTGLUE_AB_SITES = ("chal_rocks_tiny", "seitah_overlook_tiny")        # the lightglue_ab stage (24 Oct)
 
 
 class Pipeline:
@@ -295,6 +300,19 @@ class Pipeline:
             return "failed", f"no report (exit {rc}; see rover_frame.log)"
         return "done", str(out / "report.md")
 
+    def s_lightglue_ab(self):
+        """The LightGlue A/B test on the two tiny blocks with the models in use, after everything else (24 Oct):
+        every variant again, no tiny joint - it must not promote anything at the end of a run that promoted."""
+        notes, ok = [], True
+        for site in LIGHTGLUE_AB_SITES:
+            cmd = [PY, ROOT / "scripts" / "lightglue_ab.py", "--root", self.root, "--site", site, "--no-joint",
+                   "--no-promote", "--rerun"]
+            rc = self.run("lightglue_ab", cmd, timeout_h=getattr(self.a, "ab_timeout_h", 8.0))
+            md = next(iter(self.root.glob(f"*_{site}_zcam/lightglue_ab.md")), None)
+            notes.append(f"{site}: exit {rc}" + (f" ({md})" if md else ""))
+            ok = ok and rc == 0
+        return ("done" if ok or self.a.dry_run else "failed"), "; ".join(notes)
+
     def s_report(self):
         from mppp.calib.models import describe
         lines = [f"# MPPP {__import__('mppp').__version__} pipeline report ({datetime.datetime.now():%Y-%m-%d %H:%M})", "",
@@ -325,6 +343,10 @@ class Pipeline:
                 lines += ["", f"## {title}", "", f"latest: `{found[-1]}`" + ("" if today in found[-1].name else " (not from today)")]
                 if rp.is_file():
                     lines += ["", rp.read_text(encoding="utf-8")]
+        for site in LIGHTGLUE_AB_SITES:                         # 24 Oct: the LightGlue A/B of the tiny blocks
+            md = next(iter(self.root.glob(f"*_{site}_zcam/lightglue_ab.md")), None)
+            if md is not None and md.is_file():
+                lines += ["", f"## LightGlue A/B: {site}", "", md.read_text(encoding="utf-8")]
         (self.dir / "REPORT.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
         return "done", str(self.dir / "REPORT.md")
 
@@ -427,6 +449,7 @@ def main(argv=None) -> int:
                     help="a pipeline setting for every block run (run_sites --set), e.g. MATCH_MODE=exhaustive")
     ap.add_argument("--wait-h", type=float, default=36.0, help="how long to wait for a running batch")
     ap.add_argument("--stage-timeout-h", type=float, default=30.0, help="the time limit of a joint or the analysis")
+    ap.add_argument("--ab-timeout-h", type=float, default=8.0, help="lightglue_ab: the time limit per tiny block")
     ap.add_argument("--sites-timeout-h", type=float, default=72.0,
                     help="time limit of one run_sites call (a hung alignment is stopped with its process tree)")
     names = list(STAGES) + list(STAGE_ALIASES)       # the old names still work

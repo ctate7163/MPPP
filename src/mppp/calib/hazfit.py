@@ -38,7 +38,13 @@ MIN_T_SPAN_DEGC = 5.0              # temperature span for a slope (else 0)
 MIN_EARLY_BLOCKS = 2               # blocks on each side of the early-mission sol for an offset (else 0)
 MIN_RIG_BLOCKS = 3                 # blocks with a refined rig for a drift (else the median rotation, no drift)
 HAZCAM_LIMITS = {"max_ppm_per_degC": 100.0, "max_f0_change_pct": 1.0, "max_aspect_dev": 0.02,
-                 "max_scatter_ppm": 600.0, "max_rig_change_deg": 0.5, "min_blocks": MIN_BLOCKS}
+                 "max_scatter_ppm": 600.0, "max_rig_change_deg": 0.5, "min_blocks": MIN_BLOCKS,
+                 # 0.94.4 (24 Oct): an eye over many blocks passes on how well its law is known - the block scatter
+                 # over sqrt(blocks) - when the scatter itself is over max_scatter_ppm (the rear eyes, a quarter of
+                 # the resolution and half masked: 1600-2500 ppm per block, so a law of one tiny block stayed in use)
+                 "max_sem_ppm": 400.0, "min_blocks_sem": 8}
+OUTLIER_BLOCK_FACTOR = 4.0         # 0.94.4: a block this many robust sd (1.4826 MAD) off the eye's law is left out
+OUTLIER_BLOCK_MIN_PPM = 1500.0     # ... and at least this far (ppm of f)
 EYES = ("FL", "FR", "RL", "RR")
 
 
@@ -146,6 +152,35 @@ def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False, min_bl
         X[nrow:, cols.index("ey")] = early
     y = np.r_[P[:, 0], P[:, 1]]
     beta, cov, r = _wls(X, y, np.r_[w, w])
+    # 0.94.4: a block far off the law (23 Oct: Belva Crater's rear eyes 0.7 % low on 1.5k observations) is left out
+    # and the law fitted again, if enough blocks stay
+    rb = 0.5 * (np.abs(r[:nrow]) + np.abs(r[nrow:]))
+    mad = 1.4826 * float(np.median(np.abs(rb - np.median(rb)))) if nrow >= 5 else 0.0
+    floor = OUTLIER_BLOCK_MIN_PPM * 1e-6 * float(np.median(P[:, 0]))            # px: never for a few hundred ppm
+    off = (np.flatnonzero(rb > np.median(rb) + max(OUTLIER_BLOCK_FACTOR * mad, floor)) if nrow >= 5
+           else np.array([], int))
+    outliers = [use[i]["block"] for i in off]
+    if len(off) and nrow - len(off) >= max(need, 3):
+        keep = np.setdiff1d(np.arange(nrow), off)
+        use = [use[i] for i in keep]
+        P, T, w, early = P[keep], T[keep], w[keep], early[keep]
+        n_early, n_late = int(np.sum(early > 0.5)), int(np.sum(early <= 0.5))
+        fit_slope = float(np.ptp(T)) >= MIN_T_SPAN_DEGC and not athermal
+        fit_early = n_early >= MIN_EARLY_BLOCKS and n_late >= MIN_EARLY_BLOCKS
+        nrow = len(use)
+        cols = ["ax", "ay"] + (["g"] if fit_slope else []) + (["ex", "ey"] if fit_early else [])
+        X = np.zeros((2 * nrow, len(cols)))
+        X[:nrow, 0] = 1.0
+        X[nrow:, 1] = 1.0
+        if fit_slope:
+            X[:, cols.index("g")] = np.r_[T, T]
+        if fit_early:
+            X[:nrow, cols.index("ex")] = early
+            X[nrow:, cols.index("ey")] = early
+        y = np.r_[P[:, 0], P[:, 1]]
+        beta, cov, r = _wls(X, y, np.r_[w, w])
+    else:
+        outliers = []
     sd = np.sqrt(np.clip(np.diag(cov), 0, None))
     v = dict(zip(cols, beta))
     s = dict(zip(cols, sd))
@@ -159,6 +194,8 @@ def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False, min_bl
     params = [float(v["ax"]), float(v["ay"]), float(held[2]), float(held[3]), float(bk[0]), k2,
               float(held[6]), float(held[7]), float(held[8]), float(held[9]), 0.0, 0.0]
     scatter_ppm = float(1e6 * np.sqrt(np.average(r ** 2, weights=np.r_[w, w])) / fbar)
+    out["blocks"] = [r_["block"] for r_ in use]
+    out["outlier_blocks"] = outliers
     out.update({"params": params, "ppm_per_degC": float(ppm),
                 "sd_ppm_per_degC": float(1e6 * s.get("g", np.nan) / fbar) if fit_slope else None,
                 "k1_per_degC": float(bk[1]) if fit_slope else 0.0,
@@ -308,8 +345,12 @@ def eye_checks(e: Dict[str, Any], eye: str, limits: Optional[Dict[str, Any]] = N
     c.append((f"{eye} f0", d <= lim["max_f0_change_pct"], f"{fl:.1f} -> {f0:.1f} px ({d:.2f} % from the label fits)"))
     a = e["params"][1] / e["params"][0]
     c.append((f"{eye} aspect", abs(a - 1.0) <= lim["max_aspect_dev"], f"{a:.5f}"))
-    c.append((f"{eye} block scatter", e["scatter_ppm"] <= lim["max_scatter_ppm"],
-              f"{e['scatter_ppm']:.0f} ppm about the law"))
+    nb = len(e["blocks"])
+    sem = e["scatter_ppm"] / np.sqrt(max(nb, 1))
+    ok_s = e["scatter_ppm"] <= lim["max_scatter_ppm"] or (nb >= lim["min_blocks_sem"] and sem <= lim["max_sem_ppm"])
+    c.append((f"{eye} block scatter", ok_s,
+              f"{e['scatter_ppm']:.0f} ppm about the law, {sem:.0f} ppm / sqrt({nb} blocks)"
+              + (f"; left out as off the law: {', '.join(e['outlier_blocks'])}" if e.get("outlier_blocks") else "")))
     return c
 
 

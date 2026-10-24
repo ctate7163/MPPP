@@ -145,9 +145,10 @@ def test_new_windows_scripts_exist_crlf():
 def test_groups_and_block_sites():
     t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
     g = t["groups"]
-    assert g["zcam_consensus"] == ["seitah_overlook", "chal_rocks_large", "threeforks_north", "belva_crater", "south_arm",
-                                   "marble_mountain", "taylorfjellet", "pico_turquino"]                      # 23 Oct
-    assert "chal_rocks" not in g["zcam34_joint"] and "chal_rocks_large" in g["zcam34_joint"]
+    # 24 Oct (Christian): Chal Rocks instead of Chal Rocks Large, without Pico Turquino - a faster run
+    assert g["zcam_consensus"] == ["seitah_overlook", "chal_rocks", "threeforks_north", "belva_crater", "south_arm",
+                                   "marble_mountain", "taylorfjellet"]
+    assert "chal_rocks_large" not in g["zcam34_joint"] and "chal_rocks" in g["zcam34_joint"]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "threeforks_north", "belva_crater", "bell_island", "marble_mountain"]
     assert all(s in t["sites"] for s in g["hazcam_consensus"])
     ob = t["official_blocks"]
@@ -391,7 +392,7 @@ def test_error_analysis_batch_and_pipeline_report(tmp_path, monkeypatch):
     md = rp.error_report(res)
     assert md.startswith("# Error analysis on the SfM points")
     assert rp.STAGES == ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame",
-                         "report")
+                         "lightglue_ab", "report")
 
 
 def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
@@ -572,3 +573,24 @@ def test_lightglue_ab_four_variants_and_the_joint_variant(tmp_path):
     assert "| focal_change_pct FL |" in md and "| focal_change_pct FR |" in md
     assert lab.best_variant({"a": work}) == "sift_lightglue"
     assert lab.best_variant({"a": work}, ["sift", "lightglue"]) == "sift"
+
+
+def test_hazcam_fit_leaves_out_a_block_off_the_law_and_judges_many_blocks_by_precision():
+    """0.94.4 (24 Oct): Belva Crater's rear eyes 0.7 % low on 1.5k observations (23 Oct) are left out; an eye of
+    many blocks passes its scatter check on scatter / sqrt(blocks)."""
+    from mppp.calib import hazfit
+    rng = np.random.default_rng(4)
+    rows = []
+    for i in range(12):
+        f = 2155.0 * (1 + rng.normal(0, 1200e-6))
+        rows.append({"block": f"b{i}", "params": [f, f + 13, 2560.0, 1920.0, 0.014, -0.008, 0, 0, 0, 0, 0, 0],
+                     "start": [2148.0, 2148.0, 2560.0, 1920.0, 0.0145, -0.0083, 0, 0, 0, 0, 0, 0], "T": -20.0 + i * 0.1,
+                     "sol": 500 + 10 * i, "observations": 5000, "weak": False, "early_share": 0.0, "images": 10})
+    rows.append(dict(rows[0], block="belva", params=[2137.4, 2150.3] + rows[0]["params"][2:], observations=1500))
+    e = hazfit.fit_eye(rows, "RL")
+    assert e["outlier_blocks"] == ["belva"] and "belva" not in e["blocks"]
+    assert e["params"][0] == pytest.approx(2155.0, abs=3.0)
+    checks = dict((n, ok) for n, ok, _ in hazfit.eye_checks(e, "RL"))
+    assert e["scatter_ppm"] > 600 and checks["RL block scatter"]                 # 12 blocks: ~1200 / sqrt(12)
+    few = hazfit.fit_eye(rows[:5], "RL")
+    assert not dict((n, ok) for n, ok, _ in hazfit.eye_checks(few, "RL"))["RL block scatter"] or few["scatter_ppm"] <= 600

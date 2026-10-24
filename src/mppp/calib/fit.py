@@ -1132,8 +1132,13 @@ def check_navcam(candidate_dir: PathLike, current_dir: Optional[PathLike] = None
     for k in ("median_px", "rms_px", "p95_px"):
         v = float(res["residuals"][k])
         r = ref.get(k)
+        # 0.94.4 (24 Oct): the reference is the residual of the joint that made the models in use, over its own
+        # blocks; the rms and the p95 follow the block mix (a joint of 27 blocks with harder ones vs one of 16), so
+        # only the median gates - the rms and the p95 are reported
+        gate = k == "median_px"
         add(f"residual {k}", round(v, 4), None if r is None else round(lim["residual_factor"] * float(r), 4),
-            r is None or v <= lim["residual_factor"] * float(r), f"cameras in use {r:.4f}" if r else "no reference")
+            r is None or not gate or v <= lim["residual_factor"] * float(r),
+            (f"cameras in use {r:.4f}" if r else "no reference") + ("" if gate else " (report only: another block set)"))
     for e in ("NL", "NR"):
         d = J.compare(J.pycolmap_camera(old[e]["model"], old[e]["params"]), J.pycolmap_camera(new[e]["model"], new[e]["params"]))
         add(f"{e} change vs in use", round(float(d["rms_px"]), 3), lim["max_camera_change_px"],

@@ -33,11 +33,17 @@ def test_pipeline_dry_run_and_state(tmp_path):
     r = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path), "--dry-run"],
                        capture_output=True, text=True, timeout=600)
     out = r.stdout + r.stderr
-    for s in ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame", "report"):
+    for s in ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame",
+              "lightglue_ab", "report"):
         assert f"{s}: start" in out, (s, out[-3000:])
     assert "run_rover_frame.py" in out and out.index("rover_frame: start") < out.index("report: start")
+    # 24 Oct: the LightGlue A/B at the end, every variant again, no tiny joint (nothing promoted)
+    ab = [ln for ln in out.splitlines() if "lightglue_ab.py" in ln]
+    assert len(ab) == 2 and all("--no-joint" in ln and "--no-promote" in ln and "--rerun" in ln for ln in ab)
+    assert "chal_rocks_tiny" in ab[0] and "seitah_overlook_tiny" in ab[1]
+    assert out.index("lightglue_ab: start") > out.index("rover_frame: start")
     assert "run_sites.py" in out and "--group ecam_consensus" in out and "calib navcam" in out
-    assert "--sites seitah_overlook chal_rocks_large" in out and "--zcam" in out and "olifants" in out
+    assert "--sites seitah_overlook chal_rocks threeforks_north" in out and "--zcam" in out and "olifants" in out
     # 0.94.4: the Hazcams are fitted over the ecam blocks before the Mastcam-Z runs, not over the Mastcam-Z blocks
     assert "calib hazcam --group ecam_consensus" in out and "calib hazcam --zcam-blocks" not in out
     assert out.index("calib hazcam --group ecam_consensus") < out.index("zcam_runs: start")
@@ -119,8 +125,9 @@ def test_pipeline_zcam_sites_and_stop_before(tmp_path):
     rp = _script("run_pipeline")
     p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True))
     names = p.zcam_sites()
-    assert names[:7] == ["seitah_overlook", "chal_rocks_large", "threeforks_north", "belva_crater", "south_arm",
-                         "marble_mountain", "taylorfjellet"] and "rochette" in names and len(names) == len(set(names))
+    assert names[:7] == ["seitah_overlook", "chal_rocks", "threeforks_north", "belva_crater", "south_arm",
+                         "marble_mountain", "taylorfjellet"] and "rochette" in names and "pico_turquino" not in names
+    assert "chal_rocks_large" not in names and len(names) == len(set(names))
     out = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path / "b"), "--dry-run", "--from", "navcam_joint",
                           "--stop-before", "zcam_runs"], capture_output=True, text=True, timeout=120)
     log = out.stdout + out.stderr

@@ -4,6 +4,20 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- **Mastcam-Z sites for a faster run** (Christian, 24 Oct): `zcam_consensus` and `zcam34_joint` take Chal Rocks instead
+  of Chal Rocks Large (1601 images); Pico Turquino left out of `zcam_consensus` (Z48 keeps Chal Rocks, Seitah
+  Overlook and Taylorfjellet - the minimum of three blocks).
+- **`run_pipeline.py`: a `lightglue_ab` stage after `rover_frame`** - `scripts/lightglue_ab.py` on Chal Rocks tiny and
+  Seitah Overlook tiny, every variant again with the models just promoted (`--rerun`), no tiny joint and no
+  promotion (`--no-joint --no-promote`); its tables go into REPORT.md.  The state tag stays v0944: a pipeline started
+  before the stage existed runs it (with `rover_frame` and the report) when `run_pipeline.bat` is started again.
+- **Good camera models are promoted** (24 Oct, the checks of 20-23 Oct):
+  - the Hazcam fit leaves out a block far off an eye's law (more than 4 robust sd and 1500 ppm; 23 Oct: Belva
+    Crater's rear eyes 0.7 % low on 1.5k observations) and refits;
+  - an eye of 8 or more blocks passes its block-scatter check on scatter / sqrt(blocks) <= 400 ppm (the rear eyes
+    scatter 1600-2500 ppm per block, so a rear law of one tiny block stayed in use);
+  - the Navcam promotion gates on the median residual against the models in use; the rms and the p95 follow the
+    block mix of the two joints and are reported only.
 - **A Hazcam pair's eye ratio no longer fails a block** (24 Oct: Knob Mountain Large FAIL on RL 0.184 / RR 0.422 px,
   ratio 2.29 - it would have left the joints): `hazcam_residual_eye_ratio`, warn 2 / fail 10 (the Navcam and
   Mastcam-Z pairs keep 1.3 / 2.0); saved reports are judged again with it.

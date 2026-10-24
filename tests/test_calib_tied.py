@@ -87,6 +87,12 @@ def test_tied_adjust_and_files(tmp_path):
     rep = check_navcam(out)
     names = [c["check"] for c in rep["checks"]]
     assert "block agreement" in names and "leave-one-block-out" not in names
+    # 24 Oct: only the median residual gates against the models in use (another block set); rms and p95 report
+    res_checks = {c["check"]: c for c in rep["checks"] if c["check"].startswith("residual ")}
+    assert set(res_checks) == {"residual median_px", "residual rms_px", "residual p95_px"}
+    for k in ("residual rms_px", "residual p95_px"):
+        assert res_checks[k]["ok"] and (res_checks[k]["note"].endswith("(report only: another block set)")
+                                        or res_checks[k]["note"] == "no reference")
     # the diagnostic pass: per-block units, globals held, no ties
     diag = T.diagnostic_pass(rec, proj, idx, st, g, bin_deg=10.0, iterations=10, verbose=False)
     assert diag["cameras"] and all(c["scape"] == "blk" for c in diag["cameras"])
