@@ -308,15 +308,75 @@ def pointing_fit(rel: List[Dict[str, Any]], group: str, angles: str = "encoder",
     return res
 
 
+def _site_last_drive(stations: Sequence[str], waypoints=None) -> Dict[int, int]:
+    """{site: its last drive}: the waypoint table's and the stations' own (a mid-drive station after the table's
+    last end-of-drive waypoint counts)."""
+    last: Dict[int, int] = {}
+    try:
+        from mppp.paths import data_file
+        from mppp.waypoints.blocks import waypoint_points
+        W = waypoint_points(waypoints or data_file("M20_waypoints.json"))
+        for r in W:
+            last[int(r[1])] = max(last.get(int(r[1]), -1), int(r[5]))
+    except Exception:                                    # noqa: BLE001 - the stations alone
+        pass
+    for st in stations:
+        m = re.fullmatch(r"S(\d{3})D(\d{4})", str(st))
+        if m:
+            last[int(m.group(1))] = max(last.get(int(m.group(1)), -1), int(m.group(2)))
+    return last
+
+
+def site_role(station: str, last: Dict[int, int]) -> str:
+    """Where a station is in its rover site (Christian 24 Oct: the last waypoint before a site index change is the
+    more likely to have a rotation error): "last_before_site_change", "site_start" (DRIVE 0, at the previous site's
+    last position), "site_start_and_last" (a one-station site) or "within_site"."""
+    m = re.fullmatch(r"S(\d{3})D(\d{4})", str(station))
+    if not m:
+        return "unknown"
+    site, drive = int(m.group(1)), int(m.group(2))
+    start, end = drive == 0, last.get(site) == drive
+    return "site_start_and_last" if start and end else "site_start" if start else \
+        "last_before_site_change" if end else "within_site"
+
+
+def heading_by_role(groups: List[Dict[str, Any]], last: Dict[int, int]) -> List[Dict[str, Any]]:
+    """The front Hazcam body attitude against the telemetry per station, about its block's median (the block frame
+    removed), grouped by :func:`site_role`: |heading| (z) and |tilt| (x, y) in mdeg."""
+    by_block: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for g in groups:
+        if g["family"] == "F":
+            by_block[g["block"]].append(g)
+    per_station: Dict[Tuple[str, str], List[np.ndarray]] = defaultdict(list)
+    for b, gs in by_block.items():
+        med = np.median([[g["omega_tel_mdeg"][a] for a in AXES] for g in gs], axis=0)
+        for g in gs:
+            per_station[(b, g["station"])].append(np.array([g["omega_tel_mdeg"][a] for a in AXES]) - med)
+    roles: Dict[str, List[Tuple[float, float]]] = defaultdict(list)
+    for (b, st), vs in per_station.items():
+        v = np.median(vs, axis=0)
+        roles[site_role(st, last)].append((abs(float(v[2])), float(np.hypot(v[0], v[1]))))
+    out = []
+    for role in ("last_before_site_change", "site_start", "site_start_and_last", "within_site", "unknown"):
+        if roles.get(role):
+            h = np.array([x[0] for x in roles[role]])
+            t = np.array([x[1] for x in roles[role]])
+            out.append({"role": role, "stations": int(len(h)), "heading_median_mdeg": float(np.median(h)),
+                        "heading_p90_mdeg": float(np.percentile(h, 90)), "heading_over_1deg": int((h > 1000).sum()),
+                        "tilt_median_mdeg": float(np.median(t))})
+    return out
+
+
 def station_summary(rel: List[Dict[str, Any]], groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Per block and station: the frames, the Hazcam body poses, the share of mast frames with a measured body."""
     out = []
     keys = sorted({(r["block"], r["station"]) for r in rel})
+    last = _site_last_drive([k[1] for k in keys])
     for b, s in keys:
         rs = [r for r in rel if r["block"] == b and r["station"] == s]
         mast = [r for r in rs if r["family"] in "NZ"]
         gs = [g for g in groups if g["block"] == b and g["station"] == s]
-        out.append({"block": b, "station": s, "frames": len(rs), "mast_frames": len(mast),
+        out.append({"block": b, "station": s, "site_role": site_role(s, last), "frames": len(rs), "mast_frames": len(mast),
                     "mast_with_body": sum(measured(r) for r in mast),
                     "mast_propagated": sum(r["body"].endswith("_propagated") for r in mast),
                     "front_bodies": sum(g["family"] == "F" for g in gs), "rear_bodies": sum(g["family"] == "R" for g in gs),
@@ -339,7 +399,11 @@ def run(images: Sequence[Dict[str, Any]], states: Dict[str, Dict[str, Any]]) -> 
                    "telemetry": pointing_fit(rel, g, bodies="all", per_block=True)}
     flat_groups = [{k: v for k, v in g.items() if not k.startswith(("R_", "O_"))} |
                    {f"O_body_{a}_m": float(x) for a, x in zip(AXES, g["O_body"])} for g in groups]
+    last = _site_last_drive(sorted({r["station"] for r in rel}))
+    for g in flat_groups:
+        g["site_role"] = site_role(g["station"], last)
     return {"rows": rel, "groups": flat_groups, "changes": changes, "stations": station_summary(rel, groups),
+            "heading_by_site_role": heading_by_role(flat_groups, last),
             "mounts": mounts(rel), "mounts_propagated": mounts(rel, "propagated"), "mounts_telemetry": mounts(rel, "all"),
             "fits": fits, "body_sources": {k: sum(r["body"] == k for r in rel) for k in sorted({r["body"] for r in rel})},
             "n_images": len(images), "n_used": len(rows), "left_out": reasons,

@@ -363,3 +363,24 @@ def test_label_sclk_encoding():
     from rover_frame import spice
     assert spice.encoded_sclk(729889968.787) == round(729889968.787 * 65536)
     assert spice.encoded_sclk("729889968.5") == 729889968 * 65536 + 32768
+
+
+def test_site_roles_and_heading_by_role():
+    """Christian 24 Oct: the last waypoint before a site index change is the more likely to have a rotation error -
+    the stations are tagged and the heading error is summarised by tag."""
+    last = {71: 1076, 72: 542, 73: 0}                  # {site: its last drive}
+    assert analysis.site_role("S071D1076", last) == "last_before_site_change"
+    assert analysis.site_role("S072D0000", last) == "site_start"
+    assert analysis.site_role("S072D0100", last) == "within_site"
+    assert analysis.site_role("S073D0000", last) == "site_start_and_last"
+    gs = [{"block": "b", "family": "F", "station": st, "omega_tel_mdeg": {"x": 0.0, "y": 0.0, "z": z}}
+          for st, z in (("S071D0500", 10.0), ("S071D1076", 1500.0), ("S072D0000", -40.0), ("S072D0100", 0.0))]
+    hr = {r["role"]: r for r in analysis.heading_by_role(gs, last)}
+    assert hr["last_before_site_change"]["heading_over_1deg"] == 1 and hr["within_site"]["stations"] == 2
+    rng = np.random.default_rng(3)
+    images, states, _ = scene(rng)
+    res = analysis.run(images, states)
+    assert {s["site_role"] for s in res["stations"]} <= {"last_before_site_change", "site_start", "within_site",
+                                                         "site_start_and_last"}
+    assert res["heading_by_site_role"]
+    assert analysis._site_last_drive(["S071D1076"])[71] >= 1076      # a station after the table's last waypoint

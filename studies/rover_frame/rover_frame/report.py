@@ -69,6 +69,15 @@ def markdown(res: Dict[str, Any], blocks: Dict[str, str]) -> str:
                 v = [g["omega_tel_mdeg"][a] for g in gs]
                 cells.append(f"{np.median(v):+.0f} ({len(v)})" if v else "-")
         L.append(f"| {b} | {sum(g['block'] == b for g in res['groups'])} | " + " | ".join(cells) + " |")
+    hr = res.get("heading_by_site_role") or []
+    if hr:
+        L += ["", "## Heading error and site index changes (front Hazcam body vs telemetry, about the block median)", "",
+              "Christian 24 Oct: the last waypoint before a site index change is the more likely to have a rotation "
+              "error. Site start = DRIVE 0 (at the previous site's last position).", "",
+              "| site role | stations | median |heading| mdeg | p90 | > 1 deg | median |tilt| mdeg |", "|---|---|---|---|---|---|"]
+        for r in hr:
+            L.append(f"| {r['role']} | {r['stations']} | {r['heading_median_mdeg']:.0f} | {r['heading_p90_mdeg']:.0f} | "
+                     f"{r['heading_over_1deg']} | {r['tilt_median_mdeg']:.0f} |")
     ch = res["changes"]
     L += ["", "## Body pose changes between the sequences of one station", ""]
     if ch:

@@ -4,6 +4,8 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- Rover-frame study: every station is tagged by its place in its rover site (`last_before_site_change`, `site_start`, `within_site`; Christian 24 Oct: the last waypoint before a site index change is the more likely to have a rotation error), and the report and `rover_frame.json` give the front-Hazcam heading error about the block median by tag.
+
 - Rover kernels (Christian, 24 Oct): the rover-frame study estimates the rover attitude and position per rover pose (end-of-drive pose from both Hazcam pairs, later poses from the front pair, propagated poses; the rear-to-front Hazcam correction and the IMU-mean rover frame over all blocks) and writes them with spiceypy: a CK per block (`M2020_ROVER` relative to `M2020_LOCAL_LEVEL`, constant per interval), an SPK per block (with NAIF's clock kernel), an FK of the four Hazcams, the sigma / source sidecar and a meta-kernel (`studies/rover_frame/rover_frame/estimate.py`, `spice.py`; `--no-kernels`; the `rover` extra).
 
 - The calibration joints take blocks that fail only the labels' pointing checks (`block_rotation_deg`, `attitude_residual_p95_deg`): Tuxedo Park (eight stations' headings 1.6-1.9 deg off) and Witch Hazel Hill (one site's heading 3.3 deg off) have median residuals of 0.12-0.15 px.  Their health verdict stays FAIL elsewhere (`sfm.health.LABEL_POINTING_CHECKS`, `rejudge(warn_only=...)`).
