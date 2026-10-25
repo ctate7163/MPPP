@@ -993,6 +993,16 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   f"iterative Schur solver: {summary.BriefReport()}")
         if summary.termination_type == pyceres.TerminationType.FAILURE:
             raise RuntimeError(f"bundle adjustment failed twice: {first.BriefReport()} / {summary.BriefReport()}")
+    if (extra_info or {}).get("exact_solve") and (extra_info or {}).get("tie_specs") \
+            and summary.termination_type != pyceres.TerminationType.FAILURE:
+        # 0.94.6: Levenberg-Marquardt on with the ties as exact constraints (mppp.calib.tiesolve)
+        from ..calib.tiesolve import exact_tie_refine
+        free_ = list(pose_blocks.values()) + list(cam_blocks.values()) + list(rig_blocks.values()) + list(vblocks.values())
+        xr = exact_tie_refine(prob, extra_info["tie_specs"], point_arrs, free_, extra_info["cov_blocks"],
+                              verbose=True)
+        extra_info["exact_refine"] = {k: v for k, v in xr.items() if k != "history"}
+        extra_info["exact_refine"]["history"] = xr.get("history")
+        extra_info["tie_ids"] = [t["id"] for t in extra_info["tie_specs"]] if extra_info.get("tie_ids") else []
     cov_out = None
     if covariance:
         cov_out = _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att, pose_blocks,
@@ -1068,7 +1078,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             "tied_cameras": tied, "k2_clamped": k2_clamped,
             "unlocalized_stations": unloc, "navcam_aspect": navcam_aspect, "aspect_priors": len(aspect_costs),
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
-            "final_cost": summary.final_cost, "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
+            "final_cost": (float(extra_info["exact_refine"]["cost_end"]) if (extra_info or {}).get("exact_refine")
+                           and not extra_info["exact_refine"].get("error") and "cost_end" in extra_info["exact_refine"]
+                           else summary.final_cost), "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
             "termination": str(summary.termination_type), "brief": summary.BriefReport(), "retried": retried, "extra": extra_info, "camera_views": views_used, "camera_views_unchanged": views_unchanged,
             "refine_tangential": tangential_setting(refine_tangential), "linear_solver": solver, "num_threads": so.num_threads,
             "seconds": float(summary.total_time_in_seconds)}

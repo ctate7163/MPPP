@@ -37,8 +37,9 @@ def _csr(J):
                          shape=(int(J.num_rows), int(J.num_cols))).tocsr()
 
 
-def _point_block_inverse(Hpp, n_points: int, rel_damp: float = 1e-12):
-    """The inverse of the block-diagonal 3 x 3 point part of the normal matrix, as a sparse block-diagonal matrix."""
+def _point_block_inverse(Hpp, n_points: int, rel_damp: float = 1e-12, lm: float = 0.0):
+    """The inverse of the block-diagonal 3 x 3 point part of the normal matrix, as a sparse block-diagonal matrix
+    (``lm``: Levenberg-Marquardt damping, lm x its diagonal added)."""
     import scipy.sparse as sp
     B = np.zeros((n_points, 3, 3))
     for a in range(3):
@@ -47,6 +48,8 @@ def _point_block_inverse(Hpp, n_points: int, rel_damp: float = 1e-12):
             d = Hpp.diagonal(k)
             idx = 3 * np.arange(n_points) + min(a, b)
             B[:, a, b] = d[idx]
+    if lm:
+        B = B + lm * (np.diagonal(B, axis1=1, axis2=2)[:, :, None] * np.eye(3))
     tr = np.trace(B, axis1=1, axis2=2)
     B += (rel_damp * np.maximum(tr, 1e-300))[:, None, None] * np.eye(3)
     Binv = np.linalg.inv(B)

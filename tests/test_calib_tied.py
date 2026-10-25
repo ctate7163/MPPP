@@ -291,3 +291,62 @@ def test_exact_tie_covariance_agrees_with_colmap_and_reports_correlations(tmp_pa
     assert T.covariance_line(dict(r1, residuals={})).endswith("; ok")
     bad = dict(r1, rig=dict(r1["rig"], sd_rate={"pitch": float("inf"), "yaw": 0.1, "roll": 0.1}))
     assert "NOT USABLE" in T.covariance_line(bad) and "D_pitch" in T.covariance_line(bad)
+
+
+def test_exact_tie_solve_does_not_depend_on_the_tie_sigma(tmp_path, monkeypatch):
+    """0.94.6 (25 Oct): with stiff tie residuals Levenberg-Marquardt stops in a flat valley (the synthetic pitch rate
+    0.24 at 1e-6, 0.19 at 1e-10 at the same cost); the exact refinement (mppp.calib.tiesolve: the ties as
+    constraints) reaches the same globals whatever the sigma, never raises the cost, and leaves the ties in place."""
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    for r in proj.images:
+        k = int(r["sclk_key"][:10])
+        r["sol"] = (100 if k % 4 < 2 else 200) if r["station"] == "S001D0000" else (900 if k % 4 < 2 else 1000)
+
+    def run(q_sigma):
+        monkeypatch.setitem(T.TIE_SIGMA, "q", q_sigma)
+        rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+        ba, g, _ = T.adjust_tied(rec2, proj2, idx, st, units, iterations=200, covariance=True, passes=1, verbose=False,
+                                 exact_solve=True)
+        return T.globals_result(st, g, ba, units), g, ba
+
+    r1, g1, ba1 = run(1e-6)
+    r2, g2, ba2 = run(1e-10)
+    for ba in (ba1, ba2):
+        ex = ba["extra"]["exact_refine"]
+        assert ex["error"] is None and 0.0 <= ex["cost_end"] <= ex["cost_start"]
+    sd = r1["rig"]["sd_rate"]["pitch"]
+    assert abs(g1["D"][0] - g2["D"][0]) < 0.02 * sd
+    assert np.allclose(g1["S_NL"], g2["S_NL"], rtol=1e-3, atol=1e-7)
+    assert r1["covariance_method"].startswith("exact ties") and r1["exact_refine"]["iterations"] >= 1
+
+
+def test_law_check_deviations_and_held_residuals(tmp_path):
+    """0.94.6 (Christian, 25 Oct: how good the global solutions are at predicting the cameras): the law check holds
+    every unit at the law (residuals per block), frees them (deviations from the law in sd units, chi^2 / dof, trends)
+    and compares any law with the same free units."""
+    pytest.importorskip("pyceres")
+    import copy
+    from mppp.calib import lawcheck as L
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    free = L.units_free(rec, proj, idx, st, iterations=30, verbose=False)
+    held = L.law_held(rec, proj, idx, st, iterations=30)
+    assert free["cameras"] and free["rigs"] and free["camera_cov_dims"] == [3]
+    blk = next(iter(held["blocks"]))
+    assert held["blocks"][blk]["rms_px"] >= free["blocks"][blk]["rms_px"] - 1e-6   # holding never fits better
+    d = L.deviations(free, st, min_images=1)
+    assert {"NL_fx", "NR_fx", "rig_pitch"} <= set(d["chi2"])
+    c = d["cameras"][0]
+    assert c["sd_fx"] > 0 and c["z_fx"] == pytest.approx(c["d_fx"] / c["sd_fx"])
+    st2 = copy.deepcopy(st)                                    # a law 100 ppm longer in fx: the deviations 100 ppm less
+    st2["G"]["NL"] = np.array(st2["G"]["NL"], float)
+    st2["G"]["NL"][0] *= 1 + 100e-6
+    d2 = L.deviations(free, st2, min_images=1)
+    a = next(r for r in d["cameras"] if r["eye"] == "NL")
+    b = next(r for r in d2["cameras"] if r["eye"] == "NL" and r["key"] == a["key"])
+    assert b["d_fx"] == pytest.approx(a["d_fx"] - 100.0, abs=0.1)
+    res = {"laws": {"x": st["folder"]}, "held": {"x": held}, "deviations": {"x": d}, "free": free}
+    lines = L.describe(res, "x")
+    assert lines[0].startswith("law x") and any("chi2/dof" in s for s in lines)
+    out = L.write_validation(res, tmp_path / "lc")
+    assert (out / "report.md").exists() and (out / "law_validation.json").exists()

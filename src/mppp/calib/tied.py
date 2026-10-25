@@ -59,6 +59,8 @@ TIE_SIGMA = {"fx": 1e-3, "fy": 1e-3, "cx": 1e-3, "cy": 1e-3, "k": 1e-7, "q": 1e-
 # 0.94.6: the covariance of the global terms with the ties eliminated exactly (mppp.calib.tiecov) - COLMAP's estimator
 # on the tied problem gave them infinite from about a dozen blocks on (20, 24, 25 Oct: 22-29 blocks)
 EXACT_TIE_COVARIANCE = True
+# 0.94.6 (study): after Ceres' solve, Levenberg-Marquardt with the ties as exact constraints (mppp.calib.tiesolve)
+EXACT_TIE_SOLVE = False
 BIN_DEG = 2.0                    # fine bins; within a bin the images' own temperatures count (keypoint map)
 DIAG_BIN_MIN_IMAGES = 8          # 22 Oct: the diagnostic pass merges a block's adjacent fine bins (per era) until
 DIAG_BIN_MAX_DEG = 10.0          #   each eye has this many images, at most this wide - the cold morning images
@@ -448,7 +450,8 @@ _HELD_NAMES = {"S_NL": SLOPE_TERMS, "S_NR": SLOPE_TERMS, "E_NL": EARLY_TERMS, "E
 
 
 def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT, tie_rigs: bool = True,
-              tie_cameras: bool = True, pp_prior: Optional[Dict[str, float]] = None, iso_f: bool = ISO_F):
+              tie_cameras: bool = True, pp_prior: Optional[Dict[str, float]] = None, iso_f: bool = ISO_F,
+              exact_solve: Optional[bool] = None):
     """The ``extra_residuals`` callable for :func:`mppp.sfm.reconstruction.bundle_adjust` and the global parameter
     arrays it ties to.  ``hold``: global terms held at their start (``"E_NR"``, ``"S_NL_cy"``, ``"Q0_yaw"``, ``"H"``
     ...).  ``H``'s yaw and roll are always held at 0 (linear yaw and roll trends); terms the data cannot see are held
@@ -483,6 +486,7 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
     def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
         n_cam = n_rig = 0
         tie_ids = []                                         # 0.94.6: for the exact-tie covariance
+        specs = []                                           # 0.94.6: the ties as constraints (mppp.calib.tiesolve)
         if tie_cameras:
             for cid, u in units["cameras"].items():
                 blk = cam_blocks.get(int(cid))
@@ -502,8 +506,9 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                 if u["early"]:
                     for i, k in enumerate(EARLY_TERMS):
                         A[TIED_PARAMS.index(k), 27 + i] = -1.0  # E (this eye)
-                tie_ids.append(prob.add_residual_block(LinearTie(A, sig, [12, 10, 5, 4]), None,
-                                                       [blk, g[f"G_{eye}"], g[f"S_{eye}"], g[f"E_{eye}"]]))
+                bl = [blk, g[f"G_{eye}"], g[f"S_{eye}"], g[f"E_{eye}"]]
+                tie_ids.append(prob.add_residual_block(LinearTie(A, sig, [12, 10, 5, 4]), None, bl))
+                specs.append({"id": tie_ids[-1], "A": A, "sigma": sig, "sizes": [12, 10, 5, 4], "blocks": bl})
                 n_cam += 1
         if tie_rigs:
             for rid, u in units["rigs"].items():
@@ -517,8 +522,10 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                     A[i, 7 + i] = -1.0                               # Q0
                     A[i, 10 + i] = -0.5 * _MDEG * s / 1000.0         # D (mdeg / 1000 sol)
                     A[i, 13 + i] = -0.5 * _MDEG * min(s, knot) / 1000.0   # H
-                tie_ids.append(prob.add_residual_block(LinearTie(A, np.full(3, TIE_SIGMA["q"]), [7, 3, 3, 3]), None,
-                                                       [blk, g["Q0"], g["D"], g["H"]]))
+                bl = [blk, g["Q0"], g["D"], g["H"]]
+                tie_ids.append(prob.add_residual_block(LinearTie(A, np.full(3, TIE_SIGMA["q"]), [7, 3, 3, 3]), None, bl))
+                specs.append({"id": tie_ids[-1], "A": A, "sigma": np.full(3, TIE_SIGMA["q"]), "sizes": [7, 3, 3, 3],
+                              "blocks": bl, "quaternion": True})
                 n_rig += 1
         n_pp = 0
         consts = []
@@ -556,7 +563,8 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
         return {"cov_blocks": {k: v for k, v in g.items() if prob.has_parameter_block(v)
                                and not prob.is_parameter_block_constant(v)},
                 "ties": {"cameras": n_cam, "rigs": n_rig, "pp_priors": n_pp}, "held": {k: sorted(v) for k, v in held.items()},
-                "tie_ids": tie_ids if EXACT_TIE_COVARIANCE else []}
+                "tie_ids": tie_ids if EXACT_TIE_COVARIANCE else [], "tie_specs": specs,
+                "exact_solve": bool(EXACT_TIE_SOLVE if exact_solve is None else exact_solve)}
 
     return hook, g
 
@@ -604,12 +612,14 @@ def keypoint_terms(units: Dict[str, Any], proj, temps: Dict[str, float], g: Dict
 def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT,
                 tie_rigs: bool = True, tie_cameras: bool = True, iterations: int = 100, covariance: bool = True,
                 passes: int = 2, verbose: bool = True, refine_pp: bool = True,
-                pp_prior: Optional[Dict[str, float]] = None, iso_f: bool = ISO_F) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
+                pp_prior: Optional[Dict[str, float]] = None, iso_f: bool = ISO_F,
+                exact_solve: Optional[bool] = None) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
     """The adjustment of a tied reconstruction (``passes`` solves, the slopes of the keypoint map updated between
     them).  Returns (ba result of the last pass, the global arrays, residual statistics)."""
     from ..sfm.reconstruction import bundle_adjust
     iso = bool(iso_f and tie_cameras)
-    hook, g = make_ties(st, units, hold=hold, tie_rigs=tie_rigs, tie_cameras=tie_cameras, pp_prior=pp_prior, iso_f=iso)
+    hook, g = make_ties(st, units, hold=hold, tie_rigs=tie_rigs, tie_cameras=tie_cameras, pp_prior=pp_prior, iso_f=iso,
+                        exact_solve=exact_solve)
     temps = idx["temps"]
     ba = None
     n_pass = max(1, int(passes))
@@ -692,15 +702,13 @@ def _sd_from_units(cov: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any
     return out
 
 
-def global_correlations(cov: Dict[str, Any], held: Dict[str, Any], min_abs: float = 0.8, top: int = 25
-                        ) -> List[Dict[str, Any]]:
-    """0.94.6: the strongest correlations between the global terms (from the exact-tie covariance): pairs with
-    |r| >= ``min_abs``, strongest first - what the data cannot tell apart (e.g. a thermal slope and a drift in sol,
-    when temperature follows the season)."""
+def global_covariance(cov: Dict[str, Any], held: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """0.94.6: the exact-tie covariance of every free global term with every other, named (``G_NL_k3``, ``D_pitch``
+    ...), in the problem's units (unit variance factor x the problem's variance factor)."""
     full = (cov.get("extra_exact") or {}).get("full")
     if not full:
-        return []
-    C = np.asarray(full["cov"], float)
+        return None
+    vf = float(cov.get("variance_factor", 1.0))
     names = []
     for blk, j in full["columns"]:
         nm = _HELD_NAMES.get(blk)
@@ -708,6 +716,18 @@ def global_correlations(cov: Dict[str, Any], held: Dict[str, Any], min_abs: floa
         free = [i for i in range(n_amb or (j + 1)) if i not in set(held.get(blk, ()))] if n_amb else list(range(j + 1))
         i_amb = free[j] if j < len(free) else j
         names.append(f"{blk}_{nm[i_amb]}" if nm and i_amb < len(nm) else f"{blk}[{j}]")
+    return {"names": names, "cov": (np.asarray(full["cov"], float) * vf).tolist(), "variance_factor": vf}
+
+
+def global_correlations(cov: Dict[str, Any], held: Dict[str, Any], min_abs: float = 0.8, top: int = 25
+                        ) -> List[Dict[str, Any]]:
+    """0.94.6: the strongest correlations between the global terms (from the exact-tie covariance): pairs with
+    |r| >= ``min_abs``, strongest first - what the data cannot tell apart (e.g. a thermal slope and a drift in sol,
+    when temperature follows the season)."""
+    gc = global_covariance(cov, held)
+    if not gc:
+        return []
+    C, names = np.asarray(gc["cov"], float), gc["names"]
     d = np.sqrt(np.clip(np.diag(C), 0, None))
     ok = d > 0
     R = np.zeros_like(C)
@@ -733,6 +753,8 @@ def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, A
                            "covariance_method": cov.get("extra_method") or "colmap",
                            "covariance_exact": {k: v for k, v in (cov.get("extra_exact") or {}).items() if k != "full"},
                            "global_correlations": global_correlations(cov, held),
+                           "global_covariance": global_covariance(cov, held),
+                           "exact_refine": (ba.get("extra") or {}).get("exact_refine"),
                            "held": held, "ties": (ba.get("extra") or {}).get("ties"), "isotropic_f_slope": iso,
                            "pass_costs": (ba.get("extra") or {}).get("pass_costs")}
     for eye in ("NL", "NR"):
