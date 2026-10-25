@@ -174,6 +174,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--promote-new-only", action="store_true",
                    help="zcam / hazcam: promote only models of which none is in use (0.94.1: a tiny joint never "
                         "replaces a model of more blocks)")
+    p = sub.add_parser("zcam-states", help="0.94.6: the Mastcam-Z backlash state of every image from the blocks' focal "
+                       "lengths (the states run: run_zcam_states.bat) - proposed additions to and removals from the "
+                       "found list")
+    p.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the scapes root (default MPPP_SCAPES)")
+    p.add_argument("--variant", default="", help="the blocks' project colmap_<variant> (the states run: states)")
+    p.add_argument("--sites", nargs="*", default=None, help="only these sites' _zcam blocks (default: every one with "
+                   "a zcam_focus_states.json)")
+    p.add_argument("--found", default=None, help="the found list (default <root>/zcam_low_backlash_found.csv)")
+    p.add_argument("--out", default=None, help="the folder for report.md, images.csv, sequences.csv, levels.json and "
+                   "found_list_proposal.txt (default <root>/camera_analysis/zcam_states_<date>)")
+    p.add_argument("--z", type=float, default=3.0, help="z of a state call (default 3)")
+    p.add_argument("--apply", action="store_true", help="write the proposal into the found list (a dated backup first)")
     sub.add_parser("doctor", help="what is set, what is missing: environment variables, dependencies, models, waypoints")
     sub.add_parser("version", help="the MPPP version")
     return ap
@@ -771,6 +783,37 @@ def cmd_doctor(a: argparse.Namespace) -> int:
     return 1 if missing else 0
 
 
+def cmd_zcam_states(a: argparse.Namespace) -> int:
+    """``zcam-states``: :mod:`mppp.sfm.zcam_states` over the ``_zcam`` blocks under ``--root``."""
+    import datetime
+    from .sfm import zcam_states as ZS
+    from .sfm.backlash import default_found_path, load_low_backlash
+    if not a.root:
+        print("zcam-states: --root (or MPPP_SCAPES) is needed", file=sys.stderr)
+        return 2
+    root = Path(a.root)
+    found = Path(a.found) if a.found else default_found_path(root)
+    blocks = ZS.find_blocks(root, a.variant, a.sites)
+    if not blocks:
+        print(f"zcam-states: no _zcam block with zcam_focus_states.json under {root} (variant "
+              f"{a.variant or '(default)'})", file=sys.stderr)
+        return 1
+    lists = load_low_backlash(None, found=found)
+    res = ZS.survey(blocks, a.variant, lists, z_min=a.z)
+    out = Path(a.out) if a.out else root / "camera_analysis" / f"zcam_states_{datetime.date.today():%Y%m%d}"
+    files = ZS.write_survey(res, out)
+    p = res["proposal"]
+    print(f"zcam-states: {len(blocks)} blocks, {len(res['images'])} images; {len(p['add'])} to add, "
+          f"{len(p['remove'])} to take off, {len(p['review'])} to review -> {files['report']}")
+    if a.apply:
+        if not found:
+            print("zcam-states --apply: no found list (give --found)", file=sys.stderr)
+            return 2
+        r = ZS.apply_proposal(p, found)
+        print(f"found list {found}: {r['added']} added, {r['removed']} taken off (backup {r['backup']})")
+    return 0
+
+
 def cmd_version(a: argparse.Namespace) -> int:
     from . import __file__ as where, __version__
     print(f"mppp {__version__} ({Path(where).parent})")
@@ -779,6 +822,7 @@ def cmd_version(a: argparse.Namespace) -> int:
 
 COMMANDS = {"gui": cmd_gui, "process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
             "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "maps": cmd_maps, "calib": cmd_calib, "doctor": cmd_doctor,
+            "zcam-states": cmd_zcam_states,
             "version": cmd_version}
 
 

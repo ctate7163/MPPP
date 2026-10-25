@@ -423,9 +423,10 @@ class MPPPImage:
                 zm = calib.load_zcam(int(self.fn.zoom_mm))
                 focus = label_float(self.label, "INSTRUMENT_STATE_PARMS.FOCUS_POSITION_COUNT")
                 if zm is not None and focus is not None and self.fn.camera_group in (zm.get("cameras") or {}):
-                    from .sfm.backlash import is_low_backlash, load_low_backlash
+                    from .sfm.backlash import default_found_path, is_low_backlash, load_low_backlash
                     listed = is_low_backlash({"stem": self.fn.stem, "sequence": self.fn.sequence, "sol": self.sol,
-                                              "camera_group": self.fn.camera_group}, load_low_backlash())
+                                              "camera_group": self.fn.camera_group},
+                                             load_low_backlash(found=default_found_path()))
                     state = calib.focus_state(listed, self.fn.camera_group)
                     name, params, info = calib.zcam_camera_at(zm, self.fn.camera_group, focus, state)
                     src = f"{Path(zm['file']).name}: {info['source']}, {state} state"

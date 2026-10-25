@@ -138,6 +138,7 @@ class Settings:
     zcam_intrinsics: str = "focus_model"          # Mastcam-Z start: "focus_model" (the promoted model) or "label"
     zcam_focus_model: Optional[Path] = None       # a focus-model JSON to start from; None: the one in use
     zcam_focus_bin: Optional[float] = 30          # focus motor counts per Mastcam-Z camera (None: one camera per eye)
+    zcam_bin_by: str = "focus"                    # 0.94.6: the Mastcam-Z cameras - "focus" (focus bins), "sequence" (focus bins of each sol and sequence), "image" (one camera per image: its own focal length - the states run)
     zcam_bin_refine: str = "focal_pp"             # a focus-bin camera refines fx, fy and on ZR cx, cy ("focal_pp"); "focal", "all", "model"
     zcam_line_params: Dict[str, List[str]] = field(default_factory=lambda: {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"],
                                                                             "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]})   # the focus parameters stage 2 puts on a line per eye
@@ -146,9 +147,10 @@ class Settings:
     # list's frames get their own (low-state) cameras; a block's focal fits only report groups that look low
     zcam_backlash: Optional[str] = "list"         # focus backlash states: "list", "list_split", "split", "report" or None
     zcam_low_backlash: Any = None                 # the low-backlash observation list; None: the shipped CSV; False: none
-    # 0.93.6: off - the found list (written by runs' focal fits, "list_split") held Seitah Overlook's high-state
-    # pointings 2 and 4 of ZCAM08114 (22 Oct); "auto" = <scapes_root>/zcam_low_backlash_found.csv
-    zcam_low_backlash_found: Any = None
+    # 0.94.6 (Christian, 25 Oct: "always use this list"): the found list again, with the shipped one - curated by
+    # hand and by `mppp zcam states --apply` ("-" lines take frames off; 0.93.6 had it off after Seitah Overlook's
+    # high-state pointings 2 and 4 of ZCAM08114 got in); "auto" = <scapes_root>/zcam_low_backlash_found.csv
+    zcam_low_backlash_found: Any = "auto"
     zcam_focus_line: bool = True                  # stage 2 puts the focus-bin cameras on lines in focus count (False: f per bin)
     zcam_line_cycles: int = 2                     # rounds of freeing the bins and refitting the lines
     zcam_line_form: Optional[Dict[str, Any]] = None   # the form of each focus line {eye: {param: form}} for a study; None: the shipped form
@@ -222,6 +224,10 @@ class Settings:
                 d.pop(k, None)
         if d.get("lightglue_keypoints") in (None, "largest"):
             d.pop("lightglue_keypoints", None)       # 0.94.4: the keys of every run before it stay what they were
+        if d.get("zcam_bin_by") in (None, "focus"):
+            d.pop("zcam_bin_by", None)               # 0.94.6: likewise
+        if not d.get("include_zcam"):
+            d["zcam_low_backlash_found"] = None      # 0.94.6: the found list is a Mastcam-Z setting (Navcam keys stay)
         return d
 
 
@@ -816,6 +822,7 @@ def wanted_project_settings(s: Settings, work: Path) -> Dict[str, Any]:
     return {"zero_terms": list(zero), "zcam_intrinsics": s.zcam_intrinsics,
             "zcam_zero_terms": list(zzero) if (zzero is not None and z) else None,
             "zcam_focus_bin": float(s.zcam_focus_bin) if s.zcam_focus_bin else None, "zcam_bin_refine": s.zcam_bin_refine,
+            "zcam_bin_by": (s.zcam_bin_by or "focus") if z else None,
             "zcam_rig": s.zcam_rig, "zcam_rig_refine": s.zcam_rig_refine,
             "zcam_low_backlash_sha256": low_backlash_fingerprint(s.zcam_low_backlash, found) if z else None,
             "zcam_line_params": ({str(k): list(v) for k, v in s.zcam_line_params.items()}
@@ -892,6 +899,7 @@ def build_project(work: PathLike, images: List[Dict[str, Any]], settings: Settin
         proj = SfmProject.create(images, work / "processed", root, prior_sigma_m=(s.prior_sigma_m,) * 3,
                                  zcam_intrinsics=s.zcam_intrinsics, zero_terms=zero,
                                  zcam_focus_bin=s.zcam_focus_bin, zcam_bin_refine=s.zcam_bin_refine, zcam_rig=s.zcam_rig,
+                                 zcam_bin_by=s.zcam_bin_by or "focus",
                                  navcam_rig=s.navcam_rig, zcam_hold_f_images=s.zcam_hold_f_images,
                                  navcam_cameras=s.navcam_cameras,
                                  zcam_zero_terms=zzero if z else None, zcam_rig_refine=s.zcam_rig_refine,

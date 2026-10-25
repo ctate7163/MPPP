@@ -290,7 +290,7 @@ def test_0936_defaults_and_hazcam_over_zcam_blocks(tmp_path):
     from mppp import cli
     from mppp.pipeline import Settings
     s = Settings()
-    assert s.zcam_backlash == "list" and s.zcam_low_backlash_found is None
+    assert s.zcam_backlash == "list" and s.zcam_low_backlash_found == "auto"       # 0.94.6: on again
     ap = cli.build_parser() if hasattr(cli, "build_parser") else None
     if ap is not None:
         a = ap.parse_args(["calib", "hazcam", "--zcam-blocks", "--group", "zcam_consensus", "--root", str(tmp_path)])

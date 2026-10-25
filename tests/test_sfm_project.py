@@ -138,6 +138,14 @@ def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     assert zm["params"][0] > z["params"][0]                           # the label f is ~1 % short
     with pytest.raises(ValueError):
         SfmProject.create(man["images"], out, tmp_path / "r", zcam_bin_refine="some")
+    # 0.94.6: the states run - one camera per Mastcam-Z image, f free (no image count holds it)
+    pi = SfmProject.create(man["images"], out, tmp_path / "i", link=False, zcam_low_backlash=False,
+                           zcam_bin_by="image", zcam_hold_f_images=0)
+    zk = [k for k in pi.cameras if k.startswith("ZL034")]
+    assert len(zk) == 1 and zk[0].startswith(key + "_c") and "fx" not in pi.cameras[zk[0]]["fixed_params"]
+    assert pi.settings["zcam_bin_by"] == "image" and pm.settings["zcam_bin_by"] == "focus"
+    with pytest.raises(ValueError, match="zcam_bin_by"):
+        SfmProject.create(man["images"], out, tmp_path / "s", zcam_bin_by="pointing")
 
 
 def test_station_labels_start_with_the_sol():

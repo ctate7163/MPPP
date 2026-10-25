@@ -266,7 +266,7 @@ def test_pipeline_settings_v0p73():
     s = Settings()
     assert s.zcam_bin_refine == "focal_pp" and s.zcam_backlash == "list"
     assert s.zcam_line_params == {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"], "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]}
-    assert s.zcam_low_backlash_found is None                      # 0.93.6: the found list off
+    assert s.zcam_low_backlash_found == "auto"                    # 0.94.6: the found list on again (0.93.6: off)
 
 
 def test_resolved_site_carries_the_visits(tmp_path):

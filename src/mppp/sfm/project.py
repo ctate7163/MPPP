@@ -312,7 +312,7 @@ class SfmProject:
                zcam_line_form: Any = None, navcam_rig_epoch_breaks: Optional[Sequence[float]] = None,
                navcam_rig_epochs_tie: bool = True, navcam_pp: str = NAVCAM_PP,
                navcam_rig_roll: str = "hold", hazcam_intrinsics: str = "radial",
-               hazcam_rig_refine: str = "hold") -> "SfmProject":
+               hazcam_rig_refine: str = "hold", zcam_bin_by: str = "focus") -> "SfmProject":
         """
         ``metas``: ``MPPPImage.meta`` dicts with ``outputs`` (as in the MPPP manifest; paths relative to
         ``processed_dir``), padded to the detector frame.  One COLMAP camera per Navcam eye (from the promoted
@@ -338,6 +338,9 @@ class SfmProject:
         ``zcam_focus_bin`` (default 30): each eye and zoom is split into cameras by focus motor count, bins at most
         this many counts wide (:func:`focus_bins`), named e.g. ``ZL034_F02312`` (the bin's median count).  None or 0:
         one camera per eye and zoom.
+        ``zcam_bin_by`` (0.94.6): ``"focus"`` (default) - the focus bins above; ``"sequence"`` - the focus bins of
+        each sol and sequence apart (``ZL034_F02312_s0121_ZCAM08114``); ``"image"`` - one camera per image
+        (``ZL034_F02312_c0677678707``), each with its own focal length: the states run (``run_zcam_states.bat``).
         ``zcam_bin_refine``: ``"focal"`` - a bin camera refines fx, fy only; ``"focal_pp"`` - and on ZR cx, cy;
         ``"model"`` - f held at the model; ``"all"`` - every parameter.  Each image records ``camera_group``
         (``ZL034``), ``focus_count``, ``label_f_px`` and ``focus_state``.
@@ -367,6 +370,8 @@ class SfmProject:
             raise ValueError("zcam_intrinsics must be 'label' or 'focus_model'")
         if zcam_rig_refine not in ("auto", "hold", "refine"):
             raise ValueError("zcam_rig_refine must be 'auto', 'hold' or 'refine'")
+        if zcam_bin_by not in ("focus", "sequence", "image"):
+            raise ValueError("zcam_bin_by must be 'focus', 'sequence' or 'image'")
         if zcam_bin_refine not in ZCAM_BIN_REFINE_SETTINGS:
             raise ValueError(f"zcam_bin_refine must be one of {ZCAM_BIN_REFINE_SETTINGS}")
         if navcam_distortion_fit not in ("hold", "refine"):
@@ -506,7 +511,7 @@ class SfmProject:
             fmodel = _zcam_fmodel() if zcam_intrinsics == "focus_model" else None
             cameras = _split_by_focus(images, cameras, instruments, float(zcam_focus_bin), zcam_bin_refine,
                                       fmodel, int(zcam_hold_f_images), line_params=zcam_line_params,
-                                      line_form=zcam_line_form)
+                                      line_form=zcam_line_form, by=zcam_bin_by)
 
         _align_priors_to_cameras(images, cameras)
         rig = _rig_from_pairs([r for r in images if instruments.get(r["camera_group"]) != "Z"])
@@ -557,6 +562,7 @@ class SfmProject:
                     "zcam_hold_f_images": int(zcam_hold_f_images) if zcam_intrinsics == "focus_model" else None,
                     "zcam_focus_model": focus_info,
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
+                    "zcam_bin_by": zcam_bin_by if any(f == "Z" for f in instruments.values()) else None,
                     "zcam_bin_refine": zcam_bin_refine, "zcam_rig": bool(zcam_rig),
                     # the focus parameters of each eye that stage 2 puts on lines in focus count, per state
                     "zcam_line_params": ({str(k): list(v) for k, v in zcam_line_params.items()}
@@ -658,6 +664,22 @@ def station_labels(images: Iterable[Dict[str, Any]]) -> Dict[str, str]:
     return out
 
 
+def _bin_unit(r: Dict[str, Any], by: str) -> str:
+    """The part of a Mastcam-Z camera's name below its focus bin (0.94.6): "" ("focus"), ``s0121_ZCAM08114``
+    ("sequence"), ``c0677678707`` and the product's version ("image": the spacecraft clock, unique per eye)."""
+    if by == "sequence":
+        try:
+            sol = f"s{int(r.get('sol')):04d}"
+        except (TypeError, ValueError):
+            sol = "sna"
+        return f"{sol}_{r.get('sequence') or 'na'}"
+    if by == "image":
+        parts = str(r.get("stem") or r.get("name") or "").split("_")
+        clock = parts[2] if len(parts) > 2 else str(r.get("image_id", "na"))
+        return f"c{clock}" + (f"_{parts[-1][-3:]}" if len(parts) > 5 else "")
+    return ""
+
+
 def _focus_tag(count: Optional[float]) -> str:
     """Camera-name suffix for a focus count: F02312, Fm00150 (negative), Fna (unknown)."""
     if count is None:
@@ -743,7 +765,7 @@ def zcam_model_pp_shift(gm: Optional[Dict[str, Any]], focus: Optional[float],
 def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, Any]], families: Dict[str, str],
                     width: float, refine: str, model: Optional[Dict[str, Any]] = None,
                     hold_f_images: int = 0, line_params: Optional[Dict[str, Any]] = None,
-                    line_form: Any = None) -> Dict[str, Dict[str, Any]]:
+                    line_form: Any = None, by: str = "focus") -> Dict[str, Dict[str, Any]]:
     """Replace each Mastcam-Z camera by one camera per focus bin (see ``SfmProject.create``).  ``model``: the
     focal-length model (:func:`zcam_focus_model`); bins then start from it, and bins of at most ``hold_f_images``
     images hold f there.  The model's temperature and sol terms are evaluated at the bin's median focal-plane
@@ -757,14 +779,15 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
         gm = (model or {}).get("cameras", {}).get(group)
         all_counts = [r["focus_count"] for r in rows if r["focus_count"] is not None]
         focus_ref = float(np.median(all_counts)) if all_counts else None
-        # images of the known low-backlash (regular) focus state get their own bins
-        bkeys = [(bb, r.get("focus_state") == "regular") for r, bb in zip(rows, bins)]
+        # images of the known low-backlash (regular) focus state get their own bins; 0.94.6 ``by``: and each sol
+        # and sequence its own ("sequence"), or each image ("image")
+        bkeys = [(bb, r.get("focus_state") == "regular", _bin_unit(r, by)) for r, bb in zip(rows, bins)]
         for b in sorted(set(bkeys)):
             members = [r for r, bb in zip(rows, bkeys) if bb == b]
             counts = [r["focus_count"] for r in members if r["focus_count"] is not None]
             med = float(np.median(counts)) if counts else None
             regular = bool(b[1])
-            key = f"{group}_{_focus_tag(med)}" + ("_reg" if regular else "")
+            key = f"{group}_{_focus_tag(med)}" + (f"_{b[2]}" if b[2] else "") + ("_reg" if regular else "")
             params = list(map(float, base["params"]))
             fl = [r["label_f_px"] for r in members if r.get("label_f_px") is not None]
             Ts = [float(r["camera_temperature_degC"]) for r in members if r.get("camera_temperature_degC") is not None]

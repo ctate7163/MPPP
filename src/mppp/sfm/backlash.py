@@ -60,6 +60,22 @@ def low_backlash_path(path: Any = None):
 FOUND_FILE = "zcam_low_backlash_found.csv"      # next to the WORK folders (SCAPES_ROOT), filled by notebook 03
 
 
+def default_found_path(root: Any = None):
+    """0.94.6 (Christian, 25 Oct: "always use this list"): the found list in use - ``<root>/zcam_low_backlash_found.csv``,
+    else ``MPPP_LOW_BACKLASH_FOUND``, else ``<MPPP_SCAPES>/zcam_low_backlash_found.csv``; None when there is none."""
+    import os
+    from pathlib import Path
+    if root:
+        return Path(root) / FOUND_FILE
+    env = os.environ.get("MPPP_LOW_BACKLASH_FOUND")
+    if env:
+        return Path(env)
+    sc = os.environ.get("MPPP_SCAPES")
+    if sc and (Path(sc) / FOUND_FILE).is_file():
+        return Path(sc) / FOUND_FILE
+    return None
+
+
 def append_found(path: Any, groups: Sequence[Dict[str, Any]], site: str = "", when: Optional[str] = None) -> int:
     """
     add the images of newly classified low-backlash (regular) focus groups to the found list ``path``
@@ -109,17 +125,20 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
     (``ZL0_0121_0677679408_053RAD_N0041250ZCAM08114_034085A03``), ``0121_0677679408_053`` (sol, clock), ``ZCAM07114_034``
     (a sequence at one zoom), ``ZCAM08114`` (a sequence at every zoom) - matched as a substring of the image's file name
     (case-insensitive); ``sol:sequence`` (``363:ZCAM08394``) also works.  A trailing ``?`` (uncertain) is kept as
-    an entry and counted in ``uncertain``.  A full product name also matches the same eye and spacecraft clock
+    an entry and counted in ``uncertain``.  0.94.6: an entry starting with ``-`` takes frames OFF the list (any of
+    the forms above; it wins over every match, in either file): ``-0121_0677678972_053`` (sol 121 pointing 2).  A full product name also matches the same eye and spacecraft clock
     whatever its product type and version (``ZL0_0091_0675031997_228RAD_...A03`` matches ``ZLF_0091_0675031997_228EBY_...J01``,
     key ``clocks``).  Every other Mastcam-Z image is in the high-backlash state, except at
     110 mm, which has a single state.  Returns {"entries", "sol_sequences", "clocks", "uncertain", "file"}.
     """
     import re
     if path is False:                                  # no list: every Mastcam-Z image high-backlash
-        return {"entries": set(), "sol_sequences": set(), "clocks": set(), "uncertain": [], "file": None}
+        return {"entries": set(), "sol_sequences": set(), "clocks": set(), "uncertain": [], "file": None,
+                "excluded": {"entries": set(), "sol_sequences": set(), "clocks": set()}}
     f = low_backlash_path(path)
     out: Dict[str, Any] = {"entries": set(), "sol_sequences": set(), "clocks": set(), "uncertain": [], "file": str(f),
-                           "found_file": None, "found": 0}
+                           "found_file": None, "found": 0,
+                           "excluded": {"entries": set(), "sol_sequences": set(), "clocks": set()}}
     texts = [f.read_text(encoding="utf-8-sig")] if f.is_file() else []
     if found:                                          # the observations notebook 03 classified (found list)
         from pathlib import Path as _P
@@ -137,21 +156,26 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
             tok = tok.strip().strip('"').strip()
             if not tok:
                 continue
+            dst = out
+            if tok.startswith("-"):                    # 0.94.6: off the list
+                tok = tok[1:].strip()
+                dst = out["excluded"]
             if tok.endswith("?"):
                 tok = tok.rstrip("?").strip()
-                out["uncertain"].append(tok)
+                if dst is out:
+                    out["uncertain"].append(tok)
             m = re.fullmatch(r"(\d+):(ZCAM\d{5})", tok, re.I)
             if m:
-                out["sol_sequences"].add((int(m.group(1)), m.group(2).upper()))
+                dst["sol_sequences"].add((int(m.group(1)), m.group(2).upper()))
                 continue
             for ext in (".IMG", ".PNG", ".LBL"):
                 if tok.upper().endswith(ext):
                     tok = tok[: -len(ext)]
             if len(tok) >= 6:                          # a too-short fragment would match everything
-                out["entries"].add(tok.upper())
+                dst["entries"].add(tok.upper())
             c = _clock_key(tok)
             if c:
-                out["clocks"].add(c)
+                dst["clocks"].add(c)
     return out
 
 
@@ -183,8 +207,15 @@ def is_low_backlash(row: Dict[str, Any], lst: Dict[str, Any]) -> bool:
     110 mm, which has one focus state)."""
     if group_zoom(row.get("camera_group", row.get("instrument"))) in SINGLE_STATE_ZOOMS:
         return False
+    ex = lst.get("excluded")
+    if ex and _matches(row, ex):                         # 0.94.6: a "-" entry takes the frame off the list
+        return False
+    return _matches(row, lst)
+
+
+def _matches(row: Dict[str, Any], lst: Dict[str, Any]) -> bool:
     name = str(row.get("stem") or row.get("name") or "").upper()
-    if any(e in name for e in lst["entries"]):
+    if any(e in name for e in lst.get("entries", ())):
         return True
     c = _clock_key(name)
     if c and c in lst.get("clocks", ()):
@@ -194,7 +225,7 @@ def is_low_backlash(row: Dict[str, Any], lst: Dict[str, Any]) -> bool:
         sol = int(row.get("sol"))
     except (TypeError, ValueError):
         sol = None
-    return (sol, seq) in lst["sol_sequences"]
+    return (sol, seq) in lst.get("sol_sequences", ())
 
 
 def group_zoom(group: Any) -> Optional[int]:
@@ -495,7 +526,7 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
     (:func:`measured_backlash_lines`, ``measured_ratio``; else the focus model's f0 / label f0), so that the
     midpoint follows the focus count; (2) ``sequence_rule``: one state per sequence (:func:`apply_sequence_states`),
     the images on the low-backlash list (``known``: a :func:`load_low_backlash` dict, a path, False for none; default
-    the project's list, without the found list) being the exceptions (``listed_names``, regular in
+    the project's list and, 0.94.6, its found list) being the exceptions (``listed_names``, regular in
     :func:`image_states`).  The ratios that decide (``ratio_fit``, ``sd_fit``) come from the images not on that
     list; ``ratio`` / ``sd`` are every fitted image's, as before.  ``report`` (a dict) receives the lines and the
     sequences.  ``bin_fallback`` (:func:`bin_focal_fallback`) classifies a group without any per-image fit
@@ -509,9 +540,10 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
                                                 or {}).get("disabled")):
         lst = load_low_backlash(False)                   # 0.93.5: a project built without a list keeps none
     else:
-        f = known if known is not None else ((getattr(project, "settings", None) or {}).get("zcam_low_backlash") or {}).get("file")
-        try:
-            lst = load_low_backlash(f)
+        zl = (getattr(project, "settings", None) or {}).get("zcam_low_backlash") or {}
+        f = known if known is not None else zl.get("file")
+        try:                                             # 0.94.6: with the project's found list
+            lst = load_low_backlash(f, found=zl.get("found_file") if known is None else None)
         except Exception:                                                  # noqa: BLE001
             lst = load_low_backlash(False)
     rows = []
