@@ -1122,10 +1122,20 @@ def check_navcam(candidate_dir: PathLike, current_dir: Optional[PathLike] = None
     sd = res.get("sd") or {}
     finite = all(isinstance(sd.get(e), dict) and "diag" not in sd[e] and all(np.isfinite(list(sd[e].values())))
                  for e in ("NL", "NR"))
+    # 0.94.5 (24 Oct): the joint's own covariance is required - the bin-camera fallback ignores the correlations
+    # (3-4x small: +-0.14 against +-0.52 ppm/degC) and the rig terms' sd must be finite (24 Oct: pitch, yaw rate inf)
+    fb = res.get("sd_source")
+    rig_sd = res.get("rig_sd") or {}
+    bad_rig = sorted(k for k, v in rig_sd.items() if v is None or not np.isfinite(v) or v <= 0)
+    ok_cov = finite and not fb and not bad_rig
     _damp = res.get("covariance_damping")
-    add("covariance", "finite" if finite else "missing", "finite sd of both eyes", finite,
-        str(res.get("covariance_error") or "") + (f"damped {float(_damp):g} (sd of near-null directions slightly low)"
-                                                  if _damp and float(_damp) > 1e-8 else ""))
+    add("covariance", "finite" if ok_cov else ("fallback" if finite and fb else "missing"),
+        "the joint's finite sd of both eyes and the rig terms", ok_cov,
+        "; ".join(x for x in (str(res.get("covariance_error") or ""),
+                              f"damped {float(_damp):g} (sd of near-null directions slightly low)"
+                              if _damp and float(_damp) > 1e-8 else "",
+                              "camera sd propagated from the bin cameras (correlations ignored)" if fb else "",
+                              f"rig sd not finite: {', '.join(bad_rig)}" if bad_rig else "") if x))
     it = int(res.get("iterations") or 0)
     add("converged", it, "< 100 iterations", 0 < it < 100 and np.isfinite(res.get("final_cost", np.nan)))
     ref = (old["NL"].get("verification") or {}).get("residuals") or {}

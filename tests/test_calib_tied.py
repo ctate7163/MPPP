@@ -195,3 +195,64 @@ def test_diagnostic_bins_merge_thin_cold_bins():
     assert set(lab) == {-14, -10, -2}                    # -14..-11 (8 images), -10..-9, then -2 and 0 together
     assert lab.count(-14) == 8 and lab.count(-10) == 10 and lab.count(-2) == 13
     assert frames[k]["bin"] == -14                       # other blocks are untouched
+
+
+def test_joint_refines_the_rig_roll_the_blocks_hold(tmp_path):
+    """0.94.5: the blocks hold the Navcam rig roll and their settings came through merge_scapes, so the joint held
+    every unit's roll and never refitted the global roll (20-24 Oct: identical to 7 digits, sd 6e-5 mdeg)."""
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    proj.settings = dict(proj.settings, navcam_rig_roll="hold", navcam_rig_yaw="hold")
+    st["D"] = st["D"] + np.array([0.0, 0.0, 3.0])                     # a roll rate the data do not have
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    assert proj2.settings["navcam_rig_roll"] == "refine" and proj2.settings["navcam_rig_yaw"] == "refine"
+    ba, g, stats = T.adjust_tied(rec2, proj2, idx, st, units, iterations=30, covariance=True, passes=2, verbose=False)
+    res = T.globals_result(st, g, ba, units)
+    roll, sd = res["rig"]["rate_mdeg_per_1000sol"]["roll"], res["rig"]["sd_rate"]["roll"]
+    assert abs(roll - float(st["D"][2])) > 1.0                         # moved off the start
+    assert 0.01 < sd < 5.0                                            # a real sd, not the 6e-5 of a held term
+    assert res["pass_costs"] and len(res["pass_costs"]) >= 2
+
+
+def test_early_offsets_kept_only_where_significant():
+    from mppp.calib import tied as T
+    em = lambda off, sd: {"offsets_px": dict(zip(T.EARLY_TERMS, off)), "sd_px": dict(zip(T.EARLY_TERMS, sd))}  # noqa
+    res = {"NL": {"early_mission": em([-0.015, -0.009, 0.207, 0.137], [0.04, 0.05, 0.05, 0.04])},
+           "NR": {"early_mission": em([0.029, 0.022, 0.293, 0.160], [0.04, 0.05, 0.05, 0.04])}}
+    held, judged = T.early_terms_to_hold(res)
+    assert judged and set(held) == {"E_NL_fx", "E_NL_fy", "E_NR_fx", "E_NR_fy"}
+    res["sd_source"] = {"NL": "propagated from the bin cameras' covariances"}
+    assert T.early_terms_to_hold(res) == ([], False)                  # not judged on the fallback sd
+
+
+def test_covariance_check_needs_the_joints_own_sd(tmp_path):
+    from mppp.calib import tied as T
+    res = {"rig": {"sd_sol0_mdeg": {"pitch": float("inf"), "yaw": float("nan"), "roll": 0.1},
+                   "sd_rate": {"pitch": float("inf"), "yaw": float("inf"), "roll": 0.08}, "sd_pitch_early": 0.4},
+           "held": {"Q0": [1], "H": [1, 2]}}
+    sd = T.rig_sd_free(res)
+    assert "Q0_yaw" not in sd and sd["D_yaw"] == float("inf") and sd["Q0_roll"] == 0.1
+
+
+def test_keypoint_scale_follows_fx_slope_with_iso(tmp_path):
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    g = T.make_ties(st, units)[1]
+    g["S_NL"][1] = 0.0                                              # a stale fy slope
+    temps = {k: v + 0.7 for k, v in idx["temps"].items()}            # each image a little off its bin's median
+    ks, _ = T.keypoint_terms(units, proj2, temps, g, iso_f=True)
+    ks0, _ = T.keypoint_terms(units, proj2, temps, g, iso_f=False)
+    nl = [int(r["image_id"]) for r in proj2.images if units["cameras"][int(r["camera_id"])]["eye"] == "NL"]
+    moved = [i for i in nl if i in ks and abs(ks[i][0] - 1.0) > 0]
+    assert moved and all(ks[i][1] == pytest.approx(ks[i][0], rel=1e-12) for i in moved)
+    assert any(ks0[i][1] == 1.0 for i in moved)
+
+
+def test_joint_points_by_stations_within_the_angle_limits(tmp_path):
+    from mppp.calib import joint as J
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    ids = J._subsample_points(rec, 200, seed=1)
+    ang, nst = J.point_geometry(rec, ids)
+    assert len(ids) == 200 and ang.min() >= J.MIN_TRI_ANGLE_DEG and ang.max() <= J.MAX_TRI_ANGLE_DEG
+    alla, alln = J.point_geometry(rec, list(rec.points3D))
+    assert nst.mean() >= alln[(alla >= 0.25) & (alla <= 60)].mean() - 1e-9    # multi-station points preferred
