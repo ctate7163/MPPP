@@ -531,8 +531,8 @@ def test_0941_tiny_sites_and_joint_commands(tmp_path, monkeypatch):
     haz = calls[0]
     assert "hazcam" in haz and "--variant" in haz and "--promote-new-only" in haz and "--min-blocks" in haz
     z110 = [c for c in calls if "110" in c][0]
-    assert sum(1 for x in z110 if str(x).startswith("seitah_overlook_tiny=")) == 1 and not any(
-        str(x).startswith("chal_rocks_tiny=") for x in z110)                       # chal rocks has no 110 mm
+    assert sum(1 for x in z110 if str(x).startswith("seitah_overlook_tiny=")) == 1 and any(
+        str(x).startswith("chal_rocks_tiny=") for x in z110)                       # 24 Oct: chal rocks with 110 mm too
     from mppp.cli import build_parser
     a = build_parser().parse_args(["calib", "zcam", "--zoom", "48", "--min-blocks", "1", "--promote-new-only"])
     assert a.min_blocks == 1 and a.promote_new_only

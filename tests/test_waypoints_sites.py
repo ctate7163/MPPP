@@ -393,3 +393,10 @@ def test_site_fixes_24_oct():
     assert k["sols"] == [[437, 459], [535, 538], [694, 707]]
     assert work_folder(Path("x"), "enchanted_lake", False, e["sols"]).name == "mars2020_sol_0556_enchanted_lake"
     assert work_folder(Path("x"), "knob_mountain_large", False, k["sols"]).name == "mars2020_sol_0437_knob_mountain_large"
+
+
+def test_chal_rocks_110mm():
+    """Christian 24 Oct: Chal Rocks' Mastcam-Z block takes the 110 mm frames too (the tiny copy mirrors it)."""
+    from mppp.waypoints.sites import load_site_table
+    t = load_site_table()["sites"]
+    assert t["chal_rocks"]["zcam"] == [34, 48, 63, 79, 110] == t["chal_rocks_tiny"]["zcam"]

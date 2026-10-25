@@ -4,6 +4,8 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- Sites (Christian, 24 Oct): Chal Rocks (and its tiny copy) take the 110 mm Mastcam-Z frames too (`zcam` 34, 48, 63, 79, 110): its Mastcam-Z block realigns on the next run.
+
 - Navcam joint (Christian, 24 Oct, from the 20 and 24 Oct joints):
   - the rig roll is refined in the joints (`tied_reconstruction`, `merge_scapes`): the blocks hold it and their settings came through, so every unit's roll was held and the global roll and roll rate were never refitted (-56.795270 mdeg and -4.933370 mdeg/1000 sol to 7 digits on 20 and 24 Oct, sd 6e-5 mdeg; the diagnostic roll profile had Q2 0.0);
   - with one relative focal slope the keypoint map scales fy by fx's slope (the ties'), not the held fy slope of the last sync; a pass that starts more than 1.5x above the last one's end gets one more pass (24 Oct: 2.54e6 after 1.82e5); the pass costs are recorded;
