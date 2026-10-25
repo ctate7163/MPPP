@@ -34,7 +34,11 @@ Stages (each logged in ``<root>\\mppp_pipeline\\<stage>.log``, the pipeline in `
  8. ``lightglue_ab``   - scripts/lightglue_ab.py on Chal Rocks tiny and Seitah Overlook tiny (24 Oct, Christian): SIFT,
                          LightGlue, LightGlue on every octave and SIFT + LightGlue again with the camera models just
                          promoted (--rerun), no tiny joint (nothing promoted) -> <WORK>/lightglue_ab.md of each
- 9. ``report``         - ``<root>\\mppp_pipeline\\REPORT.md``
+ 9. ``zcam_states``    - 0.94.6: the zcam_runs sites again as the variant ``states`` (every Mastcam-Z image its own
+                         camera, f free, no focus lines: run_zcam_states.bat), then ``mppp zcam-states`` ->
+                         camera_analysis/zcam_states_<date>/ (report.md, found_list_proposal.txt; the found list is
+                         not changed - ``--apply`` does that)
+10. ``report``         - ``<root>\\mppp_pipeline\\REPORT.md``
 
 A stage that fails is logged and the pipeline goes on (the next stage works with what there is).  Exit code 0 when
 every stage ran (whatever it found).  The pipeline before 0.93.9 (consensus passes, baseline study, the Z34-only
@@ -62,7 +66,10 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 PY = sys.executable
 STAGES = ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame", "lightglue_ab",
-          "report")
+          "zcam_states", "report")
+# 0.94.6 (Christian, 25 Oct): the states run - the Mastcam-Z sites again as the variant "states", one camera per image
+# with its own focal length (run_zcam_states.bat), then mppp zcam-states: which frames are low, the found-list proposal
+ZCAM_STATES_SETS = ("ZCAM_BIN_BY=image", "ZCAM_HOLD_F_IMAGES=0", "ZCAM_BIN_REFINE=focal", "ZCAM_FOCUS_LINE=false")
 # the stage set of the state file (0.94.4: ecam stages).  Not changed for the rover_frame stage (added 23 Oct during
 # the weekend run): a state of this tag simply lacks it, so a rerun does rover_frame and the report only
 STATE_TAG = "v0944"
@@ -313,6 +320,28 @@ class Pipeline:
             ok = ok and rc == 0
         return ("done" if ok or self.a.dry_run else "failed"), "; ".join(notes)
 
+    def s_zcam_states(self):
+        """The states run over the zcam_runs sites, then the per-image states and the found-list proposal."""
+        if getattr(self.a, "no_zcam_states", False):
+            return "skipped", "--no-zcam-states"
+        names = self.zcam_sites()
+        if not names:
+            return "failed", f"no sites in {self.zcam_group} / {ZCAM34_JOINT}"
+        sets = []
+        for x in ZCAM_STATES_SETS:
+            sets += ["--set", x]
+        st, note = self._sites("zcam_states", ["--sites", *names, "--variant", "states", *sets], True)
+        out = self._out("zcam_states", "report.md")
+        self.state.setdefault("zcam_states", {})["study"] = str(out)
+        self.save()
+        rc = self._mppp("zcam_states", out, ["zcam-states", "--root", self.root, "--variant", "states", "--out", out],
+                        timeout_h=2)
+        if self.a.dry_run:
+            return "done", "dry run"
+        if not (out / "report.md").is_file():
+            return "failed", f"{note}; no states report (exit {rc}; see zcam_states.log)"
+        return "done", f"{note}; {out / 'report.md'} (proposal: found_list_proposal.txt, not applied)"
+
     def s_report(self):
         from mppp.calib.models import describe
         lines = [f"# MPPP {__import__('mppp').__version__} pipeline report ({datetime.datetime.now():%Y-%m-%d %H:%M})", "",
@@ -440,6 +469,7 @@ def main(argv=None) -> int:
     ap.add_argument("--zcam-hazcam-fit", action="store_true",
                     help="zcam_joints also fits the Hazcams over the Mastcam-Z blocks (off since 0.94.4)")
     ap.add_argument("--no-nz", action="store_true", help="zcam_joints without the Navcam + Mastcam-Z check")
+    ap.add_argument("--no-zcam-states", action="store_true", help="skip the zcam_states stage (the states run)")
     ap.add_argument("--zooms", type=int, nargs="*", default=list(ZOOMS), help="the Mastcam-Z joints (default all)")
     ap.add_argument("--zcam-group", default=None, help="the Mastcam-Z sites (default zcam_consensus)")
     ap.add_argument("--n-boot", type=int, default=50, help="error_analysis: bootstrap rounds of the gate fit")

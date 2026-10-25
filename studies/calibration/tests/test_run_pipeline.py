@@ -169,7 +169,7 @@ def test_baseline_sites_qualify_from_the_waypoint_fields():
     m = _script("navcam_baseline_study")
     keep, left = m.qualifying_sites()
     assert keep and all(s in ("van_zyl_overlook_huge", "chal_rocks_large", "seitah_north_large", "threeforks_large",
-                              "belva_crater_large", "bell_island_large", "taylorfjellet_huge", "origny_large")
+                              "belva_crater_large", "bell_island_large", "taylorfjellet_large", "origny_large")
                         for s in keep)
     t = {"sites": {"a": {"n_waypoints": 5, "max_waypoint_separation_m": 31.0},
                    "b": {"n_waypoints": 4, "max_waypoint_separation_m": 90.0},

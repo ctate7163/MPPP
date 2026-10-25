@@ -8,7 +8,7 @@ REM camera of its own, its focal length free (ZCAM_BIN_BY=image, ZCAM_HOLD_F_IMA
 REM no focus lines (ZCAM_FOCUS_LINE=false), so that each image's f / label f is its own.  The low-state list and the
 REM found list (%MPPP_SCAPES%\zcam_low_backlash_found.csv) give only the starting focal lengths.
 REM
-REM Then zcam_states_report.bat: "mppp zcam-states --variant states" - per block, eye and zoom the high-state line
+REM Then "run_zcam_states.bat report": "mppp zcam-states --variant states" - per block, eye and zoom the high-state line
 REM in focus count and the state gap, each image low / high / undecided, each sequence's pattern in clock order
 REM (sol 121 ZCAM08114: LHLHL), and the proposal for the found list (additions; "-" lines for listed frames found
 REM high; the cases to review) in %MPPP_SCAPES%\camera_analysis\zcam_states_<date>\.  Nothing is written to the
@@ -16,6 +16,7 @@ REM found list until you run:  python -m mppp zcam-states --root %MPPP_SCAPES% -
 REM
 REM   run_zcam_states.bat                      the ten weekend Mastcam-Z sites (below)
 REM   set MPPP_STATES_SITES=chal_rocks rockytop   other sites (any with a "zcam" list in sites.json)
+REM   run_zcam_states.bat report [--apply]     only the report (after the run; --apply writes the found list)
 REM   set MPPP_THEN=none                        align only, no report
 REM Do not start it while another run_sites batch is running (run_sites refuses: one batch at a time).
 REM ======================================================================================================
@@ -35,7 +36,16 @@ call "%MPPP_WIN%\mppp_env.bat" || ( pause & exit /b 1 )
 if not defined MPPP_SCAPES if exist "D:\scapes" set "MPPP_SCAPES=D:\scapes"
 if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx MPPP_SCAPES D:\scapes & pause & exit /b 1)
 set "ROOT=%MPPP_SCAPES%"
-if not defined MPPP_THEN set "MPPP_THEN=zcam_states_report.bat"
+if /i "%~1"=="report" (
+  shift
+  python -m mppp zcam-states --root "%ROOT%" --variant states %2 %3 %4
+  if not defined MPPP_NOPAUSE_END pause
+  exit /b
+)
+if not defined MPPP_THEN (
+  set "MPPP_THEN=run_zcam_states.bat"
+  set "MPPP_THEN_ARGS=report"
+)
 if /i "%MPPP_THEN%"=="none" set "MPPP_THEN="
 start "MPPP Mastcam-Z states - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" --sites %MPPP_STATES_SITES% --zcam --variant states --jobs 2 %SETS% %*
 echo MPPP Mastcam-Z states run started in a minimised window (variant "states"), then %MPPP_THEN%.

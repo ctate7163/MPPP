@@ -250,7 +250,7 @@ def test_shipped_sites_v0p75():
     assert "olifants" not in g["ecam_consensus"] and "cheyava_falls" in g["ecam_consensus"]
     assert "threeforks_large" in g["ecam_consensus"] and "threeforks_north" not in g["ecam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
     assert "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
-    assert len(g["ecam_consensus"]) == 29 and "seitah_overlook" in g["ecam_consensus"] and {"plateau_point", "vingeanne", "hans_amundsen_workspace", "pico_turquino", "hippo_pools"} <= set(g["ecam_consensus"]) and "navcam_consensus_v0p82" not in g
+    assert len(g["ecam_consensus"]) == 30 and "seitah_overlook" in g["ecam_consensus"] and {"plateau_point", "vingeanne", "hans_amundsen_workspace", "pico_turquino", "hippo_pools"} <= set(g["ecam_consensus"]) and "navcam_consensus_v0p82" not in g
     assert len(g["zcam34_consensus"]) == 12 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:2] == ["chal_rocks_large", "rochette"]   # 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back (12 blocks)
 
 
@@ -347,7 +347,7 @@ def test_sites_19_oct_afternoon():
     assert S["van_zyl_overlook_huge"]["sols"] == [[15, 99], [361, 378]]
     nc = set(G["ecam_consensus"])
     assert {"seitah_north_large", "marble_mountain", "hippo_pools", "cheyava_falls", "bunsen_peak", "tuxedo_park",
-            "belva_crater_large", "oeb_landing_site", "van_zyl_overlook_huge", "origny_large"} <= nc and len(nc) == 29 and "knob_mountain_large" in nc
+            "belva_crater_large", "oeb_landing_site", "van_zyl_overlook_huge", "origny_large"} <= nc and len(nc) == 30 and "knob_mountain_large" in nc
     assert "seitah_north_large" in G["navcam_baseline"] and "van_zyl_overlook_huge" in G["navcam_baseline"]
     assert not any(s in ("butler_landing_large", "van_zyl_overlook_large") for g in G.values() for s in g)
 
@@ -396,7 +396,12 @@ def test_site_fixes_24_oct():
 
 
 def test_chal_rocks_110mm():
-    """Christian 24 Oct: Chal Rocks' Mastcam-Z block takes the 110 mm frames too (the tiny copy mirrors it)."""
+    """Christian 24 Oct: Chal Rocks' Mastcam-Z block took the 110 mm frames too; 25 Oct: left out again, with
+    Taylorfjellet's, so that the blocks run faster (the tiny copy mirrors Chal Rocks); Taylorfjellet Huge is
+    Taylorfjellet Large and Groloy is in ecam_consensus."""
     from mppp.waypoints.sites import load_site_table
-    t = load_site_table()["sites"]
-    assert t["chal_rocks"]["zcam"] == [34, 48, 63, 79, 110] == t["chal_rocks_tiny"]["zcam"]
+    d = load_site_table()
+    t = d["sites"]
+    assert t["chal_rocks"]["zcam"] == [34, 48, 63, 79] == t["chal_rocks_tiny"]["zcam"] == t["taylorfjellet"]["zcam"]
+    assert "taylorfjellet_huge" not in t and t["taylorfjellet_large"]["sols"] == [[1601, 1673]]
+    assert "groloy" in d["groups"]["ecam_consensus"] and "taylorfjellet_large" in d["groups"]["ecam_consensus"]

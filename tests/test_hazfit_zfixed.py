@@ -392,7 +392,7 @@ def test_error_analysis_batch_and_pipeline_report(tmp_path, monkeypatch):
     md = rp.error_report(res)
     assert md.startswith("# Error analysis on the SfM points")
     assert rp.STAGES == ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame",
-                         "lightglue_ab", "report")
+                         "lightglue_ab", "zcam_states", "report")
 
 
 def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
@@ -531,8 +531,8 @@ def test_0941_tiny_sites_and_joint_commands(tmp_path, monkeypatch):
     haz = calls[0]
     assert "hazcam" in haz and "--variant" in haz and "--promote-new-only" in haz and "--min-blocks" in haz
     z110 = [c for c in calls if "110" in c][0]
-    assert sum(1 for x in z110 if str(x).startswith("seitah_overlook_tiny=")) == 1 and any(
-        str(x).startswith("chal_rocks_tiny=") for x in z110)                       # 24 Oct: chal rocks with 110 mm too
+    assert sum(1 for x in z110 if str(x).startswith("seitah_overlook_tiny=")) == 1 and not any(
+        str(x).startswith("chal_rocks_tiny=") for x in z110)       # 25 Oct: chal rocks without 110 mm again (faster)
     from mppp.cli import build_parser
     a = build_parser().parse_args(["calib", "zcam", "--zoom", "48", "--min-blocks", "1", "--promote-new-only"])
     assert a.min_blocks == 1 and a.promote_new_only
