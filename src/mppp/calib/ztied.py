@@ -52,6 +52,13 @@ NG = len(GLOBAL_TERMS)
 MIN_MIXED_EXPOSURES = 5
 LOW_LIST_CHECK = True                  # 0.93.7: a low-state camera enters only when its frames are on the shipped list
 REGULAR_RATIO_RANGE = (1.004, 1.016)   # 0.93.5: backlash / regular f of a fitted regular state (the states ~0.95 % apart)
+# 0.94.6 (Christian, 24 Oct): the high / low ratio may vary by block or sol - within a block the low frames give
+# 1.0131-1.0153 against the block's high-state line, Three Forks North 1.010, Belva Crater 1.017.  Each group of
+# low-state bins ("block": a block, "sol": a block's sol) gets its own offset on a_fx_regular (fy follows by the
+# aspect), drawn to 0 with an sd of REGULAR_RATIO_GROUP_SD x f: the global regular ratio is then the groups' mean
+# and a group that disagrees no longer pulls the high state's line or the distortion.  "global": one ratio (0.94.5)
+REGULAR_RATIO_BY = "block"
+REGULAR_RATIO_GROUP_SD = 0.003
 TIE_SIGMA_Z = {"f": 1e-3, "k": 1e-7, "p": 1e-8, "cy": 1e-3}       # px; unitless - the ties are effectively exact
 NAV_POINTS_PER_BLOCK = 8000
 Z_POINTS_PER_BLOCK = 8000
@@ -181,6 +188,12 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
     proj.settings["zcam_virtual_rig"] = {f"Z{zoom:03d}": {"R_sensor_from_ref": sg["rig"]["R"].tolist(),
                                                           "t_sensor_from_ref": sg["rig"]["t"].tolist(), "hold": False}}
     zcams = set(zunits)
+    sols_of: Dict[int, List[float]] = {}
+    for r in proj.images:
+        if int(r.get("camera_id", -1)) in zunits and r.get("sol") is not None:
+            sols_of.setdefault(int(r["camera_id"]), []).append(float(r["sol"]))
+    for cid, u in zunits.items():                # 0.94.6: the bin's sol (median of its images) for ratio_by "sol"
+        u["sol"] = int(round(float(np.median(sols_of[cid])))) if sols_of.get(cid) else None
     sg["mixed"] = mixed_exposures(proj.images, zunits)
     sg["split_cameras_left_out"] = split_out
     sg["low_cameras_not_on_list"] = off_list
@@ -220,14 +233,45 @@ def _navcam_globals(st: Dict[str, Any]) -> Dict[str, np.ndarray]:
     return {"G_NL": st["G"]["NL"], "G_NR": st["G"]["NR"], "S_NL": st["S"]["NL"], "S_NR": st["S"]["NR"]}
 
 
+def ratio_group(u: Dict[str, Any], by: Optional[str] = None) -> Optional[str]:
+    """The group of a low-state bin whose high / low ratio is its own (:data:`REGULAR_RATIO_BY`): the block, or the
+    block and sol; None for "global" (one ratio per eye)."""
+    by = REGULAR_RATIO_BY if by is None else by
+    if by == "global":
+        return None
+    if by == "sol":
+        return f"{u['scape']}|sol{u.get('sol')}"
+    return str(u["scape"])
+
+
+def ratio_groups(zunits: Dict[int, Dict[str, Any]], by: Optional[str] = None) -> Dict[Tuple[str, str], List[int]]:
+    """{(eye group, ratio group): [low-state bin camera ids]} - every eye with two or more groups (one group: its
+    ratio is the eye's own, no offset)."""
+    out: Dict[Tuple[str, str], List[int]] = {}
+    for cid, u in zunits.items():
+        k = ratio_group(u, by) if u["state"] == "regular" else None
+        if k is not None:
+            out.setdefault((u["group"], k), []).append(int(cid))
+    n_eye: Dict[str, int] = {}
+    for eye, _ in out:
+        n_eye[eye] = n_eye.get(eye, 0) + 1
+    return {k: v for k, v in out.items() if n_eye[k[0]] >= 2}
+
+
 def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool = True,
                hold: Union[Sequence[str], Dict[str, Sequence[str]]] = ()):
     """The ``extra_residuals`` hook tying each Mastcam-Z bin camera to its eye's global terms (``tie`` False: no
-    ties, the globals out of the problem - the diagnostic pass).  Returns (hook, g) with g {eye group: array}."""
+    ties, the globals out of the problem - the diagnostic pass).  Returns (hook, g) with g {eye group: array}; the
+    hook's ``ratio_offsets`` {(eye, group): array(1)} are the low-state groups' offsets on a_fx_regular (0.94.6,
+    ``sg["ratio_by"]``, default :data:`REGULAR_RATIO_BY`)."""
     import pyceres
     LinearTie = T._linear_tie_class()
     g = {k: v["G"].copy() for k, v in sg["eyes"].items()}
     keep: List[np.ndarray] = []
+    by = sg.get("ratio_by") or REGULAR_RATIO_BY
+    rgroups = ratio_groups(zunits, by) if tie else {}
+    dreg = {k: np.zeros(1) for k in rgroups}
+    unit_group = {cid: k for k, cids in rgroups.items() for cid in cids}
 
     def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
         n = 0
@@ -243,16 +287,21 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 ratio = float(sg["eyes"][eye]["ratio"]) if reg else 1.0
                 rows, sig = [], []
                 G0 = sg["eyes"][eye]["G"]
+                rk = unit_group.get(int(cid))
+                nx = 1 if rk is not None else 0              # 0.94.6: the group's own offset on a_fx_regular
                 for pi, gi in ((_FX, 2 if reg else 0), (_FY, 2 if reg else 1)):
-                    a = np.zeros(12 + NG); a[pi] = 1.0; a[12 + 4] = -u["dF"] / ratio
+                    a = np.zeros(12 + NG + nx); a[pi] = 1.0; a[12 + 4] = -u["dF"] / ratio
                     # 0.93.5: the regular state scales f, not the pixel aspect - its fy is a_fx_regular x the
                     # backlash aspect at the start (22 Oct Z34: a free a_fy_regular gave a regular fy / fx of 0.984)
                     a[12 + gi] = -(float(G0[1] / G0[0]) if (reg and pi == _FY) else 1.0)
+                    if nx:
+                        a[12 + NG] = -(float(G0[1] / G0[0]) if pi == _FY else 1.0)
                     rows.append(a); sig.append(TIE_SIGMA_Z["f"])
                 for pi, gi, s_ in ((_K1, 5, "k"), (_K2, 6, "k"), (_P1, 7, "p"), (_P2, 8, "p")):
-                    a = np.zeros(12 + NG); a[pi] = 1.0; a[12 + gi] = -1.0
+                    a = np.zeros(12 + NG + nx); a[pi] = 1.0; a[12 + gi] = -1.0
                     rows.append(a); sig.append(TIE_SIGMA_Z[s_])
-                prob.add_residual_block(LinearTie(np.array(rows), np.array(sig), [12, NG]), None, [blk, g[eye]])
+                prob.add_residual_block(LinearTie(np.array(rows), np.array(sig), [12, NG] + [1] * nx), None,
+                                        [blk, g[eye]] + ([dreg[rk]] if nx else []))
                 if reg:                                      # 0.93.2: cx = pin + d_cx, cy = pin + b_cy dF + d_cy
                     c0 = np.array([u["c_cx"], u["c_cy"]], float)
                     keep.append(c0)
@@ -270,6 +319,10 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                                             [blk, g[eye], c0])
                     prob.set_parameter_block_constant(c0)
                 n += 1
+        for (eye, gk), d in dreg.items():                # the groups' offsets drawn to 0 (the eye's ratio their mean)
+            if prob.has_parameter_block(d):
+                sd_px = REGULAR_RATIO_GROUP_SD * float(sg["eyes"][eye]["G"][2])
+                prob.add_residual_block(LinearTie(np.ones((1, 1)), np.array([sd_px]), [1]), None, [d])
         held: Dict[str, List[int]] = {}
         for eye, arr in g.items():
             if not prob.has_parameter_block(arr):
@@ -289,10 +342,12 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 prob.set_parameter_block_constant(arr)
             elif ix:
                 prob.set_manifold(arr, pyceres.SubsetManifold(len(arr), sorted(ix)))
-        return {"cov_blocks": {k: v for k, v in g.items() if prob.has_parameter_block(v)
-                               and not prob.is_parameter_block_constant(v)}, "ties": {"zcam_cameras": n},
-                "held": held}
+        cb = {k: v for k, v in g.items() if prob.has_parameter_block(v) and not prob.is_parameter_block_constant(v)}
+        cb.update({f"dreg|{eye}|{gk}": d for (eye, gk), d in dreg.items() if prob.has_parameter_block(d)})
+        return {"cov_blocks": cb, "ties": {"zcam_cameras": n}, "held": held}
 
+    hook.ratio_offsets = dreg
+    hook.ratio_by = by
     return hook, g
 
 
@@ -388,6 +443,8 @@ def adjust_z(rec, proj, idx, st, units, zunits, sg, iterations: int = 100, covar
                            refine_zcam_rig=refine_zcam_rig, extra_residuals=hook)
         if verbose:
             log.info(f"  pass {p_ + 1}: {ba['brief'][:160]}")
+    ba["ratio_offsets"] = {k: float(v[0]) for k, v in hook.ratio_offsets.items()}
+    ba["ratio_by"] = hook.ratio_by
     stats = J.residual_stats(rec, proj, keypoint_scale=ks, keypoint_map=kmap)
     return ba, g, stats
 
@@ -434,7 +491,32 @@ def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
                             "mixed_exposures": int((sg.get("mixed") or {}).get(eye, 0)),
                             "bins": sum(1 for u in zunits.values() if u["group"] == eye),
                             "regular_bins": sum(1 for u in zunits.values() if u["group"] == eye and u["state"] == "regular")}
+    out["regular_ratio_by"] = ba.get("ratio_by") or REGULAR_RATIO_BY
+    out["regular_ratio_groups"] = ratio_group_rows(out, ba, zunits)
     return out
+
+
+def ratio_group_rows(res: Dict[str, Any], ba: Dict[str, Any], zunits: Dict[int, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """0.94.6: per eye and low-state group the high / low ratio (a_fx_backlash / (a_fx_regular + offset)), its sd
+    and z against the eye's ratio, the group's bins and sols."""
+    cov = ba.get("covariance") or {}
+    by = ba.get("ratio_by") or REGULAR_RATIO_BY
+    rows = []
+    for (eye, gk), d in sorted((ba.get("ratio_offsets") or {}).items()):
+        e = res["eyes"].get(eye)
+        if e is None:
+            continue
+        tm = e["terms"]
+        sd = T._sd(cov, f"dreg|{eye}|{gk}", 1)
+        s_px = float(sd[0]) if sd is not None and np.isfinite(sd[0]) else None
+        a_r = float(tm["a_fx_regular"])
+        ratio, ratio0 = float(tm["a_fx_backlash"]) / (a_r + d), float(tm["a_fx_backlash"]) / a_r
+        sd_ratio = (ratio * s_px / (a_r + d)) if s_px else None
+        us = [u for u in zunits.values() if u["group"] == eye and u["state"] == "regular" and ratio_group(u, by) == gk]
+        rows.append({"eye": eye, "group": gk, "offset_px": float(d), "sd_px": s_px, "ratio": ratio,
+                     "sd_ratio": sd_ratio, "eye_ratio": ratio0, "z": (float(d) / s_px) if s_px else None,
+                     "bins": len(us), "sols": sorted({u.get("sol") for u in us if u.get("sol") is not None})})
+    return rows
 
 
 def rig_result(proj, sg, zoom: int = ZOOM) -> Dict[str, Any]:
@@ -565,9 +647,11 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
                zoom: int = ZOOM, nav_points: int = NAV_POINTS_PER_BLOCK, z_points: int = Z_POINTS_PER_BLOCK,
                iterations: int = 100, passes: int = 2, diagnostics: bool = True, verbose: bool = True,
                scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None,
-               k_tests: bool = True) -> Dict[str, Any]:
+               k_tests: bool = True, ratio_by: Optional[str] = None) -> Dict[str, Any]:
     """The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the distortion tests (:func:`distortion_tests`,
-    ``k_tests``), the diagnostic pass.  ``model``: the focus model to start from (default: the one in use)."""
+    ``k_tests``), the diagnostic pass.  ``model``: the focus model to start from (default: the one in use);
+    ``ratio_by``: "global" | "block" | "sol", the low-state groups with their own high / low ratio (default
+    :data:`REGULAR_RATIO_BY`)."""
     from ..sfm.project import zcam_focus_model_path
     start_from_blocks = False
     if model is None:
@@ -589,6 +673,9 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
                  f"cameras (held) ({time.time() - t:.0f} s)")
     if not zunits:
         raise ValueError(f"no Mastcam-Z {zoom} mm bins in the blocks")
+    sg["ratio_by"] = ratio_by or REGULAR_RATIO_BY
+    if ratio_by not in (None, "global", "block", "sol"):
+        raise ValueError(f"ratio_by {ratio_by!r}: global, block or sol")
     fixed = fixed_globals(sg)                       # 0.93: the zoom's fixed distortion terms, held
     hold = {e: sorted(v) for e, v in fixed.items()}
     if verbose and fixed:
@@ -819,6 +906,11 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    + ("" if "d_cx_regular" in e.get("held", []) else
                       f"; low-state principal point {f('d_cx_regular')}, {f('d_cy_regular')} px from the high "
                       f"state's ({e.get('mixed_exposures', 0)} exposures with the other eye in the high state)"))
+    for r_ in res.get("regular_ratio_groups") or []:
+        out.append(f"{r_['eye']} high / low ratio of {r_['group']} ({r_['bins']} low-state bins, sols "
+                   f"{', '.join(map(str, r_['sols'])) or '-'}): {r_['ratio']:.4f}"
+                   + (f" +- {r_['sd_ratio']:.4f}" if r_.get("sd_ratio") else "")
+                   + f" (the eye's {r_['eye_ratio']:.4f}" + (f", z {r_['z']:+.1f})" if r_.get("z") is not None else ")"))
     if res.get("low_cameras_not_on_list"):
         out.append(f"left out: {len(res['low_cameras_not_on_list'])} low-state cameras with frames not on the shipped "
                    f"low-state list (the found list)")
@@ -912,9 +1004,18 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
         gm["aspect"] = float(tm["a_fy_backlash"] / tm["a_fx_backlash"])
         gm["reference_focus"] = ref
         gm["regular_ratio"] = ratio
+        grp = [x for x in res.get("regular_ratio_groups") or [] if x["eye"] == eye]
+        gm.pop("regular_ratio_groups", None)
+        if grp:                                       # 0.94.6: the groups' own ratios, for the record
+            gm["regular_ratio_groups"] = {"by": res.get("regular_ratio_by"),
+                                          "groups": {x["group"]: {k: x[k] for k in ("ratio", "sd_ratio", "bins", "sols")}
+                                                     for x in grp},
+                                          "note": "regular_ratio is the groups' mean; each low-state group's own ratio "
+                                                  "(offset drawn to 0 with sd %.1f %%)" % (100 * REGULAR_RATIO_GROUP_SD)}
         if single:                                    # 0.93.5: 110 mm has one state - no regular state at all
             gm["lines"].pop("regular", None)
-            for k_ in ("regular_ratio", "regular_pp_offset_px", "regular_pp_offset", "regular_ratio_note"):
+            for k_ in ("regular_ratio", "regular_pp_offset_px", "regular_pp_offset", "regular_ratio_note",
+                       "regular_ratio_groups"):
                 gm.pop(k_, None)
             gm["focus_state"] = "single"
             reg = {}

@@ -158,6 +158,8 @@ def build_parser() -> argparse.ArgumentParser:
                    "(left out by default)")
     p.add_argument("--no-k-tests", action="store_true", help="zcam: skip the k1/k2 likelihood-ratio tests (2 more "
                    "adjustments)")
+    p.add_argument("--zcam-ratio-by", choices=("block", "sol", "global"), default=None,
+                   help="zcam: the low-state groups with their own high / low ratio (default block; global: one per eye)")
     p.add_argument("--promote-if-ok", action="store_true", help="promote the candidate when every check passes")
     p.add_argument("--no-promote", action="store_true", help="never promote (overrides --promote-if-ok)")
     p.add_argument("--note", default="", help="promotion note")
@@ -614,7 +616,7 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     log.info("calib zcam: %d blocks -> %s", len(blocks), out)
     res = Z.fit_zjoint(blocks, zoom=a.zoom, nav_points=a.points or Z.NAV_POINTS_PER_BLOCK,
                        z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, diagnostics=not a.no_diagnostics,
-                       k_tests=not a.no_k_tests)
+                       k_tests=not a.no_k_tests, ratio_by=getattr(a, "zcam_ratio_by", None))
     from .calib import models_fingerprint
     from .pipeline import run_done
     res["models_fingerprint"] = models_fingerprint()

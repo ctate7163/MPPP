@@ -107,6 +107,8 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None):
             if r["_reg"]:
                 p[2] += reg["offset"][0]
                 p[3] += reg["offset"][1]
+                if reg.get("ratio"):                # 0.94.6: this block's own high / low ratio
+                    p[:2] *= float(model["cameras"][r["camera_group"]]["regular_ratio"]) / float(reg["ratio"])
             rec.add_camera(pycolmap.Camera(camera_id=nid, model="FULL_OPENCV", width=ZW, height=ZH, params=p))
             proj.cameras[key] = {"model": "FULL_OPENCV", "params": p.tolist(), "width": ZW, "height": ZH,
                                  "group": r["camera_group"], "focus_count_median": float(r["focus_count"]),
@@ -358,3 +360,42 @@ def test_zcam_joint_gives_the_regular_state_its_own_principal_point(tmp_path, mo
     monkeypatch.setattr(Z, "MIN_MIXED_EXPOSURES", 10 ** 6)
     res0, rig_err0 = run(truth)
     assert "d_cx_regular" in res0["eyes"]["ZL034"]["held"] and rig_err0 > 3 * max(rig_err, 1.0)
+
+
+def test_zcam_joint_high_low_ratio_by_block(tmp_path, monkeypatch):
+    """0.94.6 (Christian, 24 Oct): the high / low ratio can vary by block - two blocks with ZL ratios 1.007 and
+    1.011 (truth): with ratio_by "block" each block's ratio is recovered and the eye's is their mean; "global" fits
+    one ratio between them."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    monkeypatch.setattr(Z, "LOW_LIST_CHECK", False)
+    rng = np.random.default_rng(7)
+    truth = _truth_model()
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500, reg={"eye": "L", "F": 950.0, "offset": (0, 0),
+                                                                         "ratio": 1.007})
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900, reg={"eye": "L", "F": 950.0, "offset": (0, 0),
+                                                                   "ratio": 1.011})
+    st = _navcam_law(cams, rigT)
+
+    def run(by):
+        return Z.fit_zjoint({}, model=copy.deepcopy(truth), scapes=[copy.deepcopy(a), copy.deepcopy(b)], st=st,
+                            nav_points=None, z_points=None, iterations=60, passes=2, verbose=False,
+                            diagnostics=False, k_tests=False, ratio_by=by)
+
+    res = run("block")
+    g = {r["group"]: r for r in res["regular_ratio_groups"]}
+    assert set(g) == {"blk_a", "blk_b"} and res["regular_ratio_by"] == "block"
+    assert g["blk_a"]["ratio"] == pytest.approx(1.007, abs=3e-4) and g["blk_b"]["ratio"] == pytest.approx(1.011, abs=3e-4)
+    assert g["blk_a"]["sd_ratio"] and g["blk_a"]["sd_ratio"] < 1e-3 and g["blk_a"]["sols"] == [500]
+    t = res["eyes"]["ZL034"]["terms"]
+    assert t["a_fx_backlash"] / t["a_fx_regular"] == pytest.approx(1.009, abs=4e-4)        # the groups' mean
+    assert any("high / low ratio of blk_a" in x for x in Z.describe(res))
+    cand = Z.candidate_model(res, truth)
+    assert set(cand["cameras"]["ZL034"]["regular_ratio_groups"]["groups"]) == {"blk_a", "blk_b"}
+    assert "regular_ratio_groups" not in cand["cameras"]["ZR034"]        # ZR: no low-state bins
+    r0 = run("global")
+    assert r0["regular_ratio_groups"] == []
+    t0 = r0["eyes"]["ZL034"]["terms"]
+    assert 1.007 < t0["a_fx_backlash"] / t0["a_fx_regular"] < 1.011
+    assert Z.ratio_group({"scape": "x", "sol": 91}, "sol") == "x|sol91" and Z.ratio_group({"scape": "x"}, "global") is None
