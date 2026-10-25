@@ -281,6 +281,7 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
 
     def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
         n = 0
+        tie_ids = []                                         # 0.94.6: for the exact-tie covariance
         has_reg = {k: False for k in g}
         if tie:
             for cid, u in zunits.items():
@@ -306,23 +307,23 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 for pi, gi, s_ in ((_K1, 5, "k"), (_K2, 6, "k"), (_P1, 7, "p"), (_P2, 8, "p")):
                     a = np.zeros(12 + NG + nx); a[pi] = 1.0; a[12 + gi] = -1.0
                     rows.append(a); sig.append(TIE_SIGMA_Z[s_])
-                prob.add_residual_block(LinearTie(np.array(rows), np.array(sig), [12, NG] + [1] * nx), None,
-                                        [blk, g[eye]] + ([dreg[rk]] if nx else []))
+                tie_ids.append(prob.add_residual_block(LinearTie(np.array(rows), np.array(sig), [12, NG] + [1] * nx),
+                                                       None, [blk, g[eye]] + ([dreg[rk]] if nx else [])))
                 if reg:                                      # 0.93.2: cx = pin + d_cx, cy = pin + b_cy dF + d_cy
                     c0 = np.array([u["c_cx"], u["c_cy"]], float)
                     keep.append(c0)
                     a = np.zeros((2, 12 + NG + 2))
                     a[0, _CX] = 1.0; a[0, 12 + 10] = -1.0; a[0, 12 + NG] = -1.0
                     a[1, _CY] = 1.0; a[1, 12 + 9] = -u["dF"]; a[1, 12 + 11] = -1.0; a[1, 12 + NG + 1] = -1.0
-                    prob.add_residual_block(LinearTie(a, np.array([TIE_SIGMA_Z["cy"]] * 2), [12, NG, 2]), None,
-                                            [blk, g[eye], c0])
+                    tie_ids.append(prob.add_residual_block(LinearTie(a, np.array([TIE_SIGMA_Z["cy"]] * 2), [12, NG, 2]),
+                                                           None, [blk, g[eye], c0]))
                     prob.set_parameter_block_constant(c0)
                 elif eye.startswith("ZR"):                   # cy = its pin + b_cy (focus - ref)
                     c0 = np.array([u["c_cy"]], float)
                     keep.append(c0)
                     a = np.zeros((1, 12 + NG + 1)); a[0, _CY] = 1.0; a[0, 12 + 9] = -u["dF"]; a[0, 12 + NG] = -1.0
-                    prob.add_residual_block(LinearTie(a, np.array([TIE_SIGMA_Z["cy"]]), [12, NG, 1]), None,
-                                            [blk, g[eye], c0])
+                    tie_ids.append(prob.add_residual_block(LinearTie(a, np.array([TIE_SIGMA_Z["cy"]]), [12, NG, 1]),
+                                                           None, [blk, g[eye], c0]))
                     prob.set_parameter_block_constant(c0)
                 n += 1
         for (eye, gk), d in dreg.items():                # the groups' offsets drawn to 0 (the eye's ratio their mean)
@@ -350,7 +351,8 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 prob.set_manifold(arr, pyceres.SubsetManifold(len(arr), sorted(ix)))
         cb = {k: v for k, v in g.items() if prob.has_parameter_block(v) and not prob.is_parameter_block_constant(v)}
         cb.update({f"dreg|{eye}|{gk}": d for (eye, gk), d in dreg.items() if prob.has_parameter_block(d)})
-        return {"cov_blocks": cb, "ties": {"zcam_cameras": n}, "held": held}
+        return {"cov_blocks": cb, "ties": {"zcam_cameras": n}, "held": held,
+                "tie_ids": tie_ids if T.EXACT_TIE_COVARIANCE else []}
 
     hook.ratio_offsets = dreg
     hook.ratio_by = by
@@ -484,7 +486,9 @@ def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
     """The global terms per eye with their sd (the problem's covariance of the global arrays)."""
     cov = ba.get("covariance") or {}
     held = (ba.get("extra") or {}).get("held") or {}
-    out: Dict[str, Any] = {"covariance_error": cov.get("error"), "eyes": {}}
+    out: Dict[str, Any] = {"covariance_error": cov.get("error"), "eyes": {},
+                           "covariance_method": cov.get("extra_method") or "colmap",     # 0.94.6
+                           "covariance_exact": {k: v for k, v in (cov.get("extra_exact") or {}).items() if k != "full"}}
     for eye, arr in g.items():
         sd = T._sd(cov, eye, len(arr), held.get(eye, ()))
         e = sg["eyes"][eye]

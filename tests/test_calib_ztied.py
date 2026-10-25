@@ -386,6 +386,7 @@ def test_zcam_joint_high_low_ratio_by_block(tmp_path, monkeypatch):
     res = run("block")
     g = {r["group"]: r for r in res["regular_ratio_groups"]}
     assert set(g) == {"blk_a", "blk_b"} and res["regular_ratio_by"] == "block"
+    assert res["covariance_method"].startswith("exact ties"), res.get("covariance_exact")    # 0.94.6
     assert g["blk_a"]["ratio"] == pytest.approx(1.007, abs=3e-4) and g["blk_b"]["ratio"] == pytest.approx(1.011, abs=3e-4)
     assert g["blk_a"]["sd_ratio"] and g["blk_a"]["sd_ratio"] < 1e-3 and g["blk_a"]["sols"] == [500]
     t = res["eyes"]["ZL034"]["terms"]

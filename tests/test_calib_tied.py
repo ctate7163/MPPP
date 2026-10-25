@@ -256,3 +256,38 @@ def test_joint_points_by_stations_within_the_angle_limits(tmp_path):
     assert len(ids) == 200 and ang.min() >= J.MIN_TRI_ANGLE_DEG and ang.max() <= J.MAX_TRI_ANGLE_DEG
     alla, alln = J.point_geometry(rec, list(rec.points3D))
     assert nst.mean() >= alln[(alla >= 0.25) & (alla <= 60)].mean() - 1e-9    # multi-station points preferred
+
+
+def test_exact_tie_covariance_agrees_with_colmap_and_reports_correlations(tmp_path, monkeypatch):
+    """0.94.6 (Christian, 25 Oct: the 24/25 Oct joints' global sd came out infinite): the covariance of the global
+    terms with the ties eliminated exactly (mppp.calib.tiecov) agrees with COLMAP's estimator where that works (one
+    small block, a hinge, four sols), does not depend on the tie sigmas, and the log says when the sd are unusable."""
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    for r in proj.images:                                     # four sols, two before the knot: the hinge is free
+        k = int(r["sclk_key"][:10])
+        r["sol"] = (100 if k % 4 < 2 else 200) if r["station"] == "S001D0000" else (900 if k % 4 < 2 else 1000)
+
+    def run(exact, q_sigma=1e-8):
+        monkeypatch.setattr(T, "EXACT_TIE_COVARIANCE", exact)
+        monkeypatch.setitem(T.TIE_SIGMA, "q", q_sigma)
+        rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+        ba, g, _ = T.adjust_tied(rec2, proj2, idx, st, units, iterations=20, covariance=True, passes=1, verbose=False)
+        return T.globals_result(st, g, ba, units), ba
+
+    r0, _ = run(False)
+    r1, ba1 = run(True)
+    assert r0["covariance_method"] == "colmap" and r1["covariance_method"].startswith("exact ties")
+    assert ba1["covariance"]["extra_exact"]["error"] is None and ba1["covariance"]["extra_exact"]["dims"]["tied_columns"] > 0
+    for a in ("pitch", "roll"):
+        assert r1["rig"]["sd_rate"][a] == pytest.approx(r0["rig"]["sd_rate"][a], rel=0.03)
+        assert r1["rig"]["sd_sol0_mdeg"][a] == pytest.approx(r0["rig"]["sd_sol0_mdeg"][a], rel=0.03)
+    assert r1["rig"]["sd_pitch_early"] == pytest.approx(r0["rig"]["sd_pitch_early"], rel=0.03)
+    assert r1["NL"]["sd"]["fx_ppm_per_degC"] == pytest.approx(r0["NL"]["sd"]["fx_ppm_per_degC"], rel=0.03)
+    assert not r1.get("sd_source")
+    r2, _ = run(True, q_sigma=1e-10)                          # stiffer ties: the exact covariance does not move
+    assert r2["rig"]["sd_rate"]["pitch"] == pytest.approx(r1["rig"]["sd_rate"]["pitch"], rel=1e-2)
+    assert isinstance(r1["global_correlations"], list)
+    assert T.covariance_line(dict(r1, residuals={})).endswith("; ok")
+    bad = dict(r1, rig=dict(r1["rig"], sd_rate={"pitch": float("inf"), "yaw": 0.1, "roll": 0.1}))
+    assert "NOT USABLE" in T.covariance_line(bad) and "D_pitch" in T.covariance_line(bad)

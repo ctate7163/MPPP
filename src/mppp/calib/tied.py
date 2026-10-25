@@ -56,6 +56,9 @@ SLOPE_TERMS = ("fx", "fy", "cx", "cy", "k1")                                  # 
 EARLY_TERMS = ("fx", "fy", "cx", "cy")                                        # px, per eye
 ANGLES = ("pitch", "yaw", "roll")                                             # rotation-vector x, y, z
 TIE_SIGMA = {"fx": 1e-3, "fy": 1e-3, "cx": 1e-3, "cy": 1e-3, "k": 1e-7, "q": 1e-8}
+# 0.94.6: the covariance of the global terms with the ties eliminated exactly (mppp.calib.tiecov) - COLMAP's estimator
+# on the tied problem gave them infinite from about a dozen blocks on (20, 24, 25 Oct: 22-29 blocks)
+EXACT_TIE_COVARIANCE = True
 BIN_DEG = 2.0                    # fine bins; within a bin the images' own temperatures count (keypoint map)
 DIAG_BIN_MIN_IMAGES = 8          # 22 Oct: the diagnostic pass merges a block's adjacent fine bins (per era) until
 DIAG_BIN_MAX_DEG = 10.0          #   each eye has this many images, at most this wide - the cold morning images
@@ -479,6 +482,7 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
 
     def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
         n_cam = n_rig = 0
+        tie_ids = []                                         # 0.94.6: for the exact-tie covariance
         if tie_cameras:
             for cid, u in units["cameras"].items():
                 blk = cam_blocks.get(int(cid))
@@ -498,8 +502,8 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                 if u["early"]:
                     for i, k in enumerate(EARLY_TERMS):
                         A[TIED_PARAMS.index(k), 27 + i] = -1.0  # E (this eye)
-                prob.add_residual_block(LinearTie(A, sig, [12, 10, 5, 4]), None,
-                                        [blk, g[f"G_{eye}"], g[f"S_{eye}"], g[f"E_{eye}"]])
+                tie_ids.append(prob.add_residual_block(LinearTie(A, sig, [12, 10, 5, 4]), None,
+                                                       [blk, g[f"G_{eye}"], g[f"S_{eye}"], g[f"E_{eye}"]]))
                 n_cam += 1
         if tie_rigs:
             for rid, u in units["rigs"].items():
@@ -513,8 +517,8 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                     A[i, 7 + i] = -1.0                               # Q0
                     A[i, 10 + i] = -0.5 * _MDEG * s / 1000.0         # D (mdeg / 1000 sol)
                     A[i, 13 + i] = -0.5 * _MDEG * min(s, knot) / 1000.0   # H
-                prob.add_residual_block(LinearTie(A, np.full(3, TIE_SIGMA["q"]), [7, 3, 3, 3]), None,
-                                        [blk, g["Q0"], g["D"], g["H"]])
+                tie_ids.append(prob.add_residual_block(LinearTie(A, np.full(3, TIE_SIGMA["q"]), [7, 3, 3, 3]), None,
+                                                       [blk, g["Q0"], g["D"], g["H"]]))
                 n_rig += 1
         n_pp = 0
         consts = []
@@ -551,7 +555,8 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                 prob.set_manifold(g[gname], pyceres.SubsetManifold(len(g[gname]), sorted(ix)))
         return {"cov_blocks": {k: v for k, v in g.items() if prob.has_parameter_block(v)
                                and not prob.is_parameter_block_constant(v)},
-                "ties": {"cameras": n_cam, "rigs": n_rig, "pp_priors": n_pp}, "held": {k: sorted(v) for k, v in held.items()}}
+                "ties": {"cameras": n_cam, "rigs": n_rig, "pp_priors": n_pp}, "held": {k: sorted(v) for k, v in held.items()},
+                "tie_ids": tie_ids if EXACT_TIE_COVARIANCE else []}
 
     return hook, g
 
@@ -687,6 +692,35 @@ def _sd_from_units(cov: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any
     return out
 
 
+def global_correlations(cov: Dict[str, Any], held: Dict[str, Any], min_abs: float = 0.8, top: int = 25
+                        ) -> List[Dict[str, Any]]:
+    """0.94.6: the strongest correlations between the global terms (from the exact-tie covariance): pairs with
+    |r| >= ``min_abs``, strongest first - what the data cannot tell apart (e.g. a thermal slope and a drift in sol,
+    when temperature follows the season)."""
+    full = (cov.get("extra_exact") or {}).get("full")
+    if not full:
+        return []
+    C = np.asarray(full["cov"], float)
+    names = []
+    for blk, j in full["columns"]:
+        nm = _HELD_NAMES.get(blk)
+        n_amb = len(nm) if nm else None
+        free = [i for i in range(n_amb or (j + 1)) if i not in set(held.get(blk, ()))] if n_amb else list(range(j + 1))
+        i_amb = free[j] if j < len(free) else j
+        names.append(f"{blk}_{nm[i_amb]}" if nm and i_amb < len(nm) else f"{blk}[{j}]")
+    d = np.sqrt(np.clip(np.diag(C), 0, None))
+    ok = d > 0
+    R = np.zeros_like(C)
+    R[np.ix_(ok, ok)] = C[np.ix_(ok, ok)] / np.outer(d[ok], d[ok])
+    pairs = []
+    for i in range(len(names)):
+        for k in range(i + 1, len(names)):
+            if ok[i] and ok[k] and abs(R[i, k]) >= min_abs:
+                pairs.append({"a": names[i], "b": names[k], "r": float(R[i, k])})
+    pairs.sort(key=lambda x: -abs(x["r"]))
+    return pairs[:top]
+
+
 def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, Any], units: Dict[str, Any]) -> Dict[str, Any]:
     """The global parameters with their sd, in the units of the model files (the sd from the problem's covariance
     of the global blocks, else propagated from the bin cameras' covariances, :func:`_sd_from_units`)."""
@@ -696,6 +730,9 @@ def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, A
     fallback = None
     out: Dict[str, Any] = {"T0_degC": st["T0"], "knot_sol": st["knot"], "early_sol": units["early_sol"],
                            "covariance_error": cov.get("error"), "covariance_damping": cov.get("damping"),
+                           "covariance_method": cov.get("extra_method") or "colmap",
+                           "covariance_exact": {k: v for k, v in (cov.get("extra_exact") or {}).items() if k != "full"},
+                           "global_correlations": global_correlations(cov, held),
                            "held": held, "ties": (ba.get("extra") or {}).get("ties"), "isotropic_f_slope": iso,
                            "pass_costs": (ba.get("extra") or {}).get("pass_costs")}
     for eye in ("NL", "NR"):
@@ -1076,8 +1113,28 @@ def describe_result(res: Dict[str, Any]) -> List[str]:
     lines.append(f"tied joint: cost {res.get('final_cost', float('nan')):.1f}, it {res.get('iterations')}, median "
                  f"{s.get('median_px', float('nan')):.4f} / rms {s.get('rms_px', float('nan')):.4f} px, corners "
                  f"{s.get('corner_median_px', float('nan')):.3f} px ({res.get('seconds', 0):.0f} s); covariance "
-                 f"{'ok' if not res.get('covariance_error') else res['covariance_error']}")
+                 f"{covariance_line(res)}")
+    for c in res.get("global_correlations") or []:
+        lines.append(f"  correlated: {c['a']} ~ {c['b']} r {c['r']:+.3f}")
     return lines
+
+
+def covariance_line(res: Dict[str, Any]) -> str:
+    """0.94.6: what the covariance is - its method, whether the global terms got their own finite sd (the log said
+    "covariance ok" on 24 and 25 Oct while every rig sd was infinite)."""
+    if res.get("covariance_error"):
+        return f"FAILED ({res['covariance_error']})"
+    bad = [k for k, v in rig_sd_free(res).items() if v is None or not np.isfinite(v)]
+    src = res.get("sd_source")
+    ex = res.get("covariance_exact") or {}
+    cond = (ex.get("dims") or {}).get("condition")
+    txt = f"{res.get('covariance_method', 'colmap')}" + (f", scaled condition {cond:.2g}" if cond else "")
+    if ex.get("error"):
+        txt += f" (exact ties failed: {ex['error']})"
+    if bad or src:
+        return txt + "; NOT USABLE: " + "; ".join(([f"rig sd not finite: {', '.join(bad)}"] if bad else []) +
+                                                 ([f"camera sd {', '.join(sorted(src))} from the bin cameras"] if src else []))
+    return txt + "; ok"
 
 
 # ====================================================================================== the candidate files

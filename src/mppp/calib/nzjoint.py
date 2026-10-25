@@ -66,7 +66,8 @@ def adjust_nz(rec, proj, idx, st, units, zunits, sg, hold: Sequence[str] = T.HOL
         b = hook_z(prob, **kw) or {}
         return {"cov_blocks": {**(a.get("cov_blocks") or {}), **(b.get("cov_blocks") or {})},
                 "ties": {"navcam": a.get("ties"), "zcam": b.get("ties")},
-                "held": {**(a.get("held") or {}), **(b.get("held") or {})}}
+                "held": {**(a.get("held") or {}), **(b.get("held") or {})},
+                "tie_ids": list(a.get("tie_ids") or []) + list(b.get("tie_ids") or [])}    # 0.94.6: both sets
 
     _hold_z_pp(proj)
     ba = None

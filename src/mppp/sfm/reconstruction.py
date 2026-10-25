@@ -743,8 +743,10 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             per_image[iid] = (cam.model, cov, kps, [rig_blocks[(fr.rig_id, im.camera_id)], pose,
                                                     cam_blocks[int(im.camera_id)]], True)
     reproj, rig_reproj, add = cf.ReprojErrorCost, cf.RigReprojErrorCost, prob.add_residual_block
+    point_arrs: List[np.ndarray] = []                         # 0.94.6: for the exact-tie covariance
     for pid, pt in rec.points3D.items():
         xyz = pt.xyz
+        point_arrs.append(xyz)
         for el in pt.track.elements:
             info = per_image.get(el.image_id)
             if info is None:
@@ -995,6 +997,29 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     if covariance:
         cov_out = _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att, pose_blocks,
                                      cam_blocks=cam_blocks, extra_blocks=(extra_info or {}).get("cov_blocks"))
+        if (extra_info or {}).get("tie_ids") and (extra_info or {}).get("cov_blocks"):
+            # 0.94.6: the global terms of a tied joint with the ties eliminated exactly (COLMAP's estimator gave
+            # them infinite on 22-29 blocks: tie weights of 1e16 next to data weights of 1e7) - last, as it takes
+            # the tie residuals out of the problem
+            from ..calib.tiecov import exact_tie_covariance
+            free = list(pose_blocks.values()) + list(cam_blocks.values()) + list(rig_blocks.values()) + \
+                list(vblocks.values())
+            ex = exact_tie_covariance(prob, extra_info["tie_ids"], point_arrs, free, extra_info["cov_blocks"])
+            cov_out = dict(cov_out or {})
+            cov_out["extra_method"] = ex["method"] if not ex.get("error") else "colmap (exact ties failed)"
+            cov_out["extra_exact"] = {k: ex.get(k) for k in ("error", "dims", "variance_factor", "full")}
+            if not ex.get("error"):
+                blocks = dict(cov_out.get("blocks") or {})
+                for k, c in ex["blocks"].items():         # unit variance factor: _sd scales by the problem's
+                    blocks[k] = np.asarray(c)
+                cov_out["blocks"] = blocks
+                if not cov_out.get("variance_factor"):   # COLMAP's failed: 2 cost / (residuals - parameters)
+                    d = ex.get("dims") or {}
+                    n_eff = 3 * int(d.get("points", 0)) + int(d.get("free_columns", 0)) + int(d.get("global_columns", 0))
+                    cov_out["variance_factor"] = float(2.0 * summary.final_cost / max(prob.num_residuals() - n_eff, 1))
+                cov_out.pop("error", None)
+            else:
+                logger.info(f"bundle adjustment: the exact-tie covariance failed ({ex['error']}); COLMAP's kept")
     for fid in pose_blocks:
         rec.frames[fid].rig_from_world = work.frames[fid].rig_from_world
     if vblocks:                                               # write back the Mastcam-Z rigs and right poses
