@@ -55,7 +55,7 @@ PathLike = Union[str, Path]
 # name: (warn, fail, direction) - "above": bad when value > threshold; "below": bad when value < threshold
 DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "registered_fraction": (0.98, 0.90, "below"),
-    "excluded_fraction": (0.05, 0.30, "above"),        # fail 0.30 (Christian, 22 Oct 2026; was 0.20)
+    "excluded_fraction": (0.05, 0.33, "above"),        # fail 0.33 (Christian, 24 Oct 2026; 0.30 from 22 Oct, 0.20 before)
     "unconstrained_fraction": (0.25, 0.60, "above"),
     "held_frame_fraction": (0.02, 0.10, "above"),
     "obs_per_image_p05": (200, 50, "below"),

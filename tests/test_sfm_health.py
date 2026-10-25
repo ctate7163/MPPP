@@ -57,7 +57,7 @@ def test_health_lists_weak_images_with_advice(tmp_path):
     from helpers import _build_rec, _synthetic
     from mppp.sfm.health import DEFAULT_THRESHOLDS, assess_alignment, health_table
     assert DEFAULT_THRESHOLDS["rig_rotation_change_deg"][:2] == (0.06, 0.3)            # 22 Oct 2026 (0.2 before)
-    assert DEFAULT_THRESHOLDS["excluded_fraction"][:2] == (0.05, 0.30)
+    assert DEFAULT_THRESHOLDS["excluded_fraction"][:2] == (0.05, 0.33)          # 24 Oct (Christian)
     assert DEFAULT_THRESHOLDS["outlier_image_fraction"][:2] == (0.04, 0.20)
     assert DEFAULT_THRESHOLDS["ray_displacement_max_px"][:2] == (20.0, 60.0)
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
@@ -332,11 +332,11 @@ def test_a_zoom_joint_judges_the_block_on_its_zoom(tmp_path):
     from mppp.sfm.health import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom
     nav = [f"NLF_0091_0000000{i:03d}_000RAD_N0040136NCAM00500_0A0195J01.png" for i in range(60)]
     z34 = [f"ZL0_0091_0000001{i:03d}_000RAD_N0040136ZCAM08060_034085A03.png" for i in range(30)]
-    z79 = [f"ZL0_0091_0000002{i:03d}_000RAD_N0040136ZCAM08060_079085A03.png" for i in range(40)]
-    ex = [{"images": [n], "kind": "outlier", "observations": 5} for n in z79[:39] + z34[:1]]
+    z79 = [f"ZL0_0091_0000002{i:03d}_000RAD_N0040136ZCAM08060_079085A03.png" for i in range(50)]
+    ex = [{"images": [n], "kind": "outlier", "observations": 5} for n in z79 + z34[:1]]
     (tmp_path / "project.json").write_text(_json.dumps({"images": [{"name": n} for n in nav + z34 + z79],
                                                          "settings": {"reconstruction": {"excluded": ex}}}))
-    rep = {"checks": [{"check": "excluded_fraction", "value": 40 / 130, "status": "fail"}]}
+    rep = {"checks": [{"check": "excluded_fraction", "value": 51 / 140, "status": "fail"}]}
     assert rejudge(dict(rep, checks=[dict(rep["checks"][0])]), warn_only=LABEL_POINTING_CHECKS)[0] == "fail"
     notes = restrict_to_zoom(rep, tmp_path, 34)
     assert rep["checks"][0]["value"] == 1 / 90 and notes
