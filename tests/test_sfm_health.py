@@ -323,3 +323,21 @@ def test_label_pointing_checks_do_not_keep_a_block_out_of_the_joints():
     assert rejudge(rep, warn_only=LABEL_POINTING_CHECKS)[0] == "warn"
     rep["checks"].append({"check": "residual_median_px", "value": 1.5, "status": "fail"})
     assert rejudge(rep, warn_only=LABEL_POINTING_CHECKS)[0] == "fail"
+
+
+def test_a_zoom_joint_judges_the_block_on_its_zoom(tmp_path):
+    """0.94.5 (Chal Rocks Mastcam-Z, 24 Oct): 30 % of the frames excluded, nearly all at 79 mm - a FAIL that kept the
+    block out of the Z34 joint.  The joint of one zoom counts that zoom's frames (and the Navcam, Hazcams) only."""
+    import json as _json
+    from mppp.sfm.health import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom
+    nav = [f"NLF_0091_0000000{i:03d}_000RAD_N0040136NCAM00500_0A0195J01.png" for i in range(60)]
+    z34 = [f"ZL0_0091_0000001{i:03d}_000RAD_N0040136ZCAM08060_034085A03.png" for i in range(30)]
+    z79 = [f"ZL0_0091_0000002{i:03d}_000RAD_N0040136ZCAM08060_079085A03.png" for i in range(40)]
+    ex = [{"images": [n], "kind": "outlier", "observations": 5} for n in z79[:39] + z34[:1]]
+    (tmp_path / "project.json").write_text(_json.dumps({"images": [{"name": n} for n in nav + z34 + z79],
+                                                         "settings": {"reconstruction": {"excluded": ex}}}))
+    rep = {"checks": [{"check": "excluded_fraction", "value": 40 / 130, "status": "fail"}]}
+    assert rejudge(dict(rep, checks=[dict(rep["checks"][0])]), warn_only=LABEL_POINTING_CHECKS)[0] == "fail"
+    notes = restrict_to_zoom(rep, tmp_path, 34)
+    assert rep["checks"][0]["value"] == 1 / 90 and notes
+    assert rejudge(rep, warn_only=LABEL_POINTING_CHECKS)[0] == "pass"

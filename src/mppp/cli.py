@@ -534,7 +534,7 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
             continue
         if str(done.get("verdict")) == "fail" and not getattr(a, "include_failed", False):
             # 0.93.3: judged again under the current thresholds and rules (a block run before a rule changed)
-            v2, changed = _rejudged(work, getattr(a, "variant", "") or "")
+            v2, changed = _rejudged(work, getattr(a, "variant", "") or "", zoom=zoom if zcam else None)
             if v2 == "fail" or v2 is None:
                 skipped.append(f"{n} (alignment health FAIL; --include-failed takes it)")    # 22 Oct
                 continue
@@ -546,15 +546,19 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
     return out
 
 
-def _rejudged(work, variant: str = ""):
-    """(verdict, changed checks) of a block's saved health report under the current rules; (None, []) without one."""
-    from .sfm.health import LABEL_POINTING_CHECKS, rejudge, restation
+def _rejudged(work, variant: str = "", zoom: Optional[int] = None):
+    """(verdict, changed checks) of a block's saved health report under the current rules; (None, []) without one.
+    ``zoom`` (a Mastcam-Z joint, 0.94.5): the excluded frames and the corners judged on that zoom (and the Navcam,
+    Hazcams) only - Chal Rocks' 79 mm frames failed a block the Z34 joint needs."""
+    from .sfm.health import LABEL_POINTING_CHECKS, rejudge, restation, restrict_to_zoom
     from .sfm.workdir import project_dir
     try:
         h = json.loads((project_dir(work, variant) / "health" / "health.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None, []
     fixed = restation(h, project_dir(work, variant))     # 0.94.4: shifts from the label priors (moved Hazcam priors)
+    if zoom is not None:
+        fixed += restrict_to_zoom(h, project_dir(work, variant), int(zoom))
     v, changed = rejudge(h, warn_only=LABEL_POINTING_CHECKS)     # the labels' heading errors are not the block's
     return v, fixed + changed
 

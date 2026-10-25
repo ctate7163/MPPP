@@ -38,6 +38,7 @@ from __future__ import annotations
 import logging
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -968,6 +969,46 @@ def restation(report: Dict[str, Any], colmap_dir: PathLike, min_frame_observatio
 LABEL_POINTING_CHECKS = ("block_rotation_deg", "attitude_residual_p95_deg")
 
 
+_ZOOM = re.compile(r"ZCAM\d{5}_(\d{3})")
+
+
+def _group_zoom(grp: str) -> Optional[int]:
+    """The zoom of a Mastcam-Z camera group (``ZL034``, ``ZR079_F03216``), else None."""
+    m = re.match(r"Z[LR](\d{3})", str(grp))
+    return int(m.group(1)) if m else None
+
+
+def restrict_to_zoom(report: Dict[str, Any], colmap_dir: PathLike, zoom: int) -> List[str]:
+    """0.94.5 (24 Oct, Chal Rocks Mastcam-Z: 30.2 % excluded, 180 of the 194 frames at 79 mm): for a joint of one
+    zoom, the excluded fraction counted over the Navcam, Hazcam and that zoom's images only (the other zooms' frames
+    are not the joint's).  Changes the report's ``excluded_fraction`` value in place; returns notes."""
+    root = Path(colmap_dir)
+    try:
+        pj = json.loads((root / "project.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+    def keep(name: str) -> bool:
+        m = _ZOOM.search(str(name))
+        return m is None or int(m.group(1)) == int(zoom)
+
+    ex = ((pj.get("settings") or {}).get("reconstruction") or {}).get("excluded") or []
+    unc = {n for e in ex if e.get("kind", "outlier" if e.get("observations", 1) else "unconstrained") == "unconstrained"
+           for n in e.get("images", [])}
+    excl = {n for e in ex for n in e.get("images", [])} - unc
+    names = [r["name"] for r in pj.get("images") or [] if keep(r["name"])]
+    k_ex = [n for n in excl if keep(n)]
+    out = []
+    for c in report.get("checks") or []:
+        if c.get("check") == "excluded_fraction":
+            old = c.get("value")
+            c["value"] = len(k_ex) / max(1, len(names))
+            out.append(f"excluded_fraction at {int(zoom)} mm: {old:.3f} -> {c['value']:.3f} "
+                       f"({len(k_ex)} of {len(names)} Navcam, Hazcam and {int(zoom)} mm images)")
+    report["zoom_restricted"] = int(zoom)
+    return out
+
+
 def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = None,
             warn_only: Sequence[str] = ()) -> Tuple[str, List[str]]:
     """The verdict of a saved health report (``health/health.json``) under the current thresholds and rules (0.93.3):
@@ -983,7 +1024,11 @@ def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = Non
         if name == "residual_eye_ratio" and any(f"{e}: " in str(c.get("note", "")) for e in ("FL", "RL")):
             name = "hazcam_residual_eye_ratio"        # 0.94.4: a Hazcam pair (reports before 0.94.4)
         if name == "corner_triangulated_ratio" and report.get("coverage_by_radius"):
-            wc = _corner_ratio(report["coverage_by_radius"])
+            cams = report["coverage_by_radius"].get("cameras") or {}
+            skip = set(zcam_uncalibrated_groups(cams))
+            if report.get("zoom_restricted") is not None:  # 0.94.5: a joint of one zoom judges that zoom's corners
+                skip |= {g for g in cams if _group_zoom(g) not in (None, int(report["zoom_restricted"]))}
+            wc = _corner_ratio(report["coverage_by_radius"], skip_groups=sorted(skip))
             v = wc[1] if wc else None
         st = _status(name, v, thr) if name in thr else st0
         if st == "fail" and name in warn_only:
