@@ -1573,7 +1573,7 @@ def hazcam_line(cov: Dict[str, Any]) -> str:
 OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 2.0,   # 2.0 px (Christian, 22 Oct 2026; 1.6 since v0p61, v0p50 1.2)
                     "shift_mad_factor": 5.0, "min_shift_m": 0.25,
                     "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None,
-                    "min_navcam_ties": None}
+                    "min_navcam_ties": None, "lenient_zooms": ()}
 # a Mastcam-Z frame needs at least this many valid tie points with an anchor camera (points seen by the frame and by an
 # anchor image with a third look, MIN_MIXED_TRACK_LENGTH) - fewer, and it is excluded like an outlier (Christian,
 # 20 Oct).  The anchors (21 Oct): Navcam for 34 and 48 mm; Navcam or a Mastcam-Z image at a wider zoom (shorter focal
@@ -1611,32 +1611,89 @@ def _zoom_of(name: str) -> Optional[int]:
         return None
 
 
+# 0.94.5 (Christian, 24 Oct; Chal Rocks: 136 of the 214 79 mm frames excluded with "0 tie points with Navcam or a
+# wider zoom"): a tie with a wider zoom counts with two looks (a 79 mm point seen by one 34 mm image); and a frame of a
+# long zoom with fewer direct ties is anchored through its own mosaic - ZCAM_MOSAIC_TIES tie points with frames of its
+# zoom that are anchored (directly or so).  At Chal Rocks a 79 mm frame shares a median 13,400 points, nearly all with
+# the other 79 mm frames, and 1-2 with a 34 mm one: 57 of 170 were anchored directly, the other 113 through the mosaic.
+MIN_WIDER_ZOOM_TRACK_LENGTH = 2
+ZCAM_MOSAIC_TIES = 50
+
+
 def navcam_tie_counts(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH,
-                      navcam_only_max_zoom: Optional[int] = ZCAM_NAVCAM_ONLY_MAX_ZOOM) -> Dict[int, int]:
+                      navcam_only_max_zoom: Optional[int] = ZCAM_NAVCAM_ONLY_MAX_ZOOM,
+                      min_wider_track_length: int = MIN_WIDER_ZOOM_TRACK_LENGTH) -> Dict[int, int]:
     """Per registered Mastcam-Z image, its valid tie points with an anchor: 3-D points it observes whose track also
-    holds an anchor image and is at least ``min_mixed_track_length`` long (the third look).  The anchors are the
-    Navcam images; for a zoom above ``navcam_only_max_zoom`` (48 mm) also the Mastcam-Z images at a shorter zoom (a
-    63 mm frame ties through 34 or 48 mm, a 110 mm frame through 34-79 mm).  ``navcam_only_max_zoom=None``: Navcam
-    only for every zoom."""
+    holds an anchor image.  The anchors are the Navcam images (the track at least ``min_mixed_track_length`` long:
+    the third look); for a zoom above ``navcam_only_max_zoom`` (48 mm) also the Mastcam-Z images at a shorter zoom (a
+    63 mm frame ties through 34 or 48 mm, a 110 mm frame through 34-79 mm; 0.94.5: from ``min_wider_track_length``
+    looks, 2).  ``navcam_only_max_zoom=None``: Navcam only for every zoom."""
+    return zcam_anchor_ties(rec, min_mixed_track_length, navcam_only_max_zoom, min_wider_track_length)[0]
+
+
+def zcam_anchor_ties(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH,
+                     navcam_only_max_zoom: Optional[int] = ZCAM_NAVCAM_ONLY_MAX_ZOOM,
+                     min_wider_track_length: int = MIN_WIDER_ZOOM_TRACK_LENGTH):
+    """(:func:`navcam_tie_counts`, {image: {same-zoom image: shared points}} of the zooms above
+    ``navcam_only_max_zoom``)."""
     fam = {int(i): rec.images[i].name[:1] for i in rec.reg_image_ids()}
     zoom = {i: _zoom_of(rec.images[i].name) for i, f in fam.items() if f == "Z"}
     out = {i: 0 for i in zoom}
+    share: Dict[int, Dict[int, int]] = {}
     for pt in rec.points3D.values():
-        if pt.track.length() < min_mixed_track_length:
+        L = pt.track.length()
+        if L < min(min_mixed_track_length, min_wider_track_length):
             continue
         ids = {int(el.image_id) for el in pt.track.elements}
         zs = [i for i in ids if i in zoom]
         if not zs:
             continue
-        has_nav = any(fam.get(i) == "N" for i in ids)
+        has_nav = L >= min_mixed_track_length and any(fam.get(i) == "N" for i in ids)
         widest = min((zoom[i] for i in zs if zoom[i] is not None), default=None)
         for i in zs:
+            long_zoom = navcam_only_max_zoom is not None and zoom[i] is not None and zoom[i] > navcam_only_max_zoom
             if has_nav:
                 out[i] += 1
-            elif (navcam_only_max_zoom is not None and zoom[i] is not None and widest is not None
-                  and zoom[i] > navcam_only_max_zoom and widest < zoom[i]):
+            elif long_zoom and L >= min_wider_track_length and widest is not None and widest < zoom[i]:
                 out[i] += 1                                   # tied through a wider Mastcam-Z zoom
+            if long_zoom:
+                for j in zs:
+                    if j != i and zoom[j] == zoom[i]:
+                        d = share.setdefault(i, {})
+                        d[j] = d.get(j, 0) + 1
+    return out, share
+
+
+def uncalibrated_zooms(rec) -> List[int]:
+    """The Mastcam-Z zooms of a reconstruction without a promoted focus model (:func:`mppp.calib.load_zcam`)."""
+    from .. import calib
+    out = []
+    names = [rec.images[i].name for i in rec.reg_image_ids()]
+    for z in sorted({_zoom_of(n) for n in names if n[:1] == "Z"} - {None}):
+        try:
+            if calib.load_zcam(int(z)) is None:
+                out.append(int(z))
+        except Exception:                                    # noqa: BLE001 - unreadable counts as uncalibrated
+            out.append(int(z))
     return out
+
+
+def mosaic_anchored(ties: Dict[int, int], share: Dict[int, Dict[int, int]], min_ties: int,
+                    min_mosaic: int = ZCAM_MOSAIC_TIES) -> set:
+    """The long-zoom images anchored through their mosaic: with fewer than ``min_ties`` direct anchor ties but
+    ``min_mosaic`` tie points with same-zoom images that are anchored (directly, or through the mosaic in turn)."""
+    anchored = {i for i, n in ties.items() if n >= min_ties}
+    through: set = set()
+    grew = True
+    while grew:
+        grew = False
+        for i, d in share.items():
+            if i in anchored or i in through:
+                continue
+            if sum(c for j, c in d.items() if j in anchored or j in through) >= min_mosaic:
+                through.add(i)
+                grew = True
+    return through
 
 
 def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str, Any]]:
@@ -1707,21 +1764,28 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
                        "reasons": []}
     if not frames:
         return []
-    ties = navcam_tie_counts(rec) if any(f["family"] == "N" for f in frames.values()) else {}
+    ties, share = zcam_anchor_ties(rec) if any(f["family"] == "N" for f in frames.values()) else ({}, {})
     if ties and int(th["min_navcam_ties"]) > 0:
+        through = mosaic_anchored(ties, share, int(th["min_navcam_ties"]))
         for fid, f in frames.items():
             if f["family"] != "Z" or not f["observations"]:
                 continue
             n = sum(ties.get(int(d.id), 0) for d in rec.frames[fid].data_ids)
             f["navcam_ties"] = n
+            if n < int(th["min_navcam_ties"]) and any(int(d.id) in through for d in rec.frames[fid].data_ids):
+                f["anchored_through_mosaic"] = True             # 0.94.5: a long zoom's mosaic ties it
+                continue
             if n < int(th["min_navcam_ties"]):
                 z = _zoom_of(f["images"][0])
                 anchor = "Navcam" if z is None or z <= ZCAM_NAVCAM_ONLY_MAX_ZOOM else "Navcam or a wider zoom"
                 f["reasons"].append(f"{n} tie points with {anchor} < {int(th['min_navcam_ties'])}")
     all_med = np.median([f["median_residual_px"] for f in frames.values() if np.isfinite(f["median_residual_px"])])
     lim = max(th["residual_factor"] * all_med, th["min_residual_px"])
+    lenient = {int(z) for z in (th.get("lenient_zooms") or ())}
     for f in frames.values():
-        if f["observations"] and f["median_residual_px"] > lim:
+        if f["family"] == "Z" and lenient and _zoom_of(f["images"][0]) in lenient:
+            pass                    # 0.94.5: a zoom without a calibrated focus model, its focus lines still being fitted
+        elif f["observations"] and f["median_residual_px"] > lim:
             f["reasons"].append(f"median residual {f['median_residual_px']:.2f} px > {lim:.2f}")
         if f["observations"] == 0:
             f["reasons"].append("no tie points")
@@ -2142,6 +2206,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         th_ = dict(outlier_thresholds or {})
         if not navcam_ties:
             th_["min_navcam_ties"] = 0
+            # 0.94.5 (Chal Rocks 79 mm, 24 Oct): before the final test the zooms without a calibrated focus model are
+            # not judged on their residuals - their focal lengths start at the labels (0.5-0.7 % off at 79 mm) and
+            # are only fitted from round 2
+            th_.setdefault("lenient_zooms", uncalibrated_zooms(rec))
         found = find_outlier_frames(rec, project, **th_)
         new = [f for f in found if f["frame_id"] not in {e["frame_id"] for e in excluded}]
         if new:

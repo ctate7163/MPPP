@@ -48,7 +48,7 @@ RUN_SETTINGS = "run_settings.json"
 
 # Bumped when the alignment code changes its results under unchanged settings (a default changed in the code, not
 # in the settings), so that the batch scripts align every site again instead of skipping it as done.
-ZCAM_RULES = 1                   # 0.93.4: Mastcam-Z blocks only (a partly listed focus group, unique _reg names)
+ZCAM_RULES = 2                   # 0.94.5: a long zoom anchored through a wider zoom with 2 looks or through its mosaic (1, 0.93.4: a partly listed focus group, unique _reg names)
 ALIGN_RULES = 92                 # 0.94.4: Hazcam + Mastcam-Z points need a Navcam look (91: isolated two-view points deleted; 89: Hazcam eye from 500 observations)
 # Likewise for the selection and processing rules (process_done.json).
 PROCESS_RULES = 6                # 0.94.0: the shipped exclusion list before the processing (5: own stations on other sols)

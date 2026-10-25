@@ -94,3 +94,39 @@ def test_zoom_ladder_63_to_110_tie_through_wider_zooms():
     assert c[40] == 11 and c[41] == 11
     c0 = navcam_tie_counts(_Rec(images, pts), navcam_only_max_zoom=None)       # the 20 Oct rule: Navcam only
     assert c0[40] == 0
+
+
+def test_long_zoom_ties_with_two_looks_and_through_its_mosaic():
+    """0.94.5 (Christian, 24 Oct; Chal Rocks 79 mm): a tie with a wider zoom counts with two looks, and a long-zoom
+    frame with fewer direct ties is anchored through the frames of its own mosaic that are anchored."""
+    from mppp.sfm.reconstruction import (ZCAM_MIN_NAVCAM_TIES, ZCAM_MOSAIC_TIES, mosaic_anchored, navcam_tie_counts,
+                                         zcam_anchor_ties)
+    images = {1: _Image("NLF_a", [0, 0, 1.9]),
+              20: _Image(_zname("L", 34, 1), [0, 0, 2]),
+              50: _Image(_zname("L", 79, 4), [0, 0, 2]), 51: _Image(_zname("L", 79, 5), [0, 0, 2]),
+              52: _Image(_zname("L", 79, 6), [0, 0, 2]), 53: _Image(_zname("L", 79, 7), [0, 0, 2])}
+    pts = [([0, 0, 0], [20, 1, 1])] * 12               # Z34 on Navcam
+    pts += [([0, 0, 0], [50, 20])] * 12                # 79 mm frame 50: two-look ties with 34 mm - they count now
+    pts += [([0, 0, 0], [50, 51])] * ZCAM_MOSAIC_TIES  # 51 shares the mosaic with 50
+    pts += [([0, 0, 0], [51, 52])] * ZCAM_MOSAIC_TIES  # 52 with 51 (anchored in turn)
+    pts += [([0, 0, 0], [53, 52])] * 5                 # 53 barely: not anchored
+    rec = _Rec(images, pts)
+    c = navcam_tie_counts(rec)
+    assert c[50] == 12 and c[51] == 0
+    assert navcam_tie_counts(rec, min_wider_track_length=3)[50] == 0          # the 0.94.4 rule
+    ties, share = zcam_anchor_ties(rec)
+    through = mosaic_anchored(ties, share, ZCAM_MIN_NAVCAM_TIES)
+    assert through == {51, 52}
+
+
+def test_uncalibrated_zoom_residuals_not_judged_early():
+    """0.94.5: a zoom without a calibrated focus model is not excluded on its residual before the final test."""
+    from mppp import calib
+    from mppp.sfm.reconstruction import uncalibrated_zooms
+    images = {50: _Image(_zname("L", 79, 4), [0, 0, 2]), 20: _Image(_zname("L", 34, 1), [0, 0, 2]),
+              1: _Image("NLF_a", [0, 0, 1.9])}
+    u = uncalibrated_zooms(_Rec(images, []))
+    import pycolmap
+    rec = pycolmap.Reconstruction()
+    assert uncalibrated_zooms(rec) == []
+    assert (79 in u) == (calib.load_zcam(79) is None) and (34 in u) == (calib.load_zcam(34) is None)
