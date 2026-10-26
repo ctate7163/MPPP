@@ -9,7 +9,7 @@ early-mission terms, and the stereo rig with its drift.  Over a set of finished 
 * **law held** - one camera per (block, eye, merged temperature bin, era) and one stereo rig per (block, epoch, bin,
   era), each SET from the law at the unit's own temperature, era and sol (the images' own temperatures through the
   keypoint map), and HELD; only the poses and points re-solved.  Per block: the residuals the law leaves.
-* **units free** - the same units refined freely (fx, fy, k1 and the rig rotation; the principal points and the
+* **units free** (per law) - the same units refined freely (fx, fy, k1 and the rig rotation; the principal points and the
   rest of the distortion at the law, as in the joint's diagnostic pass), with the covariance of every unit.  Per
   block: the residuals; per unit: its deviation from the law in units of its own sd (z).
 * **pointing** - the joint's pointing pass (:func:`mppp.calib.tied.pointing_pass`): one camera per (block, eye, era)
@@ -17,9 +17,9 @@ early-mission terms, and the stereo rig with its drift.  Over a set of finished 
 
 The law predicts the cameras where the deviations are standard normal (chi^2 / dof near 1) with no trend in
 temperature or sol; chi^2 / dof >> 1, or a trend, is variation the law does not model.  The residual cost of holding
-the law (law held minus units free, per block) says whether that variation matters for the 3-D.  Since the free
-pass does not depend on the law (it starts there), the deviations are evaluated against every law given
-(:func:`deviations`), and the law-held pass is run once per law.
+the law (law held minus units free, per block) says whether that variation matters for the 3-D.  The free and
+pointing passes hold the terms they do not free (principal points or k2-k4, the rig) at the law under test, so they
+are run per law.
 """
 from __future__ import annotations
 
@@ -258,26 +258,27 @@ def deviations(free: Dict[str, Any], st: Dict[str, Any], pointing: Optional[Dict
     return out
 
 
-def validate_laws(scapes_cfg: Dict[str, PathLike], laws: Dict[str, Optional[PathLike]], reference: Optional[str] = None,
-                  points: int = 4000, iterations: int = 60, pointing: bool = True, verbose: bool = True) -> Dict[str, Any]:
-    """Each law of ``laws`` {label: cameras folder} against the blocks: the law-held pass per law; one free pass
-    and one pointing pass (from ``reference``, default the first law) whose units are compared with every law."""
+def validate_laws(scapes_cfg: Dict[str, PathLike], laws: Dict[str, Optional[PathLike]], points: int = 4000,
+                  iterations: int = 60, pointing: bool = True, verbose: bool = True) -> Dict[str, Any]:
+    """Each law of ``laws`` {label: cameras folder} against the blocks: per law the law-held pass, the free pass and
+    the pointing pass.  (25 Oct: one free pass from the first law compared with the others was biased - the free
+    units hold the principal point and k2-k4 at the law they start from, so k1 and the rig pitch absorbed the other
+    laws' differences in those: NR k1 chi^2 / dof 31 against 4.)"""
     labels = list(laws)
-    ref = reference or labels[0]
     st = {k: T.start_values(v) for k, v in laws.items()}
-    rec0, proj0, idx = load_blocks(scapes_cfg, st[ref], points)
-    out: Dict[str, Any] = {"blocks": list(scapes_cfg), "points_per_block": points, "reference": ref,
+    rec0, proj0, idx = load_blocks(scapes_cfg, st[labels[0]], points)
+    out: Dict[str, Any] = {"blocks": list(scapes_cfg), "points_per_block": points,
                            "laws": {k: str(st[k]["folder"]) for k in labels},
-                           "images": {s: len(v) for s, v in idx["images"].items()}}
-    free = units_free(rec0, proj0, idx, st[ref], iterations=iterations, verbose=verbose)
-    point = (T.pointing_pass(rec0, proj0, idx, st[ref], law_globals(st[ref]), iterations=iterations, verbose=verbose)
-             if pointing else None)
-    out["free"] = {k: free[k] for k in ("blocks", "all", "brief", "final_cost", "seconds", "variance_factor",
-                                        "camera_cov_dims", "covariance_error")}
-    if point:
-        out["pointing_pass"] = {k: point.get(k) for k in ("residuals", "brief", "covariance_error", "pp_prior_px")}
-    out["held"], out["deviations"] = {}, {}
+                           "images": {s: len(v) for s, v in idx["images"].items()},
+                           "free": {}, "pointing_pass": {}, "held": {}, "deviations": {}}
     for k in labels:
+        free = units_free(rec0, proj0, idx, st[k], iterations=iterations, verbose=verbose)
+        point = (T.pointing_pass(rec0, proj0, idx, st[k], law_globals(st[k]), iterations=iterations, verbose=verbose)
+                 if pointing else None)
+        out["free"][k] = {kk: free[kk] for kk in ("blocks", "all", "brief", "final_cost", "seconds", "variance_factor",
+                                                  "camera_cov_dims", "covariance_error")}
+        if point:
+            out["pointing_pass"][k] = {kk: point.get(kk) for kk in ("residuals", "brief", "covariance_error", "pp_prior_px")}
         out["held"][k] = law_held(rec0, proj0, idx, st[k], iterations=iterations)
         out["deviations"][k] = deviations(free, st[k], point)
         if verbose:
@@ -287,7 +288,8 @@ def validate_laws(scapes_cfg: Dict[str, PathLike], laws: Dict[str, Optional[Path
 
 
 def describe(res: Dict[str, Any], label: str) -> List[str]:
-    h, d, f = res["held"][label], res["deviations"][label], res["free"]
+    h, d = res["held"][label], res["deviations"][label]
+    f = res["free"][label] if label in res["free"] else res["free"]
     out = [f"law {label} ({res['laws'][label]}): held {h['all']['median_px']:.4f} / {h['all']['rms_px']:.4f} px "
            f"(median / rms), units free {f['all']['median_px']:.4f} / {f['all']['rms_px']:.4f} px"]
     for s in sorted(h["blocks"]):

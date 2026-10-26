@@ -55,12 +55,16 @@ TIED_PARAMS = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4")     #
 SLOPE_TERMS = ("fx", "fy", "cx", "cy", "k1")                                  # per degC (px; k1 unitless)
 EARLY_TERMS = ("fx", "fy", "cx", "cy")                                        # px, per eye
 ANGLES = ("pitch", "yaw", "roll")                                             # rotation-vector x, y, z
-TIE_SIGMA = {"fx": 1e-3, "fy": 1e-3, "cx": 1e-3, "cy": 1e-3, "k": 1e-7, "q": 1e-8}
+# 0.94.6 (25 Oct, the 12-block solver study): k and q 1e-6 (were 1e-7, 1e-8).  Ceres converges further with them
+# (12 blocks: 23913.06 against 23913.40 with the units then set exactly on the law) and in half the time; the exact
+# solve below then puts every unit on the law, and the exact covariance does not depend on the sigmas
+TIE_SIGMA = {"fx": 1e-3, "fy": 1e-3, "cx": 1e-3, "cy": 1e-3, "k": 1e-6, "q": 1e-6}
 # 0.94.6: the covariance of the global terms with the ties eliminated exactly (mppp.calib.tiecov) - COLMAP's estimator
 # on the tied problem gave them infinite from about a dozen blocks on (20, 24, 25 Oct: 22-29 blocks)
 EXACT_TIE_COVARIANCE = True
-# 0.94.6 (study): after Ceres' solve, Levenberg-Marquardt with the ties as exact constraints (mppp.calib.tiesolve)
-EXACT_TIE_SOLVE = False
+# 0.94.6: after Ceres' solve, Levenberg-Marquardt with the ties as exact constraints (mppp.calib.tiesolve): the
+# units set from the globals, so the result is the law's own optimum whatever the sigmas
+EXACT_TIE_SOLVE = True
 BIN_DEG = 2.0                    # fine bins; within a bin the images' own temperatures count (keypoint map)
 DIAG_BIN_MIN_IMAGES = 8          # 22 Oct: the diagnostic pass merges a block's adjacent fine bins (per era) until
 DIAG_BIN_MAX_DEG = 10.0          #   each eye has this many images, at most this wide - the cold morning images
@@ -71,7 +75,12 @@ MAX_SPAN_SOLS = 50.0                 # rig epochs of the joint: at most 50 sols 
 KNOTS_TESTED = tuple(float(k) for k in np.linspace(200.0, 400.0, 25))   # the pitch transitions after the BA (20 Oct)
 EARLY_SOL = 380.0
 KNOT_SOL = 250.0                 # the pitch hinge (the free-knot refit of 20 Oct: 250, range 200-290)
-HOLD_DEFAULT = ("Q0_yaw",)       # the runs hold the yaw: a constant yaw mirrors NR's cx
+# the runs hold the yaw (a constant yaw mirrors NR's cx) and, 0.94.6 (Christian 25 Oct: "set the least significant
+# terms to a reasonable value"), k4 of each eye at the models in use: k1-k4 trade off (|r| 0.88-0.99) and the solve
+# crawled along that valley; held, the 12-block joint's scaled condition fell from 4.2e5 to 3.0e4, the k1-k3 sd 3-8x,
+# fx's sd 15 %, for a radial change of at most 0.08 / 0.18 px (NL / NR) at the very corner (theta 1.05 rad) and
+# 0.002 px at 0.5 rad; k4 = 0 is rejected (+1.4 / 1.6 px at the corner, cost +50)
+HOLD_DEFAULT = ("Q0_yaw", "G_NL_k4", "G_NR_k4")
 PASS_JUMP_FACTOR = 1.5           # 0.94.5: a pass starting this far above the last one's end gets one more pass
 EARLY_Z_MIN = 3.0                # 0.94.5 (Christian 24 Oct): an early-mission offset is kept only where |z| reaches this
 ISO_F = True    # one focal slope per eye (fy's ppm/degC = fx's): 20 Oct joint fx/fy 36.0/37.1, 35.6/35.3 ppm/degC,
@@ -763,7 +772,10 @@ def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, A
         sdE = _sd(cov, f"E_{eye}", 4, held.get(f"E_{eye}", ()))
         if iso and sdS is not None:
             sdS = sdS.copy(); sdS[1] = sdS[0] * G[1] / G[0]
-        if sdS is None or not np.all(np.isfinite(sdS)):
+        # 25 Oct: a held slope (S_NL_cx ...) is NaN by design - only the free ones need an sd (the hold study fell
+        # back to the bin cameras and skipped the early-mission test whenever a slope was held)
+        free_S = [i for i in range(5) if i not in set(held.get(f"S_{eye}", ())) or (iso and i == 1)]
+        if sdS is None or not np.all(np.isfinite(sdS[free_S])):
             if fallback is None:
                 fallback = _sd_from_units(cov, st, units, held, iso_f=iso)
             fb = fallback.get(eye)

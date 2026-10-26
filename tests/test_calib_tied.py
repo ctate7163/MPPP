@@ -270,7 +270,9 @@ def test_exact_tie_covariance_agrees_with_colmap_and_reports_correlations(tmp_pa
 
     def run(exact, q_sigma=1e-8):
         monkeypatch.setattr(T, "EXACT_TIE_COVARIANCE", exact)
+        monkeypatch.setattr(T, "EXACT_TIE_SOLVE", False)       # COLMAP's estimator needs the stiff ties' own optimum
         monkeypatch.setitem(T.TIE_SIGMA, "q", q_sigma)
+        monkeypatch.setitem(T.TIE_SIGMA, "k", 1e-7)
         rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
         ba, g, _ = T.adjust_tied(rec2, proj2, idx, st, units, iterations=20, covariance=True, passes=1, verbose=False)
         return T.globals_result(st, g, ba, units), ba
@@ -345,8 +347,21 @@ def test_law_check_deviations_and_held_residuals(tmp_path):
     a = next(r for r in d["cameras"] if r["eye"] == "NL")
     b = next(r for r in d2["cameras"] if r["eye"] == "NL" and r["key"] == a["key"])
     assert b["d_fx"] == pytest.approx(a["d_fx"] - 100.0, abs=0.1)
-    res = {"laws": {"x": st["folder"]}, "held": {"x": held}, "deviations": {"x": d}, "free": free}
+    res = {"laws": {"x": st["folder"]}, "held": {"x": held}, "deviations": {"x": d}, "free": {"x": free}}
     lines = L.describe(res, "x")
     assert lines[0].startswith("law x") and any("chi2/dof" in s for s in lines)
     out = L.write_validation(res, tmp_path / "lc")
     assert (out / "report.md").exists() and (out / "law_validation.json").exists()
+
+
+def test_a_held_slope_keeps_the_joints_own_sd(tmp_path):
+    """25 Oct (the hold study): a held thermal slope has no sd by design; the other terms keep the joint's own
+    covariance (before, any held slope sent every sd to the bin-camera fallback and skipped the early-mission test)."""
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, _ = T.adjust_tied(rec2, proj2, idx, st, units, hold=tuple(T.HOLD_DEFAULT) + ("S_NL_cx",), iterations=20,
+                             covariance=True, passes=1, verbose=False)
+    res = T.globals_result(st, g, ba, units)
+    assert not res.get("sd_source")
+    assert np.isfinite(res["NL"]["sd"]["fx_ppm_per_degC"]) and np.isnan(res["NL"]["sd"]["cx_px_per_degC"])

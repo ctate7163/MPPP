@@ -994,7 +994,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         if summary.termination_type == pyceres.TerminationType.FAILURE:
             raise RuntimeError(f"bundle adjustment failed twice: {first.BriefReport()} / {summary.BriefReport()}")
     if (extra_info or {}).get("exact_solve") and (extra_info or {}).get("tie_specs") \
-            and summary.termination_type != pyceres.TerminationType.FAILURE:
+            and (extra_info or {}).get("cov_blocks") and summary.termination_type != pyceres.TerminationType.FAILURE:
+        # (no free global term - every global held, e.g. the pointing pass: the ties hold the units on the law already)
         # 0.94.6: Levenberg-Marquardt on with the ties as exact constraints (mppp.calib.tiesolve)
         from ..calib.tiesolve import exact_tie_refine
         free_ = list(pose_blocks.values()) + list(cam_blocks.values()) + list(rig_blocks.values()) + list(vblocks.values())
