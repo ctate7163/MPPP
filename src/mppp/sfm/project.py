@@ -466,13 +466,20 @@ class SfmProject:
             return _fm_cache["m"]
 
         # the known low-backlash (regular focus state) images; every other one is in the backlash state
-        from .backlash import is_low_backlash, load_low_backlash, low_backlash_fingerprint
+        from .backlash import (FOCUS_BELOW_FILE, is_focus_from_below, is_low_backlash, load_focus_below,
+                               load_low_backlash, low_backlash_fingerprint)
         _lb = load_low_backlash(zcam_low_backlash, found=zcam_low_backlash_found)
-        n_low = 0
+        # 0.94.6 (Christian, 26 Oct): the focus approach - frames whose focus came into place from below, the list
+        # next to the found list (<scapes>/zcam_focus_from_below.csv); they get their own bin cameras (``_fb``)
+        _fb_file = (Path(zcam_low_backlash_found).parent / FOCUS_BELOW_FILE) if zcam_low_backlash_found else None
+        _fb = load_focus_below(found=_fb_file) if _fb_file is not None else None
+        n_low = n_fb = 0
         for r in images:
             if instruments.get(r["camera_group"]) == "Z":
                 r["focus_state"] = calib.focus_state(is_low_backlash(r, _lb), r.get("camera_group"))
                 n_low += r["focus_state"] == "regular"
+                r["focus_below"] = bool(_fb and is_focus_from_below(r, _fb))
+                n_fb += r["focus_below"]
 
         cameras = {}
         nav_info: Dict[str, Any] = {}
@@ -576,6 +583,12 @@ class SfmProject:
                     "zcam_line_form": zcam_line_form,                   # the form of every focus line
                     "zcam_low_backlash_sha256": (low_backlash_fingerprint(zcam_low_backlash, zcam_low_backlash_found)
                                                  if any(f == "Z" for f in instruments.values()) else None),
+                    "zcam_focus_below_sha256": (low_backlash_fingerprint(_fb_file)
+                                                if (_fb_file and _fb_file.is_file()
+                                                    and any(f == "Z" for f in instruments.values())) else None),
+                    "zcam_focus_below": ({"file": str(_fb_file), "images": int(n_fb),
+                                          "sha256": low_backlash_fingerprint(_fb_file) if (_fb_file and _fb_file.is_file()) else None}
+                                         if _fb_file is not None else None),
                     "zcam_low_backlash": {"file": _lb["file"], "images": int(n_low),
                                           "disabled": zcam_low_backlash is False,     # 0.93.5: no list at all
                                           "entries": len(_lb["entries"]) + len(_lb["sol_sequences"]),
@@ -781,13 +794,17 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
         focus_ref = float(np.median(all_counts)) if all_counts else None
         # images of the known low-backlash (regular) focus state get their own bins; 0.94.6 ``by``: and each sol
         # and sequence its own ("sequence"), or each image ("image")
-        bkeys = [(bb, r.get("focus_state") == "regular", _bin_unit(r, by)) for r, bb in zip(rows, bins)]
+        # 0.94.6: and the frames whose focus came into place from below (the focus-approach list) theirs ("_fb")
+        bkeys = [(bb, r.get("focus_state") == "regular", _bin_unit(r, by), bool(r.get("focus_below")))
+                 for r, bb in zip(rows, bins)]
         for b in sorted(set(bkeys)):
             members = [r for r, bb in zip(rows, bkeys) if bb == b]
             counts = [r["focus_count"] for r in members if r["focus_count"] is not None]
             med = float(np.median(counts)) if counts else None
             regular = bool(b[1])
-            key = f"{group}_{_focus_tag(med)}" + (f"_{b[2]}" if b[2] else "") + ("_reg" if regular else "")
+            fbelow = bool(b[3])
+            key = (f"{group}_{_focus_tag(med)}" + (f"_{b[2]}" if b[2] else "") + ("_fb" if fbelow else "")
+                   + ("_reg" if regular else ""))
             params = list(map(float, base["params"]))
             fl = [r["label_f_px"] for r in members if r.get("label_f_px") is not None]
             Ts = [float(r["camera_temperature_degC"]) for r in members if r.get("camera_temperature_degC") is not None]
@@ -891,6 +908,14 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                 extra = dict(extra, backlash_state="regular", state_source="list")
             if not regular:                          # 0.93.5: every bin carries its state; 110 mm "single"
                 extra = dict(extra, backlash_state=("single" if forms.is_single_state(group) else "backlash"))
+            if fbelow:                               # 0.94.6: the focus approach - the model's offset, if it has one
+                dfb = float((gm or {}).get("focus_below_offset_px") or 0.0)
+                if dfb:
+                    a_ = params[1] / params[0]
+                    params[0] += dfb
+                    params[1] += dfb * a_
+                    src += f"; focus from below: fx {dfb:+.2f} px (the model's offset)"
+                extra = dict(extra, focus_approach="below")
             cam = dict(base, params=params, group=group, focus_count_median=med,
                        focus_count_range=[min(counts), max(counts)] if counts else None, n_images=len(members),
                        fixed_params=fixed, source=src, temperature_median_degC=Tb, sol_median=Sb, **extra)

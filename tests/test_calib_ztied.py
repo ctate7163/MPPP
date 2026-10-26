@@ -54,7 +54,7 @@ def _truth_model():
     return m
 
 
-def _block(tmp_path, name, shift, model, rng, sol, reg=None):
+def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None):
     """One block: the synthetic Navcam stations (helpers._synthetic) plus Mastcam-Z 34 mm stereo frames at each
     station (three pointings x three focus counts), every image seeing dense terrain patches.  ``reg``
     {"eye": "L", "F": 950.0, "offset": (dcx, dcy)}: that eye's images at that focus are in the regular state (f /
@@ -82,7 +82,8 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None):
                 for eye, R, C in (("L", RL, CL), ("R", RR, CR)):
                     nm = f"Z{eye}0_{sol:04d}_{k:04d}.png"
                     is_reg = bool(reg) and eye == reg["eye"] and F == reg["F"]
-                    zimgs.append({"_reg": is_reg, "name": nm, "stem": nm[:-4], "instrument": f"Z{eye}", "eye": eye, "sclk_key": sclk,
+                    is_fb = bool(fb) and eye == fb["eye"] and F == fb["F"]       # 0.94.6: focus from below
+                    zimgs.append({"_reg": is_reg, "_fb": is_fb, "name": nm, "stem": nm[:-4], "instrument": f"Z{eye}", "eye": eye, "sclk_key": sclk,
                                   "sol": sol, "site": 1, "drive": int(st[-4:]), "station": st, "sequence": "ZCAM00000",
                                   "downsample_scale": 1.0, "native_size": [ZW, ZH], "prior_C": C.tolist(),
                                   "prior_R_w2c": R.tolist(), "has_mask": False, "camera_group": f"Z{eye}034",
@@ -101,9 +102,14 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None):
     db = {"NL": 1, "NR": 2}
     zcid, nid = {}, 3
     for r in zimgs:
-        key = f"{r['camera_group']}_f{int(r['focus_count'])}" + ("_reg" if r["_reg"] else "")
+        key = (f"{r['camera_group']}_f{int(r['focus_count'])}" + ("_fb" if r["_fb"] else "")
+               + ("_reg" if r["_reg"] else ""))
         if key not in zcid:
             p = _law(model, r["camera_group"], r["focus_count"], "regular" if r["_reg"] else "backlash")
+            if r["_fb"]:                            # 0.94.6: the focus-from-below offset (px on fx, fy x aspect)
+                asp = p[1] / p[0]
+                p[0] += fb["offset_px"]
+                p[1] += fb["offset_px"] * asp
             if r["_reg"]:
                 p[2] += reg["offset"][0]
                 p[3] += reg["offset"][1]
@@ -400,3 +406,31 @@ def test_zcam_joint_high_low_ratio_by_block(tmp_path, monkeypatch):
     t0 = r0["eyes"]["ZL034"]["terms"]
     assert 1.007 < t0["a_fx_backlash"] / t0["a_fx_regular"] < 1.011
     assert Z.ratio_group({"scape": "x", "sol": 91}, "sol") == "x|sol91" and Z.ratio_group({"scape": "x"}, "global") is None
+
+
+def test_zcam_joint_focus_from_below_offset(tmp_path, monkeypatch):
+    """0.94.6 (Christian, 26 Oct: two backlash effects superimposed): bins whose focus came into place from below
+    ("_fb") share the focus slope with an intercept offset of their own; the joint recovers it (-3 px on ZL at
+    focus 600 in one block), leaves the other eye without one, and writes it into the candidate model."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    monkeypatch.setattr(Z, "LOW_LIST_CHECK", False)
+    assert forms.zcam_focus_below("ZL034_F01254_fb_reg@blk") and not forms.zcam_focus_below("ZL034_F01254_reg")
+    assert forms.zcam_state("ZL034_F01254_fb_reg@blk") == "regular"
+    rng = np.random.default_rng(11)
+    truth = _truth_model()
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500, fb={"eye": "L", "F": 600.0, "offset_px": -3.0})
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900)
+    st = _navcam_law(cams, rigT)
+    res = Z.fit_zjoint({}, model=copy.deepcopy(truth), scapes=[a, b], st=st, nav_points=None, z_points=None,
+                       iterations=60, passes=2, verbose=False, diagnostics=False, k_tests=False)
+    rows = {r["eye"]: r for r in res["focus_below"]}
+    assert set(rows) == {"ZL034"} and rows["ZL034"]["bins"] == 1 and rows["ZL034"]["blocks"] == ["blk_a"]
+    assert rows["ZL034"]["offset_px"] == pytest.approx(-3.0, abs=0.3)
+    assert rows["ZL034"]["sd_px"] and rows["ZL034"]["sd_px"] < 0.5
+    t = res["eyes"]["ZL034"]["terms"]
+    assert t["a_fx_backlash"] == pytest.approx(_law(truth, "ZL034", 600.0)[0], abs=0.5)    # the line itself unmoved
+    cand = Z.candidate_model(res, truth)
+    assert cand["cameras"]["ZL034"]["focus_below_offset_px"] == pytest.approx(rows["ZL034"]["offset_px"])
+    assert "focus_below_offset_px" not in cand["cameras"]["ZR034"]

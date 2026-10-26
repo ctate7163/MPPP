@@ -52,6 +52,11 @@ def test_cameras_per_image_and_per_sequence():
     assert len(cams) == 1
     cams = _split_by_focus([dict(r) for r in rows], {"ZL034": base}, {"ZL034": "Z"}, 30.0, "focal", by="sequence")
     assert sorted(cams) == ["ZL034_F01000_s0100_ZCAM00001", "ZL034_F01002_s0101_ZCAM00002"]
+    fbr = [dict(r) for r in rows]
+    fbr[1]["focus_below"] = True                     # 0.94.6: focus from below - a bin camera of its own ("_fb")
+    cams = _split_by_focus(fbr, {"ZL034": base}, {"ZL034": "Z"}, 30.0, "focal")
+    fbk = [k for k in cams if k.endswith("_fb")]
+    assert len(cams) == 2 and fbk == ["ZL034_F01001_fb"] and cams[fbk[0]]["focus_approach"] == "below"
     rr = [dict(r) for r in rows]
     cams = _split_by_focus(rr, {"ZL034": base}, {"ZL034": "Z"}, 30.0, "focal", by="image", hold_f_images=0)
     assert len(cams) == 3 and all("_c07" in k for k in cams) and len({r["instrument"] for r in rr}) == 3

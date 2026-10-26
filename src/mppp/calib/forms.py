@@ -52,6 +52,12 @@ def is_single_state(key: Any) -> bool:
     return zcam_key_zoom(key) in ZCAM_SINGLE_STATE_ZOOMS
 
 
+def zcam_focus_below(key: Any) -> bool:
+    """0.94.6 (Christian, 26 Oct): a Mastcam-Z bin camera of frames whose focus came into place from below -
+    ``_fb`` in its key (``ZL034_F01254_fb``, ``ZL034_F01254_fb_reg@block``)."""
+    return "fb" in str(key).split("@", 1)[0].split("_")[1:]
+
+
 def zcam_state(key: Any, spec: Optional[Dict[str, Any]] = None) -> str:
     """The focus state of a Mastcam-Z camera (one rule for the block reports, the joints and the checks, 0.93.5):
     ``"single"`` at a single-state zoom (110 mm), else the camera's own ``backlash_state`` when it has one, else

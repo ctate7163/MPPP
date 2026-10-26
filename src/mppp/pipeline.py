@@ -813,6 +813,15 @@ def _low_backlash_found(s: Settings, work: Path) -> Optional[Path]:
     return Path(s.zcam_low_backlash_found) if s.zcam_low_backlash_found else None
 
 
+def _focus_below_sha(found: Optional[Path]) -> Optional[str]:
+    """The fingerprint of the focus-approach list next to the found list (None without one)."""
+    from .sfm.backlash import FOCUS_BELOW_FILE, low_backlash_fingerprint
+    if not found:
+        return None
+    f = Path(found).parent / FOCUS_BELOW_FILE
+    return low_backlash_fingerprint(f) if f.is_file() else None
+
+
 def wanted_project_settings(s: Settings, work: Path) -> Dict[str, Any]:
     """What ``project.settings`` must record for the project to be reused rather than built again."""
     from .sfm.backlash import low_backlash_fingerprint
@@ -825,6 +834,7 @@ def wanted_project_settings(s: Settings, work: Path) -> Dict[str, Any]:
             "zcam_bin_by": (s.zcam_bin_by or "focus") if z else None,
             "zcam_rig": s.zcam_rig, "zcam_rig_refine": s.zcam_rig_refine,
             "zcam_low_backlash_sha256": low_backlash_fingerprint(s.zcam_low_backlash, found) if z else None,
+            "zcam_focus_below_sha256": _focus_below_sha(found) if z else None,      # 0.94.6
             "zcam_line_params": ({str(k): list(v) for k, v in s.zcam_line_params.items()}
                                  if (s.zcam_line_params and z) else None),
             "zcam_rig_fit": s.zcam_rig_fit if z else None,

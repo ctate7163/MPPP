@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 
 from . import joint as J
-from .forms import is_single_state
+from .forms import is_single_state, zcam_focus_below
 from . import tied as T
 
 log = logging.getLogger("mppp.calib")
@@ -174,6 +174,7 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
         reg = stt == "regular"
         G = e["G"]
         zunits[new] = {"key": name, "scape": z["scape"], "group": g, "eye": g[:2], "state": stt,
+                       "fb": zcam_focus_below(z["key"]),           # 0.94.6: the focus came in from below
                        "focus": None if foc is None else float(foc), "dF": dF,
                        # the pins: the model's pp0 (full-frame pixels, as the padded frames), else from the bin
                        "c_cx": float(e["pp0"][0]) if len(e["pp0"]) == 2 else float(p[_CX] - (G[10] if reg else 0.0)),
@@ -281,6 +282,10 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
     rgroups = ratio_groups(zunits, by) if tie else {}
     dreg = {k: np.zeros(1) for k in rgroups}
     unit_group = {cid: k for k, cids in rgroups.items() for cid in cids}
+    # 0.94.6 (Christian, 26 Oct): the focus approach - one offset per eye (px on fx; fy x the aspect) for the bins
+    # whose focus came into place from below, the same focus slope ("a different y-intercept")
+    dfb = {eye: np.array([float((sg.get("focus_below_px") or {}).get(eye, 0.0))])
+           for eye in sorted({u["group"] for u in zunits.values() if u.get("fb")})} if tie else {}
 
     def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
         n = 0
@@ -306,18 +311,23 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 G0 = sg["eyes"][eye]["G"]
                 rk = unit_group.get(int(cid))
                 nx = 1 if rk is not None else 0              # 0.94.6: the group's own offset on a_fx_regular
+                nf = 1 if (u.get("fb") and eye in dfb) else 0    # 0.94.6: the focus-from-below offset
+                asp = float(G0[1] / G0[0])
                 for pi, gi in ((_FX, 2 if reg else 0), (_FY, 2 if reg else 1)):
-                    a = np.zeros(12 + NG + nx); a[pi] = 1.0; a[12 + 4] = -u["dF"] / ratio
+                    a = np.zeros(12 + NG + nx + nf); a[pi] = 1.0; a[12 + 4] = -u["dF"] / ratio
                     # 0.93.5: the regular state scales f, not the pixel aspect - its fy is a_fx_regular x the
                     # backlash aspect at the start (22 Oct Z34: a free a_fy_regular gave a regular fy / fx of 0.984)
-                    a[12 + gi] = -(float(G0[1] / G0[0]) if (reg and pi == _FY) else 1.0)
+                    a[12 + gi] = -(asp if (reg and pi == _FY) else 1.0)
                     if nx:
-                        a[12 + NG] = -(float(G0[1] / G0[0]) if pi == _FY else 1.0)
+                        a[12 + NG] = -(asp if pi == _FY else 1.0)
+                    if nf:
+                        a[12 + NG + nx] = -(asp if pi == _FY else 1.0)
                     rows.append(a); sig.append(TIE_SIGMA_Z["f"])
                 for pi, gi, s_ in ((_K1, 5, "k"), (_K2, 6, "k"), (_P1, 7, "p"), (_P2, 8, "p")):
-                    a = np.zeros(12 + NG + nx); a[pi] = 1.0; a[12 + gi] = -1.0
+                    a = np.zeros(12 + NG + nx + nf); a[pi] = 1.0; a[12 + gi] = -1.0
                     rows.append(a); sig.append(TIE_SIGMA_Z[s_])
-                add_tie(np.array(rows), np.array(sig), [12, NG] + [1] * nx, [blk, g[eye]] + ([dreg[rk]] if nx else []))
+                add_tie(np.array(rows), np.array(sig), [12, NG] + [1] * (nx + nf),
+                        [blk, g[eye]] + ([dreg[rk]] if nx else []) + ([dfb[eye]] if nf else []))
                 if reg:                                      # 0.93.2: cx = pin + d_cx, cy = pin + b_cy dF + d_cy
                     c0 = np.array([u["c_cx"], u["c_cy"]], float)
                     keep.append(c0)
@@ -358,12 +368,14 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 prob.set_manifold(arr, pyceres.SubsetManifold(len(arr), sorted(ix)))
         cb = {k: v for k, v in g.items() if prob.has_parameter_block(v) and not prob.is_parameter_block_constant(v)}
         cb.update({f"dreg|{eye}|{gk}": d for (eye, gk), d in dreg.items() if prob.has_parameter_block(d)})
+        cb.update({f"dfb|{eye}": d for eye, d in dfb.items() if prob.has_parameter_block(d)})
         return {"cov_blocks": cb, "ties": {"zcam_cameras": n}, "held": held,
                 "tie_ids": tie_ids if T.EXACT_TIE_COVARIANCE else [], "tie_specs": specs,
                 "exact_solve": bool(EXACT_TIE_SOLVE)}
 
     hook.ratio_offsets = dreg
     hook.ratio_by = by
+    hook.focus_below = dfb
     return hook, g
 
 
@@ -461,6 +473,8 @@ def adjust_z(rec, proj, idx, st, units, zunits, sg, iterations: int = 100, covar
             log.info(f"  pass {p_ + 1}: {ba['brief'][:160]}")
     ba["ratio_offsets"] = {k: float(v[0]) for k, v in hook.ratio_offsets.items()}
     ba["ratio_by"] = hook.ratio_by
+    ba["focus_below_px"] = {k: float(v[0]) for k, v in hook.focus_below.items()}       # 0.94.6
+    sg["focus_below_px"] = dict(ba["focus_below_px"])
     stats = J.residual_stats(rec, proj, keypoint_scale=ks, keypoint_map=kmap)
     return ba, g, stats
 
@@ -511,7 +525,26 @@ def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
                             "regular_bins": sum(1 for u in zunits.values() if u["group"] == eye and u["state"] == "regular")}
     out["regular_ratio_by"] = ba.get("ratio_by") or REGULAR_RATIO_BY
     out["regular_ratio_groups"] = ratio_group_rows(out, ba, zunits)
+    out["focus_below"] = focus_below_rows(out, ba, zunits)
     return out
+
+
+def focus_below_rows(res: Dict[str, Any], ba: Dict[str, Any], zunits: Dict[int, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """0.94.6 (Christian, 26 Oct): per eye the focus-from-below offset (px on fx at the same focus count), its sd,
+    z, the offset in ppm of the backlash f, and the bins it rests on (also on the low list or not)."""
+    cov = ba.get("covariance") or {}
+    rows = []
+    for eye, d in sorted((ba.get("focus_below_px") or {}).items()):
+        e = res["eyes"].get(eye)
+        sd = T._sd(cov, f"dfb|{eye}", 1)
+        s_px = float(sd[0]) if sd is not None and np.isfinite(sd[0]) else None
+        f0 = float(e["terms"]["a_fx_backlash"]) if e else None
+        us = [u for u in zunits.values() if u["group"] == eye and u.get("fb")]
+        rows.append({"eye": eye, "offset_px": float(d), "sd_px": s_px, "z": (float(d) / s_px) if s_px else None,
+                     "ppm": (1e6 * float(d) / f0) if f0 else None, "sd_ppm": (1e6 * s_px / f0) if (f0 and s_px) else None,
+                     "bins": len(us), "bins_also_low": sum(1 for u in us if u["state"] == "regular"),
+                     "blocks": sorted({u["scape"] for u in us})})
+    return rows
 
 
 def ratio_group_rows(res: Dict[str, Any], ba: Dict[str, Any], zunits: Dict[int, Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -585,8 +618,9 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
         G = g[u["group"]]
         reg = u["state"] == "regular"
         ratio = float(sg["eyes"][u["group"]]["ratio"]) if reg else 1.0
-        p[_FX] = G[2 if reg else 0] + G[4] * u["dF"] / ratio
-        p[_FY] = G[3 if reg else 1] + G[4] * u["dF"] / ratio
+        dfb_ = float((sg.get("focus_below_px") or {}).get(u["group"], 0.0)) if u.get("fb") else 0.0
+        p[_FX] = G[2 if reg else 0] + G[4] * u["dF"] / ratio + dfb_
+        p[_FY] = G[3 if reg else 1] + G[4] * u["dF"] / ratio + dfb_ * float(G[1] / G[0])
         p[_K1], p[_K2], p[_P1], p[_P2] = G[5], G[6], G[7], G[8]
         if reg:                                         # 0.93.2: the regular state's principal point
             p[_CX] = u["c_cx"] + G[10]
@@ -925,6 +959,12 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    + ("" if "d_cx_regular" in e.get("held", []) else
                       f"; low-state principal point {f('d_cx_regular')}, {f('d_cy_regular')} px from the high "
                       f"state's ({e.get('mixed_exposures', 0)} exposures with the other eye in the high state)"))
+    for r_ in res.get("focus_below") or []:          # 0.94.6: the focus approach
+        sdp = f" +- {r_['sd_px']:.2f}" if r_.get("sd_px") else ""
+        out.append(f"{r_['eye']} focus from below: fx {r_['offset_px']:+.2f}{sdp} px"
+                   + (f" ({r_['ppm']:+.0f} ppm, z {r_['z']:+.1f})" if r_.get("z") is not None and r_.get("ppm") is not None else "")
+                   + f" at the same focus count; {r_['bins']} bins ({r_['bins_also_low']} also low state) in "
+                   + ", ".join(r_["blocks"]))
     for r_ in res.get("regular_ratio_groups") or []:
         out.append(f"{r_['eye']} high / low ratio of {r_['group']} ({r_['bins']} low-state bins, sols "
                    f"{', '.join(map(str, r_['sols'])) or '-'}): {r_['ratio']:.4f}"
@@ -1023,6 +1063,14 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
         gm["aspect"] = float(tm["a_fy_backlash"] / tm["a_fx_backlash"])
         gm["reference_focus"] = ref
         gm["regular_ratio"] = ratio
+        fbr = [x for x in res.get("focus_below") or [] if x["eye"] == eye]
+        gm.pop("focus_below_offset_px", None)
+        gm.pop("focus_below", None)
+        if fbr:                                       # 0.94.6: the focus approach (px on fx, same slope)
+            gm["focus_below_offset_px"] = float(fbr[0]["offset_px"])
+            gm["focus_below"] = {k: fbr[0][k] for k in ("sd_px", "z", "ppm", "bins", "bins_also_low", "blocks")}
+            gm["focus_below"]["note"] = ("the bins whose focus came into place from below (the focus-approach list): "
+                                         "fx + offset, fy + offset x aspect, at the same focus count")
         grp = [x for x in res.get("regular_ratio_groups") or [] if x["eye"] == eye]
         gm.pop("regular_ratio_groups", None)
         if grp:                                       # 0.94.6: the groups' own ratios, for the record
