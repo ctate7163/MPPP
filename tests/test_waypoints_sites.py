@@ -402,8 +402,10 @@ def test_chal_rocks_110mm():
     from mppp.waypoints.sites import load_site_table
     d = load_site_table()
     t = d["sites"]
-    assert t["chal_rocks_tiny"]["zcam"] == [34, 48, 63, 79] == t["taylorfjellet"]["zcam"]
-    assert t["chal_rocks"]["zcam"] == [34, 48, 63, 79, 110]          # 26 Oct (Christian): 110 mm back for the focus study
+    # 26 Oct (Christian): 79 and 110 mm out for now - 34, 48, 63 mm until the wider zooms have good models
+    assert t["chal_rocks_tiny"]["zcam"] == [34, 48, 63] == t["taylorfjellet"]["zcam"] == t["chal_rocks"]["zcam"]
+    assert t["seitah_overlook"]["zcam"] == [34, 48, 63] and t["belva_crater"]["zcam"] == [34]
+    assert not any(z in (79, 110) for s_ in t.values() for z in (s_.get("zcam") or []))
     assert t["taylorfjellet"]["settings"]["exclude"] == ["seq:ZCAM05065"]       # 26 Oct (Christian)
     from mppp.pipeline import Settings
     a = Settings(exclude=["seq:ZCAM05065"]).key_dict()

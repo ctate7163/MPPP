@@ -47,7 +47,8 @@ def test_pipeline_dry_run_and_state(tmp_path):
     # 0.94.4: the Hazcams are fitted over the ecam blocks before the Mastcam-Z runs, not over the Mastcam-Z blocks
     assert "calib hazcam --group ecam_consensus" in out and "calib hazcam --zcam-blocks" not in out
     assert out.index("calib hazcam --group ecam_consensus") < out.index("zcam_runs: start")
-    assert "calib zcam --zoom 110" in out and "calib nz" in out
+    assert "calib zcam --zoom 63" in out and "calib nz" in out                  # 26 Oct: 34, 48, 63 mm only
+    assert "calib zcam --zoom 79" not in out and "calib zcam --zoom 110" not in out
     assert "error_analysis_batch.py" in out
     assert out.count("--jobs 2") >= 2                                    # 0.94.3: two sites at a time by default
     assert not (tmp_path / "mppp_pipeline" / "state.json").exists()      # a dry run leaves no state
@@ -141,7 +142,7 @@ def test_pipeline_zcam_runs_only_some_sites(tmp_path, monkeypatch):
     got = []
     monkeypatch.setattr(rp.Pipeline, "_sites", lambda self, stage, args, zcam: got.append(args) or ("done", "ok"))
     p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, zcam_sites=["taylorfjellet", "marble_mountain"]))
-    assert p.s_zcam_runs() == ("done", "ok") and got[-1] == ["--sites", "marble_mountain", "taylorfjellet"]
+    assert p.s_zcam_runs() == ("done", "ok") and got[-1] == ["--sites", "taylorfjellet", "marble_mountain"]   # given order
     p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, zcam_sites=["pico_turquino"]))
     assert p.s_zcam_runs()[0] == "failed"
     p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True))

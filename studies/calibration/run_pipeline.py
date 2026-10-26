@@ -77,7 +77,8 @@ STAGE_ALIASES = {"navcam_runs": "ecam_runs", "navcam_joint": "ecam_joint"}     #
 STOP_ON_FAIL = ()                                # every stage goes on to the next
 ZCAM_GROUP, ECAM_GROUP, ZCAM34_JOINT = "zcam_consensus", "ecam_consensus", "zcam34_joint"
 NAVCAM_GROUP = ECAM_GROUP                        # the name before 0.94.4
-ZOOMS = (34, 48, 63, 79, 110)
+ZOOMS = (34, 48, 63)                # Christian, 26 Oct: 79 and 110 mm out until the wider zooms have good models
+ALL_ZOOMS = (34, 48, 63, 79, 110)
 LIGHTGLUE_AB_SITES = ("chal_rocks_tiny", "seitah_overlook_tiny")        # the lightglue_ab stage (24 Oct)
 
 
@@ -242,7 +243,7 @@ class Pipeline:
             unknown = [n for n in only if n not in names]
             if unknown:
                 return "failed", f"--zcam-sites: not Mastcam-Z sites of this run: {', '.join(unknown)}"
-            names = [n for n in names if n in only]
+            names = list(dict.fromkeys(only))           # Christian, 26 Oct: in the order given (the first first)
         return self._sites("zcam_runs", ["--sites", *names], True)
 
     def s_zcam_joints(self):
@@ -372,7 +373,7 @@ class Pipeline:
         today = f"{datetime.date.today():%Y%m%d}"
         for pat, title in (("navcal_tied_*", "Navcam joint"), ("hazcam_fit_ecam_*", "Hazcam fit (ecam blocks)"),
                            ("hazcam_fit_zcam_*", "Hazcam fit (Mastcam-Z blocks)"),
-                           *[(f"zcam{z}_joint_*", f"Mastcam-Z {z} mm joint") for z in ZOOMS],
+                           *[(f"zcam{z}_joint_*", f"Mastcam-Z {z} mm joint") for z in ALL_ZOOMS],
                            ("nz34_joint_*", "Navcam + Mastcam-Z check"), ("error_analysis_*", "Error analysis"),
                            ("rover_frame_*", "Rover frame (study 3A)")):
             found = sorted(p for p in ca.glob(pat) if p.is_dir()) if ca.is_dir() else []
@@ -479,7 +480,7 @@ def main(argv=None) -> int:
                     help="zcam_joints also fits the Hazcams over the Mastcam-Z blocks (off since 0.94.4)")
     ap.add_argument("--no-nz", action="store_true", help="zcam_joints without the Navcam + Mastcam-Z check")
     ap.add_argument("--no-zcam-states", action="store_true", help="skip the zcam_states stage (the states run)")
-    ap.add_argument("--zooms", type=int, nargs="*", default=list(ZOOMS), help="the Mastcam-Z joints (default all)")
+    ap.add_argument("--zooms", type=int, nargs="*", default=list(ZOOMS), help="the Mastcam-Z joints (default 34, 48, 63)")
     ap.add_argument("--zcam-group", default=None, help="the Mastcam-Z sites (default zcam_consensus)")
     ap.add_argument("--zcam-sites", nargs="+", default=None, metavar="SITE",
                     help="zcam_runs aligns only these sites; the joints use the others' finished blocks as they are")

@@ -400,7 +400,7 @@ def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
     import importlib.util
     from mppp.waypoints.sites import load_site_table
     t = load_site_table()["sites"]
-    assert t["chal_rocks_tiny"]["sols"] == [[91, 98]] and t["chal_rocks_tiny"]["zcam"] == [z for z in t["chal_rocks"]["zcam"] if z != 110]
+    assert t["chal_rocks_tiny"]["sols"] == [[91, 98]] and t["chal_rocks_tiny"]["zcam"] == t["chal_rocks"]["zcam"]
     for s in ("chal_rocks", "chal_rocks_large", "chal_rocks_tiny"):
         assert t[s]["no_mask_inference_at"][-3:] == ["ZCAM00034", "ZCAM08060", "RHAZ0*"]
     assert t["bell_island"]["no_mask_inference_at"] == ["RHAZ0*"] == t["bell_island_large"]["no_mask_inference_at"]
@@ -527,12 +527,11 @@ def test_0941_tiny_sites_and_joint_commands(tmp_path, monkeypatch):
     monkeypatch.setattr(lab.subprocess, "call", lambda cmd, cwd=None: calls.append(cmd) or 0)
     (tmp_path / "camera_analysis").mkdir()
     out = lab.tiny_joint(SimpleNamespace(root=str(tmp_path), promote=True), works)
-    assert out["exit"] == {"hazcam": 0, "z34": 0, "z48": 0, "z63": 0, "z79": 0, "z110": 0}
+    # 26 Oct (Christian): 34, 48, 63 mm only - no 79 / 110 mm joint (no block has those zooms)
+    assert out["exit"] == {"hazcam": 0, "z34": 0, "z48": 0, "z63": 0}
     haz = calls[0]
     assert "hazcam" in haz and "--variant" in haz and "--promote-new-only" in haz and "--min-blocks" in haz
-    z110 = [c for c in calls if "110" in c][0]
-    assert sum(1 for x in z110 if str(x).startswith("seitah_overlook_tiny=")) == 1 and not any(
-        str(x).startswith("chal_rocks_tiny=") for x in z110)       # 25 Oct: chal rocks without 110 mm again (faster)
+    assert not [c for c in calls if "--zoom" in c and str(c[c.index("--zoom") + 1]) in ("79", "110")]
     from mppp.cli import build_parser
     a = build_parser().parse_args(["calib", "zcam", "--zoom", "48", "--min-blocks", "1", "--promote-new-only"])
     assert a.min_blocks == 1 and a.promote_new_only
