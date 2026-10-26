@@ -58,6 +58,9 @@ REGULAR_RATIO_RANGE = (1.004, 1.016)   # 0.93.5: backlash / regular f of a fitte
 # low-state bins ("block": a block, "sol": a block's sol) gets its own offset on a_fx_regular (fy follows by the
 # aspect), drawn to 0 with an sd of REGULAR_RATIO_GROUP_SD x f: the global regular ratio is then the groups' mean
 # and a group that disagrees no longer pulls the high state's line or the distortion.  "global": one ratio (0.94.5)
+# 26 Oct (the first real Mastcam-Z joint with it, Z34, 7 blocks): the exact-tie refinement found no decrease in 20
+# tries and took 524 s per call (2.2 M residuals); Ceres' stiff ties hold the units on the law well enough here - off
+EXACT_TIE_SOLVE = False
 REGULAR_RATIO_BY = "block"
 REGULAR_RATIO_GROUP_SD = 0.003
 TIE_SIGMA_Z = {"f": 1e-3, "k": 1e-7, "p": 1e-8, "cy": 1e-3}       # px; unitless - the ties are effectively exact
@@ -357,7 +360,7 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
         cb.update({f"dreg|{eye}|{gk}": d for (eye, gk), d in dreg.items() if prob.has_parameter_block(d)})
         return {"cov_blocks": cb, "ties": {"zcam_cameras": n}, "held": held,
                 "tie_ids": tie_ids if T.EXACT_TIE_COVARIANCE else [], "tie_specs": specs,
-                "exact_solve": bool(T.EXACT_TIE_SOLVE)}
+                "exact_solve": bool(EXACT_TIE_SOLVE)}
 
     hook.ratio_offsets = dreg
     hook.ratio_by = by

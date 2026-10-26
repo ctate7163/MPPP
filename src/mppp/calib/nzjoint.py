@@ -69,7 +69,7 @@ def adjust_nz(rec, proj, idx, st, units, zunits, sg, hold: Sequence[str] = T.HOL
                 "held": {**(a.get("held") or {}), **(b.get("held") or {})},
                 "tie_ids": list(a.get("tie_ids") or []) + list(b.get("tie_ids") or []),    # 0.94.6: both sets
                 "tie_specs": list(a.get("tie_specs") or []) + list(b.get("tie_specs") or []),
-                "exact_solve": bool(a.get("exact_solve") or b.get("exact_solve"))}
+                "exact_solve": bool(a.get("exact_solve") and b.get("exact_solve"))}    # 26 Oct: off with the Mastcam-Z
 
     _hold_z_pp(proj)
     ba = None
