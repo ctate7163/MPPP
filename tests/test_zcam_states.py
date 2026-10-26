@@ -127,3 +127,32 @@ def test_states_survey_low_high_mixed_and_proposal(tmp_path):
     assert ZS.apply_proposal(p, found)["added"] == 0                    # nothing twice
     from mppp.cli import main
     assert main(["zcam-states", "--root", str(tmp_path), "--found", str(found), "--out", str(tmp_path / "o2")]) == 0
+
+
+def test_focus_from_below_list_and_motor_moves(tmp_path):
+    """0.94.6 (Christian, 26 Oct: two backlash effects superimposed): the focus-approach list is separate from the
+    zoom (low / high) list and applies at every zoom; the motor moves come from the previous frame of the eye."""
+    from mppp.sfm.backlash import is_focus_from_below, is_low_backlash, load_focus_below, load_low_backlash, motor_moves
+    fb = tmp_path / "zcam_focus_from_below.csv"
+    fb.write_text("92:ZCAM00033\n0121_0677678900\n-0121_0677678707\n", encoding="utf-8")
+    lst = load_focus_below(found=fb)
+    a = {"stem": _name("L", 92, 675116815, "ZCAM00033"), "sol": 92, "sequence": "ZCAM00033", "camera_group": "ZL034"}
+    b = {"stem": _name("R", 121, 677678900, "ZCAM08114", 79), "sol": 121, "sequence": "ZCAM08114", "camera_group": "ZR079"}
+    c = {"stem": _name("L", 121, 677678707, "ZCAM08114"), "sol": 121, "sequence": "ZCAM08114", "camera_group": "ZL034"}
+    d = {"stem": _name("L", 93, 675176651, "ZCAM00034"), "sol": 93, "sequence": "ZCAM00034", "camera_group": "ZL034"}
+    e = {"stem": _name("L", 121, 677678847, "ZCAM08114", 110), "sol": 121, "sequence": "ZCAM08114", "camera_group": "ZL110"}
+    assert is_focus_from_below(a, lst) and is_focus_from_below(b, lst)
+    assert not is_focus_from_below(c, lst) and not is_focus_from_below(d, lst)          # "-" line; the default
+    fb.write_text("0121_0677678847\n", encoding="utf-8")
+    assert is_focus_from_below(e, load_focus_below(found=fb))                           # 110 mm too
+    assert not is_low_backlash(e, load_low_backlash(None, found=fb))                    # the zoom list: one state
+    man = []
+    for i, (eye, sclk, zm, fc) in enumerate((("L", 100.0, 2448, 1254), ("L", 140.0, 3834, 2316), ("L", 200.0, 3834, 2100),
+                                             ("L", 9000.0, 3834, 2100), ("R", 150.0, 2448, 1296))):
+        man.append({"filename": {"family": "Z", "eye": eye, "stem": f"s{i}"}, "sclk": sclk,
+                    "zoom_position_count": zm, "focus_position_count": fc})
+    mv = motor_moves(man)
+    assert mv["s0"]["zoom_dir"] is None and mv["s4"]["previous"] is None
+    assert (mv["s1"]["zoom_dir"], mv["s1"]["focus_dir"], mv["s1"]["dfocus"]) == ("up", "up", 1062.0)
+    assert (mv["s2"]["zoom_dir"], mv["s2"]["focus_dir"]) == ("none", "down")
+    assert mv["s3"]["zoom_dir"] is None                                                 # more than 30 min later

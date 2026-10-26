@@ -402,6 +402,7 @@ def test_chal_rocks_110mm():
     from mppp.waypoints.sites import load_site_table
     d = load_site_table()
     t = d["sites"]
-    assert t["chal_rocks"]["zcam"] == [34, 48, 63, 79] == t["chal_rocks_tiny"]["zcam"] == t["taylorfjellet"]["zcam"]
+    assert t["chal_rocks_tiny"]["zcam"] == [34, 48, 63, 79] == t["taylorfjellet"]["zcam"]
+    assert t["chal_rocks"]["zcam"] == [34, 48, 63, 79, 110]          # 26 Oct (Christian): 110 mm back for the focus study
     assert "taylorfjellet_huge" not in t and t["taylorfjellet_large"]["sols"] == [[1601, 1673]]
     assert "groloy" in d["groups"]["ecam_consensus"] and "taylorfjellet_large" in d["groups"]["ecam_consensus"]

@@ -179,6 +179,88 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
     return out
 
 
+# ------------------------------------------------------------------ 0.94.6: the focus approach (second backlash)
+FOCUS_BELOW_FILE = "zcam_focus_from_below.csv"        # next to the WORK folders, like the found list
+FOCUS_BELOW_SHIPPED = "mars2020_mastcam-z_focus_from_below.csv"   # in mppp/data
+
+
+def default_focus_below_path(root: Any = None):
+    """Christian, 26 Oct: the frames whose focus came into place from BELOW (the focus motor moving up) -
+    ``<root>/zcam_focus_from_below.csv``, else ``MPPP_FOCUS_BELOW``, else ``<MPPP_SCAPES>/zcam_focus_from_below.csv``."""
+    import os
+    from pathlib import Path
+    if root:
+        return Path(root) / FOCUS_BELOW_FILE
+    env = os.environ.get("MPPP_FOCUS_BELOW")
+    if env:
+        return Path(env)
+    sc = os.environ.get("MPPP_SCAPES")
+    return Path(sc) / FOCUS_BELOW_FILE if sc else None
+
+
+def load_focus_below(path: Any = None, found: Any = "auto") -> Dict[str, Any]:
+    """The focus-approach list (Christian, 26 Oct: "two different backlash effects superimposed").  The default -
+    no entry - is the focus mechanism coming DOWN into place (sol 93 ZCAM00034, sol 102 ZCAM08062); an entry marks
+    frames whose focus came into place from below (sols 92 and 93 ZCAM00033; sol 121 ZCAM08114 pointings 1, 3, 5),
+    a slightly shorter effective focal length at the same counts.  Independent of the zoom (low / high backlash)
+    list: a frame can be on both.  Same syntax as :func:`load_low_backlash` (sol:sequence, sol_clock, stems, ``-``
+    to take frames off); applies at every zoom, 110 mm included."""
+    from pathlib import Path
+    shipped = Path(path) if path else Path(__file__).resolve().parents[1] / "data" / FOCUS_BELOW_SHIPPED
+    if found == "auto":
+        found = default_focus_below_path()
+    return load_low_backlash(shipped, found=found)
+
+
+def is_focus_from_below(row: Dict[str, Any], lst: Optional[Dict[str, Any]]) -> bool:
+    """Whether an image row is on the focus-approach list (any zoom)."""
+    if not lst:
+        return False
+    ex = lst.get("excluded")
+    if ex and _matches(row, ex):
+        return False
+    return _matches(row, lst)
+
+
+def motor_moves(images: Iterable[Dict[str, Any]], max_gap_s: float = 1800.0) -> Dict[str, Dict[str, Any]]:
+    """Per Mastcam-Z image (key: stem): the zoom and focus motor move from the previous image of the same eye in
+    clock order - ``dzoom``, ``dfocus`` (counts), ``dt_s``, ``zoom_dir`` / ``focus_dir`` ("up", "down", "none"; None
+    when the previous image is more than ``max_gap_s`` earlier or there is none).  ``images``: manifest entries
+    (``filename``, ``sclk``, ``zoom_position_count``, ``focus_position_count``).  Only the frames given count: an
+    autofocus sweep, a thumbnail or another sequence in between is not seen."""
+    by: Dict[str, List[Dict[str, Any]]] = {}
+    for m in images:
+        fn = m.get("filename") or {}
+        if fn.get("family") != "Z" or m.get("sclk") is None:
+            continue
+        by.setdefault(str(fn.get("eye")), []).append(m)
+    out: Dict[str, Dict[str, Any]] = {}
+
+    def _dir(d):
+        return None if d is None else ("up" if d > 0 else "down" if d < 0 else "none")
+
+    for eye, lst in by.items():
+        lst.sort(key=lambda m: float(m["sclk"]))
+        prev = None
+        for m in lst:
+            stem = str(m["filename"].get("stem"))
+            rec = {"zoom": m.get("zoom_position_count"), "focus": m.get("focus_position_count"), "dzoom": None,
+                   "dfocus": None, "dt_s": None, "zoom_dir": None, "focus_dir": None, "previous": None}
+            if prev is not None:
+                dt = float(m["sclk"]) - float(prev["sclk"])
+                if dt <= max_gap_s:
+                    try:
+                        dz = float(m["zoom_position_count"]) - float(prev["zoom_position_count"])
+                        df = float(m["focus_position_count"]) - float(prev["focus_position_count"])
+                    except (TypeError, ValueError):
+                        dz = df = None
+                    rec.update(dzoom=dz, dfocus=df, dt_s=dt, zoom_dir=_dir(dz), focus_dir=_dir(df),
+                               previous=str(prev["filename"].get("stem")))
+            out[stem] = rec
+            prev = m
+    return out
+
+
 def _clock_key(name: str):
     """(eye, spacecraft clock) of a Mastcam-Z product name (``ZL0_0091_0675031997_...`` -> ("L", "0675031997"))."""
     import re

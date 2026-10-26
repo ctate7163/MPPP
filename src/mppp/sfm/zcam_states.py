@@ -59,11 +59,28 @@ def _clock(name: str) -> str:
 
 
 # ====================================================================================== the blocks' images
-def block_images(work: PathLike, variant: str = "", lists: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """One row per Mastcam-Z image of a block (110 mm left out: one state): name, block, group, eye, zoom, sol,
-    sequence, focus, ratio (fitted / label f; None without a fit), sd, observations, listed (shipped or found
-    list), camera."""
-    from .backlash import SINGLE_STATE_ZOOMS, is_low_backlash
+def _manifest_moves(work: PathLike) -> Dict[str, Dict[str, Any]]:
+    """The motor moves of a block's Mastcam-Z images (:func:`mppp.sfm.backlash.motor_moves`) from its processed
+    manifest (the newest ``processed/mppp_manifest_*.json``); {} without one."""
+    from .backlash import motor_moves
+    ms = sorted((Path(work) / "processed").glob("mppp_manifest_*.json"), key=lambda p: p.stat().st_mtime)
+    if not ms:
+        return {}
+    try:
+        man = json.loads(ms[-1].read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return motor_moves(man.get("images") or [])
+
+
+def block_images(work: PathLike, variant: str = "", lists: Optional[Dict[str, Any]] = None,
+                 focus_list: Optional[Dict[str, Any]] = None, single: bool = False) -> List[Dict[str, Any]]:
+    """One row per Mastcam-Z image of a block (110 mm left out: one state; ``single``: only the 110 mm images):
+    name, block, group, eye, zoom, sol, sequence, focus, ratio (fitted / label f; None without a fit), sd,
+    observations, listed (shipped or found list), camera; 0.94.6 (Christian, 26 Oct): the motor moves from the
+    previous frame (``zoom_dir``, ``focus_dir``, ``dzoom``, ``dfocus``) and ``focus_below`` (on the focus-approach
+    list)."""
+    from .backlash import SINGLE_STATE_ZOOMS, is_focus_from_below, is_low_backlash
     from .workdir import project_dir
     root = project_dir(Path(work), variant or None)
     fs = root / "zcam_focus_states.json"
@@ -75,18 +92,23 @@ def block_images(work: PathLike, variant: str = "", lists: Optional[Dict[str, An
     fits = dict(st.get("fits_before") or {})
     fits.update(st.get("fits_after") or {})                  # after a split: the images' last fits
     out = []
+    moves = _manifest_moves(work)
     for r in proj.get("images") or []:
         g = str(r.get("camera_group") or "")
-        if not g.startswith("Z") or _zoom(g) in SINGLE_STATE_ZOOMS:
+        if not g.startswith("Z") or ((_zoom(g) in SINGLE_STATE_ZOOMS) != bool(single)):
             continue
         f = fits.get(r["name"]) or {}
+        mv = moves.get(r.get("stem") or Path(r["name"]).stem) or {}
         out.append({"block": Path(work).name, "name": r["name"], "stem": r.get("stem") or Path(r["name"]).stem,
                     "group": g, "eye": g[:2], "zoom": _zoom(g), "sol": r.get("sol"), "sequence": r.get("sequence"),
                     "focus": r.get("focus_count"), "clock": _clock(r["name"]),
                     "ratio": f.get("ratio_label"), "sd": f.get("sd_ratio"), "observations": f.get("observations"),
                     "camera": f.get("camera"),
-                    "listed": bool(lists is not None and is_low_backlash(r, lists)),
-                    "start_state": r.get("focus_state")})
+                    "listed": bool(lists is not None and not single and is_low_backlash(r, lists)),
+                    "start_state": r.get("focus_state"),
+                    "zoom_dir": mv.get("zoom_dir"), "focus_dir": mv.get("focus_dir"), "dzoom": mv.get("dzoom"),
+                    "dfocus": mv.get("dfocus"),
+                    "focus_below": bool(focus_list is not None and is_focus_from_below(r, focus_list))})
     return out
 
 
@@ -177,15 +199,19 @@ def classify(rows: List[Dict[str, Any]], z_min: float = Z_MIN, pooled_gap: Optio
 
 
 def survey(blocks: Dict[str, PathLike], variant: str = "", lists: Optional[Dict[str, Any]] = None,
-           z_min: float = Z_MIN) -> Dict[str, Any]:
-    """Every block's Mastcam-Z images classified; the per-zoom gap pooled over the blocks that measure one.
-    Returns {"images", "levels", "sequences", "pooled_gap", "proposal"}."""
+           z_min: float = Z_MIN, focus_list: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Every block's Mastcam-Z images classified; the per-zoom gap pooled over the blocks that measure one; the
+    focal ratios by motor approach (:func:`approach_table`, 110 mm included).
+    Returns {"images", "levels", "sequences", "pooled_gap", "proposal", "approach"}."""
     rows: List[Dict[str, Any]] = []
+    single: List[Dict[str, Any]] = []
     for name, w in blocks.items():
-        b = block_images(w, variant, lists)
-        for r in b:
+        b = block_images(w, variant, lists, focus_list)
+        s1 = block_images(w, variant, lists, focus_list, single=True)
+        for r in b + s1:
             r["block"] = name
         rows += b
+        single += s1
     by: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
     for r in rows:
         by.setdefault((r["block"], r["group"]), []).append(r)
@@ -206,7 +232,60 @@ def survey(blocks: Dict[str, PathLike], variant: str = "", lists: Optional[Dict[
     levels = {f"{k[0]}|{k[1]}": classify(v, z_min, pooled, slopes) for k, v in by.items()}
     seqs = sequences(rows)
     return {"images": rows, "levels": levels, "pooled_gap": pooled, "pooled_slope": slopes, "sequences": seqs,
-            "proposal": proposal(rows, seqs, lists), "z_min": z_min}
+            "proposal": proposal(rows, seqs, lists), "z_min": z_min, "single_images": single,
+            "approach": approach_table(rows, single), "focus_list_proposal": focus_list_proposal(rows + single)}
+
+
+FOCUS_MOVE_MIN = 100.0               # a focus move up this large (counts, from the previous frame) proposes the frame
+
+
+def approach_table(rows: List[Dict[str, Any]], single: Sequence[Dict[str, Any]] = ()) -> List[Dict[str, Any]]:
+    """0.94.6 (Christian, 26 Oct: the zoom and the focus backlash superimposed): per zoom and eye, the frames'
+    focal ratios by how the motors came into place - zoom up / down / none and focus up / down / none from the
+    previous frame (within 30 min) - and by the lists (zoom low state, focus from below).  ``d`` is the ratio about
+    the block's high line (34-79 mm, :func:`classify`); at 110 mm (no high line) about the median of the block's
+    110 mm frames of that eye.  Returns rows {zoom, eye, zoom_dir, focus_dir, listed, focus_below, n, d_median_pct,
+    d_mean_pct, d_se_pct}."""
+    s_rows = []
+    by: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for r in single:
+        if r.get("ratio") is not None:
+            by.setdefault((r["block"], r["group"]), []).append(r)
+    for v in by.values():
+        med = float(np.median([r["ratio"] for r in v]))
+        for r in v:
+            s_rows.append(dict(r, d=float(r["ratio"]) - med, state="single"))
+    groups: Dict[Tuple[Any, ...], List[float]] = {}
+    for r in list(rows) + s_rows:
+        if r.get("d") is None or r.get("state") in ("implausible", "no fit"):
+            continue
+        k = (r["zoom"], r["eye"], r.get("zoom_dir") or "-", r.get("focus_dir") or "-", bool(r.get("listed")),
+             bool(r.get("focus_below")))
+        groups.setdefault(k, []).append(float(r["d"]))
+    out = []
+    for k, v in sorted(groups.items(), key=lambda kv: tuple(str(x) for x in kv[0])):
+        a = np.array(v)
+        out.append({"zoom": k[0], "eye": k[1], "zoom_dir": k[2], "focus_dir": k[3], "listed": k[4],
+                    "focus_below": k[5], "n": int(a.size), "d_median_pct": 100 * float(np.median(a)),
+                    "d_mean_pct": 100 * float(a.mean()),
+                    "d_se_pct": 100 * float(a.std(ddof=1) / np.sqrt(a.size)) if a.size > 1 else None})
+    return out
+
+
+def focus_list_proposal(rows: Sequence[Dict[str, Any]], min_move: float = FOCUS_MOVE_MIN) -> Dict[str, List[Dict[str, Any]]]:
+    """Frames whose focus moved UP by at least ``min_move`` counts from the previous frame (same eye, within 30
+    min) and are not on the focus-approach list (``add``); listed frames whose focus moved down by that much
+    (``check``).  Only the frames in the blocks count (a sweep or a sequence in between is not seen)."""
+    add, check = [], []
+    for r in rows:
+        dfc = r.get("dfocus")
+        if dfc is None:
+            continue
+        if dfc >= min_move and not r.get("focus_below"):
+            add.append({k: r.get(k) for k in ("block", "sol", "sequence", "group", "stem", "dzoom", "dfocus")})
+        elif dfc <= -min_move and r.get("focus_below"):
+            check.append({k: r.get(k) for k in ("block", "sol", "sequence", "group", "stem", "dzoom", "dfocus")})
+    return {"add": add, "check": check}
 
 
 def sequences(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -399,6 +478,28 @@ def report_lines(res: Dict[str, Any]) -> List[str]:
             out.append(f"- {r['block']} sol {r['sol']} {r['sequence']} {r['group']}: {nm} - {r['why']}")
         if len(p[key]) > 400:
             out.append(f"- ... {len(p[key]) - 400} more in found_list_proposal.txt")
+    if res.get("approach"):
+        out += ["", "## Focal ratio by how the motors came into place", "",
+                "From the previous frame of the same eye (within 30 min; frames outside the blocks are not seen). "
+                "`d` about the block's high line (110 mm: about the block's median).  zoom list: on the low "
+                "(zoom) backlash list; focus list: on the focus-from-below list.", "",
+                "| zoom | eye | zoom | focus | zoom list | focus list | n | d median | d mean +- se |",
+                "|---|---|---|---|---|---|---|---|---|"]
+        for a in res["approach"]:
+            se = f" +- {a['d_se_pct']:.3f}" if a.get("d_se_pct") is not None else ""
+            out.append(f"| {a['zoom']} | {a['eye']} | {a['zoom_dir']} | {a['focus_dir']} | {'yes' if a['listed'] else '-'} "
+                       f"| {'yes' if a['focus_below'] else '-'} | {a['n']} | {a['d_median_pct']:+.3f} % | "
+                       f"{a['d_mean_pct']:+.3f}{se} % |")
+    fp = res.get("focus_list_proposal") or {}
+    if fp:
+        out += ["", f"## Focus-from-below list: frames whose focus moved up >= {FOCUS_MOVE_MIN:g} counts, not listed "
+                f"({len(fp.get('add', []))}); listed frames whose focus moved down ({len(fp.get('check', []))})", ""]
+        for r in (fp.get("add") or [])[:200]:
+            out.append(f"- add? {r['block']} sol {r['sol']} {r['sequence']} {r['group']}: {r['stem']} (focus "
+                       f"{r['dfocus']:+.0f}, zoom {r['dzoom']:+.0f})")
+        for r in (fp.get("check") or [])[:200]:
+            out.append(f"- check: {r['block']} sol {r['sol']} {r['sequence']} {r['group']}: {r['stem']} (focus "
+                       f"{r['dfocus']:+.0f}, zoom {r['dzoom']:+.0f})")
     out += ["", "## Undecided and unfitted sequences", ""]
     und = [s for s in res["sequences"] if s["verdict"] in ("undecided", "no fit")]
     for s in und[:300]:

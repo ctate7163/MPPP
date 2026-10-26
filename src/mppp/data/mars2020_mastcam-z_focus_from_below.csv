@@ -1,0 +1,7 @@
+# Mastcam-Z frames whose FOCUS came into place from below (the focus motor moving up to its count) - the second
+# backlash effect (Christian, 26 Oct 2026), independent of the zoom (low / high backlash) list.  The default - not on
+# this list - is the focus coming down into place (sol 93 ZCAM00034, sol 102 ZCAM08062).  Same syntax as the
+# low-backlash list (sol:sequence, sol_clock, stems; "-" takes frames off).  The reviewed entries live in the list
+# next to the WORK folders (<MPPP_SCAPES>/zcam_focus_from_below.csv); this shipped copy holds the reference cases.
+92:ZCAM00033           # Chal Rocks sol 92: zoom 34 -> 79, focus moving up at each step
+93:ZCAM00033           # Chal Rocks sol 93: zoom 34 -> 79, focus moving up at each step

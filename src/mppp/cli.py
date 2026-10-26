@@ -787,7 +787,7 @@ def cmd_zcam_states(a: argparse.Namespace) -> int:
     """``zcam-states``: :mod:`mppp.sfm.zcam_states` over the ``_zcam`` blocks under ``--root``."""
     import datetime
     from .sfm import zcam_states as ZS
-    from .sfm.backlash import default_found_path, load_low_backlash
+    from .sfm.backlash import default_focus_below_path, default_found_path, load_focus_below, load_low_backlash
     if not a.root:
         print("zcam-states: --root (or MPPP_SCAPES) is needed", file=sys.stderr)
         return 2
@@ -799,7 +799,8 @@ def cmd_zcam_states(a: argparse.Namespace) -> int:
               f"{a.variant or '(default)'})", file=sys.stderr)
         return 1
     lists = load_low_backlash(None, found=found)
-    res = ZS.survey(blocks, a.variant, lists, z_min=a.z)
+    focus_list = load_focus_below(found=default_focus_below_path(root))      # 0.94.6: the focus approach
+    res = ZS.survey(blocks, a.variant, lists, z_min=a.z, focus_list=focus_list)
     out = Path(a.out) if a.out else root / "camera_analysis" / f"zcam_states_{datetime.date.today():%Y%m%d}"
     files = ZS.write_survey(res, out)
     p = res["proposal"]

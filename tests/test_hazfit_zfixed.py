@@ -400,7 +400,7 @@ def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
     import importlib.util
     from mppp.waypoints.sites import load_site_table
     t = load_site_table()["sites"]
-    assert t["chal_rocks_tiny"]["sols"] == [[91, 98]] and t["chal_rocks_tiny"]["zcam"] == t["chal_rocks"]["zcam"]
+    assert t["chal_rocks_tiny"]["sols"] == [[91, 98]] and t["chal_rocks_tiny"]["zcam"] == [z for z in t["chal_rocks"]["zcam"] if z != 110]
     for s in ("chal_rocks", "chal_rocks_large", "chal_rocks_tiny"):
         assert t[s]["no_mask_inference_at"][-3:] == ["ZCAM00034", "ZCAM08060", "RHAZ0*"]
     assert t["bell_island"]["no_mask_inference_at"] == ["RHAZ0*"] == t["bell_island_large"]["no_mask_inference_at"]
