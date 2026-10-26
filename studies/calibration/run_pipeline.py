@@ -234,6 +234,15 @@ class Pipeline:
         names = self.zcam_sites()
         if not names:
             return "failed", f"no sites in {self.zcam_group} / {ZCAM34_JOINT}"
+        only = list(getattr(self.a, "zcam_sites", None) or [])
+        if only:
+            # 0.94.6 (Christian, 26 Oct - results by the end of the day after a restart): align only these; the
+            # joints take the other sites' finished blocks as they are (a block aligned with other Navcam models
+            # fails the joint's check; one never finished is left out)
+            unknown = [n for n in only if n not in names]
+            if unknown:
+                return "failed", f"--zcam-sites: not Mastcam-Z sites of this run: {', '.join(unknown)}"
+            names = [n for n in names if n in only]
         return self._sites("zcam_runs", ["--sites", *names], True)
 
     def s_zcam_joints(self):
@@ -472,6 +481,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-zcam-states", action="store_true", help="skip the zcam_states stage (the states run)")
     ap.add_argument("--zooms", type=int, nargs="*", default=list(ZOOMS), help="the Mastcam-Z joints (default all)")
     ap.add_argument("--zcam-group", default=None, help="the Mastcam-Z sites (default zcam_consensus)")
+    ap.add_argument("--zcam-sites", nargs="+", default=None, metavar="SITE",
+                    help="zcam_runs aligns only these sites; the joints use the others' finished blocks as they are")
     ap.add_argument("--n-boot", type=int, default=50, help="error_analysis: bootstrap rounds of the gate fit")
     ap.add_argument("--jobs", type=int, default=int(os.environ.get("MPPP_JOBS", "2") or 2),
                     help="ecam_runs / zcam_runs: sites aligned at the same time (default 2, or MPPP_JOBS; 0.94.3)")

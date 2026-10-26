@@ -135,6 +135,20 @@ def test_pipeline_zcam_sites_and_stop_before(tmp_path):
     assert "calib hazcam --group ecam_consensus" in log                # the old stage name names ecam_joint
 
 
+def test_pipeline_zcam_runs_only_some_sites(tmp_path, monkeypatch):
+    """26 Oct: --zcam-sites aligns only those sites (the joints take the others' finished blocks); an unknown one fails."""
+    rp = _script("run_pipeline")
+    got = []
+    monkeypatch.setattr(rp.Pipeline, "_sites", lambda self, stage, args, zcam: got.append(args) or ("done", "ok"))
+    p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, zcam_sites=["taylorfjellet", "marble_mountain"]))
+    assert p.s_zcam_runs() == ("done", "ok") and got[-1] == ["--sites", "marble_mountain", "taylorfjellet"]
+    p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, zcam_sites=["pico_turquino"]))
+    assert p.s_zcam_runs()[0] == "failed"
+    p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True))
+    p.s_zcam_runs()
+    assert len(got[-1]) == 1 + len(p.zcam_sites())
+
+
 # ------------------------------------------------------------------------------------------- the study scripts
 def test_baseline_combine():
     m = _script("navcam_baseline_study")
