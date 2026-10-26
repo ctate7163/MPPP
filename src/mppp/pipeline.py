@@ -228,6 +228,8 @@ class Settings:
             d.pop("zcam_bin_by", None)               # 0.94.6: likewise
         if not d.get("include_zcam"):
             d["zcam_low_backlash_found"] = None      # 0.94.6: the found list is a Mastcam-Z setting (Navcam keys stay)
+            if d.get("exclude"):                     # 0.94.6: a Mastcam-Z sequence left out does not change a Navcam run
+                d["exclude"] = [e for e in d["exclude"] if not str(e).strip().lower().startswith("seq:zcam")]
         return d
 
 

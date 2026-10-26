@@ -404,5 +404,10 @@ def test_chal_rocks_110mm():
     t = d["sites"]
     assert t["chal_rocks_tiny"]["zcam"] == [34, 48, 63, 79] == t["taylorfjellet"]["zcam"]
     assert t["chal_rocks"]["zcam"] == [34, 48, 63, 79, 110]          # 26 Oct (Christian): 110 mm back for the focus study
+    assert t["taylorfjellet"]["settings"]["exclude"] == ["seq:ZCAM05065"]       # 26 Oct (Christian)
+    from mppp.pipeline import Settings
+    a = Settings(exclude=["seq:ZCAM05065"]).key_dict()
+    assert a == Settings().key_dict()                                            # a Navcam run: the key stays
+    assert Settings(exclude=["seq:ZCAM05065"], include_zcam=True).key_dict() != Settings(include_zcam=True).key_dict()
     assert "taylorfjellet_huge" not in t and t["taylorfjellet_large"]["sols"] == [[1601, 1673]]
     assert "groloy" in d["groups"]["ecam_consensus"] and "taylorfjellet_large" in d["groups"]["ecam_consensus"]
