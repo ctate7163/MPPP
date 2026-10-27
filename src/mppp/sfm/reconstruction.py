@@ -1872,6 +1872,69 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
     return sorted(out, key=lambda f: f["frame_id"])
 
 
+# 0.95.0 (Christian, 27 Oct; Marble Mountain ZCAM04469, 26 Oct: 63 mm at the horizon from a station 2 m off tied to
+# the far field - the bin's focal length +7.9 %, its frames 1.7 m from the station, the block failed on the station
+# spread): a Mastcam-Z bin whose refined focal length is more than ZCAM_MISTIE_FOCAL_PCT off its start (the model)
+# while its frames sit more than ZCAM_MISTIE_SHIFT_M from where the station's Navcam shift puts them is a mis-tie:
+# its frames are dropped and the bin reset to the model before the final adjustment, instead of failing the block
+ZCAM_MISTIE_FOCAL_PCT = 2.0
+ZCAM_MISTIE_SHIFT_M = 0.5
+
+
+def find_mistied_bins(rec, project: SfmProject, focal_pct: float = ZCAM_MISTIE_FOCAL_PCT,
+                      shift_m: float = ZCAM_MISTIE_SHIFT_M, station_shifts: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """The Mastcam-Z bins of ``rec`` that are tied to the wrong range (:data:`ZCAM_MISTIE_FOCAL_PCT`,
+    :data:`ZCAM_MISTIE_SHIFT_M`): per bin camera {"camera", "frame_ids", "images", "focal_change_pct", "shift_m",
+    "reasons"}.  A frame's shift is its solved centre minus its label prior, less its station's Navcam shift
+    (``station_shifts`` {station: (3,)}, else the images' ``prior_station_shift_m``); the bin's is the median over
+    its registered frames.  Bins held at the model are not judged."""
+    db = (project.settings.get("database") or {}).get("cameras") or {}
+    by_name = {r["name"]: r for r in project.images}
+    out = []
+    for key, cid in sorted(db.items()):
+        spec = project.cameras.get(key) or {}
+        if not str(key).startswith("Z") or spec.get("held_at_model") or int(cid) not in rec.cameras:
+            continue
+        p0 = np.asarray(spec.get("params") or [], float)
+        cam = rec.cameras[int(cid)]
+        if len(p0) < 2 or not p0[0]:
+            continue
+        f0, f1 = float(np.sqrt(p0[0] * p0[1])), float(np.sqrt(cam.params[0] * cam.params[1]))
+        dev = 100.0 * abs(f1 / f0 - 1.0)
+        if dev <= float(focal_pct):
+            continue
+        fids, names, ex = [], [], []
+        for iid in rec.reg_image_ids():
+            im = rec.images[iid]
+            if int(im.camera_id) != int(cid):
+                continue
+            r = by_name.get(im.name)
+            if r is None:
+                continue
+            fids.append(int(im.frame_id))
+            names.append(im.name)
+            prior = r.get("prior_C_label") or r.get("prior_C")
+            if prior is None:
+                continue
+            sh = None
+            if station_shifts and r.get("station") in station_shifts:
+                sh = np.asarray(station_shifts[r["station"]], float)
+            elif r.get("prior_station_shift_m") is not None:
+                sh = np.asarray(r["prior_station_shift_m"], float)
+            dC = np.asarray(im.projection_center(), float) - np.asarray(prior, float) - (sh if sh is not None else 0.0)
+            ex.append(float(np.linalg.norm(dC)))
+        if not fids:
+            continue
+        med = float(np.median(ex)) if ex else 0.0
+        if med <= float(shift_m):
+            continue
+        out.append({"camera": key, "frame_ids": sorted(set(fids)), "images": sorted(names), "focal_change_pct": dev,
+                    "shift_m": med, "kind": "mistie",
+                    "reasons": [f"far-field mis-tie: focal length {dev:.2f} % from the model (> {float(focal_pct):g} %) and its "
+                                f"frames {med:.2f} m from the station (> {float(shift_m):g} m)"]})
+    return out
+
+
 def exclude_frames(rec, frame_ids: Sequence[int]) -> int:
     """Deregister frames (their observations and single-frame points go); returns the number removed."""
     n = 0
@@ -2574,6 +2637,31 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                             + (f"; {_zcam_terrain_line(iso['zcam_terrain_after'])}" if iso.get("zcam_terrain_after")
                                else ""))
         ZG.trace(rec, project, "before_final")
+        # 0.95.0: the far-field mis-ties first - their frames out, their bins back at the model
+        mt_th = dict(outlier_thresholds or {})
+        mis = find_mistied_bins(rec, project, focal_pct=float(mt_th.get("mistie_focal_pct", ZCAM_MISTIE_FOCAL_PCT)),
+                                shift_m=float(mt_th.get("mistie_shift_m", ZCAM_MISTIE_SHIFT_M)))
+        if mis:
+            done_f = {e["frame_id"] for e in excluded}
+            new_m = []
+            for m in mis:
+                for fid, nm in zip(m["frame_ids"], m["images"]):
+                    if fid in done_f:
+                        continue
+                    new_m.append({"frame_id": int(fid), "images": [nm], "family": "Z", "camera": m["camera"],
+                                  "reasons": list(m["reasons"]), "kind": "mistie",
+                                  "focal_change_pct": m["focal_change_pct"], "shift_m": m["shift_m"],
+                                  "when": "stage 2, before the final adjustment (far-field mis-tie)"})
+            if new_m:
+                exclude_frames(rec, [f["frame_id"] for f in new_m])
+                excluded.extend(new_m)
+            reset_cameras_to_start(rec, project, [m["camera"] for m in mis])
+            if verbose:
+                logger.info("stage 2, before the final adjustment: far-field mis-ties - "
+                            + "; ".join(f"{m['camera']}: {len(m['frame_ids'])} frames, f {m['focal_change_pct']:+.2f} %, "
+                                        f"{m['shift_m']:.2f} m" for m in mis) + " (frames excluded, the bins reset to the model)")
+            log.append({"mistied_bins": [{k: v for k, v in m.items() if k != "frame_ids"} for m in mis],
+                        "when": "stage 2, before the final adjustment"})
         if exclude_outliers:
             _exclude("stage 2, before the final adjustment", navcam_ties=True)
         else:                                  # the Navcam-tie minimum holds even without the outlier tests

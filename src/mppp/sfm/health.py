@@ -57,6 +57,7 @@ DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "registered_fraction": (0.98, 0.90, "below"),
     "excluded_fraction": (0.05, 0.33, "above"),        # fail 0.33 (Christian, 24 Oct 2026; 0.30 from 22 Oct, 0.20 before)
     "unconstrained_fraction": (0.25, 0.60, "above"),
+    "mistied_frames": (0, 1e9, "above"),                    # 0.95.0: any far-field mis-tie warns, none fails
     "held_frame_fraction": (0.02, 0.10, "above"),
     "obs_per_image_p05": (200, 50, "below"),
     "cross_station_fraction": (0.02, 0.005, "below"),
@@ -578,6 +579,12 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
           f"{len(excl)} images in frames that did not align with the majority (exclude_outliers)")
     check("registration", "unconstrained_fraction", len(unc) / max(1, len(project.images)),
           f"{len(unc)} images with no tie points at all (defocused, sky, calibration target...): left out")
+    mis = [e for e in ex_recs if e.get("kind") == "mistie"]                   # 0.95.0: the far-field mis-ties
+    if mis:
+        cams = sorted({str(e.get("camera")) for e in mis})
+        check("registration", "mistied_frames", len(mis),
+              f"{len(mis)} Mastcam-Z frames tied to the wrong range dropped, their bins reset to the model: "
+              + ", ".join(cams[:6]) + (" ..." if len(cams) > 6 else ""))
     held = [r["name"] for r in rows if r["observations"] < min_frame_observations]
     check("registration", "held_frame_fraction", len(held) / max(1, len(rows)),
           f"{len(held)} images with < {min_frame_observations} observations stay at their prior pose")

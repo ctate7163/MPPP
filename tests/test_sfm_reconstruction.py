@@ -365,6 +365,48 @@ def test_find_outlier_frames_flags_a_frame_that_left_its_station(tmp_path):
     assert rec.num_reg_images() == n_img - 2 and bad not in set(rec.reg_frame_ids())
 
 
+def test_find_mistied_bins_focal_and_station_shift(tmp_path):
+    """0.95.0 (Christian, 27 Oct; Marble Mountain ZCAM04469: 63 mm at the horizon from a station 2 m off - f +7.9 %,
+    1.7 m shift): a Mastcam-Z bin is a far-field mis-tie only when both its focal length is off the model by more than
+    2 % and its frames sit more than 0.5 m from where the station's Navcam shift puts them; either alone passes, a bin
+    held at the model is not judged, and the frames' station shift is taken off before the test."""
+    from mppp.sfm.reconstruction import ZCAM_MISTIE_FOCAL_PCT, ZCAM_MISTIE_SHIFT_M, find_mistied_bins
+    assert ZCAM_MISTIE_FOCAL_PCT == 2.0 and ZCAM_MISTIE_SHIFT_M == 0.5
+    proj, rec, _ = _solved(tmp_path)
+    db = proj.settings["database"]["cameras"]
+    cid = int(db["NL"])                                                   # NL's camera plays a 63 mm bin
+    db["ZL063_F00500"] = db.pop("NL")
+    proj.cameras["ZL063_F00500"] = dict(proj.cameras.pop("NL"), group="ZL063")
+    cam = rec.cameras[cid]
+    p0 = np.array(cam.params, float)
+    assert find_mistied_bins(rec, proj) == []                              # at the model: nothing
+    cam.params = p0 * np.r_[1.08, 1.08, np.ones(len(p0) - 2)]             # f +8 %, the frames where the priors say
+    assert find_mistied_bins(rec, proj) == []
+    names = {rec.images[i].name for i in rec.reg_image_ids() if int(rec.images[i].camera_id) == cid}
+    for r in proj.images:
+        if r["name"] in names:                                             # ... and 1.7 m from their priors
+            r["prior_C_label"] = (np.asarray(r["prior_C"]) - [1.7, 0.0, 0.0]).tolist()
+    found = find_mistied_bins(rec, proj)
+    assert len(found) == 1 and found[0]["camera"] == "ZL063_F00500" and set(found[0]["images"]) == names
+    assert found[0]["focal_change_pct"] == pytest.approx(8.0, abs=0.01) and found[0]["shift_m"] == pytest.approx(1.7, abs=0.05)
+    assert found[0]["kind"] == "mistie" and "far-field mis-tie" in found[0]["reasons"][0]
+    assert find_mistied_bins(rec, proj, focal_pct=10.0) == [] and find_mistied_bins(rec, proj, shift_m=2.0) == []
+    # the station's own Navcam shift explains the frames' displacement: no mis-tie
+    st = {r["station"] for r in proj.images if r["name"] in names}
+    assert find_mistied_bins(rec, proj, station_shifts={s_: np.array([1.7, 0.0, 0.0]) for s_ in st}) == []
+    for r in proj.images:
+        if r["name"] in names:
+            r["prior_station_shift_m"] = [1.7, 0.0, 0.0]
+    assert find_mistied_bins(rec, proj) == []
+    for r in proj.images:
+        r.pop("prior_station_shift_m", None)
+    cam.params = p0 * np.r_[1.01, 1.01, np.ones(len(p0) - 2)]             # a 1 % focal change is a focus offset, not a mis-tie
+    assert find_mistied_bins(rec, proj) == []
+    cam.params = p0 * np.r_[1.08, 1.08, np.ones(len(p0) - 2)]
+    proj.cameras["ZL063_F00500"]["held_at_model"] = True                   # a held bin is not judged
+    assert find_mistied_bins(rec, proj) == []
+
+
 def test_find_outlier_frames_flags_large_residuals(tmp_path):
     from scipy.spatial.transform import Rotation
     import pycolmap
