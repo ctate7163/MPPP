@@ -416,6 +416,34 @@ def _corner_ratio(cov: Dict[str, Any], inner: float = 0.6, outer: float = 0.85, 
     return worst
 
 
+# 0.94.5 (Christian, 27 Oct: Chal Rocks failed the 63 mm joint on ZL063's corners, 0.205): a Mastcam-Z camera's corner
+# coverage warns but does not fail a block - its mosaics overlap little at the corners; the Navcam's still fails
+ZCAM_CORNER_WARN_ONLY = True
+
+
+def corner_check(cov: Dict[str, Any], thr: Dict[str, tuple], skip_groups=None) -> Tuple[Optional[tuple], Optional[str]]:
+    """(the worst camera of :func:`_corner_ratio`, the check's status): the Navcam (and other non-Mastcam-Z) cameras
+    judged as before, the Mastcam-Z cameras at most "warn" (:data:`ZCAM_CORNER_WARN_ONLY`)."""
+    if skip_groups is None:
+        skip_groups = zcam_uncalibrated_groups(cov["cameras"])
+    skip = set(skip_groups)
+    wc = _corner_ratio(cov, skip_groups=sorted(skip))
+    if wc is None:
+        return None, None
+    if not ZCAM_CORNER_WARN_ONLY:
+        return wc, _status("corner_triangulated_ratio", wc[1], thr)
+    zg = {g for g in cov["cameras"] if str(g)[:1] == "Z"}
+    wn = _corner_ratio(cov, skip_groups=sorted(skip | zg))
+    wz = _corner_ratio(cov, skip_groups=sorted(skip | (set(cov["cameras"]) - zg)))
+    sts = []
+    if wn:
+        sts.append(_status("corner_triangulated_ratio", wn[1], thr))
+    if wz:
+        s = _status("corner_triangulated_ratio", wz[1], thr)
+        sts.append("warn" if s == "fail" else s)
+    return wc, max(sts, key=lambda s: _RANK.get(s, 0), default="pass")
+
+
 # ------------------------------------------------------- weak-image diagnosis
 WEAK_CAUSES = {
     "few_keypoints": "few SIFT keypoints: the image is mostly masked (rover, sky) or featureless",
@@ -645,11 +673,12 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
               + ", ".join(f"{k}: {v:.3f}" for k, v in radial.items() if v is not None))
 
     cov = coverage_by_radius(rec, project)
-    wc = _corner_ratio(cov)
+    wc, st_c = corner_check(cov, thr)
     if wc:
         check("reprojection", "corner_triangulated_ratio", wc[1],
               f"{wc[0]}: {100 * wc[3]:.0f} % of keypoints beyond 0.85 of the corner radius become tie points, "
               f"{100 * wc[2]:.0f} % inside 0.6 (distortion model invertible to the corners?)")
+        checks[-1]["status"] = st_c
 
     # ---- camera model
     cams_after = {}
@@ -903,6 +932,8 @@ def plot_health(report: Dict[str, Any], rec, project: SfmProject, path: PathLike
     ax[1, 1].set_ylim(bottom=0)
     ax[1, 1].set_title("camera centre vs prior, by station")
     fig.suptitle(f"alignment health: {report['verdict'].upper()}")
+    from ..calib.constrain import panel_letters
+    panel_letters(ax)                       # 27 Oct (Christian): "A. title", left-justified, as the maps
     fig.tight_layout()
     fig.savefig(path, dpi=130)
     plt.close(fig)
@@ -1051,9 +1082,11 @@ def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = Non
             skip = set(zcam_uncalibrated_groups(cams))
             if report.get("zoom_restricted") is not None:  # 0.94.4: a joint of one zoom judges that zoom's corners
                 skip |= {g for g in cams if _group_zoom(g) not in (None, int(report["zoom_restricted"]))}
-            wc = _corner_ratio(report["coverage_by_radius"], skip_groups=sorted(skip))
+            wc, st_c = corner_check(report["coverage_by_radius"], thr, skip_groups=sorted(skip))
             v = wc[1] if wc else None
-        st = _status(name, v, thr) if name in thr else st0
+            st = st_c if wc else st0
+        else:
+            st = _status(name, v, thr) if name in thr else st0
         if st == "fail" and name in warn_only:
             st = "warn"
         if st != st0:

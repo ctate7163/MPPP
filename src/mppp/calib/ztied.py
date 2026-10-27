@@ -61,7 +61,18 @@ REGULAR_RATIO_RANGE = (1.004, 1.016)   # 0.93.5: backlash / regular f of a fitte
 # 26 Oct (the first real Mastcam-Z joint with it, Z34, 7 blocks): the exact-tie refinement found no decrease in 20
 # tries and took 524 s per call (2.2 M residuals); Ceres' stiff ties hold the units on the law well enough here - off
 EXACT_TIE_SOLVE = False
-REGULAR_RATIO_BY = "block"
+# 0.94.5 (Christian, 27 Oct: "tie the low backlash state's slope to the high and only fit the offset between the
+# two"; the high state's focal length itself moves by sequence): one high / low offset per eye ("global"), the
+# low state on the high state's slope (REGULAR_SAME_SLOPE; before: slope / ratio), and with fewer than
+# MIN_LOW_IMAGES low-state images of an eye its ratio held at the 34 mm one (Z48 of 27 Oct: 6 images per eye in
+# two blocks, which disagreed by 1.2 %)
+REGULAR_RATIO_BY = "global"
+REGULAR_SAME_SLOPE = True
+MIN_LOW_IMAGES = 10
+RATIO_HOLD_ZOOM = 34
+# 0.94.5 (Christian, 27 Oct): per block, the Mastcam-Z aspect (fy / fx of the diagnostic pass, the line with the
+# most observations) against the Navcam's per-block dfy - dfx (the Navcam diagnostic pass over the same blocks)
+BLOCK_ASPECT_MIN_OBS = 500
 REGULAR_RATIO_GROUP_SD = 0.003
 TIE_SIGMA_Z = {"f": 1e-3, "k": 1e-7, "p": 1e-8, "cy": 1e-3}       # px; unitless - the ties are effectively exact
 NAV_POINTS_PER_BLOCK = 8000
@@ -204,6 +215,10 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
     for cid, u in zunits.items():                # 0.94.4: the bin's sol (median of its images) for ratio_by "sol"
         u["sol"] = int(round(float(np.median(sols_of[cid])))) if sols_of.get(cid) else None
     sg["mixed"] = mixed_exposures(proj.images, zunits)
+    sg["low_images"] = {g_: sum(1 for r in proj.images if int(r.get("camera_id", -1)) in zunits
+                                and zunits[int(r["camera_id"])]["group"] == g_
+                                and zunits[int(r["camera_id"])]["state"] == "regular")
+                        for g_ in sorted({u["group"] for u in zunits.values()})}      # 0.94.5
     sg["split_cameras_left_out"] = split_out
     sg["low_cameras_not_on_list"] = off_list
     sg["found_list"] = sg_found
@@ -241,6 +256,14 @@ def mixed_exposures(images: Sequence[Dict[str, Any]], zunits: Dict[int, Dict[str
 
 def _navcam_globals(st: Dict[str, Any]) -> Dict[str, np.ndarray]:
     return {"G_NL": st["G"]["NL"], "G_NR": st["G"]["NR"], "S_NL": st["S"]["NL"], "S_NR": st["S"]["NR"]}
+
+
+def slope_div(sg: Dict[str, Any], eye: str, reg: bool) -> float:
+    """What a low-state bin divides the focus slope by: 1 (:data:`REGULAR_SAME_SLOPE`, 0.94.5) or the eye's start
+    ratio (the regular lines the backlash lines scaled, before 0.94.5); 1 for a backlash-state bin."""
+    if not reg or REGULAR_SAME_SLOPE:
+        return 1.0
+    return float(sg["eyes"][eye]["ratio"])
 
 
 def ratio_group(u: Dict[str, Any], by: Optional[str] = None) -> Optional[str]:
@@ -306,7 +329,7 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 eye = u["group"]
                 reg = u["state"] == "regular"
                 has_reg[eye] |= reg
-                ratio = float(sg["eyes"][eye]["ratio"]) if reg else 1.0
+                ratio = slope_div(sg, eye, reg)
                 rows, sig = [], []
                 G0 = sg["eyes"][eye]["G"]
                 rk = unit_group.get(int(cid))
@@ -347,6 +370,11 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
             if prob.has_parameter_block(d):
                 sd_px = REGULAR_RATIO_GROUP_SD * float(sg["eyes"][eye]["G"][2])
                 prob.add_residual_block(LinearTie(np.ones((1, 1)), np.array([sd_px]), [1]), None, [d])
+        for eye, arr in g.items():                       # 0.94.5: too few low-state images - the ratio held
+            r0 = sg["eyes"][eye].get("ratio_hold")
+            if tie and r0 and has_reg[eye] and prob.has_parameter_block(arr):
+                a = np.zeros((1, NG)); a[0, 2] = 1.0; a[0, 0] = -1.0 / float(r0)
+                add_tie(a, np.array([TIE_SIGMA_Z["f"]]), [NG], [arr])
         held: Dict[str, List[int]] = {}
         for eye, arr in g.items():
             if not prob.has_parameter_block(arr):
@@ -522,7 +550,9 @@ def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
                             "ratio_start": e["ratio"], "pp0_px": e["pp0"],
                             "mixed_exposures": int((sg.get("mixed") or {}).get(eye, 0)),
                             "bins": sum(1 for u in zunits.values() if u["group"] == eye),
-                            "regular_bins": sum(1 for u in zunits.values() if u["group"] == eye and u["state"] == "regular")}
+                            "regular_bins": sum(1 for u in zunits.values() if u["group"] == eye and u["state"] == "regular"),
+                            "low_images": int((sg.get("low_images") or {}).get(eye, 0)),        # 0.94.5
+                            "ratio_hold": e.get("ratio_hold"), "ratio_hold_source": e.get("ratio_hold_source")}
     out["regular_ratio_by"] = ba.get("ratio_by") or REGULAR_RATIO_BY
     out["regular_ratio_groups"] = ratio_group_rows(out, ba, zunits)
     out["focus_below"] = focus_below_rows(out, ba, zunits)
@@ -617,7 +647,7 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
         p = np.asarray(rec.cameras[cid].params, float).copy()
         G = g[u["group"]]
         reg = u["state"] == "regular"
-        ratio = float(sg["eyes"][u["group"]]["ratio"]) if reg else 1.0
+        ratio = slope_div(sg, u["group"], reg)
         dfb_ = float((sg.get("focus_below_px") or {}).get(u["group"], 0.0)) if u.get("fb") else 0.0
         p[_FX] = G[2 if reg else 0] + G[4] * u["dF"] / ratio + dfb_
         p[_FY] = G[3 if reg else 1] + G[4] * u["dF"] / ratio + dfb_ * float(G[1] / G[0])
@@ -679,7 +709,7 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
                         sol = np.linalg.lstsq(A * np.sqrt(w)[:, None], y * np.sqrt(w), rcond=None)[0]
                         a, b = float(sol[0]), float(sol[1])
                     else:
-                        bG = float(g[eye][4]) / (float(sg["eyes"][eye]["ratio"]) if stt == "regular" else 1.0)
+                        bG = float(g[eye][4]) / slope_div(sg, eye, stt == "regular")
                         a, b = float(np.average(y - bG * F, weights=w)), bG
                     row["lines"].setdefault(eye, {}).setdefault(stt, {})[pn] = {"a": a, "b": b, "bins": len(us),
                                                                                  "observations": int(w.sum())}
@@ -694,12 +724,113 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
     return {"blocks": rows, "fits": fits, "brief": ba["brief"]}
 
 
+def set_ratio_holds(sg: Dict[str, Any], zoom: int, verbose: bool = True) -> Dict[str, float]:
+    """0.94.5: the eyes with low-state bins but fewer than :data:`MIN_LOW_IMAGES` low-state images get
+    ``sg["eyes"][eye]["ratio_hold"]`` - the 34 mm model's ratio of that side (``ZL034`` for ``ZL048``), else
+    :data:`mppp.calib.fit.REGULAR_RATIO_DEFAULT`; the hook ties a_fx_regular = a_fx_backlash / that ratio."""
+    from .fit import REGULAR_RATIO_DEFAULT
+    out = {}
+    if int(zoom) == RATIO_HOLD_ZOOM:
+        return out
+    ref = None
+    try:
+        from ..sfm.project import zcam_focus_model_path
+        f = zcam_focus_model_path(zoom=RATIO_HOLD_ZOOM)
+        ref = json.loads(f.read_text(encoding="utf-8")) if f.is_file() else None
+    except Exception:                                # noqa: BLE001
+        ref = None
+    for eye, e in sg["eyes"].items():
+        n = int((sg.get("low_images") or {}).get(eye, 0))
+        if is_single_state(eye) or n == 0 or n >= MIN_LOW_IMAGES:
+            continue
+        side = f"{eye[:2]}{RATIO_HOLD_ZOOM:03d}"
+        r = ((ref or {}).get("cameras") or {}).get(side, {}).get("regular_ratio")
+        e["ratio_hold"] = float(r) if r else float(REGULAR_RATIO_DEFAULT)
+        e["ratio_hold_source"] = (f"the {RATIO_HOLD_ZOOM} mm model ({side})" if r else "the default")
+        out[eye] = e["ratio_hold"]
+        if verbose:
+            log.info(f"Mastcam-Z joint: {eye} has {n} low-state images (< {MIN_LOW_IMAGES}): its high / low ratio held "
+                     f"at {e['ratio_hold']:.4f} ({e['ratio_hold_source']})")
+    return out
+
+
+def navcam_block_aspect(scapes: Sequence[Any], st: Dict[str, Any], nav_points: Optional[int] = NAV_POINTS_PER_BLOCK,
+                        verbose: bool = True, min_images: int = 8) -> Dict[str, Dict[str, Any]]:
+    """0.94.5: per block the Navcam's dfy - dfx (ppm about the law in use): the Navcam diagnostic pass
+    (:func:`mppp.calib.tied.diagnostic_pass`, one camera per block, eye and temperature bin, fx, fy, k1 free) over the
+    blocks' Navcam frames, the bins with >= ``min_images`` images, weighted by images.  Returns {block: {"NL", "NR",
+    "mean" (ppm), "images"}}."""
+    import pycolmap
+    cams = {k: pycolmap.Camera(model=st["cameras"][k]["model"], width=5120, height=3840,
+                               params=np.asarray(st["cameras"][k]["params"], float)) for k in ("NL", "NR")}
+    rec0, proj0, idx = J.merge_scapes(list(scapes), cams, (st["R"], st["t"]), points_per_scape=nav_points, seed=0)
+    g = {"G_NL": st["G"]["NL"].copy(), "G_NR": st["G"]["NR"].copy(), "S_NL": st["S"]["NL"].copy(),
+         "S_NR": st["S"]["NR"].copy(), "E_NL": st["E"]["NL"].copy(), "E_NR": st["E"]["NR"].copy(),
+         "Q0": st["Q0"].copy(), "D": st["D"].copy(), "H": st["H"].copy()}
+    d = T.diagnostic_pass(rec0, proj0, idx, st, g, verbose=verbose, pointing=False)
+    return navcam_aspect_by_block(d.get("cameras") or [], min_images=min_images)
+
+
+def navcam_aspect_by_block(cameras: Sequence[Dict[str, Any]], min_images: int = 8) -> Dict[str, Dict[str, Any]]:
+    """{block: {"NL", "NR", "mean", "images"}}: the image-weighted dfy - dfx (ppm) of the diagnostic units."""
+    acc: Dict[str, Dict[str, List[Tuple[float, int]]]] = {}
+    for c in cameras:
+        if not c.get("scape") or int(c.get("images", 0)) < min_images:
+            continue
+        acc.setdefault(str(c["scape"]), {}).setdefault(c["eye"], []).append(
+            (float(c["dfy_ppm"]) - float(c["dfx_ppm"]), int(c["images"])))
+    out = {}
+    for b, eyes in acc.items():
+        row: Dict[str, Any] = {"images": int(sum(n for v in eyes.values() for _, n in v))}
+        for eye, v in eyes.items():
+            row[eye] = float(np.average([x for x, _ in v], weights=[n for _, n in v]))
+        vals = [row[e] for e in ("NL", "NR") if e in row]
+        row["mean"] = float(np.mean(vals)) if vals else None
+        out[b] = row
+    return out
+
+
+def block_aspect_rows(res: Dict[str, Any], nav: Dict[str, Dict[str, Any]],
+                      min_obs: int = BLOCK_ASPECT_MIN_OBS) -> Dict[str, Any]:
+    """0.94.5 (Christian, 27 Oct): per block and eye, the Mastcam-Z fy - fx of the diagnostic pass (the state line
+    with the most observations, at the reference focus) about the joint's (ppm of fx and px) against the Navcam's
+    per-block dfy - dfx (``nav``, :func:`navcam_block_aspect`).  Rows with fewer than ``min_obs`` observations are
+    listed but not judged.  Returns {"rows", "slope" (Mastcam-Z on Navcam ppm over the judged rows), "max_diff_ppm"}."""
+    rows = []
+    for b in (res.get("diagnostics") or {}).get("blocks") or []:
+        for eye, states in (b.get("lines") or {}).items():
+            best = max(states.items(), key=lambda kv: int((kv[1].get("fx") or {}).get("observations", 0)), default=None)
+            if not best or "fx" not in best[1] or "fy" not in best[1]:
+                continue
+            stt, ln = best
+            tm = ((res.get("eyes") or {}).get(eye) or {}).get("terms") or {}
+            if not tm.get("a_fx_backlash"):
+                continue
+            asp = float(tm["a_fy_backlash"]) / float(tm["a_fx_backlash"])
+            fx, fy = float(ln["fx"]["a"]), float(ln["fy"]["a"])
+            z_ppm = 1e6 * (fy / fx - asp)
+            n = nav.get(b["block"]) or {}
+            nv = n.get("mean")
+            obs = int(ln["fx"].get("observations", 0))
+            rows.append({"block": b["block"], "eye": eye, "state": stt, "observations": obs,
+                         "zcam_dfy_minus_dfx_px": float((fy - fx) - fx * (asp - 1.0)), "zcam_ppm": float(z_ppm),
+                         "navcam_ppm": None if nv is None else float(nv), "navcam_NL_ppm": n.get("NL"),
+                         "navcam_NR_ppm": n.get("NR"), "diff_ppm": None if nv is None else float(z_ppm - nv),
+                         "judged": bool(obs >= min_obs and nv is not None)})
+    J_ = [r for r in rows if r["judged"]]
+    slope = None
+    if len(J_) >= 3 and np.ptp([r["navcam_ppm"] for r in J_]) > 0:
+        slope = float(np.polyfit([r["navcam_ppm"] for r in J_], [r["zcam_ppm"] for r in J_], 1)[0])
+    return {"rows": rows, "slope": slope,
+            "max_diff_ppm": max((abs(r["diff_ppm"]) for r in J_), default=None), "min_observations": int(min_obs)}
+
+
 # ====================================================================================== the run and the files
 def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = None, navcam_dir: Optional[PathLike] = None,
                zoom: int = ZOOM, nav_points: int = NAV_POINTS_PER_BLOCK, z_points: int = Z_POINTS_PER_BLOCK,
                iterations: int = 100, passes: int = 2, diagnostics: bool = True, verbose: bool = True,
                scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None,
-               k_tests: bool = True, ratio_by: Optional[str] = None) -> Dict[str, Any]:
+               k_tests: bool = True, ratio_by: Optional[str] = None, navcam_aspect: bool = True) -> Dict[str, Any]:
     """The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the distortion tests (:func:`distortion_tests`,
     ``k_tests``), the diagnostic pass.  ``model``: the focus model to start from (default: the one in use);
     ``ratio_by``: "global" | "block" | "sol", the low-state groups with their own high / low ratio (default
@@ -718,7 +849,11 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
             if verbose:
                 log.info(f"Mastcam-Z joint: no {zoom} mm focus model in use - started from the blocks' refined bins")
     t = time.time()
+    if scapes is None and diagnostics and navcam_aspect:    # 0.94.5: kept for the Navcam's per-block aspect
+        scapes = [J.load_scape(n, w, single=False) for n, w in blocks.items()]
     rec, proj, idx, st, units, zunits, sg = build(blocks, model, navcam_dir, zoom, nav_points, z_points, scapes=scapes, st=st)
+    if diagnostics and navcam_aspect:
+        sg["_scapes"] = scapes
     if verbose:
         log.info(f"Mastcam-Z joint: {len(blocks or scapes or [])} blocks, {rec.num_reg_images()} images, "
                  f"{rec.num_points3D()} points; {len(zunits)} Mastcam-Z bins, {len(units['cameras'])} Navcam bin "
@@ -728,6 +863,7 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     sg["ratio_by"] = ratio_by or REGULAR_RATIO_BY
     if ratio_by not in (None, "global", "block", "sol"):
         raise ValueError(f"ratio_by {ratio_by!r}: global, block or sol")
+    set_ratio_holds(sg, zoom, verbose=verbose)       # 0.94.5
     fixed = fixed_globals(sg)                       # 0.93: the zoom's fixed distortion terms, held
     hold = {e: sorted(v) for e, v in fixed.items()}
     if verbose and fixed:
@@ -757,6 +893,13 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     if diagnostics:
         res["diagnostics"] = diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks=blocks, zoom=zoom,
                                              verbose=verbose)
+        if navcam_aspect:                            # 0.94.5: the per-block aspect against the Navcam's
+            try:
+                nav = navcam_block_aspect(sg.get("_scapes") or [], st, nav_points, verbose=verbose)
+                res["block_aspect"] = block_aspect_rows(res, nav)
+            except Exception as e:                   # noqa: BLE001 - a diagnostic: the joint stands without it
+                log.warning(f"Mastcam-Z joint: the per-block aspect against the Navcam did not run ({type(e).__name__}: {e})")
+                res["block_aspect"] = {"error": f"{type(e).__name__}: {e}"}
     return res
 
 
@@ -956,6 +1099,8 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    f"(high backlash state), slope {f('b', 5)} px/count; k1 {f('k1', 4)}, k2 {f('k2', 4)}, p1 {tm['p1']:+.2e}, "
                    f"p2 {tm['p2']:+.2e}" + (f"; cy slope {f('b_cy', 5)} px/count" if eye.startswith("ZR") else "")
                    + f"; {e['bins']} bins ({e['regular_bins']} in the low backlash state)" + lo
+                   + (f" - held at {e['ratio_hold']:.4f} ({e.get('ratio_hold_source')}: {e.get('low_images', 0)} low-state "
+                      f"images < {MIN_LOW_IMAGES})" if e.get("ratio_hold") and e.get("regular_bins") else "")
                    + ("" if "d_cx_regular" in e.get("held", []) else
                       f"; low-state principal point {f('d_cx_regular')}, {f('d_cy_regular')} px from the high "
                       f"state's ({e.get('mixed_exposures', 0)} exposures with the other eye in the high state)"))
@@ -991,6 +1136,17 @@ def describe(res: Dict[str, Any]) -> List[str]:
         sl = lambda x, u: (f"{x['slope']:+.2f} +- {x['se']:.2f} {u}" if x.get("slope") is not None else "-")   # noqa: E731
         out.append(f"rig {ang} per block: sd {fz.get('sd_mdeg') or float('nan'):.1f} mdeg; vs sol {sl(a, 'mdeg/1000 sol')}, "
                    f"vs lens T {sl(b, 'mdeg/degC')}")
+    ba_ = res.get("block_aspect") or {}
+    if ba_.get("error"):
+        out.append(f"per-block aspect vs the Navcam: not run ({ba_['error']})")
+    for r_ in ba_.get("rows") or []:                 # 0.94.5 (Christian, 27 Oct)
+        nv = "-" if r_.get("navcam_ppm") is None else f"{r_['navcam_ppm']:+.0f}"
+        out.append(f"{r_['block']} {r_['eye']} ({r_['state']} state, {r_['observations']} obs): Mastcam-Z d(fy - fx) "
+                   f"{r_['zcam_dfy_minus_dfx_px']:+.2f} px ({r_['zcam_ppm']:+.0f} ppm), Navcam {nv} ppm"
+                   + (f", difference {r_['diff_ppm']:+.0f} ppm" if r_.get("diff_ppm") is not None else "")
+                   + ("" if r_["judged"] else " (not judged)"))
+    if ba_.get("slope") is not None:
+        out.append(f"per-block aspect: Mastcam-Z on Navcam slope {ba_['slope']:+.2f} over the judged block lines")
     return out
 
 
@@ -1010,7 +1166,11 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
         sdv = lambda k: float(sd[k]) if k in sd and np.isfinite(sd[k]) else None      # noqa: E731
         single = is_single_state(eye)
         ratio_note = None
-        if "a_fx_regular" in e["held"]:
+        if e.get("ratio_hold") and int(e.get("regular_bins") or 0):     # 0.94.5: too few low-state images
+            ratio = float(e["ratio_hold"])
+            ratio_note = (f"held at {ratio:.4f} ({e.get('ratio_hold_source') or 'the 34 mm model'}): "
+                          f"{int(e.get('low_images') or 0)} low-state images (< {MIN_LOW_IMAGES})")
+        elif "a_fx_regular" in e["held"]:
             ratio = float(e["ratio_start"])
             if abs(ratio - 1.0) < 1e-9 and not single:
                 # 0.94.0: a first calibration without low-state bins (its start from the blocks had ratio 1): the
@@ -1036,8 +1196,11 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
         if eye.startswith("ZR") and len(pp0) == 2:
             bk["cx"] = {"a": float(pp0[0]), "b": 0.0, "form": "pinned"}
             bk["cy"] = {"a": float(pp0[1]), "b": tm["b_cy"], "sd_b": sdv("b_cy"), "form": "pinned_slope"}
-        reg = {pn: {"a": v["a"] / (ratio if pn in ("fx", "fy") else 1.0), "b": v["b"] / (ratio if pn in ("fx", "fy") else 1.0),
-                    "derived": f"backlash / {ratio:.5f}" if pn in ("fx", "fy") else "backlash"} for pn, v in bk.items()}
+        sdiv = 1.0 if REGULAR_SAME_SLOPE else ratio    # 0.94.5: the low state on the high state's slope
+        reg = {pn: {"a": v["a"] / (ratio if pn in ("fx", "fy") else 1.0), "b": v["b"] / (sdiv if pn in ("fx", "fy") else 1.0),
+                    "derived": ((f"backlash a / {ratio:.5f}, the backlash slope" if REGULAR_SAME_SLOPE
+                                 else f"backlash / {ratio:.5f}") if pn in ("fx", "fy") else "backlash")}
+               for pn, v in bk.items()}
         # 0.93.2: the regular state's own principal point (pp0 + the offset; the pose is shared with the backlash state)
         doff = [float(tm.get("d_cx_regular", 0.0)), float(tm.get("d_cy_regular", 0.0))]
         off_held = "d_cx_regular" in e["held"]
@@ -1136,7 +1299,8 @@ def block_line_rows(res: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 # the joint's own gate (20 Oct, first real run: Z residuals NaN and four blocks aligned with older models, promoted)
 ZJOINT_LIMITS = {"max_zcam_median_px": 0.6, "max_zcam_nonfinite_share": 0.005,
-                 "max_zcam_rms_px": 1.5}             # 0.94.4: Z34 0.80, Z63 0.42; Z48 of 27 Oct 3.30, Z79 of 26 Oct 29.6
+                 "max_zcam_rms_px": 1.5,
+                 "max_block_aspect_vs_navcam_ppm": 3000.0}             # 0.94.4: Z34 0.80, Z63 0.42; Z48 of 27 Oct 3.30, Z79 of 26 Oct 29.6
 
 
 def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -1158,6 +1322,15 @@ def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict
     checks.append({"check": "Mastcam-Z residuals finite", "ok": share <= lim["max_zcam_nonfinite_share"],
                    "note": f"{int(z.get('zcam_nonfinite') or 0)} of {int(z.get('zcam_observations') or 0)} not finite "
                            f"({100 * share:.2f} %)"})
+    ba_ = res.get("block_aspect") or {}
+    if ba_.get("rows"):                                # 0.94.5: per-block fy - fx against the Navcam's
+        bad = [r for r in ba_["rows"] if r["judged"] and abs(r["diff_ppm"]) > lim["max_block_aspect_vs_navcam_ppm"]]
+        nj = sum(1 for r in ba_["rows"] if r["judged"])
+        checks.append({"check": "per-block aspect vs the Navcam", "ok": not bad,
+                       "note": (f"{nj} block lines judged (>= {ba_.get('min_observations')} observations), largest "
+                                f"|Mastcam-Z - Navcam| d(fy - fx) {ba_['max_diff_ppm']:.0f} ppm" if nj else "no line judged")
+                               + f" (<= {lim['max_block_aspect_vs_navcam_ppm']:g})"
+                               + (": " + ", ".join(f"{r['block']} {r['eye']} {r['diff_ppm']:+.0f}" for r in bad) if bad else "")})
     navfp, bfp = res.get("navcam_fingerprint"), res.get("block_navcam_fingerprints")
     if navfp and bfp:                                  # 0.93: the Navcam models are what the joint holds
         other = sorted(n for n, f in bfp.items() if f != navfp)

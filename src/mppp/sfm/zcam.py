@@ -149,6 +149,9 @@ def plot_focus_breathing(project: SfmProject, table: List[Dict[str, Any]], fits:
     if not groups:
         axes[0][0].text(0.5, 0.5, "no Mastcam-Z focus-bin cameras", ha="center", va="center")
         axes[0][0].set_axis_off()
+    elif len(groups) > 1:
+        from ..calib.constrain import panel_letters
+        panel_letters(axes)                 # 27 Oct (Christian): "A. title", left-justified, as the maps
     fig.tight_layout()
     out = Path(out_png)
     out.parent.mkdir(parents=True, exist_ok=True)

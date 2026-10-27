@@ -21,6 +21,8 @@ from pathlib import Path
 
 import numpy as np
 
+from mppp.calib.constrain import panel_letters
+
 EYE = {"NL": "C0", "NR": "C3"}            # left cool, right warm
 LAWC = ["C0", "C2", "C4", "C9", "C8"]
 
@@ -49,6 +51,8 @@ def residuals(res, out):
     axs[1].set_xticks(x)
     axs[1].set_xticklabels(blocks, rotation=35, ha="right", fontsize=8)
     axs[0].set_title("Navcam laws held against the blocks' own units (reprojection residuals)")
+    axs[1].set_title("rms residual per block")
+    panel_letters(axs)
     fig.tight_layout()
     fig.savefig(out / "lawcheck_residuals.png", dpi=130)
     plt.close(fig)
@@ -87,6 +91,9 @@ def cameras(res, law, out, min_images=8):
             if i == len(terms) - 1:
                 ax.set_xlabel("temperature (degC)")
             ax.grid(alpha=0.3)
+            if not ax.get_title():
+                ax.set_title(f"{eye} {lab.split(' (')[0]}", fontsize=10)
+    panel_letters(axs)
     fig.tight_layout()
     fig.savefig(out / f"lawcheck_cameras_{law}.png", dpi=130)
     plt.close(fig)
@@ -112,6 +119,8 @@ def rig(res, law, out, min_frames=8):
         ax.grid(alpha=0.3)
     fig.colorbar(sc, ax=axs, label="temperature (degC)", shrink=0.6)
     axs[0].set_title(f"stereo rig units (free) about {law}")
+    axs[1].set_title("yaw"); axs[2].set_title("roll")
+    panel_letters(axs)
     axs[-1].set_xlabel("sol")
     fig.savefig(out / f"lawcheck_rig_{law}.png", dpi=130, bbox_inches="tight")
     plt.close(fig)
@@ -148,6 +157,10 @@ def pointing(res, law, out, min_images=8):
         ax.set_title(f"stereo pointing NR - NL {k} (px)")
         ax.set_xlabel("temperature (degC)")
         ax.grid(alpha=0.3)
+    for ax_ in np.ravel(axs):
+        if not ax_.get_title():
+            ax_.set_title(" ")
+    panel_letters(axs)
     fig.tight_layout()
     fig.savefig(out / f"lawcheck_pointing_{law}.png", dpi=130)
     plt.close(fig)

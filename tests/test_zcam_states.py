@@ -161,3 +161,24 @@ def test_focus_from_below_list_and_motor_moves(tmp_path):
     assert (mv["s1"]["zoom_dir"], mv["s1"]["focus_dir"], mv["s1"]["dfocus"]) == ("up", "up", 1062.0)
     assert (mv["s2"]["zoom_dir"], mv["s2"]["focus_dir"]) == ("none", "down")
     assert mv["s3"]["zoom_dir"] is None                                                 # more than 30 min later
+
+
+def test_centre_offsets_where_the_centres_are_free():
+    """0.95 (Christian, 27 Oct): the right eye's state shows in its principal point - the survey reports each
+    image's centre about its eye's high-state median, where the centres vary (ZL holds its centre: nothing)."""
+    from mppp.sfm import zcam_states as Z
+    zr = [{"block": "b", "group": "ZR034", "sol": 121, "sequence": "S", "clock": f"{i}", "state": "high",
+           "listed": False, "cx": 743.0 + 0.1 * (i % 2), "cy": 664.0, "d": 0.0, "gap": 0.01} for i in range(6)]
+    zr += [{"block": "b", "group": "ZR034", "sol": 121, "sequence": "T", "clock": f"9{i}", "state": "high",
+            "listed": True, "cx": 745.5, "cy": 662.0, "d": 0.0, "gap": 0.01} for i in range(3)]
+    zl = [{"block": "b", "group": "ZL034", "sol": 121, "sequence": "S", "clock": f"{i}", "state": "high",
+           "listed": False, "cx": 870.0, "cy": 559.0, "d": 0.0, "gap": 0.01} for i in range(4)]
+    Z.centre_offsets({("b", "ZR034"): zr, ("b", "ZL034"): zl})
+    assert all(r["dcx"] is None for r in zl)
+    t = [r for r in zr if r["sequence"] == "T"][0]
+    assert abs(t["dcx"] - 2.45) < 1e-9 and abs(t["dcy"] + 2.0) < 1e-9
+    seq = {(s["sequence"], s["group"]): s for s in Z.sequences(zr + zl)}
+    assert abs(seq[("T", "ZR034")]["dcx_median_px"] - 2.45) < 1e-9 and seq[("S", "ZL034")]["dcx_median_px"] is None
+    from pathlib import Path
+    rp = (Path(__file__).resolve().parents[1] / "studies" / "calibration" / "run_pipeline.py").read_text()
+    assert '"ZCAM_BIN_REFINE=focal_pp"' in rp

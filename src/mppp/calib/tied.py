@@ -80,7 +80,13 @@ KNOT_SOL = 250.0                 # the pitch hinge (the free-knot refit of 20 Oc
 # crawled along that valley; held, the 12-block joint's scaled condition fell from 4.2e5 to 3.0e4, the k1-k3 sd 3-8x,
 # fx's sd 15 %, for a radial change of at most 0.08 / 0.18 px (NL / NR) at the very corner (theta 1.05 rad) and
 # 0.002 px at 0.5 rad; k4 = 0 is rejected (+1.4 / 1.6 px at the corner, cost +50)
-HOLD_DEFAULT = ("Q0_yaw", "G_NL_k4", "G_NR_k4")
+HOLD_DEFAULT = ("Q0_yaw", "G_NL_k4", "G_NR_k4", "G_NL_cy", "E_NL_cy")
+# 0.94.5 (Christian, 27 Oct): NL cy held (the law's level and its early-mission offset).  Over the 29 blocks the two
+# eyes' cy deviations correlate at 0.999 - left minus right 0.03 px rms against 0.77 px rms shared: the shared part is
+# head pitch (1 px ~ 19 mdeg), the per-block pointing's (lawcheck: cy chi^2/dof ~16).  NL because the rig refers to
+# it: NR cy then carries only the stereo vertical offset, which is well measured.
+TIE_K1_SLOPE = True   # 0.94.5 (Christian, 27 Oct): NR's k1 thermal slope tied to NL's - one design (the tied joint had
+                      # NL -8.2 +- 1.2, NR -4.0 +- 1.3 x 1e-6/degC; the weighted mean about -6.1)
 PASS_JUMP_FACTOR = 1.5           # 0.94.4: a pass starting this far above the last one's end gets one more pass
 EARLY_Z_MIN = 3.0                # 0.94.4 (Christian 24 Oct): an early-mission offset is kept only where |z| reaches this
 ISO_F = True    # one focal slope per eye (fy's ppm/degC = fx's): 20 Oct joint fx/fy 36.0/37.1, 35.6/35.3 ppm/degC,
@@ -460,7 +466,7 @@ _HELD_NAMES = {"S_NL": SLOPE_TERMS, "S_NR": SLOPE_TERMS, "E_NL": EARLY_TERMS, "E
 
 def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT, tie_rigs: bool = True,
               tie_cameras: bool = True, pp_prior: Optional[Dict[str, float]] = None, iso_f: bool = ISO_F,
-              exact_solve: Optional[bool] = None):
+              exact_solve: Optional[bool] = None, tie_k1: bool = TIE_K1_SLOPE):
     """The ``extra_residuals`` callable for :func:`mppp.sfm.reconstruction.bundle_adjust` and the global parameter
     arrays it ties to.  ``hold``: global terms held at their start (``"E_NR"``, ``"S_NL_cy"``, ``"Q0_yaw"``, ``"H"``
     ...).  ``H``'s yaw and roll are always held at 0 (linear yaw and roll trends); terms the data cannot see are held
@@ -479,6 +485,10 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
     if iso_f and tie_cameras:
         hold += ["S_NL_fy", "S_NR_fy"]
         sync_iso(g)
+    k1tie = bool(tie_k1 and tie_cameras)
+    if k1tie:                                          # NR's k1 slope reads NL's (S_NR's k1 entry held, kept equal)
+        hold += ["S_NR_k1"]
+        sync_k1(g)
     for eye in ("NL", "NR"):
         if not any(u["early"] and u["eye"] == eye for u in units["cameras"].values()):
             hold.append(f"E_{eye}")
@@ -516,8 +526,16 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                     for i, k in enumerate(EARLY_TERMS):
                         A[TIED_PARAMS.index(k), 27 + i] = -1.0  # E (this eye)
                 bl = [blk, g[f"G_{eye}"], g[f"S_{eye}"], g[f"E_{eye}"]]
-                tie_ids.append(prob.add_residual_block(LinearTie(A, sig, [12, 10, 5, 4]), None, bl))
-                specs.append({"id": tie_ids[-1], "A": A, "sigma": sig, "sizes": [12, 10, 5, 4], "blocks": bl})
+                sizes = [12, 10, 5, 4]
+                if k1tie and eye == "NR":                      # 0.94.5: NR's k1 row reads NL's k1 slope
+                    A2 = np.zeros((A.shape[0], A.shape[1] + 5))
+                    A2[:, :A.shape[1]] = A
+                    k1r = TIED_PARAMS.index("k1")
+                    A2[k1r, 22 + SLOPE_TERMS.index("k1")] = 0.0
+                    A2[k1r, A.shape[1] + SLOPE_TERMS.index("k1")] = -dT
+                    A, bl, sizes = A2, bl + [g["S_NL"]], sizes + [5]
+                tie_ids.append(prob.add_residual_block(LinearTie(A, sig, sizes), None, bl))
+                specs.append({"id": tie_ids[-1], "A": A, "sigma": sig, "sizes": sizes, "blocks": bl})
                 n_cam += 1
         if tie_rigs:
             for rid, u in units["rigs"].items():
@@ -578,6 +596,11 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
     return hook, g
 
 
+def sync_k1(g: Dict[str, np.ndarray]) -> None:
+    """0.94.5: NR's k1 thermal slope set to NL's (:data:`TIE_K1_SLOPE`) in place."""
+    g["S_NR"][SLOPE_TERMS.index("k1")] = g["S_NL"][SLOPE_TERMS.index("k1")]
+
+
 def sync_iso(g: Dict[str, np.ndarray]) -> None:
     """The isotropic focal slope: fy's slope set to fx's relative slope (same ppm/degC) in place."""
     for eye in ("NL", "NR"):
@@ -622,13 +645,15 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
                 tie_rigs: bool = True, tie_cameras: bool = True, iterations: int = 100, covariance: bool = True,
                 passes: int = 2, verbose: bool = True, refine_pp: bool = True,
                 pp_prior: Optional[Dict[str, float]] = None, iso_f: bool = ISO_F,
-                exact_solve: Optional[bool] = None) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
+                exact_solve: Optional[bool] = None, tie_k1: bool = TIE_K1_SLOPE
+                ) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
     """The adjustment of a tied reconstruction (``passes`` solves, the slopes of the keypoint map updated between
     them).  Returns (ba result of the last pass, the global arrays, residual statistics)."""
     from ..sfm.reconstruction import bundle_adjust
     iso = bool(iso_f and tie_cameras)
+    k1tie = bool(tie_k1 and tie_cameras)
     hook, g = make_ties(st, units, hold=hold, tie_rigs=tie_rigs, tie_cameras=tie_cameras, pp_prior=pp_prior, iso_f=iso,
-                        exact_solve=exact_solve)
+                        exact_solve=exact_solve, tie_k1=k1tie)
     temps = idx["temps"]
     ba = None
     n_pass = max(1, int(passes))
@@ -644,6 +669,8 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
                            linear_solver="sparse_schur", keypoint_scale=ks, keypoint_map=kmap, extra_residuals=hook)
         if iso:
             sync_iso(g)
+        if k1tie:
+            sync_k1(g)
         if verbose:
             log.info(f"  pass {p_ + 1}: {ba['brief'][:160]}")
         costs.append((float(ba.get("initial_cost", np.nan)), float(ba.get("final_cost", np.nan))))
@@ -658,6 +685,7 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
         ba.setdefault("extra", {})
         if isinstance(ba["extra"], dict):
             ba["extra"]["iso_f"] = iso
+            ba["extra"]["tie_k1"] = k1tie
             ba["extra"]["pass_costs"] = costs
     ks, kmap = keypoint_terms(units, proj, temps, g, iso_f=iso)
     stats = J.residual_stats(rec, proj, keypoint_scale=ks, keypoint_map=kmap)
@@ -756,6 +784,7 @@ def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, A
     cov = ba.get("covariance") or {}
     held = (ba.get("extra") or {}).get("held") or {}
     iso = bool((ba.get("extra") or {}).get("iso_f"))
+    k1tie = bool((ba.get("extra") or {}).get("tie_k1"))
     fallback = None
     out: Dict[str, Any] = {"T0_degC": st["T0"], "knot_sol": st["knot"], "early_sol": units["early_sol"],
                            "covariance_error": cov.get("error"), "covariance_damping": cov.get("damping"),
@@ -792,6 +821,11 @@ def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, A
                                                     "k1_per_degC": float(sdS[4])},
                     "early_mission": {"before_sol": units["early_sol"], "offsets_px": dict(zip(EARLY_TERMS, map(float, E))),
                                       "sd_px": None if sdE is None else dict(zip(EARLY_TERMS, map(float, sdE)))}}
+    if k1tie and isinstance(out.get("NL"), dict) and isinstance(out.get("NR"), dict):   # 0.94.5: one k1 slope
+        out["NR"]["k1_per_degC"] = out["NL"]["k1_per_degC"]
+        if out["NR"].get("sd") and out["NL"].get("sd"):
+            out["NR"]["sd"]["k1_per_degC"] = out["NL"]["sd"]["k1_per_degC"]
+        out["k1_slope_tied"] = "NR's k1 thermal slope is NL's (TIE_K1_SLOPE, Christian 27 Oct)"
     R0 = R_of_q(g["Q0"])
     sdQ, sdD, sdH = (_sd(cov, "Q0", 3, held.get("Q0", ())), _sd(cov, "D", 3, held.get("D", ())),
                      _sd(cov, "H", 3, held.get("H", ())))

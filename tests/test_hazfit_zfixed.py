@@ -150,7 +150,7 @@ def test_groups_and_block_sites():
     # again, Bright Angel; the Hazcam consensus without Three Forks North; a list per zoom
     # (10:30: Chal Rocks again, not Chal Rocks Large)
     assert g["zcam_consensus"] == ["chal_rocks", "seitah_overlook", "threeforks_north", "belva_crater",
-                                   "taylorfjellet", "marble_mountain", "bright_angel", "pico_turquino", "south_arm"]
+                                   "taylorfjellet", "marble_mountain", "bright_angel", "pico_turquino", "south_arm", "overlook_mountain"]
     assert "chal_rocks_large" not in g["zcam34_joint"] and "chal_rocks" in g["zcam34_joint"]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "belva_crater", "bell_island", "marble_mountain"]
     assert g["zcam63_consensus"] == ["chal_rocks_large", "seitah_overlook", "bright_angel", "taylorfjellet", "marble_mountain"]

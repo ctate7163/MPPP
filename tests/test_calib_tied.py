@@ -387,3 +387,24 @@ def test_calib_lawcheck_command(tmp_path, monkeypatch):
     a = cli.build_parser().parse_args(["calib", "lawcheck", "--root", str(tmp_path), "--out", str(tmp_path / "o")])
     seen.clear()
     assert cli.cmd_calib(a) == 0 and seen["laws"] == {"in_use": None}
+
+
+def test_nl_cy_held_and_one_k1_slope(tmp_path):
+    """0.95 (Christian, 27 Oct): NL cy held (level and early offset; the shared per-block part is head pitch) and NR's
+    k1 thermal slope tied to NL's (one design); ``tie_k1=False`` frees NR's again."""
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    assert "G_NL_cy" in T.HOLD_DEFAULT and "E_NL_cy" in T.HOLD_DEFAULT and T.TIE_K1_SLOPE
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, _ = T.adjust_tied(rec2, proj2, idx, st, units, iterations=15, covariance=True, passes=1, verbose=False)
+    held = (ba.get("extra") or {}).get("held") or {}
+    assert T.TIED_PARAMS.index("cy") in held.get("G_NL", []) and T.SLOPE_TERMS.index("k1") in held.get("S_NR", [])
+    assert g["G_NL"][T.TIED_PARAMS.index("cy")] == pytest.approx(st["G"]["NL"][T.TIED_PARAMS.index("cy")])
+    assert g["S_NR"][4] == g["S_NL"][4]
+    res = T.globals_result(st, g, ba, units)
+    assert res["NR"]["k1_per_degC"] == res["NL"]["k1_per_degC"] and res.get("k1_slope_tied")
+    assert res["NR"]["sd"]["k1_per_degC"] == res["NL"]["sd"]["k1_per_degC"]
+    rec3, proj3, units3 = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba3, g3, _ = T.adjust_tied(rec3, proj3, idx, st, units3, iterations=10, covariance=False, passes=1, verbose=False,
+                               tie_k1=False)
+    assert 4 not in ((ba3.get("extra") or {}).get("held") or {}).get("S_NR", [])

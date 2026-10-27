@@ -338,15 +338,20 @@ def label_camera(meta: Dict[str, Any]) -> Tuple[str, List[float], str]:
 IFOV_MDEG = 18.9          # one Navcam pixel, 0.33 mrad
 FIG_DPI = 200             # the standard figures (make_figures.bat; Christian, 20 Oct)
 RIG_TREND_YLIMS = {"pitch": (-10.0, 30.0), "yaw": (-20.0, 20.0), "roll": (-20.0, 20.0)}   # mdeg (Christian, 22 Oct)
-STEREO_CX_YLIM = (-20.0, -17.0)        # px, the rig trends' stereo cx panel, primary axis (Christian, 22 Oct)
+STEREO_CX_YLIM = (-20.0, -16.0)        # px, the rig trends' stereo cx panel (D), primary axis (Christian, 22 Oct; top -16 since 27 Oct)
 EYE_COLORS = {"NL": "C0", "NR": "C3"}        # left eye cool, right eye warm
 
 
-def panel_letters(axs, fontsize: float = 12.0) -> None:
-    """Label the visible subplots A, B, C ... in reading order (row by row), bold, just left of each title."""
+def panel_letters(axs, fontsize: Optional[float] = None) -> None:
+    """Letter the visible subplots A, B, C ... in reading order (row by row) as the maps do (Christian, 27 Oct): the
+    letter starts the title - "A. pitch: ..." - and the title is left-justified.  Call after the titles are set;
+    ``fontsize`` overrides the title's own size."""
     for k, ax in enumerate(a for a in np.ravel(axs) if a.axison):
-        ax.text(-0.02, 1.0, chr(ord("A") + k), transform=ax.transAxes, ha="right", va="bottom", fontsize=fontsize,
-                fontweight="bold")
+        centre, left = ax.get_title(loc="center"), ax.get_title(loc="left")
+        size = fontsize or (ax.title.get_fontsize() if centre else ax._left_title.get_fontsize())
+        text = left or centre
+        ax.set_title("", loc="center")
+        ax.set_title(f"{chr(ord('A') + k)}. {text}" if text else f"{chr(ord('A') + k)}.", loc="left", fontsize=size)
 
 
 def _out_of_axis_note(ax, y, lo, hi, what="epoch(s)") -> None:
@@ -387,7 +392,7 @@ def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], dr
     in (solid, ± se band).  ``rig_residuals`` is the study's ``rig_residuals.json`` (rig rotation free, cameras
     held), ``consensus`` its ``consensus.json``.  ``ylims``: per angle (default :data:`RIG_TREND_YLIMS`: pitch
     -10 to +30, yaw and roll -20 to +20 mdeg), ``cx_ylim`` the stereo panel's primary axis (default
-    :data:`STEREO_CX_YLIM`, -20 to -17 px; None = from the data); points outside are counted on the panel.
+    :data:`STEREO_CX_YLIM`, -20 to -16 px; None = from the data); points outside are counted on the panel.
     Panels lettered A-D; ``point_labels=False`` leaves out the block name at every point.
     """
     plt = _plt()
@@ -463,6 +468,52 @@ def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], dr
     fig.suptitle(f"Navcam rig trends{(' ' + label) if label else ''} ({nb} blocks, {len(B)} rig epochs; drift referred to sol {sol_ref:.0f}; "
                  f"right axes in Navcam IFOV, 0.33 mrad = {IFOV_MDEG} mdeg)", fontsize=10)
     fig.tight_layout(rect=(0, 0, 1, 0.97)); fig.savefig(path, dpi=dpi)
+    plt.close(fig)
+    return Path(path)
+
+
+HAZCAM_IFOV_MDEG = float(np.degrees(1.0 / 2142.0) * 1e3)    # one Hazcam pixel (f about 2142 px): 26.7 mdeg
+
+
+def plot_hazcam_rig_trends(rig: Dict[str, Any], path: PathLike, label: str = "", dpi: int = FIG_DPI,
+                           point_labels: bool = True) -> Optional[Path]:
+    """0.94.5 (Christian, 27 Oct: "make similar figures for the front and rear hazcams"): a Hazcam pair's rig trends,
+    1 x 3 like the Navcam's (pitch, roll, yaw): every block's refined rig rotation (``rig["per_block"]`` from
+    :func:`mppp.calib.hazfit.fit_rig`) relative to the fitted rig at sol 0 against the block's sol, with the drift
+    line, the scatter about it in the titles and a secondary axis in Hazcam IFOV.  None without per-block rows."""
+    rows = [r for r in (rig.get("per_block") or []) if r.get("sol") is not None]
+    if not rows:
+        return None
+    plt = _plt()
+    fam = rig.get("family", "?")
+    sol = np.array([r["sol"] for r in rows], float)
+    d = rig.get("drift") or {}
+    fig, axs = plt.subplots(1, 3, figsize=(15.0, 4.6), squeeze=False)
+    ss = np.linspace(0, max(2050.0, float(sol.max()) + 50), 200)
+    for ax, ang in zip(axs[0], ("pitch", "roll", "yaw")):
+        y = np.array([r[f"{ang}_mdeg"] for r in rows], float)
+        rate = float(d.get(f"{ang}_mdeg_per_sol") or 0.0)
+        ax.plot(sol, y, "o", color="C0", label="block rig (rotation free, cameras held)")
+        if d:
+            ax.plot(ss, rate * ss, "-", color="C3", label=f"drift {1000 * rate:+.2f} mdeg/1000 sol")
+        if point_labels:
+            for xx, yy, r in zip(sol, y, rows):
+                ax.annotate(str(r["block"])[:22], (xx, yy), fontsize=5.5, alpha=0.6, xytext=(3, 3), textcoords="offset points")
+        res = y - rate * sol
+        sd = float(np.std(res, ddof=1)) if len(res) > 1 else float("nan")
+        ax.set_title(f"{ang}: {len(rows)} blocks; scatter about the {'drift' if d else 'median'} {sd:.1f} mdeg "
+                     f"= {sd / HAZCAM_IFOV_MDEG:.2f} px", fontsize=9)
+        ax.axhline(0, color="0.6", lw=0.8)
+        ax.set_xlim(0, ss[-1]); ax.grid(alpha=0.3); ax.legend(fontsize=7, loc="best")
+        ax.set_xlabel("sol", fontsize=8)
+        ax.set_ylabel(f"{ang} relative to the rig at sol 0 (mdeg)", fontsize=8)
+        ax.secondary_yaxis("right", functions=(lambda m: m / HAZCAM_IFOV_MDEG, lambda q: q * HAZCAM_IFOV_MDEG)).set_ylabel(
+            "Hazcam IFOV equivalent (px)", fontsize=8)
+    panel_letters(axs)
+    name = {"F": "front", "R": "rear"}.get(fam, fam)
+    fig.suptitle(f"{name} Hazcam rig trends{(' ' + label) if label else ''} ({len(rows)} blocks; right axes in Hazcam "
+                 f"IFOV, {HAZCAM_IFOV_MDEG:.1f} mdeg)", fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.93)); fig.savefig(path, dpi=dpi)
     plt.close(fig)
     return Path(path)
 

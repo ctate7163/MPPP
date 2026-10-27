@@ -4,7 +4,7 @@ REM MPPP 0.94.4 - run_zcam_states.bat (Christian, 25 Oct 2026): which Mastcam-Z 
 REM
 REM Aligns the Navcam + Mastcam-Z block of each site again as the variant "states" (WORK\colmap_states; the
 REM blocks' own colmap\ is not touched, and its features and matches are reused) with every Mastcam-Z image as a
-REM camera of its own, its focal length free (ZCAM_BIN_BY=image, ZCAM_HOLD_F_IMAGES=0, ZCAM_BIN_REFINE=focal) and
+REM camera of its own, its focal length free (ZCAM_BIN_BY=image, ZCAM_HOLD_F_IMAGES=0, ZCAM_BIN_REFINE=focal_pp - the right eye's centre free too) and
 REM no focus lines (ZCAM_FOCUS_LINE=false), so that each image's f / label f is its own.  The low-state list and the
 REM found list (%MPPP_SCAPES%\zcam_low_backlash_found.csv) give only the starting focal lengths.
 REM
@@ -22,7 +22,7 @@ REM Do not start it while another run_sites batch is running (run_sites refuses:
 REM ======================================================================================================
 setlocal
 if not defined MPPP_STATES_SITES set "MPPP_STATES_SITES=seitah_overlook chal_rocks threeforks_north belva_crater south_arm marble_mountain taylorfjellet rochette enchanted_lake olifants"
-set "SETS=--set ZCAM_BIN_BY=image --set ZCAM_HOLD_F_IMAGES=0 --set ZCAM_BIN_REFINE=focal --set ZCAM_FOCUS_LINE=false"
+set "SETS=--set ZCAM_BIN_BY=image --set ZCAM_HOLD_F_IMAGES=0 --set ZCAM_BIN_REFINE=focal_pp --set ZCAM_FOCUS_LINE=false"
 
 if not defined MPPP_HOME if exist "%~dp0mppp_env.bat" if exist "%~dp0..\process_sites.py" for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 if not defined MPPP_HOME set "MPPP_HOME=%~dp0..\.."

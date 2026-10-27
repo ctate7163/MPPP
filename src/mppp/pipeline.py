@@ -153,7 +153,7 @@ class Settings:
     zcam_low_backlash_found: Any = "auto"
     zcam_focus_line: bool = True                  # stage 2 puts the focus-bin cameras on lines in focus count (False: f per bin)
     zcam_line_cycles: int = 2                     # rounds of freeing the bins and refitting the lines
-    zcam_station_prior_sigma_m: float = 0.1       # 0.95 (27 Oct): a Mastcam-Z frame's position prior moves with its station's Navcam shift, +-this per axis (m); 0: the waypoint prior (prior_sigma_m)
+    zcam_station_prior_sigma_m: float = 0.1       # 0.94.5 (27 Oct): a Mastcam-Z frame's position prior moves with its station's Navcam shift, +-this per axis (m); 0: the waypoint prior (prior_sigma_m)
     zcam_line_form: Optional[Dict[str, Any]] = None   # the form of each focus line {eye: {param: form}} for a study; None: the shipped form
     zcam_rig: bool = True                         # the two Mastcam-Z eyes of an exposure form a stereo rig, one per zoom
     zcam_rig_fit: Optional[str] = "rotation"      # the Mastcam-Z rig refined in stage 2: "rotation", "full" (and translation), None
@@ -228,7 +228,7 @@ class Settings:
         if d.get("zcam_bin_by") in (None, "focus"):
             d.pop("zcam_bin_by", None)               # 0.94.4: likewise
         if not d.get("include_zcam"):
-            d.pop("zcam_station_prior_sigma_m", None)   # 0.95: a Mastcam-Z setting (Navcam keys stay)
+            d.pop("zcam_station_prior_sigma_m", None)   # 0.94.5: a Mastcam-Z setting (Navcam keys stay)
             d["zcam_low_backlash_found"] = None      # 0.94.4: the found list is a Mastcam-Z setting (Navcam keys stay)
             if d.get("exclude"):                     # 0.94.4: a Mastcam-Z sequence left out does not change a Navcam run
                 d["exclude"] = [e for e in d["exclude"] if not str(e).strip().lower().startswith("seq:zcam")]

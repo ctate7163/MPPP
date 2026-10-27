@@ -140,14 +140,15 @@ def test_rig_drift_fit_free_knot(tmp_path):
 
 def test_panel_letters_limits_and_unlabelled_versions(tmp_path, monkeypatch):
     """22 Oct (Christian): every Navcam and Mastcam-Z subplot lettered A, B ...; rig trends pitch -10..30, yaw and
-    roll -20..20 mdeg, the stereo cx panel -20..-17 px; make_figures also writes the plots without point labels."""
+    roll -20..20 mdeg, the stereo cx panel -20..-16 px (27 Oct); make_figures also writes the plots without point labels."""
     from mppp.calib import constrain as C, fit as F, models as M
     seen = []
     orig = C.panel_letters
     def spy(axs, **kw):
         orig(axs, **kw)
-        seen.append([(t.get_text(), ax.get_ylim(), len(ax.texts)) for ax in np.ravel(axs) if ax.axison
-                     for t in ax.texts if t.get_fontweight() == "bold"])
+        # 27 Oct (Christian): the letter starts the left-justified title, as the maps ("A. pitch: ...")
+        seen.append([(ax.get_title(loc="left").split(".")[0], ax.get_ylim(), len(ax.texts)) for ax in np.ravel(axs)
+                     if ax.axison and ax.get_title(loc="left")])
     monkeypatch.setattr(C, "panel_letters", spy)
     rr = {"blocks": [{"block": f"Fake{k} [sols 90-110]", "site": f"Fake{k}", "sol_median": 100.0 + 300 * k,
                       "T_median_degC": -18.0 - 3 * k, "images": 12, "yaw_mdeg": 1.0 + k, "pitch_mdeg": -0.5, "roll_mdeg": 2.0}
@@ -163,7 +164,7 @@ def test_panel_letters_limits_and_unlabelled_versions(tmp_path, monkeypatch):
     assert a.stat().st_size != b.stat().st_size
     lab, nolab = seen
     assert [x[0] for x in lab] == list("ABCD")
-    assert [x[1] for x in lab] == [(-10.0, 30.0), (-20.0, 20.0), (-20.0, 20.0), (-20.0, -17.0)]   # pitch, roll, yaw, stereo cx
+    assert [x[1] for x in lab] == [(-10.0, 30.0), (-20.0, 20.0), (-20.0, 20.0), (-20.0, -16.0)]   # pitch, roll, yaw, stereo cx
     assert all(n1 > n2 for (_, _, n1), (_, _, n2) in zip(lab, nolab))      # the block names are gone
     rows = [{"block": f"mars2020_blk{k}", "sol": 100.0 + 200 * k, "T_optics_degC": -10.0 + 4 * k, "yaw_mdeg": 0.3 * k,
              "pitch_mdeg": -0.2 * k, "roll_mdeg": 0.1, "dbaseline_mm": 0.05 * k} for k in range(4)]

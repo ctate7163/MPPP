@@ -243,6 +243,9 @@ def fit_rig(rows: List[Dict[str, Any]], fam: str) -> Dict[str, Any]:
             [Rotation.from_matrix(np.asarray(r["R"])).as_rotvec() for r in refined], axis=0)).as_matrix()
         out.update({"R": Rm.tolist(), "drift": None, "note": f"{len(refined)} refined rigs: no drift "
                     f"(>= {MIN_RIG_BLOCKS} needed); the {'refined' if refined else 'CAHV'} median rotation"})
+        Rmr = Rotation.from_matrix(Rm)
+        out["per_block"] = [_rig_row(r, (Rotation.from_matrix(np.asarray(r["R"])) * Rmr.inv()).as_rotvec())
+                            for r in refined]
         return out
     off = np.array([(Rotation.from_matrix(np.asarray(r["R"])) * R0.inv()).as_rotvec() for r in refined]) * 1e3 * 180 / np.pi
     sols = np.array([r["sol"] for r in refined], float)
@@ -254,8 +257,17 @@ def fit_rig(rows: List[Dict[str, Any]], fam: str) -> Dict[str, Any]:
                 "drift": {"model": "linear", "sol0": 0.0, "pitch_mdeg_per_sol": float(coef[1, 0]),
                           "yaw_mdeg_per_sol": float(coef[1, 1]), "roll_mdeg_per_sol": float(coef[1, 2]),
                           "blocks": len(refined)},
-                "scatter_mdeg": [float(x) for x in np.sqrt(np.mean(res ** 2, axis=0))]})
+                "scatter_mdeg": [float(x) for x in np.sqrt(np.mean(res ** 2, axis=0))],
+                # 0.94.5 (the rig trends figure): each block's rotation relative to the fitted rig at sol 0 (mdeg)
+                "per_block": [dict(block=r["block"], sol=float(r["sol"]), pitch_mdeg=float(v[0]), yaw_mdeg=float(v[1]),
+                                   roll_mdeg=float(v[2])) for r, v in zip(refined, off - coef[0])]})
     return out
+
+
+def _rig_row(r: Dict[str, Any], rotvec: np.ndarray) -> Dict[str, Any]:
+    v = np.asarray(rotvec, float) * 1e3 * 180 / np.pi
+    return {"block": r["block"], "sol": float(r["sol"]), "pitch_mdeg": float(v[0]), "yaw_mdeg": float(v[1]),
+            "roll_mdeg": float(v[2])}
 
 
 def fit_hazcam(blocks: Dict[str, PathLike], model: str = "cahv_ba", limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -433,13 +445,23 @@ def write_hazcam(res: Dict[str, Any], out_dir: PathLike) -> Dict[str, Any]:
             (cand / name).write_text(json.dumps(rig_file(r, stamp), indent=1), encoding="utf-8")
             files.append(str(cand / name))
     (out / "hazcam_fit.json").write_text(json.dumps(res, indent=1, default=float), encoding="utf-8")
+    figs = []                         # 0.94.5 (Christian, 27 Oct): the rig trends of each pair, as the Navcam's
+    for fam, r in (res.get("rigs") or {}).items():
+        try:
+            from .constrain import plot_hazcam_rig_trends
+            f = plot_hazcam_rig_trends(r, out / f"hazcam_rig_trends_{fam}.png", label=f"({stamp})")
+            if f:
+                figs.append(f.name)
+        except Exception as e:                   # noqa: BLE001 - a figure never fails the fit
+            log.warning(f"Hazcam {fam} rig trends figure: {type(e).__name__}: {e}")
     (out / "check.json").write_text(json.dumps(chk, indent=1), encoding="utf-8")
     lines = [f"# Hazcam fit ({stamp})", "", f"Blocks: {', '.join(res.get('blocks') or [])}.", ""]
     lines += [f"- {x}" for x in describe(res)]
     lines += ["", "## Checks (each eye and pair on its own; the passing ones are in candidate/)", ""]
     lines += [f"- {'ok' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}" for c in chk["checks"]]
+    lines += [""] + [f"![{f}]({f})" for f in figs]
     (out / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return {"folder": str(out), "candidate": str(cand), "files": files, "check": chk}
+    return {"folder": str(out), "candidate": str(cand), "files": files, "check": chk, "figures": figs}
 
 
 def describe(res: Dict[str, Any]) -> List[str]:

@@ -260,6 +260,10 @@ def test_zcam_joint_recovers_the_focus_law_and_the_rig(tmp_path, monkeypatch):
     assert any("radial displacement" in x for x in Z.describe(res))
     d = res["diagnostics"]
     assert {r["block"] for r in d["blocks"]} == {"blk_a", "blk_b"}
+    ba = res["block_aspect"]                                          # 0.94.5: the Navcam's per-block aspect
+    assert "error" not in ba, ba
+    assert {r["block"] for r in ba["rows"]} == {"blk_a", "blk_b"} and all(r["navcam_ppm"] is not None for r in ba["rows"])
+    assert all(abs(r["navcam_ppm"]) < 300 and abs(r["diff_ppm"]) < 1000 for r in ba["rows"]), ba["rows"]
     assert all(abs(r["yaw_mdeg"]) < 5 for r in d["blocks"])
     assert d["blocks"][0]["lines"]["ZL034"]["backlash"]["fx"]["bins"] == 3
     out = Z.write_zjoint(res, tmp_path / "cand", model=start)
@@ -458,3 +462,52 @@ def test_joint_gate_rms_eyes_aspect_ratio_27oct():
     assert ch["eyes f0"] is False
     new["cameras"]["ZR048"]["f0_px"] = 6680.0
     assert {c["check"]: c["ok"] for c in check_zcam(new, old)["checks"]}["eyes f0"] is True
+
+
+def test_block_aspect_against_the_navcam():
+    """0.94.5 (Christian, 27 Oct): per block the Mastcam-Z fy - fx (the line with the most observations) against the
+    Navcam's per-block dfy - dfx; a block line more than 3000 ppm off fails the joint's check, a thin one is not judged."""
+    from mppp.calib import ztied as Z
+    nav = Z.navcam_aspect_by_block([
+        {"scape": "a", "eye": "NL", "images": 20, "dfx_ppm": 100.0, "dfy_ppm": 300.0},
+        {"scape": "a", "eye": "NR", "images": 20, "dfx_ppm": 0.0, "dfy_ppm": 400.0},
+        {"scape": "a", "eye": "NR", "images": 3, "dfx_ppm": 0.0, "dfy_ppm": 9e5},       # too few images
+        {"scape": "b", "eye": "NL", "images": 10, "dfx_ppm": 0.0, "dfy_ppm": -100.0}])
+    assert nav["a"]["NL"] == pytest.approx(200.0) and nav["a"]["NR"] == pytest.approx(400.0)
+    assert nav["a"]["mean"] == pytest.approx(300.0) and nav["b"]["mean"] == pytest.approx(-100.0)
+    asp = 0.9995
+    res = {"eyes": {"ZL048": {"terms": {"a_fx_backlash": 6700.0, "a_fy_backlash": 6700.0 * asp}}},
+           "diagnostics": {"blocks": [
+               {"block": "a", "lines": {"ZL048": {
+                   "backlash": {"fx": {"a": 6700.0, "observations": 3000}, "fy": {"a": 6700.0 * (asp + 3e-4), "observations": 3000}},
+                   "regular": {"fx": {"a": 6640.0, "observations": 100}, "fy": {"a": 6700.0, "observations": 100}}}}},
+               {"block": "b", "lines": {"ZL048": {
+                   "regular": {"fx": {"a": 6650.0, "observations": 2500}, "fy": {"a": 6650.0 * (asp + 5e-3), "observations": 2500}},
+                   "backlash": {"fx": {"a": 6733.0, "observations": 150}, "fy": {"a": 6846.0, "observations": 150}}}}},
+               {"block": "c", "lines": {"ZL048": {
+                   "backlash": {"fx": {"a": 6700.0, "observations": 200}, "fy": {"a": 6800.0, "observations": 200}}}}}]}}
+    ba = Z.block_aspect_rows(res, nav)
+    r = {x["block"]: x for x in ba["rows"]}
+    assert r["a"]["state"] == "backlash" and r["a"]["zcam_ppm"] == pytest.approx(300.0, abs=1)
+    assert r["a"]["diff_ppm"] == pytest.approx(0.0, abs=1) and r["a"]["judged"]
+    assert r["b"]["state"] == "regular" and r["b"]["diff_ppm"] == pytest.approx(5100.0, abs=2)
+    assert not r["c"]["judged"]                                   # 200 observations, no Navcam
+    chk = Z.joint_checks(dict(res, block_aspect=ba), {"checks": []})
+    c = next(x for x in chk["checks"] if x["check"] == "per-block aspect vs the Navcam")
+    assert not c["ok"] and "b ZL048 +5100" in c["note"]
+    lines = Z.describe(dict(res, block_aspect=ba, eyes={}))
+    assert any(x.startswith("a ZL048 (backlash state, 3000 obs)") and "Navcam +300 ppm" in x for x in lines)
+
+
+def test_ratio_held_with_few_low_state_images():
+    """0.94.5 (Z48 of 27 Oct: 6 low-state images per eye, two blocks 1.2 % apart): with fewer than MIN_LOW_IMAGES the
+    eye's high / low ratio is held at the 34 mm model's; 34 mm itself and eyes without low-state images are not held."""
+    from mppp.calib import ztied as Z
+    from mppp.calib.fit import REGULAR_RATIO_DEFAULT
+    sg = {"eyes": {"ZL048": {}, "ZR048": {}}, "low_images": {"ZL048": 6, "ZR048": 40}}
+    held = Z.set_ratio_holds(sg, 48, verbose=False)
+    assert set(held) == {"ZL048"} and 1.004 <= held["ZL048"] <= 1.016
+    assert sg["eyes"]["ZL048"]["ratio_hold_source"] in ("the 34 mm model (ZL034)", "the default")
+    assert Z.set_ratio_holds({"eyes": {"ZL034": {}}, "low_images": {"ZL034": 3}}, 34, verbose=False) == {}
+    assert Z.set_ratio_holds({"eyes": {"ZL063": {}}, "low_images": {"ZL063": 0}}, 63, verbose=False) == {}
+    assert REGULAR_RATIO_DEFAULT and Z.REGULAR_SAME_SLOPE and Z.REGULAR_RATIO_BY == "global"

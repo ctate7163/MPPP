@@ -455,6 +455,9 @@ def image_focal_fits(rec, project, min_observations: int = 20, loss_px: float = 
                         "ratio_label": (f_fit / float(lf)) if lf else None,
                         "sd_ratio": (sd * f_cam / float(lf)) if lf else None,
                         "rotation_mdeg": float(np.degrees(np.linalg.norm(sol.x[:3])) * 1e3),
+                        # 0.94.5 (Christian, 27 Oct): the camera's principal point - per image in the states run
+                        # (ZCAM_BIN_REFINE=focal_pp frees ZR's), where the right eye's state shows (Seitah Overlook)
+                        "cx_px": float(cam.params[2]), "cy_px": float(cam.params[3]),
                         "center_source": "navcam station" if free_c else "solved",
                         "center_offset_m": float(np.linalg.norm(Cp + sol.x[4:7] - C)) if free_c else 0.0,
                         "rms_px": float(np.sqrt(np.mean(e ** 2)))}

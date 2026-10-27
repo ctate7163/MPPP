@@ -126,8 +126,8 @@ def test_pipeline_zcam_sites_and_stop_before(tmp_path):
     rp = _script("run_pipeline")
     p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True))
     names = p.zcam_sites()
-    assert names[:9] == ["chal_rocks", "seitah_overlook", "threeforks_north", "belva_crater", "taylorfjellet",
-                         "marble_mountain", "bright_angel", "pico_turquino", "south_arm"] and "rochette" in names   # 27 Oct lists
+    assert names[:10] == ["chal_rocks", "seitah_overlook", "threeforks_north", "belva_crater", "taylorfjellet",
+                         "marble_mountain", "bright_angel", "pico_turquino", "south_arm", "overlook_mountain"] and "rochette" in names   # 27 Oct lists
     assert "chal_rocks_large" not in names and len(names) == len(set(names))
     out = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path / "b"), "--dry-run", "--from", "navcam_joint",
                           "--stop-before", "zcam_runs"], capture_output=True, text=True, timeout=120)

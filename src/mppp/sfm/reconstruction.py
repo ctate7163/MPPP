@@ -1563,7 +1563,7 @@ def reset_cameras_to_start(rec, project: SfmProject, keys) -> List[str]:
 # for its station (the rover's localisation error) and tightens to this sigma per axis.  Rockytop (22 Oct): with the
 # 1 m waypoint prior, a rear Hazcam pair tied by 48 points slid 1.3 m from its station (0.12 m for the Navcam frames)
 HAZCAM_STATION_PRIOR_SIGMA_M = 0.1
-# 0.95 (Christian, 27 Oct: South Arm ZCAM09468, Marble Mountain ZCAM04469 - horizon frames with no strongly
+# 0.94.5 (Christian, 27 Oct: South Arm ZCAM09468, Marble Mountain ZCAM04469 - horizon frames with no strongly
 # triangulated points wandered 1-2 m): a Mastcam-Z frame sits on the same mast as its station's Navcam frames (its
 # label CAHV places it to cm), so its prior moves with the station's Navcam shift and tightens to this sigma per
 # axis; well-tied frames are held by their thousands of observations, far-field ones by the prior.  0: off.
@@ -1582,7 +1582,7 @@ def hazcam_station_priors(rec, project: SfmProject, sigma_m: float = HAZCAM_STAT
     """Move the position prior of every Hazcam image of ``project`` by its station's median Navcam shift (solved
     minus prior centre of the registered Navcam images of ``rec``) and give it ``sigma_m`` (``prior_sigma_m``); the
     label prior stays in ``prior_C_label``.  Stations without registered Navcam images keep the waypoint prior.
-    ``zcam_sigma_m`` > 0 (0.95, :data:`ZCAM_STATION_PRIOR_SIGMA_M`): the Mastcam-Z images too, with that sigma.
+    ``zcam_sigma_m`` > 0 (0.94.5, :data:`ZCAM_STATION_PRIOR_SIGMA_M`): the Mastcam-Z images too, with that sigma.
     Returns {station: shift (3,)}."""
     by_name = {r["name"]: r for r in project.images}
     d: Dict[str, List[np.ndarray]] = {}

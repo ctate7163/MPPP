@@ -12,6 +12,14 @@ AXES = ("x", "y", "z")
 COOL, WARM = "C0", "C3"                           # left eye / front pair cool, right eye / rear pair warm
 
 
+def _letters(axs):
+    """27 Oct (Christian): the panels lettered in their titles ("A. ..."), left-justified, as the maps."""
+    import numpy as _np
+    if _np.size(axs) > 1:
+        from mppp.calib.constrain import panel_letters
+        panel_letters(axs)
+
+
 def write_csv(path: Path, rows: Sequence[Dict[str, Any]]) -> None:
     keys: List[str] = []
     for r in rows:
@@ -152,6 +160,7 @@ def figures(res: Dict[str, Any], out: Path) -> List[Path]:
         axs[0].legend(loc="lower right", fontsize=7)
         axs[-1].set_xlabel("Hazcam body pose (blocks in order, poses in time)")
         fig.suptitle("Rover body attitude from the Hazcams minus the telemetry attitude (rover frame)")
+        _letters(axs)
         fig.tight_layout()
         p = out / "body_attitude.png"
         fig.savefig(p, dpi=200)
@@ -186,6 +195,7 @@ def figures(res: Dict[str, Any], out: Path) -> List[Path]:
             axs[k, 0].set_ylabel(f"head {a} (mdeg)")
         fig.suptitle(f"{'Mastcam-Z ' + zoom + ' mm' if zoom else 'Navcam'}: attitude relative to the "
                      f"{'telemetry' if tel else 'Hazcam'} body, head frame (label kinematics removed)")
+        _letters(axs)
         fig.tight_layout()
         p = out / f"pointing_{'zcam' + zoom if zoom else 'navcam'}.png"
         fig.savefig(p, dpi=200)
@@ -204,6 +214,7 @@ def figures(res: Dict[str, Any], out: Path) -> List[Path]:
             axs[k].set_ylabel(f"adjusted change {a} (mdeg)")
         axs[0].legend(fontsize=7)
         fig.suptitle("Body pose changes between the Hazcam sequences of one station")
+        _letters(axs)
         fig.tight_layout()
         p = out / "body_changes.png"
         fig.savefig(p, dpi=200)
@@ -230,6 +241,7 @@ def figures(res: Dict[str, Any], out: Path) -> List[Path]:
                 axs[k].set_yticks(range(1, len(labs) + 1), labs)
             axs[k].set_xlabel(f"{a} minus the median (mm)")
         fig.suptitle("Camera positions in the body frame (Hazcams) and the head frame (mast cameras): the scatter")
+        _letters(axs)
         fig.tight_layout()
         p = out / "position_scatter.png"
         fig.savefig(p, dpi=200)

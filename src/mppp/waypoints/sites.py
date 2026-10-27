@@ -426,6 +426,13 @@ def work_folder(root: PathLike, site: str, zcam: bool = False,
     old = Path(root) / folder_name(site, legacy_first_sol(sols), zcam)  # the first range listed (before 27 Oct)
     if old != new and old.is_dir() and not new.exists():
         return old              # a folder made before 27 Oct keeps working until move_scapes.py renames it
+    if not new.exists() and Path(root).is_dir():
+        # 27 Oct: the site's first sol changed since its folder was made (Enchanted Lake 0556 -> 0421): the one folder
+        # of this site and kind under the root keeps working until move_scapes.py renames it
+        tail = folder_name(site, 0, zcam)[len(FOLDER_PREFIX) + 4:]
+        found = [d for d in Path(root).glob(f"{FOLDER_PREFIX}[0-9][0-9][0-9][0-9]{tail}") if d.is_dir()]
+        if len(found) == 1:
+            return found[0]
     return new
 
 

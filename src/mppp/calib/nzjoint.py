@@ -83,6 +83,8 @@ def adjust_nz(rec, proj, idx, st, units, zunits, sg, hold: Sequence[str] = T.HOL
                            refine_zcam_rig="rotation", extra_residuals=hook)
         if iso_f:
             T.sync_iso(gn)
+        if T.TIE_K1_SLOPE:
+            T.sync_k1(gn)
         if verbose:
             log.info(f"  N+Z pass {p_ + 1}: {ba['brief'][:160]}")
     if isinstance(ba.get("extra"), dict):

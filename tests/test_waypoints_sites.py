@@ -220,6 +220,9 @@ def test_site_table_with_visits(tmp_path):
     assert S.work_folder(tmp_path, "sid", True, [[361, 378], [91, 101]]).name == "mars2020_sol_0091_sid_zcam"
     (tmp_path / "mars2020_sol_0361_sid_zcam").mkdir()                   # a folder named before 27 Oct keeps working
     assert S.work_folder(tmp_path, "sid", True, [[361, 378], [91, 101]]).name == "mars2020_sol_0361_sid_zcam"
+    (tmp_path / "mars2020_sol_0555_tw").mkdir()                         # a first sol changed since: its one folder
+    assert S.work_folder(tmp_path, "tw", False, [[556, 590], [421, 423]]).name == "mars2020_sol_0555_tw"
+    assert S.work_folder(tmp_path, "tw", True, [[556, 590], [421, 423]]).name == "mars2020_sol_0421_tw_zcam"
     (tmp_path / "mars2020_sol_0091_sid_zcam").mkdir()                   # until the new one exists
     assert S.work_folder(tmp_path, "sid", True, [[361, 378], [91, 101]]).name == "mars2020_sol_0091_sid_zcam"
     err, warn = S.validate_site_table(f)
@@ -250,7 +253,7 @@ def test_shipped_sites_v0p75():
     t = S.load_site_table()
     r = S.load_site_ranges()
     assert r["chal_rocks"] == [(91, 101), (361, 378)] and r["threeforks_large"][0] == (652, 693)
-    assert r["enchanted_lake"] == [(556, 590), (422, 423)] and S.load_sites()["chal_rocks"] == (91, 378)
+    assert r["enchanted_lake"] == [(555, 590), (421, 423)] and S.load_sites()["chal_rocks"] == (91, 378)
     g = t["groups"]
     assert "olifants" not in g["ecam_consensus"] and "cheyava_falls" in g["ecam_consensus"]
     assert "threeforks_large" in g["ecam_consensus"] and "threeforks_north" not in g["ecam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
@@ -331,7 +334,7 @@ def test_site_fixes_19_oct():
     t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))["sites"]
     assert t["chal_rocks_large"]["sols"][0] == [72, 100]
     assert t["chal_rocks_large"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
-    assert [422, 423] in t["enchanted_lake"]["sols"]     # 24 Oct (Christian): from sol 422
+    assert [421, 423] in t["enchanted_lake"]["sols"]     # 27 Oct (Christian): the sol 421 and 555 end-of-drive stations back
     assert t["bell_island_large"]["sols"][0][0] == 1431
     assert t["rochette"]["sols"][0][0] == 178 and t["rochette"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
     assert t["hippo_pools"]["sols"][0][0] == 1948 and t["hippo_pools"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
@@ -393,10 +396,10 @@ def test_site_fixes_24_oct():
     from mppp.waypoints.sites import load_site_table, work_folder
     t = load_site_table()["sites"]
     e, k = t["enchanted_lake"], t["knob_mountain_large"]
-    assert e["sols"] == [[556, 590], [422, 423]] and e["settings"]["NEARBY_FROM_FIRST_SOL"] is True
-    assert 23 not in e["rover_sites"]
+    assert e["sols"] == [[555, 590], [421, 423]] and e["settings"]["NEARBY_FROM_FIRST_SOL"] is True   # 27 Oct
+    assert 23 in e["rover_sites"] and e["settings"]["exclude"] == ["S026D6236"]
     assert k["sols"] == [[437, 459], [535, 538], [694, 707]]
-    assert work_folder(Path("x"), "enchanted_lake", False, e["sols"]).name == "mars2020_sol_0422_enchanted_lake"   # 27 Oct: first sol
+    assert work_folder(Path("x"), "enchanted_lake", False, e["sols"]).name == "mars2020_sol_0421_enchanted_lake"   # 27 Oct: first sol
     assert work_folder(Path("x"), "knob_mountain_large", False, k["sols"]).name == "mars2020_sol_0437_knob_mountain_large"
 
 

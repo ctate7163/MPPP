@@ -103,7 +103,7 @@ def block_images(work: PathLike, variant: str = "", lists: Optional[Dict[str, An
                     "group": g, "eye": g[:2], "zoom": _zoom(g), "sol": r.get("sol"), "sequence": r.get("sequence"),
                     "focus": r.get("focus_count"), "clock": _clock(r["name"]),
                     "ratio": f.get("ratio_label"), "sd": f.get("sd_ratio"), "observations": f.get("observations"),
-                    "camera": f.get("camera"),
+                    "camera": f.get("camera"), "cx": f.get("cx_px"), "cy": f.get("cy_px"),
                     "listed": bool(lists is not None and not single and is_low_backlash(r, lists)),
                     "start_state": r.get("focus_state"),
                     "zoom_dir": mv.get("zoom_dir"), "focus_dir": mv.get("focus_dir"), "dzoom": mv.get("dzoom"),
@@ -230,10 +230,37 @@ def survey(blocks: Dict[str, PathLike], variant: str = "", lists: Optional[Dict[
         if g:
             pooled[zoom] = float(np.median(g))
     levels = {f"{k[0]}|{k[1]}": classify(v, z_min, pooled, slopes) for k, v in by.items()}
+    centre_offsets(by)
     seqs = sequences(rows)
     return {"images": rows, "levels": levels, "pooled_gap": pooled, "pooled_slope": slopes, "sequences": seqs,
             "proposal": proposal(rows, seqs, lists), "z_min": z_min, "single_images": single,
             "approach": approach_table(rows, single), "focus_list_proposal": focus_list_proposal(rows + single)}
+
+
+CENTRE_FLAG_PX = 1.0                 # a sequence whose camera centre sits this far from its eye's high-state centre
+
+
+def centre_offsets(by: Dict[Tuple[str, str], List[Dict[str, Any]]]) -> None:
+    """0.94.5 (Christian, 27 Oct: the right eye's backlash state shows mainly in its principal point - Seitah Overlook
+    ZCAM08114 pointings 1, 3, 5 fit high in f but 2-3.7 px off in the high-state bins): per (block, eye and zoom),
+    each image's cx, cy (``dcx``, ``dcy``, full-frame px) about the median of the block's unlisted high-state images
+    of that camera.  Only where the centres vary (the states run with ``ZCAM_BIN_REFINE=focal_pp`` frees ZR's; ZL holds
+    its centre as the reference eye).  Sets ``dcx``, ``dcy`` on the rows (None otherwise)."""
+    for (_blk, _grp), v in by.items():
+        c = [(r["cx"], r["cy"]) for r in v if r.get("cx") is not None and r.get("cy") is not None]
+        if len(c) < 2 or float(np.ptp([x for x, _ in c])) + float(np.ptp([y for _, y in c])) < 1e-6:
+            for r in v:
+                r["dcx"] = r["dcy"] = None
+            continue
+        ref = [(r["cx"], r["cy"]) for r in v if r.get("state") == "high" and not r.get("listed") and r.get("cx") is not None]
+        if len(ref) < 2:                                   # the unlisted high-state images, else every high one
+            ref = [(r["cx"], r["cy"]) for r in v if r.get("state") == "high" and r.get("cx") is not None]
+        ref = ref if len(ref) >= 2 else c
+        mx, my = float(np.median([x for x, _ in ref])), float(np.median([y for _, y in ref]))
+        for r in v:
+            ok = r.get("cx") is not None and r.get("cy") is not None
+            r["dcx"] = float(r["cx"]) - mx if ok else None
+            r["dcy"] = float(r["cy"]) - my if ok else None
 
 
 FOCUS_MOVE_MIN = 100.0               # a focus move up this large (counts, from the previous frame) proposes the frame
@@ -316,6 +343,10 @@ def sequences(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     "pattern": "".join(code[r["state"]] for r in v),
                     "listed_pattern": "".join("*" if r["listed"] else "-" for r in v),
                     "d_median_pct": 100 * float(np.median(ds)) if ds else None,
+                    "dcx_median_px": (float(np.median([r["dcx"] for r in v if r.get("dcx") is not None]))
+                                      if any(r.get("dcx") is not None for r in v) else None),
+                    "dcy_median_px": (float(np.median([r["dcy"] for r in v if r.get("dcy") is not None]))
+                                      if any(r.get("dcy") is not None for r in v) else None),
                     "gap_pct": 100 * float(v[0]["gap"]) if v[0].get("gap") else None,
                     "focus": sorted({r["focus"] for r in v if r.get("focus") is not None})[:3]})
     return out
@@ -376,14 +407,15 @@ def write_survey(res: Dict[str, Any], out: PathLike) -> Dict[str, Path]:
     out.mkdir(parents=True, exist_ok=True)
     files = {}
     cols = ["block", "group", "sol", "sequence", "clock", "focus", "ratio", "sd", "observations", "listed",
-            "start_state", "d", "gap", "z_mid", "state", "name"]
+            "start_state", "d", "gap", "z_mid", "state", "cx", "cy", "dcx", "dcy", "name"]
     with (out / "images.csv").open("w", newline="", encoding="utf-8") as fh:
         wr = csv.DictWriter(fh, cols, extrasaction="ignore")
         wr.writeheader()
         wr.writerows(res["images"])
     files["images"] = out / "images.csv"
     scols = ["block", "sol", "sequence", "group", "images", "listed", "low", "high", "undecided", "no_fit",
-             "implausible", "verdict", "pattern", "listed_pattern", "d_median_pct", "gap_pct"]
+             "implausible", "verdict", "pattern", "listed_pattern", "d_median_pct", "gap_pct", "dcx_median_px",
+             "dcy_median_px"]
     with (out / "sequences.csv").open("w", newline="", encoding="utf-8") as fh:
         wr = csv.DictWriter(fh, scols, extrasaction="ignore")
         wr.writeheader()
@@ -470,6 +502,18 @@ def report_lines(res: Dict[str, Any]) -> List[str]:
                        f"`{s['pattern']}` | `{s['listed_pattern']}` | {s['verdict']} | "
                        + (f"{s['d_median_pct']:+.2f} %" if s["d_median_pct"] is not None else "-") + " | "
                        + (f"{s['gap_pct']:.2f} %" if s["gap_pct"] is not None else "-") + " |")
+    cen = [s for s in res["sequences"] if s.get("dcx_median_px") is not None
+           and (s["listed"] or np.hypot(s["dcx_median_px"], s["dcy_median_px"] or 0.0) >= CENTRE_FLAG_PX)]
+    if any(s.get("dcx_median_px") is not None for s in res["sequences"]):
+        out += ["", "## Camera centre by sequence (where the centres are free: the right eye in the states run)", "",
+                f"The centre (cx, cy, full-frame px) about the median of the block's high-state images of that camera; "
+                f"listed sequences, and those {CENTRE_FLAG_PX:g} px or more off. The right eye's backlash state shows "
+                "mainly here (Seitah Overlook, 27 Oct).", "",
+                "| block | sol | sequence | camera | images | listed | f pattern | dcx | dcy | d f |", "|---|---|---|---|---|---|---|---|---|---|"]
+        for s in cen:
+            out.append(f"| {s['block']} | {s['sol']} | {s['sequence']} | {s['group']} | {s['images']} | `{s['listed_pattern']}` | "
+                       f"`{s['pattern']}` | {s['dcx_median_px']:+.2f} | {(s['dcy_median_px'] or 0.0):+.2f} | "
+                       + (f"{s['d_median_pct']:+.2f} %" if s["d_median_pct"] is not None else "-") + " |")
     for title, key in (("To add to the found list", "add"), ("To take off (listed, found high)", "remove"),
                        ("To review", "review")):
         out += ["", f"## {title} ({len(p[key])})", ""]

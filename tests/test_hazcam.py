@@ -312,3 +312,33 @@ def test_hazcam_station_priors_follow_the_navcam_solution():
     from mppp.pipeline import Settings
     assert Settings().zcam_station_prior_sigma_m == R.ZCAM_STATION_PRIOR_SIGMA_M == 0.1
     assert "zcam_station_prior_sigma_m" not in Settings(include_zcam=False).key_dict()        # Navcam keys stay
+
+
+def test_hazcam_rig_trends_figure_and_panel_letters(tmp_path):
+    """0.95 (Christian, 27 Oct): rig trends for the front and rear Hazcams like the Navcam's, the panels lettered in
+    their titles ("A. ..."), left-justified, as the maps."""
+    from scipy.spatial.transform import Rotation
+    from mppp.calib import hazfit as H
+    from mppp.calib.constrain import panel_letters, plot_hazcam_rig_trends
+    R0 = Rotation.from_rotvec([0.001, 0.002, -0.001])
+    rows = []
+    for k, sol in enumerate((100, 400, 800, 1200, 1600)):
+        dv = np.radians(1e-3 * np.array([0.01, 0.02, -0.005]) * sol)       # mdeg per sol drift
+        rows.append({"block": f"b{k}", "sol": sol, "refined": True, "R_start": R0.as_matrix().tolist(),
+                     "R": (Rotation.from_rotvec(dv) * R0).as_matrix().tolist(), "t": [0.249, 0, 0]})
+    r = H.fit_rig(rows, "F")
+    assert len(r["per_block"]) == 5 and abs(r["drift"]["pitch_mdeg_per_sol"] - 0.01) < 1e-6
+    assert all(abs(p["pitch_mdeg"] - 0.01 * p["sol"]) < 1e-3 for p in r["per_block"])
+    f = plot_hazcam_rig_trends(r, tmp_path / "hazcam_rig_trends_F.png")
+    assert f is not None and f.is_file()
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, axs = plt.subplots(1, 2)
+    axs[0].set_title("pitch"); axs[1].set_title("roll")
+    panel_letters(axs)
+    assert axs[0].get_title(loc="left") == "A. pitch" and axs[1].get_title(loc="left") == "B. roll"
+    assert axs[0].get_title() == ""
+    plt.close(fig)
+    from mppp.calib import constrain as C
+    assert C.STEREO_CX_YLIM == (-20.0, -16.0)

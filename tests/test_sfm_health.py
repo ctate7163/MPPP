@@ -371,3 +371,31 @@ def test_a_zoom_joint_sets_aside_other_zooms_camera_checks(tmp_path):
     r = rep()
     restrict_to_zoom(r, tmp_path, 48)                             # the 48 mm joint keeps its own failure
     assert rejudge(r, warn_only=LABEL_POINTING_CHECKS)[0] == "fail"
+
+
+def _cov(groups):
+    from mppp.sfm.health import RADIUS_EDGES
+    n = len(RADIUS_EDGES) - 1
+    cams = {}
+    for g, (fin, fout) in groups.items():
+        tri = [fin if hi <= 0.6 + 1e-9 else (fout if lo >= 0.85 - 1e-9 else 0.3)
+               for lo, hi in zip(RADIUS_EDGES[:-1], RADIUS_EDGES[1:])]
+        cams[g] = {"keypoints": [100] * n, "triangulated_fraction": tri}
+    return {"edges": list(RADIUS_EDGES), "cameras": cams}
+
+
+def test_corner_check_warns_for_mastcam_z_fails_for_navcam(monkeypatch):
+    """0.94.5 (Christian, 27 Oct: Chal Rocks out of the 63 mm joint on ZL063's corners, 0.205): a Mastcam-Z camera's
+    corner coverage warns, a Navcam camera's still fails; rejudging an old report follows."""
+    from mppp.sfm.health import DEFAULT_THRESHOLDS, corner_check, rejudge
+    thr = dict(DEFAULT_THRESHOLDS)
+    wc, st = corner_check(_cov({"NL": (0.5, 0.45), "ZL063": (0.46, 0.094)}), thr, skip_groups=[])
+    assert wc[0] == "ZL063" and wc[1] == pytest.approx(0.204, abs=1e-3) and st == "warn"
+    wc, st = corner_check(_cov({"NL": (0.5, 0.1), "ZL063": (0.46, 0.4)}), thr, skip_groups=[])
+    assert wc[0] == "NL" and st == "fail"
+    rep = {"checks": [{"check": "corner_triangulated_ratio", "status": "fail", "value": 0.205, "note": "ZL063: 9 %"}],
+           "coverage_by_radius": _cov({"NL": (0.5, 0.45), "ZL063": (0.46, 0.094)})}
+    import mppp.sfm.health as H
+    monkeypatch.setattr(H, "zcam_uncalibrated_groups", lambda groups: set())      # 63 mm calibrated here
+    v, changed = rejudge(rep)
+    assert v == "warn" and changed == ["corner_triangulated_ratio: fail -> warn (ZL063: 9 %)"]
