@@ -28,9 +28,8 @@ def sol_ranges(sols: Any) -> List[Tuple[int, int]]:
     """
     the sol ranges of a site's ``"sols"`` entry as a list of (first, last): ``[a, b]`` is one range,
     ``[[a, b], [c, d], ...]`` several - the visits of a site the rover left and came back to (Chal Rocks Sid: sols
-    361-378 and 91-101).  **The first range is the main visit**: it names the WORK folder (``mars2020_sol_<its first
-    sol>_...``) and is the block's sol range for everything that wants one number; the others are the other visits,
-    in any order.  Raises ``ValueError`` for anything else.
+    361-378 and 91-101), in any order.  The block's first sol (the earliest of every range, Christian 27 Oct) names the
+    WORK folder (``mars2020_sol_<first sol>_...``).  Raises ``ValueError`` for anything else.
     """
     if isinstance(sols, (list, tuple)) and len(sols) == 2 and all(isinstance(x, (int, float)) and not isinstance(x, bool)
                                                                    for x in sols):
@@ -43,11 +42,17 @@ def sol_ranges(sols: Any) -> List[Tuple[int, int]]:
 
 
 def sol_span(sols: Any) -> Tuple[int, int]:
-    """(first sol of the main visit, last sol of all visits) of a ``"sols"`` entry - what the older code
-    (``SITES[name]``, the folder name, ``work_folder``) wants as one range.  The first sol is the **main visit's**
-    (the first range listed), so a site that gained an earlier visit keeps its folder name."""
+    """(first sol, last sol) of every visit of a ``"sols"`` entry - what the older code (``SITES[name]``, the folder
+    name, ``work_folder``) wants as one range.  27 Oct 2026 (Christian): a scape is always named by its block's first
+    sol - the earliest of all its ranges (before: the first range listed, "the main visit"; see
+    :func:`legacy_first_sol`)."""
     rs = sol_ranges(sols)
-    return int(rs[0][0]), max(int(b) for _, b in rs)
+    return min(int(a) for a, _ in rs), max(int(b) for _, b in rs)
+
+
+def legacy_first_sol(sols: Any) -> int:
+    """The first sol of the first range listed - the folder name before 27 Oct 2026 (the "main visit")."""
+    return int(sol_ranges(sols)[0][0])
 
 
 def in_sol_ranges(sol: int, sols: Any) -> bool:
@@ -56,7 +61,7 @@ def in_sol_ranges(sol: int, sols: Any) -> bool:
 
 
 def site_sol_ranges(table: Dict[str, Any], site: str) -> List[Tuple[int, int]]:
-    """the sol ranges of ``site`` in a site table (:func:`load_site_table`), main visit first."""
+    """the sol ranges of ``site`` in a site table (:func:`load_site_table`), in the order listed."""
     v = table["sites"][site]
     return sol_ranges(v.get("sols") if isinstance(v, dict) else v)
 
@@ -91,7 +96,7 @@ GROUP_ALIASES = {"navcam_consensus": "ecam_consensus"}
 
 def load_sites(path: Optional[PathLike] = None) -> Dict[str, Tuple[int, int]]:
     """name -> (first sol, last sol) from the site definitions file (notebook 03 ``SITES``).  for a site
-    with several visits this is :func:`sol_span` (first sol of the main visit, last sol of all); the visits themselves
+    with several visits this is :func:`sol_span` (first sol of all visits, last sol of all); the visits themselves
     are :func:`load_site_ranges`."""
     d = load_site_table(path)
     out = {}
@@ -102,7 +107,7 @@ def load_sites(path: Optional[PathLike] = None) -> Dict[str, Tuple[int, int]]:
 
 
 def load_site_ranges(path: Optional[PathLike] = None) -> Dict[str, List[Tuple[int, int]]]:
-    """name -> [(first, last), ...] (main visit first) from the site definitions file."""
+    """name -> [(first, last), ...] (in the order listed) from the site definitions file."""
     d = load_site_table(path)
     return {k: sol_ranges(v.get("sols") if isinstance(v, dict) else v) for k, v in d["sites"].items()}
 
@@ -417,7 +422,11 @@ def work_folder(root: PathLike, site: str, zcam: bool = False,
         if site not in table:
             raise KeyError(f"site {site!r} is not in the site definitions ({SITES_FILE}); give sols=(first, last)")
         sols = table[site]
-    return Path(root) / folder_name(site, sol_span(sols)[0], zcam)      # the main visit's first sol
+    new = Path(root) / folder_name(site, sol_span(sols)[0], zcam)       # the block's first sol (27 Oct)
+    old = Path(root) / folder_name(site, legacy_first_sol(sols), zcam)  # the first range listed (before 27 Oct)
+    if old != new and old.is_dir() and not new.exists():
+        return old              # a folder made before 27 Oct keeps working until move_scapes.py renames it
+    return new
 
 
 def parse_work_folder(folder: PathLike) -> Tuple[Optional[str], bool]:

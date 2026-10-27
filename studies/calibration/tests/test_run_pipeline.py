@@ -43,7 +43,7 @@ def test_pipeline_dry_run_and_state(tmp_path):
     assert "chal_rocks_tiny" in ab[0] and "seitah_overlook_tiny" in ab[1]
     assert out.index("lightglue_ab: start") > out.index("rover_frame: start")
     assert "run_sites.py" in out and "--group ecam_consensus" in out and "calib navcam" in out
-    assert "--sites seitah_overlook chal_rocks threeforks_north" in out and "--zcam" in out and "olifants" in out
+    assert "--sites chal_rocks seitah_overlook threeforks_north" in out and "--zcam" in out and "olifants" in out
     # 0.94.4: the Hazcams are fitted over the ecam blocks before the Mastcam-Z runs, not over the Mastcam-Z blocks
     assert "calib hazcam --group ecam_consensus" in out and "calib hazcam --zcam-blocks" not in out
     assert out.index("calib hazcam --group ecam_consensus") < out.index("zcam_runs: start")
@@ -126,8 +126,8 @@ def test_pipeline_zcam_sites_and_stop_before(tmp_path):
     rp = _script("run_pipeline")
     p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True))
     names = p.zcam_sites()
-    assert names[:7] == ["seitah_overlook", "chal_rocks", "threeforks_north", "belva_crater", "south_arm",
-                         "marble_mountain", "taylorfjellet"] and "rochette" in names and "pico_turquino" not in names
+    assert names[:9] == ["chal_rocks", "seitah_overlook", "threeforks_north", "belva_crater", "taylorfjellet",
+                         "marble_mountain", "bright_angel", "pico_turquino", "south_arm"] and "rochette" in names   # 27 Oct lists
     assert "chal_rocks_large" not in names and len(names) == len(set(names))
     out = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path / "b"), "--dry-run", "--from", "navcam_joint",
                           "--stop-before", "zcam_runs"], capture_output=True, text=True, timeout=120)
@@ -143,7 +143,7 @@ def test_pipeline_zcam_runs_only_some_sites(tmp_path, monkeypatch):
     monkeypatch.setattr(rp.Pipeline, "_sites", lambda self, stage, args, zcam: got.append(args) or ("done", "ok"))
     p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, zcam_sites=["taylorfjellet", "marble_mountain"]))
     assert p.s_zcam_runs() == ("done", "ok") and got[-1] == ["--sites", "taylorfjellet", "marble_mountain"]   # given order
-    p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, zcam_sites=["pico_turquino"]))
+    p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True, zcam_sites=["groloy"]))       # not a Mastcam-Z site
     assert p.s_zcam_runs()[0] == "failed"
     p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True))
     p.s_zcam_runs()

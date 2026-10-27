@@ -408,7 +408,7 @@ def run_done(work: PathLike, variant: str = "") -> Optional[Dict[str, Any]]:
 class Site:
     """A site resolved against the settings: its sol ranges and WORK folder."""
     name: str
-    sol_ranges: List[Tuple[int, int]]        # every visit, main visit first
+    sol_ranges: List[Tuple[int, int]]        # every visit, in the order listed
     work: Path
     zcam: bool
     zooms: List[int]
@@ -486,7 +486,7 @@ def resolve_site(site_or_work: PathLike, settings: Settings) -> Tuple[Site, Sett
         ranges = sol_ranges(rec["sols"])
         if not s.scapes_root:
             raise ValueError("no scapes root: set Settings.scapes_root (or the MPPP_SCAPES environment variable)")
-        work = Path(s.scapes_root) / work_folder(".", name, bool(s.include_zcam), rec["sols"]).name
+        work = work_folder(Path(s.scapes_root), name, bool(s.include_zcam), rec["sols"])
     for a, b in ranges:
         if b < a:
             raise ValueError(f"site {name!r}: a visit ends before it starts ({ranges})")

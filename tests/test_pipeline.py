@@ -274,7 +274,7 @@ def test_resolved_site_carries_the_visits(tmp_path):
     extra = {"sid2": {"sols": [[361, 378], [91, 101]], "zcam": [34]}, "one": {"sols": [700, 712], "zcam": [34]}}
     s = Settings(scapes_root=tmp_path, sites_extra=extra)
     st, _ = resolve_site("sid2", s)
-    assert st.sol_ranges == [(361, 378), (91, 101)] and st.work.name == "mars2020_sol_0361_sid2"
+    assert st.sol_ranges == [(361, 378), (91, 101)] and st.work.name == "mars2020_sol_0091_sid2"   # 27 Oct: first sol
     assert resolve_site("one", s)[0].sol_ranges == [(700, 712)]
     assert resolve_site(tmp_path / "mars2020_sol_0361_sid2_zcam", s)[0].zooms == [34]
 

@@ -4,6 +4,7 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- **A scape is named by its block's first sol** (Christian, 27 Oct): `sol_span` takes the earliest sol of every range (before: the first range listed, "the main visit"). Nine sites change name: Enchanted Lake 0556 -> 0422, South Arm 1408 -> 1359, Three Forks North / Large 0680 / 0652 -> 0413, OEB landing site 0031 -> 0013, Artuby Ridge 0342 -> 0174, Knob Mountain, Three Forks South and Huge. `work_folder` keeps using a folder with the old name until the new one exists, so nothing runs again; `studies/calibration/move_scapes.py --old-root <none> --apply` renames them (and the paths inside).
 - `mppp calib lawcheck` (27 Oct): the 25 Oct law check as a command - each Navcam law (`--law LABEL=DIR`, default the models in use) against the finished Navcam blocks into `law_validation.json` and `report.md` (figures: `studies/calibration/plot_lawcheck.py`).
 - **Navcam run keys no longer change with a Mastcam-Z promotion** (27 Oct: the Z48 promotion queued every Navcam site again): the camera-model fingerprint of a Navcam (+ Hazcam) block leaves out the Mastcam-Z focus models (`models_fingerprint(include_zcam=False)`); a Mastcam-Z block's key keeps them. Navcam blocks finished before this run again once (their keys were stale anyway).
 - A plain `python scripts\run_sites.py` (and the other entry scripts, `mppp`) sets `KMP_DUPLICATE_LIB_OK` itself, as `mppp_env.bat` does (27 Oct: Seitah Overlook started from PowerShell aborted on OpenMP).

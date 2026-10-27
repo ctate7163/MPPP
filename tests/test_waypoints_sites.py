@@ -60,7 +60,7 @@ def _meta(stem, sol, site, drive, seq):
 def test_sites_json_is_the_site_list():
     from mppp.waypoints import sites as S
     t = S.load_site_table()
-    assert len(t["sites"]) >= 32 and load_sites()["rockytop"][1] == 530 and load_sites()["south_arm"] == (1408, 1412)
+    assert len(t["sites"]) >= 32 and load_sites()["rockytop"][1] == 530 and load_sites()["south_arm"] == (1359, 1412)
     for g, members in t["groups"].items():
         assert (members or g in ("zcam79_consensus", "zcam110_consensus")) and all(m in t["sites"] for m in members), g
     for k, v in t["sites"].items():
@@ -198,7 +198,8 @@ def test_sol_ranges_span_and_membership():
     from mppp.waypoints import sites as S
     assert S.sol_ranges([1, 2]) == [(1, 2)]
     assert S.sol_ranges([[361, 378], [91, 101]]) == [(361, 378), (91, 101)]
-    assert S.sol_span([[361, 378], [91, 101]]) == (361, 378)          # the main visit names the folder; last of all
+    assert S.sol_span([[361, 378], [91, 101]]) == (91, 378)           # 27 Oct (Christian): the first sol of all names the folder
+    assert S.legacy_first_sol([[361, 378], [91, 101]]) == 361         # (before: the first range listed)
     assert S.sol_span([[91, 101], [361, 378]]) == (91, 378)
     assert S.in_sol_ranges(95, [[361, 378], [91, 101]]) and not S.in_sol_ranges(200, [[361, 378], [91, 101]])
     for bad in ([1], [1, 2, 3], [[1, 2], 3], "x", [[1, "a"]]):
@@ -214,9 +215,13 @@ def test_site_table_with_visits(tmp_path):
         "sid": {"sols": [[361, 378], [91, 101]], "zcam": [34], "settings": {}},
         "one": {"sols": [700, 712], "zcam": [], "settings": {}}},
         "groups": {"ecam_consensus": ["sid", "one"]}}))
-    assert S.load_sites(f) == {"sid": (361, 378), "one": (700, 712)}
+    assert S.load_sites(f) == {"sid": (91, 378), "one": (700, 712)}
     assert S.load_site_ranges(f) == {"sid": [(361, 378), (91, 101)], "one": [(700, 712)]}
+    assert S.work_folder(tmp_path, "sid", True, [[361, 378], [91, 101]]).name == "mars2020_sol_0091_sid_zcam"
+    (tmp_path / "mars2020_sol_0361_sid_zcam").mkdir()                   # a folder named before 27 Oct keeps working
     assert S.work_folder(tmp_path, "sid", True, [[361, 378], [91, 101]]).name == "mars2020_sol_0361_sid_zcam"
+    (tmp_path / "mars2020_sol_0091_sid_zcam").mkdir()                   # until the new one exists
+    assert S.work_folder(tmp_path, "sid", True, [[361, 378], [91, 101]]).name == "mars2020_sol_0091_sid_zcam"
     err, warn = S.validate_site_table(f)
     assert not err and not warn
     f.write_text(json.dumps({"sites": {"sid": {"sols": [[361, 378], [370, 400]], "zcam": [34]}}, "groups": {}}))
@@ -235,7 +240,7 @@ def test_scan_accepts_a_folder_of_the_second_visit(tmp_path):
     ims = [{"sol": 95, "instrument": "NL", "station": "S003D0100"}] * 12
     (w / "colmap" / "project.json").write_text(json.dumps({"images": ims, "settings": {"reconstruction": {"path": "sparse/m"}}}))
     rows = S.scan_scapes(tmp_path, {"sid": [[361, 378], [91, 101]]})
-    assert rows[0]["ok"] and rows[0]["site_sol_ranges"] == [[361, 378], [91, 101]] and rows[0]["site_sols"] == [361, 378]
+    assert rows[0]["ok"] and rows[0]["site_sol_ranges"] == [[361, 378], [91, 101]] and rows[0]["site_sols"] == [91, 378]
     rows = S.scan_scapes(tmp_path, {"sid": [361, 378]})
     assert not rows[0]["ok"] and "no image in the site's sols 361-378" in rows[0]["reason"]
 
@@ -391,7 +396,7 @@ def test_site_fixes_24_oct():
     assert e["sols"] == [[556, 590], [422, 423]] and e["settings"]["NEARBY_FROM_FIRST_SOL"] is True
     assert 23 not in e["rover_sites"]
     assert k["sols"] == [[437, 459], [535, 538], [694, 707]]
-    assert work_folder(Path("x"), "enchanted_lake", False, e["sols"]).name == "mars2020_sol_0556_enchanted_lake"
+    assert work_folder(Path("x"), "enchanted_lake", False, e["sols"]).name == "mars2020_sol_0422_enchanted_lake"   # 27 Oct: first sol
     assert work_folder(Path("x"), "knob_mountain_large", False, k["sols"]).name == "mars2020_sol_0437_knob_mountain_large"
 
 

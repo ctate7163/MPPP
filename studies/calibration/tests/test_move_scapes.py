@@ -25,7 +25,7 @@ def test_move_scapes_plan_and_apply(tmp_path):
     out = subprocess.run(cmd + ["--apply"], capture_output=True, text=True, check=True).stdout
     names = {p.name for p in new.iterdir()}
     assert {"mars2020_sol_0072_chal_rocks_large", "mars2020_sol_1431_bell_island_large",     # new first sols
-            "mars2020_sol_1948_hippo_pools", "mars2020_sol_1408_south_arm_zcam",
+            "mars2020_sol_1948_hippo_pools", "mars2020_sol_1359_south_arm_zcam",     # 27 Oct: the first sol of all
             "mars2020_sol_0020_van_zyl_overlook_large", "mars2020_sol_0047_van_zyl_overlook_large",
             "camera_analysis", "mppp_pipeline", "error_analysis"} <= names, names
     assert (new / "error_analysis" / "2026-10-05").is_dir()                              # merged
