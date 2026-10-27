@@ -73,11 +73,12 @@ MIN_LOW_IMAGES = 6                     # (Christian, 27 Oct: "under ~6"; Z63 has
 # the ratio across blocks"): a bin camera with fewer observations in the joint is not tied to the lines (its fx, fy
 # free, the rest held at the start) - Z48 of 27 Oct: Chal Rocks' and Seitah Overlook's one high-state bins, ~150
 # observations, fy / fx 1.7 % and 4.5 % off
-MIN_BIN_OBSERVATIONS = 500
+MIN_BIN_OBSERVATIONS = 1000                 # (Christian, 27 Oct: 500 -> 1000 - Seitah Overlook's ZR048 high-state bin,
+# 959 observations, fx 6547 / fy 6836, passed 500)
 RATIO_HOLD_ZOOM = 34
 # 0.94.5 (Christian, 27 Oct): per block, the Mastcam-Z aspect (fy / fx of the diagnostic pass, the line with the
 # most observations) against the Navcam's per-block dfy - dfx (the Navcam diagnostic pass over the same blocks)
-BLOCK_ASPECT_MIN_OBS = 500
+BLOCK_ASPECT_MIN_OBS = 1000                # the same cut as the lines (MIN_BIN_OBSERVATIONS)
 REGULAR_RATIO_GROUP_SD = 0.003
 TIE_SIGMA_Z = {"f": 1e-3, "k": 1e-7, "p": 1e-8, "cy": 1e-3}       # px; unitless - the ties are effectively exact
 NAV_POINTS_PER_BLOCK = 8000
