@@ -412,10 +412,11 @@ def test_chal_rocks_110mm():
     t = d["sites"]
     # 26 Oct (Christian): 79 and 110 mm out for now - 34, 48, 63 mm until the wider zooms have good models
     assert t["chal_rocks_tiny"]["zcam"] == [34, 48, 63] and t["chal_rocks"]["zcam"] == [34, 48, 63, 79, 110]   # 27 Oct
-    assert t["taylorfjellet"]["zcam"] == [34, 63, 79]      # 27 Oct (Christian): its one 48 mm pair out; 79 mm in
+    assert t["taylorfjellet"]["zcam"] == [34, 48, 63, 79]  # 0.95.0 (Christian, 27 Oct): the 48 mm pair back, held at the model
     assert t["seitah_overlook"]["zcam"] == [34, 48, 63, 79, 110] and t["belva_crater"]["zcam"] == [34, 79, 110]
     assert t["taylorfjellet"]["settings"]["exclude"] == ["seq:ZCAM05065"]       # 26 Oct (Christian)
-    assert t["marble_mountain"]["settings"]["exclude"] == ["seq:ZCAM04469"]     # 27 Oct (Christian)
+    assert t["marble_mountain"]["settings"] == {}       # 0.95.0 (Christian, 27 Oct): ZCAM04469 back, the mis-tie guard drops it
+    assert "exclude" not in t["seitah_overlook"]["settings"]                    # 27 Oct (Christian): ZCAM08111 stays - a primary set
     assert t["enchanted_lake"]["no_mask_inference_at"] == ["ZCAM07115"]        # 27 Oct (Christian)
     from mppp.pipeline import Settings
     a = Settings(exclude=["seq:ZCAM05065"]).key_dict()
