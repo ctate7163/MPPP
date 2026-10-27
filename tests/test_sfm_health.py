@@ -341,3 +341,24 @@ def test_a_zoom_joint_judges_the_block_on_its_zoom(tmp_path):
     notes = restrict_to_zoom(rep, tmp_path, 34)
     assert rep["checks"][0]["value"] == 1 / 90 and notes
     assert rejudge(rep, warn_only=LABEL_POINTING_CHECKS)[0] == "pass"
+
+
+def test_a_zoom_joint_sets_aside_other_zooms_camera_checks(tmp_path):
+    """0.94.4 (Christian, 27 Oct): Taylorfjellet failed on its one 48 mm pair (ZR048_F02070 principal point +90 px)
+    and was left out of the Z34 and Z63 joints.  Another zoom's camera-model checks no longer fail the block."""
+    from mppp.sfm.health import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom
+
+    def rep():
+        return {"checks": [
+            {"section": "camera model", "check": "principal_point_change_px", "value": 90.2, "status": "fail", "warn": 20.0, "fail": 60.0, "note": "ZR048_F02070"},
+            {"section": "camera model", "check": "focal_change_pct", "value": 0.1, "status": "pass", "warn": 0.5, "fail": 2.0, "note": "ZL034_F00600"},
+            {"section": "camera model", "check": "focal_change_pct", "value": 0.2, "status": "pass", "warn": 0.5, "fail": 2.0, "note": "ZR063_F02500_reg"},
+            {"section": "camera model", "check": "principal_point_change_px", "value": 0.5, "status": "pass", "warn": 20.0, "fail": 60.0, "note": "NL_T-020-017.5"}]}
+    r = rep()
+    assert rejudge(rep(), warn_only=LABEL_POINTING_CHECKS)[0] == "fail"
+    notes = restrict_to_zoom(r, tmp_path, 63)                     # no project.json: the camera checks still go
+    assert [c["note"] for c in r["checks"]] == ["ZR063_F02500_reg", "NL_T-020-017.5"] and "ZR048_F02070 fail" in notes[0]
+    assert rejudge(r, warn_only=LABEL_POINTING_CHECKS)[0] == "pass"
+    r = rep()
+    restrict_to_zoom(r, tmp_path, 48)                             # the 48 mm joint keeps its own failure
+    assert rejudge(r, warn_only=LABEL_POINTING_CHECKS)[0] == "fail"

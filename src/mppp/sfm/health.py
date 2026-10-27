@@ -970,6 +970,7 @@ LABEL_POINTING_CHECKS = ("block_rotation_deg", "attitude_residual_p95_deg")
 
 
 _ZOOM = re.compile(r"ZCAM\d{5}_(\d{3})")
+_ZCAM_CAMERA = re.compile(r"Z[LR](\d{3})(?:_|$)")        # a Mastcam-Z bin camera (ZR048_F02070, ZL034_F00180_reg)
 
 
 def _group_zoom(grp: str) -> Optional[int]:
@@ -981,12 +982,23 @@ def _group_zoom(grp: str) -> Optional[int]:
 def restrict_to_zoom(report: Dict[str, Any], colmap_dir: PathLike, zoom: int) -> List[str]:
     """0.94.5 (24 Oct, Chal Rocks Mastcam-Z: 30.2 % excluded, 180 of the 194 frames at 79 mm): for a joint of one
     zoom, the excluded fraction counted over the Navcam, Hazcam and that zoom's images only (the other zooms' frames
-    are not the joint's).  Changes the report's ``excluded_fraction`` value in place; returns notes."""
+    are not the joint's).  Changes the report's ``excluded_fraction`` value in place; returns notes.  0.94.4 (27 Oct):
+    the camera-model checks of the other zooms' Mastcam-Z cameras are taken out of the report too."""
     root = Path(colmap_dir)
+    out = []
+    # 0.94.4 (Christian, 27 Oct: Taylorfjellet failed on its one 48 mm pair, ZR048_F02070 principal point +90 px):
+    # a camera-model check of another zoom's Mastcam-Z camera is not this joint's - it no longer fails the block
+    others = [c for c in report.get("checks") or [] if c.get("section") == "camera model"
+              and (m := _ZCAM_CAMERA.match(str(c.get("note") or ""))) and int(m.group(1)) != int(zoom)]
+    if others:
+        report["checks"] = [c for c in report["checks"] if not any(c is o for o in others)]
+        bad = [o for o in others if o.get("status") in ("warn", "fail")]
+        out.append(f"camera-model checks of other zooms' cameras set aside: {len(others)}"
+                   + (f" ({', '.join(sorted({str(o['note']) + ' ' + str(o['status']) for o in bad}))})" if bad else ""))
     try:
         pj = json.loads((root / "project.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return []
+        return out
 
     def keep(name: str) -> bool:
         m = _ZOOM.search(str(name))
@@ -998,7 +1010,6 @@ def restrict_to_zoom(report: Dict[str, Any], colmap_dir: PathLike, zoom: int) ->
     excl = {n for e in ex for n in e.get("images", [])} - unc
     names = [r["name"] for r in pj.get("images") or [] if keep(r["name"])]
     k_ex = [n for n in excl if keep(n)]
-    out = []
     for c in report.get("checks") or []:
         if c.get("check") == "excluded_fraction":
             old = c.get("value")

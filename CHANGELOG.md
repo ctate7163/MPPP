@@ -4,6 +4,7 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- **A zoom's joint sets aside the other zooms' camera checks** (Christian, 27 Oct): a block whose only FAIL is a camera-model check of another zoom's Mastcam-Z camera now counts (`health.restrict_to_zoom`). Taylorfjellet's existing block (FAIL on its one 48 mm pair, ZR048_F02070 principal point +90 px) is WARN for the Z34 and Z63 joints and still FAIL for Z48 - no rerun needed.
 - Sites (Christian, 27 Oct): Taylorfjellet without 48 mm (`zcam` [34, 63]): its one 48 mm pair left the ZR048 bin camera unconstrained (principal point +90 px), which failed the site and kept it out of the Z34 and Z63 joints.
 - Sites (Christian, 27 Oct): Enchanted Lake with 63 mm too (`zcam` [34, 63]); the pipeline's Mastcam-Z joints of every zoom take `zcam34_joint` + `zcam_consensus` (48 / 63 took `zcam_consensus` only), so its 63 mm frames reach the Z63 joint.
 - Sites (Christian, 27 Oct): Pico Turquino back in `zcam_consensus` (48 mm; a third block for the Z48 joint).
