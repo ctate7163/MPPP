@@ -690,8 +690,9 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
             continue
         ch = _camera_change(c0, rec.cameras[int(cid)])
         cams_after[instr] = ch
+        held = " (held at the model: too few images of its zoom at the site)" if c0.get("held_at_model") else ""   # 0.95.0
         for k in ("focal_change_pct", "principal_point_change_px", "ray_displacement_max_px"):
-            check("camera model", k, ch[k], instr, "%" if k.endswith("pct") else "full-res px")
+            check("camera model", k, ch[k], instr + held, "%" if k.endswith("pct") else "full-res px")
 
     asp = navcam_aspect_changes(project, rec)
     if asp:

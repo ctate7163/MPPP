@@ -107,7 +107,7 @@ def test_focus_bins_greedy_and_tags():
 
 def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     from mppp.sfm.project import FULL_OPENCV_NAMES, ZCAM_BIN_HELD, SfmProject
-    man, out = processed_pair
+    man, out = processed_pair                 # (one Mastcam-Z image: zcam_min_zoom_images=0 keeps its bin refinable, 0.95.0)
     zmeta = [m for m in man["images"] if m["filename"]["family"] == "Z"][0]
     fc = float(zmeta["focus_position_count"])
     key = f"ZL034_F{int(round(fc)):05d}"
@@ -115,10 +115,10 @@ def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     # bin, f held
     lb = tmp_path / "low_backlash.csv"
     lb.write_text(zmeta["filename"]["stem"] + "\n" if "stem" in zmeta["filename"] else Path(zmeta["source_product"]).stem + "\n")
-    reg = SfmProject.create(man["images"], out, tmp_path / "g", link=False, zcam_intrinsics="label", zcam_low_backlash=lb)
+    reg = SfmProject.create(man["images"], out, tmp_path / "g", link=False, zcam_min_zoom_images=0, zcam_intrinsics="label", zcam_low_backlash=lb)
     assert set(reg.cameras) == {"NL", key + "_reg"} and reg.settings["zcam_low_backlash"]["images"] == 1
     assert {"fx", "fy"} <= set(reg.cameras[key + "_reg"]["fixed_params"])
-    proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, zcam_intrinsics="label",
+    proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, zcam_min_zoom_images=0, zcam_intrinsics="label",
                              zcam_low_backlash=False)
     assert set(proj.cameras) == {"NL", key} and proj.settings["zcam_low_backlash_sha256"] is None
     z = proj.cameras[key]
@@ -128,18 +128,18 @@ def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     r = [r for r in proj.images if r["camera_group"] == "ZL034"][0]
     assert r["instrument"] == key and r["focus_count"] == fc and abs(r["label_f_px"] - z["params"][0]) < 1e-9
     assert proj.settings["zcam_focus_bin"] == 30.0 and proj.settings["zcam_bin_refine"] == "focal"
-    pa = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_bin_refine="all",
+    pa = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_min_zoom_images=0, zcam_bin_refine="all",
                            zcam_intrinsics="label", zcam_low_backlash=False)
     assert pa.cameras[key]["fixed_params"] == ["k2"]                  # the zoom's fixed term stays held
     # default: f from the focus model; a one-image bin holds it
-    pm = SfmProject.create(man["images"], out, tmp_path / "m", link=False, zcam_low_backlash=False)
+    pm = SfmProject.create(man["images"], out, tmp_path / "m", link=False, zcam_min_zoom_images=0, zcam_low_backlash=False)
     zm = pm.cameras[key]
     assert "focus model" in zm["source"] and {"fx", "fy"} <= set(zm["fixed_params"])
     assert zm["params"][0] > z["params"][0]                           # the label f is ~1 % short
     with pytest.raises(ValueError):
-        SfmProject.create(man["images"], out, tmp_path / "r", zcam_bin_refine="some")
+        SfmProject.create(man["images"], out, tmp_path / "r", zcam_bin_refine="some", zcam_min_zoom_images=0)
     # 0.94.4: the states run - one camera per Mastcam-Z image, f free (no image count holds it)
-    pi = SfmProject.create(man["images"], out, tmp_path / "i", link=False, zcam_low_backlash=False,
+    pi = SfmProject.create(man["images"], out, tmp_path / "i", link=False, zcam_min_zoom_images=0, zcam_low_backlash=False,
                            zcam_bin_by="image", zcam_hold_f_images=0)
     zk = [k for k in pi.cameras if k.startswith("ZL034")]
     assert len(zk) == 1 and zk[0].startswith(key + "_c") and "fx" not in pi.cameras[zk[0]]["fixed_params"]
@@ -586,6 +586,35 @@ def test_split_by_focus_regular_state_bins():
     assert c["params"][0] == pytest.approx(other["params"][0] / 1.009 + 0.1 * (c["focus_count_median"] - other["focus_count_median"]) / 1.009, rel=1e-6)
     assert "k3" in other["fixed_params"]                      # the eye's fixed terms are inherited (ZCAM_K3 = "zero")
     assert {r["instrument"] for r in rows if r["focus_state"] == "regular"} == set(reg)
+
+
+def test_split_by_focus_holds_a_zoom_with_too_few_images():
+    """0.95.0 (Christian, 27 Oct; Taylorfjellet's one 48 mm pair: the bin held f but ZR's free principal point went
+    +90 px and failed the block): an eye and zoom with fewer than min_zoom_images images at the site keeps every bin
+    at the model - all parameters fixed, held_at_model set, the sequence recorded; a zoom with enough is as before."""
+    from mppp.sfm.project import ZCAM_MIN_ZOOM_IMAGES, _split_by_focus
+    from mppp.calib.forms import FULL_OPENCV_PARAMS
+    assert ZCAM_MIN_ZOOM_IMAGES == 6
+    base = {"model": "FULL_OPENCV", "width": 1648, "height": 1200, "source": "median of label CAHVOR models",
+            "params": [5000.0, 5000.0, 824.0, 600.0, 0, 0, 0, 0, 0, 0, 0, 0], "fixed_params": ["k3"]}
+    gm = {"f0_px": 5045.0, "label_f0_px": 5000.0, "reference_focus": 1000.0, "slope_px_per_count": 0.1,
+          "aspect": 1.0, "focus_range": [0, 3000]}
+    rows = _zrows("ZR048", [1000, 1000]) + _zrows("ZR034", [1000, 1005, 1010, 1012, 1020, 1021, 1030])
+    for r in rows:
+        r["sequence"] = "ZCAM01234"
+    cams = _split_by_focus(rows, {"ZR048": dict(base), "ZR034": dict(base)}, {"ZR048": "Z", "ZR034": "Z"}, 30.0, "focal_pp",
+                           {"cameras": {"ZR048": gm, "ZR034": gm}}, hold_f_images=2, line_params={"ZR": ["fx", "fy", "cx", "cy"]},
+                           by="sequence", min_zoom_images=ZCAM_MIN_ZOOM_IMAGES)
+    z48 = [c for k, c in cams.items() if k.startswith("ZR048")]
+    z34 = [c for k, c in cams.items() if k.startswith("ZR034")]
+    assert len(z48) == 1 and z48[0]["held_at_model"] and set(z48[0]["fixed_params"]) == set(FULL_OPENCV_PARAMS)
+    assert "held at the model: 2 images of ZR048" in z48[0]["source"]
+    assert z48[0]["sequence"] == "ZCAM01234" and z48[0]["sequence_sol"] == 100          # the sequence bins' record
+    assert all(not c.get("held_at_model") for c in z34) and any("cy" not in c["fixed_params"] for c in z34)
+    # the default of the project API is the same; 0 switches it off
+    free = _split_by_focus(rows, {"ZR048": dict(base)}, {"ZR048": "Z"}, 30.0, "focal_pp", {"cameras": {"ZR048": gm}},
+                           hold_f_images=2, line_params={"ZR": ["fx", "fy", "cx", "cy"]}, min_zoom_images=0)
+    assert not any(c.get("held_at_model") for c in free.values()) and "cy" not in list(free.values())[0]["fixed_params"]
 
 
 # the early-mission Navcam offsets of the camera files (v0p70)

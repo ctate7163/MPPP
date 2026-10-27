@@ -279,6 +279,8 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
         c = project.cameras.get(key) or {}
         if not str(key).startswith("Z") or int(cid) not in rec.cameras or c.get("group") is None:
             continue
+        if c.get("held_at_model"):                    # 0.95.0: too few images of its zoom at the site - not on the lines
+            continue
         p = np.array(rec.cameras[int(cid)].params, float)
         groups.setdefault(c["group"], []).append({
             "camera": key, "camera_id": int(cid), "focus": c.get("focus_count_median"), "p": p,

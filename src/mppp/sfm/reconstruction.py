@@ -786,6 +786,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         free = pc.get("free_params") or []            # e.g. the rational Navcam k4; any model
         if free and cam.model.name in _PARAM_NAMES:
             fixed = sorted(set(fixed) - {names.index(n) for n in free if n in names})
+        if pc.get("held_at_model") or len(fixed) >= len(blk):   # 0.95.0: every parameter held - a constant block
+            prob.set_parameter_block_constant(blk)
+            continue
         prob.set_parameter_block_variable(blk)
         if fixed:
             prob.set_manifold(blk, pyceres.SubsetManifold(len(blk), sorted(fixed)))

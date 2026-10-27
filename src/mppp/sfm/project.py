@@ -68,6 +68,10 @@ ZCAM_BIN_REFINE_SETTINGS = ("focal", "all", "model", "focal_pp")  # "model": f h
 # "focal_pp": a bin refines fx, fy - and on the right eye (ZR) also cx, cy, the R-L boresight that the narrow field
 # makes observable (ZL keeps its principal point: the Mastcam-Z reference eye, like NL); the regular-state bins too
 ZCAM_HOLD_F_IMAGES = 2                              # focus bins with <= this many images hold f at the model
+# 0.95.0 (Christian, 27 Oct; Taylorfjellet's one 48 mm pair: the bin held f but ZR's free principal point went +90 px
+# and failed the block): an eye and zoom with fewer than this many images at a site keeps every bin at the model -
+# nothing refined (``held_at_model``), nothing to fail on
+ZCAM_MIN_ZOOM_IMAGES = 6
 NAVCAM_RIG = "consensus"                            # Navcam rig rotation starts from the promoted rig ("cahv": the labels)
 NAVCAM_RIG_FILE = calib.models.RIG_FILE["N"]
 NAVCAM_FISHEYE_PATTERN = "M2020_{instrument}_fisheye_tangential.json"
@@ -304,6 +308,7 @@ class SfmProject:
                zcam_low_backlash: Optional[PathLike] = None, zcam_line_params: Optional[Dict[str, Any]] = None,
                zcam_low_backlash_found: Optional[PathLike] = None, zcam_rig_fit: Optional[str] = None,
                navcam_distortion: str = "fisheye_tangential", zcam_hold_f_images: int = ZCAM_HOLD_F_IMAGES,
+               zcam_min_zoom_images: int = ZCAM_MIN_ZOOM_IMAGES,
                navcam_rig: str = NAVCAM_RIG, navcam_cameras: Optional[PathLike] = None,
                zcam_zero_terms: Optional[Sequence[str]] = None,
                zcam_focus_model_file: Optional[PathLike] = None,
@@ -331,6 +336,8 @@ class SfmProject:
         sol, the translation the fitted one when the file has it; ``"cahv"``: both from the label CAHV pairs.
         ``zcam_focus_model_file``: a focus-model JSON to use instead of the promoted one of its zoom (a candidate);
         the project records its path and SHA-256 (``settings["zcam_focus_model"]``).
+        ``zcam_min_zoom_images`` (0.95.0, default 6): an eye and zoom with fewer images at the site keeps every bin
+        at the model (``held_at_model``: all parameters fixed; the lines and the health checks leave it alone).
         ``zcam_hold_f_images`` (default 2): with ``"focus_model"``, bins of at most this many images hold their
         focal length at the model (a bin of one or two images constrains it poorly).
         Mastcam-Z left and right exposures have different spacecraft clocks, so they are separate frames (no rig
@@ -518,7 +525,8 @@ class SfmProject:
             fmodel = _zcam_fmodel() if zcam_intrinsics == "focus_model" else None
             cameras = _split_by_focus(images, cameras, instruments, float(zcam_focus_bin), zcam_bin_refine,
                                       fmodel, int(zcam_hold_f_images), line_params=zcam_line_params,
-                                      line_form=zcam_line_form, by=zcam_bin_by)
+                                      line_form=zcam_line_form, by=zcam_bin_by,
+                                      min_zoom_images=int(zcam_min_zoom_images))
 
         _align_priors_to_cameras(images, cameras)
         rig = _rig_from_pairs([r for r in images if instruments.get(r["camera_group"]) != "Z"])
@@ -567,6 +575,8 @@ class SfmProject:
                     "zcam_zero_terms": None if zcam_zero_terms is None else list(zcam_zero_terms),
                     "processed_dir": str(processed_dir), "zcam_intrinsics": zcam_intrinsics,
                     "zcam_hold_f_images": int(zcam_hold_f_images) if zcam_intrinsics == "focus_model" else None,
+                    "zcam_min_zoom_images": (int(zcam_min_zoom_images)      # 0.95.0 (a Mastcam-Z setting)
+                                             if any(f == "Z" for f in instruments.values()) else None),
                     "zcam_focus_model": focus_info,
                     "zcam_focus_bin": float(zcam_focus_bin) if zcam_focus_bin else None,
                     "zcam_bin_by": zcam_bin_by if any(f == "Z" for f in instruments.values()) else None,
@@ -778,7 +788,7 @@ def zcam_model_pp_shift(gm: Optional[Dict[str, Any]], focus: Optional[float],
 def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, Any]], families: Dict[str, str],
                     width: float, refine: str, model: Optional[Dict[str, Any]] = None,
                     hold_f_images: int = 0, line_params: Optional[Dict[str, Any]] = None,
-                    line_form: Any = None, by: str = "focus") -> Dict[str, Dict[str, Any]]:
+                    line_form: Any = None, by: str = "focus", min_zoom_images: int = 0) -> Dict[str, Dict[str, Any]]:
     """Replace each Mastcam-Z camera by one camera per focus bin (see ``SfmProject.create``).  ``model``: the
     focal-length model (:func:`zcam_focus_model`); bins then start from it, and bins of at most ``hold_f_images``
     images hold f there.  The model's temperature and sol terms are evaluated at the bin's median focal-plane
@@ -788,6 +798,8 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
     for group in sorted(k for k in cameras if families.get(k) == "Z"):
         base = cameras[group]
         rows = [r for r in images if r["camera_group"] == group]
+        # 0.95.0: too few images of this eye and zoom at the site - every bin held at the model
+        held_zoom = bool(min_zoom_images) and 0 < len(rows) < int(min_zoom_images)
         bins = focus_bins([r["focus_count"] for r in rows], width)
         gm = (model or {}).get("cameras", {}).get(group)
         all_counts = [r["focus_count"] for r in rows if r["focus_count"] is not None]
@@ -920,6 +932,10 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                 seqs = sorted({str(r.get("sequence")) for r in members if r.get("sequence")})
                 sols_ = sorted({int(r["sol"]) for r in members if r.get("sol") is not None})
                 extra = dict(extra, sequence=seqs[0] if len(seqs) == 1 else None, sequence_sol=sols_[0] if len(sols_) == 1 else None)
+            if held_zoom:
+                fixed = list(FULL_OPENCV_NAMES)
+                src += f"; held at the model: {len(rows)} images of {group} at the site (< {int(min_zoom_images)})"
+                extra = dict(extra, held_at_model=True)
             cam = dict(base, params=params, group=group, focus_count_median=med,
                        focus_count_range=[min(counts), max(counts)] if counts else None, n_images=len(members),
                        fixed_params=fixed, source=src, temperature_median_degC=Tb, sol_median=Sb, **extra)

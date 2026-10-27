@@ -143,6 +143,7 @@ class Settings:
     zcam_line_params: Dict[str, List[str]] = field(default_factory=lambda: {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"],
                                                                             "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]})   # the focus parameters stage 2 puts on a line per eye
     zcam_hold_f_images: int = 2                   # focus bins with at most this many images hold f at the focus model
+    zcam_min_zoom_images: int = 6                 # 0.95.0 (Christian, 27 Oct): an eye and zoom with fewer images at a site keeps every bin at the model (Taylorfjellet's one 48 mm pair: a free principal point went +90 px)
     # 0.93.6 (Christian, 23 Oct): a frame is in the high backlash state unless it is on the low-state list - the
     # list's frames get their own (low-state) cameras; a block's focal fits only report groups that look low
     zcam_backlash: Optional[str] = "list"         # focus backlash states: "list", "list_split", "split", "report" or None
@@ -849,6 +850,7 @@ def wanted_project_settings(s: Settings, work: Path) -> Dict[str, Any]:
             "navcam_rig_epochs_breaks": [float(x) for x in s.navcam_rig_epoch_breaks_sols],
             "navcam_distortion": "fisheye_tangential", "navcam_rig": s.navcam_rig,
             "zcam_hold_f_images": int(s.zcam_hold_f_images) if s.zcam_intrinsics == "focus_model" else None,
+            "zcam_min_zoom_images": int(s.zcam_min_zoom_images) if z else None,       # 0.95.0
             "prior_R_corrected": True,
             "navcam_distortion_fit": s.navcam_distortion_fit, "navcam_k4": "consensus",
             "navcam_rig_yaw": s.navcam_rig_yaw, "navcam_rig_roll": s.navcam_rig_roll, "navcam_pp": s.navcam_pp,
@@ -917,6 +919,7 @@ def build_project(work: PathLike, images: List[Dict[str, Any]], settings: Settin
                                  zcam_focus_bin=s.zcam_focus_bin, zcam_bin_refine=s.zcam_bin_refine, zcam_rig=s.zcam_rig,
                                  zcam_bin_by=s.zcam_bin_by or "focus",
                                  navcam_rig=s.navcam_rig, zcam_hold_f_images=s.zcam_hold_f_images,
+                                 zcam_min_zoom_images=s.zcam_min_zoom_images,
                                  navcam_cameras=s.navcam_cameras,
                                  zcam_zero_terms=zzero if z else None, zcam_rig_refine=s.zcam_rig_refine,
                                  zcam_low_backlash=s.zcam_low_backlash, zcam_low_backlash_found=found,
