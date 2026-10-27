@@ -360,11 +360,17 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
     dreg = {k: np.zeros(1) for k in rgroups}
     unit_group = {cid: k for k, cids in rgroups.items() for cid in cids}
     # 0.94.4 (Christian, 26 Oct): the focus approach - one offset per eye (px on fx; fy x the aspect) for the bins
-    # whose focus came into place from below, the same focus slope ("a different y-intercept")
-    # 0.94.5: only for an eye with a focus-from-below bin in the high (backlash) state - with every such bin also in
-    # the low state the offset is the low state's ratio again (Z48 of 27 Oct: -1.5 % and -1.0 %, both bins low state)
+    # whose focus came into place from below, the same focus slope ("a different y-intercept").
+    # 0.94.5 / 0.95.0 (Christian, 27 Oct): only when the eye has an fb bin in the high state (not thin) - with every fb
+    # bin also in the low state the offset is one with the high / low ratio (Z48 of 27 Oct: -1.5 % and -1.0 %, both
+    # bins low state); then no parameter: the offset is 0 and ``hook.focus_below_held`` says why
+    fb_eyes = sorted({u["group"] for u in zunits.values() if u.get("fb")})
+    fb_high = {eye for eye in fb_eyes if any(u.get("fb") and u["state"] != "regular" and not u.get("thin") and u["group"] == eye
+                                             for u in zunits.values())}
     dfb = {eye: np.array([float((sg.get("focus_below_px") or {}).get(eye, 0.0))])
-           for eye in sorted({u["group"] for u in zunits.values() if u.get("fb") and u["state"] != "regular" and not u.get("thin")})} if tie else {}
+           for eye in fb_eyes if eye in fb_high} if tie else {}
+    fb_held = {eye: "held at 0: every focus-from-below bin of this eye is in the low state (the offset is one with "
+                    "the high / low ratio)" for eye in fb_eyes if eye not in fb_high} if tie else {}
 
     def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
         n = 0
@@ -467,6 +473,7 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
     hook.ratio_offsets = dreg
     hook.ratio_by = by
     hook.focus_below = dfb
+    hook.focus_below_held = fb_held
     return hook, g
 
 
@@ -565,15 +572,22 @@ def adjust_z(rec, proj, idx, st, units, zunits, sg, iterations: int = 100, covar
     ba["ratio_offsets"] = {k: float(v[0]) for k, v in hook.ratio_offsets.items()}
     ba["ratio_by"] = hook.ratio_by
     ba["focus_below_px"] = {k: float(v[0]) for k, v in hook.focus_below.items()}       # 0.94.4
+    ba["focus_below_held"] = dict(hook.focus_below_held)                                # 0.95.0
     sg["focus_below_px"] = dict(ba["focus_below_px"])
     stats = J.residual_stats(rec, proj, keypoint_scale=ks, keypoint_map=kmap)
     return ba, g, stats
 
 
-def _zstats(rec, zunits) -> Dict[str, Any]:
-    """Residual statistics of the Mastcam-Z observations alone (full-frame px) and the Navcam-Mastcam-Z points."""
+WORST_IMAGES = 20                           # 0.95.0: the frames with the largest rms in the joint's report
+
+
+def _zstats(rec, zunits, images: Optional[Sequence[Dict[str, Any]]] = None, worst: int = WORST_IMAGES) -> Dict[str, Any]:
+    """Residual statistics of the Mastcam-Z observations alone (full-frame px) and the Navcam-Mastcam-Z points.
+    0.95.0 (Z48 of 27 Oct: rms 1.95 px against a 0.165 px median - a few frames misfit): per image too, and the
+    ``worst`` frames by rms (``worst_images``: block, image, sequence, sol, bin, state, rms, observations)."""
     zimg = {int(i) for i in rec.reg_image_ids() if int(rec.images[i].camera_id) in zunits}
     res, mixed = [], 0
+    per: Dict[int, List[float]] = {}
     for pt in rec.points3D.values():
         ids = [int(el.image_id) for el in pt.track.elements]
         zs = [i for i in ids if i in zimg]
@@ -584,15 +598,32 @@ def _zstats(rec, zunits) -> Dict[str, Any]:
                 im = rec.images[el.image_id]
                 cam = rec.cameras[im.camera_id]
                 uv = cam.img_from_cam(np.atleast_2d(im.cam_from_world() * pt.xyz))
-                res.append(float(np.linalg.norm(np.asarray(uv)[0] - im.points2D[el.point2D_idx].xy)))
+                d = float(np.linalg.norm(np.asarray(uv)[0] - im.points2D[el.point2D_idx].xy))
+                res.append(d)
+                per.setdefault(int(el.image_id), []).append(d)
     r = np.asarray(res, float)
     ok = np.isfinite(r)                  # NaN: the point behind the camera / outside the lens model (20 Oct joint)
     f = r[ok]
+    meta = {int(x.get("image_id", -1)): x for x in (images or [])}
+    rows = []
+    for iid, ds in per.items():
+        a = np.asarray(ds, float)
+        a = a[np.isfinite(a)]
+        if not a.size:
+            continue
+        u = zunits.get(int(rec.images[iid].camera_id)) or {}
+        m = meta.get(iid, {})
+        rows.append({"image": str(rec.images[iid].name), "block": u.get("scape"), "bin": u.get("key"),
+                     "state": u.get("state"), "sequence": m.get("sequence"), "sol": m.get("sol"),
+                     "rms_px": float(np.sqrt(np.mean(a ** 2))), "median_px": float(np.median(a)), "observations": int(a.size)})
+    rows.sort(key=lambda x: -x["rms_px"])
     return {"zcam_observations": int(r.size), "navcam_zcam_points": int(mixed),
             "zcam_nonfinite": int((~ok).sum()), "zcam_nonfinite_share": float((~ok).mean()) if r.size else 0.0,
             "zcam_median_px": float(np.median(f)) if f.size else None,
             "zcam_rms_px": float(np.sqrt(np.mean(f ** 2))) if f.size else None,
-            "zcam_p95_px": float(np.percentile(f, 95)) if f.size else None}
+            "zcam_p95_px": float(np.percentile(f, 95)) if f.size else None,
+            "zcam_images": len(rows), "worst_images": rows[:int(worst)],
+            "images_over_1px": int(sum(1 for x in rows if x["rms_px"] > 1.0))}
 
 
 def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
@@ -638,6 +669,11 @@ def focus_below_rows(res: Dict[str, Any], ba: Dict[str, Any], zunits: Dict[int, 
         us = [u for u in zunits.values() if u["group"] == eye and u.get("fb")]
         rows.append({"eye": eye, "offset_px": float(d), "sd_px": s_px, "z": (float(d) / s_px) if s_px else None,
                      "ppm": (1e6 * float(d) / f0) if f0 else None, "sd_ppm": (1e6 * s_px / f0) if (f0 and s_px) else None,
+                     "bins": len(us), "bins_also_low": sum(1 for u in us if u["state"] == "regular"),
+                     "blocks": sorted({u["scape"] for u in us})})
+    for eye, why in sorted((ba.get("focus_below_held") or {}).items()):       # 0.95.0: held at 0, for the record
+        us = [u for u in zunits.values() if u["group"] == eye and u.get("fb")]
+        rows.append({"eye": eye, "offset_px": 0.0, "sd_px": None, "z": None, "ppm": 0.0, "sd_ppm": None, "held": why,
                      "bins": len(us), "bins_also_low": sum(1 for u in us if u["state"] == "regular"),
                      "blocks": sorted({u["scape"] for u in us})})
     return rows
@@ -948,7 +984,7 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     res["min_bin_observations"] = int(MIN_BIN_OBSERVATIONS)
     res["found_list"] = sg.get("found_list")
     res.update({"zoom": zoom, "blocks": sorted({u["scape"] for u in zunits.values()}), "residuals": stats,
-                "zcam": _zstats(rec, zunits), "rig": rig_result(proj, sg, zoom), "final_cost": float(ba["final_cost"]),
+                "zcam": _zstats(rec, zunits, proj.images), "rig": rig_result(proj, sg, zoom), "final_cost": float(ba["final_cost"]),
                 "iterations": ba["iterations"], "brief": ba["brief"], "seconds": time.time() - t,
                 "navcam_models": str(st["folder"]), "points": {"navcam_per_block": nav_points, "zcam_per_block": z_points}})
     res["distortion"] = distortion_curves(res, ba, zunits=zunits)
@@ -1176,6 +1212,10 @@ def describe(res: Dict[str, Any]) -> List[str]:
                                       if eye.startswith("ZR") else
                                       f"{e.get('mixed_exposures', 0)} exposures with the other eye in the high state") + ")"))
     for r_ in res.get("focus_below") or []:          # 0.94.4: the focus approach
+        if r_.get("held"):                           # 0.95.0
+            out.append(f"{r_['eye']} focus from below: {r_['held']}; {r_['bins']} bins ({r_['bins_also_low']} low state) in "
+                       + ", ".join(r_["blocks"]))
+            continue
         sdp = f" +- {r_['sd_px']:.2f}" if r_.get("sd_px") else ""
         out.append(f"{r_['eye']} focus from below: fx {r_['offset_px']:+.2f}{sdp} px"
                    + (f" ({r_['ppm']:+.0f} ppm, z {r_['z']:+.1f})" if r_.get("z") is not None and r_.get("ppm") is not None else "")
@@ -1306,7 +1346,10 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
         fbr = [x for x in res.get("focus_below") or [] if x["eye"] == eye]
         gm.pop("focus_below_offset_px", None)
         gm.pop("focus_below", None)
-        if fbr:                                       # 0.94.4: the focus approach (px on fx, same slope)
+        if fbr and fbr[0].get("held"):               # 0.95.0: no high-state fb bin - no offset (0), the reason kept
+            gm["focus_below"] = {k: fbr[0][k] for k in ("bins", "bins_also_low", "blocks", "held")}
+            gm["focus_below"]["note"] = "no focus-from-below offset: " + str(fbr[0]["held"])
+        elif fbr:                                     # 0.94.4: the focus approach (px on fx, same slope)
             gm["focus_below_offset_px"] = float(fbr[0]["offset_px"])
             gm["focus_below"] = {k: fbr[0][k] for k in ("sd_px", "z", "ppm", "bins", "bins_also_low", "blocks")}
             gm["focus_below"]["note"] = ("the bins whose focus came into place from below (the focus-approach list): "
@@ -1394,8 +1437,12 @@ def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict
     rms = z.get("zcam_rms_px")
     if rms is not None:                                # (results before 0.94 have no rms)
         okr = np.isfinite(rms) and rms <= lim["max_zcam_rms_px"]
+        wi = z.get("worst_images") or []               # 0.95.0: the frames behind a failed rms
         checks.append({"check": "Mastcam-Z residual rms", "ok": bool(okr),
-                       "note": f"rms {rms:.3f} px (<= {lim['max_zcam_rms_px']:g})"})
+                       "note": f"rms {rms:.3f} px (<= {lim['max_zcam_rms_px']:g})"
+                               + (f"; {z.get('images_over_1px', 0)} of {z.get('zcam_images', 0)} frames over 1 px, worst "
+                                  + ", ".join(f"{w['image']} ({w['block']}, {w.get('sequence') or '-'}, {w['rms_px']:.2f} px)"
+                                              for w in wi[:3]) if (wi and not okr) else "")})
     checks.append({"check": "Mastcam-Z residuals finite", "ok": share <= lim["max_zcam_nonfinite_share"],
                    "note": f"{int(z.get('zcam_nonfinite') or 0)} of {int(z.get('zcam_observations') or 0)} not finite "
                            f"({100 * share:.2f} %)"})
@@ -1463,6 +1510,13 @@ def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[st
     lines += [f"- {x}" for x in describe(res)]
     lines += ["", "## Checks against the model in use", ""] + [f"- {'ok' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}"
                                                               for c in chk["checks"]]
+    wi = (res.get("zcam") or {}).get("worst_images") or []
+    if wi:                                                   # 0.95.0: the frames with the largest rms
+        z = res["zcam"]
+        lines += ["", f"## Worst frames ({z.get('images_over_1px', 0)} of {z.get('zcam_images', 0)} over 1 px rms)", "",
+                  "| image | block | sequence | sol | bin | state | rms px | median px | obs |", "|---|---|---|---|---|---|---|---|---|"]
+        lines += [f"| {w['image']} | {w['block']} | {w.get('sequence') or '-'} | {w.get('sol') if w.get('sol') is not None else '-'} | "
+                  f"{w['bin']} | {w['state']} | {w['rms_px']:.2f} | {w['median_px']:.2f} | {w['observations']} |" for w in wi]
     lines += [""] + [f"![{f}]({f})" for f in figs]
     (out / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return {"folder": str(out), "model": str(out / name), "check": chk, "figures": figs, "block_lines": rows}

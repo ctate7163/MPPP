@@ -269,7 +269,13 @@ def test_zcam_joint_recovers_the_focus_law_and_the_rig(tmp_path, monkeypatch):
     assert all(abs(r["navcam_ppm"]) < 300 and abs(r["diff_ppm"]) < 1000 for r in ba["rows"]), ba["rows"]
     assert all(abs(r["yaw_mdeg"]) < 5 for r in d["blocks"])
     assert d["blocks"][0]["lines"]["ZL034"]["backlash"]["fx"]["bins"] == 3
+    z = res["zcam"]                                                   # 0.95.0: per-image residuals, the worst frames
+    assert z["zcam_images"] == 72 and len(z["worst_images"]) == 20 and z["images_over_1px"] == 0
+    w = z["worst_images"][0]
+    assert w["block"] in ("blk_a", "blk_b") and w["bin"].startswith("Z") and w["state"] == "backlash" and w["observations"] > 10
+    assert w["rms_px"] >= z["worst_images"][-1]["rms_px"] and w["sequence"] == "ZCAM00000" and w["sol"] in (500, 900)
     out = Z.write_zjoint(res, tmp_path / "cand", model=start)
+    assert "## Worst frames (0 of 72 over 1 px rms)" in (tmp_path / "cand" / "report.md").read_text()
     new = json.loads((tmp_path / "cand" / "M2020_ZCAM034_focus_model.json").read_text())
     from mppp.calib import forms
     assert not forms.validate_zcam(new) and new["form"] == forms.ZCAM_FORM_ID
@@ -441,6 +447,19 @@ def test_zcam_joint_focus_from_below_offset(tmp_path, monkeypatch):
     cand = Z.candidate_model(res, truth)
     assert cand["cameras"]["ZL034"]["focus_below_offset_px"] == pytest.approx(rows["ZL034"]["offset_px"])
     assert "focus_below_offset_px" not in cand["cameras"]["ZR034"]
+    # 0.95.0 (Christian, 27 Oct): every fb bin of the eye also in the low state - the offset is one with the high /
+    # low ratio: held at 0, the reason in the rows and the candidate, no offset written
+    reg = {"eye": "L", "F": 600.0, "offset": (0.0, 0.0)}
+    a2, _, _ = _block(tmp_path, "blk_a2", 0.0, truth, rng, 500, reg=reg, fb={"eye": "L", "F": 600.0, "offset_px": -3.0})
+    b2, _, _ = _block(tmp_path, "blk_b2", 0.0, truth, rng, 900, reg=reg)
+    r2 = Z.fit_zjoint({}, model=copy.deepcopy(truth), scapes=[a2, b2], st=st, nav_points=None, z_points=None,
+                      iterations=40, passes=1, verbose=False, diagnostics=False, k_tests=False)
+    rows2 = {r["eye"]: r for r in r2["focus_below"]}
+    assert set(rows2) == {"ZL034"} and rows2["ZL034"]["held"] and rows2["ZL034"]["offset_px"] == 0.0
+    assert rows2["ZL034"]["bins"] == 1 and rows2["ZL034"]["bins_also_low"] == 1
+    c2 = Z.candidate_model(r2, truth)
+    assert "focus_below_offset_px" not in c2["cameras"]["ZL034"] and "held" in c2["cameras"]["ZL034"]["focus_below"]
+    assert any("focus from below: held at 0" in x for x in Z.describe(r2))
 
 
 def test_joint_gate_rms_eyes_aspect_ratio_27oct():
@@ -451,8 +470,12 @@ def test_joint_gate_rms_eyes_aspect_ratio_27oct():
     base = {"ok": True, "checks": []}
     z = {"zcam_median_px": 0.19, "zcam_nonfinite_share": 0.0, "zcam_observations": 10}
     assert Z.joint_checks({"zcam": dict(z, zcam_rms_px=0.8)}, base)["ok"]
-    bad = Z.joint_checks({"zcam": dict(z, zcam_rms_px=3.3)}, base)
+    bad = Z.joint_checks({"zcam": dict(z, zcam_rms_px=3.3, zcam_images=40, images_over_1px=2, worst_images=[
+        {"image": "ZR0_0121_x.png", "block": "seitah_overlook", "sequence": "ZCAM08114", "rms_px": 4.1},
+        {"image": "ZR0_0121_y.png", "block": "seitah_overlook", "sequence": "ZCAM08114", "rms_px": 2.0}])}, base)
     assert not bad["ok"] and any(c["check"] == "Mastcam-Z residual rms" and not c["ok"] for c in bad["checks"])
+    note = next(c["note"] for c in bad["checks"] if c["check"] == "Mastcam-Z residual rms")      # 0.95.0: the frames
+    assert "2 of 40 frames over 1 px, worst ZR0_0121_x.png (seitah_overlook, ZCAM08114, 4.10 px)" in note
     assert ZCAM_MODEL_LIMITS["max_aspect_dev"] == 0.005          # Christian, 27 Oct: 0.5 %
     assert {"max_k1", "baseline_m", "max_f0_change_pct"} <= set(ZCAM_MODEL_LIMITS)   # (a comment once swallowed them)
     new = {"cameras": {"ZL048": {"f0_px": 6671.1, "aspect": 1.0006, "regular_ratio": 1.0095,
