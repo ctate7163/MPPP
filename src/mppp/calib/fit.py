@@ -1273,7 +1273,7 @@ def promote_navcam(candidate_dir: PathLike, note: str, folder: Optional[PathLike
 
 # ====================================================================================== Mastcam-Z calibration
 ZCAM_MODEL_LIMITS = {"max_f0_change_pct": 1.5, "max_k1": 1.5, "baseline_m": (0.20, 0.29),
-                     "max_aspect_dev": 0.003,             # 0.94.4: 0.3 % (was 2 %; Z48 0.9928, Z79 0.981 passed)
+                     "max_aspect_dev": 0.005,             # 0.94.4: 0.5 % (Christian, 27 Oct; was 2 %: Z48 0.9928, Z79 0.981 passed)
                      "max_rig_change_deg": 1.0, "max_rig_scatter_mdeg": 150.0, "max_baseline_scatter_mm": 3.0,
                      "max_tau_f_px": 10.0, "min_blocks": 3,
                      "max_p": forms.ZCAM_MAX_P, "max_tau_p": 1e-3,     # zcam-v2: |p1|, |p2| and their block scatter

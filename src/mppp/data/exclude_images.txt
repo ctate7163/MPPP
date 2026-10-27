@@ -24,7 +24,7 @@ seq:ZCAM01*
 !seq:ZCAM00033       # Chal Rocks (sols 91-93): kept (Christian, 22 Oct)
 !seq:ZCAM00034       # Chal Rocks: kept
 !seq:ZCAM00015       # kept (Christian, 22 Oct)
-!seq:ZCAM01025       # kept (Christian, 23 Oct)
+# seq:ZCAM01025 no longer kept (Christian, 27 Oct): seq:ZCAM01* above leaves it out
 
 # other Mastcam-Z observations
 seq:ZCAM08512        # Rockytop: 74 stereo frames
@@ -50,3 +50,4 @@ N*_0681_0727400691_868*
 *_0693_0728459809_940*   # Three Forks North, front Hazcams: bad colours (Christian, 23 Oct)
 FLF_1976_0842367348_066RAD_N0910806FHAZ02008_0A0095J04   # Marble Mountain sol 1976, front left Hazcam (Christian, 26 Oct)
 *_1987_0843335916_525*   # Marble Mountain sol 1987 ZCAM04473 (63 mm): too few tie points, none to its stereo partner (Christian, 27 Oct)
+*_0556_0716304025_894*   # Enchanted Lake sol 556 (Christian, 27 Oct)
