@@ -150,10 +150,10 @@ def test_groups_and_block_sites():
     # again, Bright Angel; the Hazcam consensus without Three Forks North; a list per zoom
     # (10:30: Chal Rocks again, not Chal Rocks Large)
     assert g["zcam_consensus"] == ["chal_rocks", "seitah_overlook", "threeforks_north", "belva_crater",
-                                   "taylorfjellet", "marble_mountain", "bright_angle", "pico_turquino", "south_arm"]
+                                   "taylorfjellet", "marble_mountain", "bright_angel", "pico_turquino", "south_arm"]
     assert "chal_rocks_large" not in g["zcam34_joint"] and "chal_rocks" in g["zcam34_joint"]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "belva_crater", "bell_island", "marble_mountain"]
-    assert g["zcam63_consensus"] == ["chal_rocks_large", "seitah_overlook", "bright_angle", "taylorfjellet", "marble_mountain"]
+    assert g["zcam63_consensus"] == ["chal_rocks_large", "seitah_overlook", "bright_angel", "taylorfjellet", "marble_mountain"]
     assert t["sites"]["bright_angle_large"]["sols"] == [[1175, 1220]] and t["sites"]["bright_angle_large"]["official_blocks"] == []
     assert all(s in t["sites"] for s in g["hazcam_consensus"])
     ob = t["official_blocks"]
@@ -295,7 +295,7 @@ def test_0936_defaults_and_hazcam_over_zcam_blocks(tmp_path):
     from mppp import cli
     from mppp.pipeline import Settings
     s = Settings()
-    assert s.zcam_backlash == "list" and s.zcam_low_backlash_found == "auto"       # 0.94.6: on again
+    assert s.zcam_backlash == "list" and s.zcam_low_backlash_found == "auto"       # 0.94.4: on again
     ap = cli.build_parser() if hasattr(cli, "build_parser") else None
     if ap is not None:
         a = ap.parse_args(["calib", "hazcam", "--zcam-blocks", "--group", "zcam_consensus", "--root", str(tmp_path)])

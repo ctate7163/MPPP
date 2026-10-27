@@ -121,7 +121,7 @@ def stereo_offset(left, right, sensor_from_rig) -> Dict[str, float]:
 
 
 # ================================================================ merging
-MIN_TRI_ANGLE_DEG = 0.25        # 0.94.5 (Bunsen Peak, 24 Oct): below it (0.1 % of points, after the BA) 1.7 px median
+MIN_TRI_ANGLE_DEG = 0.25        # 0.94.4 (Bunsen Peak, 24 Oct): below it (0.1 % of points, after the BA) 1.7 px median
 MAX_TRI_ANGLE_DEG = 60.0        # above it (0.1 %) 1.3 px median - near-field mismatches
 WIDE_ANGLE_DEG = 20.0           # 20-60 deg (5 %): 0.54 px median, twice the rest - drawn at half the weight
 WIDE_WEIGHT = 0.5
@@ -155,7 +155,7 @@ def point_geometry(rec, pids: Sequence[int]) -> Tuple[np.ndarray, np.ndarray]:
 
 def _subsample_points(rec, n: Optional[int], seed: int = 0, min_track: int = 2,
                       min_angle: float = MIN_TRI_ANGLE_DEG, max_angle: float = MAX_TRI_ANGLE_DEG) -> List[int]:
-    """Point ids to keep: all if ``n`` is None, else ``n`` drawn without replacement.  0.94.5 (Christian 24 Oct):
+    """Point ids to keep: all if ``n`` is None, else ``n`` drawn without replacement.  0.94.4 (Christian 24 Oct):
     the points are drawn by the number of stations they are seen from (capped at 4; they carry the intrinsics -
     before, by track length), a point under ``min_angle`` (drifted below the blocks' cut in their adjustment) or over
     ``max_angle`` never, one of 20-60 deg at half the weight.  The geometry is computed for ``OVERSAMPLE`` x ``n``
@@ -254,7 +254,7 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
             proj.settings = dict(proj.settings)
             proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
             proj.settings["navcam_rig_yaw"] = "refine"
-            proj.settings["navcam_rig_roll"] = "refine"           # 0.94.5: the blocks hold it; a joint refines it
+            proj.settings["navcam_rig_roll"] = "refine"           # 0.94.4: the blocks hold it; a joint refines it
         idx["temps"].update({n: float(v["T"]) for n, v in sc.temps.items()})
         rec = sc.rec
         # a rig-epoch copy of an eye ("NL#1") is that eye here (the joint has one camera per eye)

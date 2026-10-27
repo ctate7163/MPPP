@@ -1,5 +1,5 @@
 """
-The Mastcam-Z focus-backlash states of every image, from the blocks' own focal lengths (0.94.6, Christian 25 Oct):
+The Mastcam-Z focus-backlash states of every image, from the blocks' own focal lengths (0.94.4, Christian 25 Oct):
 which frames belong on the low-state (found) list, which do not, and which cannot be told yet.
 
 Each block's ``zcam_focus_states.json`` holds, per Mastcam-Z image, its fitted focal length over its label focal
@@ -77,7 +77,7 @@ def block_images(work: PathLike, variant: str = "", lists: Optional[Dict[str, An
                  focus_list: Optional[Dict[str, Any]] = None, single: bool = False) -> List[Dict[str, Any]]:
     """One row per Mastcam-Z image of a block (110 mm left out: one state; ``single``: only the 110 mm images):
     name, block, group, eye, zoom, sol, sequence, focus, ratio (fitted / label f; None without a fit), sd,
-    observations, listed (shipped or found list), camera; 0.94.6 (Christian, 26 Oct): the motor moves from the
+    observations, listed (shipped or found list), camera; 0.94.4 (Christian, 26 Oct): the motor moves from the
     previous frame (``zoom_dir``, ``focus_dir``, ``dzoom``, ``dfocus``) and ``focus_below`` (on the focus-approach
     list)."""
     from .backlash import SINGLE_STATE_ZOOMS, is_focus_from_below, is_low_backlash
@@ -240,7 +240,7 @@ FOCUS_MOVE_MIN = 100.0               # a focus move up this large (counts, from 
 
 
 def approach_table(rows: List[Dict[str, Any]], single: Sequence[Dict[str, Any]] = ()) -> List[Dict[str, Any]]:
-    """0.94.6 (Christian, 26 Oct: the zoom and the focus backlash superimposed): per zoom and eye, the frames'
+    """0.94.4 (Christian, 26 Oct: the zoom and the focus backlash superimposed): per zoom and eye, the frames'
     focal ratios by how the motors came into place - zoom up / down / none and focus up / down / none from the
     previous frame (within 30 min) - and by the lists (zoom low state, focus from below).  ``d`` is the ratio about
     the block's high line (34-79 mm, :func:`classify`); at 110 mm (no high line) about the median of the block's

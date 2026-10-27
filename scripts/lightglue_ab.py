@@ -14,6 +14,8 @@ whether CUDA is available: without them the "lightglue" alignment falls back to 
 says which matcher ran).
 """
 from __future__ import annotations
+import os as _os
+_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as mppp_env.bat - two OpenMP runtimes (torch, pycolmap) abort a plain "python" start
 
 import argparse
 import datetime

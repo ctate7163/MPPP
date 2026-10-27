@@ -126,11 +126,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dems", default=None, help="1 m DTM GeoTIFFs, os.pathsep-separated (M20_DEMS)")
     p.add_argument("--orthos", default=None, help="orthomosaic GeoTIFFs (M20_ORTHOS)")
     p = sub.add_parser("calib", help="the camera calibrations (0.91: the Navcam tied joint, the Mastcam-Z joint)")
-    p.add_argument("which", choices=["navcam", "zcam", "nz", "hazcam"],
+    p.add_argument("which", choices=["navcam", "zcam", "nz", "hazcam", "lawcheck"],
                    help="navcam: the one-adjustment joint over the finished Navcam blocks; zcam: the Mastcam-Z joint "
                         "over the finished Navcam + Mastcam-Z blocks, the Navcam held at the models in use; nz: the "
                         "combined joint (both laws free) compared with the Navcam-only law - a check, never promoted; "
-                        "hazcam: the Hazcam law (Navcam form) from the finished blocks with Hazcams (0.93)")
+                        "hazcam: the Hazcam law (Navcam form) from the finished blocks with Hazcams (0.93); "
+                        "lawcheck: how well each Navcam law (--law) predicts the blocks' cameras (mppp.calib.lawcheck)")
     p.add_argument("--variant", default="", help="the blocks' project colmap_<variant> (default colmap; the Hazcam-only "
                    "alignments: hazcam)")
     p.add_argument("--root", default=None, metavar="DIR", help="the scapes root (default: MPPP_SCAPES)")
@@ -160,6 +161,8 @@ def build_parser() -> argparse.ArgumentParser:
                    "adjustments)")
     p.add_argument("--zcam-ratio-by", choices=("block", "sol", "global"), default=None,
                    help="zcam: the low-state groups with their own high / low ratio (default block; global: one per eye)")
+    p.add_argument("--law", action="append", default=None, metavar="LABEL=DIR",
+                   help="lawcheck: a Navcam law to check, a cameras folder (repeatable; default in_use=the models in use)")
     p.add_argument("--promote-if-ok", action="store_true", help="promote the candidate when every check passes")
     p.add_argument("--no-promote", action="store_true", help="never promote (overrides --promote-if-ok)")
     p.add_argument("--note", default="", help="promotion note")
@@ -167,14 +170,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help="zcam / hazcam: the blocks a candidate needs (0.94.1, the tiny joints: 1 or 2)")
     p.add_argument("--hazcam-method", choices=["joint", "blocks"], default="joint",
                    help="hazcam: joint = the law fitted on the image observations of every block, each frame at its "
-                        "own temperature (0.94.5, default); blocks = a line through one refined camera per block")
+                        "own temperature (0.94.4, default); blocks = a line through one refined camera per block")
     p.add_argument("--hazcam-slope", choices=["FL", "all", "per_eye"], default="FL",
                    help="hazcam joint: FL = every eye takes FL's ppm/degC (default, Christian 24 Oct); all = one "
                         "slope shared by the four eyes; per_eye = a slope per eye")
     p.add_argument("--promote-new-only", action="store_true",
                    help="zcam / hazcam: promote only models of which none is in use (0.94.1: a tiny joint never "
                         "replaces a model of more blocks)")
-    p = sub.add_parser("zcam-states", help="0.94.6: the Mastcam-Z backlash state of every image from the blocks' focal "
+    p = sub.add_parser("zcam-states", help="0.94.4: the Mastcam-Z backlash state of every image from the blocks' focal "
                        "lengths (the states run: run_zcam_states.bat) - proposed additions to and removals from the "
                        "found list")
     p.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the scapes root (default MPPP_SCAPES)")
@@ -562,7 +565,7 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
 
 def _rejudged(work, variant: str = "", zoom: Optional[int] = None):
     """(verdict, changed checks) of a block's saved health report under the current rules; (None, []) without one.
-    ``zoom`` (a Mastcam-Z joint, 0.94.5): the excluded frames and the corners judged on that zoom (and the Navcam,
+    ``zoom`` (a Mastcam-Z joint, 0.94.4): the excluded frames and the corners judged on that zoom (and the Navcam,
     Hazcams) only - Chal Rocks' 79 mm frames failed a block the Z34 joint needs."""
     from .sfm.health import LABEL_POINTING_CHECKS, rejudge, restation, restrict_to_zoom
     from .sfm.workdir import project_dir
@@ -589,6 +592,8 @@ def cmd_calib(a: argparse.Namespace) -> int:
         return _calib_nz(a)
     if a.which == "hazcam":
         return _calib_hazcam(a)
+    if a.which == "lawcheck":
+        return _calib_lawcheck(a)
     blocks = _navcam_blocks(a)
     if len(blocks) < 2:
         print(f"ERROR: {len(blocks)} finished block(s); the joint needs several", file=sys.stderr)
@@ -664,6 +669,32 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     return 0
 
 
+def _calib_lawcheck(a: argparse.Namespace) -> int:
+    """``calib lawcheck`` (0.94.4; the 25 Oct study as a command): each Navcam law (``--law LABEL=DIR``, default the
+    models in use) against the finished Navcam blocks - the law held, the units free, the pointing pass - into
+    ``law_validation.json`` and ``report.md``; ``studies/calibration/plot_lawcheck.py`` draws the figures."""
+    import datetime
+    from .calib import lawcheck as L
+    blocks = _navcam_blocks(a)
+    if len(blocks) < 2:
+        print(f"ERROR: {len(blocks)} finished block(s); the law check needs several", file=sys.stderr)
+        return 1
+    laws: Dict[str, Optional[str]] = {}
+    for item in a.law or ["in_use="]:
+        label, _, folder = str(item).partition("=")
+        if not label.strip():
+            print(f"ERROR: --law {item!r}: LABEL=DIR", file=sys.stderr)
+            return 2
+        laws[label.strip()] = folder.strip() or None
+    root = Path(a.root or os.environ.get("MPPP_SCAPES") or next(iter(blocks.values())).parent)
+    out = Path(a.out) if a.out else root / "camera_analysis" / f"lawcheck_{datetime.date.today():%Y%m%d}"
+    log.info("calib lawcheck: %d blocks, laws %s -> %s", len(blocks), ", ".join(laws), out)
+    res = L.validate_laws(blocks, laws, points=a.points or 4000)
+    L.write_validation(res, out)
+    print(f"law check -> {out / 'report.md'}; figures: python studies/calibration/plot_lawcheck.py \"{out}\"")
+    return 0
+
+
 def _calib_hazcam(a: argparse.Namespace) -> int:
     """``calib hazcam``: the Hazcam law (:mod:`mppp.calib.hazfit`) from the finished blocks with Hazcams; the
     candidate files of the eyes and pairs that pass their checks, promoted with ``--promote-if-ok``."""
@@ -682,7 +713,7 @@ def _calib_hazcam(a: argparse.Namespace) -> int:
     lim = {"min_blocks": a.min_blocks} if getattr(a, "min_blocks", None) else None
     method = getattr(a, "hazcam_method", None) or "joint"
     res = None
-    if method == "joint":                 # 0.94.5 (Christian 24 Oct): the law fitted on the observations of every block
+    if method == "joint":                 # 0.94.4 (Christian 24 Oct): the law fitted on the observations of every block
         from .calib import hazjoint as HJ
         try:
             res = HJ.fit_hazcam_joint(blocks, slope_mode=getattr(a, "hazcam_slope", None) or "FL", limits=lim)
@@ -799,7 +830,7 @@ def cmd_zcam_states(a: argparse.Namespace) -> int:
               f"{a.variant or '(default)'})", file=sys.stderr)
         return 1
     lists = load_low_backlash(None, found=found)
-    focus_list = load_focus_below(found=default_focus_below_path(root))      # 0.94.6: the focus approach
+    focus_list = load_focus_below(found=default_focus_below_path(root))      # 0.94.4: the focus approach
     res = ZS.survey(blocks, a.variant, lists, z_min=a.z, focus_list=focus_list)
     out = Path(a.out) if a.out else root / "camera_analysis" / f"zcam_states_{datetime.date.today():%Y%m%d}"
     files = ZS.write_survey(res, out)
@@ -828,6 +859,7 @@ COMMANDS = {"gui": cmd_gui, "process": cmd_process, "align": cmd_align, "run": c
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as mppp_env.bat (torch and pycolmap both bring OpenMP)
     ap = build_parser()
     a = ap.parse_args(argv)
     if not a.cmd:

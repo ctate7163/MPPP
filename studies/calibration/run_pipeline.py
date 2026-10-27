@@ -34,7 +34,7 @@ Stages (each logged in ``<root>\\mppp_pipeline\\<stage>.log``, the pipeline in `
  8. ``lightglue_ab``   - scripts/lightglue_ab.py on Chal Rocks tiny and Seitah Overlook tiny (24 Oct, Christian): SIFT,
                          LightGlue, LightGlue on every octave and SIFT + LightGlue again with the camera models just
                          promoted (--rerun), no tiny joint (nothing promoted) -> <WORK>/lightglue_ab.md of each
- 9. ``zcam_states``    - 0.94.6: the zcam_runs sites again as the variant ``states`` (every Mastcam-Z image its own
+ 9. ``zcam_states``    - 0.94.4: the zcam_runs sites again as the variant ``states`` (every Mastcam-Z image its own
                          camera, f free, no focus lines: run_zcam_states.bat), then ``mppp zcam-states`` ->
                          camera_analysis/zcam_states_<date>/ (report.md, found_list_proposal.txt; the found list is
                          not changed - ``--apply`` does that)
@@ -46,6 +46,8 @@ Mastcam-Z calibration from per-block lines) is in the git history; its state fil
 ``state_before_<tag>.json``.
 """
 from __future__ import annotations
+import os as _os
+_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as mppp_env.bat - two OpenMP runtimes (torch, pycolmap) abort a plain "python" start
 
 import argparse
 import datetime
@@ -67,7 +69,7 @@ if str(ROOT / "src") not in sys.path:
 PY = sys.executable
 STAGES = ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame", "lightglue_ab",
           "zcam_states", "report")
-# 0.94.6 (Christian, 25 Oct): the states run - the Mastcam-Z sites again as the variant "states", one camera per image
+# 0.94.4 (Christian, 25 Oct): the states run - the Mastcam-Z sites again as the variant "states", one camera per image
 # with its own focal length (run_zcam_states.bat), then mppp zcam-states: which frames are low, the found-list proposal
 ZCAM_STATES_SETS = ("ZCAM_BIN_BY=image", "ZCAM_HOLD_F_IMAGES=0", "ZCAM_BIN_REFINE=focal", "ZCAM_FOCUS_LINE=false")
 # the stage set of the state file (0.94.4: ecam stages).  Not changed for the rover_frame stage (added 23 Oct during
@@ -237,7 +239,7 @@ class Pipeline:
             return "failed", f"no sites in {self.zcam_group} / {ZCAM34_JOINT}"
         only = list(getattr(self.a, "zcam_sites", None) or [])
         if only:
-            # 0.94.6 (Christian, 26 Oct - results by the end of the day after a restart): align only these; the
+            # 0.94.4 (Christian, 26 Oct - results by the end of the day after a restart): align only these; the
             # joints take the other sites' finished blocks as they are (a block aligned with other Navcam models
             # fails the joint's check; one never finished is left out)
             unknown = [n for n in only if n not in names]

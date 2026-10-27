@@ -53,7 +53,7 @@ def is_single_state(key: Any) -> bool:
 
 
 def zcam_focus_below(key: Any) -> bool:
-    """0.94.6 (Christian, 26 Oct): a Mastcam-Z bin camera of frames whose focus came into place from below -
+    """0.94.4 (Christian, 26 Oct): a Mastcam-Z bin camera of frames whose focus came into place from below -
     ``_fb`` in its key (``ZL034_F01254_fb``, ``ZL034_F01254_fb_reg@block``)."""
     return "fb" in str(key).split("@", 1)[0].split("_")[1:]
 

@@ -89,7 +89,7 @@ def main(argv=None) -> int:
 
 
 def kernels(res, out: Path, naif=None) -> dict:
-    """The rover kernels (study 3A, 0.94.5): the attitude intervals and Hazcam mounts of :mod:`rover_frame.estimate`
+    """The rover kernels (study 3A, 0.94.4): the attitude intervals and Hazcam mounts of :mod:`rover_frame.estimate`
     written by :mod:`rover_frame.spice` into ``out``."""
     from rover_frame import estimate, spice
     spice.spiceypy()                                     # a clear message when spiceypy is missing

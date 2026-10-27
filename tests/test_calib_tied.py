@@ -198,7 +198,7 @@ def test_diagnostic_bins_merge_thin_cold_bins():
 
 
 def test_joint_refines_the_rig_roll_the_blocks_hold(tmp_path):
-    """0.94.5: the blocks hold the Navcam rig roll and their settings came through merge_scapes, so the joint held
+    """0.94.4: the blocks hold the Navcam rig roll and their settings came through merge_scapes, so the joint held
     every unit's roll and never refitted the global roll (20-24 Oct: identical to 7 digits, sd 6e-5 mdeg)."""
     pytest.importorskip("pyceres")
     proj, rec, idx, st, T = _tied_setup(tmp_path)
@@ -259,7 +259,7 @@ def test_joint_points_by_stations_within_the_angle_limits(tmp_path):
 
 
 def test_exact_tie_covariance_agrees_with_colmap_and_reports_correlations(tmp_path, monkeypatch):
-    """0.94.6 (Christian, 25 Oct: the 24/25 Oct joints' global sd came out infinite): the covariance of the global
+    """0.94.4 (Christian, 25 Oct: the 24/25 Oct joints' global sd came out infinite): the covariance of the global
     terms with the ties eliminated exactly (mppp.calib.tiecov) agrees with COLMAP's estimator where that works (one
     small block, a hinge, four sols), does not depend on the tie sigmas, and the log says when the sd are unusable."""
     pytest.importorskip("pyceres")
@@ -296,7 +296,7 @@ def test_exact_tie_covariance_agrees_with_colmap_and_reports_correlations(tmp_pa
 
 
 def test_exact_tie_solve_does_not_depend_on_the_tie_sigma(tmp_path, monkeypatch):
-    """0.94.6 (25 Oct): with stiff tie residuals Levenberg-Marquardt stops in a flat valley (the synthetic pitch rate
+    """0.94.4 (25 Oct): with stiff tie residuals Levenberg-Marquardt stops in a flat valley (the synthetic pitch rate
     0.24 at 1e-6, 0.19 at 1e-10 at the same cost); the exact refinement (mppp.calib.tiesolve: the ties as
     constraints) reaches the same globals whatever the sigma, never raises the cost, and leaves the ties in place."""
     pytest.importorskip("pyceres")
@@ -324,7 +324,7 @@ def test_exact_tie_solve_does_not_depend_on_the_tie_sigma(tmp_path, monkeypatch)
 
 
 def test_law_check_deviations_and_held_residuals(tmp_path):
-    """0.94.6 (Christian, 25 Oct: how good the global solutions are at predicting the cameras): the law check holds
+    """0.94.4 (Christian, 25 Oct: how good the global solutions are at predicting the cameras): the law check holds
     every unit at the law (residuals per block), frees them (deviations from the law in sd units, chi^2 / dof, trends)
     and compares any law with the same free units."""
     pytest.importorskip("pyceres")
@@ -365,3 +365,25 @@ def test_a_held_slope_keeps_the_joints_own_sd(tmp_path):
     res = T.globals_result(st, g, ba, units)
     assert not res.get("sd_source")
     assert np.isfinite(res["NL"]["sd"]["fx_ppm_per_degC"]) and np.isnan(res["NL"]["sd"]["cx_px_per_degC"])
+
+
+def test_calib_lawcheck_command(tmp_path, monkeypatch):
+    """27 Oct: the 25 Oct law check as a command - ``mppp calib lawcheck --law LABEL=DIR``."""
+    from mppp import cli
+    from mppp.calib import lawcheck as L
+    seen = {}
+    monkeypatch.setattr(cli, "_navcam_blocks", lambda a: {"a": tmp_path / "a", "b": tmp_path / "b"})
+
+    def fake_validate(blocks, laws, points=4000, **kw):
+        seen.update(blocks=blocks, laws=laws, points=points)
+        return {"held": {}}
+    monkeypatch.setattr(L, "validate_laws", fake_validate)
+    monkeypatch.setattr(L, "write_validation", lambda res, out: seen.setdefault("out", out))
+    a = cli.build_parser().parse_args(["calib", "lawcheck", "--root", str(tmp_path), "--out", str(tmp_path / "o"),
+                                       "--law", "in_use=", "--law", "cand=" + str(tmp_path / "c"), "--points", "500"])
+    assert cli.cmd_calib(a) == 0
+    assert seen["laws"] == {"in_use": None, "cand": str(tmp_path / "c")} and seen["points"] == 500
+    assert set(seen["blocks"]) == {"a", "b"} and str(seen["out"]) == str(tmp_path / "o")
+    a = cli.build_parser().parse_args(["calib", "lawcheck", "--root", str(tmp_path), "--out", str(tmp_path / "o")])
+    seen.clear()
+    assert cli.cmd_calib(a) == 0 and seen["laws"] == {"in_use": None}

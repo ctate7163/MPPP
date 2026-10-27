@@ -61,7 +61,7 @@ FOUND_FILE = "zcam_low_backlash_found.csv"      # next to the WORK folders (SCAP
 
 
 def default_found_path(root: Any = None):
-    """0.94.6 (Christian, 25 Oct: "always use this list"): the found list in use - ``<root>/zcam_low_backlash_found.csv``,
+    """0.94.4 (Christian, 25 Oct: "always use this list"): the found list in use - ``<root>/zcam_low_backlash_found.csv``,
     else ``MPPP_LOW_BACKLASH_FOUND``, else ``<MPPP_SCAPES>/zcam_low_backlash_found.csv``; None when there is none."""
     import os
     from pathlib import Path
@@ -125,7 +125,7 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
     (``ZL0_0121_0677679408_053RAD_N0041250ZCAM08114_034085A03``), ``0121_0677679408_053`` (sol, clock), ``ZCAM07114_034``
     (a sequence at one zoom), ``ZCAM08114`` (a sequence at every zoom) - matched as a substring of the image's file name
     (case-insensitive); ``sol:sequence`` (``363:ZCAM08394``) also works.  A trailing ``?`` (uncertain) is kept as
-    an entry and counted in ``uncertain``.  0.94.6: an entry starting with ``-`` takes frames OFF the list (any of
+    an entry and counted in ``uncertain``.  0.94.4: an entry starting with ``-`` takes frames OFF the list (any of
     the forms above; it wins over every match, in either file): ``-0121_0677678972_053`` (sol 121 pointing 2).  A full product name also matches the same eye and spacecraft clock
     whatever its product type and version (``ZL0_0091_0675031997_228RAD_...A03`` matches ``ZLF_0091_0675031997_228EBY_...J01``,
     key ``clocks``).  Every other Mastcam-Z image is in the high-backlash state, except at
@@ -157,7 +157,7 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
             if not tok:
                 continue
             dst = out
-            if tok.startswith("-"):                    # 0.94.6: off the list
+            if tok.startswith("-"):                    # 0.94.4: off the list
                 tok = tok[1:].strip()
                 dst = out["excluded"]
             if tok.endswith("?"):
@@ -179,7 +179,7 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
     return out
 
 
-# ------------------------------------------------------------------ 0.94.6: the focus approach (second backlash)
+# ------------------------------------------------------------------ 0.94.4: the focus approach (second backlash)
 FOCUS_BELOW_FILE = "zcam_focus_from_below.csv"        # next to the WORK folders, like the found list
 FOCUS_BELOW_SHIPPED = "mars2020_mastcam-z_focus_from_below.csv"   # in mppp/data
 
@@ -290,7 +290,7 @@ def is_low_backlash(row: Dict[str, Any], lst: Dict[str, Any]) -> bool:
     if group_zoom(row.get("camera_group", row.get("instrument"))) in SINGLE_STATE_ZOOMS:
         return False
     ex = lst.get("excluded")
-    if ex and _matches(row, ex):                         # 0.94.6: a "-" entry takes the frame off the list
+    if ex and _matches(row, ex):                         # 0.94.4: a "-" entry takes the frame off the list
         return False
     return _matches(row, lst)
 
@@ -608,7 +608,7 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
     (:func:`measured_backlash_lines`, ``measured_ratio``; else the focus model's f0 / label f0), so that the
     midpoint follows the focus count; (2) ``sequence_rule``: one state per sequence (:func:`apply_sequence_states`),
     the images on the low-backlash list (``known``: a :func:`load_low_backlash` dict, a path, False for none; default
-    the project's list and, 0.94.6, its found list) being the exceptions (``listed_names``, regular in
+    the project's list and, 0.94.4, its found list) being the exceptions (``listed_names``, regular in
     :func:`image_states`).  The ratios that decide (``ratio_fit``, ``sd_fit``) come from the images not on that
     list; ``ratio`` / ``sd`` are every fitted image's, as before.  ``report`` (a dict) receives the lines and the
     sequences.  ``bin_fallback`` (:func:`bin_focal_fallback`) classifies a group without any per-image fit
@@ -624,7 +624,7 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
     else:
         zl = (getattr(project, "settings", None) or {}).get("zcam_low_backlash") or {}
         f = known if known is not None else zl.get("file")
-        try:                                             # 0.94.6: with the project's found list
+        try:                                             # 0.94.4: with the project's found list
             lst = load_low_backlash(f, found=zl.get("found_file") if known is None else None)
         except Exception:                                                  # noqa: BLE001
             lst = load_low_backlash(False)

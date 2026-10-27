@@ -55,14 +55,14 @@ TIED_PARAMS = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4")     #
 SLOPE_TERMS = ("fx", "fy", "cx", "cy", "k1")                                  # per degC (px; k1 unitless)
 EARLY_TERMS = ("fx", "fy", "cx", "cy")                                        # px, per eye
 ANGLES = ("pitch", "yaw", "roll")                                             # rotation-vector x, y, z
-# 0.94.6 (25 Oct, the 12-block solver study): k and q 1e-6 (were 1e-7, 1e-8).  Ceres converges further with them
+# 0.94.4 (25 Oct, the 12-block solver study): k and q 1e-6 (were 1e-7, 1e-8).  Ceres converges further with them
 # (12 blocks: 23913.06 against 23913.40 with the units then set exactly on the law) and in half the time; the exact
 # solve below then puts every unit on the law, and the exact covariance does not depend on the sigmas
 TIE_SIGMA = {"fx": 1e-3, "fy": 1e-3, "cx": 1e-3, "cy": 1e-3, "k": 1e-6, "q": 1e-6}
-# 0.94.6: the covariance of the global terms with the ties eliminated exactly (mppp.calib.tiecov) - COLMAP's estimator
+# 0.94.4: the covariance of the global terms with the ties eliminated exactly (mppp.calib.tiecov) - COLMAP's estimator
 # on the tied problem gave them infinite from about a dozen blocks on (20, 24, 25 Oct: 22-29 blocks)
 EXACT_TIE_COVARIANCE = True
-# 0.94.6: after Ceres' solve, Levenberg-Marquardt with the ties as exact constraints (mppp.calib.tiesolve): the
+# 0.94.4: after Ceres' solve, Levenberg-Marquardt with the ties as exact constraints (mppp.calib.tiesolve): the
 # units set from the globals, so the result is the law's own optimum whatever the sigmas
 EXACT_TIE_SOLVE = True
 BIN_DEG = 2.0                    # fine bins; within a bin the images' own temperatures count (keypoint map)
@@ -75,14 +75,14 @@ MAX_SPAN_SOLS = 50.0                 # rig epochs of the joint: at most 50 sols 
 KNOTS_TESTED = tuple(float(k) for k in np.linspace(200.0, 400.0, 25))   # the pitch transitions after the BA (20 Oct)
 EARLY_SOL = 380.0
 KNOT_SOL = 250.0                 # the pitch hinge (the free-knot refit of 20 Oct: 250, range 200-290)
-# the runs hold the yaw (a constant yaw mirrors NR's cx) and, 0.94.6 (Christian 25 Oct: "set the least significant
+# the runs hold the yaw (a constant yaw mirrors NR's cx) and, 0.94.4 (Christian 25 Oct: "set the least significant
 # terms to a reasonable value"), k4 of each eye at the models in use: k1-k4 trade off (|r| 0.88-0.99) and the solve
 # crawled along that valley; held, the 12-block joint's scaled condition fell from 4.2e5 to 3.0e4, the k1-k3 sd 3-8x,
 # fx's sd 15 %, for a radial change of at most 0.08 / 0.18 px (NL / NR) at the very corner (theta 1.05 rad) and
 # 0.002 px at 0.5 rad; k4 = 0 is rejected (+1.4 / 1.6 px at the corner, cost +50)
 HOLD_DEFAULT = ("Q0_yaw", "G_NL_k4", "G_NR_k4")
-PASS_JUMP_FACTOR = 1.5           # 0.94.5: a pass starting this far above the last one's end gets one more pass
-EARLY_Z_MIN = 3.0                # 0.94.5 (Christian 24 Oct): an early-mission offset is kept only where |z| reaches this
+PASS_JUMP_FACTOR = 1.5           # 0.94.4: a pass starting this far above the last one's end gets one more pass
+EARLY_Z_MIN = 3.0                # 0.94.4 (Christian 24 Oct): an early-mission offset is kept only where |z| reaches this
 ISO_F = True    # one focal slope per eye (fy's ppm/degC = fx's): 20 Oct joint fx/fy 36.0/37.1, 35.6/35.3 ppm/degC,
                 # the per-block bins fy-fx +2.0 +- 4.3, +3.7 +- 4.5 ppm/degC (Christian: "set those equal if possible")
 _IDX = {n: i for i, n in enumerate(("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1"))}
@@ -334,7 +334,7 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
     newproj.settings = dict(newproj.settings)
     newproj.settings["database"] = {"cameras": db}
     newproj.settings["navcam_rig_yaw"] = "refine"
-    # 0.94.5: the roll too - the blocks hold it (0.91: per epoch it is poorly determined) and their settings come
+    # 0.94.4: the roll too - the blocks hold it (0.91: per epoch it is poorly determined) and their settings come
     # through merge_scapes, so the joint held every unit's roll at its start and the global roll and roll rate were
     # never refitted (20-24 Oct: -56.795270 mdeg and -4.933370 mdeg/1000 sol to 7 digits, sd 6e-5 mdeg)
     newproj.settings["navcam_rig_roll"] = "refine"
@@ -419,7 +419,7 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
             ims = [d.id for d in fr.data_ids if d.id in reg]
             if not ims or any(int(rec.images[i].camera_id) not in cmap for i in ims):
                 continue
-            nc, nr_ = cmap[int(rec.images[ims[0]].camera_id)]
+            _, nr_ = cmap[int(rec.images[ims[0]].camera_id)]
             nf = pycolmap.Frame(frame_id=fid, rig_id=nr_)
             for i in ims:
                 nf.add_data_id(pycolmap.data_t(sensor_id=sensor(cmap[int(rec.images[i].camera_id)][0]), id=i))
@@ -494,8 +494,8 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
 
     def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
         n_cam = n_rig = 0
-        tie_ids = []                                         # 0.94.6: for the exact-tie covariance
-        specs = []                                           # 0.94.6: the ties as constraints (mppp.calib.tiesolve)
+        tie_ids = []                                         # 0.94.4: for the exact-tie covariance
+        specs = []                                           # 0.94.4: the ties as constraints (mppp.calib.tiesolve)
         if tie_cameras:
             for cid, u in units["cameras"].items():
                 blk = cam_blocks.get(int(cid))
@@ -610,7 +610,7 @@ def keypoint_terms(units: Dict[str, Any], proj, temps: Dict[str, float], g: Dict
             continue
         eye, dT = eye_unit[cid], float(T) - T_unit[cid]
         Gs, Ss = g[f"G_{eye}"], g[f"S_{eye}"]
-        # 0.94.5: with one relative slope (iso) fy's scale is fx's - the ties' - not the held S_fy of the last sync
+        # 0.94.4: with one relative slope (iso) fy's scale is fx's - the ties' - not the held S_fy of the last sync
         ks[iid] = (1.0 + Ss[0] / Gs[0] * dT, 1.0 + (Ss[0] / Gs[0] if iso_f else Ss[1] / Gs[1]) * dT)
         shift[iid] = np.array([Ss[2] * dT, Ss[3] * dT])
     kmap = (lambda iid, k, cam, _s=shift: k - _s[iid] if iid in _s else k)        # noqa: E731
@@ -647,7 +647,7 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
         if verbose:
             log.info(f"  pass {p_ + 1}: {ba['brief'][:160]}")
         costs.append((float(ba.get("initial_cost", np.nan)), float(ba.get("final_cost", np.nan))))
-        # 0.94.5: a pass that starts far above where the last one ended (24 Oct: 2.54e6 after 1.82e5) means the
+        # 0.94.4: a pass that starts far above where the last one ended (24 Oct: 2.54e6 after 1.82e5) means the
         # keypoint map or the ties moved between passes - one more pass, so the covariance is taken at a settled point
         if (last and len(costs) >= 2 and n_pass < int(passes) + 1 and np.isfinite(costs[-1][0])
                 and costs[-1][0] > PASS_JUMP_FACTOR * costs[-2][1]):
@@ -712,7 +712,7 @@ def _sd_from_units(cov: Dict[str, Any], st: Dict[str, Any], units: Dict[str, Any
 
 
 def global_covariance(cov: Dict[str, Any], held: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """0.94.6: the exact-tie covariance of every free global term with every other, named (``G_NL_k3``, ``D_pitch``
+    """0.94.4: the exact-tie covariance of every free global term with every other, named (``G_NL_k3``, ``D_pitch``
     ...), in the problem's units (unit variance factor x the problem's variance factor)."""
     full = (cov.get("extra_exact") or {}).get("full")
     if not full:
@@ -730,7 +730,7 @@ def global_covariance(cov: Dict[str, Any], held: Dict[str, Any]) -> Optional[Dic
 
 def global_correlations(cov: Dict[str, Any], held: Dict[str, Any], min_abs: float = 0.8, top: int = 25
                         ) -> List[Dict[str, Any]]:
-    """0.94.6: the strongest correlations between the global terms (from the exact-tie covariance): pairs with
+    """0.94.4: the strongest correlations between the global terms (from the exact-tie covariance): pairs with
     |r| >= ``min_abs``, strongest first - what the data cannot tell apart (e.g. a thermal slope and a drift in sol,
     when temperature follows the season)."""
     gc = global_covariance(cov, held)
@@ -881,7 +881,7 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
     early_held, judged = early_terms_to_hold(res, early_z_min)
     res_first = None
     if early_held:
-        # 0.94.5 (Christian 24 Oct): the offsets without significant evidence set to 0 and held, the joint again
+        # 0.94.4 (Christian 24 Oct): the offsets without significant evidence set to 0 and held, the joint again
         if verbose:
             log.info("tied joint: early-mission offsets not significant (|z| < %g), set to 0 and refitted: %s"
                      % (early_z_min, ", ".join(early_held)))
@@ -1154,7 +1154,7 @@ def describe_result(res: Dict[str, Any]) -> List[str]:
 
 
 def covariance_line(res: Dict[str, Any]) -> str:
-    """0.94.6: what the covariance is - its method, whether the global terms got their own finite sd (the log said
+    """0.94.4: what the covariance is - its method, whether the global terms got their own finite sd (the log said
     "covariance ok" on 24 and 25 Oct while every rig sd was infinite)."""
     if res.get("covariance_error"):
         return f"FAILED ({res['covariance_error']})"
@@ -1208,7 +1208,7 @@ def write_tied(res: Dict[str, Any], out_dir: PathLike, note: str = "", template_
                               "applied_terms": [k for k in EARLY_TERMS if k in em["offsets_px"]
                                                 and f"E_{eye}_{k}" not in set((res.get("early_test") or {}).get("held") or ())],
                               "note": "tied joint: the offsets of this eye for the images before before_sol (weighted by "
-                                      "a block's share of early images); 0.94.5: kept only where |z| >= "
+                                      "a block's share of early images); 0.94.4: kept only where |z| >= "
                                       f"{(res.get('early_test') or {}).get('z_min', EARLY_Z_MIN):g}, the others 0 and held"}
         if em.get("sd_px"):
             c["early_mission"]["sd_px"] = {k: float(v) for k, v in em["sd_px"].items() if np.isfinite(v)}

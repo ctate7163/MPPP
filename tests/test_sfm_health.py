@@ -326,7 +326,7 @@ def test_label_pointing_checks_do_not_keep_a_block_out_of_the_joints():
 
 
 def test_a_zoom_joint_judges_the_block_on_its_zoom(tmp_path):
-    """0.94.5 (Chal Rocks Mastcam-Z, 24 Oct): 30 % of the frames excluded, nearly all at 79 mm - a FAIL that kept the
+    """0.94.4 (Chal Rocks Mastcam-Z, 24 Oct): 30 % of the frames excluded, nearly all at 79 mm - a FAIL that kept the
     block out of the Z34 joint.  The joint of one zoom counts that zoom's frames (and the Navcam, Hazcams) only."""
     import json as _json
     from mppp.sfm.health import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom

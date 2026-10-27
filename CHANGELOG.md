@@ -4,6 +4,11 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- `mppp calib lawcheck` (27 Oct): the 25 Oct law check as a command - each Navcam law (`--law LABEL=DIR`, default the models in use) against the finished Navcam blocks into `law_validation.json` and `report.md` (figures: `studies/calibration/plot_lawcheck.py`).
+- **Navcam run keys no longer change with a Mastcam-Z promotion** (27 Oct: the Z48 promotion queued every Navcam site again): the camera-model fingerprint of a Navcam (+ Hazcam) block leaves out the Mastcam-Z focus models (`models_fingerprint(include_zcam=False)`); a Mastcam-Z block's key keeps them. Navcam blocks finished before this run again once (their keys were stale anyway).
+- A plain `python scripts\run_sites.py` (and the other entry scripts, `mppp`) sets `KMP_DUPLICATE_LIB_OK` itself, as `mppp_env.bat` does (27 Oct: Seitah Overlook started from PowerShell aborted on OpenMP).
+- Clean-up (27 Oct audit): the interim version tags 0.94.5 / 0.94.6 in comments and docstrings are 0.94.4 (the release they are in); an unused matrix in the exact-tie solve and two unused variables gone.
+- Sites (Christian, 27 Oct): the second Bright Angel entry `bright_angle` (sol 1177, "Bright Angel Outcrop") is gone; the consensus lists name the official block's site `bright_angel` (sols 1176-1181, 1219; 34 and 63 mm).
 - Sites (Christian, 27 Oct): Enchanted Lake runs no mask inference on ZCAM07115 (`no_mask_inference_at`).
 - Exclusions (Christian, 27 Oct): sequence ZCAM01025 no longer kept (`seq:ZCAM01*` leaves it out) and exposure `0556_0716304025_894` (Enchanted Lake) on the global exclude list.
 - Sites and groups (Christian, 27 Oct): a new unofficial block `bright_angle_large`, sols 1175-1220 (19 waypoints, 164 m across, rover sites 53-56; Navcam and Hazcams). New lists: `zcam_consensus` with Bright Angel (Chal Rocks stays, not Chal Rocks Large); `hazcam_consensus` without Three Forks North; per-zoom lists `zcam48/63/79/110_consensus` with Seitah Overlook (63: Taylorfjellet, Marble Mountain; 110: Belva Crater).

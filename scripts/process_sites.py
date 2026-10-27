@@ -29,6 +29,8 @@ and its status in ``<WORK>/mppp_status.json``; this script's log is ``<root>/pro
 that fails is logged and the next one starts.
 """
 from __future__ import annotations
+import os as _os
+_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as mppp_env.bat - two OpenMP runtimes (torch, pycolmap) abort a plain "python" start
 
 import argparse
 import os

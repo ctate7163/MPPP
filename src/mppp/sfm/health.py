@@ -980,7 +980,7 @@ def _group_zoom(grp: str) -> Optional[int]:
 
 
 def restrict_to_zoom(report: Dict[str, Any], colmap_dir: PathLike, zoom: int) -> List[str]:
-    """0.94.5 (24 Oct, Chal Rocks Mastcam-Z: 30.2 % excluded, 180 of the 194 frames at 79 mm): for a joint of one
+    """0.94.4 (24 Oct, Chal Rocks Mastcam-Z: 30.2 % excluded, 180 of the 194 frames at 79 mm): for a joint of one
     zoom, the excluded fraction counted over the Navcam, Hazcam and that zoom's images only (the other zooms' frames
     are not the joint's).  Changes the report's ``excluded_fraction`` value in place; returns notes.  0.94.4 (27 Oct):
     the camera-model checks of the other zooms' Mastcam-Z cameras are taken out of the report too."""
@@ -1037,7 +1037,7 @@ def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = Non
         if name == "corner_triangulated_ratio" and report.get("coverage_by_radius"):
             cams = report["coverage_by_radius"].get("cameras") or {}
             skip = set(zcam_uncalibrated_groups(cams))
-            if report.get("zoom_restricted") is not None:  # 0.94.5: a joint of one zoom judges that zoom's corners
+            if report.get("zoom_restricted") is not None:  # 0.94.4: a joint of one zoom judges that zoom's corners
                 skip |= {g for g in cams if _group_zoom(g) not in (None, int(report["zoom_restricted"]))}
             wc = _corner_ratio(report["coverage_by_radius"], skip_groups=sorted(skip))
             v = wc[1] if wc else None

@@ -67,7 +67,7 @@ def test_sites_json_is_the_site_list():
         assert all(a <= b for a, b in S.sol_ranges(v["sols"])) and isinstance(v.get("settings", {}), dict), k
     assert {"rockytop", "south_arm", "taylorfjellet"} <= set(S.zcam34_sites(t)) and "van_zyl_overlook" not in S.zcam34_sites(t)
     assert all(isinstance(v.get("zcam"), list) and set(v["zcam"]) <= {34, 48, 63, 79, 110} for v in t["sites"].values())
-    assert 34 in S.site_zooms(t["sites"]["chal_rocks"]) and "bright_angle" in S.zcam_sites(t, zoom=63)
+    assert 34 in S.site_zooms(t["sites"]["chal_rocks"]) and "bright_angel" in S.zcam_sites(t, zoom=63) and "bright_angle" not in t["sites"]
     zc = set(t["groups"]["zcam_consensus"])
     assert all(S.site_zooms(t["sites"][m]) for m in zc)
     for g in ("ecam_consensus", "zcam34_consensus", "zcam48_consensus", "zcam63_consensus"):

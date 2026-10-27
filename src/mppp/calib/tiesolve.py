@@ -1,5 +1,5 @@
 """
-The tied joints solved with the ties as exact constraints (0.94.6, Christian 25 Oct 2026: "write each unit's camera as
+The tied joints solved with the ties as exact constraints (0.94.4, Christian 25 Oct 2026: "write each unit's camera as
 a function of the globals, so there are no tie residuals at all").
 
 The joints tie each unit (bin camera, rig unit) to the global terms with stiff linear residuals (``LinearTie``, sigma
@@ -215,7 +215,6 @@ def exact_tie_refine(prob, ties: Sequence[Dict[str, Any]], point_blocks: Sequenc
             for jy in np.nonzero(coef)[0]:
                 Tr.append(int(ucols_all[cu])); Tc.append(nf + int(jy)); Tv.append(float(coef[jy]))
         T = sp.csr_matrix((Tv, (Tr, Tc)), shape=(r_dim, nf + ky))
-        Tg = T[np.sort(gidx)] if False else None                # (globals updated through Ng below)
 
         def snapshot():
             return [np.array(a, copy=True) for a in plist]

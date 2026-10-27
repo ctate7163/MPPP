@@ -208,14 +208,16 @@ def _zoom_of_group(g: str) -> Optional[int]:
         return None
 
 
-def models_fingerprint(folder: Optional[PathLike] = None) -> Optional[str]:
+def models_fingerprint(folder: Optional[PathLike] = None, include_zcam: bool = True) -> Optional[str]:
     """SHA-256 (16 hex) over the Navcam model files, the Hazcam files and the Mastcam-Z focus models of ``folder``
-    (default: in use): part of the run key, so that a promotion makes a batch align every site again."""
+    (default: in use): part of the run key, so that a promotion makes a batch align every site again.
+    ``include_zcam=False`` (0.94.4, 27 Oct): without the Mastcam-Z focus models - the key of a Navcam (+ Hazcam) block,
+    which no Mastcam-Z promotion changes (a Z48 promotion queued every Navcam site again)."""
     d = _folder(folder)
     h = hashlib.sha256()
     n = 0
     names = list(NAVCAM_FILES) + sorted(set(CAMERA_FILE.values()) - set(NAVCAM_FILES)) + sorted(RIG_FILE.values())
-    files = [d / x for x in names] + sorted(d.glob("M2020_ZCAM*_focus_model.json"))
+    files = [d / x for x in names] + (sorted(d.glob("M2020_ZCAM*_focus_model.json")) if include_zcam else [])
     for f in files:
         if f.is_file():
             h.update(f.name.encode())

@@ -1,5 +1,5 @@
 """
-The Hazcam joint (0.94.5, Christian 24 Oct 2026): the Hazcam law fitted directly on the image observations of every
+The Hazcam joint (0.94.4, Christian 24 Oct 2026): the Hazcam law fitted directly on the image observations of every
 block at once, each frame at its own camera temperature, instead of a line through one refined camera per block.
 
 "Bin the hazcams by temp and fit the slope directly in the joint instead of just fitting the scattered points ...
@@ -489,7 +489,7 @@ def eye_result(j: Dict[str, Any], eye: str, rows: List[Dict[str, Any]], start: n
     applied = [t for t, n in (("fx", ex), ("fy", ey)) if n in law.ix and n not in law.held]
     sd_s = _sd(law, cov, sn)
     src_note = ("own slope" if law.mode == "per_eye" else "slope shared by all four eyes" if law.mode == "all"
-                else f"FL's slope (Christian 24 Oct: the same thermal slope front and rear)")
+                else "FL's slope (Christian 24 Oct: the same thermal slope front and rear)")
     out = {"eye": eye, "method": "joint", "blocks": sorted({im["block"] for im in ims}), "weak_blocks": [],
            "outlier_blocks": [], "params": [float(v) for v in p], "ppm_per_degC": 1e6 * s,
            "sd_ppm_per_degC": None if sd_s is None else 1e6 * sd_s,

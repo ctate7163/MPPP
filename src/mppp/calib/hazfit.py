@@ -122,7 +122,7 @@ def _wls(X: np.ndarray, y: np.ndarray, w: np.ndarray):
     return beta, cov, r
 
 
-EARLY_Z_MIN = 3.0                  # 0.94.5 (Christian 24 Oct): an early-mission offset only where significant
+EARLY_Z_MIN = 3.0                  # 0.94.4 (Christian 24 Oct): an early-mission offset only where significant
 
 
 def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False, min_blocks: Optional[int] = None,
@@ -189,7 +189,7 @@ def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False, min_bl
     v = dict(zip(cols, beta))
     s = dict(zip(cols, sd))
     if fit_early:
-        # 0.94.5 (Christian 24 Oct): the early-mission offsets stay 0 until there is significant evidence for them
+        # 0.94.4 (Christian 24 Oct): the early-mission offsets stay 0 until there is significant evidence for them
         z = {k: (v[k] / s[k] if s[k] > 0 else 0.0) for k in ("ex", "ey")}
         if max(abs(z["ex"]), abs(z["ey"])) < EARLY_Z_MIN:
             out2 = fit_eye(rows, eye, athermal=athermal, min_blocks=min_blocks, early_offsets=False)

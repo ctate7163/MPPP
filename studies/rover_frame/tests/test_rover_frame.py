@@ -190,7 +190,7 @@ def test_other_rover_pose_is_carried_over():
     assert res["fits"]["NL"]["measured"]["n"] < res["fits"]["NL"]["pooled"]["n"]
 
 
-# --- the rover kernels (0.94.5, Christian 24 Oct: estimate and save them with spiceypy) -----------------------------
+# --- the rover kernels (0.94.4, Christian 24 Oct: estimate and save them with spiceypy) -----------------------------
 
 LSK = r"""KPL/LSK
 \begindata

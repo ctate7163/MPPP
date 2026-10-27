@@ -25,6 +25,8 @@ Progress: ``<WORK>/runs/<time>/log.txt`` and ``<WORK>/mppp_status.json`` (``--st
 heartbeat is older than 5 minutes has stopped).
 """
 from __future__ import annotations
+import os as _os
+_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as mppp_env.bat - two OpenMP runtimes (torch, pycolmap) abort a plain "python" start
 
 import argparse
 import sys

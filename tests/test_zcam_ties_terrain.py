@@ -97,7 +97,7 @@ def test_zoom_ladder_63_to_110_tie_through_wider_zooms():
 
 
 def test_long_zoom_ties_with_two_looks_and_through_its_mosaic():
-    """0.94.5 (Christian, 24 Oct; Chal Rocks 79 mm): a tie with a wider zoom counts with two looks, and a long-zoom
+    """0.94.4 (Christian, 24 Oct; Chal Rocks 79 mm): a tie with a wider zoom counts with two looks, and a long-zoom
     frame with fewer direct ties is anchored through the frames of its own mosaic that are anchored."""
     from mppp.sfm.reconstruction import (ZCAM_MIN_NAVCAM_TIES, ZCAM_MOSAIC_TIES, mosaic_anchored, navcam_tie_counts,
                                          zcam_anchor_ties)
@@ -120,7 +120,7 @@ def test_long_zoom_ties_with_two_looks_and_through_its_mosaic():
 
 
 def test_uncalibrated_zoom_residuals_not_judged_early():
-    """0.94.5: a zoom without a calibrated focus model is not excluded on its residual before the final test."""
+    """0.94.4: a zoom without a calibrated focus model is not excluded on its residual before the final test."""
     from mppp import calib
     from mppp.sfm.reconstruction import uncalibrated_zooms
     images = {50: _Image(_zname("L", 79, 4), [0, 0, 2]), 20: _Image(_zname("L", 34, 1), [0, 0, 2]),

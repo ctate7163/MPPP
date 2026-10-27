@@ -1,4 +1,4 @@
-"""The Hazcam joint (0.94.5, Christian 24 Oct): the slope fitted on the observations, FL's slope for all four eyes,
+"""The Hazcam joint (0.94.4, Christian 24 Oct): the slope fitted on the observations, FL's slope for all four eyes,
 the early-mission offsets kept only where significant, the temperature bins."""
 import json
 

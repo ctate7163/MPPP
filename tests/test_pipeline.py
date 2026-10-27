@@ -266,7 +266,7 @@ def test_pipeline_settings_v0p73():
     s = Settings()
     assert s.zcam_bin_refine == "focal_pp" and s.zcam_backlash == "list"
     assert s.zcam_line_params == {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"], "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]}
-    assert s.zcam_low_backlash_found == "auto"                    # 0.94.6: the found list on again (0.93.6: off)
+    assert s.zcam_low_backlash_found == "auto"                    # 0.94.4: the found list on again (0.93.6: off)
 
 
 def test_resolved_site_carries_the_visits(tmp_path):
@@ -317,3 +317,22 @@ def test_one_eye_exposures():
              "ZL0_0122_0677784010_631RAD_N0041422ZCAM08000_0340LMJ01.IMG"]
     assert one_eye_exposures(paths) == ["FRF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J01",
                                         "NLF_0122_0677784999_000RAD_N0041422NCAM00500_0A0295J01"]
+
+
+def test_navcam_run_key_ignores_the_zcam_models(tmp_path, monkeypatch):
+    """27 Oct: promoting a Mastcam-Z model (Z48) queued every Navcam site again - a Navcam block's key now leaves
+    the Mastcam-Z focus models out of the camera-model fingerprint; a Mastcam-Z block's keeps them."""
+    import shutil
+    from mppp import calib
+    from mppp.calib.models import models_fingerprint
+    src = Path(calib.__file__).parent.parent / "data" / "cmods"
+    d = tmp_path / "cmods"
+    shutil.copytree(src, d)
+    nav0, all0 = models_fingerprint(d, include_zcam=False), models_fingerprint(d)
+    (d / "M2020_ZCAM048_focus_model.json").write_text("{}")
+    assert models_fingerprint(d, include_zcam=False) == nav0 and models_fingerprint(d) != all0
+    from mppp import pipeline as P
+    seen = []
+    monkeypatch.setattr(calib, "models_fingerprint", lambda include_zcam=True: seen.append(include_zcam) or str(include_zcam))
+    P.run_key({"include_zcam": False}); P.run_key({"include_zcam": True})
+    assert seen == [False, True]

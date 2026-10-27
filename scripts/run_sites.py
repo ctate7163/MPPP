@@ -25,6 +25,8 @@ GPU steps take turns (:class:`mppp.sfm.gpu.gpu_lock`).  With more than one job e
 to ``<WORK>/runs/console_<time>.txt``.
 """
 from __future__ import annotations
+import os as _os
+_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as mppp_env.bat - two OpenMP runtimes (torch, pycolmap) abort a plain "python" start
 
 import argparse
 import os

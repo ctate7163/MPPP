@@ -1,6 +1,6 @@
 @echo off
 REM ======================================================================================================
-REM MPPP 0.94.6 - run_zcam_states.bat (Christian, 25 Oct 2026): which Mastcam-Z frames are in the low backlash state?
+REM MPPP 0.94.4 - run_zcam_states.bat (Christian, 25 Oct 2026): which Mastcam-Z frames are in the low backlash state?
 REM
 REM Aligns the Navcam + Mastcam-Z block of each site again as the variant "states" (WORK\colmap_states; the
 REM blocks' own colmap\ is not touched, and its features and matches are reused) with every Mastcam-Z image as a

@@ -1,5 +1,5 @@
 """
-How well a Navcam law predicts the cameras on Mars (0.94.6; Christian, 25 Oct 2026: "load the colmap files with the
+How well a Navcam law predicts the cameras on Mars (0.94.4; Christian, 25 Oct 2026: "load the colmap files with the
 global camera, rig and other kernels so that we know how good those global solutions are ... This a key place
 where we empirically say how good our camera models are at predicting the real behavior of cameras on Mars").
 

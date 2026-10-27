@@ -48,7 +48,7 @@ RUN_SETTINGS = "run_settings.json"
 
 # Bumped when the alignment code changes its results under unchanged settings (a default changed in the code, not
 # in the settings), so that the batch scripts align every site again instead of skipping it as done.
-ZCAM_RULES = 2                   # 0.94.5: a long zoom anchored through a wider zoom with 2 looks or through its mosaic (1, 0.93.4: a partly listed focus group, unique _reg names)
+ZCAM_RULES = 2                   # 0.94.4: a long zoom anchored through a wider zoom with 2 looks or through its mosaic (1, 0.93.4: a partly listed focus group, unique _reg names)
 ALIGN_RULES = 92                 # 0.94.4: Hazcam + Mastcam-Z points need a Navcam look (91: isolated two-view points deleted; 89: Hazcam eye from 500 observations)
 # Likewise for the selection and processing rules (process_done.json).
 PROCESS_RULES = 6                # 0.94.0: the shipped exclusion list before the processing (5: own stations on other sols)
@@ -138,7 +138,7 @@ class Settings:
     zcam_intrinsics: str = "focus_model"          # Mastcam-Z start: "focus_model" (the promoted model) or "label"
     zcam_focus_model: Optional[Path] = None       # a focus-model JSON to start from; None: the one in use
     zcam_focus_bin: Optional[float] = 30          # focus motor counts per Mastcam-Z camera (None: one camera per eye)
-    zcam_bin_by: str = "focus"                    # 0.94.6: the Mastcam-Z cameras - "focus" (focus bins), "sequence" (focus bins of each sol and sequence), "image" (one camera per image: its own focal length - the states run)
+    zcam_bin_by: str = "focus"                    # 0.94.4: the Mastcam-Z cameras - "focus" (focus bins), "sequence" (focus bins of each sol and sequence), "image" (one camera per image: its own focal length - the states run)
     zcam_bin_refine: str = "focal_pp"             # a focus-bin camera refines fx, fy and on ZR cx, cy ("focal_pp"); "focal", "all", "model"
     zcam_line_params: Dict[str, List[str]] = field(default_factory=lambda: {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"],
                                                                             "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]})   # the focus parameters stage 2 puts on a line per eye
@@ -147,7 +147,7 @@ class Settings:
     # list's frames get their own (low-state) cameras; a block's focal fits only report groups that look low
     zcam_backlash: Optional[str] = "list"         # focus backlash states: "list", "list_split", "split", "report" or None
     zcam_low_backlash: Any = None                 # the low-backlash observation list; None: the shipped CSV; False: none
-    # 0.94.6 (Christian, 25 Oct: "always use this list"): the found list again, with the shipped one - curated by
+    # 0.94.4 (Christian, 25 Oct: "always use this list"): the found list again, with the shipped one - curated by
     # hand and by `mppp zcam states --apply` ("-" lines take frames off; 0.93.6 had it off after Seitah Overlook's
     # high-state pointings 2 and 4 of ZCAM08114 got in); "auto" = <scapes_root>/zcam_low_backlash_found.csv
     zcam_low_backlash_found: Any = "auto"
@@ -225,10 +225,10 @@ class Settings:
         if d.get("lightglue_keypoints") in (None, "largest"):
             d.pop("lightglue_keypoints", None)       # 0.94.4: the keys of every run before it stay what they were
         if d.get("zcam_bin_by") in (None, "focus"):
-            d.pop("zcam_bin_by", None)               # 0.94.6: likewise
+            d.pop("zcam_bin_by", None)               # 0.94.4: likewise
         if not d.get("include_zcam"):
-            d["zcam_low_backlash_found"] = None      # 0.94.6: the found list is a Mastcam-Z setting (Navcam keys stay)
-            if d.get("exclude"):                     # 0.94.6: a Mastcam-Z sequence left out does not change a Navcam run
+            d["zcam_low_backlash_found"] = None      # 0.94.4: the found list is a Mastcam-Z setting (Navcam keys stay)
+            if d.get("exclude"):                     # 0.94.4: a Mastcam-Z sequence left out does not change a Navcam run
                 d["exclude"] = [e for e in d["exclude"] if not str(e).strip().lower().startswith("seq:zcam")]
         return d
 
@@ -370,7 +370,8 @@ def run_key(settings: Union[Settings, Dict[str, Any]], source: Optional[str] = N
             d["zcam_rules"] = ZCAM_RULES             # a Mastcam-Z block's own rules: the Navcam-only keys stay
         try:
             from .calib import models_fingerprint
-            d["cmods"] = models_fingerprint()
+            zc = bool(isinstance(d["settings"], dict) and d["settings"].get("include_zcam"))
+            d["cmods"] = models_fingerprint(include_zcam=zc)    # 27 Oct: a Navcam block's key without the Z models
         except Exception:                                                  # noqa: BLE001
             d["cmods"] = None
     txt = json.dumps(d, sort_keys=True, default=str)
@@ -836,7 +837,7 @@ def wanted_project_settings(s: Settings, work: Path) -> Dict[str, Any]:
             "zcam_bin_by": (s.zcam_bin_by or "focus") if z else None,
             "zcam_rig": s.zcam_rig, "zcam_rig_refine": s.zcam_rig_refine,
             "zcam_low_backlash_sha256": low_backlash_fingerprint(s.zcam_low_backlash, found) if z else None,
-            "zcam_focus_below_sha256": _focus_below_sha(found) if z else None,      # 0.94.6
+            "zcam_focus_below_sha256": _focus_below_sha(found) if z else None,      # 0.94.4
             "zcam_line_params": ({str(k): list(v) for k, v in s.zcam_line_params.items()}
                                  if (s.zcam_line_params and z) else None),
             "zcam_rig_fit": s.zcam_rig_fit if z else None,

@@ -1,5 +1,5 @@
 """
-The rover kernels of study 3A in SPICE form, written with spiceypy (0.94.5, Christian 24 Oct 2026):
+The rover kernels of study 3A in SPICE form, written with spiceypy (0.94.4, Christian 24 Oct 2026):
 
 - ``m2020_surf_rover_mppp_<block>_v01.bc`` (CK type 3): ``M2020_ROVER`` (-168000) relative to ``M2020_LOCAL_LEVEL``
   (-168910), as NAIF's telemetry CKs.  One segment per interval of :func:`rover_frame.estimate.intervals`, the

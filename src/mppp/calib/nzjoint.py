@@ -67,7 +67,7 @@ def adjust_nz(rec, proj, idx, st, units, zunits, sg, hold: Sequence[str] = T.HOL
         return {"cov_blocks": {**(a.get("cov_blocks") or {}), **(b.get("cov_blocks") or {})},
                 "ties": {"navcam": a.get("ties"), "zcam": b.get("ties")},
                 "held": {**(a.get("held") or {}), **(b.get("held") or {})},
-                "tie_ids": list(a.get("tie_ids") or []) + list(b.get("tie_ids") or []),    # 0.94.6: both sets
+                "tie_ids": list(a.get("tie_ids") or []) + list(b.get("tie_ids") or []),    # 0.94.4: both sets
                 "tie_specs": list(a.get("tie_specs") or []) + list(b.get("tie_specs") or []),
                 "exact_solve": bool(a.get("exact_solve") and b.get("exact_solve"))}    # 26 Oct: off with the Mastcam-Z
 
@@ -200,7 +200,7 @@ def fit_nzjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = N
     # 1) the reference: Navcam held at its law, the Mastcam-Z law free
     t = time.time()
     rec_h, proj_h = copy.deepcopy(rec), copy.deepcopy(proj)
-    ba_h, gz_h, _ = Z.adjust_z(rec_h, proj_h, idx, st, units, zunits, sg, iterations=iterations, passes=passes,
+    _, gz_h, _ = Z.adjust_z(rec_h, proj_h, idx, st, units, zunits, sg, iterations=iterations, passes=passes,
                                covariance=False, verbose=verbose, hold=zhold)
     gn0 = {"G_NL": st["G"]["NL"], "G_NR": st["G"]["NR"], "S_NL": st["S"]["NL"], "S_NR": st["S"]["NR"],
            "E_NL": st["E"]["NL"], "E_NR": st["E"]["NR"], "Q0": st["Q0"], "D": st["D"], "H": st["H"]}

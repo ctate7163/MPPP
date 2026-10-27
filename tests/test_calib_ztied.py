@@ -82,7 +82,7 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None):
                 for eye, R, C in (("L", RL, CL), ("R", RR, CR)):
                     nm = f"Z{eye}0_{sol:04d}_{k:04d}.png"
                     is_reg = bool(reg) and eye == reg["eye"] and F == reg["F"]
-                    is_fb = bool(fb) and eye == fb["eye"] and F == fb["F"]       # 0.94.6: focus from below
+                    is_fb = bool(fb) and eye == fb["eye"] and F == fb["F"]       # 0.94.4: focus from below
                     zimgs.append({"_reg": is_reg, "_fb": is_fb, "name": nm, "stem": nm[:-4], "instrument": f"Z{eye}", "eye": eye, "sclk_key": sclk,
                                   "sol": sol, "site": 1, "drive": int(st[-4:]), "station": st, "sequence": "ZCAM00000",
                                   "downsample_scale": 1.0, "native_size": [ZW, ZH], "prior_C": C.tolist(),
@@ -106,14 +106,14 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None):
                + ("_reg" if r["_reg"] else ""))
         if key not in zcid:
             p = _law(model, r["camera_group"], r["focus_count"], "regular" if r["_reg"] else "backlash")
-            if r["_fb"]:                            # 0.94.6: the focus-from-below offset (px on fx, fy x aspect)
+            if r["_fb"]:                            # 0.94.4: the focus-from-below offset (px on fx, fy x aspect)
                 asp = p[1] / p[0]
                 p[0] += fb["offset_px"]
                 p[1] += fb["offset_px"] * asp
             if r["_reg"]:
                 p[2] += reg["offset"][0]
                 p[3] += reg["offset"][1]
-                if reg.get("ratio"):                # 0.94.6: this block's own high / low ratio
+                if reg.get("ratio"):                # 0.94.4: this block's own high / low ratio
                     p[:2] *= float(model["cameras"][r["camera_group"]]["regular_ratio"]) / float(reg["ratio"])
             rec.add_camera(pycolmap.Camera(camera_id=nid, model="FULL_OPENCV", width=ZW, height=ZH, params=p))
             proj.cameras[key] = {"model": "FULL_OPENCV", "params": p.tolist(), "width": ZW, "height": ZH,
@@ -369,7 +369,7 @@ def test_zcam_joint_gives_the_regular_state_its_own_principal_point(tmp_path, mo
 
 
 def test_zcam_joint_high_low_ratio_by_block(tmp_path, monkeypatch):
-    """0.94.6 (Christian, 24 Oct): the high / low ratio can vary by block - two blocks with ZL ratios 1.007 and
+    """0.94.4 (Christian, 24 Oct): the high / low ratio can vary by block - two blocks with ZL ratios 1.007 and
     1.011 (truth): with ratio_by "block" each block's ratio is recovered and the eye's is their mean; "global" fits
     one ratio between them."""
     from mppp.calib import forms
@@ -392,7 +392,7 @@ def test_zcam_joint_high_low_ratio_by_block(tmp_path, monkeypatch):
     res = run("block")
     g = {r["group"]: r for r in res["regular_ratio_groups"]}
     assert set(g) == {"blk_a", "blk_b"} and res["regular_ratio_by"] == "block"
-    assert res["covariance_method"].startswith("exact ties"), res.get("covariance_exact")    # 0.94.6
+    assert res["covariance_method"].startswith("exact ties"), res.get("covariance_exact")    # 0.94.4
     assert g["blk_a"]["ratio"] == pytest.approx(1.007, abs=3e-4) and g["blk_b"]["ratio"] == pytest.approx(1.011, abs=3e-4)
     assert g["blk_a"]["sd_ratio"] and g["blk_a"]["sd_ratio"] < 1e-3 and g["blk_a"]["sols"] == [500]
     t = res["eyes"]["ZL034"]["terms"]
@@ -409,7 +409,7 @@ def test_zcam_joint_high_low_ratio_by_block(tmp_path, monkeypatch):
 
 
 def test_zcam_joint_focus_from_below_offset(tmp_path, monkeypatch):
-    """0.94.6 (Christian, 26 Oct: two backlash effects superimposed): bins whose focus came into place from below
+    """0.94.4 (Christian, 26 Oct: two backlash effects superimposed): bins whose focus came into place from below
     ("_fb") share the focus slope with an intercept offset of their own; the joint recovers it (-3 px on ZL at
     focus 600 in one block), leaves the other eye without one, and writes it into the candidate model."""
     from mppp.calib import forms

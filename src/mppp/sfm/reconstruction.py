@@ -743,7 +743,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             per_image[iid] = (cam.model, cov, kps, [rig_blocks[(fr.rig_id, im.camera_id)], pose,
                                                     cam_blocks[int(im.camera_id)]], True)
     reproj, rig_reproj, add = cf.ReprojErrorCost, cf.RigReprojErrorCost, prob.add_residual_block
-    point_arrs: List[np.ndarray] = []                         # 0.94.6: for the exact-tie covariance
+    point_arrs: List[np.ndarray] = []                         # 0.94.4: for the exact-tie covariance
     for pid, pt in rec.points3D.items():
         xyz = pt.xyz
         point_arrs.append(xyz)
@@ -996,7 +996,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     if (extra_info or {}).get("exact_solve") and (extra_info or {}).get("tie_specs") \
             and (extra_info or {}).get("cov_blocks") and summary.termination_type != pyceres.TerminationType.FAILURE:
         # (no free global term - every global held, e.g. the pointing pass: the ties hold the units on the law already)
-        # 0.94.6: Levenberg-Marquardt on with the ties as exact constraints (mppp.calib.tiesolve)
+        # 0.94.4: Levenberg-Marquardt on with the ties as exact constraints (mppp.calib.tiesolve)
         from ..calib.tiesolve import exact_tie_refine
         free_ = list(pose_blocks.values()) + list(cam_blocks.values()) + list(rig_blocks.values()) + list(vblocks.values())
         xr = exact_tie_refine(prob, extra_info["tie_specs"], point_arrs, free_, extra_info["cov_blocks"],
@@ -1009,7 +1009,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         cov_out = _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att, pose_blocks,
                                      cam_blocks=cam_blocks, extra_blocks=(extra_info or {}).get("cov_blocks"))
         if (extra_info or {}).get("tie_ids") and (extra_info or {}).get("cov_blocks"):
-            # 0.94.6: the global terms of a tied joint with the ties eliminated exactly (COLMAP's estimator gave
+            # 0.94.4: the global terms of a tied joint with the ties eliminated exactly (COLMAP's estimator gave
             # them infinite on 22-29 blocks: tie weights of 1e16 next to data weights of 1e7) - last, as it takes
             # the tie residuals out of the problem
             from ..calib.tiecov import exact_tie_covariance
@@ -1649,7 +1649,7 @@ def _zoom_of(name: str) -> Optional[int]:
         return None
 
 
-# 0.94.5 (Christian, 24 Oct; Chal Rocks: 136 of the 214 79 mm frames excluded with "0 tie points with Navcam or a
+# 0.94.4 (Christian, 24 Oct; Chal Rocks: 136 of the 214 79 mm frames excluded with "0 tie points with Navcam or a
 # wider zoom"): a tie with a wider zoom counts with two looks (a 79 mm point seen by one 34 mm image); and a frame of a
 # long zoom with fewer direct ties is anchored through its own mosaic - ZCAM_MOSAIC_TIES tie points with frames of its
 # zoom that are anchored (directly or so).  At Chal Rocks a 79 mm frame shares a median 13,400 points, nearly all with
@@ -1664,7 +1664,7 @@ def navcam_tie_counts(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH,
     """Per registered Mastcam-Z image, its valid tie points with an anchor: 3-D points it observes whose track also
     holds an anchor image.  The anchors are the Navcam images (the track at least ``min_mixed_track_length`` long:
     the third look); for a zoom above ``navcam_only_max_zoom`` (48 mm) also the Mastcam-Z images at a shorter zoom (a
-    63 mm frame ties through 34 or 48 mm, a 110 mm frame through 34-79 mm; 0.94.5: from ``min_wider_track_length``
+    63 mm frame ties through 34 or 48 mm, a 110 mm frame through 34-79 mm; 0.94.4: from ``min_wider_track_length``
     looks, 2).  ``navcam_only_max_zoom=None``: Navcam only for every zoom."""
     return zcam_anchor_ties(rec, min_mixed_track_length, navcam_only_max_zoom, min_wider_track_length)[0]
 
@@ -1811,7 +1811,7 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
             n = sum(ties.get(int(d.id), 0) for d in rec.frames[fid].data_ids)
             f["navcam_ties"] = n
             if n < int(th["min_navcam_ties"]) and any(int(d.id) in through for d in rec.frames[fid].data_ids):
-                f["anchored_through_mosaic"] = True             # 0.94.5: a long zoom's mosaic ties it
+                f["anchored_through_mosaic"] = True             # 0.94.4: a long zoom's mosaic ties it
                 continue
             if n < int(th["min_navcam_ties"]):
                 z = _zoom_of(f["images"][0])
@@ -1822,7 +1822,7 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
     lenient = {int(z) for z in (th.get("lenient_zooms") or ())}
     for f in frames.values():
         if f["family"] == "Z" and lenient and _zoom_of(f["images"][0]) in lenient:
-            pass                    # 0.94.5: a zoom without a calibrated focus model, its focus lines still being fitted
+            pass                    # 0.94.4: a zoom without a calibrated focus model, its focus lines still being fitted
         elif f["observations"] and f["median_residual_px"] > lim:
             f["reasons"].append(f"median residual {f['median_residual_px']:.2f} px > {lim:.2f}")
         if f["observations"] == 0:
@@ -2244,7 +2244,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         th_ = dict(outlier_thresholds or {})
         if not navcam_ties:
             th_["min_navcam_ties"] = 0
-            # 0.94.5 (Chal Rocks 79 mm, 24 Oct): before the final test the zooms without a calibrated focus model are
+            # 0.94.4 (Chal Rocks 79 mm, 24 Oct): before the final test the zooms without a calibrated focus model are
             # not judged on their residuals - their focal lengths start at the labels (0.5-0.7 % off at 79 mm) and
             # are only fitted from round 2
             th_.setdefault("lenient_zooms", uncalibrated_zooms(rec))

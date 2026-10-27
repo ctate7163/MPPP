@@ -1,4 +1,4 @@
-"""0.94.6 (Christian, 25 Oct): the found list is always read (with "-" lines taking frames off), a states run gives
+"""0.94.4 (Christian, 25 Oct): the found list is always read (with "-" lines taking frames off), a states run gives
 every Mastcam-Z image its own camera, and `mppp zcam-states` tells which frames are in the low backlash state."""
 import json
 
@@ -33,7 +33,7 @@ def test_found_list_on_for_mastcamz_keys_only():
     s = Settings()
     assert s.zcam_low_backlash_found == "auto" and s.zcam_bin_by == "focus"
     k = s.key_dict()
-    assert k["zcam_low_backlash_found"] is None and "zcam_bin_by" not in k      # Navcam keys as before 0.94.6
+    assert k["zcam_low_backlash_found"] is None and "zcam_bin_by" not in k      # Navcam keys as before 0.94.4
     kz = s.replace(include_zcam=True).key_dict()
     assert kz["zcam_low_backlash_found"] == "auto"
     assert "zcam_bin_by" in s.replace(include_zcam=True, zcam_bin_by="image").key_dict()
@@ -53,7 +53,7 @@ def test_cameras_per_image_and_per_sequence():
     cams = _split_by_focus([dict(r) for r in rows], {"ZL034": base}, {"ZL034": "Z"}, 30.0, "focal", by="sequence")
     assert sorted(cams) == ["ZL034_F01000_s0100_ZCAM00001", "ZL034_F01002_s0101_ZCAM00002"]
     fbr = [dict(r) for r in rows]
-    fbr[1]["focus_below"] = True                     # 0.94.6: focus from below - a bin camera of its own ("_fb")
+    fbr[1]["focus_below"] = True                     # 0.94.4: focus from below - a bin camera of its own ("_fb")
     cams = _split_by_focus(fbr, {"ZL034": base}, {"ZL034": "Z"}, 30.0, "focal")
     fbk = [k for k in cams if k.endswith("_fb")]
     assert len(cams) == 2 and fbk == ["ZL034_F01001_fb"] and cams[fbk[0]]["focus_approach"] == "below"
@@ -135,7 +135,7 @@ def test_states_survey_low_high_mixed_and_proposal(tmp_path):
 
 
 def test_focus_from_below_list_and_motor_moves(tmp_path):
-    """0.94.6 (Christian, 26 Oct: two backlash effects superimposed): the focus-approach list is separate from the
+    """0.94.4 (Christian, 26 Oct: two backlash effects superimposed): the focus-approach list is separate from the
     zoom (low / high) list and applies at every zoom; the motor moves come from the previous frame of the eye."""
     from mppp.sfm.backlash import is_focus_from_below, is_low_backlash, load_focus_below, load_low_backlash, motor_moves
     fb = tmp_path / "zcam_focus_from_below.csv"

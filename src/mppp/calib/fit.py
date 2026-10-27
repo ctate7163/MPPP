@@ -1122,7 +1122,7 @@ def check_navcam(candidate_dir: PathLike, current_dir: Optional[PathLike] = None
     sd = res.get("sd") or {}
     finite = all(isinstance(sd.get(e), dict) and "diag" not in sd[e] and all(np.isfinite(list(sd[e].values())))
                  for e in ("NL", "NR"))
-    # 0.94.5 (24 Oct): the joint's own covariance is required - the bin-camera fallback ignores the correlations
+    # 0.94.4 (24 Oct): the joint's own covariance is required - the bin-camera fallback ignores the correlations
     # (3-4x small: +-0.14 against +-0.52 ppm/degC) and the rig terms' sd must be finite (24 Oct: pitch, yaw rate inf)
     fb = res.get("sd_source")
     rig_sd = res.get("rig_sd") or {}

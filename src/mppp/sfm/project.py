@@ -338,7 +338,7 @@ class SfmProject:
         ``zcam_focus_bin`` (default 30): each eye and zoom is split into cameras by focus motor count, bins at most
         this many counts wide (:func:`focus_bins`), named e.g. ``ZL034_F02312`` (the bin's median count).  None or 0:
         one camera per eye and zoom.
-        ``zcam_bin_by`` (0.94.6): ``"focus"`` (default) - the focus bins above; ``"sequence"`` - the focus bins of
+        ``zcam_bin_by`` (0.94.4): ``"focus"`` (default) - the focus bins above; ``"sequence"`` - the focus bins of
         each sol and sequence apart (``ZL034_F02312_s0121_ZCAM08114``); ``"image"`` - one camera per image
         (``ZL034_F02312_c0677678707``), each with its own focal length: the states run (``run_zcam_states.bat``).
         ``zcam_bin_refine``: ``"focal"`` - a bin camera refines fx, fy only; ``"focal_pp"`` - and on ZR cx, cy;
@@ -469,7 +469,7 @@ class SfmProject:
         from .backlash import (FOCUS_BELOW_FILE, is_focus_from_below, is_low_backlash, load_focus_below,
                                load_low_backlash, low_backlash_fingerprint)
         _lb = load_low_backlash(zcam_low_backlash, found=zcam_low_backlash_found)
-        # 0.94.6 (Christian, 26 Oct): the focus approach - frames whose focus came into place from below, the list
+        # 0.94.4 (Christian, 26 Oct): the focus approach - frames whose focus came into place from below, the list
         # next to the found list (<scapes>/zcam_focus_from_below.csv); they get their own bin cameras (``_fb``)
         _fb_file = (Path(zcam_low_backlash_found).parent / FOCUS_BELOW_FILE) if zcam_low_backlash_found else None
         _fb = load_focus_below(found=_fb_file) if _fb_file is not None else None
@@ -678,7 +678,7 @@ def station_labels(images: Iterable[Dict[str, Any]]) -> Dict[str, str]:
 
 
 def _bin_unit(r: Dict[str, Any], by: str) -> str:
-    """The part of a Mastcam-Z camera's name below its focus bin (0.94.6): "" ("focus"), ``s0121_ZCAM08114``
+    """The part of a Mastcam-Z camera's name below its focus bin (0.94.4): "" ("focus"), ``s0121_ZCAM08114``
     ("sequence"), ``c0677678707`` and the product's version ("image": the spacecraft clock, unique per eye)."""
     if by == "sequence":
         try:
@@ -792,9 +792,9 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
         gm = (model or {}).get("cameras", {}).get(group)
         all_counts = [r["focus_count"] for r in rows if r["focus_count"] is not None]
         focus_ref = float(np.median(all_counts)) if all_counts else None
-        # images of the known low-backlash (regular) focus state get their own bins; 0.94.6 ``by``: and each sol
+        # images of the known low-backlash (regular) focus state get their own bins; 0.94.4 ``by``: and each sol
         # and sequence its own ("sequence"), or each image ("image")
-        # 0.94.6: and the frames whose focus came into place from below (the focus-approach list) theirs ("_fb")
+        # 0.94.4: and the frames whose focus came into place from below (the focus-approach list) theirs ("_fb")
         bkeys = [(bb, r.get("focus_state") == "regular", _bin_unit(r, by), bool(r.get("focus_below")))
                  for r, bb in zip(rows, bins)]
         for b in sorted(set(bkeys)):
@@ -908,7 +908,7 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                 extra = dict(extra, backlash_state="regular", state_source="list")
             if not regular:                          # 0.93.5: every bin carries its state; 110 mm "single"
                 extra = dict(extra, backlash_state=("single" if forms.is_single_state(group) else "backlash"))
-            if fbelow:                               # 0.94.6: the focus approach - the model's offset, if it has one
+            if fbelow:                               # 0.94.4: the focus approach - the model's offset, if it has one
                 dfb = float((gm or {}).get("focus_below_offset_px") or 0.0)
                 if dfb:
                     a_ = params[1] / params[0]

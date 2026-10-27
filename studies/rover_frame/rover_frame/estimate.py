@@ -1,5 +1,5 @@
 """
-The rover attitude and position per rover pose, from the adjusted blocks (study 3A, 0.94.5, Christian 24 Oct 2026),
+The rover attitude and position per rover pose, from the adjusted blocks (study 3A, 0.94.4, Christian 24 Oct 2026),
 for the SPICE kernels of :mod:`rover_frame.spice`.  No new adjustment: the Hazcam body poses of
 :func:`rover_frame.analysis.body_groups` combined by the end-of-drive rule.
 
