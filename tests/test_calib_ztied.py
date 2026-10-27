@@ -434,3 +434,26 @@ def test_zcam_joint_focus_from_below_offset(tmp_path, monkeypatch):
     cand = Z.candidate_model(res, truth)
     assert cand["cameras"]["ZL034"]["focus_below_offset_px"] == pytest.approx(rows["ZL034"]["offset_px"])
     assert "focus_below_offset_px" not in cand["cameras"]["ZR034"]
+
+
+def test_joint_gate_rms_eyes_aspect_ratio_27oct():
+    """27 Oct: Z48 was promoted with ZR fy / fx 0.9928, ZL / ZR f0 1.8 % apart, fitted high / low ratios 0.9939 and
+    1.0231 (start kept, 'ok') and a Mastcam-Z rms of 3.3 px."""
+    from mppp.calib import ztied as Z
+    from mppp.calib.fit import check_zcam, ZCAM_MODEL_LIMITS
+    base = {"ok": True, "checks": []}
+    z = {"zcam_median_px": 0.19, "zcam_nonfinite_share": 0.0, "zcam_observations": 10}
+    assert Z.joint_checks({"zcam": dict(z, zcam_rms_px=0.8)}, base)["ok"]
+    bad = Z.joint_checks({"zcam": dict(z, zcam_rms_px=3.3)}, base)
+    assert not bad["ok"] and any(c["check"] == "Mastcam-Z residual rms" and not c["ok"] for c in bad["checks"])
+    assert ZCAM_MODEL_LIMITS["max_aspect_dev"] <= 0.003
+    new = {"cameras": {"ZL048": {"f0_px": 6671.1, "aspect": 1.0006, "regular_ratio": 1.0095,
+                                 "regular_ratio_note": "fitted regular ratio 0.9939 outside 1.004..1.016: the start ratio 1.0095 kept"},
+                       "ZR048": {"f0_px": 6789.0, "aspect": 0.99284, "regular_ratio": 1.0095}}}
+    old = {"cameras": {"ZL048": {"f0_px": 6700.1}, "ZR048": {"f0_px": 6703.7}}, "state": "calibrated"}
+    ch = {c["check"]: c["ok"] for c in check_zcam(new, old)["checks"]}
+    assert ch["ZL048 regular ratio"] is False and ch["ZR048 regular ratio"] is True
+    assert ch["ZR048 aspect"] is False and ch["ZL048 aspect"] is True
+    assert ch["eyes f0"] is False
+    new["cameras"]["ZR048"]["f0_px"] = 6680.0
+    assert {c["check"]: c["ok"] for c in check_zcam(new, old)["checks"]}["eyes f0"] is True

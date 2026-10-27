@@ -1272,7 +1272,7 @@ def promote_navcam(candidate_dir: PathLike, note: str, folder: Optional[PathLike
 
 
 # ====================================================================================== Mastcam-Z calibration
-ZCAM_MODEL_LIMITS = {"max_f0_change_pct": 1.5, "max_aspect_dev": 0.02, "max_k1": 1.5, "baseline_m": (0.20, 0.29),
+ZCAM_MODEL_LIMITS = {"max_f0_change_pct": 1.5, "max_aspect_dev": 0.003,    # 0.94.4: 0.3 % (was 2 %; Z48 0.9928, Z79 0.981 passed) "max_k1": 1.5, "baseline_m": (0.20, 0.29),
                      "max_rig_change_deg": 1.0, "max_rig_scatter_mdeg": 150.0, "max_baseline_scatter_mm": 3.0,
                      "max_tau_f_px": 10.0, "min_blocks": 3,
                      "max_p": forms.ZCAM_MAX_P, "max_tau_p": 1e-3,     # zcam-v2: |p1|, |p2| and their block scatter
@@ -1280,7 +1280,9 @@ ZCAM_MODEL_LIMITS = {"max_f0_change_pct": 1.5, "max_aspect_dev": 0.02, "max_k1":
                      "min_blocks_start": 2,
                      "max_regular_pp_offset_px": 10.0,   # 0.93.2: the regular state's principal point from the backlash's
                      "regular_ratio_range": (1.004, 1.016),   # 0.93.5: backlash / regular f (the states ~0.95 % apart)
-                     "max_regular_aspect_diff": 5e-4}     # 0.93.5: the state scales f, not the pixel aspect
+                     "max_regular_aspect_diff": 5e-4,     # 0.93.5: the state scales f, not the pixel aspect
+                     "max_eye_f0_diff_pct": 0.5,         # 0.94.4: ZL, ZR f0 of one zoom (one design; Z34 0.15 %, Z48 of 27 Oct 1.8 %)
+                     "fail_ratio_out_of_range": True}    # 0.94.4: a fitted high / low ratio outside the range fails (was: start kept, ok)
 REGULAR_RATIO_DEFAULT = 1.0095          # backlash / regular focal length when the blocks do not measure it
 
 
@@ -1765,8 +1767,12 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
         elif c.get("regular_ratio"):
             lo, hi = lim["regular_ratio_range"]
             rr_ = float(c["regular_ratio"])
-            add(f"{g} regular ratio", lo <= rr_ <= hi, f"backlash / regular f {rr_:.4f} ({lo:g}..{hi:g})"
-                + (f"; {c['regular_ratio_note']}" if c.get("regular_ratio_note") else ""))
+            note_ = str(c.get("regular_ratio_note") or "")
+            # 0.94.4: the fit put the states outside their physical range (Z48 of 27 Oct: 0.9939 and 1.0231) - the
+            # state assignment or the bins are wrong, which keeping the start ratio hides
+            bad_fit = bool(lim.get("fail_ratio_out_of_range")) and "outside" in note_
+            add(f"{g} regular ratio", lo <= rr_ <= hi and not bad_fit, f"backlash / regular f {rr_:.4f} ({lo:g}..{hi:g})"
+                + (f"; {note_}" if note_ else ""))
             bkl = (c.get("lines") or {}).get("backlash") or {}
             if all(isinstance(x.get(pn), dict) and x[pn].get("a") for x in (regl, bkl) for pn in ("fx", "fy")):
                 da = regl["fy"]["a"] / regl["fx"]["a"] - bkl["fy"]["a"] / bkl["fx"]["a"]
@@ -1797,6 +1803,12 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
             if isinstance(x, dict) and np.isfinite(x.get("chi2_dof_a", np.nan)):
                 add(f"{g} backlash {pn} block scatter", float(x.get("tau_a") or 0.0) <= lim["max_tau_f_px"],
                     f"between-block sd {float(x.get('tau_a') or 0.0):.1f} px (chi2/dof {x['chi2_dof_a']:.1f})")
+    # 0.94.4: the two eyes of one zoom have one optical design - their f0 agree to a few 0.1 %
+    f0s = {g: float(c["f0_px"]) for g, c in (new.get("cameras") or {}).items() if c.get("f0_px")}
+    if len(f0s) == 2:
+        (ga, fa), (gb, fb) = sorted(f0s.items())
+        d = 100.0 * abs(fa / fb - 1.0)
+        add("eyes f0", d <= lim["max_eye_f0_diff_pct"], f"{ga} {fa:.1f}, {gb} {fb:.1f} px ({d:.2f} %, <= {lim['max_eye_f0_diff_pct']:g})")
     rig = new.get("rig")
     if rig:
         b = float(rig.get("baseline_m") or 0.0)

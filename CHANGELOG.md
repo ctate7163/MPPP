@@ -4,6 +4,7 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- **Tighter Mastcam-Z model checks** (27 Oct: Z48 was promoted with ZR fy / fx 0.9928, its eyes' f0 1.8 % apart, fitted high / low ratios 0.9939 and 1.0231 and a Mastcam-Z rms of 3.3 px; Z79 of 26 Oct with aspect 0.981 and rms 29.6 px): the aspect within 0.3 % of 1 (was 2 %), the two eyes' f0 within 0.5 % (`eyes f0`), a fitted high / low ratio outside 1.004..1.016 fails instead of keeping the start ratio, and the joint's Mastcam-Z residual rms <= 1.5 px (`ZJOINT_LIMITS["max_zcam_rms_px"]`).
 - Mastcam-Z (Christian, 26 Oct): 34, 48 and 63 mm only for now - 79 and 110 mm out of every site's `zcam` list and the pipeline's joints (`run_pipeline.ZOOMS`) until the wider zooms have good promoted models. `run_pipeline --zcam-sites` runs the sites in the order given.
 - Sites (Christian, 26 Oct): Taylorfjellet leaves out ZCAM05065 (`settings.exclude`). A Mastcam-Z sequence left out (`seq:ZCAM...`) no longer changes the run key of a Navcam-only run. A front Hazcam frame of Marble Mountain (sol 1976) is on the global exclude list.
 - **Focus from below in the blocks and the Mastcam-Z joint**: the frames on the focus-approach list get their own bin cameras (`_fb`, before `_reg`); the joint fits one intercept offset per eye (px on fx, fy x the aspect; same focus slope), reported with its sd and written into the focus model (`focus_below_offset_px`).

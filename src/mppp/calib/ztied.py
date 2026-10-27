@@ -1135,7 +1135,8 @@ def block_line_rows(res: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 # the joint's own gate (20 Oct, first real run: Z residuals NaN and four blocks aligned with older models, promoted)
-ZJOINT_LIMITS = {"max_zcam_median_px": 0.6, "max_zcam_nonfinite_share": 0.005}
+ZJOINT_LIMITS = {"max_zcam_median_px": 0.6, "max_zcam_nonfinite_share": 0.005,
+                 "max_zcam_rms_px": 1.5}             # 0.94.4: Z34 0.80, Z63 0.42; Z48 of 27 Oct 3.30, Z79 of 26 Oct 29.6
 
 
 def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -1149,6 +1150,11 @@ def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict
     okm = med is not None and np.isfinite(med) and med <= lim["max_zcam_median_px"]
     checks.append({"check": "Mastcam-Z residuals", "ok": bool(okm),
                    "note": (f"median {med:.3f} px" if med is not None else "none") + f" (<= {lim['max_zcam_median_px']:g})"})
+    rms = z.get("zcam_rms_px")
+    if rms is not None:                                # (results before 0.94 have no rms)
+        okr = np.isfinite(rms) and rms <= lim["max_zcam_rms_px"]
+        checks.append({"check": "Mastcam-Z residual rms", "ok": bool(okr),
+                       "note": f"rms {rms:.3f} px (<= {lim['max_zcam_rms_px']:g})"})
     checks.append({"check": "Mastcam-Z residuals finite", "ok": share <= lim["max_zcam_nonfinite_share"],
                    "note": f"{int(z.get('zcam_nonfinite') or 0)} of {int(z.get('zcam_observations') or 0)} not finite "
                            f"({100 * share:.2f} %)"})
