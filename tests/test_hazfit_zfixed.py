@@ -145,9 +145,10 @@ def test_new_windows_scripts_exist_crlf():
 def test_groups_and_block_sites():
     t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
     g = t["groups"]
-    # 24 Oct (Christian): Chal Rocks instead of Chal Rocks Large, without Pico Turquino - a faster run
+    # 24 Oct (Christian): Chal Rocks instead of Chal Rocks Large, without Pico Turquino - a faster run;
+    # 27 Oct: Pico Turquino back (a third 48 mm block)
     assert g["zcam_consensus"] == ["seitah_overlook", "chal_rocks", "threeforks_north", "belva_crater", "south_arm",
-                                   "marble_mountain", "taylorfjellet"]
+                                   "marble_mountain", "taylorfjellet", "pico_turquino"]
     assert "chal_rocks_large" not in g["zcam34_joint"] and "chal_rocks" in g["zcam34_joint"]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "threeforks_north", "belva_crater", "bell_island", "marble_mountain"]
     assert all(s in t["sites"] for s in g["hazcam_consensus"])

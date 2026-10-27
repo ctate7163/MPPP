@@ -20,8 +20,8 @@ Stages (each logged in ``<root>\\mppp_pipeline\\<stage>.log``, the pipeline in `
  4. ``zcam_runs``      - run_sites.py --zcam over the zcam_consensus sites and the other zcam34_joint sites
                          (run_sites_zcam.bat): the Navcam + Mastcam-Z + Hazcam blocks at every zoom of each site's
                          "zcam" list, with the Navcam and Hazcam models just promoted
- 5. ``zcam_joints``    - the Mastcam-Z joint of each zoom (34 over zcam34_joint + zcam_consensus, 48 / 63 / 79 / 110
-                         over zcam_consensus), each promoted when its checks pass, then the Navcam + Mastcam-Z check
+ 5. ``zcam_joints``    - the Mastcam-Z joint of each zoom over zcam34_joint + zcam_consensus (27 Oct; 48 / 63 were
+                         over zcam_consensus only), each promoted when its checks pass, then the Navcam + Mastcam-Z check
                          (never promoted).  No second Hazcam fit: the Mastcam-Z blocks hold the same Hazcam frames
                          as the ecam blocks of their sols (--zcam-hazcam-fit fits them anyway)
  6. ``error_analysis`` - studies/analyses/error_analysis_batch.py over every finished block of both groups
@@ -255,7 +255,9 @@ class Pipeline:
                                                  "--root", self.root, "--out", out, *promote], timeout_h=6)
             notes.append(f"Hazcam fit exit {rc}")
         for z in self.a.zooms:
-            group = f"{ZCAM34_JOINT},{self.zcam_group}" if z == 34 else self.zcam_group
+            # 27 Oct (Christian: Enchanted Lake with 63 mm): every zoom over both groups - a site without the
+            # zoom in its "zcam" list is left out by the joint
+            group = f"{ZCAM34_JOINT},{self.zcam_group}"
             out = self._out(f"zcam{z}_joint", "zcam_joint.json")
             rc = self._mppp("zcam_joints", out, ["calib", "zcam", "--zoom", z, "--group", group, "--root", self.root,
                                                  "--out", out, *promote], timeout_h=self.a.stage_timeout_h)

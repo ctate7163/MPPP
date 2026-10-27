@@ -447,6 +447,7 @@ def test_joint_gate_rms_eyes_aspect_ratio_27oct():
     bad = Z.joint_checks({"zcam": dict(z, zcam_rms_px=3.3)}, base)
     assert not bad["ok"] and any(c["check"] == "Mastcam-Z residual rms" and not c["ok"] for c in bad["checks"])
     assert ZCAM_MODEL_LIMITS["max_aspect_dev"] <= 0.003
+    assert {"max_k1", "baseline_m", "max_f0_change_pct"} <= set(ZCAM_MODEL_LIMITS)   # (a comment once swallowed them)
     new = {"cameras": {"ZL048": {"f0_px": 6671.1, "aspect": 1.0006, "regular_ratio": 1.0095,
                                  "regular_ratio_note": "fitted regular ratio 0.9939 outside 1.004..1.016: the start ratio 1.0095 kept"},
                        "ZR048": {"f0_px": 6789.0, "aspect": 0.99284, "regular_ratio": 1.0095}}}
