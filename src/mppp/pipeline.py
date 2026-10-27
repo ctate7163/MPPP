@@ -138,7 +138,7 @@ class Settings:
     zcam_intrinsics: str = "focus_model"          # Mastcam-Z start: "focus_model" (the promoted model) or "label"
     zcam_focus_model: Optional[Path] = None       # a focus-model JSON to start from; None: the one in use
     zcam_focus_bin: Optional[float] = 30          # focus motor counts per Mastcam-Z camera (None: one camera per eye)
-    zcam_bin_by: str = "focus"                    # 0.94.4: the Mastcam-Z cameras - "focus" (focus bins), "sequence" (focus bins of each sol and sequence), "image" (one camera per image: its own focal length - the states run)
+    zcam_bin_by: str = "sequence"                 # 0.94.4: the Mastcam-Z cameras - "focus" (focus bins), "sequence" (focus bins of each sol and sequence), "image" (one camera per image: its own focal length - the states run); 0.95.0 (Christian, 27 Oct): "sequence" - each sequence's bins carry its own focus offset (mppp.calib.ztied)
     zcam_bin_refine: str = "focal_pp"             # a focus-bin camera refines fx, fy and on ZR cx, cy ("focal_pp"); "focal", "all", "model"
     zcam_line_params: Dict[str, List[str]] = field(default_factory=lambda: {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"],
                                                                             "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]})   # the focus parameters stage 2 puts on a line per eye
@@ -228,6 +228,7 @@ class Settings:
         if d.get("zcam_bin_by") in (None, "focus"):
             d.pop("zcam_bin_by", None)               # 0.94.4: likewise
         if not d.get("include_zcam"):
+            d.pop("zcam_bin_by", None)               # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
             d.pop("zcam_station_prior_sigma_m", None)   # 0.94.5: a Mastcam-Z setting (Navcam keys stay)
             d["zcam_low_backlash_found"] = None      # 0.94.4: the found list is a Mastcam-Z setting (Navcam keys stay)
             if d.get("exclude"):                     # 0.94.4: a Mastcam-Z sequence left out does not change a Navcam run

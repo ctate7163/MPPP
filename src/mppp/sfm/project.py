@@ -916,6 +916,10 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                     params[1] += dfb * a_
                     src += f"; focus from below: fx {dfb:+.2f} px (the model's offset)"
                 extra = dict(extra, focus_approach="below")
+            if by == "sequence":                     # 0.95.0: the bin's sequence (one per bin) for the joint's offsets
+                seqs = sorted({str(r.get("sequence")) for r in members if r.get("sequence")})
+                sols_ = sorted({int(r["sol"]) for r in members if r.get("sol") is not None})
+                extra = dict(extra, sequence=seqs[0] if len(seqs) == 1 else None, sequence_sol=sols_[0] if len(sols_) == 1 else None)
             cam = dict(base, params=params, group=group, focus_count_median=med,
                        focus_count_range=[min(counts), max(counts)] if counts else None, n_images=len(members),
                        fixed_params=fixed, source=src, temperature_median_degC=Tb, sol_median=Sb, **extra)

@@ -31,11 +31,12 @@ def test_found_list_lines_and_exclusions(tmp_path):
 def test_found_list_on_for_mastcamz_keys_only():
     from mppp.pipeline import Settings
     s = Settings()
-    assert s.zcam_low_backlash_found == "auto" and s.zcam_bin_by == "focus"
+    assert s.zcam_low_backlash_found == "auto" and s.zcam_bin_by == "sequence"      # 0.95.0: sequence bins
     k = s.key_dict()
     assert k["zcam_low_backlash_found"] is None and "zcam_bin_by" not in k      # Navcam keys as before 0.94.4
     kz = s.replace(include_zcam=True).key_dict()
-    assert kz["zcam_low_backlash_found"] == "auto"
+    assert kz["zcam_low_backlash_found"] == "auto" and kz["zcam_bin_by"] == "sequence"
+    assert "zcam_bin_by" not in s.replace(include_zcam=True, zcam_bin_by="focus").key_dict()   # the 0.94.4 keys
     assert "zcam_bin_by" in s.replace(include_zcam=True, zcam_bin_by="image").key_dict()
 
 

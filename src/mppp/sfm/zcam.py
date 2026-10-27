@@ -15,7 +15,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -232,6 +232,27 @@ def line_params_for(project: SfmProject, group: str) -> Tuple[str, ...]:
     return tuple(v) if v else LINE_PARAMS.get(eye, ("fx", "fy"))
 
 
+def _sequence_offsets_for(use: Sequence[Dict[str, Any]], min_images: int, min_obs: int) -> Dict[str, Dict[str, Any]]:
+    """0.95.0: {sequence key: {"images", "observations", "bins", "held"}} of the bins ``use`` (one state of an eye):
+    a sequence with at least ``min_images`` frames and ``min_obs`` observations over its bins gets its own intercept
+    (``held`` None); the others are held at 0 with the reason.  Bins without a sequence (focus bins) have none."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for r in use:
+        sk = r.get("seq")
+        if not sk:
+            continue
+        e = out.setdefault(sk, {"images": 0, "observations": 0, "bins": 0, "held": None})
+        e["images"] += int(r.get("images") or 0)
+        e["observations"] += int(r.get("observations") or 0)
+        e["bins"] += 1
+    for sk, e in out.items():
+        if e["images"] < min_images:
+            e["held"] = f"held at 0: {e['images']} frames (< {min_images})"
+        elif e["observations"] < min_obs:
+            e["held"] = f"held at 0: {e['observations']} observations (< {min_obs})"
+    return out
+
+
 def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] = None, min_observations: int = 200,
                       min_span: float = 300.0, huber_k: float = 1.345, outlier_sigma: float = 4.0,
                       apply: bool = True, min_observations_regular: int = 50) -> Dict[str, Any]:
@@ -261,7 +282,9 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
         p = np.array(rec.cameras[int(cid)].params, float)
         groups.setdefault(c["group"], []).append({
             "camera": key, "camera_id": int(cid), "focus": c.get("focus_count_median"), "p": p,
-            "observations": int(obs.get(int(cid), 0)),
+            "observations": int(obs.get(int(cid), 0)), "images": int(c.get("n_images") or 0),
+            # 0.95.0: the bin's sequence (sequence bins, zcam_bin_by "sequence"); None on focus bins
+            "seq": f"s{c.get('sequence_sol')}|{c['sequence']}" if c.get("sequence") else None,
             # the lines of a state: a single-state (110 mm) bin is on the zoom's one line, stored as the backlash one
             "state": "regular" if calib.zcam_state(key, c) == "regular" else "backlash",
             "focus_state": calib.zcam_state(key, c)})
@@ -306,20 +329,54 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
             # with their own offsets; the slope is this state's, the regular state follows the backlash state's
             common = [pn for pn in params if form.get(pn) == "common"]
             common_fit = None
+            seq_off: Dict[str, float] = {}
+            seq_rows: Dict[str, Dict[str, Any]] = {}
             if len(common) >= 2 and fit_slope:
-                Xc = np.zeros((len(use) * len(common), len(common) + 1))
-                yc = np.zeros(len(use) * len(common))
+                # 0.95.0 (Christian, 27 Oct): one intercept per sequence (block, sol, sequence) with enough frames
+                # and observations, drawn to 0 (the state's line is the sequences' weighted mean); the thin ones on
+                # the line itself.  The offset is the same for fx and fy (the aspect's share of it is < 0.05 %)
+                seqs = _sequence_offsets_for(use, forms.MIN_SEQ_IMAGES, forms.MIN_SEQ_OBS)
+                sfree = [k for k, v in seqs.items() if not v["held"]]
+                if len(sfree) < 2:                     # one sequence: no offset to tell from the line
+                    sfree = []
+                # the offsets sum to zero, weighted by the sequences' observations (the line is their weighted
+                # mean): the last one is minus the weighted sum of the others, so no column of its own
+                wseq = {k: float(seqs[k]["observations"]) for k in sfree}
+                last = sfree[-1] if sfree else None
+                col = {k: len(common) + i for i, k in enumerate(sfree[:-1])}
+                nc = len(common) + max(len(sfree) - 1, 0) + 1
+                n = len(use)
+                Xc = np.zeros((n * len(common), nc))
+                yc = np.zeros(n * len(common))
                 wc = np.tile(w, len(common))
                 for j, pn in enumerate(common):
-                    Xc[j * len(use):(j + 1) * len(use), j] = 1.0
-                    Xc[j * len(use):(j + 1) * len(use), -1] = F - ref
-                    yc[j * len(use):(j + 1) * len(use)] = [r["p"][PARAM_INDEX[pn]] for r in use]
+                    Xc[j * n:(j + 1) * n, j] = 1.0
+                    Xc[j * n:(j + 1) * n, -1] = F - ref
+                    yc[j * n:(j + 1) * n] = [r["p"][PARAM_INDEX[pn]] for r in use]
+                    for i, r in enumerate(use):
+                        sk = r.get("seq")
+                        if sk in col:
+                            Xc[j * n + i, col[sk]] = 1.0
+                        elif sk is not None and sk == last:
+                            for k2, c2 in col.items():
+                                Xc[j * n + i, c2] = -wseq[k2] / wseq[last]
+                f_ref = float(np.median([r["p"][PARAM_INDEX[common[0]]] for r in use]))
                 c, se_c, _, _ = huber_fit(Xc, yc, wc, huber_k, floor=0.05)
                 common_fit = {"b": float(c[-1]), "sd_b": float(se_c[-1]), "params": list(common)}
+                seq_off = {k: float(c[col[k]]) for k in col}
+                if last is not None:
+                    seq_off[last] = -sum(wseq[k] * seq_off[k] for k in col) / wseq[last]
+                for k, v in seqs.items():
+                    seq_rows[k] = dict(v, offset_px=seq_off.get(k, 0.0),
+                                       sd_px=(float(se_c[col[k]]) if k in col else
+                                              (float(np.mean([se_c[c2] for c2 in col.values()])) if k == last else None)),
+                                       ppm=1e6 * seq_off.get(k, 0.0) / f_ref)
             for pn in params:
                 k = PARAM_INDEX[pn]
                 y = np.array([r["p"][k] for r in use], float)
                 fm = form.get(pn, "free")
+                if fm == "common" and seq_off:          # 0.95.0: the line through the bins less their sequence offsets
+                    y = y - np.array([seq_off.get(r.get("seq"), 0.0) for r in use], float)
                 bl = (res["lines"].get("backlash") or {}).get(pn) if st == "regular" else None
                 slope0 = bl["b"] if (bl and "b" in bl) else model_slope.get(pn, 0.0)
                 src0 = "backlash state" if (bl and "b" in bl) else ("focus model" if gm else "labels")
@@ -373,6 +430,8 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                     ent["a_source"] = "pinned at the model's pp0 (form)"
                 elif pin_note:
                     ent["a_source"] = pin_note
+                if fm == "common" and seq_rows:        # 0.95.0: the sequences' offsets of this state (px on this line)
+                    ent["sequences"] = {sk: dict(v) for sk, v in seq_rows.items()}
                 for rr, d in zip(use, resid):
                     row = {"camera": rr["camera"], "state": st, "param": pn, "focus": rr["focus"],
                            "value": float(rr["p"][k]), "residual": float(d), "observations": rr["observations"]}
@@ -407,6 +466,9 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                     v = ln[pn]["a"] + ln[pn]["b"] * (fc - ref)
                     if rr["state"] == "regular" and not own and pn in ("fx", "fy"):
                         v /= ratio                           # the regular state sits at the label
+                    sq = (ln[pn].get("sequences") or {}).get(rr.get("seq")) if rr.get("seq") else None
+                    if sq and not sq.get("held"):             # 0.95.0: on its sequence's line, not the block's
+                        v += float(sq["offset_px"])
                     if rr["state"] == "regular" and not own and pn in ("cx", "cy"):
                         # 0.93.5: on the backlash lines, a regular bin keeps the regular state's principal point
                         off = gm.get("regular_pp_offset_px") or [0.0, 0.0]

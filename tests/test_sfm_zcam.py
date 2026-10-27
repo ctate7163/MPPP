@@ -726,6 +726,53 @@ def test_refit_lines_on_the_v0p75_form(monkeypatch):
     assert p[4] == pytest.approx(zr["backlash"]["k1"]["a"]) and p[0] == pytest.approx(zr["backlash"]["fx"]["a"] + zr["backlash"]["fx"]["b"] * (300 - 600))
 
 
+def test_refit_lines_with_sequence_offsets(monkeypatch):
+    """0.95.0 (Christian, 27 Oct: different sequences sit at different linear offsets with the same slope): on sequence
+    bins the backlash-state fx, fy lines get one intercept per sequence - two sequences +12 / -12 px off the block's
+    line are recovered, a thin one (4 frames) is held at 0, the slope is the common one, the bins are set on their
+    sequence's line; the k1 line and the pinned centre are untouched."""
+    import pycolmap
+    from mppp.sfm import zcam
+    from mppp.sfm.zcam import refit_focus_lines
+    rec = pycolmap.Reconstruction()
+    cams, db, obs = {}, {}, {}
+    rng = np.random.default_rng(3)
+    cid = 1
+    seqs = {"ZCAM00001": (12.0, 300, 8), "ZCAM00002": (-12.0, 500, 8), "ZCAM00003": (30.0, 700, 1)}   # offset, sol, frames per bin
+    for seq, (off, sol, nim) in seqs.items():
+        for f in (100, 400, 700, 1000):
+            p = [4700.0 + off + 0.050 * (f - 600) + rng.normal(0, 0.2), 4710.0 + off + 0.050 * (f - 600) + rng.normal(0, 0.2),
+                 820.0, 600.0 + 0.0017 * (f - 600), -0.47, 0.7, 0, 0]
+            rec.add_camera(pycolmap.Camera(camera_id=cid, model="OPENCV", width=1648, height=1200, params=np.array(p, float)))
+            key = f"ZR034_F{f:05d}_s{sol:04d}_{seq}"
+            cams[key] = {"group": "ZR034", "focus_count_median": float(f), "backlash_state": "backlash",
+                         "sequence": seq, "sequence_sol": sol, "n_images": nim}
+            db[key] = cid
+            obs[cid] = 1000
+            cid += 1
+    proj = SimpleNamespace(cameras=cams, images=[], settings={"database": {"cameras": db},
+                                                            "zcam_line_params": {"ZR": ["fx", "fy", "cx", "cy", "k1", "k2"]}})
+    monkeypatch.setattr(zcam, "_observations_per_camera", lambda rec: obs)
+    model = {"cameras": {"ZR034": {"reference_focus": 600.0, "f0_px": 4705.0, "label_f0_px": 4659.0, "slope_px_per_count": 0.05,
+                                   "aspect": 1.002, "pp0_px": [820.0, 600.0]}}}
+    out = refit_focus_lines(rec, proj, model=model)
+    ln = out["ZR034"]["lines"]["backlash"]
+    sq = ln["fx"]["sequences"]
+    assert set(sq) == {"s300|ZCAM00001", "s500|ZCAM00002", "s700|ZCAM00003"}
+    assert sq["s300|ZCAM00001"]["offset_px"] == pytest.approx(12.0, abs=0.5) and not sq["s300|ZCAM00001"]["held"]
+    assert sq["s500|ZCAM00002"]["offset_px"] == pytest.approx(-12.0, abs=0.5) and sq["s500|ZCAM00002"]["sd_px"] > 0
+    assert sq["s700|ZCAM00003"]["held"].startswith("held at 0: 4 frames") and sq["s700|ZCAM00003"]["offset_px"] == 0.0
+    assert ln["fx"]["b"] == pytest.approx(0.050, abs=0.002) and ln["fy"]["b"] == ln["fx"]["b"]
+    assert ln["fx"]["a"] == pytest.approx(4700.0, abs=1.0)               # the weighted mean of the two free ones
+    assert 10.0 < ln["fx"]["rms"] < 20.0 and ln["k1"]["a"] == pytest.approx(-0.47) and ln["cx"]["a"] == 820.0
+    assert "sequences" not in ln["k1"] and "sequences" not in ln["cx"]
+    p1 = rec.cameras[db["ZR034_F00400_s0300_ZCAM00001"]].params           # on its sequence's line
+    assert p1[0] == pytest.approx(ln["fx"]["a"] + 12.0 + ln["fx"]["b"] * (400 - 600), abs=0.6)
+    p3 = rec.cameras[db["ZR034_F00400_s0700_ZCAM00003"]].params           # the thin one: on the block's line
+    assert p3[0] == pytest.approx(ln["fx"]["a"] + ln["fx"]["b"] * (400 - 600), abs=0.01)
+    assert out["ZR034"]["f0_px"] == pytest.approx(np.sqrt(ln["fx"]["a"] * ln["fy"]["a"]))
+
+
 def test_refit_lines_pin_the_regular_state_at_its_own_principal_point(monkeypatch):
     """0.95.0 (Christian, 27 Oct: the right eye's regular principal-point offset): a ZR regular-state line with its own
     bins is pinned at pp0 plus the model's regular_pp_offset_px, as the no-own-line path already added it (0.93.5) -

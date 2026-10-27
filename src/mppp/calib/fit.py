@@ -1287,7 +1287,8 @@ ZCAM_MODEL_LIMITS = {"max_f0_change_pct": 1.5, "max_k1": 1.5, "baseline_m": (0.2
                      "regular_ratio_range": (1.004, 1.016),   # 0.93.5: backlash / regular f (the states ~0.95 % apart)
                      "max_regular_aspect_diff": 5e-4,     # 0.93.5: the state scales f, not the pixel aspect
                      "max_eye_f0_diff_pct": 0.5,         # 0.94.4: ZL, ZR f0 of one zoom (one design; Z34 0.15 %, Z48 of 27 Oct 1.8 %)
-                     "fail_ratio_out_of_range": True}    # 0.94.4: a fitted high / low ratio outside the range fails (was: start kept, ok)
+                     "fail_ratio_out_of_range": True,    # 0.94.4: a fitted high / low ratio outside the range fails (was: start kept, ok)
+                     "max_sequence_offset_pct": 1.0}     # 0.95.0: a sequence's focus offset beyond this is a mis-tie, not a focus offset
 REGULAR_RATIO_DEFAULT = 1.0095          # backlash / regular focal length when the blocks do not measure it
 
 
@@ -1794,6 +1795,14 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
                 + (f", {rp.get('paired_low_exposures', 0)} low-state exposures paired with ZL (relative to ZL's)"
                    if str(g).startswith("ZR") and "paired_low_exposures" in rp else            # 0.95.0
                    f", {rp.get('mixed_exposures', 0)} exposures with the other eye in backlash"))
+        so = c.get("sequence_offsets") or {}              # 0.95.0: the sequences' focus offsets (block facts)
+        if so.get("free"):
+            mx = float(so.get("max_abs_ppm") or 0.0)
+            big = [r for r in so.get("rows") or [] if not r.get("held") and abs(r.get("ppm") or 0.0) > 1e4 * lim["max_sequence_offset_pct"]]
+            add(f"{g} sequence offsets", mx <= 1e4 * lim["max_sequence_offset_pct"],
+                f"{so['free']} fitted, {so.get('held', 0)} held at 0; largest {mx:.0f} ppm (<= {lim['max_sequence_offset_pct']:g} %)"
+                + (f"; sd {so['sd_ppm']:.0f} ppm" if so.get("sd_ppm") is not None else "")
+                + (": " + ", ".join(f"{r['block']} {r['sequence']} {r['ppm']:+.0f}" for r in big[:4]) if big else ""))
         dist = c.get("distortion") or {}
         if "k1" in (dist.get("names") or []):
             k1 = dist["params"][dist["names"].index("k1")]

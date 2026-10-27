@@ -54,11 +54,13 @@ def _truth_model():
     return m
 
 
-def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None):
+def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None, seq_offsets=None):
     """One block: the synthetic Navcam stations (helpers._synthetic) plus Mastcam-Z 34 mm stereo frames at each
     station (three pointings x three focus counts), every image seeing dense terrain patches.  ``reg``
     {"eye": "L", "F": 950.0, "offset": (dcx, dcy)}: that eye's images at that focus are in the regular state (f /
-    regular ratio, the principal point moved by the offset; the other eye in backlash)."""
+    regular ratio, the principal point moved by the offset; the other eye in backlash).  ``seq_offsets`` (0.95.0)
+    {"ZCAM00001": px, ...}: each pointing is a sequence of its own (ZCAM00001..3) with sequence bins (the camera key
+    carries sol and sequence, the spec ``sequence`` / ``sequence_sol``) and that focus offset on fx (fy x aspect)."""
     from helpers import _synthetic
     from mppp.calib.joint import Scape
     from scipy.spatial.transform import Rotation
@@ -68,7 +70,8 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None):
     zimgs, k = [], 0
     patches = []
     for st, C0 in (("S001D0000", np.array([0.0, 0.0, 1.9])), ("S001D0100", np.array([4.0, 1.0, 1.9]))):
-        for az in (20.0, 60.0, 100.0):
+        for iaz, az in enumerate((20.0, 60.0, 100.0)):
+            seqname = f"ZCAM{iaz + 1:05d}" if seq_offsets is not None else "ZCAM00000"
             RL = _look(C0, az, 28.0)
             CL = C0 + np.array([0.0, 0.0, 0.15])
             tgt = CL + RL[2] * (1.9 / np.sin(np.radians(28.0)))
@@ -86,7 +89,7 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None):
                     is_reg = rg is not None
                     is_fb = bool(fb) and eye == fb["eye"] and F == fb["F"]       # 0.94.4: focus from below
                     zimgs.append({"_reg": is_reg, "_regspec": rg, "_fb": is_fb, "name": nm, "stem": nm[:-4], "instrument": f"Z{eye}", "eye": eye, "sclk_key": sclk,
-                                  "sol": sol, "site": 1, "drive": int(st[-4:]), "station": st, "sequence": "ZCAM00000",
+                                  "sol": sol, "site": 1, "drive": int(st[-4:]), "station": st, "sequence": seqname,
                                   "downsample_scale": 1.0, "native_size": [ZW, ZH], "prior_C": C.tolist(),
                                   "prior_R_w2c": R.tolist(), "has_mask": False, "camera_group": f"Z{eye}034",
                                   "focus_count": F})
@@ -104,10 +107,14 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None):
     db = {"NL": 1, "NR": 2}
     zcid, nid = {}, 3
     for r in zimgs:
-        key = (f"{r['camera_group']}_f{int(r['focus_count'])}" + ("_fb" if r["_fb"] else "")
-               + ("_reg" if r["_reg"] else ""))
+        key = (f"{r['camera_group']}_f{int(r['focus_count'])}" + (f"_s{sol:04d}_{r['sequence']}" if seq_offsets is not None else "")
+               + ("_fb" if r["_fb"] else "") + ("_reg" if r["_reg"] else ""))
         if key not in zcid:
             p = _law(model, r["camera_group"], r["focus_count"], "regular" if r["_reg"] else "backlash")
+            if seq_offsets is not None:             # 0.95.0: the sequence's focus offset
+                asp = p[1] / p[0]
+                p[0] += float(seq_offsets.get(r["sequence"], 0.0))
+                p[1] += float(seq_offsets.get(r["sequence"], 0.0)) * asp
             if r["_fb"]:                            # 0.94.4: the focus-from-below offset (px on fx, fy x aspect)
                 asp = p[1] / p[0]
                 p[0] += fb["offset_px"]
@@ -121,7 +128,8 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None):
             rec.add_camera(pycolmap.Camera(camera_id=nid, model="FULL_OPENCV", width=ZW, height=ZH, params=p))
             proj.cameras[key] = {"model": "FULL_OPENCV", "params": p.tolist(), "width": ZW, "height": ZH,
                                  "group": r["camera_group"], "focus_count_median": float(r["focus_count"]),
-                                 "backlash_state": "regular" if r["_reg"] else "backlash", "fixed_params": ["cx", "cy"]}
+                                 "backlash_state": "regular" if r["_reg"] else "backlash", "fixed_params": ["cx", "cy"],
+                                 **({"sequence": r["sequence"], "sequence_sol": sol, "n_images": 2} if seq_offsets is not None else {})}
             zcid[key] = nid
             db[key] = nid
             nid += 1
@@ -621,3 +629,69 @@ def test_right_eye_low_state_principal_point_without_mixed_exposures(tmp_path, m
     monkeypatch.setattr(Z, "MIN_PAIRED_LOW_EXPOSURES", 10 ** 6)
     res0, rig_err0 = run()
     assert "d_cx_regular" in res0["eyes"]["ZR034"]["held"] and rig_err0 > 3 * max(rig_err, 1.0)
+
+
+def test_zcam_joint_sequence_offsets(tmp_path, monkeypatch):
+    """0.95.0 (Christian, 27 Oct: different sequences sit at different linear offsets with the same slope): on
+    sequence bins each (block, sol, sequence) of an eye gets its own intercept offset, drawn to 0; the truth has
+    sequences +10 / 0 / -10 px off the law in both blocks - the offsets are recovered, the eye's line and slope stay
+    at the truth, the candidate records them and the check passes; the diagnostic pass puts the bins at the law plus
+    their offsets.  Without sequence bins (0.94.x projects) nothing changes."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    monkeypatch.setattr(Z, "ZBIN_MIN_OBS", 100)          # (the synthetic sequence bins: two frames, ~440 observations)
+    rng = np.random.default_rng(19)
+    truth = _truth_model()
+    so = {"ZCAM00001": 10.0, "ZCAM00002": 0.0, "ZCAM00003": -10.0}
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500, seq_offsets=so)
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900, seq_offsets=so)
+    st = _navcam_law(cams, rigT)
+    assert a.project.cameras["ZL034_f300_s0500_ZCAM00001"]["sequence"] == "ZCAM00001"
+    res = Z.fit_zjoint({}, model=copy.deepcopy(truth), scapes=[copy.deepcopy(a), copy.deepcopy(b)], st=st,
+                       nav_points=None, z_points=None, iterations=60, passes=2, verbose=False, k_tests=False)
+    rows = {(r["eye"], r["block"], r["sequence"]): r for r in res["sequence_offsets"]}
+    assert len(rows) == 12 and all(not r["held"] for r in rows.values())        # 2 eyes x 2 blocks x 3 sequences
+    for eye in ("ZL034", "ZR034"):
+        for blk in ("blk_a", "blk_b"):
+            for seq, off in so.items():
+                r = rows[(eye, blk, seq)]
+                assert r["offset_px"] == pytest.approx(off, abs=0.8), (eye, blk, seq, r)
+                assert r["sol"] == (500 if blk == "blk_a" else 900) and r["images"] == 6 and r["bins"] == 3
+                assert r["focus_span"] == pytest.approx(650.0) and r["sd_px"] and r["sd_px"] < 1.0
+        e = res["eyes"][eye]
+        tm = e["terms"]
+        ln = truth["cameras"][eye]["lines"]["backlash"]
+        assert tm["a_fx_backlash"] == pytest.approx(ln["fx"]["a"], abs=0.8)       # the line: the sequences' mean
+        assert tm["b"] == pytest.approx(0.04, abs=2e-3)
+        assert e["sequences"]["free"] == 6 and e["sequences"]["held"] == 0 and e["sequences"]["with_focus_span"] == 6
+        assert 1500 < e["sequences"]["max_abs_ppm"] < 2600
+    assert any("sequence offsets: 6 fitted (6 with a focus span" in x for x in Z.describe(res))
+    cand = Z.candidate_model(res, truth)
+    gm = cand["cameras"]["ZL034"]
+    assert gm["sequence_offsets"]["free"] == 6 and len(gm["sequence_offsets"]["rows"]) == 6
+    from mppp.calib.fit import check_zcam
+    chk = {c["check"]: c for c in check_zcam(cand, truth)["checks"]}
+    assert chk["ZL034 sequence offsets"]["ok"] and "6 fitted, 0 held at 0" in chk["ZL034 sequence offsets"]["note"]
+    assert not forms.validate_zcam(cand)
+    out = Z.write_zjoint(res, tmp_path / "cand", model=truth)
+    rep = (tmp_path / "cand" / "report.md").read_text()
+    assert "## Sequence offsets" in rep and "| ZL034 | blk_a | 500 | ZCAM00001 | +" in rep
+    assert any(c["check"] == "ZR034 sequence offsets" and c["ok"] for c in out["check"]["checks"])
+    # the diagnostic pass: the per-block lines sit at the law (the offsets taken out), not 10 px apart
+    d = res["diagnostics"]["blocks"]
+    a_zl = truth["cameras"]["ZL034"]["lines"]["backlash"]["fx"]["a"]
+    for blk in d:
+        assert blk["lines"]["ZL034"]["backlash"]["fx"]["a"] == pytest.approx(a_zl, abs=1.5)
+    # a sequence offset of 2 % is a mis-tie: the check fails and names it
+    gm["sequence_offsets"]["rows"][0].update(ppm=20000.0)
+    gm["sequence_offsets"]["max_abs_ppm"] = 20000.0
+    c2 = {c["check"]: c for c in check_zcam(cand, truth)["checks"]}["ZL034 sequence offsets"]
+    assert not c2["ok"] and "blk_a ZCAM00001 +20000" in c2["note"]
+    # focus bins (no sequence on the specs): no offsets at all
+    a0, _, _ = _block(tmp_path, "blk_a0", 0.0, truth, rng, 500)
+    b0, _, _ = _block(tmp_path, "blk_b0", 0.0, truth, rng, 900)
+    r0 = Z.fit_zjoint({}, model=copy.deepcopy(truth), scapes=[a0, b0], st=st, nav_points=None, z_points=None,
+                      iterations=30, passes=1, verbose=False, diagnostics=False, k_tests=False)
+    assert r0["sequence_offsets"] == [] and r0["eyes"]["ZL034"]["sequences"]["free"] == 0
+    assert "sequence_offsets" not in Z.candidate_model(r0, truth)["cameras"]["ZL034"]

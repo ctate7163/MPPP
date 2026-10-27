@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 
 from . import joint as J
+from . import forms
 from .forms import is_single_state, zcam_focus_below
 from . import tied as T
 
@@ -79,6 +80,17 @@ MIN_LOW_IMAGES = 6                     # (Christian, 27 Oct: "under ~6"; Z63 has
 MIN_BIN_OBSERVATIONS = 1000                 # (Christian, 27 Oct: 500 -> 1000 - Seitah Overlook's ZR048 high-state bin,
 # 959 observations, fx 6547 / fy 6836, passed 500)
 RATIO_HOLD_ZOOM = 34
+# 0.95.0 (Christian, 27 Oct: "the focal length is not curved over focus; different sequences sit at different linear
+# offsets with the same slope" - Seitah Overlook's fixed infinity focus -0.26 % from the Z34 line, Taylorfjellet's
+# close look-down sequences about -0.5 %): each sequence (block, sol, sequence) of an eye gets an intercept offset
+# on fx (fy x the aspect) on top of the eye's line - the way the ratio groups and the focus-from-below offset enter
+# - shared by its states (a mixed sequence then measures the high / low ratio within itself), drawn to 0 with an sd
+# of SEQ_OFFSET_SD x f (the eye's line is the sequences' weighted mean); a sequence with fewer than MIN_SEQ_IMAGES
+# frames or MIN_SEQ_OBS block observations holds its offset at 0 (the constants in mppp.calib.forms, shared with the
+# blocks' line refit).  Needs sequence bins (zcam_bin_by "sequence")
+SEQ_OFFSET_SD = forms.SEQ_OFFSET_SD
+MIN_SEQ_IMAGES = forms.MIN_SEQ_IMAGES
+MIN_SEQ_OBS = forms.MIN_SEQ_OBS
 # 0.94.5 (Christian, 27 Oct): per block, the Mastcam-Z aspect (fy / fx of the diagnostic pass, the line with the
 # most observations) against the Navcam's per-block dfy - dfx (the Navcam diagnostic pass over the same blocks)
 BLOCK_ASPECT_MIN_OBS = 1000                # the same cut as the lines (MIN_BIN_OBSERVATIONS)
@@ -193,9 +205,13 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
         stt = _state(spec, z["key"])
         reg = stt == "regular"
         G = e["G"]
+        seq = spec.get("sequence")                               # 0.95.0: set by sequence bins (zcam_bin_by "sequence")
         zunits[new] = {"key": name, "scape": z["scape"], "group": g, "eye": g[:2], "state": stt,
                        "fb": zcam_focus_below(z["key"]),           # 0.94.4: the focus came in from below
                        "focus": None if foc is None else float(foc), "dF": dF,
+                       "observations": z.get("observations"),
+                       "seq": (f"{z['scape']}|s{spec.get('sequence_sol')}|{seq}" if seq else None),
+                       "sequence": seq, "sequence_sol": spec.get("sequence_sol"),
                        # the pins: the model's pp0 (full-frame pixels, as the padded frames), else from the bin
                        "c_cx": float(e["pp0"][0]) if len(e["pp0"]) == 2 else float(p[_CX] - (G[10] if reg else 0.0)),
                        "c_cy": float(e["pp0"][1]) if len(e["pp0"]) == 2 else float(p[_CY] - G[9] * dF
@@ -223,6 +239,7 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
             sols_of.setdefault(int(r["camera_id"]), []).append(float(r["sol"]))
     for cid, u in zunits.items():                # 0.94.4: the bin's sol (median of its images) for ratio_by "sol"
         u["sol"] = int(round(float(np.median(sols_of[cid])))) if sols_of.get(cid) else None
+        u["images"] = len(sols_of.get(cid) or [])  # 0.95.0: the bin's frames in the problem
     sg["mixed"] = mixed_exposures(proj.images, zunits)
     sg["paired_low"] = paired_low_exposures(proj.images, zunits)         # 0.95.0 (Mastcam-Z joint: ZR's low-state principal-point offset fitted relative to ZL's from every exposure paired with ZL (not only the mixed ones); the site runs pin a regular-state line at pp0 + the model's offset (Christian, 27 Oct: the state shows in the centre - Seitah ZR063 0.65 px))
     sg["split_cameras_left_out"] = split_out
@@ -345,6 +362,37 @@ def ratio_groups(zunits: Dict[int, Dict[str, Any]], by: Optional[str] = None) ->
     return {k: v for k, v in out.items() if n_eye[k[0]] >= 2}
 
 
+def sequence_groups(zunits: Dict[int, Dict[str, Any]], min_images: Optional[int] = None,
+                    min_obs: Optional[int] = None) -> Tuple[Dict[Tuple[str, str], List[int]], Dict[Tuple[str, str], Dict[str, Any]]]:
+    """0.95.0: {(eye group, sequence key): [bin camera ids]} of the sequences whose offset is free - at least
+    ``min_images`` frames and ``min_obs`` block observations over the sequence's bins (:data:`MIN_SEQ_IMAGES`,
+    :data:`MIN_SEQ_OBS`) - and {key: {"images", "observations", "bins", "held"}} of every sequence (the thin ones with
+    ``held`` set: their offset is 0).  Bins without a sequence (focus bins, projects before 0.95.0) have none."""
+    mi = MIN_SEQ_IMAGES if min_images is None else int(min_images)
+    mo = MIN_SEQ_OBS if min_obs is None else int(min_obs)
+    groups: Dict[Tuple[str, str], List[int]] = {}
+    for cid, u in zunits.items():
+        if u.get("seq"):
+            groups.setdefault((u["group"], u["seq"]), []).append(int(cid))
+    info: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    free: Dict[Tuple[str, str], List[int]] = {}
+    for k, cids in groups.items():
+        us = [zunits[c] for c in cids]
+        n_im = sum(int(u.get("images") or 0) for u in us)
+        n_ob = sum(int(u.get("observations") or 0) for u in us)
+        F = [u["dF"] for u in us if u.get("focus") is not None]
+        row = {"images": n_im, "observations": n_ob, "bins": len(cids), "focus_span": float(np.ptp(F)) if F else 0.0,
+               "states": sorted({u["state"] for u in us}), "held": None}
+        if n_im < mi:
+            row["held"] = f"held at 0: {n_im} frames (< {mi})"
+        elif n_ob < mo:
+            row["held"] = f"held at 0: {n_ob} observations (< {mo})"
+        else:
+            free[k] = cids
+        info[k] = row
+    return free, info
+
+
 def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool = True,
                hold: Union[Sequence[str], Dict[str, Sequence[str]]] = ()):
     """The ``extra_residuals`` hook tying each Mastcam-Z bin camera to its eye's global terms (``tie`` False: no
@@ -371,6 +419,10 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
            for eye in fb_eyes if eye in fb_high} if tie else {}
     fb_held = {eye: "held at 0: every focus-from-below bin of this eye is in the low state (the offset is one with "
                     "the high / low ratio)" for eye in fb_eyes if eye not in fb_high} if tie else {}
+    # 0.95.0: the sequences' offsets (SEQ_OFFSET_SD, MIN_SEQ_IMAGES, MIN_SEQ_OBS)
+    sfree, sinfo = sequence_groups(zunits) if tie else ({}, {})
+    dseq = {k: np.array([float(((sg.get("sequence_offsets_px") or {}).get(f"{k[0]}|{k[1]}", 0.0)))]) for k in sfree}
+    unit_seq = {cid: k for k, cids in sfree.items() for cid in cids}
 
     def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
         n = 0
@@ -399,9 +451,12 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 rk = unit_group.get(int(cid))
                 nx = 1 if rk is not None else 0              # 0.94.4: the group's own offset on a_fx_regular
                 nf = 1 if (u.get("fb") and eye in dfb) else 0    # 0.94.4: the focus-from-below offset
+                sk = unit_seq.get(int(cid))
+                ns = 1 if sk is not None else 0              # 0.95.0: the sequence's offset
                 asp = float(G0[1] / G0[0])
+                nextra = nx + nf + ns
                 for pi, gi in ((_FX, 2 if reg else 0), (_FY, 2 if reg else 1)):
-                    a = np.zeros(12 + NG + nx + nf); a[pi] = 1.0; a[12 + 4] = -u["dF"] / ratio
+                    a = np.zeros(12 + NG + nextra); a[pi] = 1.0; a[12 + 4] = -u["dF"] / ratio
                     # 0.93.5: the regular state scales f, not the pixel aspect - its fy is a_fx_regular x the
                     # backlash aspect at the start (22 Oct Z34: a free a_fy_regular gave a regular fy / fx of 0.984)
                     a[12 + gi] = -(asp if (reg and pi == _FY) else 1.0)
@@ -409,12 +464,14 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                         a[12 + NG] = -(asp if pi == _FY else 1.0)
                     if nf:
                         a[12 + NG + nx] = -(asp if pi == _FY else 1.0)
+                    if ns:
+                        a[12 + NG + nx + nf] = -(asp if pi == _FY else 1.0)
                     rows.append(a); sig.append(TIE_SIGMA_Z["f"])
                 for pi, gi, s_ in ((_K1, 5, "k"), (_K2, 6, "k"), (_P1, 7, "p"), (_P2, 8, "p")):
-                    a = np.zeros(12 + NG + nx + nf); a[pi] = 1.0; a[12 + gi] = -1.0
+                    a = np.zeros(12 + NG + nextra); a[pi] = 1.0; a[12 + gi] = -1.0
                     rows.append(a); sig.append(TIE_SIGMA_Z[s_])
-                add_tie(np.array(rows), np.array(sig), [12, NG] + [1] * (nx + nf),
-                        [blk, g[eye]] + ([dreg[rk]] if nx else []) + ([dfb[eye]] if nf else []))
+                add_tie(np.array(rows), np.array(sig), [12, NG] + [1] * nextra,
+                        [blk, g[eye]] + ([dreg[rk]] if nx else []) + ([dfb[eye]] if nf else []) + ([dseq[sk]] if ns else []))
                 if reg:                                      # 0.93.2: cx = pin + d_cx, cy = pin + b_cy dF + d_cy
                     c0 = np.array([u["c_cx"], u["c_cy"]], float)
                     keep.append(c0)
@@ -433,6 +490,10 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
         for (eye, gk), d in dreg.items():                # the groups' offsets drawn to 0 (the eye's ratio their mean)
             if prob.has_parameter_block(d):
                 sd_px = REGULAR_RATIO_GROUP_SD * float(sg["eyes"][eye]["G"][2])
+                prob.add_residual_block(LinearTie(np.ones((1, 1)), np.array([sd_px]), [1]), None, [d])
+        for (eye, sk), d in dseq.items():                # 0.95.0: the sequences' offsets drawn to 0 (the line their mean)
+            if prob.has_parameter_block(d):
+                sd_px = SEQ_OFFSET_SD * float(sg["eyes"][eye]["G"][0])
                 prob.add_residual_block(LinearTie(np.ones((1, 1)), np.array([sd_px]), [1]), None, [d])
         for eye, arr in g.items():                       # 0.94.5: too few low-state images - the ratio held
             r0 = sg["eyes"][eye].get("ratio_hold")
@@ -466,6 +527,7 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
         cb = {k: v for k, v in g.items() if prob.has_parameter_block(v) and not prob.is_parameter_block_constant(v)}
         cb.update({f"dreg|{eye}|{gk}": d for (eye, gk), d in dreg.items() if prob.has_parameter_block(d)})
         cb.update({f"dfb|{eye}": d for eye, d in dfb.items() if prob.has_parameter_block(d)})
+        cb.update({f"dseq|{eye}|{sk}": d for (eye, sk), d in dseq.items() if prob.has_parameter_block(d)})
         return {"cov_blocks": cb, "ties": {"zcam_cameras": n}, "held": held,
                 "tie_ids": tie_ids if T.EXACT_TIE_COVARIANCE else [], "tie_specs": specs,
                 "exact_solve": bool(EXACT_TIE_SOLVE)}
@@ -474,6 +536,8 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
     hook.ratio_by = by
     hook.focus_below = dfb
     hook.focus_below_held = fb_held
+    hook.sequence_offsets = dseq
+    hook.sequence_info = sinfo
     return hook, g
 
 
@@ -574,6 +638,9 @@ def adjust_z(rec, proj, idx, st, units, zunits, sg, iterations: int = 100, covar
     ba["focus_below_px"] = {k: float(v[0]) for k, v in hook.focus_below.items()}       # 0.94.4
     ba["focus_below_held"] = dict(hook.focus_below_held)                                # 0.95.0
     sg["focus_below_px"] = dict(ba["focus_below_px"])
+    ba["sequence_offsets_px"] = {f"{k[0]}|{k[1]}": float(v[0]) for k, v in hook.sequence_offsets.items()}   # 0.95.0
+    ba["sequence_info"] = {f"{k[0]}|{k[1]}": dict(v) for k, v in hook.sequence_info.items()}
+    sg["sequence_offsets_px"] = dict(ba["sequence_offsets_px"])
     stats = J.residual_stats(rec, proj, keypoint_scale=ks, keypoint_map=kmap)
     return ba, g, stats
 
@@ -653,7 +720,43 @@ def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
     out["regular_ratio_by"] = ba.get("ratio_by") or REGULAR_RATIO_BY
     out["regular_ratio_groups"] = ratio_group_rows(out, ba, zunits)
     out["focus_below"] = focus_below_rows(out, ba, zunits)
+    out["sequence_offsets"] = sequence_offset_rows(out, ba, zunits)             # 0.95.0
+    for eye, e in out["eyes"].items():
+        rows_ = [r for r in out["sequence_offsets"] if r["eye"] == eye]
+        fr = [r for r in rows_ if not r.get("held")]
+        e["sequences"] = {"free": len(fr), "held": len(rows_) - len(fr),
+                          "with_focus_span": sum(1 for r in fr if r["focus_span"] >= 300.0),
+                          "sd_ppm": float(np.std([r["ppm"] for r in fr], ddof=1)) if len(fr) > 1 else None,
+                          "max_abs_ppm": max((abs(r["ppm"]) for r in fr), default=None),
+                          "prior_sd_pct": 100.0 * SEQ_OFFSET_SD}
     return out
+
+
+def sequence_offset_rows(res: Dict[str, Any], ba: Dict[str, Any], zunits: Dict[int, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """0.95.0: per eye and sequence (block, sol, sequence) the focus offset (px on fx at the same focus count), its sd,
+    z, ppm of the eye's high-state f, the frames, bins, block observations, focus span and states; the sequences held
+    at 0 with their reason."""
+    cov = ba.get("covariance") or {}
+    rows = []
+    for key, info in sorted((ba.get("sequence_info") or {}).items()):
+        eye, sk = key.split("|", 1)
+        e = res["eyes"].get(eye)
+        f0 = float(e["terms"]["a_fx_backlash"]) if e else None
+        parts = sk.split("|")
+        block, sol, seq = parts[0], parts[1][1:] if len(parts) > 1 else None, parts[2] if len(parts) > 2 else None
+        d = (ba.get("sequence_offsets_px") or {}).get(key)
+        row = {"eye": eye, "key": sk, "block": block, "sol": (int(sol) if sol and sol != "None" else None), "sequence": seq,
+               "images": info["images"], "bins": info["bins"], "observations": info["observations"],
+               "focus_span": info["focus_span"], "states": info["states"], "held": info.get("held")}
+        if d is None:
+            row.update({"offset_px": 0.0, "sd_px": None, "z": None, "ppm": 0.0, "sd_ppm": None})
+        else:
+            sd = T._sd(cov, f"dseq|{key}", 1)
+            s_px = float(sd[0]) if sd is not None and np.isfinite(sd[0]) else None
+            row.update({"offset_px": float(d), "sd_px": s_px, "z": (float(d) / s_px) if s_px else None,
+                        "ppm": (1e6 * float(d) / f0) if f0 else None, "sd_ppm": (1e6 * s_px / f0) if (f0 and s_px) else None})
+        rows.append(row)
+    return rows
 
 
 def focus_below_rows(res: Dict[str, Any], ba: Dict[str, Any], zunits: Dict[int, Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -751,8 +854,10 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
         reg = u["state"] == "regular"
         ratio = slope_div(sg, u["group"], reg)
         dfb_ = float((sg.get("focus_below_px") or {}).get(u["group"], 0.0)) if u.get("fb") else 0.0
-        p[_FX] = G[2 if reg else 0] + G[4] * u["dF"] / ratio + dfb_
-        p[_FY] = G[3 if reg else 1] + G[4] * u["dF"] / ratio + dfb_ * float(G[1] / G[0])
+        # 0.95.0: plus the bin's sequence offset (else the per-block lines absorb the offsets as aspect / level)
+        dsq_ = float((sg.get("sequence_offsets_px") or {}).get(f"{u['group']}|{u['seq']}", 0.0)) if u.get("seq") else 0.0
+        p[_FX] = G[2 if reg else 0] + G[4] * u["dF"] / ratio + dfb_ + dsq_
+        p[_FY] = G[3 if reg else 1] + G[4] * u["dF"] / ratio + (dfb_ + dsq_) * float(G[1] / G[0])
         p[_K1], p[_K2], p[_P1], p[_P2] = G[5], G[6], G[7], G[8]
         if reg:                                         # 0.93.2: the regular state's principal point
             p[_CX] = u["c_cx"] + G[10]
@@ -1221,6 +1326,17 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    + (f" ({r_['ppm']:+.0f} ppm, z {r_['z']:+.1f})" if r_.get("z") is not None and r_.get("ppm") is not None else "")
                    + f" at the same focus count; {r_['bins']} bins ({r_['bins_also_low']} also low state) in "
                    + ", ".join(r_["blocks"]))
+    for eye, e in res["eyes"].items():               # 0.95.0: the sequences' offsets
+        sm = e.get("sequences") or {}
+        if not (sm.get("free") or sm.get("held")):
+            continue
+        fr = [r for r in res.get("sequence_offsets") or [] if r["eye"] == eye and not r.get("held")]
+        big = sorted(fr, key=lambda r: -abs(r["ppm"] or 0.0))[:3]
+        out.append(f"{eye} sequence offsets: {sm['free']} fitted ({sm.get('with_focus_span', 0)} with a focus span >= 300 "
+                   f"counts - the slope's support), {sm['held']} held at 0"
+                   + (f"; sd {sm['sd_ppm']:.0f} ppm" if sm.get("sd_ppm") is not None else "")
+                   + (", largest " + ", ".join(f"{r['block']} {r['sequence']} {r['ppm']:+.0f} ppm" + (f" (z {r['z']:+.1f})" if r.get("z") is not None else "")
+                                               for r in big) if big else ""))
     for r_ in res.get("regular_ratio_groups") or []:
         out.append(f"{r_['eye']} high / low ratio of {r_['group']} ({r_['bins']} low-state bins, sols "
                    f"{', '.join(map(str, r_['sols'])) or '-'}): {r_['ratio']:.4f}"
@@ -1354,6 +1470,19 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
             gm["focus_below"] = {k: fbr[0][k] for k in ("sd_px", "z", "ppm", "bins", "bins_also_low", "blocks")}
             gm["focus_below"]["note"] = ("the bins whose focus came into place from below (the focus-approach list): "
                                          "fx + offset, fy + offset x aspect, at the same focus count")
+        sq = [x for x in res.get("sequence_offsets") or [] if x["eye"] == eye]
+        gm.pop("sequence_offsets", None)
+        if sq:                                        # 0.95.0: the sequences' offsets, for the record (block facts,
+            sm = dict(e.get("sequences") or {})       # not model terms: the line is the eye's)
+            gm["sequence_offsets"] = {
+                "note": ("each sequence (block, sol, sequence) sits at its own offset on the eye's line (px on fx at the "
+                         "same focus count, fy x aspect), drawn to 0 with sd %.1f %% of f; the line is the sequences' "
+                         "weighted mean; sequences under %d frames or %d observations held at 0"
+                         % (100 * SEQ_OFFSET_SD, MIN_SEQ_IMAGES, MIN_SEQ_OBS)),
+                "free": sm.get("free"), "held": sm.get("held"), "with_focus_span": sm.get("with_focus_span"),
+                "sd_ppm": sm.get("sd_ppm"), "max_abs_ppm": sm.get("max_abs_ppm"),
+                "rows": [{k: x[k] for k in ("block", "sol", "sequence", "offset_px", "sd_px", "ppm", "images", "bins",
+                                            "focus_span", "states", "held")} for x in sq]}
         grp = [x for x in res.get("regular_ratio_groups") or [] if x["eye"] == eye]
         gm.pop("regular_ratio_groups", None)
         if grp:                                       # 0.94.4: the groups' own ratios, for the record
@@ -1510,6 +1639,19 @@ def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[st
     lines += [f"- {x}" for x in describe(res)]
     lines += ["", "## Checks against the model in use", ""] + [f"- {'ok' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}"
                                                               for c in chk["checks"]]
+    sq = res.get("sequence_offsets") or []
+    if sq:                                                   # 0.95.0: the sequences' focus offsets
+        lines += ["", "## Sequence offsets (px on fx at the same focus count; drawn to 0 with sd "
+                      f"{100 * SEQ_OFFSET_SD:.1f} % of f)", "",
+                  "| eye | block | sol | sequence | offset px | sd | ppm | z | frames | bins | obs | focus span | states |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+        for r in sorted(sq, key=lambda x: (x["eye"], x["block"], x["sol"] or 0, x["sequence"] or "")):
+            lines.append(f"| {r['eye']} | {r['block']} | {r['sol'] if r['sol'] is not None else '-'} | {r['sequence'] or '-'} | "
+                         + (str(r["held"]) if r.get("held") else
+                            f"{r['offset_px']:+.2f} | {r['sd_px']:.2f} | {r['ppm']:+.0f} | {r['z']:+.1f}" if r.get("sd_px")
+                            else f"{r['offset_px']:+.2f} | - | {r['ppm']:+.0f} | -")
+                         + (" | | |" if r.get("held") else "")
+                         + f" | {r['images']} | {r['bins']} | {r['observations']} | {r['focus_span']:.0f} | {', '.join(r['states'])} |")
     wi = (res.get("zcam") or {}).get("worst_images") or []
     if wi:                                                   # 0.95.0: the frames with the largest rms
         z = res["zcam"]

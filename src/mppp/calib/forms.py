@@ -127,6 +127,14 @@ ZCAM_LINE_PARAMS = {"ZL": ("fx", "fy", "k1", "k2", "p1", "p2"), "ZR": ("fx", "fy
 ZCAM_FORM_ID = "zcam-v2"                 # 0.91: p1, p2 refined (zcam-v1 held them at 0; its files still load)
 ZCAM_LINE_FORMS = ("free", "common", "constant", "pinned", "pinned_slope")
 ZCAM_MAX_P = 5e-3                        # |p1|, |p2| beyond this is not a lens (Rochette 20 Oct: 7.5e-4, 4.2e-4)
+# 0.95.0 (Christian, 27 Oct: "the focal length is not curved over focus; different sequences sit at different linear
+# offsets with the same slope"): each sequence (block, sol, sequence) of an eye sits at an intercept offset on fx
+# (fy x the aspect) on top of the eye's line, in the Mastcam-Z joint (mppp.calib.ztied) and the blocks' line refit
+# (mppp.sfm.zcam); drawn to 0 with an sd of SEQ_OFFSET_SD x f; a sequence with fewer than MIN_SEQ_IMAGES frames or
+# MIN_SEQ_OBS observations holds its offset at 0.  Needs sequence bins (zcam_bin_by "sequence")
+SEQ_OFFSET_SD = 0.005
+MIN_SEQ_IMAGES = 5
+MIN_SEQ_OBS = 500
 
 # 0.93 (Christian, 22 Oct): Mastcam-Z distortion terms held at fixed values per zoom and eye, in the blocks, the
 # image priors and the Mastcam-Z joint.  34 mm: k2 (ZL +0.5, ZR +0.6 - the 22 Oct joint fitted +0.484 +- 0.010 and
