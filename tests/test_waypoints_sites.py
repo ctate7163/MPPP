@@ -408,6 +408,7 @@ def test_chal_rocks_110mm():
     assert t["seitah_overlook"]["zcam"] == [34, 48, 63] and t["belva_crater"]["zcam"] == [34]
     assert not any(z in (79, 110) for s_ in t.values() for z in (s_.get("zcam") or []))
     assert t["taylorfjellet"]["settings"]["exclude"] == ["seq:ZCAM05065"]       # 26 Oct (Christian)
+    assert t["marble_mountain"]["settings"]["exclude"] == ["seq:ZCAM04469"]     # 27 Oct (Christian)
     from mppp.pipeline import Settings
     a = Settings(exclude=["seq:ZCAM05065"]).key_dict()
     assert a == Settings().key_dict()                                            # a Navcam run: the key stays
