@@ -971,6 +971,8 @@ LABEL_POINTING_CHECKS = ("block_rotation_deg", "attitude_residual_p95_deg")
 
 _ZOOM = re.compile(r"ZCAM\d{5}_(\d{3})")
 _ZCAM_CAMERA = re.compile(r"Z[LR](\d{3})(?:_|$)")        # a Mastcam-Z bin camera (ZR048_F02070, ZL034_F00180_reg)
+_ZCAM_NAMED = re.compile(r"\bZ[LR](\d{3})\b")             # Mastcam-Z camera groups named in a note (ZL063: 0.252)
+_ZCAM_NAMED_FULL = re.compile(r"\bZ[LR]\d{3}\b")
 
 
 def _group_zoom(grp: str) -> Optional[int]:
@@ -990,11 +992,21 @@ def restrict_to_zoom(report: Dict[str, Any], colmap_dir: PathLike, zoom: int) ->
     # a camera-model check of another zoom's Mastcam-Z camera is not this joint's - it no longer fails the block
     others = [c for c in report.get("checks") or [] if c.get("section") == "camera model"
               and (m := _ZCAM_CAMERA.match(str(c.get("note") or ""))) and int(m.group(1)) != int(zoom)]
+    # 27 Oct (Seitah Overlook: the eye ratio of its 63 mm frames failed the block for the Z34 joint): a residual check
+    # that names only Mastcam-Z cameras of other zooms (the worse / better eye ratio "ZL063: 0.252, ZR063: 0.646")
+    for c in report.get("checks") or []:
+        if c.get("check") == "residual_eye_ratio" and not any(c is o for o in others):
+            zs = {int(z) for z in _ZCAM_NAMED.findall(str(c.get("note") or ""))}
+            if zs and int(zoom) not in zs:
+                others.append(c)
     if others:
         report["checks"] = [c for c in report["checks"] if not any(c is o for o in others)]
         bad = [o for o in others if o.get("status") in ("warn", "fail")]
-        out.append(f"camera-model checks of other zooms' cameras set aside: {len(others)}"
-                   + (f" ({', '.join(sorted({str(o['note']) + ' ' + str(o['status']) for o in bad}))})" if bad else ""))
+        def _name(o):
+            nm = str(o.get("note") or "")
+            return nm if _ZCAM_CAMERA.match(nm) else f"{o.get('check')} {'/'.join(sorted(set(_ZCAM_NAMED_FULL.findall(nm))))}"
+        out.append(f"checks of other zooms' Mastcam-Z cameras set aside: {len(others)}"
+                   + (f" ({', '.join(sorted({_name(o) + ' ' + str(o['status']) for o in bad}))})" if bad else ""))
     try:
         pj = json.loads((root / "project.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):

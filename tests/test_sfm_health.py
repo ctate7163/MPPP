@@ -359,6 +359,15 @@ def test_a_zoom_joint_sets_aside_other_zooms_camera_checks(tmp_path):
     notes = restrict_to_zoom(r, tmp_path, 63)                     # no project.json: the camera checks still go
     assert [c["note"] for c in r["checks"]] == ["ZR063_F02500_reg", "NL_T-020-017.5"] and "ZR048_F02070 fail" in notes[0]
     assert rejudge(r, warn_only=LABEL_POINTING_CHECKS)[0] == "pass"
+    r = {"checks": [{"section": "reprojection", "check": "residual_eye_ratio", "value": 2.56, "status": "fail", "warn": 1.3,
+                     "fail": 2.0, "note": "median residual, worse eye / better eye: ZL063: 0.252, ZR063: 0.646"}]}
+    assert rejudge(dict(r), warn_only=LABEL_POINTING_CHECKS)[0] == "fail"            # (Seitah Overlook, 27 Oct)
+    restrict_to_zoom(r, tmp_path, 34)
+    assert r["checks"] == [] and rejudge(r, warn_only=LABEL_POINTING_CHECKS)[0] == "pass"
+    r = {"checks": [{"section": "reprojection", "check": "residual_eye_ratio", "value": 2.56, "status": "fail", "warn": 1.3,
+                     "fail": 2.0, "note": "median residual, worse eye / better eye: ZL063: 0.252, ZR063: 0.646"}]}
+    restrict_to_zoom(r, tmp_path, 63)
+    assert rejudge(r, warn_only=LABEL_POINTING_CHECKS)[0] == "fail"
     r = rep()
     restrict_to_zoom(r, tmp_path, 48)                             # the 48 mm joint keeps its own failure
     assert rejudge(r, warn_only=LABEL_POINTING_CHECKS)[0] == "fail"
