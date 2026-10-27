@@ -146,11 +146,14 @@ def test_groups_and_block_sites():
     t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
     g = t["groups"]
     # 24 Oct (Christian): Chal Rocks instead of Chal Rocks Large, without Pico Turquino - a faster run;
-    # 27 Oct: Pico Turquino back (a third 48 mm block)
-    assert g["zcam_consensus"] == ["seitah_overlook", "chal_rocks", "threeforks_north", "belva_crater", "south_arm",
-                                   "marble_mountain", "taylorfjellet", "pico_turquino"]
+    # 27 Oct: Pico Turquino back (a third 48 mm block); later on 27 Oct (Christian's new lists): Chal Rocks Large
+    # again, Bright Angel; the Hazcam consensus without Three Forks North; a list per zoom
+    assert g["zcam_consensus"] == ["chal_rocks_large", "seitah_overlook", "threeforks_north", "belva_crater",
+                                   "taylorfjellet", "marble_mountain", "bright_angle", "pico_turquino", "south_arm"]
     assert "chal_rocks_large" not in g["zcam34_joint"] and "chal_rocks" in g["zcam34_joint"]
-    assert g["hazcam_consensus"] == ["chal_rocks_large", "threeforks_north", "belva_crater", "bell_island", "marble_mountain"]
+    assert g["hazcam_consensus"] == ["chal_rocks_large", "belva_crater", "bell_island", "marble_mountain"]
+    assert g["zcam63_consensus"] == ["chal_rocks_large", "seitah_overlook", "bright_angle", "taylorfjellet", "marble_mountain"]
+    assert t["sites"]["bright_angle_large"]["sols"] == [[1175, 1220]] and t["sites"]["bright_angle_large"]["official_blocks"] == []
     assert all(s in t["sites"] for s in g["hazcam_consensus"])
     ob = t["official_blocks"]
     assert ob["3"]["site"] == "chal_rocks" and ob["18"]["site"] == "belva_crater" and ob["9"]["site"] == "threeforks_north"
