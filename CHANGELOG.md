@@ -4,6 +4,7 @@ The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12
 
 ## 0.94.4 — 2026-10-23
 
+- Sites (Christian, 27 Oct): Taylorfjellet without 48 mm (`zcam` [34, 63]): its one 48 mm pair left the ZR048 bin camera unconstrained (principal point +90 px), which failed the site and kept it out of the Z34 and Z63 joints.
 - Sites (Christian, 27 Oct): Enchanted Lake with 63 mm too (`zcam` [34, 63]); the pipeline's Mastcam-Z joints of every zoom take `zcam34_joint` + `zcam_consensus` (48 / 63 took `zcam_consensus` only), so its 63 mm frames reach the Z63 joint.
 - Sites (Christian, 27 Oct): Pico Turquino back in `zcam_consensus` (48 mm; a third block for the Z48 joint).
 - **Tighter Mastcam-Z model checks** (27 Oct: Z48 was promoted with ZR fy / fx 0.9928, its eyes' f0 1.8 % apart, fitted high / low ratios 0.9939 and 1.0231 and a Mastcam-Z rms of 3.3 px; Z79 of 26 Oct with aspect 0.981 and rms 29.6 px): the aspect within 0.3 % of 1 (was 2 %; a first edit put a comment over `max_k1` and `baseline_m`, so the rig check crashed - fixed before any joint ran with it), the two eyes' f0 within 0.5 % (`eyes f0`), a fitted high / low ratio outside 1.004..1.016 fails instead of keeping the start ratio, and the joint's Mastcam-Z residual rms <= 1.5 px (`ZJOINT_LIMITS["max_zcam_rms_px"]`).

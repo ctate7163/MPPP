@@ -403,7 +403,8 @@ def test_chal_rocks_110mm():
     d = load_site_table()
     t = d["sites"]
     # 26 Oct (Christian): 79 and 110 mm out for now - 34, 48, 63 mm until the wider zooms have good models
-    assert t["chal_rocks_tiny"]["zcam"] == [34, 48, 63] == t["taylorfjellet"]["zcam"] == t["chal_rocks"]["zcam"]
+    assert t["chal_rocks_tiny"]["zcam"] == [34, 48, 63] == t["chal_rocks"]["zcam"]
+    assert t["taylorfjellet"]["zcam"] == [34, 63]          # 27 Oct (Christian): its one 48 mm pair out
     assert t["seitah_overlook"]["zcam"] == [34, 48, 63] and t["belva_crater"]["zcam"] == [34]
     assert not any(z in (79, 110) for s_ in t.values() for z in (s_.get("zcam") or []))
     assert t["taylorfjellet"]["settings"]["exclude"] == ["seq:ZCAM05065"]       # 26 Oct (Christian)
