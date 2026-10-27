@@ -726,6 +726,31 @@ def test_refit_lines_on_the_v0p75_form(monkeypatch):
     assert p[4] == pytest.approx(zr["backlash"]["k1"]["a"]) and p[0] == pytest.approx(zr["backlash"]["fx"]["a"] + zr["backlash"]["fx"]["b"] * (300 - 600))
 
 
+def test_refit_lines_pin_the_regular_state_at_its_own_principal_point(monkeypatch):
+    """0.95.0 (Christian, 27 Oct: the right eye's regular principal-point offset): a ZR regular-state line with its own
+    bins is pinned at pp0 plus the model's regular_pp_offset_px, as the no-own-line path already added it (0.93.5) -
+    before, the two paths disagreed and the low-state bins were set back to the high state's centre."""
+    from mppp.sfm.zcam import refit_focus_lines
+    rec, proj, model, db = _bins(monkeypatch)
+    model["cameras"]["ZR034"]["regular_pp_offset_px"] = [-5.0, 3.0]
+    for key, cid in db.items():                       # the low-state bins' centres carry the offset
+        if key.startswith("ZR") and key.endswith("_reg"):
+            p = np.array(rec.cameras[cid].params, float)
+            p[2] -= 5.0
+            p[3] += 3.0
+            rec.cameras[cid].params = p
+    out = refit_focus_lines(rec, proj, model=model)
+    zr = out["ZR034"]["lines"]
+    assert zr["backlash"]["cx"]["a"] == 820.0 and zr["backlash"]["cy"]["a"] == 600.0
+    assert zr["regular"]["cx"]["a"] == 815.0 and zr["regular"]["cy"]["a"] == 603.0 and zr["regular"]["cx"]["b"] == 0.0
+    assert zr["regular"]["cy"]["b"] == pytest.approx(zr["backlash"]["cy"]["b"], abs=5e-4)   # the same slope, through the pin
+    assert zr["regular"]["cy"]["rms"] < 0.2 and zr["regular"]["cx"]["rms"] < 0.2        # (the old pin: 3 and 5 px off)
+    p = rec.cameras[db["ZR034_F00600_reg"]].params
+    assert p[2] == pytest.approx(815.0) and p[3] == pytest.approx(603.0)
+    assert rec.cameras[db["ZR034_F00500"]].params[2] == pytest.approx(820.0)
+    assert "cx" not in out["ZL034"]["lines"]["regular"]                                  # ZL: the reference eye
+
+
 def test_refit_lines_free_form_and_foreign_pp0(monkeypatch):
     from mppp.sfm.zcam import PIN_MAX_OFFSET_PX, refit_focus_lines
     rec, proj, model, _ = _bins(monkeypatch, form={"ZL": {k: "free" for k in ("fx", "fy", "k1", "k2")},

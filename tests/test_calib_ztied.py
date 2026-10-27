@@ -81,9 +81,11 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None):
                 sclk = f"{7000 + k:010d}_000"
                 for eye, R, C in (("L", RL, CL), ("R", RR, CR)):
                     nm = f"Z{eye}0_{sol:04d}_{k:04d}.png"
-                    is_reg = bool(reg) and eye == reg["eye"] and F == reg["F"]
+                    regs = reg if isinstance(reg, list) else ([reg] if reg else [])   # 0.95.0: one spec per eye
+                    rg = next((x for x in regs if eye == x["eye"] and F == x["F"]), None)
+                    is_reg = rg is not None
                     is_fb = bool(fb) and eye == fb["eye"] and F == fb["F"]       # 0.94.4: focus from below
-                    zimgs.append({"_reg": is_reg, "_fb": is_fb, "name": nm, "stem": nm[:-4], "instrument": f"Z{eye}", "eye": eye, "sclk_key": sclk,
+                    zimgs.append({"_reg": is_reg, "_regspec": rg, "_fb": is_fb, "name": nm, "stem": nm[:-4], "instrument": f"Z{eye}", "eye": eye, "sclk_key": sclk,
                                   "sol": sol, "site": 1, "drive": int(st[-4:]), "station": st, "sequence": "ZCAM00000",
                                   "downsample_scale": 1.0, "native_size": [ZW, ZH], "prior_C": C.tolist(),
                                   "prior_R_w2c": R.tolist(), "has_mask": False, "camera_group": f"Z{eye}034",
@@ -111,10 +113,11 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None):
                 p[0] += fb["offset_px"]
                 p[1] += fb["offset_px"] * asp
             if r["_reg"]:
-                p[2] += reg["offset"][0]
-                p[3] += reg["offset"][1]
-                if reg.get("ratio"):                # 0.94.4: this block's own high / low ratio
-                    p[:2] *= float(model["cameras"][r["camera_group"]]["regular_ratio"]) / float(reg["ratio"])
+                rg = r["_regspec"]
+                p[2] += rg["offset"][0]
+                p[3] += rg["offset"][1]
+                if rg.get("ratio"):                 # 0.94.4: this block's own high / low ratio
+                    p[:2] *= float(model["cameras"][r["camera_group"]]["regular_ratio"]) / float(rg["ratio"])
             rec.add_camera(pycolmap.Camera(camera_id=nid, model="FULL_OPENCV", width=ZW, height=ZH, params=p))
             proj.cameras[key] = {"model": "FULL_OPENCV", "params": p.tolist(), "width": ZW, "height": ZH,
                                  "group": r["camera_group"], "focus_count_median": float(r["focus_count"]),
@@ -548,3 +551,50 @@ def test_thin_bins_left_out_of_the_lines():
     assert proj.cameras["ZL048_F3_reg@b"]["free_params"] == ["fx", "fy"]
     assert {"k1", "k2", "cx", "cy"} <= set(proj.cameras["ZL048_F3_reg@b"]["fixed_params"])
     assert sg["low_images"] == {"ZL048": 2}                          # the thin bin's image not counted
+
+
+def test_right_eye_low_state_principal_point_without_mixed_exposures(tmp_path, monkeypatch):
+    """0.95.0 (Christian, 27 Oct: "the right eye's regular principal-point offset - the state shows in the centre"):
+    both eyes low at the same focus in every exposure (no mixed exposures at all), ZR's low-state principal point
+    -5, +3 px from its high state's.  0.93.2's mixed rule held both offsets and the rig took the shift up; now ZR's
+    offset is fitted relative to ZL's (held, the reference eye) from the paired exposures, and the rig stays."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    from scipy.spatial.transform import Rotation
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    monkeypatch.setattr(Z, "LOW_LIST_CHECK", False)
+    rng = np.random.default_rng(17)
+    truth = _truth_model()
+    regs = [{"eye": "L", "F": 950.0, "offset": (0.0, 0.0)}, {"eye": "R", "F": 950.0, "offset": (-5.0, 3.0)}]
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500, reg=regs)
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900, reg=regs)
+    st = _navcam_law(cams, rigT)
+    Rt = np.asarray(truth["rig"]["R_sensor_from_ref"])
+
+    def run():
+        res = Z.fit_zjoint({}, model=copy.deepcopy(truth), scapes=[copy.deepcopy(a), copy.deepcopy(b)], st=st,
+                           nav_points=None, z_points=None, iterations=60, passes=2, verbose=False, diagnostics=False,
+                           k_tests=False)
+        R = np.asarray(res["rig"]["R_sensor_from_ref"])
+        return res, float(np.degrees(np.linalg.norm(Rotation.from_matrix(R @ Rt.T).as_rotvec())) * 1e3)
+
+    res, rig_err = run()
+    zl, zr = res["eyes"]["ZL034"], res["eyes"]["ZR034"]
+    assert zl["mixed_exposures"] == 0 and zr["mixed_exposures"] == 0
+    assert zl["paired_low_exposures"] == 12 and zr["paired_low_exposures"] == 12
+    assert "d_cx_regular" in zl["held"] and "d_cx_regular" not in zr["held"]
+    assert zr["terms"]["d_cx_regular"] == pytest.approx(-5.0, abs=0.4)
+    assert zr["terms"]["d_cy_regular"] == pytest.approx(3.0, abs=0.4)
+    assert rig_err < 3.0
+    cand = Z.candidate_model(res, truth)
+    rp = cand["cameras"]["ZR034"]["regular_pp_offset"]
+    assert not rp["held"] and rp["paired_low_exposures"] == 12 and "relative to ZL" in rp["note"]
+    assert cand["cameras"]["ZL034"]["regular_pp_offset"]["held"]
+    from mppp.calib.fit import check_zcam
+    note = next(c["note"] for c in check_zcam(cand, truth)["checks"] if c["check"] == "ZR034 regular principal point")
+    assert "12 low-state exposures paired with ZL" in note
+    assert any("low-state exposures paired with ZL" in x for x in Z.describe(res))
+    # the old rule (0.93.2): both held, the rig takes the shift up
+    monkeypatch.setattr(Z, "MIN_PAIRED_LOW_EXPOSURES", 10 ** 6)
+    res0, rig_err0 = run()
+    assert "d_cx_regular" in res0["eyes"]["ZR034"]["held"] and rig_err0 > 3 * max(rig_err, 1.0)

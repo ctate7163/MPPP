@@ -1791,7 +1791,9 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
             add(f"{g} regular principal point", float(np.hypot(*off)) <= lim["max_regular_pp_offset_px"],
                 f"{off[0]:+.2f}, {off[1]:+.2f} px from the backlash state's"
                 + (f" (sd {sd[0]:.2f}, {sd[1]:.2f})" if sd[0] is not None and sd[1] is not None else "")
-                + f", {rp.get('mixed_exposures', 0)} exposures with the other eye in backlash")
+                + (f", {rp.get('paired_low_exposures', 0)} low-state exposures paired with ZL (relative to ZL's)"
+                   if str(g).startswith("ZR") and "paired_low_exposures" in rp else            # 0.95.0
+                   f", {rp.get('mixed_exposures', 0)} exposures with the other eye in backlash"))
         dist = c.get("distortion") or {}
         if "k1" in (dist.get("names") or []):
             k1 = dist["params"][dist["names"].index("k1")]

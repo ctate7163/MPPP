@@ -339,6 +339,9 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                     pp0 = gm.get("pp0_px") if gm else None
                     if pp0 and len(pp0) == 2:
                         pin_a = float(pp0[0 if pn == "cx" else 1])
+                        if st == "regular":          # 0.95.0: the regular state's own principal point (the model's
+                            off_ = gm.get("regular_pp_offset_px") or [0.0, 0.0]      # offset, as the no-own-line path)
+                            pin_a += float(off_[0 if pn == "cx" else 1])
                         far = abs(float(np.median(y)) - pin_a)
                         if far > PIN_MAX_OFFSET_PX:        # a model that does not belong to these bins: not pinned
                             pin_note = (f"not pinned: the model's pp0 {pin_a:.1f} is {far:.0f} px from the bins' median "

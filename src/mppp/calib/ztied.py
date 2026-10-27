@@ -50,6 +50,9 @@ NG = len(GLOBAL_TERMS)
 # frame rotation or the Mastcam-Z rig.  The offset is observable through the exposures in which this eye is regular
 # and the other eye in the backlash state (the other eye and the rig fix the pose); with fewer it is held
 MIN_MIXED_EXPOSURES = 5
+# 0.95.0 (Christian, 27 Oct): ZR's regular-state offset is relative to ZL's (the reference eye, its offset held unless
+# the mixed exposures make it observable) and needs only exposures with ZL in the problem, in any state
+MIN_PAIRED_LOW_EXPOSURES = 10
 LOW_LIST_CHECK = True                  # 0.93.7: a low-state camera enters only when its frames are on the list
 # (0.94.4: the shipped list and the found list, `found` of build - "auto": <the blocks' root>/zcam_low_backlash_found.csv)
 REGULAR_RATIO_RANGE = (1.004, 1.016)   # 0.93.5: backlash / regular f of a fitted regular state (the states ~0.95 % apart)
@@ -221,6 +224,7 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
     for cid, u in zunits.items():                # 0.94.4: the bin's sol (median of its images) for ratio_by "sol"
         u["sol"] = int(round(float(np.median(sols_of[cid])))) if sols_of.get(cid) else None
     sg["mixed"] = mixed_exposures(proj.images, zunits)
+    sg["paired_low"] = paired_low_exposures(proj.images, zunits)         # 0.95.0 (Mastcam-Z joint: ZR's low-state principal-point offset fitted relative to ZL's from every exposure paired with ZL (not only the mixed ones); the site runs pin a regular-state line at pp0 + the model's offset (Christian, 27 Oct: the state shows in the centre - Seitah ZR063 0.65 px))
     sg["split_cameras_left_out"] = split_out
     sg["low_cameras_not_on_list"] = off_list
     sg["found_list"] = sg_found
@@ -273,9 +277,12 @@ def mark_thin_bins(rec, proj, zunits: Dict[int, Dict[str, Any]], sg: Dict[str, A
     return thin
 
 
-def mixed_exposures(images: Sequence[Dict[str, Any]], zunits: Dict[int, Dict[str, Any]]) -> Dict[str, int]:
+def mixed_exposures(images: Sequence[Dict[str, Any]], zunits: Dict[int, Dict[str, Any]],
+                    other_state: Optional[str] = "backlash") -> Dict[str, int]:
     """Per eye group, the exposures (block, SCLK) in which this eye is in the regular state and the other eye of the
-    same zoom in the backlash state - what makes the regular state's principal point observable (0.93.2)."""
+    same zoom in the backlash state - what makes the regular state's principal point observable (0.93.2).
+    ``other_state`` None (0.95.0): the other eye in the problem in any state - the exposures that make the right
+    eye's regular-state principal point observable relative to the left eye's (:func:`paired_low_exposures`)."""
     ex: Dict[Tuple[Any, Any], Dict[str, str]] = {}
     for r in images:
         u = zunits.get(int(r.get("camera_id", -1)))
@@ -286,9 +293,19 @@ def mixed_exposures(images: Sequence[Dict[str, Any]], zunits: Dict[int, Dict[str
     for v in ex.values():
         for g, st in v.items():
             other = ("ZR" if g.startswith("ZL") else "ZL") + g[2:]
-            if st == "regular" and v.get(other) == "backlash":
+            if st == "regular" and (v.get(other) == other_state if other_state else other in v):
                 out[g] += 1
     return out
+
+
+def paired_low_exposures(images: Sequence[Dict[str, Any]], zunits: Dict[int, Dict[str, Any]]) -> Dict[str, int]:
+    """0.95.0 (Christian, 27 Oct: "the right eye's regular principal-point offset - the state shows in the centre"):
+    per eye group, the exposures in which this eye is in the regular (low) state and the other eye is in the problem
+    in any state.  With ZL the reference eye (its principal point pinned, its regular offset held unless the mixed
+    exposures make it observable), ZR's regular-state offset is the right-minus-left boresight change of the low
+    state, observable through the rig in every such exposure - not only in the mixed ones (0.93.2), which Z63 lacks
+    (Seitah Overlook ZR063's low-state frames: 0.65 px)."""
+    return mixed_exposures(images, zunits, other_state=None)
 
 
 def _navcam_globals(st: Dict[str, Any]) -> Dict[str, np.ndarray]:
@@ -423,6 +440,11 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
             ix = {3}                                         # a_fy_regular: a_fx_regular x the aspect (0.93.5)
             if not has_reg[eye]:
                 ix |= {2, 3, 10, 11}                         # no regular-state bin: the regular offsets stay
+            elif eye.startswith("ZR"):
+                # 0.95.0: ZR's low-state principal point relative to ZL's - observable through the rig in every
+                # exposure with ZL in the problem, whatever ZL's state
+                if int((sg.get("paired_low") or {}).get(eye, 0)) < MIN_PAIRED_LOW_EXPOSURES:
+                    ix |= {10, 11}
             elif int((sg.get("mixed") or {}).get(eye, 0)) < MIN_MIXED_EXPOSURES:
                 ix |= {10, 11}                               # 0.93.2: the regular pp not observable apart from the pose
             if not eye.startswith("ZR"):
@@ -590,6 +612,7 @@ def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
                             "held": [GLOBAL_TERMS[i] for i in held.get(eye, [])], "reference_focus": e["ref"],
                             "ratio_start": e["ratio"], "pp0_px": e["pp0"],
                             "mixed_exposures": int((sg.get("mixed") or {}).get(eye, 0)),
+                            "paired_low_exposures": int((sg.get("paired_low") or {}).get(eye, 0)),     # 0.95.0
                             "bins": sum(1 for u in zunits.values() if u["group"] == eye and not u.get("thin")),
                             "regular_bins": sum(1 for u in zunits.values() if u["group"] == eye and u["state"] == "regular"
                                                 and not u.get("thin")),
@@ -1149,7 +1172,9 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    + (f"; {e['thin_bins']} bins with < {MIN_BIN_OBSERVATIONS} observations left out" if e.get("thin_bins") else "")
                    + ("" if "d_cx_regular" in e.get("held", []) else
                       f"; low-state principal point {f('d_cx_regular')}, {f('d_cy_regular')} px from the high "
-                      f"state's ({e.get('mixed_exposures', 0)} exposures with the other eye in the high state)"))
+                      f"state's (" + (f"{e.get('paired_low_exposures', 0)} low-state exposures paired with ZL"
+                                      if eye.startswith("ZR") else
+                                      f"{e.get('mixed_exposures', 0)} exposures with the other eye in the high state") + ")"))
     for r_ in res.get("focus_below") or []:          # 0.94.4: the focus approach
         sdp = f" +- {r_['sd_px']:.2f}" if r_.get("sd_px") else ""
         out.append(f"{r_['eye']} focus from below: fx {r_['offset_px']:+.2f}{sdp} px"
@@ -1255,12 +1280,18 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
             reg["cy"] = {"a": float(pp0[1]) + doff[1], "b": float(tm["b_cy"]) if eye.startswith("ZR") else 0.0,
                          "derived": "pp0 + the regular-state offset" + (" (and the cy slope)" if eye.startswith("ZR") else "")}
         gm["regular_pp_offset_px"] = doff
+        right = eye.startswith("ZR")
         gm["regular_pp_offset"] = {"sd_px": [sdv("d_cx_regular"), sdv("d_cy_regular")], "held": off_held,
                                    "mixed_exposures": int(e.get("mixed_exposures") or 0),
-                                   "note": ("held: fewer than %d exposures with this eye regular and the other in the "
-                                            "backlash state" % MIN_MIXED_EXPOSURES) if off_held else
-                                           "fitted: the regular state's principal point minus the backlash state's "
-                                           "(the pose shared: the other eye and the rig fix it)"}
+                                   "paired_low_exposures": int(e.get("paired_low_exposures") or 0),     # 0.95.0
+                                   "note": (("held: fewer than %d exposures with this eye in the low state and ZL in the "
+                                             "problem" % MIN_PAIRED_LOW_EXPOSURES) if right else
+                                            ("held: fewer than %d exposures with this eye regular and the other in the "
+                                             "backlash state" % MIN_MIXED_EXPOSURES)) if off_held else
+                                           (("fitted: ZR's low-state principal point minus its high state's, relative "
+                                             "to ZL's (the reference eye; the pose shared through the rig)") if right else
+                                            "fitted: the regular state's principal point minus the backlash state's "
+                                            "(the pose shared: the other eye and the rig fix it)")}
         gm["lines"] = {"backlash": {pn: {k: v for k, v in x.items() if k in ("a", "b", "form")} for pn, x in bk.items()},
                        "regular": {pn: {k: v for k, v in x.items() if k in ("a", "b", "derived")} for pn, x in reg.items()},
                        "reference_focus": ref}
