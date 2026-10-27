@@ -84,7 +84,8 @@ DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     # knowledge is ~0.1-0.35 deg per frame; the p95 over nine sites was 0.23-0.69 deg)
     "attitude_residual_p95_deg": (0.75, 2.0, "above"),
     "within_station_shift_spread_m": (0.1, 0.4, "above"),   # doubled in v0p20 (user request)
-    "corner_triangulated_ratio": (0.5, 0.25, "below"),      # v0p20
+    # v0p20; 0.94.5 (Christian, 27 Oct): fail relaxed 0.25 -> 0.15 (Chal Rocks ZL063 0.205)
+    "corner_triangulated_ratio": (0.5, 0.15, "below"),
     # the scale error of the station layout is judged as the displacement it makes at the stations
     # (|s - 1| x rms station distance from the centroid x sqrt(n)): 2 % over an 8 m block is 0.2 m, within the
     # waypoint accuracy; prior_scale_error_pct is reported without a verdict

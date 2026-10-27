@@ -128,7 +128,7 @@ def test_health_thresholds_v0p20():
     from mppp.sfm.health import DEFAULT_THRESHOLDS
     assert DEFAULT_THRESHOLDS["station_shift_median_m"][:2] == (2.0, 6.0)
     assert DEFAULT_THRESHOLDS["within_station_shift_spread_m"][:2] == (0.1, 0.4)
-    assert DEFAULT_THRESHOLDS["corner_triangulated_ratio"] == (0.5, 0.25, "below")
+    assert DEFAULT_THRESHOLDS["corner_triangulated_ratio"] == (0.5, 0.15, "below")      # 0.94.5: fail 0.25 -> 0.15
 
 
 def test_camera_change_reaches_the_corners():
@@ -389,12 +389,14 @@ def test_corner_check_warns_for_mastcam_z_fails_for_navcam(monkeypatch):
     corner coverage warns, a Navcam camera's still fails; rejudging an old report follows."""
     from mppp.sfm.health import DEFAULT_THRESHOLDS, corner_check, rejudge
     thr = dict(DEFAULT_THRESHOLDS)
-    wc, st = corner_check(_cov({"NL": (0.5, 0.45), "ZL063": (0.46, 0.094)}), thr, skip_groups=[])
-    assert wc[0] == "ZL063" and wc[1] == pytest.approx(0.204, abs=1e-3) and st == "warn"
-    wc, st = corner_check(_cov({"NL": (0.5, 0.1), "ZL063": (0.46, 0.4)}), thr, skip_groups=[])
+    wc, st = corner_check(_cov({"NL": (0.5, 0.45), "ZL063": (0.46, 0.046)}), thr, skip_groups=[])
+    assert wc[0] == "ZL063" and wc[1] == pytest.approx(0.10, abs=1e-3) and st == "warn"      # below the 0.15 fail
+    wc, st = corner_check(_cov({"NL": (0.5, 0.05), "ZL063": (0.46, 0.4)}), thr, skip_groups=[])
     assert wc[0] == "NL" and st == "fail"
+    wc, st = corner_check(_cov({"NL": (0.5, 0.1), "ZL063": (0.46, 0.4)}), thr, skip_groups=[])
+    assert st == "warn"                                                        # 0.20: a warning since 0.94.5
     rep = {"checks": [{"check": "corner_triangulated_ratio", "status": "fail", "value": 0.205, "note": "ZL063: 9 %"}],
-           "coverage_by_radius": _cov({"NL": (0.5, 0.45), "ZL063": (0.46, 0.094)})}
+           "coverage_by_radius": _cov({"NL": (0.5, 0.45), "ZL063": (0.46, 0.046)})}
     import mppp.sfm.health as H
     monkeypatch.setattr(H, "zcam_uncalibrated_groups", lambda groups: set())      # 63 mm calibrated here
     v, changed = rejudge(rep)

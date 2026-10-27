@@ -68,7 +68,12 @@ EXACT_TIE_SOLVE = False
 # two blocks, which disagreed by 1.2 %)
 REGULAR_RATIO_BY = "global"
 REGULAR_SAME_SLOPE = True
-MIN_LOW_IMAGES = 10
+MIN_LOW_IMAGES = 6                     # (Christian, 27 Oct: "under ~6"; Z63 has 5 per eye, Z48 6)
+# 0.94.5 (Christian, 27 Oct: "leave out high- or low-state bins with too few observations (under ~500), and take
+# the ratio across blocks"): a bin camera with fewer observations in the joint is not tied to the lines (its fx, fy
+# free, the rest held at the start) - Z48 of 27 Oct: Chal Rocks' and Seitah Overlook's one high-state bins, ~150
+# observations, fy / fx 1.7 % and 4.5 % off
+MIN_BIN_OBSERVATIONS = 500
 RATIO_HOLD_ZOOM = 34
 # 0.94.5 (Christian, 27 Oct): per block, the Mastcam-Z aspect (fy / fx of the diagnostic pass, the line with the
 # most observations) against the Navcam's per-block dfy - dfx (the Navcam diagnostic pass over the same blocks)
@@ -215,10 +220,6 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
     for cid, u in zunits.items():                # 0.94.4: the bin's sol (median of its images) for ratio_by "sol"
         u["sol"] = int(round(float(np.median(sols_of[cid])))) if sols_of.get(cid) else None
     sg["mixed"] = mixed_exposures(proj.images, zunits)
-    sg["low_images"] = {g_: sum(1 for r in proj.images if int(r.get("camera_id", -1)) in zunits
-                                and zunits[int(r["camera_id"])]["group"] == g_
-                                and zunits[int(r["camera_id"])]["state"] == "regular")
-                        for g_ in sorted({u["group"] for u in zunits.values()})}      # 0.94.5
     sg["split_cameras_left_out"] = split_out
     sg["low_cameras_not_on_list"] = off_list
     sg["found_list"] = sg_found
@@ -233,7 +234,42 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
             fid = rec.images[int(r["image_id"])].frame_id
             if fid in rec.frames and rec.frames[fid].has_pose:
                 rec.deregister_frame(fid)
+    mark_thin_bins(rec, proj, zunits, sg)          # 0.94.5
     return rec, proj, idx, st, units, zunits, sg
+
+
+def mark_thin_bins(rec, proj, zunits: Dict[int, Dict[str, Any]], sg: Dict[str, Any],
+                   min_obs: Optional[int] = None) -> List[str]:
+    """0.94.5: the bin cameras with fewer than ``min_obs`` (:data:`MIN_BIN_OBSERVATIONS`) observations in the joint
+    get ``thin`` - left out of the ties (fx, fy free, the principal point and distortion held at the start); then
+    ``sg["low_images"]`` {eye: low-state images of the bins kept} and ``sg["thin_bins"]`` [names]."""
+    min_obs = MIN_BIN_OBSERVATIONS if min_obs is None else int(min_obs)
+    obs: Dict[int, int] = {}
+    for pt in rec.points3D.values():
+        for el in pt.track.elements:
+            c = int(rec.images[el.image_id].camera_id)
+            if c in zunits:
+                obs[c] = obs.get(c, 0) + 1
+    thin = []
+    for cid, u in zunits.items():
+        u["observations"] = int(obs.get(int(cid), 0))
+        u["thin"] = bool(min_obs and u["observations"] < min_obs)
+        if u["thin"]:
+            thin.append(f"{u['key']} ({u['observations']})")
+            spec = proj.cameras.get(u["key"])
+            if spec is not None:
+                spec["fixed_params"] = sorted(set(spec.get("fixed_params") or []) | {"cx", "cy", "k1", "k2", "p1", "p2"})
+                spec["free_params"] = ["fx", "fy"]
+    sg["thin_bins"] = thin
+    sg["low_images"] = {g_: sum(1 for r in proj.images if int(r.get("camera_id", -1)) in zunits
+                                and zunits[int(r["camera_id"])]["group"] == g_
+                                and zunits[int(r["camera_id"])]["state"] == "regular"
+                                and not zunits[int(r["camera_id"])].get("thin"))
+                        for g_ in sorted({u["group"] for u in zunits.values()})}
+    if thin:
+        log.info("Mastcam-Z joint: %d bin cameras with fewer than %d observations left out of the lines (%s)", len(thin),
+                 min_obs, ", ".join(thin[:12]) + (" ..." if len(thin) > 12 else ""))
+    return thin
 
 
 def mixed_exposures(images: Sequence[Dict[str, Any]], zunits: Dict[int, Dict[str, Any]]) -> Dict[str, int]:
@@ -282,7 +318,7 @@ def ratio_groups(zunits: Dict[int, Dict[str, Any]], by: Optional[str] = None) ->
     ratio is the eye's own, no offset)."""
     out: Dict[Tuple[str, str], List[int]] = {}
     for cid, u in zunits.items():
-        k = ratio_group(u, by) if u["state"] == "regular" else None
+        k = ratio_group(u, by) if (u["state"] == "regular" and not u.get("thin")) else None
         if k is not None:
             out.setdefault((u["group"], k), []).append(int(cid))
     n_eye: Dict[str, int] = {}
@@ -307,8 +343,10 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
     unit_group = {cid: k for k, cids in rgroups.items() for cid in cids}
     # 0.94.4 (Christian, 26 Oct): the focus approach - one offset per eye (px on fx; fy x the aspect) for the bins
     # whose focus came into place from below, the same focus slope ("a different y-intercept")
+    # 0.94.5: only for an eye with a focus-from-below bin in the high (backlash) state - with every such bin also in
+    # the low state the offset is the low state's ratio again (Z48 of 27 Oct: -1.5 % and -1.0 %, both bins low state)
     dfb = {eye: np.array([float((sg.get("focus_below_px") or {}).get(eye, 0.0))])
-           for eye in sorted({u["group"] for u in zunits.values() if u.get("fb")})} if tie else {}
+           for eye in sorted({u["group"] for u in zunits.values() if u.get("fb") and u["state"] != "regular" and not u.get("thin")})} if tie else {}
 
     def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
         n = 0
@@ -323,6 +361,8 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
         has_reg = {k: False for k in g}
         if tie:
             for cid, u in zunits.items():
+                if u.get("thin"):                            # 0.94.5: too few observations - not on the lines
+                    continue
                 blk = cam_blocks.get(int(cid))
                 if blk is None or not prob.has_parameter_block(blk) or prob.is_parameter_block_constant(blk):
                     continue
@@ -549,8 +589,10 @@ def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
                             "held": [GLOBAL_TERMS[i] for i in held.get(eye, [])], "reference_focus": e["ref"],
                             "ratio_start": e["ratio"], "pp0_px": e["pp0"],
                             "mixed_exposures": int((sg.get("mixed") or {}).get(eye, 0)),
-                            "bins": sum(1 for u in zunits.values() if u["group"] == eye),
-                            "regular_bins": sum(1 for u in zunits.values() if u["group"] == eye and u["state"] == "regular"),
+                            "bins": sum(1 for u in zunits.values() if u["group"] == eye and not u.get("thin")),
+                            "regular_bins": sum(1 for u in zunits.values() if u["group"] == eye and u["state"] == "regular"
+                                                and not u.get("thin")),
+                            "thin_bins": sum(1 for u in zunits.values() if u["group"] == eye and u.get("thin")),
                             "low_images": int((sg.get("low_images") or {}).get(eye, 0)),        # 0.94.5
                             "ratio_hold": e.get("ratio_hold"), "ratio_hold_source": e.get("ratio_hold_source")}
     out["regular_ratio_by"] = ba.get("ratio_by") or REGULAR_RATIO_BY
@@ -741,7 +783,7 @@ def set_ratio_holds(sg: Dict[str, Any], zoom: int, verbose: bool = True) -> Dict
         ref = None
     for eye, e in sg["eyes"].items():
         n = int((sg.get("low_images") or {}).get(eye, 0))
-        if is_single_state(eye) or n == 0 or n >= MIN_LOW_IMAGES:
+        if is_single_state(eye) or n >= MIN_LOW_IMAGES:     # (n == 0 too: no measurement - the 34 mm ratio)
             continue
         side = f"{eye[:2]}{RATIO_HOLD_ZOOM:03d}"
         r = ((ref or {}).get("cameras") or {}).get(side, {}).get("regular_ratio")
@@ -878,6 +920,8 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
         res["start_model"] = model
     res["split_cameras_left_out"] = list(sg.get("split_cameras_left_out") or [])
     res["low_cameras_not_on_list"] = list(sg.get("low_cameras_not_on_list") or [])
+    res["thin_bins"] = list(sg.get("thin_bins") or [])          # 0.94.5
+    res["min_bin_observations"] = int(MIN_BIN_OBSERVATIONS)
     res["found_list"] = sg.get("found_list")
     res.update({"zoom": zoom, "blocks": sorted({u["scape"] for u in zunits.values()}), "residuals": stats,
                 "zcam": _zstats(rec, zunits), "rig": rig_result(proj, sg, zoom), "final_cost": float(ba["final_cost"]),
@@ -1099,8 +1143,9 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    f"(high backlash state), slope {f('b', 5)} px/count; k1 {f('k1', 4)}, k2 {f('k2', 4)}, p1 {tm['p1']:+.2e}, "
                    f"p2 {tm['p2']:+.2e}" + (f"; cy slope {f('b_cy', 5)} px/count" if eye.startswith("ZR") else "")
                    + f"; {e['bins']} bins ({e['regular_bins']} in the low backlash state)" + lo
-                   + (f" - held at {e['ratio_hold']:.4f} ({e.get('ratio_hold_source')}: {e.get('low_images', 0)} low-state "
-                      f"images < {MIN_LOW_IMAGES})" if e.get("ratio_hold") and e.get("regular_bins") else "")
+                   + (f"; high / low ratio held at {e['ratio_hold']:.4f} ({e.get('ratio_hold_source')}: {e.get('low_images', 0)} "
+                      f"low-state images < {MIN_LOW_IMAGES})" if e.get("ratio_hold") else "")
+                   + (f"; {e['thin_bins']} bins with < {MIN_BIN_OBSERVATIONS} observations left out" if e.get("thin_bins") else "")
                    + ("" if "d_cx_regular" in e.get("held", []) else
                       f"; low-state principal point {f('d_cx_regular')}, {f('d_cy_regular')} px from the high "
                       f"state's ({e.get('mixed_exposures', 0)} exposures with the other eye in the high state)"))
@@ -1166,7 +1211,7 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
         sdv = lambda k: float(sd[k]) if k in sd and np.isfinite(sd[k]) else None      # noqa: E731
         single = is_single_state(eye)
         ratio_note = None
-        if e.get("ratio_hold") and int(e.get("regular_bins") or 0):     # 0.94.5: too few low-state images
+        if e.get("ratio_hold"):                       # 0.94.5: too few (or no) low-state images
             ratio = float(e["ratio_hold"])
             ratio_note = (f"held at {ratio:.4f} ({e.get('ratio_hold_source') or 'the 34 mm model'}): "
                           f"{int(e.get('low_images') or 0)} low-state images (< {MIN_LOW_IMAGES})")

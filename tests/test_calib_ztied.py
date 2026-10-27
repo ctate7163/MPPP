@@ -501,13 +501,50 @@ def test_block_aspect_against_the_navcam():
 
 def test_ratio_held_with_few_low_state_images():
     """0.94.5 (Z48 of 27 Oct: 6 low-state images per eye, two blocks 1.2 % apart): with fewer than MIN_LOW_IMAGES the
-    eye's high / low ratio is held at the 34 mm model's; 34 mm itself and eyes without low-state images are not held."""
+    eye's high / low ratio is held at the 34 mm model's; no low-state image at all: held too; 34 mm
+    itself and the single-state 110 mm are not."""
     from mppp.calib import ztied as Z
     from mppp.calib.fit import REGULAR_RATIO_DEFAULT
-    sg = {"eyes": {"ZL048": {}, "ZR048": {}}, "low_images": {"ZL048": 6, "ZR048": 40}}
+    sg = {"eyes": {"ZL048": {}, "ZR048": {}}, "low_images": {"ZL048": 5, "ZR048": 6}}
     held = Z.set_ratio_holds(sg, 48, verbose=False)
     assert set(held) == {"ZL048"} and 1.004 <= held["ZL048"] <= 1.016
     assert sg["eyes"]["ZL048"]["ratio_hold_source"] in ("the 34 mm model (ZL034)", "the default")
     assert Z.set_ratio_holds({"eyes": {"ZL034": {}}, "low_images": {"ZL034": 3}}, 34, verbose=False) == {}
-    assert Z.set_ratio_holds({"eyes": {"ZL063": {}}, "low_images": {"ZL063": 0}}, 63, verbose=False) == {}
+    h = Z.set_ratio_holds({"eyes": {"ZL063": {}}, "low_images": {"ZL063": 0}}, 63, verbose=False)
+    assert set(h) == {"ZL063"}                                    # no low-state image: not measured, held too
+    assert Z.set_ratio_holds({"eyes": {"ZL110": {}}, "low_images": {"ZL110": 0}}, 110, verbose=False) == {}
     assert REGULAR_RATIO_DEFAULT and Z.REGULAR_SAME_SLOPE and Z.REGULAR_RATIO_BY == "global"
+
+
+def test_focus_below_offset_needs_a_high_state_bin():
+    """0.94.5 (Z48 of 27 Oct: -1.5 % / -1.0 % from two focus-from-below bins, both in the low state): the offset is
+    fitted only for an eye with a focus-from-below bin in the high state."""
+    from mppp.calib import ztied as Z
+    sg = {"eyes": {"ZL048": {"G": np.zeros(Z.NG)}, "ZR048": {"G": np.zeros(Z.NG)}}}
+    zunits = {1: {"group": "ZL048", "state": "regular", "fb": True}, 2: {"group": "ZL048", "state": "backlash", "fb": False},
+              3: {"group": "ZR048", "state": "backlash", "fb": True}}
+    hook, _g = Z.make_zties(sg, zunits)
+    assert set(hook.focus_below) == {"ZR048"}
+
+
+def test_thin_bins_left_out_of_the_lines():
+    """0.94.5 (Christian, 27 Oct): a bin camera with fewer than MIN_BIN_OBSERVATIONS observations in the joint is left
+    out of the lines (fx, fy free, the rest held); the low-state image count (for the ratio hold) skips it."""
+    from types import SimpleNamespace as NS
+    from mppp.calib import ztied as Z
+    imgs = {1: NS(camera_id=11), 2: NS(camera_id=12), 3: NS(camera_id=13)}
+    pts = {i: NS(track=NS(elements=[NS(image_id=1), NS(image_id=2)] + ([NS(image_id=3)] if i < 100 else [])))
+           for i in range(600)}
+    rec = NS(points3D=pts, images=imgs)
+    proj = NS(cameras={"ZL048_F1@a": {"fixed_params": ["k3"]}, "ZL048_F2_reg@a": {"fixed_params": ["k3"]},
+                       "ZL048_F3_reg@b": {"fixed_params": ["k3"]}},
+              images=[{"camera_id": 11}, {"camera_id": 12}, {"camera_id": 12}, {"camera_id": 13}])
+    zunits = {11: {"key": "ZL048_F1@a", "group": "ZL048", "state": "backlash"},
+              12: {"key": "ZL048_F2_reg@a", "group": "ZL048", "state": "regular"},
+              13: {"key": "ZL048_F3_reg@b", "group": "ZL048", "state": "regular"}}
+    sg = {}
+    thin = Z.mark_thin_bins(rec, proj, zunits, sg, min_obs=500)
+    assert thin == ["ZL048_F3_reg@b (100)"] and zunits[13]["thin"] and not zunits[12]["thin"]
+    assert proj.cameras["ZL048_F3_reg@b"]["free_params"] == ["fx", "fy"]
+    assert {"k1", "k2", "cx", "cy"} <= set(proj.cameras["ZL048_F3_reg@b"]["fixed_params"])
+    assert sg["low_images"] == {"ZL048": 2}                          # the thin bin's image not counted
