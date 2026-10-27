@@ -310,6 +310,12 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
         if include_zcam:
             zcam_of: Dict[str, int] = {}
             idx["zimages"][sc.name] = []
+            # 0.95.0 (Christian, 27 Oct): each bin's observations in its block (before the joint's point sampling)
+            zobs: Dict[int, int] = {}
+            for pt in rec.points3D.values():
+                for el in pt.track.elements:
+                    c_ = int(rec.images[el.image_id].camera_id)
+                    zobs[c_] = zobs.get(c_, 0) + 1
             for fid, fr in rec.frames.items():
                 if not fr.has_pose:
                     continue
@@ -330,7 +336,8 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
                         new.add_rig(zr)
                         zcam_of[key] = next_cam
                         idx["zcams"][next_cam] = {"scape": sc.name, "key": key, "rig_id": next_rig,
-                                                  "spec": copy.deepcopy(sc.project.cameras.get(key) or {})}
+                                                  "spec": copy.deepcopy(sc.project.cameras.get(key) or {}),
+                                                  "observations": int(zobs.get(int(im.camera_id), 0))}
                         next_cam += 1
                         next_rig += 1
                     cid = zcam_of[key]
