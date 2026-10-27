@@ -49,3 +49,4 @@ N*_0681_0727400691_868*
 *_0684_0727664729_880*   # Three Forks North, front Hazcams: bad colours (Christian, 23 Oct)
 *_0693_0728459809_940*   # Three Forks North, front Hazcams: bad colours (Christian, 23 Oct)
 FLF_1976_0842367348_066RAD_N0910806FHAZ02008_0A0095J04   # Marble Mountain sol 1976, front left Hazcam (Christian, 26 Oct)
+*_1987_0843335916_525*   # Marble Mountain sol 1987 ZCAM04473 (63 mm): too few tie points, none to its stereo partner (Christian, 27 Oct)
