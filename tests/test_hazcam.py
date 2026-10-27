@@ -302,3 +302,13 @@ def test_hazcam_station_priors_follow_the_navcam_solution():
     assert np.allclose(f1["prior_C"], [1.1, 0.2, -1])
     cov = {"eyes": {"FL": {"observations": 5000}, "RL": {"observations": 200}}}
     assert R.hazcam_weak_eyes(cov) == ["RL"] and R.hazcam_weak_eyes({}) == []
+    # 0.95 (Christian, 27 Oct: South Arm's horizon frames wandered): the Mastcam-Z frames too, with their own sigma
+    proj.images.append({"name": "z1", "instrument": "ZL034_F00600", "station": "A", "prior_C": [0.2, 0.1, 1.9]})
+    R.hazcam_station_priors(rec, proj)
+    assert "prior_sigma_m" not in proj.images[-1]                            # off by default here
+    R.hazcam_station_priors(rec, proj, zcam_sigma_m=0.05)
+    z1 = proj.images[-1]
+    assert np.allclose(z1["prior_C"], [0.3, 0.3, 1.9]) and z1["prior_sigma_m"] == 0.05 and f1["prior_sigma_m"] == 0.1
+    from mppp.pipeline import Settings
+    assert Settings().zcam_station_prior_sigma_m == R.ZCAM_STATION_PRIOR_SIGMA_M == 0.1
+    assert "zcam_station_prior_sigma_m" not in Settings(include_zcam=False).key_dict()        # Navcam keys stay

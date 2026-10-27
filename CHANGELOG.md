@@ -2,6 +2,11 @@
 
 The development history before 0.90 is in `docs/history/` (`CHANGELOG_v0p1-v0p12.md`, `CHANGELOG_v0p13-v0p85.md`).
 
+## 0.95.0 — unreleased
+
+- **Mastcam-Z position priors follow the station** (Christian, 27 Oct: South Arm ZCAM09468 and Marble Mountain ZCAM04469 - horizon frames with no strongly triangulated points wandered 1-2 m): in stage 2 every Mastcam-Z frame's prior moves with its station's Navcam shift and tightens to `zcam_station_prior_sigma_m` = 0.1 m per axis (0: the waypoint prior as before), as the Hazcam frames' already did. The Mastcam-Z frames share the mast with the Navcam, so their label CAHV places them to cm; well-tied frames stay held by their observations. A Mastcam-Z setting: Mastcam-Z run keys change (every Mastcam-Z block runs again), Navcam keys do not.
+- Sites (Christian, 27 Oct): 79 and 110 mm back in Chal Rocks, Seitah Overlook and Belva Crater, 79 mm in Taylorfjellet, so those frames align in the next round (the pipeline's joints stay at 34, 48, 63 mm; the tiny Chal Rocks copy stays without 79 and 110).
+
 ## 0.94.4 — 2026-10-23
 
 - **A scape is named by its block's first sol** (Christian, 27 Oct): `sol_span` takes the earliest sol of every range (before: the first range listed, "the main visit"). Nine sites change name: Enchanted Lake 0556 -> 0422, South Arm 1408 -> 1359, Three Forks North / Large 0680 / 0652 -> 0413, OEB landing site 0031 -> 0013, Artuby Ridge 0342 -> 0174, Knob Mountain, Three Forks South and Huge. `work_folder` keeps using a folder with the old name until the new one exists, so nothing runs again; `studies/calibration/move_scapes.py --old-root <none> --apply` renames them (and the paths inside).

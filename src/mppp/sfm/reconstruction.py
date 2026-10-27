@@ -1563,6 +1563,11 @@ def reset_cameras_to_start(rec, project: SfmProject, keys) -> List[str]:
 # for its station (the rover's localisation error) and tightens to this sigma per axis.  Rockytop (22 Oct): with the
 # 1 m waypoint prior, a rear Hazcam pair tied by 48 points slid 1.3 m from its station (0.12 m for the Navcam frames)
 HAZCAM_STATION_PRIOR_SIGMA_M = 0.1
+# 0.95 (Christian, 27 Oct: South Arm ZCAM09468, Marble Mountain ZCAM04469 - horizon frames with no strongly
+# triangulated points wandered 1-2 m): a Mastcam-Z frame sits on the same mast as its station's Navcam frames (its
+# label CAHV places it to cm), so its prior moves with the station's Navcam shift and tightens to this sigma per
+# axis; well-tied frames are held by their thousands of observations, far-field ones by the prior.  0: off.
+ZCAM_STATION_PRIOR_SIGMA_M = 0.1
 
 
 def label_prior_C(r: Dict[str, Any]) -> np.ndarray:
@@ -1572,11 +1577,12 @@ def label_prior_C(r: Dict[str, Any]) -> np.ndarray:
     return np.asarray(r.get("prior_C_label") or r["prior_C"], float)
 
 
-def hazcam_station_priors(rec, project: SfmProject, sigma_m: float = HAZCAM_STATION_PRIOR_SIGMA_M
-                          ) -> Dict[str, np.ndarray]:
+def hazcam_station_priors(rec, project: SfmProject, sigma_m: float = HAZCAM_STATION_PRIOR_SIGMA_M,
+                          zcam_sigma_m: float = 0.0) -> Dict[str, np.ndarray]:
     """Move the position prior of every Hazcam image of ``project`` by its station's median Navcam shift (solved
     minus prior centre of the registered Navcam images of ``rec``) and give it ``sigma_m`` (``prior_sigma_m``); the
     label prior stays in ``prior_C_label``.  Stations without registered Navcam images keep the waypoint prior.
+    ``zcam_sigma_m`` > 0 (0.95, :data:`ZCAM_STATION_PRIOR_SIGMA_M`): the Mastcam-Z images too, with that sigma.
     Returns {station: shift (3,)}."""
     by_name = {r["name"]: r for r in project.images}
     d: Dict[str, List[np.ndarray]] = {}
@@ -1589,11 +1595,13 @@ def hazcam_station_priors(rec, project: SfmProject, sigma_m: float = HAZCAM_STAT
     shifts = {st: np.median(np.asarray(v), axis=0) for st, v in d.items()}
     out: Dict[str, np.ndarray] = {}
     for r in project.images:
-        if str(r.get("instrument", ""))[:1] not in HAZCAM_FAMILIES or r.get("station") not in shifts:
+        fam = str(r.get("instrument", ""))[:1]
+        is_z = fam == "Z" and float(zcam_sigma_m or 0) > 0
+        if (fam not in HAZCAM_FAMILIES and not is_z) or r.get("station") not in shifts or r.get("prior_C") is None:
             continue
         r.setdefault("prior_C_label", list(r["prior_C"]))
         r["prior_C"] = (np.asarray(r["prior_C_label"], float) + shifts[r["station"]]).tolist()
-        r["prior_sigma_m"] = float(sigma_m)
+        r["prior_sigma_m"] = float(zcam_sigma_m if is_z else sigma_m)
         r["prior_station_shift_m"] = shifts[r["station"]].tolist()
         out[r["station"]] = shifts[r["station"]]
     return out
@@ -2062,7 +2070,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 zcam_focus_line: bool = True, zcam_line_cycles: int = 2, thermal_after_stage1: bool = True,
                 pose_guided: Union[bool, Dict[str, Any]] = True, navcam_aspect: str = "hold",
                 isolated_points_factor: float = ISOLATED_POINTS_FACTOR,
-                round1_hold: bool = ROUND1_HOLD):
+                round1_hold: bool = ROUND1_HOLD, zcam_station_prior_sigma_m: float = ZCAM_STATION_PRIOR_SIGMA_M):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
@@ -2346,19 +2354,24 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         n_restored = restore_frames(rec, init, late)          # pycolmap 4 dropped them in stage 1
         if n_restored:
             log[0]["frames_restored"] = n_restored
-        shifts = hazcam_station_priors(rec, project) if h_frames else {}
+        zsig = float(zcam_station_prior_sigma_m or 0.0) if z_frames else 0.0
+        shifts = hazcam_station_priors(rec, project, zcam_sigma_m=zsig) if (h_frames or zsig > 0) else {}
         if shifts:
             log[0]["hazcam_station_shifts_m"] = {st: [round(float(x), 4) for x in v] for st, v in shifts.items()}
+            if zsig > 0:
+                log[0]["zcam_station_prior_sigma_m"] = zsig
             if verbose:
-                logger.info("stage 2: Hazcam priors moved with their stations' Navcam solution (+-"
-                            f"{HAZCAM_STATION_PRIOR_SIGMA_M:g} m): " + ", ".join(
-                                f"{st} {np.linalg.norm(v):.2f} m" for st, v in sorted(shifts.items())))
+                logger.info("stage 2: " + ("Hazcam and Mastcam-Z" if (h_frames and zsig > 0) else "Mastcam-Z" if zsig > 0 else "Hazcam")
+                            + " priors moved with their stations' Navcam solution (Hazcam +-"
+                            f"{HAZCAM_STATION_PRIOR_SIGMA_M:g} m" + (f", Mastcam-Z +-{zsig:g} m" if zsig > 0 else "")
+                            + "): " + ", ".join(f"{st} {np.linalg.norm(v):.2f} m" for st, v in sorted(shifts.items())))
         by_name_ = {r["name"]: r for r in project.images}
         for fid in late:
             T0 = init.frames[fid].rig_from_world
             names_ = [init.images[d.id].name for d in init.frames[fid].data_ids if d.id in init.images]
             st_ = (by_name_.get(names_[0]) or {}).get("station") if names_ else None
-            if st_ in shifts and str((by_name_.get(names_[0]) or {}).get("instrument", ""))[:1] in HAZCAM_FAMILIES:
+            fam_ = str((by_name_.get(names_[0]) or {}).get("instrument", ""))[:1]
+            if st_ in shifts and (fam_ in HAZCAM_FAMILIES or (zsig > 0 and fam_ == "Z")):
                 import pycolmap as _pc
                 R0 = np.asarray(T0.rotation.matrix())
                 C0 = -R0.T @ np.asarray(T0.translation) + shifts[st_]
