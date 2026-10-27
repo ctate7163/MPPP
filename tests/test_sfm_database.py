@@ -102,6 +102,19 @@ def test_gpu_steps_run_in_another_python(tmp_path):
     with pytest.warns(UserWarning, match="own python"):
         info = check_gpu_python(sys.executable, require_cuda=False)
     assert info["pycolmap"] == info["pycolmap_here"]
+    # 0.95.0: a count per family (im0 is a "Navcam", the others not) - two extraction passes into one features.db,
+    # recorded as a dict, and the record is what decides a re-extraction.  (pycolmap's CPU SIFT caps the count only
+    # loosely - 60 gives ~160 on these crops; the GPU path caps exactly - so the counts are compared on copies of
+    # one image: test_feature_count_per_family.)
+    proj.images[0]["instrument"] = "NL"
+    extract_features(proj, max_num_features={"N": 120, "*": 60}, use_gpu=False, python=sys.executable, num_octaves=5)
+    assert proj.settings["features"]["max_num_features"] == {"*": 60, "N": 120}
+    db0 = pycolmap.Database.open(str(proj.features_db))
+    assert {im.name for im in db0.read_all_images()} == set(names)
+    db0.close()
+    from mppp.sfm.database import features_up_to_date
+    assert features_up_to_date(proj, max_num_features={"N": 120, "*": 60}, num_octaves=5)
+    assert not features_up_to_date(proj, max_num_features={"N": 120, "*": 70}, num_octaves=5)
     extract_features(proj, max_num_features=2000, use_gpu=False, python=sys.executable, num_octaves=5)
     assert proj.features_db.is_file() and proj.settings["features"]["max_num_features"] == 2000
     assert proj.settings["features"]["num_octaves"] == 5                     # v0p63: through the other python too
@@ -447,3 +460,24 @@ def test_other_matchers_matches_kept_for_an_ab(tmp_path):
     D._features_record(proj).write_text('{"k": 2}')                # new features: the library is of no use
     D.build_database(proj, matching=lg)
     assert not list(lib.glob("*.db"))
+
+
+def test_feature_count_per_family(tmp_path):
+    """0.95.0 (Christian, 27 Oct): {"N": 2 x, "*": x} - the Navcam copy of one image gets more features than the
+    other two copies (one pass per count into one features.db); an int is every family's count."""
+    import cv2
+    from mppp.sfm import SfmProject, extract_features
+    rng = np.random.default_rng(5)
+    img = cv2.equalizeHist(cv2.GaussianBlur((rng.random((600, 600)) * 255).astype(np.uint8), (0, 0), 2))
+    (tmp_path / "images").mkdir()
+    for n in ("a0.png", "a1.png", "a2.png"):
+        cv2.imwrite(str(tmp_path / "images" / n), cv2.cvtColor(img, cv2.COLOR_GRAY2BGR))
+    proj = SfmProject(tmp_path, [{"name": "a0.png", "instrument": "NL", "has_mask": False},
+                                 {"name": "a1.png", "instrument": "ZL", "has_mask": False},
+                                 {"name": "a2.png", "instrument": "FL", "has_mask": False}], {}, {}, [0, 0, 0], {})
+    extract_features(proj, max_num_features={"N": 400, "*": 100}, use_gpu=False)
+    db = pycolmap.Database.open(str(proj.features_db))
+    counts = {im.name: db.num_keypoints_for_image(im.image_id) for im in db.read_all_images()}
+    db.close()
+    assert counts["a1.png"] == counts["a2.png"] and counts["a0.png"] > 1.5 * counts["a1.png"], counts
+    assert proj.settings["features"]["max_num_features"] == {"*": 100, "N": 400}

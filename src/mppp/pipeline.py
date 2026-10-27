@@ -165,7 +165,7 @@ class Settings:
     navcam_rig_epoch_breaks_sols: Tuple[float, ...] = (300,)   # images on both sides of these sols get separate rig rotations
 
     # --- features and matching -----------------------------------------------------------------------------------
-    max_num_features: int = 32768                 # SIFT features per image
+    max_num_features: Any = field(default_factory=lambda: {"N": 65536, "*": 32768})   # SIFT features per image, by family ("*": the rest); 0.95.0 (Christian, 27 Oct): twice the 32768 on the full-resolution Navcam frames, for the Mastcam-Z ties
     sift: Dict[str, Any] = field(default_factory=lambda: dict(domain_size_pooling=False, estimate_affine_shape=False,
                                                               num_octaves=None, first_octave=-1))   # num_octaves None: 6 with Mastcam-Z, else 4
     match_mode: str = "exhaustive"                # the matcher (0.94.4, Christian 23 Oct: SIFT again - the LightGlue A/B on Chal Rocks tiny: 13.6k Navcam-Mastcam-Z ties with SIFT, 7.6k with LightGlue, residual median 0.22 vs 0.37 px; 0.93.9 had LightGlue): "lightglue" (SIFT + LightGlue on the GPU; COLMAP's SIFT matcher when torch / kornia are missing or it would take over 3 h), "exhaustive" (COLMAP's SIFT matcher), "sift+lightglue" (0.94.4: both, LightGlue's inliers added to SIFT's) or "prior_pairs" (quick / CPU); over max_exhaustive_images images the prior-overlap pairs

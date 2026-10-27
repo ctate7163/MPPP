@@ -19,7 +19,12 @@ def test_feature_and_matching_defaults():
     assert D._feature_settings(32768, 5120, False, num_octaves=5)["num_octaves"] == 5
     from mppp.pipeline import Settings
     s = Settings()
-    assert s.max_num_features == 32768 and "num_octaves" in s.sift and s.match["guided_matching"] is False
+    # 0.95.0 (Christian, 27 Oct): twice the features on the Navcam frames; the rest as before
+    assert s.max_num_features == {"N": 65536, "*": 32768} and "num_octaves" in s.sift and s.match["guided_matching"] is False
+    assert D.feature_count_for(s.max_num_features, "N") == 65536 and D.feature_count_for(s.max_num_features, "Z") == 32768
+    assert D.feature_count_for(s.max_num_features, "F") == 32768 and D.feature_count_for(32768, "N") == 32768
+    assert D._feature_settings(s.max_num_features, 5120, False)["max_num_features"] == {"*": 32768, "N": 65536}
+    assert D._feature_settings({"*": 32768}, 5120, False)["max_num_features"] == 32768       # one count: as before
 
 
 # pose-guided Navcam - Mastcam-Z matching (mppp.sfm.guided, v0p64)

@@ -38,10 +38,32 @@ def _features_record(project: SfmProject) -> Path:
     return project.features_db.with_suffix(".json")
 
 
-def _feature_settings(max_num_features: int, max_image_size: int, domain_size_pooling: bool,
+def features_by_family(max_num_features: Any) -> Dict[str, int]:
+    """0.95.0 (Christian, 27 Oct: twice the features on the full-resolution Navcam frames, which the zoomed-in
+    Mastcam-Z frames tie to): ``max_num_features`` as {family letter: count} - an int is every family's; a dict
+    {"N": 65536, "*": 32768} gives the Navcam its own count and the rest the default ("*", else
+    :data:`DEFAULT_MAX_NUM_FEATURES`).  Families: N (Navcam), Z (Mastcam-Z), F / R (Hazcams)."""
+    if isinstance(max_num_features, dict):
+        base = int(max_num_features.get("*", DEFAULT_MAX_NUM_FEATURES))
+        out = {str(k)[:1].upper(): int(v) for k, v in max_num_features.items() if str(k) != "*"}
+        out["*"] = base
+        return out
+    return {"*": int(max_num_features)}
+
+
+def feature_count_for(max_num_features: Any, family: str) -> int:
+    """The SIFT feature count of an image family (:func:`features_by_family`)."""
+    fam = features_by_family(max_num_features)
+    return int(fam.get(str(family)[:1].upper(), fam["*"]))
+
+
+def _feature_settings(max_num_features: Any, max_image_size: int, domain_size_pooling: bool,
                       estimate_affine_shape: bool = False, num_octaves: int = DEFAULT_NUM_OCTAVES,
                       first_octave: int = DEFAULT_FIRST_OCTAVE) -> Dict[str, Any]:
-    out = {"max_num_features": int(max_num_features), "max_image_size": int(max_image_size),
+    fam = features_by_family(max_num_features)
+    # recorded as before when one count serves every family (older features.json stay valid)
+    mnf: Any = fam["*"] if len(fam) == 1 else {k: fam[k] for k in sorted(fam)}
+    out = {"max_num_features": mnf, "max_image_size": int(max_image_size),
            "domain_size_pooling": bool(domain_size_pooling)}
     if estimate_affine_shape:                            # recorded only when on: older features.json stay valid
         out["estimate_affine_shape"] = True
@@ -67,7 +89,7 @@ def image_fingerprints(project: SfmProject) -> Dict[str, list]:
     return out
 
 
-def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES,
+def features_up_to_date(project: SfmProject, max_num_features: Any = DEFAULT_MAX_NUM_FEATURES,
                         max_image_size: int = DEFAULT_MAX_IMAGE_SIZE, domain_size_pooling: bool = False,
                         estimate_affine_shape: bool = False, num_octaves: int = DEFAULT_NUM_OCTAVES,
                         first_octave: int = DEFAULT_FIRST_OCTAVE) -> bool:
@@ -101,7 +123,7 @@ def features_up_to_date(project: SfmProject, max_num_features: int = DEFAULT_MAX
     return all(files.get(n) == now[n] for n in names)
 
 
-def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NUM_FEATURES, max_image_size: int = DEFAULT_MAX_IMAGE_SIZE,
+def extract_features(project: SfmProject, max_num_features: Any = DEFAULT_MAX_NUM_FEATURES, max_image_size: int = DEFAULT_MAX_IMAGE_SIZE,
                      use_gpu: Optional[bool] = None, num_threads: int = -1, overwrite: bool = False,
                      domain_size_pooling: bool = False, python: Optional[PathLike] = None,
                      estimate_affine_shape: bool = False, num_octaves: int = DEFAULT_NUM_OCTAVES,
@@ -127,6 +149,9 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
     regions - both make SIFT more tolerant of the perspective change between
     strongly converging views (notebook 03, "high convergence").  COLMAP runs
     either on the CPU only (several times slower than the GPU).
+
+    ``max_num_features`` (0.95.0): an int, or {family letter: count, "*": the rest} - e.g. {"N": 65536, "*": 32768}
+    gives the full-resolution Navcam frames twice the features (one extraction pass per distinct count).
 
     ``num_octaves``, ``first_octave``: the SIFT scale range.  COLMAP's default (4, -1) detects at 2x, 1x,
     1/2 and 1/4 of the image, so two images match over about 4-8x of scale at best.  More octaves (5: down to 1/8,
@@ -156,14 +181,6 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
     reader = pycolmap.ImageReaderOptions()
     if any(r.get("has_mask") for r in project.images):
         reader.mask_path = str(project.masks_dir)
-    opts = pycolmap.FeatureExtractionOptions()
-    opts.max_image_size = int(max_image_size)
-    opts.num_threads = int(num_threads)
-    opts.sift.max_num_features = int(max_num_features)
-    opts.sift.domain_size_pooling = bool(domain_size_pooling)
-    opts.sift.estimate_affine_shape = bool(estimate_affine_shape)
-    opts.sift.num_octaves = int(num_octaves)
-    opts.sift.first_octave = int(first_octave)
     if (domain_size_pooling or estimate_affine_shape) and use_gpu is not False:
         if use_gpu:
             log.info("DSP / affine shape: COLMAP extracts these on the CPU")
@@ -173,10 +190,27 @@ def extract_features(project: SfmProject, max_num_features: int = DEFAULT_MAX_NU
         warnings.warn("this pycolmap build has no CUDA; running on the CPU (or use the COLMAP GUI/CLI with a GPU)")
         use_gpu = False
     device = pycolmap.Device.auto if use_gpu is None else (pycolmap.Device.cuda if use_gpu else pycolmap.Device.cpu)
-    pycolmap.extract_features(str(db), str(project.images_dir), image_names=names,
-                              camera_mode=pycolmap.CameraMode.PER_IMAGE, reader_options=reader,
-                              extraction_options=opts, device=device)
-    project.settings["features"] = {"max_num_features": max_num_features, "max_image_size": max_image_size,
+    # 0.95.0: one extraction pass per distinct feature count (the families with that count)
+    by_count: Dict[int, List[str]] = {}
+    for r in project.images:
+        fam = str(r.get("instrument") or r["name"])[:1]
+        by_count.setdefault(feature_count_for(max_num_features, fam), []).append(r["name"])
+    for count, group in sorted(by_count.items(), key=lambda kv: -kv[0]):
+        opts = pycolmap.FeatureExtractionOptions()
+        opts.max_image_size = int(max_image_size)
+        opts.num_threads = int(num_threads)
+        opts.sift.max_num_features = int(count)
+        opts.sift.domain_size_pooling = bool(domain_size_pooling)
+        opts.sift.estimate_affine_shape = bool(estimate_affine_shape)
+        opts.sift.num_octaves = int(num_octaves)
+        opts.sift.first_octave = int(first_octave)
+        if len(by_count) > 1:
+            log.info(f"SIFT: {len(group)} images at max_num_features={count}")
+        pycolmap.extract_features(str(db), str(project.images_dir), image_names=group,
+                                  camera_mode=pycolmap.CameraMode.PER_IMAGE, reader_options=reader,
+                                  extraction_options=opts, device=device)
+    project.settings["features"] = {"max_num_features": _feature_settings(max_num_features, max_image_size, False)["max_num_features"],
+                                    "max_image_size": max_image_size,
                                     "domain_size_pooling": domain_size_pooling,
                                     "estimate_affine_shape": bool(estimate_affine_shape), "masks": bool(reader.mask_path),
                                     "num_octaves": int(num_octaves), "first_octave": int(first_octave)}
