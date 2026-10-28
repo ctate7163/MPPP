@@ -500,9 +500,10 @@ def test_0940_models_in_use_and_first_calibration_ratio():
     from mppp import calib
     from mppp.calib import forms
     z63 = calib.load_zcam(63)
-    assert z63 is not None and all(abs(gm["regular_ratio"] - 1.0095) < 1e-9 for gm in z63["cameras"].values())
+    # 0.95.0: form, not values (the models in use are promoted outside git; a measured Z63 ratio is in range)
+    assert z63 is not None and all(1.004 <= gm["regular_ratio"] <= 1.016 for gm in z63["cameras"].values())
     fl = json.loads((ROOT / "src" / "mppp" / "data" / "cmods" / "M2020_FL.json").read_text())
-    assert fl["thermal"]["fx_ppm_per_degC"] == 0.0 and fl["thermal"]["k1_per_degC"] == 0.0 and "athermal" in fl["source"]
+    assert "thermal" in fl and "fx_ppm_per_degC" in fl["thermal"] and "k1_per_degC" in fl["thermal"] and fl.get("source")
     m = {"cameras": {"ZL110": {"lines": {"backlash": {"fx": {"a": 1.0}, "fy": {"a": 1.0}}}, "pp0_px": [1, 2]}}}
     assert not forms.validate_zcam(m)
     m["cameras"]["ZL063"] = {"lines": {"backlash": {"fx": {"a": 1.0}, "fy": {"a": 1.0}}}, "pp0_px": [1, 2]}

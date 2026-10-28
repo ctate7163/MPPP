@@ -470,18 +470,20 @@ def test_navcam_consensus_shipped_with_mppp():
         f = NAVCAM_CONSENSUS_DIR / NAVCAM_FISHEYE_PATTERN.format(instrument=eye)
         cam = camera_from_colmap_json(f)
         assert cam["model"] == "THIN_PRISM_FISHEYE" and len(cam["params"]) == 12
-        th = json.loads(f.read_text())["thermal"]
-        # the 20 Oct 2026 tied joint (22 blocks): fx, fy per axis, ~35-37 ppm/degC (equal within 1 sd)
-        assert 34.5 < th["fx_ppm_per_degC"] < 37.5 and 34.5 < th["fy_ppm_per_degC"] < 38.0 and th["T0_degC"] == -20
+        j = json.loads(f.read_text())
+        th = j["thermal"]
+        # 0.95.0 (Christian, 27 Oct): form and provenance, not the values - the models in use are promoted outside
+        # git (MPPP_CMODS) and shipped at a release; a tied joint's per-axis thermal terms are tens of ppm/degC
+        assert 10.0 < th["fx_ppm_per_degC"] < 80.0 and 10.0 < th["fy_ppm_per_degC"] < 80.0 and th["T0_degC"] == -20
         assert "ppm_per_degC" not in th                                          # the per-axis terms are the model
+        assert "tied" in str(j.get("source", "")).lower() or "joint" in str(j.get("source", "")).lower()
+        assert 2900.0 < cam["params"][0] < 3000.0 and abs(cam["params"][9]) < 0.05
     assert (NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).is_file()
     assert calib.navcam_fingerprint(NAVCAM_CONSENSUS_DIR)
-    # the parameters of the 20 Oct 2026 tied joint navcal_tied_20261020_2 (the rig's fitted translation flag kept)
-    nl = json.loads((NAVCAM_CONSENSUS_DIR / "M2020_NL_fisheye_tangential.json").read_text())
     rig = json.loads((NAVCAM_CONSENSUS_DIR / NAVCAM_RIG_FILE).read_text())
-    assert nl["params"][0] == pytest.approx(2956.174675387718) and nl["params"][9] == pytest.approx(-0.00668292165703605)
-    assert rig["translation"] == "fitted" and rig["baseline_m"] == pytest.approx(0.4240102397823094)
-    assert rig["drift"]["yaw_mdeg_per_sol"] == pytest.approx(0.002900943422501099)
+    assert rig["translation"] in ("fitted", "cahv") and 0.40 < rig["baseline_m"] < 0.44
+    assert "drift" in rig and abs(rig["drift"]["yaw_mdeg_per_sol"]) < 0.05
+    assert not calib.check_form(NAVCAM_CONSENSUS_DIR)["errors"]
 
 
 def test_navcam_distortion_hold_and_held_zeros():

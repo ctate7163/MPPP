@@ -17,6 +17,8 @@ REM 0.90: the scapes root and the PDS folder may also come from one-line files n
 REM when MPPP_SCAPES / MPPP_PDS are not set in the environment (setx MPPP_SCAPES D:\scapes sets them for good)
 if not defined MPPP_SCAPES if exist "%~dp0mppp_scapes.txt" for /f "usebackq eol=# delims=" %%L in ("%~dp0mppp_scapes.txt") do set "MPPP_SCAPES=%%~L"
 if not defined MPPP_PDS if exist "%~dp0mppp_pds.txt" for /f "usebackq eol=# delims=" %%L in ("%~dp0mppp_pds.txt") do set "MPPP_PDS=%%~L"
+REM 0.95.0: the camera models in use live outside git (mppp cmods init D:\scapes\cmods writes mppp_cmods.txt)
+if not defined MPPP_CMODS if exist "%~dp0mppp_cmods.txt" for /f "usebackq eol=# delims=" %%L in ("%~dp0mppp_cmods.txt") do set "MPPP_CMODS=%%~L"
 set "_MPPP_VERBOSE="
 
 :search

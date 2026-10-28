@@ -413,6 +413,85 @@ def _copy_retry(src: PathLike, dst: PathLike, tries: int = 20, wait_s: float = 1
     raise err  # type: ignore[misc]
 
 
+# ------------------------------------------------------------------------------------- the folder outside git (0.95.0)
+# Christian, 27 Oct: the promoted models lived uncommitted in the repo (every sync stashed and restored them, GitHub
+# never saw them, the tests pinned to the shipped values failed when they were committed).  The models in use now
+# live in MPPP_CMODS (D:\scapes\cmods on the PC: `mppp cmods init D:\scapes\cmods` seeds it with the package set
+# and writes scripts/windows/mppp_cmods.txt for mppp_env.bat); the package copy is what a release ships
+# (`mppp cmods ship` copies the models in use into it for the one commit that freezes the cameras)
+def package_files() -> List[str]:
+    """The camera-model files of the package folder (models, README, CHANGES), by name."""
+    from ..paths import package_cmods_dir
+    d = package_cmods_dir()
+    return sorted(f.name for f in d.iterdir() if f.is_file()) if d.is_dir() else []
+
+
+def init_folder(dst: PathLike, overwrite: bool = False) -> Dict[str, Any]:
+    """Seed ``dst`` with the package's camera models (the files it lacks; ``overwrite``: every file).  Returns
+    {"folder", "copied": [names], "kept": [names]}.  A complete set is needed: the fingerprints, the form check and
+    the describe lines read one folder."""
+    from ..paths import package_cmods_dir
+    src = package_cmods_dir()
+    dst = Path(dst)
+    dst.mkdir(parents=True, exist_ok=True)
+    copied, kept = [], []
+    for name in package_files():
+        if (dst / name).is_file() and not overwrite:
+            kept.append(name)
+            continue
+        _copy_retry(src / name, dst / name)
+        copied.append(name)
+    if copied:
+        with (dst / CHANGES).open("a", encoding="utf-8") as fh:
+            stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            fh.write(f"\n## {stamp} - folder seeded from the package copy ({src}): {', '.join(copied)}\n")
+    log.info("camera-model folder %s: %d file(s) copied from the package, %d kept", dst, len(copied), len(kept))
+    return {"folder": str(dst), "copied": copied, "kept": kept}
+
+
+def ship(folder: Optional[PathLike] = None, note: str = "") -> Dict[str, Any]:
+    """Copy the models in use (``folder``, default :func:`mppp.paths.cmods_dir`) into the package folder - the
+    release's shipped models (commit src/mppp/data/cmods).  Model files only, plus CHANGES.md; README.md stays.
+    Returns {"from", "to", "files": {name: sha12}, "changed": [names]}."""
+    from ..paths import package_cmods_dir
+    src = _folder(folder)
+    dst = package_cmods_dir()
+    if src.resolve() == dst.resolve():
+        return {"from": str(src), "to": str(dst), "files": {}, "changed": [], "note": "the models in use are the package copy"}
+    names = [n for n in sorted(f.name for f in src.iterdir() if f.is_file())
+             if _target_name(n) == n or n == CHANGES]
+    changed, shas = [], {}
+    for n in names:
+        before = sha12(dst / n) if (dst / n).is_file() else None
+        _copy_retry(src / n, dst / n)
+        shas[n] = sha12(dst / n)
+        if shas[n] != before:
+            changed.append(n)
+    if changed:
+        with (dst / CHANGES).open("a", encoding="utf-8") as fh:
+            stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            fh.write(f"\n## {stamp} - shipped from {src}" + (f" - {note}" if note else "") + f": {', '.join(changed)}\n")
+    log.info("camera models shipped from %s into %s: %d changed", src, dst, len(changed))
+    return {"from": str(src), "to": str(dst), "files": shas, "changed": changed}
+
+
+def status(folder: Optional[PathLike] = None) -> Dict[str, Any]:
+    """Where the models in use are and how they stand against the package copy: {"folder", "package", "override"
+    (MPPP_CMODS in use), "fingerprint", "package_fingerprint", "same", "missing" (package files the folder lacks),
+    "differs" (model files whose contents differ)}."""
+    from ..paths import package_cmods_dir
+    d = _folder(folder)
+    pkg = package_cmods_dir()
+    names = [n for n in package_files() if _target_name(n) == n]
+    missing = [n for n in names if not (d / n).is_file()]
+    differs = [n for n in names if (d / n).is_file() and (pkg / n).is_file() and sha12(d / n) != sha12(pkg / n)]
+    extra = sorted(f.name for f in d.iterdir() if f.is_file() and _target_name(f.name) == f.name and not (pkg / f.name).is_file()) if d.is_dir() else []
+    return {"folder": str(d), "package": str(pkg), "override": d.resolve() != pkg.resolve(),
+            "fingerprint": models_fingerprint(d), "package_fingerprint": models_fingerprint(pkg),
+            "same": models_fingerprint(d) == models_fingerprint(pkg), "missing": missing, "differs": differs,
+            "extra": extra}
+
+
 def promote(sources: Sequence[PathLike], note: str = "", folder: Optional[PathLike] = None,
             dry_run: bool = False) -> Dict[str, Any]:
     """
@@ -429,6 +508,9 @@ def promote(sources: Sequence[PathLike], note: str = "", folder: Optional[PathLi
     if dry_run:
         return {"folder": str(dst), "files": {n: sha12(f) for n, f in todo.items()}, "checked": desc, "stamp": None}
     dst.mkdir(parents=True, exist_ok=True)
+    from ..paths import package_cmods_dir
+    if dst.resolve() != package_cmods_dir().resolve():       # 0.95.0: an override folder is kept complete
+        init_folder(dst)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     lines, shas = [], {}
     for name, f in todo.items():

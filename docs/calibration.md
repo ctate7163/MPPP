@@ -4,6 +4,13 @@
 `src/mppp/data/cmods/`. `mppp cmods list` prints the models in use; `MPPP_CMODS` points at another folder, whose
 missing files fall back to the package copies.
 
+Since 0.95.0 the models *in use* on a working machine live outside git: `mppp cmods init D:\scapes\cmods` seeds
+that folder with the package set and writes `scripts/windows/mppp_cmods.txt`, from which the batch files set
+`MPPP_CMODS` (a shell needs `setx MPPP_CMODS D:\scapes\cmods`); promotions (`mppp cmods promote`, the joints'
+`--promote-if-ok`) go there and keep the folder complete; `mppp cmods status` compares it with the package copy;
+`mppp cmods ship` copies the models in use into `src/mppp/data/cmods/` for the one commit that ships them with a
+release. The tests check the shipped models' form and provenance, not their values.
+
 ## Model forms
 
 **Navcam** (eyes NL, NR). COLMAP `THIN_PRISM_FISHEYE` at the full 5120 x 3840 frame, with sx1 = sy1 = 0 held. The

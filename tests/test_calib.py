@@ -275,7 +275,8 @@ def test_promote_replaces_the_file_and_logs_it(tmp_path, monkeypatch):
     dst = tmp_path / "cmods"
     monkeypatch.setenv("MPPP_CMODS", str(dst))
     res = calib.promote([src], note="first")
-    assert set(res["files"]) >= set(M.NAVCAM_FILES) and (dst / "CHANGES.md").read_text().count("first") == 1
+    assert set(res["files"]) >= set(M.NAVCAM_FILES) and (dst / "CHANGES.md").read_text().count(" - first\n") == 1
+    assert "seeded from the package copy" in (dst / "CHANGES.md").read_text()      # 0.95.0: the folder kept complete
     assert not (dst / "history").exists()
     new = tmp_path / "new"
     new.mkdir()
@@ -314,3 +315,49 @@ def test_shipped_navcam_models_are_the_tied_joint():
         assert c["early_mission"]["applied_terms"] == ["fx", "fy", "cx", "cy"] and c["early_mission"]["per_eye"]
     assert rig["drift"]["sol0"] == 0.0 and rig["drift"]["knot_sol"] == 250.0
     assert calib.check_form()["ok"]
+
+
+def test_cmods_folder_outside_git_init_status_ship(tmp_path, monkeypatch):
+    """0.95.0 (Christian, 27 Oct): the models in use live in MPPP_CMODS - `init` seeds the folder with the package
+    set, `status` compares it with the package copy, a promotion into it keeps it complete, and `ship` copies the
+    models in use into the package folder (here a scratch copy) for a release."""
+    import mppp.paths as P
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    for f in M._folder(None).iterdir():
+        if f.is_file():
+            (pkg / f.name).write_bytes(f.read_bytes())
+    monkeypatch.setattr(P, "package_cmods_dir", lambda: pkg)
+    monkeypatch.delenv("MPPP_CMODS", raising=False)
+    st = M.status()
+    assert not st["override"] and st["same"] and st["missing"] == [] and st["differs"] == []
+    dst = tmp_path / "scapes" / "cmods"
+    res = M.init_folder(dst)
+    assert set(res["copied"]) == set(M.package_files()) and res["kept"] == [] and (dst / "CHANGES.md").read_text().count("seeded") == 1
+    assert M.init_folder(dst)["copied"] == []                           # a second init copies nothing
+    monkeypatch.setenv("MPPP_CMODS", str(dst))
+    st = M.status()
+    assert st["override"] and st["same"] and st["folder"] == str(dst) and st["package"] == str(pkg)
+    assert calib.check_form()["ok"] and calib.models_fingerprint() == calib.models_fingerprint(pkg)
+    # a promotion into the folder: it differs from the package copy; nothing in the package changed
+    new = tmp_path / "new"
+    new.mkdir()
+    d = json.loads((pkg / "M2020_NL_fisheye_tangential.json").read_text())
+    d["params"][0] += 1.0
+    (new / "M2020_NL_fisheye_tangential.json").write_text(json.dumps(d))
+    calib.promote([new], note="better NL")
+    st = M.status()
+    assert not st["same"] and st["differs"] == ["M2020_NL_fisheye_tangential.json"] and st["missing"] == []
+    assert json.loads((pkg / "M2020_NL_fisheye_tangential.json").read_text())["params"][0] != d["params"][0]
+    # an incomplete folder is completed by a promotion into it
+    (dst / "M2020_N_rig.json").unlink()
+    assert M.status()["missing"] == ["M2020_N_rig.json"]
+    calib.promote([new], note="again")
+    assert M.status()["missing"] == [] and (dst / "M2020_N_rig.json").is_file()
+    # ship: the package copy takes the models in use (the release's shipped models)
+    sh = M.ship(note="freeze")
+    assert sh["changed"] == ["CHANGES.md", "M2020_NL_fisheye_tangential.json"] or set(sh["changed"]) >= {"M2020_NL_fisheye_tangential.json"}
+    assert json.loads((pkg / "M2020_NL_fisheye_tangential.json").read_text())["params"][0] == d["params"][0]
+    assert M.status()["same"] and "freeze" in (pkg / "CHANGES.md").read_text()
+    monkeypatch.delenv("MPPP_CMODS")
+    assert M.ship().get("note")                                            # in use = the package copy: nothing to do

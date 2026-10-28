@@ -8,7 +8,7 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp align WORK [--variant NAME] [--set ...] [--settings FILE] [--gui] [--stop-after STEP] [--force] [--status]
     mppp run SITE|WORK [...]                  process, then align
     mppp sites [list | check | folder SITE]   the site definitions (mppp/data/sites.json)
-    mppp cmods [list | promote PATH ... --note TEXT]   the camera models in use
+    mppp cmods [list | status | promote PATH ... --note TEXT | init DIR | ship]   the camera models in use (MPPP_CMODS)
     mppp mask [list | fetch [NAME] | install FILE]      the terrain mask model
     mppp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
     mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
@@ -93,8 +93,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--variant", default="", help="the project colmap_<variant> instead of colmap")
 
     p = sub.add_parser("cmods", help="the camera models in use")
-    p.add_argument("what", nargs="?", default="list", choices=("list", "promote"))
-    p.add_argument("paths", nargs="*", help="promote: folders or files with the new models")
+    p.add_argument("what", nargs="?", default="list", choices=("list", "promote", "init", "ship", "status"))
+    p.add_argument("paths", nargs="*", help="promote: folders or files with the new models; init: the folder to seed "
+                                           "(outside git, e.g. D:\\scapes\\cmods; MPPP_CMODS)")
     p.add_argument("--note", default="", help="promote: why these are the better models (goes into CHANGES.md)")
     p.add_argument("--dry-run", action="store_true", help="promote: check and show, copy nothing")
 
@@ -387,6 +388,40 @@ def cmd_gui(a: argparse.Namespace) -> int:
 
 def cmd_cmods(a: argparse.Namespace) -> int:
     from .calib import models as M
+    if a.what == "status":                                   # 0.95.0: the folder in use against the package copy
+        st = M.status()
+        print(f"camera models in use: {st['folder']}" + (" (MPPP_CMODS)" if st["override"] else " (the package copy)"))
+        print(f"  fingerprint {st['fingerprint']}; package copy {st['package']} fingerprint {st['package_fingerprint']}"
+              + (" - the same" if st["same"] else ""))
+        if st["missing"]:
+            print(f"  MISSING from the folder: {', '.join(st['missing'])} (mppp cmods init {st['folder']} seeds them)")
+        if st["differs"]:
+            print(f"  differ from the package copy: {', '.join(st['differs'])} (mppp cmods ship copies them in for a release)")
+        if st["extra"]:
+            print(f"  not in the package copy: {', '.join(st['extra'])}")
+        return 0 if not st["missing"] else 1
+    if a.what == "init":
+        if not a.paths:
+            print("ERROR: mppp cmods init DIR - the folder to seed with the package's camera models", file=sys.stderr)
+            return 1
+        res = M.init_folder(a.paths[0])
+        print(f"{res['folder']}: {len(res['copied'])} file(s) copied from the package copy, {len(res['kept'])} kept")
+        try:                                                 # the batch files read it (mppp_env.bat)
+            from .paths import source_root
+            env = source_root() / "scripts" / "windows" / "mppp_cmods.txt"
+            env.write_text(str(Path(res["folder"]).resolve()) + "\n", encoding="utf-8")
+            print(f"written {env} - the batch files set MPPP_CMODS from it; for a shell: setx MPPP_CMODS {res['folder']}")
+        except Exception as e:                               # noqa: BLE001 - not a checkout
+            print(f"(no scripts/windows/mppp_cmods.txt written: {e}); set MPPP_CMODS={res['folder']} in the environment")
+        return 0
+    if a.what == "ship":
+        res = M.ship(note=a.note)
+        if res.get("note"):
+            print(res["note"])
+            return 0
+        print(f"{len(res['changed'])} file(s) changed in {res['to']} from {res['from']}: {', '.join(res['changed']) or '-'}; "
+              f"commit src/mppp/data/cmods (the release's shipped models)")
+        return 0
     if a.what == "list" or not a.paths:
         print("\n".join(M.describe()))
         form = M.check_form()
@@ -412,7 +447,10 @@ def cmd_cmods(a: argparse.Namespace) -> int:
     if a.dry_run:
         return 0
     res = M.promote(a.paths, note=a.note)
-    print(f"{len(res['files'])} file(s) now in {res['folder']} ({res['stamp']}); commit src/mppp/data/cmods")
+    from .paths import package_cmods_dir
+    inside = Path(res["folder"]).resolve() == package_cmods_dir().resolve()
+    print(f"{len(res['files'])} file(s) now in {res['folder']} ({res['stamp']}); "
+          + ("commit src/mppp/data/cmods" if inside else "outside git (MPPP_CMODS); mppp cmods ship copies them into the package for a release"))
     return 0
 
 

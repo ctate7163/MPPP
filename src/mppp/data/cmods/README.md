@@ -1,6 +1,7 @@
 # MPPP camera models (`src/mppp/data/cmods`)
 
-The one folder of the camera models in use.  `MPPP_CMODS` points MPPP to another folder.  Everything that reads
+The camera models a release ships.  On a working machine the models in use live in `MPPP_CMODS` (0.95.0:
+`mppp cmods init DIR` seeds it from here, `mppp cmods ship` copies the models in use back for a release).  Everything that reads
 them goes through `mppp.calib` (`load_camera`, `load_rig`, `load_zcam`; `camera_at`, `rig_at`, `zcam_camera_at`
 constrain them to an image or block; `check_form` and `describe` say what is in use).
 

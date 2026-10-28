@@ -115,7 +115,8 @@ For many sites at once, `scripts/run_sites.py --group ecam_consensus` and `scrip
 
 `mppp.calib` defines one frozen model form per camera family and ships the promoted models in
 `src/mppp/data/cmods/` (`mppp cmods list`; `MPPP_CMODS` points at another folder, whose missing files fall back to
-the package copies):
+the package copies; on a working machine the models in use live there - `mppp cmods init DIR`, `mppp cmods status`,
+`mppp cmods ship` - see docs/calibration.md):
 
 * **Navcam** — COLMAP `THIN_PRISM_FISHEYE` at the full 5120 × 3840 frame (sx1 = sy1 = 0 held); focal lengths,
   principal point and k1 linear in camera temperature, offsets for the early mission, and a stereo rig whose

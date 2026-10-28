@@ -123,7 +123,7 @@ def test_promote_cmods(monkeypatch, tmp_path, capsys):
     pc = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(pc)
     assert pc.main([str(NAVCAM_PACKAGE_CONSENSUS_DIR), "--note", "first"]) == 0
-    assert navcam_consensus_dir() == dst and (dst / "CHANGES.md").read_text().count("first") == 1
+    assert navcam_consensus_dir() == dst and (dst / "CHANGES.md").read_text().count(" - first\n") == 1
     # a new NL camera replaces the old one; the change is logged (git history keeps the replaced file)
     new = tmp_path / "new"
     new.mkdir()

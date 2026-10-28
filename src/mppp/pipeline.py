@@ -910,7 +910,7 @@ def build_project(work: PathLike, images: List[Dict[str, Any]], settings: Settin
     have = (proj.settings.get("navcam_cameras") or {}) if proj is not None else {}
     rebuild = (s.reprocess_all or proj is None or names != {r["stem"] for r in proj.images}
                or any(proj.settings.get(k) != v for k, v in wanted.items())
-               or have.get("dir") != str(nav_dir)
+               # 0.95.0: the models' fingerprint decides, not the folder (MPPP_CMODS moved: nothing to rebuild)
                or have.get("fingerprint") != navcam_fingerprint(nav_dir)      # rewritten models rebuild the project
                or _hazcam_settings_changed(proj, s))
     if rebuild:
