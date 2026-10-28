@@ -64,16 +64,77 @@ def test_staged_reconstruct_runs_pose_guided_matching(tmp_path, monkeypatch):
     from mppp.sfm import reconstruction as R
     proj, new, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
     monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(new))
-    rec = R.reconstruct(proj, sigma_px=0.3, schedule=((24.0, 10.0, 8.0), (8.0, 3.0, 4.0)), max_iterations=5,
-                        verbose=False, navcam_intrinsics="refine", staged=True, out_name="cahv_ba", zcam_focus_line=False)
+    kw = dict(sigma_px=0.3, schedule=((24.0, 10.0, 8.0), (8.0, 3.0, 4.0)), max_iterations=5, verbose=False,
+              navcam_intrinsics="refine", staged=True, out_name="cahv_ba", zcam_focus_line=False)
+    # 0.95.0 (Christian, 28 Oct): the default scope "weak" matches only the Mastcam-Z frames short of anchor ties
+    # (every one here: no Navcam - Mastcam-Z matches at all), in the exclusion round, before the exclusion
+    rec = R.reconstruct(proj, **kw)
+    pg = proj.settings["pose_guided_weak"]
+    assert pg["new_matches"] > 0 and pg["after"]["navcam_zcam_points"] > pg["before"]["navcam_zcam_points"]
+    n_z = sum(1 for f in fam.values() if f == "Z")
+    assert pg["round"] == 2 and pg["weak_images_before"] == pg["images"] == n_z and pg["weak_images_after"] <= n_z
+    assert pg["no_points_before"] == 0 and "pose_guided" not in proj.settings
+    assert (proj.root / "database_guided_weak.db").is_file() and not (proj.root / "database_guided.db").exists()
+    assert set(zf) <= set(rec.reg_frame_ids())
+    # "final": the 0.94 pass over every frame after the rounds, and no weak pass
+    (proj.root / "database_guided_weak.db").unlink()
+    rec = R.reconstruct(proj, pose_guided={"scope": "final"}, **kw)
     pg = proj.settings["pose_guided"]
     assert pg["new_matches"] > 0 and pg["after"]["navcam_zcam_points"] > pg["before"]["navcam_zcam_points"]
-    assert (proj.root / "database_guided.db").is_file() and set(zf) <= set(rec.reg_frame_ids())
+    assert pg["images"] is None and "pose_guided_weak" not in proj.settings
+    assert (proj.root / "database_guided.db").is_file() and not (proj.root / "database_guided_weak.db").exists()
+    # "all": both
+    (proj.root / "database_guided.db").unlink()
+    R.reconstruct(proj, pose_guided={"scope": "all"}, **kw)
+    assert proj.settings["pose_guided_weak"]["new_matches"] > 0 and "pose_guided" in proj.settings
+    assert (proj.root / "database_guided.db").is_file() and (proj.root / "database_guided_weak.db").is_file()
+    with pytest.raises(ValueError, match="scope"):
+        R.reconstruct(proj, pose_guided={"scope": "some"}, **kw)
     # off: no guided database
     (proj.root / "database_guided.db").unlink()
+    (proj.root / "database_guided_weak.db").unlink()
     R.reconstruct(proj, sigma_px=0.3, schedule=((24.0, 10.0, 8.0),), max_iterations=5, verbose=False,
                   navcam_intrinsics="refine", staged=True, out_name="cahv_ba", zcam_focus_line=False, pose_guided=False)
-    assert not (proj.root / "database_guided.db").exists()
+    assert not (proj.root / "database_guided.db").exists() and not (proj.root / "database_guided_weak.db").exists()
+
+
+def test_weak_pass_reaches_a_frame_with_no_tie_points_before_its_exclusion(tmp_path, monkeypatch):
+    """0.95.0 (Overlook Mountain, 28 Oct: 101 frames "no tie points" lost in round 2 before the guided step): a
+    Mastcam-Z frame no match reached is posed from its label, gets its pairs from the points of the frames around
+    it (select_pairs the other way round, partner_depth_range) and its matches before the exclusion, and stays."""
+    pytest.importorskip("pyceres")
+    from helpers import _write_database, _zcam_rig_rec
+    from mppp.sfm import reconstruction as R
+    from mppp.sfm.guided import select_pairs, weak_zcam_images
+    proj, rec0, zf = _zcam_rig_rec(tmp_path)
+    fam = {r["image_id"]: r["instrument"][0] for r in proj.images}
+    lone = sorted(i for i, f in fam.items() if f == "Z")[0]              # one Mastcam-Z frame with no matches at all
+    lone_frame = rec0.images[lone].frame_id
+    lone_ims = {int(d.id) for d in rec0.frames[lone_frame].data_ids}
+    _write_database(rec0, proj.database, descriptors=True, keep_pair=lambda a, b: not ({a, b} & lone_ims))
+    proj.images_dir.mkdir(parents=True, exist_ok=True)
+    # the start of stage 2 as the pipeline sees it: the lone frame registered at its label with no points
+    bare = copy.deepcopy(rec0)
+    for p in list(bare.points3D):
+        pt = bare.points3D[p]
+        if any(int(e.image_id) in lone_ims for e in pt.track.elements):
+            bare.delete_point3D(p)
+    assert bare.images[lone].num_points3D == 0
+    monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(bare))
+    weak = weak_zcam_images(bare, proj, 50)
+    assert lone in weak and weak[lone] == 0
+    pairs = select_pairs(bare, proj, ("Z",), 8, 5, 50.0, only=[lone])      # the narrow synthetic frame sees few
+    assert pairs and all(a == lone for a, b, n in pairs) and all(n >= 5 for a, b, n in pairs)
+    assert not select_pairs(bare, proj, ("Z",), 8, 5, 50.0, only=[])
+    kw = dict(sigma_px=0.3, schedule=((24.0, 10.0, 8.0), (8.0, 3.0, 4.0)), max_iterations=5, verbose=False,
+              navcam_intrinsics="refine", staged=True, out_name="cahv_ba", zcam_focus_line=False, exclude_outliers=True)
+    rec = R.reconstruct(proj, pose_guided={"scope": "final", "min_points": 5}, **kw)
+    assert lone_frame in {e["frame_id"] for e in proj.settings["reconstruction"]["excluded"]}   # 0.94: dropped first
+    rec = R.reconstruct(proj, pose_guided={"min_points": 5}, **kw)
+    pg = proj.settings["pose_guided_weak"]
+    assert pg["no_points_before"] >= 1 and pg["no_points_after"] < pg["no_points_before"]
+    assert lone_frame not in {e["frame_id"] for e in proj.settings["reconstruction"]["excluded"]}
+    assert lone_frame in set(rec.reg_frame_ids()) and rec.images[lone].num_points3D > 0
 
 
 # the local depth window (v0p65)

@@ -2221,6 +2221,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     Mastcam-Z): after the stage-2 rounds, matches guided by the poses (:mod:`mppp.sfm.guided`; a dict overrides
     ``GUIDED_DEFAULTS``) go into ``<project>/database_guided.db``, the block is triangulated from it and adjusted
     once more; the report (Navcam-Mastcam-Z tie points before / after) is in ``project.settings["pose_guided"]``.
+    0.95.0 (Christian, 28 Oct): its ``scope`` - "weak" (default): only the Mastcam-Z frames with fewer than
+    ``weak_navcam_ties`` (50) anchor ties, or none, are matched, in the round ``exclude_after_round`` before the
+    exclusion that would drop them (``project.settings["pose_guided_weak"]``); "all": that pass and the every-frame
+    pass after the rounds; "final": the every-frame pass only (0.94).
     ``navcam_aspect`` (v0p65, notebook 03 ``NAVCAM_ASPECT``): "hold" (default) keeps every Navcam camera's fy / fx at
     its start (the consensus pixel aspect) in all bundle adjustments of the run, the thermal stage included;
     "free" refines fx and fy independently.  ``thermal_after_stage1``: with ``staged``, the Navcam thermal
@@ -2528,6 +2532,14 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         cov_prev, line_snap, undone = None, None, set()
         poses_prev, cams_prev, reg_prev = {}, {}, set()
         settled = None
+        from .guided import GUIDED_DEFAULTS, SCOPES
+        guided_opts = {k_: v_ for k_, v_ in (pose_guided if isinstance(pose_guided, dict) else {}).items()
+                       if k_ not in ("scope", "only")}
+        guided_scope = str((pose_guided if isinstance(pose_guided, dict) else {}).get("scope") or GUIDED_DEFAULTS["scope"])
+        if guided_scope not in SCOPES:
+            raise ValueError(f"pose_guided scope must be one of {SCOPES}, not {guided_scope!r}")
+        for k_ in ("pose_guided", "pose_guided_weak"):          # a previous run's reports in this project
+            project.settings.pop(k_, None)
         ZG.trace(rec, project, "stage2_start")
         for k, (tpx, loss, rmax) in enumerate(schedule):
             rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)
@@ -2628,9 +2640,53 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 if h_frames:
                     logger.info(f"stage 2 round {k + 1}: {hazcam_line(entry['hazcam_coverage'])}")
             ZG.trace(rec, project, f"r{k + 1}_filtered", {"filtered": n_bad})
-            if exclude_outliers and k + 1 == min(int(exclude_after_round), len(schedule)):
-                _exclude(f"stage 2, after round {k + 1}")
-                ZG.trace(rec, project, f"r{k + 1}_excluded")
+            if k + 1 == min(int(exclude_after_round), len(schedule)):
+                if (pose_guided and zkeys and guided_scope in ("weak", "all")
+                        and Path(topts2.get("database") or project.database).is_file()):
+                    # 0.95.0 (Christian, 28 Oct): the weak Mastcam-Z frames (few anchor ties, or none at all) get
+                    # their pose-guided matches now, before the exclusion that would drop them (Overlook Mountain:
+                    # 101 frames "no tie points" lost in round 2, then 735 k guided Navcam-Z matches they could not use)
+                    from .guided import _family_ties, pose_guided_matching, weak_zcam_images
+                    n_weak = int(guided_opts.get("weak_navcam_ties", GUIDED_DEFAULTS["weak_navcam_ties"]))
+                    weak = weak_zcam_images(rec, project, n_weak)
+                    if weak:
+                        no_pts0 = sum(1 for i in weak if rec.images[i].num_points3D == 0)
+                        zcov_w0 = ZG.group_coverage(rec, project)
+                        rec_w, topts_w = copy.deepcopy(rec), topts2
+                        before_w = _family_ties(rec, project)
+                        dbg, wprep = pose_guided_matching(rec, project, topts2.get("database") or project.database,
+                                                          out_database=project.root / "database_guided_weak.db",
+                                                          verbose=verbose, **dict(guided_opts, only=sorted(weak)))
+                        topts2 = dict(topts, database=dbg)
+                        rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)
+                        n_w = filter_observations(rec, project, float(rmax)) + drop_short_tracks(rec, min_track_length)
+                        zcov_w1 = ZG.group_coverage(rec, project)
+                        weak_after = weak_zcam_images(rec, project, n_weak)
+                        wprep.update({"round": k + 1, "weak_navcam_ties": n_weak, "weak_images_before": len(weak),
+                                      "weak_images_after": len(weak_after),
+                                      "no_points_before": no_pts0,
+                                      "no_points_after": sum(1 for i in weak if i in rec.images and rec.images[i].num_points3D == 0),
+                                      "before": before_w, "after": _family_ties(rec, project), "filtered": n_w,
+                                      "zcam_coverage_before": zcov_w0, "zcam_coverage_after": zcov_w1})
+                        wbad = ZG.collapsed(zcov_w0, zcov_w1)
+                        if wbad:
+                            rec, topts2 = rec_w, topts_w
+                            wprep["reverted"] = (f"{', '.join(wbad)} lost its frames with tie points "
+                                                 f"({ZG.brief(zcov_w0)} -> {ZG.brief(zcov_w1)})")
+                        del rec_w
+                        log.append({"stage": 2, "round": k + 1, "pose_guided_weak": wprep})
+                        project.settings["pose_guided_weak"] = wprep
+                        if verbose:
+                            logger.info(f"stage 2 round {k + 1}, pose-guided matches for the {len(weak)} weak Mastcam-Z "
+                                        f"frames (< {n_weak} anchor ties; {wprep['no_points_before']} with none): "
+                                        f"{wprep['pairs']} pairs, {wprep['new_matches']} new matches; weak frames "
+                                        f"{len(weak)} -> {len(weak_after)}, with no tie points "
+                                        f"{wprep['no_points_before']} -> {wprep['no_points_after']}"
+                                        + (f"; undone: {wprep['reverted']}" if wprep.get("reverted") else ""))
+                        ZG.trace(rec, project, f"r{k + 1}_guided_weak")
+                if exclude_outliers:
+                    _exclude(f"stage 2, after round {k + 1}")
+                    ZG.trace(rec, project, f"r{k + 1}_excluded")
             if settled:
                 # 0.95.0: the lines have settled - the remaining rounds would hold the bins on them and move little;
                 # the pose-guided matching and the final adjustment follow as after the last round
@@ -2640,9 +2696,11 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                 f"{settled['limit_px']:g} px since the last refit - {settled['rounds_skipped']} "
                                 f"round(s) skipped")
                 break
-        if pose_guided and zkeys and Path(topts2.get("database") or project.database).is_file():
+        if (pose_guided and zkeys and guided_scope in ("all", "final")
+                and Path(topts2.get("database") or project.database).is_file()):
             # matches guided by the stage-2 poses (Mastcam-Z against Navcam and the other zooms), then one more
-            # triangulation from them and one adjustment at the last round's thresholds
+            # triangulation from them and one adjustment at the last round's thresholds (0.95.0: with scope "weak",
+            # the default, only the weak frames' pass above runs)
             from .guided import _family_ties, pose_guided_matching
             from .health import beyond_ground
             before = _family_ties(rec, project)
@@ -2652,7 +2710,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             bg0 = beyond_ground(rec, sample=50000)["fraction"] or 0.0
             rec_before, topts_before = copy.deepcopy(rec), topts2
             dbg, prep = pose_guided_matching(rec, project, topts2.get("database") or project.database, verbose=verbose,
-                                             **(pose_guided if isinstance(pose_guided, dict) else {}))
+                                             **guided_opts)
             topts2 = dict(topts, database=dbg)
             tpx, loss, rmax = schedule[-1]
             rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)

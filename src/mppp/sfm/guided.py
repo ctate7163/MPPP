@@ -29,7 +29,7 @@ import shutil
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -47,7 +47,14 @@ GUIDED_DEFAULTS = {"families": ("Z",), "max_px": 3.0, "max_ratio": 0.85, "max_di
                    # 0.94.4: 1 by default - on the PC (more cores than OpenBLAS was built for) a run stopped for good
                    # at this step (Chal Rocks tiny, 23 Oct 15:11), and the threads saved nothing on the tiny blocks
                    # (120 s either way): the time is in the pair selection and the database, not the matching
-                   "workers": 1}                     # 0: min(8, CPU count)
+                   "workers": 1,                     # 0: min(8, CPU count)
+                   # 0.95.0 (Christian, 28 Oct): "weak" - the Mastcam-Z frames with fewer than weak_navcam_ties anchor
+                   # ties (none included), matched before the exclusion after the stage-2 round exclude_after_round
+                   # (Overlook Mountain lost 101 frames "no tie points" in round 2, then the guided step found 735 k
+                   # Navcam-Z matches it could no longer give them); "all" - that pass and then every frame after the
+                   # rounds (the 0.94 pass, +15-19 % ties at 8000 pairs and ~2 h); "final" - the 0.94 pass only
+                   "scope": "weak", "weak_navcam_ties": 50}
+SCOPES = ("weak", "all", "final")
 
 
 def _pose(im) -> Tuple[np.ndarray, np.ndarray]:
@@ -118,31 +125,58 @@ def _project(rec, iid: int, X: np.ndarray) -> np.ndarray:
     return uv
 
 
+def weak_zcam_images(rec, project, max_navcam_ties: int = 50) -> Dict[int, int]:
+    """0.95.0: {image id: anchor ties} of the registered Mastcam-Z images with fewer than ``max_navcam_ties`` valid
+    tie points with an anchor (:func:`mppp.sfm.reconstruction.zcam_anchor_ties`: Navcam, or a wider zoom for the
+    long ones) - the frames with no tie points at all included (0)."""
+    from .reconstruction import zcam_anchor_ties
+    fam = {r["image_id"]: str(r["instrument"])[:1] for r in project.images if "image_id" in r}
+    ties, _ = zcam_anchor_ties(rec)
+    out = {}
+    for i in rec.reg_image_ids():
+        i = int(i)
+        if fam.get(i) == "Z" and int(ties.get(i, 0)) < int(max_navcam_ties):
+            out[i] = int(ties.get(i, 0))
+    return out
+
+
 def select_pairs(rec, project, families: Sequence[str] = ("Z",), max_pairs: int = 8, min_points: int = 20,
-                 max_baseline_m: Optional[float] = 50.0, sample: int = 300, seed: int = 0) -> List[Tuple[int, int, int]]:
+                 max_baseline_m: Optional[float] = 50.0, sample: int = 300, seed: int = 0,
+                 only: Optional[Iterable[int]] = None) -> List[Tuple[int, int, int]]:
     """
-    (A, B, overlap) for every registered image A of ``families`` and the ``max_pairs`` registered images B whose
-    frame sees the most of A's triangulated points (at least ``min_points`` of a sample of ``sample``), centres at
-    most ``max_baseline_m`` apart.  A pair of two such images is listed once.
+    (A, B, overlap) for every registered image A of ``families`` (``only``: these image ids of them) and the
+    ``max_pairs`` registered images B whose frame sees the most of A's triangulated points (at least ``min_points``
+    of a sample of ``sample``), centres at most ``max_baseline_m`` apart.  A pair of two such images is listed once.
+    0.95.0: an A with fewer than ``min_points`` points of its own (a frame no match reached, posed from its label)
+    is scored the other way round - by B's points that fall in A's frame - so the frames with no tie points get
+    their pairs too.
     """
     rng = np.random.default_rng(seed)
     fam = {r["image_id"]: str(r["instrument"])[:1] for r in project.images if "image_id" in r}
     reg = [int(i) for i in rec.reg_image_ids()]
     cen = {i: _pose(rec.images[i])[1] for i in reg}
+    keep = set(int(i) for i in only) if only is not None else None
     out, seen = [], set()
+    pts_b: Dict[int, np.ndarray] = {}
     for a in reg:
-        if fam.get(a) not in families:
+        if fam.get(a) not in families or (keep is not None and a not in keep):
             continue
         X = _image_points(rec, a)
-        if len(X) < min_points:
-            continue
+        reverse = len(X) < min_points
         if len(X) > sample:
             X = X[rng.choice(len(X), sample, replace=False)]
         scores = []
         for b in reg:
             if b == a or (max_baseline_m and np.linalg.norm(cen[b] - cen[a]) > max_baseline_m):
                 continue
-            n = int(_in_frame(rec.cameras[rec.images[b].camera_id], _project(rec, b, X)).sum())
+            if reverse:
+                if b not in pts_b:                              # every point of B (the narrow frame sees few of them)
+                    Xb = _image_points(rec, b)
+                    pts_b[b] = Xb[rng.choice(len(Xb), 20 * sample, replace=False)] if len(Xb) > 20 * sample else Xb
+                Xb = pts_b[b]
+                n = int(_in_frame(rec.cameras[rec.images[a].camera_id], _project(rec, a, Xb)).sum()) if len(Xb) >= min_points else 0
+            else:
+                n = int(_in_frame(rec.cameras[rec.images[b].camera_id], _project(rec, b, X)).sum())
             if n >= min_points:
                 scores.append((n, b))
         for n, b in sorted(scores, reverse=True)[:max_pairs]:
@@ -152,6 +186,21 @@ def select_pairs(rec, project, families: Sequence[str] = ("Z",), max_pairs: int 
             seen.add(key)
             out.append((a, b, n))
     return out
+
+
+def partner_depth_range(rec, a: int, b: int, margin=(0.5, 3.0), default=(0.5, 1000.0)) -> Tuple[float, float]:
+    """0.95.0: the depth range of image ``a`` from the triangulated points of ``b`` that fall in ``a``'s frame
+    (an ``a`` with no points of its own); ``default`` with fewer than 20."""
+    Xb = _image_points(rec, b)
+    if len(Xb) < 20:
+        return default
+    cam = rec.cameras[rec.images[a].camera_id]
+    ok = _in_frame(cam, _project(rec, a, Xb))
+    if ok.sum() < 20:
+        return default
+    _, C = _pose(rec.images[a])
+    d = np.linalg.norm(Xb[ok] - C, axis=1)
+    return max(0.1, margin[0] * float(np.percentile(d, 2))), min(5000.0, margin[1] * float(np.percentile(d, 98)))
 
 
 def _unit(d: np.ndarray) -> np.ndarray:
@@ -410,8 +459,9 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
                 out = alt
         from .database import copy_database
         copy_database(database, out, descriptors=False)        # 0.95.0: the descriptors are read from the original
+    only = o.get("only")                                       # 0.95.0: the weak frames' pass
     pairs = select_pairs(rec, project, tuple(o["families"]), int(o["max_pairs"]), int(o["min_points"]),
-                         o.get("max_baseline_m"))
+                         o.get("max_baseline_m"), only=only)
     scale = {r["image_id"]: float(r.get("downsample_scale", 1.0)) for r in project.images if "image_id" in r}
     fam = {r["image_id"]: str(r["instrument"])[:1] for r in project.images if "image_id" in r}
     db = pycolmap.Database.open(str(out))
@@ -443,9 +493,17 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
             if a not in depth:
                 depth[a] = _depth_range(rec, a, tuple(o["depth_margin"]))
             todo.append((a, b))
+        n_own = {a: rec.images[a].num_points3D for a in {ab[0] for ab in todo}}
+        local_min = int(o["local_min"]) if local is not None else 0
 
         def one(ab):
             a_, b_ = ab
+            if local is not None and n_own.get(a_, 0) < local_min:
+                # 0.95.0: a frame with (nearly) no points of its own has no depth windows - the partner's points in
+                # its frame give one global range for the pair
+                return guided_pair_matches(rec, a_, b_, desc[a_], desc[b_], scale.get(a_, 1.0), scale.get(b_, 1.0),
+                                           partner_depth_range(rec, a_, b_, tuple(o["depth_margin"])), float(o["max_px"]),
+                                           float(o["max_ratio"]), float(o["max_distance"]), local=None)
             return guided_pair_matches(rec, a_, b_, desc[a_], desc[b_], scale.get(a_, 1.0), scale.get(b_, 1.0),
                                        depth[a_], float(o["max_px"]), float(o["max_ratio"]), float(o["max_distance"]),
                                        local=local)
@@ -483,7 +541,7 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
         if ddb is not db:
             ddb.close()
     rep = {"database": str(out), "pairs": len(pairs), "pairs_with_new_matches": n_pairs_used, "new_matches": int(n_new),
-           "pairs_without_descriptors": n_nodesc,
+           "pairs_without_descriptors": n_nodesc, "images": len(set(int(i) for i in only)) if only is not None else None,
            "new_matches_by_family": by_fam, "options": {k: (list(v) if isinstance(v, tuple) else v) for k, v in o.items()},
            "seconds": round(time.time() - t0, 1), "workers": workers}
     if verbose:
