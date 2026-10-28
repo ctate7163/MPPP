@@ -86,7 +86,7 @@ RATIO_HOLD_ZOOM = 34
 # on fx (fy x the aspect) on top of the eye's line - the way the ratio groups and the focus-from-below offset enter
 # - shared by its states (a mixed sequence then measures the high / low ratio within itself), drawn to 0 with an sd
 # of SEQ_OFFSET_SD x f (the eye's line is the sequences' weighted mean); a sequence with fewer than MIN_SEQ_IMAGES
-# frames or MIN_SEQ_OBS block observations holds its offset at 0 (the constants in mppp.calib.forms, shared with the
+# frames or MIN_SEQ_OBS observations in the joint holds its offset at 0 (the constants in mppp.calib.forms, shared with the
 # blocks' line refit).  Needs sequence bins (zcam_bin_by "sequence")
 SEQ_OFFSET_SD = forms.SEQ_OFFSET_SD
 MIN_SEQ_IMAGES = forms.MIN_SEQ_IMAGES
@@ -365,14 +365,14 @@ def ratio_groups(zunits: Dict[int, Dict[str, Any]], by: Optional[str] = None) ->
 def sequence_groups(zunits: Dict[int, Dict[str, Any]], min_images: Optional[int] = None,
                     min_obs: Optional[int] = None) -> Tuple[Dict[Tuple[str, str], List[int]], Dict[Tuple[str, str], Dict[str, Any]]]:
     """0.95.0: {(eye group, sequence key): [bin camera ids]} of the sequences whose offset is free - at least
-    ``min_images`` frames and ``min_obs`` block observations over the sequence's bins (:data:`MIN_SEQ_IMAGES`,
+    ``min_images`` frames and ``min_obs`` observations in the joint over the sequence's bins (:data:`MIN_SEQ_IMAGES`,
     :data:`MIN_SEQ_OBS`) - and {key: {"images", "observations", "bins", "held"}} of every sequence (the thin ones with
     ``held`` set: their offset is 0).  Bins without a sequence (focus bins, projects before 0.95.0) have none."""
     mi = MIN_SEQ_IMAGES if min_images is None else int(min_images)
     mo = MIN_SEQ_OBS if min_obs is None else int(min_obs)
     groups: Dict[Tuple[str, str], List[int]] = {}
     for cid, u in zunits.items():
-        if u.get("seq"):
+        if u.get("seq") and not u.get("thin"):          # (a thin bin is not on the lines: no offset either)
             groups.setdefault((u["group"], u["seq"]), []).append(int(cid))
     info: Dict[Tuple[str, str], Dict[str, Any]] = {}
     free: Dict[Tuple[str, str], List[int]] = {}

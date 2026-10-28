@@ -640,7 +640,7 @@ def test_zcam_joint_sequence_offsets(tmp_path, monkeypatch):
     from mppp.calib import forms
     from mppp.calib import ztied as Z
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
-    monkeypatch.setattr(Z, "ZBIN_MIN_OBS", 100)          # (the synthetic sequence bins: two frames, ~440 observations)
+    monkeypatch.setattr(Z, "MIN_BIN_OBSERVATIONS", 100)  # (the synthetic sequence bins: two frames, ~440 observations)
     rng = np.random.default_rng(19)
     truth = _truth_model()
     so = {"ZCAM00001": 10.0, "ZCAM00002": 0.0, "ZCAM00003": -10.0}
