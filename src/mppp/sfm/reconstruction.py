@@ -1741,6 +1741,9 @@ def hazcam_line(cov: Dict[str, Any]) -> str:
 # 0.95.0 (Christian, 28 Oct): stage 2 stops freeing the Mastcam-Z bins once a refit moves the focus lines by less
 # than this (px at the fitted bins) - two rounds instead of three on a settled block
 ZCAM_LINE_SETTLE_PX = 0.1
+# a frame without tie points whose label boresight points more than this above the horizon is noted as a likely
+# sky or far-field frame (0.95.0)
+SKY_ELEVATION_DEG = 3.0
 OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 2.0,   # 2.0 px (Christian, 22 Oct 2026; 1.6 since v0p61, v0p50 1.2)
                     "shift_mad_factor": 5.0, "min_shift_m": 0.25,
                     "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None,
@@ -1935,9 +1938,12 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
         obs = sum(n_img.get(i, 0) for i in ims)
         meds = [med_img[i] for i in ims if i in med_img]
         ins = str(rows[0]["instrument"])
+        R0 = np.asarray(r0["prior_R_w2c"], float)
         frames[fid] = {"frame_id": int(fid), "images": [rec.images[i].name for i in ims], "station": rows[0]["station"],
                        "family": "Z" if ins.startswith("Z") else "H" if ins[:1] in HAZCAM_FAMILIES else "N",
-                       "observations": obs,
+                       "observations": obs, "sequence": rows[0].get("sequence"),
+                       "boresight_elevation_deg": round(float(np.degrees(np.arcsin(np.clip(R0[2, 2], -1, 1)))), 1),
+                       "sol": rows[0].get("sol"),
                        "median_residual_px": float(np.median(meds)) if meds else float("inf"), "dC": dC, "dR": dR,
                        "reasons": []}
     if not frames:
@@ -1966,7 +1972,12 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
         elif f["observations"] and f["median_residual_px"] > lim:
             f["reasons"].append(f"median residual {f['median_residual_px']:.2f} px > {lim:.2f}")
         if f["observations"] == 0:
-            f["reasons"].append("no tie points")
+            # 0.95.0 (Overlook Mountain, 28 Oct: 101 frames of four 48 mm sequences without tie points): the label
+            # boresight elevation tells a sky or far-field frame from a matching gap
+            el = f.get("boresight_elevation_deg")
+            f["reasons"].append("no tie points" + (f" (boresight {el:+.0f} deg above the horizon: sky or far field?)"
+                                                   if el is not None and el > SKY_ELEVATION_DEG
+                                                   else f" (boresight {el:+.0f} deg)" if el is not None else ""))
         elif f["observations"] < th["min_observations"]:
             f["reasons"].append(f"{f['observations']} observations < {th['min_observations']}")
     groups: Dict[tuple, List[Dict[str, Any]]] = {}

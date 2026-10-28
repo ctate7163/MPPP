@@ -1100,6 +1100,16 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
                  v["cross_points"], v["prior"])
     for e in excluded:
         log.info("   %s | %s | %s", ", ".join(e["images"]), e["station"], "; ".join(e["reasons"]))
+    import numpy as np
+    by_seq: Dict[str, List[Dict[str, Any]]] = {}
+    for e in excluded:                                    # 0.95.0: the frames without tie points by sequence
+        if e.get("kind") == "unconstrained" and e.get("sequence"):
+            by_seq.setdefault(str(e["sequence"]), []).append(e)
+    if by_seq:
+        log.info("frames without tie points by sequence: %s", "; ".join(
+            f"{sq} {len(v)}" + (f" (boresight {np.median([x['boresight_elevation_deg'] for x in v if x.get('boresight_elevation_deg') is not None]):+.0f} deg)"
+                                if any(x.get("boresight_elevation_deg") is not None for x in v) else "")
+            for sq, v in sorted(by_seq.items(), key=lambda kv: -len(kv[1]))))
     summary = export_for_error(proj, rec, level="light" if light else "full")
     log.info("export: %s", json.dumps({k: summary[k] for k in ("tracks", "residual_rms_native_px", "registered_images",
                                                                 "project_images", "prior_offset_median_m",
