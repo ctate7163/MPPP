@@ -146,3 +146,29 @@ def test_export_for_error_computes_eps_from_its_own_residuals(tmp_path):
     ref = calibrate_eps_from_residuals(m)
     for k in ("eps_intra_px", "eps_cross_px", "n_intra_obs", "n_cross_obs"):
         assert summary["eps"][k] == pytest.approx(ref[k], rel=1e-9)
+
+
+def test_stations_csv_records_the_sun_and_the_block_frame(tmp_path):
+    """0.95.0 (Christian, 27 Oct): stations.csv carries the Sun-Mars distance, the label sun vector in ENU and the
+    same vector in the block frame; block_frame.json the block's rotation from the label ENU frame."""
+    pytest.importorskip("pyceres")
+    import csv
+    import json
+    from helpers import _build_rec, _synthetic
+    from mppp.sfm.export import export_for_error
+    proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
+    for k, r in enumerate(proj.images):                                   # the label values (no manifest sun facts)
+        r["solar_azimuth_deg"], r["solar_elevation_deg"] = 90.0, 30.0
+        if k == 0:
+            r["solar_elevation_deg"] = None                               # one without: empty columns
+    rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
+    export_for_error(proj, rec, tmp_path / "ei")
+    bf = json.loads((tmp_path / "ei" / "block_frame.json").read_text())
+    assert bf["images"] > 0 and bf["angle_deg"] < 0.5 and len(bf["R_block_from_enu"]) == 3     # the truth: no tilt
+    rows = list(csv.DictReader((tmp_path / "ei" / "stations.csv").open(encoding="utf-8")))
+    assert {"d_mars_au", "d_mars_source", "sun_e", "sun_n", "sun_u", "sun_bx", "sun_by", "sun_bz"} <= set(rows[0])
+    r1 = rows[1]
+    assert float(r1["sun_e"]) == pytest.approx(np.cos(np.radians(30)), abs=1e-9) and float(r1["sun_u"]) == pytest.approx(0.5)
+    assert abs(float(r1["sun_bx"]) - float(r1["sun_e"])) < 0.01 and abs(float(r1["sun_bz"]) - 0.5) < 0.01
+    assert rows[0]["sun_e"] == "" and rows[0]["sun_bx"] == ""
+    assert rows[1]["d_mars_source"] in ("ls_ellipse", "") and (rows[1]["d_mars_au"] == "" or 1.3 < float(rows[1]["d_mars_au"]) < 1.7)

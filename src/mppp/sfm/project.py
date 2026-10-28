@@ -456,6 +456,9 @@ class SfmProject:
                 "sequence": fn["sequence"], "downsample_scale": s, "native_size": [iw, ih],
                 "lmst": m.get("LMST"), "solar_elevation_deg": m.get("solar_elevation_deg"),
                 "solar_azimuth_deg": m.get("solar_azimuth_deg"),
+                # 0.95.0: the sun facts (from the manifest when it has them, else from its label values)
+                **({"d_mars_au": m.get("d_mars_au"), "d_mars_source": m.get("d_mars_source"), "sun_enu": m.get("sun_enu")}
+                   if "d_mars_au" in m else _sun_record(m)),
                 "prior_C": (np.asarray(m["pose"]["C_enu_m"], float) - offset).tolist(),
                 "prior_R_w2c": R.tolist(), "position_source": m["pose"].get("position_source"),
                 "has_mask": "mask" in m["outputs"],
@@ -685,6 +688,11 @@ def station_labels(images: Iterable[Dict[str, Any]]) -> Dict[str, str]:
         sol = "" if not s else (f"Sol{min(s):04d}" if len(s) == 1 else f"Sol{min(s):04d}-{max(s):04d}")
         out[st] = f"{sol} {st}".strip()
     return out
+
+
+def _sun_record(m: Dict[str, Any]) -> Dict[str, Any]:
+    from ..sun import sun_record
+    return sun_record(m, spice=False)                # (the ellipse: SPICE needs the kernels, done at processing)
 
 
 def _bin_unit(r: Dict[str, Any], by: str) -> str:

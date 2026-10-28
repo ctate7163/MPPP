@@ -502,16 +502,35 @@ def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
     out.mkdir(parents=True, exist_ok=True)
     native = write_native_text_model(rec, project, out / "native")
 
+    # 0.95.0 (Christian, 27 Oct): the block's tilt from the label ENU frame and the sun in the block frame, recorded
+    # at freeze time for the paper-3 work (mppp.sun)
+    from ..sun import block_rotation, sun_in_block, sun_record
+    blk = block_rotation(rec, project)
+    (out / "block_frame.json").write_text(json.dumps(
+        {"R_block_from_enu": blk["R_block_from_enu"] if blk else None,
+         "rotvec_deg_about_E_N_U": blk["rotvec_deg"] if blk else None, "angle_deg": blk["angle_deg"] if blk else None,
+         "images": blk["images"] if blk else 0,
+         "note": "v_block = R_block_from_enu @ v_enu: the median over the registered images of the world-frame rotation "
+                 "taking the label attitude to the refined one (the health check block_rotation_deg); sun_bx/by/bz in "
+                 "stations.csv are the label sun vectors rotated into the block frame"}, indent=1), encoding="utf-8")
     with (out / "stations.csv").open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         labels = station_labels(project.images)
         w.writerow(["name", "station", "site", "drive", "sol", "sclk_key", "lmst", "solar_elevation_deg", "solar_azimuth_deg",
-                    "instrument", "downsample_scale", "sequence", "registered", "station_label"])
+                    "instrument", "downsample_scale", "sequence", "registered", "station_label",
+                    "d_mars_au", "d_mars_source", "sun_e", "sun_n", "sun_u", "sun_bx", "sun_by", "sun_bz"])
         reg = {rec.images[i].name for i in rec.reg_image_ids()}
         for r in project.images:
+            sr = ({"d_mars_au": r.get("d_mars_au"), "d_mars_source": r.get("d_mars_source"), "sun_enu": r.get("sun_enu")}
+                  if "d_mars_au" in r else sun_record(r, spice=False))
+            s_enu = sr.get("sun_enu")
+            s_blk = sun_in_block(s_enu, blk["R_block_from_enu"]) if (blk and s_enu is not None) else None
             w.writerow([r["name"], r["station"], r["site"], r["drive"], r["sol"], r["sclk_key"], r.get("lmst"),
                         r.get("solar_elevation_deg"), r.get("solar_azimuth_deg"), r["instrument"], r["downsample_scale"], r["sequence"],
-                        r["name"] in reg, labels.get(r["station"], r["station"])])
+                        r["name"] in reg, labels.get(r["station"], r["station"]),
+                        sr.get("d_mars_au"), sr.get("d_mars_source")]
+                       + (list(map(float, s_enu)) if s_enu is not None else [None] * 3)
+                       + (list(map(float, s_blk)) if s_blk is not None else [None] * 3))
     rows = pose_residual_table(rec, project)
     if rows:
         with (out / "poses.csv").open("w", newline="", encoding="utf-8") as f:

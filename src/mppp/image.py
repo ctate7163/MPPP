@@ -527,6 +527,11 @@ class MPPPImage:
     @property
     def meta(self) -> Dict[str, Any]:
         from . import VERSION_TAG
+        from .sun import sun_record
+
+        def _sun_facts(L_s, az, el, utc):
+            return sun_record({"L_s_deg": L_s, "solar_azimuth_deg": az, "solar_elevation_deg": el, "start_time_utc": str(utc)})
+
         L = self.label
         return {
             "mppp_version": VERSION_TAG,
@@ -536,6 +541,8 @@ class MPPPImage:
             "sclk": self.fn.sclk, "start_time_utc": str(label_get(L, "START_TIME", default="")),
             "LMST": self.LMST, "LTST": self.LTST, "L_s_deg": self.L_s,
             "solar_azimuth_deg": self.solar_az, "solar_elevation_deg": self.solar_el,
+            # 0.95.0 (Christian, 27 Oct): the per-image sun facts the paper-3 work needs (mppp.sun)
+            **_sun_facts(self.L_s, self.solar_az, self.solar_el, label_get(L, "START_TIME", default="")),
             "tau_estimated": self.tau_estimated, "tau_reference": self.tau_ref,
             "scale_zenith": self.scale_zenith, "white_balance": self.white_balance.tolist(),
             "brightness": self.brightness, "lmst_h": self.lmst_h, "saturated_fraction": self.saturated_fraction,
