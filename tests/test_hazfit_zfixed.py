@@ -148,9 +148,11 @@ def test_groups_and_block_sites():
     # 24 Oct (Christian): Chal Rocks instead of Chal Rocks Large, without Pico Turquino - a faster run;
     # 27 Oct: Pico Turquino back (a third 48 mm block); later on 27 Oct (Christian's new lists): Chal Rocks Large
     # again, Bright Angel; the Hazcam consensus without Three Forks North; a list per zoom
-    # (10:30: Chal Rocks again, not Chal Rocks Large)
+    # (10:30: Chal Rocks again, not Chal Rocks Large); 28 Oct: Airey Hill in the ecam and zcam consensus lists
     assert g["zcam_consensus"] == ["chal_rocks", "seitah_overlook", "threeforks_north", "belva_crater",
-                                   "taylorfjellet", "marble_mountain", "bright_angel", "pico_turquino", "south_arm", "overlook_mountain"]
+                                   "taylorfjellet", "marble_mountain", "bright_angel", "pico_turquino", "south_arm",
+                                   "overlook_mountain", "airey_hill"]
+    assert "airey_hill" in g["ecam_consensus"]
     assert "chal_rocks_large" not in g["zcam34_joint"] and "chal_rocks" in g["zcam34_joint"]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "belva_crater", "bell_island", "marble_mountain"]
     assert g["zcam63_consensus"] == ["chal_rocks_large", "seitah_overlook", "bright_angel", "taylorfjellet", "marble_mountain"]
