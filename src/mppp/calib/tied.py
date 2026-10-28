@@ -88,6 +88,15 @@ HOLD_DEFAULT = ("Q0_yaw", "G_NL_k4", "G_NR_k4", "G_NL_cy", "E_NL_cy")
 TIE_K1_SLOPE = True   # 0.94.5 (Christian, 27 Oct): NR's k1 thermal slope tied to NL's - one design (the tied joint had
                       # NL -8.2 +- 1.2, NR -4.0 +- 1.3 x 1e-6/degC; the weighted mean about -6.1)
 PASS_JUMP_FACTOR = 1.5           # 0.94.4: a pass starting this far above the last one's end gets one more pass
+# 0.95.0 (Christian, 27 Oct): every pass starts above the last one's end (about 2.3x; 24 and 25 Oct too) because the
+# keypoint map is re-applied with the new thermal slopes - every observation moves by S x dT - and the solve brings
+# the cost back to the same value.  The extra pass is now decided by the final costs: one more only while the end
+# of a pass is still more than PASS_SETTLE_TOL (relative) from the end of the one before
+PASS_SETTLE_TOL = 1e-3
+# 0.95.0 (Christian, 27 Oct: the exact-tie step ran four times, 4 min each, and never lowered the cost): skipped when
+# the ties are already met - their share of the cost below EXACT_TIE_MET_SHARE - and, once it found no decrease in
+# a run, for the rest of that run
+EXACT_TIE_MET_SHARE = 1e-6
 EARLY_Z_MIN = 3.0                # 0.94.4 (Christian 24 Oct): an early-mission offset is kept only where |z| reaches this
 ISO_F = True    # one focal slope per eye (fy's ppm/degC = fx's): 20 Oct joint fx/fy 36.0/37.1, 35.6/35.3 ppm/degC,
                 # the per-block bins fy-fx +2.0 +- 4.3, +3.7 +- 4.5 ppm/degC (Christian: "set those equal if possible")
@@ -587,12 +596,16 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                 prob.set_parameter_block_constant(g[gname])
             else:
                 prob.set_manifold(g[gname], pyceres.SubsetManifold(len(g[gname]), sorted(ix)))
+        want_exact = bool(EXACT_TIE_SOLVE if exact_solve is None else exact_solve)
         return {"cov_blocks": {k: v for k, v in g.items() if prob.has_parameter_block(v)
                                and not prob.is_parameter_block_constant(v)},
                 "ties": {"cameras": n_cam, "rigs": n_rig, "pp_priors": n_pp}, "held": {k: sorted(v) for k, v in held.items()},
                 "tie_ids": tie_ids if EXACT_TIE_COVARIANCE else [], "tie_specs": specs,
-                "exact_solve": bool(EXACT_TIE_SOLVE if exact_solve is None else exact_solve)}
+                "exact_solve": want_exact and not exact_state["skip"], "exact_state": exact_state,
+                "exact_met_share": EXACT_TIE_MET_SHARE}
 
+    exact_state: Dict[str, Any] = {"skip": False, "reason": None}       # 0.95.0: set by the adjustment (no decrease)
+    hook.exact_state = exact_state
     return hook, g
 
 
@@ -675,10 +688,16 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
             log.info(f"  pass {p_ + 1}: {ba['brief'][:160]}")
         costs.append((float(ba.get("initial_cost", np.nan)), float(ba.get("final_cost", np.nan))))
         # 0.94.4: a pass that starts far above where the last one ended (24 Oct: 2.54e6 after 1.82e5) means the
-        # keypoint map or the ties moved between passes - one more pass, so the covariance is taken at a settled point
-        if (last and len(costs) >= 2 and n_pass < int(passes) + 1 and np.isfinite(costs[-1][0])
-                and costs[-1][0] > PASS_JUMP_FACTOR * costs[-2][1]):
-            log.warning(f"  pass {p_ + 1} started at {costs[-1][0]:.4g} after {costs[-2][1]:.4g}: one more pass")
+        # keypoint map or the ties moved between passes.  0.95.0: that is the keypoint map re-applied with the new
+        # slopes (every pass, ~2.3x) - noted, and one more pass only while the final costs have not settled
+        # (PASS_SETTLE_TOL), so the covariance is taken at a settled point
+        if len(costs) >= 2 and np.isfinite(costs[-1][0]) and costs[-1][0] > PASS_JUMP_FACTOR * costs[-2][1] and verbose:
+            log.info(f"  pass {p_ + 1} started at {costs[-1][0]:.4g} after {costs[-2][1]:.4g} (the keypoint map re-applied "
+                     f"with the new slopes) and ended at {costs[-1][1]:.4g}")
+        if (last and len(costs) >= 2 and n_pass < int(passes) + 1 and np.isfinite(costs[-1][1]) and np.isfinite(costs[-2][1])
+                and abs(costs[-1][1] - costs[-2][1]) > PASS_SETTLE_TOL * max(costs[-2][1], 1e-300)):
+            log.warning(f"  pass {p_ + 1} ended at {costs[-1][1]:.6g} after {costs[-2][1]:.6g} (more than "
+                        f"{100 * PASS_SETTLE_TOL:g} % apart): one more pass")
             n_pass += 1
         p_ += 1
     if ba is not None:

@@ -1001,11 +1001,34 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         # (no free global term - every global held, e.g. the pointing pass: the ties hold the units on the law already)
         # 0.94.4: Levenberg-Marquardt on with the ties as exact constraints (mppp.calib.tiesolve)
         from ..calib.tiesolve import exact_tie_refine
-        free_ = list(pose_blocks.values()) + list(cam_blocks.values()) + list(rig_blocks.values()) + list(vblocks.values())
-        xr = exact_tie_refine(prob, extra_info["tie_specs"], point_arrs, free_, extra_info["cov_blocks"],
-                              verbose=True)
-        extra_info["exact_refine"] = {k: v for k, v in xr.items() if k != "history"}
-        extra_info["exact_refine"]["history"] = xr.get("history")
+        # 0.95.0 (Christian, 27 Oct): the ties' share of the cost first - already met, nothing for the exact step to
+        # gain (it ran four times for 4 min each on the 27 Oct Navcam joint and never lowered the cost)
+        met_share = float((extra_info or {}).get("exact_met_share") or 0.0)
+        tie_share = None
+        try:
+            eo_ = pyceres.EvaluateOptions()
+            eo_.set_residual_blocks([t["id"] for t in extra_info["tie_specs"]])
+            eo_.apply_loss_function = False
+            r_ = np.asarray(prob.evaluate_residuals(eo_), float)
+            tie_share = 0.5 * float(r_ @ r_) / max(float(summary.final_cost), 1e-300)
+        except Exception:                                      # noqa: BLE001 - a diagnostic
+            tie_share = None
+        if tie_share is not None and met_share and tie_share < met_share:
+            extra_info["exact_refine"] = {"skipped": f"ties met: their share of the cost {tie_share:.2e} < {met_share:g}",
+                                          "tie_cost_share": tie_share}
+            logger.info(f"exact-tie refinement skipped: the ties are met (their share of the cost {tie_share:.2e})")
+        else:
+            free_ = list(pose_blocks.values()) + list(cam_blocks.values()) + list(rig_blocks.values()) + list(vblocks.values())
+            xr = exact_tie_refine(prob, extra_info["tie_specs"], point_arrs, free_, extra_info["cov_blocks"],
+                                  verbose=True)
+            extra_info["exact_refine"] = {k: v for k, v in xr.items() if k != "history"}
+            extra_info["exact_refine"]["history"] = xr.get("history")
+            extra_info["exact_refine"]["tie_cost_share"] = tie_share
+            st_ = extra_info.get("exact_state")
+            if isinstance(st_, dict) and not xr.get("error") and not xr.get("history"):     # no decrease at all
+                st_["skip"] = True
+                st_["reason"] = f"no decrease ({xr.get('iterations', 0)} iterations, {xr.get('seconds', 0):.0f} s)"
+                logger.info("exact-tie refinement found no decrease: skipped for the rest of this run")
         extra_info["tie_ids"] = [t["id"] for t in extra_info["tie_specs"]] if extra_info.get("tie_ids") else []
     cov_out = None
     if covariance:

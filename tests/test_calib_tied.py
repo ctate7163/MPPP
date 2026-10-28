@@ -434,3 +434,38 @@ def test_covariance_check_skips_held_terms(tmp_path):
 
     assert cov_check(["Q0_yaw", "G_NL_k4", "G_NR_k4", "G_NL_cy", "E_NL_cy"])["ok"]
     assert not cov_check(["Q0_yaw", "G_NL_k4", "G_NR_k4"])["ok"]          # NL cy NaN but fitted
+
+
+def test_exact_tie_step_skipped_when_met_or_fruitless(tmp_path, monkeypatch):
+    """0.95.0 (Christian, 27 Oct: the exact-tie step ran four times for 4 min each on the Navcam joint and never
+    lowered the cost): skipped when the ties' share of the cost is already below EXACT_TIE_MET_SHARE, and - once it
+    found no decrease in a run - for the rest of that run; the pass loop adds a pass only while the final costs
+    have not settled, not because a pass starts above the last one's end (the keypoint map re-applied)."""
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    monkeypatch.setattr(T, "EXACT_TIE_MET_SHARE", 1.0)                   # every tie share is below 1: skipped
+    ba, g, _ = T.adjust_tied(rec2, proj2, idx, st, units, iterations=30, covariance=False, passes=1, verbose=False,
+                             exact_solve=True)
+    ex = ba["extra"]["exact_refine"]
+    assert "skipped" in ex and ex["skipped"].startswith("ties met") and 0 <= ex["tie_cost_share"] < 1.0
+    # a fruitless refine (no decrease): the second pass does not run it
+    monkeypatch.setattr(T, "EXACT_TIE_MET_SHARE", 0.0)
+    calls = []
+    import mppp.calib.tiesolve as TS
+
+    def fake_refine(prob, ties, *a, **k):
+        calls.append(1)
+        return {"error": None, "iterations": 1, "history": [], "cost_start": 1.0, "cost_end": 1.0, "seconds": 0.0,
+                "stop": "no decrease", "global_change": {}}
+
+    monkeypatch.setattr(TS, "exact_tie_refine", fake_refine)
+    rec3, proj3, units3 = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, _ = T.adjust_tied(rec3, proj3, idx, st, units3, iterations=30, covariance=False, passes=2, verbose=False,
+                             exact_solve=True)
+    assert len(calls) == 1 and ba["extra"]["exact_state"]["skip"] and "no decrease" in ba["extra"]["exact_state"]["reason"]
+    assert "exact_refine" not in ba["extra"] or ba["extra"].get("exact_refine", {}).get("stop") is None   # pass 2: not run
+    costs = ba["extra"]["pass_costs"]
+    assert len(costs) in (2, 3) and all(np.isfinite(c[1]) for c in costs)
+    monkeypatch.undo()
+    assert T.PASS_SETTLE_TOL == 1e-3 and T.EXACT_TIE_MET_SHARE == 1e-6
