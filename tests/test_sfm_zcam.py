@@ -650,6 +650,48 @@ def test_staged_nz_reconstruct_v0p74(tmp_path, monkeypatch):
     assert any(g.get("sequence") == "ZCAM09001" for g in zb.get("new_regular_groups") or []), zb.get("group_counts")
     assert "ZCAM09001" in (tmp_path / "zcam_low_backlash_found.csv").read_text()
     assert out.num_reg_images() > 0
+    # 0.95.0: every refit records how far the lines moved the bins from where the round started (here from the
+    # model they were held at in round 1); below zcam_line_settle_px (0.1 px) the remaining round is skipped
+    log = st["reconstruction"]["log"]
+    rounds = [e for e in log if e.get("stage") == 2 and "zcam_focus_lines" in e]
+    assert rounds and rounds[0]["line_change_px"]["max_px"] is not None and set(rounds[0]["line_change_px"]["groups"]) == {"ZL034", "ZR034"}
+    settled = [e for e in log if e.get("lines_settled")]
+    assert (len(settled) == 1 and settled[0]["lines_settled"]["rounds_skipped"] == 1) == (rounds[0]["line_change_px"]["max_px"] < 0.1)
+
+
+def test_stage_2_skips_its_last_round_when_the_focus_lines_settle(tmp_path, monkeypatch):
+    """0.95.0 (Christian, 28 Oct): with zcam_line_settle_px the remaining rounds are skipped once a refit moves the
+    bins by less than it (two rounds instead of three); 0 never skips."""
+    pytest.importorskip("pyceres")
+    import copy
+    from mppp.sfm import reconstruction as R
+    from mppp.sfm.reconstruction import ZCAM_LINE_SETTLE_PX
+    assert ZCAM_LINE_SETTLE_PX == 0.1
+    from mppp.pipeline import Settings
+    assert Settings().zcam_line_settle_px == 0.1 and "zcam_line_settle_px" not in Settings().key_dict()
+    assert Settings(include_zcam=True).key_dict()["zcam_line_settle_px"] == 0.1
+    proj, rec = _nz_block(tmp_path)
+    monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(rec))
+    monkeypatch.setattr(R, "triangulate", lambda r, project, **kw: r)
+    sched = ((24.0, 10.0, 8.0), (12.0, 4.0, 4.0), (8.0, 3.0, 3.0))
+    kw = dict(sigma_px=0.1, schedule=sched, max_iterations=10, verbose=False, navcam_intrinsics="hold", staged=True,
+              out_name="cahv_ba", zcam_focus_line=True, zcam_line_cycles=2, zcam_backlash=None, pose_guided=False,
+              gui_native=False, attitude_prior_deg=None, exclude_outliers=False)
+    R.reconstruct(proj, zcam_line_settle_px=1e9, **kw)                   # any move counts as settled
+    log = _stage2_log(proj)
+    settled = [e for e in log if e.get("lines_settled")]
+    assert len(settled) == 1 and settled[0]["lines_settled"]["round"] == 2 and settled[0]["lines_settled"]["rounds_skipped"] == 1
+    assert max(e["round"] for e in log if "round" in e) == 2            # round 3 skipped
+    assert settled[0]["lines_settled"]["max_px"] == [e for e in log if "zcam_focus_lines" in e][-1]["line_change_px"]["max_px"]
+    proj2, rec2 = _nz_block(tmp_path / "b")
+    monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(rec2))
+    R.reconstruct(proj2, zcam_line_settle_px=0, **kw)                    # never
+    log2 = _stage2_log(proj2)
+    assert not [e for e in log2 if e.get("lines_settled")] and max(e["round"] for e in log2 if "round" in e) == 3
+
+
+def _stage2_log(proj):
+    return [e for e in proj.settings["reconstruction"]["log"] if e.get("stage") == 2]
 
 
 # the Mastcam-Z line form, the bin-camera fallback of the focus-state classification (v0p75)

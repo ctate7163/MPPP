@@ -157,6 +157,7 @@ class Settings:
     zcam_uncalibrated_matching: bool = True       # 0.95.0 (Christian, 28 Oct): verify the Mastcam-Z pairs uncalibrated (fundamental matrix) from the start - COLMAP's calibrated estimators abort on a pair whose keypoints fail to unproject, and the pass before the retry was lost; False: calibrated with the retry (a Mastcam-Z setting: Navcam keys stay)
     zcam_line_zooms: Any = (34, 48, 63)           # 0.95.0 (Christian, 28 Oct): the zooms whose bins go on focus lines; 79 and 110 mm keep their refined values per bin until they have real models (Chal Rocks ZR079 fy 42 px rms)
     zcam_line_cycles: int = 2                     # rounds of freeing the bins and refitting the lines
+    zcam_line_settle_px: float = 0.1              # 0.95.0 (Christian, 28 Oct): the remaining stage-2 rounds are skipped once a refit moves the focus lines by less than this (px at the bins) - two rounds instead of three on a settled block; 0: never (a Mastcam-Z setting: Navcam keys stay)
     zcam_station_prior_sigma_m: float = 0.1       # 0.94.5 (27 Oct): a Mastcam-Z frame's position prior moves with its station's Navcam shift, +-this per axis (m); 0: the waypoint prior (prior_sigma_m)
     zcam_line_form: Optional[Dict[str, Any]] = None   # the form of each focus line {eye: {param: form}} for a study; None: the shipped form
     zcam_rig: bool = True                         # the two Mastcam-Z eyes of an exposure form a stereo rig, one per zoom
@@ -238,6 +239,7 @@ class Settings:
             d.pop("zcam_zooms_only", None)           # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
             d.pop("zcam_line_zooms", None)           # 0.95.0: likewise
             d.pop("zcam_uncalibrated_matching", None)   # 0.95.0: likewise
+            d.pop("zcam_line_settle_px", None)       # 0.95.0: likewise
             d.pop("zcam_bin_by", None)               # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
             d.pop("zcam_station_prior_sigma_m", None)   # 0.94.5: a Mastcam-Z setting (Navcam keys stay)
             d["zcam_low_backlash_found"] = None      # 0.94.4: the found list is a Mastcam-Z setting (Navcam keys stay)
@@ -1077,6 +1079,7 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
                       thermal_fine_deg=s.thermal_fine_deg, localize_min_images=s.localize_min_images,
                       zcam_backlash=s.zcam_backlash if z else None, zcam_focus_line=bool(s.zcam_focus_line),
                       zcam_line_cycles=int(s.zcam_line_cycles), pose_guided=s.pose_guided,
+                      zcam_line_settle_px=float(s.zcam_line_settle_px or 0),
                       isolated_points_factor=float(s.isolated_points_factor or 0),
                       navcam_aspect=s.navcam_aspect, thermal_after_stage1=bool(s.thermal_after_stage1),
                       round1_hold=bool(s.round1_hold), zcam_station_prior_sigma_m=float(s.zcam_station_prior_sigma_m or 0),

@@ -1651,6 +1651,9 @@ def hazcam_line(cov: Dict[str, Any]) -> str:
             + f"; Navcam-Hazcam tie points {cov['navcam_hazcam_points']}")
 
 
+# 0.95.0 (Christian, 28 Oct): stage 2 stops freeing the Mastcam-Z bins once a refit moves the focus lines by less
+# than this (px at the fitted bins) - two rounds instead of three on a settled block
+ZCAM_LINE_SETTLE_PX = 0.1
 OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 2.0,   # 2.0 px (Christian, 22 Oct 2026; 1.6 since v0p61, v0p50 1.2)
                     "shift_mad_factor": 5.0, "min_shift_m": 0.25,
                     "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None,
@@ -2186,6 +2189,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 thermal_fine_range: Any = "default", thermal_fine_deg: Any = "default",
                 zcam_backlash: Optional[str] = None, zcam_backlash_z: float = 3.0,
                 zcam_focus_line: bool = True, zcam_line_cycles: int = 2, thermal_after_stage1: bool = True,
+                zcam_line_settle_px: float = ZCAM_LINE_SETTLE_PX,
                 pose_guided: Union[bool, Dict[str, Any]] = True, navcam_aspect: str = "hold",
                 isolated_points_factor: float = ISOLATED_POINTS_FACTOR,
                 round1_hold: bool = ROUND1_HOLD, zcam_station_prior_sigma_m: float = ZCAM_STATION_PRIOR_SIGMA_M):
@@ -2208,7 +2212,10 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     camera held at its start (the focus model), then ``zcam_line_cycles`` times lets the focus-bin focal lengths free
     for one round and puts them back on one line per eye and zoom fitted to them
     (:func:`mppp.sfm.zcam.refit_focus_lines`: f0 and slope in focus count; outlier bins reported, not followed);
-    the remaining rounds and the final adjustment hold them on the line.  Distortion, principal point (linear in
+    the remaining rounds and the final adjustment hold them on the line.  ``zcam_line_settle_px`` (0.95.0,
+    Christian, 28 Oct): when a refit moves no line by more than this (px at the fitted bins,
+    :func:`mppp.sfm.zcam.focus_line_change_px`), the remaining rounds are skipped - two stage-2 rounds instead
+    of three on a block whose lines have settled; 0: never.  Distortion, principal point (linear in
     focus from the model) and the zoom's rig stay one per eye / zoom.  The lines are in
     ``project.settings["zcam_focus_lines"]``.  ``pose_guided`` (v0p64, notebook 03 ``POSE_GUIDED``; staged runs with
     Mastcam-Z): after the stage-2 rounds, matches guided by the poses (:mod:`mppp.sfm.guided`; a dict overrides
@@ -2520,6 +2527,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         from . import zcam_guard as ZG
         cov_prev, line_snap, undone = None, None, set()
         poses_prev, cams_prev, reg_prev = {}, {}, set()
+        settled = None
         ZG.trace(rec, project, "stage2_start")
         for k, (tpx, loss, rmax) in enumerate(schedule):
             rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts2)
@@ -2570,6 +2578,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 if project.settings.get("hazcam") is not None:
                     project.settings["hazcam"]["rig_hold"] = sorted(
                         {e[0] for e in hazcam_weak_held if {e[0] + "L", e[0] + "R"} & hazkeys <= hazcam_weak_held})
+            round_snap = ZG.snapshot(rec, project) if (zcam_focus_line and zfree and zkeys) else None   # 0.95.0
             ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
                                attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold_k), linear_solver=linear_solver,
@@ -2579,17 +2588,26 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             poses_prev, cams_prev = ZG.frame_poses(rec, project), ZG.snapshot(rec, project)
             reg_prev = set(int(f) for f in rec.reg_frame_ids())
             if zcam_focus_line and zfree and zkeys:
-                from .zcam import focus_line_lines, refit_focus_lines
+                from .zcam import focus_line_change_px, focus_line_lines, refit_focus_lines
                 line_snap = ZG.snapshot(rec, project)
                 lines = refit_focus_lines(rec, project)
                 if undone:                                       # a group whose lines were undone stays off them
                     ZG.restore(rec, line_snap, ZG.camera_ids_of(project, undone))
                 ZG.trace(rec, project, f"r{k + 1}_lines")
-                log.append({"stage": 2, "round": k + 1, "zcam_focus_lines": lines})
+                moved = focus_line_change_px(rec, project, round_snap or {}, lines, undone)
+                log.append({"stage": 2, "round": k + 1, "zcam_focus_lines": lines, "line_change_px": moved})
                 if verbose:
                     logger.info(f"stage 2 round {k + 1}: Mastcam-Z focus lines (bins set on them):")
                     for ln in focus_line_lines(lines):
                         logger.info(ln)
+                    if moved.get("max_px") is not None:
+                        logger.info(f"stage 2 round {k + 1}: the lines moved the bins {moved['max_px']:.3f} px at most "
+                                    f"from where the round started (" + ", ".join(f"{g} {v:.3f}" for g, v in sorted(moved["groups"].items()))
+                                    + ")")
+                if (moved.get("max_px") is not None and float(zcam_line_settle_px or 0) > 0
+                        and moved["max_px"] < float(zcam_line_settle_px) and k + 1 < len(schedule)):
+                    settled = {"round": k + 1, "max_px": moved["max_px"], "limit_px": float(zcam_line_settle_px),
+                               "rounds_skipped": len(schedule) - (k + 1)}
             n_bad = filter_observations(rec, project, float(rmax)) + drop_short_tracks(rec, min_track_length)
             st = track_statistics(rec, project)
             res = native_residuals(rec, project)["residual_native_px"]
@@ -2613,6 +2631,15 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             if exclude_outliers and k + 1 == min(int(exclude_after_round), len(schedule)):
                 _exclude(f"stage 2, after round {k + 1}")
                 ZG.trace(rec, project, f"r{k + 1}_excluded")
+            if settled:
+                # 0.95.0: the lines have settled - the remaining rounds would hold the bins on them and move little;
+                # the pose-guided matching and the final adjustment follow as after the last round
+                log.append({"stage": 2, "round": k + 1, "lines_settled": settled})
+                if verbose:
+                    logger.info(f"stage 2 round {k + 1}: the focus lines moved {settled['max_px']:.3f} px < "
+                                f"{settled['limit_px']:g} px since the last refit - {settled['rounds_skipped']} "
+                                f"round(s) skipped")
+                break
         if pose_guided and zkeys and Path(topts2.get("database") or project.database).is_file():
             # matches guided by the stage-2 poses (Mastcam-Z against Navcam and the other zooms), then one more
             # triangulation from them and one adjustment at the last round's thresholds

@@ -15,14 +15,14 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
 from .. import calib
 from ..calib import forms
 from ..calib.fit import huber_fit, huber_line
-from .project import SfmProject
+from .project import FULL_OPENCV_NAMES, PARAM_NAMES, SfmProject
 
 PathLike = Union[str, Path]
 
@@ -497,6 +497,43 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
                     p[PARAM_INDEX[pn]] = v
                 rec.cameras[rr["camera_id"]].params = p
         out[g] = res
+    return out
+
+
+LINE_CHANGE_PARAMS = ("fx", "fy", "cx", "cy")        # the pixel-valued parameters (k1, k2 act through fx, fy)
+
+
+def _model_name(cam) -> str:
+    m = getattr(cam, "model", None)
+    return str(getattr(m, "name", m)).split(".")[-1]
+
+
+def focus_line_change_px(rec, project: SfmProject, before: Dict[int, Any], lines: Dict[str, Any],
+                         skip_groups: Iterable[str] = ()) -> Dict[str, Any]:
+    """0.95.0 (Christian, 28 Oct): how far a refit of the focus lines moved the Mastcam-Z bin cameras - the largest
+    change, in px, of fx, fy, cx or cy between ``before`` (a :func:`mppp.sfm.zcam_guard.snapshot` taken at the start
+    of the round: the bins on the last refit's lines, or at the focus model in round 1) and the cameras now set on
+    the new lines (``lines``: the refit's result; groups without lines, or in ``skip_groups``, are left out), per
+    group and over all.  ``{"max_px": float | None, "groups": {group: px}}``.  Stage 2 skips its remaining line
+    rounds when ``max_px`` is below ``zcam_line_settle_px``."""
+    db = (project.settings.get("database") or {}).get("cameras") or {}
+    skip = set(skip_groups)
+    out: Dict[str, Any] = {"max_px": None, "groups": {}}
+    for key, cid in db.items():
+        k, cid = str(key), int(cid)
+        g = k[:5]
+        if not k.startswith("Z") or g in skip or cid not in rec.cameras or cid not in before:
+            continue
+        r = lines.get(g) or {}
+        if not r.get("lines"):
+            continue
+        names = PARAM_NAMES.get(_model_name(rec.cameras[cid]), FULL_OPENCV_NAMES)
+        now = np.asarray(rec.cameras[cid].params, float)
+        was = np.asarray(before[cid], float)
+        d = max(abs(float(now[i]) - float(was[i])) for i, pn in enumerate(names[:len(now)]) if pn in LINE_CHANGE_PARAMS)
+        out["groups"][g] = round(max(out["groups"].get(g, 0.0), d), 4)
+    if out["groups"]:
+        out["max_px"] = max(out["groups"].values())
     return out
 
 
