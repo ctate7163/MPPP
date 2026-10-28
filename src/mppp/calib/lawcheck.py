@@ -239,16 +239,25 @@ def deviations(free: Dict[str, Any], st: Dict[str, Any], pointing: Optional[Dict
                     out["trends"][f"{eye}_{k}_vs_T"] = dict(f, units="px per degC")
         # the stereo pointing: NR's principal point about the law against NL's (both in px)
         st_rows = []
+        # 0.95.0: the stereo difference's sd from the pointing pass's own stereo blocks (the eyes correlate at
+        # 0.997-0.999: hypot(sd_L, sd_R) was 14-18x too large, chi2/dof 0.01-0.13 - the stereo law was never tested)
+        pst = {(x["block"], bool(x["early"])): x for x in (pointing.get("stereo") or [])}
         for (s, e) in sorted({(r["scape"], r["early"]) for r in pp}):
             L = next((r for r in pp if r["scape"] == s and r["early"] == e and r["eye"] == "NL"), None)
             R = next((r for r in pp if r["scape"] == s and r["early"] == e and r["eye"] == "NR"), None)
             if not (L and R and L.get("sd_cx") and R.get("sd_cx")):
                 continue
             row = {"block": s, "early": e, "T": 0.5 * (L["T"] + R["T"]), "images": L["images"] + R["images"]}
+            ps_ = pst.get((s, bool(e))) or {}
+            exact = ps_.get("sd_source", "").startswith("exact")
             for k in ("cx", "cy"):
                 d = R[f"d_{k}"] - L[f"d_{k}"]
-                sd = float(np.hypot(R[f"sd_{k}"], L[f"sd_{k}"])) if R.get(f"sd_{k}") and L.get(f"sd_{k}") else None
+                if exact and ps_.get(f"sd_{k}_px"):
+                    sd = float(ps_[f"sd_{k}_px"])
+                else:
+                    sd = float(np.hypot(R[f"sd_{k}"], L[f"sd_{k}"])) if R.get(f"sd_{k}") and L.get(f"sd_{k}") else None
                 row.update({f"d_{k}": d, f"sd_{k}": sd, f"z_{k}": d / sd if sd else None})
+            row["sd_source"] = "exact (stereo block)" if exact else "hypot (the eyes taken as independent)"
             st_rows.append(row)
         out["stereo"] = st_rows
         for k in ("cx", "cy"):

@@ -62,6 +62,14 @@ TIE_SIGMA = {"fx": 1e-3, "fy": 1e-3, "cx": 1e-3, "cy": 1e-3, "k": 1e-6, "q": 1e-
 # 0.94.4: the covariance of the global terms with the ties eliminated exactly (mppp.calib.tiecov) - COLMAP's estimator
 # on the tied problem gave them infinite from about a dozen blocks on (20, 24, 25 Oct: 22-29 blocks)
 EXACT_TIE_COVARIANCE = True
+# 0.95.0 (Christian, 27 Oct: the two eyes' principal points and their thermal slopes correlate at r 0.98-0.997 - the
+# sum is head pointing, the difference the stereo property, well measured but unreadable in two correlated sd):
+# the joint carries the stereo differences NR - NL as a global block of their own (DS: dG_cx, dG_cy, dS_cx, dS_cy)
+# tied exactly to the eyes' terms, so their sd come out of the exact-tie covariance directly; in the pointing pass
+# (the law check) each block-era gets its stereo principal-point difference the same way (STEREO_UNIT_TERMS) -
+# before, its sd was hypot(sd_L, sd_R), 14-18x too large with the eyes correlated at 0.997-0.999
+STEREO_PP_TERMS = True
+STEREO_TERMS = ("dG_cx", "dG_cy", "dS_cx", "dS_cy")
 # 0.94.4: after Ceres' solve, Levenberg-Marquardt with the ties as exact constraints (mppp.calib.tiesolve): the
 # units set from the globals, so the result is the law's own optimum whatever the sigmas
 EXACT_TIE_SOLVE = True
@@ -87,6 +95,10 @@ HOLD_DEFAULT = ("Q0_yaw", "G_NL_k4", "G_NR_k4", "G_NL_cy", "E_NL_cy")
 # it: NR cy then carries only the stereo vertical offset, which is well measured.
 TIE_K1_SLOPE = True   # 0.94.5 (Christian, 27 Oct): NR's k1 thermal slope tied to NL's - one design (the tied joint had
                       # NL -8.2 +- 1.2, NR -4.0 +- 1.3 x 1e-6/degC; the weighted mean about -6.1)
+# 0.95.0 (Christian, 27 Oct: NL 35.80, NR 35.87 ppm/degC, 0.07 +- 0.13 apart, r 0.95): NR's focal thermal slope tied
+# to NL's in ppm/degC - off by default until the comparison run (mppp calib navcam --tie-f-slope) says it costs
+# nothing; then the freeze's form
+TIE_F_SLOPE = False
 PASS_JUMP_FACTOR = 1.5           # 0.94.4: a pass starting this far above the last one's end gets one more pass
 # 0.95.0 (Christian, 27 Oct): every pass starts above the last one's end (about 2.3x; 24 and 25 Oct too) because the
 # keypoint map is re-applied with the new thermal slopes - every observation moves by S x dT - and the solve brings
@@ -475,7 +487,8 @@ _HELD_NAMES = {"S_NL": SLOPE_TERMS, "S_NR": SLOPE_TERMS, "E_NL": EARLY_TERMS, "E
 
 def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT, tie_rigs: bool = True,
               tie_cameras: bool = True, pp_prior: Optional[Dict[str, float]] = None, iso_f: bool = ISO_F,
-              exact_solve: Optional[bool] = None, tie_k1: bool = TIE_K1_SLOPE):
+              exact_solve: Optional[bool] = None, tie_k1: bool = TIE_K1_SLOPE, stereo_units: bool = False,
+              tie_f: Optional[bool] = None):
     """The ``extra_residuals`` callable for :func:`mppp.sfm.reconstruction.bundle_adjust` and the global parameter
     arrays it ties to.  ``hold``: global terms held at their start (``"E_NR"``, ``"S_NL_cy"``, ``"Q0_yaw"``, ``"H"``
     ...).  ``H``'s yaw and roll are always held at 0 (linear yaw and roll trends); terms the data cannot see are held
@@ -488,6 +501,10 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
     g = {"G_NL": st["G"]["NL"].copy(), "G_NR": st["G"]["NR"].copy(), "S_NL": st["S"]["NL"].copy(),
          "S_NR": st["S"]["NR"].copy(), "E_NL": st["E"]["NL"].copy(), "E_NR": st["E"]["NR"].copy(),
          "Q0": st["Q0"].copy(), "D": st["D"].copy(), "H": st["H"].copy()}
+    if STEREO_PP_TERMS and tie_cameras:                 # 0.95.0: the stereo differences NR - NL, a block of their own
+        g["DS"] = np.array([g["G_NR"][2] - g["G_NL"][2], g["G_NR"][3] - g["G_NL"][3],
+                            g["S_NR"][2] - g["S_NL"][2], g["S_NR"][3] - g["S_NL"][3]], float)
+    stereo_blocks: Dict[str, np.ndarray] = {}         # 0.95.0: the pointing pass's per-block stereo differences
     sig = np.array([TIE_SIGMA["fx"], TIE_SIGMA["fy"], TIE_SIGMA["cx"], TIE_SIGMA["cy"]] + [TIE_SIGMA["k"]] * 6)
     knot = float(st["knot"])
     hold = list(hold) + ["H_yaw", "H_roll"]
@@ -498,6 +515,10 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
     if k1tie:                                          # NR's k1 slope reads NL's (S_NR's k1 entry held, kept equal)
         hold += ["S_NR_k1"]
         sync_k1(g)
+    ftie = bool((TIE_F_SLOPE if tie_f is None else tie_f) and tie_cameras)
+    if ftie:                                           # 0.95.0: NR's focal slope reads NL's ppm/degC (S_NR fx held)
+        hold += ["S_NR_fx", "S_NR_fy"]
+        sync_f(g)
     for eye in ("NL", "NR"):
         if not any(u["early"] and u["eye"] == eye for u in units["cameras"].values()):
             hold.append(f"E_{eye}")
@@ -536,12 +557,21 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                         A[TIED_PARAMS.index(k), 27 + i] = -1.0  # E (this eye)
                 bl = [blk, g[f"G_{eye}"], g[f"S_{eye}"], g[f"E_{eye}"]]
                 sizes = [12, 10, 5, 4]
-                if k1tie and eye == "NR":                      # 0.94.5: NR's k1 row reads NL's k1 slope
+                if (k1tie or ftie) and eye == "NR":            # 0.94.5: NR's k1 row reads NL's k1 slope
                     A2 = np.zeros((A.shape[0], A.shape[1] + 5))
                     A2[:, :A.shape[1]] = A
-                    k1r = TIED_PARAMS.index("k1")
-                    A2[k1r, 22 + SLOPE_TERMS.index("k1")] = 0.0
-                    A2[k1r, A.shape[1] + SLOPE_TERMS.index("k1")] = -dT
+                    base = A.shape[1]
+                    if k1tie:
+                        k1r = TIED_PARAMS.index("k1")
+                        A2[k1r, 22 + SLOPE_TERMS.index("k1")] = 0.0
+                        A2[k1r, base + SLOPE_TERMS.index("k1")] = -dT
+                    if ftie:                                   # 0.95.0: NR's fx (and fy) rows read NL's fx slope, scaled
+                        ratio = float(g["G_NR"][0] / g["G_NL"][0])     # by the eyes' f (the same ppm/degC)
+                        fxr, fyr = TIED_PARAMS.index("fx"), TIED_PARAMS.index("fy")
+                        A2[fxr, 22 + 0] = 0.0
+                        A2[fxr, base + 0] = -dT * ratio
+                        A2[fyr, 22 + 0] = A2[fyr, 22 + 1] = 0.0
+                        A2[fyr, base + 0] = -dT * ratio * float(g["G_NR"][1] / g["G_NR"][0])
                     A, bl, sizes = A2, bl + [g["S_NL"]], sizes + [5]
                 tie_ids.append(prob.add_residual_block(LinearTie(A, sig, sizes), None, bl))
                 specs.append({"id": tie_ids[-1], "A": A, "sigma": sig, "sizes": sizes, "blocks": bl})
@@ -563,8 +593,49 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                 specs.append({"id": tie_ids[-1], "A": A, "sigma": np.full(3, TIE_SIGMA["q"]), "sizes": [7, 3, 3, 3],
                               "blocks": bl, "quaternion": True})
                 n_rig += 1
+        if "DS" in g and tie_cameras:                   # 0.95.0: DS = (G_NR - G_NL, S_NR - S_NL) for cx, cy, exactly
+            A = np.zeros((4, 10 + 10 + 5 + 5 + 4))
+            for i, (pi, gi) in enumerate(((2, 0), (3, 1))):          # dG_cx, dG_cy
+                A[i, pi] = 1.0; A[i, 10 + pi] = -1.0; A[i, 30 + gi] = -1.0
+            for i, (pi, gi) in enumerate(((2, 2), (3, 3))):          # dS_cx, dS_cy
+                A[2 + i, 20 + pi] = 1.0; A[2 + i, 25 + pi] = -1.0; A[2 + i, 30 + gi] = -1.0
+            sds = np.array([TIE_SIGMA["cx"], TIE_SIGMA["cy"], TIE_SIGMA["cx"], TIE_SIGMA["cy"]], float)
+            bl = [g["G_NR"], g["G_NL"], g["S_NR"], g["S_NL"], g["DS"]]
+            tie_ids.append(prob.add_residual_block(LinearTie(A, sds, [10, 10, 5, 5, 4]), None, bl))
+            specs.append({"id": tie_ids[-1], "A": A, "sigma": sds, "sizes": [10, 10, 5, 5, 4], "blocks": bl})
         n_pp = 0
         consts = []
+        if stereo_units:                                 # 0.95.0: per (block, era) the stereo principal-point difference
+            by_be: Dict[Tuple[str, Any], Dict[str, Any]] = {}
+            for cid, u in units["cameras"].items():
+                by_be.setdefault((str(u["scape"]), bool(u["early"])), {})[u["eye"]] = (int(cid), u)
+            for (scape, early), eyes in sorted(by_be.items()):
+                if "NL" not in eyes or "NR" not in eyes:
+                    continue
+                (cl, uL), (cr, uR) = eyes["NL"], eyes["NR"]
+                bL, bR = cam_blocks.get(cl), cam_blocks.get(cr)
+                if (bL is None or bR is None or not prob.has_parameter_block(bL) or not prob.has_parameter_block(bR)
+                        or prob.is_parameter_block_constant(bL) or prob.is_parameter_block_constant(bR)):
+                    continue
+                stl_ = dict(st, G={"NL": g["G_NL"], "NR": g["G_NR"]}, S={"NL": g["S_NL"], "NR": g["S_NR"]},
+                            E={"NL": g["E_NL"], "NR": g["E_NR"]})
+                lawL = camera_params(stl_, "NL", uL["T"], uL["early"])
+                lawR = camera_params(stl_, "NR", uR["T"], uR["early"])
+                ratio = float(lawR[0] / lawL[0])
+                # (R.c - lawR.c) - ratio (L.c - lawL.c) - D = 0, the law part as a constant block
+                c0 = np.array([lawR[2] - ratio * lawL[2], lawR[3] - ratio * lawL[3]], float)
+                dblk = np.array([(np.asarray(bR)[2] - ratio * np.asarray(bL)[2]) - c0[0],
+                                 (np.asarray(bR)[3] - ratio * np.asarray(bL)[3]) - c0[1]], float)
+                A = np.zeros((2, 12 + 12 + 2 + 2))
+                for i, pi in enumerate((2, 3)):
+                    A[i, pi] = 1.0; A[i, 12 + pi] = -ratio; A[i, 24 + i] = -1.0; A[i, 26 + i] = -1.0
+                sds = np.array([TIE_SIGMA["cx"], TIE_SIGMA["cy"]], float)
+                bl = [bR, bL, dblk, c0]
+                tie_ids.append(prob.add_residual_block(LinearTie(A, sds, [12, 12, 2, 2]), None, bl))
+                prob.set_parameter_block_constant(c0)
+                consts.append(c0)
+                specs.append({"id": tie_ids[-1], "A": A, "sigma": sds, "sizes": [12, 12, 2, 2], "blocks": bl})
+                stereo_blocks[f"stereo:{scape}:{int(early)}"] = dblk
         for cid, u in units["cameras"].items():             # a prior on the units' principal point about the law
             psig = (pp_prior or {}).get(u["eye"])
             blk = cam_blocks.get(int(cid))
@@ -597,8 +668,9 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
             else:
                 prob.set_manifold(g[gname], pyceres.SubsetManifold(len(g[gname]), sorted(ix)))
         want_exact = bool(EXACT_TIE_SOLVE if exact_solve is None else exact_solve)
-        return {"cov_blocks": {k: v for k, v in g.items() if prob.has_parameter_block(v)
-                               and not prob.is_parameter_block_constant(v)},
+        cb = {k: v for k, v in g.items() if prob.has_parameter_block(v) and not prob.is_parameter_block_constant(v)}
+        cb.update({k: v for k, v in stereo_blocks.items() if prob.has_parameter_block(v)})
+        return {"cov_blocks": cb,
                 "ties": {"cameras": n_cam, "rigs": n_rig, "pp_priors": n_pp}, "held": {k: sorted(v) for k, v in held.items()},
                 "tie_ids": tie_ids if EXACT_TIE_COVARIANCE else [], "tie_specs": specs,
                 "exact_solve": want_exact and not exact_state["skip"], "exact_state": exact_state,
@@ -606,12 +678,21 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
 
     exact_state: Dict[str, Any] = {"skip": False, "reason": None}       # 0.95.0: set by the adjustment (no decrease)
     hook.exact_state = exact_state
+    hook.stereo_blocks = stereo_blocks
     return hook, g
 
 
 def sync_k1(g: Dict[str, np.ndarray]) -> None:
     """0.94.5: NR's k1 thermal slope set to NL's (:data:`TIE_K1_SLOPE`) in place."""
     g["S_NR"][SLOPE_TERMS.index("k1")] = g["S_NL"][SLOPE_TERMS.index("k1")]
+
+
+def sync_f(g: Dict[str, np.ndarray]) -> None:
+    """0.95.0: NR's focal thermal slopes set to NL's ppm/degC (:data:`TIE_F_SLOPE`) in place: fx by the eyes' f ratio,
+    fy by NR's own fy / fx."""
+    ratio = float(g["G_NR"][0] / g["G_NL"][0])
+    g["S_NR"][0] = g["S_NL"][0] * ratio
+    g["S_NR"][1] = g["S_NR"][0] * float(g["G_NR"][1] / g["G_NR"][0])
 
 
 def sync_iso(g: Dict[str, np.ndarray]) -> None:
@@ -658,15 +739,17 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
                 tie_rigs: bool = True, tie_cameras: bool = True, iterations: int = 100, covariance: bool = True,
                 passes: int = 2, verbose: bool = True, refine_pp: bool = True,
                 pp_prior: Optional[Dict[str, float]] = None, iso_f: bool = ISO_F,
-                exact_solve: Optional[bool] = None, tie_k1: bool = TIE_K1_SLOPE
-                ) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
+                exact_solve: Optional[bool] = None, tie_k1: bool = TIE_K1_SLOPE, stereo_units: bool = False,
+                tie_f: Optional[bool] = None) -> Tuple[Dict[str, Any], Dict[str, np.ndarray], Any]:
     """The adjustment of a tied reconstruction (``passes`` solves, the slopes of the keypoint map updated between
-    them).  Returns (ba result of the last pass, the global arrays, residual statistics)."""
+    them).  Returns (ba result of the last pass, the global arrays, residual statistics).  ``stereo_units`` (0.95.0):
+    each block-era's stereo principal-point difference as a block of its own (the pointing pass)."""
     from ..sfm.reconstruction import bundle_adjust
     iso = bool(iso_f and tie_cameras)
     k1tie = bool(tie_k1 and tie_cameras)
+    ftie = bool((TIE_F_SLOPE if tie_f is None else tie_f) and tie_cameras)
     hook, g = make_ties(st, units, hold=hold, tie_rigs=tie_rigs, tie_cameras=tie_cameras, pp_prior=pp_prior, iso_f=iso,
-                        exact_solve=exact_solve, tie_k1=k1tie)
+                        exact_solve=exact_solve, tie_k1=k1tie, stereo_units=stereo_units, tie_f=ftie)
     temps = idx["temps"]
     ba = None
     n_pass = max(1, int(passes))
@@ -684,6 +767,8 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
             sync_iso(g)
         if k1tie:
             sync_k1(g)
+        if ftie:
+            sync_f(g)
         if verbose:
             log.info(f"  pass {p_ + 1}: {ba['brief'][:160]}")
         costs.append((float(ba.get("initial_cost", np.nan)), float(ba.get("final_cost", np.nan))))
@@ -705,6 +790,7 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
         if isinstance(ba["extra"], dict):
             ba["extra"]["iso_f"] = iso
             ba["extra"]["tie_k1"] = k1tie
+            ba["extra"]["tie_f"] = ftie
             ba["extra"]["pass_costs"] = costs
     ks, kmap = keypoint_terms(units, proj, temps, g, iso_f=iso)
     stats = J.residual_stats(rec, proj, keypoint_scale=ks, keypoint_map=kmap)
@@ -845,6 +931,8 @@ def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, A
         if out["NR"].get("sd") and out["NL"].get("sd"):
             out["NR"]["sd"]["k1_per_degC"] = out["NL"]["sd"]["k1_per_degC"]
         out["k1_slope_tied"] = "NR's k1 thermal slope is NL's (TIE_K1_SLOPE, Christian 27 Oct)"
+    if (ba.get("extra") or {}).get("tie_f"):
+        out["f_slope_tied"] = "NR's focal thermal slope is NL's ppm/degC (TIE_F_SLOPE / --tie-f-slope, 0.95.0)"
     R0 = R_of_q(g["Q0"])
     sdQ, sdD, sdH = (_sd(cov, "Q0", 3, held.get("Q0", ())), _sd(cov, "D", 3, held.get("D", ())),
                      _sd(cov, "H", 3, held.get("H", ())))
@@ -855,6 +943,12 @@ def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, A
                   "sd_rate": None if sdD is None else dict(zip(ANGLES, map(float, sdD))),
                   "pitch_early_mdeg_per_1000sol": float(g["D"][0] + g["H"][0]),
                   "sd_pitch_early": None if sdH is None else float(np.hypot(sdD[0] if sdD is not None else 0.0, sdH[0]))}
+    if "DS" in g:                                        # 0.95.0: the stereo differences NR - NL with their own sd
+        sd_ds = _sd(cov, "DS", 4)
+        out["stereo_pp"] = {k: {"value": float(g["DS"][i]), "sd": (None if sd_ds is None or not np.isfinite(sd_ds[i]) else float(sd_ds[i])),
+                                "z": (None if sd_ds is None or not np.isfinite(sd_ds[i]) or not sd_ds[i] else float(g["DS"][i] / sd_ds[i])),
+                                "units": "px" if k.startswith("dG") else "px per degC"}
+                            for i, k in enumerate(STEREO_TERMS)}
     return out
 
 
@@ -911,7 +1005,8 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
              bin_deg: float = BIN_DEG, max_span: float = MAX_SPAN_SOLS, early_sol: Optional[float] = None,
              knot_sol: Optional[float] = None, hold: Sequence[str] = HOLD_DEFAULT, iterations: int = 100,
              covariance: bool = True, passes: int = 2, diagnostics: bool = True, exclude: Sequence[str] = (),
-             verbose: bool = True, iso_f: bool = ISO_F, early_z_min: float = EARLY_Z_MIN) -> Dict[str, Any]:
+             verbose: bool = True, iso_f: bool = ISO_F, early_z_min: float = EARLY_Z_MIN,
+             tie_f: Optional[bool] = None) -> Dict[str, Any]:
     """The one-adjustment Navcam joint over the blocks ``{name: WORK folder}`` (module docstring), then the
     diagnostic pass.  Returns the global terms with their sd (:func:`globals_result`), the residual statistics, the
     units of the joint and of the diagnostic pass (:func:`unit_rows`) - what :func:`write_tied` writes."""
@@ -929,7 +1024,7 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
                  f"(epochs <= {max_span:g} sols, {bin_deg:g} degC bins)  ({time.time() - t:.0f} s)")
     t = time.time()
     ba, g, stats = adjust_tied(rec, proj, idx, st, units, hold=hold, iterations=iterations, covariance=covariance,
-                               passes=passes, verbose=verbose, iso_f=iso_f)
+                               passes=passes, verbose=verbose, iso_f=iso_f, tie_f=tie_f)
     res = globals_result(st, g, ba, units)
     early_held, judged = early_terms_to_hold(res, early_z_min)
     res_first = None
@@ -945,7 +1040,7 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
             st["E"][eye][EARLY_TERMS.index(k)] = 0.0
         hold = tuple(hold) + tuple(early_held)
         ba, g, stats = adjust_tied(rec, proj, idx, st, units, hold=hold, iterations=iterations, covariance=covariance,
-                                   passes=passes, verbose=verbose, iso_f=iso_f)
+                                   passes=passes, verbose=verbose, iso_f=iso_f, tie_f=tie_f)
         res = globals_result(st, g, ba, units)
     res["early_test"] = {"z_min": early_z_min, "judged": judged, "held": list(early_held), "first_fit": res_first}
     res.update({"blocks": list(scapes_cfg), "points_per_block": points, "bin_deg": bin_deg, "max_span_sols": max_span,
@@ -1125,10 +1220,14 @@ def pointing_pass(rec0, proj0, idx: Dict[str, Any], stl: Dict[str, Any], g: Dict
                                            max_span=max_span, per_block=True, pointing=True)
     ba, _g, stats = adjust_tied(rec, proj, idx, stl, units, hold=("Q0", "D", "H"), tie_rigs=True, tie_cameras=False,
                                 iterations=iterations, covariance=True, passes=1, verbose=verbose,
-                                pp_prior=dict(PP_PRIOR_PX if pp_prior is None else pp_prior))
+                                pp_prior=dict(PP_PRIOR_PX if pp_prior is None else pp_prior), stereo_units=True)
     rows = unit_rows(rec, proj, idx, units, stl, g)["cameras"]
     cov = ba.get("covariance") or {}
     vf = float(cov.get("variance_factor", 1.0))
+    # 0.95.0: the stereo differences' own covariance (the exact-tie covariance of the per-block stereo blocks: the
+    # eyes correlate at 0.997-0.999, so hypot(sd_L, sd_R) was 14-18x too large)
+    sblocks = {k[len("extra:"):]: np.asarray(v) for k, v in (cov.get("blocks") or {}).items() if k.startswith("extra:stereo:")}
+    exact_vf = float(((cov.get("extra_exact") or {}).get("variance_factor")) or vf)
     for r in rows:
         c = (cov.get("blocks") or {}).get(f"camera:{r['key']}")
         d = np.sqrt(np.clip(np.diag(np.asarray(c)) * vf, 0, None)) if c is not None else None
@@ -1141,12 +1240,19 @@ def pointing_pass(rec0, proj0, idx: Dict[str, Any], stl: Dict[str, Any], g: Dict
         if not (L and R):
             continue
         ratio = R["params"][0] / L["params"][0]
-        sd = None
-        if L.get("sd_cx_px") is not None and R.get("sd_cx_px") is not None:
+        sd = sd_cy = None
+        src = None
+        c = sblocks.get(f"stereo:{scape}:{int(bool(early))}")
+        if c is not None and c.shape == (2, 2):
+            d = np.sqrt(np.clip(np.diag(c) * exact_vf, 0, None))
+            sd, sd_cy, src = float(d[0]), float(d[1]), "exact (stereo block)"
+        elif L.get("sd_cx_px") is not None and R.get("sd_cx_px") is not None:
             sd = float(np.hypot(R["sd_cx_px"], ratio * L["sd_cx_px"]))
+            sd_cy = (float(np.hypot(R["sd_cy_px"], ratio * L["sd_cy_px"])) if L.get("sd_cy_px") is not None and R.get("sd_cy_px") is not None else None)
+            src = "hypot (the eyes taken as independent)"
         stereo.append({"block": scape, "early": early, "T": 0.5 * (L["T"] + R["T"]), "images": L["images"] + R["images"],
                        "dcx_stereo_px": R["dcx_px"] - ratio * L["dcx_px"], "dcy_stereo_px": R["dcy_px"] - ratio * L["dcy_px"],
-                       "sd_px": sd})
+                       "sd_px": sd, "sd_cx_px": sd, "sd_cy_px": sd_cy, "sd_source": src})
     if verbose:
         v = [abs(x["dcx_stereo_px"]) for x in stereo]
         log.info(f"pointing pass: {len(rows)} block cameras, rigs at the trend; stereo cx about the law: median "
@@ -1189,6 +1295,13 @@ def describe_result(res: Dict[str, Any]) -> List[str]:
                      + ", ".join(f"{k} {v:+.3f}" for k, v in o["early_mission"]["offsets_px"].items()) + " px")
     if res.get("isotropic_f_slope"):
         lines.append("focal slope isotropic: fy's ppm/degC tied to fx's (ISO_F; --aniso-f frees it)")
+    if res.get("f_slope_tied"):
+        lines.append("focal slope tied across the eyes: " + res["f_slope_tied"])
+    sp = res.get("stereo_pp")
+    if sp:                                           # 0.95.0: the stereo differences with their own sd
+        lines.append("stereo NR - NL: " + "; ".join(
+            f"{k} {v['value']:+.4f}" + (f" +- {v['sd']:.4f} (z {v['z']:+.1f})" if v.get("sd") else "") + f" {v['units']}"
+            for k, v in sp.items()))
     for eye, k in k1_significance(res).items():
         lines.append(f"{eye} k1(T): {k['k1_per_degC']:+.2e} +- {k['sd']:.1e}/degC (z {k['z']:+.1f}); over the bins' "
                      f"{k['span_degC']:.0f} degC it moves the corner (theta {k['theta_corner_rad']:.2f} rad) by "

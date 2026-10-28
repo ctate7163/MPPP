@@ -469,3 +469,58 @@ def test_exact_tie_step_skipped_when_met_or_fruitless(tmp_path, monkeypatch):
     assert len(costs) in (2, 3) and all(np.isfinite(c[1]) for c in costs)
     monkeypatch.undo()
     assert T.PASS_SETTLE_TOL == 1e-3 and T.EXACT_TIE_MET_SHARE == 1e-6
+
+
+def test_stereo_difference_terms_and_their_sd(tmp_path):
+    """0.95.0 (Christian, 27 Oct): the joint carries the stereo differences NR - NL of the principal point and its
+    thermal slopes as a block (DS) with sd from the exact-tie covariance; the pointing pass gives each block-era's
+    stereo principal-point difference its own sd (the exact stereo block), smaller than hypot(sd_L, sd_R) of two
+    correlated eyes, and the law check's stereo rows use it."""
+    pytest.importorskip("pyceres")
+    from mppp.calib import lawcheck as L
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    assert T.STEREO_PP_TERMS and T.STEREO_TERMS == ("dG_cx", "dG_cy", "dS_cx", "dS_cy")
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, _ = T.adjust_tied(rec2, proj2, idx, st, units, iterations=60, covariance=True, passes=1, verbose=False)
+    assert "DS" in g and np.allclose(g["DS"][:2], g["G_NR"][2:4] - g["G_NL"][2:4], atol=1e-6)
+    assert np.allclose(g["DS"][2:], g["S_NR"][2:4] - g["S_NL"][2:4], atol=1e-9)
+    res = T.globals_result(st, g, ba, units)
+    sp = res["stereo_pp"]
+    assert set(sp) == set(T.STEREO_TERMS) and sp["dG_cx"]["units"] == "px" and sp["dS_cx"]["units"] == "px per degC"
+    assert sp["dG_cx"]["value"] == pytest.approx(g["G_NR"][2] - g["G_NL"][2])
+    assert sp["dG_cx"]["sd"] is not None and 0 < sp["dG_cx"]["sd"] < 5.0
+    # the pointing pass: the stereo blocks' sd
+    g0 = L.law_globals(st)
+    point = T.pointing_pass(rec, proj, idx, st, g0, iterations=30, verbose=False)
+    rows = point["stereo"]
+    assert rows and all(r["sd_source"].startswith("exact") for r in rows)
+    cams = {(c["scape"], c["early"], c["eye"]): c for c in point["cameras"]}
+    for r in rows:
+        L_, R_ = cams[(r["block"], r["early"], "NL")], cams[(r["block"], r["early"], "NR")]
+        hyp = np.hypot(R_["sd_cx_px"], L_["sd_cx_px"])
+        assert 0 < r["sd_cx_px"] <= hyp * 1.05 and r["sd_cy_px"] > 0, (r, hyp)
+    free = L.units_free(rec, proj, idx, st, iterations=30, verbose=False)
+    d = L.deviations(free, st, pointing=point, min_images=1)
+    assert d["stereo"] and all(x["sd_source"].startswith("exact") for x in d["stereo"])
+    assert "stereo_cx" in d["chi2"] and d["chi2"]["stereo_cx"]["n"] >= 1
+
+
+def test_focal_thermal_slope_tied_across_the_eyes(tmp_path):
+    """0.95.0 (Christian, 27 Oct: NL 35.80, NR 35.87 ppm/degC): with tie_f NR's focal slope is NL's ppm/degC (fx by the
+    eyes' f ratio, fy by NR's aspect), S_NR fx, fy held; the default leaves them separate."""
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    assert T.TIE_F_SLOPE is False
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, _ = T.adjust_tied(rec2, proj2, idx, st, units, iterations=40, covariance=False, passes=1, verbose=False,
+                             tie_f=True)
+    ratio = g["G_NR"][0] / g["G_NL"][0]
+    assert g["S_NR"][0] == pytest.approx(g["S_NL"][0] * ratio, rel=1e-9)
+    assert g["S_NR"][1] == pytest.approx(g["S_NR"][0] * g["G_NR"][1] / g["G_NR"][0], rel=1e-9)
+    assert ba["extra"]["tie_f"] and {0, 1} <= set(ba["extra"]["held"]["S_NR"])
+    res = T.globals_result(st, g, ba, units)
+    assert "f_slope_tied" in res and res["NR"]["fx_ppm_per_degC"] == pytest.approx(res["NL"]["fx_ppm_per_degC"], rel=1e-6)
+    assert any("tied across the eyes" in x for x in T.describe_result(res))
+    rec3, proj3, units3 = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba0, g0, _ = T.adjust_tied(rec3, proj3, idx, st, units3, iterations=40, covariance=False, passes=1, verbose=False)
+    assert not ba0["extra"]["tie_f"] and 0 not in set(ba0["extra"]["held"]["S_NR"])

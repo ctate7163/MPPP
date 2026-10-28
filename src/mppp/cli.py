@@ -153,6 +153,8 @@ def build_parser() -> argparse.ArgumentParser:
                    "every Navcam-Mastcam-Z point with a third look is kept besides)")
     p.add_argument("--hold", nargs="*", default=None, help="global terms held (default Q0_yaw)")
     p.add_argument("--knot", type=float, default=None, help="the pitch hinge sol (default the rig file's)")
+    p.add_argument("--tie-f-slope", action="store_true",
+                   help="navcam: NR's focal thermal slope tied to NL's ppm/degC (0.95.0; the comparison run before it becomes the form)")
     p.add_argument("--aniso-f", action="store_true",
                    help="separate fx and fy thermal slopes (default: one ppm/degC per eye, fy tied to fx)")
     p.add_argument("--no-diagnostics", action="store_true", help="skip the per-block diagnostic pass (no gate then)")
@@ -666,7 +668,8 @@ def cmd_calib(a: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
     log.info("calib navcam: %d blocks -> %s", len(blocks), out)
     res = TJ.fit_tied(blocks, points=a.points or TJ.POINTS_PER_BLOCK, hold=tuple(a.hold) if a.hold is not None else TJ.HOLD_DEFAULT,
-                      knot_sol=a.knot, diagnostics=not a.no_diagnostics, iso_f=not a.aniso_f)
+                      knot_sol=a.knot, diagnostics=not a.no_diagnostics, iso_f=not a.aniso_f,
+                      tie_f=bool(getattr(a, "tie_f_slope", False)) or None)
     cand = TJ.write_tied(res, out / "navcam_joint", note=a.note)
     rep = check_navcam(cand)
     (out / "promotion_check.json").write_text(json.dumps(rep, indent=1, default=str), encoding="utf-8")
