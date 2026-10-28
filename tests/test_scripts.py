@@ -417,3 +417,57 @@ def test_archive_gaps_finds_and_fetches_the_missing_eye(tmp_path):
     got = d / "FLF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J02.IMG"
     assert got.read_bytes() == b"IMG" and len(calls) == 2
     assert ag.download(rows, get=get, log=lambda *_: None) == 0          # never twice
+
+
+def test_tie_point_studies_scaffold(tmp_path, capsys):
+    """0.95.0 (Christian, 28 Oct): the studies S1-S6 as variant sets run through ``mppp run --variant``, measured
+    the same way (completeness, quality, runtime per step from the log) and compared (S2 against the all-points
+    solution, S6 the per-bin focal residuals by observation band)."""
+    import importlib.util
+    import json
+    spec = importlib.util.spec_from_file_location("tps", ROOT / "scripts" / "tie_point_studies.py")
+    T = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(T)
+    assert set(T.STUDIES) == {"S1", "S2", "S3", "S4", "S5", "S6"}
+    for st, vs in T.STUDIES.items():
+        assert next(iter(vs.values())) == {}                                  # the first variant: today's default
+    from mppp.pipeline import SETTING_NAMES, normalize
+    from mppp.runner import parse_set
+    for st, vs in T.STUDIES.items():
+        for v, settings in vs.items():
+            sets = T._sets(settings)
+            assert len(sets) == 2 * len(settings)
+            parsed = normalize(parse_set(sets[1::2]))                          # every setting is a real one
+            assert set(parsed) == {k.lower() for k in settings} <= set(SETTING_NAMES)
+    assert T.STUDIES["S2"]["cap1500"] == {"ba_points_cap": 1500} and T.variant_name("S2", "cap1500") == "s2_cap1500"
+    assert T.main(["--list"]) == 0 and "S2" in capsys.readouterr().out
+    log = tmp_path / "log.txt"
+    log.write_text("2026-10-28T10:00:00 | database: x\n2026-10-28T10:10:00 | matching: y\n"
+                   "2026-10-28T10:12:00 stage 2: 5 frames\n2026-10-28T10:40:00 stage 2, pose-guided: z\n"
+                   "2026-10-28T10:50:00 stage 2: 3 isolated two-view points deleted\n"
+                   "2026-10-28T11:20:00 | export: done\n", encoding="utf-8")
+    s = T.step_seconds(log)
+    assert s["matching"] == 600 and s["stage 1"] == 120 and s["stage 2 rounds"] == 28 * 60
+    assert s["final adjustment"] == 30 * 60 and s["database to export"] == 80 * 60
+    ref = {"model": {"centres": {"a": [0, 0, 0], "b": [1, 0, 0]}, "attitudes": {"a": np.eye(3).tolist(), "b": np.eye(3).tolist()},
+                     "cameras": {"ZL034_F1": [4700, 4700, 800, 600], "NL": [1000, 1000, 0, 0]}}}
+    from scipy.spatial.transform import Rotation
+    R = Rotation.from_rotvec(np.radians([0, 0, 0.002])).as_matrix().tolist()
+    oth = {"model": {"centres": {"a": [0.005, 0, 0], "b": [1, 0.02, 0]}, "attitudes": {"a": R, "b": np.eye(3).tolist()},
+                     "cameras": {"ZL034_F1": [4702.35, 4702.35, 800, 600], "NL": [1000, 1000, 0, 0]}}}
+    c = T.compare_solutions(ref, oth)
+    assert c["centre_cm"]["max"] == pytest.approx(2.0) and c["centre_cm"]["median"] == pytest.approx(1.25)
+    assert c["attitude_mdeg"]["max"] == pytest.approx(2.0, abs=1e-6) and c["focal_pct"]["max"] == pytest.approx(0.05, abs=1e-6)
+    bins = [{"param": "fx", "residual": 2.0, "observations": 300}, {"param": "fy", "residual": -0.5, "observations": 3000},
+            {"param": "k1", "residual": 9.0, "observations": 10}]
+    tab = T.s6_table([{"bins": bins}])
+    assert any(ln.startswith("| 250-500 | 1 | 2.00") for ln in tab) and any(ln.startswith("| 2000-5000 | 1 | 0.50") for ln in tab)
+    assert T.bin_rms(bins) == pytest.approx(np.sqrt((4 + 0.25) / 2))
+    vs = {"all": {"model": ref["model"], "checks": {"cross_station_fraction": {"value": 0.03, "status": "OK"}},
+                  "steps_s": {"matching": 600}, "verdict": "OK", "bins": bins, "run_done": {"registered_images": 2, "images": 2}},
+          "cap1500": {"model": oth["model"], "checks": {}, "steps_s": {}, "verdict": "WARN", "bins": [], "run_done": {}}}
+    md = T.report_site(tmp_path, "S2", {"when": "now", "variants": vs})
+    assert "| all | cap1500 |" in md and "Against the all-points solution" in md and "2 / 2" in md
+    md6 = T.report_site(tmp_path, "S6", {"when": "now", "variants": {"default": vs["all"]}})
+    assert "per-bin focal residual about the lines vs observations" in md6
+    assert "| S2 (" in T.report_all(tmp_path, "S2", {"x": {"variants": vs, "report": "r.md"}}) or "# S2" in T.report_all(tmp_path, "S2", {"x": {"variants": vs, "report": "r.md"}})
