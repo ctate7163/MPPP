@@ -242,12 +242,10 @@ def sync_database(rec, project: SfmProject, path: Optional[PathLike] = None) -> 
     cameras, so stage 2 triangulates against this copy (default ``<project>/database_thermal.db``); the project
     database itself is not changed.  Returns the path of the copy.
     """
-    import shutil
     import pycolmap
+    from .database import copy_database
     out = Path(path) if path else project.root / "database_thermal.db"
-    if out.exists():
-        out.unlink()
-    shutil.copyfile(project.database, out)
+    copy_database(project.database, out, descriptors=False)        # 0.95.0: without the descriptors
     db = pycolmap.Database.open(str(out))
     try:
         for cid, cam in rec.cameras.items():

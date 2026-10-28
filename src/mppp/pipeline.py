@@ -177,6 +177,7 @@ class Settings:
                                                                max_keypoints=8192, filter_threshold=0.1))   # matching options (the last two: LightGlue)
     lightglue_keypoints: str = "largest"          # 0.94.4: which max_keypoints keypoints LightGlue sees: "largest" scales, or "octaves" (a share of every octave; in the run key only when not "largest")
     match_block_size: int = 100                   # images per exhaustive-matching block
+    keep_databases: bool = False                  # 0.95.0: keep the run's database copies (database_thermal.db, database_guided.db; without descriptors) after the run - deleted by default (not in the run key)
 
     # --- reconstruction ------------------------------------------------------------------------------------------
     schedule: Any = ((24.0, 10.0, 8.0), (12.0, 4.0, 4.0), (8.0, 2.0, 2.0))   # rounds of (triangulation threshold px, Cauchy scale, max residual kept px)
@@ -270,7 +271,7 @@ def hazcam_families(v: Any) -> Tuple[str, ...]:
             raise ValueError(f"hazcams = {v!r}: use 'F' (front), 'R' (rear) or both")
     return tuple(f for f in ("F", "R") if f in out)
 NOT_IN_KEY = {"pds_dir", "scapes_root", "gpu_python", "colmap_bat", "workers", "gui_files", "sites_file",
-              "source", "variant", "max_exhaustive_images", "exclude_list"}
+              "source", "variant", "max_exhaustive_images", "exclude_list", "keep_databases"}
 SETTING_NAMES = tuple(f.name for f in fields(Settings))
 
 
@@ -1157,6 +1158,17 @@ def finish(proj, report: Dict[str, Any], summary: Dict[str, Any], settings: Sett
             "zcam_new_low_backlash": len((proj.settings.get("zcam_backlash") or {}).get("new_regular_groups") or [])}
     (proj.root / RUN_DONE).write_text(json.dumps(done, indent=1, default=str), encoding="utf-8")
     log.info("done: %s", proj.root / RUN_DONE)
+    if not getattr(settings, "keep_databases", False):      # 0.95.0 (Christian, 27 Oct): 5-20 GB per site on the RAID
+        freed = 0
+        for f in list(proj.root.glob("database_thermal.db")) + list(proj.root.glob("database_guided*.db")) \
+                + list(proj.root.glob("database_lightglue_add*.db")):
+            try:
+                freed += f.stat().st_size
+                f.unlink()
+            except OSError as e:                                # noqa: BLE001 - held by a viewer: next time
+                log.warning("not removed: %s (%s)", f.name, e)
+        if freed:
+            log.info("the run's database copies removed (%.1f GB; keep_databases keeps them)", freed / 1e9)
     return done
 
 

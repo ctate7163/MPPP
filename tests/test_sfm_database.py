@@ -481,3 +481,34 @@ def test_feature_count_per_family(tmp_path):
     db.close()
     assert counts["a1.png"] == counts["a2.png"] and counts["a0.png"] > 1.5 * counts["a1.png"], counts
     assert proj.settings["features"]["max_num_features"] == {"*": 100, "N": 400}
+
+
+def test_copy_database_without_descriptors(tmp_path):
+    """0.95.0 (Christian, 27 Oct: the thermal and guided copies take 5-20 GB per site): a copy keeps every table
+    but the descriptors (the largest), with the indices; with descriptors=True it is a full copy."""
+    from mppp.sfm.database import copy_database
+    src = tmp_path / "database.db"
+    db = pycolmap.Database.open(str(src))
+    cam = pycolmap.Camera(model="SIMPLE_RADIAL", width=100, height=80, params=[90.0, 50.0, 40.0, 0.0])
+    cid = db.write_camera(cam)
+    iid = db.write_image(pycolmap.Image(name="a.png", camera_id=cid))
+    kp = np.random.default_rng(1).random((50, 6)).astype(np.float32)
+    db.write_keypoints(iid, kp)
+    db.write_descriptors(iid, pycolmap.FeatureDescriptors(pycolmap.FeatureExtractorType.SIFT,
+                                                          np.random.default_rng(2).integers(0, 255, (50, 128)).astype(np.uint8)))
+    db.close()
+    out = copy_database(src, tmp_path / "copy.db")
+    d2 = pycolmap.Database.open(str(out))
+    assert len(d2.read_all_images()) == 1 and d2.num_keypoints_for_image(iid) == 50 and d2.num_descriptors_for_image(iid) == 0
+    assert d2.read_camera(cid).model.name == "SIMPLE_RADIAL"
+    d2.close()
+    assert out.stat().st_size < src.stat().st_size
+    full = copy_database(src, tmp_path / "full.db", descriptors=True)
+    d3 = pycolmap.Database.open(str(full))
+    assert d3.num_descriptors_for_image(iid) == 50
+    d3.close()
+    import sqlite3
+    con = sqlite3.connect(str(out))
+    names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    con.close()
+    assert names                                                           # the indices came along

@@ -408,12 +408,17 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
                 log.warning("pose-guided matching: %s is in use by another process; writing %s instead", out.name,
                             alt.name)
                 out = alt
-        shutil.copyfile(database, out)
+        from .database import copy_database
+        copy_database(database, out, descriptors=False)        # 0.95.0: the descriptors are read from the original
     pairs = select_pairs(rec, project, tuple(o["families"]), int(o["max_pairs"]), int(o["min_points"]),
                          o.get("max_baseline_m"))
     scale = {r["image_id"]: float(r.get("downsample_scale", 1.0)) for r in project.images if "image_id" in r}
     fam = {r["image_id"]: str(r["instrument"])[:1] for r in project.images if "image_id" in r}
     db = pycolmap.Database.open(str(out))
+    # 0.95.0: the descriptors from the project database (the copies carry none); the one of ``database`` when it is
+    # the project's own, else the original it was copied from
+    ddb_path = Path(getattr(project, "database", database))
+    ddb = db if ddb_path.resolve() == out.resolve() else pycolmap.Database.open(str(ddb_path))
     if o.get("depth", "local") not in ("local", "global"):
         raise ValueError("pose-guided matching: depth must be 'local' or 'global'")
     local = ({"k": o["local_k"], "min": o["local_min"], "radius": o["local_radius"], "factor": o["local_factor"],
@@ -427,7 +432,9 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
         for a, b, _ in pairs:                                   # descriptors and depth ranges in the main thread
             for i in (a, b):
                 if i not in desc:
-                    d = db.read_descriptors(int(i))
+                    d = ddb.read_descriptors(int(i))
+                    if not len(getattr(d, "data", d)) and ddb is not db:        # (a copy that still has them)
+                        d = db.read_descriptors(int(i))
                     desc[i] = np.asarray(getattr(d, "data", d), np.float32)        # pycolmap 4.2: FeatureDescriptors
             if (len(desc[a]) != rec.images[a].num_points2D() or len(desc[b]) != rec.images[b].num_points2D()):
                 n_nodesc += 1                                          # descriptors missing (or another feature set)
@@ -472,6 +479,8 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
             by_fam[k] = by_fam.get(k, 0) + int(len(add))
     finally:
         db.close()
+        if ddb is not db:
+            ddb.close()
     rep = {"database": str(out), "pairs": len(pairs), "pairs_with_new_matches": n_pairs_used, "new_matches": int(n_new),
            "pairs_without_descriptors": n_nodesc,
            "new_matches_by_family": by_fam, "options": {k: (list(v) if isinstance(v, tuple) else v) for k, v in o.items()},

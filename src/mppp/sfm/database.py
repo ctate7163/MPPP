@@ -223,6 +223,37 @@ def extract_features(project: SfmProject, max_num_features: Any = DEFAULT_MAX_NU
     return db
 
 
+def copy_database(src: PathLike, dst: PathLike, descriptors: bool = False) -> Path:
+    """0.95.0 (Christian, 27 Oct: the thermal and guided copies take 5-20 GB per site on the HDD RAID): a copy of a
+    COLMAP database with every table but, by default, an empty ``descriptors`` table - the one table the copies do
+    not need (the guided matcher reads descriptors from the original) and the largest (128 bytes per keypoint, more
+    than half the file).  Done through SQLite (attach, insert-select), so only the kept tables are read."""
+    import sqlite3
+    src, dst = Path(src), Path(dst)
+    if dst.exists():
+        dst.unlink()
+    con = sqlite3.connect(str(dst))
+    try:
+        con.execute("ATTACH DATABASE ? AS src", (str(src),))
+        rows = con.execute("SELECT type, name, sql FROM src.sqlite_master WHERE sql IS NOT NULL "
+                           "AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END").fetchall()
+        for typ, name, sql in rows:
+            if typ == "table":
+                con.execute(sql)
+        for typ, name, sql in rows:
+            if typ == "table" and (descriptors or name != "descriptors"):
+                con.execute(f'INSERT INTO main."{name}" SELECT * FROM src."{name}"')
+        con.commit()
+        for typ, name, sql in rows:
+            if typ != "table":
+                con.execute(sql)
+        con.commit()
+        con.execute("DETACH DATABASE src")
+    finally:
+        con.close()
+    return dst
+
+
 def scale_keypoints(kp: np.ndarray, factor: float) -> np.ndarray:
     """
     Native -> full-resolution pixels (``factor`` = 1 / downsample scale).  COLMAP
