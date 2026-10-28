@@ -540,8 +540,12 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   navcam_aspect: Optional[str] = None,
                   aspect_sigma: float = NAVCAM_ASPECT_SIGMA, refine_zcam_rig: Optional[str] = None,
                   zcam_rig_translation_sigma_m: float = ZCAM_RIG_TRANSLATION_SIGMA_M,
-                  extra_residuals=None, refine_hazcam_rig: Optional[str] = None) -> Dict[str, Any]:
+                  extra_residuals=None, refine_hazcam_rig: Optional[str] = None,
+                  thin_cap: int = 0) -> Dict[str, Any]:
     """
+    ``thin_cap`` (0.95.0): at most this many two-view, same-family, same-station points per image in the adjustment
+    (:func:`thin_points`; every tie kept); 0: every point.  The result's ``"points_skipped"`` counts them.
+
     ``refine_hazcam_rig`` (0.93) - the stereo rigs of the Hazcam pairs (sensor FR, RR): "rotation" refines their
     rotation, "hold" holds them, whatever ``refine_rig`` says; None: ``project.settings["hazcam"]["rig_refine"]``
     ("hold" without it).
@@ -753,7 +757,11 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                                                     cam_blocks[int(im.camera_id)]], True)
     reproj, rig_reproj, add = cf.ReprojErrorCost, cf.RigReprojErrorCost, prob.add_residual_block
     point_arrs: List[np.ndarray] = []                         # 0.94.4: for the exact-tie covariance
+    thin = thin_points(rec, project, int(thin_cap or 0)) if thin_cap and int(thin_cap) > 0 else None
+    skip_pts = thin["skip"] if thin else ()
     for pid, pt in rec.points3D.items():
+        if skip_pts and int(pid) in skip_pts:
+            continue
         xyz = pt.xyz
         point_arrs.append(xyz)
         for el in pt.track.elements:
@@ -1119,6 +1127,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                            else summary.final_cost), "iterations": summary.num_successful_steps + summary.num_unsuccessful_steps,
             "termination": str(summary.termination_type), "brief": summary.BriefReport(), "retried": retried, "extra": extra_info, "camera_views": views_used, "camera_views_unchanged": views_unchanged,
             "refine_tangential": tangential_setting(refine_tangential), "linear_solver": solver, "num_threads": so.num_threads,
+            "points_skipped": len(skip_pts) if thin else 0, "thin_cap": int(thin_cap or 0),
+            "points_in_adjustment": len(point_arrs),
             "seconds": float(summary.total_time_in_seconds)}
 
 
@@ -1514,6 +1524,83 @@ def drop_short_tracks(rec, min_track_length: int = 2, min_mixed_track_length: in
     for pid in short:
         rec.delete_point3D(pid)
     return len(short) + drop_mixed_short_tracks(rec, min_mixed_track_length)
+
+
+THIN_GRID = (8, 6)        # cells across and down a frame for the per-image cap of thin_points
+
+
+def thin_points(rec, project: SfmProject, cap_per_image: int, grid: Tuple[int, int] = THIN_GRID) -> Dict[str, Any]:
+    """
+    0.95.0 (Christian, 28 Oct, study S2): the 3-D points to leave out of a bundle adjustment so that each image keeps
+    at most ``cap_per_image`` of its two-view, same-family, same-station points - the ones that only fix the
+    terrain between two neighbouring frames (4-5 M points at Chal Rocks, mean track 2.8).  Every tie is kept:
+    a track of three or more images, one that joins two camera families (Navcam-Mastcam-Z, Navcam-Hazcam) or two
+    stations.  The cap is filled per image on a ``grid`` of cells, round-robin over the cells in keypoint order, so
+    the kept points spread over the frame; a point kept for one of its images counts for the other.  ``cap_per_image``
+    0 or less: nothing left out.  Returns {"skip": set of point ids, "points", "ties", "candidates", "kept",
+    "cap", "grid"}.  The points stay in the model (the export, the next triangulation); only the adjustment skips them.
+    """
+    out = {"skip": set(), "points": len(rec.points3D), "ties": 0, "candidates": 0, "kept": 0,
+           "cap": int(cap_per_image), "grid": list(grid)}
+    if cap_per_image is None or int(cap_per_image) <= 0 or not len(rec.points3D):
+        out["ties"] = out["points"]
+        return out
+    cap = int(cap_per_image)
+    by_name = {r["name"]: (r["station"], str(r["instrument"])[:1]) for r in project.images}
+    meta = {}
+    for iid in rec.reg_image_ids():
+        im = rec.images[int(iid)]
+        meta[int(iid)] = by_name.get(im.name, ("?", im.name[:1]))
+    cand: Dict[int, List[Tuple[int, int]]] = {}             # image id -> [(point id, point2D index)]
+    n_tie = 0
+    for pid, pt in rec.points3D.items():
+        els = list(pt.track.elements)
+        if len(els) != 2:
+            n_tie += 1
+            continue
+        a, b = int(els[0].image_id), int(els[1].image_id)
+        ma, mb = meta.get(a), meta.get(b)
+        if ma is None or mb is None or ma != mb:          # another station or family: a tie
+            n_tie += 1
+            continue
+        cand.setdefault(a, []).append((int(pid), int(els[0].point2D_idx)))
+        cand.setdefault(b, []).append((int(pid), int(els[1].point2D_idx)))
+    out["ties"] = n_tie
+    out["candidates"] = len(rec.points3D) - n_tie
+    kept: set = set()
+    gx, gy = max(1, int(grid[0])), max(1, int(grid[1]))
+    for iid in sorted(cand):
+        im = rec.images[iid]
+        cam = rec.cameras[im.camera_id]
+        lst = cand[iid]
+        have = sum(1 for pid, _ in lst if pid in kept)
+        if have >= cap:
+            continue
+        cells: Dict[int, List[int]] = {}
+        for pid, j in lst:
+            if pid in kept:
+                continue
+            x, y = im.points2D[j].xy
+            cx = min(gx - 1, max(0, int(gx * x / max(1.0, cam.width))))
+            cy = min(gy - 1, max(0, int(gy * y / max(1.0, cam.height))))
+            cells.setdefault(cy * gx + cx, []).append(pid)
+        order = [cells[c] for c in sorted(cells)]
+        k = 0
+        need = cap - have
+        while need > 0 and order:                        # one point per cell per pass (every list is longer than k)
+            nxt = []
+            for lst_c in order:
+                if need <= 0:
+                    break
+                kept.add(lst_c[k])
+                need -= 1
+                if k + 1 < len(lst_c):
+                    nxt.append(lst_c)
+            order, k = nxt, k + 1
+    all_cand = {pid for lst in cand.values() for pid, _ in lst}
+    out["kept"] = len(kept)
+    out["skip"] = all_cand - kept
+    return out
 
 
 def track_statistics(rec, project: SfmProject) -> Dict[str, Any]:
@@ -2189,7 +2276,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 thermal_fine_range: Any = "default", thermal_fine_deg: Any = "default",
                 zcam_backlash: Optional[str] = None, zcam_backlash_z: float = 3.0,
                 zcam_focus_line: bool = True, zcam_line_cycles: int = 2, thermal_after_stage1: bool = True,
-                zcam_line_settle_px: float = ZCAM_LINE_SETTLE_PX,
+                zcam_line_settle_px: float = ZCAM_LINE_SETTLE_PX, ba_points_cap: int = 0,
                 pose_guided: Union[bool, Dict[str, Any]] = True, navcam_aspect: str = "hold",
                 isolated_points_factor: float = ISOLATED_POINTS_FACTOR,
                 round1_hold: bool = ROUND1_HOLD, zcam_station_prior_sigma_m: float = ZCAM_STATION_PRIOR_SIGMA_M):
@@ -2215,7 +2302,9 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     the remaining rounds and the final adjustment hold them on the line.  ``zcam_line_settle_px`` (0.95.0,
     Christian, 28 Oct): when a refit moves no line by more than this (px at the fitted bins,
     :func:`mppp.sfm.zcam.focus_line_change_px`), the remaining rounds are skipped - two stage-2 rounds instead
-    of three on a block whose lines have settled; 0: never.  Distortion, principal point (linear in
+    of three on a block whose lines have settled; 0: never.  ``ba_points_cap`` (0.95.0, study S2): at most this many
+    two-view same-family same-station points per image in every adjustment of the run, every tie kept
+    (:func:`thin_points`); 0: all points.  Distortion, principal point (linear in
     focus from the model) and the zoom's rig stay one per eye / zoom.  The lines are in
     ``project.settings["zcam_focus_lines"]``.  ``pose_guided`` (v0p64, notebook 03 ``POSE_GUIDED``; staged runs with
     Mastcam-Z): after the stage-2 rounds, matches guided by the poses (:mod:`mppp.sfm.guided`; a dict overrides
@@ -2402,7 +2491,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
         rec = triangulate(rec, project, max_reproj_px=float(tpx), min_angle_deg=min_tri_angle_deg, **topts)
         st0 = track_statistics(rec, project)
         held_round = bool(round1_hold) and k == 0 and len(schedule) > 1      # poses and points only
-        ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss),
+        ba = bundle_adjust(rec, project, thin_cap=ba_points_cap, sigma_px=sigma_px, loss_scale=float(loss),
                            refine_intrinsics=refine_intrinsics and not held_round,
                            refine_tangential=refine_tangential, refine_rig=False if held_round else refine_rig,
                            max_iterations=max_iterations,
@@ -2428,7 +2517,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             _exclude(f"after round {k + 1}")
     if exclude_outliers:
         _exclude("before the final adjustment")
-    ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
+    ba = bundle_adjust(rec, project, thin_cap=ba_points_cap, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                        refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential,
                        refine_rig=refine_rig, max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
                        rig_translation_sigma_m=rig_translation_sigma_m, hold_cameras=sorted(hold), linear_solver=linear_solver,
@@ -2591,7 +2680,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                     project.settings["hazcam"]["rig_hold"] = sorted(
                         {e[0] for e in hazcam_weak_held if {e[0] + "L", e[0] + "R"} & hazkeys <= hazcam_weak_held})
             round_snap = ZG.snapshot(rec, project) if (zcam_focus_line and zfree and zkeys) else None   # 0.95.0
-            ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
+            ba = bundle_adjust(rec, project, thin_cap=ba_points_cap, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
                                attitude_prior_deg=attitude_prior_deg, hold_cameras=sorted(hold_k), linear_solver=linear_solver,
                                refine_zcam_rig=zfit if (zcam_focus_line and not zfree) else None)
@@ -2725,7 +2814,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 logger.info(f"stage 2, pose-guided: Mastcam-Z frames lost at the triangulation - "
                       f"{ZG.diagnosis_line(prep['zcam_diagnosis'])} (database before: pairs per image median "
                       f"{prep['zcam_diagnosis']['database_before']})")
-            ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
+            ba = bundle_adjust(rec, project, thin_cap=ba_points_cap, sigma_px=sigma_px, loss_scale=float(loss), refine_intrinsics=refine_intrinsics,
                                refine_tangential=refine_tangential, refine_rig=False, max_iterations=max_iterations,
                                attitude_prior_deg=attitude_prior_deg,
                                hold_cameras=sorted(hold | zkeys) if zcam_focus_line else sorted(hold),
@@ -2828,7 +2917,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 if verbose:
                     logger.info(f"stage 2: Hazcam eyes held at their start (fewer than "
                                 f"{HAZCAM_MIN_REFINE_OBSERVATIONS} tie-point observations): {sorted(hazcam_weak_held)}")
-        ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
+        ba = bundle_adjust(rec, project, thin_cap=ba_points_cap, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                            refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential, refine_rig=False,
                            max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
                            hold_cameras=sorted(hold | zkeys) if zcam_focus_line else sorted(hold), linear_solver=linear_solver,
@@ -2857,7 +2946,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 from .zcam import focus_line_lines, refit_focus_lines
                 lines = refit_focus_lines(rec, project)
                 project.settings["zcam_focus_lines"] = lines
-                ba = bundle_adjust(rec, project, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
+                ba = bundle_adjust(rec, project, thin_cap=ba_points_cap, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
                                    refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential,
                                    refine_rig=False, max_iterations=2 * max_iterations,
                                    attitude_prior_deg=attitude_prior_deg,

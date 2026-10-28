@@ -1675,3 +1675,46 @@ def test_outlier_test_hazcam_frames_against_the_label_prior(tmp_path):
             r["prior_C_label"] = (np.asarray(r["prior_C_label"]) + [1.0, 0.0, 0.0]).tolist()
     found = find_outlier_frames(rec, proj)
     assert [f["frame_id"] for f in found] == [haz] and found[0]["family"] == "H" and "shift" in found[0]["reasons"][0]
+
+
+def test_thin_points_keeps_every_tie_and_caps_the_two_view_points(tmp_path):
+    """0.95.0 (Christian, 28 Oct; study S2): thin_points leaves out of the adjustment the two-view same-family
+    same-station points beyond a per-image cap, spread over a grid, and keeps every tie (three or more views,
+    two stations or two families); bundle_adjust(thin_cap=...) skips them and reports it; 0 keeps all."""
+    pytest.importorskip("pyceres")
+    from mppp.sfm.reconstruction import bundle_adjust, thin_points
+    proj, rec, _ = _solved(tmp_path)
+    station = {r["name"]: r["station"] for r in proj.images}
+    n_all = len(rec.points3D)
+    t0 = thin_points(rec, proj, 0)
+    assert t0["skip"] == set() and t0["ties"] == n_all
+    cap = 20
+    t = thin_points(rec, proj, cap)
+    ties = {int(pid) for pid, pt in rec.points3D.items()
+            if pt.track.length() >= 3 or len({station[rec.images[e.image_id].name] for e in pt.track.elements}) > 1}
+    two = set(int(p) for p in rec.points3D) - ties
+    assert t["ties"] == len(ties) and t["candidates"] == len(two) and two and len(t["skip"]) > 0
+    assert not (t["skip"] & ties)                                           # no tie skipped
+    assert t["kept"] + len(t["skip"]) == len(two)
+    per_img = {}
+    for pid in two - t["skip"]:
+        for e in rec.points3D[pid].track.elements:
+            per_img[int(e.image_id)] = per_img.get(int(e.image_id), 0) + 1
+    assert per_img and max(per_img.values()) <= cap + 1                     # a point kept for one image counts for the other
+    # the kept points spread over the frame: more than one grid cell per image
+    for iid in list(per_img)[:3]:
+        im, cam = rec.images[iid], rec.cameras[rec.images[iid].camera_id]
+        cells = set()
+        for pid in two - t["skip"]:
+            for e in rec.points3D[pid].track.elements:
+                if int(e.image_id) == iid:
+                    x, y = im.points2D[e.point2D_idx].xy
+                    cells.add((int(8 * x / cam.width), int(6 * y / cam.height)))
+        assert len(cells) > 1
+    ba = bundle_adjust(rec, proj, sigma_px=0.3, loss_scale=10.0, max_iterations=3, thin_cap=cap, refine_intrinsics=False)
+    assert ba["points_skipped"] == len(t["skip"]) and ba["thin_cap"] == cap
+    assert ba["points_in_adjustment"] == n_all - len(t["skip"])
+    ba0 = bundle_adjust(rec, proj, sigma_px=0.3, loss_scale=10.0, max_iterations=3, refine_intrinsics=False)
+    assert ba0["points_skipped"] == 0 and ba0["points_in_adjustment"] == n_all
+    from mppp.pipeline import Settings
+    assert Settings().ba_points_cap == 0 and "ba_points_cap" in Settings().key_dict()
