@@ -195,6 +195,20 @@ def build_parser() -> argparse.ArgumentParser:
                    "found_list_proposal.txt (default <root>/camera_analysis/zcam_states_<date>)")
     p.add_argument("--z", type=float, default=3.0, help="z of a state call (default 3)")
     p.add_argument("--apply", action="store_true", help="write the proposal into the found list (a dated backup first)")
+    p = sub.add_parser("dense", help="0.95.0: the COLMAP dense reconstruction of a finished block - the workspace "
+                       "<project>/dense (images undistorted from the native-pixel model, the rover masks for the "
+                       "fusion), patch-match stereo, fusion, a mesh; dense_reconstruct.bat next to open_in_colmap.bat "
+                       "does the same with the COLMAP executable")
+    p.add_argument("work", help="the block's WORK folder (its colmap/ project) or the project folder itself")
+    p.add_argument("--variant", default="", help="the project colmap_<variant> (default colmap)")
+    p.add_argument("--prepare", action="store_true", help="only the workspace (undistorted images, masks, the configs)")
+    p.add_argument("--stereo", action="store_true", help="patch-match stereo (a CUDA pycolmap: --python or GPU_PYTHON)")
+    p.add_argument("--fusion", action="store_true", help="the fusion into dense/fused.ply (the masks applied)")
+    p.add_argument("--mesh", action="store_true", help="a Poisson mesh of the fused cloud")
+    p.add_argument("--max-image-size", type=int, default=None, help="the long side of the working images (default 2000)")
+    p.add_argument("--python", default=os.environ.get("GPU_PYTHON"), help="the Python with the CUDA pycolmap for the "
+                   "stereo (default GPU_PYTHON; without it the stereo runs here if this pycolmap has CUDA)")
+    p.add_argument("--overwrite", action="store_true", help="undistort again even if the workspace is there")
     sub.add_parser("doctor", help="what is set, what is missing: environment variables, dependencies, models, waypoints")
     sub.add_parser("version", help="the MPPP version")
     return ap
@@ -912,6 +926,35 @@ def cmd_zcam_states(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dense(a: argparse.Namespace) -> int:
+    """``dense``: :mod:`mppp.sfm.dense` on one block."""
+    from .sfm.dense import DENSE_MAX_IMAGE_SIZE, prepare_dense, run_dense, write_dense_bat
+    from .sfm.project import SfmProject
+    w = Path(a.work)
+    proj_dir = w if (w / "project.json").is_file() else w / ("colmap" + (f"_{a.variant}" if a.variant else ""))
+    if not (proj_dir / "project.json").is_file():
+        print(f"dense: no project at {proj_dir}", file=sys.stderr)
+        return 2
+    proj = SfmProject.load(proj_dir)
+    size = int(a.max_image_size or DENSE_MAX_IMAGE_SIZE)
+    steps = [s for s, on in (("stereo", a.stereo), ("fusion", a.fusion), ("mesh", a.mesh)) if on]
+    if a.prepare or not steps:
+        res = prepare_dense(proj, max_image_size=size, overwrite=a.overwrite)
+        print(f"workspace {res['workspace']}: {res['images']} images" + (f", {res['masks']['images']} masks" if res.get("masks") else ""))
+        print(f"batch file: {write_dense_bat(proj, max_image_size=size)}")
+        if not steps:
+            return 0
+    import pycolmap
+    if a.python and ("stereo" in steps or not getattr(pycolmap, "has_cuda", False)):
+        from .sfm.gpu import run_step
+        res = run_step(a.python, "dense", proj, steps=steps, max_image_size=size)
+    else:
+        res = run_dense(proj, steps=steps, max_image_size=size)
+    for k, v in (res.get("steps") or {}).items():
+        print(f"  {k}: {v}")
+    return 0
+
+
 def cmd_version(a: argparse.Namespace) -> int:
     from . import __file__ as where, __version__
     print(f"mppp {__version__} ({Path(where).parent})")
@@ -920,7 +963,7 @@ def cmd_version(a: argparse.Namespace) -> int:
 
 COMMANDS = {"gui": cmd_gui, "process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
             "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "maps": cmd_maps, "calib": cmd_calib, "doctor": cmd_doctor,
-            "zcam-states": cmd_zcam_states,
+            "zcam-states": cmd_zcam_states, "dense": cmd_dense,
             "version": cmd_version}
 
 

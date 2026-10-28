@@ -39,6 +39,7 @@ positional arguments:
     run                 process, then align a site
     sites               the site definitions
     gui                 write the COLMAP GUI files (open_in_colmap.bat ...) into finished projects
+    dense               the COLMAP dense reconstruction of a finished block (0.95.0)
     cmods               the camera models in use
     mask                the terrain mask model
     example             the Mars 2020 example data (Rockytop, sols 461-464): fetch or build
@@ -309,7 +310,32 @@ options:
 
 ## mppp gui
 
-Writes `open_in_colmap.bat`, `open_in_colmap_fullres.bat` and `colmap_gui.ini` into finished projects.
+Writes `open_in_colmap.bat`, `open_in_colmap_fullres.bat`, `colmap_gui.ini` and (0.95.0) `dense_reconstruct.bat`
+into finished projects.
+
+## mppp dense
+
+0.95.0 (Christian, 28 Oct 2026): the COLMAP dense reconstruction of a finished block, preloaded from the alignment.
+
+```text
+usage: mppp dense [-h] [--variant VARIANT] [--prepare] [--stereo] [--fusion] [--mesh]
+                  [--max-image-size N] [--python PYTHON] [--overwrite] work
+```
+
+`--prepare` (the default with no step given) writes the workspace `<project>/dense/`: the images undistorted to
+pinhole cameras from the **native-pixel** model `gui_native/sparse` (the image files are at their native
+resolution; the full-resolution model's cameras would not fit them), the pinhole model `dense/sparse/`, COLMAP's
+`stereo/patch-match.cfg` and `fusion.cfg`, and `dense/masks/` - the rover masks undistorted the same way, binary
+again, for the fusion (`StereoFusion.mask_path`: a pixel at 0 is never fused; the patch-match stereo itself takes
+no masks). `--max-image-size` (default 2000 px on the long side) sets the working resolution. `--stereo` runs the
+patch-match stereo (a CUDA pycolmap: `--python` or `GPU_PYTHON`, the environment the matcher uses), `--fusion`
+the fusion into `dense/fused.ply` with the masks, `--mesh` a Poisson mesh.
+
+`dense_reconstruct.bat`, written next to `open_in_colmap.bat`, does the same with the COLMAP executable (a CUDA
+build is looked for first): double-click runs undistortion (without the masks: `mppp dense --prepare` for those),
+stereo and fusion; `set MPPP_DENSE_STEP=prepare|stereo|fusion|mesh` runs one step, `MPPP_DENSE_MAX_SIZE` the
+resolution, `MPPP_DENSE_MESH=1` adds the mesh. The GUI's Reconstruction > Dense reconstruction dialog takes the same
+`dense\` folder as its workspace, with the undistortion already done.
 
 ```text
 usage: mppp gui [-h] [--root DIR] [--variant VARIANT] [works ...]

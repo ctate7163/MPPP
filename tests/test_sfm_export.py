@@ -195,3 +195,65 @@ def test_export_level_light_leaves_out_the_native_model_and_residuals(tmp_path):
     from pathlib import Path
     src = (Path(__file__).resolve().parents[1] / "studies" / "calibration" / "run_pipeline.py").read_text(encoding="utf-8")
     assert '"--export"' in src and "export_level=light" in src
+
+
+def test_dense_workspace_preloaded_from_the_native_model(tmp_path, monkeypatch):
+    """0.95.0 (Christian, 28 Oct): prepare_dense undistorts the images with the native-pixel model into
+    <project>/dense (pinhole cameras, COLMAP's stereo configs), undistorts the rover masks the same way for the
+    fusion (binary again), records it; dense_reconstruct.bat next to open_in_colmap.bat runs the steps with a CUDA
+    COLMAP; write_gui_project writes the batch file; mppp dense --prepare does the workspace."""
+    pytest.importorskip("pyceres")
+    import cv2
+    import json
+    import pycolmap
+    from helpers import _build_rec, _synthetic, _write_database
+    from mppp.sfm.database import write_gui_project
+    from mppp.sfm.dense import DENSE_MAX_IMAGE_SIZE, prepare_dense, write_dense_bat
+    from mppp.sfm.export import write_gui_native
+    assert DENSE_MAX_IMAGE_SIZE == 2000
+    proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
+    rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
+    proj.images_dir.mkdir(parents=True, exist_ok=True)
+    proj.masks_dir.mkdir(parents=True, exist_ok=True)
+    masked = []
+    for k, r in enumerate(proj.images):
+        w, h = r["native_size"]
+        img = rng.integers(60, 200, (h, w), dtype=np.uint8)
+        cv2.imwrite(str(proj.images_dir / r["name"]), img)
+        if k < 4:                                                        # four images with a mask: the lower half out
+            m = np.full((h, w), 255, np.uint8)
+            m[h // 2:, :] = 0
+            cv2.imwrite(str(proj.masks_dir / (r["name"] + ".png")), m)
+            r["has_mask"] = True
+            masked.append(r["name"])
+    _write_database(rec, proj.database)
+    proj.settings["reconstruction"] = {"path": "sparse/cahv_ba"}
+    (proj.root / "sparse" / "cahv_ba").mkdir(parents=True, exist_ok=True)
+    rec.write(str(proj.root / "sparse" / "cahv_ba"))
+    proj.save()
+    write_gui_native(proj, rec, colors=False)
+    res = prepare_dense(proj, max_image_size=400)
+    ws = proj.root / "dense"
+    assert res["workspace"] == str(ws) and res["images"] == rec.num_reg_images() and res["max_image_size"] == 400
+    und = pycolmap.Reconstruction(str(ws / "sparse"))
+    assert all(c.model.name == "PINHOLE" and max(c.width, c.height) <= 400 for c in und.cameras.values())
+    assert (ws / "stereo" / "patch-match.cfg").is_file() and (ws / "stereo" / "fusion.cfg").is_file()
+    assert len(list((ws / "images").iterdir())) == rec.num_reg_images()
+    assert res["masks"]["images"] == 4 and all((ws / "masks" / (n + ".png")).is_file() for n in masked)
+    m = cv2.imread(str(ws / "masks" / (masked[0] + ".png")), cv2.IMREAD_GRAYSCALE)
+    assert set(np.unique(m).tolist()) <= {0, 255} and m.shape[1] <= 400 and m[-1].max() == 0 and m[0].max() == 255
+    assert not (ws / "_masks_in").exists() and not (ws / "_masks_out").exists()
+    assert json.loads((ws / "mppp_dense.json").read_text())["images"] == res["images"]
+    assert prepare_dense(proj, max_image_size=400)["seconds"] == res["seconds"]       # there already: not redone
+    bat = write_dense_bat(proj)
+    b = bat.read_bytes()
+    assert bat.name == "dense_reconstruct.bat" and b.count(b"\n") == b.count(b"\r\n")
+    t = b.decode()
+    assert "image_undistorter" in t and "patch_match_stereo" in t and "stereo_fusion" in t and "poisson_mesher" in t
+    assert "--StereoFusion.mask_path" in t and "MPPP_DENSE_STEP" in t and "MPPP_DENSE_MAX_SIZE=2000" in t
+    assert t.index("colmap-x64-windows-cuda") < t.index("colmap-x64-windows-nocuda")      # a CUDA COLMAP first
+    out = write_gui_project(proj, model="cahv_ba")
+    assert out["bat_dense"] == str(bat)
+    from mppp.cli import main
+    assert main(["dense", str(proj.root), "--prepare", "--max-image-size", "300", "--overwrite"]) == 0
+    assert json.loads((ws / "mppp_dense.json").read_text())["max_image_size"] == 300

@@ -711,4 +711,9 @@ def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba",
         bat(root / "open_in_colmap.bat", "database.db", f"sparse\\{m}",
             f"full-resolution project and sparse\\{m} (no gui_native yet)")
     out["bat"] = str(root / "open_in_colmap.bat")
+    try:                                                   # 0.95.0: the dense reconstruction, preloaded
+        from .dense import write_dense_bat
+        out["bat_dense"] = str(write_dense_bat(project, colmap_bat))
+    except OSError as e:                                   # a viewing aid; never stop the run
+        out["bat_dense_error"] = str(e)
     return out

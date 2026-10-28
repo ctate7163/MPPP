@@ -104,6 +104,12 @@ the database copies shrink and go, and the hand exclusions of Taylorfjellet and 
   the N+Z check on request), nothing promoted, no waiting for running blocks - into `camera_analysis\trial_0p95_<date>\`.
   The 0.94 blocks have focus bins, so the Mastcam-Z joint runs without sequence offsets.
 
+- **Dense reconstruction, preloaded** (Christian, 28 Oct): `mppp dense WORK --prepare` writes `<project>/dense/`
+  - the images undistorted to pinhole cameras from the native-pixel model, COLMAP's stereo configs and the rover
+  masks undistorted the same way for the fusion; `--stereo` / `--fusion` / `--mesh` run the steps (a CUDA pycolmap
+  for the stereo, `--python`). `dense_reconstruct.bat`, written next to `open_in_colmap.bat`, does the same with the
+  COLMAP executable (a CUDA build first); the GUI's dense dialog takes `dense\` as its workspace.
+
 ### Studies (`scripts/tie_point_studies.py`)
 
 - S1 feature budget, S2 point thinning (against the all-points solution: frame centres, attitudes, per-bin focals), S3

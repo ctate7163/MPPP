@@ -256,7 +256,7 @@ class gpu_lock:
 def run_step(python: PathLike, step: str, project, **kwargs: Any) -> Dict[str, Any]:
     """Run ``extract_features`` or ``match`` on ``project`` in ``python``; reloads the project settings."""
     from .project import SfmProject
-    if step not in ("extract_features", "match"):
+    if step not in ("extract_features", "match", "dense"):
         raise ValueError(step)
     project.save()                                            # the subprocess reads project.json
     with gpu_lock(f"{step} ({project.root.parent.name})", enabled=bool(kwargs.get("use_gpu", True))):
@@ -280,6 +280,9 @@ def _main(argv) -> None:
     if step == "extract_features":
         from .database import extract_features
         res: Any = str(extract_features(proj, **kwargs))
+    elif step == "dense":                                    # 0.95.0: the stereo and the fusion on the CUDA build
+        from .dense import run_dense
+        res = run_dense(proj, **kwargs)
     else:
         from .matching import match
         res = match(proj, **kwargs)
