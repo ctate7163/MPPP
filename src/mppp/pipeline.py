@@ -154,6 +154,7 @@ class Settings:
     # high-state pointings 2 and 4 of ZCAM08114 got in); "auto" = <scapes_root>/zcam_low_backlash_found.csv
     zcam_low_backlash_found: Any = "auto"
     zcam_focus_line: bool = True                  # stage 2 puts the focus-bin cameras on lines in focus count (False: f per bin)
+    zcam_uncalibrated_matching: bool = True       # 0.95.0 (Christian, 28 Oct): verify the Mastcam-Z pairs uncalibrated (fundamental matrix) from the start - COLMAP's calibrated estimators abort on a pair whose keypoints fail to unproject, and the pass before the retry was lost; False: calibrated with the retry (a Mastcam-Z setting: Navcam keys stay)
     zcam_line_zooms: Any = (34, 48, 63)           # 0.95.0 (Christian, 28 Oct): the zooms whose bins go on focus lines; 79 and 110 mm keep their refined values per bin until they have real models (Chal Rocks ZR079 fy 42 px rms)
     zcam_line_cycles: int = 2                     # rounds of freeing the bins and refitting the lines
     zcam_station_prior_sigma_m: float = 0.1       # 0.94.5 (27 Oct): a Mastcam-Z frame's position prior moves with its station's Navcam shift, +-this per axis (m); 0: the waypoint prior (prior_sigma_m)
@@ -236,6 +237,7 @@ class Settings:
         if not d.get("include_zcam"):
             d.pop("zcam_zooms_only", None)           # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
             d.pop("zcam_line_zooms", None)           # 0.95.0: likewise
+            d.pop("zcam_uncalibrated_matching", None)   # 0.95.0: likewise
             d.pop("zcam_bin_by", None)               # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
             d.pop("zcam_station_prior_sigma_m", None)   # 0.94.5: a Mastcam-Z setting (Navcam keys stay)
             d["zcam_low_backlash_found"] = None      # 0.94.4: the found list is a Mastcam-Z setting (Navcam keys stay)
@@ -1006,10 +1008,13 @@ def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] =
     if stop_after == "features":
         return out
     mode = effective_match_mode(s, len(proj.images))
+    # 0.95.0: the Mastcam-Z pairs verified uncalibrated from the start (the calibrated pass that aborted was lost)
+    unc = {"uncalibrated_families": ("Z",)} if s.zcam_uncalibrated_matching and s.include_zcam else {}
     db = build_database(proj, reuse_matches_from=list(reuse_from),
-                        matching=match_settings(mode, **s.match, **({"keypoint_selection": str(s.lightglue_keypoints)}
-                                                                    if s.lightglue_keypoints not in (None, "largest")
-                                                                    else {})) if s.reuse_matches else None)
+                        matching=match_settings(mode, **s.match, **unc,
+                                                **({"keypoint_selection": str(s.lightglue_keypoints)}
+                                                   if s.lightglue_keypoints not in (None, "largest")
+                                                   else {})) if s.reuse_matches else None)
     if db.get("reused_matches"):
         log.info("matches reused: %s %s", {k: db["reused_matches"][k] for k in ("matches", "geometries")},
                  [x.get("skipped") or "used" for x in db["reused_matches"]["sources"]])
@@ -1026,7 +1031,7 @@ def extract_and_match(proj, settings: Settings, reuse_from: Sequence[PathLike] =
         n = len(proj.images)
         log.info("%d prior pairs%s", len(pairs), f" (instead of {n * (n - 1) // 2} exhaustive: {n} images > "
                  f"max_exhaustive_images {s.max_exhaustive_images})" if big else "")
-    kw = dict(use_gpu=gpu, block_size=s.match_block_size, **s.match)
+    kw = dict(use_gpu=gpu, block_size=s.match_block_size, **s.match, **unc)
     if s.lightglue_keypoints not in (None, "largest"):
         kw["keypoint_selection"] = str(s.lightglue_keypoints)
     # COLMAP's matcher runs in a child process: the CUDA environment, else this python on the CPU - a COLMAP

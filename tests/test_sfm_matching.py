@@ -159,6 +159,52 @@ def test_set_prior_focal(tmp_path):
     assert any(k in msg for k in CALIBRATED_ABORT_SIGNS)                                   # v0p74.9
 
 
+def test_mastcam_z_pairs_verified_uncalibrated_from_the_start(tmp_path, monkeypatch):
+    """0.95.0 (Christian, 28 Oct): with uncalibrated_families=("Z",) the Mastcam-Z database cameras have no prior
+    focal length while the matcher runs (a fundamental-matrix verification, no calibrated pass to abort and lose),
+    get it back after, and the matches record says so (a rematch when the setting changes); the pipeline passes
+    it for a Mastcam-Z run only, and the Navcam run keys stay what they were."""
+    import pycolmap
+    from mppp.sfm import matching as M
+    db_path = tmp_path / "database.db"
+    db = pycolmap.Database.open(str(db_path))
+    ids = {}
+    for k, w, h in (("NL", 5120, 3840), ("ZL034_F00300", 1648, 1200), ("ZR034_F00300", 1648, 1200)):
+        c = pycolmap.Camera(model="SIMPLE_PINHOLE", width=w, height=h, params=np.array([1000.0, w / 2, h / 2]))
+        c.has_prior_focal_length = True
+        ids[k] = db.write_camera(c)
+    db.close()
+    proj = SimpleNamespace(database=db_path, settings={"database": {"cameras": ids}}, save=lambda: None)
+    seen = {}
+
+    def fake(project, mode, *a):
+        d = pycolmap.Database.open(str(project.database))
+        seen.update({int(c.camera_id): bool(c.has_prior_focal_length) for c in d.read_all_cameras()})
+        d.close()
+        seen["fams"] = a[-1]
+        return {"mode": mode}
+    monkeypatch.setattr(M, "_match", fake)
+    out = M.match(proj, "exhaustive", uncalibrated_families=("Z",))
+    assert not seen[ids["ZL034_F00300"]] and not seen[ids["ZR034_F00300"]] and seen[ids["NL"]]
+    assert seen["fams"] == ("Z",) and out["uncalibrated"] == ["Z"] and out["uncalibrated_cameras"] == 2
+    d = pycolmap.Database.open(str(db_path))
+    assert all(c.has_prior_focal_length for c in d.read_all_cameras())      # back after the matching
+    d.close()
+    assert proj.settings["matching"]["uncalibrated"] == ["Z"]
+    seen.clear()
+    assert "uncalibrated" not in M.match(proj, "exhaustive") and seen["fams"] == ()
+    # the record: only when any (the records of every run before 0.95.0 stay valid)
+    from mppp.sfm.database import MATCH_KEYS
+    assert "uncalibrated" in MATCH_KEYS and "uncalibrated" not in M.match_settings("exhaustive")
+    assert M.match_settings("exhaustive", uncalibrated_families=("Z",))["uncalibrated"] == ["Z"]
+    assert M.match_settings("exhaustive", uncalibrated=["Z"])["uncalibrated"] == ["Z"]
+    from mppp.pipeline import Settings
+    s = Settings()
+    assert s.zcam_uncalibrated_matching is True
+    assert "zcam_uncalibrated_matching" not in s.key_dict()                  # a Navcam run: the keys unchanged
+    assert Settings(include_zcam=True).key_dict()["zcam_uncalibrated_matching"] is True
+
+
 def test_pose_guided_threads_give_the_same_matches(tmp_path):
     """0.94.2: the pairs matched in threads write the same database as one thread."""
     pytest.importorskip("pyceres")

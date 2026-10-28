@@ -32,7 +32,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
           python: Optional[PathLike] = None, max_ratio: float = 0.8, max_distance: float = 0.7,
           cross_check: bool = True, max_keypoints: int = 8192, filter_threshold: float = 0.1,
           device: Optional[str] = None, max_hours: float = 3.0,
-          keypoint_selection: str = "largest") -> Dict[str, Any]:
+          keypoint_selection: str = "largest", uncalibrated_families: Sequence[str] = ()) -> Dict[str, Any]:
     """Match and verify; results go into ``project.database``.  Returns a summary.
     ``python``: run in another Python environment, e.g. a conda one with a CUDA
     pycolmap (v0p11, see :mod:`mppp.sfm.gpu`).  ``max_ratio``, ``max_distance``,
@@ -50,16 +50,44 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     LightGlue over the same pairs, verified on their own, its inliers added to each pair's SIFT inliers (the SIFT
     ones win where both use a keypoint) - SIFT's many precise matches (above all Navcam - Mastcam-Z) and LightGlue's
     wide-baseline (cross-station) ones.  ``keypoint_selection``: which ``max_keypoints`` keypoints LightGlue sees
-    ("largest" scales, or "octaves": a share of every octave; :func:`mppp.sfm.lightglue.select_keypoints`)."""
+    ("largest" scales, or "octaves": a share of every octave; :func:`mppp.sfm.lightglue.select_keypoints`).
+
+    ``uncalibrated_families`` (0.95.0, Christian, 28 Oct): the camera families (``"Z"``: Mastcam-Z) whose pairs are
+    verified uncalibrated from the start - their database cameras lose ``has_prior_focal_length`` for the matching
+    (:func:`set_prior_focal`), so COLMAP verifies with a fundamental matrix instead of the calibrated (ray)
+    estimators, which abort on a Mastcam-Z pair whose keypoints fail to unproject (the retry below) after a pass
+    that is lost.  Recorded as ``uncalibrated`` in the matches record (a rematch when it changes)."""
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
+    fams = tuple(str(f) for f in (uncalibrated_families or ()))
+    n_unc = set_prior_focal(project, families=fams, value=False) if fams else 0
+    try:
+        out = _match(project, mode, pairs, use_gpu, max_num_matches, max_error_px, min_num_inliers, num_threads,
+                     guided_matching, block_size, python, max_ratio, max_distance, cross_check, max_keypoints,
+                     filter_threshold, device, max_hours, keypoint_selection, fams)
+    finally:
+        if fams:
+            set_prior_focal(project, families=fams, value=True)
+    if fams:
+        out["uncalibrated"] = list(fams)
+        out["uncalibrated_cameras"] = int(n_unc)
+        project.settings["matching"] = dict(project.settings.get("matching") or {}, uncalibrated=list(fams),
+                                            uncalibrated_cameras=int(n_unc))
+        project.save()
+    return out
+
+
+def _match(project: SfmProject, mode: str, pairs, use_gpu, max_num_matches: int, max_error_px: float,
+           min_num_inliers: int, num_threads: int, guided_matching: bool, block_size: int, python, max_ratio: float,
+           max_distance: float, cross_check: bool, max_keypoints: int, filter_threshold: float, device,
+           max_hours: float, keypoint_selection: str, fams: Tuple[str, ...] = ()) -> Dict[str, Any]:
     sel = {"keypoint_selection": keypoint_selection} if keypoint_selection != "largest" else {}
+    unc = {"uncalibrated": list(fams)} if fams else {}
     if mode == "sift+lightglue":
         sift_mode = "exhaustive" if pairs is None else "prior_pairs"
-        sift = match(project, mode=sift_mode, pairs=pairs, use_gpu=use_gpu, max_num_matches=max_num_matches,
-                     max_error_px=max_error_px, min_num_inliers=min_num_inliers, num_threads=num_threads,
-                     guided_matching=guided_matching, block_size=block_size, python=python, max_ratio=max_ratio,
-                     max_distance=max_distance, cross_check=cross_check)
+        sift = _match(project, sift_mode, pairs, use_gpu, max_num_matches, max_error_px, min_num_inliers, num_threads,
+                      guided_matching, block_size, python, max_ratio, max_distance, cross_check, max_keypoints,
+                      filter_threshold, device, max_hours, keypoint_selection, fams)
         add = add_lightglue(project, pairs, max_keypoints, filter_threshold, device, max_error_px, min_num_inliers,
                             max_hours, keypoint_selection)
         return _finish(project, mode, max_error_px, min_num_inliers, max_num_matches, guided_matching, max_ratio,
@@ -67,7 +95,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
                        extra={"sift": {k: sift.get(k) for k in ("matcher", "verified_pairs", "inlier_matches")},
                               "lightglue": add, "max_keypoints": int(max_keypoints),
                               "filter_threshold": float(filter_threshold), "matcher_requested": "sift+lightglue",
-                              "matcher": "sift+lightglue" if add else "sift", **sel})
+                              "matcher": "sift+lightglue" if add else "sift", **sel, **unc})
     if mode == "lightglue":
         lg = _try_lightglue(project, pairs, max_keypoints, filter_threshold, device, max_error_px, min_num_inliers,
                             max_hours, keypoint_selection)
@@ -76,7 +104,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
                            max_distance, cross_check, extra={"lightglue": lg, "max_keypoints": int(max_keypoints),
                                                              "filter_threshold": float(filter_threshold),
                                                              "matcher_requested": "lightglue", "matcher": "lightglue",
-                                                             **sel})
+                                                             **sel, **unc})
         # LightGlue unavailable or too slow here: COLMAP's SIFT matcher of the same pairs, recorded as such
         requested, mode = "lightglue", ("exhaustive" if pairs is None else "prior_pairs")
     else:
@@ -88,7 +116,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
         kw = dict(mode=mode, use_gpu=use_gpu, max_num_matches=max_num_matches,
                   max_error_px=max_error_px, min_num_inliers=min_num_inliers, num_threads=num_threads,
                   guided_matching=guided_matching, max_ratio=max_ratio, max_distance=max_distance,
-                  cross_check=cross_check, block_size=block_size)
+                  cross_check=cross_check, block_size=block_size, uncalibrated_families=list(fams))
         try:
             return run_step(python, "match", project, **kw)
         except RuntimeError as e:
@@ -146,7 +174,7 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
         pycolmap.match_image_pairs(db, matching_options=mo, pairing_options=po, verification_options=vo,
                                    device=device)
     return _finish(project, mode, max_error_px, min_num_inliers, max_num_matches, guided_matching, max_ratio,
-                   max_distance, cross_check, extra={"matcher_requested": requested, "matcher": "sift"})
+                   max_distance, cross_check, extra={"matcher_requested": requested, "matcher": "sift", **unc})
 
 
 MODES = ("lightglue", "exhaustive", "prior_pairs", "sift+lightglue")
@@ -289,7 +317,8 @@ def _finish(project: SfmProject, mode: str, max_error_px: float, min_num_inliers
                                                      max_ratio=max_ratio, max_distance=max_distance,
                                                      cross_check=cross_check,
                                                      **{k: v for k, v in (extra or {}).items()
-                                                        if k in ("max_keypoints", "filter_threshold", "matcher", "keypoint_selection")}))
+                                                        if k in ("max_keypoints", "filter_threshold", "matcher", "keypoint_selection",
+                                                                 "uncalibrated")}))
     except (OSError, KeyError, ValueError) as e:        # a missing record only means no reuse next time
         log.warning("matches record not written: %s", e)
     return summary
@@ -332,5 +361,10 @@ def match_settings(mode: str = "exhaustive", **kwargs: Any) -> Dict[str, Any]:
         v = kwargs.get(k, sig[k].default if k in sig else None)
         if k == "keypoint_selection" and v in (None, "largest"):
             continue                                 # 0.94.4: the default is not recorded (old records match)
+        if k == "uncalibrated":
+            v = kwargs.get("uncalibrated", kwargs.get("uncalibrated_families"))
+            if not v:
+                continue                             # 0.95.0: none is not recorded (old records match)
+            v = [str(f) for f in v]
         out[k] = float(v) if isinstance(v, float) or k in ("max_ratio", "max_distance", "max_error_px") else v
     return out
