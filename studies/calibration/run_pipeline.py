@@ -143,16 +143,16 @@ class Pipeline:
 
     # ---------------------------------------------------------------- stages
     def s_wait(self):
-        from _batch import BATCH_FILE
-        from mppp.runner import read_status
+        from _batch import alive_batches                         # 0.95.0: one status file per batch
         t0 = time.time()
         while True:
-            cur = read_status(self.root / BATCH_FILE)
-            if not (cur and cur.get("alive")):
+            alive = alive_batches(self.root)
+            if not alive:
                 return "done", "no batch running"
+            cur = alive[0]
             if time.time() - t0 > self.a.wait_h * 3600:
                 return "failed", f"a batch ({cur.get('kind')}, pid {cur.get('pid')}) still runs after {self.a.wait_h} h"
-            self.log(f"  wait: {cur.get('kind')} running (site {cur.get('site')}); checking again in 10 min")
+            self.log(f"  wait: {len(alive)} batch(es) running - {cur.get('kind')} (site {cur.get('site')}); checking again in 10 min")
             if self.a.dry_run:
                 return "done", "dry run"
             time.sleep(600)

@@ -159,3 +159,21 @@ def test_gui_command_writes_open_in_colmap(tmp_path):
     SfmProject(pd, [], {}, {}, [0, 0, 0], {}).save()
     assert main(["gui", "--root", str(tmp_path)]) == 0
     assert (pd / "open_in_colmap.bat").is_file() and (pd / "colmap_gui.ini").is_file()
+
+
+def test_calib_waits_for_running_sites(tmp_path, monkeypatch):
+    """0.95.0 (Christian, 27 Oct): a joint waits for a site of its groups whose alignment is running (an alive
+    mppp_status.json) instead of reading a half-written project; with --wait-h 0 it takes the finished ones now."""
+    import os
+    from mppp.cli import _wait_for_running
+    from mppp.runner import STATUS_FILE, RunStatus
+    w = tmp_path / "chal_rocks_zcam"
+    w.mkdir()
+    st = RunStatus(w / STATUS_FILE, pid=os.getpid())
+    st.update(state="running")
+    assert _wait_for_running([("chal_rocks", w), ("rochette", tmp_path / "rochette")], wait_h=0) == ["chal_rocks"]
+    sleeps = []
+    import time as _t
+    monkeypatch.setattr(_t, "sleep", lambda s_: (sleeps.append(s_), st.update(state="finished")))
+    assert _wait_for_running([("chal_rocks", w)], wait_h=1, poll_s=1) == []       # one poll, then it finished
+    assert sleeps == [1]

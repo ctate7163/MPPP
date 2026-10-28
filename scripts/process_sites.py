@@ -96,7 +96,7 @@ def main(argv=None) -> int:
     if a.dry_run:
         return 0
     try:                                   # one batch per scapes folder
-        batch = batch_lock(root, "process_sites", force=a.force_start)
+        batch = batch_lock(root, "process_sites", force=a.force_start, sites=[t[0] for t in todo])
     except BatchRunning as e:
         log(f"not started: {e}")
         print(f"\nMPPP: {e}", file=sys.stderr)

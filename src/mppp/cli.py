@@ -156,6 +156,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--aniso-f", action="store_true",
                    help="separate fx and fy thermal slopes (default: one ppm/degC per eye, fy tied to fx)")
     p.add_argument("--no-diagnostics", action="store_true", help="skip the per-block diagnostic pass (no gate then)")
+    p.add_argument("--wait-h", type=float, default=36.0, metavar="H",
+                   help="wait up to this many hours for sites of the groups whose alignment is running (0.95.0; 0: take "
+                        "the finished ones now)")
     p.add_argument("--include-failed", action="store_true", help="also blocks whose alignment health is FAIL "
                    "(left out by default)")
     p.add_argument("--no-k-tests", action="store_true", help="zcam: skip the k1/k2 likelihood-ratio tests (2 more "
@@ -571,6 +574,7 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
         names += list(g_names)
     out, skipped = {}, []
     zoom = int(getattr(a, "zoom", 34) or 34)
+    wanted = []
     for n in dict.fromkeys(names):
         site = table["sites"].get(n)
         if not site:
@@ -582,7 +586,10 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
         if zfolders and not zcam and not site.get("zcam"):
             skipped.append(f"{n} (no Mastcam-Z block)")
             continue
-        work = work_folder(root, n, zfolders, site["sols"])
+        wanted.append((n, work_folder(root, n, zfolders, site["sols"])))
+    # 0.95.0 (Christian, 27 Oct): a site of the group whose alignment is running is waited for, not taken half-done
+    _wait_for_running(wanted, float(getattr(a, "wait_h", 0) or 0))
+    for n, work in wanted:
         done = run_done(work, getattr(a, "variant", "") or "")
         if done is None:
             skipped.append(f"{n} (not finished)")
@@ -599,6 +606,24 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
     if skipped:
         log.info("calib %s: left out: %s", "zcam" if zcam else "navcam", ", ".join(skipped))
     return out
+
+
+def _wait_for_running(wanted, wait_h: float, poll_s: float = 600.0) -> List[str]:
+    """Wait (up to ``wait_h`` hours, polling every ``poll_s``) while any of the ``wanted`` [(name, WORK)] blocks has
+    an alive run status (``mppp_status.json``: a site being aligned); returns the names still running at the end."""
+    import time
+    from .runner import STATUS_FILE, read_status
+    t0 = time.time()
+    while True:
+        running = [n for n, w in wanted if (read_status(Path(w) / STATUS_FILE) or {}).get("alive")]
+        if not running or wait_h <= 0 or time.time() - t0 > wait_h * 3600:
+            if running:
+                log.warning("calib: %s still running (%s) - taken as they are if finished, else left out",
+                            ", ".join(running), "not waited for" if wait_h <= 0 else f"after {wait_h:g} h")
+            return running
+        log.info("calib: waiting for %d running site(s): %s (checking again in %.0f min)", len(running),
+                 ", ".join(running), poll_s / 60)
+        time.sleep(poll_s)
 
 
 def _rejudged(work, variant: str = "", zoom: Optional[int] = None):

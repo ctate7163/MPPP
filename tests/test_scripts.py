@@ -192,9 +192,38 @@ def test_batch_lock_refuses_a_second_batch(tmp_path):
             B.batch_lock(tmp_path, "run_sites")
     finally:
         b.stop("finished")
-    assert read_status(tmp_path / B.BATCH_FILE)["alive"] is False
+    assert read_status(tmp_path / B.BATCH_DIR / f"process_sites_{os.getpid()}.json")["alive"] is False    # 0.95.0: its own file
+    assert not (tmp_path / B.BATCH_FILE).exists()
     b2 = B.batch_lock(tmp_path, "run_sites")                  # free again
     b2.stop("finished")
+
+
+def test_batches_side_by_side_on_other_sites(tmp_path):
+    """0.95.0 (Christian, 27 Oct): a one-site run beside the pipeline - each batch has its own status file; a
+    second batch is refused only when it shares a site with a running one (or either site set is unknown)."""
+    B = _batch()
+    a = B.batch_lock(tmp_path, "run_sites", sites=["chal_rocks", "rochette"])
+    try:
+        assert len(B.alive_batches(tmp_path)) == 1 and B.alive_batches(tmp_path)[0]["sites"] == ["chal_rocks", "rochette"]
+        b = B.batch_lock(tmp_path, "run_sites", sites=["belva_crater"])             # other sites: fine
+        try:
+            assert len(B.alive_batches(tmp_path)) == 2
+            with pytest.raises(B.BatchRunning, match="shares sites with this one \\(rochette\\)"):
+                B.batch_lock(tmp_path, "run_sites", sites=["rochette", "south_arm"])
+            with pytest.raises(B.BatchRunning):                                    # an unknown site set: as before
+                B.batch_lock(tmp_path, "run_sites")
+            c = B.batch_lock(tmp_path, "run_sites", sites=["rochette"], force=True)
+            c.stop("finished")
+        finally:
+            b.stop("finished")
+    finally:
+        a.stop("finished")
+    assert B.alive_batches(tmp_path) == []
+    # the old one-file batch still counts while alive
+    from mppp.runner import RunStatus
+    old = RunStatus(tmp_path / B.BATCH_FILE, pid=os.getpid())
+    old.update(state="running")
+    assert [x["file"] for x in B.alive_batches(tmp_path)] == [str(tmp_path / B.BATCH_FILE)]
 
 
 def test_mppp_processes_picks_the_tops_of_run_trees():
@@ -230,10 +259,13 @@ def test_mark_stopped(tmp_path):
     (tmp_path / "sid_colmap").mkdir()
     a = RunStatus(tmp_path / B.BATCH_FILE, pid=4242)
     a.update(state="running")
+    (tmp_path / B.BATCH_DIR).mkdir()
+    a2 = RunStatus(tmp_path / B.BATCH_DIR / "run_sites_4243.json", pid=4243)       # 0.95.0: the per-batch files too
+    a2.update(state="running")
     b = RunStatus(tmp_path / "sid_colmap" / STATUS_FILE, pid=os.getpid())
     b.update(state="running")
-    changed = B.mark_stopped(tmp_path, [4242])
-    assert changed == [str(tmp_path / B.BATCH_FILE)]
+    changed = B.mark_stopped(tmp_path, [4242, 4243])
+    assert changed == [str(tmp_path / B.BATCH_FILE), str(tmp_path / B.BATCH_DIR / "run_sites_4243.json")]
     assert read_status(tmp_path / B.BATCH_FILE)["state"] == "stopped"
     assert read_status(tmp_path / "sid_colmap" / STATUS_FILE)["alive"] is True
 

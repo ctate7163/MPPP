@@ -16,25 +16,63 @@ from mppp.runner import STATUS_FILE, RunStatus, disable_quickedit, now, pid_aliv
 
 PathLike = Union[str, Path]
 
-BATCH_FILE = "mppp_batch.json"
+BATCH_FILE = "mppp_batch.json"           # before 0.95.0: the one batch file (still read, for an old run's status)
+BATCH_DIR = "mppp_batches"               # 0.95.0 (Christian, 27 Oct): one status file per batch, <kind>_<pid>.json -
+#   a one-site run beside the pipeline no longer needs --force-start and no longer takes over the pipeline's batch
+#   file (stop_mppp stops both, as before); the sites protect themselves with their WORK status files
 
 
 class BatchRunning(RuntimeError):
     """Another process_sites / run_sites batch is running on the same scapes folder."""
 
 
-def batch_lock(root: PathLike, kind: str, argv=None, force: bool = False) -> RunStatus:
-    """Start the status (with heartbeat) of a batch over ``root``; refuses while another batch on ``root`` is alive
-    (two batches would process the same sites at once and see each other's half-written folders)."""
+def alive_batches(root: PathLike) -> List[Dict[str, Any]]:
+    """The batches alive on ``root``: the status dicts (with ``file``) of ``mppp_batches/*.json`` and the old
+    ``mppp_batch.json`` whose heartbeat and process are alive."""
+    root = Path(root)
+    files = sorted((root / BATCH_DIR).glob("*.json")) if (root / BATCH_DIR).is_dir() else []
+    files.append(root / BATCH_FILE)
+    out = []
+    for f in files:
+        cur = read_status(f)
+        if cur and cur.get("alive"):
+            out.append(dict(cur, file=str(f)))
+    return out
+
+
+def batch_lock(root: PathLike, kind: str, argv=None, force: bool = False, sites=None) -> RunStatus:
+    """Start the status (with heartbeat) of a batch over ``root`` - its own file under ``mppp_batches/``.  Refuses
+    while another alive batch names one of this batch's ``sites`` (two batches on one site would see each other's
+    half-written folders); ``force`` starts anyway.  Finished batch files are left for the record (the newest 20)."""
     disable_quickedit()
     root = Path(root)
-    root.mkdir(parents=True, exist_ok=True)
-    cur = read_status(root / BATCH_FILE)
-    if cur and cur.get("alive") and not force:
-        raise BatchRunning(f"{cur.get('kind', 'a batch')} is already running on {root} (pid {cur.get('pid')}, started "
-                           f"{cur.get('started')}, now at {cur.get('site') or '-'}). Stop it with stop_mppp.bat "
-                           f"(or scripts/stop_runs.py) first.")
-    return RunStatus(root / BATCH_FILE, kind=kind, argv=list(argv or sys.argv), site=None).start()
+    d = root / BATCH_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    mine = set(sites or [])
+    for cur in alive_batches(root):
+        theirs = set(cur.get("sites") or []) | ({cur.get("site")} if cur.get("site") else set())
+        clash = (mine & theirs) if (mine and theirs) else None       # unknown site sets: as before, one batch at a time
+        if (clash or clash is None) and not force:
+            raise BatchRunning(f"{cur.get('kind', 'a batch')} is already running on {root} (pid {cur.get('pid')}, started "
+                               f"{cur.get('started')}, now at {cur.get('site') or '-'}; {cur.get('file')}) and shares "
+                               f"sites with this one ({', '.join(sorted(clash or [])) or 'unknown'}). Stop it with "
+                               f"stop_mppp.bat (or scripts/stop_runs.py) first, or --force-start.")
+    old = sorted(d.glob("*.json"), key=lambda f: f.stat().st_mtime)
+    for f in old[:-20]:
+        try:
+            if not (read_status(f) or {}).get("alive"):
+                f.unlink()
+        except OSError:
+            pass
+    f = d / f"{kind}_{os.getpid()}.json"
+    k = 1
+    while f.exists() and (read_status(f) or {}).get("alive"):      # (the same process twice: tests)
+        k += 1
+        f = d / f"{kind}_{os.getpid()}_{k}.json"
+    st = RunStatus(f, kind=kind, argv=list(argv or sys.argv), site=None).start()
+    if sites:
+        st.update(sites=list(sites))
+    return st
 
 
 # --- finding and stopping MPPP runs ----------------------------------------------------------------------------
@@ -98,7 +136,8 @@ def mark_stopped(root: PathLike, pids) -> List[str]:
     root = Path(root)
     changed = []
     files = [root / BATCH_FILE, root / "mppp_pipeline" / "pipeline_status.json",
-             root / "mppp_pipeline" / "weekend_status.json"] + sorted(root.glob(f"*/{STATUS_FILE}"))
+             root / "mppp_pipeline" / "weekend_status.json"] + sorted((root / BATCH_DIR).glob("*.json")) \
+        + sorted(root.glob(f"*/{STATUS_FILE}"))
     for f in files:
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
@@ -117,13 +156,12 @@ def mark_stopped(root: PathLike, pids) -> List[str]:
 def status_table(root: Path) -> int:
     """Print the run status of every WORK folder under ``root`` (``--status`` of the site scripts)."""
     import datetime
-    b = read_status(root / BATCH_FILE)
-    if b:
-        print(f"batch: {b.get('kind')} {'RUNNING' if b.get('alive') else b.get('state')} (pid {b.get('pid')}, "
-              f"started {b.get('started')}{', now at ' + str(b.get('site')) if b.get('alive') and b.get('site') else ''})"
-              + ("  - stop it with stop_mppp.bat" if b.get("alive") else ""))
-    else:
-        print("batch: none")
+    alive = alive_batches(root)
+    for b in alive:
+        print(f"batch: {b.get('kind')} RUNNING (pid {b.get('pid')}, started {b.get('started')}"
+              f"{', now at ' + str(b.get('site')) if b.get('site') else ''}; {Path(b['file']).name})  - stop_mppp.bat stops it")
+    if not alive:
+        print("batch: none running")
     rows = []
     for d in sorted(p for p in root.iterdir() if p.is_dir() and ((p / "processed").is_dir() or (p / STATUS_FILE).is_file())):
         st = read_status(d / STATUS_FILE)

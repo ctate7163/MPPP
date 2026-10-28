@@ -1192,6 +1192,15 @@ def align(work: PathLike, settings: Settings, stop_after: Optional[str] = None) 
     images = load_images(work, s, st.zooms)
     if stop_after == "manifest":
         return {"images": len(images)}
+    # 0.95.0 (Christian, 27 Oct): a block being aligned again is not finished - run_done.json goes now, so a joint
+    # that collects the group's blocks meanwhile waits for it (mppp calib) instead of reading a half-written project
+    stale = project_dir(work, s.variant) / RUN_DONE
+    if stale.is_file():
+        try:
+            stale.unlink()
+            log.info("run_done.json removed: the block is being aligned again")
+        except OSError as e:                                  # noqa: BLE001
+            log.warning("run_done.json not removed (%s)", e)
     proj, info = build_project(work, images, s)
     (proj.root / RUN_SETTINGS).write_text(json.dumps({"mppp": __version__, "run_key": key, "settings": s.to_dict()},
                                                      indent=1), encoding="utf-8")
