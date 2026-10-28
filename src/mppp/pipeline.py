@@ -181,6 +181,7 @@ class Settings:
                                                                max_keypoints=8192, filter_threshold=0.1))   # matching options (the last two: LightGlue)
     lightglue_keypoints: str = "largest"          # 0.94.4: which max_keypoints keypoints LightGlue sees: "largest" scales, or "octaves" (a share of every octave; in the run key only when not "largest")
     match_block_size: int = 100                   # images per exhaustive-matching block
+    export_level: str = "full"                    # 0.95.0 (Christian, 28 Oct): "light" leaves out what a calibration run does not use - the native-pixel text model and residuals of error_input/, error_input_navcam/ and the COLMAP GUI copy (gui_native/); "full": everything (not in the run key; run_pipeline's site runs are light unless --export)
     keep_databases: bool = False                  # 0.95.0: keep the run's database copies (database_thermal.db, database_guided.db; without descriptors) after the run - deleted by default (not in the run key)
 
     # --- reconstruction ------------------------------------------------------------------------------------------
@@ -281,7 +282,7 @@ def hazcam_families(v: Any) -> Tuple[str, ...]:
             raise ValueError(f"hazcams = {v!r}: use 'F' (front), 'R' (rear) or both")
     return tuple(f for f in ("F", "R") if f in out)
 NOT_IN_KEY = {"pds_dir", "scapes_root", "gpu_python", "colmap_bat", "workers", "gui_files", "sites_file",
-              "source", "variant", "max_exhaustive_images", "exclude_list", "keep_databases"}
+              "source", "variant", "max_exhaustive_images", "exclude_list", "keep_databases", "export_level"}
 SETTING_NAMES = tuple(f.name for f in fields(Settings))
 
 
@@ -1067,6 +1068,9 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
         log.info("waypoint position priors left out (flagged): %s", ", ".join(s.no_position_prior_at))
     rig_refine = _rig_refine(s)
     z = bool(s.include_zcam)
+    light = str(s.export_level or "full") == "light"      # 0.95.0: a calibration run's export
+    if light:
+        log.info("export level light: no native text model, residuals, Navcam-stage export or COLMAP GUI copy")
     rec = reconstruct(proj, sigma_px=0.5, schedule=s.schedule, refine_rig=rig_refine,
                       refine_tangential=_refine_tangential(s), min_track_length=2,
                       min_tri_angle_deg=s.min_tri_angle_deg, attitude_prior_deg=s.attitude_prior_deg,
@@ -1083,7 +1087,8 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
                       isolated_points_factor=float(s.isolated_points_factor or 0),
                       navcam_aspect=s.navcam_aspect, thermal_after_stage1=bool(s.thermal_after_stage1),
                       round1_hold=bool(s.round1_hold), zcam_station_prior_sigma_m=float(s.zcam_station_prior_sigma_m or 0),
-                      rig_translation_sigma_m=s.rig_translation_sigma_m if rig_refine is True else None)
+                      rig_translation_sigma_m=s.rig_translation_sigma_m if rig_refine is True else None,
+                      gui_native=not light)
     rs = proj.settings["reconstruction"]
     log.info("Navcam intrinsics: %s | held cameras: %s | staged: %s", rs.get("navcam_intrinsics"),
              rs.get("hold_cameras") or "none", rs.get("staged"))
@@ -1094,11 +1099,11 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
                  v["cross_points"], v["prior"])
     for e in excluded:
         log.info("   %s | %s | %s", ", ".join(e["images"]), e["station"], "; ".join(e["reasons"]))
-    summary = export_for_error(proj, rec)
+    summary = export_for_error(proj, rec, level="light" if light else "full")
     log.info("export: %s", json.dumps({k: summary[k] for k in ("tracks", "residual_rms_native_px", "registered_images",
                                                                 "project_images", "prior_offset_median_m",
                                                                 "station_components")}, default=str))
-    if rs.get("navcam_stage"):
+    if rs.get("navcam_stage") and not light:
         import pycolmap
         rec_nav = pycolmap.Reconstruction(str(proj.root / rs["navcam_stage"]["path"]))
         nav = export_for_error(proj, rec_nav, out_dir=proj.root / "error_input_navcam")

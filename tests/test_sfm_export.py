@@ -172,3 +172,26 @@ def test_stations_csv_records_the_sun_and_the_block_frame(tmp_path):
     assert abs(float(r1["sun_bx"]) - float(r1["sun_e"])) < 0.01 and abs(float(r1["sun_bz"]) - 0.5) < 0.01
     assert rows[0]["sun_e"] == "" and rows[0]["sun_bx"] == ""
     assert rows[1]["d_mars_source"] in ("ls_ellipse", "") and (rows[1]["d_mars_au"] == "" or 1.3 < float(rows[1]["d_mars_au"]) < 1.7)
+
+
+def test_export_level_light_leaves_out_the_native_model_and_residuals(tmp_path):
+    """0.95.0 (Christian, 28 Oct): a calibration run's export keeps the summary, the tables and the block frame
+    and leaves out the native-pixel text model and the residuals (the joints read sparse/<model>, project.json and
+    the health report); the setting is not in the run key, and run_pipeline's site runs are light unless --export."""
+    pytest.importorskip("pyceres")
+    import json
+    from helpers import _build_rec, _synthetic
+    from mppp.sfm.export import export_for_error
+    proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
+    rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
+    s = export_for_error(proj, rec, tmp_path / "ei", level="light")
+    ei = tmp_path / "ei"
+    assert s["native_model"] == {"skipped": "export level light"} and not (ei / "native").exists()
+    assert not (ei / "residuals.npz").exists()
+    assert all((ei / f).is_file() for f in ("summary.json", "stations.csv", "poses.csv", "block_frame.json"))
+    assert json.loads((ei / "summary.json").read_text())["eps"]["n_intra_obs"] > 0      # eps from the residuals held
+    from mppp.pipeline import NOT_IN_KEY, Settings
+    assert Settings().export_level == "full" and "export_level" in NOT_IN_KEY
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "studies" / "calibration" / "run_pipeline.py").read_text(encoding="utf-8")
+    assert '"--export"' in src and "export_level=light" in src

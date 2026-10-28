@@ -497,10 +497,15 @@ def epsilon_from_residuals(res: Dict[str, np.ndarray], image_names: Dict[int, st
     return out
 
 
-def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = None) -> Dict[str, Any]:
+def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = None, level: str = "full") -> Dict[str, Any]:
+    """``error_input/``: the summary, the station and pose tables, the block frame and (``level="full"``) the
+    native-pixel text model and the residuals.  ``level="light"`` (0.95.0, Christian, 28 Oct: what a calibration
+    run does not use) leaves those two out - the joints read ``sparse/<model>``, ``project.json`` and the health
+    report; the summary says ``"native_model": {"skipped": ...}``."""
     out = Path(out_dir) if out_dir else project.root / "error_input"
     out.mkdir(parents=True, exist_ok=True)
-    native = write_native_text_model(rec, project, out / "native")
+    full = str(level or "full") != "light"
+    native = write_native_text_model(rec, project, out / "native") if full else {"skipped": "export level light"}
 
     # 0.95.0 (Christian, 27 Oct): the block's tilt from the label ENU frame and the sun in the block frame, recorded
     # at freeze time for the paper-3 work (mppp.sun)
@@ -538,7 +543,8 @@ def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
             w.writeheader()
             w.writerows(rows)
     res = native_residuals(rec, project)
-    np.savez_compressed(out / "residuals.npz", **res)
+    if full:
+        np.savez_compressed(out / "residuals.npz", **res)
 
     try:
         eps = epsilon_from_residuals(res, {int(i): rec.images[i].name for i in rec.reg_image_ids()},
