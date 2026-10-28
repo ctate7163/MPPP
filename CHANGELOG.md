@@ -61,6 +61,47 @@ the database copies shrink and go, and the hand exclusions of Taylorfjellet and 
   features on the full-resolution Navcam frames, which the zoomed-in Mastcam-Z frames tie to; one extraction pass per
   distinct count; `features.json` records the dict, so every site's features are extracted again).
 - Health: the Navcam `corner_triangulated_ratio` fails below 0.15 (0.94.5).
+- **Hazcam pairs off their station are dropped, not the block** (Three Forks North: one front pair tied by 1100 points
+  slid 0.9 m and failed the block on its station's shift spread): a Hazcam pair farther than `hazcam_shift_m` = 0.3 m
+  from the median shift of its station's Navcam frames with fewer than `hazcam_strong_observations` = 3000 is excluded
+  like a Mastcam-Z frame short of Navcam ties, from a single Navcam frame on (the station MAD test needed three).
+- **79 / 110 mm bins off the focus lines** (`Settings.zcam_line_zooms` = (34, 48, 63)): a zoom without a real model
+  keeps its refined values per bin (Chal Rocks ZR079 fy on lines: rms 42 px).
+- **Frames without tie points** carry their label boresight elevation (sky or far field above 3 deg) and are counted
+  per sequence in the run log (Overlook Mountain: 101 frames of four 48 mm sequences).
+
+### Speed (Christian, 28 Oct: Chal Rocks 8.6 h with 79/110 mm, Taylorfjellet > 11 h)
+
+- **`MPPP_THREADS`**: `run_sites` divides the cores among its jobs; the bundle adjustments, the matcher, the extractor
+  and the guided matcher take that many threads (three Ceres solvers no longer oversubscribe the CPU).
+- **`Settings.zcam_zooms_only`** (`run_pipeline --zooms`, default 34 48 63; `--all-site-zooms` for every zoom): the
+  freeze runs keep the zooms being calibrated; 79 / 110 mm wait for a pass of their own.
+- **Mastcam-Z pairs verified uncalibrated from the start** (`Settings.zcam_uncalibrated_matching`; `match
+  (uncalibrated_families=("Z",))`): COLMAP's calibrated estimators abort on a pair whose keypoints fail to unproject and
+  the pass before the retry was lost (0.4 h at Chal Rocks). Recorded in the matches record; a Mastcam-Z run key.
+- **Two stage-2 rounds instead of three when the focus lines settle** (`Settings.zcam_line_settle_px` = 0.1): each
+  refit records how far its lines moved the bins from where the round started (`focus_line_change_px`); below the
+  limit the remaining rounds are skipped. 0 never skips.
+- **Pose-guided matching for the weak frames, before their exclusion** (`GUIDED_DEFAULTS["scope"]` = "weak", through
+  `Settings.pose_guided = {"scope": ...}`): the Mastcam-Z frames with fewer than `weak_navcam_ties` = 50 anchor ties, or
+  no tie points at all, get their guided matches in the exclusion round, before the exclusion that would drop them
+  (Overlook Mountain: 101 frames "no tie points" lost in round 2, then 735 k guided Navcam-Z matches they could not
+  use); a frame without points gets its pairs from the partners' points in its frame and a depth window from them.
+  "all" adds the every-frame pass after the rounds (0.94's +15-19 % ties at ~2 h), "final" is that pass alone. Report
+  in `pose_guided_weak`, `database_guided_weak.db`.
+- **Point thinning in the adjustments** (`Settings.ba_points_cap`, 0 = all; study S2): at most that many two-view,
+  same-family, same-station points per image, spread over an 8 x 6 grid, every tie kept (`thin_points`); the
+  adjustment reports `points_in_adjustment`. The points stay in the model.
+- **`Settings.export_level = "light"`** (`run_pipeline`'s site runs unless `--export`): no native text model,
+  residuals, `error_input_navcam/` or `gui_native/` - the joints read `sparse/<model>`, `project.json` and the health
+  report; `summary.json`, `stations.csv`, `poses.csv` and `block_frame.json` stay.
+
+### Studies (`scripts/tie_point_studies.py`)
+
+- S1 feature budget, S2 point thinning (against the all-points solution: frame centres, attitudes, per-bin focals), S3
+  matcher and verification, S4 pair selection and the pose-guided scope, S5 filters, S6 the per-bin focal residual
+  about the lines by observation band (for `MIN_BIN_OBSERVATIONS`): variant sets run as `mppp run --variant
+  <study>_<variant>` on the three tiny blocks, measured the same way (completeness, quality, time per step).
 
 ### Navcam joint
 
