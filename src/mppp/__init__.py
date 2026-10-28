@@ -6,12 +6,12 @@ Mastcam-Z into photogrammetry-ready imagery, masks, camera models and pose
 priors for Agisoft Metashape and COLMAP.
 
 Versioning: ``__version__`` (PEP 440) is the single source of the version;
-``pyproject.toml`` reads it, and ``VERSION_TAG`` (``v0p90``) is derived from it
+``pyproject.toml`` reads it, and ``VERSION_TAG`` (``v0p95``) is derived from it
 for file names, notebooks and output snapshots.  Releases before 1.0 were
 tagged ``v0pN``; see CHANGELOG.md and docs/history/.
 """
 
-__version__ = "0.94.5"
+__version__ = "0.95.0"
 
 
 def _tag(version: str) -> str:

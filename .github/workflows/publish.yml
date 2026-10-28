@@ -1,4 +1,4 @@
-# Publish MPPP to PyPI (https://pypi.org/project/mppp/) when a GitHub release is published (0.94.4).
+# Publish MPPP to PyPI (https://pypi.org/project/mppp/) when a GitHub release is published (0.94.4 onwards).
 # Trusted publishing (OpenID Connect): no API token is stored anywhere. One-time setup on pypi.org - a "pending
 # publisher" for the project name mppp, owner ctate7163, repository MPPP, workflow publish.yml, environment pypi
 # (docs/RELEASING.md, section 8). "Run workflow" by hand publishes to TestPyPI instead, as a rehearsal.
