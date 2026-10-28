@@ -1120,7 +1120,11 @@ def check_navcam(candidate_dir: PathLike, current_dir: Optional[PathLike] = None
     nb = len(res.get("blocks") or {})
     add("blocks", nb, lim["min_blocks"], nb >= lim["min_blocks"])
     sd = res.get("sd") or {}
-    finite = all(isinstance(sd.get(e), dict) and "diag" not in sd[e] and all(np.isfinite(list(sd[e].values())))
+    # 0.94.5: a held term has no sd (NaN) - G_NL_cy since 27 Oct, the k4s before; only the fitted terms count
+    held_t = {(str(h).split("_")[1], str(h).split("_", 2)[2]) for h in (res.get("hold") or [])
+              if str(h).startswith("G_N") and str(h).count("_") >= 2}
+    finite = all(isinstance(sd.get(e), dict) and "diag" not in sd[e]
+                 and all(np.isfinite(v) for k, v in sd[e].items() if (e, k) not in held_t)
                  for e in ("NL", "NR"))
     # 0.94.4 (24 Oct): the joint's own covariance is required - the bin-camera fallback ignores the correlations
     # (3-4x small: +-0.14 against +-0.52 ppm/degC) and the rig terms' sd must be finite (24 Oct: pitch, yaw rate inf)

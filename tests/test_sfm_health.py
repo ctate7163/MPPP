@@ -401,3 +401,13 @@ def test_corner_check_warns_for_mastcam_z_fails_for_navcam(monkeypatch):
     monkeypatch.setattr(H, "zcam_uncalibrated_groups", lambda groups: set())      # 63 mm calibrated here
     v, changed = rejudge(rep)
     assert v == "warn" and changed == ["corner_triangulated_ratio: fail -> warn (ZL063: 9 %)"]
+
+
+def test_rejudge_corner_without_a_camera_to_judge_is_info():
+    """0.94.5 regression: a saved corner FAIL whose coverage has no camera left to judge (Hazcams only) is "info",
+    as before - not the old status."""
+    from mppp.sfm.health import rejudge
+    rep = {"checks": [{"check": "corner_triangulated_ratio", "status": "fail", "value": 0.04, "note": "FL: 3 %"}],
+           "coverage_by_radius": _cov({"FL": (0.5, 0.02)})}
+    v, changed = rejudge(rep)
+    assert v == "info" and changed == ["corner_triangulated_ratio: fail -> info (FL: 3 %)"]

@@ -1,0 +1,226 @@
+{
+ "method": "tied",
+ "blocks": {
+  "oeb_landing_site": 220,
+  "chal_rocks_large": 163,
+  "chal_rocks": 83,
+  "artuby_ridge": 72,
+  "rochette": 42,
+  "issole_seitah_south": 129,
+  "seitah_north_large": 306,
+  "threeforks_large": 380,
+  "enchanted_lake": 115,
+  "knob_mountain_large": 245,
+  "rockytop": 215,
+  "belva_crater_large": 181,
+  "tuxedo_park": 116,
+  "hans_amundsen_workspace": 60,
+  "bunsen_peak": 227,
+  "cheyava_falls": 203,
+  "plateau_point": 95,
+  "pico_turquino": 81,
+  "south_arm": 107,
+  "witch_hazel_hill": 163,
+  "bell_island_large": 334,
+  "taylorfjellet": 243,
+  "taylorfjellet_large": 400,
+  "origny_large": 262,
+  "vingeanne": 133,
+  "hippo_pools": 90,
+  "marble_mountain": 131,
+  "groloy": 74
+ },
+ "T0_degC": -20.0,
+ "sd": {
+  "NL": {
+   "fx": 0.018652025070301642,
+   "fy": 0.03271663876851858,
+   "cx": 0.03878235821823349,
+   "cy": NaN,
+   "k1": 3.509842196466565e-05,
+   "k2": 7.518258459782836e-05,
+   "p1": 2.569452839336972e-06,
+   "p2": 8.24367290422566e-07,
+   "k3": 4.999953983808114e-05,
+   "k4": NaN
+  },
+  "NR": {
+   "fx": 0.01845855627193064,
+   "fy": 0.032394305481197476,
+   "cx": 0.03863640400630139,
+   "cy": 0.014276090935955995,
+   "k1": 3.422934873599281e-05,
+   "k2": 7.34231151656719e-05,
+   "p1": 2.6417385121056674e-06,
+   "p2": 8.40981134823527e-07,
+   "k3": 4.8691402645784666e-05,
+   "k4": NaN
+  }
+ },
+ "iterations": 4,
+ "final_cost": 140520.54202256678,
+ "residuals": {
+  "observations": 833397,
+  "median_px": 0.15509312438866527,
+  "rms_px": 0.33978596090526675,
+  "corner_median_px": 0.19912541349948049,
+  "p95_px": 0.6799318483660802
+ },
+ "covariance_error": null,
+ "covariance_damping": 1e-08,
+ "early_mission": {
+  "converged": true,
+  "per_eye": true,
+  "rounds": [
+   {
+    "positive_definite": true
+   }
+  ],
+  "offsets_px": {
+   "NL_fx": 0.0,
+   "NL_fy": 0.0,
+   "NL_cx": 0.0,
+   "NL_cy": 0.13718221032887473,
+   "NR_fx": 0.0,
+   "NR_fy": 0.0,
+   "NR_cx": 0.0,
+   "NR_cy": 0.1520735253660285
+  },
+  "sd_px": {
+   "NR_cy": 0.00375761986207998
+  },
+  "z": {
+   "NR_cy": 40.47070511327621
+  },
+  "applied_terms": [
+   "NL_cy",
+   "NR_cy"
+  ]
+ },
+ "thermal": {
+  "yaw_rate_mdeg_per_1000sol": 3.9395626993296182,
+  "sd": {
+   "yaw_rate": 0.10082654746647561
+  },
+  "axis_ppm": {
+   "NL": [
+    35.80063906968436,
+    35.800639069684365
+   ],
+   "NR": [
+    35.87448809946688,
+    35.87448809946687
+   ]
+  },
+  "pp_slopes": {
+   "NL": [
+    0.035300754056845074,
+    0.015142203926164392
+   ],
+   "NR": [
+    -0.01955552951889426,
+    0.013692868180897917
+   ]
+  },
+  "k1_slopes": {
+   "NL": -6.073654570038851e-06,
+   "NR": -6.073654570038851e-06
+  }
+ },
+ "sd_source": null,
+ "rig_sd": {
+  "Q0_pitch": 0.33279785142630885,
+  "D_pitch": 0.0485409817081473,
+  "D_yaw": 0.10082654746647561,
+  "Q0_roll": 0.09214420125651303,
+  "D_roll": 0.07175485282239438,
+  "H_pitch": 0.6866183381186998
+ },
+ "pass_costs": [
+  [
+   5638783.178748469,
+   140420.85542483506
+  ],
+  [
+   143402.6225903213,
+   140520.54202256678
+  ]
+ ],
+ "block_agreement": {
+  "ok": true,
+  "limits": {
+   "f_ppm": 250.0,
+   "fy_ppm": 500.0,
+   "rig_mdeg": 8.0,
+   "min_images": 8,
+   "max_share": 0.1
+  },
+  "cameras": 248,
+  "cameras_off": 20,
+  "share_cameras_off": 0.08064516129032258,
+  "rigs": 126,
+  "rigs_off": 9,
+  "share_rigs_off": 0.07142857142857142,
+  "worst_camera_ppm": 1712.367397368269,
+  "worst_rig_mdeg": 14.029242388336094,
+  "blocks_off": [
+   "bell_island_large",
+   "belva_crater_large",
+   "bunsen_peak",
+   "chal_rocks_large",
+   "cheyava_falls",
+   "issole_seitah_south",
+   "oeb_landing_site",
+   "origny_large",
+   "taylorfjellet",
+   "taylorfjellet_large",
+   "threeforks_large",
+   "tuxedo_park",
+   "vingeanne"
+  ]
+ },
+ "rig_abs_mdeg": {
+  "yaw_mdeg": 40.444693434857214,
+  "pitch_mdeg": -101.2776798633336,
+  "roll_mdeg": -57.39307826459285
+ },
+ "hold": [
+  "Q0_yaw",
+  "G_NL_k4",
+  "G_NR_k4",
+  "G_NL_cy",
+  "E_NL_cy",
+  "E_NL_fx",
+  "E_NL_fy",
+  "E_NL_cx",
+  "E_NR_fx",
+  "E_NR_fy",
+  "E_NR_cx"
+ ],
+ "seconds": 2924.2149341106415,
+ "NL": {
+  "fx": 2956.2686189226183,
+  "fy": 2956.345419271108,
+  "cx": 2591.4457461362817,
+  "cy": 1944.3244913684302,
+  "k1": 0.045198938533410955,
+  "k2": -0.010322036111022621,
+  "p1": 0.00026007754564908006,
+  "p2": 0.00036691316200320357,
+  "k3": 0.003670989121830375,
+  "k4": -0.0066247548794873224
+ },
+ "NR": {
+  "fx": 2948.7325128466346,
+  "fy": 2948.9125096890075,
+  "cx": 2573.0967158074845,
+  "cy": 1950.3371286084919,
+  "k1": 0.047577727837118215,
+  "k2": -0.016387875442197088,
+  "p1": 2.1241715426741587e-05,
+  "p2": -0.00020262629045221043,
+  "k3": 0.008964474153839674,
+  "k4": -0.00804371121051261
+ },
+ "note": "the 27 Oct Navcam joint's consensus.json (navcal_tied_20261027): a fixture for the promotion check"
+}

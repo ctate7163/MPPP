@@ -1085,7 +1085,7 @@ def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = Non
                 skip |= {g for g in cams if _group_zoom(g) not in (None, int(report["zoom_restricted"]))}
             wc, st_c = corner_check(report["coverage_by_radius"], thr, skip_groups=sorted(skip))
             v = wc[1] if wc else None
-            st = st_c if wc else st0
+            st = st_c if wc else _status(name, None, thr)     # no camera to judge: "info", as before 0.94.5
         else:
             st = _status(name, v, thr) if name in thr else st0
         if st == "fail" and name in warn_only:

@@ -1,5 +1,6 @@
 """The one-adjustment Navcam joint (mppp.calib.tied) on a synthetic block: units, ties, result, files."""
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -408,3 +409,28 @@ def test_nl_cy_held_and_one_k1_slope(tmp_path):
     ba3, g3, _ = T.adjust_tied(rec3, proj3, idx, st, units3, iterations=10, covariance=False, passes=1, verbose=False,
                                tie_k1=False)
     assert 4 not in ((ba3.get("extra") or {}).get("held") or {}).get("S_NR", [])
+
+
+def test_covariance_check_skips_held_terms(tmp_path):
+    """0.94.5 (27 Oct: the joint holding NL cy failed promotion on "covariance missing" - a held term has no sd):
+    the covariance check counts only the fitted terms; a NaN on a fitted term still fails it."""
+    import shutil
+    from mppp.calib import models as M
+    from mppp.calib.fit import check_navcam
+    cur = M._folder(None)
+    cand = tmp_path / "cand"
+    cand.mkdir()
+    for f in M.NAVCAM_FILES:
+        shutil.copy(cur / f, cand / f)
+    nan = float("nan")
+    sd = {e: {"fx": 0.02, "fy": 0.03, "cx": 0.04, "cy": 0.014, "k1": 3e-5, "k2": 7e-5, "p1": 3e-6, "p2": 8e-7,
+              "k3": 5e-5, "k4": nan} for e in ("NL", "NR")}
+    sd["NL"]["cy"] = nan
+
+    def cov_check(hold):
+        base = json.loads((Path(__file__).parent / "data" / "navcam_consensus_20261027.json").read_text())
+        (cand / "consensus.json").write_text(json.dumps(dict(base, sd=sd, hold=hold)))
+        return next(c for c in check_navcam(cand, cur)["checks"] if c["check"] == "covariance")
+
+    assert cov_check(["Q0_yaw", "G_NL_k4", "G_NR_k4", "G_NL_cy", "E_NL_cy"])["ok"]
+    assert not cov_check(["Q0_yaw", "G_NL_k4", "G_NR_k4"])["ok"]          # NL cy NaN but fitted
