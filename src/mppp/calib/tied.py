@@ -93,6 +93,9 @@ HOLD_DEFAULT = ("Q0_yaw", "G_NL_k4", "G_NR_k4", "G_NL_cy", "E_NL_cy")
 # eyes' cy deviations correlate at 0.999 - left minus right 0.03 px rms against 0.77 px rms shared: the shared part is
 # head pitch (1 px ~ 19 mdeg), the per-block pointing's (lawcheck: cy chi^2/dof ~16).  NL because the rig refers to
 # it: NR cy then carries only the stereo vertical offset, which is well measured.
+# 0.95.0 (Christian, 27 Oct): a held early-mission offset of the reference eye is held at 0, not at the value the
+# 24 Oct fit left in the model in use (E_NL_cy 0.137 px): NR's early cy is then the stereo early offset (~0.015 px)
+EARLY_HELD_AT_ZERO = ("E_NL_cy",)
 TIE_K1_SLOPE = True   # 0.94.5 (Christian, 27 Oct): NR's k1 thermal slope tied to NL's - one design (the tied joint had
                       # NL -8.2 +- 1.2, NR -4.0 +- 1.3 x 1e-6/degC; the weighted mean about -6.1)
 # 0.95.0 (Christian, 27 Oct: NL 35.80, NR 35.87 ppm/degC, 0.07 +- 0.13 apart, r 0.95): NR's focal thermal slope tied
@@ -508,6 +511,10 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
     sig = np.array([TIE_SIGMA["fx"], TIE_SIGMA["fy"], TIE_SIGMA["cx"], TIE_SIGMA["cy"]] + [TIE_SIGMA["k"]] * 6)
     knot = float(st["knot"])
     hold = list(hold) + ["H_yaw", "H_roll"]
+    for h in EARLY_HELD_AT_ZERO:                        # 0.95.0: a held reference-eye early offset is 0
+        if h in hold and tie_cameras:
+            _, eye, k = h.split("_")
+            g[f"E_{eye}"][EARLY_TERMS.index(k)] = 0.0
     if iso_f and tie_cameras:
         hold += ["S_NL_fy", "S_NR_fy"]
         sync_iso(g)

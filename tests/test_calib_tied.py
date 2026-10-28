@@ -524,3 +524,18 @@ def test_focal_thermal_slope_tied_across_the_eyes(tmp_path):
     rec3, proj3, units3 = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
     ba0, g0, _ = T.adjust_tied(rec3, proj3, idx, st, units3, iterations=40, covariance=False, passes=1, verbose=False)
     assert not ba0["extra"]["tie_f"] and 0 not in set(ba0["extra"]["held"]["S_NR"])
+
+
+def test_held_reference_early_offset_is_zero(tmp_path):
+    """0.95.0 (Christian, 27 Oct): with E_NL_cy held (HOLD_DEFAULT) it is held at 0, not at the start model's value."""
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    assert "E_NL_cy" in T.HOLD_DEFAULT and T.EARLY_HELD_AT_ZERO == ("E_NL_cy",)
+    st["E"]["NL"] = np.array(st["E"]["NL"], float)
+    st["E"]["NL"][3] = 0.137
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, _ = T.adjust_tied(rec2, proj2, idx, st, units, iterations=20, covariance=False, passes=1, verbose=False)
+    assert g["E_NL"][3] == 0.0
+    ba, g, _ = T.adjust_tied(rec2, proj2, idx, st, units, hold=("Q0_yaw",), iterations=20, covariance=False, passes=1,
+                             verbose=False)
+    assert g["E_NL"][3] != 0.0 or "E_NL" in ba["extra"]["held"]      # not held by name: the start value stays

@@ -78,6 +78,8 @@ the database copies shrink and go, and the hand exclusions of Taylorfjellet and 
   the new slopes, which is not a reason for a pass.
 - `--tie-f-slope` (`TIE_F_SLOPE`, off): NR's focal thermal slope tied to NL's ppm/degC, for the comparison run (27
   Oct: 35.80 and 35.87, 0.07 +- 0.13 apart).
+- A held early-mission offset of the reference eye is held at 0 (`EARLY_HELD_AT_ZERO`: `E_NL_cy`), not at the 0.137 px
+  the 24 Oct fit left in the model in use; NR's early cy is then the stereo early offset.
 
 ### Recorded for the paper-3 work (`mppp.sun`)
 
