@@ -604,7 +604,7 @@ class SfmProject:
                                          if _fb_file is not None else None),
                     "zcam_low_backlash": {"file": _lb["file"], "images": int(n_low),
                                           "disabled": zcam_low_backlash is False,     # 0.93.5: no list at all
-                                          "entries": len(_lb["entries"]) + len(_lb["sol_sequences"]),
+                                          "entries": len(_lb["entries"]) + len(_lb["sol_sequences"]) + len(_lb.get("sol_zooms") or []),
                                           "found_file": _lb.get("found_file"), "found": _lb.get("found", 0)},
                     "navcam_distortion": navcam_distortion, "navcam_rig": navcam_rig, "prior_R_corrected": True,
                     "navcam_distortion_fit": navcam_distortion_fit, "navcam_k4": navcam_k4,

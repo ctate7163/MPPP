@@ -29,6 +29,8 @@ through the shared points).
 """
 from __future__ import annotations
 
+import re
+
 import copy
 import logging
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -125,7 +127,9 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
     (``ZL0_0121_0677679408_053RAD_N0041250ZCAM08114_034085A03``), ``0121_0677679408_053`` (sol, clock), ``ZCAM07114_034``
     (a sequence at one zoom), ``ZCAM08114`` (a sequence at every zoom) - matched as a substring of the image's file name
     (case-insensitive); ``sol:sequence`` (``363:ZCAM08394``) also works.  A trailing ``?`` (uncertain) is kept as
-    an entry and counted in ``uncertain``.  0.94.4: an entry starting with ``-`` takes frames OFF the list (any of
+    an entry and counted in ``uncertain``.  0.95.0: ``1150-1155:048`` (or ``1150:048``) - every frame of that zoom on
+    those sols (Christian, 28 Oct: Overlook Mountain's 48 mm images are low-state), key ``sol_zooms``.  0.94.4: an
+    entry starting with ``-`` takes frames OFF the list (any of
     the forms above; it wins over every match, in either file): ``-0121_0677678972_053`` (sol 121 pointing 2).  A full product name also matches the same eye and spacecraft clock
     whatever its product type and version (``ZL0_0091_0675031997_228RAD_...A03`` matches ``ZLF_0091_0675031997_228EBY_...J01``,
     key ``clocks``).  Every other Mastcam-Z image is in the high-backlash state, except at
@@ -133,12 +137,12 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
     """
     import re
     if path is False:                                  # no list: every Mastcam-Z image high-backlash
-        return {"entries": set(), "sol_sequences": set(), "clocks": set(), "uncertain": [], "file": None,
-                "excluded": {"entries": set(), "sol_sequences": set(), "clocks": set()}}
+        return {"entries": set(), "sol_sequences": set(), "clocks": set(), "sol_zooms": [], "uncertain": [], "file": None,
+                "excluded": {"entries": set(), "sol_sequences": set(), "clocks": set(), "sol_zooms": []}}
     f = low_backlash_path(path)
-    out: Dict[str, Any] = {"entries": set(), "sol_sequences": set(), "clocks": set(), "uncertain": [], "file": str(f),
-                           "found_file": None, "found": 0,
-                           "excluded": {"entries": set(), "sol_sequences": set(), "clocks": set()}}
+    out: Dict[str, Any] = {"entries": set(), "sol_sequences": set(), "clocks": set(), "sol_zooms": [], "uncertain": [],
+                           "file": str(f), "found_file": None, "found": 0,
+                           "excluded": {"entries": set(), "sol_sequences": set(), "clocks": set(), "sol_zooms": []}}
     texts = [f.read_text(encoding="utf-8-sig")] if f.is_file() else []
     if found:                                          # the observations notebook 03 classified (found list)
         from pathlib import Path as _P
@@ -167,6 +171,12 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
             m = re.fullmatch(r"(\d+):(ZCAM\d{5})", tok, re.I)
             if m:
                 dst["sol_sequences"].add((int(m.group(1)), m.group(2).upper()))
+                continue
+            m = re.fullmatch(r"(\d+)(?:-(\d+))?:(\d{3})", tok)        # 0.95.0: sols (a range) at one zoom
+            if m:
+                lo, hi, z = int(m.group(1)), int(m.group(2) or m.group(1)), int(m.group(3))
+                if (lo, hi, z) not in dst["sol_zooms"]:
+                    dst["sol_zooms"].append((lo, hi, z))
                 continue
             for ext in (".IMG", ".PNG", ".LBL"):
                 if tok.upper().endswith(ext):
@@ -306,8 +316,18 @@ def _matches(row: Dict[str, Any], lst: Dict[str, Any]) -> bool:
     try:
         sol = int(row.get("sol"))
     except (TypeError, ValueError):
-        sol = None
-    return (sol, seq) in lst.get("sol_sequences", ())
+        m = re.match(r"Z[LR][0-9A-Z]_(\d{4})_", name)       # the sol from the product name
+        sol = int(m.group(1)) if m else None
+    if (sol, seq) in lst.get("sol_sequences", ()):
+        return True
+    if sol is not None and lst.get("sol_zooms"):
+        z = group_zoom(row.get("camera_group", row.get("instrument")))
+        if z is None:
+            m = re.search(r"ZCAM\d{5}_(\d{3})", name)         # the zoom from the product name
+            z = int(m.group(1)) if m else None
+        if z is not None and any(lo <= sol <= hi and z == zz for lo, hi, zz in lst["sol_zooms"]):
+            return True
+    return False
 
 
 def group_zoom(group: Any) -> Optional[int]:

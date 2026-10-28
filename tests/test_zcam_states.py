@@ -24,7 +24,7 @@ def test_found_list_lines_and_exclusions(tmp_path):
     assert is_low_backlash(row(_name("R", 684, 728371111, "ZCAM07114"), 684, "ZCAM07114"), lst)
     assert not is_low_backlash(row(_name("L", 501, 711425107, "ZCAM07114"), 501, "ZCAM07114"), lst)
     assert not is_low_backlash(row(b, 121, "ZCAM08114"), lst)
-    assert {k: len(v) for k, v in lst["excluded"].items()} == {"entries": 2, "sol_sequences": 0, "clocks": 1}
+    assert {k: len(v) for k, v in lst["excluded"].items()} == {"entries": 2, "sol_sequences": 0, "clocks": 1, "sol_zooms": 0}
     assert default_found_path(tmp_path) == found
 
 

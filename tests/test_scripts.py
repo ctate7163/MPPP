@@ -471,3 +471,16 @@ def test_tie_point_studies_scaffold(tmp_path, capsys):
     md6 = T.report_site(tmp_path, "S6", {"when": "now", "variants": {"default": vs["all"]}})
     assert "per-bin focal residual about the lines vs observations" in md6
     assert "| S2 (" in T.report_all(tmp_path, "S2", {"x": {"variants": vs, "report": "r.md"}}) or "# S2" in T.report_all(tmp_path, "S2", {"x": {"variants": vs, "report": "r.md"}})
+
+
+def test_trial_joints_bat_runs_every_0p95_joint_without_promoting():
+    """0.95.0 (Christian, 28 Oct): the trial of the 0.95.0 joints over the blocks aligned on 0.94 - the Navcam joint
+    twice (with and without --tie-f-slope), the law check of the candidate, the Hazcam fit, the Mastcam-Z joints of
+    34, 48 and 63 mm, the N+Z check on request; nothing promoted, no waiting for running blocks."""
+    b = (ROOT / "scripts" / "windows" / "trial_joints_0p95.bat").read_bytes()
+    assert b"\r\n" in b and b.count(b"\n") == b.count(b"\r\n")
+    t = b.decode("ascii")
+    assert t.count("calib navcam") == 2 and "--tie-f-slope" in t and "calib lawcheck" in t and "calib hazcam" in t
+    assert "calib zcam --zoom %%Z" in t and 'MPPP_ZOOMS=34 48 63' in t and "calib nz" in t
+    assert "--promote-if-ok" not in t and t.count("--no-promote") == 4 and t.count("--wait-h 0") == 7   # nz never promotes
+    assert "mppp_env.bat" in t and "trial_0p95_" in t and "plot_lawcheck.py" in t

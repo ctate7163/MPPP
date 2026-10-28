@@ -370,6 +370,18 @@ def test_low_backlash_list_shipped_and_matching(tmp_path):
     assert is_low_backlash(row("ZLF_0005_0600000000_000EBY_N0000000ZCAM00002_034085J01", "ZL034"), own)
     assert is_low_backlash(row("ZRF_0010_0610000000_000EBY_N0000000ZCAM01234_063085J01", "ZR063"), own)
     assert low_backlash_fingerprint(tmp_path / "none.csv") is None
+    # 0.95.0 (Christian, 28 Oct): sols at one zoom - Overlook Mountain's 48 mm frames (sols 1150-1155) are low-state
+    assert (1150, 1155, 48) in lst["sol_zooms"]
+    assert is_low_backlash(row("ZLF_1152_0769000000_000EBY_N0520000ZCAM03014_048085J01", "ZL048"), lst)
+    assert is_low_backlash({"name": "ZR0_1150_0768900000_000RAD_N0520000ZCAM05065_048085A03", "sol": 1150,
+                            "sequence": "ZCAM05065", "camera_group": "ZR048_F02000"}, lst)
+    assert not is_low_backlash(row("ZLF_1152_0769000000_000EBY_N0520000ZCAM03014_034085J01", "ZL034"), lst)
+    assert not is_low_backlash(row("ZLF_1156_0769400000_000EBY_N0520000ZCAM03014_048085J01", "ZL048"), lst)
+    f.write_text("1150-1155:048\n-1151:063\n200:034\n")
+    own = load_low_backlash(f)
+    assert own["sol_zooms"] == [(1150, 1155, 48), (200, 200, 34)] and own["excluded"]["sol_zooms"] == [(1151, 1151, 63)]
+    assert is_low_backlash(row("ZRF_0200_0700000000_000EBY_N0000000ZCAM00009_034085J01", "ZR034"), own)
+    assert not is_low_backlash(row("ZRF_1151_0768950000_000EBY_N0000000ZCAM00009_063085J01", "ZR063"), own)
 
 
 # the fx, fy, cx, cy lines per focus state and the low-backlash found list (v0p73)

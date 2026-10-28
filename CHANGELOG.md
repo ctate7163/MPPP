@@ -96,6 +96,14 @@ the database copies shrink and go, and the hand exclusions of Taylorfjellet and 
   residuals, `error_input_navcam/` or `gui_native/` - the joints read `sparse/<model>`, `project.json` and the health
   report; `summary.json`, `stations.csv`, `poses.csv` and `block_frame.json` stay.
 
+- **Overlook Mountain's 48 mm frames are low-state** (Christian, 28 Oct): the low-backlash list takes
+  ``<sol>[-<sol>]:<zoom>`` entries (`1150-1155:048`: every frame of that zoom on those sols; `-` takes them off), key
+  `sol_zooms`. The list's fingerprint changes, so every Mastcam-Z run key does too (they realign anyway).
+- **`scripts/windows/trial_joints_0p95.bat`**: the 0.95.0 joints over the blocks aligned on 0.94 (the Navcam joint with
+  and without `--tie-f-slope`, the law check of the candidate, the Hazcam fit, the Mastcam-Z joints of 34 / 48 / 63 mm,
+  the N+Z check on request), nothing promoted, no waiting for running blocks - into `camera_analysis\trial_0p95_<date>\`.
+  The 0.94 blocks have focus bins, so the Mastcam-Z joint runs without sequence offsets.
+
 ### Studies (`scripts/tie_point_studies.py`)
 
 - S1 feature budget, S2 point thinning (against the all-points solution: frame centres, attitudes, per-bin focals), S3
