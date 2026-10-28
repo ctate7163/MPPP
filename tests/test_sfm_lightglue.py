@@ -170,14 +170,14 @@ def test_sift_plus_lightglue_mode(monkeypatch, tmp_path):
     from types import SimpleNamespace
     from mppp.sfm import matching as M
     calls = []
-    real_match = M.match
+    real_match, real_inner = M.match, M._match
 
-    def fake_match(project, mode="exhaustive", **kw):
+    def fake_match(project, mode="exhaustive", pairs=None, *a, **kw):     # 0.95.0: the inner SIFT pass is _match
         if mode == "sift+lightglue":
-            return real_match(project, mode=mode, **kw)
-        calls.append(("sift", mode, kw.get("pairs")))
+            return real_inner(project, mode, pairs, *a, **kw)
+        calls.append(("sift", mode, pairs))
         return {"matcher": "sift", "verified_pairs": 3, "inlier_matches": 30}
-    monkeypatch.setattr(M, "match", fake_match)
+    monkeypatch.setattr(M, "_match", fake_match)
     monkeypatch.setattr(M, "add_lightglue", lambda *a: calls.append(("lg", a[-1])) or
                         {"added_inliers": 7, "pairs_added_to": 2, "new_pairs": 1, "conflicts": 0})
     finished = {}

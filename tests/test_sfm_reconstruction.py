@@ -1177,15 +1177,18 @@ def test_staged_reconstruct_records_aspect_and_guard(tmp_path, monkeypatch):
     from mppp.sfm import reconstruction as R
     proj, new, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
     monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(new))
+    # 0.95.0: the every-frame pose-guided pass (and its beyond-ground guard) runs with scope "final" / "all"
     R.reconstruct(proj, sigma_px=0.3, schedule=((24.0, 10.0, 8.0), (8.0, 3.0, 4.0)), max_iterations=5,
-                  verbose=False, navcam_intrinsics="refine", staged=True, out_name="cahv_ba", zcam_focus_line=False)
+                  verbose=False, navcam_intrinsics="refine", staged=True, out_name="cahv_ba", zcam_focus_line=False,
+                  pose_guided={"scope": "final"})
     assert proj.settings["navcam_aspect"] == "hold" and proj.settings["reconstruction"]["navcam_aspect"] == "hold"
     pg = proj.settings["pose_guided"]
     assert "beyond_ground_before" in pg and "beyond_ground_after" in pg and "reverted" not in pg
     # the guard: a rise above the limit undoes the stage
     monkeypatch.setattr(R, "POSE_GUIDED_MAX_BEYOND_GROUND_RISE", -1.0)
     rec = R.reconstruct(proj, sigma_px=0.3, schedule=((24.0, 10.0, 8.0),), max_iterations=5, verbose=False,
-                        navcam_intrinsics="refine", staged=True, out_name="cahv_ba", zcam_focus_line=False)
+                        navcam_intrinsics="refine", staged=True, out_name="cahv_ba", zcam_focus_line=False,
+                        pose_guided={"scope": "final"})
     assert "reverted" in proj.settings["pose_guided"] and rec.num_points3D() > 0
     with pytest.raises(ValueError):
         R.reconstruct(proj, verbose=False, navcam_aspect="x")
