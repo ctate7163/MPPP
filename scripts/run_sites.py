@@ -89,12 +89,18 @@ def prefetch(log, sets) -> None:
             log(f"  LightGlue weights not loaded ({type(e).__name__}: {e}); each alignment tries itself")
 
 
-def child_env():
+def child_env(jobs: int = 1):
     """The environment of an alignment: OpenBLAS limited to 8 threads unless set (0.94.4: on a PC with more cores
-    than OpenBLAS was built for, calls from many threads at once may crash it - "precompiled NUM_THREADS exceeded")."""
+    than OpenBLAS was built for, calls from many threads at once may crash it - "precompiled NUM_THREADS exceeded").
+    0.95.0 (Christian, 28 Oct: with --jobs 3 three Ceres solvers competed for every core): ``MPPP_THREADS`` = the
+    cores divided among the ``jobs`` running at once - the bundle adjustments, the matcher and the extractor read it
+    (``mppp.sfm.threads``)."""
     env = dict(os.environ)
     for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):
         env.setdefault(k, "8")
+    if "MPPP_THREADS" not in env:
+        cores = os.cpu_count() or 1
+        env["MPPP_THREADS"] = str(max(1, cores // max(1, int(jobs))))
     return env
 
 
@@ -221,7 +227,7 @@ def main(argv=None) -> int:
                 log(f"site {s}: console output in {cf}")
             try:
                 p = subprocess.Popen(child_cmd(a, work), stdout=fh, stderr=subprocess.STDOUT if fh else None,
-                                     env=child_env())
+                                     env=child_env(jobs))
             except OSError as e:
                 if fh:
                     fh.close()

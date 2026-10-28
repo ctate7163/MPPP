@@ -175,6 +175,10 @@ class Pipeline:
         cmd += ["--jobs", str(max(1, int(getattr(self.a, "jobs", 2) or 1)))]   # 0.94.3: two at a time by default
         for x in getattr(self.a, "set", None) or []:     # 0.94.4: pipeline settings for every block run
             cmd += ["--set", x]
+        if zcam and getattr(self.a, "zooms", None) and not getattr(self.a, "all_site_zooms", False):
+            # 0.95.0 (Christian, 28 Oct): the Mastcam-Z runs keep the zooms being calibrated (--zooms, default
+            # 34 48 63); the site's wider zooms wait for a pass of their own (--all-site-zooms: every zoom listed)
+            cmd += ["--set", "zcam_zooms_only=" + ",".join(str(int(z)) for z in self.a.zooms)]
         if zcam:
             cmd.append("--zcam")
         rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
@@ -485,7 +489,8 @@ def main(argv=None) -> int:
                     help="zcam_joints also fits the Hazcams over the Mastcam-Z blocks (off since 0.94.4)")
     ap.add_argument("--no-nz", action="store_true", help="zcam_joints without the Navcam + Mastcam-Z check")
     ap.add_argument("--no-zcam-states", action="store_true", help="skip the zcam_states stage (the states run)")
-    ap.add_argument("--zooms", type=int, nargs="*", default=list(ZOOMS), help="the Mastcam-Z joints (default 34, 48, 63)")
+    ap.add_argument("--zooms", type=int, nargs="*", default=list(ZOOMS), help="the Mastcam-Z joints, and the zooms the site runs keep (default 34, 48, 63; 0.95.0)")
+    ap.add_argument("--all-site-zooms", action="store_true", help="the site runs align every zoom of the site's list (79, 110 mm too), not only --zooms")
     ap.add_argument("--zcam-group", default=None, help="the Mastcam-Z sites (default zcam_consensus)")
     ap.add_argument("--zcam-sites", nargs="+", default=None, metavar="SITE",
                     help="zcam_runs aligns only these sites; the joints use the others' finished blocks as they are")

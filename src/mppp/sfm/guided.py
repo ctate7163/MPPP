@@ -426,7 +426,8 @@ def pose_guided_matching(rec, project, database: PathLike, out_database: Optiona
     desc: Dict[int, np.ndarray] = {}
     depth: Dict[int, Tuple[float, float]] = {}
     n_new, by_fam, n_pairs_used, n_nodesc = 0, {}, 0, 0
-    workers = int(o.get("workers") or 0) or min(8, os.cpu_count() or 1)
+    from .reconstruction import default_threads
+    workers = int(o.get("workers") or 0) or min(8, default_threads())          # 0.95.0: MPPP_THREADS
     try:
         todo = []
         for a, b, _ in pairs:                                   # descriptors and depth ranges in the main thread

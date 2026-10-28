@@ -135,6 +135,7 @@ class Settings:
     hazcam_rig_refine: str = "rotation"           # the Hazcam stereo rigs: "rotation" (refined when the Hazcams come in; a pair of weak eyes stays at its start) or "hold"
     include_zcam: bool = False                    # add the Mastcam-Z frames of the same sols (folder ..._zcam)
     zcam_zooms: Any = None                        # their zooms (mm), e.g. [34, 48]; None: the site's "zcam" list ([34] without one); "all": every zoom
+    zcam_zooms_only: Any = None                   # 0.95.0 (Christian, 28 Oct: 79/110 mm made Chal Rocks 4.7x longer): keep only these zooms of the site's list, e.g. [34, 48, 63] for the freeze runs (run_pipeline --zooms passes its list); None: all of the site's
     zcam_intrinsics: str = "focus_model"          # Mastcam-Z start: "focus_model" (the promoted model) or "label"
     zcam_focus_model: Optional[Path] = None       # a focus-model JSON to start from; None: the one in use
     zcam_focus_bin: Optional[float] = 30          # focus motor counts per Mastcam-Z camera (None: one camera per eye)
@@ -229,7 +230,10 @@ class Settings:
             d.pop("lightglue_keypoints", None)       # 0.94.4: the keys of every run before it stay what they were
         if d.get("zcam_bin_by") in (None, "focus"):
             d.pop("zcam_bin_by", None)               # 0.94.4: likewise
+        if not d.get("zcam_zooms_only"):
+            d.pop("zcam_zooms_only", None)           # 0.95.0: unset, the keys stay what they were
         if not d.get("include_zcam"):
+            d.pop("zcam_zooms_only", None)           # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
             d.pop("zcam_bin_by", None)               # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
             d.pop("zcam_station_prior_sigma_m", None)   # 0.94.5: a Mastcam-Z setting (Navcam keys stay)
             d["zcam_low_backlash_found"] = None      # 0.94.4: the found list is a Mastcam-Z setting (Navcam keys stay)
@@ -448,6 +452,10 @@ def zcam_zooms(settings: Settings, site_rec: Optional[Dict[str, Any]]) -> List[i
     if isinstance(z, str) and z.lower() == "all":
         z = list(ZCAM_ZOOMS_ALL)
     zooms = sorted(int(x) for x in z)
+    only = settings.zcam_zooms_only
+    if only:                                     # 0.95.0: the run keeps the zooms being calibrated
+        keep = {int(x) for x in ([only] if isinstance(only, (int, float)) else only)}
+        zooms = [x for x in zooms if x in keep]
     if set(zooms) - set(ZCAM_ZOOMS_ALL):
         raise ValueError(f"zcam_zooms = {zooms}: MPPP aligns the Mastcam-Z zooms {list(ZCAM_ZOOMS_ALL)} mm")
     return zooms

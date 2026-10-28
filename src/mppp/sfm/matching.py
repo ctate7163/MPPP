@@ -111,7 +111,8 @@ def match(project: SfmProject, mode: str = "exhaustive", pairs: Optional[Sequenc
     import pycolmap
     mo = pycolmap.FeatureMatchingOptions()
     mo.max_num_matches = int(max_num_matches)
-    mo.num_threads = int(num_threads)
+    from .reconstruction import default_threads
+    mo.num_threads = int(num_threads) if int(num_threads) > 0 else default_threads()     # 0.95.0: MPPP_THREADS
     mo.guided_matching = bool(guided_matching)
     mo.sift.max_ratio = float(max_ratio)
     mo.sift.max_distance = float(max_distance)

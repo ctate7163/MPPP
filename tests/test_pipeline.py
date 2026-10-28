@@ -102,6 +102,14 @@ def test_resolve_site(tmp_path, clean_env):
     assert st.work.name == "mars2020_sol_0460_rockytop_zcam" and st.zooms == [34, 63, 79] and s2.sift["num_octaves"] == 6
     st, s2 = resolve_site(tmp_path / "mars2020_sol_0460_rockytop_zcam", s.replace(zcam_zooms="all"))
     assert st.zooms == [34, 48, 63, 79, 110] and s2.include_zcam is True
+    # 0.95.0 (Christian, 28 Oct): the freeze runs keep the zooms being calibrated (run_pipeline --zooms)
+    st, _ = resolve_site("rockytop", s.replace(include_zcam=True, zcam_zooms_only=[34, 48, 63]))
+    assert st.zooms == [34, 63]
+    st, _ = resolve_site("rockytop", s.replace(include_zcam=True, zcam_zooms_only=(34, 48, 63), zcam_zooms="all"))
+    assert st.zooms == [34, 48, 63]
+    k = s.replace(include_zcam=True, zcam_zooms_only=[34, 48, 63]).key_dict()
+    assert k["zcam_zooms_only"] == [34, 48, 63] and "zcam_zooms_only" not in s.replace(include_zcam=True).key_dict()
+    assert "zcam_zooms_only" not in s.replace(zcam_zooms_only=[34]).key_dict()      # a Navcam run: its key as before
     with pytest.raises(KeyError, match="not in"):
         resolve_site("nowhere", s)
     with pytest.raises(ValueError, match="scapes root"):

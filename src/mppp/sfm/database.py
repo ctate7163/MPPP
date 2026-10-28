@@ -198,7 +198,8 @@ def extract_features(project: SfmProject, max_num_features: Any = DEFAULT_MAX_NU
     for count, group in sorted(by_count.items(), key=lambda kv: -kv[0]):
         opts = pycolmap.FeatureExtractionOptions()
         opts.max_image_size = int(max_image_size)
-        opts.num_threads = int(num_threads)
+        from .reconstruction import default_threads
+        opts.num_threads = int(num_threads) if int(num_threads) > 0 else default_threads()   # 0.95.0: MPPP_THREADS
         opts.sift.max_num_features = int(count)
         opts.sift.domain_size_pooling = bool(domain_size_pooling)
         opts.sift.estimate_affine_shape = bool(estimate_affine_shape)

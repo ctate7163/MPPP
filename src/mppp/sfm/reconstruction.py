@@ -233,6 +233,17 @@ def restore_shared_cameras(rec, cameras: Dict[int, Any]) -> List[int]:
     return back
 
 
+def default_threads() -> int:
+    """The threads a solver, matcher or extractor takes when not told: ``MPPP_THREADS`` (0.95.0: the cores divided
+    among the alignments running at once, set by ``run_sites.py --jobs``), else every core."""
+    import os
+    try:
+        n = int(os.environ.get("MPPP_THREADS") or 0)
+    except ValueError:
+        n = 0
+    return n if n > 0 else (os.cpu_count() or 1)
+
+
 def sync_database(rec, project: SfmProject, path: Optional[PathLike] = None) -> Path:
     """
     a copy of the project database whose cameras, rigs, frames and image cameras match ``rec``.
@@ -972,7 +983,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     if solver == "iterative_schur":
         so.preconditioner_type = pyceres.PreconditionerType.SCHUR_JACOBI
     so.max_num_iterations = int(max_iterations)
-    so.num_threads = int(num_threads) if num_threads > 0 else (__import__("os").cpu_count() or 1)
+    so.num_threads = int(num_threads) if num_threads > 0 else default_threads()
     so.minimizer_progress_to_stdout = bool(verbose)
     summary = pyceres.SolverSummary()
     pyceres.solve(so, prob, summary)
