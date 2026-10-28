@@ -204,6 +204,7 @@ LINE_STATES = forms.ZCAM_STATES
 LINE_FORM = forms.ZCAM_LINE_FORM                     # the form of each line (see mppp.calib.forms)
 LINE_FORMS = forms.ZCAM_LINE_FORMS
 PIN_MAX_OFFSET_PX = 300.0    # a pp0 further than this from the bins' principal points is not pinned (wrong model)
+LINE_ZOOMS = (34, 48, 63)    # 0.95.0: the zooms whose bins go on focus lines in the blocks (Settings.zcam_line_zooms)
 
 
 def line_form_for(project: SfmProject, group: str) -> Dict[str, str]:
@@ -275,11 +276,23 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
     db = (project.settings.get("database") or {}).get("cameras") or {}
     obs = _observations_per_camera(rec)
     groups: Dict[str, List[Dict[str, Any]]] = {}
+    # 0.95.0 (Christian, 28 Oct: Chal Rocks' ZR079 fy line fits with 42 px rms, ZR110 24 px): only the zooms with real
+    # models go on lines (``zcam_line_zooms``, default 34, 48, 63); the other zooms' bins keep their refined values
+    lz = project.settings.get("zcam_line_zooms")
+    line_zooms = {int(z) for z in (lz if lz is not None else LINE_ZOOMS)}
+    skipped_zooms: Dict[str, int] = {}
     for key, cid in db.items():
         c = project.cameras.get(key) or {}
         if not str(key).startswith("Z") or int(cid) not in rec.cameras or c.get("group") is None:
             continue
         if c.get("held_at_model"):                    # 0.95.0: too few images of its zoom at the site - not on the lines
+            continue
+        try:
+            zoom_ = int(str(c["group"])[2:5])
+        except ValueError:
+            zoom_ = None
+        if zoom_ is not None and zoom_ not in line_zooms:
+            skipped_zooms[str(c["group"])] = zoom_
             continue
         p = np.array(rec.cameras[int(cid)].params, float)
         groups.setdefault(c["group"], []).append({
@@ -291,6 +304,9 @@ def refit_param_lines(rec, project: SfmProject, model: Optional[Dict[str, Any]] 
             "state": "regular" if calib.zcam_state(key, c) == "regular" else "backlash",
             "focus_state": calib.zcam_state(key, c)})
     out: Dict[str, Any] = {}
+    for g, z_ in sorted(skipped_zooms.items()):
+        out[g] = {"skipped": f"{z_} mm is not on focus lines (zcam_line_zooms {sorted(line_zooms)}): its bins keep their "
+                             f"refined values", "lines": {}, "bins": [], "outliers": []}
     for g, rows in sorted(groups.items()):
         gm = (model.get("cameras") or {}).get(g) or {}
         params = line_params_for(project, g)

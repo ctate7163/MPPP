@@ -365,6 +365,44 @@ def test_find_outlier_frames_flags_a_frame_that_left_its_station(tmp_path):
     assert rec.num_reg_images() == n_img - 2 and bad not in set(rec.reg_frame_ids())
 
 
+def test_find_outlier_frames_drops_a_weakly_tied_hazcam_pair_off_its_station(tmp_path):
+    """0.95.0 (Three Forks North, 28 Oct: a front pair tied by 1100 points slid 0.9 m and failed the block on its
+    station's shift spread): a Hazcam pair more than hazcam_shift_m (0.3 m) from its station's Navcam shift with
+    fewer than hazcam_strong_observations is dropped, from a single Navcam frame on; a strongly tied pair that far
+    off is judged by the station MAD test as before, and a pair that follows its station is kept."""
+    from mppp.sfm.reconstruction import OUTLIER_DEFAULTS, find_outlier_frames
+    assert OUTLIER_DEFAULTS["hazcam_shift_m"] == 0.3 and OUTLIER_DEFAULTS["hazcam_strong_observations"] == 3000
+    proj, rec, _ = _solved(tmp_path)
+    by_name = {r["name"]: r for r in proj.images}
+    st = "S001D0000"
+    fids = sorted(fid for fid in rec.frames
+                  if by_name[rec.images[next(iter(rec.frames[fid].data_ids)).id].name]["station"] == st)
+    haz = fids[0]                                                          # one frame of the station plays a front pair
+    haz_names = {rec.images[d.id].name for d in rec.frames[haz].data_ids}
+    for nm in haz_names:
+        by_name[nm]["instrument"] = "FL" if by_name[nm]["instrument"] == "NL" else "FR"
+    assert find_outlier_frames(rec, proj) == []                            # on its station: kept
+    found = find_outlier_frames(rec, proj)
+    for r in proj.images:                                                  # ... the station's Navcam frames shift 0.9 m
+        if r["station"] == st and r["name"] not in haz_names:              # together (a station that moved): still kept
+            r["prior_C"] = (np.asarray(r["prior_C"]) - [0.9, 0.0, 0.0]).tolist()
+    found = find_outlier_frames(rec, proj)
+    assert [f["frame_id"] for f in found if f["family"] == "H"] == [haz]  # the pair stayed on the label while its
+    assert "weakly tied Hazcam pair" in found[0]["reasons"][0]             # station moved: 0.9 m off its station
+    assert found[0]["navcam_shift_m"] == pytest.approx(0.9, abs=0.02) and found[0]["kind"] == "outlier"
+    assert len(found[0]["reasons"]) == 1                                   # the MAD test does not repeat it
+    # strongly tied: the MAD test (0.25 m or 5 x the Navcam spread) still catches 0.9 m
+    found = find_outlier_frames(rec, proj, hazcam_strong_observations=1)
+    assert [f["frame_id"] for f in found] == [haz] and "station's median" in found[0]["reasons"][0]
+    # relaxed: a 1 m limit keeps it
+    assert find_outlier_frames(rec, proj, hazcam_shift_m=1.0, hazcam_strong_observations=1, min_shift_m=1.0) == []
+    # one Navcam frame at the station is enough for the Hazcam rule (the MAD test needs three)
+    from mppp.sfm.reconstruction import exclude_frames
+    assert exclude_frames(rec, fids[2:]) == len(fids) - 2
+    found = find_outlier_frames(rec, proj)
+    assert [f["frame_id"] for f in found] == [haz] and "weakly tied Hazcam pair" in found[0]["reasons"][0]
+
+
 def test_find_mistied_bins_focal_and_station_shift(tmp_path):
     """0.95.0 (Christian, 27 Oct; Marble Mountain ZCAM04469: 63 mm at the horizon from a station 2 m off - f +7.9 %,
     1.7 m shift): a Mastcam-Z bin is a far-field mis-tie only when both its focal length is off the model by more than

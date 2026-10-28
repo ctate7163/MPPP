@@ -1654,7 +1654,10 @@ def hazcam_line(cov: Dict[str, Any]) -> str:
 OUTLIER_DEFAULTS = {"residual_factor": 3.0, "min_residual_px": 2.0,   # 2.0 px (Christian, 22 Oct 2026; 1.6 since v0p61, v0p50 1.2)
                     "shift_mad_factor": 5.0, "min_shift_m": 0.25,
                     "attitude_mad_factor": 5.0, "min_attitude_deg": 0.5, "min_observations": None,
-                    "min_navcam_ties": None, "lenient_zooms": ()}
+                    "min_navcam_ties": None, "lenient_zooms": (),
+                    # 0.95.0: a Hazcam pair farther than this from its station's Navcam shift, with fewer than this
+                    # many observations, is dropped (Three Forks North: 1100 observations, 0.9 m)
+                    "hazcam_shift_m": 0.3, "hazcam_strong_observations": 3000}
 # a Mastcam-Z frame needs at least this many valid tie points with an anchor camera (points seen by the frame and by an
 # anchor image with a third look, MIN_MIXED_TRACK_LENGTH) - fewer, and it is excluded like an outlier (Christian,
 # 20 Oct).  The anchors (21 Oct): Navcam for 34 and 48 mm; Navcam or a Mastcam-Z image at a wider zoom (shorter focal
@@ -1794,6 +1797,10 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
       Stations with fewer than 3 frames of a family are not tested this way.
       The attitude test applies to Navcam frames only: a Mastcam-Z prior
       attitude is one mast pointing, whose error is per image;
+    * (a Hazcam pair, 0.95.0) it is weakly tied (fewer than
+      ``hazcam_strong_observations`` observations) and its shift is more than
+      ``hazcam_shift_m`` from the median shift of its station's Navcam frames
+      (one Navcam frame is enough: the pair is fixed to the rover body);
     * (a Mastcam-Z frame, Navcam images registered) it has fewer than
       ``min_navcam_ties`` (:data:`ZCAM_MIN_NAVCAM_TIES`, 10) valid tie points
       with an anchor (:func:`navcam_tie_counts`: Navcam for 34 and 48 mm, Navcam or a
@@ -1879,6 +1886,19 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
         # 0.94.4: the Hazcam frames of a station (one rover pose, few frames) are tested against the station's
         # Navcam frames when it has three or more, else among themselves; never on their attitude
         ref = groups.get((station, "N")) if fam == "H" else None
+        if fam == "H" and ref:
+            # 0.95.0 (Three Forks North, 28 Oct: one front pair tied by 1100 points slid 0.9 m and failed the block
+            # on its station's shift spread): a Hazcam pair is fixed to the rover body, so its shift is its station's
+            # Navcam shift.  A weakly tied pair (fewer than hazcam_strong_observations) farther than hazcam_shift_m
+            # from the Navcam frames' median shift is dropped - from a single Navcam frame on, the way a Mastcam-Z
+            # frame short of Navcam ties is; the MAD test below still judges the strongly tied pairs
+            med_n = np.median(np.array([f["dC"] for f in ref]), axis=0)
+            for f in fs:
+                d = float(np.linalg.norm(np.asarray(f["dC"]) - med_n))
+                f["navcam_shift_m"] = round(d, 4)
+                if d > th["hazcam_shift_m"] and f["observations"] < th["hazcam_strong_observations"]:
+                    f["reasons"].append(f"shift {d:.2f} m from its station's Navcam frames with {f['observations']} "
+                                        f"observations (a weakly tied Hazcam pair off its station)")
         ref = ref if ref is not None and len(ref) >= 3 else (fs if len(fs) >= 3 else None)
         if ref is None:
             continue
@@ -1891,7 +1911,7 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
         adev = np.degrees(np.linalg.norm(A - np.median(A, axis=0), axis=1)) if len(fs) >= 3 else np.zeros(len(fs))
         amad = 1.4826 * np.median(adev)
         for f, d, a in zip(fs, dev, adev):
-            if d > max(th["min_shift_m"], th["shift_mad_factor"] * mad):
+            if d > max(th["min_shift_m"], th["shift_mad_factor"] * mad) and not any("Hazcam pair" in s for s in f["reasons"]):
                 f["reasons"].append(f"shift {d:.2f} m from its station's median")
             if f["family"] == "N" and a > max(th["min_attitude_deg"], th["attitude_mad_factor"] * amad):
                 f["reasons"].append(f"attitude {a:.2f} deg from its station's median")

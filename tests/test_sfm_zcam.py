@@ -773,6 +773,32 @@ def test_refit_lines_with_sequence_offsets(monkeypatch):
     assert out["ZR034"]["f0_px"] == pytest.approx(np.sqrt(ln["fx"]["a"] * ln["fy"]["a"]))
 
 
+def test_refit_lines_only_for_the_zooms_with_real_models(monkeypatch):
+    """0.95.0 (Christian, 28 Oct): the bins of 79 and 110 mm stay off the focus lines (their refined values kept) until
+    those zooms have real models; zcam_line_zooms in the project settings says which zooms go on lines."""
+    import pycolmap
+    from mppp.sfm import zcam
+    from mppp.sfm.zcam import LINE_ZOOMS, refit_focus_lines
+    assert LINE_ZOOMS == (34, 48, 63)
+    rec, proj, model, db = _bins(monkeypatch)
+    # a 79 mm bin beside the 34 mm ones
+    cid = max(db.values()) + 1
+    rec.add_camera(pycolmap.Camera(camera_id=cid, model="OPENCV", width=1648, height=1200,
+                                   params=np.array([11000.0, 11000.0, 824.0, 600.0, -0.3, 0, 0, 0], float)))
+    proj.cameras["ZR079_F00600"] = {"group": "ZR079", "focus_count_median": 600.0, "backlash_state": "backlash"}
+    db["ZR079_F00600"] = cid
+    obs = zcam._observations_per_camera(rec)
+    obs[cid] = 1000
+    monkeypatch.setattr(zcam, "_observations_per_camera", lambda rec: obs)
+    out = refit_focus_lines(rec, proj, model=model)
+    assert "skipped" in out["ZR079"] and "not on focus lines" in out["ZR079"]["skipped"]
+    assert rec.cameras[cid].params[0] == 11000.0                            # untouched
+    assert "lines" in out["ZR034"] and "skipped" not in out["ZR034"]
+    proj.settings["zcam_line_zooms"] = [34, 79]
+    out = refit_focus_lines(rec, proj, model=model)
+    assert "skipped" not in out["ZR079"] or "not on focus lines" not in out["ZR079"].get("skipped", "")
+
+
 def test_refit_lines_pin_the_regular_state_at_its_own_principal_point(monkeypatch):
     """0.95.0 (Christian, 27 Oct: the right eye's regular principal-point offset): a ZR regular-state line with its own
     bins is pinned at pp0 plus the model's regular_pp_offset_px, as the no-own-line path already added it (0.93.5) -

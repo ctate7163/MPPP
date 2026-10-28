@@ -154,6 +154,7 @@ class Settings:
     # high-state pointings 2 and 4 of ZCAM08114 got in); "auto" = <scapes_root>/zcam_low_backlash_found.csv
     zcam_low_backlash_found: Any = "auto"
     zcam_focus_line: bool = True                  # stage 2 puts the focus-bin cameras on lines in focus count (False: f per bin)
+    zcam_line_zooms: Any = (34, 48, 63)           # 0.95.0 (Christian, 28 Oct): the zooms whose bins go on focus lines; 79 and 110 mm keep their refined values per bin until they have real models (Chal Rocks ZR079 fy 42 px rms)
     zcam_line_cycles: int = 2                     # rounds of freeing the bins and refitting the lines
     zcam_station_prior_sigma_m: float = 0.1       # 0.94.5 (27 Oct): a Mastcam-Z frame's position prior moves with its station's Navcam shift, +-this per axis (m); 0: the waypoint prior (prior_sigma_m)
     zcam_line_form: Optional[Dict[str, Any]] = None   # the form of each focus line {eye: {param: form}} for a study; None: the shipped form
@@ -234,6 +235,7 @@ class Settings:
             d.pop("zcam_zooms_only", None)           # 0.95.0: unset, the keys stay what they were
         if not d.get("include_zcam"):
             d.pop("zcam_zooms_only", None)           # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
+            d.pop("zcam_line_zooms", None)           # 0.95.0: likewise
             d.pop("zcam_bin_by", None)               # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
             d.pop("zcam_station_prior_sigma_m", None)   # 0.94.5: a Mastcam-Z setting (Navcam keys stay)
             d["zcam_low_backlash_found"] = None      # 0.94.4: the found list is a Mastcam-Z setting (Navcam keys stay)
@@ -244,7 +246,7 @@ class Settings:
 
 PATH_FIELDS = {"pds_dir", "scapes_root", "sites_file", "navcam_cameras", "zcam_focus_model"}
 TUPLE_FIELDS = {"sequence_prefixes", "subframe_families", "hold_cameras", "thermal_free", "navcam_rig_epoch_breaks_sols",
-                "hazcams"}
+                "hazcams", "zcam_line_zooms"}
 HAZCAM_FIELDS = ("hazcams", "hazcam_intrinsics", "hazcam_rig_refine")
 # the Hazcam products of a family: camera codes and the sequences kept (Hazcam frames come in FHAZ / RHAZ sequences)
 HAZCAM_CODES = {"F": ("FLF", "FRF"), "R": ("RLF", "RRF")}
@@ -1222,6 +1224,9 @@ def align(work: PathLike, settings: Settings, stop_after: Optional[str] = None) 
         except OSError as e:                                  # noqa: BLE001
             log.warning("run_done.json not removed (%s)", e)
     proj, info = build_project(work, images, s)
+    if s.zcam_line_zooms is not None:                       # 0.95.0: the zooms whose bins go on focus lines
+        proj.settings["zcam_line_zooms"] = sorted(int(z) for z in s.zcam_line_zooms)
+        proj.save()
     (proj.root / RUN_SETTINGS).write_text(json.dumps({"mppp": __version__, "run_key": key, "settings": s.to_dict()},
                                                      indent=1), encoding="utf-8")
     if stop_after == "project":
