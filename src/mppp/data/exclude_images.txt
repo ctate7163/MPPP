@@ -51,3 +51,4 @@ N*_0681_0727400691_868*
 FLF_1976_0842367348_066RAD_N0910806FHAZ02008_0A0095J04   # Marble Mountain sol 1976, front left Hazcam (Christian, 26 Oct)
 *_1987_0843335916_525*   # Marble Mountain sol 1987 ZCAM04473 (63 mm): too few tie points, none to its stereo partner (Christian, 27 Oct)
 *_0556_0716304025_894*   # Enchanted Lake sol 556 (Christian, 27 Oct)
+*_0693_0728459343_559*   # Three Forks North sol 693 S032D1196, front Hazcam pair (0A0295J01): ~1100 tie points, 0.9 m from its station (Christian, 28 Oct)
