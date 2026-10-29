@@ -484,3 +484,17 @@ def test_trial_joints_bat_runs_every_0p95_joint_without_promoting():
     assert "calib zcam --zoom %%Z" in t and 'MPPP_ZOOMS=34 48 63' in t and "calib nz" in t
     assert "--promote-if-ok" not in t and t.count("--no-promote") == 4 and t.count("--wait-h 0") == 7   # nz never promotes
     assert "mppp_env.bat" in t and "trial_0p95_" in t and "plot_lawcheck.py" in t
+
+
+def test_claude_sync_runs_from_a_copy_the_merge_cannot_touch():
+    """29 Oct: the merge replaced claude_sync.bat while cmd.exe was reading it; the script lost its place, started
+    over and stopped before the stash pop and the push.  It now hands over to a copy in %TEMP% before anything else
+    (without "call", so the original is never read again) and takes its folder from the copy's second argument."""
+    b = (ROOT / "scripts" / "windows" / "claude_sync.bat").read_bytes()
+    assert b.count(b"\n") == b.count(b"\r\n")
+    t = b.decode("ascii")
+    hand = t.index('"%TEMP%\\mppp_claude_sync_run.bat" --from-copy "%~dp0" %*')
+    assert t.index('if /i not "%~1"=="--from-copy"') < hand < t.index("setlocal") < t.index("git ")
+    assert "call \"%TEMP%" not in t                                         # a transfer, not a call
+    assert 'set "HERE=%~2"' in t and t.index('set "HERE=%~2"') < t.index("shift") < t.index('"%HERE:~-16%"')
+    assert "git stash pop" in t and "git push origin main" in t

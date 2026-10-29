@@ -15,9 +15,18 @@ REM Only refs/heads/main is fetched (no tags: 20-27 Oct, the tag refs broke the 
 REM tracked files go to a stash and come back after the merge (0.95.0: the camera models in use live in MPPP_CMODS,
 REM outside git, so there should be none).  Log: _transfer\claude_sync_log.txt (the last runs, newest at the end).
 REM Run it from scripts\windows - a copy elsewhere (the old one in _transfer) refuses to run.
+REM 0.95.0 (29 Oct): it runs from a copy in %TEMP%.  cmd.exe reads a batch file from disk line by line, and the merge
+REM replaces this file: on 29 Oct the running script lost its place after the merge, started over, found "already
+REM here" and stopped - the stash was never popped, main never pushed.  The copy is never touched by the merge.
 REM ======================================================================================================
+if /i not "%~1"=="--from-copy" (
+  copy /y "%~f0" "%TEMP%\mppp_claude_sync_run.bat" >nul || ( echo cannot copy %~f0 to %TEMP% & pause & exit /b 1 )
+  "%TEMP%\mppp_claude_sync_run.bat" --from-copy "%~dp0" %*
+)
 setlocal EnableExtensions EnableDelayedExpansion
-set "HERE=%~dp0"
+set "HERE=%~2"
+shift
+shift
 if /i not "%HERE:~-16%"=="scripts\windows\" (
   echo claude_sync.bat must run from scripts\windows ^(this copy: %HERE%^) - delete the old copy in _transfer
   pause
