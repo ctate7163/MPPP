@@ -347,10 +347,12 @@ def test_windows_folder_is_short():
     """0.94.4 (Christian, 23 Oct): at most 20 files in scripts\\windows, the removed ones gone."""
     w = ROOT / "scripts" / "windows"
     files = [f for f in w.iterdir() if f.is_file() and not f.name.endswith(".txt")]
-    # 0.95.1: trial_joints_0p95.bat is the trial before the freeze reruns (it goes after them) - not counted
-    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 20, sorted(f.name for f in files)
+    # 0.95.1: trial_joints_0p95.bat is the trial before the freeze reruns (it goes after them) - not counted;
+    # sites_status.bat back (Christian, 29 Oct): 21
+    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 21, sorted(f.name for f in files)
+    assert (w / "sites_status.bat").is_file() and (w / "make_paper.bat").is_file()
     for gone in ("run_weekend.bat", "build_example_data.bat", "run_multizoom_test.bat", "run_hazcam.bat",
-                 "test_lightglue.bat", "sites_status.bat", "run_sites_zcam34.bat", "zcam_tied_joint.bat"):
+                 "test_lightglue.bat", "run_sites_zcam34.bat", "zcam_tied_joint.bat", "render_paper.bat"):
         assert not (w / gone).exists(), gone
     # every batch file a kept one calls is still there
     import re

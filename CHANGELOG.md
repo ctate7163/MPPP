@@ -51,6 +51,10 @@ blocks stay valid.
   signed (`converged` false when the variant ends worse than the joint); synthetic: held 0.3, truth 0.40 -> refit
   0.415 / 0.418, delta chi2 145.
 
+- **No "ZR k1 = ZL k1" test** (Christian, 29 Oct: "ZR034 k1 should not be equal to ZL034 k1. remove that test in the
+  joint"): the distortion tests are k2 = 0 (when k2 is free) and the fixed terms freed; the curves' right-minus-left
+  difference with its z is still in the report.
+
 ### Navcam
 
 - **The combined law as model files**: the N+Z joint writes its Navcam law into `<out>\navcam_law\` (camera and rig
@@ -67,6 +71,8 @@ blocks stay valid.
 
 ### Sites and scripts
 
+- `render_paper.bat` is `make_paper.bat` (log `_transfer\make_paper_log.txt`); `sites_status.bat` is back (the run status
+  of every block under `MPPP_SCAPES`: `run_sites.py --status`); `CODE_OF_CONDUCT.md` moves to `docs/`.
 - **Include lists** (Christian, 29 Oct: "some z110 into Rockytop, but not all of them, because that would be
   thousands"): a site's `"zcam_include": {"110": ["ZCAM08529", ...]}` keeps only those sequences at that zoom (the
   zoom in the site's `zcam` list); it becomes the exclusion `zoom:110 except seq:...` (new entry form `zoom:NNN`, in

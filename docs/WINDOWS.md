@@ -9,7 +9,7 @@ batches and the weekend runner went (git history has them; `run_pipeline.bat` do
 | **the runs** | `run_pipeline.bat` (the whole calibration study: the ecam_consensus blocks - Navcam with both Hazcam pairs; the Navcam joint and the Hazcam fit, promoted; the Mastcam-Z blocks; the Mastcam-Z joints; the error analysis; the rover-frame study 3A), `run_sites.bat` (the Navcam blocks of a group), `run_sites_zcam.bat` (the Navcam + Mastcam-Z blocks of zcam_consensus, then `zcam_joints.bat`), `zcam_joints.bat`, `promote_models.bat`, `stop_mppp.bat` |
 | **status** | `check_sites.bat` (the site definitions; when each block last finished, with which version, or that it runs now) |
 | **one folder** | `process_sites.bat` (process a group's images), `align_here.bat` (align the folder it sits in) |
-| **figures** | `make_figures.bat` (the standard figures at 200 dpi), `make_maps.bat` (the site maps), `render_paper.bat` |
+| **figures** | `make_figures.bat` (the standard figures at 200 dpi), `make_maps.bat` (the site maps), `make_paper.bat` (the JOSS paper as a PDF); **status**: `sites_status.bat` (the run status of every block) |
 | **setup** | `mppp_env.bat` (finds the Python with mppp, pycolmap, pyceres; reads `mppp_python.txt`, `mppp_scapes.txt`, `mppp_pds.txt`; checks it with `scripts\check_env.py`), `install_lightglue.bat`, `claude_sync.bat` (uncommitted edits stashed before the merge and popped after it) |
 | helpers (not double-clicked) | `_run_sites.bat`, `_run_process.bat`, `_run_align.bat` (the minimised batch windows), `m20_dem_env.bat` (the DTM / orthomosaic paths of the figures and maps) |
 

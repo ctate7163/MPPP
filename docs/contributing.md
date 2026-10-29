@@ -2,7 +2,7 @@
 
 ## Code of conduct
 
-See [CODE_OF_CONDUCT.md](https://github.com/ctate7163/MPPP/blob/main/CODE_OF_CONDUCT.md) in the repository.
+See [CODE_OF_CONDUCT.md](https://github.com/ctate7163/MPPP/blob/main/docs/CODE_OF_CONDUCT.md) in the repository.
 
 ## Releases
 

@@ -279,7 +279,7 @@ def test_zcam_joint_recovers_the_focus_law_and_the_rig(tmp_path, monkeypatch):
     assert abs(dist["difference_px"][-1]) < 0.5                       # the eyes' curves agree at the corner
     tests = {t["test"]: t for t in dist["tests"]}
     assert tests["k2 = 0 (both eyes)"]["significant"]                 # k2 = 0.40 is real
-    assert not tests["ZR034 k1, k2 = ZL034 k1, k2"]["significant"]    # the eyes do not differ
+    assert set(tests) == {"k2 = 0 (both eyes)"}                       # 0.95.1: no eyes-equal k1 test
     assert max(abs(z) for z in dist["difference_z"]) < 3               # nor do their curves
     assert any("radial displacement" in x for x in Z.describe(res))
     d = res["diagnostics"]

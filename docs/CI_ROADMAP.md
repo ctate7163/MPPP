@@ -14,7 +14,7 @@ anything that lives only on the author's PC.
 | Example usage | README, notebooks 01–03 | a 10-minute example a reviewer can run: `mppp run` on the Rockytop test set (below) |
 | API documentation | docstrings | a Sphinx or mkdocs site built in CI from the docstrings (`docs/` → GitHub Pages) |
 | Automated tests | pytest, ~470 tests, two PDS products | the end-to-end block test (below); coverage report |
-| Community guidelines | — | `CONTRIBUTING.md` (how to report, how to contribute, how to run the tests) and a `CODE_OF_CONDUCT.md`; both are checked by the JOSS editor |
+| Community guidelines | — | `CONTRIBUTING.md` (how to report, how to contribute, how to run the tests) and a `docs/CODE_OF_CONDUCT.md`; both are checked by the JOSS editor |
 | Statement of need, state of the field, references | `paper/paper.md` | the `@TODO:opacity` citation, figure 3, figure sizes, the generative-AI statement |
 | Archive with a DOI at acceptance | — | Zenodo–GitHub integration; a tagged release `v1.0.0` |
 

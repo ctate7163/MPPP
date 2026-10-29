@@ -1421,10 +1421,9 @@ def distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba, iterations: i
         cases.append((f"{', '.join(terms)} free (vs the fixed values)", {}, {e: list(v) for e, v in fixed.items()}))
     if not any("k2" in fixed.get(e, {}) for e in eyes):
         cases.append(("k2 = 0 (both eyes)", {zl: {"k2": 0.0}, zr: {"k2": 0.0}}, {}))
-    if not any(k in fixed.get(zr, {}) for k in ("k1", "k2")):
-        cases.append((f"{zr} k1, k2 = {zl} k1, k2", {zr: {"k1": float(base[zl][5]), "k2": float(base[zl][6])}}, {}))
-    elif "k1" not in fixed.get(zr, {}):
-        cases.append((f"{zr} k1 = {zl} k1", {zr: {"k1": float(base[zl][5])}}, {}))
+    # 0.95.1 (Christian, 29 Oct: "ZR034 k1 should not be equal to ZL034 k1. remove that test in the joint"): no
+    # test of the eyes' k1 (k1, k2) held equal - each eye has its own lens; the curves' difference and its z
+    # (distortion_curves) are still reported
     out = []
     for name, fix, free in cases:
         t = time.time()
