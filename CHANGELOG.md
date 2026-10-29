@@ -46,6 +46,14 @@ blocks stay valid.
   files, `tied.write_law_files`, as `calib navcam` writes its candidate), so `calib lawcheck --law combined=...` checks
   it against the law in use on the Navcam blocks (the Navcam / Mastcam-Z y-scale tension, +200 / +230 ppm in fy).
 
+### Hazcams
+
+- **FL and FR fit their own thermal slopes, the rear eyes take their mean** (Christian, 29 Oct: "The FL and FR should
+  fit separately, and we can assume that both RL and RR are the average of FL and FR"). `hazjoint` slope mode
+  `"front"`, the default (`--hazcam-slope front`; `FL`, `all`, `per_eye` as before): terms `s_FL`, `s_FR`; RL and RR use
+  (s_FL + s_FR) / 2 without pulling on it, with its sd from the covariance; the report says "own slope" / "the mean of
+  FL's and FR's slopes". Before, every eye took FL's slope (+20.0 ppm/degC; FR's own +35.2).
+
 ### Sites and scripts
 
 - **Chal Rocks 79 mm off the low-state list** (Christian, 29 Oct, from `mppp zcam-states --sites chal_rocks`: every

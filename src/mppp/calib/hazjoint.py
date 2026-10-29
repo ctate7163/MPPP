@@ -50,6 +50,11 @@ EARLY_SOL = 380.0
 EARLY_Z_MIN = 3.0                 # an early-mission offset is kept when |offset / sd| reaches this
 MIN_EARLY_IMAGES = 20             # images on each side of the early-mission sol (and 2 blocks) for an offset
 SLOPE_EYES = ("FL",)              # Christian 24 Oct: "for now, give all four FL's slope"
+FRONT_EYES = ("FL", "FR")
+# 0.95.1 (Christian, 29 Oct: "The FL and FR should fit separately, and we can assume that both RL and RR are the
+# average of FL and FR"): slope_mode "front" - FL and FR each their own slope, the rear eyes the mean of the two
+# (without pulling on it); the default
+SLOPE_MODE = "front"
 BIN_DEG = 5.0                     # diagnostic bins: the Navcam's are 2 degC with >= 8 images, <= 10 degC wide
 BIN_MIN_IMAGES = 3
 BIN_MAX_DEG = 15.0
@@ -146,6 +151,8 @@ class Law:
                 names += [f"Ex_{e}", f"Ey_{e}"]
         if slope_mode == "per_eye":
             names += [f"s_{e}" for e in self.eyes]
+        elif slope_mode == "front":                  # 0.95.1: FL, FR own; RL, RR the mean
+            names += [f"s_{e}" for e in self.eyes if e in FRONT_EYES]
         else:
             names.append("s")
         self.names = names
@@ -163,16 +170,41 @@ class Law:
         self.held: set = set()
 
     def slope_name(self, eye: str) -> str:
-        return f"s_{eye}" if self.mode == "per_eye" else "s"
+        """The slope term of ``eye``; "front" mode: a rear eye's slope is the mean of the front ones' ("mean")."""
+        if self.mode == "per_eye" or (self.mode == "front" and eye in FRONT_EYES):
+            return f"s_{eye}"
+        return "mean" if self.mode == "front" else "s"
+
+    def slope_weights(self, eye: str) -> Dict[int, float]:
+        """{global index: weight}: the eye's slope as a combination of the slope terms."""
+        sn = self.slope_name(eye)
+        if sn == "mean":
+            fr = [f"s_{e}" for e in FRONT_EYES if f"s_{e}" in self.ix]
+            return {self.ix[n]: 1.0 / len(fr) for n in fr}
+        return {self.ix[sn]: 1.0}
+
+    def slope(self, eye: str, x: Optional[np.ndarray] = None) -> float:
+        x = self.x if x is None else x
+        return float(sum(w * x[i] for i, w in self.slope_weights(eye).items()))
+
+    def slope_sd(self, eye: str, cov: np.ndarray) -> Optional[float]:
+        w = self.slope_weights(eye)
+        idx = list(w)
+        v = np.array([w[i] for i in idx])
+        c = cov[np.ix_(idx, idx)]
+        var = float(v @ c @ v)
+        return float(np.sqrt(var)) if np.isfinite(var) and var >= 0 else None
 
     def informs_slope(self, eye: str) -> bool:
+        if self.mode == "front":
+            return eye in FRONT_EYES
         return self.mode in ("per_eye", "all") or eye in (SLOPE_EYES if self.mode == "FL" else ())
 
     def params(self, eye: str, T: float, early: bool, x: Optional[np.ndarray] = None) -> np.ndarray:
         x = self.x if x is None else x
         p = self.base[eye].copy()
         dT = T - T0
-        s = x[self.ix[self.slope_name(eye)]]
+        s = self.slope(eye, x)
         p[0] = x[self.ix[f"Fx_{eye}"]] * (1 + s * dT)
         p[1] = x[self.ix[f"Fy_{eye}"]] * (1 + s * dT)
         p[4] = x[self.ix[f"K1_{eye}"]] + (x[self.ix[f"k1s_{eye}"]] * dT if f"k1s_{eye}" in self.ix else 0.0)
@@ -187,14 +219,14 @@ class Law:
         """d(camera parameter)/d(global term) for fx, fy, k1, k2: {param: {global index: derivative}}."""
         x = self.x
         dT = T - T0
-        sn = self.slope_name(eye)
-        s = x[self.ix[sn]]
+        s = self.slope(eye, x)
         out: Dict[str, Dict[int, float]] = {"fx": {self.ix[f"Fx_{eye}"]: 1 + s * dT},
                                            "fy": {self.ix[f"Fy_{eye}"]: 1 + s * dT},
                                            "k1": {self.ix[f"K1_{eye}"]: 1.0}, "k2": {}}
         if self.informs_slope(eye):
-            out["fx"][self.ix[sn]] = x[self.ix[f"Fx_{eye}"]] * dT
-            out["fy"][self.ix[sn]] = x[self.ix[f"Fy_{eye}"]] * dT
+            for i, w in self.slope_weights(eye).items():
+                out["fx"][i] = w * x[self.ix[f"Fx_{eye}"]] * dT
+                out["fy"][i] = w * x[self.ix[f"Fy_{eye}"]] * dT
         if f"k1s_{eye}" in self.ix:
             out["k1"][self.ix[f"k1s_{eye}"]] = dT
         if f"K2_{eye}" in self.ix:
@@ -415,7 +447,7 @@ def _early_eyes(images: List[Dict[str, Any]], eyes: Sequence[str]) -> List[str]:
     return out
 
 
-def run_joint(data: Dict[str, Any], slope_mode: str = "FL", slope_ppm: float = 20.0, early: bool = True,
+def run_joint(data: Dict[str, Any], slope_mode: str = SLOPE_MODE, slope_ppm: float = 20.0, early: bool = True,
               iterations: int = ITERATIONS, verbose: bool = True) -> Dict[str, Any]:
     """The joint on collected data (:func:`collect`): the law, its covariance and statistics; the early offsets
     kept only where significant (then the law fitted again with the others at 0)."""
@@ -433,9 +465,9 @@ def run_joint(data: Dict[str, Any], slope_mode: str = "FL", slope_ppm: float = 2
         return float(np.ptp(T)) if T else 0.0
 
     # a slope needs a temperature span (as the block fit: hazfit.MIN_T_SPAN_DEGC); else it is held at 0
-    if slope_mode == "per_eye":
+    if slope_mode in ("per_eye", "front"):
         for e in eyes:
-            if span([e]) < MIN_T_SPAN_DEGC:
+            if f"s_{e}" in law.ix and span([e]) < MIN_T_SPAN_DEGC:
                 law.x[law.ix[f"s_{e}"]] = 0.0
                 law.held.add(f"s_{e}")
     elif span(SLOPE_EYES if slope_mode == "FL" else eyes) < MIN_T_SPAN_DEGC:
@@ -477,7 +509,7 @@ def eye_result(j: Dict[str, Any], eye: str, rows: List[Dict[str, Any]], start: n
     law, cov = j["law"], j["stats"]["cov"]
     x = law.x
     sn = law.slope_name(eye)
-    s = float(x[law.ix[sn]])
+    s = law.slope(eye)
     p = law.params(eye, T0, False)
     ims = [im for im in j["images"] if im["eye"] == eye]
     T = np.array([im["T"] for im in ims], float)
@@ -487,13 +519,15 @@ def eye_result(j: Dict[str, Any], eye: str, rows: List[Dict[str, Any]], start: n
     scatter = float(np.sqrt(np.average(ppm ** 2, weights=w))) if len(er) and w.sum() > 0 else float("nan")
     ex, ey = (f"Ex_{eye}", f"Ey_{eye}")
     applied = [t for t, n in (("fx", ex), ("fy", ey)) if n in law.ix and n not in law.held]
-    sd_s = _sd(law, cov, sn)
-    src_note = ("own slope" if law.mode == "per_eye" else "slope shared by all four eyes" if law.mode == "all"
+    sd_s = law.slope_sd(eye, cov)
+    src_note = ("own slope" if law.mode == "per_eye" or sn == f"s_{eye}" else "slope shared by all four eyes"
+                if law.mode == "all" else "the mean of FL's and FR's slopes (Christian 29 Oct)" if sn == "mean"
                 else "FL's slope (Christian 24 Oct: the same thermal slope front and rear)")
     out = {"eye": eye, "method": "joint", "blocks": sorted({im["block"] for im in ims}), "weak_blocks": [],
            "outlier_blocks": [], "params": [float(v) for v in p], "ppm_per_degC": 1e6 * s,
            "sd_ppm_per_degC": None if sd_s is None else 1e6 * sd_s,
-           "slope_source": "FL" if law.mode == "FL" else law.mode, "slope_note": src_note,
+           "slope_source": ("FL" if law.mode == "FL" else "own" if sn == f"s_{eye}" else "front mean"
+                            if sn == "mean" else law.mode), "slope_note": src_note,
            "k1_per_degC": float(x[law.ix[f"k1s_{eye}"]]) if f"k1s_{eye}" in law.ix else 0.0,
            "sd_k1_per_degC": _sd(law, cov, f"k1s_{eye}"),
            "early_mission": {"dfx_px": float(x[law.ix[ex]]) if ex in law.ix else 0.0,
@@ -504,7 +538,7 @@ def eye_result(j: Dict[str, Any], eye: str, rows: List[Dict[str, Any]], start: n
                              "blocks_early": len({im["block"] for im in ims if im["sol"] < EARLY_SOL}),
                              "blocks_late": len({im["block"] for im in ims if im["sol"] >= EARLY_SOL})},
            "sd": {"fx": _sd(law, cov, f"Fx_{eye}"), "fy": _sd(law, cov, f"Fy_{eye}")},
-           "scatter_ppm": scatter, "slope_fitted": sn not in law.held, "T_span_degC": float(np.ptp(T)) if T.size else 0.0,
+           "scatter_ppm": scatter, "slope_fitted": (all(law.names[i] not in law.held for i in law.slope_weights(eye))), "T_span_degC": float(np.ptp(T)) if T.size else 0.0,
            "athermal": False, "label_start": [float(v) for v in start[:6]],
            "images": len(ims), "observations": int(sum(len(im["X"]) for im in ims)),
            "median_residual_px": float(np.median([im["residual_px"] for im in ims])) if ims else None,
@@ -514,7 +548,7 @@ def eye_result(j: Dict[str, Any], eye: str, rows: List[Dict[str, Any]], start: n
     return out
 
 
-def fit_hazcam_joint(blocks: Dict[str, PathLike], model: str = "cahv_ba", slope_mode: str = "FL",
+def fit_hazcam_joint(blocks: Dict[str, PathLike], model: str = "cahv_ba", slope_mode: str = SLOPE_MODE,
                      limits: Optional[Dict[str, Any]] = None, compare: bool = True, rigs: bool = True,
                      verbose: bool = True) -> Dict[str, Any]:
     """The Hazcam law from the joint (with the per-eye slopes for comparison when ``compare``) in hazfit's result
@@ -549,7 +583,7 @@ def fit_hazcam_joint(blocks: Dict[str, PathLike], model: str = "cahv_ba", slope_
     st = j["stats"]
     return {"when": datetime.date.today().isoformat(), "method": "joint", "blocks": data["blocks"], "T0_degC": T0,
             "early_mission_sol": EARLY_SOL, "eyes": eyes, "limits": limits or {}, "rigs": block_res.get("rigs") or {},
-            "joint": {"slope_mode": slope_mode, "slope_eyes": list(SLOPE_EYES) if slope_mode == "FL" else slope_mode,
+            "joint": {"slope_mode": slope_mode, "slope_eyes": list(SLOPE_EYES) if slope_mode == "FL" else list(FRONT_EYES) if slope_mode == "front" else slope_mode,
                       "images": len(j["images"]), "observations": st["observations"], "median_px": st["median_px"],
                       "rms_px": st["rms_px"], "sigma0": st["sigma0"], "iterations": st["iterations"],
                       "early_z": j["early_z"], "early_held": j["early_held"], "per_eye_slopes": comp,

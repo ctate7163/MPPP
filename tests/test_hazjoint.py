@@ -155,3 +155,35 @@ def test_joint_result_is_written_as_candidate_files(tmp_path):
     assert cf["thermal"]["slope_source"] == "FL" and "joint" in cf["source"]
     assert cf["thermal"]["fx_ppm_per_degC"] == pytest.approx(res["eyes"]["FL"]["ppm_per_degC"])
     assert any("own slope" in x for x in H.describe(res)) and w["check"]["checks"]
+
+
+def test_front_mode_fits_fl_and_fr_apart_and_gives_the_rear_their_mean():
+    """0.95.1 (Christian, 29 Oct: "The FL and FR should fit separately, and we can assume that both RL and RR are the
+    average of FL and FR").  FL follows +20, FR +36 ppm/degC, the rear eyes -100 (they must not pull): FL and FR get
+    their own slopes, RL and RR the mean (+28) with its sd; the default mode."""
+    assert HJ.SLOPE_MODE == "front"
+    rng = np.random.default_rng(4)
+    data, _ = synthetic(rng, slope_ppm=20.0, per_block=10)
+    for im in data["images"]:
+        sl = {"FR": 36.0, "RL": -100.0, "RR": -100.0}.get(im["eye"])
+        if sl is None:
+            continue
+        p = _base(im["eye"])
+        f = 1 + 1e-6 * sl * (im["T"] - HJ.T0)
+        p[0] *= f
+        p[1] *= f
+        Xc = im["X"] @ im["R"].T + im["t"]
+        cam = pycolmap.Camera(model="THIN_PRISM_FISHEYE", width=5120, height=3840, params=p)
+        im["xy"] = np.asarray(cam.img_from_cam(Xc), float)
+    j = HJ.run_joint(data, verbose=False)
+    L, cov = j["law"], j["stats"]["cov"]
+    assert "s" not in L.ix and {"s_FL", "s_FR"} <= set(L.ix) and "s_RL" not in L.ix
+    s_fl, s_fr = 1e6 * L.slope("FL"), 1e6 * L.slope("FR")
+    assert s_fl == pytest.approx(20.0, abs=3.0) and s_fr == pytest.approx(36.0, abs=3.0)
+    assert 1e6 * L.slope("RL") == pytest.approx(0.5 * (s_fl + s_fr), abs=1e-6) and L.slope("RR") == L.slope("RL")
+    assert 0 < L.slope_sd("RL", cov) < max(L.slope_sd("FL", cov), L.slope_sd("FR", cov))
+    rows = []
+    r = HJ.eye_result(j, "RL", rows, data["start"]["RL"])
+    assert r["slope_source"] == "front mean" and "mean of FL's and FR's" in r["slope_note"] and r["sd_ppm_per_degC"] > 0
+    f = HJ.eye_result(j, "FR", rows, data["start"]["FR"])
+    assert f["slope_source"] == "own" and f["ppm_per_degC"] == pytest.approx(s_fr)

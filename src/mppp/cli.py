@@ -185,9 +185,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hazcam-method", choices=["joint", "blocks"], default="joint",
                    help="hazcam: joint = the law fitted on the image observations of every block, each frame at its "
                         "own temperature (0.94.4, default); blocks = a line through one refined camera per block")
-    p.add_argument("--hazcam-slope", choices=["FL", "all", "per_eye"], default="FL",
-                   help="hazcam joint: FL = every eye takes FL's ppm/degC (default, Christian 24 Oct); all = one "
-                        "slope shared by the four eyes; per_eye = a slope per eye")
+    p.add_argument("--hazcam-slope", choices=["front", "FL", "all", "per_eye"], default="front",
+                   help="hazcam joint: front = FL and FR their own ppm/degC, RL and RR the mean of the two (default, "
+                        "0.95.1, Christian 29 Oct); FL = every eye takes FL's (24 Oct); all = one slope shared by the "
+                        "four eyes; per_eye = a slope per eye")
     p.add_argument("--promote-new-only", action="store_true",
                    help="zcam / hazcam: promote only models of which none is in use (0.94.1: a tiny joint never "
                         "replaces a model of more blocks)")
@@ -808,7 +809,7 @@ def _calib_hazcam(a: argparse.Namespace) -> int:
     if method == "joint":                 # 0.94.4 (Christian 24 Oct): the law fitted on the observations of every block
         from .calib import hazjoint as HJ
         try:
-            res = HJ.fit_hazcam_joint(blocks, slope_mode=getattr(a, "hazcam_slope", None) or "FL", limits=lim)
+            res = HJ.fit_hazcam_joint(blocks, slope_mode=getattr(a, "hazcam_slope", None) or HJ.SLOPE_MODE, limits=lim)
         except Exception as e:                       # noqa: BLE001 - the block fit stands in
             log.warning("hazcam joint failed (%s: %s); the block fit instead", type(e).__name__, e)
     if res is None:
