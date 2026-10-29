@@ -1349,6 +1349,26 @@ def write_tied(res: Dict[str, Any], out_dir: PathLike, note: str = "", template_
     """The candidate folder of a :func:`fit_tied` result in the frozen form: the camera files (parameters at T0, the
     thermal terms, the early-mission offsets of each eye, sd from the covariance) and the rig file (rotation at
     sol 0, ``drift`` with ``sol0 = 0``, the three rates and the pitch hinge); ``tied_joint.json`` with everything."""
+    out = write_law_files(res, out_dir, note=note, template_dir=template_dir)
+    (out / "tied_joint.json").write_text(json.dumps(res, indent=1, default=_json_default), encoding="utf-8")
+    fi = figure_inputs(res)
+    cons = dict(consensus_record(res), **{k: fi["consensus"][k] for k in ("NL", "NR")})
+    cons["thermal"] = dict(cons["thermal"], **fi["consensus"]["thermal"])
+    (out / "consensus.json").write_text(json.dumps(cons, indent=1, default=_json_default), encoding="utf-8")
+    # the diagnostic pass as the figures' inputs (paper_figures.py reads <study>/rig_residuals.json next to navcam_joint/)
+    for folder in {out, out.parent}:
+        (folder / "rig_residuals.json").write_text(json.dumps(fi["rig_residuals"], indent=1, default=_json_default), encoding="utf-8")
+        (folder / "thermal_bins.json").write_text(json.dumps(fi["bins"], indent=1, default=_json_default), encoding="utf-8")
+        (folder / "pp_units.json").write_text(json.dumps(fi["pp_units"], indent=1, default=_json_default), encoding="utf-8")
+    return out
+
+
+def write_law_files(res: Dict[str, Any], out_dir: PathLike, note: str = "", template_dir: Optional[PathLike] = None,
+                    method: str = "MPPP Navcam joint, one adjustment (mppp.calib.tied.fit_tied") -> Path:
+    """The Navcam law files of ``res`` - :func:`globals_result` plus ``blocks`` (and ``residuals``) - in the frozen
+    form: ``M2020_NL/NR_fisheye_tangential.json`` and ``M2020_N_rig.json`` in ``out_dir``, a folder that ``calib
+    lawcheck --law LABEL=DIR`` and ``cmods promote`` take.  0.95.0: split from :func:`write_tied` so that the N+Z joint
+    writes its combined law the same way (``method`` names the source)."""
     tdir = M._folder(template_dir)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -1361,7 +1381,7 @@ def write_tied(res: Dict[str, Any], out_dir: PathLike, note: str = "", template_
         c["params"] = [float(p.get(n, 0.0)) for n in c["param_names"]]
         c["fixed_params"] = []
         sd = o["sd"] or {}
-        c["source"] = (f"MPPP Navcam joint, one adjustment (mppp.calib.tied.fit_tied, {stamp}): one {eye} camera "
+        c["source"] = (f"{method}, {stamp}): one {eye} camera "
                        f"shared by {len(blocks)} blocks ({', '.join(blocks)}); fisheye + tangential at {res['T0_degC']:g} "
                        f"degC, fx {o['fx_ppm_per_degC']:+.1f} / fy {o['fy_ppm_per_degC']:+.1f} ppm/degC, cx "
                        f"{o['cx_px_per_degC']:+.4f} px/degC, k1 {o['k1_per_degC']:+.2e}/degC, early offsets per eye; "
@@ -1409,18 +1429,8 @@ def write_tied(res: Dict[str, Any], out_dir: PathLike, note: str = "", template_
                   f"{a['yaw_mdeg']:+.2f}, pitch {a['pitch_mdeg']:+.2f}, roll {a['roll_mdeg']:+.2f} mdeg; rates "
                   f"pitch {rates['pitch']:+.2f}, yaw {rates['yaw']:+.2f}, roll {rates['roll']:+.2f} mdeg/1000 sol "
                   f"(pitch before sol {r['knot_sol']:g}: {r['pitch_early_mdeg_per_1000sol']:+.2f}). Translation held. {note}".strip())
-    rj["source"] = f"MPPP Navcam tied joint (mppp.calib.tied.fit_tied, {stamp})"
+    rj["source"] = f"{method}, {stamp})"
     M.write_model(out / M.rig_file("N", tdir).name, rj)
-    (out / "tied_joint.json").write_text(json.dumps(res, indent=1, default=_json_default), encoding="utf-8")
-    fi = figure_inputs(res)
-    cons = dict(consensus_record(res), **{k: fi["consensus"][k] for k in ("NL", "NR")})
-    cons["thermal"] = dict(cons["thermal"], **fi["consensus"]["thermal"])
-    (out / "consensus.json").write_text(json.dumps(cons, indent=1, default=_json_default), encoding="utf-8")
-    # the diagnostic pass as the figures' inputs (paper_figures.py reads <study>/rig_residuals.json next to navcam_joint/)
-    for folder in {out, out.parent}:
-        (folder / "rig_residuals.json").write_text(json.dumps(fi["rig_residuals"], indent=1, default=_json_default), encoding="utf-8")
-        (folder / "thermal_bins.json").write_text(json.dumps(fi["bins"], indent=1, default=_json_default), encoding="utf-8")
-        (folder / "pp_units.json").write_text(json.dumps(fi["pp_units"], indent=1, default=_json_default), encoding="utf-8")
     return out
 
 

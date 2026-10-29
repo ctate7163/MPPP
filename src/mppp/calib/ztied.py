@@ -94,6 +94,17 @@ MIN_SEQ_OBS = forms.MIN_SEQ_OBS
 # 0.94.5 (Christian, 27 Oct): per block, the Mastcam-Z aspect (fy / fx of the diagnostic pass, the line with the
 # most observations) against the Navcam's per-block dfy - dfx (the Navcam diagnostic pass over the same blocks)
 BLOCK_ASPECT_MIN_OBS = 1000                # the same cut as the lines (MIN_BIN_OBSERVATIONS)
+EYE_SLOPE_TIE_SD = 1e-7                   # px/count: the eye-slope tie of eye_slope_tests (exact)
+# 0.95.0 (Christian, 29 Oct): the joint refines the Mastcam-Z rig translation (1 cm prior per axis on the start rig's
+# right centre) instead of holding it at the CAHV value; "rotation" holds it again (the 0.94 joint)
+ZJOINT_RIG_FIT = "full"
+# 0.95.0 (Christian, 29 Oct: "fix the Zcam rig drift ... put this into an early mission principal point offset if it
+# is significant"): the Z34 rig pitch per block was -28 and -36 mdeg at Chal Rocks (sol 102) and Seitah Overlook
+# (119) and within +-7 mdeg from Rochette (182) on - a step, not a drift.  ZR's principal point gets one offset
+# (cx, cy) for the bins before this sol (ZL is the reference eye); kept where |z| >= EARLY_Z_MIN
+ZCAM_EARLY_SOL = 150
+ZCAM_EARLY_MIN_BINS = 3                   # fewer early ZR bins on the lines: no offset (held at 0)
+EARLY_Z_MIN = 3.0
 REGULAR_RATIO_GROUP_SD = 0.003
 TIE_SIGMA_Z = {"f": 1e-3, "k": 1e-7, "p": 1e-8, "cy": 1e-3}       # px; unitless - the ties are effectively exact
 NAV_POINTS_PER_BLOCK = 8000
@@ -145,7 +156,8 @@ def start_globals(model: Dict[str, Any], zoom: int = ZOOM) -> Dict[str, Any]:
 # ====================================================================================== the merged problem
 def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Optional[PathLike] = None,
           zoom: int = ZOOM, nav_points: int = NAV_POINTS_PER_BLOCK, z_points: int = Z_POINTS_PER_BLOCK,
-          scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None, found: Any = "auto"):
+          scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None, found: Any = "auto",
+          early_sol: Optional[int] = ZCAM_EARLY_SOL):
     """The merged reconstruction of the blocks: Navcam on the promoted law (held), Mastcam-Z bins of ``zoom`` as
     cameras of their own.  Returns (rec, proj, idx, st, units, zunits); ``zunits`` {camera_id: {"key", "scape",
     "group", "eye", "state", "focus", "dF", "c_cy"}}.  ``scapes``: loaded blocks (tests), else read from ``blocks``;
@@ -240,6 +252,7 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
     for cid, u in zunits.items():                # 0.94.4: the bin's sol (median of its images) for ratio_by "sol"
         u["sol"] = int(round(float(np.median(sols_of[cid])))) if sols_of.get(cid) else None
         u["images"] = len(sols_of.get(cid) or [])  # 0.95.0: the bin's frames in the problem
+    mark_early_bins(proj, zunits, sg, early_sol)                                # 0.95.1
     sg["mixed"] = mixed_exposures(proj.images, zunits)
     sg["paired_low"] = paired_low_exposures(proj.images, zunits)         # 0.95.0 (Mastcam-Z joint: ZR's low-state principal-point offset fitted relative to ZL's from every exposure paired with ZL (not only the mixed ones); the site runs pin a regular-state line at pp0 + the model's offset (Christian, 27 Oct: the state shows in the centre - Seitah ZR063 0.65 px))
     sg["split_cameras_left_out"] = split_out
@@ -258,6 +271,30 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
                 rec.deregister_frame(fid)
     mark_thin_bins(rec, proj, zunits, sg)          # 0.94.5
     return rec, proj, idx, st, units, zunits, sg
+
+
+def mark_early_bins(proj, zunits: Dict[int, Dict[str, Any]], sg: Dict[str, Any], early_sol: Optional[int]) -> Dict[str, Any]:
+    """0.95.0: the ZR bins before ``early_sol`` (their sol, the median of their images) carry the early-mission
+    principal-point offset (:func:`make_zties`); their cx is freed for it (backlash bins hold cx at the pin
+    otherwise).  ``sg["early"]`` {"before_sol", "eyes": {eye: {"bins", "images"}}}; no early_sol: none."""
+    out: Dict[str, Any] = {"before_sol": int(early_sol) if early_sol else None, "eyes": {}}
+    for cid, u in zunits.items():
+        u["early"] = bool(early_sol) and u["group"].startswith("ZR") and u.get("sol") is not None \
+            and int(u["sol"]) < int(early_sol)
+        if not u["early"]:
+            continue
+        e = out["eyes"].setdefault(u["group"], {"bins": 0, "images": 0, "blocks": set()})
+        e["bins"] += 1
+        e["images"] += int(u.get("images") or 0)
+        e["blocks"].add(u["scape"])
+        spec = proj.cameras.get(u["key"])
+        if spec is not None and u["state"] != "regular":
+            spec["fixed_params"] = [x for x in spec.get("fixed_params") or [] if x != "cx"]
+            spec["free_params"] = sorted(set(spec.get("free_params") or []) | {"cx"})
+    for e in out["eyes"].values():
+        e["blocks"] = sorted(e["blocks"])
+    sg["early"] = out
+    return out
 
 
 def mark_thin_bins(rec, proj, zunits: Dict[int, Dict[str, Any]], sg: Dict[str, Any],
@@ -419,6 +456,14 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
            for eye in fb_eyes if eye in fb_high} if tie else {}
     fb_held = {eye: "held at 0: every focus-from-below bin of this eye is in the low state (the offset is one with "
                     "the high / low ratio)" for eye in fb_eyes if eye not in fb_high} if tie else {}
+    # 0.95.0 (Christian, 29 Oct): ZR's early-mission principal-point offset (cx, cy), shared by its bins before
+    # sg["early"]["before_sol"]; from ZCAM_EARLY_MIN_BINS early bins on the lines on
+    early_n: Dict[str, int] = {}
+    for u in zunits.values():
+        if u.get("early") and not u.get("thin"):
+            early_n[u["group"]] = early_n.get(u["group"], 0) + 1
+    dearly = {eye: np.array(list((sg.get("early_offsets_px") or {}).get(eye, [0.0, 0.0])), float)
+              for eye, n in early_n.items() if n >= ZCAM_EARLY_MIN_BINS} if tie else {}
     # 0.95.0: the sequences' offsets (SEQ_OFFSET_SD, MIN_SEQ_IMAGES, MIN_SEQ_OBS)
     sfree, sinfo = sequence_groups(zunits) if tie else ({}, {})
     dseq = {k: np.array([float(((sg.get("sequence_offsets_px") or {}).get(f"{k[0]}|{k[1]}", 0.0)))]) for k in sfree}
@@ -472,20 +517,33 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                     rows.append(a); sig.append(TIE_SIGMA_Z[s_])
                 add_tie(np.array(rows), np.array(sig), [12, NG] + [1] * nextra,
                         [blk, g[eye]] + ([dreg[rk]] if nx else []) + ([dfb[eye]] if nf else []) + ([dseq[sk]] if ns else []))
+                ne = 2 if (u.get("early") and eye in dearly) else 0     # 0.95.0: + the early-mission offset
                 if reg:                                      # 0.93.2: cx = pin + d_cx, cy = pin + b_cy dF + d_cy
                     c0 = np.array([u["c_cx"], u["c_cy"]], float)
                     keep.append(c0)
-                    a = np.zeros((2, 12 + NG + 2))
+                    a = np.zeros((2, 12 + NG + 2 + ne))
                     a[0, _CX] = 1.0; a[0, 12 + 10] = -1.0; a[0, 12 + NG] = -1.0
                     a[1, _CY] = 1.0; a[1, 12 + 9] = -u["dF"]; a[1, 12 + 11] = -1.0; a[1, 12 + NG + 1] = -1.0
-                    add_tie(a, np.array([TIE_SIGMA_Z["cy"]] * 2), [12, NG, 2], [blk, g[eye], c0])
+                    if ne:
+                        a[0, 12 + NG + 2] = -1.0; a[1, 12 + NG + 3] = -1.0
+                    add_tie(a, np.array([TIE_SIGMA_Z["cy"]] * 2), [12, NG, 2] + ([2] if ne else []),
+                            [blk, g[eye], c0] + ([dearly[eye]] if ne else []))
                     prob.set_parameter_block_constant(c0)
                 elif eye.startswith("ZR"):                   # cy = its pin + b_cy (focus - ref)
                     c0 = np.array([u["c_cy"]], float)
                     keep.append(c0)
-                    a = np.zeros((1, 12 + NG + 1)); a[0, _CY] = 1.0; a[0, 12 + 9] = -u["dF"]; a[0, 12 + NG] = -1.0
-                    add_tie(a, np.array([TIE_SIGMA_Z["cy"]]), [12, NG, 1], [blk, g[eye], c0])
+                    a = np.zeros((1, 12 + NG + 1 + ne)); a[0, _CY] = 1.0; a[0, 12 + 9] = -u["dF"]; a[0, 12 + NG] = -1.0
+                    if ne:
+                        a[0, 12 + NG + 2] = -1.0
+                    add_tie(a, np.array([TIE_SIGMA_Z["cy"]]), [12, NG, 1] + ([2] if ne else []),
+                            [blk, g[eye], c0] + ([dearly[eye]] if ne else []))
                     prob.set_parameter_block_constant(c0)
+                    if ne:                                   # cx = its pin + the early offset (cx freed for it)
+                        cx0 = np.array([u["c_cx"]], float)
+                        keep.append(cx0)
+                        a = np.zeros((1, 12 + 1 + 2)); a[0, _CX] = 1.0; a[0, 12] = -1.0; a[0, 13] = -1.0
+                        add_tie(a, np.array([TIE_SIGMA_Z["cy"]]), [12, 1, 2], [blk, cx0, dearly[eye]])
+                        prob.set_parameter_block_constant(cx0)
                 n += 1
         for (eye, gk), d in dreg.items():                # the groups' offsets drawn to 0 (the eye's ratio their mean)
             if prob.has_parameter_block(d):
@@ -495,6 +553,13 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
             if prob.has_parameter_block(d):
                 sd_px = SEQ_OFFSET_SD * float(sg["eyes"][eye]["G"][0])
                 prob.add_residual_block(LinearTie(np.ones((1, 1)), np.array([sd_px]), [1]), None, [d])
+        if tie and sg.get("tie_eye_slopes") and len(g) == 2:
+            # 0.95.0 (Christian, 29 Oct: "the efl vs focus slopes of both should be about equal"): one focus slope
+            # for both eyes, b_ZR = b_ZL exactly (the eye-slope test of :func:`eye_slope_tests`)
+            zl, zr = sorted(g)
+            if prob.has_parameter_block(g[zl]) and prob.has_parameter_block(g[zr]):
+                a = np.zeros((1, 2 * NG)); a[0, 4] = 1.0; a[0, NG + 4] = -1.0
+                add_tie(a, np.array([EYE_SLOPE_TIE_SD]), [NG, NG], [g[zl], g[zr]])
         for eye, arr in g.items():                       # 0.94.5: too few low-state images - the ratio held
             r0 = sg["eyes"][eye].get("ratio_hold")
             if tie and r0 and has_reg[eye] and prob.has_parameter_block(arr):
@@ -528,6 +593,7 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
         cb.update({f"dreg|{eye}|{gk}": d for (eye, gk), d in dreg.items() if prob.has_parameter_block(d)})
         cb.update({f"dfb|{eye}": d for eye, d in dfb.items() if prob.has_parameter_block(d)})
         cb.update({f"dseq|{eye}|{sk}": d for (eye, sk), d in dseq.items() if prob.has_parameter_block(d)})
+        cb.update({f"dearly|{eye}": d for eye, d in dearly.items() if prob.has_parameter_block(d)})
         return {"cov_blocks": cb, "ties": {"zcam_cameras": n}, "held": held,
                 "tie_ids": tie_ids if T.EXACT_TIE_COVARIANCE else [], "tie_specs": specs,
                 "exact_solve": bool(EXACT_TIE_SOLVE)}
@@ -538,6 +604,8 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
     hook.focus_below_held = fb_held
     hook.sequence_offsets = dseq
     hook.sequence_info = sinfo
+    hook.early_offsets = dearly
+    hook.early_bins = early_n
     return hook, g
 
 
@@ -616,13 +684,18 @@ def fixed_globals(sg: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
 
 
 def adjust_z(rec, proj, idx, st, units, zunits, sg, iterations: int = 100, covariance: bool = True, passes: int = 2,
-             tie: bool = True, refine_zcam_rig: str = "rotation", verbose: bool = True,
+             tie: bool = True, refine_zcam_rig: Optional[str] = None, verbose: bool = True,
              hold: Union[Sequence[str], Dict[str, Sequence[str]]] = ()):
     """The Mastcam-Z joint's adjustment: Navcam cameras and rigs held (the promoted law), frame poses free, the
-    Mastcam-Z bins tied to the global terms (:func:`make_zties`), the Mastcam-Z rig rotation refined."""
+    Mastcam-Z bins tied to the global terms (:func:`make_zties`), the Mastcam-Z rig refined - ``refine_zcam_rig``
+    "full" (rotation and translation, 1 cm prior on the right centre) or "rotation"; default ``sg["rig_fit"]``, else
+    "rotation".  0.95.1: the thin bins (:func:`mark_thin_bins`) are held at their start (the Z79 joint of 28 Oct: a
+    free 389-observation bin went to fx 10247, fy 6701 px and the rms to 34.9 px)."""
     from ..sfm.reconstruction import bundle_adjust
+    refine_zcam_rig = refine_zcam_rig or sg.get("rig_fit") or "rotation"
     hook, g = make_zties(sg, zunits, tie=tie, hold=hold)
     navkeys = [k for k in proj.settings["database"]["cameras"] if str(k).startswith("N")]
+    navkeys += sorted({u["key"] for u in zunits.values() if u.get("thin")})
     ks, kmap = T.keypoint_terms(units, proj, idx["temps"], _navcam_globals(st))
     ba = None
     for p_ in range(max(1, int(passes))):
@@ -641,6 +714,9 @@ def adjust_z(rec, proj, idx, st, units, zunits, sg, iterations: int = 100, covar
     ba["sequence_offsets_px"] = {f"{k[0]}|{k[1]}": float(v[0]) for k, v in hook.sequence_offsets.items()}   # 0.95.0
     ba["sequence_info"] = {f"{k[0]}|{k[1]}": dict(v) for k, v in hook.sequence_info.items()}
     sg["sequence_offsets_px"] = dict(ba["sequence_offsets_px"])
+    ba["early_offsets_px"] = {k: [float(v[0]), float(v[1])] for k, v in hook.early_offsets.items()}    # 0.95.0
+    ba["early_bins"] = dict(hook.early_bins)
+    sg["early_offsets_px"] = dict(ba["early_offsets_px"])
     stats = J.residual_stats(rec, proj, keypoint_scale=ks, keypoint_map=kmap)
     return ba, g, stats
 
@@ -805,12 +881,104 @@ def ratio_group_rows(res: Dict[str, Any], ba: Dict[str, Any], zunits: Dict[int, 
     return rows
 
 
-def rig_result(proj, sg, zoom: int = ZOOM) -> Dict[str, Any]:
-    v = (proj.settings.get("zcam_virtual_rig") or {}).get(f"Z{zoom:03d}") or {}
+def rig_result(proj, sg, zoom: int = ZOOM, ba: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """The joint's Mastcam-Z rig.  0.95.1 (rig translation refined): the right centre in the left camera's frame
+    (x right, y down, z along the boresight) against the start rig's (the model in use / CAHV), with its sd and z per
+    axis from the covariance of the rig block ("extra:zrig|Z0nn", scaled by the variance factor)."""
+    fam = f"Z{zoom:03d}"
+    v = (proj.settings.get("zcam_virtual_rig") or {}).get(fam) or {}
     R = np.asarray(v.get("R_refined") or v.get("R_sensor_from_ref"), float)
     t = np.asarray(v.get("t_refined") or v.get("t_sensor_from_ref"), float)
-    return {"R_sensor_from_ref": R.tolist(), "t_sensor_from_ref": t.tolist(), "baseline_m": float(np.linalg.norm(t)),
-            "change_mdeg": float(J.rotation_mdeg(sg["rig"]["R"], R)), "translation_source": "held (the rig in use)"}
+    mode = sg.get("rig_fit") or "rotation"
+    out = {"R_sensor_from_ref": R.tolist(), "t_sensor_from_ref": t.tolist(), "baseline_m": float(np.linalg.norm(t)),
+           "change_mdeg": float(J.rotation_mdeg(sg["rig"]["R"], R)), "fit": mode,
+           "translation_source": ("refined in the joint (1 cm prior per axis on the start rig's right centre)"
+                                  if mode == "full" else "held (the rig in use)")}
+    C0 = -np.asarray(sg["rig"]["R"], float).T @ np.asarray(sg["rig"]["t"], float)
+    C = -R.T @ t
+    out["right_centre_m"] = C.tolist()
+    out["start_right_centre_m"] = C0.tolist()
+    out["baseline_change_mm"] = float(1e3 * (np.linalg.norm(C) - np.linalg.norm(C0)))
+    if mode != "full":
+        return out
+    out["translation_change_mm"] = (1e3 * (C - C0)).tolist()
+    cov = (ba or {}).get("covariance") or {}
+    c = (cov.get("blocks") or {}).get(f"extra:zrig|{fam}")
+    vf = float(cov.get("variance_factor") or 1.0)
+    if c is not None:
+        c = np.asarray(c, float)
+        it = slice(4, 7) if c.shape[0] == 7 else slice(3, 6)
+        St = c[it, it] * vf
+        SC = R.T @ St @ R                                    # C = -R^T t (the rotation's share is microns)
+        sd = np.sqrt(np.clip(np.diag(SC), 0, None)) * 1e3
+        if np.all(np.isfinite(sd)) and np.all(sd > 0):
+            out["translation_sd_mm"] = sd.tolist()
+            out["translation_z"] = (np.asarray(out["translation_change_mm"]) / sd).tolist()
+            out["translation_significant"] = bool(np.max(np.abs(out["translation_z"])) >= EARLY_Z_MIN)
+            u = C / np.linalg.norm(C)
+            out["baseline_sd_mm"] = float(np.sqrt(u @ SC @ u) * 1e3)
+    return out
+
+
+def rig_lines(r: Dict[str, Any]) -> List[str]:
+    """0.95.1: report lines of the rig translation (:func:`rig_result`)."""
+    if not r or r.get("fit") != "full":
+        return []
+    ch = r.get("translation_change_mm") or [0, 0, 0]
+    out = [f"rig translation refined: the right centre moved x {ch[0]:+.2f}, y {ch[1]:+.2f}, z (along the boresight) "
+           f"{ch[2]:+.2f} mm from the start rig; baseline {1e3 * r['baseline_m']:.2f} mm ({r['baseline_change_mm']:+.2f})"]
+    if r.get("translation_sd_mm"):
+        sd, z = r["translation_sd_mm"], r["translation_z"]
+        out.append("  sd " + ", ".join(f"{a} {s:.2f} mm (z {zz:+.1f})" for a, s, zz in zip("xyz", sd, z))
+                   + ("; significant" if r.get("translation_significant") else "; within 3 sd of the start rig"))
+    else:
+        out.append("  (no covariance of the rig block)")
+    return out
+
+
+def early_result(ba: Dict[str, Any], sg: Dict[str, Any]) -> Dict[str, Any]:
+    """0.95.1: ZR's early-mission principal-point offset (:func:`make_zties`) per eye with its sd and z; applied in
+    the candidate model where either component's |z| >= :data:`EARLY_Z_MIN`."""
+    info = sg.get("early") or {}
+    out: Dict[str, Any] = {"before_sol": info.get("before_sol"), "eyes": {}}
+    cov = (ba or {}).get("covariance") or {}
+    vf = float(cov.get("variance_factor") or 1.0)
+    for eye, e in sorted((info.get("eyes") or {}).items()):
+        row: Dict[str, Any] = {"bins": int(e["bins"]), "images": int(e["images"]), "blocks": list(e["blocks"]),
+                               "bins_on_lines": int((ba.get("early_bins") or {}).get(eye, 0))}
+        d = (ba.get("early_offsets_px") or {}).get(eye)
+        if d is None:
+            row.update({"fitted": False, "applied": False,
+                        "note": f"fewer than {ZCAM_EARLY_MIN_BINS} early bins on the lines: no offset"})
+        else:
+            row.update({"fitted": True, "offset_px": [float(d[0]), float(d[1])]})
+            c = (cov.get("blocks") or {}).get(f"extra:dearly|{eye}")
+            if c is not None:
+                sd = np.sqrt(np.clip(np.diag(np.asarray(c, float)[:2, :2]) * vf, 0, None))
+                if np.all(np.isfinite(sd)) and np.all(sd > 0):
+                    row["sd_px"] = sd.tolist()
+                    row["z"] = (np.asarray(row["offset_px"]) / sd).tolist()
+            row["applied"] = bool(row.get("z") and max(abs(x) for x in row["z"]) >= EARLY_Z_MIN)
+        out["eyes"][eye] = row
+    return out
+
+
+def early_lines(er: Optional[Dict[str, Any]]) -> List[str]:
+    if not er or not er.get("eyes"):
+        return []
+    out = []
+    for eye, r in er["eyes"].items():
+        head = f"early-mission principal point of {eye} (bins before sol {er['before_sol']}: {r['bins']} bins, " \
+               f"{r['images']} images, {', '.join(r['blocks'])})"
+        if not r.get("fitted"):
+            out.append(f"{head}: {r['note']}")
+            continue
+        o = r["offset_px"]
+        zs = (f" +- {r['sd_px'][0]:.2f}, {r['sd_px'][1]:.2f} (z {r['z'][0]:+.1f}, {r['z'][1]:+.1f})"
+              if r.get("z") else " (no sd)")
+        out.append(f"{head}: dcx {o[0]:+.2f}, dcy {o[1]:+.2f} px{zs} - "
+                   + ("significant: in the candidate model" if r["applied"] else "not significant: not applied"))
+    return out
 
 
 # ====================================================================================== the diagnostic pass
@@ -847,7 +1015,8 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
     fam0 = f"Z{zoom:03d}"
     R0 = np.asarray((proj.settings["zcam_virtual_rig"][fam0]).get("R_refined")
                     or proj.settings["zcam_virtual_rig"][fam0]["R_sensor_from_ref"], float)
-    t0 = np.asarray(proj.settings["zcam_virtual_rig"][fam0]["t_sensor_from_ref"], float)
+    t0 = np.asarray((proj.settings["zcam_virtual_rig"][fam0]).get("t_refined")          # 0.95.0: as refined
+                    or proj.settings["zcam_virtual_rig"][fam0]["t_sensor_from_ref"], float)
     for cid, u in zunits.items():                       # the bins at the joint's law
         p = np.asarray(rec.cameras[cid].params, float).copy()
         G = g[u["group"]]
@@ -864,6 +1033,12 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
             p[_CY] = u["c_cy"] + G[9] * u["dF"] + G[11]
         elif u["group"].startswith("ZR"):
             p[_CY] = u["c_cy"] + G[9] * u["dF"]
+        de = (sg.get("early_offsets_px") or {}).get(u["group"]) if u.get("early") else None
+        if de:                                          # 0.95.0: the early-mission offset (else the rig takes it)
+            if not reg:
+                p[_CX] = u["c_cx"]
+            p[_CX] += float(de[0])
+            p[_CY] += float(de[1])
         rec.cameras[cid].params = p
         spec = proj.cameras[u["key"]]
         spec["fixed_params"] = ["cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6"]
@@ -1037,12 +1212,19 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
                zoom: int = ZOOM, nav_points: int = NAV_POINTS_PER_BLOCK, z_points: int = Z_POINTS_PER_BLOCK,
                iterations: int = 100, passes: int = 2, diagnostics: bool = True, verbose: bool = True,
                scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None,
-               k_tests: bool = True, ratio_by: Optional[str] = None, navcam_aspect: bool = True) -> Dict[str, Any]:
+               k_tests: bool = True, ratio_by: Optional[str] = None, navcam_aspect: bool = True,
+               slope_tests: bool = False, rig_fit: str = ZJOINT_RIG_FIT,
+               early_sol: Optional[int] = ZCAM_EARLY_SOL) -> Dict[str, Any]:
     """The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the distortion tests (:func:`distortion_tests`,
     ``k_tests``), the diagnostic pass.  ``model``: the focus model to start from (default: the one in use);
     ``ratio_by``: "global" | "block" | "sol", the low-state groups with their own high / low ratio (default
-    :data:`REGULAR_RATIO_BY`)."""
+    :data:`REGULAR_RATIO_BY`).  ``slope_tests`` (0.95.0): the eye-slope tests (:func:`eye_slope_tests`, three more
+    adjustments).  0.95.1: ``rig_fit`` "full" (the rig translation refined, :data:`ZJOINT_RIG_FIT`) or "rotation"
+    (held at the start rig, the 0.94 joint); ``early_sol``: ZR's early-mission principal-point offset for its bins
+    before this sol (:data:`ZCAM_EARLY_SOL`; None: none)."""
     from ..sfm.project import zcam_focus_model_path
+    if rig_fit not in ("full", "rotation"):
+        raise ValueError(f"rig_fit {rig_fit!r}: full or rotation")
     start_from_blocks = False
     if model is None:
         f = zcam_focus_model_path(zoom=zoom)
@@ -1058,7 +1240,9 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     t = time.time()
     if scapes is None and diagnostics and navcam_aspect:    # 0.94.5: kept for the Navcam's per-block aspect
         scapes = [J.load_scape(n, w, single=False) for n, w in blocks.items()]
-    rec, proj, idx, st, units, zunits, sg = build(blocks, model, navcam_dir, zoom, nav_points, z_points, scapes=scapes, st=st)
+    rec, proj, idx, st, units, zunits, sg = build(blocks, model, navcam_dir, zoom, nav_points, z_points, scapes=scapes, st=st,
+                                                  early_sol=early_sol)
+    sg["rig_fit"] = rig_fit
     if diagnostics and navcam_aspect:
         sg["_scapes"] = scapes
     if verbose:
@@ -1089,13 +1273,17 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     res["min_bin_observations"] = int(MIN_BIN_OBSERVATIONS)
     res["found_list"] = sg.get("found_list")
     res.update({"zoom": zoom, "blocks": sorted({u["scape"] for u in zunits.values()}), "residuals": stats,
-                "zcam": _zstats(rec, zunits, proj.images), "rig": rig_result(proj, sg, zoom), "final_cost": float(ba["final_cost"]),
+                "zcam": _zstats(rec, zunits, proj.images), "rig": rig_result(proj, sg, zoom, ba), "final_cost": float(ba["final_cost"]),
                 "iterations": ba["iterations"], "brief": ba["brief"], "seconds": time.time() - t,
                 "navcam_models": str(st["folder"]), "points": {"navcam_per_block": nav_points, "zcam_per_block": z_points}})
+    res["early_pp"] = early_result(ba, sg)                    # 0.95.1
     res["distortion"] = distortion_curves(res, ba, zunits=zunits)
     if k_tests:
         res["distortion"]["tests"] = distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba,
                                                       iterations=iterations, verbose=verbose, fixed=fixed)
+    if slope_tests:
+        res["eye_slope_tests"] = eye_slope_tests(rec, proj, idx, st, units, zunits, sg, g, ba, zoom=zoom,
+                                                 iterations=iterations, verbose=verbose, fixed=fixed)
     if verbose:
         for line in describe(res):
             log.info(line)
@@ -1244,8 +1432,11 @@ def distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba, iterations: i
             sgv["eyes"][e]["G"] = G
         hold = {e: sorted((set(fixed.get(e, {})) | set(fix.get(e, {}))) - set(free.get(e, []))) for e in eyes}
         try:
+            # 0.95.1: the rig translation held at the joint's value (refined there): a variant with it free as well
+            # wandered off on the synthetic blocks (delta chi2 4774 for the eyes' equal k1, k2, 0.3 held)
             bav, gv, _ = adjust_z(copy.deepcopy(rec), copy.deepcopy(proj), idx, st, units, zunits, sgv,
-                                  iterations=iterations, covariance=False, passes=1, verbose=False, hold=hold)
+                                  iterations=iterations, covariance=False, passes=1, verbose=False, hold=hold,
+                                  refine_zcam_rig="rotation")
         except Exception as ex:                                       # noqa: BLE001
             out.append({"test": name, "error": f"{type(ex).__name__}: {ex}"})
             continue
@@ -1265,6 +1456,124 @@ def distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba, iterations: i
         if verbose:
             log.info(f"  distortion test {name}: delta chi2 {dchi2:.1f} ({dof} dof, p {p:.2g}), curve change "
                      f"<= {change:.2f} px ({time.time() - t:.0f} s)")
+    return out
+
+
+def _rig_centre(proj, zoom: int) -> Optional[np.ndarray]:
+    """The right Mastcam-Z centre in the left camera's frame (m) of the zoom's rig as refined in ``proj``."""
+    v = (proj.settings.get("zcam_virtual_rig") or {}).get(f"Z{zoom:03d}") or {}
+    R, t = v.get("R_refined") or v.get("R_sensor_from_ref"), v.get("t_refined") or v.get("t_sensor_from_ref")
+    if R is None or t is None:
+        return None
+    return -np.asarray(R, float).T @ np.asarray(t, float)
+
+
+def eye_slope_tests(rec, proj, idx, st, units, zunits, sg, g, ba, zoom: int = ZOOM, iterations: int = 60,
+                    verbose: bool = True, fixed: Optional[Dict[str, Dict[str, float]]] = None) -> Dict[str, Any]:
+    """0.95.0 (Christian, 29 Oct: "the efl vs focus slopes of both should be about equal"; Z34 28 Oct: ZL 0.0245, ZR
+    0.0351 px/count, the difference +0.009 to +0.012 in all ten blocks and positive at every zoom).  The hypothesis:
+    the rig translation is held at the CAHV value, and an error dz along the boresight scales ZR's image against ZL's by
+    dz / D - with D tied to the focus count, that lands in ZR's focus slope.  Three adjustments from the joint's
+    solution, each against the full model as delta chi^2 = 2 (cost change) / variance factor:
+
+    (1) ``rig translation free``: the Mastcam-Z rig's translation refined (1 cm prior per axis on the right centre,
+    :data:`mppp.sfm.reconstruction.ZCAM_RIG_TRANSLATION_SIGMA_M`) - the slopes it gives and how far the right centre
+    moves (mm, in the left camera's frame: z along the boresight);
+    (2) ``one slope for both eyes``: b_ZR = b_ZL, the rig as in the joint - the cost of equal slopes;
+    (3) ``one slope, rig translation free``: both - against (1), the cost of equal slopes once the rig may move.
+
+    If the rig is the cause, (1) moves the centre a few mm (mostly z) and brings the slopes together, and (3) costs
+    little against (1) while (2) costs a lot."""
+    from scipy.stats import chi2
+    cov = ba.get("covariance") or {}
+    vf = float(cov.get("variance_factor") or 0.0)
+    cost0 = float(ba["final_cost"])
+    eyes = sorted(g)
+    if len(eyes) != 2 or not vf:
+        return {"tests": [{"test": "skipped", "note": "two eyes and a variance factor (covariance) are needed"}]}
+    zl, zr = eyes
+    ib = GLOBAL_TERMS.index("b")
+    fixed = fixed or {}
+    hold = {e: sorted(fixed.get(e, {})) for e in eyes}
+    C0 = _rig_centre(proj, zoom)
+    out: Dict[str, Any] = {"base": {"b": {e: float(g[e][ib]) for e in eyes}, "cost": cost0, "variance_factor": vf,
+                                    "rig_centre_m": None if C0 is None else C0.tolist()}, "tests": []}
+    runs = {}
+    base_rig = sg.get("rig_fit") or "rotation"
+    out["base"]["rig"] = base_rig
+    if base_rig == "full":          # 0.95.1: the joint refines the translation - test holding it, and one slope
+        cases = (("rig translation held", "rotation", False), ("one slope for both eyes", "full", True))
+        refs = {"rig translation held": ("the joint", cost0, 3), "one slope for both eyes": ("the joint", cost0, 1)}
+    else:
+        cases = (("rig translation free", "full", False), ("one slope for both eyes", "rotation", True),
+                 ("one slope, rig translation free", "full", True))
+        refs = None
+    for name, rig_mode, tie_b in cases:
+        t = time.time()
+        sgv = copy.deepcopy(sg)
+        for e in eyes:
+            sgv["eyes"][e]["G"] = g[e].copy()
+        if tie_b:                                       # start both at the observation-weighted mean
+            bm = float(np.mean([g[e][ib] for e in eyes]))
+            for e in eyes:
+                sgv["eyes"][e]["G"][ib] = bm
+        sgv["tie_eye_slopes"] = bool(tie_b)
+        pv = copy.deepcopy(proj)
+        if rig_mode == "rotation" and base_rig == "full":   # 0.95.1: held at the start rig, not at the joint's
+            (pv.settings.get("zcam_virtual_rig") or {}).get(f"Z{zoom:03d}", {}).pop("t_refined", None)
+        try:
+            bav, gv, _ = adjust_z(copy.deepcopy(rec), pv, idx, st, units, zunits, sgv, iterations=iterations,
+                                  covariance=False, passes=1, verbose=False, hold=hold, refine_zcam_rig=rig_mode)
+        except Exception as ex:                                       # noqa: BLE001
+            out["tests"].append({"test": name, "error": f"{type(ex).__name__}: {ex}"})
+            continue
+        C = _rig_centre(pv, zoom)
+        runs[name] = float(bav["final_cost"])
+        row = {"test": name, "rig": rig_mode, "one_slope": bool(tie_b), "cost": float(bav["final_cost"]),
+               "b": {e: float(gv[e][ib]) for e in eyes}, "seconds": time.time() - t,
+               "rig_centre_change_mm": None if (C is None or C0 is None) else (1e3 * (C - C0)).tolist()}
+        out["tests"].append(row)
+    # the delta chi^2 of each against its reference: (1) and (2) against the joint, (3) against (1)
+    refs = refs or {"rig translation free": ("the joint", cost0, 3), "one slope for both eyes": ("the joint", cost0, 1),
+                    "one slope, rig translation free": ("rig translation free", runs.get("rig translation free"), 1)}
+    for row in out["tests"]:
+        if "cost" not in row:
+            continue
+        ref_name, ref_cost, dof = refs[row["test"]]
+        if ref_cost is None:
+            continue
+        d = 2.0 * (row["cost"] - ref_cost) / vf               # > 0: the variant fits worse
+        p = float(chi2.sf(abs(d), dof))
+        row.update({"against": ref_name, "dof": dof, "delta_chi2": float(d), "p": p, "significant": bool(p < 0.001)})
+        if verbose:
+            ch = row.get("rig_centre_change_mm")
+            log.info(f"  eye-slope test {row['test']}: b {zl} {row['b'][zl]:.5f}, {zr} {row['b'][zr]:.5f} px/count; "
+                     f"delta chi2 {d:+.1f} against {ref_name} ({dof} dof)"
+                     + (f"; right centre moved ({ch[0]:+.2f}, {ch[1]:+.2f}, {ch[2]:+.2f}) mm" if ch else "")
+                     + f" ({row['seconds']:.0f} s)")
+    return out
+
+
+def eye_slope_lines(est: Optional[Dict[str, Any]]) -> List[str]:
+    """Report lines of :func:`eye_slope_tests`."""
+    if not est:
+        return []
+    base = est.get("base") or {}
+    out = []
+    if base.get("b"):
+        (zl, bl), (zr, br) = sorted(base["b"].items())
+        out.append(f"eye slopes in the joint: {zl} {bl:.5f}, {zr} {br:.5f} px/count ({zr} - {zl} {br - bl:+.5f})")
+    for t in est.get("tests") or []:
+        if "delta_chi2" in t:
+            b = t["b"]
+            ch = t.get("rig_centre_change_mm")
+            out.append(f"test {t['test']}: slopes " + ", ".join(f"{e} {v:.5f}" for e, v in sorted(b.items()))
+                       + f" px/count; delta chi2 {t['delta_chi2']:+.1f} against {t['against']} ({t['dof']} dof, "
+                         f"{'significant' if t['significant'] else 'not significant'} at 0.001)"
+                       + (f"; the right centre moved x {ch[0]:+.2f}, y {ch[1]:+.2f}, z (along the boresight) "
+                          f"{ch[2]:+.2f} mm" if ch else ""))
+        else:
+            out.append(f"test {t.get('test')}: {t.get('error') or t.get('note')}")
     return out
 
 
@@ -1357,6 +1666,9 @@ def describe(res: Dict[str, Any]) -> List[str]:
                f"{z.get('navcam_zcam_points')} Navcam-Mastcam-Z points; covariance "
                f"{'ok' if not res.get('covariance_error') else res['covariance_error']}")
     out += distortion_lines(res.get("distortion") or {})
+    out += rig_lines(res.get("rig") or {})                         # 0.95.1
+    out += early_lines(res.get("early_pp"))
+    out += eye_slope_lines(res.get("eye_slope_tests"))             # 0.95.0
     d = res.get("diagnostics") or {}
     for ang, fz in (d.get("fits") or {}).items():
         a, b = fz.get("vs_sol_per_1000") or {}, fz.get("vs_T") or {}
@@ -1504,6 +1816,14 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
         if eye.startswith("ZR"):
             gm["pp"] = dict(gm.get("pp") or {}, cx_px_per_count=0.0, cy_px_per_count=float(tm["b_cy"]),
                             note="ZR principal point: cx pinned at pp0, cy pinned with its focus slope (the joint)")
+            er = ((res.get("early_pp") or {}).get("eyes") or {}).get(eye)
+            gm["pp"].pop("early", None)
+            if er and er.get("fitted"):                  # 0.95.1: the early-mission offset (applied if significant)
+                gm["pp"]["early"] = {"before_sol": res["early_pp"]["before_sol"], "dcx_px": er["offset_px"][0],
+                                     "dcy_px": er["offset_px"][1], "sd_px": er.get("sd_px"), "z": er.get("z"),
+                                     "applied": bool(er["applied"]), "blocks": er["blocks"],
+                                     "note": "ZR's principal point before sol before_sol: + (dcx, dcy) when applied "
+                                             "(the early-mission rig step of the Mastcam-Z joint)"}
         if len(pp0) == 2:
             gm["pp0_px"] = pp0
         gm["thermal"] = {"T0_degC": -15.0, "sensor": "HEAD_FPA", "f_px_per_degC": 0.0, "note": "no temperature term"}
@@ -1521,8 +1841,11 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
                                                                   "roll_mdeg")} for x in rows],
                                  "fits": d.get("fits") or {}},
                       per_block=[{"block": x["block"], "sol": x["sol"], "T_optics_degC": x["T_optics_degC"]} for x in rows],
+                      translation_change_mm=r.get("translation_change_mm"), translation_sd_mm=r.get("translation_sd_mm"),
                       note="the Mastcam-Z joint: one rig for every block and focus (rotation refined, translation "
-                           "held); per_block / residuals from the diagnostic pass (each block's own rig)")
+                           + ("refined, 1 cm prior on the start rig's right centre" if r.get("fit") == "full" else "held")
+                           + "); per_block / residuals from the diagnostic pass (each block's own rig, the early-mission "
+                             "principal-point offset applied)")
     new["rig"].pop("sd_baseline_mm", None)
     new["rig"].pop("baseline_vs_cahv", None)
     cal["diagnostics"] = {"blocks": rows, "fits": d.get("fits")}
@@ -1549,7 +1872,12 @@ def block_line_rows(res: Dict[str, Any]) -> List[Dict[str, Any]]:
 # the joint's own gate (20 Oct, first real run: Z residuals NaN and four blocks aligned with older models, promoted)
 ZJOINT_LIMITS = {"max_zcam_median_px": 0.6, "max_zcam_nonfinite_share": 0.005,
                  "max_zcam_rms_px": 1.5,
-                 "max_block_aspect_vs_navcam_ppm": 3000.0}             # 0.94.4: Z34 0.80, Z63 0.42; Z48 of 27 Oct 3.30, Z79 of 26 Oct 29.6
+                 "max_block_aspect_vs_navcam_ppm": 3000.0,
+                 # 0.95.0 (Christian, 29 Oct): a block line is failed on its aspect only from this many observations
+                 # on - Seitah Overlook (fixed infinity focus, far field) failed Z34 at 15 k and Z63 at 9 k observations
+                 # with +3100 to +5400 ppm while every line from 25 k on stayed within +-1450 ppm; the lines below are
+                 # listed in the note, not failed
+                 "min_block_aspect_check_observations": 20000}             # 0.94.4: Z34 0.80, Z63 0.42; Z48 of 27 Oct 3.30, Z79 of 26 Oct 29.6
 
 
 def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -1577,13 +1905,20 @@ def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict
                            f"({100 * share:.2f} %)"})
     ba_ = res.get("block_aspect") or {}
     if ba_.get("rows"):                                # 0.94.5: per-block fy - fx against the Navcam's
-        bad = [r for r in ba_["rows"] if r["judged"] and abs(r["diff_ppm"]) > lim["max_block_aspect_vs_navcam_ppm"]]
-        nj = sum(1 for r in ba_["rows"] if r["judged"])
+        floor = int(lim.get("min_block_aspect_check_observations") or 0)
+        judged = [r for r in ba_["rows"] if r["judged"] and r["diff_ppm"] is not None]
+        checked = [r for r in judged if int(r["observations"]) >= floor]
+        below = [r for r in judged if int(r["observations"]) < floor]
+        bad = [r for r in checked if abs(r["diff_ppm"]) > lim["max_block_aspect_vs_navcam_ppm"]]
+        worst = max((abs(r["diff_ppm"]) for r in checked), default=None)
         checks.append({"check": "per-block aspect vs the Navcam", "ok": not bad,
-                       "note": (f"{nj} block lines judged (>= {ba_.get('min_observations')} observations), largest "
-                                f"|Mastcam-Z - Navcam| d(fy - fx) {ba_['max_diff_ppm']:.0f} ppm" if nj else "no line judged")
+                       "note": (f"{len(checked)} block lines checked (>= {floor} observations), largest "
+                                f"|Mastcam-Z - Navcam| d(fy - fx) {worst:.0f} ppm" if checked else "no line checked")
                                + f" (<= {lim['max_block_aspect_vs_navcam_ppm']:g})"
-                               + (": " + ", ".join(f"{r['block']} {r['eye']} {r['diff_ppm']:+.0f}" for r in bad) if bad else "")})
+                               + (": " + ", ".join(f"{r['block']} {r['eye']} {r['diff_ppm']:+.0f}" for r in bad) if bad else "")
+                               + (f"; below {floor} observations, listed only: " + ", ".join(
+                                   f"{r['block']} {r['eye']} {r['diff_ppm']:+.0f} ppm ({r['observations'] // 1000} k)"
+                                   for r in below) if below else "")})
     navfp, bfp = res.get("navcam_fingerprint"), res.get("block_navcam_fingerprints")
     if navfp and bfp:                                  # 0.93: the Navcam models are what the joint holds
         other = sorted(n for n, f in bfp.items() if f != navfp)

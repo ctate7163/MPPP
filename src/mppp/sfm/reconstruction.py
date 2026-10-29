@@ -1048,6 +1048,15 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 logger.info("exact-tie refinement found no decrease: skipped for the rest of this run")
         extra_info["tie_ids"] = [t["id"] for t in extra_info["tie_specs"]] if extra_info.get("tie_ids") else []
     cov_out = None
+    zrig_cov = {}
+    if covariance and (extra_info or {}).get("cov_blocks") is not None:
+        # 0.95.0 (Christian, 29 Oct: the Mastcam-Z rig translation refined, "keeping a close eye on its significance"):
+        # a refined Mastcam-Z rig gets a covariance of its own ("extra:zrig|<zoom>", tangent space: rotation x, y, z
+        # then translation x, y, z)
+        zrig_cov = {f"zrig|{fam}": arr for fam, arr in vblocks.items()
+                    if prob.has_parameter_block(arr) and not prob.is_parameter_block_constant(arr)}
+        if zrig_cov:
+            extra_info["cov_blocks"] = dict(extra_info["cov_blocks"], **zrig_cov)
     if covariance:
         cov_out = _block_covariances(rec, prob, work, rig_blocks, key_of, summary, n_obs, n_prior, n_att, pose_blocks,
                                      cam_blocks=cam_blocks, extra_blocks=(extra_info or {}).get("cov_blocks"))
@@ -1056,8 +1065,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             # them infinite on 22-29 blocks: tie weights of 1e16 next to data weights of 1e7) - last, as it takes
             # the tie residuals out of the problem
             from ..calib.tiecov import exact_tie_covariance
+            zp = {id(a) for a in zrig_cov.values()}
             free = list(pose_blocks.values()) + list(cam_blocks.values()) + list(rig_blocks.values()) + \
-                list(vblocks.values())
+                [a for a in vblocks.values() if id(a) not in zp]
             ex = exact_tie_covariance(prob, extra_info["tie_ids"], point_arrs, free, extra_info["cov_blocks"])
             cov_out = dict(cov_out or {})
             cov_out["extra_method"] = ex["method"] if not ex.get("error") else "colmap (exact ties failed)"

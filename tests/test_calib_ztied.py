@@ -54,7 +54,8 @@ def _truth_model():
     return m
 
 
-def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None, seq_offsets=None):
+def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None, seq_offsets=None, dist_by_focus=None,
+           pp_shift=None):
     """One block: the synthetic Navcam stations (helpers._synthetic) plus Mastcam-Z 34 mm stereo frames at each
     station (three pointings x three focus counts), every image seeing dense terrain patches.  ``reg``
     {"eye": "L", "F": 950.0, "offset": (dcx, dcy)}: that eye's images at that focus are in the regular state (f /
@@ -75,10 +76,19 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None, seq_offset
             RL = _look(C0, az, 28.0)
             CL = C0 + np.array([0.0, 0.0, 0.15])
             tgt = CL + RL[2] * (1.9 / np.sin(np.radians(28.0)))
-            patches.append(np.column_stack([tgt[0] + rng.uniform(-1.4, 1.4, 500), tgt[1] + rng.uniform(-1.4, 1.4, 500),
-                                            rng.normal(0, 0.15, 500)]))
-            for F in (300.0, 600.0, 950.0):
+            if dist_by_focus is None:
+                patches.append(np.column_stack([tgt[0] + rng.uniform(-1.4, 1.4, 500), tgt[1] + rng.uniform(-1.4, 1.4, 500),
+                                                rng.normal(0, 0.15, 500)]))
+            for jF, F in enumerate((300.0, 600.0, 950.0)):
                 k += 1
+                if dist_by_focus is not None:
+                    # 0.95.0: each focus its own pointing and a scene at that focus's distance (the scene in focus)
+                    RL = _look(C0, az + 12.0 * jF, 10.0)
+                    D = float(dist_by_focus[F])
+                    tgt = CL + RL[2] * D
+                    w = 0.18 * D
+                    patches.append(tgt + np.column_stack([rng.uniform(-w, w, 400), rng.uniform(-w, w, 400),
+                                                          rng.normal(0, 0.12 * D, 400)]))
                 RR = Rz @ RL
                 CR = CL - RR.T @ tz
                 sclk = f"{7000 + k:010d}_000"
@@ -115,6 +125,9 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None, seq_offset
                 asp = p[1] / p[0]
                 p[0] += float(seq_offsets.get(r["sequence"], 0.0))
                 p[1] += float(seq_offsets.get(r["sequence"], 0.0)) * asp
+            if pp_shift and r["eye"] in pp_shift:   # 0.95.1: this eye's principal point moved in this block
+                p[2] += float(pp_shift[r["eye"]][0])
+                p[3] += float(pp_shift[r["eye"]][1])
             if r["_fb"]:                            # 0.94.4: the focus-from-below offset (px on fx, fy x aspect)
                 asp = p[1] / p[0]
                 p[0] += fb["offset_px"]
@@ -330,6 +343,18 @@ def test_nz_joint_agrees_with_the_navcam_law_and_sees_a_wrong_one(tmp_path):
     assert not res2["comparison"]["agree"] and "NL fx" in res2["comparison"]["beyond_limits"][0]
     out = NZ.write_nzjoint(res2, tmp_path / "nz")
     assert (tmp_path / "nz" / "report.md").is_file() and "Navcam NL" in (tmp_path / "nz" / "report.md").read_text()
+    # 0.95.0 (Christian, 29 Oct): the combined Navcam law as model files, for calib lawcheck
+    import json
+    law = tmp_path / "nz" / NZ.LAW_FOLDER
+    assert out["navcam_law"] == str(law) and "calib lawcheck --law in_use= --law combined=" in (tmp_path / "nz" / "report.md").read_text()
+    nl = json.loads((law / "M2020_NL_fisheye_tangential.json").read_text())
+    p = dict(zip(nl["param_names"], nl["params"]))
+    assert p["fx"] == pytest.approx(res2["navcam"]["NL"]["params_T0"]["fx"]) and "combined joint" in nl["source"]
+    assert nl["thermal"]["fx_ppm_per_degC"] == pytest.approx(res2["navcam"]["NL"]["fx_ppm_per_degC"])
+    assert (law / "M2020_NR_fisheye_tangential.json").is_file() and (law / "M2020_N_rig.json").is_file()
+    from mppp.calib import tied as T
+    st2 = T.start_values(law)                                         # what calib lawcheck --law reads
+    assert st2["G"]["NL"][0] == pytest.approx(res2["navcam"]["NL"]["params_T0"]["fx"], abs=1e-6)
 
 
 def test_zcam_joint_gives_the_regular_state_its_own_principal_point(tmp_path, monkeypatch):
@@ -526,9 +551,18 @@ def test_block_aspect_against_the_navcam():
     assert r["a"]["diff_ppm"] == pytest.approx(0.0, abs=1) and r["a"]["judged"]
     assert r["b"]["state"] == "regular" and r["b"]["diff_ppm"] == pytest.approx(5100.0, abs=2)
     assert not r["c"]["judged"]                                   # 200 observations, no Navcam
-    chk = Z.joint_checks(dict(res, block_aspect=ba), {"checks": []})
+    chk = Z.joint_checks(dict(res, block_aspect=ba), {"checks": []}, limits={"min_block_aspect_check_observations": 1000})
     c = next(x for x in chk["checks"] if x["check"] == "per-block aspect vs the Navcam")
     assert not c["ok"] and "b ZL048 +5100" in c["note"]
+    # 0.95.0 (Christian, 29 Oct): below the check's observation floor (20 k) a line is listed, not failed
+    assert Z.ZJOINT_LIMITS["min_block_aspect_check_observations"] == 20000
+    chk = Z.joint_checks(dict(res, block_aspect=ba), {"checks": []})
+    c = next(x for x in chk["checks"] if x["check"] == "per-block aspect vs the Navcam")
+    assert c["ok"] and "no line checked" in c["note"] and "(3 k), b ZL048 +5100 ppm (2 k)" in c["note"]
+    big = dict(ba, rows=[dict(x, observations=x["observations"] * 10) for x in ba["rows"]])
+    c = next(x for x in Z.joint_checks(dict(res, block_aspect=big), {"checks": []})["checks"]
+             if x["check"] == "per-block aspect vs the Navcam")
+    assert not c["ok"] and "b ZL048 +5100" in c["note"] and "2 block lines checked" in c["note"]
     lines = Z.describe(dict(res, block_aspect=ba, eyes={}))
     assert any(x.startswith("a ZL048 (backlash state, 3000 obs)") and "Navcam +300 ppm" in x for x in lines)
 
@@ -695,3 +729,125 @@ def test_zcam_joint_sequence_offsets(tmp_path, monkeypatch):
                       iterations=30, passes=1, verbose=False, diagnostics=False, k_tests=False)
     assert r0["sequence_offsets"] == [] and r0["eyes"]["ZL034"]["sequences"]["free"] == 0
     assert "sequence_offsets" not in Z.candidate_model(r0, truth)["cameras"]["ZL034"]
+
+
+def test_eye_slope_tests_find_a_rig_translation_error_along_the_boresight(tmp_path, monkeypatch):
+    """0.95.0 (Christian, 29 Oct: "the efl vs focus slopes of both should be about equal"; Z34 28 Oct: ZL 0.0245, ZR
+    0.0351 px/count in every block).  Blocks made with the right camera 6 mm further along the left boresight than
+    the rig the joint holds, each focus looking at a scene at its own distance (8, 4, 2 m): the joint gives ZR a
+    steeper focus slope than ZL although both are 0.04 px/count; the eye-slope tests free the rig translation (the
+    right centre moves forward and the slopes come together), and one slope for both eyes then costs little against
+    the free rig but much against the held one."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    rng = np.random.default_rng(11)
+    model = _truth_model()
+    truth = copy.deepcopy(model)
+    R = np.asarray(model["rig"]["R_sensor_from_ref"], float)
+    C = -R.T @ np.asarray(model["rig"]["t_sensor_from_ref"], float)
+    truth["rig"]["t_sensor_from_ref"] = (-R @ (C + np.array([0.0, 0.0, 0.006]))).tolist()   # 6 mm along ZL's z
+    dist = {300.0: 8.0, 600.0: 4.0, 950.0: 2.0}
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500, dist_by_focus=dist)
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900, dist_by_focus=dist)
+    st = _navcam_law(cams, rigT)
+    res = Z.fit_zjoint({}, model=model, scapes=[a, b], st=st, nav_points=None, z_points=None, iterations=40,
+                       passes=1, diagnostics=False, verbose=False, k_tests=False, slope_tests=True, rig_fit="rotation")
+    bl, br = res["eyes"]["ZL034"]["terms"]["b"], res["eyes"]["ZR034"]["terms"]["b"]
+    est = res["eye_slope_tests"]
+    t = {x["test"]: x for x in est["tests"]}
+    assert set(t) == {"rig translation free", "one slope for both eyes", "one slope, rig translation free"}, est
+    free, one, both = t["rig translation free"], t["one slope for both eyes"], t["one slope, rig translation free"]
+    gap0 = abs(br - bl)
+    gap1 = abs(free["b"]["ZR034"] - free["b"]["ZL034"])
+    assert gap0 > 0.002, (bl, br)                                     # the held rig puts the error in ZR's slope
+    assert gap1 < 0.5 * gap0, (gap0, gap1)                            # the free rig takes it back
+    dz = free["rig_centre_change_mm"][2]
+    assert 2.0 < dz < 10.0, free["rig_centre_change_mm"]              # forward, of the order of the 6 mm
+    assert free["delta_chi2"] < 0 and one["delta_chi2"] > 0          # the free rig fits better, one slope worse
+    assert both["against"] == "rig translation free" and both["delta_chi2"] < 0.25 * one["delta_chi2"]
+    assert both["b"]["ZL034"] == pytest.approx(both["b"]["ZR034"], abs=1e-5)
+    lines = Z.eye_slope_lines(est)
+    assert lines[0].startswith("eye slopes in the joint: ZL034") and any("z (along the boresight)" in x for x in lines)
+
+
+def test_zjoint_refines_the_rig_translation_and_reports_its_significance(tmp_path, monkeypatch):
+    """0.95.1 (Christian, 29 Oct: "the z34 rig translation should not be held ... let these rig parameters change and
+    optimize while keeping a close eye on their significance").  The blocks of the eye-slope test (the right camera
+    6 mm along the left boresight from the start rig): the joint's default refines the translation - the centre moves
+    forward by about 6 mm with a z well beyond 3, the eye slopes agree; the eye-slope tests are then "rig
+    translation held" (much worse) and "one slope for both eyes" (costs little)."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    rng = np.random.default_rng(11)
+    model = _truth_model()
+    truth = copy.deepcopy(model)
+    R = np.asarray(model["rig"]["R_sensor_from_ref"], float)
+    C = -R.T @ np.asarray(model["rig"]["t_sensor_from_ref"], float)
+    truth["rig"]["t_sensor_from_ref"] = (-R @ (C + np.array([0.0, 0.0, 0.006]))).tolist()
+    dist = {300.0: 8.0, 600.0: 4.0, 950.0: 2.0}
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500, dist_by_focus=dist)
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900, dist_by_focus=dist)
+    st = _navcam_law(cams, rigT)
+    res = Z.fit_zjoint({}, model=model, scapes=[a, b], st=st, nav_points=None, z_points=None, iterations=40,
+                       passes=1, diagnostics=False, verbose=False, k_tests=False, slope_tests=True)
+    r = res["rig"]
+    assert r["fit"] == "full" and r["translation_source"].startswith("refined")
+    assert 4.0 < r["translation_change_mm"][2] < 8.0, r
+    assert r["translation_sd_mm"] and r["translation_z"][2] > 3.0 and r["translation_significant"], r
+    bl, br = res["eyes"]["ZL034"]["terms"]["b"], res["eyes"]["ZR034"]["terms"]["b"]
+    assert abs(br - bl) < 0.002, (bl, br)
+    t = {x["test"]: x for x in res["eye_slope_tests"]["tests"]}
+    assert set(t) == {"rig translation held", "one slope for both eyes"}, t
+    held, one = t["rig translation held"], t["one slope for both eyes"]
+    assert held["delta_chi2"] > 0 and held["significant"] and held["dof"] == 3
+    assert one["delta_chi2"] < 0.1 * held["delta_chi2"]
+    lines = Z.describe(res)
+    assert any(x.startswith("rig translation refined: the right centre moved") for x in lines)
+    assert any("(z +" in x and "significant" in x for x in lines)
+    new = Z.candidate_model(res, model)
+    assert new["rig"]["translation_change_mm"] == r["translation_change_mm"] and "translation refined" in new["rig"]["note"]
+
+
+def test_zjoint_early_mission_principal_point_offset(tmp_path, monkeypatch):
+    """0.95.1 (Christian, 29 Oct: "fix the Zcam rig drift for all zooms.  Put this into an early mission principal
+    point offset if it is significant"; Z34: the rig pitch -28 / -36 mdeg at Chal Rocks (sol 102) and Seitah Overlook
+    (119), ~0 from sol 182).  An early block (sol 100) whose ZR principal point sits (+0.8, -3.0) px off the later
+    block's (sol 900): the joint fits ZR's early offset for its bins before sol 150, significant, into the candidate
+    model (pp.early, applied), which the block runs then apply to early ZR bins."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    from mppp.sfm.project import _split_by_focus
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    rng = np.random.default_rng(5)
+    model = _truth_model()
+    a, cams, rigT = _block(tmp_path, "blk_early", 0.0, model, rng, 100, pp_shift={"R": (0.8, -3.0)})
+    b, _, _ = _block(tmp_path, "blk_late", 0.0, model, rng, 900)
+    st = _navcam_law(cams, rigT)
+    res = Z.fit_zjoint({}, model=model, scapes=[a, b], st=st, nav_points=None, z_points=None, iterations=40,
+                       passes=1, diagnostics=False, verbose=False, k_tests=False)
+    e = res["early_pp"]
+    assert e["before_sol"] == Z.ZCAM_EARLY_SOL and set(e["eyes"]) == {"ZR034"}, e
+    r = e["eyes"]["ZR034"]
+    assert r["fitted"] and r["blocks"] == ["blk_early"] and r["bins"] == 3, r
+    assert r["offset_px"][0] == pytest.approx(0.8, abs=0.25) and r["offset_px"][1] == pytest.approx(-3.0, abs=0.25), r
+    assert r["sd_px"] and abs(r["z"][1]) > 3.0 and r["applied"], r
+    assert any("early-mission principal point of ZR034" in x and "significant: in the candidate model" in x
+               for x in Z.describe(res))
+    new = Z.candidate_model(res, model)
+    pe = new["cameras"]["ZR034"]["pp"]["early"]
+    assert pe["applied"] and pe["before_sol"] == Z.ZCAM_EARLY_SOL and pe["dcy_px"] == pytest.approx(-3.0, abs=0.25)
+    assert "early" not in (new["cameras"]["ZL034"].get("pp") or {})
+    # the block runs: an early ZR bin starts with the offset, a later one without
+    base = {"model": "FULL_OPENCV", "params": [4700.0, 4700.0, 800.0, 600.0] + [0.0] * 8, "width": 1648, "height": 1200,
+            "source": "test"}
+    imgs = [{"camera_group": "ZR034", "focus_count": 600.0, "sol": s_, "name": f"x{s_}"} for s_ in (100, 100)]
+    out_e = _split_by_focus(imgs, {"ZR034": dict(base)}, {"ZR034": "Z"}, 50.0, "free", model=new)
+    imgs = [{"camera_group": "ZR034", "focus_count": 600.0, "sol": s_, "name": f"y{s_}"} for s_ in (900, 900)]
+    out_l = _split_by_focus(imgs, {"ZR034": dict(base)}, {"ZR034": "Z"}, 50.0, "free", model=new)
+    ce = next(v for k, v in out_e.items() if k.startswith("ZR034_"))
+    cl = next(v for k, v in out_l.items() if k.startswith("ZR034_"))
+    assert ce["params"][3] - cl["params"][3] == pytest.approx(pe["dcy_px"], abs=1e-6)
+    assert ce["params"][2] - cl["params"][2] == pytest.approx(pe["dcx_px"], abs=1e-6)
+    assert "early-mission pp offset" in ce["source"]

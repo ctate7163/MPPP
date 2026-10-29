@@ -80,7 +80,7 @@ STAGE_ALIASES = {"navcam_runs": "ecam_runs", "navcam_joint": "ecam_joint"}     #
 STOP_ON_FAIL = ()                                # every stage goes on to the next
 ZCAM_GROUP, ECAM_GROUP, ZCAM34_JOINT = "zcam_consensus", "ecam_consensus", "zcam34_joint"
 NAVCAM_GROUP = ECAM_GROUP                        # the name before 0.94.4
-ZOOMS = (34, 48, 63)                # Christian, 26 Oct: 79 and 110 mm out until the wider zooms have good models
+ZOOMS = (34, 48, 63, 79, 110)       # 0.95.1 (Christian, 29 Oct: "leave z79 on so that we get a first promotable model"; Z110 too); 26 Oct-0.95.0: 34, 48, 63
 ALL_ZOOMS = (34, 48, 63, 79, 110)
 LIGHTGLUE_AB_SITES = ("chal_rocks_tiny", "seitah_overlook_tiny")        # the lightglue_ab stage (24 Oct)
 
@@ -493,7 +493,7 @@ def main(argv=None) -> int:
                     help="zcam_joints also fits the Hazcams over the Mastcam-Z blocks (off since 0.94.4)")
     ap.add_argument("--no-nz", action="store_true", help="zcam_joints without the Navcam + Mastcam-Z check")
     ap.add_argument("--no-zcam-states", action="store_true", help="skip the zcam_states stage (the states run)")
-    ap.add_argument("--zooms", type=int, nargs="*", default=list(ZOOMS), help="the Mastcam-Z joints, and the zooms the site runs keep (default 34, 48, 63; 0.95.0)")
+    ap.add_argument("--zooms", type=int, nargs="*", default=list(ZOOMS), help="the Mastcam-Z joints, and the zooms the site runs keep (default 34 48 63 79 110; 0.95.1)")
     ap.add_argument("--all-site-zooms", action="store_true", help="the site runs align every zoom of the site's list (79, 110 mm too), not only --zooms")
     ap.add_argument("--export", action="store_true", help="the site runs write the full export (native text model, residuals, error_input_navcam, gui_native); default: light (0.95.0)")
     ap.add_argument("--zcam-group", default=None, help="the Mastcam-Z sites (default zcam_consensus)")

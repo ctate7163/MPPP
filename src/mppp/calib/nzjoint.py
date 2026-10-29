@@ -80,7 +80,7 @@ def adjust_nz(rec, proj, idx, st, units, zunits, sg, hold: Sequence[str] = T.HOL
                            refine_principal_point=True, refine_rig="rotation", max_iterations=iterations,
                            attitude_prior_deg=5.0, covariance=covariance and p_ == n_pass - 1, navcam_aspect="free",
                            linear_solver="sparse_schur", keypoint_scale=ks, keypoint_map=kmap,
-                           refine_zcam_rig="rotation", extra_residuals=hook)
+                           refine_zcam_rig=sg.get("rig_fit") or "rotation", extra_residuals=hook)
         if iso_f:
             T.sync_iso(gn)
         if T.TIE_K1_SLOPE:
@@ -191,6 +191,7 @@ def fit_nzjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = N
                      f"{', '.join(sorted(extra))}")
     rec, proj, idx, st, units, zunits, sg = Z.build(blocks, model, navcam_dir, zoom, pts, z_points,
                                                     scapes=scapes, st=st)
+    sg["rig_fit"] = Z.ZJOINT_RIG_FIT                # 0.95.1: as the Mastcam-Z joint (rig translation refined)
     fixed = Z.fixed_globals(sg)                     # 0.93: the zoom's fixed Mastcam-Z terms, held in both steps
     zhold = {e: sorted(v) for e, v in fixed.items()}
     if not zunits:
@@ -223,7 +224,7 @@ def fit_nzjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = N
                            "navcam_only_blocks": sorted(extra), "fixed_terms": fixed,
                            "navcam": nav_res, "zcam": z_res, "zcam_navcam_held": {e: dict(zip(Z.GLOBAL_TERMS, map(float, a)))
                                                                                  for e, a in gz_h.items()},
-                           "rig_zcam": Z.rig_result(proj_h, sg, zoom), "final_cost": float(ba["final_cost"]),
+                           "rig_zcam": Z.rig_result(proj_h, sg2, zoom, ba), "final_cost": float(ba["final_cost"]),
                            "brief": ba["brief"], "seconds": time.time() - t, "navcam_models": str(st["folder"]),
                            "comparison": compare(navcam_only_law(st), nav_res, held_stats, nz_stats)}
     if verbose:
@@ -265,10 +266,29 @@ def describe(res: Dict[str, Any]) -> List[str]:
     return out
 
 
+LAW_FOLDER = "navcam_law"                  # 0.95.0: the combined Navcam law's files, for calib lawcheck
+
+
 def write_nzjoint(res: Dict[str, Any], out_dir: PathLike) -> Dict[str, Any]:
-    """``nz_joint.json`` and ``report.md`` in ``out_dir`` (nothing promoted)."""
+    """``nz_joint.json`` and ``report.md`` in ``out_dir`` (nothing promoted), and (0.95.0, Christian, 29 Oct) the
+    combined Navcam law as model files in ``out_dir/navcam_law/`` (:func:`mppp.calib.tied.write_law_files`), so that
+    ``calib lawcheck --law combined=<out_dir>/navcam_law`` can test it on the Navcam-only blocks against the law in
+    use - the question being whether the law the Mastcam-Z frames pull to costs the Navcam blocks anything."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    law = None
+    nav = res.get("navcam") or {}
+    if isinstance(nav.get("NL"), dict) and isinstance(nav.get("rig"), dict):
+        try:
+            law = T.write_law_files(dict(nav, blocks=list(res.get("blocks") or []) + list(res.get("navcam_only_blocks") or []),
+                                         residuals=(res.get("comparison") or {}).get("residuals")),
+                                    out / LAW_FOLDER, note=f"the Navcam law of the Navcam + Mastcam-Z {int(res['zoom'])} mm "
+                                    "combined joint (a check: not promoted)",
+                                    method="MPPP Navcam + Mastcam-Z combined joint (mppp.calib.nzjoint.fit_nzjoint")
+            res["navcam_law_folder"] = str(law)
+        except Exception as e:                       # noqa: BLE001 - the comparison stands without the files
+            log.warning(f"N+Z joint: the combined Navcam law files were not written ({type(e).__name__}: {e})")
+            res["navcam_law_folder_error"] = f"{type(e).__name__}: {e}"
     (out / "nz_joint.json").write_text(json.dumps(res, indent=1, default=T._json_default), encoding="utf-8")
     lines = [f"# Navcam + Mastcam-Z {int(res['zoom'])} mm combined joint ({datetime.date.today().isoformat()})", "",
              f"Blocks: {', '.join(res['blocks'])}; started from the Navcam law in `{res.get('navcam_models')}`. "
@@ -276,5 +296,8 @@ def write_nzjoint(res: Dict[str, Any], out_dir: PathLike) -> Dict[str, Any]:
                 if res.get("navcam_only_blocks") else "")
              + "A check of the Navcam-only law against the Mastcam-Z frames: nothing is promoted.", ""]
     lines += [f"- {x}" for x in describe(res)]
+    if law is not None:
+        lines += ["", f"The combined Navcam law is in `{law}`: test it on the Navcam-only blocks with "
+                      f"`mppp calib lawcheck --law in_use= --law combined={law}`."]
     (out / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return {"folder": str(out), "agree": res["comparison"]["agree"]}
+    return {"folder": str(out), "agree": res["comparison"]["agree"], "navcam_law": str(law) if law else None}

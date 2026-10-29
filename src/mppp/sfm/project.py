@@ -908,6 +908,16 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                     lines_used = "fx" in done
                     src += f"; {', '.join(done)} on the calibrated focus lines ({'regular' if regular else 'backlash'} state)"
                     extra["focus_lines"] = done
+            # 0.95.1: the early-mission offset of ZR's principal point (the Mastcam-Z joint's, where significant),
+            # after the lines (they set cx, cy)
+            ea = ((gm or {}).get("pp") or {}).get("early") or {}
+            sols_e = [int(r["sol"]) for r in members if r.get("sol") is not None]
+            if ea.get("applied") and sols_e and float(np.median(sols_e)) < float(ea.get("before_sol") or 0):
+                params[2] += float(ea.get("dcx_px") or 0.0)
+                params[3] += float(ea.get("dcy_px") or 0.0)
+                src += (f"; early-mission pp offset {float(ea.get('dcx_px') or 0):+.2f}, "
+                        f"{float(ea.get('dcy_px') or 0):+.2f} px (before sol {ea.get('before_sol')})")
+                extra = dict(extra, early_pp_offset_px=[float(ea.get("dcx_px") or 0.0), float(ea.get("dcy_px") or 0.0)])
             if regular and lines_used:
                 if refine != "focal_pp" or len(members) <= hold_f_images:
                     fixed = sorted(set(fixed) | {"fx", "fy"}, key=FULL_OPENCV_NAMES.index)

@@ -313,6 +313,9 @@ def _matches(row: Dict[str, Any], lst: Dict[str, Any]) -> bool:
     if c and c in lst.get("clocks", ()):
         return True
     seq = str(row.get("sequence") or "").upper()
+    if not seq:                                           # 0.95.1: the sequence from the product name
+        m = re.search(r"(ZCAM\d{5})", name)
+        seq = m.group(1) if m else ""
     try:
         sol = int(row.get("sol"))
     except (TypeError, ValueError):

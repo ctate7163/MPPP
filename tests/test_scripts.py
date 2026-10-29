@@ -347,7 +347,8 @@ def test_windows_folder_is_short():
     """0.94.4 (Christian, 23 Oct): at most 20 files in scripts\\windows, the removed ones gone."""
     w = ROOT / "scripts" / "windows"
     files = [f for f in w.iterdir() if f.is_file() and not f.name.endswith(".txt")]
-    assert len(files) <= 20, sorted(f.name for f in files)
+    # 0.95.1: trial_joints_0p95.bat is the trial before the freeze reruns (it goes after them) - not counted
+    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 20, sorted(f.name for f in files)
     for gone in ("run_weekend.bat", "build_example_data.bat", "run_multizoom_test.bat", "run_hazcam.bat",
                  "test_lightglue.bat", "sites_status.bat", "run_sites_zcam34.bat", "zcam_tied_joint.bat"):
         assert not (w / gone).exists(), gone
@@ -484,6 +485,17 @@ def test_trial_joints_bat_runs_every_0p95_joint_without_promoting():
     assert "calib zcam --zoom %%Z" in t and 'MPPP_ZOOMS=34 48 63' in t and "calib nz" in t
     assert "--promote-if-ok" not in t and t.count("--no-promote") == 4 and t.count("--wait-h 0") == 7   # nz never promotes
     assert "mppp_env.bat" in t and "trial_0p95_" in t and "plot_lawcheck.py" in t
+    # 29 Oct: the combined joint runs before the law check (on by default) and its Navcam law is checked too; the
+    # Mastcam-Z joints run the eye-slope tests
+    assert t.index("calib nz") < t.index("calib lawcheck") and 'MPPP_NZ%"=="none"' in t
+    assert "--law combined=%OUT%\\nz34_joint\\navcam_law" in t and "%COMBINED%" in t
+    assert t.count("--eye-slope-tests") == 1 and "calib zcam --zoom %%Z" in t
+    # 0.95.1: MPPP_TRIAL a list of parts (to resume after a stop), each part a subroutine; every zoom 34-110
+    assert 'MPPP_ZOOMS=34 48 63 79 110' in t and "call :part_%%P %*" in t
+    for part in ("navcam", "tiefslope", "nz", "lawcheck", "hazcam", "zcam"):
+        assert f"\r\n:part_{part}\r\n" in t
+    assert t.count("exit /b 0") == 8 and "goto :navcam" not in t and "goto :lawcheck" not in t
+    assert t.index("call :part_%%P") < t.index("goto :end") < t.index(":part_navcam")
 
 
 def test_claude_sync_runs_from_a_copy_the_merge_cannot_touch():

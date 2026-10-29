@@ -3,6 +3,70 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.95.1 — 2026-10-29
+
+**In short.** The Mastcam-Z joint refines the rig translation instead of holding it at the CAHV value, reports how
+significant the move is, and gives ZR an early-mission principal-point offset; the joints' outputs gain what the
+Navcam-anchor question needs; the trial can be resumed part by part. Run keys do not change: the 0.94 and 0.95.0
+blocks stay valid.
+
+### Mastcam-Z joint
+
+- **Rig translation refined** (Christian, 29 Oct: "the z34 rig translation should not be held ... let these rig
+  parameters change and optimize while keeping a close eye on their significance"). Z34 28 Oct: ZR's focus slope was
+  0.0105 px/count steeper than ZL's in all ten blocks (Z48 +0.013, Z63 +0.0125, Z110 +0.009) - the signature of a
+  right centre that is wrong along the boresight (it scales ZR's image by dz / D, and D goes with the focus count; a
+  synthetic block with +6 mm gave the same pattern and the free rig recovered +6.0 mm). `ztied.ZJOINT_RIG_FIT = "full"`:
+  rotation and translation refined, a 1 cm prior per axis on the start rig's right centre (`--zcam-rig-fit rotation`
+  for the 0.94 joint). The refined rig gets a covariance of its own (`extra:zrig|Z0nn`); the report and
+  `zcam_joint.json` (`rig`) give the right centre's move (x, y, z along the boresight, mm) with its sd and z per axis
+  and the baseline; the candidate model's rig carries `translation_change_mm`, `translation_sd_mm`. The N+Z joint
+  refines the rig the same way.
+- **Early-mission principal-point offset of ZR** (Christian: "fix the Zcam rig drift for all zooms. Put this into an
+  early mission principal point offset if it is significant"). The per-block rig pitch of Z34 was -28 / -36 mdeg at
+  Chal Rocks (sol 102) and Seitah Overlook (119) and within +-7 mdeg from Rochette (182) on: a step, not a drift. ZR's
+  bins before `ZCAM_EARLY_SOL` 150 (their median sol) share one offset (dcx, dcy) on top of their principal-point ties
+  (their cx is freed for it), from three early bins on (`ZCAM_EARLY_MIN_BINS`); its sd from the covariance
+  (`extra:dearly|ZR0nn`); applied in the candidate model (`pp.early`, `applied`) where |z| >= 3 and recorded otherwise.
+  The diagnostic pass applies it, so the per-block rig rows show what is left. The block runs start an early ZR bin
+  with the offset (`early_pp_offset_px` in the bin spec), after the focus lines. Every zoom; `--zcam-early-sol SOL` (0:
+  none).
+- **Eye-slope tests** (`--eye-slope-tests`) against the joint's own rig: with the translation refined they are "rig
+  translation held" (the start rig; 3 dof) and "one slope for both eyes" (1 dof); with `--zcam-rig-fit rotation` the
+  three tests of 0.95.0's first form (translation free, one slope, both).
+- **Thin bins held at their start** (the 1000-observation cut). The Z79 joint of 28 Oct: a free Seitah Overlook bin of
+  389 observations went to fx 10247, fy 6701 px and the rms to 34.9 px.
+- **Per-block aspect check with an observation floor** (`ZJOINT_LIMITS["min_block_aspect_check_observations"]`
+  20000): an eye-block line with fewer observations is listed, not judged (Seitah Overlook's far-field 9-15 k in Z34
+  and Z63 failed the check every time).
+
+### Navcam
+
+- **The combined law as model files**: the N+Z joint writes its Navcam law into `<out>\navcam_law\` (camera and rig
+  files, `tied.write_law_files`, as `calib navcam` writes its candidate), so `calib lawcheck --law combined=...` checks
+  it against the law in use on the Navcam blocks (the Navcam / Mastcam-Z y-scale tension, +200 / +230 ppm in fy).
+
+### Sites and scripts
+
+- **Chal Rocks 79 mm off the low-state list** (Christian, 29 Oct, from `mppp zcam-states --sites chal_rocks`: every
+  fitted frame of both sequences sits on the high line, +0.2 to +0.6 %, z +7 to +17): `-99:ZCAM08060` and
+  `-361:ZCAM07105` in the shipped list (the shipped `ZCAM08060_079`, on the list since 0.61, removed; a `-` entry wins
+  over the found list too, so the found list on the PC needs no edit). The Z79 joint of 28 Oct had 14 of 17 ZL bins
+  low and a block ratio of 1.0003. A row without a `sequence` takes it from the product name for the `sol:sequence`
+  entries.
+- `sites.json`: the sol ranges of Rose River Falls (449-454), Hidden Harbor (606-619) and Bessieres Island (1018-1039)
+  take in their Z34 360s; no waypoint added.
+- **79 and 110 mm back in the site runs** (Christian, 29 Oct: "leave z79 on so that we get a first promotable model to
+  improve following models. Same with Z110"): `run_pipeline.py --zooms` defaults to 34 48 63 79 110 (the site runs'
+  `zcam_zooms_only` and the joints); the 79 / 110 mm bins still keep their refined values per bin in the block runs
+  (`zcam_line_zooms` 34, 48, 63) until they have models. Marble Mountain gets 110 mm (`"zcam": [34, 63, 110]`) for a
+  third Z110 block; Belva Crater is 110 mm and not 79 mm (`[34, 110]`; Christian, 29 Oct). Chal Rocks drops 79 mm (`[34, 48, 63, 110]`; Christian: "better just to not fit z79 from that block"): the joints leave a site out of a zoom not in its list, so its existing 79 mm bins are not fitted, and the rerun does not align them (79 mm made it 4.7x longer).
+- `trial_joints_0p95.bat`: `MPPP_TRIAL` is a list of parts run in order (`navcam tiefslope nz lawcheck hazcam zcam`;
+  `all` the default) to resume after a stop; each part a subroutine; the N+Z joint before the law check, which also
+  checks the combined law; zooms 34 48 63 79 110 by default.
+- `claude_sync.bat` runs from a copy in `%TEMP%` (the merge replaced it mid-run on 29 Oct and the stash was not
+  popped).
+
 ## 0.95.0 — 2026-10-28 (the freeze release)
 
 **In short.** 0.95.0 is the code every site is rerun on before the cameras of the Navcam, the front Hazcams and

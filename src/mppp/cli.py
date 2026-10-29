@@ -165,6 +165,14 @@ def build_parser() -> argparse.ArgumentParser:
                    "(left out by default)")
     p.add_argument("--no-k-tests", action="store_true", help="zcam: skip the k1/k2 likelihood-ratio tests (2 more "
                    "adjustments)")
+    p.add_argument("--eye-slope-tests", action="store_true",
+                   help="zcam: the eye-slope tests (0.95.0: the rig translation free, one focus slope for both eyes, "
+                        "both - 3 more adjustments)")
+    p.add_argument("--zcam-rig-fit", choices=("full", "rotation"), default=None,
+                   help="zcam: the Mastcam-Z rig in the joint - full: rotation and translation refined (0.95.1 default, "
+                        "1 cm prior), rotation: the translation held at the start rig (the 0.94 joint)")
+    p.add_argument("--zcam-early-sol", type=int, default=None, metavar="SOL",
+                   help="zcam: ZR's early-mission principal-point offset for its bins before this sol (default 150; 0: none)")
     p.add_argument("--zcam-ratio-by", choices=("block", "sol", "global"), default=None,
                    help="zcam: the low-state groups with their own high / low ratio (default block; global: one per eye)")
     p.add_argument("--law", action="append", default=None, metavar="LABEL=DIR",
@@ -713,7 +721,11 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     log.info("calib zcam: %d blocks -> %s", len(blocks), out)
     res = Z.fit_zjoint(blocks, zoom=a.zoom, nav_points=a.points or Z.NAV_POINTS_PER_BLOCK,
                        z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, diagnostics=not a.no_diagnostics,
-                       k_tests=not a.no_k_tests, ratio_by=getattr(a, "zcam_ratio_by", None))
+                       k_tests=not a.no_k_tests, ratio_by=getattr(a, "zcam_ratio_by", None),
+                       slope_tests=bool(getattr(a, "eye_slope_tests", False)),
+                       rig_fit=getattr(a, "zcam_rig_fit", None) or Z.ZJOINT_RIG_FIT,
+                       early_sol=(Z.ZCAM_EARLY_SOL if getattr(a, "zcam_early_sol", None) is None
+                                  else (a.zcam_early_sol or None)))
     from .calib import models_fingerprint
     from .pipeline import run_done
     res["models_fingerprint"] = models_fingerprint()

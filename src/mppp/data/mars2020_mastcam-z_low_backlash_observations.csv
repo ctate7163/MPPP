@@ -86,5 +86,6 @@ ZCAM03018_034
 ZCAM03144_034
 ZCAM07114_034
 ZCAM08045_034
-ZCAM08060_079
+-99:ZCAM08060  # 0.95.1 (Christian, 29 Oct 2026): Chal Rocks 79 mm, high state (zcam-states 29 Oct: listed but high, d +0.34 / +0.55 %); on the list since 0.61
+-361:ZCAM07105  # 0.95.1 (Christian, 29 Oct 2026): Chal Rocks 79 mm, high state (zcam-states 29 Oct: listed but high, d +0.22 / +0.53 %); the found list had it
 1150-1155:048  # Overlook Mountain 48 mm (Christian, 28 Oct 2026): every 48 mm frame of the site is low-state
