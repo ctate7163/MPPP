@@ -69,6 +69,16 @@ blocks stay valid.
   (s_FL + s_FR) / 2 without pulling on it, with its sd from the covariance; the report says "own slope" / "the mean of
   FL's and FR's slopes". Before, every eye took FL's slope (+20.0 ppm/degC; FR's own +35.2).
 
+### Dense reconstruction
+
+- `dense_reconstruct.bat` prepares the workspace with MPPP's Python (`mppp dense --prepare --no-bat`: the images
+  **and the rover masks** undistorted, so the fusion leaves the rover out), falling back to COLMAP's
+  `image_undistorter` (no masks) only when MPPP's Python is not found; it says whether the masks are there.
+- `mppp dense <WORK> --maps [png|jpg]` (`--maps-kind geometric|photometric`): COLMAP's depth and normal maps
+  (`dense\stereo\depth_maps`, `normal_maps`, `*.bin`) as images in `dense\stereo\maps_png\` - depth in a colour scale
+  over its 2-98th percentile (range in the file name), normals as RGB in the camera frame (`sfm.dense.read_colmap_array`,
+  `export_dense_maps`).
+
 ### Sites and scripts
 
 - `render_paper.bat` is `make_paper.bat` (log `_transfer\make_paper_log.txt`); `sites_status.bat` is back (the run status

@@ -257,3 +257,43 @@ def test_dense_workspace_preloaded_from_the_native_model(tmp_path, monkeypatch):
     from mppp.cli import main
     assert main(["dense", str(proj.root), "--prepare", "--max-image-size", "300", "--overwrite"]) == 0
     assert json.loads((ws / "mppp_dense.json").read_text())["max_image_size"] == 300
+
+
+def test_dense_maps_as_images_and_the_bat_prepares_the_masks(tmp_path):
+    """0.95.1 (Christian, 29 Oct): COLMAP's depth / normal maps (text header w&h&c&, float32 column-major) as PNG or
+    JPEG in dense/stereo/maps_png; dense_reconstruct.bat prepares the workspace with MPPP's Python (the masks) before
+    falling back to COLMAP's undistorter, and does not rewrite itself."""
+    import numpy as np
+    from PIL import Image
+    from mppp.sfm.dense import export_dense_maps, read_colmap_array
+
+    def write(path, a):
+        a = np.asarray(a, np.float32)
+        h, w = a.shape[:2]
+        c = 1 if a.ndim == 2 else a.shape[2]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(f"{w}&{h}&{c}&".encode())
+            f.write(np.transpose(a.reshape(h, w, c), (1, 0, 2)).astype(np.float32).tobytes(order="F"))
+    ws = tmp_path / "dense"
+    d = np.tile(np.linspace(2.0, 10.0, 40, dtype=np.float32), (30, 1))
+    d[:5, :5] = 0.0
+    write(ws / "stereo" / "depth_maps" / "NLF_0001.png.geometric.bin", d)
+    nm = np.zeros((30, 40, 3), np.float32); nm[..., 2] = -1.0
+    write(ws / "stereo" / "normal_maps" / "NLF_0001.png.geometric.bin", nm)
+    assert np.allclose(read_colmap_array(ws / "stereo" / "depth_maps" / "NLF_0001.png.geometric.bin"), d)
+    r = export_dense_maps(ws)
+    assert r["depth_maps"] == 1 and r["normal_maps"] == 1
+    files = sorted(p.name for p in (ws / "stereo" / "maps_png").iterdir())
+    assert files[0].startswith("NLF_0001.depth_") and files[0].endswith("m.png") and files[1] == "NLF_0001.normal.png"
+    im = np.asarray(Image.open(ws / "stereo" / "maps_png" / files[0]))
+    assert im.shape == (30, 40, 3) and (im[:5, :5] == 0).all() and im[10:, 6:].any()
+    assert export_dense_maps(ws, fmt="jpg")["depth_maps"] == 1
+    from mppp.sfm.dense import write_dense_bat
+
+    class P:
+        root = tmp_path
+        settings: dict = {}
+    t = write_dense_bat(P()).read_text()
+    assert "mppp dense \"%~dp0.\" --prepare --no-bat" in t and "mppp_env.bat" in t and ":prepared" in t
+    assert t.index("--no-bat") < t.index("image_undistorter")

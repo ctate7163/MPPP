@@ -166,6 +166,63 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
     return out
 
 
+def read_colmap_array(path: PathLike):
+    """A COLMAP dense map (``stereo/depth_maps/<image>.{photometric,geometric}.bin``, ``normal_maps``): the text header
+    ``width&height&channels&`` then float32 in column-major order; returns (height, width) or (height, width, 3)."""
+    import numpy as np
+    raw = Path(path).read_bytes()
+    k, n = 0, 0
+    while n < 3:
+        if raw[k:k + 1] == b"&":
+            n += 1
+        k += 1
+    w, h, c = (int(x) for x in raw[:k].decode("ascii").strip("&").split("&"))
+    a = np.frombuffer(raw[k:], dtype=np.float32, count=w * h * c).reshape((w, h, c), order="F")
+    return np.transpose(a, (1, 0, 2)).squeeze()
+
+
+def export_dense_maps(workspace: PathLike, kind: str = "geometric", out_dir: Optional[PathLike] = None,
+                      fmt: str = "png", lo_hi: tuple = (2.0, 98.0)) -> Dict[str, Any]:
+    """0.95.1 (Christian, 29 Oct: "how can I view those in jpeg or png?"): the depth and normal maps of a dense
+    workspace as images in ``<workspace>/stereo/maps_png/`` - a depth map in a colour scale over its own 2-98th
+    percentile (near blue, far red; no depth black) with the range in the file name, a normal map as RGB = (n + 1) / 2
+    in the camera frame (x right, y down, z forward).  ``kind``: "geometric" (after the consistency check, what the
+    fusion uses) or "photometric"."""
+    import numpy as np
+    from PIL import Image
+    ws = Path(workspace)
+    out = Path(out_dir) if out_dir else ws / "stereo" / "maps_png"
+    out.mkdir(parents=True, exist_ok=True)
+    try:
+        from matplotlib import colormaps
+        cmap = colormaps["turbo"]
+    except Exception:                                      # noqa: BLE001
+        cmap = None
+    n = {"depth": 0, "normal": 0}
+    for sub, what in (("depth_maps", "depth"), ("normal_maps", "normal")):
+        for f in sorted((ws / "stereo" / sub).glob(f"*.{kind}.bin")):
+            a = read_colmap_array(f)
+            stem = f.name[: -len(f".{kind}.bin")]
+            stem = stem.rsplit(".", 1)[0] if stem.lower().endswith((".png", ".jpg", ".tif")) else stem
+            if what == "depth":
+                ok = a > 0
+                if not ok.any():
+                    continue
+                d0, d1 = np.percentile(a[ok], lo_hi)
+                t = np.clip((a - d0) / max(d1 - d0, 1e-9), 0, 1)
+                rgb = (cmap(t)[..., :3] * 255).astype(np.uint8) if cmap else np.repeat((t * 255).astype(np.uint8)[..., None], 3, 2)
+                rgb[~ok] = 0
+                name = f"{stem}.depth_{d0:.2f}-{d1:.2f}m.{fmt}"
+            else:
+                ok = np.linalg.norm(a, axis=-1) > 0
+                rgb = ((np.clip(a, -1, 1) + 1) * 127.5).astype(np.uint8)
+                rgb[~ok] = 0
+                name = f"{stem}.normal.{fmt}"
+            Image.fromarray(rgb).save(out / name, quality=92) if fmt.lower() in ("jpg", "jpeg") else Image.fromarray(rgb).save(out / name)
+            n[what] += 1
+    return {"folder": str(out), "depth_maps": n["depth"], "normal_maps": n["normal"], "kind": kind}
+
+
 def write_dense_bat(project: SfmProject, colmap_bat: Optional[str] = None, max_image_size: int = DENSE_MAX_IMAGE_SIZE) -> Path:
     """``<project>/dense_reconstruct.bat`` (next to ``open_in_colmap.bat``): the dense reconstruction with the COLMAP
     executable - the workspace from ``gui_native/sparse`` and ``images/`` unless it is there, the stereo, the fusion
@@ -174,6 +231,7 @@ def write_dense_bat(project: SfmProject, colmap_bat: Optional[str] = None, max_i
     from .. import __version__
     from .database import COLMAP_BAT_CANDIDATES
     root = Path(project.root).resolve()
+    env_bat = Path(__file__).resolve().parents[3] / "scripts" / "windows" / "mppp_env.bat"   # 0.95.1: MPPP's Python
     cands = ([str(colmap_bat or project.settings.get("colmap_bat") or "")] if (colmap_bat or project.settings.get("colmap_bat")) else [])
     cuda_first = [c for c in COLMAP_BAT_CANDIDATES if "cuda" in c.lower() and "nocuda" not in c.lower()]
     rest = [c for c in COLMAP_BAT_CANDIDATES if c not in cuda_first]
@@ -201,12 +259,25 @@ def write_dense_bat(project: SfmProject, colmap_bat: Optional[str] = None, max_i
               'if /i "%MPPP_DENSE_STEP%"=="fusion" goto :fusion',
               'if /i "%MPPP_DENSE_STEP%"=="mesh" goto :mesh',
               ':prepare',
-              'if exist "%WS%\\sparse\\cameras.bin" (echo workspace %WS% is there - delete it to undistort again) else (',
+              'if exist "%WS%\\sparse\\cameras.bin" goto :prepared',
+              # 0.95.1 (Christian, 29 Oct: "does dense_reconstruct.bat also undistort the masks?"): MPPP's Python
+              # prepares the workspace with the rover masks (mppp dense --prepare --no-bat: this file is not rewritten
+              # while it runs); without it, COLMAP's undistorter and no masks
+              f'if exist "{env_bat}" call "{env_bat}" >nul 2>nul',
+              'python -m mppp version >nul 2>nul && (',
+              '  echo %DATE% %TIME%  undistorting images\\ and the rover masks with gui_native\\sparse into %WS% ^(max %MPPP_DENSE_MAX_SIZE% px^)',
+              '  python -m mppp dense "%~dp0." --prepare --no-bat --max-image-size %MPPP_DENSE_MAX_SIZE%',
+              '  if not errorlevel 1 goto :prepared',
+              '  echo mppp dense --prepare failed - COLMAP\'s undistorter instead ^(no masks^)',
+              ')',
+              '(',
               '  echo %DATE% %TIME%  undistorting images\\ with gui_native\\sparse into %WS% ^(max %MPPP_DENSE_MAX_SIZE% px^)',
               '  call "%CB%" image_undistorter --image_path "%~dp0images" --input_path "%~dp0gui_native\\sparse" --output_path "%WS%" --output_type COLMAP --max_image_size %MPPP_DENSE_MAX_SIZE%',
               '  if errorlevel 1 (echo image_undistorter failed & pause & exit /b 1)',
               '  echo NOTE: the rover masks are not undistorted by this step - run  mppp dense --prepare  for a workspace with masks ^(the fusion then leaves the rover out^).',
               ')',
+              ':prepared',
+              'if exist "%WS%\\masks" (echo rover masks: %WS%\\masks ^(the fusion leaves the rover out^)) else (echo no masks in %WS%: the fusion keeps the rover)',
               'if /i "%MPPP_DENSE_STEP%"=="prepare" goto :done',
               ':stereo',
               'echo %DATE% %TIME%  patch-match stereo ^(geometric consistency^) - hours on the GPU',

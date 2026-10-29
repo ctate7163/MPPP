@@ -218,6 +218,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--python", default=os.environ.get("GPU_PYTHON"), help="the Python with the CUDA pycolmap for the "
                    "stereo (default GPU_PYTHON; without it the stereo runs here if this pycolmap has CUDA)")
     p.add_argument("--overwrite", action="store_true", help="undistort again even if the workspace is there")
+    p.add_argument("--no-bat", action="store_true", help="do not (re)write dense_reconstruct.bat (0.95.1: the batch file "
+                   "calls --prepare itself)")
+    p.add_argument("--maps", nargs="?", const="png", default=None, choices=("png", "jpg"),
+                   help="0.95.1: the depth and normal maps of dense/stereo as images in dense/stereo/maps_png (png or jpg)")
+    p.add_argument("--maps-kind", default="geometric", choices=("geometric", "photometric"),
+                   help="--maps: the geometric maps (after the consistency check, default) or the photometric ones")
     sub.add_parser("doctor", help="what is set, what is missing: environment variables, dependencies, models, waypoints")
     sub.add_parser("version", help="the MPPP version")
     return ap
@@ -950,11 +956,17 @@ def cmd_dense(a: argparse.Namespace) -> int:
         return 2
     proj = SfmProject.load(proj_dir)
     size = int(a.max_image_size or DENSE_MAX_IMAGE_SIZE)
+    if getattr(a, "maps", None):                             # 0.95.1: the maps as images, nothing else
+        from .sfm.dense import DENSE_DIR, export_dense_maps
+        r = export_dense_maps(proj_dir / DENSE_DIR, kind=a.maps_kind, fmt=a.maps)
+        print(f"{r['depth_maps']} depth and {r['normal_maps']} normal maps ({r['kind']}) -> {r['folder']}")
+        return 0 if (r["depth_maps"] or r["normal_maps"]) else 1
     steps = [s for s, on in (("stereo", a.stereo), ("fusion", a.fusion), ("mesh", a.mesh)) if on]
     if a.prepare or not steps:
         res = prepare_dense(proj, max_image_size=size, overwrite=a.overwrite)
         print(f"workspace {res['workspace']}: {res['images']} images" + (f", {res['masks']['images']} masks" if res.get("masks") else ""))
-        print(f"batch file: {write_dense_bat(proj, max_image_size=size)}")
+        if not getattr(a, "no_bat", False):
+            print(f"batch file: {write_dense_bat(proj, max_image_size=size)}")
         if not steps:
             return 0
     import pycolmap
