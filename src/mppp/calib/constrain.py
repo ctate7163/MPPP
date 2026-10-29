@@ -628,7 +628,7 @@ def plot_zcam_efl_vs_focus(res: Dict[str, Any], path: PathLike, dpi: int = FIG_D
     """0.95.1 (Christian, 29 Oct: "the Z34 efl versus focus curves"): a Mastcam-Z joint's focal length against focus
     count, left eye (cool) and right eye (warm) side by side on the same y range.  Top: the joint's law (high
     backlash state solid, low state dashed) and every bin's own fx from the diagnostic pass (``diagnostics.bins``:
-    one colour per block, the marker area by observations, open for the low state, x for a thin bin); efl in mm on
+    a dot per bin, all blocks alike (Christian, 29 Oct), open for the low state, x for a thin bin); efl in mm on
     the right axis (x 7.4 um).  Bottom: the bins about the law in ppm.  A joint written before 0.95.1 has no bins:
     the blocks' own lines (``diagnostics.blocks``) are drawn instead.  The reference focus dashed.  ``res``: the
     ``zcam_joint.json`` content.  None without eyes."""
@@ -667,38 +667,36 @@ def plot_zcam_efl_vs_focus(res: Dict[str, Any], path: PathLike, dpi: int = FIG_D
         else:
             ratio = None
         eb = [x for x in bins if x["eye"] == eye]
-        if eb:
-            for blk in blocks:
-                xs = [x for x in eb if x["block"] == blk]
-                if not xs:
+        if eb:                                              # 0.95.1 (Christian, 29 Oct): every bin a dot, one style
+            for st in ("backlash", "regular"):
+                pts = [x for x in eb if x["state"] == st]
+                if not pts:
                     continue
-                for st in ("backlash", "regular"):
-                    pts = [x for x in xs if x["state"] == st]
-                    if not pts:
-                        continue
-                    Fp = np.array([x["focus"] for x in pts]); fx = np.array([x["fx"] for x in pts])
-                    sz = 12 + 60 * np.sqrt(np.array([x["observations"] for x in pts]) / max(1, max(x["observations"] for x in eb)))
-                    thin = np.array([x.get("thin", False) for x in pts])
-                    law = (a_h + b * (Fp - ref)) if st == "backlash" else (
-                        (float(a_l) + b / ratio * (Fp - ref)) if ratio else np.full_like(Fp, np.nan))
-                    face = bcol[blk] if st == "backlash" else "none"
-                    ax.scatter(Fp[~thin], fx[~thin], s=sz[~thin], facecolors=face, edgecolors=bcol[blk], lw=0.8,
-                               alpha=0.85, label=(blk if st == "backlash" and j == len(eyes) - 1 else None), zorder=4)
-                    if thin.any():
-                        ax.scatter(Fp[thin], fx[thin], s=20, marker="x", color=bcol[blk], lw=0.8, zorder=4)
-                    axr.scatter(Fp, 1e6 * (fx - law) / law, s=sz * 0.6, facecolors=face, edgecolors=bcol[blk], lw=0.7,
-                                alpha=0.85, zorder=4)
-                    bots += list(1e6 * (fx[~thin] - law[~thin]) / law[~thin])
-                    tops += list(fx[~thin])
+                Fp = np.array([x["focus"] for x in pts]); fx = np.array([x["fx"] for x in pts])
+                thin = np.array([bool(x.get("thin")) for x in pts])
+                law = (a_h + b * (Fp - ref)) if st == "backlash" else (
+                    (float(a_l) + b / ratio * (Fp - ref)) if ratio else np.full_like(Fp, np.nan))
+                face = ecol[eye] if st == "backlash" else "none"
+                lab = (f"bins, {'high' if st == 'backlash' else 'low'} state ({int((~thin).sum())})")
+                ax.scatter(Fp[~thin], fx[~thin], s=14, facecolors=face, edgecolors=ecol[eye], lw=0.7, alpha=0.75,
+                           label=lab, zorder=4)
+                if thin.any():
+                    ax.scatter(Fp[thin], fx[thin], s=18, marker="x", color="0.45", lw=0.8, zorder=4,
+                               label=f"thin bins ({int(thin.sum())})")
+                r_ = 1e6 * (fx - law) / law
+                axr.scatter(Fp[~thin], r_[~thin], s=12, facecolors=face, edgecolors=ecol[eye], lw=0.7, alpha=0.75,
+                            zorder=4)
+                bots += list(r_[~thin][np.isfinite(r_[~thin])])
+                tops += list(fx[~thin])
         else:                                                # a joint before 0.95.1: the blocks' own lines
             for r in diag.get("blocks") or []:
                 ln = (((r.get("lines") or {}).get(eye) or {}).get("backlash") or {}).get("fx")
                 if not ln:
                     continue
                 y = ln["a"] + ln["b"] * (F - ref)
-                ax.plot(F, y, color=bcol[r["block"]], lw=1.0, alpha=0.9,
-                        label=(r["block"] if j == len(eyes) - 1 else None), zorder=2)
-                axr.plot(F, 1e6 * (y - law_h) / law_h, color=bcol[r["block"]], lw=1.0, alpha=0.9)
+                ax.plot(F, y, color="0.55", lw=0.9, alpha=0.8, zorder=2,
+                        label=("each block's own line (no bins in this joint)" if not tops else None))
+                axr.plot(F, 1e6 * (y - law_h) / law_h, color="0.55", lw=0.9, alpha=0.8)
                 tops += [y.min(), y.max()]
                 bots += list(1e6 * (y - law_h) / law_h)
         tops += [law_h.min(), law_h.max()]
@@ -723,12 +721,10 @@ def plot_zcam_efl_vs_focus(res: Dict[str, Any], path: PathLike, dpi: int = FIG_D
         lim = max(200.0, 1.15 * float(q))
         for ax in axs[1]:
             ax.set_ylim(-lim, lim)
-    h, l_ = axs[0][-1].get_legend_handles_labels()
-    if h:
-        axs[0][-1].legend(h, l_, fontsize=7, loc="upper left", ncol=2, framealpha=0.85)
-    h0, l0 = axs[0][0].get_legend_handles_labels()
-    if h0:
-        axs[0][0].legend(h0, l0, fontsize=8, loc="upper left", framealpha=0.85)
+    for ax in axs[0]:
+        h, l_ = ax.get_legend_handles_labels()
+        if h:
+            ax.legend(h, l_, fontsize=8, loc="upper left", framealpha=0.85)
     panel_letters(axs)
     zoom = int(res.get("zoom", 34))
     src = "bins: the diagnostic pass (law held, fx free)" if bins else "lines: each block's own (diagnostic pass)"

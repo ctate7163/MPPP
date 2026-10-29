@@ -57,8 +57,8 @@ blocks stay valid.
 
 - **Focal length against focus figure** (Christian, 29 Oct): `zcam_efl_vs_focus.png` in every Mastcam-Z joint folder
   and `zcam<zoom>_efl_vs_focus_<tag>.png` from `make_figures.bat` for a joint folder: per eye (ZL cool, ZR warm, the
-  same y range), the joint's law (high state solid, low dashed), every bin's own fx from the diagnostic pass (one
-  colour per block, area by observations, open = low state, x = thin), efl in mm on the right axis, the bins about
+  same y range), the joint's law (high state solid, low dashed), every bin's own fx from the diagnostic pass (a dot
+  per bin, all blocks alike, open = low state, x = thin), efl in mm on the right axis, the bins about
   the law in ppm below, the reference focus dashed (`constrain.plot_zcam_efl_vs_focus`). The diagnostic pass records
   the bins (`diagnostics.bins`); a joint written before has the blocks' own lines drawn instead.
 
