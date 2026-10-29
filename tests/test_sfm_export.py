@@ -282,12 +282,22 @@ def test_dense_maps_as_images_and_the_bat_prepares_the_masks(tmp_path):
     nm = np.zeros((30, 40, 3), np.float32); nm[..., 2] = -1.0
     write(ws / "stereo" / "normal_maps" / "NLF_0001.png.geometric.bin", nm)
     assert np.allclose(read_colmap_array(ws / "stereo" / "depth_maps" / "NLF_0001.png.geometric.bin"), d)
+    d[20:, 35:] = 150.0                                    # beyond 100 m
+    write(ws / "stereo" / "depth_maps" / "NLF_0001.png.geometric.bin", d)
+    mask = np.full((30, 40), 255, np.uint8); mask[25:, :10] = 0           # the rover
+    (ws / "masks").mkdir(parents=True)
+    Image.fromarray(mask).save(ws / "masks" / "NLF_0001.png.png")
     r = export_dense_maps(ws)
-    assert r["depth_maps"] == 1 and r["normal_maps"] == 1
+    assert r["depth_maps"] == 1 and r["normal_maps"] == 1 and r["with_masks"] == 1 and r["max_depth_m"] == 100.0
     files = sorted(p.name for p in (ws / "stereo" / "maps_png").iterdir())
     assert files[0].startswith("NLF_0001.depth_") and files[0].endswith("m.png") and files[1] == "NLF_0001.normal.png"
     im = np.asarray(Image.open(ws / "stereo" / "maps_png" / files[0]))
-    assert im.shape == (30, 40, 3) and (im[:5, :5] == 0).all() and im[10:, 6:].any()
+    assert im.shape == (30, 40, 4)
+    al = im[..., 3]                                         # no value = transparent
+    assert (al[:5, :5] == 0).all() and (al[20:, 35:] == 0).all() and (al[25:, :10] == 0).all() and (al[10:20, 10:30] == 255).all()
+    nm_ = np.asarray(Image.open(ws / "stereo" / "maps_png" / files[1]))
+    assert (nm_[25:, :10, 3] == 0).all() and (nm_[20:, 35:, 3] == 0).all() and (nm_[10:20, 10:30, 3] == 255).all()
+    assert float(files[0].split("_")[-1].split("-")[1][:-5]) <= 100.0           # the colour range within 100 m
     assert export_dense_maps(ws, fmt="jpg")["depth_maps"] == 1
     from mppp.sfm.dense import write_dense_bat
 

@@ -181,13 +181,33 @@ def read_colmap_array(path: PathLike):
     return np.transpose(a, (1, 0, 2)).squeeze()
 
 
+MAPS_MAX_DEPTH_M = 100.0           # 0.95.1 (Christian, 29 Oct): depth beyond this is no depth in the map images
+
+
+def _map_mask(ws: Path, image_name: str, shape) -> Optional[Any]:
+    """The rover mask of an image in the workspace (``masks/<image>.png``, 0 = rover: not fused) at ``shape``
+    (nearest neighbour when the map's resolution differs); True where the terrain is.  None without a mask."""
+    import numpy as np
+    from PIL import Image
+    f = ws / "masks" / (image_name + ".png")
+    if not f.is_file():
+        return None
+    m = Image.open(f).convert("L")
+    if m.size != (shape[1], shape[0]):
+        m = m.resize((shape[1], shape[0]), Image.NEAREST)
+    return np.asarray(m) > 0
+
+
 def export_dense_maps(workspace: PathLike, kind: str = "geometric", out_dir: Optional[PathLike] = None,
-                      fmt: str = "png", lo_hi: tuple = (2.0, 98.0)) -> Dict[str, Any]:
+                      fmt: str = "png", lo_hi: tuple = (2.0, 98.0), max_depth_m: float = MAPS_MAX_DEPTH_M,
+                      masks: bool = True) -> Dict[str, Any]:
     """0.95.1 (Christian, 29 Oct: "how can I view those in jpeg or png?"): the depth and normal maps of a dense
     workspace as images in ``<workspace>/stereo/maps_png/`` - a depth map in a colour scale over its own 2-98th
-    percentile (near blue, far red; no depth black) with the range in the file name, a normal map as RGB = (n + 1) / 2
-    in the camera frame (x right, y down, z forward).  ``kind``: "geometric" (after the consistency check, what the
-    fusion uses) or "photometric"."""
+    percentile (near blue, far red) with the range in the file name, a normal map as RGB = (n + 1) / 2 in the camera
+    frame (x right, y down, z forward).  No value ("NaN": transparent in a PNG, black in a JPEG) where there is no
+    depth, where the depth is beyond ``max_depth_m`` (100 m) and inside the rover mask (``masks/``, when ``masks``);
+    the normal map gets the same cut.  ``kind``: "geometric" (after the consistency check, what the fusion uses) or
+    "photometric"."""
     import numpy as np
     from PIL import Image
     ws = Path(workspace)
@@ -198,29 +218,41 @@ def export_dense_maps(workspace: PathLike, kind: str = "geometric", out_dir: Opt
         cmap = colormaps["turbo"]
     except Exception:                                      # noqa: BLE001
         cmap = None
-    n = {"depth": 0, "normal": 0}
-    for sub, what in (("depth_maps", "depth"), ("normal_maps", "normal")):
-        for f in sorted((ws / "stereo" / sub).glob(f"*.{kind}.bin")):
-            a = read_colmap_array(f)
-            stem = f.name[: -len(f".{kind}.bin")]
-            stem = stem.rsplit(".", 1)[0] if stem.lower().endswith((".png", ".jpg", ".tif")) else stem
-            if what == "depth":
-                ok = a > 0
-                if not ok.any():
-                    continue
-                d0, d1 = np.percentile(a[ok], lo_hi)
-                t = np.clip((a - d0) / max(d1 - d0, 1e-9), 0, 1)
-                rgb = (cmap(t)[..., :3] * 255).astype(np.uint8) if cmap else np.repeat((t * 255).astype(np.uint8)[..., None], 3, 2)
-                rgb[~ok] = 0
-                name = f"{stem}.depth_{d0:.2f}-{d1:.2f}m.{fmt}"
-            else:
-                ok = np.linalg.norm(a, axis=-1) > 0
-                rgb = ((np.clip(a, -1, 1) + 1) * 127.5).astype(np.uint8)
-                rgb[~ok] = 0
-                name = f"{stem}.normal.{fmt}"
-            Image.fromarray(rgb).save(out / name, quality=92) if fmt.lower() in ("jpg", "jpeg") else Image.fromarray(rgb).save(out / name)
-            n[what] += 1
-    return {"folder": str(out), "depth_maps": n["depth"], "normal_maps": n["normal"], "kind": kind}
+    jpeg = fmt.lower() in ("jpg", "jpeg")
+
+    def save(rgb, ok, path):
+        if jpeg:
+            rgb = rgb.copy()
+            rgb[~ok] = 0
+            Image.fromarray(rgb).save(path, quality=92)
+        else:
+            Image.fromarray(np.dstack([rgb, np.where(ok, 255, 0).astype(np.uint8)]), "RGBA").save(path)
+
+    n = {"depth": 0, "normal": 0, "masked": 0}
+    for f in sorted((ws / "stereo" / "depth_maps").glob(f"*.{kind}.bin")):
+        name = f.name[: -len(f".{kind}.bin")]                     # the image's name (NLF_....png)
+        stem = name.rsplit(".", 1)[0] if name.lower().endswith((".png", ".jpg", ".tif")) else name
+        d = read_colmap_array(f)
+        ok = (d > 0) & (d <= float(max_depth_m))
+        m = _map_mask(ws, name, d.shape) if masks else None
+        if m is not None:
+            ok &= m
+            n["masked"] += 1
+        if ok.any():
+            d0, d1 = np.percentile(d[ok], lo_hi)
+            t = np.clip((d - d0) / max(d1 - d0, 1e-9), 0, 1)
+            rgb = (cmap(t)[..., :3] * 255).astype(np.uint8) if cmap else np.repeat((t * 255).astype(np.uint8)[..., None], 3, 2)
+            save(rgb, ok, out / f"{stem}.depth_{d0:.2f}-{d1:.2f}m.{fmt}")
+            n["depth"] += 1
+        fn = ws / "stereo" / "normal_maps" / f.name
+        if fn.is_file():
+            a = read_colmap_array(fn)
+            okn = ok & (np.linalg.norm(a, axis=-1) > 0) if a.shape[:2] == ok.shape else (np.linalg.norm(a, axis=-1) > 0)
+            rgb = ((np.clip(a, -1, 1) + 1) * 127.5).astype(np.uint8)
+            save(rgb, okn, out / f"{stem}.normal.{fmt}")
+            n["normal"] += 1
+    return {"folder": str(out), "depth_maps": n["depth"], "normal_maps": n["normal"], "with_masks": n["masked"],
+            "kind": kind, "max_depth_m": float(max_depth_m)}
 
 
 def write_dense_bat(project: SfmProject, colmap_bat: Optional[str] = None, max_image_size: int = DENSE_MAX_IMAGE_SIZE) -> Path:

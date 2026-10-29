@@ -77,7 +77,8 @@ blocks stay valid.
 - `mppp dense <WORK> --maps [png|jpg]` (`--maps-kind geometric|photometric`): COLMAP's depth and normal maps
   (`dense\stereo\depth_maps`, `normal_maps`, `*.bin`) as images in `dense\stereo\maps_png\` - depth in a colour scale
   over its 2-98th percentile (range in the file name), normals as RGB in the camera frame (`sfm.dense.read_colmap_array`,
-  `export_dense_maps`).
+  `export_dense_maps`). No value (transparent in a PNG, black in a JPEG) inside the rover mask (`dense\masks`) and
+  beyond 100 m (`--max-depth`), in the depth and the normal images alike (Christian, 29 Oct).
 
 ### Sites and scripts
 

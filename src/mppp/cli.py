@@ -224,6 +224,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="0.95.1: the depth and normal maps of dense/stereo as images in dense/stereo/maps_png (png or jpg)")
     p.add_argument("--maps-kind", default="geometric", choices=("geometric", "photometric"),
                    help="--maps: the geometric maps (after the consistency check, default) or the photometric ones")
+    p.add_argument("--max-depth", type=float, default=None, help="--maps: depth beyond this (m) is left out (default 100)")
     sub.add_parser("doctor", help="what is set, what is missing: environment variables, dependencies, models, waypoints")
     sub.add_parser("version", help="the MPPP version")
     return ap
@@ -958,8 +959,11 @@ def cmd_dense(a: argparse.Namespace) -> int:
     size = int(a.max_image_size or DENSE_MAX_IMAGE_SIZE)
     if getattr(a, "maps", None):                             # 0.95.1: the maps as images, nothing else
         from .sfm.dense import DENSE_DIR, export_dense_maps
-        r = export_dense_maps(proj_dir / DENSE_DIR, kind=a.maps_kind, fmt=a.maps)
-        print(f"{r['depth_maps']} depth and {r['normal_maps']} normal maps ({r['kind']}) -> {r['folder']}")
+        from .sfm.dense import MAPS_MAX_DEPTH_M
+        r = export_dense_maps(proj_dir / DENSE_DIR, kind=a.maps_kind, fmt=a.maps,
+                              max_depth_m=a.max_depth if a.max_depth else MAPS_MAX_DEPTH_M)
+        print(f"{r['depth_maps']} depth and {r['normal_maps']} normal maps ({r['kind']}; {r['with_masks']} with rover "
+              f"masks; beyond {r['max_depth_m']:g} m left out) -> {r['folder']}")
         return 0 if (r["depth_maps"] or r["normal_maps"]) else 1
     steps = [s for s, on in (("stereo", a.stereo), ("fusion", a.fusion), ("mesh", a.mesh)) if on]
     if a.prepare or not steps:
