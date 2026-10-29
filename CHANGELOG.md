@@ -40,6 +40,17 @@ blocks stay valid.
   20000): an eye-block line with fewer observations is listed, not judged (Seitah Overlook's far-field 9-15 k in Z34
   and Z63 failed the check every time).
 
+- **k2 held at every zoom** (Christian, 29 Oct: "hold k2 at its last fit value rounded down to the lowest tenth ...
+  We don't want the k1/k2 degeneracy getting into the rig refinement"): `forms.ZCAM_FIXED_TERMS` 34 mm ZL 0.5 and ZR 0.6 as
+  before (last free fits 0.484 / 0.615; Christian: "held at a reasonable value until there is evidence of another
+  significant value"); 48 mm 1.4 / 1.4 (was free; 28 Oct 1.474 / 1.430); 63, 79, 110 mm 0 as
+  before (with p1, p2).
+- **The "free (vs the fixed values)" test works**: from the tied solution with every bin at the fixed value the
+  adjustment did not move the freed term (28 Oct Z34: k2 0.5 -> 0.5000013) and the delta chi2 (810) was convergence
+  noise made positive by `abs()`. The freed term now starts `FREED_TERM_NUDGE` off (k2 0.05) and the delta chi2 is
+  signed (`converged` false when the variant ends worse than the joint); synthetic: held 0.3, truth 0.40 -> refit
+  0.415 / 0.418, delta chi2 145.
+
 ### Navcam
 
 - **The combined law as model files**: the N+Z joint writes its Navcam law into `<out>\navcam_law\` (camera and rig
@@ -56,6 +67,13 @@ blocks stay valid.
 
 ### Sites and scripts
 
+- **Include lists** (Christian, 29 Oct: "some z110 into Rockytop, but not all of them, because that would be
+  thousands"): a site's `"zcam_include": {"110": ["ZCAM08529", ...]}` keeps only those sequences at that zoom (the
+  zoom in the site's `zcam` list); it becomes the exclusion `zoom:110 except seq:...` (new entry form `zoom:NNN`, in
+  `exclude_images.txt` too), left out of the Navcam keys. Rockytop `[34, 63, 79, 110]` with ZCAM08529, ZCAM07101,
+  ZCAM08486 at 110 mm and in `zcam_consensus` (a third Z79 block); Taylorfjellet `[34, 48, 63, 79, 110]` with
+  ZCAM09672, ZCAM09695, ZCAM09723. Marble Mountain leaves out ZCAM10008 at 110 mm (`"exclude": ["*ZCAM10008_110*"]`);
+  a Mastcam-Z exclusion pattern (`ZCAM` in it) stays out of the Navcam keys.
 - **Chal Rocks 79 mm off the low-state list** (Christian, 29 Oct, from `mppp zcam-states --sites chal_rocks`: every
   fitted frame of both sequences sits on the high line, +0.2 to +0.6 %, z +7 to +17): `-99:ZCAM08060` and
   `-361:ZCAM07105` in the shipped list (the shipped `ZCAM08060_079`, on the list since 0.61, removed; a `-` entry wins

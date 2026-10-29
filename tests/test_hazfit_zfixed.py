@@ -12,8 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # ------------------------------------------------------------------------------------- fixed Mastcam-Z terms
 def test_zcam_fixed_terms_per_zoom():
     from mppp.calib import forms
+    # 0.95.1 (Christian, 29 Oct): every zoom's k2 held at its last fit rounded down to the tenth
     assert forms.zcam_fixed_terms("ZL034") == {"k2": 0.5} and forms.zcam_fixed_terms("ZR034") == {"k2": 0.6}
-    assert forms.zcam_fixed_terms("ZL048") == {} and forms.zcam_fixed_terms("ZR048_F02312_reg") == {}
+    assert forms.zcam_fixed_terms("ZL048") == {"k2": 1.4} and forms.zcam_fixed_terms("ZR048_F02312_reg") == {"k2": 1.4}
     for z in (63, 79, 110):
         for e in ("ZL", "ZR"):
             assert forms.zcam_fixed_terms(f"{e}{z:03d}_F01234") == {"k2": 0.0, "p1": 0.0, "p2": 0.0}
@@ -31,7 +32,7 @@ def test_apply_zcam_fixed_terms_sets_and_holds():
     z34 = forms.apply_zcam_fixed_terms(dict(cam), "ZL034_F00500")
     assert z34["params"][names.index("k2")] == 0.5 and z34["params"][names.index("p1")] == 1e-3   # p1, p2 free at 34
     assert "p1" in z34["free_params"] and "k2" not in z34["free_params"]
-    assert forms.apply_zcam_fixed_terms(dict(cam), "ZL048")["params"] == cam["params"]          # nothing at 48
+    assert forms.apply_zcam_fixed_terms(dict(cam), "ZL048")["params"][names.index("k2")] == 1.4   # 0.95.1: 48 mm k2
 
 
 def test_zcam_camera_at_keeps_the_promoted_model():
@@ -57,7 +58,7 @@ def test_zjoint_fixed_globals():
     assert ztied.fixed_globals(sg) == {"ZL063": {"k2": 0.0, "p1": 0.0, "p2": 0.0}}
     assert sg["eyes"]["ZL063"]["G"][G.index("p2")] == 0.0 and sg["eyes"]["ZL063"]["G"][G.index("k1")] == 1.0
     sg = {"eyes": {"ZL048": {"G": np.ones(len(G))}}}
-    assert ztied.fixed_globals(sg) == {}
+    assert ztied.fixed_globals(sg) == {"ZL048": {"k2": 1.4}}
 
 
 # ------------------------------------------------------------------------------------------------ Hazcam fit
@@ -151,7 +152,7 @@ def test_groups_and_block_sites():
     # (10:30: Chal Rocks again, not Chal Rocks Large); 28 Oct: Airey Hill in the ecam and zcam consensus lists
     assert g["zcam_consensus"] == ["chal_rocks", "seitah_overlook", "threeforks_north", "belva_crater",
                                    "taylorfjellet", "marble_mountain", "bright_angel", "pico_turquino", "south_arm",
-                                   "overlook_mountain", "airey_hill"]
+                                   "overlook_mountain", "airey_hill", "rockytop"]   # 0.95.1: Rockytop
     assert "airey_hill" in g["ecam_consensus"]
     assert "chal_rocks_large" not in g["zcam34_joint"] and "chal_rocks" in g["zcam34_joint"]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "belva_crater", "bell_island", "marble_mountain"]
@@ -228,7 +229,7 @@ def test_excluded_station_is_not_selected_nor_an_anchor(tmp_path):
     paths, rep = find_imgs_near(tmp_path, ["NLF", "NRF"], [[460, 530]], wp, radius_m=10.0, exclude_stations=["S026D0282"])
     assert rep["stations_added"] == [] and rep["stations_in_range"] == ["S026D0630"]
     assert rep["stations_excluded"] == ["S026D0282"] and all("N0260630" in p.name for p in paths)
-    assert load_settings(site="rockytop").exclude == ["S026D0282"]
+    assert load_settings(site="rockytop").exclude == ["S026D0282", "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486"]
     st = B.site_waypoint_stats({"sols": [[460, 530]], "settings": {"EXCLUDE": ["S026D0282"]}},
                                B.waypoint_points(ROOT / "src" / "mppp" / "data" / "M20_waypoints.json"))
     assert st["n_nearby"] == 0 and st["max_waypoint_separation_m"] < 30
@@ -601,3 +602,39 @@ def test_hazcam_fit_leaves_out_a_block_off_the_law_and_judges_many_blocks_by_pre
     assert e["scatter_ppm"] > 600 and checks["RL block scatter"]                 # 12 blocks: ~1200 / sqrt(12)
     few = hazfit.fit_eye(rows[:5], "RL")
     assert not dict((n, ok) for n, ok, _ in hazfit.eye_checks(few, "RL"))["RL block scatter"] or few["scatter_ppm"] <= 600
+
+
+def test_zcam_include_keeps_only_listed_sequences_at_a_zoom():
+    """0.95.1 (Christian, 29 Oct: "add some z110 into Rockytop, but not all of them"): a site's zcam_include
+    {zoom: [sequences]} becomes the exclusion "zoom:110 except seq:..." - the other 110 mm frames are left out, every
+    other zoom and the listed sequences kept; the Navcam keys do not see it."""
+    from mppp.pipeline import load_settings as run_settings, zcam_include_entries
+    from mppp.sfm.workdir import apply_exclusions, exclusion_matches
+    e = zcam_include_entries({"110": ["ZCAM08529", "zcam07101"]})
+    assert e == ["zoom:110 except seq:ZCAM08529,ZCAM07101"]
+    mk = lambda seq, z: {"filename": {"stem": f"ZL0_0500_0700000000_000RAD_N0260000{seq}_{z:03d}0LMA01", "sol": 500,  # noqa: E731
+                                      "site": 26, "drive": 0, "sequence": seq}}
+    assert exclusion_matches(mk("ZCAM01234", 110), e[0]) and not exclusion_matches(mk("ZCAM08529", 110), e[0])
+    assert not exclusion_matches(mk("ZCAM01234", 34), e[0]) and not exclusion_matches(mk("ZCAM07101", 110), e[0])
+    assert exclusion_matches(mk("ZCAM01234", 110), "zoom:110") and not exclusion_matches(mk("NCAM00001", 110), "zoom:x")
+    kept, removed = apply_exclusions([mk("ZCAM01234", 110), mk("ZCAM08529", 110), mk("ZCAM01234", 63)], e)
+    assert len(kept) == 2 and removed[0]["image"].endswith("ZCAM01234_1100LMA01")
+    s = run_settings(site="rockytop")
+    assert "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486" in s.exclude and "S026D0282" in s.exclude
+    assert any(x.startswith("zoom:110") for x in run_settings(site="taylorfjellet").exclude)
+    assert not any(str(x).startswith("zoom:") for x in s.replace(include_zcam=False).key_dict()["exclude"])
+    assert any(str(x).startswith("zoom:") for x in s.replace(include_zcam=True).key_dict()["exclude"])
+
+
+
+def test_marble_mountain_leaves_out_zcam10008_at_110mm():
+    """0.95.1 (Christian, 29 Oct): Marble Mountain without ZCAM10008's 110 mm frames; a Mastcam-Z pattern stays out
+    of the Navcam keys."""
+    from mppp.pipeline import load_settings
+    from mppp.sfm.workdir import exclusion_matches
+    s = load_settings(site="marble_mountain")
+    assert s.exclude == ["*ZCAM10008_110*"]
+    mk = lambda z: {"filename": {"stem": f"ZR0_1980_0900000000_000RAD_N0910852ZCAM10008_{z:03d}0LMA01"}}   # noqa: E731
+    assert exclusion_matches(mk(110), s.exclude[0]) and not exclusion_matches(mk(63), s.exclude[0])
+    assert s.replace(include_zcam=False).key_dict()["exclude"] == []
+    assert s.replace(include_zcam=True).key_dict()["exclude"] == ["*ZCAM10008_110*"]

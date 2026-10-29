@@ -50,7 +50,7 @@ def test_project_with_navcam_and_mastcamz34(processed_pair, tmp_path):
     assert np.isclose(z["params"][4], zcam_focus_model()["cameras"]["ZL034"]["distortion"]["params"][0])
     dist = zcam_focus_model()["cameras"]["ZL034"]["distortion"]
     dd = dict(zip(dist["names"], dist["params"]))
-    assert z["params"][5] == 0.5                                         # 0.93.1: ZL034 k2 fixed (forms.ZCAM_FIXED_TERMS)
+    assert z["params"][5] == 0.5                                         # 0.95.1: ZL034 k2 fixed (forms.ZCAM_FIXED_TERMS)
     assert z["params"][6] == pytest.approx(dd.get("p1", 0.0)) and z["params"][7] == pytest.approx(dd.get("p2", 0.0))
     assert {r["instrument"] for r in proj.images} == {"NL", "ZL034"} and proj.rig == {}
     assert camera_key({"family": "Z", "camera_group": "ZR034", "instrument": "ZR"}) == "ZR034"

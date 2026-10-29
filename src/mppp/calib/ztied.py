@@ -94,6 +94,10 @@ MIN_SEQ_OBS = forms.MIN_SEQ_OBS
 # 0.94.5 (Christian, 27 Oct): per block, the Mastcam-Z aspect (fy / fx of the diagnostic pass, the line with the
 # most observations) against the Navcam's per-block dfy - dfx (the Navcam diagnostic pass over the same blocks)
 BLOCK_ASPECT_MIN_OBS = 1000                # the same cut as the lines (MIN_BIN_OBSERVATIONS)
+# 0.95.1: the start offset of a freed fixed term in the "free (vs the fixed values)" test: from the exactly tied
+# solution with the bins at the fixed value the adjustment did not move it at all (k2 0.5 -> 0.5000013, synthetic
+# 0.3 -> 0.3 with the truth at 0.40); the bins' data then pull the law to the free optimum
+FREED_TERM_NUDGE = {"k2": 0.05, "p1": 1e-4, "p2": 1e-4}
 EYE_SLOPE_TIE_SD = 1e-7                   # px/count: the eye-slope tie of eye_slope_tests (exact)
 # 0.95.0 (Christian, 29 Oct): the joint refines the Mastcam-Z rig translation (1 cm prior per axis on the start rig's
 # right centre) instead of holding it at the CAHV value; "rotation" holds it again (the 0.94 joint)
@@ -1429,26 +1433,40 @@ def distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba, iterations: i
             G = base[e].copy()
             for term, v in fix.get(e, {}).items():
                 G[GLOBAL_TERMS.index(term)] = v
+            for term in free.get(e, []):            # 0.95.1: a freed term starts off its fixed value - from the
+                G[GLOBAL_TERMS.index(term)] += FREED_TERM_NUDGE.get(term, 0.0)   # tied solution it did not move
             sgv["eyes"][e]["G"] = G
         hold = {e: sorted((set(fixed.get(e, {})) | set(fix.get(e, {}))) - set(free.get(e, []))) for e in eyes}
+        pv = copy.deepcopy(proj)
+        for u in zunits.values():                   # 0.95.1: a freed term must be free in the bins too (their specs
+            fr = set(free.get(u["group"], []))      # hold the fixed terms: the 28 Oct "k2 free" refits kept k2 at
+            spec = pv.cameras.get(u["key"])         # 0.5000013 and the delta chi2 was convergence noise)
+            if fr and spec is not None and not u.get("thin"):
+                spec["fixed_params"] = [x for x in spec.get("fixed_params") or [] if x not in fr]
+                spec["free_params"] = sorted(set(spec.get("free_params") or []) | fr)
+                spec.pop("fixed_terms", None)
         try:
             # 0.95.1: the rig translation held at the joint's value (refined there): a variant with it free as well
             # wandered off on the synthetic blocks (delta chi2 4774 for the eyes' equal k1, k2, 0.3 held)
-            bav, gv, _ = adjust_z(copy.deepcopy(rec), copy.deepcopy(proj), idx, st, units, zunits, sgv,
+            bav, gv, _ = adjust_z(copy.deepcopy(rec), pv, idx, st, units, zunits, sgv,
                                   iterations=iterations, covariance=False, passes=1, verbose=False, hold=hold,
                                   refine_zcam_rig="rotation")
         except Exception as ex:                                       # noqa: BLE001
             out.append({"test": name, "error": f"{type(ex).__name__}: {ex}"})
             continue
         dof = sum(len(v) for v in fix.values()) + sum(len(v) for v in free.values())
-        dchi2 = 2.0 * abs(float(bav["final_cost"]) - cost0) / vf     # freed terms lower the cost
+        # 0.95.1: signed - freed terms lower the cost, held ones raise it; the other sign is a variant that has not
+        # converged (was abs(): the 28 Oct "k2 free" delta chi2 of 810 was such a case)
+        d = float(bav["final_cost"]) - cost0
+        dchi2 = 2.0 * (-d if free else d) / vf
         resv = {"eyes": {e: {"terms": dict(zip(GLOBAL_TERMS, map(float, gv[e])))} for e in eyes}}
         resb = {"eyes": {e: {"terms": dict(zip(GLOBAL_TERMS, map(float, base[e])))} for e in eyes}}
         cv, cb = distortion_curves(resv), distortion_curves(resb)
         change = max(abs(a - b) for e in eyes for a, b in zip(cv["eyes"][e]["displacement_px"],
                                                               cb["eyes"][e]["displacement_px"]))
         p = float(chi2.sf(max(dchi2, 0.0), dof))
-        rec_t = {"test": name, "dof": dof, "delta_chi2": dchi2, "p": p, "significant": bool(p < 0.001),
+        rec_t = {"test": name, "dof": dof, "delta_chi2": dchi2, "p": p, "significant": bool(p < 0.001 and dchi2 > 0),
+                 "converged": bool(dchi2 >= -1.0),
                  "z_equivalent": float(np.sqrt(max(dchi2, 0.0))) if dof == 1 else None,
                  "max_curve_change_px": float(change), "seconds": time.time() - t,
                  "refit_terms": {e: {k: float(gv[e][GLOBAL_TERMS.index(k)]) for k in ("k1", "k2")} for e in eyes}}

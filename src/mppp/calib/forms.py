@@ -142,8 +142,12 @@ MIN_SEQ_OBS = 500
 # p2 = 0 (the narrow fields cannot separate them from k1, the principal point and the rig).
 _NARROW_FIXED = {"k2": 0.0, "p1": 0.0, "p2": 0.0}
 ZCAM_FIXED_TERMS: Dict[int, Dict[str, Dict[str, float]]] = {
+    # 0.95.1 (Christian, 29 Oct): ZL stays 0.5 (last free fit 0.484: "they are not significant, so the important thing
+    # is just that they are held at a reasonable value until there is evidence of another significant value")
     34: {"ZL": {"k2": 0.5}, "ZR": {"k2": 0.6}},
-    48: {},
+    # 0.95.1 (Christian, 29 Oct: "for all zooms, hold k2 at its last fit value rounded down to the lowest tenth ... We
+    # don't want the k1/k2 degeneracy getting into the rig refinement"): 48 mm last fitted 1.474 / 1.430 (28 Oct)
+    48: {"ZL": {"k2": 1.4}, "ZR": {"k2": 1.4}},
     63: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},
     79: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},
     110: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},

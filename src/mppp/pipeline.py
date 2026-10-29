@@ -246,7 +246,9 @@ class Settings:
             d.pop("zcam_station_prior_sigma_m", None)   # 0.94.5: a Mastcam-Z setting (Navcam keys stay)
             d["zcam_low_backlash_found"] = None      # 0.94.4: the found list is a Mastcam-Z setting (Navcam keys stay)
             if d.get("exclude"):                     # 0.94.4: a Mastcam-Z sequence left out does not change a Navcam run
-                d["exclude"] = [e for e in d["exclude"] if not str(e).strip().lower().startswith("seq:zcam")]
+                # 0.95.1: and the zoom entries and every Mastcam-Z pattern ("*ZCAM10008_110*")
+                d["exclude"] = [e for e in d["exclude"] if not str(e).strip().lower().startswith(("seq:zcam", "zoom:"))
+                                and "ZCAM" not in str(e).upper()]
         return d
 
 
@@ -337,6 +339,10 @@ def load_settings(work: Optional[PathLike] = None, site: Optional[str] = None,
         if rec.get("no_mask_inference_at"):
             over["no_mask_inference_at"] = list(rec["no_mask_inference_at"])
         over.update(rec.get("settings") or {})
+        inc = rec.get("zcam_include") or {}
+        if inc:                                     # 0.95.1: only these sequences at these zooms (Christian, 29 Oct)
+            k = next((x for x in over if x.lower() == "exclude"), "exclude")
+            over[k] = list(over.get(k) or []) + zcam_include_entries(inc)
     if work:
         over.update(read_json(Path(work) / SETTINGS_FILE))
     if settings_file:
@@ -447,6 +453,16 @@ def site_table(settings: Settings) -> Dict[str, Any]:
     for k, v in (settings.sites_extra or {}).items():
         sites[k] = {"sols": list(v)} if not isinstance(v, dict) else dict(v)
     return dict(t, sites=sites)
+
+
+def zcam_include_entries(inc: Dict[str, Any]) -> List[str]:
+    """0.95.1: a site's ``"zcam_include": {"110": ["ZCAM08529", ...]}`` (Christian, 29 Oct: "some z110 into Rockytop,
+    but not all of them, because that would be thousands") as exclusion entries: ``zoom:110 except seq:ZCAM08529,...``
+    - every frame of that zoom but those sequences' is left out (the zoom must be in the site's ``zcam`` list)."""
+    out = []
+    for z, seqs in sorted(inc.items(), key=lambda kv: int(kv[0])):
+        out.append(f"zoom:{int(z)} except seq:" + ",".join(str(x).upper() for x in seqs))
+    return out
 
 
 def zcam_zooms(settings: Settings, site_rec: Optional[Dict[str, Any]]) -> List[int]:

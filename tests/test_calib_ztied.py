@@ -851,3 +851,22 @@ def test_zjoint_early_mission_principal_point_offset(tmp_path, monkeypatch):
     assert ce["params"][3] - cl["params"][3] == pytest.approx(pe["dcy_px"], abs=1e-6)
     assert ce["params"][2] - cl["params"][2] == pytest.approx(pe["dcx_px"], abs=1e-6)
     assert "early-mission pp offset" in ce["source"]
+
+
+def test_freed_fixed_term_test_moves_the_term(tmp_path, monkeypatch):
+    """0.95.1: the "free (vs the fixed values)" test of a held k2 (truth 0.40, held at 0.3): the freed law moves to
+    the truth and the fixed value costs a positive delta chi2 (the 28 Oct runs: k2 0.5 -> 0.5000013, the delta chi2
+    convergence noise taken as abs())."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {"ZL": {"k2": 0.3}, "ZR": {"k2": 0.3}})
+    rng = np.random.default_rng(3)
+    truth = _truth_model()
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500)
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900)
+    st = _navcam_law(cams, rigT)
+    res = Z.fit_zjoint({}, model=truth, scapes=[a, b], st=st, nav_points=None, z_points=None, iterations=40,
+                       passes=1, verbose=False, diagnostics=False)
+    t = {x["test"]: x for x in res["distortion"]["tests"]}["k2 free (vs the fixed values)"]
+    assert t["delta_chi2"] > 10 and t["significant"] and t["converged"], t
+    assert all(v["k2"] == pytest.approx(0.40, abs=0.05) for v in t["refit_terms"].values()), t

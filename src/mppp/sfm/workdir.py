@@ -16,7 +16,9 @@ run and ``colmap_<variant>/`` for experiments (other SfM settings or camera mode
   - ``seq:NCAM08111``: a sequence (``seq:ZCAM01*``: every sequence starting so);
   - anything else: a file-name pattern (``*`` and ``?``), matched against the product name without extension,
     e.g. ``NLF_0658_0725353794_270RAD_N0320274NCAM08111_0A0095J01`` or ``ZR0_0690_*``;
-  - ``!`` before any entry: those images are always kept, whatever else matches them (``!seq:ZCAM00033``).
+  - ``!`` before any entry: those images are always kept, whatever else matches them (``!seq:ZCAM00033``);
+  - ``zoom:110`` (0.95.1): every Mastcam-Z frame of that zoom; ``zoom:110 except seq:ZCAM08529,ZCAM07101``: every one
+    but those sequences' (a site's ``zcam_include``: only these sequences at that zoom; the other entries still apply).
 
 - :func:`seed_variant`: a new variant starts from the default project's features (the images are hard links of
   the same processed files, so the features stay valid) and reuses its matches
@@ -85,6 +87,18 @@ def exclusion_matches(meta: Dict[str, Any], entry: str) -> bool:
         return f["site"] is not None and f["drive"] is not None and (int(f["site"]), int(f["drive"])) == (
             int(m.group(1)), int(m.group(2)))
     low = e.lower()
+    if low.startswith("zoom:"):                          # 0.95.1: a Mastcam-Z zoom, but the sequences after "except"
+        head, _, rest = low[5:].partition("except")
+        try:
+            zoom = int(head.strip())
+        except ValueError:
+            return False
+        m = re.search(r"ZCAM\d{5}_(\d{3})", str(f["stem"]).upper())
+        if not m or int(m.group(1)) != zoom:
+            return False
+        keep = {x.strip().upper() for x in rest.replace("seq:", "").split(",") if x.strip()}
+        seq = str(f["sequence"] or "").upper() or (re.search(r"(ZCAM\d{5})", str(f["stem"]).upper()) or [""])[0]
+        return seq not in keep
     if low.startswith("sol:"):
         a, _, b = low[4:].partition("-")
         lo, hi = int(a), int(b or a)
