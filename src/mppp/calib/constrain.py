@@ -621,6 +621,125 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
     return Path(path)
 
 
+ZCAM_PIXEL_MM = 0.0074            # Mastcam-Z detector pixel pitch (mm): efl = f [px] x pitch
+
+
+def plot_zcam_efl_vs_focus(res: Dict[str, Any], path: PathLike, dpi: int = FIG_DPI, label: str = "") -> Optional[Path]:
+    """0.95.1 (Christian, 29 Oct: "the Z34 efl versus focus curves"): a Mastcam-Z joint's focal length against focus
+    count, left eye (cool) and right eye (warm) side by side on the same y range.  Top: the joint's law (high
+    backlash state solid, low state dashed) and every bin's own fx from the diagnostic pass (``diagnostics.bins``:
+    one colour per block, the marker area by observations, open for the low state, x for a thin bin); efl in mm on
+    the right axis (x 7.4 um).  Bottom: the bins about the law in ppm.  A joint written before 0.95.1 has no bins:
+    the blocks' own lines (``diagnostics.blocks``) are drawn instead.  The reference focus dashed.  ``res``: the
+    ``zcam_joint.json`` content.  None without eyes."""
+    eyes = sorted((res.get("eyes") or {}).keys())
+    if not eyes:
+        return None
+    plt = _plt()
+    diag = res.get("diagnostics") or {}
+    bins = diag.get("bins") or []
+    blocks = sorted({b["block"] for b in bins} or {r["block"] for r in diag.get("blocks") or []})
+    cm = plt.get_cmap("tab20")
+    bcol = {b: cm(i % 20) for i, b in enumerate(blocks)}
+    ecol = {e: ("#1f5fbf" if e.startswith("ZL") else "#d4572a") for e in eyes}       # left cool, right warm
+    fig, axs = plt.subplots(2, len(eyes), figsize=(7.2 * len(eyes), 8.4), squeeze=False,
+                            gridspec_kw={"height_ratios": [2.2, 1]}, sharex=True)
+    focus_all = [b["focus"] for b in bins] or [0.0]
+    lo_F = min(focus_all) if bins else None
+    hi_F = max(focus_all) if bins else None
+    tops, bots = [], []
+    for j, eye in enumerate(eyes):
+        e = res["eyes"][eye]
+        t = e.get("terms") or {}
+        ref = float(e.get("reference_focus") or 600.0)
+        F0, F1 = (lo_F - 50, hi_F + 50) if bins else (ref - 500, ref + 500)
+        F = np.linspace(F0, F1, 200)
+        a_h, b = float(t.get("a_fx_backlash", np.nan)), float(t.get("b", 0.0))
+        law_h = a_h + b * (F - ref)
+        ax, axr = axs[0][j], axs[1][j]
+        ax.plot(F, law_h, color=ecol[eye], lw=2.2, label="joint law, high state", zorder=3)
+        a_l = t.get("a_fx_regular")
+        held = set(e.get("held") or [])
+        if a_l is not None and "a_fx_regular" not in held and np.isfinite(a_l):
+            ratio = a_h / float(a_l)
+            ax.plot(F, float(a_l) + b / ratio * (F - ref), color=ecol[eye], lw=1.6, ls="--", label="joint law, low state",
+                    zorder=3)
+        else:
+            ratio = None
+        eb = [x for x in bins if x["eye"] == eye]
+        if eb:
+            for blk in blocks:
+                xs = [x for x in eb if x["block"] == blk]
+                if not xs:
+                    continue
+                for st in ("backlash", "regular"):
+                    pts = [x for x in xs if x["state"] == st]
+                    if not pts:
+                        continue
+                    Fp = np.array([x["focus"] for x in pts]); fx = np.array([x["fx"] for x in pts])
+                    sz = 12 + 60 * np.sqrt(np.array([x["observations"] for x in pts]) / max(1, max(x["observations"] for x in eb)))
+                    thin = np.array([x.get("thin", False) for x in pts])
+                    law = (a_h + b * (Fp - ref)) if st == "backlash" else (
+                        (float(a_l) + b / ratio * (Fp - ref)) if ratio else np.full_like(Fp, np.nan))
+                    face = bcol[blk] if st == "backlash" else "none"
+                    ax.scatter(Fp[~thin], fx[~thin], s=sz[~thin], facecolors=face, edgecolors=bcol[blk], lw=0.8,
+                               alpha=0.85, label=(blk if st == "backlash" and j == len(eyes) - 1 else None), zorder=4)
+                    if thin.any():
+                        ax.scatter(Fp[thin], fx[thin], s=20, marker="x", color=bcol[blk], lw=0.8, zorder=4)
+                    axr.scatter(Fp, 1e6 * (fx - law) / law, s=sz * 0.6, facecolors=face, edgecolors=bcol[blk], lw=0.7,
+                                alpha=0.85, zorder=4)
+                    bots += list(1e6 * (fx[~thin] - law[~thin]) / law[~thin])
+                    tops += list(fx[~thin])
+        else:                                                # a joint before 0.95.1: the blocks' own lines
+            for r in diag.get("blocks") or []:
+                ln = (((r.get("lines") or {}).get(eye) or {}).get("backlash") or {}).get("fx")
+                if not ln:
+                    continue
+                y = ln["a"] + ln["b"] * (F - ref)
+                ax.plot(F, y, color=bcol[r["block"]], lw=1.0, alpha=0.9,
+                        label=(r["block"] if j == len(eyes) - 1 else None), zorder=2)
+                axr.plot(F, 1e6 * (y - law_h) / law_h, color=bcol[r["block"]], lw=1.0, alpha=0.9)
+                tops += [y.min(), y.max()]
+                bots += list(1e6 * (y - law_h) / law_h)
+        tops += [law_h.min(), law_h.max()]
+        for a_ in (ax, axr):
+            a_.axvline(ref, color="0.4", ls="--", lw=0.8)
+            a_.grid(alpha=0.3)
+        sd_b = (e.get("sd") or {}).get("b")
+        ax.set_title(f"{eye}: fx {a_h:.2f} px at focus {ref:.0f} (high state), slope {b:.5f}"
+                     + (f" +- {sd_b:.5f}" if sd_b else "") + " px/count", loc="left", fontsize=10)
+        ax.set_ylabel("focal length fx (px)")
+        axr.axhline(0.0, color=ecol[eye], lw=1.2)
+        axr.set_ylabel("bin - law (ppm)")
+        axr.set_xlabel("focus motor count")
+        sec = ax.secondary_yaxis("right", functions=(lambda v: v * ZCAM_PIXEL_MM, lambda v: v / ZCAM_PIXEL_MM))
+        sec.set_ylabel("efl (mm)")
+    if tops:                                                  # the same y range and ticks for both eyes
+        pad = 0.04 * (max(tops) - min(tops) or 1.0)
+        for ax in axs[0]:
+            ax.set_ylim(min(tops) - pad, max(tops) + pad)
+    if bots:
+        q = np.percentile(np.abs(bots), 99) if len(bots) > 5 else max(abs(x) for x in bots)
+        lim = max(200.0, 1.15 * float(q))
+        for ax in axs[1]:
+            ax.set_ylim(-lim, lim)
+    h, l_ = axs[0][-1].get_legend_handles_labels()
+    if h:
+        axs[0][-1].legend(h, l_, fontsize=7, loc="upper left", ncol=2, framealpha=0.85)
+    h0, l0 = axs[0][0].get_legend_handles_labels()
+    if h0:
+        axs[0][0].legend(h0, l0, fontsize=8, loc="upper left", framealpha=0.85)
+    panel_letters(axs)
+    zoom = int(res.get("zoom", 34))
+    src = "bins: the diagnostic pass (law held, fx free)" if bins else "lines: each block's own (diagnostic pass)"
+    fig.suptitle(f"Mastcam-Z {zoom} mm focal length against focus{(' ' + label) if label else ''} - "
+                 f"{len(res.get('blocks') or blocks)} blocks; {src}", fontsize=11)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(path, dpi=dpi)
+    plt.close(fig)
+    return Path(path)
+
+
 def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_DPI, label: str = "",
                          point_labels: bool = True) -> Optional[Path]:
     """Mastcam-Z rig trends 2 x 4 (Christian, 20 Oct): the blocks' rig rotation residuals about the mean (yaw, pitch,

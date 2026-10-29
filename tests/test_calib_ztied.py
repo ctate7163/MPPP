@@ -302,6 +302,10 @@ def test_zcam_joint_recovers_the_focus_law_and_the_rig(tmp_path, monkeypatch):
     assert not forms.validate_zcam(new) and new["form"] == forms.ZCAM_FORM_ID
     assert new["cameras"]["ZR034"]["lines"]["backlash"]["cy"]["form"] == "pinned_slope"
     assert out["check"]["checks"] and (tmp_path / "cand" / "report.md").is_file()
+    # 0.95.1: every bin's own fx in the diagnostic pass, and the efl against focus figure
+    b0 = res["diagnostics"]["bins"]
+    assert len(b0) == 12 and {x["eye"] for x in b0} == {"ZL034", "ZR034"} and all(x["observations"] > 0 for x in b0)
+    assert (tmp_path / "cand" / "zcam_efl_vs_focus.png").is_file()
     assert Z.block_line_rows(res)
 
 

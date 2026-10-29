@@ -1107,7 +1107,17 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
         Tz = np.array([np.nan if r["T_optics_degC"] is None else r["T_optics_degC"] for r in rows], float)
         fits[ang] = {"sd_mdeg": float(np.std(y, ddof=1)) if len(y) > 1 else None, "vs_sol_per_1000": ols(S / 1000.0, y),
                      "vs_T": ols(Tz, y)}
-    return {"blocks": rows, "fits": fits, "brief": ba["brief"]}
+    # 0.95.1 (Christian, 29 Oct: the efl vs focus curves): every bin's own fx, fy in the diagnostic pass (the law held,
+    # fx, fy free), for zcam_efl_vs_focus.png
+    bins = []
+    for cid, u in zunits.items():
+        if obs.get(cid, 0) <= 0 or u.get("focus") is None:
+            continue
+        pr = np.asarray(rec.cameras[cid].params, float)
+        bins.append({"block": u["scape"], "eye": u["group"], "state": u["state"], "focus": float(u["focus"]),
+                     "fx": float(pr[_FX]), "fy": float(pr[_FY]), "observations": int(obs[cid]), "sol": u.get("sol"),
+                     "sequence": u.get("sequence"), "thin": bool(u.get("thin")), "early": bool(u.get("early"))})
+    return {"blocks": rows, "fits": fits, "brief": ba["brief"], "bins": bins}
 
 
 def set_ratio_holds(sg: Dict[str, Any], zoom: int, verbose: bool = True) -> Dict[str, float]:
@@ -1986,6 +1996,12 @@ def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[st
             figs.append("zcam_rig_trends.png")
     except Exception as e:                                   # noqa: BLE001
         log.warning(f"rig figure: {e}")
+    try:                                                     # 0.95.1: the efl against focus, law and bins
+        from .constrain import plot_zcam_efl_vs_focus
+        if plot_zcam_efl_vs_focus(res, out / "zcam_efl_vs_focus.png"):
+            figs.append("zcam_efl_vs_focus.png")
+    except Exception as e:                                   # noqa: BLE001
+        log.warning(f"efl figure: {e}")
     lines = [f"# Mastcam-Z {int(res['zoom'])} mm joint ({datetime.date.today().isoformat()})", "",
              f"Blocks: {', '.join(res['blocks'])}; the Navcam held at `{res.get('navcam_models')}`.", ""]
     lines += [f"- {x}" for x in describe(res)]

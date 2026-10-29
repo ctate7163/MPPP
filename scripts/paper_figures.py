@@ -18,6 +18,7 @@ Writes, into ``--out`` (default ``<MPPP>/Claude outputs``):
   zcam_rig_trends_<tag>.png              Mastcam-Z rig rotations and baseline vs sol and lens temperature - --zcam
                                          (+ _nolabels.png)
   zcam_focus_lines_vs_temperature_<tag>.png   the blocks' focus lines vs lens temperature - --zcam
+  zcam<zoom>_efl_vs_focus_<tag>.png           a joint folder's focal length against focus (law and bins) - --zcam
   site_map_<tag>.png                     the traverse map: figure 2 of ``mppp maps`` (crater | traverse, block table,
                                          1 m DTM where M20_DEMS has it); --site-map simple: plot_site_map
   undistorted_example.png                with --frame (mppp.colmap.plot_undistorted_example)
@@ -174,6 +175,12 @@ def main(argv=None) -> int:
             from zcam_lines import plot_block_lines
             plot_block_lines(json.loads(bl.read_text(encoding="utf-8")), out / f"zcam_focus_lines_vs_temperature_{tag}.png",
                              dpi=a.dpi)
+        zj = zd / "zcam_joint.json"                         # 0.95.1: the efl against focus of a joint folder
+        if zj.is_file():
+            from mppp.calib.constrain import plot_zcam_efl_vs_focus
+            res_ = json.loads(zj.read_text(encoding="utf-8"))
+            plot_zcam_efl_vs_focus(res_, out / f"zcam{int(res_.get('zoom', 34))}_efl_vs_focus_{tag}.png", dpi=a.dpi,
+                                   label=zd.name)
         if not zm.is_file() and not bl.is_file():
             print(f"no Mastcam-Z calibration in {zd}: zcam figures skipped")
     # ---- the traverse map
