@@ -12,7 +12,10 @@ MPPP -> Agisoft Metashape: build the project of a block from ``metashape_job.jso
    GPS of the PNGs is Mars latitude/longitude, which Metashape would take for WGS84);
 2. COLMAP's tie points through the Bundler import (provisional poses);
 3. one sensor per COLMAP camera with the converted calibration, fixed; every camera's pose set from the job (world
-   from camera; Metashape's camera axes are COLMAP's: x right, y down, z forward);
+   from camera; Metashape's camera axes are COLMAP's: x right, y down, z forward); the camera references (the PDS
+   label priors: position with its sigma, yaw/pitch/roll); the tie points' coordinates replaced by COLMAP's (the
+   Bundler import triangulates its own with pinhole cameras; triangulated again with the real ones if the API does
+   not take them);
 4. the masks from the COLMAP project's ``masks/`` (black = masked in both);
 5. the region (the tie points' 2-98 % box);
 6. the check: sampled COLMAP observations reprojected by Metashape (pose + calibration + pixel convention) and the
@@ -124,6 +127,81 @@ def set_mask(chunk, cam, path):
     return err is None
 
 
+def read_bundler_points(path):
+    """The 3-D points of a Bundler v0.3 file, in its order (Metashape's track ids follow it)."""
+    with open(path, encoding="ascii") as f:
+        f.readline()
+        nc, npt = (int(v) for v in f.readline().split())
+        for _ in range(5 * nc):
+            f.readline()
+        pts = []
+        for _ in range(npt):
+            pts.append([float(v) for v in f.readline().split()])
+            f.readline()
+            f.readline()
+    return pts
+
+
+def set_tie_coords(chunk, pts):
+    """30 Oct (Chal Rocks): the Bundler import triangulates its own points with Bundler's pinhole cameras - 8 m off,
+    681 px reprojection error after the real cameras were set - so the points get COLMAP's coordinates (internal
+    = MPPP's world).  Returns the number set (0: not writable)."""
+    tp = tie_points(chunk)
+    if tp is None:
+        return 0
+    points = tp.points
+    n = 0
+    for i in range(len(points)):
+        t = points[i].track_id
+        if 0 <= t < len(pts):
+            x, y, z = pts[t]
+            points[i].coord = M.Vector([x, y, z, 1.0])
+            n += 1
+    if n:                                                  # read back: an API that ignores the write
+        t = tp.points[0].track_id
+        c = tp.points[0].coord
+        if 0 <= t < len(pts) and abs(c.x / c.w - pts[t][0]) > 1e-3:
+            return 0
+    return n
+
+
+def ypr_of(R_world_from_cam):
+    """Metashape's yaw, pitch, roll of a camera (world from camera, 3 x 3 rows; the chunk's local frame is the
+    identity in a local coordinate system) - the recipe of Metashape's Reference pane."""
+    rows = []
+    for r in R_world_from_cam:
+        v = [float(r[0]), -float(r[1]), -float(r[2])]           # x diag(1, -1, -1): Metashape's photo axes
+        n = math.sqrt(sum(x * x for x in v)) or 1.0
+        rows.append([x / n for x in v])
+    y, p, r = M.Utils.mat2ypr(M.Matrix(rows))
+    return [y, p, r]
+
+
+def set_reference(chunk, cam, ref):
+    """The camera's reference: the label prior's position (+ sigma) and attitude (yaw, pitch, roll by Metashape's
+    own conversion of the prior rotation; MPPP's formula when that fails)."""
+    rr = cam.reference
+    rr.location = M.Vector(ref["location"])
+    _try([lambda: setattr(rr, "location_accuracy", M.Vector(ref["location_accuracy_m"]))])
+    ypr = None
+    if ref.get("R_w2c"):
+        R = ref["R_w2c"]
+        ypr, _ = _try([lambda: ypr_of([[R[0][i], R[1][i], R[2][i]] for i in range(3)])])
+    ypr = ypr or ref.get("ypr_deg")
+    if ypr:
+        rr.rotation = M.Vector(ypr)
+        a = float(ref.get("rotation_accuracy_deg") or 2.0)
+        _try([lambda: setattr(rr, "rotation_accuracy", M.Vector([a, a, a]))])
+    _try([lambda: setattr(rr, "enabled", True)])
+    _try([lambda: setattr(rr, "location_enabled", True)])
+    _try([lambda: setattr(rr, "rotation_enabled", bool(ypr))])
+    return bool(ypr)
+
+
+def angle_diff(a, b):
+    return (a - b + 180.0) % 360.0 - 180.0
+
+
 def check(chunk, job, cams_by_name):
     """COLMAP's observations reprojected by Metashape, and the imported tie points' reprojection errors."""
     du, dv, miss = [], [], 0
@@ -136,6 +214,17 @@ def check(chunk, job, cams_by_name):
         du.append(p.x - u)
         dv.append(p.y - v)
     out = {"colmap_observations": dict(stats(du, dv), not_projected=miss)}
+    d = []                                                 # MPPP's yaw/pitch/roll formula against Metashape's
+    for im in job["images"]:
+        ref = im.get("reference") or {}
+        cam = cams_by_name.get(im["name"])
+        if not ref.get("ypr_refined_deg") or cam is None or cam.transform is None:
+            continue
+        T = cam.transform
+        got, _ = _try([lambda: ypr_of([list(T.row(i))[:3] for i in range(3)])])
+        if got:
+            d.append(max(abs(angle_diff(a, b)) for a, b in zip(got, ref["ypr_refined_deg"])))
+    out["ypr_formula_vs_metashape_deg"] = {"n": len(d), "max": max(d) if d else None, "median": median(d)}
     tp = tie_points(chunk)
     if tp is not None and len(tp.points):
         coord = {}
@@ -195,10 +284,23 @@ def build(job_path, quit_after=False):
         c.sensor = sensors[im["sensor_id"]]
         c.transform = M.Matrix(im["world_from_camera"])
         _try([lambda: setattr(c.reference, "enabled", False)])
+    chunk.euler_angles = getattr(M, "EulerAnglesYPR", chunk.euler_angles)
+    n_ref = sum(1 for im in job["images"] if im.get("reference")
+                and set_reference(chunk, cams_by_name[im["name"]], im["reference"]) is not None)
+    log(f"references: {n_ref} cameras (the PDS label priors MPPP started from)")
     used = set(sensors.values())
     stale = [s for s in chunk.sensors if s not in used]
     if stale:
         _try([lambda: chunk.remove(stale)])
+    tie_coords = "none"
+    if n_tp:                                                 # COLMAP's coordinates for the imported points
+        n_set, e2 = _try([lambda: set_tie_coords(chunk, read_bundler_points(job["bundler"]))])
+        if n_set:
+            tie_coords = f"COLMAP ({n_set} points)"
+        else:                                                # not writable: triangulated with the real cameras
+            _try([lambda: chunk.triangulateTiePoints()])
+            tie_coords = "triangulated by Metashape with the job's cameras" + (f" ({e2})" if e2 else "")
+        log(f"tie point coordinates: {tie_coords}")
     if n_tp == 0:                                            # no tracks came in: Metashape's own, poses kept
         log("no tie points from the Bundler file: matching with the poses fixed and triangulating instead")
         _try([lambda: chunk.matchPhotos(downscale=1, generic_preselection=False, reference_preselection=True,
@@ -231,6 +333,7 @@ def build(job_path, quit_after=False):
     except Exception as e:                                 # noqa: BLE001
         chk = {"error": f"{type(e).__name__}: {e}"}
     chk.update(block=job["block"], images=len(job["images"]), sensors=len(sensors), tie_points_imported=n_tp,
+               tie_point_coordinates=tie_coords, references=n_ref,
                masks=n_mask,
                conversion_max_error_px=job.get("conversion_max_error_px"), seconds=round(time.time() - t0, 1),
                metashape=getattr(M.app, "version", "?"))

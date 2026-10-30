@@ -173,3 +173,26 @@ def test_the_build_saves_before_the_check_and_keeps_its_keys():
     body = src[src.index("def build("):]
     assert body.index("doc.save(psx)") < body.index("check(chunk, job, cams_by_name)")
     assert "tie_points_imported=n_tp" in body and "tie_points=n_tp" not in body
+
+
+def test_references_and_the_bundler_points_for_the_metashape_side(tmp_path):
+    """30 Oct (Chal Rocks in Metashape): the camera references (the label priors) are ported, and the tie points
+    get COLMAP's coordinates from the Bundler file (Metashape's import triangulated its own, 8 m off)."""
+    proj, rec = _block(tmp_path)
+    proj.images[0]["prior_C"] = [1.0, 2.0, 3.0]
+    proj.images[0]["prior_R_w2c"] = np.eye(3).tolist()
+    proj.images[0]["position_source"] = "waypoint"
+    proj.settings["prior_sigma_m"] = [1.0, 1.0, 0.5]
+    proj.save()
+    MS.write_metashape_job(proj)
+    out = proj.root / "metashape"
+    job = json.loads((out / "metashape_job.json").read_text())
+    ref = {i["name"]: i["reference"] for i in job["images"]}
+    r = ref[proj.images[0]["name"]]
+    assert r["location"] == [71.0, -48.0, 3.0] and r["location_accuracy_m"] == [1.0, 1.0, 0.5]
+    assert r["R_w2c"] == np.eye(3).tolist() and len(r["ypr_deg"]) == 3 and len(r["ypr_refined_deg"]) == 3
+    assert ref[proj.images[1]["name"]] is None                         # no prior: no reference
+    pts = MB.read_bundler_points(str(out / "mars2020_sol_0091_test.bundler.out"))
+    xyz = [rec.points3D[p].xyz for p in sorted(rec.points3D)]
+    assert len(pts) == len(xyz) and np.allclose(pts, xyz, atol=1e-6)
+    assert MB.angle_diff(359.0, 1.0) == pytest.approx(-2.0)

@@ -58,6 +58,8 @@ REGION_PERCENTILES = (2.0, 98.0)   # the region: this box of the tie points, wid
 REGION_MARGIN = 0.10
 REGION_Z_PERCENTILES = (0.5, 99.5)  # up and down (see _region)
 DEFAULT_METASHAPE = r"C:\Program Files\Agisoft\Metashape Pro\metashape.exe"
+REFERENCE_SIGMA_M = 1.0            # the prior's position sigma when the project records none
+REFERENCE_ROTATION_SIGMA_DEG = 2.0  # the label attitude's sigma in the Reference pane (display only: nothing is optimised)
 
 # COLMAP model -> (Metashape sensor type, {Metashape term: COLMAP parameter name}), the terms not listed are 0
 _FISHEYE_MODELS = {"SIMPLE_RADIAL_FISHEYE", "RADIAL_FISHEYE", "OPENCV_FISHEYE", "THIN_PRISM_FISHEYE", "FOV"}
@@ -163,6 +165,35 @@ def metashape_calibration(model: str, params: Sequence[float], width: int, heigh
     cal["colmap_model"] = model
     cal["colmap_params"] = [float(v) for v in params]
     return cal
+
+
+# ====================================================================================== the references
+def metashape_ypr(R_w2c: np.ndarray) -> List[float]:
+    """Yaw, pitch, roll (deg) of a world (east, north, up) -> camera rotation in Metashape's reference convention -
+    MPPP's reference export formula (:meth:`mppp.camera.Pose.metashape_ypr_deg`); Metashape's own angles of the
+    refined poses are compared with it in the build's check."""
+    from ..camera import Pose
+    return [float(v) for v in Pose(np.asarray(R_w2c, float), np.zeros(3), "", "").metashape_ypr_deg()]
+
+
+def camera_reference(row: Dict[str, Any], offset: np.ndarray, sigma_m: Sequence[float],
+                     R_w2c_refined: Optional[np.ndarray] = None) -> Optional[Dict[str, Any]]:
+    """A camera's reference (Christian, 30 Oct: "the camera references are not ported over"): the PDS label prior
+    MPPP aligned to - its centre in the chunk's coordinates (``prior_C`` + the block offset) with the prior sigma,
+    its attitude as yaw, pitch, roll - and the yaw, pitch, roll of the refined pose (for the check)."""
+    C, R = row.get("prior_C"), row.get("prior_R_w2c")
+    if C is None:
+        return None
+    out: Dict[str, Any] = {"location": [float(v) for v in np.asarray(C, float) + offset],
+                           "location_accuracy_m": [float(v) for v in sigma_m],
+                           "source": row.get("position_source")}
+    if R is not None:
+        out["R_w2c"] = [[float(v) for v in row] for row in np.asarray(R, float)]
+        out["ypr_deg"] = metashape_ypr(np.asarray(R, float))
+        out["rotation_accuracy_deg"] = REFERENCE_ROTATION_SIGMA_DEG
+    if R_w2c_refined is not None:
+        out["ypr_refined_deg"] = metashape_ypr(R_w2c_refined)
+    return out
 
 
 # ====================================================================================== the job
@@ -289,6 +320,9 @@ def write_metashape_job(project: SfmProject, out_dir: Optional[PathLike] = None,
         worst = max(worst, cal.get("max_error_px", 0.0))
         sensors.append(dict(cal, id=int(cid), label=labels[int(cid)]))
     masks = {r["name"]: bool(r.get("has_mask")) for r in project.images}
+    rows = {r["name"]: r for r in project.images}
+    offset = np.asarray(project.offset or [0.0, 0.0, 0.0], float)
+    sigma = (project.settings.get("prior_sigma_m") or [REFERENCE_SIGMA_M] * 3)
     images = []
     for iid in order:
         im = rec.images[iid]
@@ -299,7 +333,9 @@ def write_metashape_job(project: SfmProject, out_dir: Optional[PathLike] = None,
         mpath = project.masks_dir / (im.name + ".png")
         images.append({"name": im.name, "path": str(project.images_dir / im.name), "sensor_id": int(im.camera_id),
                        "world_from_camera": T.tolist(),
-                       "mask": str(mpath) if (masks.get(im.name, True) and mpath.is_file()) else None})
+                       "mask": str(mpath) if (masks.get(im.name, True) and mpath.is_file()) else None,
+                       "reference": camera_reference(rows.get(im.name) or {}, offset, sigma,
+                                                     np.asarray(im.cam_from_world().rotation.matrix(), float))})
     bund = out / f"{name}.bundler.out"
     blist = out / f"{name}.bundler_images.txt"
     tie = write_bundler(rec, bund, blist, order, max_points=max_points)

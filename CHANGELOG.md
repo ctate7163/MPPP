@@ -33,7 +33,13 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
   P2 = p1 (checked to 1e-11 px against pycolmap); terms Metashape has no place for (sx1, sy1; k4-k6), zero in every
   MPPP model, would be fitted and reported. Chal Rocks: 137 images, 40 sensors, 383,851 tie points with 1.32 M
   observations (55 MB Bundler file); the job's sensors and poses reproject COLMAP's observations at its own
-  residuals (median 0.154 px).
+  residuals (median 0.154 px). First run in Metashape 2.2.3 (Chal Rocks): COLMAP's observations reprojected at
+  0.155 px median, mean offset (-0.002, -0.002) px - the calibration, the poses and the pixel origin carry over -
+  but the Bundler import triangulates its own tie points with Bundler's pinhole cameras (8 m off, 681 px median
+  reprojection error once the real cameras are set: the "large pixel residual that is not real", and 28 of 83
+  enabled Navcam frames without a depth map). The build now gives the points COLMAP's coordinates (triangulated
+  again with the real cameras when the API does not take them) and ports the camera references (the PDS label
+  priors: position with the prior sigma, yaw/pitch/roll by Metashape's own conversion), and saves before the check.
 - **make_figures** (`scripts/paper_figures.py`): the efl vs focus figure of the newest joint folder of each of 34, 48,
   63 mm (`zcam<zoom>_joint_<date>` or `<study>\zcam<zoom>_joint`, with its `zcam_joint.json`; `--zcam-joints`,
   `--zcam-zooms`), and of the newest Hazcam fit (`hazcam_fit_*` or `<study>\hazcam_fit`; `--hazcam`): the rig trends
