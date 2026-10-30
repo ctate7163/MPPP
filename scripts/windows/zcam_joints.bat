@@ -7,8 +7,8 @@ REM passes:
 REM   34 mm            the blocks of zcam34_joint and zcam_consensus (a calibrated model exists: >= 3 blocks to promote)
 REM   48, 63, 79, 110  the blocks of zcam_consensus (no model yet: the joint starts from the blocks' refined focus
 REM                    bins; a first calibration needs >= 2 blocks to be promoted)
-REM Held at fixed values in every joint (mppp.calib.forms.ZCAM_FIXED_TERMS): 34 mm k2 (ZL +0.5, ZR +0.6); 63, 79,
-REM 110 mm k2 = p1 = p2 = 0.  p1, p2 vary at 34 and 48 mm.
+REM Held at fixed values in every joint (mppp.calib.forms.ZCAM_FIXED_TERMS): 34 mm k2 (ZL +0.5, ZR +0.6); 48 mm k2
+REM (+1.4, 0.95.1); 63, 79, 110 mm k2 = p1 = p2 = 0.  p1, p2 vary at 34 and 48 mm.
 REM Last, the Navcam + Mastcam-Z 34 mm combined joint with every finished ecam_consensus block added (a check of
 REM the Navcam law against the Mastcam-Z frames, never promoted; about an hour; set MPPP_NZ=none to skip it).
 REM
