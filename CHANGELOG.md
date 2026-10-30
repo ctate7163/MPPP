@@ -89,6 +89,7 @@ blocks stay valid.
 
 ### Sites and scripts
 
+- `run_sites.py --group a,b`: several groups, comma-separated, each site once (as `mppp calib`).
 - **One models folder for prompts and batch files**: without `MPPP_CMODS` in the environment, `paths.cmods_dir()` reads
   `scripts\windows\mppp_cmods.txt` (written by `mppp cmods init`) as the batch files do. On 29 Oct `mppp cmods
   promote` from a prompt wrote into the package copy while the site runs aligned with `D:\scapes\cmods`.

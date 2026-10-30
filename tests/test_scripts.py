@@ -512,3 +512,22 @@ def test_claude_sync_runs_from_a_copy_the_merge_cannot_touch():
     assert "call \"%TEMP%" not in t                                         # a transfer, not a call
     assert 'set "HERE=%~2"' in t and t.index('set "HERE=%~2"') < t.index("shift") < t.index('"%HERE:~-16%"')
     assert "git stash pop" in t and "git push origin main" in t
+
+
+def test_run_sites_takes_several_groups():
+    """0.95.1 (Christian, 29 Oct: rerun every Mastcam-Z block of the joints): --group zcam34_joint,zcam_consensus is
+    the union in order, each site once; run_sites_zcam.bat passes its arguments after its own --group (the last
+    --group wins)."""
+    import argparse
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from _batch import choose_sites
+    table = {"sites": {}, "groups": {"a": ["x", "y"], "b": ["y", "z"]}}
+    ns = argparse.Namespace(all=False, group="a, b", sites=None)
+    assert choose_sites(table, ns, None) == ["x", "y", "z"]
+    import pytest
+    with pytest.raises(SystemExit):
+        choose_sites(table, argparse.Namespace(all=False, group="a,c", sites=None), None)
+    t = (ROOT / "scripts" / "windows" / "run_sites_zcam.bat").read_text()
+    assert t.index("%WHICH%") < t.index("%EXTRA% %*")
+

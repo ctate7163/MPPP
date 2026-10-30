@@ -209,10 +209,14 @@ def choose_sites(table: Dict[str, Any], a, ap) -> List[str]:
     """The sites of ``--all``, ``--group`` or ``--sites``."""
     if a.all:
         return list(table["sites"])
-    if a.group:
-        if a.group not in table.get("groups", {}):
-            raise SystemExit(f"ERROR: no group {a.group!r}; groups: {sorted(table.get('groups', {}))}")
-        return list(dict.fromkeys(table["groups"][a.group]))
+    if a.group:                                  # 0.95.1: several groups, comma-separated (as mppp calib)
+        names: List[str] = []
+        for grp in str(a.group).split(","):
+            grp = grp.strip()
+            if grp not in table.get("groups", {}):
+                raise SystemExit(f"ERROR: no group {grp!r}; groups: {sorted(table.get('groups', {}))}")
+            names += list(table["groups"][grp])
+        return list(dict.fromkeys(names))
     if a.sites:
         return list(a.sites)
     ap.error("choose --all, --group or --sites (or --status)")
