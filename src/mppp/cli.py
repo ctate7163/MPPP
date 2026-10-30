@@ -384,7 +384,7 @@ def cmd_run(a: argparse.Namespace) -> int:
         if a.nerfstudio:
             cmd_nerfstudio(argparse.Namespace(work=str(d), variant="", out=None, model=None, size="2048x1536",
                                               zcam_clip="22,16", families=None, jpg=False, threads=8,
-                                              overwrite=False))
+                                              overwrite=True))     # a new alignment: every frame resampled again
     return rc
 
 
