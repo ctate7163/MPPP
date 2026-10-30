@@ -518,6 +518,70 @@ def plot_hazcam_rig_trends(rig: Dict[str, Any], path: PathLike, label: str = "",
     return Path(path)
 
 
+def plot_hazcam_efl_vs_temperature(res: Dict[str, Any], path: PathLike, label: str = "",
+                                   dpi: int = FIG_DPI) -> Optional[Path]:
+    """0.95.2 (Christian, 30 Oct: "make_figures for the fhaz and rhaz"): the Hazcam eyes' focal length against
+    temperature, 2 x 2 (FL FR / RL RR) on one y range: every block bin's focal scale (the bins of
+    :func:`mppp.calib.hazjoint.bin_rows`, ``eyes[eye]["rows"]``: fx relative to the eye's fx at T0, ppm, with its
+    sd; open before the early-mission sol) and the fitted law (its slope through T0; "own" for FL and FR, the
+    front mean for RL and RR); efl in mm on the right axis.  ``res``: ``hazcam_fit.json``.  None without rows."""
+    eyes = [e for e in ("FL", "FR", "RL", "RR") if (res.get("eyes") or {}).get(e) and not res["eyes"][e].get("skipped")
+            and any(r.get("T") is not None and r.get("fx") for r in (res["eyes"][e].get("rows") or []))]
+    if not eyes:
+        return None
+    plt = _plt()
+    T0 = float(res.get("T0_degC", -20.0))
+    early_sol = float(res.get("early_mission_sol") or 0.0)
+    fig, axs = plt.subplots(2, 2, figsize=(13.0, 9.0), squeeze=False, sharex=True, sharey=True)
+    ecol = {"FL": "#1f5fbf", "FR": "#d4572a", "RL": "#1f5fbf", "RR": "#d4572a"}
+    Ts = [r["T"] for e in eyes for r in res["eyes"][e]["rows"] if r.get("T") is not None]
+    T = np.linspace(min(Ts + [T0]) - 3, max(Ts + [T0]) + 3, 100)
+    for k, eye in enumerate(("FL", "FR", "RL", "RR")):
+        ax = axs[k // 2][k % 2]
+        if eye not in eyes:
+            ax.set_title(f"{eye}: not fitted", fontsize=9)
+            ax.axis("off")
+            continue
+        e = res["eyes"][eye]
+        f0 = float(e["params"][0])
+        slope = float(e.get("ppm_per_degC") or 0.0)
+        sd = e.get("sd_ppm_per_degC")
+        rows = [r for r in e["rows"] if r.get("T") is not None and r.get("fx")]
+        y = np.array([1e6 * (float(r["fx"]) / f0 - 1) for r in rows])
+        x = np.array([float(r["T"]) for r in rows])
+        ys = np.array([float(r.get("sd_ppm") or 0.0) for r in rows])
+        early = np.array([float(r.get("sol") or 1e9) < early_sol for r in rows])
+        src = {"own": "own slope", "front mean": "mean of FL and FR", "FL": "FL's slope"}.get(str(e.get("slope_source")),
+                                                                                            str(e.get("slope_source") or ""))
+        ax.plot(T, slope * (T - T0), "-", color=ecol[eye], lw=2,
+                label=f"law {slope:+.1f}" + (f" +- {sd:.1f}" if sd else "") + f" ppm/degC ({src})", zorder=3)
+        for m, filled, lab in ((~early, True, "block bins"), (early, False, f"block bins before sol {early_sol:g}")):
+            if m.any():
+                ax.errorbar(x[m], y[m], yerr=ys[m], fmt="o", ms=5, color=ecol[eye], ecolor="0.6", elinewidth=0.8,
+                            mfc=ecol[eye] if filled else "none", zorder=4, label=lab)
+        ax.axhline(0, color="0.7", lw=0.8)
+        ax.axvline(T0, color="0.7", lw=0.8, ls=":")
+        sc = e.get("scatter_ppm")
+        ax.set_title(f"{eye}: f {f0:.2f} px at {T0:g} degC; {len(rows)} bins, {len(set(r['block'] for r in rows))} "
+                     f"blocks" + (f"; scatter about the law {sc:.0f} ppm" if sc is not None and np.isfinite(sc) else ""),
+                     fontsize=9)
+        ax.grid(alpha=0.3)
+        ax.legend(fontsize=7, loc="best")
+        if k % 2 == 0:
+            ax.set_ylabel(f"fx relative to fx at {T0:g} degC (ppm)", fontsize=8)
+        if k // 2 == 1:
+            ax.set_xlabel("camera temperature (degC)", fontsize=8)
+        if k % 2 == 1:
+            ax.secondary_yaxis("right", functions=(lambda q, f0=f0: q * f0 * 1e-6, lambda d, f0=f0: d / (f0 * 1e-6))
+                               ).set_ylabel("fx change (px)", fontsize=8)
+    panel_letters(axs)
+    fig.suptitle(f"Hazcam focal length against temperature{(' ' + label) if label else ''}", fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(path, dpi=dpi)
+    plt.close(fig)
+    return Path(path)
+
+
 def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, Dict[str, Any]], bins: Sequence[Dict[str, Any]],
                                    rig_residuals: Dict[str, Any], path: PathLike, early_sol: float = 380.0,
                                    label: str = "", T0: float = NAVCAM_T0_DEGC, model_label: str = "new model",

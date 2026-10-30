@@ -11,6 +11,7 @@ descriptors, and one position prior per image.
 from __future__ import annotations
 
 import logging
+import re
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
@@ -38,23 +39,54 @@ def _features_record(project: SfmProject) -> Path:
     return project.features_db.with_suffix(".json")
 
 
+def _feature_key(k: Any) -> str:
+    """A family letter ("N", "Z", "F", "R") or a Mastcam-Z zoom ("Z063", also "Z63" / "z063") - 0.95.2."""
+    k = str(k).strip()
+    m = re.fullmatch(r"[Zz]0*(\d{1,3})", k)
+    return f"Z{int(m.group(1)):03d}" if m else k[:1].upper()
+
+
 def features_by_family(max_num_features: Any) -> Dict[str, int]:
     """0.95.0 (Christian, 27 Oct: twice the features on the full-resolution Navcam frames, which the zoomed-in
     Mastcam-Z frames tie to): ``max_num_features`` as {family letter: count} - an int is every family's; a dict
     {"N": 65536, "*": 32768} gives the Navcam its own count and the rest the default ("*", else
-    :data:`DEFAULT_MAX_NUM_FEATURES`).  Families: N (Navcam), Z (Mastcam-Z), F / R (Hazcams)."""
+    :data:`DEFAULT_MAX_NUM_FEATURES`).  Families: N (Navcam), Z (Mastcam-Z), F / R (Hazcams).  0.95.2 (Christian,
+    30 Oct): a Mastcam-Z zoom has its own count with a key "Z063" (before "Z", then "*")."""
     if isinstance(max_num_features, dict):
         base = int(max_num_features.get("*", DEFAULT_MAX_NUM_FEATURES))
-        out = {str(k)[:1].upper(): int(v) for k, v in max_num_features.items() if str(k) != "*"}
+        out = {_feature_key(k): int(v) for k, v in max_num_features.items() if str(k) != "*"}
         out["*"] = base
         return out
     return {"*": int(max_num_features)}
 
 
-def feature_count_for(max_num_features: Any, family: str) -> int:
-    """The SIFT feature count of an image family (:func:`features_by_family`)."""
+def image_zoom(row: Dict[str, Any]) -> Optional[int]:
+    """The Mastcam-Z zoom (mm) of an image row: from its camera group ("ZL063...") or its name ("ZCAM09673_0630")."""
+    g = str(row.get("camera_group") or "")
+    m = re.match(r"Z[LR](\d{3})", g)
+    if not m:
+        m = re.search(r"ZCAM\d{5}_(\d{3})", str(row.get("name") or ""))
+    return int(m.group(1)) if m else None
+
+
+def features_for_project(max_num_features: Any, project: SfmProject) -> Any:
+    """0.95.2: ``max_num_features`` without the zoom keys ("Z063") of zooms the project has no image of - a block
+    without those zooms (every Navcam block) keeps its features record, and so its features."""
+    if not isinstance(max_num_features, dict):
+        return max_num_features
+    zooms = {image_zoom(r) for r in project.images if str(r.get("instrument") or r["name"])[:1].upper() == "Z"}
+    return {k: v for k, v in max_num_features.items()
+            if not (_feature_key(k).startswith("Z") and len(_feature_key(k)) == 4 and int(_feature_key(k)[1:]) not in zooms)}
+
+
+def feature_count_for(max_num_features: Any, family: str, zoom: Optional[int] = None) -> int:
+    """The SIFT feature count of an image family (:func:`features_by_family`); a Mastcam-Z ``zoom`` (mm) with its
+    own key ("Z063") takes that count."""
     fam = features_by_family(max_num_features)
-    return int(fam.get(str(family)[:1].upper(), fam["*"]))
+    f = str(family)[:1].upper()
+    if f == "Z" and zoom is not None and f"Z{int(zoom):03d}" in fam:
+        return int(fam[f"Z{int(zoom):03d}"])
+    return int(fam.get(f, fam["*"]))
 
 
 def _feature_settings(max_num_features: Any, max_image_size: int, domain_size_pooling: bool,
@@ -99,6 +131,7 @@ def features_up_to_date(project: SfmProject, max_num_features: Any = DEFAULT_MAX
     sizes and modification times, so images processed again - e.g. with
     another mask model - are extracted again).
     """
+    max_num_features = features_for_project(max_num_features, project)
     rec = _features_record(project)
     if not project.features_db.exists() or not rec.is_file():
         return False
@@ -159,6 +192,7 @@ def extract_features(project: SfmProject, max_num_features: Any = DEFAULT_MAX_NU
     Navcam frame - at little cost; they do nothing for the coarser camera.
     """
     db = project.features_db
+    max_num_features = features_for_project(max_num_features, project)     # 0.95.2: only this block's zooms
     if not overwrite and features_up_to_date(project, max_num_features, max_image_size, domain_size_pooling,
                                              estimate_affine_shape, num_octaves, first_octave):
         return db
@@ -194,7 +228,8 @@ def extract_features(project: SfmProject, max_num_features: Any = DEFAULT_MAX_NU
     by_count: Dict[int, List[str]] = {}
     for r in project.images:
         fam = str(r.get("instrument") or r["name"])[:1]
-        by_count.setdefault(feature_count_for(max_num_features, fam), []).append(r["name"])
+        by_count.setdefault(feature_count_for(max_num_features, fam, image_zoom(r) if fam.upper() == "Z" else None),
+                            []).append(r["name"])
     for count, group in sorted(by_count.items(), key=lambda kv: -kv[0]):
         opts = pycolmap.FeatureExtractionOptions()
         opts.max_image_size = int(max_image_size)

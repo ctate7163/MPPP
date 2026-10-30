@@ -171,7 +171,7 @@ class Settings:
     navcam_rig_epoch_breaks_sols: Tuple[float, ...] = (300,)   # images on both sides of these sols get separate rig rotations
 
     # --- features and matching -----------------------------------------------------------------------------------
-    max_num_features: Any = field(default_factory=lambda: {"N": 65536, "*": 32768})   # SIFT features per image, by family ("*": the rest); 0.95.0 (Christian, 27 Oct): twice the 32768 on the full-resolution Navcam frames, for the Mastcam-Z ties
+    max_num_features: Any = field(default_factory=lambda: {"N": 65536, "Z063": 16384, "Z079": 16384, "Z110": 8192, "*": 32768})   # SIFT features per image, by family ("*": the rest); 0.95.0 (Christian, 27 Oct): twice the 32768 on the full-resolution Navcam frames, for the Mastcam-Z ties; 0.95.2 (Christian, 30 Oct): 16384 at 63 and 79 mm, 8192 at 110 mm (COLMAP keeps the larger-scale features, which make the ties to the wider cameras; the finer ones tie only frames of the same zoom)
     sift: Dict[str, Any] = field(default_factory=lambda: dict(domain_size_pooling=False, estimate_affine_shape=False,
                                                               num_octaves=None, first_octave=-1))   # num_octaves None: 6 with Mastcam-Z, else 4
     match_mode: str = "exhaustive"                # the matcher (0.94.4, Christian 23 Oct: SIFT again - the LightGlue A/B on Chal Rocks tiny: 13.6k Navcam-Mastcam-Z ties with SIFT, 7.6k with LightGlue, residual median 0.22 vs 0.37 px; 0.93.9 had LightGlue): "lightglue" (SIFT + LightGlue on the GPU; COLMAP's SIFT matcher when torch / kornia are missing or it would take over 3 h), "exhaustive" (COLMAP's SIFT matcher), "sift+lightglue" (0.94.4: both, LightGlue's inliers added to SIFT's) or "prior_pairs" (quick / CPU); over max_exhaustive_images images the prior-overlap pairs
@@ -244,6 +244,9 @@ class Settings:
             d.pop("zcam_line_settle_px", None)       # 0.95.0: likewise
             d.pop("zcam_bin_by", None)               # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
             d.pop("zcam_station_prior_sigma_m", None)   # 0.94.5: a Mastcam-Z setting (Navcam keys stay)
+            if isinstance(d.get("max_num_features"), dict):   # 0.95.2: the zoom counts ("Z063") likewise
+                d["max_num_features"] = {k: v for k, v in d["max_num_features"].items()
+                                         if not re.fullmatch(r"[Zz]0*\d{1,3}", str(k))}
             d["zcam_low_backlash_found"] = None      # 0.94.4: the found list is a Mastcam-Z setting (Navcam keys stay)
             if d.get("exclude"):                     # 0.94.4: a Mastcam-Z sequence left out does not change a Navcam run
                 # 0.95.1: and the zoom entries and every Mastcam-Z pattern ("*ZCAM10008_110*")

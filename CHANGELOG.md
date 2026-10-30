@@ -3,6 +3,28 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.95.2 — 2026-10-30
+
+**In short.** Fewer SIFT features on the narrow Mastcam-Z zooms (63, 79, 110 mm); `make_figures` draws the newest 34, 48 and 63 mm
+joints and the Hazcams by default.
+
+- **Fewer SIFT features on the narrow zooms: 16,384 at 63 and 79 mm, 8,192 at 110 mm** (Christian, 30 Oct: "speed
+  up the adjustments and improve the tie point quality between ncam and Zcam ... a poor man's octree").
+  `max_num_features` takes a zoom key: `{"N": 65536, "Z063": 16384, "Z079": 16384, "Z110": 8192, "*": 32768}`
+  (`database.image_zoom` from the camera group or the product name). COLMAP keeps the larger-scale features, which
+  make the ties to the wider cameras; the finer ones have no counterpart in a Navcam frame and only tie frames of the
+  same zoom (and crowd the ratio test). The GPU matcher also clamps every image to `max_num_matches` 32,768 and
+  COLMAP lists the keypoints finest first (checked on Chal Rocks tiny, 30 Oct): an image above 32,768 lost its
+  coarsest features - the Navcam-tie ones - in the pair matching. Taylorfjellet 27 Oct: Z63 median 32,844 features
+  a frame (210 of 418 above 32,768). Only Mastcam-Z blocks with these zooms change: the zoom keys of zooms a block
+  does not have are dropped from its features record (`features_for_project`) and from the Navcam run key, so the
+  Navcam blocks keep their keys and features.
+- **make_figures** (`scripts/paper_figures.py`): the efl vs focus figure of the newest joint folder of each of 34, 48,
+  63 mm (`zcam<zoom>_joint_<date>` or `<study>\zcam<zoom>_joint`, with its `zcam_joint.json`; `--zcam-joints`,
+  `--zcam-zooms`), and of the newest Hazcam fit (`hazcam_fit_*` or `<study>\hazcam_fit`; `--hazcam`): the rig trends
+  of each pair and a new `plot_hazcam_efl_vs_temperature` (the four eyes' focal length against temperature, law and
+  block bins, early bins open), also written by the Hazcam fit itself. `make_figures.bat` passes `MPPP_FIG_ARGS`.
+
 ## 0.95.1 — 2026-10-29
 
 **In short.** The Mastcam-Z joint refines the rig translation instead of holding it at the CAHV value, reports how

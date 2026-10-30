@@ -454,6 +454,13 @@ def write_hazcam(res: Dict[str, Any], out_dir: PathLike) -> Dict[str, Any]:
                 figs.append(f.name)
         except Exception as e:                   # noqa: BLE001 - a figure never fails the fit
             log.warning(f"Hazcam {fam} rig trends figure: {type(e).__name__}: {e}")
+    try:                                  # 0.95.2 (Christian, 30 Oct): the eyes' focal length against temperature
+        from .constrain import plot_hazcam_efl_vs_temperature
+        f = plot_hazcam_efl_vs_temperature(res, out / "hazcam_efl_vs_temperature.png", label=f"({stamp})")
+        if f:
+            figs.append(f.name)
+    except Exception as e:                       # noqa: BLE001
+        log.warning(f"Hazcam efl figure: {type(e).__name__}: {e}")
     (out / "check.json").write_text(json.dumps(chk, indent=1), encoding="utf-8")
     lines = [f"# Hazcam fit ({stamp})", "", f"Blocks: {', '.join(res.get('blocks') or [])}.", ""]
     lines += [f"- {x}" for x in describe(res)]

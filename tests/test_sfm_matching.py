@@ -20,10 +20,29 @@ def test_feature_and_matching_defaults():
     from mppp.pipeline import Settings
     s = Settings()
     # 0.95.0 (Christian, 27 Oct): twice the features on the Navcam frames; the rest as before
-    assert s.max_num_features == {"N": 65536, "*": 32768} and "num_octaves" in s.sift and s.match["guided_matching"] is False
+    # 0.95.2 (Christian, 30 Oct): 16384 at 63 and 79 mm, 8192 at 110 mm
+    assert s.max_num_features == {"N": 65536, "Z063": 16384, "Z079": 16384, "Z110": 8192, "*": 32768}
+    assert "num_octaves" in s.sift and s.match["guided_matching"] is False
     assert D.feature_count_for(s.max_num_features, "N") == 65536 and D.feature_count_for(s.max_num_features, "Z") == 32768
+    assert D.feature_count_for(s.max_num_features, "Z", 34) == 32768 and D.feature_count_for(s.max_num_features, "Z", 48) == 32768
+    assert D.feature_count_for(s.max_num_features, "Z", 63) == 16384 and D.feature_count_for(s.max_num_features, "Z", 110) == 8192
+    assert D.feature_count_for(s.max_num_features, "N", 63) == 65536 and D.feature_count_for({"z63": 100, "*": 5}, "Z", 63) == 100
     assert D.feature_count_for(s.max_num_features, "F") == 32768 and D.feature_count_for(32768, "N") == 32768
-    assert D._feature_settings(s.max_num_features, 5120, False)["max_num_features"] == {"*": 32768, "N": 65536}
+    assert D._feature_settings(s.max_num_features, 5120, False)["max_num_features"] == {
+        "*": 32768, "N": 65536, "Z063": 16384, "Z079": 16384, "Z110": 8192}
+    assert D.image_zoom({"camera_group": "ZR079_F03300"}) == 79
+    assert D.image_zoom({"name": "ZL0_1603_0809247900_114RAD_N0784716ZCAM09673_0630LMA01.png"}) == 63
+    assert D.image_zoom({"name": "NLF_1606_0809515303_604RAD_N0790000NCAM00709_0A0095J02.png"}) is None
+    # a block without those zooms keeps its features record and its run key (every Navcam block)
+    class _P:
+        images = [{"name": "NLF_x.png", "instrument": "NL"}, {"name": "ZL0_1603_x_N0784716ZCAM09673_0340LMA01.png",
+                                                              "instrument": "ZL034", "camera_group": "ZL034_F01134"}]
+    assert D.features_for_project(s.max_num_features, _P()) == {"N": 65536, "*": 32768}
+    _P.images = _P.images + [{"name": "ZR0_x_ZCAM09673_0630LMA01.png", "instrument": "ZR063"}]
+    assert D.features_for_project(s.max_num_features, _P()) == {"N": 65536, "Z063": 16384, "*": 32768}
+    assert s.key_dict()["max_num_features"] == {"N": 65536, "*": 32768}            # include_zcam off
+    from dataclasses import replace
+    assert replace(s, include_zcam=True).key_dict()["max_num_features"]["Z110"] == 8192
     assert D._feature_settings({"*": 32768}, 5120, False)["max_num_features"] == 32768       # one count: as before
 
 

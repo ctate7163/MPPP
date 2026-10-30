@@ -11,6 +11,10 @@ REM   station_maps_<tag>\<block>.png              the blocks' station maps
 REM   zcam_rig_trends_<tag>.png                   Mastcam-Z rig rotations and baseline - CAHV against sol and lens T
 REM   zcam_focus_lines_vs_temperature_<tag>.png   the Mastcam-Z blocks' focus lines against lens temperature
 REM   site_map_<tag>.png                          figure 2 of make_maps (crater | traverse, the official blocks)
+REM   zcam<zoom>_efl_vs_focus_<joint>.png         0.95.2: efl vs focus of the newest 34, 48 and 63 mm joints
+REM   hazcam_rig_trends_<F|R>_<fit>.png           0.95.2: the newest Hazcam fit: rig trends of each pair
+REM   hazcam_efl_vs_temperature_<fit>.png         0.95.2: and the four eyes' focal length against temperature
+REM Other joints or a Hazcam fit: set MPPP_FIG_ARGS=--zcam-joints FOLDER ... --hazcam FOLDER (or - for none)
 REM
 REM   make_figures.bat [NAVCAM_JOINT_FOLDER] [ZCAM_CALIBRATION_FOLDER] [DPI]
 REM Defaults: the newest %MPPP_SCAPES%\camera_analysis\navcal_tied_* and zcam34_calibration_* folders; 200 dpi.
@@ -49,7 +53,7 @@ echo make_figures: Navcam joint  %STUDY%
 echo make_figures: Mastcam-Z     %ZCAM%
 echo make_figures: DTMs          %M20_DEMS%
 echo make_figures: out           %OUT%  (%DPI% dpi)
-python "%MPPP_HOME%\scripts\paper_figures.py" !ARGS!
+python "%MPPP_HOME%\scripts\paper_figures.py" !ARGS! %MPPP_FIG_ARGS%
 if errorlevel 1 ( echo make_figures: FAILED ^(see above^) & if not defined MPPP_NOPAUSE pause & exit /b 1 )
 echo make_figures: done - %OUT%
 if not defined MPPP_NOPAUSE pause

@@ -2,6 +2,7 @@
 staged alignment that brings the Hazcam frames in after the Navcam block."""
 import copy
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -342,3 +343,45 @@ def test_hazcam_rig_trends_figure_and_panel_letters(tmp_path):
     plt.close(fig)
     from mppp.calib import constrain as C
     assert C.STEREO_CX_YLIM == (-20.0, -16.0)
+
+
+def test_hazcam_efl_vs_temperature_figure(tmp_path):
+    """0.95.2 (Christian, 30 Oct): the Hazcam eyes' focal length against temperature (make_figures, the fit folder)."""
+    pytest.importorskip("matplotlib")
+    from mppp.calib.constrain import plot_hazcam_efl_vs_temperature
+    rows = lambda eye, f0: [{"block": f"b{i}", "eye": eye, "T": T, "sol": sol, "images": 4, "observations": 900,
+                             "ppm": 5.0, "sd_ppm": 10.0, "fx": f0 * (1 + 20e-6 * (T + 20)), "fy": f0, "k1": 0.0}
+                            for i, (T, sol) in enumerate(((-30, 100), (-10, 500), (0, 900)))]
+    eyes = {e: {"params": [f0, f0, 2560, 1920, 0, 0], "ppm_per_degC": 20.0, "sd_ppm_per_degC": 1.0,
+                "slope_source": "own" if e[0] == "F" else "front mean", "scatter_ppm": 5.0, "rows": rows(e, f0)}
+            for e, f0 in (("FL", 2141.6), ("FR", 2138.9), ("RL", 2140.2))}
+    eyes["RR"] = {"skipped": "no blocks"}
+    f = plot_hazcam_efl_vs_temperature({"T0_degC": -20.0, "early_mission_sol": 380, "eyes": eyes},
+                                       tmp_path / "h.png")
+    assert f is not None and f.is_file() and f.stat().st_size > 10000
+    assert plot_hazcam_efl_vs_temperature({"eyes": {}}, tmp_path / "x.png") is None
+
+
+def test_make_figures_finds_the_newest_joints_and_hazcam_fit(tmp_path):
+    """0.95.2: make_figures plots the newest 34, 48, 63 mm joints and Hazcam fit by default."""
+    import importlib.util
+    import os
+    import time
+    spec = importlib.util.spec_from_file_location("paper_figures", Path(__file__).resolve().parents[1] / "scripts" / "paper_figures.py")
+    pf = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pf)
+    ca = tmp_path / "camera_analysis"
+    for d in ("zcam34_joint_20261028", "trial_0p95_20261029/zcam34_joint", "zcam34_joint_20261029",
+              "hazcam_fit_ecam_20261027", "trial_0p95_20261029/hazcam_fit"):
+        (ca / d).mkdir(parents=True)
+    t = time.time()
+    for i, (d, f) in enumerate((("zcam34_joint_20261028", "zcam_joint.json"), ("trial_0p95_20261029/zcam34_joint", "zcam_joint.json"),
+                                ("hazcam_fit_ecam_20261027", "hazcam_fit.json"), ("trial_0p95_20261029/hazcam_fit", "hazcam_fit.json"))):
+        (ca / d / f).write_text("{}")
+        os.utime(ca / d / f, (t - 100 + i, t - 100 + i))
+    # zcam34_joint_20261029 has no zcam_joint.json (a joint that did not finish): not chosen
+    assert pf.newest_zcam_joint(tmp_path, 34) == ca / "trial_0p95_20261029" / "zcam34_joint"
+    assert pf.newest_zcam_joint(tmp_path, 48) is None
+    assert pf.newest_hazcam_fit(tmp_path) == ca / "trial_0p95_20261029" / "hazcam_fit"
+    assert pf.folder_tag(ca / "trial_0p95_20261029" / "zcam34_joint") == "trial_0p95_20261029_zcam34_joint"
+    assert pf.folder_tag(ca / "zcam34_joint_20261028") == "zcam34_joint_20261028"

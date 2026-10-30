@@ -19,6 +19,10 @@ Writes, into ``--out`` (default ``<MPPP>/Claude outputs``):
                                          (+ _nolabels.png)
   zcam_focus_lines_vs_temperature_<tag>.png   the blocks' focus lines vs lens temperature - --zcam
   zcam<zoom>_efl_vs_focus_<tag>.png           a joint folder's focal length against focus (law and bins) - --zcam
+  zcam<zoom>_efl_vs_focus_<joint>.png         0.95.2: the same for the newest 34, 48 and 63 mm joints (--zcam-joints,
+                                              --zcam-zooms; the joint folder's name in the file name)
+  hazcam_rig_trends_<F|R>_<fit>.png           0.95.2: the newest Hazcam fit's rig trends (+ _nolabels) - --hazcam
+  hazcam_efl_vs_temperature_<fit>.png         0.95.2: its eyes' focal length against temperature (law and block bins)
   site_map_<tag>.png                     the traverse map: figure 2 of ``mppp maps`` (crater | traverse, block table,
                                          1 m DTM where M20_DEMS has it); --site-map simple: plot_site_map
   undistorted_example.png                with --frame (mppp.colmap.plot_undistorted_example)
@@ -29,9 +33,13 @@ import argparse
 import glob
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
+from typing import Optional, Union
+
+PathLike = Union[str, Path]
 
 HERE = Path(__file__).resolve().parent.parent
 
@@ -65,6 +73,41 @@ def site_map_from_maps(path: Path, dpi: int = 200) -> bool:
     return True
 
 
+def _newest(paths) -> Optional[Path]:
+    """The folder whose file (the listed json) was written last."""
+    best = None
+    for f in paths:
+        try:
+            t = Path(f).stat().st_mtime
+        except OSError:
+            continue
+        if best is None or t > best[0]:
+            best = (t, Path(f).parent)
+    return best[1] if best else None
+
+
+def newest_zcam_joint(root: PathLike, zoom: int) -> Optional[Path]:
+    """0.95.2: the newest Mastcam-Z joint folder of a zoom under <root>/camera_analysis: zcam<zoom>_joint_<date>[_N]
+    (zcam_joints.bat) or <study>/zcam<zoom>_joint (trial_joints_0p95.bat), with its zcam_joint.json."""
+    ca = Path(root) / "camera_analysis"
+    return _newest(glob.glob(str(ca / f"zcam{int(zoom)}_joint_*" / "zcam_joint.json"))
+                   + glob.glob(str(ca / "*" / f"zcam{int(zoom)}_joint" / "zcam_joint.json")))
+
+
+def newest_hazcam_fit(root: PathLike) -> Optional[Path]:
+    """0.95.2: the newest Hazcam fit folder under <root>/camera_analysis: hazcam_fit_<group>_<date>[_N] or
+    <study>/hazcam_fit, with its hazcam_fit.json."""
+    ca = Path(root) / "camera_analysis"
+    return _newest(glob.glob(str(ca / "hazcam_fit_*" / "hazcam_fit.json"))
+                   + glob.glob(str(ca / "*" / "hazcam_fit" / "hazcam_fit.json")))
+
+
+def folder_tag(folder: PathLike) -> str:
+    """A file-name tag for a joint or fit folder: its name, with its study's name for <study>/zcam34_joint."""
+    f = Path(folder)
+    return f.name if re.search(r"_\d{8}", f.name) else f"{f.parent.name}_{f.name}"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the scapes root (default MPPP_SCAPES)")
@@ -82,6 +125,12 @@ def main(argv=None) -> int:
     ap.add_argument("--frame-mask", default=None)
     ap.add_argument("--frame-T", type=float, default=-20.0)
     ap.add_argument("--zcam", default=None, help="a Mastcam-Z calibration folder (zcam_calibration.py calibrate)")
+    ap.add_argument("--zcam-joints", nargs="*", default=None,
+                    help="Mastcam-Z joint folders (zcam_joint.json) for the efl vs focus figures; default: the newest "
+                         "of each of --zcam-zooms under <root>\\camera_analysis; '-' for none")
+    ap.add_argument("--zcam-zooms", default="34,48,63", help="the zooms of the default joint folders (0.95.2: 34,48,63)")
+    ap.add_argument("--hazcam", default=None, help="a Hazcam fit folder (hazcam_fit.json); default: the newest "
+                                                   "under <root>\\camera_analysis; '-' for none")
     ap.add_argument("--dpi", type=int, default=200)
     ap.add_argument("--site-map", choices=["maps", "simple", "none"], default="maps")
     a = ap.parse_args(argv)
@@ -183,6 +232,53 @@ def main(argv=None) -> int:
                                    label=zd.name)
         if not zm.is_file() and not bl.is_file():
             print(f"no Mastcam-Z calibration in {zd}: zcam figures skipped")
+    # ---- 0.95.2 (Christian, 30 Oct): the efl vs focus of the newest joint of each zoom (34, 48, 63 by default)
+    from mppp.calib.constrain import plot_hazcam_efl_vs_temperature, plot_hazcam_rig_trends, plot_zcam_efl_vs_focus
+    done_joints = {str(Path(a.zcam).resolve())} if a.zcam and (Path(a.zcam) / "zcam_joint.json").is_file() else set()
+    if a.zcam_joints == ["-"]:
+        joints = []
+    elif a.zcam_joints:
+        joints = [Path(j) for j in a.zcam_joints]
+    else:
+        joints = [newest_zcam_joint(a.root, int(z)) for z in str(a.zcam_zooms).split(",") if z.strip()] if a.root else []
+        for z, j in zip([z for z in str(a.zcam_zooms).split(",") if z.strip()], joints):
+            if j is None:
+                print(f"no Mastcam-Z {z} mm joint folder under {a.root}\\camera_analysis")
+    for j in [j for j in joints if j is not None]:
+        if str(j.resolve()) in done_joints:
+            continue
+        done_joints.add(str(j.resolve()))
+        zj = j / "zcam_joint.json"
+        if not zj.is_file():
+            print(f"{j}: no zcam_joint.json - skipped")
+            continue
+        res_ = json.loads(zj.read_text(encoding="utf-8"))
+        f = plot_zcam_efl_vs_focus(res_, out / f"zcam{int(res_.get('zoom', 34))}_efl_vs_focus_{folder_tag(j)}.png",
+                                   dpi=a.dpi, label=folder_tag(j))
+        print(f"Mastcam-Z {res_.get('zoom', 34)} mm: {j} -> {f.name if f else 'no eyes'}")
+    # ---- 0.95.2 (Christian, 30 Oct): the Hazcams - rig trends of each pair, focal length against temperature
+    hz = None if a.hazcam == "-" else (Path(a.hazcam) if a.hazcam else (newest_hazcam_fit(a.root) if a.root else None))
+    if hz is not None:
+        hf = hz / "hazcam_fit.json"
+        if hf.is_file():
+            hres = json.loads(hf.read_text(encoding="utf-8"))
+            htag = folder_tag(hz)
+            made = []
+            for fam, r in (hres.get("rigs") or {}).items():
+                if r.get("skipped"):
+                    continue
+                for suffix, labels in (("", True), ("_nolabels", False)):
+                    f = plot_hazcam_rig_trends(r, out / f"hazcam_rig_trends_{fam}_{htag}{suffix}.png", dpi=a.dpi,
+                                               label=f"({htag})", point_labels=labels)
+                    if f:
+                        made.append(f.name)
+            f = plot_hazcam_efl_vs_temperature(hres, out / f"hazcam_efl_vs_temperature_{htag}.png", label=f"({htag})",
+                                               dpi=a.dpi)
+            if f:
+                made.append(f.name)
+            print(f"Hazcam: {hz} -> {', '.join(made) or 'nothing to plot'}")
+        else:
+            print(f"{hz}: no hazcam_fit.json - Hazcam figures skipped")
     # ---- the traverse map
     if a.site_map == "maps":
         site_map_from_maps(out / f"site_map_{tag}.png", a.dpi)

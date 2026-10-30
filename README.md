@@ -40,7 +40,7 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. MPPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.95.1** (`v0p95`), the freeze release for the paper and a beta for the JOSS submission (`paper/paper.md`). Versions before 1.0 are
+Version **0.95.2** (`v0p95`), the freeze release for the paper and a beta for the JOSS submission (`paper/paper.md`). Versions before 1.0 are
 development releases; see [CHANGELOG.md](https://github.com/ctate7163/MPPP/blob/main/CHANGELOG.md).
 
 ## Install
