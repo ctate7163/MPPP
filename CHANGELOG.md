@@ -89,6 +89,9 @@ blocks stay valid.
 
 ### Sites and scripts
 
+- **One models folder for prompts and batch files**: without `MPPP_CMODS` in the environment, `paths.cmods_dir()` reads
+  `scripts\windows\mppp_cmods.txt` (written by `mppp cmods init`) as the batch files do. On 29 Oct `mppp cmods
+  promote` from a prompt wrote into the package copy while the site runs aligned with `D:\scapes\cmods`.
 - `render_paper.bat` is `make_paper.bat` (log `_transfer\make_paper_log.txt`); `sites_status.bat` is back (the run status
   of every block under `MPPP_SCAPES`: `run_sites.py --status`); `CODE_OF_CONDUCT.md` moves to `docs/`.
 - **Include lists** (Christian, 29 Oct: "some z110 into Rockytop, but not all of them, because that would be

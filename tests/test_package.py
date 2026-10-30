@@ -161,3 +161,20 @@ def test_pypi_packaging():
     r = subprocess.run([sys.executable, "-m", "mppp", "--version"], capture_output=True, text=True, timeout=120)
     import mppp
     assert r.returncode == 0 and r.stdout.strip() == f"mppp {mppp.__version__}"
+
+
+def test_cmods_dir_reads_mppp_cmods_txt_like_the_batch_files(monkeypatch, tmp_path):
+    """0.95.1 (29 Oct): without MPPP_CMODS a prompt took the package copy while the batch files took
+    scripts/windows/mppp_cmods.txt - a promotion from the prompt went where no run looked.  Now both read the file."""
+    from mppp import paths as P
+    root = tmp_path / "MPPP"
+    (root / "scripts" / "windows").mkdir(parents=True)
+    use = tmp_path / "cmods"
+    use.mkdir()
+    monkeypatch.delenv("MPPP_CMODS", raising=False)
+    monkeypatch.setattr(P, "source_root", lambda: root)
+    assert P.cmods_dir() == P.package_cmods_dir()                      # no file: the package copy
+    (root / "scripts" / "windows" / "mppp_cmods.txt").write_text(f"{use}\n", encoding="utf-8")
+    assert P.cmods_dir() == use
+    monkeypatch.setenv("MPPP_CMODS", str(tmp_path))                    # the environment still wins
+    assert P.cmods_dir() == tmp_path

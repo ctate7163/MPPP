@@ -53,7 +53,18 @@ def cmods_dir() -> Path:
     """The folder of the camera models in use: ``MPPP_CMODS`` if set, else ``mppp/data/cmods``.  Every start
     camera comes from here (:mod:`mppp.calib`); ``scripts/promote_cmods.py`` puts a new model here."""
     env = os.environ.get("MPPP_CMODS")
-    return Path(env) if env else package_cmods_dir()
+    if env:
+        return Path(env)
+    # 0.95.1 (29 Oct: "cmods promote" from a plain prompt wrote into the package copy while the batch files, which
+    # read scripts/windows/mppp_cmods.txt, aligned with D:\scapes\cmods): the same one-line file here
+    root = source_root()
+    txt = (root / "scripts" / "windows" / "mppp_cmods.txt") if root else None
+    if txt is not None and txt.is_file():
+        for line in txt.read_text(encoding="utf-8-sig").splitlines():
+            line = line.split("#", 1)[0].strip().strip('"')
+            if line and Path(line).is_dir():
+                return Path(line)
+    return package_cmods_dir()
 
 
 def cache_dir(create: bool = True) -> Path:
