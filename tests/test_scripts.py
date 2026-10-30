@@ -348,8 +348,11 @@ def test_windows_folder_is_short():
     w = ROOT / "scripts" / "windows"
     files = [f for f in w.iterdir() if f.is_file() and not f.name.endswith(".txt")]
     # 0.95.1: trial_joints_0p95.bat is the trial before the freeze reruns (it goes after them) - not counted;
-    # sites_status.bat back (Christian, 29 Oct): 21
-    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 21, sorted(f.name for f in files)
+    # sites_status.bat back (Christian, 29 Oct): 21; ecam_block.bat (Christian, 30 Oct: "a command that just
+    # generates the ecam colmap alignment with the mppp metashape and nerfstudio commands"): 22
+    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 22, sorted(f.name for f in files)
+    eb = (w / "ecam_block.bat").read_bytes()
+    assert eb.count(b"\n") == eb.count(b"\r\n") and b"run %* --root" in eb and b"--metashape --nerfstudio" in eb
     assert (w / "sites_status.bat").is_file() and (w / "make_paper.bat").is_file()
     for gone in ("run_weekend.bat", "build_example_data.bat", "run_multizoom_test.bat", "run_hazcam.bat",
                  "test_lightglue.bat", "run_sites_zcam34.bat", "zcam_tied_joint.bat", "render_paper.bat"):

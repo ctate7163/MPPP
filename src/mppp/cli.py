@@ -79,6 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p)
     p.add_argument("--gui", action="store_true", help="write the COLMAP GUI files")
     p.add_argument("--stop-after", default=None, metavar="STEP", help="stop the alignment after this step")
+    p.add_argument("--metashape", action="store_true", help="0.95.2: then the Metashape job (mppp metashape)")
+    p.add_argument("--nerfstudio", action="store_true", help="0.95.2: then the Nerfstudio export (mppp nerfstudio)")
 
     p = sub.add_parser("sites", help="the site definitions")
     p.add_argument("what", nargs="?", default="list", choices=("list", "check", "folder"))
@@ -239,6 +241,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--metashape", default=os.environ.get("MPPP_METASHAPE"),
                    help="metashape.exe (default MPPP_METASHAPE, else the standard Metashape Pro install)")
     p.add_argument("--run", action="store_true", help="build the project now (runs make_metashape_project.bat)")
+    p = sub.add_parser("nerfstudio", help="0.95.2: a finished block for Nerfstudio (splatfacto): every frame "
+                       "undistorted through COLMAP's model into one pinhole size, the masks likewise, transforms.json "
+                       "and the tie points as sparse_pc.ply, in <project>/nerfstudio")
+    p.add_argument("work", help="the block's WORK folder (its colmap/ project) or the project folder itself")
+    p.add_argument("--variant", default="", help="the project colmap_<variant> (default colmap)")
+    p.add_argument("--model", default=None, help="a native-pixel COLMAP model (default <project>/gui_native/sparse)")
+    p.add_argument("--out", default=None, help="the folder (default <project>/nerfstudio)")
+    p.add_argument("--size", default="2048x1536", help="the frame size WxH (default 2048x1536)")
+    p.add_argument("--zcam-clip", default="22,16", help="Mastcam-Z columns left out: left,right (default 22,16)")
+    p.add_argument("--families", default=None, help="only these camera families, e.g. N or N,F,R,Z (default all)")
+    p.add_argument("--jpg", action="store_true", help="JPEG images (quality 95) instead of PNG")
+    p.add_argument("--threads", type=int, default=8)
+    p.add_argument("--overwrite", action="store_true", help="write every frame again (default: keep those there)")
     sub.add_parser("doctor", help="what is set, what is missing: environment variables, dependencies, models, waypoints")
     sub.add_parser("version", help="the MPPP version")
     return ap
@@ -356,7 +371,21 @@ def cmd_run(a: argparse.Namespace) -> int:
         return 2
     s = _settings(a, a.target, {"variant": a.variant, "source": "pds", **({"gui_files": True} if a.gui else {})})
     st, s = resolve_site(a.target, s)
-    return _run(run_site, st.work, s, a, "run", run_key(s), stop_after=a.stop_after, info={"site": st.name})
+    rc = _run(run_site, st.work, s, a, "run", run_key(s), stop_after=a.stop_after, info={"site": st.name})
+    if rc in (0, 1) and (getattr(a, "metashape", False) or getattr(a, "nerfstudio", False)):
+        d = _project_dir(str(st.work), a.variant)          # 0.95.2: the exports of the finished block
+        if d is None:
+            print(f"no project at {st.work}: no exports", file=sys.stderr)
+            return rc or 1
+        if a.metashape:
+            cmd_metashape(argparse.Namespace(work=str(d), variant="", out=None, model=None, max_points=None,
+                                             metashape=os.environ.get("MPPP_METASHAPE"),
+                                             run=bool(os.environ.get("MPPP_METASHAPE_RUN"))))
+        if a.nerfstudio:
+            cmd_nerfstudio(argparse.Namespace(work=str(d), variant="", out=None, model=None, size="2048x1536",
+                                              zcam_clip="22,16", families=None, jpg=False, threads=8,
+                                              overwrite=False))
+    return rc
 
 
 def _show_status(work: Path) -> int:
@@ -960,6 +989,31 @@ def cmd_zcam_states(a: argparse.Namespace) -> int:
     return 0
 
 
+def _project_dir(work: str, variant: str = "") -> Optional[Path]:
+    w = Path(work)
+    d = w if (w / "project.json").is_file() else w / ("colmap" + (f"_{variant}" if variant else ""))
+    return d if (d / "project.json").is_file() else None
+
+
+def cmd_nerfstudio(a: argparse.Namespace) -> int:
+    """``nerfstudio``: :mod:`mppp.sfm.nerfstudio` on one block."""
+    from .sfm.nerfstudio import write_nerfstudio
+    from .sfm.project import SfmProject
+    d = _project_dir(a.work, a.variant)
+    if d is None:
+        print(f"nerfstudio: no project at {a.work}", file=sys.stderr)
+        return 2
+    W, H = (int(v) for v in str(a.size).lower().split("x"))
+    clip = tuple(int(v) for v in str(a.zcam_clip).split(","))
+    res = write_nerfstudio(SfmProject.load(d), out_dir=a.out, model_dir=a.model, size=(W, H), zcam_clip=clip,
+                           fmt="jpg" if a.jpg else "png", threads=a.threads, overwrite=a.overwrite,
+                           families=a.families.split(",") if a.families else None)
+    print(f"{res['frames']} frames at {W}x{H} ({res['cameras']} cameras), {res['points']} tie points -> {res['folder']}"
+          + (f"; {len(res['errors'])} not written: {res['errors'][:3]}" if res["errors"] else ""))
+    print(f"ns-train splatfacto --data \"{res['folder']}\" nerfstudio-data")
+    return 0 if res["frames"] else 1
+
+
 def cmd_metashape(a: argparse.Namespace) -> int:
     """``metashape``: :mod:`mppp.sfm.metashape` on one block."""
     from .sfm.metashape import write_metashape_job
@@ -1029,7 +1083,7 @@ def cmd_version(a: argparse.Namespace) -> int:
 
 COMMANDS = {"gui": cmd_gui, "process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
             "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "maps": cmd_maps, "calib": cmd_calib, "doctor": cmd_doctor,
-            "zcam-states": cmd_zcam_states, "dense": cmd_dense, "metashape": cmd_metashape,
+            "zcam-states": cmd_zcam_states, "dense": cmd_dense, "metashape": cmd_metashape, "nerfstudio": cmd_nerfstudio,
             "version": cmd_version}
 
 

@@ -46,6 +46,16 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
   observation per image and track (COLMAP lets a track see an image twice: 6,636 observations in Chal Rocks; the
   one nearer the projection is kept). Metashape's yaw/pitch/roll of the refined poses agree with MPPP's reference
   formula to 1e-13 deg.
+- **Nerfstudio export** (Christian, 30 Oct: "undistorted in a perspective frame, with images and masks all of one
+  size and an accurate transformations.json"; 2048 x 1536, "Zcam frames can be clipped 22 columns on the left and 16
+  on the right"). `mppp nerfstudio WORK` writes `<project>\nerfstudio\` (`mppp.sfm.nerfstudio`): every registered
+  frame resampled through COLMAP's exact camera model into a 2048 x 1536 pinhole frame (per-frame focal length and
+  principal point: the camera's centre resolution scaled by 2048 / width; Mastcam-Z without columns 0-21 and
+  1632-1647, scaled by 1536 / 1200), the masks likewise (0 where there is no source pixel), `transforms.json`
+  (OpenGL camera-to-world in MPPP's world frame) and `sparse_pc.ply`. Checked on a synthetic block: the resampled
+  value at Nerfstudio's projection of a tie point is the source value at COLMAP's projection.
+- **`ecam_block.bat SITE`** (`mppp run SITE --metashape --nerfstudio`): one site's Navcam + Hazcam block, then the
+  Metashape job and the Nerfstudio export. Hippo Pools' second visit runs out to sol 2022 (new images).
 - **make_figures** (`scripts/paper_figures.py`): the efl vs focus figure of the newest joint folder of each of 34, 48,
   63 mm (`zcam<zoom>_joint_<date>` or `<study>\zcam<zoom>_joint`, with its `zcam_joint.json`; `--zcam-joints`,
   `--zcam-zooms`), and of the newest Hazcam fit (`hazcam_fit_*` or `<study>\hazcam_fit`; `--hazcam`): the rig trends

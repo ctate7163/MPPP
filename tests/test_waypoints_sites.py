@@ -29,7 +29,7 @@ def test_labels_and_site_checks():
     assert site_label("rockytop") == "Rockytop"
     probs = check_sites(SITES)
     assert probs == []
-    assert SITES["hippo_pools"] == (1948, 2009) and SITES["origny"] == (1781, 1813) and SITES["origny_large"] == (1765, 1813) and SITES["olifants"] == (1880, 1889)
+    assert SITES["hippo_pools"] == (1948, 2022) and SITES["origny"] == (1781, 1813) and SITES["origny_large"] == (1765, 1813) and SITES["olifants"] == (1880, 1889)
 
 
 def test_discover_scapes(tmp_path):

@@ -378,3 +378,28 @@ tie points reprojected by Metashape (they should match COLMAP's residuals, about
 | k1, k2, k3, k4 | K1, K2, K3, K4 |
 | p1, p2 | P2, P1 (swapped: Metashape's P1 goes with x) |
 | sx1, sy1; k4-k6 of FULL_OPENCV | no place in Metashape: zero in every MPPP model (else fitted and reported) |
+
+## mppp nerfstudio
+
+0.95.2 (Christian, 30 Oct 2026): a finished block for Nerfstudio's splatfacto - every frame in one pinhole size.
+
+```text
+usage: mppp nerfstudio [-h] [--variant VARIANT] [--model MODEL] [--out OUT] [--size SIZE] [--zcam-clip ZCAM_CLIP]
+                       [--families FAMILIES] [--jpg] [--threads THREADS] [--overwrite] work
+```
+
+Writes `<project>\nerfstudio\`: `images\` and `masks\` (2048 x 1536 by default), `transforms.json` and
+`sparse_pc.ply` (the tie points, splatfacto's start). Each frame is resampled through COLMAP's exact camera model
+(`gui_native\sparse`) into a pinhole frame with its own focal length and principal point (per frame in
+`transforms.json`): Navcam and Hazcam keep their centre resolution scaled by 2048 / width (about 82 deg of a Navcam,
+100 deg of a Hazcam; the fisheye edges beyond are left out); Mastcam-Z frames lose their first 22 and last 16
+columns (`--zcam-clip`) and are scaled by 1536 / 1200. The masks are resampled the same way and are 0 wherever the
+frame has no source pixel. `transform_matrix` is camera to world with OpenGL camera axes, in MPPP's world frame
+(x east, y north, z up, metres; the block offset in `mppp`).
+
+```text
+ns-train splatfacto --data <project>\nerfstudio nerfstudio-data
+```
+
+`mppp run SITE --metashape --nerfstudio` - and `scripts\windows\ecam_block.bat SITE` - align a site's Navcam +
+Hazcam block and write both exports.
