@@ -349,3 +349,32 @@ options:
   --root DIR         the scapes root (default: MPPP_SCAPES)
   --variant VARIANT  the project colmap_<variant> instead of colmap
 ```
+
+## mppp metashape
+
+0.95.2 (Christian, 30 Oct 2026): a finished block as an Agisoft Metashape project - cameras, tie points and masks,
+the photos linked from the COLMAP project's `images\`.
+
+```text
+usage: mppp metashape [-h] [--variant VARIANT] [--model MODEL] [--out OUT] [--max-points MAX_POINTS]
+                      [--metashape METASHAPE] [--run] work
+```
+
+Writes `<project>\metashape\`: `metashape_job.json`, the tie points as Bundler v0.3 (`<block>.bundler.out` and
+`<block>.bundler_images.txt`), `build_metashape_project.py` and `make_metashape_project.bat`. Double-click the batch
+file (or `--run`): Metashape Professional (`MPPP_METASHAPE`, else the standard install) builds `<block>.psx` there
+and leaves it open (`set MPPP_METASHAPE_HEADLESS=1`: without the window). Nothing is aligned or optimised: the
+sensors (one per COLMAP camera of `gui_native\sparse`) have their calibration fixed and every camera its COLMAP
+pose. The chunk's coordinate system is local and metric - MPPP's world frame of the block (x east, y north, z up;
+the chunk transform adds the block offset). `metashape_check.json` reports COLMAP's observations and the imported
+tie points reprojected by Metashape (they should match COLMAP's residuals, about 0.15 px median).
+
+| COLMAP | Metashape |
+|---|---|
+| THIN_PRISM_FISHEYE (Navcam, Hazcam) | Fisheye |
+| FULL_OPENCV (Mastcam-Z) | Frame |
+| fx, fy | f = fy, b1 = fx - fy |
+| cx, cy (from the top-left corner) | cx - w/2, cy - h/2 (from the frame centre) |
+| k1, k2, k3, k4 | K1, K2, K3, K4 |
+| p1, p2 | P2, P1 (swapped: Metashape's P1 goes with x) |
+| sx1, sy1; k4-k6 of FULL_OPENCV | no place in Metashape: zero in every MPPP model (else fitted and reported) |

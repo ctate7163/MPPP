@@ -225,6 +225,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--maps-kind", default="geometric", choices=("geometric", "photometric"),
                    help="--maps: the geometric maps (after the consistency check, default) or the photometric ones")
     p.add_argument("--max-depth", type=float, default=None, help="--maps: depth beyond this (m) is left out (default 100)")
+    p = sub.add_parser("metashape", help="0.95.2: a finished block as an Agisoft Metashape project - cameras (calibration "
+                       "and poses fixed), COLMAP's tie points and the masks, the photos linked from images/: writes "
+                       "<project>/metashape/ (job, Bundler tie points, the build script, make_metashape_project.bat); "
+                       "Metashape Professional builds <block>.psx from it")
+    p.add_argument("work", help="the block's WORK folder (its colmap/ project) or the project folder itself")
+    p.add_argument("--variant", default="", help="the project colmap_<variant> (default colmap)")
+    p.add_argument("--model", default=None, help="a native-pixel COLMAP model (default <project>/gui_native/sparse, "
+                   "written from the block's model if missing)")
+    p.add_argument("--out", default=None, help="the folder (default <project>/metashape)")
+    p.add_argument("--max-points", type=int, default=None, help="at most this many tie points (a random subset; "
+                   "default all)")
+    p.add_argument("--metashape", default=os.environ.get("MPPP_METASHAPE"),
+                   help="metashape.exe (default MPPP_METASHAPE, else the standard Metashape Pro install)")
+    p.add_argument("--run", action="store_true", help="build the project now (runs make_metashape_project.bat)")
     sub.add_parser("doctor", help="what is set, what is missing: environment variables, dependencies, models, waypoints")
     sub.add_parser("version", help="the MPPP version")
     return ap
@@ -946,6 +960,29 @@ def cmd_zcam_states(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_metashape(a: argparse.Namespace) -> int:
+    """``metashape``: :mod:`mppp.sfm.metashape` on one block."""
+    from .sfm.metashape import write_metashape_job
+    from .sfm.project import SfmProject
+    w = Path(a.work)
+    proj_dir = w if (w / "project.json").is_file() else w / ("colmap" + (f"_{a.variant}" if a.variant else ""))
+    if not (proj_dir / "project.json").is_file():
+        print(f"metashape: no project at {proj_dir}", file=sys.stderr)
+        return 2
+    res = write_metashape_job(SfmProject.load(proj_dir), out_dir=a.out, model_dir=a.model, max_points=a.max_points,
+                              metashape_exe=a.metashape)
+    tp = res["tie_points"]
+    print(f"{res['images']} images, {res['sensors']} sensors (conversion error at most "
+          f"{res['conversion_max_error_px']:.1e} px" + (f"; fitted, not exact: {', '.join(res['inexact_sensors'])}"
+                                                        if res["inexact_sensors"] else "") + f"), {res['masks']} masks, "
+          f"{tp['points']} tie points with {tp['observations']} observations -> {res['folder']}")
+    print(f"Metashape project: {res['psx']} (made by {res['bat']})")
+    if a.run:
+        import subprocess
+        return subprocess.call(["cmd", "/c", res["bat"]]) if os.name == "nt" else 0
+    return 0
+
+
 def cmd_dense(a: argparse.Namespace) -> int:
     """``dense``: :mod:`mppp.sfm.dense` on one block."""
     from .sfm.dense import DENSE_MAX_IMAGE_SIZE, prepare_dense, run_dense, write_dense_bat
@@ -992,7 +1029,7 @@ def cmd_version(a: argparse.Namespace) -> int:
 
 COMMANDS = {"gui": cmd_gui, "process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
             "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "maps": cmd_maps, "calib": cmd_calib, "doctor": cmd_doctor,
-            "zcam-states": cmd_zcam_states, "dense": cmd_dense,
+            "zcam-states": cmd_zcam_states, "dense": cmd_dense, "metashape": cmd_metashape,
             "version": cmd_version}
 
 

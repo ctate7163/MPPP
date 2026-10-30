@@ -6,7 +6,7 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 ## 0.95.2 — 2026-10-30
 
 **In short.** Fewer SIFT features on the narrow Mastcam-Z zooms (63, 79, 110 mm); `make_figures` draws the newest 34, 48 and 63 mm
-joints and the Hazcams by default.
+joints and the Hazcams by default; a block can be opened as a Metashape project (`mppp metashape`).
 
 - **Fewer SIFT features on the narrow zooms: 16,384 at 63 and 79 mm, 8,192 at 110 mm** (Christian, 30 Oct: "speed
   up the adjustments and improve the tie point quality between ncam and Zcam ... a poor man's octree").
@@ -19,6 +19,21 @@ joints and the Hazcams by default.
   a frame (210 of 418 above 32,768). Only Mastcam-Z blocks with these zooms change: the zoom keys of zooms a block
   does not have are dropped from its features record (`features_for_project`) and from the Navcam run key, so the
   Navcam blocks keep their keys and features.
+- **Metashape project of a block** (Christian, 30 Oct: "Convert the colmap alignment a metashape project with just
+  cameras, tie points, masks. The frames should be linked to the colmap images folder"). `mppp metashape WORK`
+  writes `<WORK>\colmap\metashape\`: `metashape_job.json` (one sensor per COLMAP camera of the native-pixel model
+  `gui_native/sparse`, every pose, the masks, the region, the block offset and frame), the tie points as Bundler v0.3
+  (`<block>.bundler.out` and its image list), `build_metashape_project.py` (`mppp.sfm.metashape_build`, runs in
+  Metashape Professional's Python) and `make_metashape_project.bat`, which makes `<block>.psx`: the photos linked from
+  `images\`, the tie points imported, the sensors and poses set and the calibration fixed (no alignment, no
+  optimisation), the masks from `masks\`, a local metric coordinate system (MPPP's world frame: x east, y north,
+  z up, the chunk transform adds the block offset), and a check (`metashape_check.json`: COLMAP's observations and
+  the imported tie points reprojected by Metashape). The camera models translate exactly: THIN_PRISM_FISHEYE ->
+  Fisheye and FULL_OPENCV -> Frame with f = fy, b1 = fx - fy, (cx, cy) from the frame centre, K1..K4, and P1 = p2,
+  P2 = p1 (checked to 1e-11 px against pycolmap); terms Metashape has no place for (sx1, sy1; k4-k6), zero in every
+  MPPP model, would be fitted and reported. Chal Rocks: 137 images, 40 sensors, 383,851 tie points with 1.32 M
+  observations (55 MB Bundler file); the job's sensors and poses reproject COLMAP's observations at its own
+  residuals (median 0.154 px).
 - **make_figures** (`scripts/paper_figures.py`): the efl vs focus figure of the newest joint folder of each of 34, 48,
   63 mm (`zcam<zoom>_joint_<date>` or `<study>\zcam<zoom>_joint`, with its `zcam_joint.json`; `--zcam-joints`,
   `--zcam-zooms`), and of the newest Hazcam fit (`hazcam_fit_*` or `<study>\hazcam_fit`; `--hazcam`): the rig trends
