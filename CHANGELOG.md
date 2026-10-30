@@ -40,6 +40,12 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
   enabled Navcam frames without a depth map). The build now gives the points COLMAP's coordinates (triangulated
   again with the real cameras when the API does not take them) and ports the camera references (the PDS label
   priors: position with the prior sigma, yaw/pitch/roll by Metashape's own conversion), and saves before the check.
+  Second run: the import also renumbers its tracks (12 dropped, ids shifted by 0-12), so COLMAP's coordinates by
+  track id landed on the wrong tracks for part of the points (median 0.24 px, rms 480 px). The build now
+  triangulates the points again from COLMAP's observations with the job's cameras, and the export keeps one
+  observation per image and track (COLMAP lets a track see an image twice: 6,636 observations in Chal Rocks; the
+  one nearer the projection is kept). Metashape's yaw/pitch/roll of the refined poses agree with MPPP's reference
+  formula to 1e-13 deg.
 - **make_figures** (`scripts/paper_figures.py`): the efl vs focus figure of the newest joint folder of each of 34, 48,
   63 mm (`zcam<zoom>_joint_<date>` or `<study>\zcam<zoom>_joint`, with its `zcam_joint.json`; `--zcam-joints`,
   `--zcam-zooms`), and of the newest Hazcam fit (`hazcam_fit_*` or `<study>\hazcam_fit`; `--hazcam`): the rig trends

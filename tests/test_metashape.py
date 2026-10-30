@@ -196,3 +196,24 @@ def test_references_and_the_bundler_points_for_the_metashape_side(tmp_path):
     xyz = [rec.points3D[p].xyz for p in sorted(rec.points3D)]
     assert len(pts) == len(xyz) and np.allclose(pts, xyz, atol=1e-6)
     assert MB.angle_diff(359.0, 1.0) == pytest.approx(-2.0)
+
+
+def test_a_track_that_sees_an_image_twice_keeps_one_observation(tmp_path):
+    """30 Oct (Chal Rocks: 5,595 points): one observation per image and track - the one nearer the projection."""
+    from types import SimpleNamespace as NS
+    cam = pycolmap.Camera(model="PINHOLE", width=100, height=80, params=[100.0, 100.0, 50.0, 40.0])
+    pose = pycolmap.Rigid3d()
+    X = np.array([0.1, 0.0, 1.0])                              # projects to (60, 40)
+    kp = {1: [(60.0, 40.0), (63.0, 40.0)], 2: [(60.2, 40.0)]}
+
+    class Im(NS):
+        def cam_from_world(self):
+            return pose
+    ims = {i: Im(camera_id=1, name=f"I{i}.png", points2D=[NS(xy=np.array(p)) for p in kp[i]]) for i in kp}
+    el = lambda i, k: NS(image_id=i, point2D_idx=k)            # noqa: E731
+    pt = NS(xyz=X, color=np.array([1, 2, 3]), track=NS(elements=[el(1, 1), el(1, 0), el(2, 0)]))
+    rec = NS(images=ims, cameras={1: cam}, points3D={7: pt})
+    n = MS.write_bundler(rec, tmp_path / "b.out", tmp_path / "b.txt", [1, 2])
+    assert n["points"] == 1 and n["observations"] == 2 and n["duplicate_image_observations_dropped"] == 1
+    obs = (tmp_path / "b.out").read_text().splitlines()[-1].split()
+    assert obs[0] == "2" and obs[1:3] == ["0", "0"]            # image 1: keypoint 0 (on the projection), not 1

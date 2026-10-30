@@ -13,9 +13,8 @@ MPPP -> Agisoft Metashape: build the project of a block from ``metashape_job.jso
 2. COLMAP's tie points through the Bundler import (provisional poses);
 3. one sensor per COLMAP camera with the converted calibration, fixed; every camera's pose set from the job (world
    from camera; Metashape's camera axes are COLMAP's: x right, y down, z forward); the camera references (the PDS
-   label priors: position with its sigma, yaw/pitch/roll); the tie points' coordinates replaced by COLMAP's (the
-   Bundler import triangulates its own with pinhole cameras; triangulated again with the real ones if the API does
-   not take them);
+   label priors: position with its sigma, yaw/pitch/roll); the tie points triangulated again with these cameras
+   from COLMAP's observations (the Bundler import triangulates with pinhole cameras and renumbers its tracks);
 4. the masks from the COLMAP project's ``masks/`` (black = masked in both);
 5. the region (the tie points' 2-98 % box);
 6. the check: sampled COLMAP observations reprojected by Metashape (pose + calibration + pixel convention) and the
@@ -293,14 +292,22 @@ def build(job_path, quit_after=False):
     if stale:
         _try([lambda: chunk.remove(stale)])
     tie_coords = "none"
-    if n_tp:                                                 # COLMAP's coordinates for the imported points
-        n_set, e2 = _try([lambda: set_tie_coords(chunk, read_bundler_points(job["bundler"]))])
-        if n_set:
-            tie_coords = f"COLMAP ({n_set} points)"
-        else:                                                # not writable: triangulated with the real cameras
-            _try([lambda: chunk.triangulateTiePoints()])
-            tie_coords = "triangulated by Metashape with the job's cameras" + (f" ({e2})" if e2 else "")
-        log(f"tie point coordinates: {tie_coords}")
+    if n_tp:
+        # 30 Oct (Chal Rocks): the import triangulates with Bundler's pinhole cameras AND renumbers its tracks (12 of
+        # 383,851 dropped, the ids shifted by 0-12), so COLMAP's coordinates by track id landed on the wrong tracks
+        # for part of the points (median 0.24 px, rms 480 px).  The points are triangulated again from COLMAP's
+        # observations with the job's (exact) cameras; COLMAP's coordinates by id only if that fails.
+        _, e1 = _try([lambda: chunk.triangulateTiePoints(max_error=10, min_image=2),
+                      lambda: chunk.triangulateTiePoints()])
+        if e1 is None:
+            tie_coords = "triangulated by Metashape from COLMAP's observations with the job's cameras"
+        else:
+            n_set, e2 = _try([lambda: set_tie_coords(chunk, read_bundler_points(job["bundler"]))])
+            tie_coords = (f"COLMAP by track id ({n_set} points; triangulation failed: {e1})" if n_set
+                          else f"as imported (triangulation: {e1}; coordinates: {e2})")
+        tp = tie_points(chunk)
+        n_tp = len(tp.points) if tp is not None else 0
+        log(f"tie point coordinates: {tie_coords}; {n_tp} points")
     if n_tp == 0:                                            # no tracks came in: Metashape's own, poses kept
         log("no tie points from the Bundler file: matching with the poses fixed and triangulating instead")
         _try([lambda: chunk.matchPhotos(downscale=1, generic_preselection=False, reference_preselection=True,

@@ -235,11 +235,10 @@ def write_bundler(rec, path_out: PathLike, path_list: PathLike, order: Sequence[
         t = flip @ np.asarray(cw.translation, float)
         cams.append(f"{float(cam.params[0]):.10g} 0 0\n" + "\n".join(" ".join(f"{v:.15g}" for v in row) for row in R)
                     + "\n" + " ".join(f"{v:.15g}" for v in t))
-    pts, n_obs = [], 0
-    xy_cache: Dict[int, np.ndarray] = {}
+    pts, n_obs, n_dup = [], 0, 0
     for pid in pids:
         pt = rec.points3D[pid]
-        obs = []
+        best: Dict[int, Tuple[float, str]] = {}
         for el in pt.track.elements:
             iid = int(el.image_id)
             if iid not in pos:
@@ -247,7 +246,24 @@ def write_bundler(rec, path_out: PathLike, path_list: PathLike, order: Sequence[
             im = rec.images[iid]
             cam = rec.cameras[im.camera_id]
             xy = np.asarray(im.points2D[int(el.point2D_idx)].xy, float)
-            obs.append(f"{pos[iid]} {int(el.point2D_idx)} {xy[0] - 0.5 * cam.width:.4f} {0.5 * cam.height - xy[1]:.4f}")
+            line = f"{pos[iid]} {int(el.point2D_idx)} {xy[0] - 0.5 * cam.width:.4f} {0.5 * cam.height - xy[1]:.4f}"
+            if iid in best:
+                # 30 Oct (Chal Rocks): COLMAP lets a track see one image twice (5,595 of 383,851 points), Bundler
+                # and Metashape cannot - Metashape's import then renumbered its tracks; the observation nearer the
+                # point's projection is kept
+                n_dup += 1
+                Xc = np.asarray(im.cam_from_world() * np.asarray(pt.xyz, float), float).reshape(1, 3)
+                uv = np.asarray(cam.img_from_cam(Xc), float).reshape(2)
+                err = float(np.hypot(*(uv - xy)))
+                if best[iid][0] is None:
+                    xy0 = np.array([float(v) for v in best[iid][1].split()[2:4]]) * [1, -1] + [0.5 * cam.width,
+                                                                                               0.5 * cam.height]
+                    best[iid] = (float(np.hypot(*(uv - xy0))), best[iid][1])
+                if err < best[iid][0]:
+                    best[iid] = (err, line)
+                continue
+            best[iid] = (None, line)
+        obs = [v[1] for v in best.values()]
         if len(obs) < 2:
             continue
         x, y, z = (float(v) for v in pt.xyz)
@@ -257,7 +273,7 @@ def write_bundler(rec, path_out: PathLike, path_list: PathLike, order: Sequence[
     lines[1] = f"{len(cams)} {len(pts)}"
     Path(path_out).write_text("\n".join(lines + cams + pts) + "\n", encoding="ascii")
     Path(path_list).write_text("\n".join(rec.images[int(i)].name for i in order) + "\n", encoding="utf-8")
-    return {"cameras": len(cams), "points": len(pts), "observations": n_obs}
+    return {"cameras": len(cams), "points": len(pts), "observations": n_obs, "duplicate_image_observations_dropped": n_dup}
 
 
 def _region(xyz: np.ndarray) -> Dict[str, List[float]]:
