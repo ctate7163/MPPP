@@ -63,6 +63,11 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
   that has CUDA torch, then `scripts/train_mask.py --paper`: `figure1_masks.png/.pdf` and per-camera metrics on the
   held-out frames, the training curves, the card, `summary.md` (pairs by camera, sols, split, held-out IoU,
   augmentation) and the release candidate `.safetensors`, in `Claude outputs\mask_<checkpoint>\`. Nothing promoted.
+- **Training images keep the frames the alignment skips**: `regen_config` turns the pipeline's frame selection off
+  (v8's first regeneration lost 208 Navcam frames - sky-pointing, dark blue centre, saturated, outside the LMST
+  window - and 4 Mastcam-Z frames of site 1 have no landing-frame position and stay out).
+- **Hippo Pools: sol 1947's end-of-drive station S091D0000 in** (Christian, 30 Oct): `NEARBY_FROM_FIRST_SOL` off, so
+  its sol-1947 images come in as another visit within 10 m; the mid-drive stops at site 90 do not.
 - **Mask training augmentation**: horizontal flips (as before) and, new, large Navcam/Hazcam frames (long side above
   the input size) zoomed in by up to 2x: half of them cropped to 1/z of the frame (z uniform in [1, 2]) at a random
   place before the letterbox downsamples them (`TrainConfig.zoom_max`, `zoom_prob`, `zoom_families`; crops mostly of

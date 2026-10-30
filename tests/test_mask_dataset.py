@@ -176,3 +176,12 @@ def test_variable_refuses_empty_images_and_leaves_existing_untouched(tmp_path):
     with pytest.raises(FileNotFoundError, match="none of the 1 images"):
         build_variable_images(r)
     assert not list(r.glob("images_variable_prev_*"))
+
+
+def test_regen_keeps_the_frames_the_alignment_would_skip():
+    """30 Oct (v8): 208 Navcam frames (sky-pointing, dark blue centre, saturated, outside the LMST window) were not
+    regenerated - the pipeline's frame selection is off for training images."""
+    from mppp.mask.training.dataset import regen_config
+    sel = regen_config()["selection"]
+    assert all(sel[k] is None for k in ("max_boresight_elevation_deg", "lmst_window_h", "max_saturated_fraction",
+                                        "max_exposure_ms", "max_centre_tint"))

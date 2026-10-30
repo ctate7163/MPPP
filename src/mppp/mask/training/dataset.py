@@ -315,6 +315,12 @@ def regen_config(config: Optional[Union[PathLike, Dict]] = None) -> Dict:
     cfg["masking"]["static_masks_dir"] = None
     cfg["color"]["apply_gamma"] = False             # the network's input is linear 8-bit
     cfg["resize"].update(apply_padding=True, extra_padding=False, undistort=False)
+    # 0.95.2 (30 Oct, v8: 208 Navcam frames lost): the pipeline's frame selection is for alignment - sky-pointing,
+    # dark-blue-centre, saturated and out-of-window frames are exactly the ones the mask model must see
+    sel = cfg.setdefault("selection", {})
+    for k in ("max_boresight_elevation_deg", "lmst_window_h", "max_saturated_fraction", "max_exposure_ms",
+              "max_centre_tint"):
+        sel[k] = None
     return cfg
 
 

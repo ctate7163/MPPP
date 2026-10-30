@@ -337,7 +337,7 @@ def test_site_fixes_19_oct():
     assert [421, 423] in t["enchanted_lake"]["sols"]     # 27 Oct (Christian): the sol 421 and 555 end-of-drive stations back
     assert t["bell_island_large"]["sols"][0][0] == 1431
     assert t["rochette"]["sols"][0][0] == 178 and t["rochette"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
-    assert t["hippo_pools"]["sols"][0][0] == 1948 and t["hippo_pools"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
+    assert t["hippo_pools"]["sols"][0][0] == 1948 and "NEARBY_FROM_FIRST_SOL" not in t["hippo_pools"]["settings"]   # 30 Oct: sol 1947 EOD in
 
 
 def test_sites_19_oct_afternoon():
