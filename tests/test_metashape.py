@@ -164,3 +164,12 @@ def test_the_metashape_side_script_needs_no_mppp():
     s = MB.stats([0.3, -0.1], [0.4, 0.1])
     assert s["n"] == 2 and s["max_px"] == pytest.approx(0.5) and s["mean_du_px"] == pytest.approx(0.1)
     assert MB.median([3, 1, 2]) == 2 and MB.median([]) is None
+
+
+def test_the_build_saves_before_the_check_and_keeps_its_keys():
+    """30 Oct (Chal Rocks in Metashape 2.2.3): the tie-point count overwrote the check's "tie_points" and the log line
+    then stopped the script before the save - the project is saved first, the count has a key of its own."""
+    src = open(MB.__file__, encoding="utf-8").read()
+    body = src[src.index("def build("):]
+    assert body.index("doc.save(psx)") < body.index("check(chunk, job, cams_by_name)")
+    assert "tie_points_imported=n_tp" in body and "tie_points=n_tp" not in body

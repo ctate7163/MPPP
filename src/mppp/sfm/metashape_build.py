@@ -17,7 +17,7 @@ MPPP -> Agisoft Metashape: build the project of a block from ``metashape_job.jso
 5. the region (the tie points' 2-98 % box);
 6. the check: sampled COLMAP observations reprojected by Metashape (pose + calibration + pixel convention) and the
    imported tie points' own reprojection errors (the Bundler conversion) -> ``metashape_check.json``;
-7. the project saved as ``<block>.psx``.  Nothing is aligned or optimised.
+7. the project saved as ``<block>.psx`` (before the check is logged).  Nothing is aligned or optimised.
 """
 import json
 import math
@@ -221,23 +221,29 @@ def build(job_path, quit_after=False):
         chunk.region = reg
     off = job.get("offset") or [0, 0, 0]
     chunk.transform.matrix = M.Matrix.Translation(M.Vector(off))
+    # 7. saved before the check (30 Oct: a check that fails must not cost the project; the count of tie points had
+    # the check's key "tie_points", and the log line then stopped the script before the save)
+    doc.save(psx)
+    log(f"saved {psx} ({time.time() - t0:.0f} s)")
     # 6. the check
-    chk = check(chunk, job, cams_by_name)
-    chk.update(block=job["block"], images=len(job["images"]), sensors=len(sensors), tie_points=n_tp, masks=n_mask,
+    try:
+        chk = check(chunk, job, cams_by_name)
+    except Exception as e:                                 # noqa: BLE001
+        chk = {"error": f"{type(e).__name__}: {e}"}
+    chk.update(block=job["block"], images=len(job["images"]), sensors=len(sensors), tie_points_imported=n_tp,
+               masks=n_mask,
                conversion_max_error_px=job.get("conversion_max_error_px"), seconds=round(time.time() - t0, 1),
                metashape=getattr(M.app, "version", "?"))
     out = os.path.join(os.path.dirname(psx), "metashape_check.json")
     json.dump(chk, open(out, "w", encoding="utf-8"), indent=1)
-    co, ti = chk["colmap_observations"], chk["tie_points"]
+    co, ti = chk.get("colmap_observations") or {}, chk.get("tie_points") or {}
     if co.get("n"):
         log(f"check: COLMAP observations reprojected by Metashape - median {co['median_px']:.3f} px, rms "
             f"{co['rms_px']:.3f}, mean offset ({co['mean_du_px']:+.3f}, {co['mean_dv_px']:+.3f}) px over {co['n']}")
     if ti.get("n"):
         log(f"check: imported tie points - median {ti['median_px']:.3f} px, rms {ti['rms_px']:.3f}, mean offset "
             f"({ti['mean_du_px']:+.3f}, {ti['mean_dv_px']:+.3f}) px over {ti['n']}")
-    # 7. save
-    doc.save(psx)
-    log(f"saved {psx} ({time.time() - t0:.0f} s); check in {out}")
+    log(f"check in {out}")
     if quit_after:
         _try([lambda: M.app.quit()])
     return chk
