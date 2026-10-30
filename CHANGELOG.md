@@ -72,6 +72,9 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
   the input size) zoomed in by up to 2x: half of them cropped to 1/z of the frame (z uniform in [1, 2]) at a random
   place before the letterbox downsamples them (`TrainConfig.zoom_max`, `zoom_prob`, `zoom_families`; crops mostly of
   sub-frame padding are drawn again). A second run the same day gets `_2` instead of stopping on the existing name.
+- **Mask training on the pipeline's images only** (Christian, 30 Oct: "only trains on the images that went through
+  the standard mppp pipeline"): `train_mask.py` and `train_masks.bat` use `images\` alone; the brightness-varied
+  `images_variable\` copies (about twice the samples per epoch) are built and used only with `--variable`.
 - **make_figures** (`scripts/paper_figures.py`): the efl vs focus figure of the newest joint folder of each of 34, 48,
   63 mm (`zcam<zoom>_joint_<date>` or `<study>\zcam<zoom>_joint`, with its `zcam_joint.json`; `--zcam-joints`,
   `--zcam-zooms`), and of the newest Hazcam fit (`hazcam_fit_*` or `<study>\hazcam_fit`; `--hazcam`): the rig trends

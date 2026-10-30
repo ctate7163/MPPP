@@ -4,7 +4,7 @@ a Python that has mppp and a CUDA torch (on Windows: the notebooks' kernel; the 
 
     set MPPP_MASK_DATA=D:\\masks\\masks_training_set_v8
     set MPPP_PDS=D:\\data\\m2020
-    python scripts\\train_mask.py --regen --reuse-variable D:\\masks\\masks_training_set_v7\\images_variable
+    python scripts\\train_mask.py --regen                (images/ from the PDS; --variable also images_variable/)
     python scripts\\train_mask.py --epochs 10            (images/ already regenerated)
 
 Writes checkpoints\\convnext_tiny_s4_seg_<yyyymmdd>[_tag].pt + .json card, <stem>_debug\\ (curves.png, log.csv,
@@ -46,7 +46,10 @@ def main(argv=None) -> int:
     ap.add_argument("--data", default=os.environ.get("MPPP_MASK_DATA"), help="training set root (masks/, images/)")
     ap.add_argument("--pds", default=os.environ.get("MPPP_PDS"), help="PDS archive (for --regen)")
     ap.add_argument("--regen", action="store_true", help="regenerate images/ from the PDS, then images_variable/")
-    ap.add_argument("--reuse-variable", nargs="*", default=[], help="older images_variable/ folders to reuse")
+    ap.add_argument("--reuse-variable", nargs="*", default=[], help="older images_variable/ folders to reuse "
+                    "(with --variable)")
+    ap.add_argument("--variable", action="store_true", help="also train on images_variable/ (brightness-varied copies, "
+                    "built by --regen); 0.95.2 (Christian, 30 Oct): off - only the images of the standard pipeline")
     ap.add_argument("--workers", type=int, default=8, help="--regen processes (default 8; 1 if spawn gives trouble)")
     ap.add_argument("--epochs", type=int, default=10, help="10 = the mppp_mask_v3 recipe (TrainConfig default 6)")
     ap.add_argument("--quad-split-above", type=int, default=None, help="e.g. 4000: 5120 px frames as quadrants")
@@ -91,13 +94,14 @@ def main(argv=None) -> int:
             if not a.pds:
                 ap.error("--regen needs --pds or MPPP_PDS")
             print(regenerate_images_from_pds(data, a.pds, workers=a.workers))
-            n_img = len([f for f in (data / "images").glob("*.png")])
-            vdir = data / "images_variable"
-            n_var = len([f for f in vdir.glob("*.png")]) if vdir.is_dir() else 0
-            if n_var >= n_img > 0:                      # 0.95.2: a rerun keeps the complete images_variable/
-                print(f"images_variable/ complete ({n_var} of {n_img}): kept")
-            else:
-                print(build_variable_images(data, reuse_from=a.reuse_variable))
+            if a.variable:
+                n_img = len([f for f in (data / "images").glob("*.png")])
+                vdir = data / "images_variable"
+                n_var = len([f for f in vdir.glob("*.png")]) if vdir.is_dir() else 0
+                if n_var >= n_img > 0:                  # 0.95.2: a rerun keeps the complete images_variable/
+                    print(f"images_variable/ complete ({n_var} of {n_img}): kept")
+                else:
+                    print(build_variable_images(data, reuse_from=a.reuse_variable))
         cfg = TrainConfig(epochs=a.epochs, quad_split_above=a.quad_split_above, init_from=a.init_from,
                           hflip=not a.no_hflip, zoom_max=a.zoom_max, zoom_prob=a.zoom_prob)
         stem = f"{cfg.backbone}{'_s4' if cfg.stride4 else ''}_seg_{date.today():%Y%m%d}{('_' + a.tag) if a.tag else ''}"
@@ -107,7 +111,8 @@ def main(argv=None) -> int:
             out = out.with_name(f"{stem}_{k}.pt")
             k += 1
 
-    items = scan_dataset(data, image_dirs=("images", "images_variable"), mask_dir="masks", missing="skip")
+    image_dirs = ("images", "images_variable") if (a.variable or a.smoke) else ("images",)
+    items = scan_dataset(data, image_dirs=image_dirs, mask_dir="masks", missing="skip")
     print(f"{len(items)} images, {len({i.mask for i in items})} masks -> {out}")
     ckpt = train(items, out, cfg, live=False)
     print("saved", ckpt)
@@ -120,7 +125,7 @@ def main(argv=None) -> int:
             render_worst(view, ckpt, n=24, sort_by="confident_error_pct")
     if a.paper:
         pdir = (Path(__file__).resolve().parent.parent / "Claude outputs" / f"mask_{Path(ckpt).stem}") if a.paper == "auto" else Path(a.paper)
-        print(paper_outputs(Path(ckpt), data, pdir, items, smoke=a.smoke))
+        print(paper_outputs(Path(ckpt), data, pdir, items, smoke=a.smoke, image_dirs=image_dirs))
     return 0
 
 
@@ -146,7 +151,8 @@ def training_set_summary(items, card) -> dict:
             "zoom_max": tr.get("zoom_max"), "zoom_prob": tr.get("zoom_prob"), "backbone": card.get("backbone")}
 
 
-def paper_outputs(ckpt: Path, data: Path, out: Path, items, smoke: bool = False) -> dict:
+def paper_outputs(ckpt: Path, data: Path, out: Path, items, smoke: bool = False,
+                  image_dirs=("images",)) -> dict:
     """0.95.2 (Christian, 30 Oct: "generates the required figures and outputs needed for the joss paper"): the mask
     figure and per-camera metrics on the held-out frames (scripts/make_mask_figure.py), the training curves and
     log, the model card, the training-set summary (summary.md / .json) and the release candidate .safetensors
@@ -166,9 +172,11 @@ def paper_outputs(ckpt: Path, data: Path, out: Path, items, smoke: bool = False)
             shutil.copyfile(dbg / f, out / f"training_{f}")
     shutil.copyfile(ckpt.with_suffix(".json"), out / f"{ckpt.stem}.card.json")
     summ = training_set_summary(items, card)
+    summ["image_dirs"] = list(image_dirs)
     (out / "summary.json").write_text(json.dumps(summ, indent=1), encoding="utf-8")
     lines = [f"# Mask model {ckpt.stem}", "",
-             f"- training set: {summ['masks']} image-mask pairs ({summ['samples']} samples with images_variable), "
+             f"- training set: {summ['masks']} image-mask pairs ({summ['samples']} samples from "
+             f"{' + '.join(d + '/' for d in summ['image_dirs'])}), "
              f"sols {summ['sols'][0]}-{summ['sols'][1]}" if summ["sols"] else f"- training set: {summ['masks']} pairs",
              "- by camera: " + ", ".join(f"{k} {v}" for k, v in summ["by_camera"].items()),
              f"- split (grouped by mask): {summ['n_train_frames']} train / {summ['n_val_frames']} held-out masks "

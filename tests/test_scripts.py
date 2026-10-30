@@ -355,6 +355,7 @@ def test_windows_folder_is_short():
     tm = (w / "train_masks.bat").read_bytes()
     assert tm.count(b"\n") == tm.count(b"\r\n") and b"masks_training_set_v*" in tm and b"--paper" in tm
     assert b"--zoom-max 2" in tm and b"torch.cuda.is_available()" in tm
+    assert b"--reuse-variable" not in tm and b"--variable" not in tm.split(b"REM ======")[-1]   # images\ only (30 Oct)
     eb = (w / "ecam_block.bat").read_bytes()
     assert eb.count(b"\n") == eb.count(b"\r\n") and b"run %* --root" in eb and b"--metashape --nerfstudio" in eb
     assert (w / "sites_status.bat").is_file() and (w / "make_paper.bat").is_file()

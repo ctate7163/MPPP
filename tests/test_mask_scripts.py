@@ -62,3 +62,10 @@ def test_zoom_crop_of_large_ecam_frames():
     for _ in range(20):
         ci, cm, z = zoom_crop(pad, ms, 2.0, rng)
         assert z == 1.0 or np.mean(ci[::16, ::16].max(axis=2) > 0) >= 0.5
+
+
+def test_training_uses_the_pipeline_images_only_by_default():
+    """30 Oct (Christian: "only trains on the images that went through the standard mppp pipeline")."""
+    src = (ROOT / "scripts" / "train_mask.py").read_text()
+    assert 'image_dirs = ("images", "images_variable") if (a.variable or a.smoke) else ("images",)' in src
+    assert "if a.variable:" in src                     # images_variable/ is only built on request

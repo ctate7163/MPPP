@@ -6,8 +6,9 @@ REM
 REM   train_masks.bat [more train_mask.py options]        e.g.   train_masks.bat --epochs 12
 REM
 REM 1. The training set: MPPP_MASK_DATA, else the highest D:\masks\masks_training_set_vN (MPPP_MASK_ROOT).
-REM 2. images\ regenerated from the PDS archive (MPPP_PDS) for every mask (resumable: a rerun skips the done ones)
-REM    and images_variable\ (brightness-varied copies; the previous set's reused where they match; kept when complete).
+REM 2. images\ regenerated from the PDS archive (MPPP_PDS) for every mask through the standard MPPP pipeline
+REM    (resumable: a rerun skips the done ones). Training uses images\ only (Christian, 30 Oct: no images_variable\;
+REM    add --variable to train on the brightness-varied copies too).
 REM 3. ConvNeXt-tiny (ImageNet-22k start), 10 epochs, split grouped by mask; augmentation: horizontal flips, and the
 REM    large Navcam / Hazcam frames zoomed in by up to 2x somewhere in the frame (half of them) before they are
 REM    downsampled to the canvas.  -> checkpoints\convnext_tiny_s4_seg_<date>_vN.pt + .json card + _debug\ (curves,
@@ -43,9 +44,6 @@ if defined MPPP_MASK_DATA (
 )
 if not defined MPPP_MASK_DATA ( echo no %MPPP_MASK_ROOT%\masks_training_set_vN found: set MPPP_MASK_DATA & pause & exit /b 1 )
 if not exist "%MPPP_MASK_DATA%\masks\" ( echo %MPPP_MASK_DATA% has no masks\ folder & pause & exit /b 1 )
-set "REUSE="
-set /a "PV=VER-1" 2>nul
-if exist "%MPPP_MASK_ROOT%\masks_training_set_v%PV%\images_variable\" set "REUSE=--reuse-variable "%MPPP_MASK_ROOT%\masks_training_set_v%PV%\images_variable""
 
 REM --- 2. a Python with a CUDA torch
 set "TPY="
@@ -60,7 +58,7 @@ if not defined TPY (
 )
 
 echo %DATE% %TIME%  train_masks: %MPPP_MASK_DATA% (v%VER%), PDS %MPPP_PDS%, python %TPY%
-"%TPY%" "%MPPP_HOME%\scripts\train_mask.py" --data "%MPPP_MASK_DATA%" --pds "%MPPP_PDS%" --regen %REUSE% --epochs 10 --tag v%VER% --zoom-max 2 --zoom-prob 0.5 --paper %*
+"%TPY%" "%MPPP_HOME%\scripts\train_mask.py" --data "%MPPP_MASK_DATA%" --pds "%MPPP_PDS%" --regen --epochs 10 --tag v%VER% --zoom-max 2 --zoom-prob 0.5 --paper %*
 set "RC=%ERRORLEVEL%"
 echo %DATE% %TIME%  train_masks done ^(exit %RC%^): checkpoints in %MPPP_HOME%\checkpoints, paper outputs in "%MPPP_HOME%\Claude outputs\mask_*"
 if not defined MPPP_NOPAUSE pause
