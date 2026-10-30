@@ -8,7 +8,9 @@ a Python that has mppp and a CUDA torch (on Windows: the notebooks' kernel; the 
     python scripts\\train_mask.py --epochs 10            (images/ already regenerated)
 
 Writes checkpoints\\convnext_tiny_s4_seg_<yyyymmdd>[_tag].pt + .json card, <stem>_debug\\ (curves.png, log.csv,
-val\\, batch\\, frame_audit.csv, worst_frames_NN.png).  Never promotes or releases: do that after looking.
+val\\, batch\\, frame_audit.csv, worst_frames_NN.png); --paper also the JOSS outputs (scripts\\windows\\train_masks.bat
+does it all).  Augmentation: horizontal flips, and large Navcam/Hazcam frames zoomed in up to 2x (--zoom-max).
+Never promotes or releases: do that after looking.
 --smoke runs a tiny CPU training on synthetic data (checks the script, nothing else).
 """
 from __future__ import annotations
@@ -50,6 +52,14 @@ def main(argv=None) -> int:
     ap.add_argument("--quad-split-above", type=int, default=None, help="e.g. 4000: 5120 px frames as quadrants")
     ap.add_argument("--init-from", default=None, help="start from a ConvNeXtSeg checkpoint (fine-tune)")
     ap.add_argument("--tag", default="", help="checkpoint name suffix, e.g. v8")
+    ap.add_argument("--zoom-max", type=float, default=2.0, help="0.95.2: large Navcam/Hazcam frames zoomed in by up "
+                    "to this factor (a random crop, then downsampled; default 2; 1 = off)")
+    ap.add_argument("--zoom-prob", type=float, default=0.5, help="share of those frames zoomed (default 0.5)")
+    ap.add_argument("--no-hflip", action="store_true", help="no random left-right flips (on by default)")
+    ap.add_argument("--paper", nargs="?", const="auto", default=None, metavar="DIR",
+                    help="0.95.2: then the JOSS outputs into DIR (default <repo>/Claude outputs/mask_<checkpoint>): "
+                         "figure1_masks.png/.pdf, per-camera metrics, training curves, the card, the training-set "
+                         "summary and the release candidate .safetensors")
     ap.add_argument("--no-audit", action="store_true")
     ap.add_argument("--smoke", action="store_true", help="tiny synthetic CPU run (script check)")
     a = ap.parse_args(argv)
@@ -81,10 +91,21 @@ def main(argv=None) -> int:
             if not a.pds:
                 ap.error("--regen needs --pds or MPPP_PDS")
             print(regenerate_images_from_pds(data, a.pds, workers=a.workers))
-            print(build_variable_images(data, reuse_from=a.reuse_variable))
-        cfg = TrainConfig(epochs=a.epochs, quad_split_above=a.quad_split_above, init_from=a.init_from)
+            n_img = len([f for f in (data / "images").glob("*.png")])
+            vdir = data / "images_variable"
+            n_var = len([f for f in vdir.glob("*.png")]) if vdir.is_dir() else 0
+            if n_var >= n_img > 0:                      # 0.95.2: a rerun keeps the complete images_variable/
+                print(f"images_variable/ complete ({n_var} of {n_img}): kept")
+            else:
+                print(build_variable_images(data, reuse_from=a.reuse_variable))
+        cfg = TrainConfig(epochs=a.epochs, quad_split_above=a.quad_split_above, init_from=a.init_from,
+                          hflip=not a.no_hflip, zoom_max=a.zoom_max, zoom_prob=a.zoom_prob)
         stem = f"{cfg.backbone}{'_s4' if cfg.stride4 else ''}_seg_{date.today():%Y%m%d}{('_' + a.tag) if a.tag else ''}"
         out = checkpoints_dir(create=True) / f"{stem}.pt"
+        k = 2
+        while out.exists():                             # 0.95.2: a second run the same day gets _2, _3 ...
+            out = out.with_name(f"{stem}_{k}.pt")
+            k += 1
 
     items = scan_dataset(data, image_dirs=("images", "images_variable"), mask_dir="masks", missing="skip")
     print(f"{len(items)} images, {len({i.mask for i in items})} masks -> {out}")
@@ -97,7 +118,77 @@ def main(argv=None) -> int:
         print(worst_table(view, n=30))
         if not a.smoke:
             render_worst(view, ckpt, n=24, sort_by="confident_error_pct")
+    if a.paper:
+        pdir = (Path(__file__).resolve().parent.parent / "Claude outputs" / f"mask_{Path(ckpt).stem}") if a.paper == "auto" else Path(a.paper)
+        print(paper_outputs(Path(ckpt), data, pdir, items, smoke=a.smoke))
     return 0
+
+
+def training_set_summary(items, card) -> dict:
+    """The training set as the paper describes it: frames per camera, sols, the split (from the card)."""
+    import re
+    fam = {"N": "Navcam", "F": "Front Hazcam", "R": "Rear Hazcam", "Z": "Mastcam-Z", "S": "SHERLOC WATSON"}
+    masks = sorted({i.mask for i in items})
+    by: dict = {}
+    sols = []
+    for m in masks:
+        n = Path(m).name
+        f = fam.get(n[:1].upper(), n[:3])
+        by[f] = by.get(f, 0) + 1
+        s = re.match(r"^\w{3}_(\d{4})_", n)
+        if s:
+            sols.append(int(s.group(1)))
+    tr = card.get("training") or {}
+    return {"masks": len(masks), "samples": len(items), "by_camera": dict(sorted(by.items())),
+            "sols": [min(sols), max(sols)] if sols else None, "n_train": tr.get("n_train"), "n_val": tr.get("n_val"),
+            "n_train_frames": tr.get("n_train_frames"), "n_val_frames": tr.get("n_val_frames"),
+            "val_iou": card.get("val_iou"), "epochs": tr.get("epochs"), "hflip": tr.get("hflip"),
+            "zoom_max": tr.get("zoom_max"), "zoom_prob": tr.get("zoom_prob"), "backbone": card.get("backbone")}
+
+
+def paper_outputs(ckpt: Path, data: Path, out: Path, items, smoke: bool = False) -> dict:
+    """0.95.2 (Christian, 30 Oct: "generates the required figures and outputs needed for the joss paper"): the mask
+    figure and per-camera metrics on the held-out frames (scripts/make_mask_figure.py), the training curves and
+    log, the model card, the training-set summary (summary.md / .json) and the release candidate .safetensors
+    (not registered: promote and release after looking)."""
+    import json
+    import shutil
+    out.mkdir(parents=True, exist_ok=True)
+    card = json.loads(ckpt.with_suffix(".json").read_text(encoding="utf-8"))
+    res: dict = {"folder": str(out)}
+    import make_mask_figure
+    make_mask_figure.main(["--ckpt", str(ckpt), "--data", str(data), "--out", str(out)]
+                          + (["--dpi", "60", "--per-family", "1"] if smoke else []))
+    res["figure"] = str(out / "figure1_masks.png")
+    dbg = ckpt.parent / f"{ckpt.stem}_debug"
+    for f in ("curves.png", "log.csv"):
+        if (dbg / f).is_file():
+            shutil.copyfile(dbg / f, out / f"training_{f}")
+    shutil.copyfile(ckpt.with_suffix(".json"), out / f"{ckpt.stem}.card.json")
+    summ = training_set_summary(items, card)
+    (out / "summary.json").write_text(json.dumps(summ, indent=1), encoding="utf-8")
+    lines = [f"# Mask model {ckpt.stem}", "",
+             f"- training set: {summ['masks']} image-mask pairs ({summ['samples']} samples with images_variable), "
+             f"sols {summ['sols'][0]}-{summ['sols'][1]}" if summ["sols"] else f"- training set: {summ['masks']} pairs",
+             "- by camera: " + ", ".join(f"{k} {v}" for k, v in summ["by_camera"].items()),
+             f"- split (grouped by mask): {summ['n_train_frames']} train / {summ['n_val_frames']} held-out masks "
+             f"({summ['n_train']} / {summ['n_val']} samples)",
+             f"- held-out IoU (include class, threshold {card.get('threshold')}): {summ['val_iou']}",
+             f"- {summ['backbone']}, {summ['epochs']} epochs; augmentation: horizontal flip {summ['hflip']}, zoom of "
+             f"large Navcam/Hazcam frames up to {summ['zoom_max']} x (share {summ['zoom_prob']})", ""]
+    if (out / "mask_metrics_by_camera.md").is_file():
+        lines += ["## Held-out frames by camera (valid pixels only)", "",
+                  (out / "mask_metrics_by_camera.md").read_text(encoding="utf-8")]
+    (out / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    try:
+        from mppp.mask.hub import export_safetensors
+        r = export_safetensors(ckpt, out=out / f"{ckpt.stem}.safetensors")
+        res["safetensors"] = r.get("path")
+        res["sha256"] = r.get("sha256")
+    except Exception as e:                                   # noqa: BLE001
+        res["safetensors_error"] = f"{type(e).__name__}: {e}"
+    res["summary"] = str(out / "summary.md")
+    return res
 
 
 if __name__ == "__main__":                 # required on Windows: DataLoader workers start by spawn

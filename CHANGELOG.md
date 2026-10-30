@@ -56,6 +56,17 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
   value at Nerfstudio's projection of a tie point is the source value at COLMAP's projection.
 - **`ecam_block.bat SITE`** (`mppp run SITE --metashape --nerfstudio`): one site's Navcam + Hazcam block, then the
   Metashape job and the Nerfstudio export. Hippo Pools' second visit runs out to sol 2022 (new images).
+- **`train_masks.bat`** (Christian, 30 Oct: "looks for D:\masks\masks_training_set_v8 or the highest v and trains a
+  convnext tiny model all the way through and generates the required figures and outputs needed for the joss
+  paper"): the newest `masks_training_set_vN` (or `MPPP_MASK_DATA`), `images\` regenerated from the PDS (resumable)
+  and `images_variable\` (the previous set's reused; kept when complete), 10 epochs of ConvNeXt-tiny with a Python
+  that has CUDA torch, then `scripts/train_mask.py --paper`: `figure1_masks.png/.pdf` and per-camera metrics on the
+  held-out frames, the training curves, the card, `summary.md` (pairs by camera, sols, split, held-out IoU,
+  augmentation) and the release candidate `.safetensors`, in `Claude outputs\mask_<checkpoint>\`. Nothing promoted.
+- **Mask training augmentation**: horizontal flips (as before) and, new, large Navcam/Hazcam frames (long side above
+  the input size) zoomed in by up to 2x: half of them cropped to 1/z of the frame (z uniform in [1, 2]) at a random
+  place before the letterbox downsamples them (`TrainConfig.zoom_max`, `zoom_prob`, `zoom_families`; crops mostly of
+  sub-frame padding are drawn again). A second run the same day gets `_2` instead of stopping on the existing name.
 - **make_figures** (`scripts/paper_figures.py`): the efl vs focus figure of the newest joint folder of each of 34, 48,
   63 mm (`zcam<zoom>_joint_<date>` or `<study>\zcam<zoom>_joint`, with its `zcam_joint.json`; `--zcam-joints`,
   `--zcam-zooms`), and of the newest Hazcam fit (`hazcam_fit_*` or `<study>\hazcam_fit`; `--hazcam`): the rig trends

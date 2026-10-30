@@ -218,11 +218,34 @@ def letterbox(im: np.ndarray, ms: np.ndarray, size: int,
     return im, (ms > 127).astype(np.uint8)
 
 
+def zoom_crop(im: np.ndarray, ms: np.ndarray, zoom_max: float, rng: random.Random = random,
+              min_valid: float = 0.5, tries: int = 6) -> Tuple[np.ndarray, np.ndarray, float]:
+    """0.95.2 (Christian, 30 Oct: "for large ecam images downsample the image and zoom in by up to 2 somewhere in the
+    frame"): a crop of 1/z of the frame on each side, z uniform in [1, ``zoom_max``], at a random place - the
+    letterbox then brings it to the canvas, so the frame is seen up to z times larger than whole.  A crop with less
+    than ``min_valid`` of its pixels valid (image not 0: the padding of sub-frames) is drawn again; returns
+    (image, mask, z) - z = 1 when no crop was taken."""
+    h, w = ms.shape[:2]
+    z = rng.uniform(1.0, float(zoom_max))
+    if z <= 1.0001:
+        return im, ms, 1.0
+    cw, ch = max(1, int(round(w / z))), max(1, int(round(h / z)))
+    for _ in range(int(tries)):
+        x0, y0 = rng.randint(0, w - cw), rng.randint(0, h - ch)
+        ci = im[y0:y0 + ch, x0:x0 + cw]
+        small = ci[::16, ::16]
+        if float(np.mean(np.any(small != 0, axis=-1) if small.ndim == 3 else small != 0)) >= min_valid:
+            return ci, ms[y0:y0 + ch, x0:x0 + cw], z
+    return im, ms, 1.0
+
+
 class MaskDataset(Dataset):
     def __init__(self, items: Sequence[Item], size: int = 1648, hflip: bool = False,
-                 canvas: Optional[Tuple[int, int]] = None, quad_overlap: int = 64):
+                 canvas: Optional[Tuple[int, int]] = None, quad_overlap: int = 64,
+                 zoom_max: float = 1.0, zoom_prob: float = 0.0, zoom_families: str = "NFR"):
         self.items, self.size, self.hflip, self.canvas = list(items), int(size), hflip, canvas
         self.quad_overlap = int(quad_overlap)
+        self.zoom_max, self.zoom_prob, self.zoom_families = float(zoom_max), float(zoom_prob), str(zoom_families)
 
     def __len__(self):
         return len(self.items)
@@ -233,6 +256,9 @@ class MaskDataset(Dataset):
         if it.tile >= 0:
             (y0, y1, x0, x1), _ = quad_boxes(ms.shape[0], ms.shape[1], self.quad_overlap)[it.tile]
             im, ms = im[y0:y1, x0:x1], ms[y0:y1, x0:x1]
+        elif (self.zoom_max > 1.0 and self.zoom_prob > 0 and max(ms.shape[:2]) > self.size
+              and Path(it.image).name[:1].upper() in self.zoom_families and random.random() < self.zoom_prob):
+            im, ms, _ = zoom_crop(im, ms, self.zoom_max)      # large Navcam / Hazcam frames: zoomed in up to 2x
         im, ms = letterbox(cv2.cvtColor(im, cv2.COLOR_BGR2RGB), ms, self.size, self.canvas)
         if self.hflip and random.random() < 0.5:
             im, ms = im[:, ::-1].copy(), ms[:, ::-1].copy()
@@ -342,6 +368,12 @@ class TrainConfig:
     val_ratio: float = 0.1
     seed: int = 42
     hflip: bool = True                    # random left-right flip of training frames
+    # 0.95.2 (Christian, 30 Oct): a large Navcam / Hazcam frame (long side > input_size) is, with probability
+    # zoom_prob, cropped to 1/z of its size (z uniform in [1, zoom_max]) somewhere in the frame before the letterbox
+    # downsamples it: the model sees it up to 2x larger than whole (inference always sees the whole frame)
+    zoom_max: float = 2.0
+    zoom_prob: float = 0.5
+    zoom_families: str = "NFR"
     num_workers: int = 2                  # background image loading (0 = in this process)
     print_every: int = 50
     val_preview_every: int = 200          # iterations; 0 disables the held-out preview
@@ -537,7 +569,8 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
     # workers > 0: kept alive between epochs (on Windows each new worker re-imports torch)
     loader_kw = dict(collate_fn=collate, num_workers=cfg.num_workers, pin_memory=(dev_type == "cuda"),
                      persistent_workers=cfg.num_workers > 0)
-    tl = DataLoader(MaskDataset(tr_items, cfg.input_size, cfg.hflip, canvas, cfg.quad_overlap),
+    tl = DataLoader(MaskDataset(tr_items, cfg.input_size, cfg.hflip, canvas, cfg.quad_overlap,
+                                zoom_max=cfg.zoom_max, zoom_prob=cfg.zoom_prob, zoom_families=cfg.zoom_families),
                     batch_size=cfg.batch_size, shuffle=True, **loader_kw)
     vl = DataLoader(MaskDataset(va_items, cfg.input_size, canvas=canvas, quad_overlap=cfg.quad_overlap),
                     batch_size=cfg.batch_size, shuffle=False, **loader_kw)
