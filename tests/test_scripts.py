@@ -294,6 +294,31 @@ def test_run_sites_dry_run_and_finished(tmp_path):
     assert rs.main(["--sites", "rockytop", "--root", str(tmp_path), "--source", "processed", "--dry-run",
                     "--set", "attitude_prior_deg=1.0"]) == 0
     assert "finished with other settings" in (tmp_path / "run_sites_log.txt").read_text()
+    # 31 Oct (freeze): a block finished without a run key (an older MPPP) is queued again, not skipped
+    (st.work / "colmap" / "run_done.json").unlink()
+    (st.work / "colmap" / "error_input").mkdir()
+    (st.work / "colmap" / "error_input" / "summary.json").write_text("{}")
+    assert rs.main(["--sites", "rockytop", "--root", str(tmp_path), "--source", "processed", "--dry-run"]) == 0
+    assert "rockytop: would run (finished by an older MPPP without a run key" in \
+        (tmp_path / "run_sites_log.txt").read_text()
+
+
+def test_a_stopped_batch_does_not_go_on_to_the_joints(tmp_path, monkeypatch):
+    """31 Oct: stop_runs writes mppp_stopped.txt; _run_sites.bat then skips MPPP_THEN; a new batch clears it."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import _batch
+    import stop_runs
+    monkeypatch.setattr(_batch, "list_processes", lambda: [{"pid": 99, "ppid": 1,
+                                                            "cmd": "python scripts/run_sites.py --root x"}])
+    monkeypatch.setattr(_batch, "kill_tree", lambda pid: True)
+    monkeypatch.setattr(stop_runs.time, "sleep", lambda s: None)
+    assert stop_runs.main(["--root", str(tmp_path), "--yes"]) == 0
+    assert (tmp_path / _batch.STOP_MARKER).is_file()
+    r = (ROOT / "scripts" / "windows" / "_run_sites.bat").read_bytes()
+    assert r.index(b"mppp_stopped.txt") < r.index(b"if defined MPPP_THEN if %RC% LEQ 1")
+    assert b"mppp_stopped.txt" in r and b'set "MPPP_THEN="' in r
+    rs = (ROOT / "scripts" / "run_sites.py").read_text()
+    assert "(root / STOP_MARKER).unlink(missing_ok=True)" in rs
 
 
 def test_experiment_scripts_live_in_studies():

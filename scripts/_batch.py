@@ -16,6 +16,7 @@ from mppp.runner import STATUS_FILE, RunStatus, disable_quickedit, now, pid_aliv
 
 PathLike = Union[str, Path]
 
+STOP_MARKER = "mppp_stopped.txt"          # 31 Oct: written by stop_runs; _run_sites.bat then skips MPPP_THEN
 BATCH_FILE = "mppp_batch.json"           # before 0.95.0: the one batch file (still read, for an old run's status)
 BATCH_DIR = "mppp_batches"               # 0.95.0 (Christian, 27 Oct): one status file per batch, <kind>_<pid>.json -
 #   a one-site run beside the pipeline no longer needs --force-start and no longer takes over the pipeline's batch
@@ -201,7 +202,8 @@ def finished(work: Path, variant: str, key: str):
             return True, f"finished {d.get('finished')} with these settings (verdict {d.get('verdict')})"
         return False, "finished with other settings, camera models or alignment rules"
     if (project_dir(work, variant) / "error_input" / "summary.json").is_file():
-        return True, "finished without a run key"
+        # 31 Oct (freeze): a block finished by an MPPP without run keys is run again, not skipped
+        return False, "finished by an older MPPP without a run key - run again"
     return False, "not finished"
 
 

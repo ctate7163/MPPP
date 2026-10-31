@@ -200,6 +200,8 @@ def main(argv=None) -> int:
         log(f"not started: {e}")
         print(f"\nMPPP: {e}", file=sys.stderr)
         return 3
+    from _batch import STOP_MARKER
+    (root / STOP_MARKER).unlink(missing_ok=True)          # 31 Oct: a new batch clears an earlier stop_runs marker
 
     jobs = max(1, int(a.jobs))
     if jobs > 1 and len(todo) > 1:
