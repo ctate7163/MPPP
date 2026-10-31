@@ -53,6 +53,7 @@ log = logging.getLogger("mppp.sfm")
 PathLike = Union[str, Path]
 
 # name: (warn, fail, direction) - "above": bad when value > threshold; "below": bad when value < threshold
+MIN_CAMERA_OBSERVATIONS = 30      # 0.95.3: a camera with fewer tie-point observations is listed, not judged
 DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     "registered_fraction": (0.98, 0.90, "below"),
     "excluded_fraction": (0.05, 0.33, "above"),        # fail 0.33 (Christian, 24 Oct 2026; 0.30 from 22 Oct, 0.20 before)
@@ -691,15 +692,32 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
     # ---- camera model
     cams_after = {}
     db_cams = project.settings.get("database", {}).get("cameras", {})
+    # 0.95.3 (Rockytop, 31 Oct): a camera none of whose registered images has a tie point is not refined by the
+    # data - its values drift with the priors (ZCAM03391 79 mm: fx +9.9 %, fy +33 %, 0 observations) - so it is
+    # listed, not judged (it failed the block and kept Rockytop out of the Z79 joint)
+    obs_cam: Dict[int, int] = {}
+    for iid in reg:
+        im = rec.images[iid]
+        obs_cam[int(im.camera_id)] = obs_cam.get(int(im.camera_id), 0) + int(n_obs.get(im.name) or 0)
+    unjudged = []
     for instr, c0 in sorted(project.cameras.items()):
         cid = db_cams.get(instr)
         if cid is None or int(cid) not in rec.cameras:
             continue
         ch = _camera_change(c0, rec.cameras[int(cid)])
         cams_after[instr] = ch
+        if obs_cam.get(int(cid), 0) < MIN_CAMERA_OBSERVATIONS:
+            ch["unconstrained"] = True
+            unjudged.append(f"{instr} ({obs_cam.get(int(cid), 0)} observations)")
+            continue
         held = " (held at the model: too few images of its zoom at the site)" if c0.get("held_at_model") else ""   # 0.95.0
         for k in ("focal_change_pct", "principal_point_change_px", "ray_displacement_max_px"):
             check("camera model", k, ch[k], instr + held, "%" if k.endswith("pct") else "full-res px")
+
+    if unjudged:
+        check("camera model", "unconstrained_cameras", len(unjudged),
+              f"not judged - fewer than {MIN_CAMERA_OBSERVATIONS} tie-point observations, their values only follow "
+              f"the priors: " + ", ".join(unjudged[:12]) + (" ..." if len(unjudged) > 12 else ""))
 
     asp = navcam_aspect_changes(project, rec)
     if asp:

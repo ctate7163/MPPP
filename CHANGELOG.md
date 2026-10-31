@@ -25,6 +25,11 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   stops the chain (`zcam_backlash_rerun.bat` is a run marker).  Why: the joints of 31 Oct - Z34 Chal Rocks
   ZCAM08401 (sol 369) -4,783 / -4,154 ppm and ZCAM08396 -2,300 ppm, Z63 Rockytop ZCAM08530 / 08538 -1.0 to
   -1.1 %, about the low/high backlash ratio; Z48 not converged (101 iterations in both passes); Z110 not run.
+- **Alignment health: cameras without tie points are listed, not judged** (`unconstrained_cameras`, fewer than
+  `MIN_CAMERA_OBSERVATIONS` = 30). Rockytop's ZCAM03391 79 mm bins had 0 observations and drifted with the priors
+  (fx +9.9 %, fy +33 %); their focal and ray checks failed the block, and the FAIL kept Rockytop - with its good
+  79 mm mosaic ZCAM08522 (23 frames per eye, 26-87 k observations per bin) - out of the Z79 joint. The run key is
+  unchanged (the alignment is not).
 - **`mppp calib zcam / nz --iterations N --passes N`**: Ceres iterations per pass (default 100) and passes
   (default 2); the joint's json records `max_iterations` and `passes`.
 - **sites.json**: Seitah Overlook without the two right-eye 79 mm frames of sol 121 ZCAM08114 (0677679250,

@@ -40,6 +40,20 @@ def test_alignment_health_on_synthetic_block(tmp_path):
     # thresholds can be overridden
     rep2 = assess_alignment(proj, rec, thresholds={"rig_rotation_change_deg": (1.0, 2.0, "above")})
     assert {c["check"]: c for c in rep2["checks"]}["rig_rotation_change_deg"]["status"] == "pass"
+    # 0.95.3 (Rockytop ZCAM03391): a camera without tie-point observations is listed, not judged
+    import copy
+    c3 = copy.deepcopy(rec.cameras[1])
+    c3.camera_id = 3
+    c3.params = np.asarray(c3.params, float) * np.r_[1.12, np.ones(len(c3.params) - 1)]
+    rec.add_camera(c3)
+    proj.cameras["ZL079_X"] = copy.deepcopy(proj.cameras["NL"])
+    proj.settings["database"]["cameras"]["ZL079_X"] = 3
+    rep3 = assess_alignment(proj, rec, thresholds={"rig_rotation_change_deg": (1.0, 2.0, "above")})
+    assert not [c for c in rep3["checks"] if c["section"] == "camera model" and "ZL079_X" in str(c["note"])
+                and c["check"] != "unconstrained_cameras"]
+    unc = {c["check"]: c for c in rep3["checks"]}["unconstrained_cameras"]
+    assert unc["value"] == 1 and "ZL079_X (0 observations)" in unc["note"]
+    assert rep3["cameras"]["ZL079_X"]["unconstrained"] and "unconstrained" not in rep3["cameras"]["NL"]
 
 
 def test_weak_image_causes():
