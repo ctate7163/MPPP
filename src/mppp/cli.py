@@ -160,6 +160,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--aniso-f", action="store_true",
                    help="separate fx and fy thermal slopes (default: one ppm/degC per eye, fy tied to fx)")
     p.add_argument("--no-diagnostics", action="store_true", help="skip the per-block diagnostic pass (no gate then)")
+    p.add_argument("--iterations", type=int, default=None, metavar="N",
+                   help="zcam / nz (0.95.3, Christian 31 Oct: \"allow more joint iterations for convergence\"): Ceres "
+                        "iterations per pass of the adjustment and of its tests (default 100; the Z48 joint of 31 Oct "
+                        "stopped at 101 in both passes)")
+    p.add_argument("--passes", type=int, default=None, metavar="N",
+                   help="zcam / nz: passes of the adjustment (default 2; the covariance on the last)")
     p.add_argument("--wait-h", type=float, default=36.0, metavar="H",
                    help="wait up to this many hours for sites of the groups whose alignment is running (0.95.0; 0: take "
                         "the finished ones now)")
@@ -771,6 +777,8 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
     log.info("calib zcam: %d blocks -> %s", len(blocks), out)
     res = Z.fit_zjoint(blocks, zoom=a.zoom, nav_points=a.points or Z.NAV_POINTS_PER_BLOCK,
+                       iterations=int(getattr(a, "iterations", None) or 100),
+                       passes=int(getattr(a, "passes", None) or 2),
                        z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, diagnostics=not a.no_diagnostics,
                        k_tests=not a.no_k_tests, ratio_by=getattr(a, "zcam_ratio_by", None),
                        slope_tests=bool(getattr(a, "eye_slope_tests", False)),
@@ -911,6 +919,8 @@ def _calib_nz(a: argparse.Namespace) -> int:
         b.which, b.group, b.blocks = "navcam", a.navcam_group, None
         extra = _navcam_blocks(b)
     res = NZ.fit_nzjoint(blocks, zoom=a.zoom, nav_points=a.points or Z.NAV_POINTS_PER_BLOCK,
+                         iterations=int(getattr(a, "iterations", None) or 100),
+                         passes=int(getattr(a, "passes", None) or 2),
                          z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, navcam_blocks=extra)
     w = NZ.write_nzjoint(res, out)
     for line in NZ.describe(res):

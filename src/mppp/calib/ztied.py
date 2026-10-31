@@ -1288,7 +1288,8 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     res["found_list"] = sg.get("found_list")
     res.update({"zoom": zoom, "blocks": sorted({u["scape"] for u in zunits.values()}), "residuals": stats,
                 "zcam": _zstats(rec, zunits, proj.images), "rig": rig_result(proj, sg, zoom, ba), "final_cost": float(ba["final_cost"]),
-                "iterations": ba["iterations"], "brief": ba["brief"], "seconds": time.time() - t,
+                "iterations": ba["iterations"], "max_iterations": int(iterations), "passes": int(passes),
+                "brief": ba["brief"], "seconds": time.time() - t,
                 "navcam_models": str(st["folder"]), "points": {"navcam_per_block": nav_points, "zcam_per_block": z_points}})
     res["early_pp"] = early_result(ba, sg)                    # 0.95.1
     res["distortion"] = distortion_curves(res, ba, zunits=zunits)

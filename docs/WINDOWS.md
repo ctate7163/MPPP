@@ -6,7 +6,7 @@ batches and the weekend runner went (git history has them; `run_pipeline.bat` do
 
 | what for | files |
 |---|---|
-| **the runs** | `run_pipeline.bat` (the whole calibration study: the ecam_consensus blocks - Navcam with both Hazcam pairs; the Navcam joint and the Hazcam fit, promoted; the Mastcam-Z blocks; the Mastcam-Z joints; the error analysis; the rover-frame study 3A), `run_sites.bat` (the Navcam blocks of a group), `run_sites_zcam.bat` (the Navcam + Mastcam-Z blocks of zcam_consensus, then `zcam_joints.bat`), `zcam_joints.bat`, `promote_models.bat`, `stop_mppp.bat` |
+| **the runs** | `run_pipeline.bat` (the whole calibration study: the ecam_consensus blocks - Navcam with both Hazcam pairs; the Navcam joint and the Hazcam fit, promoted; the Mastcam-Z blocks; the Mastcam-Z joints; the error analysis; the rover-frame study 3A), `run_sites.bat` (the Navcam blocks of a group), `run_sites_zcam.bat` (the Navcam + Mastcam-Z blocks of zcam_consensus, then `zcam_joints.bat`), `zcam_joints.bat`, `zcam_backlash_rerun.bat` (0.95.3: the backlash states run of Chal Rocks, Seitah Overlook and Rockytop, the found list updated, the three blocks again with every zoom, then the 34-110 mm joints with `--iterations 300`, nothing promoted), `run_zcam_states.bat`, `promote_models.bat`, `stop_mppp.bat` |
 | **status** | `check_sites.bat` (the site definitions; when each block last finished, with which version, or that it runs now) |
 | **one folder** | `process_sites.bat` (process a group's images), `align_here.bat` (align the folder it sits in) |
 | **figures** | `make_figures.bat` (the standard figures at 200 dpi), `make_maps.bat` (the site maps), `make_paper.bat` (the JOSS paper as a PDF); **status**: `sites_status.bat` (the run status of every block) |

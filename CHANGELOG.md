@@ -15,6 +15,21 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
 - **No Mastcam-Z joints after `stop_runs`.** `stop_runs.py` (`stop_mppp.bat`) writes `mppp_stopped.txt` in the
   scapes root; `_run_sites.bat` then does not start `MPPP_THEN` (`zcam_joints.bat`) when the batch it waited for was
   stopped. A new batch removes the marker.
+- **`zcam_backlash_rerun.bat`** (Christian, 31 Oct: "one good zcam joint to capture all of the problematic
+  backlash anomalies ... the rerun of these three blocks with all zooms including z110. Allow more joint iterations
+  for convergence"): in one minimised window, (1) the per-image backlash states run of Chal Rocks, Seitah Overlook
+  and Rockytop (a new variant, `colmap_states_1031`, seeded from the blocks' current features), (2) `mppp
+  zcam-states --apply` on those blocks (`MPPP_STATES_APPLY=0` stops after the report), (3) the three blocks again
+  with `--force` (the found list is not in the run key) and every zoom of their lists, (4) `zcam_joints.bat` for
+  34 48 63 79 110 mm with `--no-promote --iterations 300`, no Hazcam fit, then the N+Z check.  `stop_mppp.bat`
+  stops the chain (`zcam_backlash_rerun.bat` is a run marker).  Why: the joints of 31 Oct - Z34 Chal Rocks
+  ZCAM08401 (sol 369) -4,783 / -4,154 ppm and ZCAM08396 -2,300 ppm, Z63 Rockytop ZCAM08530 / 08538 -1.0 to
+  -1.1 %, about the low/high backlash ratio; Z48 not converged (101 iterations in both passes); Z110 not run.
+- **`mppp calib zcam / nz --iterations N --passes N`**: Ceres iterations per pass (default 100) and passes
+  (default 2); the joint's json records `max_iterations` and `passes`.
+- **sites.json**: Seitah Overlook without the two right-eye 79 mm frames of sol 121 ZCAM08114 (0677679250,
+  0677678900: 258-261 px in the Z79 joint - mis-tied, not a state; the rig looked 0.7 deg off); Rockytop without
+  ZCAM03391 at 79 mm (f 10-11.5 % off the label).
 - **`mppp_mask_v4`** in the model registry (`src/mppp/data/models.json`): the ConvNeXt-tiny trained on the v8 mask
   set (4,095 masks, sols 9-2022, pipeline images only, flips and zoom crops; best of 20 epochs at 13, held-out IoU
   0.978; exclusion IoU Navcam 0.976, Mastcam-Z 0.945), exported as `mppp_mask_convnext_tiny_s4_v4.safetensors`

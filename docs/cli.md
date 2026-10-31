@@ -290,6 +290,10 @@ options:
   --note NOTE           promotion note
 ```
 
+`--iterations N` and `--passes N` (0.95.3; `zcam` and `nz`): Ceres iterations per pass of the adjustment and of its
+tests (default 100) and the number of passes (default 2, the covariance on the last). `zcam_backlash_rerun.bat`
+runs the joints with `--iterations 300`.
+
 ## mppp doctor
 
 ```text

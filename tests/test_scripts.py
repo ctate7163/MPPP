@@ -376,7 +376,9 @@ def test_windows_folder_is_short():
     # sites_status.bat back (Christian, 29 Oct): 21; ecam_block.bat (Christian, 30 Oct: "a command that just
     # generates the ecam colmap alignment with the mppp metashape and nerfstudio commands"): 22
     # train_masks.bat (Christian, 30 Oct: train on the newest set, the JOSS outputs): 23
-    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 23, sorted(f.name for f in files)
+    # zcam_backlash_rerun.bat (Christian, 31 Oct: "one good zcam joint to capture all of the problematic backlash
+    # anomalies"): 24
+    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 24, sorted(f.name for f in files)
     tm = (w / "train_masks.bat").read_bytes()
     assert tm.count(b"\n") == tm.count(b"\r\n") and b"masks_training_set_v*" in tm and b"--paper" in tm
     assert b"--zoom-max 2" in tm and b"torch.cuda.is_available()" in tm
@@ -564,3 +566,42 @@ def test_run_sites_takes_several_groups():
     t = (ROOT / "scripts" / "windows" / "run_sites_zcam.bat").read_text()
     assert t.index("%WHICH%") < t.index("%EXTRA% %*")
 
+
+
+def test_zcam_backlash_rerun_bat():
+    """0.95.3 (Christian, 31 Oct): the states run of the three blocks, the found list, the blocks again with every
+    zoom, the joints of 34-110 mm with more iterations, nothing promoted; stop_mppp.bat stops the chain."""
+    b = (ROOT / "scripts" / "windows" / "zcam_backlash_rerun.bat").read_bytes()
+    assert b.count(b"\n") == b.count(b"\r\n")
+    t = b.decode()
+    assert 'MPPP_RERUN_SITES=chal_rocks seitah_overlook rockytop' in t and 'MPPP_JOINT_ITERATIONS=300' in t
+    i_states = t.index("--variant %MPPP_STATES_VARIANT% --jobs 2 --force %SETS%")
+    i_apply = t.index("--sites %MPPP_RERUN_SITES% --apply")
+    i_blocks = t.index("--sites %MPPP_RERUN_SITES% --zcam --jobs 2 --force\r\n")
+    i_joints = t.index('zcam_joints.bat" --no-promote --iterations %MPPP_JOINT_ITERATIONS%')
+    assert i_states < i_apply < i_blocks < i_joints
+    assert 'MPPP_ZOOMS=34 48 63 79 110' in t and 'MPPP_HAZ=none' in t and "zcam_joints.lock" in t
+    assert t.count('if exist "%ROOT%\\mppp_stopped.txt" goto :stopped') == 3
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from _batch import mppp_processes
+    rows = [{"pid": 5, "ppid": 1, "cmd": 'cmd /c call "D:\\code\\MPPP\\scripts\\windows\\zcam_backlash_rerun.bat" --chain'}]
+    assert [r["pid"] for r in mppp_processes(rows)] == [5]
+    # the exclusions of the rerun (sites.json)
+    from mppp.waypoints.sites import load_site_table
+    from mppp.sfm.workdir import exclusion_matches
+    st = load_site_table()["sites"]
+    sei, roc = st["seitah_overlook"]["settings"]["EXCLUDE"], st["rockytop"]["settings"]["EXCLUDE"]
+    def hit(stem, entries):
+        return any(exclusion_matches({"filename": {"stem": stem, "sol": int(stem[4:8])}}, e) for e in entries)
+    assert hit("ZR0_0121_0677679250_053RAD_N0041250ZCAM08114_079085A03", sei)
+    assert not hit("ZL0_0121_0677679146_053RAD_N0041250ZCAM08114_079085A03", sei)
+    assert hit("ZL0_0477_0708000000_000RAD_N0261004ZCAM03391_0790LMA01", roc)
+    assert not hit("ZL0_0477_0708000000_000RAD_N0261004ZCAM03391_0340LMA01", roc)
+
+
+def test_calib_iterations_option():
+    from mppp.cli import build_parser
+    a = build_parser().parse_args(["calib", "zcam", "--zoom", "48", "--iterations", "300", "--passes", "3"])
+    assert a.iterations == 300 and a.passes == 3
+    a = build_parser().parse_args(["calib", "zcam"])
+    assert a.iterations is None and a.passes is None
