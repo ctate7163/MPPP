@@ -131,6 +131,9 @@ should be fixed before any error analysis. The report is written to `<project>/h
 | `summary.json` | cameras and rig before and after, track statistics, epsilon estimates |
 | `camera_shifts.png` | the camera-shift figure |
 
+Dense reconstruction, the Metashape project and the Nerfstudio export are described in
+[Downstream exports](exports.md).
+
 `run_done.json` records the run key: a hash of the settings, the camera models in use and the alignment rules. A
 WORK folder whose `run_done.json` has the same key is skipped by the batch scripts; promoting a camera model changes
 the key and realigns every block.

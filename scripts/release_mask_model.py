@@ -4,6 +4,7 @@ verify every download URL of a model against the registry's SHA-256.  Needs ``hu
 mppp[release]``) and a write token (``huggingface-cli login`` or ``HF_TOKEN``).
 
     python scripts/release_mask_model.py upload [NAME] [--repo REPO] [--card FILE] [--private] [--file FILE]
+                                                [--extra training_curves.png figure1_masks.png]
     python scripts/release_mask_model.py verify [NAME]
 """
 from __future__ import annotations
@@ -27,7 +28,7 @@ def _default_card_file() -> Optional[Path]:
 
 
 def upload_model(name: Optional[str] = None, repo_id: Optional[str] = None, card: Optional[PathLike] = None,
-                 private: bool = False, file: Optional[PathLike] = None) -> str:
+                 private: bool = False, file: Optional[PathLike] = None, extra=()) -> str:
     """
     Upload registry model ``name`` to its Hugging Face repository (0.31.2):
     the ``.safetensors`` (``file``, else ``checkpoints_dir()/<file>``, exported
@@ -63,6 +64,10 @@ def upload_model(name: Optional[str] = None, repo_id: Optional[str] = None, card
     if card is not None:
         api.upload_file(path_or_fileobj=str(card), path_in_repo="README.md", repo_id=repo_id, repo_type="model",
                         commit_message=f"model card ({name})")
+    for x in extra or ():                       # 31 Oct: the card's figures (training curves, mask figure)
+        x = Path(x)
+        api.upload_file(path_or_fileobj=str(x), path_in_repo=f"figures/{x.name}", repo_id=repo_id, repo_type="model",
+                        commit_message=f"{name}: figures/{x.name}")
     url = f"https://huggingface.co/{repo_id}/resolve/main/{entry['file']}"
     if url not in (entry.get("urls") or []):
         warnings.warn(f"{url} is not in the registry URLs of {name}; add it to src/mppp/data/models.json")
@@ -100,11 +105,12 @@ def main(argv=None) -> int:
     u.add_argument("--card")
     u.add_argument("--private", action="store_true")
     u.add_argument("--file")
+    u.add_argument("--extra", nargs="*", default=[], help="files for figures/ (the card links figures/<name>)")
     v = sub.add_parser("verify")
     v.add_argument("name", nargs="?")
     a = ap.parse_args(argv)
     if a.cmd == "upload":
-        print(upload_model(a.name, a.repo, a.card, a.private, a.file))
+        print(upload_model(a.name, a.repo, a.card, a.private, a.file, a.extra))
     else:
         for r in verify_model(a.name):
             print(("ok  " if r.get("ok") else "FAIL"), r.get("url"), r.get("sha256", r.get("error", ""))[:16])

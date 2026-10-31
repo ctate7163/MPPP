@@ -31,26 +31,25 @@ nav:
   - Quick start: quickstart.md
   - Pipeline: pipeline.md
   - Camera models and calibration: calibration.md
+  - Downstream exports: exports.md
+  - Rover masks: masks.md
   - Command line: cli.md
   - Windows batch files: WINDOWS.md
   - API reference: api.md
   - Methods: methods.md
   - Contributing: contributing.md
+  - Roadmap: roadmap.md
   - Citing: citing.md
 
-# Working notes kept in docs/ for the author; not part of the site.
+# Working notes (docs/history/, incl. history/notes/) and the Hugging Face card; not part of the site.
 exclude_docs: |
-  AUDIT_v0p90.md
-  PLAN_v0p91.md
-  DELIVERY_v0p91.md
-  HANDOFF_v0p87.md
-  CI_ROADMAP.md
   hf_model_card.md
   history/
 
 # Built and linkable, but not in the navigation.
 not_in_nav: |
   RELEASING.md
+  CODE_OF_CONDUCT.md
 
 markdown_extensions:
   - admonition

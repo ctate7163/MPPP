@@ -156,7 +156,7 @@ time exceeds the per-block budget. `mppp align --gui` writes the files that open
 | `scripts/` | batch runs (`run_sites.py`, `process_sites.py`, `align_scape.py`, `stop_runs.py`), `promote_cmods.py`, `check_sites.py`, `build_paper.py`, `release_mask_model.py`; `windows/` the .bat wrappers |
 | `studies/` | research code that imports the package and is not installed: `calibration/` (Navcam consensus, Mastcam-Z calibration, their scripts and notebook), `m20_sites/` (the waypoint-map study), `error/`, `analyses/`, `experiments/` |
 | `tests/` | pytest, one file per module; `tests/data/m20/` holds two public PDS products and the stored regression fixtures |
-| `docs/` | `methods.md` (conventions, equations, flagged assumptions), `RELEASING.md`, `HANDOFF_v0p87.md` (the state of the calibration work), `history/` |
+| `docs/` | `methods.md` (conventions, equations, flagged assumptions), `calibration.md`, `exports.md`, `masks.md`, `roadmap.md`, `RELEASING.md`, `history/` (older changelogs and working notes) |
 | `paper/` | the JOSS paper (`python scripts/build_paper.py` renders it) |
 
 ## Scope and limits
@@ -165,7 +165,7 @@ Calibrated models exist for Navcam and Mastcam-Z at 34 mm; the Hazcams (label-fi
 and the other Mastcam-Z zooms are processed with start models and are not part of the tested scope yet. Scale comes from the Navcam stereo baseline together with
 the waypoint position priors (1 m; 10 m for stations without a waypoint of their own); orientation from a weak
 attitude prior per frame. The alignment-health thresholds are provisional. See `docs/methods.md` for the flagged
-assumptions and `docs/HANDOFF_v0p87.md` for the open calibration questions.
+assumptions and `docs/calibration.md` for the calibration loop and its checks.
 
 ## Data provenance
 

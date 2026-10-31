@@ -3,6 +3,33 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.95.3 — 2026-10-31 (the freeze)
+
+**In short.** The code for the fresh run of every block: two batch fixes, the v8-trained mask model prepared for
+Hugging Face (not yet the default), a mask A/B script, and the documentation brought up to date.
+
+- **Blocks finished without a run key are run again** (`scripts/_batch.py finished`). A block with
+  `error_input/summary.json` but no `run_done.json` (an older MPPP) used to be skipped as "finished without a run
+  key"; for the freeze every block runs with the frozen models, so it is now queued ("finished by an older MPPP
+  without a run key - run again").
+- **No Mastcam-Z joints after `stop_runs`.** `stop_runs.py` (`stop_mppp.bat`) writes `mppp_stopped.txt` in the
+  scapes root; `_run_sites.bat` then does not start `MPPP_THEN` (`zcam_joints.bat`) when the batch it waited for was
+  stopped. A new batch removes the marker.
+- **`mppp_mask_v4`** in the model registry (`src/mppp/data/models.json`): the ConvNeXt-tiny trained on the v8 mask
+  set (4,095 masks, sols 9-2022, pipeline images only, flips and zoom crops; best of 20 epochs at 13, held-out IoU
+  0.978; exclusion IoU Navcam 0.976, Mastcam-Z 0.945), exported as `mppp_mask_convnext_tiny_s4_v4.safetensors`
+  (SHA-256 `9ecb3dd5…`), URL on Hugging Face `ctate7163/mppp-mask`. The default stays `mppp_mask_v3` until the A/B.
+  `docs/hf_model_card.md` describes v4 and the version table (and no longer says the sky is excluded: it is
+  included). `scripts/release_mask_model.py upload --extra` uploads the card's figures.
+- **`scripts/compare_mask_models.py`**: two or more mask models on the same held-out frames, per camera, with
+  `--seen` (the older model's training set) for the frames neither model trained on.
+- **Documentation**: new pages *Downstream exports* (dense, Metashape, Nerfstudio), *Rover masks* and *Roadmap*;
+  the API reference adds `mppp.calib.hazfit`, `mppp.sfm.dense`, `metashape`, `nerfstudio`; Methods §5 (masks)
+  updated (threshold 0.5, the registry models, sky included); the index's scope; `docs/RELEASING.md` names the right
+  upload command (`scripts/release_mask_model.py`, not `mppp.mask.hub`). The working notes (`AUDIT_v0p90`,
+  `PLAN_v0p91`, `DELIVERY_v0p91`, `HANDOFF_v0p87`, `CI_ROADMAP`) moved to `docs/history/notes/`. `mkdocs build
+  --strict` passes.
+
 ## 0.95.2 — 2026-10-30
 
 **In short.** Fewer SIFT features on the narrow Mastcam-Z zooms (63, 79, 110 mm); `make_figures` draws the newest 34, 48 and 63 mm

@@ -1,0 +1,135 @@
+"""
+A/B of mask models on the same held-out frames (31 Oct 2026, before the freeze: is the v8-trained model,
+``mppp_mask_v4``, better than the default ``mppp_mask_v3``?).
+
+    python scripts\\compare_mask_models.py --data D:\\masks\\masks_training_set_v8
+        --split-ckpt D:\\code\\MPPP\\checkpoints\\convnext_tiny_s4_seg_20261030_v8.pt
+        --models mppp_mask_v3 D:\\code\\MPPP\\checkpoints\\convnext_tiny_s4_seg_20261030_v8.pt
+        --seen D:\\masks\\masks_training_set_v7 --out "D:\\code\\MPPP\\Claude outputs\\mask_ab_v3_v4"
+
+The test frames are the held-out frames of ``--split-ckpt`` (its card's split, rebuilt as in training).  Every model
+in ``--models`` (registry names, checkpoint or .safetensors paths) is scored on them with the metrics of
+``make_mask_figure.py``: exclusion IoU, recall ("hardware recall": the rover pixels also excluded) and precision,
+valid pixels only, pooled per camera.  ``--seen``: the training set (or its masks/ folder) of an older model; its
+frames may be in that model's training data, so the table is also given for the frames NOT in it - the fair
+comparison.  Writes ``mask_ab.md`` / ``mask_ab.csv`` (and ``mask_ab_frames.csv``, one row per frame and model).
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import os
+import sys
+from pathlib import Path
+
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+
+def seen_names(path) -> set:
+    """Mask file names of an older training set (its root with masks/, or the masks folder itself)."""
+    p = Path(path)
+    d = p / "masks" if (p / "masks").is_dir() else p
+    return {f.name for f in d.glob("*.png")}
+
+
+def table(rows, subset_label: str) -> list:
+    md = [f"### {subset_label}", "", "| camera | frames | model | IoU (exclude) | recall (exclude) | precision (exclude) |",
+          "|---|---:|---|---:|---:|---:|"]
+    md += [f"| {r['camera']} | {r['frames']} | {r['model']} | {r['exclusion_IoU']:.4f} | {r['hardware_recall']:.4f} | "
+           f"{r['exclusion_precision']:.4f} |" for r in rows]
+    return md + [""]
+
+
+def pool(frame_rows, models, keep=lambda r: True):
+    acc = {}
+    for r in frame_rows:
+        if not keep(r):
+            continue
+        for cam in (r["camera"], "all"):
+            d = acc.setdefault((cam, r["model"]), {"frames": 0, "tp": 0, "fp": 0, "fn": 0})
+            d["frames"] += 1
+            for k in ("tp", "fp", "fn"):
+                d[k] += r[k]
+    out = []
+    cams = sorted({c for c, _ in acc if c != "all"}) + ["all"]
+    for cam in cams:
+        for m in models:
+            d = acc.get((cam, m))
+            if not d:
+                continue
+            tp, fp, fn = d["tp"], d["fp"], d["fn"]
+            out.append({"camera": cam, "frames": d["frames"], "model": m,
+                        "exclusion_IoU": tp / max(1, tp + fp + fn), "hardware_recall": tp / max(1, tp + fn),
+                        "exclusion_precision": tp / max(1, tp + fp)})
+    return out
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--data", required=True, help="the training set whose held-out frames are the test (images/, masks/)")
+    ap.add_argument("--split-ckpt", required=True, help="the checkpoint (or .safetensors) whose card defines the split")
+    ap.add_argument("--models", nargs="+", required=True, help="registry names or checkpoint paths to compare")
+    ap.add_argument("--seen", default=None, help="an older training set (or masks folder): report frames not in it")
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--device", default="auto")
+    ap.add_argument("--limit", type=int, default=None, help="only the first N held-out frames (a quick look)")
+    a = ap.parse_args(argv)
+
+    import cv2
+    from make_mask_figure import family, pooled
+    from mppp.mask.infer import get_model, predict_probability
+    from mppp.mask.training.audit import split_labels
+    from mppp.mask.training.train import scan_dataset
+
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    _, split_card = get_model(a.split_ckpt, a.device)
+    items = scan_dataset(a.data, image_dirs=("images",), mask_dir="masks", missing="skip")
+    split = split_labels(items, split_card)
+    val = [it for it in items if split.get(it.mask) == "val"][: a.limit]
+    if not val:
+        raise SystemExit("no held-out frames: is --split-ckpt a model trained on --data?")
+    seen = seen_names(a.seen) if a.seen else set()
+    labels = [Path(m).stem if Path(m).suffix else m for m in a.models]
+    print(f"{len(val)} held-out frames; {sum(Path(it.mask).name in seen for it in val)} of them in --seen")
+
+    frame_rows = []
+    for spec, lab in zip(a.models, labels):
+        model, card = get_model(spec, a.device)
+        thr = float(card["threshold"])
+        for k, it in enumerate(val, 1):
+            rgb = cv2.cvtColor(cv2.imread(it.image, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
+            gt = cv2.imread(it.mask, cv2.IMREAD_GRAYSCALE) > 127
+            r = pooled(gt, predict_probability(model, card, rgb) > thr, rgb.max(axis=2) > 0)
+            name = Path(it.image).name
+            frame_rows.append({"frame": name, "camera": family(name), "model": lab,
+                               "in_seen": Path(it.mask).name in seen, **r})
+            if k % 50 == 0:
+                print(f"  {lab}: {k}/{len(val)}", flush=True)
+
+    with open(out / "mask_ab_frames.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(frame_rows[0]))
+        w.writeheader()
+        w.writerows(frame_rows)
+    md = [f"# Mask model A/B on {len(val)} held-out frames of {Path(a.split_ckpt).name}", "",
+          f"Test set: {a.data}; models: {', '.join(labels)}" + (f"; --seen {a.seen}" if a.seen else ""), ""]
+    allrows = pool(frame_rows, labels)
+    md += table(allrows, "All held-out frames")
+    if seen:
+        unseen = pool(frame_rows, labels, keep=lambda r: not r["in_seen"])
+        md += table(unseen, "Held-out frames NOT in the --seen set (the fair comparison for an older model)")
+    with open(out / "mask_ab.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["subset"] + list(allrows[0]))
+        w.writeheader()
+        w.writerows([dict(r, subset="all") for r in allrows]
+                    + ([dict(r, subset="not_seen") for r in unseen] if seen else []))
+    (out / "mask_ab.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    print("\n".join(md))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

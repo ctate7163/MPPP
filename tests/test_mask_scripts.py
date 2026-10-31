@@ -23,6 +23,19 @@ def test_train_smoke_then_figure(tmp_path):
                        capture_output=True, text=True, timeout=600)
     assert r.returncode == 0, r.stderr[-2000:]
     assert (out / "figure1_masks.png").is_file() and (out / "mask_metrics_by_camera.md").is_file()
+    # 31 Oct: the A/B of two models on the same held-out frames, with a "seen" set
+    seen = tmp_path / "older" / "masks"
+    seen.mkdir(parents=True)
+    first = sorted((smoke / "set" / "masks").glob("*.png"))[0]
+    (seen / first.name).write_bytes(first.read_bytes())
+    ab = tmp_path / "ab"
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "compare_mask_models.py"), "--data", str(smoke / "set"),
+                        "--split-ckpt", str(smoke / "ckpt" / "smoke.pt"), "--models", str(smoke / "ckpt" / "smoke.pt"),
+                        str(smoke / "ckpt" / "smoke.pt"), "--seen", str(seen.parent), "--out", str(ab)],
+                       capture_output=True, text=True, timeout=600)
+    assert r.returncode == 0, r.stderr[-2000:]
+    md = (ab / "mask_ab.md").read_text()
+    assert "All held-out frames" in md and "| all |" in md and (ab / "mask_ab_frames.csv").is_file()
 
 
 @pytest.mark.slow

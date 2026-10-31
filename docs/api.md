@@ -12,6 +12,8 @@ roles (for example `:func:`), which appear here as written.
 
 ::: mppp.calib.nzjoint
 
+::: mppp.calib.hazfit
+
 ::: mppp.calib.models
 
 ::: mppp.sfm.reconstruction
@@ -19,6 +21,12 @@ roles (for example `:func:`), which appear here as written.
 ::: mppp.sfm.health
 
 ::: mppp.sfm.export
+
+::: mppp.sfm.dense
+
+::: mppp.sfm.metashape
+
+::: mppp.sfm.nerfstudio
 
 ::: mppp.mask
 

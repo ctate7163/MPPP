@@ -103,21 +103,26 @@ The registry URL of `mppp_mask_v3` is `https://huggingface.co/ctate7163/mppp-mas
 cd /d D:\code\MPPP
 pip install -U huggingface_hub
 hf auth login
-python -m mppp.mask.hub upload --name mppp_mask_v3
+python scripts\release_mask_model.py upload mppp_mask_v3
 ```
 
 `hf auth login` (older versions: `huggingface-cli login`) asks for a token with **write** access from https://huggingface.co/settings/tokens. `upload`:
 * exports `checkpoints\convnext_tiny_s4_seg_20260925b.pt` (with its `.json` card next to it) to `checkpoints\mppp_mask_convnext_tiny_s4_v3.safetensors`, if that file is not there yet;
 * refuses to upload unless the file's SHA-256 is the registry's (`46830126…`), so the URL always serves exactly what `models.json` describes;
 * creates `ctate7163/mppp-mask` if needed (public; `--private` for a private one, then every user needs `HF_TOKEN` or a login to download);
-* uploads the file and `docs/hf_model_card.md` as the repository's `README.md`.
+* uploads the file and `docs/hf_model_card.md` as the repository's `README.md`;
+* with `--extra FILE ...`, uploads those files to `figures/` (the card shows `figures/training_curves.png` and
+  `figures/figure1_masks.png`).
+
+(`upload` and `verify` are in `scripts/release_mask_model.py`, not in `python -m mppp.mask.hub`, which has
+`export`, `install`, `fetch` and `list`.)
 
 Hugging Face stores large files with Xet automatically; nothing goes into git.
 
 ## 5. Check the download path
 
 ```bat
-python -m mppp.mask.hub verify --name mppp_mask_v3
+python scripts\release_mask_model.py verify mppp_mask_v3
 set MPPP_CACHE=%TEMP%\mppp_cache_test
 python -m mppp.mask.hub fetch --name mppp_mask_v3
 python -m mppp.mask.hub list
@@ -127,21 +132,25 @@ python -m mppp.mask.hub list
 
 ## 6. Releasing a new model later
 
-1. Train and promote it (`notebooks/training/train_mask.ipynb`).
-2. Export it under a new name so the old URL keeps working:
+1. Train it: `scripts\windows\train_masks.bat` (0.95.2: the newest `masks_training_set_vN`, the figures and metrics
+   for the paper in `Claude outputs\mask_<checkpoint>`), or `notebooks/training/train_mask.ipynb`.
+2. Compare it with the default on the same held-out frames (`scripts/compare_mask_models.py`, with `--seen` = the
+   default model's training set for the fair subset).
+3. Export it under a new name so the old URL keeps working, with `--out` for the usual file name:
 
    ```bat
-   python -m mppp.mask.hub export <checkpoints>\convnext_tiny_s4_seg_best.pt --name mppp_mask_v4 --update-registry
+   python -m mppp.mask.hub export D:\code\MPPP\checkpoints\<checkpoint>.pt --name mppp_mask_v4 --out D:\code\MPPP\checkpoints\mppp_mask_convnext_tiny_s4_v4.safetensors --update-registry
    ```
 
-   For a name not yet in `models.json`, the file is `mppp_mask_v4.safetensors`, and the entry is created with an empty URL list.
-3. Add the Hugging Face URL (`https://huggingface.co/ctate7163/mppp-mask/resolve/main/<file>`) and `"hf_repo": "ctate7163/mppp-mask"` to the new entry in `src/mppp/data/models.json`, then `python -m mppp.mask.hub upload --name <name>` (step 4) and `verify`.
-4. To make it the default, set `"default": "<name>"`.
-5. Commit and push, and note the change in `CHANGELOG.md`.
+   For a name not yet in `models.json`, the entry is created with an empty URL list.
+4. Add the Hugging Face URL (`https://huggingface.co/ctate7163/mppp-mask/resolve/main/<file>`) and `"hf_repo": "ctate7163/mppp-mask"` to the new entry in `src/mppp/data/models.json`, update `docs/hf_model_card.md`, then `python scripts\release_mask_model.py upload <name> --extra <figures>` (step 4) and `verify`.
+5. To make it the default, set `"default": "<name>"`.
+6. Commit and push, and note the change in `CHANGELOG.md`.
 
 Users who want the old model can set `config["masking"]["checkpoint"] = "mppp_mask_v1"`.
 
-`mppp_mask_v2` (0.14.7) was released this way; for it the registry entry was created by hand with the file name `mppp_mask_convnext_tiny_s4_v2.safetensors`. `mppp_mask_v1` stays in the registry with its own URLs (`mask-v1`); if you already uploaded it, leave it there.
+`mppp_mask_v4` (31 Oct 2026, the v8 mask set) was prepared this way: the registry entry, its SHA-256
+(`9ecb3dd5…`) and the card are in the repository; the upload is a maintainer step. `mppp_mask_v2` (0.14.7) was released this way; for it the registry entry was created by hand with the file name `mppp_mask_convnext_tiny_s4_v2.safetensors`. `mppp_mask_v1` stays in the registry with its own URLs (`mask-v1`); if you already uploaded it, leave it there.
 
 ## 7. Zenodo DOI and JOSS
 
