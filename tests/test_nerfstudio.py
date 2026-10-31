@@ -114,3 +114,28 @@ def test_the_export_resamples_exactly_and_the_poses_reproject(tmp_path):
             assert (mask[:150] == 0).all() and mask[160:].any()             # the masked top rows came along
         else:                                    # the fisheye: the pinhole window is inside the frame, a band masked
             assert mask[:, 1024].min() == 0 and mask[1400, 1024] == 255
+
+
+def test_half_size_frames_and_the_training_batch_file(tmp_path):
+    """0.95.2 (Christian, 30 Oct): images_2/ and masks_2/ for --downscale-factor 2, and train-ns.bat - a small run from
+    the sparse points with floaters pruned."""
+    proj, rec = _scene(tmp_path)
+    res = NS.write_nerfstudio(proj, threads=2)
+    out = proj.root / "nerfstudio"
+    tj = json.loads((out / "transforms.json").read_text())
+    for fr in tj["frames"]:
+        name = fr["file_path"].split("/")[1]
+        big = cv2.imread(str(out / "masks" / name), cv2.IMREAD_GRAYSCALE)
+        im2 = cv2.imread(str(out / "images_2" / name), cv2.IMREAD_UNCHANGED)
+        m2 = cv2.imread(str(out / "masks_2" / name), cv2.IMREAD_GRAYSCALE)
+        assert im2.shape[:2] == (768, 1024) and m2.shape == (768, 1024) and set(np.unique(m2)) <= {0, 255}
+        # a valid half-size pixel has four valid source pixels
+        b = big.reshape(768, 2, 1024, 2).min(axis=(1, 3))
+        assert ((m2 > 0) <= (b > 0)).all()
+    bat = (out / "train-ns.bat").read_bytes()
+    assert res["train_bat"].endswith("train-ns.bat") and bat.count(b"\n") == bat.count(b"\r\n")
+    for k in (b"splatfacto", b"--downscale-factor 2", b"--load-3D-points True", b"--pipeline.model.random-init False",
+              b"--pipeline.model.reset-alpha-every 15", b"--pipeline.model.cull-alpha-thresh 0.2",
+              b"--pipeline.model.camera-optimizer.mode off", b"--max-num-iterations 15000", b"mars2020_sol_0091_t"):
+        assert k in bat, k
+    assert bat.index(b"%*") < bat.index(b"nerfstudio-data")          # extra options go before the dataparser

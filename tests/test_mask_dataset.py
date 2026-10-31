@@ -185,3 +185,4 @@ def test_regen_keeps_the_frames_the_alignment_would_skip():
     sel = regen_config()["selection"]
     assert all(sel[k] is None for k in ("max_boresight_elevation_deg", "lmst_window_h", "max_saturated_fraction",
                                         "max_exposure_ms", "max_centre_tint"))
+    assert regen_config()["camera_model"]["extrinsics_from_waypoints"] is False   # no landing-frame position needed

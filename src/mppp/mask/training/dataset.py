@@ -321,6 +321,9 @@ def regen_config(config: Optional[Union[PathLike, Dict]] = None) -> Dict:
     for k in ("max_boresight_elevation_deg", "lmst_window_h", "max_saturated_fraction", "max_exposure_ms",
               "max_centre_tint"):
         sel[k] = None
+    # 30 Oct (Christian: "a landing position should not be necessary to color process them"): the pose prior comes
+    # from the label's site frame, not the waypoint table (4 sol-3 Mastcam-Z frames: "Site 1 has no drive-0 waypoint")
+    cfg.setdefault("camera_model", {})["extrinsics_from_waypoints"] = False
     return cfg
 
 

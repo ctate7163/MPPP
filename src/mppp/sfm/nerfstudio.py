@@ -20,8 +20,12 @@ downsample it further. Zcam frames can be clipped 22 columns on the left and 16 
   ``fl_y``, ``cx``, ``cy``, ``w``, ``h`` and ``transform_matrix`` (camera to world, OpenGL camera axes: x right,
   y up, z back - COLMAP's with y and z flipped) in MPPP's world frame of the block (x east, y north, z up, metres;
   the block offset in ``mppp``); ``ply_file_path`` the tie points (``sparse_pc.ply``) for splatfacto's start.
+* ``images_2/``, ``masks_2/`` - the same frames at half size (1024 x 768; a small-mask pixel is valid only where its
+  four source pixels are), which Nerfstudio reads with ``--downscale-factor 2``.
+* ``train-ns.bat`` - a small splatfacto run from the tie points on the half-size frames (:data:`SPLATFACTO_ARGS`:
+  15000 steps, poses held, floaters pruned).
 
-    ns-train splatfacto --data <project>/nerfstudio nerfstudio-data
+    ns-train splatfacto --data <project>/nerfstudio nerfstudio-data --load-3D-points True
 
 Nerfstudio's dataparser orients, centres and scales the scene itself (``--orientation-method``,
 ``--center-method``, ``--auto-scale-poses``); the files are left in metres.
@@ -42,6 +46,7 @@ log = logging.getLogger("mppp.sfm")
 PathLike = Union[str, Path]
 NERFSTUDIO_DIR = "nerfstudio"
 NS_SIZE = (2048, 1536)                 # one size for every frame (Christian, 30 Oct)
+NS_DOWNSCALES = (2,)                   # images_2/, masks_2/: Nerfstudio's --downscale-factor 2 (train-ns.bat)
 ZCAM_WIDTH = 1648                      # a full Mastcam-Z frame
 ZCAM_CLIP = (22, 16)                   # columns left out of a Mastcam-Z frame: left, right (Christian, 30 Oct)
 
@@ -110,7 +115,7 @@ def write_ply(path: PathLike, xyz: np.ndarray, rgb: np.ndarray) -> None:
 def write_nerfstudio(project: SfmProject, out_dir: Optional[PathLike] = None, model_dir: Optional[PathLike] = None,
                      size: Tuple[int, int] = NS_SIZE, zcam_clip: Tuple[int, int] = ZCAM_CLIP, fmt: str = "png",
                      families: Optional[Sequence[str]] = None, threads: int = 8,
-                     overwrite: bool = False) -> Dict[str, Any]:
+                     overwrite: bool = False, downscales: Sequence[int] = NS_DOWNSCALES) -> Dict[str, Any]:
     """``<project>/nerfstudio/`` (see the module).  ``families``: only these (N, F, R, Z); ``fmt``: png or jpg for
     the images (the masks are PNG).  Frames already written are kept unless ``overwrite``."""
     import cv2
@@ -120,6 +125,9 @@ def write_nerfstudio(project: SfmProject, out_dir: Optional[PathLike] = None, mo
     out = Path(out_dir) if out_dir else root / NERFSTUDIO_DIR
     (out / "images").mkdir(parents=True, exist_ok=True)
     (out / "masks").mkdir(parents=True, exist_ok=True)
+    for f in downscales:                                     # Nerfstudio's --downscale-factor F reads these
+        (out / f"images_{int(f)}").mkdir(exist_ok=True)
+        (out / f"masks_{int(f)}").mkdir(exist_ok=True)
     mdir = Path(model_dir) if model_dir else native_model_dir(project)
     rec = pycolmap.Reconstruction(str(mdir))
     rows = {r["name"]: r for r in project.images}
@@ -151,7 +159,9 @@ def write_nerfstudio(project: SfmProject, out_dir: Optional[PathLike] = None, mo
         fam = _family(im.name, rows.get(im.name, {}))
         key = (int(im.camera_id), "Z" if fam == "Z" else "E")
         ip, mp = out / "images" / (stem + ext), out / "masks" / (stem + ".png")
-        if overwrite or not (ip.is_file() and mp.is_file()):
+        small = [(int(f), out / f"images_{int(f)}" / (stem + ext), out / f"masks_{int(f)}" / (stem + ".png"))
+                 for f in downscales]
+        if overwrite or not (ip.is_file() and mp.is_file() and all(a.is_file() and b.is_file() for _, a, b in small)):
             mx, my, ok = tables[key]
             src = cv2.imread(str(project.images_dir / im.name), cv2.IMREAD_UNCHANGED)
             if src is None:
@@ -164,8 +174,16 @@ def write_nerfstudio(project: SfmProject, out_dir: Optional[PathLike] = None, mo
                 if ms is not None:
                     m &= cv2.remap(ms, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0) > 0
             img[~m] = 0
-            cv2.imwrite(str(ip), img, [cv2.IMWRITE_JPEG_QUALITY, 95] if ext == ".jpg" else [cv2.IMWRITE_PNG_COMPRESSION, 3])
-            cv2.imwrite(str(mp), (m * 255).astype(np.uint8))
+            opts = [cv2.IMWRITE_JPEG_QUALITY, 95] if ext == ".jpg" else [cv2.IMWRITE_PNG_COMPRESSION, 3]
+            cv2.imwrite(str(ip), img, opts)
+            m8 = (m * 255).astype(np.uint8)
+            cv2.imwrite(str(mp), m8)
+            for f, sip, smp in small:            # 0.95.2 (Christian, 30 Oct): the half-size copies for training
+                wh = (img.shape[1] // f, img.shape[0] // f)
+                cv2.imwrite(str(sip), cv2.resize(img, wh, interpolation=cv2.INTER_AREA), opts)
+                # a pixel of the small mask is valid only where all its source pixels are
+                cv2.imwrite(str(smp), np.where(cv2.resize(m8, wh, interpolation=cv2.INTER_AREA) >= 255, 255, 0)
+                            .astype(np.uint8))
         return iid, None
 
     with ThreadPoolExecutor(max(1, int(threads))) as ex:
@@ -203,8 +221,53 @@ def write_nerfstudio(project: SfmProject, out_dir: Optional[PathLike] = None, mo
                      "size": list(size), "zcam_clip_columns": list(zcam_clip),
                      "cameras": {f"{k[0]}{k[1]}": v for k, v in targets.items()}}}
     (out / "transforms.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
-    return {"folder": str(out), "frames": len(frames), "errors": errors, "points": len(pids),
+    bat = write_train_ns_bat(out, _block_name(project))
+    return {"train_bat": str(bat), "folder": str(out), "frames": len(frames), "errors": errors, "points": len(pids),
             "size": list(size), "cameras": len(targets)}
 
 
-__all__ = ["write_nerfstudio", "target_camera", "remap_tables", "NS_SIZE", "ZCAM_CLIP", "NERFSTUDIO_DIR"]
+# 0.95.2 (Christian, 30 Oct: "a small and zcam optimized splatfacto training run starting from the sparse point cloud
+# and training on down sampled by two images. Make sure to prune floating blobs regularly")
+SPLATFACTO_ARGS = [
+    ("--max-num-iterations", "15000"),                     # small: 15k steps (splatfacto's default is 30k)
+    ("--steps-per-save", "2500"),
+    ("--viewer.quit-on-train-completion", "True"),
+    ("--pipeline.datamanager.cache-images", "cpu"),        # a thousand frames do not fit the GPU
+    ("--pipeline.model.camera-optimizer.mode", "off"),     # MPPP's poses are the reference: not re-adjusted
+    ("--pipeline.model.random-init", "False"),             # start from the tie points (sparse_pc.ply)
+    ("--pipeline.model.densify-grad-thresh", "0.0006"),    # Mastcam-Z: densify finer than the 0.0008 default
+    ("--pipeline.model.stop-split-at", "10000"),           # small: no new Gaussians in the last third
+    ("--pipeline.model.refine-every", "100"),
+    ("--pipeline.model.reset-alpha-every", "15"),          # floaters: opacity reset every 1500 steps, then culled
+    ("--pipeline.model.cull-alpha-thresh", "0.2"),         # ... below 0.2 (default 0.1)
+    ("--pipeline.model.cull-scale-thresh", "0.3"),         # large blobs culled (default 0.5 of the scene scale)
+    ("--pipeline.model.use-scale-regularization", "True"),  # no needles or slabs (max/min axis ratio below ...)
+    ("--pipeline.model.max-gauss-ratio", "6.0"),
+]
+DATAPARSER_ARGS = [("--downscale-factor", "2"), ("--load-3D-points", "True")]
+
+
+def write_train_ns_bat(out_dir: PathLike, block: str) -> Path:
+    """``train-ns.bat`` in the Nerfstudio folder: a small splatfacto run (:data:`SPLATFACTO_ARGS`) from the tie points
+    on the half-size frames (``images_2/``, ``masks_2/``) into ``outputs/``; ns-train from the PATH or MPPP_NS_TRAIN;
+    more splatfacto options as arguments (they go before the dataparser)."""
+    lines = ["@echo off",
+             "rem MPPP (0.95.2): a small splatfacto run of this block - from the tie points (sparse_pc.ply), on the frames",
+             "rem downsampled by 2 (images_2\\, masks_2\\: 1024 x 768), MPPP's poses held, floaters pruned (opacity reset",
+             "rem every 1500 steps and culled below 0.2, large blobs culled, scale regularisation). 15000 steps.",
+             "rem Run it from a prompt where ns-train works (the nerfstudio environment), or set MPPP_NS_TRAIN to ns-train.exe.",
+             "rem   train-ns.bat [more splatfacto options, e.g. --max-num-iterations 30000]      results: outputs\\",
+             "setlocal",
+             'if not defined MPPP_NS_TRAIN set "MPPP_NS_TRAIN=ns-train"',
+             'where "%MPPP_NS_TRAIN%" >nul 2>nul || if not exist "%MPPP_NS_TRAIN%" (echo ns-train not found: activate the '
+             'nerfstudio environment ^(conda activate nerfstudio^) or set MPPP_NS_TRAIN & pause & exit /b 1)',
+             '"%MPPP_NS_TRAIN%" splatfacto --data "%~dp0." --output-dir "%~dp0outputs" --experiment-name "' + block + '" ^']
+    lines += [f"  {k} {v} ^" for k, v in SPLATFACTO_ARGS]
+    lines += ["  %* ^", "  nerfstudio-data " + " ".join(f"{k} {v}" for k, v in DATAPARSER_ARGS),
+              "set RC=%ERRORLEVEL%", "if not defined MPPP_NOPAUSE pause", "exit /b %RC%"]
+    p = Path(out_dir) / "train-ns.bat"
+    p.write_bytes(("\r\n".join(lines) + "\r\n").encode("ascii"))
+    return p
+
+
+__all__ = ["write_nerfstudio", "write_train_ns_bat", "target_camera", "remap_tables", "NS_SIZE", "ZCAM_CLIP", "NERFSTUDIO_DIR"]

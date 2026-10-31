@@ -66,6 +66,16 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
 - **Training images keep the frames the alignment skips**: `regen_config` turns the pipeline's frame selection off
   (v8's first regeneration lost 208 Navcam frames - sky-pointing, dark blue centre, saturated, outside the LMST
   window - and 4 Mastcam-Z frames of site 1 have no landing-frame position and stay out).
+- **Training images need no landing-frame position** (Christian, 30 Oct: "a landing position should not be
+  necessary to color process them"): `regen_config` takes the pose prior from the label's site frame
+  (`extrinsics_from_waypoints` off), so the four sol-3 Mastcam-Z frames of site 1 are regenerated too.
+- **`train-ns.bat` in every Nerfstudio folder** (Christian, 30 Oct: "a small and zcam optimized splatfacto training run
+  starting from the sparse point cloud and training on down sampled by two images. Make sure to prune floating blobs
+  regularly"): `mppp nerfstudio` also writes `images_2\` and `masks_2\` (1024 x 768; a half-size mask pixel is valid
+  only where its four source pixels are) and the batch file: splatfacto, 15000 steps, `--load-3D-points` (the tie
+  points), camera optimizer off (MPPP's poses held), densification threshold 0.0006 (finer for Mastcam-Z) until step
+  10000, opacity reset every 1500 steps with culling below 0.2, large blobs culled (0.3 of the scene scale), scale
+  regularisation (axis ratio at most 6), images cached on the CPU; extra splatfacto options as arguments.
 - **Hippo Pools: sol 1947's end-of-drive station S091D0000 in** (Christian, 30 Oct): `NEARBY_FROM_FIRST_SOL` off, so
   its sol-1947 images come in as another visit within 10 m; the mid-drive stops at site 90 do not.
 - **Mask training augmentation**: horizontal flips (as before) and, new, large Navcam/Hazcam frames (long side above
