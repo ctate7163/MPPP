@@ -31,7 +31,8 @@ def test_train_smoke_then_figure(tmp_path):
     ab = tmp_path / "ab"
     r = subprocess.run([sys.executable, str(ROOT / "scripts" / "compare_mask_models.py"), "--data", str(smoke / "set"),
                         "--split-ckpt", str(smoke / "ckpt" / "smoke.pt"), "--models", str(smoke / "ckpt" / "smoke.pt"),
-                        str(smoke / "ckpt" / "smoke.pt"), "--seen", str(seen.parent), "--out", str(ab)],
+                        str(smoke / "ckpt" / "smoke.pt"), "--seen", str(seen.parent), "--seen-split",
+                        str(smoke / "ckpt" / "smoke.pt"), str(smoke / "set"), "--out", str(ab)],
                        capture_output=True, text=True, timeout=600)
     assert r.returncode == 0, r.stderr[-2000:]
     md = (ab / "mask_ab.md").read_text()

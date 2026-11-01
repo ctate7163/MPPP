@@ -73,6 +73,10 @@ def main(argv=None) -> int:
     ap.add_argument("--split-ckpt", required=True, help="the checkpoint (or .safetensors) whose card defines the split")
     ap.add_argument("--models", nargs="+", required=True, help="registry names or checkpoint paths to compare")
     ap.add_argument("--seen", default=None, help="an older training set (or masks folder): report frames not in it")
+    ap.add_argument("--seen-split", nargs=2, default=None, metavar=("CKPT", "DATA"),
+                    help="the older model's checkpoint and the set it was trained on: its held-out frames (the split "
+                         "rebuilt from its card) count as unseen too - with --seen, the frames neither model trained "
+                         "on (31 Oct: the v8 held-out frames are 98 %% v7 frames)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--device", default="auto")
     ap.add_argument("--limit", type=int, default=None, help="only the first N held-out frames (a quick look)")
@@ -93,6 +97,16 @@ def main(argv=None) -> int:
     if not val:
         raise SystemExit("no held-out frames: is --split-ckpt a model trained on --data?")
     seen = seen_names(a.seen) if a.seen else set()
+    if a.seen_split and seen:
+        # the older model's own held-out frames were not in its training either (its split, rebuilt from its card
+        # over the set it was trained on - images/ and images_variable/ as in training then)
+        _, old_card = get_model(a.seen_split[0], a.device)
+        old_items = scan_dataset(a.seen_split[1], image_dirs=("images", "images_variable"), mask_dir="masks",
+                                 missing="skip")
+        old_split = split_labels(old_items, old_card)
+        held = {Path(m).name for m, v in old_split.items() if v == "val"}
+        print(f"--seen-split: {len(held)} masks held out by {Path(a.seen_split[0]).name}")
+        seen = seen - held
     labels = [Path(m).stem if Path(m).suffix else m for m in a.models]
     print(f"{len(val)} held-out frames; {sum(Path(it.mask).name in seen for it in val)} of them in --seen")
 
@@ -120,7 +134,7 @@ def main(argv=None) -> int:
     md += table(allrows, "All held-out frames")
     if seen:
         unseen = pool(frame_rows, labels, keep=lambda r: not r["in_seen"])
-        md += table(unseen, "Held-out frames NOT in the --seen set (the fair comparison for an older model)")
+        md += table(unseen, "Held-out frames the older model did not train on (not in --seen, or in its own held-out split with --seen-split): the fair comparison")
     with open(out / "mask_ab.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["subset"] + list(allrows[0]))
         w.writeheader()
