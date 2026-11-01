@@ -605,3 +605,27 @@ def test_calib_iterations_option():
     assert a.iterations == 300 and a.passes == 3
     a = build_parser().parse_args(["calib", "zcam"])
     assert a.iterations is None and a.passes is None
+
+
+def test_zcam_aspect_geometry_on_a_small_block(tmp_path):
+    """1 Nov (Christian): the Mastcam-Z bins' fy / fx against elevation, tie range and frame coverage."""
+    pytest.importorskip("pycolmap")
+    pytest.importorskip("cv2")
+    sys.path.insert(0, str(ROOT / "scripts"))
+    sys.path.insert(0, str(ROOT / "tests"))
+    import zcam_aspect_geometry as G
+    from test_nerfstudio import _scene
+    proj, rec = _scene(tmp_path)
+    proj.settings["database"] = {"cameras": {"NL": 1, "ZL063_F02000": 2}}
+    proj.save()
+    work = proj.root.parent
+    rows = G.block_rows(work, [63])
+    assert len(rows) == 1 and rows[0]["bin"] == "ZL063_F02000" and rows[0]["ties"] == 300
+    r = rows[0]
+    assert -30 < r["elevation_deg"] < 0 and 5 < r["range_m"] < 12 and 0 < r["coverage"] <= 1
+    bins = G.summarise(rows * 9)
+    assert len(bins) == 1 and bins[0]["aspect_ppm"] == 0.0 and bins[0]["images"] == 9
+    md = G.report(bins)
+    assert md[0].startswith("# Mastcam-Z bin aspect")
+    assert G.main(["--works", str(work), "--zooms", "63", "--out", str(tmp_path / "o")]) == 0
+    assert (tmp_path / "o" / "bins.csv").is_file() and (tmp_path / "o" / "report.md").is_file()

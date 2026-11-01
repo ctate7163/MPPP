@@ -17,7 +17,10 @@ def test_zcam_fixed_terms_per_zoom():
     assert forms.zcam_fixed_terms("ZL048") == {"k2": 1.4} and forms.zcam_fixed_terms("ZR048_F02312_reg") == {"k2": 1.4}
     for z in (63, 79, 110):
         for e in ("ZL", "ZR"):
-            assert forms.zcam_fixed_terms(f"{e}{z:03d}_F01234") == {"k2": 0.0, "p1": 0.0, "p2": 0.0}
+            want = {"k2": 0.0, "p1": 0.0, "p2": 0.0}
+            if z == 110:                         # 1 Nov (Christian): 110 mm k1 held at 0 too
+                want["k1"] = 0.0
+            assert forms.zcam_fixed_terms(f"{e}{z:03d}_F01234") == want
     assert forms.zcam_fixed_terms("NL") == {} and forms.zcam_fixed_terms("FL") == {} and forms.zcam_fixed_terms("Zx") == {}
 
 
@@ -28,7 +31,8 @@ def test_apply_zcam_fixed_terms_sets_and_holds():
            "fixed_params": ["k3"], "free_params": ["fx", "fy", "k1", "k2", "p1", "p2"]}
     out = forms.apply_zcam_fixed_terms(dict(cam), "ZR110_F02000")
     assert out["params"][names.index("k2")] == 0.0 and out["params"][names.index("p1")] == 0.0
-    assert set(out["fixed_params"]) == {"k2", "p1", "p2", "k3"} and out["free_params"] == ["fx", "fy", "k1"]
+    assert out["params"][names.index("k1")] == 0.0                     # 1 Nov: 110 mm k1 held at 0
+    assert set(out["fixed_params"]) == {"k1", "k2", "p1", "p2", "k3"} and out["free_params"] == ["fx", "fy"]
     z34 = forms.apply_zcam_fixed_terms(dict(cam), "ZL034_F00500")
     assert z34["params"][names.index("k2")] == 0.5 and z34["params"][names.index("p1")] == 1e-3   # p1, p2 free at 34
     assert "p1" in z34["free_params"] and "k2" not in z34["free_params"]
@@ -151,12 +155,14 @@ def test_groups_and_block_sites():
     # again, Bright Angel; the Hazcam consensus without Three Forks North; a list per zoom
     # (10:30: Chal Rocks again, not Chal Rocks Large); 28 Oct: Airey Hill in the ecam and zcam consensus lists
     # 0.95.1: Rockytop; Taylorfjellet first (Christian, 29 Oct: the longest block starts first)
-    assert g["zcam_consensus"] == ["taylorfjellet", "chal_rocks", "seitah_overlook", "threeforks_north", "belva_crater",
+    # 1 Nov (Christian): Chal Rocks Large instead of Chal Rocks (its second 34 mm 360), with 79 and 110 mm
+    assert g["zcam_consensus"] == ["taylorfjellet", "chal_rocks_large", "seitah_overlook", "threeforks_north", "belva_crater",
                                    "marble_mountain", "bright_angel", "pico_turquino", "south_arm",
                                    "overlook_mountain", "airey_hill", "rockytop"]
     assert g["zcam34_joint"][0] == "taylorfjellet"
     assert "airey_hill" in g["ecam_consensus"]
-    assert "chal_rocks_large" not in g["zcam34_joint"] and "chal_rocks" in g["zcam34_joint"]
+    assert "chal_rocks" not in g["zcam34_joint"] and "chal_rocks_large" in g["zcam34_joint"]
+    assert t["sites"]["chal_rocks_large"]["zcam"] == [34, 48, 63, 79, 110]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "belva_crater", "bell_island", "marble_mountain"]
     assert g["zcam63_consensus"] == ["chal_rocks_large", "seitah_overlook", "bright_angel", "taylorfjellet", "marble_mountain"]
     assert t["sites"]["bright_angle_large"]["sols"] == [[1175, 1220]] and t["sites"]["bright_angle_large"]["official_blocks"] == []
@@ -231,7 +237,9 @@ def test_excluded_station_is_not_selected_nor_an_anchor(tmp_path):
     paths, rep = find_imgs_near(tmp_path, ["NLF", "NRF"], [[460, 530]], wp, radius_m=10.0, exclude_stations=["S026D0282"])
     assert rep["stations_added"] == [] and rep["stations_in_range"] == ["S026D0630"]
     assert rep["stations_excluded"] == ["S026D0282"] and all("N0260630" in p.name for p in paths)
-    assert load_settings(site="rockytop").exclude == ["S026D0282", "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486"]
+    # 31 Oct: ZCAM03391 at 79 mm left out too (0 tie points; f 10-11.5 % off)
+    assert load_settings(site="rockytop").exclude == ["S026D0282", "*ZCAM03391_079*",
+                                                      "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486"]
     st = B.site_waypoint_stats({"sols": [[460, 530]], "settings": {"EXCLUDE": ["S026D0282"]}},
                                B.waypoint_points(ROOT / "src" / "mppp" / "data" / "M20_waypoints.json"))
     assert st["n_nearby"] == 0 and st["max_waypoint_separation_m"] < 30

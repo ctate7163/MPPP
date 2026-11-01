@@ -25,6 +25,23 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   stops the chain (`zcam_backlash_rerun.bat` is a run marker).  Why: the joints of 31 Oct - Z34 Chal Rocks
   ZCAM08401 (sol 369) -4,783 / -4,154 ppm and ZCAM08396 -2,300 ppm, Z63 Rockytop ZCAM08530 / 08538 -1.0 to
   -1.1 %, about the low/high backlash ratio; Z48 not converged (101 iterations in both passes); Z110 not run.
+- **`scripts/zcam_aspect_geometry.py`** (Christian, 1 Nov: "Could fy be either a block scale change for distant
+  terrain or maybe an intrinsic camera sag from the optics changing shape with gravity?"): every Mastcam-Z bin's
+  fy / fx against its images' boresight elevation, tie-point range and frame coverage, with weighted fits and a
+  pointing x range table - gravity predicts elevation alone, a far-field geometry effect range, partial coverage the
+  coverage. Reads the blocks only.
+- **`zcam_joints.bat`: 300 Ceres iterations per pass** in every Mastcam-Z joint and in the N+Z check
+  (`MPPP_JOINT_ITERATIONS`; the 1 Nov N+Z first pass still stopped at 101).
+- **110 mm k1 held at 0** (Christian, 1 Nov: "hold z110 k1 at zero for now and test if k1 is significant"):
+  `forms.ZCAM_FIXED_TERMS[110]` now k1, k2, p1, p2 = 0 (the 1 Nov joint fitted k1 +0.42 / +0.39 against -0.23 at
+  79 mm, with fy / fx 0.993). The joint's distortion tests free the fixed terms together and, new, k1 alone
+  (delta chi2 and the curve change it makes).
+- **Chal Rocks Large replaces Chal Rocks** in `zcam_consensus` and `zcam34_joint` (Christian, 1 Nov), with 79 and
+  110 mm added to its zooms: its second 34 mm 360 (sols 72-90) at the same site separates the second visit's
+  anomaly from the place. 1 Nov analysis (all 13 Z34 blocks' bins): frames looking at the horizon have fy / fx
+  1,000-1,500 ppm lower than frames looking down, in nearly every block (Taylorfjellet, whose horizon views end on
+  a near hillside, not); Chal Rocks fails the per-block aspect check because its largest sequence (ZCAM08401) is a
+  horizon panorama. Not a backlash state, not mainly temperature.
 - **Mask training: a random tone curve per sample** (Christian, 1 Nov: "v4 should have better augmentation using
   color changes as well as h flips and zooms ... call it v4.1"). `TrainConfig.tone_prob` / `train_mask.py
   --tone-prob` (default 0.5 in the script and `train_masks.bat`): a share of the training samples get a tone curve

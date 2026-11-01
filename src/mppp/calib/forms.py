@@ -150,7 +150,10 @@ ZCAM_FIXED_TERMS: Dict[int, Dict[str, Dict[str, float]]] = {
     48: {"ZL": {"k2": 1.4}, "ZR": {"k2": 1.4}},
     63: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},
     79: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},
-    110: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},
+    # 1 Nov (Christian: "hold z110 k1 at zero for now and test if k1 is significant"): the 1 Nov joint fitted k1 +0.42 /
+    # +0.39 (79 mm: -0.23) with fy / fx 0.993 - at 6 deg the field cannot separate k1 from the far-field geometry;
+    # the joint's distortion tests free k1 alone (delta chi2, curve change)
+    110: {"ZL": dict(_NARROW_FIXED, k1=0.0), "ZR": dict(_NARROW_FIXED, k1=0.0)},
 }
 
 

@@ -29,6 +29,8 @@ if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\scapes"
 if not defined MPPP_ZOOMS set "MPPP_ZOOMS=34 48 63 79 110"
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY=%%d"
 REM 0.93.8: one zcam_joints at a time (23 Oct: two copies ran the same joints into the same folders and promoted twice)
+REM 1 Nov (0.95.3): 300 Ceres iterations per pass in every joint (the Z48 and N+Z joints stopped at 101 with 100)
+if not defined MPPP_JOINT_ITERATIONS set "MPPP_JOINT_ITERATIONS=300"
 set "LOCK=%MPPP_SCAPES%\camera_analysis\zcam_joints.lock"
 if not exist "%MPPP_SCAPES%\camera_analysis" mkdir "%MPPP_SCAPES%\camera_analysis"
 mkdir "%LOCK%" 2>nul || (
@@ -58,7 +60,7 @@ for %%Z in (%MPPP_ZOOMS%) do (
   call :freeout %%Z
   echo.
   echo %DATE% %TIME%  Mastcam-Z %%Z mm joint over !GROUP! -^> !OUT!
-  python -m mppp --log "!OUT!_log.txt" calib zcam --zoom %%Z --group "!GROUP!" --root "%MPPP_SCAPES%" --out "!OUT!" --promote-if-ok %*
+  python -m mppp --log "!OUT!_log.txt" calib zcam --zoom %%Z --group "!GROUP!" --root "%MPPP_SCAPES%" --out "!OUT!" --promote-if-ok --iterations %MPPP_JOINT_ITERATIONS% %*
   if errorlevel 1 echo Mastcam-Z %%Z mm joint: not run or FAILED - see !OUT!_log.txt
 )
 set "MPPP_NOPAUSE=1"
@@ -66,7 +68,7 @@ if exist "%MPPP_SCAPES%\camera_analysis\zcam34_joint_%TODAY%\zcam_joint.json" ca
 if /i not "%MPPP_NZ%"=="none" (
   echo.
   echo %DATE% %TIME%  Navcam + Mastcam-Z 34 mm combined joint with the ecam_consensus blocks ^(a check, nothing promoted^)
-  python -m mppp --log "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt" calib nz --group "zcam34_joint,zcam_consensus" --navcam-group ecam_consensus --root "%MPPP_SCAPES%" --out "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%"
+  python -m mppp --log "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt" calib nz --group "zcam34_joint,zcam_consensus" --navcam-group ecam_consensus --root "%MPPP_SCAPES%" --out "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%" --iterations %MPPP_JOINT_ITERATIONS%
   if errorlevel 1 echo the combined joint FAILED - see %MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt
 )
 echo %DATE% %TIME%  done

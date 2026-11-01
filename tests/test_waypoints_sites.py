@@ -367,16 +367,17 @@ def test_zcam34_joint_group_is_the_joint_default(tmp_path):
     from mppp.waypoints.sites import load_site_table, work_folder
     t = load_site_table()
     g = t["groups"]["zcam34_joint"]
-    assert "rockytop" not in g and "bunsen_peak" not in g and "chal_rocks" in g            # 24 Oct: not large
-    for n, verdict in (("chal_rocks", "warn"), ("rochette", "fail")):
+    # 24 Oct: chal_rocks, not large; 1 Nov (Christian): chal_rocks_large again (its second 34 mm 360)
+    assert "rockytop" not in g and "bunsen_peak" not in g and "chal_rocks_large" in g and "chal_rocks" not in g
+    for n, verdict in (("chal_rocks_large", "warn"), ("rochette", "fail")):
         w = work_folder(tmp_path, n, True, t["sites"][n]["sols"]) / "colmap"
         w.mkdir(parents=True)
         (w / "run_done.json").write_text(_json.dumps({"verdict": verdict, "site": n}))
     a = argparse.Namespace(blocks=None, root=str(tmp_path), sites_file=None, which="zcam", zoom=34, group=None)
-    assert a and set(_navcam_blocks(a)) == {"chal_rocks"} and a.group == "zcam34_joint"
+    assert a and set(_navcam_blocks(a)) == {"chal_rocks_large"} and a.group == "zcam34_joint"
     a2 = argparse.Namespace(blocks=None, root=str(tmp_path), sites_file=None, which="zcam", zoom=34, group=None,
                             include_failed=True)
-    assert set(_navcam_blocks(a2)) == {"chal_rocks", "rochette"}
+    assert set(_navcam_blocks(a2)) == {"chal_rocks_large", "rochette"}
 
 
 def test_ecam_consensus_and_the_old_group_name():

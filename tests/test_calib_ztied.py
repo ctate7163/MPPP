@@ -874,3 +874,35 @@ def test_freed_fixed_term_test_moves_the_term(tmp_path, monkeypatch):
     t = {x["test"]: x for x in res["distortion"]["tests"]}["k2 free (vs the fixed values)"]
     assert t["delta_chi2"] > 10 and t["significant"] and t["converged"], t
     assert all(v["k2"] == pytest.approx(0.40, abs=0.05) for v in t["refit_terms"].values()), t
+
+
+
+def test_z110_k1_held_at_zero_and_tested_alone(monkeypatch):
+    from mppp.calib import ztied as Z
+    """1 Nov (Christian): 110 mm k1 held at 0 with k2, p1, p2; the distortion tests free all of them, then k1 alone."""
+    import copy as _copy
+    from mppp.calib import forms
+    assert forms.zcam_fixed_terms("ZL110") == {"k1": 0.0, "k2": 0.0, "p1": 0.0, "p2": 0.0}
+    assert "k1" not in forms.zcam_fixed_terms("ZL079") and forms.zcam_fixed_terms("ZR034") == {"k2": 0.6}
+    calls = []
+
+    def fake_adjust(rec, proj, idx, st, units, zunits, sg, **kw):
+        calls.append(kw["hold"])
+        g = {e: np.asarray(v["G"], float) for e, v in sg["eyes"].items()}
+        return {"final_cost": 99.0}, g, None
+    monkeypatch.setattr(Z, "adjust_z", fake_adjust)
+    G = np.zeros(Z.NG)
+    G[Z.GLOBAL_TERMS.index("a_fx_backlash")] = G[Z.GLOBAL_TERMS.index("a_fy_backlash")] = 14700.0
+    g = {"ZL110": G.copy(), "ZR110": G.copy()}
+    sg = {"eyes": {e: {"G": G.copy()} for e in g}}
+    fixed = {e: forms.zcam_fixed_terms(e) for e in g}
+
+    class P:
+        cameras = {}
+    out = Z.distortion_tests(None, P(), {}, {}, {}, {}, sg, g, {"final_cost": 100.0, "covariance": {"variance_factor": 1.0}},
+                             verbose=False, fixed=fixed)
+    names = [o["test"] for o in out]
+    assert names == ["k1, k2, p1, p2 free (vs the fixed values)", "k1 free (vs the fixed value)"]
+    assert calls[0] == {"ZL110": [], "ZR110": []}
+    assert calls[1] == {"ZL110": ["k2", "p1", "p2"], "ZR110": ["k2", "p1", "p2"]}
+    assert out[1]["dof"] == 2 and out[1]["delta_chi2"] == pytest.approx(2.0)

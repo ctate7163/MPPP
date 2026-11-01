@@ -97,7 +97,7 @@ BLOCK_ASPECT_MIN_OBS = 1000                # the same cut as the lines (MIN_BIN_
 # 0.95.1: the start offset of a freed fixed term in the "free (vs the fixed values)" test: from the exactly tied
 # solution with the bins at the fixed value the adjustment did not move it at all (k2 0.5 -> 0.5000013, synthetic
 # 0.3 -> 0.3 with the truth at 0.40); the bins' data then pull the law to the free optimum
-FREED_TERM_NUDGE = {"k2": 0.05, "p1": 1e-4, "p2": 1e-4}
+FREED_TERM_NUDGE = {"k1": 0.02, "k2": 0.05, "p1": 1e-4, "p2": 1e-4}
 EYE_SLOPE_TIE_SD = 1e-7                   # px/count: the eye-slope tie of eye_slope_tests (exact)
 # 0.95.0 (Christian, 29 Oct): the joint refines the Mastcam-Z rig translation (1 cm prior per axis on the start rig's
 # right centre) instead of holding it at the CAHV value; "rotation" holds it again (the 0.94 joint)
@@ -1430,6 +1430,9 @@ def distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba, iterations: i
     if any(fixed.values()):
         terms = sorted({k for v in fixed.values() for k in v})
         cases.append((f"{', '.join(terms)} free (vs the fixed values)", {}, {e: list(v) for e, v in fixed.items()}))
+        # 1 Nov (Christian, 110 mm k1 held at 0: "test if k1 is significant"): k1 freed alone, the others held
+        if len(terms) > 1 and any("k1" in v for v in fixed.values()):
+            cases.append(("k1 free (vs the fixed value)", {}, {e: ["k1"] for e, v in fixed.items() if "k1" in v}))
     if not any("k2" in fixed.get(e, {}) for e in eyes):
         cases.append(("k2 = 0 (both eyes)", {zl: {"k2": 0.0}, zr: {"k2": 0.0}}, {}))
     # 0.95.1 (Christian, 29 Oct: "ZR034 k1 should not be equal to ZL034 k1. remove that test in the joint"): no
