@@ -59,6 +59,9 @@ def main(argv=None) -> int:
                     "to this factor (a random crop, then downsampled; default 2; 1 = off)")
     ap.add_argument("--zoom-prob", type=float, default=0.5, help="share of those frames zoomed (default 0.5)")
     ap.add_argument("--no-hflip", action="store_true", help="no random left-right flips (on by default)")
+    ap.add_argument("--tone-prob", type=float, default=0.5, help="0.95.3 (mask v4.1): share of training samples "
+                    "given a random tone curve (v3's images_variable recipe, drawn anew each time; default 0.5; 0 = "
+                    "off, as v4)")
     ap.add_argument("--paper", nargs="?", const="auto", default=None, metavar="DIR",
                     help="0.95.2: then the JOSS outputs into DIR (default <repo>/Claude outputs/mask_<checkpoint>): "
                          "figure1_masks.png/.pdf, per-camera metrics, training curves, the card, the training-set "
@@ -103,7 +106,7 @@ def main(argv=None) -> int:
                 else:
                     print(build_variable_images(data, reuse_from=a.reuse_variable))
         cfg = TrainConfig(epochs=a.epochs, quad_split_above=a.quad_split_above, init_from=a.init_from,
-                          hflip=not a.no_hflip, zoom_max=a.zoom_max, zoom_prob=a.zoom_prob)
+                          hflip=not a.no_hflip, zoom_max=a.zoom_max, zoom_prob=a.zoom_prob, tone_prob=a.tone_prob)
         stem = f"{cfg.backbone}{'_s4' if cfg.stride4 else ''}_seg_{date.today():%Y%m%d}{('_' + a.tag) if a.tag else ''}"
         out = checkpoints_dir(create=True) / f"{stem}.pt"
         k = 2
@@ -148,7 +151,8 @@ def training_set_summary(items, card) -> dict:
             "sols": [min(sols), max(sols)] if sols else None, "n_train": tr.get("n_train"), "n_val": tr.get("n_val"),
             "n_train_frames": tr.get("n_train_frames"), "n_val_frames": tr.get("n_val_frames"),
             "val_iou": card.get("val_iou"), "epochs": tr.get("epochs"), "hflip": tr.get("hflip"),
-            "zoom_max": tr.get("zoom_max"), "zoom_prob": tr.get("zoom_prob"), "backbone": card.get("backbone")}
+            "zoom_max": tr.get("zoom_max"), "zoom_prob": tr.get("zoom_prob"), "tone_prob": tr.get("tone_prob"),
+            "backbone": card.get("backbone")}
 
 
 def paper_outputs(ckpt: Path, data: Path, out: Path, items, smoke: bool = False,
@@ -183,7 +187,8 @@ def paper_outputs(ckpt: Path, data: Path, out: Path, items, smoke: bool = False,
              f"({summ['n_train']} / {summ['n_val']} samples)",
              f"- held-out IoU (include class, threshold {card.get('threshold')}): {summ['val_iou']}",
              f"- {summ['backbone']}, {summ['epochs']} epochs; augmentation: horizontal flip {summ['hflip']}, zoom of "
-             f"large Navcam/Hazcam frames up to {summ['zoom_max']} x (share {summ['zoom_prob']})", ""]
+             f"large Navcam/Hazcam frames up to {summ['zoom_max']} x (share {summ['zoom_prob']}), random tone curve "
+             f"(share {summ.get('tone_prob') or 0})", ""]
     if (out / "mask_metrics_by_camera.md").is_file():
         lines += ["## Held-out frames by camera (valid pixels only)", "",
                   (out / "mask_metrics_by_camera.md").read_text(encoding="utf-8")]

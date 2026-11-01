@@ -242,8 +242,10 @@ def zoom_crop(im: np.ndarray, ms: np.ndarray, zoom_max: float, rng: random.Rando
 class MaskDataset(Dataset):
     def __init__(self, items: Sequence[Item], size: int = 1648, hflip: bool = False,
                  canvas: Optional[Tuple[int, int]] = None, quad_overlap: int = 64,
-                 zoom_max: float = 1.0, zoom_prob: float = 0.0, zoom_families: str = "NFR"):
+                 zoom_max: float = 1.0, zoom_prob: float = 0.0, zoom_families: str = "NFR",
+                 tone_prob: float = 0.0):
         self.items, self.size, self.hflip, self.canvas = list(items), int(size), hflip, canvas
+        self.tone_prob = float(tone_prob)
         self.quad_overlap = int(quad_overlap)
         self.zoom_max, self.zoom_prob, self.zoom_families = float(zoom_max), float(zoom_prob), str(zoom_families)
 
@@ -259,7 +261,12 @@ class MaskDataset(Dataset):
         elif (self.zoom_max > 1.0 and self.zoom_prob > 0 and max(ms.shape[:2]) > self.size
               and Path(it.image).name[:1].upper() in self.zoom_families and random.random() < self.zoom_prob):
             im, ms, _ = zoom_crop(im, ms, self.zoom_max)      # large Navcam / Hazcam frames: zoomed in up to 2x
-        im, ms = letterbox(cv2.cvtColor(im, cv2.COLOR_BGR2RGB), ms, self.size, self.canvas)
+        rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+        if self.tone_prob > 0 and random.random() < self.tone_prob:
+            # 0.95.3 (mask v4.1): a random tone curve - v3's images_variable/ recipe, drawn for this sample
+            from .dataset import random_tone
+            rgb, _ = random_tone(rgb, rgb.max(axis=2) > 0, np.random.default_rng(random.getrandbits(63)))
+        im, ms = letterbox(rgb, ms, self.size, self.canvas)
         if self.hflip and random.random() < 0.5:
             im, ms = im[:, ::-1].copy(), ms[:, ::-1].copy()
         return im, ms, i
@@ -374,6 +381,11 @@ class TrainConfig:
     zoom_max: float = 2.0
     zoom_prob: float = 0.5
     zoom_families: str = "NFR"
+    # 0.95.3 (Christian, 1 Nov: "v4 should have better augmentation using color changes as well as h flips and
+    # zooms" - mask v4.1): with probability tone_prob a training sample gets a random tone curve (black point,
+    # white point, gamma, per-channel gains: dataset.VariableRecipe, the recipe of v3's images_variable/ copies),
+    # drawn anew each time; the images stay the standard pipeline's. 0 = off (v4)
+    tone_prob: float = 0.0
     num_workers: int = 2                  # background image loading (0 = in this process)
     print_every: int = 50
     val_preview_every: int = 200          # iterations; 0 disables the held-out preview
@@ -570,7 +582,8 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
     loader_kw = dict(collate_fn=collate, num_workers=cfg.num_workers, pin_memory=(dev_type == "cuda"),
                      persistent_workers=cfg.num_workers > 0)
     tl = DataLoader(MaskDataset(tr_items, cfg.input_size, cfg.hflip, canvas, cfg.quad_overlap,
-                                zoom_max=cfg.zoom_max, zoom_prob=cfg.zoom_prob, zoom_families=cfg.zoom_families),
+                                zoom_max=cfg.zoom_max, zoom_prob=cfg.zoom_prob, zoom_families=cfg.zoom_families,
+                                tone_prob=cfg.tone_prob),
                     batch_size=cfg.batch_size, shuffle=True, **loader_kw)
     vl = DataLoader(MaskDataset(va_items, cfg.input_size, canvas=canvas, quad_overlap=cfg.quad_overlap),
                     batch_size=cfg.batch_size, shuffle=False, **loader_kw)

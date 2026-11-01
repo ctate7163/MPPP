@@ -25,6 +25,12 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   stops the chain (`zcam_backlash_rerun.bat` is a run marker).  Why: the joints of 31 Oct - Z34 Chal Rocks
   ZCAM08401 (sol 369) -4,783 / -4,154 ppm and ZCAM08396 -2,300 ppm, Z63 Rockytop ZCAM08530 / 08538 -1.0 to
   -1.1 %, about the low/high backlash ratio; Z48 not converged (101 iterations in both passes); Z110 not run.
+- **Mask training: a random tone curve per sample** (Christian, 1 Nov: "v4 should have better augmentation using
+  color changes as well as h flips and zooms ... call it v4.1"). `TrainConfig.tone_prob` / `train_mask.py
+  --tone-prob` (default 0.5 in the script and `train_masks.bat`): a share of the training samples get a tone curve
+  from v3's `images_variable` recipe (`dataset.random_tone`: black point 0-0.11, white point 0.90-1.50, gamma
+  0.50-0.85, channel gains 0.95-1.05), drawn anew every time - the colour diversity v3 had from its fixed copies
+  on disk, with the images still the standard pipeline's. `train_masks.bat` trains 20 epochs (as v4).
 - **Alignment health: cameras without tie points are listed, not judged** (`unconstrained_cameras`, fewer than
   `MIN_CAMERA_OBSERVATIONS` = 30). Rockytop's ZCAM03391 79 mm bins had 0 observations and drifted with the priors
   (fx +9.9 %, fy +33 %); their focal and ray checks failed the block, and the FAIL kept Rockytop - with its good

@@ -67,7 +67,15 @@ def _seed(name: str) -> int:
 def make_variable(rgb: np.ndarray, valid: np.ndarray, name: str,
                   recipe: VariableRecipe = VariableRecipe()) -> Tuple[np.ndarray, Dict[str, float]]:
     """uint8 RGB -> uint8 RGB with a per-image tone curve; invalid pixels stay 0, valid never 0."""
-    rng = np.random.default_rng(_seed(name))
+    return random_tone(rgb, valid, np.random.default_rng(_seed(name)), recipe)
+
+
+def random_tone(rgb: np.ndarray, valid: np.ndarray, rng, recipe: VariableRecipe = VariableRecipe()
+                ) -> Tuple[np.ndarray, Dict[str, float]]:
+    """The tone curve of :func:`make_variable` with ``rng`` (a ``numpy`` Generator): black point ``lo``, white point
+    ``hi``, gamma and small per-channel gains, drawn from ``recipe``.  0.95.3 (Christian, 1 Nov, mask v4.1): drawn
+    anew for every training sample (``TrainConfig.tone_prob``) instead of one fixed copy per frame on disk
+    (``images_variable/``, v3).  Invalid pixels (0) stay 0, valid ones never become 0."""
     lo = rng.uniform(*recipe.lo)
     hi = rng.uniform(*recipe.hi)
     g = rng.uniform(*recipe.gamma)

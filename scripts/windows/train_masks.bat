@@ -9,9 +9,10 @@ REM 1. The training set: MPPP_MASK_DATA, else the highest D:\masks\masks_trainin
 REM 2. images\ regenerated from the PDS archive (MPPP_PDS) for every mask through the standard MPPP pipeline
 REM    (resumable: a rerun skips the done ones). Training uses images\ only (Christian, 30 Oct: no images_variable\;
 REM    add --variable to train on the brightness-varied copies too).
-REM 3. ConvNeXt-tiny (ImageNet-22k start), 10 epochs, split grouped by mask; augmentation: horizontal flips, and the
-REM    large Navcam / Hazcam frames zoomed in by up to 2x somewhere in the frame (half of them) before they are
-REM    downsampled to the canvas.  -> checkpoints\convnext_tiny_s4_seg_<date>_vN.pt + .json card + _debug\ (curves,
+REM 3. ConvNeXt-tiny (ImageNet-22k start), 20 epochs (as v4), split grouped by mask; augmentation: horizontal flips,
+REM    the large Navcam / Hazcam frames zoomed in by up to 2x somewhere in the frame (half of them) before they are
+REM    downsampled to the canvas, and (0.95.3, mask v4.1, Christian 1 Nov) a random tone curve on half of the samples
+REM    (black and white point, gamma, channel gains - v3's images_variable recipe, drawn anew each time).  -> checkpoints\convnext_tiny_s4_seg_<date>_vN.pt + .json card + _debug\ (curves,
 REM    held-out previews, frame audit, worst frames).
 REM 4. "Claude outputs\mask_<checkpoint>\": figure1_masks.png/.pdf (held-out frames, predicted exclusion orange, label
 REM    boundary blue), mask_metrics_by_camera.md/.csv, training_curves.png, the card, summary.md (the training set and
@@ -58,7 +59,7 @@ if not defined TPY (
 )
 
 echo %DATE% %TIME%  train_masks: %MPPP_MASK_DATA% (v%VER%), PDS %MPPP_PDS%, python %TPY%
-"%TPY%" "%MPPP_HOME%\scripts\train_mask.py" --data "%MPPP_MASK_DATA%" --pds "%MPPP_PDS%" --regen --epochs 10 --tag v%VER% --zoom-max 2 --zoom-prob 0.5 --paper %*
+"%TPY%" "%MPPP_HOME%\scripts\train_mask.py" --data "%MPPP_MASK_DATA%" --pds "%MPPP_PDS%" --regen --epochs 20 --tag v%VER% --zoom-max 2 --zoom-prob 0.5 --tone-prob 0.5 --paper %*
 set "RC=%ERRORLEVEL%"
 echo %DATE% %TIME%  train_masks done ^(exit %RC%^): checkpoints in %MPPP_HOME%\checkpoints, paper outputs in "%MPPP_HOME%\Claude outputs\mask_*"
 if not defined MPPP_NOPAUSE pause

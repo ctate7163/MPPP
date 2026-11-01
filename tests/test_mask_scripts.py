@@ -83,3 +83,43 @@ def test_training_uses_the_pipeline_images_only_by_default():
     src = (ROOT / "scripts" / "train_mask.py").read_text()
     assert 'image_dirs = ("images", "images_variable") if (a.variable or a.smoke) else ("images",)' in src
     assert "if a.variable:" in src                     # images_variable/ is only built on request
+
+
+def test_random_tone_augmentation(tmp_path):
+    """0.95.3 (mask v4.1): a random tone curve per training sample (v3's images_variable recipe), invalid pixels
+    kept at 0; make_variable gives the same images as before (same draws)."""
+    import numpy as np
+    from mppp.mask.training.dataset import VariableRecipe, make_variable, random_tone
+    rgb = np.random.default_rng(1).integers(1, 256, (40, 60, 3)).astype(np.uint8)
+    rgb[:, :5] = 0
+    valid = rgb.max(axis=2) > 0
+    a, pa = make_variable(rgb, valid, "NLF_x.png")
+    b, pb = random_tone(rgb, valid, np.random.default_rng(__import__("mppp.mask.training.dataset",
+                                                                       fromlist=["_seed"])._seed("NLF_x.png")))
+    assert (a == b).all() and pa == pb
+    r = VariableRecipe()
+    assert r.lo[0] <= pa["lo"] <= r.lo[1] and r.gamma[0] <= pa["gamma"] <= r.gamma[1]
+    c, _ = random_tone(rgb, valid, np.random.default_rng(7))
+    assert (c[:, :5] == 0).all() and c[valid].min() >= 1 and not (c == a).all()
+    tm = (ROOT / "scripts" / "windows" / "train_masks.bat").read_bytes()
+    assert b"--epochs 20" in tm and b"--tone-prob 0.5" in tm
+    src = (ROOT / "scripts" / "train_mask.py").read_text()
+    assert "tone_prob=a.tone_prob" in src
+
+
+def test_mask_dataset_applies_the_tone_curve(tmp_path):
+    pytest.importorskip("torch")
+    import cv2
+    import numpy as np
+    from mppp.mask.training.train import Item, MaskDataset
+    (tmp_path / "images").mkdir()
+    (tmp_path / "masks").mkdir()
+    img = np.full((60, 80, 3), 120, np.uint8)
+    img[:, :4] = 0
+    cv2.imwrite(str(tmp_path / "images" / "NLF_a.png"), img)
+    cv2.imwrite(str(tmp_path / "masks" / "NLF_a.png"), np.full((60, 80), 255, np.uint8))
+    it = Item(image=str(tmp_path / "images" / "NLF_a.png"), mask=str(tmp_path / "masks" / "NLF_a.png"))
+    plain = MaskDataset([it], size=80, canvas=(80, 60))[0][0]
+    toned = MaskDataset([it], size=80, canvas=(80, 60), tone_prob=1.0)[0][0]
+    assert (plain[:, 10:] == 120).all() and not (toned[:, 10:] == 120).all()
+    assert (toned[:, :4] == 0).all()
