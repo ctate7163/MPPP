@@ -46,6 +46,9 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   `forms.ZCAM_FIXED_TERMS[110]` now k1, k2, p1, p2 = 0 (the 1 Nov joint fitted k1 +0.42 / +0.39 against -0.23 at
   79 mm, with fy / fx 0.993). The joint's distortion tests free the fixed terms together and, new, k1 alone
   (delta chi2 and the curve change it makes).
+- **Belva Crater Large replaces Belva Crater** in `zcam_consensus`, `zcam34_consensus`, `zcam110_consensus` and
+  `hazcam_consensus` (Christian, 2 Nov), with 110 mm (no 79 mm, as Belva Crater): sols 770-821, 14 stations instead
+  of 5, for more 110 mm frames and stations in the 110 mm joint. Its Mastcam-Z block is built by the freeze run.
 - **Chal Rocks Large replaces Chal Rocks** in `zcam_consensus` and `zcam34_joint` (Christian, 1 Nov), with 79 and
   110 mm added to its zooms: its second 34 mm 360 (sols 72-90) at the same site separates the second visit's
   anomaly from the place. 1 Nov analysis (all 13 Z34 blocks' bins): frames looking at the horizon have fy / fx

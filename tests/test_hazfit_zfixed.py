@@ -156,14 +156,17 @@ def test_groups_and_block_sites():
     # (10:30: Chal Rocks again, not Chal Rocks Large); 28 Oct: Airey Hill in the ecam and zcam consensus lists
     # 0.95.1: Rockytop; Taylorfjellet first (Christian, 29 Oct: the longest block starts first)
     # 1 Nov (Christian): Chal Rocks Large instead of Chal Rocks (its second 34 mm 360), with 79 and 110 mm
-    assert g["zcam_consensus"] == ["taylorfjellet", "chal_rocks_large", "seitah_overlook", "threeforks_north", "belva_crater",
+    # 2 Nov (Christian): Belva Crater Large instead of Belva Crater, with 110 mm
+    assert g["zcam_consensus"] == ["taylorfjellet", "chal_rocks_large", "seitah_overlook", "threeforks_north", "belva_crater_large",
                                    "marble_mountain", "bright_angel", "pico_turquino", "south_arm",
                                    "overlook_mountain", "airey_hill", "rockytop"]
     assert g["zcam34_joint"][0] == "taylorfjellet"
     assert "airey_hill" in g["ecam_consensus"]
     assert "chal_rocks" not in g["zcam34_joint"] and "chal_rocks_large" in g["zcam34_joint"]
     assert t["sites"]["chal_rocks_large"]["zcam"] == [34, 48, 63, 79, 110]
-    assert g["hazcam_consensus"] == ["chal_rocks_large", "belva_crater", "bell_island", "marble_mountain"]
+    assert g["hazcam_consensus"] == ["chal_rocks_large", "belva_crater_large", "bell_island", "marble_mountain"]
+    assert t["sites"]["belva_crater_large"]["zcam"] == [34, 110] and "belva_crater" not in g["zcam110_consensus"]
+    assert "belva_crater_large" in g["zcam34_consensus"] and "belva_crater" not in g["zcam34_consensus"]
     assert g["zcam63_consensus"] == ["chal_rocks_large", "seitah_overlook", "bright_angel", "taylorfjellet", "marble_mountain"]
     assert t["sites"]["bright_angle_large"]["sols"] == [[1175, 1220]] and t["sites"]["bright_angle_large"]["official_blocks"] == []
     assert all(s in t["sites"] for s in g["hazcam_consensus"])
