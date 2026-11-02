@@ -25,7 +25,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 set "MPPP_WIN=%MPPP_HOME%\scripts\windows"
 if exist "%MPPP_WIN%\mppp_env.bat" ( call "%MPPP_WIN%\mppp_env.bat" || ( pause & exit /b 1 ) )
-if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\scapes"
+if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\rover_blocks"
 set "CA=%MPPP_SCAPES%\camera_analysis"
 
 set "STUDY=%~1"

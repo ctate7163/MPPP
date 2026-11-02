@@ -25,7 +25,7 @@ REM ============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
 for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
-if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\scapes"
+if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\rover_blocks"
 if not defined MPPP_ZOOMS set "MPPP_ZOOMS=34 48 63 79 110"
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY=%%d"
 REM 0.93.8: one zcam_joints at a time (23 Oct: two copies ran the same joints into the same folders and promoted twice)

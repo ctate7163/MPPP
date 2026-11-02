@@ -24,9 +24,9 @@ The COLMAP workspace is preloaded from the alignment. It holds:
 The steps:
 
 ```bat
-python -m mppp dense D:\scapes\<site>\WORK                       & rem the workspace only
-python -m mppp dense D:\scapes\<site>\WORK --stereo --fusion     & rem patch-match stereo (CUDA) and fusion
-python -m mppp dense D:\scapes\<site>\WORK --maps png            & rem depth and normal maps as images
+python -m mppp dense D:\rover_blocks\<site>\WORK                       & rem the workspace only
+python -m mppp dense D:\rover_blocks\<site>\WORK --stereo --fusion     & rem patch-match stereo (CUDA) and fusion
+python -m mppp dense D:\rover_blocks\<site>\WORK --maps png            & rem depth and normal maps as images
 ```
 
 `dense_reconstruct.bat`, next to `open_in_colmap.bat` in every project, runs the same steps with the COLMAP

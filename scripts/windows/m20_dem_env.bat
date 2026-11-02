@@ -1,13 +1,13 @@
 @echo off
 REM ======================================================================================================
 REM MPPP - m20_dem_env.bat: sets M20_DEMS and M20_ORTHOS (os.pathsep lists) for the site maps from the files under
-REM DEMROOT (default %MPPP_SCAPES%\dem, else D:\scapes\dem). Called by make_maps.bat and make_figures.bat:
+REM DEMROOT (default %MPPP_SCAPES%\dem, else D:\rover_blocks\dem). Called by make_maps.bat and make_figures.bat:
 REM   call m20_dem_env.bat          (the caller has setlocal EnableDelayedExpansion)
 REM The files under DEMROOT win over an M20_DEMS / M20_ORTHOS left in the environment (a placeholder broke the
 REM 20 Oct run). Orthomosaics: the Mars 2020 TRN mosaic (m2020_trn, the whole traverse, one radiometry) first,
 REM then the MSR mosaics (msr_trn).
 REM ======================================================================================================
-set "DEMROOT=D:\scapes\dem"
+set "DEMROOT=D:\rover_blocks\dem"
 if defined MPPP_SCAPES if exist "%MPPP_SCAPES%\dem" set "DEMROOT=%MPPP_SCAPES%\dem"
 set "_HAVE_D="
 set "_HAVE_O="

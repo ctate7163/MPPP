@@ -13,7 +13,8 @@ REM   status   run_pipeline.bat --status          report   %ROOT%\mppp_pipeline\
 REM Keep the computer awake (no sleep, no automatic restart for updates) until it has finished.
 REM ======================================================================================================
 setlocal
-set "ROOT=D:\scapes"
+REM 2 Nov 2026 (0.95.3 freeze): the blocks live in D:\rover_blocks (was D:\scapes)
+set "ROOT=D:\rover_blocks"
 if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 if not defined MPPP_HOME set "MPPP_HOME=D:\code\MPPP"
 set "MPPP_WIN=%MPPP_HOME%\scripts\windows"

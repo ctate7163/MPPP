@@ -17,7 +17,7 @@ setlocal EnableExtensions
 for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 set "MPPP_WIN=%MPPP_HOME%\scripts\windows"
 call "%MPPP_WIN%\mppp_env.bat" || ( pause & exit /b 1 )
-if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\scapes"
+if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\rover_blocks"
 if "%~1"=="" (
   echo usage: ecam_block.bat SITE   ^(a site of mppp\data\sites.json, e.g. hippo_pools^)
   pause

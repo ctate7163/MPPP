@@ -34,7 +34,7 @@ export MPPP_PDS=~/mppp_example     # searched recursively: datadrive/ (Navcam, H
 export MPPP_SCAPES=~/mppp_scapes   # the WORK folders are created here
 ```
 
-On Windows: `setx MPPP_PDS %USERPROFILE%\mppp_example` and `setx MPPP_SCAPES D:\scapes`, then open a new window.
+On Windows: `setx MPPP_PDS %USERPROFILE%\mppp_example` and `setx MPPP_SCAPES D:\rover_blocks`, then open a new window.
 
 `MPPP_PDS` set to `~/mppp_example/datadrive` (as `mppp example fetch` printed before 0.92) finds no Mastcam-Z frames; the Navcam-only run works
 with it, but the Mastcam-Z frames in `~/mppp_example/zcam` are then outside the searched folder.

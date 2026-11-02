@@ -68,16 +68,25 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   least 2 x the input size is in the training list twice - whole, and as an exactly 2x crop at a random place
   (`zoom_crop(exact=True)`); binned Navcam and Hazcam frames once; the random zoom off. Before (v4, v4.1) half of the
   large Navcam and Hazcam frames were replaced by a crop zoomed 1-2x, so the inference view of a full-resolution frame
-  was seen half as often. For mask v4.2: `train_masks.bat --tag v8_v4.2 --zoom-pairs` (after the freeze run).
+  was seen half as often. For mask v4.2: `train_masks.bat --tag v8_v4.2 --zoom-pairs`, before the freeze run's blocks (`freeze_chain.bat` waits for it).
 - **Mask A/B across sets that grew** (2 Nov): `compare_mask_models.py --also-held-out CKPT ...` keeps only the frames
   those models held out too, each split rebuilt as it trained (`items_as_trained`: the newest masks left out to the
   card's n_train + n_val - the v8 set grew from 4,095 to 4,099 masks between v4 and v4.1, and the shuffle of the
   sorted names changes with every mask). The chain's A/B uses v4.1's split with `--also-held-out` v4.
-- **`freeze_chain.bat`** (Christian, 2 Nov: away while it runs): waits for the mask training, the mask A/B of v3, v4
-  and v4.1 (`--seen-split`), the point-thinning study S2 with its verdict (cap 1500 when centres < 1 cm p95,
-  attitudes < 0.1 mdeg p95, focal lengths < 0.05 % max), then `run_pipeline.py --reset` (the state of 28 Oct had the
-  ecam stages done: without `--reset` the freeze run would have started at zcam_runs), then
-  `<root>\paper_studies\run_paper_studies.py` if it exists. Log and status in `<root>\mppp_pipeline\freeze_chain_*`.
+- **`freeze_chain.bat`** (Christian, 2 Nov: away while it runs; 14:52-14:57: the blocks in `D:\rover_blocks`, mask
+  v4.2 compared before the blocks, S2 at the end): copies the found list and the focus-from-below list from
+  `D:\scapes` into the new root, sets the DEMs from `<root>\dem`, waits for mask v4.2's training (started by hand;
+  done when its release candidate is written), runs the mask A/B of v3, v4.1 and v4.2 (v4.2's split, v4.1 with
+  `--also-held-out`, v3 with `--seen-split`) and passes `--set mask_checkpoint=<v4.2>` to the freeze run when v4.2's
+  exclusion IoU on the frames no model trained on beats v3's; then `run_pipeline.py --reset` (no point cap; `--cap`
+  adds it; the state of 28 Oct had the ecam stages done: without `--reset` the freeze run would have started at
+  zcam_runs), `<root>\paper_studies\run_paper_studies.py` if it exists, and last the point-thinning study S2 on
+  rockytop_example in `D:\scapes` with its verdict (would a cap of 1500 do: centres < 1 cm p95, attitudes
+  < 0.1 mdeg p95, focal lengths < 0.05 % max). Log and status in `<root>\mppp_pipeline\freeze_chain_*`.
+- **The blocks root is `D:\rover_blocks`** (Christian, 2 Nov; was `D:\scapes`): the default of every Windows script
+  (`run_pipeline.bat` ROOT, the `MPPP_SCAPES` fallbacks, `m20_dem_env.bat`'s DEMs in `<root>\dem`). The camera
+  models stay in `D:\scapes\cmods` (`mppp_cmods.txt`). An `MPPP_SCAPES` set with `setx` still wins:
+  `setx MPPP_SCAPES D:\rover_blocks`.
 - **The freeze run writes the full export by default** (`run_pipeline.py --light` for the calibration-run export):
   its error_analysis stage reads `error_input\native`, which the light export of 28 Oct left out.
 - **Navcam joint points by stations** (Christian, 2 Nov: "for the joint, scale to 500-1000 points per station"):

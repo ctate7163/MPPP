@@ -28,7 +28,7 @@ REM ============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
 for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
-if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\scapes"
+if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\rover_blocks"
 if not defined MPPP_ZOOMS set "MPPP_ZOOMS=34 48 63 79 110"
 if not defined MPPP_TRIAL set "MPPP_TRIAL=all"
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY=%%d"

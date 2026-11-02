@@ -33,8 +33,8 @@ if not exist "%MPPP_WIN%\mppp_env.bat" (
   exit /b 1
 )
 call "%MPPP_WIN%\mppp_env.bat" || ( pause & exit /b 1 )
-if not defined MPPP_SCAPES if exist "D:\scapes" set "MPPP_SCAPES=D:\scapes"
-if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx MPPP_SCAPES D:\scapes & pause & exit /b 1)
+if not defined MPPP_SCAPES if exist "D:\rover_blocks" set "MPPP_SCAPES=D:\rover_blocks"
+if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx MPPP_SCAPES D:\rover_blocks & pause & exit /b 1)
 set "ROOT=%MPPP_SCAPES%"
 if /i "%~1"=="report" (
   shift
