@@ -60,6 +60,8 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   `Settings.zcam_aspect_sigma` and `Settings.navcam_aspect_sigma` (Navcam and Hazcams) 1e-3 relative - about 1 px of
   tangential-like effect per bin, while the 3,000-21,000 ppm sequence outliers are 3-20 sigma (the Navcam hold was
   2e-5). Both are run-key settings, so every block runs again.
+- **Cannery Passage**, an unofficial block (Christian, 2 Nov): sols 543-552, 4 waypoints (rover sites 26, 31; 13.7 m
+  apart), Mastcam-Z 48 mm; in `zcam_consensus` and `zcam48_consensus` (a fifth 48 mm block).
 - **Rockytop: eight 63 / 79 mm sequences excluded** (Christian, 2 Nov: "frames that should not be there"):
   ZCAM05105, ZCAM05108, ZCAM05109, ZCAM05110, ZCAM05111, ZCAM05112, ZCAM05115, ZCAM05116 (`seq:` entries; Navcam run
   keys unchanged).
