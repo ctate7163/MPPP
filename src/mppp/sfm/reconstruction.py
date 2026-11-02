@@ -571,7 +571,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   covariance: bool = False, keypoint_scale: Optional[Dict[int, float]] = None,
                   keypoint_map=None, localize_min_images: Optional[int] = None,
                   navcam_aspect: Optional[str] = None,
-                  aspect_sigma: float = NAVCAM_ASPECT_SIGMA, refine_zcam_rig: Optional[str] = None,
+                  aspect_sigma: Optional[float] = None, refine_zcam_rig: Optional[str] = None,
                   zcam_rig_translation_sigma_m: float = ZCAM_RIG_TRANSLATION_SIGMA_M,
                   extra_residuals=None, refine_hazcam_rig: Optional[str] = None,
                   thin_cap: int = 0, zcam_aspect: Optional[str] = None) -> Dict[str, Any]:
@@ -847,6 +847,11 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     if navcam_aspect is None:
         navcam_aspect = str(project.settings.get("navcam_aspect") or "free")
     aspect_costs = []
+    # 2 Nov 2026 (Christian: "soften the aspect hold to about 1000 ppm. same for the ecams"): the priors' relative
+    # sigmas come from the run (navcam_aspect_sigma / zcam_aspect_sigma, set by reconstruct), else the defaults
+    if aspect_sigma is None:
+        aspect_sigma = float(project.settings.get("navcam_aspect_sigma") or NAVCAM_ASPECT_SIGMA)
+    zcam_aspect_sigma = float(project.settings.get("zcam_aspect_sigma") or ZCAM_ASPECT_SIGMA)
     if navcam_aspect == "hold" and refine_intrinsics:
         for cid, cam in work.cameras.items():
             key = key_of.get(int(cid), "")
@@ -901,7 +906,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             if tgt is None:
                 p0 = np.asarray(pc.get("params") or blk, float)
                 tgt = float(p0[1] / p0[0])
-            c = AspectPrior(float(tgt), float(ZCAM_ASPECT_SIGMA), len(blk))
+            c = AspectPrior(float(tgt), zcam_aspect_sigma, len(blk))
             try:
                 c.parameter_block = blk
             except AttributeError:
@@ -1202,6 +1207,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             "tied_cameras": tied, "k2_clamped": k2_clamped,
             "unlocalized_stations": unloc, "navcam_aspect": navcam_aspect, "aspect_priors": len(aspect_costs),
             "zcam_aspect": zcam_aspect, "zcam_aspect_priors": n_zaspect,
+            "aspect_sigma": float(aspect_sigma), "zcam_aspect_sigma": zcam_aspect_sigma,
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": (float(extra_info["exact_refine"]["cost_end"]) if (extra_info or {}).get("exact_refine")
                            and not extra_info["exact_refine"].get("error") and "cost_end" in extra_info["exact_refine"]
@@ -2386,7 +2392,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 pose_guided: Union[bool, Dict[str, Any]] = True, navcam_aspect: str = "hold",
                 isolated_points_factor: float = ISOLATED_POINTS_FACTOR,
                 round1_hold: bool = ROUND1_HOLD, zcam_station_prior_sigma_m: float = ZCAM_STATION_PRIOR_SIGMA_M,
-                zcam_aspect: str = "free"):
+                zcam_aspect: str = "free", navcam_aspect_sigma: Optional[float] = None,
+                zcam_aspect_sigma: Optional[float] = None):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
@@ -2508,6 +2515,11 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     if zcam_aspect not in ("free", "hold"):
         raise ValueError("zcam_aspect must be 'free' or 'hold'")
     project.settings["zcam_aspect"] = zcam_aspect              # 2 Nov 2026: likewise (the per-bin aspect hold)
+    for k_, v_ in (("navcam_aspect_sigma", navcam_aspect_sigma), ("zcam_aspect_sigma", zcam_aspect_sigma)):
+        if v_:
+            project.settings[k_] = float(v_)                   # 2 Nov 2026: the holds' relative sigmas
+        else:
+            project.settings.pop(k_, None)
     if zcam_aspect == "hold":
         project.settings["zcam_aspect_targets"] = zcam_aspect_targets(project)
         for g, v in project.settings["zcam_aspect_targets"].items():
@@ -3163,6 +3175,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "refine_tangential": tangential_setting(refine_tangential),
                                           "attitude_prior_deg": float(attitude_prior_deg or 0.0),
                                           "navcam_aspect": navcam_aspect, "zcam_aspect": zcam_aspect,
+                                          "navcam_aspect_sigma": navcam_aspect_sigma,
+                                          "zcam_aspect_sigma": zcam_aspect_sigma,
                                           "schedule": [list(map(float, r)) for r in schedule],
                                           "exclude_outliers": bool(exclude_outliers),
                                           "min_frame_observations": int(MIN_FRAME_OBSERVATIONS),

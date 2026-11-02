@@ -55,7 +55,11 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   34 mm slope with elevation is -67 +- 32 ppm per 10 deg outside Rockytop; the aspect outliers are single sequences
   (Chal Rocks nearly all, -2,500 to -21,500 ppm; Rockytop ZCAM03415 / 03416 sols 520-525; Seitah ZCAM08114) where a
   free fy took up geometry errors. The joints (`calib zcam`, `nz`, the Navcam joints) pass `zcam_aspect="free"`: they
-  estimate the models' aspect. "free" restores the per-bin fx, fy.
+  estimate the models' aspect. "free" restores the per-bin fx, fy. **Softened** the same morning (Christian: "soften
+  the aspect hold to about 1000 ppm. same for the ecams"; a free fy / fx also takes up some tangential distortion):
+  `Settings.zcam_aspect_sigma` and `Settings.navcam_aspect_sigma` (Navcam and Hazcams) 1e-3 relative - about 1 px of
+  tangential-like effect per bin, while the 3,000-21,000 ppm sequence outliers are 3-20 sigma (the Navcam hold was
+  2e-5). Both are run-key settings, so every block runs again.
 - **Rockytop 110 mm: ZCAM08548 added** to its `zcam_include` (Christian, 2 Nov): ZCAM08529, ZCAM07101, ZCAM08486,
   ZCAM08548.
 - **`mppp process --dry-run` counts what processing would process** (2 Nov): it applies the shipped exclusion list

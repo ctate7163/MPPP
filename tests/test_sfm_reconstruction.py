@@ -1794,3 +1794,26 @@ def test_zcam_aspect_setting_is_a_zcam_key_only():
     assert s.zcam_aspect == "hold"
     assert "zcam_aspect" not in s.replace(include_zcam=False).key_dict()
     assert s.replace(include_zcam=True).key_dict()["zcam_aspect"] == "hold"
+
+
+def test_aspect_hold_sigmas_from_the_run(tmp_path):
+    """2 Nov 2026: the Navcam / Hazcam and Mastcam-Z aspect priors take the run's relative sigmas (1e-3 = 1000 ppm in
+    the pipeline's settings) from project.settings; without them the module defaults (2e-5)."""
+    pytest.importorskip("pyceres")
+    from helpers import _zcam_rig_rec
+    from mppp.pipeline import Settings
+    from mppp.sfm import reconstruction as R
+    s = Settings()
+    assert s.navcam_aspect_sigma == 1e-3 and s.zcam_aspect_sigma == 1e-3
+    assert "zcam_aspect_sigma" not in s.replace(include_zcam=False).key_dict()
+    assert s.replace(include_zcam=False).key_dict()["navcam_aspect_sigma"] == 1e-3
+    proj, rec0, _ = _zcam_rig_rec(tmp_path)
+    for k, g in (("ZL", "ZL034"), ("ZR", "ZR034")):
+        proj.cameras[k]["group"] = g
+    ba = R.bundle_adjust(copy.deepcopy(rec0), proj, sigma_px=0.3, max_iterations=2, navcam_aspect="hold",
+                         zcam_aspect="hold")
+    assert ba["aspect_sigma"] == R.NAVCAM_ASPECT_SIGMA and ba["zcam_aspect_sigma"] == R.ZCAM_ASPECT_SIGMA
+    proj.settings.update(navcam_aspect_sigma=1e-3, zcam_aspect_sigma=1e-3)
+    ba = R.bundle_adjust(copy.deepcopy(rec0), proj, sigma_px=0.3, max_iterations=2, navcam_aspect="hold",
+                         zcam_aspect="hold")
+    assert ba["aspect_sigma"] == 1e-3 and ba["zcam_aspect_sigma"] == 1e-3 and ba["zcam_aspect_priors"] == 2
