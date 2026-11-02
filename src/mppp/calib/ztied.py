@@ -1430,9 +1430,15 @@ def distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba, iterations: i
     if any(fixed.values()):
         terms = sorted({k for v in fixed.values() for k in v})
         cases.append((f"{', '.join(terms)} free (vs the fixed values)", {}, {e: list(v) for e, v in fixed.items()}))
-        # 1 Nov (Christian, 110 mm k1 held at 0: "test if k1 is significant"): k1 freed alone, the others held
-        if len(terms) > 1 and any("k1" in v for v in fixed.values()):
-            cases.append(("k1 free (vs the fixed value)", {}, {e: ["k1"] for e, v in fixed.items() if "k1" in v}))
+        # 1 Nov (Christian, 110 mm k1 held at 0: "test if k1 is significant"; "Does z63 have a significant k2 or
+        # tangential distortion parameters?"): each part freed alone too - k1, k2, the tangential p1 and p2 - so a
+        # large joint delta chi2 is attributed
+        if len(terms) > 1:
+            for part in (["k1"], ["k2"], ["p1", "p2"]):
+                fr = {e: [t for t in part if t in v] for e, v in fixed.items()}
+                fr = {e: v for e, v in fr.items() if v}
+                if fr and sorted({t for v in fr.values() for t in v}) != terms:
+                    cases.append((f"{', '.join(part)} free (vs the fixed value{'s' if len(part) > 1 else ''})", {}, fr))
     if not any("k2" in fixed.get(e, {}) for e in eyes):
         cases.append(("k2 = 0 (both eyes)", {zl: {"k2": 0.0}, zr: {"k2": 0.0}}, {}))
     # 0.95.1 (Christian, 29 Oct: "ZR034 k1 should not be equal to ZL034 k1. remove that test in the joint"): no
@@ -1482,11 +1488,33 @@ def distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba, iterations: i
                  "converged": bool(dchi2 >= -1.0),
                  "z_equivalent": float(np.sqrt(max(dchi2, 0.0))) if dof == 1 else None,
                  "max_curve_change_px": float(change), "seconds": time.time() - t,
-                 "refit_terms": {e: {k: float(gv[e][GLOBAL_TERMS.index(k)]) for k in ("k1", "k2")} for e in eyes}}
+                 "refit_terms": {e: {k: float(gv[e][GLOBAL_TERMS.index(k)]) for k in ("k1", "k2", "p1", "p2")}
+                                 for e in eyes},
+                 "max_tangential_px": float(max(_tangential_corner_px(gv[e]) for e in eyes))}
         out.append(rec_t)
         if verbose:
             log.info(f"  distortion test {name}: delta chi2 {dchi2:.1f} ({dof} dof, p {p:.2g}), curve change "
-                     f"<= {change:.2f} px ({time.time() - t:.0f} s)")
+                     f"<= {change:.2f} px, tangential <= {rec_t['max_tangential_px']:.2f} px at the corners; refit "
+                     + "; ".join(f"{e} " + ", ".join(f"{k} {v:+.3g}" for k, v in rec_t["refit_terms"][e].items())
+                                 for e in eyes) + f" ({time.time() - t:.0f} s)")
+    return out
+
+
+def _tangential_corner_px(G, frame_px: Tuple[int, int] = FRAME_PX) -> float:
+    """The largest tangential (p1, p2) displacement in px at the four frame corners of global terms ``G`` (OpenCV:
+    dx = 2 p1 x y + p2 (r^2 + 2 x^2), dy = p1 (r^2 + 2 y^2) + 2 p2 x y, x, y normalized)."""
+    f = 0.5 * (G[GLOBAL_TERMS.index("a_fx_backlash")] + G[GLOBAL_TERMS.index("a_fy_backlash")])
+    p1, p2 = float(G[GLOBAL_TERMS.index("p1")]), float(G[GLOBAL_TERMS.index("p2")])
+    if not f:
+        return 0.0
+    W, H = frame_px
+    out = 0.0
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            x, y = sx * W / 2.0 / f, sy * H / 2.0 / f
+            r2 = x * x + y * y
+            dx, dy = 2 * p1 * x * y + p2 * (r2 + 2 * x * x), p1 * (r2 + 2 * y * y) + 2 * p2 * x * y
+            out = max(out, float(f * np.hypot(dx, dy)))
     return out
 
 
@@ -1631,7 +1659,9 @@ def distortion_lines(dist: Dict[str, Any]) -> List[str]:
         if "delta_chi2" in t:
             out.append(f"test {t['test']}: delta chi2 {t['delta_chi2']:.1f} ({t['dof']} dof, p {t['p']:.2g}, "
                        f"{'significant' if t['significant'] else 'not significant'} at 0.001); the curve moves "
-                       f"<= {t['max_curve_change_px']:.2f} px")
+                       f"<= {t['max_curve_change_px']:.2f} px"
+                       + (f", tangential <= {t['max_tangential_px']:.2f} px at the corners"
+                          if t.get("max_tangential_px") is not None else ""))
         else:
             out.append(f"test {t.get('test')}: {t.get('error') or t.get('note')}")
     return out

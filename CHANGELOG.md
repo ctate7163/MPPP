@@ -25,6 +25,16 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   stops the chain (`zcam_backlash_rerun.bat` is a run marker).  Why: the joints of 31 Oct - Z34 Chal Rocks
   ZCAM08401 (sol 369) -4,783 / -4,154 ppm and ZCAM08396 -2,300 ppm, Z63 Rockytop ZCAM08530 / 08538 -1.0 to
   -1.1 %, about the low/high backlash ratio; Z48 not converged (101 iterations in both passes); Z110 not run.
+- **Small mis-tied Mastcam-Z sequences are caught automatically** (Christian, 1 Nov). `find_mistied_bins`: a bin
+  camera of at most `ZCAM_MISTIE_SMALL_FRAMES` = 3 frames whose focal length moved more than 2 % from the model is a
+  mis-tie whatever its shift (the far-field rule still needs 2 % and a 0.5 m shift). Checked before the final
+  adjustment as before and, new, again after it: the frames are excluded, the bins reset to the model and the final
+  adjustment runs once more. Rockytop ZCAM03391 / ZCAM03400 and Seitah Overlook's two ZCAM08114 frames were found
+  by hand; Rockytop's ZCAM03400 at 79 mm is also in its EXCLUDE list now.
+- **The joint's distortion tests attribute their delta chi2** (Christian, 1 Nov: "Does z63 have a significant k2 or
+  tangential distortion parameters?"): with several fixed terms, k1, k2 and the tangential pair (p1, p2) are each
+  freed alone too; every test reports the refit k1, k2, p1, p2 and the largest tangential displacement at the frame
+  corners next to the radial curve change.
 - **`scripts/zcam_aspect_geometry.py`** (Christian, 1 Nov: "Could fy be either a block scale change for distant
   terrain or maybe an intrinsic camera sag from the optics changing shape with gravity?"): every Mastcam-Z bin's
   fy / fx against its images' boresight elevation, tie-point range and frame coverage, with weighted fits and a

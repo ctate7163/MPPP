@@ -2042,15 +2042,24 @@ def find_outlier_frames(rec, project: SfmProject, **thresholds) -> List[Dict[str
 # its frames are dropped and the bin reset to the model before the final adjustment, instead of failing the block
 ZCAM_MISTIE_FOCAL_PCT = 2.0
 ZCAM_MISTIE_SHIFT_M = 0.5
+# 0.95.3 (Christian, 1 Nov: "Catch small mis-tied Mastcam-Z sequences automatically"): a bin camera of at most
+# ZCAM_MISTIE_SMALL_FRAMES frames whose focal length moved more than ZCAM_MISTIE_FOCAL_PCT is a mis-tie whatever its
+# shift - Rockytop ZCAM03391 (79 mm, 1 frame, no tie points, f +9.9 %), ZCAM03400 (79 mm, 2 frames, f +3.1 %) and two
+# ZR 79 mm frames of Seitah Overlook ZCAM08114 (260 px) were found by hand.  The backlash states differ by ~1 %, so a
+# 2 % change of a few frames is not a state.  Checked before and again after the final adjustment (then the frames
+# go, the bins are reset to the model and the final adjustment runs once more).
+ZCAM_MISTIE_SMALL_FRAMES = 3
 
 
 def find_mistied_bins(rec, project: SfmProject, focal_pct: float = ZCAM_MISTIE_FOCAL_PCT,
-                      shift_m: float = ZCAM_MISTIE_SHIFT_M, station_shifts: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+                      shift_m: float = ZCAM_MISTIE_SHIFT_M, station_shifts: Optional[Dict[str, Any]] = None,
+                      small_frames: int = ZCAM_MISTIE_SMALL_FRAMES) -> List[Dict[str, Any]]:
     """The Mastcam-Z bins of ``rec`` that are tied to the wrong range (:data:`ZCAM_MISTIE_FOCAL_PCT`,
     :data:`ZCAM_MISTIE_SHIFT_M`): per bin camera {"camera", "frame_ids", "images", "focal_change_pct", "shift_m",
     "reasons"}.  A frame's shift is its solved centre minus its label prior, less its station's Navcam shift
     (``station_shifts`` {station: (3,)}, else the images' ``prior_station_shift_m``); the bin's is the median over
-    its registered frames.  Bins held at the model are not judged."""
+    its registered frames.  Bins held at the model are not judged.  0.95.3: a bin of at most ``small_frames`` frames
+    (:data:`ZCAM_MISTIE_SMALL_FRAMES`) needs only the focal change ("small-sequence mis-tie")."""
     db = (project.settings.get("database") or {}).get("cameras") or {}
     by_name = {r["name"]: r for r in project.images}
     out = []
@@ -2089,12 +2098,17 @@ def find_mistied_bins(rec, project: SfmProject, focal_pct: float = ZCAM_MISTIE_F
         if not fids:
             continue
         med = float(np.median(ex)) if ex else 0.0
-        if med <= float(shift_m):
+        n_fr = len(set(fids))
+        if med > float(shift_m):
+            why = (f"far-field mis-tie: focal length {dev:.2f} % from the model (> {float(focal_pct):g} %) and its "
+                   f"frames {med:.2f} m from the station (> {float(shift_m):g} m)")
+        elif small_frames and n_fr <= int(small_frames):
+            why = (f"small-sequence mis-tie: focal length {dev:.2f} % from the model (> {float(focal_pct):g} %) in a "
+                   f"bin of {n_fr} frame{'s' if n_fr != 1 else ''} (<= {int(small_frames)})")
+        else:
             continue
         out.append({"camera": key, "frame_ids": sorted(set(fids)), "images": sorted(names), "focal_change_pct": dev,
-                    "shift_m": med, "kind": "mistie",
-                    "reasons": [f"far-field mis-tie: focal length {dev:.2f} % from the model (> {float(focal_pct):g} %) and its "
-                                f"frames {med:.2f} m from the station (> {float(shift_m):g} m)"]})
+                    "shift_m": med, "kind": "mistie", "frames": n_fr, "reasons": [why]})
     return out
 
 
@@ -2938,11 +2952,40 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 if verbose:
                     logger.info(f"stage 2: Hazcam eyes held at their start (fewer than "
                                 f"{HAZCAM_MIN_REFINE_OBSERVATIONS} tie-point observations): {sorted(hazcam_weak_held)}")
-        ba = bundle_adjust(rec, project, thin_cap=ba_points_cap, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
-                           refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential, refine_rig=False,
-                           max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
-                           hold_cameras=sorted(hold | zkeys) if zcam_focus_line else sorted(hold), linear_solver=linear_solver,
-                           refine_zcam_rig=zfit if zcam_focus_line else None)
+        final_kw = dict(thin_cap=ba_points_cap, sigma_px=sigma_px, loss_scale=float(schedule[-1][1]),
+                        refine_intrinsics=refine_intrinsics, refine_tangential=refine_tangential, refine_rig=False,
+                        max_iterations=2 * max_iterations, attitude_prior_deg=attitude_prior_deg,
+                        hold_cameras=sorted(hold | zkeys) if zcam_focus_line else sorted(hold), linear_solver=linear_solver,
+                        refine_zcam_rig=zfit if zcam_focus_line else None)
+        ba = bundle_adjust(rec, project, **final_kw)
+        # 0.95.3 (Christian, 1 Nov): the mis-ties again after the final adjustment - a small sequence can move past
+        # the limit only there (Rockytop ZCAM03400: 79 mm, +3.1 % in the final model) - their frames out, their bins
+        # reset to the model, and the final adjustment once more
+        if any(str(k).startswith("Z") for k in (project.settings.get("database") or {}).get("cameras") or {}):
+            mis2 = find_mistied_bins(rec, project,
+                                     focal_pct=float(mt_th.get("mistie_focal_pct", ZCAM_MISTIE_FOCAL_PCT)),
+                                     shift_m=float(mt_th.get("mistie_shift_m", ZCAM_MISTIE_SHIFT_M)))
+            done_f = {e["frame_id"] for e in excluded}
+            new2 = []
+            for m in mis2:
+                for fid, nm in zip(m["frame_ids"], m["images"]):
+                    if fid not in done_f:
+                        new2.append({"frame_id": int(fid), "images": [nm], "family": "Z", "camera": m["camera"],
+                                     "reasons": list(m["reasons"]), "kind": "mistie",
+                                     "focal_change_pct": m["focal_change_pct"], "shift_m": m["shift_m"],
+                                     "when": "stage 2, after the final adjustment (mis-tie; adjusted again)"})
+            if new2:
+                exclude_frames(rec, [f["frame_id"] for f in new2])
+                excluded.extend(new2)
+                reset_cameras_to_start(rec, project, sorted({m["camera"] for m in mis2}))
+                if verbose:
+                    logger.info("stage 2, after the final adjustment: mis-ties - "
+                                + "; ".join(f"{m['camera']}: {m.get('frames', len(m['frame_ids']))} frames, f "
+                                            f"{m['focal_change_pct']:+.2f} %" for m in mis2)
+                                + " (frames excluded, the bins reset to the model, the final adjustment again)")
+                log.append({"mistied_bins": [{k: v for k, v in m.items() if k != "frame_ids"} for m in mis2],
+                            "when": "stage 2, after the final adjustment"})
+                ba = bundle_adjust(rec, project, **final_kw)
         if lines is not None:
             project.settings["zcam_focus_lines"] = lines
         n_bad = filter_observations(rec, project, float(schedule[-1][2])) + drop_short_tracks(rec, min_track_length)

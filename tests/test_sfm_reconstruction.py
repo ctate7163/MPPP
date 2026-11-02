@@ -441,8 +441,23 @@ def test_find_mistied_bins_focal_and_station_shift(tmp_path):
     cam.params = p0 * np.r_[1.01, 1.01, np.ones(len(p0) - 2)]             # a 1 % focal change is a focus offset, not a mis-tie
     assert find_mistied_bins(rec, proj) == []
     cam.params = p0 * np.r_[1.08, 1.08, np.ones(len(p0) - 2)]
+    # 0.95.3 (Christian, 1 Nov): a small sequence (<= 3 frames by default) needs only the focal change
+    for r in proj.images:
+        if r["name"] in names:
+            r.pop("prior_C_label", None)                                   # the frames where the priors say again
+    from mppp.sfm.reconstruction import ZCAM_MISTIE_SMALL_FRAMES
+    assert ZCAM_MISTIE_SMALL_FRAMES == 3
+    n_fr = len({int(rec.images[i].frame_id) for i in rec.reg_image_ids() if int(rec.images[i].camera_id) == cid})
+    assert n_fr > 3 and find_mistied_bins(rec, proj) == []                 # a larger bin: no
+    small = find_mistied_bins(rec, proj, small_frames=n_fr)
+    assert len(small) == 1 and "small-sequence mis-tie" in small[0]["reasons"][0] and small[0]["frames"] == n_fr
+    assert find_mistied_bins(rec, proj, small_frames=n_fr - 1) == [] and find_mistied_bins(rec, proj, small_frames=0) == []
+    cam.params = p0 * np.r_[1.015, 1.015, np.ones(len(p0) - 2)]           # 1.5 %: not a mis-tie, small or not
+    assert find_mistied_bins(rec, proj, small_frames=n_fr) == []
+    cam.params = p0 * np.r_[1.08, 1.08, np.ones(len(p0) - 2)]
     proj.cameras["ZL063_F00500"]["held_at_model"] = True                   # a held bin is not judged
     assert find_mistied_bins(rec, proj) == []
+    assert find_mistied_bins(rec, proj, small_frames=n_fr) == []
 
 
 def test_find_outlier_frames_flags_large_residuals(tmp_path):

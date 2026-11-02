@@ -902,7 +902,23 @@ def test_z110_k1_held_at_zero_and_tested_alone(monkeypatch):
     out = Z.distortion_tests(None, P(), {}, {}, {}, {}, sg, g, {"final_cost": 100.0, "covariance": {"variance_factor": 1.0}},
                              verbose=False, fixed=fixed)
     names = [o["test"] for o in out]
-    assert names == ["k1, k2, p1, p2 free (vs the fixed values)", "k1 free (vs the fixed value)"]
+    assert names == ["k1, k2, p1, p2 free (vs the fixed values)", "k1 free (vs the fixed value)",
+                     "k2 free (vs the fixed value)", "p1, p2 free (vs the fixed values)"]
     assert calls[0] == {"ZL110": [], "ZR110": []}
     assert calls[1] == {"ZL110": ["k2", "p1", "p2"], "ZR110": ["k2", "p1", "p2"]}
-    assert out[1]["dof"] == 2 and out[1]["delta_chi2"] == pytest.approx(2.0)
+    assert calls[3] == {"ZL110": ["k1", "k2"], "ZR110": ["k1", "k2"]}
+    assert out[1]["dof"] == 2 and out[1]["delta_chi2"] == pytest.approx(2.0) and out[3]["dof"] == 4
+    assert set(out[0]["refit_terms"]["ZL110"]) == {"k1", "k2", "p1", "p2"} and out[0]["max_tangential_px"] >= 0
+    # 63 mm (k2, p1, p2 held): k2 alone and the tangential pair alone; 34 mm (k2 only): no split
+    calls.clear()
+    g63 = {"ZL063": G.copy(), "ZR063": G.copy()}
+    sg63 = {"eyes": {e: {"G": G.copy()} for e in g63}}
+    out = Z.distortion_tests(None, P(), {}, {}, {}, {}, sg63, g63,
+                             {"final_cost": 100.0, "covariance": {"variance_factor": 1.0}}, verbose=False,
+                             fixed={e: forms.zcam_fixed_terms(e) for e in g63})
+    assert [o["test"] for o in out] == ["k2, p1, p2 free (vs the fixed values)", "k2 free (vs the fixed value)",
+                                        "p1, p2 free (vs the fixed values)"]
+    G2 = G.copy()
+    G2[Z.GLOBAL_TERMS.index("p1")] = 1e-3
+    assert Z._tangential_corner_px(G2) == pytest.approx(14700 * 1e-3 * ((824 / 14700) ** 2 + 3 * (600 / 14700) ** 2),
+                                                        rel=0.2)
