@@ -43,12 +43,13 @@ def test_pipeline_dry_run_and_state(tmp_path):
     assert "chal_rocks_tiny" in ab[0] and "seitah_overlook_tiny" in ab[1]
     assert out.index("lightglue_ab: start") > out.index("rover_frame: start")
     assert "run_sites.py" in out and "--group ecam_consensus" in out and "calib navcam" in out
-    assert "--sites chal_rocks seitah_overlook threeforks_north" in out and "--zcam" in out and "olifants" in out
+    assert "--sites chal_rocks_large rockytop taylorfjellet seitah_overlook" in out and "--zcam" in out and "olifants" in out   # 2 Nov lists
     # 0.94.4: the Hazcams are fitted over the ecam blocks before the Mastcam-Z runs, not over the Mastcam-Z blocks
     assert "calib hazcam --group ecam_consensus" in out and "calib hazcam --zcam-blocks" not in out
     assert out.index("calib hazcam --group ecam_consensus") < out.index("zcam_runs: start")
-    assert "calib zcam --zoom 63" in out and "calib nz" in out                  # 26 Oct: 34, 48, 63 mm only
-    assert "calib zcam --zoom 79" not in out and "calib zcam --zoom 110" not in out
+    assert "calib zcam --zoom 63" in out and "calib nz" in out
+    assert "calib zcam --zoom 79" in out and "calib zcam --zoom 110" in out     # 0.95.1: every zoom
+    assert "--points-per-station 750" in out and "--points 8000" not in out    # 2 Nov 2026: the Navcam joint
     assert "error_analysis_batch.py" in out
     assert out.count("--jobs 2") >= 2                                    # 0.94.3: two sites at a time by default
     assert not (tmp_path / "mppp_pipeline" / "state.json").exists()      # a dry run leaves no state
@@ -126,9 +127,11 @@ def test_pipeline_zcam_sites_and_stop_before(tmp_path):
     rp = _script("run_pipeline")
     p = rp.Pipeline(argparse.Namespace(root=str(tmp_path), dry_run=True))
     names = p.zcam_sites()
-    assert names[:10] == ["chal_rocks", "seitah_overlook", "threeforks_north", "belva_crater", "taylorfjellet",
-                         "marble_mountain", "bright_angel", "pico_turquino", "south_arm", "overlook_mountain"] and "rochette" in names   # 27 Oct lists
-    assert "chal_rocks_large" not in names and len(names) == len(set(names))
+    # 2 Nov lists: the three longest blocks first (Christian), then the rest of zcam_consensus and of zcam34_joint
+    assert names == ["chal_rocks_large", "rockytop", "taylorfjellet", "seitah_overlook", "threeforks_north",
+                     "belva_crater_large", "marble_mountain", "bright_angel", "pico_turquino", "south_arm",
+                     "overlook_mountain", "airey_hill", "rochette", "enchanted_lake", "olifants"]
+    assert "chal_rocks" not in names and len(names) == len(set(names))
     out = subprocess.run([sys.executable, str(RP), "--root", str(tmp_path / "b"), "--dry-run", "--from", "navcam_joint",
                           "--stop-before", "zcam_runs"], capture_output=True, text=True, timeout=120)
     log = out.stdout + out.stderr

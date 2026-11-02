@@ -260,3 +260,25 @@ def test_rig_epochs_at_most_25_sols():
     eps = sol_epochs(list(range(20, 100)) + [361, 378], 50, (300,), 25)
     assert eps == [(20, 39), (40, 59), (60, 79), (80, 99), (361, 378)] and all(b - a <= 25 for a, b in eps)
     assert sol_epochs([652, 693], 50, (300,), None) == [(652, 693)]
+
+
+def test_points_per_station(tmp_path):
+    """2 Nov 2026 (Christian: "scale to 500-1000 points per station"): merge_scapes draws a block's points by its
+    Navcam stations ({"per_station": N, "min": M}); the CLI's default for calib navcam."""
+    pytest.importorskip("pyceres")
+    from types import SimpleNamespace
+    from helpers import _build_rec, _synthetic
+    from mppp.calib import joint as J
+    from mppp.calib import tied as TJ
+    proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
+    rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=False)
+    proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
+    reg = {int(i) for i in rec.reg_image_ids()}
+    nst = len({(r.get("site"), r.get("drive")) for r in proj.images if int(r.get("image_id", -1)) in reg})
+    sc = SimpleNamespace(name="blk", project=proj, rec=rec, temps={})
+    c = {k: rec.cameras[i] for k, i in (("NL", 1), ("NR", 2))}
+    r12 = rec.rigs[1].sensor_from_rig(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=2))
+    _, _, idx = J.merge_scapes([sc], c, (r12.rotation.matrix(), r12.translation),
+                               points_per_scape={"per_station": 7, "min": 3})
+    assert idx["points_per_block"]["blk"] == {"stations": nst, "points": max(7 * nst, 3)}
+    assert TJ.POINTS_PER_STATION == 750 and TJ.POINTS_MIN_PER_BLOCK == 2000

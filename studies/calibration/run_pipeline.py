@@ -211,7 +211,7 @@ class Pipeline:
         self.state.setdefault("ecam_joint", {})["study"] = str(out)
         self.save()
         args = ["calib", "navcam", "--root", self.root, "--group", ECAM_GROUP, "--out", out, "--knot", "250",
-                "--points", "8000", *promote]
+                "--points-per-station", "750", *promote]          # 2 Nov 2026: 750 points per station (was 8000 per block)
         rc = self._mppp("ecam_joint", out, args, timeout_h=self.a.stage_timeout_h)
         chk = out / "promotion_check.json"
         rep = json.loads(chk.read_text(encoding="utf-8")) if chk.is_file() else {}

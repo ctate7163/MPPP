@@ -79,6 +79,10 @@ DIAG_BIN_MAX_DEG = 10.0          #   each eye has this many images, at most this
                                  #   (below -30 degC) are spread 1-3 per 2 degC bin and were all under the figure cut
 FIG_BIN_MIN_IMAGES = 4           # the bin cameras drawn in the intrinsics figure (the rig epochs keep 8)
 POINTS_PER_BLOCK = 8000          # Christian, 20 Oct: 8000 for the pipeline passes
+# 2 Nov 2026 (Christian: "for the joint, scale to 500-1000 points per station"): the Navcam joint's points per block
+# by its stations (``calib navcam`` default; --points N: a fixed number again), at least POINTS_MIN_PER_BLOCK
+POINTS_PER_STATION = 750
+POINTS_MIN_PER_BLOCK = 2000
 MAX_SPAN_SOLS = 50.0                 # rig epochs of the joint: at most 50 sols (doubled 20 Oct; was 25)
 KNOTS_TESTED = tuple(float(k) for k in np.linspace(200.0, 400.0, 25))   # the pitch transitions after the BA (20 Oct)
 EARLY_SOL = 380.0
@@ -1008,7 +1012,7 @@ def early_terms_to_hold(res: Dict[str, Any], z_min: float = EARLY_Z_MIN) -> Tupl
     return out, True
 
 
-def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = None, points: int = POINTS_PER_BLOCK,
+def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = None, points: Any = POINTS_PER_BLOCK,
              bin_deg: float = BIN_DEG, max_span: float = MAX_SPAN_SOLS, early_sol: Optional[float] = None,
              knot_sol: Optional[float] = None, hold: Sequence[str] = HOLD_DEFAULT, iterations: int = 100,
              covariance: bool = True, passes: int = 2, diagnostics: bool = True, exclude: Sequence[str] = (),
@@ -1050,7 +1054,7 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
                                    passes=passes, verbose=verbose, iso_f=iso_f, tie_f=tie_f)
         res = globals_result(st, g, ba, units)
     res["early_test"] = {"z_min": early_z_min, "judged": judged, "held": list(early_held), "first_fit": res_first}
-    res.update({"blocks": list(scapes_cfg), "points_per_block": points, "bin_deg": bin_deg, "max_span_sols": max_span,
+    res.update({"blocks": list(scapes_cfg), "points_per_block": idx.get("points_per_block") or points, "bin_deg": bin_deg, "max_span_sols": max_span,
                 "start_dir": st["folder"], "final_cost": float(ba["final_cost"]), "iterations": ba["iterations"],
                 "brief": ba["brief"], "seconds": time.time() - t, "residuals": stats,
                 "images": {s: len(v) for s, v in idx["images"].items()}, "hold": list(hold),

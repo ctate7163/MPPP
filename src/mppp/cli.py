@@ -150,7 +150,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--blocks", nargs="*", default=None, metavar="NAME=WORK", help="blocks given explicitly instead")
     p.add_argument("--sites-file", default=None, metavar="FILE")
     p.add_argument("--out", default=None, metavar="DIR", help="the study folder (default <root>/camera_analysis/navcal_tied_<date>)")
-    p.add_argument("--points", type=int, default=None, help="Navcam points per block (default 8000)")
+    p.add_argument("--points", type=int, default=None, help="Navcam points per block (default 8000; navcam: "
+                   "--points-per-station instead)")
+    p.add_argument("--points-per-station", type=float, default=None, metavar="N",
+                   help="navcam (2 Nov 2026): a block's Navcam points = N x its stations, at least 2000 (default 750; "
+                        "--points N: N per block)")
     p.add_argument("--zpoints", type=int, default=None, help="zcam: Mastcam-Z-only points per block (default 8000; "
                    "every Navcam-Mastcam-Z point with a third look is kept besides)")
     p.add_argument("--hold", nargs="*", default=None, help="global terms held (default Q0_yaw)")
@@ -752,7 +756,9 @@ def cmd_calib(a: argparse.Namespace) -> int:
     out = Path(a.out) if a.out else root / "camera_analysis" / f"navcal_tied_{datetime.date.today():%Y%m%d}"
     out.mkdir(parents=True, exist_ok=True)
     log.info("calib navcam: %d blocks -> %s", len(blocks), out)
-    res = TJ.fit_tied(blocks, points=a.points or TJ.POINTS_PER_BLOCK, hold=tuple(a.hold) if a.hold is not None else TJ.HOLD_DEFAULT,
+    pts = a.points or {"per_station": float(getattr(a, "points_per_station", None) or TJ.POINTS_PER_STATION),
+                       "min": TJ.POINTS_MIN_PER_BLOCK}
+    res = TJ.fit_tied(blocks, points=pts, hold=tuple(a.hold) if a.hold is not None else TJ.HOLD_DEFAULT,
                       knot_sol=a.knot, diagnostics=not a.no_diagnostics, iso_f=not a.aniso_f,
                       tie_f=bool(getattr(a, "tie_f_slope", False)) or None)
     cand = TJ.write_tied(res, out / "navcam_joint", note=a.note)

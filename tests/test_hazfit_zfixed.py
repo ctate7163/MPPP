@@ -157,12 +157,14 @@ def test_groups_and_block_sites():
     # 0.95.1: Rockytop; Taylorfjellet first (Christian, 29 Oct: the longest block starts first)
     # 1 Nov (Christian): Chal Rocks Large instead of Chal Rocks (its second 34 mm 360), with 79 and 110 mm
     # 2 Nov (Christian): Belva Crater Large instead of Belva Crater, with 110 mm
-    assert g["zcam_consensus"] == ["taylorfjellet", "chal_rocks_large", "seitah_overlook", "threeforks_north", "belva_crater_large",
-                                   "marble_mountain", "bright_angel", "pico_turquino", "south_arm",
-                                   "overlook_mountain", "airey_hill", "rockytop", "cannery_passage"]
-    # 2 Nov (Christian): Cannery Passage, an unofficial 48 mm block (sols 543-552)
-    assert t["sites"]["cannery_passage"]["zcam"] == [48, 63, 110] and "cannery_passage" in g["zcam48_consensus"]
-    assert "cannery_passage" in g["zcam63_consensus"] and "cannery_passage" in g["zcam110_consensus"]
+    # 2 Nov (Christian): the three longest blocks first; Cannery Passage out again
+    assert g["zcam_consensus"] == ["chal_rocks_large", "rockytop", "taylorfjellet", "seitah_overlook", "threeforks_north",
+                                   "belva_crater_large", "marble_mountain", "bright_angel", "pico_turquino", "south_arm",
+                                   "overlook_mountain", "airey_hill"]
+    # 2 Nov (Christian): Cannery Passage, an unofficial 48 / 63 / 110 mm block (sols 543-552), in no group
+    assert t["sites"]["cannery_passage"]["zcam"] == [48, 63, 110]
+    assert not any("cannery_passage" in v for v in g.values())
+    assert "rockytop" in g["zcam79_consensus"] and {"rockytop", "marble_mountain"} <= set(g["zcam110_consensus"])
     assert g["zcam34_joint"][0] == "taylorfjellet"
     assert "airey_hill" not in g["ecam_consensus"] and "airey_hill" in g["zcam_consensus"]   # 2 Nov: out of the Navcam list
     assert "chal_rocks" not in g["zcam34_joint"] and "chal_rocks_large" in g["zcam34_joint"]
@@ -170,8 +172,7 @@ def test_groups_and_block_sites():
     assert g["hazcam_consensus"] == ["chal_rocks_large", "belva_crater_large", "bell_island", "marble_mountain"]
     assert t["sites"]["belva_crater_large"]["zcam"] == [34, 110] and "belva_crater" not in g["zcam110_consensus"]
     assert "belva_crater_large" in g["zcam34_consensus"] and "belva_crater" not in g["zcam34_consensus"]
-    assert g["zcam63_consensus"] == ["chal_rocks_large", "seitah_overlook", "bright_angel", "taylorfjellet", "marble_mountain",
-                                     "cannery_passage"]
+    assert g["zcam63_consensus"] == ["chal_rocks_large", "seitah_overlook", "bright_angel", "taylorfjellet", "marble_mountain"]
     assert t["sites"]["bright_angle_large"]["sols"] == [[1175, 1220]] and t["sites"]["bright_angle_large"]["official_blocks"] == []
     assert all(s in t["sites"] for s in g["hazcam_consensus"])
     ob = t["official_blocks"]

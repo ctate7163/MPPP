@@ -60,6 +60,14 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   `Settings.zcam_aspect_sigma` and `Settings.navcam_aspect_sigma` (Navcam and Hazcams) 1e-3 relative - about 1 px of
   tangential-like effect per bin, while the 3,000-21,000 ppm sequence outliers are 3-20 sigma (the Navcam hold was
   2e-5). Both are run-key settings, so every block runs again.
+- **Navcam joint points by stations** (Christian, 2 Nov: "for the joint, scale to 500-1000 points per station"):
+  `calib navcam` draws 750 Navcam points per station of a block (`--points-per-station`; at least 2,000;
+  `tied.POINTS_PER_STATION`, `joint.merge_scapes` with `{"per_station", "min"}`; the per-block numbers in the result's
+  `points_per_block`), so a large block weighs by its size; `--points N` is N per block again. The freeze run
+  (`run_pipeline.py`) passes `--points-per-station 750` instead of `--points 8000`.
+- **Mastcam-Z lists** (Christian, 2 Nov): `zcam_consensus` starts with the three longest blocks, Chal Rocks Large,
+  Rockytop and Taylorfjellet; Rockytop in the 79 and 110 mm lists, Marble Mountain in the 110 mm list; Cannery Passage
+  out of every list (its site stays). The run_pipeline tests follow the lists (they still expected the 27 Oct ones).
 - **Navcam joint list (`ecam_consensus`) 31 -> 21 blocks** (Christian, 2 Nov: fewer small blocks, more large and huge
   ones): no image twice any more (oeb_landing_site, chal_rocks and chal_rocks_large were inside
   van_zyl_overlook_huge, taylorfjellet inside taylorfjellet_large); seitah_huge for issole_seitah_south and

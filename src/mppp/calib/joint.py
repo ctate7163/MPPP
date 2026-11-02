@@ -365,8 +365,19 @@ def merge_scapes(scapes, cameras: Dict[str, Any], rig: Tuple[np.ndarray, np.ndar
                     next_frame += 1
         for fid in idx["frames"][sc.name]:
             new.register_frame(fid)
-        n_pts = points_per_scape.get(sc.name, points_per_scape.get("*")) if isinstance(points_per_scape, dict) \
-            else points_per_scape                       # 0.93: {block: points} ("*": the rest)
+        if isinstance(points_per_scape, dict) and "per_station" in points_per_scape:
+            # 2 Nov 2026 (Christian: "scale to 500-1000 points per station"): a block's points by its Navcam stations
+            # (registered Navcam images' site / drive), at least ``min``
+            reg = {int(i) for i in rec.reg_image_ids()}
+            nst = len({(r.get("site"), r.get("drive")) for r in sc.project.images
+                       if str(r.get("instrument") or r.get("camera_group") or "").startswith("N")
+                       and int(r.get("image_id", -1)) in reg})
+            n_pts = max(int(round(float(points_per_scape["per_station"]) * max(nst, 1))),
+                        int(points_per_scape.get("min") or 0))
+            idx.setdefault("points_per_block", {})[sc.name] = {"stations": nst, "points": n_pts}
+        else:
+            n_pts = points_per_scape.get(sc.name, points_per_scape.get("*")) if isinstance(points_per_scape, dict) \
+                else points_per_scape                       # 0.93: {block: points} ("*": the rest)
         keep = _subsample_points(rec, n_pts, seed=seed)
         if include_zcam:
             fam = {int(i): rec.images[i].name[:1] for i in rec.reg_image_ids()}
