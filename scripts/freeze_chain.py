@@ -147,8 +147,10 @@ def main(argv=None) -> int:
     wait_for_training(c)
     if not a.skip_ab:
         if V41.is_file():
+            # 2 Nov 2026: v4.1's split (the v8 set as it is now) and only the frames v4 held out too - v4 trained on
+            # 4,095 masks, v4.1 on 4,099, so v4's split rebuilt on today's set would test v4 on its training frames
             c.run("mask_ab", [a.ab_python, HERE / "compare_mask_models.py", "--data", "D:\\masks\\masks_training_set_v8",
-                              "--split-ckpt", V4, "--models", "mppp_mask_v3", V4, V41,
+                              "--split-ckpt", V41, "--also-held-out", V4, "--models", "mppp_mask_v3", V4, V41,
                               "--seen", "D:\\masks\\masks_training_set_v7",
                               "--seen-split", "mppp_mask_v3", "D:\\masks\\masks_training_set_v7",
                               "--out", OUTPUTS / "mask_ab_v3_v4_v41"], timeout_h=2.0)

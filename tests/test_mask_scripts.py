@@ -123,3 +123,23 @@ def test_mask_dataset_applies_the_tone_curve(tmp_path):
     toned = MaskDataset([it], size=80, canvas=(80, 60), tone_prob=1.0)[0][0]
     assert (plain[:, 10:] == 120).all() and not (toned[:, 10:] == 120).all()
     assert (toned[:, :4] == 0).all()
+
+
+def test_items_as_trained_drops_the_newest_masks(tmp_path):
+    """2 Nov 2026: a model trained on fewer masks gets its split rebuilt without the newest ones."""
+    import os
+    import sys
+    from types import SimpleNamespace
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from compare_mask_models import items_as_trained
+    items = []
+    for i in range(6):
+        m = tmp_path / f"m{i}.png"
+        m.write_bytes(b"x")
+        os.utime(m, (1000 + i, 1000 + i))
+        items.append(SimpleNamespace(mask=str(m), image=str(m)))
+    card = {"name": "old", "training": {"n_train": 3, "n_val": 1}}
+    kept = items_as_trained(items, card)
+    assert [Path(it.mask).name for it in kept] == ["m0.png", "m1.png", "m2.png", "m3.png"]
+    assert items_as_trained(items, {"training": {"n_train": 5, "n_val": 1}}) == items
+    assert items_as_trained(items, {}) == items

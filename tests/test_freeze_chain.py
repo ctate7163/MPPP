@@ -27,6 +27,7 @@ def test_chain_waits_decides_and_runs(tmp_path, monkeypatch):
     assert names == ["mask_ab", "s2", "freeze"]
     ab = ran[0][1]
     assert "--seen-split" in ab and str(v41) in ab and "mppp_mask_v3" in ab
+    assert ab[ab.index("--split-ckpt") + 1] == str(v41) and "--also-held-out" in ab
     fr = ran[2][1]
     assert "--reset" in fr and "ba_points_cap=1500" in fr
     log = (tmp_path / "scapes" / "mppp_pipeline" / "freeze_chain_log.txt").read_text()

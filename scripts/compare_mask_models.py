@@ -35,6 +35,22 @@ def seen_names(path) -> set:
     return {f.name for f in d.glob("*.png")}
 
 
+def items_as_trained(items, card) -> list:
+    """The items as they were when the model of ``card`` trained (2 Nov 2026: the v8 set grew from 4,095 to 4,099
+    masks between v4 and v4.1, and the split - a shuffle of the sorted mask names - changes with every mask added):
+    the newest masks (file time) left out until the count is the card's n_train + n_val."""
+    tr = card.get("training") or {}
+    n = int(tr.get("n_train") or 0) + int(tr.get("n_val") or 0)
+    masks = sorted({it.mask for it in items})
+    if not n or len(masks) <= n:
+        return list(items)
+    newest = sorted(masks, key=lambda m: (Path(m).stat().st_mtime if Path(m).exists() else 0.0, m))[n:]
+    drop = set(newest)
+    print(f"  {len(drop)} newest masks left out to rebuild the split of {card.get('name') or 'the model'} "
+          f"({len(masks)} -> {n}): {', '.join(Path(m).name for m in sorted(drop))[:300]}")
+    return [it for it in items if it.mask not in drop]
+
+
 def table(rows, subset_label: str) -> list:
     md = [f"### {subset_label}", "", "| camera | frames | model | IoU (exclude) | recall (exclude) | precision (exclude) |",
           "|---|---:|---|---:|---:|---:|"]
@@ -77,6 +93,9 @@ def main(argv=None) -> int:
                     help="the older model's checkpoint and the set it was trained on: its held-out frames (the split "
                          "rebuilt from its card) count as unseen too - with --seen, the frames neither model trained "
                          "on (31 Oct: the v8 held-out frames are 98 %% v7 frames)")
+    ap.add_argument("--also-held-out", nargs="+", default=[], metavar="CKPT",
+                    help="2 Nov 2026: keep only the test frames these models (checkpoints trained on --data) held out "
+                         "too - their splits rebuilt as they trained (the newest masks left out to their count)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--device", default="auto")
     ap.add_argument("--limit", type=int, default=None, help="only the first N held-out frames (a quick look)")
@@ -92,8 +111,16 @@ def main(argv=None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     _, split_card = get_model(a.split_ckpt, a.device)
     items = scan_dataset(a.data, image_dirs=("images",), mask_dir="masks", missing="skip")
+    items = items_as_trained(items, split_card) if a.also_held_out else items
     split = split_labels(items, split_card)
-    val = [it for it in items if split.get(it.mask) == "val"][: a.limit]
+    val = [it for it in items if split.get(it.mask) == "val"]
+    for ck in a.also_held_out:
+        _, card_o = get_model(ck, a.device)
+        sp_o = split_labels(items_as_trained(items, card_o), card_o)
+        before = len(val)
+        val = [it for it in val if sp_o.get(it.mask) == "val"]
+        print(f"--also-held-out {Path(ck).name}: {len(val)} of {before} test frames held out by it too")
+    val = val[: a.limit]
     if not val:
         raise SystemExit("no held-out frames: is --split-ckpt a model trained on --data?")
     seen = seen_names(a.seen) if a.seen else set()

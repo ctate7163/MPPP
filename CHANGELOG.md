@@ -62,6 +62,10 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   2e-5). Both are run-key settings, so every block runs again.
 - **Seitah Overlook: sol 124 ZCAM08122 at 34 mm excluded** (2 Nov): -3.8 % in focal length in both eyes (z -700) in
   the 34 mm joint without Chal Rocks - the only check that joint failed.
+- **Mask A/B across sets that grew** (2 Nov): `compare_mask_models.py --also-held-out CKPT ...` keeps only the frames
+  those models held out too, each split rebuilt as it trained (`items_as_trained`: the newest masks left out to the
+  card's n_train + n_val - the v8 set grew from 4,095 to 4,099 masks between v4 and v4.1, and the shuffle of the
+  sorted names changes with every mask). The chain's A/B uses v4.1's split with `--also-held-out` v4.
 - **`freeze_chain.bat`** (Christian, 2 Nov: away while it runs): waits for the mask training, the mask A/B of v3, v4
   and v4.1 (`--seen-split`), the point-thinning study S2 with its verdict (cap 1500 when centres < 1 cm p95,
   attitudes < 0.1 mdeg p95, focal lengths < 0.05 % max), then `run_pipeline.py --reset` (the state of 28 Oct had the
