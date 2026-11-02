@@ -653,7 +653,7 @@ def joint_adjust(rec, proj, temps: Dict[str, float], ppm_per_degC: float, T0: fl
     args = dict(BA_DEFAULTS)
     args.setdefault("linear_solver", "sparse_schur")        # blocks share only the cameras and the rig: very sparse
     args.update(kw)
-    ba = bundle_adjust(rec, proj, navcam_aspect="free", refine_rig=refine_rig, max_iterations=max_iterations, covariance=covariance,
+    ba = bundle_adjust(rec, proj, zcam_aspect="free", navcam_aspect="free", refine_rig=refine_rig, max_iterations=max_iterations, covariance=covariance,
                        keypoint_scale=ks, hold_cameras=hold_cameras, **args)
     ba["ppm_per_degC"] = float(ppm_per_degC)
     ba["axis_ppm_per_degC"] = {k: list(map(float, v)) for k, v in (axis_ppm or {}).items()} or None

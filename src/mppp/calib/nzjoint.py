@@ -76,7 +76,7 @@ def adjust_nz(rec, proj, idx, st, units, zunits, sg, hold: Sequence[str] = T.HOL
     n_pass = max(1, int(passes))
     for p_ in range(n_pass):
         ks, kmap = T.keypoint_terms(units, proj, idx["temps"], gn)
-        ba = bundle_adjust(rec, proj, sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=True,
+        ba = bundle_adjust(rec, proj, zcam_aspect="free", sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=True,
                            refine_principal_point=True, refine_rig="rotation", max_iterations=iterations,
                            attitude_prior_deg=5.0, covariance=covariance and p_ == n_pass - 1, navcam_aspect="free",
                            linear_solver="sparse_schur", keypoint_scale=ks, keypoint_map=kmap,

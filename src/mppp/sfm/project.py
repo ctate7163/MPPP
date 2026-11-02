@@ -524,6 +524,9 @@ class SfmProject:
             missing = sorted({k for k, f in instruments.items() if f == "Z"} - set(fm.get("cameras", {})))
             if missing:
                 focus_info["no_model"] = missing                  # start from the labels (f per bin)
+            # 2 Nov 2026: each model's pixel aspect (fy / fx), for the per-bin aspect hold (zcam_aspect "hold")
+            focus_info["aspect"] = {str(g): float(c["aspect"]) for g, c in (fm.get("cameras") or {}).items()
+                                    if isinstance(c, dict) and c.get("aspect")}
         if zcam_focus_bin:
             fmodel = _zcam_fmodel() if zcam_intrinsics == "focus_model" else None
             cameras = _split_by_focus(images, cameras, instruments, float(zcam_focus_bin), zcam_bin_refine,

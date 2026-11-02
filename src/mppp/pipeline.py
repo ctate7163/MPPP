@@ -125,6 +125,7 @@ class Settings:
     navcam_distortion_fit: str = "hold"           # Navcam distortion held at the models in every block ("hold") or fitted per block ("refine")
     navcam_pp: str = "hold"                       # the Navcam principal point held at the models ("hold") or refined per block ("refine")
     navcam_aspect: str = "hold"                   # every Navcam camera keeps fy / fx at its start ("hold") or refines fx, fy apart ("free")
+    zcam_aspect: str = "hold"                     # 2 Nov 2026 (Christian): every Mastcam-Z bin camera's fy / fx held at its zoom model's pixel aspect (the eye's detector aspect where the model's is > 0.2 % off it: 110 mm) - "free": fx, fy apart per bin (before 0.95.4)
     round1_hold: bool = True                      # round 1 adjusts poses and points only; the cameras refine from round 2 on
     rig_translation_sigma_m: float = 0.005        # with navcam_rig_refine "full": the prior on the right camera centre per axis (m)
     tangential: str = "refine"                    # Navcam p1, p2 when the distortion is refined: "refine" or "zero"
@@ -244,6 +245,7 @@ class Settings:
             d.pop("zcam_line_settle_px", None)       # 0.95.0: likewise
             d.pop("zcam_bin_by", None)               # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
             d.pop("zcam_station_prior_sigma_m", None)   # 0.94.5: a Mastcam-Z setting (Navcam keys stay)
+            d.pop("zcam_aspect", None)               # 2 Nov 2026: likewise
             if isinstance(d.get("max_num_features"), dict):   # 0.95.2: the zoom counts ("Z063") likewise
                 d["max_num_features"] = {k: v for k, v in d["max_num_features"].items()
                                          if not re.fullmatch(r"[Zz]0*\d{1,3}", str(k))}
@@ -1143,7 +1145,8 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
                       zcam_line_cycles=int(s.zcam_line_cycles), pose_guided=s.pose_guided,
                       zcam_line_settle_px=float(s.zcam_line_settle_px or 0), ba_points_cap=int(s.ba_points_cap or 0),
                       isolated_points_factor=float(s.isolated_points_factor or 0),
-                      navcam_aspect=s.navcam_aspect, thermal_after_stage1=bool(s.thermal_after_stage1),
+                      navcam_aspect=s.navcam_aspect, zcam_aspect=str(s.zcam_aspect or "free"),
+                      thermal_after_stage1=bool(s.thermal_after_stage1),
                       round1_hold=bool(s.round1_hold), zcam_station_prior_sigma_m=float(s.zcam_station_prior_sigma_m or 0),
                       rig_translation_sigma_m=s.rig_translation_sigma_m if rig_refine is True else None,
                       gui_native=not light)

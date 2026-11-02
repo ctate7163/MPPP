@@ -46,6 +46,16 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   `forms.ZCAM_FIXED_TERMS[110]` now k1, k2, p1, p2 = 0 (the 1 Nov joint fitted k1 +0.42 / +0.39 against -0.23 at
   79 mm, with fy / fx 0.993). The joint's distortion tests free the fixed terms together and, new, k1 alone
   (delta chi2 and the curve change it makes).
+- **Per-bin Mastcam-Z aspect hold** (Christian, 2 Nov: "yes to the per-bin aspect hold"; `Settings.zcam_aspect`
+  "hold", a Mastcam-Z run-key setting): every Mastcam-Z bin camera's fy / fx is held (relative sigma 2e-5, the
+  Navcam's) at its zoom model's pixel aspect, or at the eye's detector aspect - the median of the 34, 48 and 63 mm
+  models - where the zoom model's is more than 0.2 % from it (`ZCAM_ASPECT_MAX_DEV`; 110 mm, 0.993) or there is no
+  model (`reconstruction.zcam_aspect_targets`, logged per group; `focus_info["aspect"]` in the project). The 2 Nov
+  analysis (`scripts/zcam_aspect_geometry.py`, 1,151 bins): no gravity sag and no range bias - within blocks the
+  34 mm slope with elevation is -67 +- 32 ppm per 10 deg outside Rockytop; the aspect outliers are single sequences
+  (Chal Rocks nearly all, -2,500 to -21,500 ppm; Rockytop ZCAM03415 / 03416 sols 520-525; Seitah ZCAM08114) where a
+  free fy took up geometry errors. The joints (`calib zcam`, `nz`, the Navcam joints) pass `zcam_aspect="free"`: they
+  estimate the models' aspect. "free" restores the per-bin fx, fy.
 - **Rockytop 110 mm: ZCAM08548 added** to its `zcam_include` (Christian, 2 Nov): ZCAM08529, ZCAM07101, ZCAM08486,
   ZCAM08548.
 - **`mppp process --dry-run` counts what processing would process** (2 Nov): it applies the shipped exclusion list

@@ -703,7 +703,7 @@ def adjust_z(rec, proj, idx, st, units, zunits, sg, iterations: int = 100, covar
     ks, kmap = T.keypoint_terms(units, proj, idx["temps"], _navcam_globals(st))
     ba = None
     for p_ in range(max(1, int(passes))):
-        ba = bundle_adjust(rec, proj, sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=True,
+        ba = bundle_adjust(rec, proj, zcam_aspect="free", sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=True,
                            refine_principal_point=False, refine_rig=False, max_iterations=iterations,
                            attitude_prior_deg=5.0, covariance=covariance and p_ == passes - 1,
                            hold_cameras=navkeys, linear_solver="sparse_schur", keypoint_scale=ks, keypoint_map=kmap,
@@ -1059,7 +1059,7 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
     navkeys = [k for k in proj.settings["database"]["cameras"] if str(k).startswith("N")]
     ks, kmap = T.keypoint_terms(units, proj, idx["temps"], _navcam_globals(st))
     t = time.time()
-    ba = bundle_adjust(rec, proj, sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=False,
+    ba = bundle_adjust(rec, proj, zcam_aspect="free", sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=False,
                        refine_principal_point=False, refine_rig=False, max_iterations=iterations, attitude_prior_deg=5.0,
                        hold_cameras=navkeys, linear_solver="sparse_schur", keypoint_scale=ks, keypoint_map=kmap,
                        refine_zcam_rig="rotation")

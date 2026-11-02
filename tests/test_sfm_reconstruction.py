@@ -1736,3 +1736,61 @@ def test_thin_points_keeps_every_tie_and_caps_the_two_view_points(tmp_path):
     assert ba0["points_skipped"] == 0 and ba0["points_in_adjustment"] == n_all
     from mppp.pipeline import Settings
     assert Settings().ba_points_cap == 0 and "ba_points_cap" in Settings().key_dict()
+
+
+def test_zcam_aspect_targets_model_or_detector():
+    """2 Nov 2026: each Mastcam-Z group held at its zoom model's fy / fx, or at the eye's detector aspect (median
+    of the 34/48/63 mm models) when the model's is more than 0.2 % off it (110 mm: 0.993)."""
+    from types import SimpleNamespace
+    from mppp.sfm import reconstruction as R
+    asp = {"ZL034": 1.0006, "ZL048": 0.9998, "ZL063": 1.0000, "ZL079": 0.9990, "ZL110": 0.9928,
+           "ZR034": 1.0009, "ZR048": 0.9997, "ZR063": 1.0000}
+    cams = {f"{g}_F01000_b{i}": {"group": g} for i, g in enumerate(["ZL034", "ZL079", "ZL110", "ZR110", "ZR034"])}
+    cams["NL"] = {"group": "NL"}
+    t = R.zcam_aspect_targets(SimpleNamespace(settings={"zcam_focus_model": {"aspect": asp}}, cameras=cams))
+    assert set(t) == {"ZL034", "ZL079", "ZL110", "ZR034", "ZR110"}
+    assert t["ZL034"] == {"aspect": 1.0006, "source": "zoom model"} and t["ZL079"]["aspect"] == 0.9990
+    assert t["ZL110"]["aspect"] == pytest.approx(1.0000) and "detector" in t["ZL110"]["source"]
+    assert "-7200 ppm" in t["ZL110"]["source"]
+    assert t["ZR110"]["aspect"] == pytest.approx(1.0000) and "no model" in t["ZR110"]["source"]
+    # no models at all: nothing to hold at (bundle_adjust then holds each camera at its start)
+    assert R.zcam_aspect_targets(SimpleNamespace(settings={}, cameras=cams)) == {}
+
+
+def test_bundle_adjust_holds_the_zcam_aspect_per_bin(tmp_path):
+    """2 Nov 2026: zcam_aspect "hold" puts every Mastcam-Z bin camera's fy / fx at its group's target; "free" and the
+    joints' explicit "free" leave it to the data; the project setting decides when the argument is not given."""
+    pytest.importorskip("pyceres")
+    from helpers import _zcam_rig_rec
+    from mppp.sfm import reconstruction as R
+    proj, rec0, _ = _zcam_rig_rec(tmp_path)
+    for k, g in (("ZL", "ZL034"), ("ZR", "ZR034")):
+        proj.cameras[k]["group"] = g
+    zc = {3: "ZL", 4: "ZR"}
+    for cid, k in zc.items():                        # start 0.3 % off the target
+        p = list(map(float, rec0.cameras[cid].params))
+        p[1] = p[0] * 1.003
+        proj.cameras[k]["params"] = p
+        rec0.cameras[cid].params = np.asarray(p, float)
+    proj.settings["zcam_aspect_targets"] = {"ZL034": {"aspect": 1.0}, "ZR034": {"aspect": 1.0}}
+    out = {}
+    for mode in ("free", "hold"):
+        rec = copy.deepcopy(rec0)
+        ba = R.bundle_adjust(rec, proj, sigma_px=0.3, max_iterations=30, navcam_aspect="free", zcam_aspect=mode)
+        assert ba["zcam_aspect"] == mode and ba["zcam_aspect_priors"] == (2 if mode == "hold" else 0)
+        out[mode] = {cid: rec.cameras[cid].params[1] / rec.cameras[cid].params[0] for cid in zc}
+    for cid in zc:
+        assert abs(out["hold"][cid] - 1.0) < 2e-4
+    proj.settings["zcam_aspect"] = "hold"
+    assert R.bundle_adjust(copy.deepcopy(rec0), proj, sigma_px=0.3, max_iterations=2,
+                           navcam_aspect="free")["zcam_aspect_priors"] == 2
+    assert R.bundle_adjust(copy.deepcopy(rec0), proj, sigma_px=0.3, max_iterations=2, navcam_aspect="free",
+                           zcam_aspect="free")["zcam_aspect_priors"] == 0
+
+
+def test_zcam_aspect_setting_is_a_zcam_key_only():
+    from mppp.pipeline import Settings
+    s = Settings()
+    assert s.zcam_aspect == "hold"
+    assert "zcam_aspect" not in s.replace(include_zcam=False).key_dict()
+    assert s.replace(include_zcam=True).key_dict()["zcam_aspect"] == "hold"

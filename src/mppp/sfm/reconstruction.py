@@ -424,6 +424,14 @@ ISOLATED_POINTS_FACTOR = 4.0     # 0.94.4: before the final stage-2 adjustment, 
 ISOLATED_POINTS_K = 8            # neighbour spacing at their range (mean distance to the K nearest points / range) are dropped
 ISOLATED_POINTS_RADII = 1.5      # ... only within this many radii of the cameras' bounding sphere (Christian, 23 Oct)
 NAVCAM_ASPECT_SIGMA = 2e-5      # 1-sigma of the fy / fx prior (relative; 0.03 px of a 1500 px focal length)
+# 2 Nov 2026 (Christian: "yes to the per-bin aspect hold"): every Mastcam-Z bin camera's fy / fx held at its zoom
+# model's pixel aspect (the pixel aspect is the detector's; free per bin it took up geometry errors - Chal Rocks,
+# Rockytop ZCAM03415/03416, Seitah ZCAM08114: -3,000 to -21,000 ppm).  A zoom whose model aspect is more than
+# ZCAM_ASPECT_MAX_DEV from the eye's detector aspect (the median of its ZCAM_ASPECT_ZOOMS models; 110 mm: 0.993)
+# is held at the detector aspect instead.  The joints (mppp.calib) keep the aspect free: they estimate the models.
+ZCAM_ASPECT_SIGMA = 2e-5        # relative 1-sigma (0.3 px of a 14,700 px 110 mm focal length)
+ZCAM_ASPECT_ZOOMS = (34, 48, 63)
+ZCAM_ASPECT_MAX_DEV = 0.002
 
 
 @__import__("functools").lru_cache(maxsize=1)
@@ -452,6 +460,31 @@ def _aspect_prior_class():
 
 def AspectPrior(a0: float, sigma: float, n: int):
     return _aspect_prior_class()(a0, sigma, n)
+
+
+def zcam_aspect_targets(project: SfmProject) -> Dict[str, Dict[str, Any]]:
+    """{Mastcam-Z group ("ZL110"): {"aspect", "source"}} - the fy / fx each bin camera of the group is held at
+    (zcam_aspect "hold"): its zoom model's aspect, or the eye's detector aspect (the median of the eye's
+    ZCAM_ASPECT_ZOOMS models) when the model's is more than ZCAM_ASPECT_MAX_DEV from it or there is no model."""
+    asp = (project.settings.get("zcam_focus_model") or {}).get("aspect") or {}
+    det: Dict[str, float] = {}
+    for eye in ("ZL", "ZR"):
+        v = [float(asp[f"{eye}{z:03d}"]) for z in ZCAM_ASPECT_ZOOMS if f"{eye}{z:03d}" in asp]
+        if v:
+            det[eye] = float(np.median(v))
+    groups = sorted({str(c.get("group")) for c in project.cameras.values()
+                     if str(c.get("group") or "").startswith(("ZL", "ZR"))})
+    zs = "/".join(str(z) for z in ZCAM_ASPECT_ZOOMS)
+    out: Dict[str, Dict[str, Any]] = {}
+    for g in groups:
+        m, d = asp.get(g), det.get(g[:2])
+        if m is not None and (d is None or abs(float(m) / d - 1.0) <= ZCAM_ASPECT_MAX_DEV):
+            out[g] = {"aspect": float(m), "source": "zoom model"}
+        elif d is not None:
+            why = (f"the model's {float(m):.5f} is {1e6 * (float(m) / d - 1):+.0f} ppm from it" if m is not None
+                   else "no model of this zoom")
+            out[g] = {"aspect": d, "source": f"{g[:2]} detector aspect (median of the {zs} mm models; {why})"}
+    return out
 
 
 @__import__("functools").lru_cache(maxsize=1)
@@ -541,7 +574,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                   aspect_sigma: float = NAVCAM_ASPECT_SIGMA, refine_zcam_rig: Optional[str] = None,
                   zcam_rig_translation_sigma_m: float = ZCAM_RIG_TRANSLATION_SIGMA_M,
                   extra_residuals=None, refine_hazcam_rig: Optional[str] = None,
-                  thin_cap: int = 0) -> Dict[str, Any]:
+                  thin_cap: int = 0, zcam_aspect: Optional[str] = None) -> Dict[str, Any]:
     """
     ``thin_cap`` (0.95.0): at most this many two-view, same-family, same-station points per image in the adjustment
     (:func:`thin_points`; every tie kept); 0: every point.  The result's ``"points_skipped"`` counts them.
@@ -840,6 +873,43 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             aspect_costs.append(c)
             prob.add_residual_block(c, None, [blk])
 
+    # 2 Nov 2026: every Mastcam-Z bin camera's fy / fx held (zcam_aspect "hold", set by reconstruct for a block run;
+    # the joints pass "free"), a soft prior per camera at its group's target (zcam_aspect_targets)
+    if zcam_aspect is None:
+        zcam_aspect = str(project.settings.get("zcam_aspect") or "free")
+    n_zaspect = 0
+    if zcam_aspect == "hold" and refine_intrinsics:
+        ztargets = project.settings.get("zcam_aspect_targets") or {}
+        for cid, cam in work.cameras.items():
+            key = key_of.get(int(cid), "")
+            pc = project.cameras.get(key, {})
+            grp = str(pc.get("group") or "")
+            if not grp.startswith(("ZL", "ZR")) or key in set(hold_cameras):
+                continue
+            blk = cam_blocks[int(cid)]
+            if not prob.has_parameter_block(blk) or prob.is_parameter_block_constant(blk):
+                continue
+            if any(blk is c_.parameter_block for c_ in aspect_costs if hasattr(c_, "parameter_block")):
+                continue
+            names = _PARAM_NAMES.get(cam.model.name)
+            if not names or names[:2] != ("fx", "fy"):
+                continue
+            fixed = set((pc.get("fixed_params") or [])) - set(pc.get("free_params") or [])
+            if "fx" in fixed or "fy" in fixed:
+                continue
+            tgt = (ztargets.get(grp) or {}).get("aspect")
+            if tgt is None:
+                p0 = np.asarray(pc.get("params") or blk, float)
+                tgt = float(p0[1] / p0[0])
+            c = AspectPrior(float(tgt), float(ZCAM_ASPECT_SIGMA), len(blk))
+            try:
+                c.parameter_block = blk
+            except AttributeError:
+                pass
+            aspect_costs.append(c)
+            prob.add_residual_block(c, None, [blk])
+            n_zaspect += 1
+
     # waypoint position priors on every frame (the reference camera's centre); not on the frames of
     # stations with fewer than localize_min_images images, if they are tied to the rest of the block
     n_prior = n_att = 0
@@ -1131,6 +1201,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             "unsurveyed_prior": {"sigma_m": sig_u, "attitude_deg": att_u} if use_priors else None,
             "tied_cameras": tied, "k2_clamped": k2_clamped,
             "unlocalized_stations": unloc, "navcam_aspect": navcam_aspect, "aspect_priors": len(aspect_costs),
+            "zcam_aspect": zcam_aspect, "zcam_aspect_priors": n_zaspect,
             "attitude_prior_deg": float(attitude_prior_deg or 0.0), "frames_held": held, "initial_cost": summary.initial_cost,
             "final_cost": (float(extra_info["exact_refine"]["cost_end"]) if (extra_info or {}).get("exact_refine")
                            and not extra_info["exact_refine"].get("error") and "cost_end" in extra_info["exact_refine"]
@@ -2314,7 +2385,8 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 zcam_line_settle_px: float = ZCAM_LINE_SETTLE_PX, ba_points_cap: int = 0,
                 pose_guided: Union[bool, Dict[str, Any]] = True, navcam_aspect: str = "hold",
                 isolated_points_factor: float = ISOLATED_POINTS_FACTOR,
-                round1_hold: bool = ROUND1_HOLD, zcam_station_prior_sigma_m: float = ZCAM_STATION_PRIOR_SIGMA_M):
+                round1_hold: bool = ROUND1_HOLD, zcam_station_prior_sigma_m: float = ZCAM_STATION_PRIOR_SIGMA_M,
+                zcam_aspect: str = "free"):
     """
     CAHV-initialised triangulation + weighted BA (see module docstring).
 
@@ -2433,6 +2505,15 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
     if navcam_aspect not in ("free", "hold"):
         raise ValueError("navcam_aspect must be 'free' or 'hold'")
     project.settings["navcam_aspect"] = navcam_aspect          # read by every bundle adjustment of the run
+    if zcam_aspect not in ("free", "hold"):
+        raise ValueError("zcam_aspect must be 'free' or 'hold'")
+    project.settings["zcam_aspect"] = zcam_aspect              # 2 Nov 2026: likewise (the per-bin aspect hold)
+    if zcam_aspect == "hold":
+        project.settings["zcam_aspect_targets"] = zcam_aspect_targets(project)
+        for g, v in project.settings["zcam_aspect_targets"].items():
+            logger.info("Mastcam-Z %s: every bin's fy / fx held at %.5f (%s)", g, v["aspect"], v["source"])
+    else:
+        project.settings.pop("zcam_aspect_targets", None)
     import time
     from .thermal import strip_thermal_bins
     t0 = time.time()
@@ -3081,7 +3162,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                                           "min_tri_angle_deg": min_tri_angle_deg,
                                           "refine_tangential": tangential_setting(refine_tangential),
                                           "attitude_prior_deg": float(attitude_prior_deg or 0.0),
-                                          "navcam_aspect": navcam_aspect,
+                                          "navcam_aspect": navcam_aspect, "zcam_aspect": zcam_aspect,
                                           "schedule": [list(map(float, r)) for r in schedule],
                                           "exclude_outliers": bool(exclude_outliers),
                                           "min_frame_observations": int(MIN_FRAME_OBSERVATIONS),

@@ -765,7 +765,7 @@ def adjust_tied(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], units: Dict[
     while p_ < n_pass:
         ks, kmap = keypoint_terms(units, proj, temps, g, iso_f=iso)
         last = p_ == n_pass - 1
-        ba = bundle_adjust(rec, proj, sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=False if pp_prior else refine_pp,
+        ba = bundle_adjust(rec, proj, zcam_aspect="free", sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=False if pp_prior else refine_pp,
                            refine_principal_point=refine_pp,
                            refine_rig="rotation", max_iterations=iterations, attitude_prior_deg=5.0,
                            covariance=covariance and last, navcam_aspect="free",
