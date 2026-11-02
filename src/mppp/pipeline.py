@@ -695,6 +695,56 @@ def processing_config(settings: Settings) -> Dict[str, Any]:
     return cfg
 
 
+def apply_exclusions(paths: Sequence[PathLike], s: Settings, sel: Optional[Dict[str, Any]] = None) -> List[Path]:
+    """The products left after the shipped exclusion list and the site's / run's EXCLUDE entries (a site's
+    ``zcam_include`` among them) - what :func:`process_site` processes, and what ``mppp process --dry-run`` counts
+    (2 Nov 2026: the dry run counted before them, e.g. Rockytop's 3550 110 mm frames instead of its 3 sequences)."""
+    paths = [Path(p) for p in paths]
+    if not s.exclude_list:
+        return paths
+    # 0.94.0 (Christian, 23 Oct): the shipped exclusion list also keeps its images out of the processing (they
+    # were processed, then left out of the alignment: Mastcam-Z movies of a thousand frames)
+    # (with the site's / run's EXCLUDE entries: "seq:ZCAM08390" for one block)
+    own = [str(e) for e in (s.exclude or [])]
+    for e in own:                                         # 0.94.4: what each of the block's own entries leaves out
+        k = len(exclude_products(paths, [e])[1])
+        log.info("not processed (EXCLUDE %r): %d products%s", e, k, "" if k else "  <- matches no product (typo?)")
+    paths, ex = exclude_products(paths, shipped_exclusions() + own)
+    if ex:
+        log.info("not processed (the shipped exclusion list%s): %d products, e.g. %s",
+                 " and EXCLUDE" if own else "", len(ex), ex[0])
+        if sel is not None:
+            sel["excluded_before_processing"] = len(ex)
+    return paths
+
+
+def product_summary(paths: Sequence[PathLike]) -> List[str]:
+    """Lines for ``mppp process --dry-run``: products per camera (Mastcam-Z per zoom) and, per Mastcam-Z zoom, its
+    sequences with their sols and frame counts (to choose a site's ``zcam_include``)."""
+    from .filenames import parse_filename
+    cams: Dict[str, int] = {}
+    seqs: Dict[int, Dict[str, List[int]]] = {}
+    for p in paths:
+        try:
+            fn = parse_filename(Path(p))
+        except Exception:                                  # noqa: BLE001
+            continue
+        if fn.family == "Z" and fn.zoom_mm:
+            key = f"Mastcam-Z {fn.zoom_mm}"
+            seqs.setdefault(int(fn.zoom_mm), {}).setdefault(fn.sequence, []).append(int(fn.sol))
+        else:
+            key = {"N": "Navcam", "F": "front Hazcam", "R": "rear Hazcam"}.get(fn.family, fn.family)
+        cams[key] = cams.get(key, 0) + 1
+    out = ["products by camera: " + ", ".join(f"{k} {v}" for k, v in sorted(cams.items()))]
+    for z in sorted(seqs):
+        rows = sorted(seqs[z].items(), key=lambda kv: (min(kv[1]), kv[0]))
+        out.append(f"Mastcam-Z {z} mm: {sum(len(v) for v in seqs[z].values())} frames in {len(rows)} sequences")
+        for q, sols in rows:
+            a, b = min(sols), max(sols)
+            out.append(f"   {q}  sol {a}" + (f"-{b}" if b != a else "") + f"  {len(sols)} frames")
+    return out
+
+
 def process_site(site_or_work: PathLike, settings: Settings) -> Path:
     """
     Select and process the images of a site (sections 1-2): one product per exposure from the PDS archive into
@@ -705,19 +755,7 @@ def process_site(site_or_work: PathLike, settings: Settings) -> Path:
     from . import load_waypoints, process_images
     st, s = resolve_site(site_or_work, settings)
     paths, sel = select_products(st, s)
-    if s.exclude_list:
-        # 0.94.0 (Christian, 23 Oct): the shipped exclusion list also keeps its images out of the processing (they
-        # were processed, then left out of the alignment: Mastcam-Z movies of a thousand frames)
-        # (with the site's / run's EXCLUDE entries: "seq:ZCAM08390" for one block)
-        own = [str(e) for e in (s.exclude or [])]
-        for e in own:                                     # 0.94.4: what each of the block's own entries leaves out
-            k = len(exclude_products(paths, [e])[1])
-            log.info("not processed (EXCLUDE %r): %d products%s", e, k, "" if k else "  <- matches no product (typo?)")
-        paths, ex = exclude_products(paths, shipped_exclusions() + own)
-        if ex:
-            log.info("not processed (the shipped exclusion list%s): %d products, e.g. %s",
-                     " and EXCLUDE" if own else "", len(ex), ex[0])
-            sel["excluded_before_processing"] = len(ex)
+    paths = apply_exclusions(paths, s, sel)
     processed = st.work / "processed"
     processed.mkdir(parents=True, exist_ok=True)
     cfg = processing_config(s)

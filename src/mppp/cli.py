@@ -340,16 +340,22 @@ def _run(fn, work: Path, s, a: argparse.Namespace, stage: str, key: str, **kw: A
 
 # --------------------------------------------------------------------------------------------------- subcommands
 def cmd_process(a: argparse.Namespace) -> int:
-    from .pipeline import process_key, process_site, resolve_site, select_products
+    from .pipeline import apply_exclusions, process_key, process_site, product_summary, resolve_site, select_products
     s = _settings(a, a.target)
     st, s = resolve_site(a.target, s)
     if a.dry_run:
         paths, sel = select_products(st, s)
-        print(f"{st.name} (sols {st.sols_text}) -> {st.work / 'processed'}: {len(paths)} products would be processed")
+        n0 = len(paths)
+        paths = apply_exclusions(paths, s, sel)        # 2 Nov 2026: as processing does (EXCLUDE, zcam_include, the list)
+        print(f"{st.name} (sols {st.sols_text}) -> {st.work / 'processed'}: {len(paths)} products would be processed"
+              + (f" ({n0 - len(paths)} of the {n0} selected left out by the exclusions)" if n0 != len(paths) else ""))
         for p in paths[:20]:
             print("  ", p.name)
         if len(paths) > 20:
             print(f"   ... {len(paths) - 20} more")
+        for line in product_summary(paths):
+            print(line)
+        print("(the selection rules - sky, LMST window, saturation, exposure - leave out more when processing)")
         return 0
     return _run(process_site, st.work, s, a, "process", process_key(s), info={"site": st.name})
 
