@@ -64,7 +64,8 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   `calib navcam` draws 750 Navcam points per station of a block (`--points-per-station`; at least 2,000;
   `tied.POINTS_PER_STATION`, `joint.merge_scapes` with `{"per_station", "min"}`; the per-block numbers in the result's
   `points_per_block`), so a large block weighs by its size; `--points N` is N per block again. The freeze run
-  (`run_pipeline.py`) passes `--points-per-station 750` instead of `--points 8000`.
+  (`run_pipeline.py`) passes `--points-per-station 1500 --iterations 300` instead of `--points 8000` (Christian: the
+  final run's joint can take longer); `calib navcam` now takes `--iterations` too (the 27 Oct joint converged in 4).
 - **Mastcam-Z lists** (Christian, 2 Nov): `zcam_consensus` starts with the three longest blocks, Chal Rocks Large,
   Rockytop and Taylorfjellet; Rockytop in the 79 and 110 mm lists, Marble Mountain in the 110 mm list; Cannery Passage
   out of every list (its site stays). The run_pipeline tests follow the lists (they still expected the 27 Oct ones).

@@ -49,7 +49,7 @@ def test_pipeline_dry_run_and_state(tmp_path):
     assert out.index("calib hazcam --group ecam_consensus") < out.index("zcam_runs: start")
     assert "calib zcam --zoom 63" in out and "calib nz" in out
     assert "calib zcam --zoom 79" in out and "calib zcam --zoom 110" in out     # 0.95.1: every zoom
-    assert "--points-per-station 750" in out and "--points 8000" not in out    # 2 Nov 2026: the Navcam joint
+    assert "--points-per-station 1500 --iterations 300" in out and "--points 8000" not in out   # 2 Nov 2026: the Navcam joint
     assert "error_analysis_batch.py" in out
     assert out.count("--jobs 2") >= 2                                    # 0.94.3: two sites at a time by default
     assert not (tmp_path / "mppp_pipeline" / "state.json").exists()      # a dry run leaves no state

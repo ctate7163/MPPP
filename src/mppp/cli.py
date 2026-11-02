@@ -165,7 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="separate fx and fy thermal slopes (default: one ppm/degC per eye, fy tied to fx)")
     p.add_argument("--no-diagnostics", action="store_true", help="skip the per-block diagnostic pass (no gate then)")
     p.add_argument("--iterations", type=int, default=None, metavar="N",
-                   help="zcam / nz (0.95.3, Christian 31 Oct: \"allow more joint iterations for convergence\"): Ceres "
+                   help="zcam / nz / navcam (0.95.3, Christian 31 Oct: \"allow more joint iterations for convergence\"): Ceres "
                         "iterations per pass of the adjustment and of its tests (default 100; the Z48 joint of 31 Oct "
                         "stopped at 101 in both passes)")
     p.add_argument("--passes", type=int, default=None, metavar="N",
@@ -760,7 +760,8 @@ def cmd_calib(a: argparse.Namespace) -> int:
                        "min": TJ.POINTS_MIN_PER_BLOCK}
     res = TJ.fit_tied(blocks, points=pts, hold=tuple(a.hold) if a.hold is not None else TJ.HOLD_DEFAULT,
                       knot_sol=a.knot, diagnostics=not a.no_diagnostics, iso_f=not a.aniso_f,
-                      tie_f=bool(getattr(a, "tie_f_slope", False)) or None)
+                      tie_f=bool(getattr(a, "tie_f_slope", False)) or None,
+                      **({"iterations": int(a.iterations)} if getattr(a, "iterations", None) else {}))   # 2 Nov 2026
     cand = TJ.write_tied(res, out / "navcam_joint", note=a.note)
     rep = check_navcam(cand)
     (out / "promotion_check.json").write_text(json.dumps(rep, indent=1, default=str), encoding="utf-8")
