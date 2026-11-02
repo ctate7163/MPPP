@@ -44,7 +44,7 @@ def test_chain_runs_through(tmp_path, monkeypatch):
     ran = []
     state = {"v42_iou": 0.9821}                                               # v4.2 better than v3
 
-    def run(self, name, cmd, timeout_h):
+    def run(self, name, cmd, timeout_h, env=None):
         cmd = [str(c) for c in cmd]
         ran.append((name, cmd))
         if name == "mask_ab":
@@ -55,7 +55,12 @@ def test_chain_runs_through(tmp_path, monkeypatch):
     roots = []
     monkeypatch.setattr(F, "s2_verdict", lambda c, root=None: roots.append(root) or True)
     assert F.main(["--root", str(new), "--old-root", str(old)]) == 0
-    assert [n for n, _ in ran] == ["mask_ab", "blocks", "final_pass", "studies", "s2"] and roots == [old]
+    assert [n for n, _ in ran] == ["mask_ab", "blocks", "final_pass", "studies", "aspect_geometry", "s6", "s2",
+                                   "s1", "s3", "s4", "s5"] and roots == [old]
+    geo, s6 = ran[4][1], ran[5][1]
+    assert geo[geo.index("--root") + 1] == str(new) and "110" in geo
+    assert s6[s6.index("--root") + 1] == str(new) and "chal_rocks_large" in s6
+    assert ran[7][1][-1] == str(old) and ran[7][1][ran[7][1].index("S1") - 1].endswith("tie_point_studies.py")
     ab = ran[0][1]
     assert ab[ab.index("--split-ckpt") + 1] == str(v42) and ab[ab.index("--also-held-out") + 1] == str(v41)
     assert "--seen-split" in ab and "mppp_mask_v3" in ab and ab[-1].endswith("mask_ab_v3_v41_v42")
@@ -66,10 +71,10 @@ def test_chain_runs_through(tmp_path, monkeypatch):
     assert "--reset" in blocks and blocks[blocks.index("--stop-before") + 1] == "error_analysis"
     assert "--reset" not in final and final[final.index("--redo"):final.index("--redo") + 3] == ["--redo", "ecam_runs", "zcam_runs"]
     assert "--stop-before" in final and "--stop-before" not in studies and "--redo" not in studies
-    assert ran[4][1][-1] == str(old)                                          # S2 at the old root, last
+    assert ran[6][1][-1] == str(old)                                          # S2 at the old root, after the blocks
     assert (new / "zcam_low_backlash_found.csv").is_file()                   # copied from the old root
     log = (new / "mppp_pipeline" / "freeze_chain_log.txt").read_text()
-    assert "trained" in log and "DEMs in" in log and "GB free" in log and "paper_studies" in log
+    assert "trained" in log and "DEMs in" in log and "GB free" in log and "make_figures.bat" in log
     st = json.loads((new / "mppp_pipeline" / "freeze_chain_status.json").read_text())
     assert st["steps"]["wait_v42"]["state"] == "done" and st["steps"]["mask_choice"]["choice"] == "v4.2"
     assert st["state"] == "done" and st["steps"]["chain"]["failed"] == []
@@ -79,7 +84,7 @@ def test_chain_v3_cap_and_flags(tmp_path, monkeypatch):
     F, v41, v42, old, new = _setup(tmp_path, monkeypatch)
     ran = []
 
-    def run(self, name, cmd, timeout_h):
+    def run(self, name, cmd, timeout_h, env=None):
         cmd = [str(c) for c in cmd]
         ran.append((name, cmd))
         if name == "mask_ab":
@@ -87,16 +92,16 @@ def test_chain_v3_cap_and_flags(tmp_path, monkeypatch):
         self.step(name, state="done", started="t", ended="t")
         return 0
     monkeypatch.setattr(F.Chain, "run", run)
-    F.main(["--root", str(new), "--old-root", str(old), "--cap", "--skip-s2", "--no-final-pass"])
-    assert [n for n, _ in ran] == ["mask_ab", "blocks", "studies"]
+    F.main(["--root", str(new), "--old-root", str(old), "--cap", "--skip-s2", "--no-final-pass", "--skip-tie-studies"])
+    assert [n for n, _ in ran] == ["mask_ab", "blocks", "studies", "aspect_geometry", "s6"]
     assert "ba_points_cap=1500" in ran[1][1] and not any(x.startswith("mask_checkpoint") for x in ran[1][1])
     st = json.loads((new / "mppp_pipeline" / "freeze_chain_status.json").read_text())
     assert st["steps"]["mask_choice"]["choice"] == "v3" and st["steps"]["final_pass"]["note"] == "--no-final-pass"
     # a fresh root: nothing but the A/B and S2
     ran.clear()
     (new / "mppp_pipeline" / "freeze_chain_status.json").unlink()
-    F.main(["--root", str(new), "--old-root", str(old), "--skip-ab", "--no-freeze", "--no-wait"])
-    assert [n for n, _ in ran] == ["s2"]
+    F.main(["--root", str(new), "--old-root", str(old), "--skip-ab", "--no-freeze", "--no-wait", "--skip-tie-studies"])
+    assert [n for n, _ in ran] == ["aspect_geometry", "s6", "s2"]
 
 
 def test_chain_restart_continues(tmp_path, monkeypatch):
@@ -105,7 +110,7 @@ def test_chain_restart_continues(tmp_path, monkeypatch):
     ran = []
     crash = {"on": True}
 
-    def run(self, name, cmd, timeout_h):
+    def run(self, name, cmd, timeout_h, env=None):
         cmd = [str(c) for c in cmd]
         ran.append((name, cmd))
         if name == "mask_ab":
@@ -126,8 +131,8 @@ def test_chain_restart_continues(tmp_path, monkeypatch):
     shutil.rmtree(F.OUTPUTS / "mask_ab_v3_v41_v42")
     ran.clear()
     crash["on"] = False
-    assert F.main(["--root", str(new), "--old-root", str(old)]) == 0
-    assert [n for n, _ in ran] == ["blocks", "final_pass", "studies", "s2"]
+    assert F.main(["--root", str(new), "--old-root", str(old), "--skip-tie-studies"]) == 0
+    assert [n for n, _ in ran] == ["blocks", "final_pass", "studies", "aspect_geometry", "s6", "s2"]
     blocks = ran[0][1]
     assert "--reset" not in blocks and f"mask_checkpoint={v42}" in blocks
     log = (new / "mppp_pipeline" / "freeze_chain_log.txt").read_text()
@@ -136,9 +141,11 @@ def test_chain_restart_continues(tmp_path, monkeypatch):
     assert len(st["restarts"]) == 1 and st["state"] == "done"
     # done: a third start runs nothing; --redo s2 runs S2 again
     ran.clear()
-    assert F.main(["--root", str(new), "--old-root", str(old)]) == 0 and ran == []
-    F.main(["--root", str(new), "--old-root", str(old), "--redo", "s2"])
+    assert F.main(["--root", str(new), "--old-root", str(old), "--skip-tie-studies"]) == 0 and ran == []
+    F.main(["--root", str(new), "--old-root", str(old), "--redo", "s2", "--skip-tie-studies"])
     assert [n for n, _ in ran] == ["s2"]
+    F.main(["--root", str(new), "--old-root", str(old)])                      # the tie studies not run before
+    assert [n for n, _ in ran] == ["s2", "s1", "s3", "s4", "s5"]
 
 
 def test_chain_refuses_second_instance(tmp_path, monkeypatch):
@@ -152,7 +159,7 @@ def test_chain_refuses_second_instance(tmp_path, monkeypatch):
     monkeypatch.setattr(F, "pid_alive", lambda pid: pid == 4242)
     assert F.main(["--root", str(new), "--old-root", str(old)]) == 2
     monkeypatch.setattr(F, "pid_alive", lambda pid: False)             # the process is gone: it starts
-    monkeypatch.setattr(F.Chain, "run", lambda self, name, cmd, timeout_h: self.step(name, state="done") or 0)
+    monkeypatch.setattr(F.Chain, "run", lambda self, name, cmd, timeout_h, env=None: self.step(name, state="done") or 0)
     monkeypatch.setattr(F, "s2_verdict", lambda c, root=None: True)
     assert F.main(["--root", str(new), "--old-root", str(old)]) == 0
 

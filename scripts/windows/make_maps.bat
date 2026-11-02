@@ -51,10 +51,10 @@ if /i not "%WHICH%"=="dtm" if defined M20_ORTHOS (
   if errorlevel 1 goto :fail
 )
 echo make_maps: done - %OUT%
-pause
+if not defined MPPP_NOPAUSE pause
 exit /b 0
 
 :fail
 echo make_maps: FAILED (see above)
-pause
+if not defined MPPP_NOPAUSE pause
 exit /b 1

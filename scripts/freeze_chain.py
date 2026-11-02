@@ -26,12 +26,19 @@ consuming tests and studies needed to really understand the results"):
                    standard set of blocks, every one aligned with the best models the run produced;
 6. ``studies``     ``run_pipeline.py`` (no flags): error_analysis, rover_frame, lightglue_ab, zcam_states and the
                    report on those blocks;
-7. ``paper_studies`` ``studies\\paper\\run_paper_studies.py`` (or ``<root>\\paper_studies\\run_paper_studies.py``) if
-                   it exists when the chain gets there - it can be synced while the blocks run;
-8. ``s2``          last, the point-thinning study S2 on rockytop_example at ``--s2-root`` (default the old root, where
-                   its block is; 14:57: "run that at the end of the freeze run after everything else important has
-                   completed") and its verdict (would a cap of 1500 do: frame centres < 1 cm p95, attitudes
-                   < 0.1 mdeg p95, per-bin focal lengths < 0.05 % max from the all-points solution).
+7. the studies that exist (15:46: "use past studies instead of writing new ones"), on the freeze run's blocks:
+   ``figures``        ``make_figures.bat`` - the standard figure set from the newest joints and the blocks;
+   ``maps``           ``make_maps.bat`` - the site maps on the DTM, the orthomosaic and white;
+   ``aspect_geometry`` ``zcam_aspect_geometry.py`` - fy / fx of every Mastcam-Z bin against elevation, range and
+                      frame coverage (gravity sag or geometry), every zoom;
+   ``s6``             ``tie_point_studies.py S6`` - the per-bin focal residuals about the focus lines against the
+                      observations, over the zcam_consensus blocks;
+   then the tie-point studies on the three tiny blocks in the old root (every finished variant is skipped):
+   ``s2``             point thinning (``--s2-root``, default the old root; 14:57: "run that at the end of the freeze
+                      run after everything else important has completed") and its verdict - would a cap of 1500 do:
+                      frame centres < 1 cm p95, attitudes < 0.1 mdeg p95, per-bin focal lengths < 0.05 % max;
+   ``s1`` ``s3`` ``s4`` ``s5``  the feature budget, the matcher and verification, pair selection and the pose-guided
+                      step, the filters (``--skip-tie-studies`` leaves these four out; ``--skip-s2`` S2).
 
 Faults.  Every step that fails is logged and the chain goes on (the pipeline itself goes on past a failed stage).  A
 step's child is stopped with its whole process tree when it runs past its time limit.  The chain's own state is
@@ -48,6 +55,7 @@ the chain's log: ``freeze_chain_log.txt``.
     scripts\\windows\\freeze_chain.bat --no-wait         no wait for the v4.2 training (the A/B with what there is)
     scripts\\windows\\freeze_chain.bat --no-final-pass   the blocks as the joints found them
     scripts\\windows\\freeze_chain.bat --no-freeze       no pipeline (the A/B and S2 only)
+    scripts\\windows\\freeze_chain.bat --skip-tie-studies  no S1 / S3 / S4 / S5 at the end
     scripts\\windows\\freeze_chain.bat --redo mask_ab    this step again even if done
 """
 from __future__ import annotations
@@ -79,7 +87,10 @@ MASK_DATA, MASK_SEEN = "D:\\masks\\masks_training_set_v8", "D:\\masks\\masks_tra
 ROOT_FILES = ("zcam_low_backlash_found.csv", "zcam_focus_from_below.csv")
 S2_SITE = "rockytop_example"
 S2_LIMITS = {"centre_cm_p95": 1.0, "attitude_mdeg_p95": 0.1, "focal_pct_max": 0.05}
-STEPS = ("root", "wait_v42", "mask_ab", "blocks", "final_pass", "studies", "paper_studies", "s2")
+STEPS = ("root", "wait_v42", "mask_ab", "blocks", "final_pass", "studies", "figures", "maps", "aspect_geometry", "s6",
+         "s2", "s1", "s3", "s4", "s5")
+TIE_STUDIES = ("s1", "s3", "s4", "s5")
+ZCAM_GROUP = "zcam_consensus"
 FREE_GB_WARN = 300.0
 STALE_S = 900                                                          # the chain's heartbeat
 
@@ -161,7 +172,7 @@ class Chain:
         return int(pid) if age < STALE_S and pid_alive(int(pid)) else None
 
     # ------------------------------------------------------------ a step's command
-    def run(self, name: str, cmd: Sequence, timeout_h: float) -> int:
+    def run(self, name: str, cmd: Sequence, timeout_h: float, env: Optional[dict] = None) -> int:
         cmd = [str(c) for c in cmd]
         self.log(f"{name}: {' '.join(cmd)}")
         self.step(name, state="running", command=cmd, started=now())
@@ -172,8 +183,9 @@ class Chain:
             with open(lf, "a", encoding="utf-8") as fh:
                 fh.write(f"\n===== {now()}  {' '.join(cmd)}\n")
                 fh.flush()
-                env = dict(os.environ, PYTHONUNBUFFERED="1", MPPP_NOPAUSE="1")
-                p = subprocess.Popen(cmd, cwd=str(REPO), stdout=fh, stderr=subprocess.STDOUT, env=env)
+                env = dict(os.environ, PYTHONUNBUFFERED="1", MPPP_NOPAUSE="1", **(env or {}))
+                p = subprocess.Popen(cmd, cwd=str(REPO), stdin=subprocess.DEVNULL, stdout=fh,
+                                     stderr=subprocess.STDOUT, env=env)       # no stdin: a pause or input() ends
                 deadline = t + timeout_h * 3600
                 while True:
                     try:
@@ -402,11 +414,37 @@ def run_pipeline_step(c: Chain, name: str, mask: Optional[Path], *extra: str, re
     return c.run(name, pipeline_cmd(c, mask, *flags), timeout_h=24 * 7)
 
 
-def paper_studies_script(c: Chain) -> Optional[Path]:
-    for p in (REPO / "studies" / "paper" / "run_paper_studies.py", c.root / "paper_studies" / "run_paper_studies.py"):
-        if p.is_file():
-            return p
-    return None
+def zcam_sites() -> list:
+    try:
+        from mppp.waypoints.sites import load_site_table
+        return list(load_site_table().get("groups", {}).get(ZCAM_GROUP) or [])
+    except Exception:                                                                 # noqa: BLE001
+        return []
+
+
+def after_studies(c: Chain) -> None:
+    """The studies that exist, on the freeze run's blocks (the .bat ones on Windows only)."""
+    env = {"MPPP_SCAPES": str(c.root)}
+    bats = {"figures": (HERE / "windows" / "make_figures.bat", 2.0), "maps": (HERE / "windows" / "make_maps.bat", 3.0)}
+    for name, (bat, hours) in bats.items():
+        if c.done(name):
+            continue
+        if os.name != "nt":
+            c.log(f"{name}: {bat.name} is a Windows script - skipped here")
+            c.step(name, state="done", note="not Windows")
+            continue
+        c.run(name, ["cmd", "/c", bat], timeout_h=hours, env=env)
+    if not c.done("aspect_geometry"):
+        c.run("aspect_geometry", [sys.executable, HERE / "zcam_aspect_geometry.py", "--root", c.root, "--group",
+                                  ZCAM_GROUP, "--zooms", "34", "48", "63", "79", "110"], timeout_h=3.0, env=env)
+    if not c.done("s6"):
+        sites = zcam_sites()
+        if sites:
+            c.run("s6", [sys.executable, HERE / "tie_point_studies.py", "S6", "--root", c.root, "--site", *sites],
+                  timeout_h=3.0, env=env)
+        else:
+            c.log(f"s6: no {ZCAM_GROUP} sites found - skipped")
+            c.step("s6", state="done", note="no sites")
 
 
 def s2_verdict(c: Chain, root: Optional[Path] = None) -> bool:
@@ -475,23 +513,23 @@ def chain(c: Chain) -> int:
             run_pipeline_step(c, "final_pass", mask, "--redo", "ecam_runs", "zcam_runs", "--stop-before", "error_analysis")
         if not c.done("studies"):
             run_pipeline_step(c, "studies", mask)
-        if not c.done("paper_studies"):
-            extra = paper_studies_script(c)
-            if extra is not None:
-                c.run("paper_studies", [sys.executable, extra, "--root", c.root], timeout_h=72)
-            else:
-                c.log("paper_studies: no studies\\paper\\run_paper_studies.py (nor one in the root) - nothing more")
-                c.step("paper_studies", state="done", note="no script")
     else:
         c.log("--no-freeze: no pipeline")
+    after_studies(c)
+    s2_root = Path(a.s2_root or a.old_root)
+    env = {"MPPP_SCAPES": str(s2_root)}
     if not a.skip_s2 and not c.done("s2"):
-        s2_root = Path(a.s2_root or a.old_root)
         c.run("s2", [sys.executable, HERE / "tie_point_studies.py", "S2", "--site", S2_SITE, "--variants", "all",
-                     "cap1500", "--root", s2_root], timeout_h=10.0)
+                     "cap1500", "--root", s2_root], timeout_h=10.0, env=env)
         try:
             s2_verdict(c, s2_root)
         except Exception as e:                                                        # noqa: BLE001
             c.log(f"S2 verdict: failed ({type(e).__name__}: {e})")
+    if not a.skip_tie_studies:
+        for st in TIE_STUDIES:
+            if not c.done(st):
+                c.run(st, [sys.executable, HERE / "tie_point_studies.py", st.upper(), "--root", s2_root],
+                      timeout_h=36.0, env=env)
     failed = [s for s in STEPS if str((c.status["steps"].get(s) or {}).get("state", "")).startswith("exit")]
     c.log("freeze chain done" + (f" - steps that did not exit 0: {', '.join(failed)}" if failed else ""))
     c.end("done", failed=failed)
@@ -510,6 +548,7 @@ def main(argv=None) -> int:
     ap.add_argument("--skip-ab", action="store_true", help="no mask A/B: v3")
     ap.add_argument("--no-final-pass", action="store_true", help="no second pass of the blocks with the promoted models")
     ap.add_argument("--skip-s2", action="store_true", help="no S2 study at the end")
+    ap.add_argument("--skip-tie-studies", action="store_true", help="no S1 / S3 / S4 / S5 at the end")
     ap.add_argument("--cap", action="store_true", help="the blocks with ba_points_cap=1500")
     ap.add_argument("--no-freeze", action="store_true", help="no pipeline")
     ap.add_argument("--redo", nargs="*", choices=STEPS, default=None, help="these steps again even if done")

@@ -84,9 +84,12 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   the Hazcam fit, the Mastcam-Z joints - promoted when their checks pass), `--redo ecam_runs zcam_runs --stop-before
   error_analysis` (the final pass: the camera-model fingerprint is in the run key, so only the blocks whose models
   were promoted are aligned again, with their features and matches reused), then the studies (error_analysis,
-  rover_frame, lightglue_ab, zcam_states, report). Then `studies\paper\run_paper_studies.py` if it exists by then,
-  and last the point-thinning study S2 on rockytop_example in `D:\scapes` with its verdict (would a cap of 1500 do:
-  centres < 1 cm p95, attitudes < 0.1 mdeg p95, focal lengths < 0.05 % max). Faults: a failed step is logged and the
+  rover_frame, lightglue_ab, zcam_states, report). Then the studies that exist (15:46: "use past studies instead of
+  writing new ones") on those blocks - `make_figures.bat`, `make_maps.bat`, `zcam_aspect_geometry.py` over every
+  zoom, `tie_point_studies.py S6` over the zcam_consensus blocks - and last the tie-point studies on the tiny blocks in
+  `D:\scapes` (finished variants skipped): S2 with its verdict (would a cap of 1500 do: centres < 1 cm p95,
+  attitudes < 0.1 mdeg p95, focal lengths < 0.05 % max), then S1, S3, S4, S5 (`--skip-tie-studies`).
+  `make_maps.bat` honours `MPPP_NOPAUSE`. Faults: a failed step is logged and the
   chain goes on; a step past its time limit is stopped with its process tree; the computer is kept awake
   (SetThreadExecutionState) and QuickEdit switched off; the chain's state is
   `<root>\mppp_pipeline\freeze_chain_status.json` - started again after a crash, a reboot or a closed window it
