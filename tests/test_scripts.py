@@ -377,8 +377,8 @@ def test_windows_folder_is_short():
     # generates the ecam colmap alignment with the mppp metashape and nerfstudio commands"): 22
     # train_masks.bat (Christian, 30 Oct: train on the newest set, the JOSS outputs): 23
     # zcam_backlash_rerun.bat (Christian, 31 Oct: "one good zcam joint to capture all of the problematic backlash
-    # anomalies"): 24
-    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 24, sorted(f.name for f in files)
+    # anomalies"): 24; freeze_chain.bat (Christian, 2 Nov: the freeze run unattended): 25
+    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 25, sorted(f.name for f in files)
     tm = (w / "train_masks.bat").read_bytes()
     assert tm.count(b"\n") == tm.count(b"\r\n") and b"masks_training_set_v*" in tm and b"--paper" in tm
     assert b"--zoom-max 2" in tm and b"torch.cuda.is_available()" in tm
