@@ -242,7 +242,7 @@ def test_excluded_station_is_not_selected_nor_an_anchor(tmp_path):
     assert rep["stations_excluded"] == ["S026D0282"] and all("N0260630" in p.name for p in paths)
     # 31 Oct: ZCAM03391 at 79 mm left out too (0 tie points; f 10-11.5 % off)
     assert load_settings(site="rockytop").exclude == ["S026D0282", "*ZCAM03391_079*", "*ZCAM03400_079*",
-                                                      "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486"]
+                                                      "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486,ZCAM08548"]
     st = B.site_waypoint_stats({"sols": [[460, 530]], "settings": {"EXCLUDE": ["S026D0282"]}},
                                B.waypoint_points(ROOT / "src" / "mppp" / "data" / "M20_waypoints.json"))
     assert st["n_nearby"] == 0 and st["max_waypoint_separation_m"] < 30
@@ -633,7 +633,7 @@ def test_zcam_include_keeps_only_listed_sequences_at_a_zoom():
     kept, removed = apply_exclusions([mk("ZCAM01234", 110), mk("ZCAM08529", 110), mk("ZCAM01234", 63)], e)
     assert len(kept) == 2 and removed[0]["image"].endswith("ZCAM01234_1100LMA01")
     s = run_settings(site="rockytop")
-    assert "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486" in s.exclude and "S026D0282" in s.exclude
+    assert "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486,ZCAM08548" in s.exclude and "S026D0282" in s.exclude
     assert any(x.startswith("zoom:110") for x in run_settings(site="taylorfjellet").exclude)
     assert not any(str(x).startswith("zoom:") for x in s.replace(include_zcam=False).key_dict()["exclude"])
     assert any(str(x).startswith("zoom:") for x in s.replace(include_zcam=True).key_dict()["exclude"])

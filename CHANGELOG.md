@@ -46,6 +46,8 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   `forms.ZCAM_FIXED_TERMS[110]` now k1, k2, p1, p2 = 0 (the 1 Nov joint fitted k1 +0.42 / +0.39 against -0.23 at
   79 mm, with fy / fx 0.993). The joint's distortion tests free the fixed terms together and, new, k1 alone
   (delta chi2 and the curve change it makes).
+- **Rockytop 110 mm: ZCAM08548 added** to its `zcam_include` (Christian, 2 Nov): ZCAM08529, ZCAM07101, ZCAM08486,
+  ZCAM08548.
 - **`mppp process --dry-run` counts what processing would process** (2 Nov): it applies the shipped exclusion list
   and the site's / run's EXCLUDE entries, a site's `zcam_include` among them (`pipeline.apply_exclusions`, shared
   with `process_site`), and prints the products by camera and, per Mastcam-Z zoom, every sequence with its sols and
