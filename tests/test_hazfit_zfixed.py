@@ -164,7 +164,7 @@ def test_groups_and_block_sites():
     assert t["sites"]["cannery_passage"]["zcam"] == [48, 63, 110] and "cannery_passage" in g["zcam48_consensus"]
     assert "cannery_passage" in g["zcam63_consensus"] and "cannery_passage" in g["zcam110_consensus"]
     assert g["zcam34_joint"][0] == "taylorfjellet"
-    assert "airey_hill" in g["ecam_consensus"]
+    assert "airey_hill" not in g["ecam_consensus"] and "airey_hill" in g["zcam_consensus"]   # 2 Nov: out of the Navcam list
     assert "chal_rocks" not in g["zcam34_joint"] and "chal_rocks_large" in g["zcam34_joint"]
     assert t["sites"]["chal_rocks_large"]["zcam"] == [34, 48, 63, 79, 110]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "belva_crater_large", "bell_island", "marble_mountain"]

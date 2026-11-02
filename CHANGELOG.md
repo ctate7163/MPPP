@@ -60,6 +60,14 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   `Settings.zcam_aspect_sigma` and `Settings.navcam_aspect_sigma` (Navcam and Hazcams) 1e-3 relative - about 1 px of
   tangential-like effect per bin, while the 3,000-21,000 ppm sequence outliers are 3-20 sigma (the Navcam hold was
   2e-5). Both are run-key settings, so every block runs again.
+- **Navcam joint list (`ecam_consensus`) 31 -> 21 blocks** (Christian, 2 Nov: fewer small blocks, more large and huge
+  ones): no image twice any more (oeb_landing_site, chal_rocks and chal_rocks_large were inside
+  van_zyl_overlook_huge, taylorfjellet inside taylorfjellet_large); seitah_huge for issole_seitah_south and
+  seitah_north_large, bright_angle_large for cheyava_falls; rochette, groloy, airey_hill and hans_amundsen_workspace
+  out; three new unofficial large blocks - `enchanted_lake_large` (sols 421-425, 556-593; 12 waypoints, 57 m),
+  `pico_turquino_large` (1303-1321; 11, 93 m) and `witch_hazel_large` (1355-1428, Witch Hazel Hill and South Arm with
+  the sol 1355 end-of-drive station; 17, 281 m) for enchanted_lake, pico_turquino, south_arm and witch_hazel_hill.
+  The Mastcam-Z and Hazcam lists are unchanged.
 - **Cannery Passage**, an unofficial block (Christian, 2 Nov): sols 543-552, 4 waypoints (rover sites 26, 31; 13.7 m
   apart), Mastcam-Z 48, 63 and 110 mm; in `zcam_consensus` and the 48, 63 and 110 mm consensus groups.
 - **Rockytop: eight 63 / 79 mm sequences excluded** (Christian, 2 Nov: "frames that should not be there"):
