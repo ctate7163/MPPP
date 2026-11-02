@@ -60,6 +60,8 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   `Settings.zcam_aspect_sigma` and `Settings.navcam_aspect_sigma` (Navcam and Hazcams) 1e-3 relative - about 1 px of
   tangential-like effect per bin, while the 3,000-21,000 ppm sequence outliers are 3-20 sigma (the Navcam hold was
   2e-5). Both are run-key settings, so every block runs again.
+- **Seitah Overlook: sol 124 ZCAM08122 at 34 mm excluded** (2 Nov): -3.8 % in focal length in both eyes (z -700) in
+  the 34 mm joint without Chal Rocks - the only check that joint failed.
 - **`freeze_chain.bat`** (Christian, 2 Nov: away while it runs): waits for the mask training, the mask A/B of v3, v4
   and v4.1 (`--seen-split`), the point-thinning study S2 with its verdict (cap 1500 when centres < 1 cm p95,
   attitudes < 0.1 mdeg p95, focal lengths < 0.05 % max), then `run_pipeline.py --reset` (the state of 28 Oct had the
