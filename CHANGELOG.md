@@ -60,6 +60,9 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   `Settings.zcam_aspect_sigma` and `Settings.navcam_aspect_sigma` (Navcam and Hazcams) 1e-3 relative - about 1 px of
   tangential-like effect per bin, while the 3,000-21,000 ppm sequence outliers are 3-20 sigma (the Navcam hold was
   2e-5). Both are run-key settings, so every block runs again.
+- **Rockytop: eight 63 / 79 mm sequences excluded** (Christian, 2 Nov: "frames that should not be there"):
+  ZCAM05105, ZCAM05108, ZCAM05109, ZCAM05110, ZCAM05111, ZCAM05112, ZCAM05115, ZCAM05116 (`seq:` entries; Navcam run
+  keys unchanged).
 - **Rockytop 110 mm: ZCAM08548 added** to its `zcam_include` (Christian, 2 Nov): ZCAM08529, ZCAM07101, ZCAM08486,
   ZCAM08548.
 - **`mppp process --dry-run` counts what processing would process** (2 Nov): it applies the shipped exclusion list

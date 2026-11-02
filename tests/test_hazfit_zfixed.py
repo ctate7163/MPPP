@@ -241,7 +241,11 @@ def test_excluded_station_is_not_selected_nor_an_anchor(tmp_path):
     assert rep["stations_added"] == [] and rep["stations_in_range"] == ["S026D0630"]
     assert rep["stations_excluded"] == ["S026D0282"] and all("N0260630" in p.name for p in paths)
     # 31 Oct: ZCAM03391 at 79 mm left out too (0 tie points; f 10-11.5 % off)
+    # 2 Nov: eight 63 / 79 mm sequences left out (Christian)
     assert load_settings(site="rockytop").exclude == ["S026D0282", "*ZCAM03391_079*", "*ZCAM03400_079*",
+                                                      "seq:ZCAM05105", "seq:ZCAM05108", "seq:ZCAM05109",
+                                                      "seq:ZCAM05110", "seq:ZCAM05111", "seq:ZCAM05112",
+                                                      "seq:ZCAM05115", "seq:ZCAM05116",
                                                       "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486,ZCAM08548"]
     st = B.site_waypoint_stats({"sols": [[460, 530]], "settings": {"EXCLUDE": ["S026D0282"]}},
                                B.waypoint_points(ROOT / "src" / "mppp" / "data" / "M20_waypoints.json"))
