@@ -1,4 +1,5 @@
-"""scripts/freeze_chain.py (2 Nov 2026): the unattended chain - the new root, the wait for v4.2, the mask choice, the S2 verdict, the commands."""
+"""scripts/freeze_chain.py (2 Nov 2026): the unattended chain - the root, the wait for v4.2, the mask choice, the
+pipeline in three calls (blocks, final pass, studies), S2 last; a restart continues it."""
 import json
 import sys
 from pathlib import Path
@@ -15,17 +16,18 @@ def _ab_csv(path, v3, v42):
     (path / "mask_ab.csv").write_text("\n".join(rows) + "\n")
 
 
-def test_chain_waits_decides_and_runs(tmp_path, monkeypatch):
+def _setup(tmp_path, monkeypatch, trained=True):
     import freeze_chain as F
     ck, outp = tmp_path / "checkpoints", tmp_path / "outputs"
     v41 = ck / "convnext_tiny_s4_seg_20261102_v8_v4.1.pt"
     v42 = ck / "convnext_tiny_s4_seg_20261103_v8_v4.2.pt"
-    rel = outp / f"mask_{v42.stem}" / f"{v42.stem}.safetensors"
-    rel.parent.mkdir(parents=True)
-    rel.write_bytes(b"x")                                                     # the hand-started training is done
     ck.mkdir()
     v41.write_bytes(b"x")
     v42.write_bytes(b"x")
+    if trained:
+        rel = outp / f"mask_{v42.stem}" / f"{v42.stem}.safetensors"
+        rel.parent.mkdir(parents=True)
+        rel.write_bytes(b"x")                                                 # the hand-started training is done
     old, new = tmp_path / "scapes", tmp_path / "rover_blocks"
     old.mkdir()
     (old / "zcam_low_backlash_found.csv").write_text("seq\n")
@@ -33,40 +35,126 @@ def test_chain_waits_decides_and_runs(tmp_path, monkeypatch):
     monkeypatch.setattr(F, "CKPT_DIR", ck)
     monkeypatch.setattr(F, "OUTPUTS", outp)
     monkeypatch.setattr(F, "V41", v41)
+    monkeypatch.setattr(F.time, "sleep", lambda s: None)
+    return F, v41, v42, old, new
+
+
+def test_chain_runs_through(tmp_path, monkeypatch):
+    F, v41, v42, old, new = _setup(tmp_path, monkeypatch)
     ran = []
+    state = {"v42_iou": 0.9821}                                               # v4.2 better than v3
 
     def run(self, name, cmd, timeout_h):
-        ran.append((name, [str(c) for c in cmd]))
+        cmd = [str(c) for c in cmd]
+        ran.append((name, cmd))
         if name == "mask_ab":
-            _ab_csv(Path(cmd[cmd.index("--out") + 1]), 0.9804, v42_iou)
+            _ab_csv(Path(cmd[cmd.index("--out") + 1]), 0.9804, state["v42_iou"])
+        self.step(name, state="done", started="t", ended="t")
         return 0
     monkeypatch.setattr(F.Chain, "run", run)
     roots = []
     monkeypatch.setattr(F, "s2_verdict", lambda c, root=None: roots.append(root) or True)
-    v42_iou = 0.9821                                                          # v4.2 better than v3
     assert F.main(["--root", str(new), "--old-root", str(old)]) == 0
-    assert [n for n, _ in ran] == ["mask_ab", "freeze", "s2"] and roots == [old]          # S2 last, at the old root
-    assert ran[2][1][-1] == str(old)
+    assert [n for n, _ in ran] == ["mask_ab", "blocks", "final_pass", "studies", "s2"] and roots == [old]
     ab = ran[0][1]
     assert ab[ab.index("--split-ckpt") + 1] == str(v42) and ab[ab.index("--also-held-out") + 1] == str(v41)
     assert "--seen-split" in ab and "mppp_mask_v3" in ab and ab[-1].endswith("mask_ab_v3_v41_v42")
-    fr = ran[1][1]
-    assert fr[fr.index("--root") + 1] == str(new) and "--reset" in fr and "ba_points_cap=1500" not in fr
-    assert f"mask_checkpoint={rel}" in fr
+    blocks, final, studies = ran[1][1], ran[2][1], ran[3][1]
+    for cmd in (blocks, final, studies):
+        assert cmd[cmd.index("--root") + 1] == str(new) and f"mask_checkpoint={v42}" in cmd
+        assert "ba_points_cap=1500" not in cmd
+    assert "--reset" in blocks and blocks[blocks.index("--stop-before") + 1] == "error_analysis"
+    assert "--reset" not in final and final[final.index("--redo"):final.index("--redo") + 3] == ["--redo", "ecam_runs", "zcam_runs"]
+    assert "--stop-before" in final and "--stop-before" not in studies and "--redo" not in studies
+    assert ran[4][1][-1] == str(old)                                          # S2 at the old root, last
     assert (new / "zcam_low_backlash_found.csv").is_file()                   # copied from the old root
     log = (new / "mppp_pipeline" / "freeze_chain_log.txt").read_text()
-    assert "the training is done" in log and "DEMs in" in log and "paper_studies" in log
+    assert "trained" in log and "DEMs in" in log and "GB free" in log and "paper_studies" in log
     st = json.loads((new / "mppp_pipeline" / "freeze_chain_status.json").read_text())
     assert st["steps"]["wait_v42"]["state"] == "done" and st["steps"]["mask_choice"]["choice"] == "v4.2"
-    # v3 better: no mask_checkpoint; --cap: the cap; --skip-s2: no study
-    ran.clear()
-    v42_iou = 0.9790
-    F.main(["--root", str(new), "--old-root", str(old), "--cap", "--skip-s2"])
-    assert [n for n, _ in ran] == ["mask_ab", "freeze"]
+    assert st["state"] == "done" and st["steps"]["chain"]["failed"] == []
+
+
+def test_chain_v3_cap_and_flags(tmp_path, monkeypatch):
+    F, v41, v42, old, new = _setup(tmp_path, monkeypatch)
+    ran = []
+
+    def run(self, name, cmd, timeout_h):
+        cmd = [str(c) for c in cmd]
+        ran.append((name, cmd))
+        if name == "mask_ab":
+            _ab_csv(Path(cmd[cmd.index("--out") + 1]), 0.9804, 0.9790)       # v3 better
+        self.step(name, state="done", started="t", ended="t")
+        return 0
+    monkeypatch.setattr(F.Chain, "run", run)
+    F.main(["--root", str(new), "--old-root", str(old), "--cap", "--skip-s2", "--no-final-pass"])
+    assert [n for n, _ in ran] == ["mask_ab", "blocks", "studies"]
     assert "ba_points_cap=1500" in ran[1][1] and not any(x.startswith("mask_checkpoint") for x in ran[1][1])
+    st = json.loads((new / "mppp_pipeline" / "freeze_chain_status.json").read_text())
+    assert st["steps"]["mask_choice"]["choice"] == "v3" and st["steps"]["final_pass"]["note"] == "--no-final-pass"
+    # a fresh root: nothing but the A/B and S2
     ran.clear()
-    F.main(["--root", str(new), "--old-root", str(old), "--skip-ab", "--no-freeze", "--no-wait", "--skip-s2"])
-    assert ran == []
+    (new / "mppp_pipeline" / "freeze_chain_status.json").unlink()
+    F.main(["--root", str(new), "--old-root", str(old), "--skip-ab", "--no-freeze", "--no-wait"])
+    assert [n for n, _ in ran] == ["s2"]
+
+
+def test_chain_restart_continues(tmp_path, monkeypatch):
+    """A crash in the blocks: the next start keeps the mask choice, skips the A/B, continues without --reset."""
+    F, v41, v42, old, new = _setup(tmp_path, monkeypatch)
+    ran = []
+    crash = {"on": True}
+
+    def run(self, name, cmd, timeout_h):
+        cmd = [str(c) for c in cmd]
+        ran.append((name, cmd))
+        if name == "mask_ab":
+            _ab_csv(Path(cmd[cmd.index("--out") + 1]), 0.9804, 0.9821)
+        if name == "blocks" and crash["on"]:
+            self.step(name, state="running", command=cmd, started="t")
+            raise RuntimeError("the computer restarted")
+        self.step(name, state="done", started="t", ended="t")
+        return 0
+    monkeypatch.setattr(F.Chain, "run", run)
+    monkeypatch.setattr(F, "s2_verdict", lambda c, root=None: True)
+    assert F.main(["--root", str(new), "--old-root", str(old)]) == 1
+    assert [n for n, _ in ran] == ["mask_ab", "blocks"]
+    st = json.loads((new / "mppp_pipeline" / "freeze_chain_status.json").read_text())
+    assert st["state"] == "failed"
+    # the A/B folder is gone too (the choice must still hold)
+    import shutil
+    shutil.rmtree(F.OUTPUTS / "mask_ab_v3_v41_v42")
+    ran.clear()
+    crash["on"] = False
+    assert F.main(["--root", str(new), "--old-root", str(old)]) == 0
+    assert [n for n, _ in ran] == ["blocks", "final_pass", "studies", "s2"]
+    blocks = ran[0][1]
+    assert "--reset" not in blocks and f"mask_checkpoint={v42}" in blocks
+    log = (new / "mppp_pipeline" / "freeze_chain_log.txt").read_text()
+    assert "continued" in log and "kept from before - v4.2" in log and "no --reset" in log
+    st = json.loads((new / "mppp_pipeline" / "freeze_chain_status.json").read_text())
+    assert len(st["restarts"]) == 1 and st["state"] == "done"
+    # done: a third start runs nothing; --redo s2 runs S2 again
+    ran.clear()
+    assert F.main(["--root", str(new), "--old-root", str(old)]) == 0 and ran == []
+    F.main(["--root", str(new), "--old-root", str(old), "--redo", "s2"])
+    assert [n for n, _ in ran] == ["s2"]
+
+
+def test_chain_refuses_second_instance(tmp_path, monkeypatch):
+    F, v41, v42, old, new = _setup(tmp_path, monkeypatch)
+    d = new / "mppp_pipeline"
+    d.mkdir(parents=True)
+    import datetime
+    (d / "freeze_chain_status.json").write_text(json.dumps({
+        "started": "t", "steps": {}, "state": "running", "pid": 4242,
+        "heartbeat": datetime.datetime.now().isoformat(timespec="seconds")}))
+    monkeypatch.setattr(F, "pid_alive", lambda pid: pid == 4242)
+    assert F.main(["--root", str(new), "--old-root", str(old)]) == 2
+    monkeypatch.setattr(F, "pid_alive", lambda pid: False)             # the process is gone: it starts
+    monkeypatch.setattr(F.Chain, "run", lambda self, name, cmd, timeout_h: self.step(name, state="done") or 0)
+    monkeypatch.setattr(F, "s2_verdict", lambda c, root=None: True)
+    assert F.main(["--root", str(new), "--old-root", str(old)]) == 0
 
 
 def test_wait_for_v42_gives_up(tmp_path, monkeypatch):
@@ -77,6 +165,13 @@ def test_wait_for_v42_gives_up(tmp_path, monkeypatch):
     c = F.Chain(type("A", (), {"root": str(tmp_path), "max_wait_h": 0.0, "quiet_min": 45.0})())
     F.wait_for_v42(c)
     assert "not done after" in (tmp_path / "mppp_pipeline" / "freeze_chain_log.txt").read_text()
+    # a checkpoint without its summary or release is not trained
+    (tmp_path / "ck").mkdir()
+    (tmp_path / "ck" / "convnext_tiny_s4_seg_20261103_v8_v4.2.pt").write_bytes(b"x")
+    assert F.v42_trained() is None
+    (tmp_path / "out" / "mask_convnext_tiny_s4_seg_20261103_v8_v4.2").mkdir(parents=True)
+    (tmp_path / "out" / "mask_convnext_tiny_s4_seg_20261103_v8_v4.2" / "summary.md").write_text("done")
+    assert F.v42_trained() is not None
 
 
 def test_s2_verdict_limits(tmp_path, monkeypatch):
@@ -91,3 +186,11 @@ def test_s2_verdict_limits(tmp_path, monkeypatch):
                       ({}, False)):
         monkeypatch.setattr(T, "compare_solutions", lambda a, b, g=got: g)
         assert F.s2_verdict(c) is want
+
+
+def test_run_stops_a_child_past_its_time(tmp_path, monkeypatch):
+    import freeze_chain as F
+    c = F.Chain(type("A", (), {"root": str(tmp_path), "redo": None})())
+    rc = c.run("sleepy", [sys.executable, "-c", "import time; time.sleep(30)"], timeout_h=0.0)
+    assert rc in (124, 127) or rc != 0
+    assert "stopped" in (tmp_path / "mppp_pipeline" / "freeze_chain_log.txt").read_text() or rc != 0

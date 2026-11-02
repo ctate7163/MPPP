@@ -73,16 +73,25 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   those models held out too, each split rebuilt as it trained (`items_as_trained`: the newest masks left out to the
   card's n_train + n_val - the v8 set grew from 4,095 to 4,099 masks between v4 and v4.1, and the shuffle of the
   sorted names changes with every mask). The chain's A/B uses v4.1's split with `--also-held-out` v4.
-- **`freeze_chain.bat`** (Christian, 2 Nov: away while it runs; 14:52-14:57: the blocks in `D:\rover_blocks`, mask
-  v4.2 compared before the blocks, S2 at the end): copies the found list and the focus-from-below list from
-  `D:\scapes` into the new root, sets the DEMs from `<root>\dem`, waits for mask v4.2's training (started by hand;
-  done when its release candidate is written), runs the mask A/B of v3, v4.1 and v4.2 (v4.2's split, v4.1 with
-  `--also-held-out`, v3 with `--seen-split`) and passes `--set mask_checkpoint=<v4.2>` to the freeze run when v4.2's
-  exclusion IoU on the frames no model trained on beats v3's; then `run_pipeline.py --reset` (no point cap; `--cap`
-  adds it; the state of 28 Oct had the ecam stages done: without `--reset` the freeze run would have started at
-  zcam_runs), `<root>\paper_studies\run_paper_studies.py` if it exists, and last the point-thinning study S2 on
-  rockytop_example in `D:\scapes` with its verdict (would a cap of 1500 do: centres < 1 cm p95, attitudes
-  < 0.1 mdeg p95, focal lengths < 0.05 % max). Log and status in `<root>\mppp_pipeline\freeze_chain_*`.
+- **`freeze_chain.bat`** (Christian, 2 Nov: away while it runs; 14:52-15:30: the blocks in `D:\rover_blocks`, mask
+  v4.2 compared before the blocks, S2 at the end, "robust against faults ... a standard set of blocks using the best
+  camera and rig models available followed by the time consuming tests and studies"): copies the found list and the
+  focus-from-below list from `D:\scapes` into the new root, checks `<root>\dem` and the free disk space, waits for
+  mask v4.2's training (started by hand; done when its release candidate or summary is written), runs the mask A/B of
+  v3, v4.1 and v4.2 (v4.2's split, v4.1 with `--also-held-out`, v3 with `--seen-split`) and passes
+  `--set mask_checkpoint=<v4.2 .pt>` to the blocks when v4.2's exclusion IoU on the frames no model trained on beats
+  v3's. The pipeline then runs in three calls: `--reset --stop-before error_analysis` (the blocks, the Navcam joint,
+  the Hazcam fit, the Mastcam-Z joints - promoted when their checks pass), `--redo ecam_runs zcam_runs --stop-before
+  error_analysis` (the final pass: the camera-model fingerprint is in the run key, so only the blocks whose models
+  were promoted are aligned again, with their features and matches reused), then the studies (error_analysis,
+  rover_frame, lightglue_ab, zcam_states, report). Then `studies\paper\run_paper_studies.py` if it exists by then,
+  and last the point-thinning study S2 on rockytop_example in `D:\scapes` with its verdict (would a cap of 1500 do:
+  centres < 1 cm p95, attitudes < 0.1 mdeg p95, focal lengths < 0.05 % max). Faults: a failed step is logged and the
+  chain goes on; a step past its time limit is stopped with its process tree; the computer is kept awake
+  (SetThreadExecutionState) and QuickEdit switched off; the chain's state is
+  `<root>\mppp_pipeline\freeze_chain_status.json` - started again after a crash, a reboot or a closed window it
+  skips the steps done, keeps the mask choice (another would change the run key) and continues the pipeline without
+  `--reset`; a second chain on the same root does not start while one is alive. No point cap (`--cap` adds it).
 - **The blocks root is `D:\rover_blocks`** (Christian, 2 Nov; was `D:\scapes`): the default of every Windows script
   (`run_pipeline.bat` ROOT, the `MPPP_SCAPES` fallbacks, `m20_dem_env.bat`'s DEMs in `<root>\dem`). The camera
   models stay in `D:\scapes\cmods` (`mppp_cmods.txt`). An `MPPP_SCAPES` set with `setx` still wins:

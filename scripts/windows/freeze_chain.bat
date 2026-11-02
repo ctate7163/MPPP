@@ -1,22 +1,31 @@
 @echo off
 REM ======================================================================================================
 REM MPPP 0.95.3 - freeze_chain.bat (2 Nov 2026, Christian: "I will be away from the computer when these finish";
-REM 14:52 "The blocks should be saved to D:\rover_blocks"; 14:54 "don't add the mask training to the freeze,
-REM just delay the start so that it will be done by the time it runs the mask comparison")
-REM Unattended: the new root (the found lists copied from D:\scapes; DEMs in D:\rover_blocks\dem), waits for the
-REM mask v4.2 training started by hand (train_masks.bat --tag v8_v4.2 --zoom-pairs), the mask A/B (v3, v4.1,
-REM v4.2) - v4.2 is used when it beats v3 -, the freeze run (run_pipeline --reset, no point cap) in D:\rover_blocks,
-REM D:\rover_blocks\paper_studies\run_paper_studies.py if it is there, and last (14:57) the point-cap study S2 on
-REM rockytop_example in D:\scapes, where its block is.  See scripts\freeze_chain.py.
-REM   freeze_chain.bat                  everything
+REM 15:30: "make sure it is robust against faults. I want it to run to completion over several days, at the end of
+REM which I want a standard set of blocks using the best camera and rig models available followed by the time
+REM consuming tests and studies needed to really understand the results").  See scripts\freeze_chain.py.
+REM Unattended, in D:\rover_blocks: the root prepared (the found lists from D:\scapes, the DEMs in dem\), a wait
+REM for the mask v4.2 training started by hand (train_masks.bat --tag v8_v4.2 --zoom-pairs), the mask A/B (v3,
+REM v4.1, v4.2; v4.2 used when it beats v3), then run_pipeline in three calls: the blocks and the joints (the
+REM Navcam, Hazcam and Mastcam-Z models promoted when their checks pass), the final pass (every block whose
+REM models changed aligned again with the promoted ones), the studies (error analysis, rover frame, LightGlue
+REM A/B, Mastcam-Z states, the report); then studies\paper\run_paper_studies.py if it exists, and last the
+REM point-cap study S2 on rockytop_example in D:\scapes.
+REM Faults: a failed step is logged and the chain goes on; a step past its time limit is stopped with its process
+REM tree; the computer is kept awake and QuickEdit is off.  After a crash, a reboot or a closed window: double-click
+REM this file again - it continues where it was (the mask choice kept, the pipeline after its last finished stage,
+REM the finished blocks skipped).  A second window on the same root does not start.
+REM   freeze_chain.bat                  everything (again after a stop: continues)
 REM   freeze_chain.bat --no-wait        no wait for the v4.2 training
-REM   freeze_chain.bat --no-freeze      the A/B and S2 only
+REM   freeze_chain.bat --no-final-pass  the blocks as the joints found them
 REM   freeze_chain.bat --skip-s2        no S2 at the end
+REM   freeze_chain.bat --redo s2        a step again (root wait_v42 mask_ab blocks final_pass studies paper_studies s2)
 REM Root: MPPP_FREEZE_ROOT if set, else D:\rover_blocks.
-REM Log: D:\rover_blocks\mppp_pipeline\freeze_chain_log.txt (and the run_pipeline logs next to it).
-REM Keep the computer awake and the Claude app open (the results are read from afar).
+REM Log: D:\rover_blocks\mppp_pipeline\freeze_chain_log.txt, status freeze_chain_status.json, each step's output
+REM freeze_chain_<step>.log, the pipeline's own logs next to them.  Keep the Claude app open (read from afar).
 REM ======================================================================================================
 setlocal EnableExtensions EnableDelayedExpansion
+title MPPP freeze chain - %MPPP_FREEZE_ROOT%
 for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
 set "KMP_DUPLICATE_LIB_OK=TRUE"
