@@ -60,6 +60,13 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   `Settings.zcam_aspect_sigma` and `Settings.navcam_aspect_sigma` (Navcam and Hazcams) 1e-3 relative - about 1 px of
   tangential-like effect per bin, while the 3,000-21,000 ppm sequence outliers are 3-20 sigma (the Navcam hold was
   2e-5). Both are run-key settings, so every block runs again.
+- **`freeze_chain.bat`** (Christian, 2 Nov: away while it runs): waits for the mask training, the mask A/B of v3, v4
+  and v4.1 (`--seen-split`), the point-thinning study S2 with its verdict (cap 1500 when centres < 1 cm p95,
+  attitudes < 0.1 mdeg p95, focal lengths < 0.05 % max), then `run_pipeline.py --reset` (the state of 28 Oct had the
+  ecam stages done: without `--reset` the freeze run would have started at zcam_runs), then
+  `<root>\paper_studies\run_paper_studies.py` if it exists. Log and status in `<root>\mppp_pipeline\freeze_chain_*`.
+- **The freeze run writes the full export by default** (`run_pipeline.py --light` for the calibration-run export):
+  its error_analysis stage reads `error_input\native`, which the light export of 28 Oct left out.
 - **Navcam joint points by stations** (Christian, 2 Nov: "for the joint, scale to 500-1000 points per station"):
   `calib navcam` draws 750 Navcam points per station of a block (`--points-per-station`; at least 2,000;
   `tied.POINTS_PER_STATION`, `joint.merge_scapes` with `{"per_station", "min"}`; the per-block numbers in the result's
