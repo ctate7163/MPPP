@@ -69,6 +69,15 @@ This batch file does the following:
 
 Running `scripts/train_mask.py` with the same options does the same on any platform.
 
+`--zoom-pairs` (mask v4.2) puts every full-resolution Navcam frame (5,120 px) into each epoch twice: whole, downsampled
+to the 1,648 px input as at inference, and as an exactly 2× crop at a random place, downsampled the same way. The
+model always sees the inference view and also sees rover hardware near the Mastcam-Z pixel scale. Binned Navcam and
+Hazcam frames are used once; the random zoom is off. On Windows:
+
+```bat
+D:\code\MPPP\scripts\windows\train_masks.bat --tag v8_v4.2 --zoom-pairs
+```
+
 ## Comparing two models
 
 ```bat

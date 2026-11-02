@@ -62,6 +62,13 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   2e-5). Both are run-key settings, so every block runs again.
 - **Seitah Overlook: sol 124 ZCAM08122 at 34 mm excluded** (2 Nov): -3.8 % in focal length in both eyes (z -700) in
   the 34 mm joint without Chal Rocks - the only check that joint failed.
+- **Mask training: zoom pairs** (Christian, 2 Nov: "the high res navcams should both downsample to the standard
+  1,648 px width and zoom in 2x before down sampling to 1,648 px ... not for hazcams. Make it exactly 2x"):
+  `train_mask.py --zoom-pairs` (`TrainConfig.zoom_pairs`, `MaskDataset`): every Navcam frame whose long side is at
+  least 2 x the input size is in the training list twice - whole, and as an exactly 2x crop at a random place
+  (`zoom_crop(exact=True)`); binned Navcam and Hazcam frames once; the random zoom off. Before (v4, v4.1) half of the
+  large Navcam and Hazcam frames were replaced by a crop zoomed 1-2x, so the inference view of a full-resolution frame
+  was seen half as often. For mask v4.2: `train_masks.bat --tag v8_v4.2 --zoom-pairs` (after the freeze run).
 - **Mask A/B across sets that grew** (2 Nov): `compare_mask_models.py --also-held-out CKPT ...` keeps only the frames
   those models held out too, each split rebuilt as it trained (`items_as_trained`: the newest masks left out to the
   card's n_train + n_val - the v8 set grew from 4,095 to 4,099 masks between v4 and v4.1, and the shuffle of the

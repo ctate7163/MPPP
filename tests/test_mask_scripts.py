@@ -143,3 +143,34 @@ def test_items_as_trained_drops_the_newest_masks(tmp_path):
     assert [Path(it.mask).name for it in kept] == ["m0.png", "m1.png", "m2.png", "m3.png"]
     assert items_as_trained(items, {"training": {"n_train": 5, "n_val": 1}}) == items
     assert items_as_trained(items, {}) == items
+
+
+def test_zoom_pairs_full_res_navcam_twice(tmp_path):
+    """2 Nov 2026 (mask v4.2): full-resolution Navcam frames are in the training list twice - whole and an exactly 2x
+    crop; binned Navcam and Hazcam frames once; the random zoom is off."""
+    import cv2
+    import numpy as np
+    from mppp.mask.training.train import Item, MaskDataset, zoom_crop
+    rows = {"NLF_0100_0000000001_000RAD_N0000000NCAM00000_0A0195J01.png": (3840, 5120),
+            "NLF_0100_0000000002_000RAD_N0000000NCAM00000_0A0195J01.png": (1920, 2560),
+            "FLF_0100_0000000003_000RAD_N0000000FHAZ00000_0A0195J01.png": (3840, 5120)}
+    items = []
+    for name, (h, w) in rows.items():
+        (tmp_path / "images").mkdir(exist_ok=True)
+        (tmp_path / "masks").mkdir(exist_ok=True)
+        im = np.full((h, w, 3), 100, np.uint8)
+        ms = np.zeros((h, w), np.uint8)
+        ms[: h // 2] = 255
+        cv2.imwrite(str(tmp_path / "images" / name), im)
+        cv2.imwrite(str(tmp_path / "masks" / name), ms)
+        items.append(Item(image=str(tmp_path / "images" / name), mask=str(tmp_path / "masks" / name)))
+    ds = MaskDataset(items, 1648, zoom_max=2.0, zoom_prob=0.5, zoom_pairs=True)
+    assert len(ds) == 4 and ds.n_zoom_pairs == 1 and ds.zoom_prob == 0.0
+    assert ds.index[-1] == (0, True)
+    im, ms, k = ds[3]
+    assert k == 0 and im.shape[:2] == ms.shape[:2]
+    off = MaskDataset(items, 1648)
+    assert len(off) == 3 and off.n_zoom_pairs == 0
+    a = np.zeros((3840, 5120, 3), np.uint8) + 1
+    ci, cm, z = zoom_crop(a, np.zeros((3840, 5120), np.uint8), 2.0, exact=True)
+    assert z == 2.0 and ci.shape[:2] == (1920, 2560)

@@ -219,14 +219,14 @@ def letterbox(im: np.ndarray, ms: np.ndarray, size: int,
 
 
 def zoom_crop(im: np.ndarray, ms: np.ndarray, zoom_max: float, rng: random.Random = random,
-              min_valid: float = 0.5, tries: int = 6) -> Tuple[np.ndarray, np.ndarray, float]:
+              min_valid: float = 0.5, tries: int = 6, exact: bool = False) -> Tuple[np.ndarray, np.ndarray, float]:
     """0.95.2 (Christian, 30 Oct: "for large ecam images downsample the image and zoom in by up to 2 somewhere in the
     frame"): a crop of 1/z of the frame on each side, z uniform in [1, ``zoom_max``], at a random place - the
     letterbox then brings it to the canvas, so the frame is seen up to z times larger than whole.  A crop with less
     than ``min_valid`` of its pixels valid (image not 0: the padding of sub-frames) is drawn again; returns
     (image, mask, z) - z = 1 when no crop was taken."""
     h, w = ms.shape[:2]
-    z = rng.uniform(1.0, float(zoom_max))
+    z = float(zoom_max) if exact else rng.uniform(1.0, float(zoom_max))      # 2 Nov 2026: exact for the zoom pairs
     if z <= 1.0001:
         return im, ms, 1.0
     cw, ch = max(1, int(round(w / z))), max(1, int(round(h / z)))
@@ -243,21 +243,46 @@ class MaskDataset(Dataset):
     def __init__(self, items: Sequence[Item], size: int = 1648, hflip: bool = False,
                  canvas: Optional[Tuple[int, int]] = None, quad_overlap: int = 64,
                  zoom_max: float = 1.0, zoom_prob: float = 0.0, zoom_families: str = "NFR",
-                 tone_prob: float = 0.0):
+                 tone_prob: float = 0.0, zoom_pairs: bool = False, zoom_pair_factor: float = 2.0,
+                 zoom_pair_families: str = "N"):
         self.items, self.size, self.hflip, self.canvas = list(items), int(size), hflip, canvas
         self.tone_prob = float(tone_prob)
         self.quad_overlap = int(quad_overlap)
         self.zoom_max, self.zoom_prob, self.zoom_families = float(zoom_max), float(zoom_prob), str(zoom_families)
+        # 2 Nov 2026 (Christian: "the high res navcams should both downsample to the standard 1,648 px width and zoom
+        # in 2x before down sampling to 1,648 px ... not for hazcams. Make it exactly 2x"): every frame whose long side
+        # is at least zoom_pair_factor x the input size (full-resolution Navcam: 5120 px) is in the training list
+        # twice - whole, and as an exactly zoom_pair_factor x crop at a random place - so the inference view is always
+        # kept and the hardware is also seen near the Mastcam-Z pixel scale.  The random zoom (zoom_prob) is off then.
+        self.zoom_pairs = bool(zoom_pairs)
+        self.zoom_pair_factor = float(zoom_pair_factor)
+        self.index: List[Tuple[int, bool]] = [(k, False) for k in range(len(self.items))]
+        if self.zoom_pairs:
+            self.zoom_prob = 0.0
+            fams = str(zoom_pair_families).upper()
+            for k, it in enumerate(self.items):
+                if it.tile >= 0 or Path(it.image).name[:1].upper() not in fams:
+                    continue
+                try:
+                    h, w = _image_size(it.mask)
+                except Exception:                                             # noqa: BLE001
+                    continue
+                if max(h, w) >= self.zoom_pair_factor * self.size:
+                    self.index.append((k, True))
+        self.n_zoom_pairs = len(self.index) - len(self.items)
 
     def __len__(self):
-        return len(self.items)
+        return len(self.index)
 
     def __getitem__(self, i):
-        it = self.items[i]
+        k, zoomed = self.index[i]
+        it = self.items[k]
         im, ms = read_pair(it)                  # labels from masks/, image alpha ignored
         if it.tile >= 0:
             (y0, y1, x0, x1), _ = quad_boxes(ms.shape[0], ms.shape[1], self.quad_overlap)[it.tile]
             im, ms = im[y0:y1, x0:x1], ms[y0:y1, x0:x1]
+        elif zoomed:
+            im, ms, _ = zoom_crop(im, ms, self.zoom_pair_factor, exact=True)   # the 2x view of a zoom pair
         elif (self.zoom_max > 1.0 and self.zoom_prob > 0 and max(ms.shape[:2]) > self.size
               and Path(it.image).name[:1].upper() in self.zoom_families and random.random() < self.zoom_prob):
             im, ms, _ = zoom_crop(im, ms, self.zoom_max)      # large Navcam / Hazcam frames: zoomed in up to 2x
@@ -269,7 +294,7 @@ class MaskDataset(Dataset):
         im, ms = letterbox(rgb, ms, self.size, self.canvas)
         if self.hflip and random.random() < 0.5:
             im, ms = im[:, ::-1].copy(), ms[:, ::-1].copy()
-        return im, ms, i
+        return im, ms, k
 
 
 class Collate:
@@ -381,6 +406,10 @@ class TrainConfig:
     zoom_max: float = 2.0
     zoom_prob: float = 0.5
     zoom_families: str = "NFR"
+    # 2 Nov 2026 (mask v4.2): the zoom pairs - full-resolution Navcam frames whole and exactly 2x (MaskDataset)
+    zoom_pairs: bool = False
+    zoom_pair_factor: float = 2.0
+    zoom_pair_families: str = "N"
     # 0.95.3 (Christian, 1 Nov: "v4 should have better augmentation using color changes as well as h flips and
     # zooms" - mask v4.1): with probability tone_prob a training sample gets a random tone curve (black point,
     # white point, gamma, per-channel gains: dataset.VariableRecipe, the recipe of v3's images_variable/ copies),
@@ -583,8 +612,13 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
                      persistent_workers=cfg.num_workers > 0)
     tl = DataLoader(MaskDataset(tr_items, cfg.input_size, cfg.hflip, canvas, cfg.quad_overlap,
                                 zoom_max=cfg.zoom_max, zoom_prob=cfg.zoom_prob, zoom_families=cfg.zoom_families,
-                                tone_prob=cfg.tone_prob),
+                                tone_prob=cfg.tone_prob, zoom_pairs=cfg.zoom_pairs,
+                                zoom_pair_factor=cfg.zoom_pair_factor, zoom_pair_families=cfg.zoom_pair_families),
                     batch_size=cfg.batch_size, shuffle=True, **loader_kw)
+    if cfg.zoom_pairs:
+        log.info(f"[mask.train] zoom pairs: {tl.dataset.n_zoom_pairs} frames ({cfg.zoom_pair_families}, long side >= "
+                 f"{cfg.zoom_pair_factor:g} x {cfg.input_size} px) also as an exactly {cfg.zoom_pair_factor:g}x crop: "
+                 f"{len(tl.dataset)} training samples per epoch")
     vl = DataLoader(MaskDataset(va_items, cfg.input_size, canvas=canvas, quad_overlap=cfg.quad_overlap),
                     batch_size=cfg.batch_size, shuffle=False, **loader_kw)
 
