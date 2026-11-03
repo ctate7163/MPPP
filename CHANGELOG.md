@@ -61,6 +61,18 @@ Hazcam early-mission step tested on the blocks.
   status file) starts it again at the next logon after a reboot and is removed when the chain ends (`--no-logon-task`);
   the free disk space is logged before every step; `freeze_chain.bat --status`; the title and the log path are set
   before `mppp_env.bat`, and an environment failure is written to the chain's log.
+- **Freeze chain audit (3 Nov, 06:20, "full spectrum audit", while the chain ran its blocks)**: (1) the reboot
+  guard never armed - `schtasks /SC ONLOGON` needs elevation ("Access is denied" in the 20:21 log); now a RunOnce
+  entry of the user (`reg add HKCU\...\RunOnce`), removed when the chain ends on its own; (2) `stop_mppp.bat` left
+  the chain alive, which then started the next pipeline step: `freeze_chain.py` is a run marker (`_batch.RUN_MARKERS`),
+  and the chain also ends when `mppp_stopped.txt` appears while a step runs (`ChainStopped`); (3) a status file of
+  another chain version is continued when its step names are all known (a tag bump no longer restarts the joints);
+  (4) a chain-side exception after the child started kills the child (no orphan next to the next step); (5) under
+  25 GB free a step waits for space (24 h) instead of starting. Found, not fixed: the tiny blocks
+  (`chal_rocks_tiny`, `seitah_overlook_tiny`) are no longer in `D:\scapes` - the lightglue_ab stage and S1/S3/S4/S5
+  will rebuild them from PDS. Tests: 13 in `tests/test_freeze_chain.py` (the disk wait off in the tests; its own test).
+  The audit's edits reached the PC's `freeze_chain.py` only as an older copy (without the studies at the end and with
+  the 0.95.3 tag); the five fixes are applied here to the 0.95.4 chain instead.
 - **The blocks root is `D:\rover_blocks`** (Christian, 2 Nov; was `D:\scapes`): the default of every Windows script
   (`run_pipeline.bat` ROOT, the `MPPP_SCAPES` fallbacks, `m20_dem_env.bat`'s DEMs in `<root>\dem`). The camera
   models stay in `D:\scapes\cmods` (`mppp_cmods.txt`). An `MPPP_SCAPES` set with `setx` still wins:

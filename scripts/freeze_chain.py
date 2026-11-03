@@ -106,8 +106,18 @@ ZCAM_GROUP = "zcam_consensus"
 FREE_GB_WARN = 300.0
 STALE_S = 900                                                          # the chain's heartbeat
 CHAIN_TAG = "freeze_0954"                     # the step set of the status file; another tag: kept aside, not used
-LOGON_TASK = "MPPP freeze chain"              # the scheduled task that starts the chain again after a reboot
+LOGON_TASK = "MPPP freeze chain"              # the RunOnce value that starts the chain again after a reboot
+# 3 Nov (audit): "schtasks /SC ONLOGON" needs elevation ("Access is denied" on the PC); the user's RunOnce key does not
+RUNONCE_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce"
+STOP_MARKER = "mppp_stopped.txt"              # written in the root by stop_runs (stop_mppp.bat)
+MIN_FREE_GB = 25.0                            # 3 Nov (audit): a step waits for disk space under this
+EXTRA_STATUS_KEYS = {"chain", "mask_choice", "s2_verdict"}
 WINDOWS = os.name == "nt"
+
+
+class ChainStopped(BaseException):
+    """stop_mppp.bat stopped a step (its marker in the root): the chain ends instead of starting the next step.  A
+    BaseException, so ``guarded`` does not take it for a failure of the step's code."""
 
 
 def now() -> str:
@@ -128,16 +138,25 @@ class Chain:
         self.resumed = False
         self.before: dict = {}
         self.set_aside: Optional[Path] = None
+        self.continued_from: Optional[str] = None
         if self.statf.is_file():                                       # a chain before: continue it
             try:
                 old = json.loads(self.statf.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 old = {}
-            if isinstance(old.get("steps"), dict) and old.get("tag") == CHAIN_TAG:
+            steps = old.get("steps") if isinstance(old.get("steps"), dict) else None
+            same = steps is not None and old.get("tag") == CHAIN_TAG
+            # 3 Nov (audit): another version of this chain whose steps are all known is continued (a tag bump must not
+            # send the blocks back to --reset); only a chain with other steps (the 14:17 one) is set aside
+            compatible = steps is not None and bool(old.get("tag")) and set(steps) <= set(STEPS) | EXTRA_STATUS_KEYS
+            if same or compatible:
                 self.status = old
                 self.before = dict(old)                           # as it was (alive_before looks at this)
                 self.status.setdefault("restarts", []).append(now())
                 self.resumed = True
+                if not same:
+                    self.continued_from = old.get("tag")
+                    self.status["tag"] = CHAIN_TAG
             elif old and not read_only:                           # another chain's steps (the 14:17 one): not ours
                 aside = d / f"freeze_chain_status_before_{CHAIN_TAG}.json"
                 try:
@@ -201,12 +220,13 @@ class Chain:
     # ------------------------------------------------------------ a step's command
     def run(self, name: str, cmd: Sequence, timeout_h: float, env: Optional[dict] = None) -> int:
         cmd = [str(c) for c in cmd]
-        free_gb(self, name)
+        wait_for_space(self, name)
         self.log(f"{name}: {' '.join(cmd)}")
         self.step(name, state="running", command=cmd, started=now())
         lf = self.dir / f"freeze_chain_{name}.log"
         t = time.time()
         rc = 127
+        p = None
         try:
             with open(lf, "a", encoding="utf-8") as fh:
                 fh.write(f"\n===== {now()}  {' '.join(cmd)}\n")
@@ -239,9 +259,30 @@ class Chain:
         except Exception as e:                                                        # noqa: BLE001
             self.log(f"{name}: could not run ({type(e).__name__}: {e})")
             rc = 127
+            if p is not None and p.poll() is None:            # 3 Nov (audit): no orphan beside the next step
+                self.log(f"{name}: stopping its child (pid {p.pid}) with its process tree")
+                try:
+                    from _batch import kill_tree
+                    kill_tree(p.pid)
+                except Exception:                                                     # noqa: BLE001
+                    p.kill()
         hours = round((time.time() - t) / 3600, 2)
         self.log(f"{name}: exit {rc} after {hours:.2f} h (log {lf})")
         self.step(name, state="done" if rc == 0 else f"exit {rc}", hours=hours, ended=now())
+        if rc != 0:
+            mk = self.root / STOP_MARKER
+            try:
+                stopped = mk.is_file() and mk.stat().st_mtime >= t - 5
+            except OSError:
+                stopped = False
+            if stopped:                                       # 3 Nov (audit): stop_mppp.bat stopped this step
+                try:
+                    why = mk.read_text(encoding="utf-8", errors="replace").strip()[:200]
+                except OSError:
+                    why = ""
+                self.log(f"{name}: stopped by stop_mppp.bat ({mk.name}: {why}) - the chain ends here; "
+                         "double-click freeze_chain.bat to continue")
+                raise ChainStopped(name)
         return rc
 
 
@@ -288,14 +329,42 @@ def free_gb(c: Chain, when: str = "") -> Optional[float]:
     return free
 
 
+def wait_for_space(c: Chain, name: str) -> None:
+    """3 Nov (audit): under MIN_FREE_GB a step waits (logged hourly, heartbeat kept, at most 24 h) instead of starting
+    into a full disk."""
+    import shutil
+    free = free_gb(c, name)
+    if free is None or free >= MIN_FREE_GB:
+        return
+    t0 = last = time.time()
+    c.log(f"{name}: {free:.0f} GB free (< {MIN_FREE_GB:g} GB) - waiting for space")
+    while True:
+        c.beat()
+        time.sleep(300)
+        try:
+            free = shutil.disk_usage(c.root).free / 1e9
+        except OSError:
+            return
+        if free >= MIN_FREE_GB:
+            c.log(f"{name}: {free:.0f} GB free - going on")
+            return
+        if time.time() - t0 > 24 * 3600:
+            c.log(f"{name}: still {free:.0f} GB free after 24 h - starting anyway")
+            return
+        if time.time() - last >= 3600:
+            last = time.time()
+            c.log(f"{name}: {free:.0f} GB free - still waiting for space")
+
+
 def bat_path() -> Path:
     return HERE / "windows" / "freeze_chain.bat"
 
 
 def logon_task_register(c: Chain) -> None:
-    """A scheduled task that starts freeze_chain.bat again when this user logs on (after a reboot the chain did not
-    see coming).  Best effort: Windows only, logged either way.  The task runs a one-line launcher written next to
-    the status file (the root and MPPP_NOPAUSE set, then the bat), so no quoting goes through schtasks."""
+    """A RunOnce entry of this user that starts freeze_chain.bat again at the next logon (after a reboot the chain did
+    not see coming; 3 Nov: a scheduled task needs elevation).  Windows removes the entry when it fires; the chain sets
+    it again at every start and removes it when it ends on its own.  Best effort: Windows only, logged either way.  It
+    runs a one-line launcher written next to the status file (the root and MPPP_NOPAUSE set, then the bat)."""
     if not WINDOWS or getattr(c.a, "no_logon_task", False):
         return
     bat = bat_path()
@@ -306,13 +375,14 @@ def logon_task_register(c: Chain) -> None:
     try:
         launcher.write_text("@echo off\r\nset \"MPPP_NOPAUSE=1\"\r\n"
                             f"set \"MPPP_FREEZE_ROOT={c.root}\"\r\ncall \"{bat}\"\r\n", encoding="ascii", newline="")
-        r = subprocess.run(["schtasks", "/Create", "/SC", "ONLOGON", "/TN", LOGON_TASK, "/TR", f'"{launcher}"', "/F",
-                            "/RL", "LIMITED"], capture_output=True, text=True, timeout=60)
+        r = subprocess.run(["reg", "add", RUNONCE_KEY, "/v", LOGON_TASK, "/t", "REG_SZ", "/d", f'"{launcher}"', "/f"],
+                           capture_output=True, text=True, timeout=60)
         if r.returncode == 0:
-            c.log(f"logon task: '{LOGON_TASK}' registered ({launcher.name}) - after a reboot the chain continues at the next logon")
+            c.log(f"logon task: RunOnce '{LOGON_TASK}' set ({launcher.name}) - after a reboot the chain continues at "
+                  "the next logon")
             c.status["logon_task"] = True
         else:
-            c.log(f"logon task: not registered (schtasks exit {r.returncode}: {(r.stderr or r.stdout).strip()[:200]}) - "
+            c.log(f"logon task: not set (reg exit {r.returncode}: {(r.stderr or r.stdout).strip()[:200]}) - "
                   "after a reboot, double-click freeze_chain.bat again")
     except Exception as e:                                                            # noqa: BLE001
         c.log(f"logon task: not registered ({type(e).__name__}: {e})")
@@ -322,7 +392,8 @@ def logon_task_delete(c: Chain) -> None:
     if not WINDOWS or not c.status.get("logon_task"):
         return
     try:
-        r = subprocess.run(["schtasks", "/Delete", "/TN", LOGON_TASK, "/F"], capture_output=True, text=True, timeout=60)
+        r = subprocess.run(["reg", "delete", RUNONCE_KEY, "/v", LOGON_TASK, "/f"], capture_output=True, text=True,
+                           timeout=60)
         c.log(f"logon task: '{LOGON_TASK}' " + ("removed" if r.returncode == 0 else f"not removed (exit {r.returncode})"))
         if r.returncode == 0:
             c.status["logon_task"] = False
@@ -568,6 +639,8 @@ def chain(c: Chain) -> int:
     a = c.a
     c.log(f"freeze chain {'continued' if c.resumed else 'started'} (root {c.root}, old root {a.old_root}, pid {os.getpid()}, "
           f"python {sys.executable})")
+    if c.continued_from:
+        c.log(f"the status of chain {c.continued_from} continued as {CHAIN_TAG} (its steps are this chain's)")
     if c.set_aside is not None:
         c.log(f"the status file of another chain kept aside as {c.set_aside.name} - its steps are not taken as done")
     if c.resumed:
@@ -693,6 +766,10 @@ def main(argv=None) -> int:
         return 2
     try:
         return chain(c)
+    except ChainStopped:
+        logon_task_delete(c)
+        c.end("stopped")
+        return 130
     except KeyboardInterrupt:
         c.log("stopped (Ctrl-C); start freeze_chain.bat again to continue")
         logon_task_delete(c)

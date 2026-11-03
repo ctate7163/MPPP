@@ -8,6 +8,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_disk_wait(monkeypatch):
+    """The disk-space wait (MIN_FREE_GB) is off in the tests - a CI disk may be smaller than the PC's."""
+    import freeze_chain as F
+    monkeypatch.setattr(F, "MIN_FREE_GB", 0.0)
+
+
 def _ab_csv(path, v3, v42):
     path.mkdir(parents=True, exist_ok=True)
     rows = ["model,subset,camera,exclusion_IoU,hardware_recall",
@@ -263,13 +273,72 @@ def test_logon_task_registered_and_removed(tmp_path, monkeypatch):
     monkeypatch.setattr(F.Chain, "run", lambda self, name, cmd, timeout_h, env=None: self.step(name, state="done") or 0)
     monkeypatch.setattr(F, "s2_verdict", lambda c, root=None: True)
     assert F.main(["--root", str(new), "--old-root", str(old), "--skip-ab"]) == 0
-    sch = [c for c in calls if c and c[0] == "schtasks"]
-    assert [c[1] for c in sch] == ["/Create", "/Delete"]
-    tr = sch[0][sch[0].index("/TR") + 1]
+    sch = [c for c in calls if c and c[0] == "reg"]
+    assert [c[1] for c in sch] == ["add", "delete"] and all(c[2] == F.RUNONCE_KEY for c in sch)
+    tr = sch[0][sch[0].index("/d") + 1]
     launcher = new / "mppp_pipeline" / "freeze_chain_logon.bat"
-    assert "ONLOGON" in sch[0] and tr == f'"{launcher}"'
+    assert tr == f'"{launcher}"' and sch[1][sch[1].index("/v") + 1] == F.LOGON_TASK
     text = launcher.read_bytes().decode()
     assert str(bat) in text and "MPPP_NOPAUSE=1" in text and str(new) in text and "\r\n" in text
     calls.clear()
     assert F.main(["--root", str(new), "--old-root", str(old), "--skip-ab", "--no-logon-task"]) == 0
-    assert not [c for c in calls if c and c[0] == "schtasks"]
+    assert not [c for c in calls if c and c[0] == "reg"]
+
+
+def test_stop_marker_ends_the_chain(tmp_path, monkeypatch):
+    """stop_runs stops the pipeline and writes <root>\\mppp_stopped.txt: the chain must not start the next step."""
+    F, v41, v42, old, new = _setup(tmp_path, monkeypatch)
+    ran = []
+
+    def popen(cmd, **kw):
+        class P:
+            pid = 1
+            def wait(self, timeout=None):
+                if "run_pipeline.py" in " ".join(cmd):
+                    (new / F.STOP_MARKER).write_text("stopped by stop_runs\n")
+                    return 1
+                return 0
+            def poll(self):
+                return 0
+        ran.append(cmd)
+        return P()
+    monkeypatch.setattr(F.subprocess, "Popen", popen)
+    monkeypatch.setattr(F, "keep_awake", lambda c: None)
+    monkeypatch.setattr(F, "wait_pipeline_idle", lambda c: None)
+    assert F.main(["--root", str(new), "--old-root", str(old), "--skip-ab", "--no-wait"]) == 130
+    assert len(ran) == 1 and "run_pipeline.py" in " ".join(ran[0])
+    st = json.loads((new / "mppp_pipeline" / "freeze_chain_status.json").read_text())
+    assert st["state"] == "stopped" and st["steps"]["blocks"]["state"] == "exit 1"
+    assert "stopped by stop_runs" in (new / "mppp_pipeline" / "freeze_chain_log.txt").read_text()
+
+
+def test_compatible_status_of_another_tag_continues(tmp_path, monkeypatch):
+    """A status file from another chain version whose steps are all known is continued, not set aside."""
+    F, v41, v42, old, new = _setup(tmp_path, monkeypatch)
+    d = new / "mppp_pipeline"
+    d.mkdir(parents=True)
+    (d / "freeze_chain_status.json").write_text(json.dumps({
+        "started": "t", "tag": "freeze_0000", "state": "done",
+        "steps": {s: {"state": "done"} for s in F.STEPS if s != "s2"} | {"mask_choice": {"state": "done", "choice": "v3"}}}))
+    ran = []
+    monkeypatch.setattr(F.Chain, "run", lambda self, name, cmd, timeout_h, env=None: ran.append(name) or self.step(name, state="done") or 0)
+    monkeypatch.setattr(F, "s2_verdict", lambda c, root=None: True)
+    assert F.main(["--root", str(new), "--old-root", str(old), "--skip-tie-studies"]) == 0
+    assert ran == ["s2"] and not list(d.glob("freeze_chain_status_before_*"))
+    assert "continued as" in (d / "freeze_chain_log.txt").read_text()
+
+
+def test_wait_for_space(tmp_path, monkeypatch):
+    """3 Nov (audit): under MIN_FREE_GB a step waits for space (here it appears on the third look)."""
+    import shutil
+    import freeze_chain as F
+    monkeypatch.setattr(F, "MIN_FREE_GB", 25.0)
+    clock = {"t": 0.0}
+    monkeypatch.setattr(F.time, "time", lambda: clock["t"])
+    monkeypatch.setattr(F.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s))
+    free = iter([10e9, 10e9, 30e9])
+    monkeypatch.setattr(shutil, "disk_usage", lambda p: type("U", (), {"free": next(free)})())
+    c = F.Chain(type("A", (), {"root": str(tmp_path), "redo": None})())
+    F.wait_for_space(c, "blocks")
+    log = (tmp_path / "mppp_pipeline" / "freeze_chain_log.txt").read_text()
+    assert "waiting for space" in log and clock["t"] == 600
