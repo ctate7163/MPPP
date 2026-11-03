@@ -17,7 +17,14 @@ The adjustment, per eye e (FL, FR, RL, RR) and image i at temperature T_i (``cam
   ``per_eye`` gives each eye its own slope (the comparison in the report);
 * k1's slope per front eye; the rear eyes' k1 and k2 are constant (they have a sixteenth of the observations);
 * the early-mission offsets Ex, Ey (images before :data:`EARLY_SOL`) are fitted and then kept only where they are
-  significant (``|z| >= EARLY_Z_MIN``); the others are set to 0 and the law fitted again;
+  significant (``|z| >= EARLY_Z_MIN``); the others are set to 0 and the law fitted again.  0.95.4 (Christian, 2 Nov:
+  "It's weird that the hazcams have such a large early mission offset and that it is at 380. I suspect that is not
+  real, so please keep an eye on it"): that z is per image observation (~10^5 of them), so it overstates the
+  evidence for a step that is shared by whole blocks.  :func:`early_check` tests the step on the blocks instead
+  (``early_mission.block_check`` of each eye, in the report): the blocks' focal scale about the law without the
+  offset, early blocks against late (Welch), the sol of the best step over every break between the blocks' sols
+  (380 is the Navcam law's sol, not a Hazcam event), the temperatures of the two groups (a step can stand in for a
+  slope held at another eye's), and the offset again with each eye's own slope.  It changes nothing in the law;
 * each image's pose is free; the 3D points are held at the block's solution and only those seen from at least two
   other frames enter (Navcam frames, the other Hazcam frames) - so a point is not placed by the image it calibrates;
 * weights: 0.5 px / the image's downsample scale (the rear eyes at a quarter resolution), Huber at 2 sigma.
@@ -496,6 +503,83 @@ def run_joint(data: Dict[str, Any], slope_mode: str = SLOPE_MODE, slope_ppm: flo
             "early_held": insignificant}
 
 
+EARLY_CHECK_Z = 3.0               # 0.95.4: a step is "supported" by the blocks at this block-level z
+EARLY_CHECK_SOL_TOL = 60.0        # ... with the best break within this many sols of EARLY_SOL
+EARLY_CHECK_MIN_BLOCKS = 2        # blocks on each side of a break for its test
+
+
+def _welch(a: np.ndarray, b: np.ndarray) -> Tuple[float, float]:
+    """Difference of the means (b - a) and its z from the scatter of each group (Welch); z 0 when undefined."""
+    d = float(np.mean(b) - np.mean(a))
+    va = float(np.var(a, ddof=1)) if len(a) > 1 else 0.0
+    vb = float(np.var(b, ddof=1)) if len(b) > 1 else 0.0
+    se = float(np.sqrt(va / max(len(a), 1) + vb / max(len(b), 1)))
+    return d, (d / se if se > 0 else 0.0)
+
+
+def early_check(rows: List[Dict[str, Any]], eye: str, offset_ppm: float, own: Optional[Dict[str, Any]] = None
+                ) -> Dict[str, Any]:
+    """The early-mission step of one eye tested on the blocks (not the image observations).
+
+    ``rows``: the eye's diagnostic bins (:func:`bin_rows`: ppm about the law, which holds the step for bins before
+    EARLY_SOL); ``offset_ppm``: the step the law applies (relative, ppm of f; 0 when held).  The bins are taken back
+    to the law without the step, averaged per block (weights: observations), then the early blocks against the late
+    ones at EARLY_SOL and at every other break between the blocks' sols."""
+    er = [r for r in rows if r.get("eye") == eye and r.get("ppm") is not None]
+    blocks: Dict[str, Dict[str, Any]] = {}
+    for r in er:
+        b = blocks.setdefault(r["block"], {"ppm": [], "w": [], "sol": [], "T": []})
+        early = float(r.get("sol") or 1e9) < EARLY_SOL
+        b["ppm"].append(float(r["ppm"]) + (offset_ppm if early else 0.0))     # about the law without the step
+        b["w"].append(max(float(r.get("observations") or 1), 1.0))
+        b["sol"].append(float(r.get("sol") or 0.0))
+        b["T"].append(float(r.get("T") or 0.0))
+    tab = sorted(({"block": k, "sol": float(np.median(v["sol"])), "T": float(np.average(v["T"], weights=v["w"])),
+                   "ppm": float(np.average(v["ppm"], weights=v["w"])), "observations": int(sum(v["w"]))}
+                  for k, v in blocks.items()), key=lambda d: d["sol"])
+    out: Dict[str, Any] = {"eye": eye, "blocks": tab, "applied_ppm": float(offset_ppm), "early_sol": EARLY_SOL}
+    sol = np.array([b["sol"] for b in tab], float)
+    y = np.array([b["ppm"] for b in tab], float)
+    T = np.array([b["T"] for b in tab], float)
+    m = sol < EARLY_SOL
+    k = EARLY_CHECK_MIN_BLOCKS
+    if m.sum() < k or (~m).sum() < k:
+        out["verdict"] = f"untested: {int(m.sum())} early / {int((~m).sum())} late blocks (>= {k} each needed)"
+        return out
+    d, z = _welch(y[m], y[~m])
+    out.update({"blocks_early": int(m.sum()), "blocks_late": int((~m).sum()),
+                "step_ppm": -d, "block_z": -z,                # early minus late: the sign of the applied offset
+                "T_early_degC": float(np.mean(T[m])), "T_late_degC": float(np.mean(T[~m]))})
+    scan = []
+    for i in range(k, len(tab) - k + 1):
+        if sol[i - 1] == sol[i]:
+            continue
+        brk = 0.5 * (sol[i - 1] + sol[i])
+        dd, zz = _welch(y[:i], y[i:])
+        scan.append({"break_sol": float(brk), "step_ppm": -dd, "block_z": -zz})
+    out["scan"] = scan
+    if scan:
+        best = max(scan, key=lambda q: abs(q["block_z"]))
+        out["best_break_sol"], out["best_block_z"] = best["break_sol"], best["block_z"]
+    if own is not None:
+        out["own_slope"] = own
+    why = []
+    if abs(out["block_z"]) < EARLY_CHECK_Z:
+        why.append(f"block-level z {out['block_z']:+.1f} (< {EARLY_CHECK_Z:g}) over {out['blocks_early']} early "
+                   f"blocks")
+    if scan and abs(out["best_break_sol"] - EARLY_SOL) > EARLY_CHECK_SOL_TOL and abs(out["best_block_z"]) > abs(out["block_z"]):
+        why.append(f"the blocks' best step is at sol {out['best_break_sol']:.0f} (z {out['best_block_z']:+.1f}), "
+                   f"not {EARLY_SOL:g}")
+    if abs(out["T_early_degC"] - out["T_late_degC"]) >= 10.0:
+        why.append(f"early blocks at {out['T_early_degC']:+.0f} degC, late at {out['T_late_degC']:+.0f}: the step "
+                   f"can stand in for a slope")
+    if own and own.get("step_ppm") is not None and abs(offset_ppm) > 0 and \
+            abs(own["step_ppm"] - offset_ppm) > 0.5 * abs(offset_ppm):
+        why.append(f"with its own slope the step is {own['step_ppm']:+.0f} ppm (applied {offset_ppm:+.0f})")
+    out["verdict"] = ("supported by the blocks" if not why else "doubtful - " + "; ".join(why))
+    return out
+
+
 def _sd(law: Law, cov: np.ndarray, name: str) -> Optional[float]:
     if name not in law.ix:
         return None
@@ -545,6 +629,16 @@ def eye_result(j: Dict[str, Any], eye: str, rows: List[Dict[str, Any]], start: n
            "rows": er, "bins": len(er)}
     if comparison:
         out["own_slope_ppm_per_degC"] = comparison.get(eye)
+    # 0.95.4: the step tested on the blocks (a diagnostic; the law is as fitted)
+    try:
+        fbar = 0.5 * (p[0] + p[1])
+        off_ppm = 1e6 * 0.5 * (out["early_mission"]["dfx_px"] + out["early_mission"]["dfy_px"]) / fbar if fbar else 0.0
+        own = (comparison or {}).get(eye) or {}
+        own_step = own.get("early_ppm")
+        out["early_mission"]["block_check"] = early_check(
+            er, eye, off_ppm, None if own_step is None else {"step_ppm": own_step, "ppm_per_degC": own.get("ppm_per_degC")})
+    except Exception as e:                                  # noqa: BLE001 - a diagnostic only
+        out["early_mission"]["block_check"] = {"verdict": f"not computed ({type(e).__name__}: {e})"}
     return out
 
 
@@ -568,9 +662,20 @@ def fit_hazcam_joint(blocks: Dict[str, PathLike], model: str = "cahv_ba", slope_
             jp = run_joint(data, slope_mode="per_eye", verbose=False)
             for e in jp["eyes"]:
                 n = f"s_{e}"
-                comp[e] = {"ppm_per_degC": 1e6 * float(jp["law"].x[jp["law"].ix[n]]),
-                           "sd": None if _sd(jp["law"], jp["stats"]["cov"], n) is None
-                           else 1e6 * _sd(jp["law"], jp["stats"]["cov"], n)}
+                L = jp["law"]
+                comp[e] = {"ppm_per_degC": 1e6 * float(L.x[L.ix[n]]),
+                           "sd": None if _sd(L, jp["stats"]["cov"], n) is None
+                           else 1e6 * _sd(L, jp["stats"]["cov"], n)}
+                # 0.95.4: the early step with the eye's own slope (before the |z| rule: the fitted value)
+                ex, ey = f"Ex_{e}", f"Ey_{e}"
+                if ex in L.ix and ey in L.ix:
+                    pe = L.params(e, T0, False)
+                    fb = 0.5 * (pe[0] + pe[1])
+                    zz = jp["early_z"]
+                    vx = 0.0 if ex in jp["early_held"] else float(L.x[L.ix[ex]])
+                    vy = 0.0 if ey in jp["early_held"] else float(L.x[L.ix[ey]])
+                    comp[e]["early_ppm"] = 1e6 * 0.5 * (vx + vy) / fb if fb else None
+                    comp[e]["early_z"] = {"fx": zz.get(ex), "fy": zz.get(ey)}
         except Exception as e:                              # noqa: BLE001 - a comparison only
             comp = {"error": f"{type(e).__name__}: {e}"}
     block_res = H.fit_hazcam(blocks, model, limits) if rigs else {"eyes": {}, "rigs": {}}
@@ -580,6 +685,10 @@ def fit_hazcam_joint(blocks: Dict[str, PathLike], model: str = "cahv_ba", slope_
             eyes[e] = eye_result(j, e, rows, data["start"][e], comp)
         elif e in (block_res.get("eyes") or {}):
             eyes[e] = dict(block_res["eyes"][e], method="block fit (too few images in the joint)")
+    for e, r in eyes.items():                               # 0.95.4: the early-mission step on the blocks
+        bc = (r.get("early_mission") or {}).get("block_check") or {}
+        if str(bc.get("verdict", "")).startswith("doubtful"):
+            log.warning(f"hazcam joint: {e} early-mission step {bc['verdict']}")
     st = j["stats"]
     return {"when": datetime.date.today().isoformat(), "method": "joint", "blocks": data["blocks"], "T0_degC": T0,
             "early_mission_sol": EARLY_SOL, "eyes": eyes, "limits": limits or {}, "rigs": block_res.get("rigs") or {},

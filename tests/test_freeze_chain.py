@@ -117,15 +117,15 @@ def test_chain_restart_continues(tmp_path, monkeypatch):
             _ab_csv(Path(cmd[cmd.index("--out") + 1]), 0.9804, 0.9821)
         if name == "blocks" and crash["on"]:
             self.step(name, state="running", command=cmd, started="t")
-            raise RuntimeError("the computer restarted")
+            raise KeyboardInterrupt                                      # the window closed / the computer restarted
         self.step(name, state="done", started="t", ended="t")
         return 0
     monkeypatch.setattr(F.Chain, "run", run)
     monkeypatch.setattr(F, "s2_verdict", lambda c, root=None: True)
-    assert F.main(["--root", str(new), "--old-root", str(old)]) == 1
+    assert F.main(["--root", str(new), "--old-root", str(old)]) == 130
     assert [n for n, _ in ran] == ["mask_ab", "blocks"]
     st = json.loads((new / "mppp_pipeline" / "freeze_chain_status.json").read_text())
-    assert st["state"] == "failed"
+    assert st["state"] == "stopped" and st["tag"] == F.CHAIN_TAG
     # the A/B folder is gone too (the choice must still hold)
     import shutil
     shutil.rmtree(F.OUTPUTS / "mask_ab_v3_v41_v42")
@@ -154,7 +154,7 @@ def test_chain_refuses_second_instance(tmp_path, monkeypatch):
     d.mkdir(parents=True)
     import datetime
     (d / "freeze_chain_status.json").write_text(json.dumps({
-        "started": "t", "steps": {}, "state": "running", "pid": 4242,
+        "started": "t", "tag": F.CHAIN_TAG, "steps": {}, "state": "running", "pid": 4242,
         "heartbeat": datetime.datetime.now().isoformat(timespec="seconds")}))
     monkeypatch.setattr(F, "pid_alive", lambda pid: pid == 4242)
     assert F.main(["--root", str(new), "--old-root", str(old)]) == 2
@@ -201,3 +201,75 @@ def test_run_stops_a_child_past_its_time(tmp_path, monkeypatch):
     rc = c.run("sleepy", [sys.executable, "-c", "import time; time.sleep(30)"], timeout_h=0.0)
     assert rc in (124, 127) or rc != 0
     assert "stopped" in (tmp_path / "mppp_pipeline" / "freeze_chain_log.txt").read_text() or rc != 0
+
+
+def test_chain_step_error_goes_on(tmp_path, monkeypatch):
+    """The chain's own code for a step raising (not its child): logged, the step marked, the next steps run."""
+    F, v41, v42, old, new = _setup(tmp_path, monkeypatch)
+    ran = []
+
+    def run(self, name, cmd, timeout_h, env=None):
+        ran.append(name)
+        if name == "mask_ab":
+            _ab_csv(Path([str(c) for c in cmd][[str(c) for c in cmd].index("--out") + 1]), 0.98, 0.99)
+        self.step(name, state="done")
+        return 0
+    monkeypatch.setattr(F.Chain, "run", run)
+
+    def boom(c, name, mask, *extra, reset=False):
+        if name == "final_pass":
+            raise RuntimeError("a bug in the chain")
+        return c.run(name, ["x"], 1)
+    monkeypatch.setattr(F, "run_pipeline_step", boom)
+    monkeypatch.setattr(F, "s2_verdict", lambda c, root=None: True)
+    assert F.main(["--root", str(new), "--old-root", str(old), "--skip-tie-studies"]) == 1
+    assert ran == ["mask_ab", "blocks", "studies", "aspect_geometry", "s6", "s2"]
+    st = json.loads((new / "mppp_pipeline" / "freeze_chain_status.json").read_text())
+    assert st["steps"]["final_pass"]["state"] == "exit chain-error" and st["state"] == "done"
+    assert "a bug in the chain" in (new / "mppp_pipeline" / "freeze_chain_log.txt").read_text()
+
+
+def test_old_status_file_set_aside(tmp_path, monkeypatch):
+    """The 14:17 chain's status (other steps, "s2" done) must not make this chain skip S2."""
+    F, v41, v42, old, new = _setup(tmp_path, monkeypatch)
+    d = new / "mppp_pipeline"
+    d.mkdir(parents=True)
+    (d / "freeze_chain_status.json").write_text(json.dumps({
+        "started": "t", "steps": {"s2": {"state": "done"}, "freeze": {"state": "running"}}}))
+    ran = []
+    monkeypatch.setattr(F.Chain, "run", lambda self, name, cmd, timeout_h, env=None: ran.append(name) or self.step(name, state="done") or 0)
+    monkeypatch.setattr(F, "s2_verdict", lambda c, root=None: True)
+    assert F.main(["--root", str(new), "--old-root", str(old), "--skip-ab", "--skip-tie-studies"]) == 0
+    assert ran == ["blocks", "final_pass", "studies", "aspect_geometry", "s6", "s2"]
+    assert (d / f"freeze_chain_status_before_{F.CHAIN_TAG}.json").is_file()
+    st = json.loads((d / "freeze_chain_status.json").read_text())
+    assert st["tag"] == F.CHAIN_TAG and "restarts" not in st
+    assert F.main(["--root", str(new), "--old-root", str(old), "--status"]) == 0
+
+
+def test_logon_task_registered_and_removed(tmp_path, monkeypatch):
+    F, v41, v42, old, new = _setup(tmp_path, monkeypatch)
+    calls = []
+
+    class R:
+        returncode, stdout, stderr = 0, "", ""
+    monkeypatch.setattr(F.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or R())
+    monkeypatch.setattr(F, "WINDOWS", True)
+    bat = tmp_path / "freeze_chain.bat"
+    bat.write_text("rem")
+    monkeypatch.setattr(F, "bat_path", lambda: bat)
+    monkeypatch.setattr(F, "keep_awake", lambda c: None)
+    monkeypatch.setattr(F, "pid_alive", lambda pid: False)
+    monkeypatch.setattr(F.Chain, "run", lambda self, name, cmd, timeout_h, env=None: self.step(name, state="done") or 0)
+    monkeypatch.setattr(F, "s2_verdict", lambda c, root=None: True)
+    assert F.main(["--root", str(new), "--old-root", str(old), "--skip-ab"]) == 0
+    sch = [c for c in calls if c and c[0] == "schtasks"]
+    assert [c[1] for c in sch] == ["/Create", "/Delete"]
+    tr = sch[0][sch[0].index("/TR") + 1]
+    launcher = new / "mppp_pipeline" / "freeze_chain_logon.bat"
+    assert "ONLOGON" in sch[0] and tr == f'"{launcher}"'
+    text = launcher.read_bytes().decode()
+    assert str(bat) in text and "MPPP_NOPAUSE=1" in text and str(new) in text and "\r\n" in text
+    calls.clear()
+    assert F.main(["--root", str(new), "--old-root", str(old), "--skip-ab", "--no-logon-task"]) == 0
+    assert not [c for c in calls if c and c[0] == "schtasks"]

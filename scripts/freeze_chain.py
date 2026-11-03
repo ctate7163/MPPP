@@ -40,16 +40,27 @@ consuming tests and studies needed to really understand the results"):
    ``s1`` ``s3`` ``s4`` ``s5``  the feature budget, the matcher and verification, pair selection and the pose-guided
                       step, the filters (``--skip-tie-studies`` leaves these four out; ``--skip-s2`` S2).
 
-Faults.  Every step that fails is logged and the chain goes on (the pipeline itself goes on past a failed stage).  A
-step's child is stopped with its whole process tree when it runs past its time limit.  The chain's own state is
-``<root>\\mppp_pipeline\\freeze_chain_status.json``: started again after a crash, a reboot or a closed window
-(double-click ``freeze_chain.bat`` again), it skips the steps marked done, keeps the mask choice, and continues the
-pipeline without ``--reset`` (the pipeline continues after its last finished stage, and the batches skip the blocks
-finished with the same run key).  A second chain on the same root does not start while one is alive
-(``freeze_chain_status.json`` heartbeat).  While it runs, the chain asks Windows not to sleep (SetThreadExecutionState)
-and switches the console's QuickEdit mode off (a click in the window would freeze a print).  A Windows Update restart
-still ends it: start it again afterwards.  Each step's output: ``<root>\\mppp_pipeline\\freeze_chain_<step>.log``;
-the chain's log: ``freeze_chain_log.txt``.
+Faults (15:30-16:02, "make sure it is robust against faults"; 0.95.4 with an independent review's fixes):
+
+- every step that fails - a non-zero exit, an exception in the chain's own code for it - is logged and the chain goes
+  on (the pipeline itself goes on past a failed stage); a step's child is stopped with its whole process tree when it
+  runs past its time limit; the free disk space is logged before every step (a warning under FREE_GB_WARN);
+- the chain's own state is ``<root>\\mppp_pipeline\\freeze_chain_status.json`` (written atomically, a heartbeat
+  every few minutes, tagged with CHAIN_TAG - the status of an older chain is kept aside as
+  ``freeze_chain_status_before_<tag>.json`` and not used: the 14:17 chain had marked "s2" done; another version of the chain's steps gets another tag).  Started again after
+  a crash, a reboot or a closed window, it skips the steps marked done, keeps the mask choice (another choice would
+  change the run key and align every block again) and continues the pipeline without ``--reset`` (the pipeline
+  continues after its last finished stage; the batches skip the blocks finished with the same run key; a pipeline
+  left running by a closed window is waited for first);
+- a second chain on the same root does not start while one is alive (the heartbeat and its process);
+- while it runs the chain asks Windows not to sleep (SetThreadExecutionState) and switches the console's QuickEdit
+  mode off (a click in the window would freeze a print);
+- a reboot (Windows Update, a power cut with the computer set to start again): the chain registers a scheduled task
+  "MPPP freeze chain" that starts ``freeze_chain.bat`` again at the next logon of this user (``schtasks /SC
+  ONLOGON``; ``--no-logon-task`` leaves it out) and deletes it when the chain ends on its own (done, Ctrl-C or a
+  failure of the chain's own code - a loop of restarts must not hide a bug).  The computer must log the user in
+  again for that (automatic logon, or someone at the keyboard); until then the chain simply waits.
+Each step's output: ``<root>\\mppp_pipeline\\freeze_chain_<step>.log``; the chain's log: ``freeze_chain_log.txt``.
 
     scripts\\windows\\freeze_chain.bat                   everything (again after a stop: continues)
     scripts\\windows\\freeze_chain.bat --no-wait         no wait for the v4.2 training (the A/B with what there is)
@@ -57,6 +68,7 @@ the chain's log: ``freeze_chain_log.txt``.
     scripts\\windows\\freeze_chain.bat --no-freeze       no pipeline (the A/B and S2 only)
     scripts\\windows\\freeze_chain.bat --skip-tie-studies  no S1 / S3 / S4 / S5 at the end
     scripts\\windows\\freeze_chain.bat --redo mask_ab    this step again even if done
+    scripts\\windows\\freeze_chain.bat --status          the state of the chain and of the pipeline, nothing run
 """
 from __future__ import annotations
 
@@ -93,6 +105,9 @@ TIE_STUDIES = ("s1", "s3", "s4", "s5")
 ZCAM_GROUP = "zcam_consensus"
 FREE_GB_WARN = 300.0
 STALE_S = 900                                                          # the chain's heartbeat
+CHAIN_TAG = "freeze_0954"                     # the step set of the status file; another tag: kept aside, not used
+LOGON_TASK = "MPPP freeze chain"              # the scheduled task that starts the chain again after a reboot
+WINDOWS = os.name == "nt"
 
 
 def now() -> str:
@@ -100,29 +115,41 @@ def now() -> str:
 
 
 class Chain:
-    def __init__(self, a):
+    def __init__(self, a, read_only: bool = False):
         self.a = a
         self.root = Path(a.root)
         d = self.root / "mppp_pipeline"
-        d.mkdir(parents=True, exist_ok=True)
+        if not read_only:
+            d.mkdir(parents=True, exist_ok=True)
         self.dir = d
         self.logf = d / "freeze_chain_log.txt"
         self.statf = d / "freeze_chain_status.json"
-        self.status = {"started": now(), "steps": {}}
+        self.status = {"started": now(), "tag": CHAIN_TAG, "steps": {}}
         self.resumed = False
         self.before: dict = {}
+        self.set_aside: Optional[Path] = None
         if self.statf.is_file():                                       # a chain before: continue it
             try:
                 old = json.loads(self.statf.read_text(encoding="utf-8"))
-                if isinstance(old.get("steps"), dict):
-                    self.status = old
-                    self.before = dict(old)                       # as it was (alive_before looks at this)
-                    self.status.setdefault("restarts", []).append(now())
-                    self.resumed = True
             except (OSError, ValueError):
-                pass
+                old = {}
+            if isinstance(old.get("steps"), dict) and old.get("tag") == CHAIN_TAG:
+                self.status = old
+                self.before = dict(old)                           # as it was (alive_before looks at this)
+                self.status.setdefault("restarts", []).append(now())
+                self.resumed = True
+            elif old and not read_only:                           # another chain's steps (the 14:17 one): not ours
+                aside = d / f"freeze_chain_status_before_{CHAIN_TAG}.json"
+                try:
+                    if aside.is_file():
+                        aside = d / f"freeze_chain_status_before_{CHAIN_TAG}_{datetime.datetime.now():%Y%m%d-%H%M%S}.json"
+                    self.statf.replace(aside)
+                    self.set_aside = aside
+                except OSError:
+                    pass
         self.redo = set(getattr(a, "redo", None) or [])
-        self.status["state"] = "running"
+        if not read_only:
+            self.status["state"] = "running"
 
     # ------------------------------------------------------------ bookkeeping
     def log(self, msg: str) -> None:
@@ -174,6 +201,7 @@ class Chain:
     # ------------------------------------------------------------ a step's command
     def run(self, name: str, cmd: Sequence, timeout_h: float, env: Optional[dict] = None) -> int:
         cmd = [str(c) for c in cmd]
+        free_gb(self, name)
         self.log(f"{name}: {' '.join(cmd)}")
         self.step(name, state="running", command=cmd, started=now())
         lf = self.dir / f"freeze_chain_{name}.log"
@@ -247,6 +275,75 @@ def keep_awake(c: Chain) -> None:
         c.log(f"console: QuickEdit not changed ({e})")
 
 
+def free_gb(c: Chain, when: str = "") -> Optional[float]:
+    """The free space on the root's drive, logged (a warning under FREE_GB_WARN); None when unknown."""
+    import shutil
+    try:
+        free = shutil.disk_usage(c.root).free / 1e9
+    except OSError as e:
+        c.log(f"{when or 'disk'}: free space unknown ({e})")
+        return None
+    c.log(f"{when or 'disk'}: {free:.0f} GB free on {c.root.drive or c.root}" +
+          (f" - WARNING: under {FREE_GB_WARN:.0f} GB; the blocks with the full export may not fit" if free < FREE_GB_WARN else ""))
+    return free
+
+
+def bat_path() -> Path:
+    return HERE / "windows" / "freeze_chain.bat"
+
+
+def logon_task_register(c: Chain) -> None:
+    """A scheduled task that starts freeze_chain.bat again when this user logs on (after a reboot the chain did not
+    see coming).  Best effort: Windows only, logged either way.  The task runs a one-line launcher written next to
+    the status file (the root and MPPP_NOPAUSE set, then the bat), so no quoting goes through schtasks."""
+    if not WINDOWS or getattr(c.a, "no_logon_task", False):
+        return
+    bat = bat_path()
+    if not bat.is_file():
+        c.log(f"logon task: no {bat} - not registered")
+        return
+    launcher = c.dir / "freeze_chain_logon.bat"
+    try:
+        launcher.write_text("@echo off\r\nset \"MPPP_NOPAUSE=1\"\r\n"
+                            f"set \"MPPP_FREEZE_ROOT={c.root}\"\r\ncall \"{bat}\"\r\n", encoding="ascii", newline="")
+        r = subprocess.run(["schtasks", "/Create", "/SC", "ONLOGON", "/TN", LOGON_TASK, "/TR", f'"{launcher}"', "/F",
+                            "/RL", "LIMITED"], capture_output=True, text=True, timeout=60)
+        if r.returncode == 0:
+            c.log(f"logon task: '{LOGON_TASK}' registered ({launcher.name}) - after a reboot the chain continues at the next logon")
+            c.status["logon_task"] = True
+        else:
+            c.log(f"logon task: not registered (schtasks exit {r.returncode}: {(r.stderr or r.stdout).strip()[:200]}) - "
+                  "after a reboot, double-click freeze_chain.bat again")
+    except Exception as e:                                                            # noqa: BLE001
+        c.log(f"logon task: not registered ({type(e).__name__}: {e})")
+
+
+def logon_task_delete(c: Chain) -> None:
+    if not WINDOWS or not c.status.get("logon_task"):
+        return
+    try:
+        r = subprocess.run(["schtasks", "/Delete", "/TN", LOGON_TASK, "/F"], capture_output=True, text=True, timeout=60)
+        c.log(f"logon task: '{LOGON_TASK}' " + ("removed" if r.returncode == 0 else f"not removed (exit {r.returncode})"))
+        if r.returncode == 0:
+            c.status["logon_task"] = False
+    except Exception as e:                                                            # noqa: BLE001
+        c.log(f"logon task: not removed ({type(e).__name__}: {e})")
+
+
+def guarded(c: Chain, name: str, fn, *args, **kw):
+    """A step's own code (not its child) that raises: logged as the step's failure, the chain goes on."""
+    try:
+        return fn(*args, **kw)
+    except KeyboardInterrupt:
+        raise
+    except Exception:                                                                 # noqa: BLE001
+        c.log(f"{name}: the chain's code for it failed - going on:\n" + traceback.format_exc())
+        st = c.status["steps"].get(name) or {}
+        if st.get("state") != "done":
+            c.step(name, state="exit chain-error")
+        return None
+
+
 def prepare_root(c: Chain) -> None:
     """The root: the lists that live next to the blocks copied from the old root when missing; dem\\ and the disk."""
     import shutil
@@ -265,13 +362,7 @@ def prepare_root(c: Chain) -> None:
             c.log(f"root: {name} not copied ({e})")
     dem = c.root / "dem"
     c.log(f"root: {'DEMs in ' + str(dem) if dem.is_dir() else 'no dem folder in ' + str(c.root) + ' (maps without a DEM)'}")
-    free = None
-    try:
-        free = shutil.disk_usage(c.root).free / 1e9
-        c.log(f"root: {free:.0f} GB free on {c.root.drive or c.root}" +
-              (f" - WARNING: under {FREE_GB_WARN:.0f} GB; the blocks with the full export may not fit" if free < FREE_GB_WARN else ""))
-    except OSError as e:
-        c.log(f"root: free space unknown ({e})")
+    free = free_gb(c, "root")
     c.step("root", state="done", root=str(c.root), dem=dem.is_dir(), free_gb=None if free is None else round(free))
 
 
@@ -433,15 +524,16 @@ def after_studies(c: Chain) -> None:
             c.log(f"{name}: {bat.name} is a Windows script - skipped here")
             c.step(name, state="done", note="not Windows")
             continue
-        c.run(name, ["cmd", "/c", bat], timeout_h=hours, env=env)
+        guarded(c, name, c.run, name, ["cmd", "/c", bat], timeout_h=hours, env=env)
     if not c.done("aspect_geometry"):
-        c.run("aspect_geometry", [sys.executable, HERE / "zcam_aspect_geometry.py", "--root", c.root, "--group",
-                                  ZCAM_GROUP, "--zooms", "34", "48", "63", "79", "110"], timeout_h=3.0, env=env)
+        guarded(c, "aspect_geometry", c.run, "aspect_geometry",
+                [sys.executable, HERE / "zcam_aspect_geometry.py", "--root", c.root, "--group",
+                 ZCAM_GROUP, "--zooms", "34", "48", "63", "79", "110"], timeout_h=3.0, env=env)
     if not c.done("s6"):
         sites = zcam_sites()
         if sites:
-            c.run("s6", [sys.executable, HERE / "tie_point_studies.py", "S6", "--root", c.root, "--site", *sites],
-                  timeout_h=3.0, env=env)
+            guarded(c, "s6", c.run, "s6", [sys.executable, HERE / "tie_point_studies.py", "S6", "--root", c.root,
+                                           "--site", *sites], timeout_h=3.0, env=env)
         else:
             c.log(f"s6: no {ZCAM_GROUP} sites found - skipped")
             c.step("s6", state="done", note="no sites")
@@ -474,66 +566,103 @@ def s2_verdict(c: Chain, root: Optional[Path] = None) -> bool:
 # ------------------------------------------------------------------ main
 def chain(c: Chain) -> int:
     a = c.a
-    c.log(f"freeze chain {'continued' if c.resumed else 'started'} (root {c.root}, old root {a.old_root}, pid {os.getpid()})")
+    c.log(f"freeze chain {'continued' if c.resumed else 'started'} (root {c.root}, old root {a.old_root}, pid {os.getpid()}, "
+          f"python {sys.executable})")
+    if c.set_aside is not None:
+        c.log(f"the status file of another chain kept aside as {c.set_aside.name} - its steps are not taken as done")
     if c.resumed:
         done = [s for s in STEPS if c.done(s)]
         c.log(f"steps done before: {', '.join(done) if done else 'none'}" + (f"; redo: {', '.join(sorted(c.redo))}" if c.redo else ""))
     keep_awake(c)
-    prepare_root(c)                                                    # cheap: every time
+    logon_task_register(c)
+    guarded(c, "root", prepare_root, c)                                # cheap: every time
     if not a.no_wait and not c.done("wait_v42"):
-        wait_for_v42(c)
+        guarded(c, "wait_v42", wait_for_v42, c)
     else:
         c.step("wait_v42", state="done", note="--no-wait" if a.no_wait else "before")
-    mask = kept_mask(c)
-    if mask is None and (c.status["steps"].get("mask_choice") or {}).get("state") != "done":
-        ck = v42_trained() if not a.skip_ab else None
-        if a.skip_ab:
-            c.log("mask_ab: --skip-ab - v3 stays")
-            c.step("mask_choice", state="done", choice="v3", reason="--skip-ab")
-        elif ck is None:
-            c.log("mask_ab: no trained v4.2 checkpoint - v3 stays")
-            c.step("mask_choice", state="done", choice="v3", reason="no v4.2")
-        else:
-            ab = OUTPUTS / "mask_ab_v3_v41_v42"
-            if not c.done("mask_ab") or not (ab / "mask_ab.csv").is_file():
-                c.run("mask_ab", [a.ab_python, HERE / "compare_mask_models.py", "--data", MASK_DATA,
-                                  "--split-ckpt", ck, "--also-held-out", V41, "--models", "mppp_mask_v3", V41, ck,
-                                  "--seen", MASK_SEEN, "--seen-split", "mppp_mask_v3", MASK_SEEN, "--out", ab],
-                      timeout_h=3.0)
-            mask = mask_choice(c, ab, ck)
+    mask = guarded(c, "mask_ab", choose_mask, c)
     if mask is not None and not mask.is_file():
         c.log(f"mask: {mask} is gone - v3 instead (the blocks' run key changes)")
         mask = None
     if not a.no_freeze:
         if not c.done("blocks"):
-            run_pipeline_step(c, "blocks", mask, "--stop-before", "error_analysis", reset=True)
+            guarded(c, "blocks", run_pipeline_step, c, "blocks", mask, "--stop-before", "error_analysis", reset=True)
         if a.no_final_pass:
             c.step("final_pass", state="done", note="--no-final-pass")
         elif not c.done("final_pass"):
-            run_pipeline_step(c, "final_pass", mask, "--redo", "ecam_runs", "zcam_runs", "--stop-before", "error_analysis")
+            guarded(c, "final_pass", run_pipeline_step, c, "final_pass", mask, "--redo", "ecam_runs", "zcam_runs",
+                    "--stop-before", "error_analysis")
         if not c.done("studies"):
-            run_pipeline_step(c, "studies", mask)
+            guarded(c, "studies", run_pipeline_step, c, "studies", mask)
     else:
         c.log("--no-freeze: no pipeline")
-    after_studies(c)
+    guarded(c, "figures", after_studies, c)
     s2_root = Path(a.s2_root or a.old_root)
     env = {"MPPP_SCAPES": str(s2_root)}
     if not a.skip_s2 and not c.done("s2"):
-        c.run("s2", [sys.executable, HERE / "tie_point_studies.py", "S2", "--site", S2_SITE, "--variants", "all",
-                     "cap1500", "--root", s2_root], timeout_h=10.0, env=env)
-        try:
-            s2_verdict(c, s2_root)
-        except Exception as e:                                                        # noqa: BLE001
-            c.log(f"S2 verdict: failed ({type(e).__name__}: {e})")
+        guarded(c, "s2", run_s2, c)
     if not a.skip_tie_studies:
         for st in TIE_STUDIES:
             if not c.done(st):
-                c.run(st, [sys.executable, HERE / "tie_point_studies.py", st.upper(), "--root", s2_root],
-                      timeout_h=36.0, env=env)
+                guarded(c, st, c.run, st, [sys.executable, HERE / "tie_point_studies.py", st.upper(), "--root", s2_root],
+                        timeout_h=36.0, env=env)
     failed = [s for s in STEPS if str((c.status["steps"].get(s) or {}).get("state", "")).startswith("exit")]
     c.log("freeze chain done" + (f" - steps that did not exit 0: {', '.join(failed)}" if failed else ""))
+    logon_task_delete(c)
     c.end("done", failed=failed)
     return 1 if failed else 0
+
+
+def choose_mask(c: Chain) -> Optional[Path]:
+    """The mask model of the blocks: the choice kept from a chain before, else the A/B of v3 against v4.2."""
+    a = c.a
+    mask = kept_mask(c)
+    if mask is not None or (c.status["steps"].get("mask_choice") or {}).get("state") == "done":
+        return mask
+    ck = v42_trained() if not a.skip_ab else None
+    if a.skip_ab:
+        c.log("mask_ab: --skip-ab - v3 stays")
+        c.step("mask_choice", state="done", choice="v3", reason="--skip-ab")
+        return None
+    if ck is None:
+        c.log("mask_ab: no trained v4.2 checkpoint - v3 stays")
+        c.step("mask_choice", state="done", choice="v3", reason="no v4.2")
+        return None
+    ab = OUTPUTS / "mask_ab_v3_v41_v42"
+    if not c.done("mask_ab") or not (ab / "mask_ab.csv").is_file():
+        c.run("mask_ab", [a.ab_python, HERE / "compare_mask_models.py", "--data", MASK_DATA,
+                          "--split-ckpt", ck, "--also-held-out", V41, "--models", "mppp_mask_v3", V41, ck,
+                          "--seen", MASK_SEEN, "--seen-split", "mppp_mask_v3", MASK_SEEN, "--out", ab],
+              timeout_h=3.0)
+    return mask_choice(c, ab, ck)
+
+
+def run_s2(c: Chain) -> None:
+    s2_root = Path(c.a.s2_root or c.a.old_root)
+    c.run("s2", [sys.executable, HERE / "tie_point_studies.py", "S2", "--site", S2_SITE, "--variants", "all",
+                 "cap1500", "--root", s2_root], timeout_h=10.0, env={"MPPP_SCAPES": str(s2_root)})
+    try:
+        s2_verdict(c, s2_root)
+    except Exception as e:                                                            # noqa: BLE001
+        c.log(f"S2 verdict: failed ({type(e).__name__}: {e})")
+
+
+def show_status(c: Chain) -> int:
+    """``--status``: the chain's steps and the pipeline's stages, nothing run (the status file is not touched)."""
+    st = c.status if c.resumed else {}
+    print(f"freeze chain on {c.root}: {st.get('state', 'not started')}" +
+          (f" (heartbeat {st.get('heartbeat')}, pid {st.get('pid')})" if st else ""))
+    for s in STEPS + ("mask_choice", "s2_verdict"):
+        e = (st.get("steps") or {}).get(s) or {}
+        extra = {k: v for k, v in e.items() if k in ("note", "choice", "verdict", "hours", "started", "ended")}
+        print(f"  {s:14s} {str(e.get('state', '-')):12s} {json.dumps(extra) if extra else ''}")
+    try:
+        from mppp.runner import read_status
+        cur = read_status(c.dir / "pipeline_status.json")
+        print(f"pipeline: {(cur or {}).get('state', 'not started')}" + (f", stage {cur.get('stage')}" if cur else ""))
+    except Exception as e:                                                            # noqa: BLE001
+        print(f"pipeline: unknown ({e})")
+    return 0
 
 
 def main(argv=None) -> int:
@@ -552,7 +681,11 @@ def main(argv=None) -> int:
     ap.add_argument("--cap", action="store_true", help="the blocks with ba_points_cap=1500")
     ap.add_argument("--no-freeze", action="store_true", help="no pipeline")
     ap.add_argument("--redo", nargs="*", choices=STEPS, default=None, help="these steps again even if done")
+    ap.add_argument("--no-logon-task", action="store_true", help="no scheduled task to continue after a reboot")
+    ap.add_argument("--status", action="store_true", help="the state of the chain and the pipeline; nothing run")
     a = ap.parse_args(argv)
+    if a.status:
+        return show_status(Chain(a, read_only=True))
     c = Chain(a)
     pid = c.alive_before()
     if pid:
@@ -562,10 +695,12 @@ def main(argv=None) -> int:
         return chain(c)
     except KeyboardInterrupt:
         c.log("stopped (Ctrl-C); start freeze_chain.bat again to continue")
+        logon_task_delete(c)
         c.end("stopped")
         return 130
     except Exception:                                                                 # noqa: BLE001
         c.log("the chain itself failed:\n" + traceback.format_exc() + "start freeze_chain.bat again to continue")
+        logon_task_delete(c)
         c.end("failed")
         return 1
 

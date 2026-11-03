@@ -187,3 +187,39 @@ def test_front_mode_fits_fl_and_fr_apart_and_gives_the_rear_their_mean():
     assert r["slope_source"] == "front mean" and "mean of FL's and FR's" in r["slope_note"] and r["sd_ppm_per_degC"] > 0
     f = HJ.eye_result(j, "FR", rows, data["start"]["FR"])
     assert f["slope_source"] == "own" and f["ppm_per_degC"] == pytest.approx(s_fr)
+
+
+def test_early_check_on_the_blocks():
+    """0.95.4 (Christian, 2 Nov): the early-mission step tested on the blocks, not the image observations."""
+    from mppp.calib import hazjoint as HJ
+
+    def rows(step_ppm, sols, T=None, applied=0.0, noise=None):
+        out = []
+        for i, s in enumerate(sols):
+            y = (step_ppm if s < HJ.EARLY_SOL else 0.0) + (noise[i] if noise is not None else 0.0)
+            y -= applied if s < HJ.EARLY_SOL else 0.0                  # the bins are about the law with the step
+            out.append({"block": f"b{i}", "eye": "RL", "sol": s, "T": (T[i] if T else -10.0), "ppm": y,
+                        "observations": 1000})
+        return out
+    sols = [60, 120, 200, 300, 420, 600, 800, 1000, 1200]
+    noise = [30, -40, 20, -10, 25, -35, 15, -20, 40]
+    # a real step at 380 on every early block: supported; the bins about the law with it applied are flat
+    c = HJ.early_check(rows(1500, sols, applied=1500, noise=noise), "RL", 1500)
+    assert c["verdict"] == "supported by the blocks" and abs(c["step_ppm"] - 1500) < 60 and c["block_z"] > 10
+    assert 300 < c["best_break_sol"] < 420
+    # one odd early block carries the "step": not significant on the blocks
+    odd = [0.0] * 9
+    odd[1] = 5000.0
+    c = HJ.early_check(rows(0, sols, noise=[n + o for n, o in zip(noise, odd)]), "RL", 1200)
+    assert c["verdict"].startswith("doubtful") and "block-level z" in c["verdict"]
+    # the step is at sol 700, not 380: the scan finds it
+    late = [s >= 700 for s in sols]
+    c = HJ.early_check([dict(r, ppm=r["ppm"] + (0 if lt else 1500)) for r, lt in zip(rows(0, sols, noise=noise), late)],
+                       "RL", 1500)
+    assert abs(c["best_break_sol"] - 700) < 101 and "not 380" in c["verdict"]
+    # early blocks warmer: flagged as a possible slope
+    T = [20 if s < 380 else -15 for s in sols]
+    c = HJ.early_check(rows(1500, sols, T=T, applied=1500, noise=noise), "RL", 1500)
+    assert "stand in for a slope" in c["verdict"]
+    # too few early blocks: untested
+    assert HJ.early_check(rows(0, [100, 500, 600, 700]), "RL", 0)["verdict"].startswith("untested")

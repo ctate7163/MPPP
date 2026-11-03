@@ -3,6 +3,61 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.95.4 — 2026-11-02
+
+**In short.** The unattended freeze chain (the new blocks root `D:\rover_blocks`, mask v4.2 compared before the
+blocks, a final pass with the promoted models, the existing studies at the end, resumable after any fault), and the
+Hazcam early-mission step tested on the blocks.
+
+- **The Hazcam early-mission step is tested on the blocks** (`mppp.calib.hazjoint.early_check`; Christian, 2 Nov:
+  "It's weird that the hazcams have such a large early mission offset and that it is at 380. I suspect that is not
+  real, so please keep an eye on it"). The joint's z for a step is per image observation (~10^5), so it overstates
+  the evidence for an effect shared by whole blocks: the 27 Oct fit kept FL's -30 ppm step at z 17 that the blocks do
+  not show at all. The check takes each eye's diagnostic bins back to the law without the step, averages them per
+  block, and tests the early blocks against the late ones (Welch, block-level z), scans every break between the
+  blocks' sols for the best step (380 is the Navcam law's sol, not a Hazcam event), compares the two groups'
+  temperatures (a step can stand in for a slope held at another eye's), and refits the step with each eye's own slope.
+  Each eye's `early_mission.block_check` in `hazcam_fit.json`, one line per eye in `report.md`, a warning in the log
+  when doubtful. The law is unchanged (diagnostic only). On the 27 Oct fit: RL +1,230 ppm, block z +51, all seven
+  early blocks +1,186 to +1,318 ppm and every late block within 170 ppm of 0, best break sol 387 (between the blocks
+  of sols 343 and 469); FR +444 ppm, z +19, best break 425; FL -7 ppm, z -0.3 (its applied -30 ppm is not real); RR
+  +41 ppm, z +1.9 (held at 0, rightly). So the step in RL and FR is in the data on every early block, not one
+  odd block; RR shows none, so it is not the rear rig as a whole - what changed for those two eyes between sols 343
+  and 469 is the open question.
+- **`freeze_chain.bat`** (Christian, 2 Nov: away while it runs; 14:52-15:30: the blocks in `D:\rover_blocks`, mask
+  v4.2 compared before the blocks, S2 at the end, "robust against faults ... a standard set of blocks using the best
+  camera and rig models available followed by the time consuming tests and studies"): copies the found list and the
+  focus-from-below list from `D:\scapes` into the new root, checks `<root>\dem` and the free disk space, waits for
+  mask v4.2's training (started by hand; done when its release candidate or summary is written), runs the mask A/B of
+  v3, v4.1 and v4.2 (v4.2's split, v4.1 with `--also-held-out`, v3 with `--seen-split`) and passes
+  `--set mask_checkpoint=<v4.2 .pt>` to the blocks when v4.2's exclusion IoU on the frames no model trained on beats
+  v3's. The pipeline then runs in three calls: `--reset --stop-before error_analysis` (the blocks, the Navcam joint,
+  the Hazcam fit, the Mastcam-Z joints - promoted when their checks pass), `--redo ecam_runs zcam_runs --stop-before
+  error_analysis` (the final pass: the camera-model fingerprint is in the run key, so only the blocks whose models
+  were promoted are aligned again, with their features and matches reused), then the studies (error_analysis,
+  rover_frame, lightglue_ab, zcam_states, report). Then the studies that exist (15:46: "use past studies instead of
+  writing new ones") on those blocks - `make_figures.bat`, `make_maps.bat`, `zcam_aspect_geometry.py` over every
+  zoom, `tie_point_studies.py S6` over the zcam_consensus blocks - and last the tie-point studies on the tiny blocks in
+  `D:\scapes` (finished variants skipped): S2 with its verdict (would a cap of 1500 do: centres < 1 cm p95,
+  attitudes < 0.1 mdeg p95, focal lengths < 0.05 % max), then S1, S3, S4, S5 (`--skip-tie-studies`).
+  `make_maps.bat` honours `MPPP_NOPAUSE`. Faults: a failed step is logged and the
+  chain goes on; a step past its time limit is stopped with its process tree; the computer is kept awake
+  (SetThreadExecutionState) and QuickEdit switched off; the chain's state is
+  `<root>\mppp_pipeline\freeze_chain_status.json` - started again after a crash, a reboot or a closed window it
+  skips the steps done, keeps the mask choice (another would change the run key) and continues the pipeline without
+  `--reset`; a second chain on the same root does not start while one is alive. No point cap (`--cap` adds it).
+  0.95.4, from an independent review (16:02): the status file carries a tag (`CHAIN_TAG`), and the status of another
+  chain - the 14:17 one, with "s2" done - is set aside as `freeze_chain_status_before_<tag>.json` instead of being
+  taken as this chain's; an exception in the chain's own code for a step is logged as `exit chain-error` and the chain
+  goes on (`guarded`); a scheduled task "MPPP freeze chain" (`schtasks /SC ONLOGON`, a one-line launcher next to the
+  status file) starts it again at the next logon after a reboot and is removed when the chain ends (`--no-logon-task`);
+  the free disk space is logged before every step; `freeze_chain.bat --status`; the title and the log path are set
+  before `mppp_env.bat`, and an environment failure is written to the chain's log.
+- **The blocks root is `D:\rover_blocks`** (Christian, 2 Nov; was `D:\scapes`): the default of every Windows script
+  (`run_pipeline.bat` ROOT, the `MPPP_SCAPES` fallbacks, `m20_dem_env.bat`'s DEMs in `<root>\dem`). The camera
+  models stay in `D:\scapes\cmods` (`mppp_cmods.txt`). An `MPPP_SCAPES` set with `setx` still wins:
+  `setx MPPP_SCAPES D:\rover_blocks`.
+
 ## 0.95.3 — 2026-10-31 (the freeze)
 
 **In short.** The code for the fresh run of every block: two batch fixes, the v8-trained mask model prepared for
@@ -73,32 +128,6 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   those models held out too, each split rebuilt as it trained (`items_as_trained`: the newest masks left out to the
   card's n_train + n_val - the v8 set grew from 4,095 to 4,099 masks between v4 and v4.1, and the shuffle of the
   sorted names changes with every mask). The chain's A/B uses v4.1's split with `--also-held-out` v4.
-- **`freeze_chain.bat`** (Christian, 2 Nov: away while it runs; 14:52-15:30: the blocks in `D:\rover_blocks`, mask
-  v4.2 compared before the blocks, S2 at the end, "robust against faults ... a standard set of blocks using the best
-  camera and rig models available followed by the time consuming tests and studies"): copies the found list and the
-  focus-from-below list from `D:\scapes` into the new root, checks `<root>\dem` and the free disk space, waits for
-  mask v4.2's training (started by hand; done when its release candidate or summary is written), runs the mask A/B of
-  v3, v4.1 and v4.2 (v4.2's split, v4.1 with `--also-held-out`, v3 with `--seen-split`) and passes
-  `--set mask_checkpoint=<v4.2 .pt>` to the blocks when v4.2's exclusion IoU on the frames no model trained on beats
-  v3's. The pipeline then runs in three calls: `--reset --stop-before error_analysis` (the blocks, the Navcam joint,
-  the Hazcam fit, the Mastcam-Z joints - promoted when their checks pass), `--redo ecam_runs zcam_runs --stop-before
-  error_analysis` (the final pass: the camera-model fingerprint is in the run key, so only the blocks whose models
-  were promoted are aligned again, with their features and matches reused), then the studies (error_analysis,
-  rover_frame, lightglue_ab, zcam_states, report). Then the studies that exist (15:46: "use past studies instead of
-  writing new ones") on those blocks - `make_figures.bat`, `make_maps.bat`, `zcam_aspect_geometry.py` over every
-  zoom, `tie_point_studies.py S6` over the zcam_consensus blocks - and last the tie-point studies on the tiny blocks in
-  `D:\scapes` (finished variants skipped): S2 with its verdict (would a cap of 1500 do: centres < 1 cm p95,
-  attitudes < 0.1 mdeg p95, focal lengths < 0.05 % max), then S1, S3, S4, S5 (`--skip-tie-studies`).
-  `make_maps.bat` honours `MPPP_NOPAUSE`. Faults: a failed step is logged and the
-  chain goes on; a step past its time limit is stopped with its process tree; the computer is kept awake
-  (SetThreadExecutionState) and QuickEdit switched off; the chain's state is
-  `<root>\mppp_pipeline\freeze_chain_status.json` - started again after a crash, a reboot or a closed window it
-  skips the steps done, keeps the mask choice (another would change the run key) and continues the pipeline without
-  `--reset`; a second chain on the same root does not start while one is alive. No point cap (`--cap` adds it).
-- **The blocks root is `D:\rover_blocks`** (Christian, 2 Nov; was `D:\scapes`): the default of every Windows script
-  (`run_pipeline.bat` ROOT, the `MPPP_SCAPES` fallbacks, `m20_dem_env.bat`'s DEMs in `<root>\dem`). The camera
-  models stay in `D:\scapes\cmods` (`mppp_cmods.txt`). An `MPPP_SCAPES` set with `setx` still wins:
-  `setx MPPP_SCAPES D:\rover_blocks`.
 - **The freeze run writes the full export by default** (`run_pipeline.py --light` for the calibration-run export):
   its error_analysis stage reads `error_input\native`, which the light export of 28 Oct left out.
 - **Navcam joint points by stations** (Christian, 2 Nov: "for the joint, scale to 500-1000 points per station"):

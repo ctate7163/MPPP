@@ -494,6 +494,15 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    + (f" over {e['bins']} temperature bins; {e['images']} images, {e['observations']} observations, "
                       f"median {e['median_residual_px']:.3f} px" if e.get("method") == "joint" else "")
                    + (f" - {e['fallback']}" if e.get("fallback") else ""))
+        bc = (e.get("early_mission") or {}).get("block_check")
+        if bc and bc.get("verdict"):
+            # 0.95.4 (Christian, 2 Nov: the early-mission step "at 380 ... I suspect that is not real")
+            out.append(f"{eye} early-mission step on the blocks: " + (
+                f"{bc['step_ppm']:+.0f} ppm early minus late, block-level z {bc['block_z']:+.1f} "
+                f"({bc['blocks_early']} early / {bc['blocks_late']} late blocks; applied {bc['applied_ppm']:+.0f} ppm)"
+                + (f"; best break sol {bc['best_break_sol']:.0f} (z {bc['best_block_z']:+.1f})" if bc.get("best_break_sol") is not None else "")
+                + f"; T early {bc['T_early_degC']:+.0f} / late {bc['T_late_degC']:+.0f} degC - " if bc.get("block_z") is not None else "")
+                + bc["verdict"])
     for fam, r in (res.get("rigs") or {}).items():
         if r.get("skipped"):
             out.append(f"{fam} rig: skipped - {r['skipped']}")
