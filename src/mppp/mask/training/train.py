@@ -117,6 +117,16 @@ def scan_dataset(data_dir: PathLike, image_dirs: Sequence[str] = ("images", "ima
     return items
 
 
+def write_split(ckpt: PathLike, train_items: Sequence[Item], val_items: Sequence[Item]) -> Path:
+    """0.95.4: ``<checkpoint>.split.json`` - the mask file names on each side of the split, as trained (a mask added
+    to the set later is on neither side: the model never saw it)."""
+    import json as _json
+    p = Path(ckpt).with_suffix(".split.json")
+    p.write_text(_json.dumps({"train": sorted({Path(it.mask).name for it in train_items}),
+                              "val": sorted({Path(it.mask).name for it in val_items})}, indent=0), encoding="utf-8")
+    return p
+
+
 def grouped_split(items: Sequence[Item], val_ratio: float = 0.1, seed: int = 42) -> Tuple[List[Item], List[Item]]:
     """Split by mask file, so every variant of a scene lands on the same side."""
     groups: Dict[str, List[Item]] = {}
@@ -752,9 +762,15 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
                                  "n_train": len(tr_items), "n_val": len(va_items), "split": "grouped by mask file",
                                  "labels": "masks/ files (image alpha ignored)",
                                  "n_train_frames": len(tr_frames), "n_val_frames": len(va_frames),
+                                 # 0.95.4 (2 Nov: the A/B of v4.1 and v4.2 rebuilt v4.1's split from file times
+                                 # and took 54 of its 59 "held-out" frames from v4.1's training): the held-out
+                                 # masks themselves, so a later comparison never has to rebuild the split
+                                 "val_masks": sorted({Path(it.mask).name for it in va_items}),
                                  "dataset_fingerprint": _dataset_fingerprint(items)},
                        history=history)
             log.info(f"  -> saved {out.name} (val IoU {best:.4f})")
+            if ep == 0 or not out.with_suffix(".split.json").is_file():
+                write_split(out, tr_items, va_items)
     if monitor:
         monitor.finish()
     return out

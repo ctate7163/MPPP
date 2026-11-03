@@ -174,3 +174,29 @@ def test_zoom_pairs_full_res_navcam_twice(tmp_path):
     a = np.zeros((3840, 5120, 3), np.uint8) + 1
     ci, cm, z = zoom_crop(a, np.zeros((3840, 5120), np.uint8), 2.0, exact=True)
     assert z == 2.0 and ci.shape[:2] == (1920, 2560)
+
+
+def test_recorded_split_beats_the_rebuild(tmp_path):
+    """0.95.4 (2 Nov): the split as training recorded it - split.json, else frame_audit.csv, else the card's val_masks
+    - not a rebuild from file times (that took 54 of 59 "held-out" frames from v4.1's training)."""
+    from types import SimpleNamespace
+    from mppp.mask.training.audit import recorded_split, split_labels
+    from mppp.mask.training.train import write_split
+    it = lambda n: SimpleNamespace(mask=str(tmp_path / "masks" / n), image=str(tmp_path / "images" / n), tile=-1)
+    items = [it(f"m{k}.png") for k in range(6)]
+    ck = tmp_path / "model.pt"
+    ck.write_bytes(b"x")
+    assert recorded_split(ck, {}) is None
+    # the card's val_masks: the rest counts as training
+    lab = split_labels(items, {"training": {"val_masks": ["m1.png"]}}, ck)
+    assert lab[items[1].mask] == "val" and lab[items[0].mask] == "train"
+    # frame_audit.csv of the debug folder
+    dbg = tmp_path / "model_debug"
+    dbg.mkdir()
+    (dbg / "frame_audit.csv").write_text("rank,name,split,mask\n1,m2.png,val,X\\masks\\m2.png\n2,m3.png,train,X\\masks\\m3.png\n")
+    lab = split_labels(items, {"training": {"val_masks": ["m1.png"]}}, ck)
+    assert lab[items[2].mask] == "val" and lab[items[3].mask] == "train" and lab[items[5].mask] == "unseen"
+    # split.json wins: a mask added after training is on neither side
+    write_split(ck, items[:4], items[4:5])
+    lab = split_labels(items, {}, ck)
+    assert [lab[i.mask] for i in items] == ["train"] * 4 + ["val", "unseen"]

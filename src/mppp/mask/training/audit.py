@@ -118,8 +118,44 @@ def _read_pair(it) -> tuple:
     return it, im, ms
 
 
-def split_labels(items: Sequence, card: Dict[str, Any]) -> Dict[str, str]:
-    """mask path -> "train" / "val", reproducing the training split from the card."""
+def recorded_split(checkpoint: Optional[PathLike], card: Optional[Dict[str, Any]] = None
+                   ) -> Optional[Dict[str, str]]:
+    """0.95.4: the split as the model trained, by mask file name ("train" / "val"), from what training recorded -
+    ``<checkpoint>.split.json``, else ``<checkpoint stem>_debug/frame_audit.csv`` (written at the end of training,
+    on the set as it was), else the card's ``val_masks`` (the rest: "train").  None when nothing was recorded (then
+    only a rebuild from the card is left, which is right only while the set has not changed)."""
+    import csv as _csv
+    import json as _json
+    if checkpoint is not None:
+        ck = Path(checkpoint)
+        sp = ck.with_suffix(".split.json")
+        if sp.is_file():
+            d = _json.loads(sp.read_text(encoding="utf-8"))
+            return {**{n: "train" for n in d.get("train", [])}, **{n: "val" for n in d.get("val", [])}}
+        fa = ck.parent / f"{ck.stem}_debug" / "frame_audit.csv"
+        if fa.is_file():
+            out: Dict[str, str] = {}
+            with open(fa, encoding="utf-8") as f:
+                for r in _csv.DictReader(f):
+                    if r.get("split") in ("train", "val"):
+                        # the mask's file name (a Windows path read anywhere: both separators)
+                        out[str(r.get("mask") or r.get("name") or "").replace("\\", "/").rsplit("/", 1)[-1]] = r["split"]
+            if out:
+                return out
+    vm = ((card or {}).get("training") or {}).get("val_masks")
+    if vm:
+        return {"*": "train", **{n: "val" for n in vm}}
+    return None
+
+
+def split_labels(items: Sequence, card: Dict[str, Any], checkpoint: Optional[PathLike] = None) -> Dict[str, str]:
+    """mask path -> "train" / "val" (or "unseen": added to the set after the model trained).  0.95.4: from the split
+    training recorded (:func:`recorded_split`) when there is one; else reproduced from the card (only right while the
+    set is unchanged: the split is a shuffle of the sorted mask names)."""
+    rec = recorded_split(checkpoint, card)
+    if rec is not None:
+        default = rec.get("*", "unseen")
+        return {it.mask: rec.get(Path(it.mask).name, default) for it in items}
     from .train import grouped_split
     tr_cfg = card.get("training") or {}
     tr, va = grouped_split(list(items), float(tr_cfg.get("val_ratio", 0.1)), int(tr_cfg.get("seed", 42)))

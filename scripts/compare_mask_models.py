@@ -109,14 +109,25 @@ def main(argv=None) -> int:
 
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    from mppp.mask.training.audit import recorded_split
     _, split_card = get_model(a.split_ckpt, a.device)
     items = scan_dataset(a.data, image_dirs=("images",), mask_dir="masks", missing="skip")
-    items = items_as_trained(items, split_card) if a.also_held_out else items
-    split = split_labels(items, split_card)
+
+    def split_of(ck, card):
+        # 0.95.4: the split training recorded (split.json, frame_audit.csv, the card's val_masks); the rebuild from
+        # file times only when nothing was recorded - on 2 Nov it took 54 of 59 "held-out" frames from v4.1's training
+        if recorded_split(ck, card) is not None:
+            print(f"  {Path(ck).name}: the split recorded in training")
+            return split_labels(items, card, ck)
+        print(f"  {Path(ck).name}: no recorded split - rebuilt from the card (newest masks left out); unreliable "
+              f"once the set has changed")
+        return split_labels(items_as_trained(items, card), card)
+
+    split = split_of(a.split_ckpt, split_card)
     val = [it for it in items if split.get(it.mask) == "val"]
     for ck in a.also_held_out:
         _, card_o = get_model(ck, a.device)
-        sp_o = split_labels(items_as_trained(items, card_o), card_o)
+        sp_o = split_of(ck, card_o)
         before = len(val)
         val = [it for it in val if sp_o.get(it.mask) == "val"]
         print(f"--also-held-out {Path(ck).name}: {len(val)} of {before} test frames held out by it too")
@@ -130,7 +141,7 @@ def main(argv=None) -> int:
         _, old_card = get_model(a.seen_split[0], a.device)
         old_items = scan_dataset(a.seen_split[1], image_dirs=("images", "images_variable"), mask_dir="masks",
                                  missing="skip")
-        old_split = split_labels(old_items, old_card)
+        old_split = split_labels(old_items, old_card, a.seen_split[0])
         held = {Path(m).name for m, v in old_split.items() if v == "val"}
         print(f"--seen-split: {len(held)} masks held out by {Path(a.seen_split[0]).name}")
         seen = seen - held

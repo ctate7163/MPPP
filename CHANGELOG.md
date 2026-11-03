@@ -9,6 +9,14 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 blocks, a final pass with the promoted models, the existing studies at the end, resumable after any fault), and the
 Hazcam early-mission step tested on the blocks.
 
+- **Mask comparisons use the split training recorded** (2 Nov, "study why the training did not improve"). The A/B
+  of v3, v4.1 and v4.2 rebuilt v4.1's split by leaving out the newest masks by file time; the v8 set had grown by
+  700 masks (656 Mastcam-Z, 320 of them 110 mm) and 54 of the 59 "held-out" test frames were in fact v4.1 training
+  frames, so v4.1 was scored on frames it had learned. Training now writes `<checkpoint>.split.json` (the mask
+  names on each side) and the card's `training.val_masks`; `mppp.mask.training.audit.recorded_split` reads those,
+  else the debug folder's `frame_audit.csv` (written at the end of training, on the set as it was), and
+  `split_labels(items, card, checkpoint)` marks masks added later as "unseen". `compare_mask_models.py` uses it for
+  `--split-ckpt`, `--also-held-out` and `--seen-split`, and says when it has to fall back to the rebuild.
 - **The Hazcam early-mission step is tested on the blocks** (`mppp.calib.hazjoint.early_check`; Christian, 2 Nov:
   "It's weird that the hazcams have such a large early mission offset and that it is at 380. I suspect that is not
   real, so please keep an eye on it"). The joint's z for a step is per image observation (~10^5), so it overstates
