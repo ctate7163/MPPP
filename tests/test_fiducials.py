@@ -268,3 +268,96 @@ def test_annotate_writes_a_figure(tmp_path):
     out = F.annotate(img, {"stem": "NLF_0001_test", "sol": 1}, 0.25, pred, det, {"TDF1": det["TDF1"] + 0.3}, "L",
                      tmp_path / "a.png")
     assert out.is_file() and out.stat().st_size > 10000
+
+
+def test_rotation_mode_holds_the_translation():
+    """4 Nov: the rig rotation with the translation held is far tighter in pitch and yaw than with it free."""
+    P, R, t = _scene()
+    pl, pr = _navcam("L"), _navcam("R")
+    R_rel, t_rel = _rig()
+    w = np.radians(np.array([4e-3, -6e-3, -12e-3]))
+    Rt = F._rot(w) @ R_rel
+    err = {"rotation": [], "free": []}
+    for s in range(12):
+        rng = np.random.default_rng(100 + s)
+        oL = _observe(pl, R, t, P, F.RIGID, rng, 0.2)
+        oR = _observe(pr, Rt @ R, Rt @ t + t_rel, P, F.RIGID, rng, 0.2)
+        for m in err:
+            f = F.solve_pair(pl, pr, oL, oR, R, t, R_rel=R_rel, t_rel=t_rel, mode=m, points=P)
+            err[m].append(f["dR_mdeg"] - np.degrees(w) * 1e3)
+    rot, free = (np.sqrt(np.mean(np.square(err[m]), 0)) for m in ("rotation", "free"))
+    assert np.all(rot < 8.0)
+    assert rot[0] < 0.5 * free[0] and rot[1] < 0.5 * free[1]
+
+
+def test_check_pair_gives_the_deck_rig_about_the_reference():
+    rng = np.random.default_rng(21)
+    P, R, t = _scene()
+    pl, pr = _navcam("L"), _navcam("R")
+    R_ref, t_rel = _rig()
+    w_law = np.radians([2e-3, 1e-3, -5e-3])                    # the law's drift at this sol
+    w_deck = np.radians([0.0, 0.0, -15e-3])                    # and the deck sees 15 mdeg more roll
+    R_law = F._rot(w_law) @ R_ref
+    R_true = F._rot(w_deck) @ R_law
+    det = {"L": _observe(pl, R, t, P, F.RIGID, rng, 0.05), "R": _observe(pr, R_true @ R, R_true @ t + t_rel, P, F.RIGID, rng, 0.05)}
+    cfw = {"L": (np.eye(3), np.zeros(3)), "R": (R_law, t_rel)}  # the law rig as the block poses (PDS mode)
+    res = F.check_pair(det, {"L": pl, "R": pr}, {"L": (R, t), "R": (R_true @ R, R_true @ t + t_rel)}, cfw, R_ref)
+    assert np.allclose([res["rig_block_pitch_mdeg"], res["rig_block_yaw_mdeg"], res["rig_block_roll_mdeg"]],
+                       np.degrees(w_law) * 1e3, atol=1e-6)
+    assert abs(res["rot_roll_mdeg"] + 15.0) < 3 * res["rot_roll_sd"] + 1.0
+    assert abs(res["rig_deckrot_roll_mdeg"] - (-5.0 - 15.0)) < 3 * res["rot_roll_sd"] + 1.0
+    assert res["rot_rms"] < 0.15
+
+
+def test_rig_trend_recovers_a_rate_and_a_step():
+    rng = np.random.default_rng(4)
+    drift = {"sol0": 0.0, "pitch_mdeg_per_sol": 0.005, "yaw_mdeg_per_sol": 0.0, "roll_mdeg_per_sol": -0.005}
+    sols = np.sort(rng.uniform(0, 2000, 80))
+    pairs = []
+    for i, s in enumerate(sols):
+        sd = rng.uniform(5, 15)
+        pairs.append({"pair": f"p{i}", "sol": float(s), "T_L": -20.0, "rot_rms": 0.5,
+                      "rig_deckrot_pitch_mdeg": 3.0 + 0.005 * s + rng.normal(0, sd), "rot_pitch_sd": sd,
+                      "rig_deckrot_yaw_mdeg": 1.0 + (10.0 if s >= 475 else 0.0) + rng.normal(0, sd), "rot_yaw_sd": sd,
+                      "rig_deckrot_roll_mdeg": -14.0 - 0.012 * s + rng.normal(0, sd), "rot_roll_sd": sd})
+    pairs.append({"pair": "bad", "sol": 900.0, "T_L": -20.0, "rot_rms": 0.5, "rig_deckrot_roll_mdeg": 400.0,
+                  "rot_roll_sd": 10.0})
+    pairs.append({"pair": "loose", "sol": 950.0, "T_L": -20.0, "rot_rms": 3.0, "rig_deckrot_roll_mdeg": 0.0, "rot_roll_sd": 10.0})
+    tr = F.rig_trend(pairs, drift, step_sol=475.0)
+    p, y, r = tr["pitch"], tr["yaw"], tr["roll"]
+    assert abs(p["rate_minus_law"]) < 3 * p["line"]["se"][1] and abs(p["offset_vs_law_mdeg"] - 3.0) < 3 * p["law"]["se"][0]
+    assert abs(r["line"]["coef"][1] + 12.0) < 3 * r["line"]["se"][1] and r["rate_minus_law_z"] < -1.0
+    assert "bad" in r["dropped"] and r["n"] == 80                     # the outlier dropped, the loose fit not used
+    assert abs(y["step"]["coef"][1] - 10.0) < 3 * y["step"]["se"][1] and y["step"]["bic"] < y["line"]["bic"]
+    assert r["constant"]["bic"] > r["line"]["bic"]
+
+
+def test_pds_pairs_and_stretch():
+    fr = [{"sclk_key": "1", "eye": "L", "scale": 0.5, "version": 1, "n_rigid": 5},
+          {"sclk_key": "1", "eye": "L", "scale": 0.5, "version": 2, "n_rigid": 5},
+          {"sclk_key": "1", "eye": "R", "scale": 0.5, "version": 1, "n_rigid": 3},
+          {"sclk_key": "2", "eye": "L", "scale": 1.0, "version": 1, "n_rigid": 6},
+          {"sclk_key": "2", "eye": "R", "scale": 1.0, "version": 1, "n_rigid": 2},
+          {"sclk_key": "3", "eye": "L", "scale": 0.25, "version": 1, "n_rigid": 6}]
+    pr = F.pds_pairs(fr)
+    assert len(pr) == 1 and pr[0][0]["version"] == 2 and pr[0][1]["eye"] == "R"
+    a = np.zeros((40, 60, 3), np.int16)
+    a[5:, :, :] = 1000
+    a[20:30, 20:40, :] = 3000
+    g = F.stretch_gray(a)
+    assert g.dtype == np.float32 and g.max() == 255.0 and g[25, 30] == 255.0 and g[10, 10] == 0.0
+    assert F.PDS_NAVCAM.match("NLF_0670_0726428419_053RAD_N0320672NCAM02670_0A0195J01.IMG")
+    assert not F.PDS_NAVCAM.match("FLF_0670_0726420507_927RAD_N0320592FHAZ08111_0A0295J01.IMG")
+
+
+def test_deck_rig_trend_script_runs_on_an_empty_archive(tmp_path):
+    import importlib.util
+    script = Path(__file__).resolve().parents[1] / "scripts" / "deck_rig_trend.py"
+    spec = importlib.util.spec_from_file_location("deck_rig_trend", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    (tmp_path / "pds" / "datadrive" / "00001").mkdir(parents=True)
+    out = tmp_path / "out"
+    assert mod.main(["--pds", str(tmp_path / "pds"), "--root", str(tmp_path), "--out", str(out), "--workers", "1"]) == 0
+    assert (out / "report.md").is_file() and (out / "summary.json").is_file()
+    assert (tmp_path / "camera_analysis" / "deck_pds_scan.json").is_file()

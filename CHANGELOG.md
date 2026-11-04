@@ -36,6 +36,24 @@ Hazcam early-mission step tested on the blocks.
   23 NR, sols 29-2006): both eyes sit about 2-2.7 mm low and 1-2.5 mm back of their labels and point about 0.1 deg
   low (the mast head or its kinematics); along the baseline NL is at its label (-0.1 +- 0.2 mm) and NR is
   1.3-1.7 +- 0.5 mm toward NL; no rotation differs between the eyes beyond its error.
+- **The rig drift checked on the rover deck, mission-wide** (new; reads only; Christian, 4 Nov: "Can you use the
+  fiducial data to check the roll trend? Can you get access to more deck images across the mission?").
+  `fiducials.solve_pair(mode="rotation")`: NR's rotation free with the rig translation held (`rot_*_mdeg` +- sd,
+  `rig_deckrot_*` about the rig file's sol-0 rotation, next to the law's `rig_block_*`) - a free translation trades
+  with the rotation at 1-2 m (synthetic, 0.3 px: pitch 40 -> 3.5 mdeg, yaw 16 -> 3.3; roll 5-6 either way).
+  `fiducials.scan_pds` / `pds_frame` / `pds_pairs` / `check_pds_pair` / `rig_trend` and `scripts/deck_rig_trend.py`:
+  every Navcam full-frame stereo pair of the local PDS archive (MPPP_PDS) whose label puts >= 3 rigid targets in
+  each eye, measured with the law at each image's temperature and the rig at its sol - no block needed; the label
+  scan is cached (`camera_analysis/deck_pds_scan.json`); fits of a constant, a line, the law's own drift shape and
+  a step against sol; `deck_rig_trend.png`, report.md. First run (4 Nov, 88 pairs staged from the archive, sols
+  15-2022, 71 used, the 3 Nov joint's cameras and rig): a pair gives pitch and yaw to ~10 mdeg and roll to ~15
+  (6-14 with targets fore and aft in both eyes). **Pitch** +6.5 +- 1.7 mdeg/1000 sol against the law's +5.5, and
+  the law's hinged shape is the best model (BIC 54 vs line 62, constant 73): the tie-point pitch drift confirmed
+  independently. **Roll** -13.5 +- 2.9 against the law's -5.4 (z -2.8); a constant roll is rejected (BIC +19 against
+  a line); a line and a step at sol 475 (-16 +- 3.5) fit equally. **Yaw**: a step of +10.4 +- 2.7 at sol 475 that
+  the tie points do not show (+0.1 +- 0.7) - with the translation held the deck's yaw also carries the baseline and
+  focal scale (0.5 px of disparity at 1.5 m), so it is not taken as a rotation. Offsets deck - tie points: pitch
+  +5.5, yaw +5.6, roll -13.6 mdeg (the deck is at the bottom edge of the frame).
 - **Navcam joint: `--zero TERM ...`** (`tied.zero_terms`, `fit_tied(zero=...)`; Christian, 3 Nov): global terms set
   to 0 and held, for the post-freeze runs - `D_roll` (one roll for the mission), `S_NL_cx S_NL_cy S_NR_cy` (those
   principal points constant with temperature, NR cx carrying the stereo term).

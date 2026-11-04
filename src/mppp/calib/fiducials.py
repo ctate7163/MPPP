@@ -28,6 +28,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import re as _re
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -82,6 +83,7 @@ UNSURVEYED_SEARCH_FULL_PX = 20.0  # TDF4: around its prior (a few mm at 1-2 m, p
 REJECT_FULL_PX = 3.0             # a target further than this from the fitted solution is dropped
 MIN_PAIR_POINTS = 3              # rigid targets over both eyes for a rig-held solution
 MIN_EYE_POINTS = 4               # rigid targets in one eye for its own resection
+MIN_ROTATION_POINTS = 6          # rigid targets over both eyes (>= 3 in NR) for the rig rotation with the translation held
 
 
 def survey_nav_m(names: Optional[Sequence[str]] = None) -> Dict[str, np.ndarray]:
@@ -264,8 +266,8 @@ def _sd(res) -> np.ndarray:
         return np.full(n, np.nan)
 
 
-MODES = ("rig", "scale", "translation", "free")
-_N_EXTRA = {"rig": 0, "scale": 1, "translation": 3, "free": 6}
+MODES = ("rig", "scale", "translation", "rotation", "free")
+_N_EXTRA = {"rig": 0, "scale": 1, "translation": 3, "rotation": 3, "free": 6}
 
 
 def solve_pair(projL: Optional[Projector], projR: Optional[Projector], obsL: Dict[str, np.ndarray],
@@ -275,8 +277,9 @@ def solve_pair(projL: Optional[Projector], projR: Optional[Projector], obsL: Dic
     """
     The NL pose in the rover frame (x_cam = R X + t) from the targets seen by NL (``obsL``) and NR (``obsR``),
     full-resolution pixels, with NR placed by the block's rig x_NR = R_rel x_NL + t_rel.  ``mode``:
-    ``rig`` (rig held), ``scale`` (t_rel scaled by 1 + k), ``translation`` (t_rel + d), ``free`` (R_rel turned by
-    w, t_rel + d).  A robust first fit, targets beyond ``reject_px`` dropped, then a plain refit.  None when there
+    ``rig`` (rig held), ``scale`` (t_rel scaled by 1 + k), ``translation`` (t_rel + d), ``rotation`` (R_rel turned
+    by w, t_rel held: the rig rotation the deck sees, 4 Nov - with the targets 1-2 m away a free translation trades
+    with the rotation), ``free`` (R_rel turned by w, t_rel + d).  A robust first fit, targets beyond ``reject_px`` dropped, then a plain refit.  None when there
     are fewer observations than unknowns + 1.  For one eye alone pass it as NL (R_rel unused).
     """
     if mode not in MODES:
@@ -299,6 +302,8 @@ def solve_pair(projL: Optional[Projector], projR: Optional[Projector], obsL: Dic
                 tr = tr * (1.0 + x[6])
             elif mode == "translation":
                 tr = tr + x[6:9]
+            elif mode == "rotation":
+                Rr = _rot(x[6:9]) @ Rr
             elif mode == "free":
                 Rr = _rot(x[6:9]) @ Rr
                 tr = tr + x[9:12]
@@ -339,7 +344,7 @@ def solve_pair(projL: Optional[Projector], projR: Optional[Projector], obsL: Dic
     if mode in ("translation", "free"):
         j = 6 if mode == "translation" else 9
         out["dt_mm"], out["dt_sd_mm"] = 1e3 * res.x[j:j + 3], 1e3 * sd[j:j + 3]
-    if mode == "free":
+    if mode in ("rotation", "free"):
         out["dR_mdeg"], out["dR_sd_mdeg"] = np.degrees(res.x[6:9]) * 1e3, np.degrees(sd[6:9]) * 1e3
     return out
 
@@ -420,7 +425,8 @@ def check_pair(det: Dict[str, Dict[str, np.ndarray]], proj: Dict[str, Projector]
         return out
     fits = {}
     for mode in MODES:
-        if (mode == "translation" and len(rigidR) < 3) or (mode == "free" and (len(rigidR) < MIN_EYE_POINTS or len(rigidL) < 3)):
+        if (mode == "translation" and len(rigidR) < 3) or (mode == "free" and (len(rigidR) < MIN_EYE_POINTS or len(rigidL) < 3)) \
+                or (mode == "rotation" and (len(rigidR) < 3 or len(rigidL) + len(rigidR) < MIN_ROTATION_POINTS)):
             fits[mode] = None              # the right eye's own pose needs its own targets
             continue
         fits[mode] = solve_pair(proj["L"], proj["R"], rigidL, rigidR, *label["L"], R_rel=R_rel, t_rel=t_rel, mode=mode,
@@ -437,17 +443,29 @@ def check_pair(det: Dict[str, Dict[str, np.ndarray]], proj: Dict[str, Projector]
     if fits["translation"]:
         d = fits["translation"]["dt_mm"]
         out.update({"dt_x_mm": d[0], "dt_y_mm": d[1], "dt_z_mm": d[2], "translation_rms": fits["translation"]["rms"]})
+    Rb = np.asarray(R_rel, float) @ np.asarray(rig_ref, float).T if rig_ref is not None else None
+    if Rb is not None:
+        a = np.degrees(_rotvec(Rb)) * 1e3
+        out.update({"rig_block_pitch_mdeg": a[0], "rig_block_yaw_mdeg": a[1], "rig_block_roll_mdeg": a[2]})
     if fits["free"]:
         w = fits["free"]["dR_mdeg"]
         ws = fits["free"]["dR_sd_mdeg"]
         out.update({"dR_pitch_mdeg": w[0], "dR_yaw_mdeg": w[1], "dR_roll_mdeg": w[2], "dR_pitch_sd": ws[0],
                     "dR_yaw_sd": ws[1], "dR_roll_sd": ws[2], "free_rms": fits["free"]["rms"]})
-        if rig_ref is not None:
-            Rb = np.asarray(R_rel, float) @ np.asarray(rig_ref, float).T
-            Rd = _rot(fits["free"]["x"][6:9]) @ Rb
-            for tag, M in (("block", Rb), ("deck", Rd)):
-                a = np.degrees(_rotvec(M)) * 1e3
-                out.update({f"rig_{tag}_pitch_mdeg": a[0], f"rig_{tag}_yaw_mdeg": a[1], f"rig_{tag}_roll_mdeg": a[2]})
+        if Rb is not None:
+            a = np.degrees(_rotvec(_rot(fits["free"]["x"][6:9]) @ Rb)) * 1e3
+            out.update({"rig_deck_pitch_mdeg": a[0], "rig_deck_yaw_mdeg": a[1], "rig_deck_roll_mdeg": a[2]})
+    if fits["rotation"]:
+        # 4 Nov (Christian: "Can you use the fiducial data to check the roll trend?"): the rig rotation with the
+        # translation held - the deck pins the translation to ~0.05 mm, and a free one trades with the rotation
+        w = fits["rotation"]["dR_mdeg"]
+        ws = fits["rotation"]["dR_sd_mdeg"]
+        out.update({"rot_pitch_mdeg": w[0], "rot_yaw_mdeg": w[1], "rot_roll_mdeg": w[2], "rot_pitch_sd": ws[0],
+                    "rot_yaw_sd": ws[1], "rot_roll_sd": ws[2], "rot_rms": fits["rotation"]["rms"],
+                    "rot_n_obs": fits["rotation"]["n_obs"]})
+        if Rb is not None:
+            a = np.degrees(_rotvec(_rot(fits["rotation"]["x"][6:9]) @ Rb)) * 1e3
+            out.update({"rig_deckrot_pitch_mdeg": a[0], "rig_deckrot_yaw_mdeg": a[1], "rig_deckrot_roll_mdeg": a[2]})
     # NL in the rover frame and the rover in the block
     R, t = rig["R"], rig["t"]
     C_rover = -R.T @ t
@@ -489,6 +507,8 @@ PAIR_COLUMNS = ["block", "pair", "station", "sol", "T_L", "T_R", "scale_native",
                 "dR_pitch_mdeg", "dR_yaw_mdeg", "dR_roll_mdeg", "dR_pitch_sd", "dR_yaw_sd", "dR_roll_sd",
                 "rig_block_pitch_mdeg", "rig_block_yaw_mdeg", "rig_block_roll_mdeg", "rig_deck_pitch_mdeg",
                 "rig_deck_yaw_mdeg", "rig_deck_roll_mdeg",
+                "rot_pitch_mdeg", "rot_yaw_mdeg", "rot_roll_mdeg", "rot_pitch_sd", "rot_yaw_sd", "rot_roll_sd", "rot_rms",
+                "rot_n_obs", "rig_deckrot_pitch_mdeg", "rig_deckrot_yaw_mdeg", "rig_deckrot_roll_mdeg",
                 "tri_n", "tri_scale_ppm", "tri_shape_rms_mm", "bar_mm", "bar_ppm", "tdf4_rover_mm",
                 "minus_label_C_L_mm", "minus_label_C_R_mm", "minus_label_rot_L_mdeg", "minus_label_rot_R_mdeg",
                 "baseline_independent_mm", "baseline_label_mm",
@@ -675,6 +695,329 @@ def check_block(work: PathLike, model: str = "cahv_ba", images_dir: Optional[Pat
             except Exception as exc:                    # noqa: BLE001 - a figure never stops the check
                 log.warning("figure %s: %s", mm["row"]["stem"], exc)
         out["figures"] = len(figs)
+    return out
+
+
+# ------------------------------------------------------------------------------------------------ the PDS archive
+# 4 Nov 2026 (Christian: "Can you use the fiducial data to check the roll trend? Can you get access to more deck
+# images across the mission?"): every Navcam stereo pair of the local PDS archive (MPPP_PDS, sols 0-2023) whose
+# label puts the deck targets in frame, measured with the cameras and the rig in use (the law at each image's
+# temperature and sol) - no block needed.  The rig rotation the deck sees (translation held, ``rot_*``) against sol
+# tests the rig drift of the Navcam joint independently of the tie points.
+PDS_NAVCAM = _re.compile(r"^N([LR])F_(\d{4})_\d{10}_\d{3}RAD_.{27}\.IMG$", _re.I)
+PDS_MIN_RIGID = 3                # rigid targets predicted in frame for a product to be kept by the scan
+PDS_COLUMNS = ["block", "pair", "station", "sol", "T_L", "T_R", "scale_native", "stem_L", "stem_R", "rig_source"] + \
+    [c for c in PAIR_COLUMNS if c not in ("block", "pair", "station", "sol", "T_L", "T_R", "scale_native")]
+
+
+def stretch_gray(a: np.ndarray) -> np.ndarray:
+    """A PDS image (H x W or H x W x bands, any number type) as float32 grey 0-255: the band mean stretched between
+    its 0.5 and 99.5 percentiles over the valid (> 0) pixels - the 8-bit scale the detection thresholds assume."""
+    g = np.asarray(a, np.float32)
+    if g.ndim == 3:
+        g = g.mean(axis=2)
+    v = g[g > 0]
+    if v.size < 100:
+        return np.zeros_like(g)
+    lo, hi = np.percentile(v, [0.5, 99.5])
+    return np.clip((g - lo) * (255.0 / max(hi - lo, 1e-6)), 0.0, 255.0).astype(np.float32)
+
+
+def pds_frame(path: PathLike, names: Optional[Sequence[str]] = None) -> Optional[Dict[str, Any]]:
+    """The label facts of one Navcam RAD product: ``stem``, ``eye`` ("L"/"R"), ``sol``, ``sclk_key``, ``scale``,
+    ``version``, ``site``/``drive``, ``T`` (degC), ``cm`` (the label CAHVOR(E) in the manifest form) and ``pred``
+    (target -> native px).  None for a sub-frame, a model not in ROVER_NAV_FRAME, or an unreadable label."""
+    from ..cmod import CameraModel
+    from ..filenames import parse_filename
+    from ..labels import camera_temperature, label_get, read_pds
+    p = Path(path)
+    try:
+        fn = parse_filename(p)
+        L, _ = read_pds(p, load_image=False)
+        gcm = label_get(L, "GEOMETRIC_CAMERA_MODEL")
+        if gcm is None or str(gcm.get("REFERENCE_COORD_SYSTEM_NAME", "ROVER_NAV_FRAME")) != "ROVER_NAV_FRAME":
+            return None
+        w, h = int(label_get(L, "IMAGE.LINE_SAMPLES")), int(label_get(L, "IMAGE.LINES"))
+        fs = label_get(L, "IMAGE.FIRST_LINE_SAMPLE", default=1)
+        fl = label_get(L, "IMAGE.FIRST_LINE", default=1)
+        fs, fl = (int(v[0] if isinstance(v, (list, tuple)) else v) for v in (fs, fl))
+        s = float(fn.downsample_scale)
+        if fs != 1 or fl != 1 or abs(w - 5120 * s) > 1 or abs(h - 3840 * s) > 1:
+            return None                                   # sub-frames: the label model is the sub-frame's
+        cm = dict(CameraModel.from_label(gcm, w, h).to_label_dict(precision=12), width=w, height=h)
+        pred = label_predict(cm, names or (list(RIGID) + list(BAR) + list(UNSURVEYED)))
+        return {"path": str(p), "stem": fn.stem, "eye": fn.eye, "sol": fn.sol, "sclk_key": fn.sclk_key, "scale": s,
+                "version": fn.version, "site": fn.site, "drive": fn.drive, "T": camera_temperature(L, "N", fn.eye),
+                "cm": cm, "pred": {k: [float(v[0]), float(v[1])] for k, v in pred.items()},
+                "n_rigid": len([k for k in pred if k in RIGID])}
+    except Exception as exc:                              # noqa: BLE001 - one bad product never stops the scan
+        log.debug("%s: %s", p.name, exc)
+        return None
+
+
+def scan_pds(root: PathLike, sols: Optional[Tuple[int, int]] = None, cache: Optional[PathLike] = None,
+             min_rigid: int = PDS_MIN_RIGID, progress: Optional[Callable[[str], None]] = None,
+             workers: int = 1) -> List[Dict[str, Any]]:
+    """Every Navcam RAD full frame below ``root`` whose label puts >= ``min_rigid`` rigid targets in frame
+    (:func:`pds_frame`).  Labels only (about 0.05 s a product; ``workers`` processes).  ``cache``: a JSON file of
+    earlier scans (keyed by path, size and time), read and rewritten, so a later scan reads only new products."""
+    import os
+    say = progress or (lambda s: log.info(s))
+    old: Dict[str, Any] = {}
+    cf = Path(cache) if cache else None
+    if cf and cf.is_file():
+        try:
+            old = json.loads(cf.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            old = {}
+    new: Dict[str, Any] = {}
+    todo: List[Tuple[str, int, int]] = []
+    for dirpath, _, files in os.walk(root):
+        for f in sorted(files):
+            m = PDS_NAVCAM.match(f)
+            if not m or (sols and not sols[0] <= int(m.group(2)) <= sols[1]):
+                continue
+            p = os.path.join(dirpath, f)
+            st = os.stat(p)
+            c = old.get(p)
+            if c and c.get("size") == st.st_size and c.get("mtime") == int(st.st_mtime):
+                new[p] = c
+            else:
+                todo.append((p, st.st_size, int(st.st_mtime)))
+    say(f"  {len(new) + len(todo)} Navcam products, {len(todo)} labels to read ({len(new)} from the cache)")
+
+    def keep(fr):
+        return fr if fr and fr["n_rigid"] >= min_rigid else None
+
+    def save():
+        if cf:
+            cf.parent.mkdir(parents=True, exist_ok=True)
+            cf.write_text(json.dumps({**old, **new}), encoding="utf-8")
+
+    paths = [q[0] for q in todo]
+    if workers > 1 and len(todo) > 200:
+        from concurrent.futures import ProcessPoolExecutor
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            it = ex.map(pds_frame, paths, chunksize=64)
+            for i, ((p, size, mt), fr) in enumerate(zip(todo, it), 1):
+                new[p] = {"size": size, "mtime": mt, "frame": keep(fr)}
+                if i % 5000 == 0:
+                    say(f"  {i} / {len(todo)} labels read")
+                    save()
+    else:
+        for i, (p, size, mt) in enumerate(todo, 1):
+            new[p] = {"size": size, "mtime": mt, "frame": keep(pds_frame(p))}
+            if i % 2000 == 0:
+                say(f"  {i} / {len(todo)} labels read")
+                save()
+    save()
+    found = [c["frame"] for c in new.values() if c.get("frame")]
+    say(f"  {len(found)} Navcam full frames with >= {min_rigid} deck targets in frame")
+    return found
+
+
+def pds_pairs(frames: Sequence[Dict[str, Any]], min_each: int = 3) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    """Stereo pairs (same SCLK) of :func:`scan_pds` frames: per eye the finest product, then the latest version;
+    both eyes with >= ``min_each`` rigid targets predicted."""
+    by: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for f in frames:
+        cur = by.setdefault(f["sclk_key"], {}).get(f["eye"])
+        if cur is None or (f["scale"], f["version"]) > (cur["scale"], cur["version"]):
+            by[f["sclk_key"]][f["eye"]] = f
+    out = []
+    for k in sorted(by):
+        e = by[k]
+        if "L" in e and "R" in e and e["L"]["n_rigid"] >= min_each and e["R"]["n_rigid"] >= min_each:
+            out.append((e["L"], e["R"]))
+    return out
+
+
+def _detect_all(g: np.ndarray, pred: Dict[str, Sequence[float]], s: float) -> Dict[str, Dict[str, float]]:
+    found = {}
+    for k, uv in pred.items():
+        if k in BAR:
+            d = detect_target(g, uv[0], uv[1], s, search_full_px=BAR_SEARCH_FULL_PX, max_cost=BAR_MAX_COST)
+        elif k in UNSURVEYED:
+            d = detect_target(g, uv[0], uv[1], s, search_full_px=UNSURVEYED_SEARCH_FULL_PX)
+        else:
+            d = detect_target(g, uv[0], uv[1], s)
+        if d:
+            found[k] = d
+    return found
+
+
+def check_pds_pair(fL: Dict[str, Any], fR: Dict[str, Any], cams: Optional[Dict[str, Dict[str, Any]]] = None,
+                   rig: Optional[Dict[str, Any]] = None, rig_ref: Optional[np.ndarray] = None,
+                   read: Optional[Callable[[str], np.ndarray]] = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    One PDS stereo pair (:func:`pds_pairs`) measured on the deck with the cameras in use at each eye's temperature
+    and sol (``cams``: {"L", "R"} model files, default the promoted ones) and the rig in use at the sol (``rig``,
+    default the promoted rig file; its drift applied).  The rig's own rotation (``rig_block_*``, here the law) and
+    the deck's (``rig_deckrot_*``, translation held; ``rig_deck_*``, translation free) are about ``rig_ref``
+    (default the rig file's rotation before its drift).  ``read``: path -> image array (default the PDS reader).
+    -> (row, detections, rays).
+    """
+    from .constrain import camera_at, rig_at
+    from .models import load_camera, load_rig
+    if cams is None:
+        cams = {e: load_camera("N", e) for e in ("L", "R")}
+    if rig is None:
+        rig = load_rig("N")
+    if rig_ref is None:
+        rig_ref = np.asarray(rig["R_sensor_from_ref"], float)
+    if read is None:
+        from ..labels import read_pds
+        read = lambda p: read_pds(p)[1]                   # noqa: E731
+    sol = fL["sol"]
+    R_law, t_law, _ = rig_at(rig, sol)
+    if t_law is None:                                      # the labels' baseline when the rig keeps no translation
+        (RL0, tL0), (RR0, tR0) = label_pose(fL["cm"]), label_pose(fR["cm"])
+        t_law = tR0 - RR0 @ RL0.T @ tL0
+    names_all = list(RIGID) + list(BAR) + list(UNSURVEYED)
+    det, proj, label, meta, pred = {}, {}, {}, {}, {}
+    for e, f in (("L", fL), ("R", fR)):
+        g = stretch_gray(read(f["path"]))
+        s = f["scale"]
+        found = _detect_all(g, f["pred"], s)
+        model, params, _ = camera_at(cams[e], f["T"], sol)
+        proj[e] = Projector(model, params)
+        label[e] = label_pose(f["cm"])
+        det[e] = {k: native_to_full([d["x"], d["y"]], s) for k, d in found.items()}
+        pred[e] = {k: np.asarray(v, float) for k, v in f["pred"].items()}
+        meta[e] = {"gray": g, "scale": s, "found": found, "frame": f}
+    cfw = {"L": (np.eye(3), np.zeros(3)), "R": (np.asarray(R_law, float), np.asarray(t_law, float))}
+    res = check_pair(det, proj, label, cfw, rig_ref)
+    fit = res.get("_fit")
+    if fit is not None:                                    # second pass around the fitted prediction
+        P = survey_nav_m(names_all)
+        added = False
+        for e in meta:
+            R, t = (fit["R"], fit["t"]) if e == "L" else (fit.get("R_R"), fit.get("t_R"))
+            if R is None:
+                continue
+            for k in pred[e]:
+                if k in det[e] or k in BAR or k in UNSURVEYED:
+                    continue
+                uv = proj[e]((R @ P[k] + t)[None])[0]
+                d = detect_target(meta[e]["gray"], *full_to_native(uv, meta[e]["scale"]), meta[e]["scale"],
+                                  search_full_px=REFINE_SEARCH_FULL_PX)
+                if d:
+                    meta[e]["found"][k] = dict(d, refined=True)
+                    det[e][k] = native_to_full([d["x"], d["y"]], meta[e]["scale"])
+                    added = True
+        if added:
+            res = check_pair(det, proj, label, cfw, rig_ref)
+    fit = res.pop("_fit", None)
+    res.pop("_residuals", None)
+    rays = []
+    for e in ("L", "R"):
+        pose = res.pop(f"_pose_{e}", None)
+        if pose is None or res.get(f"resect_n_{e}", 0) < RAY_MIN_TARGETS or res.get(f"resect_rms_{e}", 9.0) > RAY_MAX_RMS:
+            continue
+        for k in UNSURVEYED:
+            if k in det.get(e, {}):
+                rays.append({"target": k, "proj": proj[e], "R": pose[0], "t": pose[1], "uv": det[e][k],
+                             "image": meta[e]["frame"]["stem"], "block": "pds", "sol": sol})
+    row = {"block": "pds", "pair": fL["sclk_key"], "station": f"S{fL.get('site')}D{fL.get('drive')}", "sol": sol,
+           "T_L": fL["T"], "T_R": fR["T"], "scale_native": fL["scale"], "stem_L": fL["stem"], "stem_R": fR["stem"],
+           "rig_source": "law"}
+    for e in meta:
+        s = meta[e]["scale"]
+        lab = [native_to_full(pred[e][k], s) - det[e][k] for k in det[e] if k in RIGID and k in pred[e]]
+        if lab:
+            row[f"label_rms_{e}"] = float(np.sqrt(np.mean(np.sum(np.square(lab), 1))))
+    row.update(res)
+    dets = []
+    for e in meta:
+        s = meta[e]["scale"]
+        for k, d in meta[e]["found"].items():
+            fx = fy = None
+            if fit is not None:
+                R, t = (fit["R"], fit["t"]) if e == "L" else (fit.get("R_R"), fit.get("t_R"))
+                if R is not None:
+                    fx, fy = proj[e]((R @ survey_nav_m([k])[k] + t)[None])[0]
+            lx, ly = native_to_full(pred[e][k], s)
+            xf, yf = det[e][k]
+            dets.append({"block": "pds", "image": meta[e]["frame"]["stem"], "eye": e, "sol": sol, "target": k,
+                         "x_full": xf, "y_full": yf, "label_x_full": lx, "label_y_full": ly, "fit_x_full": fx,
+                         "fit_y_full": fy, "cost": d["cost"], "sd": d["sd"], "corner_dev": d["corner_dev"],
+                         "method": d.get("method"), "pass": 2 if d.get("refined") else 1})
+    return row, dets, rays
+
+
+def rig_trend(pairs: Sequence[Dict[str, Any]], drift: Optional[Dict[str, Any]] = None, source: str = "deckrot",
+              max_rms: float = 1.0, clip: float = 3.5, step_sol: Optional[float] = None) -> Dict[str, Any]:
+    """
+    The rig rotation the deck sees against sol, per angle (pitch, yaw, roll; ``rig_<source>_<angle>_mdeg`` about the
+    reference rotation, pairs with ``rot_rms`` <= ``max_rms`` px): weighted fits of (a) a constant, (b) a line in sol,
+    (c) the ``drift`` model's shape plus a constant (the law, its rate as is), and with ``step_sol`` (d) a constant
+    with a step there.  Weights 1 / (sd^2 + tau^2), tau the scatter beyond the formal sd (method of moments);
+    points whose residual from the line is beyond ``clip`` times its own sigma (at least; the robust scale of the
+    normalised residuals when that is larger) are dropped.  Per fit: the coefficients and se (scaled by
+    the reduced chi-square when it exceeds 1), chi-square, BIC; ``rate_minus_law`` (mdeg / 1000 sol) and its z.
+    """
+    from .constrain import drift_offset_mdeg
+    out: Dict[str, Any] = {"source": source, "max_rms": max_rms}
+    for ang in ("pitch", "yaw", "roll"):
+        sdc, rmc = (f"rot_{ang}_sd", "rot_rms") if source == "deckrot" else (f"dR_{ang}_sd", "free_rms")
+        rows = [(float(p["sol"]), _num(p.get(f"rig_{source}_{ang}_mdeg")), _num(p.get(sdc)),
+                 _num(p.get("T_L")), p.get("pair"))
+                for p in pairs if _num(p.get(f"rig_{source}_{ang}_mdeg")) is not None
+                and (_num(p.get(rmc)) or 9.0) <= max_rms and _num(p.get(sdc))]
+        if len(rows) < 4:
+            out[ang] = {"n": len(rows)}
+            continue
+        sol = np.array([r[0] for r in rows])
+        y = np.array([r[1] for r in rows])
+        sd = np.array([r[2] for r in rows])
+        law = np.array([drift_offset_mdeg(drift, s)[f"{ang}_mdeg"] for s in sol]) if drift else np.zeros_like(sol)
+
+        def wfit(A, yy, w):
+            W = np.sqrt(w)
+            b, *_ = np.linalg.lstsq(A * W[:, None], yy * W, rcond=None)
+            r = yy - A @ b
+            chi2 = float(np.sum(w * r ** 2))
+            dof = max(len(yy) - A.shape[1], 1)
+            C = np.linalg.pinv((A * w[:, None]).T @ A) * max(chi2 / dof, 1.0)
+            return b, np.sqrt(np.diag(C)), r, chi2
+
+        A_line = np.c_[np.ones_like(sol), (sol - 1000.0) / 1000.0]
+        tau = 0.0
+        keep = np.ones(len(y), bool)
+        for _ in range(2):                                 # tau, then one clip, then tau again
+            w = 1.0 / (sd ** 2 + tau ** 2)
+            b, se, r, chi2 = wfit(A_line[keep], y[keep], w[keep])
+            rr = y - A_line @ b
+            ex = np.mean(rr[keep] ** 2 - sd[keep] ** 2)
+            tau = float(np.sqrt(max(ex, 0.0)))
+            z = rr / np.sqrt(sd ** 2 + tau ** 2)          # each pair against its own sd
+            mad = 1.4826 * np.median(np.abs(z[keep] - np.median(z[keep])))
+            keep = np.abs(z) <= clip * max(mad, 1.0)
+        w = 1.0 / (sd ** 2 + tau ** 2)
+        k = keep
+        n = int(k.sum())
+        res: Dict[str, Any] = {"n": n, "dropped": [rows[i][4] for i in np.where(~k)[0]], "tau_mdeg": tau,
+                               "median_sd_mdeg": float(np.median(sd[k])), "sol_range": [float(sol[k].min()), float(sol[k].max())]}
+        fits = {"constant": np.ones((len(y), 1)), "line": A_line}
+        if drift:
+            fits["law"] = np.ones((len(y), 1))
+        if step_sol is not None and (sol[k] < step_sol).sum() >= 2 and (sol[k] >= step_sol).sum() >= 2:
+            fits["step"] = np.c_[np.ones_like(sol), (sol >= step_sol).astype(float)]
+        for name, A in fits.items():
+            yy = (y - law) if name == "law" else y
+            b, se, r, chi2 = wfit(A[k], yy[k], w[k])
+            res[name] = {"coef": b.tolist(), "se": se.tolist(), "chi2": chi2,
+                         "bic": chi2 + A.shape[1] * np.log(n), "rms_mdeg": float(np.sqrt(np.mean(r ** 2)))}
+        if drift:
+            law_rate = 1e3 * float(drift.get(f"{ang}_mdeg_per_sol") or 0.0)
+            ln = res["line"]
+            res["law_rate_mdeg_per_1000sol"] = law_rate
+            res["rate_minus_law"] = ln["coef"][1] - law_rate
+            res["rate_minus_law_z"] = res["rate_minus_law"] / ln["se"][1] if ln["se"][1] > 0 else float("nan")
+            res["offset_vs_law_mdeg"] = res["law"]["coef"][0]
+        res["points"] = [{"pair": rows[i][4], "sol": float(sol[i]), "y": float(y[i]), "sd": float(sd[i]),
+                          "law": float(law[i]), "T": rows[i][3], "kept": bool(k[i])} for i in range(len(y))]
+        out[ang] = res
     return out
 
 
