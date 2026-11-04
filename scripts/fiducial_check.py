@@ -154,12 +154,27 @@ def report(summary: Dict[str, Any], files: List[str], out: Path, args) -> Path:
     for k, r in (summary.get("unsurveyed_rays") or {}).items():
         se = r.get("se_jackknife_mm") or [float("nan")] * 3
         L += ["", f"{k} (not surveyed) from {r['n']} image rays (poses resected on >= {F.RAY_MIN_TARGETS} surveyed "
-              f"targets; {len(r['dropped'])} dropped): RMECH ({', '.join(f'{v:.2f}' for v in r['X_mech_mm'])}) mm, "
+              f"targets; {len(r['dropped'])} dropped): RNAV ({', '.join(f'{v:.2f}' for v in r['X_nav_mm'])}) mm, "
               f"jackknife se ({', '.join(f'{v:.2f}' for v in se)}) mm, rms {r['rms_px']:.2f} px; in use "
-              f"({', '.join(f'{v:.2f}' for v in r['prior_mech_mm'])})."]
+              f"({', '.join(f'{v:.2f}' for v in r['in_use_nav_mm'])})."]
     for k, r in (summary.get("unsurveyed") or {}).items():
-        L += [f"{k} from {r['n_kept']} stereo pairs (block rig): RMECH ({', '.join(f'{v:.2f}' for v in r['mech_mm'])}) "
+        L += [f"{k} from {r['n_kept']} stereo pairs (block rig): RNAV ({', '.join(f'{v:.2f}' for v in r['nav_mm'])}) "
               f"+- ({', '.join(f'{v:.2f}' for v in r['se_mm'])}) mm."]
+    ey = summary.get("eyes_minus_label") or {}
+    if ey:
+        L += ["", "## Each eye against its label pose (which eye moves)", "",
+              "Deck resection with the block camera minus the label pose, in the label camera axes (x right, y down, "
+              "z forward; rotation pitch / yaw / roll about x / y / z).  What both eyes share is the mast head or its "
+              "kinematics; what differs is the eye.", "",
+              "| eye | images | dx mm | dy mm | dz mm | pitch mdeg | yaw mdeg | roll mdeg |", "|---|---|---|---|---|---|---|---|"]
+        for e, r in ey.items():
+            cells = [f"{c.get('mean', float('nan')):+.2f} +- {c.get('se', float('nan')):.2f}" for c in r["C_mm"]]
+            cells += [f"{c.get('mean', float('nan')):+.0f} +- {c.get('se', float('nan')):.0f}" for c in r["rot_mdeg"]]
+            L.append(f"| N{e} | {r['images']} | " + " | ".join(cells) + " |")
+        b = summary.get("baseline_independent_minus_label_mm") or {}
+        if b.get("n"):
+            L += ["", f"Baseline from the two eyes resected independently minus the label baseline: "
+                  f"{b['mean']:+.2f} +- {b['se']:.2f} mm over {b['n_kept']} pairs."]
     L += ["", "## Per block", "", "| block | pairs | rig rms px | scale ppm | tri scale ppm | roll mdeg | yaw mdeg |",
           "|---|---|---|---|---|---|---|"]
     fmt = lambda v, f: "-" if v is None else format(v, f)                     # noqa: E731
@@ -240,7 +255,7 @@ def main(argv=None) -> int:
         rk = [q for q in rays if q["target"] == k]
         if len(rk) >= 2:
             summary["unsurveyed_rays"][k] = F.fit_point_from_rays(rk, F.survey_nav_m([k])[k])
-            summary["unsurveyed_rays"][k]["prior_mech_mm"] = list(F.UNSURVEYED_PRIOR_MECH_MM[k])
+            summary["unsurveyed_rays"][k]["in_use_nav_mm"] = list(F.UNSURVEYED_NAV_MM[k])
     summary.update({"root": str(root), "model": a.model, "blocks_checked": [w.name for w in works],
                     "minutes": round((time.time() - t0) / 60, 1)})
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=float), encoding="utf-8")

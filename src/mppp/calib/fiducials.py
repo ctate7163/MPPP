@@ -53,17 +53,18 @@ RIGID: Tuple[str, ...] = ("AFT1", "RPFA1", "RPFA2", "TDF1", "TDF2", "TDF3")
 BAR: Tuple[str, ...] = ("LDIFF", "RDIFF")                # on the differential bar: only their separation is fixed
 NOT_USED: Tuple[str, ...] = ("AFT2",)                    # behind the hexagonal plate from the mast
 # Rigid targets without a survey (Christian, 3 Nov: "There is also a seventh TDF4 that is good but was not surveyed";
-# "we can fit the tdf4 location and use it in the future").  TDF4 here is the 3 Nov fit: the rays of 20 Navcam images
-# (sols 31-1980, both eyes, >= 5 surveyed targets each) from poses resected on the surveyed targets, intersected
-# (:func:`fit_point_from_rays`): RMECH (245.79, 126.64, -0.16) mm, jackknife se (0.08, 0.09, 0.16) mm; the 9 images
-# with all seven targets give (245.78, 126.73, -0.18) +- (0.14, 0.12, 0.22).  (The first prior, the sol 334 ray cut
-# with the deck plane, was (244.6, 126.0, -0.5).)  Each check refits it: per pair from both eyes
-# (``tdf4_rover_mm``, :func:`fit_unsurveyed`) and from every resected image (``rays``, :func:`fit_point_from_rays`).
-# It is not used in the fits (it is not in RIGID) until promoted there.
-UNSURVEYED_PRIOR_MECH_MM: Dict[str, Tuple[float, float, float]] = {"TDF4": (245.79, 126.64, -0.16)}
+# "we can fit the tdf4 location and use it in the future"), in the rover navigation frame RNAV (Christian, 4 Nov:
+# "work consistently in rover frame, not rmech").  TDF4 is the 4 Nov fit: the rays of 24 Navcam images (sols 31-1980,
+# 16 NL + 8 NR, >= 5 surveyed targets each, resection rms <= 1 px, the law at each image's temperature) from poses
+# resected on the surveyed targets, intersected (:func:`fit_point_from_rays`): RNAV (335.75, 126.60, -1133.43) mm,
+# leave-one-image-out se (0.08, 0.08, 0.16) mm, ray rms 0.86 px.  The 9 images with all seven targets give
+# (335.84, 126.64, -1133.37) +- (0.07, 0.11, 0.24); 43 images with >= 4, 5 dropped, (335.85, 126.92, -1133.76) +-
+# (0.09, 0.13, 0.22).  Each check refits it: per pair from both eyes (``tdf4_rover_mm``, :func:`fit_unsurveyed`) and
+# from every resected image (``rays``, :func:`fit_point_from_rays`).  Not used in the fits (not in RIGID) until promoted.
+UNSURVEYED_NAV_MM: Dict[str, Tuple[float, float, float]] = {"TDF4": (335.75, 126.60, -1133.43)}
 RAY_MIN_TARGETS = 5              # an image's ray to an unsurveyed target needs a resection on this many surveyed ones
 RAY_MAX_RMS = 1.0                # and at most this rms (full-resolution px)
-UNSURVEYED: Tuple[str, ...] = tuple(UNSURVEYED_PRIOR_MECH_MM)
+UNSURVEYED: Tuple[str, ...] = tuple(UNSURVEYED_NAV_MM)
 DECK_CTE_PPM_PER_DEGC = 23.0                             # aluminium; the survey is taken as a room-temperature one
 
 # ------------------------------------------------------------------------------------------------ detection
@@ -84,10 +85,10 @@ MIN_EYE_POINTS = 4               # rigid targets in one eye for its own resectio
 
 
 def survey_nav_m(names: Optional[Sequence[str]] = None) -> Dict[str, np.ndarray]:
-    """Survey positions in RNAV, metres (the unsurveyed targets at their priors when named)."""
+    """Survey positions in RNAV, metres (the unsurveyed targets at their fitted RNAV positions when named)."""
     names = list(names) if names is not None else list(SURVEY_MECH_MM)
-    src = {**UNSURVEYED_PRIOR_MECH_MM, **SURVEY_MECH_MM}
-    return {k: (np.asarray(src[k], float) + MECH_TO_NAV_MM) / 1000.0 for k in names}
+    return {k: (np.asarray(UNSURVEYED_NAV_MM[k], float) if k in UNSURVEYED_NAV_MM
+                else np.asarray(SURVEY_MECH_MM[k], float) + MECH_TO_NAV_MM) / 1000.0 for k in names}
 
 
 def native_to_full(xy, scale: float) -> np.ndarray:
@@ -395,9 +396,22 @@ def check_pair(det: Dict[str, Dict[str, np.ndarray]], proj: Dict[str, Projector]
                 out[f"resect_rms_{e}"] = r["rms"]
                 out[f"resect_n_{e}"] = r["n_obs"]
                 out[f"_pose_{e}"] = (r["R"], r["t"])
+                # 4 Nov (Christian: "can this tell us if it is the NL or NR that is moving?"): this eye's pose from
+                # the deck minus its label pose, in the label camera axes (x right, y down, z forward; rotation
+                # pitch, yaw, roll).  Common to both eyes: the mast head / kinematics; different: the eye.
+                R0, t0 = label[e]
+                dC = 1e3 * (R0 @ ((-r["R"].T @ r["t"]) - (-R0.T @ t0)))
+                out[f"minus_label_C_{e}_mm"] = dC.tolist()
+                out[f"minus_label_rot_{e}_mdeg"] = (np.degrees(_rotvec(r["R"] @ R0.T)) * 1e3).tolist()
     pair = all(e in proj and e in cam_from_world for e in ("L", "R"))
     if not pair:
         return out
+    if "_pose_L" in out and "_pose_R" in out and "L" in label and "R" in label:
+        # both eyes resected independently on the deck: the baseline with no rig assumed, and the label's
+        (RLd, tLd), (RRd, tRd) = out["_pose_L"], out["_pose_R"]
+        (RL0, tL0), (RR0, tR0) = label["L"], label["R"]
+        out["baseline_independent_mm"] = 1e3 * float(np.linalg.norm(-RRd.T @ tRd + RLd.T @ tLd))
+        out["baseline_label_mm"] = 1e3 * float(np.linalg.norm(-RR0.T @ tR0 + RL0.T @ tL0))
     (RL, tL), (RR, tR) = cam_from_world["L"], cam_from_world["R"]
     R_rel = RR @ RL.T
     t_rel = tR - R_rel @ tL
@@ -476,6 +490,8 @@ PAIR_COLUMNS = ["block", "pair", "station", "sol", "T_L", "T_R", "scale_native",
                 "rig_block_pitch_mdeg", "rig_block_yaw_mdeg", "rig_block_roll_mdeg", "rig_deck_pitch_mdeg",
                 "rig_deck_yaw_mdeg", "rig_deck_roll_mdeg",
                 "tri_n", "tri_scale_ppm", "tri_shape_rms_mm", "bar_mm", "bar_ppm", "tdf4_rover_mm",
+                "minus_label_C_L_mm", "minus_label_C_R_mm", "minus_label_rot_L_mdeg", "minus_label_rot_R_mdeg",
+                "baseline_independent_mm", "baseline_label_mm",
                 "nl_in_rover_C_mm", "nl_in_rover_rotvec", "rover_in_block_origin_m", "rover_in_block_hpr_deg",
                 "rover_in_block_rotvec"]
 DET_COLUMNS = ["block", "image", "eye", "sol", "target", "x_full", "y_full", "label_x_full", "label_y_full", "fit_x_full",
@@ -832,6 +848,19 @@ def summarize(pairs: List[Dict[str, Any]]) -> Dict[str, Any]:
                                         "origin_sd_mm": (1e3 * org.std(0, ddof=1)).tolist()}
     out["stations"] = st
     out["unsurveyed"] = fit_unsurveyed(use)
+    # 4 Nov: each eye against its label pose, over every image resected on the deck (pairs or not)
+    eyes = {}
+    for e in ("L", "R"):
+        C_ = np.array([p[f"minus_label_C_{e}_mm"] for p in pairs if p.get(f"minus_label_C_{e}_mm") is not None], float)
+        W_ = np.array([p[f"minus_label_rot_{e}_mdeg"] for p in pairs if p.get(f"minus_label_rot_{e}_mdeg") is not None], float)
+        if len(C_):
+            eyes[e] = {"images": int(len(C_)),
+                       "C_mm": [robust_mean(C_[:, i]) for i in range(3)],
+                       "rot_mdeg": [robust_mean(W_[:, i]) for i in range(3)]}
+    out["eyes_minus_label"] = eyes
+    out["baseline_independent_minus_label_mm"] = robust_mean(
+        [p["baseline_independent_mm"] - p["baseline_label_mm"] for p in pairs
+         if p.get("baseline_independent_mm") is not None and p.get("baseline_label_mm") is not None])
     return out
 
 
@@ -840,7 +869,7 @@ def fit_point_from_rays(rays: List[Dict[str, Any]], X0: np.ndarray,
     """
     One rover-frame point seen in many images whose poses in the rover frame are known (each from its own
     resection on the surveyed targets): ``rays`` [{"proj": Projector, "R", "t" (x_cam = R X + t), "uv" (full px),
-    "image"}].  Least squares on the reprojection; -> {"X_nav_mm", "X_mech_mm", "sd_formal_mm" (scaled by the
+    "image"}].  Least squares on the reprojection; -> {"X_nav_mm" (RNAV), "sd_formal_mm" (scaled by the
     residual variance), "se_jackknife_mm" (leave one image out: carries each image's own pose error),
     "rms_px", "residuals_px", "n", "dropped" (rays beyond ``reject_px`` after a first fit, then refitted)}.
     """
@@ -867,7 +896,6 @@ def fit_point_from_rays(rays: List[Dict[str, Any]], X0: np.ndarray,
         res = fit(rays, res.x)
     n = len(rays)
     out: Dict[str, Any] = {"n": n, "dropped": dropped, "X_nav_mm": (1e3 * res.x).tolist(),
-                           "X_mech_mm": (1e3 * res.x - MECH_TO_NAV_MM).tolist(),
                            "rms_px": float(np.sqrt((res.fun ** 2).sum() / max(n, 1))),
                            "residuals_px": {q.get("image", str(i)): res.fun[2 * i:2 * i + 2].tolist()
                                             for i, q in enumerate(rays)}}
@@ -881,7 +909,7 @@ def fit_point_from_rays(rays: List[Dict[str, Any]], X0: np.ndarray,
 
 def fit_unsurveyed(pairs: List[Dict[str, Any]]) -> Dict[str, Any]:
     """The rover-frame positions of the unsurveyed targets (TDF4) from the pairs that triangulated them: per axis a
-    3.5-MAD-clipped mean in RNAV and RMECH (mm) with its standard error, against the prior."""
+    3.5-MAD-clipped mean in RNAV (mm) with its standard error, against the position in use."""
     out = {}
     for k in UNSURVEYED:
         col = f"{k.lower()}_rover_mm"
@@ -894,8 +922,8 @@ def fit_unsurveyed(pairs: List[Dict[str, Any]]) -> Dict[str, Any]:
         Xk = X[keep]
         m = Xk.mean(0)
         se = Xk.std(0, ddof=1) / np.sqrt(len(Xk)) if len(Xk) > 1 else np.full(3, np.nan)
-        prior = np.asarray(UNSURVEYED_PRIOR_MECH_MM[k], float)
-        out[k] = {"n": int(len(X)), "n_kept": int(len(Xk)), "nav_mm": m.tolist(), "mech_mm": (m - MECH_TO_NAV_MM).tolist(),
+        prior = np.asarray(UNSURVEYED_NAV_MM[k], float)
+        out[k] = {"n": int(len(X)), "n_kept": int(len(Xk)), "nav_mm": m.tolist(),
                   "se_mm": se.tolist(), "sd_mm": (Xk.std(0, ddof=1) if len(Xk) > 1 else np.full(3, np.nan)).tolist(),
-                  "prior_mech_mm": prior.tolist(), "minus_prior_mm": ((m - MECH_TO_NAV_MM) - prior).tolist()}
+                  "in_use_nav_mm": prior.tolist(), "minus_in_use_mm": (m - prior).tolist()}
     return out

@@ -27,9 +27,15 @@ Hazcam early-mission step tested on the blocks.
   pixel-centre mapping of the zoomed insets (the 3 Nov prototype drew them half a native pixel up-left), larger
   text, the block solution's reprojection, TDF4. **TDF4** (rigid, not surveyed; Christian, 3 Nov): tracked, and
   fitted from the rays of images whose poses are resected on the surveyed targets (`fit_point_from_rays`):
-  RMECH (245.79, 126.64, -0.16) mm +- (0.08, 0.09, 0.16) from 20 images with >= 5 targets (the 9 with all seven:
-  (245.78, 126.73, -0.18) +- (0.14, 0.12, 0.22)); now the position in use (`UNSURVEYED_PRIOR_MECH_MM`), refitted by
-  every check, not in the fits until promoted.
+  RNAV (335.75, 126.60, -1133.43) mm +- (0.08, 0.08, 0.16) from 24 images with >= 5 targets (4 Nov; the 9 with all
+  seven: (335.84, 126.64, -1133.37) +- (0.07, 0.11, 0.24)); now the position in use (`UNSURVEYED_NAV_MM`, in the rover
+  navigation frame - Christian, 4 Nov: "work consistently in rover frame, not rmech"), refitted by every check, not
+  in the fits until promoted. **Which eye moves** (4 Nov): each eye's deck resection minus its label pose, in the
+  label camera axes (`minus_label_C_*_mm`, `minus_label_rot_*_mdeg`, the report's per-eye table), and the baseline of
+  the two eyes resected independently (`baseline_independent_mm` against `baseline_label_mm`). 54 images (31 NL,
+  23 NR, sols 29-2006): both eyes sit about 2-2.7 mm low and 1-2.5 mm back of their labels and point about 0.1 deg
+  low (the mast head or its kinematics); along the baseline NL is at its label (-0.1 +- 0.2 mm) and NR is
+  1.3-1.7 +- 0.5 mm toward NL; no rotation differs between the eyes beyond its error.
 - **Navcam joint: `--zero TERM ...`** (`tied.zero_terms`, `fit_tied(zero=...)`; Christian, 3 Nov): global terms set
   to 0 and held, for the post-freeze runs - `D_roll` (one roll for the mission), `S_NL_cx S_NL_cy S_NR_cy` (those
   principal points constant with temperature, NR cx carrying the stereo term).

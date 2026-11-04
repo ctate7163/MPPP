@@ -179,6 +179,12 @@ def test_check_pair_end_to_end():
     assert abs(h - 30.0) < 0.05 and abs(p) < 0.05 and abs(r) < 0.05
     assert np.allclose(res["rover_in_block_origin_m"], o, atol=0.01)
     assert np.allclose(np.array(res["nl_in_rover_C_mm"]) / 1e3, -R.T @ t, atol=0.003)
+    # 4 Nov: each eye against its label pose, in the label camera axes; NR's label is the truth here
+    R0, t0 = label["L"]
+    want = 1e3 * (R0 @ ((-R.T @ t) - (-R0.T @ t0)))
+    assert np.allclose(res["minus_label_C_L_mm"], want, atol=0.6)
+    assert np.allclose(res["minus_label_C_R_mm"], 0.0, atol=0.6)
+    assert abs(res["baseline_independent_mm"] - 1e3 * np.linalg.norm(t_rel * (1 + k_true))) < 1.5
 
 
 def test_rover_attitude_conventions():
