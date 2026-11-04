@@ -426,8 +426,8 @@ def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], dr
         r = tot - drift_offset_rel(drift, ang, sol, sol_ref)
         rate = 1000 * (drift.get(f"{ang}_mdeg_per_sol") or 0.0)
         f = rr["fits"][ang]["vs_sol"]
-        extra = (f"; {1000 * drift['pitch_early_mdeg_per_sol']:+.1f} before sol {drift['knot_sol']:.0f}"
-                 if ang == "pitch" and drift.get("pitch_early_mdeg_per_sol") is not None else "")
+        extra = (f"; {1000 * drift[f'{ang}_early_mdeg_per_sol']:+.1f} before sol {drift['knot_sol']:.0f}"
+                 if drift.get(f"{ang}_early_mdeg_per_sol") is not None else "")     # 4 Nov: any angle with a knee
         ax.set_title(f"{ang}: drift {rate:+.2f} mdeg/1000 sol{extra}; residual trend {f['slope']:+.2f} ± {f['se']:.2f} (z {f['z']:+.1f})\n"
                      f"epoch sd about the model {r.std(ddof=1):.2f} mdeg = {r.std(ddof=1) / IFOV_MDEG:.3f} px", fontsize=9)
         ax.axhline(0, color="0.6", lw=0.8)
