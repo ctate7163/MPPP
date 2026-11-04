@@ -53,7 +53,10 @@ Hazcam early-mission step tested on the blocks.
   a line); a line and a step at sol 475 (-16 +- 3.5) fit equally. **Yaw**: a step of +10.4 +- 2.7 at sol 475 that
   the tie points do not show (+0.1 +- 0.7) - with the translation held the deck's yaw also carries the baseline and
   focal scale (0.5 px of disparity at 1.5 m), so it is not taken as a rotation. Offsets deck - tie points: pitch
-  +5.5, yaw +5.6, roll -13.6 mdeg (the deck is at the bottom edge of the frame).
+  +5.5, yaw +5.6, roll -13.6 mdeg (the deck is at the bottom edge of the frame). `--tdf4` (`extra_rigid=("TDF4",)`): the fitted TDF4 as a
+  rigid target too - simulated on the block sols' label geometry it adds ~1 % of the pairs and nothing to the roll
+  trend; all 339 block-sol pairs with >= 3 targets per eye would give rate se ~1.0 / 1.2 / 2.1 mdeg/1000 sol (pitch,
+  yaw, roll; the 71 used: 1.7 / 2.1 / 2.9) - roll needs targets fore and aft, i.e. the full archive.
 - **Navcam joint diagnostic bins hold k1 at the law** (`tied.DIAG_FREE = ("fx", "fy")`; Christian, 4 Nov: "Since df
   and dk1 trade against each other ... Ok, hold dk1 at the law"). The block-agreement pass freed fx, fy and k1 per
   block bin; in one Navcam image f and k1 correlate at -0.92 (f's sd x2.5; -0.69 with k3), and Threeforks large,

@@ -361,3 +361,21 @@ def test_deck_rig_trend_script_runs_on_an_empty_archive(tmp_path):
     assert mod.main(["--pds", str(tmp_path / "pds"), "--root", str(tmp_path), "--out", str(out), "--workers", "1"]) == 0
     assert (out / "report.md").is_file() and (out / "summary.json").is_file()
     assert (tmp_path / "camera_analysis" / "deck_pds_scan.json").is_file()
+
+
+def test_tdf4_as_an_extra_rigid_target():
+    rng = np.random.default_rng(31)
+    _, R, t = _scene()
+    P = F.survey_nav_m(list(F.RIGID) + ["TDF4"])
+    pl, pr = _navcam("L"), _navcam("R")
+    R_rel, t_rel = _rig()
+    names = list(F.RIGID) + ["TDF4"]
+    det = {"L": _observe(pl, R, t, P, names, rng, 0.05), "R": _observe(pr, R_rel @ R, R_rel @ t + t_rel, P, names, rng, 0.05)}
+    assert "TDF4" in det["L"]
+    cfw = {"L": (np.eye(3), np.zeros(3)), "R": (R_rel, t_rel)}
+    a = F.check_pair(det, {"L": pl, "R": pr}, {"L": (R, t), "R": (R_rel @ R, R_rel @ t + t_rel)}, cfw, R_rel)
+    b = F.check_pair(det, {"L": pl, "R": pr}, {"L": (R, t), "R": (R_rel @ R, R_rel @ t + t_rel)}, cfw, R_rel, ("TDF4",))
+    assert b["n_L"] == a["n_L"] + 1 and b["rot_n_obs"] == a["rot_n_obs"] + ("TDF4" in det["R"]) + 1
+    fr = [{"sclk_key": "1", "eye": "L", "scale": 0.5, "version": 1, "n_rigid": 2, "pred": {"TDF4": [0, 0]}},
+          {"sclk_key": "1", "eye": "R", "scale": 0.5, "version": 1, "n_rigid": 3, "pred": {}}]
+    assert F.pds_pairs(fr) == [] and len(F.pds_pairs(fr, extra_rigid=("TDF4",))) == 1

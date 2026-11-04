@@ -38,9 +38,9 @@ ANGLES = ("pitch", "yaw", "roll")
 
 
 def _pair_job(args):
-    fL, fR, cams, rig = args
+    fL, fR, cams, rig, extra = args
     try:
-        return F.check_pds_pair(fL, fR, cams=cams, rig=rig)
+        return F.check_pds_pair(fL, fR, cams=cams, rig=rig, extra_rigid=extra)
     except Exception as exc:                      # noqa: BLE001 - one pair never stops the others
         return {"block": "pds", "pair": fL["sclk_key"], "sol": fL["sol"], "error": str(exc)}, [], []
 
@@ -186,6 +186,7 @@ def main(argv=None) -> int:
     ap.add_argument("--workers", type=int, default=4, help="processes for the label scan and the pairs (default 4)")
     ap.add_argument("--max-rms", type=float, default=1.0, help="pairs whose rotation fit is above this rms (px) are not used")
     ap.add_argument("--step-sol", type=float, default=475.0, help="the sol of the step model (default 475)")
+    ap.add_argument("--tdf4", action="store_true", help="use TDF4 (fitted, not surveyed) as a rigid target too")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     if not a.pds or not Path(a.pds).is_dir():
@@ -209,10 +210,11 @@ def main(argv=None) -> int:
     print(f"scanning {scan_root} for Navcam frames with the deck in frame", flush=True)
     frames = F.scan_pds(scan_root, tuple(a.sols) if a.sols else None, cache=a.cache or ca / "deck_pds_scan.json",
                         progress=lambda s: print(s, flush=True), workers=a.workers)
-    pairs_in = F.pds_pairs(frames)
+    extra = ("TDF4",) if a.tdf4 else ()
+    pairs_in = F.pds_pairs(frames, extra_rigid=extra)
     print(f"{len(pairs_in)} stereo pairs with >= 3 rigid targets predicted in each eye ({(time.time() - t0) / 60:.1f} min)",
           flush=True)
-    jobs = [(fL, fR, cams, rig) for fL, fR in pairs_in]
+    jobs = [(fL, fR, cams, rig, extra) for fL, fR in pairs_in]
     rows, dets, rays = [], [], []
     if a.workers > 1 and len(jobs) > 4:
         from concurrent.futures import ProcessPoolExecutor

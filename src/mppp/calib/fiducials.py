@@ -378,7 +378,8 @@ def rover_attitude_deg(R_world_from_rover: np.ndarray) -> List[float]:
 
 
 def check_pair(det: Dict[str, Dict[str, np.ndarray]], proj: Dict[str, Projector], label: Dict[str, Tuple[np.ndarray, np.ndarray]],
-               cam_from_world: Dict[str, Tuple[np.ndarray, np.ndarray]], rig_ref: Optional[np.ndarray] = None) -> Dict[str, Any]:
+               cam_from_world: Dict[str, Tuple[np.ndarray, np.ndarray]], rig_ref: Optional[np.ndarray] = None,
+               extra_rigid: Sequence[str] = ()) -> Dict[str, Any]:
     """
     The metrics of one Navcam image pair (or one image).  ``det[eye]``: target -> full-resolution pixel
     (eye "L" / "R"); ``proj[eye]``: the block's camera; ``label[eye]``: the label (R, t) in RNAV (start values);
@@ -388,11 +389,12 @@ def check_pair(det: Dict[str, Dict[str, np.ndarray]], proj: Dict[str, Projector]
     form of the rig trends against sol.
     """
     P = survey_nav_m(list(SURVEY_MECH_MM) + list(UNSURVEYED))
-    out: Dict[str, Any] = {"n_L": len([k for k in det.get("L", {}) if k in RIGID]),
-                           "n_R": len([k for k in det.get("R", {}) if k in RIGID]),
+    rig_set = set(RIGID) | set(extra_rigid)       # 4 Nov: extra_rigid=("TDF4",) uses the fitted TDF4 as a rigid target
+    out: Dict[str, Any] = {"n_L": len([k for k in det.get("L", {}) if k in rig_set]),
+                           "n_R": len([k for k in det.get("R", {}) if k in rig_set]),
                            "targets_L": ",".join(sorted(det.get("L", {}))), "targets_R": ",".join(sorted(det.get("R", {})))}
-    rigidL = {k: v for k, v in det.get("L", {}).items() if k in RIGID}
-    rigidR = {k: v for k, v in det.get("R", {}).items() if k in RIGID}
+    rigidL = {k: v for k, v in det.get("L", {}).items() if k in rig_set}
+    rigidR = {k: v for k, v in det.get("R", {}).items() if k in rig_set}
     # one-eye resections (intrinsics at metric scale, pose free)
     for e, ob in (("L", rigidL), ("R", rigidR)):
         if e in proj and e in label and len(ob) >= MIN_EYE_POINTS:
@@ -816,7 +818,8 @@ def scan_pds(root: PathLike, sols: Optional[Tuple[int, int]] = None, cache: Opti
     return found
 
 
-def pds_pairs(frames: Sequence[Dict[str, Any]], min_each: int = 3) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+def pds_pairs(frames: Sequence[Dict[str, Any]], min_each: int = 3,
+              extra_rigid: Sequence[str] = ()) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
     """Stereo pairs (same SCLK) of :func:`scan_pds` frames: per eye the finest product, then the latest version;
     both eyes with >= ``min_each`` rigid targets predicted."""
     by: Dict[str, Dict[str, Dict[str, Any]]] = {}
@@ -827,7 +830,8 @@ def pds_pairs(frames: Sequence[Dict[str, Any]], min_each: int = 3) -> List[Tuple
     out = []
     for k in sorted(by):
         e = by[k]
-        if "L" in e and "R" in e and e["L"]["n_rigid"] >= min_each and e["R"]["n_rigid"] >= min_each:
+        n = {x: e[x]["n_rigid"] + len([k for k in extra_rigid if k in e[x].get("pred", {})]) for x in e}
+        if "L" in e and "R" in e and n["L"] >= min_each and n["R"] >= min_each:
             out.append((e["L"], e["R"]))
     return out
 
@@ -848,13 +852,16 @@ def _detect_all(g: np.ndarray, pred: Dict[str, Sequence[float]], s: float) -> Di
 
 def check_pds_pair(fL: Dict[str, Any], fR: Dict[str, Any], cams: Optional[Dict[str, Dict[str, Any]]] = None,
                    rig: Optional[Dict[str, Any]] = None, rig_ref: Optional[np.ndarray] = None,
-                   read: Optional[Callable[[str], np.ndarray]] = None) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
+                   read: Optional[Callable[[str], np.ndarray]] = None,
+                   extra_rigid: Sequence[str] = ()) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     One PDS stereo pair (:func:`pds_pairs`) measured on the deck with the cameras in use at each eye's temperature
     and sol (``cams``: {"L", "R"} model files, default the promoted ones) and the rig in use at the sol (``rig``,
     default the promoted rig file; its drift applied).  The rig's own rotation (``rig_block_*``, here the law) and
     the deck's (``rig_deckrot_*``, translation held; ``rig_deck_*``, translation free) are about ``rig_ref``
     (default the rig file's rotation before its drift).  ``read``: path -> image array (default the PDS reader).
+    ``extra_rigid``: unsurveyed targets used as rigid at their fitted positions (("TDF4",); 4 Nov: simulated on the
+    block sols' label geometry it adds about 1 % of the pairs and nothing to the roll trend's se).
     -> (row, detections, rays).
     """
     from .constrain import camera_at, rig_at
@@ -886,7 +893,7 @@ def check_pds_pair(fL: Dict[str, Any], fR: Dict[str, Any], cams: Optional[Dict[s
         pred[e] = {k: np.asarray(v, float) for k, v in f["pred"].items()}
         meta[e] = {"gray": g, "scale": s, "found": found, "frame": f}
     cfw = {"L": (np.eye(3), np.zeros(3)), "R": (np.asarray(R_law, float), np.asarray(t_law, float))}
-    res = check_pair(det, proj, label, cfw, rig_ref)
+    res = check_pair(det, proj, label, cfw, rig_ref, extra_rigid)
     fit = res.get("_fit")
     if fit is not None:                                    # second pass around the fitted prediction
         P = survey_nav_m(names_all)
@@ -906,7 +913,7 @@ def check_pds_pair(fL: Dict[str, Any], fR: Dict[str, Any], cams: Optional[Dict[s
                     det[e][k] = native_to_full([d["x"], d["y"]], meta[e]["scale"])
                     added = True
         if added:
-            res = check_pair(det, proj, label, cfw, rig_ref)
+            res = check_pair(det, proj, label, cfw, rig_ref, extra_rigid)
     fit = res.pop("_fit", None)
     res.pop("_residuals", None)
     rays = []
