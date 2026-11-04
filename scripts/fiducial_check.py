@@ -151,6 +151,15 @@ def report(summary: Dict[str, Any], files: List[str], out: Path, args) -> Path:
               f"-{sv['deck_cte_ppm_per_degC']:.0f} ppm/degC if the deck follows the camera temperature; a camera bar "
               f"shrinking with the same expansion coefficient cancels it, and a block baseline that does not follow "
               f"temperature then shows as no slope at all."]
+    for k, r in (summary.get("unsurveyed_rays") or {}).items():
+        se = r.get("se_jackknife_mm") or [float("nan")] * 3
+        L += ["", f"{k} (not surveyed) from {r['n']} image rays (poses resected on >= {F.RAY_MIN_TARGETS} surveyed "
+              f"targets; {len(r['dropped'])} dropped): RMECH ({', '.join(f'{v:.2f}' for v in r['X_mech_mm'])}) mm, "
+              f"jackknife se ({', '.join(f'{v:.2f}' for v in se)}) mm, rms {r['rms_px']:.2f} px; in use "
+              f"({', '.join(f'{v:.2f}' for v in r['prior_mech_mm'])})."]
+    for k, r in (summary.get("unsurveyed") or {}).items():
+        L += [f"{k} from {r['n_kept']} stereo pairs (block rig): RMECH ({', '.join(f'{v:.2f}' for v in r['mech_mm'])}) "
+              f"+- ({', '.join(f'{v:.2f}' for v in r['se_mm'])}) mm."]
     L += ["", "## Per block", "", "| block | pairs | rig rms px | scale ppm | tri scale ppm | roll mdeg | yaw mdeg |",
           "|---|---|---|---|---|---|---|"]
     fmt = lambda v, f: "-" if v is None else format(v, f)                     # noqa: E731
@@ -207,7 +216,7 @@ def main(argv=None) -> int:
         return 2
     out = Path(a.out) if a.out else root / "camera_analysis" / f"fiducials_{datetime.date.today():%Y%m%d}"
     out.mkdir(parents=True, exist_ok=True)
-    pairs, dets = [], []
+    pairs, dets, rays = [], [], []
     t0 = time.time()
     for i, w in enumerate(works, 1):
         print(f"[{i}/{len(works)}] {w.name}", flush=True)
@@ -221,10 +230,17 @@ def main(argv=None) -> int:
         print(f"  {len(r['pairs'])} image pairs with targets, {len(solved)} solved, {len(r['detections'])} detections",
               flush=True)
         pairs += r["pairs"]
+        rays += r.get("rays", [])
         dets += r["detections"]
     F.write_csv(out / "pairs.csv", pairs, ["block"] + [c for c in F.PAIR_COLUMNS if c != "block"])
     F.write_csv(out / "detections.csv", dets, F.DET_COLUMNS)
     summary = F.summarize(pairs)
+    summary["unsurveyed_rays"] = {}
+    for k in F.UNSURVEYED:
+        rk = [q for q in rays if q["target"] == k]
+        if len(rk) >= 2:
+            summary["unsurveyed_rays"][k] = F.fit_point_from_rays(rk, F.survey_nav_m([k])[k])
+            summary["unsurveyed_rays"][k]["prior_mech_mm"] = list(F.UNSURVEYED_PRIOR_MECH_MM[k])
     summary.update({"root": str(root), "model": a.model, "blocks_checked": [w.name for w in works],
                     "minutes": round((time.time() - t0) / 60, 1)})
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=float), encoding="utf-8")

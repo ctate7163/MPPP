@@ -1019,17 +1019,40 @@ def early_terms_to_hold(res: Dict[str, Any], z_min: float = EARLY_Z_MIN) -> Tupl
     return out, True
 
 
+def zero_terms(st: Dict[str, Any], names: Sequence[str]) -> Dict[str, Any]:
+    """A copy of the start values with the named global terms at 0 (``"D_roll"``: no roll drift in sol,
+    ``"S_NL_cx"``: no NL cx temperature slope, ``"Q0_yaw"`` ...); the caller holds them (3 Nov 2026, Christian: "one
+    roll for the whole mission", "hold the NL cx and cy and NR cy to one value").  Unknown names raise."""
+    st = copy.deepcopy(st)
+    for h in names:
+        base, _, c = h.rpartition("_")
+        arr = None
+        if base in ("D", "Q0", "H"):
+            arr = st[base]
+        elif base[:2] in ("G_", "S_", "E_") and base[2:] in ("NL", "NR"):
+            arr = st[base[0]][base[2:]]
+        names_ = _HELD_NAMES.get(base, ())
+        if arr is None or c not in names_:
+            raise ValueError(f"cannot zero {h!r} (a global term such as D_roll, S_NL_cx, Q0_yaw)")
+        arr[names_.index(c)] = 0.0
+    return st
+
+
 def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = None, points: Any = POINTS_PER_BLOCK,
              bin_deg: float = BIN_DEG, max_span: float = MAX_SPAN_SOLS, early_sol: Optional[float] = None,
              knot_sol: Optional[float] = None, hold: Sequence[str] = HOLD_DEFAULT, iterations: int = 100,
              covariance: bool = True, passes: int = 2, diagnostics: bool = True, exclude: Sequence[str] = (),
              verbose: bool = True, iso_f: bool = ISO_F, early_z_min: float = EARLY_Z_MIN,
-             tie_f: Optional[bool] = None, early_offsets: Optional[bool] = None) -> Dict[str, Any]:
+             tie_f: Optional[bool] = None, early_offsets: Optional[bool] = None,
+             zero: Sequence[str] = ()) -> Dict[str, Any]:
     """The one-adjustment Navcam joint over the blocks ``{name: WORK folder}`` (module docstring), then the
-    diagnostic pass.  Returns the global terms with their sd (:func:`globals_result`), the residual statistics, the
+    diagnostic pass.  ``zero``: global terms set to 0 and held (:func:`zero_terms`; 3 Nov 2026).  Returns the global terms with their sd (:func:`globals_result`), the residual statistics, the
     units of the joint and of the diagnostic pass (:func:`unit_rows`) - what :func:`write_tied` writes."""
     import pycolmap
     st = start_values(start_dir, knot_sol=knot_sol)
+    if zero:
+        st = zero_terms(st, zero)
+        hold = tuple(dict.fromkeys(tuple(hold) + tuple(zero)))
     cams = {k: pycolmap.Camera(model=st["cameras"][k]["model"], width=5120, height=3840,
                                params=np.asarray(st["cameras"][k]["params"], float)) for k in ("NL", "NR")}
     t = time.time()

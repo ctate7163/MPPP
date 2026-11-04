@@ -52,6 +52,18 @@ MECH_TO_NAV_MM = np.array([90.02, 0.0, -1133.38])      # RMECH origin in RNAV (R
 RIGID: Tuple[str, ...] = ("AFT1", "RPFA1", "RPFA2", "TDF1", "TDF2", "TDF3")
 BAR: Tuple[str, ...] = ("LDIFF", "RDIFF")                # on the differential bar: only their separation is fixed
 NOT_USED: Tuple[str, ...] = ("AFT2",)                    # behind the hexagonal plate from the mast
+# Rigid targets without a survey (Christian, 3 Nov: "There is also a seventh TDF4 that is good but was not surveyed";
+# "we can fit the tdf4 location and use it in the future").  TDF4 here is the 3 Nov fit: the rays of 20 Navcam images
+# (sols 31-1980, both eyes, >= 5 surveyed targets each) from poses resected on the surveyed targets, intersected
+# (:func:`fit_point_from_rays`): RMECH (245.79, 126.64, -0.16) mm, jackknife se (0.08, 0.09, 0.16) mm; the 9 images
+# with all seven targets give (245.78, 126.73, -0.18) +- (0.14, 0.12, 0.22).  (The first prior, the sol 334 ray cut
+# with the deck plane, was (244.6, 126.0, -0.5).)  Each check refits it: per pair from both eyes
+# (``tdf4_rover_mm``, :func:`fit_unsurveyed`) and from every resected image (``rays``, :func:`fit_point_from_rays`).
+# It is not used in the fits (it is not in RIGID) until promoted there.
+UNSURVEYED_PRIOR_MECH_MM: Dict[str, Tuple[float, float, float]] = {"TDF4": (245.79, 126.64, -0.16)}
+RAY_MIN_TARGETS = 5              # an image's ray to an unsurveyed target needs a resection on this many surveyed ones
+RAY_MAX_RMS = 1.0                # and at most this rms (full-resolution px)
+UNSURVEYED: Tuple[str, ...] = tuple(UNSURVEYED_PRIOR_MECH_MM)
 DECK_CTE_PPM_PER_DEGC = 23.0                             # aluminium; the survey is taken as a room-temperature one
 
 # ------------------------------------------------------------------------------------------------ detection
@@ -65,15 +77,17 @@ MAX_CORNER_PX = 0.75             # native px: cv2.cornerSubPix used when it stay
 EDGE_MARGIN = 20                 # native px: predictions closer to the frame edge are skipped
 BAR_SEARCH_FULL_PX = 40.0        # LDIFF / RDIFF: the differential bar turns them 10-30 px from the label prediction
 BAR_MAX_COST = 0.15              # and a wide search needs a stricter symmetry
+UNSURVEYED_SEARCH_FULL_PX = 20.0  # TDF4: around its prior (a few mm at 1-2 m, plus the label pose's 3-6 px)
 REJECT_FULL_PX = 3.0             # a target further than this from the fitted solution is dropped
 MIN_PAIR_POINTS = 3              # rigid targets over both eyes for a rig-held solution
 MIN_EYE_POINTS = 4               # rigid targets in one eye for its own resection
 
 
 def survey_nav_m(names: Optional[Sequence[str]] = None) -> Dict[str, np.ndarray]:
-    """Survey positions in RNAV, metres."""
+    """Survey positions in RNAV, metres (the unsurveyed targets at their priors when named)."""
     names = list(names) if names is not None else list(SURVEY_MECH_MM)
-    return {k: (np.asarray(SURVEY_MECH_MM[k], float) + MECH_TO_NAV_MM) / 1000.0 for k in names}
+    src = {**UNSURVEYED_PRIOR_MECH_MM, **SURVEY_MECH_MM}
+    return {k: (np.asarray(src[k], float) + MECH_TO_NAV_MM) / 1000.0 for k in names}
 
 
 def native_to_full(xy, scale: float) -> np.ndarray:
@@ -358,13 +372,16 @@ def rover_attitude_deg(R_world_from_rover: np.ndarray) -> List[float]:
 
 
 def check_pair(det: Dict[str, Dict[str, np.ndarray]], proj: Dict[str, Projector], label: Dict[str, Tuple[np.ndarray, np.ndarray]],
-               cam_from_world: Dict[str, Tuple[np.ndarray, np.ndarray]]) -> Dict[str, Any]:
+               cam_from_world: Dict[str, Tuple[np.ndarray, np.ndarray]], rig_ref: Optional[np.ndarray] = None) -> Dict[str, Any]:
     """
     The metrics of one Navcam image pair (or one image).  ``det[eye]``: target -> full-resolution pixel
     (eye "L" / "R"); ``proj[eye]``: the block's camera; ``label[eye]``: the label (R, t) in RNAV (start values);
-    ``cam_from_world[eye]``: the block pose (R, t).  Missing eyes are simply absent.
+    ``cam_from_world[eye]``: the block pose (R, t).  Missing eyes are simply absent.  ``rig_ref``: a reference
+    rig rotation (the rig file's ``R_sensor_from_ref``, before its drift): the block's and the deck's rig
+    rotations are then also given about it (``rig_block_*_mdeg``, ``rig_deck_*_mdeg``: pitch, yaw, roll), the
+    form of the rig trends against sol.
     """
-    P = survey_nav_m()
+    P = survey_nav_m(list(SURVEY_MECH_MM) + list(UNSURVEYED))
     out: Dict[str, Any] = {"n_L": len([k for k in det.get("L", {}) if k in RIGID]),
                            "n_R": len([k for k in det.get("R", {}) if k in RIGID]),
                            "targets_L": ",".join(sorted(det.get("L", {}))), "targets_R": ",".join(sorted(det.get("R", {})))}
@@ -377,6 +394,7 @@ def check_pair(det: Dict[str, Dict[str, np.ndarray]], proj: Dict[str, Projector]
             if r:
                 out[f"resect_rms_{e}"] = r["rms"]
                 out[f"resect_n_{e}"] = r["n_obs"]
+                out[f"_pose_{e}"] = (r["R"], r["t"])
     pair = all(e in proj and e in cam_from_world for e in ("L", "R"))
     if not pair:
         return out
@@ -388,7 +406,11 @@ def check_pair(det: Dict[str, Dict[str, np.ndarray]], proj: Dict[str, Projector]
         return out
     fits = {}
     for mode in MODES:
-        fits[mode] = solve_pair(proj["L"], proj["R"], rigidL, rigidR, *label["L"], R_rel=R_rel, t_rel=t_rel, mode=mode, points=P)
+        if (mode == "translation" and len(rigidR) < 3) or (mode == "free" and (len(rigidR) < MIN_EYE_POINTS or len(rigidL) < 3)):
+            fits[mode] = None              # the right eye's own pose needs its own targets
+            continue
+        fits[mode] = solve_pair(proj["L"], proj["R"], rigidL, rigidR, *label["L"], R_rel=R_rel, t_rel=t_rel, mode=mode,
+                                points=P)
     rig = fits["rig"]
     if rig is None:
         return out
@@ -406,6 +428,12 @@ def check_pair(det: Dict[str, Dict[str, np.ndarray]], proj: Dict[str, Projector]
         ws = fits["free"]["dR_sd_mdeg"]
         out.update({"dR_pitch_mdeg": w[0], "dR_yaw_mdeg": w[1], "dR_roll_mdeg": w[2], "dR_pitch_sd": ws[0],
                     "dR_yaw_sd": ws[1], "dR_roll_sd": ws[2], "free_rms": fits["free"]["rms"]})
+        if rig_ref is not None:
+            Rb = np.asarray(R_rel, float) @ np.asarray(rig_ref, float).T
+            Rd = _rot(fits["free"]["x"][6:9]) @ Rb
+            for tag, M in (("block", Rb), ("deck", Rd)):
+                a = np.degrees(_rotvec(M)) * 1e3
+                out.update({f"rig_{tag}_pitch_mdeg": a[0], f"rig_{tag}_yaw_mdeg": a[1], f"rig_{tag}_roll_mdeg": a[2]})
     # NL in the rover frame and the rover in the block
     R, t = rig["R"], rig["t"]
     C_rover = -R.T @ t
@@ -424,6 +452,9 @@ def check_pair(det: Dict[str, Dict[str, np.ndarray]], proj: Dict[str, Projector]
         X, rms = triangulate(proj["L"], proj["R"], R_rel, t_rel, det["L"][k], det["R"][k], R @ P[k] + t)
         if rms <= REJECT_FULL_PX:
             tri[k] = X
+    for k in UNSURVEYED:
+        if k in tri:
+            out[f"{k.lower()}_rover_mm"] = (1e3 * (R.T @ (tri[k] - t))).tolist()
     rig_tri = [k for k in tri if k in RIGID]
     out["tri_n"] = len(rig_tri)
     if len(rig_tri) >= 3:
@@ -442,7 +473,9 @@ PAIR_COLUMNS = ["block", "pair", "station", "sol", "T_L", "T_R", "scale_native",
                 "label_rms_L", "label_rms_R", "resect_rms_L", "resect_rms_R", "rig_rms", "rig_n_obs", "rig_dropped",
                 "baseline_block_mm", "baseline_fid_mm", "scale_ppm", "scale_sd_ppm", "dt_x_mm", "dt_y_mm", "dt_z_mm",
                 "dR_pitch_mdeg", "dR_yaw_mdeg", "dR_roll_mdeg", "dR_pitch_sd", "dR_yaw_sd", "dR_roll_sd",
-                "tri_n", "tri_scale_ppm", "tri_shape_rms_mm", "bar_mm", "bar_ppm",
+                "rig_block_pitch_mdeg", "rig_block_yaw_mdeg", "rig_block_roll_mdeg", "rig_deck_pitch_mdeg",
+                "rig_deck_yaw_mdeg", "rig_deck_roll_mdeg",
+                "tri_n", "tri_scale_ppm", "tri_shape_rms_mm", "bar_mm", "bar_ppm", "tdf4_rover_mm",
                 "nl_in_rover_C_mm", "nl_in_rover_rotvec", "rover_in_block_origin_m", "rover_in_block_hpr_deg",
                 "rover_in_block_rotvec"]
 DET_COLUMNS = ["block", "image", "eye", "sol", "target", "x_full", "y_full", "label_x_full", "label_y_full", "fit_x_full",
@@ -465,21 +498,33 @@ def _read_image(path: Path) -> Optional[np.ndarray]:
 
 def check_block(work: PathLike, model: str = "cahv_ba", images_dir: Optional[PathLike] = None,
                 out_dir: Optional[PathLike] = None, figures: int = 3,
-                progress: Optional[Callable[[str], None]] = None) -> Dict[str, Any]:
+                progress: Optional[Callable[[str], None]] = None, rec=None,
+                rig_ref: Optional[np.ndarray] = None) -> Dict[str, Any]:
     """
     The fiducial check of one solved block (``work``: the block folder, or its ``colmap`` folder).  Writes
     ``<out_dir>/<block>_pairs.csv`` and ``<block>_detections.csv`` (and annotated figures of up to ``figures``
     images with every rigid target found) when ``out_dir`` is given.  ``images_dir`` overrides where the
-    images are read (default: the project's ``images`` folder).  -> {"block", "pairs" (rows), "detections"}.
+    images are read (default: the project's ``images`` folder).  ``rec``: the solved reconstruction when already
+    read (anything with ``images``, ``cameras`` and ``reg_image_ids()`` like a ``pycolmap.Reconstruction``);
+    ``rig_ref``: the reference rig rotation (default: the Navcam rig file in use, before its drift).
+    -> {"block", "pairs" (rows), "detections"}.
     """
-    import pycolmap
     w = Path(work)
     root = w / "colmap" if (w / "colmap" / "project.json").is_file() else w
     block_dir = root.parent if root.name == "colmap" else root
     name = block_dir.name
     say = progress or (lambda s: log.info(s))
     pj = json.loads((root / "project.json").read_text(encoding="utf-8"))
-    rec = pycolmap.Reconstruction(str(root / "sparse" / model))
+    if rec is None:
+        import pycolmap
+        rec = pycolmap.Reconstruction(str(root / "sparse" / model))
+    if rig_ref is None:
+        try:
+            from .models import load_rig
+            rr = load_rig("N")
+            rig_ref = np.asarray(rr["R_sensor_from_ref"], float) if rr else None
+        except Exception:                               # noqa: BLE001 - the absolute rig angles are optional
+            rig_ref = None
     by_name = {rec.images[i].name: rec.images[i] for i in rec.reg_image_ids()}
     man = _manifest(block_dir)
     idir = Path(images_dir) if images_dir else root / "images"
@@ -488,8 +533,8 @@ def check_block(work: PathLike, model: str = "cahv_ba", images_dir: Optional[Pat
     groups: Dict[str, Dict[str, Dict[str, Any]]] = {}
     for r in rows:
         groups.setdefault(str(r.get("sclk_key") or r["stem"]), {})[str(r.get("eye") or r["stem"][1])] = r
-    names_all = list(RIGID) + list(BAR)
-    pairs_out, det_out, figs = [], [], []
+    names_all = list(RIGID) + list(BAR) + list(UNSURVEYED)
+    pairs_out, det_out, figs, rays = [], [], [], []
     for key, eyes in sorted(groups.items()):
         pred, det, proj, label, cfw, meta = {}, {}, {}, {}, {}, {}
         for e, r in eyes.items():
@@ -508,8 +553,12 @@ def check_block(work: PathLike, model: str = "cahv_ba", images_dir: Optional[Pat
             g = to_gray(img)
             found = {}
             for k, uv in p.items():
-                d = (detect_target(g, uv[0], uv[1], s, search_full_px=BAR_SEARCH_FULL_PX, max_cost=BAR_MAX_COST)
-                     if k in BAR else detect_target(g, uv[0], uv[1], s))
+                if k in BAR:
+                    d = detect_target(g, uv[0], uv[1], s, search_full_px=BAR_SEARCH_FULL_PX, max_cost=BAR_MAX_COST)
+                elif k in UNSURVEYED:
+                    d = detect_target(g, uv[0], uv[1], s, search_full_px=UNSURVEYED_SEARCH_FULL_PX)
+                else:
+                    d = detect_target(g, uv[0], uv[1], s)
                 if d:
                     found[k] = d
             im = by_name[r["name"]]
@@ -521,7 +570,7 @@ def check_block(work: PathLike, model: str = "cahv_ba", images_dir: Optional[Pat
             meta[e] = {"row": r, "scale": s, "gray": g, "img": img, "found": found}
         if not meta:
             continue
-        res = check_pair(det, proj, label, cfw)
+        res = check_pair(det, proj, label, cfw, rig_ref)
         # second pass: targets missed in the first pass, searched around the block solution's prediction
         fit = res.get("_fit")
         if fit is not None:
@@ -532,7 +581,7 @@ def check_block(work: PathLike, model: str = "cahv_ba", images_dir: Optional[Pat
                 if R is None:
                     continue
                 for k in pred[e]:
-                    if k in det[e] or k in BAR:
+                    if k in det[e] or k in BAR or k in UNSURVEYED:
                         continue
                     uv = proj[e]((R @ P[k] + t)[None])[0]
                     d = detect_target(meta[e]["gray"], *full_to_native(uv, meta[e]["scale"]), meta[e]["scale"],
@@ -542,8 +591,17 @@ def check_block(work: PathLike, model: str = "cahv_ba", images_dir: Optional[Pat
                         det[e][k] = native_to_full([d["x"], d["y"]], meta[e]["scale"])
                         added = True
             if added:
-                res = check_pair(det, proj, label, cfw)
+                res = check_pair(det, proj, label, cfw, rig_ref)
         fit = res.pop("_fit", None)
+        for e in ("L", "R"):
+            pose = res.pop(f"_pose_{e}", None)
+            if pose is None or e not in meta or res.get(f"resect_n_{e}", 0) < RAY_MIN_TARGETS \
+                    or res.get(f"resect_rms_{e}", 9.0) > RAY_MAX_RMS:
+                continue
+            for k in UNSURVEYED:
+                if k in det.get(e, {}):
+                    rays.append({"target": k, "proj": proj[e], "R": pose[0], "t": pose[1], "uv": det[e][k],
+                                 "image": meta[e]["row"]["stem"], "block": name, "sol": meta[e]["row"].get("sol")})
         res.pop("_residuals", None)
         r0 = next(iter(meta.values()))["row"]
         row = {"block": name, "pair": key, "station": r0.get("station"), "sol": r0.get("sol"),
@@ -573,7 +631,7 @@ def check_block(work: PathLike, model: str = "cahv_ba", images_dir: Optional[Pat
                                 "corner_dev": d["corner_dev"], "method": d.get("method"),
                                 "pass": 2 if d.get("refined") else 1})
             if out_dir and len(figs) < figures and all(k in meta[e]["found"] for k in RIGID):
-                figs.append((e, meta[e], pred[e], det[e], fit))
+                figs.append((e, meta[e], pred[e], det[e], fit, proj[e]))
         say(f"{name} {key}: L {res.get('n_L', 0)} R {res.get('n_R', 0)} targets, "
             f"rig rms {res.get('rig_rms', float('nan')):.2f} px, "
             f"scale {res.get('scale_ppm', float('nan')):+.0f} ppm")
@@ -582,15 +640,22 @@ def check_block(work: PathLike, model: str = "cahv_ba", images_dir: Optional[Pat
             meta[e].pop("gray", None)
             if id(meta[e]) not in kept:
                 meta[e].pop("img", None)
-    out = {"block": name, "pairs": pairs_out, "detections": det_out}
+    out = {"block": name, "pairs": pairs_out, "detections": det_out, "rays": rays}
     if out_dir:
         o = Path(out_dir)
         o.mkdir(parents=True, exist_ok=True)
         write_csv(o / f"{name}_pairs.csv", pairs_out, PAIR_COLUMNS)
         write_csv(o / f"{name}_detections.csv", det_out, DET_COLUMNS)
-        for e, mm, pr, dt, fit in figs:
+        for e, mm, pr, dt, fit, pj_ in figs:
             try:
-                annotate(mm["img"], mm["row"], mm["scale"], pr, dt, fit, e, o / f"{name}_{mm['row']['stem']}_fiducials.png")
+                fitted = {}
+                if fit is not None:
+                    R, t = (fit["R"], fit["t"]) if e == "L" else (fit.get("R_R"), fit.get("t_R"))
+                    if R is not None:
+                        P = survey_nav_m(list(RIGID) + list(UNSURVEYED))
+                        fitted = {k: pj_((R @ X + t)[None])[0] for k, X in P.items()}
+                annotate(mm["img"], mm["row"], mm["scale"], pr, dt, fitted, e,
+                         o / f"{name}_{mm['row']['stem']}_fiducials.png")
             except Exception as exc:                    # noqa: BLE001 - a figure never stops the check
                 log.warning("figure %s: %s", mm["row"]["stem"], exc)
         out["figures"] = len(figs)
@@ -609,35 +674,61 @@ def write_csv(path: PathLike, rows: List[Dict[str, Any]], columns: Sequence[str]
 
 
 # ------------------------------------------------------------------------------------------------ figure
-def annotate(img: np.ndarray, row: Dict[str, Any], scale: float, pred: Dict[str, np.ndarray], det: Dict[str, np.ndarray],
-             fit: Optional[Dict[str, Any]], eye: str, out: PathLike, width: int = 2048) -> Path:
-    """One image with the label prediction (red x) and the measurement (green o); insets of the six rigid targets
-    with measured - label in full-resolution px (the block solution's residuals are in the pairs table)."""
+def _cross(img: np.ndarray, x: float, y: float, size: float, color, thick: int = 2, tilted: bool = False) -> None:
+    """A cross centred at sub-pixel (x, y) in the drawing's own pixel-centre coordinates."""
     import cv2
-    RED, GRN, YEL, WHT = (40, 40, 255), (60, 230, 60), (0, 220, 255), (255, 255, 255)
+    S = 16                                               # 4 fractional bits
+    h = 0.5 * size
+    segs = ([(-h, -h, h, h), (-h, h, h, -h)] if tilted else [(-h, 0, h, 0), (0, -h, 0, h)])
+    for a, b, c, d in segs:
+        cv2.line(img, (int(round((x + a) * S)), int(round((y + b) * S))), (int(round((x + c) * S)), int(round((y + d) * S))),
+                 color, thick, cv2.LINE_AA, shift=4)
+
+
+def annotate(img: np.ndarray, row: Dict[str, Any], scale: float, pred: Dict[str, np.ndarray], det: Dict[str, np.ndarray],
+             fitted: Optional[Dict[str, np.ndarray]], eye: str, out: PathLike, width: int = 2048) -> Path:
+    """
+    One image with the label prediction (red x), the measurement (green o) and, in the insets, the block
+    solution's reprojection (cyan +) of the six rigid targets with measured - fitted and measured - label in
+    full-resolution px.  ``pred``: native pixels; ``det`` and ``fitted``: full-resolution pixels.  Marks are drawn
+    at sub-pixel positions with the pixel-centre mapping of the resampled crops (a pixel centre u of the crop at
+    zoom z sits at (u + 0.5) z - 0.5).
+    """
+    import cv2
+    RED, GRN, YEL, CYN, WHT = (40, 40, 255), (60, 230, 60), (0, 220, 255), (255, 220, 0), (255, 255, 255)
+    PNK = (230, 120, 255)
     h0, w0 = img.shape[:2]
     s = width / w0
-    main = cv2.resize(img, (width, int(h0 * s)), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_CUBIC)
+    main = cv2.resize(img, (width, int(round(h0 * s))), interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_CUBIC)
     nat = {k: full_to_native(v, scale) for k, v in det.items()}
+    fit_nat = {k: full_to_native(v, scale) for k, v in (fitted or {}).items()}
+    to_main = lambda v: (float(v[0] + 0.5) * s - 0.5, float(v[1] + 0.5) * s - 0.5)          # noqa: E731
 
-    def put(t_, pos, col, sc=0.8):
-        cv2.putText(main, t_, pos, cv2.FONT_HERSHEY_SIMPLEX, sc, (0, 0, 0), 5, cv2.LINE_AA)
-        cv2.putText(main, t_, pos, cv2.FONT_HERSHEY_SIMPLEX, sc, col, 2, cv2.LINE_AA)
+    def put(t_, pos, col, sc=1.15):
+        cv2.putText(main, t_, pos, cv2.FONT_HERSHEY_SIMPLEX, sc, (0, 0, 0), 7, cv2.LINE_AA)
+        cv2.putText(main, t_, pos, cv2.FONT_HERSHEY_SIMPLEX, sc, col, 3, cv2.LINE_AA)
     for k, uv in pred.items():
-        x, y = int(uv[0] * s), int(uv[1] * s)
-        cv2.drawMarker(main, (x, y), RED, cv2.MARKER_TILTED_CROSS, 22, 2)
+        x, y = to_main(uv)
+        col = PNK if k in UNSURVEYED else YEL
+        _cross(main, x, y, 24, RED, 2, tilted=True)
         if k in nat:
-            cv2.circle(main, (int(nat[k][0] * s), int(nat[k][1] * s)), 16, GRN, 2)
-        put(k, (x + 20, y - 18) if x < width - 140 else (x - 110, y - 28), YEL)
-    cv2.rectangle(main, (10, 10), (760, 120), (0, 0, 0), -1)
-    cv2.drawMarker(main, (35, 40), RED, cv2.MARKER_TILTED_CROSS, 22, 2)
-    cv2.putText(main, "predicted: survey through the label CAHVORE", (60, 48), cv2.FONT_HERSHEY_SIMPLEX, 0.65, WHT, 1,
+            mx, my = to_main(nat[k])
+            cv2.circle(main, (int(round(mx * 16)), int(round(my * 16))), 18 * 16, GRN, 3, cv2.LINE_AA, shift=4)
+        lab = f"{k} (not surveyed)" if k in UNSURVEYED else k
+        put(lab, (int(x) + 24, int(y) - 22) if x < width - 32 * len(lab) else (int(x) - 26 * len(lab), int(y) - 30), col)
+    cv2.rectangle(main, (10, 10), (1060, 196), (0, 0, 0), -1)
+    _cross(main, 40, 48, 24, RED, 2, tilted=True)
+    cv2.putText(main, "label: survey (TDF4: prior) through the label CAHVORE", (75, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.95,
+                WHT, 2, cv2.LINE_AA)
+    cv2.circle(main, (40, 104), 17, GRN, 3)
+    cv2.putText(main, "measured: point-symmetry / saddle centre", (75, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.95, WHT, 2,
                 cv2.LINE_AA)
-    cv2.circle(main, (35, 85), 14, GRN, 2)
-    cv2.putText(main, "measured: point-symmetry centre", (60, 93), cv2.FONT_HERSHEY_SIMPLEX, 0.65, WHT, 1, cv2.LINE_AA)
-    order = ["AFT1", "RPFA2", "RPFA1", "TDF3", "TDF2", "TDF1"]
+    _cross(main, 40, 158, 24, CYN, 2)
+    cv2.putText(main, "fit (insets): block cameras + rig, pose from the deck", (75, 168), cv2.FONT_HERSHEY_SIMPLEX, 0.95,
+                WHT, 2, cv2.LINE_AA)
+    order = ["AFT1", "RPFA2", "RPFA1", "TDF3", "TDF2", "TDF1"] + list(UNSURVEYED)
     T = width // len(order)
-    hh = max(12, int(round(50 * scale)))
+    hh = max(10, int(round(48 * scale)))                # +- 48 full-resolution px around the target
     z = T / (2 * hh)
     tiles = []
     for k in order:
@@ -648,26 +739,34 @@ def annotate(img: np.ndarray, row: Dict[str, Any], scale: float, pred: Dict[str,
         cx, cy = int(round(c0[0])), int(round(c0[1]))
         pad = cv2.copyMakeBorder(img, hh, hh, hh, hh, cv2.BORDER_CONSTANT)
         c = cv2.resize(pad[cy:cy + 2 * hh, cx:cx + 2 * hh], (T, T), interpolation=cv2.INTER_CUBIC)
+        to_tile = lambda v: ((float(v[0]) - (cx - hh) + 0.5) * z - 0.5, (float(v[1]) - (cy - hh) + 0.5) * z - 0.5)  # noqa: E731
+        lines = []
         if k in pred:
-            p = ((pred[k][0] - cx + hh) * z, (pred[k][1] - cy + hh) * z)
-            cv2.drawMarker(c, (int(p[0]), int(p[1])), RED, cv2.MARKER_TILTED_CROSS, 24, 2)
-        txt = "not found"
+            _cross(c, *to_tile(pred[k]), 22, RED, 2, tilted=True)
+        if k in fit_nat:
+            _cross(c, *to_tile(fit_nat[k]), 22, CYN, 1)
         if k in nat:
-            m = ((nat[k][0] - cx + hh) * z, (nat[k][1] - cy + hh) * z)
-            cv2.drawMarker(c, (int(m[0]), int(m[1])), GRN, cv2.MARKER_CROSS, 24, 2)
-            dl = det[k] - native_to_full(pred[k], scale) if k in pred else np.array([np.nan, np.nan])
-            txt = f"meas-label ({dl[0]:+.1f}, {dl[1]:+.1f})"
-        cv2.rectangle(c, (0, 0), (T, 30), (0, 0, 0), -1)
-        cv2.rectangle(c, (0, T - 30), (T, T), (0, 0, 0), -1)
-        cv2.putText(c, k, (6, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.6, YEL, 1, cv2.LINE_AA)
-        cv2.putText(c, txt, (6, T - 9), cv2.FONT_HERSHEY_SIMPLEX, 0.5, WHT, 1, cv2.LINE_AA)
+            _cross(c, *to_tile(nat[k]), 22, GRN, 1)
+            if k in fitted:
+                d = det[k] - fitted[k]
+                lines.append(f"{'-prior' if k in UNSURVEYED else '-fit'} {d[0]:+.2f} {d[1]:+.2f}")
+            if k in pred:
+                d = det[k] - native_to_full(pred[k], scale)
+                lines.append(f"-label {d[0]:+.1f} {d[1]:+.1f}")
+        else:
+            lines.append("not found")
+        cv2.rectangle(c, (0, 0), (T, 38), (0, 0, 0), -1)
+        cv2.rectangle(c, (0, T - 30 * len(lines) - 10), (T, T), (0, 0, 0), -1)
+        cv2.putText(c, k, (8, 29), cv2.FONT_HERSHEY_SIMPLEX, 0.9, PNK if k in UNSURVEYED else YEL, 2, cv2.LINE_AA)
+        for i, ln in enumerate(lines):
+            cv2.putText(c, ln, (8, T - 12 - 30 * (len(lines) - 1 - i)), cv2.FONT_HERSHEY_SIMPLEX, 0.75, WHT, 2, cv2.LINE_AA)
         tiles.append(c)
     strip = np.hstack(tiles)
     strip = np.pad(strip, ((0, 0), (0, width - strip.shape[1]), (0, 0)))
-    title = np.zeros((44, width, 3), np.uint8)
-    res = "full resolution" if scale == 1 else f"1/{int(round(1 / scale))} resolution"
-    cv2.putText(title, f"{row['stem'][:43]}  sol {row.get('sol')}, {res} - offsets in full-resolution px", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, WHT, 1, cv2.LINE_AA)
+    title = np.zeros((56, width, 3), np.uint8)
+    res = "full res" if scale == 1 else f"1/{int(round(1 / scale))} res"
+    cv2.putText(title, f"{row['stem'][:35]}  sol {row.get('sol')}, {res}; insets +-48 px, offsets in full-res px",
+                (10, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.85, WHT, 2, cv2.LINE_AA)
     out = Path(out)
     cv2.imwrite(str(out), np.vstack([title, main, strip]))
     return out
@@ -732,4 +831,71 @@ def summarize(pairs: List[Dict[str, Any]]) -> Dict[str, Any]:
             st[f"{key[0]}:{key[1]}"] = {"pairs": len(sp), "hpr_sd_mdeg": (1e3 * hpr.std(0, ddof=1)).tolist(),
                                         "origin_sd_mm": (1e3 * org.std(0, ddof=1)).tolist()}
     out["stations"] = st
+    out["unsurveyed"] = fit_unsurveyed(use)
+    return out
+
+
+def fit_point_from_rays(rays: List[Dict[str, Any]], X0: np.ndarray,
+                        reject_px: Optional[float] = REJECT_FULL_PX) -> Dict[str, Any]:
+    """
+    One rover-frame point seen in many images whose poses in the rover frame are known (each from its own
+    resection on the surveyed targets): ``rays`` [{"proj": Projector, "R", "t" (x_cam = R X + t), "uv" (full px),
+    "image"}].  Least squares on the reprojection; -> {"X_nav_mm", "X_mech_mm", "sd_formal_mm" (scaled by the
+    residual variance), "se_jackknife_mm" (leave one image out: carries each image's own pose error),
+    "rms_px", "residuals_px", "n", "dropped" (rays beyond ``reject_px`` after a first fit, then refitted)}.
+    """
+    from scipy.optimize import least_squares
+
+    def fit(rs, x0, robust=False):
+        def f(X):
+            r = []
+            for q in rs:
+                pr = q["proj"]((q["R"] @ X + q["t"])[None])[0]
+                r.append(pr - q["uv"] if np.all(np.isfinite(pr)) else np.array([50.0, 50.0]))
+            return np.concatenate(r)
+        return least_squares(f, np.asarray(x0, float), x_scale="jac", loss="soft_l1" if robust else "linear", f_scale=1.0)
+
+    res = fit(rays, X0, robust=bool(reject_px))
+    dropped = []
+    if reject_px:
+        d = np.hypot(res.fun[0::2], res.fun[1::2])
+        dropped = [q.get("image", str(i)) for i, q in enumerate(rays) if d[i] > reject_px]
+        if len(rays) - len(dropped) >= 2:
+            rays = [q for i, q in enumerate(rays) if d[i] <= reject_px]
+        else:
+            dropped = []
+        res = fit(rays, res.x)
+    n = len(rays)
+    out: Dict[str, Any] = {"n": n, "dropped": dropped, "X_nav_mm": (1e3 * res.x).tolist(),
+                           "X_mech_mm": (1e3 * res.x - MECH_TO_NAV_MM).tolist(),
+                           "rms_px": float(np.sqrt((res.fun ** 2).sum() / max(n, 1))),
+                           "residuals_px": {q.get("image", str(i)): res.fun[2 * i:2 * i + 2].tolist()
+                                            for i, q in enumerate(rays)}}
+    out["sd_formal_mm"] = (1e3 * _sd(res)).tolist()
+    if n >= 3:
+        loo = np.array([fit(rays[:i] + rays[i + 1:], res.x).x for i in range(n)])
+        se = np.sqrt((n - 1) / n * ((loo - loo.mean(0)) ** 2).sum(0))
+        out["se_jackknife_mm"] = (1e3 * se).tolist()
+    return out
+
+
+def fit_unsurveyed(pairs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """The rover-frame positions of the unsurveyed targets (TDF4) from the pairs that triangulated them: per axis a
+    3.5-MAD-clipped mean in RNAV and RMECH (mm) with its standard error, against the prior."""
+    out = {}
+    for k in UNSURVEYED:
+        col = f"{k.lower()}_rover_mm"
+        X = np.array([p[col] for p in pairs if p.get(col) is not None], float).reshape(-1, 3)
+        if len(X) == 0:
+            continue
+        med = np.median(X, 0)
+        mad = np.median(np.abs(X - med), 0) * 1.4826
+        keep = np.all((np.abs(X - med) <= 3.5 * np.where(mad > 0, mad, np.inf)), 1) if len(X) > 2 else np.ones(len(X), bool)
+        Xk = X[keep]
+        m = Xk.mean(0)
+        se = Xk.std(0, ddof=1) / np.sqrt(len(Xk)) if len(Xk) > 1 else np.full(3, np.nan)
+        prior = np.asarray(UNSURVEYED_PRIOR_MECH_MM[k], float)
+        out[k] = {"n": int(len(X)), "n_kept": int(len(Xk)), "nav_mm": m.tolist(), "mech_mm": (m - MECH_TO_NAV_MM).tolist(),
+                  "se_mm": se.tolist(), "sd_mm": (Xk.std(0, ddof=1) if len(Xk) > 1 else np.full(3, np.nan)).tolist(),
+                  "prior_mech_mm": prior.tolist(), "minus_prior_mm": ((m - MECH_TO_NAV_MM) - prior).tolist()}
     return out

@@ -158,6 +158,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--zpoints", type=int, default=None, help="zcam: Mastcam-Z-only points per block (default 8000; "
                    "every Navcam-Mastcam-Z point with a third look is kept besides)")
     p.add_argument("--hold", nargs="*", default=None, help="global terms held (default Q0_yaw)")
+    p.add_argument("--zero", nargs="*", default=None, metavar="TERM",
+                   help="navcam (3 Nov 2026): global terms set to 0 and held, besides --hold: D_roll (one roll for the "
+                        "mission), S_NL_cx S_NL_cy S_NR_cy (those principal points constant with temperature) ...")
     p.add_argument("--knot", type=float, default=None, help="the pitch hinge sol (default the rig file's)")
     p.add_argument("--tie-f-slope", action="store_true",
                    help="navcam: NR's focal thermal slope tied to NL's ppm/degC (0.95.0; the comparison run before it becomes the form)")
@@ -760,7 +763,7 @@ def cmd_calib(a: argparse.Namespace) -> int:
                        "min": TJ.POINTS_MIN_PER_BLOCK}
     res = TJ.fit_tied(blocks, points=pts, hold=tuple(a.hold) if a.hold is not None else TJ.HOLD_DEFAULT,
                       knot_sol=a.knot, diagnostics=not a.no_diagnostics, iso_f=not a.aniso_f,
-                      tie_f=bool(getattr(a, "tie_f_slope", False)) or None,
+                      tie_f=bool(getattr(a, "tie_f_slope", False)) or None, zero=tuple(getattr(a, "zero", None) or ()),
                       **({"iterations": int(a.iterations)} if getattr(a, "iterations", None) else {}))   # 2 Nov 2026
     cand = TJ.write_tied(res, out / "navcam_joint", note=a.note)
     rep = check_navcam(cand)

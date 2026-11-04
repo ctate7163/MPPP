@@ -234,3 +234,31 @@ def test_script_finds_blocks(tmp_path):
     import argparse
     rep = mod.report(s, [], tmp_path, argparse.Namespace(model="cahv_ba"))
     assert "Rover deck fiducial check" in rep.read_text()
+
+
+def test_fit_point_from_rays_and_tdf4():
+    rng = np.random.default_rng(11)
+    P = F.survey_nav_m(list(F.RIGID) + list(F.UNSURVEYED))
+    assert "TDF4" in P and "TDF4" not in F.RIGID
+    X = P["TDF4"] + [0.0012, -0.0008, 0.0005]                  # the truth, 1-2 mm from the position in use
+    proj = _navcam("L")
+    rays = []
+    for i, C in enumerate([[0.55, 0.60, -1.90], [0.45, 0.20, -1.95], [0.60, -0.15, -1.92], [0.35, 0.45, -1.88]]):
+        R, t = _look_at(np.array(C), P["TDF2"])
+        uv = proj((R @ X + t)[None])[0] + rng.normal(0, 0.1, 2)
+        rays.append({"proj": proj, "R": R, "t": t, "uv": uv, "image": f"im{i}"})
+    R, t = _look_at(np.array([0.5, 0.0, -1.9]), P["TDF2"])
+    rays.append({"proj": proj, "R": R, "t": t, "uv": proj((R @ X + t)[None])[0] + [12.0, 0.0], "image": "bad"})
+    f = F.fit_point_from_rays(rays, P["TDF4"])
+    assert f["dropped"] == ["bad"] and f["n"] == 4
+    assert np.allclose(np.array(f["X_nav_mm"]) / 1e3, X, atol=4e-4)
+    assert len(f["se_jackknife_mm"]) == 3 and f["rms_px"] < 0.3
+
+
+def test_annotate_writes_a_figure(tmp_path):
+    img = np.full((960, 1280, 3), 120, np.uint8)
+    pred = {"TDF1": np.array([600.0, 500.0]), "TDF4": np.array([300.0, 400.0])}
+    det = {"TDF1": F.native_to_full([601.2, 499.4], 0.25)}
+    out = F.annotate(img, {"stem": "NLF_0001_test", "sol": 1}, 0.25, pred, det, {"TDF1": det["TDF1"] + 0.3}, "L",
+                     tmp_path / "a.png")
+    assert out.is_file() and out.stat().st_size > 10000

@@ -19,9 +19,20 @@ Hazcam early-mission step tested on the blocks.
   LDIFF-RDIFF separation (the differential bar turns, its length does not), the NL pose in the rover frame and the
   rover pose in the block (heading, pitch, roll), and its spread within each station. AFT2 is behind the hexagonal
   plate from the mast. Writes `<root>/camera_analysis/fiducials_<date>/` (pairs.csv, detections.csv, summary.json,
-  report.md, plots, annotated images with all six targets). First block (Seitah huge, sol 203 pair): label
-  4.9 / 4.7 px rms, one eye with the block camera 0.28 / 0.24 px, pair with the block rig 0.49 px, baseline
-  -607 +- 240 ppm.
+  report.md, plots, annotated images with all six targets). First 12 pairs (Seitah huge, Three Forks large, Bell
+  Island large; sols 203-1549, the images reachable from the mask set): one eye with the block camera 0.2-0.7 px,
+  pair with the block rig 0.5-1.1 px, **baseline -978 +- 116 ppm** (the deck asks for 423.6 mm against the block
+  rig's 424.0; chi2/dof 1.0; no significant temperature or sol trend yet); the deck's rig pitch per pair is
+  +-50-170 mdeg, far too coarse for the 5 mdeg/1000 sol pitch drift. Annotated images: sub-pixel marks with the
+  pixel-centre mapping of the zoomed insets (the 3 Nov prototype drew them half a native pixel up-left), larger
+  text, the block solution's reprojection, TDF4. **TDF4** (rigid, not surveyed; Christian, 3 Nov): tracked, and
+  fitted from the rays of images whose poses are resected on the surveyed targets (`fit_point_from_rays`):
+  RMECH (245.79, 126.64, -0.16) mm +- (0.08, 0.09, 0.16) from 20 images with >= 5 targets (the 9 with all seven:
+  (245.78, 126.73, -0.18) +- (0.14, 0.12, 0.22)); now the position in use (`UNSURVEYED_PRIOR_MECH_MM`), refitted by
+  every check, not in the fits until promoted.
+- **Navcam joint: `--zero TERM ...`** (`tied.zero_terms`, `fit_tied(zero=...)`; Christian, 3 Nov): global terms set
+  to 0 and held, for the post-freeze runs - `D_roll` (one roll for the mission), `S_NL_cx S_NL_cy S_NR_cy` (those
+  principal points constant with temperature, NR cx carrying the stereo term).
 - **No early-mission offsets in the Navcam and Hazcam laws** (Christian, 3 Nov: "let's remove early mission offset
   altogether"). `tied.EARLY_OFFSETS`, `hazjoint.EARLY_OFFSETS`, `hazfit.EARLY_OFFSETS` = False: every early term at 0
   and held (no |z| test); `fit_tied(early_offsets=True)`, `run_joint(early=True)`, `fit_eye(early_offsets=True)` fit

@@ -539,3 +539,20 @@ def test_held_reference_early_offset_is_zero(tmp_path):
     ba, g, _ = T.adjust_tied(rec2, proj2, idx, st, units, hold=("Q0_yaw",), iterations=20, covariance=False, passes=1,
                              verbose=False)
     assert g["E_NL"][3] != 0.0 or "E_NL" in ba["extra"]["held"]      # not held by name: the start value stays
+
+
+def test_zero_terms_sets_and_validates():
+    """3 Nov 2026: --zero D_roll S_NL_cx ... sets the global terms to 0 (fit_tied holds them)."""
+    import numpy as np
+    import pytest as _pt
+    from mppp.calib import tied as TJ
+    st = {"D": np.array([5.4, 2.7, -4.9]), "Q0": np.zeros(3), "H": np.zeros(3),
+          "S": {"NL": np.ones(len(TJ.SLOPE_TERMS)), "NR": np.ones(len(TJ.SLOPE_TERMS))},
+          "G": {"NL": np.ones(10), "NR": np.ones(10)}, "E": {"NL": np.ones(len(TJ.EARLY_TERMS)), "NR": np.ones(len(TJ.EARLY_TERMS))}}
+    z = TJ.zero_terms(st, ["D_roll", "S_NL_cx", "S_NL_cy", "S_NR_cy"])
+    assert z["D"][2] == 0 and z["D"][0] == 5.4 and st["D"][2] == -4.9          # a copy
+    sl = list(TJ.SLOPE_TERMS)
+    assert z["S"]["NL"][sl.index("cx")] == 0 and z["S"]["NL"][sl.index("cy")] == 0 and z["S"]["NR"][sl.index("cy")] == 0
+    assert z["S"]["NR"][sl.index("cx")] == 1
+    with _pt.raises(ValueError):
+        TJ.zero_terms(st, ["D_spin"])
