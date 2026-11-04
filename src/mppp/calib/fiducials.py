@@ -62,7 +62,12 @@ NOT_USED: Tuple[str, ...] = ("AFT2",)                    # behind the hexagonal 
 # (335.84, 126.64, -1133.37) +- (0.07, 0.11, 0.24); 43 images with >= 4, 5 dropped, (335.85, 126.92, -1133.76) +-
 # (0.09, 0.13, 0.22).  Each check refits it: per pair from both eyes (``tdf4_rover_mm``, :func:`fit_unsurveyed`) and
 # from every resected image (``rays``, :func:`fit_point_from_rays`).  Not used in the fits (not in RIGID) until promoted.
-UNSURVEYED_NAV_MM: Dict[str, Tuple[float, float, float]] = {"TDF4": (335.75, 126.60, -1133.43)}
+# 4 Nov, all seven (Christian: "Resolve the tdf4 location"): the 567 archive images with >= 4 of the seven predicted
+# in frame, 80 rays (48 NL, 32 NR, sols 33-2006, >= 5 surveyed, rms <= 1 px): (335.83, 126.70, -1133.66) +- (0.05,
+# 0.05, 0.09) mm, ray rms 0.87 px, none dropped; sols <= 1135 and later agree to 0.05 mm (the target does not move).
+# One eye alone lands 2-4 mm along the line of sight (nearly parallel rays).  With the deck's focal-scale term freed
+# (below the law by ~0.18 % at the deck) it moves by (+0.23, +0.27, -0.19) mm: known to ~0.3 mm, model-dependent.
+UNSURVEYED_NAV_MM: Dict[str, Tuple[float, float, float]] = {"TDF4": (335.83, 126.70, -1133.66)}
 RAY_MIN_TARGETS = 5              # an image's ray to an unsurveyed target needs a resection on this many surveyed ones
 RAY_MAX_RMS = 1.0                # and at most this rms (full-resolution px)
 UNSURVEYED: Tuple[str, ...] = tuple(UNSURVEYED_NAV_MM)

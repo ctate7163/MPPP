@@ -57,6 +57,23 @@ Hazcam early-mission step tested on the blocks.
   rigid target too - simulated on the block sols' label geometry it adds ~1 % of the pairs and nothing to the roll
   trend; all 339 block-sol pairs with >= 3 targets per eye would give rate se ~1.0 / 1.2 / 2.1 mdeg/1000 sol (pitch,
   yaw, roll; the 71 used: 1.7 / 2.1 / 2.9) - roll needs targets fore and aft, i.e. the full archive.
+- **TDF4 resolved; the deck with all seven targets** (Christian, 4 Nov: "how many images are there with 4 or more
+  of the seven fiducials? Resolve the tdf4 location and remeasure the rig rotation"). The archive holds 567 Navcam
+  full-frame images with >= 4 of the seven predicted in frame (NL 281, NR 286; 230 stereo pairs); 410 have >= 4
+  found. **TDF4** `UNSURVEYED_NAV_MM` = RNAV (335.83, 126.70, -1133.66) mm +- (0.05, 0.05, 0.09) from 80 rays
+  (+0.08, +0.10, -0.23 from the 24-image value; early and late halves agree to 0.05 mm). **Rig rotation** with TDF4
+  rigid: 200 of 230 pairs solve (164 without - the simulation's "~1 %" was wrong for this selection, where NR
+  often has 3 surveyed targets), and the scatter beyond the formal sd falls from 40-88 mdeg to 0-5. With the 71 earlier
+  pairs, 192-198 used: pitch +3.6 +- 1.0 (law +5.5, z -1.8; the law's hinged shape and a knee at 250 are best, a
+  quadratic +12 BIC), yaw +5.1 +- 1.6 (law +2.7; a step at 475 and the law equal), **roll -9.7 +- 2.0 (law -5.4,
+  z -1.9; the law's line is best, a knee at 250 +3.9 and a quadratic +5.8 BIC)** mdeg/1000 sol. **A static focal
+  term at the deck**: one adjustment of all 410 images (226 pairs on the law rig, 70 lone images; poses, rig
+  rotation offset and rate, TDF4, a focal scale per eye) wants f +1840 / +1740 +- 100 ppm (NL / NR) - or, with f
+  held, k1 +0.0016 / +0.0015 (law 0.045 / 0.047) - the same in every sol third, cold and warm half, full-res only
+  and lone images; rms 0.80 -> 0.65 px (f) or 0.58 (k1). The label CAHVORE's pupil motion is < 0.1 px at the deck,
+  so not that. Either the law's radial profile in the lower field or a near-range effect: a diagnostic for the
+  post-freeze Navcam joint (deck observations as an extra group with their own near-field term), not a change to
+  the law now.
 - **Navcam joint diagnostic bins hold k1 at the law** (`tied.DIAG_FREE = ("fx", "fy")`; Christian, 4 Nov: "Since df
   and dk1 trade against each other ... Ok, hold dk1 at the law"). The block-agreement pass freed fx, fy and k1 per
   block bin; in one Navcam image f and k1 correlate at -0.92 (f's sd x2.5; -0.69 with k3), and Threeforks large,
