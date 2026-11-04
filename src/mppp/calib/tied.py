@@ -77,6 +77,11 @@ BIN_DEG = 2.0                    # fine bins; within a bin the images' own tempe
 DIAG_BIN_MIN_IMAGES = 8          # 22 Oct: the diagnostic pass merges a block's adjacent fine bins (per era) until
 DIAG_BIN_MAX_DEG = 10.0          #   each eye has this many images, at most this wide - the cold morning images
                                  #   (below -30 degC) are spread 1-3 per 2 degC bin and were all under the figure cut
+# 4 Nov 2026 (Christian: "Since df and dk1 trade against each other ... Ok, hold dk1 at the law"): the block-agreement
+# bins free the focal lengths only, the distortion (k1 with its temperature slope) held at the law.  In one Navcam
+# image the f-k1 correlation is -0.92 (f's sd x2.5); Threeforks, Vingeanne and Belva paired +-400 ppm in fy with dk1
+# of the opposite sign.  ("fx", "fy", "k1") is the earlier pass.
+DIAG_FREE: Tuple[str, ...] = ("fx", "fy")
 FIG_BIN_MIN_IMAGES = 4           # the bin cameras drawn in the intrinsics figure (the rig epochs keep 8)
 POINTS_PER_BLOCK = 8000          # Christian, 20 Oct: 8000 for the pipeline passes
 # 2 Nov 2026 (Christian: "for the joint, scale to 500-1000 points per station"): the Navcam joint's points per block
@@ -363,10 +368,10 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
         if per_block and pointing:  # the pointing pass: fx, fy, cx, cy free, the distortion held
             c = navcam_distortion_terms(c, "hold", pp="refine")
             newproj.cameras[name] = c
-        elif per_block:            # the diagnostic bins like the block runs' thermal bins: fx, fy, k1 free, the rest held
+        elif per_block:            # the diagnostic bins: DIAG_FREE free (fx, fy; k1 too before 4 Nov), the rest held
             c = navcam_distortion_terms(c, "hold", pp="hold")
-            c["fixed_params"] = [n for n in c["fixed_params"] if n != "k1"]
-            c["free_params"] = sorted(set(c.get("free_params") or []) | {"fx", "fy", "k1"})
+            c["fixed_params"] = [n for n in c["fixed_params"] if n not in DIAG_FREE]
+            c["free_params"] = sorted(set(c.get("free_params") or []) | set(DIAG_FREE))
             newproj.cameras[name] = c
         else:
             newproj.cameras[name] = navcam_distortion_terms(c, "refine")

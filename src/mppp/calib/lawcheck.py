@@ -9,7 +9,7 @@ early-mission terms, and the stereo rig with its drift.  Over a set of finished 
 * **law held** - one camera per (block, eye, merged temperature bin, era) and one stereo rig per (block, epoch, bin,
   era), each SET from the law at the unit's own temperature, era and sol (the images' own temperatures through the
   keypoint map), and HELD; only the poses and points re-solved.  Per block: the residuals the law leaves.
-* **units free** (per law) - the same units refined freely (fx, fy, k1 and the rig rotation; the principal points and the
+* **units free** (per law) - the same units refined freely (fx, fy and the rig rotation - k1 too before 4 Nov; the principal points and the
   rest of the distortion at the law, as in the joint's diagnostic pass), with the covariance of every unit.  Per
   block: the residuals; per unit: its deviation from the law in units of its own sd (z).
 * **pointing** - the joint's pointing pass (:func:`mppp.calib.tied.pointing_pass`): one camera per (block, eye, era)
@@ -37,7 +37,8 @@ from . import tied as T
 log = logging.getLogger("mppp.calib")
 PathLike = Union[str, Path]
 MIN_IMAGES = 8                    # units with fewer images / frames are listed, not used in the statistics
-FREE_ORDER = ("fx", "fy", "k1")   # the free pass's camera tangent (the SubsetManifold keeps the free ones in order)
+FREE_ORDER = T.DIAG_FREE           # the free pass's camera tangent (the SubsetManifold keeps the free ones in order);
+                                   # 4 Nov: fx, fy (k1 held at the law, tied.DIAG_FREE; ("fx", "fy", "k1") before)
 
 
 def law_globals(st: Dict[str, Any]) -> Dict[str, np.ndarray]:

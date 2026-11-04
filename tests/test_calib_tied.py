@@ -334,7 +334,7 @@ def test_law_check_deviations_and_held_residuals(tmp_path):
     proj, rec, idx, st, T = _tied_setup(tmp_path)
     free = L.units_free(rec, proj, idx, st, iterations=30, verbose=False)
     held = L.law_held(rec, proj, idx, st, iterations=30)
-    assert free["cameras"] and free["rigs"] and free["camera_cov_dims"] == [3]
+    assert free["cameras"] and free["rigs"] and free["camera_cov_dims"] == [len(T.DIAG_FREE)]
     blk = next(iter(held["blocks"]))
     assert held["blocks"][blk]["rms_px"] >= free["blocks"][blk]["rms_px"] - 1e-6   # holding never fits better
     d = L.deviations(free, st, min_images=1)
@@ -556,3 +556,15 @@ def test_zero_terms_sets_and_validates():
     assert z["S"]["NR"][sl.index("cx")] == 1
     with _pt.raises(ValueError):
         TJ.zero_terms(st, ["D_spin"])
+
+
+def test_diagnostic_bins_hold_k1_at_the_law(tmp_path):
+    """4 Nov (Christian: "hold dk1 at the law"): the block-agreement bins free fx and fy only."""
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    assert T.DIAG_FREE == ("fx", "fy")
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0, per_block=True)
+    cams = [proj2.cameras[k] for k in proj2.cameras if "@" in k]
+    assert cams
+    for c in cams:
+        assert {"fx", "fy"} <= set(c["free_params"]) and "k1" not in c["free_params"]
+        assert "k1" in c["fixed_params"] and not ({"fx", "fy"} & set(c["fixed_params"]))

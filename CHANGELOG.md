@@ -54,6 +54,18 @@ Hazcam early-mission step tested on the blocks.
   the tie points do not show (+0.1 +- 0.7) - with the translation held the deck's yaw also carries the baseline and
   focal scale (0.5 px of disparity at 1.5 m), so it is not taken as a rotation. Offsets deck - tie points: pitch
   +5.5, yaw +5.6, roll -13.6 mdeg (the deck is at the bottom edge of the frame).
+- **Navcam joint diagnostic bins hold k1 at the law** (`tied.DIAG_FREE = ("fx", "fy")`; Christian, 4 Nov: "Since df
+  and dk1 trade against each other ... Ok, hold dk1 at the law"). The block-agreement pass freed fx, fy and k1 per
+  block bin; in one Navcam image f and k1 correlate at -0.92 (f's sd x2.5; -0.69 with k3), and Threeforks large,
+  Vingeanne and Belva Crater large paired +-400 ppm in fy with dk1 of the opposite sign. Not used by the running
+  freeze chain (its Navcam joint is done); takes effect at the next `calib navcam` and `calib lawcheck` (its free units are
+  the same bins: `lawcheck.FREE_ORDER = tied.DIAG_FREE`).
+- **Which eye moves, 4 Nov with the deck pairs** (57 NL and 50 NR resections, the 3 Nov law cameras, label camera
+  axes): along the baseline NL +0.24 +- 0.13 mm and NR -0.83 +- 0.18 mm from their labels (pairs: baseline
+  -0.95 +- 0.17 mm shorter than the labels'); both eyes 2.0-2.3 mm low and 1.0-1.4 mm back, and turned (pitch
+  -86/-69, yaw +88/+102 mdeg) - the mast head. NR - NL: 0.43 +- 0.07 mm forward (the size the common yaw makes),
+  roll +15 +- 4 mdeg. The roll drift against sol splits evenly between the eyes against their labels (NL +15 +- 8,
+  NR -16 +- 7 mdeg/1000 sol; NR - NL -15 +- 7, as the deck rig's -13.5 +- 2.9): which eye turns stays unresolved.
 - **Navcam joint: `--zero TERM ...`** (`tied.zero_terms`, `fit_tied(zero=...)`; Christian, 3 Nov): global terms set
   to 0 and held, for the post-freeze runs - `D_roll` (one roll for the mission), `S_NL_cx S_NL_cy S_NR_cy` (those
   principal points constant with temperature, NR cx carrying the stereo term).
