@@ -9,6 +9,19 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 blocks, a final pass with the promoted models, the existing studies at the end, resumable after any fault), and the
 Hazcam early-mission step tested on the blocks.
 
+- **Rover deck fiducial check** (new; reads only, not part of the freeze chain; Christian, 3 Nov: "build the
+  fiducial check for the aligned blocks"). `mppp.calib.fiducials` and `scripts/fiducial_check.py`: the six surveyed
+  rigid deck targets (AFT1, RPFA1, RPFA2, TDF1-3; RMECH survey, RNAV = RMECH + (90.02, 0, -1133.38) mm) predicted
+  through each Navcam image's label CAHVORE, found by point symmetry (phase correlation of the window with its
+  180-degree rotation, then `cv2.cornerSubPix`), and fitted with each block's own refined cameras and NL-NR pose:
+  one-eye resections, the pair with the block's rig held (`rig_rms`), the baseline the deck asks for
+  (`scale_ppm` +- sd), the rig translation and rotation it sees, the triangulated deck's scale and shape, the
+  LDIFF-RDIFF separation (the differential bar turns, its length does not), the NL pose in the rover frame and the
+  rover pose in the block (heading, pitch, roll), and its spread within each station. AFT2 is behind the hexagonal
+  plate from the mast. Writes `<root>/camera_analysis/fiducials_<date>/` (pairs.csv, detections.csv, summary.json,
+  report.md, plots, annotated images with all six targets). First block (Seitah huge, sol 203 pair): label
+  4.9 / 4.7 px rms, one eye with the block camera 0.28 / 0.24 px, pair with the block rig 0.49 px, baseline
+  -607 +- 240 ppm.
 - **No early-mission offsets in the Navcam and Hazcam laws** (Christian, 3 Nov: "let's remove early mission offset
   altogether"). `tied.EARLY_OFFSETS`, `hazjoint.EARLY_OFFSETS`, `hazfit.EARLY_OFFSETS` = False: every early term at 0
   and held (no |z| test); `fit_tied(early_offsets=True)`, `run_joint(early=True)`, `fit_eye(early_offsets=True)` fit
