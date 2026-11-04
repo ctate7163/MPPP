@@ -9,6 +9,15 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 blocks, a final pass with the promoted models, the existing studies at the end, resumable after any fault), and the
 Hazcam early-mission step tested on the blocks.
 
+- **No early-mission offsets in the Navcam and Hazcam laws** (Christian, 3 Nov: "let's remove early mission offset
+  altogether"). `tied.EARLY_OFFSETS`, `hazjoint.EARLY_OFFSETS`, `hazfit.EARLY_OFFSETS` = False: every early term at 0
+  and held (no |z| test); `fit_tied(early_offsets=True)`, `run_joint(early=True)`, `fit_eye(early_offsets=True)` fit
+  them again. Why: their z was per image observation. Navcam (3 Nov joint): NR fy +0.057 px, NR cy +0.039 px; on
+  block means the fy step is -223 +- 112 ppm (NL) and -165 +- 119 ppm (NR), not significant and of the other sign;
+  the cy offsets of the models in use (+0.137 / +0.152 px) are common to both eyes, i.e. absorbed by the image
+  attitudes; at 0 no image point moves by more than 0.04 px. Hazcams: the step is real in the data for RL (+1,230 ppm
+  on all seven early blocks) and FR (+444 ppm) - `early_check` keeps reporting it; with the offsets at 0 the early
+  RL blocks sit about 0.12 % off the law. The Mastcam-Z early principal-point term (ZR before sol 150) is unchanged.
 - **`ecam_consensus`: Witch Hazel Hill back in place of Witch Hazel Hill Large** (Christian, 3 Nov). The large block
   (sols 1355-1428: Witch Hazel Hill and South Arm, 281 m) failed its health check in the freeze run - 9 of 20 stations
   in one tied piece, 2 stations without cross-station ties, attitude p95 3.9 deg - and the Navcam joint left it out.

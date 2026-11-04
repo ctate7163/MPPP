@@ -123,12 +123,14 @@ def _wls(X: np.ndarray, y: np.ndarray, w: np.ndarray):
 
 
 EARLY_Z_MIN = 3.0                  # 0.94.4 (Christian 24 Oct): an early-mission offset only where significant
+EARLY_OFFSETS = False              # 0.95.4 (Christian, 3 Nov): no early-mission offsets (fit_eye(early_offsets=True) for them)
 
 
 def fit_eye(rows: List[Dict[str, Any]], eye: str, athermal: bool = False, min_blocks: Optional[int] = None,
-            early_offsets: bool = True) -> Dict[str, Any]:
+            early_offsets: Optional[bool] = None) -> Dict[str, Any]:
     """The law of one eye from its block rows (:func:`block_rows`; weak eyes left out).  ``athermal`` (0.93.10): no
     temperature terms - fx, fy and k1 constant (the fallback when the temperature slope fails its check)."""
+    early_offsets = EARLY_OFFSETS if early_offsets is None else early_offsets      # 0.95.4: off by default
     use = [r for r in rows if not r["weak"] and r["T"] is not None and r["observations"] > 0]
     starts = np.array([r["start"] for r in rows], float) if rows else np.zeros((0, 12))
     out: Dict[str, Any] = {"eye": eye, "blocks": [r["block"] for r in use], "weak_blocks": [r["block"] for r in rows if r["weak"]]}

@@ -56,7 +56,7 @@ def synthetic(rng, slope_ppm=30.0, early_px=0.0, n_blocks=6, per_block=6, n_pts=
 def test_joint_recovers_the_slope_and_drops_an_insignificant_early_offset():
     rng = np.random.default_rng(1)
     data, law = synthetic(rng, slope_ppm=30.0, early_px=0.0, per_block=10)
-    j = HJ.run_joint(data, slope_mode="FL", slope_ppm=0.0, verbose=False)
+    j = HJ.run_joint(data, slope_mode="FL", slope_ppm=0.0, verbose=False, early=True)
     L, cov = j["law"], j["stats"]["cov"]
     s = 1e6 * L.x[L.ix["s"]]
     sd = 1e6 * np.sqrt(cov[L.ix["s"], L.ix["s"]])
@@ -71,9 +71,12 @@ def test_joint_recovers_the_slope_and_drops_an_insignificant_early_offset():
 def test_a_real_early_offset_is_kept():
     rng = np.random.default_rng(2)
     data, law = synthetic(rng, slope_ppm=30.0, early_px=3.0, per_block=10)
-    j = HJ.run_joint(data, slope_mode="FL", verbose=False)
+    j = HJ.run_joint(data, slope_mode="FL", verbose=False, early=True)
     L = j["law"]
     assert L.x[L.ix["Ex_FL"]] == pytest.approx(3.0, abs=0.3) and "Ex_FL" not in j["early_held"]
+    # 0.95.4 (Christian, 3 Nov: "remove early mission offset altogether"): by default no early terms at all
+    j0 = HJ.run_joint(data, slope_mode="FL", verbose=False)
+    assert not j0["early_eyes"] and not any(n.startswith(("Ex_", "Ey_")) for n in j0["law"].names)
 
 
 def test_rear_eyes_take_fls_slope_without_pulling_on_it():
@@ -132,10 +135,11 @@ def test_block_fit_keeps_early_offsets_only_where_significant():
                         "observations": 5000, "weak": False, "early_share": e})
         return out
 
-    quiet = H.fit_eye(rows(0.0), "RL")
+    assert not H.fit_eye(rows(12.0), "RL")["early_mission"]["fitted"]      # 0.95.4: off by default
+    quiet = H.fit_eye(rows(0.0), "RL", early_offsets=True)
     assert not quiet["early_mission"]["fitted"] and quiet["early_mission"]["dfx_px"] == 0.0
     assert quiet["early_mission"].get("tested") and abs(quiet["early_mission"]["z"]["fx"]) < 3
-    loud = H.fit_eye(rows(12.0), "RL")
+    loud = H.fit_eye(rows(12.0), "RL", early_offsets=True)
     assert loud["early_mission"]["fitted"] and loud["early_mission"]["dfx_px"] == pytest.approx(12.0, abs=3.0)
     assert H.camera_file(quiet, "x")["early_mission"]["applied_terms"] == []
 

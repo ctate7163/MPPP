@@ -88,7 +88,7 @@ def _rows(eye, f0=2150.0, ppm=40.0, early_dfx=1.5, k1_per=2e-5, n=6, seed=0):
 
 def test_hazcam_fit_eye_recovers_the_law():
     from mppp.calib import hazfit
-    e = hazfit.fit_eye(_rows("FL"), "FL")
+    e = hazfit.fit_eye(_rows("FL"), "FL", early_offsets=True)        # the data carry an early offset
     assert e["blocks"] == [f"b{i}" for i in range(6)] and e["weak_blocks"] == ["weak"]
     assert e["ppm_per_degC"] == pytest.approx(40.0, abs=1.0) and e["slope_fitted"]
     assert e["early_mission"]["fitted"] and e["early_mission"]["dfx_px"] == pytest.approx(1.5, abs=0.1)
@@ -119,8 +119,9 @@ def test_hazcam_write_check_and_camera_at(tmp_path):
     from mppp import calib
     from mppp.calib import hazfit
     res = {"when": "2026-10-22", "blocks": [f"b{i}" for i in range(6)], "T0_degC": hazfit.T0_DEGC,
-           "eyes": {"FL": hazfit.fit_eye(_rows("FL"), "FL"), "FR": hazfit.fit_eye(_rows("FR", seed=1), "FR"),
-                    "RL": hazfit.fit_eye(_rows("RL", n=2), "RL")}}
+           "eyes": {"FL": hazfit.fit_eye(_rows("FL"), "FL", early_offsets=True),
+                    "FR": hazfit.fit_eye(_rows("FR", seed=1), "FR", early_offsets=True),
+                    "RL": hazfit.fit_eye(_rows("RL", n=2), "RL", early_offsets=True)}}
     w = hazfit.write_hazcam(res, tmp_path / "fit")
     chk = w["check"]
     assert chk["eyes"]["FL"] and chk["eyes"]["FR"] and not chk["eyes"]["RL"] and not chk["ok"]

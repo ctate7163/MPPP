@@ -100,6 +100,13 @@ HOLD_DEFAULT = ("Q0_yaw", "G_NL_k4", "G_NR_k4", "G_NL_cy", "E_NL_cy")
 # 0.95.0 (Christian, 27 Oct): a held early-mission offset of the reference eye is held at 0, not at the value the
 # 24 Oct fit left in the model in use (E_NL_cy 0.137 px): NR's early cy is then the stereo early offset (~0.015 px)
 EARLY_HELD_AT_ZERO = ("E_NL_cy",)
+# 0.95.4 (Christian, 3 Nov 2026: "let's remove early mission offset altogether"): the early-mission offsets are held at
+# 0 for both eyes.  The 3 Nov joint had NR fy +0.057 px and NR cy +0.039 px (z 11 and 16 per observation); on block
+# means the fy step is not significant (NL -223 +- 112, NR -165 +- 119 ppm, opposite sign) and the cy offsets are
+# common to both eyes in the models in use (+0.137 / +0.152 px - absorbed by the image attitudes).  Setting them to 0
+# moves no image point by more than 0.04 px.  early_offsets=True fits them again (with the |z| rule).
+EARLY_OFFSETS = False
+EARLY_ALL = tuple(f"E_{e}_{k}" for e in ("NL", "NR") for k in EARLY_TERMS)
 TIE_K1_SLOPE = True   # 0.94.5 (Christian, 27 Oct): NR's k1 thermal slope tied to NL's - one design (the tied joint had
                       # NL -8.2 +- 1.2, NR -4.0 +- 1.3 x 1e-6/degC; the weighted mean about -6.1)
 # 0.95.0 (Christian, 27 Oct: NL 35.80, NR 35.87 ppm/degC, 0.07 +- 0.13 apart, r 0.95): NR's focal thermal slope tied
@@ -1017,7 +1024,7 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
              knot_sol: Optional[float] = None, hold: Sequence[str] = HOLD_DEFAULT, iterations: int = 100,
              covariance: bool = True, passes: int = 2, diagnostics: bool = True, exclude: Sequence[str] = (),
              verbose: bool = True, iso_f: bool = ISO_F, early_z_min: float = EARLY_Z_MIN,
-             tie_f: Optional[bool] = None) -> Dict[str, Any]:
+             tie_f: Optional[bool] = None, early_offsets: Optional[bool] = None) -> Dict[str, Any]:
     """The one-adjustment Navcam joint over the blocks ``{name: WORK folder}`` (module docstring), then the
     diagnostic pass.  Returns the global terms with their sd (:func:`globals_result`), the residual statistics, the
     units of the joint and of the diagnostic pass (:func:`unit_rows`) - what :func:`write_tied` writes."""
@@ -1029,6 +1036,13 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
     rec0, proj0, idx = J.merge_scapes((J.load_scape(n, scapes_cfg[n]) for n in scapes_cfg), cams, (st["R"], st["t"]),
                                       points_per_scape=points, seed=0, exclude=exclude)
     rec, proj, units = tied_reconstruction(rec0, proj0, idx, st, bin_deg=bin_deg, early_sol=early_sol, max_span=max_span)
+    if not (EARLY_OFFSETS if early_offsets is None else early_offsets):
+        # 0.95.4: no early-mission offsets - every E term at 0 and held, no |z| test
+        st = copy.deepcopy(st)
+        for eye in ("NL", "NR"):
+            st["E"][eye] = np.zeros(len(EARLY_TERMS)) if not isinstance(st["E"][eye], list) else [0.0] * len(EARLY_TERMS)
+        hold = tuple(dict.fromkeys(tuple(hold) + EARLY_ALL))
+        early_z_min = 0.0
     if verbose:
         log.info(f"tied joint: {len(scapes_cfg)} blocks, {rec.num_reg_images()} images, {rec.num_points3D()} points; "
                  f"{len(units['cameras'])} bin cameras, {len(units['rigs'])} rig units "

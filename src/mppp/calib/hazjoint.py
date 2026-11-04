@@ -55,6 +55,10 @@ EYES = ("FL", "FR", "RL", "RR")
 T0 = -20.0
 EARLY_SOL = 380.0
 EARLY_Z_MIN = 3.0                 # an early-mission offset is kept when |offset / sd| reaches this
+# 0.95.4 (Christian, 3 Nov 2026: "let's remove early mission offset altogether"): no early-mission offsets in the
+# Hazcam law; early_check still reports the step on the blocks (the 27 Oct fit: RL +1,230 ppm on all seven early
+# blocks, FR +444 ppm - real in the data, cause open).  run_joint(early=True) fits them again.
+EARLY_OFFSETS = False
 MIN_EARLY_IMAGES = 20             # images on each side of the early-mission sol (and 2 blocks) for an offset
 SLOPE_EYES = ("FL",)              # Christian 24 Oct: "for now, give all four FL's slope"
 FRONT_EYES = ("FL", "FR")
@@ -454,7 +458,8 @@ def _early_eyes(images: List[Dict[str, Any]], eyes: Sequence[str]) -> List[str]:
     return out
 
 
-def run_joint(data: Dict[str, Any], slope_mode: str = SLOPE_MODE, slope_ppm: float = 20.0, early: bool = True,
+def run_joint(data: Dict[str, Any], slope_mode: str = SLOPE_MODE, slope_ppm: float = 20.0,
+              early: Optional[bool] = None,
               iterations: int = ITERATIONS, verbose: bool = True) -> Dict[str, Any]:
     """The joint on collected data (:func:`collect`): the law, its covariance and statistics; the early offsets
     kept only where significant (then the law fitted again with the others at 0)."""
@@ -464,7 +469,7 @@ def run_joint(data: Dict[str, Any], slope_mode: str = SLOPE_MODE, slope_ppm: flo
     images = [dict(im) for im in images0 if im["eye"] in eyes]
     for im in images:
         im["R"], im["t"] = im["R"].copy(), im["t"].copy()
-    ee = _early_eyes(images, eyes) if early else []
+    ee = _early_eyes(images, eyes) if (EARLY_OFFSETS if early is None else early) else []
     law = Law(eyes, data["start"], slope_ppm, slope_mode, early_eyes=ee)
 
     def span(es):
