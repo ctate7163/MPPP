@@ -614,9 +614,10 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
             ppm2 = ax_ppm[eye][k]; ppm_iu = th_iu[f"{p}_ppm"]
             ax.plot(tt, f2[p] * (1 + 1e-6 * ppm2 * (tt - T0)), ls, color=col, lw=1.4,
                     label=f"{p} {model_label}: {f2[p]:.2f} px at {T0:.0f} °C, {ppm2:+.1f} ppm/°C ({f2[p] * 1e-6 * ppm2:+.4f} px/°C)")
-            if k == 0:
-                ax.plot(tt, p_iu[k] * (1 + 1e-6 * ppm_iu * (tt - T0)), ":", color="0.4", lw=1.1,
-                        label=f"fx in use for the block runs: {p_iu[k]:.2f} px, {ppm_iu:+.1f} ppm/°C")
+            # 3 Nov 2026 (Christian: "Is the starting model the black dashed line for both fx and fy?"): the model in
+            # use for fx (dotted) and fy (dash-dot), both grey
+            ax.plot(tt, p_iu[k] * (1 + 1e-6 * ppm_iu * (tt - T0)), linestyle=":" if k == 0 else (0, (5, 2, 1, 2)),
+                    color="0.4", lw=1.1, label=f"{p} in use for the block runs: {p_iu[k]:.2f} px, {ppm_iu:+.1f} ppm/°C")
             for early, mfc in ((False, None), (True, "white")):
                 rs = [r for r in rows if (r["block"] in early_blk) == early]
                 if not rs:
@@ -625,7 +626,8 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
                 v = np.array([r[p] for r in rs])                           # the bin's focal length itself (px)
                 ax.scatter(Tb, v, s=6 + 1.5 * np.sqrt(nb * 10), marker=mk, facecolors=mfc or col, edgecolors=col, alpha=alpha, zorder=3,
                            label=(f"{p} per temperature bin of the block runs (size ~ images)" if not early else
-                                  f"{p}, blocks before sol {early_sol:.0f} (early-mission offset not removed)") if p == "fx" else None)
+                                  f"{p}, blocks before sol {early_sol:.0f} (early-mission offset not removed)")
+                           if p == "fx" or not early else None)
         ax.axhline(f2["fx"], color="0.6", lw=0.6)
         ax.set_title(f"{eye}: focal length", fontsize=10)
         ax.set_ylabel("focal length (full-frame px)", fontsize=8)

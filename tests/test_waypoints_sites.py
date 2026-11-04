@@ -359,10 +359,12 @@ def test_sites_19_oct_afternoon():
     # small blocks out (rochette, groloy, airey_hill, hans_amundsen_workspace), three new large ones
     assert {"seitah_huge", "marble_mountain", "hippo_pools", "bright_angle_large", "bunsen_peak", "tuxedo_park",
             "belva_crater_large", "van_zyl_overlook_huge", "origny_large", "enchanted_lake_large",
-            "pico_turquino_large", "witch_hazel_large"} <= nc and len(nc) == 21 and "knob_mountain_large" in nc
+            "pico_turquino_large", "witch_hazel_hill"} <= nc and "witch_hazel_large" not in nc and len(nc) == 21 and "knob_mountain_large" in nc
     assert not nc & {"oeb_landing_site", "chal_rocks", "chal_rocks_large", "issole_seitah_south", "seitah_north_large",
                      "cheyava_falls", "taylorfjellet", "enchanted_lake", "pico_turquino", "south_arm",
-                     "witch_hazel_hill", "rochette", "groloy", "airey_hill", "hans_amundsen_workspace"}
+                     "rochette", "groloy", "airey_hill", "hans_amundsen_workspace"}
+    # 3 Nov 2026 (Christian): witch_hazel_hill back in place of witch_hazel_large (two parts 281 m apart: 9 of 20
+    # stations tied, health FAIL)
     assert "seitah_north_large" in G["navcam_baseline"] and "van_zyl_overlook_huge" in G["navcam_baseline"]
     assert not any(s in ("butler_landing_large", "van_zyl_overlook_large") for g in G.values() for s in g)
 

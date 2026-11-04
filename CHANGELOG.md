@@ -9,6 +9,13 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 blocks, a final pass with the promoted models, the existing studies at the end, resumable after any fault), and the
 Hazcam early-mission step tested on the blocks.
 
+- **`ecam_consensus`: Witch Hazel Hill back in place of Witch Hazel Hill Large** (Christian, 3 Nov). The large block
+  (sols 1355-1428: Witch Hazel Hill and South Arm, 281 m) failed its health check in the freeze run - 9 of 20 stations
+  in one tied piece, 2 stations without cross-station ties, attitude p95 3.9 deg - and the Navcam joint left it out.
+  The freeze chain's final pass runs `witch_hazel_hill` (its block is new, so it aligns from the start).
+- **Navcam intrinsics-vs-temperature figure**: the fy model in use is drawn (grey dash-dot, beside fx's dotted) and
+  the fy bins (squares) have a legend entry (Christian, 3 Nov: "Is the starting model the black dashed line for both
+  fx and fy?").
 - **Mask comparisons use the split training recorded** (2 Nov, "study why the training did not improve"). The A/B
   of v3, v4.1 and v4.2 rebuilt v4.1's split by leaving out the newest masks by file time; the v8 set had grown by
   700 masks (656 Mastcam-Z, 320 of them 110 mm) and 54 of the 59 "held-out" test frames were in fact v4.1 training
