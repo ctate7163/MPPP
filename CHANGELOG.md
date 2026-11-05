@@ -57,6 +57,23 @@ Hazcam early-mission step tested on the blocks.
   rigid target too - simulated on the block sols' label geometry it adds ~1 % of the pairs and nothing to the roll
   trend; all 339 block-sol pairs with >= 3 targets per eye would give rate se ~1.0 / 1.2 / 2.1 mdeg/1000 sol (pitch,
   yaw, roll; the 71 used: 1.7 / 2.1 / 2.9) - roll needs targets fore and aft, i.e. the full archive.
+- **The rover deck inside the bundle adjustment** (new; Christian, 4 Nov: "Look into ways of putting the fiducial
+  locations directly in the bundle adjustment ... Then build and test the deck-in-the-adjustment"). `mppp.sfm.deck`:
+  one rover pose T_j (block <- RNAV) per rest interval (per station, or `split="sol"`), a 3-D point per (interval,
+  target) observed by its deck pixels with COLMAP's own reprojection costs (the tie points' camera, pose, rig and
+  intrinsic blocks) and tied to T_j P_k by the survey (0.05 mm per axis; TDF4 0.4 mm), through the
+  `extra_residuals` hook of `bundle_adjust`; the prior-gauge recentre is applied to T_j. With a rigid T_j the survey
+  sets the block's metric scale, so a translation-refined rig measures the stereo baseline against the survey inside
+  the solve. `python -m mppp.sfm.deck WORK` on a solved block (writes `sparse/cahv_ba_deck`, `colmap/deck/`), or the
+  setting `deck_in_ba` (`True`/`"station"`/`"sol"`; off by default and then not in the run key). Tests: the survey
+  tie's Jacobian, a synthetic block whose 1 % long baseline the deck brings back to < 0.1 %, poses held -> only T
+  moves. First block, Three Forks north ecams sols 686-688 (one station, deck unmasked, 16k features, Navcam and
+  front-Hazcam baselines refined): deck 1.15 -> 1.04 px over 40 targets in 10 images; **Navcam baseline 423.56 mm
+  (-1058 ppm), front Hazcam -1056 ppm** (the two move together: one station has no other scale); the deck's own
+  scale left over +204 +- 294 ppm. Without the deck the same adjustment drifts in scale (-6000 ppm: weak priors only).
+- **Hazcam rigs: `hazcam_rig_refine = "full"`** (Christian, 4 Nov: "the hazcams might not have correct baselines, so
+  let those refine too"): rotation and translation, with the rig translation prior (`rig_translation_sigma_m`) on
+  the right centre; a weak pair (`rig_hold`, < 500 observations) stays held.
 - **TDF4 resolved; the deck with all seven targets** (Christian, 4 Nov: "how many images are there with 4 or more
   of the seven fiducials? Resolve the tdf4 location and remeasure the rig rotation"). The archive holds 567 Navcam
   full-frame images with >= 4 of the seven predicted in frame (NL 281, NR 286; 230 stereo pairs); 410 have >= 4

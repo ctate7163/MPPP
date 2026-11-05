@@ -992,8 +992,17 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         nav_rig = str(key_of.get(int(key[1]), "")).startswith("N") if key_of else False
         if key_of and str(key_of.get(int(key[1]), ""))[:1] in ("F", "R"):      # a Hazcam pair (0.93)
             fam_h = str(key_of.get(int(key[1]), ""))[:1]
-            if hz_mode == "rotation" and fam_h not in set((project.settings.get("hazcam") or {}).get("rig_hold") or ()):
+            weak_h = fam_h in set((project.settings.get("hazcam") or {}).get("rig_hold") or ())
+            if hz_mode == "rotation" and not weak_h:
                 prob.set_manifold(arr, pyceres.SubsetManifold(7, [3, 4, 5, 6]))
+            elif hz_mode == "full" and not weak_h:
+                # 4 Nov 2026 (Christian: "the hazcams might not have correct baselines, so let those refine too"):
+                # rotation and translation, with the Navcam rig's prior on the right centre (rig_translation_sigma_m)
+                q0, t0 = rig_start[key][:4], rig_start[key][4:7]
+                C0 = -Rotation.from_quat(q0 / np.linalg.norm(q0)).as_matrix().T @ t0
+                prob.add_residual_block(cf.AbsolutePosePositionPriorCost(
+                    np.eye(3) * float(rig_translation_sigma_m or 0.005) ** 2, C0), None, [arr])
+                prob.set_manifold(arr, pyceres.SubsetManifold(7, [3]))
             else:
                 prob.set_parameter_block_constant(arr)
             continue

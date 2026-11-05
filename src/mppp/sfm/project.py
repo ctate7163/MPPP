@@ -392,8 +392,8 @@ class SfmProject:
                              "no longer a form")
         if navcam_pp not in NAVCAM_PP_SETTINGS:
             raise ValueError(f"navcam_pp must be one of {NAVCAM_PP_SETTINGS}")
-        if hazcam_rig_refine not in ("hold", "rotation"):
-            raise ValueError("hazcam_rig_refine must be 'hold' or 'rotation'")
+        if hazcam_rig_refine not in ("hold", "rotation", "full"):
+            raise ValueError("hazcam_rig_refine must be 'hold', 'rotation' or 'full' (rotation and baseline, 4 Nov 2026)")
         from .start_cameras import (HAZCAM_INTRINSICS, hazcam_start_camera, navcam_start_camera, navcam_start_rig,
                                     zcam_eye_camera)
         if hazcam_intrinsics not in HAZCAM_INTRINSICS:

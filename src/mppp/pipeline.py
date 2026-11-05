@@ -137,6 +137,7 @@ class Settings:
     hazcam_intrinsics: str = "radial"             # what a block refines of each Hazcam eye: "radial" (fx, fy, k1, k2), "focal", "all" or "hold" (the start is the label CAHVORE fit)
     hazcam_rig_refine: str = "rotation"           # the Hazcam stereo rigs: "rotation" (refined when the Hazcams come in; a pair of weak eyes stays at its start) or "hold"
     include_zcam: bool = False                    # add the Mastcam-Z frames of the same sols (folder ..._zcam)
+    deck_in_ba: Any = False                       # 4 Nov 2026 (Christian): the surveyed rover-deck targets in one more adjustment after the alignment (mppp.sfm.deck): sparse/cahv_ba_deck and colmap/deck/; False: off; True or "station": one rover pose per station; "sol": per station and sol
     zcam_zooms: Any = None                        # their zooms (mm), e.g. [34, 48]; None: the site's "zcam" list ([34] without one); "all": every zoom
     zcam_zooms_only: Any = None                   # 0.95.0 (Christian, 28 Oct: 79/110 mm made Chal Rocks 4.7x longer): keep only these zooms of the site's list, e.g. [34, 48, 63] for the freeze runs (run_pipeline --zooms passes its list); None: all of the site's
     zcam_intrinsics: str = "focus_model"          # Mastcam-Z start: "focus_model" (the promoted model) or "label"
@@ -236,6 +237,8 @@ class Settings:
                 d.pop(k, None)
         if d.get("lightglue_keypoints") in (None, "largest"):
             d.pop("lightglue_keypoints", None)       # 0.94.4: the keys of every run before it stay what they were
+        if not d.get("deck_in_ba"):
+            d.pop("deck_in_ba", None)                # 4 Nov 2026: off, the keys stay what they were
         if d.get("zcam_bin_by") in (None, "focus"):
             d.pop("zcam_bin_by", None)               # 0.94.4: likewise
         if not d.get("zcam_zooms_only"):
@@ -879,7 +882,7 @@ def _check_settings(s: Settings) -> None:
                      ("navcam_pp", s.navcam_pp, ("hold", "refine")),
                      ("navcam_intrinsics", s.navcam_intrinsics, ("refine", "hold", "auto")),
                      ("hazcam_intrinsics", s.hazcam_intrinsics, ("radial", "focal", "all", "hold")),
-                     ("hazcam_rig_refine", s.hazcam_rig_refine, ("hold", "rotation")),
+                     ("hazcam_rig_refine", s.hazcam_rig_refine, ("hold", "rotation", "full")),
                      ("source", s.source, SOURCES)):
         if v not in ok:
             raise ValueError(f"{k} = {v!r}: use one of {ok}")
@@ -1205,6 +1208,19 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
     if bl:
         log.info("Mastcam-Z focus groups: %s | f / label f: %s", bl["group_counts"],
                  {k: (round(v["ratio_median"], 4) if v["ratio_median"] else None) for k, v in (bl.get("after") or bl["before"]).items()})
+    if s.deck_in_ba:
+        # 4 Nov 2026: the deck survey in one more adjustment; the block's products stay those of sparse/cahv_ba
+        import pycolmap
+        from .sfm.deck import adjust as deck_adjust
+        split = "sol" if str(s.deck_in_ba).lower() == "sol" else "station"
+        try:
+            dk = deck_adjust(proj.root, rec=pycolmap.Reconstruction(str(proj.root / "sparse" / "cahv_ba")), split=split)
+            proj.settings.setdefault("reconstruction", {})["deck"] = {
+                k: dk[k] for k in ("observations", "images", "deck_rms_px_start", "deck_rms_px", "baselines_mm",
+                                   "baseline_change_ppm", "split")}
+            proj.save()
+        except Exception as e:                            # noqa: BLE001 - a block without deck views still finishes
+            log.warning("deck in the adjustment: not done (%s: %s)", type(e).__name__, e)
     return rec, summary
 
 
