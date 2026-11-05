@@ -71,6 +71,10 @@ Hazcam early-mission step tested on the blocks.
   front-Hazcam baselines refined): deck 1.15 -> 1.04 px over 40 targets in 10 images; **Navcam baseline 423.56 mm
   (-1058 ppm), front Hazcam -1056 ppm** (the two move together: one station has no other scale); the deck's own
   scale left over +204 +- 294 ppm. Without the deck the same adjustment drifts in scale (-6000 ppm: weak priors only).
+  A target more than 3 px (and 4 x the median) off the start fit is dropped (`DECK_REJECT_PX`; one false AFT1, 11 px).
+  Two rest intervals (sol 684 at S032D1174 masked, 686-688 at S032D1184): both at 1.06-1.08 px, Navcam baseline
+  423.57 mm (-1030 ppm); the rover moved 408.4 mm between them by the deck, 408.5 (front) / 407.8 (rear) by the
+  Hazcams.
 - **Hazcam rigs: `hazcam_rig_refine = "full"`** (Christian, 4 Nov: "the hazcams might not have correct baselines, so
   let those refine too"): rotation and translation, with the rig translation prior (`rig_translation_sigma_m`) on
   the right centre; a weak pair (`rig_hold`, < 500 observations) stays held.

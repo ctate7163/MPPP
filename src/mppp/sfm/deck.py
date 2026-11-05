@@ -38,6 +38,8 @@ DECK_SIGMA_PX = 0.35          # a deck target's pixel sigma, native px (the fidu
 SURVEY_SIGMA_MM = 0.05        # the survey per axis: rigid (the deck is one aluminium body)
 TDF4_SIGMA_MM = 0.4           # TDF4: our own ray fit (4 Nov: known to about +-0.4 mm by method)
 DECK_LOSS_SCALE = 3.0         # Huber scale in units of the deck sigma
+DECK_REJECT_PX = 3.0          # full-res px: a target this far (and > 4 x the median) from the start fit is dropped
+                              # (Three Forks north sol 684: one AFT1 found 11 px off, a false symmetry centre)
 TARGETS = ("TDF1", "TDF2", "TDF3", "AFT1", "RPFA1", "RPFA2", "TDF4")
 
 
@@ -268,10 +270,21 @@ def adjust(work, model: str = "cahv_ba", out_model: Optional[str] = "cahv_ba_dec
         o["interval"] = interval_of(rows.get(rec.images[o["image_id"]].name) or {}, split)
     man = F._manifest(root.parent)
     labels = {o["stem"]: (man.get(o["stem"]) or {}).get("camera_model_label") for o in obs}
-    T, start = {}, {}
+    T, start, dropped = {}, {}, []
     for j in sorted({o["interval"] for o in obs}):
         sel = [o for o in obs if o["interval"] == j]
         T[j], rms = start_T(sel, rec, labels, scale_free)
+        for o in sel:
+            o["interval"] = j
+        e0 = np.linalg.norm(deck_residuals(sel, rec, {j: T[j]}, scale_free), axis=1)
+        bad = {id(o) for o, ei in zip(sel, e0) if ei > max(DECK_REJECT_PX, 4 * float(np.median(e0)))}
+        if bad and len(sel) - len(bad) >= 4:
+            for o, ei in zip(sel, e0):
+                if id(o) in bad:
+                    dropped.append({"image": o["stem"], "target": o["target"], "interval": j, "px": float(ei)})
+            sel = [o for o in sel if id(o) not in bad]
+            obs = [o for o in obs if id(o) not in bad]
+            T[j], rms = start_T(sel, rec, labels, scale_free)
         T[j] = np.ascontiguousarray(T[j], dtype=np.float64)
         start[j] = {"rms_px": rms, "observations": len(sel), "images": len({o["image_id"] for o in sel}),
                     "T": T[j].tolist()}
@@ -301,7 +314,7 @@ def adjust(work, model: str = "cahv_ba", out_model: Optional[str] = "cahv_ba_dec
         "work": str(root), "model": model, "out_model": out_model, "split": split, "scale_free": scale_free,
         "sigma_px": sigma_px, "survey_sigma_mm": survey_sigma_mm, "tdf4_sigma_mm": tdf4_sigma_mm,
         "refine_rig": refine_rig, "hold_cameras": list(hold), "hold_poses": hold_poses,
-        "observations": len(obs), "images": len({o["image_id"] for o in obs}),
+        "observations": len(obs), "images": len({o["image_id"] for o in obs}), "dropped": dropped,
         "deck_rms_px_start": float(np.sqrt(np.mean(res_start ** 2) * 2)),
         "deck_rms_px": float(np.sqrt(np.mean(e ** 2) * 2)),
         "baselines_mm_start": b0, "baselines_mm": b1,
