@@ -75,6 +75,11 @@ Hazcam early-mission step tested on the blocks.
   Two rest intervals (sol 684 at S032D1174 masked, 686-688 at S032D1184): both at 1.06-1.08 px, Navcam baseline
   423.57 mm (-1030 ppm); the rover moved 408.4 mm between them by the deck, 408.5 (front) / 407.8 (rear) by the
   Hazcams.
+  Mastcam-Z in the deck adjustment (5 Nov): Z deck targets are found where the block pose predicts them
+  (`Z_SEARCH_PX`), and with `include_zcam` the Z rig's translation is refined against the survey too (its start
+  baseline read from `zcam_virtual_rig`). Three Forks north, Navcam and the Z34 deck pan (sols 686-692, one interval
+  per sol): 63 targets in 28 images at 0.89 px; **Z34 baseline 242.85 -> 242.56 mm (-1184 ppm)**, Navcam -1042 ppm in
+  the same solve. Study A1 (seven stations, sols 477-1831) in the project doc of 5 Nov.
 - **Hazcam rigs: `hazcam_rig_refine = "full"`** (Christian, 4 Nov: "the hazcams might not have correct baselines, so
   let those refine too"): rotation and translation, with the rig translation prior (`rig_translation_sigma_m`) on
   the right centre; a weak pair (`rig_hold`, < 500 observations) stays held.

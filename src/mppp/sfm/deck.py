@@ -106,6 +106,57 @@ def detections(work: Path, rec, names: Sequence[str] = TARGETS) -> List[Dict[str
     return out
 
 
+Z_SEARCH_PX = 12.0            # Mastcam-Z: search around the prediction through the block and a Navcam interval's T
+                              # (Three Forks north sol 692: found 1-3 px from it; a wide search finds false centres)
+
+
+def z_detections(root: Path, rec, rows: Dict[str, Dict[str, Any]], T: Dict[str, np.ndarray], split: str,
+                 names: Sequence[str] = TARGETS, search_px: float = Z_SEARCH_PX) -> List[Dict[str, Any]]:
+    """The deck targets in the block's Mastcam-Z images (4 Nov: S2 / the Z baseline against the survey), predicted
+    through the block's camera and pose and the rover pose ``T`` of the same station (any interval of it, else the
+    first), and found by point symmetry within ``search_px`` (full = native px for Mastcam-Z)."""
+    from ..calib import fiducials as F
+    Rotation = _rot()
+    P = F.survey_nav_m(list(names))
+    out = []
+    for iid in rec.reg_image_ids():
+        im = rec.images[iid]
+        r = rows.get(im.name) or {}
+        if not str(r.get("instrument", "")).startswith("Z"):
+            continue
+        st = interval_of(r, "station")
+        t = next((v for k, v in T.items() if k.startswith(st)), None)
+        if t is None:
+            continue
+        cam = rec.cameras[im.camera_id]
+        pj = F.Projector.from_pycolmap(cam)
+        Rc, tc = _cam_pose(im)
+        Rt = Rotation.from_rotvec(t[:3]).as_matrix()
+        pred = {}
+        for k, X in P.items():
+            Xc = Rc @ (Rt @ X + t[3:6]) + tc
+            if Xc[2] <= 0:
+                continue
+            uv = pj(Xc)[0]
+            if np.all(np.isfinite(uv)) and 15 <= uv[0] < cam.width - 15 and 15 <= uv[1] < cam.height - 15:
+                pred[k] = uv
+        if not pred:
+            continue
+        img = F._read_image(root / "images" / im.name)
+        if img is None:
+            continue
+        g = F.to_gray(img)
+        s = float(r.get("downsample_scale") or 1.0)
+        for k, uv in pred.items():
+            nat = F.full_to_native(uv, s)
+            d = F.detect_target(g, nat[0], nat[1], s, search_full_px=search_px)
+            if d:
+                out.append({"image_id": int(iid), "stem": r.get("stem") or im.name[:-4], "target": k, "sol": r.get("sol"),
+                            "eye": str(r.get("instrument"))[1:2], "family": "Z",
+                            "uv": F.native_to_full([d["x"], d["y"]], s), "interval": interval_of(r, split)})
+    return out
+
+
 def interval_of(row: Dict[str, Any], split: str = "station") -> str:
     """A rest interval's key: the station (S###D####), or station and sol (``split="sol"``)."""
     st = str(row.get("station") or f"S{int(row.get('site', 0)):03d}D{int(row.get('drive', 0)):04d}")
@@ -235,8 +286,12 @@ def make_hook(obs: List[Dict[str, Any]], T: Dict[str, np.ndarray], sigma_px: flo
     return hook, state
 
 
-def _baselines(rec, key_of: Dict[int, str]) -> Dict[str, float]:
+def _baselines(rec, key_of: Dict[int, str], proj=None) -> Dict[str, float]:
     out = {}
+    for fam, v in ((proj.settings.get("zcam_virtual_rig") or {}) if proj is not None else {}).items():
+        t = v.get("t_refined") or v.get("t_sensor_from_ref")      # the Mastcam-Z rig of each zoom (a block of its own)
+        if t is not None:
+            out[f"ZR{fam[1:]}"] = float(np.linalg.norm(np.asarray(t, float))) * 1e3
     for rid, rig in rec.rigs.items():
         for sid in rig.non_ref_sensors:
             out[key_of.get(int(sid.id), str(sid.id))] = float(np.linalg.norm(np.asarray(rig.sensor_from_rig(sid).translation))) * 1e3
@@ -247,7 +302,8 @@ def adjust(work, model: str = "cahv_ba", out_model: Optional[str] = "cahv_ba_dec
            split: str = "station", scale_free: bool = False, sigma_px: float = DECK_SIGMA_PX,
            survey_sigma_mm: float = SURVEY_SIGMA_MM, tdf4_sigma_mm: float = TDF4_SIGMA_MM,
            refine_rig: Any = None, refine_intrinsics: Optional[bool] = None, hold_poses: bool = False,
-           report: bool = True, max_iterations: int = 100) -> Dict[str, Any]:
+           report: bool = True, max_iterations: int = 100, zcam: bool = True,
+           zcam_rig: Optional[str] = None) -> Dict[str, Any]:
     """One bundle adjustment of a solved block with the deck in it.  ``work``: the block or its ``colmap`` folder.
     ``refine_rig`` None: the block's own (True when it refined the Navcam baseline, else "rotation");
     ``refine_intrinsics`` None: True, with the block's held cameras held.  Writes ``sparse/<out_model>`` (None: not
@@ -290,8 +346,22 @@ def adjust(work, model: str = "cahv_ba", out_model: Optional[str] = "cahv_ba_dec
                     "T": T[j].tolist()}
         log.info("deck: interval %s, %d targets in %d images, start T on the held poses rms %.2f px",
                  j, len(sel), start[j]["images"], rms)
+    if zcam:
+        zobs = z_detections(root, rec, rows, T, split)
+        for j in sorted({o["interval"] for o in zobs} - set(T)):
+            sel = [o for o in zobs if o["interval"] == j]
+            t0 = next((v for k, v in T.items() if k.split("_sol")[0] == j.split("_sol")[0]), None)
+            if t0 is None or len(sel) < 4:
+                zobs = [o for o in zobs if o["interval"] != j]
+                continue
+            T[j] = np.ascontiguousarray(np.array(t0, dtype=np.float64))
+            start[j] = {"rms_px": float(np.sqrt(np.mean(deck_residuals(sel, rec, {j: T[j]}, scale_free) ** 2) * 2)),
+                        "observations": len(sel), "images": len({o["image_id"] for o in sel}), "T": T[j].tolist(),
+                        "from": "Mastcam-Z, started at the station's Navcam T"}
+        obs = obs + zobs
+        log.info("deck: %d Mastcam-Z targets in %d images", len(zobs), len({o["image_id"] for o in zobs}))
     key_of = {int(v): k for k, v in proj.settings.get("database", {}).get("cameras", {}).items()}
-    b0 = _baselines(rec, key_of)
+    b0 = _baselines(rec, key_of, proj)
     res_start = deck_residuals(obs, rec, T, scale_free)
     rs = proj.settings.get("reconstruction") or {}
     if refine_rig is None:
@@ -304,12 +374,14 @@ def adjust(work, model: str = "cahv_ba", out_model: Optional[str] = "cahv_ba_dec
     ba = bundle_adjust(rec, proj, sigma_px=0.5, refine_intrinsics=True if refine_intrinsics is None else bool(refine_intrinsics),
                        refine_rig=refine_rig, rig_translation_sigma_m=float(proj.settings.get("rig_translation_sigma_m") or 0.005)
                        if refine_rig is True else None, hold_cameras=hold, extra_residuals=hook,
-                       max_iterations=max_iterations)
+                       max_iterations=max_iterations,
+                       refine_zcam_rig=zcam_rig or (proj.settings.get("zcam_rig_fit")
+                                                    if proj.settings.get("zcam_rig_fit") in ("rotation", "full") else None))
     shift = np.asarray(((ba.get("prior_gauge") or {}).get("shift_m")) or [0.0, 0.0, 0.0], float)
     for t in T.values():                                  # the block was recentred after the solve: T with it
         t[3:6] += shift
     e = deck_residuals(obs, rec, T, scale_free)
-    b1 = _baselines(rec, key_of)
+    b1 = _baselines(rec, key_of, proj)
     out: Dict[str, Any] = {
         "work": str(root), "model": model, "out_model": out_model, "split": split, "scale_free": scale_free,
         "sigma_px": sigma_px, "survey_sigma_mm": survey_sigma_mm, "tdf4_sigma_mm": tdf4_sigma_mm,
