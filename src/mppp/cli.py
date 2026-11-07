@@ -188,6 +188,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "1 cm prior), rotation: the translation held at the start rig (the 0.94 joint)")
     p.add_argument("--zcam-early-sol", type=int, default=None, metavar="SOL",
                    help="zcam: ZR's early-mission principal-point offset for its bins before this sol (default 150; 0: none)")
+    p.add_argument("--zcam-aspect", type=float, default=None, metavar="RATIO",
+                   help="zcam (6 Nov 2026): hold each eye's fy / fx at RATIO (1.0: square pixels) - the test of the "
+                        "Navcam-Mastcam-Z vertical-scale tension; default: the aspect is free")
     p.add_argument("--zcam-ratio-by", choices=("block", "sol", "global"), default=None,
                    help="zcam: the low-state groups with their own high / low ratio (default block; global: one per eye)")
     p.add_argument("--law", action="append", default=None, metavar="LABEL=DIR",
@@ -798,6 +801,7 @@ def _calib_zcam(a: argparse.Namespace) -> int:
                        z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, diagnostics=not a.no_diagnostics,
                        k_tests=not a.no_k_tests, ratio_by=getattr(a, "zcam_ratio_by", None),
                        slope_tests=bool(getattr(a, "eye_slope_tests", False)),
+                       aspect_hold=getattr(a, "zcam_aspect", None),
                        rig_fit=getattr(a, "zcam_rig_fit", None) or Z.ZJOINT_RIG_FIT,
                        early_sol=(Z.ZCAM_EARLY_SOL if getattr(a, "zcam_early_sol", None) is None
                                   else (a.zcam_early_sol or None)))

@@ -922,3 +922,20 @@ def test_z110_k1_held_at_zero_and_tested_alone(monkeypatch):
     G2[Z.GLOBAL_TERMS.index("p1")] = 1e-3
     assert Z._tangential_corner_px(G2) == pytest.approx(14700 * 1e-3 * ((824 / 14700) ** 2 + 3 * (600 / 14700) ** 2),
                                                         rel=0.2)
+
+
+def test_zcam_joint_aspect_held(tmp_path, monkeypatch):
+    """6 Nov 2026: ``aspect_hold`` ties each eye's backlash fy line to its fx line (fy / fx = the held value)."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    rng = np.random.default_rng(5)
+    truth = _truth_model()
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500)
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900)
+    st = _navcam_law(cams, rigT)
+    res = Z.fit_zjoint({}, model=copy.deepcopy(truth), scapes=[a, b], st=st, nav_points=None, z_points=None, iterations=40,
+                       passes=1, verbose=False, diagnostics=False, k_tests=False, aspect_hold=1.0)
+    for g in ("ZL034", "ZR034"):
+        tm = res["eyes"][g]["terms"]
+        assert tm["a_fy_backlash"] / tm["a_fx_backlash"] == pytest.approx(1.0, abs=1e-6)

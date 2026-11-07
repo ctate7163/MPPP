@@ -564,6 +564,11 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
             if prob.has_parameter_block(g[zl]) and prob.has_parameter_block(g[zr]):
                 a = np.zeros((1, 2 * NG)); a[0, 4] = 1.0; a[0, NG + 4] = -1.0
                 add_tie(a, np.array([EYE_SLOPE_TIE_SD]), [NG, NG], [g[zl], g[zr]])
+        if tie and sg.get("aspect_hold") is not None:    # 6 Nov 2026: fy = aspect x fx on the backlash line
+            for eye, arr in g.items():
+                if prob.has_parameter_block(arr):
+                    a = np.zeros((1, NG)); a[0, 1] = 1.0; a[0, 0] = -float(sg["aspect_hold"])
+                    add_tie(a, np.array([TIE_SIGMA_Z["f"]]), [NG], [arr])
         for eye, arr in g.items():                       # 0.94.5: too few low-state images - the ratio held
             r0 = sg["eyes"][eye].get("ratio_hold")
             if tie and r0 and has_reg[eye] and prob.has_parameter_block(arr):
@@ -1228,14 +1233,16 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
                scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None,
                k_tests: bool = True, ratio_by: Optional[str] = None, navcam_aspect: bool = True,
                slope_tests: bool = False, rig_fit: str = ZJOINT_RIG_FIT,
-               early_sol: Optional[int] = ZCAM_EARLY_SOL) -> Dict[str, Any]:
+               early_sol: Optional[int] = ZCAM_EARLY_SOL, aspect_hold: Optional[float] = None) -> Dict[str, Any]:
     """The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the distortion tests (:func:`distortion_tests`,
     ``k_tests``), the diagnostic pass.  ``model``: the focus model to start from (default: the one in use);
     ``ratio_by``: "global" | "block" | "sol", the low-state groups with their own high / low ratio (default
     :data:`REGULAR_RATIO_BY`).  ``slope_tests`` (0.95.0): the eye-slope tests (:func:`eye_slope_tests`, three more
     adjustments).  0.95.1: ``rig_fit`` "full" (the rig translation refined, :data:`ZJOINT_RIG_FIT`) or "rotation"
     (held at the start rig, the 0.94 joint); ``early_sol``: ZR's early-mission principal-point offset for its bins
-    before this sol (:data:`ZCAM_EARLY_SOL`; None: none)."""
+    before this sol (:data:`ZCAM_EARLY_SOL`; None: none).  ``aspect_hold`` (6 Nov 2026, the Navcam-Mastcam-Z
+    vertical-scale study): each eye's fy / fx held at this value (1.0: square pixels) by an exact tie of the
+    backlash fy line to the fx line; the regular state follows as before.  Default None: the aspect is free."""
     from ..sfm.project import zcam_focus_model_path
     if rig_fit not in ("full", "rotation"):
         raise ValueError(f"rig_fit {rig_fit!r}: full or rotation")
@@ -1257,6 +1264,14 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     rec, proj, idx, st, units, zunits, sg = build(blocks, model, navcam_dir, zoom, nav_points, z_points, scapes=scapes, st=st,
                                                   early_sol=early_sol)
     sg["rig_fit"] = rig_fit
+    if aspect_hold is not None:                        # 6 Nov 2026: start the fy lines at the held aspect
+        sg["aspect_hold"] = float(aspect_hold)
+        for e in sg["eyes"].values():
+            G = e["G"]
+            G[1] = float(aspect_hold) * G[0]
+            G[3] = float(aspect_hold) * G[2]
+        if verbose:
+            log.info(f"Mastcam-Z joint: fy / fx held at {float(aspect_hold):.6f} in every eye")
     if diagnostics and navcam_aspect:
         sg["_scapes"] = scapes
     if verbose:
