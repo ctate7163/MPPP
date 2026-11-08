@@ -568,3 +568,43 @@ def test_diagnostic_bins_hold_k1_at_the_law(tmp_path):
     for c in cams:
         assert {"fx", "fy"} <= set(c["free_params"]) and "k1" not in c["free_params"]
         assert "k1" in c["fixed_params"] and not ({"fx", "fy"} & set(c["fixed_params"]))
+
+
+def test_yaw_knee_from_the_rig_file(tmp_path):
+    """0.95.5 (Christian, 7 Nov: "the knee looks real"): a rig file with a yaw knee (yaw_early_mdeg_per_sol) starts
+    the joint with H's yaw, which the joint then fits (roll stays linear); the law matches rig_at at every sol."""
+    import shutil
+    from mppp.calib import models as M, constrain as C, tied as T
+    src = M._folder(None)
+    d = tmp_path / "cm"
+    shutil.copytree(src, d)
+    rp = d / "M2020_N_rig.json"
+    rig = json.loads(rp.read_text())
+    rig["drift"].update({"yaw_early_mdeg_per_sol": -0.0289, "yaw_mdeg_per_sol": 0.00399, "hinge_angles": ["pitch", "yaw"]})
+    rp.write_text(json.dumps(rig))
+    st = T.start_values(d)
+    assert st["hinge_angles"] == ["pitch", "yaw"]
+    assert st["H"][1] == pytest.approx(1e3 * (-0.0289 - 0.00399)) and st["H"][2] == 0.0
+    for sol in (60.0, 250.0, 1200.0):
+        R_law = T.R_of_q(T.rig_q_at(st["Q0"], st["D"], st["H"], sol, st["knot"]))
+        R_file = C.rig_at(rig, sol)[0]
+        from scipy.spatial.transform import Rotation
+        dv = np.degrees(Rotation.from_matrix(R_law @ R_file.T).as_rotvec()) * 1e3
+        assert np.abs(dv).max() < 0.05                  # mdeg (the law adds quaternions: second order)
+    st0 = T.start_values()                                                  # the models in use: no yaw knee
+    assert "yaw" not in st0["hinge_angles"] and st0["H"][1] == 0.0
+
+
+def test_yaw_knee_is_fitted_with_three_sols(tmp_path):
+    pytest.importorskip("pyceres")
+    proj, rec, idx, st, T = _tied_setup(tmp_path)
+    for r in proj.images:                                                   # three sols, one before the knot
+        r["sol"] = {"S001D0000": 120}.get(r["station"], 900 if int(r["sclk_key"][:10]) % 2 else 1300)
+    st["hinge_angles"] = ["pitch", "yaw"]
+    rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
+    ba, g, stats = T.adjust_tied(rec2, proj2, idx, st, units, iterations=10, covariance=False, passes=1, verbose=False)
+    held = (ba.get("extra") or {}).get("held") or {}
+    if len({round(float(u["sol"])) for u in units["rigs"].values()}) >= 3:
+        assert held.get("H") == [2]                                         # roll's hinge only
+    res = T.globals_result(st, g, ba, units)
+    assert res["rig"]["hinge_angles"] == ["pitch", "yaw"] and "yaw_early_mdeg_per_1000sol" in res["rig"]

@@ -438,12 +438,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--rig", choices=("auto", "rotation", "full", "hold"), default="auto")
     ap.add_argument("--hold-intrinsics", action="store_true")
     ap.add_argument("--hold-poses", action="store_true", help="test: poses and rigs held")
+    ap.add_argument("--zcam-rig", choices=("auto", "rotation", "full"), default="auto",
+                    help="0.95.5: the Mastcam-Z rig in the deck adjustment (full: its baseline against the survey; auto: "
+                         "the block's zcam_rig_fit)")
+    ap.add_argument("--no-zcam", action="store_true", help="the Navcam (and Hazcam) deck targets only")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     rig = {"auto": None, "rotation": "rotation", "full": True, "hold": False}[a.rig]
     out = adjust(a.work, a.model, None if a.out.lower() == "none" else a.out, split=a.split, scale_free=a.scale_free,
                  sigma_px=a.sigma_px, survey_sigma_mm=a.survey_sigma_mm, refine_rig=rig,
-                 refine_intrinsics=False if a.hold_intrinsics else None, hold_poses=a.hold_poses)
+                 refine_intrinsics=False if a.hold_intrinsics else None, hold_poses=a.hold_poses,
+                 zcam=not a.no_zcam, zcam_rig=None if a.zcam_rig == "auto" else a.zcam_rig)
     print(json.dumps({k: out[k] for k in ("observations", "images", "deck_rms_px_start", "deck_rms_px",
                                           "baselines_mm", "baseline_change_ppm")}, indent=1, default=float))
     for j, v in out["intervals"].items():

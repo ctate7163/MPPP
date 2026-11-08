@@ -361,3 +361,12 @@ def test_cmods_folder_outside_git_init_status_ship(tmp_path, monkeypatch):
     assert M.status()["same"] and "freeze" in (pkg / "CHANGES.md").read_text()
     monkeypatch.delenv("MPPP_CMODS")
     assert M.ship().get("note")                                            # in use = the package copy: nothing to do
+
+
+def test_rig_at_applies_a_deck_translation():
+    """0.95.5: translation "deck" (the rover-deck survey's length) is used by the projects, like "fitted"."""
+    rig = calib.load_rig("N")
+    t_deck = (np.asarray(rig["t_sensor_from_ref_m"]) * 0.999).tolist()
+    _, t, applied = calib.rig_at(dict(rig, translation="deck", t_sensor_from_ref_m=t_deck), 500.0)
+    assert t is not None and np.allclose(t, t_deck)
+    assert calib.rig_at(dict(rig, translation=None), 500.0)[1] is None

@@ -3,6 +3,32 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.95.5 — 2026-11-08
+
+**In short.** What the second freeze run needs (Christian, 8 Nov: "prepare a new freeze run with the Nov 3 ncam
+models and the new rig model"): the deck baseline reaches the blocks, the Navcam joint reads and fits a yaw knee,
+the Mastcam-Z joints can promote with the per-block aspect gate waived, and the deck adjustment frees the Z rig.
+
+- **Rig translation "deck" is used by the blocks** (bug). `calib.rig_at` returned the file's translation only for
+  `"translation": "fitted"`; the 6 Nov 2026 promotion wrote `"deck"` (423.60 mm), so every block started after it
+  took its CAHV baseline instead (Rockytop's states run of 8 Nov: 424.36 mm). The freeze blocks of 2-6 Nov ended
+  before that promotion and used the fitted 424.01 mm. `RIG_TRANSLATIONS_USED = ("fitted", "deck")`; the Navcam
+  promotion keeps a deck length (`fit.promote_navcam`'s carry-over).
+- **Navcam rig yaw knee** (Christian, 7 Nov: "the knee looks real, so the yaw and pitch ... should use the knee").
+  `tied.start_values` reads `yaw_early_mdeg_per_sol` of the rig file (H's yaw) and records `hinge_angles`; the joint
+  then fits H's yaw (it was always held at 0; roll stays linear) and writes `yaw_early_mdeg_per_sol` and
+  `hinge_angles: ["pitch", "yaw"]`. Without a yaw knee in the file nothing changes. `rig_at` / `drift_offset_mdeg`
+  applied a yaw knee already.
+- **`calib zcam --promote-waive CHECK ...`**: promote when the only failed checks are the ones named; the waiver
+  is written to `promotion_waiver.json` and the promotion note. `run_pipeline.py --zcam-waive-aspect ZOOM ...`
+  passes `--promote-waive "per-block aspect vs the Navcam"` to those zooms' joints, `--zcam-aspect-hold ZOOM ...`
+  passes `--zcam-aspect 1.0`.
+- **`python -m mppp.sfm.deck --zcam-rig full`**: the Mastcam-Z rig refined in the deck adjustment, so a Z34 deck pan
+  gives the Z baseline against the survey; `--no-zcam` for the Navcam targets only.
+- `sites.json`: Chal Rocks large without sol 99 ZCAM08060 at 79 mm (the Z79 joint's +1.2 % sequence, a near-focus
+  pan of the deck and the ground beside it); group `freeze2_z110_without_marble` for the Z110 test without Marble
+  Mountain.
+
 ## 0.95.4 — 2026-11-02
 
 **In short.** The unattended freeze chain (the new blocks root `D:\rover_blocks`, mask v4.2 compared before the

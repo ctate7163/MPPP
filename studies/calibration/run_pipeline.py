@@ -272,12 +272,19 @@ class Pipeline:
             # zoom in its "zcam" list is left out by the joint
             group = f"{ZCAM34_JOINT},{self.zcam_group}"
             out = self._out(f"zcam{z}_joint", "zcam_joint.json")
+            extra = []
+            if promote and int(z) in set(getattr(self.a, "zcam_waive_aspect", None) or []):
+                extra += ["--promote-waive", "per-block aspect vs the Navcam"]
+            if int(z) in set(getattr(self.a, "zcam_aspect_hold", None) or []):
+                extra += ["--zcam-aspect", "1.0"]
             rc = self._mppp("zcam_joints", out, ["calib", "zcam", "--zoom", z, "--group", group, "--root", self.root,
-                                                 "--out", out, *promote], timeout_h=self.a.stage_timeout_h)
+                                                 "--out", out, *promote, *extra], timeout_h=self.a.stage_timeout_h)
             ck = out / "check.json"
             ok = json.loads(ck.read_text(encoding="utf-8")).get("ok") if ck.is_file() else None
+            wv = (out / "promotion_waiver.json").is_file()
             notes.append(f"Z{z}: " + ("not run / failed" if rc != 0 and ok is None else
-                                      "checks passed" if ok else "a check failed"))
+                                      "checks passed" if ok else
+                                      "promoted with the per-block aspect waived" if wv else "a check failed"))
         if not self.a.no_nz:
             out = self._out("nz34_joint", "nz_joint.json")
             rc = self._mppp("zcam_joints", out, ["calib", "nz", "--group", f"{ZCAM34_JOINT},{self.zcam_group}",
@@ -499,6 +506,11 @@ def main(argv=None) -> int:
     ap.add_argument("--all-site-zooms", action="store_true", help="the site runs align every zoom of the site's list (79, 110 mm too), not only --zooms")
     ap.add_argument("--export", action="store_true", help="the site runs write the full export (native text model, residuals, error_input_navcam, gui_native) - the default since 2 Nov 2026 (kept for old command lines)")
     ap.add_argument("--light", action="store_true", help="the site runs skip that export (the 0.95.0 calibration-run default; the error_analysis stage then finds no error_input/native)")
+    ap.add_argument("--zcam-waive-aspect", type=int, nargs="*", default=[], metavar="ZOOM",
+                    help="0.95.5 (8 Nov): these zooms' joints promote when the per-block aspect against the Navcam is "
+                         "their only failed check (calib zcam --promote-waive)")
+    ap.add_argument("--zcam-aspect-hold", type=int, nargs="*", default=[], metavar="ZOOM",
+                    help="0.95.5: these zooms' joints hold fy / fx at 1 (calib zcam --zcam-aspect 1.0)")
     ap.add_argument("--zcam-group", default=None, help="the Mastcam-Z sites (default zcam_consensus)")
     ap.add_argument("--zcam-sites", nargs="+", default=None, metavar="SITE",
                     help="zcam_runs aligns only these sites; the joints use the others' finished blocks as they are")

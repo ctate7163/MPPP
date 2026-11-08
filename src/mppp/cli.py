@@ -207,6 +207,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="hazcam joint: front = FL and FR their own ppm/degC, RL and RR the mean of the two (default, "
                         "0.95.1, Christian 29 Oct); FL = every eye takes FL's (24 Oct); all = one slope shared by the "
                         "four eyes; per_eye = a slope per eye")
+    p.add_argument("--promote-waive", nargs="*", default=None, metavar="CHECK",
+                   help="zcam (0.95.5, Christian 8 Nov: \"update the z63, z79, z110 models that are good enough\"): promote "
+                        "with --promote-if-ok when the only checks that failed are these (names as check.json gives "
+                        "them, e.g. \"per-block aspect vs the Navcam\"); the waiver is written to promotion_waiver.json "
+                        "and into the promotion note")
     p.add_argument("--promote-new-only", action="store_true",
                    help="zcam / hazcam: promote only models of which none is in use (0.94.1: a tiny joint never "
                         "replaces a model of more blocks)")
@@ -832,11 +837,23 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     if promote and getattr(a, "promote_new_only", False) and (M.zcam_files() or {}).get(int(a.zoom)):
         print(f"not promoted: a {a.zoom} mm model is in use (--promote-new-only)")
         promote = False
-    if promote and w["check"]["ok"]:
-        pr = M.promote([Path(w["model"])], note=a.note or f"Mastcam-Z {a.zoom} mm joint of {len(blocks)} blocks")
+    failed = [c["check"] for c in w["check"]["checks"] if not c["ok"]]
+    waive = [str(x) for x in (getattr(a, "promote_waive", None) or [])]
+    waived = bool(failed) and all(f in waive for f in failed)
+    if promote and (w["check"]["ok"] or waived):
+        note = a.note or f"Mastcam-Z {a.zoom} mm joint of {len(blocks)} blocks"
+        if waived:                                     # 0.95.5: a hand decision, recorded with the model
+            rec = {"zoom": int(a.zoom), "waived": failed, "notes": {c["check"]: c["note"] for c in w["check"]["checks"]
+                                                                     if not c["ok"]},
+                   "reason": "--promote-waive: the only failed checks were waived (good enough for the freeze)"}
+            (out / "promotion_waiver.json").write_text(json.dumps(rec, indent=1), encoding="utf-8")
+            note += "; waived: " + "; ".join(failed)
+            print(f"promoting with the waived check(s): {', '.join(failed)}")
+        pr = M.promote([Path(w["model"])], note=note)
         print(f"promoted into {pr['folder']} ({pr['stamp']})")
     elif promote:
-        print("not promoted: a check failed (the model in use stays)")
+        print("not promoted: a check failed (the model in use stays)"
+              + (f"; not waived: {', '.join(f for f in failed if f not in waive)}" if waive else ""))
     return 0
 
 

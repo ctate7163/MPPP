@@ -136,7 +136,7 @@ def navcam_start_rig(rig: Dict[str, Any], images: Sequence[Dict[str, Any]], fami
         rig["t_sensor_from_ref"] = [float(x) for x in t]
         rig["baseline_m"] = float(np.linalg.norm(t))
     rig["rotation_source"] = (f"{Path(shipped['file']).name} (refined consensus; translation "
-                              f"{'fitted on the large blocks' if t is not None else 'from CAHV'}) from "
+                              f"{('from the rover-deck survey' if shipped.get('translation') == 'deck' else 'fitted on the large blocks') if t is not None else 'from CAHV'}) from "
                               f"{Path(shipped['file']).parent}")
     return info
 

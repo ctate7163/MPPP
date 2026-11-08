@@ -205,7 +205,11 @@ def start_values(cmods_dir: Optional[PathLike] = None, knot_sol: Optional[float]
     knot = float(knot_sol if knot_sol is not None else (dr.get("knot_sol") or KNOT_SOL))
     D = np.array([1e3 * float(dr.get(f"{a}_mdeg_per_sol") or 0.0) for a in ANGLES])
     early_pitch = 1e3 * float(dr.get("pitch_early_mdeg_per_sol", dr.get("pitch_mdeg_per_sol")) or 0.0)
-    H = np.array([early_pitch - D[0], 0.0, 0.0])
+    # 0.95.5 (Christian, 7 Nov: "the knee looks real, so the yaw and pitch ... should use the knee"): a yaw hinge when
+    # the rig file has one (yaw_early_mdeg_per_sol); roll stays linear
+    yaw_hinge = dr.get("yaw_early_mdeg_per_sol") is not None and "yaw" in (dr.get("hinge_angles") or ["yaw"])
+    early_yaw = 1e3 * float(dr["yaw_early_mdeg_per_sol"]) if yaw_hinge else D[1]
+    H = np.array([early_pitch - D[0], early_yaw - D[1], 0.0])
     sol0 = float(dr.get("sol0") or 0.0)
     knot_ref = float(dr.get("knot_ref") or 0.0)
     q_file = q_xyz(np.asarray(rj["R_sensor_from_ref"], float))
@@ -213,6 +217,7 @@ def start_values(cmods_dir: Optional[PathLike] = None, knot_sol: Optional[float]
     # refer it to sol 0 with knot_ref 0
     q0 = q_file - 0.5 * _MDEG * (D * sol0 + H * (min(sol0, knot) - knot_ref)) / 1000.0
     out.update({"knot": knot, "D": D, "H": H, "Q0": q0, "t": np.asarray(rj["t_sensor_from_ref_m"], float),
+                "hinge_angles": ["pitch", "yaw"] if yaw_hinge else ["pitch"],
                 "R": np.asarray(rj["R_sensor_from_ref"], float), "cameras": {"NL": nl, "NR": nr}, "rig": rj})
     return out
 
@@ -510,7 +515,8 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
               tie_f: Optional[bool] = None):
     """The ``extra_residuals`` callable for :func:`mppp.sfm.reconstruction.bundle_adjust` and the global parameter
     arrays it ties to.  ``hold``: global terms held at their start (``"E_NR"``, ``"S_NL_cy"``, ``"Q0_yaw"``, ``"H"``
-    ...).  ``H``'s yaw and roll are always held at 0 (linear yaw and roll trends); terms the data cannot see are held
+    ...).  ``H``'s roll is always held at 0 (a linear roll trend), its yaw too unless the rig file has a yaw knee
+    (``yaw_early_mdeg_per_sol``, 0.95.5); terms the data cannot see are held
     too (the early offsets without early-mission cameras, the hinge without rig units before the knot).  With
     ``tie_cameras`` / ``tie_rigs`` False the units stay free and the globals are held (the diagnostic pass).
     ``iso_f``: one relative focal slope per eye - fy's tie reads fx's slope scaled by fy/fx (the S array's fy entry
@@ -526,7 +532,7 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
     stereo_blocks: Dict[str, np.ndarray] = {}         # 0.95.0: the pointing pass's per-block stereo differences
     sig = np.array([TIE_SIGMA["fx"], TIE_SIGMA["fy"], TIE_SIGMA["cx"], TIE_SIGMA["cy"]] + [TIE_SIGMA["k"]] * 6)
     knot = float(st["knot"])
-    hold = list(hold) + ["H_yaw", "H_roll"]
+    hold = list(hold) + ["H_roll"] + ([] if "yaw" in (st.get("hinge_angles") or ()) else ["H_yaw"])
     for h in EARLY_HELD_AT_ZERO:                        # 0.95.0: a held reference-eye early offset is 0
         if h in hold and tie_cameras:
             _, eye, k = h.split("_")
@@ -965,7 +971,12 @@ def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, A
                   "rate_mdeg_per_1000sol": dict(zip(ANGLES, map(float, g["D"]))),
                   "sd_rate": None if sdD is None else dict(zip(ANGLES, map(float, sdD))),
                   "pitch_early_mdeg_per_1000sol": float(g["D"][0] + g["H"][0]),
-                  "sd_pitch_early": None if sdH is None else float(np.hypot(sdD[0] if sdD is not None else 0.0, sdH[0]))}
+                  "sd_pitch_early": None if sdH is None else float(np.hypot(sdD[0] if sdD is not None else 0.0, sdH[0])),
+                  "hinge_angles": list(st.get("hinge_angles") or ["pitch"])}
+    if "yaw" in out["rig"]["hinge_angles"]:              # 0.95.5: the yaw knee
+        out["rig"]["yaw_early_mdeg_per_1000sol"] = float(g["D"][1] + g["H"][1])
+        out["rig"]["sd_yaw_early"] = (None if sdH is None or not np.isfinite(sdH[1]) else
+                                      float(np.hypot(sdD[1] if sdD is not None else 0.0, sdH[1])))
     if "DS" in g:                                        # 0.95.0: the stereo differences NR - NL with their own sd
         sd_ds = _sd(cov, "DS", 4)
         out["stereo_pp"] = {k: {"value": float(g["DS"][i]), "sd": (None if sd_ds is None or not np.isfinite(sd_ds[i]) else float(sd_ds[i])),
@@ -1361,7 +1372,9 @@ def describe_result(res: Dict[str, Any]) -> List[str]:
                      f"{k['corner_px']:.2f} px")
     r = res["rig"]
     lines.append(f"rig at sol 0: {r['angles_sol0_mdeg']}; rates mdeg/1000 sol {r['rate_mdeg_per_1000sol']} "
-                 f"(pitch before sol {r['knot_sol']:g}: {r['pitch_early_mdeg_per_1000sol']:+.2f})")
+                 f"(pitch before sol {r['knot_sol']:g}: {r['pitch_early_mdeg_per_1000sol']:+.2f}"
+                 + (f", yaw {r['yaw_early_mdeg_per_1000sol']:+.2f}" if r.get('yaw_early_mdeg_per_1000sol') is not None else "")
+                 + ")")
     s = res.get("residuals") or {}
     lines.append(f"tied joint: cost {res.get('final_cost', float('nan')):.1f}, it {res.get('iterations')}, median "
                  f"{s.get('median_px', float('nan')):.4f} / rms {s.get('rms_px', float('nan')):.4f} px, corners "
@@ -1467,14 +1480,21 @@ def write_law_files(res: Dict[str, Any], out_dir: PathLike, note: str = "", temp
                    "pitch_mdeg_per_sol": rates["pitch"] / 1000.0, "yaw_mdeg_per_sol": rates["yaw"] / 1000.0,
                    "roll_mdeg_per_sol": rates["roll"] / 1000.0,
                    "pitch_early_mdeg_per_sol": float(r["pitch_early_mdeg_per_1000sol"]) / 1000.0,
-                   "hinge_angles": ["pitch"], "blocks": len(blocks), "blocks_names": blocks,
-                   "source": f"tied joint ({stamp}): yaw and roll linear in sol, pitch with the early hinge, all "
-                             f"fitted with the cameras in one adjustment; sd mdeg/1000 sol {r.get('sd_rate')}"}
+                   "hinge_angles": list(r.get("hinge_angles") or ["pitch"]), "blocks": len(blocks), "blocks_names": blocks,
+                   "source": f"tied joint ({stamp}): "
+                             + ("pitch and yaw with the early hinge, roll linear in sol"
+                                if "yaw" in (r.get("hinge_angles") or ()) else
+                                "yaw and roll linear in sol, pitch with the early hinge")
+                             + f", all fitted with the cameras in one adjustment; sd mdeg/1000 sol {r.get('sd_rate')}"}
+    if r.get("yaw_early_mdeg_per_1000sol") is not None:   # 0.95.5: the yaw knee
+        rj["drift"]["yaw_early_mdeg_per_sol"] = float(r["yaw_early_mdeg_per_1000sol"]) / 1000.0
     a = r["angles_sol0_mdeg"]
     rj["note"] = (f"x_NR = R x_NL + t. Navcam tied joint {stamp} ({len(blocks)} blocks): rotation at sol 0, yaw "
                   f"{a['yaw_mdeg']:+.2f}, pitch {a['pitch_mdeg']:+.2f}, roll {a['roll_mdeg']:+.2f} mdeg; rates "
                   f"pitch {rates['pitch']:+.2f}, yaw {rates['yaw']:+.2f}, roll {rates['roll']:+.2f} mdeg/1000 sol "
-                  f"(pitch before sol {r['knot_sol']:g}: {r['pitch_early_mdeg_per_1000sol']:+.2f}). Translation held. {note}".strip())
+                  f"(pitch before sol {r['knot_sol']:g}: {r['pitch_early_mdeg_per_1000sol']:+.2f}"
+                  + (f", yaw {r['yaw_early_mdeg_per_1000sol']:+.2f}" if r.get("yaw_early_mdeg_per_1000sol") is not None else "")
+                  + f"). Translation held. {note}".strip())
     rj["source"] = f"{method}, {stamp})"
     M.write_model(out / M.rig_file("N", tdir).name, rj)
     return out
@@ -1521,6 +1541,8 @@ def rig_sd_free(res: Dict[str, Any]) -> Dict[str, Optional[float]]:
             out[f"D_{a}"] = (r.get("sd_rate") or {}).get(a)
     if 0 not in set(held.get("H") or ()):
         out["H_pitch"] = r.get("sd_pitch_early")
+    if "yaw" in (r.get("hinge_angles") or ()) and 1 not in set(held.get("H") or ()):
+        out["H_yaw"] = r.get("sd_yaw_early")
     return {k: (None if v is None else float(v)) for k, v in out.items()}
 
 

@@ -123,12 +123,16 @@ def drift_offset_mdeg(drift: Dict[str, Any], sol: float) -> Dict[str, float]:
     return out
 
 
+RIG_TRANSLATIONS_USED = ("fitted", "deck")   # 0.95.5: a rig file's translation the projects use ("deck": the survey's length)
+
+
 def rig_at(rig: Dict[str, Any], sol: Optional[float] = None) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
     """
     The stereo rig (x_sensor = R x_ref + t) of a rig file at ``sol``: the file's rotation turned by the drift offset
     at that sol (:func:`drift_offset_mdeg`; pitch, yaw, roll about x, y, z of the sensor camera).  Returns (R, t,
-    applied): ``t`` is the fitted translation (``translation = "fitted"``) or None when the block keeps its CAHV
-    baseline.
+    applied): ``t`` is the file's translation when the projects use it (``translation`` "fitted" or "deck": the
+    length set from the rover-deck survey) or None when the block keeps its CAHV baseline.  0.95.5: "deck" was
+    ignored before - the 6 Nov 2026 rig file (423.60 mm) left every block at its CAHV baseline (~424.36 mm).
     """
     from scipy.spatial.transform import Rotation
     R = np.asarray(rig["R_sensor_from_ref"], float)
@@ -141,7 +145,7 @@ def rig_at(rig: Dict[str, Any], sol: Optional[float] = None) -> Tuple[np.ndarray
         applied["drift"] = {**dr, "sol_median": float(sol),
                             "offset_mdeg": {"pitch": off["pitch_mdeg"], "yaw": off["yaw_mdeg"], "roll": off["roll_mdeg"]}}
     t = None
-    if rig.get("translation") == "fitted" and rig.get("t_sensor_from_ref_m") is not None:
+    if rig.get("translation") in RIG_TRANSLATIONS_USED and rig.get("t_sensor_from_ref_m") is not None:
         t = np.asarray(rig["t_sensor_from_ref_m"], float)
     return R, t, applied
 

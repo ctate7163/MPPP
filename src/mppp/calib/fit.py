@@ -1045,7 +1045,7 @@ def write_navcam(res: Dict[str, Any], out_dir: PathLike, note: str = "",
     tr = res.get("rig_translation")
     jt = res.get("rig_translation_joint")
     applied = bool((tr or jt) and res.get("rig_translation_applied"))
-    carried = not applied and r.get("translation") == "fitted"     # a fit only recorded keeps the one in use
+    carried = not applied and r.get("translation") in ("fitted", "deck")   # a fit only recorded keeps the one in use (0.95.5: a deck length too)
     if tr:
         r["translation_fit"] = {k: tr[k] for k in ("blocks", "dcentre_mm", "sd_t_mm", "baseline_start_m", "baseline_m",
                                                    "dbaseline_mm", "t_m", "variance_factor", "sigma_m")}
