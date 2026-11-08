@@ -629,3 +629,25 @@ def test_zcam_aspect_geometry_on_a_small_block(tmp_path):
     assert md[0].startswith("# Mastcam-Z bin aspect")
     assert G.main(["--works", str(work), "--zooms", "63", "--out", str(tmp_path / "o")]) == 0
     assert (tmp_path / "o" / "bins.csv").is_file() and (tmp_path / "o" / "report.md").is_file()
+
+
+def test_zcam_mast_head_chain_round_trip():
+    """0.95.5 (scripts/zcam_mast_head.py): a Navcam pose from the chain goes back to the chain's own c and Q in the
+    head frame; the level mast frame puts NL ahead of the elevation axis, on the left, above it."""
+    import importlib.util, json as _j
+    import numpy as _np
+    spec = importlib.util.spec_from_file_location("zmh", str(Path(__file__).resolve().parent.parent / "scripts" / "zcam_mast_head.py"))
+    zmh = importlib.util.module_from_spec(spec); spec.loader.exec_module(zmh)
+    m = {"params": _j.loads('''{"W_rotvec_rad": [0.003913956929754023, 0.00266991321087316, -3.122261291130396], "P_xy_m": [0.8011894511997478, 0.5568794458630825], "h_m": [-0.0003506674984743533, 0.0, -1.9177004015584642], "c_L_m": [-0.05427324252593979, 0.2145980435045003, 0.1283363006047039], "c_R_m": [-0.05459462261361909, -0.2089250814636251, 0.12808116004673997], "Q_L_rotvec_rad": [-0.0571317210820025, -0.05495643684105014, 4.713989481400855], "Q_R_rotvec_rad": [0.017207252511186724, 0.01762287619051183, -1.5693821313696412], "G_rotvec_rad": [0.0015152142044422285, -0.0023839926438474776, -0.019291570441226168], "k_az": 0.0, "k_el": 0.0, "qT_L_rad_per_C": [1.918888638212186e-06, 8.55857117217576e-06, -2.203852941882726e-06], "qT_R_rad_per_C": [2.3541237840220355e-06, 7.687363792083791e-06, -8.992571276870773e-07], "T0_C": -20.0}''')}
+    mast = zmh.Mast(m)
+    for eye in ("L", "R"):
+        for az, el in ((0.3, 1.2), (-2.0, 0.6), (2.9, 1.5)):
+            R, C = zmh.chain_pose(m, eye, az, el)
+            c, Q = mast.head(C, R, az, el)
+            assert _np.allclose(c, m["params"][f"c_{eye}_m"], atol=1e-9)
+            assert _np.allclose(Q, zmh.RV(m["params"][f"Q_{eye}_rotvec_rad"]), atol=1e-9)
+    nl = mast.mast_point(_np.asarray(m["params"]["c_L_m"]))
+    assert nl[0] > 100 and nl[1] < -200 and nl[2] < -50                     # mm: ahead, left, above
+    R0, _ = zmh.chain_pose(m, "L", 0.0, mast.el_level)
+    yaw, pitch = zmh.yaw_pitch(mast.F @ R0[2])
+    assert abs(yaw) < 1e-6 and abs(pitch) < 1e-6

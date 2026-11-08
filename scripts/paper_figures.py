@@ -23,6 +23,10 @@ Writes, into ``--out`` (default ``<MPPP>/Claude outputs``):
                                               --zcam-zooms; the joint folder's name in the file name)
   hazcam_rig_trends_<F|R>_<fit>.png           0.95.2: the newest Hazcam fit's rig trends (+ _nolabels) - --hazcam
   hazcam_efl_vs_temperature_<fit>.png         0.95.2: its eyes' focal length against temperature (law and block bins)
+  zcam<zoom>_navcam_on_mast_head_<tag>.png    0.95.5: the Mastcam-Z pair (each zoom) and the Navcam on the mast head
+                                              through the deck_joint chain (scripts/zcam_mast_head.py) - --mast-chain
+  zcam_mast_head_vs_zoom_<tag>.png            0.95.5: centre and image-centre pointing against zoom (+ the station
+                                              table and the Z mount per zoom: zcam_mast_head_<tag>.json)
   site_map_<tag>.png                     the traverse map: figure 2 of ``mppp maps`` (crater | traverse, block table,
                                          1 m DTM where M20_DEMS has it); --site-map simple: plot_site_map
   undistorted_example.png                with --frame (mppp.colmap.plot_undistorted_example)
@@ -131,6 +135,10 @@ def main(argv=None) -> int:
     ap.add_argument("--zcam-zooms", default="34,48,63", help="the zooms of the default joint folders (0.95.2: 34,48,63)")
     ap.add_argument("--hazcam", default=None, help="a Hazcam fit folder (hazcam_fit.json); default: the newest "
                                                    "under <root>\\camera_analysis; '-' for none")
+    ap.add_argument("--mast-chain", default=None,
+                    help="0.95.5: the deck_joint mast chain (deck_joint_mast_model.json) for the mast-head figures; "
+                         "default: the newest under <root>\\camera_analysis or --out; '-' for none")
+    ap.add_argument("--mast-labels", default=None, help="rover_frame_labels.json (default <root>\\camera_analysis\\)")
     ap.add_argument("--dpi", type=int, default=200)
     ap.add_argument("--site-map", choices=["maps", "simple", "none"], default="maps")
     a = ap.parse_args(argv)
@@ -186,6 +194,23 @@ def main(argv=None) -> int:
         (out / f"navcam_block_table_{tag}.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")
         drift = F.fit_rig_drift(F.rig_rows(res), knot_sol="free")
         (out / f"rig_drift_refit_{tag}.json").write_text(json.dumps(drift, indent=1, default=float), encoding="utf-8")
+    # ---- 0.95.5: the Mastcam-Z and Navcam cameras on the mast head, through the deck_joint chain
+    if a.mast_chain != "-" and a.root:
+        chain = a.mast_chain
+        if not chain:
+            cands = (glob.glob(str(Path(a.root) / "camera_analysis" / "**" / "deck_joint_mast_model.json"), recursive=True)
+                     + glob.glob(str(out / "**" / "deck_joint_mast_model.json"), recursive=True))
+            chain = max(cands, key=os.path.getmtime) if cands else None
+        lab = a.mast_labels or str(Path(a.root) / "camera_analysis" / "rover_frame_labels.json")
+        if chain and Path(lab).is_file():
+            sys.path.insert(0, str(HERE / "scripts"))
+            try:
+                import zcam_mast_head
+                zcam_mast_head.run(a.root, chain, lab, None, out, tag, a.dpi, a.label)
+            except Exception as e:                                         # noqa: BLE001
+                print(f"mast head figures: skipped ({type(e).__name__}: {e})")
+        else:
+            print("mast head figures: no deck_joint_mast_model.json or rover_frame_labels.json - skipped")
     # ---- station maps: the blocks' own health figures (plot_camera_shifts), collected
     if folders:
         sm = out / f"station_maps_{tag}"

@@ -25,6 +25,14 @@ the Mastcam-Z joints can promote with the per-block aspect gate waived, and the 
   passes `--zcam-aspect 1.0`.
 - **`python -m mppp.sfm.deck --zcam-rig full`**: the Mastcam-Z rig refined in the deck adjustment, so a Z34 deck pan
   gives the Z baseline against the survey; `--no-zcam` for the Navcam targets only.
+- **Standard figure: the cameras on the mast head** (Christian, 8 Nov: "I love zcam rig figure. Add that to the list of
+  standard figure ... also do this for the other zooms").  `scripts/zcam_mast_head.py`: the Z frames of the Mastcam-Z
+  blocks through the deck_joint mast chain (resolver angles; per station the block <- RNAV similarity from its Navcam
+  frames) into the head frame; per zoom a 2 x 2 (top view, side view, pair centre / height against sol and
+  temperature, centre along the boresight against focus), the centre and image-centre pointing against zoom, and the
+  Z mount per zoom (Q_Z per zoom and eye; c_Z from 34 mm, along the boresight held at its near-focus median) in
+  `zcam_mast_head_<tag>.json`.  `paper_figures.py --mast-chain` (default: the newest deck_joint_mast_model.json under
+  `<root>\camera_analysis` or `--out`).
 - `sites.json`: Chal Rocks large without sol 99 ZCAM08060 at 79 mm (the Z79 joint's +1.2 % sequence, a near-focus
   pan of the deck and the ground beside it); group `freeze2_z110_without_marble` for the Z110 test without Marble
   Mountain.
