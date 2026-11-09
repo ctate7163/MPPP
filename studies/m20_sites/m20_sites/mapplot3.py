@@ -20,6 +20,7 @@ BOX_B = (77.205, 77.47, 18.38, 18.515)
 used_all = set(); ortho_used = set()
 BACKGROUND = background_mode()          # M20_BACKGROUND: 'dtm' (default) or 'ortho'
 import os
+CONTOURS = os.environ.get('M20_CONTOURS', '1') != '0'   # 9 Nov 2026: 100 m contours on the DTM / tile panels; never on the orthomosaic
 import matplotlib.patheffects as pe
 DPI = int(os.environ.get('M20_DPI', 300))     # output resolution of every figure (set M20_DPI=300 for smaller files)
 FS = 1.15                                   # global font scale
@@ -55,10 +56,11 @@ def draw_terrain(ax, gx, gy, Z, norm, ci, exag=3, alt=40, flat=None, coslat=None
     if flat is not None: shade = np.clip(shade*flat/(0.35 + 0.65*np.sin(np.deg2rad(alt))), 0, 1.15)
     rgb = CMAP(norm(Zf))[..., :3]; rgb = 0.55*rgb + 0.45*0.86
     out = np.clip(rgb*shade[..., None], 0, 1); out = np.where(np.isnan(Z)[..., None], 0.93, out)
+    on_ortho = False
     if ortho and BACKGROUND == 'ortho' and (gx[-1] - gx[0]) < 2.0:      # orthomosaic only on local panels (C-I, zooms)
         G, used = sample_ortho(*np.meshgrid(gx, gy))
         if np.isfinite(G).any():
-            ortho_used.update(used)
+            ortho_used.update(used); on_ortho = True
             tint = CMAP(norm(Zf))[..., :3]
             if G.ndim == 3:                                            # a colour mosaic: as it is
                 o3 = np.clip(G, 0, 1)
@@ -67,6 +69,8 @@ def draw_terrain(ax, gx, gy, Z, norm, ci, exag=3, alt=40, flat=None, coslat=None
             G = G if G.ndim == 2 else np.nanmean(G, axis=-1)
             out = np.where(np.isfinite(G)[..., None], o3, out)
     ax.imshow(out, extent=[gx[0], gx[-1], gy[0], gy[-1]], origin='lower', interpolation='bilinear', zorder=0)
+    if on_ortho or not CONTOURS:        # 9 Nov 2026: no contour lines on the orthomosaic panels (M20_CONTOURS=0 drops them everywhere)
+        return
     lev = np.arange(np.floor(np.nanmin(Zf)/ci)*ci, np.nanmax(Zf)+ci, ci)
     ax.contour(gx, gy, Zf, levels=lev, colors='k', linewidths=0.3, alpha=0.25, zorder=1)
 

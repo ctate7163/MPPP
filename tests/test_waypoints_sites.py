@@ -434,3 +434,20 @@ def test_chal_rocks_110mm():
     assert Settings(exclude=["seq:ZCAM05065"], include_zcam=True).key_dict() != Settings(include_zcam=True).key_dict()
     assert "taylorfjellet_huge" not in t and t["taylorfjellet_large"]["sols"] == [[1601, 1673]]
     assert "groloy" not in d["groups"]["ecam_consensus"] and "taylorfjellet_large" in d["groups"]["ecam_consensus"]
+
+
+def test_maps_sync_study_waypoints(tmp_path, monkeypatch):
+    """0.96: ``mppp maps`` copies the waypoint table in use into the study folder (the scripts there read their own
+    M20_waypoints.json); a second call finds it current.  No download here (refresh=False: cache or snapshot)."""
+    import hashlib
+    from mppp.cli import sync_study_waypoints
+    from mppp.waypoints import load_waypoints
+    monkeypatch.setenv("MPPP_CACHE", str(tmp_path / "cache"))
+    study = tmp_path / "study"
+    study.mkdir()
+    r1 = sync_study_waypoints(study, refresh=False)
+    assert "study copy updated" in r1 and "waypoints to sol" in r1
+    w = load_waypoints(refresh=False)
+    assert hashlib.sha256((study / "M20_waypoints.json").read_bytes()).hexdigest() == w["_mppp_source"]["sha256"]
+    r2 = sync_study_waypoints(study, refresh=False)
+    assert "already current" in r2

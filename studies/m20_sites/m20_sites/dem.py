@@ -3,7 +3,7 @@ Order of preference: MSR TRN HiRISE DTM (Bland et al. 2024/25, 77.057-77.380E) t
 Set M20_DEMS to a os.pathsep-separated list of GeoTIFF paths, or drop the files into ./dem/.
 Orthomosaics (optional background): M20_ORTHOS (same form) or files with ORTHO in the name under ./dem/.
 M20_BACKGROUND chooses the background: "dtm" (default: elevation tint + hillshade) or "ortho" (orthomosaic in grey,
-light elevation tint and contours on top; falls back to the DTM/tiles where no orthomosaic covers the panel).
+light elevation tint, no contour lines; falls back to the DTM/tiles where no orthomosaic covers the panel).
 Waypoint easting/northing (lat_ts ~18.47 deg) are converted through lon/lat, never used directly against the DEM grid."""
 import os, glob, json, numpy as np
 from scipy.ndimage import map_coordinates
