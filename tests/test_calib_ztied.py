@@ -34,6 +34,15 @@ def _law(model, g, F, state="backlash"):
     return np.array([fx, fy, cx, cy, d.get("k1", 0), d.get("k2", 0), d.get("p1", 0), d.get("p2", 0), 0, 0, 0, 0], float)
 
 
+@pytest.fixture(autouse=True)
+def _flat_synthetic_blocks_are_not_weak(monkeypatch):
+    """0.96 (item F): the synthetic blocks point every frame at pitch 28 deg, so every sequence covers one vertical
+    field of view and would count as weak; the weak-sequence fy offsets are turned off for these tests except where
+    a test turns them on."""
+    from mppp.calib import ztied as Z
+    monkeypatch.setattr(Z, "WEAK_SEQUENCE_FOV", 0.0)
+
+
 def _truth_model():
     """The focus model in use, made the zcam-v2 truth of the synthetic blocks (p1, p2 small, a ZR cy slope)."""
     from mppp.sfm.project import zcam_focus_model_path
@@ -597,7 +606,10 @@ def test_focus_below_offset_needs_a_high_state_bin():
     sg = {"eyes": {"ZL048": {"G": np.zeros(Z.NG)}, "ZR048": {"G": np.zeros(Z.NG)}}}
     zunits = {1: {"group": "ZL048", "state": "regular", "fb": True}, 2: {"group": "ZL048", "state": "backlash", "fb": False},
               3: {"group": "ZR048", "state": "backlash", "fb": True}}
-    hook, _g = Z.make_zties(sg, zunits)
+    hook, _g = Z.make_zties(sg, zunits)                           # 0.96: not fitted unless asked
+    assert set(hook.focus_below) == set() and all("not fitted" in v for v in hook.focus_below_held.values())
+    assert set(hook.focus_below_held) == {"ZL048", "ZR048"}
+    hook, _g = Z.make_zties(dict(sg, focus_below_fit=True), zunits)
     assert set(hook.focus_below) == {"ZR048"}
 
 
@@ -1192,3 +1204,57 @@ def test_f0_uncertainty_from_the_sequence_scatter():
            "rig": {"change_mdeg": 0.0, "baseline_m": 0.2435}, "zcam": {}}
     line = next(x for x in Z.describe(res) if x.startswith("ZL048 f0 sd:"))
     assert "4 sequences, the offsets' sd at the prior" in line and "adopted" in line
+
+
+def test_weak_sequences_fy_offsets_and_the_gate(tmp_path, monkeypatch):
+    """0.96, item F (Christian, 9 Nov: the Z110 slope pulled shallow by fy of single-row horizon pans; ZCAM08038's
+    2-row strip): sequences covering under 2 vertical fields of view are weak; in the joint their fy gets an offset
+    of its own, so a +3000 ppm fy departure of one sequence lands in its offset (about the eye's mean) instead of
+    pulling the line, and the gate leaves their pools out.  The flat synthetic blocks are all weak at factor 2 and
+    none at factor 0.5."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    monkeypatch.setattr(Z, "MIN_BIN_OBSERVATIONS", 100)
+    monkeypatch.setattr(Z, "WEAK_SEQUENCE_FOV", 2.0)
+    rng = np.random.default_rng(31)
+    truth = _truth_model()
+    so = {"ZCAM00001": 0.0, "ZCAM00002": 0.0, "ZCAM00003": 0.0}
+    sa = {"ZCAM00002": 3000.0}
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500, seq_offsets=so, seq_aspect=sa)
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900, seq_offsets=so, seq_aspect=sa)
+    st = _navcam_law(cams, rigT)
+    rec_, proj_, idx_, st_, units_, zunits_, sg_ = Z.build({}, copy.deepcopy(truth), None, 34, None, None,
+                                                           scapes=[copy.deepcopy(a), copy.deepcopy(b)], st=st)
+    w = sg_["weak_sequences"]
+    assert len(w) == 12 and all(v["weak"] and v["rows"] == 1 and 0.9 < v["covered_fov"] < 1.2 and v["elevation_span_deg"] < 1.0
+                                for v in w.values())
+    assert not any(v["weak"] for v in Z.weak_sequences(rec_, zunits_, fov_factor=0.5).values())
+    assert not any(v["weak"] for v in Z.weak_sequences(rec_, zunits_, fov_factor=0.0).values())
+    res = Z.fit_zjoint({}, model=copy.deepcopy(truth), scapes=[copy.deepcopy(a), copy.deepcopy(b)], st=st,
+                       nav_points=None, z_points=None, iterations=60, passes=2, verbose=False, k_tests=False)
+    assert len(res["weak_sequences"]) == 12
+    wf = {(r["eye"], r["block"], r["sequence"]): r for r in res["weak_fy"]}
+    assert len(wf) == 12
+    for eye in ("ZL034", "ZR034"):
+        for blk in ("blk_a", "blk_b"):
+            assert wf[(eye, blk, "ZCAM00002")]["ppm"] == pytest.approx(2000.0, abs=500), wf[(eye, blk, "ZCAM00002")]
+            assert wf[(eye, blk, "ZCAM00001")]["ppm"] == pytest.approx(-1000.0, abs=500)
+            assert wf[(eye, blk, "ZCAM00002")]["sd_px"] is not None and wf[(eye, blk, "ZCAM00002")]["z"] > 3
+            assert wf[(eye, blk, "ZCAM00002")]["prior_sd_px"] == pytest.approx(0.01 * res["eyes"][eye]["terms"]["a_fy_backlash"], rel=0.01)
+    # the law (with the offsets) now fits every sequence: the pools' aspect about it is small, and the gate leaves
+    # the weak pools out (all are weak here, so it falls back to all of them and says so)
+    assert all(p["weak"] and abs(p["aspect_ppm"]) < 700 for p in res["diagnostics"]["pools"])
+    ba = res["block_aspect"]
+    assert ba["weak_pools"] == 12 and all(r["weak_pools"] == 3 and r["pools"] == 0 for r in ba["rows"])
+    assert all(b_["weak"] for b_ in res["diagnostics"]["bins"])
+    ln = res["diagnostics"]["blocks"][0]["lines"]["ZL034"]["backlash"]
+    assert ln["fy"]["weak_bins_left_out"] == 0 and ln["fx"]["weak_bins_left_out"] == 0    # (no strong bin: all kept)
+    lines = Z.describe(res)
+    assert any(x.startswith("weak-geometry sequences (under 2 vertical fields of view): 12 in the problem; 12 with a free fy offset") for x in lines)
+    assert any("ZCAM00002" in x and "fy +" in x and "1 row(s)" in x for x in lines), lines
+    # the focus-approach offset is not fitted (9 Nov)
+    assert res["focus_below"] == [] or all(r.get("held") for r in res["focus_below"])
+    out = Z.write_zjoint(res, tmp_path / "cand", model=truth)
+    assert "weak-geometry sequences" in (tmp_path / "cand" / "report.md").read_text()
+    assert not any("focus" in c["check"] and not c["ok"] for c in out["check"]["checks"])

@@ -143,6 +143,18 @@ OPPOSITE_STATE_TOL = 0.35
 # field of view
 RESIDUAL_DIR_SEQUENCES = 10
 ROW_GAP_FRACTION = 0.5
+# 0.96 (item F of 5 Nov; Christian, 9 Nov, the Z110 slope: fy slopes 0.11-0.13 px/count against fx 0.31 in the bins,
+# the shared slope pulled 5-9 % shallow; ZCAM08038, a 2-row strip 14 deg tall, fy/fx -0.5 % with no change in the
+# residuals).  A sequence is weak in the vertical when its frames' boresight elevations cover (span + one field of
+# view) less than WEAK_SEQUENCE_FOV vertical fields of view: single rows and 2-row strips.  In the joint such a
+# sequence's fy gets an offset of its own (px, drawn to 0 with sd WEAK_FY_SD x f), so its fy does not pull the
+# slope or the aspect; its pools stay out of the per-block aspect gate's mean (reported, not judged).  0 turns it off
+WEAK_SEQUENCE_FOV = 2.0
+WEAK_FY_SD = 0.01
+# 0.96 (Christian, 9 Nov: "remove focus breathing as a fit parameter"): the focus-approach offset (0.94.4, one offset
+# on f for the bins whose focus came into place from below) is no longer fitted - held at 0 - unless asked
+# (``fit_zjoint(focus_below=True)``, ``calib zcam --zcam-focus-below``).  The focus slope itself stays, of course
+FOCUS_BELOW_FIT = False
 NAV_POINTS_PER_BLOCK = 8000
 Z_POINTS_PER_BLOCK = 8000
 _FX, _FY, _CX, _CY, _K1, _K2, _P1, _P2 = range(8)                     # FULL_OPENCV parameter indices
@@ -306,7 +318,40 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
             if fid in rec.frames and rec.frames[fid].has_pose:
                 rec.deregister_frame(fid)
     mark_thin_bins(rec, proj, zunits, sg)          # 0.94.5
+    sg["weak_sequences"] = weak_sequences(rec, zunits)                          # 0.96 (item F)
     return rec, proj, idx, st, units, zunits, sg
+
+
+def weak_sequences(rec, zunits: Dict[int, Dict[str, Any]], fov_factor: Optional[float] = None) -> Dict[str, Dict[str, Any]]:
+    """0.96 (item F): {"eye|sequence key": {"eye", "sequence", "images", "elevation_span_deg", "vertical_fov_deg",
+    "covered_fov", "rows", "weak"}} for every sequence with frames in the problem - the frames' boresight
+    elevations (:func:`_elevation_deg`, the block alignment's poses), the covered extent (span + one field of view)
+    in vertical fields of view, the number of rows (elevation tiers, :data:`ROW_GAP_FRACTION`), and ``weak`` when
+    the covered extent is under ``fov_factor`` (:data:`WEAK_SEQUENCE_FOV`; 0: nothing is weak) fields of view."""
+    ff = WEAK_SEQUENCE_FOV if fov_factor is None else float(fov_factor)
+    per: Dict[Tuple[str, str], List[float]] = {}
+    cams: Dict[Tuple[str, str], int] = {}
+    for iid in rec.reg_image_ids():
+        cid = int(rec.images[iid].camera_id)
+        u = zunits.get(cid)
+        if u is None or not u.get("seq"):
+            continue
+        k = (u["group"], u["seq"])
+        per.setdefault(k, []).append(_elevation_deg(rec, int(iid)))
+        cams.setdefault(k, cid)
+    out: Dict[str, Dict[str, Any]] = {}
+    for (eye, seq), els in per.items():
+        cam = rec.cameras[cams[(eye, seq)]]
+        fy = float(np.asarray(cam.params, float)[_FY])
+        vfov = float(np.degrees(2.0 * np.arctan(float(cam.height) / (2.0 * fy)))) if fy > 0 else 0.0
+        span = float(max(els) - min(els))
+        srt = sorted(els)
+        rows = 1 + sum(1 for a, b in zip(srt, srt[1:]) if b - a > ROW_GAP_FRACTION * vfov)
+        covered = (span + vfov) / vfov if vfov > 0 else 0.0
+        out[f"{eye}|{seq}"] = {"eye": eye, "sequence": seq, "images": len(els), "elevation_span_deg": span,
+                               "vertical_fov_deg": vfov, "covered_fov": covered, "rows": int(rows),
+                               "weak": bool(ff > 0 and covered < ff)}
+    return out
 
 
 def mark_early_bins(proj, zunits: Dict[int, Dict[str, Any]], sg: Dict[str, Any], early_sol: Optional[int]) -> Dict[str, Any]:
@@ -488,10 +533,13 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
     fb_eyes = sorted({u["group"] for u in zunits.values() if u.get("fb")})
     fb_high = {eye for eye in fb_eyes if any(u.get("fb") and u["state"] != "regular" and not u.get("thin") and u["group"] == eye
                                              for u in zunits.values())}
+    fit_fb = bool(sg.get("focus_below_fit", FOCUS_BELOW_FIT))
     dfb = {eye: np.array([float((sg.get("focus_below_px") or {}).get(eye, 0.0))])
-           for eye in fb_eyes if eye in fb_high} if tie else {}
-    fb_held = {eye: "held at 0: every focus-from-below bin of this eye is in the low state (the offset is one with "
-                    "the high / low ratio)" for eye in fb_eyes if eye not in fb_high} if tie else {}
+           for eye in fb_eyes if eye in fb_high} if (tie and fit_fb) else {}
+    fb_held = ({eye: "held at 0: every focus-from-below bin of this eye is in the low state (the offset is one with "
+                     "the high / low ratio)" for eye in fb_eyes if eye not in fb_high} if fit_fb else
+               # 0.96 (Christian, 9 Nov): not a fit parameter any more
+               {eye: "held at 0: the focus-approach offset is not fitted (0.96; --zcam-focus-below fits it)" for eye in fb_eyes}) if tie else {}
     # 0.95.0 (Christian, 29 Oct): ZR's early-mission principal-point offset (cx, cy), shared by its bins before
     # sg["early"]["before_sol"]; from ZCAM_EARLY_MIN_BINS early bins on the lines on
     early_n: Dict[str, int] = {}
@@ -504,6 +552,10 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
     sfree, sinfo = sequence_groups(zunits) if tie else ({}, {})
     dseq = {k: np.array([float(((sg.get("sequence_offsets_px") or {}).get(f"{k[0]}|{k[1]}", 0.0)))]) for k in sfree}
     unit_seq = {cid: k for k, cids in sfree.items() for cid in cids}
+    # 0.96 (item F): the weak-geometry sequences' fy offsets (px, drawn to 0 with WEAK_FY_SD x f)
+    weak = sg.get("weak_sequences") or {}
+    dweak = {k: np.array([float(((sg.get("weak_fy_px") or {}).get(f"{k[0]}|{k[1]}", 0.0)))])
+             for k in sfree if (weak.get(f"{k[0]}|{k[1]}") or {}).get("weak")} if tie else {}
 
     def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
         n = 0
@@ -534,8 +586,9 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                 nf = 1 if (u.get("fb") and eye in dfb) else 0    # 0.94.4: the focus-from-below offset
                 sk = unit_seq.get(int(cid))
                 ns = 1 if sk is not None else 0              # 0.95.0: the sequence's offset
+                nw = 1 if (sk is not None and sk in dweak) else 0     # 0.96: the weak sequence's fy offset
                 asp = float(G0[1] / G0[0])
-                nextra = nx + nf + ns
+                nextra = nx + nf + ns + nw
                 for pi, gi in ((_FX, 2 if reg else 0), (_FY, 2 if reg else 1)):
                     a = np.zeros(12 + NG + nextra); a[pi] = 1.0; a[12 + 4] = -u["dF"] / ratio
                     # 0.93.5: the regular state scales f, not the pixel aspect - its fy is a_fx_regular x the
@@ -547,12 +600,15 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
                         a[12 + NG + nx] = -(asp if pi == _FY else 1.0)
                     if ns:
                         a[12 + NG + nx + nf] = -(asp if pi == _FY else 1.0)
+                    if nw and pi == _FY:                     # fy = the line + this sequence's own fy offset
+                        a[12 + NG + nx + nf + ns] = -1.0
                     rows.append(a); sig.append(TIE_SIGMA_Z["f"])
                 for pi, gi, s_ in ((_K1, 5, "k"), (_K2, 6, "k"), (_P1, 7, "p"), (_P2, 8, "p")):
                     a = np.zeros(12 + NG + nextra); a[pi] = 1.0; a[12 + gi] = -1.0
                     rows.append(a); sig.append(TIE_SIGMA_Z[s_])
                 add_tie(np.array(rows), np.array(sig), [12, NG] + [1] * nextra,
-                        [blk, g[eye]] + ([dreg[rk]] if nx else []) + ([dfb[eye]] if nf else []) + ([dseq[sk]] if ns else []))
+                        [blk, g[eye]] + ([dreg[rk]] if nx else []) + ([dfb[eye]] if nf else []) + ([dseq[sk]] if ns else [])
+                        + ([dweak[sk]] if nw else []))
                 ne = 2 if (u.get("early") and eye in dearly) else 0     # 0.95.0: + the early-mission offset
                 if reg:                                      # 0.93.2: cx = pin + d_cx, cy = pin + b_cy dF + d_cy
                     c0 = np.array([u["c_cx"], u["c_cy"]], float)
@@ -588,6 +644,10 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
         for (eye, sk), d in dseq.items():                # 0.95.0: the sequences' offsets drawn to 0 (the line their mean)
             if prob.has_parameter_block(d):
                 sd_px = SEQ_OFFSET_SD * float(sg["eyes"][eye]["G"][0])
+                prob.add_residual_block(LinearTie(np.ones((1, 1)), np.array([sd_px]), [1]), None, [d])
+        for (eye, sk), d in dweak.items():               # 0.96: the weak sequences' fy offsets drawn to 0
+            if prob.has_parameter_block(d):
+                sd_px = WEAK_FY_SD * float(sg["eyes"][eye]["G"][1])
                 prob.add_residual_block(LinearTie(np.ones((1, 1)), np.array([sd_px]), [1]), None, [d])
         if tie and sg.get("tie_eye_slopes") and len(g) == 2:
             # 0.95.0 (Christian, 29 Oct: "the efl vs focus slopes of both should be about equal"): one focus slope
@@ -634,6 +694,7 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
         cb.update({f"dreg|{eye}|{gk}": d for (eye, gk), d in dreg.items() if prob.has_parameter_block(d)})
         cb.update({f"dfb|{eye}": d for eye, d in dfb.items() if prob.has_parameter_block(d)})
         cb.update({f"dseq|{eye}|{sk}": d for (eye, sk), d in dseq.items() if prob.has_parameter_block(d)})
+        cb.update({f"dweak|{eye}|{sk}": d for (eye, sk), d in dweak.items() if prob.has_parameter_block(d)})
         cb.update({f"dearly|{eye}": d for eye, d in dearly.items() if prob.has_parameter_block(d)})
         return {"cov_blocks": cb, "ties": {"zcam_cameras": n}, "held": held,
                 "tie_ids": tie_ids if T.EXACT_TIE_COVARIANCE else [], "tie_specs": specs,
@@ -645,6 +706,7 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
     hook.focus_below_held = fb_held
     hook.sequence_offsets = dseq
     hook.sequence_info = sinfo
+    hook.weak_fy = dweak
     hook.early_offsets = dearly
     hook.early_bins = early_n
     return hook, g
@@ -755,6 +817,8 @@ def adjust_z(rec, proj, idx, st, units, zunits, sg, iterations: int = 100, covar
     ba["sequence_offsets_px"] = {f"{k[0]}|{k[1]}": float(v[0]) for k, v in hook.sequence_offsets.items()}   # 0.95.0
     ba["sequence_info"] = {f"{k[0]}|{k[1]}": dict(v) for k, v in hook.sequence_info.items()}
     sg["sequence_offsets_px"] = dict(ba["sequence_offsets_px"])
+    ba["weak_fy_px"] = {f"{k[0]}|{k[1]}": float(v[0]) for k, v in hook.weak_fy.items()}                 # 0.96
+    sg["weak_fy_px"] = dict(ba["weak_fy_px"])
     ba["early_offsets_px"] = {k: [float(v[0]), float(v[1])] for k, v in hook.early_offsets.items()}    # 0.95.0
     ba["early_bins"] = dict(hook.early_bins)
     sg["early_offsets_px"] = dict(ba["early_offsets_px"])
@@ -837,6 +901,8 @@ def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
     out["regular_ratio_by"] = ba.get("ratio_by") or REGULAR_RATIO_BY
     out["regular_ratio_groups"] = ratio_group_rows(out, ba, zunits)
     out["focus_below"] = focus_below_rows(out, ba, zunits)
+    out["weak_fy"] = weak_fy_rows(ba, sg, zunits)                                # 0.96 (item F)
+    out["weak_sequences"] = {k: v for k, v in (sg.get("weak_sequences") or {}).items() if v.get("weak")}
     out["sequence_offsets"] = sequence_offset_rows(out, ba, zunits)             # 0.95.0
     for eye, e in out["eyes"].items():
         rows_ = [r for r in out["sequence_offsets"] if r["eye"] == eye]
@@ -1104,8 +1170,9 @@ def _law_copy(rec, proj, zunits, sg, g, zoom: int = ZOOM):
         dfb_ = float((sg.get("focus_below_px") or {}).get(u["group"], 0.0)) if u.get("fb") else 0.0
         # 0.95.0: plus the bin's sequence offset (else the per-block lines absorb the offsets as aspect / level)
         dsq_ = float((sg.get("sequence_offsets_px") or {}).get(f"{u['group']}|{u['seq']}", 0.0)) if u.get("seq") else 0.0
+        dwk_ = float((sg.get("weak_fy_px") or {}).get(f"{u['group']}|{u['seq']}", 0.0)) if u.get("seq") else 0.0   # 0.96
         p[_FX] = G[2 if reg else 0] + G[4] * u["dF"] / ratio + dfb_ + dsq_
-        p[_FY] = G[3 if reg else 1] + G[4] * u["dF"] / ratio + (dfb_ + dsq_) * float(G[1] / G[0])
+        p[_FY] = G[3 if reg else 1] + G[4] * u["dF"] / ratio + (dfb_ + dsq_) * float(G[1] / G[0]) + dwk_
         p[_K1], p[_K2], p[_P1], p[_P2] = G[5], G[6], G[7], G[8]
         if reg:                                         # 0.93.2: the regular state's principal point
             p[_CX] = u["c_cx"] + G[10]
@@ -1236,8 +1303,10 @@ def pooled_pass(rec, proj, idx, st, units, zunits, sg, g, law: Dict[int, np.ndar
         P = pvals[(eye, key)]
         us = [zunits[c] for c in cids]
         sols = [u.get("sol") for u in us if u.get("sol") is not None]
+        wk = (sg.get("weak_sequences") or {}).get(f"{eye}|{key}") or {}
         row: Dict[str, Any] = {"eye": eye, "key": key, "block": us[0]["scape"],
                                "sequence": us[0].get("sequence") if (pool == "sequence" and us[0].get("seq")) else None,
+                               "weak": bool(wk.get("weak")), "covered_fov": wk.get("covered_fov"), "rows": wk.get("rows"),
                                "sol": int(round(float(np.median(sols)))) if sols else None,
                                "states": sorted({u["state"] for u in us}), "bins": len(cids),
                                "thin_bins": sum(1 for u in us if u.get("thin")),
@@ -1298,6 +1367,7 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
         log.info(f"Mastcam-Z diagnostic pass: {ba['brief'][:160]} ({time.time() - t:.0f} s)")
     obs = _bin_observations(rec)
     meta = _block_meta(blocks or {}, proj)
+    weak = sg.get("weak_sequences") or {}
     from scipy.spatial.transform import Rotation
     rows: List[Dict[str, Any]] = []
     for sc in scapes:
@@ -1314,18 +1384,23 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
                       and u["focus"] is not None and obs.get(cid, 0) > 0]
                 if not us:
                     continue
-                F = np.array([u["dF"] for _, u in us]); w = np.array([obs[c] for c, _ in us], float)
                 for pn, pi in (("fx", _FX), ("fy", _FY)):
-                    y = np.array([float(rec.cameras[c].params[pi]) for c, _ in us])
-                    if len(us) >= 3 and np.ptp(F) >= 300:
+                    us_ = us
+                    if pn == "fy":                       # 0.96 (item F): the weak sequences' fy stays out of the line
+                        strong = [(c, u) for c, u in us if not (weak.get(f"{u['group']}|{u.get('seq')}") or {}).get("weak")]
+                        us_ = strong or us
+                    F = np.array([u["dF"] for _, u in us_]); w = np.array([obs[c] for c, _ in us_], float)
+                    y = np.array([float(rec.cameras[c].params[pi]) for c, _ in us_])
+                    if len(us_) >= 3 and np.ptp(F) >= 300:
                         A = np.c_[np.ones_like(F), F]
                         sol = np.linalg.lstsq(A * np.sqrt(w)[:, None], y * np.sqrt(w), rcond=None)[0]
                         a, b = float(sol[0]), float(sol[1])
                     else:
                         bG = float(g[eye][4]) / slope_div(sg, eye, stt == "regular")
                         a, b = float(np.average(y - bG * F, weights=w)), bG
-                    row["lines"].setdefault(eye, {}).setdefault(stt, {})[pn] = {"a": a, "b": b, "bins": len(us),
-                                                                                 "observations": int(w.sum())}
+                    row["lines"].setdefault(eye, {}).setdefault(stt, {})[pn] = {"a": a, "b": b, "bins": len(us_),
+                                                                                 "observations": int(w.sum()),
+                                                                                 "weak_bins_left_out": len(us) - len(us_)}
         rows.append(row)
     fits = {}
     for ang in ("yaw", "pitch", "roll"):
@@ -1346,8 +1421,10 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
                      "fx": float(pr[_FX]), "fy": float(pr[_FY]), "observations": int(obs[cid]), "sol": u.get("sol"),
                      "sequence": u.get("sequence"), "seq": u.get("seq"), "thin": bool(u.get("thin")), "early": bool(u.get("early")),
                      # 0.96: about the law (the bin's line value), for the per-sequence means and the state flags
-                     "dfx_ppm": 1e6 * float(pr[_FX] / L[_FX] - 1.0), "dfy_ppm": 1e6 * float(pr[_FY] / L[_FY] - 1.0)})
-    out = {"blocks": rows, "fits": fits, "brief": ba["brief"], "bins": bins, "pool": pool}
+                     "dfx_ppm": 1e6 * float(pr[_FX] / L[_FX] - 1.0), "dfy_ppm": 1e6 * float(pr[_FY] / L[_FY] - 1.0),
+                     "weak": bool((weak.get(f"{u['group']}|{u.get('seq')}") or {}).get("weak"))})
+    out = {"blocks": rows, "fits": fits, "brief": ba["brief"], "bins": bins, "pool": pool,
+           "weak_sequences": {k: v for k, v in weak.items() if v.get("weak")}}
     if pooled_error:
         out["pooled_error"] = pooled_error
     if pooled:
@@ -1517,6 +1594,7 @@ def block_aspect_rows(res: Dict[str, Any], nav: Dict[str, Dict[str, Any]],
             pb = per_bin.get((block, eye)) or {}
 
             def pooled(ps_):
+                ps_ = [p for p in ps_ if not p.get("weak")] or ps_     # 0.96 (item F): weak sequences out of the mean
                 w = np.array([float(p["observations"]) for p in ps_])
                 if w.sum() <= 0:
                     return None, 0
@@ -1525,7 +1603,8 @@ def block_aspect_rows(res: Dict[str, Any], nav: Dict[str, Dict[str, Any]],
             z_ppm, obs = pooled(ps)
             if z_ppm is None:
                 continue
-            r = _row(block, eye, z_ppm, obs, f0 * z_ppm * 1e-6, source="pooled", pools=len(ps),
+            n_weak = sum(1 for p in ps if p.get("weak"))
+            r = _row(block, eye, z_ppm, obs, f0 * z_ppm * 1e-6, source="pooled", pools=len(ps) - n_weak, weak_pools=n_weak,
                      state="+".join(sorted({s for p in ps for s in p.get("states") or []})),
                      per_bin_ppm=pb.get("ppm"), per_bin_state=pb.get("state"), per_bin_observations=pb.get("observations"))
             r["per_bin_diff_ppm"] = (None if (pb.get("ppm") is None or r["navcam_ppm"] is None) else float(pb["ppm"] - r["navcam_ppm"]))
@@ -1552,8 +1631,9 @@ def block_aspect_rows(res: Dict[str, Any], nav: Dict[str, Dict[str, Any]],
     seqs = sorted(pools, key=lambda p: -abs(float(p["aspect_ppm"])))[:POOL_SEQUENCES_REPORTED]
     return {"rows": rows, "slope": slope, "source": "pooled" if pools else "per-bin", "pool": d.get("pool"),
             "max_diff_ppm": max((abs(r["diff_ppm"]) for r in J_), default=None), "min_observations": int(min_obs),
+            "weak_pools": sum(1 for p in pools if p.get("weak")),
             "sequences": [{k: p.get(k) for k in ("eye", "block", "sequence", "key", "sol", "states", "bins", "observations",
-                                                 "dfx_ppm", "dfy_ppm", "aspect_ppm", "sd_aspect_ppm")} for p in seqs]}
+                                                 "dfx_ppm", "dfy_ppm", "aspect_ppm", "sd_aspect_ppm", "weak", "rows")} for p in seqs]}
 
 
 # ====================================================================================== the run and the files
@@ -1564,7 +1644,7 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
                k_tests: bool = True, ratio_by: Optional[str] = None, navcam_aspect: bool = True,
                slope_tests: bool = False, rig_fit: str = ZJOINT_RIG_FIT,
                early_sol: Optional[int] = ZCAM_EARLY_SOL, aspect_hold: Optional[float] = None,
-               pool: Optional[str] = DIAG_POOL) -> Dict[str, Any]:
+               pool: Optional[str] = DIAG_POOL, focus_below: bool = FOCUS_BELOW_FIT) -> Dict[str, Any]:
     """The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the distortion tests (:func:`distortion_tests`,
     ``k_tests``), the diagnostic pass.  ``model``: the focus model to start from (default: the one in use);
     ``ratio_by``: "global" | "block" | "sol", the low-state groups with their own high / low ratio (default
@@ -1576,7 +1656,8 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     backlash fy line to the fx line; the regular state follows as before.  Default None: the aspect is free.
     0.96: ``pool`` - the diagnostic pass's pooled model ("sequence", :data:`DIAG_POOL`; "block"; None: per bin
     only), which the per-block aspect gate reads; the residual directions per sequence (:func:`residual_directions`)
-    and the opposite-state flags (:func:`opposite_state_flags`)."""
+    and the opposite-state flags (:func:`opposite_state_flags`); ``focus_below``: fit the focus-approach offset
+    (:data:`FOCUS_BELOW_FIT`, off since 9 Nov)."""
     from ..sfm.project import zcam_focus_model_path
     if rig_fit not in ("full", "rotation"):
         raise ValueError(f"rig_fit {rig_fit!r}: full or rotation")
@@ -1606,6 +1687,11 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
             G[3] = float(aspect_hold) * G[2]
         if verbose:
             log.info(f"Mastcam-Z joint: fy / fx held at {float(aspect_hold):.6f} in every eye")
+    sg["focus_below_fit"] = bool(focus_below)                                   # 0.96
+    if verbose and sg.get("weak_sequences"):
+        nw = sum(1 for v in sg["weak_sequences"].values() if v.get("weak"))
+        log.info(f"Mastcam-Z joint: {nw} of {len(sg['weak_sequences'])} sequences weak in the vertical "
+                 f"(under {WEAK_SEQUENCE_FOV:g} fields of view): their fy gets an offset of its own")
     if diagnostics and navcam_aspect:
         sg["_scapes"] = scapes
     if verbose:
@@ -1797,6 +1883,47 @@ def residual_direction_lines(res: Dict[str, Any], n: int = RESIDUAL_DIR_SEQUENCE
             head += "; rows: " + ", ".join(f"el {r['elevation_deg']:+.0f} deg ({r['images']}) x {r['rms_x_px']:.2f} / y {r['rms_y_px']:.2f} px, "
                                            f"fy {fmt(r.get('fy_scale_left_ppm'))} ppm" for r in s["rows"])
         out.append(head)
+    return out
+
+
+def weak_fy_rows(ba: Dict[str, Any], sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """0.96 (item F): per weak sequence with a free fy offset: the offset (px, ppm of fy, z against its prior) and
+    the sequence's geometry (covered fields of view, rows, frames)."""
+    cov = (ba.get("covariance") or {}).get("blocks") or {}
+    vf = float((ba.get("covariance") or {}).get("variance_factor") or 1.0)
+    weak = sg.get("weak_sequences") or {}
+    rows: List[Dict[str, Any]] = []
+    for k, px in sorted((ba.get("weak_fy_px") or {}).items()):
+        eye, _, seq = k.partition("|")
+        fy = float(sg["eyes"][eye]["G"][1])
+        c = cov.get(f"extra:dweak|{eye}|{seq}")
+        sd = float(np.sqrt(max(0.0, float(np.asarray(c).ravel()[0]) * vf))) if c is not None else None
+        w = weak.get(k) or {}
+        us = [u for u in zunits.values() if u["group"] == eye and u.get("seq") == seq]
+        rows.append({"eye": eye, "key": seq, "sequence": us[0].get("sequence") if us else None, "block": us[0]["scape"] if us else None,
+                     "sol": us[0].get("sequence_sol") if us else None, "offset_px": float(px), "ppm": 1e6 * float(px) / fy,
+                     "sd_px": sd, "z": (float(px) / sd) if sd else None, "prior_sd_px": WEAK_FY_SD * fy,
+                     "covered_fov": w.get("covered_fov"), "rows": w.get("rows"), "images": w.get("images"),
+                     "elevation_span_deg": w.get("elevation_span_deg")})
+    return rows
+
+
+def weak_sequence_lines(res: Dict[str, Any]) -> List[str]:
+    rows = res.get("weak_fy") or []
+    d = res.get("diagnostics") or {}
+    n_weak = len(d.get("weak_sequences") or {}) if d else None
+    if not rows and not n_weak:
+        return []
+    head = (f"weak-geometry sequences (under {WEAK_SEQUENCE_FOV:g} vertical fields of view): "
+            + (f"{n_weak} in the problem; " if n_weak is not None else "")
+            + f"{len(rows)} with a free fy offset in the joint (prior sd {100 * WEAK_FY_SD:g} % of fy; their fy is out of the "
+              f"slope and the aspect, their pools out of the aspect gate)")
+    out = [head]
+    for r in sorted(rows, key=lambda r: -abs(r["ppm"]))[:POOL_SEQUENCES_REPORTED]:
+        out.append(f"  {r.get('block')} {r.get('sequence') or r['key']} {r['eye']}: fy {r['offset_px']:+.1f} px ({r['ppm']:+.0f} ppm"
+                   + (f", z {r['z']:+.1f}" if r.get("z") is not None else "") + f"); {r.get('rows')} row(s), "
+                   f"{r['covered_fov']:.1f} FOV covered, {r.get('images')} frames" if r.get("covered_fov") is not None else
+                   f"  {r.get('block')} {r.get('sequence') or r['key']} {r['eye']}: fy {r['offset_px']:+.1f} px ({r['ppm']:+.0f} ppm)")
     return out
 
 
@@ -2340,7 +2467,9 @@ def describe(res: Dict[str, Any]) -> List[str]:
         out.append(f"pooled sequences with the largest |dfy - dfx| ({len(ba_['sequences'])}): " + "; ".join(
             f"{s['block']} {s.get('sequence') or s['key']} {s['eye']} dfx {s['dfx_ppm']:+.0f} / dfy {s['dfy_ppm']:+.0f} ppm"
             + (f" (+- {s['sd_aspect_ppm']:.0f})" if s.get("sd_aspect_ppm") else "") + f", {s['observations']} obs"
+            + (" [weak: out of the gate]" if s.get("weak") else "")
             for s in ba_["sequences"]))
+    out += weak_sequence_lines(res)                                     # 0.96 (item F)
     out += opposite_state_lines(res.get("opposite_states"))             # 0.96 (item C)
     out += residual_direction_lines(res)                                # 0.96 (item B)
     return out

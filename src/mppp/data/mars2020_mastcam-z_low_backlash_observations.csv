@@ -89,3 +89,9 @@ ZCAM08045_034
 -99:ZCAM08060  # 0.95.1 (Christian, 29 Oct 2026): Chal Rocks 79 mm, high state (zcam-states 29 Oct: listed but high, d +0.34 / +0.55 %); on the list since 0.61
 -361:ZCAM07105  # 0.95.1 (Christian, 29 Oct 2026): Chal Rocks 79 mm, high state (zcam-states 29 Oct: listed but high, d +0.22 / +0.53 %); the found list had it
 1150-1155:048  # Overlook Mountain 48 mm (Christian, 28 Oct 2026): every 48 mm frame of the site is low-state
+90:ZCAM08051  # Chal Rocks large 34 mm, both eyes (Christian, 9 Nov 2026; zcam-states 9 Nov: median -0.92 / -0.96 % against a 1.04 % gap, 38 fitted frames; the 27 unfitted frames follow their sequence)
+586:ZCAM08602  # Enchanted Lake 34 mm, both eyes (Christian, 9 Nov 2026; zcam-states 9 Nov: -0.86 / -0.92 %)
+556:ZCAM08577  # Enchanted Lake 63 mm, both eyes (Christian, 9 Nov 2026; the 4 Nov Z63 joint's bins -3,760 / -5,000 ppm = 90 / 88 % of the gap; the block-relative states study could not see it - the only 63 mm sequence of its block)
+ZL:78:ZCAM08038  # Chal Rocks large 63 mm, LEFT eye only (Christian, 5 and 9 Nov 2026; the mini-block of 5 Nov: ZL on its low line, ZR on its high line; the 4 Nov joint's bins ZL -3,600 ppm, ZR +640); the found list has the 24 stems since 5 Nov
+-507:ZCAM08530  # Rockytop 63 mm off the list (Christian, 9 Nov 2026; the 4 Nov Z63 joint's bins: ZL 0 ppm, ZR -1,270 ppm = 0 / 22 % of the gap - high state)
+-513:ZCAM08538  # Rockytop 63 mm off the list (Christian, 9 Nov 2026; the 4 Nov Z63 joint's bins: ZL -530 ppm, ZR -1,720 ppm = 13 / 30 % of the gap - high state)

@@ -193,6 +193,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "Navcam-Mastcam-Z vertical-scale tension; default: the aspect is free")
     p.add_argument("--zcam-ratio-by", choices=("block", "sol", "global"), default=None,
                    help="zcam: the low-state groups with their own high / low ratio (default block; global: one per eye)")
+    p.add_argument("--zcam-focus-below", action="store_true",
+                   help="zcam (0.96): fit the focus-approach offset again (off since 9 Nov: held at 0)")
     p.add_argument("--zcam-pool", choices=("sequence", "block", "none"), default=None,
                    help="zcam (0.96): the diagnostic pass's pooled model, which the per-block aspect gate reads - one pool "
                         "per eye and sequence (default), per eye, block and backlash state, or none (the per-bin pass "
@@ -815,7 +817,8 @@ def _calib_zcam(a: argparse.Namespace) -> int:
                        early_sol=(Z.ZCAM_EARLY_SOL if getattr(a, "zcam_early_sol", None) is None
                                   else (a.zcam_early_sol or None)),
                        pool=(Z.DIAG_POOL if getattr(a, "zcam_pool", None) is None
-                             else (None if a.zcam_pool == "none" else a.zcam_pool)))
+                             else (None if a.zcam_pool == "none" else a.zcam_pool)),
+                       focus_below=bool(getattr(a, "zcam_focus_below", False)) or Z.FOCUS_BELOW_FIT)
     from .calib import models_fingerprint
     from .pipeline import run_done
     res["models_fingerprint"] = models_fingerprint()

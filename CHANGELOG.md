@@ -47,8 +47,28 @@ sequence scatter.
   same as each offset's sd) and reflects the assumed scatter, not the observed one. Now the fitted offsets' sample sd
   (shrunk by the prior where it binds - flagged `prior_bound`) gives f0 an sd of its own, and the larger of the two is
   adopted. The prior in the fit is unchanged; the lines' `sd_a` stay the covariance's.
-- Not in this version: items E (the `navcal_tied_20261103` exact-tie LinAlgError) and F (weak-geometry sequences, under
-  about 2 vertical fields of view, out of the aspect gate).
+- **F. Weak-geometry sequences** (`weak_sequences`, `WEAK_SEQUENCE_FOV` 2, `WEAK_FY_SD` 1 %; Christian, 9 Nov: the Z110
+  slope — the bins' fy slope 0.11–0.13 px/count against fx's 0.31, the shared slope pulled 5–9 % shallow by the
+  single-row horizon pans; ZCAM08038's 2-row strip at fy/fx −0.5 % with no change in the residuals). A sequence whose
+  frames' boresight elevations cover (span + one field of view) under 2 vertical fields of view is weak: in the joint
+  its fy gets an offset of its own (px, drawn to 0 with sd 1 % of fy; `weak_fy_px`, `res["weak_fy"]`, a report line),
+  so its fy does not pull the slope or the aspect; its pools stay out of the per-block aspect gate's mean and the
+  per-block fy line (reported as weak). `WEAK_SEQUENCE_FOV = 0` turns it off. Unit test: a +3000 ppm fy departure of
+  one sequence lands in its offset.
+- **The focus-approach offset is not fitted any more** (`FOCUS_BELOW_FIT = False`; Christian, 9 Nov: "remove focus
+  breathing as a fit parameter"). The 0.94.4 offset on f for bins whose focus came into place from below is held at 0
+  and the report says so; `calib zcam --zcam-focus-below` / `fit_zjoint(focus_below=True)` fit it again. The focus
+  slope itself (the line) is unchanged.
+- **Low-backlash list** (`mars2020_mastcam-z_low_backlash_observations.csv`, Christian 9 Nov): on — Chal Rocks sol 90
+  ZCAM08051 and Enchanted Lake sol 586 ZCAM08602 at 34 mm (the 9 Nov states study: −0.92 / −0.96 % and −0.86 / −0.92 %
+  against a 1.04 % gap), Enchanted Lake sol 556 ZCAM08577 at 63 mm (the 4 Nov joint's bins at 90 / 88 % of the gap;
+  invisible to the block-relative states study as its block's only 63 mm sequence), Chal Rocks sol 78 ZCAM08038 left
+  eye only; off — Rockytop sols 507 / 513 ZCAM08530 / ZCAM08538 at 63 mm (0–30 % of the gap). New entry syntax
+  `ZL:78:ZCAM08038` (one eye of a sequence on a sol; `-` takes it off), key `eye_sol_sequences`. The blocks concerned
+  (Chal Rocks large, Enchanted Lake, Rockytop) need realigning; freeze-2's Z step does that.
+- `sites.json`: Rochette without the sol 180 frame(s) at SCLK 0682923713 (`*F_0180_0682923713*`).
+- Not in this version: item E (the `navcal_tied_20261103` exact-tie LinAlgError); the Z79 Chal Rocks relabels
+  (ZCAM07105, ZCAM08390 to low) are a test, not a list change yet — see the 9 Nov notes.
 
 ## 0.95.5 — 2026-11-08
 

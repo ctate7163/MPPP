@@ -373,6 +373,25 @@ def test_low_backlash_list_shipped_and_matching(tmp_path):
     # 0.95.0 (Christian, 28 Oct): sols at one zoom - Overlook Mountain's 48 mm frames (sols 1150-1155) are low-state
     assert (1150, 1155, 48) in lst["sol_zooms"]
     assert is_low_backlash(row("ZLF_1152_0769000000_000EBY_N0520000ZCAM03014_048085J01", "ZL048"), lst)
+    # 0.96 (Christian, 9 Nov): the shipped list's new entries - Chal Rocks sol 90 ZCAM08051 and Enchanted Lake sol 586
+    # ZCAM08602 at 34 mm, Enchanted Lake sol 556 ZCAM08577 at 63 mm (both eyes); Chal Rocks sol 78 ZCAM08038 LEFT eye
+    # only (ZL:78:ZCAM08038); Rockytop sols 507 / 513 ZCAM08530 / ZCAM08538 OFF the list, whatever the found list says
+    assert (90, "ZCAM08051") in lst["sol_sequences"] and (586, "ZCAM08602") in lst["sol_sequences"] and (556, "ZCAM08577") in lst["sol_sequences"]
+    assert ("ZL", 78, "ZCAM08038") in lst["eye_sol_sequences"]
+    assert is_low_backlash(row("ZLF_0078_0673880000_000EBY_N0032430ZCAM08038_063085J01", "ZL063"), lst)
+    assert not is_low_backlash(row("ZRF_0078_0673880000_000EBY_N0032430ZCAM08038_063085J01", "ZR063"), lst)
+    assert is_low_backlash(row("ZRF_0556_0716300000_000EBY_N0270000ZCAM08577_063085J01", "ZR063"), lst)
+    assert (507, "ZCAM08530") in lst["excluded"]["sol_sequences"] and (513, "ZCAM08538") in lst["excluded"]["sol_sequences"]
+    g = tmp_path / "found.csv"
+    g.write_text("ZL0_0507_0712000000_000RAD_N0260000ZCAM08530_063085A01  # found 20 Oct\n")
+    both = load_low_backlash(found=g)
+    assert not is_low_backlash(row("ZLF_0507_0712000000_000EBY_N0260000ZCAM08530_063085J01", "ZL063"), both)
+    # the eye-qualified entry in an own list, with the eye from the row when the stem has none
+    f2 = tmp_path / "eye.csv"
+    f2.write_text("ZR:12:ZCAM00001\n-ZL:12:ZCAM00001\n")
+    own2 = load_low_backlash(f2)
+    assert is_low_backlash({"stem": "x", "eye": "ZR", "sequence": "ZCAM00001", "sol": 12, "camera_group": "ZR034"}, own2)
+    assert not is_low_backlash({"stem": "x", "eye": "ZL", "sequence": "ZCAM00001", "sol": 12, "camera_group": "ZL034"}, own2)
     assert is_low_backlash({"name": "ZR0_1150_0768900000_000RAD_N0520000ZCAM05065_048085A03", "sol": 1150,
                             "sequence": "ZCAM05065", "camera_group": "ZR048_F02000"}, lst)
     assert not is_low_backlash(row("ZLF_1152_0769000000_000EBY_N0520000ZCAM03014_034085J01", "ZL034"), lst)
