@@ -2137,6 +2137,15 @@ ZCAM_MISTIE_SHIFT_M = 0.5
 ZCAM_MISTIE_SMALL_FRAMES = 3
 
 
+def _image_station(project: Any, name: str) -> Optional[str]:
+    """0.95.5 fix (9 Nov): the station of an image by name (None when the project does not have it) - the mis-tie
+    exclusions carry it like every other exclusion (the site log and the states runs read ``station``)."""
+    for r in project.images:
+        if r.get("name") == name:
+            return r.get("station")
+    return None
+
+
 def find_mistied_bins(rec, project: SfmProject, focal_pct: float = ZCAM_MISTIE_FOCAL_PCT,
                       shift_m: float = ZCAM_MISTIE_SHIFT_M, station_shifts: Optional[Dict[str, Any]] = None,
                       small_frames: int = ZCAM_MISTIE_SMALL_FRAMES) -> List[Dict[str, Any]]:
@@ -3012,6 +3021,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                     if fid in done_f:
                         continue
                     new_m.append({"frame_id": int(fid), "images": [nm], "family": "Z", "camera": m["camera"],
+                                  "station": _image_station(project, nm),
                                   "reasons": list(m["reasons"]), "kind": "mistie",
                                   "focal_change_pct": m["focal_change_pct"], "shift_m": m["shift_m"],
                                   "when": "stage 2, before the final adjustment (far-field mis-tie)"})
@@ -3073,6 +3083,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 for fid, nm in zip(m["frame_ids"], m["images"]):
                     if fid not in done_f:
                         new2.append({"frame_id": int(fid), "images": [nm], "family": "Z", "camera": m["camera"],
+                                     "station": _image_station(project, nm),
                                      "reasons": list(m["reasons"]), "kind": "mistie",
                                      "focal_change_pct": m["focal_change_pct"], "shift_m": m["shift_m"],
                                      "when": "stage 2, after the final adjustment (mis-tie; adjusted again)"})

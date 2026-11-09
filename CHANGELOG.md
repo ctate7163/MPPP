@@ -9,6 +9,15 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 models and the new rig model"): the deck baseline reaches the blocks, the Navcam joint reads and fits a yaw knee,
 the Mastcam-Z joints can promote with the per-block aspect gate waived, and the deck adjustment frees the Z rig.
 
+- **Mis-tie exclusions carry their station** (bug, 9 Nov). The far-field and small-sequence mis-tie exclusions
+  (`find_mistied_bins`, 0.95.0 / 0.95.3) had no `station`, and the site log's list of excluded frames
+  (`pipeline.run_site`) read `e["station"]`: a block whose adjustment excluded a mis-tie ended with
+  `KeyError: 'station'` after its last adjustment, before the export, the health report and `run_done.json`. Every
+  failed states run of freeze-1 ended this way (Rockytop 9.2 h, Chal Rocks large 7.9 h, Taylorfjellet 10.3 h, Marble
+  Mountain 3.0 h, Airey Hill 0.3 h, Overlook Mountain, Rochette, Bright Angel's first try): per-image free focal
+  lengths make mis-ties common; with the focus lines they are rare. The blocks' `zcam_focus_states.json` and
+  `sparse/` were written before the failure, so `mppp zcam-states` reads them as they are. The exclusions now name
+  the image's station (`reconstruction._image_station`) and the log line takes a missing one as `-`.
 - **Rig translation "deck" is used by the blocks** (bug). `calib.rig_at` returned the file's translation only for
   `"translation": "fitted"`; the 6 Nov 2026 promotion wrote `"deck"` (423.60 mm), so every block started after it
   took its CAHV baseline instead (Rockytop's states run of 8 Nov: 424.36 mm). The freeze blocks of 2-6 Nov ended

@@ -1166,7 +1166,7 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
         log.info("   no position prior: %s (%s images, %s cross-station points): %s", st, v["images"],
                  v["cross_points"], v["prior"])
     for e in excluded:
-        log.info("   %s | %s | %s", ", ".join(e["images"]), e["station"], "; ".join(e["reasons"]))
+        log.info("   %s | %s | %s", ", ".join(e.get("images") or []), e.get("station") or "-", "; ".join(e.get("reasons") or []))
     import numpy as np
     by_seq: Dict[str, List[Dict[str, Any]]] = {}
     for e in excluded:                                    # 0.95.0: the frames without tie points by sequence

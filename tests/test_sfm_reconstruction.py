@@ -1817,3 +1817,24 @@ def test_aspect_hold_sigmas_from_the_run(tmp_path):
     ba = R.bundle_adjust(copy.deepcopy(rec0), proj, sigma_px=0.3, max_iterations=2, navcam_aspect="hold",
                          zcam_aspect="hold")
     assert ba["aspect_sigma"] == 1e-3 and ba["zcam_aspect_sigma"] == 1e-3 and ba["zcam_aspect_priors"] == 2
+
+
+def test_mistie_exclusions_carry_the_station(tmp_path, caplog):
+    """0.95.5 fix (9 Nov: every failed states run of freeze-1 - Rockytop, Chal Rocks large, Taylorfjellet, Marble
+    Mountain, Airey Hill, Overlook Mountain, Rochette, Bright Angel's first try - ended with ``KeyError: 'station'``
+    after its last adjustment): the mis-tie exclusions name the image's station like every other exclusion, and the
+    site log no longer needs one."""
+    import logging as _lg
+    from mppp.sfm.reconstruction import _image_station
+    proj, rec, _ = _solved(tmp_path)
+    r0 = proj.images[0]
+    assert _image_station(proj, r0["name"]) == r0["station"]
+    assert _image_station(proj, "not_an_image.png") is None
+    # the log line of mppp.pipeline with an exclusion that has no station
+    log = _lg.getLogger("mppp.test_mistie")
+    e = {"images": ["a.png"], "reasons": ["far-field mis-tie"], "kind": "mistie"}
+    with caplog.at_level(_lg.INFO):
+        log.info("   %s | %s | %s", ", ".join(e.get("images") or []), e.get("station") or "-", "; ".join(e.get("reasons") or []))
+    assert "a.png | - | far-field mis-tie" in caplog.text
+    src = (__import__("pathlib").Path(__import__("mppp").__file__).parent / "pipeline.py").read_text(encoding="utf-8")
+    assert 'e["station"]' not in src
