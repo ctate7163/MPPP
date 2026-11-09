@@ -67,6 +67,14 @@ sequence scatter.
   `ZL:78:ZCAM08038` (one eye of a sequence on a sol; `-` takes it off), key `eye_sol_sequences`. The blocks concerned
   (Chal Rocks large, Enchanted Lake, Rockytop) need realigning; freeze-2's Z step does that.
 - `sites.json`: Rochette without the sol 180 frame(s) at SCLK 0682923713 (`*F_0180_0682923713*`).
+- `sites.json` (Christian, 9 Nov): Belva Crater large from sol 768 - the approach station 39_0000, 100 m south of the
+  crater stations, with its Mastcam-Z sequences ZCAM08785 (63 mm; `zcam_include` keeps the 63 mm list to it),
+  ZCAM08788, ZCAM08796, ZCAM08810, ZCAM08812 and ZCAM08817; `zcam` [34, 63, 110], 14 waypoints, 132.5 m across.
+  Official block 18 keeps its 770–821 visits.
+- `sites.json` (Christian, 9 Nov): Belva Crater large from sol 768 - the approach station 39_0000, 100 m south of the
+  crater stations, with its Mastcam-Z sequences ZCAM08785 (63 mm; `zcam_include` keeps the 63 mm list to it),
+  ZCAM08788, ZCAM08796, ZCAM08810, ZCAM08812 and ZCAM08817; `zcam` [34, 63, 110], 14 waypoints, 132.5 m across.
+  Official block 18 keeps its 770–821 visits.
 - Not in this version: item E (the `navcal_tied_20261103` exact-tie LinAlgError); the Z79 Chal Rocks relabels
   (ZCAM07105, ZCAM08390 to low) are a test, not a list change yet — see the 9 Nov notes.
 - **Mask training: online augmentation** (`mppp.mask.training.augment`, the 9 Nov plan
