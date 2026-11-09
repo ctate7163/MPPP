@@ -69,6 +69,14 @@ sequence scatter.
 - `sites.json`: Rochette without the sol 180 frame(s) at SCLK 0682923713 (`*F_0180_0682923713*`).
 - Not in this version: item E (the `navcal_tied_20261103` exact-tie LinAlgError); the Z79 Chal Rocks relabels
   (ZCAM07105, ZCAM08390 to low) are a test, not a list change yet — see the 9 Nov notes.
+- **Site maps** (Christian, 9 Nov): `make_maps.bat` downloads the current waypoint table first (`mppp maps
+  --waypoints refresh|auto|study`, `cli.sync_study_waypoints` copies it into the study folder); no contour lines on
+  the orthomosaic panels (`M20_CONTOURS=0` drops them from the DTM panels too); figure 6
+  (`m20_mars_to_rover_sites_no_I`): E–H 1.25× wider and zoomed in 1.2× (less where a region's blocks would not fit),
+  the block list moved right and without "sols ended inside"; the cluster zooms (figure 1) carry a translucent box
+  behind every sol number. `sites.json`: **Curtis Ridge** (sols 1298–1304, N×4) is official block 28; Pico Turquino
+  to Marble Mountain are 29–41 (the sites' `official_blocks` lists, `blocks_all` and
+  `blocks_margin_unit_neretva_vallis` follow).
 
 ## 0.95.5 — 2026-11-08
 

@@ -20,6 +20,9 @@ BOX_B = (77.205, 77.47, 18.38, 18.515)
 used_all = set(); ortho_used = set()
 BACKGROUND = background_mode()          # M20_BACKGROUND: 'dtm' (default) or 'ortho'
 import os
+FIG6_WIDEN = float(os.environ.get('M20_FIG6_WIDEN', '1.25'))      # 9 Nov 2026: figure 6's E-H panels, x the 1.5 km width
+FIG6_ZOOM = float(os.environ.get('M20_FIG6_ZOOM', '1.2'))        # ... and zoomed in (fewer metres per inch), when the blocks fit
+FIG6_LIST_SHIFT = float(os.environ.get('M20_FIG6_LIST_SHIFT', '0.35'))   # ... the block list moved right (in)
 CONTOURS = os.environ.get('M20_CONTOURS', '1') != '0'   # 9 Nov 2026: 100 m contours on the DTM / tile panels; never on the orthomosaic
 import matplotlib.patheffects as pe
 DPI = int(os.environ.get('M20_DPI', 300))     # output resolution of every figure (set M20_DPI=300 for smaller files)
@@ -472,7 +475,23 @@ def fig5(out, with_I=True):
         hb = box_around(ids, pad_m=0); cl, ca = (hb[0]+hb[1])/2, (hb[2]+hb[3])/2
         y0 = ca - h_ref/2/M_LAT
         return (cl - w/2/M_LON, cl + w/2/M_LON, y0, y0 + h/M_LAT)
-    boxes = {r: centred(RID[r], 1500.0, BH, 2000.0) for r in skinny}
+    # 9 Nov 2026 (figure 6, Christian): E-H wider (FIG6_WIDEN x the 1.5 km panel width) and zoomed in (FIG6_ZOOM x
+    # fewer metres per inch), the block list moved right - the zoom is lowered where the blocks of a region would not
+    # fit the smaller box, so E-H still share one scale
+    if not with_I:
+        s_in6 = s_in * FIG6_WIDEN
+        zoom = FIG6_ZOOM
+        for r in skinny:                                             # the largest zoom at which every region fits
+            hb = box_around(RID[r], pad_m=70)
+            ext_w, ext_h = (hb[1] - hb[0]) * M_LON, (hb[3] - hb[2]) * M_LAT
+            zoom = min(zoom, (s_in6 / inch_per_km * 1000) / max(ext_w, 1), BH / max(ext_h, 1))
+        zoom = max(1.0, zoom)
+        inch_per_km *= zoom
+        BH = sh / inch_per_km * 1000
+        print(f'figure 6: E-H {s_in6:.2f} in wide, zoom {zoom:.2f} -> {s_in6 / inch_per_km * 1000:.0f} x {BH:.0f} m')
+        boxes = {r: centred(RID[r], s_in6 / inch_per_km * 1000, BH, BH) for r in skinny}
+    else:
+        boxes = {r: centred(RID[r], 1500.0, BH, 2000.0) for r in skinny}
     if with_I: boxes['mfan'] = centred(RID['mfan'], w4_m, BH4, 2500.0)    # I: margin unit + upper fan in one panel; may overlap F and G
     for r in boxes:
         for i in RID[r]:
@@ -509,7 +528,7 @@ def fig5(out, with_I=True):
     for row, yt in layout:
         x = left
         for r in row:
-            w = s_in if r in skinny else w4_in; hh = sh if r in skinny else sh4
+            w = (s_in6 if not with_I else s_in) if r in skinny else w4_in; hh = sh if r in skinny else sh4
             ax = fig.add_axes(rect(x, yt-hh, w, hh))
             gxr, gyr, Zr, _ = T[r]; draw_terrain(ax, gxr, gyr, Zr, NORM[r], 10, exag=2)
             overlay(ax, boxes[r], ids=RID[r], eod=True, squares=True, fs=10)        # block numbers
@@ -528,7 +547,7 @@ def fig5(out, with_I=True):
             if r in CB: colorbar(fig, rect(x+0.1, yt-hh, cbw-0.1, hh), NORM[r], CB[r]); x += cslot
             else: x += g
     if not with_I:   # ---- figure 6: list of all blocks to the right of E-H ----
-        x_l = left + 2*s_in + g + cslot + 0.15; top = y3 + 0.05; bot = y4 - sh; wl = R - x_l
+        x_l = left + 2*s_in6 + g + cslot + 0.15 + FIG6_LIST_SHIFT; top = y3 + 0.05; bot = y4 - sh; wl = R - x_l
         axL = fig.add_axes(rect(x_l, bot, wl, top - bot)); axL.axis('off')
         NW = max(len(o['name']) for o in sites)
         lines = [f"{o['id']:>2}  {o['name']:<{NW}}  {fmt_counts(o, pad=True):<10} sols {fmt_runs(o['runs'])}" + ('+' if o['runs'][-1][1] >= last else '')
@@ -538,12 +557,12 @@ def fig5(out, with_I=True):
         rr = fig.canvas.get_renderer(); bb = txt.get_window_extent(rr)
         k = min(wl*fig.dpi/bb.width, 0.95*(top - bot)*fig.dpi/bb.height)   # largest font that fits the box
         txt.set_fontsize(min(10*k, 11.5*FS))
-        axL.text(0, 1.0, 'I. Blocks of rover stations: N× = Navcam 360s, Z× = Mastcam-Z 360s within ±30 m; sols ended inside',
+        axL.text(0, 1.0, 'I. Blocks of rover stations: N× = Navcam 360s, Z× = Mastcam-Z 360s',
                  va='top', ha='left', fontsize=9.5*FS, color=INK, transform=axL.transAxes)
         print('list font', round(min(10*k, 11.5*FS), 2))
     dpi5 = DPI
     scale_note = (f'E–I share one scale (E–H {BH/1000:.1f} km tall, I {BH4/1000:.1f} km tall; box I in D overlaps F and G).' if with_I
-                  else f'E–H share one scale ({BH/1000:.1f} km tall, 1.5 km wide).')
+                  else f'E–H share one scale ({BH/1000:.2f} km tall, {s_in6 / inch_per_km:.2f} km wide).')
     bg_note = (' Background C–I: coarse HiRISE-DTM-based terrain, ~70 m grid (HiRISE DTM not yet connected).' if not used_all
                else ' Background C–I: 1 m HiRISE DTM (' + ', '.join(sorted(used_all)) + ') where available, ~70 m terrain elsewhere.')
     if ortho_used: bg_note += ' HiRISE orthomosaic (' + ', '.join(sorted(ortho_used)) + ') in grey where available.'

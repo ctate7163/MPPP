@@ -278,10 +278,11 @@ def test_sites_block_record_and_groups():
     t = load_site_table()
     assert t["version"] == 5                                              # v0p81: the official_blocks table
     b = block_sites(t)
-    assert len(b) == 40 and b[0] == "butler_landing" and b[-1] == "marble_mountain"   # 9 Nov: butler_landing runs block 1 (oeb_landing_site out); 0.91: + Rose River Falls, Olifants
+    assert len(b) == 41 and b[0] == "butler_landing" and b[-1] == "marble_mountain"   # 9 Nov: + Curtis Ridge (block 28); butler_landing runs block 1 (oeb_landing_site out)
+    assert b[27] == "curtis_ridge" and t["official_blocks"]["28"]["name"] == "Curtis Ridge"
     assert "oeb_landing_site" not in b and t["official_blocks"]["1"]["site"] == "butler_landing"
     assert site_block("chal_rocks_large", t)["number"] == 3 and site_block("chal_rocks", t)["number"] == 3
-    assert len(site_group("blocks_all")) == 40
+    assert len(site_group("blocks_all")) == 41
     assert "chal_rocks_large" in site_group("navcam_baseline")
     err, _ = validate_site_table()
     assert not err

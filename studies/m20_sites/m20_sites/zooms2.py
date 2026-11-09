@@ -14,6 +14,7 @@ def posi(s):
     w = np.where(S <= s)[0]; return w[-1] if len(w) else 0
 ncol = int(__import__('os').environ.get('M20_ZOOM_COLS', 6)); nrow = -(-len(sites) // ncol)   # 6 columns; the legend in the title band
 CONTOURS = __import__('os').environ.get('M20_ZOOM_CONTOURS', '0') == '1'   # 20 Oct: no contour lines by default
+SOL_LABEL_ALPHA = float(__import__('os').environ.get('M20_SOL_LABEL_ALPHA', '0.55'))   # 9 Nov: the box behind each sol number
 assert len(sites) <= ncol*nrow
 fig, axs = plt.subplots(nrow, ncol, figsize=(3.45*ncol, 3.6*nrow), facecolor='#fcfcfb')
 dem_used = set(); ortho_used = set(); BACKGROUND = background_mode()   # M20_BACKGROUND: 'dtm' (default) or 'ortho'
@@ -85,8 +86,10 @@ for k, (ax, o) in enumerate(zip(axs.flat, sites)):
         ax.scatter(X[m]-cx, Y[m]-cy, marker='s', s=20, facecolor='white', ec=ec_, lw=1.0, zorder=z)
         ax.scatter(X[it]-cx, Y[it]-cy, marker='x', s=18, color=INK2 if col == C1 else OUTG, lw=0.9, zorder=z)
     for i in inb:
+        # 9 Nov 2026 (Christian): a light translucent box behind every sol number, legible on the dark backgrounds
         ax.annotate(str(S[i]), (X[i]-cx, Y[i]-cy), xytext=(3, 2.5), textcoords='offset points', fontsize=7.2,
-                    color=(INK if F[i] == 'y' else INK2) if i in mem else OUTG, zorder=6)
+                    color=(INK if F[i] == 'y' else INK2) if i in mem else OUTG, zorder=6,
+                    bbox=dict(boxstyle='round,pad=0.12', fc='white', ec='none', alpha=SOL_LABEL_ALPHA))
     for num, ss, _, _ in PANOS:
         i = posi(ss[0])
         if abs(X[i]-cx) <= HALF and abs(Y[i]-cy) <= HALF:
