@@ -25,10 +25,12 @@ def test_found_list_lines_and_exclusions(tmp_path):
     assert not is_low_backlash(row(_name("L", 501, 711425107, "ZCAM07114"), 501, "ZCAM07114"), lst)
     assert not is_low_backlash(row(b, 121, "ZCAM08114"), lst)
     # 0.95.1: the shipped list takes Chal Rocks' 79 mm sequences off (-99:ZCAM08060, -361:ZCAM07105)
-    # 0.96 (9 Nov): plus Rockytop's -507:ZCAM08530 and -513:ZCAM08538
+    # 0.96 (9 Nov): Rockytop's -507:ZCAM08530 and -513:ZCAM08538, the ZCAM07114 frames of sols 435 and 817; the 29 Oct
+    # -99:ZCAM08060 / -361:ZCAM07105 are gone (Chal Rocks' 79 mm sequences are low again)
     assert {k: len(v) for k, v in lst["excluded"].items()} == {"entries": 2, "sol_sequences": 4, "eye_sol_sequences": 0,
                                                               "clocks": 1, "sol_zooms": 0}
-    assert lst["excluded"]["sol_sequences"] == {(99, "ZCAM08060"), (361, "ZCAM07105"), (507, "ZCAM08530"), (513, "ZCAM08538")}
+    assert lst["excluded"]["sol_sequences"] == {(507, "ZCAM08530"), (513, "ZCAM08538"), (435, "ZCAM07114"), (817, "ZCAM07114")}
+    assert (361, "ZCAM07105") in lst["sol_sequences"] and (360, "ZCAM08390") in lst["sol_sequences"]
     assert not is_low_backlash({"name": "ZR0_0099_0675741232_223RAD_N0040218ZCAM08060_079085A03", "camera_group": "ZR079"},
                                lst)                              # the sequence from the name (no "sequence" field)
     assert default_found_path(tmp_path) == found
