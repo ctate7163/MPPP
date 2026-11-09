@@ -234,7 +234,9 @@ def photometric(rgb: np.ndarray, valid: np.ndarray, rng, cfg: PhotometricConfig 
         x += rng.standard_normal(x.shape).astype(np.float32) * sig
         p["noise_sigma"] = s
     if rng.random() < cfg.grey_prob:
-        grey = x @ np.array([0.299, 0.587, 0.114], np.float32)
+        # elementwise, not a BLAS matmul: on the PC a (H, W, 3) @ (3,) through MKL aborted the process (9 Nov, with
+        # torch's OpenMP loaded in the same test session)
+        grey = 0.299 * x[..., 0] + 0.587 * x[..., 1] + 0.114 * x[..., 2]
         x = np.repeat(grey[..., None], 3, axis=2)
         p["grey"] = True
     out = np.clip(np.rint(np.clip(x, 0.0, 1.0) * 255.0), 1, 255).astype(np.uint8)
@@ -346,11 +348,11 @@ class ColorMatrix:
 
     def apply(self, rgb: np.ndarray, valid: np.ndarray, inverse: bool = False) -> np.ndarray:
         x = rgb.astype(np.float32) / 255.0
-        if inverse:
-            Mi = np.linalg.inv(self.M)
-            y = (x - self.b.reshape(1, 1, 3)) @ Mi.T
+        if inverse:                                     # einsum without optimize: no BLAS call (see photometric)
+            Mi = np.linalg.inv(self.M).astype(np.float32)
+            y = np.einsum("hwc,dc->hwd", x - self.b.reshape(1, 1, 3), Mi, optimize=False)
         else:
-            y = x @ self.M.T + self.b.reshape(1, 1, 3)
+            y = np.einsum("hwc,dc->hwd", x, self.M.astype(np.float32), optimize=False) + self.b.reshape(1, 1, 3)
         out = np.clip(np.rint(np.clip(y, 0, 1) * 255.0), 1, 255).astype(np.uint8)
         out[~valid] = 0
         return out
