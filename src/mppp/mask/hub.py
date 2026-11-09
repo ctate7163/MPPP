@@ -27,8 +27,8 @@ login``) is sent to huggingface.co, for a private model repository.
 Release (docs/RELEASING.md)::
 
     python -m mppp.mask.hub export checkpoints/convnext_tiny_s4_seg_20260925b.pt --name mppp_mask_v3 --update-registry
-    python scripts/release_mask_model.py upload mppp_mask_v3     (maintainers)
-    python scripts/release_mask_model.py verify mppp_mask_v3
+    python -m mppp_studies.mask_training.release_mask_model upload mppp_mask_v3     (maintainers)
+    python -m mppp_studies.mask_training.release_mask_model verify mppp_mask_v3
 """
 from __future__ import annotations
 

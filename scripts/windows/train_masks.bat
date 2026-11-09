@@ -5,12 +5,12 @@ REM on the newest training set, then the JOSS paper's outputs.
 REM
 REM   train_masks.bat [more train_mask.py options]        e.g.   train_masks.bat --epochs 12
 REM   train_masks.bat --recipe A --epochs 30 --tag v9A     0.96 (9 Nov 2026): the online augmentations of the mask
-REM   train_masks.bat --recipe B --epochs 30 --tag v9B     plan (mppp.mask.training.augment): A lighting + LMST
+REM   train_masks.bat --recipe B --epochs 30 --tag v9B     plan (mppp_studies.mask_training.augment): A lighting + LMST
 REM   train_masks.bat --recipe C --epochs 30 --tag v9C     sampler; B + angular scale, defocus, quad split; C + copy-
 REM                                                        paste, colour matrix, family batches.  A later --tag wins
 REM                                                        over the default v%VER%; --recipe turns the tone curve off.
 REM   Add --test-list D:\masks\frozen_test_list.txt to every run so they are scored on the same held-out frames
-REM   (make it once: python scripts\train_mask.py --write-test-list D:\masks\frozen_test_list.txt --from-checkpoint <v4.2 .pt>).
+REM   (make it once: python -m mppp_studies.mask_training.train_mask --write-test-list D:\masks\frozen_test_list.txt --from-checkpoint <v4.2 .pt>).
 REM
 REM 1. The training set: MPPP_MASK_DATA, else the highest D:\masks\masks_training_set_vN (MPPP_MASK_ROOT).
 REM 2. images\ regenerated from the PDS archive (MPPP_PDS) for every mask through the standard MPPP pipeline
@@ -66,7 +66,7 @@ if not defined TPY (
 )
 
 echo %DATE% %TIME%  train_masks: %MPPP_MASK_DATA% (v%VER%), PDS %MPPP_PDS%, python %TPY%
-"%TPY%" "%MPPP_HOME%\scripts\train_mask.py" --data "%MPPP_MASK_DATA%" --pds "%MPPP_PDS%" --regen --epochs 20 --tag v%VER% --zoom-max 2 --zoom-prob 0.5 --tone-prob 0.5 --paper %*
+"%TPY%" -m mppp_studies.mask_training.train_mask --data "%MPPP_MASK_DATA%" --pds "%MPPP_PDS%" --regen --epochs 20 --tag v%VER% --zoom-max 2 --zoom-prob 0.5 --tone-prob 0.5 --paper %*
 set "RC=%ERRORLEVEL%"
 echo %DATE% %TIME%  train_masks done ^(exit %RC%^): checkpoints in %MPPP_HOME%\checkpoints, paper outputs in "%MPPP_HOME%\Claude outputs\mask_*"
 if not defined MPPP_NOPAUSE pause

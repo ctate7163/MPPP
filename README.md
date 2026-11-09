@@ -132,9 +132,10 @@ the package copies; on a working machine the models in use live there - `mppp cm
   label CAHVOR. An image is in the high-focal-length state unless the low-backlash list or its own focal fit says
   otherwise.
 
-New models enter with `scripts/promote_cmods.py <files> --note "..."` (validated against the form, logged in
-`cmods/CHANGES.md`; the replaced files stay in git history). The fits that produce them are in `mppp.calib.fit`;
-the calibration campaigns themselves are research code in `studies/calibration/`.
+New models enter with `python -m mppp_studies.calibration.promote_cmods <files> --note "..."` (validated against the
+form, logged in `cmods/CHANGES.md`; the replaced files stay in git history). The fits that produce them are the
+calibration study, `mppp_studies.calibration` (0.96.0: the core package reads the promoted models and never solves
+for them).
 
 ## GPU on Windows
 
@@ -150,14 +151,14 @@ time exceeds the per-block budget. `mppp align --gui` writes the files that open
 
 | path | content |
 |---|---|
-| `src/mppp/` | the package: `pipeline` and `cli` (the workflow), `process` and `image` (PDS → images), `mask` (inference; `mask/training`), `calib` (camera-model forms, models, constraints, fits), `sfm` (COLMAP project, features, LightGlue matching, bundle adjustment, health, export), `waypoints` (waypoint table, sites, blocks), `error` (the error model, under development), `camera`/`cmod`/`colmap`/`labels`/`radiometry`/`writers`/`config`/`paths` |
+| `src/mppp/` | the pipeline: `pipeline` and `cli` (the workflow), `process` and `image` (PDS → images), `mask` (inference, the model files), `calib` (camera-model forms, the promoted models, their constraint to an image or block), `sfm` (COLMAP project, features, matching, the adjustment, exports, dense), `ibr` (mesh, depth and photometric cube, the stereoscopic panorama), `waypoints`, `waypoints` |
+| `src/mppp_studies/` | the studies (installed with the package, importing it, never imported by it): `calibration` (the camera-model solvers, their gates and promotion, the deck and fiducial studies, the chain driver of a freeze run), `error` (the reconstruction-error model), `mask_training` (training, audit, release of the mask model), `sites` (the site-map figures), `paper`, `misc` (what did not clearly belong anywhere) |
 | `src/mppp/data/` | site definitions, waypoint snapshot, optical-depth table, the camera models in use (`cmods/`), the mask-model registry |
-| `notebooks/` | the workflows above as thin callers of the pipeline |
-| `scripts/` | batch runs (`run_sites.py`, `process_sites.py`, `align_scape.py`, `stop_runs.py`), `promote_cmods.py`, `check_sites.py`, `build_paper.py`, `release_mask_model.py`; `windows/` the .bat wrappers |
-| `studies/` | research code that imports the package and is not installed: `calibration/` (Navcam consensus, Mastcam-Z calibration, their scripts and notebook), `m20_sites/` (the waypoint-map study), `error/`, `analyses/`, `experiments/` |
+| `notebooks/` | `pipeline_example.ipynb` (the pipeline end to end on the example data) and `studies/` (one notebook per study) |
+| `scripts/` | the batch runs of the pipeline (`run_sites.py`, `process_sites.py`, `align_scape.py`, `stop_runs.py`, `check_sites.py`, `check_env.py`, `waypoint_check.py`); `windows/` the .bat wrappers |
 | `tests/` | pytest, one file per module; `tests/data/m20/` holds two public PDS products and the stored regression fixtures |
 | `docs/` | `methods.md` (conventions, equations, flagged assumptions), `calibration.md`, `exports.md`, `masks.md`, `roadmap.md`, `RELEASING.md`, `history/` (older changelogs and working notes) |
-| `paper/` | the JOSS paper (`python scripts/build_paper.py` renders it) |
+| `paper/` | the JOSS paper (`python -m mppp_studies.paper.build_paper` renders it) |
 
 ## Scope and limits
 

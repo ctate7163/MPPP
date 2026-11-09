@@ -21,7 +21,7 @@ import numpy as np
 
 from .. import calib
 from ..calib import forms
-from ..calib.fit import huber_fit, huber_line
+from ..calib.robust import huber_fit, huber_line
 from .project import FULL_OPENCV_NAMES, PARAM_NAMES, SfmProject
 
 PathLike = Union[str, Path]

@@ -1,4 +1,4 @@
-"""The one-adjustment Navcam joint (mppp.calib.tied) on a synthetic block: units, ties, result, files."""
+"""The one-adjustment Navcam joint (mppp_studies.calibration.tied) on a synthetic block: units, ties, result, files."""
 import json
 from pathlib import Path
 
@@ -10,7 +10,7 @@ pycolmap = pytest.importorskip("pycolmap")
 
 def _tied_setup(tmp_path):
     from helpers import _build_rec, _synthetic
-    from mppp.calib import tied as T
+    from mppp_studies.calibration import tied as T
     proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
     rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=False)
     # sols: the first station early in the mission (before the knot), the second late; temperatures in two bins
@@ -84,7 +84,7 @@ def test_tied_adjust_and_files(tmp_path):
     assert rig["drift"]["sol0"] == 0.0 and rig["drift"]["knot_ref"] == 0.0 and "roll_mdeg_per_sol" in rig["drift"]
     assert not forms.validate_rig(rig)
     assert (out / "tied_joint.json").exists() and (out / "consensus.json").exists()
-    from mppp.calib.fit import check_navcam
+    from mppp_studies.calibration.fit import check_navcam
     rep = check_navcam(out)
     names = [c["check"] for c in rep["checks"]]
     assert "block agreement" in names and "leave-one-block-out" not in names
@@ -184,7 +184,7 @@ def test_isotropic_focal_slope(tmp_path):
 def test_diagnostic_bins_merge_thin_cold_bins():
     """22 Oct (Christian): the cold morning images (1-3 per 2 degC bin of a block) were all below the figure cut;
     the diagnostic pass merges a block's adjacent thin bins until each eye has 8 images, at most 10 degC wide."""
-    from mppp.calib.tied import merge_bins
+    from mppp_studies.calibration.tied import merge_bins
     frames, counts = {}, {}
     k = 0
     for b, n in ((-14, 2), (-13, 1), (-12, 3), (-11, 2), (-10, 9), (-9, 1), (-2, 10), (0, 3)):
@@ -216,7 +216,7 @@ def test_joint_refines_the_rig_roll_the_blocks_hold(tmp_path):
 
 
 def test_early_offsets_kept_only_where_significant():
-    from mppp.calib import tied as T
+    from mppp_studies.calibration import tied as T
     em = lambda off, sd: {"offsets_px": dict(zip(T.EARLY_TERMS, off)), "sd_px": dict(zip(T.EARLY_TERMS, sd))}  # noqa
     res = {"NL": {"early_mission": em([-0.015, -0.009, 0.207, 0.137], [0.04, 0.05, 0.05, 0.04])},
            "NR": {"early_mission": em([0.029, 0.022, 0.293, 0.160], [0.04, 0.05, 0.05, 0.04])}}
@@ -227,7 +227,7 @@ def test_early_offsets_kept_only_where_significant():
 
 
 def test_covariance_check_needs_the_joints_own_sd(tmp_path):
-    from mppp.calib import tied as T
+    from mppp_studies.calibration import tied as T
     res = {"rig": {"sd_sol0_mdeg": {"pitch": float("inf"), "yaw": float("nan"), "roll": 0.1},
                    "sd_rate": {"pitch": float("inf"), "yaw": float("inf"), "roll": 0.08}, "sd_pitch_early": 0.4},
            "held": {"Q0": [1], "H": [1, 2]}}
@@ -250,7 +250,7 @@ def test_keypoint_scale_follows_fx_slope_with_iso(tmp_path):
 
 
 def test_joint_points_by_stations_within_the_angle_limits(tmp_path):
-    from mppp.calib import joint as J
+    from mppp_studies.calibration import joint as J
     proj, rec, idx, st, T = _tied_setup(tmp_path)
     ids = J._subsample_points(rec, 200, seed=1)
     ang, nst = J.point_geometry(rec, ids)
@@ -330,7 +330,7 @@ def test_law_check_deviations_and_held_residuals(tmp_path):
     and compares any law with the same free units."""
     pytest.importorskip("pyceres")
     import copy
-    from mppp.calib import lawcheck as L
+    from mppp_studies.calibration import lawcheck as L
     proj, rec, idx, st, T = _tied_setup(tmp_path)
     free = L.units_free(rec, proj, idx, st, iterations=30, verbose=False)
     held = L.law_held(rec, proj, idx, st, iterations=30)
@@ -371,9 +371,10 @@ def test_a_held_slope_keeps_the_joints_own_sd(tmp_path):
 def test_calib_lawcheck_command(tmp_path, monkeypatch):
     """27 Oct: the 25 Oct law check as a command - ``mppp calib lawcheck --law LABEL=DIR``."""
     from mppp import cli
-    from mppp.calib import lawcheck as L
+    from mppp_studies.calibration import cli as scli
+    from mppp_studies.calibration import lawcheck as L
     seen = {}
-    monkeypatch.setattr(cli, "_navcam_blocks", lambda a: {"a": tmp_path / "a", "b": tmp_path / "b"})
+    monkeypatch.setattr(scli, "_navcam_blocks", lambda a: {"a": tmp_path / "a", "b": tmp_path / "b"})
 
     def fake_validate(blocks, laws, points=4000, **kw):
         seen.update(blocks=blocks, laws=laws, points=points)
@@ -382,12 +383,12 @@ def test_calib_lawcheck_command(tmp_path, monkeypatch):
     monkeypatch.setattr(L, "write_validation", lambda res, out: seen.setdefault("out", out))
     a = cli.build_parser().parse_args(["calib", "lawcheck", "--root", str(tmp_path), "--out", str(tmp_path / "o"),
                                        "--law", "in_use=", "--law", "cand=" + str(tmp_path / "c"), "--points", "500"])
-    assert cli.cmd_calib(a) == 0
+    assert scli.cmd_calib(a) == 0
     assert seen["laws"] == {"in_use": None, "cand": str(tmp_path / "c")} and seen["points"] == 500
     assert set(seen["blocks"]) == {"a", "b"} and str(seen["out"]) == str(tmp_path / "o")
     a = cli.build_parser().parse_args(["calib", "lawcheck", "--root", str(tmp_path), "--out", str(tmp_path / "o")])
     seen.clear()
-    assert cli.cmd_calib(a) == 0 and seen["laws"] == {"in_use": None}
+    assert scli.cmd_calib(a) == 0 and seen["laws"] == {"in_use": None}
 
 
 def test_nl_cy_held_and_one_k1_slope(tmp_path):
@@ -416,7 +417,7 @@ def test_covariance_check_skips_held_terms(tmp_path):
     the covariance check counts only the fitted terms; a NaN on a fitted term still fails it."""
     import shutil
     from mppp.calib import models as M
-    from mppp.calib.fit import check_navcam
+    from mppp_studies.calibration.fit import check_navcam
     cur = M._folder(None)
     cand = tmp_path / "cand"
     cand.mkdir()
@@ -477,7 +478,7 @@ def test_stereo_difference_terms_and_their_sd(tmp_path):
     stereo principal-point difference its own sd (the exact stereo block), smaller than hypot(sd_L, sd_R) of two
     correlated eyes, and the law check's stereo rows use it."""
     pytest.importorskip("pyceres")
-    from mppp.calib import lawcheck as L
+    from mppp_studies.calibration import lawcheck as L
     proj, rec, idx, st, T = _tied_setup(tmp_path)
     assert T.STEREO_PP_TERMS and T.STEREO_TERMS == ("dG_cx", "dG_cy", "dS_cx", "dS_cy")
     rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
@@ -545,7 +546,7 @@ def test_zero_terms_sets_and_validates():
     """3 Nov 2026: --zero D_roll S_NL_cx ... sets the global terms to 0 (fit_tied holds them)."""
     import numpy as np
     import pytest as _pt
-    from mppp.calib import tied as TJ
+    from mppp_studies.calibration import tied as TJ
     st = {"D": np.array([5.4, 2.7, -4.9]), "Q0": np.zeros(3), "H": np.zeros(3),
           "S": {"NL": np.ones(len(TJ.SLOPE_TERMS)), "NR": np.ones(len(TJ.SLOPE_TERMS))},
           "G": {"NL": np.ones(10), "NR": np.ones(10)}, "E": {"NL": np.ones(len(TJ.EARLY_TERMS)), "NR": np.ones(len(TJ.EARLY_TERMS))}}
@@ -574,7 +575,8 @@ def test_yaw_knee_from_the_rig_file(tmp_path):
     """0.95.5 (Christian, 7 Nov: "the knee looks real"): a rig file with a yaw knee (yaw_early_mdeg_per_sol) starts
     the joint with H's yaw, which the joint then fits (roll stays linear); the law matches rig_at at every sol."""
     import shutil
-    from mppp.calib import models as M, constrain as C, tied as T
+    from mppp.calib import models as M, constrain as C
+    from mppp_studies.calibration import tied as T
     src = M._folder(None)
     d = tmp_path / "cm"
     shutil.copytree(src, d)

@@ -26,6 +26,35 @@ from .tiecov import _csr, _point_block_inverse, _ptr
 log = logging.getLogger("mppp.calib")
 
 
+
+def linear_tie_class():
+    import pyceres
+
+    class LinearTie(pyceres.CostFunction):
+        """r = (A x) / sigma over the concatenated parameter blocks (A constant)."""
+
+        def __init__(self, A: np.ndarray, sigma: np.ndarray, sizes: Sequence[int]):
+            super().__init__()
+            self.A = np.asarray(A, float) / np.asarray(sigma, float)[:, None]
+            self.sizes = list(map(int, sizes))
+            self.offsets = np.cumsum([0] + self.sizes)
+            self.set_num_residuals(self.A.shape[0])
+            self.set_parameter_block_sizes(self.sizes)
+
+        def Evaluate(self, parameters, residuals, jacobians):
+            x = np.concatenate([np.asarray(p, float) for p in parameters])
+            residuals[:] = self.A @ x
+            if jacobians is not None:
+                for j, jac in enumerate(jacobians):
+                    if jac is not None:
+                        a, b = self.offsets[j], self.offsets[j + 1]
+                        jac[:] = self.A[:, a:b].ravel()
+            return True
+
+    return LinearTie
+
+
+
 def _probe_plus_jacobians(prob, blocks: Sequence[np.ndarray]) -> List[np.ndarray]:
     """Each block's PlusJacobian (ambient x tangent) at its current value: an identity residual over the blocks,
     evaluated once and removed."""
@@ -110,10 +139,9 @@ def exact_tie_refine(prob, ties: Sequence[Dict[str, Any]], point_blocks: Sequenc
     import pyceres
     import scipy.sparse as sp
     import scipy.sparse.linalg as spla
-    from .tied import _linear_tie_class
     t0 = time.time()
     out: Dict[str, Any] = {"error": None, "iterations": 0, "history": []}
-    LinearTie = _linear_tie_class()
+    LinearTie = linear_tie_class()
     removed = False
     try:
         seen, plist, kinds = set(), [], []

@@ -37,8 +37,10 @@ def test_studies_are_outside_the_package():
     for gone in ("calibration.py", "navcal.py", "navcal_consensus.py", "navcal_report.py", "navcal_tied.py",
                  "zcam_calib.py", "zcam_lines.py", "diagnose.py", "sites.py", "cmods_form.py"):
         assert not (pkg / "sfm" / gone).exists(), gone
-    for f in ("calibration/navcal_consensus.py", "calibration/zcam_calib.py", "m20_sites/prototype.py"):
-        assert (ROOT / "studies" / f).is_file(), f
+    # 0.96.0: the studies are the package mppp_studies; the old calibration scripts sit in its misc part
+    for f in ("misc/calibration_old/navcal_consensus.py", "misc/calibration_old/zcam_calib.py", "sites/prototype.py"):
+        assert (ROOT / "src" / "mppp_studies" / f).is_file(), f
+    assert not (ROOT / "studies").exists()
     assert not (pkg / "scapes.py").exists()
     for f in ("tests/data/legacy_expected_ZL0.npz", "tests/data/legacy_expected_NLF.npz"):
         assert (ROOT / f).is_file()

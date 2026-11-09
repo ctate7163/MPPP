@@ -6,13 +6,13 @@ roles (for example `:func:`), which appear here as written.
 
 ::: mppp.pipeline
 
-::: mppp.calib.tied
+::: mppp_studies.calibration.tied
 
-::: mppp.calib.ztied
+::: mppp_studies.calibration.ztied
 
-::: mppp.calib.nzjoint
+::: mppp_studies.calibration.nzjoint
 
-::: mppp.calib.hazfit
+::: mppp_studies.calibration.hazfit
 
 ::: mppp.calib.models
 

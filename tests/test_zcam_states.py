@@ -91,7 +91,7 @@ def _block(tmp_path, name, rows):
 
 
 def test_states_survey_low_high_mixed_and_proposal(tmp_path):
-    from mppp.sfm import zcam_states as ZS
+    from mppp_studies.calibration import zcam_states as ZS
     from mppp.sfm.backlash import load_low_backlash
     rng = np.random.default_rng(1)
     rows = []
@@ -175,7 +175,7 @@ def test_focus_from_below_list_and_motor_moves(tmp_path):
 def test_centre_offsets_where_the_centres_are_free():
     """0.95 (Christian, 27 Oct): the right eye's state shows in its principal point - the survey reports each
     image's centre about its eye's high-state median, where the centres vary (ZL holds its centre: nothing)."""
-    from mppp.sfm import zcam_states as Z
+    from mppp_studies.calibration import zcam_states as Z
     zr = [{"block": "b", "group": "ZR034", "sol": 121, "sequence": "S", "clock": f"{i}", "state": "high",
            "listed": False, "cx": 743.0 + 0.1 * (i % 2), "cy": 664.0, "d": 0.0, "gap": 0.01} for i in range(6)]
     zr += [{"block": "b", "group": "ZR034", "sol": 121, "sequence": "T", "clock": f"9{i}", "state": "high",
@@ -189,5 +189,5 @@ def test_centre_offsets_where_the_centres_are_free():
     seq = {(s["sequence"], s["group"]): s for s in Z.sequences(zr + zl)}
     assert abs(seq[("T", "ZR034")]["dcx_median_px"] - 2.45) < 1e-9 and seq[("S", "ZL034")]["dcx_median_px"] is None
     from pathlib import Path
-    rp = (Path(__file__).resolve().parents[1] / "studies" / "calibration" / "run_pipeline.py").read_text()
+    rp = (Path(__file__).resolve().parents[1] / "src" / "mppp_studies" / "calibration" / "run_pipeline.py").read_text()
     assert '"ZCAM_BIN_REFINE=focal_pp"' in rp

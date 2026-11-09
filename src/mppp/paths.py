@@ -4,7 +4,7 @@ Where MPPP finds its files.
 * **Package data** (``data_dir()``, installed with the package): the camera models in use ``cmods/``
   (:mod:`mppp.calib`), the optical-depth table, a snapshot of the M2020 waypoints, the Mastcam-Z occlusion
   profiles, the low-backlash observation list and the model registry ``models.json``.  Nothing here is written
-  at run time except by a promotion (``scripts/promote_cmods.py``).
+  at run time except by a promotion (``mppp_studies.calibration.promote_cmods``).
 * **User cache** (``cache_dir()``): refreshed waypoints and downloaded or
   installed mask models.  ``MPPP_CACHE`` overrides the location; otherwise
   ``%LOCALAPPDATA%\\mppp`` on Windows, ``~/Library/Caches/mppp`` on macOS and
@@ -51,7 +51,7 @@ def package_cmods_dir() -> Path:
 
 def cmods_dir() -> Path:
     """The folder of the camera models in use: ``MPPP_CMODS`` if set, else ``mppp/data/cmods``.  Every start
-    camera comes from here (:mod:`mppp.calib`); ``scripts/promote_cmods.py`` puts a new model here."""
+    camera comes from here (:mod:`mppp.calib`); ``mppp_studies.calibration.promote_cmods`` puts a new model here."""
     env = os.environ.get("MPPP_CMODS")
     if env:
         return Path(env)

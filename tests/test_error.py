@@ -1,4 +1,4 @@
-"""The error model's readers and fits (mppp.error.waypoints, colmap, alignment): stations from the waypoint
+"""The error model's readers and fits (mppp_studies.error.waypoints, colmap, alignment): stations from the waypoint
 snapshot, the gate and decorrelation fits, projections.  The physics checks are tests/test_error_model.py."""
 import json
 from pathlib import Path
@@ -12,7 +12,7 @@ DATA = Path(__file__).resolve().parents[1] / "src/mppp/data/M20_waypoints.json" 
 
 def test_build_stations_no_longer_shadowed():
     """v0p15: a second `_last_per_sol` shadowed the first -> build_stations raised TypeError."""
-    from mppp.error.waypoints import build_stations, load_featurecollection
+    from mppp_studies.error.waypoints import build_stations, load_featurecollection
     stations, info = build_stations(load_featurecollection(str(DATA)), anchor_site=3, anchor_drive=0)
     assert len(stations) >= 2
 
@@ -24,7 +24,7 @@ def test_sol_1842_last_per_sol_orders_by_site_and_drive():
     87_5286 (final='m'); the 'highest drive' rule kept the latter.  Both callers (stations_from_rmcs,
     build_stations) use the one rule.
     """
-    from mppp.error.waypoints import stations_from_rmcs
+    from mppp_studies.error.waypoints import stations_from_rmcs
     feats = json.loads(DATA.read_text())["features"]
     by = {f["properties"]["RMC"]: f["properties"] for f in feats}
     assert by["87_5286"]["final"] == "m" and by["88_0"]["final"] == "y"
@@ -88,7 +88,7 @@ def _synthetic_model(noise_px=0.0, seed=0, full_keypoint_lists=True):
 
 
 def _synthetic_pairs(A=0.8, thb=5.0, cv=0.4, L0=2.3, s_intra=0.5, n=200_000, seed=0):
-    from mppp.error.alignment import gate_curve
+    from mppp_studies.error.alignment import gate_curve
     rng = np.random.default_rng(seed)
     cross = rng.random(n) < 0.7
     th = np.where(cross, rng.uniform(0, 30, n), rng.uniform(0, 3, n))
@@ -102,7 +102,7 @@ def _synthetic_pairs(A=0.8, thb=5.0, cv=0.4, L0=2.3, s_intra=0.5, n=200_000, see
 
 @pytest.mark.parametrize("full_lists", [True, False])
 def test_decorrelation_uses_the_observed_rays(full_lists):
-    from mppp.error.colmap import measure_theta_c, observed_rays
+    from mppp_studies.error.colmap import measure_theta_c, observed_rays
     m, X = _synthetic_model(noise_px=0.0, full_keypoint_lists=full_lists)
     ids, C, U = observed_rays(m, m.points[5])
     assert len(ids) == 6
@@ -118,7 +118,7 @@ def test_decorrelation_uses_the_observed_rays(full_lists):
 
 
 def test_fit_gate_recovers_a_known_gate():
-    from mppp.error.alignment import combine_pairs, fit_gate, survival_curve
+    from mppp_studies.error.alignment import combine_pairs, fit_gate, survival_curve
     pairs = _synthetic_pairs()
     g = fit_gate(pairs, n_boot=5)
     assert g["constrained"] and g["chi2_dof"] < 3
@@ -134,7 +134,7 @@ def test_fit_gate_recovers_a_known_gate():
 
 
 def test_fit_gate_flags_a_sharp_cutoff():
-    from mppp.error.alignment import fit_gate
+    from mppp_studies.error.alignment import fit_gate
     pairs = _synthetic_pairs()
     cut = pairs["cross"] & (pairs["theta_deg"] > 20)          # a cliff at 20 deg, flat before: not a power law
     pairs["observed"] = np.where(pairs["cross"], np.where(cut, False, np.random.default_rng(3).random(cut.size) < 0.4),
@@ -144,7 +144,7 @@ def test_fit_gate_flags_a_sharp_cutoff():
 
 
 def test_lmst_family_and_find_error_input(tmp_path):
-    from mppp.error.alignment import _family, _lmst_hours, find_error_input
+    from mppp_studies.error.alignment import _family, _lmst_hours, find_error_input
     assert _lmst_hours("Sol-00684M15:13:15.006") == pytest.approx(15 + 13 / 60 + 15.006 / 3600)
     assert _lmst_hours("") is None
     assert _family("NL") == "Navcam" and _family("ZR034") == "Mastcam-Z"
@@ -158,7 +158,7 @@ def test_lmst_family_and_find_error_input(tmp_path):
 
 def test_gate_curve_cv_zero_limit_has_no_warnings():
     import warnings
-    from mppp.error.alignment import gate_curve
+    from mppp_studies.error.alignment import gate_curve
     th = np.linspace(0, 30, 31)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -170,7 +170,7 @@ def test_gate_curve_cv_zero_limit_has_no_warnings():
 def test_native_point_ids_follow_the_shortened_keypoint_lists():
     """residuals.npz carries reconstruction keypoint indices; the native model keeps observed keypoints only."""
     from types import SimpleNamespace
-    from mppp.error.alignment import _native_point_ids
+    from mppp_studies.error.alignment import _native_point_ids
     # image 1: keypoints 0..9, observed at 2, 5, 9 -> native list [p10, p11, p12]
     # image 2: full list of 4 keypoints, observed at 1 and 3
     m = SimpleNamespace(images={1: SimpleNamespace(point3D_ids=np.array([10, 11, 12])),
@@ -182,7 +182,7 @@ def test_native_point_ids_follow_the_shortened_keypoint_lists():
 
 def test_error_analysis_keeps_tracks_of_three_or_more(tmp_path, monkeypatch):
     from helpers import _synthetic_model
-    from mppp.error import alignment as A
+    from mppp_studies.error import alignment as A
     model, X = _synthetic_model(noise_px=0.2)
     for pid in list(model.points)[:80]:                      # 80 points seen by two images only
         p = model.points[pid]
@@ -206,7 +206,7 @@ def test_error_analysis_keeps_tracks_of_three_or_more(tmp_path, monkeypatch):
 
 def _synthetic_pairs_v0p22_2(rng, n=40000, A=0.8, theta_bar=5.0, cv=0.6, tau_h=3.0, s_intra=0.7):
     """Cross-station trials drawn from the power gate x exp(-dLMST/tau), plus same-station trials at s_intra."""
-    from mppp.error.alignment import gate_curve
+    from mppp_studies.error.alignment import gate_curve
     th = rng.uniform(0, 30, n)
     dl = rng.uniform(0, 8, n)
     p = s_intra * gate_curve(th, A, theta_bar, cv) * np.exp(-dl / tau_h)
@@ -224,7 +224,7 @@ def _synthetic_pairs_v0p22_2(rng, n=40000, A=0.8, theta_bar=5.0, cv=0.6, tau_h=3
 
 def _alignment(tmp_path, monkeypatch, stations_csv):
     from helpers import _synthetic_model
-    from mppp.error import alignment as A
+    from mppp_studies.error import alignment as A
     model, X = _synthetic_model(noise_px=0.2)
     e = tmp_path / "work" / "colmap" / "error_input"
     (e / "native").mkdir(parents=True)
@@ -234,7 +234,7 @@ def _alignment(tmp_path, monkeypatch, stations_csv):
 
 
 def test_fit_gate_recovers_all_parameters_and_ranks_the_forms():
-    from mppp.error import alignment as A
+    from mppp_studies.error import alignment as A
     rng = np.random.default_rng(3)
     pairs = _synthetic_pairs_v0p22_2(rng)
     g = A.fit_gate(pairs, form="power", illumination="dlmst", fit_tau=True, n_boot=0)
@@ -269,7 +269,7 @@ def test_fit_gate_recovers_all_parameters_and_ranks_the_forms():
 
 
 def test_fit_gate_flags_a_flat_gate_as_unconstrained():
-    from mppp.error import alignment as A
+    from mppp_studies.error import alignment as A
     rng = np.random.default_rng(4)
     pairs = _synthetic_pairs_v0p22_2(rng, theta_bar=5000.0, cv=0.6)          # no decline with angle inside 30 deg
     g = A.fit_gate(pairs, form="power", illumination="dlmst", n_boot=0)
@@ -279,7 +279,7 @@ def test_fit_gate_flags_a_flat_gate_as_unconstrained():
 
 
 def test_fit_rho_and_first_bin():
-    from mppp.error.alignment import RHO_EDGES_DEG, fit_rho
+    from mppp_studies.error.alignment import RHO_EDGES_DEG, fit_rho
     e = np.array(RHO_EDGES_DEG)
     c = 0.5 * (e[:-1] + e[1:])
     rho = 0.01 + 0.15 * np.exp(-c ** 2 / (2 * 0.3 ** 2))
@@ -295,7 +295,7 @@ def test_fit_rho_and_first_bin():
 
 def test_decorrelation_reports_disjoint_pairs_with_errors(tmp_path, monkeypatch):
     from helpers import _synthetic_model
-    from mppp.error import alignment as A
+    from mppp_studies.error import alignment as A
     model, X = _synthetic_model(noise_px=0.2)
     e = tmp_path / "work" / "colmap" / "error_input"
     (e / "native").mkdir(parents=True)
@@ -344,8 +344,8 @@ def test_solar_geometry_from_stations_csv(tmp_path, monkeypatch):
 
 
 def test_tau_replaces_L0_in_the_error_package():
-    import mppp.error.alignment as A
-    import mppp.error.core as C
+    import mppp_studies.error.alignment as A
+    import mppp_studies.error.core as C
     assert not any(n.startswith("L0") or "L0" in n for n in dir(A) + dir(C) if n.isupper() or "_" in n and "L0_" in n)
     assert "tau_h" in A.ILLUMINATION["dlmst"]
     import inspect

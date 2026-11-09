@@ -44,7 +44,7 @@ positional arguments:
     mask                the terrain mask model
     example             the Mars 2020 example data (Rockytop, sols 461-464): fetch or build
     waypoints           the Mars 2020 waypoint table in use (cached download or packaged snapshot)
-    maps                the M20 site-map figures (studies/m20_sites) from the official blocks of
+    maps                the M20 site-map figures (mppp_studies.sites) from the official blocks of
                         sites.json
     calib               the camera calibrations (0.91: the Navcam tied joint, the Mastcam-Z joint)
     doctor              what is set, what is missing: environment variables, dependencies, models,

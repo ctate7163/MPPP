@@ -82,7 +82,7 @@ if exist "%OUT%\nz34_joint\navcam_law\M2020_NL_fisheye_tangential.json" set "COM
 echo %DATE% %TIME%  law check: the law in use, the trial candidate and the combined law -^> %OUT%\lawcheck
 python -m mppp --log "%OUT%\lawcheck_log.txt" calib lawcheck --root "%MPPP_SCAPES%" --group ecam_consensus --law in_use= --law trial_0p95="%OUT%\navcal_tied\navcam_joint" %COMBINED% --out "%OUT%\lawcheck" --wait-h 0 %*
 if errorlevel 1 echo law check: FAILED - see %OUT%\lawcheck_log.txt
-if exist "%OUT%\lawcheck\law_validation.json" python "%MPPP_HOME%\studies\calibration\plot_lawcheck.py" "%OUT%\lawcheck"
+if exist "%OUT%\lawcheck\law_validation.json" python -m mppp_studies.calibration.plot_lawcheck "%OUT%\lawcheck"
 exit /b 0
 
 :part_hazcam

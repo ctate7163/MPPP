@@ -165,7 +165,7 @@ def test_calib_waits_for_running_sites(tmp_path, monkeypatch):
     """0.95.0 (Christian, 27 Oct): a joint waits for a site of its groups whose alignment is running (an alive
     mppp_status.json) instead of reading a half-written project; with --wait-h 0 it takes the finished ones now."""
     import os
-    from mppp.cli import _wait_for_running
+    from mppp_studies.calibration.cli import _wait_for_running
     from mppp.runner import STATUS_FILE, RunStatus
     w = tmp_path / "chal_rocks_zcam"
     w.mkdir()

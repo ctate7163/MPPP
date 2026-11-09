@@ -53,7 +53,7 @@ echo make_figures: Navcam joint  %STUDY%
 echo make_figures: Mastcam-Z     %ZCAM%
 echo make_figures: DTMs          %M20_DEMS%
 echo make_figures: out           %OUT%  (%DPI% dpi)
-python "%MPPP_HOME%\scripts\paper_figures.py" !ARGS! %MPPP_FIG_ARGS%
+python -m mppp_studies.paper.paper_figures !ARGS! %MPPP_FIG_ARGS%
 if errorlevel 1 ( echo make_figures: FAILED ^(see above^) & if not defined MPPP_NOPAUSE pause & exit /b 1 )
 echo make_figures: done - %OUT%
 if not defined MPPP_NOPAUSE pause

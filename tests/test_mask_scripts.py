@@ -1,4 +1,4 @@
-"""scripts/train_mask.py (headless retraining) and scripts/make_mask_figure.py (the paper's mask figure) end to end on
+"""mppp_studies.mask_training.train_mask (headless retraining) and mppp_studies.mask_training.make_mask_figure (the paper's mask figure) end to end on
 a tiny synthetic set (CPU)."""
 import subprocess
 import sys
@@ -13,12 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_train_smoke_then_figure(tmp_path):
     pytest.importorskip("torch")
     pytest.importorskip("timm")
-    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "train_mask.py"), "--smoke"], capture_output=True,
+    r = subprocess.run([sys.executable, "-m", "mppp_studies.mask_training.train_mask", "--smoke"], capture_output=True,
                        text=True, timeout=900, env={**__import__("os").environ, "TMPDIR": str(tmp_path)})
     assert r.returncode == 0, r.stderr[-2000:]
     smoke = sorted(tmp_path.glob("mppp_mask_smoke_*"))[-1]
     out = tmp_path / "fig"
-    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "make_mask_figure.py"), "--ckpt",
+    r = subprocess.run([sys.executable, "-m", "mppp_studies.mask_training.make_mask_figure", "--ckpt",
                         str(smoke / "ckpt" / "smoke.pt"), "--data", str(smoke / "set"), "--out", str(out)],
                        capture_output=True, text=True, timeout=600)
     assert r.returncode == 0, r.stderr[-2000:]
@@ -29,7 +29,7 @@ def test_train_smoke_then_figure(tmp_path):
     first = sorted((smoke / "set" / "masks").glob("*.png"))[0]
     (seen / first.name).write_bytes(first.read_bytes())
     ab = tmp_path / "ab"
-    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "compare_mask_models.py"), "--data", str(smoke / "set"),
+    r = subprocess.run([sys.executable, "-m", "mppp_studies.mask_training.compare_mask_models", "--data", str(smoke / "set"),
                         "--split-ckpt", str(smoke / "ckpt" / "smoke.pt"), "--models", str(smoke / "ckpt" / "smoke.pt"),
                         str(smoke / "ckpt" / "smoke.pt"), "--seen", str(seen.parent), "--seen-split",
                         str(smoke / "ckpt" / "smoke.pt"), str(smoke / "set"), "--out", str(ab)],
@@ -45,7 +45,7 @@ def test_train_smoke_with_the_paper_outputs(tmp_path):
     pytest.importorskip("torch")
     pytest.importorskip("timm")
     out = tmp_path / "paper"
-    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "train_mask.py"), "--smoke", "--paper", str(out)],
+    r = subprocess.run([sys.executable, "-m", "mppp_studies.mask_training.train_mask", "--smoke", "--paper", str(out)],
                        capture_output=True, text=True, timeout=900, env={**__import__("os").environ, "TMPDIR": str(tmp_path)})
     assert r.returncode == 0, r.stderr[-2000:]
     for f in ("figure1_masks.png", "mask_metrics_by_camera.md", "summary.md", "summary.json", "smoke.card.json",
@@ -60,7 +60,7 @@ def test_zoom_crop_of_large_ecam_frames():
     pytest.importorskip("torch")
     import random
     import numpy as np
-    from mppp.mask.training.train import zoom_crop
+    from mppp_studies.mask_training.train import zoom_crop
     rng = random.Random(1)
     im = np.full((3840, 5120, 3), 100, np.uint8)
     ms = np.zeros((3840, 5120), np.uint8)
@@ -80,7 +80,7 @@ def test_zoom_crop_of_large_ecam_frames():
 
 def test_training_uses_the_pipeline_images_only_by_default():
     """30 Oct (Christian: "only trains on the images that went through the standard mppp pipeline")."""
-    src = (ROOT / "scripts" / "train_mask.py").read_text()
+    src = (ROOT / "src" / "mppp_studies" / "mask_training" / "train_mask.py").read_text()
     assert 'image_dirs = ("images", "images_variable") if (a.variable or a.smoke) else ("images",)' in src
     assert "if a.variable:" in src                     # images_variable/ is only built on request
 
@@ -89,12 +89,12 @@ def test_random_tone_augmentation(tmp_path):
     """0.95.3 (mask v4.1): a random tone curve per training sample (v3's images_variable recipe), invalid pixels
     kept at 0; make_variable gives the same images as before (same draws)."""
     import numpy as np
-    from mppp.mask.training.dataset import VariableRecipe, make_variable, random_tone
+    from mppp_studies.mask_training.dataset import VariableRecipe, make_variable, random_tone
     rgb = np.random.default_rng(1).integers(1, 256, (40, 60, 3)).astype(np.uint8)
     rgb[:, :5] = 0
     valid = rgb.max(axis=2) > 0
     a, pa = make_variable(rgb, valid, "NLF_x.png")
-    b, pb = random_tone(rgb, valid, np.random.default_rng(__import__("mppp.mask.training.dataset",
+    b, pb = random_tone(rgb, valid, np.random.default_rng(__import__("mppp_studies.mask_training.dataset",
                                                                        fromlist=["_seed"])._seed("NLF_x.png")))
     assert (a == b).all() and pa == pb
     r = VariableRecipe()
@@ -103,7 +103,7 @@ def test_random_tone_augmentation(tmp_path):
     assert (c[:, :5] == 0).all() and c[valid].min() >= 1 and not (c == a).all()
     tm = (ROOT / "scripts" / "windows" / "train_masks.bat").read_bytes()
     assert b"--epochs 20" in tm and b"--tone-prob 0.5" in tm
-    src = (ROOT / "scripts" / "train_mask.py").read_text()
+    src = (ROOT / "src" / "mppp_studies" / "mask_training" / "train_mask.py").read_text()
     assert "tone_prob=a.tone_prob" in src
 
 
@@ -111,7 +111,7 @@ def test_mask_dataset_applies_the_tone_curve(tmp_path):
     pytest.importorskip("torch")
     import cv2
     import numpy as np
-    from mppp.mask.training.train import Item, MaskDataset
+    from mppp_studies.mask_training.train import Item, MaskDataset
     (tmp_path / "images").mkdir()
     (tmp_path / "masks").mkdir()
     img = np.full((60, 80, 3), 120, np.uint8)
@@ -131,7 +131,7 @@ def test_items_as_trained_drops_the_newest_masks(tmp_path):
     import sys
     from types import SimpleNamespace
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-    from compare_mask_models import items_as_trained
+    from mppp_studies.mask_training.compare_mask_models import items_as_trained
     items = []
     for i in range(6):
         m = tmp_path / f"m{i}.png"
@@ -150,7 +150,7 @@ def test_zoom_pairs_full_res_navcam_twice(tmp_path):
     crop; binned Navcam and Hazcam frames once; the random zoom is off."""
     import cv2
     import numpy as np
-    from mppp.mask.training.train import Item, MaskDataset, zoom_crop
+    from mppp_studies.mask_training.train import Item, MaskDataset, zoom_crop
     rows = {"NLF_0100_0000000001_000RAD_N0000000NCAM00000_0A0195J01.png": (3840, 5120),
             "NLF_0100_0000000002_000RAD_N0000000NCAM00000_0A0195J01.png": (1920, 2560),
             "FLF_0100_0000000003_000RAD_N0000000FHAZ00000_0A0195J01.png": (3840, 5120)}
@@ -180,8 +180,8 @@ def test_recorded_split_beats_the_rebuild(tmp_path):
     """0.95.4 (2 Nov): the split as training recorded it - split.json, else frame_audit.csv, else the card's val_masks
     - not a rebuild from file times (that took 54 of 59 "held-out" frames from v4.1's training)."""
     from types import SimpleNamespace
-    from mppp.mask.training.audit import recorded_split, split_labels
-    from mppp.mask.training.train import write_split
+    from mppp_studies.mask_training.audit import recorded_split, split_labels
+    from mppp_studies.mask_training.train import write_split
     it = lambda n: SimpleNamespace(mask=str(tmp_path / "masks" / n), image=str(tmp_path / "images" / n), tile=-1)
     items = [it(f"m{k}.png") for k in range(6)]
     ck = tmp_path / "model.pt"

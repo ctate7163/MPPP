@@ -39,7 +39,7 @@ HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))                      # sibling modules (_batch)
 
-from _batch import filter_zcam, status_table  # noqa: E402,F401  (used by process_sites.py and the tests)
+from mppp.batch import filter_zcam, status_table  # noqa: E402,F401  (used by process_sites.py and the tests)
 
 
 def default_jobs() -> int:
@@ -142,7 +142,7 @@ def main(argv=None) -> int:
     root = Path(a.root)
     if a.status:
         return status_table(root)
-    from _batch import BatchRunning, batch_lock, choose_sites, finished, site_settings
+    from mppp.batch import BatchRunning, batch_lock, choose_sites, finished, site_settings
     from mppp.pipeline import run_key
     from mppp.runner import STATUS_FILE, Log, parse_set, read_status
     from mppp.waypoints.sites import load_site_table
@@ -200,7 +200,7 @@ def main(argv=None) -> int:
         log(f"not started: {e}")
         print(f"\nMPPP: {e}", file=sys.stderr)
         return 3
-    from _batch import STOP_MARKER
+    from mppp.batch import STOP_MARKER
     (root / STOP_MARKER).unlink(missing_ok=True)          # 31 Oct: a new batch clears an earlier stop_runs marker
 
     jobs = max(1, int(a.jobs))

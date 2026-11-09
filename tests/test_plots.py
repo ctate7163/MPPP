@@ -1,5 +1,5 @@
 """The 0.90 plotting functions, each in its module: camera model vs temperature and rig vs sol (mppp.calib.constrain),
-the block table (mppp.calib.fit), site map and LMST histograms (mppp.waypoints.blocks), undistortion (mppp.colmap)."""
+the block table (mppp_studies.calibration.fit), site map and LMST histograms (mppp.waypoints.blocks), undistortion (mppp.colmap)."""
 import json
 import struct
 from pathlib import Path
@@ -45,7 +45,8 @@ def _fake_block(tmp, name="mars2020_sol_0100_fake", T=-18.0, sol=100):
 
 
 def test_block_results_and_table(tmp_path):
-    from mppp.calib import fit as F, models as M
+    from mppp.calib import models as M
+    from mppp_studies.calibration import fit as F
     b = F.block_navcam_results(_fake_block(tmp_path))
     assert b["site"] == "fake" and set(b["cameras"]) == {"NL_T-020-015", "NR_T-020-015"} and "N" in b["rigs"]
     rows = F.navcam_block_table([b], M.load_camera("N", "L"), M.load_camera("N", "R"), M.load_rig("N"))
@@ -61,7 +62,8 @@ def test_block_results_and_table(tmp_path):
 def test_refined_rig_and_intrinsics_figures(tmp_path):
     """The study's rig-trends and intrinsics-vs-temperature formats draw from a small rig_residuals / consensus
     fixture and the block bins."""
-    from mppp.calib import constrain as C, fit as F, models as M
+    from mppp.calib import constrain as C, models as M
+    from mppp_studies.calibration import fit as F
     b = F.block_navcam_results(_fake_block(tmp_path))
     rr = {"blocks": [{"block": "Fake [sols 90-110]", "site": "Fake", "sol_median": 100.0 + 10 * k, "T_median_degC": -18.0 - k,
                       "images": 12, "yaw_mdeg": 1.0, "pitch_mdeg": -0.5, "roll_mdeg": 2.0} for k in range(3)],
@@ -76,11 +78,12 @@ def test_refined_rig_and_intrinsics_figures(tmp_path):
 
 
 def test_site_map_and_lmst(tmp_path):
-    from mppp.waypoints import blocks as B
+    from mppp_studies.sites import figures as B
+    from mppp.waypoints import blocks as BL
     from mppp.waypoints.table import snapshot_path
     from mppp.waypoints.sites import load_site_table
     tab = load_site_table()
-    sw = B.site_waypoints(tab["sites"], snapshot_path())
+    sw = BL.site_waypoints(tab["sites"], snapshot_path())
     assert "rochette" in sw and sw["rochette"]["first_sol"] >= 178
     f = B.plot_site_map(None, snapshot_path(), tmp_path / "map.png", highlight=["rochette"], dpi=80)   # no terrain
     assert f.stat().st_size > 10000
@@ -119,8 +122,9 @@ def test_undistort_and_example(tmp_path):
 def test_rig_drift_fit_free_knot(tmp_path):
     """fit_rig_drift recovers a hinge drift (knot, rates) from synthetic epochs; sol0 = 0 convention; the candidate
     rig file reproduces the fit through rig_at."""
-    from mppp.calib import constrain as C, fit as F, models as M
-    from mppp.calib.joint import rig_angles
+    from mppp.calib import constrain as C, models as M
+    from mppp_studies.calibration import fit as F
+    from mppp_studies.calibration.joint import rig_angles
     rng = np.random.default_rng(2)
     rows = []
     for sol in np.linspace(20, 2000, 30):
@@ -141,7 +145,8 @@ def test_rig_drift_fit_free_knot(tmp_path):
 def test_panel_letters_limits_and_unlabelled_versions(tmp_path, monkeypatch):
     """22 Oct (Christian): every Navcam and Mastcam-Z subplot lettered A, B ...; rig trends pitch -10..30, yaw and
     roll -20..20 mdeg, the stereo cx panel -20..-16 px (27 Oct); make_figures also writes the plots without point labels."""
-    from mppp.calib import constrain as C, fit as F, models as M
+    from mppp.calib import constrain as C, models as M
+    from mppp_studies.calibration import fit as F
     seen = []
     orig = C.panel_letters
     def spy(axs, **kw):

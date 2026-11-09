@@ -1,8 +1,8 @@
 """
-Physics checks of the error model (mppp.error): every test compares the
+Physics checks of the error model (mppp_studies.error): every test compares the
 vectorised implementation against a closed-form result or an independently
 written naive reference.  A failure here means the physics is wrong, not that
-a plot looks odd.  (v0p90: the former ``mppp.error.selftest``, as pytest tests.)
+a plot looks odd.  (v0p90: the former ``mppp_studies.error.selftest``, as pytest tests.)
 """
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ import tempfile
 import numpy as np
 import pytest
 
-from mppp.error.core import (Grid, FlatPlane, Instrument, Station, ModelConfig, PoseModel,
+from mppp_studies.error.core import (Grid, FlatPlane, Instrument, Station, ModelConfig, PoseModel,
                              OcclusionMask, solve_precision_field)
-from mppp.error.metrics import compute_metrics
+from mppp_studies.error.metrics import compute_metrics
 
 
 def _check(name, ok, msg=""):
@@ -128,7 +128,7 @@ def test_correlation_floor():
     theta = 0 the model correctly gives rho = 1 (identical observations, zero
     information gain), so the floor must be probed with well-separated views.
     """
-    from mppp.error.core import _correlation_inflation
+    from mppp_studies.error.core import _correlation_inflation
 
     # -- unit test the participation ratio against k_eff = N/(1+(N-1)rho) ----
     for rho_inf in (0.0, 0.05, 0.25):
@@ -472,7 +472,7 @@ def test_vectorised_matches_reference():
 # --------------------------------------------------------------------------
 
 def test_link_modes():
-    from mppp.error.core import ModelConfig
+    from mppp_studies.error.core import ModelConfig
     inst = _plain_instrument()
     sts = [Station(xyz=[-11, 2, 2.0], az_deg=70.0, instrument=inst, is_anchor=True),
            Station(xyz=[7, -8, 1.9], az_deg=300.0, instrument=inst),
@@ -622,7 +622,7 @@ def _write_synthetic_colmap(d, eps_intra=0.4, eps_cross=1.1,
 @pytest.mark.slow
 def test_colmap_roundtrip():
     from mppp.colmap import read_colmap
-    from mppp.error.colmap import calibrate_eps_from_residuals, match_survival, measured_view_graph
+    from mppp_studies.error.colmap import calibrate_eps_from_residuals, match_survival, measured_view_graph
     EI, EC, TM = 0.4, 1.1, 30.0
     with tempfile.TemporaryDirectory() as d:
         n_im, n_pt = _write_synthetic_colmap(d, EI, EC, TM)
@@ -707,7 +707,7 @@ def test_colmap_handles_empty_observation_lines():
 
 def test_precision_convention():
     """eps='disparity' must equal eps='per_image' scaled by sqrt(2)."""
-    from mppp.error.core import Instrument
+    from mppp_studies.error.core import Instrument
     g = Grid(x=np.array([18.0]), y=np.array([0.0]))
     a = Instrument(name="a", ifov_rad=2e-4, baseline_m=0.25, eps_intra_px=0.5,
                    precision_convention="per_image")
@@ -725,7 +725,7 @@ def test_precision_convention():
 
 
 def test_correlation_kernels():
-    from mppp.error.core import correlation_kernel
+    from mppp_studies.error.core import correlation_kernel
     tc = np.radians(15.0)
     for kind in ("gaussian", "exponential", "cosine", "tilt"):
         _check(f"kernel {kind}: rho(0) = 1",
@@ -745,14 +745,14 @@ def test_correlation_kernels():
 
 
 def test_four_cases_ordering():
-    from mppp.error.cases import run_four_cases
-    from mppp.error.core import Instrument, NAVCAM
+    from mppp_studies.error.cases import run_four_cases
+    from mppp_studies.error.core import Instrument, NAVCAM
     inst = Instrument(name="N", ifov_rad=NAVCAM.ifov_rad,
                       baseline_m=NAVCAM.baseline_m, eps_intra_px=0.5)
     sts = [Station(xyz=[0, 0, 1.9], az_deg=30, name="W1", instrument=inst),
            Station(xyz=[3.2, 1.1, 1.9], az_deg=120, name="W2", instrument=inst),
            Station(xyz=[1.0, 4.0, 1.9], az_deg=240, name="W3", instrument=inst)]
-    from mppp.error.core import choose_anchor
+    from mppp_studies.error.core import choose_anchor
     choose_anchor(sts, "center")
     g = Grid.covering(sts, margin_m=30.0, n=61)
     res = run_four_cases(sts, g, use_correlation=False)
@@ -776,7 +776,7 @@ def test_plot_map_colorbar_and_rover_icon():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from mppp.error.plotting import plot_map
+    from mppp_studies.error.plotting import plot_map
     inst = _plain_instrument()
     sts = [Station(xyz=[-6, 1, 2.0], az_deg=75.0, instrument=inst, is_anchor=True),
            Station(xyz=[4, -3, 1.9], az_deg=310.0, instrument=inst)]
@@ -822,9 +822,9 @@ def test_ideal_ordering_holds_on_real_data():
     boundary interactions don't reliably show up in hand-placed synthetic
     layouts). Skips gracefully if the data file is not present in this build.
     """
-    from mppp.error.core import Instrument, NAVCAM
-    from mppp.error.waypoints import stations_from_rmcs
-    from mppp.error.cases import run_four_cases
+    from mppp_studies.error.core import Instrument, NAVCAM
+    from mppp_studies.error.waypoints import stations_from_rmcs
+    from mppp_studies.error.cases import run_four_cases
     from mppp.waypoints import snapshot_path
     data = str(snapshot_path())                       # the frozen packaged snapshot
     if not os.path.exists(data):
@@ -850,7 +850,7 @@ def test_ideal_ordering_holds_on_real_data():
 
 
 def test_stations_from_rmcs():
-    from mppp.error.waypoints import stations_from_rmcs
+    from mppp_studies.error.waypoints import stations_from_rmcs
     fc = {"type": "FeatureCollection", "features": [
         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0, 0]},
          "properties": {"RMC": "1_0", "site": 1, "drive": 0, "sol": 1,
@@ -905,8 +905,8 @@ def test_ideal_dominates_lbs_and_is_dominated_by_full_fusion():
     old "ideal never exceeds full_fusion" check, extended to include the new
     all-pairs IDEAL sitting strictly between the two.
     """
-    from mppp.error.cases import run_four_cases
-    from mppp.error.core import Instrument, NAVCAM, choose_anchor
+    from mppp_studies.error.cases import run_four_cases
+    from mppp_studies.error.core import Instrument, NAVCAM, choose_anchor
     inst = Instrument(name="N", ifov_rad=NAVCAM.ifov_rad,
                       baseline_m=NAVCAM.baseline_m, eps_intra_px=0.5)
     sts = [Station(xyz=[0, 0, 1.9], az_deg=30, name="W1", instrument=inst),
@@ -942,8 +942,8 @@ def test_ideal_field_uses_single_ray_per_station():
     """ideal_field must ignore each station's own intra-pair baseline -- it
     should give the SAME result as full_fusion on stations whose instrument
     already has eye_offsets=(0.0,) (i.e. no intra-pair to lose)."""
-    from mppp.error.core import Instrument, choose_anchor
-    from mppp.error.cases import ideal_field
+    from mppp_studies.error.core import Instrument, choose_anchor
+    from mppp_studies.error.cases import ideal_field
     mono = Instrument(name="mono", ifov_rad=2e-4, baseline_m=0.25,
                       eps_intra_px=0.5, eye_offsets=(0.0,))
     sts = [Station(xyz=[0, 0, 1.9], az_deg=30, name="W1", instrument=mono),
@@ -951,7 +951,7 @@ def test_ideal_field_uses_single_ray_per_station():
     choose_anchor(sts, "first")
     g = Grid.square(15.0, 41)
     f_ideal = ideal_field(g, sts, ModelConfig(store_station_dirs=True, use_correlation=False))
-    from mppp.error.core import ModelConfig as MC
+    from mppp_studies.error.core import ModelConfig as MC
     f_full = solve_precision_field(g, sts, MC(link_mode="full", use_correlation=False,
                                               store_station_dirs=True))
     m1 = compute_metrics(f_ideal)["sigma_n"]
@@ -963,9 +963,9 @@ def test_ideal_field_uses_single_ray_per_station():
 
 
 def test_network_pose():
-    from mppp.error.network import (pose_covariance_from_network, datum_modes,
+    from mppp_studies.error.network import (pose_covariance_from_network, datum_modes,
                               rigidity_score)
-    from mppp.error.core import Instrument, NAVCAM, choose_anchor
+    from mppp_studies.error.core import Instrument, NAVCAM, choose_anchor
     inst = Instrument(name="N", ifov_rad=NAVCAM.ifov_rad,
                       baseline_m=NAVCAM.baseline_m, eps_intra_px=0.5)
     sts = [Station(xyz=[0, 0, 1.9], az_deg=30, name="W1", instrument=inst),
@@ -1025,7 +1025,7 @@ def test_plot_stats_box_and_axis_label_control():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from mppp.error.plotting import plot_map
+    from mppp_studies.error.plotting import plot_map
     inst = _plain_instrument()
     sts = [Station(xyz=[-6, 1, 2.0], az_deg=75.0, instrument=inst, is_anchor=True),
            Station(xyz=[4, -3, 1.9], az_deg=310.0, instrument=inst)]
@@ -1076,7 +1076,7 @@ def test_plot_shares_colour_limits():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from mppp.error.plotting import plot_map
+    from mppp_studies.error.plotting import plot_map
     inst = _plain_instrument()
     sts = [Station(xyz=[-6, 1, 2.0], az_deg=75.0, instrument=inst, is_anchor=True),
            Station(xyz=[4, -3, 1.9], az_deg=310.0, instrument=inst)]
@@ -1122,7 +1122,7 @@ def test_pose_modes_path_vs_baseline():
            np.allclose(sfm.station_sigmas(anchor)[0], 0.0))
 
     # the per-case mapping must use these
-    from mppp.error.cases import CASE_POSE
+    from mppp_studies.error.cases import CASE_POSE
     _check("all cases are geometry-only (pose none); registration reported separately",
            CASE_POSE["fixed"] == "none"
            and CASE_POSE["optimistic"] == "none"
@@ -1133,7 +1133,7 @@ def test_pose_modes_path_vs_baseline():
 
 
 def test_occlusion_profiles_from_csv():
-    from mppp.error.core import load_occlusion_profiles, eye_masks_for
+    from mppp_studies.error.core import load_occlusion_profiles, eye_masks_for
     from mppp.paths import data_dir
     if not os.path.exists(os.path.join(str(data_dir()), "M2020_occlusion_profiles.csv")):
         pytest.skip("occlusion profile CSV absent")
@@ -1154,7 +1154,7 @@ def test_occlusion_profiles_from_csv():
 
 
 def test_measured_gate():
-    from mppp.error.core import gate_powerlaw, illumination_gate
+    from mppp_studies.error.core import gate_powerlaw, illumination_gate
     cfg = ModelConfig(gate_A=0.4, theta_bar_deg=4.3, gate_cv=0.36)
     _check("gate at theta=0 equals A", abs(float(gate_powerlaw(0.0, cfg)) - 0.4) < 1e-12)
     th = np.radians(np.array([1, 2, 4.3, 10, 20, 45]))
@@ -1206,7 +1206,7 @@ def test_measured_gate():
     _check("completeness uses tau (counts), not L_eff",
            ModelConfig().tau_h > ModelConfig().L_eff_h)
 
-    from mppp.error.cases import CASE_PARAMS
+    from mppp_studies.error.cases import CASE_PARAMS
     _check("three matching cases present", set(CASE_PARAMS) == {"pessimistic","measured","optimistic"})
     _check("cases are ordered pessimistic < measured < optimistic in theta_bar",
            CASE_PARAMS["pessimistic"][1] < CASE_PARAMS["measured"][1] < CASE_PARAMS["optimistic"][1])
@@ -1237,7 +1237,7 @@ def test_redundancy_cap():
 
 
 def test_anchor_modes():
-    from mppp.error.core import choose_anchor
+    from mppp_studies.error.core import choose_anchor
     sts = [Station(xyz=[0, 0, 1.9], az_deg=0, name="A"),
            Station(xyz=[10, 0, 1.9], az_deg=0, name="B"),
            Station(xyz=[20, 0, 1.9], az_deg=0, name="C")]

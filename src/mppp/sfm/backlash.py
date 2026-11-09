@@ -38,7 +38,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 
 from .. import calib
-from ..calib.fit import huber_fit, weighted_median as _wmedian
+from ..calib.robust import huber_fit, weighted_median as _wmedian
 
 log = logging.getLogger("mppp.sfm")
 STATES = calib.ZCAM_STATES

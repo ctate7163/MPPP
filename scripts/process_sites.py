@@ -63,7 +63,7 @@ def main(argv=None) -> int:
     if not a.root:
         ap.error("--root (or the MPPP_SCAPES environment variable) is required")
     root = Path(a.root)
-    from _batch import BatchRunning, batch_lock, choose_sites, filter_zcam, site_settings, status_table
+    from mppp.batch import BatchRunning, batch_lock, choose_sites, filter_zcam, site_settings, status_table
     if a.status:
         return status_table(root)
 

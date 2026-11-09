@@ -3,7 +3,7 @@ mppp.mask — reconstruction masks (terrain vs rover hardware, rover shadows and
 
 Inference with the released model (``infer_mask``; the model is downloaded
 once, see :mod:`mppp.mask.hub`) or with any ConvNeXtSeg checkpoint and its
-model card.  Retraining (:mod:`mppp.mask.training`: the data set, the training
+model card.  Retraining (:mod:`mppp_studies.mask_training`: the data set, the training
 loop, progress plots and the label audit) is included for completeness; it is
 not needed to process images.
 

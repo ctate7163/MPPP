@@ -1,4 +1,4 @@
-"""0.93.1: the Hazcam fit from block results (mppp.calib.hazfit), the fixed Mastcam-Z distortion terms per zoom, the
+"""0.93.1: the Hazcam fit from block results (mppp_studies.calibration.hazfit), the fixed Mastcam-Z distortion terms per zoom, the
 Z joint's fixed globals, and the new Windows scripts."""
 import json
 from pathlib import Path
@@ -52,7 +52,7 @@ def test_zcam_camera_at_keeps_the_promoted_model():
 
 
 def test_zjoint_fixed_globals():
-    from mppp.calib import ztied
+    from mppp_studies.calibration import ztied
     G = ztied.GLOBAL_TERMS
     sg = {"eyes": {"ZL034": {"G": np.zeros(len(G))}, "ZR034": {"G": np.zeros(len(G))}}}
     fx = ztied.fixed_globals(sg)
@@ -67,7 +67,7 @@ def test_zjoint_fixed_globals():
 
 # ------------------------------------------------------------------------------------------------ Hazcam fit
 def _rows(eye, f0=2150.0, ppm=40.0, early_dfx=1.5, k1_per=2e-5, n=6, seed=0):
-    from mppp.calib.hazfit import T0_DEGC
+    from mppp_studies.calibration.hazfit import T0_DEGC
     rng = np.random.default_rng(seed)
     rows = []
     for i in range(n):
@@ -87,7 +87,7 @@ def _rows(eye, f0=2150.0, ppm=40.0, early_dfx=1.5, k1_per=2e-5, n=6, seed=0):
 
 
 def test_hazcam_fit_eye_recovers_the_law():
-    from mppp.calib import hazfit
+    from mppp_studies.calibration import hazfit
     e = hazfit.fit_eye(_rows("FL"), "FL", early_offsets=True)        # the data carry an early offset
     assert e["blocks"] == [f"b{i}" for i in range(6)] and e["weak_blocks"] == ["weak"]
     assert e["ppm_per_degC"] == pytest.approx(40.0, abs=1.0) and e["slope_fitted"]
@@ -100,7 +100,7 @@ def test_hazcam_fit_eye_recovers_the_law():
 
 def test_hazcam_fit_rig_drift_and_median():
     from scipy.spatial.transform import Rotation
-    from mppp.calib import hazfit
+    from mppp_studies.calibration import hazfit
     R0 = Rotation.from_euler("xyz", [0.5, -1.0, 0.2], degrees=True)
     rows = []
     for i, sol in enumerate((100, 400, 700, 1000)):
@@ -117,7 +117,7 @@ def test_hazcam_fit_rig_drift_and_median():
 
 def test_hazcam_write_check_and_camera_at(tmp_path):
     from mppp import calib
-    from mppp.calib import hazfit
+    from mppp_studies.calibration import hazfit
     res = {"when": "2026-10-22", "blocks": [f"b{i}" for i in range(6)], "T0_degC": hazfit.T0_DEGC,
            "eyes": {"FL": hazfit.fit_eye(_rows("FL"), "FL", early_offsets=True),
                     "FR": hazfit.fit_eye(_rows("FR", seed=1), "FR", early_offsets=True),
@@ -172,7 +172,8 @@ def test_groups_and_block_sites():
     assert "chal_rocks" not in g["zcam34_joint"] and "chal_rocks_large" in g["zcam34_joint"]
     assert t["sites"]["chal_rocks_large"]["zcam"] == [34, 48, 63, 79, 110]
     assert g["hazcam_consensus"] == ["chal_rocks_large", "belva_crater_large", "bell_island", "marble_mountain"]
-    assert t["sites"]["belva_crater_large"]["zcam"] == [34, 110] and "belva_crater" not in g["zcam110_consensus"]
+    b = t["sites"]["belva_crater_large"]                       # 9 Nov: sol 768 approach station, 63 mm ZCAM08785 only
+    assert b["zcam"] == [34, 63, 110] and b["zcam_include"] == {"63": ["ZCAM08785"]} and "belva_crater" not in g["zcam110_consensus"]
     assert "belva_crater_large" in g["zcam34_consensus"] and "belva_crater" not in g["zcam34_consensus"]
     assert g["zcam63_consensus"] == ["chal_rocks_large", "seitah_overlook", "bright_angel", "taylorfjellet", "marble_mountain"]
     assert t["sites"]["bright_angle_large"]["sols"] == [[1175, 1220]] and t["sites"]["bright_angle_large"]["official_blocks"] == []
@@ -404,24 +405,20 @@ def test_error_analysis_batch_and_pipeline_report(tmp_path, monkeypatch):
     import sys as _sys
     _sys.path.insert(0, str(ROOT / "tests"))
     from helpers import _synthetic_model
-    from mppp.error import alignment as A
+    from mppp_studies.error import alignment as A
     model, X = _synthetic_model(noise_px=0.2)
     e = tmp_path / "work" / "colmap" / "error_input"
     (e / "native").mkdir(parents=True)
     (e / "stations.csv").write_text("name,station,instrument\n" + "".join(
         f"img{k}.png,{'A' if k <= 3 else 'B'},NL\n" for k in range(1, 7)))
     monkeypatch.setattr(A, "read_colmap", lambda path: copy.deepcopy(model))
-    spec = importlib.util.spec_from_file_location("eab", ROOT / "studies" / "analyses" / "error_analysis_batch.py")
-    eab = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(eab)
+    eab = importlib.import_module("mppp_studies.error.batch")
     out = tmp_path / "ea"
     eab.main([str(out), f"good={tmp_path / 'work'}", f"missing={tmp_path / 'nothing'}", "--n-points", "300",
               "--n-boot", "0"])
     res = json.loads((out / "error_analysis_batch.json").read_text())
     assert "good" in res["alignments"] or "good" in (res.get("failed") or {})
-    spec = importlib.util.spec_from_file_location("rp", ROOT / "studies" / "calibration" / "run_pipeline.py")
-    rp = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(rp)
+    rp = importlib.import_module("mppp_studies.calibration.run_pipeline")
     md = rp.error_report(res)
     assert md.startswith("# Error analysis on the SfM points")
     assert rp.STAGES == ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame",
@@ -441,9 +438,7 @@ def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
     assert mask_inference_skipped(["RHAZ0*"], 1, 1, name="RLF_0093_0675031997_228RAS_N0040100RHAZ00102_0A0095J01")
     assert not mask_inference_skipped(["RHAZ0*"], 1, 1, name="RLF_0093_0675031997_228RAS_N0040100RHAZ10102_0A0095J01")
     assert mask_inference_skipped(["RHAZ0"], 1, 1, sequence="RHAZ01234")
-    spec = importlib.util.spec_from_file_location("lab", ROOT / "scripts" / "lightglue_ab.py")
-    lab = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(lab)
+    lab = importlib.import_module("mppp_studies.calibration.lightglue_ab")
     work = tmp_path / "w"
     for v, m in (("sift", "sift"), ("lightglue", "lightglue")):
         c = work / f"colmap_{v}"
@@ -466,7 +461,7 @@ def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
 
 def test_check_zcam_rig_scatter_of_too_few_blocks():
     """0.93.9 (Z48 of 23 Oct): a rig scatter that could not be measured (one block per angle: None) is no crash."""
-    from mppp.calib.fit import check_zcam
+    from mppp_studies.calibration.fit import check_zcam
     ln = {"fx": {"a": 6700.0, "b": 0.0}, "fy": {"a": 6702.0, "b": 0.0}}
     new = {"cameras": {"ZL048": {"f0_px": 6701.0, "aspect": 1.0003, "lines": {"backlash": ln}}},
            "rig": {"baseline_m": 0.2436, "sd_rotvec_mdeg": [None, None, None], "blocks": ["a"]}}
@@ -477,7 +472,7 @@ def test_check_zcam_rig_scatter_of_too_few_blocks():
 def test_hazcam_athermal_fallback():
     """0.93.10 (Christian): an eye whose temperature law fails its thermal check gets the athermal law (fx, fy, k1
     constant) when that passes every check; else the temperature law stays, with the attempt recorded."""
-    from mppp.calib import hazfit as H
+    from mppp_studies.calibration import hazfit as H
     rng = np.random.default_rng(1)
     start = [2147.0, 2147.0, 2560.0, 1920.0, 0.01, -0.006, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
@@ -548,9 +543,7 @@ def test_0941_tiny_sites_and_joint_commands(tmp_path, monkeypatch):
     from mppp.waypoints.sites import load_site_table, work_folder
     t = load_site_table()["sites"]
     assert t["seitah_overlook_tiny"]["sols"] == [[116, 121]]
-    spec = importlib.util.spec_from_file_location("lab", ROOT / "scripts" / "lightglue_ab.py")
-    lab = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(lab)
+    lab = importlib.import_module("mppp_studies.calibration.lightglue_ab")
     works = {}
     for s in ("chal_rocks_tiny", "seitah_overlook_tiny"):
         w = work_folder(tmp_path, s, True, t[s]["sols"])
@@ -575,9 +568,7 @@ def test_lightglue_ab_four_variants_and_the_joint_variant(tmp_path):
     """0.94.4: the A/B runs four variants (their settings), reports them side by side with the Navcam-Mastcam-Z
     tie points, and the tiny joint takes the variant with the most of them."""
     import importlib.util
-    spec = importlib.util.spec_from_file_location("lab", ROOT / "scripts" / "lightglue_ab.py")
-    lab = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(lab)
+    lab = importlib.import_module("mppp_studies.calibration.lightglue_ab")
     assert list(lab.VARIANTS)[:4] == ["sift", "lightglue", "lightglue_octaves", "sift_lightglue"]
     assert lab.DEFAULT_VARIANTS == ("sift", "lightglue", "lightglue_octaves", "sift_lightglue")
     assert "POSE_GUIDED=false" in lab.VARIANTS["sift_pg_off"] and "ISOLATED_POINTS_FACTOR=0" in lab.VARIANTS["sift_iso_off"]
@@ -611,7 +602,7 @@ def test_lightglue_ab_four_variants_and_the_joint_variant(tmp_path):
 def test_hazcam_fit_leaves_out_a_block_off_the_law_and_judges_many_blocks_by_precision():
     """0.94.4 (24 Oct): Belva Crater's rear eyes 0.7 % low on 1.5k observations (23 Oct) are left out; an eye of
     many blocks passes its scatter check on scatter / sqrt(blocks)."""
-    from mppp.calib import hazfit
+    from mppp_studies.calibration import hazfit
     rng = np.random.default_rng(4)
     rows = []
     for i in range(12):

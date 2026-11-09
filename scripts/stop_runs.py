@@ -32,7 +32,7 @@ def main(argv=None) -> int:
     ap.add_argument("--yes", action="store_true", help="stop without asking")
     ap.add_argument("--list", action="store_true", help="only list the runs")
     a = ap.parse_args(argv)
-    from _batch import STOP_MARKER, kill_tree, list_processes, mark_stopped, mppp_processes
+    from mppp.batch import STOP_MARKER, kill_tree, list_processes, mark_stopped, mppp_processes
     roots = [Path(r) for r in (a.root or [os.environ.get("MPPP_SCAPES", ".")])]
     runs = mppp_processes(list_processes())
     if not runs:

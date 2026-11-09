@@ -330,7 +330,7 @@ class SfmProject:
         ``zcam_zero_terms``: the terms set to 0 in the Mastcam-Z cameras (e.g. ``("p1", "p2", "b1", "b2")``) when
         they differ from the Navcam ones (``zero_terms``); None: ``zero_terms`` for both.
         ``navcam_cameras``: a folder with Navcam model files to start from instead of the models in use (a candidate
-        of :func:`mppp.calib.fit.write_navcam`); the files' ``verification`` blocks are kept in
+        of :func:`mppp_studies.calibration.fit.write_navcam`); the files' ``verification`` blocks are kept in
         ``settings["navcam_cameras"]``.
         ``navcam_rig``: ``"consensus"`` (default) starts the rig rotation from the promoted rig at the block's median
         sol, the translation the fitted one when the file has it; ``"cahv"``: both from the label CAHV pairs.

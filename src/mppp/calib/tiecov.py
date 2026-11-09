@@ -1,7 +1,7 @@
 """
 The covariance of the global terms of a tied joint, with the ties eliminated exactly (0.94.4, 25 Oct 2026).
 
-The joints (:mod:`mppp.calib.tied`, :mod:`mppp.calib.ztied`) tie each unit - a bin camera, a rig unit - to the
+The joints (:mod:`mppp_studies.calibration.tied`, :mod:`mppp_studies.calibration.ztied`) tie each unit - a bin camera, a rig unit - to the
 global terms with linear residuals of sigma 1e-3 px .. 1e-8 rad (``LinearTie``): effectively exact, weights up to
 1e16 next to data weights of 1e7.  The solve is fine with that, but the covariance is not: COLMAP's estimator
 eliminates the points and inverts the reduced normal matrix as it is, and on the 22-29 block Navcam joints (20,

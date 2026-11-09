@@ -1,4 +1,4 @@
-"""scripts/freeze_chain.py (2 Nov 2026): the unattended chain - the root, the wait for v4.2, the mask choice, the
+"""mppp_studies.calibration.freeze_chain (2 Nov 2026): the unattended chain - the root, the wait for v4.2, the mask choice, the
 pipeline in three calls (blocks, final pass, studies), S2 last; a restart continues it."""
 import json
 import sys
@@ -14,7 +14,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _no_disk_wait(monkeypatch):
     """The disk-space wait (MIN_FREE_GB) is off in the tests - a CI disk may be smaller than the PC's."""
-    import freeze_chain as F
+    from mppp_studies.calibration import freeze_chain as F
     monkeypatch.setattr(F, "MIN_FREE_GB", 0.0)
 
 
@@ -27,7 +27,7 @@ def _ab_csv(path, v3, v42):
 
 
 def _setup(tmp_path, monkeypatch, trained=True):
-    import freeze_chain as F
+    from mppp_studies.calibration import freeze_chain as F
     ck, outp = tmp_path / "checkpoints", tmp_path / "outputs"
     v41 = ck / "convnext_tiny_s4_seg_20261102_v8_v4.1.pt"
     v42 = ck / "convnext_tiny_s4_seg_20261103_v8_v4.2.pt"
@@ -70,7 +70,7 @@ def test_chain_runs_through(tmp_path, monkeypatch):
     geo, s6 = ran[4][1], ran[5][1]
     assert geo[geo.index("--root") + 1] == str(new) and "110" in geo
     assert s6[s6.index("--root") + 1] == str(new) and "chal_rocks_large" in s6
-    assert ran[7][1][-1] == str(old) and ran[7][1][ran[7][1].index("S1") - 1].endswith("tie_point_studies.py")
+    assert ran[7][1][-1] == str(old) and ran[7][1][ran[7][1].index("S1") - 1].endswith("tie_point_studies")
     ab = ran[0][1]
     assert ab[ab.index("--split-ckpt") + 1] == str(v42) and ab[ab.index("--also-held-out") + 1] == str(v41)
     assert "--seen-split" in ab and "mppp_mask_v3" in ab and ab[-1].endswith("mask_ab_v3_v41_v42")
@@ -175,7 +175,7 @@ def test_chain_refuses_second_instance(tmp_path, monkeypatch):
 
 
 def test_wait_for_v42_gives_up(tmp_path, monkeypatch):
-    import freeze_chain as F
+    from mppp_studies.calibration import freeze_chain as F
     monkeypatch.setattr(F, "CKPT_DIR", tmp_path / "ck")
     monkeypatch.setattr(F, "OUTPUTS", tmp_path / "out")
     monkeypatch.setattr(F.time, "sleep", lambda s: None)
@@ -192,8 +192,8 @@ def test_wait_for_v42_gives_up(tmp_path, monkeypatch):
 
 
 def test_s2_verdict_limits(tmp_path, monkeypatch):
-    import freeze_chain as F
-    import tie_point_studies as T
+    from mppp_studies.calibration import freeze_chain as F
+    from mppp_studies.calibration import tie_point_studies as T
     c = F.Chain(type("A", (), {"root": str(tmp_path)})())
     work = tmp_path / "mars2020_sol_0461_rockytop_example_zcam" / "studies"
     work.mkdir(parents=True)
@@ -206,7 +206,7 @@ def test_s2_verdict_limits(tmp_path, monkeypatch):
 
 
 def test_run_stops_a_child_past_its_time(tmp_path, monkeypatch):
-    import freeze_chain as F
+    from mppp_studies.calibration import freeze_chain as F
     c = F.Chain(type("A", (), {"root": str(tmp_path), "redo": None})())
     rc = c.run("sleepy", [sys.executable, "-c", "import time; time.sleep(30)"], timeout_h=0.0)
     assert rc in (124, 127) or rc != 0
@@ -294,7 +294,7 @@ def test_stop_marker_ends_the_chain(tmp_path, monkeypatch):
         class P:
             pid = 1
             def wait(self, timeout=None):
-                if "run_pipeline.py" in " ".join(cmd):
+                if "run_pipeline" in " ".join(cmd):
                     (new / F.STOP_MARKER).write_text("stopped by stop_runs\n")
                     return 1
                 return 0
@@ -306,7 +306,7 @@ def test_stop_marker_ends_the_chain(tmp_path, monkeypatch):
     monkeypatch.setattr(F, "keep_awake", lambda c: None)
     monkeypatch.setattr(F, "wait_pipeline_idle", lambda c: None)
     assert F.main(["--root", str(new), "--old-root", str(old), "--skip-ab", "--no-wait"]) == 130
-    assert len(ran) == 1 and "run_pipeline.py" in " ".join(ran[0])
+    assert len(ran) == 1 and "run_pipeline" in " ".join(ran[0])
     st = json.loads((new / "mppp_pipeline" / "freeze_chain_status.json").read_text())
     assert st["state"] == "stopped" and st["steps"]["blocks"]["state"] == "exit 1"
     assert "stopped by stop_runs" in (new / "mppp_pipeline" / "freeze_chain_log.txt").read_text()
@@ -331,7 +331,7 @@ def test_compatible_status_of_another_tag_continues(tmp_path, monkeypatch):
 def test_wait_for_space(tmp_path, monkeypatch):
     """3 Nov (audit): under MIN_FREE_GB a step waits for space (here it appears on the third look)."""
     import shutil
-    import freeze_chain as F
+    from mppp_studies.calibration import freeze_chain as F
     monkeypatch.setattr(F, "MIN_FREE_GB", 25.0)
     clock = {"t": 0.0}
     monkeypatch.setattr(F.time, "time", lambda: clock["t"])

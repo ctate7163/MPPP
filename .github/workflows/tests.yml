@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check the paper (citations, figures)
-        run: python scripts/build_paper.py --check-only || true
+        run: python -m mppp_studies.paper.build_paper --check-only || true
       - name: Build the JOSS draft
         uses: openjournals/openjournals-draft-action@master
         with:

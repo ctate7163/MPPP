@@ -19,7 +19,7 @@ The forms (:mod:`mppp.calib.forms`):
   focal fit puts it in the low-focal-length ``"regular"`` state.
 
 :mod:`mppp.calib.models` loads the promoted models (``mppp.paths.cmods_dir()``) and promotes new ones;
-:mod:`mppp.calib.constrain` gives the camera of one image or block; :mod:`mppp.calib.fit` fits the forms to solved
+:mod:`mppp.calib.constrain` gives the camera of one image or block; :mod:`mppp_studies.calibration.fit` fits the forms to solved
 blocks (one streamlined fit per form) and gates the candidates.
 """
 from .forms import (FULL_FRAME, FULL_OPENCV_PARAMS, HAZCAM, INTRINSIC_CORE, NAVCAM, NAVCAM_PARAMS, PARAM_NAMES, ZCAM,  # noqa: F401

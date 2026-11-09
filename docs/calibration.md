@@ -64,7 +64,7 @@ needs at least two finished blocks. Results go to `<root>/camera_analysis/<name>
 
 ### Navcam tied joint: `mppp calib navcam`
 
-Module [`mppp.calib.tied`](api.md#mppp.calib.tied). Every term of the Navcam form is a parameter of one bundle
+Module [`mppp_studies.calibration.tied`](api.md#mppp_studies.calibration.tied). Every term of the Navcam form is a parameter of one bundle
 adjustment over the finished Navcam blocks:
 
 - each eye gets one COLMAP camera per (temperature bin, era), where the era is before or after the early-mission
@@ -87,7 +87,7 @@ mppp calib navcam --promote-if-ok --note "tied joint of the consensus blocks"
 
 ### Mastcam-Z joint: `mppp calib zcam`
 
-Module [`mppp.calib.ztied`](api.md#mppp.calib.ztied). One bundle adjustment over the finished Navcam + Mastcam-Z
+Module [`mppp_studies.calibration.ztied`](api.md#mppp_studies.calibration.ztied). One bundle adjustment over the finished Navcam + Mastcam-Z
 blocks of one zoom (`--zoom`, default 34):
 
 - **Navcam held** at the promoted law (camera per eye, temperature bin and era; rig on its sol trend). The Navcam
@@ -140,7 +140,7 @@ each promoted if its checks pass, the Z34 figures, and the combined check below.
 
 ### Combined check: `mppp calib nz`
 
-Module [`mppp.calib.nzjoint`](api.md#mppp.calib.nzjoint). One adjustment of the finished Navcam + Mastcam-Z blocks
+Module [`mppp_studies.calibration.nzjoint`](api.md#mppp_studies.calibration.nzjoint). One adjustment of the finished Navcam + Mastcam-Z blocks
 in which the Navcam law and the Mastcam-Z focus law are both free, starting from the promoted laws. It compares the
 result with the Navcam-only law: how far each Navcam term moved in units of its standard deviation, the Navcam and
 Mastcam-Z residuals before and after, and the rig.
@@ -164,7 +164,7 @@ mppp calib nz --zoom 34 --group zcam34_joint,zcam_consensus --navcam-group ecam_
 
 ### Hazcam fit: `mppp calib hazcam`
 
-Module [`mppp.calib.hazfit`](api.md#mppp.calib.hazfit) (0.93.1). The Hazcam law in the Navcam form, fitted from the
+Module [`mppp_studies.calibration.hazfit`](api.md#mppp_studies.calibration.hazfit) (0.93.1). The Hazcam law in the Navcam form, fitted from the
 finished blocks' refined Hazcam cameras and rigs (`sparse/cahv_ba` of each block's project; `--variant` picks the
 project folder, `hazcam` for the Hazcam-only alignments):
 
@@ -203,7 +203,7 @@ mppp cmods promote <candidate folder or files> --note "why"
 ```
 
 `promote` validates each file against the form, copies it into the models folder and appends the note to
-`cmods/CHANGES.md`; the replaced files stay in the git history. `scripts/promote_cmods.py` does the same from a
+`cmods/CHANGES.md`; the replaced files stay in the git history. `mppp_studies.calibration.promote_cmods` does the same from a
 script. Commit `src/mppp/data/cmods` after a promotion.
 
 Camera models and site definitions are the author's decisions; open an issue before proposing a change to them.

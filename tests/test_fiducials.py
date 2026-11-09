@@ -1,11 +1,11 @@
-"""The rover deck fiducial check (mppp.calib.fiducials, 0.95.5): detection, the pair solutions, the summary."""
+"""The rover deck fiducial check (mppp_studies.calibration.fiducials, 0.95.5): detection, the pair solutions, the summary."""
 import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from mppp.calib import fiducials as F
+from mppp_studies.calibration import fiducials as F
 from mppp.paths import data_dir
 
 pytest.importorskip("cv2")
@@ -223,10 +223,7 @@ def test_write_csv(tmp_path):
 
 def test_script_finds_blocks(tmp_path):
     import importlib.util
-    script = Path(__file__).resolve().parents[1] / "scripts" / "fiducial_check.py"
-    spec = importlib.util.spec_from_file_location("fiducial_check", script)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = importlib.import_module("mppp_studies.calibration.fiducial_check")
     for b in ("mars2020_sol_0201_seitah_huge", "mars2020_sol_0413_threeforks_large"):
         d = tmp_path / b / "colmap"
         (d / "sparse" / "cahv_ba").mkdir(parents=True)
@@ -352,10 +349,7 @@ def test_pds_pairs_and_stretch():
 
 def test_deck_rig_trend_script_runs_on_an_empty_archive(tmp_path):
     import importlib.util
-    script = Path(__file__).resolve().parents[1] / "scripts" / "deck_rig_trend.py"
-    spec = importlib.util.spec_from_file_location("deck_rig_trend", script)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    mod = importlib.import_module("mppp_studies.calibration.deck_rig_trend")
     (tmp_path / "pds" / "datadrive" / "00001").mkdir(parents=True)
     out = tmp_path / "out"
     assert mod.main(["--pds", str(tmp_path / "pds"), "--root", str(tmp_path), "--out", str(out), "--workers", "1"]) == 0

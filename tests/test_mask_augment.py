@@ -1,4 +1,4 @@
-"""0.96: the online mask augmentations (mppp.mask.training.augment) - numpy only, no torch."""
+"""0.96: the online mask augmentations (mppp_studies.mask_training.augment) - numpy only, no torch."""
 import json
 import sys
 
@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 try:
-    from mppp.mask.training import augment as A
+    from mppp_studies.mask_training import augment as A
 except ModuleNotFoundError:                      # no torch here: mppp.mask's __init__ needs it, augment.py does not
     import importlib.util
     from pathlib import Path
@@ -212,11 +212,8 @@ def test_augment_pipeline_stages_follow_the_config():
 def test_frozen_test_list_round_trip(tmp_path):
     """0.96: read_test_list / write_test_list and grouped_split(test_list=...) - the listed frames are the held-out
     side whatever the seed; names may be given as stems or with another extension."""
-    import importlib.util
-    import mppp
-    _p = Path(mppp.__file__).parent / "mask" / "training" / "train.py"
     try:
-        from mppp.mask.training import train as T
+        from mppp_studies.mask_training import train as T
     except ModuleNotFoundError:
         pytest.skip("torch is not installed: train.py is tested on the GPU machine")
     names = [f"ZL0_{k:04d}_0700000000_000FDR_N0000000ZCAM0{k:04d}_0340LMJ01.png" for k in range(10)]

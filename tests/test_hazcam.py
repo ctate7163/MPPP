@@ -319,7 +319,7 @@ def test_hazcam_rig_trends_figure_and_panel_letters(tmp_path):
     """0.95 (Christian, 27 Oct): rig trends for the front and rear Hazcams like the Navcam's, the panels lettered in
     their titles ("A. ..."), left-justified, as the maps."""
     from scipy.spatial.transform import Rotation
-    from mppp.calib import hazfit as H
+    from mppp_studies.calibration import hazfit as H
     from mppp.calib.constrain import panel_letters, plot_hazcam_rig_trends
     R0 = Rotation.from_rotvec([0.001, 0.002, -0.001])
     rows = []
@@ -367,9 +367,7 @@ def test_make_figures_finds_the_newest_joints_and_hazcam_fit(tmp_path):
     import importlib.util
     import os
     import time
-    spec = importlib.util.spec_from_file_location("paper_figures", Path(__file__).resolve().parents[1] / "scripts" / "paper_figures.py")
-    pf = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(pf)
+    pf = importlib.import_module("mppp_studies.paper.paper_figures")
     ca = tmp_path / "camera_analysis"
     for d in ("zcam34_joint_20261028", "trial_0p95_20261029/zcam34_joint", "zcam34_joint_20261029",
               "hazcam_fit_ecam_20261027", "trial_0p95_20261029/hazcam_fit"):

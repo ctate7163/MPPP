@@ -76,7 +76,7 @@ def test_bat_files_work_from_any_folder_and_find_the_environment():
 
 def _batch():
     sys.path.insert(0, str(ROOT / "scripts"))
-    import _batch
+    from mppp import batch as _batch
     return _batch
 
 
@@ -108,7 +108,7 @@ def test_stop_mppp_bat():
     assert b.count(b"\n") == b.count(b"\r\n") and b"stop_runs.py" in b and b"mppp_env.bat" in b
     for name in ("process_sites.py", "run_sites.py"):
         assert "batch_lock(" in (ROOT / "scripts" / name).read_text()
-    for name in ("align_scape.py", "process_sites.py", "run_sites.py", "stop_runs.py", "check_sites.py", "_batch.py"):
+    for name in ("align_scape.py", "process_sites.py", "run_sites.py", "stop_runs.py", "check_sites.py"):
         src = (ROOT / "scripts" / name).read_text()
         assert "nbclient" not in src and "run_notebook" not in src and "ipynb" not in src, name
 
@@ -119,9 +119,7 @@ def test_promote_cmods(monkeypatch, tmp_path, capsys):
     from mppp.sfm.project import NAVCAM_PACKAGE_CONSENSUS_DIR, navcam_consensus_dir
     dst = tmp_path / "cmods"
     monkeypatch.setenv("MPPP_CMODS", str(dst))
-    spec = importlib.util.spec_from_file_location("promote_cmods", ROOT / "scripts" / "promote_cmods.py")
-    pc = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(pc)
+    pc = importlib.import_module("mppp_studies.calibration.promote_cmods")
     assert pc.main([str(NAVCAM_PACKAGE_CONSENSUS_DIR), "--note", "first"]) == 0
     assert navcam_consensus_dir() == dst and (dst / "CHANGES.md").read_text().count(" - first\n") == 1
     # a new NL camera replaces the old one; the change is logged (git history keeps the replaced file)
@@ -306,7 +304,7 @@ def test_run_sites_dry_run_and_finished(tmp_path):
 def test_a_stopped_batch_does_not_go_on_to_the_joints(tmp_path, monkeypatch):
     """31 Oct: stop_runs writes mppp_stopped.txt; _run_sites.bat then skips MPPP_THEN; a new batch clears it."""
     sys.path.insert(0, str(ROOT / "scripts"))
-    import _batch
+    from mppp import batch as _batch
     import stop_runs
     monkeypatch.setattr(_batch, "list_processes", lambda: [{"pid": 99, "ppid": 1,
                                                             "cmd": "python scripts/run_sites.py --root x"}])
@@ -324,7 +322,7 @@ def test_a_stopped_batch_does_not_go_on_to_the_joints(tmp_path, monkeypatch):
 def test_experiment_scripts_live_in_studies():
     for name in ("lens_model_experiment.py", "lens_terms_experiment.py", "pair_experiment.py",
                  "temperature_bins_experiment.py", "error_sources.py"):
-        assert not (ROOT / "scripts" / name).exists() and (ROOT / "studies" / "experiments" / name).is_file(), name
+        assert not (ROOT / "scripts" / name).exists() and (ROOT / "src" / "mppp_studies" / "misc" / "experiments" / name).is_file(), name
 
 
 def test_windows_run_sites_zcam_passes_extra_through():
@@ -333,14 +331,14 @@ def test_windows_run_sites_zcam_passes_extra_through():
 
 
 def test_scripts_and_bat_exist():
-    assert (ROOT / "studies" / "calibration" / "prepare_next_run.py").is_file()      # 0.90: a calibration study
+    assert (ROOT / "src" / "mppp_studies" / "misc" / "calibration_old" / "prepare_next_run.py").is_file()   # 0.96: misc
     assert not (ROOT / "scripts" / "prepare_next_run.py").exists()
     assert not (ROOT / "scripts" / "windows" / "prepare_next_run.bat").exists()
 
 
 def test_stop_runs_knows_the_pipeline(tmp_path):
     sys.path.insert(0, str(ROOT / "scripts"))
-    from _batch import mark_stopped, mppp_processes
+    from mppp.batch import mark_stopped, mppp_processes
     rows = [{"pid": 10, "ppid": 1, "cmd": "python scripts/run_pipeline.py --root D:/x"},
             {"pid": 11, "ppid": 10, "cmd": "python scripts/run_sites.py --root D:/x --group zcam34_consensus"},
             {"pid": 12, "ppid": 11, "cmd": "python scripts/align_scape.py D:/x/site"}]
@@ -428,9 +426,7 @@ def test_check_sites_shows_the_last_runs(tmp_path, capsys):
 def test_archive_gaps_finds_and_fetches_the_missing_eye(tmp_path):
     """0.94.4: a right Hazcam (J01) whose left image is not in the archive; the PDS has both eyes as J02."""
     import importlib.util
-    spec = importlib.util.spec_from_file_location("archive_gaps", ROOT / "scripts" / "archive_gaps.py")
-    ag = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(ag)
+    ag = importlib.import_module("mppp_studies.misc.archive_gaps")
     d = tmp_path / "00122" / "ids" / "rdr" / "fcam"
     d.mkdir(parents=True)
     (d / "FRF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J01.IMG").write_bytes(b"r")
@@ -463,9 +459,7 @@ def test_tie_point_studies_scaffold(tmp_path, capsys):
     solution, S6 the per-bin focal residuals by observation band)."""
     import importlib.util
     import json
-    spec = importlib.util.spec_from_file_location("tps", ROOT / "scripts" / "tie_point_studies.py")
-    T = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(T)
+    T = importlib.import_module("mppp_studies.calibration.tie_point_studies")
     assert set(T.STUDIES) == {"S1", "S2", "S3", "S4", "S5", "S6"}
     for st, vs in T.STUDIES.items():
         assert next(iter(vs.values())) == {}                                  # the first variant: today's default
@@ -521,7 +515,7 @@ def test_trial_joints_bat_runs_every_0p95_joint_without_promoting():
     assert t.count("calib navcam") == 2 and "--tie-f-slope" in t and "calib lawcheck" in t and "calib hazcam" in t
     assert "calib zcam --zoom %%Z" in t and 'MPPP_ZOOMS=34 48 63' in t and "calib nz" in t
     assert "--promote-if-ok" not in t and t.count("--no-promote") == 4 and t.count("--wait-h 0") == 7   # nz never promotes
-    assert "mppp_env.bat" in t and "trial_0p95_" in t and "plot_lawcheck.py" in t
+    assert "mppp_env.bat" in t and "trial_0p95_" in t and "plot_lawcheck" in t
     # 29 Oct: the combined joint runs before the law check (on by default) and its Navcam law is checked too; the
     # Mastcam-Z joints run the eye-slope tests
     assert t.index("calib nz") < t.index("calib lawcheck") and 'MPPP_NZ%"=="none"' in t
@@ -556,7 +550,7 @@ def test_run_sites_takes_several_groups():
     import argparse
     import sys
     sys.path.insert(0, str(ROOT / "scripts"))
-    from _batch import choose_sites
+    from mppp.batch import choose_sites
     table = {"sites": {}, "groups": {"a": ["x", "y"], "b": ["y", "z"]}}
     ns = argparse.Namespace(all=False, group="a, b", sites=None)
     assert choose_sites(table, ns, None) == ["x", "y", "z"]
@@ -583,7 +577,7 @@ def test_zcam_backlash_rerun_bat():
     assert 'MPPP_ZOOMS=34 48 63 79 110' in t and 'MPPP_HAZ=none' in t and "zcam_joints.lock" in t
     assert t.count('if exist "%ROOT%\\mppp_stopped.txt" goto :stopped') == 3
     sys.path.insert(0, str(ROOT / "scripts"))
-    from _batch import mppp_processes
+    from mppp.batch import mppp_processes
     rows = [{"pid": 5, "ppid": 1, "cmd": 'cmd /c call "D:\\code\\MPPP\\scripts\\windows\\zcam_backlash_rerun.bat" --chain'}]
     assert [r["pid"] for r in mppp_processes(rows)] == [5]
     # the exclusions of the rerun (sites.json)
@@ -611,9 +605,8 @@ def test_zcam_aspect_geometry_on_a_small_block(tmp_path):
     """1 Nov (Christian): the Mastcam-Z bins' fy / fx against elevation, tie range and frame coverage."""
     pytest.importorskip("pycolmap")
     pytest.importorskip("cv2")
-    sys.path.insert(0, str(ROOT / "scripts"))
     sys.path.insert(0, str(ROOT / "tests"))
-    import zcam_aspect_geometry as G
+    from mppp_studies.calibration import zcam_aspect_geometry as G
     from test_nerfstudio import _scene
     proj, rec = _scene(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "ZL063_F02000": 2}}
@@ -632,12 +625,11 @@ def test_zcam_aspect_geometry_on_a_small_block(tmp_path):
 
 
 def test_zcam_mast_head_chain_round_trip():
-    """0.95.5 (scripts/zcam_mast_head.py): a Navcam pose from the chain goes back to the chain's own c and Q in the
+    """0.95.5 (mppp_studies.calibration.zcam_mast_head): a Navcam pose from the chain goes back to the chain's own c and Q in the
     head frame; the level mast frame puts NL ahead of the elevation axis, on the left, above it."""
     import importlib.util, json as _j
     import numpy as _np
-    spec = importlib.util.spec_from_file_location("zmh", str(Path(__file__).resolve().parent.parent / "scripts" / "zcam_mast_head.py"))
-    zmh = importlib.util.module_from_spec(spec); spec.loader.exec_module(zmh)
+    zmh = importlib.import_module("mppp_studies.calibration.zcam_mast_head")
     m = {"params": _j.loads('''{"W_rotvec_rad": [0.003913956929754023, 0.00266991321087316, -3.122261291130396], "P_xy_m": [0.8011894511997478, 0.5568794458630825], "h_m": [-0.0003506674984743533, 0.0, -1.9177004015584642], "c_L_m": [-0.05427324252593979, 0.2145980435045003, 0.1283363006047039], "c_R_m": [-0.05459462261361909, -0.2089250814636251, 0.12808116004673997], "Q_L_rotvec_rad": [-0.0571317210820025, -0.05495643684105014, 4.713989481400855], "Q_R_rotvec_rad": [0.017207252511186724, 0.01762287619051183, -1.5693821313696412], "G_rotvec_rad": [0.0015152142044422285, -0.0023839926438474776, -0.019291570441226168], "k_az": 0.0, "k_el": 0.0, "qT_L_rad_per_C": [1.918888638212186e-06, 8.55857117217576e-06, -2.203852941882726e-06], "qT_R_rad_per_C": [2.3541237840220355e-06, 7.687363792083791e-06, -8.992571276870773e-07], "T0_C": -20.0}''')}
     mast = zmh.Mast(m)
     for eye in ("L", "R"):

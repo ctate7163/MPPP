@@ -1,4 +1,4 @@
-"""The Navcam joint machinery and the consensus candidate (mppp.calib.joint, mppp.calib.fit)."""
+"""The Navcam joint machinery and the consensus candidate (mppp_studies.calibration.joint, mppp_studies.calibration.fit)."""
 import json
 import numpy as np
 import pytest
@@ -16,7 +16,7 @@ def _cam(model="FULL_OPENCV", cid=1):
 
 
 def test_stereo_offset_follows_yaw():
-    from mppp.calib.joint import stereo_offset
+    from mppp_studies.calibration.joint import stereo_offset
     from scipy.spatial.transform import Rotation
     L, R = _cam(cid=1), _cam(cid=2)
     T0 = pycolmap.Rigid3d(pycolmap.Rotation3d(np.eye(3)), np.array([-0.424, 0, 0]))
@@ -29,7 +29,7 @@ def test_stereo_offset_follows_yaw():
 
 def test_bundle_adjust_keypoint_scale_equals_scaled_camera():
     """Keypoints divided by s about the principal point fit a camera whose fx, fy are s times smaller."""
-    from mppp.calib.joint import keypoint_scales
+    from mppp_studies.calibration.joint import keypoint_scales
 
     class P:
         images = [{"image_id": 1, "name": "a"}, {"image_id": 2, "name": "b"}]
@@ -56,7 +56,7 @@ def test_sol_epochs():
 
 def test_thermal_keypoint_map_moves_the_principal_point():
     pycolmap = pytest.importorskip("pycolmap")
-    from mppp.calib.joint import thermal_keypoint_map
+    from mppp_studies.calibration.joint import thermal_keypoint_map
     proj = SimpleNamespace(images=[{"image_id": 1, "name": "a", "sol": 1100}, {"image_id": 2, "name": "b", "sol": 1000}])
     temps = {"a": -10.0, "b": -30.0}
     f = thermal_keypoint_map(proj, temps, -20.0, pp_slopes={1: (0.05, -0.02)}, base_of={7: 1})
@@ -71,7 +71,7 @@ def test_thermal_keypoint_map_moves_the_principal_point():
 def test_write_navcam_candidate(tmp_path):
     """The Navcam candidate folder from a fit_navcam result (the files in use as the template)."""
     from mppp.paths import cmods_dir
-    from mppp.calib.fit import write_navcam
+    from mppp_studies.calibration.fit import write_navcam
     from mppp.sfm.project import PARAM_NAMES, camera_from_colmap_json
     names = PARAM_NAMES["THIN_PRISM_FISHEYE"]
     cur = {e: json.loads((cmods_dir() / f"M2020_{e}_fisheye_tangential.json").read_text()) for e in ("NL", "NR")}
@@ -104,7 +104,7 @@ def test_write_navcam_candidate(tmp_path):
     assert check_form(d)["ok"]
     import subprocess, sys
     root = Path(__file__).resolve().parents[1]
-    r = subprocess.run([sys.executable, str(root / "scripts" / "promote_cmods.py"), str(d), "--dry-run"],
+    r = subprocess.run([sys.executable, "-m", "mppp_studies.calibration.promote_cmods", str(d), "--dry-run"],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
 
@@ -117,8 +117,8 @@ def test_baseline_degeneracy_on_a_synthetic_block(tmp_path):
     re-converged, finite slopes), and on a block whose scale is only the prior's the cost rise is small."""
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
-    from mppp.calib import joint as NC
-    from mppp.calib.fit import baseline_degeneracy
+    from mppp_studies.calibration import joint as NC
+    from mppp_studies.calibration.fit import baseline_degeneracy
     proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
     rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=False)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
@@ -141,7 +141,7 @@ def test_joint_translation_records_the_start_as_a_copy(tmp_path):
     """The start translation must be a copy: pycolmap's Rigid3d.translation is a view into the rig."""
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
-    from mppp.calib import joint as NC
+    from mppp_studies.calibration import joint as NC
     proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
     rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=False)
     rid, cid, T = NC.stereo_rig(rec)
@@ -172,7 +172,7 @@ def test_sol_epochs_cut_at_the_pitch_knot():
 
 def test_k1_keypoint_map():
     pycolmap = pytest.importorskip("pycolmap")
-    from mppp.calib.joint import k1_keypoint_map
+    from mppp_studies.calibration.joint import k1_keypoint_map
 
     class P:
         images = [{"image_id": 1, "name": "a", "instrument": "NL"}, {"image_id": 2, "name": "b", "instrument": "NR"}]
@@ -201,7 +201,7 @@ def _write_form(d: Path, k4=0.0012, k1s=-3e-6):
 
 
 def test_consensus_change(tmp_path):
-    from mppp.calib.fit import PASS_LIMITS, consensus_change
+    from mppp_studies.calibration.fit import PASS_LIMITS, consensus_change
     _write_form(tmp_path / "a", k4=0.0)
     _write_form(tmp_path / "b", k4=0.0)
     ch = consensus_change(tmp_path / "a", tmp_path / "b")
@@ -217,7 +217,7 @@ def test_consensus_change(tmp_path):
 
 
 def test_k1_slopes_from_blocks(tmp_path):
-    from mppp.calib.fit import k1_slopes_from_blocks
+    from mppp_studies.calibration.fit import k1_slopes_from_blocks
     rng = np.random.default_rng(0)
     cfg = {}
     for b, off in (("A", 0.0), ("B", 2e-4), ("C", -1e-4)):
@@ -236,7 +236,7 @@ def test_k1_slopes_from_blocks(tmp_path):
 
 
 def test_joint_kw_and_thermal_values_k1():
-    from mppp.calib.fit import _joint_kw, _thermal_values
+    from mppp_studies.calibration.fit import _joint_kw, _thermal_values
     v = _thermal_values({"ppm_per_degC": 38.0, "k1_slopes": {"NL": -4e-6, "NR": 1e-6}})
     assert v["NL_k1"] == -4e-6
     kw = _joint_kw(v, None)
@@ -246,7 +246,7 @@ def test_joint_kw_and_thermal_values_k1():
 
 def test_fit_navcam_accepts_the_v0p80_gates():
     import inspect
-    from mppp.calib.fit import LOO_LIMITS, fit_navcam
+    from mppp_studies.calibration.fit import LOO_LIMITS, fit_navcam
     p = inspect.signature(fit_navcam).parameters
     assert {"k1_slopes", "leave_one_out", "loo_iterations"} <= set(p)
     assert LOO_LIMITS == {"centre_px": 0.05, "corner_px": 0.10}
@@ -268,8 +268,8 @@ def test_points_per_station(tmp_path):
     pytest.importorskip("pyceres")
     from types import SimpleNamespace
     from helpers import _build_rec, _synthetic
-    from mppp.calib import joint as J
-    from mppp.calib import tied as TJ
+    from mppp_studies.calibration import joint as J
+    from mppp_studies.calibration import tied as TJ
     proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
     rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=False)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}

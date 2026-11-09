@@ -129,7 +129,7 @@ ZCAM_LINE_FORMS = ("free", "common", "constant", "pinned", "pinned_slope")
 ZCAM_MAX_P = 5e-3                        # |p1|, |p2| beyond this is not a lens (Rochette 20 Oct: 7.5e-4, 4.2e-4)
 # 0.95.0 (Christian, 27 Oct: "the focal length is not curved over focus; different sequences sit at different linear
 # offsets with the same slope"): each sequence (block, sol, sequence) of an eye sits at an intercept offset on fx
-# (fy x the aspect) on top of the eye's line, in the Mastcam-Z joint (mppp.calib.ztied) and the blocks' line refit
+# (fy x the aspect) on top of the eye's line, in the Mastcam-Z joint (mppp_studies.calibration.ztied) and the blocks' line refit
 # (mppp.sfm.zcam); drawn to 0 with an sd of SEQ_OFFSET_SD x f; a sequence with fewer than MIN_SEQ_IMAGES frames or
 # MIN_SEQ_OBS observations holds its offset at 0.  Needs sequence bins (zcam_bin_by "sequence")
 SEQ_OFFSET_SD = 0.005

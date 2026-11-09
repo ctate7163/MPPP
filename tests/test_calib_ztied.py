@@ -1,4 +1,4 @@
-"""The Mastcam-Z joint (mppp.calib.ztied) on two synthetic Navcam + Mastcam-Z 34 mm blocks: the Navcam held at its
+"""The Mastcam-Z joint (mppp_studies.calibration.ztied) on two synthetic Navcam + Mastcam-Z 34 mm blocks: the Navcam held at its
 law, the Mastcam-Z focus lines, distortion and rig recovered from a perturbed start; the diagnostic pass, the files."""
 import copy
 import json
@@ -39,7 +39,7 @@ def _flat_synthetic_blocks_are_not_weak(monkeypatch):
     """0.96 (item F): the synthetic blocks point every frame at pitch 28 deg, so every sequence covers one vertical
     field of view and would count as weak; the weak-sequence fy offsets are turned off for these tests except where
     a test turns them on."""
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     monkeypatch.setattr(Z, "WEAK_SEQUENCE_FOV", 0.0)
 
 
@@ -72,7 +72,7 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None, seq_offset
     {"ZCAM00001": px, ...}: each pointing is a sequence of its own (ZCAM00001..3) with sequence bins (the camera key
     carries sol and sequence, the spec ``sequence`` / ``sequence_sol``) and that focus offset on fx (fy x aspect)."""
     from helpers import _synthetic
-    from mppp.calib.joint import Scape
+    from mppp_studies.calibration.joint import Scape
     from scipy.spatial.transform import Rotation
     proj, truth, P, cams, rigT, noise, rng_ = _synthetic(tmp_path / name, noise_native_px=0.05, seed=int(sol))
     Rz = np.asarray(model["rig"]["R_sensor_from_ref"], float)
@@ -236,7 +236,7 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None, seq_offset
 
 
 def _navcam_law(cams, rigT):
-    from mppp.calib import tied as T
+    from mppp_studies.calibration import tied as T
     st = T.start_values()
     for eye in ("NL", "NR"):
         st["G"][eye] = np.asarray(cams[eye]["params"], float)[:10].copy()
@@ -251,7 +251,7 @@ def _navcam_law(cams, rigT):
 
 def test_zcam_joint_recovers_the_focus_law_and_the_rig(tmp_path, monkeypatch):
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})       # the truth has k2 = 0.40: no fixed terms (0.93.1) here
     rng = np.random.default_rng(3)
     truth = _truth_model()
@@ -322,7 +322,7 @@ def test_zcam_joint_recovers_the_focus_law_and_the_rig(tmp_path, monkeypatch):
 
 def test_joint_gate_residuals_and_block_models():
     """20 Oct, first real joint: NaN Mastcam-Z residuals and blocks aligned with older models were promoted."""
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     base = {"ok": True, "checks": [{"check": "form", "ok": True, "note": ""}]}
     good = {"zcam": {"zcam_median_px": 0.3, "zcam_nonfinite_share": 0.0, "zcam_observations": 10},
             "models_fingerprint": "abc", "block_runs": {"a": {"camera_models": {"fingerprint": "abc"}}}}
@@ -338,7 +338,7 @@ def test_joint_gate_residuals_and_block_models():
 def test_nz_joint_agrees_with_the_navcam_law_and_sees_a_wrong_one(tmp_path):
     """21 Oct (Christian): the combined Navcam + Mastcam-Z joint - both laws free - compared with the Navcam-only law.
     On blocks made with the law it agrees; with the law's NL fx 3 px off it pulls fx back and says so."""
-    from mppp.calib import nzjoint as NZ
+    from mppp_studies.calibration import nzjoint as NZ
     rng = np.random.default_rng(3)
     truth = _truth_model()
     a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500)
@@ -367,7 +367,7 @@ def test_nz_joint_agrees_with_the_navcam_law_and_sees_a_wrong_one(tmp_path):
     assert p["fx"] == pytest.approx(res2["navcam"]["NL"]["params_T0"]["fx"]) and "combined joint" in nl["source"]
     assert nl["thermal"]["fx_ppm_per_degC"] == pytest.approx(res2["navcam"]["NL"]["fx_ppm_per_degC"])
     assert (law / "M2020_NR_fisheye_tangential.json").is_file() and (law / "M2020_N_rig.json").is_file()
-    from mppp.calib import tied as T
+    from mppp_studies.calibration import tied as T
     st2 = T.start_values(law)                                         # what calib lawcheck --law reads
     assert st2["G"]["NL"][0] == pytest.approx(res2["navcam"]["NL"]["params_T0"]["fx"], abs=1e-6)
 
@@ -377,7 +377,7 @@ def test_zcam_joint_gives_the_regular_state_its_own_principal_point(tmp_path, mo
     point (truth +6, -4 px from the backlash state's) is fitted from the exposures with ZR in backlash, and the rig
     stays at the truth; with the offset held at 0 (the old form) the rig takes it up."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     from scipy.spatial.transform import Rotation
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
     monkeypatch.setattr(Z, "LOW_LIST_CHECK", False)          # synthetic low-state frames: not on the shipped list
@@ -434,7 +434,7 @@ def test_zcam_joint_high_low_ratio_by_block(tmp_path, monkeypatch):
     1.011 (truth): with ratio_by "block" each block's ratio is recovered and the eye's is their mean; "global" fits
     one ratio between them."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
     monkeypatch.setattr(Z, "LOW_LIST_CHECK", False)
     rng = np.random.default_rng(7)
@@ -474,7 +474,7 @@ def test_zcam_joint_focus_from_below_offset(tmp_path, monkeypatch):
     ("_fb") share the focus slope with an intercept offset of their own; the joint recovers it (-3 px on ZL at
     focus 600 in one block), leaves the other eye without one, and writes it into the candidate model."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
     monkeypatch.setattr(Z, "LOW_LIST_CHECK", False)
     assert forms.zcam_focus_below("ZL034_F01254_fb_reg@blk") and not forms.zcam_focus_below("ZL034_F01254_reg")
@@ -514,8 +514,8 @@ def test_zcam_joint_focus_from_below_offset(tmp_path, monkeypatch):
 def test_joint_gate_rms_eyes_aspect_ratio_27oct():
     """27 Oct: Z48 was promoted with ZR fy / fx 0.9928, ZL / ZR f0 1.8 % apart, fitted high / low ratios 0.9939 and
     1.0231 (start kept, 'ok') and a Mastcam-Z rms of 3.3 px."""
-    from mppp.calib import ztied as Z
-    from mppp.calib.fit import check_zcam, ZCAM_MODEL_LIMITS
+    from mppp_studies.calibration import ztied as Z
+    from mppp_studies.calibration.fit import check_zcam, ZCAM_MODEL_LIMITS
     base = {"ok": True, "checks": []}
     z = {"zcam_median_px": 0.19, "zcam_nonfinite_share": 0.0, "zcam_observations": 10}
     assert Z.joint_checks({"zcam": dict(z, zcam_rms_px=0.8)}, base)["ok"]
@@ -542,7 +542,7 @@ def test_joint_gate_rms_eyes_aspect_ratio_27oct():
 def test_block_aspect_against_the_navcam():
     """0.94.5 (Christian, 27 Oct): per block the Mastcam-Z fy - fx (the line with the most observations) against the
     Navcam's per-block dfy - dfx; a block line more than 3000 ppm off fails the joint's check, a thin one is not judged."""
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     nav = Z.navcam_aspect_by_block([
         {"scape": "a", "eye": "NL", "images": 20, "dfx_ppm": 100.0, "dfy_ppm": 300.0},
         {"scape": "a", "eye": "NR", "images": 20, "dfx_ppm": 0.0, "dfy_ppm": 400.0},
@@ -587,8 +587,8 @@ def test_ratio_held_with_few_low_state_images():
     """0.94.5 (Z48 of 27 Oct: 6 low-state images per eye, two blocks 1.2 % apart): with fewer than MIN_LOW_IMAGES the
     eye's high / low ratio is held at the 34 mm model's; no low-state image at all: held too; 34 mm
     itself and the single-state 110 mm are not."""
-    from mppp.calib import ztied as Z
-    from mppp.calib.fit import REGULAR_RATIO_DEFAULT
+    from mppp_studies.calibration import ztied as Z
+    from mppp_studies.calibration.fit import REGULAR_RATIO_DEFAULT
     sg = {"eyes": {"ZL048": {}, "ZR048": {}}, "low_images": {"ZL048": 5, "ZR048": 6}}
     held = Z.set_ratio_holds(sg, 48, verbose=False)
     assert set(held) == {"ZL048"} and 1.004 <= held["ZL048"] <= 1.016
@@ -603,7 +603,7 @@ def test_ratio_held_with_few_low_state_images():
 def test_focus_below_offset_needs_a_high_state_bin():
     """0.94.5 (Z48 of 27 Oct: -1.5 % / -1.0 % from two focus-from-below bins, both in the low state): the offset is
     fitted only for an eye with a focus-from-below bin in the high state."""
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     sg = {"eyes": {"ZL048": {"G": np.zeros(Z.NG)}, "ZR048": {"G": np.zeros(Z.NG)}}}
     zunits = {1: {"group": "ZL048", "state": "regular", "fb": True}, 2: {"group": "ZL048", "state": "backlash", "fb": False},
               3: {"group": "ZR048", "state": "backlash", "fb": True}}
@@ -618,7 +618,7 @@ def test_thin_bins_left_out_of_the_lines():
     """0.94.5 (Christian, 27 Oct): a bin camera with fewer than MIN_BIN_OBSERVATIONS observations in the joint is left
     out of the lines (fx, fy free, the rest held); the low-state image count (for the ratio hold) skips it."""
     from types import SimpleNamespace as NS
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     imgs = {1: NS(camera_id=11), 2: NS(camera_id=12), 3: NS(camera_id=13)}
     pts = {i: NS(track=NS(elements=[NS(image_id=1), NS(image_id=2)] + ([NS(image_id=3)] if i < 100 else [])))
            for i in range(600)}
@@ -643,7 +643,7 @@ def test_right_eye_low_state_principal_point_without_mixed_exposures(tmp_path, m
     -5, +3 px from its high state's.  0.93.2's mixed rule held both offsets and the rig took the shift up; now ZR's
     offset is fitted relative to ZL's (held, the reference eye) from the paired exposures, and the rig stays."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     from scipy.spatial.transform import Rotation
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
     monkeypatch.setattr(Z, "LOW_LIST_CHECK", False)
@@ -674,7 +674,7 @@ def test_right_eye_low_state_principal_point_without_mixed_exposures(tmp_path, m
     rp = cand["cameras"]["ZR034"]["regular_pp_offset"]
     assert not rp["held"] and rp["paired_low_exposures"] == 12 and "relative to ZL" in rp["note"]
     assert cand["cameras"]["ZL034"]["regular_pp_offset"]["held"]
-    from mppp.calib.fit import check_zcam
+    from mppp_studies.calibration.fit import check_zcam
     note = next(c["note"] for c in check_zcam(cand, truth)["checks"] if c["check"] == "ZR034 regular principal point")
     assert "12 low-state exposures paired with ZL" in note
     assert any("low-state exposures paired with ZL" in x for x in Z.describe(res))
@@ -691,7 +691,7 @@ def test_zcam_joint_sequence_offsets(tmp_path, monkeypatch):
     at the truth, the candidate records them and the check passes; the diagnostic pass puts the bins at the law plus
     their offsets.  Without sequence bins (0.94.x projects) nothing changes."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
     monkeypatch.setattr(Z, "MIN_BIN_OBSERVATIONS", 100)  # (the synthetic sequence bins: two frames, ~440 observations)
     rng = np.random.default_rng(19)
@@ -723,7 +723,7 @@ def test_zcam_joint_sequence_offsets(tmp_path, monkeypatch):
     cand = Z.candidate_model(res, truth)
     gm = cand["cameras"]["ZL034"]
     assert gm["sequence_offsets"]["free"] == 6 and len(gm["sequence_offsets"]["rows"]) == 6
-    from mppp.calib.fit import check_zcam
+    from mppp_studies.calibration.fit import check_zcam
     chk = {c["check"]: c for c in check_zcam(cand, truth)["checks"]}
     assert chk["ZL034 sequence offsets"]["ok"] and "6 fitted, 0 held at 0" in chk["ZL034 sequence offsets"]["note"]
     assert not forms.validate_zcam(cand)
@@ -758,7 +758,7 @@ def test_eye_slope_tests_find_a_rig_translation_error_along_the_boresight(tmp_pa
     right centre moves forward and the slopes come together), and one slope for both eyes then costs little against
     the free rig but much against the held one."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
     rng = np.random.default_rng(11)
     model = _truth_model()
@@ -797,7 +797,7 @@ def test_zjoint_refines_the_rig_translation_and_reports_its_significance(tmp_pat
     forward by about 6 mm with a z well beyond 3, the eye slopes agree; the eye-slope tests are then "rig
     translation held" (much worse) and "one slope for both eyes" (costs little)."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
     rng = np.random.default_rng(11)
     model = _truth_model()
@@ -836,7 +836,7 @@ def test_zjoint_early_mission_principal_point_offset(tmp_path, monkeypatch):
     block's (sol 900): the joint fits ZR's early offset for its bins before sol 150, significant, into the candidate
     model (pp.early, applied), which the block runs then apply to early ZR bins."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     from mppp.sfm.project import _split_by_focus
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
     rng = np.random.default_rng(5)
@@ -877,7 +877,7 @@ def test_freed_fixed_term_test_moves_the_term(tmp_path, monkeypatch):
     the truth and the fixed value costs a positive delta chi2 (the 28 Oct runs: k2 0.5 -> 0.5000013, the delta chi2
     convergence noise taken as abs())."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {"ZL": {"k2": 0.3}, "ZR": {"k2": 0.3}})
     rng = np.random.default_rng(3)
     truth = _truth_model()
@@ -893,7 +893,7 @@ def test_freed_fixed_term_test_moves_the_term(tmp_path, monkeypatch):
 
 
 def test_z110_k1_held_at_zero_and_tested_alone(monkeypatch):
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     """1 Nov (Christian): 110 mm k1 held at 0 with k2, p1, p2; the distortion tests free all of them, then k1 alone."""
     import copy as _copy
     from mppp.calib import forms
@@ -942,7 +942,7 @@ def test_z110_k1_held_at_zero_and_tested_alone(monkeypatch):
 def test_zcam_joint_aspect_held(tmp_path, monkeypatch):
     """6 Nov 2026: ``aspect_hold`` ties each eye's backlash fy line to its fx line (fy / fx = the held value)."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
     rng = np.random.default_rng(5)
     truth = _truth_model()
@@ -966,7 +966,7 @@ def test_pooled_diagnostic_pass_recovers_a_sequence_aspect(tmp_path, monkeypatch
     line beside it, and the sequence table leads with ZCAM00002.  pool=None: the per-bin gate
     as before 0.96; pool="block": one pool per eye, block and state."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
     monkeypatch.setattr(Z, "MIN_BIN_OBSERVATIONS", 100)
     rng = np.random.default_rng(23)
@@ -1042,7 +1042,7 @@ def test_block_aspect_pooled_rows_visits_and_sequences():
     """0.96, item A: the gate row is the observation-weighted mean of the block's pools' dfy - dfx, the per-bin line
     beside it; a block visited twice (sols 80 and 370) gets a row per visit, report only; the sequence table holds
     the pools with the largest |dfy - dfx|."""
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     nav = {"a": {"mean": 100.0, "NL": 50.0, "NR": 150.0, "images": 40}}
     asp = 0.9995
     res = {"eyes": {"ZL034": {"terms": {"a_fx_backlash": 4700.0, "a_fy_backlash": 4700.0 * asp}}},
@@ -1082,7 +1082,7 @@ def test_opposite_state_flags_and_the_warning():
     within +900 of 0 - ZL in the low state, labelled high): the flag fires on that case, not when the eyes move
     together, nor when fx and fy part; the mirror case (an eye labelled low at +step) flags a possible high state;
     a warning in the checks, never a failure; without pools the per-bin means serve."""
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     eyes = {"ZL063": {"terms": {"a_fx_backlash": 8615.5, "a_fx_regular": 8579.6, "a_fy_backlash": 8613.0}, "held": []},
             "ZR063": {"terms": {"a_fx_backlash": 8612.6, "a_fx_regular": 8577.0, "a_fy_backlash": 8610.0}, "held": []}}
     step = 1e6 * (8579.6 / 8615.5 - 1.0)                                  # about -4170 ppm
@@ -1132,7 +1132,7 @@ def test_residual_directions_see_an_fy_scale_error(tmp_path):
     from the final pass, the rms of x and y apart and the scale left in fx, fy.  On a synthetic block at its truth
     nothing is left; with one sequence's ZL fy made 2000 ppm too large the y residuals grow away from the centre
     and the row says the frames want fy 2000 ppm smaller, x untouched."""
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     rng = np.random.default_rng(29)
     truth = _truth_model()
     so = {"ZCAM00001": 0.0, "ZCAM00002": 0.0, "ZCAM00003": 0.0}
@@ -1178,7 +1178,7 @@ def test_residual_directions_see_an_fy_scale_error(tmp_path):
 def test_f0_uncertainty_from_the_sequence_scatter():
     """0.96, item D (Z48 of 4 Nov: f0 +-13.39 px, the same as each sequence offset's sd - the prior / sqrt(sequences),
     not the observed scatter): the scatter of the fitted offsets gives f0 an sd of its own; the larger is adopted."""
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     f0 = 6696.0
     prior = Z.SEQ_OFFSET_SD * f0                                           # 33.5 px per offset
     e = {"terms": {"a_fx_backlash": f0}, "sd": {"a_fx_backlash": prior / np.sqrt(4)}}
@@ -1214,7 +1214,7 @@ def test_weak_sequences_fy_offsets_and_the_gate(tmp_path, monkeypatch):
     pulling the line, and the gate leaves their pools out.  The flat synthetic blocks are all weak at factor 2 and
     none at factor 0.5."""
     from mppp.calib import forms
-    from mppp.calib import ztied as Z
+    from mppp_studies.calibration import ztied as Z
     monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
     monkeypatch.setattr(Z, "MIN_BIN_OBSERVATIONS", 100)
     monkeypatch.setattr(Z, "WEAK_SEQUENCE_FOV", 2.0)

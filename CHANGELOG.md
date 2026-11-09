@@ -11,7 +11,7 @@ Christian 5 Nov: "yes to pooling on the block or sequence level"): a pooled diag
 residual direction per sequence, a warning for opposite backlash states between the eyes, and f0's sd from the
 sequence scatter.
 
-- **A. Pooled diagnostic pass** (`mppp.calib.ztied.pooled_pass`; `calib zcam --zcam-pool sequence|block|none`,
+- **A. Pooled diagnostic pass** (`mppp_studies.calibration.ztied.pooled_pass`; `calib zcam --zcam-pool sequence|block|none`,
   default sequence; `fit_zjoint(pool=...)`). One pool per (eye, sequence) - or (eye, block, backlash state) with
   "block" - over the bins at the joint's law: per pool one scale on fx, one on fy (so f and fy / fx) and cx, cy free,
   the distortion on the line, each frame on the line at its own focus count (its keypoints scaled by the eye's slope
@@ -77,7 +77,7 @@ sequence scatter.
   Official block 18 keeps its 770–821 visits.
 - Not in this version: item E (the `navcal_tied_20261103` exact-tie LinAlgError); the Z79 Chal Rocks relabels
   (ZCAM07105, ZCAM08390 to low) are a test, not a list change yet — see the 9 Nov notes.
-- **Mask training: online augmentation** (`mppp.mask.training.augment`, the 9 Nov plan
+- **Mask training: online augmentation** (`mppp_studies.mask_training.augment`, the 9 Nov plan
   `claude/mask-next-run-2026-11-09-worst-frames-and-augmentation-plan.md`): lighting (exposure ×0.4–2.5 log-uniform,
   gamma 0.6–1.8, channel gains ±15 %, black level ±2 %, Poisson-Gaussian noise, soft shadows ×0.3–0.6 with the label
   unchanged, haze veil, grey↔colour) drawn per sample in linear space — replaces `images_variable/` and the v4.1 tone
@@ -86,7 +86,7 @@ sequence scatter.
   pixel zooms); mask-conditioned defocus (2–12 px, p 0.3); cross-camera copy-paste of hardware cutouts at the matched
   angular scale (p 0.3); a fitted colour matrix (`ColorMatrix` json, identity until fitted) applied N→Z and inverted;
   family-stratified batches (half Mastcam-Z); `train_families` for the transfer runs, the validation IoU per camera
-  family in the log and the card history. `TrainConfig` fields of the same names; `scripts/train_mask.py --recipe
+  family in the log and the card history. `TrainConfig` fields of the same names; `mppp_studies.mask_training.train_mask --recipe
   A|B|C` (A photometric + sampler; B + angular scale, defocus, quad split 4000; C + copy-paste, colour matrix,
   family batches) and the single flags; `train_masks.bat --recipe A --epochs 30 --tag v9A`. Tests: numpy parts
   (`tests/test_mask_augment.py`); the torch wiring is smoke-tested with `train_mask.py --smoke --recipe C`.
@@ -134,10 +134,10 @@ the Mastcam-Z joints can promote with the per-block aspect gate waived, and the 
   is written to `promotion_waiver.json` and the promotion note. `run_pipeline.py --zcam-waive-aspect ZOOM ...`
   passes `--promote-waive "per-block aspect vs the Navcam"` to those zooms' joints, `--zcam-aspect-hold ZOOM ...`
   passes `--zcam-aspect 1.0`.
-- **`python -m mppp.sfm.deck --zcam-rig full`**: the Mastcam-Z rig refined in the deck adjustment, so a Z34 deck pan
+- **`python -m mppp_studies.calibration.deck --zcam-rig full`**: the Mastcam-Z rig refined in the deck adjustment, so a Z34 deck pan
   gives the Z baseline against the survey; `--no-zcam` for the Navcam targets only.
 - **Standard figure: the cameras on the mast head** (Christian, 8 Nov: "I love zcam rig figure. Add that to the list of
-  standard figure ... also do this for the other zooms").  `scripts/zcam_mast_head.py`: the Z frames of the Mastcam-Z
+  standard figure ... also do this for the other zooms").  `mppp_studies.calibration.zcam_mast_head`: the Z frames of the Mastcam-Z
   blocks through the deck_joint mast chain (resolver angles; per station the block <- RNAV similarity from its Navcam
   frames) into the head frame; per zoom a 2 x 2 (top view, side view, pair centre / height against sol and
   temperature, centre along the boresight against focus), the centre and image-centre pointing against zoom, and the
@@ -155,7 +155,7 @@ blocks, a final pass with the promoted models, the existing studies at the end, 
 Hazcam early-mission step tested on the blocks.
 
 - **Rover deck fiducial check** (new; reads only, not part of the freeze chain; Christian, 3 Nov: "build the
-  fiducial check for the aligned blocks"). `mppp.calib.fiducials` and `scripts/fiducial_check.py`: the six surveyed
+  fiducial check for the aligned blocks"). `mppp_studies.calibration.fiducials` and `mppp_studies.calibration.fiducial_check`: the six surveyed
   rigid deck targets (AFT1, RPFA1, RPFA2, TDF1-3; RMECH survey, RNAV = RMECH + (90.02, 0, -1133.38) mm) predicted
   through each Navcam image's label CAHVORE, found by point symmetry (phase correlation of the window with its
   180-degree rotation, then `cv2.cornerSubPix`), and fitted with each block's own refined cameras and NL-NR pose:
@@ -186,7 +186,7 @@ Hazcam early-mission step tested on the blocks.
   `fiducials.solve_pair(mode="rotation")`: NR's rotation free with the rig translation held (`rot_*_mdeg` +- sd,
   `rig_deckrot_*` about the rig file's sol-0 rotation, next to the law's `rig_block_*`) - a free translation trades
   with the rotation at 1-2 m (synthetic, 0.3 px: pitch 40 -> 3.5 mdeg, yaw 16 -> 3.3; roll 5-6 either way).
-  `fiducials.scan_pds` / `pds_frame` / `pds_pairs` / `check_pds_pair` / `rig_trend` and `scripts/deck_rig_trend.py`:
+  `fiducials.scan_pds` / `pds_frame` / `pds_pairs` / `check_pds_pair` / `rig_trend` and `mppp_studies.calibration.deck_rig_trend`:
   every Navcam full-frame stereo pair of the local PDS archive (MPPP_PDS) whose label puts >= 3 rigid targets in
   each eye, measured with the law at each image's temperature and the rig at its sol - no block needed; the label
   scan is cached (`camera_analysis/deck_pds_scan.json`); fits of a constant, a line, the law's own drift shape and
@@ -203,13 +203,13 @@ Hazcam early-mission step tested on the blocks.
   trend; all 339 block-sol pairs with >= 3 targets per eye would give rate se ~1.0 / 1.2 / 2.1 mdeg/1000 sol (pitch,
   yaw, roll; the 71 used: 1.7 / 2.1 / 2.9) - roll needs targets fore and aft, i.e. the full archive.
 - **The rover deck inside the bundle adjustment** (new; Christian, 4 Nov: "Look into ways of putting the fiducial
-  locations directly in the bundle adjustment ... Then build and test the deck-in-the-adjustment"). `mppp.sfm.deck`:
+  locations directly in the bundle adjustment ... Then build and test the deck-in-the-adjustment"). `mppp_studies.calibration.deck`:
   one rover pose T_j (block <- RNAV) per rest interval (per station, or `split="sol"`), a 3-D point per (interval,
   target) observed by its deck pixels with COLMAP's own reprojection costs (the tie points' camera, pose, rig and
   intrinsic blocks) and tied to T_j P_k by the survey (0.05 mm per axis; TDF4 0.4 mm), through the
   `extra_residuals` hook of `bundle_adjust`; the prior-gauge recentre is applied to T_j. With a rigid T_j the survey
   sets the block's metric scale, so a translation-refined rig measures the stereo baseline against the survey inside
-  the solve. `python -m mppp.sfm.deck WORK` on a solved block (writes `sparse/cahv_ba_deck`, `colmap/deck/`), or the
+  the solve. `python -m mppp_studies.calibration.deck WORK` on a solved block (writes `sparse/cahv_ba_deck`, `colmap/deck/`), or the
   setting `deck_in_ba` (`True`/`"station"`/`"sol"`; off by default and then not in the run key). Tests: the survey
   tie's Jacobian, a synthetic block whose 1 % long baseline the deck brings back to < 0.1 %, poses held -> only T
   moves. First block, Three Forks north ecams sols 686-688 (one station, deck unmasked, 16k features, Navcam and
@@ -280,11 +280,11 @@ Hazcam early-mission step tested on the blocks.
   of v3, v4.1 and v4.2 rebuilt v4.1's split by leaving out the newest masks by file time; the v8 set had grown by
   700 masks (656 Mastcam-Z, 320 of them 110 mm) and 54 of the 59 "held-out" test frames were in fact v4.1 training
   frames, so v4.1 was scored on frames it had learned. Training now writes `<checkpoint>.split.json` (the mask
-  names on each side) and the card's `training.val_masks`; `mppp.mask.training.audit.recorded_split` reads those,
+  names on each side) and the card's `training.val_masks`; `mppp_studies.mask_training.audit.recorded_split` reads those,
   else the debug folder's `frame_audit.csv` (written at the end of training, on the set as it was), and
   `split_labels(items, card, checkpoint)` marks masks added later as "unseen". `compare_mask_models.py` uses it for
   `--split-ckpt`, `--also-held-out` and `--seen-split`, and says when it has to fall back to the rebuild.
-- **The Hazcam early-mission step is tested on the blocks** (`mppp.calib.hazjoint.early_check`; Christian, 2 Nov:
+- **The Hazcam early-mission step is tested on the blocks** (`mppp_studies.calibration.hazjoint.early_check`; Christian, 2 Nov:
   "It's weird that the hazcams have such a large early mission offset and that it is at 380. I suspect that is not
   real, so please keep an eye on it"). The joint's z for a step is per image observation (~10^5), so it overstates
   the evidence for an effect shared by whole blocks: the 27 Oct fit kept FL's -30 ppm step at z 17 that the blocks do
@@ -377,7 +377,7 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   tangential distortion parameters?"): with several fixed terms, k1, k2 and the tangential pair (p1, p2) are each
   freed alone too; every test reports the refit k1, k2, p1, p2 and the largest tangential displacement at the frame
   corners next to the radial curve change.
-- **`scripts/zcam_aspect_geometry.py`** (Christian, 1 Nov: "Could fy be either a block scale change for distant
+- **`mppp_studies.calibration.zcam_aspect_geometry`** (Christian, 1 Nov: "Could fy be either a block scale change for distant
   terrain or maybe an intrinsic camera sag from the optics changing shape with gravity?"): every Mastcam-Z bin's
   fy / fx against its images' boresight elevation, tie-point range and frame coverage, with weighted fits and a
   pointing x range table - gravity predicts elevation alone, a far-field geometry effect range, partial coverage the
@@ -393,7 +393,7 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   Navcam's) at its zoom model's pixel aspect, or at the eye's detector aspect - the median of the 34, 48 and 63 mm
   models - where the zoom model's is more than 0.2 % from it (`ZCAM_ASPECT_MAX_DEV`; 110 mm, 0.993) or there is no
   model (`reconstruction.zcam_aspect_targets`, logged per group; `focus_info["aspect"]` in the project). The 2 Nov
-  analysis (`scripts/zcam_aspect_geometry.py`, 1,151 bins): no gravity sag and no range bias - within blocks the
+  analysis (`mppp_studies.calibration.zcam_aspect_geometry`, 1,151 bins): no gravity sag and no range bias - within blocks the
   34 mm slope with elevation is -67 +- 32 ppm per 10 deg outside Rockytop; the aspect outliers are single sequences
   (Chal Rocks nearly all, -2,500 to -21,500 ppm; Rockytop ZCAM03415 / 03416 sols 520-525; Seitah ZCAM08114) where a
   free fy took up geometry errors. The joints (`calib zcam`, `nz`, the Navcam joints) pass `zcam_aspect="free"`: they
@@ -477,13 +477,13 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   0.978; exclusion IoU Navcam 0.976, Mastcam-Z 0.945), exported as `mppp_mask_convnext_tiny_s4_v4.safetensors`
   (SHA-256 `9ecb3dd5…`), URL on Hugging Face `ctate7163/mppp-mask`. The default stays `mppp_mask_v3` until the A/B.
   `docs/hf_model_card.md` describes v4 and the version table (and no longer says the sky is excluded: it is
-  included). `scripts/release_mask_model.py upload --extra` uploads the card's figures.
-- **`scripts/compare_mask_models.py`**: two or more mask models on the same held-out frames, per camera, with
+  included). `mppp_studies.mask_training.release_mask_model upload --extra` uploads the card's figures.
+- **`mppp_studies.mask_training.compare_mask_models`**: two or more mask models on the same held-out frames, per camera, with
   `--seen` (the older model's training set) for the frames neither model trained on.
 - **Documentation**: new pages *Downstream exports* (dense, Metashape, Nerfstudio), *Rover masks* and *Roadmap*;
-  the API reference adds `mppp.calib.hazfit`, `mppp.sfm.dense`, `metashape`, `nerfstudio`; Methods §5 (masks)
+  the API reference adds `mppp_studies.calibration.hazfit`, `mppp.sfm.dense`, `metashape`, `nerfstudio`; Methods §5 (masks)
   updated (threshold 0.5, the registry models, sky included); the index's scope; `docs/RELEASING.md` names the right
-  upload command (`scripts/release_mask_model.py`, not `mppp.mask.hub`). The working notes (`AUDIT_v0p90`,
+  upload command (`mppp_studies.mask_training.release_mask_model`, not `mppp.mask.hub`). The working notes (`AUDIT_v0p90`,
   `PLAN_v0p91`, `DELIVERY_v0p91`, `HANDOFF_v0p87`, `CI_ROADMAP`) moved to `docs/history/notes/`. `mkdocs build
   --strict` passes.
 
@@ -544,7 +544,7 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
   convnext tiny model all the way through and generates the required figures and outputs needed for the joss
   paper"): the newest `masks_training_set_vN` (or `MPPP_MASK_DATA`), `images\` regenerated from the PDS (resumable)
   and `images_variable\` (the previous set's reused; kept when complete), 10 epochs of ConvNeXt-tiny with a Python
-  that has CUDA torch, then `scripts/train_mask.py --paper`: `figure1_masks.png/.pdf` and per-camera metrics on the
+  that has CUDA torch, then `mppp_studies.mask_training.train_mask --paper`: `figure1_masks.png/.pdf` and per-camera metrics on the
   held-out frames, the training curves, the card, `summary.md` (pairs by camera, sols, split, held-out IoU,
   augmentation) and the release candidate `.safetensors`, in `Claude outputs\mask_<checkpoint>\`. Nothing promoted.
 - **Training images keep the frames the alignment skips**: `regen_config` turns the pipeline's frame selection off
@@ -569,7 +569,7 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
 - **Mask training on the pipeline's images only** (Christian, 30 Oct: "only trains on the images that went through
   the standard mppp pipeline"): `train_mask.py` and `train_masks.bat` use `images\` alone; the brightness-varied
   `images_variable\` copies (about twice the samples per epoch) are built and used only with `--variable`.
-- **make_figures** (`scripts/paper_figures.py`): the efl vs focus figure of the newest joint folder of each of 34, 48,
+- **make_figures** (`mppp_studies.paper.paper_figures`): the efl vs focus figure of the newest joint folder of each of 34, 48,
   63 mm (`zcam<zoom>_joint_<date>` or `<study>\zcam<zoom>_joint`, with its `zcam_joint.json`; `--zcam-joints`,
   `--zcam-zooms`), and of the newest Hazcam fit (`hazcam_fit_*` or `<study>\hazcam_fit`; `--hazcam`): the rig trends
   of each pair and a new `plot_hazcam_efl_vs_temperature` (the four eyes' focal length against temperature, law and
@@ -801,7 +801,7 @@ the database copies shrink and go, and the hand exclusions of Taylorfjellet and 
   for the stereo, `--python`). `dense_reconstruct.bat`, written next to `open_in_colmap.bat`, does the same with the
   COLMAP executable (a CUDA build first); the GUI's dense dialog takes `dense\` as its workspace.
 
-### Studies (`scripts/tie_point_studies.py`)
+### Studies (`mppp_studies.calibration.tie_point_studies`)
 
 - S1 feature budget, S2 point thinning (against the all-points solution: frame centres, attitudes, per-bin focals), S3
   matcher and verification, S4 pair selection and the pose-guided scope, S5 filters, S6 the per-bin focal residual

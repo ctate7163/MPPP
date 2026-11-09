@@ -125,7 +125,7 @@ def test_colmap_text_model_round_trip(tmp_path):
 def test_one_projection_for_everyone():
     import pycolmap
     from mppp.colmap import project_camera, scale_camera_params
-    from mppp.error.colmap import project_camera as pe
+    from mppp_studies.error.colmap import project_camera as pe
     assert pe is project_camera
     p = [2950, 2951, 2560, 1920, -0.27, 0.1, 0, 0, -0.02, 0, 0, 0]
     x = np.array([[0.3, -0.2, 1.0], [0.01, 0.02, 2.0]])

@@ -370,7 +370,7 @@ def test_sites_19_oct_afternoon():
 def test_zcam34_joint_group_is_the_joint_default(tmp_path):
     """22 Oct: the joints take zcam34_joint (the good blocks) by default and leave out FAIL blocks."""
     import argparse, json as _json
-    from mppp.cli import _navcam_blocks
+    from mppp_studies.calibration.cli import _navcam_blocks
     from mppp.waypoints.sites import load_site_table, work_folder
     t = load_site_table()
     g = t["groups"]["zcam34_joint"]
@@ -441,7 +441,7 @@ def test_maps_sync_study_waypoints(tmp_path, monkeypatch):
     """0.96: ``mppp maps`` copies the waypoint table in use into the study folder (the scripts there read their own
     M20_waypoints.json); a second call finds it current.  No download here (refresh=False: cache or snapshot)."""
     import hashlib
-    from mppp.cli import sync_study_waypoints
+    from mppp_studies.sites.cli import sync_study_waypoints
     from mppp.waypoints import load_waypoints
     monkeypatch.setenv("MPPP_CACHE", str(tmp_path / "cache"))
     study = tmp_path / "study"

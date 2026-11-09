@@ -46,7 +46,7 @@ def test_waypoints_snapshot_cache_and_refresh(tmp_path, monkeypatch):
     assert W.load_waypoints()["_mppp_source"]["n_features"] == 1                # the cache now wins
     with pytest.warns(UserWarning, match="could not download"):
         assert W.load_waypoints(refresh=True, url=(tmp_path / "missing.json").as_uri())["_mppp_source"]["n_features"] == 1
-    from mppp.error.waypoints import load_featurecollection                     # one loader for both
+    from mppp_studies.error.waypoints import load_featurecollection                     # one loader for both
     assert len(load_featurecollection()["features"]) == 1
 
 

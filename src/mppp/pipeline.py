@@ -137,13 +137,13 @@ class Settings:
     hazcam_intrinsics: str = "radial"             # what a block refines of each Hazcam eye: "radial" (fx, fy, k1, k2), "focal", "all" or "hold" (the start is the label CAHVORE fit)
     hazcam_rig_refine: str = "rotation"           # the Hazcam stereo rigs: "rotation" (refined when the Hazcams come in; a pair of weak eyes stays at its start) or "hold"
     include_zcam: bool = False                    # add the Mastcam-Z frames of the same sols (folder ..._zcam)
-    deck_in_ba: Any = False                       # 4 Nov 2026 (Christian): the surveyed rover-deck targets in one more adjustment after the alignment (mppp.sfm.deck): sparse/cahv_ba_deck and colmap/deck/; False: off; True or "station": one rover pose per station; "sol": per station and sol
+    deck_in_ba: Any = False                       # 4 Nov 2026 (Christian): the surveyed rover-deck targets in one more adjustment after the alignment (mppp_studies.calibration.deck): sparse/cahv_ba_deck and colmap/deck/; False: off; True or "station": one rover pose per station; "sol": per station and sol
     zcam_zooms: Any = None                        # their zooms (mm), e.g. [34, 48]; None: the site's "zcam" list ([34] without one); "all": every zoom
     zcam_zooms_only: Any = None                   # 0.95.0 (Christian, 28 Oct: 79/110 mm made Chal Rocks 4.7x longer): keep only these zooms of the site's list, e.g. [34, 48, 63] for the freeze runs (run_pipeline --zooms passes its list); None: all of the site's
     zcam_intrinsics: str = "focus_model"          # Mastcam-Z start: "focus_model" (the promoted model) or "label"
     zcam_focus_model: Optional[Path] = None       # a focus-model JSON to start from; None: the one in use
     zcam_focus_bin: Optional[float] = 30          # focus motor counts per Mastcam-Z camera (None: one camera per eye)
-    zcam_bin_by: str = "sequence"                 # 0.94.4: the Mastcam-Z cameras - "focus" (focus bins), "sequence" (focus bins of each sol and sequence), "image" (one camera per image: its own focal length - the states run); 0.95.0 (Christian, 27 Oct): "sequence" - each sequence's bins carry its own focus offset (mppp.calib.ztied)
+    zcam_bin_by: str = "sequence"                 # 0.94.4: the Mastcam-Z cameras - "focus" (focus bins), "sequence" (focus bins of each sol and sequence), "image" (one camera per image: its own focal length - the states run); 0.95.0 (Christian, 27 Oct): "sequence" - each sequence's bins carry its own focus offset (mppp_studies.calibration.ztied)
     zcam_bin_refine: str = "focal_pp"             # a focus-bin camera refines fx, fy and on ZR cx, cy ("focal_pp"); "focal", "all", "model"
     zcam_line_params: Dict[str, List[str]] = field(default_factory=lambda: {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"],
                                                                             "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]})   # the focus parameters stage 2 puts on a line per eye
@@ -1211,7 +1211,10 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
     if s.deck_in_ba:
         # 4 Nov 2026: the deck survey in one more adjustment; the block's products stay those of sparse/cahv_ba
         import pycolmap
-        from .sfm.deck import adjust as deck_adjust
+        try:                                                   # 0.96.0: the deck adjustment is the calibration study's
+            from mppp_studies.calibration.deck import adjust as deck_adjust
+        except ImportError as e:
+            raise RuntimeError(f"deck_in_ba needs the calibration study (mppp_studies.calibration.deck): {e}") from e
         split = "sol" if str(s.deck_in_ba).lower() == "sol" else "station"
         try:
             dk = deck_adjust(proj.root, rec=pycolmap.Reconstruction(str(proj.root / "sparse" / "cahv_ba")), split=split)

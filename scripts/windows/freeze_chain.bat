@@ -3,7 +3,7 @@ REM ============================================================================
 REM MPPP 0.95.4 - freeze_chain.bat (2 Nov 2026, Christian: "I will be away from the computer when these finish";
 REM 15:52: "make sure it is robust against faults. I want it to run to completion over several days, at the end of
 REM which I want a standard set of blocks using the best camera and rig models available followed by the time
-REM consuming tests and studies needed to really understand the results").  See scripts\freeze_chain.py.
+REM consuming tests and studies needed to really understand the results").  See mppp_studies.calibration.freeze_chain.
 REM Unattended, in D:\rover_blocks: the root prepared (the found lists from D:\scapes, the DEMs in dem\), a wait
 REM for the mask v4.2 training started by hand (train_masks.bat --tag v8_v4.2 --zoom-pairs), the mask A/B (v3,
 REM v4.1, v4.2; v4.2 used when it beats v3), then run_pipeline in three calls: the blocks and the joints (the
@@ -48,7 +48,7 @@ set "KMP_DUPLICATE_LIB_OK=TRUE"
 set "MPPP_SCAPES=%MPPP_FREEZE_ROOT%"
 call "%MPPP_HOME%\scripts\windows\m20_dem_env.bat"
 if /i "%~1"=="--status" (
-  python "%MPPP_HOME%\scripts\freeze_chain.py" --root "%MPPP_SCAPES%" --status
+  python -m mppp_studies.calibration.freeze_chain --root "%MPPP_SCAPES%" --status
   if not defined MPPP_NOPAUSE pause
   exit /b 0
 )
@@ -58,7 +58,7 @@ for %%P in ("%MPPP_TRAIN_PYTHON%" "python" "%GPU_PYTHON%") do if not defined TPY
 )
 if not defined TPY set "TPY=python"
 echo %DATE% %TIME%  freeze chain: root %MPPP_SCAPES%, mask A/B with %TPY%; log %_FC_LOG%
-python "%MPPP_HOME%\scripts\freeze_chain.py" --root "%MPPP_SCAPES%" --old-root "D:\scapes" --ab-python "%TPY%" %*
+python -m mppp_studies.calibration.freeze_chain --root "%MPPP_SCAPES%" --old-root "D:\scapes" --ab-python "%TPY%" %*
 set "_FC_RC=%ERRORLEVEL%"
 echo %DATE% %TIME%  freeze chain finished (exit %_FC_RC%)
 if not defined MPPP_NOPAUSE pause

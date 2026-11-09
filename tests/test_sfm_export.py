@@ -134,7 +134,7 @@ def test_export_for_error_computes_eps_from_its_own_residuals(tmp_path):
     import json
     from helpers import _build_rec, _synthetic
     from mppp.colmap import read_colmap
-    from mppp.error.colmap import calibrate_eps_from_residuals
+    from mppp_studies.error.colmap import calibrate_eps_from_residuals
     from mppp.sfm.export import export_for_error
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
@@ -193,7 +193,7 @@ def test_export_level_light_leaves_out_the_native_model_and_residuals(tmp_path):
     from mppp.pipeline import NOT_IN_KEY, Settings
     assert Settings().export_level == "full" and "export_level" in NOT_IN_KEY
     from pathlib import Path
-    src = (Path(__file__).resolve().parents[1] / "studies" / "calibration" / "run_pipeline.py").read_text(encoding="utf-8")
+    src = (Path(__file__).resolve().parents[1] / "src" / "mppp_studies" / "calibration" / "run_pipeline.py").read_text(encoding="utf-8")
     assert '"--export"' in src and "export_level=light" in src
 
 

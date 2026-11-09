@@ -7,7 +7,7 @@ import pytest
 
 pycolmap = pytest.importorskip("pycolmap")
 
-from mppp.calib import hazjoint as HJ  # noqa: E402
+from mppp_studies.calibration import hazjoint as HJ  # noqa: E402
 from mppp.calib import models as M  # noqa: E402
 
 
@@ -119,7 +119,7 @@ def test_bin_rows_about_the_law():
 
 
 def test_block_fit_keeps_early_offsets_only_where_significant():
-    from mppp.calib import hazfit as H
+    from mppp_studies.calibration import hazfit as H
     rng = np.random.default_rng(5)
     base = _base("RL")
 
@@ -145,7 +145,7 @@ def test_block_fit_keeps_early_offsets_only_where_significant():
 
 
 def test_joint_result_is_written_as_candidate_files(tmp_path):
-    from mppp.calib import hazfit as H
+    from mppp_studies.calibration import hazfit as H
     rng = np.random.default_rng(6)
     data, law = synthetic(rng, slope_ppm=30.0, per_block=10)
     j = HJ.run_joint(data, slope_mode="FL", verbose=False)
@@ -195,7 +195,7 @@ def test_front_mode_fits_fl_and_fr_apart_and_gives_the_rear_their_mean():
 
 def test_early_check_on_the_blocks():
     """0.95.4 (Christian, 2 Nov): the early-mission step tested on the blocks, not the image observations."""
-    from mppp.calib import hazjoint as HJ
+    from mppp_studies.calibration import hazjoint as HJ
 
     def rows(step_ppm, sols, T=None, applied=0.0, noise=None):
         out = []

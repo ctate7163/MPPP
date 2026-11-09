@@ -63,7 +63,7 @@ Held-out frames by camera. The scores use valid pixels only, for the **exclusion
 | `mppp_mask_v1` | `mppp_mask_convnext_tiny_s4_v1.safetensors` | 24 Sep 2026, 3 epochs | v7 set | 0.971 | |
 
 The held-out IoUs of v3 and v4 come from different splits of different sets, so they are not a comparison. MPPP's
-`scripts/compare_mask_models.py` scores both on the same held-out frames, including the subset that v3 never saw.
+`mppp_studies.mask_training.compare_mask_models` scores both on the same held-out frames, including the subset that v3 never saw.
 The default is set in MPPP's `src/mppp/data/models.json`; select a model with `"checkpoint": "mppp_mask_v4"`.
 
 All versions have the same architecture and input. Each file carries its full model card (every inference setting
@@ -91,7 +91,7 @@ Without MPPP:
 - `safetensors.torch.load_file(path)` gives the weights.
 - `safetensors.safe_open(path, "pt").metadata()["mppp_card"]` gives the card (JSON).
 
-To retrain on a newer mask set, use MPPP's `scripts/train_mask.py`, or `scripts/windows/train_masks.bat` on Windows.
+To retrain on a newer mask set, use MPPP's `mppp_studies.mask_training.train_mask`, or `scripts/windows/train_masks.bat` on Windows.
 
 ## Limitations
 

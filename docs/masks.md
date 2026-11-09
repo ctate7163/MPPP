@@ -18,7 +18,7 @@ checks its SHA-256 against `src/mppp/data/models.json` and keeps it in the user 
 | `mppp_mask_v2`, `mppp_mask_v1` | v7 mask set | 0.977, 0.971 | kept for reproducibility |
 
 The two held-out IoUs come from different splits of different sets, so they are not a comparison;
-`scripts/compare_mask_models.py` is (below). Held-out exclusion IoU of `mppp_mask_v4`, by camera (valid pixels only):
+`mppp_studies.mask_training.compare_mask_models` is (below). Held-out exclusion IoU of `mppp_mask_v4`, by camera (valid pixels only):
 
 | camera | IoU | recall | precision |
 |---|---:|---:|---:|
@@ -67,7 +67,7 @@ This batch file does the following:
 4. It writes the paper outputs to `Claude outputs\mask_<checkpoint>\`: the mask figure, per-camera metrics,
    training curves, the card, a training-set summary and a release-candidate `.safetensors`.
 
-Running `scripts/train_mask.py` with the same options does the same on any platform.
+Running `mppp_studies.mask_training.train_mask` with the same options does the same on any platform.
 
 `--zoom-pairs` (mask v4.2) puts every full-resolution Navcam frame (5,120 px) into each epoch twice: whole, downsampled
 to the 1,648 px input as at inference, and as an exactly 2× crop at a random place, downsampled the same way. The
@@ -81,7 +81,7 @@ D:\code\MPPP\scripts\windows\train_masks.bat --tag v8_v4.2 --zoom-pairs
 ## Comparing two models
 
 ```bat
-python D:\code\MPPP\scripts\compare_mask_models.py --data D:\masks\masks_training_set_v8 --split-ckpt D:\code\MPPP\checkpoints\convnext_tiny_s4_seg_20261030_v8.pt --models mppp_mask_v3 D:\code\MPPP\checkpoints\convnext_tiny_s4_seg_20261030_v8.pt --seen D:\masks\masks_training_set_v7 --out "D:\code\MPPP\Claude outputs\mask_ab_v3_v4"
+python D:\code\MPPP\mppp_studies.mask_training.compare_mask_models --data D:\masks\masks_training_set_v8 --split-ckpt D:\code\MPPP\checkpoints\convnext_tiny_s4_seg_20261030_v8.pt --models mppp_mask_v3 D:\code\MPPP\checkpoints\convnext_tiny_s4_seg_20261030_v8.pt --seen D:\masks\masks_training_set_v7 --out "D:\code\MPPP\Claude outputs\mask_ab_v3_v4"
 ```
 
 This scores both models on the held-out frames of the new model, by camera. With `--seen`, it scores them again on
@@ -93,6 +93,6 @@ Releasing a model takes three steps:
 
 1. Export it to safetensors under a new registry name.
 2. Add its Hugging Face URL to `models.json`.
-3. Upload the file and the model card (`docs/hf_model_card.md`) with `scripts/release_mask_model.py`.
+3. Upload the file and the model card (`docs/hf_model_card.md`) with `mppp_studies.mask_training.release_mask_model`.
 
 See [Releasing](RELEASING.md), sections 4–6.

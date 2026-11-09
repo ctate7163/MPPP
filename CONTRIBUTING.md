@@ -20,8 +20,8 @@ python -m flake8 --select F src/mppp scripts
 **Pull requests**: one change per request, with a test in the module's test file (`tests/test_<module>.py`) and a
 line in `CHANGELOG.md`. Library code logs through `logging.getLogger("mppp.<module>")`, never `print`; no
 machine-specific paths; no camera-model files outside `src/mppp/data/cmods/` (new models go through
-`scripts/promote_cmods.py`). Research code that imports the package but is not part of the pipeline belongs in
-`studies/`.
+`mppp_studies.calibration.promote_cmods`). Research code that imports the package but is not part of the pipeline belongs in
+`src/mppp_studies/` (a study of its own, or `misc/` when unsure).
 
 **Camera models and site definitions** are the author's decisions (`mppp cmods list`, `mppp sites list`); open an
 issue before proposing a change to them.

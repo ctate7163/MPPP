@@ -89,7 +89,7 @@ def test_quad_inference_stitches_cores(monkeypatch):
 
 
 def test_pretrained_file_auto(tmp_path, monkeypatch):
-    from mppp.mask.training import train as T
+    from mppp_studies.mask_training import train as T
     monkeypatch.setattr("mppp.paths.checkpoints_dir", lambda: tmp_path)
     assert T.resolve_pretrained_file("auto", "convnext_tiny") is None             # -> hub / HF cache
     (tmp_path / "convnext_tiny.fb_in22k.safetensors").write_bytes(b"x")
@@ -260,9 +260,9 @@ def test_default_mask_model_is_v3():
 
 
 def _release():
-    """The maintainers' release script (scripts/release_mask_model.py), loaded as a module."""
+    """The maintainers' release script (mppp_studies.mask_training.release_mask_model), loaded as a module."""
     import importlib.util
-    f = Path(__file__).resolve().parents[1] / "scripts" / "release_mask_model.py"
+    f = Path(__file__).resolve().parents[1] / "src" / "mppp_studies" / "mask_training" / "release_mask_model.py"
     spec = importlib.util.spec_from_file_location("release_mask_model", f)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

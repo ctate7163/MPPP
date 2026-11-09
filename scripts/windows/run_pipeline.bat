@@ -25,16 +25,16 @@ if not exist "%MPPP_WIN%\mppp_env.bat" (
 )
 call "%MPPP_WIN%\mppp_env.bat" || ( pause & exit /b 1 )
 if /i "%~1"=="--status" (
-  python "%MPPP_HOME%\studies\calibration\run_pipeline.py" --root "%ROOT%" --status
+  python -m mppp_studies.calibration.run_pipeline --root "%ROOT%" --status
   pause
   exit /b 0
 )
 if /i "%~1"=="--dry-run" (
-  python "%MPPP_HOME%\studies\calibration\run_pipeline.py" --root "%ROOT%" %*
+  python -m mppp_studies.calibration.run_pipeline --root "%ROOT%" %*
   pause
   exit /b 0
 )
-start "MPPP pipeline - %ROOT%" /min cmd /c python "%MPPP_HOME%\studies\calibration\run_pipeline.py" --root "%ROOT%" %* ^|^| pause
+start "MPPP pipeline - %ROOT%" /min cmd /c python -m mppp_studies.calibration.run_pipeline --root "%ROOT%" %* ^|^| pause
 echo MPPP pipeline started in a minimised window. Log: "%ROOT%\mppp_pipeline\pipeline_log.txt"
 echo Status: run_pipeline.bat --status
 timeout /t 15

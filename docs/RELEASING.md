@@ -103,7 +103,7 @@ The registry URL of `mppp_mask_v3` is `https://huggingface.co/ctate7163/mppp-mas
 cd /d D:\code\MPPP
 pip install -U huggingface_hub
 hf auth login
-python scripts\release_mask_model.py upload mppp_mask_v3
+python -m mppp_studies.mask_training.release_mask_model upload mppp_mask_v3
 ```
 
 `hf auth login` (older versions: `huggingface-cli login`) asks for a token with **write** access from https://huggingface.co/settings/tokens. `upload`:
@@ -114,7 +114,7 @@ python scripts\release_mask_model.py upload mppp_mask_v3
 * with `--extra FILE ...`, uploads those files to `figures/` (the card shows `figures/training_curves.png` and
   `figures/figure1_masks.png`).
 
-(`upload` and `verify` are in `scripts/release_mask_model.py`, not in `python -m mppp.mask.hub`, which has
+(`upload` and `verify` are in `mppp_studies.mask_training.release_mask_model`, not in `python -m mppp.mask.hub`, which has
 `export`, `install`, `fetch` and `list`.)
 
 Hugging Face stores large files with Xet automatically; nothing goes into git.
@@ -122,7 +122,7 @@ Hugging Face stores large files with Xet automatically; nothing goes into git.
 ## 5. Check the download path
 
 ```bat
-python scripts\release_mask_model.py verify mppp_mask_v3
+python -m mppp_studies.mask_training.release_mask_model verify mppp_mask_v3
 set MPPP_CACHE=%TEMP%\mppp_cache_test
 python -m mppp.mask.hub fetch --name mppp_mask_v3
 python -m mppp.mask.hub list
@@ -134,7 +134,7 @@ python -m mppp.mask.hub list
 
 1. Train it: `scripts\windows\train_masks.bat` (0.95.2: the newest `masks_training_set_vN`, the figures and metrics
    for the paper in `Claude outputs\mask_<checkpoint>`), or `notebooks/training/train_mask.ipynb`.
-2. Compare it with the default on the same held-out frames (`scripts/compare_mask_models.py`, with `--seen` = the
+2. Compare it with the default on the same held-out frames (`mppp_studies.mask_training.compare_mask_models`, with `--seen` = the
    default model's training set for the fair subset).
 3. Export it under a new name so the old URL keeps working, with `--out` for the usual file name:
 
@@ -143,7 +143,7 @@ python -m mppp.mask.hub list
    ```
 
    For a name not yet in `models.json`, the entry is created with an empty URL list.
-4. Add the Hugging Face URL (`https://huggingface.co/ctate7163/mppp-mask/resolve/main/<file>`) and `"hf_repo": "ctate7163/mppp-mask"` to the new entry in `src/mppp/data/models.json`, update `docs/hf_model_card.md`, then `python scripts\release_mask_model.py upload <name> --extra <figures>` (step 4) and `verify`.
+4. Add the Hugging Face URL (`https://huggingface.co/ctate7163/mppp-mask/resolve/main/<file>`) and `"hf_repo": "ctate7163/mppp-mask"` to the new entry in `src/mppp/data/models.json`, update `docs/hf_model_card.md`, then `python -m mppp_studies.mask_training.release_mask_model upload <name> --extra <figures>` (step 4) and `verify`.
 5. To make it the default, set `"default": "<name>"`.
 6. Commit and push, and note the change in `CHANGELOG.md`.
 

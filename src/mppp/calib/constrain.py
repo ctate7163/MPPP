@@ -483,7 +483,7 @@ def plot_hazcam_rig_trends(rig: Dict[str, Any], path: PathLike, label: str = "",
                            point_labels: bool = True) -> Optional[Path]:
     """0.94.5 (Christian, 27 Oct: "make similar figures for the front and rear hazcams"): a Hazcam pair's rig trends,
     1 x 3 like the Navcam's (pitch, roll, yaw): every block's refined rig rotation (``rig["per_block"]`` from
-    :func:`mppp.calib.hazfit.fit_rig`) relative to the fitted rig at sol 0 against the block's sol, with the drift
+    :func:`mppp_studies.calibration.hazfit.fit_rig`) relative to the fitted rig at sol 0 against the block's sol, with the drift
     line, the scatter about it in the titles and a secondary axis in Hazcam IFOV.  None without per-block rows."""
     rows = [r for r in (rig.get("per_block") or []) if r.get("sol") is not None]
     if not rows:
@@ -526,7 +526,7 @@ def plot_hazcam_efl_vs_temperature(res: Dict[str, Any], path: PathLike, label: s
                                    dpi: int = FIG_DPI) -> Optional[Path]:
     """0.95.2 (Christian, 30 Oct: "make_figures for the fhaz and rhaz"): the Hazcam eyes' focal length against
     temperature, 2 x 2 (FL FR / RL RR) on one y range: every block bin's focal scale (the bins of
-    :func:`mppp.calib.hazjoint.bin_rows`, ``eyes[eye]["rows"]``: fx relative to the eye's fx at T0, ppm, with its
+    :func:`mppp_studies.calibration.hazjoint.bin_rows`, ``eyes[eye]["rows"]``: fx relative to the eye's fx at T0, ppm, with its
     sd; open before the early-mission sol) and the fitted law (its slope through T0; "own" for FL and FR, the
     front mean for RL and RR); efl in mm on the right axis.  ``res``: ``hazcam_fit.json``.  None without rows."""
     eyes = [e for e in ("FL", "FR", "RL", "RR") if (res.get("eyes") or {}).get(e) and not res["eyes"][e].get("skipped")

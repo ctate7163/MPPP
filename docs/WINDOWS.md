@@ -13,8 +13,8 @@ batches and the weekend runner went (git history has them; `run_pipeline.bat` do
 | **setup** | `mppp_env.bat` (finds the Python with mppp, pycolmap, pyceres; reads `mppp_python.txt`, `mppp_scapes.txt`, `mppp_pds.txt`; checks it with `scripts\check_env.py`), `install_lightglue.bat`, `claude_sync.bat` (uncommitted edits stashed before the merge and popped after it) |
 | helpers (not double-clicked) | `_run_sites.bat`, `_run_process.bat`, `_run_align.bat` (the minimised batch windows), `m20_dem_env.bat` (the DTM / orthomosaic paths of the figures and maps) |
 
-Removed in 0.94.4: `run_weekend.bat` (`python studies\calibration\run_weekend.py` still works), `test_lightglue.bat`
-(`python scripts\lightglue_ab.py`), `run_hazcam.bat` and `hazcam_calibration.bat` (the Hazcam fit is in
+Removed in 0.94.4: `run_weekend.bat` (`python -m mppp_studies.misc.calibration_old.run_weekend` still works), `test_lightglue.bat`
+(`python -m mppp_studies.calibration.lightglue_ab`), `run_hazcam.bat` and `hazcam_calibration.bat` (the Hazcam fit is in
 `run_pipeline.bat`), `navcam_tied_joint.bat` and `zcam_tied_joint.bat` (`mppp calib navcam`, `mppp calib zcam`;
 in `run_pipeline.bat`), `run_sites_zcam34.bat`, `run_z34.bat`, `run_multizoom_test.bat`, `run_v0p87.bat`,
 `move_scapes.bat`, `build_example_data.bat` (`python -m mppp example build --pds ... --zcam ... --out _transfer`), `sites_status.bat` (`check_sites.bat`).
@@ -31,7 +31,7 @@ extraction and matching, LightGlue) take turns through `%LOCALAPPDATA%\mppp\gpu.
 ## Site maps: `scripts\windows\make_maps.bat`
 
 Double-click it (or `make_maps.bat dtm 300`, `make_maps.bat ortho`, `make_maps.bat both 450`): the six M20 site-map
-figures of `studies\m20_sites\m20_sites` from the official blocks of `src\mppp\data\sites.json`, into
+figures of `mppp_studies.sites` (`m20_sites`) from the official blocks of `src\mppp\data\sites.json`, into
 `Claude outputs\maps_<yyyymmdd>\m20_<figure>_<dtm|ortho>.png`.  Backgrounds: the 1 m HiRISE DTMs and the
 orthomosaic under `D:\rover_blocks\dem` (or `M20_DEMS` / `M20_ORTHOS`), the ~70 m terrain tiles elsewhere.  Needs
 `pip install -e ".[maps]"` (adjustText, rasterio, pyproj).  Each figure is its own process; at 300 dpi with the

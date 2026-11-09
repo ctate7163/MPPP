@@ -20,15 +20,15 @@ focal fit puts it in the `regular` state (the lower focal length).
 (`mppp.calib.check_form`); `run_sites.py` and notebook 03 refuse to start otherwise.  The models' fingerprint
 (`mppp.calib.models_fingerprint`) is part of the run key: a promotion makes `run_sites.py` align every site again.
 
-**Change the models in use only with `scripts/promote_cmods.py`** (`mppp.calib.models.promote`: checks each file
+**Change the models in use only with `mppp_studies.calibration.promote_cmods`** (`mppp.calib.models.promote`: checks each file
 against its form, replaces the file, logs the change in `CHANGES.md`), then commit - the replaced models are in the
 git history, there is no `history/` folder:
 
-    python scripts/promote_cmods.py <candidate folder or files> --note "why these are better"
-    python scripts/promote_cmods.py --list
+    python -m mppp_studies.calibration.promote_cmods <candidate folder or files> --note "why these are better"
+    python -m mppp_studies.calibration.promote_cmods --list
     git add src/mppp/data/cmods && git commit -m "cmods: ..."
 
-A Navcam candidate comes from `mppp.calib.fit.fit_navcam` + `write_navcam` (gated by `check_navcam`), a Mastcam-Z
-one from `mppp.calib.fit.fit_zcam` (gated by `check_zcam`); the study scripts that run them are in
+A Navcam candidate comes from `mppp_studies.calibration.fit.fit_navcam` + `write_navcam` (gated by `check_navcam`), a Mastcam-Z
+one from `mppp_studies.calibration.fit.fit_zcam` (gated by `check_zcam`); the study scripts that run them are in
 `studies/calibration/`.  Projects built from other models are rebuilt from these on their next notebook 03 run;
 processed images, features and matches are reused.

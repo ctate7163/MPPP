@@ -1037,7 +1037,7 @@ def test_single_state_zoom_and_one_state_rule():
                                          "regular": {"fx": {"a": 14000.0, "b": 0.0}, "fy": {"a": 14001.0, "b": 0.0}}}}}}
     _, p, _ = calib.zcam_camera_at(m, "ZL110", 600.0, "regular")
     assert p[0] == pytest.approx(15000.0) and p[1] == pytest.approx(15001.0)        # the one state's lines
-    from mppp.calib.fit import regular_ratio
+    from mppp_studies.calibration.fit import regular_ratio
     assert regular_ratio([], "ZL110")["ratio"] is None
     from mppp.sfm.reconstruction import HAZCAM_MIN_REFINE_OBSERVATIONS
     assert HAZCAM_MIN_REFINE_OBSERVATIONS == 500                                     # Christian, 22 Oct
@@ -1046,7 +1046,7 @@ def test_single_state_zoom_and_one_state_rule():
 def test_check_zcam_regular_state_limits():
     """0.93.5: a fitted regular ratio outside 1.004..1.016 or a regular aspect apart from the backlash one fails; a
     110 mm model with a regular state fails."""
-    from mppp.calib.fit import check_zcam
+    from mppp_studies.calibration.fit import check_zcam
     ln = lambda fx, fy: {"fx": {"a": fx, "b": 0.0}, "fy": {"a": fy, "b": 0.0}}           # noqa: E731
     new = {"cameras": {"ZL034": {"f0_px": 4733.0, "aspect": 1.0008, "regular_ratio": 1.0238,
                                  "lines": {"backlash": ln(4731.7, 4735.3), "regular": ln(4659.9, 4587.0)}},

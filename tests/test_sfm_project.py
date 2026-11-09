@@ -348,7 +348,7 @@ def test_rig_at_applies_the_hinge():
     rig = calib.load_rig("N")
     m = dict(rig["drift"])
     shipped = {"R_sensor_from_ref": np.eye(3).tolist(), "drift": m}
-    from mppp.calib.joint import rig_angles
+    from mppp_studies.calibration.joint import rig_angles
     for sol in (63.0, 1084.0, 1970.0):
         R, _, applied = calib.rig_at(shipped, sol)
         ang = rig_angles(R)
