@@ -3,6 +3,53 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.96.0 — in progress (not built; `__version__` stays until the build)
+
+**In short.** The Mastcam-Z joint's diagnostics after the 4 Nov Z34 joint failed only the per-block aspect gate on
+Chal Rocks large (items A-D of `claude/handoff-2026-11-05-zcam-joint-diagnostics-pooling-states-residuals.md`,
+Christian 5 Nov: "yes to pooling on the block or sequence level"): a pooled diagnostic pass the gate reads, the
+residual direction per sequence, a warning for opposite backlash states between the eyes, and f0's sd from the
+sequence scatter.
+
+- **A. Pooled diagnostic pass** (`mppp.calib.ztied.pooled_pass`; `calib zcam --zcam-pool sequence|block|none`,
+  default sequence; `fit_zjoint(pool=...)`). One pool per (eye, sequence) - or (eye, block, backlash state) with
+  "block" - over the bins at the joint's law: per pool one scale on fx, one on fy (so f and fy / fx) and cx, cy free,
+  the distortion on the line, each frame on the line at its own focus count (its keypoints scaled by the eye's slope
+  from the bin's focus to the frame's). The per-bin pass still runs (the lines, the rig trends, `zcam_efl_vs_focus`),
+  so `pool` costs one more adjustment. The per-block aspect gate (`block_aspect_rows`) now reads the pooled value -
+  the observation-weighted mean of the block's pools' dfy - dfx (20,000-observation floor as before) - with the
+  per-bin line beside it (`per_bin_ppm`, `per_bin_diff_ppm`); a block with two visits (Chal Rocks large, sols 72-100
+  and 360-379; `visits_of`, gaps over 100 sols) gets a row per visit, report only. The report lists the 10 pools with
+  the largest |dfy - dfx| with their dfx, dfy. Why: ZCAM08401 (sol 369, a 6-row 200-degree pan) makes each row its
+  own 30-count focus bin, whose fy is held only by the rows above and below - other bins; the rows' fy drifted
+  together by -1.5 to -1.8 % in the joint's per-bin pass while the block alignment (aspect held) and the mini-block
+  of 5 Nov evening showed nothing. The joint's own fit is unchanged. Unit test: a sequence with fy +3000 ppm off the
+  law in both synthetic blocks - the pools find it (about the fitted line, which is the sequences' mean), the per-bin
+  bins agree, the gate reads the block mean.
+- **B. Residual direction per sequence** (`residual_directions`, from the final joint pass, in `zcam_joint.json`
+  and `report.md`): per (eye, sequence) the rms of the x and y residuals apart, the scale left in fx and fy (the slope
+  of the residual against the distance from the principal point, as ppm the frames want f changed by, with its sd),
+  and the same per row (elevation tier, clustered at gaps over half the vertical field of view) for pans. The 10
+  sequences with the largest rms and every sequence flagged by A or C. Mostly vertical residuals growing from the
+  centre mean a real pull (pose or structure, e.g. the visit-2 site-frame offset) that pooling would hide; no
+  direction means the bins were the problem. Unit test: ZL's fy made 2000 ppm too large in one sequence - the row
+  says fy -2000 ppm, x untouched.
+- **C. Opposite backlash states between the eyes** (`opposite_state_flags`, `OPPOSITE_STATE_TOL` 35 %): per sequence,
+  the two eyes' dfx from the diagnostic pass (the pools, else the per-bin means) against each eye's low-state step
+  1e6 (1 / ratio - 1); an eye labelled high within 35 % of its step while the other eye is within 35 % of 0, fx and
+  fy moving together, is "possible low state, eye X" (the mirror: "possible high state"). A WARN line in the report,
+  `check.json` and `calib zcam`'s output (`check_label`), never a failure. The case: Z63 ZCAM08038 (sol 78), ZL at
+  -3,450 / -3,760 ppm against a step of -4,170, ZR within +900 of 0; confirmed by the mini-block, and its 24 ZL frames
+  are on the found list since 5 Nov.
+- **D. f0's sd from the sequence scatter** (`f0_uncertainty`; `eyes.<eye>.f0_sd` in the result, `f0_sd_px` and
+  `f0_uncertainty` in the candidate model, a report line). The sequence offsets are random effects with the prior sd
+  0.5 % of f, so with few sequences the covariance's sd of f0 is the prior / sqrt(sequences) (Z48: +-13.39 px, the
+  same as each offset's sd) and reflects the assumed scatter, not the observed one. Now the fitted offsets' sample sd
+  (shrunk by the prior where it binds - flagged `prior_bound`) gives f0 an sd of its own, and the larger of the two is
+  adopted. The prior in the fit is unchanged; the lines' `sd_a` stay the covariance's.
+- Not in this version: items E (the `navcal_tied_20261103` exact-tie LinAlgError) and F (weak-geometry sequences, under
+  about 2 vertical fields of view, out of the aspect gate).
+
 ## 0.95.5 — 2026-11-08
 
 **In short.** What the second freeze run needs (Christian, 8 Nov: "prepare a new freeze run with the Nov 3 ncam

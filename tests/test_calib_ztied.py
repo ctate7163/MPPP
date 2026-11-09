@@ -55,7 +55,7 @@ def _truth_model():
 
 
 def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None, seq_offsets=None, dist_by_focus=None,
-           pp_shift=None):
+           pp_shift=None, seq_aspect=None):
     """One block: the synthetic Navcam stations (helpers._synthetic) plus Mastcam-Z 34 mm stereo frames at each
     station (three pointings x three focus counts), every image seeing dense terrain patches.  ``reg``
     {"eye": "L", "F": 950.0, "offset": (dcx, dcy)}: that eye's images at that focus are in the regular state (f /
@@ -125,6 +125,8 @@ def _block(tmp_path, name, shift, model, rng, sol, reg=None, fb=None, seq_offset
                 asp = p[1] / p[0]
                 p[0] += float(seq_offsets.get(r["sequence"], 0.0))
                 p[1] += float(seq_offsets.get(r["sequence"], 0.0)) * asp
+            if seq_aspect:                          # 0.96: this sequence's fy off the law by so many ppm (fx on it)
+                p[1] *= 1.0 + 1e-6 * float(seq_aspect.get(r["sequence"], 0.0))
             if pp_shift and r["eye"] in pp_shift:   # 0.95.1: this eye's principal point moved in this block
                 p[2] += float(pp_shift[r["eye"]][0])
                 p[3] += float(pp_shift[r["eye"]][1])
@@ -939,3 +941,254 @@ def test_zcam_joint_aspect_held(tmp_path, monkeypatch):
     for g in ("ZL034", "ZR034"):
         tm = res["eyes"][g]["terms"]
         assert tm["a_fy_backlash"] / tm["a_fx_backlash"] == pytest.approx(1.0, abs=1e-6)
+
+
+# ====================================================================================== 0.96: items A-D of 5 Nov
+def test_pooled_diagnostic_pass_recovers_a_sequence_aspect(tmp_path, monkeypatch):
+    """0.96, item A (Christian, 5 Nov: "yes to pooling on the block or sequence level"): the diagnostic pass pooled
+    by sequence - one fx scale, one fy scale and cx, cy per (eye, sequence), the frames on the line at their own
+    focus.  The truth has ZCAM00002's fy +3000 ppm off the law in both blocks (fx on it).  The joint's fy line is the
+    sequences' mean (+1000), so about the law ZCAM00002's pools sit at +2000 ppm and the other sequences' at -1000;
+    the per-bin bins beside them agree, the block aspect gate reads the pooled block mean (about 0) with the per-bin
+    line beside it, and the sequence table leads with ZCAM00002.  pool=None: the per-bin gate
+    as before 0.96; pool="block": one pool per eye, block and state."""
+    from mppp.calib import forms
+    from mppp.calib import ztied as Z
+    monkeypatch.setitem(forms.ZCAM_FIXED_TERMS, 34, {})
+    monkeypatch.setattr(Z, "MIN_BIN_OBSERVATIONS", 100)
+    rng = np.random.default_rng(23)
+    truth = _truth_model()
+    so = {"ZCAM00001": 0.0, "ZCAM00002": 0.0, "ZCAM00003": 0.0}
+    sa = {"ZCAM00002": 3000.0}
+    a, cams, rigT = _block(tmp_path, "blk_a", 0.0, truth, rng, 500, seq_offsets=so, seq_aspect=sa)
+    b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900, seq_offsets=so, seq_aspect=sa)
+    st = _navcam_law(cams, rigT)
+    res = Z.fit_zjoint({}, model=copy.deepcopy(truth), scapes=[copy.deepcopy(a), copy.deepcopy(b)], st=st,
+                       nav_points=None, z_points=None, iterations=60, passes=2, verbose=False, k_tests=False)
+    d = res["diagnostics"]
+    assert d["pool"] == "sequence" and len(d["pools"]) == 12 and d["frames_at_own_focus"] == 0   # (frames at the bin's focus)
+    pools = {(p["eye"], p["block"], p["sequence"]): p for p in d["pools"]}
+    for eye in ("ZL034", "ZR034"):
+        for blk in ("blk_a", "blk_b"):
+            p2 = pools[(eye, blk, "ZCAM00002")]
+            assert p2["aspect_ppm"] == pytest.approx(2000.0, abs=500), p2
+            assert abs(p2["dfx_ppm"]) < 500 and p2["bins"] == 3 and p2["observations"] > 300 and p2["sd_aspect_ppm"] < 400
+            assert p2["sol"] == (500 if blk == "blk_a" else 900) and p2["states"] == ["backlash"]
+            for sq in ("ZCAM00001", "ZCAM00003"):
+                assert pools[(eye, blk, sq)]["aspect_ppm"] == pytest.approx(-1000.0, abs=500), pools[(eye, blk, sq)]
+    # the per-bin pass beside it: every ZCAM00002 bin about +2000 ppm in dfy - dfx as well
+    b2 = [x for x in d["bins"] if x["sequence"] == "ZCAM00002"]
+    assert len(b2) == 12 and all(abs((x["dfy_ppm"] - x["dfx_ppm"]) - 2000.0) < 600 for x in b2), b2
+    # the gate reads the pooled value (the observation-weighted mean over the block's pools: about 0)
+    ba = res["block_aspect"]
+    assert ba["source"] == "pooled" and ba["pool"] == "sequence"
+    rows = [r for r in ba["rows"] if r["visit"] is None]
+    assert len(rows) == 4 and all(r["source"] == "pooled" and r["pools"] == 3 and r["judged"] for r in rows)
+    for r in rows:
+        assert abs(r["zcam_ppm"]) < 400 and r["per_bin_ppm"] is not None and r["per_bin_state"] == "backlash"
+        assert abs(r["per_bin_ppm"] - r["zcam_ppm"]) < 200 and r["per_bin_diff_ppm"] is not None
+    assert not any(r["visit"] for r in ba["rows"])                      # one visit per block
+    assert ba["sequences"][0]["sequence"] == "ZCAM00002" and all(s["sequence"] == "ZCAM00002" for s in ba["sequences"][:4])
+    lines = Z.describe(res)
+    assert any("per-block aspect from the pooled diagnostic pass" in x for x in lines)
+    assert any(x.startswith("blk_a ZL034 (3 pools,") and "pooled d(fy - fx)" in x and "per-bin line" in x for x in lines)
+    assert any(x.startswith("pooled sequences with the largest |dfy - dfx|") and "ZCAM00002" in x for x in lines)
+    # the sequence scales (for the state flags) come from the pools
+    sc = {(s["eye"], s["block"], s["sequence"]): s for s in Z.sequence_scales(d)}
+    assert sc[("ZL034", "blk_a", "ZCAM00002")]["source"] == "pooled" and len(sc) == 12
+    # item C ran: nothing flagged (no eye sits at its low-state step), the check a passing one without a warning
+    os_ = res["opposite_states"]
+    assert os_["sequences_checked"] == 6 and os_["flags"] == [] and os_["steps_ppm"]["ZL034"] < -5000
+    # item B ran on the final pass: 12 (eye, sequence) rows, small and directionless residuals
+    rd = res["residual_directions"]
+    assert len(rd["sequences"]) == 12 and all(s["rms_px"] < 0.3 for s in rd["sequences"])
+    assert all(abs(s["fy_scale_left_ppm"]) < 1500 for s in rd["sequences"]) and rd["sequences"][0]["rows"] == []
+    out = Z.write_zjoint(res, tmp_path / "cand", model=truth)
+    rep = (tmp_path / "cand" / "report.md").read_text()
+    assert "## Pooled diagnostic pass" in rep and "| ZCAM00002 |" in rep and "## Residual direction per sequence" in rep
+    c = {x["check"]: x for x in out["check"]["checks"]}["opposite backlash states between the eyes"]
+    assert c["ok"] and not c["warning"] and "none flagged" in c["note"]
+    # pool=None: the per-bin gate alone, as before 0.96
+    r0 = Z.fit_zjoint({}, model=copy.deepcopy(truth), scapes=[copy.deepcopy(a), copy.deepcopy(b)], st=st,
+                      nav_points=None, z_points=None, iterations=30, passes=1, verbose=False, k_tests=False, pool=None)
+    assert r0["diagnostics"]["pool"] is None and "pools" not in r0["diagnostics"]
+    assert r0["block_aspect"]["source"] == "per-bin" and r0["block_aspect"]["sequences"] == []
+    assert all(r["source"] == "per-bin" and r["state"] == "backlash" for r in r0["block_aspect"]["rows"])
+    assert Z.sequence_scales(r0["diagnostics"])[0]["source"] == "per-bin mean"
+    assert r0["opposite_states"]["sequences_checked"] == 6
+    # pool="block": one pool per eye, block and state
+    rec_, proj_, idx_, st_, units_, zunits_, sg_ = Z.build({}, copy.deepcopy(truth), None, 34, None, None,
+                                                           scapes=[copy.deepcopy(a), copy.deepcopy(b)], st=st)
+    assert {Z.pool_key(u, "block") for u in zunits_.values()} == {"blk_a|backlash", "blk_b|backlash"}
+    assert len({Z.pool_key(u, "sequence") for u in zunits_.values()}) == 6
+    with pytest.raises(ValueError):
+        Z.diagnostic_pass(rec_, proj_, idx_, st_, units_, zunits_, sg_, {}, pool="eye")
+
+
+def test_block_aspect_pooled_rows_visits_and_sequences():
+    """0.96, item A: the gate row is the observation-weighted mean of the block's pools' dfy - dfx, the per-bin line
+    beside it; a block visited twice (sols 80 and 370) gets a row per visit, report only; the sequence table holds
+    the pools with the largest |dfy - dfx|."""
+    from mppp.calib import ztied as Z
+    nav = {"a": {"mean": 100.0, "NL": 50.0, "NR": 150.0, "images": 40}}
+    asp = 0.9995
+    res = {"eyes": {"ZL034": {"terms": {"a_fx_backlash": 4700.0, "a_fy_backlash": 4700.0 * asp}}},
+           "diagnostics": {"pool": "sequence",
+                           "blocks": [{"block": "a", "lines": {"ZL034": {"backlash": {
+                               "fx": {"a": 4700.0, "observations": 30000}, "fy": {"a": 4700.0 * (asp + 2e-3), "observations": 30000}}}}}],
+                           "pools": [
+                               {"eye": "ZL034", "key": "a|s80|ZCAM00010", "block": "a", "sequence": "ZCAM00010", "sol": 80, "states": ["backlash"],
+                                "bins": 4, "observations": 10000, "dfx_ppm": 100.0, "dfy_ppm": 600.0, "aspect_ppm": 500.0},
+                               {"eye": "ZL034", "key": "a|s370|ZCAM08401", "block": "a", "sequence": "ZCAM08401", "sol": 370, "states": ["backlash"],
+                                "bins": 11, "observations": 30000, "dfx_ppm": 0.0, "dfy_ppm": -4500.0, "aspect_ppm": -4500.0, "sd_aspect_ppm": 120.0}]}}
+    ba = Z.block_aspect_rows(res, nav)
+    assert ba["source"] == "pooled" and ba["pool"] == "sequence"
+    main = [r for r in ba["rows"] if r["visit"] is None]
+    assert len(main) == 1 and main[0]["source"] == "pooled" and main[0]["pools"] == 2 and main[0]["observations"] == 40000
+    assert main[0]["zcam_ppm"] == pytest.approx((500.0 * 10000 - 4500.0 * 30000) / 40000) and main[0]["judged"]
+    assert main[0]["diff_ppm"] == pytest.approx(main[0]["zcam_ppm"] - 100.0)
+    assert main[0]["per_bin_ppm"] == pytest.approx(2000.0, abs=1) and main[0]["per_bin_diff_ppm"] == pytest.approx(1900.0, abs=1)
+    vis = [r for r in ba["rows"] if r["visit"]]
+    assert [r["visit"] for r in vis] == ["sol 80", "sol 370"] and not any(r["judged"] for r in vis)
+    assert vis[1]["zcam_ppm"] == pytest.approx(-4500.0) and vis[1]["pools"] == 1 and vis[1]["per_bin_ppm"] is None
+    assert ba["sequences"][0]["sequence"] == "ZCAM08401" and ba["sequences"][0]["sd_aspect_ppm"] == 120.0
+    assert Z.visits_of([72, 80, 100, 360, 379]) == [(72, 100), (360, 379)] and Z.visits_of([None]) == []
+    # the gate: the pooled row fails at -3250 ppm against the Navcam (one row checked, the visits not counted)
+    chk = Z.joint_checks(dict(res, block_aspect=ba), {"checks": []})
+    c = next(x for x in chk["checks"] if x["check"] == "per-block aspect vs the Navcam")
+    assert not c["ok"] and "1 block lines checked" in c["note"] and "a ZL034 -3350" in c["note"]
+    lines = Z.describe(dict(res, block_aspect=ba, eyes={}))
+    assert any(x.startswith("a ZL034 (2 pools, 40000 obs): Mastcam-Z pooled d(fy - fx) -3250 ppm, Navcam +100 ppm, difference -3350 ppm; "
+                            "per-bin line +2000 ppm (backlash state, difference +1900)") for x in lines), lines
+    assert any(x.startswith("a ZL034 sols") is False and x.startswith("a ZL034 sol 370 (1 pools, 30000 obs)") and x.endswith("(visit: report only)")
+               for x in lines), lines
+
+
+def test_opposite_state_flags_and_the_warning():
+    """0.96, item C (Z63 ZCAM08038, sol 78: ZL's bins -3,450 / -3,760 ppm against a low-state step of -4,170, ZR
+    within +900 of 0 - ZL in the low state, labelled high): the flag fires on that case, not when the eyes move
+    together, nor when fx and fy part; the mirror case (an eye labelled low at +step) flags a possible high state;
+    a warning in the checks, never a failure; without pools the per-bin means serve."""
+    from mppp.calib import ztied as Z
+    eyes = {"ZL063": {"terms": {"a_fx_backlash": 8615.5, "a_fx_regular": 8579.6, "a_fy_backlash": 8613.0}, "held": []},
+            "ZR063": {"terms": {"a_fx_backlash": 8612.6, "a_fx_regular": 8577.0, "a_fy_backlash": 8610.0}, "held": []}}
+    step = 1e6 * (8579.6 / 8615.5 - 1.0)                                  # about -4170 ppm
+    assert Z.low_state_step_ppm({"eyes": eyes}, "ZL063") == pytest.approx(step)
+    assert Z.low_state_step_ppm({"eyes": {"ZL110": {"terms": {}}}}, "ZL110") is None
+
+    def pool(eye, seq, dfx, dfy, state="backlash", sol=78):
+        return {"eye": eye, "key": f"chal|s{sol}|{seq}", "block": "chal", "sequence": seq, "sol": sol, "states": [state],
+                "bins": 2, "observations": 12000, "dfx_ppm": dfx, "dfy_ppm": dfy, "aspect_ppm": dfy - dfx}
+    pools = [pool("ZL063", "ZCAM08038", -3450.0, -3760.0), pool("ZR063", "ZCAM08038", 410.0, 870.0),      # the case
+             pool("ZL063", "ZCAM08040", -3800.0, -3900.0), pool("ZR063", "ZCAM08040", -3700.0, -3800.0),  # both low: not opposite
+             pool("ZL063", "ZCAM08041", -3800.0, -1200.0), pool("ZR063", "ZCAM08041", 100.0, 50.0),       # fx, fy apart
+             pool("ZL063", "ZCAM08042", 4300.0, 4200.0, state="regular"), pool("ZR063", "ZCAM08042", -200.0, 0.0)]   # the mirror
+    res = {"eyes": eyes, "diagnostics": {"pool": "sequence", "pools": pools}}
+    os_ = Z.opposite_state_flags(res)
+    assert os_["sequences_checked"] == 4 and os_["source"] == "pooled"
+    fl = {(f["sequence"], f["eye"]): f for f in os_["flags"]}
+    assert set(fl) == {("ZCAM08038", "ZL063"), ("ZCAM08042", "ZL063")}
+    f = fl[("ZCAM08038", "ZL063")]
+    assert f["flag"] == "possible low state, eye ZL063" and f["other_eye"] == "ZR063" and f["other_dfx_ppm"] == 410.0
+    assert f["step_ppm"] == pytest.approx(step) and f["labelled"] == ["backlash"] and f["sol"] == 78
+    assert fl[("ZCAM08042", "ZL063")]["flag"] == "possible high state, eye ZL063"
+    lines = Z.opposite_state_lines(os_)
+    assert "2 flagged (WARNING" in lines[0] and lines[1].startswith("  chal ZCAM08038 sol 78: possible low state, eye ZL063 (labelled backlash)")
+    chk = Z.joint_checks(dict(res, opposite_states=os_, zcam={"zcam_median_px": 0.3, "zcam_nonfinite_share": 0.0}), {"checks": []})
+    c = next(x for x in chk["checks"] if x["check"] == "opposite backlash states between the eyes")
+    assert c["ok"] and c["warning"] and "ZCAM08038 possible low state, eye ZL063" in c["note"] and Z.check_label(c) == "WARN"
+    assert chk["ok"]                                                      # a warning does not fail the joint
+    assert Z.check_label({"ok": True}) == "ok" and Z.check_label({"ok": False, "warning": True}) == "FAIL"
+    # no pools (pool None): the per-bin means per sequence, weighted by observations
+    bins = [{"block": "chal", "eye": "ZL063", "state": "backlash", "sequence": "ZCAM08038", "seq": "chal|s78|ZCAM08038", "sol": 78,
+             "observations": 3000, "dfx_ppm": -3000.0, "dfy_ppm": -3300.0},
+            {"block": "chal", "eye": "ZL063", "state": "backlash", "sequence": "ZCAM08038", "seq": "chal|s78|ZCAM08038", "sol": 78,
+             "observations": 9000, "dfx_ppm": -3600.0, "dfy_ppm": -3900.0},
+            {"block": "chal", "eye": "ZR063", "state": "backlash", "sequence": "ZCAM08038", "seq": "chal|s78|ZCAM08038", "sol": 78,
+             "observations": 12000, "dfx_ppm": 410.0, "dfy_ppm": 870.0}]
+    sc = Z.sequence_scales({"pool": None, "bins": bins})
+    zl = next(s for s in sc if s["eye"] == "ZL063")
+    assert zl["source"] == "per-bin mean" and zl["dfx_ppm"] == pytest.approx(-3450.0) and zl["bins"] == 2 and zl["observations"] == 12000
+    os0 = Z.opposite_state_flags({"eyes": eyes, "diagnostics": {"pool": None, "bins": bins}})
+    assert len(os0["flags"]) == 1 and os0["flags"][0]["source"] == "per-bin mean"
+    assert Z.opposite_state_lines({"sequences_checked": 0, "flags": [], "steps_ppm": {}, "tolerance": 0.35})[0].endswith("none flagged")
+
+
+def test_residual_directions_see_an_fy_scale_error(tmp_path):
+    """0.96, item B (ZCAM08401 at 1.9-2.5 px rms in the 4 Nov joint, 0.17-0.25 px alone): per sequence and eye,
+    from the final pass, the rms of x and y apart and the scale left in fx, fy.  On a synthetic block at its truth
+    nothing is left; with one sequence's ZL fy made 2000 ppm too large the y residuals grow away from the centre
+    and the row says the frames want fy 2000 ppm smaller, x untouched."""
+    from mppp.calib import ztied as Z
+    rng = np.random.default_rng(29)
+    truth = _truth_model()
+    so = {"ZCAM00001": 0.0, "ZCAM00002": 0.0, "ZCAM00003": 0.0}
+    a, _, _ = _block(tmp_path, "blk_a", 0.0, truth, rng, 500, seq_offsets=so)
+    db = a.project.settings["database"]["cameras"]
+    zunits = {}
+    for key, spec in a.project.cameras.items():
+        if not key.startswith("Z"):
+            continue
+        zunits[int(db[key])] = {"key": key, "group": spec["group"], "scape": "blk_a", "state": "backlash",
+                                "sequence": spec["sequence"], "sequence_sol": 500, "seq": f"blk_a|s500|{spec['sequence']}"}
+    rd = Z.residual_directions(a.rec, zunits, a.project.images)
+    rows = {(r["eye"], r["sequence"]): r for r in rd["sequences"]}
+    assert len(rows) == 6 and all(r["rms_px"] < 0.1 and r["rms_x_px"] < 0.1 and r["rms_y_px"] < 0.1 for r in rows.values())
+    assert all(abs(r["fx_scale_left_ppm"]) < 300 and abs(r["fy_scale_left_ppm"]) < 300 for r in rows.values())
+    r = rows[("ZL034", "ZCAM00002")]
+    assert r["block"] == "blk_a" and r["sol"] == 500 and r["images"] == 6 and r["rows"] == []      # one elevation: no tiers
+    assert r["elevation_span_deg"] < 1.0 and 12 < r["vertical_fov_deg"] < 16 and 6 < rd["row_gap_deg"]["ZL034"] < 8
+    # ZL's ZCAM00002 cameras with fy 2000 ppm too large
+    for key, spec in a.project.cameras.items():
+        if key.startswith("ZL") and spec["sequence"] == "ZCAM00002":
+            cam = a.rec.cameras[int(db[key])]
+            p = np.asarray(cam.params, float).copy()
+            p[1] *= 1.002
+            cam.params = p
+    rd2 = Z.residual_directions(a.rec, zunits, a.project.images)
+    assert rd2["sequences"][0]["eye"] == "ZL034" and rd2["sequences"][0]["sequence"] == "ZCAM00002"   # the largest rms first
+    r2 = rd2["sequences"][0]
+    assert r2["rms_y_px"] > 3 * r2["rms_x_px"] and r2["rms_y_px"] > 0.4
+    assert r2["fy_scale_left_ppm"] == pytest.approx(-2000.0, abs=150) and abs(r2["fx_scale_left_ppm"]) < 300
+    assert r2["fy_scale_left_sd_ppm"] < 100
+    lines = Z.residual_direction_lines({"residual_directions": rd2}, n=2)
+    assert lines[0].startswith("residual direction per sequence") and len(lines) == 3
+    assert lines[1].startswith("  blk_a ZCAM00002 ZL034 (6 frames): rms") and "scale left fx" in lines[1]
+    assert int(lines[1].split("fy ")[-1].split(" ppm")[0]) == pytest.approx(-2000, abs=150)
+    # a flagged sequence outside the top n is listed too
+    flagged = {"block_aspect": {"sequences": [{"block": "blk_a", "sequence": "ZCAM00003"}]}}
+    assert len(Z.residual_direction_lines(dict(flagged, residual_directions=rd2), n=1)) >= 3
+    assert Z.residual_direction_lines({"residual_directions": {"error": "x"}}) == ["residual directions: not run (x)"]
+    assert Z.residual_direction_lines({}) == []
+
+
+def test_f0_uncertainty_from_the_sequence_scatter():
+    """0.96, item D (Z48 of 4 Nov: f0 +-13.39 px, the same as each sequence offset's sd - the prior / sqrt(sequences),
+    not the observed scatter): the scatter of the fitted offsets gives f0 an sd of its own; the larger is adopted."""
+    from mppp.calib import ztied as Z
+    f0 = 6696.0
+    prior = Z.SEQ_OFFSET_SD * f0                                           # 33.5 px per offset
+    e = {"terms": {"a_fx_backlash": f0}, "sd": {"a_fx_backlash": prior / np.sqrt(4)}}
+    rows = [{"offset_px": o, "sd_px": prior * 0.98} for o in (-40.0, 10.0, 25.0, 45.0)]     # scatter about 36 px
+    fs = Z.f0_uncertainty(e, rows)
+    assert fs["free_sequences"] == 4 and fs["prior_sd_px"] == pytest.approx(prior / 2) and fs["reported_px"] == pytest.approx(prior / 2)
+    sc = float(np.std([-40.0, 10.0, 25.0, 45.0], ddof=1))
+    assert fs["sequence_scatter_px"] == pytest.approx(sc) and fs["from_scatter_px"] == pytest.approx(sc / 2)
+    assert fs["adopted_px"] == pytest.approx(sc / 2) and "scatter" in fs["adopted_source"] and fs["prior_bound"]
+    assert fs["adopted_ppm"] == pytest.approx(1e6 * sc / 2 / f0) and fs["sequence_scatter_ppm"] == pytest.approx(1e6 * sc / f0)
+    # a tight scatter (Z34: 0.1-0.3 % within blocks) smaller than the covariance's: the covariance stays
+    tight = [{"offset_px": o, "sd_px": 4.0} for o in (-6.0, 2.0, 3.0, 5.0)]
+    ft = Z.f0_uncertainty(e, tight)
+    assert ft["adopted_px"] == pytest.approx(prior / 2) and ft["adopted_source"].startswith("the covariance") and not ft["prior_bound"]
+    one = Z.f0_uncertainty(e, tight[:1])
+    assert one["sequence_scatter_px"] is None and one["adopted_px"] == pytest.approx(prior / 2) and one["free_sequences"] == 1
+    none = Z.f0_uncertainty({"terms": {"a_fx_backlash": f0}, "sd": {}}, rows)
+    assert none["reported_px"] is None and none["adopted_px"] == pytest.approx(sc / 2)
+    # the report line and the candidate model carry it
+    res = {"eyes": {"ZL048": dict(e, f0_sd=fs, held=[], reference_focus=600.0, bins=4, regular_bins=0, thin_bins=0,
+                                  terms={"a_fx_backlash": f0, "a_fy_backlash": f0, "a_fx_regular": f0 / 1.0095, "a_fy_regular": f0 / 1.0095,
+                                         "b": 0.05, "k1": -0.3, "k2": 0.4, "p1": 0.0, "p2": 0.0, "b_cy": 0.0, "d_cx_regular": 0.0,
+                                         "d_cy_regular": 0.0})},
+           "rig": {"change_mdeg": 0.0, "baseline_m": 0.2435}, "zcam": {}}
+    line = next(x for x in Z.describe(res) if x.startswith("ZL048 f0 sd:"))
+    assert "4 sequences, the offsets' sd at the prior" in line and "adopted" in line

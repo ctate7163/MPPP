@@ -17,7 +17,10 @@ blocks of a zoom, with the Navcam held at the models in use and the Mastcam-Z fo
   not into the frame rotation or the rig (chal_rocks, 22 Oct: the only block with regular images, and the outlier
   of the per-block rigs, pitch -29 / yaw -12 mdeg).
 * **Diagnostic pass** - the global law held, each block's bins (fx, fy) and its own rig free: the per-block focus
-  lines and the per-block rig rotations about the joint - the sol and temperature trends of the rig.
+  lines and the per-block rig rotations about the joint - the sol and temperature trends of the rig.  0.96: a pooled
+  pass as well (one fx scale, one fy scale and cx, cy per eye and sequence, the frames on the line at their own
+  focus), which the per-block aspect gate reads; the residual direction per sequence from the final pass; a warning
+  when the two eyes of a sequence sit in opposite backlash states; f0's sd with the sequence scatter folded in.
 
 The result is a candidate focus model in the zcam-v2 form (``write_zjoint``), checked with
 :func:`mppp.calib.fit.check_zcam` against the one in use, promoted on request.
@@ -111,6 +114,35 @@ ZCAM_EARLY_MIN_BINS = 3                   # fewer early ZR bins on the lines: no
 EARLY_Z_MIN = 3.0
 REGULAR_RATIO_GROUP_SD = 0.003
 TIE_SIGMA_Z = {"f": 1e-3, "k": 1e-7, "p": 1e-8, "cy": 1e-3}       # px; unitless - the ties are effectively exact
+# 0.96 (Christian, 5 Nov: "yes to pooling on the block or sequence level"; the Z34 joint of 4 Nov failed only the
+# per-block aspect gate on Chal Rocks large, where one 6-row pan, ZCAM08401, makes each row its own 30-count focus
+# bin: fx is held by the side-by-side overlap within the row, fy only by the rows above and below, which are other
+# bins, and the rows' fy drifted together by -1.5 to -1.8 %).  The diagnostic pass gets a pooled model as well: one
+# pool per (eye, sequence) - DIAG_POOL "sequence" - or per (eye, block, backlash state) - "block"; None: the per-bin
+# pass alone.  Every frame of a pool follows the joint's line at its own focus count (the bin's law camera, the
+# frame's keypoints scaled by the line from the bin's focus to the frame's); per pool, free: one scale on fx, one on
+# fy (so f and fy / fx) and cx, cy; the distortion stays on the line.  The per-block aspect gate reads the pooled
+# values (the observation-weighted mean of the block's pools' dfy - dfx); the per-bin lines stay in the report
+# beside them.  The pool scales are in units of 1e-3 (0.1 %) in the problem, ppm in the results
+DIAG_POOL = "sequence"
+POOL_SCALE_UNIT = 1e-3
+POOL_SEQUENCES_REPORTED = 10            # the pools with the largest |dfy - dfx| in the report
+# 0.96: a block with two visits (Chal Rocks large: sols 72-100 and 360-379) gets one aspect row per visit as well
+# (report only, not gated); visits are the pools' sols split at gaps over this many sols
+VISIT_GAP_SOLS = 100
+# 0.96 (item C of 5 Nov; Z63 ZCAM08038, sol 78: ZL's bins sat -3,450 / -3,760 ppm in fx where its low state's step is
+# -4,170 ppm, ZR's within +900 of 0 - ZL in the low state, labelled high; the mini-block of 5 Nov evening confirmed
+# it): per sequence and eye, from the diagnostic pass, "possible low state" when one eye's dfx is within this
+# fraction of its low-state step and the other eye's within the same fraction of 0, fx and fy moving together.  A
+# warning in the report and check.json, not a failure
+OPPOSITE_STATE_TOL = 0.35
+# 0.96 (item B of 5 Nov): the direction of the residuals per sequence from the final joint pass - rms x and y apart,
+# the scale left in fx and fy (the slope of the residual against the distance from the principal point, ppm), and
+# the same per row (elevation tier) for pans; the sequences with the largest rms, and every sequence flagged by the
+# pools or the states, in the report.  Rows are elevation clusters split at gaps over this fraction of the vertical
+# field of view
+RESIDUAL_DIR_SEQUENCES = 10
+ROW_GAP_FRACTION = 0.5
 NAV_POINTS_PER_BLOCK = 8000
 Z_POINTS_PER_BLOCK = 8000
 _FX, _FY, _CX, _CY, _K1, _K2, _P1, _P2 = range(8)                     # FULL_OPENCV parameter indices
@@ -814,6 +846,46 @@ def globals_result(sg, g, ba, zunits) -> Dict[str, Any]:
                           "sd_ppm": float(np.std([r["ppm"] for r in fr], ddof=1)) if len(fr) > 1 else None,
                           "max_abs_ppm": max((abs(r["ppm"]) for r in fr), default=None),
                           "prior_sd_pct": 100.0 * SEQ_OFFSET_SD}
+        e["f0_sd"] = f0_uncertainty(e, fr)                                    # 0.96 (item D)
+    return out
+
+
+def f0_uncertainty(e: Dict[str, Any], free_rows: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """0.96 (item D of 5 Nov): the sd of the eye's f0 (a_fx_backlash at the reference focus).  The sequence offsets
+    are random effects with the prior sd :data:`SEQ_OFFSET_SD` x f, so with few sequences the covariance's sd of f0
+    is about that prior / sqrt(sequences) - Z48 of 4 Nov: +-13.39 px, the same as each offset's sd - and reflects
+    the assumed scatter, not the observed one.  Here the scatter is estimated from the fitted offsets (their sample
+    sd; shrunk towards 0 by the prior, so a lower bound where the prior binds), f0's sd from it (scatter /
+    sqrt(sequences)), and the larger of the two adopted.  The prior stays as it is in the fit.  Returns
+    {"reported_px", "free_sequences", "prior_sd_px", "sequence_scatter_px", "sequence_scatter_ppm", "from_scatter_px",
+    "adopted_px", "adopted_ppm", "adopted_source", "prior_bound" (the fitted offsets' sd within 10 % of the prior:
+    the prior, not the data, set the offsets), "note"}."""
+    tm, sd = e.get("terms") or {}, e.get("sd") or {}
+    f0 = float(tm.get("a_fx_backlash") or 0.0)
+    rep = sd.get("a_fx_backlash")
+    rep = float(rep) if rep is not None and np.isfinite(rep) else None
+    n = len(free_rows)
+    out: Dict[str, Any] = {"reported_px": rep, "free_sequences": n, "prior_sd_px": float(SEQ_OFFSET_SD * f0 / np.sqrt(n)) if (n and f0) else None,
+                           "sequence_scatter_px": None, "sequence_scatter_ppm": None, "from_scatter_px": None,
+                           "adopted_px": rep, "adopted_ppm": (1e6 * rep / f0) if (rep is not None and f0) else None,
+                           "adopted_source": "the covariance (no sequence scatter: fewer than 2 free sequences)", "prior_bound": None}
+    if n >= 2:
+        offs = np.array([float(r["offset_px"]) for r in free_rows])
+        scatter = float(np.std(offs, ddof=1))
+        from_sc = float(scatter / np.sqrt(n))
+        osd = [float(r["sd_px"]) for r in free_rows if r.get("sd_px")]
+        prior_px = SEQ_OFFSET_SD * f0
+        out.update({"sequence_scatter_px": scatter, "sequence_scatter_ppm": (1e6 * scatter / f0) if f0 else None,
+                    "from_scatter_px": from_sc,
+                    "prior_bound": bool(osd and prior_px and abs(float(np.median(osd)) - prior_px) <= 0.1 * prior_px)})
+        if rep is None or from_sc > rep:
+            out.update({"adopted_px": from_sc, "adopted_source": f"the sequences' scatter / sqrt({n})"})
+        else:
+            out["adopted_source"] = "the covariance (larger than the sequences' scatter would give)"
+        out["adopted_ppm"] = (1e6 * out["adopted_px"] / f0) if f0 else None
+    out["note"] = ("f0's sd: the larger of the covariance's (which rests on the sequence-offset prior, %.1f %% of f) and "
+                   "the fitted sequence offsets' sample sd / sqrt(sequences); the scatter is shrunk by the prior where it binds"
+                   % (100 * SEQ_OFFSET_SD))
     return out
 
 
@@ -1011,14 +1083,11 @@ def _block_meta(blocks: Dict[str, PathLike], proj) -> Dict[str, Dict[str, Any]]:
     return out
 
 
-def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[Dict[str, PathLike]] = None,
-                    zoom: int = ZOOM, iterations: int = 60, verbose: bool = True) -> Dict[str, Any]:
-    """The global law held: every Mastcam-Z bin at the law with fx, fy free (no ties), one Mastcam-Z rig per block
-    (rotation free).  Returns {"blocks": per block the lines (a, b of fx, fy per eye and state, weighted by the
-    bins' observations) and the rig rotation about the joint (yaw, pitch, roll mdeg), "fits": the rig's trends with
-    sol and lens temperature}."""
-    from ..sfm.reconstruction import bundle_adjust
-    from .fit import ols
+def _law_copy(rec, proj, zunits, sg, g, zoom: int = ZOOM):
+    """0.96: a deep copy of the joint's reconstruction with every Mastcam-Z bin camera at the joint's law (its
+    state's line at the bin's focus, plus its sequence, focus-from-below and early-mission offsets; the distortion
+    and principal point of the law) and one Mastcam-Z rig per block (``Z0nn@block``, rotation free, at the joint's
+    rig) - the start of the diagnostic passes.  Returns (rec, proj, law {bin camera id: params at the law}, R0, t0)."""
     rec = copy.deepcopy(rec)
     proj = copy.deepcopy(proj)
     fam0 = f"Z{zoom:03d}"
@@ -1026,6 +1095,7 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
                     or proj.settings["zcam_virtual_rig"][fam0]["R_sensor_from_ref"], float)
     t0 = np.asarray((proj.settings["zcam_virtual_rig"][fam0]).get("t_refined")          # 0.95.0: as refined
                     or proj.settings["zcam_virtual_rig"][fam0]["t_sensor_from_ref"], float)
+    law: Dict[int, np.ndarray] = {}
     for cid, u in zunits.items():                       # the bins at the joint's law
         p = np.asarray(rec.cameras[cid].params, float).copy()
         G = g[u["group"]]
@@ -1049,6 +1119,7 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
             p[_CX] += float(de[0])
             p[_CY] += float(de[1])
         rec.cameras[cid].params = p
+        law[int(cid)] = p.copy()
         spec = proj.cameras[u["key"]]
         spec["fixed_params"] = ["cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6"]
         spec["free_params"] = []
@@ -1061,6 +1132,161 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
         if cg[:5] in zoom_groups(zoom) and r.get("scape"):
             r["camera_group"] = f"{cg[:5]}@{r['scape']}"
     proj.settings["zcam_virtual_rig"] = vr
+    return rec, proj, law, R0, t0
+
+
+def _bin_observations(rec, zunits: Optional[Dict[int, Dict[str, Any]]] = None) -> Dict[int, int]:
+    obs: Dict[int, int] = {}
+    for pt in rec.points3D.values():
+        for el in pt.track.elements:
+            c = int(rec.images[el.image_id].camera_id)
+            if zunits is None or c in zunits:
+                obs[c] = obs.get(c, 0) + 1
+    return obs
+
+
+def pool_key(u: Dict[str, Any], pool: str) -> str:
+    """0.96: the pool a bin belongs to - ``"sequence"``: its sequence (block | sol | sequence; a bin without one, a
+    focus bin of a project before 0.95.0, pools with its block and state), ``"block"``: its block and backlash
+    state."""
+    if pool == "sequence" and u.get("seq"):
+        return str(u["seq"])
+    return f"{u['scape']}|{u['state']}"
+
+
+def pooled_pass(rec, proj, idx, st, units, zunits, sg, g, law: Dict[int, np.ndarray], pool: str = DIAG_POOL,
+                zoom: int = ZOOM, iterations: int = 60, verbose: bool = True) -> Dict[str, Any]:
+    """0.96 (item A of 5 Nov): the pooled diagnostic pass on a law copy (:func:`_law_copy`).  One pool per (eye,
+    :func:`pool_key`); every bin camera of a pool is tied to it exactly - fx = law fx (1 + s_x), fy = law fy (1 +
+    s_y), cx = law cx + d_cx, cy = law cy + d_cy - so the pool's four parameters (scales in :data:`POOL_SCALE_UNIT`,
+    offsets in px) are all that moves; each frame's keypoints are scaled by the eye's line from the bin's focus to
+    the frame's own, so the frames follow the line at their own focus count.  The distortion stays at the law, one
+    rig per block (rotation free), the Navcam held.  Returns {"pool", "pools": [per pool the eye, key, block,
+    sequence, sol, states, bins, observations, images, dfx_ppm, dfy_ppm, aspect_ppm (dfy - dfx) with their sd, dcx_px,
+    dcy_px], "brief", "seconds"}."""
+    from ..sfm.reconstruction import bundle_adjust
+    import pyceres                                                       # noqa: F401 (pyceres present)
+    LinearTie = T._linear_tie_class()
+    obs = _bin_observations(rec, zunits)
+    pools: Dict[Tuple[str, str], List[int]] = {}
+    for cid, u in zunits.items():
+        if obs.get(int(cid), 0) <= 0 or int(cid) not in law:
+            continue
+        pools.setdefault((u["group"], pool_key(u, pool)), []).append(int(cid))
+    pvals = {k: np.zeros(4) for k in pools}
+    for cids in pools.values():                                          # the bins' fx, fy, cx, cy move with the pool
+        for cid in cids:
+            spec = proj.cameras[zunits[cid]["key"]]
+            spec["fixed_params"] = ["k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6"]
+            spec["free_params"] = ["cx", "cy"]
+    # the frames at their own focus: the keypoints scaled by the line from the bin's focus to the frame's
+    ks, kmap = T.keypoint_terms(units, proj, idx["temps"], _navcam_globals(st))
+    n_scaled = 0
+    for r in proj.images:
+        cid = int(r.get("camera_id", -1))
+        u = zunits.get(cid)
+        if u is None or cid not in law or u.get("focus") is None or r.get("focus_count") is None:
+            continue
+        G = g[u["group"]]
+        b = float(G[4]) / slope_div(sg, u["group"], u["state"] == "regular")
+        dF = float(r["focus_count"]) - float(u["focus"])
+        if dF == 0.0:
+            continue
+        L = law[cid]
+        ks[int(r["image_id"])] = (1.0 + b * dF / float(L[_FX]), 1.0 + b * dF / float(L[_FY]))
+        n_scaled += 1
+    const = np.ones(1)
+    sig = np.array([TIE_SIGMA_Z["f"], TIE_SIGMA_Z["f"], TIE_SIGMA_Z["cy"], TIE_SIGMA_Z["cy"]])
+
+    def hook(prob, cam_blocks=None, rig_blocks=None, key_of=None, work=None):
+        n = 0
+        for (eye, key), cids in pools.items():
+            P = pvals[(eye, key)]
+            for cid in cids:
+                blk = cam_blocks.get(int(cid))
+                if blk is None or not prob.has_parameter_block(blk) or prob.is_parameter_block_constant(blk):
+                    continue
+                L = law[cid]
+                A = np.zeros((4, 12 + 4 + 1))
+                A[0, _FX] = 1.0; A[0, 12] = -float(L[_FX]) * POOL_SCALE_UNIT; A[0, 16] = -float(L[_FX])
+                A[1, _FY] = 1.0; A[1, 13] = -float(L[_FY]) * POOL_SCALE_UNIT; A[1, 16] = -float(L[_FY])
+                A[2, _CX] = 1.0; A[2, 14] = -1.0; A[2, 16] = -float(L[_CX])
+                A[3, _CY] = 1.0; A[3, 15] = -1.0; A[3, 16] = -float(L[_CY])
+                prob.add_residual_block(LinearTie(A, sig, [12, 4, 1]), None, [blk, P, const])
+                n += 1
+        if prob.has_parameter_block(const):
+            prob.set_parameter_block_constant(const)
+        cb = {f"pool|{eye}|{key}": P for (eye, key), P in pvals.items() if prob.has_parameter_block(P)}
+        return {"cov_blocks": cb, "ties": {"pooled_bins": n, "pools": len(cb)}, "tie_ids": [], "tie_specs": [],
+                "exact_solve": False}
+
+    navkeys = [k for k in proj.settings["database"]["cameras"] if str(k).startswith("N")]
+    t = time.time()
+    ba = bundle_adjust(rec, proj, zcam_aspect="free", sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True, refine_tangential=False,
+                       refine_principal_point=False, refine_rig=False, max_iterations=iterations, attitude_prior_deg=5.0,
+                       hold_cameras=navkeys, linear_solver="sparse_schur", keypoint_scale=ks, keypoint_map=kmap,
+                       refine_zcam_rig="rotation", covariance=True, extra_residuals=hook)
+    if verbose:
+        log.info(f"Mastcam-Z pooled diagnostic pass ({pool}, {len(pools)} pools, {n_scaled} frames at their own focus): "
+                 f"{ba['brief'][:160]} ({time.time() - t:.0f} s)")
+    cov = ba.get("covariance") or {}
+    vf = float(cov.get("variance_factor") or 1.0)
+    rows: List[Dict[str, Any]] = []
+    for (eye, key), cids in pools.items():
+        P = pvals[(eye, key)]
+        us = [zunits[c] for c in cids]
+        sols = [u.get("sol") for u in us if u.get("sol") is not None]
+        row: Dict[str, Any] = {"eye": eye, "key": key, "block": us[0]["scape"],
+                               "sequence": us[0].get("sequence") if (pool == "sequence" and us[0].get("seq")) else None,
+                               "sol": int(round(float(np.median(sols)))) if sols else None,
+                               "states": sorted({u["state"] for u in us}), "bins": len(cids),
+                               "thin_bins": sum(1 for u in us if u.get("thin")),
+                               "observations": int(sum(obs.get(c, 0) for c in cids)),
+                               "images": int(sum(int(u.get("images") or 0) for u in us)),
+                               "focus_span": float(np.ptp([u["dF"] for u in us])) if len(us) > 1 else 0.0,
+                               "dfx_ppm": 1e6 * float(P[0]) * POOL_SCALE_UNIT, "dfy_ppm": 1e6 * float(P[1]) * POOL_SCALE_UNIT,
+                               "dcx_px": float(P[2]), "dcy_px": float(P[3])}
+        row["aspect_ppm"] = row["dfy_ppm"] - row["dfx_ppm"]
+        c = (cov.get("blocks") or {}).get(f"extra:pool|{eye}|{key}")
+        if c is not None and np.asarray(c).shape == (4, 4) and np.all(np.isfinite(c)):
+            C = np.asarray(c, float) * vf
+            sd = np.sqrt(np.clip(np.diag(C), 0, None))
+            k = 1e6 * POOL_SCALE_UNIT
+            row.update({"sd_dfx_ppm": k * float(sd[0]), "sd_dfy_ppm": k * float(sd[1]),
+                        "sd_aspect_ppm": k * float(np.sqrt(max(0.0, C[0, 0] + C[1, 1] - 2 * C[0, 1]))),
+                        "sd_dcx_px": float(sd[2]), "sd_dcy_px": float(sd[3])})
+        rows.append(row)
+    rows.sort(key=lambda r: (r["block"], r["eye"], r["key"]))
+    return {"pool": pool, "pools": rows, "brief": ba["brief"], "seconds": time.time() - t, "frames_at_own_focus": n_scaled}
+
+
+def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[Dict[str, PathLike]] = None,
+                    zoom: int = ZOOM, iterations: int = 60, verbose: bool = True,
+                    pool: Optional[str] = DIAG_POOL) -> Dict[str, Any]:
+    """The global law held: every Mastcam-Z bin at the law with fx, fy free (no ties), one Mastcam-Z rig per block
+    (rotation free).  Returns {"blocks": per block the lines (a, b of fx, fy per eye and state, weighted by the
+    bins' observations) and the rig rotation about the joint (yaw, pitch, roll mdeg), "fits": the rig's trends with
+    sol and lens temperature, "bins": every bin's own fx, fy (and dfx_ppm, dfy_ppm about the law)}.  0.96: with
+    ``pool`` ("sequence", the default, or "block") the pooled pass as well (:func:`pooled_pass`): ``"pool"`` and
+    ``"pools"``, which the per-block aspect gate reads (:func:`block_aspect_rows`); None: the per-bin pass alone."""
+    from ..sfm.reconstruction import bundle_adjust
+    from .fit import ols
+    if pool not in (None, "sequence", "block"):
+        raise ValueError(f"pool {pool!r}: sequence, block or None")
+    pooled = None
+    pooled_error = None
+    if pool:
+        rec_p, proj_p, law, _, _ = _law_copy(rec, proj, zunits, sg, g, zoom)
+        try:
+            pooled = pooled_pass(rec_p, proj_p, idx, st, units, zunits, sg, g, law, pool=pool, zoom=zoom,
+                                 iterations=iterations, verbose=verbose)
+        except Exception as e:                        # noqa: BLE001 - in a chain the joint stands on the per-bin pass
+            pooled_error = f"{type(e).__name__}: {e}"
+            log.warning(f"Mastcam-Z pooled diagnostic pass failed ({pooled_error}); the aspect gate reads the per-bin lines")
+        del rec_p, proj_p
+    rec, proj, law, R0, t0 = _law_copy(rec, proj, zunits, sg, g, zoom)
+    fam0 = f"Z{zoom:03d}"
+    scapes = sorted({u["scape"] for u in zunits.values()})
     navkeys = [k for k in proj.settings["database"]["cameras"] if str(k).startswith("N")]
     ks, kmap = T.keypoint_terms(units, proj, idx["temps"], _navcam_globals(st))
     t = time.time()
@@ -1070,11 +1296,7 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
                        refine_zcam_rig="rotation")
     if verbose:
         log.info(f"Mastcam-Z diagnostic pass: {ba['brief'][:160]} ({time.time() - t:.0f} s)")
-    obs = {}
-    for pt in rec.points3D.values():
-        for el in pt.track.elements:
-            c = int(rec.images[el.image_id].camera_id)
-            obs[c] = obs.get(c, 0) + 1
+    obs = _bin_observations(rec)
     meta = _block_meta(blocks or {}, proj)
     from scipy.spatial.transform import Rotation
     rows: List[Dict[str, Any]] = []
@@ -1119,10 +1341,19 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
         if obs.get(cid, 0) <= 0 or u.get("focus") is None:
             continue
         pr = np.asarray(rec.cameras[cid].params, float)
+        L = law[int(cid)]
         bins.append({"block": u["scape"], "eye": u["group"], "state": u["state"], "focus": float(u["focus"]),
                      "fx": float(pr[_FX]), "fy": float(pr[_FY]), "observations": int(obs[cid]), "sol": u.get("sol"),
-                     "sequence": u.get("sequence"), "thin": bool(u.get("thin")), "early": bool(u.get("early"))})
-    return {"blocks": rows, "fits": fits, "brief": ba["brief"], "bins": bins}
+                     "sequence": u.get("sequence"), "seq": u.get("seq"), "thin": bool(u.get("thin")), "early": bool(u.get("early")),
+                     # 0.96: about the law (the bin's line value), for the per-sequence means and the state flags
+                     "dfx_ppm": 1e6 * float(pr[_FX] / L[_FX] - 1.0), "dfy_ppm": 1e6 * float(pr[_FY] / L[_FY] - 1.0)})
+    out = {"blocks": rows, "fits": fits, "brief": ba["brief"], "bins": bins, "pool": pool}
+    if pooled_error:
+        out["pooled_error"] = pooled_error
+    if pooled:
+        out.update({"pools": pooled["pools"], "pooled_brief": pooled["brief"], "pooled_seconds": pooled["seconds"],
+                    "frames_at_own_focus": pooled["frames_at_own_focus"]})
+    return out
 
 
 def set_ratio_holds(sg: Dict[str, Any], zoom: int, verbose: bool = True) -> Dict[str, float]:
@@ -1191,14 +1422,66 @@ def navcam_aspect_by_block(cameras: Sequence[Dict[str, Any]], min_images: int = 
     return out
 
 
+def visits_of(sols: Sequence[Optional[int]], gap: int = VISIT_GAP_SOLS) -> List[Tuple[int, int]]:
+    """0.96: the visits among ``sols`` - runs of sols split where two consecutive ones are more than ``gap`` apart -
+    as (first sol, last sol); [] with no sols."""
+    ss = sorted({int(s) for s in sols if s is not None})
+    if not ss:
+        return []
+    out, start = [], ss[0]
+    for a, b in zip(ss, ss[1:]):
+        if b - a > gap:
+            out.append((start, a))
+            start = b
+    out.append((start, ss[-1]))
+    return out
+
+
+def sequence_scales(d: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """0.96: per (block, sequence, eye) the diagnostic pass's dfx, dfy about the law (ppm) - the pool's when the
+    pass was pooled by sequence, else the observation-weighted mean of the sequence's bins; and the states, bins,
+    observations.  Bins without a sequence (focus bins) are grouped by block and state under sequence None."""
+    rows: List[Dict[str, Any]] = []
+    pools = d.get("pools") if d.get("pool") == "sequence" else None
+    if pools:
+        for p in pools:
+            rows.append({"block": p["block"], "sequence": p.get("sequence"), "sol": p.get("sol"), "eye": p["eye"],
+                         "key": p["key"], "states": list(p.get("states") or []), "bins": int(p["bins"]),
+                         "observations": int(p["observations"]), "dfx_ppm": float(p["dfx_ppm"]), "dfy_ppm": float(p["dfy_ppm"]),
+                         "sd_dfx_ppm": p.get("sd_dfx_ppm"), "sd_dfy_ppm": p.get("sd_dfy_ppm"), "source": "pooled"})
+        return rows
+    acc: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = {}
+    for b in d.get("bins") or []:
+        if b.get("dfx_ppm") is None or int(b.get("observations") or 0) <= 0:
+            continue
+        key = b.get("seq") or f"{b['block']}|{b['state']}"
+        acc.setdefault((b["block"], key, b["eye"]), []).append(b)
+    for (blk, key, eye), bs in sorted(acc.items()):
+        w = np.array([float(b["observations"]) for b in bs])
+        sols = [b.get("sol") for b in bs if b.get("sol") is not None]
+        rows.append({"block": blk, "sequence": bs[0].get("sequence") if bs[0].get("seq") else None,
+                     "sol": int(round(float(np.median(sols)))) if sols else None, "eye": eye, "key": key,
+                     "states": sorted({b["state"] for b in bs}), "bins": len(bs), "observations": int(w.sum()),
+                     "dfx_ppm": float(np.average([b["dfx_ppm"] for b in bs], weights=w)),
+                     "dfy_ppm": float(np.average([b["dfy_ppm"] for b in bs], weights=w)),
+                     "sd_dfx_ppm": None, "sd_dfy_ppm": None, "source": "per-bin mean"})
+    return rows
+
+
 def block_aspect_rows(res: Dict[str, Any], nav: Dict[str, Dict[str, Any]],
                       min_obs: int = BLOCK_ASPECT_MIN_OBS) -> Dict[str, Any]:
     """0.94.5 (Christian, 27 Oct): per block and eye, the Mastcam-Z fy - fx of the diagnostic pass (the state line
     with the most observations, at the reference focus) about the joint's (ppm of fx and px) against the Navcam's
     per-block dfy - dfx (``nav``, :func:`navcam_block_aspect`).  Rows with fewer than ``min_obs`` observations are
-    listed but not judged.  Returns {"rows", "slope" (Mastcam-Z on Navcam ppm over the judged rows), "max_diff_ppm"}."""
-    rows = []
-    for b in (res.get("diagnostics") or {}).get("blocks") or []:
+    listed but not judged.  0.96: with a pooled pass (``diagnostics["pools"]``) the judged value is the pooled one -
+    the observation-weighted mean of the block's pools' dfy - dfx (``source`` "pooled") - with the per-bin line's
+    beside it (``per_bin_ppm``, ``per_bin_diff_ppm``, ``per_bin_state``); a block with several visits
+    (:func:`visits_of`) gets one row per visit as well (``visit``, report only: not judged); ``sequences`` lists the
+    :data:`POOL_SEQUENCES_REPORTED` pools with the largest |dfy - dfx|.  Returns {"rows", "slope" (Mastcam-Z on
+    Navcam ppm over the judged rows), "max_diff_ppm", "source", "sequences"}."""
+    d = res.get("diagnostics") or {}
+    per_bin: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for b in d.get("blocks") or []:
         for eye, states in (b.get("lines") or {}).items():
             best = max(states.items(), key=lambda kv: int((kv[1].get("fx") or {}).get("observations", 0)), default=None)
             if not best or "fx" not in best[1] or "fy" not in best[1]:
@@ -1209,21 +1492,68 @@ def block_aspect_rows(res: Dict[str, Any], nav: Dict[str, Dict[str, Any]],
                 continue
             asp = float(tm["a_fy_backlash"]) / float(tm["a_fx_backlash"])
             fx, fy = float(ln["fx"]["a"]), float(ln["fy"]["a"])
-            z_ppm = 1e6 * (fy / fx - asp)
-            n = nav.get(b["block"]) or {}
-            nv = n.get("mean")
-            obs = int(ln["fx"].get("observations", 0))
-            rows.append({"block": b["block"], "eye": eye, "state": stt, "observations": obs,
-                         "zcam_dfy_minus_dfx_px": float((fy - fx) - fx * (asp - 1.0)), "zcam_ppm": float(z_ppm),
-                         "navcam_ppm": None if nv is None else float(nv), "navcam_NL_ppm": n.get("NL"),
-                         "navcam_NR_ppm": n.get("NR"), "diff_ppm": None if nv is None else float(z_ppm - nv),
-                         "judged": bool(obs >= min_obs and nv is not None)})
+            per_bin[(b["block"], eye)] = {"state": stt, "ppm": float(1e6 * (fy / fx - asp)),
+                                          "px": float((fy - fx) - fx * (asp - 1.0)), "observations": int(ln["fx"].get("observations", 0))}
+    pools = d.get("pools") or []
+    rows: List[Dict[str, Any]] = []
+
+    def _row(block: str, eye: str, z_ppm: float, obs: int, px: float, **extra) -> Dict[str, Any]:
+        n = nav.get(block) or {}
+        nv = n.get("mean")
+        r = {"block": block, "eye": eye, "observations": int(obs), "zcam_dfy_minus_dfx_px": float(px), "zcam_ppm": float(z_ppm),
+             "navcam_ppm": None if nv is None else float(nv), "navcam_NL_ppm": n.get("NL"), "navcam_NR_ppm": n.get("NR"),
+             "diff_ppm": None if nv is None else float(z_ppm - nv), "judged": bool(obs >= min_obs and nv is not None),
+             "visit": None}
+        r.update(extra)
+        return r
+
+    if pools:
+        groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+        for p in pools:
+            groups.setdefault((p["block"], p["eye"]), []).append(p)
+        for (block, eye), ps in sorted(groups.items()):
+            tm = ((res.get("eyes") or {}).get(eye) or {}).get("terms") or {}
+            f0 = float(tm.get("a_fx_backlash") or 0.0)
+            pb = per_bin.get((block, eye)) or {}
+
+            def pooled(ps_):
+                w = np.array([float(p["observations"]) for p in ps_])
+                if w.sum() <= 0:
+                    return None, 0
+                return float(np.average([p["aspect_ppm"] for p in ps_], weights=w)), int(w.sum())
+
+            z_ppm, obs = pooled(ps)
+            if z_ppm is None:
+                continue
+            r = _row(block, eye, z_ppm, obs, f0 * z_ppm * 1e-6, source="pooled", pools=len(ps),
+                     state="+".join(sorted({s for p in ps for s in p.get("states") or []})),
+                     per_bin_ppm=pb.get("ppm"), per_bin_state=pb.get("state"), per_bin_observations=pb.get("observations"))
+            r["per_bin_diff_ppm"] = (None if (pb.get("ppm") is None or r["navcam_ppm"] is None) else float(pb["ppm"] - r["navcam_ppm"]))
+            rows.append(r)
+            vis = visits_of([p.get("sol") for p in ps])
+            if len(vis) >= 2:                            # 0.96: one row per visit, report only
+                for a, b_ in vis:
+                    sub = [p for p in ps if p.get("sol") is not None and a <= int(p["sol"]) <= b_]
+                    zv, ov = pooled(sub)
+                    if zv is None:
+                        continue
+                    rv = _row(block, eye, zv, ov, f0 * zv * 1e-6, source="pooled", pools=len(sub), state=r["state"],
+                              per_bin_ppm=None, per_bin_state=None, per_bin_observations=None, per_bin_diff_ppm=None,
+                              visit=(f"sol {a}" if a == b_ else f"sols {a}-{b_}"))
+                    rv["judged"] = False
+                    rows.append(rv)
+    else:
+        for (block, eye), pb in sorted(per_bin.items()):
+            rows.append(_row(block, eye, pb["ppm"], pb["observations"], pb["px"], source="per-bin", state=pb["state"]))
     J_ = [r for r in rows if r["judged"]]
     slope = None
     if len(J_) >= 3 and np.ptp([r["navcam_ppm"] for r in J_]) > 0:
         slope = float(np.polyfit([r["navcam_ppm"] for r in J_], [r["zcam_ppm"] for r in J_], 1)[0])
-    return {"rows": rows, "slope": slope,
-            "max_diff_ppm": max((abs(r["diff_ppm"]) for r in J_), default=None), "min_observations": int(min_obs)}
+    seqs = sorted(pools, key=lambda p: -abs(float(p["aspect_ppm"])))[:POOL_SEQUENCES_REPORTED]
+    return {"rows": rows, "slope": slope, "source": "pooled" if pools else "per-bin", "pool": d.get("pool"),
+            "max_diff_ppm": max((abs(r["diff_ppm"]) for r in J_), default=None), "min_observations": int(min_obs),
+            "sequences": [{k: p.get(k) for k in ("eye", "block", "sequence", "key", "sol", "states", "bins", "observations",
+                                                 "dfx_ppm", "dfy_ppm", "aspect_ppm", "sd_aspect_ppm")} for p in seqs]}
 
 
 # ====================================================================================== the run and the files
@@ -1233,7 +1563,8 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
                scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None,
                k_tests: bool = True, ratio_by: Optional[str] = None, navcam_aspect: bool = True,
                slope_tests: bool = False, rig_fit: str = ZJOINT_RIG_FIT,
-               early_sol: Optional[int] = ZCAM_EARLY_SOL, aspect_hold: Optional[float] = None) -> Dict[str, Any]:
+               early_sol: Optional[int] = ZCAM_EARLY_SOL, aspect_hold: Optional[float] = None,
+               pool: Optional[str] = DIAG_POOL) -> Dict[str, Any]:
     """The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the distortion tests (:func:`distortion_tests`,
     ``k_tests``), the diagnostic pass.  ``model``: the focus model to start from (default: the one in use);
     ``ratio_by``: "global" | "block" | "sol", the low-state groups with their own high / low ratio (default
@@ -1242,7 +1573,10 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     (held at the start rig, the 0.94 joint); ``early_sol``: ZR's early-mission principal-point offset for its bins
     before this sol (:data:`ZCAM_EARLY_SOL`; None: none).  ``aspect_hold`` (6 Nov 2026, the Navcam-Mastcam-Z
     vertical-scale study): each eye's fy / fx held at this value (1.0: square pixels) by an exact tie of the
-    backlash fy line to the fx line; the regular state follows as before.  Default None: the aspect is free."""
+    backlash fy line to the fx line; the regular state follows as before.  Default None: the aspect is free.
+    0.96: ``pool`` - the diagnostic pass's pooled model ("sequence", :data:`DIAG_POOL`; "block"; None: per bin
+    only), which the per-block aspect gate reads; the residual directions per sequence (:func:`residual_directions`)
+    and the opposite-state flags (:func:`opposite_state_flags`)."""
     from ..sfm.project import zcam_focus_model_path
     if rig_fit not in ("full", "rotation"):
         raise ValueError(f"rig_fit {rig_fit!r}: full or rotation")
@@ -1307,6 +1641,11 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
                 "brief": ba["brief"], "seconds": time.time() - t,
                 "navcam_models": str(st["folder"]), "points": {"navcam_per_block": nav_points, "zcam_per_block": z_points}})
     res["early_pp"] = early_result(ba, sg)                    # 0.95.1
+    try:                                                      # 0.96 (item B): the residual directions per sequence
+        res["residual_directions"] = residual_directions(rec, zunits, proj.images)
+    except Exception as e:                                    # noqa: BLE001 - a diagnostic: the joint stands without it
+        log.warning(f"Mastcam-Z joint: the residual directions did not run ({type(e).__name__}: {e})")
+        res["residual_directions"] = {"error": f"{type(e).__name__}: {e}"}
     res["distortion"] = distortion_curves(res, ba, zunits=zunits)
     if k_tests:
         res["distortion"]["tests"] = distortion_tests(rec, proj, idx, st, units, zunits, sg, g, ba,
@@ -1319,7 +1658,7 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
             log.info(line)
     if diagnostics:
         res["diagnostics"] = diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks=blocks, zoom=zoom,
-                                             verbose=verbose)
+                                             verbose=verbose, pool=pool)
         if navcam_aspect:                            # 0.94.5: the per-block aspect against the Navcam's
             try:
                 nav = navcam_block_aspect(sg.get("_scapes") or [], st, nav_points, verbose=verbose)
@@ -1327,7 +1666,220 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
             except Exception as e:                   # noqa: BLE001 - a diagnostic: the joint stands without it
                 log.warning(f"Mastcam-Z joint: the per-block aspect against the Navcam did not run ({type(e).__name__}: {e})")
                 res["block_aspect"] = {"error": f"{type(e).__name__}: {e}"}
+        try:                                         # 0.96 (item C): possible opposite backlash states between the eyes
+            res["opposite_states"] = opposite_state_flags(res)
+            if verbose:
+                for line in opposite_state_lines(res["opposite_states"]):
+                    log.warning(line) if res["opposite_states"].get("flags") else log.info(line)
+        except Exception as e:                       # noqa: BLE001
+            log.warning(f"Mastcam-Z joint: the opposite-state check did not run ({type(e).__name__}: {e})")
+            res["opposite_states"] = {"error": f"{type(e).__name__}: {e}"}
     return res
+
+
+# ====================================================================================== residual directions, states
+def _elevation_deg(rec, image_id: int) -> float:
+    """The frame's boresight elevation (deg, negative looking down) from its pose in the reconstruction: the
+    camera z axis in the world frame (z up: ENU / the site frame)."""
+    R = np.asarray(rec.images[int(image_id)].cam_from_world().rotation.matrix(), float)
+    return float(np.degrees(np.arcsin(np.clip(R[2, 2], -1.0, 1.0))))
+
+
+def _direction_stats(dx: np.ndarray, dy: np.ndarray, vx: np.ndarray, vy: np.ndarray) -> Dict[str, Any]:
+    """rms of the x and y residuals, and the scale left in fx, fy: the slope of the residual against the distance
+    from the principal point, as ppm the frames want the focal length changed by (positive: a larger f than the
+    model's; the residual is projected - observed, so the data's scale is 1 - slope)."""
+    out = {"observations": int(dx.size), "rms_px": float(np.sqrt(np.mean(dx ** 2 + dy ** 2))) if dx.size else None,
+           "rms_x_px": float(np.sqrt(np.mean(dx ** 2))) if dx.size else None,
+           "rms_y_px": float(np.sqrt(np.mean(dy ** 2))) if dy.size else None}
+    for nm, d, v in (("fx", dx, vx), ("fy", dy, vy)):
+        s2 = float(v @ v)
+        if d.size >= 20 and s2 > 0:
+            slope = float(d @ v) / s2
+            resid = d - slope * v
+            se = float(np.sqrt(max(0.0, resid @ resid / max(1, d.size - 1)) / s2))
+            out[f"{nm}_scale_left_ppm"] = -1e6 * slope
+            out[f"{nm}_scale_left_sd_ppm"] = 1e6 * se
+        else:
+            out[f"{nm}_scale_left_ppm"] = None
+            out[f"{nm}_scale_left_sd_ppm"] = None
+    return out
+
+
+def residual_directions(rec, zunits: Dict[int, Dict[str, Any]], images: Sequence[Dict[str, Any]],
+                        row_gap_fraction: float = ROW_GAP_FRACTION) -> Dict[str, Any]:
+    """0.96 (item B of 5 Nov; ZCAM08401's frames at 1.9-2.5 px rms in the 4 Nov joint against 0.17-0.25 px alone):
+    per sequence (block | sol | sequence; focus bins without one: block | state) and eye, from the final joint pass,
+    the rms of the x and y residuals apart and the scale left in fx and fy (:func:`_direction_stats`); for pans the
+    same per row (elevation tier: the frames' boresight elevations clustered at gaps over ``row_gap_fraction`` of the
+    vertical field of view).  Mostly vertical residuals growing away from the centre mean a real pull (pose or
+    structure) that pooling would hide; no direction means the bins were the problem.  Returns {"sequences": rows
+    sorted by rms (block, sequence, sol, eye, images, the stats, "rows": [{tier, elevation_deg, images, stats}]),
+    "row_gap_deg": {eye: deg}}."""
+    zimg = {int(i) for i in rec.reg_image_ids() if int(rec.images[i].camera_id) in zunits}
+    meta = {int(x.get("image_id", -1)): x for x in (images or [])}
+    per: Dict[int, List[Tuple[float, float, float, float]]] = {}
+    for pt in rec.points3D.values():
+        for el in pt.track.elements:
+            iid = int(el.image_id)
+            if iid not in zimg:
+                continue
+            im = rec.images[iid]
+            cam = rec.cameras[im.camera_id]
+            uv = np.asarray(cam.img_from_cam(np.atleast_2d(im.cam_from_world() * pt.xyz)))[0]
+            xy = np.asarray(im.points2D[el.point2D_idx].xy, float)
+            if not np.all(np.isfinite(uv)):
+                continue
+            p = np.asarray(cam.params, float)
+            per.setdefault(iid, []).append((float(uv[0] - xy[0]), float(uv[1] - xy[1]), float(xy[0] - p[_CX]), float(xy[1] - p[_CY])))
+    seqs: Dict[Tuple[str, str], List[int]] = {}
+    for iid in per:
+        u = zunits[int(rec.images[iid].camera_id)]
+        key = u.get("seq") or f"{u['scape']}|{u['state']}"
+        seqs.setdefault((u["group"], key), []).append(iid)
+    gap_deg: Dict[str, float] = {}
+    rows_out: List[Dict[str, Any]] = []
+    for (eye, key), iids in seqs.items():
+        u0 = zunits[int(rec.images[iids[0]].camera_id)]
+        fy = float(np.median([float(rec.cameras[rec.images[i].camera_id].params[_FY]) for i in iids]))
+        H = float(rec.cameras[rec.images[iids[0]].camera_id].height)
+        vfov = float(np.degrees(2.0 * np.arctan(H / (2.0 * fy))))
+        gap_deg[eye] = row_gap_fraction * vfov
+        arrs = [np.asarray(per[i], float) for i in iids]
+        allr = np.vstack(arrs)
+        els = {i: _elevation_deg(rec, i) for i in iids}
+        m0 = meta.get(iids[0], {})
+        row: Dict[str, Any] = {"eye": eye, "key": key, "block": u0["scape"], "sequence": u0.get("sequence") if u0.get("seq") else None,
+                               "sol": u0.get("sequence_sol") if u0.get("seq") else (m0.get("sol")), "images": len(iids),
+                               "elevation_span_deg": float(max(els.values()) - min(els.values())),
+                               "vertical_fov_deg": vfov}
+        row.update(_direction_stats(allr[:, 0], allr[:, 1], allr[:, 2], allr[:, 3]))
+        # the rows (elevation tiers) of a pan
+        order = sorted(iids, key=lambda i: els[i])
+        tiers: List[List[int]] = [[order[0]]]
+        for a, b in zip(order, order[1:]):
+            if els[b] - els[a] > gap_deg[eye]:
+                tiers.append([])
+            tiers[-1].append(b)
+        row["rows"] = []
+        if len(tiers) >= 2:
+            for k, tier in enumerate(tiers):
+                tr = np.vstack([np.asarray(per[i], float) for i in tier])
+                trow = {"tier": k, "elevation_deg": float(np.mean([els[i] for i in tier])), "images": len(tier)}
+                trow.update(_direction_stats(tr[:, 0], tr[:, 1], tr[:, 2], tr[:, 3]))
+                row["rows"].append(trow)
+        rows_out.append(row)
+    rows_out.sort(key=lambda r: -(r["rms_px"] or 0.0))
+    return {"sequences": rows_out, "row_gap_deg": gap_deg, "row_gap_fraction": float(row_gap_fraction)}
+
+
+def residual_direction_lines(res: Dict[str, Any], n: int = RESIDUAL_DIR_SEQUENCES) -> List[str]:
+    """0.96: report lines for the ``n`` sequences with the largest rms, plus every sequence flagged by the pools
+    (:func:`block_aspect_rows` ``sequences``) or the states (:func:`opposite_state_flags`)."""
+    rd = res.get("residual_directions") or {}
+    if rd.get("error"):
+        return [f"residual directions: not run ({rd['error']})"]
+    seqs = rd.get("sequences") or []
+    if not seqs:
+        return []
+    flagged = {(s["block"], s.get("sequence") or s.get("key")) for s in (res.get("block_aspect") or {}).get("sequences") or []}
+    flagged |= {(f["block"], f.get("sequence") or f.get("key")) for f in (res.get("opposite_states") or {}).get("flags") or []}
+    top = seqs[:n] + [s for s in seqs[n:] if (s["block"], s.get("sequence") or s["key"]) in flagged]
+    out = [f"residual direction per sequence (final joint pass; the {n} largest rms" + (", and the flagged ones" if len(top) > n else "")
+           + "; scale left: ppm the frames want f changed by, from the slope of the residual against the distance from "
+             "the principal point; rows: elevation tiers of a pan)"]
+    fmt = lambda v: "-" if v is None else f"{v:+.0f}"      # noqa: E731
+    for s in top:
+        head = f"  {s['block']} {s.get('sequence') or s['key']} {s['eye']} ({s['images']} frames): rms {s['rms_px']:.2f} px " \
+               f"(x {s['rms_x_px']:.2f}, y {s['rms_y_px']:.2f}); scale left fx {fmt(s.get('fx_scale_left_ppm'))}, " \
+               f"fy {fmt(s.get('fy_scale_left_ppm'))} ppm"
+        if s.get("rows"):
+            head += "; rows: " + ", ".join(f"el {r['elevation_deg']:+.0f} deg ({r['images']}) x {r['rms_x_px']:.2f} / y {r['rms_y_px']:.2f} px, "
+                                           f"fy {fmt(r.get('fy_scale_left_ppm'))} ppm" for r in s["rows"])
+        out.append(head)
+    return out
+
+
+def low_state_step_ppm(res: Dict[str, Any], eye: str) -> Optional[float]:
+    """0.96: the eye's high -> low backlash step in f (ppm, negative): 1e6 (1 / ratio - 1) with the joint's fitted
+    high / low ratio (a_fx_backlash / a_fx_regular), else its held ratio, else the start model's; None for a
+    single-state eye (110 mm)."""
+    e = (res.get("eyes") or {}).get(eye)
+    if not e or is_single_state(eye):
+        return None
+    tm = e.get("terms") or {}
+    held = set(e.get("held") or [])
+    if "a_fx_regular" not in held and tm.get("a_fx_regular"):
+        ratio = float(tm["a_fx_backlash"]) / float(tm["a_fx_regular"])
+    elif e.get("ratio_hold"):
+        ratio = float(e["ratio_hold"])
+    else:
+        ratio = float(e.get("ratio_start") or 1.0)
+    if abs(ratio - 1.0) < 1e-9:
+        from .fit import REGULAR_RATIO_DEFAULT
+        ratio = float(REGULAR_RATIO_DEFAULT)
+    return 1e6 * (1.0 / ratio - 1.0)
+
+
+def opposite_state_flags(res: Dict[str, Any], tol: float = OPPOSITE_STATE_TOL) -> Dict[str, Any]:
+    """0.96 (item C of 5 Nov): per sequence, the two eyes' dfx from the diagnostic pass (:func:`sequence_scales`)
+    against the eyes' low-state steps (:func:`low_state_step_ppm`).  An eye labelled high whose dfx is within ``tol``
+    of its step while the other eye's is within ``tol`` of 0, fx and fy moving together (|dfy - dfx| within the same
+    tolerance), is flagged "possible low state"; the mirror (an eye labelled low at +|step|, the other at 0) "possible
+    high state".  A warning, not a failure.  Returns {"tolerance", "steps_ppm": {eye: step}, "sequences_checked",
+    "flags": [{block, sequence, sol, eye, flag, dfx_ppm, dfy_ppm, step_ppm, other_eye, other_dfx_ppm, observations}]}."""
+    d = res.get("diagnostics") or {}
+    scales = sequence_scales(d)
+    steps = {eye: low_state_step_ppm(res, eye) for eye in (res.get("eyes") or {})}
+    by_seq: Dict[Tuple[str, str], Dict[str, Dict[str, Any]]] = {}
+    for s in scales:
+        by_seq.setdefault((s["block"], s["key"]), {})[s["eye"]] = s
+    flags: List[Dict[str, Any]] = []
+    checked = 0
+    for (block, key), eyes in sorted(by_seq.items()):
+        if len(eyes) != 2 or any(steps.get(e) is None for e in eyes):
+            continue
+        checked += 1
+        for eye, s in eyes.items():
+            other = next(o for o in eyes if o != eye)
+            so = eyes[other]
+            step, step_o = float(steps[eye]), float(steps[other])
+            states = set(s.get("states") or [])
+            together = abs(float(s["dfy_ppm"]) - float(s["dfx_ppm"])) <= tol * abs(step)
+            other_zero = abs(float(so["dfx_ppm"])) <= tol * abs(step_o)
+            if not (together and other_zero):
+                continue
+            flag = None
+            if states == {"backlash"} and abs(float(s["dfx_ppm"]) - step) <= tol * abs(step):
+                flag = f"possible low state, eye {eye}"
+            elif states == {"regular"} and abs(float(s["dfx_ppm"]) + step) <= tol * abs(step):
+                flag = f"possible high state, eye {eye}"
+            if flag:
+                flags.append({"block": block, "sequence": s.get("sequence"), "key": key, "sol": s.get("sol"), "eye": eye,
+                              "flag": flag, "dfx_ppm": float(s["dfx_ppm"]), "dfy_ppm": float(s["dfy_ppm"]), "step_ppm": step,
+                              "labelled": sorted(states), "other_eye": other, "other_dfx_ppm": float(so["dfx_ppm"]),
+                              "observations": int(s["observations"]), "source": s.get("source")})
+    return {"tolerance": float(tol), "steps_ppm": steps, "sequences_checked": checked, "flags": flags,
+            "source": (scales[0]["source"] if scales else None)}
+
+
+def opposite_state_lines(os_: Optional[Dict[str, Any]]) -> List[str]:
+    if not os_:
+        return []
+    if os_.get("error"):
+        return [f"opposite backlash states: not checked ({os_['error']})"]
+    steps = ", ".join(f"{e} {s:+.0f}" for e, s in sorted((os_.get("steps_ppm") or {}).items()) if s is not None)
+    head = (f"opposite backlash states between the eyes: {os_.get('sequences_checked', 0)} sequences checked against the "
+            f"low-state steps ({steps} ppm; tolerance {100 * os_.get('tolerance', OPPOSITE_STATE_TOL):.0f} %)")
+    if not os_.get("flags"):
+        return [head + ": none flagged"]
+    out = [head + f": {len(os_['flags'])} flagged (WARNING - check the low-state list)"]
+    for f in os_["flags"]:
+        out.append(f"  {f['block']} {f.get('sequence') or f['key']}" + (f" sol {f['sol']}" if f.get("sol") is not None else "")
+                   + f": {f['flag']} (labelled {'/'.join(f['labelled'])}): dfx {f['dfx_ppm']:+.0f}, dfy {f['dfy_ppm']:+.0f} ppm "
+                     f"against a step of {f['step_ppm']:+.0f}; {f['other_eye']} dfx {f['other_dfx_ppm']:+.0f} ppm; "
+                     f"{f['observations']} obs")
+    return out
 
 
 # ====================================================================================== k1, k2: curves and tests
@@ -1711,6 +2263,15 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    + (f" ({r_['ppm']:+.0f} ppm, z {r_['z']:+.1f})" if r_.get("z") is not None and r_.get("ppm") is not None else "")
                    + f" at the same focus count; {r_['bins']} bins ({r_['bins_also_low']} also low state) in "
                    + ", ".join(r_["blocks"]))
+    for eye, e in res["eyes"].items():               # 0.96 (item D): f0's sd from the sequence scatter
+        fs = e.get("f0_sd") or {}
+        if fs.get("sequence_scatter_px") is None:
+            continue
+        rp = "-" if fs.get("reported_px") is None else f"{fs['reported_px']:.2f}"
+        out.append(f"{eye} f0 sd: covariance {rp} px (prior-based: {fs['prior_sd_px']:.2f} with {fs['free_sequences']} sequences"
+                   + (", the offsets' sd at the prior" if fs.get("prior_bound") else "")
+                   + f"); sequence scatter {fs['sequence_scatter_px']:.2f} px ({fs['sequence_scatter_ppm']:.0f} ppm) -> "
+                   f"{fs['from_scatter_px']:.2f} px; adopted {fs['adopted_px']:.2f} px ({fs['adopted_ppm']:.0f} ppm, {fs['adopted_source']})")
     for eye, e in res["eyes"].items():               # 0.95.0: the sequences' offsets
         sm = e.get("sequences") or {}
         if not (sm.get("free") or sm.get("held")):
@@ -1754,14 +2315,34 @@ def describe(res: Dict[str, Any]) -> List[str]:
     ba_ = res.get("block_aspect") or {}
     if ba_.get("error"):
         out.append(f"per-block aspect vs the Navcam: not run ({ba_['error']})")
+    if ba_.get("source") == "pooled":                # 0.96
+        out.append(f"per-block aspect from the pooled diagnostic pass (one pool per eye and {ba_.get('pool')}: fx, fy "
+                   f"scales and cx, cy free, the frames on the line at their own focus); the per-bin line beside it")
     for r_ in ba_.get("rows") or []:                 # 0.94.5 (Christian, 27 Oct)
         nv = "-" if r_.get("navcam_ppm") is None else f"{r_['navcam_ppm']:+.0f}"
+        if r_.get("source") == "pooled":             # 0.96: the pooled value, the per-bin one beside it
+            head = (f"{r_['block']} {r_['eye']}" + (f" {r_['visit']}" if r_.get("visit") else "")
+                    + f" ({r_.get('pools', 0)} pools, {r_['observations']} obs)")
+            pb = ("" if r_.get("per_bin_ppm") is None else
+                  f"; per-bin line {r_['per_bin_ppm']:+.0f} ppm ({r_.get('per_bin_state')} state"
+                  + (f", difference {r_['per_bin_diff_ppm']:+.0f}" if r_.get("per_bin_diff_ppm") is not None else "") + ")")
+            out.append(f"{head}: Mastcam-Z pooled d(fy - fx) {r_['zcam_ppm']:+.0f} ppm, Navcam {nv} ppm"
+                       + (f", difference {r_['diff_ppm']:+.0f} ppm" if r_.get("diff_ppm") is not None else "")
+                       + pb + ("" if r_["judged"] else (" (visit: report only)" if r_.get("visit") else " (not judged)")))
+            continue
         out.append(f"{r_['block']} {r_['eye']} ({r_['state']} state, {r_['observations']} obs): Mastcam-Z d(fy - fx) "
                    f"{r_['zcam_dfy_minus_dfx_px']:+.2f} px ({r_['zcam_ppm']:+.0f} ppm), Navcam {nv} ppm"
                    + (f", difference {r_['diff_ppm']:+.0f} ppm" if r_.get("diff_ppm") is not None else "")
                    + ("" if r_["judged"] else " (not judged)"))
     if ba_.get("slope") is not None:
         out.append(f"per-block aspect: Mastcam-Z on Navcam slope {ba_['slope']:+.2f} over the judged block lines")
+    if ba_.get("sequences"):                         # 0.96: the pools with the largest |dfy - dfx|
+        out.append(f"pooled sequences with the largest |dfy - dfx| ({len(ba_['sequences'])}): " + "; ".join(
+            f"{s['block']} {s.get('sequence') or s['key']} {s['eye']} dfx {s['dfx_ppm']:+.0f} / dfy {s['dfy_ppm']:+.0f} ppm"
+            + (f" (+- {s['sd_aspect_ppm']:.0f})" if s.get("sd_aspect_ppm") else "") + f", {s['observations']} obs"
+            for s in ba_["sequences"]))
+    out += opposite_state_lines(res.get("opposite_states"))             # 0.96 (item C)
+    out += residual_direction_lines(res)                                # 0.96 (item B)
     return out
 
 
@@ -1843,6 +2424,11 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
         if ratio_note:
             gm["regular_ratio_note"] = ratio_note
         gm["f0_px"] = float(np.sqrt(tm["a_fx_backlash"] * tm["a_fy_backlash"]))
+        gm.pop("f0_sd_px", None)
+        gm.pop("f0_uncertainty", None)
+        if e.get("f0_sd"):                            # 0.96 (item D): f0's sd with the sequence scatter folded in
+            gm["f0_sd_px"] = e["f0_sd"].get("adopted_px")
+            gm["f0_uncertainty"] = dict(e["f0_sd"])
         gm["slope_px_per_count"] = float(tm["b"])
         gm["aspect"] = float(tm["a_fy_backlash"] / tm["a_fx_backlash"])
         gm["reference_focus"] = ref
@@ -1956,6 +2542,11 @@ ZJOINT_LIMITS = {"max_zcam_median_px": 0.6, "max_zcam_nonfinite_share": 0.005,
                  "min_block_aspect_check_observations": 20000}             # 0.94.4: Z34 0.80, Z63 0.42; Z48 of 27 Oct 3.30, Z79 of 26 Oct 29.6
 
 
+def check_label(c: Dict[str, Any]) -> str:
+    """0.96: ``ok`` / ``WARN`` (a passing check with ``warning`` set) / ``FAIL``."""
+    return "FAIL" if not c.get("ok") else ("WARN" if c.get("warning") else "ok")
+
+
 def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """``check_zcam``'s checks plus the joint's: the Mastcam-Z residuals finite and small, and every block aligned
     with the camera models in use (``res["block_runs"]``, from the blocks' ``run_done.json``) - a block aligned with
@@ -1995,6 +2586,14 @@ def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict
                                + (f"; below {floor} observations, listed only: " + ", ".join(
                                    f"{r['block']} {r['eye']} {r['diff_ppm']:+.0f} ppm ({r['observations'] // 1000} k)"
                                    for r in below) if below else "")})
+    os_ = res.get("opposite_states")
+    if os_ and not os_.get("error"):                    # 0.96 (item C): a warning, never a failure
+        fl = os_.get("flags") or []
+        checks.append({"check": "opposite backlash states between the eyes", "ok": True, "warning": bool(fl),
+                       "note": (f"{os_.get('sequences_checked', 0)} sequences checked; "
+                                + (("WARNING: " + ", ".join(f"{f['block']} {f.get('sequence') or f['key']} {f['flag']} "
+                                                            f"(dfx {f['dfx_ppm']:+.0f} vs step {f['step_ppm']:+.0f} ppm)" for f in fl))
+                                   if fl else "none flagged"))})
     navfp, bfp = res.get("navcam_fingerprint"), res.get("block_navcam_fingerprints")
     if navfp and bfp:                                  # 0.93: the Navcam models are what the joint holds
         other = sorted(n for n, f in bfp.items() if f != navfp)
@@ -2054,8 +2653,37 @@ def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[st
     lines = [f"# Mastcam-Z {int(res['zoom'])} mm joint ({datetime.date.today().isoformat()})", "",
              f"Blocks: {', '.join(res['blocks'])}; the Navcam held at `{res.get('navcam_models')}`.", ""]
     lines += [f"- {x}" for x in describe(res)]
-    lines += ["", "## Checks against the model in use", ""] + [f"- {'ok' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}"
+    lines += ["", "## Checks against the model in use", ""] + [f"- {check_label(c)} {c['check']}: {c['note']}"
                                                               for c in chk["checks"]]
+    ba_ = res.get("block_aspect") or {}
+    if ba_.get("sequences"):                                 # 0.96 (item A): the pools with the largest |dfy - dfx|
+        lines += ["", f"## Pooled diagnostic pass: the {len(ba_['sequences'])} sequences with the largest |dfy - fx| "
+                      f"(one pool per eye and {ba_.get('pool')}; ppm about the joint's line)", "",
+                  "| eye | block | sequence | sol | dfx ppm | dfy ppm | dfy - dfx | sd | bins | obs | states |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|"]
+        for s in ba_["sequences"]:
+            lines.append(f"| {s['eye']} | {s['block']} | {s.get('sequence') or s['key']} | {s['sol'] if s.get('sol') is not None else '-'} | "
+                         f"{s['dfx_ppm']:+.0f} | {s['dfy_ppm']:+.0f} | {s['aspect_ppm']:+.0f} | "
+                         + (f"{s['sd_aspect_ppm']:.0f}" if s.get("sd_aspect_ppm") else "-")
+                         + f" | {s['bins']} | {s['observations']} | {', '.join(s.get('states') or [])} |")
+    rd = res.get("residual_directions") or {}
+    if rd.get("sequences"):                                  # 0.96 (item B)
+        n = RESIDUAL_DIR_SEQUENCES
+        flagged = {(s["block"], s.get("sequence") or s.get("key")) for s in ba_.get("sequences") or []}
+        flagged |= {(f["block"], f.get("sequence") or f.get("key")) for f in (res.get("opposite_states") or {}).get("flags") or []}
+        top = rd["sequences"][:n] + [s for s in rd["sequences"][n:] if (s["block"], s.get("sequence") or s["key"]) in flagged]
+        fm = lambda v: "-" if v is None else f"{v:+.0f}"      # noqa: E731
+        lines += ["", f"## Residual direction per sequence (final joint pass; the {n} largest rms and the flagged sequences)", "",
+                  "Scale left: ppm the frames want f changed by (the slope of the residual against the distance from the "
+                  "principal point; positive: a larger f than the model's). Rows: the elevation tiers of a pan.", "",
+                  "| eye | block | sequence | sol | frames | rms px | rms x | rms y | fx left ppm | fy left ppm | el span deg | rows (el: x / y px, fy left) |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+        for s in top:
+            rws = "; ".join(f"{r['elevation_deg']:+.0f}: {r['rms_x_px']:.2f} / {r['rms_y_px']:.2f}, {fm(r.get('fy_scale_left_ppm'))}"
+                            for r in s.get("rows") or []) or "-"
+            lines.append(f"| {s['eye']} | {s['block']} | {s.get('sequence') or s['key']} | {s['sol'] if s.get('sol') is not None else '-'} | "
+                         f"{s['images']} | {s['rms_px']:.2f} | {s['rms_x_px']:.2f} | {s['rms_y_px']:.2f} | "
+                         f"{fm(s.get('fx_scale_left_ppm'))} | {fm(s.get('fy_scale_left_ppm'))} | {s['elevation_span_deg']:.0f} | {rws} |")
     sq = res.get("sequence_offsets") or []
     if sq:                                                   # 0.95.0: the sequences' focus offsets
         lines += ["", "## Sequence offsets (px on fx at the same focus count; drawn to 0 with sd "
