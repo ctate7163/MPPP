@@ -5,7 +5,7 @@ from mppp.paths import data_dir  # noqa: E402
 from pathlib import Path
 import copy
 from types import SimpleNamespace
-from mppp.sfm.reconstruction import camera_changes, print_camera_changes  # noqa: E402
+from mppp.sfm.reconstruction import camera_changes  # noqa: E402
 
 
 pycolmap = pytest.importorskip("pycolmap")
@@ -683,11 +683,7 @@ def test_eye_camera_without_images_after_thermal_split(caplog):
     assert [r["camera"] for r in rows] == ["NL", "NR", "NL_T10"]          # Mastcam-Z focus bin left out
     assert rows[0]["names"][-2:] == ["sx1", "sy1"] and rows[0]["images"] == 0
     assert rows[2]["thermal_bin"] and rows[2]["refined"][0] == pytest.approx(p[0] * 1.003)
-    import logging
-    with caplog.at_level(logging.INFO, logger="mppp.sfm"):
-        print_camera_changes(rec, proj)
-    out = caplog.text
-    assert "no images after the thermal split" in out and "[temperature bin]" in out
+
 
 
 def test_camera_missing_from_reconstruction():

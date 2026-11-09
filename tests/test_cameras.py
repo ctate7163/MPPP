@@ -54,7 +54,10 @@ def test_cahv_decomposition_round_trip():
     X = C + (Rm.T @ (np.random.default_rng(1).uniform([-1, -1, 2], [1, 1, 9], (50, 3))).T).T
     xc = (R @ (X - C).T).T
     uv = (intr.K @ (xc / xc[:, 2:3]).T).T[:, :2]
-    assert np.allclose(uv, cam.project_cahv(X), atol=1e-8)
+    # the CAHV projection (0.96.0: project_cahv left the package; the identity it checked, written out)
+    d = X - cam.C
+    cahv = np.c_[(d @ cam.H) / (d @ cam.A), (d @ cam.V) / (d @ cam.A)]
+    assert np.allclose(uv, cahv, atol=1e-8)
 
 
 def test_padding_shifts_principal_point_only():

@@ -231,7 +231,7 @@ def test_screen_block(tmp_path, monkeypatch):
     pytest.importorskip("pyceres")
     from helpers import _block_without_navcam_zcam_matches
     from mppp.sfm import reconstruction as R
-    from mppp.sfm.health import screen_block, screen_blocks
+    from mppp_studies.calibration.screening import screen_block, screen_blocks
     proj, new, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
     monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(new))
     R.reconstruct(proj, sigma_px=0.3, schedule=((24.0, 10.0, 8.0),), max_iterations=5, verbose=False,
@@ -248,7 +248,7 @@ def test_screen_block(tmp_path, monkeypatch):
 
 
 def test_screen_block_cache(tmp_path, monkeypatch):
-    from mppp.sfm import health as H
+    from mppp_studies.calibration import screening as H
     root = tmp_path / "w" / "colmap"
     sp = root / "sparse" / "cahv_ba"
     sp.mkdir(parents=True)
@@ -277,7 +277,7 @@ def test_restation_uses_the_label_priors(tmp_path):
     FAIL 1.06 m at a station whose Navcam moved 2.1 m) is judged again from the label priors."""
     import csv
     import json
-    from mppp.sfm.health import rejudge, restation
+    from mppp_studies.calibration.screening import rejudge, restation
     root = tmp_path / "colmap"
     (root / "error_input").mkdir(parents=True)
     shift = np.array([2.1, 0.0, 0.0])
@@ -314,7 +314,8 @@ def test_restation_uses_the_label_priors(tmp_path):
 def test_hazcam_eye_ratio_does_not_fail_a_block():
     """0.94.4: Knob Mountain Large failed on the rear Hazcams' eye ratio (RL 0.184 / RR 0.422 px = 2.29); a Hazcam
     pair has its own check, and saved reports are judged again with it."""
-    from mppp.sfm.health import DEFAULT_THRESHOLDS, rejudge
+    from mppp.sfm.health import DEFAULT_THRESHOLDS
+    from mppp_studies.calibration.screening import rejudge
     assert DEFAULT_THRESHOLDS["hazcam_residual_eye_ratio"][1] > DEFAULT_THRESHOLDS["residual_eye_ratio"][1]
     rep = {"checks": [{"check": "residual_eye_ratio", "value": 2.29, "status": "fail",
                        "note": "median residual, worse eye / better eye: RL: 0.184, RR: 0.422"},
@@ -329,7 +330,7 @@ def test_hazcam_eye_ratio_does_not_fail_a_block():
 def test_label_pointing_checks_do_not_keep_a_block_out_of_the_joints():
     """0.94.4: Witch Hazel Hill (one site's heading 3.3 deg off its label) and Tuxedo Park (block rotation 1.62 deg)
     are judged WARN for the calibration joints; elsewhere the FAIL stands."""
-    from mppp.sfm.health import LABEL_POINTING_CHECKS, rejudge
+    from mppp_studies.calibration.screening import LABEL_POINTING_CHECKS, rejudge
     rep = {"checks": [{"check": "attitude_residual_p95_deg", "value": 3.363, "status": "fail"},
                       {"check": "block_rotation_deg", "value": 1.62, "status": "fail"},
                       {"check": "residual_median_px", "value": 0.12, "status": "pass"}]}
@@ -343,7 +344,7 @@ def test_a_zoom_joint_judges_the_block_on_its_zoom(tmp_path):
     """0.94.4 (Chal Rocks Mastcam-Z, 24 Oct): 30 % of the frames excluded, nearly all at 79 mm - a FAIL that kept the
     block out of the Z34 joint.  The joint of one zoom counts that zoom's frames (and the Navcam, Hazcams) only."""
     import json as _json
-    from mppp.sfm.health import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom
+    from mppp_studies.calibration.screening import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom
     nav = [f"NLF_0091_0000000{i:03d}_000RAD_N0040136NCAM00500_0A0195J01.png" for i in range(60)]
     z34 = [f"ZL0_0091_0000001{i:03d}_000RAD_N0040136ZCAM08060_034085A03.png" for i in range(30)]
     z79 = [f"ZL0_0091_0000002{i:03d}_000RAD_N0040136ZCAM08060_079085A03.png" for i in range(50)]
@@ -360,7 +361,7 @@ def test_a_zoom_joint_judges_the_block_on_its_zoom(tmp_path):
 def test_a_zoom_joint_sets_aside_other_zooms_camera_checks(tmp_path):
     """0.94.4 (Christian, 27 Oct): Taylorfjellet failed on its one 48 mm pair (ZR048_F02070 principal point +90 px)
     and was left out of the Z34 and Z63 joints.  Another zoom's camera-model checks no longer fail the block."""
-    from mppp.sfm.health import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom
+    from mppp_studies.calibration.screening import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom
 
     def rep():
         return {"checks": [
@@ -401,7 +402,8 @@ def _cov(groups):
 def test_corner_check_warns_for_mastcam_z_fails_for_navcam(monkeypatch):
     """0.94.5 (Christian, 27 Oct: Chal Rocks out of the 63 mm joint on ZL063's corners, 0.205): a Mastcam-Z camera's
     corner coverage warns, a Navcam camera's still fails; rejudging an old report follows."""
-    from mppp.sfm.health import DEFAULT_THRESHOLDS, corner_check, rejudge
+    from mppp.sfm.health import DEFAULT_THRESHOLDS, corner_check
+    from mppp_studies.calibration.screening import rejudge
     thr = dict(DEFAULT_THRESHOLDS)
     wc, st = corner_check(_cov({"NL": (0.5, 0.45), "ZL063": (0.46, 0.046)}), thr, skip_groups=[])
     assert wc[0] == "ZL063" and wc[1] == pytest.approx(0.10, abs=1e-3) and st == "warn"      # below the 0.15 fail
@@ -420,7 +422,7 @@ def test_corner_check_warns_for_mastcam_z_fails_for_navcam(monkeypatch):
 def test_rejudge_corner_without_a_camera_to_judge_is_info():
     """0.94.5 regression: a saved corner FAIL whose coverage has no camera left to judge (Hazcams only) is "info",
     as before - not the old status."""
-    from mppp.sfm.health import rejudge
+    from mppp_studies.calibration.screening import rejudge
     rep = {"checks": [{"check": "corner_triangulated_ratio", "status": "fail", "value": 0.04, "note": "FL: 3 %"}],
            "coverage_by_radius": _cov({"FL": (0.5, 0.02)})}
     v, changed = rejudge(rep)

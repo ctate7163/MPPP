@@ -133,11 +133,6 @@ def zcam_sites(table: Optional[Dict[str, Any]] = None, path: Optional[PathLike] 
     return [k for k, v in t["sites"].items() if site_zooms(v) and (zoom is None or int(zoom) in site_zooms(v))]
 
 
-def zcam34_sites(table: Optional[Dict[str, Any]] = None, path: Optional[PathLike] = None) -> List[str]:
-    """the sites with Mastcam-Z 34 mm (:func:`zcam_sites` with ``zoom=34``)."""
-    return zcam_sites(table, path, 34)
-
-
 def site_group(name: str, path: Optional[PathLike] = None) -> List[str]:
     """the sites of a group in the site definitions file (e.g. ``"ecam_consensus"``); a site listed
     twice is used once."""

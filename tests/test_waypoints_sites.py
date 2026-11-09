@@ -65,7 +65,7 @@ def test_sites_json_is_the_site_list():
         assert (members or g in ("zcam79_consensus", "zcam110_consensus")) and all(m in t["sites"] for m in members), g
     for k, v in t["sites"].items():
         assert all(a <= b for a, b in S.sol_ranges(v["sols"])) and isinstance(v.get("settings", {}), dict), k
-    assert {"rockytop", "south_arm", "taylorfjellet"} <= set(S.zcam34_sites(t)) and "van_zyl_overlook" not in S.zcam34_sites(t)
+    assert {"rockytop", "south_arm", "taylorfjellet"} <= set(S.zcam_sites(t, zoom=34)) and "van_zyl_overlook" not in S.zcam_sites(t, zoom=34)
     assert all(isinstance(v.get("zcam"), list) and set(v["zcam"]) <= {34, 48, 63, 79, 110} for v in t["sites"].values())
     assert 34 in S.site_zooms(t["sites"]["chal_rocks"]) and "bright_angel" in S.zcam_sites(t, zoom=63) and "bright_angle" not in t["sites"]
     zc = set(t["groups"]["zcam_consensus"])
@@ -173,7 +173,7 @@ def test_zcam_field_and_folder_names(tmp_path):
     assert any("'e'" in w and "replaced by 'zcam'" in w for w in warn)
     assert any("more than once" in w for w in warn) and any("no 63" in w for w in warn)
     t = S.load_site_table(f)
-    assert S.zcam_sites(t) == ["a", "d", "e"] and S.zcam_sites(t, zoom=48) == ["e"] and S.zcam34_sites(t) == ["a"]
+    assert S.zcam_sites(t) == ["a", "d", "e"] and S.zcam_sites(t, zoom=48) == ["e"] and S.zcam_sites(t, zoom=34) == ["a"]
     assert S.work_folder(tmp_path, "a", True, (1, 2)).name == "mars2020_sol_0001_a_zcam"
     err, _ = S.validate_site_table()
     assert err == []

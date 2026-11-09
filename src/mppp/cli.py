@@ -243,11 +243,6 @@ def _settings(a: argparse.Namespace, target: Optional[str] = None, extra: Option
     return s.replace(**(extra or {}))
 
 
-def _work_of(target: str, s) -> Path:
-    from .pipeline import resolve_site
-    return resolve_site(target, s)[0].work
-
-
 def _run(fn, work: Path, s, a: argparse.Namespace, stage: str, key: str, **kw: Any) -> int:
     """A logged run: the log file echoes to the console, so the console handler steps aside meanwhile."""
     from .runner import RunAlive, run_logged

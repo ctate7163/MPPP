@@ -450,14 +450,14 @@ def write_hazcam(res: Dict[str, Any], out_dir: PathLike) -> Dict[str, Any]:
     figs = []                         # 0.94.5 (Christian, 27 Oct): the rig trends of each pair, as the Navcam's
     for fam, r in (res.get("rigs") or {}).items():
         try:
-            from mppp.calib.constrain import plot_hazcam_rig_trends
+            from .plots import plot_hazcam_rig_trends
             f = plot_hazcam_rig_trends(r, out / f"hazcam_rig_trends_{fam}.png", label=f"({stamp})")
             if f:
                 figs.append(f.name)
         except Exception as e:                   # noqa: BLE001 - a figure never fails the fit
             log.warning(f"Hazcam {fam} rig trends figure: {type(e).__name__}: {e}")
     try:                                  # 0.95.2 (Christian, 30 Oct): the eyes' focal length against temperature
-        from mppp.calib.constrain import plot_hazcam_efl_vs_temperature
+        from .plots import plot_hazcam_efl_vs_temperature
         f = plot_hazcam_efl_vs_temperature(res, out / "hazcam_efl_vs_temperature.png", label=f"({stamp})")
         if f:
             figs.append(f.name)

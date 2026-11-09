@@ -6,16 +6,14 @@ import json
 from pathlib import Path
 
 
-def test_dedupe_keeps_highest_version_and_never_deletes(tmp_path):
-    from mppp.select import dedupe_by_version, find_imgs
+def test_find_imgs_by_sequence_and_the_archive_untouched(tmp_path):
+    from mppp.select import find_imgs
     a = tmp_path / "NLF_0709_0729883381_848RAD_N0332864SAPP00601_0A00LLJ01.IMG"
     b = tmp_path / "NLF_0709_0729883381_848RAD_N0332864SAPP00601_0A00LLJ02.IMG"
     c = tmp_path / "ZL0_0710_0729888971_069RAD_N0332864ZCAM07114_1100LMA01.IMG"
     for p in (a, b, c):
         p.write_bytes(b"x")
-    kept, dropped = dedupe_by_version([a, b, c])
-    assert kept == [b, c] and dropped == [a]
-    assert a.exists()                                            # archive untouched
+    assert a.exists() and b.exists()                             # archive untouched (0.96.0: dedupe_by_version left the package)
     assert find_imgs(tmp_path, ["ZL0"], sequ_id="_110") == [c]
     assert find_imgs(tmp_path, ["ZL0"], sequ_id="_034") == []
     assert find_imgs(tmp_path, ["NLF", "ZL0"], sol_range=(709, 709)) == [a, b]

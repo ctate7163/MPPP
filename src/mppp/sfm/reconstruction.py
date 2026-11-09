@@ -1092,9 +1092,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         summary = pyceres.SolverSummary()
         pyceres.solve(so, prob, summary)
         retried = {"first": first.BriefReport(), "second": summary.BriefReport()}
-        if True:                                              # always: it matters for the record
-            logger.info(f"bundle adjustment: the first solve failed ({first.BriefReport()}); solved again with the "
-                  f"iterative Schur solver: {summary.BriefReport()}")
+        logger.info(f"bundle adjustment: the first solve failed ({first.BriefReport()}); solved again with the "
+                    f"iterative Schur solver: {summary.BriefReport()}")
         if summary.termination_type == pyceres.TerminationType.FAILURE:
             raise RuntimeError(f"bundle adjustment failed twice: {first.BriefReport()} / {summary.BriefReport()}")
     if (extra_info or {}).get("exact_solve") and (extra_info or {}).get("tie_specs") \
@@ -2249,20 +2248,6 @@ def camera_changes(rec, project: SfmProject) -> List[Dict[str, Any]]:
         rows.append({"camera": k, "camera_id": cid, "model": cam.model.name, "names": list(names),
                      "start": [float(x) for x in c["params"]], "refined": [float(x) for x in cam.params],
                      "images": int(n_img.get(cid, 0)), "thermal_bin": bool(c.get("thermal_bin")), "missing": False})
-    return rows
-
-
-def print_camera_changes(rec, project: SfmProject, n_params: int = 10) -> List[Dict[str, Any]]:
-    """Print :func:`camera_changes` (start -> refined, first ``n_params`` parameters).  Returns the rows."""
-    rows = camera_changes(rec, project)
-    for r in rows:
-        if r["missing"]:
-            logger.info(f"{r['camera']}: not in the reconstruction")
-            continue
-        tag = ("  [temperature bin]" if r["thermal_bin"] else
-               "  [no images after the thermal split: values before it]" if r["images"] == 0 else "")
-        logger.info(f"{r['camera']} ({r['images']} images){tag}: " + " ".join(
-            f"{n} {a:.4g}->{b:.4g}" for n, a, b in zip(r["names"][:n_params], r["start"], r["refined"])))
     return rows
 
 

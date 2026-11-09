@@ -114,7 +114,8 @@ def test_tied_figure_inputs_feed_the_refined_figures(tmp_path):
     assert fi["bins"] and fi["rig_residuals"]["blocks"] and "pp_slopes" in fi["consensus"]["thermal"]
     out = T.write_tied(res, tmp_path / "cand")
     assert (out.parent / "rig_residuals.json").is_file() and (out / "thermal_bins.json").is_file()
-    from mppp.calib import constrain as C, load_camera
+    from mppp.calib import load_camera
+    from mppp_studies.calibration import plots as C
     rig = json.loads((out / "M2020_N_rig.json").read_text())
     inuse = {e: load_camera("N", e[1]) for e in ("NL", "NR")}
     cons = json.loads((out / "consensus.json").read_text())
@@ -575,7 +576,8 @@ def test_yaw_knee_from_the_rig_file(tmp_path):
     """0.95.5 (Christian, 7 Nov: "the knee looks real"): a rig file with a yaw knee (yaw_early_mdeg_per_sol) starts
     the joint with H's yaw, which the joint then fits (roll stays linear); the law matches rig_at at every sol."""
     import shutil
-    from mppp.calib import models as M, constrain as C
+    from mppp.calib import models as M
+    from mppp_studies.calibration import plots as C
     from mppp_studies.calibration import tied as T
     src = M._folder(None)
     d = tmp_path / "cm"

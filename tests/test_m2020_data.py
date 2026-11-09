@@ -132,7 +132,7 @@ def test_undistort_zeroes_distortion_and_keeps_size(waypoints):
     from mppp import MPPPImage
     cfg = config_selection_off({"masking": {"infer_mask": False}, "resize": {"undistort": True}})
     im = MPPPImage(ZL0, cfg, waypoints)
-    assert im.undistorted and not im.intrinsics.is_distorted()
+    assert im.undistorted and not any(im.intrinsics.dist.values())
     assert im.image_int16.shape == (1200, 1648, 3) and im.intrinsics.skew == 0
     assert set(np.unique(im.mask_valid)) <= {0, 255}
     assert not im.image_int16[im.mask_valid == 0].any()

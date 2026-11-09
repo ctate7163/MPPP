@@ -298,6 +298,7 @@ def test_corner_check_skips_uncalibrated_zooms_and_rejudge():
     """0.93.3: the corner check leaves out the Mastcam-Z zooms without a calibrated focus model (Seitah Overlook,
     22 Oct: ZR063 the only FAIL); a saved FAIL report is judged again under the current rules at the joint gate."""
     from mppp.sfm import health as H
+    from mppp_studies.calibration.screening import rejudge
     from mppp import calib
     edges = [0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0]
     good = {"keypoints": [100] * 9, "triangulated_fraction": [0.5] * 9}
@@ -311,10 +312,10 @@ def test_corner_check_skips_uncalibrated_zooms_and_rejudge():
         {"check": "corner_triangulated_ratio", "value": 0.04, "status": "fail"},
         {"check": "excluded_fraction", "value": 0.25, "status": "fail"},
         {"check": "rig_rotation_change_deg", "value": 0.27, "status": "fail"}]}
-    v, changed = H.rejudge(report)
+    v, changed = rejudge(report)
     if "ZR063" in uncal:
         assert v in ("pass", "warn") and len(changed) == 3
-    assert H.rejudge({"checks": [{"check": "excluded_fraction", "value": 0.35, "status": "fail"}]})[0] == "fail"
+    assert rejudge({"checks": [{"check": "excluded_fraction", "value": 0.35, "status": "fail"}]})[0] == "fail"
 
 
 def test_0936_defaults_and_hazcam_over_zcam_blocks(tmp_path):
@@ -336,7 +337,8 @@ def test_0936_defaults_and_hazcam_over_zcam_blocks(tmp_path):
 def test_hazcam_rig_change_judged_at_its_own_limit():
     """0.93.6: a Hazcam rig's change from its (label) start fails at 0.5 deg, the Navcam / Mastcam-Z rigs at 0.3 -
     Marble Mountain's rear rig 0.304 deg (23 Oct) no longer fails the block, also in a report from before."""
-    from mppp.sfm.health import DEFAULT_THRESHOLDS, rejudge
+    from mppp.sfm.health import DEFAULT_THRESHOLDS
+    from mppp_studies.calibration.screening import rejudge
     assert DEFAULT_THRESHOLDS["hazcam_rig_rotation_change_deg"][:2] == (0.06, 0.5)
     rep = {"checks": [{"check": "rig_rotation_change_deg", "value": 0.304, "status": "fail",
                        "note": "R: baseline 0.93353 -> 0.93353 m"}]}

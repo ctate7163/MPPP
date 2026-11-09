@@ -102,13 +102,6 @@ def label_float(label: Dict[str, Any], *keys: str, default: Optional[float] = No
         return default
 
 
-def as_vector(value: Iterable[Any], n: Optional[int] = None) -> np.ndarray:
-    v = np.asarray(list(value), dtype=np.float64)
-    if n is not None and v.shape != (n,):
-        raise ValueError(f"Expected a vector of length {n}, got shape {v.shape}")
-    return v
-
-
 # ------------------------------------------------------------------ instrument temperatures
 LEFT_KEY, RIGHT_KEY = "NAVCAM_LEFT_CAL", "NAVCAM_RIGHT_CAL"      # the Navcam camera-plate sensors of each eye
 # the Hazcam calibration sensors as the engineering-camera labels name them (the rear pair has no _CAL sensor in

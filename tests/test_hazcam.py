@@ -320,7 +320,8 @@ def test_hazcam_rig_trends_figure_and_panel_letters(tmp_path):
     their titles ("A. ..."), left-justified, as the maps."""
     from scipy.spatial.transform import Rotation
     from mppp_studies.calibration import hazfit as H
-    from mppp.calib.constrain import panel_letters, plot_hazcam_rig_trends
+    from mppp.calib.constrain import panel_letters
+    from mppp_studies.calibration.plots import plot_hazcam_rig_trends
     R0 = Rotation.from_rotvec([0.001, 0.002, -0.001])
     rows = []
     for k, sol in enumerate((100, 400, 800, 1200, 1600)):
@@ -348,7 +349,7 @@ def test_hazcam_rig_trends_figure_and_panel_letters(tmp_path):
 def test_hazcam_efl_vs_temperature_figure(tmp_path):
     """0.95.2 (Christian, 30 Oct): the Hazcam eyes' focal length against temperature (make_figures, the fit folder)."""
     pytest.importorskip("matplotlib")
-    from mppp.calib.constrain import plot_hazcam_efl_vs_temperature
+    from mppp_studies.calibration.plots import plot_hazcam_efl_vs_temperature
     rows = lambda eye, f0: [{"block": f"b{i}", "eye": eye, "T": T, "sol": sol, "images": 4, "observations": 900,
                              "ppm": 5.0, "sd_ppm": 10.0, "fx": f0 * (1 + 20e-6 * (T + 20)), "fy": f0, "k1": 0.0}
                             for i, (T, sol) in enumerate(((-30, 100), (-10, 500), (0, 900)))]

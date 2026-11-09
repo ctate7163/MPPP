@@ -350,11 +350,6 @@ class ColmapModel:
         return sorted({im.station for im in self.images.values()
                        if im.station is not None})
 
-    def station_center(self, name: str) -> np.ndarray:
-        C = [im.center for im in self.images.values() if im.station == name]
-        return np.mean(C, axis=0)
-
-
 def _rows(path):
     with open(path) as fh:
         for line in fh:

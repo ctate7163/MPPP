@@ -86,11 +86,6 @@ class Form:
     focus: Tuple[str, ...]
     description: str
 
-    @property
-    def distortion_names(self) -> Tuple[str, ...]:
-        return tuple(n for n in self.param_names if n not in INTRINSIC_CORE)
-
-
 NAVCAM = Form(
     name="navcam", families=("N",), colmap_model="THIN_PRISM_FISHEYE", param_names=NAVCAM_PARAMS,
     frame=FULL_FRAME["N"], held_zero=("sx1", "sy1"),

@@ -730,11 +730,6 @@ def _num(v: Any) -> Optional[float]:
     return x if np.isfinite(x) else None
 
 
-def zcam_focus_model_files(folder: Optional[PathLike] = None) -> Dict[int, Path]:
-    """{zoom mm: focus-model file} of the models in use (:func:`mppp.calib.zcam_files`)."""
-    return calib.zcam_files(folder)
-
-
 def _zoom_of_group(g: str) -> Optional[int]:
     try:
         return int(str(g)[2:5]) if str(g).startswith("Z") else None

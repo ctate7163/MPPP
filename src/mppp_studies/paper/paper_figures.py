@@ -9,7 +9,7 @@ calibration folder and the finished blocks, at 200 dpi by default:
                                     [--site-map maps|simple|none] [--blocks folder ...] [--frame image.png ...]
 
 Writes, into ``--out`` (default ``<MPPP>/Claude outputs``):
-  navcam_rig_trends_<tag>.png            rig trends 2x2 (mppp.calib.constrain.plot_rig_trends) - needs --study;
+  navcam_rig_trends_<tag>.png            rig trends 2x2 (mppp_studies.calibration.plots.plot_rig_trends) - needs --study;
                                          _nolabels.png: the same without the block name at each point
   navcam_intrinsics_vs_temperature_<tag>.png   (plot_intrinsics_vs_temperature) - needs --study and the blocks
   lmst_histogram_<tag>.png + _by_site.csv      (mppp.waypoints.blocks.plot_lmst_histograms)
@@ -144,7 +144,8 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    from mppp.calib import constrain as C, models as M
+    from mppp.calib import models as M
+    from mppp_studies.calibration import plots as C
     from mppp_studies.calibration import fit as F
     from mppp_studies.sites import figures as B
     from mppp.waypoints.sites import load_site_table
@@ -250,14 +251,14 @@ def main(argv=None) -> int:
                              dpi=a.dpi)
         zj = zd / "zcam_joint.json"                         # 0.95.1: the efl against focus of a joint folder
         if zj.is_file():
-            from mppp.calib.constrain import plot_zcam_efl_vs_focus
+            from mppp_studies.calibration.plots import plot_zcam_efl_vs_focus
             res_ = json.loads(zj.read_text(encoding="utf-8"))
             plot_zcam_efl_vs_focus(res_, out / f"zcam{int(res_.get('zoom', 34))}_efl_vs_focus_{tag}.png", dpi=a.dpi,
                                    label=zd.name)
         if not zm.is_file() and not bl.is_file():
             print(f"no Mastcam-Z calibration in {zd}: zcam figures skipped")
     # ---- 0.95.2 (Christian, 30 Oct): the efl vs focus of the newest joint of each zoom (34, 48, 63 by default)
-    from mppp.calib.constrain import plot_hazcam_efl_vs_temperature, plot_hazcam_rig_trends, plot_zcam_efl_vs_focus
+    from mppp_studies.calibration.plots import plot_hazcam_efl_vs_temperature, plot_hazcam_rig_trends, plot_zcam_efl_vs_focus
     done_joints = {str(Path(a.zcam).resolve())} if a.zcam and (Path(a.zcam) / "zcam_joint.json").is_file() else set()
     if a.zcam_joints == ["-"]:
         joints = []

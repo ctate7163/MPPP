@@ -537,7 +537,7 @@ def test_bundle_adjust_holds_the_navcam_distortion(tmp_path):
 def test_zcam_focus_models_per_zoom(tmp_path):
     """One focus-model file per zoom, merged; a model with distortion and pp0 sets the eye camera; the
     fingerprint covers every zoom's file."""
-    from mppp.sfm.project import zcam_focus_model, zcam_focus_model_files, zcam_focus_model_fingerprint, _split_by_focus
+    from mppp.sfm.project import zcam_focus_model, zcam_focus_model_fingerprint, _split_by_focus
     from mppp.sfm.start_cameras import zcam_eye_camera
     fp0 = zcam_focus_model_fingerprint()
     m48 = {"cameras": {"ZL048": {"f0_px": 6600.0, "reference_focus": 500.0, "slope_px_per_count": 0.1, "aspect": 1.0,
@@ -546,8 +546,9 @@ def test_zcam_focus_models_per_zoom(tmp_path):
                                  "pp0_px": [820.0, 610.0], "pp": {"cx_px_per_count": 0.01, "cy_px_per_count": 0.0}}},
            "rig": {"R_sensor_from_ref": np.eye(3).tolist(), "note": "test"}}
     (tmp_path / "M2020_ZCAM048_focus_model.json").write_text(json.dumps(m48))
-    files = zcam_focus_model_files(tmp_path)
-    assert set(files) >= {34, 48} and files[48].parent == tmp_path       # (63 in use since 0.94.0)
+    from mppp.calib import zcam_files
+    files = zcam_files(tmp_path)
+    assert set(files) >= {34, 48} and Path(files[48]).parent == tmp_path       # (63 in use since 0.94.0)
     m = zcam_focus_model(tmp_path)
     assert {"ZL034", "ZR034", "ZL048"} <= set(m["cameras"]) and m["zooms"][48]["rig"]["note"] == "test"
     assert m["state"].startswith("calibrated")              # the 34 mm file's top level (22 Oct: the Z34 joint)

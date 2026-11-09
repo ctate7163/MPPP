@@ -214,7 +214,8 @@ def _rejudged(work, variant: str = "", zoom: Optional[int] = None):
     """(verdict, changed checks) of a block's saved health report under the current rules; (None, []) without one.
     ``zoom`` (a Mastcam-Z joint, 0.94.4): the excluded frames and the corners judged on that zoom (and the Navcam,
     Hazcams) only - Chal Rocks' 79 mm frames failed a block the Z34 joint needs."""
-    from mppp.sfm.health import LABEL_POINTING_CHECKS, rejudge, restation, restrict_to_zoom
+    from mppp_studies.calibration.screening import LABEL_POINTING_CHECKS
+    from mppp_studies.calibration.screening import rejudge, restation, restrict_to_zoom
     from mppp.sfm.workdir import project_dir
     try:
         h = json.loads((project_dir(work, variant) / "health" / "health.json").read_text(encoding="utf-8"))

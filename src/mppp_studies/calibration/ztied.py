@@ -2746,7 +2746,7 @@ def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[st
     """The candidate folder: ``M2020_ZCAM034_focus_model.json`` (the joint's model), its check against the model in
     use (``check.json``), ``zcam_joint.json`` (everything), ``block_lines.json``, the figures and ``report.md``."""
     from mppp.sfm.project import zcam_focus_model_path
-    from mppp.calib.constrain import plot_zcam_rig_trends
+    from .plots import plot_zcam_rig_trends
     from .fit import check_zcam
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -2774,7 +2774,7 @@ def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[st
     except Exception as e:                                   # noqa: BLE001
         log.warning(f"rig figure: {e}")
     try:                                                     # 0.95.1: the efl against focus, law and bins
-        from mppp.calib.constrain import plot_zcam_efl_vs_focus
+        from .plots import plot_zcam_efl_vs_focus
         if plot_zcam_efl_vs_focus(res, out / "zcam_efl_vs_focus.png"):
             figs.append("zcam_efl_vs_focus.png")
     except Exception as e:                                   # noqa: BLE001

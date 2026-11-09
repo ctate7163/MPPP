@@ -298,14 +298,6 @@ def write_table(table: Dict[str, Any], path: PathLike) -> Path:
     return p
 
 
-def site_official_blocks(site: str, table: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """The official block records a site includes (with their ``"number"``)."""
-    from .sites import load_site_table
-    t = table if table is not None else load_site_table()
-    ob = t.get("official_blocks") or {}
-    return [{"number": int(n), **ob[str(n)]} for n in (t["sites"][site].get("official_blocks") or []) if str(n) in ob]
-
-
 def block_runs(table: Optional[Dict[str, Any]] = None) -> List[Tuple[int, str]]:
     """(number, site) of every official block, by number."""
     from .sites import load_site_table
@@ -314,34 +306,6 @@ def block_runs(table: Optional[Dict[str, Any]] = None) -> List[Tuple[int, str]]:
 
 
 # ------------------------------------------------------------------------------------------- plots (0.90)
-def site_waypoints(sites: Dict[str, Any], waypoints: Union[PathLike, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """Per site: its end-of-drive waypoints (lon, lat, sol) within its sol ranges and their centre.  ``sites`` is
-    the ``sites`` entry of the site table ({name: {"sols": ...}})."""
-    from .sites import sol_ranges
-    from .table import lonlat_of
-    d = waypoints if isinstance(waypoints, dict) else json.loads(Path(waypoints).read_text(encoding="utf-8"))
-    feats = []
-    for f in d.get("features") or []:
-        p = f.get("properties") or {}
-        ll = lonlat_of(f)
-        if ll is None or p.get("sol") is None:
-            continue
-        feats.append((int(p["sol"]), ll[0], ll[1], str(p.get("final", "")).lower() == "y"))
-    out = {}
-    for name, v in sites.items():
-        try:
-            rs = sol_ranges(v.get("sols", v) if isinstance(v, dict) else v)
-        except (ValueError, TypeError):
-            continue
-        pts = [(s, lo, la) for s, lo, la, eod in feats if any(a <= s <= b for a, b in rs)]
-        if not pts:
-            continue
-        A = np.array(pts, float)
-        out[name] = {"sols": A[:, 0].astype(int).tolist(), "lon": A[:, 1].tolist(), "lat": A[:, 2].tolist(),
-                     "centre": [float(np.median(A[:, 1])), float(np.median(A[:, 2]))], "first_sol": int(A[:, 0].min())}
-    return out
-
-
 def _waypoint_records(waypoints: Union[PathLike, Dict[str, Any]]) -> List[Dict[str, Any]]:
     d = waypoints if isinstance(waypoints, dict) else json.loads(Path(waypoints).read_text(encoding="utf-8"))
     out = []
@@ -438,44 +402,3 @@ def renumber_official_blocks(table: Dict[str, Any], waypoints: Union[PathLike, D
         groups.setdefault("blocks_" + (new[n]["region"] or "other"), []).append(new[n]["site"])
     return rep
 
-
-def rename_site(table: Dict[str, Any], old: str, new: str, label: Optional[str] = None) -> List[str]:
-    """Rename a site everywhere: the sites table (in place, order kept), the official block that it runs (name,
-    site, source_key, notes), every group."""
-    if old not in table["sites"]:
-        raise KeyError(old)
-    if new in table["sites"]:
-        raise KeyError(f"{new} exists")
-    table["sites"] = {(new if k == old else k): v for k, v in table["sites"].items()}
-    if label:
-        table["sites"][new]["label"] = label
-    rep = [f"site {old} -> {new}"]
-    for n, b in (table.get("official_blocks") or {}).items():
-        if b.get("site") == old:
-            b["site"] = new
-            if b.get("source_key") == old:
-                b["source_key"] = new
-            if label:
-                rep.append(f"block {n}: {b['name']} -> {label}")
-                b["name"] = label
-            b["notes"] = (b.get("notes") or "").replace(f"'{old}'", f"'{new}'")
-    for g, members in (table.get("groups") or {}).items():
-        if old in members:
-            table["groups"][g] = [new if m == old else m for m in members]
-            rep.append(f"group {g}: {old} -> {new}")
-    return rep
-
-
-def remove_site(table: Dict[str, Any], site: str, replacement: Optional[str] = None) -> List[str]:
-    """Drop a site; in the groups it is replaced by ``replacement`` (or removed)."""
-    if site not in table["sites"]:
-        raise KeyError(site)
-    del table["sites"][site]
-    rep = [f"site {site} removed" + (f" (groups: {replacement})" if replacement else "")]
-    for g, members in (table.get("groups") or {}).items():
-        if site in members:
-            table["groups"][g] = list(dict.fromkeys(replacement if m == site and replacement else m for m in members if m != site or replacement))
-    for n, b in (table.get("official_blocks") or {}).items():
-        if b.get("site") == site:
-            raise ValueError(f"official block {n} ({b['name']}) runs on {site}: give it another site first")
-    return rep

@@ -73,23 +73,3 @@ def terrain_grid(folder: os.PathLike, box: Sequence[float], step_deg: float, lev
     GX, GY = np.meshgrid(gx, gy)
     return gx, gy, griddata((U, V), H, (GX, GY), method="linear")
 
-
-def shaded_relief(gx: np.ndarray, gy: np.ndarray, Z: np.ndarray, vert_exag: float = 3.0,
-                  cmap: str = "gist_earth", clip_pct: Tuple[float, float] = (1.0, 99.0)) -> Dict[str, Any]:
-    """RGB hillshade of a height grid (muted tint, light from the north-west) for ``imshow``: {"rgb", "extent",
-    "norm", "cmap"}."""
-    import matplotlib.pyplot as plt
-    from matplotlib.colors import LightSource
-    dx = np.deg2rad(gx[1] - gx[0]) * MARS_RADIUS_M * np.cos(np.deg2rad(gy.mean()))
-    dy = np.deg2rad(gy[1] - gy[0]) * MARS_RADIUS_M
-    fill = np.nanmean(Z) if np.isfinite(Z).any() else 0.0
-    Zf = np.where(np.isnan(Z), fill, Z)
-    hs = LightSource(azdeg=315, altdeg=40).hillshade(Zf, vert_exag=vert_exag, dx=dx, dy=dy)
-    cm = plt.get_cmap(cmap)
-    norm = plt.Normalize(np.nanpercentile(Z, clip_pct[0]) if np.isfinite(Z).any() else 0,
-                         np.nanpercentile(Z, clip_pct[1]) if np.isfinite(Z).any() else 1)
-    rgb = cm(norm(Zf))[..., :3]
-    rgb = 0.4 * rgb + 0.6 * 0.88
-    out = rgb * (0.35 + 0.65 * hs[..., None])
-    out = np.where(np.isnan(Z)[..., None], 0.93, out)
-    return {"rgb": out, "extent": [gx[0], gx[-1], gy[0], gy[-1]], "norm": norm, "cmap": cm}

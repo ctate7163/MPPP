@@ -7,16 +7,13 @@ from pathlib import Path
 import pytest
 
 
-def test_parse_set_and_python_literal():
+def test_parse_set():
     from mppp import runner as R
     v = R.parse_set(["A=3", "B=dict(x=1)", "C=rational", "D=[1, 2]", "E=((24,10,8),(8,2,2))", r"F=D:\scapes\x", "G=True"])
     assert v == {"A": 3, "B": "py:dict(x=1)", "C": "rational", "D": [1, 2], "E": [(24, 10, 8), (8, 2, 2)],
                  "F": "D:\\scapes\\x", "G": True}
     with pytest.raises(ValueError, match="NAME=VALUE"):
         R.parse_set(["novalue"])
-    assert R.python_literal("navcam_cameras", "D:/x") == "Path(r'D:/x')"
-    assert R.python_literal("MATCH", "py:dict(max_ratio=0.8)") == "dict(max_ratio=0.8)"
-    assert R.python_literal("ATTITUDE_PRIOR_DEG", 1.0) == "1.0"
 
 
 def test_status_heartbeat(tmp_path):

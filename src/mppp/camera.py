@@ -74,9 +74,6 @@ class Intrinsics:
             warnings.warn("k4 (r^8 term) is non-zero and is ignored by the OpenCV model.")
         return np.array([d["k1"], d["k2"], d["p1"], d["p2"], d["k3"]], dtype=np.float64)
 
-    def is_distorted(self) -> bool:
-        return any(abs(self.dist.get(k, 0.0)) > 0 for k in DIST_KEYS)
-
     # -- image-geometry edits ------------------------------------------------
     def shifted(self, dx: float, dy: float, width: int, height: int) -> "Intrinsics":
         """Image padded/cropped: origin moves by (dx, dy) pixels; new size given."""
@@ -107,12 +104,6 @@ class CAHVOR:
         from .cmod import parse_label_model
         c = parse_label_model(gcm)
         return cls(c["C"], c["A"], c["H"], c["V"], c["O"], c["R"], c["model_type"])
-
-    def project_cahv(self, X: np.ndarray) -> np.ndarray:
-        """Linear (CAHV) projection of 3-D points (N,3), rover-nav frame -> (sample, line)."""
-        d = np.atleast_2d(X) - self.C
-        z = d @ self.A
-        return np.stack([d @ self.H / z, d @ self.V / z], axis=1)
 
     def decompose(self, width: int, height: int):
         """

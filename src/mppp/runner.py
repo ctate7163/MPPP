@@ -190,16 +190,6 @@ def pid_alive(pid: int) -> bool:
 
 
 # --- settings from the command line -----------------------------------------------------------------------------
-def python_literal(name: str, value: Any) -> str:
-    """Python source for a setting given as a JSON value (strings of path settings become ``Path``; a string
-    starting with ``py:`` is taken as Python source, e.g. ``"py:dict(max_ratio=0.85)"``)."""
-    if isinstance(value, str) and value.startswith("py:"):
-        return value[3:].strip()
-    if name.upper() in PATH_SETTINGS and isinstance(value, str):
-        return f"Path(r{value!r})"
-    return repr(value)
-
-
 def parse_set(items) -> Dict[str, Any]:
     """``["NAME=VALUE", ...]`` -> {NAME: value}; VALUE is JSON if it parses (``3``, ``true``, ``[1, 2]``,
     ``"text"``), else a Python literal (``(8.0, 2.0, 2.0)``), else a bare word or path as a string, else Python

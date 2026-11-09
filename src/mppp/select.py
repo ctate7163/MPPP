@@ -156,37 +156,3 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
     report["n_in_range"], report["n_added"] = len(in_range), len(paths) - len(in_range)
     return sorted(set(paths)), report
 
-
-def find_imgs_in_sol_range(sol_first: int, sol_last: int, camera_codes: Sequence[str],
-                           input_dir: PathLike, sequ_id: Optional[str] = None, **kw) -> List[Path]:
-    """Legacy-compatible signature."""
-    return find_imgs(input_dir, camera_codes, sol_range=(sol_first, sol_last), sequ_id=sequ_id, **kw)
-
-
-def find_imgs_for_waypoint(waypoint: Dict[str, Any], camera_codes: Sequence[str],
-                           input_dir: PathLike, sequ_id: Optional[str] = None, **kw) -> List[Path]:
-    """Legacy-compatible signature."""
-    p = waypoint.get("properties", waypoint)
-    return find_imgs(input_dir, camera_codes, site_drive=(int(p["site"]), int(p["drive"])),
-                     sequ_id=sequ_id, **kw)
-
-
-def dedupe_by_version(paths: Iterable[PathLike]) -> Tuple[List[Path], List[Path]]:
-    """
-    Keep, for products identical up to the two-digit version field, only the
-    highest version.  Returns ``(kept, superseded)`` in input order.
-    Files are never deleted.
-    """
-    paths = [Path(p) for p in paths]
-    best: Dict[str, Tuple[int, Path]] = {}
-    for p in paths:
-        try:
-            fn = parse_filename(p)
-            key, ver = fn.stem[:52].upper(), fn.version
-        except ValueError:
-            key, ver = f"__unparsed__{p.name}", -1
-        if key not in best or (ver, p.name) > (best[key][0], best[key][1].name):
-            best[key] = (ver, p)
-    keep = {v[1] for v in best.values()}
-    kept = [p for p in paths if p in keep]
-    return list(dict.fromkeys(kept)), [p for p in paths if p not in keep]
