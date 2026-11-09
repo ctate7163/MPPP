@@ -255,12 +255,12 @@ def test_shipped_sites_v0p75():
     assert r["chal_rocks"] == [(91, 101), (361, 378)] and r["threeforks_large"][0] == (652, 693)
     assert r["enchanted_lake"] == [(555, 590), (421, 423)] and S.load_sites()["chal_rocks"] == (91, 378)
     g = t["groups"]
-    # 2 Nov 2026: cheyava_falls inside bright_angle_large
-    assert "olifants" not in g["ecam_consensus"] and "bright_angle_large" in g["ecam_consensus"]
-    assert "threeforks_large" in g["ecam_consensus"] and "threeforks_north" not in g["ecam_consensus"]   # the 7 large blocks back (0.90, 20 Oct)
-    assert "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
-    assert len(g["ecam_consensus"]) == 21 and "airey_hill" not in g["ecam_consensus"] and "seitah_overlook" in g["ecam_consensus"] and {"plateau_point", "vingeanne", "pico_turquino_large", "hippo_pools"} <= set(g["ecam_consensus"]) and "navcam_consensus_v0p82" not in g   # 2 Nov 2026: 21 blocks
-    assert len(g["zcam34_consensus"]) == 12 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:2] == ["chal_rocks_large", "rochette"]   # 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back (12 blocks)
+    # 9 Nov 2026 (Christian): the ecam consensus is the nine large blocks
+    assert g["ecam_consensus"] == ["van_zyl_overlook_huge", "seitah_north_large", "threeforks_large", "delta_front_ascent",
+                                   "belva_crater_large", "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools"]
+    assert "threeforks_north" not in g["ecam_consensus"] and "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
+    assert "navcam_consensus_v0p82" not in g
+    assert len(g["zcam34_consensus"]) == 13 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:3] == ["butler_landing", "chal_rocks_large", "rochette"]   # 9 Nov: butler_landing; 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back
 
 
 def test_zcam34_dev_group_sites_have_the_zoom():
@@ -278,7 +278,8 @@ def test_sites_block_record_and_groups():
     t = load_site_table()
     assert t["version"] == 5                                              # v0p81: the official_blocks table
     b = block_sites(t)
-    assert len(b) == 40 and b[0] == "oeb_landing_site" and b[-1] == "marble_mountain"   # 0.91: + Rose River Falls, Olifants
+    assert len(b) == 40 and b[0] == "butler_landing" and b[-1] == "marble_mountain"   # 9 Nov: butler_landing runs block 1 (oeb_landing_site out); 0.91: + Rose River Falls, Olifants
+    assert "oeb_landing_site" not in b and t["official_blocks"]["1"]["site"] == "butler_landing"
     assert site_block("chal_rocks_large", t)["number"] == 3 and site_block("chal_rocks", t)["number"] == 3
     assert len(site_group("blocks_all")) == 40
     assert "chal_rocks_large" in site_group("navcam_baseline")
@@ -351,20 +352,16 @@ def test_sites_19_oct_afternoon():
     assert S["issole_seitah_south"]["sols"] == [[201, 201], [286, 339]]
     assert S["seitah_north_large"]["sols"] == [[202, 284]]
     assert S["artuby_ridge"]["sols"] == [[342, 349], [174, 176]]
-    assert S["seitah_overlook"]["sols"] == [[113, 125]] and S["butler_landing"]["sols"] == [[1, 14], [32, 44]]
+    assert S["seitah_overlook"]["sols"] == [[113, 125]] and S["butler_landing"]["sols"] == [[1, 14]]   # 9 Nov: sols 1-14 only
     assert "butler_landing_large" not in S and "van_zyl_overlook_large" not in S
     assert S["van_zyl_overlook_huge"]["sols"] == [[15, 99], [361, 378]]
     nc = set(G["ecam_consensus"])
-    # 2 Nov 2026 (Christian): 21 blocks - the large and huge ones in place of the small ones they contain, four
-    # small blocks out (rochette, groloy, airey_hill, hans_amundsen_workspace), three new large ones
-    assert {"seitah_huge", "marble_mountain", "hippo_pools", "bright_angle_large", "bunsen_peak", "tuxedo_park",
-            "belva_crater_large", "van_zyl_overlook_huge", "origny_large", "enchanted_lake_large",
-            "pico_turquino_large", "witch_hazel_hill"} <= nc and "witch_hazel_large" not in nc and len(nc) == 21 and "knob_mountain_large" in nc
-    assert not nc & {"oeb_landing_site", "chal_rocks", "chal_rocks_large", "issole_seitah_south", "seitah_north_large",
-                     "cheyava_falls", "taylorfjellet", "enchanted_lake", "pico_turquino", "south_arm",
-                     "rochette", "groloy", "airey_hill", "hans_amundsen_workspace"}
-    # 3 Nov 2026 (Christian): witch_hazel_hill back in place of witch_hazel_large (two parts 281 m apart: 9 of 20
-    # stations tied, health FAIL)
+    # 9 Nov 2026 (Christian): nine large blocks (2 Nov: 21 - the large and huge ones in place of the small ones)
+    assert nc == {"van_zyl_overlook_huge", "seitah_north_large", "threeforks_large", "delta_front_ascent", "belva_crater_large",
+                  "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools"}
+    assert not nc & {"oeb_landing_site", "chal_rocks", "chal_rocks_large", "issole_seitah_south", "cheyava_falls", "taylorfjellet",
+                     "enchanted_lake", "pico_turquino", "south_arm", "witch_hazel_hill", "rochette", "groloy", "airey_hill",
+                     "hans_amundsen_workspace"}
     assert "seitah_north_large" in G["navcam_baseline"] and "van_zyl_overlook_huge" in G["navcam_baseline"]
     assert not any(s in ("butler_landing_large", "van_zyl_overlook_large") for g in G.values() for s in g)
 
@@ -394,7 +391,7 @@ def test_ecam_consensus_and_the_old_group_name():
     from mppp.waypoints import sites as S
     t = S.load_site_table()
     assert "ecam_consensus" in t["groups"] and S.GROUP_ALIASES == {"navcam_consensus": "ecam_consensus"}
-    assert S.site_group("navcam_consensus") == S.site_group("ecam_consensus") and "seitah_overlook" in S.site_group("ecam_consensus")
+    assert S.site_group("navcam_consensus") == S.site_group("ecam_consensus") and "hippo_pools" in S.site_group("ecam_consensus")
     raw = json.loads(S.SITES_FILE.read_text(encoding="utf-8"))
     assert "navcam_consensus" not in raw["groups"]                    # only the new name in the file
 

@@ -159,7 +159,8 @@ def test_groups_and_block_sites():
     # 1 Nov (Christian): Chal Rocks Large instead of Chal Rocks (its second 34 mm 360), with 79 and 110 mm
     # 2 Nov (Christian): Belva Crater Large instead of Belva Crater, with 110 mm
     # 2 Nov (Christian): the three longest blocks first; Cannery Passage out again
-    assert g["zcam_consensus"] == ["chal_rocks_large", "rockytop", "taylorfjellet", "seitah_overlook", "threeforks_north",
+    # 9 Nov (Christian): butler_landing (sols 1-14, site 3 drive 0000) in the zcam consensus
+    assert g["zcam_consensus"] == ["butler_landing", "chal_rocks_large", "rockytop", "taylorfjellet", "seitah_overlook", "threeforks_north",
                                    "belva_crater_large", "marble_mountain", "bright_angel", "pico_turquino", "south_arm",
                                    "overlook_mountain", "airey_hill"]
     # 2 Nov (Christian): Cannery Passage, an unofficial 48 / 63 / 110 mm block (sols 543-552), in no group
