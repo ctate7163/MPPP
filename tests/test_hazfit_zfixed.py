@@ -261,7 +261,7 @@ def test_excluded_station_is_not_selected_nor_an_anchor(tmp_path):
 def test_rochette_excludes_s006d2594():
     from mppp.pipeline import load_settings
     s = load_settings(site="rochette")
-    assert s.exclude == ["S006D2594"] and s.nearby_from_first_sol
+    assert s.exclude == ["S006D2594", "*F_0180_0682923713*"] and s.nearby_from_first_sol   # 9 Nov: the sol 180 frame(s)
 
 
 def test_block_station_images_on_other_sols_are_selected(tmp_path):
