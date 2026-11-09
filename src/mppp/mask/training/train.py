@@ -56,7 +56,7 @@ from torch.utils.data import DataLoader, Dataset
 from ..model import DEFAULT_CARD, ConvNeXtSeg, canvas_of, fit_to_canvas, needs_quad_split, quad_boxes, write_card
 
 if TYPE_CHECKING:                                   # 0.96: the online augmentations (imported lazily at run time)
-    from .augment import AugmentConfig
+    from .augment import Augment, AugmentConfig
 
 log = logging.getLogger("mppp.mask")
 
@@ -130,15 +130,45 @@ def write_split(ckpt: PathLike, train_items: Sequence[Item], val_items: Sequence
     return p
 
 
-def grouped_split(items: Sequence[Item], val_ratio: float = 0.1, seed: int = 42) -> Tuple[List[Item], List[Item]]:
-    """Split by mask file, so every variant of a scene lands on the same side."""
+def read_test_list(path: PathLike) -> List[str]:
+    """0.96: the frozen test list - one mask file name (or stem) per line, ``#`` comments and blank lines skipped."""
+    out = []
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        t = line.split("#", 1)[0].strip()
+        if t:
+            out.append(Path(t.replace("\\", "/")).name)
+    return out
+
+
+def write_test_list(path: PathLike, names: Sequence[str], note: str = "") -> Path:
+    """Write a frozen test list (sorted, one mask file name per line)."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    head = f"# MPPP mask frozen test list ({len(set(names))} frames){': ' + note if note else ''}\n"
+    p.write_text(head + "\n".join(sorted(set(names))) + "\n", encoding="utf-8")
+    return p
+
+
+def grouped_split(items: Sequence[Item], val_ratio: float = 0.1, seed: int = 42,
+                  test_list: Optional[Sequence[str]] = None) -> Tuple[List[Item], List[Item]]:
+    """Split by mask file, so every variant of a scene lands on the same side.  0.96: with ``test_list`` (mask file
+    names, :func:`read_test_list`) the held-out side is exactly those frames - the frozen test set every run is
+    scored on - and ``val_ratio`` is not used; names not in the set are ignored."""
     groups: Dict[str, List[Item]] = {}
     for it in items:
         groups.setdefault(it.mask, []).append(it)
     keys = sorted(groups)
-    random.Random(seed).shuffle(keys)
-    n_val = max(1, int(round(val_ratio * len(keys))))
-    val_keys = set(keys[:n_val])
+    if test_list is not None:
+        wanted = {Path(str(n).replace("\\", "/")).name for n in test_list}
+        if not wanted:
+            raise ValueError("the test list is empty")
+        val_keys = {k for k in keys if Path(k).name in wanted or Path(k).stem in wanted}
+        if not val_keys:
+            raise ValueError("no frame of the test list is in the data set")
+    else:
+        random.Random(seed).shuffle(keys)
+        n_val = max(1, int(round(val_ratio * len(keys))))
+        val_keys = set(keys[:n_val])
     train = [it for k in keys if k not in val_keys for it in groups[k]]
     val = [it for k in keys if k in val_keys for it in groups[k]]
     return train, val
@@ -231,6 +261,21 @@ def letterbox(im: np.ndarray, ms: np.ndarray, size: int,
     return im, (ms > 127).astype(np.uint8)
 
 
+class LetterboxFn:
+    """:func:`letterbox` with the run's size and canvas bound - picklable (spawned DataLoader workers)."""
+
+    def __init__(self, size: int, canvas: Optional[Tuple[int, int]]):
+        self.size, self.canvas = int(size), canvas
+
+    def __call__(self, im: np.ndarray, ms: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        return letterbox(im, ms, self.size, self.canvas)
+
+    def factor(self, h: int, w: int) -> float:
+        """The resize factor a (h, w) frame gets (canvas px per native px)."""
+        nh, nw = fit_to_canvas(h, w, self.size, self.canvas or (self.size, self.size))
+        return nw / float(max(1, w))
+
+
 def zoom_crop(im: np.ndarray, ms: np.ndarray, zoom_max: float, rng: random.Random = random,
               min_valid: float = 0.5, tries: int = 6, exact: bool = False) -> Tuple[np.ndarray, np.ndarray, float]:
     """0.95.2 (Christian, 30 Oct: "for large ecam images downsample the image and zoom in by up to 2 somewhere in the
@@ -264,16 +309,18 @@ class MaskDataset(Dataset):
         # angular-scale normalisation (replaces the letterbox and the pixel zooms when it applies), mask-conditioned
         # defocus, cross-camera copy-paste and the fitted colour transfer.  None = the 0.95.5 behaviour.
         self.aug = aug
-        self.color_matrix = None
-        if aug is not None and aug.color_matrix:
-            from .augment import ColorMatrix
-            self.color_matrix = ColorMatrix.load(aug.color_matrix)
+        self.augment: Optional["Augment"] = None
         # copy-paste donors: the whole frames with a known angular scale (their hardware cutouts are read on demand)
         self.donors: List[int] = []
-        if aug is not None and aug.copy_paste:
-            from .augment import native_mrad_per_px
-            self.donors = [k for k, it in enumerate(self.items)
-                           if it.tile < 0 and native_mrad_per_px(Path(it.image).name, 1) is not None]
+        if aug is not None:
+            from . import augment as A
+            if aug.copy_paste:
+                self.donors = [k for k, it in enumerate(self.items)
+                               if it.tile < 0 and A.native_mrad_per_px(Path(it.image).name, 1) is not None]
+            cw, ch = canvas or (self.size, self.size)
+            # a module-level callable, not a lambda: Windows DataLoader workers (spawn) pickle the dataset
+            self.augment = A.Augment.from_config(aug, LetterboxFn(self.size, self.canvas), (cw, ch),
+                                                 donor=self._donor if self.donors else None)
         self.quad_overlap = int(quad_overlap)
         self.zoom_max, self.zoom_prob, self.zoom_families = float(zoom_max), float(zoom_prob), str(zoom_families)
         # 2 Nov 2026 (Christian: "the high res navcams should both downsample to the standard 1,648 px width and zoom
@@ -318,49 +365,25 @@ class MaskDataset(Dataset):
             # 0.95.3 (mask v4.1): a random tone curve - v3's images_variable/ recipe, drawn for this sample
             from .dataset import random_tone
             rgb, _ = random_tone(rgb, rgb.max(axis=2) > 0, np.random.default_rng(random.getrandbits(63)))
-        if self.aug is not None:
-            im, ms = self._augment(rgb, ms, it, zoomed)
+        if self.augment is not None:                              # 0.96: the augmentation pipeline (augment.Augment)
+            from .augment import native_mrad_per_px
+            native = native_mrad_per_px(Path(it.image).name, ms.shape[1]) if (it.tile < 0 and not zoomed) else None
+            im, ms = self.augment(rgb, ms, Path(it.image).name, native, np.random.default_rng(random.getrandbits(63)))
         else:
             im, ms = letterbox(rgb, ms, self.size, self.canvas)
         if self.hflip and random.random() < 0.5:
             im, ms = im[:, ::-1].copy(), ms[:, ::-1].copy()
         return im, ms, k
 
-    # ---- 0.96: the online augmentations (training/augment.py) ------------------------------------------------------
-    def _augment(self, rgb: np.ndarray, ms: np.ndarray, it: Item, zoomed: bool) -> Tuple[np.ndarray, np.ndarray]:
+    # ---- 0.96: the copy-paste donor for augment.Augment -----------------------------------------------------------
+    def _donor(self, rng):
+        """A hardware cutout of another whole frame and that frame's native mrad / px, or None."""
         from . import augment as A
-        aug = self.aug
-        rng = np.random.default_rng(random.getrandbits(63))
-        stem = Path(it.image).name
-        fam = A.family_of(stem)
-        cw, ch = self.canvas or (self.size, self.size)
-        native = A.native_mrad_per_px(stem, ms.shape[1]) if (it.tile < 0 and not zoomed) else None
-        canvas_mrad = None                                   # mrad / px of the sample on the canvas, when known
-        if aug.angular_scale and native is not None and rng.random() < aug.angular.prob:
-            im, ms, info = A.angular_scale(rgb, ms, native, (cw, ch), rng, aug.angular)
-            canvas_mrad = info["target"]
-        else:
-            im, ms = letterbox(rgb, ms, self.size, self.canvas)
-            if native is not None:
-                nh, nw = fit_to_canvas(rgb.shape[0], rgb.shape[1], self.size, (cw, ch))
-                canvas_mrad = native * rgb.shape[1] / float(max(1, nw))
-        valid = im.max(axis=2) > 0
-        if aug.copy_paste and self.donors and canvas_mrad is not None and rng.random() < aug.copy_paste_cfg.prob:
-            d = self.items[int(self.donors[int(rng.integers(0, len(self.donors)))])]
-            if d.image != it.image:
-                dim, dms = read_pair(d)
-                cut = A.hardware_cutout(cv2.cvtColor(dim, cv2.COLOR_BGR2RGB), dms, aug.copy_paste_cfg.min_area)
-                dnat = A.native_mrad_per_px(Path(d.image).name, dms.shape[1])
-                if cut is not None and dnat is not None:
-                    im, ms, _ = A.paste_hardware(im, ms, cut, dnat / canvas_mrad, rng, aug.copy_paste_cfg)
-                    valid = im.max(axis=2) > 0
-        if aug.defocus and rng.random() < aug.defocus_cfg.prob:
-            im, _ = A.defocus_hardware(im, ms, valid, rng, aug.defocus_cfg)
-        if self.color_matrix is not None:
-            im, _ = A.color_transfer(im, valid, fam, self.color_matrix, rng, aug.color_prob)
-        if aug.photometric and rng.random() < aug.photometric_prob:
-            im, _ = A.photometric(im, valid, rng, aug.photo)
-        return im, ms
+        d = self.items[int(self.donors[int(rng.integers(0, len(self.donors)))])]
+        dim, dms = read_pair(d)
+        cut = A.hardware_cutout(cv2.cvtColor(dim, cv2.COLOR_BGR2RGB), dms, self.aug.copy_paste_cfg.min_area)
+        dnat = A.native_mrad_per_px(Path(d.image).name, dms.shape[1])
+        return (cut, dnat) if (cut is not None and dnat is not None) else None
 
 
 class Collate:
@@ -497,6 +520,8 @@ class TrainConfig:
     family_batches: bool = False          # every batch half non-Mastcam-Z, half Mastcam-Z
     train_families: Optional[str] = None  # train on these families only (e.g. "NFR" or "Z"); validation stays whole -
                                           # the per-family val IoU is then the transfer score of the 9 Nov plan
+    test_list: Optional[str] = None       # 0.96: a frozen test list (read_test_list): the held-out frames of every run,
+                                          # in place of the val_ratio draw; recorded in the card (path, count, sha256)
     num_workers: int = 2                  # background image loading (0 = in this process)
     print_every: int = 50
     val_preview_every: int = 200          # iterations; 0 disables the held-out preview
@@ -740,7 +765,17 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
             raise ValueError(f"canvas {cfg.canvas} must be multiples of 32 (ConvNeXt output stride)")
         card["canvas"] = [cw, ch]
     canvas = canvas_of(card)
-    tr_frames, va_frames = grouped_split(items, cfg.val_ratio, cfg.seed)     # split by mask BEFORE tiling
+    test_names = read_test_list(cfg.test_list) if cfg.test_list else None
+    tr_frames, va_frames = grouped_split(items, cfg.val_ratio, cfg.seed, test_names)   # split by mask BEFORE tiling
+    test_rec = None
+    if test_names is not None:                                                # 0.96: the frozen test set
+        found = {Path(it.mask).name for it in va_frames}
+        stems = {Path(n).stem for n in found}
+        missing = sorted(n for n in set(test_names) if n not in found and Path(n).stem not in stems)
+        test_rec = {"path": str(cfg.test_list), "n_listed": len(set(test_names)), "n_found": len(found),
+                    "sha256": hashlib.sha256(Path(cfg.test_list).read_bytes()).hexdigest()}
+        log.info(f"[mask.train] frozen test list {cfg.test_list}: {len(found)} of {len(set(test_names))} frames in the set"
+                 + (f", {len(missing)} missing (e.g. {missing[0]})" if missing else ""))
     tr_items, tr_q = expand_quads(tr_frames, cfg.quad_split_above, cfg.quad_overlap, cfg.skip_empty_quads)
     va_items, va_q = expand_quads(va_frames, cfg.quad_split_above, cfg.quad_overlap, cfg.skip_empty_quads)
     if cfg.quad_split_above:
@@ -762,8 +797,8 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
                         zoom_pair_factor=cfg.zoom_pair_factor, zoom_pair_families=cfg.zoom_pair_families, aug=aug)
     weights = sample_weights(tr_ds, cfg)
     if aug is not None:
-        log.info(f"[mask.train] online augmentation: {aug.summary()}"
-                 + (f", {len(tr_ds.donors)} copy-paste donors" if aug.copy_paste else ""))
+        log.info(f"[mask.train] online augmentation: geometry {'angular scale' if aug.angular_scale else 'letterbox'}, "
+                 f"stages {tr_ds.augment.names()}" + (f", {len(tr_ds.donors)} copy-paste donors" if aug.copy_paste else ""))
     if weights is not None:
         log.info(f"[mask.train] LMST sampler: {int((weights > 1).sum())}/{len(weights)} early / late samples x "
                  f"{cfg.lmst_upweight:g}, {int((weights == 1).sum())} midday")
@@ -920,6 +955,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
                                  "n_train": len(tr_items), "n_val": len(va_items), "split": "grouped by mask file",
                                  "labels": "masks/ files (image alpha ignored)",
                                  "n_train_frames": len(tr_frames), "n_val_frames": len(va_frames),
+                                 "test_list": test_rec,
                                  # 0.95.4 (2 Nov: the A/B of v4.1 and v4.2 rebuilt v4.1's split from file times
                                  # and took 54 of its 59 "held-out" frames from v4.1's training): the held-out
                                  # masks themselves, so a later comparison never has to rebuild the split

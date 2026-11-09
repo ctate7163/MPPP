@@ -289,7 +289,8 @@ def test_zcam00015_kept_and_origny_navcam_only():
     assert "!seq:ZCAM00015" in shipped_exclusions()
     t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
     assert t["sites"]["origny"]["zcam"] == [] and t["sites"]["origny_large"]["zcam"] == []
-    assert t["official_blocks"]["35"]["mastcam_z_360"] == []
+    origny = next(b for b in t["official_blocks"].values() if b["site"] == "origny")   # block 36 since Curtis Ridge (9 Nov)
+    assert origny["mastcam_z_360"] == []
 
 
 def test_corner_check_skips_uncalibrated_zooms_and_rejudge():

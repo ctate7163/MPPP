@@ -92,6 +92,14 @@ def main(argv=None) -> int:
                     help="train on these camera families only (e.g. NFR or Z); validation stays whole - the "
                          "per-family val IoU in the log is the transfer score")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--test-list", default=None, metavar="FILE",
+                    help="0.96: the frozen test list (one mask file name per line): these frames are held out in "
+                         "place of the random val split, so every run is scored on the same frames")
+    ap.add_argument("--write-test-list", default=None, metavar="FILE",
+                    help="write a frozen test list from --from-checkpoint's recorded held-out split and exit")
+    ap.add_argument("--from-checkpoint", default=None, metavar="CKPT",
+                    help="--write-test-list: the checkpoint whose recorded val split (.split.json, frame_audit.csv "
+                         "or the card's val_masks) becomes the list")
     ap.add_argument("--smoke", action="store_true", help="tiny synthetic CPU run (script check)")
     a = ap.parse_args(argv)
     if a.recipe:
@@ -109,6 +117,22 @@ def main(argv=None) -> int:
             a.quad_split_above = int(r["quad_split_above"])
     if a.photometric:
         a.tone_prob = 0.0                                   # the online photometric augmentation replaces the tone curve
+    if a.write_test_list:
+        from mppp.mask.training.audit import recorded_split
+        from mppp.mask.training.train import write_test_list
+        if not a.from_checkpoint:
+            ap.error("--write-test-list needs --from-checkpoint CKPT")
+        import json as _json
+        ck = Path(a.from_checkpoint)
+        card = _json.loads(ck.with_suffix(".json").read_text(encoding="utf-8")) if ck.with_suffix(".json").is_file() else None
+        sp = recorded_split(ck, card) or {}
+        names = [n for n, v in sp.items() if v == "val" and n != "*"]
+        if not names:
+            print(f"{ck}: no recorded held-out split (no .split.json, frame_audit.csv or card val_masks)")
+            return 2
+        out = write_test_list(a.write_test_list, names, note=f"held-out frames of {ck.name}")
+        print(f"{out}: {len(set(names))} frames (the held-out split of {ck.name})")
+        return 0
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")   # mppp logs to "mppp.*"; notebooks show nothing
     import torch
@@ -125,7 +149,7 @@ def main(argv=None) -> int:
                           num_workers=0, val_preview_every=0, print_every=2, val_ratio=0.25,
                           photometric=a.photometric, lmst_sampler=a.lmst_sampler, angular_scale=a.angular_scale,
                           defocus=a.defocus, copy_paste=a.copy_paste, family_batches=a.family_batches,
-                          train_families=a.train_families, seed=a.seed)
+                          train_families=a.train_families, seed=a.seed, test_list=a.test_list)
         out = root / "ckpt" / "smoke.pt"
     else:
         if not a.data:
@@ -160,7 +184,7 @@ def main(argv=None) -> int:
                           photometric=a.photometric, lmst_sampler=a.lmst_sampler, lmst_upweight=a.lmst_upweight,
                           angular_scale=a.angular_scale, angular_range=tuple(a.angular_range), defocus=a.defocus,
                           copy_paste=a.copy_paste, color_matrix=cm, family_batches=a.family_batches,
-                          train_families=a.train_families)
+                          train_families=a.train_families, test_list=a.test_list)
         if a.angular_scale:
             cfg.zoom_prob = 0.0                             # the angular scale replaces the pixel zooms
             cfg.zoom_pairs = False

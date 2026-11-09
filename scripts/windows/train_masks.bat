@@ -9,6 +9,8 @@ REM   train_masks.bat --recipe B --epochs 30 --tag v9B     plan (mppp.mask.train
 REM   train_masks.bat --recipe C --epochs 30 --tag v9C     sampler; B + angular scale, defocus, quad split; C + copy-
 REM                                                        paste, colour matrix, family batches.  A later --tag wins
 REM                                                        over the default v%VER%; --recipe turns the tone curve off.
+REM   Add --test-list D:\masks\frozen_test_list.txt to every run so they are scored on the same held-out frames
+REM   (make it once: python scripts\train_mask.py --write-test-list D:\masks\frozen_test_list.txt --from-checkpoint <v4.2 .pt>).
 REM
 REM 1. The training set: MPPP_MASK_DATA, else the highest D:\masks\masks_training_set_vN (MPPP_MASK_ROOT).
 REM 2. images\ regenerated from the PDS archive (MPPP_PDS) for every mask through the standard MPPP pipeline

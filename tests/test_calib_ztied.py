@@ -485,7 +485,8 @@ def test_zcam_joint_focus_from_below_offset(tmp_path, monkeypatch):
     b, _, _ = _block(tmp_path, "blk_b", 0.0, truth, rng, 900)
     st = _navcam_law(cams, rigT)
     res = Z.fit_zjoint({}, model=copy.deepcopy(truth), scapes=[a, b], st=st, nav_points=None, z_points=None,
-                       iterations=60, passes=2, verbose=False, diagnostics=False, k_tests=False)
+                       iterations=60, passes=2, verbose=False, diagnostics=False, k_tests=False,
+                       focus_below=True)                        # 0.96: off by default (FOCUS_BELOW_FIT), fitted here
     rows = {r["eye"]: r for r in res["focus_below"]}
     assert set(rows) == {"ZL034"} and rows["ZL034"]["bins"] == 1 and rows["ZL034"]["blocks"] == ["blk_a"]
     assert rows["ZL034"]["offset_px"] == pytest.approx(-3.0, abs=0.3)

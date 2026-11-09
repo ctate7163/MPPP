@@ -159,3 +159,74 @@ def test_recipes_follow_the_plan():
     assert A.RECIPES["B"]["angular_scale"] and A.RECIPES["B"]["defocus"] and A.RECIPES["B"]["quad_split_above"] == 4000
     assert A.RECIPES["C"]["copy_paste"] and A.RECIPES["C"]["family_batches"] and A.RECIPES["C"]["color_matrix"] == "auto"
     assert A.AugmentConfig().summary()["photometric"] is False
+
+
+def _letterbox(size, canvas):
+    """The inference resize without torch (train.letterbox's layout): long side -> size, fit the canvas, pad bottom/right."""
+    import cv2
+    cw, ch = canvas
+
+    def fn(im, ms):
+        h, w = ms.shape[:2]
+        r = min(size / max(h, w), cw / w, ch / h)
+        nh, nw = min(ch, int(round(h * r))), min(cw, int(round(w * r)))
+        oi = np.zeros((ch, cw, 3), np.uint8); oi[:nh, :nw] = cv2.resize(im, (nw, nh), interpolation=cv2.INTER_AREA)
+        om = np.zeros((ch, cw), np.uint8); om[:nh, :nw] = cv2.resize(ms, (nw, nh), interpolation=cv2.INTER_NEAREST)
+        return oi, om
+    fn.factor = lambda h, w: min(size / max(h, w), cw / w, ch / h)
+    return fn
+
+
+def test_augment_pipeline_stages_follow_the_config():
+    """0.96: Augment.from_config builds the stages the config turns on, in the plan's order; add_stage extends it
+    without touching the dataset; the geometry step is the letterbox unless the angular scale applies."""
+    im, ms = _scene()
+    lb = _letterbox(160, (160, 120))
+    off = A.Augment.from_config(A.AugmentConfig(), lb, (160, 120))
+    assert off.names() == []
+    oi, om = off(im, ms, NAV, 1.0, np.random.default_rng(0))
+    ri, rm = lb(im, ms)
+    assert np.array_equal(oi, ri) and np.array_equal(om, rm)             # nothing on: exactly the letterbox
+    cfg = A.AugmentConfig(photometric=True, defocus=True, copy_paste=True, angular_scale=True)
+    cut = A.hardware_cutout(im, ms)
+    donor = lambda rng: (cut, 1.0)                                          # noqa: E731
+    aug = A.Augment.from_config(cfg, lb, (160, 120), donor=donor)
+    assert aug.names() == ["copy_paste", "defocus", "photometric"]        # colour transfer off: identity matrix
+    calls = []
+    aug.add_stage("my_new_one", lambda s, rng: (calls.append(s.canvas_mrad), s)[1], before="photometric")
+    assert aug.names() == ["copy_paste", "defocus", "my_new_one", "photometric"]
+    for seed in range(4):
+        oi, om = aug(im, ms, NAV, 1.0, np.random.default_rng(seed))
+        assert oi.shape == (120, 160, 3) and om.shape == (120, 160) and set(np.unique(om)) <= {0, 255}
+    assert len(calls) == 4 and all(c is not None for c in calls)         # the sample carries its canvas scale
+    # an unknown camera keeps the letterbox and no canvas scale (copy-paste then skips itself)
+    s = aug.geometry(im, ms, "SIF_0682_0727000000_000FDR_N0290000SRLC08040_0000LMJ01.png", None, np.random.default_rng(0))
+    assert s.canvas_mrad is None and s.info["geometry"] == {"letterbox": True}
+    s2 = aug.stage_copy_paste(s, np.random.default_rng(0))
+    assert "copy_paste" not in s2.info
+    # the letterbox's canvas scale: the frame drawn 160 px wide from 320 native -> 2x the native mrad
+    plain = A.Augment.from_config(A.AugmentConfig(), lb, (160, 120)).geometry(im, ms, NAV, 1.0, np.random.default_rng(0))
+    assert plain.canvas_mrad == pytest.approx(2.0, rel=0.02)
+
+
+def test_frozen_test_list_round_trip(tmp_path):
+    """0.96: read_test_list / write_test_list and grouped_split(test_list=...) - the listed frames are the held-out
+    side whatever the seed; names may be given as stems or with another extension."""
+    import importlib.util
+    import mppp
+    _p = Path(mppp.__file__).parent / "mask" / "training" / "train.py"
+    try:
+        from mppp.mask.training import train as T
+    except ModuleNotFoundError:
+        pytest.skip("torch is not installed: train.py is tested on the GPU machine")
+    names = [f"ZL0_{k:04d}_0700000000_000FDR_N0000000ZCAM0{k:04d}_0340LMJ01.png" for k in range(10)]
+    items = [T.Item(image=f"/d/images/{n}", mask=f"/d/masks/{n}") for n in names]
+    lst = T.write_test_list(tmp_path / "frozen.txt", [names[1], names[4], Path(names[7]).stem, names[4]], note="t")
+    got = T.read_test_list(lst)
+    assert got == sorted({names[1], names[4], Path(names[7]).stem})
+    for seed in (1, 2, 3):
+        tr, va = T.grouped_split(items, 0.1, seed, got)
+        assert sorted(Path(it.mask).name for it in va) == sorted([names[1], names[4], names[7]])
+        assert len(tr) == 7
+    with pytest.raises(ValueError):
+        T.grouped_split(items, 0.1, 1, ["not_there.png"])

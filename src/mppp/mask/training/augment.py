@@ -36,7 +36,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import cv2
 import numpy as np
@@ -398,3 +398,130 @@ RECIPES: Dict[str, Dict[str, Any]] = {
     "C": {"photometric": True, "lmst_sampler": True, "angular_scale": True, "defocus": True, "quad_split_above": 4000,
           "copy_paste": True, "color_matrix": "auto", "family_batches": True},
 }
+
+
+# ------------------------------------------------------------------------------------------------- the pipeline
+@dataclass
+class Sample:
+    """One training sample on the canvas while the stages run: uint8 RGB, uint8 mask (255 terrain), the product
+    stem, its camera family, the canvas angular scale (mrad / px, None when the camera is unknown) and the
+    parameters each stage drew (``info[stage]``)."""
+    im: np.ndarray
+    ms: np.ndarray
+    stem: str
+    family: str
+    canvas_mrad: Optional[float]
+    info: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def valid(self) -> np.ndarray:
+        return self.im.max(axis=2) > 0
+
+
+Stage = Callable[["Sample", Any], "Sample"]                 # (sample, numpy Generator) -> sample
+Letterbox = Callable[[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]
+DonorFn = Callable[[Any], Optional[Tuple[Tuple[np.ndarray, np.ndarray], float]]]   # rng -> ((rgb, alpha), native mrad)
+
+
+class Augment:
+    """The augmentation pipeline of one training sample (0.96): a geometry step that puts the frame on the canvas
+    (:func:`angular_scale` when the camera is known and ``cfg.angular_scale`` is on, else the caller's letterbox),
+    then ``stages`` in order - each ``(name, fn)`` with ``fn(sample, rng) -> sample``.  :meth:`from_config` builds
+    the stages the config turns on (copy-paste, defocus, colour transfer, photometric); a later run adds one with
+    :meth:`add_stage` and never touches the dataset's ``__getitem__``.
+
+    ``letterbox(im, ms)``: the inference resize (``train.letterbox`` with the run's size and canvas).  ``donor(rng)``:
+    a hardware cutout of another frame and that frame's native mrad / px, for the copy-paste stage.
+    """
+
+    def __init__(self, cfg: AugmentConfig, letterbox: Letterbox, canvas: Tuple[int, int],
+                 donor: Optional[DonorFn] = None, color_matrix: Optional[ColorMatrix] = None):
+        self.cfg, self.letterbox, self.canvas, self.donor = cfg, letterbox, (int(canvas[0]), int(canvas[1])), donor
+        self.color_matrix = color_matrix
+        if color_matrix is None and cfg.color_matrix:
+            self.color_matrix = ColorMatrix.load(cfg.color_matrix)
+        self.stages: List[Tuple[str, Stage]] = []
+
+    # ---- building
+    @classmethod
+    def from_config(cls, cfg: AugmentConfig, letterbox: Letterbox, canvas: Tuple[int, int],
+                    donor: Optional[DonorFn] = None) -> "Augment":
+        a = cls(cfg, letterbox, canvas, donor)
+        if cfg.copy_paste and donor is not None:
+            a.add_stage("copy_paste", a.stage_copy_paste)
+        if cfg.defocus:
+            a.add_stage("defocus", a.stage_defocus)
+        if a.color_matrix is not None and not a.color_matrix.is_identity():
+            a.add_stage("color_transfer", a.stage_color_transfer)
+        if cfg.photometric:
+            a.add_stage("photometric", a.stage_photometric)
+        return a
+
+    def add_stage(self, name: str, fn: Stage, before: Optional[str] = None) -> "Augment":
+        """Append a stage (or insert it before the stage ``before``)."""
+        if before is None:
+            self.stages.append((name, fn))
+        else:
+            k = [n for n, _ in self.stages].index(before)
+            self.stages.insert(k, (name, fn))
+        return self
+
+    def names(self) -> List[str]:
+        return [n for n, _ in self.stages]
+
+    # ---- running
+    def geometry(self, rgb: np.ndarray, ms: np.ndarray, stem: str, native_mrad: Optional[float], rng) -> Sample:
+        """The frame onto the canvas: the angular-scale resample when it applies, else the letterbox."""
+        fam = family_of(stem)
+        if self.cfg.angular_scale and native_mrad is not None and rng.random() < self.cfg.angular.prob:
+            im, out_ms, info = angular_scale(rgb, ms, native_mrad, self.canvas, rng, self.cfg.angular)
+            return Sample(im, out_ms, stem, fam, info["target"], {"geometry": {"angular_scale": info}})
+        im, out_ms = self.letterbox(rgb, ms)
+        canvas_mrad = None
+        if native_mrad is not None:
+            factor = getattr(self.letterbox, "factor", None)        # the resize factor, when the letterbox tells it
+            if factor is not None:
+                canvas_mrad = native_mrad / float(factor(rgb.shape[0], rgb.shape[1]))
+            else:                                                   # else from the drawn width (pad is 0)
+                cols = np.flatnonzero(im.max(axis=(0, 2)) > 0)
+                drawn = int(cols[-1] + 1) if len(cols) else im.shape[1]
+                canvas_mrad = native_mrad * rgb.shape[1] / float(max(1, drawn))
+        return Sample(im, out_ms, stem, fam, canvas_mrad, {"geometry": {"letterbox": True}})
+
+    def __call__(self, rgb: np.ndarray, ms: np.ndarray, stem: str, native_mrad: Optional[float], rng
+                 ) -> Tuple[np.ndarray, np.ndarray]:
+        s = self.geometry(rgb, ms, stem, native_mrad, rng)
+        for name, fn in self.stages:
+            s = fn(s, rng)
+        return s.im, s.ms
+
+    # ---- the stages of the 9 Nov plan
+    def stage_copy_paste(self, s: Sample, rng) -> Sample:
+        c = self.cfg.copy_paste_cfg
+        if s.canvas_mrad is None or self.donor is None or rng.random() >= c.prob:
+            return s
+        got = self.donor(rng)
+        if got is None:
+            return s
+        cutout, donor_mrad = got
+        im, ms, info = paste_hardware(s.im, s.ms, cutout, donor_mrad / s.canvas_mrad, rng, c)
+        s.im, s.ms = im, ms
+        s.info["copy_paste"] = info
+        return s
+
+    def stage_defocus(self, s: Sample, rng) -> Sample:
+        c = self.cfg.defocus_cfg
+        if rng.random() >= c.prob:
+            return s
+        s.im, s.info["defocus"] = defocus_hardware(s.im, s.ms, s.valid, rng, c)
+        return s
+
+    def stage_color_transfer(self, s: Sample, rng) -> Sample:
+        s.im, s.info["color_transfer"] = color_transfer(s.im, s.valid, s.family, self.color_matrix, rng, self.cfg.color_prob)
+        return s
+
+    def stage_photometric(self, s: Sample, rng) -> Sample:
+        if rng.random() >= self.cfg.photometric_prob:
+            return s
+        s.im, s.info["photometric"] = photometric(s.im, s.valid, rng, self.cfg.photo)
+        return s

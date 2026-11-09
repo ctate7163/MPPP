@@ -82,6 +82,12 @@ sequence scatter.
   A|B|C` (A photometric + sampler; B + angular scale, defocus, quad split 4000; C + copy-paste, colour matrix,
   family batches) and the single flags; `train_masks.bat --recipe A --epochs 30 --tag v9A`. Tests: numpy parts
   (`tests/test_mask_augment.py`); the torch wiring is smoke-tested with `train_mask.py --smoke --recipe C`.
+  The augmentations run as a pipeline object, `augment.Augment` (a geometry step - angular scale or the letterbox -
+  then named stages; `from_config` builds the ones the config turns on, `add_stage` adds one without touching the
+  dataset), and `MaskDataset` only calls it. **Frozen test list** (`--test-list FILE`, `TrainConfig.test_list`,
+  `read_test_list` / `write_test_list`): the listed mask files are the held-out side of every run in place of the
+  random draw, so runs are scored on the same frames; the card records path, count and sha256; `train_mask.py
+  --write-test-list FILE --from-checkpoint CKPT` writes one from a checkpoint's recorded held-out split.
 - **Site maps** (Christian, 9 Nov): `make_maps.bat` downloads the current waypoint table first (`mppp maps
   --waypoints refresh|auto|study`, `cli.sync_study_waypoints` copies it into the study folder); no contour lines on
   the orthomosaic panels (`M20_CONTOURS=0` drops them from the DTM panels too); figure 6
