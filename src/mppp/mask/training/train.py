@@ -45,7 +45,7 @@ import random
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import cv2
 import numpy as np
@@ -54,6 +54,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 from ..model import DEFAULT_CARD, ConvNeXtSeg, canvas_of, fit_to_canvas, needs_quad_split, quad_boxes, write_card
+
+if TYPE_CHECKING:                                   # 0.96: the online augmentations (imported lazily at run time)
+    from .augment import AugmentConfig
 
 log = logging.getLogger("mppp.mask")
 
@@ -254,9 +257,23 @@ class MaskDataset(Dataset):
                  canvas: Optional[Tuple[int, int]] = None, quad_overlap: int = 64,
                  zoom_max: float = 1.0, zoom_prob: float = 0.0, zoom_families: str = "NFR",
                  tone_prob: float = 0.0, zoom_pairs: bool = False, zoom_pair_factor: float = 2.0,
-                 zoom_pair_families: str = "N"):
+                 zoom_pair_families: str = "N", aug: Optional["AugmentConfig"] = None):
         self.items, self.size, self.hflip, self.canvas = list(items), int(size), hflip, canvas
         self.tone_prob = float(tone_prob)
+        # 0.96 (mask run of 9 Nov 2026): the online augmentations of training/augment.py - photometric (lighting),
+        # angular-scale normalisation (replaces the letterbox and the pixel zooms when it applies), mask-conditioned
+        # defocus, cross-camera copy-paste and the fitted colour transfer.  None = the 0.95.5 behaviour.
+        self.aug = aug
+        self.color_matrix = None
+        if aug is not None and aug.color_matrix:
+            from .augment import ColorMatrix
+            self.color_matrix = ColorMatrix.load(aug.color_matrix)
+        # copy-paste donors: the whole frames with a known angular scale (their hardware cutouts are read on demand)
+        self.donors: List[int] = []
+        if aug is not None and aug.copy_paste:
+            from .augment import native_mrad_per_px
+            self.donors = [k for k, it in enumerate(self.items)
+                           if it.tile < 0 and native_mrad_per_px(Path(it.image).name, 1) is not None]
         self.quad_overlap = int(quad_overlap)
         self.zoom_max, self.zoom_prob, self.zoom_families = float(zoom_max), float(zoom_prob), str(zoom_families)
         # 2 Nov 2026 (Christian: "the high res navcams should both downsample to the standard 1,648 px width and zoom
@@ -301,10 +318,49 @@ class MaskDataset(Dataset):
             # 0.95.3 (mask v4.1): a random tone curve - v3's images_variable/ recipe, drawn for this sample
             from .dataset import random_tone
             rgb, _ = random_tone(rgb, rgb.max(axis=2) > 0, np.random.default_rng(random.getrandbits(63)))
-        im, ms = letterbox(rgb, ms, self.size, self.canvas)
+        if self.aug is not None:
+            im, ms = self._augment(rgb, ms, it, zoomed)
+        else:
+            im, ms = letterbox(rgb, ms, self.size, self.canvas)
         if self.hflip and random.random() < 0.5:
             im, ms = im[:, ::-1].copy(), ms[:, ::-1].copy()
         return im, ms, k
+
+    # ---- 0.96: the online augmentations (training/augment.py) ------------------------------------------------------
+    def _augment(self, rgb: np.ndarray, ms: np.ndarray, it: Item, zoomed: bool) -> Tuple[np.ndarray, np.ndarray]:
+        from . import augment as A
+        aug = self.aug
+        rng = np.random.default_rng(random.getrandbits(63))
+        stem = Path(it.image).name
+        fam = A.family_of(stem)
+        cw, ch = self.canvas or (self.size, self.size)
+        native = A.native_mrad_per_px(stem, ms.shape[1]) if (it.tile < 0 and not zoomed) else None
+        canvas_mrad = None                                   # mrad / px of the sample on the canvas, when known
+        if aug.angular_scale and native is not None and rng.random() < aug.angular.prob:
+            im, ms, info = A.angular_scale(rgb, ms, native, (cw, ch), rng, aug.angular)
+            canvas_mrad = info["target"]
+        else:
+            im, ms = letterbox(rgb, ms, self.size, self.canvas)
+            if native is not None:
+                nh, nw = fit_to_canvas(rgb.shape[0], rgb.shape[1], self.size, (cw, ch))
+                canvas_mrad = native * rgb.shape[1] / float(max(1, nw))
+        valid = im.max(axis=2) > 0
+        if aug.copy_paste and self.donors and canvas_mrad is not None and rng.random() < aug.copy_paste_cfg.prob:
+            d = self.items[int(self.donors[int(rng.integers(0, len(self.donors)))])]
+            if d.image != it.image:
+                dim, dms = read_pair(d)
+                cut = A.hardware_cutout(cv2.cvtColor(dim, cv2.COLOR_BGR2RGB), dms, aug.copy_paste_cfg.min_area)
+                dnat = A.native_mrad_per_px(Path(d.image).name, dms.shape[1])
+                if cut is not None and dnat is not None:
+                    im, ms, _ = A.paste_hardware(im, ms, cut, dnat / canvas_mrad, rng, aug.copy_paste_cfg)
+                    valid = im.max(axis=2) > 0
+        if aug.defocus and rng.random() < aug.defocus_cfg.prob:
+            im, _ = A.defocus_hardware(im, ms, valid, rng, aug.defocus_cfg)
+        if self.color_matrix is not None:
+            im, _ = A.color_transfer(im, valid, fam, self.color_matrix, rng, aug.color_prob)
+        if aug.photometric and rng.random() < aug.photometric_prob:
+            im, _ = A.photometric(im, valid, rng, aug.photo)
+        return im, ms
 
 
 class Collate:
@@ -425,6 +481,22 @@ class TrainConfig:
     # white point, gamma, per-channel gains: dataset.VariableRecipe, the recipe of v3's images_variable/ copies),
     # drawn anew each time; the images stay the standard pipeline's. 0 = off (v4)
     tone_prob: float = 0.0
+    # 0.96 (mask run of 9 Nov 2026, `mask-next-run-2026-11-09`): the online augmentations of training/augment.py.
+    # Recipes (scripts/train_mask.py --recipe): A = photometric + lmst_sampler; B = A + angular_scale + defocus +
+    # quad_split_above 4000; C = B + copy_paste + color_matrix + family_batches.  All off = the 0.95.5 behaviour.
+    photometric: bool = False             # exposure, gamma, channel gains, black level, noise, shadow, haze, grey
+    photometric_prob: float = 0.9
+    lmst_sampler: bool = False            # frames before 09:00 / after 16:00 LMST drawn lmst_upweight x more often
+    lmst_upweight: float = 4.5
+    angular_scale: bool = False           # one target mrad/px per sample, log-uniform in angular_range
+    angular_range: Tuple[float, float] = (0.08, 1.2)
+    defocus: bool = False                 # the hardware region blurred (2-12 px), p 0.3
+    copy_paste: bool = False              # another frame's hardware pasted at the matched angular scale, p 0.3
+    color_matrix: Optional[str] = None    # ColorMatrix json (Navcam -> Mastcam-Z); applied forwards / inverted, p 0.3
+    color_prob: float = 0.3
+    family_batches: bool = False          # every batch half non-Mastcam-Z, half Mastcam-Z
+    train_families: Optional[str] = None  # train on these families only (e.g. "NFR" or "Z"); validation stays whole -
+                                          # the per-family val IoU is then the transfer score of the 9 Nov plan
     num_workers: int = 2                  # background image loading (0 = in this process)
     print_every: int = 50
     val_preview_every: int = 200          # iterations; 0 disables the held-out preview
@@ -575,6 +647,65 @@ def _dataset_fingerprint(items: Sequence[Item]) -> str:
     return h.hexdigest()[:16]
 
 
+def augment_config(cfg: TrainConfig):
+    """0.96: the :class:`augment.AugmentConfig` of a training config, or None when no online augmentation is on."""
+    if not (cfg.photometric or cfg.angular_scale or cfg.defocus or cfg.copy_paste or cfg.color_matrix):
+        return None
+    from .augment import AngularScaleConfig, AugmentConfig
+    return AugmentConfig(photometric=bool(cfg.photometric), photometric_prob=float(cfg.photometric_prob),
+                         angular_scale=bool(cfg.angular_scale),
+                         angular=AngularScaleConfig(target_range=tuple(float(v) for v in cfg.angular_range)),
+                         defocus=bool(cfg.defocus), copy_paste=bool(cfg.copy_paste),
+                         color_matrix=cfg.color_matrix or None, color_prob=float(cfg.color_prob))
+
+
+def sample_weights(ds: "MaskDataset", cfg: TrainConfig) -> Optional[np.ndarray]:
+    """0.96: one weight per dataset index (``ds.index``) from the LMST of the frame's clock (augment.lmst_weights),
+    or None when the sampler is off."""
+    if not cfg.lmst_sampler:
+        return None
+    from .augment import lmst_weights
+    stems = [Path(ds.items[k].image).name for k, _ in ds.index]
+    return lmst_weights(stems, upweight=float(cfg.lmst_upweight))
+
+
+class FamilyBatchSampler(torch.utils.data.Sampler):
+    """0.96: batches half from the Mastcam-Z frames and half from the others (``family_batches``), each half drawn
+    with replacement by ``weights`` (the LMST weights, or uniform) - the stratified batches of the 9 Nov plan.  When
+    one family is missing, plain weighted batches.  One epoch = len(dataset) // batch_size batches."""
+
+    def __init__(self, ds: "MaskDataset", batch_size: int, weights: Optional[np.ndarray], seed: int):
+        self.n, self.bs, self.seed, self.epoch = len(ds), int(batch_size), int(seed), 0
+        fam = np.array([Path(ds.items[k].image).name[:1].upper() == "Z" for k, _ in ds.index])
+        self.groups = [np.where(fam)[0], np.where(~fam)[0]]
+        self.groups = [g for g in self.groups if len(g)]
+        w = np.ones(self.n) if weights is None else np.asarray(weights, float)
+        self.w = [w[g] / w[g].sum() for g in self.groups]
+
+    def __len__(self):
+        return max(1, self.n // self.bs)
+
+    def __iter__(self):
+        rng = np.random.default_rng(self.seed + self.epoch)
+        self.epoch += 1
+        for _ in range(len(self)):
+            if len(self.groups) == 1:
+                yield [int(v) for v in rng.choice(self.groups[0], self.bs, p=self.w[0])]
+                continue
+            nz = self.bs // 2
+            a = rng.choice(self.groups[0], nz, p=self.w[0]); b = rng.choice(self.groups[1], self.bs - nz, p=self.w[1])
+            out = np.concatenate([a, b]); rng.shuffle(out)
+            yield [int(v) for v in out]
+
+
+def filter_families(items: Sequence[Item], families: Optional[str]) -> List[Item]:
+    """The items whose product name starts with one of ``families`` (None = all)."""
+    if not families:
+        return list(items)
+    fams = set(str(families).upper())
+    return [it for it in items if Path(it.image).name[:1].upper() in fams]
+
+
 def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainConfig] = None,
           device: Optional[str] = None, overwrite: bool = False,
           on_progress: Optional[Callable[[Dict], None]] = None,
@@ -620,11 +751,31 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
     # workers > 0: kept alive between epochs (on Windows each new worker re-imports torch)
     loader_kw = dict(collate_fn=collate, num_workers=cfg.num_workers, pin_memory=(dev_type == "cuda"),
                      persistent_workers=cfg.num_workers > 0)
-    tl = DataLoader(MaskDataset(tr_items, cfg.input_size, cfg.hflip, canvas, cfg.quad_overlap,
-                                zoom_max=cfg.zoom_max, zoom_prob=cfg.zoom_prob, zoom_families=cfg.zoom_families,
-                                tone_prob=cfg.tone_prob, zoom_pairs=cfg.zoom_pairs,
-                                zoom_pair_factor=cfg.zoom_pair_factor, zoom_pair_families=cfg.zoom_pair_families),
-                    batch_size=cfg.batch_size, shuffle=True, **loader_kw)
+    if cfg.train_families:                                    # 0.96: the transfer runs (train one family, validate all)
+        n0 = len(tr_items)
+        tr_items = filter_families(tr_items, cfg.train_families)
+        log.info(f"[mask.train] training on families {cfg.train_families}: {len(tr_items)}/{n0} samples")
+    aug = augment_config(cfg)
+    tr_ds = MaskDataset(tr_items, cfg.input_size, cfg.hflip, canvas, cfg.quad_overlap,
+                        zoom_max=cfg.zoom_max, zoom_prob=cfg.zoom_prob, zoom_families=cfg.zoom_families,
+                        tone_prob=cfg.tone_prob, zoom_pairs=cfg.zoom_pairs,
+                        zoom_pair_factor=cfg.zoom_pair_factor, zoom_pair_families=cfg.zoom_pair_families, aug=aug)
+    weights = sample_weights(tr_ds, cfg)
+    if aug is not None:
+        log.info(f"[mask.train] online augmentation: {aug.summary()}"
+                 + (f", {len(tr_ds.donors)} copy-paste donors" if aug.copy_paste else ""))
+    if weights is not None:
+        log.info(f"[mask.train] LMST sampler: {int((weights > 1).sum())}/{len(weights)} early / late samples x "
+                 f"{cfg.lmst_upweight:g}, {int((weights == 1).sum())} midday")
+    if cfg.family_batches:
+        tl = DataLoader(tr_ds, batch_sampler=FamilyBatchSampler(tr_ds, cfg.batch_size, weights, cfg.seed), **loader_kw)
+        log.info(f"[mask.train] family-stratified batches: {len(tl)} per epoch")
+    elif weights is not None:
+        sampler = torch.utils.data.WeightedRandomSampler(torch.as_tensor(weights, dtype=torch.double), len(tr_ds),
+                                                         replacement=True, generator=torch.Generator().manual_seed(cfg.seed))
+        tl = DataLoader(tr_ds, batch_size=cfg.batch_size, sampler=sampler, **loader_kw)
+    else:
+        tl = DataLoader(tr_ds, batch_size=cfg.batch_size, shuffle=True, **loader_kw)
     if cfg.zoom_pairs:
         log.info(f"[mask.train] zoom pairs: {tl.dataset.n_zoom_pairs} frames ({cfg.zoom_pair_families}, long side >= "
                  f"{cfg.zoom_pair_factor:g} x {cfg.input_size} px) also as an exactly {cfg.zoom_pair_factor:g}x crop: "
@@ -738,20 +889,27 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
 
         model.eval()
         v_loss = v_iou = 0.0
+        fam_iou: Dict[str, List[float]] = {}                 # 0.96: the val IoU per camera family (transfer score)
         with torch.no_grad():
-            for x, gt, _ in vl:
+            for x, gt, idx in vl:
                 x, gt = x.to(device), gt.to(device)
                 logits = forward(model, x, precision, dev_type)
                 l, _, _ = bce_tversky_loss(logits, gt)
                 v_loss += float(l)
                 v_iou += batch_iou(logits, gt, cfg.threshold)
+                for j, k in enumerate(idx):
+                    f = Path(va_items[k].image).name[:1].upper()
+                    fam_iou.setdefault(f, []).append(batch_iou(logits[j:j + 1], gt[j:j + 1], cfg.threshold))
         v_loss /= max(1, len(vl))
         v_iou /= max(1, len(vl))
         if not math.isfinite(v_loss):
             raise NonFiniteLoss(f"non-finite validation loss after epoch {ep + 1}")
+        fam_mean = {f: float(np.mean(v)) for f, v in sorted(fam_iou.items())}
         history.append({"epoch": ep + 1, "train_loss": s_loss / len(tl), "train_iou": s_iou / len(tl),
-                        "val_loss": v_loss, "val_iou": v_iou, "aspp_pre_bn_peak": peak["aspp_pre_bn"]})
-        log.info(f"[ep {ep + 1}/{cfg.epochs}] train IoU {s_iou / len(tl):.4f}  val IoU {v_iou:.4f}  val loss {v_loss:.4f}")
+                        "val_loss": v_loss, "val_iou": v_iou, "aspp_pre_bn_peak": peak["aspp_pre_bn"],
+                        "val_iou_by_family": fam_mean})
+        log.info(f"[ep {ep + 1}/{cfg.epochs}] train IoU {s_iou / len(tl):.4f}  val IoU {v_iou:.4f}  val loss {v_loss:.4f}"
+                 + "  by family " + " ".join(f"{f}:{v:.4f}" for f, v in fam_mean.items()))
         if v_iou > best:
             best = v_iou
             torch.save({"model": model.state_dict(), "val_iou": best, "epoch": ep + 1}, out)

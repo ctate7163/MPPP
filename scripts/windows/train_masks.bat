@@ -4,6 +4,11 @@ REM MPPP - train_masks.bat (0.95.2, Christian, 30 Oct 2026): the rover-mask mode
 REM on the newest training set, then the JOSS paper's outputs.
 REM
 REM   train_masks.bat [more train_mask.py options]        e.g.   train_masks.bat --epochs 12
+REM   train_masks.bat --recipe A --epochs 30 --tag v9A     0.96 (9 Nov 2026): the online augmentations of the mask
+REM   train_masks.bat --recipe B --epochs 30 --tag v9B     plan (mppp.mask.training.augment): A lighting + LMST
+REM   train_masks.bat --recipe C --epochs 30 --tag v9C     sampler; B + angular scale, defocus, quad split; C + copy-
+REM                                                        paste, colour matrix, family batches.  A later --tag wins
+REM                                                        over the default v%VER%; --recipe turns the tone curve off.
 REM
 REM 1. The training set: MPPP_MASK_DATA, else the highest D:\masks\masks_training_set_vN (MPPP_MASK_ROOT).
 REM 2. images\ regenerated from the PDS archive (MPPP_PDS) for every mask through the standard MPPP pipeline

@@ -69,6 +69,19 @@ sequence scatter.
 - `sites.json`: Rochette without the sol 180 frame(s) at SCLK 0682923713 (`*F_0180_0682923713*`).
 - Not in this version: item E (the `navcal_tied_20261103` exact-tie LinAlgError); the Z79 Chal Rocks relabels
   (ZCAM07105, ZCAM08390 to low) are a test, not a list change yet — see the 9 Nov notes.
+- **Mask training: online augmentation** (`mppp.mask.training.augment`, the 9 Nov plan
+  `claude/mask-next-run-2026-11-09-worst-frames-and-augmentation-plan.md`): lighting (exposure ×0.4–2.5 log-uniform,
+  gamma 0.6–1.8, channel gains ±15 %, black level ±2 %, Poisson-Gaussian noise, soft shadows ×0.3–0.6 with the label
+  unchanged, haze veil, grey↔colour) drawn per sample in linear space — replaces `images_variable/` and the v4.1 tone
+  curve; an LMST-weighted sampler (the frame's clock → LMST within ±2 min; before 09:00 / after 16:00 drawn 4.5×);
+  angular-scale normalisation (one target mrad/px per sample from 0.08–1.2, Navcam zoomed in, Z110 out; replaces the
+  pixel zooms); mask-conditioned defocus (2–12 px, p 0.3); cross-camera copy-paste of hardware cutouts at the matched
+  angular scale (p 0.3); a fitted colour matrix (`ColorMatrix` json, identity until fitted) applied N→Z and inverted;
+  family-stratified batches (half Mastcam-Z); `train_families` for the transfer runs, the validation IoU per camera
+  family in the log and the card history. `TrainConfig` fields of the same names; `scripts/train_mask.py --recipe
+  A|B|C` (A photometric + sampler; B + angular scale, defocus, quad split 4000; C + copy-paste, colour matrix,
+  family batches) and the single flags; `train_masks.bat --recipe A --epochs 30 --tag v9A`. Tests: numpy parts
+  (`tests/test_mask_augment.py`); the torch wiring is smoke-tested with `train_mask.py --smoke --recipe C`.
 - **Site maps** (Christian, 9 Nov): `make_maps.bat` downloads the current waypoint table first (`mppp maps
   --waypoints refresh|auto|study`, `cli.sync_study_waypoints` copies it into the study folder); no contour lines on
   the orthomosaic panels (`M20_CONTOURS=0` drops them from the DTM panels too); figure 6

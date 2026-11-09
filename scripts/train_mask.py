@@ -9,7 +9,10 @@ a Python that has mppp and a CUDA torch (on Windows: the notebooks' kernel; the 
 
 Writes checkpoints\\convnext_tiny_s4_seg_<yyyymmdd>[_tag].pt + .json card, <stem>_debug\\ (curves.png, log.csv,
 val\\, batch\\, frame_audit.csv, worst_frames_NN.png); --paper also the JOSS outputs (scripts\\windows\\train_masks.bat
-does it all).  Augmentation: horizontal flips, and large Navcam/Hazcam frames zoomed in up to 2x (--zoom-max).
+does it all).  Augmentation: horizontal flips, and large Navcam/Hazcam frames zoomed in up to 2x (--zoom-max);
+0.96 (9 Nov 2026): --recipe A|B|C turns on the online augmentations of mppp.mask.training.augment (lighting,
+LMST sampler, angular-scale normalisation, mask-conditioned defocus, cross-camera copy-paste, colour matrix,
+family-stratified batches), e.g.  python scripts\\train_mask.py --recipe A --epochs 30 --tag v5A
 Never promotes or releases: do that after looking.
 --smoke runs a tiny CPU training on synthetic data (checks the script, nothing else).
 """
@@ -70,8 +73,42 @@ def main(argv=None) -> int:
                          "figure1_masks.png/.pdf, per-camera metrics, training curves, the card, the training-set "
                          "summary and the release candidate .safetensors")
     ap.add_argument("--no-audit", action="store_true")
+    # 0.96 (mask run of 9 Nov 2026): the online augmentations of mppp.mask.training.augment, as recipes or one by one
+    ap.add_argument("--recipe", choices=["A", "B", "C"], default=None,
+                    help="9 Nov plan: A = photometric + LMST sampler; B = A + angular scale + defocus + quad split 4000; "
+                         "C = B + copy-paste + colour matrix + family batches (the single flags below add to it)")
+    ap.add_argument("--photometric", action="store_true", help="online lighting augmentation (replaces --tone-prob)")
+    ap.add_argument("--lmst-sampler", action="store_true", help="early / late LMST frames drawn 4.5x more often")
+    ap.add_argument("--lmst-upweight", type=float, default=4.5)
+    ap.add_argument("--angular-scale", action="store_true", help="one target mrad/px per sample (0.08-1.2)")
+    ap.add_argument("--angular-range", type=float, nargs=2, default=(0.08, 1.2), metavar=("LO", "HI"))
+    ap.add_argument("--defocus", action="store_true", help="the hardware region blurred 2-12 px, p 0.3")
+    ap.add_argument("--copy-paste", action="store_true", help="another frame's hardware pasted at the matched scale, p 0.3")
+    ap.add_argument("--color-matrix", default=None, metavar="JSON",
+                    help="fitted Navcam -> Mastcam-Z colour matrix (augment.ColorMatrix); 'auto' = "
+                         "<data>\\color_matrix.json when it exists, else off")
+    ap.add_argument("--family-batches", action="store_true", help="half Mastcam-Z, half other cameras per batch")
+    ap.add_argument("--train-families", default=None, metavar="LETTERS",
+                    help="train on these camera families only (e.g. NFR or Z); validation stays whole - the "
+                         "per-family val IoU in the log is the transfer score")
+    ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--smoke", action="store_true", help="tiny synthetic CPU run (script check)")
     a = ap.parse_args(argv)
+    if a.recipe:
+        from mppp.mask.training.augment import RECIPES
+        r = RECIPES[a.recipe]
+        a.photometric = a.photometric or r.get("photometric", False)
+        a.lmst_sampler = a.lmst_sampler or r.get("lmst_sampler", False)
+        a.angular_scale = a.angular_scale or r.get("angular_scale", False)
+        a.defocus = a.defocus or r.get("defocus", False)
+        a.copy_paste = a.copy_paste or r.get("copy_paste", False)
+        a.family_batches = a.family_batches or r.get("family_batches", False)
+        if a.color_matrix is None and r.get("color_matrix"):
+            a.color_matrix = r["color_matrix"]
+        if a.quad_split_above is None and r.get("quad_split_above"):
+            a.quad_split_above = int(r["quad_split_above"])
+    if a.photometric:
+        a.tone_prob = 0.0                                   # the online photometric augmentation replaces the tone curve
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")   # mppp logs to "mppp.*"; notebooks show nothing
     import torch
@@ -85,7 +122,10 @@ def main(argv=None) -> int:
         _smoke_data(root / "set")
         data = root / "set"
         cfg = TrainConfig(epochs=1, batch_size=2, input_size=128, canvas=(128, 96), pretrained=False,
-                          num_workers=0, val_preview_every=0, print_every=2, val_ratio=0.25)
+                          num_workers=0, val_preview_every=0, print_every=2, val_ratio=0.25,
+                          photometric=a.photometric, lmst_sampler=a.lmst_sampler, angular_scale=a.angular_scale,
+                          defocus=a.defocus, copy_paste=a.copy_paste, family_batches=a.family_batches,
+                          train_families=a.train_families, seed=a.seed)
         out = root / "ckpt" / "smoke.pt"
     else:
         if not a.data:
@@ -108,9 +148,22 @@ def main(argv=None) -> int:
                     print(f"images_variable/ complete ({n_var} of {n_img}): kept")
                 else:
                     print(build_variable_images(data, reuse_from=a.reuse_variable))
+        cm = a.color_matrix
+        if cm == "auto":
+            cm = str(data / "color_matrix.json") if (data / "color_matrix.json").is_file() else None
+            if cm is None:
+                print("color matrix: no color_matrix.json in the data root - colour transfer off (fit one from "
+                      "co-registered Navcam / Mastcam-Z terrain: mppp.mask.training.augment.ColorMatrix)")
         cfg = TrainConfig(epochs=a.epochs, quad_split_above=a.quad_split_above, init_from=a.init_from,
                           hflip=not a.no_hflip, zoom_max=a.zoom_max, zoom_prob=0.0 if a.zoom_pairs else a.zoom_prob,
-                          tone_prob=a.tone_prob, zoom_pairs=bool(a.zoom_pairs))
+                          tone_prob=a.tone_prob, zoom_pairs=bool(a.zoom_pairs), seed=a.seed,
+                          photometric=a.photometric, lmst_sampler=a.lmst_sampler, lmst_upweight=a.lmst_upweight,
+                          angular_scale=a.angular_scale, angular_range=tuple(a.angular_range), defocus=a.defocus,
+                          copy_paste=a.copy_paste, color_matrix=cm, family_batches=a.family_batches,
+                          train_families=a.train_families)
+        if a.angular_scale:
+            cfg.zoom_prob = 0.0                             # the angular scale replaces the pixel zooms
+            cfg.zoom_pairs = False
         stem = f"{cfg.backbone}{'_s4' if cfg.stride4 else ''}_seg_{date.today():%Y%m%d}{('_' + a.tag) if a.tag else ''}"
         out = checkpoints_dir(create=True) / f"{stem}.pt"
         k = 2
