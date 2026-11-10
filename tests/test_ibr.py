@@ -795,3 +795,120 @@ def test_two_view_terrain_is_fused_with_the_station_options(tmp_path):
     hr = M.horizontal_distance(pr, P)
     assert len(pr) > len(pts) and (hr < 3.0).sum() > 3 * max(1, (h < 3.0).sum())   # the masked near field is back
     assert (ws / "fused.ply").is_file() and len(np.asarray(o3d.io.read_point_cloud(str(ws / "fused.ply")).points)) == len(pts)
+
+
+# ----------------------------------------------------------------------------- 10 Nov: stale patch-match maps, the blend
+def test_old_patch_match_maps_are_cleared_when_the_options_change(tmp_path):
+    """COLMAP's patch-match skips every image whose maps exist (the PC, 10 Nov: --stereo again took 0.3 s and the
+    8 m cut-off stayed).  Maps made with other options - or unrecorded ones when this run sets options - go first."""
+    from mppp.sfm.dense import STATION_STEREO_OPTIONS, stereo_outputs_ready
+    ws = tmp_path / "ws"
+    for d in ("depth_maps", "normal_maps"):
+        (ws / "stereo" / d).mkdir(parents=True)
+        for k in ("photometric", "geometric"):
+            (ws / "stereo" / d / f"a.png.{k}.bin").write_bytes(b"x")
+    rec = {"options": dict(STATION_STEREO_OPTIONS), "geom_consistency": True, "max_image_size": 2000}
+    r = stereo_outputs_ready(ws, rec)                                        # the 9 Nov maps: no record, defaults
+    assert r["cleared"] == 4 and "unrecorded" in r["why"] and not list((ws / "stereo" / "depth_maps").glob("*.bin"))
+    (ws / "stereo" / "depth_maps" / "a.png.geometric.bin").write_bytes(b"x")
+    r = stereo_outputs_ready(ws, rec)                                        # same options: kept (COLMAP resumes)
+    assert r["cleared"] == 0 and r["kept"] == 1
+    r = stereo_outputs_ready(ws, dict(rec, options={**rec["options"], "filter_min_triangulation_angle": 1.0}))
+    assert r["cleared"] == 1 and "filter_min_triangulation_angle" in r["why"]
+    (ws / "stereo" / "depth_maps" / "a.png.geometric.bin").write_bytes(b"x")
+    assert stereo_outputs_ready(ws, dict(rec, options={**rec["options"], "filter_min_triangulation_angle": 1.0}), force=True)["cleared"] == 1
+    ws2 = tmp_path / "ws2"                                                  # a whole-block run with defaults keeps old maps
+    (ws2 / "stereo" / "depth_maps").mkdir(parents=True)
+    (ws2 / "stereo" / "depth_maps" / "b.bin").write_bytes(b"x")
+    assert stereo_outputs_ready(ws2, {"options": {}, "geom_consistency": True, "max_image_size": 2000})["cleared"] == 0
+
+
+def _ring_station(tmp_path, n=8, darken=0.7):
+    """n frames every 360/n deg (45 deg overlaps at n = 8), a ground texture fixed to the ground; every other frame
+    ``darken`` times as bright (another exposure)."""
+    import cv2
+    rec = pycolmap.Reconstruction()
+    cam = pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=400, height=300, params=np.array([200.0, 200.0, 150.0]))
+    rec.add_camera(cam)
+    rig = pycolmap.Rig(rig_id=1)
+    rig.add_ref_sensor(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=1))
+    rec.add_rig(rig)
+    root = tmp_path / "mars2020_sol_0091_ring" / "colmap"
+    (root / "images").mkdir(parents=True)
+    P = np.array([5.0, 5.0, 1.8])
+    rows = []
+    for k in range(1, n + 1):
+        R = _look((k - 1) * 360.0 / n, 25.0)
+        Ck = P + R.T @ np.array([0.0, 0.0, 0.3])
+        fr = pycolmap.Frame(frame_id=k, rig_id=1)
+        fr.add_data_id(pycolmap.data_t(sensor_id=pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=1), id=k))
+        fr.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(R), -R @ Ck)
+        rec.add_frame(fr)
+        name = f"NLF_{k}.png"
+        im = pycolmap.Image(name=name, keypoints=np.zeros((0, 2)), camera_id=1, image_id=k)
+        im.frame_id = k
+        rec.add_image(im)
+        rows.append({"name": name, "site": 3, "drive": 10, "sol": 91, "camera_group": "NL"})
+    for fid in list(rec.frames):
+        rec.register_frame(fid)
+    proj = _Proj(root, rows)
+    st = select_station(proj, rec, "3_10", families="N")
+    scene = RC.Scene(_plane(0.0, 300.0), plane={"normal": [0, 0, 1], "offset": 0.0, "centre": st.pivot, "up": [0, 0, 1],
+                                                 "radius_m": 100.0}, sky=True)
+    for im in rec.images.values():
+        Rm = np.asarray(im.cam_from_world().rotation.matrix())
+        C = np.asarray(im.projection_center())
+        m = RC.cast_image(scene, cam, Rm, C, scale=1.0)
+        _, dw, _ = RC.pixel_rays(cam, Rm, 1.0)
+        X = C + m["range"][..., None] * dw
+        tex = 120.0 + 0.3 * (_world_texture(X).astype(float) - 128.0)
+        f = darken if im.image_id % 2 == 0 else 1.0
+        cv2.imwrite(str(root / "images" / im.name), np.clip(np.where(m["label"] == RC.LABEL_FAR, 200, tex) * f, 0, 255).astype(np.uint8))
+    return proj, rec, st, scene
+
+
+def test_blend_has_no_seams_between_exposures(tmp_path):
+    """Christian, 10 Nov: "the mosaic should be blended together to avoid jagged borders".  Six frames, every other
+    one 30 % darker: the gain pass finds the ratio, and around the horizon band the brightness has no steps; without
+    the gains the frames' levels show; the detail band keeps the texture sharp (not averaged away)."""
+    import cv2
+    proj, rec, st, scene = _ring_station(tmp_path, n=6)                     # 30 deg overlaps, the frames' middles alone
+    out_g, out_n = tmp_path / "with_gains", tmp_path / "no_gains"
+    rg = O.render_station(proj, rec, st, scene, out_g, width=720, ipd_m=0.064, scale=1.0, rows_per_chunk=60, eyes=("left",))
+    O.render_station(proj, rec, st, scene, out_n, width=720, ipd_m=0.064, scale=1.0, rows_per_chunk=60, eyes=("left",), gains=False)
+    g = rg["gains"]["gains"]
+    ratio = np.median([g[f"NLF_{k}.png"] for k in (2, 4, 6)]) / np.median([g[f"NLF_{k}.png"] for k in (1, 3, 5)])
+    assert rg["gains"]["pairs"] >= 6 and abs(ratio - 1 / 0.7) < 0.05
+    def band_profile(f):
+        L = cv2.imread(str(f), cv2.IMREAD_GRAYSCALE).astype(float)
+        v0, v1 = int((90 + 30) / 180 * 360), int((90 + 40) / 180 * 360)          # 30-40 deg below the horizon
+        prof = L[v0:v1].mean(axis=0)
+        k = 9                                                                   # average out the 10 cm cells
+        return np.convolve(prof, np.ones(k) / k, mode="valid"), L[v0:v1]
+    pg, Lg = band_profile(out_g / "ods_left.png")
+    pn, _ = band_profile(out_n / "ods_left.png")
+    # the truth: the same frames all at one exposure; the blends against it, column by column (the texture cancels)
+    proj1, rec1, st1, scene1 = _ring_station(tmp_path / "same", n=6, darken=1.0)
+    O.render_station(proj1, rec1, st1, scene1, tmp_path / "truth", width=720, ipd_m=0.064, scale=1.0, rows_per_chunk=60,
+                     eyes=("left",), gains=False)
+    pt, _ = band_profile(tmp_path / "truth" / "ods_left.png")
+    qg, qn = pg / pt, pn / pt
+    assert qg.min() / qg.max() > 0.95                                           # one level all round
+    assert qn.min() / qn.max() < 0.8                                            # the exposures show without gains
+    assert np.abs(np.diff(qg)).max() < 0.01                                     # no step at a seam
+    assert Lg.std() > 10                                                        # the texture is still there
+
+
+def test_edge_distance_counts_from_the_mask_and_the_border(tmp_path):
+    import cv2
+    img = np.full((60, 80, 3), 100, np.uint8)
+    cv2.imwrite(str(tmp_path / "a.png"), img)
+    m = np.full((60, 80), 255, np.uint8)
+    m[40:] = 0                                                                   # the rover in the bottom third
+    cv2.imwrite(str(tmp_path / "a.png.mask.png"), m)
+    cam = pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=80, height=60, params=np.array([50.0, 40.0, 30.0]))
+    s_ = O.SourceImage("a.png", cam, np.eye(3), np.zeros(3), tmp_path / "a.png", tmp_path / "a.png.mask.png", 1.0)
+    d = s_.edge_distance()
+    assert d[45, 40] == 0 and d[0, 40] <= 1.0 and 9 <= d[30, 40] <= 11 and d[20, 40] > d[35, 40]
+    nm = O.SourceImage("a.png", cam, np.eye(3), np.zeros(3), tmp_path / "a.png", None, 1.0).edge_distance()
+    assert nm[45, 40] > 10                                                       # the rover shown: only the border counts

@@ -348,6 +348,8 @@ A station run loosens COLMAP's patch-match and fusion filters (10 Nov 2026): a p
 angle instead of 3 deg (with Navcam's 0.424 m baseline, 61 m instead of 8 m) and one consistent source view instead
 of two, and a fused point 2 images instead of 5 - the far terrain of one station is seen by one stereo pair only.
 `--min-angle DEG` and `--min-views N` change them; a whole-block run keeps COLMAP's defaults.
+The options of the patch-match maps are recorded in `stereo/mppp_stereo.json`: maps made with other options are
+deleted before `--stereo` (COLMAP skips every image whose maps exist), `--restereo` deletes them in any case.
 `--keep-rover` fuses the same depth maps without the rover masks into `fused_rover.ply` (for `mppp mesh / depthmaps /
 ods --rover`: the rover body and deck shown, products in `ods/<station>_rover/`); after a run, `--fusion
 --keep-rover` alone is enough.

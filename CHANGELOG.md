@@ -146,6 +146,26 @@ changes made on the way to the build.
   in both eyes. Not handled yet: the wind-sensor booms below the mast head, too close to the eyes (Christian: "In the
   future, we will need a way to deal with those by somehow removing them from the point cloud and masking out that
   part of the images"); and an arm moved between the station's sols shows twice.
+- **Why the mesh still had no coverage after the fix** (10 Nov, the PC's 10:34 rerun). One frame's maps settle it:
+  its photometric depth map has depth nearly everywhere (17 % of its pixels at 8-60 m, 15 % beyond), the geometric
+  map nothing beyond 8 m (99th percentile 7.0 m) - the 3 deg filter. The rerun did not get the fix: the PC was still
+  on ecf9a5a (bundles h and i not synced), and even with it COLMAP's patch-match skips every image whose maps exist
+  (the stereo step took 0.3 s). `stereo_outputs_ready`: the options of the maps are recorded
+  (`stereo/mppp_stereo.json`); maps made with other options, or unrecorded ones when the run sets options, are
+  deleted before the stereo; the same options keep them (COLMAP resumes); `mppp dense --restereo` forces it.
+- **The ODS blend** (10 Nov; Christian: "the mosaic should be blended together to avoid jagged borders"). The
+  prototype took the best two sources by a 40 px border feather over the parallax angle - hard steps at every frame
+  boundary and along the rover mask's outline. Now: the feather counts from every edge a source may not cross (the
+  image border and the rover mask: a distance transform per source), rising as a smoothstep; two bands - the low
+  band (each source blurred, sigma 0.6 % of its short side) over a wide feather (15 % of the short side), the detail
+  over a narrow one (3 %), so brightness changes across a wide strip while the texture stays sharp and is not
+  ghosted; the best four sources per pixel; a soft parallax term 1 / (1 + angle / 0.02 rad); and one gain per source
+  from the low-band brightness of the pixels two sources share (a 1024 px pass; median log ratios per pair, least
+  squares with a weak pull to 1, clipped 0.6-1.6; `ods.json` "gains", `--no-gains`). Test: six frames, every other
+  one 30 % darker - the gains come back at 1/0.70, the band around the station is level to 5 % against a
+  same-exposure render with no step over 1 %, where without gains the frames' levels show (> 20 %). With the plane
+  the terrain past 8 m is no longer painted on a 100 m sphere, which was the other source of breaks at the seams
+  (two frames disagreeing on where that terrain is).
 - **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
   bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)
   0.9711 against v4.2 0.9724 on the same data and frames (-0.0013, 95 % -0.0023..-0.0004; -0.0043 on the 120 frames

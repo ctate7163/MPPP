@@ -158,6 +158,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--min-angle", type=float, default=None, help="0.96: the patch-match triangulation angle (deg) a pixel "
                    "needs; default 0.4 with --station / --images (Navcam 0.424 m baseline: 61 m), COLMAP's 3 (8 m) "
                    "for a whole block")
+    p.add_argument("--restereo", action="store_true", help="0.96: delete the workspace's patch-match maps before --stereo "
+                   "(they are deleted anyway when they were made with other options; COLMAP skips every image whose "
+                   "maps exist)")
     p.add_argument("--keep-rover", action="store_true", help="0.96: the fusion without the rover masks, into "
                    "fused_rover.ply (the rover body and deck kept, for mppp mesh / depthmaps / ods --rover); the "
                    "stereo is the same (it takes no masks), so --fusion --keep-rover alone after a run is enough")
@@ -730,10 +733,12 @@ def cmd_dense(a: argparse.Namespace) -> int:
     if py and ("stereo" in steps or not getattr(pycolmap, "has_cuda", False)):
         print(f"dense: {', '.join(steps)} in {py}")
         res = run_step(py, "dense", proj, steps=steps, max_image_size=size, workspace=str(ws), images=subset,
-                       stereo_options=so, fusion_options=fo, keep_rover=bool(getattr(a, "keep_rover", False)))
+                       stereo_options=so, fusion_options=fo, keep_rover=bool(getattr(a, "keep_rover", False)),
+                       restereo=bool(getattr(a, "restereo", False)))
     else:
         res = run_dense(proj, workspace=ws, steps=steps, max_image_size=size, images=subset,
-                        stereo_options=so, fusion_options=fo, keep_rover=bool(getattr(a, "keep_rover", False)))
+                        stereo_options=so, fusion_options=fo, keep_rover=bool(getattr(a, "keep_rover", False)),
+                       restereo=bool(getattr(a, "restereo", False)))
     for k, v in (res.get("steps") or {}).items():
         print(f"  {k}: {v}")
     return 0

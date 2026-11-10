@@ -114,6 +114,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--images", nargs="*", default=None)
     p.add_argument("--rows-per-chunk", type=int, default=128)
     p.add_argument("--eyes", nargs="+", default=["left", "right"], choices=["left", "right", "centre"])
+    p.add_argument("--no-gains", action="store_true", help="no gain compensation between the source frames")
     p.add_argument("--rover", action="store_true", help="0.96: the rover body and deck shown: the cloud fused without the rover masks (mppp dense --keep-rover), the "
                    "rover's pixels used; products in ods/<station>_rover/ (the wind-sensor booms below the mast head "
                    "are in it too, too close to the eyes - not handled yet)")
@@ -196,12 +197,15 @@ def cmd_ods(a: argparse.Namespace) -> int:
     scene = _scene(out)
     rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, families=a.cameras, scale=a.scale,
                          zcam_scale=a.zcam_scale, images=a.images, rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
-                         use_masks=not a.rover)
+                         use_masks=not a.rover, gains=not a.no_gains)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: {e['file']}  coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "
               f"plane {100 * c.get('plane', 0):.1f}%, far {100 * c['far']:.1f}%, "
               f"no surface {100 * c['no_surface']:.1f}%, {e['sources_used']} sources")
+    if rep.get("gains"):
+        g = list(rep["gains"]["gains"].values())
+        print(f"gains: {min(g):.3f} - {max(g):.3f} over {rep['gains']['pairs']} source pairs")
     return 0
 
 

@@ -206,6 +206,39 @@ def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
     return res
 
 
+STEREO_RECORD = "mppp_stereo.json"      # stereo/<this>: the options the depth maps in the workspace were made with
+
+
+def stereo_outputs_ready(ws: PathLike, record: Dict[str, Any], force: bool = False) -> Dict[str, Any]:
+    """Make the workspace's patch-match outputs match ``record`` (the options of the run about to start).
+
+    COLMAP's patch-match skips every image whose depth and normal maps already exist (10 Nov 2026 on the PC: a second
+    ``--stereo`` with the new station options took 0.3 s and left the 8 m cut-off in place).  So when the maps were
+    made with other options - or with unrecorded ones while this run sets some, or ``force`` - they are deleted first
+    (depth_maps, normal_maps, consistency_graphs); maps made with the same options are kept, and COLMAP resumes the
+    images still missing.  Returns {"cleared": n files, "why": ...}."""
+    st = Path(ws) / "stereo"
+    rec_file = st / STEREO_RECORD
+    old = json.loads(rec_file.read_text(encoding="utf-8")) if rec_file.is_file() else None
+    maps = [f for d in ("depth_maps", "normal_maps", "consistency_graphs") if (st / d).is_dir() for f in (st / d).glob("*.bin")]
+    why = None
+    if maps:
+        if force:
+            why = "asked (--restereo)"
+        elif old is None and record.get("options"):
+            why = "maps from a run with unrecorded options (before 0.96's record) and this run sets options"
+        elif old is not None and old != record:
+            why = "maps made with other options: " + ", ".join(
+                f"{k} {old.get(k)!r} -> {record.get(k)!r}" for k in sorted(set(old) | set(record)) if old.get(k) != record.get(k))
+    if why:
+        for f in maps:
+            f.unlink()
+        log.info("dense: %d old patch-match maps deleted (%s)", len(maps), why)
+    st.mkdir(parents=True, exist_ok=True)
+    rec_file.write_text(json.dumps(record, indent=1, sort_keys=True, default=str), encoding="utf-8")
+    return {"cleared": len(maps) if why else 0, "why": why, "kept": 0 if why else len(maps)}
+
+
 def set_options(opts: Any, values: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Set the fields ``values`` on a pycolmap options object; returns the fields as set (a typo raises)."""
     done: Dict[str, Any] = {}
@@ -221,7 +254,8 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
               max_image_size: int = DENSE_MAX_IMAGE_SIZE, geom_consistency: bool = True,
               gpu_index: str = "-1", images: Optional[Sequence[str]] = None,
               stereo_options: Optional[Dict[str, Any]] = None,
-              fusion_options: Optional[Dict[str, Any]] = None, keep_rover: bool = False) -> Dict[str, Any]:
+              fusion_options: Optional[Dict[str, Any]] = None, keep_rover: bool = False,
+              restereo: bool = False) -> Dict[str, Any]:
     """The dense steps from Python: ``prepare`` (:func:`prepare_dense`), ``stereo`` (patch-match stereo; needs a CUDA
     pycolmap), ``fusion`` (``dense/fused.ply``, the masks applied), ``mesh`` (``dense/meshed-poisson.ply``).
     ``stereo_options`` / ``fusion_options``: ``PatchMatchOptions`` / ``StereoFusionOptions`` fields to set (e.g.
@@ -242,9 +276,12 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
         po.max_image_size = int(max_image_size)
         po.gpu_index = str(gpu_index)
         so = set_options(po, stereo_options)
+        state = stereo_outputs_ready(ws, {"options": {k: float(v) if isinstance(v, float) else v for k, v in so.items()},
+                                          "geom_consistency": bool(geom_consistency), "max_image_size": int(max_image_size)},
+                                     force=restereo)
         pycolmap.patch_match_stereo(str(ws), "COLMAP", options=po)
         out["steps"]["stereo"] = {"seconds": round(time.time() - t0, 1), "geom_consistency": bool(geom_consistency),
-                                  "options": so}
+                                  "options": so, "old_maps": state}
     if "fusion" in steps:
         t0 = time.time()
         fo = pycolmap.StereoFusionOptions()
