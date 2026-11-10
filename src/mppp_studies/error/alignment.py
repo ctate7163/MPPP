@@ -26,7 +26,7 @@ values it assumes (``ModelConfig`` defaults, ``cases.CASE_PARAMS``):
 ``parameters``            all of the above as one row
 ========================  ===================================================
 
-``notebooks/03_error_analysis.ipynb`` runs these on the sites of a study.
+``notebooks/studies/error_analysis.ipynb`` runs these on the sites of a study.
 Caveats: sparse tracks are biased towards well-matched terrain, so eps is a
 lower bound and the survival curves are optimistic; "possible" pairs ignore
 occlusion and the MPPP masks, which lowers the same-station and cross-station

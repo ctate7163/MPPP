@@ -14,7 +14,7 @@ mppp.ibr - image-based rendering products of an aligned block (0.96.0, the proto
   station's own frames (the omnidirectional stereo of a 64 mm IPD circle about the pivot), with a provenance map.
 
 Everything is in the block frame (metres) of the model the block ended with (``gui_native/sparse``); nothing is
-re-aligned.  The optional dependency set is ``mppp[ibr]`` (open3d, trimesh); the CLI is ``mppp mesh``,
+re-aligned.  The optional dependency set is ``mppp[ibr]`` (open3d); the CLI is ``mppp mesh``,
 ``mppp depthmaps`` and ``mppp ods``.
 """
 from .station import Station, fit_pivot, select_station, station_images  # noqa: F401

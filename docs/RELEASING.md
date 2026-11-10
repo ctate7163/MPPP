@@ -133,7 +133,7 @@ python -m mppp.mask.hub list
 ## 6. Releasing a new model later
 
 1. Train it: `scripts\windows\train_masks.bat` (0.95.2: the newest `masks_training_set_vN`, the figures and metrics
-   for the paper in `Claude outputs\mask_<checkpoint>`), or `notebooks/training/train_mask.ipynb`.
+   for the paper in `Claude outputs\mask_<checkpoint>`), or `notebooks/studies/mask_training.ipynb`.
 2. Compare it with the default on the same held-out frames (`mppp_studies.mask_training.compare_mask_models`, with `--seen` = the
    default model's training set for the fair subset).
 3. Export it under a new name so the old URL keeps working, with `--out` for the usual file name:

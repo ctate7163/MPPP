@@ -8,7 +8,7 @@ fields of `mppp.pipeline.Settings` (see the [API reference](api.md)); `--set NAM
 
 ```text
 usage: mppp [-h] [-v | -q] [--log FILE]
-            {process,align,run,sites,gui,cmods,mask,example,waypoints,maps,calib,doctor,version} ...
+            {process,align,run,sites,gui,cmods,mask,example,waypoints,maps,calib,mesh,depthmaps,ods,dense,metashape,nerfstudio,doctor,version} ...
 
 The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping from the shell.
 
@@ -25,6 +25,9 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
     mppp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
     mppp calib zcam|nz|hazcam [--zoom Z] [--group G1,G2] [--navcam-group G] [--variant V] [--promote-if-ok]
+    mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 60] [--far-radius 100]   0.96: one clean surface
+    mppp depthmaps WORK --station ... [--cameras N] [--scale 0.5] [--photometry]   0.96: per-image depth / normal maps, the photometric cube
+    mppp ods WORK --station ... [--width 8192] [--ipd 0.064]                       0.96: the stereoscopic panorama, two eye images
     mppp doctor                               what is set, what is missing (environment, dependencies, models)
     mppp version
 
@@ -33,7 +36,7 @@ write ``<WORK>/runs/<time>/log.txt`` and ``<WORK>/mppp_status.json`` as well (:f
 Every subcommand returns an exit code (0 ok, 1 failed, 2 bad arguments, 3 a run is already going on).
 
 positional arguments:
-  {process,align,run,sites,gui,cmods,mask,example,waypoints,maps,calib,doctor,version}
+  {process,align,run,sites,gui,cmods,mask,example,waypoints,maps,calib,mesh,depthmaps,ods,dense,metashape,nerfstudio,doctor,version}
     process             select the PDS products of a site and process them into <WORK>/processed
     align               align the images processed in a WORK folder
     run                 process, then align a site
@@ -353,6 +356,42 @@ options:
   --root DIR         the scapes root (default: MPPP_SCAPES)
   --variant VARIANT  the project colmap_<variant> instead of colmap
 ```
+
+## mppp mesh, mppp depthmaps, mppp ods
+
+0.96.0 (Christian, 9 Nov 2026: "the pipeline that generates the per image depth maps and photometric cube from the
+cleaned up 3d mesh ... prototype the stereoscopic pipeline. The output should just be two images"): the products of
+one **station** (a site and drive of the rover) of a finished block, under `<project>/ods/<station>/`
+(`mppp.ibr`; the `[ibr]` extra: open3d).
+
+```text
+usage: mppp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--colmap colmap.exe] [--dense-dir DIR]
+                      [--mesh-radius 60] [--far-radius 100] [--target-triangles 3000000] [--poisson-depth 10]
+                      [--cameras N] [--no-preview]
+usage: mppp depthmaps WORK --station ... [--cameras N] [--scale 0.5] [--zcam-scale 1] [--images NAME ...]
+                      [--photometry] [--no-shadow] [--no-preview] [--no-validate]
+usage: mppp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras N] [--scale 0.5] [--images ...]
+                      [--rows-per-chunk 128] [--eyes left right]
+```
+
+`--station` is `S026D0392`, `26_392` or `sol:461`.  **`mesh`**: the station's frames by camera family, the mast
+pivot fitted from their centres and rotations (`station.json`), then the surface over the fused cloud (the newest
+`dense*/fused.ply`, or `--points`): Poisson (open3d), or COLMAP's Delaunay mesher through `--colmap` over
+`--dense-dir`; then the cleanup of the 31 Oct plan — components under 1 %, rubber sheets (long thin triangles),
+surface no fused point supports within τ(z) = max(5 cm, 2 % z, 3 σz), everything beyond `--mesh-radius` — the
+decimation to `--target-triangles`, Taubin smoothing, and the far sphere at `--far-radius` so every ray hits
+something; `mesh.ply`, `far_sphere.ply`, `mesh_report.json` (the coverage by range), `mesh_preview.png`.
+**`depthmaps`**: every frame of the station ray-cast through its own camera model into mesh + sphere at
+`--scale` of the native size: `maps/<image>.npz` (depth, range, normal, label 0 none / 1 mesh / 2 far) and 16-bit
+previews, validated against the sparse points the frame observes (`maps_report.md`); `--photometry` adds the
+photometric cube from the sun direction of the frame's row (`sun_enu` turned into the block frame): incidence,
+emission, phase and the cast shadow — `photometry/` (npz), `photometry_maps/` (COLMAP `.bin` arrays),
+`photometry_png/`, `photometry_report.json`.  **`ods`**: the omni-directional stereo panorama — equirectangular,
+`--width` × half, the eyes `--ipd` apart on the circle around the pivot — each eye's rays cast into the scene and
+every hit coloured from the source frame that sees it best (the smallest angle to the frame's axis, inside the
+frame and its mask): `ods_left.png`, `ods_right.png`, `provenance.png` (which frame coloured what), `ods.json`
+(the coverage: coloured, mesh, far, none).  Any VR photo viewer that takes an equirectangular pair shows it; the
+viewer itself is future work.
 
 ## mppp metashape
 

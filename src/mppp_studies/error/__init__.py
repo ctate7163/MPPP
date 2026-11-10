@@ -7,7 +7,7 @@ decorrelation angle, the view graph) back out of the pipeline's
 reconstruction regimes (``cases``, ``metrics``, ``network``, ``viewgraph``,
 ``plotting``).  It is under development and not part of the advertised MPPP
 workflow: nothing in ``mppp.sfm`` or ``mppp.pipeline`` imports it, the
-studies in ``studies/error/`` and ``notebooks/03_error_analysis.ipynb`` do.
+study's own runs and ``notebooks/studies/error_analysis.ipynb`` do.
 The public API is the names below (``from mppp_studies.error import ...``); the
 physics checks are ``tests/test_error_model.py``.
 """

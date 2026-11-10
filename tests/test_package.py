@@ -83,7 +83,7 @@ def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
 
 def test_version():
     import mppp
-    assert mppp.__version__ == "0.95.5" and mppp.VERSION_TAG == "v0p95"
+    assert mppp.__version__ == "0.96.0" and mppp.VERSION_TAG == "v0p96"
     cff = (ROOT / "CITATION.cff").read_text()
     assert f"version: {mppp.__version__}" in cff
     assert f"## {mppp.__version__}" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -95,9 +95,11 @@ def test_notebooks_compile_and_have_a_parameters_cell():
     import ast
     import json
     import re
-    files = sorted((ROOT / "notebooks").glob("*.ipynb")) + sorted((ROOT / "notebooks" / "training").glob("*.ipynb"))
-    assert [f.name for f in files] == ["01_process_images.ipynb", "02_colmap_alignment.ipynb",
-                                       "03_error_analysis.ipynb", "train_mask.ipynb"]
+    files = sorted((ROOT / "notebooks").glob("*.ipynb")) + sorted((ROOT / "notebooks" / "studies").glob("*.ipynb"))
+    # 0.96.0 (Christian, 9 Nov: "clean up the notebooks to have one example of the pipeline and other notebooks
+    # for each study"): the pipeline example, then one per study
+    assert [f.name for f in files] == ["pipeline_example.ipynb", "camera_models.ipynb", "error_analysis.ipynb",
+                                       "mask_training.ipynb", "sites_maps.ipynb"]
     for f in files:
         nb = json.loads(f.read_text(encoding="utf-8"))
         cells = nb["cells"]
@@ -109,9 +111,12 @@ def test_notebooks_compile_and_have_a_parameters_cell():
             ast.parse("\n".join(ln for ln in src.splitlines() if not re.match(r"\s*(%|!(?!=))", ln)))    # magics
             for bad in ("NOTEBOOK_FOR_MPPP", "sync_from_claude", "adopt_claude", "D:/", "D:\\", "C:\\"):
                 assert bad not in src, (f.name, bad)
-    nb2 = json.loads((ROOT / "notebooks" / "02_colmap_alignment.ipynb").read_text(encoding="utf-8"))
+    nb2 = json.loads((ROOT / "notebooks" / "pipeline_example.ipynb").read_text(encoding="utf-8"))
     src2 = "".join("".join(c["source"]) for c in nb2["cells"] if c["cell_type"] == "code")
-    assert "from mppp.pipeline import align" in src2 and "health_table" in src2 and "plot_camera_shifts" in src2
+    for need in ("process_site", "from mppp.pipeline import align", "health_table", "plot_camera_shifts", "run_dense",
+                 "build_station_mesh", "cast_station", "photometric_cube", "render_station", "write_nerfstudio"):
+        assert need in src2, need
+    assert "mppp_studies" not in src2                   # the pipeline example is the core alone; the studies have their own
 
 
 def test_no_logger_call_with_flush():

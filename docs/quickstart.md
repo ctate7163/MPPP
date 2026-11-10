@@ -90,5 +90,5 @@ report = run_site("rockytop_example", s)
 print(report["verdict"])
 ```
 
-The notebooks in `notebooks/` (`01_process_images`, `02_colmap_alignment`, `03_error_analysis`) call the same
-functions and show the results.
+`notebooks/pipeline_example.ipynb` calls the same functions on the example data and shows the results; the
+studies (`mppp_studies`) have a notebook each under `notebooks/studies/`.

@@ -1,4 +1,4 @@
-# The Windows batch files (0.94.4: 19 files)
+# The Windows batch files (0.96.0: 25 files)
 
 One folder, `scripts\windows\`, every double-click file in one place; it finds the repository two levels up.
 0.94.4 (Christian, 23 Oct): trimmed to the files in use - the one-off runs, the single-zoom and single-camera
@@ -6,11 +6,12 @@ batches and the weekend runner went (git history has them; `run_pipeline.bat` do
 
 | what for | files |
 |---|---|
+| **the freeze** | `freeze.bat` (0.96.0: the freeze run, unattended and resumable, on its own checkout `D:\code\MPPP_freeze` cloned from this tree - `mppp_studies.calibration.freeze`: wait, mask, cmods, zjoints, zfinal, ecam, nz, deck, ztests, studies, report; `--status`, `--mask-model keep\|auto\|FILE`, `--update-code`, `--redo STEP`, `--only STEP`), `stop_mppp.bat` (also stops it: "stopped by the user") |
 | **the runs** | `run_pipeline.bat` (the whole calibration study: the ecam_consensus blocks - Navcam with both Hazcam pairs; the Navcam joint and the Hazcam fit, promoted; the Mastcam-Z blocks; the Mastcam-Z joints; the error analysis; the rover-frame study 3A), `run_sites.bat` (the Navcam blocks of a group), `run_sites_zcam.bat` (the Navcam + Mastcam-Z blocks of zcam_consensus, then `zcam_joints.bat`), `zcam_joints.bat`, `zcam_backlash_rerun.bat` (0.95.3: the backlash states run of Chal Rocks, Seitah Overlook and Rockytop, the found list updated, the three blocks again with every zoom, then the 34-110 mm joints with `--iterations 300`, nothing promoted), `run_zcam_states.bat`, `promote_models.bat`, `stop_mppp.bat` |
 | **status** | `check_sites.bat` (the site definitions; when each block last finished, with which version, or that it runs now) |
 | **one folder** | `process_sites.bat` (process a group's images), `align_here.bat` (align the folder it sits in) |
 | **figures** | `make_figures.bat` (the standard figures at 200 dpi), `make_maps.bat` (the site maps), `make_paper.bat` (the JOSS paper as a PDF); **status**: `sites_status.bat` (the run status of every block) |
-| **setup** | `mppp_env.bat` (finds the Python with mppp, pycolmap, pyceres; reads `mppp_python.txt`, `mppp_scapes.txt`, `mppp_pds.txt`; checks it with `scripts\check_env.py`), `install_lightglue.bat`, `claude_sync.bat` (uncommitted edits stashed before the merge and popped after it) |
+| **setup** | `mppp_env.bat` (finds the Python with mppp, pycolmap, pyceres; reads `mppp_python.txt`, `mppp_scapes.txt`, `mppp_pds.txt`; checks it with `scripts\check_env.py`), `install_lightglue.bat`, `sync_code.bat` (0.96.0, replaces `claude_sync.bat`: this tree's `main` fast-forwarded from a delivered git bundle or from GitHub, the quick tests one file per process with MKL sequential, the freeze checkout brought up unless a freeze runs on it; nothing started, nothing pushed) |
 | helpers (not double-clicked) | `_run_sites.bat`, `_run_process.bat`, `_run_align.bat` (the minimised batch windows), `m20_dem_env.bat` (the DTM / orthomosaic paths of the figures and maps) |
 
 Removed in 0.94.4: `run_weekend.bat` (`python -m mppp_studies.misc.calibration_old.run_weekend` still works), `test_lightglue.bat`

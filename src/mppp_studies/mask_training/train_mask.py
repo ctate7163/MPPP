@@ -1,5 +1,5 @@
 """
-Headless mask retraining (a GPU machine), equivalent to notebooks/training/train_mask.ipynb steps 1-3.  Run it from
+Headless mask retraining (a GPU machine), equivalent to notebooks/studies/mask_training.ipynb steps 1-3.  Run it from
 a Python that has mppp and a CUDA torch (on Windows: the notebooks' kernel; the pip torch of envs/mppp.yml is CPU only):
 
     set MPPP_MASK_DATA=D:\\masks\\masks_training_set_v8

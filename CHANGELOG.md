@@ -3,13 +3,107 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
-## 0.96.0 — in progress (not built; `__version__` stays until the build)
+## 0.96.0 — 2026-11-10
 
-**In short.** The Mastcam-Z joint's diagnostics after the 4 Nov Z34 joint failed only the per-block aspect gate on
-Chal Rocks large (items A-D of `claude/handoff-2026-11-05-zcam-joint-diagnostics-pooling-states-residuals.md`,
-Christian 5 Nov: "yes to pooling on the block or sequence level"): a pooled diagnostic pass the gate reads, the
-residual direction per sequence, a warning for opposite backlash states between the eyes, and f0's sd from the
-sequence scatter.
+**In short.** The core and the studies apart (Christian, 9 Nov: "The core is the pipeline ... The code that solves
+the camera models from the blocks or deck alignments should be a mature study ... the tie point error analysis ...
+Training the mask model should also be a study"): `mppp` is the pipeline alone - PDS products in, the waypoints,
+the promoted camera models, processed images, the COLMAP block, its health, the dense cloud, the exports - and the
+research lives in `mppp_studies` (`calibration`, `error`, `mask_training`, `sites`, `paper`, `misc`), which imports
+the core and which the core never imports.  Dead code out of the core.  Two new products of the pipeline: per-image
+depth maps and the photometric cube from a cleaned station mesh, and a prototype of the stereoscopic panorama
+(`mppp mesh`, `mppp depthmaps`, `mppp ods`).  The freeze run as a driver of its own (`freeze.bat`) with the mask
+comparison in front of it, and one way to sync code (`sync_code.bat`).  One pipeline notebook and one per study.
+Below them, the Mastcam-Z joint diagnostics of 5-9 Nov (items A-F), the mask augmentations and the site-map
+changes made on the way to the build.
+
+- **The split** (`src/mppp_studies/`, 1/n). `mppp.calib` keeps what the pipeline reads and the forms the studies
+  share (`forms`, `models`, `constrain`'s thermal and focus laws, `labelfit`, `tiecov`, `tiesolve` with the linear
+  tie class, the new `robust` - Huber fits, weighted medians, `meta_line`, the OLS line - that `sfm.backlash` and
+  `sfm.zcam` use); the joints, the tied fits, the Hazcam and NZ joints, the law check, the fiducials, the deck
+  adjustment, the backlash states, the pipeline runner, the first freeze chain, the promotions, the plots and the
+  block screening moved to `mppp_studies.calibration` (`python -m mppp_studies.calibration calib|zcam-states`;
+  `mppp calib` and `mppp zcam-states` forward there, `_study_parsers` / `_study_command`); `mppp.error` and the
+  error batch, the Navcam and cross-station studies and the site map became `mppp_studies.error`; the mask training
+  (train, dataset, audit, monitor, augment, `train_mask`, `compare_mask_models`, `make_mask_figure`,
+  `release_mask_model`) `mppp_studies.mask_training` - `mppp.mask` keeps the inference and the hub; the M20 site
+  figures, the maps and the waypoint figures `mppp_studies.sites` (`mppp maps` forwards; `python -m
+  mppp_studies.sites maps`); the paper's figures and build `mppp_studies.paper`; the old calibration study, the
+  experiments, the v0.52-53 navcal and the one-off scripts `mppp_studies.misc` (kept, not maintained). The one hook
+  the pipeline keeps is lazy: `pipeline.deck_in_ba` imports `mppp_studies.calibration.deck` when a block asks for the
+  deck in its adjustment, with a plain message when the studies are not installed. `mppp_studies.paths`
+  (`repo_root`, `outputs_dir`, `docs_dir`): where the studies write. README, CONTRIBUTING, `docs/WINDOWS.md`,
+  `docs/methods.md`, `docs/cli.md` follow the move.
+- **Dead code out of the core** (2/n; vulture at 80 %): `forms.distortion_names`, `colmap.station_center`,
+  `labels.as_vector`, `select.find_imgs_in_sol_range` / `find_imgs_for_waypoint` / `dedupe_by_version`,
+  `terrain.shaded_relief`, `camera.is_distorted` / `project_cahv`, `runner.python_literal`,
+  `project.zcam_focus_model_files`, `reconstruction.print_camera_changes`, `sites.zcam34_sites`,
+  `blocks.site_official_blocks` / `rename_site` / `remove_site` / `site_waypoints`, `cli._work_of`, the waypoint
+  figures of `waypoints.blocks`; `constrain`'s plots and `health`'s re-judging into the calibration study. pyflakes
+  clean (`flake8 --select F src/mppp`); the split's loose ends it found fixed (`run_rover_frame`'s root,
+  `study_navcam`'s data folder, `screening`'s named imports).
+- **The freeze driver** (3/n; `mppp_studies.calibration.freeze`, `scripts\windows\freeze.bat`; Christian, 9 Nov:
+  "please prepare a freeze.bat that will run on 0.96"). The freeze-2 steps - wait, cmods, zjoints, zfinal, ecam, nz,
+  deck, ztests, studies, report - on the 0.96 layout, with the first chain's robustness (atomic status with a
+  heartbeat, one run per root, keep-awake, RunOnce after a reboot, a disk-space wait, a failed step logged and the
+  run goes on) and three fixes from the 9 Nov restarts: a stop by the user (Ctrl-C, `stop_mppp.bat`) is logged
+  and `--status` says "stopped by the user"; `--status` tells running / not running / done apart (heartbeat and
+  pid); `--update-code` only updates the checkout (`git pull --ff-only` from `D:\code\MPPP`) and refuses under a
+  live run. New step **mask** (`--mask-model keep|auto|FILE`; Christian: "can you delay the start until the mask
+  comparison is done and we know which CNN is best?"): `keep` is the model the blocks on disk were processed with
+  (read from their `run_settings.json`; no image processed again); `auto` waits for the training under way and its
+  comparison and uses the new model when it beats the blocks' model by `--mask-margin` (0.01) exclusion IoU - then
+  every image is processed again and every block aligned again (the checkpoint is in the run key). The choice is
+  kept across restarts. The run requires MPPP 0.96.x in its checkout (`--any-version`). `freeze.bat` runs it on
+  its own checkout `D:\code\MPPP_freeze`, cloned from the main tree the first time. **`sync_code.bat`** (replaces
+  `claude_sync.bat`; Christian: "let's clean up the MPPP directory so that these conflicts don't keep happening"):
+  a delivered bundle or GitHub, one fast-forward of `main`, the quick tests one file per process with MKL
+  sequential (torch's and MKL's OpenMP in one process aborted the 9 Nov runs), the freeze checkout brought up
+  through the driver unless a freeze runs on it; nothing started, nothing pushed. `freeze_chain.bat` retired (the
+  first chain's module stays, tested); `scripts\windows` stays at 25 files. **`train_mask --compare [MODEL ...]`**
+  (`train_masks.bat` forwards it; Christian: "will the mask comparison run after the training so that we will know
+  which is better?"): right after the training, `compare_mask_models` of the new checkpoint against the blocks'
+  model (`mppp_mask_v3`) on its held-out frames -> `Claude outputs/mask_<ckpt>/mask_ab/` and `mask_verdict.json`
+  (exclusion IoU per model, winner, margin), which the freeze reads. `mppp doctor` prints the checkout's git head,
+  the studies package and the live runs on `MPPP_SCAPES`. Tests: `tests/test_freeze.py` (14).
+- **`mppp.ibr` - the station mesh, the depth maps, the photometric cube, the stereoscopic panorama** (4/n;
+  Christian, 9 Nov: "0.96.0 should build the pipeline that generates the per image depth maps and photometric cube
+  from the cleaned up 3d mesh. 0.96.0 should prototype the stereoscopic pipeline. The output should just be two
+  images. Don't build the webviewer"; the plans of 29 and 31 Oct). `station`: the station of a block (site, drive),
+  its frames by camera family, the mast pivot from their centres and rotations (least squares C_i = P + R_i^T d_g
+  per family; the mean centre below 6 frames or 60 deg of azimuth), the block's up / north / east from
+  `error_input/block_frame.json` or the sun model. `mesh`: Poisson (open3d; COLMAP's Delaunay mesher through the
+  executable when given) over the fused cloud, then the cleanup - components under 1 %, rubber sheets, surface no
+  fused point supports within tau(z) = max(5 cm, 2 % z, 3 sigma_z), the 60 m radius - decimation to 3 M
+  triangles, Taubin smoothing, the far sphere at 100 m; `mesh_report.json` with the coverage by range, a preview.
+  `raycast`: open3d's RaycastingScene over mesh + sphere; per image the depth, range, normal and label maps (0
+  none, 1 mesh, 2 far) through the camera's own model (`cam_from_img` rays) at a fraction of the native size; npz
+  and 16-bit previews; validation against the sparse points the image observes; `maps_report.{json,md}`.
+  `photometry`: incidence, emission, phase and the cast shadow from the sun direction of the image's row
+  (`sun_enu` through `R_block_from_enu`); npz, COLMAP `.bin` arrays, previews, `photometry_report.json`. `ods`:
+  the omni-directional stereo panorama (equirectangular 8192 x 4096, 64 mm between the eyes): each eye's rays cast
+  into the scene, every hit coloured from the source frame that sees it best (the smallest angle to the frame's
+  axis, inside the frame and its mask), chunked by rows; `ods_left.png`, `ods_right.png`, `provenance.png`,
+  `ods.json` with the coverage. Rockytop sols 461-464 (the example data) is the example station. `mppp mesh |
+  depthmaps | ods WORK --station S003D1234` (also `python -m mppp.ibr`); the products under
+  `<project>/ods/<station>/`; the `[ibr]` extra (open3d). Not built: the web viewer (future work; any VR photo
+  viewer shows the pair). SPICE stays future work (Christian, 9 Nov). Tests: `tests/test_ibr.py` (12: the pivot
+  fit, the cleanup, the far sphere and tau, Poisson + decimation, the cast depth against the analytic plane through
+  THIN_PRISM_FISHEYE and FULL_OPENCV, the angles on a plane and a shadow, the array round trip, the ODS geometry
+  and render, the three commands end to end on a saved block).
+- **Notebooks** (Christian: "clean up the notebooks to have one example of the pipeline and other notebooks for
+  each study"): `notebooks/pipeline_example.ipynb` (the whole core on the example data: processing, the alignment
+  and its health, cameras and tie points, the dense cloud, the station mesh, the depth and photometric maps, the
+  stereoscopic panorama, the Metashape and Nerfstudio exports; replaces `01_process_images` and
+  `02_colmap_alignment`) and `notebooks/studies/` - `camera_models` (the joints, the deck, the promotion; rewritten
+  for the study package), `error_analysis`, `mask_training` (+ the recipes, the frozen test list, `--compare`),
+  `sites_maps` (new). `scripts/_make_notebooks_0p96.py` regenerates the new ones.
+
+**On the way to the build (5-9 Nov).** The Mastcam-Z joint's diagnostics after the 4 Nov Z34 joint failed only
+the per-block aspect gate on Chal Rocks large (items A-D of
+`claude/handoff-2026-11-05-zcam-joint-diagnostics-pooling-states-residuals.md`, Christian 5 Nov: "yes to pooling on
+the block or sequence level"): a pooled diagnostic pass the gate reads, the residual direction per sequence, a
+warning for opposite backlash states between the eyes, and f0's sd from the sequence scatter.
 
 - **A. Pooled diagnostic pass** (`mppp_studies.calibration.ztied.pooled_pass`; `calib zcam --zcam-pool sequence|block|none`,
   default sequence; `fit_zjoint(pool=...)`). One pool per (eye, sequence) - or (eye, block, backlash state) with

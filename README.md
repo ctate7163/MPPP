@@ -40,7 +40,9 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. MPPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.95.2** (`v0p95`), the freeze release for the paper and a beta for the JOSS submission (`paper/paper.md`). Versions before 1.0 are
+Version **0.96.0** (`v0p96`): the core (`mppp`, the pipeline) and the research studies (`mppp_studies`) apart, the
+freeze run as a driver of its own, and the first products past the block - per-image depth maps, the photometric
+cube and a stereoscopic panorama from a cleaned station mesh. The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are
 development releases; see [CHANGELOG.md](https://github.com/ctate7163/MPPP/blob/main/CHANGELOG.md).
 
 ## Install
@@ -95,12 +97,12 @@ mppp align  <WORK> --set attitude_prior_deg=1 --variant tight      # another set
 mppp cmods list                  # the camera models in use
 ```
 
-The same functions are importable (`mppp.pipeline.Settings`, `process_site`, `align`, `run_site`), and the
-notebooks in `notebooks/` call them and show the results: `01_process_images` (selection and processing),
-`02_colmap_alignment` (the alignment, its health table and camera changes), `03_error_analysis` (the error model's
-inputs measured from alignments; `mppp.error` is under development), `training/train_mask` (retraining the mask
-model). Reruns reuse processed images, features and matches; a changed setting or a promoted camera model changes
-the run key and realigns.
+The same functions are importable (`mppp.pipeline.Settings`, `process_site`, `align`, `run_site`), and
+`notebooks/pipeline_example.ipynb` calls them on the example data (Rockytop, sols 461-464) and shows the results,
+start to finish: processing, the alignment and its health, the dense cloud, the station mesh, the depth and
+photometric maps, the stereoscopic panorama, the exports.  The research studies have a notebook each under
+`notebooks/studies/` (`camera_models`, `error_analysis`, `mask_training`, `sites_maps`).  Reruns reuse processed
+images, features and matches; a changed setting or a promoted camera model changes the run key and realigns.
 
 Outputs of `process`: `images_png16/<PDS stem>.png` (the mask in the alpha channel), `references.txt` for
 Metashape *Import Reference*, `colmap/sparse_prior/` (cameras, poses, rig), `mppp_manifest_<version>.json` and
