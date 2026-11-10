@@ -148,6 +148,10 @@ def add_parsers(sub) -> None:
     p.add_argument("--rows-per-chunk", type=int, default=128)
     p.add_argument("--eyes", nargs="+", default=["left", "right"], choices=["left", "right", "centre"])
     p.add_argument("--no-gains", action="store_true", help="no gain compensation between the source frames")
+    p.add_argument("--stack-top", default="right", choices=["right", "left"], help="the eye on top in "
+                   "ods_stereo_square.png / .jpg (default right: the right eye above the left)")
+    p.add_argument("--stack-only", action="store_true", help="only stack the eye images already in the folder into "
+                   "ods_stereo_square.png / .jpg (no rendering)")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
                    "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
     p.add_argument("--rover", action="store_true", help="0.96: the rover body and deck shown: the cloud fused without the rover masks (mppp dense --keep-rover), the "
@@ -225,19 +229,31 @@ def cmd_depthmaps(a: argparse.Namespace) -> int:
 
 
 def cmd_ods(a: argparse.Namespace) -> int:
-    from .ods import render_station
+    from .ods import render_station, stack_eyes
+    if a.stack_only:
+        out = Path(a.out) if a.out else None
+        if out is None:
+            project = _project(a.work)
+            rec = _model(project)
+            st, out = _station(project, rec, a)
+        r = stack_eyes(out, top=a.stack_top)
+        print(f"{r['jpg']}  ({r['size'][0]} x {r['size'][1]}, {r['top']} eye on top; also .png)")
+        return 0
     project = _project(a.work)
     rec = _model(project)
     st, out = _station(project, rec, a)
     scene = _scene(out)
     rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, families=a.cameras, scale=a.scale,
                          zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
-                         use_masks=not a.rover, gains=not a.no_gains)
+                         use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: {e['file']}  coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "
               f"plane {100 * c.get('plane', 0):.1f}%, far {100 * c['far']:.1f}%, "
               f"no surface {100 * c['no_surface']:.1f}%, {e['sources_used']} sources")
+    if rep.get("stacked"):
+        print(f"stacked: {rep['stacked']['jpg']} ({rep['stacked']['size'][0]} x {rep['stacked']['size'][1]}, "
+              f"{rep['stacked']['top']} eye on top; also .png)")
     if rep.get("gains"):
         g = list(rep["gains"]["gains"].values())
         print(f"gains: {min(g):.3f} - {max(g):.3f} over {rep['gains']['pairs']} source pairs")

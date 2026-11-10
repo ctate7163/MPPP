@@ -423,6 +423,14 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert mppp_main(["ods", work, "--station", "3_10", "--rover", "--width", "128", "--scale", "0.25"]) == 0
     assert json.loads((outr / "ods.json").read_text(encoding="utf-8"))["rover"] == "shown"
     assert (out / "ods_left.png").is_file() and (outr / "ods_left.png").is_file()           # both variants side by side
+    sq = cv2.imread(str(out / "ods_stereo_square.jpg"))                                     # right eye on top: a square
+    assert sq.shape == (256, 256, 3) and (out / "ods_stereo_square.png").is_file()
+    Lp, Rp = cv2.imread(str(out / "ods_left.png")), cv2.imread(str(out / "ods_right.png"))
+    sqp = cv2.imread(str(out / "ods_stereo_square.png"))
+    assert np.array_equal(sqp[:128], Rp) and np.array_equal(sqp[128:], Lp)
+    (out / "ods_stereo_square.png").unlink()
+    assert mppp_main(["ods", work, "--station", "3_10", "--stack-only", "--stack-top", "left"]) == 0
+    assert np.array_equal(cv2.imread(str(out / "ods_stereo_square.png"))[:128], Lp)
 
 
 # ----------------------------------------------------------------------------- 9 Nov evening: what the Rockytop run found

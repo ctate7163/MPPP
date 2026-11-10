@@ -183,6 +183,10 @@ changes made on the way to the build.
     so it now uses COLMAP's normals (else estimated and turned to the mast head); and Poisson runs per zone of
     distance from the axis (0-4, 4-12, 12-20 m, 0.3 m overlaps), each from the points of its own zone, so the
     octree is ~1 cm near the mast, ~2.5 cm at 4-12 m, ~5 cm beyond; the decimation target is 6 M triangles;
+  - **the stereo pair as one square** (Christian: "make a version with the ods_right.png stacked on top of the
+    ods_left so that it is a square that I can upload"): `ods_stereo_square.png` / `.jpg` (8192 x 8192, the right
+    eye on top; `--stack-top left` for the other order), written by `mppp ods`; `mppp ods --stack-only` stacks the
+    eye images already in a folder;
   - **`--out DIR`** for mesh / depthmaps / ods (e.g. `D:\rover_blocks\single_sites\S003D2046`, `...\with_rover`).
 - **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
   bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)

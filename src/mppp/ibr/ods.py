@@ -435,10 +435,32 @@ def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int) -> Pat
     return Path(out_png)
 
 
+STACK_NAME = "ods_stereo_square"     # .png and .jpg: the right eye on top of the left (Christian, 10 Nov)
+
+
+def stack_eyes(out_dir: PathLike, top: str = "right", jpeg_quality: int = 95) -> Dict[str, Any]:
+    """``ods_stereo_square.png`` / ``.jpg``: the two eye images stacked into one square (W x W) - ``top`` eye above
+    (Christian, 10 Nov: "make a version with the ods_right.png stacked on top of the ods_left so that it is a square
+    that I can upload").  Returns {"png", "jpg", "size", "top"}."""
+    import cv2
+    out = Path(out_dir)
+    other = "left" if top == "right" else "right"
+    a, b = cv2.imread(str(out / f"ods_{top}.png")), cv2.imread(str(out / f"ods_{other}.png"))
+    if a is None or b is None:
+        raise FileNotFoundError(f"{out}: ods_left.png and ods_right.png are both needed")
+    if a.shape != b.shape:
+        raise ValueError(f"{out}: the eye images differ in size ({a.shape} vs {b.shape})")
+    sq = np.vstack([a, b])
+    png, jpg = out / f"{STACK_NAME}.png", out / f"{STACK_NAME}.jpg"
+    cv2.imwrite(str(png), sq)
+    cv2.imwrite(str(jpg), sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
+    return {"png": str(png), "jpg": str(jpg), "size": [int(sq.shape[1]), int(sq.shape[0])], "top": top}
+
+
 def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width: int = DEFAULT_WIDTH, ipd_m: float = DEFAULT_IPD_M,
                    families: str = "N", scale: float = 0.5, zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None,
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
-                   gains: bool = True) -> Dict[str, Any]:
+                   gains: bool = True, stack_top: str = "right") -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/ods_left.png``, ``ods_right.png``, ``provenance.png`` (left
     eye's sources), ``ods.json``.  Returns the record."""
     import cv2
@@ -480,6 +502,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                 "sources_used": int(len(np.unique(res["source"][res["source"] >= 0])))}
         for s in sources:
             s.release()
+    if "left" in eyes and "right" in eyes:
+        rec_out["stacked"] = stack_eyes(out, top=stack_top)
     rec_out["seconds"] = round(time.time() - t0, 1)
     (out / "ods.json").write_text(json.dumps(rec_out, indent=1, default=float), encoding="utf-8")
     log.info("ods: %s -> %s (%.0f s)", station.label, out, rec_out["seconds"])
