@@ -71,7 +71,8 @@ def test_bat_files_work_from_any_folder_and_find_the_environment():
     body = env.split(":try_prefix\n")[1]
     assert "%~dp0" not in body                     # inside a call :label, %0 is the label
     r = subprocess.run([sys.executable, str(win.parent / "check_env.py")], capture_output=True, text=True)   # 0.94.4: scripts\
-    assert r.returncode in (0, 1) and sys.executable in r.stdout
+    # the PC, 10 Nov: sys.executable came as ...\miniconda3\.\python.exe, check_env.py printed the normalised path
+    assert r.returncode in (0, 1) and os.path.normcase(os.path.normpath(sys.executable)) in os.path.normcase(r.stdout)
 
 
 def _batch():

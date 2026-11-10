@@ -1,22 +1,11 @@
 """0.96: the online mask augmentations (mppp_studies.mask_training.augment) - numpy only, no torch."""
 import json
-import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-try:
-    from mppp_studies.mask_training import augment as A
-except ModuleNotFoundError:                      # no torch here: mppp.mask's __init__ needs it, augment.py does not
-    import importlib.util
-    from pathlib import Path
-
-    import mppp
-    _p = Path(mppp.__file__).parent / "mask" / "training" / "augment.py"
-    _spec = importlib.util.spec_from_file_location("mppp_mask_augment_standalone", _p)
-    A = importlib.util.module_from_spec(_spec)
-    sys.modules[_spec.name] = A                  # dataclasses look the module up in sys.modules
-    _spec.loader.exec_module(A)
+from mppp_studies.mask_training import augment as A       # numpy only: imports without torch since the 0.96 split
 
 NAV = "NLF_0474_0708800000_000FDR_N0260000NCAM02474_01_095J01.png"
 Z34 = "ZL0_0181_0683000000_000FDR_N0060000ZCAM08199_0340LMJ01.png"
