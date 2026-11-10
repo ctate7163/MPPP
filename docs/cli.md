@@ -320,6 +320,30 @@ options:
 Writes `open_in_colmap.bat`, `open_in_colmap_fullres.bat`, `colmap_gui.ini` and (0.95.0) `dense_reconstruct.bat`
 into finished projects.
 
+## mppp single-sites
+
+0.96.0 (Christian, 10 Nov 2026: "We'll use these three as the test sites ... the single sites should come from a
+config file"). The single-station test sites of `mppp.ibr`, listed in `src/mppp/data/single_sites.json` (per
+station: `site` - a site of `sites.json`, whose Navcam WORK folder is the block - or `work`; `station`; `frames`:
+`images`, `scale` or `sequences` for the dense step; optional `variants`, `mesh_args` / `depthmaps_args` /
+`ods_args`, `note`).
+
+```text
+usage: mppp single-sites [LABEL ...] [--config FILE] [--root D:\rover_blocks] [--out DIR]
+                         [--steps dense mesh depthmaps ods] [--variants masked rover]
+                         [--squares-only] [--list] [--dry-run] [--install DIR]
+```
+
+Per station and variant the steps run as their own processes: `mppp dense` (stereo and fusion, then the fusion with
+the rover kept), then `mesh`, `depthmaps --photometry` and `ods` into `<root>\single_sites\<label>\` (rover masked
+out) and `...\<label>\with_rover\` (rover shown). A failed step skips the rest of its variant (a failed dense step
+the whole station). Each station's output also goes to `single_site_log.txt` in its folder;
+`single_sites_summary.md` has a line per station and variant: the exit codes, how far the fused points reach, the
+ground plane, the panorama's coverage, whether the square is there. `--squares-only` only stacks the eye images
+already there. `--install DIR` writes `update_and_run_single_sites.bat` into DIR: it fast-forwards `D:\code\MPPP`
+to the newest bundle in `D:\rover_blocks\_transfer` when that bundle is ahead (never back), then runs
+`mppp single-sites` with its arguments - it names no version, so it never needs replacing.
+
 ## mppp dense
 
 0.95.0 (Christian, 28 Oct 2026): the COLMAP dense reconstruction of a finished block, preloaded from the alignment.

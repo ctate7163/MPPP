@@ -211,6 +211,12 @@ changes made on the way to the build.
     `head_hardware_masked`; `--keep-head-hardware`);
   - **the mesh to 30 m** from the mast axis (Christian: "extend the outer edge of the mesh out to 30 m"; 20 m in
     the morning), a fourth Poisson zone 20-30 m (~6 cm), the points within 35 m meshed;
+  - **`mppp single-sites`** (Christian: "let's remove the last letter and just make it
+    update_and_run_single_sites.bat. the single sites should come from a config file"): the stations in
+    `mppp/data/single_sites.json` (S003D2046 Van Zyl sol 52, S026D0630 Rockytop sol 461, S032D1184 Three Forks
+    sols 686-688), each step its own process, both variants, logs per station, `single_sites_summary.md`;
+    `--install DIR` writes `update_and_run_single_sites.bat`, which takes the newest bundle in `_transfer` when it
+    is ahead of the tree and names no version;
   - **`--out DIR`** for mesh / depthmaps / ods (e.g. `D:\rover_blocks\single_sites\S003D2046`, `...\with_rover`).
 - **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
   bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)

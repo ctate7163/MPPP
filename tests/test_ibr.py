@@ -1061,3 +1061,62 @@ def test_mast_head_hardware_is_what_stays_put_across_the_tier():
         assert h is not None and h[60:70, 70:90].all() and h.sum() == 200            # the boom, nothing of the deck
     few = O.head_hardware_masks(srcs[:2], masks[:2], (0, 0, 1))
     assert all(h is None for h in few)                                               # two frames: no verdict
+
+
+# ----------------------------------------------------------------------------- 10 Nov: the single sites from a config file
+def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
+    """Christian, 10 Nov: "the single sites should come from a config file" and one update_and_run_single_sites.bat.
+    The shipped config has the three test stations; the plan resolves each block from sites.json and builds the
+    commands of both variants; a failed dense step stops that station; the summary has a line per variant; the
+    installed batch file names no version."""
+    from mppp.ibr import single_sites as SS
+    cfg = SS.load_config()
+    assert set(cfg["stations"]) == {"S003D2046", "S026D0630", "S032D1184"}
+    assert len(cfg["stations"]["S003D2046"]["frames"]["images"]) == 12
+    root = tmp_path / "rb"
+    for f in ("mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop", "mars2020_sol_0413_threeforks_large"):
+        (root / f).mkdir(parents=True)
+    runs = SS.plan(cfg, root)
+    assert [Path(r["work"]).name for r in runs] == ["mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop",
+                                                    "mars2020_sol_0413_threeforks_large"]
+    r0 = runs[0]
+    steps = [(c["variant"], c["step"]) for c in r0["commands"]]
+    assert steps == [("masked", "dense"), ("rover", "dense"), ("masked", "mesh"), ("masked", "depthmaps"), ("masked", "ods"),
+                     ("rover", "mesh"), ("rover", "depthmaps"), ("rover", "ods")]
+    dense = r0["commands"][0]["argv"]
+    assert dense[:4] == ["dense", r0["work"], "--station", "3_2046"] and dense.count("--images") == 1 and "--stereo" in dense
+    rover_ods = r0["commands"][-1]["argv"]
+    assert "--rover" in rover_ods and rover_ods[-1].endswith(str(Path("S003D2046") / "with_rover"))
+    assert SS.plan(cfg, root, labels=["S026D0630"], steps=["ods"], variants=["masked"])[0]["commands"] == [
+        {"variant": "masked", "step": "ods", "argv": ["ods", str(root / "mars2020_sol_0460_rockytop"), "--station", "26_630",
+                                                      "--out", str(root / "single_sites" / "S026D0630")]}]
+    with pytest.raises(KeyError):
+        SS.plan(cfg, root, labels=["S999D9999"])
+    # the run: the steps stood in for; Rockytop's dense step fails, so nothing else of it runs
+    calls = []
+
+    def fake_run(argv, fh):
+        calls.append(argv)
+        if argv[0] == "dense" and "26_630" in argv:
+            return 1
+        if argv[0] == "ods":
+            out = Path(argv[argv.index("--out") + 1])
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "ods.json").write_text(json.dumps({"eyes": {"left": {"coverage": {"mesh": 0.2, "plane": 0.3, "far": 0.5,
+                                                                                      "coloured": 0.9}}}}), encoding="utf-8")
+            (out / "ods_stereo_square.jpg").write_bytes(b"x")
+        return 0
+    monkeypatch.setattr(SS, "_run", fake_run)
+    rc = SS.run_all(runs, root / "single_sites")
+    assert rc == 1                                                                     # one station failed
+    rock = [c for c in calls if "26_630" in c]
+    assert rock == [runs[1]["commands"][0]["argv"]]                                    # its dense step only
+    assert sum(1 for c in calls if "3_2046" in c) == 8 and sum(1 for c in calls if "32_1184" in c) == 8
+    summary = (root / "single_sites" / "single_sites_summary.md").read_text(encoding="utf-8")
+    assert summary.count("| S003D2046 |") == 2 and "| S026D0630 | masked | dense 1 |" in summary
+    assert "mesh 20 %, plane 30 %, far 50 %" in summary
+    assert (root / "single_sites" / "S003D2046" / "single_site_log.txt").exists()
+    f = SS.install(tmp_path / "inst")
+    b = f.read_bytes()
+    assert f.name == "update_and_run_single_sites.bat" and b"\r\n" in b and b"python -m mppp single-sites %*" in b
+    assert b"7dbd5da" not in b and b"_transfer" in b and b"--ff-only" in b and b"merge-base --is-ancestor" in b

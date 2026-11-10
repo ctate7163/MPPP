@@ -90,6 +90,8 @@ def _tie_points(rec, min_track: int = 3) -> np.ndarray:
 
 
 def add_parsers(sub) -> None:
+    from .single_sites import add_parser as _single_sites_parser
+    _single_sites_parser(sub)
     p = sub.add_parser("mesh", help="0.96: the surface of one station of a finished block: a clean mesh to 30 m from the mast "
                        "axis, the ground plane to 100 m, the sky at infinity (mppp.ibr.mesh)")
     p.add_argument("work")
@@ -269,7 +271,12 @@ def cmd_ods(a: argparse.Namespace) -> int:
     return 0
 
 
-COMMANDS = {"mesh": cmd_mesh, "depthmaps": cmd_depthmaps, "ods": cmd_ods}
+def cmd_single_sites(a: argparse.Namespace) -> int:
+    from .single_sites import cmd_single_sites as run
+    return run(a)
+
+
+COMMANDS = {"mesh": cmd_mesh, "depthmaps": cmd_depthmaps, "ods": cmd_ods, "single-sites": cmd_single_sites}
 
 
 def main(argv=None) -> int:

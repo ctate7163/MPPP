@@ -762,6 +762,7 @@ COMMANDS = {"gui": cmd_gui, "process": cmd_process, "align": cmd_align, "run": c
             "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "maps": _study_command("maps"), "calib": _study_command("calib"), "doctor": cmd_doctor,
             "zcam-states": _study_command("zcam-states"), "dense": cmd_dense, "metashape": cmd_metashape, "nerfstudio": cmd_nerfstudio,
             "mesh": _ibr_command("mesh"), "depthmaps": _ibr_command("depthmaps"), "ods": _ibr_command("ods"),
+            "single-sites": _ibr_command("single-sites"),
             "version": cmd_version}
 
 
