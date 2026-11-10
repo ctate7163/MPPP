@@ -1088,11 +1088,13 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert dense[:4] == ["dense", r0["work"], "--station", "3_2046"] and dense.count("--images") == 1 and "--stereo" in dense
     rover_ods = r0["commands"][4]["argv"]
     assert "--mask-rover" in r0["commands"][-1]["argv"]
-    assert "--rover" in rover_ods and rover_ods[-1].endswith(str(Path("S003D2046") / "with_rover"))
+    assert "--rover" in rover_ods and rover_ods[rover_ods.index("--out") + 1].endswith(str(Path("S003D2046") / "with_rover"))
+    assert rover_ods[-2:] == ["--bits", "16"]                                              # 0.96.1: the 16-bit panorama
     assert SS.plan(cfg, root, labels=["S026D0630"], steps=["ods"], variants=["masked"])[0]["commands"] == [
         {"variant": "masked", "step": "ods", "argv": ["ods", str(root / "mars2020_sol_0460_rockytop"), "--station", "26_630",
                                                       "--mask-rover", "--out", str(root / "single_sites" / "S026D0630"),
-                                                      "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"]}]
+                                                      "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
+                                                      "--bits", "16"]}]
     with pytest.raises(KeyError):
         SS.plan(cfg, root, labels=["S999D9999"])
     # the run: the steps stood in for; Rockytop's dense step fails, so nothing else of it runs
@@ -1311,3 +1313,86 @@ def test_floating_surface_removed_and_deep_faces_cut(tmp_path):
     Vm = RD.mech_to_block(np.array([[0.0, 0.0, 0.05], [0.1, 0.0, -0.01], [0.0, 0.1, 0.0], [0.2, 0.2, 0.8]]), pose)
     Vc, Fc, lifted, cut = RD.clamp_to_deck(Vm, pose, np.array([[0, 1, 2], [1, 2, 3]]))
     assert (lifted, cut) == (1, 1) and Fc.tolist() == [[0, 1, 2]] and abs(RD.block_to_mech(Vc, pose)[0, 2]) < 1e-12
+
+
+# ----------------------------------------------------------------------------- 10 Nov: the 16-bit linear panorama
+def test_linear16_of_a_real_product_and_the_archive_lookup(tmp_path):
+    import cv2
+    import shutil
+    from types import SimpleNamespace
+    import mppp
+    from conftest import NLF
+    from mppp.ibr import linear16 as L16
+    cfg = mppp.load_config()
+    i16, sat, facts = L16.linear16_of_product(NLF, cfg)
+    from mppp.image import MPPPImage
+    c8 = mppp.load_config({"masking": {"infer_mask": False}, "camera_model": {"extrinsics_from_waypoints": False},
+                           "selection": {"max_boresight_elevation_deg": None, "max_exposure_ms": None, "max_centre_tint": None,
+                                         "max_saturated_fraction": None, "lmst_window_h": None}})
+    i8 = MPPPImage(NLF, c8, None).image_int8
+    assert i16.dtype == np.uint16 and i16.shape == i8.shape
+    free = (i8 < 255).all(axis=2)
+    assert np.abs(i16[free] / 64.0 - i8[free]).max() <= 0.51                   # the 8-bit image is the 16-bit one / 64 ...
+    assert 0.005 < facts["clipped_in_8bit_share"] < 0.05 and facts["clipped_in_16bit_share"] == 0     # ... clipped at 255
+    assert i16.max() > 255 * 64 and facts["white_balance"] == [1.1, 1.4, 1.8] and facts["saturated_share"] == sat.mean()
+    # a plateau is saturation; a smooth highlight is not
+    g = np.random.default_rng(0)
+    raw = g.uniform(0.1, 0.8, (200, 300, 3))
+    assert not L16.saturation_mask(raw).any()
+    raw[50:90, 100:160, 1] = 1.0
+    m = L16.saturation_mask(raw)
+    assert m[50:90, 100:160].all() and m.sum() == 40 * 60
+    # the block: its 8-bit image at half the size, the product in <archive>/00461/ids/rdr/ncam/
+    root = tmp_path / "blk" / "colmap"
+    (root / "images").mkdir(parents=True)
+    (tmp_path / "blk" / "processed").mkdir()
+    (tmp_path / "blk" / "processed" / "mppp_config_v0p95.json").write_text(json.dumps(mppp.load_config()), encoding="utf-8")
+    name = NLF.stem + ".png"
+    cv2.imwrite(str(root / "images" / name), i8[: i8.shape[0] // 2, : i8.shape[1] // 2])
+    arch = tmp_path / "pds" / "00461" / "ids" / "rdr" / "ncam"
+    arch.mkdir(parents=True)
+    shutil.copy2(NLF, arch / NLF.name)
+    proj = SimpleNamespace(root=root, settings={"processed_dir": str(tmp_path / "blk" / "processed")})
+    rep = L16.ensure_linear16(proj, [name, "NLF_0461_0000000000_000RAD_N0260630NCAM00000_0A0195J01.png"], pds=tmp_path / "pds")
+    assert rep["have"] == [name] and rep["made"] == 1 and len(rep["missing"]) == 1
+    f, sf = L16.files(proj, name)
+    back = cv2.imread(str(f), cv2.IMREAD_UNCHANGED)
+    assert back.dtype == np.uint16 and back.shape[:2] == (i8.shape[0] // 2, i8.shape[1] // 2) and sf.is_file()
+    assert json.loads((root / "images16" / "linear16.json").read_text())[name]["cropped"]       # a half-resolution frame
+    assert L16.ensure_linear16(proj, [name], pds=tmp_path / "nowhere")["made"] == 0          # kept, not made again
+    # the view's tone curve: unchanged below the knee, monotone, the 16-bit ceiling at 255, the hue kept
+    x = np.array([[100.0, 50.0, 25.0], [190.0, 95.0, 0.0], [600.0, 300.0, 150.0], [1023.98, 1023.98, 1023.98]], np.float32)
+    y = L16.tone_soft(x)
+    assert np.allclose(y[:2], x[:2]) and 190 < y[2, 0] < 255 and abs(y[2, 1] / y[2, 0] - 0.5) < 1e-4 and y[3, 0] > 254.9
+
+
+def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
+    import cv2
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    d16 = Path(proj.root) / "images16"
+    d16.mkdir()
+    for n in st.images:                                           # the frames 3x brighter than the 8-bit range holds
+        img8 = cv2.imread(str(Path(proj.root) / "images" / n), cv2.IMREAD_COLOR)
+        cv2.imwrite(str(d16 / n), (img8.astype(np.uint16) * 64 * 3))
+        sat = np.zeros(img8.shape[:2], np.uint8)
+        if n == st.images[0]:
+            sat[:, :200] = 255                                    # the left half of the red frame "saturated"
+        cv2.imwrite(str(d16 / (Path(n).stem + ".sat.png")), sat)
+    out = tmp_path / "o16"
+    r = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, bits=16, gains=False)
+    assert r["bits"] == 16 and r["linear16"]["rendered"] and not r["linear16"]["missing"]
+    L16 = cv2.imread(str(out / "S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)[..., ::-1]
+    L8 = cv2.imread(str(out / "S003D0010_ods_left.png"))[..., ::-1]
+    assert L16.dtype == np.uint16 and L16.shape == (128, 256, 3) and L8.dtype == np.uint8
+    east = L16[70, 64]                                            # az 90: the green frame, 255 x 3 x 64
+    assert abs(int(east[1]) - 255 * 3 * 64) < 300 and east[0] < 300 and r["eyes"]["left"]["above_8bit_range"] > 0.2
+    assert 200 < L8[70, 64, 1] <= 255 and L8[70, 64, 0] < 5       # the view: rolled off, still green
+    north = L16[70, 2:126:8]                                      # the red frame: neutral where it was saturated
+    assert (np.abs(north[:, 0].astype(int) - north[:, 1].astype(int)) < 300).any() and (north[:, 1] < 300).any()
+    sq = cv2.imread(str(out / "S003D0010_ods_stereo_square_16.png"), cv2.IMREAD_UNCHANGED)
+    assert sq.dtype == np.uint16 and sq.shape == (256, 256, 3) and np.array_equal(sq[:128], L16[..., ::-1])
+    assert (out / "S003D0010_ods_stereo_square.jpg").is_file()
+    # a frame without its 16-bit image: the 8-bit panorama, and the record says so
+    (d16 / st.images[1]).unlink()
+    r8 = O.render_station(proj, rec, st, scene, tmp_path / "o8", width=128, scale=0.5, rows_per_chunk=32, bits=16, gains=False)
+    assert r8["bits"] == 8 and r8["linear16"]["missing"] and not (tmp_path / "o8" / "S003D0010_ods_left_16.png").is_file()

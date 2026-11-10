@@ -149,6 +149,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     argv.append("--photometry")
                 if step == "ods" and st.get("ods_exclude"):   # 10 Nov: pairs left out of the panorama
                     argv += ["--exclude", *[str(x) for x in st["ods_exclude"]]]
+                argv += [str(x) for x in (cfg.get(f"{step}_args") or [])]      # 0.96.1: for every station
                 argv += [str(x) for x in st.get(f"{step}_args", [])]
                 cmds.append({"variant": v, "step": step, "argv": argv})
         runs.append({"label": lab, "work": str(work), "out": str(base), "note": st.get("note", ""), "variants": vs,

@@ -23,6 +23,21 @@ the station in their names; the stacked square has the left eye on top; the rove
   hole in the reconstructed deck - a quarter of the deck seen from the mast at Van Zyl, mostly around the mast
   foot - lands on the deck, coloured from the deck's own pixels, instead of on the ground 1.1 m below.
   `rover_deck.json` (the pose, the footprint corners in the block, the agreement); `--no-deck-floor`.
+- **The panorama in 16 bits** (`mppp ods --bits 16`, `mppp.ibr.linear16`; Christian: "please implement a 16-bit
+  process so that I can color correct it later ... I would like to have more control over the color space"). The
+  block's 8-bit images are the 16-bit linear product / 64 clipped at 255 - a quarter of the 16-bit range; the test
+  product (Rockytop NCAM03461) has 3.9 % of its pixels clipped in 8 bits and none in 16. The station's frames are
+  made again from their PDS products with the block's own settings (mask inference off) into
+  `<project>/images16/` (uint16 linear RGB, the saturation mask `.sat.png`, `linear16.json` with each frame's white
+  balance, brightness, zenith scale and the divisor back to radiance); the product is found in the frame's sol
+  folder under `--pds` / `MPPP_PDS` / the archive the block's manifest names. The blend, the gains, the crack and
+  sky fills run in float on them; a detector-saturated pixel (a pile-up at the top of a channel) is made neutral
+  instead of the white balance's tint and gives way to another frame. Outputs next to the 8-bit ones:
+  `<station>_ods_left_16.png`, `_right_16.png`, `_stereo_square_16.png` (uint16, linear, no gamma; `ods.json`
+  `linear16` documents the encoding). The 8-bit panorama then comes from the linear one through `--tone soft`
+  (default: unchanged up to 190, the highlights rolled off to 255 at the 16-bit ceiling, hue kept) or `--tone
+  clip` (as before). A frame without its product: a loud warning and the 8-bit panorama. On for the single sites
+  (`ods_args` in `single_sites.json`, now also a top-level key).
 - **Floating surface removed** (Christian: "floating polygons should be removed ... everything above the cameras
   and every thing 1 meter below the camera beyond 3 meters"): `mppp mesh` drops the fused points and the triangles
   above the cameras anywhere, and beyond 3 m of the mast axis those less than 1 m below the cameras

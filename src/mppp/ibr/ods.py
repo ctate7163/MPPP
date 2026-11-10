@@ -120,6 +120,9 @@ class SourceImage:
         self._dist: Optional[np.ndarray] = None
         self.gain = 1.0
         self.extra_mask: Optional[np.ndarray] = None      # True = may not be used (the mast-head hardware, rover shown)
+        self.linear_file: Optional[Path] = None           # 0.96.1: the 16-bit linear image (mppp.ibr.linear16)
+        self.sat_file: Optional[Path] = None              # ... and its saturation mask
+        self._sat: Optional[np.ndarray] = None
         self.W = max(1, int(round(camera.width * scale)))
         self.H = max(1, int(round(camera.height * scale)))
 
@@ -136,6 +139,24 @@ class SourceImage:
         return uv, z, inside
 
     def rgb(self) -> np.ndarray:
+        """The colour image at scale: uint8, or - from the 16-bit linear image - float32 in the 8-bit image's units
+        (the 16-bit value / 64: up to 1024, not clipped at 255), saturated pixels made neutral."""
+        if self._rgb is None and self.linear_file is not None:
+            import cv2
+            img = cv2.imread(str(self.linear_file), cv2.IMREAD_UNCHANGED)
+            if img is None or img.dtype != np.uint16:
+                raise FileNotFoundError(f"{self.linear_file}: not a 16-bit image")
+            img = img[..., :3][..., ::-1].astype(np.float32) / 64.0
+            sat = cv2.imread(str(self.sat_file), cv2.IMREAD_GRAYSCALE) if self.sat_file and Path(self.sat_file).is_file() else None
+            if sat is not None and sat.any():
+                m = sat > 0
+                img[m] = img[m].max(axis=1, keepdims=True)          # white at its brightness, not the white balance's tint
+            if img.shape[1] != self.W or img.shape[0] != self.H:
+                img = cv2.resize(img, (self.W, self.H), interpolation=cv2.INTER_AREA)
+                if sat is not None:
+                    sat = cv2.resize(sat, (self.W, self.H), interpolation=cv2.INTER_AREA)
+            self._sat = None if sat is None or not sat.any() else cv2.GaussianBlur(sat.astype(np.float32) / 255.0, (0, 0), 1.5)
+            self._rgb = np.ascontiguousarray(img)
         if self._rgb is None:
             import cv2
             img = cv2.imread(str(self.image_file), cv2.IMREAD_COLOR)
@@ -157,8 +178,14 @@ class SourceImage:
             self._mask = None if m is None else (m > 0)
         return self._mask
 
+    def sample_saturation(self, uv: np.ndarray) -> Optional[np.ndarray]:
+        """The saturated share (0-1) at ``uv``; None for a frame without saturation (or an 8-bit source)."""
+        self.rgb()
+        return None if self._sat is None else self._bilinear(self._sat, uv)
+
     def release(self) -> None:
         self._rgb = None
+        self._sat = None
         self._low = None
         self._dist = None
 
@@ -265,7 +292,7 @@ def head_hardware_masks(sources: Sequence["SourceImage"], masks: Sequence[Option
 
 def station_sources(project, rec, station, families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0,
                     images: Optional[Sequence[str]] = None, use_masks: bool = True,
-                    mask_head_hardware: bool = True) -> List[SourceImage]:
+                    mask_head_hardware: bool = True, linear16: Optional[Dict[str, Any]] = None) -> List[SourceImage]:
     """The station's frames as sources; ``use_masks=False`` (``mppp ods --rover``) lets the rover's own pixels in,
     except the hardware fixed to the mast head (:func:`head_hardware_masks`) unless ``mask_head_hardware`` is off."""
     by_name = {im.name: im for im in rec.images.values()}
@@ -281,6 +308,8 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
         out.append(SourceImage(name, rec.cameras[im.camera_id], np.asarray(cw.rotation.matrix(), float),
                                np.asarray(im.projection_center(), float), Path(project.root) / "images" / name,
                                mf if (use_masks and mf.is_file()) else None, s))
+        if linear16 is not None:
+            out[-1].linear_file, out[-1].sat_file = linear16[name]
     if not use_masks and mask_head_hardware and out:
         import cv2
         ms = []
@@ -426,12 +455,14 @@ def estimate_gains(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence
 def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], eye: str, width: int, height: int,
                ipd_m: float, rows_per_chunk: int = 128, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0),
                feather_px: float = FEATHER_PX, progress=None, sky_fill: bool = True,
-               azimuth0_deg: float = 0.0) -> Dict[str, np.ndarray]:
-    """One eye's equirect: {"rgb" (H, W, 3) uint8, "source" (H, W) int16 (-1 none; the strongest source), "label"
+               azimuth0_deg: float = 0.0, linear: bool = False) -> Dict[str, np.ndarray]:
+    """One eye's equirect: {"rgb" (H, W, 3) uint8 - or, ``linear``, float32 in 8-bit units up to 1024 (x 64 = the
+    16-bit linear value) -, "source" (H, W) int16 (-1 none; the strongest source), "label"
     (H, W) uint8 surface label, "range" (H, W) float32}.  The two-band blend of the module doc, with each source's
     ``gain`` (:func:`estimate_gains`; 1 when not estimated)."""
     P = np.asarray(pivot, float)
-    rgb = np.zeros((height, width, 3), np.uint8)
+    rgb = np.zeros((height, width, 3), np.float32 if linear else np.uint8)
+    top = LINEAR_TOP if linear else 255.0
     source = np.full((height, width), -1, np.int16)
     label = np.zeros((height, width), np.uint8)
     rng = np.zeros((height, width), np.float32)
@@ -460,6 +491,10 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
                 aterm = c["ang"][sel, slot]
                 w_lo = _smoothstep(dist / (FEATHER_LOW_FRAC * src.short_side)) * aterm
                 w_hi = _smoothstep(dist / (FEATHER_HIGH_FRAC * src.short_side)) * aterm ** 3
+                sat = src.sample_saturation(c["uv"][sel, slot])
+                if sat is not None:                              # a saturated pixel: another frame, where there is one
+                    keep = (1.0 - SAT_DOWNWEIGHT * np.clip(sat, 0.0, 1.0)).astype(np.float32)
+                    w_lo, w_hi = w_lo * keep, w_hi * keep
                 g = src.gain
                 low_acc[sel] += (g * lo) * w_lo[:, None]
                 hi_acc[sel] += (g * (full - lo)) * w_hi[:, None]
@@ -473,7 +508,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         col[has] = low_acc[has] / w_low_sum[has][:, None]
         hh = has & (w_hi_sum > 1e-6)
         col[hh] += hi_acc[hh] / w_hi_sum[hh][:, None]
-        rgb[r0:r1] = np.clip(col, 0, 255).astype(np.uint8).reshape(r1 - r0, width, 3)
+        rgb[r0:r1] = np.clip(col, 0, top).astype(rgb.dtype).reshape(r1 - r0, width, 3)
         source[r0:r1] = np.where(has, strongest, -1).astype(np.int16).reshape(r1 - r0, width)
         label[r0:r1] = c["label"].reshape(r1 - r0, width)
         rng[r0:r1] = np.where(c["ok"], c["t"], 0).reshape(r1 - r0, width)
@@ -564,7 +599,8 @@ def fill_sky(rgb: np.ndarray, source: np.ndarray, label: np.ndarray) -> np.ndarr
     c_row = (1 - fr[ys]) * levels[k0[ys], xs] + fr[ys] * levels[k1[ys], xs]
     fill = (1 - sm[ys, xs])[:, None] * c_row + sm[ys, xs][:, None] * zenith[None, :]
     ww = w[ys, xs][:, None]
-    rgb[ys, xs] = np.clip((1 - ww) * rgb[ys, xs].astype(np.float32) + ww * fill, 0, 255).astype(np.uint8)
+    top = 255.0 if rgb.dtype == np.uint8 else LINEAR_TOP
+    rgb[ys, xs] = np.clip((1 - ww) * rgb[ys, xs].astype(np.float32) + ww * fill, 0, top).astype(rgb.dtype)
     source[hole] = -3
     return changed
 
@@ -591,7 +627,11 @@ def fill_cracks(rgb: np.ndarray, source: np.ndarray, label: np.ndarray, max_px: 
     if filled.any():
         ys, xs = np.nonzero(filled)
         y0, y1, x0, x1 = max(0, ys.min() - 8), min(rgb.shape[0], ys.max() + 9), max(0, xs.min() - 8), min(rgb.shape[1], xs.max() + 9)
-        sub = cv2.inpaint(np.ascontiguousarray(rgb[y0:y1, x0:x1]), filled[y0:y1, x0:x1].astype(np.uint8), 5, cv2.INPAINT_TELEA)
+        fm = filled[y0:y1, x0:x1].astype(np.uint8)
+        if rgb.dtype == np.uint8:
+            sub = cv2.inpaint(np.ascontiguousarray(rgb[y0:y1, x0:x1]), fm, 5, cv2.INPAINT_TELEA)
+        else:                                                # float: one channel at a time
+            sub = np.dstack([cv2.inpaint(np.ascontiguousarray(rgb[y0:y1, x0:x1, k]), fm, 5, cv2.INPAINT_TELEA) for k in range(3)])
         rgb[y0:y1, x0:x1][filled[y0:y1, x0:x1]] = sub[filled[y0:y1, x0:x1]]
         source[filled] = -2
     return filled
@@ -615,6 +655,8 @@ def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int) -> Pat
     return Path(out_png)
 
 
+LINEAR_TOP = 65535.0 / 64.0      # the 16-bit ceiling in 8-bit units
+SAT_DOWNWEIGHT = 0.98            # a saturated source pixel keeps this much less weight in the blend
 STACK_NAME = "ods_stereo_square"     # .png and .jpg: the left eye on top of the right (Christian, 10 Nov: "put the left view on top")
 OLD_NAMES = ("ods_left.png", "ods_right.png", "ods_stereo_square.png", "ods_stereo_square.jpg")
 
@@ -640,7 +682,7 @@ def find_prefix(out_dir: PathLike) -> str:
 
 
 def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, prefix: Optional[str] = None,
-               square_prefix: Optional[str] = None) -> Dict[str, Any]:
+               square_prefix: Optional[str] = None, suffix: str = "") -> Dict[str, Any]:
     """``<prefix>_ods_stereo_square.png`` / ``.jpg``: the two eye images stacked into one square (W x W) - ``top``
     eye above (Christian, 10 Nov: "make a version with the ods_right.png stacked on top of the ods_left so that it is
     a square that I can upload").  ``prefix`` None: that of the eye images in ``out_dir``; ``square_prefix`` (default
@@ -651,6 +693,16 @@ def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, pre
     if prefix is None:
         prefix = find_prefix(out)
     other = "left" if top == "right" else "right"     # 10 Nov: left on top by default (was right)
+    if suffix:                                           # "_16": the 16-bit linear eye images, a 16-bit PNG only
+        a = cv2.imread(str(ods_file(out, top + suffix, prefix)), cv2.IMREAD_UNCHANGED)
+        b = cv2.imread(str(ods_file(out, other + suffix, prefix)), cv2.IMREAD_UNCHANGED)
+        if a is None or b is None or a.shape != b.shape:
+            raise FileNotFoundError(f"{out}: the two {suffix} eye images are needed, of one size")
+        sp = prefix if square_prefix is None else square_prefix
+        png = ods_file(out, "stereo_square" + suffix, sp)
+        sq = np.vstack([a, b])
+        cv2.imwrite(str(png), sq)
+        return {"png": str(png), "size": [int(sq.shape[1]), int(sq.shape[0])], "top": top, "bits": 16}
     a, b = cv2.imread(str(ods_file(out, top, prefix))), cv2.imread(str(ods_file(out, other, prefix)))
     if a is None or b is None:
         raise FileNotFoundError(f"{out}: {ods_file(out, 'left', prefix).name} and {ods_file(out, 'right', prefix).name} "
@@ -669,7 +721,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None,
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
                    gains: bool = True, stack_top: str = "left", sky_fill: bool = True,
-                   mask_head_hardware: bool = True, azimuth0_deg: float = 0.0, prefix: Optional[str] = None) -> Dict[str, Any]:
+                   mask_head_hardware: bool = True, azimuth0_deg: float = 0.0, prefix: Optional[str] = None,
+                   bits: int = 8, pds: Optional[PathLike] = None, tone: str = "soft") -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_ods_stereo_square.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``S003D2046`` / ``S003D2046_rover``); '' for the bare names.  Returns the record."""
@@ -679,8 +732,24 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     if prefix is None:
         prefix = ods_prefix(station.label, rover=not use_masks)
     height = width // 2
+    lin, lin_rep = None, None
+    if int(bits) == 16:                              # 0.96.1: the frames as 16-bit linear images (mppp.ibr.linear16)
+        from .linear16 import ensure_linear16, files as _lin_files
+        by = {im.name for im in rec.images.values() if im.has_pose}
+        want = [n for n in (list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())])
+                if n in by]
+        lin_rep = ensure_linear16(project, want, pds=pds)
+        if lin_rep["missing"]:
+            for n, why in list(lin_rep["missing"].items())[:5]:
+                log.warning("ods --bits 16: %s: %s", n, why)
+            log.warning("ods --bits 16: %d of %d frames have no 16-bit image - THE PANORAMA IS RENDERED IN 8 BITS",
+                        len(lin_rep["missing"]), len(want))
+        else:
+            lin = {n: _lin_files(project, n) for n in want}
+            log.info("ods: 16-bit linear sources (%d frames, %d made now) from %s", len(want), lin_rep["made"], lin_rep["dir"])
+    linear = lin is not None
     sources = station_sources(project, rec, station, families=families, scale=scale, zcam_scale=zcam_scale, images=images,
-                              use_masks=use_masks, mask_head_hardware=mask_head_hardware)
+                              use_masks=use_masks, mask_head_hardware=mask_head_hardware, linear16=lin)
     if not sources:
         raise ValueError(f"station {station.label}: no source images of families {families!r} with a pose")
     axes = dict(up=station.up, north=station.north, east=station.east)
@@ -701,9 +770,17 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         log.info("ods: gains over %d source pairs: %s", g["pairs"], ", ".join(f"{v:.3f}" for v in g["gains"].values()))
     for eye in eyes:
         res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, rows_per_chunk=rows_per_chunk,
-                         progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, **axes)
+                         progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, linear=linear, **axes)
         f = ods_file(out, eye, prefix)
-        cv2.imwrite(str(f), res["rgb"][..., ::-1])
+        if linear:                                   # the 16-bit linear panorama, and the 8-bit one for viewing
+            f16 = ods_file(out, eye + "_16", prefix)
+            cv2.imwrite(str(f16), np.clip(np.rint(res["rgb"][..., ::-1] * 64.0), 0, 65535).astype(np.uint16))
+            from .linear16 import tone_soft
+            view = tone_soft(res["rgb"]) if tone == "soft" else np.clip(res["rgb"], 0, 255)
+            over = float((res["rgb"].max(axis=2) > 255.0).mean())
+            cv2.imwrite(str(f), np.rint(view[..., ::-1]).astype(np.uint8))
+        else:
+            cv2.imwrite(str(f), res["rgb"][..., ::-1])
         if eye == eyes[0]:
             provenance_png(res["source"], out / "provenance.png", len(sources))
         lab = res["label"]
@@ -716,16 +793,33 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                 "cracks_filled": float(res["filled"].sum() / n),
                                 "sky_filled": float(res["sky_filled"].sum() / n)},
                                 "sources_used": int(len(np.unique(res["source"][res["source"] >= 0])))}
+        if linear:
+            rec_out["eyes"][eye].update(file_16bit=str(f16), above_8bit_range=over)
         for s in sources:
             s.release()
     if "left" in eyes and "right" in eyes:
         rec_out["stacked"] = stack_eyes(out, top=stack_top, prefix=prefix)
+        if linear:
+            rec_out["stacked_16bit"] = stack_eyes(out, top=stack_top, prefix=prefix, suffix="_16")
     if prefix:                                       # the unprefixed files of before 10 Nov would be stale
         for n in OLD_NAMES:
             if (out / n).is_file():
                 (out / n).unlink()
                 log.info("ods: removed the stale %s (now %s_%s)", n, prefix, n)
     rec_out["prefix"] = prefix
+    rec_out["bits"] = 16 if linear else 8
+    if int(bits) == 16:
+        fr = [v for v in (lin_rep.get("frames") or {}).values() if v]
+        rec_out["linear16"] = {
+            "rendered": linear, "missing": lin_rep["missing"], "dir": lin_rep["dir"],
+            "encoding": "uint16 linear, no gamma: value = radiance x white balance x brightness / zenith scale x "
+                        "scale_rad_to_int16 x the frame's gain (gains in this file); value / 64 = the 8-bit panorama "
+                        "before its tone curve; 0 = no data",
+            "white_balance": fr[0]["white_balance"] if fr else None, "brightness": fr[0]["brightness"] if fr else None,
+            "scale_rad_to_int16": fr[0]["scale_rad_to_int16"] if fr else None,
+            "view_tone": tone if linear else None,
+            "frames_saturated_share_max": max([f["saturated_share"] for f in fr], default=None),
+            "frames_clipped_in_8bit_share_max": max([f["clipped_in_8bit_share"] for f in fr], default=None)}
     rec_out["seconds"] = round(time.time() - t0, 1)
     (out / "ods.json").write_text(json.dumps(rec_out, indent=1, default=float), encoding="utf-8")
     log.info("ods: %s -> %s (%.0f s)", station.label, out, rec_out["seconds"])

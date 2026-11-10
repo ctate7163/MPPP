@@ -187,6 +187,16 @@ def add_parsers(sub) -> None:
     p.add_argument("--sols", nargs="+", type=int, default=None, help="only the frames of these sols")
     p.add_argument("--exclude", nargs="+", default=None, help="leave these frames out (stems or names; a stereo pair "
                    "goes together: NLF_... also drops its NRF_ partner)")
+    p.add_argument("--bits", type=int, default=8, choices=[8, 16], help="16 (0.96.1): the frames made again from their "
+                   "PDS products as 16-bit linear images (<project>/images16/, mppp.ibr.linear16), the panorama blended "
+                   "in them: <station>_ods_left_16.png, _right_16.png, _stereo_square_16.png (uint16 linear, for colour "
+                   "work) next to the 8-bit ones; saturated pixels neutral. Falls back to 8 bits where a product is "
+                   "not found")
+    p.add_argument("--pds", default=None, help="--bits 16: the PDS archive (default MPPP_PDS, else the one the block's "
+                   "manifest names)")
+    p.add_argument("--tone", default="soft", choices=["soft", "clip"], help="--bits 16: the 8-bit panorama from the "
+                   "linear one - soft (default: unchanged to 190, the highlights rolled off instead of clipped) or clip "
+                   "(as the 8-bit pipeline: cut at 255)")
     p.add_argument("--prefix", default=None, help="the panoramas' file-name prefix (default the station, S003D2046_ / "
                    "S003D2046_rover_: S003D2046_ods_left.png ...; '' for the bare ods_left.png)")
     p.add_argument("--rows-per-chunk", type=int, default=128)
@@ -317,12 +327,18 @@ def cmd_ods(a: argparse.Namespace) -> int:
                          zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,
-                         azimuth0_deg=-180.0 if a.north_center else a.azimuth0, prefix=a.prefix)
+                         azimuth0_deg=-180.0 if a.north_center else a.azimuth0, prefix=a.prefix,
+                         bits=a.bits, pds=a.pds, tone=a.tone)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: {e['file']}  coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "
               f"plane {100 * c.get('plane', 0):.1f}%, far {100 * c['far']:.1f}%, "
               f"no surface {100 * c['no_surface']:.1f}%, {e['sources_used']} sources")
+    if rep.get("bits") == 16:
+        print(f"16-bit linear: {rep['stacked_16bit']['png'] if rep.get('stacked_16bit') else rep['linear16']['dir']}; "
+              f"the 8-bit view with the '{rep['linear16']['view_tone']}' tone curve")
+    elif rep.get("linear16"):
+        print(f"--bits 16 NOT possible: {len(rep['linear16']['missing'])} frames without a 16-bit image (see the log) - rendered in 8 bits")
     if rep.get("stacked"):
         print(f"stacked: {rep['stacked']['jpg']} ({rep['stacked']['size'][0]} x {rep['stacked']['size'][1]}, "
               f"{rep['stacked']['top']} eye on top; also .png)")
