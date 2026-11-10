@@ -503,7 +503,8 @@ def test_dense_subset_prepare_and_fusion_write_fused_ply(tmp_path, monkeypatch):
 
 def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
     """9 Nov: mppp dense --stereo looked only at GPU_PYTHON; on the PC the CUDA python is gpu_python.txt (MPPP_GPU_PY),
-    so the stereo would have run in the CPU pycolmap and stopped.  Now: --python, else GPU_PYTHON, else gpu_python()."""
+    so the stereo would have run in the CPU pycolmap and stopped.  Now: --python, else GPU_PYTHON, else the alignment's
+    own lookup (pipeline._default_gpu_python: MPPP_GPU_PYTHON, MPPP_GPU_PY, gpu_python.txt, the mppp_gpu env)."""
     import mppp.sfm.gpu as G
     from mppp.cli import main as mppp_main
     from mppp.sfm.project import SfmProject
@@ -518,7 +519,8 @@ def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
     calls = []
     monkeypatch.delenv("GPU_PYTHON", raising=False)
     monkeypatch.setattr(pycolmap, "has_cuda", False, raising=False)
-    monkeypatch.setattr(G, "gpu_python", lambda default=None: "/envs/mppp_gpu/python.exe")
+    import mppp.pipeline as PL
+    monkeypatch.setattr(PL, "_default_gpu_python", lambda: "/envs/mppp_gpu/python.exe")
     monkeypatch.setattr(G, "run_step", lambda py, step, proj, **kw: calls.append((py, step, kw)) or {"steps": {}})
     assert mppp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--fusion"]) == 0
     py, step, kw = calls[0]

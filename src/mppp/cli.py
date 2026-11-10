@@ -138,7 +138,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mesh", action="store_true", help="a Poisson mesh of the fused cloud")
     p.add_argument("--max-image-size", type=int, default=None, help="the long side of the working images (default 2000)")
     p.add_argument("--python", default=os.environ.get("GPU_PYTHON"), help="the Python with the CUDA pycolmap for the "
-                   "stereo (default GPU_PYTHON, else the pipeline's GPU python: MPPP_GPU_PY or gpu_python.txt; "
+                   "stereo (default GPU_PYTHON, else the alignment's GPU python: MPPP_GPU_PYTHON, MPPP_GPU_PY, "
+                   "gpu_python.txt, the mppp_gpu conda env; "
                    "without one the stereo runs here if this pycolmap has CUDA)")
     p.add_argument("--overwrite", action="store_true", help="undistort again even if the workspace is there")
     p.add_argument("--no-bat", action="store_true", help="do not (re)write dense_reconstruct.bat (0.95.1: the batch file "
@@ -701,10 +702,12 @@ def cmd_dense(a: argparse.Namespace) -> int:
         if not steps:
             return 0
     import pycolmap
-    from .sfm.gpu import gpu_python, run_step
-    # 9 Nov: the CUDA python the pipeline itself uses (MPPP_GPU_PY, %LOCALAPPDATA%\mppp\gpu_python.txt) when
-    # neither --python nor GPU_PYTHON names one - before, the stereo ran here and stopped at "needs a CUDA pycolmap"
-    py = a.python or (None if getattr(pycolmap, "has_cuda", False) else gpu_python())
+    from .pipeline import _default_gpu_python
+    from .sfm.gpu import run_step
+    # the CUDA python the alignment itself uses (pipeline._default_gpu_python: MPPP_GPU_PYTHON, MPPP_GPU_PY,
+    # %LOCALAPPDATA%\mppp\gpu_python.txt, the mppp_gpu conda env) when neither --python nor GPU_PYTHON names one.
+    # 10 Nov on the PC: the 9 Nov fix looked at gpu_python() alone and missed MPPP_GPU_PYTHON / the mppp_gpu env
+    py = a.python or (None if getattr(pycolmap, "has_cuda", False) else _default_gpu_python())
     if py and ("stereo" in steps or not getattr(pycolmap, "has_cuda", False)):
         print(f"dense: {', '.join(steps)} in {py}")
         res = run_step(py, "dense", proj, steps=steps, max_image_size=size, workspace=str(ws), images=subset)
