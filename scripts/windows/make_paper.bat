@@ -2,7 +2,7 @@
 REM ======================================================================================================
 REM MPPP 0.95.1 - make_paper.bat (make_paper.bat until 29 Oct 2026; Christian, 19 Oct 2026): paper\paper.md (the JOSS paper) -> paper\paper.pdf
 REM
-REM claude_sync.bat calls it (make_paper.bat --quiet) after every sync, so paper.pdf always matches the code that
+REM run it (make_paper.bat --quiet) after a sync, so paper.pdf matches the code that
 REM was just synced; nothing else renders it.  Run it by hand to render without syncing.
 REM
 REM pandoc paper\paper.md --citeproc --bibliography paper\paper.bib --resource-path paper -o paper\paper.pdf

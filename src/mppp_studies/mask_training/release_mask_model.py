@@ -23,8 +23,10 @@ PathLike = Union[str, Path]
 
 
 def _default_card_file() -> Optional[Path]:
-    p = Path(__file__).resolve().parents[1] / "docs" / "hf_model_card.md"     # scripts/ -> repo root
-    return p if p.is_file() else None
+    from mppp_studies.paths import docs_dir
+    d = docs_dir()
+    p = d / "hf_model_card.md" if d is not None else None                     # the checkout's docs/
+    return p if p is not None and p.is_file() else None
 
 
 def upload_model(name: Optional[str] = None, repo_id: Optional[str] = None, card: Optional[PathLike] = None,

@@ -27,6 +27,7 @@ import hashlib
 import json
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -535,7 +536,13 @@ def cmd_doctor(a: argparse.Namespace) -> int:
     from .paths import cmods_dir, source_root
     from .waypoints.table import waypoints_age_days
     lines = [f"mppp {__version__}", f"python {sys.version.split()[0]} ({sys.executable})",
-             f"source checkout: {source_root() or 'no (installed package)'}"]
+             f"source checkout: {source_root() or 'no (installed package)'}" + _git_head(source_root())]
+    try:
+        import mppp_studies
+        lines.append(f"studies          {Path(mppp_studies.__file__).parent}")
+    except Exception as e:                                                # noqa: BLE001
+        lines.append(f"studies          not importable ({type(e).__name__}): the calibration, error and mask-training "
+                     "studies need the source checkout (src/mppp_studies)")
     missing = 0
     for var, what in (("MPPP_SCAPES", "the scapes root (WORK folders)"), ("MPPP_PDS", "the PDS archive"),
                       ("MPPP_GPU_PYTHON", "the GPU python for SIFT (optional)"), ("COLMAP_BAT", "COLMAP (optional, GUI)")):
@@ -561,8 +568,40 @@ def cmd_doctor(a: argparse.Namespace) -> int:
     lines.append(f"camera models    {cmods_dir()} fingerprint {models_fingerprint()} form {'ok' if fm['ok'] else 'NOT OK: ' + '; '.join(fm['errors'])}")
     age = waypoints_age_days()
     lines.append(f"waypoints        {'packaged snapshot (mppp waypoints --refresh)' if age is None else f'downloaded copy {age:.1f} days old'}")
+    lines += _live_runs(os.environ.get("MPPP_SCAPES"))
     print("\n".join(lines))
     return 1 if missing else 0
+
+
+def _git_head(root: Optional[Path]) -> str:
+    """`` @ <short hash> <subject>`` of a source checkout, or nothing (0.96.0: which code a tree holds, at a glance)."""
+    if root is None or not (root / ".git").exists():
+        return ""
+    try:
+        r = subprocess.run(["git", "-C", str(root), "log", "--oneline", "-1"], capture_output=True, text=True, timeout=20)
+        return f" @ {r.stdout.strip()}" if r.returncode == 0 and r.stdout.strip() else ""
+    except Exception:                                                     # noqa: BLE001
+        return ""
+
+
+def _live_runs(scapes: Optional[str]) -> List[str]:
+    """0.96.0: what runs on the scapes root right now - the pipeline lock and the freeze drivers' status files
+    (pid alive and heartbeat fresh), so a sync or a second start does not walk into a run."""
+    if not scapes:
+        return []
+    from .runner import read_status
+    d = Path(scapes) / "mppp_pipeline"
+    out = []
+    for name, label in (("pipeline_status.json", "pipeline"), ("freeze_status.json", "freeze (0.96)"),
+                        ("freeze2_status.json", "freeze-2"), ("freeze_chain_status.json", "freeze chain")):
+        st = read_status(d / name)
+        if not st:
+            continue
+        cur = next((k for k, v in (st.get("steps") or {}).items() if isinstance(v, dict) and v.get("state") == "running"), None)
+        where = st.get("stage") or cur or "-"
+        out.append(f"{label:<16} {'RUNNING' if st.get('alive') else st.get('state', '?')} (pid {st.get('pid')}, "
+                   f"heartbeat {st.get('heartbeat')}, {where})")
+    return out or [f"runs on {scapes}: none"]
 
 
 def _project_dir(work: str, variant: str = "") -> Optional[Path]:

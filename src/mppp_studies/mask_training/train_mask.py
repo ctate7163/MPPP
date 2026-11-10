@@ -19,11 +19,17 @@ Never promotes or releases: do that after looking.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
 from datetime import date
 from pathlib import Path
+
+from mppp_studies.paths import outputs_dir
+
+DEFAULT_BASELINE = "mppp_mask_v3"                  # the model the blocks on disk were processed with (freeze-1 chose it)
+VERDICT_FILE = "mask_verdict.json"                 # the comparison's outcome, read by the 0.96 freeze (--mask-model auto)
 
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")     # duplicate Intel OpenMP on Windows/conda; before torch
 
@@ -44,7 +50,18 @@ def _smoke_data(root: Path) -> None:
         cv2.imwrite(str(root / "masks" / name), m)
 
 
+def parser_for_test() -> argparse.ArgumentParser:
+    """The argument parser alone (the tests check the options without a torch)."""
+    return _parser()
+
+
 def main(argv=None) -> int:
+    ap = _parser()
+    a = ap.parse_args(argv)
+    return _main(ap, a)
+
+
+def _parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", default=os.environ.get("MPPP_MASK_DATA"), help="training set root (masks/, images/)")
     ap.add_argument("--pds", default=os.environ.get("MPPP_PDS"), help="PDS archive (for --regen)")
@@ -100,8 +117,21 @@ def main(argv=None) -> int:
     ap.add_argument("--from-checkpoint", default=None, metavar="CKPT",
                     help="--write-test-list: the checkpoint whose recorded val split (.split.json, frame_audit.csv "
                          "or the card's val_masks) becomes the list")
+    ap.add_argument("--compare", nargs="*", default=None, metavar="MODEL",
+                    help="0.96 (Christian, 9 Nov: 'will the mask comparison run after the training so that we will "
+                         "know which is better?'): after the training, compare_mask_models of the new checkpoint "
+                         f"against these registry names or checkpoints (none given: {DEFAULT_BASELINE}) on the new "
+                         "model's held-out frames -> Claude outputs/mask_<checkpoint>/mask_ab/ and "
+                         f"{VERDICT_FILE} (the exclusion IoU of each and the winner); the freeze reads it")
+    ap.add_argument("--compare-seen", default=None, metavar="DATA",
+                    help="--compare: the older training set the first --compare model trained on (frames in it are "
+                         "left out of the fair subset; default: none, every held-out frame counts)")
+    ap.add_argument("--compare-device", default="auto")
     ap.add_argument("--smoke", action="store_true", help="tiny synthetic CPU run (script check)")
-    a = ap.parse_args(argv)
+    return ap
+
+
+def _main(ap: argparse.ArgumentParser, a) -> int:
     if a.recipe:
         from mppp_studies.mask_training.augment import RECIPES
         r = RECIPES[a.recipe]
@@ -208,8 +238,12 @@ def main(argv=None) -> int:
         if not a.smoke:
             render_worst(view, ckpt, n=24, sort_by="confident_error_pct")
     if a.paper:
-        pdir = (Path(__file__).resolve().parent.parent / "Claude outputs" / f"mask_{Path(ckpt).stem}") if a.paper == "auto" else Path(a.paper)
+        pdir = (outputs_dir() / f"mask_{Path(ckpt).stem}") if a.paper == "auto" else Path(a.paper)
         print(paper_outputs(Path(ckpt), data, pdir, items, smoke=a.smoke, image_dirs=image_dirs))
+    if a.compare is not None:
+        verdict = compare_after_training(Path(ckpt), data, a.compare or [DEFAULT_BASELINE], seen=a.compare_seen,
+                                         device=a.compare_device, smoke=a.smoke)
+        print(json.dumps(verdict, indent=1))
     return 0
 
 
@@ -235,6 +269,58 @@ def training_set_summary(items, card) -> dict:
             "zoom_max": tr.get("zoom_max"), "zoom_prob": tr.get("zoom_prob"), "tone_prob": tr.get("tone_prob"),
             "zoom_pairs": tr.get("zoom_pairs"),
             "backbone": card.get("backbone")}
+
+
+def compare_after_training(ckpt: Path, data: Path, models, seen=None, device: str = "auto", smoke: bool = False,
+                           out: Path | None = None) -> dict:
+    """The new checkpoint against ``models`` on its own held-out frames (``compare_mask_models``), then the verdict:
+    ``{"new", "baseline", "models": {label: exclusion IoU}, "subset", "winner", "margin"}`` written as
+    ``mask_verdict.json`` next to the A/B.  ``subset`` is ``not_seen`` when ``seen`` was given (the frames the baseline
+    did not train on), else ``all``.  The winner is the model with the highest exclusion IoU over all cameras; the
+    margin is new minus baseline (the first of ``models``).  Nothing is promoted: the freeze (``--mask-model auto``)
+    decides with its own margin, and a person decides what to release."""
+    from .compare_mask_models import main as compare_main
+    out = Path(out) if out is not None else outputs_dir(create=True) / f"mask_{ckpt.stem}" / "mask_ab"
+    out.mkdir(parents=True, exist_ok=True)
+    models = [str(m) for m in models]
+    argv = ["--data", str(data), "--split-ckpt", str(ckpt), "--models", *models, str(ckpt), "--out", str(out),
+            "--device", device]
+    if seen:
+        argv += ["--seen", str(seen), "--seen-split", models[0], str(seen)]
+    if smoke:
+        argv += ["--limit", "4"]
+    rc = compare_main(argv)
+    verdict = read_verdict_from_ab(out, new=ckpt, baseline=models[0])
+    verdict["exit"] = rc
+    (out.parent / VERDICT_FILE).write_text(json.dumps(verdict, indent=1), encoding="utf-8")
+    return verdict
+
+
+def read_verdict_from_ab(ab_dir: Path, new: Path, baseline: str) -> dict:
+    """The verdict from ``mask_ab.csv``: the exclusion IoU of every model over all cameras, on the fair subset
+    (``not_seen``) when the A/B has one, else on all held-out frames."""
+    import csv
+    rows = []
+    try:
+        with open(Path(ab_dir) / "mask_ab.csv", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+    except OSError:
+        pass
+    pick: dict = {}
+    for r in rows:
+        if r.get("camera") == "all":
+            try:
+                pick.setdefault(r.get("subset", "all"), {})[r["model"]] = float(r["exclusion_IoU"])
+            except (KeyError, ValueError):
+                pass
+    subset = "not_seen" if pick.get("not_seen") else "all"
+    scores = pick.get(subset) or {}
+    new_label = Path(new).stem
+    base_label = Path(baseline).stem if Path(baseline).suffix in (".pt", ".safetensors") else baseline
+    winner = max(scores, key=scores.get) if scores else None
+    margin = (scores.get(new_label) - scores.get(base_label)) if new_label in scores and base_label in scores else None
+    return {"new": str(new), "new_label": new_label, "baseline": baseline, "baseline_label": base_label,
+            "subset": subset, "models": scores, "winner": winner, "margin": margin, "ab_dir": str(ab_dir)}
 
 
 def paper_outputs(ckpt: Path, data: Path, out: Path, items, smoke: bool = False,

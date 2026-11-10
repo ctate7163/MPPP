@@ -36,7 +36,7 @@ set "OUT=%MPPP_SCAPES%\camera_analysis\trial_0p95_%TODAY%"
 if not exist "%OUT%" mkdir "%OUT%"
 echo %DATE% %TIME%  MPPP trial of the 0.95.0 joints -^> %OUT%
 python -m mppp version
-if errorlevel 1 ( echo mppp does not run - sync and install first ^(claude_sync.bat^) & pause & exit /b 1 )
+if errorlevel 1 ( echo mppp does not run - sync and install first ^(sync_code.bat^) & pause & exit /b 1 )
 python -m mppp cmods status
 echo.
 echo The camera models in use must be the ones the blocks were aligned with ^(a block aligned with other Navcam

@@ -376,6 +376,7 @@ def test_windows_folder_is_short():
     # train_masks.bat (Christian, 30 Oct: train on the newest set, the JOSS outputs): 23
     # zcam_backlash_rerun.bat (Christian, 31 Oct: "one good zcam joint to capture all of the problematic backlash
     # anomalies"): 24; freeze_chain.bat (Christian, 2 Nov: the freeze run unattended): 25
+    # 0.96.0 (9 Nov): claude_sync.bat and freeze_chain.bat out, sync_code.bat and freeze.bat in: 25
     assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 25, sorted(f.name for f in files)
     tm = (w / "train_masks.bat").read_bytes()
     assert tm.count(b"\n") == tm.count(b"\r\n") and b"masks_training_set_v*" in tm and b"--paper" in tm
@@ -529,18 +530,39 @@ def test_trial_joints_bat_runs_every_0p95_joint_without_promoting():
     assert t.index("call :part_%%P") < t.index("goto :end") < t.index(":part_navcam")
 
 
-def test_claude_sync_runs_from_a_copy_the_merge_cannot_touch():
-    """29 Oct: the merge replaced claude_sync.bat while cmd.exe was reading it; the script lost its place, started
-    over and stopped before the stash pop and the push.  It now hands over to a copy in %TEMP% before anything else
-    (without "call", so the original is never read again) and takes its folder from the copy's second argument."""
-    b = (ROOT / "scripts" / "windows" / "claude_sync.bat").read_bytes()
+def test_sync_code_runs_from_a_copy_the_merge_cannot_touch():
+    """29 Oct: the merge replaced the sync script while cmd.exe was reading it; the script lost its place, started
+    over and stopped before the stash pop.  0.96.0 (9 Nov, Christian: "let's clean up the MPPP directory so that
+    these conflicts don't keep happening"): sync_code.bat replaces claude_sync.bat - a bundle or GitHub, one
+    fast-forward, the quick tests one file per process, the freeze checkout updated through the driver (which refuses
+    while a run is alive), nothing started, no push (Christian pushes).  It hands over to a copy in %TEMP% before
+    anything else (without "call") and takes its folder from the copy's second argument."""
+    b = (ROOT / "scripts" / "windows" / "sync_code.bat").read_bytes()
     assert b.count(b"\n") == b.count(b"\r\n")
     t = b.decode("ascii")
-    hand = t.index('"%TEMP%\\mppp_claude_sync_run.bat" --from-copy "%~dp0" %*')
-    assert t.index('if /i not "%~1"=="--from-copy"') < hand < t.index("setlocal") < t.index("git ")
-    assert "call \"%TEMP%" not in t                                         # a transfer, not a call
-    assert 'set "HERE=%~2"' in t and t.index('set "HERE=%~2"') < t.index("shift") < t.index('"%HERE:~-16%"')
-    assert "git stash pop" in t and "git push origin main" in t
+    import re
+    hand = t.index('"%TEMP%\\mppp_sync_code_run.bat" --from-copy "%~dp0" %*')
+    first_git = re.search(r"\n\s*git ", t).start()                        # the first git command (not the comments)
+    assert t.index('if /i not "%~1"=="--from-copy"') < hand < t.index("setlocal") < first_git
+    assert 'call "%TEMP%' not in t                                          # a transfer, not a call
+    assert 'set "HERE=%~2"' in t and t.index('set "HERE=%~2"') < t.index("shift")
+    commands = "\n".join(l for l in t.splitlines() if not l.strip().upper().startswith("REM"))
+    assert "git stash pop" in commands and "git push" not in commands.split("echo next:")[0]   # no push by the script
+    assert "--ff-only" in t and 'MKL_THREADING_LAYER=SEQUENTIAL' in t and "-m pytest" in t
+    assert "mppp_studies.calibration.freeze" in t and "--update-code" in t
+    assert not (ROOT / "scripts" / "windows" / "claude_sync.bat").exists()
+
+
+def test_freeze_bat():
+    """0.96.0 (Christian, 9 Nov: "please prepare a freeze.bat that will run on 0.96"): its own checkout cloned from
+    this tree, the driver module, --status and --update-code start nothing, the mask comparison's Python found."""
+    b = (ROOT / "scripts" / "windows" / "freeze.bat").read_bytes()
+    assert b.count(b"\n") == b.count(b"\r\n")
+    t = b.decode("ascii")
+    assert "git clone" in t and "MPPP_FREEZE_CODE" in t and "mppp_studies.calibration.freeze" in t
+    assert 'PYTHONPATH=%MPPP_FREEZE_CODE%\\src' in t and "--from-tree" in t and "--ab-python" in t
+    assert t.index(":quick") > t.index("goto :quick") and "--update-code" in t and "--status" in t
+    assert not (ROOT / "scripts" / "windows" / "freeze_chain.bat").exists()
 
 
 def test_run_sites_takes_several_groups():

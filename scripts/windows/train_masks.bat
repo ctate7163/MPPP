@@ -11,6 +11,12 @@ REM                                                        paste, colour matrix,
 REM                                                        over the default v%VER%; --recipe turns the tone curve off.
 REM   Add --test-list D:\masks\frozen_test_list.txt to every run so they are scored on the same held-out frames
 REM   (make it once: python -m mppp_studies.mask_training.train_mask --write-test-list D:\masks\frozen_test_list.txt --from-checkpoint <v4.2 .pt>).
+REM   train_masks.bat --recipe A --tag v9A --compare           0.96 (9 Nov, "will the mask comparison run after the
+REM                                                        training?"): right after the training, compare_mask_models
+REM                                                        of the new checkpoint against mppp_mask_v3 (the blocks' model;
+REM                                                        add names or .pt paths after --compare for more) on its held-out
+REM                                                        frames -> Claude outputs\mask_<checkpoint>\mask_ab\ and
+REM                                                        mask_verdict.json, which freeze.bat --mask-model auto reads.
 REM
 REM 1. The training set: MPPP_MASK_DATA, else the highest D:\masks\masks_training_set_vN (MPPP_MASK_ROOT).
 REM 2. images\ regenerated from the PDS archive (MPPP_PDS) for every mask through the standard MPPP pipeline
