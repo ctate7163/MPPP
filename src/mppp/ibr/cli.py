@@ -45,6 +45,7 @@ def _model(project):
 
 def _station(project, rec, a):
     from .station import select_station
+    _rover(a)
     st = select_station(project, rec, a.station, families=getattr(a, "cameras", "N") or "N")
     if getattr(a, "out", None):                      # 10 Nov: e.g. D:\rover_blocks\single_sites\S003D2046[\with_rover]
         out = Path(a.out)
@@ -106,6 +107,21 @@ def _tie_points(rec, min_track: int = 3) -> np.ndarray:
     return np.asarray(pts, float).reshape(-1, 3)
 
 
+def _rover_args(p) -> None:
+    p.add_argument("--rover", action="store_true", help="the rover body and deck shown - the default since 0.96.1 "
+                   "(kept for old command lines)")
+    p.add_argument("--mask-rover", action="store_true", help="the rover masked out: the rover-masked cloud and the rover "
+                   "masks, products in ods/<station>/ (default since 0.96.1, Christian 10 Nov: the rover and its deck "
+                   "shown - the cloud fused without the masks, mppp dense --fusion --keep-rover - products in "
+                   "ods/<station>_rover/)")
+
+
+def _rover(a) -> bool:
+    """0.96.1: the rover shown unless ``--mask-rover``."""
+    a.rover = not getattr(a, "mask_rover", False)
+    return a.rover
+
+
 def add_parsers(sub) -> None:
     from .single_sites import add_parser as _single_sites_parser
     _single_sites_parser(sub)
@@ -132,9 +148,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--no-preview", action="store_true")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
                    "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
-    p.add_argument("--rover", action="store_true", help="0.96: the rover body and deck shown: the cloud fused without the rover masks (mppp dense --keep-rover), the "
-                   "rover's pixels used; products in ods/<station>_rover/ (the wind-sensor booms below the mast head "
-                   "are in it too, too close to the eyes - not handled yet)")
+    _rover_args(p)
     p.add_argument("--no-deck-floor", action="store_true", help="--rover: no floor at the rover deck (default: nothing "
                    "below the deck top inside its footprint, RMECH x -1.10..+0.95 m, y +-0.60 m, placed by the frames' "
                    "label CAHVORE poses; the floor added to the mesh; rover_deck.json)")
@@ -154,9 +168,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--no-validate", action="store_true")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
                    "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
-    p.add_argument("--rover", action="store_true", help="0.96: the rover body and deck shown: the cloud fused without the rover masks (mppp dense --keep-rover), the "
-                   "rover's pixels used; products in ods/<station>_rover/ (the wind-sensor booms below the mast head "
-                   "are in it too, too close to the eyes - not handled yet)")
+    _rover_args(p)
     p = sub.add_parser("ods", help="0.96: the stereoscopic panorama of the station - two equirect eye images (mppp.ibr.ods)")
     p.add_argument("work")
     p.add_argument("--station", required=True)
@@ -192,9 +204,7 @@ def add_parsers(sub) -> None:
                    "ods_stereo_square.png / .jpg (no rendering)")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
                    "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
-    p.add_argument("--rover", action="store_true", help="0.96: the rover body and deck shown: the cloud fused without the rover masks (mppp dense --keep-rover), the "
-                   "rover's pixels used; products in ods/<station>_rover/ (the wind-sensor booms below the mast head "
-                   "are in it too, too close to the eyes - not handled yet)")
+    _rover_args(p)
 
 
 def _points_file(project, given: Optional[str], label: Optional[str] = None, rover: bool = False) -> Path:
@@ -210,7 +220,9 @@ def _points_file(project, given: Optional[str], label: Optional[str] = None, rov
     cands = sorted(Path(project.root).glob(f"dense*/{fname}"), key=lambda p: p.stat().st_mtime)
     if not cands:
         hint = " --keep-rover" if rover else ""
-        raise FileNotFoundError(f"{project.root}: no dense*/{fname} - run mppp dense --station ... --fusion{hint} first, or give --points")
+        more = " (or --mask-rover for the rover-masked products)" if rover else ""
+        raise FileNotFoundError(f"{project.root}: no dense*/{fname} - run mppp dense --station ... --fusion{hint} first, or give "
+                                f"--points{more}")
     return cands[-1]
 
 

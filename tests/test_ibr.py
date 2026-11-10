@@ -372,7 +372,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     o3d.io.write_point_cloud(str(root / "dense" / "fused.ply"), pcd)
 
     work = str(root.parent)
-    assert mppp_main(["mesh", work, "--station", "3_10", "--poisson-depth", "7", "--target-triangles", "20000", "--no-preview"]) == 0
+    assert mppp_main(["mesh", work, "--station", "3_10", "--mask-rover", "--poisson-depth", "7", "--target-triangles", "20000", "--no-preview"]) == 0
     out = root / "ods" / "S003D0010"
     rep = json.loads((out / "mesh_report.json").read_text(encoding="utf-8"))
     assert (out / "mesh.ply").is_file() and (out / "ground_plane.json").is_file() and rep["points"] == len(pts)
@@ -386,7 +386,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     cen, _, _ = M.triangle_geometry(V, F)
     assert M.horizontal_distance(cen, rep["pivot_block_m"]).max() <= 30.05            # 30 m from the axis (smoothing: mm)
 
-    assert mppp_main(["depthmaps", work, "--station", "3_10", "--scale", "0.25", "--photometry", "--no-preview"]) == 0
+    assert mppp_main(["depthmaps", work, "--station", "3_10", "--mask-rover", "--scale", "0.25", "--photometry", "--no-preview"]) == 0
     maps = sorted((out / "maps").glob("*.npz"))
     assert len(maps) == 4
     m = RC.load_maps(maps[0])
@@ -398,7 +398,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     ok = np.isfinite(inc)
     assert ok.any() and np.all(inc[ok] >= 0) and np.all(inc[ok] <= 90)
 
-    assert mppp_main(["ods", work, "--station", "3_10", "--width", "256", "--scale", "0.25", "--rows-per-chunk", "32"]) == 0
+    assert mppp_main(["ods", work, "--station", "3_10", "--mask-rover", "--width", "256", "--scale", "0.25", "--rows-per-chunk", "32"]) == 0
     L = cv2.imread(str(out / "S003D0010_ods_left.png"))
     Rr = cv2.imread(str(out / "S003D0010_ods_right.png"))
     assert L.shape == (128, 256, 3) and Rr.shape == L.shape
@@ -433,7 +433,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     sqp = cv2.imread(str(out / "S003D0010_ods_stereo_square.png"))
     assert np.array_equal(sqp[:128], Lp) and np.array_equal(sqp[128:], Rp)                   # 10 Nov: left on top
     (out / "S003D0010_ods_stereo_square.png").unlink()
-    assert mppp_main(["ods", work, "--station", "3_10", "--stack-only", "--stack-top", "right"]) == 0
+    assert mppp_main(["ods", work, "--station", "3_10", "--mask-rover", "--stack-only", "--stack-top", "right"]) == 0
     assert np.array_equal(cv2.imread(str(out / "S003D0010_ods_stereo_square.png"))[:128], Rp)
 
 
@@ -1082,15 +1082,16 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
                                                     "mars2020_sol_0413_threeforks_large"]
     r0 = runs[0]
     steps = [(c["variant"], c["step"]) for c in r0["commands"]]
-    assert steps == [("masked", "dense"), ("rover", "dense"), ("masked", "mesh"), ("masked", "depthmaps"), ("masked", "ods"),
-                     ("rover", "mesh"), ("rover", "depthmaps"), ("rover", "ods")]
+    assert steps == [("masked", "dense"), ("rover", "dense"), ("rover", "mesh"), ("rover", "depthmaps"), ("rover", "ods"),
+                     ("masked", "mesh"), ("masked", "depthmaps"), ("masked", "ods")]          # 0.96.1: the rover shown first
     dense = r0["commands"][0]["argv"]
     assert dense[:4] == ["dense", r0["work"], "--station", "3_2046"] and dense.count("--images") == 1 and "--stereo" in dense
-    rover_ods = r0["commands"][-1]["argv"]
+    rover_ods = r0["commands"][4]["argv"]
+    assert "--mask-rover" in r0["commands"][-1]["argv"]
     assert "--rover" in rover_ods and rover_ods[-1].endswith(str(Path("S003D2046") / "with_rover"))
     assert SS.plan(cfg, root, labels=["S026D0630"], steps=["ods"], variants=["masked"])[0]["commands"] == [
         {"variant": "masked", "step": "ods", "argv": ["ods", str(root / "mars2020_sol_0460_rockytop"), "--station", "26_630",
-                                                      "--out", str(root / "single_sites" / "S026D0630"),
+                                                      "--mask-rover", "--out", str(root / "single_sites" / "S026D0630"),
                                                       "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"]}]
     with pytest.raises(KeyError):
         SS.plan(cfg, root, labels=["S999D9999"])

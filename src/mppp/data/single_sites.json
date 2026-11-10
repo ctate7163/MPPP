@@ -1,9 +1,9 @@
 {
- "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (masked, rover), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' for every station's dense step (and per station the same key).",
+ "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (rover, masked; the rover shown is the default since 0.96.1, run first), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' for every station's dense step (and per station the same key).",
  "out": "single_sites",
  "variants": [
-  "masked",
-  "rover"
+  "rover",
+  "masked"
  ],
  "dense_args": [
   "--full-fov"

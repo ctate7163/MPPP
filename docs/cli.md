@@ -375,8 +375,9 @@ of two, and a fused point 2 images instead of 5 - the far terrain of one station
 The options of the patch-match maps are recorded in `stereo/mppp_stereo.json`: maps made with other options are
 deleted before `--stereo` (COLMAP skips every image whose maps exist), `--restereo` deletes them in any case.
 `--keep-rover` fuses the same depth maps without the rover masks into `fused_rover.ply` (for `mppp mesh / depthmaps /
-ods --rover`: the rover body and deck shown, products in `ods/<station>_rover/`); after a run, `--fusion
---keep-rover` alone is enough.
+ods`, which show the rover body and deck by default since 0.96.1 - products in `ods/<station>_rover/`;
+`--mask-rover` for the rover-masked products in `ods/<station>/`); after a run, `--fusion --keep-rover` alone is
+enough.
 
 `dense_reconstruct.bat`, written next to `open_in_colmap.bat`, does the same with the COLMAP executable (a CUDA
 build is looked for first): double-click runs undistortion (without the masks: `mppp dense --prepare` for those),
@@ -440,8 +441,9 @@ emission, phase and the cast shadow — `photometry/` (npz), `photometry_maps/` 
 every hit coloured from the source frame that sees it best (the smallest angle to the frame's axis, inside the
 frame and its mask): `<station>_ods_left.png`, `<station>_ods_right.png`, `<station>_ods_stereo_square.png/.jpg`
 (the left eye above the right; `--stack-top right`), `provenance.png` (which frame coloured what), `ods.json` (the
-coverage: coloured, mesh, far, none); `--rover` names them `<station>_rover_ods_...`; `--exclude STEM ...` leaves
-frames out (both eyes of a pair).  **`mesh --rover`** puts a floor at the rover deck: nothing below the deck top
+coverage: coloured, mesh, far, none); with the rover shown (the default since 0.96.1) they are
+`<station>_rover_ods_...`, with `--mask-rover` `<station>_ods_...`; `--exclude STEM ...` leaves
+frames out (both eyes of a pair).  **`mesh`** with the rover shown puts a floor at the rover deck: nothing below the deck top
 inside its footprint (RMECH x -1.10..+0.95 m, y +-0.60 m, z 0 = the deck top; the rover placed by the frames' label
 CAHVORE poses), the floor added to the mesh, `rover_deck.json`; `--no-deck-floor` to leave it out.  Any VR photo viewer that takes an equirectangular pair shows it; the
 viewer itself is future work.

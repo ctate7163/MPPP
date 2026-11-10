@@ -7,7 +7,7 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 
 **In short.** The with-rover station products get a floor at the rover deck, hardwired in the rover frame and
 placed per station by the frames' label camera models; pairs can be left out of the panorama; the panoramas carry
-the station in their names; the stacked square has the left eye on top.
+the station in their names; the stacked square has the left eye on top; the rover is shown by default.
 
 - **The rover deck floor** (`mppp.ibr.rover_deck`; Christian: "put a minimum height at the rover deck. Things can
   be above it, but not below ... It doesn't change, so it can be hardwired for the with rover parts"). The deck is
@@ -29,6 +29,10 @@ the station in their names; the stacked square has the left eye on top.
 - **The panoramas named by station** (Christian: "name the ods with a site and drive prefix"):
   `S003D2046_ods_left.png`, `_ods_right.png`, `_ods_stereo_square.png/.jpg`, and `S003D2046_rover_...` in the
   rover variant (`--prefix`; '' for the bare names); a render removes the unprefixed files of before.
+- **The rover shown by default** (Christian: "make with the rover deck visible default"): `mppp mesh / depthmaps /
+  ods` use the cloud fused without the rover masks (`fused_rover.ply`, `mppp dense --fusion --keep-rover`) and the
+  rover's pixels unless `--mask-rover` (the old default); `--rover` is still accepted. The single sites run the
+  rover variant first (`variants` in `single_sites.json`); the folders stay `<label>\with_rover\` and `<label>\`.
 - **The left eye on top** of the stacked square by default (Christian: "put the left view on top"; `--stack-top
   right` for the old order).
 

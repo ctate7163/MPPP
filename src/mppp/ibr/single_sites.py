@@ -130,7 +130,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                              "argv": ["dense", str(work), "--station", st["station"], *fa, "--fusion", "--keep-rover"]})
         for v in vs:
             out = base if v == "masked" else base / "with_rover"
-            extra = ["--rover"] if v == "rover" else []
+            extra = ["--rover"] if v == "rover" else ["--mask-rover"]    # 0.96.1: the rover shown by default
             for step in ("mesh", "depthmaps", "ods"):
                 if step not in steps:
                     continue
