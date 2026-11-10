@@ -295,11 +295,15 @@ def cmd_ods(a: argparse.Namespace) -> int:
     from .ods import render_station, stack_eyes
     if a.stack_only:
         out = Path(a.out) if a.out else None
+        sq = a.prefix
         if out is None:
             project = _project(a.work)
             rec = _model(project)
             st, out = _station(project, rec, a)
-        r = stack_eyes(out, top=a.stack_top)
+            if sq is None:
+                from .ods import ods_prefix
+                sq = ods_prefix(st.label, rover=a.rover)
+        r = stack_eyes(out, top=a.stack_top, square_prefix=sq)
         print(f"{r['jpg']}  ({r['size'][0]} x {r['size'][1]}, {r['top']} eye on top; also .png)")
         return 0
     project = _project(a.work)

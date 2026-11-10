@@ -33,6 +33,14 @@ the station in their names; the stacked square has the left eye on top; the rove
   ods` use the cloud fused without the rover masks (`fused_rover.ply`, `mppp dense --fusion --keep-rover`) and the
   rover's pixels unless `--mask-rover` (the old default); `--rover` is still accepted. The single sites run the
   rover variant first (`variants` in `single_sites.json`); the folders stay `<label>\with_rover\` and `<label>\`.
+- **`update_and_run_single_sites.bat` fetches with `+main:refs/remotes/bundle/main`**: a plain fetch refused to
+  move the local copy of the bundle's `main` backwards (the old bat pinned to bundle l failed with "fetch from the
+  bundle failed" once a newer bundle had been fetched).
+- **`make_square.bat`** (Christian: "also put a make_square.bat that puts the left on top"), written next to
+  `update_and_run_single_sites.bat` by `single-sites --install`: the code updated the same way, then
+  `single-sites --squares-only` - each station's eye images already there stacked into
+  `<station>[_rover]_ods_stereo_square.jpg / .png`, the left eye on top, nothing rendered (`ods --stack-only`
+  names the square by the station even where the eye images still have the old names).
 - **The left eye on top** of the stacked square by default (Christian: "put the left view on top"; `--stack-top
   right` for the old order).
 

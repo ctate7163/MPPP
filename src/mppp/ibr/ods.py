@@ -639,10 +639,12 @@ def find_prefix(out_dir: PathLike) -> str:
     return n[:-1] if n.endswith("_") else n
 
 
-def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, prefix: Optional[str] = None) -> Dict[str, Any]:
+def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, prefix: Optional[str] = None,
+               square_prefix: Optional[str] = None) -> Dict[str, Any]:
     """``<prefix>_ods_stereo_square.png`` / ``.jpg``: the two eye images stacked into one square (W x W) - ``top``
     eye above (Christian, 10 Nov: "make a version with the ods_right.png stacked on top of the ods_left so that it is
-    a square that I can upload").  ``prefix`` None: that of the eye images in ``out_dir``.  Returns {"png", "jpg",
+    a square that I can upload").  ``prefix`` None: that of the eye images in ``out_dir``; ``square_prefix`` (default
+    ``prefix``): the square's, e.g. ``S003D2046`` for eye images still named without one.  Returns {"png", "jpg",
     "size", "top"}."""
     import cv2
     out = Path(out_dir)
@@ -656,7 +658,8 @@ def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, pre
     if a.shape != b.shape:
         raise ValueError(f"{out}: the eye images differ in size ({a.shape} vs {b.shape})")
     sq = np.vstack([a, b])
-    png, jpg = ods_file(out, "stereo_square", prefix), ods_file(out, "stereo_square", prefix, ".jpg")
+    sp = prefix if square_prefix is None else square_prefix
+    png, jpg = ods_file(out, "stereo_square", sp), ods_file(out, "stereo_square", sp, ".jpg")
     cv2.imwrite(str(png), sq)
     cv2.imwrite(str(jpg), sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
     return {"png": str(png), "jpg": str(jpg), "size": [int(sq.shape[1]), int(sq.shape[0])], "top": top}

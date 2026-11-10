@@ -50,8 +50,9 @@ set "B="
 for /f "delims=" %%f in ('dir /b /o-d "%TRANSFER%\mppp_*.bundle" 2^>nul') do if not defined B set "B=%TRANSFER%\%%f"
 for /f %%h in ('git rev-parse HEAD') do set "H0=%%h"
 if defined B (
-  git fetch -q "!B!" main:refs/remotes/bundle/main
-  if errorlevel 1 ( echo fetch from !B! failed & pause & exit /b 1 )
+  REM the + : the ref is only a copy of the bundle's main, so an older or other bundle may replace it
+  git fetch -q "!B!" +main:refs/remotes/bundle/main
+  if errorlevel 1 ( echo fetch from !B! failed - send Claude the lines above & pause & exit /b 1 )
   git merge-base --is-ancestor HEAD refs/remotes/bundle/main
   if errorlevel 1 (
     echo the newest bundle !B! is not ahead of %REPO% - the code is kept as it is
@@ -66,6 +67,15 @@ call scripts\windows\mppp_env.bat || ( pause & exit /b 1 )
 python -m mppp single-sites %*
 pause
 """
+
+
+SQUARES_BAT_NAME = "make_square.bat"
+SQUARES_BAT = BAT.replace("REM update_and_run_single_sites.bat [LABEL ...] [--steps ...]  (written by python -m mppp single-sites --install)",
+                          "REM make_square.bat [LABEL ...]  (written by python -m mppp single-sites --install)")
+SQUARES_BAT = SQUARES_BAT.replace("REM 2. python -m mppp single-sites with the arguments given: the stations of src\\mppp\\data\\single_sites.json",
+                                  "REM 2. python -m mppp single-sites --squares-only: every station's two eye images already there stacked into\n"
+                                  "REM    <station>[_rover]_ods_stereo_square.jpg / .png, the left eye on top (Christian, 10 Nov); nothing rendered")
+SQUARES_BAT = SQUARES_BAT.replace("python -m mppp single-sites %*", "python -m mppp single-sites --squares-only %*")
 
 
 def load_config(path: Optional[PathLike] = None) -> Dict[str, Any]:
@@ -203,7 +213,10 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                 for v in run["variants"]:
                     out = base / ("with_rover" if v == "rover" else "")
                     if any(out.glob("*ods_right.png")):
-                        codes[v]["square"] = _run(["ods", "-", "--station", "x", "--stack-only", "--out", str(out)], fh)
+                        from .ods import ods_prefix
+                        codes[v]["square"] = _run(["ods", "-", "--station", "x", "--stack-only", "--stack-top", "left",
+                                                   "--prefix", ods_prefix(run["label"], rover=v == "rover"),
+                                                   "--out", str(out)], fh)
             else:
                 failed = set()
                 for c in run["commands"]:
@@ -234,6 +247,8 @@ def install(dest: PathLike) -> Path:
     d.mkdir(parents=True, exist_ok=True)
     f = d / BAT_NAME
     f.write_bytes(BAT.replace("\r\n", "\n").replace("\n", "\r\n").encode("ascii"))
+    g = d / SQUARES_BAT_NAME                          # 10 Nov: the squares alone, the left eye on top
+    g.write_bytes(SQUARES_BAT.replace("\r\n", "\n").replace("\n", "\r\n").encode("ascii"))
     return f
 
 
@@ -250,7 +265,7 @@ def add_parser(sub) -> None:
                    "ods_stereo_square.jpg / .png")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
-    p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} into DIR and stop")
+    p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
 
 
 def cmd_single_sites(a: argparse.Namespace) -> int:

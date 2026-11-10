@@ -1262,3 +1262,20 @@ def test_exclude_pairs_and_prefix(tmp_path):
     assert ods_file(tmp_path, "stereo_square", "", ".jpg").name == "ods_stereo_square.jpg"
     (tmp_path / "S003D2046_rover_ods_left.png").write_bytes(b"x")
     assert find_prefix(tmp_path) == "S003D2046_rover"
+
+
+def test_squares_left_on_top_named_by_station(tmp_path):
+    import cv2
+    from mppp.ibr.ods import stack_eyes
+    from mppp.ibr import single_sites as SS
+    L = np.full((8, 16, 3), 40, np.uint8)
+    R = np.full((8, 16, 3), 200, np.uint8)
+    cv2.imwrite(str(tmp_path / "ods_left.png"), L)              # eye images named before 10 Nov
+    cv2.imwrite(str(tmp_path / "ods_right.png"), R)
+    r = stack_eyes(tmp_path, square_prefix="S003D2046")
+    sq = cv2.imread(str(tmp_path / "S003D2046_ods_stereo_square.png"))
+    assert r["top"] == "left" and sq.shape == (16, 16, 3) and np.array_equal(sq[:8], L) and np.array_equal(sq[8:], R)
+    f = SS.install(tmp_path / "bats")
+    b = (tmp_path / "bats" / "make_square.bat").read_text()
+    assert f.name == "update_and_run_single_sites.bat" and "single-sites --squares-only %*" in b and "+main:" in b
+    assert "+main:refs/remotes/bundle/main" in f.read_text()
