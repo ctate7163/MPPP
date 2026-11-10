@@ -286,7 +286,6 @@ def _try_lightglue(project: SfmProject, pairs, max_keypoints: int, filter_thresh
         log.warning("LightGlue stopped (%s); COLMAP's SIFT matcher for the pairs not matched yet",
                     str(e).splitlines()[0][:200])
         try:
-            import torch
             torch.cuda.empty_cache()
         except Exception:                           # noqa: BLE001
             pass

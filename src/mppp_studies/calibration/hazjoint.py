@@ -463,7 +463,6 @@ def run_joint(data: Dict[str, Any], slope_mode: str = SLOPE_MODE, slope_ppm: flo
               iterations: int = ITERATIONS, verbose: bool = True) -> Dict[str, Any]:
     """The joint on collected data (:func:`collect`): the law, its covariance and statistics; the early offsets
     kept only where significant (then the law fitted again with the others at 0)."""
-    import copy
     images0 = data["images"]
     eyes = [e for e in EYES if sum(im["eye"] == e for im in images0) >= MIN_EYE_IMAGES and e in data["start"]]
     images = [dict(im) for im in images0 if im["eye"] in eyes]

@@ -52,9 +52,8 @@ import os
 import numpy as np
 
 from mppp_studies.error.core import (Grid, Station, Instrument, NAVCAM, MASTCAM_Z_34,
-                   ModelConfig, PoseModel, choose_anchor)
+                   PoseModel, choose_anchor)
 from mppp_studies.error.cases import run_four_cases, case_table, CASE_PARAMS
-from mppp_studies.error.metrics import compute_metrics
 from mppp_studies.error.network import pose_covariance_from_network, network_report
 from mppp_studies.error.waypoints import stations_from_rmcs
 
@@ -76,7 +75,7 @@ from mppp_studies.error.waypoints import stations_from_rmcs
 from mppp_studies.error.sitemap import load_site_image, crop_to_extent, trim_border_fraction  # noqa: E402
 from mppp.waypoints import snapshot_path as _snapshot  # noqa: E402
 DEFAULT_WAYPOINTS = str(_snapshot())                  # the packaged, frozen waypoint snapshot
-DEFAULT_SITE_IMAGE = os.path.join(_HERE, "data", "butler_landing_1_vertical_50m.jpg")   # not distributed
+DEFAULT_SITE_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "butler_landing_1_vertical_50m.jpg")   # not distributed
 DEFAULT_RMCS = ["3_0", "3_110", "3_1266", "3_1398"]
 
 #: Standard error-metric choices for the four-panel figure.

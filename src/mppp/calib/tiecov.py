@@ -18,7 +18,7 @@ of the size of the data.  For exact ties this is the same covariance the full pr
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
 import numpy as np
 

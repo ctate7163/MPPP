@@ -13,9 +13,8 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
-import numpy as np
 
 log = logging.getLogger("mppp.calib")
 

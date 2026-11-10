@@ -11,7 +11,7 @@ import gzip
 import os
 import struct
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 

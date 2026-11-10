@@ -26,7 +26,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 from .project import SfmProject
 
@@ -273,7 +273,7 @@ def write_dense_bat(project: SfmProject, colmap_bat: Optional[str] = None, max_i
              "rem Double-click.  set MPPP_DENSE_STEP=prepare|stereo|fusion|mesh for one step; MPPP_DENSE_MAX_SIZE (long side,",
              f"rem default {int(max_image_size)} px); MPPP_DENSE_MESH=1 for a Poisson mesh at the end.  The GUI's Reconstruction >",
              "rem Dense reconstruction dialog takes the same dense\\ folder as its workspace (open_in_colmap.bat first).",
-             f'set "WS=%~dp0dense"',
+             'set "WS=%~dp0dense"',
              f'if not defined MPPP_DENSE_MAX_SIZE set "MPPP_DENSE_MAX_SIZE={int(max_image_size)}"',
              'if not defined MPPP_DENSE_STEP set "MPPP_DENSE_STEP=all"',
              'set "CB="',

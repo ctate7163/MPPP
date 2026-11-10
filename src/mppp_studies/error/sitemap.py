@@ -32,10 +32,9 @@ download the file out of band and pass a local path instead.
 
 from __future__ import annotations
 
-import io
 import os
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple
 from urllib.parse import urlparse
 
 __all__ = ["load_site_image", "crop_to_extent", "SiteImageError", "SiteCrop",

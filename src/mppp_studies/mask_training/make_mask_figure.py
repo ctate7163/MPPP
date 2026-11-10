@@ -36,7 +36,6 @@ def sol_of(name: str) -> str:
 
 
 def pooled(truth_incl, pred_incl, valid):
-    import numpy as np
     t, p = ~truth_incl & valid, ~pred_incl & valid                 # exclusion class, valid pixels only
     return {"tp": int((t & p).sum()), "fp": int((~t & p & valid).sum()), "fn": int((t & ~p).sum()),
             "n_valid": int(valid.sum())}

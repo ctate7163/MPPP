@@ -27,6 +27,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent          # mppp_studies/calibration
+ROOT = HERE.parents[2]                          # the repository root
 
 
 def main(argv=None) -> int:
@@ -67,7 +68,8 @@ def main(argv=None) -> int:
     res = analysis.run(images, states)
     out = Path(a.out) if a.out else root / "camera_analysis" / f"rover_frame_{datetime.date.today():%Y%m%d}"
     done = report.write_all(res, out, {k: str(v) for k, v in found.items()}, plots=not a.no_plots)
-    co = ROOT / "Claude outputs"
+    from mppp_studies.paths import outputs_dir
+    co = outputs_dir()
     if done["figures"] and co.is_dir():
         dst = co / out.name
         dst.mkdir(exist_ok=True)

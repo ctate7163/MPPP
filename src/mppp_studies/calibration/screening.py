@@ -12,9 +12,12 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
-from mppp.sfm.health import *  # noqa: F401,F403  (the thresholds, the judge and the report readers)
-from mppp.sfm import health as _H
-from mppp.sfm.health import _RANK, _status  # noqa: F401  (the judge the re-judging shares)
+import re
+from typing import Sequence, Tuple
+
+from mppp.sfm.health import (DEFAULT_THRESHOLDS, _RANK, _status, beyond_ground, corner_check, log,  # noqa: F401
+                             navcam_aspect_changes, zcam_uncalibrated_groups)
+from mppp.sfm.project import SfmProject
 
 PathLike = Union[str, Path]
 

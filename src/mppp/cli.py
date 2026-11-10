@@ -13,6 +13,9 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
     mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F] [--waypoints refresh|auto|study]
     mppp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
+    mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 60] [--far-radius 100]   0.96: one clean surface
+    mppp depthmaps WORK --station ... [--cameras N] [--scale 0.5] [--photometry]   0.96: per-image depth / normal maps, the photometric cube
+    mppp ods WORK --station ... [--width 8192] [--ipd 0.064]                       0.96: the stereoscopic panorama, two eye images
     mppp doctor                               what is set, what is missing (environment, dependencies, models)
     mppp version
 
@@ -23,14 +26,13 @@ Every subcommand returns an exit code (0 ok, 1 failed, 2 bad arguments, 3 a run 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("mppp.cli")
 
@@ -122,6 +124,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--refresh", action="store_true", help="download the current table now (every sync should)")
 
     _study_parsers(sub)                       # 0.96.0: calib, zcam-states (mppp_studies.calibration), maps (mppp_studies.sites)
+    from .ibr.cli import add_parsers as _ibr_parsers
+    _ibr_parsers(sub)                         # 0.96.0: mesh, depthmaps, ods (mppp.ibr)
     p = sub.add_parser("dense", help="0.95.0: the COLMAP dense reconstruction of a finished block - the workspace "
                        "<project>/dense (images undistorted from the native-pixel model, the rover masks for the "
                        "fusion), patch-match stereo, fusion, a mesh; dense_reconstruct.bat next to open_in_colmap.bat "
@@ -696,10 +700,20 @@ def cmd_version(a: argparse.Namespace) -> int:
     return 0
 
 
+def _ibr_command(name: str):
+    def run(a: argparse.Namespace) -> int:
+        from .ibr.cli import COMMANDS as IBR
+        return IBR[name](a)
+    run.__name__ = f"cmd_{name}"
+    return run
+
+
 COMMANDS = {"gui": cmd_gui, "process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
             "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "maps": _study_command("maps"), "calib": _study_command("calib"), "doctor": cmd_doctor,
             "zcam-states": _study_command("zcam-states"), "dense": cmd_dense, "metashape": cmd_metashape, "nerfstudio": cmd_nerfstudio,
+            "mesh": _ibr_command("mesh"), "depthmaps": _ibr_command("depthmaps"), "ods": _ibr_command("ods"),
             "version": cmd_version}
+
 
 
 def main(argv: Optional[List[str]] = None) -> int:

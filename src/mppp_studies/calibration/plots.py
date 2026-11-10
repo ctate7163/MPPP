@@ -13,7 +13,6 @@ import numpy as np
 from mppp.calib.constrain import (EYE_COLORS, FIG_DPI, IFOV_MDEG, NAVCAM_T0_DEGC, RIG_TREND_YLIMS, STEREO_CX_YLIM,  # noqa: F401
                                   _out_of_axis_note, _plt, drift_offset_mdeg, drift_offset_rel, panel_letters, rig_at,
                                   thermal_scale, thermal_terms, zcam_lines_at)
-from mppp.calib import forms
 
 PathLike = Union[str, Path]
 
