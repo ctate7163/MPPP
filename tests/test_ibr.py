@@ -499,3 +499,28 @@ def test_dense_subset_prepare_and_fusion_write_fused_ply(tmp_path, monkeypatch):
     assert (ws / "fused.ply").is_file() and out["steps"]["fusion"]["points"] > 1000
     pts = np.asarray(o3d.io.read_point_cloud(str(ws / "fused.ply")).points)
     assert np.median(np.abs(pts[:, 2])) < 0.01                           # on the plane z = 0
+
+
+def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
+    """9 Nov: mppp dense --stereo looked only at GPU_PYTHON; on the PC the CUDA python is gpu_python.txt (MPPP_GPU_PY),
+    so the stereo would have run in the CPU pycolmap and stopped.  Now: --python, else GPU_PYTHON, else gpu_python()."""
+    import mppp.sfm.gpu as G
+    from mppp.cli import main as mppp_main
+    from mppp.sfm.project import SfmProject
+    proj0, rec, st, scene, P, colours = _station_scene(tmp_path)
+    root = proj0.root
+    (root / "gui_native" / "sparse").mkdir(parents=True)
+    rec.write(str(root / "gui_native" / "sparse"))
+    rows = json.loads((root / "project.json").read_text(encoding="utf-8"))["images"]
+    for r in rows:
+        r.update(station="S003D0010", sequence="NCAM00001", downsample_scale=1.0)
+    SfmProject(root, rows, {}, {}, [0.0, 0.0, 0.0], {"world_frame": "site3_enu"}).save()
+    calls = []
+    monkeypatch.delenv("GPU_PYTHON", raising=False)
+    monkeypatch.setattr(pycolmap, "has_cuda", False, raising=False)
+    monkeypatch.setattr(G, "gpu_python", lambda default=None: "/envs/mppp_gpu/python.exe")
+    monkeypatch.setattr(G, "run_step", lambda py, step, proj, **kw: calls.append((py, step, kw)) or {"steps": {}})
+    assert mppp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--fusion"]) == 0
+    py, step, kw = calls[0]
+    assert py == "/envs/mppp_gpu/python.exe" and step == "dense" and kw["steps"] == ["stereo", "fusion"]
+    assert kw["workspace"].endswith("dense_S003D0010") and len(kw["images"]) == 4

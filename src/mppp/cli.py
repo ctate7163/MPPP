@@ -138,7 +138,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mesh", action="store_true", help="a Poisson mesh of the fused cloud")
     p.add_argument("--max-image-size", type=int, default=None, help="the long side of the working images (default 2000)")
     p.add_argument("--python", default=os.environ.get("GPU_PYTHON"), help="the Python with the CUDA pycolmap for the "
-                   "stereo (default GPU_PYTHON; without it the stereo runs here if this pycolmap has CUDA)")
+                   "stereo (default GPU_PYTHON, else the pipeline's GPU python: MPPP_GPU_PY or gpu_python.txt; "
+                   "without one the stereo runs here if this pycolmap has CUDA)")
     p.add_argument("--overwrite", action="store_true", help="undistort again even if the workspace is there")
     p.add_argument("--no-bat", action="store_true", help="do not (re)write dense_reconstruct.bat (0.95.1: the batch file "
                    "calls --prepare itself)")
@@ -700,9 +701,13 @@ def cmd_dense(a: argparse.Namespace) -> int:
         if not steps:
             return 0
     import pycolmap
-    if a.python and ("stereo" in steps or not getattr(pycolmap, "has_cuda", False)):
-        from .sfm.gpu import run_step
-        res = run_step(a.python, "dense", proj, steps=steps, max_image_size=size, workspace=str(ws), images=subset)
+    from .sfm.gpu import gpu_python, run_step
+    # 9 Nov: the CUDA python the pipeline itself uses (MPPP_GPU_PY, %LOCALAPPDATA%\mppp\gpu_python.txt) when
+    # neither --python nor GPU_PYTHON names one - before, the stereo ran here and stopped at "needs a CUDA pycolmap"
+    py = a.python or (None if getattr(pycolmap, "has_cuda", False) else gpu_python())
+    if py and ("stereo" in steps or not getattr(pycolmap, "has_cuda", False)):
+        print(f"dense: {', '.join(steps)} in {py}")
+        res = run_step(py, "dense", proj, steps=steps, max_image_size=size, workspace=str(ws), images=subset)
     else:
         res = run_dense(proj, workspace=ws, steps=steps, max_image_size=size, images=subset)
     for k, v in (res.get("steps") or {}).items():
