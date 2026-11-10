@@ -44,7 +44,10 @@ def _model(project):
 def _station(project, rec, a):
     from .station import select_station
     st = select_station(project, rec, a.station, families=getattr(a, "cameras", "N") or "N")
-    out = Path(project.root) / "ods" / (st.label + ("_rover" if getattr(a, "rover", False) else ""))
+    if getattr(a, "out", None):                      # 10 Nov: e.g. D:\rover_blocks\single_sites\S003D2046[\with_rover]
+        out = Path(a.out)
+    else:
+        out = Path(project.root) / "ods" / (st.label + ("_rover" if getattr(a, "rover", False) else ""))
     out.mkdir(parents=True, exist_ok=True)
     (out / "station.json").write_text(json.dumps(st.to_json(), indent=1, default=float), encoding="utf-8")
     fit = st.pivot_fit
@@ -56,6 +59,28 @@ def _station(project, rec, a):
 def _scene(out: Path):
     from .mesh import load_scene
     return load_scene(out)
+
+
+def _frames(project, st, a) -> Optional[list]:
+    """The frames for depthmaps / ods: ``--images``; else the frames the station's dense workspace was made from
+    (``dense_<station>*/mppp_dense.json``: 10 Nov, the Van Zyl run - the panorama took all 16 frames of the station,
+    sols 52, 54 and 64, and showed the arm where it was on the other sols); else every frame of the station.  Then
+    ``--sols``."""
+    names = list(a.images) if getattr(a, "images", None) else None
+    if names is None:
+        recs = sorted(Path(project.root).glob(f"dense_{st.label}*/mppp_dense.json"), key=lambda f: f.stat().st_mtime)
+        if recs:
+            sub = json.loads(recs[-1].read_text(encoding="utf-8")).get("subset") or []
+            have = set(st.images)
+            names = [n for n in sub if n in have] or None
+            if names:
+                log.info("frames: the %d of the dense workspace %s (--images to choose others)", len(names), recs[-1].parent.name)
+    sols = getattr(a, "sols", None)
+    if sols:
+        base = names if names is not None else list(st.images)
+        names = [n for n in base if n[4:8].isdigit() and int(n[4:8]) in set(int(x) for x in sols)]
+        log.info("frames: %d on sols %s", len(names), sols)
+    return names
 
 
 def _tie_points(rec, min_track: int = 3) -> np.ndarray:
@@ -82,10 +107,12 @@ def add_parsers(sub) -> None:
                    "block's tie points to 100 m, which reach farther)")
     p.add_argument("--far-radius", type=float, default=None, help="a finite far sphere at this radius instead of the sky "
                    "at infinity (the 0.96.0 prototype)")
-    p.add_argument("--target-triangles", type=int, default=3_000_000)
+    p.add_argument("--target-triangles", type=int, default=6_000_000, help="decimate to at most this many (default 6 M)")
     p.add_argument("--poisson-depth", type=int, default=10)
     p.add_argument("--cameras", default="N", help="the station's frames for the pivot (default N)")
     p.add_argument("--no-preview", action="store_true")
+    p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
+                   "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
     p.add_argument("--rover", action="store_true", help="0.96: the rover body and deck shown: the cloud fused without the rover masks (mppp dense --keep-rover), the "
                    "rover's pixels used; products in ods/<station>_rover/ (the wind-sensor booms below the mast head "
                    "are in it too, too close to the eyes - not handled yet)")
@@ -95,11 +122,15 @@ def add_parsers(sub) -> None:
     p.add_argument("--cameras", default="N", help="camera family letters, e.g. N or NZ")
     p.add_argument("--scale", type=float, default=0.5, help="Navcam maps at this fraction of the native size")
     p.add_argument("--zcam-scale", type=float, default=1.0)
-    p.add_argument("--images", nargs="*", default=None, help="only these image names")
+    p.add_argument("--images", nargs="*", default=None, help="only these image names (default: the frames of the "
+                   "station's dense workspace, else all its frames)")
+    p.add_argument("--sols", nargs="+", type=int, default=None, help="only the frames of these sols")
     p.add_argument("--photometry", action="store_true", help="then the photometric cube (incidence, emission, phase, shadow)")
     p.add_argument("--no-shadow", action="store_true")
     p.add_argument("--no-preview", action="store_true")
     p.add_argument("--no-validate", action="store_true")
+    p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
+                   "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
     p.add_argument("--rover", action="store_true", help="0.96: the rover body and deck shown: the cloud fused without the rover masks (mppp dense --keep-rover), the "
                    "rover's pixels used; products in ods/<station>_rover/ (the wind-sensor booms below the mast head "
                    "are in it too, too close to the eyes - not handled yet)")
@@ -111,10 +142,14 @@ def add_parsers(sub) -> None:
     p.add_argument("--cameras", default="N")
     p.add_argument("--scale", type=float, default=0.5)
     p.add_argument("--zcam-scale", type=float, default=1.0)
-    p.add_argument("--images", nargs="*", default=None)
+    p.add_argument("--images", nargs="*", default=None, help="only these image names (default: the frames of the "
+                   "station's dense workspace, else all its frames)")
+    p.add_argument("--sols", nargs="+", type=int, default=None, help="only the frames of these sols")
     p.add_argument("--rows-per-chunk", type=int, default=128)
     p.add_argument("--eyes", nargs="+", default=["left", "right"], choices=["left", "right", "centre"])
     p.add_argument("--no-gains", action="store_true", help="no gain compensation between the source frames")
+    p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
+                   "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
     p.add_argument("--rover", action="store_true", help="0.96: the rover body and deck shown: the cloud fused without the rover masks (mppp dense --keep-rover), the "
                    "rover's pixels used; products in ods/<station>_rover/ (the wind-sensor booms below the mast head "
                    "are in it too, too close to the eyes - not handled yet)")
@@ -138,13 +173,13 @@ def _points_file(project, given: Optional[str], label: Optional[str] = None, rov
 
 
 def cmd_mesh(a: argparse.Namespace) -> int:
-    from .mesh import build_station_mesh, mesh_preview, read_mesh, read_points
+    from .mesh import build_station_mesh, mesh_preview, read_mesh, read_points, read_points_normals
     project = _project(a.work)
     rec = _model(project)
     st, out = _station(project, rec, a)
     pts_file = _points_file(project, a.points, st.label, rover=a.rover)
-    pts = read_points(pts_file)
-    log.info("mesh: %d points from %s", len(pts), pts_file)
+    pts, nrm = read_points_normals(pts_file)
+    log.info("mesh: %d points from %s (%s)", len(pts), pts_file, "with normals" if nrm is not None else "no normals")
     terrain = None
     if a.rover:                                   # the plane from the terrain alone, not the deck
         try:
@@ -152,7 +187,7 @@ def cmd_mesh(a: argparse.Namespace) -> int:
         except FileNotFoundError:
             log.warning("mesh --rover: no rover-masked fused.ply; the plane is fitted to the cloud with the rover in it")
     ties = None if a.no_tie_points else _tie_points(rec)
-    rep = build_station_mesh(pts, st.pivot, out, dense_dir=a.dense_dir or pts_file.parent, colmap_exe=a.colmap,
+    rep = build_station_mesh(pts, st.pivot, out, normals=nrm, dense_dir=a.dense_dir or pts_file.parent, colmap_exe=a.colmap,
                              radius_m=a.mesh_radius, far_radius_m=a.far_radius, target_triangles=a.target_triangles,
                              poisson_depth=a.poisson_depth, station=st.to_json(), up=st.up, plane_radius_m=a.plane_radius,
                              ground_points=ties, horizontal_plane=a.horizontal_plane, plane_points=terrain)
@@ -180,7 +215,7 @@ def cmd_depthmaps(a: argparse.Namespace) -> int:
     st, out = _station(project, rec, a)
     scene = _scene(out)
     rep = cast_station(project, rec, st, scene, out, families=a.cameras, scale=a.scale, zcam_scale=a.zcam_scale,
-                       images=a.images, previews=not a.no_preview, validate=not a.no_validate, use_masks=not a.rover)
+                       images=_frames(project, st, a), previews=not a.no_preview, validate=not a.no_validate, use_masks=not a.rover)
     print(f"{st.label}: {rep['n_images']} images -> {out / 'maps'}; {out / 'maps_report.md'}")
     if a.photometry:
         from .photometry import photometric_cube
@@ -196,7 +231,7 @@ def cmd_ods(a: argparse.Namespace) -> int:
     st, out = _station(project, rec, a)
     scene = _scene(out)
     rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, families=a.cameras, scale=a.scale,
-                         zcam_scale=a.zcam_scale, images=a.images, rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
+                         zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
                          use_masks=not a.rover, gains=not a.no_gains)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]

@@ -28,7 +28,13 @@ Blending (10 Nov 2026, Christian: "the mosaic should be blended together to avoi
   1 / (1 + angle / 0.02 rad) (the eye's ray against the source's ray to X);
 - **gain compensation**: one gain per source, from the low-band brightness of the pixels that two sources share
   (a first pass at 1024 px; medians of the log ratios per pair, least squares with a weak pull to 1, clipped to
-  0.6-1.6), so frames of different exposures or sols meet without a step.  ``ods.json`` records the gains.
+  0.6-1.6), so frames of different exposures or sols meet without a step.  ``ods.json`` records the gains;
+- **no black cracks** (10 Nov, the Van Zyl S003D2046 run): a ray through a gap in the mesh ends on the plane or
+  the terrain behind, which the mesh then hides from every camera - a black triangle on the deck, a sliver along a
+  mesh edge.  A pixel no source sees unhidden takes the best hidden one (by the same weight); cracks still left
+  (at most ``HOLE_FILL_MAX_PX`` pixels and ``HOLE_FILL_MAX_WIDTH_PX`` wide) are filled from their edges
+  (``cv2.inpaint``) and marked in the provenance map (grey); large unseen areas (straight down, above the
+  frames' tops) stay black.
 
 Resolution: 8192 x 4096 is 0.77 mrad/px, about the Navcam's half-resolution sampling; the processed images are
 read at ``scale`` (0.5 for the Navcam).  Works in row chunks so the memory stays bounded.  ``ods.json`` records
@@ -59,6 +65,8 @@ FEATHER_HIGH_FRAC = 0.03         # the detail band's feather
 LOW_SIGMA_FRAC = 0.006           # the low band: Gaussian sigma, this fraction of the short side (~6 px at 960)
 ANGLE_SCALE_RAD = 0.02           # parallax term 1 / (1 + angle / this)
 GAIN_RANGE = (0.6, 1.6)
+HOLE_FILL_MAX_PX = 4000          # holes (a surface, no source) up to this many pixels are filled from their edges
+HOLE_FILL_MAX_WIDTH_PX = 24      # ... and only if thin: no pixel farther than this from the hole's edge
 GAIN_PASS_WIDTH = 1024
 
 
@@ -217,7 +225,11 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
     best_w = np.zeros((n, K), np.float32)
     best = {"k": np.full((n, K), -1, np.int32), "uv": np.zeros((n, K, 2), np.float32), "dist": np.zeros((n, K), np.float32),
             "short": np.ones((n, K), np.float32), "ang": np.zeros((n, K), np.float32)}
-    rows = np.arange(n)
+    fb_w = np.zeros(n, np.float32)
+    fb_k = np.full(n, -1, np.int32)
+    fb_uv = np.zeros((n, 2), np.float32)
+    fb_dist = np.zeros(n, np.float32)
+    fb_short = np.ones(n, np.float32)
     for k, src in enumerate(sources):
         uv, z, inside = src.project(X)
         cand = inside & ok
@@ -232,6 +244,12 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
         # visibility: nothing between the camera and X (within tau(z) of X; tau of at most 100 m: a point on the sky
         # is still hidden by a rock in front of the camera)
         occ = scene.occluded(np.broadcast_to(src.C, (len(ij), 3)), X[ij], tau_m(np.minimum(z[ij], 100.0)))
+        if occ.any():                                        # the best hidden view, for pixels no source sees unhidden
+            io, do = ij[occ], dist[occ]
+            wo = _smoothstep(do / (FEATHER_LOW_FRAC * src.short_side)).astype(np.float32) + 1e-6
+            b = wo > fb_w[io]
+            io, wo, do = io[b], wo[b], do[b]
+            fb_w[io], fb_k[io], fb_uv[io], fb_dist[io], fb_short[io] = wo, k, uv[io], do, src.short_side
         ij, dist = ij[~occ], dist[~occ]
         if not len(ij):
             continue
@@ -249,7 +267,13 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
         best["dist"][ij, slot] = dist[take]
         best["short"][ij, slot] = src.short_side
         best["ang"][ij, slot] = aterm[take]
-    best.update(label=lab, t=hit["t"], ok=ok)
+    none = best["k"][:, 0] < 0
+    for slot in range(1, K):
+        none &= best["k"][:, slot] < 0
+    use = none & (fb_k >= 0)                                 # nobody sees it unhidden: the best hidden view
+    best["k"][use, 0], best["uv"][use, 0], best["dist"][use, 0] = fb_k[use], fb_uv[use], fb_dist[use]
+    best["short"][use, 0], best["ang"][use, 0] = fb_short[use], 1.0
+    best.update(label=lab, t=hit["t"], ok=ok, hidden_fallback=use)
     return best
 
 
@@ -318,11 +342,13 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     source = np.full((height, width), -1, np.int16)
     label = np.zeros((height, width), np.uint8)
     rng = np.zeros((height, width), np.float32)
+    hidden = np.zeros((height, width), bool)
     t0 = time.time()
     for r0 in range(0, height, rows_per_chunk):
         r1 = min(height, r0 + rows_per_chunk)
         o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east)
         c = candidates(scene, sources, o, d)
+        hidden[r0:r1] = c["hidden_fallback"].reshape(r1 - r0, width)
         n = len(d)
         low_acc = np.zeros((n, 3), np.float32)
         hi_acc = np.zeros((n, 3), np.float32)
@@ -360,13 +386,43 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         rng[r0:r1] = np.where(c["ok"], c["t"], 0).reshape(r1 - r0, width)
         if progress:
             progress(eye, r1, height, time.time() - t0)
-    return {"rgb": rgb, "source": source, "label": label, "range": rng}
+    filled = fill_cracks(rgb, source, label)
+    return {"rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled}
+
+
+def fill_cracks(rgb: np.ndarray, source: np.ndarray, label: np.ndarray, max_px: int = HOLE_FILL_MAX_PX,
+                max_width_px: float = HOLE_FILL_MAX_WIDTH_PX) -> np.ndarray:
+    """Fill (in place) the small, thin holes - a surface but no source - from their edges; ``source`` = -2 there.
+    Returns the filled mask."""
+    import cv2
+    hole = ((source < 0) & (label != LABEL_NONE)).astype(np.uint8)
+    filled = np.zeros(hole.shape, bool)
+    if not hole.any():
+        return filled
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(hole, connectivity=8)
+    dist = cv2.distanceTransform(hole, cv2.DIST_L2, 3)
+    small = np.zeros(n, bool)
+    small[1:] = stats[1:, cv2.CC_STAT_AREA] <= max_px
+    if small.any():
+        widest = np.zeros(n, np.float32)
+        np.maximum.at(widest, lab.ravel(), dist.ravel())
+        small &= widest <= max_width_px
+        small[0] = False
+    filled = small[lab]
+    if filled.any():
+        ys, xs = np.nonzero(filled)
+        y0, y1, x0, x1 = max(0, ys.min() - 8), min(rgb.shape[0], ys.max() + 9), max(0, xs.min() - 8), min(rgb.shape[1], xs.max() + 9)
+        sub = cv2.inpaint(np.ascontiguousarray(rgb[y0:y1, x0:x1]), filled[y0:y1, x0:x1].astype(np.uint8), 5, cv2.INPAINT_TELEA)
+        rgb[y0:y1, x0:x1][filled[y0:y1, x0:x1]] = sub[filled[y0:y1, x0:x1]]
+        source[filled] = -2
+    return filled
 
 
 def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int) -> Path:
     """The source index per pixel as colours (golden-angle hues), black = no data."""
     import cv2
     img = np.zeros(source.shape + (3,), np.uint8)
+    img[source == -2] = (128, 128, 128)                       # cracks filled from their edges
     for k in range(max(0, n_sources)):
         m = source == k
         if not m.any():
@@ -418,7 +474,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         rec_out["eyes"][eye] = {"file": str(f), "coverage": {"coloured": float((res["source"] >= 0).sum() / n),
                                 "mesh": float((lab == LABEL_MESH).sum() / n), "plane": float((lab == LABEL_PLANE).sum() / n),
                                 "far": float((lab == LABEL_FAR).sum() / n),
-                                "no_surface": float((lab == 0).sum() / n)},
+                                "no_surface": float((lab == 0).sum() / n),
+                                "hidden_view_used": float(res["hidden_fallback"].sum() / n),
+                                "cracks_filled": float(res["filled"].sum() / n)},
                                 "sources_used": int(len(np.unique(res["source"][res["source"] >= 0])))}
         for s in sources:
             s.release()

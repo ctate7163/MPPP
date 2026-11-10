@@ -166,6 +166,24 @@ changes made on the way to the build.
   same-exposure render with no step over 1 %, where without gains the frames' levels show (> 20 %). With the plane
   the terrain past 8 m is no longer painted on a 100 m sphere, which was the other source of breaks at the seams
   (two frames disagreeing on where that terrain is).
+- **The first good station: Van Zyl Overlook S003D2046, sol 52** (10 Nov, the six Navcam pairs Christian chose) -
+  3.1 M fused points reaching 65 m, the ground plane 1.90 m below the head (tilt 0.2 deg, 0.47 m rms over 324
+  bins), the depth maps within 0.2 / 0.5 / 1.4 % of the tie points at 0-5 / 5-10 / 10-20 m; the ODS 23 % mesh,
+  27 % plane, 51 % sky / far. What it showed, and the changes:
+  - **the arm in the rover-shown panorama**: depthmaps and ods took all 16 frames of the station (sols 52, 54 and
+    64), the dense step only the 12 of sol 52 - now they default to the frames of the station's dense workspace
+    (`mppp_dense.json`), `--images` / `--sols` to choose;
+  - **black cracks** (triangles on the deck, slivers along mesh edges): a ray through a gap in the mesh ends on the
+    ground behind, which the mesh hides from every camera; a pixel no source sees unhidden now takes the best
+    hidden view, and the cracks still left (at most 4000 px, 24 px wide) are filled from their edges (grey in the
+    provenance map; `ods.json`: `hidden_view_used`, `cracks_filled`); large unseen areas stay black;
+  - **the rover's mesh and the near-field detail** (Christian: "the mesh on the rover does not look very good";
+    "The near and mid terrain needs a little more detail and higher polygon count"): the mesh step read the fused
+    cloud without its normals and Poisson estimated them - unoriented above 200,000 points, every real station -
+    so it now uses COLMAP's normals (else estimated and turned to the mast head); and Poisson runs per zone of
+    distance from the axis (0-4, 4-12, 12-20 m, 0.3 m overlaps), each from the points of its own zone, so the
+    octree is ~1 cm near the mast, ~2.5 cm at 4-12 m, ~5 cm beyond; the decimation target is 6 M triangles;
+  - **`--out DIR`** for mesh / depthmaps / ods (e.g. `D:\rover_blocks\single_sites\S003D2046`, `...\with_rover`).
 - **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
   bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)
   0.9711 against v4.2 0.9724 on the same data and frames (-0.0013, 95 % -0.0023..-0.0004; -0.0043 on the 120 frames

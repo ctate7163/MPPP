@@ -912,3 +912,82 @@ def test_edge_distance_counts_from_the_mask_and_the_border(tmp_path):
     assert d[45, 40] == 0 and d[0, 40] <= 1.0 and 9 <= d[30, 40] <= 11 and d[20, 40] > d[35, 40]
     nm = O.SourceImage("a.png", cam, np.eye(3), np.zeros(3), tmp_path / "a.png", None, 1.0).edge_distance()
     assert nm[45, 40] > 10                                                       # the rover shown: only the border counts
+
+
+# ----------------------------------------------------------------------------- 10 Nov: zones, normals, cracks
+def test_zoned_poisson_is_finer_near_the_mast_and_uses_the_given_normals():
+    """Christian, 10 Nov: "The near and mid terrain needs a little more detail and higher polygon count".  Each zone
+    has its own octree box, so the near field's triangles are several times smaller than the outer zone's; the
+    fused normals are used as given (COLMAP orients them), else estimated and turned to the mast head."""
+    rng = np.random.default_rng(7)
+    P = np.array([0.0, 0.0, 2.0])
+    r = np.sqrt(rng.uniform(0, 20.5 ** 2, 400_000))
+    a = rng.uniform(0, 2 * np.pi, len(r))
+    xy = np.c_[r * np.cos(a), r * np.sin(a)]
+    keep = rng.random(len(r)) < np.clip(4.0 / np.maximum(r, 1.0), 0.05, 1.0)       # dense near, sparse far (a station)
+    xy = xy[keep]
+    z = 0.05 * np.sin(3 * xy[:, 0]) * np.cos(3 * xy[:, 1])
+    pts = np.c_[xy, z]
+    nrm = np.tile([0.0, 0.0, 1.0], (len(pts), 1))
+    V, F, how, crep = M.zoned_poisson(pts, nrm, P, (0, 0, 1), 20.0, zones=((0, 4, 8), (4, 12, 8), (12, None, 8)))
+    assert [z_["zone_m"] for z_ in how["zones"]] == [[0, 4.0], [4, 12.0], [12, 20.0]]
+    assert all(z_["normals"] == "given" and z_["triangles"] > 100 for z_ in how["zones"])
+    cen, _, longest = M.triangle_geometry(V, F)
+    h = M.horizontal_distance(cen, P)
+    assert h.max() <= 20.0 + 1e-6 and h.min() < 1.5
+    assert np.median(longest[h < 3.5]) * 3 < np.median(longest[h > 13])            # the near field is finer
+    for ring in (4.0, 12.0):                                                         # no gap at the zone edges
+        band = (h > ring - 0.15) & (h < ring + 0.15)
+        az = np.degrees(np.arctan2(cen[band, 1], cen[band, 0])) % 360
+        assert len(np.unique((az // 10).astype(int))) == 36
+    _, _, how2 = M.poisson_arrays(pts[:5000], None, depth=6, viewpoint=P)
+    assert how2["normals"] == "estimated, towards the mast head"
+
+
+def test_a_point_hidden_from_every_source_takes_the_best_hidden_view(tmp_path):
+    """The black cracks of the Van Zyl run: the eye's ray through a gap in the mesh ends on the ground, which the mesh
+    hides from the camera 30 cm ahead.  Now the hidden view colours it (marked), instead of black."""
+    proj, rec, st, scene0, P, colours = _station_scene(tmp_path)
+    Vg, Fg = _plane(0.0, 300.0)
+    # a plate at z = 1 m north of the station with a 6 cm hole where the eye's ray (north, 45 deg down) crosses it
+    Q = np.asarray(st.pivot, float)
+    xs = np.linspace(-1.0, 1.0, 81) + Q[0]
+    ys = np.linspace(0.3, 1.6, 53) + Q[1]
+    X, Y = np.meshgrid(xs, ys)
+    Vp = np.c_[X.ravel(), Y.ravel(), np.ones(X.size)]
+    Fp = []
+    nx = len(xs)
+    for j in range(len(ys) - 1):
+        for i in range(nx - 1):
+            q = j * nx + i
+            cx, cy = (xs[i] + xs[i + 1]) / 2 - Q[0], (ys[j] + ys[j + 1]) / 2 - Q[1]
+            if np.hypot(cx, cy - (Q[2] - 1.0)) < 0.06:
+                continue
+            Fp += [[q, q + 1, q + nx], [q + 1, q + nx + 1, q + nx]]
+    V = np.vstack([Vg, Vp])
+    F = np.vstack([Fg, np.asarray(Fp) + len(Vg)])
+    scene = RC.Scene((V, F))
+    sources = O.station_sources(proj, rec, st, scale=1.0)
+    d = np.array([[0.0, np.cos(np.radians(45)), -np.sin(np.radians(45))]])
+    c = O.candidates(scene, sources, st.pivot[None], d)
+    assert c["label"][0] == RC.LABEL_MESH and abs(c["t"][0] - Q[2] / np.sin(np.radians(45))) < 0.1   # through the hole
+    assert c["hidden_fallback"][0] and c["k"][0, 0] == 0                          # the north frame, hidden: used
+
+
+def test_thin_cracks_are_filled_and_large_holes_stay_black():
+    rgb = np.full((200, 400, 3), 120, np.uint8)
+    rgb[:, :200] = 60
+    source = np.zeros((200, 400), np.int16)
+    label = np.ones((200, 400), np.uint8)
+    source[100, 20:380] = -1                                                       # a crack, 1 px wide
+    rgb[100, 20:380] = 0
+    source[20:80, 250:390] = -1                                                    # a large hole
+    rgb[20:80, 250:390] = 0
+    label[150:190, 10:60] = 0                                                      # no surface at all: not ours
+    source[150:190, 10:60] = -1
+    rgb[150:190, 10:60] = 0
+    filled = O.fill_cracks(rgb, source, label)
+    assert filled[100, 20:380].all() and np.all(source[100, 20:380] == -2)
+    assert abs(int(rgb[100, 50, 0]) - 60) < 8 and abs(int(rgb[100, 300, 0]) - 120) < 8
+    assert not filled[20:80, 250:390].any() and np.all(rgb[50, 300] == 0)
+    assert not filled[150:190, 10:60].any()

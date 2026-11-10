@@ -58,7 +58,13 @@ PLANE_SECTOR_DEG = 10.0
 PLANE_MAX_TILT_DEG = 20.0
 PLANE_MIN_BINS = 8
 PLANE_MIN_POINTS_PER_BIN = 5
-DEFAULT_TARGET_TRIANGLES = 3_000_000
+DEFAULT_TARGET_TRIANGLES = 6_000_000
+# 10 Nov (Christian: "The near and mid terrain needs a little more detail and higher polygon count"): Poisson per zone of
+# horizontal distance from the mast axis - each zone meshed from the points within its outer edge + 1 m, so its octree
+# box is small and depth 10 is ~1 cm at 0-4 m, ~2.5 cm at 4-12 m, ~5 cm beyond; the zones overlap by ZONE_OVERLAP_M
+# (no gap for a ray to fall through)
+MESH_ZONES = ((0.0, 4.0, 10), (4.0, 12.0, 10), (12.0, None, 10))       # (inner m, outer m or None = the mesh radius, depth)
+ZONE_OVERLAP_M = 0.3
 GRAZING = 0.10
 COMPONENT_FRACTION = 0.01
 
@@ -327,6 +333,13 @@ def read_points(ply: PathLike) -> np.ndarray:
     return np.asarray(_o3d().io.read_point_cloud(str(ply)).points, float)
 
 
+def read_points_normals(ply: PathLike) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    """(points (n, 3), normals (n, 3) or None) of a PLY: COLMAP's fused cloud carries normals oriented to its cameras."""
+    pc = _o3d().io.read_point_cloud(str(ply))
+    P = np.asarray(pc.points, float)
+    return P, (np.asarray(pc.normals, float) if pc.has_normals() else None)
+
+
 def read_mesh(ply: PathLike) -> Tuple[np.ndarray, np.ndarray]:
     return from_o3d(_o3d().io.read_triangle_mesh(str(ply)))
 
@@ -339,24 +352,77 @@ def write_mesh(ply: PathLike, V: np.ndarray, F: np.ndarray) -> Path:
 
 
 def poisson_arrays(points: np.ndarray, normals: Optional[np.ndarray] = None, depth: int = 10,
-                   density_quantile: float = 0.02) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
-    """Open3D Poisson over the points (normals estimated when missing), the lowest ``density_quantile`` of the
-    vertices (the skin Poisson stretches over gaps) trimmed."""
+                   density_quantile: float = 0.02, viewpoint: Optional[Sequence[float]] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+    """Open3D Poisson over the points, the lowest ``density_quantile`` of the vertices (the skin Poisson stretches
+    over gaps) trimmed.  Normals: the given ones (the fused cloud's, oriented to the cameras by COLMAP); else
+    estimated and turned towards ``viewpoint`` (the mast head) - 10 Nov: before, a cloud of more than 200,000
+    points got unoriented normals, which Poisson turns into lumps and holes."""
     o3d = _o3d()
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(np.asarray(points, float))
-    if normals is not None and len(normals) == len(points):
+    nsrc = "given"
+    if normals is not None and len(normals) == len(points) and np.isfinite(normals).all() and np.abs(normals).sum() > 0:
         pcd.normals = o3d.utility.Vector3dVector(np.asarray(normals, float))
     else:
         pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.5, max_nn=30))
-        pcd.orient_normals_consistent_tangent_plane(10) if len(points) < 200_000 else None
+        if viewpoint is not None:
+            pcd.orient_normals_towards_camera_location(np.asarray(viewpoint, float))
+            nsrc = "estimated, towards the mast head"
+        elif len(points) < 200_000:
+            pcd.orient_normals_consistent_tangent_plane(10)
+            nsrc = "estimated, tangent-plane orientation"
+        else:
+            nsrc = "estimated, unoriented"
     mesh, dens = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=int(depth))
     dens = np.asarray(dens)
     if len(dens) and density_quantile > 0:
         thr = np.quantile(dens, density_quantile)
         mesh.remove_vertices_by_mask(dens < thr)
     V, F = from_o3d(mesh)
-    return V, F, {"method": "poisson (open3d, fallback)", "depth": int(depth), "density_quantile": density_quantile}
+    return V, F, {"method": "poisson (open3d, fallback)", "depth": int(depth), "density_quantile": density_quantile,
+                  "normals": nsrc}
+
+
+def zoned_poisson(points: np.ndarray, normals: Optional[np.ndarray], pivot: Sequence[float], up: Sequence[float],
+                  radius_m: float, zones=MESH_ZONES, overlap_m: float = ZONE_OVERLAP_M,
+                  clean: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any], Dict[str, Any]]:
+    """Poisson per zone of horizontal distance from the axis (see MESH_ZONES), each part cleaned (``clean`` =
+    clean_arrays' keywords) and clipped to its zone +- ``overlap_m``, the parts joined.  Returns (V, F, surface
+    report, cleanup report)."""
+    P = np.asarray(pivot, float)
+    h = horizontal_distance(points, P, up)
+    Vs, Fs, parts, cleans = [], [], [], []
+    base = 0
+    for lo, hi, depth in zones:
+        outer = float(radius_m) if hi is None else min(float(hi), float(radius_m))
+        if lo >= outer:
+            continue
+        sel = h <= outer + 1.0
+        if lo > 0:
+            sel &= h >= max(0.0, lo - 1.0)
+        if sel.sum() < 500:
+            parts.append({"zone_m": [lo, outer], "points": int(sel.sum()), "triangles": 0})
+            continue
+        V, F, how = poisson_arrays(points[sel], None if normals is None else normals[sel], depth=depth, viewpoint=P)
+        last = hi is None or float(hi) >= float(radius_m)          # the outermost zone ends at the mesh radius itself
+        V, F, crep = clean_arrays(V, F, P, points=points[sel], up=up, radius_m=outer if last else outer + overlap_m,
+                                  **(clean or {}))
+        if len(F):
+            cen, _, _ = triangle_geometry(V, F)
+            keep = horizontal_distance(cen, P, up) >= lo - (overlap_m if lo > 0 else 0.0)
+            V, F = keep_triangles(V, F, keep)
+        parts.append({"zone_m": [lo, outer], "points": int(sel.sum()), "depth": int(depth), "triangles": int(len(F)),
+                      "normals": how.get("normals")})
+        cleans.append({"zone_m": [lo, outer], **crep})
+        Vs.append(V)
+        Fs.append(F + base)
+        base += len(V)
+    V = np.vstack(Vs) if Vs else np.zeros((0, 3))
+    F = np.vstack(Fs) if Fs else np.zeros((0, 3), np.int64)
+    how = {"method": "poisson per zone (open3d)", "zones": parts, "overlap_m": overlap_m}
+    crep = {"triangles_in": int(sum(c["triangles_in"] for c in cleans)), "steps": [s_ for c in cleans for s_ in
+            [{**st, "zone_m": c["zone_m"]} for st in c["steps"]]], "triangles_out": int(len(F)), "vertices_out": int(len(V))}
+    return V, F, how, crep
 
 
 def delaunay_mesh(dense_dir: PathLike, out_ply: PathLike, colmap_exe: str = "colmap") -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
@@ -426,11 +492,12 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
             V, F, how = delaunay_mesh(dense_dir, out / "mesh_raw.ply", colmap_exe)
         except Exception as e:                                                      # noqa: BLE001
             log.warning("mesh: Delaunay failed (%s) - Poisson instead", e)
-            V, F, how = poisson_arrays(points, normals, depth=poisson_depth)
+            V, F, how = poisson_arrays(points, normals, depth=poisson_depth, viewpoint=pivot)
             how["delaunay_error"] = str(e)[:300]
+        V, F, clean = clean_arrays(V, F, pivot, points=points, radius_m=radius_m, up=up)
     else:
-        V, F, how = poisson_arrays(points, normals, depth=poisson_depth)
-    V, F, clean = clean_arrays(V, F, pivot, points=points, radius_m=radius_m, up=up)
+        zones = tuple((lo, hi, int(poisson_depth)) for lo, hi, _ in MESH_ZONES)
+        V, F, how, clean = zoned_poisson(points, normals, pivot, up, radius_m, zones=zones)
     V, F, dec = decimate_and_smooth(V, F, target_triangles=target_triangles)
     write_mesh(out / "mesh.ply", V, F)
     base = all_points if plane_points is None else np.asarray(plane_points, float)
