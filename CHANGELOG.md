@@ -107,6 +107,18 @@ changes made on the way to the build.
   --images`**: a sub-model of those frames in its own workspace `dense_<station>[_<sequence>]` (the whole block's
   317 frames otherwise), which `mppp mesh` takes first. Tests: the ODS parallax with a ground-fixed texture, the
   dense subset and the fusion on a synthetic plane.
+- **The first real station run, on the PC (10 Nov)**: Rockytop S026D0630, the 16 sol-461 half-resolution Navcam
+  frames, `mppp dense --station 26_630 --scale 0.5` with patch-match on CUDA (323 s) and the fusion (150,014
+  points); then `mesh`, `depthmaps --photometry`, `ods`. The sparse points agree with the cast depth to 0.1-0.5 %
+  (median |dz|/z, 0-10 m). **But the fused cloud stopped at 7.7 m** (99th percentile; none beyond 10 m), so the
+  mesh covered 2-10 m (55 m^2) and the ODS pair is 7 % mesh, 93 % far sphere. The cause is COLMAP's default
+  patch-match filter: a pixel needs a 3 deg triangulation angle (Navcam's 0.424 m baseline: 8.1 m) and two
+  consistent sources, and a fused point 5 images, where one station's far terrain is seen by one stereo pair.
+  **`mppp dense --station / --images` now uses `STATION_STEREO_OPTIONS`** (0.4 deg - 61 m, the mesh radius - and
+  one consistent source) **and `STATION_FUSION_OPTIONS`** (2 images); `--min-angle DEG` and `--min-views N` set
+  them; a whole block keeps COLMAP's defaults; the options used are in `mppp_dense_run.json`. The stereo has to
+  be run again (the filter is applied in patch-match). Also: the open3d message names `open3d>=0.20` (the first
+  with a Python 3.13 wheel; the `[ibr]` extra too) with quotes that work in cmd.
 - **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
   bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)
   0.9711 against v4.2 0.9724 on the same data and frames (-0.0013, 95 % -0.0023..-0.0004; -0.0043 on the 120 frames

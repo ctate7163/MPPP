@@ -34,6 +34,16 @@ log = logging.getLogger("mppp.sfm")
 PathLike = Union[str, Path]
 DENSE_DIR = "dense"
 DENSE_MAX_IMAGE_SIZE = 2000        # the long side of the undistorted (working) images; the GUI's default too
+# 10 Nov 2026 (Rockytop S026D0630, the first real station run): with COLMAP's defaults the fused cloud of a Navcam 360
+# stopped at 7.7 m (99th percentile; not one point beyond 10 m) and the mesh covered 2-10 m only.  Patch-match keeps a
+# pixel only if its triangulation angle is >= 3 deg (filter_min_triangulation_angle) and two source views agree
+# (filter_min_num_consistent); the fusion wants 5 pixels (min_num_pixels).  Navcam's 0.424 m baseline makes 3 deg at
+# 0.424 / tan(3 deg) = 8.1 m, and the far terrain of one station is seen by one stereo pair.  For a station (or an
+# --images subset): 0.4 deg (0.424 m / tan 0.4 deg = 61 m, the mesh radius), one consistent source, two pixels; the
+# mesh's range-dependent support check (tau(z)) and rubber-sheet removal clean what the looser filter lets through.
+STATION_STEREO_OPTIONS = {"min_triangulation_angle": 0.4, "filter_min_triangulation_angle": 0.4,
+                          "filter_min_num_consistent": 1}
+STATION_FUSION_OPTIONS = {"min_num_pixels": 2}
 
 
 def native_model_dir(project: SfmProject) -> Path:
@@ -193,11 +203,26 @@ def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
     return res
 
 
+def set_options(opts: Any, values: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Set the fields ``values`` on a pycolmap options object; returns the fields as set (a typo raises)."""
+    done: Dict[str, Any] = {}
+    for k, v in (values or {}).items():
+        if not hasattr(opts, k):
+            raise ValueError(f"{type(opts).__name__} has no field {k!r}")
+        setattr(opts, k, type(getattr(opts, k))(v))
+        done[k] = getattr(opts, k)
+    return done
+
+
 def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=("prepare", "stereo", "fusion"),
               max_image_size: int = DENSE_MAX_IMAGE_SIZE, geom_consistency: bool = True,
-              gpu_index: str = "-1", images: Optional[Sequence[str]] = None) -> Dict[str, Any]:
+              gpu_index: str = "-1", images: Optional[Sequence[str]] = None,
+              stereo_options: Optional[Dict[str, Any]] = None,
+              fusion_options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The dense steps from Python: ``prepare`` (:func:`prepare_dense`), ``stereo`` (patch-match stereo; needs a CUDA
-    pycolmap), ``fusion`` (``dense/fused.ply``, the masks applied), ``mesh`` (``dense/meshed-poisson.ply``)."""
+    pycolmap), ``fusion`` (``dense/fused.ply``, the masks applied), ``mesh`` (``dense/meshed-poisson.ply``).
+    ``stereo_options`` / ``fusion_options``: ``PatchMatchOptions`` / ``StereoFusionOptions`` fields to set (e.g.
+    :data:`STATION_STEREO_OPTIONS`); COLMAP's defaults otherwise."""
     import pycolmap
     ws = Path(workspace) if workspace else Path(project.root) / DENSE_DIR
     out: Dict[str, Any] = {"workspace": str(ws), "steps": {}}
@@ -212,20 +237,23 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
         po.geom_consistency = bool(geom_consistency)
         po.max_image_size = int(max_image_size)
         po.gpu_index = str(gpu_index)
+        so = set_options(po, stereo_options)
         pycolmap.patch_match_stereo(str(ws), "COLMAP", options=po)
-        out["steps"]["stereo"] = {"seconds": round(time.time() - t0, 1), "geom_consistency": bool(geom_consistency)}
+        out["steps"]["stereo"] = {"seconds": round(time.time() - t0, 1), "geom_consistency": bool(geom_consistency),
+                                  "options": so}
     if "fusion" in steps:
         t0 = time.time()
         fo = pycolmap.StereoFusionOptions()
         if (ws / "masks").is_dir():
             fo.mask_path = str(ws / "masks")
         fo.max_image_size = int(max_image_size)
+        fset = set_options(fo, fusion_options)
         # 9 Nov (the sandbox run on Rockytop): pycolmap 4.2's stereo_fusion writes a model folder by default
         # (output_type "bin") - the fused points never reached fused.ply and the call raised after the fusion
         fused = pycolmap.stereo_fusion(str(ws / "fused.ply"), str(ws), "COLMAP", input_type="geometric" if geom_consistency else "photometric",
                                        options=fo, output_type="ply")
         out["steps"]["fusion"] = {"seconds": round(time.time() - t0, 1), "points": fused.num_points3D(),
-                                  "ply": str(ws / "fused.ply"), "masks": fo.mask_path or None}
+                                  "ply": str(ws / "fused.ply"), "masks": fo.mask_path or None, "options": fset}
     if "mesh" in steps:
         t0 = time.time()
         pycolmap.poisson_meshing(str(ws / "fused.ply"), str(ws / "meshed-poisson.ply"))

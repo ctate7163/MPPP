@@ -344,6 +344,10 @@ frames alone: a sub-model of them (the other frames deregistered, their observat
 its own workspace `<project>/dense_<station>[_<sequence>]`, so the patch-match stereo and the fusion see nothing
 else, and `mppp mesh --station` takes that workspace's `fused.ply` first. For example the sol-461 half-resolution
 Navcam frames of Rockytop: `mppp dense <WORK> --station 26_630 --scale 0.5 --prepare --stereo --fusion`.
+A station run loosens COLMAP's patch-match and fusion filters (10 Nov 2026): a pixel needs a 0.4 deg triangulation
+angle instead of 3 deg (with Navcam's 0.424 m baseline, 61 m instead of 8 m) and one consistent source view instead
+of two, and a fused point 2 images instead of 5 - the far terrain of one station is seen by one stereo pair only.
+`--min-angle DEG` and `--min-views N` change them; a whole-block run keeps COLMAP's defaults.
 
 `dense_reconstruct.bat`, written next to `open_in_colmap.bat`, does the same with the COLMAP executable (a CUDA
 build is looked for first): double-click runs undistortion (without the masks: `mppp dense --prepare` for those),

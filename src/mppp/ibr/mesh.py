@@ -202,7 +202,7 @@ def _o3d():
     try:
         import open3d as o3d
     except ImportError as e:                                                        # pragma: no cover
-        raise ImportError("mppp.ibr needs open3d>=0.18: pip install 'mppp[ibr]' (open3d)") from e
+        raise ImportError('mppp.ibr needs open3d (0.20 or later for Python 3.13): python -m pip install "open3d>=0.20"') from e
     return o3d
 
 

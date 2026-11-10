@@ -526,3 +526,32 @@ def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
     py, step, kw = calls[0]
     assert py == "/envs/mppp_gpu/python.exe" and step == "dense" and kw["steps"] == ["stereo", "fusion"]
     assert kw["workspace"].endswith("dense_S003D0010") and len(kw["images"]) == 4
+    from mppp.sfm.dense import STATION_FUSION_OPTIONS, STATION_STEREO_OPTIONS
+    assert kw["stereo_options"] == STATION_STEREO_OPTIONS and kw["fusion_options"] == STATION_FUSION_OPTIONS
+    calls.clear()
+    assert mppp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--min-angle", "1.5", "--min-views", "3"]) == 0
+    kw = calls[0][2]
+    assert kw["stereo_options"] == {"min_triangulation_angle": 1.0, "filter_min_triangulation_angle": 1.5,
+                                    "filter_min_num_consistent": 2}
+    assert kw["fusion_options"] == {"min_num_pixels": 3}
+
+
+def test_station_dense_options_reach_the_mesh_radius_and_are_set_on_pycolmap():
+    """10 Nov, Rockytop S026D0630 on the PC: COLMAP's 3 deg filter angle stopped the fused cloud at 7.7 m (Navcam
+    0.424 m baseline: 8.1 m).  The station options reach the mesh radius, and set_options puts them on pycolmap's
+    option objects (a misspelt field raises instead of being ignored)."""
+    import math
+    import pytest
+    from mppp.ibr.mesh import DEFAULT_RADIUS_M
+    from mppp.sfm.dense import STATION_FUSION_OPTIONS, STATION_STEREO_OPTIONS, set_options
+    assert 0.424 / math.tan(math.radians(3.0)) < 8.2                     # the default: the 8 m cut-off seen
+    assert 0.424 / math.tan(math.radians(STATION_STEREO_OPTIONS["filter_min_triangulation_angle"])) >= DEFAULT_RADIUS_M
+    po, fo = pycolmap.PatchMatchOptions(), pycolmap.StereoFusionOptions()
+    assert po.filter_min_triangulation_angle == 3.0 and fo.min_num_pixels == 5   # COLMAP's defaults, still
+    got = set_options(po, STATION_STEREO_OPTIONS)
+    assert po.filter_min_num_consistent == 1 and abs(po.filter_min_triangulation_angle - 0.4) < 1e-6
+    assert set(got) == set(STATION_STEREO_OPTIONS)
+    set_options(fo, STATION_FUSION_OPTIONS)
+    assert fo.min_num_pixels == 2 and isinstance(fo.min_num_pixels, int)
+    with pytest.raises(ValueError):
+        set_options(fo, {"min_num_pixel": 2})

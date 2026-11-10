@@ -29,6 +29,12 @@ Since 0.94.3 the site batches (`run_sites*.bat`, `run_pipeline.bat`) align **two
 or set `MPPP_JOBS`). Each site's console output is then in `<WORK>\runs\console_<time>.txt`; the GPU steps (SIFT
 extraction and matching, LightGlue) take turns through `%LOCALAPPDATA%\mppp\gpu.lock` (`MPPP_GPU_LOCK=0` turns that off).
 
+## The station products (`mppp mesh`, `depthmaps`, `ods`)
+
+They need open3d in the Python that runs mppp (the base Python): `python -m pip install "open3d>=0.20"` (0.20 is the
+first release with a Windows wheel for Python 3.13). The dense step before them runs its patch-match in the CUDA
+python (`mppp_gpu`) by itself.
+
 ## Site maps: `scripts\windows\make_maps.bat`
 
 Double-click it (or `make_maps.bat dtm 300`, `make_maps.bat ortho`, `make_maps.bat both 450`): the six M20 site-map

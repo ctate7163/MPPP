@@ -155,6 +155,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sequence", nargs="+", default=None, help="--station: only these sequences (NCAM03461 ...)")
     p.add_argument("--scale", type=float, default=None, help="--station: only frames at this downsample (0.5: half-res)")
     p.add_argument("--images", nargs="+", default=None, help="0.96: only these image names (instead of --station)")
+    p.add_argument("--min-angle", type=float, default=None, help="0.96: the patch-match triangulation angle (deg) a pixel "
+                   "needs; default 0.4 with --station / --images (Navcam 0.424 m baseline: 61 m), COLMAP's 3 (8 m) "
+                   "for a whole block")
+    p.add_argument("--min-views", type=int, default=None, help="0.96: the images a fused point needs (fusion "
+                   "min_num_pixels; patch-match then wants max(1, N-1) consistent sources); default 2 with --station / "
+                   "--images, COLMAP's 5 for a whole block")
     p = sub.add_parser("metashape", help="0.95.2: a finished block as an Agisoft Metashape project - cameras (calibration "
                        "and poses fixed), COLMAP's tie points and the masks, the photos linked from images/: writes "
                        "<project>/metashape/ (job, Bundler tie points, the build script, make_metashape_project.bat); "
@@ -707,12 +713,24 @@ def cmd_dense(a: argparse.Namespace) -> int:
     # the CUDA python the alignment itself uses (pipeline._default_gpu_python: MPPP_GPU_PYTHON, MPPP_GPU_PY,
     # %LOCALAPPDATA%\mppp\gpu_python.txt, the mppp_gpu conda env) when neither --python nor GPU_PYTHON names one.
     # 10 Nov on the PC: the 9 Nov fix looked at gpu_python() alone and missed MPPP_GPU_PYTHON / the mppp_gpu env
+    from .sfm.dense import STATION_FUSION_OPTIONS, STATION_STEREO_OPTIONS
+    so = dict(STATION_STEREO_OPTIONS) if subset is not None else {}     # 10 Nov: COLMAP's 3 deg stopped Rockytop at 8 m
+    fo = dict(STATION_FUSION_OPTIONS) if subset is not None else {}
+    if getattr(a, "min_angle", None) is not None:
+        so.update(min_triangulation_angle=min(float(a.min_angle), 1.0), filter_min_triangulation_angle=float(a.min_angle))
+    if getattr(a, "min_views", None) is not None:
+        so["filter_min_num_consistent"] = max(1, int(a.min_views) - 1)
+        fo["min_num_pixels"] = int(a.min_views)
+    if so or fo:
+        print(f"dense options: stereo {so or 'COLMAP defaults'}; fusion {fo or 'COLMAP defaults'}")
     py = a.python or (None if getattr(pycolmap, "has_cuda", False) else _default_gpu_python())
     if py and ("stereo" in steps or not getattr(pycolmap, "has_cuda", False)):
         print(f"dense: {', '.join(steps)} in {py}")
-        res = run_step(py, "dense", proj, steps=steps, max_image_size=size, workspace=str(ws), images=subset)
+        res = run_step(py, "dense", proj, steps=steps, max_image_size=size, workspace=str(ws), images=subset,
+                       stereo_options=so, fusion_options=fo)
     else:
-        res = run_dense(proj, workspace=ws, steps=steps, max_image_size=size, images=subset)
+        res = run_dense(proj, workspace=ws, steps=steps, max_image_size=size, images=subset,
+                        stereo_options=so, fusion_options=fo)
     for k, v in (res.get("steps") or {}).items():
         print(f"  {k}: {v}")
     return 0
