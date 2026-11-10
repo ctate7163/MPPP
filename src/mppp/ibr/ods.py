@@ -8,7 +8,7 @@ Geometry: the viewer's eyes sit on a circle of diameter IPD (64 mm) about the st
 horizontal plane.  The pixel (u, v) of a W x H equirect looks along azimuth theta (from north through east) and
 elevation phi; the left eye's ray starts at ``P - (IPD/2) right(theta)`` and the right eye's at ``P + (IPD/2)
 right(theta)`` with ``right = h x up`` and ``h`` the horizontal view direction - the standard ODS construction.
-Both rays are cast at the station's surface (mesh within 20 m of the mast axis, the ground plane to 100 m, the sky at
+Both rays are cast at the station's surface (mesh within 30 m of the mast axis, the ground plane to 100 m, the sky at
 infinity; :mod:`.raycast`): the hit point X and its label.
 
 Colour: X is projected into every image of the station (the Navcam frames of that waypoint; ``--cameras`` adds
@@ -33,8 +33,13 @@ Blending (10 Nov 2026, Christian: "the mosaic should be blended together to avoi
   the terrain behind, which the mesh then hides from every camera - a black triangle on the deck, a sliver along a
   mesh edge.  A pixel no source sees unhidden takes the best hidden one (by the same weight); cracks still left
   (at most ``HOLE_FILL_MAX_PX`` pixels and ``HOLE_FILL_MAX_WIDTH_PX`` wide) are filled from their edges
-  (``cv2.inpaint``) and marked in the provenance map (grey); large unseen areas (straight down, above the
-  frames' tops) stay black.
+  (``cv2.inpaint``) and marked in the provenance map (grey); large unseen areas below the horizon (straight down)
+  stay black;
+- **the sky above the frames** (10 Nov, Christian: "extrapolate and blur the light blue sky upwards so that there
+  isn't a shape boundary there"): per column the colour of the band just below the highest sky pixel a frame saw,
+  that boundary and its colour smoothed around the panorama (no sawtooth from the frames' tops), the colour carried
+  up and blended into the panorama's mean sky colour at the zenith, cross-faded with the seen sky over a band about
+  the smoothed boundary; light blue in the provenance map; ``--no-sky-fill``.
 
 Resolution: 8192 x 4096 is 0.77 mrad/px; a half-resolution Navcam frame (2560 px) is 0.68 mrad/px, a full-resolution
 one 0.34.  The processed images are read at ``scale`` of their own size - 1 by default (10 Nov; 0.5 before, which
@@ -68,6 +73,15 @@ ANGLE_SCALE_RAD = 0.02           # parallax term 1 / (1 + angle / this)
 GAIN_RANGE = (0.6, 1.6)
 HOLE_FILL_MAX_PX = 4000          # holes (a surface, no source) up to this many pixels are filled from their edges
 HOLE_FILL_MAX_WIDTH_PX = 24      # ... and only if thin: no pixel farther than this from the hole's edge
+PAD_MAX_VALUE = 1                # a source pixel this dark in every channel, in a region touching the border, is padding
+PAD_MIN_FRAC = 0.002             # ... when the region is at least this fraction of the image
+SKY_MIN_VALUE = 12               # the sky fill samples no pixel darker than this (no black or near-black areas)
+SKY_ENVELOPE_FRAC = 0.10         # the boundary: the lowest of the frames' tops within this fraction of the width
+SKY_SKIP_FRAC = 0.004            # the sky colour sampled this far (of the height) below each column's highest seen pixel
+SKY_BAND_FRAC = 0.03             #   over a band this tall, from its brightest SKY_BRIGHT_SHARE (sky, not the distant
+SKY_BRIGHT_SHARE = 0.4           #   hills the band can reach - both are "far"), median
+SKY_SMOOTH_FRAC = 0.02           # the boundary and the colour smoothed around the panorama (Gaussian, of the width)
+SKY_FEATHER_FRAC = 0.02          # the fill cross-fades with the seen sky over this band (of the height) about the boundary
 GAIN_PASS_WIDTH = 1024
 
 
@@ -101,6 +115,7 @@ class SourceImage:
         self._low: Optional[np.ndarray] = None
         self._dist: Optional[np.ndarray] = None
         self.gain = 1.0
+        self.extra_mask: Optional[np.ndarray] = None      # True = may not be used (the mast-head hardware, rover shown)
         self.W = max(1, int(round(camera.width * scale)))
         self.H = max(1, int(round(camera.height * scale)))
 
@@ -155,15 +170,38 @@ class SourceImage:
             self._low = cv2.GaussianBlur(self.rgb().astype(np.float32), (0, 0), sig)
         return self._low
 
+    def padding(self) -> np.ndarray:
+        """The black padding of the processed frame (MPPP pads the subframes to the frame size): pixels at most
+        PAD_MAX_VALUE in every channel in a connected region that touches the image border and covers at least
+        PAD_MIN_FRAC of the image (10 Nov: the padding was blended in as image content - the fade to black at the
+        frames' tops)."""
+        import cv2
+        z = (self.rgb().max(axis=2) <= PAD_MAX_VALUE).astype(np.uint8)
+        pad = np.zeros((self.H, self.W), bool)
+        if not z.any():
+            return pad
+        n, lab, stats, _ = cv2.connectedComponentsWithStats(z, connectivity=4)
+        border = np.unique(np.r_[lab[0], lab[-1], lab[:, 0], lab[:, -1]])
+        for k in border:
+            if k and stats[k, cv2.CC_STAT_AREA] >= PAD_MIN_FRAC * self.H * self.W:
+                pad |= lab == k
+        return pad
+
     def edge_distance(self) -> np.ndarray:
         """Distance (pixels at scale) of every pixel from the nearest edge of what this source may give: the image
-        border and the rover mask's edge."""
+        border, the frame's black padding, the rover mask's edge (and, with the rover shown, the hardware fixed to
+        the mast head: ``extra_mask``)."""
         if self._dist is None:
             import cv2
-            ok = np.ones((self.H, self.W), np.uint8)
+            ok = (~self.padding()).astype(np.uint8)
             m = self.mask()
             if m is not None:
                 ok &= m.astype(np.uint8)
+            if self.extra_mask is not None:
+                em = self.extra_mask
+                if em.shape != ok.shape:
+                    em = cv2.resize(em.astype(np.uint8), (self.W, self.H), interpolation=cv2.INTER_NEAREST) > 0
+                ok &= (~em).astype(np.uint8)
             pad = np.zeros((self.H + 2, self.W + 2), np.uint8)
             pad[1:-1, 1:-1] = ok
             self._dist = cv2.distanceTransform(pad, cv2.DIST_L2, 5)[1:-1, 1:-1].astype(np.float32)
@@ -188,9 +226,44 @@ class SourceImage:
         return self._bilinear(self.edge_distance(), uv)
 
 
+HEAD_HARDWARE_FRACTION = 0.75    # rover shown: a pixel the rover mask covers in this share of a tier's frames is mast-head
+HEAD_TIER_DEG = 4.0              # hardware (it turns with the cameras); the frames grouped by eye and elevation (deg)
+HEAD_MIN_FRAMES = 3
+
+
+def head_hardware_masks(sources: Sequence["SourceImage"], masks: Sequence[Optional[np.ndarray]], up: Sequence[float],
+                        fraction: float = HEAD_HARDWARE_FRACTION, tier_deg: float = HEAD_TIER_DEG,
+                        min_frames: int = HEAD_MIN_FRAMES) -> List[Optional[np.ndarray]]:
+    """The hardware fixed to the mast head (the wind-sensor booms below the cameras; Christian, 10 Nov: "what can we
+    do about the light colored boom on the side of the mast?").  It turns with the cameras, so it sits at the same
+    pixels of every frame of one eye at one elevation, while the deck moves across the frames as the mast turns: per
+    group (eye, elevation tier) of at least ``min_frames`` frames, the pixels the rover mask covers in at least
+    ``fraction`` of them.  Returns, per source, True = mast-head hardware (or None)."""
+    u = np.asarray(up, float) / np.linalg.norm(up)
+    groups: Dict[Tuple[str, int, Tuple[int, int]], List[int]] = {}
+    for i, (src, m) in enumerate(zip(sources, masks)):
+        if m is None:
+            continue
+        z = src.R[2]                                          # the optical axis in the block frame
+        el = float(np.degrees(np.arcsin(np.clip(z @ u, -1, 1))))
+        groups.setdefault((src.name[:2], int(round(el / tier_deg)), m.shape), []).append(i)
+    out: List[Optional[np.ndarray]] = [None] * len(sources)
+    for (_eye, _tier, _shape), ids in groups.items():
+        if len(ids) < min_frames:
+            continue
+        rover_share = np.mean([~masks[i] for i in ids], axis=0)          # masks: True = terrain
+        fixed = rover_share >= fraction
+        if fixed.any():
+            for i in ids:
+                out[i] = fixed & ~masks[i]                    # only where this frame's own mask says rover
+    return out
+
+
 def station_sources(project, rec, station, families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0,
-                    images: Optional[Sequence[str]] = None, use_masks: bool = True) -> List[SourceImage]:
-    """The station's frames as sources; ``use_masks=False`` (``mppp ods --rover``) lets the rover's own pixels in."""
+                    images: Optional[Sequence[str]] = None, use_masks: bool = True,
+                    mask_head_hardware: bool = True) -> List[SourceImage]:
+    """The station's frames as sources; ``use_masks=False`` (``mppp ods --rover``) lets the rover's own pixels in,
+    except the hardware fixed to the mast head (:func:`head_hardware_masks`) unless ``mask_head_hardware`` is off."""
     by_name = {im.name: im for im in rec.images.values()}
     names = list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())]
     out = []
@@ -204,6 +277,20 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
         out.append(SourceImage(name, rec.cameras[im.camera_id], np.asarray(cw.rotation.matrix(), float),
                                np.asarray(im.projection_center(), float), Path(project.root) / "images" / name,
                                mf if (use_masks and mf.is_file()) else None, s))
+    if not use_masks and mask_head_hardware and out:
+        import cv2
+        ms = []
+        for src in out:
+            mf = Path(project.root) / "masks" / (src.name + ".png")
+            m = cv2.imread(str(mf), cv2.IMREAD_GRAYSCALE) if mf.is_file() else None
+            if m is not None and (m.shape[1] != src.W or m.shape[0] != src.H):
+                m = cv2.resize(m, (src.W, src.H), interpolation=cv2.INTER_NEAREST)
+            ms.append(None if m is None else m > 0)
+        hw = head_hardware_masks(out, ms, station.up)
+        for src, h in zip(out, hw):
+            src.extra_mask = h
+        n = sum(1 for h in hw if h is not None and h.any())
+        log.info("ods: mast-head hardware masked in %d of %d frames (rover shown)", n, len(out))
     return out
 
 
@@ -334,7 +421,7 @@ def estimate_gains(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence
 
 def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], eye: str, width: int, height: int,
                ipd_m: float, rows_per_chunk: int = 128, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0),
-               feather_px: float = FEATHER_PX, progress=None) -> Dict[str, np.ndarray]:
+               feather_px: float = FEATHER_PX, progress=None, sky_fill: bool = True) -> Dict[str, np.ndarray]:
     """One eye's equirect: {"rgb" (H, W, 3) uint8, "source" (H, W) int16 (-1 none; the strongest source), "label"
     (H, W) uint8 surface label, "range" (H, W) float32}.  The two-band blend of the module doc, with each source's
     ``gain`` (:func:`estimate_gains`; 1 when not estimated)."""
@@ -388,7 +475,90 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         if progress:
             progress(eye, r1, height, time.time() - t0)
     filled = fill_cracks(rgb, source, label)
-    return {"rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled}
+    sky = fill_sky(rgb, source, label) if sky_fill else np.zeros(label.shape, bool)
+    return {"rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
+            "sky_filled": sky}
+
+
+def fill_sky(rgb: np.ndarray, source: np.ndarray, label: np.ndarray) -> np.ndarray:
+    """Fill (in place) the sky no frame saw, above the horizon (see the module doc).  The boundary is the lower
+    envelope of the frames' tops (the lowest top within SKY_ENVELOPE_FRAC of the width), smoothed; the colour the
+    median of the seen sky SKY_SKIP_FRAC below it (past the frames' darker top edges), smoothed around the panorama;
+    carried up into the panorama's median sky colour at the zenith; the seen sky above the boundary and within
+    SKY_FEATHER_FRAC of it cross-faded into the fill.  ``source`` = -3 where nothing was seen.  Returns the mask of
+    the pixels changed (empty when no sky was seen at all)."""
+    from scipy.ndimage import gaussian_filter1d, maximum_filter1d
+    H, W = label.shape
+    rows = np.arange(H)
+    above = (90.0 - (rows + 0.5) / H * 180.0) > 0.0
+    sky = (label == LABEL_FAR) & above[:, None]
+    bright = rgb.max(axis=2) >= SKY_MIN_VALUE
+    seen = sky & (source != -1) & bright                     # no black or near-black pixel is carried up
+    changed = np.zeros((H, W), bool)
+    has = seen.any(axis=0)
+    if has.sum() < max(8, W // 100):
+        return changed
+    idx = np.arange(W)
+    good = np.flatnonzero(has)
+    r_top = np.where(has, np.argmax(seen, axis=0), 0).astype(float)
+    r_top[~has] = np.interp(idx[~has], good, r_top[good], period=W)
+    env = maximum_filter1d(r_top, size=max(3, int(SKY_ENVELOPE_FRAC * W)), mode="wrap")     # the notches' bottoms
+    sig = max(2.0, SKY_SMOOTH_FRAC * W)
+    r_s = gaussian_filter1d(env, sig, mode="wrap")
+    skip, band = max(1, int(SKY_SKIP_FRAC * H)), max(2, int(SKY_BAND_FRAC * H))
+    horizon = int(np.searchsorted(-(90.0 - (rows + 0.5) / H * 180.0), 0.0))          # the first row below the horizon
+    col = np.full((W, 3), np.nan)
+    for c in np.flatnonzero(has):
+        r0 = int(r_top[c]) + skip
+        sl = slice(min(H - 1, r0), max(min(H - 1, r0) + 1, min(horizon, r0 + band)))
+        m = seen[sl, c]
+        if m.sum() >= min(3, band):
+            px = rgb[sl, c][m].astype(float)
+            lum = px.mean(axis=1)
+            keep = lum >= np.quantile(lum, 1.0 - SKY_BRIGHT_SHARE)
+            col[c] = np.median(px[keep], axis=0)
+    ok = np.isfinite(col[:, 0])
+    if ok.sum() < max(8, W // 100):
+        return changed
+    g = np.flatnonzero(ok)
+    for k in range(3):
+        col[~ok, k] = np.interp(idx[~ok], g, col[g, k], period=W)
+    zenith = np.median(col[ok], axis=0)
+    # the horizontal blur widens upwards as 1 / cos(elevation) - the same width on the sky at every elevation, so the
+    # column streaks do not converge at the pole (Christian, 10 Nov) - from levels sig * 2^k, interpolated per row
+    levels = []
+    sg = sig
+    while True:
+        levels.append(np.stack([gaussian_filter1d(col[:, k], min(sg, 4.0 * W), mode="wrap") for k in range(3)], axis=1))
+        if sg >= W:
+            break
+        sg *= 2.0
+    levels.append(np.broadcast_to(zenith, (W, 3)).astype(float))      # the last level: uniform
+    levels = np.stack(levels)                                          # (L, W, 3)
+    el_rows = 90.0 - (rows + 0.5) / H * 180.0
+    el_b = 90.0 - (r_s.mean() + 0.5) / H * 180.0                        # the boundary's elevation (mean)
+    want = 1.0 / np.maximum(np.cos(np.radians(el_rows)), 1e-3) * np.cos(np.radians(min(el_b, 89.0)))
+    lk = np.clip(np.log2(np.maximum(want, 1.0)), 0.0, len(levels) - 1.0)  # level per row (0 at and below the boundary)
+    k0 = np.floor(lk).astype(int)
+    k1 = np.minimum(k0 + 1, len(levels) - 1)
+    fr = (lk - k0)[:, None]
+    R = rows[:, None].astype(float)
+    t = np.clip((r_s[None, :] - R) / np.maximum(r_s[None, :], 1.0), 0.0, 1.0)          # 0 at the boundary, 1 at the zenith
+    sm = t * t * (3 - 2 * t)
+    feather = max(2.0, SKY_FEATHER_FRAC * H)
+    w = np.clip((r_s[None, :] + feather - R) / (2.0 * feather), 0.0, 1.0)              # the cross-fade about the boundary
+    w = w * w * (3 - 2 * w)
+    hole = sky & ((source == -1) | ~bright)
+    w = np.where(hole & (R <= r_s[None, :] + 3 * feather), 1.0, w)      # dark leftovers near the boundary: the fill
+    w = np.where(sky, w, 0.0)
+    changed = w > 1e-3
+    ys, xs = np.nonzero(changed)
+    c_row = (1 - fr[ys]) * levels[k0[ys], xs] + fr[ys] * levels[k1[ys], xs]
+    fill = (1 - sm[ys, xs])[:, None] * c_row + sm[ys, xs][:, None] * zenith[None, :]
+    ww = w[ys, xs][:, None]
+    rgb[ys, xs] = np.clip((1 - ww) * rgb[ys, xs].astype(np.float32) + ww * fill, 0, 255).astype(np.uint8)
+    source[hole] = -3
+    return changed
 
 
 def fill_cracks(rgb: np.ndarray, source: np.ndarray, label: np.ndarray, max_px: int = HOLE_FILL_MAX_PX,
@@ -424,6 +594,7 @@ def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int) -> Pat
     import cv2
     img = np.zeros(source.shape + (3,), np.uint8)
     img[source == -2] = (128, 128, 128)                       # cracks filled from their edges
+    img[source == -3] = (230, 200, 160)                       # the sky filled above the frames (BGR: light blue)
     for k in range(max(0, n_sources)):
         m = source == k
         if not m.any():
@@ -461,7 +632,8 @@ def stack_eyes(out_dir: PathLike, top: str = "right", jpeg_quality: int = 95) ->
 def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width: int = DEFAULT_WIDTH, ipd_m: float = DEFAULT_IPD_M,
                    families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None,
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
-                   gains: bool = True, stack_top: str = "right") -> Dict[str, Any]:
+                   gains: bool = True, stack_top: str = "right", sky_fill: bool = True,
+                   mask_head_hardware: bool = True) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/ods_left.png``, ``ods_right.png``, ``provenance.png`` (left
     eye's sources), ``ods.json``.  Returns the record."""
     import cv2
@@ -469,7 +641,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     out.mkdir(parents=True, exist_ok=True)
     height = width // 2
     sources = station_sources(project, rec, station, families=families, scale=scale, zcam_scale=zcam_scale, images=images,
-                              use_masks=use_masks)
+                              use_masks=use_masks, mask_head_hardware=mask_head_hardware)
     if not sources:
         raise ValueError(f"station {station.label}: no source images of families {families!r} with a pose")
     axes = dict(up=station.up, north=station.north, east=station.east)
@@ -480,14 +652,16 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
 
     rec_out: Dict[str, Any] = {"station": station.to_json(), "width": width, "height": height, "ipd_m": ipd_m,
                                "sources": [s.name for s in sources], "scale": scale, "zcam_scale": zcam_scale,
-                               "rover": "shown" if not use_masks else "masked out", "eyes": {}}
+                               "rover": "shown" if not use_masks else "masked out",
+                               "head_hardware_masked": [s.name for s in sources if s.extra_mask is not None and s.extra_mask.any()],
+                               "eyes": {}}
     if gains:
         g = estimate_gains(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
         rec_out["gains"] = g
         log.info("ods: gains over %d source pairs: %s", g["pairs"], ", ".join(f"{v:.3f}" for v in g["gains"].values()))
     for eye in eyes:
         res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, rows_per_chunk=rows_per_chunk,
-                         progress=progress, **axes)
+                         progress=progress, sky_fill=sky_fill, **axes)
         f = out / f"ods_{eye}.png"
         cv2.imwrite(str(f), res["rgb"][..., ::-1])
         if eye == eyes[0]:
@@ -499,7 +673,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                 "far": float((lab == LABEL_FAR).sum() / n),
                                 "no_surface": float((lab == 0).sum() / n),
                                 "hidden_view_used": float(res["hidden_fallback"].sum() / n),
-                                "cracks_filled": float(res["filled"].sum() / n)},
+                                "cracks_filled": float(res["filled"].sum() / n),
+                                "sky_filled": float(res["sky_filled"].sum() / n)},
                                 "sources_used": int(len(np.unique(res["source"][res["source"] >= 0])))}
         for s in sources:
             s.release()

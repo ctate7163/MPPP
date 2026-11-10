@@ -1,7 +1,7 @@
 """
 mppp.ibr.cli - ``mppp mesh``, ``mppp depthmaps``, ``mppp ods`` on one finished block.
 
-    mppp mesh WORK --station 3_1234 [--points dense/fused.ply] [--colmap colmap.exe] [--mesh-radius 20] [--plane-radius 100]
+    mppp mesh WORK --station 3_1234 [--points dense/fused.ply] [--colmap colmap.exe] [--mesh-radius 30] [--plane-radius 100]
     mppp depthmaps WORK --station 3_1234 [--cameras N] [--scale 0.5] [--photometry]
     mppp ods WORK --station 3_1234 [--width 8192] [--ipd 0.064] [--cameras N]
 
@@ -90,15 +90,15 @@ def _tie_points(rec, min_track: int = 3) -> np.ndarray:
 
 
 def add_parsers(sub) -> None:
-    p = sub.add_parser("mesh", help="0.96: the surface of one station of a finished block: a clean mesh to 20 m from the mast "
+    p = sub.add_parser("mesh", help="0.96: the surface of one station of a finished block: a clean mesh to 30 m from the mast "
                        "axis, the ground plane to 100 m, the sky at infinity (mppp.ibr.mesh)")
     p.add_argument("work")
     p.add_argument("--station", required=True, help="S003D1234 / 3_1234 / sol:91")
     p.add_argument("--points", default=None, help="the fused dense cloud (default <project>/dense*/fused.ply, the newest)")
     p.add_argument("--colmap", default=None, help="the COLMAP executable: Delaunay over --dense-dir instead of Poisson")
     p.add_argument("--dense-dir", default=None, help="the dense workspace of the Delaunay mesher (default: --points' folder)")
-    p.add_argument("--mesh-radius", type=float, default=20.0, help="the mesh to this horizontal distance from the mast "
-                   "axis (m; default 20)")
+    p.add_argument("--mesh-radius", type=float, default=30.0, help="the mesh to this horizontal distance from the mast "
+                   "axis (m; default 30)")
     p.add_argument("--plane-radius", type=float, default=100.0, help="the ground plane beyond the mesh, to this horizontal "
                    "distance (m; default 100); the sky at infinity beyond")
     p.add_argument("--horizontal-plane", action="store_true", help="a horizontal ground plane at the median height "
@@ -153,6 +153,11 @@ def add_parsers(sub) -> None:
     p.add_argument("--no-gains", action="store_true", help="no gain compensation between the source frames")
     p.add_argument("--stack-top", default="right", choices=["right", "left"], help="the eye on top in "
                    "ods_stereo_square.png / .jpg (default right: the right eye above the left)")
+    p.add_argument("--keep-head-hardware", action="store_true", help="--rover: keep the hardware fixed to the mast head "
+                   "(the wind-sensor booms; default: masked, found as what the rover mask covers at the same pixels in the "
+                   "frames of one eye and elevation)")
+    p.add_argument("--no-sky-fill", action="store_true", help="leave the sky above the frames black (default: the seen "
+                   "sky carried up to the zenith, the frames' tops blended away)")
     p.add_argument("--stack-only", action="store_true", help="only stack the eye images already in the folder into "
                    "ods_stereo_square.png / .jpg (no rendering)")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
@@ -248,7 +253,8 @@ def cmd_ods(a: argparse.Namespace) -> int:
     scene = _scene(out)
     rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, families=a.cameras, scale=a.scale,
                          zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
-                         use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top)
+                         use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
+                         sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: {e['file']}  coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "

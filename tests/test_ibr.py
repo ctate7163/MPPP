@@ -311,8 +311,11 @@ def test_ods_render_colours_each_direction_from_its_frame(tmp_path):
     # 45 degrees between two frames, their fields of view (+-45 deg horizontally) both end there: a blend or one of them
     px = at(L, 45.0, -20.0).astype(int)
     assert px.sum() > 100
-    # straight up: no frame looks there (they tilt 15 deg down): black, provenance none
-    assert np.all(at(L, 10.0, 85.0) == 0)
+    # straight up: no frame looks there (they tilt 15 deg down): the sky filled from the seen sky below (10 Nov)
+    assert at(L, 10.0, 85.0).sum() > 100
+    O.render_station(proj, rec, st, scene, tmp_path / "nofill", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32,
+                     sky_fill=False)
+    assert np.all(at(cv2.imread(str(tmp_path / "nofill" / "ods_left.png"))[..., ::-1], 10.0, 85.0) == 0)
     rec_json = json.loads((out / "ods.json").read_text(encoding="utf-8"))
     cov = rec_json["eyes"]["left"]["coverage"]
     assert 0.2 < cov["coloured"] < 0.9 and cov["no_surface"] == 0.0 and rec_json["eyes"]["left"]["sources_used"] == 4
@@ -376,12 +379,12 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert not (out / "far_sphere.ply").exists() and rep["scene"]["beyond"] == "the sky at infinity"
     gp = json.loads((out / "ground_plane.json").read_text(encoding="utf-8"))
     assert gp["method"] == "fit" and gp["tilt_deg"] < 0.5 and abs(gp["offset"]) < 0.05          # the plane z = 0
-    assert rep["scene"]["mesh_radius_m"] == 20.0
+    assert rep["scene"]["mesh_radius_m"] == 30.0
     assert rep["station"]["station"] == "S003D0010" and rep["points_file"].endswith("fused.ply")
     V, F = M.read_mesh(out / "mesh.ply")
     assert len(F) > 1000 and abs(float(np.median(V[:, 2]))) < 0.1                     # the ground plane, near z = 0
     cen, _, _ = M.triangle_geometry(V, F)
-    assert M.horizontal_distance(cen, rep["pivot_block_m"]).max() <= 20.05            # 20 m from the axis (smoothing: mm)
+    assert M.horizontal_distance(cen, rep["pivot_block_m"]).max() <= 30.05            # 30 m from the axis (smoothing: mm)
 
     assert mppp_main(["depthmaps", work, "--station", "3_10", "--scale", "0.25", "--photometry", "--no-preview"]) == 0
     maps = sorted((out / "maps").glob("*.npz"))
@@ -999,3 +1002,62 @@ def test_thin_cracks_are_filled_and_large_holes_stay_black():
     assert abs(int(rgb[100, 50, 0]) - 60) < 8 and abs(int(rgb[100, 300, 0]) - 120) < 8
     assert not filled[20:80, 250:390].any() and np.all(rgb[50, 300] == 0)
     assert not filled[150:190, 10:60].any()
+
+
+# ----------------------------------------------------------------------------- 10 Nov: padding, sky fill, mast-head hardware
+def test_black_padding_is_not_image_content(tmp_path):
+    import cv2
+    img = np.full((100, 160, 3), 90, np.uint8)
+    img[:25] = 0                                                                    # padding along the top
+    img[60:63, 80:83] = 0                                                           # a real black speck inside
+    cv2.imwrite(str(tmp_path / "a.png"), img)
+    cam = pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=160, height=100, params=np.array([80.0, 80.0, 50.0]))
+    s_ = O.SourceImage("a.png", cam, np.eye(3), np.zeros(3), tmp_path / "a.png", None, 1.0)
+    pad = s_.padding()
+    assert pad[:25].all() and not pad[25:].any()
+    d = s_.edge_distance()
+    assert d[10, 80] == 0 and 9 <= d[35, 80] <= 11                                  # feathers count from the padding
+
+
+def test_sky_fill_carries_the_sky_up_without_black_or_sawtooth():
+    """Christian, 10 Nov: "extrapolate and blur the light blue sky upwards so that there isn't a shape boundary
+    there" - "make sure not to extrapolate black pixel areas"."""
+    from mppp.ibr.raycast import LABEL_FAR, LABEL_MESH
+    H, W = 400, 800
+    rgb = np.zeros((H, W, 3), np.uint8)
+    source = np.full((H, W), -1, np.int16)
+    label = np.full((H, W), LABEL_FAR, np.uint8)
+    label[200:] = LABEL_MESH
+    cols = np.arange(W)
+    top = 120 + (25 * np.abs(((cols % 100) / 100.0) - 0.5) * 2).astype(int)        # the frames' sawtooth tops
+    for c in cols:
+        rgb[top[c]:200, c] = (180, 170, 200)
+        source[top[c]:200, c] = 0
+        rgb[top[c]:top[c] + 4, c] = (5, 5, 5)                                       # the dark top edge of the frames
+    rgb[200:] = (110, 80, 60)
+    source[200:] = 0
+    changed = O.fill_sky(rgb, source, label)
+    up = rgb[:150].astype(int)
+    assert changed[:100].all() and up.min() > 120                                  # no black carried up
+    assert np.abs(up - np.array([180, 170, 200])).max() < 12                       # the sky's colour
+    assert np.abs(np.diff(rgb[100].astype(int), axis=0)).max() <= 2                # no sawtooth left in a row
+    assert np.all(rgb[300] == (110, 80, 60))                                       # below the horizon: untouched
+
+
+def test_mast_head_hardware_is_what_stays_put_across_the_tier():
+    """A boom fixed to the mast head sits at the same pixels in every frame of one eye and elevation; the deck moves
+    across the frames as the mast turns.  Only the boom is masked with the rover shown."""
+    cam = pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=100, height=80, params=np.array([60.0, 50.0, 40.0]))
+    srcs, masks = [], []
+    for k, yaw in enumerate((0, 60, 120, 180, 240)):
+        s_ = O.SourceImage(f"NLF_{k}.png", cam, _look(yaw, 30.0), np.zeros(3), Path("x.png"), None, 1.0)
+        m = np.ones((80, 100), bool)
+        m[60:70, 70:90] = False                                                     # the boom: always there
+        m[40:80, 10 * k:10 * k + 25] = False                                        # the deck: moves
+        srcs.append(s_)
+        masks.append(m)
+    hw = O.head_hardware_masks(srcs, masks, (0, 0, 1))
+    for h in hw:
+        assert h is not None and h[60:70, 70:90].all() and h.sum() == 200            # the boom, nothing of the deck
+    few = O.head_hardware_masks(srcs[:2], masks[:2], (0, 0, 1))
+    assert all(h is None for h in few)                                               # two frames: no verdict

@@ -25,7 +25,7 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
     mppp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
     mppp calib zcam|nz|hazcam [--zoom Z] [--group G1,G2] [--navcam-group G] [--variant V] [--promote-if-ok]
-    mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 20] [--plane-radius 100]   0.96: one clean surface
+    mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 30] [--plane-radius 100]   0.96: one clean surface
     mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--photometry]   0.96: per-image depth / normal maps, the photometric cube
     mppp ods WORK --station ... [--width 8192] [--ipd 0.064]                       0.96: the stereoscopic panorama, two eye images
     mppp doctor                               what is set, what is missing (environment, dependencies, models)
@@ -382,7 +382,7 @@ one **station** (a site and drive of the rover) of a finished block, under `<pro
 
 ```text
 usage: mppp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--colmap colmap.exe] [--dense-dir DIR]
-                      [--mesh-radius 20] [--plane-radius 100] [--horizontal-plane] [--no-tie-points]
+                      [--mesh-radius 30] [--plane-radius 100] [--horizontal-plane] [--no-tie-points]
                       [--far-radius R] [--target-triangles 3000000] [--poisson-depth 10] [--cameras N] [--no-preview]
 usage: mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--zcam-scale 1] [--images NAME ...]
                       [--photometry] [--no-shadow] [--no-preview] [--no-validate]
@@ -395,7 +395,7 @@ pivot fitted from their centres and rotations (`station.json`), then the surface
 `dense*/fused.ply`, or `--points`): Poisson (open3d), or COLMAP's Delaunay mesher through `--colmap` over
 `--dense-dir`; then the cleanup of the 31 Oct plan — components under 1 %, rubber sheets (long thin triangles),
 surface no fused point supports within τ(z) = max(5 cm, 2 % z, 3 σz), everything farther than `--mesh-radius`
-(20 m) from the mast axis (horizontal distance; 10 Nov 2026) — the decimation to `--target-triangles`, Taubin
+(30 m) from the mast axis (horizontal distance; 10 Nov 2026) — the decimation to `--target-triangles`, Taubin
 smoothing. Beyond the mesh: **the ground plane** out to `--plane-radius` (100 m) from the axis, fitted to the fused
 points and the block's tie points (seen by 3+ images) as the medians of 10 deg x range-ring bins and a Huber fit,
 so it follows the regional slope (`--horizontal-plane` for a level one; a tilt over 20 deg or too few bins falls

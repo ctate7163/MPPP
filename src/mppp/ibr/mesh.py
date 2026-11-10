@@ -14,8 +14,8 @@ Cleanup, in order, each step counted in ``mesh_report.json``:
    as seen from the pivot (|n . v| < ``grazing``) are dropped - the skins stretched across occlusion edges;
 3. support: triangles whose centroid is farther than tau(range) + half their longest edge from the nearest fused
    point are dropped (surface hallucinated over gaps);
-4. radius: terrain farther than ``radius_m`` (20 m) from the mast's axis - the vertical through the pivot,
-   horizontal distance - is dropped (Christian, 10 Nov 2026: "cut off at 20 m from the axis of the mast rotation");
+4. radius: terrain farther than ``radius_m`` (30 m; 20 m on 10 Nov morning) from the mast's axis - the vertical through the pivot,
+   horizontal distance - is dropped (Christian, 10 Nov 2026: "cut off at 20 m from the axis of the mast rotation", then 30 m);
    the ground plane takes over beyond it;
 5. quadric decimation to ``target_triangles`` and five Taubin smoothing iterations (no shrinkage).
 
@@ -26,7 +26,7 @@ bin, then a Huber line fit z = a x + b y + c over the bins, so the near field's 
 rings and an outlier bin does not tilt it.  It follows the regional slope (a horizontal plane on a 10 deg slope is
 17 m off at 100 m); ``horizontal=True``, or a tilt over 20 deg, or fewer than 8 bins, gives the horizontal plane at
 the median height instead.  Its misfit per ring is in ``ground_plane.json``; the tie points on it are checked again
-in the depth maps' report.  The mesh's holes within 20 m show the plane too.  Beyond 100 m the 64 mm disparity of an
+in the depth maps' report.  The mesh's holes within 30 m show the plane too.  Beyond 100 m the 64 mm disparity of an
 8K equirect is under a pixel (about 0.7 px at 100 m), so the sky at infinity shows no stereo error to speak of.
 Only the fused points within ``radius_m`` + 5 m are meshed; the farther ones feed the plane fit.
 
@@ -50,7 +50,7 @@ PathLike = Union[str, Path]
 
 NAVCAM_HALF_IFOV_RAD = 0.68e-3       # Navcam at half resolution (8K ODS sampling)
 NAVCAM_BASELINE_M = 0.424
-DEFAULT_RADIUS_M = 20.0             # the mesh: horizontal distance from the mast axis (10 Nov; was 60 m of range)
+DEFAULT_RADIUS_M = 30.0             # the mesh: horizontal distance from the mast axis (10 Nov: 20 m, then 30 at Christian's ask; was 60 m of range)
 DEFAULT_PLANE_RADIUS_M = 100.0      # the ground plane out to here (horizontal); then the sky at infinity
 DEFAULT_FAR_RADIUS_M = 100.0        # the 0.96.0 prototype's finite far sphere (mppp mesh --far-radius)
 PLANE_RINGS_M = (3.0, 5.0, 7.5, 10.0, 15.0, 20.0, 30.0, 45.0, 65.0, 100.0)
@@ -61,9 +61,9 @@ PLANE_MIN_POINTS_PER_BIN = 5
 DEFAULT_TARGET_TRIANGLES = 6_000_000
 # 10 Nov (Christian: "The near and mid terrain needs a little more detail and higher polygon count"): Poisson per zone of
 # horizontal distance from the mast axis - each zone meshed from the points within its outer edge + 1 m, so its octree
-# box is small and depth 10 is ~1 cm at 0-4 m, ~2.5 cm at 4-12 m, ~5 cm beyond; the zones overlap by ZONE_OVERLAP_M
+# box is small and depth 10 is ~1 cm at 0-4 m, ~2.5 cm at 4-12 m, ~4 cm at 12-20 m, ~6 cm at 20-30 m; the zones overlap by ZONE_OVERLAP_M
 # (no gap for a ray to fall through)
-MESH_ZONES = ((0.0, 4.0, 10), (4.0, 12.0, 10), (12.0, None, 10))       # (inner m, outer m or None = the mesh radius, depth)
+MESH_ZONES = ((0.0, 4.0, 10), (4.0, 12.0, 10), (12.0, 20.0, 10), (20.0, None, 10))   # (inner m, outer m or None = the mesh radius, depth)
 ZONE_OVERLAP_M = 0.3
 GRAZING = 0.10
 COMPONENT_FRACTION = 0.01

@@ -204,7 +204,7 @@ print("fused clouds:", [str(f) for f in fused] or "none yet")'''),
 0.96.  One station (a site and drive of the rover) of the block: its frames by camera family, the mast pivot fitted
 from their centres and rotations, and the surface over the fused cloud — Poisson (COLMAP's Delaunay mesher when the
 executable is given), then the cleanup: components under 1 %, rubber sheets, surface no fused point supports within
-τ(z) = max(5 cm, 2 % z, 3 σz), everything farther than 20 m from the mast axis; decimation, Taubin smoothing.  Beyond
+τ(z) = max(5 cm, 2 % z, 3 σz), everything farther than 30 m from the mast axis; decimation, Taubin smoothing.  Beyond
 the mesh the ground plane (fitted to the fused and tie points to 100 m, following the regional slope) and beyond
 that the sky at infinity, so every ray hits something.  Products under `<project>/ods/<station>/` with
 `mesh_report.json`, `ground_plane.json` and a preview.
@@ -223,10 +223,10 @@ print(st.label, len(st.images), "frames; pivot", [round(float(v), 3) for v in st
 if fused:
     pts = read_points(fused[-1])
     ties = np.asarray([p.xyz for p in rec.points3D.values() if p.track.length() >= 3], float).reshape(-1, 3)
-    rep = build_station_mesh(pts, st.pivot, out, radius_m=20.0, plane_radius_m=100.0, up=st.up, ground_points=ties,
+    rep = build_station_mesh(pts, st.pivot, out, radius_m=30.0, plane_radius_m=100.0, up=st.up, ground_points=ties,
                              station=st.to_json())
     V, F = read_mesh(out / "mesh.ply")
-    mesh_preview(V, F, st.pivot, out / "mesh_preview.png", radius_m=20.0, scene=load_scene(out), up=st.up, north=st.north, east=st.east)
+    mesh_preview(V, F, st.pivot, out / "mesh_preview.png", radius_m=30.0, scene=load_scene(out), up=st.up, north=st.north, east=st.east)
     print(json.dumps({k: rep[k] for k in ("surface", "cleanup", "scene", "points_by_ring", "coverage_by_range")}, indent=1, default=float)[:1800])
     display(NbImage(filename=str(out / "mesh_preview.png")))'''),
     md('''

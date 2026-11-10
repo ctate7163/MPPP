@@ -8,7 +8,7 @@ images agree by construction, which the patch-match maps never do.
 
 The surface (Christian, 10 Nov 2026: "cut off at 20 m from the axis of the mast rotation, beyond that, project onto a
 flat plain out to 100 m, and beyond that onto a sphere at infinity"), in order of priority: the station's **mesh**
-(within 20 m of the mast axis); where a ray misses it, the **ground plane** (fitted to the terrain, out to 100 m from
+(within 30 m of the mast axis); where a ray misses it, the **ground plane** (fitted to the terrain, out to 100 m from
 the axis; it also fills the mesh's holes); where it misses both, the **sky at infinity** (label "far": a direction,
 no depth).  The mesh wins over the plane even where the plane is nearer (a hollow below it), and only the mesh
 occludes.  A finite far sphere (the 0.96.0 prototype's) is still taken when one is given.

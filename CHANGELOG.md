@@ -192,6 +192,25 @@ changes made on the way to the build.
     were read at 1.36 mrad, coarser than the panorama. About 10-20 % longer (the per-frame preparation; the work
     per panorama pixel is the same) and ~1 GB more memory for 16 frames. 16K pays off only with full-resolution
     frames (0.34 mrad);
+  - **the sky above the frames filled** (Christian: "extrapolate and blur the light blue sky upwards so that there
+    isn't a shape boundary there"; "make sure not to extrapolate black pixel areas"; "increase the width of the
+    blending near the top so that streaks do not converge at the north pole"): per column the colour from the
+    brightest 40 % of a band just below its highest seen sky pixel (sky, not the distant hills, which are "far" too;
+    no pixel darker than 12), the boundary the lower envelope of the frames' tops (the lowest within 10 % of the
+    width) smoothed (2 % of the width), the colour carried up and blurred horizontally as 1 / cos(elevation) (the
+    same width on the sky everywhere; uniform at the zenith) into the median sky colour, cross-faded with the seen
+    sky over 2 % of the height; light blue in the provenance map, `sky_filled` in `ods.json`, `--no-sky-fill`;
+  - **the frames' black padding is not image content**: MPPP pads the subframes to the frame size, and the blend
+    took the padding in as black - the fade to black at the frames' tops. Pixels at most 1 in every channel in a
+    region touching the border (>= 0.2 % of the image) are now outside what a source may give; the feathers count
+    from their edge;
+  - **the hardware on the mast head** (Christian: "what can we do about the light colored boom on the side of the
+    mast?"): with the rover shown, the wind-sensor booms below the cameras turn with them - the same pixels in every
+    frame of one eye and elevation, while the deck moves across the frames as the mast turns. What the rover mask
+    covers in >= 75 % of a tier's frames (>= 3 frames, 4 deg tiers) is masked; the deck stays (`ods.json`
+    `head_hardware_masked`; `--keep-head-hardware`);
+  - **the mesh to 30 m** from the mast axis (Christian: "extend the outer edge of the mesh out to 30 m"; 20 m in
+    the morning), a fourth Poisson zone 20-30 m (~6 cm), the points within 35 m meshed;
   - **`--out DIR`** for mesh / depthmaps / ods (e.g. `D:\rover_blocks\single_sites\S003D2046`, `...\with_rover`).
 - **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
   bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)
