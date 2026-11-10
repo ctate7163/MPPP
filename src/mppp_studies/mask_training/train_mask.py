@@ -95,6 +95,10 @@ def _parser() -> argparse.ArgumentParser:
                     help="9 Nov plan: A = photometric + LMST sampler; B = A + angular scale + defocus + quad split 4000; "
                          "C = B + copy-paste + colour matrix + family batches (the single flags below add to it)")
     ap.add_argument("--photometric", action="store_true", help="online lighting augmentation (replaces --tone-prob)")
+    ap.add_argument("--photometric-strength", choices=["mild", "strong"], default="mild",
+                    help="10 Nov: mild (default: exposure x0.7-1.15 on half the samples, gamma 0.85-1.2) or strong "
+                         "(v4.4: exposure x0.4-2.5, gamma 0.6-1.8)")
+    ap.add_argument("--photometric-prob", type=float, default=0.5, help="share of the samples (v4.4: 0.9)")
     ap.add_argument("--lmst-sampler", action="store_true", help="early / late LMST frames drawn 4.5x more often")
     ap.add_argument("--lmst-upweight", type=float, default=4.5)
     ap.add_argument("--angular-scale", action="store_true", help="one target mrad/px per sample (0.08-1.2)")
@@ -211,7 +215,8 @@ def _main(ap: argparse.ArgumentParser, a) -> int:
         cfg = TrainConfig(epochs=a.epochs, quad_split_above=a.quad_split_above, init_from=a.init_from,
                           hflip=not a.no_hflip, zoom_max=a.zoom_max, zoom_prob=0.0 if a.zoom_pairs else a.zoom_prob,
                           tone_prob=a.tone_prob, zoom_pairs=bool(a.zoom_pairs), seed=a.seed,
-                          photometric=a.photometric, lmst_sampler=a.lmst_sampler, lmst_upweight=a.lmst_upweight,
+                          photometric=a.photometric, photometric_prob=a.photometric_prob,
+                          photometric_strength=a.photometric_strength, lmst_sampler=a.lmst_sampler, lmst_upweight=a.lmst_upweight,
                           angular_scale=a.angular_scale, angular_range=tuple(a.angular_range), defocus=a.defocus,
                           copy_paste=a.copy_paste, color_matrix=cm, family_batches=a.family_batches,
                           train_families=a.train_families, test_list=a.test_list)

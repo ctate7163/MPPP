@@ -166,11 +166,15 @@ def angular_scale(im: np.ndarray, ms: np.ndarray, native_mrad: float, canvas: Tu
 # ------------------------------------------------------------------------------------------------- photometric
 @dataclass(frozen=True)
 class PhotometricConfig:
-    exposure_range: Tuple[float, float] = (0.4, 2.5)    # log-uniform multiplier
-    exposure_prob: float = 0.8
-    gamma_range: Tuple[float, float] = (0.6, 1.8)       # after the exposure
-    gain_range: Tuple[float, float] = (0.85, 1.15)      # per channel (white-balance jitter)
-    black_level: float = 0.02                           # +- this share of full scale
+    # 10 Nov (Christian: "lower the brightness contrast jitter augmentation ... the bright rover deck is one of the
+    # best cues it has"): the v4.4 run's exposure x0.4-2.5 and gamma 0.6-1.8 on 90 % of the samples clipped the deck
+    # to white or sank it into the terrain - v4.4 missed more hardware than v4.2 on the same data and frames (-0.004
+    # IoU on the frames neither saw, 95 % -0.009..-0.001).  The defaults are now mild; PHOTOMETRIC_STRONG is v4.4's.
+    exposure_range: Tuple[float, float] = (0.7, 1.15)   # log-uniform; brightening kept small: it clips the deck first
+    exposure_prob: float = 0.5
+    gamma_range: Tuple[float, float] = (0.85, 1.2)      # after the exposure
+    gain_range: Tuple[float, float] = (0.92, 1.08)      # per channel (white-balance jitter)
+    black_level: float = 0.01                           # +- this share of full scale
     noise_prob: float = 0.7
     noise_sigma_range: Tuple[float, float] = (0.002, 0.02)   # sigma at full scale: sigma(x) = s * sqrt(x) (+ s/4 read)
     shadow_prob: float = 0.3
@@ -179,6 +183,11 @@ class PhotometricConfig:
     haze_alpha: Tuple[float, float] = (0.0, 0.15)
     haze_prob: float = 0.5
     grey_prob: float = 0.25                             # grey <-> colour swap (covers mono VCE frames too)
+
+
+PHOTOMETRIC_STRONG = PhotometricConfig(exposure_range=(0.4, 2.5), exposure_prob=0.8, gamma_range=(0.6, 1.8),
+                                       gain_range=(0.85, 1.15), black_level=0.02)   # the 9 Nov run (v4.4)
+PHOTOMETRIC_PRESETS = {"mild": PhotometricConfig(), "strong": PHOTOMETRIC_STRONG}
 
 
 def _shadow_mask(h: int, w: int, rng, edge_px: int) -> np.ndarray:
@@ -377,7 +386,7 @@ class AugmentConfig:
     """What :class:`..train.MaskDataset` applies to a training sample, in this order: angular scale (or the letterbox),
     copy-paste, defocus, colour transfer, photometric.  The flip stays in the dataset."""
     photometric: bool = False
-    photometric_prob: float = 0.9
+    photometric_prob: float = 0.5                       # 10 Nov: was 0.9 (v4.4)
     photo: PhotometricConfig = field(default_factory=PhotometricConfig)
     angular_scale: bool = False
     angular: AngularScaleConfig = field(default_factory=AngularScaleConfig)

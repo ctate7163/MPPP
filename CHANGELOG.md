@@ -107,6 +107,14 @@ changes made on the way to the build.
   --images`**: a sub-model of those frames in its own workspace `dense_<station>[_<sequence>]` (the whole block's
   317 frames otherwise), which `mppp mesh` takes first. Tests: the ODS parallax with a ground-fixed texture, the
   dense subset and the fusion on a synthetic plane.
+- **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
+  bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)
+  0.9711 against v4.2 0.9724 on the same data and frames (-0.0013, 95 % -0.0023..-0.0004; -0.0043 on the 120 frames
+  v3 never saw), the loss nearly all missed hardware; v3 0.9787 (0.9731 on the 120, tied with v4.2). The photometric
+  defaults are now mild - exposure x0.7-1.15 (brightening small: it clips the deck first), gamma 0.85-1.2, gains
+  +-8 %, black level +-1 %, on half the samples (`--photometric-prob 0.5`); a 215-grey deck patch never clips and
+  keeps 92 % of its contrast to the terrain (median), against 29 % clipped under v4.4's settings, kept as
+  `PHOTOMETRIC_STRONG` (`--photometric-strength strong`). Test: `test_mild_photometric_keeps_the_bright_deck_a_cue`.
 - **Notebooks** (Christian: "clean up the notebooks to have one example of the pipeline and other notebooks for
   each study"): `notebooks/pipeline_example.ipynb` (the whole core on the example data: processing, the alignment
   and its health, cameras and tie points, the dense cloud, the station mesh, the depth and photometric maps, the

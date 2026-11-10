@@ -508,7 +508,8 @@ class TrainConfig:
     # Recipes (mppp_studies.mask_training.train_mask --recipe): A = photometric + lmst_sampler; B = A + angular_scale + defocus +
     # quad_split_above 4000; C = B + copy_paste + color_matrix + family_batches.  All off = the 0.95.5 behaviour.
     photometric: bool = False             # exposure, gamma, channel gains, black level, noise, shadow, haze, grey
-    photometric_prob: float = 0.9
+    photometric_prob: float = 0.5         # 10 Nov: 0.9 in v4.4
+    photometric_strength: str = "mild"    # 10 Nov: augment.PHOTOMETRIC_PRESETS - "mild" (default) or "strong" (v4.4)
     lmst_sampler: bool = False            # frames before 09:00 / after 16:00 LMST drawn lmst_upweight x more often
     lmst_upweight: float = 4.5
     angular_scale: bool = False           # one target mrad/px per sample, log-uniform in angular_range
@@ -676,8 +677,9 @@ def augment_config(cfg: TrainConfig):
     """0.96: the :class:`augment.AugmentConfig` of a training config, or None when no online augmentation is on."""
     if not (cfg.photometric or cfg.angular_scale or cfg.defocus or cfg.copy_paste or cfg.color_matrix):
         return None
-    from .augment import AngularScaleConfig, AugmentConfig
+    from .augment import PHOTOMETRIC_PRESETS, AngularScaleConfig, AugmentConfig
     return AugmentConfig(photometric=bool(cfg.photometric), photometric_prob=float(cfg.photometric_prob),
+                         photo=PHOTOMETRIC_PRESETS[getattr(cfg, "photometric_strength", "mild")],
                          angular_scale=bool(cfg.angular_scale),
                          angular=AngularScaleConfig(target_range=tuple(float(v) for v in cfg.angular_range)),
                          defocus=bool(cfg.defocus), copy_paste=bool(cfg.copy_paste),

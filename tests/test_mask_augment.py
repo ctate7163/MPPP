@@ -216,3 +216,29 @@ def test_frozen_test_list_round_trip(tmp_path):
         assert len(tr) == 7
     with pytest.raises(ValueError):
         T.grouped_split(items, 0.1, 1, ["not_there.png"])
+
+
+def test_mild_photometric_keeps_the_bright_deck_a_cue():
+    """10 Nov (Christian: "lower the brightness contrast jitter ... the bright rover deck is one of the best cues"):
+    the mild default keeps a deck-bright patch unclipped and brighter than the terrain on nearly every draw; the
+    v4.4 preset (PHOTOMETRIC_STRONG) clips or flattens it often - the hardware v4.4 missed."""
+    img = np.zeros((64, 64, 3), np.uint8)
+    img[:, :32] = 90                                    # terrain
+    img[:, 32:] = 215                                   # the deck
+    valid = np.ones((64, 64), bool)
+
+    def stats(cfg, n=300):
+        rng = np.random.default_rng(1)
+        clipped = flat = 0
+        for _ in range(n):
+            out, _ = A.photometric(img, valid, rng, cfg)
+            deck, terr = out[:, 40:56].astype(float).mean(), out[:, 8:24].astype(float).mean()
+            clipped += deck >= 250
+            flat += (deck - terr) < 0.35 * (215 - 90)
+        return clipped / n, flat / n
+
+    c_mild, f_mild = stats(A.PhotometricConfig())
+    c_strong, f_strong = stats(A.PHOTOMETRIC_STRONG)
+    assert c_mild < 0.02 and f_mild < 0.10, (c_mild, f_mild)
+    assert c_strong > 3 * max(c_mild, 0.01) or f_strong > 2 * max(f_mild, 0.02), (c_strong, f_strong)
+    assert A.PHOTOMETRIC_PRESETS["strong"] is A.PHOTOMETRIC_STRONG and A.AugmentConfig().photometric_prob == 0.5
