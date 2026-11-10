@@ -1242,7 +1242,7 @@ def test_mesh_with_the_deck_floor(tmp_path):
     d = rep["rover_deck"]
     assert d["points_below_dropped"] >= 500 and d["floor_triangles"] > 1000
     V, F = M.read_mesh(tmp_path / "mesh.ply")
-    Mv = RD.block_to_mech(V, pose)
+    Mv = RD.block_to_mech(V[np.unique(F)], pose)                # the vertices the faces use
     inside = RD.in_footprint(Mv)
     assert (Mv[inside, 2] <= 1e-6).all()                        # nothing below the deck top inside the footprint
 
@@ -1279,3 +1279,35 @@ def test_squares_left_on_top_named_by_station(tmp_path):
     b = (tmp_path / "bats" / "make_square.bat").read_text()
     assert f.name == "update_and_run_single_sites.bat" and "single-sites --squares-only %*" in b and "+main:" in b
     assert "+main:refs/remotes/bundle/main" in f.read_text()
+
+
+def test_floating_surface_removed_and_deep_faces_cut(tmp_path):
+    from mppp.ibr import rover_deck as RD
+    P = np.array([0.0, 0.0, 1.9])
+    plane = {"normal": [0.0, 0.0, 1.0], "offset": 0.0}
+    X = np.array([[1.0, 0, 2.5],        # above the cameras, near: goes
+                  [1.0, 0, 1.5],        # within 3 m, below the cameras: the rover, stays
+                  [5.0, 0, 1.2],        # beyond 3 m, 0.7 m below the cameras: goes
+                  [5.0, 0, 0.5],        # beyond 3 m, a rock 1.4 m below: stays
+                  [20.0, 0, 0.0]])
+    assert M.floating(X, P, (0, 0, 1), plane).tolist() == [True, False, True, False, False]
+    tilt = np.radians(8.0)              # a slope: the ground 14 m uphill is at the cameras' level, and stays
+    n = np.array([-np.sin(tilt), 0.0, np.cos(tilt)])
+    up_hill = np.array([[14.0, 0.0, 14.0 * np.tan(tilt)], [14.0, 0.0, 14.0 * np.tan(tilt) + 1.2]])
+    assert M.floating(up_hill, P, (0, 0, 1), {"normal": n.tolist(), "offset": 0.0}).tolist() == [False, True]
+    # a mesh: level ground and a floating sheet 1.5 m up at 6-8 m
+    g = np.random.default_rng(1)
+    terr = np.c_[g.uniform(-12, 12, (60000, 2)), np.zeros(60000)]
+    sheet = np.c_[g.uniform(6, 8, (3000, 1)), g.uniform(-1, 1, (3000, 1)), np.full(3000, 1.5)]
+    rep = M.build_station_mesh(np.vstack([terr, sheet]), P, tmp_path / "a", radius_m=10.0, plane_radius_m=20.0, poisson_depth=7)
+    V, F = M.read_mesh(tmp_path / "a" / "mesh.ply")
+    assert rep["floating"]["points_dropped"] == 3000 and V[np.unique(F), 2].max() < 0.9
+    rep2 = M.build_station_mesh(np.vstack([terr, sheet]), P, tmp_path / "b", radius_m=10.0, plane_radius_m=20.0, poisson_depth=7,
+                                remove_floating=False)
+    V2, F2 = M.read_mesh(tmp_path / "b" / "mesh.ply")
+    assert rep2["floating"] is None and V2[np.unique(F2), 2].max() > 1.3
+    # the deck: a shallow vertex is lifted, a face with a deep vertex is dropped
+    pose = {"R_block_from_rnav": np.diag([1.0, -1.0, -1.0]), "t_block_from_rnav": np.zeros(3)}
+    Vm = RD.mech_to_block(np.array([[0.0, 0.0, 0.05], [0.1, 0.0, -0.01], [0.0, 0.1, 0.0], [0.2, 0.2, 0.8]]), pose)
+    Vc, Fc, lifted, cut = RD.clamp_to_deck(Vm, pose, np.array([[0, 1, 2], [1, 2, 3]]))
+    assert (lifted, cut) == (1, 1) and Fc.tolist() == [[0, 1, 2]] and abs(RD.block_to_mech(Vc, pose)[0, 2]) < 1e-12

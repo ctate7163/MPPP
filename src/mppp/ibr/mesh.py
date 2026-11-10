@@ -462,6 +462,30 @@ def points_by_ring(points: np.ndarray, pivot: Sequence[float], up: Sequence[floa
     return [{"ring_m": [lo, hi], "points": int(((h >= lo) & (h < hi)).sum())} for lo, hi in zip(rings[:-1], rings[1:])]
 
 
+FLOAT_CLEARANCE_M = 1.0      # beyond FLOAT_BEYOND_M the surface is at least this far below the cameras
+FLOAT_BEYOND_M = 3.0         # (horizontal distance from the mast axis; inside it the rover reaches up to the head)
+
+
+def height_above_plane(X: np.ndarray, plane: Dict[str, Any], up: Sequence[float] = (0, 0, 1)) -> np.ndarray:
+    """The vertical height of points above the ground plane (m)."""
+    n = np.asarray(plane["normal"], float)
+    u = np.asarray(up, float) / np.linalg.norm(up)
+    return (np.asarray(X, float) @ n - float(plane["offset"])) / float(n @ u)
+
+
+def floating(X: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: Dict[str, Any],
+             clearance_m: float = FLOAT_CLEARANCE_M, beyond_m: float = FLOAT_BEYOND_M) -> np.ndarray:
+    """Points that cannot be surface seen from the mast (Christian, 10 Nov: "floating polygons should be removed ...
+    everything above the cameras and every thing 1 meter below the camera beyond 3 meters"): above the cameras
+    anywhere, or beyond ``beyond_m`` of the mast axis and higher than ``clearance_m`` below the cameras.  Heights are
+    above the fitted ground plane - on level ground the rule as given; on a slope (Rockytop, 8 deg: the ground
+    reaches the cameras' level 14 m uphill) the terrain itself is kept."""
+    X = np.asarray(X, float)
+    hc = float(height_above_plane(np.asarray(pivot, float)[None], plane, up)[0])
+    h = height_above_plane(X, plane, up)
+    return (h > hc) | ((horizontal_distance(X, pivot, up) > beyond_m) & (h > hc - clearance_m))
+
+
 def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: PathLike, normals: Optional[np.ndarray] = None,
                        dense_dir: Optional[PathLike] = None, colmap_exe: Optional[str] = None,
                        radius_m: float = DEFAULT_RADIUS_M, far_radius_m: Optional[float] = None,
@@ -469,7 +493,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
                        station: Optional[Dict[str, Any]] = None, up: Sequence[float] = (0, 0, 1),
                        plane_radius_m: float = DEFAULT_PLANE_RADIUS_M, ground_points: Optional[np.ndarray] = None,
                        horizontal_plane: bool = False, plane_points: Optional[np.ndarray] = None,
-                       deck: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                       deck: Optional[Dict[str, Any]] = None, remove_floating: bool = True) -> Dict[str, Any]:
     """The whole of step 2 for one station: the surface (Delaunay through ``colmap_exe`` over ``dense_dir`` when
     given, else Poisson over the ``points`` within ``radius_m`` + 5 m of the axis), the cleanup (the mesh to
     ``radius_m`` from the axis), the decimation, the ground plane (:func:`fit_ground_plane` over ``points`` and
@@ -479,7 +503,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
     when ``points`` hold more than terrain (``mppp mesh --rover``: the rover-masked cloud, not the rover's deck).
     ``deck``: the rover pose of :func:`mppp.ibr.rover_deck.rover_pose` (``--rover``): nothing below the deck top
     inside its footprint - the points there dropped, the vertices lifted onto it, and the deck floor added.
-    Returns the report."""
+    ``remove_floating``: :func:`floating` points and triangles removed.  Returns the report."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -494,8 +518,19 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
             if normals is not None:
                 normals = np.asarray(normals)[~drop]
     all_points = points
+    base = all_points if plane_points is None else np.asarray(plane_points, float)
+    gp_in = base if ground_points is None or not len(ground_points) else np.vstack([base, np.asarray(ground_points, float)])
+    plane = fit_ground_plane(gp_in, pivot, up, radius_m=plane_radius_m, horizontal=horizontal_plane)
+    plane["sources"] = {"fused_points": int(len(base)), "tie_points": int(0 if ground_points is None else len(ground_points))}
     h = horizontal_distance(points, pivot, up)
     near = h <= radius_m + 5.0
+    float_rep = None
+    if remove_floating:                                         # 10 Nov: nothing floating above the terrain
+        fl = floating(points, pivot, up, plane)
+        float_rep = {"above_camera_m": 0.0, "clearance_below_camera_m": FLOAT_CLEARANCE_M, "beyond_m": FLOAT_BEYOND_M,
+                     "camera_height_above_plane_m": float(height_above_plane(np.asarray(pivot, float)[None], plane, up)[0]),
+                     "points_dropped": int((fl & near).sum())}
+        near &= ~fl
     points = points[near]
     if normals is not None:
         normals = np.asarray(normals)[near]
@@ -511,9 +546,18 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
         zones = tuple((lo, hi, int(poisson_depth)) for lo, hi, _ in MESH_ZONES)
         V, F, how, clean = zoned_poisson(points, normals, pivot, up, radius_m, zones=zones)
     V, F, dec = decimate_and_smooth(V, F, target_triangles=target_triangles)
+    if remove_floating and len(F):
+        bad = floating(V, pivot, up, plane)
+        dropf = bad[np.asarray(F)].any(axis=1)
+        F = np.asarray(F)[~dropf]
+        float_rep["triangles_dropped"] = int(dropf.sum())
+        log.info("mesh: floating surface - %d points and %d triangles removed (above the cameras, or less than %g m below "
+                 "them beyond %g m; heights from the ground plane)", float_rep["points_dropped"], int(dropf.sum()),
+                 FLOAT_CLEARANCE_M, FLOAT_BEYOND_M)
     if deck is not None:
         from .rover_deck import clamp_to_deck, deck_floor_arrays
-        V, moved = clamp_to_deck(V, deck)
+        V, F, moved, cut = clamp_to_deck(V, deck, F)
+        deck_rep["triangles_below_dropped"] = cut
         Vd, Fd = deck_floor_arrays(deck)
         F = np.vstack([np.asarray(F, np.int64), np.asarray(Fd, np.int64) + len(V)])
         V = np.vstack([V, Vd])
@@ -521,10 +565,6 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
         log.info("mesh: the rover deck floor - %d points below it dropped, %d vertices lifted onto it, %d floor triangles",
                  deck_rep["points_below_dropped"], moved, len(Fd))
     write_mesh(out / "mesh.ply", V, F)
-    base = all_points if plane_points is None else np.asarray(plane_points, float)
-    gp_in = base if ground_points is None or not len(ground_points) else np.vstack([base, np.asarray(ground_points, float)])
-    plane = fit_ground_plane(gp_in, pivot, up, radius_m=plane_radius_m, horizontal=horizontal_plane)
-    plane["sources"] = {"fused_points": int(len(base)), "tie_points": int(0 if ground_points is None else len(ground_points))}
     (out / "ground_plane.json").write_text(json.dumps(plane, indent=1, default=float), encoding="utf-8")
     files = {"mesh": str(out / "mesh.ply"), "ground_plane": str(out / "ground_plane.json")}
     sphere = None
@@ -542,7 +582,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
                      "plane": {k: plane[k] for k in ("method", "radius_m", "tilt_deg", "height_below_pivot_m", "rms_m", "bins")
                                if k in plane},
                      "beyond": "a far sphere" if sphere else "the sky at infinity"},
-           "far_sphere": sphere, "rover_deck": deck_rep, "coverage_by_range": coverage_by_range(V, F, pivot), "tau_m": {str(z): float(tau_m(z))
+           "far_sphere": sphere, "rover_deck": deck_rep, "floating": float_rep, "coverage_by_range": coverage_by_range(V, F, pivot), "tau_m": {str(z): float(tau_m(z))
            for z in (2, 5, 10, 15, 20, 30, 50, 85)}, "files": files, "seconds": round(time.time() - t0, 1)}
     (out / "mesh_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
     log.info("mesh: %d -> %d triangles (%s) within %g m of the axis; ground plane %s (tilt %.1f deg, %.2f m rms over %d "

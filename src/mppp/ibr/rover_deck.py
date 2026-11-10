@@ -20,8 +20,8 @@ checked against the surveyed fiducials and the label Hazcam positions):
 Inside the footprint nothing seen from the mast can be below the deck top, so the with-rover mesh is
 
 1. cut: fused points inside the footprint and more than ``DECK_TOLERANCE_M`` below the top are dropped before meshing;
-2. clamped: mesh vertices inside the footprint below the top are lifted onto it (Poisson's sagging bubbles under the
-   holes of the deck);
+2. clamped: mesh vertices inside the footprint up to 10 cm below the top are lifted onto it (Poisson's sagging
+   bubbles under the holes of the deck); faces with a vertex deeper than that are dropped;
 3. floored: a grid of triangles at the deck top over the footprint is added to the mesh, so a ray through a hole in
    the reconstructed deck lands on the deck (coloured from the deck's own pixels) instead of the ground 1.1 m below.
 
@@ -135,16 +135,30 @@ def below_deck(points: np.ndarray, pose: Dict[str, Any], tolerance_m: float = DE
     return in_footprint(M) & (M[:, 2] > DECK_TOP_MECH_Z_M + tolerance_m)
 
 
-def clamp_to_deck(V: np.ndarray, pose: Dict[str, Any]) -> Tuple[np.ndarray, int]:
-    """Vertices inside the footprint below the deck top lifted onto it (along the rover's z). Returns (V, n moved)."""
+DECK_MAX_LIFT_M = 0.10                                   # a vertex deeper than this is not a sagging deck: its faces go
+
+
+def clamp_to_deck(V: np.ndarray, pose: Dict[str, Any], F: Optional[np.ndarray] = None,
+                  max_lift_m: float = DECK_MAX_LIFT_M):
+    """Vertices inside the footprint below the deck top lifted onto it (along the rover's z).  With ``F``: only those
+    within ``max_lift_m`` of the top are lifted, and the faces with a deeper vertex are dropped (10 Nov, Van Zyl:
+    half of the 2,000 vertices below the top were 0.15-1.5 m down - ground and wheel surface under the footprint;
+    lifted, the 219 faces that also reach outside it became sheets from the deck's edge down to the ground).
+    Returns (V, n lifted), or (V, F, n lifted, n faces dropped) with ``F``."""
     M = block_to_mech(V, pose)
-    sel = in_footprint(M) & (M[:, 2] > DECK_TOP_MECH_Z_M)
-    if not sel.any():
-        return V, 0
-    M[sel, 2] = DECK_TOP_MECH_Z_M
+    ins = in_footprint(M)
+    below = ins & (M[:, 2] > DECK_TOP_MECH_Z_M)
+    deep = below & (M[:, 2] > DECK_TOP_MECH_Z_M + max_lift_m) if F is not None else np.zeros(len(M), bool)
+    sel = below & ~deep
     V = np.array(V, float, copy=True)
-    V[sel] = mech_to_block(M[sel], pose)
-    return V, int(sel.sum())
+    if sel.any():
+        M[sel, 2] = DECK_TOP_MECH_Z_M
+        V[sel] = mech_to_block(M[sel], pose)
+    if F is None:
+        return V, int(sel.sum())
+    F = np.asarray(F)
+    drop = deep[F].any(axis=1)
+    return V, F[~drop], int(sel.sum()), int(drop.sum())
 
 
 def deck_floor_arrays(pose: Dict[str, Any], step_m: float = DECK_GRID_M) -> Tuple[np.ndarray, np.ndarray]:

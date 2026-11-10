@@ -23,6 +23,16 @@ the station in their names; the stacked square has the left eye on top; the rove
   hole in the reconstructed deck - a quarter of the deck seen from the mast at Van Zyl, mostly around the mast
   foot - lands on the deck, coloured from the deck's own pixels, instead of on the ground 1.1 m below.
   `rover_deck.json` (the pose, the footprint corners in the block, the agreement); `--no-deck-floor`.
+- **Floating surface removed** (Christian: "floating polygons should be removed ... everything above the cameras
+  and every thing 1 meter below the camera beyond 3 meters"): `mppp mesh` drops the fused points and the triangles
+  above the cameras anywhere, and beyond 3 m of the mast axis those less than 1 m below the cameras
+  (`mesh.floating`; `mesh_report.json` `floating`; `--keep-floating`). Heights are taken above the fitted ground
+  plane, which on level ground is the rule as given and on a slope keeps the hillside (Rockytop, 8 deg: the ground
+  is at the cameras' level 14 m uphill). Van Zyl: 7,132 points and 418 of 1.63 M triangles; the terrain itself
+  reaches 0.78 m above the plane within 30 m, under the 0.92 m cut.
+- **The deck clamp lifts only vertices within 10 cm of the top**; faces with a deeper vertex inside the footprint
+  are dropped (Van Zyl: half of the 2,000 vertices below the top were 0.15-1.5 m down; lifted, 219 faces reaching
+  outside the footprint would have become sheets from the deck's edge to the ground).
 - **`ods --exclude STEM ...`** (Christian: "please remove these stereo pairs from the ODS process"): frames left
   out of the panorama, a stereo pair together (an NLF stem drops its NRF partner); per station `ods_exclude` in
   `single_sites.json` - Rockytop's `NCAM13461` pair at 0707875039 and Three Forks' `NCAM13688` pair at 0728029302. Only the panorama drops them: the dense cloud and the mesh still use them.

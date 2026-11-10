@@ -445,7 +445,8 @@ coverage: coloured, mesh, far, none); with the rover shown (the default since 0.
 `<station>_rover_ods_...`, with `--mask-rover` `<station>_ods_...`; `--exclude STEM ...` leaves
 frames out (both eyes of a pair).  **`mesh`** with the rover shown puts a floor at the rover deck: nothing below the deck top
 inside its footprint (RMECH x -1.10..+0.95 m, y +-0.60 m, z 0 = the deck top; the rover placed by the frames' label
-CAHVORE poses), the floor added to the mesh, `rover_deck.json`; `--no-deck-floor` to leave it out.  Any VR photo viewer that takes an equirectangular pair shows it; the
+CAHVORE poses), the floor added to the mesh, `rover_deck.json`; `--no-deck-floor` to leave it out.  `mesh` also removes floating surface: anything above the cameras, and beyond
+3 m of the mast axis anything less than 1 m below them, heights above the ground plane (`--keep-floating`).  Any VR photo viewer that takes an equirectangular pair shows it; the
 viewer itself is future work.
 
 ## mppp metashape

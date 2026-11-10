@@ -149,6 +149,9 @@ def add_parsers(sub) -> None:
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
                    "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
     _rover_args(p)
+    p.add_argument("--keep-floating", action="store_true", help="keep surface floating above the terrain (default, "
+                   "0.96.1: removed - anything above the cameras, and beyond 3 m of the mast axis anything less than "
+                   "1 m below them; heights above the ground plane)")
     p.add_argument("--no-deck-floor", action="store_true", help="--rover: no floor at the rover deck (default: nothing "
                    "below the deck top inside its footprint, RMECH x -1.10..+0.95 m, y +-0.60 m, placed by the frames' "
                    "label CAHVORE poses; the floor added to the mesh; rover_deck.json)")
@@ -257,7 +260,7 @@ def cmd_mesh(a: argparse.Namespace) -> int:
                              radius_m=a.mesh_radius, far_radius_m=a.far_radius, target_triangles=a.target_triangles,
                              poisson_depth=a.poisson_depth, station=st.to_json(), up=st.up, plane_radius_m=a.plane_radius,
                              ground_points=ties, horizontal_plane=a.horizontal_plane, plane_points=terrain,
-                             deck=deck)
+                             deck=deck, remove_floating=not a.keep_floating)
     rep["rover"] = "shown" if a.rover else "masked out"
     rep["points_file"] = str(pts_file)
     (out / "mesh_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
