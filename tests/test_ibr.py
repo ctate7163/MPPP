@@ -1120,3 +1120,15 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     b = f.read_bytes()
     assert f.name == "update_and_run_single_sites.bat" and b"\r\n" in b and b"python -m mppp single-sites %*" in b
     assert b"7dbd5da" not in b and b"_transfer" in b and b"--ff-only" in b and b"merge-base --is-ancestor" in b
+
+
+def test_ods_first_column_azimuth():
+    """Christian, 10 Nov: "provide an option to rotate the sphere so that the first column is North" - north is the
+    first column by default; --azimuth0 / --north-center turn the panorama."""
+    P = np.zeros(3)
+    _, d0 = O.ods_rays(360, 180, (90, 91), P, 0.064, "centre")
+    assert np.allclose(d0[0], [0, 1, 0], atol=0.02) and np.allclose(d0[90], [1, 0, 0], atol=0.02)       # N, then E
+    _, d1 = O.ods_rays(360, 180, (90, 91), P, 0.064, "centre", azimuth0_deg=90.0)
+    assert np.allclose(d1[0], [1, 0, 0], atol=0.02)                                                    # east first
+    _, d2 = O.ods_rays(360, 180, (90, 91), P, 0.064, "centre", azimuth0_deg=-180.0)
+    assert np.allclose(d2[180], [0, 1, 0], atol=0.02) and np.allclose(d2[0], [0, -1, 0], atol=0.02)    # north centred

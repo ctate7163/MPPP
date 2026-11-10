@@ -160,6 +160,10 @@ def add_parsers(sub) -> None:
                    "frames of one eye and elevation)")
     p.add_argument("--no-sky-fill", action="store_true", help="leave the sky above the frames black (default: the seen "
                    "sky carried up to the zenith, the frames' tops blended away)")
+    p.add_argument("--azimuth0", type=float, default=0.0, help="the azimuth (deg, from north through east) at the left "
+                   "edge of the panorama: 0 = north in the first column (default)")
+    p.add_argument("--north-center", action="store_true", help="north in the middle of the panorama (--azimuth0 -180), "
+                   "for viewers that face the image centre")
     p.add_argument("--stack-only", action="store_true", help="only stack the eye images already in the folder into "
                    "ods_stereo_square.png / .jpg (no rendering)")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
@@ -256,7 +260,8 @@ def cmd_ods(a: argparse.Namespace) -> int:
     rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, families=a.cameras, scale=a.scale,
                          zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
-                         sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware)
+                         sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,
+                         azimuth0_deg=-180.0 if a.north_center else a.azimuth0)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: {e['file']}  coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "

@@ -66,6 +66,8 @@ DEFAULT_WIDTH = 8192
 DEFAULT_IPD_M = 0.064
 FEATHER_PX = 40.0                # (0.96.0 prototype) a source's weight fell to zero this close to its image border
 MAX_SOURCES_BLENDED = 4
+EDGE_MARGIN_PX = 3.0             # a source gives nothing within this many pixels of its border, padding or mask edge
+                                 # (10 Nov: the frames' outermost rows are darker - a faint line where the sky fill starts)
 FEATHER_LOW_FRAC = 0.15          # the low band's feather: this fraction of the source's short side
 FEATHER_HIGH_FRAC = 0.03         # the detail band's feather
 LOW_SIGMA_FRAC = 0.006           # the low band: Gaussian sigma, this fraction of the short side (~6 px at 960)
@@ -81,19 +83,21 @@ SKY_SKIP_FRAC = 0.004            # the sky colour sampled this far (of the heigh
 SKY_BAND_FRAC = 0.03             #   over a band this tall, from its brightest SKY_BRIGHT_SHARE (sky, not the distant
 SKY_BRIGHT_SHARE = 0.4           #   hills the band can reach - both are "far"), median
 SKY_SMOOTH_FRAC = 0.02           # the boundary and the colour smoothed around the panorama (Gaussian, of the width)
+SKY_EDGE_ROWS_FRAC = 0.001       # the first rows below each column's highest seen sky pixel are replaced by the fill
 SKY_FEATHER_FRAC = 0.02          # the fill cross-fades with the seen sky over this band (of the height) about the boundary
 GAIN_PASS_WIDTH = 1024
 
 
 def ods_rays(width: int, height: int, rows: Tuple[int, int], pivot: Sequence[float], ipd_m: float, eye: str,
-             up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0)) -> Tuple[np.ndarray, np.ndarray]:
+             up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), azimuth0_deg: float = 0.0) -> Tuple[np.ndarray, np.ndarray]:
     """Origins and unit directions (n, 3) of the equirect pixels in ``rows`` = (r0, r1) for ``eye`` ("left" /
-    "right" / "centre").  Column 0 looks north and the azimuth grows eastward (clockwise seen from above), so the
+    "right" / "centre").  The left edge of column 0 looks along azimuth ``azimuth0_deg`` (0 = north, the default;
+    -180 puts north in the middle) and the azimuth grows eastward (clockwise seen from above), so by default the
     panorama reads N, E, S, W from left to right; row 0 is the zenith."""
     P = np.asarray(pivot, float)
     e, n, u = (np.asarray(v, float) for v in (east, north, up))
     r0, r1 = rows
-    az = (np.arange(width) + 0.5) / width * 2 * np.pi
+    az = (np.arange(width) + 0.5) / width * 2 * np.pi + np.radians(float(azimuth0_deg))
     el = np.pi / 2 - (np.arange(r0, r1) + 0.5) / height * np.pi
     A, E = np.meshgrid(az, el)
     h = np.sin(A)[..., None] * e + np.cos(A)[..., None] * n                 # horizontal view direction
@@ -325,7 +329,7 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
             continue
         ij = cand.nonzero()[0]
         dist = src.sample_edge_distance(uv[ij])
-        keep = dist > 0.5                                    # inside the image and off the rover mask
+        keep = dist > EDGE_MARGIN_PX                          # inside the image, off the padding and the rover mask
         ij, dist = ij[keep], dist[keep]
         if not len(ij):
             continue
@@ -421,7 +425,8 @@ def estimate_gains(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence
 
 def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], eye: str, width: int, height: int,
                ipd_m: float, rows_per_chunk: int = 128, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0),
-               feather_px: float = FEATHER_PX, progress=None, sky_fill: bool = True) -> Dict[str, np.ndarray]:
+               feather_px: float = FEATHER_PX, progress=None, sky_fill: bool = True,
+               azimuth0_deg: float = 0.0) -> Dict[str, np.ndarray]:
     """One eye's equirect: {"rgb" (H, W, 3) uint8, "source" (H, W) int16 (-1 none; the strongest source), "label"
     (H, W) uint8 surface label, "range" (H, W) float32}.  The two-band blend of the module doc, with each source's
     ``gain`` (:func:`estimate_gains`; 1 when not estimated)."""
@@ -434,7 +439,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     t0 = time.time()
     for r0 in range(0, height, rows_per_chunk):
         r1 = min(height, r0 + rows_per_chunk)
-        o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east)
+        o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east, azimuth0_deg)
         c = candidates(scene, sources, o, d)
         hidden[r0:r1] = c["hidden_fallback"].reshape(r1 - r0, width)
         n = len(d)
@@ -550,6 +555,9 @@ def fill_sky(rgb: np.ndarray, source: np.ndarray, label: np.ndarray) -> np.ndarr
     w = w * w * (3 - 2 * w)
     hole = sky & ((source == -1) | ~bright)
     w = np.where(hole & (R <= r_s[None, :] + 3 * feather), 1.0, w)      # dark leftovers near the boundary: the fill
+    edge = max(2, int(round(SKY_EDGE_ROWS_FRAC * H)))                    # the frames' top rows: the fill (Christian:
+    top_c = np.where(has, np.argmax(seen, axis=0), -1)                   # "a faint dark line where the extrapolation
+    w = np.where((top_c[None, :] >= 0) & (R >= top_c[None, :]) & (R < top_c[None, :] + edge), 1.0, w)   # starts")
     w = np.where(sky, w, 0.0)
     changed = w > 1e-3
     ys, xs = np.nonzero(changed)
@@ -633,7 +641,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None,
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
                    gains: bool = True, stack_top: str = "right", sky_fill: bool = True,
-                   mask_head_hardware: bool = True) -> Dict[str, Any]:
+                   mask_head_hardware: bool = True, azimuth0_deg: float = 0.0) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/ods_left.png``, ``ods_right.png``, ``provenance.png`` (left
     eye's sources), ``ods.json``.  Returns the record."""
     import cv2
@@ -653,6 +661,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     rec_out: Dict[str, Any] = {"station": station.to_json(), "width": width, "height": height, "ipd_m": ipd_m,
                                "sources": [s.name for s in sources], "scale": scale, "zcam_scale": zcam_scale,
                                "rover": "shown" if not use_masks else "masked out",
+                               "azimuth_of_column_0_deg": float(azimuth0_deg) % 360.0,
                                "head_hardware_masked": [s.name for s in sources if s.extra_mask is not None and s.extra_mask.any()],
                                "eyes": {}}
     if gains:
@@ -661,7 +670,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         log.info("ods: gains over %d source pairs: %s", g["pairs"], ", ".join(f"{v:.3f}" for v in g["gains"].values()))
     for eye in eyes:
         res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, rows_per_chunk=rows_per_chunk,
-                         progress=progress, sky_fill=sky_fill, **axes)
+                         progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, **axes)
         f = out / f"ods_{eye}.png"
         cv2.imwrite(str(f), res["rgb"][..., ::-1])
         if eye == eyes[0]:

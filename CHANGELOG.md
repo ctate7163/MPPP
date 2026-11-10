@@ -217,6 +217,12 @@ changes made on the way to the build.
     sols 686-688), each step its own process, both variants, logs per station, `single_sites_summary.md`;
     `--install DIR` writes `update_and_run_single_sites.bat`, which takes the newest bundle in `_transfer` when it
     is ahead of the tree and names no version;
+  - **the faint dark line where the sky fill starts** (Christian: "maybe mask out one or two rows below the edge"):
+    a source gives nothing within 3 px of its border, its padding or its mask edge (the frames' outermost rows are
+    darker), and the sky fill replaces the first 0.1 % of the height (4 rows at 8K) below each column's top;
+  - **`--azimuth0 DEG` / `--north-center`** (Christian: "provide an option to rotate the sphere so that the first
+    column is North"): the first column was north already (the azimuth from the block's ENU); now the azimuth of
+    the left edge is an option (`ods.json` `azimuth_of_column_0_deg`), `--north-center` = -180;
   - **`--out DIR`** for mesh / depthmaps / ods (e.g. `D:\rover_blocks\single_sites\S003D2046`, `...\with_rover`).
 - **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
   bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)
