@@ -54,6 +54,7 @@ by ``--status`` as "stopped by the user" - not as running, not as a failure.
 from __future__ import annotations
 
 import argparse
+import csv
 import datetime
 import glob
 import json
@@ -65,7 +66,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 from .freeze_chain import (ChainStopped, RUNONCE_KEY, STOP_MARKER, WINDOWS, free_gb, keep_awake, now, pid_alive,
                            wait_for_space)
@@ -254,10 +255,12 @@ class Run:
         if kept and kept.get("state") == "done":
             return f"kept from before: {kept.get('choice')}"
         current = blocks_mask(self.root)
-        cur_label = Path(current).stem if current else DEFAULT_MASK
+        cur_label = model_label(current) if current else DEFAULT_MASK
         spec = a.mask_model
         if spec == "keep":
-            choice = {"state": "done", "choice": f"keep ({cur_label})", "set": None, "current": current}
+            # the blocks' own checkpoint is set explicitly when it is a path: a run without the setting would be
+            # another configuration (the registry default), and every image would be processed again
+            choice = {"state": "done", "choice": f"keep ({cur_label})", "set": current, "current": current}
         elif spec != "auto":
             same = spec == current or (current is None and spec == DEFAULT_MASK)
             choice = {"state": "done", "choice": spec, "set": None if same else spec, "current": current}
@@ -284,7 +287,7 @@ class Run:
                     "current": current, "tag": tag}
         verdict = self.ensure_verdict(home, ck, current or DEFAULT_MASK)
         scores = (verdict or {}).get("models") or {}
-        new_iou, base_iou = scores.get(Path(ck).stem), scores.get(cur_label)
+        new_iou, base_iou = scores.get(model_label(ck)), scores.get(cur_label)
         self.log(f"mask auto: exclusion IoU on the {(verdict or {}).get('subset', '?')} frames {json.dumps(scores)}")
         if new_iou is not None and base_iou is not None and new_iou - base_iou >= a.mask_margin:
             self.log(f"mask auto: {ck.name} ({new_iou:.4f}) beats {cur_label} ({base_iou:.4f}) by >= {a.mask_margin}"
@@ -310,15 +313,20 @@ class Run:
             if self.a.dry_run:
                 return None
             if age is not None and age > self.a.mask_quiet_min and time.time() - t0 > 600:
-                self.log(f"mask auto: the training log quiet for {age:.0f} min - going on without it")
+                ck = trained_checkpoint(home, tag, quiet=True)
+                if ck is not None:
+                    self.log(f"mask auto: the training log quiet for {age:.0f} min - {ck.name} (its best epoch) taken as the result")
+                    return ck
+                self.log(f"mask auto: the training log quiet for {age:.0f} min and no checkpoint - going on without it")
                 return None
             if time.time() - t0 > self.a.mask_max_wait_h * 3600:
                 self.log(f"mask auto: not trained after {self.a.mask_max_wait_h} h - going on without it")
                 return None
             if time.time() - last > 1800:
                 last = time.time()
+                ep = training_log_epoch(home, tag)
                 self.log("mask auto: waiting for the training (" + ("no log yet" if age is None else f"log {age:.0f} min old")
-                         + f"; {(time.time() - t0) / 3600:.1f} h so far)")
+                         + (f", epoch {ep[0]} iteration {ep[1]}/{ep[2]}" if ep else "") + f"; {(time.time() - t0) / 3600:.1f} h so far)")
             self.beat()
             time.sleep(120)
 
@@ -329,7 +337,7 @@ class Run:
         if not vf.is_file() and not self.a.dry_run:
             # give train_mask's own comparison a moment (it runs right after the training)
             t0 = time.time()
-            while not vf.is_file() and time.time() - t0 < 1800:
+            while not vf.is_file() and time.time() - t0 < 900:
                 self.beat()
                 time.sleep(60)
         if vf.is_file():
@@ -341,7 +349,7 @@ class Run:
         if not data:
             self.log("mask auto: no training set found for the comparison")
             return None
-        seen = self.a.mask_seen or previous_training_set(data)
+        seen = self.a.mask_seen or baseline_training_set(self.a.mask_root, baseline) or previous_training_set(data)
         cmd = [self.a.ab_python, "-m", "mppp_studies.mask_training.compare_mask_models", "--data", data, "--split-ckpt",
                ck, "--models", baseline, ck, "--out", out / "mask_ab"]
         if seen:
@@ -504,6 +512,13 @@ class Run:
 
 
 # ------------------------------------------------------------------ the mask model on disk
+def model_label(spec: str) -> str:
+    """The label of a mask model as the comparison names it: a registry name as it is, a checkpoint by its stem
+    (Windows or POSIX path)."""
+    name = re.split(r"[\\/]", str(spec))[-1]
+    return name[:-3] if name.endswith(".pt") else (name[:-12] if name.endswith(".safetensors") else name)
+
+
 def blocks_mask(root: Path) -> Optional[str]:
     """The ``mask_checkpoint`` the finished blocks under ``root`` were processed with (the most common value of their
     ``run_settings.json``); None: the registry default."""
@@ -529,9 +544,25 @@ def newest_training_tag(home: Path) -> Optional[str]:
     return m.group(2) if m and m.group(2) else None
 
 
-def trained_checkpoint(home: Path, tag: str) -> Optional[Path]:
+def training_log_epoch(home: Path, tag: str) -> Optional[Tuple[int, int, int]]:
+    """``(epoch, iter, n_iter)`` of the last row of the training log of ``tag``; None without a log."""
+    logs = sorted((home / "checkpoints").glob(f"*_{tag}_debug/log.csv"), key=lambda p: p.stat().st_mtime)
+    if not logs:
+        return None
+    try:
+        with open(logs[-1], encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        last = rows[-1]
+        return int(last["epoch"]), int(last["iter"]), int(last["n_iter"])
+    except (OSError, ValueError, KeyError, IndexError):
+        return None
+
+
+def trained_checkpoint(home: Path, tag: str, quiet: bool = False) -> Optional[Path]:
     """The checkpoint of ``tag`` once its training is through: its summary or release candidate exists in
-    ``Claude outputs/mask_<checkpoint>/`` or its card says so."""
+    ``Claude outputs/mask_<checkpoint>/``, or the training log's last row is the last iteration of the last epoch
+    (the card is only rewritten when an epoch improves, so its history alone cannot tell), or - ``quiet`` - the log
+    has gone quiet and the checkpoint is there (the training ended one way or another; the best epoch stands)."""
     cks = sorted((home / "checkpoints").glob(f"*_{tag}.pt"), key=lambda p: p.stat().st_mtime)
     if not cks:
         return None
@@ -539,14 +570,16 @@ def trained_checkpoint(home: Path, tag: str) -> Optional[Path]:
     out = home / "Claude outputs" / f"mask_{ck.stem}"
     if (out / "summary.md").is_file() or any(out.glob("*.safetensors")) or (out / "mask_verdict.json").is_file():
         return ck
-    card = ck.with_suffix(".json")
+    epochs = None
     try:
-        c = json.loads(card.read_text(encoding="utf-8"))
-        if len(c.get("history") or []) >= int((c.get("training") or {}).get("epochs") or 10 ** 9):
-            return ck                                 # every epoch in the card's history (the last one improved)
+        c = json.loads(ck.with_suffix(".json").read_text(encoding="utf-8"))
+        epochs = int((c.get("training") or {}).get("epochs") or 0) or None
     except (OSError, ValueError, TypeError):
         pass
-    return None
+    last = training_log_epoch(home, tag)
+    if epochs and last and last[0] >= epochs and last[1] >= last[2]:
+        return ck                                     # the last iteration of the last epoch logged
+    return ck if quiet else None
 
 
 def newest_training_set(mask_root: str) -> Optional[str]:
@@ -556,6 +589,19 @@ def newest_training_set(mask_root: str) -> Optional[str]:
         if m and (Path(d) / "masks").is_dir():
             sets.append((int(m.group(1)), d))
     return max(sets)[1] if sets else None
+
+
+BASELINE_SETS = {"mppp_mask_v3": "masks_training_set_v7", "mppp_mask_v4": "masks_training_set_v8"}
+
+
+def baseline_training_set(mask_root: str, baseline: str) -> Optional[str]:
+    """The training set a registered baseline trained on (its ``--seen`` in the comparison: the frames it has seen
+    are left out of the fair subset); None for a checkpoint or an unknown name."""
+    name = BASELINE_SETS.get(str(baseline))
+    if not name:
+        return None
+    p = Path(mask_root) / name
+    return str(p) if (p / "masks").is_dir() else None
 
 
 def previous_training_set(data: str) -> Optional[str]:
@@ -627,7 +673,8 @@ def logon_task_register(r: Run) -> None:
     launcher = r.dir / "freeze_logon.bat"
     try:
         launcher.write_text("@echo off\r\nset \"MPPP_NOPAUSE=1\"\r\n" + f"set \"MPPP_FREEZE_CODE={r.code}\"\r\n"
-                            + f"call \"{bat}\" --root \"{r.root}\"\r\n", encoding="ascii", newline="")
+                            + f"call \"{bat}\" --root \"{r.root}\" --mask-model \"{r.a.mask_model}\" --mask-margin {r.a.mask_margin}\r\n",
+                            encoding="ascii", newline="")
         res = subprocess.run(["reg", "add", RUNONCE_KEY, "/v", LOGON_TASK, "/t", "REG_SZ", "/d", f'"{launcher}"', "/f"],
                              capture_output=True, text=True, timeout=60)
         if res.returncode == 0:

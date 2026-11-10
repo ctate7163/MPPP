@@ -366,14 +366,12 @@ rigs; `deck_rig_trend` the rig drift over the mission from the deck pairs; `fidu
 only.
 '''),
     code('''
-from mppp_studies.calibration import zcam_mast_head
-fig_dir = Path(os.environ.get("MPPP_OUTPUTS", "Claude outputs")) / "mast_head"
-try:
-    out = zcam_mast_head.main(["--out", str(fig_dir)])
-    for png in sorted(fig_dir.glob("*.png"))[:2]:
-        display(NbImage(filename=str(png)))
-except SystemExit:
-    pass'''),
+from mppp_studies.paths import outputs_dir
+print("python -m mppp_studies.calibration.zcam_mast_head --root", ROOT, "--chain <the deck joint's chain json>")
+print("python -m mppp_studies.calibration.deck_rig_trend --root", ROOT)
+print("python -m mppp_studies.calibration.fiducial_check --root", ROOT)
+for png in sorted(outputs_dir().glob("*mast_head*/*.png"))[:2] + sorted(outputs_dir().glob("*deck_rig_trend*/*.png"))[:1]:
+    display(NbImage(filename=str(png)))'''),
     md('''
 ## 6  Promotion — `python -m mppp_studies.calibration.promote_cmods RESULT_DIR --note "..."`
 A joint that passes its checks writes candidate files; `promote_cmods` copies them into the cmods folder with a

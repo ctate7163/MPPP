@@ -244,3 +244,135 @@ def test_train_mask_verdict_from_the_ab_table(tmp_path):
     a = parser_for_test().parse_args(["--compare", "--smoke"])
     assert a.compare == [] and a.compare_device == "auto"
     assert parser_for_test().parse_args(["--smoke"]).compare is None
+
+
+# ----------------------------------------------------------------------------- 9 Nov evening: the PC as it stands
+def _pc_like_root(tmp_path: Path) -> Path:
+    """D:\\rover_blocks on the evening of 9 Nov: the first chain's status says 'studies running' with a heartbeat
+    hours old, the pipeline lock stale (freeze-2 stopped at 14:53), cmods_freeze2 with the freeze-2 rig, finished
+    blocks processed with the registry default."""
+    root = _root(tmp_path)
+    d = root / "mppp_pipeline"
+    (d / "freeze_chain_status.json").write_text(json.dumps({
+        "state": "running", "heartbeat": "2026-11-09T09:26:53", "pid": 31060,
+        "steps": {"studies": {"state": "running"}, "figures": {}, "maps": {}}}), encoding="utf-8")
+    (d / "pipeline_status.json").write_text(json.dumps({
+        "state": "running", "pid": 43512, "host": "scipc25-04", "heartbeat": "2026-11-09T14:53:16",
+        "kind": "pipeline", "stage": "zcam_runs"}), encoding="utf-8")
+    (root / "cmods_freeze2").mkdir()
+    (root / "cmods_freeze2" / "M2020_N_rig.json").write_text(json.dumps({"source": "freeze-2 (8 Nov): deck rig"}), encoding="utf-8")
+    for name in ("mars2020_sol_0072_chal_rocks_large_zcam", "mars2020_sol_0413_threeforks_north_zcam", "mars2020_sol_0001_butler_landing"):
+        c = root / name / "colmap"
+        c.mkdir(parents=True)
+        (c / "run_settings.json").write_text(json.dumps({"settings": {"mask_checkpoint": None, "infer_mask": True}}), encoding="utf-8")
+        (c / "run_done.json").write_text("{}", encoding="utf-8")
+    return root
+
+
+def _pc_like_training(tmp_path: Path, last_epoch: int, last_iter: int, epochs: int = 30, improved_at: int = 17) -> Path:
+    """D:\\code\\MPPP\\checkpoints on 9 Nov: the v9A start that died at 14:48 and the live v9_v4.4 run - its card
+    written at its best epoch only, its log at (last_epoch, last_iter)."""
+    home = tmp_path / "MPPP"
+    ck_dir = home / "checkpoints"
+    dead = ck_dir / "convnext_tiny_s4_seg_20261109_v9A_debug"
+    dead.mkdir(parents=True)
+    (dead / "log.csv").write_text("epoch,iter,n_iter,loss\n1,150,1080,0.93\n", encoding="utf-8")
+    os.utime(dead / "log.csv", (1794260894, 1794260894))                                  # 14:48
+    live = ck_dir / "convnext_tiny_s4_seg_20261109_v9_v4.4_debug"
+    live.mkdir()
+    iters = list(range(50, 1051, 50)) + [1080]                                          # every 50, then the epoch's end
+    rows = ["epoch,iter,n_iter,loss"] + [f"{e},{i},1080,0.05" for e in range(1, last_epoch + 1) for i in iters
+                                         if (e < last_epoch or i <= last_iter)]
+    (live / "log.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+    ck = ck_dir / "convnext_tiny_s4_seg_20261109_v9_v4.4.pt"
+    ck.write_bytes(b"x")
+    ck.with_suffix(".json").write_text(json.dumps({"epoch": improved_at, "val_iou": 0.9754, "training": {"epochs": epochs},
+                                                   "history": [{"epoch": e} for e in range(1, improved_at + 1)]}), encoding="utf-8")
+    return home
+
+
+def test_the_training_end_is_read_from_the_log_not_the_card(tmp_path):
+    home = _pc_like_training(tmp_path, last_epoch=18, last_iter=900)
+    assert fz.newest_training_tag(home) == "v9_v4.4"                        # the live run, not the dead v9A start
+    assert fz.training_log_epoch(home, "v9_v4.4") == (18, 900, 1080)
+    assert fz.trained_checkpoint(home, "v9_v4.4") is None                   # epoch 18 of 30: not through
+    # the last epoch's last iteration logged, the card still at epoch 17 (no later epoch improved): through
+    home2 = _pc_like_training(tmp_path / "b", last_epoch=30, last_iter=1080)
+    ck = fz.trained_checkpoint(home2, "v9_v4.4")
+    assert ck is not None and ck.name == "convnext_tiny_s4_seg_20261109_v9_v4.4.pt"
+    # quiet: the log stopped mid-way (a crash) - with quiet=True the checkpoint there is taken, else not
+    assert fz.trained_checkpoint(home, "v9_v4.4", quiet=True) is not None
+    assert fz.trained_checkpoint(home, "v9_v4.4", quiet=False) is None
+
+
+def test_keep_passes_the_blocks_own_checkpoint_when_it_is_a_path(tmp_path):
+    root = _root(tmp_path)
+    (root / "cmods").mkdir()
+    (root / "cmods" / "M2020_N_rig.json").write_text(json.dumps({"source": "freeze"}), encoding="utf-8")
+    for i in range(2):
+        c = root / f"block{i}" / "colmap"
+        c.mkdir(parents=True)
+        (c / "run_settings.json").write_text(json.dumps({"settings": {"mask_checkpoint": "D:\\ck\\v42.pt"}}), encoding="utf-8")
+    assert _run(root) == 0
+    st = _status(root)
+    assert st["mask"]["set"] == "D:\\ck\\v42.pt" and st["mask"]["choice"] == "keep (v42)"
+    log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert log.count("--set mask_checkpoint=D:\\ck\\v42.pt") == 4           # the same configuration: nothing processed again
+    assert "every image is processed again" not in log
+
+
+def test_pc_like_root_auto_with_the_live_training_in_a_dry_run(tmp_path):
+    """The evening's state in a dry run: wait passes (both status files stale), cmods already the freeze rig, the
+    mask step finds the live training and - in a dry run - goes on without waiting; the chain runs on v3."""
+    root = _pc_like_root(tmp_path)
+    home = _pc_like_training(tmp_path, last_epoch=18, last_iter=900)
+    assert _run(root, "--mask-model", "auto", "--mask-home", str(home), "--cmods", str(root / "cmods_freeze2")) == 0
+    st = _status(root)
+    assert st["steps"]["wait"]["note"].startswith("pipeline idle")
+    assert "already in it" in st["steps"]["cmods"]["note"]
+    assert st["mask"]["tag"] == "v9_v4.4" and st["mask"]["set"] is None and "not finished" in st["mask"]["choice"]
+    log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert "mask auto: waiting for the training 'v9_v4.4'" in log and "mask_checkpoint=" not in log
+    assert "deck_chal_rocks_large (dry run)" in log and "deck_threeforks_north (dry run)" in log
+    assert "deck_airey_hill (dry run)" in log
+
+
+def test_pc_like_root_auto_with_a_finished_training_and_a_verdict(tmp_path):
+    root = _pc_like_root(tmp_path)
+    home = _pc_like_training(tmp_path, last_epoch=30, last_iter=1080)
+    ck = home / "checkpoints" / "convnext_tiny_s4_seg_20261109_v9_v4.4.pt"
+    out = home / "Claude outputs" / f"mask_{ck.stem}"
+    out.mkdir(parents=True)
+    (out / "mask_verdict.json").write_text(json.dumps({"models": {ck.stem: 0.9842, "mppp_mask_v3": 0.9712}, "subset": "not_seen"}), encoding="utf-8")
+    assert _run(root, "--mask-model", "auto", "--mask-home", str(home), "--cmods", str(root / "cmods_freeze2")) == 0
+    st = _status(root)
+    assert st["mask"]["set"] == str(ck) and st["mask"]["choice"] == f"new {ck.name}"
+    log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert log.count(f"--set mask_checkpoint={ck}") == 4 and "every image is processed again" in log
+    # the dry-run comparison command when no verdict is there: the baseline's own training set as --seen
+    root2 = _pc_like_root(tmp_path / "two")
+    (out / "mask_verdict.json").unlink()
+    masks = tmp_path / "masks"
+    for v in (7, 8, 9):
+        (masks / f"masks_training_set_v{v}" / "masks").mkdir(parents=True)
+    assert fz.baseline_training_set(str(masks), "mppp_mask_v3") == str(masks / "masks_training_set_v7")
+    assert fz.baseline_training_set(str(masks), "D:\\ck\\x.pt") is None
+    assert _run(root2, "--mask-model", "auto", "--mask-home", str(home), "--mask-root", str(masks),
+                "--cmods", str(root2 / "cmods_freeze2")) == 0
+    log2 = (root2 / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert ("mask_ab (dry run)" in log2 and "-m mppp_studies.mask_training.compare_mask_models" in log2
+            and f"--data {masks / 'masks_training_set_v9'}" in log2 and "--models mppp_mask_v3" in log2
+            and f"--seen {masks / 'masks_training_set_v7'} --seen-split mppp_mask_v3 {masks / 'masks_training_set_v7'}" in log2)
+
+
+def test_logon_launcher_carries_the_mask_options(tmp_path, monkeypatch):
+    root = _root(tmp_path)
+    monkeypatch.setattr(fz, "WINDOWS", True)
+    calls = []
+    monkeypatch.setattr(fz.subprocess, "run", lambda cmd, **kw: calls.append(cmd) or type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+    a = fz.parser().parse_args(["--root", str(root), "--code", str(fz.REPO), "--mask-model", "auto", "--mask-margin", "0.005"])
+    r = fz.Run(a)
+    fz.logon_task_register(r)
+    launcher = (root / "mppp_pipeline" / "freeze_logon.bat").read_text(encoding="ascii")
+    assert '--mask-model "auto" --mask-margin 0.005' in launcher and "freeze.bat" in launcher
+    assert calls and calls[0][:2] == ["reg", "add"]

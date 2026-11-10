@@ -54,7 +54,7 @@ for %%A in (%*) do (
   if /i "%%~A"=="--help" goto :quick
 )
 echo %DATE% %TIME%  freeze: root %MPPP_FREEZE_ROOT%, code %MPPP_FREEZE_CODE%, mask comparison with %TPY%
-python -m mppp_studies.calibration.freeze --root "%MPPP_FREEZE_ROOT%" --code "%MPPP_FREEZE_CODE%" --from-tree "%MPPP_MAIN%" --ab-python "%TPY%" %*
+python -m mppp_studies.calibration.freeze --root "%MPPP_FREEZE_ROOT%" --code "%MPPP_FREEZE_CODE%" --from-tree "%MPPP_MAIN%" --mask-home "%MPPP_MAIN%" --ab-python "%TPY%" %*
 set "_RC=%ERRORLEVEL%"
 echo %DATE% %TIME%  freeze finished (exit %_RC%)
 if not defined MPPP_NOPAUSE pause
