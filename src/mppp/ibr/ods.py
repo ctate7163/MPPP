@@ -615,23 +615,48 @@ def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int) -> Pat
     return Path(out_png)
 
 
-STACK_NAME = "ods_stereo_square"     # .png and .jpg: the right eye on top of the left (Christian, 10 Nov)
+STACK_NAME = "ods_stereo_square"     # .png and .jpg: the left eye on top of the right (Christian, 10 Nov: "put the left view on top")
+OLD_NAMES = ("ods_left.png", "ods_right.png", "ods_stereo_square.png", "ods_stereo_square.jpg")
 
 
-def stack_eyes(out_dir: PathLike, top: str = "right", jpeg_quality: int = 95) -> Dict[str, Any]:
-    """``ods_stereo_square.png`` / ``.jpg``: the two eye images stacked into one square (W x W) - ``top`` eye above
-    (Christian, 10 Nov: "make a version with the ods_right.png stacked on top of the ods_left so that it is a square
-    that I can upload").  Returns {"png", "jpg", "size", "top"}."""
+def ods_prefix(station_label: str, rover: bool = False) -> str:
+    """The file-name prefix of a station's panoramas (Christian, 10 Nov: "name the ods with a site and drive
+    prefix"): ``S003D2046`` / ``S003D2046_rover``."""
+    return f"{station_label}_rover" if rover else str(station_label)
+
+
+def ods_file(out_dir: PathLike, kind: str, prefix: str = "", ext: str = ".png") -> Path:
+    """``<prefix>_ods_<kind><ext>`` (kind left / right / stereo_square); ``ods_<kind><ext>`` without a prefix."""
+    return Path(out_dir) / f"{(prefix + '_') if prefix else ''}ods_{kind}{ext}"
+
+
+def find_prefix(out_dir: PathLike) -> str:
+    """The prefix of the newest ``*ods_left.png`` in ``out_dir`` ('' for the unprefixed name of before 10 Nov)."""
+    c = sorted(Path(out_dir).glob("*ods_left.png"), key=lambda f: f.stat().st_mtime)
+    if not c:
+        return ""
+    n = c[-1].name[:-len("ods_left.png")]
+    return n[:-1] if n.endswith("_") else n
+
+
+def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, prefix: Optional[str] = None) -> Dict[str, Any]:
+    """``<prefix>_ods_stereo_square.png`` / ``.jpg``: the two eye images stacked into one square (W x W) - ``top``
+    eye above (Christian, 10 Nov: "make a version with the ods_right.png stacked on top of the ods_left so that it is
+    a square that I can upload").  ``prefix`` None: that of the eye images in ``out_dir``.  Returns {"png", "jpg",
+    "size", "top"}."""
     import cv2
     out = Path(out_dir)
-    other = "left" if top == "right" else "right"
-    a, b = cv2.imread(str(out / f"ods_{top}.png")), cv2.imread(str(out / f"ods_{other}.png"))
+    if prefix is None:
+        prefix = find_prefix(out)
+    other = "left" if top == "right" else "right"     # 10 Nov: left on top by default (was right)
+    a, b = cv2.imread(str(ods_file(out, top, prefix))), cv2.imread(str(ods_file(out, other, prefix)))
     if a is None or b is None:
-        raise FileNotFoundError(f"{out}: ods_left.png and ods_right.png are both needed")
+        raise FileNotFoundError(f"{out}: {ods_file(out, 'left', prefix).name} and {ods_file(out, 'right', prefix).name} "
+                                f"are both needed")
     if a.shape != b.shape:
         raise ValueError(f"{out}: the eye images differ in size ({a.shape} vs {b.shape})")
     sq = np.vstack([a, b])
-    png, jpg = out / f"{STACK_NAME}.png", out / f"{STACK_NAME}.jpg"
+    png, jpg = ods_file(out, "stereo_square", prefix), ods_file(out, "stereo_square", prefix, ".jpg")
     cv2.imwrite(str(png), sq)
     cv2.imwrite(str(jpg), sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
     return {"png": str(png), "jpg": str(jpg), "size": [int(sq.shape[1]), int(sq.shape[0])], "top": top}
@@ -640,13 +665,16 @@ def stack_eyes(out_dir: PathLike, top: str = "right", jpeg_quality: int = 95) ->
 def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width: int = DEFAULT_WIDTH, ipd_m: float = DEFAULT_IPD_M,
                    families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None,
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
-                   gains: bool = True, stack_top: str = "right", sky_fill: bool = True,
-                   mask_head_hardware: bool = True, azimuth0_deg: float = 0.0) -> Dict[str, Any]:
-    """The two eye images of a station -> ``out_dir/ods_left.png``, ``ods_right.png``, ``provenance.png`` (left
-    eye's sources), ``ods.json``.  Returns the record."""
+                   gains: bool = True, stack_top: str = "left", sky_fill: bool = True,
+                   mask_head_hardware: bool = True, azimuth0_deg: float = 0.0, prefix: Optional[str] = None) -> Dict[str, Any]:
+    """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
+    ``<prefix>_ods_stereo_square.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
+    :func:`ods_prefix` (``S003D2046`` / ``S003D2046_rover``); '' for the bare names.  Returns the record."""
     import cv2
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    if prefix is None:
+        prefix = ods_prefix(station.label, rover=not use_masks)
     height = width // 2
     sources = station_sources(project, rec, station, families=families, scale=scale, zcam_scale=zcam_scale, images=images,
                               use_masks=use_masks, mask_head_hardware=mask_head_hardware)
@@ -658,7 +686,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     def progress(eye, r, h, dt):
         log.info("ods %s: %d / %d rows (%.0f s)", eye, r, h, dt)
 
-    rec_out: Dict[str, Any] = {"station": station.to_json(), "width": width, "height": height, "ipd_m": ipd_m,
+    rec_out: Dict[str, Any] = {"station": station.to_json(), "prefix": prefix, "width": width, "height": height, "ipd_m": ipd_m,
                                "sources": [s.name for s in sources], "scale": scale, "zcam_scale": zcam_scale,
                                "rover": "shown" if not use_masks else "masked out",
                                "azimuth_of_column_0_deg": float(azimuth0_deg) % 360.0,
@@ -671,7 +699,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     for eye in eyes:
         res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, rows_per_chunk=rows_per_chunk,
                          progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, **axes)
-        f = out / f"ods_{eye}.png"
+        f = ods_file(out, eye, prefix)
         cv2.imwrite(str(f), res["rgb"][..., ::-1])
         if eye == eyes[0]:
             provenance_png(res["source"], out / "provenance.png", len(sources))
@@ -688,7 +716,13 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         for s in sources:
             s.release()
     if "left" in eyes and "right" in eyes:
-        rec_out["stacked"] = stack_eyes(out, top=stack_top)
+        rec_out["stacked"] = stack_eyes(out, top=stack_top, prefix=prefix)
+    if prefix:                                       # the unprefixed files of before 10 Nov would be stale
+        for n in OLD_NAMES:
+            if (out / n).is_file():
+                (out / n).unlink()
+                log.info("ods: removed the stale %s (now %s_%s)", n, prefix, n)
+    rec_out["prefix"] = prefix
     rec_out["seconds"] = round(time.time() - t0, 1)
     (out / "ods.json").write_text(json.dumps(rec_out, indent=1, default=float), encoding="utf-8")
     log.info("ods: %s -> %s (%.0f s)", station.label, out, rec_out["seconds"])

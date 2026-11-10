@@ -137,6 +137,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                 argv = [step, str(work), "--station", st["station"], *extra, "--out", str(out)]
                 if step == "depthmaps":
                     argv.append("--photometry")
+                if step == "ods" and st.get("ods_exclude"):   # 10 Nov: pairs left out of the panorama
+                    argv += ["--exclude", *[str(x) for x in st["ods_exclude"]]]
                 argv += [str(x) for x in st.get(f"{step}_args", [])]
                 cmds.append({"variant": v, "step": step, "argv": argv})
         runs.append({"label": lab, "work": str(work), "out": str(base), "note": st.get("note", ""), "variants": vs,
@@ -175,7 +177,7 @@ def _summary_line(run: Dict[str, Any], variant: str, codes: Dict[str, int]) -> s
         c = o["eyes"]["left"]["coverage"]
         cells.append(f"mesh {100 * c['mesh']:.0f} %, plane {100 * c.get('plane', 0):.0f} %, far {100 * c['far']:.0f} %, "
                      f"coloured {100 * c['coloured']:.0f} %")
-        cells.append("yes" if (out / "ods_stereo_square.jpg").is_file() else "no")
+        cells.append("yes" if any(out.glob("*ods_stereo_square.jpg")) else "no")
     except (OSError, ValueError, KeyError):
         cells += ["-", "-"]
     return "| " + " | ".join(cells) + " |"
@@ -200,7 +202,7 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
             if squares_only:
                 for v in run["variants"]:
                     out = base / ("with_rover" if v == "rover" else "")
-                    if (out / "ods_right.png").is_file():
+                    if any(out.glob("*ods_right.png")):
                         codes[v]["square"] = _run(["ods", "-", "--station", "x", "--stack-only", "--out", str(out)], fh)
             else:
                 failed = set()

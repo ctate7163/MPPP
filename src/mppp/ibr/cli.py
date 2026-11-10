@@ -8,7 +8,9 @@ mppp.ibr.cli - ``mppp mesh``, ``mppp depthmaps``, ``mppp ods`` on one finished b
 ``WORK`` is the block folder (or its ``colmap`` project folder).  The station's products go to
 ``<project>/ods/<station>/``: ``station.json``, ``mesh.ply``, ``ground_plane.json``, ``mesh_report.json``,
 ``mesh_preview.png``, ``maps/``, ``maps_png/``, ``maps_report.{json,md}``, ``photometry/``, ``photometry_maps/``,
-``photometry_png/``, ``photometry_report.json``, ``ods_left.png``, ``ods_right.png``, ``provenance.png``, ``ods.json``.
+``photometry_png/``, ``photometry_report.json``, ``<station>_ods_left.png``, ``<station>_ods_right.png``,
+``<station>_ods_stereo_square.png/.jpg`` (``<station>_rover_...`` with ``--rover``), ``provenance.png``, ``ods.json``
+(``rover_deck.json`` with ``mesh --rover``).
 """
 from __future__ import annotations
 
@@ -75,12 +77,27 @@ def _frames(project, st, a) -> Optional[list]:
             names = [n for n in sub if n in have] or None
             if names:
                 log.info("frames: the %d of the dense workspace %s (--images to choose others)", len(names), recs[-1].parent.name)
+    excl = getattr(a, "exclude", None)
+    if excl:
+        keys = {_pair_key(e) for e in excl}
+        base = names if names is not None else list(st.images)
+        names = [n for n in base if _pair_key(n) not in keys]
+        log.info("frames: %d left out (--exclude, both eyes of a pair): %s", len(base) - len(names),
+                 ", ".join(sorted(set(base) - set(names))) or "none of them were in")
     sols = getattr(a, "sols", None)
     if sols:
         base = names if names is not None else list(st.images)
         names = [n for n in base if n[4:8].isdigit() and int(n[4:8]) in set(int(x) for x in sols)]
         log.info("frames: %d on sols %s", len(names), sols)
     return names
+
+
+def _pair_key(name: str) -> str:
+    """A frame's name without the eye and the extension: NLF_... and NRF_... share it (a stereo pair)."""
+    n = Path(str(name).strip()).name
+    if n.lower().endswith(".png"):
+        n = n[:-4]
+    return (n[0] + n[2:]).upper() if len(n) > 2 and n[1].upper() in "LR" else n.upper()
 
 
 def _tie_points(rec, min_track: int = 3) -> np.ndarray:
@@ -118,6 +135,9 @@ def add_parsers(sub) -> None:
     p.add_argument("--rover", action="store_true", help="0.96: the rover body and deck shown: the cloud fused without the rover masks (mppp dense --keep-rover), the "
                    "rover's pixels used; products in ods/<station>_rover/ (the wind-sensor booms below the mast head "
                    "are in it too, too close to the eyes - not handled yet)")
+    p.add_argument("--no-deck-floor", action="store_true", help="--rover: no floor at the rover deck (default: nothing "
+                   "below the deck top inside its footprint, RMECH x -1.10..+0.95 m, y +-0.60 m, placed by the frames' "
+                   "label CAHVORE poses; the floor added to the mesh; rover_deck.json)")
     p = sub.add_parser("depthmaps", help="0.96: per-image depth / range / normal / label maps cast from the station's mesh (mppp.ibr.raycast)")
     p.add_argument("work")
     p.add_argument("--station", required=True)
@@ -150,11 +170,15 @@ def add_parsers(sub) -> None:
     p.add_argument("--images", nargs="*", default=None, help="only these image names (default: the frames of the "
                    "station's dense workspace, else all its frames)")
     p.add_argument("--sols", nargs="+", type=int, default=None, help="only the frames of these sols")
+    p.add_argument("--exclude", nargs="+", default=None, help="leave these frames out (stems or names; a stereo pair "
+                   "goes together: NLF_... also drops its NRF_ partner)")
+    p.add_argument("--prefix", default=None, help="the panoramas' file-name prefix (default the station, S003D2046_ / "
+                   "S003D2046_rover_: S003D2046_ods_left.png ...; '' for the bare ods_left.png)")
     p.add_argument("--rows-per-chunk", type=int, default=128)
     p.add_argument("--eyes", nargs="+", default=["left", "right"], choices=["left", "right", "centre"])
     p.add_argument("--no-gains", action="store_true", help="no gain compensation between the source frames")
-    p.add_argument("--stack-top", default="right", choices=["right", "left"], help="the eye on top in "
-                   "ods_stereo_square.png / .jpg (default right: the right eye above the left)")
+    p.add_argument("--stack-top", default="left", choices=["left", "right"], help="the eye on top in "
+                   "<station>_ods_stereo_square.png / .jpg (default left: the left eye above the right; right before 10 Nov)")
     p.add_argument("--keep-head-hardware", action="store_true", help="--rover: keep the hardware fixed to the mast head "
                    "(the wind-sensor booms; default: masked, found as what the rover mask covers at the same pixels in the "
                    "frames of one eye and elevation)")
@@ -204,11 +228,24 @@ def cmd_mesh(a: argparse.Namespace) -> int:
             terrain = read_points(_points_file(project, None, st.label))
         except FileNotFoundError:
             log.warning("mesh --rover: no rover-masked fused.ply; the plane is fitted to the cloud with the rover in it")
+    deck = None
+    if a.rover and not getattr(a, "no_deck_floor", False):     # 10 Nov: nothing below the rover deck
+        from .rover_deck import rover_pose, write_deck
+        try:
+            deck = rover_pose(project, rec, st.images)
+            d = write_deck(out, deck, st.up)
+            log.info("rover deck: %d frames agree to %.2f deg / %.1f mm; rover tilt %.1f deg; floor %.2f x %.2f m -> %s",
+                     d["frames"], d["rot_spread_deg"], d["pos_spread_mm"], d.get("rover_tilt_deg", float("nan")),
+                     d["size_m"][0], d["size_m"][1], out / "rover_deck.json")
+        except Exception as e:                                   # noqa: BLE001 - the mesh without the floor
+            log.warning("mesh --rover: no rover pose for the deck floor (%s); meshing without it", e)
+            deck = None
     ties = None if a.no_tie_points else _tie_points(rec)
     rep = build_station_mesh(pts, st.pivot, out, normals=nrm, dense_dir=a.dense_dir or pts_file.parent, colmap_exe=a.colmap,
                              radius_m=a.mesh_radius, far_radius_m=a.far_radius, target_triangles=a.target_triangles,
                              poisson_depth=a.poisson_depth, station=st.to_json(), up=st.up, plane_radius_m=a.plane_radius,
-                             ground_points=ties, horizontal_plane=a.horizontal_plane, plane_points=terrain)
+                             ground_points=ties, horizontal_plane=a.horizontal_plane, plane_points=terrain,
+                             deck=deck)
     rep["rover"] = "shown" if a.rover else "masked out"
     rep["points_file"] = str(pts_file)
     (out / "mesh_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
@@ -261,7 +298,7 @@ def cmd_ods(a: argparse.Namespace) -> int:
                          zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,
-                         azimuth0_deg=-180.0 if a.north_center else a.azimuth0)
+                         azimuth0_deg=-180.0 if a.north_center else a.azimuth0, prefix=a.prefix)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: {e['file']}  coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "

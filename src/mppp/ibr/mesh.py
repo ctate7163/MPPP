@@ -468,7 +468,8 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
                        target_triangles: int = DEFAULT_TARGET_TRIANGLES, poisson_depth: int = 10,
                        station: Optional[Dict[str, Any]] = None, up: Sequence[float] = (0, 0, 1),
                        plane_radius_m: float = DEFAULT_PLANE_RADIUS_M, ground_points: Optional[np.ndarray] = None,
-                       horizontal_plane: bool = False, plane_points: Optional[np.ndarray] = None) -> Dict[str, Any]:
+                       horizontal_plane: bool = False, plane_points: Optional[np.ndarray] = None,
+                       deck: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The whole of step 2 for one station: the surface (Delaunay through ``colmap_exe`` over ``dense_dir`` when
     given, else Poisson over the ``points`` within ``radius_m`` + 5 m of the axis), the cleanup (the mesh to
     ``radius_m`` from the axis), the decimation, the ground plane (:func:`fit_ground_plane` over ``points`` and
@@ -476,11 +477,22 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
     sphere when ``far_radius_m`` is given (the 0.96.0 prototype).  ``mesh.ply``, ``ground_plane.json`` (and
     ``far_sphere.ply``) and ``mesh_report.json`` in ``out_dir``.  ``plane_points``: the terrain cloud for the plane
     when ``points`` hold more than terrain (``mppp mesh --rover``: the rover-masked cloud, not the rover's deck).
+    ``deck``: the rover pose of :func:`mppp.ibr.rover_deck.rover_pose` (``--rover``): nothing below the deck top
+    inside its footprint - the points there dropped, the vertices lifted onto it, and the deck floor added.
     Returns the report."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     points = np.asarray(points, float)
+    deck_rep = None
+    if deck is not None:                                        # 10 Nov: a floor at the rover deck
+        from .rover_deck import below_deck
+        drop = below_deck(points, deck)
+        deck_rep = {"points_below_dropped": int(drop.sum())}
+        if drop.any():
+            points = points[~drop]
+            if normals is not None:
+                normals = np.asarray(normals)[~drop]
     all_points = points
     h = horizontal_distance(points, pivot, up)
     near = h <= radius_m + 5.0
@@ -499,6 +511,15 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
         zones = tuple((lo, hi, int(poisson_depth)) for lo, hi, _ in MESH_ZONES)
         V, F, how, clean = zoned_poisson(points, normals, pivot, up, radius_m, zones=zones)
     V, F, dec = decimate_and_smooth(V, F, target_triangles=target_triangles)
+    if deck is not None:
+        from .rover_deck import clamp_to_deck, deck_floor_arrays
+        V, moved = clamp_to_deck(V, deck)
+        Vd, Fd = deck_floor_arrays(deck)
+        F = np.vstack([np.asarray(F, np.int64), np.asarray(Fd, np.int64) + len(V)])
+        V = np.vstack([V, Vd])
+        deck_rep.update(vertices_lifted=moved, floor_triangles=int(len(Fd)))
+        log.info("mesh: the rover deck floor - %d points below it dropped, %d vertices lifted onto it, %d floor triangles",
+                 deck_rep["points_below_dropped"], moved, len(Fd))
     write_mesh(out / "mesh.ply", V, F)
     base = all_points if plane_points is None else np.asarray(plane_points, float)
     gp_in = base if ground_points is None or not len(ground_points) else np.vstack([base, np.asarray(ground_points, float)])
@@ -521,7 +542,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
                      "plane": {k: plane[k] for k in ("method", "radius_m", "tilt_deg", "height_below_pivot_m", "rms_m", "bins")
                                if k in plane},
                      "beyond": "a far sphere" if sphere else "the sky at infinity"},
-           "far_sphere": sphere, "coverage_by_range": coverage_by_range(V, F, pivot), "tau_m": {str(z): float(tau_m(z))
+           "far_sphere": sphere, "rover_deck": deck_rep, "coverage_by_range": coverage_by_range(V, F, pivot), "tau_m": {str(z): float(tau_m(z))
            for z in (2, 5, 10, 15, 20, 30, 50, 85)}, "files": files, "seconds": round(time.time() - t0, 1)}
     (out / "mesh_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
     log.info("mesh: %d -> %d triangles (%s) within %g m of the axis; ground plane %s (tilt %.1f deg, %.2f m rms over %d "

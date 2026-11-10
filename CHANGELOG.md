@@ -233,6 +233,28 @@ changes made on the way to the build.
     and clears the old maps. On by default for the single sites (`dense_args` in `single_sites.json`); the
     previous summary is kept as `single_sites_summary_previous.md` for the comparison;
   - **`--out DIR`** for mesh / depthmaps / ods (e.g. `D:\rover_blocks\single_sites\S003D2046`, `...\with_rover`).
+  - **The rover deck floor** (`mppp.ibr.rover_deck`; Christian: "put a minimum height at the rover deck. Things can
+    be above it, but not below ... It doesn't change, so it can be hardwired for the with rover parts"). The deck is
+    hardwired in RMECH (RNAV axes, origin RNAV (+90.02, 0, -1133.38) mm, z 0 = the deck top): the top at z = 0,
+    x -1.10 .. +0.95 m, y -0.60 .. +0.60 m (2.05 x 1.20 m), measured on the Van Zyl S003D2046 rover cloud placed
+    in RMECH: the deck points at a median 20 mm above the surveyed top (TDF1-3 at -0.4 to -0.6 mm), the front
+    face dropping at x 0.95 (front Hazcams at x +1.0, 0.40 m below the top), the rear Hazcams at x -1.14,
+    y +-0.47, the deck points to y -0.65 / +0.59, the rockers outside y 0.85. The rover in the block per station:
+    each Navcam frame's label CAHVORE (RNAV, the manifest's `camera_model_label`) against its solved pose, the
+    rotation mean and median translation (Van Zyl: 12 frames within 0.12 deg and 2.8 mm; rover tilt 0.2 deg).
+    `mesh --rover` then drops the fused points inside the footprint more than 3 cm below the top, lifts the mesh
+    vertices there onto it, and adds the floor (a 5 cm grid, ~2,000 triangles) to `mesh.ply`, so a ray through a
+    hole in the reconstructed deck - a quarter of the deck seen from the mast at Van Zyl, mostly around the mast
+    foot - lands on the deck, coloured from the deck's own pixels, instead of on the ground 1.1 m below.
+    `rover_deck.json` (the pose, the footprint corners in the block, the agreement); `--no-deck-floor`;
+  - **`ods --exclude STEM ...`** (Christian: "please remove these stereo pairs from the ODS process"): frames left
+    out of the panorama, a stereo pair together (an NLF stem drops its NRF partner); per station `ods_exclude` in
+    `single_sites.json` - Rockytop's `NCAM13461` pair at 0707875039 and Three Forks' `NCAM13688` pair at 0728029302;
+  - **The panoramas named by station** (Christian: "name the ods with a site and drive prefix"):
+    `S003D2046_ods_left.png`, `_ods_right.png`, `_ods_stereo_square.png/.jpg`, and `S003D2046_rover_...` in the
+    rover variant (`--prefix`; '' for the bare names); a render removes the unprefixed files of before;
+  - **The left eye on top** of the stacked square by default (Christian: "put the left view on top"; `--stack-top
+    right` for the old order).
 - **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
   bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)
   0.9711 against v4.2 0.9724 on the same data and frames (-0.0013, 95 % -0.0023..-0.0004; -0.0043 on the 120 frames

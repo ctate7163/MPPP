@@ -295,8 +295,8 @@ def test_ods_render_colours_each_direction_from_its_frame(tmp_path):
     assert st.label == "S003D0010" and len(st.images) == 4 and st.pivot_fit["fallback"]   # four frames: the mean centre, flagged
     out = tmp_path / "ods"
     O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
-    L = cv2.imread(str(out / "ods_left.png"))[..., ::-1]
-    Rr = cv2.imread(str(out / "ods_right.png"))[..., ::-1]
+    L = cv2.imread(str(out / "S003D0010_ods_left.png"))[..., ::-1]
+    Rr = cv2.imread(str(out / "S003D0010_ods_right.png"))[..., ::-1]
     assert L.shape == (128, 256, 3) and Rr.shape == L.shape and (out / "provenance.png").is_file()
     # looking north along the horizon (row 64 ~ elevation 0, column 0 azimuth 0): the north frame (red) colours it
     def at(img, az_deg, el_deg):
@@ -315,7 +315,7 @@ def test_ods_render_colours_each_direction_from_its_frame(tmp_path):
     assert at(L, 10.0, 85.0).sum() > 100
     O.render_station(proj, rec, st, scene, tmp_path / "nofill", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32,
                      sky_fill=False)
-    assert np.all(at(cv2.imread(str(tmp_path / "nofill" / "ods_left.png"))[..., ::-1], 10.0, 85.0) == 0)
+    assert np.all(at(cv2.imread(str(tmp_path / "nofill" / "S003D0010_ods_left.png"))[..., ::-1], 10.0, 85.0) == 0)
     rec_json = json.loads((out / "ods.json").read_text(encoding="utf-8"))
     cov = rec_json["eyes"]["left"]["coverage"]
     assert 0.2 < cov["coloured"] < 0.9 and cov["no_surface"] == 0.0 and rec_json["eyes"]["left"]["sources_used"] == 4
@@ -399,8 +399,8 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert ok.any() and np.all(inc[ok] >= 0) and np.all(inc[ok] <= 90)
 
     assert mppp_main(["ods", work, "--station", "3_10", "--width", "256", "--scale", "0.25", "--rows-per-chunk", "32"]) == 0
-    L = cv2.imread(str(out / "ods_left.png"))
-    Rr = cv2.imread(str(out / "ods_right.png"))
+    L = cv2.imread(str(out / "S003D0010_ods_left.png"))
+    Rr = cv2.imread(str(out / "S003D0010_ods_right.png"))
     assert L.shape == (128, 256, 3) and Rr.shape == L.shape
     oj = json.loads((out / "ods.json").read_text(encoding="utf-8"))
     assert oj["eyes"]["left"]["coverage"]["coloured"] > 0.2 and oj["eyes"]["left"]["sources_used"] == 4
@@ -425,15 +425,16 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert (np.abs(Vr[:, 2] - 1.0) < 0.15).sum() > 50                                        # the deck is in the mesh
     assert mppp_main(["ods", work, "--station", "3_10", "--rover", "--width", "128", "--scale", "0.25"]) == 0
     assert json.loads((outr / "ods.json").read_text(encoding="utf-8"))["rover"] == "shown"
-    assert (out / "ods_left.png").is_file() and (outr / "ods_left.png").is_file()           # both variants side by side
-    sq = cv2.imread(str(out / "ods_stereo_square.jpg"))                                     # right eye on top: a square
-    assert sq.shape == (256, 256, 3) and (out / "ods_stereo_square.png").is_file()
-    Lp, Rp = cv2.imread(str(out / "ods_left.png")), cv2.imread(str(out / "ods_right.png"))
-    sqp = cv2.imread(str(out / "ods_stereo_square.png"))
-    assert np.array_equal(sqp[:128], Rp) and np.array_equal(sqp[128:], Lp)
-    (out / "ods_stereo_square.png").unlink()
-    assert mppp_main(["ods", work, "--station", "3_10", "--stack-only", "--stack-top", "left"]) == 0
-    assert np.array_equal(cv2.imread(str(out / "ods_stereo_square.png"))[:128], Lp)
+    assert (out / "S003D0010_ods_left.png").is_file() and (outr / "S003D0010_rover_ods_left.png").is_file()     # both variants side by side
+    assert not (outr / "S003D0010_ods_left.png").is_file()                                    # 10 Nov: the station prefix
+    sq = cv2.imread(str(out / "S003D0010_ods_stereo_square.jpg"))                             # left eye on top: a square
+    assert sq.shape == (256, 256, 3) and (out / "S003D0010_ods_stereo_square.png").is_file()
+    Lp, Rp = cv2.imread(str(out / "S003D0010_ods_left.png")), cv2.imread(str(out / "S003D0010_ods_right.png"))
+    sqp = cv2.imread(str(out / "S003D0010_ods_stereo_square.png"))
+    assert np.array_equal(sqp[:128], Lp) and np.array_equal(sqp[128:], Rp)                   # 10 Nov: left on top
+    (out / "S003D0010_ods_stereo_square.png").unlink()
+    assert mppp_main(["ods", work, "--station", "3_10", "--stack-only", "--stack-top", "right"]) == 0
+    assert np.array_equal(cv2.imread(str(out / "S003D0010_ods_stereo_square.png"))[:128], Rp)
 
 
 # ----------------------------------------------------------------------------- 9 Nov evening: what the Rockytop run found
@@ -463,8 +464,8 @@ def test_ods_eyes_differ_by_the_parallax_of_the_baseline(tmp_path):
     W = 2048
     out = tmp_path / "ods_tex"
     O.render_station(proj, rec, st, scene, out, width=W, ipd_m=0.064, scale=1.0, rows_per_chunk=128)
-    L = cv2.imread(str(out / "ods_left.png"), cv2.IMREAD_GRAYSCALE).astype(np.float32)
-    Rr = cv2.imread(str(out / "ods_right.png"), cv2.IMREAD_GRAYSCALE).astype(np.float32)
+    L = cv2.imread(str(out / "S003D0010_ods_left.png"), cv2.IMREAD_GRAYSCALE).astype(np.float32)
+    Rr = cv2.imread(str(out / "S003D0010_ods_right.png"), cv2.IMREAD_GRAYSCALE).astype(np.float32)
     H = L.shape[0]
     h_cam = P[2]                                                        # the plane is z = 0
     for el in (-35.0, -25.0):
@@ -696,8 +697,8 @@ def test_ods_on_the_plane_and_sky_scene_the_sky_has_no_disparity(tmp_path):
     rep = O.render_station(proj, rec, st, scene, out, width=512, ipd_m=0.064, scale=1.0, rows_per_chunk=64)
     cov = rep["eyes"]["left"]["coverage"]
     assert cov["no_surface"] == 0.0 and cov["plane"] > 0.02 and cov["far"] > 0.3 and cov["mesh"] > 0.05
-    L = cv2.imread(str(out / "ods_left.png"), cv2.IMREAD_GRAYSCALE)
-    Rr = cv2.imread(str(out / "ods_right.png"), cv2.IMREAD_GRAYSCALE)
+    L = cv2.imread(str(out / "S003D0010_ods_left.png"), cv2.IMREAD_GRAYSCALE)
+    Rr = cv2.imread(str(out / "S003D0010_ods_right.png"), cv2.IMREAD_GRAYSCALE)
     v = int((90 - 10.0) / 180 * 256)                                            # 10 deg above the horizon: sky, seen
     row_l, row_r = L[v], Rr[v]
     seen = (row_l > 0) & (row_r > 0)
@@ -896,13 +897,13 @@ def test_blend_has_no_seams_between_exposures(tmp_path):
         prof = L[v0:v1].mean(axis=0)
         k = 9                                                                   # average out the 10 cm cells
         return np.convolve(prof, np.ones(k) / k, mode="valid"), L[v0:v1]
-    pg, Lg = band_profile(out_g / "ods_left.png")
-    pn, _ = band_profile(out_n / "ods_left.png")
+    pg, Lg = band_profile(out_g / "S003D0010_ods_left.png")
+    pn, _ = band_profile(out_n / "S003D0010_ods_left.png")
     # the truth: the same frames all at one exposure; the blends against it, column by column (the texture cancels)
     proj1, rec1, st1, scene1 = _ring_station(tmp_path / "same", n=6, darken=1.0)
     O.render_station(proj1, rec1, st1, scene1, tmp_path / "truth", width=720, ipd_m=0.064, scale=1.0, rows_per_chunk=60,
                      eyes=("left",), gains=False)
-    pt, _ = band_profile(tmp_path / "truth" / "ods_left.png")
+    pt, _ = band_profile(tmp_path / "truth" / "S003D0010_ods_left.png")
     qg, qn = pg / pt, pn / pt
     assert qg.min() / qg.max() > 0.95                                           # one level all round
     assert qn.min() / qn.max() < 0.8                                            # the exposures show without gains
@@ -1089,7 +1090,8 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert "--rover" in rover_ods and rover_ods[-1].endswith(str(Path("S003D2046") / "with_rover"))
     assert SS.plan(cfg, root, labels=["S026D0630"], steps=["ods"], variants=["masked"])[0]["commands"] == [
         {"variant": "masked", "step": "ods", "argv": ["ods", str(root / "mars2020_sol_0460_rockytop"), "--station", "26_630",
-                                                      "--out", str(root / "single_sites" / "S026D0630")]}]
+                                                      "--out", str(root / "single_sites" / "S026D0630"),
+                                                      "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"]}]
     with pytest.raises(KeyError):
         SS.plan(cfg, root, labels=["S999D9999"])
     # the run: the steps stood in for; Rockytop's dense step fails, so nothing else of it runs
@@ -1104,7 +1106,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
             out.mkdir(parents=True, exist_ok=True)
             (out / "ods.json").write_text(json.dumps({"eyes": {"left": {"coverage": {"mesh": 0.2, "plane": 0.3, "far": 0.5,
                                                                                       "coloured": 0.9}}}}), encoding="utf-8")
-            (out / "ods_stereo_square.jpg").write_bytes(b"x")
+            (out / "S003D0010_ods_stereo_square.jpg").write_bytes(b"x")
         return 0
     monkeypatch.setattr(SS, "_run", fake_run)
     rc = SS.run_all(runs, root / "single_sites")
@@ -1185,3 +1187,77 @@ def test_full_fov_undistortion_keeps_the_fisheye_corners(tmp_path):
     r = stereo_outputs_ready(ws, {"options": {}, "geom_consistency": True, "max_image_size": r1["max_image_size_used"],
                                   "full_fov": True})
     assert r["cleared"] == 1 and "full_fov" in r["why"]
+
+
+# ----------------------------------------------------------------------------- 10 Nov: the rover deck floor, left-out pairs, prefixes
+def test_rover_deck_pose_floor_and_clamp():
+    from scipy.spatial.transform import Rotation as Rot
+    from mppp.ibr import rover_deck as RD
+    rng = np.random.default_rng(3)
+    R_true = Rot.from_euler("zyx", [73.0, 1.5, -2.0], degrees=True).as_matrix() @ np.diag([1.0, -1.0, -1.0])  # z down -> up
+    t_true = np.array([30.4, 7.7, 0.8])
+    Rcb, Cb, Rcr, Cr = [], [], [], []
+    for k in range(8):                                         # mast frames: camera in RNAV, the same camera in the block
+        R_cr = Rot.from_euler("xyz", rng.normal(0, 40, 3), degrees=True).as_matrix()
+        C_r = np.array([0.8, 0.5, -1.95]) + rng.normal(0, 0.1, 3)
+        Rcr.append(R_cr); Cr.append(C_r)
+        Rcb.append(R_cr @ R_true.T); Cb.append(R_true @ C_r + t_true)
+    pose = RD.pose_from_pairs(Rcb, Cb, Rcr, Cr)
+    assert np.allclose(pose["R_block_from_rnav"], R_true, atol=1e-9) and np.allclose(pose["t_block_from_rnav"], t_true)
+    assert pose["rot_spread_deg"] < 1e-6 and pose["n"] == 8
+    up = -R_true[:, 2]
+    # the deck top at RMECH z = 0 is 1.133 m above the RNAV origin
+    top = RD.mech_to_block(np.array([[0.0, 0.0, 0.0]]), pose)[0]
+    assert abs((top - t_true) @ up - 1.13338) < 1e-6
+    # points: on the deck, 0.2 m below it (dropped), above it, and below it but outside the footprint (kept)
+    M = np.array([[0.0, 0.0, -0.01], [0.2, 0.1, 0.2], [-0.5, 0.3, -0.3], [1.3, 0.0, 0.4], [0.0, 0.9, 0.6]])
+    X = RD.mech_to_block(M, pose)
+    assert RD.below_deck(X, pose).tolist() == [False, True, False, False, False]
+    V2, n = RD.clamp_to_deck(X, pose)
+    assert n == 1 and np.allclose(RD.block_to_mech(V2, pose)[1], [0.2, 0.1, 0.0]) and np.allclose(V2[[0, 2, 3, 4]], X[[0, 2, 3, 4]])
+    Vd, Fd = RD.deck_floor_arrays(pose)
+    Md = RD.block_to_mech(Vd, pose)
+    assert np.allclose(Md[:, 2], 0) and Md[:, 0].min() == pytest.approx(-1.10) and Md[:, 1].max() == pytest.approx(0.60)
+    nrm = np.cross(Vd[Fd[:, 1]] - Vd[Fd[:, 0]], Vd[Fd[:, 2]] - Vd[Fd[:, 0]])
+    assert (nrm @ up > 0).all()                                # facing up
+    area = 0.5 * np.linalg.norm(nrm, axis=1).sum()
+    assert area == pytest.approx(2.05 * 1.20, rel=1e-6)
+    rec = RD.deck_record(pose, up)
+    assert rec["size_m"] == pytest.approx([2.05, 1.20]) and rec["rover_tilt_deg"] < 1e-4
+
+
+def test_mesh_with_the_deck_floor(tmp_path):
+    from mppp.ibr import rover_deck as RD
+    R = np.diag([1.0, -1.0, -1.0])                              # RNAV x = block x, z down
+    pose = {"R_block_from_rnav": R, "t_block_from_rnav": np.zeros(3)}
+    # terrain at z = 0 around the rover, a partial deck at its top (z = 1.133 m), and a sag below it
+    g = np.random.default_rng(0)
+    terr = np.c_[g.uniform(-6, 6, (40000, 2)), np.zeros(40000)]
+    deck = RD.mech_to_block(np.c_[g.uniform(-1.0, 0.0, (4000, 1)), g.uniform(-0.5, 0.5, (4000, 1)), np.zeros(4000)], pose)
+    sag = RD.mech_to_block(np.c_[g.uniform(0.2, 0.8, (500, 1)), g.uniform(-0.3, 0.3, (500, 1)), np.full(500, 0.5)], pose)
+    pts = np.vstack([terr, deck, sag])
+    pivot = RD.mech_to_block(np.array([[0.72, 0.56, -0.78]]), pose)[0]
+    rep = M.build_station_mesh(pts, pivot, tmp_path, radius_m=6.0, plane_radius_m=10.0, poisson_depth=7, deck=pose)
+    d = rep["rover_deck"]
+    assert d["points_below_dropped"] >= 500 and d["floor_triangles"] > 1000
+    V, F = M.read_mesh(tmp_path / "mesh.ply")
+    Mv = RD.block_to_mech(V, pose)
+    inside = RD.in_footprint(Mv)
+    assert (Mv[inside, 2] <= 1e-6).all()                        # nothing below the deck top inside the footprint
+
+
+def test_exclude_pairs_and_prefix(tmp_path):
+    from types import SimpleNamespace
+    from mppp.ibr.cli import _frames, _pair_key
+    from mppp.ibr.ods import ods_file, ods_prefix, find_prefix
+    a, b = "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01", "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"
+    assert _pair_key(a) == _pair_key(b + ".png") and _pair_key(a) != _pair_key(a.replace("0707875039", "0707875040"))
+    st = SimpleNamespace(label="S026D0630", images=[a + ".png", b + ".png", "NLF_0461_1_x.png", "NRF_0461_1_x.png"])
+    proj = SimpleNamespace(root=tmp_path)
+    got = _frames(proj, st, SimpleNamespace(images=None, sols=None, exclude=[a]))
+    assert got == ["NLF_0461_1_x.png", "NRF_0461_1_x.png"]
+    assert ods_prefix("S003D2046") == "S003D2046" and ods_prefix("S003D2046", rover=True) == "S003D2046_rover"
+    assert ods_file(tmp_path, "left", "S003D2046").name == "S003D2046_ods_left.png"
+    assert ods_file(tmp_path, "stereo_square", "", ".jpg").name == "ods_stereo_square.jpg"
+    (tmp_path / "S003D2046_rover_ods_left.png").write_bytes(b"x")
+    assert find_prefix(tmp_path) == "S003D2046_rover"

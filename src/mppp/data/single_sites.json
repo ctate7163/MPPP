@@ -1,5 +1,5 @@
 {
- "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (masked, rover), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' for every station's dense step (and per station the same key).",
+ "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (masked, rover), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' for every station's dense step (and per station the same key).",
  "out": "single_sites",
  "variants": [
   "masked",
@@ -33,18 +33,24 @@
   "S026D0630": {
    "site": "rockytop",
    "station": "26_630",
-   "note": "Rockytop, sol 461: the 16 half-resolution Navcam frames (NCAM03461, 02461, 13461)",
+   "note": "Rockytop, sol 461: the 16 half-resolution Navcam frames (NCAM03461, 02461, 13461); one pair left out of the panorama (Christian, 10 Nov)",
    "frames": {
     "scale": 0.5
-   }
+   },
+   "ods_exclude": [
+    "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"
+   ]
   },
   "S032D1184": {
    "site": "threeforks_large",
    "station": "32_1184",
-   "note": "Three Forks, sols 686 and 688: the 26 half-resolution Navcam frames (NCAM02686, 03686, 12686, 03688, 13688)",
+   "note": "Three Forks, sols 686 and 688: the 26 half-resolution Navcam frames (NCAM02686, 03686, 12686, 03688, 13688); one pair left out of the panorama (Christian, 10 Nov)",
    "frames": {
     "scale": 0.5
-   }
+   },
+   "ods_exclude": [
+    "NLF_0688_0728029302_791RAD_N0321184NCAM13688_0A0195J01"
+   ]
   }
  }
 }

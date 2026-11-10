@@ -411,7 +411,8 @@ usage: mppp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--col
 usage: mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--zcam-scale 1] [--images NAME ...]
                       [--photometry] [--no-shadow] [--no-preview] [--no-validate]
 usage: mppp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras N] [--scale 1] [--images ...]
-                      [--rows-per-chunk 128] [--eyes left right]
+                      [--rows-per-chunk 128] [--eyes left right] [--exclude STEM ...] [--stack-top left]
+                      [--prefix S003D2046]
 ```
 
 `--station` is `S026D0392`, `26_392` or `sol:461`.  **`mesh`**: the station's frames by camera family, the mast
@@ -437,8 +438,12 @@ emission, phase and the cast shadow — `photometry/` (npz), `photometry_maps/` 
 `photometry_png/`, `photometry_report.json`.  **`ods`**: the omni-directional stereo panorama — equirectangular,
 `--width` × half, the eyes `--ipd` apart on the circle around the pivot — each eye's rays cast into the scene and
 every hit coloured from the source frame that sees it best (the smallest angle to the frame's axis, inside the
-frame and its mask): `ods_left.png`, `ods_right.png`, `provenance.png` (which frame coloured what), `ods.json`
-(the coverage: coloured, mesh, far, none).  Any VR photo viewer that takes an equirectangular pair shows it; the
+frame and its mask): `<station>_ods_left.png`, `<station>_ods_right.png`, `<station>_ods_stereo_square.png/.jpg`
+(the left eye above the right; `--stack-top right`), `provenance.png` (which frame coloured what), `ods.json` (the
+coverage: coloured, mesh, far, none); `--rover` names them `<station>_rover_ods_...`; `--exclude STEM ...` leaves
+frames out (both eyes of a pair).  **`mesh --rover`** puts a floor at the rover deck: nothing below the deck top
+inside its footprint (RMECH x -1.10..+0.95 m, y +-0.60 m, z 0 = the deck top; the rover placed by the frames' label
+CAHVORE poses), the floor added to the mesh, `rover_deck.json`; `--no-deck-floor` to leave it out.  Any VR photo viewer that takes an equirectangular pair shows it; the
 viewer itself is future work.
 
 ## mppp metashape
