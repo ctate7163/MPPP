@@ -223,6 +223,15 @@ changes made on the way to the build.
   - **`--azimuth0 DEG` / `--north-center`** (Christian: "provide an option to rotate the sphere so that the first
     column is North"): the first column was north already (the azimuth from the block's ENU); now the azimuth of
     the left edge is an option (`ods.json` `azimuth_of_column_0_deg`), `--north-center` = -180;
+  - **`mppp dense --full-fov`** (Christian: "the rover is too discontinuous. this could be because the undistorted
+    images throw away the edges of the fov leading to less deck coverage"): COLMAP's undistortion crops the pinhole
+    image to the rectangle of valid pixels - a half-resolution Navcam frame keeps 90 % of its pixels, the corners
+    cut from 60.9 to 53.5 deg of half-angle, the top and bottom eighths at 66 / 72 %; at Van Zyl S003D2046, 89 % of
+    the rover's pixels reached the stereo (83-92 % in the deck frames). `--full-fov` keeps the whole field of view
+    (`blank_pixels` 1) at a size scaled so the centre keeps the default's focal length (2000 -> ~2550 px; ~1.8x the
+    patch-match time); the workspace record and the stereo record carry it, so a change redoes the undistortion
+    and clears the old maps. On by default for the single sites (`dense_args` in `single_sites.json`); the
+    previous summary is kept as `single_sites_summary_previous.md` for the comparison;
   - **`--out DIR`** for mesh / depthmaps / ods (e.g. `D:\rover_blocks\single_sites\S003D2046`, `...\with_rover`).
 - **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
   bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)

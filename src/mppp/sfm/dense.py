@@ -125,19 +125,31 @@ def subset_model(model_dir: PathLike, names: Sequence[str], out_dir: PathLike):
 
 def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
                   max_image_size: int = DENSE_MAX_IMAGE_SIZE, masks: bool = True, overwrite: bool = False,
-                  num_threads: int = -1, images: Optional[Sequence[str]] = None) -> Dict[str, Any]:
+                  num_threads: int = -1, images: Optional[Sequence[str]] = None, full_fov: bool = False) -> Dict[str, Any]:
     """The dense workspace ``out_dir`` (default ``<project>/dense``); returns its record (also ``mppp_dense.json``).
     ``images`` (0.96.0): only these frames (:func:`subset_images`) - a sub-model of them is undistorted, so the
-    patch-match stereo and the fusion see nothing else (its own workspace, :func:`subset_label`)."""
+    patch-match stereo and the fusion see nothing else (its own workspace, :func:`subset_label`).
+
+    ``full_fov`` (10 Nov 2026, Christian: "the undistorted images throw away the edges of the fov leading to less
+    deck coverage"): COLMAP's undistortion crops the pinhole image to the rectangle of valid pixels, which drops the
+    fisheye's corners - 10 % of a Navcam frame (corner half-angle 60.9 -> 53.5 deg) and 11 % of the rover's pixels at
+    Van Zyl S003D2046 (up to 17 % in a frame).  ``full_fov`` keeps the whole field of view (``blank_pixels`` 1; the
+    corners outside the fisheye are black and unused) at a working size scaled up so that the centre keeps the
+    default's focal length (2000 -> ~2550 px for the half-resolution frames: ~1.8x the patch-match time)."""
     import numpy as np
     import pycolmap
     out = Path(out_dir) if out_dir else Path(project.root) / DENSE_DIR
     rec_file = out / "mppp_dense.json"
     if (out / "sparse" / "cameras.bin").is_file() and rec_file.is_file() and not overwrite:
         prev = json.loads(rec_file.read_text(encoding="utf-8"))
-        if int(prev.get("max_image_size", -1)) == int(max_image_size) and sorted(prev.get("subset") or []) == sorted(images or []):
-            log.info("dense: workspace %s is there (max_image_size %d); overwrite=True to redo it", out, max_image_size)
+        if (int(prev.get("max_image_size", -1)) == int(max_image_size) and sorted(prev.get("subset") or []) == sorted(images or [])
+                and bool(prev.get("full_fov", False)) == bool(full_fov)):
+            log.info("dense: workspace %s is there (max_image_size %d%s); overwrite=True to redo it", out, max_image_size,
+                     ", full field of view" if full_fov else "")
             return prev
+        for sub in ("images", "sparse", "masks"):                 # other undistortion: the old images go first
+            if (out / sub).exists():
+                shutil.rmtree(out / sub)
     if out.exists() and overwrite:
         shutil.rmtree(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -150,6 +162,21 @@ def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
         model = subset_model(model, images, out / "_model_subset") and (out / "_model_subset")
     opts = pycolmap.UndistortCameraOptions()
     opts.max_image_size = int(max_image_size)
+    size_used = int(max_image_size)
+    if full_fov:
+        cams = list(pycolmap.Reconstruction(str(model)).cameras.values())
+        ratio = 1.0
+        if cams:
+            cam = max(cams, key=lambda c: c.width)
+            f_def = float(pycolmap.undistort_camera(opts, cam).params[0])
+            o_full = pycolmap.UndistortCameraOptions()
+            o_full.max_image_size = int(max_image_size)
+            o_full.blank_pixels = 1.0
+            f_full = float(pycolmap.undistort_camera(o_full, cam).params[0])
+            ratio = max(1.0, f_def / max(f_full, 1e-9))
+        size_used = int(np.ceil(max_image_size * ratio))
+        opts.blank_pixels = 1.0
+        opts.max_image_size = size_used
     from .reconstruction import default_threads
     nt = int(num_threads) if int(num_threads) > 0 else default_threads()
     pycolmap.undistort_images(str(out), str(model), str(project.images_dir), image_names=list(images or []),
@@ -157,6 +184,7 @@ def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
     und = pycolmap.Reconstruction(str(out / "sparse"))
     res: Dict[str, Any] = {"workspace": str(out), "source_model": str(model), "images": und.num_images(),
                            "cameras": und.num_cameras(), "max_image_size": int(max_image_size), "masks": None,
+           "full_fov": bool(full_fov), "max_image_size_used": int(size_used),
                            "seconds": None, "subset": sorted(images) if images else None}
     if masks and project.masks_dir.is_dir():
         names = [r["name"] for r in project.images if r.get("has_mask") and (project.masks_dir / (r["name"] + ".png")).is_file()]
@@ -255,7 +283,7 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
               gpu_index: str = "-1", images: Optional[Sequence[str]] = None,
               stereo_options: Optional[Dict[str, Any]] = None,
               fusion_options: Optional[Dict[str, Any]] = None, keep_rover: bool = False,
-              restereo: bool = False) -> Dict[str, Any]:
+              restereo: bool = False, full_fov: bool = False) -> Dict[str, Any]:
     """The dense steps from Python: ``prepare`` (:func:`prepare_dense`), ``stereo`` (patch-match stereo; needs a CUDA
     pycolmap), ``fusion`` (``dense/fused.ply``, the masks applied), ``mesh`` (``dense/meshed-poisson.ply``).
     ``stereo_options`` / ``fusion_options``: ``PatchMatchOptions`` / ``StereoFusionOptions`` fields to set (e.g.
@@ -265,7 +293,10 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
     ws = Path(workspace) if workspace else Path(project.root) / DENSE_DIR
     out: Dict[str, Any] = {"workspace": str(ws), "steps": {}}
     if "prepare" in steps or not (ws / "sparse" / "cameras.bin").is_file():
-        out["steps"]["prepare"] = prepare_dense(project, ws, max_image_size=max_image_size, images=images)
+        out["steps"]["prepare"] = prepare_dense(project, ws, max_image_size=max_image_size, images=images, full_fov=full_fov)
+    wrec = ws / "mppp_dense.json"                               # the size the workspace's images were made at
+    if wrec.is_file():
+        max_image_size = int(json.loads(wrec.read_text(encoding="utf-8")).get("max_image_size_used") or max_image_size)
     if "stereo" in steps:
         if not getattr(pycolmap, "has_cuda", False):
             raise RuntimeError("patch-match stereo needs a CUDA pycolmap (the gpu_python environment) or "
@@ -276,8 +307,10 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
         po.max_image_size = int(max_image_size)
         po.gpu_index = str(gpu_index)
         so = set_options(po, stereo_options)
+        fov = json.loads(wrec.read_text(encoding="utf-8")).get("full_fov", False) if wrec.is_file() else False
         state = stereo_outputs_ready(ws, {"options": {k: float(v) if isinstance(v, float) else v for k, v in so.items()},
-                                          "geom_consistency": bool(geom_consistency), "max_image_size": int(max_image_size)},
+                                          "geom_consistency": bool(geom_consistency), "max_image_size": int(max_image_size),
+                                          "full_fov": bool(fov)},
                                      force=restereo)
         pycolmap.patch_match_stereo(str(ws), "COLMAP", options=po)
         out["steps"]["stereo"] = {"seconds": round(time.time() - t0, 1), "geom_consistency": bool(geom_consistency),

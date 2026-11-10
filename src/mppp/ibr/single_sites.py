@@ -119,7 +119,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
         st = cfg["stations"][lab]
         work = block_folder(st, root)
         vs = [v for v in (variants or st.get("variants") or cfg.get("variants") or VARIANTS)]
-        fa = frame_args(st.get("frames") or {})
+        fa = frame_args(st.get("frames") or {}) + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
         base = Path(out_root) / lab
         cmds: List[Dict[str, Any]] = []
         if "dense" in steps:
@@ -184,6 +184,9 @@ def _summary_line(run: Dict[str, Any], variant: str, codes: Dict[str, int]) -> s
 def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool = False) -> int:
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
+    prev = out_root / "single_sites_summary.md"
+    if prev.is_file():                                         # the run before, for comparison
+        shutil.copy2(prev, out_root / "single_sites_summary_previous.md")
     lines = ["# Single-site runs", "", f"{time.strftime('%Y-%m-%d %H:%M')}", "",
              "| station | variant | exit codes | fused points | ground plane | panorama (left eye) | square |",
              "|---|---|---|---|---|---|---|"]

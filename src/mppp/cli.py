@@ -158,6 +158,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--min-angle", type=float, default=None, help="0.96: the patch-match triangulation angle (deg) a pixel "
                    "needs; default 0.4 with --station / --images (Navcam 0.424 m baseline: 61 m), COLMAP's 3 (8 m) "
                    "for a whole block")
+    p.add_argument("--full-fov", action="store_true", help="0.96: undistort to the whole field of view (the fisheye's "
+                   "corners kept: 10 %% of a Navcam frame, 11 %% of the rover's pixels at Van Zyl), the working size "
+                   "scaled so the centre keeps its resolution (~1.8x the stereo time); the default crops to the "
+                   "rectangle of valid pixels")
     p.add_argument("--restereo", action="store_true", help="0.96: delete the workspace's patch-match maps before --stereo "
                    "(they are deleted anyway when they were made with other options; COLMAP skips every image whose "
                    "maps exist)")
@@ -707,7 +711,8 @@ def cmd_dense(a: argparse.Namespace) -> int:
         return 0 if (r["depth_maps"] or r["normal_maps"]) else 1
     steps = [s for s, on in (("stereo", a.stereo), ("fusion", a.fusion), ("mesh", a.mesh)) if on]
     if a.prepare or not steps:
-        res = prepare_dense(proj, ws, max_image_size=size, overwrite=a.overwrite, images=subset)
+        res = prepare_dense(proj, ws, max_image_size=size, overwrite=a.overwrite, images=subset,
+                            full_fov=bool(getattr(a, "full_fov", False)))
         print(f"workspace {res['workspace']}: {res['images']} images" + (f", {res['masks']['images']} masks" if res.get("masks") else ""))
         if not getattr(a, "no_bat", False) and subset is None:
             print(f"batch file: {write_dense_bat(proj, max_image_size=size)}")
@@ -734,11 +739,11 @@ def cmd_dense(a: argparse.Namespace) -> int:
         print(f"dense: {', '.join(steps)} in {py}")
         res = run_step(py, "dense", proj, steps=steps, max_image_size=size, workspace=str(ws), images=subset,
                        stereo_options=so, fusion_options=fo, keep_rover=bool(getattr(a, "keep_rover", False)),
-                       restereo=bool(getattr(a, "restereo", False)))
+                       restereo=bool(getattr(a, "restereo", False)), full_fov=bool(getattr(a, "full_fov", False)))
     else:
         res = run_dense(proj, workspace=ws, steps=steps, max_image_size=size, images=subset,
                         stereo_options=so, fusion_options=fo, keep_rover=bool(getattr(a, "keep_rover", False)),
-                       restereo=bool(getattr(a, "restereo", False)))
+                       restereo=bool(getattr(a, "restereo", False)), full_fov=bool(getattr(a, "full_fov", False)))
     for k, v in (res.get("steps") or {}).items():
         print(f"  {k}: {v}")
     return 0

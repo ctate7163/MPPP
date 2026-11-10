@@ -1,31 +1,50 @@
 {
- "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (masked, rover), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'.",
+ "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (masked, rover), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' for every station's dense step (and per station the same key).",
  "out": "single_sites",
- "variants": ["masked", "rover"],
+ "variants": [
+  "masked",
+  "rover"
+ ],
+ "dense_args": [
+  "--full-fov"
+ ],
  "stations": {
   "S003D2046": {
    "site": "van_zyl_overlook_huge",
    "station": "3_2046",
    "note": "Van Zyl Overlook, sol 52: the six Navcam pairs NCAM00303, NCAM03052 x3, NCAM02052 x2 (Christian, 10 Nov)",
-   "frames": {"images": [
-    "NLF_0052_0671564132_350RAD_N0032046NCAM00303_0A0195J01.png", "NRF_0052_0671564132_350RAD_N0032046NCAM00303_0A0195J01.png",
-    "NLF_0052_0671564293_446RAD_N0032046NCAM03052_0A0195J01.png", "NRF_0052_0671564293_446RAD_N0032046NCAM03052_0A0195J01.png",
-    "NLF_0052_0671564415_007RAD_N0032046NCAM03052_0A0195J01.png", "NRF_0052_0671564415_007RAD_N0032046NCAM03052_0A0195J01.png",
-    "NLF_0052_0671564560_659RAD_N0032046NCAM03052_0A0195J01.png", "NRF_0052_0671564560_659RAD_N0032046NCAM03052_0A0195J01.png",
-    "NLF_0052_0671568487_887RAD_N0032046NCAM02052_0A0295J01.png", "NRF_0052_0671568487_887RAD_N0032046NCAM02052_0A0295J01.png",
-    "NLF_0052_0671568531_150RAD_N0032046NCAM02052_0A0295J01.png", "NRF_0052_0671568531_150RAD_N0032046NCAM02052_0A0295J01.png"]}
+   "frames": {
+    "images": [
+     "NLF_0052_0671564132_350RAD_N0032046NCAM00303_0A0195J01.png",
+     "NRF_0052_0671564132_350RAD_N0032046NCAM00303_0A0195J01.png",
+     "NLF_0052_0671564293_446RAD_N0032046NCAM03052_0A0195J01.png",
+     "NRF_0052_0671564293_446RAD_N0032046NCAM03052_0A0195J01.png",
+     "NLF_0052_0671564415_007RAD_N0032046NCAM03052_0A0195J01.png",
+     "NRF_0052_0671564415_007RAD_N0032046NCAM03052_0A0195J01.png",
+     "NLF_0052_0671564560_659RAD_N0032046NCAM03052_0A0195J01.png",
+     "NRF_0052_0671564560_659RAD_N0032046NCAM03052_0A0195J01.png",
+     "NLF_0052_0671568487_887RAD_N0032046NCAM02052_0A0295J01.png",
+     "NRF_0052_0671568487_887RAD_N0032046NCAM02052_0A0295J01.png",
+     "NLF_0052_0671568531_150RAD_N0032046NCAM02052_0A0295J01.png",
+     "NRF_0052_0671568531_150RAD_N0032046NCAM02052_0A0295J01.png"
+    ]
+   }
   },
   "S026D0630": {
    "site": "rockytop",
    "station": "26_630",
    "note": "Rockytop, sol 461: the 16 half-resolution Navcam frames (NCAM03461, 02461, 13461)",
-   "frames": {"scale": 0.5}
+   "frames": {
+    "scale": 0.5
+   }
   },
   "S032D1184": {
    "site": "threeforks_large",
    "station": "32_1184",
    "note": "Three Forks, sols 686 and 688: the 26 half-resolution Navcam frames (NCAM02686, 03686, 12686, 03688, 13688)",
-   "frames": {"scale": 0.5}
+   "frames": {
+    "scale": 0.5
+   }
   }
  }
 }

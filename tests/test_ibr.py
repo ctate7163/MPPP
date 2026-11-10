@@ -1132,3 +1132,56 @@ def test_ods_first_column_azimuth():
     assert np.allclose(d1[0], [1, 0, 0], atol=0.02)                                                    # east first
     _, d2 = O.ods_rays(360, 180, (90, 91), P, 0.064, "centre", azimuth0_deg=-180.0)
     assert np.allclose(d2[180], [0, 1, 0], atol=0.02) and np.allclose(d2[0], [0, -1, 0], atol=0.02)    # north centred
+
+
+def test_full_fov_undistortion_keeps_the_fisheye_corners(tmp_path):
+    """Christian, 10 Nov: "the undistorted images throw away the edges of the fov leading to less deck coverage".
+    The default undistortion crops a Navcam fisheye to the rectangle of valid pixels (the corners go); --full-fov
+    keeps them, at a size scaled so the centre keeps the default's focal length; a change of the setting redoes
+    the workspace, and the stereo record carries it (old maps cleared)."""
+    import cv2
+    from mppp.sfm.dense import prepare_dense, stereo_outputs_ready
+    from mppp.sfm.project import SfmProject
+    params = [v / 4 if i < 4 else v for i, v in enumerate(NL)]                       # a quarter-size Navcam: 1280 x 960
+    rec = pycolmap.Reconstruction()
+    cam = pycolmap.Camera(camera_id=1, model="THIN_PRISM_FISHEYE", width=1280, height=960, params=np.asarray(params, float))
+    rec.add_camera(cam)
+    rig = pycolmap.Rig(rig_id=1)
+    rig.add_ref_sensor(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=1))
+    rec.add_rig(rig)
+    root = tmp_path / "mars2020_sol_0052_fov" / "colmap"
+    (root / "images").mkdir(parents=True)
+    fr = pycolmap.Frame(frame_id=1, rig_id=1)
+    fr.add_data_id(pycolmap.data_t(sensor_id=pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=1), id=1))
+    fr.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(_look(0.0, 30.0)), np.zeros(3))
+    rec.add_frame(fr)
+    im = pycolmap.Image(name="NLF_1.png", keypoints=np.zeros((0, 2)), camera_id=1, image_id=1)
+    im.frame_id = 1
+    rec.add_image(im)
+    rec.register_frame(1)
+    cv2.imwrite(str(root / "images" / "NLF_1.png"), np.full((960, 1280, 3), 120, np.uint8))
+    (root / "gui_native" / "sparse").mkdir(parents=True)
+    rec.write(str(root / "gui_native" / "sparse"))
+    proj = SfmProject(root, [{"name": "NLF_1.png", "site": 3, "drive": 2046, "sol": 52}], {}, {}, [0, 0, 0], {})
+    proj.save()
+    ws = root / "dense_test"
+    r0 = prepare_dense(proj, ws, max_image_size=1000, masks=False)
+    c0 = list(pycolmap.Reconstruction(str(ws / "sparse")).cameras.values())[0]
+    r1 = prepare_dense(proj, ws, max_image_size=1000, masks=False, full_fov=True)
+    c1 = list(pycolmap.Reconstruction(str(ws / "sparse")).cameras.values())[0]
+    assert not r0["full_fov"] and r1["full_fov"] and r1["max_image_size_used"] > 1000
+    assert abs(c1.params[0] - c0.params[0]) / c0.params[0] < 0.01                    # the centre keeps its focal length
+
+    def corner_deg(c):
+        xy = np.asarray(c.cam_from_img(np.array([[0.5, 0.5]])))[0]
+        return np.degrees(np.arctan(np.hypot(*xy)))
+    native = corner_deg(cam)
+    assert corner_deg(c0) < native - 3.0 and corner_deg(c1) > native - 0.5               # the corners: cut / kept
+    assert prepare_dense(proj, ws, max_image_size=1000, masks=False, full_fov=True)["max_image_size_used"] == r1["max_image_size_used"]
+    (ws / "stereo" / "depth_maps").mkdir(parents=True, exist_ok=True)
+    (ws / "stereo" / "depth_maps" / "NLF_1.png.geometric.bin").write_bytes(b"x")
+    stereo_outputs_ready(ws, {"options": {}, "geom_consistency": True, "max_image_size": 1000, "full_fov": False})
+    (ws / "stereo" / "depth_maps" / "NLF_1.png.geometric.bin").write_bytes(b"x")
+    r = stereo_outputs_ready(ws, {"options": {}, "geom_consistency": True, "max_image_size": r1["max_image_size_used"],
+                                  "full_fov": True})
+    assert r["cleared"] == 1 and "full_fov" in r["why"]
