@@ -8,7 +8,8 @@ Geometry: the viewer's eyes sit on a circle of diameter IPD (64 mm) about the st
 horizontal plane.  The pixel (u, v) of a W x H equirect looks along azimuth theta (from north through east) and
 elevation phi; the left eye's ray starts at ``P - (IPD/2) right(theta)`` and the right eye's at ``P + (IPD/2)
 right(theta)`` with ``right = h x up`` and ``h`` the horizontal view direction - the standard ODS construction.
-Both rays are cast at the station's surface (mesh + far sphere): the hit point X and its label.
+Both rays are cast at the station's surface (mesh within 20 m of the mast axis, the ground plane to 100 m, the sky at
+infinity; :mod:`.raycast`): the hit point X and its label.
 
 Colour: X is projected into every image of the station (the Navcam frames of that waypoint; ``--cameras`` adds
 Mastcam-Z) through the exact camera model; an image is a candidate when X falls inside it, in front of it, is not
@@ -32,7 +33,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 
 from .mesh import tau_m
-from .raycast import LABEL_NONE, Scene
+from .raycast import LABEL_FAR, LABEL_MESH, LABEL_NONE, LABEL_PLANE, Scene
 
 log = logging.getLogger("mppp.ibr.ods")
 PathLike = Union[str, Path]
@@ -119,7 +120,8 @@ class SourceImage:
 
 
 def station_sources(project, rec, station, families: str = "N", scale: float = 0.5, zcam_scale: float = 1.0,
-                    images: Optional[Sequence[str]] = None) -> List[SourceImage]:
+                    images: Optional[Sequence[str]] = None, use_masks: bool = True) -> List[SourceImage]:
+    """The station's frames as sources; ``use_masks=False`` (``mppp ods --rover``) lets the rover's own pixels in."""
     by_name = {im.name: im for im in rec.images.values()}
     names = list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())]
     out = []
@@ -132,7 +134,7 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 0
         mf = Path(project.root) / "masks" / (name + ".png")
         out.append(SourceImage(name, rec.cameras[im.camera_id], np.asarray(cw.rotation.matrix(), float),
                                np.asarray(im.projection_center(), float), Path(project.root) / "images" / name,
-                               mf if mf.is_file() else None, s))
+                               mf if (use_masks and mf.is_file()) else None, s))
     return out
 
 
@@ -173,7 +175,8 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
                 continue
             ij = cand.nonzero()[0]
             # visibility: nothing between the camera and X (within tau(z) of X)
-            occ = scene.occluded(np.broadcast_to(src.C, (len(ij), 3)), X[ij], tau_m(z[ij]))
+            # (tau of at most 100 m: a point on the sky is still hidden by a rock in front of the camera)
+            occ = scene.occluded(np.broadcast_to(src.C, (len(ij), 3)), X[ij], tau_m(np.minimum(z[ij], 100.0)))
             ij = ij[~occ]
             if not len(ij):
                 continue
@@ -234,14 +237,15 @@ def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int) -> Pat
 
 def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width: int = DEFAULT_WIDTH, ipd_m: float = DEFAULT_IPD_M,
                    families: str = "N", scale: float = 0.5, zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None,
-                   rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right")) -> Dict[str, Any]:
+                   rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/ods_left.png``, ``ods_right.png``, ``provenance.png`` (left
     eye's sources), ``ods.json``.  Returns the record."""
     import cv2
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     height = width // 2
-    sources = station_sources(project, rec, station, families=families, scale=scale, zcam_scale=zcam_scale, images=images)
+    sources = station_sources(project, rec, station, families=families, scale=scale, zcam_scale=zcam_scale, images=images,
+                              use_masks=use_masks)
     if not sources:
         raise ValueError(f"station {station.label}: no source images of families {families!r} with a pose")
     axes = dict(up=station.up, north=station.north, east=station.east)
@@ -251,7 +255,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         log.info("ods %s: %d / %d rows (%.0f s)", eye, r, h, dt)
 
     rec_out: Dict[str, Any] = {"station": station.to_json(), "width": width, "height": height, "ipd_m": ipd_m,
-                               "sources": [s.name for s in sources], "scale": scale, "zcam_scale": zcam_scale, "eyes": {}}
+                               "sources": [s.name for s in sources], "scale": scale, "zcam_scale": zcam_scale,
+                               "rover": "shown" if not use_masks else "masked out", "eyes": {}}
     for eye in eyes:
         res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, rows_per_chunk=rows_per_chunk,
                          progress=progress, **axes)
@@ -262,7 +267,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         lab = res["label"]
         n = lab.size
         rec_out["eyes"][eye] = {"file": str(f), "coverage": {"coloured": float((res["source"] >= 0).sum() / n),
-                                "mesh": float((lab == 1).sum() / n), "far": float((lab == 2).sum() / n),
+                                "mesh": float((lab == LABEL_MESH).sum() / n), "plane": float((lab == LABEL_PLANE).sum() / n),
+                                "far": float((lab == LABEL_FAR).sum() / n),
                                 "no_surface": float((lab == 0).sum() / n)},
                                 "sources_used": int(len(np.unique(res["source"][res["source"] >= 0])))}
         for s in sources:

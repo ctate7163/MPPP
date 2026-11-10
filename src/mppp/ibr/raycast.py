@@ -3,12 +3,20 @@ mppp.ibr.raycast - per-image depth, range, normal and label maps cast from one s
 
 A ray through every pixel centre of an image, through the image's **exact** camera model (``pycolmap.Camera.
 cam_from_img``: THIN_PRISM_FISHEYE for the Navcam, FULL_OPENCV for Mastcam-Z), rotated into the block frame and
-cast at the station's mesh and far sphere (``open3d.t.geometry.RaycastingScene``).  One surface, many views: the
-maps of two images agree by construction, which the patch-match maps never do.
+cast at the station's surface (``open3d.t.geometry.RaycastingScene``).  One surface, many views: the maps of two
+images agree by construction, which the patch-match maps never do.
+
+The surface (Christian, 10 Nov 2026: "cut off at 20 m from the axis of the mast rotation, beyond that, project onto a
+flat plain out to 100 m, and beyond that onto a sphere at infinity"), in order of priority: the station's **mesh**
+(within 20 m of the mast axis); where a ray misses it, the **ground plane** (fitted to the terrain, out to 100 m from
+the axis; it also fills the mesh's holes); where it misses both, the **sky at infinity** (label "far": a direction,
+no depth).  The mesh wins over the plane even where the plane is nearer (a hollow below it), and only the mesh
+occludes.  A finite far sphere (the 0.96.0 prototype's) is still taken when one is given.
 
 Per pixel: ``depth`` (z along the optical axis, metres, COLMAP's convention), ``range`` (along the ray; a fisheye
-pixel near 90 degrees has z -> 0), ``normal`` (camera frame, facing the camera), ``label`` (0 none, 1 mesh, 2 far
-sphere, 3 masked by the image's rover mask) and the triangle id.  Stored as ``maps/<image>.npz`` (depth float32,
+pixel near 90 degrees has z -> 0), ``normal`` (camera frame, facing the camera), ``label`` (0 none, 1 mesh, 2 far:
+the sky at infinity - depth and range 0 - or the finite far sphere, 3 masked by the image's rover mask, 4 the ground
+plane) and the triangle id.  Stored as ``maps/<image>.npz`` (depth float32,
 range float16, normal int8 x 127, label uint8, tri int32) with PNG previews.
 
 Resolution: ``scale`` of the native image (0.5 for the Navcam = the 8K ODS sampling; 1.0 for Mastcam-Z).  The
@@ -31,16 +39,27 @@ import numpy as np
 log = logging.getLogger("mppp.ibr.raycast")
 PathLike = Union[str, Path]
 
-LABEL_NONE, LABEL_MESH, LABEL_FAR, LABEL_MASKED = 0, 1, 2, 3
+LABEL_NONE, LABEL_MESH, LABEL_FAR, LABEL_MASKED, LABEL_PLANE = 0, 1, 2, 3, 4
 RANGE_BINS = ((0, 5), (5, 10), (10, 20), (20, 60), (60, 1e9))
+SKY_RANGE_M = 1.0e6     # "infinity" for the rays that end on the sky: the 64 mm ODS baseline subtends 6e-8 rad there
 INVALID_ID = 4294967295
 
 
 class Scene:
-    """The station's mesh and far sphere in one ray-casting scene; geometry ids mapped to labels."""
+    """The station's surface: the mesh (and a finite far sphere, if given) in one ray-casting scene, then the ground
+    ``plane`` (a dict with ``normal``, ``offset`` - n . X = offset - ``centre``, ``up`` and ``radius_m``, the
+    horizontal reach from the mast axis; :func:`mppp.ibr.mesh.fit_ground_plane`), then the ``sky`` at infinity."""
 
-    def __init__(self, mesh: Tuple[np.ndarray, np.ndarray], sphere: Optional[Tuple[np.ndarray, np.ndarray]] = None):
+    def __init__(self, mesh: Tuple[np.ndarray, np.ndarray], sphere: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+                 plane: Optional[Dict[str, Any]] = None, sky: bool = False):
         import open3d as o3d
+        self.plane = None
+        if plane is not None:
+            n = np.asarray(plane["normal"], float)
+            self.plane = {"normal": n / np.linalg.norm(n), "offset": float(plane["offset"]),
+                          "centre": np.asarray(plane["centre"], float), "up": np.asarray(plane.get("up", (0, 0, 1)), float),
+                          "radius_m": float(plane["radius_m"])}
+        self.sky = bool(sky)
         self.o3d = o3d
         self.scene = o3d.t.geometry.RaycastingScene()
         self.ids: Dict[int, int] = {}
@@ -54,12 +73,16 @@ class Scene:
             self.ids[int(gid)] = LABEL_FAR
         self.mesh_V, self.mesh_F = V, F
 
-    def cast(self, origins: np.ndarray, dirs: np.ndarray) -> Dict[str, np.ndarray]:
-        """Rays (n, 3) + (n, 3) -> {"t" range (inf: no hit), "label", "normal" (world, unit or 0), "tri"}."""
+    def _cast_geometry(self, origins: np.ndarray, dirs: np.ndarray) -> Dict[str, np.ndarray]:
+        """The mesh and the finite sphere only (nearest hit)."""
         o = np.broadcast_to(np.asarray(origins, np.float32), np.asarray(dirs).shape)
-        rays = self.o3d.core.Tensor(np.concatenate([o, np.asarray(dirs, np.float32)], axis=1))
+        if not self.ids:
+            n = len(o)
+            return {"t": np.full(n, np.inf, np.float64), "label": np.zeros(n, np.uint8), "normal": np.zeros((n, 3), np.float32),
+                    "tri": np.full(n, -1, np.int64)}
+        rays = self.o3d.core.Tensor(np.ascontiguousarray(np.concatenate([o, np.asarray(dirs, np.float32)], axis=1)))
         ans = self.scene.cast_rays(rays)
-        t = ans["t_hit"].numpy()
+        t = ans["t_hit"].numpy().astype(np.float64)
         gid = ans["geometry_ids"].numpy()
         label = np.zeros(len(t), np.uint8)
         for g, lab in self.ids.items():
@@ -67,15 +90,55 @@ class Scene:
         label[~np.isfinite(t)] = LABEL_NONE
         tri = ans["primitive_ids"].numpy().astype(np.int64)
         tri[label != LABEL_MESH] = -1
-        return {"t": t, "label": label, "normal": ans["primitive_normals"].numpy(), "tri": tri}
+        return {"t": t, "label": label, "normal": ans["primitive_normals"].numpy().copy(), "tri": tri}
+
+    def plane_hits(self, origins: np.ndarray, dirs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """(t, hit) of the rays on the ground plane within its horizontal reach (t inf where it misses)."""
+        d = np.asarray(dirs, float)
+        o = np.broadcast_to(np.asarray(origins, float), d.shape)
+        pl = self.plane
+        t = np.full(len(d), np.inf)
+        if pl is None:
+            return t, np.zeros(len(d), bool)
+        n = pl["normal"]
+        den = d @ n
+        with np.errstate(divide="ignore", invalid="ignore"):
+            tt = (pl["offset"] - o @ n) / den
+        ok = np.isfinite(tt) & (tt > 1e-6) & (np.abs(den) > 1e-9)
+        X = o + np.where(ok, tt, 0.0)[:, None] * d
+        v = X - pl["centre"]
+        h = v - (v @ pl["up"])[:, None] * pl["up"]
+        ok &= np.linalg.norm(h, axis=1) <= pl["radius_m"]
+        t[ok] = tt[ok]
+        return t, ok
+
+    def cast(self, origins: np.ndarray, dirs: np.ndarray) -> Dict[str, np.ndarray]:
+        """Rays (n, 3) + (n, 3) -> {"t" range (inf: no hit; SKY_RANGE_M on the sky), "label", "normal" (world, unit or
+        0), "tri"}: the mesh first, the plane where the mesh is missed, the sky where both are."""
+        hit = self._cast_geometry(origins, dirs)
+        label, t = hit["label"], hit["t"]
+        if self.plane is not None:
+            tp, okp = self.plane_hits(origins, dirs)
+            take = okp & (label != LABEL_MESH) & ((label == LABEL_NONE) | (tp < t))
+            t[take] = tp[take]
+            label[take] = LABEL_PLANE
+            hit["normal"][take] = self.plane["normal"]
+            hit["tri"][take] = -1
+        if self.sky:
+            miss = label == LABEL_NONE
+            t[miss] = SKY_RANGE_M
+            label[miss] = LABEL_FAR
+            hit["normal"][miss] = 0.0
+        return {"t": t, "label": label, "normal": hit["normal"], "tri": hit["tri"]}
 
     def occluded(self, origins: np.ndarray, targets: np.ndarray, tol: np.ndarray) -> np.ndarray:
-        """True where the segment origin -> target meets a surface more than ``tol`` before the target."""
+        """True where the segment origin -> target meets the mesh more than ``tol`` before the target (the plane and
+        the sky never occlude: the plane is a stand-in for terrain the mesh does not reach)."""
         d = np.asarray(targets, float) - np.asarray(origins, float)
         r = np.linalg.norm(d, axis=1)
         d = d / np.where(r > 0, r, 1.0)[:, None]
-        hit = self.cast(origins, d)
-        return np.isfinite(hit["t"]) & (hit["t"] < r - np.asarray(tol, float))
+        hit = self._cast_geometry(origins, d)
+        return (hit["label"] == LABEL_MESH) & (hit["t"] < r - np.asarray(tol, float))
 
 
 def _legacy(o3d, V, F):
@@ -117,7 +180,7 @@ def cast_image(scene: Scene, camera, R: np.ndarray, C: np.ndarray, scale: float 
     label = hit["label"].reshape(H, W)
     label[~valid] = LABEL_NONE
     nw = hit["normal"].reshape(H, W, 3)
-    ok = label != LABEL_NONE
+    ok = (label != LABEL_NONE) & (t < 0.5 * SKY_RANGE_M)             # the sky: label far, no depth
     rng = np.where(ok, t, 0.0).astype(np.float32)
     depth = (rng * d_cam[..., 2]).astype(np.float32)
     n_cam = nw @ np.asarray(R, float).T            # R n for every pixel
@@ -163,8 +226,11 @@ def preview_png(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> Tuple[Path
     lab = maps["label"]
     v = np.zeros_like(rng)
     ok = lab == LABEL_MESH
+    ok = ok | (lab == LABEL_PLANE)
     v[ok] = np.clip((np.log10(np.clip(rng[ok], 0.5, 200)) - np.log10(0.5)) / (np.log10(200) - np.log10(0.5)), 0, 1)
     img = cv2.applyColorMap((v * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
+    pl = lab == LABEL_PLANE
+    img[pl] = (img[pl] * 0.55).astype(np.uint8)                        # the ground plane: the same colours, darker
     img[lab == LABEL_FAR] = (160, 160, 160)
     img[lab == LABEL_MASKED] = (40, 40, 120)
     img[lab == LABEL_NONE] = 0
@@ -173,7 +239,7 @@ def preview_png(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> Tuple[Path
     cv2.imwrite(str(p1), img)
     n = maps["normal"]
     nimg = ((n * 0.5 + 0.5) * 255).astype(np.uint8)[..., ::-1]
-    nimg[lab != LABEL_MESH] = 0
+    nimg[(lab != LABEL_MESH) & (lab != LABEL_PLANE)] = 0
     p2 = Path(str(out_prefix) + "_normal.png")
     cv2.imwrite(str(p2), nimg)
     return p1, p2
@@ -182,7 +248,8 @@ def preview_png(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> Tuple[Path
 def coverage(maps: Dict[str, np.ndarray]) -> Dict[str, float]:
     lab = maps["label"]
     n = lab.size
-    return {"mesh": float((lab == LABEL_MESH).sum() / n), "far": float((lab == LABEL_FAR).sum() / n),
+    return {"mesh": float((lab == LABEL_MESH).sum() / n), "plane": float((lab == LABEL_PLANE).sum() / n),
+            "far": float((lab == LABEL_FAR).sum() / n),
             "none": float((lab == LABEL_NONE).sum() / n), "masked": float((lab == LABEL_MASKED).sum() / n)}
 
 
@@ -194,8 +261,7 @@ def validate_sparse(rec, image_id: int, maps: Dict[str, np.ndarray], scale: floa
     cw = im.cam_from_world()
     R, t = np.asarray(cw.rotation.matrix(), float), np.asarray(cw.translation, float)
     H, W = maps["depth"].shape
-    rows = []
-    z_obs, z_cast = [], []
+    obs: Dict[int, Tuple[list, list]] = {LABEL_MESH: ([], []), LABEL_PLANE: ([], [])}
     none = 0
     for p2 in im.points2D:
         if not p2.has_point3D():
@@ -205,20 +271,27 @@ def validate_sparse(rec, image_id: int, maps: Dict[str, np.ndarray], scale: floa
         u, v = int(p2.xy[0] * scale), int(p2.xy[1] * scale)
         if not (0 <= u < W and 0 <= v < H) or z <= 0:
             continue
-        if maps["label"][v, u] != LABEL_MESH:
+        lab = int(maps["label"][v, u])
+        if lab not in obs:
             none += 1
             continue
-        z_obs.append(z)
-        z_cast.append(float(maps["depth"][v, u]))
-    z_obs, z_cast = np.asarray(z_obs), np.asarray(z_cast)
-    for lo, hi in RANGE_BINS:
-        m = (z_obs >= lo) & (z_obs < hi)
-        if m.sum() < 3:
-            continue
-        rel = np.abs(z_cast[m] - z_obs[m]) / z_obs[m]
-        rows.append({"range_m": [lo, hi if hi < 1e8 else None], "points": int(m.sum()), "median_rel_dz": float(np.median(rel)),
-                     "p90_rel_dz": float(np.quantile(rel, 0.9)), "median_dz_m": float(np.median(z_cast[m] - z_obs[m]))})
-    return {"image": im.name, "points_on_mesh": int(len(z_obs)), "points_off_surface": int(none), "bins": rows}
+        obs[lab][0].append(z)
+        obs[lab][1].append(float(maps["depth"][v, u]))
+
+    def bins(z_obs, z_cast):
+        z_obs, z_cast = np.asarray(z_obs), np.asarray(z_cast)
+        rows = []
+        for lo, hi in RANGE_BINS:
+            m = (z_obs >= lo) & (z_obs < hi)
+            if m.sum() < 3:
+                continue
+            rel = np.abs(z_cast[m] - z_obs[m]) / z_obs[m]
+            rows.append({"range_m": [lo, hi if hi < 1e8 else None], "points": int(m.sum()), "median_rel_dz": float(np.median(rel)),
+                         "p90_rel_dz": float(np.quantile(rel, 0.9)), "median_dz_m": float(np.median(z_cast[m] - z_obs[m]))})
+        return rows
+    # the tie points on the plane tell how far the flat stand-in is from the terrain it replaces (20-100 m)
+    return {"image": im.name, "points_on_mesh": int(len(obs[LABEL_MESH][0])), "points_on_plane": int(len(obs[LABEL_PLANE][0])),
+            "points_off_surface": int(none), "bins": bins(*obs[LABEL_MESH]), "plane_bins": bins(*obs[LABEL_PLANE])}
 
 
 def panorama_range(scene: Scene, pivot: Sequence[float], width: int = 1440, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0)) -> Dict[str, np.ndarray]:
@@ -233,13 +306,14 @@ def panorama_range(scene: Scene, pivot: Sequence[float], width: int = 1440, up=(
     r = hit["t"].reshape(H, width)
     lab = hit["label"].reshape(H, width)
     r[lab == LABEL_NONE] = 0
+    r[r >= 0.5 * SKY_RANGE_M] = np.inf
     return {"range": r.astype(np.float32), "label": lab}
 
 
 # ----------------------------------------------------------------------------- a station's image set
 def cast_station(project, rec, station, scene: Scene, out_dir: PathLike, families: str = "N", scale: float = 0.5,
                  zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None, previews: bool = True,
-                 validate: bool = True) -> Dict[str, Any]:
+                 validate: bool = True, use_masks: bool = True) -> Dict[str, Any]:
     """The maps of every registered image of ``station`` (``families`` letters; or the ``images`` named) at
     ``scale`` (Mastcam-Z at ``zcam_scale``), the previews and the validation -> ``out_dir/maps``, ``maps_png``,
     ``maps_report.json``.  Returns the report."""
@@ -262,7 +336,7 @@ def cast_station(project, rec, station, scene: Scene, out_dir: PathLike, familie
         s = zcam_scale if name[:1].upper() == "Z" else scale
         mask = None
         mf = Path(project.root) / "masks" / (name + ".png")
-        if mf.is_file():
+        if use_masks and mf.is_file():
             import cv2
             mask = cv2.imread(str(mf), cv2.IMREAD_GRAYSCALE) > 0
         maps = cast_image(scene, cam, R, C, scale=s, mask=mask)
@@ -275,42 +349,51 @@ def cast_station(project, rec, station, scene: Scene, out_dir: PathLike, familie
         if validate:
             row["sparse"] = validate_sparse(rec, iid, maps, s)
         rows.append(row)
-        log.info("depthmaps: %s %.0f%% mesh, %.0f%% far", name, 100 * row["coverage"]["mesh"], 100 * row["coverage"]["far"])
+        log.info("depthmaps: %s %.0f%% mesh, %.0f%% plane, %.0f%% far", name, 100 * row["coverage"]["mesh"],
+                 100 * row["coverage"]["plane"], 100 * row["coverage"]["far"])
     rep = {"station": station.label, "n_images": len(rows), "scale": scale, "zcam_scale": zcam_scale, "images": rows,
-           "summary": _summary(rows)}
+           "summary": _summary(rows), "summary_plane": _summary(rows, "plane_bins")}
     out.mkdir(parents=True, exist_ok=True)
     (out / "maps_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
     (out / "maps_report.md").write_text(report_md(rep), encoding="utf-8")
     return rep
 
 
-def _summary(rows) -> Dict[str, Any]:
+def _summary(rows, which: str = "bins") -> Dict[str, Any]:
     fam: Dict[str, Dict[str, list]] = {}
     for r in rows:
         if "sparse" not in r:
             continue
         f = "Z" if r["image"][:1].upper() == "Z" else r["image"][:1].upper()
-        for b in r["sparse"]["bins"]:
+        for b in r["sparse"].get(which, []):
             key = f"{b['range_m'][0]}-{b['range_m'][1] or 'inf'}"
-            fam.setdefault(f, {}).setdefault(key, []).append(b["median_rel_dz"])
-    return {f: {k: {"images": len(v), "median_of_medians_rel_dz": float(np.median(v))} for k, v in d.items()} for f, d in fam.items()}
+            fam.setdefault(f, {}).setdefault(key, []).append((b["median_rel_dz"], b["median_dz_m"]))
+    return {f: {k: {"images": len(v), "median_of_medians_rel_dz": float(np.median([a for a, _ in v])),
+                    "median_of_medians_dz_m": float(np.median([b for _, b in v]))} for k, v in d.items()} for f, d in fam.items()}
 
 
 def report_md(rep: Dict[str, Any]) -> str:
     lines = [f"# Depth maps of station {rep['station']}", "", f"{rep['n_images']} images; Navcam scale {rep['scale']}, "
-             f"Mastcam-Z scale {rep['zcam_scale']}.", "", "| image | mesh | far | none | masked | points on mesh | median |dz|/z (0-5, 5-10, 10-20, 20-60 m) |",
-             "|---|---:|---:|---:|---:|---:|---|"]
+             f"Mastcam-Z scale {rep['zcam_scale']}.", "", "| image | mesh | plane | far | none | masked | points on mesh | median |dz|/z (0-5, 5-10, 10-20, 20-60 m) | points on plane |",
+             "|---|---:|---:|---:|---:|---:|---:|---|---:|"]
     for r in rep["images"]:
         if "error" in r:
-            lines.append(f"| {r['image']} | | | | | | {r['error']} |")
+            lines.append(f"| {r['image']} | | | | | | | {r['error']} | |")
             continue
         c = r["coverage"]
         sp = r.get("sparse") or {}
         bins = {f"{b['range_m'][0]}": b["median_rel_dz"] for b in sp.get("bins", [])}
         txt = ", ".join(f"{bins[k]:.3f}" if k in bins else "-" for k in ("0", "5", "10", "20"))
-        lines.append(f"| {r['image']} | {c['mesh']:.2f} | {c['far']:.2f} | {c['none']:.2f} | {c['masked']:.2f} | {sp.get('points_on_mesh', '-')} | {txt} |")
+        lines.append(f"| {r['image']} | {c['mesh']:.2f} | {c.get('plane', 0):.2f} | {c['far']:.2f} | {c['none']:.2f} | {c['masked']:.2f} | "
+                     f"{sp.get('points_on_mesh', '-')} | {txt} | {sp.get('points_on_plane', '-')} |")
     if rep.get("summary"):
         lines += ["", "## Sparse points against the cast depth, per camera family (median over the images of the per-image median |dz|/z)", ""]
         for f, d in rep["summary"].items():
             lines.append(f"- {f}: " + "; ".join(f"{k} m: {v['median_of_medians_rel_dz']:.3f} ({v['images']} images)" for k, v in d.items()))
+    if rep.get("summary_plane"):
+        lines += ["", "## Sparse points on the ground plane (how far the flat stand-in is from the terrain: median |dz|/z, "
+                  "and the median signed dz, cast - observed; negative = the plane is nearer than the terrain)", ""]
+        for f, d in rep["summary_plane"].items():
+            lines.append(f"- {f}: " + "; ".join(f"{k} m: {v['median_of_medians_rel_dz']:.3f}, dz {v['median_of_medians_dz_m']:+.2f} m "
+                                                 f"({v['images']} images)" for k, v in d.items()))
     return "\n".join(lines) + "\n"

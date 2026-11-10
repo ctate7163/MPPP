@@ -44,6 +44,9 @@ DENSE_MAX_IMAGE_SIZE = 2000        # the long side of the undistorted (working) 
 STATION_STEREO_OPTIONS = {"min_triangulation_angle": 0.4, "filter_min_triangulation_angle": 0.4,
                           "filter_min_num_consistent": 1}
 STATION_FUSION_OPTIONS = {"min_num_pixels": 2}
+# 10 Nov 2026 (Christian: "try this with and without the rover body and deck shown"): the fusion without the rover
+# masks goes to its own cloud, so the rover-removed products stay as they are
+FUSED_ROVER_PLY = "fused_rover.ply"
 
 
 def native_model_dir(project: SfmProject) -> Path:
@@ -218,11 +221,12 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
               max_image_size: int = DENSE_MAX_IMAGE_SIZE, geom_consistency: bool = True,
               gpu_index: str = "-1", images: Optional[Sequence[str]] = None,
               stereo_options: Optional[Dict[str, Any]] = None,
-              fusion_options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+              fusion_options: Optional[Dict[str, Any]] = None, keep_rover: bool = False) -> Dict[str, Any]:
     """The dense steps from Python: ``prepare`` (:func:`prepare_dense`), ``stereo`` (patch-match stereo; needs a CUDA
     pycolmap), ``fusion`` (``dense/fused.ply``, the masks applied), ``mesh`` (``dense/meshed-poisson.ply``).
     ``stereo_options`` / ``fusion_options``: ``PatchMatchOptions`` / ``StereoFusionOptions`` fields to set (e.g.
-    :data:`STATION_STEREO_OPTIONS`); COLMAP's defaults otherwise."""
+    :data:`STATION_STEREO_OPTIONS`); COLMAP's defaults otherwise.  ``keep_rover``: the fusion without the rover masks,
+    into ``fused_rover.ply`` (the rover body and deck kept; the stereo is the same - it takes no masks)."""
     import pycolmap
     ws = Path(workspace) if workspace else Path(project.root) / DENSE_DIR
     out: Dict[str, Any] = {"workspace": str(ws), "steps": {}}
@@ -244,16 +248,18 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
     if "fusion" in steps:
         t0 = time.time()
         fo = pycolmap.StereoFusionOptions()
-        if (ws / "masks").is_dir():
+        used_masks = (ws / "masks").is_dir() and not keep_rover
+        if used_masks:
             fo.mask_path = str(ws / "masks")
+        ply = ws / (FUSED_ROVER_PLY if keep_rover else "fused.ply")
         fo.max_image_size = int(max_image_size)
         fset = set_options(fo, fusion_options)
         # 9 Nov (the sandbox run on Rockytop): pycolmap 4.2's stereo_fusion writes a model folder by default
         # (output_type "bin") - the fused points never reached fused.ply and the call raised after the fusion
-        fused = pycolmap.stereo_fusion(str(ws / "fused.ply"), str(ws), "COLMAP", input_type="geometric" if geom_consistency else "photometric",
+        fused = pycolmap.stereo_fusion(str(ply), str(ws), "COLMAP", input_type="geometric" if geom_consistency else "photometric",
                                        options=fo, output_type="ply")
         out["steps"]["fusion"] = {"seconds": round(time.time() - t0, 1), "points": fused.num_points3D(),
-                                  "ply": str(ws / "fused.ply"), "masks": fo.mask_path or None, "options": fset}
+                                  "ply": str(ply), "masks": str(ws / "masks") if used_masks else None, "options": fset, "rover_kept": bool(keep_rover)}
     if "mesh" in steps:
         t0 = time.time()
         pycolmap.poisson_meshing(str(ws / "fused.ply"), str(ws / "meshed-poisson.ply"))

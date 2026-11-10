@@ -13,7 +13,7 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
     mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F] [--waypoints refresh|auto|study]
     mppp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
-    mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 60] [--far-radius 100]   0.96: one clean surface
+    mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 20] [--plane-radius 100]   0.96: one clean surface
     mppp depthmaps WORK --station ... [--cameras N] [--scale 0.5] [--photometry]   0.96: per-image depth / normal maps, the photometric cube
     mppp ods WORK --station ... [--width 8192] [--ipd 0.064]                       0.96: the stereoscopic panorama, two eye images
     mppp doctor                               what is set, what is missing (environment, dependencies, models)
@@ -158,6 +158,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--min-angle", type=float, default=None, help="0.96: the patch-match triangulation angle (deg) a pixel "
                    "needs; default 0.4 with --station / --images (Navcam 0.424 m baseline: 61 m), COLMAP's 3 (8 m) "
                    "for a whole block")
+    p.add_argument("--keep-rover", action="store_true", help="0.96: the fusion without the rover masks, into "
+                   "fused_rover.ply (the rover body and deck kept, for mppp mesh / depthmaps / ods --rover); the "
+                   "stereo is the same (it takes no masks), so --fusion --keep-rover alone after a run is enough")
     p.add_argument("--min-views", type=int, default=None, help="0.96: the images a fused point needs (fusion "
                    "min_num_pixels; patch-match then wants max(1, N-1) consistent sources); default 2 with --station / "
                    "--images, COLMAP's 5 for a whole block")
@@ -727,10 +730,10 @@ def cmd_dense(a: argparse.Namespace) -> int:
     if py and ("stereo" in steps or not getattr(pycolmap, "has_cuda", False)):
         print(f"dense: {', '.join(steps)} in {py}")
         res = run_step(py, "dense", proj, steps=steps, max_image_size=size, workspace=str(ws), images=subset,
-                       stereo_options=so, fusion_options=fo)
+                       stereo_options=so, fusion_options=fo, keep_rover=bool(getattr(a, "keep_rover", False)))
     else:
         res = run_dense(proj, workspace=ws, steps=steps, max_image_size=size, images=subset,
-                        stereo_options=so, fusion_options=fo)
+                        stereo_options=so, fusion_options=fo, keep_rover=bool(getattr(a, "keep_rover", False)))
     for k, v in (res.get("steps") or {}).items():
         print(f"  {k}: {v}")
     return 0

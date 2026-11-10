@@ -25,7 +25,7 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
     mppp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
     mppp calib zcam|nz|hazcam [--zoom Z] [--group G1,G2] [--navcam-group G] [--variant V] [--promote-if-ok]
-    mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 60] [--far-radius 100]   0.96: one clean surface
+    mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 20] [--plane-radius 100]   0.96: one clean surface
     mppp depthmaps WORK --station ... [--cameras N] [--scale 0.5] [--photometry]   0.96: per-image depth / normal maps, the photometric cube
     mppp ods WORK --station ... [--width 8192] [--ipd 0.064]                       0.96: the stereoscopic panorama, two eye images
     mppp doctor                               what is set, what is missing (environment, dependencies, models)
@@ -348,6 +348,9 @@ A station run loosens COLMAP's patch-match and fusion filters (10 Nov 2026): a p
 angle instead of 3 deg (with Navcam's 0.424 m baseline, 61 m instead of 8 m) and one consistent source view instead
 of two, and a fused point 2 images instead of 5 - the far terrain of one station is seen by one stereo pair only.
 `--min-angle DEG` and `--min-views N` change them; a whole-block run keeps COLMAP's defaults.
+`--keep-rover` fuses the same depth maps without the rover masks into `fused_rover.ply` (for `mppp mesh / depthmaps /
+ods --rover`: the rover body and deck shown, products in `ods/<station>_rover/`); after a run, `--fusion
+--keep-rover` alone is enough.
 
 `dense_reconstruct.bat`, written next to `open_in_colmap.bat`, does the same with the COLMAP executable (a CUDA
 build is looked for first): double-click runs undistortion (without the masks: `mppp dense --prepare` for those),
@@ -377,8 +380,8 @@ one **station** (a site and drive of the rover) of a finished block, under `<pro
 
 ```text
 usage: mppp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--colmap colmap.exe] [--dense-dir DIR]
-                      [--mesh-radius 60] [--far-radius 100] [--target-triangles 3000000] [--poisson-depth 10]
-                      [--cameras N] [--no-preview]
+                      [--mesh-radius 20] [--plane-radius 100] [--horizontal-plane] [--no-tie-points]
+                      [--far-radius R] [--target-triangles 3000000] [--poisson-depth 10] [--cameras N] [--no-preview]
 usage: mppp depthmaps WORK --station ... [--cameras N] [--scale 0.5] [--zcam-scale 1] [--images NAME ...]
                       [--photometry] [--no-shadow] [--no-preview] [--no-validate]
 usage: mppp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras N] [--scale 0.5] [--images ...]
@@ -389,12 +392,20 @@ usage: mppp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras
 pivot fitted from their centres and rotations (`station.json`), then the surface over the fused cloud (the newest
 `dense*/fused.ply`, or `--points`): Poisson (open3d), or COLMAP's Delaunay mesher through `--colmap` over
 `--dense-dir`; then the cleanup of the 31 Oct plan — components under 1 %, rubber sheets (long thin triangles),
-surface no fused point supports within τ(z) = max(5 cm, 2 % z, 3 σz), everything beyond `--mesh-radius` — the
-decimation to `--target-triangles`, Taubin smoothing, and the far sphere at `--far-radius` so every ray hits
-something; `mesh.ply`, `far_sphere.ply`, `mesh_report.json` (the coverage by range), `mesh_preview.png`.
-**`depthmaps`**: every frame of the station ray-cast through its own camera model into mesh + sphere at
-`--scale` of the native size: `maps/<image>.npz` (depth, range, normal, label 0 none / 1 mesh / 2 far) and 16-bit
-previews, validated against the sparse points the frame observes (`maps_report.md`); `--photometry` adds the
+surface no fused point supports within τ(z) = max(5 cm, 2 % z, 3 σz), everything farther than `--mesh-radius`
+(20 m) from the mast axis (horizontal distance; 10 Nov 2026) — the decimation to `--target-triangles`, Taubin
+smoothing. Beyond the mesh: **the ground plane** out to `--plane-radius` (100 m) from the axis, fitted to the fused
+points and the block's tie points (seen by 3+ images) as the medians of 10 deg x range-ring bins and a Huber fit,
+so it follows the regional slope (`--horizontal-plane` for a level one; a tilt over 20 deg or too few bins falls
+back to it); it also fills the mesh's holes. Beyond the plane **the sky at infinity**. The mesh has priority over
+the plane even where the plane is nearer, and only the mesh occludes. `mesh.ply`, `ground_plane.json` (the plane,
+its tilt and its misfit per ring), `mesh_report.json` (the fused points per ring from the axis, the coverage by
+range), `mesh_preview.png` (the plane outlined in the range panorama). `--far-radius R` gives the 0.96.0
+prototype's finite sphere instead of the sky.
+**`depthmaps`**: every frame of the station ray-cast through its own camera model into mesh, plane and sky at
+`--scale` of the native size: `maps/<image>.npz` (depth, range, normal, label 0 none / 1 mesh / 2 sky at infinity,
+no depth / 3 masked / 4 plane) and 16-bit previews (the plane darker), validated against the sparse points the frame
+observes, on the mesh and on the plane separately (`maps_report.md`: how far the flat stand-in is from the terrain); `--photometry` adds the
 photometric cube from the sun direction of the frame's row (`sun_enu` turned into the block frame): incidence,
 emission, phase and the cast shadow — `photometry/` (npz), `photometry_maps/` (COLMAP `.bin` arrays),
 `photometry_png/`, `photometry_report.json`.  **`ods`**: the omni-directional stereo panorama — equirectangular,

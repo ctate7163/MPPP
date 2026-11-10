@@ -26,8 +26,8 @@ which is fitted from the station's own poses. Navcam comes first, then Mastcam-Z
 2. **Mesh, cleanup and a far-field sphere** (`mppp mesh`):
    - a Delaunay mesh of the fused points;
    - floaters, rubber sheets across occlusion edges and unsupported surface removed;
-   - terrain clipped at about 60 m;
-   - a sphere at about 100 m, beyond which the stereo disparity of an 8K panorama is under one pixel.
+   - terrain clipped at 20 m from the mast axis (10 Nov 2026), a ground plane fitted to the terrain beyond it to
+     100 m, and the sky at infinity beyond that, where the stereo disparity of an 8K panorama is under a pixel.
 3. **Per-image depth and normal maps** (`mppp depthmaps`). Each map is ray-cast from the mesh through the image's
    exact camera model (THIN_PRISM_FISHEYE, FULL_OPENCV), so the depth maps of all images agree on one surface. The
    Mastcam-Z frames, which are not used for the mesh, give an independent check.

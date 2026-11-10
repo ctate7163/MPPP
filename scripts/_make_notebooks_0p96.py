@@ -204,12 +204,14 @@ print("fused clouds:", [str(f) for f in fused] or "none yet")'''),
 0.96.  One station (a site and drive of the rover) of the block: its frames by camera family, the mast pivot fitted
 from their centres and rotations, and the surface over the fused cloud — Poisson (COLMAP's Delaunay mesher when the
 executable is given), then the cleanup: components under 1 %, rubber sheets, surface no fused point supports within
-τ(z) = max(5 cm, 2 % z, 3 σz), everything beyond 60 m; decimation, Taubin smoothing, and a far sphere at 100 m so
-every ray hits something.  Products under `<project>/ods/<station>/` with `mesh_report.json` and a preview.
+τ(z) = max(5 cm, 2 % z, 3 σz), everything farther than 20 m from the mast axis; decimation, Taubin smoothing.  Beyond
+the mesh the ground plane (fitted to the fused and tie points to 100 m, following the regional slope) and beyond
+that the sky at infinity, so every ray hits something.  Products under `<project>/ods/<station>/` with
+`mesh_report.json`, `ground_plane.json` and a preview.
 '''),
     code('''
 from mppp.ibr.station import select_station, station_images
-from mppp.ibr.mesh import build_station_mesh, mesh_preview, read_mesh, read_points
+from mppp.ibr.mesh import build_station_mesh, load_scene, mesh_preview, read_mesh, read_points
 stations = sorted({r.get("station") for r in proj.images if r.get("station")})
 print("stations in the block:", stations)
 spec = STATION or stations[0]
@@ -220,15 +222,17 @@ out.mkdir(parents=True, exist_ok=True)
 print(st.label, len(st.images), "frames; pivot", [round(float(v), 3) for v in st.pivot], "m; fit", st.pivot_fit)
 if fused:
     pts = read_points(fused[-1])
-    rep = build_station_mesh(pts, st.pivot, out, radius_m=60.0, far_radius_m=100.0, station=st.to_json())
+    ties = np.asarray([p.xyz for p in rec.points3D.values() if p.track.length() >= 3], float).reshape(-1, 3)
+    rep = build_station_mesh(pts, st.pivot, out, radius_m=20.0, plane_radius_m=100.0, up=st.up, ground_points=ties,
+                             station=st.to_json())
     V, F = read_mesh(out / "mesh.ply")
-    mesh_preview(V, F, st.pivot, out / "mesh_preview.png", sphere=read_mesh(out / "far_sphere.ply"), radius_m=60.0)
-    print(json.dumps({k: rep[k] for k in ("surface", "cleanup", "decimation", "coverage_by_range")}, indent=1, default=float)[:1500])
+    mesh_preview(V, F, st.pivot, out / "mesh_preview.png", radius_m=20.0, scene=load_scene(out), up=st.up, north=st.north, east=st.east)
+    print(json.dumps({k: rep[k] for k in ("surface", "cleanup", "scene", "points_by_ring", "coverage_by_range")}, indent=1, default=float)[:1800])
     display(NbImage(filename=str(out / "mesh_preview.png")))'''),
     md('''
 ## 8  Per-image depth maps and the photometric cube — `mppp depthmaps WORK --station ... --photometry`
-Every frame of the station ray-cast through its own camera model into the mesh and the far sphere: depth, range,
-normal and label maps (0 none, 1 mesh, 2 far) at half the native size, validated against the sparse points the
+Every frame of the station ray-cast through its own camera model into the mesh, the ground plane and the sky: depth,
+range, normal and label maps (0 none, 1 mesh, 2 sky at infinity, 3 masked, 4 plane) at half the native size, validated against the sparse points the
 frame observes (`maps_report.md`).  Then, from the sun direction of each frame (`sun_enu` of the row, turned into
 the block frame), the photometric cube: incidence, emission and phase angles and the cast shadow — `photometry/`
 (npz), `photometry_maps/` (COLMAP `.bin` arrays), previews, `photometry_report.json`.
@@ -237,7 +241,7 @@ the block frame), the photometric cube: incidence, emission and phase angles and
 from mppp.ibr.raycast import Scene, cast_station, load_maps
 from mppp.ibr.photometry import photometric_cube, load_photometry
 if (out / "mesh.ply").is_file():
-    scene = Scene(read_mesh(out / "mesh.ply"), read_mesh(out / "far_sphere.ply"))
+    scene = load_scene(out)
     mrep = cast_station(proj, rec, st, scene, out, families="N", scale=0.5)
     print(open(out / "maps_report.md", encoding="utf-8").read()[:2000])
     prep = photometric_cube(proj, rec, st, scene, out / "maps", out)

@@ -372,10 +372,16 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert mppp_main(["mesh", work, "--station", "3_10", "--poisson-depth", "7", "--target-triangles", "20000", "--no-preview"]) == 0
     out = root / "ods" / "S003D0010"
     rep = json.loads((out / "mesh_report.json").read_text(encoding="utf-8"))
-    assert (out / "mesh.ply").is_file() and (out / "far_sphere.ply").is_file() and rep["points"] == len(pts)
+    assert (out / "mesh.ply").is_file() and (out / "ground_plane.json").is_file() and rep["points"] == len(pts)
+    assert not (out / "far_sphere.ply").exists() and rep["scene"]["beyond"] == "the sky at infinity"
+    gp = json.loads((out / "ground_plane.json").read_text(encoding="utf-8"))
+    assert gp["method"] == "fit" and gp["tilt_deg"] < 0.5 and abs(gp["offset"]) < 0.05          # the plane z = 0
+    assert rep["scene"]["mesh_radius_m"] == 20.0
     assert rep["station"]["station"] == "S003D0010" and rep["points_file"].endswith("fused.ply")
     V, F = M.read_mesh(out / "mesh.ply")
     assert len(F) > 1000 and abs(float(np.median(V[:, 2]))) < 0.1                     # the ground plane, near z = 0
+    cen, _, _ = M.triangle_geometry(V, F)
+    assert M.horizontal_distance(cen, rep["pivot_block_m"]).max() <= 20.05            # 20 m from the axis (smoothing: mm)
 
     assert mppp_main(["depthmaps", work, "--station", "3_10", "--scale", "0.25", "--photometry", "--no-preview"]) == 0
     maps = sorted((out / "maps").glob("*.npz"))
@@ -396,6 +402,27 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     oj = json.loads((out / "ods.json").read_text(encoding="utf-8"))
     assert oj["eyes"]["left"]["coverage"]["coloured"] > 0.2 and oj["eyes"]["left"]["sources_used"] == 4
     assert (out / "station.json").is_file()
+
+    # --rover: a 'deck' (points 1 m up, within 1.5 m of the axis) in fused_rover.ply; the mesh keeps it, the plane is
+    # still fitted to the terrain cloud (fused.ply), the products go to ods/<station>_rover
+    deck = np.c_[rng.uniform(-1.5, 1.5, (6000, 2)) + P[:2], np.full(6000, 1.0)]
+    pcd2 = o3d.geometry.PointCloud()
+    allp = np.vstack([pts, deck])
+    pcd2.points = o3d.utility.Vector3dVector(allp)
+    pcd2.normals = o3d.utility.Vector3dVector(np.tile([0.0, 0.0, 1.0], (len(allp), 1)))
+    o3d.io.write_point_cloud(str(root / "dense" / "fused_rover.ply"), pcd2)
+    assert mppp_main(["mesh", work, "--station", "3_10", "--rover", "--poisson-depth", "8", "--target-triangles", "40000",
+                      "--no-preview"]) == 0
+    outr = root / "ods" / "S003D0010_rover"
+    rr = json.loads((outr / "mesh_report.json").read_text(encoding="utf-8"))
+    assert rr["rover"] == "shown" and rr["points_file"].endswith("fused_rover.ply") and rr["points"] == len(allp)
+    gpr = json.loads((outr / "ground_plane.json").read_text(encoding="utf-8"))
+    assert abs(gpr["offset"]) < 0.05 and gpr["sources"]["fused_points"] == len(pts)          # the terrain, not the deck
+    Vr, Fr = M.read_mesh(outr / "mesh.ply")
+    assert (np.abs(Vr[:, 2] - 1.0) < 0.15).sum() > 50                                        # the deck is in the mesh
+    assert mppp_main(["ods", work, "--station", "3_10", "--rover", "--width", "128", "--scale", "0.25"]) == 0
+    assert json.loads((outr / "ods.json").read_text(encoding="utf-8"))["rover"] == "shown"
+    assert (out / "ods_left.png").is_file() and (outr / "ods_left.png").is_file()           # both variants side by side
 
 
 # ----------------------------------------------------------------------------- 9 Nov evening: what the Rockytop run found
@@ -555,3 +582,216 @@ def test_station_dense_options_reach_the_mesh_radius_and_are_set_on_pycolmap():
     assert fo.min_num_pixels == 2 and isinstance(fo.min_num_pixels, int)
     with pytest.raises(ValueError):
         set_options(fo, {"min_num_pixel": 2})
+
+
+# ----------------------------------------------------------------------------- 10 Nov: mesh to 20 m, ground plane to 100 m, sky at infinity
+def test_ground_plane_follows_the_regional_slope_and_ignores_outliers():
+    """The plane through the (sector, ring) medians: an 8 deg slope with rocks and a few wild points is recovered to
+    a fraction of a degree; too few bins, or asked, gives the horizontal plane at the median height."""
+    rng = np.random.default_rng(5)
+    P = np.array([0.0, 0.0, 2.0])
+    xy = rng.uniform(-100, 100, (60_000, 2))
+    xy = xy[np.hypot(*xy.T) <= 100]
+    slope = np.tan(np.radians(8.0))
+    z = slope * xy[:, 0] + 0.15 * rng.standard_normal(len(xy))                 # uphill towards +x
+    rocks = rng.random(len(xy)) < 0.05
+    z[rocks] += rng.uniform(0.2, 1.5, rocks.sum())
+    pts = np.c_[xy, z]
+    wild = np.c_[rng.uniform(-50, 50, (300, 2)), rng.uniform(-40, 60, 300)]   # mismatched tie points
+    gp = M.fit_ground_plane(np.vstack([pts, wild]), P)
+    assert gp["method"] == "fit" and abs(gp["tilt_deg"] - 8.0) < 0.3
+    assert np.allclose(gp["downhill_direction"], [-1, 0, 0], atol=0.02)
+    n = np.asarray(gp["normal"])
+    assert abs(gp["offset"] - n @ np.array([0.0, 0.0, 0.1])) < 0.2                # through the median ground at the axis
+    assert gp["bins"] > 200 and gp["by_ring"][-1]["ring_m"] == [65.0, 100.0]
+    flat = M.fit_ground_plane(pts, P, horizontal=True)
+    assert flat["tilt_deg"] == 0.0 and flat["method"].startswith("horizontal")
+    few = M.fit_ground_plane(pts[np.hypot(*pts[:, :2].T) < 4], P)               # nothing beyond 4 m: 1 ring
+    assert few["method"].startswith("horizontal")
+
+
+def test_scene_mesh_then_plane_then_sky():
+    """Priority, not nearest: a ray on the mesh stays on it even where the plane is nearer; a ray through a hole
+    in the mesh or beyond its 20 m reach ends on the plane; above the horizon, or beyond the plane's 100 m, the sky
+    at infinity (label far, no depth in the maps). Only the mesh occludes."""
+    P = np.array([0.0, 0.0, 2.0])
+    V, F = _terrain(n=41, size=20.0)                                            # terrain z ~ 0 to |x|,|y| <= 20 m
+    V[:, 2] -= 0.5                                                               # the mesh 0.5 m below the plane
+    cen, _, _ = M.triangle_geometry(V, F)
+    keep = ~((np.abs(cen[:, 0] - 6) < 1.5) & (np.abs(cen[:, 1]) < 1.5))          # a hole 6 m east
+    V, F = M.keep_triangles(V, F, keep)
+    plane = {"normal": [0, 0, 1], "offset": 0.0, "centre": P, "up": [0, 0, 1], "radius_m": 100.0}
+    sc = RC.Scene((V, F), plane=plane, sky=True)
+
+    def ray(x, y, z):
+        d = np.array([[x, y, z]], float) - P
+        return sc.cast(P, d / np.linalg.norm(d))
+    h = ray(3.0, 3.0, -0.5)
+    assert h["label"][0] == RC.LABEL_MESH and abs(h["t"][0] - np.linalg.norm([3, 3, -2.5])) < 0.05
+    h = ray(6.0, 0.0, 0.0)                                                       # through the hole: the plane z = 0
+    assert h["label"][0] == RC.LABEL_PLANE and abs(h["t"][0] - np.linalg.norm([6, 0, -2])) < 1e-6
+    assert np.allclose(h["normal"][0], [0, 0, 1])
+    h = ray(60.0, 0.0, 0.0)                                                      # beyond the mesh
+    assert h["label"][0] == RC.LABEL_PLANE
+    h = ray(300.0, 0.0, 0.0)                                                     # beyond the plane's reach
+    assert h["label"][0] == RC.LABEL_FAR and h["t"][0] == RC.SKY_RANGE_M
+    h = ray(10.0, 0.0, 5.0)                                                      # up
+    assert h["label"][0] == RC.LABEL_FAR
+    # the plane does not occlude: a mesh point below it is visible from above
+    tgt = np.array([[3.0, 3.0, -0.5]])
+    assert not sc.occluded(P[None], tgt, np.array([0.05]))[0]
+    # cast_image: sky pixels have label far and no depth; plane pixels a depth
+    cam = pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=160, height=120, params=np.array([80.0, 80.0, 60.0]))
+    m = RC.cast_image(sc, cam, _look(90.0, 0.0), P, scale=1.0)
+    far = m["label"] == RC.LABEL_FAR
+    pl = m["label"] == RC.LABEL_PLANE
+    assert far[:50].all() and np.all(m["depth"][far] == 0) and np.all(m["range"][far] == 0)
+    assert pl.any() and np.all(m["depth"][pl] > 0) and RC.coverage(m)["plane"] > 0
+    pan = RC.panorama_range(sc, P, width=72)
+    assert np.isinf(pan["range"][0]).all()
+
+
+def test_horizontal_radius_clip_is_from_the_mast_axis():
+    V, F = _terrain(n=41, size=30.0)
+    V[:, 2] = -10.0 + 0.3 * V[:, 0]                                             # sloped ground well below the head
+    P = np.array([0.0, 0.0, 2.0])
+    V2, F2, rep = M.clean_arrays(V, F, P, points=None, radius_m=20.0, up=(0, 0, 1))
+    cen, _, _ = M.triangle_geometry(V2, F2)
+    h = M.horizontal_distance(cen, P)
+    assert h.max() <= 20.0 and h.max() > 18.0                                   # 3-D range would have cut nearer
+    assert rep["steps"][-1]["measured"].startswith("from the mast axis")
+
+
+def test_ods_on_the_plane_and_sky_scene_the_sky_has_no_disparity(tmp_path):
+    """With the plane and the sky: every pixel has a surface; the rays above the horizon that a frame sees are
+    coloured, and identically in both eyes (at infinity); below the horizon beyond the mesh the plane gives the
+    eyes their parallax."""
+    import cv2
+    proj, rec, st, _, P, colours = _station_scene(tmp_path)
+    Vm, Fm = _plane(0.0, 14.0)                                                  # a 'mesh' only to 14 m
+    plane = M.fit_ground_plane(np.c_[np.random.default_rng(0).uniform(-90, 90, (20000, 2)) + P[:2], np.zeros(20000)], st.pivot)
+    scene = RC.Scene((Vm, Fm), plane=plane, sky=True)
+    for im in rec.images.values():
+        cam = rec.cameras[im.camera_id]
+        R = np.asarray(im.cam_from_world().rotation.matrix())
+        C = np.asarray(im.projection_center())
+        m = RC.cast_image(scene, cam, R, C, scale=1.0)
+        _, dw, _ = RC.pixel_rays(cam, R, 1.0)
+        X = C + m["range"][..., None] * dw
+        sky = m["label"] == RC.LABEL_FAR
+        img = np.where(sky, 200, _world_texture(X)).astype(np.uint8)
+        cv2.imwrite(str(proj.root / "images" / im.name), img)
+    out = tmp_path / "ods_ps"
+    rep = O.render_station(proj, rec, st, scene, out, width=512, ipd_m=0.064, scale=1.0, rows_per_chunk=64)
+    cov = rep["eyes"]["left"]["coverage"]
+    assert cov["no_surface"] == 0.0 and cov["plane"] > 0.02 and cov["far"] > 0.3 and cov["mesh"] > 0.05
+    L = cv2.imread(str(out / "ods_left.png"), cv2.IMREAD_GRAYSCALE)
+    Rr = cv2.imread(str(out / "ods_right.png"), cv2.IMREAD_GRAYSCALE)
+    v = int((90 - 10.0) / 180 * 256)                                            # 10 deg above the horizon: sky, seen
+    row_l, row_r = L[v], Rr[v]
+    seen = (row_l > 0) & (row_r > 0)
+    assert seen.mean() > 0.8 and np.all(np.abs(row_l[seen].astype(int) - 200) <= 2) and np.abs(row_l[seen].astype(int) - row_r[seen]).max() <= 1
+    # the plane band (14-100 m, elevation -7.3 to -1 deg): the eyes differ there (the ground texture's parallax)
+    lab = O.render_eye(scene, O.station_sources(proj, rec, st, scale=1.0), st.pivot, "left", 512, 256, 0.064,
+                       up=st.up, north=st.north, east=st.east)["label"]
+    assert (lab == RC.LABEL_PLANE).any() and (lab == RC.LABEL_MESH).any()
+
+
+def test_two_view_terrain_is_fused_with_the_station_options(tmp_path):
+    """Christian, 10 Nov: "Many parts of the terrain will only be seen by two images, so make sure those get good
+    depth coverage."  A Navcam-like stereo pair (0.424 m apart, both looking north, 20 deg down) over textured
+    ground: every ground point is seen by exactly two images.  COLMAP's default fusion (5 images a point) fuses
+    nothing; the station options (2) fuse the pair's ground out to 20 m and beyond, on the ground to a few mm."""
+    import cv2
+    from mppp.sfm.dense import STATION_FUSION_OPTIONS, prepare_dense, run_dense
+    from mppp.sfm.project import SfmProject
+    from mppp.ibr.photometry import write_colmap_array
+    rec = pycolmap.Reconstruction()
+    cam = pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=640, height=480, params=np.array([500.0, 320.0, 240.0]))
+    rec.add_camera(cam)
+    rig = pycolmap.Rig(rig_id=1)
+    rig.add_ref_sensor(pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=1))
+    rec.add_rig(rig)
+    root = tmp_path / "mars2020_sol_0461_pair" / "colmap"
+    (root / "images").mkdir(parents=True)
+    P = np.array([0.0, 0.0, 2.0])
+    R = _look(0.0, 20.0)
+    rows = []
+    # tie points on the ground seen by both eyes: COLMAP's fusion takes which images overlap from them
+    g = np.random.default_rng(2)
+    T = np.c_[g.uniform(-6, 6, 400), g.uniform(4, 30, 400), np.zeros(400)]
+    centres = {1: P + np.array([-0.212, 0.0, 0.0]), 2: P + np.array([0.212, 0.0, 0.0])}
+    kps = {}
+    for k, Ck in centres.items():
+        Xc = (T - Ck) @ R.T
+        kps[k] = np.asarray(cam.img_from_cam(Xc), float)
+    vis = np.all([(kp[:, 0] > 0) & (kp[:, 0] < 640) & (kp[:, 1] > 0) & (kp[:, 1] < 480) for kp in kps.values()], axis=0)
+    T, kps = T[vis], {k: v[vis] for k, v in kps.items()}
+    for k, Ck in centres.items():
+        fr = pycolmap.Frame(frame_id=k, rig_id=1)
+        fr.add_data_id(pycolmap.data_t(sensor_id=pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=1), id=k))
+        fr.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(R), -R @ Ck)
+        rec.add_frame(fr)
+        name = ("NLF" if k == 1 else "NRF") + "_0461_pair.png"
+        im = pycolmap.Image(name=name, keypoints=kps[k], camera_id=1, image_id=k)
+        im.frame_id = k
+        rec.add_image(im)
+        rows.append({"name": name, "site": 26, "drive": 630, "sol": 461, "camera_group": "NL" if k == 1 else "NR",
+                     "station": "S026D0630", "sequence": "NCAM00001", "downsample_scale": 1.0})
+    for fid in list(rec.frames):
+        rec.register_frame(fid)
+    for j, X in enumerate(T):
+        tr = pycolmap.Track()
+        tr.add_element(1, j)
+        tr.add_element(2, j)
+        rec.add_point3D(X, tr, np.array([128, 128, 128], np.uint8))
+    assert rec.num_points3D() > 100
+    scene = RC.Scene(_plane(0.0, 500.0))
+    for im in rec.images.values():
+        Rm = np.asarray(im.cam_from_world().rotation.matrix())
+        C = np.asarray(im.projection_center())
+        m = RC.cast_image(scene, cam, Rm, C, scale=1.0)
+        _, dw, _ = RC.pixel_rays(cam, Rm, 1.0)
+        X = C + m["range"][..., None] * dw
+        cv2.imwrite(str(root / "images" / im.name), np.where(m["label"] == 1, _world_texture(X), 0).astype(np.uint8))
+    model = root / "gui_native" / "sparse"
+    model.mkdir(parents=True)
+    rec.write(str(model))
+    # a 'rover' in the bottom fifth of both frames (mask 0 = rover): the fusion leaves it out unless the rover is kept
+    (root / "masks").mkdir()
+    for r in rows:
+        mk = np.full((480, 640), 255, np.uint8)
+        mk[384:] = 0
+        cv2.imwrite(str(root / "masks" / (r["name"] + ".png")), mk)
+        r["has_mask"] = True
+    proj = SfmProject(root, rows, {}, {}, [0.0, 0.0, 0.0], {"world_frame": "site26_enu"})
+    proj.save()
+    ws = root / "dense_S026D0630"
+    prep = prepare_dense(proj, ws, max_image_size=640, masks=True, images=[r["name"] for r in rows])
+    assert prep["masks"]["images"] == 2
+    und = pycolmap.Reconstruction(str(ws / "sparse"))
+    for im in und.images.values():
+        c2 = und.cameras[im.camera_id]
+        Rm = np.asarray(im.cam_from_world().rotation.matrix())
+        m = RC.cast_image(scene, c2, Rm, np.asarray(im.projection_center()), scale=1.0)
+        g = (m["label"] == RC.LABEL_MESH) & (m["range"] < 60)
+        write_colmap_array(ws / "stereo" / "depth_maps" / f"{im.name}.geometric.bin", np.where(g, m["depth"], 0))
+        write_colmap_array(ws / "stereo" / "normal_maps" / f"{im.name}.geometric.bin", m["normal"] * g[..., None])
+    out = run_dense(proj, workspace=ws, steps=("fusion",), max_image_size=640)
+    assert out["steps"]["fusion"]["points"] < 50                                  # COLMAP's 5 images: the pair is lost
+    out = run_dense(proj, workspace=ws, steps=("fusion",), max_image_size=640, fusion_options=STATION_FUSION_OPTIONS)
+    assert out["steps"]["fusion"]["options"] == {"min_num_pixels": 2}
+    pts = np.asarray(o3d.io.read_point_cloud(str(ws / "fused.ply")).points)
+    h = M.horizontal_distance(pts, P)
+    assert len(pts) > 20_000 and np.median(np.abs(pts[:, 2])) < 0.01
+    assert (h > 20).sum() > 500 and h.max() > 40                                 # the pair's far ground is there
+    rings = M.points_by_ring(pts, P)
+    assert all(r["points"] > 0 for r in rings if 10 <= r["ring_m"][0] < 30)
+    # mppp dense --keep-rover: the same depth maps fused without the masks, into fused_rover.ply
+    kept = run_dense(proj, workspace=ws, steps=("fusion",), max_image_size=640, fusion_options=STATION_FUSION_OPTIONS,
+                     keep_rover=True)["steps"]["fusion"]
+    assert kept["ply"].endswith("fused_rover.ply") and kept["masks"] is None and kept["rover_kept"]
+    pr = np.asarray(o3d.io.read_point_cloud(str(ws / "fused_rover.ply")).points)
+    hr = M.horizontal_distance(pr, P)
+    assert len(pr) > len(pts) and (hr < 3.0).sum() > 3 * max(1, (h < 3.0).sum())   # the masked near field is back
+    assert (ws / "fused.ply").is_file() and len(np.asarray(o3d.io.read_point_cloud(str(ws / "fused.ply")).points)) == len(pts)

@@ -119,6 +119,33 @@ changes made on the way to the build.
   them; a whole block keeps COLMAP's defaults; the options used are in `mppp_dense_run.json`. The stereo has to
   be run again (the filter is applied in patch-match). Also: the open3d message names `open3d>=0.20` (the first
   with a Python 3.13 wheel; the `[ibr]` extra too) with quotes that work in cmd.
+- **The station's surface: the mesh to 20 m from the mast axis, a ground plane to 100 m, the sky at infinity**
+  (10 Nov; Christian: "cut off at 20 m from the axis of the mast rotation, beyond that, project onto a flat plain out
+  to 100 m, and beyond that onto a sphere at infinity ... Many parts of the terrain will only be seen by two images,
+  so make sure those get good depth coverage"; "even if you don't get a solid constraint of stereo range on the mid
+  to far field terrain, you can still assume that it is distant with little parallax"). `mppp mesh`: the mesh is
+  clipped at `--mesh-radius` 20 m of horizontal distance from the axis (was 60 m of range); only the fused points
+  within 25 m are meshed. `fit_ground_plane`: the fused points and the block's tie points (3+ images) 3-100 m from
+  the axis, the median point of each 10 deg x range-ring bin, a Huber fit z = a x + b y + c over the bins - the
+  regional slope (an 8 deg test slope with rocks and wild points comes back to 0.3 deg); horizontal at the median
+  height with `--horizontal-plane`, a tilt over 20 deg or under 8 bins / 90 deg of azimuth; `ground_plane.json` has
+  the plane, its tilt, its downhill direction and the misfit per ring. `raycast.Scene`: the mesh first, the plane
+  where a ray misses it (out to `--plane-radius` 100 m; it fills the mesh's holes too), the sky at infinity where it
+  misses both (label 2, no depth in the maps; 1e6 m for the ODS); priority, not the nearest hit, and only the mesh
+  occludes. New label 4 = plane in the maps, the reports and `ods.json`; the depth maps' report checks the tie points
+  on the plane as well (how far the flat stand-in is from the terrain it replaces). `mesh_report.json`: the fused
+  points per ring from the axis, the scene. `--far-radius R` keeps the prototype's finite sphere. Two-view coverage:
+  a stereo-pair test with COLMAP's real fusion - 0 points with its defaults, 239,704 with the station options,
+  on the ground to 4.7 mm (median), out to 60 m (11,483 at 15-20 m, 23,962 beyond 20 m).
+- **The rover shown, or not** (10 Nov; Christian: "We should try this with and without the rover body and deck
+  shown. The rover deck should always be aligned though."). `mppp dense --station ... --fusion --keep-rover`: the
+  same depth maps fused without the rover masks into `fused_rover.ply` (the stereo takes no masks, so no new
+  stereo); `mppp mesh / depthmaps / ods --rover`: that cloud meshed with the deck (the plane still from the masked
+  `fused.ply`, so the deck does not lift it), the rover's pixels used, products in `ods/<station>_rover/` beside the
+  rover-removed ones. The deck comes from the same posed frames as the terrain, so it sits where the block puts it
+  in both eyes. Not handled yet: the wind-sensor booms below the mast head, too close to the eyes (Christian: "In the
+  future, we will need a way to deal with those by somehow removing them from the point cloud and masking out that
+  part of the images"); and an arm moved between the station's sols shows twice.
 - **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
   bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)
   0.9711 against v4.2 0.9724 on the same data and frames (-0.0013, 95 % -0.0023..-0.0004; -0.0043 on the 120 frames
