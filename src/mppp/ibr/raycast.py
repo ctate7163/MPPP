@@ -19,7 +19,8 @@ the sky at infinity - depth and range 0 - or the finite far sphere, 3 masked by 
 plane) and the triangle id.  Stored as ``maps/<image>.npz`` (depth float32,
 range float16, normal int8 x 127, label uint8, tri int32) with PNG previews.
 
-Resolution: ``scale`` of the native image (0.5 for the Navcam = the 8K ODS sampling; 1.0 for Mastcam-Z).  The
+Resolution: ``scale`` of the frame's own size - 1 by default, its own pixel grid (10 Nov; 0.5 before); Mastcam-Z
+``zcam_scale`` 1.  The
 camera is never rescaled: the scaled grid's pixel centres are mapped to native pixel coordinates first.
 
 Validation (``maps_report.json``): the observed sparse points of every image against the cast depth at their
@@ -311,7 +312,7 @@ def panorama_range(scene: Scene, pivot: Sequence[float], width: int = 1440, up=(
 
 
 # ----------------------------------------------------------------------------- a station's image set
-def cast_station(project, rec, station, scene: Scene, out_dir: PathLike, families: str = "N", scale: float = 0.5,
+def cast_station(project, rec, station, scene: Scene, out_dir: PathLike, families: str = "N", scale: float = 1.0,
                  zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None, previews: bool = True,
                  validate: bool = True, use_masks: bool = True) -> Dict[str, Any]:
     """The maps of every registered image of ``station`` (``families`` letters; or the ``images`` named) at

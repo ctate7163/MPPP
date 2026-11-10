@@ -26,7 +26,7 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
     mppp calib zcam|nz|hazcam [--zoom Z] [--group G1,G2] [--navcam-group G] [--variant V] [--promote-if-ok]
     mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 20] [--plane-radius 100]   0.96: one clean surface
-    mppp depthmaps WORK --station ... [--cameras N] [--scale 0.5] [--photometry]   0.96: per-image depth / normal maps, the photometric cube
+    mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--photometry]   0.96: per-image depth / normal maps, the photometric cube
     mppp ods WORK --station ... [--width 8192] [--ipd 0.064]                       0.96: the stereoscopic panorama, two eye images
     mppp doctor                               what is set, what is missing (environment, dependencies, models)
     mppp version
@@ -384,9 +384,9 @@ one **station** (a site and drive of the rover) of a finished block, under `<pro
 usage: mppp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--colmap colmap.exe] [--dense-dir DIR]
                       [--mesh-radius 20] [--plane-radius 100] [--horizontal-plane] [--no-tie-points]
                       [--far-radius R] [--target-triangles 3000000] [--poisson-depth 10] [--cameras N] [--no-preview]
-usage: mppp depthmaps WORK --station ... [--cameras N] [--scale 0.5] [--zcam-scale 1] [--images NAME ...]
+usage: mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--zcam-scale 1] [--images NAME ...]
                       [--photometry] [--no-shadow] [--no-preview] [--no-validate]
-usage: mppp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras N] [--scale 0.5] [--images ...]
+usage: mppp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras N] [--scale 1] [--images ...]
                       [--rows-per-chunk 128] [--eyes left right]
 ```
 

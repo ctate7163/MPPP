@@ -120,7 +120,8 @@ def add_parsers(sub) -> None:
     p.add_argument("work")
     p.add_argument("--station", required=True)
     p.add_argument("--cameras", default="N", help="camera family letters, e.g. N or NZ")
-    p.add_argument("--scale", type=float, default=0.5, help="Navcam maps at this fraction of the native size")
+    p.add_argument("--scale", type=float, default=1.0, help="Navcam maps at this fraction of the frame's own size "
+                   "(default 1: its own pixel grid; 0.5 before 10 Nov)")
     p.add_argument("--zcam-scale", type=float, default=1.0)
     p.add_argument("--images", nargs="*", default=None, help="only these image names (default: the frames of the "
                    "station's dense workspace, else all its frames)")
@@ -140,7 +141,9 @@ def add_parsers(sub) -> None:
     p.add_argument("--width", type=int, default=8192)
     p.add_argument("--ipd", type=float, default=0.064, help="eye separation in metres")
     p.add_argument("--cameras", default="N")
-    p.add_argument("--scale", type=float, default=0.5)
+    p.add_argument("--scale", type=float, default=1.0, help="the Navcam frames sampled at this fraction of their own "
+                   "size (default 1, Christian 10 Nov: the half-resolution frames are 0.68 mrad a pixel, the 8K "
+                   "panorama 0.77 - at 0.5 they were 1.36, coarser than the panorama)")
     p.add_argument("--zcam-scale", type=float, default=1.0)
     p.add_argument("--images", nargs="*", default=None, help="only these image names (default: the frames of the "
                    "station's dense workspace, else all its frames)")

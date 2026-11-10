@@ -36,8 +36,9 @@ Blending (10 Nov 2026, Christian: "the mosaic should be blended together to avoi
   (``cv2.inpaint``) and marked in the provenance map (grey); large unseen areas (straight down, above the
   frames' tops) stay black.
 
-Resolution: 8192 x 4096 is 0.77 mrad/px, about the Navcam's half-resolution sampling; the processed images are
-read at ``scale`` (0.5 for the Navcam).  Works in row chunks so the memory stays bounded.  ``ods.json`` records
+Resolution: 8192 x 4096 is 0.77 mrad/px; a half-resolution Navcam frame (2560 px) is 0.68 mrad/px, a full-resolution
+one 0.34.  The processed images are read at ``scale`` of their own size - 1 by default (10 Nov; 0.5 before, which
+made the half-resolution frames 1.36 mrad/px, coarser than the panorama); 0.5 suits full-resolution frames.  Works in row chunks so the memory stays bounded.  ``ods.json`` records
 the pivot, the images, the eye separation and the coverage.
 """
 from __future__ import annotations
@@ -187,7 +188,7 @@ class SourceImage:
         return self._bilinear(self.edge_distance(), uv)
 
 
-def station_sources(project, rec, station, families: str = "N", scale: float = 0.5, zcam_scale: float = 1.0,
+def station_sources(project, rec, station, families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0,
                     images: Optional[Sequence[str]] = None, use_masks: bool = True) -> List[SourceImage]:
     """The station's frames as sources; ``use_masks=False`` (``mppp ods --rover``) lets the rover's own pixels in."""
     by_name = {im.name: im for im in rec.images.values()}
@@ -458,7 +459,7 @@ def stack_eyes(out_dir: PathLike, top: str = "right", jpeg_quality: int = 95) ->
 
 
 def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width: int = DEFAULT_WIDTH, ipd_m: float = DEFAULT_IPD_M,
-                   families: str = "N", scale: float = 0.5, zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None,
+                   families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None,
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
                    gains: bool = True, stack_top: str = "right") -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/ods_left.png``, ``ods_right.png``, ``provenance.png`` (left

@@ -187,6 +187,11 @@ changes made on the way to the build.
     ods_left so that it is a square that I can upload"): `ods_stereo_square.png` / `.jpg` (8192 x 8192, the right
     eye on top; `--stack-top left` for the other order), written by `mppp ods`; `mppp ods --stack-only` stacks the
     eye images already in a folder;
+  - **`--scale 1` by default** for depthmaps and ods (Christian, 10 Nov): the frames sampled at their own size.
+    The test stations' half-resolution frames are 0.68 mrad a pixel and the 8K panorama 0.77; at the old 0.5 they
+    were read at 1.36 mrad, coarser than the panorama. About 10-20 % longer (the per-frame preparation; the work
+    per panorama pixel is the same) and ~1 GB more memory for 16 frames. 16K pays off only with full-resolution
+    frames (0.34 mrad);
   - **`--out DIR`** for mesh / depthmaps / ods (e.g. `D:\rover_blocks\single_sites\S003D2046`, `...\with_rover`).
 - **Milder lighting augmentation** (10 Nov; Christian: "lower the brightness contrast jitter augmentation ... the
   bright rover deck is one of the best cues it has"). The A/B of 10 Nov on the 480 frozen frames: v4.4 (recipe A)

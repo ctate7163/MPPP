@@ -232,7 +232,7 @@ if fused:
     md('''
 ## 8  Per-image depth maps and the photometric cube — `mppp depthmaps WORK --station ... --photometry`
 Every frame of the station ray-cast through its own camera model into the mesh, the ground plane and the sky: depth,
-range, normal and label maps (0 none, 1 mesh, 2 sky at infinity, 3 masked, 4 plane) at half the native size, validated against the sparse points the
+range, normal and label maps (0 none, 1 mesh, 2 sky at infinity, 3 masked, 4 plane) at each frame's own pixel grid, validated against the sparse points the
 frame observes (`maps_report.md`).  Then, from the sun direction of each frame (`sun_enu` of the row, turned into
 the block frame), the photometric cube: incidence, emission and phase angles and the cast shadow — `photometry/`
 (npz), `photometry_maps/` (COLMAP `.bin` arrays), previews, `photometry_report.json`.
@@ -242,7 +242,7 @@ from mppp.ibr.raycast import Scene, cast_station, load_maps
 from mppp.ibr.photometry import photometric_cube, load_photometry
 if (out / "mesh.ply").is_file():
     scene = load_scene(out)
-    mrep = cast_station(proj, rec, st, scene, out, families="N", scale=0.5)
+    mrep = cast_station(proj, rec, st, scene, out, families="N", scale=1.0)
     print(open(out / "maps_report.md", encoding="utf-8").read()[:2000])
     prep = photometric_cube(proj, rec, st, scene, out / "maps", out)
     print(json.dumps(prep["summary"], indent=1, default=float)[:1200])
@@ -265,7 +265,7 @@ takes a top-bottom or side-by-side equirectangular pair.  The viewer itself is f
     code('''
 from mppp.ibr.ods import render_station
 if (out / "mesh.ply").is_file():
-    orep = render_station(proj, rec, st, scene, out, width=4096, ipd_m=0.064, families="N", scale=0.5)
+    orep = render_station(proj, rec, st, scene, out, width=4096, ipd_m=0.064, families="N", scale=1.0)
     for eye, e in orep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, far {100 * c['far']:.1f}%, no surface {100 * c['no_surface']:.1f}%")
