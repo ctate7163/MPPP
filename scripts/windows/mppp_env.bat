@@ -50,6 +50,9 @@ exit /b 1
 
 :ok
 set "_MPPP_VERBOSE="
+REM 0.96.0: this tree's own packages first (mppp and mppp_studies under src\) - an editable install made before the
+REM split does not know the new top-level package mppp_studies; the freeze checkout sets its own PYTHONPATH before.
+if defined PYTHONPATH ( set "PYTHONPATH=%MPPP_HOME%\src;%PYTHONPATH%" ) else ( set "PYTHONPATH=%MPPP_HOME%\src" )
 exit /b 0
 
 REM --- a conda installation: MPPP_ENV first, then the base environment, then every environment in envs\ ------
