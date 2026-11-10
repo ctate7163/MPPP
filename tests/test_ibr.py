@@ -294,7 +294,7 @@ def test_ods_render_colours_each_direction_from_its_frame(tmp_path):
     proj, rec, st, scene, P, colours = _station_scene(tmp_path)
     assert st.label == "S003D0010" and len(st.images) == 4 and st.pivot_fit["fallback"]   # four frames: the mean centre, flagged
     out = tmp_path / "ods"
-    rep = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
+    O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
     L = cv2.imread(str(out / "ods_left.png"))[..., ::-1]
     Rr = cv2.imread(str(out / "ods_right.png"))[..., ::-1]
     assert L.shape == (128, 256, 3) and Rr.shape == L.shape and (out / "provenance.png").is_file()
@@ -396,3 +396,106 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     oj = json.loads((out / "ods.json").read_text(encoding="utf-8"))
     assert oj["eyes"]["left"]["coverage"]["coloured"] > 0.2 and oj["eyes"]["left"]["sources_used"] == 4
     assert (out / "station.json").is_file()
+
+
+# ----------------------------------------------------------------------------- 9 Nov evening: what the Rockytop run found
+def _world_texture(X):
+    """A texture fixed to the ground (random grey per 10 cm cell): every source frame shows the same pattern where it
+    sees the same ground, so the two eyes' images differ only by their parallax."""
+    i = np.floor(X[..., 0] / 0.10).astype(np.int64)
+    j = np.floor(X[..., 1] / 0.10).astype(np.int64)
+    return (40 + (((i * 73856093) ^ (j * 19349663)) % 176)).astype(np.uint8)
+
+
+def test_ods_eyes_differ_by_the_parallax_of_the_baseline(tmp_path):
+    """The stereo itself (the Rockytop sandbox run, 9 Nov: a test with one colour per frame cannot see it - the
+    seams between frames are fixed in direction): with a texture fixed to the ground, the left eye's image is the
+    right eye's shifted by 2 asin(IPD / 2D) at horizontal distance D, and not at all vertically."""
+    import cv2
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    for im in rec.images.values():
+        cam = rec.cameras[im.camera_id]
+        R = np.asarray(im.cam_from_world().rotation.matrix())
+        C = np.asarray(im.projection_center())
+        m = RC.cast_image(scene, cam, R, C, scale=1.0)
+        _, dw, _ = RC.pixel_rays(cam, R, 1.0)
+        X = C + m["range"][..., None] * dw
+        img = np.where(m["label"] == RC.LABEL_MESH, _world_texture(X), 0).astype(np.uint8)
+        cv2.imwrite(str(proj.root / "images" / im.name), img)
+    W = 2048
+    out = tmp_path / "ods_tex"
+    O.render_station(proj, rec, st, scene, out, width=W, ipd_m=0.064, scale=1.0, rows_per_chunk=128)
+    L = cv2.imread(str(out / "ods_left.png"), cv2.IMREAD_GRAYSCALE).astype(np.float32)
+    Rr = cv2.imread(str(out / "ods_right.png"), cv2.IMREAD_GRAYSCALE).astype(np.float32)
+    H = L.shape[0]
+    h_cam = P[2]                                                        # the plane is z = 0
+    for el in (-35.0, -25.0):
+        v = int((90 - el) / 180 * H)
+        D = h_cam / np.tan(np.radians(-el))
+        expected = 2 * np.arcsin(0.032 / D) * W / (2 * np.pi)
+        got = []
+        for u0 in range(16, W - 96, 128):                               # windows inside the frames, off the seams
+            a, b = L[v - 16:v + 16, u0:u0 + 64], Rr[v - 16:v + 16, u0:u0 + 64]
+            if (a == 0).mean() > 0.01 or (b == 0).mean() > 0.01 or a.std() < 10:
+                continue
+            (dx, dy), resp = cv2.phaseCorrelate(b, a, cv2.createHanningWindow((64, 32), cv2.CV_32F))
+            if resp > 0.2:
+                got.append((dx, dy))
+        got = np.array(got)
+        assert len(got) >= 4, el
+        assert abs(np.median(got[:, 0]) - expected) < 0.08 * expected + 0.3, (el, expected, np.median(got[:, 0]))
+        assert abs(np.median(got[:, 1])) < 0.3
+
+
+def test_dense_subset_prepare_and_fusion_write_fused_ply(tmp_path, monkeypatch):
+    """mppp dense --station (0.96): a sub-model of the station's frames, its own workspace; and the fusion writes
+    fused.ply (pycolmap 4.2's stereo_fusion writes a model folder unless output_type="ply" - the Rockytop sandbox
+    run found run_dense raising after the fusion with no fused.ply).  Patch-match needs CUDA: the depth maps are
+    cast from the plane here, in COLMAP's format."""
+    import cv2
+    from mppp.sfm.dense import prepare_dense, run_dense, subset_images, subset_label
+    from mppp.sfm.project import SfmProject
+    from mppp.ibr.photometry import write_colmap_array
+    proj0, rec, st, scene, P, colours = _station_scene(tmp_path)
+    root = proj0.root
+    for im in rec.images.values():                                      # textured, so the fusion has colours
+        cam = rec.cameras[im.camera_id]
+        R = np.asarray(im.cam_from_world().rotation.matrix())
+        m = RC.cast_image(scene, cam, R, np.asarray(im.projection_center()), scale=1.0)
+        _, dw, _ = RC.pixel_rays(cam, R, 1.0)
+        X = np.asarray(im.projection_center()) + m["range"][..., None] * dw
+        cv2.imwrite(str(root / "images" / im.name), np.where(m["label"] == 1, _world_texture(X), 0).astype(np.uint8))
+    model = root / "gui_native" / "sparse"
+    model.mkdir(parents=True)
+    rec.write(str(model))
+    rows = json.loads((root / "project.json").read_text(encoding="utf-8"))["images"]
+    for r in rows:
+        r.update(station="S003D0010", sequence="NCAM00001" if r["name"] < "NLF_3" else "NCAM00002", downsample_scale=1.0)
+    proj = SfmProject(root, rows, {}, {}, [0.0, 0.0, 0.0], {"world_frame": "site3_enu"})
+    proj.save()
+    names = subset_images(proj, station="3_10", families="N", sequences=["NCAM00001"])
+    assert names == ["NLF_1.png", "NLF_2.png"]
+    assert subset_label("3_10", ["NCAM00001"]) == "dense_S003D0010_NCAM00001"
+    assert len(subset_images(proj, station="3_10")) == 4 and subset_images(proj, station="3_11") == []
+    ws = root / subset_label("3_10")
+    res = prepare_dense(proj, ws, max_image_size=400, masks=False, images=subset_images(proj, station="3_10"))
+    assert res["images"] == 4 and res["subset"] == sorted(r["name"] for r in rows)
+    und = pycolmap.Reconstruction(str(ws / "sparse"))
+    for im in und.images.values():                                      # the plane through each undistorted camera
+        cam = und.cameras[im.camera_id]
+        R = np.asarray(im.cam_from_world().rotation.matrix())
+        m = RC.cast_image(scene, cam, R, np.asarray(im.projection_center()), scale=1.0)
+        ground = m["label"] == RC.LABEL_MESH                            # the far sphere is no stereo depth
+        write_colmap_array(ws / "stereo" / "depth_maps" / f"{im.name}.geometric.bin", np.where(ground, m["depth"], 0))
+        write_colmap_array(ws / "stereo" / "normal_maps" / f"{im.name}.geometric.bin", m["normal"] * ground[..., None])
+    real_opts = pycolmap.StereoFusionOptions
+
+    def one_pixel_opts():                     # the four frames look N / E / S / W: a point from one image is enough
+        o = real_opts()
+        o.min_num_pixels = 1
+        return o
+    monkeypatch.setattr(pycolmap, "StereoFusionOptions", one_pixel_opts)
+    out = run_dense(proj, workspace=ws, steps=("fusion",), max_image_size=400, images=res["subset"])
+    assert (ws / "fused.ply").is_file() and out["steps"]["fusion"]["points"] > 1000
+    pts = np.asarray(o3d.io.read_point_cloud(str(ws / "fused.ply")).points)
+    assert np.median(np.abs(pts[:, 2])) < 0.01                           # on the plane z = 0

@@ -147,6 +147,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--maps-kind", default="geometric", choices=("geometric", "photometric"),
                    help="--maps: the geometric maps (after the consistency check, default) or the photometric ones")
     p.add_argument("--max-depth", type=float, default=None, help="--maps: depth beyond this (m) is left out (default 100)")
+    p.add_argument("--station", default=None, help="0.96: only the frames of this station (S026D0630, 26_630, sol:461): "
+                   "a sub-model of them, its own workspace <project>/dense_<station>[_<sequence>]")
+    p.add_argument("--cameras", default="N", help="--station: the camera families (default N)")
+    p.add_argument("--sequence", nargs="+", default=None, help="--station: only these sequences (NCAM03461 ...)")
+    p.add_argument("--scale", type=float, default=None, help="--station: only frames at this downsample (0.5: half-res)")
+    p.add_argument("--images", nargs="+", default=None, help="0.96: only these image names (instead of --station)")
     p = sub.add_parser("metashape", help="0.95.2: a finished block as an Agisoft Metashape project - cameras (calibration "
                        "and poses fixed), COLMAP's tie points and the masks, the photos linked from images/: writes "
                        "<project>/metashape/ (job, Bundler tie points, the build script, make_metashape_project.bat); "
@@ -667,28 +673,38 @@ def cmd_dense(a: argparse.Namespace) -> int:
         return 2
     proj = SfmProject.load(proj_dir)
     size = int(a.max_image_size or DENSE_MAX_IMAGE_SIZE)
+    from .sfm.dense import DENSE_DIR, subset_images, subset_label
+    subset, ws = None, proj_dir / DENSE_DIR
+    if getattr(a, "station", None) or getattr(a, "images", None):
+        subset = subset_images(proj, station=a.station, families=a.cameras, sequences=a.sequence, names=a.images,
+                               scale=a.scale)
+        if not subset:
+            print(f"dense: no frames for --station {a.station} --cameras {a.cameras} --sequence {a.sequence}", file=sys.stderr)
+            return 2
+        ws = proj_dir / subset_label(a.station, a.sequence, a.images)
+        print(f"dense subset: {len(subset)} frames -> {ws}")
     if getattr(a, "maps", None):                             # 0.95.1: the maps as images, nothing else
-        from .sfm.dense import DENSE_DIR, export_dense_maps
+        from .sfm.dense import export_dense_maps
         from .sfm.dense import MAPS_MAX_DEPTH_M
-        r = export_dense_maps(proj_dir / DENSE_DIR, kind=a.maps_kind, fmt=a.maps,
+        r = export_dense_maps(ws, kind=a.maps_kind, fmt=a.maps,
                               max_depth_m=a.max_depth if a.max_depth else MAPS_MAX_DEPTH_M)
         print(f"{r['depth_maps']} depth and {r['normal_maps']} normal maps ({r['kind']}; {r['with_masks']} with rover "
               f"masks; beyond {r['max_depth_m']:g} m left out) -> {r['folder']}")
         return 0 if (r["depth_maps"] or r["normal_maps"]) else 1
     steps = [s for s, on in (("stereo", a.stereo), ("fusion", a.fusion), ("mesh", a.mesh)) if on]
     if a.prepare or not steps:
-        res = prepare_dense(proj, max_image_size=size, overwrite=a.overwrite)
+        res = prepare_dense(proj, ws, max_image_size=size, overwrite=a.overwrite, images=subset)
         print(f"workspace {res['workspace']}: {res['images']} images" + (f", {res['masks']['images']} masks" if res.get("masks") else ""))
-        if not getattr(a, "no_bat", False):
+        if not getattr(a, "no_bat", False) and subset is None:
             print(f"batch file: {write_dense_bat(proj, max_image_size=size)}")
         if not steps:
             return 0
     import pycolmap
     if a.python and ("stereo" in steps or not getattr(pycolmap, "has_cuda", False)):
         from .sfm.gpu import run_step
-        res = run_step(a.python, "dense", proj, steps=steps, max_image_size=size)
+        res = run_step(a.python, "dense", proj, steps=steps, max_image_size=size, workspace=str(ws), images=subset)
     else:
-        res = run_dense(proj, steps=steps, max_image_size=size)
+        res = run_dense(proj, workspace=ws, steps=steps, max_image_size=size, images=subset)
     for k, v in (res.get("steps") or {}).items():
         print(f"  {k}: {v}")
     return 0

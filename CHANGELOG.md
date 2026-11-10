@@ -91,6 +91,22 @@ changes made on the way to the build.
   fit, the cleanup, the far sphere and tau, Poisson + decimation, the cast depth against the analytic plane through
   THIN_PRISM_FISHEYE and FULL_OPENCV, the angles on a plane and a shadow, the array round trip, the ODS geometry
   and render, the three commands end to end on a saved block).
+- **Tested on the Rockytop block (9 Nov evening, the sandbox)** with the real model, poses and cameras of
+  `D:\rover_blocks\mars2020_sol_0460_rockytop` (315 frames, 1.05 M tie points; the image files could not be read
+  through the bridge - hard links - so one real sol-461 frame from `tests/data` and rendered stand-ins for the
+  others): the Metashape conversion exact to 1.8e-12 px over the 54 sensors, Metashape's own camera equations
+  reproducing pycolmap's projection to 2.5e-11 px on 20,000 observations (0.32 px rms against the keypoints, mean
+  0.0007 px: no half-pixel offset), every Bundler observation in front of its camera; the dense workspace of the
+  16 sol-461 half-resolution Navcam frames; COLMAP's fusion and Poisson mesher on stand-in depth maps (no CUDA
+  here: the patch-match is the one step not run), the fused cloud within 1.5 cm (median) of the tie points to
+  10 m; the station pivot from 20 frames to 0.4 mm rms; the depth maps through the native fisheye models within
+  0.3-0.4 % of the tie points' depth to 10 m; the photometric cube; the 4096 x 2048 ODS pair, whose left / right
+  disparity is 99 % of the 64 mm prediction from 2 to 7 m with no vertical disparity. Two fixes from it:
+  **`mppp dense` fusion wrote no `fused.ply`** on pycolmap 4.2 (its `stereo_fusion` writes a model folder unless
+  `output_type="ply"`; the call raised after the fusion) - fixed; **`mppp dense --station / --sequence / --scale /
+  --images`**: a sub-model of those frames in its own workspace `dense_<station>[_<sequence>]` (the whole block's
+  317 frames otherwise), which `mppp mesh` takes first. Tests: the ODS parallax with a ground-fixed texture, the
+  dense subset and the fusion on a synthetic plane.
 - **Notebooks** (Christian: "clean up the notebooks to have one example of the pipeline and other notebooks for
   each study"): `notebooks/pipeline_example.ipynb` (the whole core on the example data: processing, the alignment
   and its health, cameras and tie points, the dense cloud, the station mesh, the depth and photometric maps, the

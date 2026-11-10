@@ -26,7 +26,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, List, Sequence
 
 from .project import SfmProject
 
@@ -51,17 +51,78 @@ def native_model_dir(project: SfmProject) -> Path:
     return nat
 
 
+def subset_images(project: SfmProject, station: Optional[str] = None, families: str = "N",
+                  sequences: Optional[Sequence[str]] = None, names: Optional[Sequence[str]] = None,
+                  scale: Optional[float] = None) -> List[str]:
+    """The image names of a dense subset (0.96.0, Christian 9 Nov: "test the 3d meshing, reprojection and stereoscopic
+    pipeline on one med res navcam sequence at sol 461"): the frames of ``station`` (S026D0630, 26_630, sol:461)
+    whose camera family is in ``families``, of ``sequences`` (NCAM03461 ...) if given, at the downsample ``scale``
+    (0.5 = the half-resolution frames) if given; or the ``names`` themselves."""
+    if names:
+        have = {r["name"] for r in project.images}
+        missing = [n for n in names if n not in have]
+        if missing:
+            raise ValueError(f"not in the project: {missing[:3]}")
+        return list(names)
+    rows = list(project.images)
+    if station:
+        from ..ibr.station import parse_station
+        site, drive, sol = parse_station(station)
+        rows = [r for r in rows if (sol is None or int(r.get("sol") or -1) == sol)
+                and (site is None or (int(r.get("site") or -1) == site and int(r.get("drive") or -1) == drive))]
+    if families:
+        rows = [r for r in rows if str(r.get("camera_group") or r.get("instrument") or "?")[:1] in set(families)]
+    if sequences:
+        rows = [r for r in rows if r.get("sequence") in set(sequences)]
+    if scale is not None:
+        rows = [r for r in rows if abs(float(r.get("downsample_scale") or 1.0) - float(scale)) < 1e-6]
+    return sorted(r["name"] for r in rows)
+
+
+def subset_label(station: Optional[str] = None, sequences: Optional[Sequence[str]] = None,
+                 names: Optional[Sequence[str]] = None) -> str:
+    """``dense_<station>[_<sequence>...]`` (or ``dense_subset_<n>``): the workspace of a subset."""
+    if station:
+        from ..ibr.station import parse_station
+        site, drive, sol = parse_station(station)
+        lab = f"S{site:03d}D{drive:04d}" if site is not None else f"sol{sol:04d}"
+        return "_".join([f"{DENSE_DIR}_{lab}", *(sequences or [])])
+    return f"{DENSE_DIR}_subset_{len(names or [])}"
+
+
+def subset_model(model_dir: PathLike, names: Sequence[str], out_dir: PathLike):
+    """The native model with only the frames of ``names`` registered (the others' observations dropped, points
+    seen by fewer than two of the kept frames gone): ``out_dir`` (cameras, frames, images, points3D)."""
+    import pycolmap
+    rec = pycolmap.Reconstruction(str(model_dir))
+    keep = set(names)
+    for fid, fr in list(rec.frames.items()):
+        mine = [rec.images[d.id].name for d in fr.data_ids
+                if d.sensor_id.type == pycolmap.SensorType.CAMERA and d.id in rec.images]
+        if fr.has_pose and not any(n in keep for n in mine):
+            rec.deregister_frame(fid)
+    found = {im.name for im in rec.images.values() if im.has_pose}
+    lost = sorted(keep - found)
+    if lost:
+        log.warning("dense subset: %d of the frames asked for are not registered in the model: %s", len(lost), lost[:3])
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    rec.write(str(out_dir))
+    return rec
+
+
 def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
                   max_image_size: int = DENSE_MAX_IMAGE_SIZE, masks: bool = True, overwrite: bool = False,
-                  num_threads: int = -1) -> Dict[str, Any]:
-    """The dense workspace ``out_dir`` (default ``<project>/dense``); returns its record (also ``mppp_dense.json``)."""
+                  num_threads: int = -1, images: Optional[Sequence[str]] = None) -> Dict[str, Any]:
+    """The dense workspace ``out_dir`` (default ``<project>/dense``); returns its record (also ``mppp_dense.json``).
+    ``images`` (0.96.0): only these frames (:func:`subset_images`) - a sub-model of them is undistorted, so the
+    patch-match stereo and the fusion see nothing else (its own workspace, :func:`subset_label`)."""
     import numpy as np
     import pycolmap
     out = Path(out_dir) if out_dir else Path(project.root) / DENSE_DIR
     rec_file = out / "mppp_dense.json"
     if (out / "sparse" / "cameras.bin").is_file() and rec_file.is_file() and not overwrite:
         prev = json.loads(rec_file.read_text(encoding="utf-8"))
-        if int(prev.get("max_image_size", -1)) == int(max_image_size):
+        if int(prev.get("max_image_size", -1)) == int(max_image_size) and sorted(prev.get("subset") or []) == sorted(images or []):
             log.info("dense: workspace %s is there (max_image_size %d); overwrite=True to redo it", out, max_image_size)
             return prev
     if out.exists() and overwrite:
@@ -69,16 +130,21 @@ def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     model = native_model_dir(project)
+    if images:
+        missing = [n for n in images if not (Path(project.images_dir) / n).is_file()]
+        if missing:
+            raise FileNotFoundError(f"dense subset: {len(missing)} image files missing in {project.images_dir}: {missing[:2]}")
+        model = subset_model(model, images, out / "_model_subset") and (out / "_model_subset")
     opts = pycolmap.UndistortCameraOptions()
     opts.max_image_size = int(max_image_size)
     from .reconstruction import default_threads
     nt = int(num_threads) if int(num_threads) > 0 else default_threads()
-    pycolmap.undistort_images(str(out), str(model), str(project.images_dir), output_type="COLMAP",
-                              undistort_options=opts, num_threads=nt)
+    pycolmap.undistort_images(str(out), str(model), str(project.images_dir), image_names=list(images or []),
+                              output_type="COLMAP", undistort_options=opts, num_threads=nt)
     und = pycolmap.Reconstruction(str(out / "sparse"))
     res: Dict[str, Any] = {"workspace": str(out), "source_model": str(model), "images": und.num_images(),
                            "cameras": und.num_cameras(), "max_image_size": int(max_image_size), "masks": None,
-                           "seconds": None}
+                           "seconds": None, "subset": sorted(images) if images else None}
     if masks and project.masks_dir.is_dir():
         names = [r["name"] for r in project.images if r.get("has_mask") and (project.masks_dir / (r["name"] + ".png")).is_file()]
         in_model = {im.name for im in und.images.values()}
@@ -129,14 +195,14 @@ def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
 
 def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=("prepare", "stereo", "fusion"),
               max_image_size: int = DENSE_MAX_IMAGE_SIZE, geom_consistency: bool = True,
-              gpu_index: str = "-1") -> Dict[str, Any]:
+              gpu_index: str = "-1", images: Optional[Sequence[str]] = None) -> Dict[str, Any]:
     """The dense steps from Python: ``prepare`` (:func:`prepare_dense`), ``stereo`` (patch-match stereo; needs a CUDA
     pycolmap), ``fusion`` (``dense/fused.ply``, the masks applied), ``mesh`` (``dense/meshed-poisson.ply``)."""
     import pycolmap
     ws = Path(workspace) if workspace else Path(project.root) / DENSE_DIR
     out: Dict[str, Any] = {"workspace": str(ws), "steps": {}}
     if "prepare" in steps or not (ws / "sparse" / "cameras.bin").is_file():
-        out["steps"]["prepare"] = prepare_dense(project, ws, max_image_size=max_image_size)
+        out["steps"]["prepare"] = prepare_dense(project, ws, max_image_size=max_image_size, images=images)
     if "stereo" in steps:
         if not getattr(pycolmap, "has_cuda", False):
             raise RuntimeError("patch-match stereo needs a CUDA pycolmap (the gpu_python environment) or "
@@ -154,8 +220,10 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
         if (ws / "masks").is_dir():
             fo.mask_path = str(ws / "masks")
         fo.max_image_size = int(max_image_size)
+        # 9 Nov (the sandbox run on Rockytop): pycolmap 4.2's stereo_fusion writes a model folder by default
+        # (output_type "bin") - the fused points never reached fused.ply and the call raised after the fusion
         fused = pycolmap.stereo_fusion(str(ws / "fused.ply"), str(ws), "COLMAP", input_type="geometric" if geom_consistency else "photometric",
-                                       options=fo)
+                                       options=fo, output_type="ply")
         out["steps"]["fusion"] = {"seconds": round(time.time() - t0, 1), "points": fused.num_points3D(),
                                   "ply": str(ws / "fused.ply"), "masks": fo.mask_path or None}
     if "mesh" in steps:

@@ -338,6 +338,13 @@ no masks). `--max-image-size` (default 2000 px on the long side) sets the workin
 patch-match stereo (a CUDA pycolmap: `--python` or `GPU_PYTHON`, the environment the matcher uses), `--fusion`
 the fusion into `dense/fused.ply` with the masks, `--mesh` a Poisson mesh.
 
+**A station or a sequence only** (0.96.0): `--station S026D0630` (or `26_630`, `sol:461`) with `--cameras N`,
+`--sequence NCAM03461 ...` and `--scale 0.5` (the half-resolution frames), or `--images NAME ...`, works on those
+frames alone: a sub-model of them (the other frames deregistered, their observations dropped) is undistorted into
+its own workspace `<project>/dense_<station>[_<sequence>]`, so the patch-match stereo and the fusion see nothing
+else, and `mppp mesh --station` takes that workspace's `fused.ply` first. For example the sol-461 half-resolution
+Navcam frames of Rockytop: `mppp dense <WORK> --station 26_630 --scale 0.5 --prepare --stereo --fusion`.
+
 `dense_reconstruct.bat`, written next to `open_in_colmap.bat`, does the same with the COLMAP executable (a CUDA
 build is looked for first): double-click runs undistortion (without the masks: `mppp dense --prepare` for those),
 stereo and fusion; `set MPPP_DENSE_STEP=prepare|stereo|fusion|mesh` runs one step, `MPPP_DENSE_MAX_SIZE` the

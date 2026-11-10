@@ -99,9 +99,14 @@ def add_parsers(sub) -> None:
     p.add_argument("--eyes", nargs="+", default=["left", "right"], choices=["left", "right", "centre"])
 
 
-def _points_file(project, given: Optional[str]) -> Path:
+def _points_file(project, given: Optional[str], label: Optional[str] = None) -> Path:
+    """``--points``, else the station's own dense workspace (``dense_<station>*/fused.ply``, ``mppp dense --station``),
+    else the newest ``dense*/fused.ply``."""
     if given:
         return Path(given)
+    own = sorted(Path(project.root).glob(f"dense_{label}*/fused.ply"), key=lambda p: p.stat().st_mtime) if label else []
+    if own:
+        return own[-1]
     cands = sorted(Path(project.root).glob("dense*/fused.ply"), key=lambda p: p.stat().st_mtime)
     if not cands:
         raise FileNotFoundError(f"{project.root}: no dense*/fused.ply - run mppp dense (prepare, stereo, fusion) first, or give --points")
@@ -113,7 +118,7 @@ def cmd_mesh(a: argparse.Namespace) -> int:
     project = _project(a.work)
     rec = _model(project)
     st, out = _station(project, rec, a)
-    pts_file = _points_file(project, a.points)
+    pts_file = _points_file(project, a.points, st.label)
     pts = read_points(pts_file)
     log.info("mesh: %d points from %s", len(pts), pts_file)
     rep = build_station_mesh(pts, st.pivot, out, dense_dir=a.dense_dir or pts_file.parent, colmap_exe=a.colmap,
