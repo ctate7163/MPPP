@@ -200,8 +200,8 @@ def add_parsers(sub) -> None:
     p.add_argument("--pds", default=None, help="--bits 16: the PDS archive (default MPPP_PDS, else the one the block's "
                    "manifest names)")
     p.add_argument("--tone", default="auto", choices=["auto", "soft", "clip"], help="--bits 16: the 8-bit panorama "
-                   "from the linear one - auto (default: the black and white points set from the panorama, 0.5 and "
-                   "99.7 %% of what the frames coloured, the same for both eyes, the brightest rolled off), soft "
+                   "from the linear one - auto (default: the exposure set on the ground - its median to 100 of 255 - the "
+                   "same for both eyes, the highlights rolled off and faded to white instead of clipped), soft "
                    "(unchanged to 190, the highlights rolled off) or clip (as the 8-bit pipeline: cut at 255)")
     p.add_argument("--exposure16", type=float, default=0.5, help="--bits 16: the 16-bit files at this factor of the "
                    "frames' own 16-bit scale (default 0.5: darker, with headroom so nothing saturates)")
@@ -223,6 +223,8 @@ def add_parsers(sub) -> None:
                    "edge of the panorama: 0 = north in the first column (default)")
     p.add_argument("--north-center", action="store_true", help="north in the middle of the panorama (--azimuth0 -180), "
                    "for viewers that face the image centre")
+    p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and the square again from the "
+                   "16-bit ones in the folder (--tone auto; no rendering)")
     p.add_argument("--stack-only", action="store_true", help="only stack the eye images already in the folder into "
                    "ods_stereo_square.png / .jpg (no rendering)")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
@@ -317,6 +319,17 @@ def cmd_depthmaps(a: argparse.Namespace) -> int:
 
 def cmd_ods(a: argparse.Namespace) -> int:
     from .ods import render_station, stack_eyes
+    if a.retone:                                 # the 8-bit panoramas again from the 16-bit ones, no rendering
+        from .linear16 import retone
+        from .ods import find_prefix
+        out = Path(a.out) if a.out else None
+        if out is None:
+            project = _project(a.work)
+            st, out = _station(project, _model(project), a)
+        r = retone(out, a.prefix if a.prefix is not None else find_prefix(out), top=a.stack_top)
+        print(f"{r['square']}  (levels {r['levels_16bit_units'][0]:.0f} / ground {r['levels_16bit_units'][1]:.0f} of the 16-bit scale, "
+              f"{r['top']} eye on top)")
+        return 0
     if a.stack_only:
         out = Path(a.out) if a.out else None
         sq = a.prefix

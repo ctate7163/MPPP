@@ -239,34 +239,73 @@ def tone_soft(x: np.ndarray, knee: float = 190.0, top: float = 255.0) -> np.ndar
     return np.clip(x * s[..., None], 0.0, 255.0)
 
 
-def auto_levels(x: np.ndarray, seen: Optional[np.ndarray] = None, low_pct: float = 0.5, high_pct: float = 99.7) -> Tuple[float, float]:
-    """The black and white points (8-bit units) of a linear panorama for viewing: the ``low_pct`` percentile of the
-    darkest channel and the ``high_pct`` percentile of the brightest, over the pixels a frame coloured (``seen``)."""
+TERRAIN_GREY = 100.0             # the median of the ground lands here (8-bit), as in the 8-bit pipeline's frames
+KNEE = 170.0                     # linear up to here; above it the highlights roll off towards 255 ...
+DESATURATE = 0.85                # ... and lose this much of their colour by 3 shoulder widths above the knee
+
+
+def auto_levels(x: np.ndarray, seen: Optional[np.ndarray] = None, low_pct: float = 0.5) -> Tuple[float, float]:
+    """(black point, the ground's median) of a linear panorama, in its own units: the ``low_pct`` percentile of
+    the darkest channel, and the median brightness (mean of the channels) of the lower half - below the horizon,
+    mostly terrain - over the pixels a frame coloured (``seen``).  The exposure for viewing is set on the ground,
+    not on the brightest things (10 Nov, Van Zyl: with the white point on the 99.7 % of the panorama the sunlit
+    white deck took the range and the terrain came out at a fifth of it)."""
     x = np.asarray(x)
+    H = x.shape[0]
     step = max(1, int(np.sqrt(x.shape[0] * x.shape[1] / 2e6)))
-    sub = x[::step, ::step].reshape(-1, 3)
-    if seen is not None:
-        sub = sub[np.asarray(seen)[::step, ::step].ravel()]
-    if not len(sub):
-        return 0.0, 255.0
-    lo = float(np.percentile(sub.min(axis=1), low_pct))
-    hi = float(np.percentile(sub.max(axis=1), high_pct))
-    lo = min(lo, 0.5 * hi)                                         # the black point never eats the midtones
-    return lo, max(hi, lo + 1.0)
+    sub = x[::step, ::step]
+    ok = sub.max(axis=2) > 0 if seen is None else np.asarray(seen)[::step, ::step]
+    if not ok.any():
+        return 0.0, TERRAIN_GREY
+    lo = float(np.percentile(sub[ok].min(axis=1), low_pct))
+    low_half = np.zeros(ok.shape, bool)
+    low_half[sub.shape[0] // 2:] = True
+    g = ok & low_half
+    med = float(np.median(sub[g if g.sum() > 100 else ok].mean(axis=1)))
+    lo = min(lo, 0.5 * med)
+    return lo, max(med, lo + 1e-3)
 
 
-LEVELS_WHITE = 235.0             # the white point lands here; what is brighter rolls off to 255
-
-
-def tone_levels(x: np.ndarray, lo: float, hi: float) -> np.ndarray:
+def tone_levels(x: np.ndarray, lo: float, mid: float) -> np.ndarray:
     """Linear values -> 0..255 for viewing (Christian, 10 Nov: "an 8bit version that has the high and low points
-    rescaled optimally to show detail"): ``lo`` -> 0, ``hi`` -> LEVELS_WHITE, linear between (the hue kept), the few
-    pixels above ``hi`` rolled off towards 255 instead of clipped."""
+    rescaled optimally to show detail"): ``lo`` -> 0 and the ground's median ``mid`` -> TERRAIN_GREY, linear up to
+    KNEE; above it the brightest channel rolls off towards 255 (never clipped) and the colour fades towards neutral,
+    as an overexposed white does."""
     x = np.asarray(x, np.float32)
-    k = LEVELS_WHITE / max(hi - lo, 1e-6)
+    k = TERRAIN_GREY / max(mid - lo, 1e-6)
     z = np.clip((x - lo) * k, 0.0, None)
     m = z.max(axis=-1)
-    span = 255.0 - LEVELS_WHITE
-    y = LEVELS_WHITE + span * (1.0 - np.exp(-(m - LEVELS_WHITE) / span))   # slope 1 at the white point, 255 at infinity
-    s_ = np.where(m > LEVELS_WHITE, y / np.maximum(m, 1e-6), 1.0)
-    return np.clip(z * s_[..., None], 0.0, 255.0)
+    span = 255.0 - KNEE
+    over = np.clip(m - KNEE, 0.0, None)
+    y = KNEE + span * (1.0 - np.exp(-over / span))                  # slope 1 at the knee, 255 at infinity
+    s_ = np.where(m > KNEE, y / np.maximum(m, 1e-6), 1.0)
+    out = z * s_[..., None]
+    w = (DESATURATE * np.clip(over / (3.0 * span), 0.0, 1.0))[..., None]
+    out = (1.0 - w) * out + w * np.minimum(y, 255.0)[..., None]
+    return np.clip(out, 0.0, 255.0)
+
+
+def retone(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int = 95) -> Dict[str, Any]:
+    """The 8-bit panoramas and the square again from the 16-bit ones in ``out_dir`` (no rendering): the levels from
+    the left eye, used for both."""
+    import cv2
+    out = Path(out_dir)
+    pre = f"{prefix}_" if prefix else ""
+    levels, imgs = None, {}
+    for eye in ("left", "right"):
+        f = out / f"{pre}ods_{eye}_16.png"
+        a = cv2.imread(str(f), cv2.IMREAD_UNCHANGED)
+        if a is None or a.dtype != np.uint16:
+            raise FileNotFoundError(f"{f}: no 16-bit panorama")
+        a = a[..., :3].astype(np.float32)
+        if levels is None:
+            levels = auto_levels(a)
+        v = np.rint(tone_levels(a, *levels)).astype(np.uint8)
+        cv2.imwrite(str(out / f"{pre}ods_{eye}.png"), v)
+        imgs[eye] = v
+        del a
+    other = "right" if top == "left" else "left"
+    sq = np.vstack([imgs[top], imgs[other]])
+    cv2.imwrite(str(out / f"{pre}ods_stereo_square.png"), sq)
+    cv2.imwrite(str(out / f"{pre}ods_stereo_square.jpg"), sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
+    return {"levels_16bit_units": [float(v) for v in levels], "square": str(out / f"{pre}ods_stereo_square.jpg"), "top": top}

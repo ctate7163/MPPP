@@ -57,9 +57,12 @@ the station in their names; the stacked square has the left eye on top; the rove
   saturation ... process it into an 8bit version that has the high and low points rescaled optimally to show
   detail"): the 16-bit panoramas are written at `--exposure16` 0.5 of the frames' own 16-bit scale (the blend is
   not clipped before; `ods.json` records the share clipped, the factor and the levels), and the 8-bit panorama is
-  made from the linear one with `--tone auto` (now the default): the black point at the 0.5 % of the darkest
-  channel, the white point at the 99.7 % of the brightest - over what the frames coloured, set on the first eye
-  and used for both - mapped to 0 and 235, linear between, the few brighter pixels rolled off to 255.
+  made from the linear one with `--tone auto` (now the default): the exposure is set on the ground - the black
+  point at the 0.5 % of the darkest channel, the median of the lower half (mostly terrain) at 100 of 255, from the
+  first eye for both - linear up to 170, the highlights rolled off towards 255 and faded to neutral instead of
+  clipped. (The first version put the white point at the 99.7 % of the panorama: at Van Zyl the sunlit white deck
+  took the range and the terrain came out at a fifth of it.) `ods --retone` / `single-sites --retone` make the
+  8-bit panoramas and squares again from the 16-bit ones, without rendering.
 - **The ground filled where no frame saw it** (Christian: "the holes in the rover should be filled at ground level.
   Same with the area occluded by the arm. It shouldn't be zero, but continuous with a planar terrain"):
   `ods.fill_ground` - below the horizon, what no frame coloured (under the rover, behind the arm, through holes

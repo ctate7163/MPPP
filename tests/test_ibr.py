@@ -1388,9 +1388,9 @@ def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
     east = L16[70, 64]                                            # az 90: the green frame, 255 x 3 x 64, at exposure 0.5
     assert abs(int(east[1]) - 255 * 3 * 32) < 300 and east[0] < 300 and r["eyes"]["left"]["above_8bit_range"] > 0.2
     assert r["eyes"]["left"]["clipped_in_16bit"] == 0 and r["linear16"]["exposure16"] == 0.5
-    assert 200 < L8[70, 64, 1] <= 255 and L8[70, 64, 0] < 5       # the view: levelled, still green
+    assert 200 < L8[70, 64, 1] <= 255 and L8[70, 64, 0] < L8[70, 64, 1] - 50      # the view: bright, faded, still green
     lo, hi = r["linear16"]["view_levels_8bit_units"]
-    assert r["linear16"]["view_tone"] == "auto" and 700 < hi < 800 and lo < 50      # the white point at the frames' 765
+    assert r["linear16"]["view_tone"] == "auto" and hi > lo >= 0
     north = L16[70, 2:126:8]                                      # the red frame: neutral where it was saturated
     assert (np.abs(north[:, 0].astype(int) - north[:, 1].astype(int)) < 300).any() and (north[:, 1] < 300).any()
     r2 = O.render_station(proj, rec, st, scene, tmp_path / "o16b", width=128, scale=0.5, rows_per_chunk=32, bits=16, gains=False,
@@ -1421,10 +1421,31 @@ def test_ground_fill_and_levels():
     assert f[48:].all() and not f[:48].any() and (source[48:] == -4).all()
     assert np.allclose(rgb[60, 100], (120, 80, 60), atol=2) and np.allclose(rgb[50, 50], (120, 80, 60), atol=25)   # terrain, not deck
     assert (rgb[:32] == 0).all()                                  # nothing above the horizon
-    lo, hi = auto_levels(np.linspace(10, 510, 30000, dtype=np.float32).reshape(100, 100, 3))
-    assert 10 <= lo < 20 and 500 < hi <= 510
-    y = tone_levels(np.array([[lo, lo, lo], [hi, hi / 2, lo], [3 * hi, 3 * hi, 3 * hi]], np.float32), lo, hi)
-    assert np.allclose(y[0], 0) and abs(y[1, 0] - 235) < 0.01 and 235 < y[2, 0] <= 255 and y[1, 1] < y[1, 0]
+    pan = np.zeros((100, 200, 3), np.float32)
+    pan[:50] = 300.0                                              # sky
+    pan[50:] = (60.0, 40.0, 30.0)                                 # ground: mean 43.3
+    pan[80:, :40] = 900.0                                         # the white deck, a fifth of the lower half
+    lo, mid = auto_levels(pan)
+    assert abs(mid - 130.0 / 3) < 1 and lo <= 30
+    y = tone_levels(np.array([[lo, lo, lo], [mid, mid, mid], [900.0, 880.0, 990.0], [1e5, 1e5, 1e5]], np.float32), lo, mid)
+    assert np.allclose(y[0], 0) and abs(y[1, 0] - 100) < 0.01                      # the ground's median at 100
+    assert 200 < y[2].min() and y[2].max() <= 255 and y[2].max() - y[2].min() < 8   # the deck: near white, not clipped, its tint faded
+    assert y[3].max() <= 255
+
+
+def test_retone_from_the_16bit_panoramas(tmp_path):
+    import cv2
+    from mppp.ibr.linear16 import retone
+    g = np.random.default_rng(0)
+    for eye in ("left", "right"):
+        a = np.zeros((64, 128, 3), np.uint16)
+        a[32:] = g.integers(2000, 3000, (32, 128, 3))
+        a[:32] = 9000
+        cv2.imwrite(str(tmp_path / f"S1_rover_ods_{eye}_16.png"), a)
+    r = retone(tmp_path, "S1_rover")
+    sq = cv2.imread(str(tmp_path / "S1_rover_ods_stereo_square.jpg"))
+    L8 = cv2.imread(str(tmp_path / "S1_rover_ods_left.png"))
+    assert sq.shape == (128, 128, 3) and 80 < np.median(L8[32:]) < 120 and L8[:32].min() > 180 and r["top"] == "left"
 
 
 def test_rover_model_in_the_mesh(tmp_path):

@@ -194,7 +194,7 @@ def _summary_line(run: Dict[str, Any], variant: str, codes: Dict[str, int]) -> s
     return "| " + " | ".join(cells) + " |"
 
 
-def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool = False) -> int:
+def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool = False, retone: bool = False) -> int:
     out_root = Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
     prev = out_root / "single_sites_summary.md"
@@ -210,7 +210,12 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
         print(f"\n######## {run['label']}: {run['note']}\n######## block {run['work']} -> {base}", flush=True)
         codes: Dict[str, Dict[str, int]] = {v: {} for v in run["variants"]}
         with open(base / "single_site_log.txt", "a", encoding="utf-8") as fh:
-            if squares_only:
+            if retone:
+                for v in run["variants"]:
+                    out = base / ("with_rover" if v == "rover" else "")
+                    if any(out.glob("*ods_right_16.png")):
+                        codes[v]["retone"] = _run(["ods", "-", "--station", "x", "--retone", "--out", str(out)], fh)
+            elif squares_only:
                 for v in run["variants"]:
                     out = base / ("with_rover" if v == "rover" else "")
                     if any(out.glob("*ods_right.png")):
@@ -264,6 +269,8 @@ def add_parser(sub) -> None:
     p.add_argument("--variants", nargs="+", default=None, choices=VARIANTS)
     p.add_argument("--squares-only", action="store_true", help="only stack the eye images already there into "
                    "ods_stereo_square.jpg / .png")
+    p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and squares again from the "
+                   "16-bit ones already there (no rendering)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
@@ -288,4 +295,4 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
             for c in r["commands"]:
                 print(f"   [{c['variant']}] python -m mppp " + " ".join(c["argv"]))
         return 0
-    return run_all(runs, out_root, squares_only=a.squares_only)
+    return run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone)
