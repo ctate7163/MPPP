@@ -90,3 +90,48 @@ def model_in_block(pose: Dict[str, Any], parts: Optional[Sequence[str]] = None) 
     remap = np.full(len(V), -1, np.int64)
     remap[used] = np.arange(len(used))
     return mech_to_block(V[used], pose), remap[F]
+
+
+MAST_DILATE_FRAC = 0.012          # the mast mask grown by this share of the frame's width (pose and model error)
+MAST_NEAR_M = 0.06                # fused points this close to the mast and its booms are dropped
+
+
+def mast_masks(sources, pose: Dict[str, Any], dilate_frac: float = MAST_DILATE_FRAC):
+    """Per source frame (:class:`mppp.ibr.ods.SourceImage`) the pixels of the mast and its wind-sensor booms (the
+    model's part "mast"), True = hardware, or None where it is not in the frame (Christian, 10 Nov: "use this to
+    predict the location of the wind booms and remove them from the 360").  The mast below the head is fixed to
+    the rover - only the head turns - so the part is placed by the rover pose alone and its triangles are projected
+    through each frame's own camera; at Van Zyl the white boom in the frames at azimuth 105 deg falls on the
+    prediction.  The mask is grown by ``dilate_frac`` of the width."""
+    import cv2
+    from .rover_deck import mech_to_block
+    V, F, _ = load(["mast"])
+    used = np.unique(F)
+    remap = np.full(len(V), -1, np.int64)
+    remap[used] = np.arange(len(used))
+    Vb, Fm = mech_to_block(V[used], pose), remap[F]
+    out = []
+    for src in sources:
+        uv, z, _ = src.project(Vb)
+        ok = np.isfinite(uv).all(axis=1) & (z > 0.02)
+        big = 3.0 * max(src.W, src.H)
+        ok &= (np.abs(uv) < big).all(axis=1)
+        tri = Fm[ok[Fm].all(axis=1)]
+        if not len(tri):
+            out.append(None)
+            continue
+        p = uv[tri]                                              # (n, 3, 2)
+        lo, hi = p.min(axis=1), p.max(axis=1)
+        vis = (hi[:, 0] >= 0) & (hi[:, 1] >= 0) & (lo[:, 0] < src.W) & (lo[:, 1] < src.H) & ((hi - lo).max(axis=1) < 0.6 * max(src.W, src.H))
+        if not vis.any():
+            out.append(None)
+            continue
+        m = np.zeros((src.H, src.W), np.uint8)
+        cv2.fillPoly(m, list(np.rint(p[vis]).astype(np.int32)), 255)
+        if not m.any():
+            out.append(None)
+            continue
+        r = max(3, int(round(dilate_frac * src.W)))
+        m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
+        out.append(m > 0)
+    return out

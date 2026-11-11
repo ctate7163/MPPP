@@ -205,6 +205,8 @@ def add_parsers(sub) -> None:
                    "(unchanged to 190, the highlights rolled off) or clip (as the 8-bit pipeline: cut at 255)")
     p.add_argument("--exposure16", type=float, default=0.5, help="--bits 16: the 16-bit files at this factor of the "
                    "frames' own 16-bit scale (default 0.5: darker, with headroom so nothing saturates)")
+    p.add_argument("--keep-mast", action="store_true", help="rover shown: keep the mast and its wind-sensor booms in "
+                   "the frames (default: masked - the rover model's mast projected into every frame)")
     p.add_argument("--no-ground-fill", action="store_true", help="leave black what no frame coloured below the horizon "
                    "(default: filled as plain terrain from the terrain around it - under the rover, behind the arm)")
     p.add_argument("--prefix", default=None, help="the panoramas' file-name prefix (default the station, S003D2046_ / "
@@ -353,7 +355,7 @@ def cmd_ods(a: argparse.Namespace) -> int:
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,
                          azimuth0_deg=-180.0 if a.north_center else a.azimuth0, prefix=a.prefix,
                          bits=a.bits, pds=a.pds, tone=a.tone, exposure16=a.exposure16,
-                         ground_fill=not a.no_ground_fill)
+                         ground_fill=not a.no_ground_fill, mask_mast=not a.keep_mast)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: {e['file']}  coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "

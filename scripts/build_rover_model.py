@@ -30,8 +30,12 @@ ARM_STOW_DEG = (89.2, 16.4, 71.9, -103.3, -90.1)
 DECK_TOP_MODEL_Y = 1.135
 ICP_MODEL_FROM_MECH = np.array([[1.0, -2.0e-4, -2.0e-3, 0.0], [2.0e-4, 1.0, 1.1e-3, 2.1e-3], [2.0e-3, -1.1e-3, 1.0, 2.7e-3],
                                 [0.0, 0.0, 0.0, 1.0]])
-TARGET_FACES = {"body": 32000, "arm": 10000, "arm_base": 2300, "suspension": 8000, "wheels": 9000}
-PARTS = ("body", "arm", "arm_base", "suspension", "wheels")
+TARGET_FACES = {"body": 32000, "arm": 10000, "arm_base": 2300, "suspension": 8000, "wheels": 9000, "mast": 6000}
+PARTS = ("body", "arm", "arm_base", "suspension", "wheels", "mast")
+MAST_PARTS = ("bottom", "bottom.002", "bottom.003", "probe.001", "top", "probe")   # turn with the head's azimuth: the
+# mast tube and the wind-sensor booms on it; kept as the part "mast" (not for the mesh: for masking them in the
+# frames, mppp.ibr.rover_model.mast_mask), in the model's own azimuth - the head looking forward (0 deg)
+HEAD = ("head", "lens", "Mastcam_Z_cams", "microphones.001", "NavCams")
 MAST = ("bottom", "bottom.002", "bottom.003", "probe.001", "top", "probe", "head", "lens", "Mastcam_Z_cams",
         "microphones.001", "NavCams")
 MOVING = ("antenna_hg",)                  # the high-gain antenna points differently every sol: left to the images
@@ -111,13 +115,14 @@ def build(glb: Path, out: Path) -> dict:
         if "mesh" not in n:
             continue
         k = link_of(i)
-        if under(i, MAST) or under(i, BELLY) or under(i, MOVING):
+        if under(i, HEAD) or under(i, BELLY) or under(i, MOVING):
             continue
+        is_mast = under(i, MAST_PARTS)
         if k is not None:
             kind, move = "arm", stow[k] @ np.linalg.inv(rest[k])
         else:
             nm = root_name(i)
-            kind = ("arm_base" if nm.startswith(("arm.001", "arm_cable")) else "wheels" if nm.startswith("Wheels")
+            kind = ("mast" if is_mast else "arm_base" if nm.startswith(("arm.001", "arm_cable")) else "wheels" if nm.startswith("Wheels")
                     else "suspension" if nm.startswith("suspension") else "body")
             move = np.eye(4)
         W = move @ world(i)
@@ -149,9 +154,11 @@ def build(glb: Path, out: Path) -> dict:
         off += len(v)
         rep[kind] = {"faces_in": int(n0), "faces": int(len(f)), "bounds_mech_m": np.round([v.min(0), v.max(0)], 3).tolist()}
     V, F, P = np.vstack(V).astype(np.float32), np.vstack(F).astype(np.int32), np.concatenate(P)
+    axis_xy = [0.716, 0.559]                                         # the pivot fit of the Van Zyl frames; the tube is centred on it
     meta = {"source": glb.name, "credit": "NASA/JPL-Caltech", "url": "https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/",
             "frame": "RMECH (x forward, y right, z down, z 0 = the deck top), metres", "parts": list(PARTS),
-            "arm_chain": list(ARM_CHAIN), "arm_axes": list(ARM_AXES), "arm_stow_deg": list(ARM_STOW_DEG), "report": rep}
+            "arm_chain": list(ARM_CHAIN), "arm_axes": list(ARM_AXES), "arm_stow_deg": list(ARM_STOW_DEG), "report": rep,
+            "mast_axis_xy_m": axis_xy, "mast_model_azimuth_deg": 0.0}
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out, vertices=V, faces=F, part=P, meta=json.dumps(meta))
     return meta

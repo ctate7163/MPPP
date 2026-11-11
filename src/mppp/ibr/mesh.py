@@ -524,6 +524,9 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
             near = rover_model.near_model(points, deck, parts=rover_model_parts)
             deck_rep["points_on_model_dropped"] = int((near & ~drop).sum())
             drop |= near
+            mast = rover_model.near_model(points, deck, near_m=rover_model.MAST_NEAR_M, parts=("mast",))
+            deck_rep["points_on_mast_dropped"] = int((mast & ~drop).sum())     # the mast and its booms: not in the mesh
+            drop |= mast
         if drop.any():
             points = points[~drop]
             if normals is not None:

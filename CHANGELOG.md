@@ -53,6 +53,14 @@ the station in their names; the stacked square has the left eye on top; the rove
   and adds the model at the station's rover pose; points farther from it are meshed as before (the antenna,
   cables). The deck floor stays; the rear floor is used only without the model. `--no-rover-model`,
   `--rover-model-parts body arm arm_base` (suspension and wheels are in the level-ground pose).
+- **The wind-sensor booms masked from the model** (Christian: "use this to predict the location of the wind booms
+  and remove them from the 360"). The mast below the head is fixed to the rover - only the head turns - so the
+  model's mast and booms (the part `mast`, kept out of the mesh) sit at the rover pose; projected through the label
+  cameras, the white boom in the Van Zyl frames at azimuth 105 deg and in the -45 deg frame falls on the
+  prediction. `rover_model.mast_masks` projects the part's triangles through each frame's camera, grows the mask
+  by 1.2 % of the width and adds it to the frame's excluded pixels (rover shown; `ods.json` `mast_masked`;
+  `--keep-mast`); `mppp mesh` drops the fused points within 6 cm of the mast and booms. What was behind a boom
+  comes from another frame, or from the ground fill.
 - **Darker 16-bit files, a levelled 8-bit version** (Christian: "The 16-bit images should be darker to avoid
   saturation ... process it into an 8bit version that has the high and low points rescaled optimally to show
   detail"): the 16-bit panoramas are written at `--exposure16` 0.5 of the frames' own 16-bit scale (the blend is

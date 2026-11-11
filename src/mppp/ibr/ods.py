@@ -292,7 +292,8 @@ def head_hardware_masks(sources: Sequence["SourceImage"], masks: Sequence[Option
 
 def station_sources(project, rec, station, families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0,
                     images: Optional[Sequence[str]] = None, use_masks: bool = True,
-                    mask_head_hardware: bool = True, linear16: Optional[Dict[str, Any]] = None) -> List[SourceImage]:
+                    mask_head_hardware: bool = True, linear16: Optional[Dict[str, Any]] = None,
+                    mast_pose: Optional[Dict[str, Any]] = None) -> List[SourceImage]:
     """The station's frames as sources; ``use_masks=False`` (``mppp ods --rover``) lets the rover's own pixels in,
     except the hardware fixed to the mast head (:func:`head_hardware_masks`) unless ``mask_head_hardware`` is off."""
     by_name = {im.name: im for im in rec.images.values()}
@@ -324,6 +325,16 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
             src.extra_mask = h
         n = sum(1 for h in hw if h is not None and h.any())
         log.info("ods: mast-head hardware masked in %d of %d frames (rover shown)", n, len(out))
+    if not use_masks and mast_pose is not None and out:      # 0.96.1: the mast and its wind-sensor booms, from the model
+        from .rover_model import available, mast_masks
+        if available():
+            mm = mast_masks(out, mast_pose)
+            for src, m in zip(out, mm):
+                if m is not None:
+                    src.extra_mask = m if src.extra_mask is None else (src.extra_mask | m)
+                    src.mast_masked = True
+            log.info("ods: the mast and its booms masked in %d of %d frames (the rover model at the rover pose)",
+                     sum(1 for m in mm if m is not None), len(out))
     return out
 
 
@@ -775,7 +786,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    gains: bool = True, stack_top: str = "left", sky_fill: bool = True,
                    mask_head_hardware: bool = True, azimuth0_deg: float = 0.0, prefix: Optional[str] = None,
                    bits: int = 8, pds: Optional[PathLike] = None, tone: str = "auto", exposure16: float = 0.5,
-                   ground_fill: bool = True) -> Dict[str, Any]:
+                   ground_fill: bool = True, mask_mast: bool = True) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_ods_stereo_square.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``S003D2046`` / ``S003D2046_rover``); '' for the bare names.  Returns the record."""
@@ -801,8 +812,16 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             lin = {n: _lin_files(project, n) for n in want}
             log.info("ods: 16-bit linear sources (%d frames, %d made now) from %s", len(want), lin_rep["made"], lin_rep["dir"])
     linear = lin is not None
+    mast_pose = None
+    if not use_masks and mask_mast:                  # the rover in the block, for the mast's mask
+        try:
+            from .rover_deck import rover_pose
+            mast_pose = rover_pose(project, rec, station.images)
+        except Exception as e:                       # noqa: BLE001 - the panorama without that mask
+            log.warning("ods: no rover pose for the mast mask (%s)", e)
     sources = station_sources(project, rec, station, families=families, scale=scale, zcam_scale=zcam_scale, images=images,
-                              use_masks=use_masks, mask_head_hardware=mask_head_hardware, linear16=lin)
+                              use_masks=use_masks, mask_head_hardware=mask_head_hardware, linear16=lin,
+                              mast_pose=mast_pose)
     if not sources:
         raise ValueError(f"station {station.label}: no source images of families {families!r} with a pose")
     axes = dict(up=station.up, north=station.north, east=station.east)
@@ -816,6 +835,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                "rover": "shown" if not use_masks else "masked out",
                                "azimuth_of_column_0_deg": float(azimuth0_deg) % 360.0,
                                "head_hardware_masked": [s.name for s in sources if s.extra_mask is not None and s.extra_mask.any()],
+                               "mast_masked": [s.name for s in sources if getattr(s, "mast_masked", False)],
                                "eyes": {}}
     if gains:
         g = estimate_gains(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)

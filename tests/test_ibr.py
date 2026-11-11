@@ -1471,7 +1471,42 @@ def test_rover_model_in_the_mesh(tmp_path):
     pivot = RD.mech_to_block(np.array([[0.72, 0.56, -0.78]]), pose)[0]
     rep = M.build_station_mesh(np.vstack([terr, on_deck]), pivot, tmp_path, radius_m=6.0, plane_radius_m=10.0, poisson_depth=7, deck=pose)
     d = rep["rover_deck"]
-    assert d["model_triangles"] == len(F) and d["points_on_model_dropped"] > 2500 and "rear_floor_triangles" not in d
+    assert d["model_triangles"] == len(RM.load(M.ROVER_MODEL_PARTS)[1]) and d["points_on_model_dropped"] > 2500 and "rear_floor_triangles" not in d
     rep2 = M.build_station_mesh(np.vstack([terr, on_deck]), pivot, tmp_path / "b", radius_m=6.0, plane_radius_m=10.0, poisson_depth=7,
                                 deck=pose, rover_model_parts=None)
     assert "model_triangles" not in rep2["rover_deck"] and rep2["rover_deck"]["rear_floor_triangles"] > 0
+
+
+def test_mast_mask_from_the_rover_model():
+    from mppp.ibr import rover_deck as RD, rover_model as RM
+    V, F, meta = RM.load(["mast"])
+    mv = V[np.unique(F)]
+    assert meta["mast_axis_xy_m"] == [0.716, 0.559] and len(F) > 2000
+    boom = mv[(mv[:, 1] > 0.85)]                                  # the boom to the right rear, 0.46 m above the deck
+    assert len(boom) and abs(boom[:, 2].mean() + 0.46) < 0.05 and "mast" not in M.ROVER_MODEL_PARTS
+    pose = {"R_block_from_rnav": np.diag([1.0, -1.0, -1.0]), "t_block_from_rnav": np.zeros(3)}
+
+    class Src:                                                    # a pinhole at the head, looking at the boom / away from it
+        W, H = 400, 300
+
+        def __init__(self, target):
+            self.C = RD.mech_to_block(np.array([[0.75, 0.6, -0.80]]), pose)[0]
+            z = target - self.C
+            z /= np.linalg.norm(z)
+            x = np.cross(z, [0.0, 0.0, 1.0]); x /= np.linalg.norm(x)
+            self.R = np.stack([x, np.cross(z, x), z])
+
+        def project(self, X):
+            Xc = (X - self.C) @ self.R.T
+            uv = np.full((len(X), 2), np.nan)
+            f = Xc[:, 2] > 1e-3
+            uv[f] = 200.0 * Xc[f, :2] / Xc[f, 2:3] + (200.0, 150.0)
+            return uv, Xc[:, 2], None
+    tip = RD.mech_to_block(boom.mean(axis=0)[None], pose)[0]
+    far = Src(tip)
+    far.C = far.C + np.array([20.0, 0.0, 0.0])                    # 20 m off, looking the same way: the mast is not in view
+    at, away = RM.mast_masks([Src(tip), far], pose)
+    assert at is not None and at[150, 200] and 0.01 < at.mean() < 0.9 and away is None
+    cloud = RD.mech_to_block(np.vstack([boom, boom + np.array([0.0, 0.0, 1.0])]), pose)
+    near = RM.near_model(cloud, pose, near_m=RM.MAST_NEAR_M, parts=("mast",))
+    assert near[: len(boom)].all() and not near[len(boom):].any()
