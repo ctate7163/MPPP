@@ -1240,7 +1240,8 @@ def test_mesh_with_the_deck_floor(tmp_path):
     sag = RD.mech_to_block(np.c_[g.uniform(0.2, 0.8, (500, 1)), g.uniform(-0.3, 0.3, (500, 1)), np.full(500, 0.5)], pose)
     pts = np.vstack([terr, deck, sag])
     pivot = RD.mech_to_block(np.array([[0.72, 0.56, -0.78]]), pose)[0]
-    rep = M.build_station_mesh(pts, pivot, tmp_path, radius_m=6.0, plane_radius_m=10.0, poisson_depth=7, deck=pose)
+    rep = M.build_station_mesh(pts, pivot, tmp_path, radius_m=6.0, plane_radius_m=10.0, poisson_depth=7, deck=pose,
+                               rover_model_parts=None)
     d = rep["rover_deck"]
     assert d["points_below_dropped"] >= 500 and d["floor_triangles"] > 1000
     V, F = M.read_mesh(tmp_path / "mesh.ply")
@@ -1424,3 +1425,32 @@ def test_ground_fill_and_levels():
     assert 10 <= lo < 20 and 500 < hi <= 510
     y = tone_levels(np.array([[lo, lo, lo], [hi, hi / 2, lo], [3 * hi, 3 * hi, 3 * hi]], np.float32), lo, hi)
     assert np.allclose(y[0], 0) and abs(y[1, 0] - 235) < 0.01 and 235 < y[2, 0] <= 255 and y[1, 1] < y[1, 0]
+
+
+def test_rover_model_in_the_mesh(tmp_path):
+    from mppp.ibr import rover_deck as RD, rover_model as RM
+    assert RM.available()
+    V, F, meta = RM.load()
+    assert meta["credit"] == "NASA/JPL-Caltech" and 40000 < len(F) < 80000 and meta["arm_stow_deg"][0] == 89.2
+    assert V[:, 0].min() < -1.6 and V[:, 0].max() < 1.5            # the RTG behind; the arm stowed, not reaching forward
+    assert abs(V[:, 1]).max() < 1.4 and 1.05 < V[:, 2].max() < 1.2  # the wheels on the ground, 1.13 m below the deck top
+    Vb, Fb, _ = RM.load(["body"])
+    assert len(Fb) < len(F)
+    top = Vb[np.unique(Fb)]
+    deck = top[(np.abs(top[:, 0]) < 0.5) & (np.abs(top[:, 1]) < 0.4) & (np.abs(top[:, 2]) < 0.02)]
+    assert len(deck) > 20 and (np.abs(deck[:, 2]) < 0.012).mean() > 0.3     # the deck top at z 0
+    pose = {"R_block_from_rnav": np.diag([1.0, -1.0, -1.0]), "t_block_from_rnav": np.array([3.0, 2.0, 0.0])}
+    S = RD.mech_to_block(RM.surface_samples()[::50], pose)
+    assert RM.near_model(S, pose).all() and not RM.near_model(S + np.array([0.0, 0.0, 3.0]), pose).any()
+    Vm, Fm = RM.model_in_block(pose)
+    assert Fm.max() == len(Vm) - 1 and abs(Vm[:, 2].min()) < 0.02   # block z up: the wheels at z 0 (RNAV origin on the ground)
+    g = np.random.default_rng(0)
+    terr = np.c_[g.uniform(-4, 10, (40000, 2)), np.zeros(40000)]
+    on_deck = RD.mech_to_block(np.c_[g.uniform(-0.5, 0.5, (3000, 1)), g.uniform(-0.3, 0.3, (3000, 1)), g.normal(0, 0.005, 3000)], pose)
+    pivot = RD.mech_to_block(np.array([[0.72, 0.56, -0.78]]), pose)[0]
+    rep = M.build_station_mesh(np.vstack([terr, on_deck]), pivot, tmp_path, radius_m=6.0, plane_radius_m=10.0, poisson_depth=7, deck=pose)
+    d = rep["rover_deck"]
+    assert d["model_triangles"] == len(F) and d["points_on_model_dropped"] > 2500 and "rear_floor_triangles" not in d
+    rep2 = M.build_station_mesh(np.vstack([terr, on_deck]), pivot, tmp_path / "b", radius_m=6.0, plane_radius_m=10.0, poisson_depth=7,
+                                deck=pose, rover_model_parts=None)
+    assert "model_triangles" not in rep2["rover_deck"] and rep2["rover_deck"]["rear_floor_triangles"] > 0

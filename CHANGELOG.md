@@ -38,6 +38,21 @@ the station in their names; the stacked square has the left eye on top; the rove
   (default: unchanged up to 190, the highlights rolled off to 255 at the 16-bit ceiling, hue kept) or `--tone
   clip` (as before). A frame without its product: a loud warning and the 8-bit panorama. On for the single sites
   (`ods_args` in `single_sites.json`, now also a top-level key).
+- **The Perseverance model in the mesh** (`mppp.ibr.rover_model`, `scripts/build_rover_model.py`; Christian: "take
+  this model of perseverance's, simplify it, add it to the mesh, and project the images onto it. The arm is stowed,
+  so you would need to rotate the arm joints"). NASA's glTF model (credit NASA/JPL-Caltech, 199,000 triangles, metres,
+  x left / y up / z forward, the wheels on y 0) maps to RMECH as x = z, y = -x, z = 1.135 - y; an ICP of the Van Zyl
+  rover cloud onto its body moves that by 0.12 deg and 2-3 mm. The arm is a chain of five nodes (shoulder azimuth
+  about its local y, shoulder elevation, elbow and wrist about z, the turret about y); the five angles from the
+  model's deployed pose were fitted to the Van Zyl cloud of the stowed arm: +89.2, +16.4, +71.9, -103.3, -90.1 deg
+  (78 % of the arm's cloud within 2 cm of it; a second solution differs in the wrist and turret only - the turret's
+  own angle is the least certain). Left out: the mast above its base and the head, the high-gain antenna (they
+  move), the under-belly parts. Simplified per part to 61,000 triangles, 0.6 MB
+  (`mppp/data/rover/perseverance_rmech.npz`). Of the Van Zyl rover cloud 88 % is within 3 cm of the model and 94 %
+  within 5 cm. With the rover shown, `mppp mesh` drops the fused points within 4 cm of the model (Van Zyl: 224,000)
+  and adds the model at the station's rover pose; points farther from it are meshed as before (the antenna,
+  cables). The deck floor stays; the rear floor is used only without the model. `--no-rover-model`,
+  `--rover-model-parts body arm arm_base` (suspension and wheels are in the level-ground pose).
 - **Darker 16-bit files, a levelled 8-bit version** (Christian: "The 16-bit images should be darker to avoid
   saturation ... process it into an 8bit version that has the high and low points rescaled optimally to show
   detail"): the 16-bit panoramas are written at `--exposure16` 0.5 of the frames' own 16-bit scale (the blend is

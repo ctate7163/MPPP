@@ -445,7 +445,9 @@ coverage: coloured, mesh, far, none); with the rover shown (the default since 0.
 `<station>_rover_ods_...`, with `--mask-rover` `<station>_ods_...`; `--exclude STEM ...` leaves
 frames out (both eyes of a pair).  **`mesh`** with the rover shown puts a floor at the rover deck: nothing below the deck top
 inside its footprint (RMECH x -1.10..+0.95 m, y +-0.60 m, z 0 = the deck top; the rover placed by the frames' label
-CAHVORE poses), the floor added to the mesh, `rover_deck.json`; `--no-deck-floor` to leave it out.  **`ods --bits 16`** (0.96.1) blends the panorama from 16-bit linear frames made
+CAHVORE poses), the floor added to the mesh, `rover_deck.json`; `--no-deck-floor` to leave it out.  With the rover shown the mesh also takes NASA's Perseverance
+model (simplified, the arm stowed; `mppp.ibr.rover_model`) at the station's rover pose, the fused points within 4 cm
+of it dropped (`--no-rover-model`, `--rover-model-parts`).  **`ods --bits 16`** (0.96.1) blends the panorama from 16-bit linear frames made
 again from the PDS products (`<project>/images16/`; `--pds` or `MPPP_PDS`): `<station>_ods_left_16.png`,
 `_right_16.png`, `_stereo_square_16.png` (uint16 linear, for colour work; what the 8-bit images clip at 255 is kept,
 saturated pixels are neutral) next to the 8-bit ones, which get a soft highlight roll-off (`--tone clip` for the old

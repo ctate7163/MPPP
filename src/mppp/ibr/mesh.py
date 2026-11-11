@@ -462,6 +462,7 @@ def points_by_ring(points: np.ndarray, pivot: Sequence[float], up: Sequence[floa
     return [{"ring_m": [lo, hi], "points": int(((h >= lo) & (h < hi)).sum())} for lo, hi in zip(rings[:-1], rings[1:])]
 
 
+ROVER_MODEL_PARTS = ("body", "arm", "arm_base", "suspension", "wheels")     # of mppp.ibr.rover_model, with ``deck``
 FLOAT_CLEARANCE_M = 1.0      # beyond FLOAT_BEYOND_M the surface is at least this far below the cameras
 FLOAT_BEYOND_M = 3.0         # (horizontal distance from the mast axis; inside it the rover reaches up to the head)
 
@@ -493,7 +494,8 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
                        station: Optional[Dict[str, Any]] = None, up: Sequence[float] = (0, 0, 1),
                        plane_radius_m: float = DEFAULT_PLANE_RADIUS_M, ground_points: Optional[np.ndarray] = None,
                        horizontal_plane: bool = False, plane_points: Optional[np.ndarray] = None,
-                       deck: Optional[Dict[str, Any]] = None, remove_floating: bool = True) -> Dict[str, Any]:
+                       deck: Optional[Dict[str, Any]] = None, remove_floating: bool = True,
+                       rover_model_parts: Optional[Sequence[str]] = ROVER_MODEL_PARTS) -> Dict[str, Any]:
     """The whole of step 2 for one station: the surface (Delaunay through ``colmap_exe`` over ``dense_dir`` when
     given, else Poisson over the ``points`` within ``radius_m`` + 5 m of the axis), the cleanup (the mesh to
     ``radius_m`` from the axis), the decimation, the ground plane (:func:`fit_ground_plane` over ``points`` and
@@ -503,16 +505,25 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
     when ``points`` hold more than terrain (``mppp mesh --rover``: the rover-masked cloud, not the rover's deck).
     ``deck``: the rover pose of :func:`mppp.ibr.rover_deck.rover_pose` (``--rover``): nothing below the deck top
     inside its footprint - the points there dropped, the vertices lifted onto it, and the deck floor added.
-    ``remove_floating``: :func:`floating` points and triangles removed.  Returns the report."""
+    ``remove_floating``: :func:`floating` points and triangles removed.  ``rover_model_parts`` (with ``deck``): the
+    parts of the Perseverance model (:mod:`mppp.ibr.rover_model`) added to the mesh, the fused points on them
+    dropped; None or empty: no model (the deck floors alone).  Returns the report."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     points = np.asarray(points, float)
     deck_rep = None
+    use_model = False
     if deck is not None:                                        # 10 Nov: a floor at the rover deck
         from .rover_deck import below_deck
+        from . import rover_model
+        use_model = bool(rover_model_parts) and rover_model.available()
         drop = below_deck(points, deck)
         deck_rep = {"points_below_dropped": int(drop.sum())}
+        if use_model:                                           # the rover model stands for the points on it
+            near = rover_model.near_model(points, deck, parts=rover_model_parts)
+            deck_rep["points_on_model_dropped"] = int((near & ~drop).sum())
+            drop |= near
         if drop.any():
             points = points[~drop]
             if normals is not None:
@@ -561,11 +572,19 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
         Vd, Fd = deck_floor_arrays(deck)
         F = np.vstack([np.asarray(F, np.int64), np.asarray(Fd, np.int64) + len(V)])
         V = np.vstack([V, Vd])
-        from .rover_deck import REAR_X_M, REAR_Y_M              # the second floor behind the deck (holes in the back)
-        Vr, Fr = deck_floor_arrays(deck, x_m=REAR_X_M, y_m=REAR_Y_M)
-        F = np.vstack([F, np.asarray(Fr, np.int64) + len(V)])
-        V = np.vstack([V, Vr])
-        deck_rep["rear_floor_triangles"] = int(len(Fr))
+        if use_model:                                           # the Perseverance model, placed by the rover pose
+            Vm, Fm = rover_model.model_in_block(deck, parts=rover_model_parts)
+            F = np.vstack([F, np.asarray(Fm, np.int64) + len(V)])
+            V = np.vstack([V, Vm])
+            deck_rep.update(model_triangles=int(len(Fm)), model_parts=list(rover_model_parts))
+            log.info("mesh: the rover model - %d points on it dropped, %d triangles added (%s)",
+                     deck_rep["points_on_model_dropped"], len(Fm), ", ".join(rover_model_parts))
+        else:
+            from .rover_deck import REAR_X_M, REAR_Y_M          # the second floor behind the deck (holes in the back)
+            Vr, Fr = deck_floor_arrays(deck, x_m=REAR_X_M, y_m=REAR_Y_M)
+            F = np.vstack([F, np.asarray(Fr, np.int64) + len(V)])
+            V = np.vstack([V, Vr])
+            deck_rep["rear_floor_triangles"] = int(len(Fr))
         deck_rep.update(vertices_lifted=moved, floor_triangles=int(len(Fd)))
         log.info("mesh: the rover deck floor - %d points below it dropped, %d vertices lifted onto it, %d floor triangles",
                  deck_rep["points_below_dropped"], moved, len(Fd))

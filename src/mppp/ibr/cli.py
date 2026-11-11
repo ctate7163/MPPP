@@ -152,6 +152,11 @@ def add_parsers(sub) -> None:
     p.add_argument("--keep-floating", action="store_true", help="keep surface floating above the terrain (default, "
                    "0.96.1: removed - anything above the cameras, and beyond 3 m of the mast axis anything less than "
                    "1 m below them; heights above the ground plane)")
+    p.add_argument("--no-rover-model", action="store_true", help="rover shown: no Perseverance model in the mesh "
+                   "(default, 0.96.1: NASA's model, simplified, the arm stowed, placed by the rover pose - the fused "
+                   "points within 4 cm of it dropped; mppp.ibr.rover_model)")
+    p.add_argument("--rover-model-parts", nargs="+", default=None, choices=["body", "arm", "arm_base", "suspension", "wheels"],
+                   help="only these parts of the model (default all; e.g. without suspension wheels on rough ground)")
     p.add_argument("--no-deck-floor", action="store_true", help="--rover: no floor at the rover deck (default: nothing "
                    "below the deck top inside its footprint, RMECH x -1.10..+0.95 m, y +-0.60 m, placed by the frames' "
                    "label CAHVORE poses; the floor added to the mesh; rover_deck.json)")
@@ -245,7 +250,7 @@ def _points_file(project, given: Optional[str], label: Optional[str] = None, rov
 
 
 def cmd_mesh(a: argparse.Namespace) -> int:
-    from .mesh import build_station_mesh, mesh_preview, read_mesh, read_points, read_points_normals
+    from .mesh import ROVER_MODEL_PARTS, build_station_mesh, mesh_preview, read_mesh, read_points, read_points_normals
     project = _project(a.work)
     rec = _model(project)
     st, out = _station(project, rec, a)
@@ -275,7 +280,8 @@ def cmd_mesh(a: argparse.Namespace) -> int:
                              radius_m=a.mesh_radius, far_radius_m=a.far_radius, target_triangles=a.target_triangles,
                              poisson_depth=a.poisson_depth, station=st.to_json(), up=st.up, plane_radius_m=a.plane_radius,
                              ground_points=ties, horizontal_plane=a.horizontal_plane, plane_points=terrain,
-                             deck=deck, remove_floating=not a.keep_floating)
+                             deck=deck, remove_floating=not a.keep_floating,
+                             rover_model_parts=None if a.no_rover_model else (a.rover_model_parts or ROVER_MODEL_PARTS))
     rep["rover"] = "shown" if a.rover else "masked out"
     rep["points_file"] = str(pts_file)
     (out / "mesh_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
