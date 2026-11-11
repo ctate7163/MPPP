@@ -561,6 +561,11 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
         Vd, Fd = deck_floor_arrays(deck)
         F = np.vstack([np.asarray(F, np.int64), np.asarray(Fd, np.int64) + len(V)])
         V = np.vstack([V, Vd])
+        from .rover_deck import REAR_X_M, REAR_Y_M              # the second floor behind the deck (holes in the back)
+        Vr, Fr = deck_floor_arrays(deck, x_m=REAR_X_M, y_m=REAR_Y_M)
+        F = np.vstack([F, np.asarray(Fr, np.int64) + len(V)])
+        V = np.vstack([V, Vr])
+        deck_rep["rear_floor_triangles"] = int(len(Fr))
         deck_rep.update(vertices_lifted=moved, floor_triangles=int(len(Fd)))
         log.info("mesh: the rover deck floor - %d points below it dropped, %d vertices lifted onto it, %d floor triangles",
                  deck_rep["points_below_dropped"], moved, len(Fd))

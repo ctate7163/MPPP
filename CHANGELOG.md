@@ -38,6 +38,23 @@ the station in their names; the stacked square has the left eye on top; the rove
   (default: unchanged up to 190, the highlights rolled off to 255 at the 16-bit ceiling, hue kept) or `--tone
   clip` (as before). A frame without its product: a loud warning and the 8-bit panorama. On for the single sites
   (`ods_args` in `single_sites.json`, now also a top-level key).
+- **Darker 16-bit files, a levelled 8-bit version** (Christian: "The 16-bit images should be darker to avoid
+  saturation ... process it into an 8bit version that has the high and low points rescaled optimally to show
+  detail"): the 16-bit panoramas are written at `--exposure16` 0.5 of the frames' own 16-bit scale (the blend is
+  not clipped before; `ods.json` records the share clipped, the factor and the levels), and the 8-bit panorama is
+  made from the linear one with `--tone auto` (now the default): the black point at the 0.5 % of the darkest
+  channel, the white point at the 99.7 % of the brightest - over what the frames coloured, set on the first eye
+  and used for both - mapped to 0 and 235, linear between, the few brighter pixels rolled off to 255.
+- **The ground filled where no frame saw it** (Christian: "the holes in the rover should be filled at ground level.
+  Same with the area occluded by the arm. It shouldn't be zero, but continuous with a planar terrain"):
+  `ods.fill_ground` - below the horizon, what no frame coloured (under the rover, behind the arm, through holes
+  in the rover) takes the colour of the terrain around it (coloured pixels on the ground plane or on mesh within
+  25 cm of it, not the rover) by a pull-push pyramid, wrapped around north; `source` -4, brown in
+  `provenance.png`, `ground_filled` in `ods.json`; `--no-ground-fill`. Above the horizon an uncoloured surface is
+  now a sky hole and takes the sky fill.
+- **A second floor behind the deck** (Christian: "The back of the rover could use another minimum plane"): at the
+  deck top's level over RMECH x -1.55 .. -1.10 m, y +-0.45 m (under the RTG and the aft structure), added to the
+  rover mesh - a rough stand-in until the rover model is in the mesh.
 - **Floating surface removed** (Christian: "floating polygons should be removed ... everything above the cameras
   and every thing 1 meter below the camera beyond 3 meters"): `mppp mesh` drops the fused points and the triangles
   above the cameras anywhere, and beyond 3 m of the mast axis those less than 1 m below the cameras

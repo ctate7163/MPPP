@@ -455,18 +455,21 @@ def estimate_gains(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence
 def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], eye: str, width: int, height: int,
                ipd_m: float, rows_per_chunk: int = 128, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0),
                feather_px: float = FEATHER_PX, progress=None, sky_fill: bool = True,
-               azimuth0_deg: float = 0.0, linear: bool = False) -> Dict[str, np.ndarray]:
+               azimuth0_deg: float = 0.0, linear: bool = False, ground_fill: bool = True) -> Dict[str, np.ndarray]:
     """One eye's equirect: {"rgb" (H, W, 3) uint8 - or, ``linear``, float32 in 8-bit units up to 1024 (x 64 = the
     16-bit linear value) -, "source" (H, W) int16 (-1 none; the strongest source), "label"
     (H, W) uint8 surface label, "range" (H, W) float32}.  The two-band blend of the module doc, with each source's
     ``gain`` (:func:`estimate_gains`; 1 when not estimated)."""
     P = np.asarray(pivot, float)
     rgb = np.zeros((height, width, 3), np.float32 if linear else np.uint8)
-    top = LINEAR_TOP if linear else 255.0
+    top = 4.0 * LINEAR_TOP if linear else 255.0             # float: not clipped here; the 16-bit file has its own scale
     source = np.full((height, width), -1, np.int16)
     label = np.zeros((height, width), np.uint8)
     rng = np.zeros((height, width), np.float32)
     hidden = np.zeros((height, width), bool)
+    ground = np.zeros((height, width), bool)                 # terrain at the ground plane's level (the ground fill's donors)
+    u_ = np.asarray(up, float) / np.linalg.norm(up)
+    pl = getattr(scene, "plane", None)
     t0 = time.time()
     for r0 in range(0, height, rows_per_chunk):
         r1 = min(height, r0 + rows_per_chunk)
@@ -509,15 +512,63 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         hh = has & (w_hi_sum > 1e-6)
         col[hh] += hi_acc[hh] / w_hi_sum[hh][:, None]
         rgb[r0:r1] = np.clip(col, 0, top).astype(rgb.dtype).reshape(r1 - r0, width, 3)
+        if pl is not None:
+            tt = np.where(c["ok"] & np.isfinite(c["t"]), c["t"], 0.0)
+            X = o + tt[:, None] * d
+            hgt = (X @ pl["normal"] - pl["offset"]) / float(pl["normal"] @ u_)
+            g = has & ((c["label"] == LABEL_PLANE) | ((c["label"] == LABEL_MESH) & (np.abs(hgt) < GROUND_BAND_M)))
+            ground[r0:r1] = g.reshape(r1 - r0, width)
         source[r0:r1] = np.where(has, strongest, -1).astype(np.int16).reshape(r1 - r0, width)
         label[r0:r1] = c["label"].reshape(r1 - r0, width)
         rng[r0:r1] = np.where(c["ok"], c["t"], 0).reshape(r1 - r0, width)
         if progress:
             progress(eye, r1, height, time.time() - t0)
     filled = fill_cracks(rgb, source, label)
+    gfill = fill_ground(rgb, source, ground) if ground_fill else np.zeros(label.shape, bool)
     sky = fill_sky(rgb, source, label) if sky_fill else np.zeros(label.shape, bool)
     return {"rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
-            "sky_filled": sky}
+            "sky_filled": sky, "ground_filled": gfill}
+
+
+GROUND_BAND_M = 0.25             # mesh this close to the ground plane counts as terrain for the ground fill
+GROUND_PAD_FRAC = 0.25           # the panorama wrapped by this share of its width for the fill (no seam at north)
+
+
+def fill_ground(rgb: np.ndarray, source: np.ndarray, donors: np.ndarray) -> np.ndarray:
+    """Fill (in place) what no frame coloured below the horizon - under the rover, behind the arm, through holes in
+    the rover - as plain terrain (Christian, 10 Nov: "the holes in the rover should be filled at ground level. Same
+    with the area occluded by the arm. It shouldn't be zero, but continuous with a planar terrain"): the colours of
+    the terrain pixels (``donors``: coloured, on the ground plane or mesh at its level - not the rover) carried
+    inwards by a pull-push pyramid, so the fill is continuous with the terrain at its rim and smooth far from it.
+    ``source`` = -4 there.  Returns the mask of the pixels filled."""
+    import cv2
+    H, W = source.shape
+    rows = np.arange(H)
+    below = ((90.0 - (rows + 0.5) / H * 180.0) <= 0.0)[:, None]
+    holes = below & (source == -1)
+    if not holes.any() or donors.sum() < 50:
+        return np.zeros((H, W), bool)
+    pad = max(1, int(GROUND_PAD_FRAC * W))
+    wrap = lambda a: np.concatenate([a[:, -pad:], a, a[:, :pad]], axis=1)      # noqa: E731
+    wgt = wrap((donors & below).astype(np.float32))
+    img = wrap(rgb.astype(np.float32)) * wgt[..., None]
+    pyr = [(img, wgt)]
+    while min(pyr[-1][1].shape) > 2:                          # pull: weighted averages, coarser and coarser
+        a, w = pyr[-1]
+        size = (max(1, (a.shape[1] + 1) // 2), max(1, (a.shape[0] + 1) // 2))
+        pyr.append((cv2.resize(a, size, interpolation=cv2.INTER_AREA), cv2.resize(w, size, interpolation=cv2.INTER_AREA)))
+    a, w = pyr[-1]
+    cur = a / np.maximum(w, 1e-6)[..., None]
+    cur[w <= 1e-6] = (a.reshape(-1, 3).sum(axis=0) / max(float(w.sum()), 1e-6))
+    for a, w in reversed(pyr[:-1]):                           # push: where a level knows little, the coarser one
+        up_ = cv2.resize(cur, (a.shape[1], a.shape[0]), interpolation=cv2.INTER_LINEAR)
+        conf = np.clip(w, 0.0, 1.0)[..., None]
+        cur = a + (1.0 - conf) * up_
+    fill = cur[:, pad:pad + W]
+    top = 255.0 if rgb.dtype == np.uint8 else LINEAR_TOP
+    rgb[holes] = np.clip(fill[holes], 0, top).astype(rgb.dtype)
+    source[holes] = -4
+    return holes
 
 
 def fill_sky(rgb: np.ndarray, source: np.ndarray, label: np.ndarray) -> np.ndarray:
@@ -531,7 +582,7 @@ def fill_sky(rgb: np.ndarray, source: np.ndarray, label: np.ndarray) -> np.ndarr
     H, W = label.shape
     rows = np.arange(H)
     above = (90.0 - (rows + 0.5) / H * 180.0) > 0.0
-    sky = (label == LABEL_FAR) & above[:, None]
+    sky = ((label == LABEL_FAR) | (source == -1)) & above[:, None]     # 10 Nov: an uncoloured surface up there too
     bright = rgb.max(axis=2) >= SKY_MIN_VALUE
     seen = sky & (source != -1) & bright                     # no black or near-black pixel is carried up
     changed = np.zeros((H, W), bool)
@@ -643,6 +694,7 @@ def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int) -> Pat
     img = np.zeros(source.shape + (3,), np.uint8)
     img[source == -2] = (128, 128, 128)                       # cracks filled from their edges
     img[source == -3] = (230, 200, 160)                       # the sky filled above the frames (BGR: light blue)
+    img[source == -4] = (90, 120, 150)                        # the ground filled as plain terrain (brown)
     for k in range(max(0, n_sources)):
         m = source == k
         if not m.any():
@@ -722,7 +774,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
                    gains: bool = True, stack_top: str = "left", sky_fill: bool = True,
                    mask_head_hardware: bool = True, azimuth0_deg: float = 0.0, prefix: Optional[str] = None,
-                   bits: int = 8, pds: Optional[PathLike] = None, tone: str = "soft") -> Dict[str, Any]:
+                   bits: int = 8, pds: Optional[PathLike] = None, tone: str = "auto", exposure16: float = 0.5,
+                   ground_fill: bool = True) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_ods_stereo_square.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``S003D2046`` / ``S003D2046_rover``); '' for the bare names.  Returns the record."""
@@ -768,15 +821,26 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         g = estimate_gains(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
         rec_out["gains"] = g
         log.info("ods: gains over %d source pairs: %s", g["pairs"], ", ".join(f"{v:.3f}" for v in g["gains"].values()))
+    levels = None
     for eye in eyes:
         res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, rows_per_chunk=rows_per_chunk,
-                         progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, linear=linear, **axes)
+                         progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, linear=linear,
+                         ground_fill=ground_fill, **axes)
         f = ods_file(out, eye, prefix)
         if linear:                                   # the 16-bit linear panorama, and the 8-bit one for viewing
             f16 = ods_file(out, eye + "_16", prefix)
-            cv2.imwrite(str(f16), np.clip(np.rint(res["rgb"][..., ::-1] * 64.0), 0, 65535).astype(np.uint16))
-            from .linear16 import tone_soft
-            view = tone_soft(res["rgb"]) if tone == "soft" else np.clip(res["rgb"], 0, 255)
+            k16 = 64.0 * float(exposure16)           # darker than the frames: headroom for the gains and the grading
+            v16 = np.rint(res["rgb"][..., ::-1] * k16)
+            clipped16 = float((v16.max(axis=2) > 65535).mean())
+            cv2.imwrite(str(f16), np.clip(v16, 0, 65535).astype(np.uint16))
+            del v16
+            from .linear16 import auto_levels, tone_levels, tone_soft
+            if tone == "auto":                       # the black and white points from the first eye, for both
+                if levels is None:
+                    levels = auto_levels(res["rgb"], res["source"] >= 0)
+                view = tone_levels(res["rgb"], *levels)
+            else:
+                view = tone_soft(res["rgb"]) if tone == "soft" else np.clip(res["rgb"], 0, 255)
             over = float((res["rgb"].max(axis=2) > 255.0).mean())
             cv2.imwrite(str(f), np.rint(view[..., ::-1]).astype(np.uint8))
         else:
@@ -791,10 +855,11 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                 "no_surface": float((lab == 0).sum() / n),
                                 "hidden_view_used": float(res["hidden_fallback"].sum() / n),
                                 "cracks_filled": float(res["filled"].sum() / n),
-                                "sky_filled": float(res["sky_filled"].sum() / n)},
+                                "sky_filled": float(res["sky_filled"].sum() / n),
+                                "ground_filled": float(res["ground_filled"].sum() / n)},
                                 "sources_used": int(len(np.unique(res["source"][res["source"] >= 0])))}
         if linear:
-            rec_out["eyes"][eye].update(file_16bit=str(f16), above_8bit_range=over)
+            rec_out["eyes"][eye].update(file_16bit=str(f16), above_8bit_range=over, clipped_in_16bit=clipped16)
         for s in sources:
             s.release()
     if "left" in eyes and "right" in eyes:
@@ -818,6 +883,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             "white_balance": fr[0]["white_balance"] if fr else None, "brightness": fr[0]["brightness"] if fr else None,
             "scale_rad_to_int16": fr[0]["scale_rad_to_int16"] if fr else None,
             "view_tone": tone if linear else None,
+            "view_levels_8bit_units": None if levels is None else [float(v) for v in levels],
+            "exposure16": float(exposure16),
+            "value_16bit": "the linear value x 64 x exposure16 (0.5: half the frames' own 16-bit scale)",
             "frames_saturated_share_max": max([f["saturated_share"] for f in fr], default=None),
             "frames_clipped_in_8bit_share_max": max([f["clipped_in_8bit_share"] for f in fr], default=None)}
     rec_out["seconds"] = round(time.time() - t0, 1)

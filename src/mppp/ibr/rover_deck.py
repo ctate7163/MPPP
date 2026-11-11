@@ -161,10 +161,17 @@ def clamp_to_deck(V: np.ndarray, pose: Dict[str, Any], F: Optional[np.ndarray] =
     return V, F[~drop], int(sel.sum()), int(drop.sum())
 
 
-def deck_floor_arrays(pose: Dict[str, Any], step_m: float = DECK_GRID_M) -> Tuple[np.ndarray, np.ndarray]:
-    """The floor: a grid of triangles at the deck top over the footprint, in the block frame, facing up."""
-    xs = np.linspace(DECK_X_M[0], DECK_X_M[1], max(2, int(round((DECK_X_M[1] - DECK_X_M[0]) / step_m)) + 1))
-    ys = np.linspace(DECK_Y_M[0], DECK_Y_M[1], max(2, int(round((DECK_Y_M[1] - DECK_Y_M[0]) / step_m)) + 1))
+REAR_X_M = (-1.55, DECK_X_M[0])                          # behind the deck, under the RTG and the aft structure:
+REAR_Y_M = (-0.45, 0.45)                                 # a second floor at the deck top's level (10 Nov; a rough
+                                                         # stand-in until the rover model is in the mesh)
+
+
+def deck_floor_arrays(pose: Dict[str, Any], step_m: float = DECK_GRID_M, x_m: Sequence[float] = DECK_X_M,
+                      y_m: Sequence[float] = DECK_Y_M) -> Tuple[np.ndarray, np.ndarray]:
+    """A floor: a grid of triangles at the deck top over ``x_m`` x ``y_m`` (default the deck's footprint), in the
+    block frame, facing up."""
+    xs = np.linspace(x_m[0], x_m[1], max(2, int(round((x_m[1] - x_m[0]) / step_m)) + 1))
+    ys = np.linspace(y_m[0], y_m[1], max(2, int(round((y_m[1] - y_m[0]) / step_m)) + 1))
     gx, gy = np.meshgrid(xs, ys, indexing="ij")
     M = np.stack([gx.ravel(), gy.ravel(), np.full(gx.size, DECK_TOP_MECH_Z_M)], axis=1)
     nx, ny = len(xs), len(ys)

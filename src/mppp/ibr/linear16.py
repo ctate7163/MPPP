@@ -237,3 +237,36 @@ def tone_soft(x: np.ndarray, knee: float = 190.0, top: float = 255.0) -> np.ndar
     y = knee + (top - knee) * (1.0 - (1.0 - t) ** k)
     s = np.where(m > knee, y / np.maximum(m, 1e-6), 1.0)
     return np.clip(x * s[..., None], 0.0, 255.0)
+
+
+def auto_levels(x: np.ndarray, seen: Optional[np.ndarray] = None, low_pct: float = 0.5, high_pct: float = 99.7) -> Tuple[float, float]:
+    """The black and white points (8-bit units) of a linear panorama for viewing: the ``low_pct`` percentile of the
+    darkest channel and the ``high_pct`` percentile of the brightest, over the pixels a frame coloured (``seen``)."""
+    x = np.asarray(x)
+    step = max(1, int(np.sqrt(x.shape[0] * x.shape[1] / 2e6)))
+    sub = x[::step, ::step].reshape(-1, 3)
+    if seen is not None:
+        sub = sub[np.asarray(seen)[::step, ::step].ravel()]
+    if not len(sub):
+        return 0.0, 255.0
+    lo = float(np.percentile(sub.min(axis=1), low_pct))
+    hi = float(np.percentile(sub.max(axis=1), high_pct))
+    lo = min(lo, 0.5 * hi)                                         # the black point never eats the midtones
+    return lo, max(hi, lo + 1.0)
+
+
+LEVELS_WHITE = 235.0             # the white point lands here; what is brighter rolls off to 255
+
+
+def tone_levels(x: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    """Linear values -> 0..255 for viewing (Christian, 10 Nov: "an 8bit version that has the high and low points
+    rescaled optimally to show detail"): ``lo`` -> 0, ``hi`` -> LEVELS_WHITE, linear between (the hue kept), the few
+    pixels above ``hi`` rolled off towards 255 instead of clipped."""
+    x = np.asarray(x, np.float32)
+    k = LEVELS_WHITE / max(hi - lo, 1e-6)
+    z = np.clip((x - lo) * k, 0.0, None)
+    m = z.max(axis=-1)
+    span = 255.0 - LEVELS_WHITE
+    y = LEVELS_WHITE + span * (1.0 - np.exp(-(m - LEVELS_WHITE) / span))   # slope 1 at the white point, 255 at infinity
+    s_ = np.where(m > LEVELS_WHITE, y / np.maximum(m, 1e-6), 1.0)
+    return np.clip(z * s_[..., None], 0.0, 255.0)

@@ -194,9 +194,14 @@ def add_parsers(sub) -> None:
                    "not found")
     p.add_argument("--pds", default=None, help="--bits 16: the PDS archive (default MPPP_PDS, else the one the block's "
                    "manifest names)")
-    p.add_argument("--tone", default="soft", choices=["soft", "clip"], help="--bits 16: the 8-bit panorama from the "
-                   "linear one - soft (default: unchanged to 190, the highlights rolled off instead of clipped) or clip "
-                   "(as the 8-bit pipeline: cut at 255)")
+    p.add_argument("--tone", default="auto", choices=["auto", "soft", "clip"], help="--bits 16: the 8-bit panorama "
+                   "from the linear one - auto (default: the black and white points set from the panorama, 0.5 and "
+                   "99.7 %% of what the frames coloured, the same for both eyes, the brightest rolled off), soft "
+                   "(unchanged to 190, the highlights rolled off) or clip (as the 8-bit pipeline: cut at 255)")
+    p.add_argument("--exposure16", type=float, default=0.5, help="--bits 16: the 16-bit files at this factor of the "
+                   "frames' own 16-bit scale (default 0.5: darker, with headroom so nothing saturates)")
+    p.add_argument("--no-ground-fill", action="store_true", help="leave black what no frame coloured below the horizon "
+                   "(default: filled as plain terrain from the terrain around it - under the rover, behind the arm)")
     p.add_argument("--prefix", default=None, help="the panoramas' file-name prefix (default the station, S003D2046_ / "
                    "S003D2046_rover_: S003D2046_ods_left.png ...; '' for the bare ods_left.png)")
     p.add_argument("--rows-per-chunk", type=int, default=128)
@@ -328,7 +333,8 @@ def cmd_ods(a: argparse.Namespace) -> int:
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,
                          azimuth0_deg=-180.0 if a.north_center else a.azimuth0, prefix=a.prefix,
-                         bits=a.bits, pds=a.pds, tone=a.tone)
+                         bits=a.bits, pds=a.pds, tone=a.tone, exposure16=a.exposure16,
+                         ground_fill=not a.no_ground_fill)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: {e['file']}  coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "

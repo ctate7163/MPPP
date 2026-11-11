@@ -1384,11 +1384,18 @@ def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
     L16 = cv2.imread(str(out / "S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)[..., ::-1]
     L8 = cv2.imread(str(out / "S003D0010_ods_left.png"))[..., ::-1]
     assert L16.dtype == np.uint16 and L16.shape == (128, 256, 3) and L8.dtype == np.uint8
-    east = L16[70, 64]                                            # az 90: the green frame, 255 x 3 x 64
-    assert abs(int(east[1]) - 255 * 3 * 64) < 300 and east[0] < 300 and r["eyes"]["left"]["above_8bit_range"] > 0.2
-    assert 200 < L8[70, 64, 1] <= 255 and L8[70, 64, 0] < 5       # the view: rolled off, still green
+    east = L16[70, 64]                                            # az 90: the green frame, 255 x 3 x 64, at exposure 0.5
+    assert abs(int(east[1]) - 255 * 3 * 32) < 300 and east[0] < 300 and r["eyes"]["left"]["above_8bit_range"] > 0.2
+    assert r["eyes"]["left"]["clipped_in_16bit"] == 0 and r["linear16"]["exposure16"] == 0.5
+    assert 200 < L8[70, 64, 1] <= 255 and L8[70, 64, 0] < 5       # the view: levelled, still green
+    lo, hi = r["linear16"]["view_levels_8bit_units"]
+    assert r["linear16"]["view_tone"] == "auto" and 700 < hi < 800 and lo < 50      # the white point at the frames' 765
     north = L16[70, 2:126:8]                                      # the red frame: neutral where it was saturated
     assert (np.abs(north[:, 0].astype(int) - north[:, 1].astype(int)) < 300).any() and (north[:, 1] < 300).any()
+    r2 = O.render_station(proj, rec, st, scene, tmp_path / "o16b", width=128, scale=0.5, rows_per_chunk=32, bits=16, gains=False,
+                          exposure16=1.0, tone="clip", eyes=("left",))
+    e2 = cv2.imread(str(tmp_path / "o16b" / "S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)[35, 32]
+    assert abs(int(e2[1]) - 255 * 3 * 64) < 300 and r2["linear16"]["view_levels_8bit_units"] is None
     sq = cv2.imread(str(out / "S003D0010_ods_stereo_square_16.png"), cv2.IMREAD_UNCHANGED)
     assert sq.dtype == np.uint16 and sq.shape == (256, 256, 3) and np.array_equal(sq[:128], L16[..., ::-1])
     assert (out / "S003D0010_ods_stereo_square.jpg").is_file()
@@ -1396,3 +1403,24 @@ def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
     (d16 / st.images[1]).unlink()
     r8 = O.render_station(proj, rec, st, scene, tmp_path / "o8", width=128, scale=0.5, rows_per_chunk=32, bits=16, gains=False)
     assert r8["bits"] == 8 and r8["linear16"]["missing"] and not (tmp_path / "o8" / "S003D0010_ods_left_16.png").is_file()
+
+
+def test_ground_fill_and_levels():
+    from mppp.ibr.linear16 import auto_levels, tone_levels
+    H, W = 64, 128
+    rgb = np.zeros((H, W, 3), np.float32)
+    source = np.full((H, W), -1, np.int16)
+    donors = np.zeros((H, W), bool)
+    rgb[32:48] = (120.0, 80.0, 60.0)                              # terrain below the horizon, rows 32-47
+    source[32:48] = 0
+    donors[32:48] = True
+    rgb[44:48, 40:60] = (900.0, 900.0, 900.0)                     # the white deck: coloured, not a donor
+    donors[44:48, 40:60] = False
+    f = O.fill_ground(rgb, source, donors)
+    assert f[48:].all() and not f[:48].any() and (source[48:] == -4).all()
+    assert np.allclose(rgb[60, 100], (120, 80, 60), atol=2) and np.allclose(rgb[50, 50], (120, 80, 60), atol=25)   # terrain, not deck
+    assert (rgb[:32] == 0).all()                                  # nothing above the horizon
+    lo, hi = auto_levels(np.linspace(10, 510, 30000, dtype=np.float32).reshape(100, 100, 3))
+    assert 10 <= lo < 20 and 500 < hi <= 510
+    y = tone_levels(np.array([[lo, lo, lo], [hi, hi / 2, lo], [3 * hi, 3 * hi, 3 * hi]], np.float32), lo, hi)
+    assert np.allclose(y[0], 0) and abs(y[1, 0] - 235) < 0.01 and 235 < y[2, 0] <= 255 and y[1, 1] < y[1, 0]
