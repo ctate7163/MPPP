@@ -220,7 +220,7 @@ class Run:
 
     def pipeline(self, name: str, *args: str) -> int:
         cmd = [self.python, "-m", "mppp_studies.calibration.run_pipeline", "--root", self.root, "--jobs",
-               str(self.a.jobs), *args]
+               str(self.a.jobs), "--sites-timeout-h", f"{self.a.sites_timeout_h:g}", *args]
         m = self.mask_set()
         if m:
             cmd += ["--set", f"mask_checkpoint={m}"]
@@ -228,6 +228,18 @@ class Run:
 
     def mppp(self, name: str, *args: str, timeout_h: float = 30) -> int:
         return self.run(name, [self.python, "-m", "mppp", *args], timeout_h=timeout_h)
+
+    def passed(self, what: str, rc: int) -> str:
+        """``exit 0``, or the step fails (0.96.1, 11 Nov): a child that stopped with an error left the step's work
+        unfinished - recorded as done, a restart would never take it up again and the report would call it done."""
+        if rc != 0 and not self.a.dry_run:
+            raise RuntimeError(f"{what} exit {rc} (log {self.dir / ('freeze_' + what + '.log')})")
+        return f"exit {rc}"
+
+    def day(self) -> str:
+        """The run's date tag for its output folders: the day the run started, so a restart on a later day finds
+        what it made before (0.96.1; was today's date)."""
+        return str(self.status.get("started") or now())[:10].replace("-", "")
 
     def guarded(self, step: str, fn) -> None:
         if self.done(step) or (self.a.only and step != self.a.only):
@@ -419,20 +431,25 @@ class Run:
         if self.a.zcam_waive_aspect:
             args += ["--zcam-waive-aspect", *map(str, self.a.zcam_waive_aspect)]
         rc = self.pipeline("zjoints", *args)
-        since = (self.status["steps"].get("zjoints") or {}).get("started", "")
-        return f"exit {rc}; " + "; ".join(self.zjoint_lines(since=since))
+        since = str(self.status.get("started") or "")                 # the joints of this run, also after a restart
+        lines = "; ".join(self.zjoint_lines(since=since))
+        if rc != 0 and not self.a.dry_run:
+            raise RuntimeError(f"zjoints exit {rc} ({lines}; log {self.dir / 'freeze_zjoints.log'})")
+        return f"exit {rc}; " + lines
 
     def s_zfinal(self) -> str:
-        return f"exit {self.pipeline('zfinal', '--from', 'zcam_runs', '--redo', 'zcam_runs', '--stop-before', 'zcam_joints')}"
+        return self.passed("zfinal", self.pipeline("zfinal", "--from", "zcam_runs", "--redo", "zcam_runs", "--stop-before",
+                                                   "zcam_joints"))
 
     def s_ecam(self) -> str:
-        return f"exit {self.pipeline('ecam', '--from', 'ecam_runs', '--redo', 'ecam_runs', 'ecam_joint', '--stop-before', 'zcam_runs', '--no-promote')}"
+        return self.passed("ecam", self.pipeline("ecam", "--from", "ecam_runs", "--redo", "ecam_runs", "ecam_joint",
+                                                 "--stop-before", "zcam_runs", "--no-promote"))
 
     def s_nz(self) -> str:
-        out = self.root / "camera_analysis" / f"nz34_joint_freeze_{datetime.date.today():%Y%m%d}"
+        out = self.root / "camera_analysis" / f"nz34_joint_freeze_{self.day()}"
         rc = self.mppp("nz", "--log", f"{out}_log.txt", "calib", "nz", "--group", JOINT_GROUP, "--navcam-group",
                        "ecam_consensus", "--root", self.root, "--out", out)
-        return f"exit {rc} ({out})"
+        return f"{self.passed('nz', rc)} ({out})"
 
     def s_deck(self) -> str:
         from mppp.waypoints.sites import load_site_table, work_folder
@@ -464,7 +481,7 @@ class Run:
 
     def s_ztests(self) -> str:
         notes = []
-        day = f"{datetime.date.today():%Y%m%d}"
+        day = self.day()
         for name, args in ZTESTS:
             out = self.root / "camera_analysis" / f"{name}_freeze_{day}"
             if (out / "check.json").is_file():
@@ -478,7 +495,7 @@ class Run:
 
     def s_studies(self) -> str:
         rc = self.pipeline("studies", "--from", "error_analysis", "--redo", "error_analysis", "rover_frame", "--no-zcam-states")
-        return f"exit {rc} ({self.dir / 'REPORT.md'})"
+        return f"{self.passed('studies', rc)} ({self.dir / 'REPORT.md'})"
 
     def s_report(self) -> str:
         md = report_md(self)
@@ -840,6 +857,9 @@ def parser() -> argparse.ArgumentParser:
                     help="auto: a Python with a CUDA torch for the comparison")
     ap.add_argument("--zcam-waive-aspect", type=int, nargs="*", default=list(WAIVE_ASPECT), metavar="ZOOM")
     ap.add_argument("--jobs", type=int, default=int(os.environ.get("MPPP_JOBS", "2") or 2))
+    ap.add_argument("--sites-timeout-h", type=float, default=168.0,
+                    help="the time limit of one pass over the blocks (run_pipeline --sites-timeout-h; its own default "
+                         "of 72 h is within reach of 16 Mastcam-Z blocks at two jobs: the large ones take 7-8 h each)")
     ap.add_argument("--now", action="store_true", help="start once the pipeline lock is free")
     ap.add_argument("--max-wait-h", type=float, default=24 * 7)
     ap.add_argument("--redo", nargs="*", choices=STEPS, default=[])
@@ -871,6 +891,13 @@ def main(argv=None) -> int:
     r.status.pop("stopped_by", None)
     r.log(f"freeze {'continued' if r.resumed and r.status['steps'] else 'started'} (pid {os.getpid()}, root {r.root}, "
           f"code {r.code} [{git_head(r.code)}], models {r.cmods}, mask {a.mask_model})")
+    if r.resumed and r.before.get("state") == "running":
+        # 0.96.1 (11 Nov): the run before did not end - a reboot, a closed window or a kill; said in the log and kept
+        cut = {"last_heartbeat": r.before.get("heartbeat"), "continued": now(),
+               "step": next((s for s in STEPS if (r.before.get("steps", {}).get(s) or {}).get("state") == "running"), None)}
+        r.status.setdefault("interruptions", []).append(cut)
+        r.log(f"the run before ended without a stop (last heartbeat {cut['last_heartbeat']}, in {cut['step']}): a restart "
+              "of the PC or a closed window - continuing; blocks that finished are kept, the ones under way start again")
     if r.resumed:
         done = [s for s in STEPS if r.done(s)]
         r.log(f"steps done before: {', '.join(done) if done else 'none'}" + (f"; redo: {', '.join(sorted(r.redo))}" if r.redo else ""))

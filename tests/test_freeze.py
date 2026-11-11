@@ -376,3 +376,53 @@ def test_logon_launcher_carries_the_mask_options(tmp_path, monkeypatch):
     launcher = (root / "mppp_pipeline" / "freeze_logon.bat").read_text(encoding="ascii")
     assert '--mask-model "auto" --mask-margin 0.005' in launcher and "freeze.bat" in launcher
     assert calls and calls[0][:2] == ["reg", "add"]
+
+
+# ----------------------------------------------------------------------------- 0.96.1 (11 Nov): the PC restarted under the run
+def test_a_child_that_fails_fails_its_step_and_a_restart_takes_it_up(tmp_path, monkeypatch):
+    root = _root(tmp_path)
+    argv = ["--root", str(root), "--code", str(fz.REPO), "--no-logon-task", "--cmods", str(root / "cmods")]
+    rcs = {"zfinal": [1, 0]}
+    monkeypatch.setattr(fz.Run, "pipeline", lambda self, name, *a: rcs.get(name, [0]).pop(0) if rcs.get(name) else 0)
+    r = fz.Run(fz.parser().parse_args(argv))
+    r.guarded("zfinal", r.s_zfinal)
+    assert r.status["steps"]["zfinal"]["state"].startswith("failed: RuntimeError: zfinal exit 1") and not r.done("zfinal")
+    r.guarded("ecam", r.s_ecam)                                             # the run goes on
+    assert r.done("ecam")
+    r2 = fz.Run(fz.parser().parse_args(argv))                               # started again: the failed step runs
+    r2.guarded("zfinal", r2.s_zfinal)
+    assert r2.done("zfinal") and r2.status["steps"]["zfinal"]["note"] == "exit 0"
+
+
+def test_a_restart_after_a_reboot_is_said_and_keeps_the_runs_day(tmp_path, monkeypatch):
+    root = _root(tmp_path)
+    (root / "cmods").mkdir()
+    (root / "cmods" / "M2020_N_rig.json").write_text(json.dumps({"source": "freeze"}), encoding="utf-8")
+    f = root / "mppp_pipeline" / fz.STATUS_FILE
+    f.write_text(json.dumps({"state": "running", "started": "2026-11-10T08:29:36", "heartbeat": "2026-11-11T03:10:00", "pid": 4,
+                             "tag": fz.TAG, "steps": {"wait": {"state": "done"}, "mask": {"state": "done"},
+                                                      "cmods": {"state": "done"}, "zjoints": {"state": "running"}},
+                             "mask": {"state": "done", "choice": "keep (mppp_mask_v3)", "set": None}}), encoding="utf-8")
+    seen = {}
+
+    def pipeline(self, name, *args):
+        seen.setdefault("day", self.day())
+        return 0
+    monkeypatch.setattr(fz.Run, "pipeline", pipeline)
+    monkeypatch.setattr(fz.Run, "mppp", lambda self, name, *a, **k: seen.setdefault(name, a) and 0)
+    monkeypatch.setattr(fz.Run, "s_deck", lambda self: "no deck here")
+    assert _run(root) == 0
+    st = _status(root)
+    assert st["interruptions"][0]["last_heartbeat"] == "2026-11-11T03:10:00" and st["interruptions"][0]["step"] == "zjoints"
+    assert seen["day"] == "20261110" and any("nz34_joint_freeze_20261110" in str(x) for x in seen["nz"])
+    log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert "ended without a stop (last heartbeat 2026-11-11T03:10:00, in zjoints)" in log
+
+
+def test_the_block_passes_get_the_long_time_limit(tmp_path, monkeypatch):
+    root = _root(tmp_path)
+    cmds = []
+    monkeypatch.setattr(fz.Run, "run", lambda self, name, cmd, **k: cmds.append([str(c) for c in cmd]) or 0)
+    r = fz.Run(fz.parser().parse_args(["--root", str(root), "--code", str(fz.REPO), "--cmods", str(root / "cmods")]))
+    r.pipeline("zjoints", "--from", "zcam_runs")
+    assert cmds[0][cmds[0].index("--sites-timeout-h") + 1] == "168"

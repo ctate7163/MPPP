@@ -71,7 +71,10 @@ ZCAM_STATES_SETS = ("ZCAM_BIN_BY=image", "ZCAM_HOLD_F_IMAGES=0", "ZCAM_BIN_REFIN
 # the weekend run): a state of this tag simply lacks it, so a rerun does rover_frame and the report only
 STATE_TAG = "v0944"
 STAGE_ALIASES = {"navcam_runs": "ecam_runs", "navcam_joint": "ecam_joint"}     # the names before 0.94.4
-STOP_ON_FAIL = ()                                # every stage goes on to the next
+STOP_ON_FAIL = ("ecam_runs", "zcam_runs")        # 0.96.1: block runs that did not get through (the wait for another
+#                                                  batch gave up, run_sites hit its time limit) stop the pipeline - the
+#                                                  joints after them would read blocks of two generations of models.
+#                                                  Sites that failed on their own still leave the stage "done"
 ZCAM_GROUP, ECAM_GROUP, ZCAM34_JOINT = "zcam_consensus", "ecam_consensus", "zcam34_joint"
 NAVCAM_GROUP = ECAM_GROUP                        # the name before 0.94.4
 ZOOMS = (34, 48, 63, 79, 110)       # 0.95.1 (Christian, 29 Oct: "leave z79 on so that we get a first promotable model"; Z110 too); 26 Oct-0.95.0: 34, 48, 63
@@ -193,6 +196,11 @@ class Pipeline:
         if rc == 1 and not self.a.dry_run:                     # a failed site once more (finished ones are skipped)
             self.log(f"  {stage}: some sites failed - once more")
             rc = self.run(stage, cmd, timeout_h=self.a.sites_timeout_h)
+        if rc == 124 and not self.a.dry_run:
+            # 0.96.1 (11 Nov): run_sites stopped at its time limit is not "done" - the sites it had not reached still
+            # hold the alignment of the models before, and a joint over them would mix the two
+            return "failed", (f"run_sites stopped at its time limit ({self.a.sites_timeout_h:g} h, --sites-timeout-h): "
+                              "start again - the finished sites are skipped")
         return ("done", "every site finished") if rc == 0 else ("done", f"finished with failed sites (exit {rc}; see run_sites_log.txt)")
 
     def s_ecam_runs(self):

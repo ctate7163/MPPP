@@ -53,6 +53,23 @@ the station in their names; the stacked square has the left eye on top; the rove
   and adds the model at the station's rover pose; points farther from it are meshed as before (the antenna,
   cables). The deck floor stays; the rear floor is used only without the model. `--no-rover-model`,
   `--rover-model-parts body arm arm_base` (suspension and wheels are in the level-ground pose).
+- **The freeze after a restart of the PC** (11 Nov; Christian: "the rest of the freeze pipeline should be scanned
+  for bugs and improvements"; the alignment of the Mastcam-Z blocks is unchanged, and so are the run keys - the
+  blocks that finished stay finished under this code):
+  - a step whose child stops with an error is **failed, not done** (`zjoints`, `zfinal`, `ecam`, `nz`, `studies`
+    recorded "done - exit 1" before: a restart never took the step up again and the report called it done). The
+    run still goes on to the next step; started again, it runs the failed ones;
+  - `run_pipeline`: `run_sites` stopped at its time limit, or a wait for another batch that gave up, **stops the
+    pipeline** (`STOP_ON_FAIL` was empty, and the stage was recorded "done - finished with failed sites (exit
+    124)": the joints would then have read blocks of two generations of models). Sites that fail on their own
+    still leave the stage done, as before;
+  - the freeze passes `--sites-timeout-h 168` (its own `--sites-timeout-h`): run_pipeline's default of 72 h for one
+    pass was within reach of 16 Mastcam-Z blocks at two jobs (Chal Rocks large 7.2 h, Rockytop 8.4 h);
+  - the output folders of `nz` and `ztests` carry the day the run started, not today's: a restart on a later day
+    finds what it made before; the joints listed for `zjoints` are those since the run's start, not since the
+    last restart;
+  - a run that ended without a stop (a reboot, a closed window) is said in the log on the restart, with its last
+    heartbeat and step, and kept in the status (`interruptions`).
 - **The wind-sensor booms masked from the model** (Christian: "use this to predict the location of the wind booms
   and remove them from the 360"). The mast below the head is fixed to the rover - only the head turns - so the
   model's mast and booms (the part `mast`, kept out of the mesh) sit at the rover pose; projected through the label
