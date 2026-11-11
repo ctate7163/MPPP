@@ -378,7 +378,11 @@ def test_windows_folder_is_short():
     # zcam_backlash_rerun.bat (Christian, 31 Oct: "one good zcam joint to capture all of the problematic backlash
     # anomalies"): 24; freeze_chain.bat (Christian, 2 Nov: the freeze run unattended): 25
     # 0.96.0 (9 Nov): claude_sync.bat and freeze_chain.bat out, sync_code.bat and freeze.bat in: 25
-    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 25, sorted(f.name for f in files)
+    # 0.96.1 (Christian, 11 Nov: "Please put that bat file in the MPPP/scripts/windows/ folder"):
+    # update_and_run_single_sites.bat, the copy of mppp.ibr.single_sites.BAT: 26
+    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 26, sorted(f.name for f in files)
+    from mppp.ibr import single_sites as SS
+    assert (w / SS.BAT_NAME).read_bytes() == SS.BAT.replace("\r\n", "\n").replace("\n", "\r\n").encode("ascii")
     tm = (w / "train_masks.bat").read_bytes()
     assert tm.count(b"\n") == tm.count(b"\r\n") and b"masks_training_set_v*" in tm and b"--paper" in tm
     assert b"--zoom-max 2" in tm and b"torch.cuda.is_available()" in tm

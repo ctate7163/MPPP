@@ -70,6 +70,10 @@ the station in their names; the stacked square has the left eye on top; the rove
     last restart;
   - a run that ended without a stop (a reboot, a closed window) is said in the log on the restart, with its last
     heartbeat and step, and kept in the status (`interruptions`).
+- **`scripts\windows\update_and_run_single_sites.bat`** (Christian, 11 Nov: "Please put that bat file in the
+  MPPP/scripts/windows/ folder"): the copy of `mppp.ibr.single_sites.BAT` (a test keeps the two identical). In the
+  repository it works on the tree it is in; everything after the settings is one parenthesised block, read whole
+  before it runs, because the merge may replace the file under it. 26 files in `scripts\windows`.
 - **The wind-sensor booms masked from the model** (Christian: "use this to predict the location of the wind booms
   and remove them from the 360"). The mast below the head is fixed to the rover - only the head turns - so the
   model's mast and booms (the part `mast`, kept out of the mesh) sit at the rover pose; projected through the label
