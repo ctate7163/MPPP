@@ -146,7 +146,7 @@ def deck_baseline_figure(deck_joint: Optional[PathLike], chain: PathLike, out_pn
         b = (m.get("navcam_rig") or {}).get("baseline_mm")
         if not b:
             raise ValueError(f"no station rigs under {deck_joint} and no navcam_rig.baseline_mm in {chain}")
-        fit, label = {"coef": b["coef"], "jk_se": b.get("jk_se")}, f"({m.get('name') or Path(chain).stem}: fit only)"
+        fit, label = {"coef": b["coef"], "jk_se": b.get("jk_se")}, f"({Path(chain).stem})"
     return plot_deck_baseline(rows, out_png, fit, variants, label, dpi)
 
 

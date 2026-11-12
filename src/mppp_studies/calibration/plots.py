@@ -152,7 +152,7 @@ def plot_hazcam_rig_trends(rig: Dict[str, Any], path: PathLike, label: str = "",
     name = {"F": "front", "R": "rear"}.get(fam, fam)
     fig.suptitle(f"{name} Hazcam rig trends{(' ' + label) if label else ''} ({len(rows)} blocks; right axes in Hazcam "
                  f"IFOV, {HAZCAM_IFOV_MDEG:.1f} mdeg)", fontsize=10)
-    fig.tight_layout(rect=(0, 0, 1, 0.93)); fig.savefig(path, dpi=dpi)
+    fig.tight_layout(rect=(0, 0, 1, 0.94)); fig.savefig(path, dpi=dpi)
     plt.close(fig)
     return Path(path)
 
@@ -714,10 +714,10 @@ def plot_deck_baseline(rows: Sequence[Dict[str, Any]], path: PathLike, fit: Opti
     axs[0][1].secondary_yaxis("right", functions=(lambda m: 1e6 * (m / a - 1), lambda q: a * (1 + q / 1e6))).set_ylabel(
         f"ppm from a = {a:.3f} mm", fontsize=9)
     panel_letters(axs)
-    fig.suptitle(f"Navcam stereo baseline from the deck fiducials{(' ' + label) if label else ''}: "
+    fig.suptitle(f"Navcam stereo baseline from the deck fiducials{(' ' + label) if label else ''}\n"
                  f"B = a + b_T (T + 20) + b_s (sol − 1000)/1000,  a = {a:.3f} ± {se[0]:.3f} mm "
                  f"({1e6 * (a / NAVCAM_LABEL_BASELINE_MM - 1):+.0f} ppm from the label)"
-                 + ("" if rows else "\nno station rows available: the fit of the shipped deck_joint model only"), fontsize=10)
-    fig.tight_layout(rect=(0, 0, 1, 0.93)); fig.savefig(path, dpi=dpi)
+                 + ("" if rows else "; no station rows found: the fit alone"), fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.94)); fig.savefig(path, dpi=dpi)
     plt.close(fig)
     return Path(path)

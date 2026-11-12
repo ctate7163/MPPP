@@ -23,6 +23,14 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   (or `MPPP_DECK_FRAME`; default the sol-1642 right frame under `D:\data\m2020\datadrive`). On that frame the six
   surveyed targets are 5.1 px rms from the label model and 1.5 px from the constrained one (0.3 px about a common
   1.4 px shift, which is the chain's pose error for the frame).
+- **More standard figures** (Christian, 12 Nov). `make_figures.bat` now also writes, per Mastcam-Z joint folder, the
+  rig trends of that joint (`zcam<zoom>_rig_trends_<joint>.png`, + `_nolabels`; before only from an old-style
+  `zcam34_calibration_*` folder), and `navcam_baseline_deck_joint_<tag>.png`: the Navcam baseline of every station rig
+  of the deck_joint against temperature and sol (`plots.deck_baseline_rows`, `fit_deck_baseline`,
+  `plot_deck_baseline`; `paper_figures --deck-joint FOLDER`, default `EOD_WORK` or `D:\rover_frame_eod`, reading
+  `jr_<run>.json` and `eod_report.json`). Without that folder the figure shows the shipped DJ32 fit and no points.
+  The Hazcam rig trends were already in the set (newest `hazcam_fit_*`). The deck fiducial figure had red and blue
+  swapped; fixed.
 - **26 and 100 mm** are zooms MPPP aligns (`chal_rocks_large`, `seitah_overlook`). No focus model and no joint:
   their bin cameras start from the label model and refine in the block. 100 mm holds k2 = p1 = p2 = 0 as 79 mm does;
   nothing is held at 26 mm yet. Not aligned on real data before this release.
