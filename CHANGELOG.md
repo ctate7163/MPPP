@@ -31,9 +31,14 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   The enhanced-local view uses one smoothed gain map for both eyes (CLAHE on the eyes' mean lightness).
 - **Single-site runs, faster at the same quality** (Christian, 12 Nov). `mppp dense --stereo` on a workspace whose
   depth and normal maps are all there, made with the same options, skips the stereo step and does not wait for
-  the GPU lock (`dense.stereo_cached`; a run sat 12 min behind an alignment for 1 s of stereo). The rover-shown
-  mesh reads the rover-masked variant's terrain mesh and sets the model on it (`mppp mesh --rover --terrain-from
-  DIR`, set by the single-site plan): one surface run per station instead of two.
+  the GPU lock (`dense.stereo_cached`; a run sat 12 min behind an alignment for 1 s of stereo). The variant that
+  runs second reads the first one's terrain mesh, with the rover model taken off or set on (`mppp mesh
+  --terrain-from DIR`, set by the single-site plan for either order): one surface run per station instead of two.
+- **Far-field underlay and apron** (Christian, 12 Nov, Van Zyl: holes near the horizon in the mesh preview). From 20 m
+  every cell of the fill's polar grid gets its two triangles 5 cm under the cell heights, so a ray through a gap of
+  the ragged far mesh ends at the terrain's range; past the mesh radius the grid goes on to twice the radius with its
+  height falling to the ground plane's (`mesh.FILL_UNDERLAY_*`, `FILL_APRON_FACTOR`; `fill_terrain(underlay=False)`:
+  as before). The depth maps see the apron as mesh out to 100 m.
 - **Freeze window** (Christian, 12 Nov): a line when a block starts ("aligning <site>") and when it ends (verdict,
   images, residual, hours), and every half hour the last log line of each running block.
 - **Freeze on 0.97, from the beginning** (Christian, 12 Nov: "restart the freeze from the beginning using the

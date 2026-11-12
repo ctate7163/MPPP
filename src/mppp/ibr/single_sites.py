@@ -162,8 +162,9 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                 if step not in steps:
                     continue
                 argv = [step, str(work), "--station", st["station"], *extra, "--out", str(out)]
-                if step == "mesh" and v == "rover" and "masked" in vs and vs.index("masked") < vs.index("rover"):
-                    argv += ["--terrain-from", str(base)]      # 0.97.0: the terrain mesh is built once
+                if step == "mesh" and vs.index(v) > 0 and "mesh" in steps:     # 0.97.0: the terrain mesh is built once,
+                    first = vs[0]                                               # by the variant that runs first
+                    argv += ["--terrain-from", str(base if first == "masked" else base / "with_rover")]
                 if step == "depthmaps":
                     argv.append("--photometry")
                 if step == "ods" and st.get("ods_exclude"):   # 10 Nov: pairs left out of the panorama

@@ -141,8 +141,8 @@ def add_parsers(sub) -> None:
     p.add_argument("--mesh-radius", type=float, default=50.0, help="the mesh to this horizontal distance from the mast "
                    "axis (m; default 30)")
     p.add_argument("--terrain-from", default=None, metavar="DIR",
-                   help="0.97.0, with --rover: the folder of this station's rover-masked mppp mesh - its terrain is "
-                        "used as it is and the rover model set on it (no second surface run)")
+                   help="0.97.0: the folder of this station's other variant (rover shown / masked) - its terrain mesh is used "
+                        "as it is, with or without the rover model (no second surface run)")
     p.add_argument("--plane-radius", type=float, default=100.0, help="the ground plane beyond the mesh, to this horizontal "
                    "distance (m; default 100); the sky at infinity beyond")
     p.add_argument("--horizontal-plane", action="store_true", help="a horizontal ground plane at the median height "
@@ -295,17 +295,24 @@ def _mesh_on_terrain(src: Path, out: Path, deck, st, a, parts) -> Optional[Dict[
         rep = json.loads(need[2].read_text(encoding="utf-8"))
     except ValueError:
         return None
-    same = (rep.get("rover") == "masked out" and not rep.get("rover_triangles")
-            and (rep.get("station") or {}).get("label") == st.label
+    same = ((rep.get("station") or {}).get("label") == st.label
             and abs(float((rep.get("scene") or {}).get("mesh_radius_m", -1)) - float(a.mesh_radius)) < 1e-6
             and bool((rep.get("fill") or {})) == (not getattr(a, "no_fill", False)))
     if not same:
         log.info("mesh --terrain-from %s: not this station's rover-masked terrain with these settings - built again", src)
         return None
     V, F = read_mesh(need[0])
+    rt = rep.get("rover_triangles")                 # the other variant's rover model: the last triangles of its mesh
+    if rt and int(rt[1]) == len(F) and 0 <= int(rt[0]) < int(rt[1]):
+        F = F[:int(rt[0])]
+        used = np.zeros(len(V), bool)
+        used[F.ravel()] = True
+        V, F = V[used], (np.cumsum(used) - 1)[F]
+    elif rt:
+        return None
     tris = None
     deck_rep: Dict[str, Any] = {"terrain_only": True}
-    if parts and rover_model.available():
+    if deck is not None and parts and rover_model.available():
         Vm, Fm = rover_model.model_in_block(deck, parts=parts)
         tris = [int(len(F)), int(len(F) + len(Fm))]
         F = np.vstack([F, Fm + len(V)])
@@ -315,7 +322,7 @@ def _mesh_on_terrain(src: Path, out: Path, deck, st, a, parts) -> Optional[Dict[
     out.mkdir(parents=True, exist_ok=True)
     write_mesh(out / "mesh.ply", V, F)
     shutil.copy2(need[1], out / "ground_plane.json")
-    rep.update(rover_deck=deck_rep, rover_triangles=tris, terrain_from=str(src),
+    rep.update(rover_deck=deck_rep if deck is not None else None, rover_triangles=tris, terrain_from=str(src),
                files={"mesh": str(out / "mesh.ply"), "ground_plane": str(out / "ground_plane.json")})
     log.info("mesh: the terrain of %s (%d triangles) with the rover model (%d triangles) - no second surface run",
              src, tris[0] if tris else len(F), (tris[1] - tris[0]) if tris else 0)
@@ -355,10 +362,10 @@ def cmd_mesh(a: argparse.Namespace) -> int:
                  d["size_m"][0], d["size_m"][1], out / "rover_deck.json")
     ties = None if a.no_tie_points else _tie_points(rec)
     rep = None
-    if a.rover and not old_way and deck is not None and getattr(a, "terrain_from", None):
+    if not old_way and getattr(a, "terrain_from", None) and (deck is not None or not a.rover):
         # 0.97.0 (Christian, 12 Nov 2026: "Build the terrain mesh once"): the rover-masked variant's mesh is this
         # variant's terrain - read it and set the model on it, no second Poisson run
-        rep = _mesh_on_terrain(Path(a.terrain_from), out, deck, st, a,
+        rep = _mesh_on_terrain(Path(a.terrain_from), out, deck if a.rover else None, st, a,
                                None if a.no_rover_model else (a.rover_model_parts or ROVER_MODEL_PARTS))
     if rep is None:
         rep = build_station_mesh(pts, st.pivot, out, normals=nrm, dense_dir=a.dense_dir or pts_file.parent, colmap_exe=a.colmap,

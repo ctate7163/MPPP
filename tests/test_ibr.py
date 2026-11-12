@@ -384,7 +384,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     V, F = M.read_mesh(out / "mesh.ply")
     assert len(F) > 1000 and abs(float(np.median(V[:, 2]))) < 0.1                     # the ground plane, near z = 0
     cen, _, _ = M.triangle_geometry(V, F)
-    assert M.horizontal_distance(cen, rep["pivot_block_m"]).max() <= 50.05            # 50 m from the axis (the cloud here ends at 30 m)
+    assert M.horizontal_distance(cen, rep["pivot_block_m"]).max() <= 100.05           # 0.97.0: the apron to twice the 50 m radius
 
     assert mppp_main(["depthmaps", work, "--station", "3_10", "--mask-rover", "--scale", "0.25", "--photometry", "--no-preview"]) == 0
     maps = sorted((out / "maps").glob("*.npz"))
@@ -1782,7 +1782,16 @@ def test_rover_mesh_on_the_masked_terrain(tmp_path):
     cfg = {"stations": {"S1": {"station": "3_10", "work": str(tmp_path)}}}
     cmds = S.plan(cfg, tmp_path)[0]["commands"]
     m = [c["argv"] for c in cmds if c["step"] == "mesh"]
-    assert "--terrain-from" not in m[0] and m[1][m[1].index("--terrain-from") + 1] == str(tmp_path / "single_sites" / "S1")
+    first_out = tmp_path / "single_sites" / "S1" / ("with_rover" if "--rover" in m[0] else "")
+    assert "--terrain-from" not in m[0] and Path(m[1][m[1].index("--terrain-from") + 1]) == Path(first_out)
+    # the masked variant after the rover one: the model's triangles (the last ones) are taken off again
+    rep.update(rover="shown", rover_triangles=[1, 2])
+    write_mesh(src / "mesh.ply", np.vstack([V, V + 5]), np.array([[0, 1, 2], [3, 4, 5]]))
+    (src / "mesh_report.json").write_text(json.dumps(rep))
+    a.mesh_radius = 50.0
+    r = C._mesh_on_terrain(src, tmp_path / "masked", None, st, a, None)
+    Vt, Ft = read_mesh(tmp_path / "masked" / "mesh.ply")
+    assert len(Ft) == 1 and len(Vt) == 3 and r["rover_triangles"] is None
 
 
 def test_stereo_cached(tmp_path):
@@ -1801,3 +1810,27 @@ def test_stereo_cached(tmp_path):
         (ws / "stereo" / d / "a.png.geometric.bin").write_bytes(b"x")
     assert D.stereo_cached(ws, opts, max_image_size=2000)
     assert not D.stereo_cached(ws, opts, max_image_size=1000)                 # other options: the stereo step decides
+
+
+def test_far_underlay_and_apron():
+    """0.97.0 (12 Nov): beyond 20 m every grid cell has a surface just under the terrain; an apron falls to the plane."""
+    from mppp.ibr import mesh as M
+    from mppp.ibr.raycast import LABEL_MESH, Scene
+    rng = np.random.default_rng(0)
+    # a ragged terrain 0.5 m above the plane: small triangles scattered to 50 m, most of the area a gap
+    c = rng.uniform(-50, 50, (4000, 2)); c = c[np.hypot(c[:, 0], c[:, 1]) < 50]
+    V = np.repeat(np.c_[c, np.full(len(c), -1.5)], 3, axis=0) + np.tile([[0, 0, 0], [0.2, 0, 0], [0, 0.2, 0]], (len(c), 1))
+    F = np.arange(len(V)).reshape(-1, 3)
+    plane = {"normal": [0, 0, 1], "offset": -2.0, "centre": [0, 0, 0], "up": [0, 0, 1], "radius_m": 100.0}
+    V2, F2, rep = M.fill_terrain(V, F, (0, 0, 0), (0, 0, 1), plane, 50.0)
+    assert rep["underlay"]["apron_to_m"] == 100.0
+    sc = Scene((V2, F2), plane=plane, sky=True)
+    az = np.radians(np.arange(0, 360, 1.0))
+    for r, aim, lo, hi in ((35.0, -1.6, -1.65, -1.4), (75.0, -1.9, -1.95, -1.6), (99.0, -2.05, -2.01, -1.9)):
+        tgt = np.c_[r * np.cos(az), r * np.sin(az), np.full(len(az), aim)]
+        d = tgt / np.linalg.norm(tgt, axis=1)[:, None]
+        h = sc.cast(np.zeros((len(az), 3)), d)
+        z = (h["t"][:, None] * d)[:, 2]
+        assert (h["label"] == LABEL_MESH).mean() > 0.97 and lo < np.median(z) < hi, (r, np.median(z))
+    V3, F3, rep3 = M.fill_terrain(V, F, (0, 0, 0), (0, 0, 1), plane, 50.0, underlay=False)
+    assert rep3["underlay"] is None and len(F3) < len(F2)

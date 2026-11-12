@@ -571,6 +571,15 @@ ROVER_FOOTPRINT_Y_M = (-1.50, 1.50)   # RMECH y: outside the wheels (track about
 FILL_AZ_STEP_DEG = 2.0                # the fill's polar grid about the mast axis: azimuth step ...
 FILL_RING0_M = 0.4                    # ... and rings from here, each FILL_RING_RATIO x the last, to the mesh radius
 FILL_RING_RATIO = 1.06
+# 0.97.0 (Christian, 12 Nov 2026, Van Zyl: "the mesh preview still has some holes near the horizon ... so that they
+# don't appear as holes in the stereo view"): far from the mast the Poisson mesh is ragged - gaps smaller than a grid
+# cell, which the hole rule below does not see.  From FILL_UNDERLAY_FROM_M on every cell of the grid gets its two
+# triangles, FILL_UNDERLAY_DROP_M below the cell heights: a ray through a gap ends on it, at the terrain's range.
+# Past the mesh radius the grid goes on to FILL_APRON_FACTOR x the radius, its height falling to the ground plane's:
+# mesh and plane meet without a step.
+FILL_UNDERLAY_FROM_M = 20.0
+FILL_UNDERLAY_DROP_M = 0.05
+FILL_APRON_FACTOR = 2.0
 
 
 def under_rover(X: np.ndarray, pose: Dict[str, Any]) -> np.ndarray:
@@ -582,7 +591,8 @@ def under_rover(X: np.ndarray, pose: Dict[str, Any]) -> np.ndarray:
 
 
 def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: Dict[str, Any],
-                 radius_m: float, rover: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+                 radius_m: float, rover: Optional[Dict[str, Any]] = None,
+                 underlay: bool = True) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """
     0.97.0 (Christian, 12 Nov 2026: "interpolate terrain under the rover so that it is flattish terrain without
     holes. The far field should interpolate over hole in the terrain. This is especially important behind the
@@ -611,6 +621,9 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
     edges = [0.0, FILL_RING0_M]
     while edges[-1] < radius_m:
         edges.append(min(edges[-1] * FILL_RING_RATIO, float(radius_m)))
+    apron_m = float(radius_m) * (FILL_APRON_FACTOR if underlay else 1.0)
+    while edges[-1] < apron_m:                                  # the apron: past the mesh, down to the plane
+        edges.append(min(edges[-1] * FILL_RING_RATIO, apron_m))
     edges = np.array(edges)
     na, nr = int(round(360.0 / FILL_AZ_STEP_DEG)), len(edges) - 1
     hits = np.zeros((nr, na), int)
@@ -651,6 +664,13 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
     else:
         hn = np.zeros_like(nx)                                   # no terrain at all: the plane
     hn[0, :] = np.mean(hn[0, :])                                 # the axis is one point
+    if underlay:
+        rn = np.broadcast_to(edges[:, None], hn.shape)
+        far = np.clip((rn - FILL_UNDERLAY_FROM_M) / max(0.1 * FILL_UNDERLAY_FROM_M, 1e-6), 0.0, 1.0)
+        hn = hn - FILL_UNDERLAY_DROP_M * far                     # just under the terrain, from the underlay's start
+        if apron_m > radius_m:                                   # the apron's height: the rim's, falling to the plane
+            t = np.clip((rn - radius_m) / (apron_m - radius_m), 0.0, 1.0)
+            hn = hn * (0.5 + 0.5 * np.cos(np.pi * t))
     nu = np.asarray(plane["normal"], float)
     Xn = P[None, None, :] + nx[..., None] * e + ny[..., None] * n
     # the node on the vertical through (x, y) at height hn above the plane
@@ -664,6 +684,8 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
     need |= np.roll(hole, 1, axis=1) | np.roll(hole, -1, axis=1)  # inside its cell, and a ray must not pass between
     need[1:] |= hole[:-1]
     need[:-1] |= hole[1:]
+    if underlay:
+        need |= (edges[:-1] >= FILL_UNDERLAY_FROM_M)[:, None]
     ii, jj = np.nonzero(need)
     for i, j in zip(ii, jj):
         a_, b_, c_, d_ = idx(i, j), idx(i, j + 1), idx(i + 1, j + 1), idx(i + 1, j)
@@ -673,10 +695,13 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
             Ff.append((a_, b_, c_)); Ff.append((a_, c_, d_))
     Ff = np.asarray(Ff, np.int64).reshape(-1, 3)
     rings = (0, 3, 10, 20, 30, 50, 1e9)
-    by_ring = [{"ring_m": [lo, min(hi, float(radius_m))], "cells": int(((rc >= lo) & (rc < hi)).sum() * na),
-                "filled": int(hole[(rc >= lo) & (rc < hi)].sum())} for lo, hi in zip(rings[:-1], rings[1:])
+    inside = rc < radius_m                                       # the report: the mesh's own reach, not the apron
+    by_ring = [{"ring_m": [lo, min(hi, float(radius_m))], "cells": int((inside & (rc >= lo) & (rc < hi)).sum() * na),
+                "filled": int(hole[inside & (rc >= lo) & (rc < hi)].sum())} for lo, hi in zip(rings[:-1], rings[1:])
                if lo < radius_m]
-    rep.update(cells=int(nr * na), covered=int(covered.sum()), filled=int(hole.sum()), triangles=int(len(Ff)),
+    rep.update(cells=int(inside.sum() * na), covered=int(covered.sum()), filled=int(hole[inside].sum()), triangles=int(len(Ff)),
+               underlay=({"from_m": FILL_UNDERLAY_FROM_M, "drop_m": FILL_UNDERLAY_DROP_M, "apron_to_m": apron_m}
+                         if underlay else None),
                filled_by_ring=by_ring, grid={"az_step_deg": FILL_AZ_STEP_DEG, "rings": int(nr)})
     if len(Ff):
         F = np.vstack([F, Ff + len(V)])
