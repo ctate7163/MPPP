@@ -566,6 +566,124 @@ def floating(X: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: 
     return ((r <= beyond_m) & (h > hc)) | ((r > beyond_m) & (hl > np.maximum(hc - clearance_m, FLOAT_RANGE_FRACTION * r)))
 
 
+ROVER_FOOTPRINT_X_M = (-1.75, 1.60)   # RMECH x of the ground the rover stands over (rear of the RTG to the stowed turret)
+ROVER_FOOTPRINT_Y_M = (-1.50, 1.50)   # RMECH y: outside the wheels (track about 2.7 m)
+FILL_AZ_STEP_DEG = 2.0                # the fill's polar grid about the mast axis: azimuth step ...
+FILL_RING0_M = 0.4                    # ... and rings from here, each FILL_RING_RATIO x the last, to the mesh radius
+FILL_RING_RATIO = 1.06
+
+
+def under_rover(X: np.ndarray, pose: Dict[str, Any]) -> np.ndarray:
+    """Points over the rover's footprint on the ground (``pose``: :func:`mppp.ibr.rover_deck.rover_pose`)."""
+    from .rover_deck import block_to_mech
+    M = block_to_mech(np.asarray(X, float), pose)
+    return ((M[:, 0] >= ROVER_FOOTPRINT_X_M[0]) & (M[:, 0] <= ROVER_FOOTPRINT_X_M[1])
+            & (M[:, 1] >= ROVER_FOOTPRINT_Y_M[0]) & (M[:, 1] <= ROVER_FOOTPRINT_Y_M[1]))
+
+
+def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: Dict[str, Any],
+                 radius_m: float, rover: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+    """
+    0.97.0 (Christian, 12 Nov 2026: "interpolate terrain under the rover so that it is flattish terrain without
+    holes. The far field should interpolate over hole in the terrain. This is especially important behind the
+    rover"): the terrain mesh made whole out to ``radius_m``.
+
+    A polar grid about the mast axis (``FILL_AZ_STEP_DEG`` x rings growing by ``FILL_RING_RATIO``).  A cell is
+    *covered* when a triangle's centroid lies in it; its height is the median of those centroids above the plane.
+    With ``rover`` (the rover pose) the triangles over the rover's footprint are removed first, so that ground is
+    interpolated, not meshed from what the masks left.  The heights of the grid's nodes are interpolated linearly
+    over the covered cells (nearest beyond their hull) - flat between the edges of a hole - and every cell that is
+    not covered, and its neighbours, get two triangles.  Returns (V, F, {"cells", "covered", "filled", "triangles",
+    "under_rover_triangles_removed", "filled_by_ring"}).
+    """
+    from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+    P = np.asarray(pivot, float)
+    u = np.asarray(up, float) / np.linalg.norm(up)
+    e = np.cross([0.0, 1.0, 0.0], u); e = e / np.linalg.norm(e)
+    n = np.cross(u, e)
+    V, F = np.asarray(V, float), np.asarray(F, np.int64)
+    rep: Dict[str, Any] = {"under_rover_triangles_removed": 0}
+    if rover is not None and len(F):
+        cen, _, _ = triangle_geometry(V, F)
+        drop = under_rover(cen, rover)
+        rep["under_rover_triangles_removed"] = int(drop.sum())
+        V, F = keep_triangles(V, F, ~drop)
+    edges = [0.0, FILL_RING0_M]
+    while edges[-1] < radius_m:
+        edges.append(min(edges[-1] * FILL_RING_RATIO, float(radius_m)))
+    edges = np.array(edges)
+    na, nr = int(round(360.0 / FILL_AZ_STEP_DEG)), len(edges) - 1
+    hits = np.zeros((nr, na), int)
+    hsum: Dict[Tuple[int, int], list] = {}
+    if len(F):
+        cen, _, _ = triangle_geometry(V, F)
+        d = cen - P
+        x, y = d @ e, d @ n
+        r = np.hypot(x, y)
+        ok = r < radius_m
+        ir = np.clip(np.searchsorted(edges, r[ok], side="right") - 1, 0, nr - 1)
+        ia = (np.floor(np.degrees(np.arctan2(y[ok], x[ok])) % 360.0 / FILL_AZ_STEP_DEG).astype(int)) % na
+        h = height_above_plane(cen[ok], plane, up)
+        key = ir * na + ia
+        order = np.argsort(key, kind="stable")
+        ks, hs = key[order], h[order]
+        st = np.flatnonzero(np.r_[True, ks[1:] != ks[:-1]])
+        en = np.r_[st[1:], len(ks)]
+        med = np.full((nr, na), np.nan)
+        for a_, b_ in zip(st, en):
+            med[ks[a_] // na, ks[a_] % na] = np.median(hs[a_:b_])
+            hits[ks[a_] // na, ks[a_] % na] = b_ - a_
+    else:
+        med = np.full((nr, na), np.nan)
+    covered = hits > 0
+    rc = 0.5 * (edges[:-1] + edges[1:])
+    ac = np.radians((np.arange(na) + 0.5) * FILL_AZ_STEP_DEG)
+    cx, cy = rc[:, None] * np.cos(ac)[None, :], rc[:, None] * np.sin(ac)[None, :]
+    an = np.radians(np.arange(na) * FILL_AZ_STEP_DEG)
+    nx, ny = edges[:, None] * np.cos(an)[None, :], edges[:, None] * np.sin(an)[None, :]      # nodes (nr + 1, na)
+    if covered.sum() >= 3:
+        pts = np.c_[cx[covered], cy[covered]]
+        lin = LinearNDInterpolator(pts, med[covered])
+        hn = lin(nx, ny)
+        miss = ~np.isfinite(hn)
+        if miss.any():
+            hn[miss] = NearestNDInterpolator(pts, med[covered])(nx[miss], ny[miss])
+    else:
+        hn = np.zeros_like(nx)                                   # no terrain at all: the plane
+    hn[0, :] = np.mean(hn[0, :])                                 # the axis is one point
+    nu = np.asarray(plane["normal"], float)
+    Xn = P[None, None, :] + nx[..., None] * e + ny[..., None] * n
+    # the node on the vertical through (x, y) at height hn above the plane
+    h0 = height_above_plane(Xn.reshape(-1, 3), plane, up).reshape(nx.shape)
+    Xn = Xn + (hn - h0)[..., None] * u
+    Vf = Xn.reshape(-1, 3)
+    idx = lambda i, j: i * na + (j % na)                         # noqa: E731
+    Ff = []
+    hole = ~covered
+    need = hole.copy()                                           # and the covered cells around a hole: a mesh ends
+    need |= np.roll(hole, 1, axis=1) | np.roll(hole, -1, axis=1)  # inside its cell, and a ray must not pass between
+    need[1:] |= hole[:-1]
+    need[:-1] |= hole[1:]
+    ii, jj = np.nonzero(need)
+    for i, j in zip(ii, jj):
+        a_, b_, c_, d_ = idx(i, j), idx(i, j + 1), idx(i + 1, j + 1), idx(i + 1, j)
+        if i == 0:
+            Ff.append((a_, c_, d_))                              # the innermost ring: triangles from the axis
+        else:
+            Ff.append((a_, b_, c_)); Ff.append((a_, c_, d_))
+    Ff = np.asarray(Ff, np.int64).reshape(-1, 3)
+    rings = (0, 3, 10, 20, 30, 50, 1e9)
+    by_ring = [{"ring_m": [lo, min(hi, float(radius_m))], "cells": int(((rc >= lo) & (rc < hi)).sum() * na),
+                "filled": int(hole[(rc >= lo) & (rc < hi)].sum())} for lo, hi in zip(rings[:-1], rings[1:])
+               if lo < radius_m]
+    rep.update(cells=int(nr * na), covered=int(covered.sum()), filled=int(hole.sum()), triangles=int(len(Ff)),
+               filled_by_ring=by_ring, grid={"az_step_deg": FILL_AZ_STEP_DEG, "rings": int(nr)})
+    if len(Ff):
+        F = np.vstack([F, Ff + len(V)])
+        V = np.vstack([V, Vf])
+    return V, F, rep
+
+
 def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: PathLike, normals: Optional[np.ndarray] = None,
                        dense_dir: Optional[PathLike] = None, colmap_exe: Optional[str] = None,
                        radius_m: float = DEFAULT_RADIUS_M, far_radius_m: Optional[float] = None,
@@ -574,7 +692,8 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
                        plane_radius_m: float = DEFAULT_PLANE_RADIUS_M, ground_points: Optional[np.ndarray] = None,
                        horizontal_plane: bool = False, plane_points: Optional[np.ndarray] = None,
                        deck: Optional[Dict[str, Any]] = None, remove_floating: bool = True,
-                       rover_model_parts: Optional[Sequence[str]] = ROVER_MODEL_PARTS) -> Dict[str, Any]:
+                       rover_model_parts: Optional[Sequence[str]] = ROVER_MODEL_PARTS, terrain_only: bool = False,
+                       fill: bool = True, rover_pose: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The whole of step 2 for one station: the surface (Delaunay through ``colmap_exe`` over ``dense_dir`` when
     given, else Poisson over the ``points`` within ``radius_m`` + 5 m of the axis), the cleanup (the mesh to
     ``radius_m`` from the axis), the decimation, the ground plane (:func:`fit_ground_plane` over ``points`` and
@@ -586,14 +705,22 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
     inside its footprint - the points there dropped, the vertices lifted onto it, and the deck floor added.
     ``remove_floating``: :func:`floating` points and triangles removed.  ``rover_model_parts`` (with ``deck``): the
     parts of the Perseverance model (:mod:`mppp.ibr.rover_model`) added to the mesh, the fused points on them
-    dropped; None or empty: no model (the deck floors alone).  Returns the report."""
+    dropped; None or empty: no model (the deck floors alone).  0.97.0: ``terrain_only`` - ``points`` are the
+    rover-masked cloud (terrain alone): nothing of the rover is meshed from points, the deck floor is not needed, and
+    with ``deck`` the Perseverance model is added to the finished terrain (the unmasked images then project onto
+    it).  ``fill`` (:func:`fill_terrain`): the terrain interpolated under the rover (``rover_pose``, default
+    ``deck``) and over every hole out to ``radius_m``.  Returns the report."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     points = np.asarray(points, float)
     deck_rep = None
     use_model = False
-    if deck is not None:                                        # 10 Nov: a floor at the rover deck
+    if deck is not None and terrain_only:                       # 0.97.0: the terrain alone; the model comes after
+        from . import rover_model
+        use_model = bool(rover_model_parts) and rover_model.available()
+        deck_rep = {"terrain_only": True}
+    elif deck is not None:                                      # 10 Nov: a floor at the rover deck
         from .rover_deck import below_deck
         from . import rover_model
         use_model = bool(rover_model_parts) and rover_model.available()
@@ -650,7 +777,26 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
         log.info("mesh: floating surface - %d points and %d triangles removed (above the cameras, or less than %g m below "
                  "them beyond %g m; heights from the ground plane)", float_rep["points_dropped"], int(dropf.sum()),
                  FLOAT_CLEARANCE_M, FLOAT_BEYOND_M)
-    if deck is not None:
+    fill_rep = None
+    if fill:                                                    # 0.97.0: no holes, flattish ground under the rover
+        V, F, fill_rep = fill_terrain(V, F, pivot, up, plane, radius_m, rover=rover_pose if rover_pose is not None else deck)
+        log.info("mesh: terrain fill - %d of %d cells had no surface (%d triangles); %d triangles under the rover replaced",
+                 fill_rep["filled"], fill_rep["cells"], fill_rep["triangles"], fill_rep["under_rover_triangles_removed"])
+    if deck is not None and terrain_only:
+        if use_model:
+            Vm, Fm = rover_model.model_in_block(deck, parts=rover_model_parts)
+            F = np.vstack([np.asarray(F, np.int64), np.asarray(Fm, np.int64) + len(V)])
+            V = np.vstack([V, Vm])
+            deck_rep.update(model_triangles=int(len(Fm)), model_parts=list(rover_model_parts))
+            log.info("mesh: the rover model on the terrain - %d triangles (%s)", len(Fm), ", ".join(rover_model_parts))
+        else:
+            from .rover_deck import REAR_X_M, REAR_Y_M, deck_floor_arrays
+            for kw in ({}, {"x_m": REAR_X_M, "y_m": REAR_Y_M}):
+                Vd, Fd = deck_floor_arrays(deck, **kw)
+                F = np.vstack([np.asarray(F, np.int64), np.asarray(Fd, np.int64) + len(V)])
+                V = np.vstack([V, Vd])
+            deck_rep["model"] = "not available: the deck floors alone"
+    elif deck is not None:
         from .rover_deck import clamp_to_deck, deck_floor_arrays
         V, F, moved, cut = clamp_to_deck(V, deck, F)
         deck_rep["triangles_below_dropped"] = cut
@@ -691,7 +837,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
                      "plane": {k: plane[k] for k in ("method", "radius_m", "tilt_deg", "height_below_pivot_m", "rms_m", "bins")
                                if k in plane},
                      "beyond": "a far sphere" if sphere else "the sky at infinity"},
-           "far_sphere": sphere, "rover_deck": deck_rep, "floating": float_rep, "coverage_by_range": coverage_by_range(V, F, pivot), "tau_m": {str(z): float(tau_m(z))
+           "far_sphere": sphere, "rover_deck": deck_rep, "fill": fill_rep, "floating": float_rep, "coverage_by_range": coverage_by_range(V, F, pivot), "tau_m": {str(z): float(tau_m(z))
            for z in (2, 5, 10, 15, 20, 30, 50, 85)}, "files": files, "seconds": round(time.time() - t0, 1)}
     (out / "mesh_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
     log.info("mesh: %d -> %d triangles (%s) within %g m of the axis; ground plane %s (tilt %.1f deg, %.2f m rms over %d "

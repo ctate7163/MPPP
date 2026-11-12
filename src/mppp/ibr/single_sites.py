@@ -153,9 +153,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
         if "dense" in steps:
             cmds.append({"variant": "masked", "step": "dense",
                          "argv": ["dense", str(work), "--station", st["station"], *fa, "--prepare", "--stereo", "--fusion"]})
-            if "rover" in vs:
-                cmds.append({"variant": "rover", "step": "dense",
-                             "argv": ["dense", str(work), "--station", st["station"], *fa, "--fusion", "--keep-rover"]})
+            # 0.97.0: no second fusion with the rover kept - the rover-shown mesh is the terrain of the rover-masked
+            # cloud with the Perseverance model on it (mppp mesh --rover; --rover-cloud is the 0.96 way)
         for v in vs:
             out = base if v == "masked" else base / "with_rover"
             extra = ["--rover"] if v == "rover" else ["--mask-rover"]    # 0.96.1: the rover shown by default

@@ -57,6 +57,18 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   only.
 - **Top-down stereo 360 names** (Christian, 12 Nov): `<station>[_rover]_360_3DTD.jpg / .png / _16.png`, was
   `..._ods_stereo_square...`; a folder made again loses the files under the old name.
+- **Rover-shown station products: terrain first, then the rover model** (Christian, 12 Nov: "let's try only
+  rendering the terrain without the rover. then add the rover model in let the images without the rover masked
+  project onto the rover model ... interpolate terrain under the rover so that it is flattish terrain without holes.
+  The far field should interpolate over hole in the terrain"). `mppp mesh --rover` now meshes the rover-masked
+  cloud (`fused.ply`, the terrain alone) and sets the Perseverance model on it; the unmasked frames then project
+  onto the model. `--rover-cloud` is the 0.96 way (the cloud fused with the rover in it, the deck floor). The second
+  fusion (`dense --fusion --keep-rover`) is gone from `run_single_site_ibr.bat`. Both variants: `mesh.fill_terrain`
+  removes the triangles over the rover's footprint and gives every cell of a polar grid (2 deg, rings growing 6 %)
+  that has no surface, out to the mesh radius, an interpolated one - linear between the edges of a hole, so flat
+  under the rover and across far-field gaps (`--no-fill`: the ground plane shows through, as before). On the
+  Rockytop terrain cloud: 5,897 of 15,120 cells filled (452 of 1,620 at 30-50 m). The rover pose and model on a
+  real station are not tested here (no reconstruction in the cloud session).
 - **26 and 100 mm** are zooms MPPP aligns (`chal_rocks_large`, `seitah_overlook`). No focus model and no joint:
   their bin cameras start from the label model and refine in the block. 100 mm holds k2 = p1 = p2 = 0 as 79 mm does;
   nothing is held at 26 mm yet. Not aligned on real data before this release.

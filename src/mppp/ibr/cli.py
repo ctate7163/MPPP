@@ -163,6 +163,11 @@ def add_parsers(sub) -> None:
                    "points within 4 cm of it dropped; mppp.ibr.rover_model)")
     p.add_argument("--rover-model-parts", nargs="+", default=None, choices=["body", "arm", "arm_base", "suspension", "wheels"],
                    help="only these parts of the model (default all; e.g. without suspension wheels on rough ground)")
+    p.add_argument("--rover-cloud", action="store_true", help="--rover the 0.96 way: the mesh from the cloud fused with "
+                   "the rover in it (fused_rover.ply), with the deck floor (default since 0.97.0: the terrain of the "
+                   "rover-masked cloud, then the Perseverance model on it)")
+    p.add_argument("--no-fill", action="store_true", help="0.97.0: leave the terrain's holes to the ground plane "
+                   "(default: the terrain interpolated under the rover and over every hole out to --mesh-radius)")
     p.add_argument("--no-deck-floor", action="store_true", help="--rover: no floor at the rover deck (default: nothing "
                    "below the deck top inside its footprint, RMECH x -1.10..+0.95 m, y +-0.60 m, placed by the frames' "
                    "label CAHVORE poses; the floor added to the mesh; rover_deck.json)")
@@ -271,33 +276,39 @@ def cmd_mesh(a: argparse.Namespace) -> int:
     project = _project(a.work)
     rec = _model(project)
     st, out = _station(project, rec, a)
-    pts_file = _points_file(project, a.points, st.label, rover=a.rover)
+    # 0.97.0 (Christian, 12 Nov 2026: "only rendering the terrain without the rover. then add the rover model in"):
+    # the rover-shown mesh is the terrain of the rover-masked cloud with the Perseverance model set on it;
+    # --rover-cloud: the 0.96 way, the mesh from the cloud fused with the rover in it
+    old_way = bool(a.rover and getattr(a, "rover_cloud", False))
+    pts_file = _points_file(project, a.points, st.label, rover=old_way)
     pts, nrm = read_points_normals(pts_file)
     log.info("mesh: %d points from %s (%s)", len(pts), pts_file, "with normals" if nrm is not None else "no normals")
     terrain = None
-    if a.rover:                                   # the plane from the terrain alone, not the deck
+    if old_way:                                   # the plane from the terrain alone, not the deck
         try:
             terrain = read_points(_points_file(project, None, st.label))
         except FileNotFoundError:
             log.warning("mesh --rover: no rover-masked fused.ply; the plane is fitted to the cloud with the rover in it")
-    deck = None
-    if a.rover and not getattr(a, "no_deck_floor", False):     # 10 Nov: nothing below the rover deck
-        from .rover_deck import rover_pose, write_deck
-        try:
-            deck = rover_pose(project, rec, st.images)
-            d = write_deck(out, deck, st.up)
-            log.info("rover deck: %d frames agree to %.2f deg / %.1f mm; rover tilt %.1f deg; floor %.2f x %.2f m -> %s",
-                     d["frames"], d["rot_spread_deg"], d["pos_spread_mm"], d.get("rover_tilt_deg", float("nan")),
-                     d["size_m"][0], d["size_m"][1], out / "rover_deck.json")
-        except Exception as e:                                   # noqa: BLE001 - the mesh without the floor
-            log.warning("mesh --rover: no rover pose for the deck floor (%s); meshing without it", e)
-            deck = None
+    deck, pose = None, None
+    from .rover_deck import rover_pose, write_deck
+    try:
+        pose = rover_pose(project, rec, st.images)   # also for the masked variant: the ground under the rover
+    except Exception as e:                           # noqa: BLE001 - the mesh without the rover's footprint
+        log.warning("mesh: no rover pose (%s); the terrain under the rover is not replaced%s", e,
+                    ", no rover model" if a.rover else "")
+    if a.rover and pose is not None and not getattr(a, "no_deck_floor", False):
+        deck = pose
+        d = write_deck(out, deck, st.up)
+        log.info("rover deck: %d frames agree to %.2f deg / %.1f mm; rover tilt %.1f deg; floor %.2f x %.2f m -> %s",
+                 d["frames"], d["rot_spread_deg"], d["pos_spread_mm"], d.get("rover_tilt_deg", float("nan")),
+                 d["size_m"][0], d["size_m"][1], out / "rover_deck.json")
     ties = None if a.no_tie_points else _tie_points(rec)
     rep = build_station_mesh(pts, st.pivot, out, normals=nrm, dense_dir=a.dense_dir or pts_file.parent, colmap_exe=a.colmap,
                              radius_m=a.mesh_radius, far_radius_m=a.far_radius, target_triangles=a.target_triangles,
                              poisson_depth=a.poisson_depth, station=st.to_json(), up=st.up, plane_radius_m=a.plane_radius,
                              ground_points=ties, horizontal_plane=a.horizontal_plane, plane_points=terrain,
-                             deck=deck, remove_floating=not a.keep_floating,
+                             deck=deck, remove_floating=not a.keep_floating, terrain_only=not old_way,
+                             fill=not getattr(a, "no_fill", False), rover_pose=pose,
                              rover_model_parts=None if a.no_rover_model else (a.rover_model_parts or ROVER_MODEL_PARTS))
     rep["rover"] = "shown" if a.rover else "masked out"
     rep["points_file"] = str(pts_file)

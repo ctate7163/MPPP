@@ -406,23 +406,29 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert oj["eyes"]["left"]["coverage"]["coloured"] > 0.2 and oj["eyes"]["left"]["sources_used"] == 4
     assert (out / "station.json").is_file()
 
-    # --rover: a 'deck' (points 1 m up, within 1.5 m of the axis) in fused_rover.ply; the mesh keeps it, the plane is
-    # still fitted to the terrain cloud (fused.ply), the products go to ods/<station>_rover
+    # --rover (0.97.0): the terrain of the rover-masked cloud (fused.ply), then the rover model; --rover-cloud is the
+    # 0.96 way - a 'deck' (points 1 m up, within 1.5 m of the axis) in fused_rover.ply stays in the mesh, the plane
+    # still fitted to the terrain cloud; the products go to ods/<station>_rover
     deck = np.c_[rng.uniform(-1.5, 1.5, (6000, 2)) + P[:2], np.full(6000, 1.0)]
     pcd2 = o3d.geometry.PointCloud()
     allp = np.vstack([pts, deck])
     pcd2.points = o3d.utility.Vector3dVector(allp)
     pcd2.normals = o3d.utility.Vector3dVector(np.tile([0.0, 0.0, 1.0], (len(allp), 1)))
     o3d.io.write_point_cloud(str(root / "dense" / "fused_rover.ply"), pcd2)
-    assert mppp_main(["mesh", work, "--station", "3_10", "--rover", "--poisson-depth", "8", "--target-triangles", "40000",
-                      "--no-preview"]) == 0
     outr = root / "ods" / "S003D0010_rover"
+    assert mppp_main(["mesh", work, "--station", "3_10", "--rover", "--rover-cloud", "--poisson-depth", "8",
+                      "--target-triangles", "40000", "--no-preview"]) == 0
     rr = json.loads((outr / "mesh_report.json").read_text(encoding="utf-8"))
     assert rr["rover"] == "shown" and rr["points_file"].endswith("fused_rover.ply") and rr["points"] == len(allp)
     gpr = json.loads((outr / "ground_plane.json").read_text(encoding="utf-8"))
     assert abs(gpr["offset"]) < 0.05 and gpr["sources"]["fused_points"] == len(pts)          # the terrain, not the deck
     Vr, Fr = M.read_mesh(outr / "mesh.ply")
     assert (np.abs(Vr[:, 2] - 1.0) < 0.15).sum() > 50                                        # the deck is in the mesh
+    assert mppp_main(["mesh", work, "--station", "3_10", "--rover", "--poisson-depth", "8", "--target-triangles", "40000",
+                      "--no-preview"]) == 0
+    rr = json.loads((outr / "mesh_report.json").read_text(encoding="utf-8"))
+    assert rr["rover"] == "shown" and rr["points_file"].endswith("fused.ply") and rr["points"] == len(pts)   # terrain alone
+    assert rr["fill"]["triangles"] >= 0 and "filled_by_ring" in rr["fill"]
     assert mppp_main(["ods", work, "--station", "3_10", "--rover", "--width", "128", "--scale", "0.25"]) == 0
     assert json.loads((outr / "ods.json").read_text(encoding="utf-8"))["rover"] == "shown"
     assert (out / "S003D0010_ods_left.png").is_file() and (outr / "S003D0010_rover_ods_left.png").is_file()     # both variants side by side
@@ -1082,11 +1088,11 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
                                                     "mars2020_sol_0413_threeforks_large"]
     r0 = runs[0]
     steps = [(c["variant"], c["step"]) for c in r0["commands"]]
-    assert steps == [("masked", "dense"), ("rover", "dense"), ("rover", "mesh"), ("rover", "depthmaps"), ("rover", "ods"),
-                     ("masked", "mesh"), ("masked", "depthmaps"), ("masked", "ods")]          # 0.96.1: the rover shown first
+    assert steps == [("masked", "dense"), ("rover", "mesh"), ("rover", "depthmaps"), ("rover", "ods"),
+                     ("masked", "mesh"), ("masked", "depthmaps"), ("masked", "ods")]          # 0.97.0: one fusion, the terrain's
     dense = r0["commands"][0]["argv"]
     assert dense[:4] == ["dense", r0["work"], "--station", "3_2046"] and dense.count("--images") == 1 and "--stereo" in dense
-    rover_ods = r0["commands"][4]["argv"]
+    rover_ods = r0["commands"][3]["argv"]
     assert "--mask-rover" in r0["commands"][-1]["argv"]
     assert "--rover" in rover_ods and rover_ods[rover_ods.index("--out") + 1].endswith(str(Path("S003D2046") / "with_rover"))
     assert rover_ods[-6:] == ["--bits", "16", "--eyes", "left", "right", "centre"]         # 0.97.0: 16 bits, the centre eye
@@ -1120,7 +1126,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert rc == 1                                                                     # one station failed
     rock = [c for c in calls if "26_630" in c]
     assert rock == [runs[1]["commands"][0]["argv"]]                                    # its dense step only
-    assert sum(1 for c in calls if "3_2046" in c) == 8 and sum(1 for c in calls if "32_1184" in c) == 8
+    assert sum(1 for c in calls if "3_2046" in c) == 7 and sum(1 for c in calls if "32_1184" in c) == 7   # 0.97.0: one fusion
     summary = (root / "single_sites" / "single_sites_summary.md").read_text(encoding="utf-8")
     assert summary.count("| S003D2046 |") == 2 and "| S026D0630 | masked | dense 1 |" in summary
     assert "mesh 20 %, plane 30 %, far 50 %" in summary
@@ -1586,3 +1592,45 @@ def test_floating_rule_keeps_far_terrain_above_the_plane():
     new = M.floating(pts, P, up, plane, ground=M.local_ground(pts, P, up, plane))
     assert new[:len(xy)][hill].mean() < 0.02 and new[:len(xy)].mean() < 0.01
     assert new[len(xy):].mean() > 0.95
+
+
+def test_fill_terrain_closes_holes_and_flattens_under_the_rover():
+    """0.97.0 (Christian, 12 Nov 2026: "interpolate terrain under the rover so that it is flattish terrain without
+    holes. The far field should interpolate over hole in the terrain"): a sloped terrain with a far hole and junk
+    under the rover - after the fill every downward ray from the pivot within the radius meets a surface, the ground
+    under the rover follows the slope, and the far hole is bridged at the terrain's height."""
+    from mppp.ibr import mesh as M
+    n = 161
+    g = np.linspace(-20, 20, n)
+    X, Y = np.meshgrid(g, g)
+    Z = 0.1 * X                                              # a 5.7 deg slope
+    V = np.c_[X.ravel(), Y.ravel(), Z.ravel()]
+    idx = np.arange(n * n).reshape(n, n)
+    F = np.r_[np.c_[idx[:-1, :-1].ravel(), idx[:-1, 1:].ravel(), idx[1:, 1:].ravel()],
+              np.c_[idx[:-1, :-1].ravel(), idx[1:, 1:].ravel(), idx[1:, :-1].ravel()]]
+    cen = V[F].mean(1)
+    far_hole = (np.hypot(cen[:, 0] + 12, cen[:, 1]) < 3)     # a hole 12 m behind
+    F = F[~far_hole]
+    V = V.copy()
+    near = np.hypot(V[:, 0], V[:, 1]) < 1.2
+    V[near, 2] += 0.6                                        # junk under the rover
+    P, up = np.array([0.0, 0.0, 2.0]), np.array([0.0, 0.0, 1.0])
+    plane = {"normal": [0.0, 0.0, 1.0], "offset": 0.0}
+    pose = {"R_block_from_rnav": np.diag([1.0, -1.0, -1.0]).tolist(), "t_block_from_rnav": [0.0, 0.0, 1.0]}
+    Vf, Ff, rep = M.fill_terrain(V, F, P, up, plane, 18.0, rover=pose)
+    assert rep["under_rover_triangles_removed"] > 100 and rep["filled"] > 0 and rep["triangles"] > 0
+    import open3d as o3d
+    sc = o3d.t.geometry.RaycastingScene()
+    sc.add_triangles(o3d.core.Tensor(Vf.astype(np.float32)), o3d.core.Tensor(Ff.astype(np.uint32)))
+    rng = np.random.default_rng(0)
+    tgt = np.c_[rng.uniform(-12, 12, (4000, 2)), np.zeros(4000)]
+    tgt[:, 2] = 0.1 * tgt[:, 0]
+    d = tgt - P
+    d /= np.linalg.norm(d, axis=1)[:, None]
+    t = sc.cast_rays(o3d.core.Tensor(np.c_[np.tile(P, (len(d), 1)), d].astype(np.float32)))["t_hit"].numpy()
+    assert np.isfinite(t).all()                                                    # no ray falls through
+    hit = P + d * t[:, None]
+    under = np.hypot(hit[:, 0], hit[:, 1]) < 1.0
+    assert under.sum() > 5 and np.abs(hit[under, 2] - 0.1 * hit[under, 0]).max() < 0.15    # flattish: the slope, not the junk
+    hole = np.hypot(hit[:, 0] + 12, hit[:, 1]) < 2.5
+    assert hole.sum() > 20 and np.abs(hit[hole, 2] - 0.1 * hit[hole, 0]).max() < 0.2
