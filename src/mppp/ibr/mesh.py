@@ -50,7 +50,7 @@ PathLike = Union[str, Path]
 
 NAVCAM_HALF_IFOV_RAD = 0.68e-3       # Navcam at half resolution (8K ODS sampling)
 NAVCAM_BASELINE_M = 0.424
-DEFAULT_RADIUS_M = 30.0             # the mesh: horizontal distance from the mast axis (10 Nov: 20 m, then 30 at Christian's ask; was 60 m of range)
+DEFAULT_RADIUS_M = 50.0             # the mesh: horizontal distance from the mast axis (10 Nov: 20 m, then 30; 12 Nov, 0.97.0: 50 m - Christian: "make sure it extends all the way to 50. The mesh can be extra simplified at that distances")
 DEFAULT_PLANE_RADIUS_M = 100.0      # the ground plane out to here (horizontal); then the sky at infinity
 DEFAULT_FAR_RADIUS_M = 100.0        # the 0.96.0 prototype's finite far sphere (mppp mesh --far-radius)
 PLANE_RINGS_M = (3.0, 5.0, 7.5, 10.0, 15.0, 20.0, 30.0, 45.0, 65.0, 100.0)
@@ -63,7 +63,7 @@ DEFAULT_TARGET_TRIANGLES = 6_000_000
 # horizontal distance from the mast axis - each zone meshed from the points within its outer edge + 1 m, so its octree
 # box is small and depth 10 is ~1 cm at 0-4 m, ~2.5 cm at 4-12 m, ~4 cm at 12-20 m, ~6 cm at 20-30 m; the zones overlap by ZONE_OVERLAP_M
 # (no gap for a ray to fall through)
-MESH_ZONES = ((0.0, 4.0, 10), (4.0, 12.0, 10), (12.0, 20.0, 10), (20.0, None, 10))   # (inner m, outer m or None = the mesh radius, depth)
+MESH_ZONES = ((0.0, 4.0, 10), (4.0, 12.0, 10), (12.0, 20.0, 10), (20.0, 30.0, 10), (30.0, None, 9))   # (inner m, outer m or None = the mesh radius, depth); 0.97.0: 30-50 m at depth 9 (~20 cm), "extra simplified"
 ZONE_OVERLAP_M = 0.3
 GRAZING = 0.10
 COMPONENT_FRACTION = 0.01
@@ -474,17 +474,96 @@ def height_above_plane(X: np.ndarray, plane: Dict[str, Any], up: Sequence[float]
     return (np.asarray(X, float) @ n - float(plane["offset"])) / float(n @ u)
 
 
+FLOAT_GROUND_CELL_M = 2.0     # 0.97.0: the local ground under a point - a grid of this cell size ...
+FLOAT_GROUND_PERCENTILE = 20.0   # ... holding this percentile of its points' heights above the plane, median-smoothed
+FLOAT_GROUND_MIN_POINTS = 5
+FLOAT_GROUND_MAX_RISE = 0.30  # the local ground is taken no higher than this x the distance above the plane (17 deg)
+FLOAT_RANGE_FRACTION = 0.05   # far terrain: the allowed height above the local ground grows to this x the distance
+
+
+def local_ground(points: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: Dict[str, Any],
+                 cell_m: float = FLOAT_GROUND_CELL_M) -> Dict[str, Any]:
+    """The ground under the terrain cloud as heights above the plane on a horizontal grid about the pivot: per cell
+    the ``FLOAT_GROUND_PERCENTILE`` of its points (>= ``FLOAT_GROUND_MIN_POINTS``), then a 3 x 3 median over the
+    filled cells, capped at ``FLOAT_GROUND_MAX_RISE`` x the distance.  {"cell_m", "origin", "e", "n", "grid"
+    (NaN: no ground known there)} for :func:`ground_height`."""
+    P = np.asarray(pivot, float)
+    u = np.asarray(up, float) / np.linalg.norm(up)
+    e = np.cross([0.0, 1.0, 0.0], u); e = e / np.linalg.norm(e)
+    n = np.cross(u, e)
+    X = np.asarray(points, float)
+    d = X - P
+    x, y = d @ e, d @ n
+    h = height_above_plane(X, plane, up)
+    R = max(float(np.hypot(x, y).max()) if len(X) else 1.0, cell_m) + cell_m
+    m = int(np.ceil(2 * R / cell_m))
+    i = np.clip(((x + R) / cell_m).astype(int), 0, m - 1); j = np.clip(((y + R) / cell_m).astype(int), 0, m - 1)
+    grid = np.full((m, m), np.nan)
+    if len(X):
+        key = i * m + j
+        order = np.argsort(key, kind="stable")
+        ks, hs = key[order], h[order]
+        starts = np.flatnonzero(np.r_[True, ks[1:] != ks[:-1]])
+        ends = np.r_[starts[1:], len(ks)]
+        for a, b in zip(starts, ends):
+            if b - a >= FLOAT_GROUND_MIN_POINTS:
+                grid[ks[a] // m, ks[a] % m] = np.percentile(hs[a:b], FLOAT_GROUND_PERCENTILE)
+        pad = np.pad(grid, 1, constant_values=np.nan)
+        st = np.stack([pad[1 + di:1 + di + m, 1 + dj:1 + dj + m] for di in (-1, 0, 1) for dj in (-1, 0, 1)])
+        with np.errstate(all="ignore"):
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                sm = np.nanmedian(st, axis=0)
+        grid = np.where(np.isfinite(grid), sm, np.nan)
+        cx = (np.arange(m) + 0.5) * cell_m - R
+        rr = np.hypot(cx[:, None], cx[None, :])
+        grid = np.minimum(grid, FLOAT_GROUND_MAX_RISE * rr)
+    return {"cell_m": float(cell_m), "half_m": float(R), "e": e, "n": n, "grid": grid}
+
+
+def ground_height(X: np.ndarray, pivot: Sequence[float], ground: Dict[str, Any]) -> np.ndarray:
+    """The local ground (height above the plane, m) under points ``X``; 0 (the plane) where the grid has none in
+    the point's cell or its eight neighbours."""
+    d = np.asarray(X, float) - np.asarray(pivot, float)
+    c, R, g = ground["cell_m"], ground["half_m"], ground["grid"]
+    m = g.shape[0]
+    i = np.clip(((d @ ground["e"] + R) / c).astype(int), 0, m - 1); j = np.clip(((d @ ground["n"] + R) / c).astype(int), 0, m - 1)
+    out = g[i, j]
+    miss = ~np.isfinite(out)
+    if miss.any():
+        pad = np.pad(g, 1, constant_values=np.nan)
+        st = np.stack([pad[1 + di + i[miss], 1 + dj + j[miss]] for di in (-1, 0, 1) for dj in (-1, 0, 1)])
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            nb = np.nanmedian(st, axis=0)
+        out = out.copy(); out[miss] = np.where(np.isfinite(nb), nb, 0.0)
+    return out
+
+
 def floating(X: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: Dict[str, Any],
-             clearance_m: float = FLOAT_CLEARANCE_M, beyond_m: float = FLOAT_BEYOND_M) -> np.ndarray:
+             clearance_m: float = FLOAT_CLEARANCE_M, beyond_m: float = FLOAT_BEYOND_M,
+             ground: Optional[Dict[str, Any]] = None) -> np.ndarray:
     """Points that cannot be surface seen from the mast (Christian, 10 Nov: "floating polygons should be removed ...
     everything above the cameras and every thing 1 meter below the camera beyond 3 meters"): above the cameras
-    anywhere, or beyond ``beyond_m`` of the mast axis and higher than ``clearance_m`` below the cameras.  Heights are
-    above the fitted ground plane - on level ground the rule as given; on a slope (Rockytop, 8 deg: the ground
-    reaches the cameras' level 14 m uphill) the terrain itself is kept."""
+    anywhere, or beyond ``beyond_m`` of the mast axis and higher than ``clearance_m`` below the cameras.
+
+    Heights are above the ground.  Without ``ground`` that is the fitted plane (0.96).  On terrain that is not a
+    plane the rule then removes the terrain itself: at Rockytop (plane rms 1.1 m, the camera 1.5 m above it) it took
+    42 % of the fused points at 15-20 m and 71 % at 20-30 m, whole sectors of them, so the mesh ended at about 15 m
+    there.  0.97.0: with ``ground`` (:func:`local_ground` of the terrain cloud) the height is above the local
+    ground, and beyond ``beyond_m`` the allowed height is max(camera height - ``clearance_m``,
+    ``FLOAT_RANGE_FRACTION`` x distance) - a 2 m rise in the ground 40 m away is terrain, 2 m above the ground at
+    5 m is not."""
     X = np.asarray(X, float)
     hc = float(height_above_plane(np.asarray(pivot, float)[None], plane, up)[0])
     h = height_above_plane(X, plane, up)
-    return (h > hc) | ((horizontal_distance(X, pivot, up) > beyond_m) & (h > hc - clearance_m))
+    r = horizontal_distance(X, pivot, up)
+    if ground is None:
+        return (h > hc) | ((r > beyond_m) & (h > hc - clearance_m))
+    hl = h - ground_height(X, pivot, ground)
+    return ((r <= beyond_m) & (h > hc)) | ((r > beyond_m) & (hl > np.maximum(hc - clearance_m, FLOAT_RANGE_FRACTION * r)))
 
 
 def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: PathLike, normals: Optional[np.ndarray] = None,
@@ -539,9 +618,12 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
     h = horizontal_distance(points, pivot, up)
     near = h <= radius_m + 5.0
     float_rep = None
+    ground = None
     if remove_floating:                                         # 10 Nov: nothing floating above the terrain
-        fl = floating(points, pivot, up, plane)
+        ground = local_ground(base[horizontal_distance(base, pivot, up) <= radius_m + 5.0], pivot, up, plane)   # 0.97.0
+        fl = floating(points, pivot, up, plane, ground=ground)
         float_rep = {"above_camera_m": 0.0, "clearance_below_camera_m": FLOAT_CLEARANCE_M, "beyond_m": FLOAT_BEYOND_M,
+                     "heights_from": f"the local ground ({FLOAT_GROUND_CELL_M:g} m grid)", "range_fraction": FLOAT_RANGE_FRACTION,
                      "camera_height_above_plane_m": float(height_above_plane(np.asarray(pivot, float)[None], plane, up)[0]),
                      "points_dropped": int((fl & near).sum())}
         near &= ~fl
@@ -561,7 +643,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
         V, F, how, clean = zoned_poisson(points, normals, pivot, up, radius_m, zones=zones)
     V, F, dec = decimate_and_smooth(V, F, target_triangles=target_triangles)
     if remove_floating and len(F):
-        bad = floating(V, pivot, up, plane)
+        bad = floating(V, pivot, up, plane, ground=ground)
         dropf = bad[np.asarray(F)].any(axis=1)
         F = np.asarray(F)[~dropf]
         float_rep["triangles_dropped"] = int(dropf.sum())

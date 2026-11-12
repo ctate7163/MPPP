@@ -1,7 +1,7 @@
 """
 mppp.ibr.cli - ``mppp mesh``, ``mppp depthmaps``, ``mppp ods`` on one finished block.
 
-    mppp mesh WORK --station 3_1234 [--points dense/fused.ply] [--colmap colmap.exe] [--mesh-radius 30] [--plane-radius 100]
+    mppp mesh WORK --station 3_1234 [--points dense/fused.ply] [--colmap colmap.exe] [--mesh-radius 50] [--plane-radius 100]
     mppp depthmaps WORK --station 3_1234 [--cameras N] [--scale 0.5] [--photometry]
     mppp ods WORK --station 3_1234 [--width 8192] [--ipd 0.064] [--cameras N]
 
@@ -138,7 +138,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--points", default=None, help="the fused dense cloud (default <project>/dense*/fused.ply, the newest)")
     p.add_argument("--colmap", default=None, help="the COLMAP executable: Delaunay over --dense-dir instead of Poisson")
     p.add_argument("--dense-dir", default=None, help="the dense workspace of the Delaunay mesher (default: --points' folder)")
-    p.add_argument("--mesh-radius", type=float, default=30.0, help="the mesh to this horizontal distance from the mast "
+    p.add_argument("--mesh-radius", type=float, default=50.0, help="the mesh to this horizontal distance from the mast "
                    "axis (m; default 30)")
     p.add_argument("--plane-radius", type=float, default=100.0, help="the ground plane beyond the mesh, to this horizontal "
                    "distance (m; default 100); the sky at infinity beyond")

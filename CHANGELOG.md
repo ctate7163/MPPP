@@ -35,6 +35,17 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   temperature slope removed to -20 C) against sol relative to the trend at sol 0, and the stereo cx against the lens
   temperature; the same y limits, IFOV axes and panel letters. The joint has no rig drift model, so the lines are
   least-squares fits to the blocks (`plots.zcam_rig_trend_fit`). The baseline column is gone.
+- **Station mesh to 50 m** (Christian, 12 Nov: "why does the rockytop ods mesh not extend all the way to 30 m? ...
+  make sure it extends all the way to 50"). The cause was the floating-surface rule, which measured heights from the
+  fitted ground plane: at Rockytop S026D0630 (plane rms 1.1 m) it removed 42 % of the fused points at 15-20 m and
+  71 % at 20-30 m, whole sectors of them. The rule now measures heights from the local ground (a 2 m grid of the
+  terrain cloud, `mesh.local_ground`), and beyond 3 m allows max(camera height - 1 m, 5 % of the distance).
+  `--mesh-radius` defaults to 50 m with a fifth Poisson zone, 30-50 m at depth 9 (about 20 cm). On the Rockytop
+  cloud: mesh area at 20-40 m 604 -> 2455 m2, at 40-60 m 0 -> 1280 m2; 7.5 k points dropped as floating (205 k
+  before). Where the dense cloud has no points (north and south beyond about 25 m there) the ground plane still
+  takes over. The linear depth pictures run to 50 m.
+- **Navcam law on the Mastcam-Z rig figure**: the promoted Navcam rig drift law, dashed green, in the pitch, roll
+  and yaw panels (`plot_zcam_rig_trends(navcam_drift=...)`).
 - **26 and 100 mm** are zooms MPPP aligns (`chal_rocks_large`, `seitah_overlook`). No focus model and no joint:
   their bin cameras start from the label model and refine in the block. 100 mm holds k2 = p1 = p2 = 0 as 79 mm does;
   nothing is held at 26 mm yet. Not aligned on real data before this release.

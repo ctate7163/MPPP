@@ -474,7 +474,7 @@ def zcam_rig_trend_fit(rows: Sequence[Dict[str, Any]], T0: float = ZCAM_T0_DEGC)
 def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_DPI, label: str = "",
                          point_labels: bool = True, T0: float = ZCAM_T0_DEGC,
                          ylims: Optional[Dict[str, Tuple[float, float]]] = None, knee_sol: Optional[float] = 250.0,
-                         ) -> Optional[Path]:
+                         navcam_drift: Any = "promoted") -> Optional[Path]:
     """Mastcam-Z rig trends in the format of the Navcam's :func:`plot_rig_trends` (Christian, 12 Nov 2026: "make the
     zcam 34 rig trend figure identical in format to the ncam trends figure"): 2 x 2, 12.5 x 8.2 in; pitch (A), roll
     (B) and yaw with its temperature slope removed to ``T0`` (C) of every block's own rig against the block's sol,
@@ -483,6 +483,9 @@ def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_D
     the block lens temperature, the sol trend removed, with the slope and its +- se band and a right axis in mdeg.
     The Mastcam-Z joint has no drift model, so the lines are least-squares fits to these points
     (:func:`zcam_rig_trend_fit`); the dashed vertical lines are the Navcam knee (``knee_sol``) and ``T0``.
+    ``navcam_drift`` (Christian, 12 Nov: "add the latest promoted ncam trend law too"): the Navcam rig's drift law
+    drawn in each sol panel (dashed green, relative to sol 0 like the Navcam figure's model line) - a ``drift`` dict,
+    "promoted" (default: the promoted Navcam rig file's, :func:`mppp.calib.models.load_rig`), or None for none.
     ``model``: a joint's ``M2020_ZCAM<zoom>_focus_model.json`` (``rig.residuals.per_block``).  None without rig rows."""
     rig = model.get("rig") or (model.get("calibration") or {}).get("rig") or {}
     rows = [r for r in ((rig.get("residuals") or {}).get("per_block")) or [] if r.get("sol") is not None]
@@ -503,6 +506,12 @@ def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_D
     def annotate(ax, x, y):
         for xx, yy, n in (zip(x, y, names) if point_labels else []):
             ax.annotate(n[:22], (xx, yy), fontsize=5.5, alpha=0.6, xytext=(3, 3), textcoords="offset points")
+    if navcam_drift == "promoted":
+        try:
+            from mppp.calib.models import load_rig
+            navcam_drift = (load_rig("N") or {}).get("drift")
+        except Exception:                                    # noqa: BLE001 - the figure without the Navcam law
+            navcam_drift = None
     fig, axs = plt.subplots(2, 2, figsize=(12.5, 8.2))
     ss = np.linspace(0, 2050, 400)
     panels = {"pitch": axs[0][0], "roll": axs[0][1], "yaw": axs[1][0]}
@@ -516,6 +525,12 @@ def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_D
             lab = "block rig (rig rotation free, cameras held)"
         ax.plot(sol, y, "o", color="C0", label=lab)
         ax.plot(ss, f["per_sol"] * ss, "-", color="C3", label="linear trend (fit to these blocks)")
+        if navcam_drift:
+            nr = 1000 * (navcam_drift.get(f"{ang}_mdeg_per_sol") or 0.0)
+            ne = navcam_drift.get(f"{ang}_early_mdeg_per_sol")
+            ax.plot(ss, drift_offset_rel(navcam_drift, ang, ss, 0.0), "--", color="#2a9d4a", lw=1.3,
+                    label=f"Navcam rig law (promoted): {nr:+.2f} mdeg/1000 sol"
+                          + (f", {1000 * ne:+.1f} before sol {navcam_drift.get('knot_sol', 0):.0f}" if ne is not None else ""))
         annotate(ax, sol, y)
         z = f["per_sol"] / f["se_per_sol"] if f["se_per_sol"] and np.isfinite(f["se_per_sol"]) else float("nan")
         ax.set_title(f"{ang}: trend {1000 * f['per_sol']:+.2f} ± {1000 * f['se_per_sol']:.2f} mdeg/1000 sol (z {z:+.1f})\n"

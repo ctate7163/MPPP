@@ -379,12 +379,12 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert not (out / "far_sphere.ply").exists() and rep["scene"]["beyond"] == "the sky at infinity"
     gp = json.loads((out / "ground_plane.json").read_text(encoding="utf-8"))
     assert gp["method"] == "fit" and gp["tilt_deg"] < 0.5 and abs(gp["offset"]) < 0.05          # the plane z = 0
-    assert rep["scene"]["mesh_radius_m"] == 30.0
+    assert rep["scene"]["mesh_radius_m"] == 50.0                     # 0.97.0: the mesh to 50 m
     assert rep["station"]["station"] == "S003D0010" and rep["points_file"].endswith("fused.ply")
     V, F = M.read_mesh(out / "mesh.ply")
     assert len(F) > 1000 and abs(float(np.median(V[:, 2]))) < 0.1                     # the ground plane, near z = 0
     cen, _, _ = M.triangle_geometry(V, F)
-    assert M.horizontal_distance(cen, rep["pivot_block_m"]).max() <= 30.05            # 30 m from the axis (smoothing: mm)
+    assert M.horizontal_distance(cen, rep["pivot_block_m"]).max() <= 50.05            # 50 m from the axis (the cloud here ends at 30 m)
 
     assert mppp_main(["depthmaps", work, "--station", "3_10", "--mask-rover", "--scale", "0.25", "--photometry", "--no-preview"]) == 0
     maps = sorted((out / "maps").glob("*.npz"))
@@ -1566,3 +1566,23 @@ def test_pivot_at_mastcamz_height_and_shared_tone_levels(tmp_path):
     maps = {"range": rng, "label": lab, "normal": np.zeros((8, 16, 3), np.float32)}
     names = sorted(p.name for p in RC.preview_jpg(maps, tmp_path / "photometry_jpg" / "IMG"))
     assert names == ["IMG_depth_linear.jpg", "IMG_depth_log.jpg", "IMG_normal.jpg"]
+
+
+def test_floating_rule_keeps_far_terrain_above_the_plane():
+    """0.97.0 (Rockytop S026D0630: the mesh ended at 15 m where the ground rose above the fitted plane): with the
+    local ground, a hill 3 m high 25-40 m away is terrain; a blob 2 m above the ground 8 m away is still floating."""
+    from mppp.ibr import mesh as M
+    rng = np.random.default_rng(3)
+    xy = rng.uniform(-45, 45, (60_000, 2))
+    z = 3.0 * np.exp(-((xy[:, 0] - 30) ** 2 + xy[:, 1] ** 2) / (2 * 8.0 ** 2))          # a hill to the east
+    ground_pts = np.c_[xy, z]
+    blob = np.c_[rng.normal(8, 0.2, 300), rng.normal(0, 0.2, 300), rng.normal(2.0, 0.1, 300)]
+    pts = np.vstack([ground_pts, blob])
+    P, up = np.array([0.0, 0.0, 1.5]), np.array([0.0, 0.0, 1.0])
+    plane = {"normal": [0.0, 0.0, 1.0], "offset": 0.0}
+    hill = (np.hypot(xy[:, 0] - 30, xy[:, 1]) < 6)
+    old = M.floating(pts, P, up, plane)
+    assert old[:len(xy)][hill].mean() > 0.9 and old[len(xy):].all()                 # the 0.96 rule took the hill too
+    new = M.floating(pts, P, up, plane, ground=M.local_ground(pts, P, up, plane))
+    assert new[:len(xy)][hill].mean() < 0.02 and new[:len(xy)].mean() < 0.01
+    assert new[len(xy):].mean() > 0.95
