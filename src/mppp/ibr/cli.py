@@ -161,7 +161,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--no-rover-model", action="store_true", help="rover shown: no Perseverance model in the mesh "
                    "(default, 0.96.1: NASA's model, simplified, the arm stowed, placed by the rover pose - the fused "
                    "points within 4 cm of it dropped; mppp.ibr.rover_model)")
-    p.add_argument("--rover-model-parts", nargs="+", default=None, choices=["body", "arm", "arm_base", "suspension", "wheels"],
+    p.add_argument("--rover-model-parts", nargs="+", default=None, choices=["body", "arm", "arm_base", "suspension", "wheels", "antenna"],
                    help="only these parts of the model (default all; e.g. without suspension wheels on rough ground)")
     p.add_argument("--rover-cloud", action="store_true", help="--rover the 0.96 way: the mesh from the cloud fused with "
                    "the rover in it (fused_rover.ply), with the deck floor (default since 0.97.0: the terrain of the "

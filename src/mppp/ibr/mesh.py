@@ -462,7 +462,7 @@ def points_by_ring(points: np.ndarray, pivot: Sequence[float], up: Sequence[floa
     return [{"ring_m": [lo, hi], "points": int(((h >= lo) & (h < hi)).sum())} for lo, hi in zip(rings[:-1], rings[1:])]
 
 
-ROVER_MODEL_PARTS = ("body", "arm", "arm_base", "suspension", "wheels")     # of mppp.ibr.rover_model, with ``deck``
+ROVER_MODEL_PARTS = ("body", "arm", "arm_base", "suspension", "wheels", "antenna")     # of mppp.ibr.rover_model, with ``deck``
 FLOAT_CLEARANCE_M = 1.0      # beyond FLOAT_BEYOND_M the surface is at least this far below the cameras
 FLOAT_BEYOND_M = 3.0         # (horizontal distance from the mast axis; inside it the rover reaches up to the head)
 

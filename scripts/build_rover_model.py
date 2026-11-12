@@ -9,8 +9,9 @@ and project the images onto it. The arm is stowed, so you would need to rotate t
 * Frame: the model is in metres, x left, y up, z forward, the wheels on y = 0; RMECH (x forward, y right, z down,
   z 0 = the deck top) is x = z_model, y = -x_model, z = 1.135 - y_model, then the small rigid correction of an ICP of
   the Van Zyl S003D2046 rover cloud onto the body (0.12 deg, 2-3 mm; 60 % of the cloud within 3 cm of the body).
-* Left out: the mast above its base and the head (they turn with the cameras), the high-gain antenna (it points
-  differently every sol; the images give it), the parts under the belly.
+* Left out: the mast above its base and the head (they turn with the cameras), the parts under the belly.
+* The high-gain antenna (0.97.0): the part "antenna", in one neutral pose (HGA_AZ_DEG, HGA_TILT_DEG) - it points
+  differently every sol, and the model does not follow it.
 * The arm: the chain arm.003 (shoulder azimuth, about its local y) - arm.002 (shoulder elevation, local z) - arm
   (elbow, z) - arm.004 (wrist, z) - turret_obj (turret, y), turned from the model's deployed pose by ARM_STOW_DEG, the
   fit of the five angles to the Van Zyl cloud of the stowed arm (78 % of the arm's cloud within 2 cm of it, 94 %
@@ -26,19 +27,34 @@ import numpy as np
 
 ARM_CHAIN = ("arm.003", "arm.002", "arm", "arm.004", "turret_obj")
 ARM_AXES = ("y", "z", "z", "z", "y")
-ARM_STOW_DEG = (89.2, 16.4, 71.9, -103.3, -90.1)
+ARM_STOW_DEG = (89.2, 20.4, 71.9, -93.3, 85.0)       # 0.97.0 (Christian, 12 Nov 2026: "The turret needs to be rotate 180 so
+# that the drill points out and pixl toward the mast. the PERSEVERANCE plate on the arm can rotate up a little"): the
+# turret turned by 175 deg (-90.1 -> 85.0), the wrist -103.3 -> -93.3 and the shoulder elevation 16.4 -> 20.4, chosen
+# by eye from renders of the model through the label camera of NLF_0461_0707871340 (Rockytop S026D0630) against the
+# frame: the drill's dome, PIXL's box, the bit and the top instruments within about 20 px (half-resolution frame).
+# Before (10 Nov): the fit to the Van Zyl cloud, which left the turret's own angle the least certain - it was 180 deg off.
+HGA_NODES = ("antenna_hg",)
+HGA_AZ_DEG = 90.0            # 0.97.0 (Christian, 12 Nov 2026: "put the high gain antenna back in and have it point in a
+HGA_TILT_DEG = -45.0         # neutral direction ... tilted forward at a 45 degree angle"): the gimbal's arm towards +y
+#                              (the dish to the right of the gimbal), the dish turned 45 deg about that arm so that it
+#                              faces forward and up.  Checked against NRF_0461_0707874458 (Rockytop) and
+#                              NLF_0052_0671568487 (Van Zyl): the dish's outline falls on the dish in both.
+HGA_AXIS_XY_M = (-0.46, -0.475)          # RMECH: the gimbal's vertical (azimuth) axis
+HGA_GIMBAL_M = (-0.436, -0.463, -0.25)   # RMECH: the top of the gimbal, where the dish's arm starts
+HGA_MODEL_AZ_DEG = 25.0                  # the direction of that arm in NASA's model (dish flat, pointing up)
+HGA_FIXED_BELOW_Z_M = -0.13              # RMECH z (down): components centred below this height do not turn (the base)
 DECK_TOP_MODEL_Y = 1.135
 ICP_MODEL_FROM_MECH = np.array([[1.0, -2.0e-4, -2.0e-3, 0.0], [2.0e-4, 1.0, 1.1e-3, 2.1e-3], [2.0e-3, -1.1e-3, 1.0, 2.7e-3],
                                 [0.0, 0.0, 0.0, 1.0]])
-TARGET_FACES = {"body": 32000, "arm": 10000, "arm_base": 2300, "suspension": 8000, "wheels": 9000, "mast": 6000}
-PARTS = ("body", "arm", "arm_base", "suspension", "wheels", "mast")
+TARGET_FACES = {"body": 32000, "arm": 10000, "arm_base": 2300, "suspension": 8000, "wheels": 9000, "mast": 6000, "antenna": 6000}
+PARTS = ("body", "arm", "arm_base", "suspension", "wheels", "mast", "antenna")
 MAST_PARTS = ("bottom", "bottom.002", "bottom.003", "probe.001", "top", "probe")   # turn with the head's azimuth: the
 # mast tube and the wind-sensor booms on it; kept as the part "mast" (not for the mesh: for masking them in the
 # frames, mppp.ibr.rover_model.mast_mask), in the model's own azimuth - the head looking forward (0 deg)
 HEAD = ("head", "lens", "Mastcam_Z_cams", "microphones.001", "NavCams")
 MAST = ("bottom", "bottom.002", "bottom.003", "probe.001", "top", "probe", "head", "lens", "Mastcam_Z_cams",
         "microphones.001", "NavCams")
-MOVING = ("antenna_hg",)                  # the high-gain antenna points differently every sol: left to the images
+MOVING = ()                               # 0.97.0: the high-gain antenna is the part "antenna", in a neutral pose (HGA_*)
 BELLY = ("arm_01", "arm_02", "arm_01_joint", "arm_02_joint", "arm_01_pivot", "arm_02_pivot", "arm_02.001", "pan_end cover")
 
 
@@ -54,6 +70,36 @@ def _local(n):
     if "translation" in n:
         T[:3, 3] = n["translation"]
     return T
+
+
+def pose_hga(X: np.ndarray, F: np.ndarray, az_deg: float = HGA_AZ_DEG, tilt_deg: float = HGA_TILT_DEG):
+    """The high-gain antenna of NASA's model (vertices ``X`` in RMECH) in a pose: every connected component above the
+    base turned about the gimbal's vertical axis so that the dish's arm points to ``az_deg`` (from +x towards +y),
+    then the dish (the largest component, and what sits on it) turned by ``tilt_deg`` about that arm."""
+    import trimesh
+    from scipy.spatial.transform import Rotation as R
+    ax = np.array([HGA_AXIS_XY_M[0], HGA_AXIS_XY_M[1], 0.0])
+    g0 = np.asarray(HGA_GIMBAL_M, float)
+    comps = trimesh.Trimesh(X, F, process=False).split(only_watertight=False)
+    dish = max(comps, key=lambda c: c.area)
+    Rz = R.from_euler("z", np.radians(az_deg - HGA_MODEL_AZ_DEG)).as_matrix()
+    a = np.array([np.cos(np.radians(az_deg)), np.sin(np.radians(az_deg)), 0.0])
+    g = (g0 - ax) @ Rz.T + ax
+    Rt = R.from_rotvec(a * np.radians(tilt_deg)).as_matrix()
+    Vs, Fs, off = [], [], 0
+    for c in comps:
+        v = np.asarray(c.vertices, float).copy()
+        cz = float(c.centroid[2])
+        if cz < HGA_FIXED_BELOW_Z_M:
+            v = (v - ax) @ Rz.T + ax
+            on_dish = c is dish or (np.linalg.norm(c.centroid[:2] - dish.centroid[:2]) < 0.12 and cz < -0.2
+                                    and np.linalg.norm(c.centroid[:2] - ax[:2]) > 0.1)
+            if on_dish:
+                v = (v - g) @ Rt.T + g
+        Vs.append(v)
+        Fs.append(np.asarray(c.faces) + off)
+        off += len(v)
+    return np.vstack(Vs), np.vstack(Fs)
 
 
 def build(glb: Path, out: Path) -> dict:
@@ -118,11 +164,12 @@ def build(glb: Path, out: Path) -> dict:
         if under(i, HEAD) or under(i, BELLY) or under(i, MOVING):
             continue
         is_mast = under(i, MAST_PARTS)
+        is_hga = under(i, HGA_NODES)
         if k is not None:
             kind, move = "arm", stow[k] @ np.linalg.inv(rest[k])
         else:
             nm = root_name(i)
-            kind = ("mast" if is_mast else "arm_base" if nm.startswith(("arm.001", "arm_cable")) else "wheels" if nm.startswith("Wheels")
+            kind = ("antenna" if is_hga else "mast" if is_mast else "arm_base" if nm.startswith(("arm.001", "arm_cable")) else "wheels" if nm.startswith("Wheels")
                     else "suspension" if nm.startswith("suspension") else "body")
             move = np.eye(4)
         W = move @ world(i)
@@ -140,6 +187,9 @@ def build(glb: Path, out: Path) -> dict:
         if not parts[kind]:
             continue
         m = trimesh.util.concatenate(parts[kind])
+        if kind == "antenna":                 # the dish in its neutral pose
+            hv, hf = pose_hga(np.asarray(m.vertices, float), np.asarray(m.faces))
+            m = trimesh.Trimesh(hv, hf, process=False)
         om = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(m.vertices), o3d.utility.Vector3iVector(m.faces))
         om.remove_duplicated_vertices()
         om.remove_degenerate_triangles()
@@ -158,6 +208,7 @@ def build(glb: Path, out: Path) -> dict:
     meta = {"source": glb.name, "credit": "NASA/JPL-Caltech", "url": "https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/",
             "frame": "RMECH (x forward, y right, z down, z 0 = the deck top), metres", "parts": list(PARTS),
             "arm_chain": list(ARM_CHAIN), "arm_axes": list(ARM_AXES), "arm_stow_deg": list(ARM_STOW_DEG), "report": rep,
+            "hga": {"az_deg": HGA_AZ_DEG, "tilt_deg": HGA_TILT_DEG, "note": "a neutral pose, not the sol's pointing"},
             "mast_axis_xy_m": axis_xy, "mast_model_azimuth_deg": 0.0}
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out, vertices=V, faces=F, part=P, meta=json.dumps(meta))

@@ -78,6 +78,14 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   what is still left the same brown. `ods.json` counts the samples turned away and the brown share per eye. The mask
   also covers the rover's shadow, so shadow pixels do not colour the terrain in this render. Tested on synthetic
   scenes only.
+- **Rover model: the high-gain antenna, the turret turned, the arm raised** (Christian, 12 Nov: "put the high gain
+  antenna back in and have it point in a neutral direction ... tilted forward at a 45 degree angle. The turret needs
+  to be rotate 180 so that the drill points out and pixl toward the mast. the PERSEVERANCE plate on the arm can
+  rotate up a little"). `perseverance_rmech.npz` rebuilt (`scripts/build_rover_model.py`): a part "antenna" (in the
+  mesh by default) - the dish to the right of its gimbal, turned 45 deg to face forward and up, one pose for every
+  sol; the arm's stow angles (89.2, 20.4, 71.9, -93.3, 85.0) deg, was (89.2, 16.4, 71.9, -103.3, -90.1). Chosen by eye
+  from renders through the label cameras of three frames (Rockytop sol 461 x 2, Van Zyl sol 52): the dish's outline
+  falls on the dish in both antenna frames; the turret's dome, PIXL, bit and top instruments within about 20 px.
 - **26 and 100 mm** are zooms MPPP aligns (`chal_rocks_large`, `seitah_overlook`). No focus model and no joint:
   their bin cameras start from the label model and refine in the block. 100 mm holds k2 = p1 = p2 = 0 as 79 mm does;
   nothing is held at 26 mm yet. Not aligned on real data before this release.

@@ -6,8 +6,11 @@ of perseverance's, simplify it, add it to the mesh, and project the images onto 
 https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/) simplified to 59,000 triangles in the rover
 mechanical frame RMECH (x forward, y right, z down, z 0 = the deck top; see :mod:`mppp.ibr.rover_deck`), built by
 ``scripts/build_rover_model.py``: body, suspension and wheels as modelled, the arm turned to its stowed pose (the
-five joint angles fitted to the Van Zyl S003D2046 cloud), without what moves from image to image - the mast and
-head, the high-gain antenna.  Against the Van Zyl rover cloud (placed in RMECH by the label CAHVORE poses) 88 % of
+five joint angles fitted to the Van Zyl S003D2046 cloud, then - 0.97.0 - the turret turned half round, the wrist and
+the shoulder adjusted against a Rockytop frame: the drill points out, PIXL towards the mast), without what moves from
+image to image - the mast and head.  0.97.0: the high-gain antenna is the part "antenna" in one neutral pose (the
+dish to the right of its gimbal, tilted 45 deg to face forward and up; Christian, 12 Nov 2026); it points differently
+every sol and the model does not follow it.  Against the Van Zyl rover cloud (placed in RMECH by the label CAHVORE poses) 88 % of
 the cloud is within 3 cm of the model and 94 % within 5 cm.
 
 With the rover shown, ``mppp mesh`` then
