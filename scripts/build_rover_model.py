@@ -27,7 +27,7 @@ import numpy as np
 
 ARM_CHAIN = ("arm.003", "arm.002", "arm", "arm.004", "turret_obj")
 ARM_AXES = ("y", "z", "z", "z", "y")
-ARM_STOW_DEG = (90.0, 14.5, 66.3, -86.9, 77.5)       # 0.97.0 (Christian, 12 Nov 2026: "The turret needs to be rotate 180 so
+ARM_STOW_DEG = (90.0, 14.5, 68.8, -89.4, 77.5)       # 0.97.0 (Christian, 12 Nov 2026: "The turret needs to be rotate 180 so
 # that the drill points out and pixl toward the mast. the PERSEVERANCE plate on the arm can rotate up a little"): the
 # turret turned by 175 deg (-90.1 -> 85.0), the wrist -103.3 -> -93.3 and the shoulder elevation 16.4 -> 20.4, chosen
 # by eye from renders of the model through the label camera of NLF_0461_0707871340 (Rockytop S026D0630) against the
@@ -40,13 +40,16 @@ ARM_STOW_DEG = (90.0, 14.5, 66.3, -86.9, 77.5)       # 0.97.0 (Christian, 12 Nov
 # the bit in NLF_0461_0707871340 (Rockytop), PIXL and the nameplate's centre line in NRF_0052_0671568531 (Van Zyl):
 # (14.5, 66.3, -86.9, 77.5), rms 44 px at half resolution (the marks are good to 20-30 px); with the azimuth free the
 # same fit gives 90.9.
+# Then (Christian: "the arm turret is too high. Bring it down a little while leaving the far side of the forearm in
+# place"): the elbow +2.5 deg with the wrist -2.5 deg - the forearm turns about its elbow end, the turret keeps its
+# attitude and comes down 3 cm (about 45 px in the Rockytop frame).
 # Before (10 Nov): the fit to the Van Zyl cloud, which left the turret's own angle the least certain - it was 180 deg off.
 # 0.97.0 (Christian, 12 Nov 2026: "there's a black rubber thing on the far side of the middle deck at looks like it
-# should be rotated 30-45 degrees"): the ribbed block of the body (a connected component 21 cm along y, 7 cm tall,
-# centred at near_m) stands upright in NASA's model; in the frames it leans.  Turned 40 deg about its long axis
-# through its foot (the line along y at pivot_xz_m), chosen from renders against NRF_0461_0707874458: at +40 its
-# ribbed face shows as in the frame; -40, and +-37 about the vertical, do not.
-BODY_TURNS = ({"near_m": (-0.323, -0.088, -0.048), "axis": "y", "pivot_xz_m": (-0.323, -0.013), "angle_deg": 40.0},)
+# should be rotated 30-45 degrees" ... "rotate it in azimuth back 30 degrees"): the ribbed block of the body (a
+# connected component 21 cm along y, 7 cm tall, centred at near_m) turned 30 deg about the vertical through its own
+# centre, so that its ribbed face looks towards the mast as in NRF_0461_0707874458 (-30 in turn_components' sense;
+# +30 shows it end on).  A lean about its long axis (tried first) was the wrong axis.
+BODY_TURNS = ({"near_m": (-0.323, -0.088, -0.048), "pivot_xy_m": (-0.323, -0.088), "angle_deg": -30.0},)
 STRAY_M = 0.012              # a decimated triangle this far from the model it was made from is a stray one
 HGA_NODES = ("antenna_hg",)
 HGA_AZ_DEG = 90.0            # 0.97.0 (Christian, 12 Nov 2026: "put the high gain antenna back in and have it point in a
