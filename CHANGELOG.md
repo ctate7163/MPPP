@@ -9,6 +9,13 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 fails a block; two independent validation tests and a ledger of what is validated; the single-station products
 share one viewpoint and one tone scale, and their pictures are jpg.
 
+- **Wildcat Ridge 63 mm, right eyes low** (Christian, 12 Nov: "put the right eyes of ZCAM08530 and ZCAM08538 in the low
+  state and run a joint for z63, z79, and z110"). The low-state list has `ZR:507:ZCAM08530` and `ZR:513:ZCAM08538`;
+  the left eyes stay off it (`-ZL:...`, which also overrides the found list). A test, not a finding: in the 12 Nov
+  block the eyes are 0.36 % apart in f / label f against a 0.45 % gap, which one eye low or a label offset between
+  the eyes would both give. `wildcat_ridge` loses `zcam_joint_exclude` and is in the 63 mm joint.
+  `zcam_joints_097.bat wildcat` aligns the block again and runs the three joints only (outputs `..._097w`). The
+  list's fingerprint is in every Mastcam-Z run key, so any other Mastcam-Z block that is run again aligns again.
 - **Sites** (Christian, 12 Nov). Rockytop is split at sol 500: `wildcat_ridge` (sols 500-534) and `skinner_ridge`
   (460-499) replace `rockytop` in the Mastcam-Z groups; `rockytop` is as before. New in `zcam_consensus`:
   `rose_river_falls` (34, 63, 110 mm), `knob_mountain_large`, `hippo_pools` (34, 48, 63, 110 mm).

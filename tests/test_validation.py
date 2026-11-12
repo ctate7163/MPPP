@@ -46,7 +46,7 @@ def test_workspace_station_warns_and_sites_of_0p97():
     t = load_site_table()
     s = t["sites"]
     assert set(s["rockytop"]["zcam_include"]) == {"110"} and s["rose_river_falls"]["zcam"] == [34, 63, 110]
-    assert s["wildcat_ridge"]["zcam_joint_exclude"] == [63] and s["skinner_ridge"]["sols"] == [[460, 499]]
+    assert "zcam_joint_exclude" not in s["wildcat_ridge"] and s["skinner_ridge"]["sols"] == [[460, 499]]
     for z in ("chal_rocks_large", "seitah_overlook"):                    # 26 and 100 mm
         assert s[z]["zcam"] == [26, 34, 48, 63, 79, 100, 110]
     assert s["seitah_overlook"]["settings"]["EXCLUDE"] == ["*ZCAM08122_034*"]

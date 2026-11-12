@@ -17,6 +17,9 @@ REM   zcam_joints_097.bat             everything
 REM   zcam_joints_097.bat joints      steps 2-4 (the blocks are aligned)
 REM   zcam_joints_097.bat seitah010   ONLY Seitah Overlook again with a minimum parallax of 0.10 deg (0.25 is the
 REM                                   rule): results in ...seitah_overlook_zcam\colmap_tri010, the standard block untouched
+REM   zcam_joints_097.bat wildcat     (12 Nov, later) Wildcat Ridge aligned again - the right eyes of ZCAM08530 and
+REM                                   ZCAM08538 are low on the list now - then ONLY the 63, 79 and 110 mm joints
+REM                                   (outputs ..._097w; no ratio tests, no validation)
 REM Models: MPPP_FREEZE_CMODS, else D:\rover_blocks\cmods_freeze2.  Root: MPPP_SCAPES, else D:\rover_blocks.
 REM Log: %ROOT%\mppp_pipeline\zcam_joints_097_log.txt
 REM ======================================================================================================
@@ -34,7 +37,15 @@ set "GROUP=zcam34_joint,zcam_consensus"
 set "PROMOTE=--no-promote"
 if "%MPPP_PROMOTE%"=="1" set "PROMOTE=--promote-if-ok --promote-waive "per-block aspect vs the Navcam""
 echo %DATE% %TIME% zcam_joints_097: models %MPPP_CMODS%, root %ROOT%, %PROMOTE% >> "%LOG%"
+set "TAG=097"
 if /i "%~1"=="joints" goto joints
+if /i "%~1"=="wildcat" (
+  set "TAG=097w"
+  echo ==== Wildcat Ridge again: ZR of ZCAM08530 and ZCAM08538 low
+  python "%MPPP_HOME%\scripts\run_sites.py" --root "%ROOT%" --sites wildcat_ridge --jobs 1 --zcam
+  echo %DATE% %TIME% wildcat_ridge: exit !ERRORLEVEL! >> "%LOG%"
+  goto joints
+)
 if /i "%~1"=="seitah010" (
   python "%MPPP_HOME%\scripts\run_sites.py" --root "%ROOT%" --sites seitah_overlook --jobs 1 --zcam --variant tri010 --set min_tri_angle_deg=0.10
   echo %DATE% %TIME% seitah_overlook tri010: exit !ERRORLEVEL! >> "%LOG%"
@@ -49,9 +60,10 @@ echo %DATE% %TIME% blocks: exit %ERRORLEVEL% >> "%LOG%"
 :joints
 for %%Z in (63 79 110) do (
   echo ==== 2. the %%Z mm joint
-  python -m mppp --log "%CA%\zcam%%Z_joint_%TODAY%_097_log.txt" calib zcam --zoom %%Z --group %GROUP% --root "%ROOT%" --out "%CA%\zcam%%Z_joint_%TODAY%_097" --iterations 300 %PROMOTE%
+  python -m mppp --log "%CA%\zcam%%Z_joint_%TODAY%_!TAG!_log.txt" calib zcam --zoom %%Z --group %GROUP% --root "%ROOT%" --out "%CA%\zcam%%Z_joint_%TODAY%_!TAG!" --iterations 300 %PROMOTE%
   echo %DATE% %TIME% Z%%Z joint: exit !ERRORLEVEL! >> "%LOG%"
 )
+if /i "%~1"=="wildcat" ( echo done: %CA%\zcam63_joint_%TODAY%_097w\report.md, zcam79_..., zcam110_... & pause & exit /b )
 echo ==== 3. the ratio tests: 79 mm one state and the ladder's gap, 63 mm the ladder's gap
 python -m mppp --log "%CA%\zcam79_one_state_%TODAY%_log.txt" calib zcam --zoom 79 --group %GROUP% --root "%ROOT%" --out "%CA%\zcam79_one_state_%TODAY%" --iterations 300 --zcam-hold-ratio 1.0 --no-promote
 python -m mppp --log "%CA%\zcam79_ratio_ladder_%TODAY%_log.txt" calib zcam --zoom 79 --group %GROUP% --root "%ROOT%" --out "%CA%\zcam79_ratio_ladder_%TODAY%" --iterations 300 --zcam-hold-ratio 1.006 --no-promote
