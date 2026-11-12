@@ -29,6 +29,11 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   0: the sky at infinity as before). The eye separation is full to 50 m of range from the pivot, falls as a cosine
   and is zero from the sphere on, the same for both eyes. Depth maps are unchanged (the sky has no depth there).
   The enhanced-local view uses one smoothed gain map for both eyes (CLAHE on the eyes' mean lightness).
+- **Single-site runs, faster at the same quality** (Christian, 12 Nov). `mppp dense --stereo` on a workspace whose
+  depth and normal maps are all there, made with the same options, skips the stereo step and does not wait for
+  the GPU lock (`dense.stereo_cached`; a run sat 12 min behind an alignment for 1 s of stereo). The rover-shown
+  mesh reads the rover-masked variant's terrain mesh and sets the model on it (`mppp mesh --rover --terrain-from
+  DIR`, set by the single-site plan): one surface run per station instead of two.
 - **Freeze window** (Christian, 12 Nov): a line when a block starts ("aligning <site>") and when it ends (verdict,
   images, residual, hours), and every half hour the last log line of each running block.
 - **Freeze on 0.97, from the beginning** (Christian, 12 Nov: "restart the freeze from the beginning using the

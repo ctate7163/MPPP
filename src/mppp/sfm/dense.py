@@ -267,6 +267,49 @@ def stereo_outputs_ready(ws: PathLike, record: Dict[str, Any], force: bool = Fal
     return {"cleared": len(maps) if why else 0, "why": why, "kept": 0 if why else len(maps)}
 
 
+def stereo_record(ws: PathLike, stereo_options: Optional[Dict[str, Any]], geom_consistency: bool, max_image_size: int):
+    """(PatchMatchOptions, the fields set, the record of ``stereo/mppp_stereo.json``) of a stereo run on ``ws``."""
+    import pycolmap
+    ws = Path(ws)
+    wrec = ws / "mppp_dense.json"
+    if wrec.is_file():
+        max_image_size = int(json.loads(wrec.read_text(encoding="utf-8")).get("max_image_size_used") or max_image_size)
+    po = pycolmap.PatchMatchOptions()
+    po.geom_consistency = bool(geom_consistency)
+    po.max_image_size = int(max_image_size)
+    so = set_options(po, stereo_options)
+    fov = json.loads(wrec.read_text(encoding="utf-8")).get("full_fov", False) if wrec.is_file() else False
+    rec = {"options": {k: float(v) if isinstance(v, float) else v for k, v in so.items()},
+           "geom_consistency": bool(geom_consistency), "max_image_size": int(max_image_size), "full_fov": bool(fov)}
+    return po, so, rec
+
+
+def stereo_cached(ws: PathLike, stereo_options: Optional[Dict[str, Any]] = None, geom_consistency: bool = True,
+                  max_image_size: int = 0) -> bool:
+    """0.97.0 (Christian, 12 Nov 2026: "Don't wait for the GPU when the stereo maps are cached"): True when every
+    image of the workspace has its depth and normal map from a run with these very options - a stereo step would
+    do nothing, so it needs neither the GPU nor the wait for it."""
+    ws = Path(ws)
+    st = ws / "stereo"
+    rec_file = st / STEREO_RECORD
+    imgs = [f for f in (ws / "images").rglob("*") if f.is_file()] if (ws / "images").is_dir() else []
+    if not imgs or not rec_file.is_file():
+        return False
+    try:
+        _, _, rec = stereo_record(ws, stereo_options, geom_consistency, max_image_size)
+        old = json.loads(rec_file.read_text(encoding="utf-8"))
+    except Exception:                                            # noqa: BLE001 - then the stereo step decides
+        return False
+    if json.loads(json.dumps(rec, sort_keys=True, default=str)) != old:
+        return False
+    kind = "geometric" if geom_consistency else "photometric"
+    for f in imgs:
+        rel = f.relative_to(ws / "images").as_posix()
+        if not all((st / d / f"{rel}.{kind}.bin").is_file() for d in ("depth_maps", "normal_maps")):
+            return False
+    return True
+
+
 def set_options(opts: Any, values: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Set the fields ``values`` on a pycolmap options object; returns the fields as set (a typo raises)."""
     done: Dict[str, Any] = {}
@@ -302,16 +345,9 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
             raise RuntimeError("patch-match stereo needs a CUDA pycolmap (the gpu_python environment) or "
                                "dense_reconstruct.bat with a CUDA COLMAP")
         t0 = time.time()
-        po = pycolmap.PatchMatchOptions()
-        po.geom_consistency = bool(geom_consistency)
-        po.max_image_size = int(max_image_size)
+        po, so, srec = stereo_record(ws, stereo_options, geom_consistency, max_image_size)
         po.gpu_index = str(gpu_index)
-        so = set_options(po, stereo_options)
-        fov = json.loads(wrec.read_text(encoding="utf-8")).get("full_fov", False) if wrec.is_file() else False
-        state = stereo_outputs_ready(ws, {"options": {k: float(v) if isinstance(v, float) else v for k, v in so.items()},
-                                          "geom_consistency": bool(geom_consistency), "max_image_size": int(max_image_size),
-                                          "full_fov": bool(fov)},
-                                     force=restereo)
+        state = stereo_outputs_ready(ws, srec, force=restereo)
         pycolmap.patch_match_stereo(str(ws), "COLMAP", options=po)
         out["steps"]["stereo"] = {"seconds": round(time.time() - t0, 1), "geom_consistency": bool(geom_consistency),
                                   "options": so, "old_maps": state}

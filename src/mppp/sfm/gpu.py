@@ -253,13 +253,13 @@ class gpu_lock:
             self.fh = None
 
 
-def run_step(python: PathLike, step: str, project, **kwargs: Any) -> Dict[str, Any]:
+def run_step(python: PathLike, step: str, project, lock: bool = True, **kwargs: Any) -> Dict[str, Any]:
     """Run ``extract_features`` or ``match`` on ``project`` in ``python``; reloads the project settings."""
     from .project import SfmProject
     if step not in ("extract_features", "match", "dense"):
         raise ValueError(step)
     project.save()                                            # the subprocess reads project.json
-    with gpu_lock(f"{step} ({project.root.parent.name})", enabled=bool(kwargs.get("use_gpu", True))):
+    with gpu_lock(f"{step} ({project.root.parent.name})", enabled=bool(lock) and bool(kwargs.get("use_gpu", True))):   # lock False: a step that needs no GPU (0.97.0)
         out = _run(python, [step, str(project.root), json.dumps(kwargs)])
     project.settings = SfmProject.load(project.root).settings  # what the subprocess recorded
     last = [ln for ln in out.strip().splitlines() if ln.startswith("MPPP_RESULT ")]

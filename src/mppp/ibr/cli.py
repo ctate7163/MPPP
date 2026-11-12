@@ -20,7 +20,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -140,6 +140,9 @@ def add_parsers(sub) -> None:
     p.add_argument("--dense-dir", default=None, help="the dense workspace of the Delaunay mesher (default: --points' folder)")
     p.add_argument("--mesh-radius", type=float, default=50.0, help="the mesh to this horizontal distance from the mast "
                    "axis (m; default 30)")
+    p.add_argument("--terrain-from", default=None, metavar="DIR",
+                   help="0.97.0, with --rover: the folder of this station's rover-masked mppp mesh - its terrain is "
+                        "used as it is and the rover model set on it (no second surface run)")
     p.add_argument("--plane-radius", type=float, default=100.0, help="the ground plane beyond the mesh, to this horizontal "
                    "distance (m; default 100); the sky at infinity beyond")
     p.add_argument("--horizontal-plane", action="store_true", help="a horizontal ground plane at the median height "
@@ -279,6 +282,46 @@ def _points_file(project, given: Optional[str], label: Optional[str] = None, rov
     return cands[-1]
 
 
+def _mesh_on_terrain(src: Path, out: Path, deck, st, a, parts) -> Optional[Dict[str, Any]]:
+    """The rover-shown mesh from the terrain mesh in ``src`` (the same station's rover-masked ``mppp mesh``) with the
+    Perseverance model on it; None when ``src`` does not hold that terrain (then the mesh is built as usual)."""
+    import shutil
+    from . import rover_model
+    from .mesh import read_mesh, write_mesh
+    need = [src / n for n in ("mesh.ply", "ground_plane.json", "mesh_report.json")]
+    if not all(f.is_file() for f in need) or src.resolve() == Path(out).resolve():
+        return None
+    try:
+        rep = json.loads(need[2].read_text(encoding="utf-8"))
+    except ValueError:
+        return None
+    same = (rep.get("rover") == "masked out" and not rep.get("rover_triangles")
+            and (rep.get("station") or {}).get("label") == st.label
+            and abs(float((rep.get("scene") or {}).get("mesh_radius_m", -1)) - float(a.mesh_radius)) < 1e-6
+            and bool((rep.get("fill") or {})) == (not getattr(a, "no_fill", False)))
+    if not same:
+        log.info("mesh --terrain-from %s: not this station's rover-masked terrain with these settings - built again", src)
+        return None
+    V, F = read_mesh(need[0])
+    tris = None
+    deck_rep: Dict[str, Any] = {"terrain_only": True}
+    if parts and rover_model.available():
+        Vm, Fm = rover_model.model_in_block(deck, parts=parts)
+        tris = [int(len(F)), int(len(F) + len(Fm))]
+        F = np.vstack([F, Fm + len(V)])
+        V = np.vstack([V, Vm])
+        deck_rep.update(model_triangles=int(len(Fm)), model_parts=list(parts))
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    write_mesh(out / "mesh.ply", V, F)
+    shutil.copy2(need[1], out / "ground_plane.json")
+    rep.update(rover_deck=deck_rep, rover_triangles=tris, terrain_from=str(src),
+               files={"mesh": str(out / "mesh.ply"), "ground_plane": str(out / "ground_plane.json")})
+    log.info("mesh: the terrain of %s (%d triangles) with the rover model (%d triangles) - no second surface run",
+             src, tris[0] if tris else len(F), (tris[1] - tris[0]) if tris else 0)
+    return rep
+
+
 def cmd_mesh(a: argparse.Namespace) -> int:
     from .mesh import ROVER_MODEL_PARTS, build_station_mesh, mesh_preview, read_mesh, read_points, read_points_normals
     project = _project(a.work)
@@ -311,13 +354,20 @@ def cmd_mesh(a: argparse.Namespace) -> int:
                  d["frames"], d["rot_spread_deg"], d["pos_spread_mm"], d.get("rover_tilt_deg", float("nan")),
                  d["size_m"][0], d["size_m"][1], out / "rover_deck.json")
     ties = None if a.no_tie_points else _tie_points(rec)
-    rep = build_station_mesh(pts, st.pivot, out, normals=nrm, dense_dir=a.dense_dir or pts_file.parent, colmap_exe=a.colmap,
-                             radius_m=a.mesh_radius, far_radius_m=a.far_radius, target_triangles=a.target_triangles,
-                             poisson_depth=a.poisson_depth, station=st.to_json(), up=st.up, plane_radius_m=a.plane_radius,
-                             ground_points=ties, horizontal_plane=a.horizontal_plane, plane_points=terrain,
-                             deck=deck, remove_floating=not a.keep_floating, terrain_only=not old_way,
-                             fill=not getattr(a, "no_fill", False), rover_pose=pose,
-                             rover_model_parts=None if a.no_rover_model else (a.rover_model_parts or ROVER_MODEL_PARTS))
+    rep = None
+    if a.rover and not old_way and deck is not None and getattr(a, "terrain_from", None):
+        # 0.97.0 (Christian, 12 Nov 2026: "Build the terrain mesh once"): the rover-masked variant's mesh is this
+        # variant's terrain - read it and set the model on it, no second Poisson run
+        rep = _mesh_on_terrain(Path(a.terrain_from), out, deck, st, a,
+                               None if a.no_rover_model else (a.rover_model_parts or ROVER_MODEL_PARTS))
+    if rep is None:
+        rep = build_station_mesh(pts, st.pivot, out, normals=nrm, dense_dir=a.dense_dir or pts_file.parent, colmap_exe=a.colmap,
+                                 radius_m=a.mesh_radius, far_radius_m=a.far_radius, target_triangles=a.target_triangles,
+                                 poisson_depth=a.poisson_depth, station=st.to_json(), up=st.up, plane_radius_m=a.plane_radius,
+                                 ground_points=ties, horizontal_plane=a.horizontal_plane, plane_points=terrain,
+                                 deck=deck, remove_floating=not a.keep_floating, terrain_only=not old_way,
+                                 fill=not getattr(a, "no_fill", False), rover_pose=pose,
+                                 rover_model_parts=None if a.no_rover_model else (a.rover_model_parts or ROVER_MODEL_PARTS))
     rep["rover"] = "shown" if a.rover else "masked out"
     rep["points_file"] = str(pts_file)
     (out / "mesh_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")

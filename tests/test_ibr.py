@@ -1758,3 +1758,46 @@ def test_enhlocal_one_gain_for_both_eyes():
     g = L.local_gain(a, b)
     assert g.shape == (64, 128) and np.allclose(g, L.local_gain(b, a)) and g.min() > 0.3 and g.max() < 4
     assert L.local_contrast(a, g).shape == a.shape
+
+
+def test_rover_mesh_on_the_masked_terrain(tmp_path):
+    """0.97.0 (12 Nov): the rover-shown mesh is the rover-masked terrain mesh plus the model - no second surface run."""
+    import types
+    from mppp.ibr import cli as C, rover_model
+    from mppp.ibr.mesh import read_mesh, write_mesh
+    src, out = tmp_path / "S1", tmp_path / "S1" / "with_rover"
+    src.mkdir()
+    V = np.array([[0, 0, 0.0], [1, 0, 0], [0, 1, 0]]); F = np.array([[0, 1, 2]])
+    write_mesh(src / "mesh.ply", V, F)
+    (src / "ground_plane.json").write_text("{}")
+    rep = {"rover": "masked out", "rover_triangles": None, "station": {"label": "S1"}, "scene": {"mesh_radius_m": 50.0},
+           "fill": {"filled": 1}}
+    (src / "mesh_report.json").write_text(json.dumps(rep))
+    st = types.SimpleNamespace(label="S1"); a = types.SimpleNamespace(mesh_radius=50.0, no_fill=False)
+    r = C._mesh_on_terrain(src, out, None, st, a, None)                       # no model parts: the terrain alone
+    assert r["terrain_from"] == str(src) and len(read_mesh(out / "mesh.ply")[1]) == 1 and (out / "ground_plane.json").is_file()
+    a.mesh_radius = 30.0
+    assert C._mesh_on_terrain(src, out, None, st, a, None) is None            # other settings: built again
+    from mppp.ibr import single_sites as S
+    cfg = {"stations": {"S1": {"station": "3_10", "work": str(tmp_path)}}}
+    cmds = S.plan(cfg, tmp_path)[0]["commands"]
+    m = [c["argv"] for c in cmds if c["step"] == "mesh"]
+    assert "--terrain-from" not in m[0] and m[1][m[1].index("--terrain-from") + 1] == str(tmp_path / "single_sites" / "S1")
+
+
+def test_stereo_cached(tmp_path):
+    """0.97.0 (12 Nov): a workspace whose maps are all there, made with the same options, needs no stereo step."""
+    from mppp.sfm import dense as D
+    ws = tmp_path / "dense_x"
+    (ws / "images").mkdir(parents=True)
+    (ws / "images" / "a.png").write_bytes(b"x")
+    opts = dict(D.STATION_STEREO_OPTIONS)
+    assert not D.stereo_cached(ws, opts, max_image_size=2000)
+    _, _, rec = D.stereo_record(ws, opts, True, 2000)
+    D.stereo_outputs_ready(ws, rec)
+    assert not D.stereo_cached(ws, opts, max_image_size=2000)                 # the record, but no maps
+    for d in ("depth_maps", "normal_maps"):
+        (ws / "stereo" / d).mkdir(parents=True, exist_ok=True)
+        (ws / "stereo" / d / "a.png.geometric.bin").write_bytes(b"x")
+    assert D.stereo_cached(ws, opts, max_image_size=2000)
+    assert not D.stereo_cached(ws, opts, max_image_size=1000)                 # other options: the stereo step decides

@@ -735,9 +735,19 @@ def cmd_dense(a: argparse.Namespace) -> int:
     if so or fo:
         print(f"dense options: stereo {so or 'COLMAP defaults'}; fusion {fo or 'COLMAP defaults'}")
     py = a.python or (None if getattr(pycolmap, "has_cuda", False) else _default_gpu_python())
+    need_gpu = True
+    if "stereo" in steps and not getattr(a, "restereo", False):           # 0.97.0: nothing to compute -> no GPU, no wait
+        from .sfm.dense import stereo_cached
+        if stereo_cached(ws, so, max_image_size=size):
+            steps = [s for s in steps if s != "stereo"]
+            need_gpu = False
+            print("dense: the stereo maps of this workspace are there, made with these options - stereo skipped, "
+                  "no wait for the GPU")
+            if not steps:
+                return 0
     if py and ("stereo" in steps or not getattr(pycolmap, "has_cuda", False)):
         print(f"dense: {', '.join(steps)} in {py}")
-        res = run_step(py, "dense", proj, steps=steps, max_image_size=size, workspace=str(ws), images=subset,
+        res = run_step(py, "dense", proj, lock=need_gpu, steps=steps, max_image_size=size, workspace=str(ws), images=subset,
                        stereo_options=so, fusion_options=fo, keep_rover=bool(getattr(a, "keep_rover", False)),
                        restereo=bool(getattr(a, "restereo", False)), full_fov=bool(getattr(a, "full_fov", False)))
     else:
