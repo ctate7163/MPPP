@@ -1711,9 +1711,10 @@ def test_exposure_and_enhanced_views(tmp_path):
     assert 0.5 <= e <= 4.0 and abs(x.max() * 64 * e - 0.95 * 65535) < 0.02 * 65535     # nothing clipped
     assert L.auto_exposure16(x * 100) == 0.5 and L.auto_exposure16(x * 0.01) == 4.0
     lo, hi, g = L.enhanced_levels(x)
-    assert lo < 40 and hi > 250 and 1.4 <= g <= 3.0
+    assert lo < 40 and 80 < hi < 130 and 1.0 <= g <= 2.6           # from the terrain band: the bright sky is not in it
     v = L.tone_enhanced(x, lo, hi, g)
-    assert v.min() >= 0 and v.max() <= 255 and abs(np.median(v[32:].mean(axis=2)) / 255 - 0.45) < 0.05
+    assert v.min() >= 0 and v.max() <= 255 and abs(np.median(v[32:].mean(axis=2)) / 255 - 0.45) < 0.08
+    assert (v[:4] == 255).all()                                       # the sky clips
     f = tmp_path / "levels.json"
     assert L.shared_value(f, "exposure16", lambda: 1.5) == (1.5, "computed")
     assert L.shared_value(f, "exposure16", lambda: 9.9) == (1.5, "file")
@@ -1725,7 +1726,7 @@ def test_exposure_and_enhanced_views(tmp_path):
     r = L.write_enhanced(tmp_path, "S1", levels_file=f)
     a = cv2.imread(r["files"]["enh"]); b = cv2.imread(r["files"]["enhlocal"])
     assert a.shape == (128, 128, 3) and b.shape == a.shape and r["files"]["enh"].endswith("S1_enh_360_3DTD.jpg")
-    assert "enhanced_levels_8bit_linear_units" in json.loads(f.read_text())
+    assert "enhanced_terrain_levels_8bit_linear_units" in json.loads(f.read_text())
 
 
 def test_sky_sphere_and_range_merge():
@@ -1834,3 +1835,28 @@ def test_far_underlay_and_apron():
         assert (h["label"] == LABEL_MESH).mean() > 0.97 and lo < np.median(z) < hi, (r, np.median(z))
     V3, F3, rep3 = M.fill_terrain(V, F, (0, 0, 0), (0, 0, 1), plane, 50.0, underlay=False)
     assert rep3["underlay"] is None and len(F3) < len(F2)
+
+
+def test_nearby_stations_and_width(tmp_path):
+    """0.97.0 (12 Nov): the neighbours' frames for the dense step; the single-site panorama width for one run."""
+    import types
+    from mppp.sfm.dense import nearby_station_images
+    rows = []
+    for (site, drive, x) in ((3, 10, 0.0), (3, 20, 8.0), (3, 30, 40.0)):
+        for i in range(2):
+            rows.append({"name": f"NLF_{site}_{drive}_{i}.png", "camera_group": "NL", "site": site, "drive": drive, "sol": 50,
+                         "prior_C": [x, 0.1 * i, 0.0], "downsample_scale": 0.5})
+    rows.append({"name": "ZL0_3_20.png", "camera_group": "ZL034", "site": 3, "drive": 20, "prior_C": [8.0, 0, 0]})
+    proj = types.SimpleNamespace(images=rows)
+    nb = nearby_station_images(proj, "3_10", 15.0, families="N", scale=0.5)
+    assert nb["names"] == ["NLF_3_20_0.png", "NLF_3_20_1.png"] and nb["stations"]["S003D0020"]["distance_m"] == 8.0
+    assert nearby_station_images(proj, "3_10", 5.0)["names"] == []
+    from mppp.ibr import single_sites as S
+    cfg = {"stations": {"S1": {"station": "3_10", "work": str(tmp_path), "nearby_m": 15}}, "ods_args": ["--width", "8192"]}
+    cmds = S.plan(cfg, tmp_path, ods_width=16384)[0]["commands"]
+    dense = [c["argv"] for c in cmds if c["step"] == "dense"][0]
+    assert dense[dense.index("--nearby-m") + 1] == "15"
+    mesh = [c["argv"] for c in cmds if c["step"] == "mesh"][0]
+    assert mesh[mesh.index("--keep-under-rover") + 1] == "0.25"
+    ods = [c["argv"] for c in cmds if c["step"] == "ods"][0]
+    assert ods[-2:] == ["--width", "16384"]

@@ -321,10 +321,15 @@ def shared_levels(path: Optional[PathLike], compute, scale: float = 1.0) -> Tupl
 EXPOSURE16_TOP = 0.95            # auto exposure: the EXPOSURE16_PCT percentile of the brightest channel lands here
 EXPOSURE16_PCT = 99.99           #   (of 65535) - one linear gain per station, nothing clipped but 1 pixel in 10,000
 EXPOSURE16_RANGE = (0.5, 4.0)    #   within these factors of the frames' own 16-bit scale (0.5: the value before)
-ENH_LOW_PCT, ENH_HIGH_PCT = 0.1, 99.9   # enhanced view: black at this percentile of the darkest channel, white at
-#                                         this percentile of the brightest - one pair for the three channels (no tint)
-ENH_GROUND = 0.45                # ... and a gamma that puts the ground's median here (of 1)
-ENH_GAMMA_RANGE = (1.4, 3.0)     #   display gamma within these (2.2 is the usual one)
+# 12 Nov, later (Christian: "It looks too bland. The sky and rover deck can saturate at the expense of maximizing
+# contrast on the terrain"): the levels come from the terrain alone - the band of the panorama between ENH_BAND_DEG
+# below the horizon (past the deck, short of the sky) - and whatever is brighter than its white point clips.
+ENH_BAND_DEG = (-30.0, -2.0)     # elevation of the rows the levels are taken from
+ENH_LOW_PCT, ENH_HIGH_PCT = 0.5, 99.5   # black at this percentile of the band's darkest channel, white at this
+#                                         percentile of its brightest - one pair for the three channels (no tint)
+ENH_GROUND = 0.45                # ... and a gamma that puts the band's median here (of 1)
+ENH_GAMMA_RANGE = (1.0, 2.6)     #   display gamma within these
+ENH_CHROMA = 1.2                 # the colour (Lab a, b) of the 8-bit view times this
 CLAHE_CLIP, CLAHE_TILES = 2.0, (8, 16)   # local version: OpenCV CLAHE on the lightness, tiles (rows, columns)
 
 
@@ -363,20 +368,23 @@ def shared_value(path: Optional[PathLike], key: str, compute):
 
 
 def enhanced_levels(x: np.ndarray, seen: Optional[np.ndarray] = None) -> List[float]:
-    """[black, white, display gamma] of the enhanced view of a linear panorama, in its own units (the rule above)."""
+    """[black, white, display gamma] of the enhanced view of a linear equirectangular panorama, in its own units:
+    from the terrain band alone (the rule above); the sky and the deck may clip."""
     x = np.asarray(x)
-    step = max(1, int(np.sqrt(x.shape[0] * x.shape[1] / 2e6)))
-    sub = x[::step, ::step].astype(np.float32)
-    ok = sub.max(axis=2) > 0 if seen is None else np.asarray(seen)[::step, ::step]
+    H = x.shape[0]
+    el = 90.0 - (np.arange(H) + 0.5) / H * 180.0
+    rows = np.flatnonzero((el >= ENH_BAND_DEG[0]) & (el <= ENH_BAND_DEG[1]))
+    if not len(rows):
+        rows = np.arange(H // 2, H)
+    step = max(1, int(np.sqrt(len(rows) * x.shape[1] / 2e6)))
+    sub = x[rows[::step]][:, ::step].astype(np.float32)
+    ok = sub.max(axis=2) > 0 if seen is None else np.asarray(seen)[rows[::step]][:, ::step]
     if not ok.any():
         return [0.0, 255.0, 2.2]
     lo = float(np.percentile(sub[ok].min(axis=1), ENH_LOW_PCT))
     hi = float(np.percentile(sub[ok].max(axis=1), ENH_HIGH_PCT))
     hi = max(hi, lo + 1e-3)
-    low_half = np.zeros(ok.shape, bool)
-    low_half[sub.shape[0] // 2:] = True
-    g = ok & low_half
-    med = float(np.median(sub[g if g.sum() > 100 else ok].mean(axis=1)))
+    med = float(np.median(sub[ok].mean(axis=1)))
     n = float(np.clip((med - lo) / (hi - lo), 1e-4, 0.999))
     gamma = float(np.clip(np.log(n) / np.log(ENH_GROUND), *ENH_GAMMA_RANGE))
     return [lo, hi, gamma]
@@ -435,8 +443,13 @@ def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quali
             raise FileNotFoundError(f"{f}: no 16-bit panorama")
         a = a[..., :3].astype(np.float32) / k16                      # 8-bit linear units, BGR
         if lv is None:
-            lv, _ = shared_value(levels_file, "enhanced_levels_8bit_linear_units", lambda: enhanced_levels(a))
-        eyes[eye] = np.rint(tone_enhanced(a, *lv)).astype(np.uint8)
+            lv, _ = shared_value(levels_file, "enhanced_terrain_levels_8bit_linear_units", lambda: enhanced_levels(a))
+        v8 = np.rint(tone_enhanced(a, *lv)).astype(np.uint8)
+        if ENH_CHROMA != 1.0:                                       # the same for both eyes: a fixed factor
+            lab = cv2.cvtColor(v8, cv2.COLOR_BGR2LAB).astype(np.float32)
+            lab[..., 1:] = np.clip(128.0 + ENH_CHROMA * (lab[..., 1:] - 128.0), 0, 255)
+            v8 = cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2BGR)
+        eyes[eye] = v8
         del a
     other = "right" if top == "left" else "left"
     files = {}
@@ -446,8 +459,9 @@ def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quali
         files[tag] = str(out / f"{pre}{tag}_{STACK_NAME}.jpg")
         cv2.imwrite(files[tag], sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
     return {"levels_8bit_linear_units": {"black": lv[0], "white": lv[1], "gamma": lv[2]}, "files": files,
-            "rule": f"black: {ENH_LOW_PCT} % of the darkest channel; white: {ENH_HIGH_PCT} % of the brightest; gamma "
-                    f"puts the ground's median at {ENH_GROUND} (within {ENH_GAMMA_RANGE}); enhlocal: CLAHE clip "
+            "rule": f"levels from the terrain band, elevation {ENH_BAND_DEG} deg: black {ENH_LOW_PCT} % of the darkest channel, "
+                    f"white {ENH_HIGH_PCT} % of the brightest (the sky and the deck may clip); gamma puts the band's "
+                    f"median at {ENH_GROUND} (within {ENH_GAMMA_RANGE}); colour x {ENH_CHROMA}; enhlocal: CLAHE clip "
                     f"{CLAHE_CLIP}, tiles {CLAHE_TILES} on the mean lightness of the two eyes, one smoothed gain map for both"}
 
 

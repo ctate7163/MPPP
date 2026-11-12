@@ -580,6 +580,8 @@ FILL_RING_RATIO = 1.06
 FILL_UNDERLAY_FROM_M = 20.0
 FILL_UNDERLAY_DROP_M = 0.05
 FILL_APRON_FACTOR = 2.0
+FILL_MIN_COVER = 0.6              # a cell counts as covered when its triangles' area is this share of the cell's
+FILL_ROVER_REF_RADIUS_M = 5.0    # rover_keep_m: the ground's height from the triangles within this of the axis, off the footprint
 
 
 def under_rover(X: np.ndarray, pose: Dict[str, Any]) -> np.ndarray:
@@ -592,7 +594,7 @@ def under_rover(X: np.ndarray, pose: Dict[str, Any]) -> np.ndarray:
 
 def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: Dict[str, Any],
                  radius_m: float, rover: Optional[Dict[str, Any]] = None,
-                 underlay: bool = True) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+                 underlay: bool = True, rover_keep_m: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """
     0.97.0 (Christian, 12 Nov 2026: "interpolate terrain under the rover so that it is flattish terrain without
     holes. The far field should interpolate over hole in the terrain. This is especially important behind the
@@ -616,6 +618,19 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
     if rover is not None and len(F):
         cen, _, _ = triangle_geometry(V, F)
         drop = under_rover(cen, rover)
+        if rover_keep_m and drop.any():
+            # 0.97.0: with the neighbours' frames in the cloud the ground under the rover is measured - what lies
+            # within rover_keep_m of the ground's height around the footprint stays; what is higher (deck, belly,
+            # mask leaks) or lower goes
+            h = height_above_plane(cen, plane, up)
+            dP = cen - P
+            near = (~drop) & (np.hypot(dP @ e, dP @ n) < FILL_ROVER_REF_RADIUS_M)
+            if near.sum() >= 50:
+                ref = float(np.median(h[near]))
+                keep_under = drop & (np.abs(h - ref) <= float(rover_keep_m))
+                rep["under_rover_triangles_kept"] = int(keep_under.sum())
+                rep["under_rover_ground_ref_m"] = ref
+                drop &= ~keep_under
         rep["under_rover_triangles_removed"] = int(drop.sum())
         V, F = keep_triangles(V, F, ~drop)
     edges = [0.0, FILL_RING0_M]
@@ -649,6 +664,12 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
     else:
         med = np.full((nr, na), np.nan)
     covered = hits > 0
+    if len(F):                                                   # 0.97.0: a cell is covered by area, not by one triangle -
+        a3, b3, c3 = V[F[:, 0]], V[F[:, 1]], V[F[:, 2]]          # at a hole's rim (the rover's footprint) a few triangles
+        ar = 0.5 * np.linalg.norm(np.cross(b3 - a3, c3 - a3), axis=1)[ok]      # in a cell left gaps to the plane
+        asum = np.bincount(key, weights=ar, minlength=nr * na).reshape(nr, na)
+        cell_area = (0.5 * (edges[1:] ** 2 - edges[:-1] ** 2) * np.radians(FILL_AZ_STEP_DEG))[:, None]
+        covered &= asum >= FILL_MIN_COVER * cell_area
     rc = 0.5 * (edges[:-1] + edges[1:])
     ac = np.radians((np.arange(na) + 0.5) * FILL_AZ_STEP_DEG)
     cx, cy = rc[:, None] * np.cos(ac)[None, :], rc[:, None] * np.sin(ac)[None, :]
@@ -718,7 +739,8 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
                        horizontal_plane: bool = False, plane_points: Optional[np.ndarray] = None,
                        deck: Optional[Dict[str, Any]] = None, remove_floating: bool = True,
                        rover_model_parts: Optional[Sequence[str]] = ROVER_MODEL_PARTS, terrain_only: bool = False,
-                       fill: bool = True, rover_pose: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                       fill: bool = True, rover_pose: Optional[Dict[str, Any]] = None,
+                       rover_keep_m: Optional[float] = None) -> Dict[str, Any]:
     """The whole of step 2 for one station: the surface (Delaunay through ``colmap_exe`` over ``dense_dir`` when
     given, else Poisson over the ``points`` within ``radius_m`` + 5 m of the axis), the cleanup (the mesh to
     ``radius_m`` from the axis), the decimation, the ground plane (:func:`fit_ground_plane` over ``points`` and
@@ -805,7 +827,8 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
     rover_tris = None
     fill_rep = None
     if fill:                                                    # 0.97.0: no holes, flattish ground under the rover
-        V, F, fill_rep = fill_terrain(V, F, pivot, up, plane, radius_m, rover=rover_pose if rover_pose is not None else deck)
+        V, F, fill_rep = fill_terrain(V, F, pivot, up, plane, radius_m, rover=rover_pose if rover_pose is not None else deck,
+                                      rover_keep_m=rover_keep_m)
         log.info("mesh: terrain fill - %d of %d cells had no surface (%d triangles); %d triangles under the rover replaced",
                  fill_rep["filled"], fill_rep["cells"], fill_rep["triangles"], fill_rep["under_rover_triangles_removed"])
     if deck is not None and terrain_only:

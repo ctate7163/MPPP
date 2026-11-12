@@ -39,6 +39,20 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   the ragged far mesh ends at the terrain's range; past the mesh radius the grid goes on to twice the radius with its
   height falling to the ground plane's (`mesh.FILL_UNDERLAY_*`, `FILL_APRON_FACTOR`; `fill_terrain(underlay=False)`:
   as before). The depth maps see the apron as mesh out to 100 m.
+- **Fill: coverage by area** (Christian, 12 Nov: black patches in the incidence, emission and phase maps at the edge
+  of the ground interpolated under the rover). A grid cell counts as covered when its triangles' area is 60 % of
+  the cell's (one triangle before), so the cells at a hole's rim are filled and no ray passes between mesh and fill
+  to the plane, which has no angles (`mesh.FILL_MIN_COVER`).
+- **Nearby stations for the ground** (Christian, 12 Nov: "constrain the terrain from the masked images of several
+  nearby stations"). `mppp dense --station S --nearby-m M` adds the frames of the block's other stations within M
+  metres (its own workspace, `dense_<S>..._near<M>`); `mppp mesh --keep-under-rover 0.25` then keeps the terrain under
+  the rover's footprint that lies within 0.25 m of the ground's height around it. In `single_sites.json`:
+  `"nearby_m": 15` per station or at the top level (and `keep_under_rover_m`). Off by default; not run on a block yet.
+- **Enhanced views from the terrain** (Christian, 12 Nov: "too bland. The sky and rover deck can saturate"). Black and
+  white points at 0.5 % and 99.5 % of the band 2-30 deg below the horizon, the gamma (1.0-2.6) puts that band's
+  median at 0.45, the colour x 1.2; what is brighter than the terrain's white clips. Replaces the rule of this morning.
+- **Single sites**: `--width PX` for one run (e.g. 16384, with `--out` to keep the panoramas there); the log is
+  written line by line.
 - **Freeze window** (Christian, 12 Nov): a line when a block starts ("aligning <site>") and when it ends (verdict,
   images, residual, hours), and every half hour the last log line of each running block.
 - **Freeze on 0.97, from the beginning** (Christian, 12 Nov: "restart the freeze from the beginning using the

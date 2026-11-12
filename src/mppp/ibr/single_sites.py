@@ -133,7 +133,7 @@ def frame_args(frames: Dict[str, Any]) -> List[str]:
 
 
 def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = None, labels: Optional[Sequence[str]] = None,
-         steps: Sequence[str] = STEPS, variants: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
+         steps: Sequence[str] = STEPS, variants: Optional[Sequence[str]] = None, ods_width: Optional[int] = None) -> List[Dict[str, Any]]:
     """The runs, in order: one entry per station with its block, its output folder and the commands (argv lists of
     ``python -m mppp``), grouped by variant."""
     root = Path(root)
@@ -148,6 +148,9 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
         work = block_folder(st, root)
         vs = [v for v in (variants or st.get("variants") or cfg.get("variants") or VARIANTS)]
         fa = frame_args(st.get("frames") or {}) + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
+        near = st.get("nearby_m", cfg.get("nearby_m"))          # 0.97.0: the neighbours' frames constrain the ground
+        if near:
+            fa += ["--nearby-m", f"{float(near):g}"]
         base = Path(out_root) / lab
         cmds: List[Dict[str, Any]] = []
         if "dense" in steps:
@@ -171,8 +174,12 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     argv += ["--exclude", *[str(x) for x in st["ods_exclude"]]]
                 if step == "ods":                    # 0.97.0: one 16-to-8-bit scaling for both variants of a station
                     argv += ["--tone-levels", str(base / TONE_FILE)]
+                if step == "mesh" and near:
+                    argv += ["--keep-under-rover", f"{float(st.get('keep_under_rover_m', cfg.get('keep_under_rover_m', 0.25))):g}"]
                 argv += [str(x) for x in (cfg.get(f"{step}_args") or [])]      # 0.96.1: for every station
                 argv += [str(x) for x in st.get(f"{step}_args", [])]
+                if step == "ods" and ods_width:      # after the config's arguments: the last --width counts
+                    argv += ["--width", str(int(ods_width))]
                 cmds.append({"variant": v, "step": step, "argv": argv})
         runs.append({"label": lab, "work": str(work), "out": str(base), "note": st.get("note", ""), "variants": vs,
                      "commands": cmds})
@@ -188,6 +195,7 @@ def _run(argv: List[str], log_fh) -> int:
     for line in p.stdout:
         sys.stdout.write(line)
         log_fh.write(line)
+        log_fh.flush()                               # 0.97.0: the log shows where a long step is
     p.wait()
     log_fh.write(f"===== exit {p.returncode}\n")
     log_fh.flush()
@@ -296,6 +304,9 @@ def add_parser(sub) -> None:
     p.add_argument("--out", default=None, help="the output root (default <root>/<config 'out'>)")
     p.add_argument("--steps", nargs="+", default=list(STEPS), choices=STEPS)
     p.add_argument("--variants", nargs="+", default=None, choices=VARIANTS)
+    p.add_argument("--width", type=int, default=None, metavar="PX",
+                   help="0.97.0: the panorama's width for this run (e.g. 16384; the config's or 8192 otherwise) - give "
+                        "--out as well to keep the panoramas already made")
     p.add_argument("--squares-only", action="store_true", help="only stack the eye images already there into "
                    "360_3DTD.jpg / .png")
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and squares again from the "
@@ -317,7 +328,7 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         for lab, st in cfg["stations"].items():
             print(f"{lab}  {st['station']:>9}  {st.get('site') or st.get('work')}  {st.get('note', '')}")
         return 0
-    runs = plan(cfg, root, out_root, a.labels, a.steps, a.variants)
+    runs = plan(cfg, root, out_root, a.labels, a.steps, a.variants, ods_width=a.width)
     if a.dry_run:
         for r in runs:
             print(f"{r['label']}: {r['work']} -> {r['out']}")

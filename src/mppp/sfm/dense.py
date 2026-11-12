@@ -26,7 +26,9 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Union, List, Sequence
+from typing import Any, Dict, Optional, Tuple, Union, List, Sequence
+
+import numpy as np
 
 from .project import SfmProject
 
@@ -90,6 +92,45 @@ def subset_images(project: SfmProject, station: Optional[str] = None, families: 
     if scale is not None:
         rows = [r for r in rows if abs(float(r.get("downsample_scale") or 1.0) - float(scale)) < 1e-6]
     return sorted(r["name"] for r in rows)
+
+
+def nearby_station_images(project: SfmProject, station: str, radius_m: float, families: str = "N",
+                          scale: Optional[float] = None) -> Dict[str, Any]:
+    """0.97.0 (Christian, 12 Nov 2026: "constrain the terrain from the masked images of several nearby stations"):
+    the frames of the block's other stations whose position (the mean of their frames' prior centres) is within
+    ``radius_m`` of ``station``'s - they see the ground this station's rover stands on, the rover being elsewhere.
+    Returns {"names": [...], "stations": {label: {"distance_m", "images"}}}."""
+    from ..ibr.station import parse_station
+    site, drive, sol = parse_station(station)
+    groups: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
+    for r in project.images:
+        if families and str(r.get("camera_group") or r.get("instrument") or "?")[:1] not in set(families):
+            continue
+        if r.get("site") is None or r.get("drive") is None or r.get("prior_C") is None:
+            continue
+        groups.setdefault((int(r["site"]), int(r["drive"])), []).append(r)
+    if site is None:                                            # sol:NNNN - the station of that sol's frames
+        own = [k for k, rows in groups.items() if any(int(x.get("sol") or -1) == sol for x in rows)]
+        key = own[-1] if own else None
+    else:
+        key = (site, drive)
+    out: Dict[str, Any] = {"names": [], "stations": {}}
+    if key not in groups:
+        return out
+    c0 = np.mean([r["prior_C"] for r in groups[key]], axis=0)
+    for k, rows in sorted(groups.items()):
+        if k == key:
+            continue
+        d = float(np.linalg.norm(np.mean([r["prior_C"] for r in rows], axis=0) - c0))
+        if d > float(radius_m):
+            continue
+        if scale is not None:
+            rows = [r for r in rows if abs(float(r.get("downsample_scale") or 1.0) - float(scale)) < 1e-6]
+        if rows:
+            out["stations"][f"S{k[0]:03d}D{k[1]:04d}"] = {"distance_m": round(d, 2), "images": len(rows)}
+            out["names"] += [r["name"] for r in rows]
+    out["names"] = sorted(set(out["names"]))
+    return out
 
 
 def subset_label(station: Optional[str] = None, sequences: Optional[Sequence[str]] = None,

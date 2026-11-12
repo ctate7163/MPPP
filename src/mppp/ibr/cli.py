@@ -140,6 +140,10 @@ def add_parsers(sub) -> None:
     p.add_argument("--dense-dir", default=None, help="the dense workspace of the Delaunay mesher (default: --points' folder)")
     p.add_argument("--mesh-radius", type=float, default=50.0, help="the mesh to this horizontal distance from the mast "
                    "axis (m; default 30)")
+    p.add_argument("--keep-under-rover", type=float, default=None, metavar="M",
+                   help="0.97.0: under the rover's footprint keep the terrain within M metres of the ground's height "
+                        "around it (for a cloud that holds nearby stations' frames, mppp dense --nearby-m; default: all "
+                        "of it is replaced by the interpolated ground)")
     p.add_argument("--terrain-from", default=None, metavar="DIR",
                    help="0.97.0: the folder of this station's other variant (rover shown / masked) - its terrain mesh is used "
                         "as it is, with or without the rover model (no second surface run)")
@@ -374,6 +378,7 @@ def cmd_mesh(a: argparse.Namespace) -> int:
                                  ground_points=ties, horizontal_plane=a.horizontal_plane, plane_points=terrain,
                                  deck=deck, remove_floating=not a.keep_floating, terrain_only=not old_way,
                                  fill=not getattr(a, "no_fill", False), rover_pose=pose,
+                                     rover_keep_m=getattr(a, "keep_under_rover", None),
                                  rover_model_parts=None if a.no_rover_model else (a.rover_model_parts or ROVER_MODEL_PARTS))
     rep["rover"] = "shown" if a.rover else "masked out"
     rep["points_file"] = str(pts_file)

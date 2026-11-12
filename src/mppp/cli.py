@@ -153,6 +153,9 @@ def build_parser() -> argparse.ArgumentParser:
                    "a sub-model of them, its own workspace <project>/dense_<station>[_<sequence>]")
     p.add_argument("--cameras", default="N", help="--station: the camera families (default N)")
     p.add_argument("--sequence", nargs="+", default=None, help="--station: only these sequences (NCAM03461 ...)")
+    p.add_argument("--nearby-m", type=float, default=None, metavar="M",
+                   help="0.97.0, with --station: also the frames of the block's other stations within M metres (they "
+                        "see the ground under this station's rover); its own workspace dense_<station>..._near<M>")
     p.add_argument("--scale", type=float, default=None, help="--station: only frames at this downsample (0.5: half-res)")
     p.add_argument("--images", nargs="+", default=None, help="0.96: only these image names (instead of --station)")
     p.add_argument("--min-angle", type=float, default=None, help="0.96: the patch-match triangulation angle (deg) a pixel "
@@ -700,6 +703,13 @@ def cmd_dense(a: argparse.Namespace) -> int:
             print(f"dense: no frames for --station {a.station} --cameras {a.cameras} --sequence {a.sequence}", file=sys.stderr)
             return 2
         ws = proj_dir / subset_label(a.station, a.sequence, a.images)
+        if getattr(a, "nearby_m", None) and a.station:          # 0.97.0: the neighbours' frames, for the ground here
+            from .sfm.dense import nearby_station_images
+            nb = nearby_station_images(proj, a.station, a.nearby_m, families=a.cameras, scale=a.scale)
+            subset = sorted(set(subset) | set(nb["names"]))
+            ws = ws.with_name(ws.name + f"_near{a.nearby_m:g}")
+            print(f"dense: {len(nb['names'])} frames of {len(nb['stations'])} stations within {a.nearby_m:g} m added: "
+                  + (", ".join(f"{k} ({v['distance_m']:g} m, {v['images']})" for k, v in nb["stations"].items()) or "none"))
         print(f"dense subset: {len(subset)} frames -> {ws}")
     if getattr(a, "maps", None):                             # 0.95.1: the maps as images, nothing else
         from .sfm.dense import export_dense_maps
