@@ -117,6 +117,39 @@ def folder_tag(folder: PathLike) -> str:
     return f.name if re.search(r"_\d{8}", f.name) else f"{f.parent.name}_{f.name}"
 
 
+def deck_baseline_figure(deck_joint: Optional[PathLike], chain: PathLike, out_png: PathLike, dpi: int = 200):
+    """The Navcam baseline figure: the station rigs of the newest main ``jr_<run>.json`` under ``deck_joint`` (not a
+    jackknife ``_st<k>`` / ``_jk<k>`` run) with the fit and datum variants of its ``eod_report.json``; without that
+    folder the fit of the mast-chain file ``chain`` (``navcam_rig.baseline_mm``) and no points."""
+    import re
+    from mppp_studies.calibration.plots import deck_baseline_rows, plot_deck_baseline
+    rows, fit, variants, label = [], None, {}, ""
+    d = Path(deck_joint) if deck_joint else None
+    if d and d.is_dir():
+        jrs = [p for p in d.glob("jr_*.json") if not re.search(r"_(st|jk)\d+\.json$", p.name)]
+        best = None
+        for p in sorted(jrs, key=os.path.getmtime, reverse=True):
+            r = deck_baseline_rows(json.loads(p.read_text(encoding="utf-8")))
+            if best is None or len(r) > len(best[1]):
+                best = (p, r)
+        if best and best[1]:
+            rows, label = best[1], f"({best[0].stem[3:]}, {len({r['station'] for r in best[1]})} stations)"
+            rep = d / "eod_report.json"
+            if rep.is_file():
+                R = json.loads(rep.read_text(encoding="utf-8"))
+                if R.get("run") == best[0].stem[3:]:
+                    fit = (R.get("rig_trends") or {}).get("baseline_mm", {}).get("linear")
+                    variants = {k: v["baseline_minus_20C_mm"] for k, v in (R.get("variants") or {}).items()
+                                if v.get("baseline_minus_20C_mm")}
+    if not rows:
+        m = json.loads(Path(chain).read_text(encoding="utf-8"))
+        b = (m.get("navcam_rig") or {}).get("baseline_mm")
+        if not b:
+            raise ValueError(f"no station rigs under {deck_joint} and no navcam_rig.baseline_mm in {chain}")
+        fit, label = {"coef": b["coef"], "jk_se": b.get("jk_se")}, f"({m.get('name') or Path(chain).stem}: fit only)"
+    return plot_deck_baseline(rows, out_png, fit, variants, label, dpi)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the scapes root (default MPPP_SCAPES)")
@@ -147,6 +180,9 @@ def main(argv=None) -> int:
     ap.add_argument("--deck-frame", default=os.environ.get("MPPP_DECK_FRAME", DECK_FRAME),
                     help="0.97.0: one full-resolution Navcam RAD product (.IMG) of the deck for the fiducial figure "
                          "(default MPPP_DECK_FRAME or the sol-1642 frame under D:\\data\\m2020\\datadrive); - for none")
+    ap.add_argument("--deck-joint", default=os.environ.get("EOD_WORK", r"D:\rover_frame_eod"),
+                    help="0.97.0: the deck_joint work folder (jr_<run>.json, eod_report.json) for the Navcam baseline "
+                         "figure (default EOD_WORK or D:\\rover_frame_eod); without it the shipped DJ32 fit alone")
     ap.add_argument("--dpi", type=int, default=200)
     ap.add_argument("--site-map", choices=["maps", "simple", "none"], default="maps")
     a = ap.parse_args(argv)
@@ -266,6 +302,13 @@ def main(argv=None) -> int:
                     print(f"deck fiducial figure: skipped ({type(e).__name__}: {e})")
             else:
                 print(f"deck fiducial figure: {a.deck_frame} not found - skipped (--deck-frame or MPPP_DECK_FRAME)")
+        # ---- 0.97.0: the Navcam baseline of the deck_joint's station rigs against temperature and sol
+        if chain:
+            try:
+                f = deck_baseline_figure(a.deck_joint, chain, out / f"navcam_baseline_deck_joint_{tag}.png", a.dpi)
+                print(f"Navcam baseline (deck_joint): {f}")
+            except Exception as e:                                         # noqa: BLE001
+                print(f"Navcam baseline figure: skipped ({type(e).__name__}: {e})")
         lab = a.mast_labels or str(Path(a.root) / "camera_analysis" / "rover_frame_labels.json")
         if chain and Path(lab).is_file():
             try:
@@ -344,6 +387,12 @@ def main(argv=None) -> int:
         f = plot_zcam_efl_vs_focus(res_, out / f"zcam{int(res_.get('zoom', 34))}_efl_vs_focus_{folder_tag(j)}.png",
                                    dpi=a.dpi, label=folder_tag(j))
         print(f"Mastcam-Z {res_.get('zoom', 34)} mm: {j} -> {f.name if f else 'no eyes'}")
+        zmf = j / f"M2020_ZCAM{int(res_.get('zoom', 34)):03d}_focus_model.json"      # 0.97.0: the joint's rig trends
+        if zmf.is_file():
+            zm_ = json.loads(zmf.read_text(encoding="utf-8"))
+            for suffix, labels in (("", True), ("_nolabels", False)):
+                C.plot_zcam_rig_trends(zm_, out / f"zcam{int(res_.get('zoom', 34))}_rig_trends_{folder_tag(j)}{suffix}.png",
+                                       dpi=a.dpi, label=folder_tag(j), point_labels=labels)
     # ---- 0.95.2 (Christian, 30 Oct): the Hazcams - rig trends of each pair, focal length against temperature
     hz = None if a.hazcam == "-" else (Path(a.hazcam) if a.hazcam else (newest_hazcam_fit(a.root) if a.root else None))
     if hz is not None:

@@ -611,3 +611,113 @@ def plot_zoom_ladder(rows: Sequence[Dict[str, Any]], out_png: PathLike, dpi: int
     fig.savefig(out_png, dpi=dpi)
     plt.close(fig)
     return gaps
+
+
+# ------------------------------------------------------------------------------------------------ deck_joint baseline
+NAVCAM_LABEL_BASELINE_MM = 424.36      # |C_R - C_L| of the label CAHVORE pair
+DECK_MIN_OBS = 5                       # station rigs with fewer deck observations are left out (eod_report.py)
+DECK_T0, DECK_SOL0 = -20.0, 1000.0     # the deck_joint's reference temperature (C) and sol
+NAVCAM_KNEE_SOL = 250.0
+
+
+def deck_baseline_rows(jr: Dict[str, Any], min_deck: int = DECK_MIN_OBS) -> List[Dict[str, Any]]:
+    """The station rigs of a deck_joint result (``jr_<run>.json`` of the end-of-drive run: ``nav_baselines``) as rows
+    {"station", "T", "sol", "baseline_mm", "deck_obs"}: one per Navcam rig with a temperature and at least
+    ``min_deck`` deck observations."""
+    rows = []
+    for k, v in (jr.get("nav_baselines") or {}).items():
+        if v.get("T") is None or v.get("baseline_mm") is None or v.get("deck_obs", 0) < min_deck:
+            continue
+        sol = v.get("sol_median")
+        if sol is None and v.get("sols"):
+            sol = float(np.median(v["sols"]))
+        if sol is None:
+            continue
+        rows.append({"station": str(k).split("/")[0], "T": float(v["T"]), "sol": float(sol),
+                     "baseline_mm": float(v["baseline_mm"]), "deck_obs": int(v.get("deck_obs", 0))})
+    return sorted(rows, key=lambda r: r["sol"])
+
+
+def fit_deck_baseline(rows: Sequence[Dict[str, Any]], clip: float = 3.5) -> Optional[Dict[str, Any]]:
+    """b = a + b_T (T - T0) + b_s (sol - sol0) / 1000 over the station rigs, with one pass of rejection beyond
+    ``clip`` x 1.4826 MAD: {"coef": [a mm, b_T mm/C, b_s mm/1000 sol], "se", "rms_mm", "n", "rejected"}."""
+    if len(rows) < 5:
+        return None
+    T = np.array([r["T"] for r in rows]); S = np.array([r["sol"] for r in rows]); y = np.array([r["baseline_mm"] for r in rows])
+    A = np.c_[np.ones(len(y)), T - DECK_T0, (S - DECK_SOL0) / 1000.0]
+    keep = np.ones(len(y), bool)
+    for _ in range(2):
+        c = np.linalg.lstsq(A[keep], y[keep], rcond=None)[0]
+        r = y - A @ c
+        mad = 1.4826 * np.median(np.abs(r[keep] - np.median(r[keep])))
+        new = np.abs(r) <= clip * max(mad, 1e-9)
+        if np.array_equal(new, keep):
+            break
+        keep = new
+    n = int(keep.sum())
+    s2 = float((r[keep] ** 2).sum() / max(n - 3, 1))
+    se = np.sqrt(np.diag(s2 * np.linalg.inv(A[keep].T @ A[keep])))
+    return {"coef": c.tolist(), "se": se.tolist(), "rms_mm": float(np.sqrt((r[keep] ** 2).mean())), "n": n,
+            "rejected": [rows[i]["station"] for i in np.flatnonzero(~keep)]}
+
+
+def plot_deck_baseline(rows: Sequence[Dict[str, Any]], path: PathLike, fit: Optional[Dict[str, Any]] = None,
+                       variants: Optional[Dict[str, float]] = None, label: str = "", dpi: int = FIG_DPI,
+                       in_use_mm: Optional[float] = None) -> Optional[Path]:
+    """0.97.0 (Christian, 12 Nov 2026: "a navcam baseline figure coming from the deck 360 alignments with the
+    fiducials"): the Navcam stereo baseline B = |C_NR - C_NL| of every station rig of the deck_joint (one end-of-drive
+    360 each, scale from the surveyed deck targets), A against the camera temperature T with the sol term removed,
+    B against sol with the temperature term removed; the panels share the y axis.  The line is
+    B = a + b_T (T + 20) + b_s (sol - 1000) / 1000 (``fit``: {"coef", "se" or "jk_se"}; fitted here when None) with its
+    1-sigma band on a; the label CAHVORE baseline and the datum ``variants`` ({name: mm at -20 C}) are horizontal
+    references, the sol-250 knee a dashed vertical line.  The right axis is ppm from a.  None without rows and fit."""
+    rows = list(rows or [])
+    own = fit_deck_baseline(rows) if rows else None
+    fit = fit or own
+    if fit is None:
+        return None
+    plt = _plt()
+    a, bT, bs = (float(v) for v in fit["coef"][:3])
+    se = fit.get("jk_se") or fit.get("se") or [0, 0, 0]
+    rej = set(fit.get("rejected") or [])
+    fig, axs = plt.subplots(1, 2, figsize=(13.5, 5.2), sharey=True, squeeze=False)
+    T = np.array([r["T"] for r in rows]); S = np.array([r["sol"] for r in rows]); y = np.array([r["baseline_mm"] for r in rows])
+    out_ = np.array([r["station"] in rej for r in rows], bool)
+    panels = ((T, y - bs * (S - DECK_SOL0) / 1000.0, "Navcam camera temperature T (°C)", (-50.0, 0.0), DECK_T0, bT, 1.0,
+               f"b_T = {1e3 * bT:+.1f} ± {1e3 * se[1]:.1f} µm/°C = {1e6 * bT / a:+.1f} ± {1e6 * se[1] / a:.1f} ppm/°C"),
+              (S, y - bT * (T - DECK_T0), "sol", (0.0, 2100.0), DECK_SOL0, bs, 1000.0,
+               f"b_s = {1e3 * bs:+.0f} ± {1e3 * se[2]:.0f} µm / 1000 sol = {1e6 * bs / a:+.0f} ± {1e6 * se[2] / a:.0f} ppm"))
+    for ax, (x, yy, xl, xr, x0, slope, per, txt) in zip(axs[0], panels):
+        if len(x):
+            xr = (min(xr[0], float(x.min()) - 2), max(xr[1], float(x.max()) + 2))
+            ax.plot(x[~out_], yy[~out_], "o", color="#1f5fbf", ms=5.5, mec="white", mew=0.5,
+                    label=f"station rig ({int((~out_).sum())}), other term removed")
+            if out_.any():
+                ax.plot(x[out_], yy[out_], "x", color="0.45", ms=6, label=f"left out of the fit ({int(out_.sum())})")
+        xx = np.linspace(xr[0], xr[1], 50)
+        ax.plot(xx, a + slope * (xx - x0) / per, "-", color="k", lw=1.2, label=f"fit: {txt}")
+        ax.fill_between(xx, a + slope * (xx - x0) / per - se[0], a + slope * (xx - x0) / per + se[0], color="k", alpha=0.12, lw=0)
+        ax.axhline(NAVCAM_LABEL_BASELINE_MM, color="#c8502a", lw=1.0, ls="--", label=f"label CAHVORE {NAVCAM_LABEL_BASELINE_MM:.2f} mm")
+        if in_use_mm:
+            ax.axhline(in_use_mm, color="#2a9d4a", lw=1.0, ls="-.", label=f"rig in use {in_use_mm:.2f} mm")
+        for i, (nm, v) in enumerate((variants or {}).items()):
+            ax.axhline(float(v), color="0.4", lw=0.8, ls=":", label=f"{nm} {float(v):.2f} mm")
+        ax.axvline(x0, color="0.5", lw=0.8, ls="--")
+        ax.set_xlim(*xr); ax.set_xlabel(xl, fontsize=9); ax.grid(alpha=0.3); ax.legend(fontsize=7, loc="upper right")
+    axs[0][1].axvline(NAVCAM_KNEE_SOL, color="0.5", lw=0.8, ls="--")
+    axs[0][1].annotate("sol 250", (NAVCAM_KNEE_SOL, 0.02), xycoords=("data", "axes fraction"), fontsize=7, color="0.35",
+                       xytext=(3, 0), textcoords="offset points")
+    lo = min([a - 0.45] + ([float(y[~out_].min()) - 0.05] if (~out_).any() else []))
+    hi = max([NAVCAM_LABEL_BASELINE_MM + 0.15] + ([float(y[~out_].max()) + 0.05] if (~out_).any() else []))
+    axs[0][0].set_ylim(lo, hi)
+    axs[0][0].set_ylabel("Navcam baseline B = |C_NR − C_NL| (mm)", fontsize=9)
+    axs[0][1].secondary_yaxis("right", functions=(lambda m: 1e6 * (m / a - 1), lambda q: a * (1 + q / 1e6))).set_ylabel(
+        f"ppm from a = {a:.3f} mm", fontsize=9)
+    panel_letters(axs)
+    fig.suptitle(f"Navcam stereo baseline from the deck fiducials{(' ' + label) if label else ''}: "
+                 f"B = a + b_T (T + 20) + b_s (sol − 1000)/1000,  a = {a:.3f} ± {se[0]:.3f} mm "
+                 f"({1e6 * (a / NAVCAM_LABEL_BASELINE_MM - 1):+.0f} ppm from the label)"
+                 + ("" if rows else "\nno station rows available: the fit of the shipped deck_joint model only"), fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.93)); fig.savefig(path, dpi=dpi)
+    plt.close(fig)
+    return Path(path)

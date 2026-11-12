@@ -108,3 +108,32 @@ def test_deck_frame_figure(tmp_path):
            "image": rng.integers(0, 255, (384, 512, 3)).astype(np.uint8)}
     out = FD.plot_deck_frame(res, tmp_path / "deck.png", dpi=60)
     assert out.is_file() and out.stat().st_size > 10000
+
+
+def test_deck_baseline_figure(tmp_path):
+    """0.97.0: the Navcam baseline figure from a deck_joint work folder (station rigs + report), and from the shipped
+    mast-chain file alone when there is no such folder."""
+    import json
+    import numpy as np
+    from pathlib import Path
+    import mppp_studies
+    from mppp_studies.calibration.plots import deck_baseline_rows, fit_deck_baseline
+    from mppp_studies.paper.paper_figures import SHIPPED_MAST_CHAIN, deck_baseline_figure
+    chain = Path(mppp_studies.__file__).parent / "calibration" / "data" / SHIPPED_MAST_CHAIN
+    rng = np.random.default_rng(1)
+    nb = {}
+    for i in range(40):
+        T, sol = float(rng.uniform(-40, -8)), float(rng.uniform(15, 2000))
+        b = 423.53 - 0.0066 * (T + 20) + 0.03 * (sol - 1000) / 1000 + float(rng.normal(0, 0.1))
+        nb[f"S{i:03d}D0000/rig0"] = {"T": T, "sols": [sol], "baseline_mm": b, "deck_obs": 12, "t_mm": [0, 0, 0]}
+    nb["S999D0000/rig0"] = {"T": -20.0, "sols": [500], "baseline_mm": 425.0, "deck_obs": 2}     # too few deck observations
+    work = tmp_path / "eod"
+    work.mkdir()
+    (work / "jr_EOD.json").write_text(json.dumps({"nav_baselines": nb}))
+    (work / "jr_EOD_st0.json").write_text(json.dumps({"nav_baselines": {}}))
+    rows = deck_baseline_rows({"nav_baselines": nb})
+    assert len(rows) == 40
+    f = fit_deck_baseline(rows)
+    assert abs(f["coef"][0] - 423.53) < 0.06 and f["n"] >= 38
+    assert deck_baseline_figure(work, chain, tmp_path / "a.png", 60).stat().st_size > 10000
+    assert deck_baseline_figure(tmp_path / "none", chain, tmp_path / "b.png", 60).stat().st_size > 10000

@@ -1349,7 +1349,7 @@ def deck_frame_models(path: PathLike, chain: Union[PathLike, Dict[str, Any]], cm
     a = np.asarray(img, np.float32)
     lo, hi = np.percentile(a[a > 0], [0.5, 99.7]) if np.any(a > 0) else (0.0, 1.0)
     a = np.clip((a - lo) / max(hi - lo, 1e-6), 0.0, 1.0) ** (1 / 2.2)           # one stretch for all bands, display gamma
-    out["image"] = (255.0 * (a[..., ::-1] if a.ndim == 3 else a)).astype(np.uint8)   # read_pds gives BGR
+    out["image"] = (255.0 * a).astype(np.uint8)        # read_pds gives the bands in file order: red, green, blue
     return out
 
 
