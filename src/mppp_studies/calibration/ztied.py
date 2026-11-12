@@ -1644,8 +1644,12 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
                k_tests: bool = True, ratio_by: Optional[str] = None, navcam_aspect: bool = True,
                slope_tests: bool = False, rig_fit: str = ZJOINT_RIG_FIT,
                early_sol: Optional[int] = ZCAM_EARLY_SOL, aspect_hold: Optional[float] = None,
-               pool: Optional[str] = DIAG_POOL, focus_below: bool = FOCUS_BELOW_FIT) -> Dict[str, Any]:
-    """The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the distortion tests (:func:`distortion_tests`,
+               pool: Optional[str] = DIAG_POOL, focus_below: bool = FOCUS_BELOW_FIT,
+               ratio_hold: Optional[float] = None) -> Dict[str, Any]:
+    """0.97.0: ``ratio_hold`` - every eye's high / low focal ratio held at this value (1.0: one state for both - the
+    test of whether a zoom's two backlash states can be told apart at all; such a run is a test, never promoted).
+
+    The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the distortion tests (:func:`distortion_tests`,
     ``k_tests``), the diagnostic pass.  ``model``: the focus model to start from (default: the one in use);
     ``ratio_by``: "global" | "block" | "sol", the low-state groups with their own high / low ratio (default
     :data:`REGULAR_RATIO_BY`).  ``slope_tests`` (0.95.0): the eye-slope tests (:func:`eye_slope_tests`, three more
@@ -1704,6 +1708,21 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     if ratio_by not in (None, "global", "block", "sol"):
         raise ValueError(f"ratio_by {ratio_by!r}: global, block or sol")
     set_ratio_holds(sg, zoom, verbose=verbose)       # 0.94.5
+    if ratio_hold is not None:                       # 0.97.0: the one-state test (or any held ratio)
+        if not 0.9 < float(ratio_hold) < 1.1:
+            raise ValueError(f"ratio_hold {ratio_hold!r}: a high / low focal ratio near 1")
+        sg["ratio_hold_test"] = float(ratio_hold)
+        for eye, e in sg["eyes"].items():
+            if is_single_state(eye):
+                continue
+            e["ratio_hold"] = float(ratio_hold)
+            e["ratio_hold_source"] = ("--zcam-hold-ratio: one state for both (test)" if float(ratio_hold) == 1.0
+                                      else "--zcam-hold-ratio (test)")
+            G = e["G"]
+            G[2], G[3] = G[0] / float(ratio_hold), G[1] / float(ratio_hold)
+        if verbose:
+            log.info(f"Mastcam-Z joint: TEST - the high / low ratio of every eye held at {float(ratio_hold):.4f}"
+                     + (" (one state for both)" if float(ratio_hold) == 1.0 else ""))
     fixed = fixed_globals(sg)                       # 0.93: the zoom's fixed distortion terms, held
     hold = {e: sorted(v) for e, v in fixed.items()}
     if verbose and fixed:

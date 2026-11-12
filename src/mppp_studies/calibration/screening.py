@@ -167,6 +167,15 @@ def rejudge(report: Dict[str, Any], thresholds: Optional[Dict[str, tuple]] = Non
             wc, st_c = corner_check(report["coverage_by_radius"], thr, skip_groups=sorted(skip))
             v = wc[1] if wc else None
             st = st_c if wc else _status(name, None, thr)     # no camera to judge: "info", as before 0.94.5
+        elif name == "within_station_shift_spread_m" and report.get("stations"):
+            # 0.97.0 (Christian, 12 Nov): a report of before the rule - the several-sol (arm workspace) stations
+            # cannot fail the block; the check is judged on the one-sol stations
+            from mppp.sfm.health import shift_spread_checks
+            sp = shift_spread_checks(report["stations"])
+            v = sp["station"][1] if sp["station"] else None
+            st = _status(name, v, thr)
+            if sp["workspace"] and _status("workspace_station_shift_spread_m", sp["workspace"][1], thr) == "warn":
+                st = max(st, "warn", key=lambda x: _RANK.get(x, 0))
         else:
             st = _status(name, v, thr) if name in thr else st0
         if st == "fail" and name in warn_only:

@@ -499,6 +499,11 @@ class Run:
 
     def s_report(self) -> str:
         md = report_md(self)
+        try:                                           # 0.97.0: the validation ledger closes the final report
+            from ..validation.ledger import table_md
+            md = md.rstrip("\n") + "\n\n" + table_md()
+        except Exception as e:                         # noqa: BLE001 - the report without it
+            self.log(f"report: validation ledger not added ({e})")
         (self.dir / REPORT_FILE).write_text(md, encoding="utf-8")
         if self.a.report_copy:
             try:

@@ -55,6 +55,7 @@ include = ["mppp*"]
 
 [tool.setuptools.package-data]
 mppp = ["data/*.json", "data/*.csv", "data/*.txt", "data/cmods/*.json", "data/cmods/*.md", "data/rover/*.npz"]
+mppp_studies = ["validation/*.json"]
 
 [project.scripts]
 mppp = "mppp.cli:main"

@@ -88,6 +88,13 @@ def add_parsers(sub) -> None:
                    help="zcam: the low-state groups with their own high / low ratio (default block; global: one per eye)")
     p.add_argument("--zcam-focus-below", action="store_true",
                    help="zcam (0.96): fit the focus-approach offset again (off since 9 Nov: held at 0)")
+    p.add_argument("--zcam-take", nargs="+", default=None, metavar="SITE",
+                   help="zcam (0.97.0): sites taken although their zcam_joint_exclude names the zoom (rockytop at 63 mm)")
+    p.add_argument("--zcam-hold-ratio", type=float, default=None, metavar="RATIO",
+                   help="zcam (0.97.0, Christian 12 Nov: \"The 79 mm high and low gap might not be separable, so test if "
+                        "one state fits both\"): the high / low focal ratio of every eye held at RATIO - 1.0: one state "
+                        "for both (the low-state bins on the high line); compare the report's residuals and sequence "
+                        "offsets with the run where the ratio is free or held at the 34 mm value")
     p.add_argument("--zcam-pool", choices=("sequence", "block", "none"), default=None,
                    help="zcam (0.96): the diagnostic pass's pooled model, which the per-block aspect gate reads - one pool "
                         "per eye and sequence (default), per eye, block and backlash state, or none (the per-bin pass "
@@ -165,6 +172,11 @@ def _navcam_blocks(a: argparse.Namespace) -> Dict[str, Path]:
             continue
         if zcam and site.get("zcam") and zoom not in [int(z) for z in site["zcam"]]:
             skipped.append(f"{n} (no {zoom} mm in its \"zcam\" list)")
+            continue
+        if zcam and zoom in [int(z) for z in site.get("zcam_joint_exclude") or []] \
+                and n not in (getattr(a, "zcam_take", None) or []):
+            skipped.append(f"{n} (zcam_joint_exclude: left out of the {zoom} mm joint in the site definitions; "
+                           f"--zcam-take {n} takes it)")      # 0.97.0
             continue
         if zfolders and not zcam and not site.get("zcam"):
             skipped.append(f"{n} (no Mastcam-Z block)")
@@ -294,7 +306,8 @@ def _calib_zcam(a: argparse.Namespace) -> int:
                                   else (a.zcam_early_sol or None)),
                        pool=(Z.DIAG_POOL if getattr(a, "zcam_pool", None) is None
                              else (None if a.zcam_pool == "none" else a.zcam_pool)),
-                       focus_below=bool(getattr(a, "zcam_focus_below", False)) or Z.FOCUS_BELOW_FIT)
+                       focus_below=bool(getattr(a, "zcam_focus_below", False)) or Z.FOCUS_BELOW_FIT,
+                       ratio_hold=getattr(a, "zcam_hold_ratio", None))
     from mppp.calib import models_fingerprint
     from mppp.pipeline import run_done
     res["models_fingerprint"] = models_fingerprint()
@@ -321,6 +334,13 @@ def _calib_zcam(a: argparse.Namespace) -> int:
     print(f"=> {'every check passes' if w['check']['ok'] else 'a check failed'}"
           + (f" ({warned} warning{'s' if warned != 1 else ''})" if warned else "") + f"; {out / 'report.md'}")
     promote = a.promote_if_ok and not a.no_promote
+    if getattr(a, "zcam_hold_ratio", None) is not None:        # 0.97.0: a test run
+        (out / "ratio_hold_test.json").write_text(json.dumps(
+            {"zoom": int(a.zoom), "ratio_hold": float(a.zcam_hold_ratio), "final_cost": res.get("final_cost"),
+             "residuals": res.get("residuals"), "blocks": sorted(blocks)}, indent=1, default=float), encoding="utf-8")
+        if promote:
+            print("not promoted: --zcam-hold-ratio is a test run")
+        promote = False
     if promote and getattr(a, "promote_new_only", False) and (M.zcam_files() or {}).get(int(a.zoom)):
         print(f"not promoted: a {a.zoom} mm model is in use (--promote-new-only)")
         promote = False
@@ -402,6 +422,13 @@ def _calib_hazcam(a: argparse.Namespace) -> int:
     for c in w["check"]["checks"]:
         print(f"  {'ok  ' if c['ok'] else 'FAIL'} {c['check']}: {c['note']}")
     promote = a.promote_if_ok and not a.no_promote
+    if getattr(a, "zcam_hold_ratio", None) is not None:        # 0.97.0: a test run
+        (out / "ratio_hold_test.json").write_text(json.dumps(
+            {"zoom": int(a.zoom), "ratio_hold": float(a.zcam_hold_ratio), "final_cost": res.get("final_cost"),
+             "residuals": res.get("residuals"), "blocks": sorted(blocks)}, indent=1, default=float), encoding="utf-8")
+        if promote:
+            print("not promoted: --zcam-hold-ratio is a test run")
+        promote = False
     if promote and getattr(a, "promote_new_only", False):        # 0.94.1: only models of which none is in use
         from mppp.paths import cmods_dir
         kept = [f for f in w["files"] if not (cmods_dir() / Path(f).name).is_file()]

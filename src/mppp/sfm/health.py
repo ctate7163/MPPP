@@ -38,6 +38,7 @@ from __future__ import annotations
 import logging
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -85,6 +86,10 @@ DEFAULT_THRESHOLDS: Dict[str, tuple] = {
     # knowledge is ~0.1-0.35 deg per frame; the p95 over nine sites was 0.23-0.69 deg)
     "attitude_residual_p95_deg": (0.75, 2.0, "above"),
     "within_station_shift_spread_m": (0.1, 0.4, "above"),   # doubled in v0p20 (user request)
+    # 0.97.0 (Christian, 12 Nov 2026: "the arm-workspace station flag should not fail a block"): a station the rover
+    # stayed at over several sols (an arm workspace: Taylorfjellet S079D0732, sols 1635-1640, 0.65 m) is judged apart
+    # and can only warn - its frames carry several waypoint solutions and the rover settles as the arm works
+    "workspace_station_shift_spread_m": (0.1, None, "above"),
     # v0p20; 0.94.5 (Christian, 27 Oct): fail relaxed 0.25 -> 0.15 (Chal Rocks ZL063 0.205)
     "corner_triangulated_ratio": (0.5, 0.15, "below"),
     # the scale error of the station layout is judged as the displacement it makes at the stations
@@ -107,8 +112,33 @@ def _status(name: str, value: Optional[float], thr: Dict[str, tuple]) -> str:
         return "info"
     warn, fail, direction = thr[name]
     if direction == "above":
-        return "fail" if value > fail else "warn" if value > warn else "pass"
-    return "fail" if value < fail else "warn" if value < warn else "pass"
+        return "fail" if (fail is not None and value > fail) else "warn" if value > warn else "pass"
+    return "fail" if (fail is not None and value < fail) else "warn" if value < warn else "pass"
+
+
+_SOL_RANGE = re.compile(r"Sol\s*0*(\d+)\s*-\s*0*(\d+)", re.I)
+
+
+def is_workspace_station(label: Any) -> bool:
+    """0.97.0: whether a station label (``Sol1635-1640 S079D0732``, :func:`station_labels`) spans more than one sol -
+    the rover stayed there (an arm workspace).  ``Sol1601 S078D4716`` and a bare ``S078D4716`` do not."""
+    m = _SOL_RANGE.search(str(label or ""))
+    return bool(m) and int(m.group(1)) != int(m.group(2))
+
+
+def shift_spread_checks(stations: Dict[str, Dict[str, Any]]) -> Dict[str, Optional[Tuple[str, float]]]:
+    """0.97.0: the largest within-station shift spread among the one-sol stations (``"station"``: (label, m), the
+    check that can fail a block) and among the several-sol ones (``"workspace"``, warns only); None for an empty
+    class.  ``stations``: the health report's table ({station: {"label", "shift_spread_m"}})."""
+    out: Dict[str, Optional[Tuple[str, float]]] = {"station": None, "workspace": None}
+    for st, v in (stations or {}).items():
+        sp = v.get("shift_spread_m")
+        if sp is None or not np.isfinite(sp):
+            continue
+        k = "workspace" if is_workspace_station(v.get("label", st)) else "station"
+        if out[k] is None or sp > out[k][1]:
+            out[k] = (str(v.get("label", st)), float(sp))
+    return out
 
 
 def _q(a: np.ndarray, q: float) -> Optional[float]:
@@ -785,9 +815,15 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
         check("poses", "station_shift_median_m", worst[1]["shift_median_m"],
               f"largest station median |refined - prior| ({labels.get(worst[0], worst[0])})"
               + (" - stations with a position prior" if unloc else ""), "m")
-        spread = max(st_tab.items(), key=lambda kv: kv[1]["shift_spread_m"])
-        check("poses", "within_station_shift_spread_m", spread[1]["shift_spread_m"],
-              f"largest RMS spread of the shifts within one station ({labels.get(spread[0], spread[0])})", "m")
+        sp = shift_spread_checks(st_tab)             # 0.97.0: the several-sol (arm workspace) stations apart
+        if sp["station"]:
+            check("poses", "within_station_shift_spread_m", sp["station"][1],
+                  f"largest RMS spread of the shifts within one station ({sp['station'][0]})"
+                  + (" - one-sol stations" if sp["workspace"] else ""), "m")
+        if sp["workspace"]:
+            check("poses", "workspace_station_shift_spread_m", sp["workspace"][1],
+                  f"largest RMS spread within a station held over several sols ({sp['workspace'][0]}): an arm "
+                  f"workspace - warns only", "m")
     att = np.array([x["dAttitude_deg"] for x in good])
     check("poses", "attitude_change_p95_deg", _q(att, 95), f"median {_q(att, 50):.3f} deg" if att.size else "", "deg")
     # is the block still in the East-North-Up frame?  The common part of every frame's attitude change
