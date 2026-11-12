@@ -9,6 +9,23 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 fails a block; two independent validation tests and a ledger of what is validated; the single-station products
 share one viewpoint and one tone scale, and their pictures are jpg.
 
+- **Arm from the label joint angles** (Christian, 12 Nov). The model's joint angles are sign x resolver angle +
+  offset with signs (+, -, -, -, -) and offsets (0, 0, -90, +90, 0) deg (`rover_model.arm_model_angles_deg`,
+  `arm_is_stowed`): the rendered arm falls on the arm in six frames with the arm out (sols 18-1995) and its outline
+  is 1.5-2.7 times closer to the image edges than the pose fitted by eye, also in three stowed frames. The shipped
+  model's stow pose is now the median resolver stow (model angles 90.09, 16.37, 71.66, -88.18, 81.48). The mesh is
+  still the stowed arm only: posing it per station for an arm that is out is not coded.
+- **ODS pole merging** (Christian, Quest 3: cross-eyed looking down). The eye separation is full to 30 deg of
+  elevation, falls as a cosine and is zero from 80 deg, up and down (`ods.POLE_MERGE_DEG`, `mppp ods --pole-merge
+  START END`; `90 90`: none). `ods.json` records it.
+- **16-bit exposure and enhanced 8-bit views** (Christian, 12 Nov). `--exposure16 auto` (the default; 0.5 before):
+  one linear gain per station, the largest between 0.5 and 4 that keeps the 99.99 % point of the brightest channel
+  at 95 % of the range, kept in the station's levels file so both variants share it. New secondary products from
+  the 16-bit panoramas, by one fixed rule: `<prefix>_enh_360_3DTD.jpg` (black at 0.1 % of the darkest channel,
+  white at 99.9 % of the brightest, a gamma within 1.4-3.0 that puts the ground's median at 0.45) and
+  `<prefix>_enhlocal_360_3DTD.jpg` (the same, then CLAHE on the lightness). `mppp ods ... --retone` writes them too.
+- **Freeze window** (Christian, 12 Nov): a line when a block starts ("aligning <site>") and when it ends (verdict,
+  images, residual, hours), and every half hour the last log line of each running block.
 - **Freeze on 0.97, from the beginning** (Christian, 12 Nov: "restart the freeze from the beginning using the
   improved alignment rules. Make sure that seitah overlook uses a min of 0.1 deg parallax"). `freeze.bat --fresh`
   sets the status of the run before aside (`freeze_status_before_<time>.json`) so that every step runs again; the

@@ -138,3 +138,26 @@ def mast_masks(sources, pose: Dict[str, Any], dilate_frac: float = MAST_DILATE_F
         m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
         out.append(m > 0)
     return out
+
+
+# 0.97.0 (12 Nov 2026): NASA's model's arm joint angles from the labels' resolver angles (scripts/build_rover_model.py,
+# where the signs and offsets are derived): model = sign * label + offset, degrees.
+ARM_LABEL_SIGN = (1.0, -1.0, -1.0, -1.0, -1.0)
+ARM_LABEL_OFFSET_DEG = (0.0, 0.0, -90.0, 90.0, 0.0)
+ARM_LABEL_STOW_DEG = (90.09, -16.37, -161.66, 178.18, 278.52)
+ARM_STOWED_WITHIN_DEG = 3.0
+
+
+def arm_model_angles_deg(label_deg):
+    """The model's five arm joint angles (deg, each in (-180, 180]) for the label's resolver angles (deg)."""
+    import numpy as np
+    a = np.asarray(ARM_LABEL_SIGN) * np.asarray(label_deg, float) + np.asarray(ARM_LABEL_OFFSET_DEG)
+    return -((-a + 180.0) % 360.0 - 180.0)
+
+
+def arm_is_stowed(label_deg, within_deg: float = ARM_STOWED_WITHIN_DEG) -> bool:
+    """Whether every joint is within ``within_deg`` of the stow pose (the pose of the shipped model)."""
+    import numpy as np
+    d = (np.asarray(label_deg, float) - np.asarray(ARM_LABEL_STOW_DEG) + 180.0) % 360.0 - 180.0
+    return bool(np.all(np.abs(d) <= within_deg))
+

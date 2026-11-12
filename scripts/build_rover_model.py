@@ -27,7 +27,19 @@ import numpy as np
 
 ARM_CHAIN = ("arm.003", "arm.002", "arm", "arm.004", "turret_obj")
 ARM_AXES = ("y", "z", "z", "z", "y")
-ARM_STOW_DEG = (90.0, 14.5, 68.8, -89.4, 77.5)       # 0.97.0 (Christian, 12 Nov 2026: "The turret needs to be rotate 180 so
+# 0.97.0 (Christian, 12 Nov 2026: "use those arm joint angles to estimate where the arm is in space"): the model's
+# joint angles from the image labels' resolver angles (ARM_ARTICULATION_STATE, JOINT 1-5 RESOLVER, degrees):
+#   model = ARM_LABEL_SIGN * label + ARM_LABEL_OFFSET_DEG.
+# Signs from six frames with the arm out (sols 18, 46 x 2, 74, 530, 1995: edge distance of the rendered outline, 32
+# sign sets tried; the turret's from sol 46 by eye).  The offsets are the round ones (0, 0, -90, +90, 0): with them
+# the outline is 1.5-2.7 times closer to the image edges than with the stow pose fitted by eye before, in the six
+# frames and in three stowed ones (sols 52, 461, 1463).  The stow pose is the median resolver stow of 443 stows,
+# sols 12-2022 (90.09, -16.37, -161.66, 178.18, 278.52 deg; sd 7-29 mdeg).  Before (12 Nov, by eye): (90.0, 14.5,
+# 68.8, -89.4, 77.5).
+ARM_LABEL_SIGN = (1.0, -1.0, -1.0, -1.0, -1.0)
+ARM_LABEL_OFFSET_DEG = (0.0, 0.0, -90.0, 90.0, 0.0)
+ARM_LABEL_STOW_DEG = (90.09, -16.37, -161.66, 178.18, 278.52)
+ARM_STOW_DEG = (90.09, 16.37, 71.66, -88.18, 81.48)
 # that the drill points out and pixl toward the mast. the PERSEVERANCE plate on the arm can rotate up a little"): the
 # turret turned by 175 deg (-90.1 -> 85.0), the wrist -103.3 -> -93.3 and the shoulder elevation 16.4 -> 20.4, chosen
 # by eye from renders of the model through the label camera of NLF_0461_0707871340 (Rockytop S026D0630) against the

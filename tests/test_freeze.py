@@ -450,3 +450,25 @@ def test_seitah_overlook_parallax():
     from mppp.pipeline import load_settings
     assert load_settings(site="seitah_overlook").min_tri_angle_deg == 0.10
     assert load_settings(site="chal_rocks_large").min_tri_angle_deg == 0.25
+
+
+def test_window_shows_the_block_being_aligned(tmp_path):
+    """0.97.0 (12 Nov): a line when a block starts and when it ends."""
+    import time
+    root = _root(tmp_path)
+    r = fz.Run(fz.parser().parse_args(["--root", str(root), "--code", str(tmp_path)]))
+    w = root / "mars2020_sol_0500_wildcat_ridge_zcam"
+    w.mkdir(parents=True)
+    st = {"state": "running", "site": "wildcat_ridge", "started": "2026-11-12T14:40:46", "log": str(w / "log.txt")}
+    (w / "log.txt").write_text("2026-11-12T14:43:41      | stage 1: Navcam only\n", encoding="utf-8")
+    (w / "mppp_status.json").write_text(json.dumps(st), encoding="utf-8")
+    t0 = time.time() - 60
+    r.show_blocks("zjoints", t0)
+    r.show_blocks("zjoints", t0)                                          # no second "aligning" line
+    st.update(state="finished", ended="2026-11-12T18:10:46",
+              result={"verdict": "warn", "images": 697, "registered_images": 683, "residual_rms_native_px": 0.44})
+    (w / "mppp_status.json").write_text(json.dumps(st), encoding="utf-8")
+    r.show_blocks("zjoints", t0)
+    log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert log.count("aligning wildcat_ridge") == 1 and "stage 1: Navcam only" in log
+    assert "wildcat_ridge finished after 3.5 h: warn, 683 of 697 images, 0.44 px" in log

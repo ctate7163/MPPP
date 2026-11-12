@@ -295,18 +295,143 @@ def shared_levels(path: Optional[PathLike], compute, scale: float = 1.0) -> Tupl
     f = Path(path) if path else None
     if f is not None and f.is_file():
         d = _json.loads(f.read_text(encoding="utf-8"))
-        lo, mid = (float(v) for v in d["levels_8bit_linear_units"])
-        return (lo * scale, mid * scale), "file"
+        if "levels_8bit_linear_units" in d:
+            lo, mid = (float(v) for v in d["levels_8bit_linear_units"])
+            return (lo * scale, mid * scale), "file"
     lo, mid = compute()
     if f is not None:
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(_json.dumps({"levels_8bit_linear_units": [lo / scale, mid / scale],
+        try:
+            keep = _json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
+        except ValueError:
+            keep = {}
+        f.write_text(_json.dumps({**keep, "levels_8bit_linear_units": [lo / scale, mid / scale],
                                   "meaning": "black point and the ground's median of the linear panorama, in the "
                                              "frames' 16-bit scale / 64; view = tone_levels(linear, black, ground): "
                                              f"ground -> {TERRAIN_GREY:g} of 255, linear to {KNEE:g}, then rolled off",
                                   "note": "delete this file to have the levels found again on the next panorama"},
                                  indent=1), encoding="utf-8")
     return (float(lo), float(mid)), "computed"
+
+
+# ------------------------------------------------------------------ 0.97.0 (12 Nov): exposure and enhanced views
+# Christian, 12 Nov 2026: "the 16-bit images are little too dark. could we brighten them without saturating on the
+# brightest parts? When generating the 8-bit version ... try a gamma stretch and min max re normalization to fit as
+# much detail as possible in the 8-bits ... make sure it is roughly the same process from site to site."
+EXPOSURE16_TOP = 0.95            # auto exposure: the EXPOSURE16_PCT percentile of the brightest channel lands here
+EXPOSURE16_PCT = 99.99           #   (of 65535) - one linear gain per station, nothing clipped but 1 pixel in 10,000
+EXPOSURE16_RANGE = (0.5, 4.0)    #   within these factors of the frames' own 16-bit scale (0.5: the value before)
+ENH_LOW_PCT, ENH_HIGH_PCT = 0.1, 99.9   # enhanced view: black at this percentile of the darkest channel, white at
+#                                         this percentile of the brightest - one pair for the three channels (no tint)
+ENH_GROUND = 0.45                # ... and a gamma that puts the ground's median here (of 1)
+ENH_GAMMA_RANGE = (1.4, 3.0)     #   display gamma within these (2.2 is the usual one)
+CLAHE_CLIP, CLAHE_TILES = 2.0, (8, 16)   # local version: OpenCV CLAHE on the lightness, tiles (rows, columns)
+
+
+def auto_exposure16(x: np.ndarray, seen: Optional[np.ndarray] = None) -> float:
+    """The exposure16 (factor of the frames' 16-bit scale) for a linear panorama ``x`` in 8-bit linear units."""
+    x = np.asarray(x)
+    step = max(1, int(np.sqrt(x.shape[0] * x.shape[1] / 4e6)))
+    sub = x[::step, ::step]
+    ok = sub.max(axis=2) > 0 if seen is None else np.asarray(seen)[::step, ::step]
+    if not ok.any():
+        return EXPOSURE16_RANGE[0]
+    top = float(np.percentile(sub[ok].max(axis=1), EXPOSURE16_PCT))
+    e = EXPOSURE16_TOP * 65535.0 / max(top * UNITS_PER_8BIT, 1e-6)
+    return float(np.clip(e, *EXPOSURE16_RANGE))
+
+
+def shared_value(path: Optional[PathLike], key: str, compute):
+    """``key`` of the station's shared levels file when it is there (the with- and without-rover panoramas use one
+    value), else ``compute()`` - then added to the file.  Returns (value, "file" | "computed")."""
+    import json as _json
+    f = Path(path) if path else None
+    d: Dict[str, Any] = {}
+    if f is not None and f.is_file():
+        try:
+            d = _json.loads(f.read_text(encoding="utf-8"))
+        except ValueError:
+            d = {}
+        if key in d:
+            return d[key], "file"
+    v = compute()
+    if f is not None:
+        d[key] = v
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(_json.dumps(d, indent=1), encoding="utf-8")
+    return v, "computed"
+
+
+def enhanced_levels(x: np.ndarray, seen: Optional[np.ndarray] = None) -> List[float]:
+    """[black, white, display gamma] of the enhanced view of a linear panorama, in its own units (the rule above)."""
+    x = np.asarray(x)
+    step = max(1, int(np.sqrt(x.shape[0] * x.shape[1] / 2e6)))
+    sub = x[::step, ::step].astype(np.float32)
+    ok = sub.max(axis=2) > 0 if seen is None else np.asarray(seen)[::step, ::step]
+    if not ok.any():
+        return [0.0, 255.0, 2.2]
+    lo = float(np.percentile(sub[ok].min(axis=1), ENH_LOW_PCT))
+    hi = float(np.percentile(sub[ok].max(axis=1), ENH_HIGH_PCT))
+    hi = max(hi, lo + 1e-3)
+    low_half = np.zeros(ok.shape, bool)
+    low_half[sub.shape[0] // 2:] = True
+    g = ok & low_half
+    med = float(np.median(sub[g if g.sum() > 100 else ok].mean(axis=1)))
+    n = float(np.clip((med - lo) / (hi - lo), 1e-4, 0.999))
+    gamma = float(np.clip(np.log(n) / np.log(ENH_GROUND), *ENH_GAMMA_RANGE))
+    return [lo, hi, gamma]
+
+
+def tone_enhanced(x: np.ndarray, lo: float, hi: float, gamma: float) -> np.ndarray:
+    """Linear values -> 0..255: (x - lo) / (hi - lo) clipped to 0..1, raised to 1 / gamma; one curve for the channels."""
+    n = np.clip((np.asarray(x, np.float32) - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+    return 255.0 * n ** (1.0 / gamma)
+
+
+def local_contrast(bgr8: np.ndarray) -> np.ndarray:
+    """CLAHE on the lightness of an 8-bit BGR equirectangular image, continuous across the 360-degree seam."""
+    import cv2
+    W = bgr8.shape[1]
+    pad = W // CLAHE_TILES[1]
+    wide = np.concatenate([bgr8[:, -pad:], bgr8, bgr8[:, :pad]], axis=1)
+    lab = cv2.cvtColor(wide, cv2.COLOR_BGR2LAB)
+    cl = cv2.createCLAHE(clipLimit=CLAHE_CLIP, tileGridSize=(CLAHE_TILES[1] + 2, CLAHE_TILES[0]))
+    lab[..., 0] = cl.apply(lab[..., 0])
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)[:, pad:pad + W]
+
+
+def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int = 95,
+                   levels_file: Optional[PathLike] = None) -> Dict[str, Any]:
+    """The contrast-enhanced secondary products from the 16-bit eye panoramas of ``out_dir`` (no rendering):
+      <prefix>_enh_360_3DTD.jpg        black / white points and gamma by the fixed rule (:func:`enhanced_levels`)
+      <prefix>_enhlocal_360_3DTD.jpg   the same, then local contrast (:func:`local_contrast`)
+    Levels from the left eye (or the station's levels file), used for both eyes."""
+    import cv2
+    from .ods import STACK_NAME
+    out = Path(out_dir)
+    pre = f"{prefix}_" if prefix else ""
+    k16 = UNITS_PER_8BIT * _exposure16(out)
+    lv, eyes = None, {}
+    for eye in ("left", "right"):
+        f = out / f"{pre}ods_{eye}_16.png"
+        a = cv2.imread(str(f), cv2.IMREAD_UNCHANGED)
+        if a is None or a.dtype != np.uint16:
+            raise FileNotFoundError(f"{f}: no 16-bit panorama")
+        a = a[..., :3].astype(np.float32) / k16                      # 8-bit linear units, BGR
+        if lv is None:
+            lv, _ = shared_value(levels_file, "enhanced_levels_8bit_linear_units", lambda: enhanced_levels(a))
+        eyes[eye] = np.rint(tone_enhanced(a, *lv)).astype(np.uint8)
+        del a
+    other = "right" if top == "left" else "left"
+    files = {}
+    for tag, fn in (("enh", lambda v: v), ("enhlocal", local_contrast)):
+        sq = np.vstack([fn(eyes[top]), fn(eyes[other])])
+        files[tag] = str(out / f"{pre}{tag}_{STACK_NAME}.jpg")
+        cv2.imwrite(files[tag], sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
+    return {"levels_8bit_linear_units": {"black": lv[0], "white": lv[1], "gamma": lv[2]}, "files": files,
+            "rule": f"black: {ENH_LOW_PCT} % of the darkest channel; white: {ENH_HIGH_PCT} % of the brightest; gamma "
+                    f"puts the ground's median at {ENH_GROUND} (within {ENH_GAMMA_RANGE}); enhlocal: CLAHE clip "
+                    f"{CLAHE_CLIP}, tiles {CLAHE_TILES} on the lightness"}
 
 
 def _exposure16(out_dir: PathLike) -> float:
@@ -346,4 +471,6 @@ def retone(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int 
     cv2.imwrite(str(out / f"{pre}{STACK_NAME}.png"), sq)
     cv2.imwrite(str(out / f"{pre}{STACK_NAME}.jpg"), sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
     drop_old_stacks(out, pre[:-1] if pre.endswith("_") else pre)
-    return {"levels_16bit_units": [float(v) for v in levels], "square": str(out / f"{pre}{STACK_NAME}.jpg"), "top": top}
+    enh = write_enhanced(out, prefix, top=top, jpeg_quality=jpeg_quality, levels_file=levels_file)
+    return {"levels_16bit_units": [float(v) for v in levels], "square": str(out / f"{pre}{STACK_NAME}.jpg"), "top": top,
+            "enhanced": enh}

@@ -193,6 +193,9 @@ def add_parsers(sub) -> None:
     p.add_argument("--station", required=True)
     p.add_argument("--width", type=int, default=8192)
     p.add_argument("--ipd", type=float, default=0.064, help="eye separation in metres")
+    p.add_argument("--pole-merge", type=float, nargs=2, default=None, metavar=("START", "END"),
+                   help="0.97.0: elevation (deg, up or down) where the eye separation starts to fall and where it is "
+                        "zero (default 30 80); --pole-merge 90 90: none")
     p.add_argument("--cameras", default="N")
     p.add_argument("--scale", type=float, default=1.0, help="the Navcam frames sampled at this fraction of their own "
                    "size (default 1, Christian 10 Nov: the half-resolution frames are 0.68 mrad a pixel, the 8K "
@@ -214,8 +217,10 @@ def add_parsers(sub) -> None:
                    "from the linear one - auto (default: the exposure set on the ground - its median to 100 of 255 - the "
                    "same for both eyes, the highlights rolled off and faded to white instead of clipped), soft "
                    "(unchanged to 190, the highlights rolled off) or clip (as the 8-bit pipeline: cut at 255)")
-    p.add_argument("--exposure16", type=float, default=0.5, help="--bits 16: the 16-bit files at this factor of the "
-                   "frames' own 16-bit scale (default 0.5: darker, with headroom so nothing saturates)")
+    p.add_argument("--exposure16", default="auto", type=lambda v: v if v == "auto" else float(v),
+                   help="--bits 16: the 16-bit files at this factor of the frames' own 16-bit scale; auto (default, "
+                        "0.97.0): the largest gain between 0.5 and 4 that keeps the 99.99 %% point of the brightest "
+                        "channel at 95 %% of the range - one gain per station, kept in the levels file")
     p.add_argument("--keep-mast", action="store_true", help="rover shown: keep the mast and its wind-sensor booms in "
                    "the frames (default: masked - the rover model's mast projected into every frame)")
     p.add_argument("--no-ground-fill", action="store_true", help="leave black what no frame coloured below the horizon "
@@ -374,7 +379,7 @@ def cmd_ods(a: argparse.Namespace) -> int:
     rec = _model(project)
     st, out = _station(project, rec, a)
     scene = _scene(out)
-    rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, families=a.cameras, scale=a.scale,
+    rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, pole_merge_deg=("default" if a.pole_merge is None else (None if a.pole_merge[0] >= 90 else tuple(a.pole_merge))), families=a.cameras, scale=a.scale,
                          zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,

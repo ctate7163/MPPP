@@ -64,6 +64,22 @@ PathLike = Union[str, Path]
 
 DEFAULT_WIDTH = 8192
 DEFAULT_IPD_M = 0.064
+# 0.97.0 (Christian, 12 Nov 2026, Quest 3: "when I tilt my head down ... I go cross-eyed"): pole merging.  An ODS
+# pair is right only at the horizon: towards a pole each column keeps its own eye offset, so in a view looking down
+# the columns to the side carry their disparity along the wrong direction for the viewer's eyes (vertical
+# misalignment), and near surfaces (the deck 1 m below) carry far too much of it.  The eye separation is full to
+# POLE_MERGE_DEG[0] of elevation (up or down), falls as a cosine and is zero from POLE_MERGE_DEG[1]: one image
+# for both eyes at the poles.  None: no merging (the panoramas before 12 Nov).
+POLE_MERGE_DEG: Optional[Tuple[float, float]] = (30.0, 80.0)
+
+
+def pole_merge(el_rad, merge_deg=POLE_MERGE_DEG) -> np.ndarray:
+    """The share of the eye separation at elevation ``el_rad`` (1 at the horizon, 0 at the poles)."""
+    a = np.abs(np.degrees(np.asarray(el_rad, float)))
+    if not merge_deg:
+        return np.ones_like(a)
+    lo, hi = float(merge_deg[0]), float(merge_deg[1])
+    return np.cos(0.5 * np.pi * np.clip((a - lo) / max(hi - lo, 1e-9), 0.0, 1.0))
 FEATHER_PX = 40.0                # (0.96.0 prototype) a source's weight fell to zero this close to its image border
 MAX_SOURCES_BLENDED = 4
 EDGE_MARGIN_PX = 3.0             # a source gives nothing within this many pixels of its border, padding or mask edge
@@ -89,7 +105,7 @@ GAIN_PASS_WIDTH = 1024
 
 
 def ods_rays(width: int, height: int, rows: Tuple[int, int], pivot: Sequence[float], ipd_m: float, eye: str,
-             up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), azimuth0_deg: float = 0.0) -> Tuple[np.ndarray, np.ndarray]:
+             up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), azimuth0_deg: float = 0.0, pole_merge_deg="default") -> Tuple[np.ndarray, np.ndarray]:
     """Origins and unit directions (n, 3) of the equirect pixels in ``rows`` = (r0, r1) for ``eye`` ("left" /
     "right" / "centre").  The left edge of column 0 looks along azimuth ``azimuth0_deg`` (0 = north, the default;
     -180 puts north in the middle) and the azimuth grows eastward (clockwise seen from above), so by default the
@@ -104,7 +120,8 @@ def ods_rays(width: int, height: int, rows: Tuple[int, int], pivot: Sequence[flo
     d = np.cos(E)[..., None] * h + np.sin(E)[..., None] * u
     sign = {"left": -1.0, "right": 1.0, "centre": 0.0, "center": 0.0}[eye]
     right = np.cross(h, u)                                                 # points to the viewer's right
-    o = P + sign * (ipd_m / 2.0) * right
+    share = pole_merge(E, POLE_MERGE_DEG if isinstance(pole_merge_deg, str) else pole_merge_deg)
+    o = P + sign * (ipd_m / 2.0) * share[..., None] * right
     return o.reshape(-1, 3), d.reshape(-1, 3)
 
 
@@ -517,7 +534,7 @@ def estimate_gains(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence
 def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], eye: str, width: int, height: int,
                ipd_m: float, rows_per_chunk: int = 128, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0),
                feather_px: float = FEATHER_PX, progress=None, sky_fill: bool = True,
-               azimuth0_deg: float = 0.0, linear: bool = False, ground_fill: bool = True) -> Dict[str, np.ndarray]:
+               azimuth0_deg: float = 0.0, linear: bool = False, ground_fill: bool = True, pole_merge_deg="default") -> Dict[str, np.ndarray]:
     """One eye's equirect: {"rgb" (H, W, 3) uint8 - or, ``linear``, float32 in 8-bit units up to 1024 (x 64 = the
     16-bit linear value) -, "source" (H, W) int16 (-1 none; the strongest source), "label"
     (H, W) uint8 surface label, "range" (H, W) float32}.  The two-band blend of the module doc, with each source's
@@ -538,7 +555,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     t0 = time.time()
     for r0 in range(0, height, rows_per_chunk):
         r1 = min(height, r0 + rows_per_chunk)
-        o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east, azimuth0_deg)
+        o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east, azimuth0_deg, pole_merge_deg=pole_merge_deg)
         c = candidates(scene, sources, o, d)
         rej[0] += c["rejected"][0]; rej[1] += c["rejected"][1]
         rover_px[r0:r1] = c["on_rover"].reshape(r1 - r0, width)
@@ -915,9 +932,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
                    gains: bool = True, stack_top: str = "left", sky_fill: bool = True,
                    mask_head_hardware: bool = True, azimuth0_deg: float = 0.0, prefix: Optional[str] = None,
-                   bits: int = 8, pds: Optional[PathLike] = None, tone: str = "auto", exposure16: float = 0.5,
+                   bits: int = 8, pds: Optional[PathLike] = None, tone: str = "auto", exposure16: Union[float, str] = "auto",
                    ground_fill: bool = True, mask_mast: bool = True,
-                   tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True) -> Dict[str, Any]:
+                   tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True, pole_merge_deg="default") -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_360_3DTD.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``S003D2046`` / ``S003D2046_rover``); '' for the bare names.  Returns the record."""
@@ -962,6 +979,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         log.info("ods %s: %d / %d rows (%.0f s)", eye, r, h, dt)
 
     rec_out: Dict[str, Any] = {"station": station.to_json(), "prefix": prefix, "width": width, "height": height, "ipd_m": ipd_m,
+                               "pole_merge_deg": (list(POLE_MERGE_DEG) if POLE_MERGE_DEG else None) if isinstance(pole_merge_deg, str) else (list(pole_merge_deg) if pole_merge_deg else None),
                                "sources": [s.name for s in sources], "scale": scale, "zcam_scale": zcam_scale,
                                "rover": "shown" if not use_masks else "masked out",
                                "azimuth_of_column_0_deg": float(azimuth0_deg) % 360.0,
@@ -974,13 +992,19 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         log.info("ods: gains over %d source pairs: %s", g["pairs"], ", ".join(f"{v:.3f}" for v in g["gains"].values()))
     levels, levels_from, depth_rec = None, None, None
     for eye in eyes:
-        res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, rows_per_chunk=rows_per_chunk,
+        res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, pole_merge_deg=pole_merge_deg, rows_per_chunk=rows_per_chunk,
                          progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, linear=linear,
                          ground_fill=ground_fill, **axes)
         f = ods_file(out, eye, prefix)
         if linear:                                   # the 16-bit linear panorama, and the 8-bit one for viewing
             f16 = ods_file(out, eye + "_16", prefix)
-            k16 = 64.0 * float(exposure16)           # darker than the frames: headroom for the gains and the grading
+            if isinstance(exposure16, str):          # 0.97.0 "auto": one gain per station, shared by its variants
+                from .linear16 import auto_exposure16, shared_value
+                exposure16, _src = shared_value(tone_levels_file, "exposure16",
+                                                lambda: auto_exposure16(res["rgb"], res["source"] >= 0))
+                exposure16 = float(exposure16)
+                log.info("ods: 16-bit exposure %.3f of the frames' scale (%s)", exposure16, _src)
+            k16 = 64.0 * float(exposure16)
             v16 = np.rint(res["rgb"][..., ::-1] * k16)
             clipped16 = float((v16.max(axis=2) > 65535).mean())
             cv2.imwrite(str(f16), np.clip(v16, 0, 65535).astype(np.uint16))
@@ -1027,6 +1051,10 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         rec_out["stacked"] = stack_eyes(out, top=stack_top, prefix=prefix)
         if linear:
             rec_out["stacked_16bit"] = stack_eyes(out, top=stack_top, prefix=prefix, suffix="_16")
+            rec_out.setdefault("linear16", {})["exposure16"] = float(exposure16)
+            (out / "ods.json").write_text(json.dumps(rec_out, indent=1, default=str), encoding="utf-8")   # write_enhanced reads the exposure
+            from .linear16 import write_enhanced
+            rec_out["enhanced"] = write_enhanced(out, prefix, top=stack_top, levels_file=tone_levels_file)
     if prefix:                                       # the unprefixed files of before 10 Nov would be stale
         for n in OLD_NAMES:
             if (out / n).is_file():
@@ -1049,8 +1077,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             "scale_rad_to_int16": fr[0]["scale_rad_to_int16"] if fr else None,
             "view_tone": tone if linear else None,
             "view_levels_8bit_units": None if levels is None else [float(v) for v in levels],
-            "exposure16": float(exposure16),
-            "value_16bit": "the linear value x 64 x exposure16 (0.5: half the frames' own 16-bit scale)",
+            "exposure16": None if isinstance(exposure16, str) else float(exposure16),
+            "value_16bit": "the linear value x 64 x exposure16 (auto: the gain that puts the 99.99 % point of the brightest channel at 95 % of the range, 0.5-4)",
             "frames_saturated_share_max": max([f["saturated_share"] for f in fr], default=None),
             "frames_clipped_in_8bit_share_max": max([f["clipped_in_8bit_share"] for f in fr], default=None)}
     rec_out["seconds"] = round(time.time() - t0, 1)

@@ -1390,7 +1390,7 @@ def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
             sat[:, :200] = 255                                    # the left half of the red frame "saturated"
         cv2.imwrite(str(d16 / (Path(n).stem + ".sat.png")), sat)
     out = tmp_path / "o16"
-    r = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, bits=16, gains=False)
+    r = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, bits=16, gains=False, exposure16=0.5)
     assert r["bits"] == 16 and r["linear16"]["rendered"] and not r["linear16"]["missing"]
     L16 = cv2.imread(str(out / "S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)[..., ::-1]
     L8 = cv2.imread(str(out / "S003D0010_ods_left.png"))[..., ::-1]
@@ -1462,7 +1462,7 @@ def test_rover_model_in_the_mesh(tmp_path):
     from mppp.ibr import rover_deck as RD, rover_model as RM
     assert RM.available()
     V, F, meta = RM.load()
-    assert meta["credit"] == "NASA/JPL-Caltech" and 40000 < len(F) < 80000 and meta["arm_stow_deg"] == [90.0, 14.5, 68.8, -89.4, 77.5] and "antenna" in meta["parts"]   # 0.97.0
+    assert meta["credit"] == "NASA/JPL-Caltech" and 40000 < len(F) < 80000 and meta["arm_stow_deg"] == [90.09, 16.37, 71.66, -88.18, 81.48] and "antenna" in meta["parts"]   # 0.97.0
     assert V[:, 0].min() < -1.6 and V[:, 0].max() < 1.5            # the RTG behind; the arm stowed, not reaching forward
     assert abs(V[:, 1]).max() < 1.4 and 1.05 < V[:, 2].max() < 1.2  # the wheels on the ground, 1.13 m below the deck top
     Vb, Fb, _ = RM.load(["body"])
@@ -1677,3 +1677,52 @@ def test_surface_check_keeps_rover_pixels_on_the_rover_and_terrain_on_terrain(tm
     assert list(c["k"][:, 0] >= 0) == [False, True, True] and c["rejected"] == [0, 1]
     c = O.candidates(sc, [src], o, d, surface_check=False)   # the check off: as before
     assert (c["k"][:, 0] >= 0).all()
+
+
+def test_ods_pole_merging():
+    """0.97.0 (12 Nov): the eye separation is full to 30 deg of elevation and zero from 80 deg, up and down."""
+    from mppp.ibr import ods as O
+    P = np.zeros(3)
+    assert np.allclose(O.pole_merge(np.radians([0, 30, -30, 80, -85, 90])), [1, 1, 1, 0, 0, 0], atol=1e-9)
+    assert 0.6 < O.pole_merge(np.radians(-55.0)) < 0.8
+    for row, want in ((90, 0.064), (20, 0.0), (160, 0.0)):                # horizon, 69.5 deg up... rows of a 180-row panorama
+        oL, _ = O.ods_rays(360, 180, (row, row + 1), P, 0.064, "left")
+        oR, _ = O.ods_rays(360, 180, (row, row + 1), P, 0.064, "right")
+        sep = np.linalg.norm(oR - oL, axis=1)
+        assert np.allclose(sep, sep[0])
+        if want:
+            assert np.allclose(sep, want)
+        else:
+            assert sep[0] < 0.064 * 0.4
+    oL, _ = O.ods_rays(360, 180, (175, 176), P, 0.064, "left")
+    assert np.allclose(oL, 0.0)                                           # 85.5 deg down: one image for both eyes
+    oL, _ = O.ods_rays(360, 180, (175, 176), P, 0.064, "left", pole_merge_deg=None)
+    assert np.allclose(np.linalg.norm(oL, axis=1), 0.032)
+
+
+def test_exposure_and_enhanced_views(tmp_path):
+    """0.97.0 (12 Nov): one automatic 16-bit gain per station and the contrast-enhanced 8-bit products."""
+    import cv2
+    from mppp.ibr import linear16 as L
+    rng = np.random.default_rng(0)
+    x = np.clip(rng.normal(60, 15, (64, 128, 3)), 1, None).astype(np.float32)        # 8-bit linear units
+    x[:4] = 300.0                                                                      # a bright sky
+    e = L.auto_exposure16(x)
+    assert 0.5 <= e <= 4.0 and abs(x.max() * 64 * e - 0.95 * 65535) < 0.02 * 65535     # nothing clipped
+    assert L.auto_exposure16(x * 100) == 0.5 and L.auto_exposure16(x * 0.01) == 4.0
+    lo, hi, g = L.enhanced_levels(x)
+    assert lo < 40 and hi > 250 and 1.4 <= g <= 3.0
+    v = L.tone_enhanced(x, lo, hi, g)
+    assert v.min() >= 0 and v.max() <= 255 and abs(np.median(v[32:].mean(axis=2)) / 255 - 0.45) < 0.05
+    f = tmp_path / "levels.json"
+    assert L.shared_value(f, "exposure16", lambda: 1.5) == (1.5, "computed")
+    assert L.shared_value(f, "exposure16", lambda: 9.9) == (1.5, "file")
+    (lv, src) = L.shared_levels(f, lambda: (2.0, 50.0))
+    assert src == "computed" and L.shared_value(f, "exposure16", lambda: 0)[0] == 1.5  # the file keeps both
+    (tmp_path / "ods.json").write_text(json.dumps({"linear16": {"exposure16": e}}))
+    for eye in ("left", "right"):
+        cv2.imwrite(str(tmp_path / f"S1_ods_{eye}_16.png"), np.clip(x * 64 * e, 0, 65535).astype(np.uint16))
+    r = L.write_enhanced(tmp_path, "S1", levels_file=f)
+    a = cv2.imread(r["files"]["enh"]); b = cv2.imread(r["files"]["enhlocal"])
+    assert a.shape == (128, 128, 3) and b.shape == a.shape and r["files"]["enh"].endswith("S1_enh_360_3DTD.jpg")
+    assert "enhanced_levels_8bit_linear_units" in json.loads(f.read_text())

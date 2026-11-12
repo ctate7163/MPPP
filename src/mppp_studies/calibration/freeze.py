@@ -187,10 +187,12 @@ class Run:
                 deadline = t0 + timeout_h * 3600
                 while True:
                     try:
-                        rc = p.wait(timeout=max(5.0, min(300.0, deadline - time.time())))
+                        rc = p.wait(timeout=max(5.0, min(60.0, deadline - time.time())))
+                        self.show_blocks(name, t0)
                         break
                     except subprocess.TimeoutExpired:
                         self.beat()
+                        self.show_blocks(name, t0)
                         if time.time() > deadline:
                             self.log(f"{name}: past {timeout_h} h - stopped with its process tree")
                             kill_tree(p.pid)
@@ -217,6 +219,61 @@ class Run:
                 self.log(f"{name}: stopped by stop_mppp.bat - the run ends here; start freeze.bat to continue")
                 raise ChainStopped(name)
         return rc
+
+    # 0.97.0 (Christian, 12 Nov 2026: "the freeze window should show what block is being aligned so that I don't
+    # need to ask you"): the blocks' own status files, read while a step's child runs
+    BLOCK_LINE_EVERY_S = 1800.0
+
+    def show_blocks(self, step: str, t0: float) -> None:
+        """A line in the window (and the log) when a block starts or ends, and every half hour where each running
+        block is (the last line of its log).  Never raises."""
+        try:
+            seen = self.__dict__.setdefault("_blocks", {})
+            running = []
+            for f in sorted(self.root.glob("mars2020_sol_*/mppp_status.json")):
+                try:
+                    if f.stat().st_mtime < t0 - 5:
+                        continue
+                    d = json.loads(f.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                site = str(d.get("site") or f.parent.name) + (f" [{d['variant']}]" if d.get("variant") else "")
+                key, state = str(f.parent), str(d.get("state"))
+                if state == "running":
+                    running.append((site, d))
+                if seen.get(key) == (state, d.get("started")):
+                    continue
+                seen[key] = (state, d.get("started"))
+                if state == "running":
+                    self.log(f"{step}: aligning {site} (started {str(d.get('started'))[11:16]}, {f.parent.name})")
+                else:
+                    r = d.get("result") or {}
+                    try:
+                        h = (datetime.datetime.fromisoformat(d["ended"]) - datetime.datetime.fromisoformat(d["started"])).total_seconds() / 3600
+                        took = f" after {h:.1f} h"
+                    except (KeyError, TypeError, ValueError):
+                        took = ""
+                    extra = (f": {r.get('verdict')}, {r.get('registered_images')} of {r.get('images')} images, "
+                             f"{float(r.get('residual_rms_native_px') or 0):.2f} px") if r else \
+                            (f": {str(d.get('last_error'))[:120]}" if d.get("last_error") else "")
+                    self.log(f"{step}: {site} {state}{took}{extra}")
+            last = self.__dict__.get("_blocks_line", 0.0)
+            if running and time.time() - last >= self.BLOCK_LINE_EVERY_S:
+                self.__dict__["_blocks_line"] = time.time()
+                for site, d in running:
+                    where = ""
+                    try:
+                        with open(d["log"], "rb") as lf:
+                            lf.seek(0, 2)
+                            lf.seek(max(0, lf.tell() - 4000))
+                            lines = [ln for ln in lf.read().decode("utf-8", "replace").splitlines() if "|" in ln]
+                        if lines:
+                            where = " - " + lines[-1].split("|", 1)[1].strip()[:110]
+                    except (OSError, KeyError, TypeError):
+                        pass
+                    self.log(f"{step}: {site} running since {str(d.get('started'))[11:16]}{where}")
+        except Exception:                                                             # noqa: BLE001 - a display only
+            pass
 
     def pipeline(self, name: str, *args: str) -> int:
         cmd = [self.python, "-m", "mppp_studies.calibration.run_pipeline", "--root", self.root, "--jobs",
