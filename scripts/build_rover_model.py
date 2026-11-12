@@ -27,12 +27,16 @@ import numpy as np
 
 ARM_CHAIN = ("arm.003", "arm.002", "arm", "arm.004", "turret_obj")
 ARM_AXES = ("y", "z", "z", "z", "y")
-ARM_STOW_DEG = (89.2, 20.4, 71.9, -93.3, 85.0)       # 0.97.0 (Christian, 12 Nov 2026: "The turret needs to be rotate 180 so
+ARM_STOW_DEG = (96.0, 20.4, 71.9, -93.3, 85.0)       # 0.97.0 (Christian, 12 Nov 2026: "The turret needs to be rotate 180 so
 # that the drill points out and pixl toward the mast. the PERSEVERANCE plate on the arm can rotate up a little"): the
 # turret turned by 175 deg (-90.1 -> 85.0), the wrist -103.3 -> -93.3 and the shoulder elevation 16.4 -> 20.4, chosen
 # by eye from renders of the model through the label camera of NLF_0461_0707871340 (Rockytop S026D0630) against the
 # frame: the drill's dome, PIXL's box, the bit and the top instruments within about 20 px (half-resolution frame).
+# Then the shoulder azimuth 89.2 -> 96.0 (Christian: "align the PERSEVERANCE plate on the front forearm"): the forearm's
+# slope in NRF_0052_0671568531 (Van Zyl S003D2046) - 38 deg below the image's horizontal at 94, about 43 in the
+# frame - with the turret in the Rockytop frame still in place.
 # Before (10 Nov): the fit to the Van Zyl cloud, which left the turret's own angle the least certain - it was 180 deg off.
+STRAY_M = 0.012              # a decimated triangle this far from the model it was made from is a stray one
 HGA_NODES = ("antenna_hg",)
 HGA_AZ_DEG = 90.0            # 0.97.0 (Christian, 12 Nov 2026: "put the high gain antenna back in and have it point in a
 HGA_TILT_DEG = -45.0         # neutral direction ... tilted forward at a 45 degree angle"): the gimbal's arm towards +y
@@ -194,15 +198,29 @@ def build(glb: Path, out: Path) -> dict:
         om.remove_duplicated_vertices()
         om.remove_degenerate_triangles()
         n0 = len(om.triangles)
+        stray = 0
         if n0 > TARGET_FACES[kind]:
+            ref = o3d.t.geometry.RaycastingScene()
+            ref.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(om))
             om = om.simplify_quadric_decimation(TARGET_FACES[kind])
+            # 0.97.0 (Christian, 12 Nov 2026: "there seem to be some extra polygons cutting across the deck"): the
+            # decimation joins parts that only touch (the deck's bar to the mast's base) with long triangles through
+            # the air; a triangle with its centroid or an edge's middle farther than STRAY_M from the model goes
+            v_, f_ = np.asarray(om.vertices), np.asarray(om.triangles)
+            a_ = v_[f_]
+            probes = np.stack([a_.mean(1), 0.5 * (a_[:, 0] + a_[:, 1]), 0.5 * (a_[:, 1] + a_[:, 2]), 0.5 * (a_[:, 2] + a_[:, 0])], 1)
+            dist = ref.compute_distance(o3d.core.Tensor(probes.reshape(-1, 3).astype(np.float32))).numpy().reshape(-1, 4).max(1)
+            bad = dist > STRAY_M
+            stray = int(bad.sum())
+            if stray:
+                om.remove_triangles_by_mask(bad.tolist())
             om.remove_unreferenced_vertices()
         v, f = np.asarray(om.vertices), np.asarray(om.triangles)
         V.append(v)
         F.append(f + off)
         P.append(np.full(len(f), pid, np.uint8))
         off += len(v)
-        rep[kind] = {"faces_in": int(n0), "faces": int(len(f)), "bounds_mech_m": np.round([v.min(0), v.max(0)], 3).tolist()}
+        rep[kind] = {"faces_in": int(n0), "faces": int(len(f)), "stray_faces_removed": stray, "bounds_mech_m": np.round([v.min(0), v.max(0)], 3).tolist()}
     V, F, P = np.vstack(V).astype(np.float32), np.vstack(F).astype(np.int32), np.concatenate(P)
     axis_xy = [0.716, 0.559]                                         # the pivot fit of the Van Zyl frames; the tube is centred on it
     meta = {"source": glb.name, "credit": "NASA/JPL-Caltech", "url": "https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/",
