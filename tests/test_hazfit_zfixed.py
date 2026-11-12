@@ -168,7 +168,7 @@ def test_groups_and_block_sites():
     # 2 Nov (Christian): Cannery Passage, an unofficial 48 / 63 / 110 mm block (sols 543-552), in no group
     assert t["sites"]["cannery_passage"]["zcam"] == [48, 63, 110]
     assert not any("cannery_passage" in v for v in g.values())
-    assert "rockytop" in g["zcam79_consensus"] and {"rockytop", "marble_mountain"} <= set(g["zcam110_consensus"])
+    assert "wildcat_ridge" in g["zcam79_consensus"] and {"skinner_ridge", "marble_mountain"} <= set(g["zcam110_consensus"])   # 0.97.0: the ridges
     assert g["zcam34_joint"][0] == "taylorfjellet"
     assert "airey_hill" not in g["ecam_consensus"] and "airey_hill" in g["zcam_consensus"]   # 2 Nov: out of the Navcam list
     assert "chal_rocks" not in g["zcam34_joint"] and "chal_rocks_large" in g["zcam34_joint"]
