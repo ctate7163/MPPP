@@ -16,6 +16,13 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   `mars2020_sol_1145_overlook_mountain_zcam`. `seitah_overlook`: its two right-eye 79 mm frames of sol 121 are back.
   A site key `"zcam_joint_exclude": [zooms]` leaves a site out of those zooms' joints (`calib zcam --zcam-take SITE`
   takes it): `wildcat_ridge` at 63 mm, whose block keeps ZCAM08530 and ZCAM08538 as their test.
+- **Deck fiducial figure** (Christian, 12 Nov). `make_figures.bat` draws one full-resolution Navcam deck frame with
+  every target marked three ways: measured, through the label CAHVORE, and through the constrained model (the Navcam
+  law at the frame's temperature and sol, with the pose of the deck_joint mast chain at the label's resolver angles;
+  nothing fitted to the frame). `fiducials.deck_frame_models`, `plot_deck_frame`; `paper_figures --deck-frame FILE`
+  (or `MPPP_DECK_FRAME`; default the sol-1642 right frame under `D:\data\m2020\datadrive`). On that frame the six
+  surveyed targets are 5.1 px rms from the label model and 1.5 px from the constrained one (0.3 px about a common
+  1.4 px shift, which is the chain's pose error for the frame).
 - **26 and 100 mm** are zooms MPPP aligns (`chal_rocks_large`, `seitah_overlook`). No focus model and no joint:
   their bin cameras start from the label model and refine in the block. 100 mm holds k2 = p1 = p2 = 0 as 79 mm does;
   nothing is held at 26 mm yet. Not aligned on real data before this release.

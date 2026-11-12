@@ -85,3 +85,26 @@ def test_zooms_26_and_100_and_the_zoom_ladder(tmp_path):
     assert len(rows) == 30 and {r["state"] for r in rows if r["clock"] > 1000 + 90 * 4 + 30 * 11} == {"high"}
     g = C.plot_zoom_ladder(rows, tmp_path / "ladder.png", dpi=60)
     assert (tmp_path / "ladder.png").is_file() and abs(g["ZL079"]["gap_pct"] - 0.6) < 1e-6 and g["ZR034"]["n_low"] == 2
+
+
+def test_deck_frame_figure(tmp_path):
+    """0.97.0: the one-frame fiducial figure draws from a result of deck_frame_models, and the resolver angles are
+    read by name from the label."""
+    import numpy as np
+    from mppp_studies.calibration import fiducials as FD
+    lab = {"RSM_ARTICULATION_STATE": {"ARTICULATION_DEVICE_ANGLE": [0.66, 0.81, 0, 0, 0, 0, 0.67, 0.82],
+                                      "ARTICULATION_DEVICE_ANGLE_NAME": ["AZIMUTH FINAL-RESOLVER", "ELEVATION FINAL-RESOLVER",
+                                                                         "AZIMUTH INITIAL-RESOLVER", "ELEVATION INITIAL-RESOLVER",
+                                                                         "AZIMUTH REQUESTED", "ELEVATION REQUESTED",
+                                                                         "AZIMUTH FINAL-ENCODER", "ELEVATION FINAL-ENCODER"]}}
+    assert FD.resolver_angles(lab) == (0.66, 0.81)
+    rng = np.random.default_rng(0)
+    T = {k: {"measured": [100.0 + 40 * i, 80.0 + 20 * i], "label": [103.0 + 40 * i, 78.0 + 20 * i],
+             "constrained": [100.5 + 40 * i, 80.4 + 20 * i], "rigid": k in FD.RIGID,
+             "kind": "bar" if k in FD.BAR else "unsurveyed" if k in FD.UNSURVEYED else "rigid"}
+         for i, k in enumerate(list(FD.RIGID) + list(FD.BAR) + list(FD.UNSURVEYED))}
+    res = {"stem": "NRF_TEST", "eye": "R", "sol": 1642, "T": -8.6, "scale": 1.0, "az": 0.66, "el": 0.81, "targets": T,
+           "rms_px": {"label": 3.6, "constrained": 0.64}, "scatter_px": {"label": 0.0, "constrained": 0.0},
+           "image": rng.integers(0, 255, (384, 512, 3)).astype(np.uint8)}
+    out = FD.plot_deck_frame(res, tmp_path / "deck.png", dpi=60)
+    assert out.is_file() and out.stat().st_size > 10000

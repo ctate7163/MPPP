@@ -49,6 +49,8 @@ HERE = Path(__file__).resolve().parents[3]          # the repository root (src/m
 
 
 SHIPPED_MAST_CHAIN = "deck_joint_mast_model_DJ32_20261107.json"
+DECK_FRAME = (r"D:\data\m2020\datadrive\01642\ids\rdr\ncam"
+              r"\NRF_1642_0812712250_112RAD_N0790870NCAM03642_0A0095J01.IMG")
 
 
 def finished_blocks(root: Path, group: str = "ecam_consensus"):
@@ -142,6 +144,9 @@ def main(argv=None) -> int:
                     help="0.95.5: the deck_joint mast chain (deck_joint_mast_model.json) for the mast-head figures; "
                          "default: the newest under <root>\\camera_analysis or --out; '-' for none")
     ap.add_argument("--mast-labels", default=None, help="rover_frame_labels.json (default <root>\\camera_analysis\\)")
+    ap.add_argument("--deck-frame", default=os.environ.get("MPPP_DECK_FRAME", DECK_FRAME),
+                    help="0.97.0: one full-resolution Navcam RAD product (.IMG) of the deck for the fiducial figure "
+                         "(default MPPP_DECK_FRAME or the sol-1642 frame under D:\\data\\m2020\\datadrive); - for none")
     ap.add_argument("--dpi", type=int, default=200)
     ap.add_argument("--site-map", choices=["maps", "simple", "none"], default="maps")
     a = ap.parse_args(argv)
@@ -248,6 +253,19 @@ def main(argv=None) -> int:
                 chain = str(shipped) if shipped.is_file() else None                                        # always made
                 if chain:
                     print(f"mast head figures: no deck_joint_mast_model.json under {a.root} - the shipped {SHIPPED_MAST_CHAIN}")
+        # ---- 0.97.0: the deck fiducials of one frame through the label model and through the law + chain
+        if chain and a.deck_frame and a.deck_frame != "-":
+            if Path(a.deck_frame).is_file():
+                try:
+                    from mppp_studies.calibration import fiducials as FD
+                    dres = FD.deck_frame_models(a.deck_frame, chain, a.cmods)
+                    FD.plot_deck_frame(dres, out / f"deck_fiducials_label_vs_constrained_{tag}.png", dpi=a.dpi)
+                    (out / f"deck_fiducials_label_vs_constrained_{tag}.json").write_text(
+                        json.dumps({k: v for k, v in dres.items() if k != "image"}, indent=1), encoding="utf-8")
+                except Exception as e:                                     # noqa: BLE001
+                    print(f"deck fiducial figure: skipped ({type(e).__name__}: {e})")
+            else:
+                print(f"deck fiducial figure: {a.deck_frame} not found - skipped (--deck-frame or MPPP_DECK_FRAME)")
         lab = a.mast_labels or str(Path(a.root) / "camera_analysis" / "rover_frame_labels.json")
         if chain and Path(lab).is_file():
             try:

@@ -1282,3 +1282,139 @@ def fit_unsurveyed(pairs: List[Dict[str, Any]]) -> Dict[str, Any]:
                   "se_mm": se.tolist(), "sd_mm": (Xk.std(0, ddof=1) if len(Xk) > 1 else np.full(3, np.nan)).tolist(),
                   "in_use_nav_mm": prior.tolist(), "minus_in_use_mm": (m - prior).tolist()}
     return out
+
+
+# ------------------------------------------------------------------------------------------------ one deck frame
+DECK_FRAME_DEFAULT = "NRF_1642_0812712250_112RAD_N0790870NCAM03642_0A0095J01"   # sol 1642, full resolution, -8.6 C:
+#                                                     all six rigid targets, TDF4 and both differential-bar targets
+DECK_INSET_HALF_PX = 14            # half-size of a target's inset (full-resolution px)
+MODEL_COLOURS = {"measured": "#ffd400", "label": "#e6007e", "constrained": "#00c8a0"}
+
+
+def resolver_angles(label) -> Tuple[float, float]:
+    """The RSM final-resolver azimuth and elevation (rad) of a product label (the angles of the deck_joint chain)."""
+    from mppp.labels import label_get
+    st = label_get(label, "RSM_ARTICULATION_STATE")
+    names = [str(n).upper() for n in st["ARTICULATION_DEVICE_ANGLE_NAME"]]
+    ang = st["ARTICULATION_DEVICE_ANGLE"]
+    return float(ang[names.index("AZIMUTH FINAL-RESOLVER")]), float(ang[names.index("ELEVATION FINAL-RESOLVER")])
+
+
+def deck_frame_models(path: PathLike, chain: Union[PathLike, Dict[str, Any]], cmods: Optional[PathLike] = None,
+                      ) -> Dict[str, Any]:
+    """
+    0.97.0 (Christian, 12 Nov 2026: "a fiducial figure for one high res full deck navcam ... the locations of the
+    fiducial using the label and constrained camera models").  One full-frame Navcam RAD product, each deck target
+    three ways (full-resolution px, corner origin):
+      measured     :func:`detect_target` around the label prediction
+      label        the product label's CAHVOR(E), intrinsics and pose
+      constrained  the Navcam law at the frame's temperature and sol (:func:`mppp.calib.constrain.camera_at`) with
+                   the pose of the deck_joint mast chain at the label's resolver angles - nothing fitted to this frame
+    Returns {"stem", "eye", "sol", "T", "scale", "az", "el", "image" (uint8 RGB or grey), "targets": {name: {"measured",
+    "label", "constrained", "rigid"}}, "rms_px": {"label", "constrained"} (rigid targets), "mean_px", "scatter_px" (rms about the mean offset)}.
+    """
+    from mppp.calib.constrain import camera_at
+    from mppp.calib.models import load_camera
+    from mppp.labels import read_pds
+    from mppp_studies.calibration.zcam_mast_head import chain_pose
+    fr = pds_frame(path)
+    if fr is None:
+        raise ValueError(f"{path}: not a full-frame Navcam product with a ROVER_NAV_FRAME model")
+    m = chain if isinstance(chain, dict) else json.loads(Path(chain).read_text(encoding="utf-8"))
+    L, img = read_pds(Path(path))
+    az, el = resolver_angles(L)
+    s = fr["scale"]
+    name, par, _ = camera_at(load_camera("N", fr["eye"], cmods), fr["T"], fr["sol"])
+    proj = Projector(name, par)
+    R, C = chain_pose(m, fr["eye"], az, el, fr["T"])
+    g = stretch_gray(to_gray(img))
+    P = survey_nav_m(list(fr["pred"]))
+    targets: Dict[str, Dict[str, Any]] = {}
+    for k, xy in fr["pred"].items():
+        search = BAR_SEARCH_FULL_PX if k in BAR else UNSURVEYED_SEARCH_FULL_PX if k in UNSURVEYED else SEARCH_FULL_PX
+        d = detect_target(g, xy[0], xy[1], s, search, BAR_MAX_COST if k in BAR else MAX_COST)
+        if d is None:
+            continue
+        targets[k] = {"measured": native_to_full([d["x"], d["y"]], s).tolist(), "label": native_to_full(xy, s).tolist(),
+                      "constrained": proj((R @ (P[k] - C))[None])[0].tolist(), "rigid": k in RIGID,
+                      "kind": "bar" if k in BAR else "unsurveyed" if k in UNSURVEYED else "rigid"}
+    out = {"stem": fr["stem"], "eye": fr["eye"], "sol": fr["sol"], "T": fr["T"], "scale": s, "az": az, "el": el,
+           "targets": targets, "rms_px": {}, "mean_px": {}, "chain": m.get("name"), "camera": name}
+    rigid = [t for t in targets.values() if t["rigid"]]
+    for key in ("label", "constrained"):
+        d = np.array([np.subtract(t[key], t["measured"]) for t in rigid], float).reshape(-1, 2)
+        out["rms_px"][key] = float(np.sqrt((d ** 2).sum(1).mean())) if len(d) else None
+        out["mean_px"][key] = d.mean(0).tolist() if len(d) else None
+        out.setdefault("scatter_px", {})[key] = float(np.sqrt(((d - d.mean(0)) ** 2).sum(1).mean())) if len(d) else None
+    a = np.asarray(img, np.float32)
+    lo, hi = np.percentile(a[a > 0], [0.5, 99.7]) if np.any(a > 0) else (0.0, 1.0)
+    a = np.clip((a - lo) / max(hi - lo, 1e-6), 0.0, 1.0) ** (1 / 2.2)           # one stretch for all bands, display gamma
+    out["image"] = (255.0 * (a[..., ::-1] if a.ndim == 3 else a)).astype(np.uint8)   # read_pds gives BGR
+    return out
+
+
+def plot_deck_frame(res: Dict[str, Any], out_png: PathLike, dpi: int = 200, inset_half_px: int = DECK_INSET_HALF_PX,
+                    ) -> Path:
+    """The frame of :func:`deck_frame_models` with every target marked, and one inset per target (+-``inset_half_px``
+    full-resolution px about the measured centre): the measured centre (cross), the label model's prediction (circle)
+    and the constrained model's (diamond), with each model's offset from the measured centre in px."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    img, T, s = res["image"], res["targets"], res["scale"]
+    names = sorted(T, key=lambda k: (T[k]["kind"] != "rigid", T[k]["kind"] == "bar", k))
+    n = len(names)
+    ncol = 3
+    nrow = max(1, int(np.ceil(n / ncol)))
+    fig = plt.figure(figsize=(15.5, 7.6))
+    gs = fig.add_gridspec(nrow, 2 * ncol + ncol, wspace=0.10, hspace=0.34, left=0.005, right=0.995, top=0.88, bottom=0.02)
+    ax = fig.add_subplot(gs[:, :2 * ncol])
+    kw = {"cmap": "gray"} if img.ndim == 2 else {}
+    ext = (0, img.shape[1] / s, img.shape[0] / s, 0)                     # full-resolution px, corner origin
+    ax.imshow(img, extent=ext, interpolation="bilinear", **kw)
+    MC = MODEL_COLOURS
+    for k in names:
+        x, y = T[k]["measured"]
+        ax.plot([x], [y], "s", ms=13, mfc="none", mec=MC["measured"], mew=1.3)
+        ax.annotate(k + ("" if T[k]["rigid"] else "*"), (x, y), xytext=(10, -10), textcoords="offset points",
+                    color=MC["measured"], fontsize=9, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.15", fc="black", ec="none", alpha=0.55))
+    ax.set_xticks([]); ax.set_yticks([])
+    eye = {"L": "left", "R": "right"}.get(res["eye"], res["eye"])
+    fig.suptitle(f"Deck fiducials in one {eye} Navcam frame: sol {res['sol']}, camera temperature T = {res['T']:.1f} °C, "
+                 f"mast azimuth {np.degrees(res['az']):.1f}°, elevation {np.degrees(res['el']):.1f}° (resolver)\n"
+                 f"{res['stem']}", fontsize=10.5, y=0.985)
+    h = inset_half_px
+    for i, k in enumerate(names):
+        a = fig.add_subplot(gs[i // ncol, 2 * ncol + i % ncol])
+        x, y = T[k]["measured"]
+        a.imshow(img, extent=ext, interpolation="nearest", **kw)
+        a.set_xlim(x - h, x + h); a.set_ylim(y + h, y - h)
+        a.plot([x], [y], "+", ms=16, mew=1.4, color=MC["measured"])
+        txt = []
+        for key, mk in (("label", "o"), ("constrained", "D")):
+            px, py = T[k][key]
+            a.plot([x, px], [y, py], "-", lw=1.0, color=MC[key])
+            a.plot([px], [py], mk, ms=8, mfc="none", mec=MC[key], mew=1.6)
+            txt.append(f"{key} ({px - x:+.1f}, {py - y:+.1f})")
+        a.set_title(f"{k}{'' if T[k]['rigid'] else '*'}   Δ(x, y) px\n" + "\n".join(txt), fontsize=7.5, pad=3, loc="left")
+        a.set_xticks([]); a.set_yticks([])
+    from matplotlib.lines import Line2D
+    r = res["rms_px"]
+    hnd = [Line2D([], [], marker="+", ls="", ms=11, mew=1.4, color=MC["measured"], label="measured centre"),
+           Line2D([], [], marker="o", ls="", ms=8, mfc="none", mec=MC["label"], mew=1.6,
+                  label=f"label CAHVORE (rms {r['label']:.1f} px, {res['scatter_px']['label']:.1f} px about its mean)"),
+           Line2D([], [], marker="D", ls="", ms=8, mfc="none", mec=MC["constrained"], mew=1.6,
+                  label=f"constrained: Navcam law + mast chain (rms {r['constrained']:.1f} px, "
+                        f"{res['scatter_px']['constrained']:.1f} px about its mean)")]
+    leg = ax.legend(handles=hnd, loc="lower left", fontsize=9, framealpha=0.75, facecolor="black", edgecolor="none")
+    for t in leg.get_texts():
+        t.set_color("white")
+    ax.text(0.995, 0.988, f"insets ±{h} px, full resolution; rms over the six surveyed rigid targets; "
+            "* not in the rms (TDF4 unsurveyed, LDIFF/RDIFF on the moving differential bar)",
+            transform=ax.transAxes, ha="right", va="top", fontsize=7, color="white",
+            bbox=dict(fc="black", ec="none", alpha=0.55, pad=1.5))
+    out_png = Path(out_png)
+    fig.savefig(out_png, dpi=dpi)
+    plt.close(fig)
+    return out_png
