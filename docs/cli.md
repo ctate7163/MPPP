@@ -439,7 +439,7 @@ emission, phase and the cast shadow — `photometry/` (npz), `photometry_maps/` 
 `photometry_jpg/`, `photometry_report.json`.  **`ods`**: the omni-directional stereo panorama — equirectangular,
 `--width` × half, the eyes `--ipd` apart on the circle around the pivot — each eye's rays cast into the scene and
 every hit coloured from the source frame that sees it best (the smallest angle to the frame's axis, inside the
-frame and its mask): `<station>_ods_left.png`, `<station>_ods_right.png`, `<station>_ods_stereo_square.png/.jpg`
+frame and its mask): `<station>_ods_left.png`, `<station>_ods_right.png`, `<station>_360_3DTD.png/.jpg`
 (the left eye above the right; `--stack-top right`), `provenance.png` (which frame coloured what), `ods.json` (the
 coverage: coloured, mesh, far, none); with the rover shown (the default since 0.96.1) they are
 `<station>_rover_ods_...`, with `--mask-rover` `<station>_ods_...`; `--exclude STEM ...` leaves
@@ -449,7 +449,7 @@ CAHVORE poses), the floor added to the mesh, `rover_deck.json`; `--no-deck-floor
 model (simplified, the arm stowed; `mppp.ibr.rover_model`) at the station's rover pose, the fused points within 4 cm
 of it dropped (`--no-rover-model`, `--rover-model-parts`).  **`ods --bits 16`** (0.96.1) blends the panorama from 16-bit linear frames made
 again from the PDS products (`<project>/images16/`; `--pds` or `MPPP_PDS`): `<station>_ods_left_16.png`,
-`_right_16.png`, `_stereo_square_16.png` (uint16 linear, for colour work; what the 8-bit images clip at 255 is kept,
+`_right_16.png`, `_360_3DTD_16.png` (uint16 linear, for colour work; what the 8-bit images clip at 255 is kept,
 saturated pixels are neutral) next to the 8-bit ones, which get a soft highlight roll-off (`--tone clip` for the old
 cut).  `mesh` also removes floating surface: anything above the cameras, and beyond
 3 m of the mast axis anything less than 1 m below them, heights above the ground plane (`--keep-floating`).  Any VR photo viewer that takes an equirectangular pair shows it; the

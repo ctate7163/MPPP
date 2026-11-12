@@ -168,6 +168,7 @@ class Settings:
     zcam_rig: bool = True                         # the two Mastcam-Z eyes of an exposure form a stereo rig, one per zoom
     zcam_rig_fit: Optional[str] = "rotation"      # the Mastcam-Z rig refined in stage 2: "rotation", "full" (and translation), None
     zcam_rig_refine: str = "refine"               # "refine" (from the model's rig), "auto" (held when the model has one), "hold"
+    zcam_rig_epoch_span_sols: Optional[float] = None   # 0.97.0: set by resolve_site (100) for a Mastcam-Z site whose sols span more than 100 - its zoom rigs are split into epochs of at most 100 sols (mppp.sfm.project.zcam_rig_epochs), so its run key changes and it is aligned again; None: the key of every other site stays
     pose_guided: Any = True                       # after the stage-2 rounds, match again guided by the poses (a dict overrides mppp.sfm.guided.GUIDED_DEFAULTS)
     isolated_points_factor: float = 4.0           # 0.94.4: before the final stage-2 adjustment, delete the two-view points more than this x the median spacing (at their range) from their 8 nearest points - the scattered false points above and below the terrain; 0 = off
     thermal_after_stage1: bool = True             # the Navcam temperature bins are fitted at the end of stage 1, before Mastcam-Z comes in
@@ -241,6 +242,8 @@ class Settings:
             d.pop("deck_in_ba", None)                # 4 Nov 2026: off, the keys stay what they were
         if d.get("zcam_bin_by") in (None, "focus"):
             d.pop("zcam_bin_by", None)               # 0.94.4: likewise
+        if not d.get("zcam_rig_epoch_span_sols"):
+            d.pop("zcam_rig_epoch_span_sols", None)  # 0.97.0: a site within 100 sols keeps its key
         if not d.get("zcam_zooms_only"):
             d.pop("zcam_zooms_only", None)           # 0.95.0: unset, the keys stay what they were
         if not d.get("include_zcam"):
@@ -542,6 +545,9 @@ def resolve_site(site_or_work: PathLike, settings: Settings) -> Tuple[Site, Sett
     if s.sift.get("num_octaves") is None:              # 6 octaves with Mastcam-Z (coarse features on the Zcam frames), else COLMAP's 4
         s = s.replace(sift=dict(s.sift, num_octaves=6 if zooms else 4))
     s = s.replace(zcam_zooms=zooms)
+    from .sfm.project import ZCAM_RIG_EPOCH_MAX_SPAN_SOLS
+    if zooms and s.zcam_rig and max(b for _, b in ranges) - min(a for a, _ in ranges) > ZCAM_RIG_EPOCH_MAX_SPAN_SOLS:
+        s = s.replace(zcam_rig_epoch_span_sols=float(ZCAM_RIG_EPOCH_MAX_SPAN_SOLS))    # 0.97.0: its Z rigs get epochs
     return Site(name, ranges, work, bool(s.include_zcam), zooms), s
 
 

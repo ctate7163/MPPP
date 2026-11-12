@@ -741,6 +741,9 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             r = rows_by_name.get(im.name) or {}
             g = str(r.get("camera_group", ""))
             fam = "Z" + g[2:]
+            if g.startswith("ZR") and fam in vrig:           # 0.97.0: the rig of the image's epoch (at most 100 sols)
+                from .project import zcam_rig_key
+                fam = zcam_rig_key(vrig, fam, r)
             if g.startswith("ZR") and fam in vrig and (g[2:], r.get("sclk_key")) in lefts:
                 fr = work.frames[im.frame_id]
                 if len(list(fr.data_ids)) == 1:              # a frame of its own (no COLMAP rig)

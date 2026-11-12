@@ -1194,11 +1194,41 @@ def _law_copy(rec, proj, zunits, sg, g, zoom: int = ZOOM):
     vr = {}
     for sc in scapes:
         vr[f"{fam0}@{sc}"] = {"R_sensor_from_ref": R0.tolist(), "t_sensor_from_ref": t0.tolist(), "hold": False}
+    # 0.97.0 (Christian, 12 Nov 2026: "the sol span of one z34 rig in a block is not longer than 100 sols"): a block
+    # whose stereo pairs span more gets one rig per epoch here (Z0nn@block, Z0nn@block#1 ...), from the rows' sols -
+    # also for a block aligned before the block runs had rig epochs
+    from mppp.sfm.project import ZCAM_RIG_EPOCH_MAX_SPAN_SOLS, zcam_epoch_ranges
+    zrows: Dict[str, List[Dict[str, Any]]] = {}
     for r in proj.images:
         cg = str(r.get("camera_group", ""))
         if cg[:5] in zoom_groups(zoom) and r.get("scape"):
             r["camera_group"] = f"{cg[:5]}@{r['scape']}"
+            r["zcam_rig_epoch"] = 0
+            zrows.setdefault(r["scape"], []).append(r)
+    epochs: Dict[str, List[Dict[str, Any]]] = {}
+    for sc, rr in zrows.items():
+        eyes: Dict[Any, set] = {}
+        for r in rr:
+            eyes.setdefault(r.get("sclk_key"), set()).add(str(r["camera_group"])[:2])
+        psols = [int(r["sol"]) for r in rr if r.get("sol") is not None and str(r["camera_group"]).startswith("ZL")
+                 and {"ZL", "ZR"} <= eyes.get(r.get("sclk_key"), set())]
+        eps = zcam_epoch_ranges(psols)
+        if len(eps) < 2 or f"{fam0}@{sc}" not in vr:
+            continue
+        bounds = [e[1] for e in eps[:-1]]
+        for r in rr:
+            if r.get("sol") is not None:
+                r["zcam_rig_epoch"] = int(sum(1 for hi in bounds if int(r["sol"]) > hi))
+        tab = []
+        for k, (a, b) in enumerate(eps):
+            key = f"{fam0}@{sc}" + (f"#{k}" if k else "")
+            if k:
+                vr[key] = {"R_sensor_from_ref": R0.tolist(), "t_sensor_from_ref": t0.tolist(), "hold": False}
+            mem = [x for x in psols if a <= x <= b]
+            tab.append({"index": k, "rig_key": key, "sols": [int(a), int(b)], "sol_median": float(np.median(mem)), "pairs": len(mem)})
+        epochs[sc] = tab
     proj.settings["zcam_virtual_rig"] = vr
+    proj.settings["zcam_rig_epochs_diag"] = {"max_span_sols": ZCAM_RIG_EPOCH_MAX_SPAN_SOLS, "blocks": epochs} if epochs else None
     return rec, proj, law, R0, t0
 
 
@@ -1378,6 +1408,14 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
                                "T_optics_degC": meta.get(sc, {}).get("T_optics_degC"),
                                "pitch_mdeg": float(rv[0]), "yaw_mdeg": float(rv[1]), "roll_mdeg": float(rv[2]),
                                "lines": {}}
+        eps_ = ((proj.settings.get("zcam_rig_epochs_diag") or {}).get("blocks") or {}).get(sc)
+        if eps_:                                         # 0.97.0: the block's rig per epoch (epoch 0 is the row's own)
+            row["rig_epochs"] = []
+            for e_ in eps_:
+                ve = proj.settings["zcam_virtual_rig"][e_["rig_key"]]
+                re_ = np.degrees(Rotation.from_matrix(np.asarray(ve.get("R_refined") or ve["R_sensor_from_ref"], float)
+                                                      @ R0.T).as_rotvec()) * 1e3
+                row["rig_epochs"].append(dict(e_, pitch_mdeg=float(re_[0]), yaw_mdeg=float(re_[1]), roll_mdeg=float(re_[2])))
         for eye in zoom_groups(zoom):
             for stt in ("backlash", "regular"):
                 us = [(cid, u) for cid, u in zunits.items() if u["scape"] == sc and u["group"] == eye and u["state"] == stt
@@ -1403,10 +1441,11 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
                                                                                  "weak_bins_left_out": len(us) - len(us_)}
         rows.append(row)
     fits = {}
+    rrows = rig_rows_by_epoch(rows)                      # 0.97.0: a block's rig epochs each count as a rig
     for ang in ("yaw", "pitch", "roll"):
-        y = np.array([r[f"{ang}_mdeg"] for r in rows], float)
-        S = np.array([np.nan if r["sol"] is None else r["sol"] for r in rows], float)
-        Tz = np.array([np.nan if r["T_optics_degC"] is None else r["T_optics_degC"] for r in rows], float)
+        y = np.array([r[f"{ang}_mdeg"] for r in rrows], float)
+        S = np.array([np.nan if r["sol"] is None else r["sol"] for r in rrows], float)
+        Tz = np.array([np.nan if r["T_optics_degC"] is None else r["T_optics_degC"] for r in rrows], float)
         fits[ang] = {"sd_mdeg": float(np.std(y, ddof=1)) if len(y) > 1 else None, "vs_sol_per_1000": ols(S / 1000.0, y),
                      "vs_T": ols(Tz, y)}
     # 0.95.1 (Christian, 29 Oct: the efl vs focus curves): every bin's own fx, fy in the diagnostic pass (the law held,
@@ -2647,9 +2686,7 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
                       baseline_m=r["baseline_m"], translation_source=r["translation_source"],
                       blocks=res["blocks"],
                       sd_rotvec_mdeg=[d["fits"][a]["sd_mdeg"] for a in ("pitch", "yaw", "roll")] if d.get("fits") else None,
-                      residuals={"per_block": [{k: x[k] for k in ("block", "sol", "T_optics_degC", "yaw_mdeg", "pitch_mdeg",
-                                                                  "roll_mdeg")} for x in rows],
-                                 "fits": d.get("fits") or {}},
+                      residuals={"per_block": rig_rows_by_epoch(rows), "fits": d.get("fits") or {}},
                       per_block=[{"block": x["block"], "sol": x["sol"], "T_optics_degC": x["T_optics_degC"]} for x in rows],
                       translation_change_mm=r.get("translation_change_mm"), translation_sd_mm=r.get("translation_sd_mm"),
                       note="the Mastcam-Z joint: one rig for every block and focus (rotation refined, translation "
@@ -2758,6 +2795,23 @@ def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict
                        "note": ("all " + str(len(runs))) if not other else
                        f"{', '.join(other)} aligned with other camera models (run them again first)"})
     return {"ok": all(c["ok"] for c in checks), "checks": checks}
+
+
+def rig_rows_by_epoch(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The diagnostic pass's rig rows for the model file and the rig figure: one per block, or - 0.97.0 - one per rig
+    epoch of a block whose pairs span more than 100 sols (``rig_epochs``): "block [sols a-b]" at the epoch's median
+    sol, with the block's lens temperature."""
+    out = []
+    for x in rows:
+        eps = x.get("rig_epochs")
+        if not eps:
+            out.append({k: x[k] for k in ("block", "sol", "T_optics_degC", "yaw_mdeg", "pitch_mdeg", "roll_mdeg")})
+            continue
+        for e in eps:
+            out.append({"block": f"{x['block']} [sols {e['sols'][0]}-{e['sols'][1]}]", "sol": e["sol_median"],
+                        "T_optics_degC": x.get("T_optics_degC"), "yaw_mdeg": e["yaw_mdeg"], "pitch_mdeg": e["pitch_mdeg"],
+                        "roll_mdeg": e["roll_mdeg"], "site": x["block"], "rig_epoch": e["index"], "pairs": e["pairs"]})
+    return out
 
 
 def write_zjoint(res: Dict[str, Any], out_dir: PathLike, model: Optional[Dict[str, Any]] = None,

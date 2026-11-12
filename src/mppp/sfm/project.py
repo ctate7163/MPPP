@@ -91,6 +91,9 @@ NAVCAM_RIG_EPOCH_GAP_SOLS = calib.constrain.RIG_EPOCH_GAP_SOLS    # Navcam visit
                                                                  # apart get their own rig rotation
 NAVCAM_RIG_EPOCH_BREAKS_SOLS = calib.constrain.RIG_EPOCH_BREAK_SOLS
 NAVCAM_RIG_EPOCH_MAX_SPAN_SOLS = calib.constrain.RIG_EPOCH_MAX_SPAN_SOLS   # an epoch spanning more sols is split
+ZCAM_RIG_EPOCH_MAX_SPAN_SOLS = 100.0   # 0.97.0 (Christian, 12 Nov 2026: "the sol span of one z34 rig in a block is not
+#                                        longer than 100 sols"): a Mastcam-Z rig spanning more sols is split
+ZCAM_RIG_EPOCH_MIN_PAIRS = 4           # an epoch with fewer stereo pairs gets no rig of its own: joined to the nearest
 NAVCAM_RIG_EPOCH_MIN_IMAGES = 16     # 0.91: an epoch with fewer Navcam images (8 stereo frames) ...
 NAVCAM_RIG_EPOCH_MIN_STATIONS = 2    # ... or a single station gets no rig of its own: joined to the nearest epoch
 
@@ -537,6 +540,7 @@ class SfmProject:
         _align_priors_to_cameras(images, cameras)
         rig = _rig_from_pairs([r for r in images if instruments.get(r["camera_group"]) != "Z"])
         zrig: Dict[str, Any] = {}
+        zcam_epochs = None
         if zcam_rig:
             # one Mastcam-Z rig per zoom for every focus bin (a COLMAP rig has one camera per eye, the focus
             # bins have many): the bundle adjustment poses a right image from its left partner of the same exposure
@@ -562,6 +566,7 @@ class SfmProject:
                     ent["rotation_source"] += "; translation of the focus model"
                 ent["hold"] = (bool(zr) if zcam_rig_refine == "auto" else zcam_rig_refine == "hold")
                 zrig[fam_key] = ent
+            zcam_epochs = zcam_rig_epochs(images, zrig, instruments)       # 0.97.0: a rig spans at most 100 sols
         for fam_key in [k for k in rig if k in ("N", "F", "R")]:
             if navcam_rig == "consensus":
                 info = navcam_start_rig(rig[fam_key], images, fam_key, nav_dir)
@@ -591,6 +596,7 @@ class SfmProject:
                     "zcam_line_params": ({str(k): list(v) for k, v in zcam_line_params.items()}
                                          if zcam_line_params else None),
                     "zcam_virtual_rig": zrig or None, "zcam_rig_refine": zcam_rig_refine,
+                    "zcam_rig_epochs": (zcam_epochs if zcam_rig else None) or None,   # zoom rigs split by sol (0.97.0)
                     "zcam_rig_fit": zcam_rig_fit,                       # "rotation" / "full" in stage 2
                     "navcam_rig_epochs": epochs_info,                   # the Navcam visits with their own rig
                     "navcam_rig_epochs_gap": gap,
@@ -996,6 +1002,98 @@ def _align_priors_to_cameras(images: List[Dict[str, Any]], cameras: Dict[str, Di
         M = prior_rotation_correction(r["label_c_px"], r["label_f_px"], (p[2], p[3]))
         r["prior_R_w2c"] = (M @ np.asarray(r["prior_R_w2c"], float)).tolist()
         r["prior_R_correction_deg"] = float(np.degrees(np.arccos(np.clip((np.trace(M) - 1) / 2, -1.0, 1.0))))
+
+
+def zcam_epoch_ranges(pair_sols: Sequence[int], max_span: float = ZCAM_RIG_EPOCH_MAX_SPAN_SOLS,
+                      min_pairs: int = ZCAM_RIG_EPOCH_MIN_PAIRS) -> List[Tuple[int, int]]:
+    """The sol ranges of the Mastcam-Z rig epochs for the stereo pairs' sols ``pair_sols`` (one entry per pair): no
+    range spans more than ``max_span`` sols; a range with fewer than ``min_pairs`` pairs is joined to the neighbour
+    nearest in sol (the joined range can then exceed ``max_span``: a rig needs pairs to be measured)."""
+    psols = sorted(int(x) for x in pair_sols)
+    if not psols:
+        return []
+    eps = calib.sol_epochs(psols, max_span, (), max_span)
+    n_in = lambda e: sum(1 for x in psols if e[0] <= x <= e[1])                    # noqa: E731
+    while len(eps) > 1:
+        small = [e for e in eps if n_in(e) < min_pairs]
+        if not small:
+            break
+        e = min(small, key=n_in)
+        i = eps.index(e)
+        cands = [j for j in (i - 1, i + 1) if 0 <= j < len(eps)]
+        j = min(cands, key=lambda q: (eps[q][0] - e[1]) if q > i else (e[0] - eps[q][1]))
+        lo, hi = min(i, j), max(i, j)
+        eps = eps[:lo] + [(eps[lo][0], eps[hi][1])] + eps[hi + 1:]
+    return eps
+
+
+def zcam_rig_epochs(images: List[Dict[str, Any]], zrig: Dict[str, Any], families: Dict[str, str],
+                    max_span: float = ZCAM_RIG_EPOCH_MAX_SPAN_SOLS, min_pairs: int = ZCAM_RIG_EPOCH_MIN_PAIRS,
+                    ) -> Optional[Dict[str, Any]]:
+    """
+    0.97.0 (Christian, 12 Nov 2026: "mastcam-Z 34mm rigs should be split every 100 sols ... so that the sol span of
+    one z34 rig in a block is not longer than 100 sols"; Chal Rocks large: sols 72-100 and 361-378 on one rig).
+    Splits each zoom's virtual rig ``zrig["Z0nn"]`` into one rig per *epoch*: the stereo pairs' sols clustered so
+    that no cluster spans more than ``max_span`` sols (:func:`mppp.calib.sol_epochs`: visits more than ``max_span``
+    apart are separate, a longer visit is cut at its middle sol).  An epoch with fewer than ``min_pairs`` pairs joins
+    the neighbour nearest in sol.  The first epoch in sol order keeps the key ``Z0nn``; the later ones get a copy
+    ``Z0nn#k`` (same start rotation and translation, refined on their own), and every Mastcam-Z image row of that
+    zoom gets ``zcam_rig_epoch`` = k, which the bundle adjustment reads to pick the rig of a pair.  The intrinsics
+    are untouched: the focus bins are shared by the epochs.  Returns {"max_span_sols", "min_pairs", "zooms":
+    {"Z0nn": [{"index", "rig_key", "sols", "sol_median", "pairs"}]}} with the zooms that were split, else None.
+    """
+    import copy
+    table: Dict[str, Any] = {}
+    for fam in [k for k in list(zrig) if "#" not in k]:
+        zoom = fam[1:]
+        rows = [r for r in images if families.get(r.get("camera_group")) == "Z" and str(r.get("camera_group", ""))[2:] == zoom
+                and r.get("sol") is not None]
+        for r in rows:
+            r["zcam_rig_epoch"] = 0
+        by: Dict[Any, set] = {}
+        for r in rows:
+            by.setdefault(r.get("sclk_key"), set()).add(str(r["camera_group"])[:2])
+        pair_keys = {k for k, v in by.items() if {"ZL", "ZR"} <= v}
+        psols = sorted(int(r["sol"]) for r in rows if r.get("sclk_key") in pair_keys and str(r["camera_group"]).startswith("ZL"))
+        if not psols:
+            continue
+        eps = zcam_epoch_ranges(psols, max_span, min_pairs)
+        if len(eps) < 2:
+            continue
+        ent_tab = []
+        for k, (a, b) in enumerate(eps):
+            key = fam if k == 0 else f"{fam}#{k}"
+            mem = [x for x in psols if a <= x <= b]
+            ep = {"index": k, "sols": [int(a), int(b)], "sol_median": float(np.median(mem)), "pairs": len(mem)}
+            if k:
+                zrig[key] = dict(copy.deepcopy(zrig[fam]), n_pairs=len(mem))
+                zrig[key]["rotation_source"] = (str(zrig[fam].get("rotation_source", ""))
+                                                + f"; rig epoch {k} (sols {int(a)}-{int(b)}, {len(mem)} pairs)")
+            else:
+                zrig[fam]["n_pairs"] = len(mem)
+            zrig[key]["epoch"] = ep
+            ent_tab.append(dict(ep, rig_key=key))
+        bounds = [e[1] for e in eps[:-1]]
+        for r in rows:                                  # an unpaired frame's epoch is its sol's (no rig acts on it)
+            r["zcam_rig_epoch"] = int(sum(1 for hi in bounds if int(r["sol"]) > hi))
+        table[fam] = ent_tab
+        log.info(f"Mastcam-Z {zoom} mm rig: {len(eps)} epochs of at most {max_span:g} sols - "
+                    + ", ".join(f"{e['rig_key']} sols {e['sols'][0]}-{e['sols'][1]} ({e['pairs']} pairs)" for e in ent_tab))
+    if not table:
+        return None
+    return {"max_span_sols": float(max_span), "min_pairs": int(min_pairs), "zooms": table}
+
+
+def zcam_rig_key(vrig: Dict[str, Any], fam: str, row: Dict[str, Any]) -> str:
+    """The key in ``settings["zcam_virtual_rig"]`` of the rig that poses a right Mastcam-Z image: the zoom's (or, in
+    the joint's diagnostic pass, the block's: ``Z0nn@block``) rig of the image's epoch ``zcam_rig_epoch`` when that
+    rig exists (``...#k``), else the zoom's one rig (a joint over blocks has one rig for all)."""
+    k = row.get("zcam_rig_epoch")
+    if k:
+        key = f"{fam}#{int(k)}"
+        if key in vrig:
+            return key
+    return fam
 
 
 def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: float,

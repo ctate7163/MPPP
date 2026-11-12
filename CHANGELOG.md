@@ -46,6 +46,17 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   takes over. The linear depth pictures run to 50 m.
 - **Navcam law on the Mastcam-Z rig figure**: the promoted Navcam rig drift law, dashed green, in the pitch, roll
   and yaw panels (`plot_zcam_rig_trends(navcam_drift=...)`).
+- **Mastcam-Z rig epochs** (Christian, 12 Nov: "mastcam-Z 34mm rigs should be split every 100 sols ... so that the
+  sol span of one z34 rig in a block is not longer than 100 sols"). A zoom's rig in a block is split into one rig
+  per epoch of at most 100 sols of its stereo pairs (`sfm.project.zcam_rig_epochs`; keys `Z034`, `Z034#1` ...; an
+  epoch with fewer than 4 pairs joins its neighbour; every zoom, not 34 mm alone). The focus bins and intrinsics
+  are shared; only the rig differs. Chal Rocks large: sols 72-100 and 361-378. A joint over blocks keeps one rig;
+  its diagnostic pass gives such a block one rig per epoch, and the model file and the rig figure show each as
+  "block [sols a-b]". A Mastcam-Z site whose sols span more than 100 gets a new run key
+  (`zcam_rig_epoch_span_sols`), so it is aligned again; every other key is unchanged. Tested on synthetic rows
+  only.
+- **Top-down stereo 360 names** (Christian, 12 Nov): `<station>[_rover]_360_3DTD.jpg / .png / _16.png`, was
+  `..._ods_stereo_square...`; a folder made again loses the files under the old name.
 - **26 and 100 mm** are zooms MPPP aligns (`chal_rocks_large`, `seitah_overlook`). No focus model and no joint:
   their bin cameras start from the label model and refine in the block. 100 mm holds k2 = p1 = p2 = 0 as 79 mm does;
   nothing is held at 26 mm yet. Not aligned on real data before this release.

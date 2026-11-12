@@ -10,7 +10,7 @@ mppp.ibr.cli - ``mppp mesh``, ``mppp depthmaps``, ``mppp ods`` on one finished b
 ``mesh_preview.png``, ``maps/``, ``maps_report.{json,md}``, ``photometry/``, ``photometry_maps/``,
 ``photometry_jpg/`` (0.97.0: per image _rad, _depth_linear, _depth_log, _normal, _incidence, _emission, _phase,
 _shadow .jpg), ``photometry_report.json``, ``<station>_ods_left.png``, ``<station>_ods_right.png``,
-``<station>_ods_stereo_square.png/.jpg`` (``<station>_rover_...`` with ``--rover``), ``provenance.png``, ``ods.json``
+``<station>_360_3DTD.png/.jpg`` (``<station>_rover_...`` with ``--rover``), ``provenance.png``, ``ods.json``
 (``rover_deck.json`` with ``mesh --rover``).
 """
 from __future__ import annotations
@@ -200,7 +200,7 @@ def add_parsers(sub) -> None:
                    "goes together: NLF_... also drops its NRF_ partner)")
     p.add_argument("--bits", type=int, default=8, choices=[8, 16], help="16 (0.96.1): the frames made again from their "
                    "PDS products as 16-bit linear images (<project>/images16/, mppp.ibr.linear16), the panorama blended "
-                   "in them: <station>_ods_left_16.png, _right_16.png, _stereo_square_16.png (uint16 linear, for colour "
+                   "in them: <station>_ods_left_16.png, _right_16.png, _360_3DTD_16.png (uint16 linear, for colour "
                    "work) next to the 8-bit ones; saturated pixels neutral. Falls back to 8 bits where a product is "
                    "not found")
     p.add_argument("--pds", default=None, help="--bits 16: the PDS archive (default MPPP_PDS, else the one the block's "
@@ -221,7 +221,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--eyes", nargs="+", default=["left", "right"], choices=["left", "right", "centre"])
     p.add_argument("--no-gains", action="store_true", help="no gain compensation between the source frames")
     p.add_argument("--stack-top", default="left", choices=["left", "right"], help="the eye on top in "
-                   "<station>_ods_stereo_square.png / .jpg (default left: the left eye above the right; right before 10 Nov)")
+                   "<station>_360_3DTD.png / .jpg (default left: the left eye above the right; right before 10 Nov)")
     p.add_argument("--keep-head-hardware", action="store_true", help="--rover: keep the hardware fixed to the mast head "
                    "(the wind-sensor booms; default: masked, found as what the rover mask covers at the same pixels in the "
                    "frames of one eye and elevation)")
@@ -241,7 +241,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and the square again from the "
                    "16-bit ones in the folder (--tone auto; no rendering)")
     p.add_argument("--stack-only", action="store_true", help="only stack the eye images already in the folder into "
-                   "ods_stereo_square.png / .jpg (no rendering)")
+                   "360_3DTD.png / .jpg (no rendering)")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
                    "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
     _rover_args(p)

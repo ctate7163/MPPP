@@ -91,7 +91,7 @@ SQUARES_BAT = BAT.replace("REM run_single_site_ibr.bat [LABEL ...] [--steps ...]
                           "REM make_square.bat [LABEL ...]  (written by python -m mppp single-sites --install)")
 SQUARES_BAT = SQUARES_BAT.replace("REM 2. python -m mppp single-sites with the arguments given: the stations of src\\mppp\\data\\single_sites.json",
                                   "REM 2. python -m mppp single-sites --squares-only: every station's two eye images already there stacked into\n"
-                                  "REM    <station>[_rover]_ods_stereo_square.jpg / .png, the left eye on top (Christian, 10 Nov); nothing rendered")
+                                  "REM    <station>[_rover]_360_3DTD.jpg / .png, the left eye on top (Christian, 10 Nov); nothing rendered")
 SQUARES_BAT = SQUARES_BAT.replace("python -m mppp single-sites %*", "python -m mppp single-sites --squares-only %*")
 assert "--squares-only %*" in SQUARES_BAT and "make_square.bat [LABEL" in SQUARES_BAT
 
@@ -208,7 +208,7 @@ def _summary_line(run: Dict[str, Any], variant: str, codes: Dict[str, int]) -> s
         c = o["eyes"]["left"]["coverage"]
         cells.append(f"mesh {100 * c['mesh']:.0f} %, plane {100 * c.get('plane', 0):.0f} %, far {100 * c['far']:.0f} %, "
                      f"coloured {100 * c['coloured']:.0f} %")
-        cells.append("yes" if any(out.glob("*ods_stereo_square.jpg")) else "no")
+        cells.append("yes" if any(out.glob("*360_3DTD.jpg")) else "no")
     except (OSError, ValueError, KeyError):
         cells += ["-", "-"]
     return "| " + " | ".join(cells) + " |"
@@ -295,7 +295,7 @@ def add_parser(sub) -> None:
     p.add_argument("--steps", nargs="+", default=list(STEPS), choices=STEPS)
     p.add_argument("--variants", nargs="+", default=None, choices=VARIANTS)
     p.add_argument("--squares-only", action="store_true", help="only stack the eye images already there into "
-                   "ods_stereo_square.jpg / .png")
+                   "360_3DTD.jpg / .png")
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and squares again from the "
                    "16-bit ones already there (no rendering)")
     p.add_argument("--list", action="store_true", help="the stations of the config")

@@ -720,7 +720,11 @@ def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int) -> Pat
 
 LINEAR_TOP = 65535.0 / 64.0      # the 16-bit ceiling in 8-bit units
 SAT_DOWNWEIGHT = 0.98            # a saturated source pixel keeps this much less weight in the blend
-STACK_NAME = "ods_stereo_square"     # .png and .jpg: the left eye on top of the right (Christian, 10 Nov: "put the left view on top")
+STACK_NAME = "360_3DTD"              # .png and .jpg: the left eye on top of the right (Christian, 10 Nov: "put the left view on
+#                                      top"); 0.97.0 (Christian, 12 Nov 2026: "remove '_ods_stereo_square' and add '_360_3DTD' to every top
+#                                      down 360 image product so that meta knows how to project it"): <prefix>_360_3DTD.jpg, was
+#                                      <prefix>_ods_stereo_square.jpg
+OLD_STACK_NAME = "ods_stereo_square"
 OLD_NAMES = ("ods_left.png", "ods_right.png", "ods_stereo_square.png", "ods_stereo_square.jpg")
 
 
@@ -731,8 +735,26 @@ def ods_prefix(station_label: str, rover: bool = False) -> str:
 
 
 def ods_file(out_dir: PathLike, kind: str, prefix: str = "", ext: str = ".png") -> Path:
-    """``<prefix>_ods_<kind><ext>`` (kind left / right / stereo_square); ``ods_<kind><ext>`` without a prefix."""
+    """``<prefix>_ods_<kind><ext>`` (kind left / right / centre; the top-down square: :func:`stack_file`); ``ods_<kind><ext>`` without a prefix."""
     return Path(out_dir) / f"{(prefix + '_') if prefix else ''}ods_{kind}{ext}"
+
+
+def stack_file(out_dir: PathLike, prefix: str = "", ext: str = ".png", suffix: str = "") -> Path:
+    """The top-down stereo 360 (left eye above the right): ``<prefix>_360_3DTD<suffix><ext>`` (``suffix`` "_16": the
+    16-bit linear one); ``360_3DTD...`` without a prefix."""
+    return Path(out_dir) / f"{(prefix + '_') if prefix else ''}{STACK_NAME}{suffix}{ext}"
+
+
+def drop_old_stacks(out_dir: PathLike, prefix: str = "") -> List[str]:
+    """Removes the same station's squares under the old name (``<prefix>_ods_stereo_square[_16].png/.jpg``), so a
+    folder made again holds one top-down image per kind.  Returns the names removed."""
+    gone = []
+    for suffix, ext in (("", ".png"), ("", ".jpg"), ("_16", ".png")):
+        f = Path(out_dir) / f"{(prefix + '_') if prefix else ''}{OLD_STACK_NAME}{suffix}{ext}"
+        if f.is_file():
+            f.unlink()
+            gone.append(f.name)
+    return gone
 
 
 def find_prefix(out_dir: PathLike) -> str:
@@ -746,7 +768,7 @@ def find_prefix(out_dir: PathLike) -> str:
 
 def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, prefix: Optional[str] = None,
                square_prefix: Optional[str] = None, suffix: str = "") -> Dict[str, Any]:
-    """``<prefix>_ods_stereo_square.png`` / ``.jpg``: the two eye images stacked into one square (W x W) - ``top``
+    """``<prefix>_360_3DTD.png`` / ``.jpg`` (0.97.0; ``_ods_stereo_square`` before): the two eye images stacked into one square (W x W) - ``top``
     eye above (Christian, 10 Nov: "make a version with the ods_right.png stacked on top of the ods_left so that it is
     a square that I can upload").  ``prefix`` None: that of the eye images in ``out_dir``; ``square_prefix`` (default
     ``prefix``): the square's, e.g. ``S003D2046`` for eye images still named without one.  Returns {"png", "jpg",
@@ -762,9 +784,10 @@ def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, pre
         if a is None or b is None or a.shape != b.shape:
             raise FileNotFoundError(f"{out}: the two {suffix} eye images are needed, of one size")
         sp = prefix if square_prefix is None else square_prefix
-        png = ods_file(out, "stereo_square" + suffix, sp)
+        png = stack_file(out, sp, ".png", suffix)
         sq = np.vstack([a, b])
         cv2.imwrite(str(png), sq)
+        drop_old_stacks(out, sp)
         return {"png": str(png), "size": [int(sq.shape[1]), int(sq.shape[0])], "top": top, "bits": 16}
     a, b = cv2.imread(str(ods_file(out, top, prefix))), cv2.imread(str(ods_file(out, other, prefix)))
     if a is None or b is None:
@@ -774,9 +797,10 @@ def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, pre
         raise ValueError(f"{out}: the eye images differ in size ({a.shape} vs {b.shape})")
     sq = np.vstack([a, b])
     sp = prefix if square_prefix is None else square_prefix
-    png, jpg = ods_file(out, "stereo_square", sp), ods_file(out, "stereo_square", sp, ".jpg")
+    png, jpg = stack_file(out, sp), stack_file(out, sp, ".jpg")
     cv2.imwrite(str(png), sq)
     cv2.imwrite(str(jpg), sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
+    drop_old_stacks(out, sp)
     return {"png": str(png), "jpg": str(jpg), "size": [int(sq.shape[1]), int(sq.shape[0])], "top": top}
 
 
@@ -819,7 +843,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    ground_fill: bool = True, mask_mast: bool = True,
                    tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
-    ``<prefix>_ods_stereo_square.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
+    ``<prefix>_360_3DTD.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``S003D2046`` / ``S003D2046_rover``); '' for the bare names.  Returns the record."""
     import cv2
     out = Path(out_dir)

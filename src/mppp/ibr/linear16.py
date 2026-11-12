@@ -342,6 +342,8 @@ def retone(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int 
         del a
     other = "right" if top == "left" else "left"
     sq = np.vstack([imgs[top], imgs[other]])
-    cv2.imwrite(str(out / f"{pre}ods_stereo_square.png"), sq)
-    cv2.imwrite(str(out / f"{pre}ods_stereo_square.jpg"), sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
-    return {"levels_16bit_units": [float(v) for v in levels], "square": str(out / f"{pre}ods_stereo_square.jpg"), "top": top}
+    from .ods import STACK_NAME, drop_old_stacks
+    cv2.imwrite(str(out / f"{pre}{STACK_NAME}.png"), sq)
+    cv2.imwrite(str(out / f"{pre}{STACK_NAME}.jpg"), sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
+    drop_old_stacks(out, pre[:-1] if pre.endswith("_") else pre)
+    return {"levels_16bit_units": [float(v) for v in levels], "square": str(out / f"{pre}{STACK_NAME}.jpg"), "top": top}

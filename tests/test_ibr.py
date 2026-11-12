@@ -427,14 +427,14 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert json.loads((outr / "ods.json").read_text(encoding="utf-8"))["rover"] == "shown"
     assert (out / "S003D0010_ods_left.png").is_file() and (outr / "S003D0010_rover_ods_left.png").is_file()     # both variants side by side
     assert not (outr / "S003D0010_ods_left.png").is_file()                                    # 10 Nov: the station prefix
-    sq = cv2.imread(str(out / "S003D0010_ods_stereo_square.jpg"))                             # left eye on top: a square
-    assert sq.shape == (256, 256, 3) and (out / "S003D0010_ods_stereo_square.png").is_file()
+    sq = cv2.imread(str(out / "S003D0010_360_3DTD.jpg"))                             # left eye on top: a square
+    assert sq.shape == (256, 256, 3) and (out / "S003D0010_360_3DTD.png").is_file()
     Lp, Rp = cv2.imread(str(out / "S003D0010_ods_left.png")), cv2.imread(str(out / "S003D0010_ods_right.png"))
-    sqp = cv2.imread(str(out / "S003D0010_ods_stereo_square.png"))
+    sqp = cv2.imread(str(out / "S003D0010_360_3DTD.png"))
     assert np.array_equal(sqp[:128], Lp) and np.array_equal(sqp[128:], Rp)                   # 10 Nov: left on top
-    (out / "S003D0010_ods_stereo_square.png").unlink()
+    (out / "S003D0010_360_3DTD.png").unlink()
     assert mppp_main(["ods", work, "--station", "3_10", "--mask-rover", "--stack-only", "--stack-top", "right"]) == 0
-    assert np.array_equal(cv2.imread(str(out / "S003D0010_ods_stereo_square.png"))[:128], Rp)
+    assert np.array_equal(cv2.imread(str(out / "S003D0010_360_3DTD.png"))[:128], Rp)
 
 
 # ----------------------------------------------------------------------------- 9 Nov evening: what the Rockytop run found
@@ -1113,7 +1113,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
             out.mkdir(parents=True, exist_ok=True)
             (out / "ods.json").write_text(json.dumps({"eyes": {"left": {"coverage": {"mesh": 0.2, "plane": 0.3, "far": 0.5,
                                                                                       "coloured": 0.9}}}}), encoding="utf-8")
-            (out / "S003D0010_ods_stereo_square.jpg").write_bytes(b"x")
+            (out / "S003D0010_360_3DTD.jpg").write_bytes(b"x")
         return 0
     monkeypatch.setattr(SS, "_run", fake_run)
     rc = SS.run_all(runs, root / "single_sites")
@@ -1257,7 +1257,7 @@ def test_mesh_with_the_deck_floor(tmp_path):
 def test_exclude_pairs_and_prefix(tmp_path):
     from types import SimpleNamespace
     from mppp.ibr.cli import _frames, _pair_key
-    from mppp.ibr.ods import ods_file, ods_prefix, find_prefix
+    from mppp.ibr.ods import ods_file, ods_prefix, find_prefix, stack_file
     a, b = "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01", "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"
     assert _pair_key(a) == _pair_key(b + ".png") and _pair_key(a) != _pair_key(a.replace("0707875039", "0707875040"))
     st = SimpleNamespace(label="S026D0630", images=[a + ".png", b + ".png", "NLF_0461_1_x.png", "NRF_0461_1_x.png"])
@@ -1266,7 +1266,7 @@ def test_exclude_pairs_and_prefix(tmp_path):
     assert got == ["NLF_0461_1_x.png", "NRF_0461_1_x.png"]
     assert ods_prefix("S003D2046") == "S003D2046" and ods_prefix("S003D2046", rover=True) == "S003D2046_rover"
     assert ods_file(tmp_path, "left", "S003D2046").name == "S003D2046_ods_left.png"
-    assert ods_file(tmp_path, "stereo_square", "", ".jpg").name == "ods_stereo_square.jpg"
+    assert stack_file(tmp_path, "", ".jpg").name == "360_3DTD.jpg"
     (tmp_path / "S003D2046_rover_ods_left.png").write_bytes(b"x")
     assert find_prefix(tmp_path) == "S003D2046_rover"
 
@@ -1280,7 +1280,7 @@ def test_squares_left_on_top_named_by_station(tmp_path):
     cv2.imwrite(str(tmp_path / "ods_left.png"), L)              # eye images named before 10 Nov
     cv2.imwrite(str(tmp_path / "ods_right.png"), R)
     r = stack_eyes(tmp_path, square_prefix="S003D2046")
-    sq = cv2.imread(str(tmp_path / "S003D2046_ods_stereo_square.png"))
+    sq = cv2.imread(str(tmp_path / "S003D2046_360_3DTD.png"))
     assert r["top"] == "left" and sq.shape == (16, 16, 3) and np.array_equal(sq[:8], L) and np.array_equal(sq[8:], R)
     f = SS.install(tmp_path / "bats")
     b = (tmp_path / "bats" / "make_square.bat").read_text()
@@ -1401,9 +1401,9 @@ def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
                           exposure16=1.0, tone="clip", eyes=("left",))
     e2 = cv2.imread(str(tmp_path / "o16b" / "S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)[35, 32]
     assert abs(int(e2[1]) - 255 * 3 * 64) < 300 and r2["linear16"]["view_levels_8bit_units"] is None
-    sq = cv2.imread(str(out / "S003D0010_ods_stereo_square_16.png"), cv2.IMREAD_UNCHANGED)
+    sq = cv2.imread(str(out / "S003D0010_360_3DTD_16.png"), cv2.IMREAD_UNCHANGED)
     assert sq.dtype == np.uint16 and sq.shape == (256, 256, 3) and np.array_equal(sq[:128], L16[..., ::-1])
-    assert (out / "S003D0010_ods_stereo_square.jpg").is_file()
+    assert (out / "S003D0010_360_3DTD.jpg").is_file()
     # a frame without its 16-bit image: the 8-bit panorama, and the record says so
     (d16 / st.images[1]).unlink()
     r8 = O.render_station(proj, rec, st, scene, tmp_path / "o8", width=128, scale=0.5, rows_per_chunk=32, bits=16, gains=False)
@@ -1447,7 +1447,7 @@ def test_retone_from_the_16bit_panoramas(tmp_path):
         a[:32] = 9000
         cv2.imwrite(str(tmp_path / f"S1_rover_ods_{eye}_16.png"), a)
     r = retone(tmp_path, "S1_rover")
-    sq = cv2.imread(str(tmp_path / "S1_rover_ods_stereo_square.jpg"))
+    sq = cv2.imread(str(tmp_path / "S1_rover_360_3DTD.jpg"))
     L8 = cv2.imread(str(tmp_path / "S1_rover_ods_left.png"))
     assert sq.shape == (128, 128, 3) and 80 < np.median(L8[32:]) < 120 and L8[:32].min() > 180 and r["top"] == "left"
 

@@ -823,3 +823,45 @@ def test_navcam_rig_epochs_small_epoch_joined():
     info = navcam_rig_epochs(images, rig, 50.0, cameras=cams, breaks=(300.0,))
     assert [e["sols"] for e in info["epochs"]] == [[174, 176], [341, 505]] and info["merged_small_epochs"]
     assert {r["rig_epoch"] for r in images if r["sol"] == 341} == {1}
+
+
+def test_zcam_rig_epochs_span_at_most_100_sols():
+    """0.97.0 (Christian, 12 Nov 2026: "the sol span of one z34 rig in a block is not longer than 100 sols"): Chal
+    Rocks large's two visits get a rig each; the bundle adjustment's key falls back to the zoom's rig in a joint."""
+    from mppp.sfm.project import zcam_epoch_ranges, zcam_rig_epochs, zcam_rig_key
+    assert zcam_epoch_ranges([72] * 6 + [100] * 5 + [361] * 8 + [378] * 4) == [(72, 100), (361, 378)]
+    assert zcam_epoch_ranges([10] * 5 + [90] * 5) == [(10, 90)]                         # 80 sols: one rig
+    assert zcam_epoch_ranges([10] * 5 + [150] * 5 + [300] * 5) == [(10, 10), (150, 150), (300, 300)]
+    assert zcam_epoch_ranges([72] * 9 + [361] * 2) == [(72, 361)]                       # too few pairs: joined
+    assert zcam_epoch_ranges([0] * 5 + [60] * 5 + [120] * 5) == [(0, 60), (120, 120)]   # a 120-sol visit cut at its middle
+    images = []
+    for i, sol in enumerate([72] * 5 + [100] * 5 + [361] * 6 + [378] * 6):
+        for eye in ("ZL", "ZR"):
+            images.append({"name": f"{eye}_{i}", "camera_group": f"{eye}034", "sol": sol, "sclk_key": f"k{i}"})
+    images.append({"name": "ZL_single", "camera_group": "ZL034", "sol": 370, "sclk_key": "alone"})
+    images.append({"name": "ZL110", "camera_group": "ZL110", "sol": 80, "sclk_key": "z"})
+    images.append({"name": "ZR110", "camera_group": "ZR110", "sol": 80, "sclk_key": "z"})
+    fam = {"ZL034": "Z", "ZR034": "Z", "ZL110": "Z", "ZR110": "Z"}
+    zrig = {"Z034": {"R_sensor_from_ref": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "t_sensor_from_ref": [-0.243, 0, 0], "hold": False,
+                     "rotation_source": "model"},
+            "Z110": {"R_sensor_from_ref": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "t_sensor_from_ref": [-0.243, 0, 0], "hold": False}}
+    tab = zcam_rig_epochs(images, zrig, fam)
+    assert set(zrig) == {"Z034", "Z034#1", "Z110"} and list(tab["zooms"]) == ["Z034"]
+    assert [e["sols"] for e in tab["zooms"]["Z034"]] == [[72, 100], [361, 378]] and tab["max_span_sols"] == 100.0
+    assert zrig["Z034#1"]["t_sensor_from_ref"] == zrig["Z034"]["t_sensor_from_ref"] and zrig["Z034#1"]["n_pairs"] == 12
+    by = {r["name"]: r for r in images}
+    assert by["ZR_0"]["zcam_rig_epoch"] == 0 and by["ZR_15"]["zcam_rig_epoch"] == 1 and by["ZL_single"]["zcam_rig_epoch"] == 1
+    assert zcam_rig_key(zrig, "Z034", by["ZR_15"]) == "Z034#1" and zcam_rig_key(zrig, "Z034", by["ZR_0"]) == "Z034"
+    assert zcam_rig_key({"Z034": {}}, "Z034", by["ZR_15"]) == "Z034"                    # a joint: one rig for all
+    assert zcam_rig_key({"Z034@blk": {}, "Z034@blk#1": {}}, "Z034@blk", by["ZR_15"]) == "Z034@blk#1"   # the diagnostic pass
+
+
+def test_run_key_changes_only_for_zcam_sites_over_100_sols(tmp_path, monkeypatch):
+    from mppp.pipeline import Settings, resolve_site, run_key
+    s = Settings(scapes_root=str(tmp_path), include_zcam=True)
+    _, a = resolve_site("chal_rocks_large", s)
+    _, b = resolve_site("butler_landing", s)
+    assert a.zcam_rig_epoch_span_sols == 100.0 and b.zcam_rig_epoch_span_sols is None
+    assert "zcam_rig_epoch_span_sols" in a.key_dict() and "zcam_rig_epoch_span_sols" not in b.key_dict()
+    _, n = resolve_site("chal_rocks_large", Settings(scapes_root=str(tmp_path)))        # the Navcam block: no change
+    assert n.zcam_rig_epoch_span_sols is None
