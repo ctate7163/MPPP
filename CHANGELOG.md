@@ -89,8 +89,10 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   plate's centre line at Van Zyl sol 52), then the elbow +2.5 and the wrist -2.5 deg ("bring it down a little while
   leaving the far side of the forearm in place": the turret 3 cm lower). In NLF_0052_0671564132, which shows the
   whole arm and was not used for the fit, the plate, the elbow, PIXL and the dome fall on the frame's. The ribbed
-  block on the deck is turned 30 deg in azimuth about its own centre (`BODY_TURNS`; a lean about its long axis was
-  the wrong axis). Decimated triangles farther than 12 mm from the model they came from are removed (4, in the
+  block on the deck is turned 30 deg in azimuth about its -y end, the right end as the mast cameras see it, which stays in place
+  (`BODY_TURNS`; first about its own centre; a lean about its long axis was the wrong axis). Checked afterwards
+  against three later frames (sols 1431, 1463, 1470): turret dome and instrument box within about 30 px, except the
+  dome about 80 px high on sol 1463; no refit. Decimated triangles farther than 12 mm from the model they came from are removed (4, in the
   suspension). Chosen by eye
   from renders through the label cameras of three frames (Rockytop sol 461 x 2, Van Zyl sol 52): the dish's outline
   falls on the dish in both antenna frames; the turret's dome, PIXL, bit and top instruments within about 20 px.

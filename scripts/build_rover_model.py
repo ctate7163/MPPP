@@ -48,8 +48,10 @@ ARM_STOW_DEG = (90.0, 14.5, 68.8, -89.4, 77.5)       # 0.97.0 (Christian, 12 Nov
 # should be rotated 30-45 degrees" ... "rotate it in azimuth back 30 degrees"): the ribbed block of the body (a
 # connected component 21 cm along y, 7 cm tall, centred at near_m) turned 30 deg about the vertical through its own
 # centre, so that its ribbed face looks towards the mast as in NRF_0461_0707874458 (-30 in turn_components' sense;
-# +30 shows it end on).  A lean about its long axis (tried first) was the wrong axis.
-BODY_TURNS = ({"near_m": (-0.323, -0.088, -0.048), "pivot_xy_m": (-0.323, -0.088), "angle_deg": -30.0},)
+# +30 shows it end on).  A lean about its long axis (tried first) was the wrong axis.  Then ("the back thing should
+# be anchored on the right side and then rotated so that its right extent stays in place"): the pivot is the block's
+# -y end (y = -0.194 m, the right end as the mast cameras see it looking aft, by the roller bracket), not its centre.
+BODY_TURNS = ({"near_m": (-0.323, -0.088, -0.048), "pivot_xy_m": (-0.323, -0.194), "angle_deg": -30.0},)
 STRAY_M = 0.012              # a decimated triangle this far from the model it was made from is a stray one
 HGA_NODES = ("antenna_hg",)
 HGA_AZ_DEG = 90.0            # 0.97.0 (Christian, 12 Nov 2026: "put the high gain antenna back in and have it point in a
