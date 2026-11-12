@@ -9,6 +9,11 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 fails a block; two independent validation tests and a ledger of what is validated; the single-station products
 share one viewpoint and one tone scale, and their pictures are jpg.
 
+- **Freeze on 0.97, from the beginning** (Christian, 12 Nov: "restart the freeze from the beginning using the
+  improved alignment rules. Make sure that seitah overlook uses a min of 0.1 deg parallax"). `freeze.bat --fresh`
+  sets the status of the run before aside (`freeze_status_before_<time>.json`) so that every step runs again; the
+  driver needs MPPP 0.97.x and tags its outputs `freeze_097`. `seitah_overlook` has `min_tri_angle_deg` 0.10 in its
+  site settings (0.25 stays the rule elsewhere).
 - **Rover model placed by its deck targets** (Christian, 12 Nov: "find the fiducials on the 3D model deck and say if
   they are consistent with the surveyed locations"). NASA's model has the ten deck targets as 24 mm discs. Seven
   (TDF1-4, LDIFF, RDIFF, AFT1) fit the survey rigidly to 2.2 mm rms; RPFA1, RPFA2 and AFT2 are 6-18 mm off in the

@@ -11,6 +11,8 @@ REM   freeze.bat --mask-model auto      wait for the mask training under way and
 REM                                     when it beats the blocks' model by 0.01 exclusion IoU (--mask-margin), else
 REM                                     the blocks' model stays (default --mask-model keep: no image processed again)
 REM   freeze.bat --update-code          the checkout brought up to this tree's main (git pull --ff-only); nothing started
+REM   freeze.bat --fresh --now          0.97.0: from the beginning - the status of the run before is set aside,
+REM                                     every step runs again (refused while a freeze is alive)
 REM   freeze.bat --now                  start once the pipeline lock is free (do not wait for the first chain)
 REM   freeze.bat --redo zjoints         a step again;   freeze.bat --only deck   one step
 REM   freeze.bat --zcam-waive-aspect    (default 63 79 110) the zooms whose per-block aspect gate is waived
@@ -23,7 +25,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 for %%I in ("%~dp0..\..") do set "MPPP_MAIN=%%~fI"
 if not defined MPPP_FREEZE_ROOT set "MPPP_FREEZE_ROOT=D:\rover_blocks"
 if not defined MPPP_FREEZE_CODE set "MPPP_FREEZE_CODE=D:\code\MPPP_freeze"
-title MPPP freeze (0.96) - %MPPP_FREEZE_ROOT%
+title MPPP freeze (0.97) - %MPPP_FREEZE_ROOT%
 call "%MPPP_MAIN%\scripts\windows\mppp_env.bat"
 if errorlevel 1 (
   echo freeze: no Python with mppp found - not started

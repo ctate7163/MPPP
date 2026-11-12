@@ -74,7 +74,7 @@ from .freeze_chain import (ChainStopped, RUNONCE_KEY, STOP_MARKER, WINDOWS, free
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 STEPS = ("wait", "mask", "cmods", "zjoints", "zfinal", "ecam", "nz", "deck", "ztests", "studies", "report")
-TAG = "freeze_096"
+TAG = "freeze_097"            # 0.97.0 (12 Nov): the run restarted from the beginning on the 0.97 rules
 ZOOMS = (34, 48, 63, 79, 110)
 WAIVE_ASPECT = (63, 79, 110)          # Christian, 8 Nov: "update the z63, z79, z110 models that are good enough"
 DECK_BLOCKS = {                       # the Z34 deck pans (sequence, sol, station) and their blocks
@@ -89,7 +89,7 @@ JOINT_GROUP = "zcam34_joint,zcam_consensus"
 OLD_CHAIN_ROOT_STEPS = ("studies", "figures", "maps", "aspect_geometry", "s6")
 STALE_S = 900
 LOGON_TASK = "MPPP freeze"
-REQUIRED_VERSION = "0.96"
+REQUIRED_VERSION = "0.97"
 DEFAULT_MASK = "mppp_mask_v3"         # the registry default: what a block without mask_checkpoint was processed with
 STATUS_FILE, LOG_FILE, REPORT_FILE = "freeze_status.json", "freeze_log.txt", "freeze_report.md"
 
@@ -846,7 +846,7 @@ def parser() -> argparse.ArgumentParser:
                     help="the run's camera models (MPPP_CMODS of every step)")
     ap.add_argument("--cmods-from", default=r"D:\scapes\cmods", help="the models in use the folder is seeded from")
     ap.add_argument("--candidate", default=None, help="a folder of models promoted into --cmods when it holds no freeze rig")
-    ap.add_argument("--candidate-note", default="freeze (0.96): the candidate models promoted at the start of the run")
+    ap.add_argument("--candidate-note", default="freeze (0.97): the candidate models promoted at the start of the run")
     ap.add_argument("--mask-model", default="keep", metavar="keep|auto|FILE|NAME",
                     help="the mask model of the blocks (see above; default keep)")
     ap.add_argument("--mask-tag", default=None, help="auto: the training's --tag (default: the newest training)")
@@ -868,6 +868,9 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--now", action="store_true", help="start once the pipeline lock is free")
     ap.add_argument("--max-wait-h", type=float, default=24 * 7)
     ap.add_argument("--redo", nargs="*", choices=STEPS, default=[])
+    ap.add_argument("--fresh", action="store_true",
+                    help="0.97.0: start from the beginning - the status of the run before is set aside "
+                         "(freeze_status_before_<time>.json), no step counts as done; refused while a run is alive")
     ap.add_argument("--only", choices=STEPS, default=None)
     ap.add_argument("--report-copy", default=None, help="a folder the report is copied to")
     ap.add_argument("--no-logon-task", action="store_true")
@@ -886,11 +889,23 @@ def main(argv=None) -> int:
         return show_status(Run(a, read_only=True))
     if a.update_code:
         return update_code(a)
+    aside = None
+    if a.fresh and not a.dry_run:                            # 0.97.0: the run before set aside, its files kept
+        r0 = Run(a, read_only=True)
+        pid = r0.alive_before()
+        if pid:
+            print(f"not started: a freeze is running on {r0.root} (pid {pid}) - stop it first (stop_mppp.bat)")
+            return 2
+        if r0.status_file.is_file():
+            aside = r0.status_file.with_name(f"freeze_status_before_{datetime.datetime.now():%Y%m%d_%H%M%S}.json")
+            r0.status_file.replace(aside)
     r = Run(a)
     pid = r.alive_before()
     if pid:
         r.log(f"not started: a freeze is already running on {r.root} (pid {pid}) - one window only")
         return 2
+    if aside is not None:
+        r.log(f"--fresh: the status of the run before is in {aside.name}; every step runs again")
     r.status["state"] = "running"
     r.status.pop("ended", None)
     r.status.pop("stopped_by", None)

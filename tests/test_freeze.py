@@ -214,7 +214,7 @@ def test_version_gate(tmp_path, monkeypatch):
     monkeypatch.setattr(fz, "code_version", lambda r: "0.95.5 D:\\code\\MPPP_freeze2\\src\\mppp\\__init__.py")
     assert _run(root) == 1
     assert _status(root)["state"] == "failed"
-    assert "needs MPPP 0.96.x" in (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert "needs MPPP 0.97.x" in (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
     (root / "cmods").mkdir()
     (root / "cmods" / "M2020_N_rig.json").write_text(json.dumps({"source": "freeze"}), encoding="utf-8")
     assert _run(root, "--any-version") == 0
@@ -426,3 +426,27 @@ def test_the_block_passes_get_the_long_time_limit(tmp_path, monkeypatch):
     r = fz.Run(fz.parser().parse_args(["--root", str(root), "--code", str(fz.REPO), "--cmods", str(root / "cmods")]))
     r.pipeline("zjoints", "--from", "zcam_runs")
     assert cmds[0][cmds[0].index("--sites-timeout-h") + 1] == "168"
+
+
+def test_fresh_sets_the_old_status_aside(tmp_path, monkeypatch):
+    """0.97.0 (12 Nov): --fresh starts from the beginning; the status of the run before is kept under another name."""
+    root = _root(tmp_path)
+    d = root / "mppp_pipeline"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / fz.STATUS_FILE).write_text(json.dumps({"started": "2026-11-09T00:00:00", "tag": "freeze_096", "state": "stopped",
+                                                "steps": {"zjoints": {"state": "done"}}}), encoding="utf-8")
+    monkeypatch.setattr(fz, "code_version", lambda r: "0.97.0 x")
+    monkeypatch.setattr(fz.Run, "guarded", lambda self, s, f: None)
+    for n in ("keep_awake", "logon_task_register", "logon_task_delete", "free_gb"):
+        monkeypatch.setattr(fz, n, lambda *a, **k: None)
+    fz.main(["--root", str(root), "--code", str(tmp_path), "--fresh", "--now", "--no-logon-task"])
+    old = list(d.glob("freeze_status_before_*.json"))
+    assert len(old) == 1 and json.loads(old[0].read_text(encoding="utf-8"))["tag"] == "freeze_096"
+    new = json.loads((d / fz.STATUS_FILE).read_text(encoding="utf-8"))
+    assert new["tag"] == "freeze_097" and "zjoints" not in new["steps"]
+
+
+def test_seitah_overlook_parallax():
+    from mppp.pipeline import load_settings
+    assert load_settings(site="seitah_overlook").min_tri_angle_deg == 0.10
+    assert load_settings(site="chal_rocks_large").min_tri_angle_deg == 0.25
