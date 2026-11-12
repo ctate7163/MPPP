@@ -27,7 +27,7 @@ import numpy as np
 
 ARM_CHAIN = ("arm.003", "arm.002", "arm", "arm.004", "turret_obj")
 ARM_AXES = ("y", "z", "z", "z", "y")
-ARM_STOW_DEG = (96.0, 20.4, 71.9, -93.3, 85.0)       # 0.97.0 (Christian, 12 Nov 2026: "The turret needs to be rotate 180 so
+ARM_STOW_DEG = (90.0, 14.5, 66.3, -86.9, 77.5)       # 0.97.0 (Christian, 12 Nov 2026: "The turret needs to be rotate 180 so
 # that the drill points out and pixl toward the mast. the PERSEVERANCE plate on the arm can rotate up a little"): the
 # turret turned by 175 deg (-90.1 -> 85.0), the wrist -103.3 -> -93.3 and the shoulder elevation 16.4 -> 20.4, chosen
 # by eye from renders of the model through the label camera of NLF_0461_0707871340 (Rockytop S026D0630) against the
@@ -35,7 +35,18 @@ ARM_STOW_DEG = (96.0, 20.4, 71.9, -93.3, 85.0)       # 0.97.0 (Christian, 12 Nov
 # Then the shoulder azimuth 89.2 -> 96.0 (Christian: "align the PERSEVERANCE plate on the front forearm"): the forearm's
 # slope in NRF_0052_0671568531 (Van Zyl S003D2046) - 38 deg below the image's horizontal at 94, about 43 in the
 # frame - with the turret in the Rockytop frame still in place.
+# Then (Christian: "az90 is more right for that joint", "the turret ... maybe down just a little"): the shoulder
+# azimuth held at 90 and the other four angles fitted by least squares to marked points - the drill's dome, PIXL and
+# the bit in NLF_0461_0707871340 (Rockytop), PIXL and the nameplate's centre line in NRF_0052_0671568531 (Van Zyl):
+# (14.5, 66.3, -86.9, 77.5), rms 44 px at half resolution (the marks are good to 20-30 px); with the azimuth free the
+# same fit gives 90.9.
 # Before (10 Nov): the fit to the Van Zyl cloud, which left the turret's own angle the least certain - it was 180 deg off.
+# 0.97.0 (Christian, 12 Nov 2026: "there's a black rubber thing on the far side of the middle deck at looks like it
+# should be rotated 30-45 degrees"): the ribbed block of the body (a connected component 21 cm along y, 7 cm tall,
+# centred at near_m) stands upright in NASA's model; in the frames it leans.  Turned 40 deg about its long axis
+# through its foot (the line along y at pivot_xz_m), chosen from renders against NRF_0461_0707874458: at +40 its
+# ribbed face shows as in the frame; -40, and +-37 about the vertical, do not.
+BODY_TURNS = ({"near_m": (-0.323, -0.088, -0.048), "axis": "y", "pivot_xz_m": (-0.323, -0.013), "angle_deg": 40.0},)
 STRAY_M = 0.012              # a decimated triangle this far from the model it was made from is a stray one
 HGA_NODES = ("antenna_hg",)
 HGA_AZ_DEG = 90.0            # 0.97.0 (Christian, 12 Nov 2026: "put the high gain antenna back in and have it point in a
@@ -74,6 +85,47 @@ def _local(n):
     if "translation" in n:
         T[:3, 3] = n["translation"]
     return T
+
+
+def turn_components(v: np.ndarray, f: np.ndarray, turns=None) -> np.ndarray:
+    """``v`` with the connected components named by BODY_TURNS (centroid within 2 cm of ``near_m``) turned by
+    ``angle_deg`` about the vertical through ``pivot_xy_m`` (RMECH; positive: the -y end swings to -x), or - ``axis``
+    "y" - about the line along y through (x, z) = ``pivot_xz_m``."""
+    import trimesh
+    turns = BODY_TURNS if turns is None else turns
+    lo, hi = v.min(0), v.max(0)
+    todo = [t for t in turns if np.all(np.asarray(t["near_m"]) > lo - 0.05) and np.all(np.asarray(t["near_m"]) < hi + 0.05)]
+    if not todo:
+        return v
+    v = v.copy()
+    import scipy.sparse as sp
+    from scipy.sparse.csgraph import connected_components
+    # components over coincident vertices (the primitives repeat a vertex per face corner)
+    key = np.round(v, 5)
+    _, inv = np.unique(key, axis=0, return_inverse=True)
+    inv = inv.ravel()
+    fi = inv[f]
+    n = int(inv.max()) + 1
+    g = sp.coo_matrix((np.ones(3 * len(f)), (np.r_[fi[:, 0], fi[:, 1], fi[:, 2]], np.r_[fi[:, 1], fi[:, 2], fi[:, 0]])), shape=(n, n))
+    _, lab = connected_components(g, directed=False)
+    vlab = lab[inv]
+    for t in todo:
+        near = np.asarray(t["near_m"], float)
+        for c in np.unique(vlab):
+            sel = vlab == c
+            if np.linalg.norm(v[sel].mean(0) - near) < 0.02:
+                a = np.radians(t["angle_deg"])
+                if t.get("axis", "z") == "y":             # about the line along y through (x, z) = pivot_xz_m
+                    px, pz = t["pivot_xz_m"]
+                    x, z = v[sel, 0] - px, v[sel, 2] - pz
+                    v[sel, 0] = px + np.cos(a) * x + np.sin(a) * z
+                    v[sel, 2] = pz - np.sin(a) * x + np.cos(a) * z
+                    continue
+                px, py = t["pivot_xy_m"]
+                x, y = v[sel, 0] - px, v[sel, 1] - py
+                v[sel, 0] = px + np.cos(a) * x + np.sin(a) * y
+                v[sel, 1] = py - np.sin(a) * x + np.cos(a) * y
+    return v
 
 
 def pose_hga(X: np.ndarray, F: np.ndarray, az_deg: float = HGA_AZ_DEG, tilt_deg: float = HGA_TILT_DEG):
@@ -184,7 +236,10 @@ def build(glb: Path, out: Path) -> dict:
         for gn in geo_nodes.get(n["mesh"], []):
             m = sc.geometry[gn]
             v = trimesh.transform_points(trimesh.transform_points(np.asarray(m.vertices, float), W), A)
-            parts[kind].append(trimesh.Trimesh(v, np.asarray(m.faces), process=False))
+            fm = np.asarray(m.faces)
+            if kind == "body":
+                v = turn_components(v, fm)
+            parts[kind].append(trimesh.Trimesh(v, fm, process=False))
     V, F, P, rep = [], [], [], {}
     off = 0
     for pid, kind in enumerate(PARTS):
