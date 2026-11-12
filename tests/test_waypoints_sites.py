@@ -66,7 +66,7 @@ def test_sites_json_is_the_site_list():
     for k, v in t["sites"].items():
         assert all(a <= b for a, b in S.sol_ranges(v["sols"])) and isinstance(v.get("settings", {}), dict), k
     assert {"rockytop", "south_arm", "taylorfjellet"} <= set(S.zcam_sites(t, zoom=34)) and "van_zyl_overlook" not in S.zcam_sites(t, zoom=34)
-    assert all(isinstance(v.get("zcam"), list) and set(v["zcam"]) <= {34, 48, 63, 79, 110} for v in t["sites"].values())
+    assert all(isinstance(v.get("zcam"), list) and set(v["zcam"]) <= {26, 34, 48, 63, 79, 100, 110} for v in t["sites"].values())
     assert 34 in S.site_zooms(t["sites"]["chal_rocks"]) and "bright_angel" in S.zcam_sites(t, zoom=63) and "bright_angle" not in t["sites"]
     zc = set(t["groups"]["zcam_consensus"])
     assert all(S.site_zooms(t["sites"][m]) for m in zc)
@@ -169,7 +169,7 @@ def test_zcam_field_and_folder_names(tmp_path):
                              "groups": {"zcam63_consensus": ["a", "a"]}}))
     err, warn = S.validate_site_table(f)
     assert any("'b'" in e and "true or false" in e for e in err) and any("'z34' is now" in e for e in err)
-    assert any("'d'" in e and "34, 48, 63, 79, 110" in e for e in err)
+    assert any("'d'" in e and "26, 34, 48, 63, 79, 100, 110" in e for e in err)
     assert any("'e'" in w and "replaced by 'zcam'" in w for w in warn)
     assert any("more than once" in w for w in warn) and any("no 63" in w for w in warn)
     t = S.load_site_table(f)
@@ -260,7 +260,7 @@ def test_shipped_sites_v0p75():
                                    "belva_crater_large", "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools"]
     assert "threeforks_north" not in g["ecam_consensus"] and "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
     assert "navcam_consensus_v0p82" not in g
-    assert len(g["zcam34_consensus"]) == 13 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:3] == ["butler_landing", "chal_rocks_large", "rochette"]   # 9 Nov: butler_landing; 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back
+    assert len(g["zcam34_consensus"]) == 14 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:3] == ["butler_landing", "chal_rocks_large", "rochette"]   # 9 Nov: butler_landing; 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back
 
 
 def test_zcam34_dev_group_sites_have_the_zoom():
@@ -421,9 +421,9 @@ def test_chal_rocks_110mm():
     # 26 Oct (Christian): 79 and 110 mm out for now - 34, 48, 63 mm until the wider zooms have good models
     assert t["chal_rocks_tiny"]["zcam"] == [34, 48, 63] and t["chal_rocks"]["zcam"] == [34, 48, 63, 79, 110]   # 0.95.1: 79 out; 30 Oct: back in
     assert t["taylorfjellet"]["zcam"] == [34, 48, 63, 79, 110]   # 0.95.1: 110 (zcam_include)
-    assert t["rockytop"]["zcam"] == [34, 63, 79, 110] and set(t["rockytop"]["zcam_include"]) == {"63", "110"}   # 0.97.0: 63 mm is ZCAM08541 alone
+    assert t["rockytop"]["zcam"] == [34, 63, 79, 110] and set(t["rockytop"]["zcam_include"]) == {"110"}
     assert True  # 0.95.0 (Christian, 27 Oct): the 48 mm pair back, held at the model
-    assert t["seitah_overlook"]["zcam"] == [34, 48, 63, 79, 110] and t["belva_crater"]["zcam"] == [34, 110]   # 0.95.1: no 79
+    assert t["seitah_overlook"]["zcam"] == [26, 34, 48, 63, 79, 100, 110] and t["belva_crater"]["zcam"] == [34, 110]   # 0.95.1: no 79
     assert t["marble_mountain"]["zcam"] == [34, 63, 110]                             # 0.95.1: a third Z110 block
     assert t["taylorfjellet"]["settings"]["exclude"] == ["seq:ZCAM05065"]       # 26 Oct (Christian)
     assert t["marble_mountain"]["settings"] == {"exclude": ["*ZCAM10008_110*"]}   # 0.95.1 (Christian, 29 Oct)       # 0.95.0 (Christian, 27 Oct): ZCAM04469 back, the mis-tie guard drops it

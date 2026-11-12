@@ -1,0 +1,412 @@
+{
+ "name": "M2020 deck_joint mast model (Navcam, front Hazcams)",
+ "created": "2026-11-07 13:34",
+ "source_run": "DJ32_elscaleoff",
+ "frame": "ROVER_NAV_FRAME",
+ "angles": "RSM resolver az, el (rad, product label)",
+ "equations": {
+  "R_cam_from_rnav": "Rot(qT_eye (T - T0)) Rot(Q_eye) Ry(el (1 + k_el))^T Rz(az (1 + k_az))^T Rot(W)",
+  "C_rnav": "[P_x, P_y, 0] + Rot(G) Rz(az (1 + k_az)) (h + Ry(-el (1 + k_el)) c_eye)"
+ },
+ "symbols": {
+  "RNAV": "rover navigation frame: x forward, y right, z down; origin and orientation set by the deck survey",
+  "camera frame": "x right, y down, z along the optical axis (COLMAP)",
+  "az, el": "RSM azimuth and elevation (rad) from the product label (resolver values unless angles says encoder)",
+  "T, T0": "Navcam camera (plate) temperature of the frame and the reference -20 C",
+  "Rz(a), Ry(a)": "right-handed rotation matrices by angle a about z and y",
+  "Rot(v)": "rotation matrix of the rotation vector v (axis * angle)",
+  "W": "rover side of the azimuth stage: rotation from RNAV into the azimuth-zero frame (contains the 180 deg convention flip, the azimuth zero offset and the azimuth-axis tilt)",
+  "P": "the azimuth axis point where the axis meets the RNAV plane z = 0 (P_x, P_y), m",
+  "G": "rotation applied to the position model: azimuth-axis tilt (x, y) and azimuth zero (z) as seen by the camera centres; independent of W",
+  "h": "offset of the elevation axis from P, in the azimuth-rotated frame (x along the boom, z vertical = elevation-axis height), m; h_y is 0 by convention (folded into c_y)",
+  "c_L, c_R": "camera centre of NL / NR from the elevation axis, in the head (elevation-rotated) frame, m; c_y is the lateral position of the eye from the azimuth axis (h_y folded in)",
+  "y_L, y_R": "lateral position of NL / NR from the azimuth axis (h_y + c_y), m; y_L - y_R is the stereo baseline",
+  "Q_L, Q_R": "rotation from the head frame to the NL / NR camera frame (the camera pointing in the head)",
+  "k_az, k_el": "scale on the resolver angles: angle used = angle (1 + k)",
+  "qT_L, qT_R": "camera-frame pointing rate per eye (rad/C), applied as Rot(qT (T - T0)); x/y parts are principal-point motion (dcx = fx qT_y, dcy = -fy qT_x), z is roll"
+ },
+ "params": {
+  "W_rotvec_rad": [
+   0.003913956929754023,
+   0.00266991321087316,
+   -3.122261291130396
+  ],
+  "P_xy_m": [
+   0.8011894511997478,
+   0.5568794458630825
+  ],
+  "h_m": [
+   -0.0003506674984743533,
+   0.0,
+   -1.9177004015584642
+  ],
+  "c_L_m": [
+   -0.05427324252593979,
+   0.2145980435045003,
+   0.1283363006047039
+  ],
+  "c_R_m": [
+   -0.05459462261361909,
+   -0.2089250814636251,
+   0.12808116004673997
+  ],
+  "Q_L_rotvec_rad": [
+   -0.0571317210820025,
+   -0.05495643684105014,
+   4.713989481400855
+  ],
+  "Q_R_rotvec_rad": [
+   0.017207252511186724,
+   0.01762287619051183,
+   -1.5693821313696412
+  ],
+  "G_rotvec_rad": [
+   0.0015152142044422285,
+   -0.0023839926438474776,
+   -0.019291570441226168
+  ],
+  "k_az": 0.0,
+  "k_el": 0.0,
+  "qT_L_rad_per_C": [
+   1.918888638212186e-06,
+   8.55857117217576e-06,
+   -2.203852941882726e-06
+  ],
+  "qT_R_rad_per_C": [
+   2.3541237840220355e-06,
+   7.687363792083791e-06,
+   -8.992571276870773e-07
+  ],
+  "T0_C": -20.0
+ },
+ "jackknife_sd": {
+  "W_rotvec_rad": [
+   8.392273480845012e-05,
+   6.631393574969552e-05,
+   0.00014996286553817405
+  ],
+  "P_xy_m": [
+   0.00023536451811117536,
+   0.00024359817442767235
+  ],
+  "h_m": [
+   0.00022293614480874726,
+   0.0,
+   0.0001895464739233741
+  ],
+  "c_L_m": [
+   0.00026961488553804334,
+   3.991436827004294e-05,
+   0.00017874415688827445
+  ],
+  "c_R_m": [
+   0.00024758993068836025,
+   4.4783754242448345e-05,
+   0.00011941549037290018
+  ],
+  "Q_L_rotvec_rad": [
+   0.00016909489461948885,
+   0.00010541168989340243,
+   6.903789163179788e-05
+  ],
+  "Q_R_rotvec_rad": [
+   0.00017313195846691438,
+   0.00011648940883355645,
+   7.920902014613073e-05
+  ],
+  "G_rotvec_rad": [
+   0.0001684366049376089,
+   0.00014019356196828318,
+   0.0003239355917276164
+  ],
+  "k_az": [
+   0.0
+  ],
+  "k_el": [
+   0.0001561798282563134
+  ],
+  "qT_L_rad_per_C": [
+   3.428885387924648e-06,
+   8.660550566742838e-06,
+   3.062679900193925e-06
+  ],
+  "qT_R_rad_per_C": [
+   3.235107336108549e-06,
+   8.05068298904572e-06,
+   4.17176129318389e-06
+  ]
+ },
+ "n_jackknife": 10,
+ "jackknife_runs": "DJ32",
+ "survey_sigma_mm": {
+  "AFT1": [
+   0.3,
+   0.3,
+   0.6
+  ],
+  "RPFA1": [
+   0.15,
+   0.15,
+   0.3
+  ],
+  "RPFA2": [
+   0.15,
+   0.15,
+   0.3
+  ],
+  "TDF1": [
+   0.15,
+   0.15,
+   0.3
+  ],
+  "TDF2": [
+   0.15,
+   0.15,
+   0.3
+  ],
+  "TDF3": [
+   0.15,
+   0.15,
+   0.3
+  ]
+ },
+ "deck_points_minus_survey_mm": {
+  "TDF1": [
+   -0.083,
+   0.025,
+   0.089
+  ],
+  "TDF2": [
+   -0.051,
+   0.003,
+   0.045
+  ],
+  "TDF3": [
+   0.102,
+   -0.021,
+   -0.076
+  ],
+  "AFT1": [
+   -0.173,
+   0.134,
+   0.348
+  ],
+  "RPFA1": [
+   0.018,
+   -0.003,
+   -0.194
+  ],
+  "RPFA2": [
+   0.057,
+   -0.038,
+   0.048
+  ],
+  "TDF4": [
+   0.246,
+   0.34,
+   -0.433
+  ]
+ },
+ "fhaz": {
+  "R_FL_from_rnav_rotvec_rad": [
+   -0.9729691719261818,
+   -0.7358449390812716,
+   -1.2947660782063268
+  ],
+  "C_FL_m": [
+   1.1006756903466826,
+   -0.009233194527670822,
+   -0.7271873760716873
+  ],
+  "rig_FR_from_FL": {
+   "rotvec_rad": [
+    -0.0012747815088769805,
+    -0.34671344678657084,
+    0.0005244338708565984
+   ],
+   "t_m": [
+    -0.2470902221161378,
+    -4.616691003430764e-05,
+    -0.02998021938704041
+   ],
+   "baseline_m": 0.24890237755248737
+  }
+ },
+ "navcam_rig": {
+  "model": "NR <- NL: value = a + b (T + 20) + c (sol - 1000) / 1000 (station rigs of the deck_joint, robust fit)",
+  "baseline_mm": {
+   "coef": [
+    423.5268123514615,
+    -0.006654150386749419,
+    0.03261784174686357
+   ],
+   "jk_se": [
+    0.023607856580604734,
+    0.0041577052880548875,
+    0.03737219816791459
+   ]
+  },
+  "C_R_in_L_mm": {
+   "x": {
+    "coef": [
+     423.5261501937688,
+     -0.00665293304537053,
+     0.03260242864016526
+    ],
+    "jk_se": [
+     0.023607882714183775,
+     0.004157897126872715,
+     0.03736890511833088
+    ]
+   },
+   "y": {
+    "coef": [
+     0.7188778961718698,
+     0.00038355731258088866,
+     0.023298786730192204
+    ],
+    "jk_se": [
+     0.00720914076612281,
+     0.0015348748890655704,
+     0.010245541766741358
+    ]
+   },
+   "z": {
+    "coef": [
+     -0.012771660874518963,
+     -0.00017057763330756588,
+     0.1289938417781905
+    ],
+    "jk_se": [
+     0.04025518608032358,
+     0.006353074194125172,
+     0.08123889345958248
+    ]
+   }
+  },
+  "rotvec_mdeg": {
+   "rx": {
+    "coef": [
+     -90.37716530166551,
+     0.04901908138732022,
+     6.921488486969351
+    ],
+    "jk_se": [
+     0.19921604769056567,
+     0.035581587233893756,
+     0.3480354741699827
+    ]
+   },
+   "ry": {
+    "coef": [
+     43.281230121074174,
+     -0.05298448679124489,
+     3.9797886299803418
+    ],
+    "jk_se": [
+     0.7394309764495158,
+     0.1359499548409221,
+     1.4043753355761588
+    ]
+   },
+   "rz": {
+    "coef": [
+     -59.802147189523374,
+     0.10493316934641987,
+     -7.4736788580383475
+    ],
+    "jk_se": [
+     1.0820062042840732,
+     0.27685646004601533,
+     1.653843252478558
+    ]
+   }
+  },
+  "rotvec_knee250_mdeg": {
+   "rx": {
+    "design": "a + b (T + 20) + c (sol - 1000) / 1000 + d max(sol - 250, 0) / 1000",
+    "coef_abcd": [
+     -80.39690656408169,
+     0.03797150142310882,
+     19.881068733063703,
+     -13.176253609658222
+    ],
+    "jk_se": [
+     16.981317465482675,
+     0.03427083802257218,
+     22.49513460644207,
+     22.585386239413484
+    ],
+    "value_at_sol1000_m20C": -90.27909677132536,
+    "per_1000sol_before_250": 19.881068733063703,
+    "per_1000sol_after_250": 6.704815123405481
+   },
+   "ry": {
+    "design": "a + b (T + 20) + c (sol - 1000) / 1000 + d max(sol - 250, 0) / 1000",
+    "coef_abcd": [
+     13.104677303424419,
+     -0.01931305706134093,
+     -33.98976015045552,
+     39.410320986947525
+    ],
+    "jk_se": [
+     17.671662942009593,
+     0.12825747263398588,
+     22.66787335782558,
+     23.24385160010946
+    ],
+    "value_at_sol1000_m20C": 42.662418043635064,
+    "per_1000sol_before_250": -33.98976015045552,
+    "per_1000sol_after_250": 5.420560836492008
+   }
+  },
+  "note": "rx = pitch, ry = yaw, rz = roll of NR (sensor frame); pitch and yaw use the knee at sol 250 (as the block_joint), roll linear"
+ },
+ "pointing_T_as_pp": {
+  "NL_chain": {
+   "qT_mdeg_per_C": [
+    0.08322437978066928,
+    0.4859004988862203,
+    -0.12934374170707902
+   ],
+   "jk_sd": [
+    0.19646066116216038,
+    0.4962129957339978,
+    0.1754786322806601
+   ],
+   "dcx_px_per_C": 0.025000701323725078,
+   "dcy_px_per_C": -0.004282086284163276,
+   "roll_mdeg_per_C": -0.12934374170707902
+  },
+  "NR_chain": {
+   "qT_mdeg_per_C": [
+    0.10828632073932104,
+    0.43975419226592094,
+    -0.05943528136304269
+   ],
+   "jk_sd": [
+    0.18535799663083055,
+    0.4612701574700861,
+    0.23902431523547532
+   ],
+   "dcx_px_per_C": 0.02262636741863211,
+   "dcy_px_per_C": -0.005571580948063185,
+   "roll_mdeg_per_C": -0.05943528136304269
+  },
+  "NR_rel_NL_rig": {
+   "rig_rot_slope_mdeg_per_C": [
+    0.04901908138732022,
+    -0.05298448679124489,
+    0.10493316934641987
+   ],
+   "jk_se": [
+    0.035581587233893756,
+    0.1359499548409221,
+    0.27685646004601533
+   ],
+   "dcx_px_per_C": -0.0027261740461166995,
+   "dcy_px_per_C": -0.0025221447924768086,
+   "roll_mdeg_per_C": 0.10493316934641987
+  }
+ }
+}

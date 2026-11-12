@@ -499,3 +499,115 @@ def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_D
     fig.savefig(path, dpi=dpi)
     plt.close(fig)
     return Path(path)
+
+
+# ------------------------------------------------------------------------------------------------ the zoom ladder
+ZOOM_SWEEP_GAP_S = 60.0          # the zoom steps of one sweep are 25-40 s apart; the pointing changes take longer
+ZOOM_LADDER = {"block": "seitah_overlook", "sol": 121, "sequence": "ZCAM08114"}     # five pointings, the zoom swept
+#                                                                                     up (low state) and down (high)
+
+
+def zoom_ladder_rows(images_csv: PathLike, block: str = ZOOM_LADDER["block"], sol: int = ZOOM_LADDER["sol"],
+                     sequence: str = ZOOM_LADDER["sequence"]) -> List[Dict[str, Any]]:
+    """The frames of a zoom ladder from a states study's ``images.csv`` (per-image focal fits, f / label f): one row
+    per frame with its zoom, eye, clock, ratio, observations and ``state`` - "low" in a sweep that steps the zoom UP,
+    "high" in one that steps it DOWN (the zoom-history rule).  The frames are grouped into sweeps by time (:data:`ZOOM_SWEEP_GAP_S`): a frame can be
+    missing from the study (too few ties) and 110 mm is not in it, so neighbouring zooms alone would misread a
+    sweep that turned at 110 mm."""
+    import csv
+    rows = []
+    with open(images_csv, newline="", encoding="utf-8") as fh:
+        for r in csv.DictReader(fh):
+            if block in r["block"] and r["sequence"] == sequence and int(float(r["sol"])) == int(sol) and r.get("ratio"):
+                g = r["group"]
+                rows.append({"eye": g[:2], "zoom": int(g[2:5]), "clock": float(r["clock"]), "ratio": float(r["ratio"]),
+                             "observations": int(float(r.get("observations") or 0)), "focus": float(r.get("focus") or "nan")})
+    for eye in ("ZL", "ZR"):
+        seq = sorted((r for r in rows if r["eye"] == eye), key=lambda r: r["clock"])
+        sweeps: List[List[Dict[str, Any]]] = []
+        for r in seq:                                  # a sweep: frames less than ZOOM_SWEEP_GAP_S apart
+            if sweeps and r["clock"] - sweeps[-1][-1]["clock"] <= ZOOM_SWEEP_GAP_S:
+                sweeps[-1].append(r)
+            else:
+                sweeps.append([r])
+        last = None
+        for sw in sweeps:
+            d = np.sign(sw[-1]["zoom"] - sw[0]["zoom"]) if len(sw) > 1 else (0 if last is None else -last)
+            st = "low" if d >= 0 else "high"            # a lone first frame: taken as a step up
+            for r in sw:
+                r["state"] = st
+            last = d if d else 1
+    return rows
+
+
+def zoom_ladder_gaps(rows: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Per eye and zoom (``"ZL034"``): the high and low levels of f / label f weighted by observations, and the gap
+    ``g = (f_high - f_low) / f_high`` in percent; None where a state has no frame."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for key in sorted({(r["eye"], r["zoom"]) for r in rows}):
+        lev = {}
+        for st in ("high", "low"):
+            rr = [r for r in rows if (r["eye"], r["zoom"]) == key and r["state"] == st]
+            w = np.array([max(1, r["observations"]) for r in rr], float)
+            lev[st] = float(np.sum(w * np.array([r["ratio"] for r in rr])) / w.sum()) if rr else None
+            lev["n_" + st] = len(rr)
+        lev["gap_pct"] = None if None in (lev["high"], lev["low"]) else 100.0 * (lev["high"] - lev["low"]) / lev["high"]
+        out[f"{key[0]}{key[1]:03d}"] = lev
+    return out
+
+
+def plot_zoom_ladder(rows: Sequence[Dict[str, Any]], out_png: PathLike, dpi: int = 200,
+                     title: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+    """0.97.0 (Christian, 12 Nov 2026: "in the official figures, add one that compares sol 121 low and high zooms"):
+    one panel per zoom, f relative to that eye's high-state level (%) against the minutes into the sequence; the
+    left eye cool, the right warm, high-state frames as up triangles and low-state as down triangles sized by their
+    tie-point observations, the low level of each eye dotted with its gap g; the panels share the y axis.  Returns
+    :func:`zoom_ladder_gaps`."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    gaps = zoom_ladder_gaps(rows)
+    zooms = sorted({r["zoom"] for r in rows})
+    t0 = min(r["clock"] for r in rows)
+    col = {"ZL": "#1f5fbf", "ZR": "#c8502a"}
+    fig, axes = plt.subplots(1, len(zooms), figsize=(4.3 * len(zooms), 4.2), sharey=True, squeeze=False)
+    for ax, z in zip(axes[0], zooms):
+        ax.axhline(0.0, color="0.35", ls="--", lw=1)
+        for eye in ("ZL", "ZR"):
+            g = gaps.get(f"{eye}{z:03d}") or {}
+            rr = sorted((r for r in rows if r["eye"] == eye and r["zoom"] == z), key=lambda r: r["clock"])
+            ref = g.get("high")
+            if ref is None and g.get("low") is not None:           # no high frame: placed by the other eye's gap
+                other = gaps.get(f"{'ZR' if eye == 'ZL' else 'ZL'}{z:03d}") or {}
+                if other.get("gap_pct") is not None:
+                    ref = g["low"] / (1.0 - other["gap_pct"] / 100.0)
+            if ref is None or not rr:
+                continue
+            t = [(r["clock"] - t0) / 60.0 for r in rr]
+            y = [100.0 * (r["ratio"] / ref - 1.0) for r in rr]
+            ax.plot(t, y, color=col[eye], lw=0.8, alpha=0.5)
+            for r, ti, yi in zip(rr, t, y):
+                ax.scatter([ti], [yi], marker="^" if r["state"] == "high" else "v", color=col[eye], zorder=3,
+                           s=float(np.clip(12.0 * np.sqrt(max(1, r["observations"]) / 50.0), 18, 170)))
+            if g.get("low") is not None:
+                lo = 100.0 * (g["low"] / ref - 1.0)
+                ax.axhline(lo, color=col[eye], ls=":", lw=1.2)
+                lab = (f"{eye}: g = {g['gap_pct']:.2f} %" if g.get("gap_pct") is not None
+                       else f"{eye}: no high-state frame (placed by the other eye's gap)")
+                ax.text(0.02 if eye == "ZL" else 0.98, lo, lab, color=col[eye], fontsize=7.5, va="bottom" if eye == "ZR" else "top",
+                        ha="left" if eye == "ZL" else "right", transform=ax.get_yaxis_transform())
+        ax.set_title(f"{z} mm")
+        ax.set_xlabel("minutes into the sequence")
+        ax.grid(alpha=0.3)
+    axes[0][0].set_ylabel("f relative to the eye's high-state level (%)")
+    h = [plt.Line2D([], [], marker="^", ls="", color="0.3", label="high state (zoom stepped down)"),
+         plt.Line2D([], [], marker="v", ls="", color="0.3", label="low state (zoom stepped up)"),
+         plt.Line2D([], [], color=col["ZL"], label="ZL"), plt.Line2D([], [], color=col["ZR"], label="ZR"),
+         plt.Line2D([], [], color="0.35", ls="--", label="high level"), plt.Line2D([], [], color="0.35", ls=":", label="low level (per eye)")]
+    fig.legend(handles=h, fontsize=8, loc="lower center", ncol=6, frameon=False)
+    fig.suptitle(title or "Mastcam-Z zoom ladder: high and low backlash states at each zoom (symbol size: tie-point observations)",
+                 fontsize=10)
+    fig.tight_layout(rect=(0, 0.06, 1, 1))
+    fig.savefig(out_png, dpi=dpi)
+    plt.close(fig)
+    return gaps

@@ -26,7 +26,12 @@ PARAM_NAMES: Dict[str, Tuple[str, ...]] = {
 INTRINSIC_CORE = ("fx", "fy", "cx", "cy")          # focal length and principal point; everything else is distortion
 # full detector frame (width, height) at downsample scale 1, by camera family
 FULL_FRAME = {"N": (5120, 3840), "F": (5120, 3840), "R": (5120, 3840), "Z": (1648, 1200)}
-ZCAM_ZOOMS = (34, 48, 63, 79, 110)
+# 0.97.0 (Christian, 12 Nov 2026: "Add z026 and z100 to chal rocks and seitah overlook"): 26 and 100 mm join the zooms
+# MPPP aligns.  Neither has a focus model: their bin cameras start from the label model and refine in the block (as
+# 48-110 mm did before their first joint); they carry ties between the other zooms.  A site takes them only when its
+# "zcam" list names them.
+ZCAM_ZOOMS = (26, 34, 48, 63, 79, 100, 110)
+ZCAM_ZOOMS_WITH_JOINT = (34, 48, 63, 79, 110)       # the zooms with a joint and a focus model
 # the two Mastcam-Z focus (backlash) states: "backlash" is the high-focal-length state every image is in unless the
 # low-backlash list or its own focal fit puts it in the "regular" (low-focal-length, label-like) state
 ZCAM_STATES = ("backlash", "regular")
@@ -34,6 +39,8 @@ ZCAM_DEFAULT_STATE = "backlash"
 # 0.93.5 (Christian, 22 Oct): 110 mm (the end of the zoom's mechanical range) has no backlash state - its images are
 # "single": the low-backlash lists never apply, no regular state is derived or checked, its frames anchor the
 # per-state corrections of the other zooms (they tie to them through the block's points without a state of their own)
+# 0.97.0: 26 mm keeps the default (high) state like any frame off the low list - the zoom can only have come down to
+# it, and the low lists cover 27-109 mm; it is not "single", so nothing anchors on it.  100 mm has both states.
 ZCAM_SINGLE_STATE_ZOOMS = (110,)
 ZCAM_SINGLE_STATE = "single"
 
@@ -145,6 +152,7 @@ ZCAM_FIXED_TERMS: Dict[int, Dict[str, Dict[str, float]]] = {
     48: {"ZL": {"k2": 1.4}, "ZR": {"k2": 1.4}},
     63: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},
     79: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},
+    100: {"ZL": dict(_NARROW_FIXED), "ZR": dict(_NARROW_FIXED)},     # 0.97.0: as 79 mm (26 mm: nothing held yet)
     # 1 Nov (Christian: "hold z110 k1 at zero for now and test if k1 is significant"): the 1 Nov joint fitted k1 +0.42 /
     # +0.39 (79 mm: -0.23) with fy / fx 0.993 - at 6 deg the field cannot separate k1 from the far-field geometry;
     # the joint's distortion tests free k1 alone (delta chi2, curve change)

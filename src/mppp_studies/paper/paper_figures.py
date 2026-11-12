@@ -48,6 +48,9 @@ PathLike = Union[str, Path]
 HERE = Path(__file__).resolve().parents[3]          # the repository root (src/mppp_studies/paper -> root)
 
 
+SHIPPED_MAST_CHAIN = "deck_joint_mast_model_DJ32_20261107.json"
+
+
 def finished_blocks(root: Path, group: str = "ecam_consensus"):
     """The block folders of a site group under ``root`` whose alignment finished (``colmap/run_done.json``)."""
     from mppp.waypoints.sites import load_site_table
@@ -132,7 +135,7 @@ def main(argv=None) -> int:
     ap.add_argument("--zcam-joints", nargs="*", default=None,
                     help="Mastcam-Z joint folders (zcam_joint.json) for the efl vs focus figures; default: the newest "
                          "of each of --zcam-zooms under <root>\\camera_analysis; '-' for none")
-    ap.add_argument("--zcam-zooms", default="34,48,63", help="the zooms of the default joint folders (0.95.2: 34,48,63)")
+    ap.add_argument("--zcam-zooms", default="34,48,63,79,110", help="the zooms of the default joint folders (0.97.0: all five; 34,48,63 before)")
     ap.add_argument("--hazcam", default=None, help="a Hazcam fit folder (hazcam_fit.json); default: the newest "
                                                    "under <root>\\camera_analysis; '-' for none")
     ap.add_argument("--mast-chain", default=None,
@@ -162,6 +165,43 @@ def main(argv=None) -> int:
         except Exception as e:                                             # noqa: BLE001
             print(f"{f.name}: skipped ({type(e).__name__}: {e})")
     print(f"{len(res)} finished blocks")
+    # ---- 0.97.0 (Christian, 12 Nov 2026): the Seitah Overlook zoom ladder of sol 121 - low against high at each zoom
+    try:
+        st = _newest(Path(a.root).glob("camera_analysis/zcam_states_*/images.csv")) if a.root else None
+        if st is not None:
+            rows = C.zoom_ladder_rows(st / "images.csv")
+            if rows:
+                f = out / f"zcam_zoom_ladder_seitah_sol121_{st.name}.png"
+                gaps = C.plot_zoom_ladder(rows, f, dpi=a.dpi, title="Seitah Overlook ZCAM08114, sol 121, far focus: zoom "
+                                          "stepped up (low backlash state) and down (high); symbol size: tie-point observations")
+                (out / f"zcam_zoom_ladder_seitah_sol121_{st.name}.json").write_text(json.dumps(gaps, indent=1), encoding="utf-8")
+                print("zoom ladder: " + ", ".join(f"{k} {v['gap_pct']:.2f} %" for k, v in gaps.items() if v.get("gap_pct") is not None)
+                      + f" -> {f.name}")
+    except Exception as e:                                                 # noqa: BLE001 - the other figures still made
+        print(f"zoom ladder figure: skipped ({type(e).__name__}: {e})")
+    # ---- 0.97.0: the independent validation - test 3 (Mastcam-Z pairs alone), test 4 (deck focal) and the ledger
+    try:
+        from mppp_studies.validation import deck_focal as VD
+        from mppp_studies.validation import ledger as VL
+        from mppp_studies.validation import zpairs as VZ
+        (out / f"validation_ledger_{tag}.md").write_text(VL.table_md(), encoding="utf-8")
+        zp = _newest(Path(a.root).glob("camera_analysis/validation_zpairs_*/zpairs.json")) if a.root else None
+        if zp is not None:
+            import csv as _csv
+            zr = json.loads((zp / "zpairs.json").read_text(encoding="utf-8"))
+            with open(zp / "zpairs.csv", newline="", encoding="utf-8") as fh:
+                prs = [{k: (float(v) if k in ("sol", "pitch_mdeg", "zoom") and v not in ("", None) else v) for k, v in r.items()}
+                       for r in _csv.DictReader(fh)]
+            prs = [dict(r, zoom=int(r["zoom"])) for r in prs if r.get("pitch_mdeg") not in ("", None)]
+            VZ.figure(prs, zr["units"], {int(k): v for k, v in zr["trend"].items()}, out / f"validation_zpairs_pitch_vs_sol_{zp.name}.png",
+                      {34: (5.4, 1.5), 110: (5.3, 1.7)})
+            print(f"validation test 3: {zp.name}")
+        df = _newest(Path(a.root).glob("camera_analysis/validation_deck_focal_*/deck_focal.json")) if a.root else None
+        if df is not None:
+            VD._figure(json.loads((df / "deck_focal.json").read_text(encoding="utf-8")), out / f"validation_deck_focal_vs_temperature_{df.name}.png")
+            print(f"validation test 4: {df.name}")
+    except Exception as e:                                                 # noqa: BLE001
+        print(f"validation figures: skipped ({type(e).__name__}: {e})")
     # ---- rig trends and intrinsics vs temperature (the study's refined formats)
     if study and (study / "navcam_joint" / "consensus.json").is_file():
         cons = json.loads((study / "navcam_joint" / "consensus.json").read_text(encoding="utf-8"))
@@ -203,6 +243,11 @@ def main(argv=None) -> int:
             cands = (glob.glob(str(Path(a.root) / "camera_analysis" / "**" / "deck_joint_mast_model.json"), recursive=True)
                      + glob.glob(str(out / "**" / "deck_joint_mast_model.json"), recursive=True))
             chain = max(cands, key=os.path.getmtime) if cands else None
+            if chain is None:                         # 0.97.0: the DJ32 chain of 7 Nov shipped with the studies, so the
+                shipped = Path(__file__).resolve().parents[1] / "calibration" / "data" / SHIPPED_MAST_CHAIN   # figure is
+                chain = str(shipped) if shipped.is_file() else None                                        # always made
+                if chain:
+                    print(f"mast head figures: no deck_joint_mast_model.json under {a.root} - the shipped {SHIPPED_MAST_CHAIN}")
         lab = a.mast_labels or str(Path(a.root) / "camera_analysis" / "rover_frame_labels.json")
         if chain and Path(lab).is_file():
             try:

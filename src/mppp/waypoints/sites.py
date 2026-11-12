@@ -112,7 +112,7 @@ def load_site_ranges(path: Optional[PathLike] = None) -> Dict[str, List[Tuple[in
     return {k: sol_ranges(v.get("sols") if isinstance(v, dict) else v) for k, v in d["sites"].items()}
 
 
-ZCAM_ZOOMS = (34, 48, 63, 79, 110) # the Mastcam-Z zooms (mm) MPPP aligns
+ZCAM_ZOOMS = (26, 34, 48, 63, 79, 100, 110) # the Mastcam-Z zooms (mm) MPPP aligns
 
 
 def site_zooms(v: Any) -> List[int]:

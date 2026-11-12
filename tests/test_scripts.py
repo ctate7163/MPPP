@@ -518,9 +518,10 @@ def test_zcam_joints_097_bat():
     b = (ROOT / "scripts" / "windows" / "zcam_joints_097.bat").read_bytes()
     assert b"\r\n" in b and b.count(b"\n") == b.count(b"\r\n")
     t = b.decode("ascii")
-    assert "--sites rose_river_falls knob_mountain_large overlook_mountain hippo_pools rockytop rockytop_skinner" in t and "for %%Z in (63 79 110)" in t
+    assert "--sites wildcat_ridge skinner_ridge chal_rocks_large seitah_overlook rose_river_falls" in t and "--zcam-hold-ratio 1.006" in t and "for %%Z in (63 79 110)" in t
     assert "--zcam-hold-ratio 1.0 --no-promote" in t and 'set "PROMOTE=--no-promote"' in t
     assert "mppp_studies.validation.zpairs" in t and "cmods_freeze2" in t
+    assert "--variant tri010 --set min_tri_angle_deg=0.10" in t and "--zcam-hold-ratio 1.0045" in t
     assert not (ROOT / "scripts" / "windows" / "trial_joints_0p95.bat").exists()
 
 
@@ -603,7 +604,8 @@ def test_zcam_backlash_rerun_bat():
     sei, roc = st["seitah_overlook"]["settings"]["EXCLUDE"], st["rockytop"]["settings"]["EXCLUDE"]
     def hit(stem, entries):
         return any(exclusion_matches({"filename": {"stem": stem, "sol": int(stem[4:8])}}, e) for e in entries)
-    assert hit("ZR0_0121_0677679250_053RAD_N0041250ZCAM08114_079085A03", sei)
+    assert not hit("ZR0_0121_0677679250_053RAD_N0041250ZCAM08114_079085A03", sei)   # 0.97.0 (12 Nov): back in
+    assert hit("ZL0_0124_0677900000_000RAD_N0041422ZCAM08122_034085A03", sei)
     assert not hit("ZL0_0121_0677679146_053RAD_N0041250ZCAM08114_079085A03", sei)
     assert hit("ZL0_0477_0708000000_000RAD_N0261004ZCAM03391_0790LMA01", roc)
     assert not hit("ZL0_0477_0708000000_000RAD_N0261004ZCAM03391_0340LMA01", roc)

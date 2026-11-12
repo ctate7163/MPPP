@@ -41,7 +41,7 @@ log = logging.getLogger("mppp.pipeline")
 
 SOURCES = ("pds", "processed")
 STEPS = ("manifest", "project", "features", "database", "match", "reconstruct", "health", "export")
-ZCAM_ZOOMS_ALL = (34, 48, 63, 79, 110)
+ZCAM_ZOOMS_ALL = (26, 34, 48, 63, 79, 100, 110)    # 0.97.0: 26 and 100 mm too (a site names them in "zcam")
 RUN_DONE = "run_done.json"
 PROCESS_DONE = "process_done.json"      # <WORK>/processed/process_done.json: written by a finished processing run
 RUN_SETTINGS = "run_settings.json"

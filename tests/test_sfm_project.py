@@ -199,7 +199,7 @@ def test_project_scope_is_checked_first(processed_pair, tmp_path):  # noqa: F811
     z = json.loads(json.dumps(man["images"], default=str))
     for m in z:
         if m["filename"]["family"] == "Z":
-            m["filename"]["zoom_mm"] = 100                    # 34, 48, 63, 79, 110 are in scope; 100 is not
+            m["filename"]["zoom_mm"] = 55                     # 0.97.0: 26 to 110 mm are in scope (26 and 100 added); 55 is not
     with pytest.raises(ValueError, match="outside MPPP's scope"):
         SfmProject.create(z, out, tmp_path / "s", link=False)
     und = json.loads(json.dumps(man["images"], default=str))

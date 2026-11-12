@@ -160,9 +160,11 @@ def test_groups_and_block_sites():
     # 2 Nov (Christian): Belva Crater Large instead of Belva Crater, with 110 mm
     # 2 Nov (Christian): the three longest blocks first; Cannery Passage out again
     # 9 Nov (Christian): butler_landing (sols 1-14, site 3 drive 0000) in the zcam consensus
-    assert g["zcam_consensus"] == ["butler_landing", "chal_rocks_large", "rockytop", "taylorfjellet", "seitah_overlook", "threeforks_north",
-                                   "belva_crater_large", "marble_mountain", "bright_angel", "pico_turquino", "south_arm",
-                                   "overlook_mountain", "airey_hill"]
+    # 0.97.0 (12 Nov): Rockytop split into the two ridges; four more sites
+    assert g["zcam_consensus"] == ["butler_landing", "chal_rocks_large", "wildcat_ridge", "skinner_ridge", "taylorfjellet",
+                                   "seitah_overlook", "threeforks_north", "belva_crater_large", "marble_mountain",
+                                   "bright_angel", "pico_turquino", "south_arm", "overlook_mountain", "airey_hill",
+                                   "rose_river_falls", "knob_mountain_large", "hippo_pools"]
     # 2 Nov (Christian): Cannery Passage, an unofficial 48 / 63 / 110 mm block (sols 543-552), in no group
     assert t["sites"]["cannery_passage"]["zcam"] == [48, 63, 110]
     assert not any("cannery_passage" in v for v in g.values())

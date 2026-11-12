@@ -101,7 +101,7 @@ def test_resolve_site(tmp_path, clean_env):
     st, s2 = resolve_site("rockytop", s.replace(include_zcam=True))
     assert st.work.name == "mars2020_sol_0460_rockytop_zcam" and st.zooms == [34, 63, 79, 110] and s2.sift["num_octaves"] == 6
     st, s2 = resolve_site(tmp_path / "mars2020_sol_0460_rockytop_zcam", s.replace(zcam_zooms="all"))
-    assert st.zooms == [34, 48, 63, 79, 110] and s2.include_zcam is True
+    assert st.zooms == [26, 34, 48, 63, 79, 100, 110] and s2.include_zcam is True   # 0.97.0: 26 and 100 mm
     # 0.95.0 (Christian, 28 Oct): the freeze runs keep the zooms being calibrated (run_pipeline --zooms)
     st, _ = resolve_site("rockytop", s.replace(include_zcam=True, zcam_zooms_only=[34, 48, 63]))
     assert st.zooms == [34, 63]

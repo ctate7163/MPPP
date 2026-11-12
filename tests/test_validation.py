@@ -45,9 +45,43 @@ def test_workspace_station_warns_and_sites_of_0p97():
     assert _status("within_station_shift_spread_m", 0.65, DEFAULT_THRESHOLDS) == "fail"
     t = load_site_table()
     s = t["sites"]
-    assert s["rockytop"]["zcam_include"]["63"] == ["ZCAM08541"] and "ZCAM08537" in s["rockytop"]["zcam_include"]["110"]
-    assert "zcam_joint_exclude" not in s["rockytop"] and s["rose_river_falls"]["zcam"] == [34, 63, 110]
+    assert set(s["rockytop"]["zcam_include"]) == {"110"} and s["rose_river_falls"]["zcam"] == [34, 63, 110]
+    assert s["wildcat_ridge"]["zcam_joint_exclude"] == [63] and s["skinner_ridge"]["sols"] == [[460, 499]]
+    for z in ("chal_rocks_large", "seitah_overlook"):                    # 26 and 100 mm
+        assert s[z]["zcam"] == [26, 34, 48, 63, 79, 100, 110]
+    assert s["seitah_overlook"]["settings"]["EXCLUDE"] == ["*ZCAM08122_034*"]
+    for g in ("zcam_consensus", "zcam34_consensus", "zcam79_consensus", "zcam110_consensus"):
+        assert "rockytop" not in t["groups"][g] and "wildcat_ridge" in t["groups"][g] and "skinner_ridge" in t["groups"][g]
+    assert "rockytop_skinner" not in t["groups"]["zcam_consensus"]
     assert s["overlook_mountain"]["sols"] == [[1145, 1157]] and s["overlook_mountain"]["zcam"] == [48, 63, 79, 110]
     assert s["hippo_pools"]["zcam"] == [34, 48, 63, 110]
-    for n in ("rose_river_falls", "knob_mountain_large", "taylorfjellet", "overlook_mountain", "hippo_pools", "rockytop_skinner"):
+    for n in ("rose_river_falls", "knob_mountain_large", "taylorfjellet", "overlook_mountain", "hippo_pools"):
         assert n in t["groups"]["zcam_consensus"]
+
+
+def test_zooms_26_and_100_and_the_zoom_ladder(tmp_path):
+    """0.97.0 (Christian, 12 Nov 2026): 26 and 100 mm are zooms MPPP aligns (no joint, no single state); the official
+    figure of the Seitah zoom ladder - states from the sweep direction, frames missing from the study allowed."""
+    from mppp.calib import forms
+    from mppp.pipeline import ZCAM_ZOOMS_ALL
+    from mppp.waypoints import sites as WS
+    from mppp_studies.calibration import plots as C
+    assert forms.ZCAM_ZOOMS == ZCAM_ZOOMS_ALL == WS.ZCAM_ZOOMS == (26, 34, 48, 63, 79, 100, 110)
+    assert forms.ZCAM_SINGLE_STATE_ZOOMS == (110,) and forms.zcam_fixed_terms("ZL100") == forms.zcam_fixed_terms("ZL079")
+    assert not forms.is_single_state("ZL026") and forms.ZCAM_ZOOMS_WITH_JOINT == (34, 48, 63, 79, 110)
+    lines = ["block,group,sol,sequence,clock,focus,ratio,sd,observations"]
+    t = 1000
+    for k, zs in enumerate(([34, 48, 63, 79], [79, 63, 48, 34], [34, 48, 63], [79, 63, 48, 34])):   # the third sweep lost its 79
+        t += 90
+        for z in zs:
+            t += 30
+            up = k % 2 == 0
+            for eye in ("ZL", "ZR"):
+                lines.append(f"mars2020_sol_0113_seitah_overlook_zcam,{eye}{z:03d},121,ZCAM08114,{t},1254,"
+                             f"{1.0 - (0.006 if up else 0.0)},1e-5,{500 + 100 * k}")
+    f = tmp_path / "images.csv"
+    f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    rows = C.zoom_ladder_rows(f)
+    assert len(rows) == 30 and {r["state"] for r in rows if r["clock"] > 1000 + 90 * 4 + 30 * 11} == {"high"}
+    g = C.plot_zoom_ladder(rows, tmp_path / "ladder.png", dpi=60)
+    assert (tmp_path / "ladder.png").is_file() and abs(g["ZL079"]["gap_pct"] - 0.6) < 1e-6 and g["ZR034"]["n_low"] == 2

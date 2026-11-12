@@ -9,17 +9,24 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 fails a block; two independent validation tests and a ledger of what is validated; the single-station products
 share one viewpoint and one tone scale, and their pictures are jpg.
 
-- **Sites** (Christian, 12 Nov). `rose_river_falls` with 34, 63 and 110 mm and `knob_mountain_large` in
-  `zcam_consensus`; `overlook_mountain` is now site 52 from drive 2166 to 2750 (sols 1145-1157, four stations
-  excluded) with 48, 63, 79 and 110 mm - a new folder, `mars2020_sol_1145_overlook_mountain_zcam`; `hippo_pools`
-  with 34, 48, 63 and 110 mm, in `zcam_consensus`; `rockytop` keeps one 63 mm sequence, ZCAM08541, and gains ZCAM08537 at 110 mm. A site key
-  `"zcam_joint_exclude": [zooms]` leaves a site out of those zooms' joints (`calib zcam --zcam-take SITE` takes it);
-  no site uses it now.
+- **Sites** (Christian, 12 Nov). Rockytop is split at sol 500: `wildcat_ridge` (sols 500-534) and `skinner_ridge`
+  (460-499) replace `rockytop` in the Mastcam-Z groups; `rockytop` is as before. New in `zcam_consensus`:
+  `rose_river_falls` (34, 63, 110 mm), `knob_mountain_large`, `hippo_pools` (34, 48, 63, 110 mm).
+  `overlook_mountain` is site 52 from drive 2166 to 2750 (sols 1145-1157) with 48, 63, 79 and 110 mm - a new folder,
+  `mars2020_sol_1145_overlook_mountain_zcam`. `seitah_overlook`: its two right-eye 79 mm frames of sol 121 are back.
+  A site key `"zcam_joint_exclude": [zooms]` leaves a site out of those zooms' joints (`calib zcam --zcam-take SITE`
+  takes it): `wildcat_ridge` at 63 mm, whose block keeps ZCAM08530 and ZCAM08538 as their test.
+- **26 and 100 mm** are zooms MPPP aligns (`chal_rocks_large`, `seitah_overlook`). No focus model and no joint:
+  their bin cameras start from the label model and refine in the block. 100 mm holds k2 = p1 = p2 = 0 as 79 mm does;
+  nothing is held at 26 mm yet. Not aligned on real data before this release.
+- **Official figures** (`make_figures.bat`): `zcam_zoom_ladder_seitah_sol121_<states study>.png` - Seitah Overlook
+  ZCAM08114, low against high backlash state at 34, 48, 63 and 79 mm, with the gap per eye (and a `.json` of it).
 - **Alignment health.** `within_station_shift_spread_m` is judged on the one-sol stations; a station held over
   several sols (an arm workspace) has its own check, `workspace_station_shift_spread_m`, which warns and cannot
   fail. Saved reports are re-judged the same way, so Taylorfjellet enters the joints without a new alignment.
 - **`calib zcam --zcam-hold-ratio RATIO`.** Every eye's high / low focal ratio held; 1.0 is one state for both -
-  the test for a zoom whose states may not be separable (79 mm). A test run: never promoted;
+  the test for a zoom whose states may not be separable (79 mm); 1.0045 and 1.006 are the Seitah ladder's gaps
+  at 63 and 79 mm. A test run: never promoted;
   `ratio_hold_test.json` in its folder.
 - **`mppp_studies.validation`** (new). `zpairs`: the Mastcam-Z rig rotation from ZL / ZR pairs alone (no Navcam,
   no bundle adjustment). `deck_focal`: the Navcam focal law against temperature from single frames on the surveyed
