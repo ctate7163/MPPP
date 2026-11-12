@@ -1462,7 +1462,7 @@ def test_rover_model_in_the_mesh(tmp_path):
     from mppp.ibr import rover_deck as RD, rover_model as RM
     assert RM.available()
     V, F, meta = RM.load()
-    assert meta["credit"] == "NASA/JPL-Caltech" and 40000 < len(F) < 80000 and meta["arm_stow_deg"][0] == 89.2
+    assert meta["credit"] == "NASA/JPL-Caltech" and 40000 < len(F) < 80000 and meta["arm_stow_deg"] == [96.0, 20.4, 71.9, -93.3, 85.0] and "antenna" in meta["parts"]   # 0.97.0
     assert V[:, 0].min() < -1.6 and V[:, 0].max() < 1.5            # the RTG behind; the arm stowed, not reaching forward
     assert abs(V[:, 1]).max() < 1.4 and 1.05 < V[:, 2].max() < 1.2  # the wheels on the ground, 1.13 m below the deck top
     Vb, Fb, _ = RM.load(["body"])
