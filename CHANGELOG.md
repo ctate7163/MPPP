@@ -9,6 +9,12 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 fails a block; two independent validation tests and a ledger of what is validated; the single-station products
 share one viewpoint and one tone scale, and their pictures are jpg.
 
+- **Rover model placed by its deck targets** (Christian, 12 Nov: "find the fiducials on the 3D model deck and say if
+  they are consistent with the surveyed locations"). NASA's model has the ten deck targets as 24 mm discs. Seven
+  (TDF1-4, LDIFF, RDIFF, AFT1) fit the survey rigidly to 2.2 mm rms; RPFA1, RPFA2 and AFT2 are 6-18 mm off in the
+  model. That fit replaces the cloud ICP in `scripts/build_rover_model.py` (the ICP had the forward deck 4 mm high).
+  In NRF_1642_0812712250 through the Navcam law and the deck_joint mast chain the discs of TDF1-4 and AFT1 are
+  2.8 px rms from the detected targets (8.8 px before; the surveyed points 1.5 px). The arm angles are unchanged.
 - **Wildcat Ridge 63 mm, right eyes low** (Christian, 12 Nov: "put the right eyes of ZCAM08530 and ZCAM08538 in the low
   state and run a joint for z63, z79, and z110"). The low-state list has `ZR:507:ZCAM08530` and `ZR:513:ZCAM08538`;
   the left eyes stay off it (`-ZL:...`, which also overrides the found list). A test, not a finding: in the 12 Nov

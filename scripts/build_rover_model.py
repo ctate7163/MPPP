@@ -64,7 +64,16 @@ HGA_GIMBAL_M = (-0.436, -0.463, -0.25)   # RMECH: the top of the gimbal, where t
 HGA_MODEL_AZ_DEG = 25.0                  # the direction of that arm in NASA's model (dish flat, pointing up)
 HGA_FIXED_BELOW_Z_M = -0.13              # RMECH z (down): components centred below this height do not turn (the base)
 DECK_TOP_MODEL_Y = 1.135
-ICP_MODEL_FROM_MECH = np.array([[1.0, -2.0e-4, -2.0e-3, 0.0], [2.0e-4, 1.0, 1.1e-3, 2.1e-3], [2.0e-3, -1.1e-3, 1.0, 2.7e-3],
+# 0.97.0 (Christian, 12 Nov 2026: "find the fiducials on the 3D model deck and say if they are consistent with the
+# surveyed locations"): NASA's model carries the ten deck targets as discs of 24 mm radius.  The placement is the rigid
+# fit of seven of them (TDF1-4, LDIFF, RDIFF, AFT1) to the survey (fiducials.SURVEY_MECH_MM, TDF4 at its fitted
+# position): rms 2.2 mm.  RPFA1, RPFA2 and AFT2 are 6-18 mm off in the model and are left out.  Before: an ICP fit of
+# the model to the Van Zyl cloud, [[1, -2.0e-4, -2.0e-3, 0], [2.0e-4, 1, 1.1e-3, 2.1e-3], [2.0e-3, -1.1e-3, 1, 2.7e-3]],
+# which put the forward deck targets 4 mm high (8.8 px rms in NRF_1642_0812712250 through the Navcam law and the
+# deck_joint mast chain; this placement 2.8 px; the survey itself 1.5 px).  The name is kept.
+ICP_MODEL_FROM_MECH = np.array([[1.000002, -0.000654, 0.000622, -0.000243],
+                                [0.000651, 1.000000, 0.000990, 0.000791],
+                                [-0.000623, -0.000989, 1.000002, 0.000798],
                                 [0.0, 0.0, 0.0, 1.0]])
 TARGET_FACES = {"body": 32000, "arm": 10000, "arm_base": 2300, "suspension": 8000, "wheels": 9000, "mast": 6000, "antenna": 6000}
 PARTS = ("body", "arm", "arm_base", "suspension", "wheels", "mast", "antenna")
