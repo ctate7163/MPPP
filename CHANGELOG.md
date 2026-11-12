@@ -24,6 +24,11 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   the 16-bit panoramas, by one fixed rule: `<prefix>_enh_360_3DTD.jpg` (black at 0.1 % of the darkest channel,
   white at 99.9 % of the brightest, a gamma within 1.4-3.0 that puts the ground's median at 0.45) and
   `<prefix>_enhlocal_360_3DTD.jpg` (the same, then CLAHE on the lightness). `mppp ods ... --retone` writes them too.
+- **Sky sphere and range fade in the ODS** (Christian, 12 Nov). The rays that miss mesh and plane end on a sphere of
+  200 m about the mast axis and the ground plane reaches to it (`Scene.set_sky_sphere`, `mppp ods --sky-radius M`;
+  0: the sky at infinity as before). The eye separation is full to 50 m of range from the pivot, falls as a cosine
+  and is zero from the sphere on, the same for both eyes. Depth maps are unchanged (the sky has no depth there).
+  The enhanced-local view uses one smoothed gain map for both eyes (CLAHE on the eyes' mean lightness).
 - **Freeze window** (Christian, 12 Nov): a line when a block starts ("aligning <site>") and when it ends (verdict,
   images, residual, hours), and every half hour the last log line of each running block.
 - **Freeze on 0.97, from the beginning** (Christian, 12 Nov: "restart the freeze from the beginning using the

@@ -388,16 +388,32 @@ def tone_enhanced(x: np.ndarray, lo: float, hi: float, gamma: float) -> np.ndarr
     return 255.0 * n ** (1.0 / gamma)
 
 
-def local_contrast(bgr8: np.ndarray) -> np.ndarray:
-    """CLAHE on the lightness of an 8-bit BGR equirectangular image, continuous across the 360-degree seam."""
+CLAHE_GAIN_BLUR_FRAC = 0.004     # the gain map smoothed over this share of the width: the eyes' disparity under it
+
+
+def local_gain(left8: np.ndarray, right8: np.ndarray) -> np.ndarray:
+    """One lightness gain map (H, W, float32) for both eyes of an 8-bit BGR equirectangular pair: CLAHE on the mean
+    of the two eyes' lightness, as output / input, smoothed, continuous across the 360-degree seam (Christian, 12
+    Nov 2026: "The enhlocal should have the same processing for both eyes")."""
     import cv2
-    W = bgr8.shape[1]
-    pad = W // CLAHE_TILES[1]
-    wide = np.concatenate([bgr8[:, -pad:], bgr8, bgr8[:, :pad]], axis=1)
-    lab = cv2.cvtColor(wide, cv2.COLOR_BGR2LAB)
+    L = [cv2.cvtColor(v, cv2.COLOR_BGR2LAB)[..., 0].astype(np.float32) for v in (left8, right8)]
+    m = np.rint(0.5 * (L[0] + L[1])).astype(np.uint8)
+    W = m.shape[1]
+    pad = max(1, W // CLAHE_TILES[1])
+    wide = np.concatenate([m[:, -pad:], m, m[:, :pad]], axis=1)
     cl = cv2.createCLAHE(clipLimit=CLAHE_CLIP, tileGridSize=(CLAHE_TILES[1] + 2, CLAHE_TILES[0]))
-    lab[..., 0] = cl.apply(lab[..., 0])
-    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)[:, pad:pad + W]
+    out = cl.apply(wide).astype(np.float32)
+    g = (out + 1.0) / (wide.astype(np.float32) + 1.0)
+    g = cv2.GaussianBlur(g, (0, 0), max(1.0, CLAHE_GAIN_BLUR_FRAC * W))
+    return g[:, pad:pad + W]
+
+
+def local_contrast(bgr8: np.ndarray, gain: np.ndarray) -> np.ndarray:
+    """The lightness of an 8-bit BGR image times ``gain`` (:func:`local_gain`), the colour kept."""
+    import cv2
+    lab = cv2.cvtColor(bgr8, cv2.COLOR_BGR2LAB)
+    lab[..., 0] = np.clip(np.rint(lab[..., 0].astype(np.float32) * gain), 0, 255).astype(np.uint8)
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
 
 def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int = 95,
@@ -424,14 +440,15 @@ def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quali
         del a
     other = "right" if top == "left" else "left"
     files = {}
-    for tag, fn in (("enh", lambda v: v), ("enhlocal", local_contrast)):
+    gain = local_gain(eyes["left"], eyes["right"])                  # one map for both eyes
+    for tag, fn in (("enh", lambda v: v), ("enhlocal", lambda v: local_contrast(v, gain))):
         sq = np.vstack([fn(eyes[top]), fn(eyes[other])])
         files[tag] = str(out / f"{pre}{tag}_{STACK_NAME}.jpg")
         cv2.imwrite(files[tag], sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
     return {"levels_8bit_linear_units": {"black": lv[0], "white": lv[1], "gamma": lv[2]}, "files": files,
             "rule": f"black: {ENH_LOW_PCT} % of the darkest channel; white: {ENH_HIGH_PCT} % of the brightest; gamma "
                     f"puts the ground's median at {ENH_GROUND} (within {ENH_GAMMA_RANGE}); enhlocal: CLAHE clip "
-                    f"{CLAHE_CLIP}, tiles {CLAHE_TILES} on the lightness"}
+                    f"{CLAHE_CLIP}, tiles {CLAHE_TILES} on the mean lightness of the two eyes, one smoothed gain map for both"}
 
 
 def _exposure16(out_dir: PathLike) -> float:

@@ -1726,3 +1726,35 @@ def test_exposure_and_enhanced_views(tmp_path):
     a = cv2.imread(r["files"]["enh"]); b = cv2.imread(r["files"]["enhlocal"])
     assert a.shape == (128, 128, 3) and b.shape == a.shape and r["files"]["enh"].endswith("S1_enh_360_3DTD.jpg")
     assert "enhanced_levels_8bit_linear_units" in json.loads(f.read_text())
+
+
+def test_sky_sphere_and_range_merge():
+    """0.97.0 (12 Nov): the sky on a 200 m sphere, the plane out to it, the eye separation fading with range."""
+    from mppp.ibr import ods as O
+    from mppp.ibr.raycast import LABEL_FAR, LABEL_PLANE, SKY_RANGE_M, Scene
+    V = np.array([[-1, -1, -2.0], [1, -1, -2.0], [0, 1, -2.0]]); F = np.array([[0, 1, 2]])
+    plane = {"normal": [0, 0, 1], "offset": -2.0, "centre": [0, 0, 0], "up": [0, 0, 1], "radius_m": 100.0}
+    sc = Scene((V, F), plane=plane, sky=True)
+    o = np.zeros((3, 3)); d = np.array([[1, 0, 0.0], [np.cos(-0.012), 0, np.sin(-0.012)], [0, 0, 1.0]])
+    h = sc.cast(o, d)
+    assert h["t"][0] == SKY_RANGE_M and h["label"][1] == LABEL_FAR             # 167 m out: past the 100 m plane
+    sc.set_sky_sphere(200.0)
+    h = sc.cast(o, d)
+    assert np.allclose(h["t"][[0, 2]], 200.0) and h["label"][0] == LABEL_FAR
+    assert h["label"][1] == LABEL_PLANE and 160 < h["t"][1] < 175              # the plane reaches the sphere
+    sc.set_sky_sphere(0)
+    assert sc.cast(o, d)["t"][0] == SKY_RANGE_M
+    assert np.allclose(O.range_merge([10, 50, 200, 1e6], 200.0), [1, 1, 0, 0], atol=1e-9)
+    assert 0.6 < O.range_merge(125.0, 200.0) < 0.8 and O.range_merge(500.0, None) == 1.0
+    oL, _ = O.ods_rays(8, 4, (2, 3), np.zeros(3), 0.064, "left", share=np.linspace(0, 1, 8))
+    assert np.allclose(np.linalg.norm(oL, axis=1), 0.032 * np.linspace(0, 1, 8))
+
+
+def test_enhlocal_one_gain_for_both_eyes():
+    from mppp.ibr import linear16 as L
+    rng = np.random.default_rng(1)
+    a = rng.integers(20, 200, (64, 128, 3)).astype(np.uint8)
+    b = np.roll(a, 2, axis=1)
+    g = L.local_gain(a, b)
+    assert g.shape == (64, 128) and np.allclose(g, L.local_gain(b, a)) and g.min() > 0.3 and g.max() < 4
+    assert L.local_contrast(a, g).shape == a.shape

@@ -74,6 +74,18 @@ class Scene:
             self.ids[int(gid)] = LABEL_FAR
         self.mesh_V, self.mesh_F = V, F
         self.rover_triangles: Optional[Tuple[int, int]] = None     # 0.97.0: [first, end) of the rover model in the mesh
+        self.sky_radius_m: Optional[float] = None    # 0.97.0: the sky on a sphere of this radius about the plane's centre
+
+    def set_sky_sphere(self, radius_m: Optional[float]) -> None:
+        """0.97.0 (Christian, 12 Nov 2026: "the 3d terrain should probably stop at a 100 or 200 m radius sky sphere"
+        ... "Extend the ground plane to the sphere so mesh, plane and sphere meet without a gap in depth"): the rays
+        that miss mesh and plane end on a sphere of ``radius_m`` about the plane's centre, and the plane reaches to
+        it.  None or 0: the sky at infinity, the plane as fitted.  Needs the plane (its centre)."""
+        if not radius_m or self.plane is None or not self.sky:
+            self.sky_radius_m = None
+            return
+        self.sky_radius_m = float(radius_m)
+        self.plane["radius_m"] = float(radius_m)
 
     def on_rover(self, tri: np.ndarray) -> Optional[np.ndarray]:
         """True where a mesh triangle index is one of the rover model's; None when the mesh holds no model."""
@@ -137,6 +149,13 @@ class Scene:
         if self.sky:
             miss = label == LABEL_NONE
             t[miss] = SKY_RANGE_M
+            if self.sky_radius_m and miss.any():                 # the sphere, from inside it (else infinity)
+                d = np.asarray(dirs, float)[miss]
+                v = np.broadcast_to(np.asarray(origins, float), (len(label), 3))[miss] - self.plane["centre"]
+                b = np.einsum("ij,ij->i", v, d)
+                disc = b * b - (np.einsum("ij,ij->i", v, v) - self.sky_radius_m ** 2)
+                ts = -b + np.sqrt(np.maximum(disc, 0.0))
+                t[miss] = np.where((disc > 0) & (ts > 0), ts, SKY_RANGE_M)
             label[miss] = LABEL_FAR
             hit["normal"][miss] = 0.0
         return {"t": t, "label": label, "normal": hit["normal"], "tri": hit["tri"]}

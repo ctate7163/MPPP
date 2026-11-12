@@ -71,6 +71,19 @@ DEFAULT_IPD_M = 0.064
 # POLE_MERGE_DEG[0] of elevation (up or down), falls as a cosine and is zero from POLE_MERGE_DEG[1]: one image
 # for both eyes at the poles.  None: no merging (the panoramas before 12 Nov).
 POLE_MERGE_DEG: Optional[Tuple[float, float]] = (30.0, 80.0)
+# 0.97.0 (Christian, 12 Nov 2026: "Fade the eye separation with range past the mesh edge, so the last terrain and the
+# sky do not jump in depth"): the eye separation is full to RANGE_MERGE_M[0] (the mesh's reach), falls as a cosine
+# and is zero from the sky sphere's radius; the range is that of the ray from the pivot, so both eyes fade alike.
+SKY_RADIUS_M: Optional[float] = 200.0
+RANGE_MERGE_FROM_M = 50.0
+
+
+def range_merge(range_m, sky_radius_m: Optional[float], from_m: float = RANGE_MERGE_FROM_M) -> np.ndarray:
+    """The share of the eye separation at ``range_m`` from the pivot (1 near, 0 from the sky sphere on)."""
+    r = np.asarray(range_m, float)
+    if not sky_radius_m or sky_radius_m <= from_m:
+        return np.ones_like(r)
+    return np.cos(0.5 * np.pi * np.clip((r - from_m) / (sky_radius_m - from_m), 0.0, 1.0))
 
 
 def pole_merge(el_rad, merge_deg=POLE_MERGE_DEG) -> np.ndarray:
@@ -105,7 +118,7 @@ GAIN_PASS_WIDTH = 1024
 
 
 def ods_rays(width: int, height: int, rows: Tuple[int, int], pivot: Sequence[float], ipd_m: float, eye: str,
-             up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), azimuth0_deg: float = 0.0, pole_merge_deg="default") -> Tuple[np.ndarray, np.ndarray]:
+             up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), azimuth0_deg: float = 0.0, pole_merge_deg="default", share=None) -> Tuple[np.ndarray, np.ndarray]:
     """Origins and unit directions (n, 3) of the equirect pixels in ``rows`` = (r0, r1) for ``eye`` ("left" /
     "right" / "centre").  The left edge of column 0 looks along azimuth ``azimuth0_deg`` (0 = north, the default;
     -180 puts north in the middle) and the azimuth grows eastward (clockwise seen from above), so by default the
@@ -120,8 +133,10 @@ def ods_rays(width: int, height: int, rows: Tuple[int, int], pivot: Sequence[flo
     d = np.cos(E)[..., None] * h + np.sin(E)[..., None] * u
     sign = {"left": -1.0, "right": 1.0, "centre": 0.0, "center": 0.0}[eye]
     right = np.cross(h, u)                                                 # points to the viewer's right
-    share = pole_merge(E, POLE_MERGE_DEG if isinstance(pole_merge_deg, str) else pole_merge_deg)
-    o = P + sign * (ipd_m / 2.0) * share[..., None] * right
+    share_ = pole_merge(E, POLE_MERGE_DEG if isinstance(pole_merge_deg, str) else pole_merge_deg)
+    if share is not None:                                                  # a further share per ray (the range fade)
+        share_ = share_ * np.asarray(share, float).reshape(share_.shape)
+    o = P + sign * (ipd_m / 2.0) * share_[..., None] * right
     return o.reshape(-1, 3), d.reshape(-1, 3)
 
 
@@ -555,7 +570,12 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     t0 = time.time()
     for r0 in range(0, height, rows_per_chunk):
         r1 = min(height, r0 + rows_per_chunk)
-        o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east, azimuth0_deg, pole_merge_deg=pole_merge_deg)
+        rshare = None
+        if getattr(scene, "sky_radius_m", None) and eye in ("left", "right"):    # the range from the pivot's own ray
+            oc, dc = ods_rays(width, height, (r0, r1), P, 0.0, "centre", up, north, east, azimuth0_deg)
+            rshare = range_merge(scene.cast(oc, dc)["t"], scene.sky_radius_m)
+        o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east, azimuth0_deg, pole_merge_deg=pole_merge_deg,
+                        share=rshare)
         c = candidates(scene, sources, o, d)
         rej[0] += c["rejected"][0]; rej[1] += c["rejected"][1]
         rover_px[r0:r1] = c["on_rover"].reshape(r1 - r0, width)
@@ -934,7 +954,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    mask_head_hardware: bool = True, azimuth0_deg: float = 0.0, prefix: Optional[str] = None,
                    bits: int = 8, pds: Optional[PathLike] = None, tone: str = "auto", exposure16: Union[float, str] = "auto",
                    ground_fill: bool = True, mask_mast: bool = True,
-                   tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True, pole_merge_deg="default") -> Dict[str, Any]:
+                   tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True, pole_merge_deg="default", sky_radius_m="default") -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_360_3DTD.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``S003D2046`` / ``S003D2046_rover``); '' for the bare names.  Returns the record."""
@@ -978,7 +998,10 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     def progress(eye, r, h, dt):
         log.info("ods %s: %d / %d rows (%.0f s)", eye, r, h, dt)
 
+    if hasattr(scene, "set_sky_sphere"):                 # 0.97.0: the sky on a sphere, the plane out to it
+        scene.set_sky_sphere(SKY_RADIUS_M if isinstance(sky_radius_m, str) else sky_radius_m)
     rec_out: Dict[str, Any] = {"station": station.to_json(), "prefix": prefix, "width": width, "height": height, "ipd_m": ipd_m,
+                               "sky_radius_m": getattr(scene, "sky_radius_m", None), "range_merge_from_m": RANGE_MERGE_FROM_M,
                                "pole_merge_deg": (list(POLE_MERGE_DEG) if POLE_MERGE_DEG else None) if isinstance(pole_merge_deg, str) else (list(pole_merge_deg) if pole_merge_deg else None),
                                "sources": [s.name for s in sources], "scale": scale, "zcam_scale": zcam_scale,
                                "rover": "shown" if not use_masks else "masked out",

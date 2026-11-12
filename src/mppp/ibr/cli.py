@@ -193,6 +193,9 @@ def add_parsers(sub) -> None:
     p.add_argument("--station", required=True)
     p.add_argument("--width", type=int, default=8192)
     p.add_argument("--ipd", type=float, default=0.064, help="eye separation in metres")
+    p.add_argument("--sky-radius", type=float, default=None, metavar="M",
+                   help="0.97.0: the sky on a sphere of this radius about the mast axis, the ground plane out to it, the "
+                        "eye separation fading from 50 m to zero there (default 200; 0: the sky at infinity as before)")
     p.add_argument("--pole-merge", type=float, nargs=2, default=None, metavar=("START", "END"),
                    help="0.97.0: elevation (deg, up or down) where the eye separation starts to fall and where it is "
                         "zero (default 30 80); --pole-merge 90 90: none")
@@ -379,7 +382,7 @@ def cmd_ods(a: argparse.Namespace) -> int:
     rec = _model(project)
     st, out = _station(project, rec, a)
     scene = _scene(out)
-    rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, pole_merge_deg=("default" if a.pole_merge is None else (None if a.pole_merge[0] >= 90 else tuple(a.pole_merge))), families=a.cameras, scale=a.scale,
+    rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, sky_radius_m=("default" if a.sky_radius is None else a.sky_radius), pole_merge_deg=("default" if a.pole_merge is None else (None if a.pole_merge[0] >= 90 else tuple(a.pole_merge))), families=a.cameras, scale=a.scale,
                          zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,
