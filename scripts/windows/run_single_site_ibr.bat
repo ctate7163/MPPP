@@ -1,10 +1,17 @@
 @echo off
-REM update_and_run_single_sites.bat [LABEL ...] [--steps ...]  (written by python -m mppp single-sites --install)
+REM run_single_site_ibr.bat [LABEL ...] [--steps ...]  (written by python -m mppp single-sites --install)
 REM 1. D:\code\MPPP fast-forwarded to the newest git bundle in %TRANSFER% - if that bundle is ahead of it
 REM    (a bundle behind it, e.g. after a pull from GitHub, is left alone; nothing is overwritten)
 REM 2. python -m mppp single-sites with the arguments given: the stations of src\mppp\data\single_sites.json
+REM    0.97.0: the Perseverance model in the rover mesh, the panorama blended in 16 bits, ONE 16-to-8-bit scaling per
+REM    station for the rover-shown and rover-masked versions (<station>\tone_levels.json), the per-image pictures as
+REM    jpg in photometry_jpg (rad, depth linear / log, normal, incidence, emission, phase, shadow), a centre panorama
+REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
+REM    examples:  run_single_site_ibr.bat S003D2046            one station
+REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
+REM               run_single_site_ibr.bat --dry-run            the commands, not run
 REM Nothing in this file names a version, so it never needs replacing.
-REM It also lives in scripts\windows of the repository (0.96.1): there it works on the tree it is in.  Everything
+REM It also lives in scripts\windows of the repository (0.97.0): there it works on the tree it is in.  Everything
 REM after the settings is one parenthesised block, read whole before it runs - the merge may replace this file.
 REM A copy put into scripts\windows by hand (untracked) is removed before the merge, which brings the tracked one.
 setlocal EnableDelayedExpansion
@@ -24,8 +31,8 @@ set "B="
     if errorlevel 1 (
       echo the newest bundle !B! is not ahead of %REPO% - the code is kept as it is
     ) else (
-      git ls-files --error-unmatch scripts/windows/update_and_run_single_sites.bat >nul 2>nul
-      if errorlevel 1 if exist scripts\windows\update_and_run_single_sites.bat del /q scripts\windows\update_and_run_single_sites.bat
+      git ls-files --error-unmatch scripts/windows/run_single_site_ibr.bat >nul 2>nul
+      if errorlevel 1 if exist scripts\windows\run_single_site_ibr.bat del /q scripts\windows\run_single_site_ibr.bat
       git merge -q --ff-only refs/remotes/bundle/main
       if errorlevel 1 ( echo fast-forward failed - send Claude the lines above & pause & exit /b 1 )
     )

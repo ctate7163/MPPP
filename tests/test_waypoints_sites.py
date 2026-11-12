@@ -421,7 +421,7 @@ def test_chal_rocks_110mm():
     # 26 Oct (Christian): 79 and 110 mm out for now - 34, 48, 63 mm until the wider zooms have good models
     assert t["chal_rocks_tiny"]["zcam"] == [34, 48, 63] and t["chal_rocks"]["zcam"] == [34, 48, 63, 79, 110]   # 0.95.1: 79 out; 30 Oct: back in
     assert t["taylorfjellet"]["zcam"] == [34, 48, 63, 79, 110]   # 0.95.1: 110 (zcam_include)
-    assert t["rockytop"]["zcam"] == [34, 63, 79, 110] and set(t["rockytop"]["zcam_include"]) == {"110"}
+    assert t["rockytop"]["zcam"] == [34, 63, 79, 110] and set(t["rockytop"]["zcam_include"]) == {"63", "110"}   # 0.97.0: 63 mm is ZCAM08541 alone
     assert True  # 0.95.0 (Christian, 27 Oct): the 48 mm pair back, held at the model
     assert t["seitah_overlook"]["zcam"] == [34, 48, 63, 79, 110] and t["belva_crater"]["zcam"] == [34, 110]   # 0.95.1: no 79
     assert t["marble_mountain"]["zcam"] == [34, 63, 110]                             # 0.95.1: a third Z110 block

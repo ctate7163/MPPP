@@ -379,8 +379,9 @@ def test_windows_folder_is_short():
     # anomalies"): 24; freeze_chain.bat (Christian, 2 Nov: the freeze run unattended): 25
     # 0.96.0 (9 Nov): claude_sync.bat and freeze_chain.bat out, sync_code.bat and freeze.bat in: 25
     # 0.96.1 (Christian, 11 Nov: "Please put that bat file in the MPPP/scripts/windows/ folder"):
-    # update_and_run_single_sites.bat, the copy of mppp.ibr.single_sites.BAT: 26
-    assert len([f for f in files if not f.name.startswith("trial_joints_")]) <= 26, sorted(f.name for f in files)
+    # run_single_site_ibr.bat, the copy of mppp.ibr.single_sites.BAT: 26
+    # 0.97.0: zcam_joints_097.bat is this version's one run (in place of trial_joints_0p95.bat) - not counted either
+    assert len([f for f in files if not f.name.startswith(("trial_joints_", "zcam_joints_0"))]) <= 26, sorted(f.name for f in files)
     from mppp.ibr import single_sites as SS
     assert (w / SS.BAT_NAME).read_bytes() == SS.BAT.replace("\r\n", "\n").replace("\n", "\r\n").encode("ascii")
     tm = (w / "train_masks.bat").read_bytes()
@@ -511,28 +512,16 @@ def test_tie_point_studies_scaffold(tmp_path, capsys):
     assert "| S2 (" in T.report_all(tmp_path, "S2", {"x": {"variants": vs, "report": "r.md"}}) or "# S2" in T.report_all(tmp_path, "S2", {"x": {"variants": vs, "report": "r.md"}})
 
 
-def test_trial_joints_bat_runs_every_0p95_joint_without_promoting():
-    """0.95.0 (Christian, 28 Oct): the trial of the 0.95.0 joints over the blocks aligned on 0.94 - the Navcam joint
-    twice (with and without --tie-f-slope), the law check of the candidate, the Hazcam fit, the Mastcam-Z joints of
-    34, 48 and 63 mm, the N+Z check on request; nothing promoted, no waiting for running blocks."""
-    b = (ROOT / "scripts" / "windows" / "trial_joints_0p95.bat").read_bytes()
+def test_zcam_joints_097_bat():
+    """0.97.0 (Christian, 12 Nov 2026): the new blocks, the 63 / 79 / 110 mm joints, the 79 mm one-state test and
+    validation test 3; nothing promoted unless MPPP_PROMOTE=1; trial_joints_0p95.bat is gone."""
+    b = (ROOT / "scripts" / "windows" / "zcam_joints_097.bat").read_bytes()
     assert b"\r\n" in b and b.count(b"\n") == b.count(b"\r\n")
     t = b.decode("ascii")
-    assert t.count("calib navcam") == 2 and "--tie-f-slope" in t and "calib lawcheck" in t and "calib hazcam" in t
-    assert "calib zcam --zoom %%Z" in t and 'MPPP_ZOOMS=34 48 63' in t and "calib nz" in t
-    assert "--promote-if-ok" not in t and t.count("--no-promote") == 4 and t.count("--wait-h 0") == 7   # nz never promotes
-    assert "mppp_env.bat" in t and "trial_0p95_" in t and "plot_lawcheck" in t
-    # 29 Oct: the combined joint runs before the law check (on by default) and its Navcam law is checked too; the
-    # Mastcam-Z joints run the eye-slope tests
-    assert t.index("calib nz") < t.index("calib lawcheck") and 'MPPP_NZ%"=="none"' in t
-    assert "--law combined=%OUT%\\nz34_joint\\navcam_law" in t and "%COMBINED%" in t
-    assert t.count("--eye-slope-tests") == 1 and "calib zcam --zoom %%Z" in t
-    # 0.95.1: MPPP_TRIAL a list of parts (to resume after a stop), each part a subroutine; every zoom 34-110
-    assert 'MPPP_ZOOMS=34 48 63 79 110' in t and "call :part_%%P %*" in t
-    for part in ("navcam", "tiefslope", "nz", "lawcheck", "hazcam", "zcam"):
-        assert f"\r\n:part_{part}\r\n" in t
-    assert t.count("exit /b 0") == 8 and "goto :navcam" not in t and "goto :lawcheck" not in t
-    assert t.index("call :part_%%P") < t.index("goto :end") < t.index(":part_navcam")
+    assert "--sites rose_river_falls knob_mountain_large overlook_mountain hippo_pools rockytop" in t and "for %%Z in (63 79 110)" in t
+    assert "--zcam-hold-ratio 1.0 --no-promote" in t and 'set "PROMOTE=--no-promote"' in t
+    assert "mppp_studies.validation.zpairs" in t and "cmods_freeze2" in t
+    assert not (ROOT / "scripts" / "windows" / "trial_joints_0p95.bat").exists()
 
 
 def test_sync_code_runs_from_a_copy_the_merge_cannot_touch():

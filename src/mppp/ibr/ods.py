@@ -780,13 +780,44 @@ def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, pre
     return {"png": str(png), "jpg": str(jpg), "size": [int(sq.shape[1]), int(sq.shape[0])], "top": top}
 
 
+DEPTH16_UNITS_PER_M = 500.0      # <prefix>_ods_centre_depth_16.png: uint16 = range (m) x this (2 mm steps, to 131 m)
+
+
+def write_centre_depth(out_dir: PathLike, prefix: str, rng: np.ndarray, label: np.ndarray) -> Dict[str, Any]:
+    """0.97.0 (Christian, 12 Nov 2026: "also make a version projected from the center rotation with a depth map"): the
+    depth of the centre panorama - the range from the pivot along each pixel's ray, on the panorama's own grid -
+    as ``<prefix>_ods_centre_depth.npz`` (float32 metres ``range``, uint8 ``label``; 0 = no surface, the sky inf),
+    ``_depth_16.png`` (uint16 = metres x DEPTH16_UNITS_PER_M; 0 = no surface, 65535 = the sky or beyond 131 m) and the
+    pictures ``_depth_linear.jpg`` / ``_depth_log.jpg`` (:func:`mppp.ibr.raycast.depth_rgb`)."""
+    import cv2
+    from .raycast import JPEG_QUALITY, SKY_RANGE_M, depth_rgb
+    out = Path(out_dir)
+    r = np.asarray(rng, np.float32).copy()
+    lab = np.asarray(label, np.uint8)
+    sky = (lab == LABEL_FAR) | (r >= 0.5 * SKY_RANGE_M)
+    r[sky] = np.inf
+    r[lab == 0] = 0.0
+    files = {"npz": ods_file(out, "centre_depth", prefix, ".npz"), "png16": ods_file(out, "centre_depth_16", prefix),
+             "linear": ods_file(out, "centre_depth_linear", prefix, ".jpg"), "log": ods_file(out, "centre_depth_log", prefix, ".jpg")}
+    np.savez_compressed(files["npz"], range=r, label=lab)
+    d16 = np.where(np.isfinite(r), np.clip(np.rint(r * DEPTH16_UNITS_PER_M), 0, 65535), 65535).astype(np.uint16)
+    cv2.imwrite(str(files["png16"]), d16)
+    for mode in ("linear", "log"):
+        cv2.imwrite(str(files[mode]), depth_rgb(np.where(np.isfinite(r), r, 0), lab, mode), [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+    ok = np.isfinite(r) & (r > 0)
+    return {"files": {k: str(v) for k, v in files.items()}, "units_per_m_16bit": DEPTH16_UNITS_PER_M,
+            "encoding": "range from the pivot along the pixel's ray (m); npz: 0 none, inf sky; 16-bit png: 0 none, 65535 sky",
+            "median_m": float(np.median(r[ok])) if ok.any() else None, "surface_share": float(ok.mean())}
+
+
 def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width: int = DEFAULT_WIDTH, ipd_m: float = DEFAULT_IPD_M,
                    families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None,
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
                    gains: bool = True, stack_top: str = "left", sky_fill: bool = True,
                    mask_head_hardware: bool = True, azimuth0_deg: float = 0.0, prefix: Optional[str] = None,
                    bits: int = 8, pds: Optional[PathLike] = None, tone: str = "auto", exposure16: float = 0.5,
-                   ground_fill: bool = True, mask_mast: bool = True) -> Dict[str, Any]:
+                   ground_fill: bool = True, mask_mast: bool = True,
+                   tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_ods_stereo_square.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``S003D2046`` / ``S003D2046_rover``); '' for the bare names.  Returns the record."""
@@ -841,7 +872,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         g = estimate_gains(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
         rec_out["gains"] = g
         log.info("ods: gains over %d source pairs: %s", g["pairs"], ", ".join(f"{v:.3f}" for v in g["gains"].values()))
-    levels = None
+    levels, levels_from, depth_rec = None, None, None
     for eye in eyes:
         res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, rows_per_chunk=rows_per_chunk,
                          progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, linear=linear,
@@ -856,8 +887,12 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             del v16
             from .linear16 import auto_levels, tone_levels, tone_soft
             if tone == "auto":                       # the black and white points from the first eye, for both
-                if levels is None:
-                    levels = auto_levels(res["rgb"], res["source"] >= 0)
+                if levels is None:                   # 0.97.0: or from the file the other variant wrote
+                    from .linear16 import shared_levels
+                    levels, levels_from = shared_levels(tone_levels_file,
+                                                        lambda: auto_levels(res["rgb"], res["source"] >= 0))
+                    log.info("ods: 8-bit view levels %.1f / %.1f (%s%s)", levels[0], levels[1], levels_from,
+                             f": {tone_levels_file}" if tone_levels_file else "")
                 view = tone_levels(res["rgb"], *levels)
             else:
                 view = tone_soft(res["rgb"]) if tone == "soft" else np.clip(res["rgb"], 0, 255)
@@ -865,6 +900,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             cv2.imwrite(str(f), np.rint(view[..., ::-1]).astype(np.uint8))
         else:
             cv2.imwrite(str(f), res["rgb"][..., ::-1])
+        if eye in ("centre", "center") and centre_depth:     # 0.97.0: the panorama from the pivot, with its depth
+            depth_rec = write_centre_depth(out, prefix, res["range"], res["label"])
         if eye == eyes[0]:
             provenance_png(res["source"], out / "provenance.png", len(sources))
         lab = res["label"]
@@ -892,6 +929,10 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 (out / n).unlink()
                 log.info("ods: removed the stale %s (now %s_%s)", n, prefix, n)
     rec_out["prefix"] = prefix
+    if depth_rec:
+        rec_out["centre_depth"] = depth_rec
+    rec_out["view_levels_from"] = levels_from
+    rec_out["tone_levels_file"] = str(tone_levels_file) if tone_levels_file else None
     rec_out["bits"] = 16 if linear else 8
     if int(bits) == 16:
         fr = [v for v in (lin_rep.get("frames") or {}).values() if v]

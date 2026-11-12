@@ -7,8 +7,9 @@ mppp.ibr.cli - ``mppp mesh``, ``mppp depthmaps``, ``mppp ods`` on one finished b
 
 ``WORK`` is the block folder (or its ``colmap`` project folder).  The station's products go to
 ``<project>/ods/<station>/``: ``station.json``, ``mesh.ply``, ``ground_plane.json``, ``mesh_report.json``,
-``mesh_preview.png``, ``maps/``, ``maps_png/``, ``maps_report.{json,md}``, ``photometry/``, ``photometry_maps/``,
-``photometry_png/``, ``photometry_report.json``, ``<station>_ods_left.png``, ``<station>_ods_right.png``,
+``mesh_preview.png``, ``maps/``, ``maps_report.{json,md}``, ``photometry/``, ``photometry_maps/``,
+``photometry_jpg/`` (0.97.0: per image _rad, _depth_linear, _depth_log, _normal, _incidence, _emission, _phase,
+_shadow .jpg), ``photometry_report.json``, ``<station>_ods_left.png``, ``<station>_ods_right.png``,
 ``<station>_ods_stereo_square.png/.jpg`` (``<station>_rover_...`` with ``--rover``), ``provenance.png``, ``ods.json``
 (``rover_deck.json`` with ``mesh --rover``).
 """
@@ -46,7 +47,8 @@ def _model(project):
 def _station(project, rec, a):
     from .station import select_station
     _rover(a)
-    st = select_station(project, rec, a.station, families=getattr(a, "cameras", "N") or "N")
+    st = select_station(project, rec, a.station, families=getattr(a, "cameras", "N") or "N",
+                        pivot_height=getattr(a, "pivot_height", None) or "zcam")
     if getattr(a, "out", None):                      # 10 Nov: e.g. D:\rover_blocks\single_sites\S003D2046[\with_rover]
         out = Path(a.out)
     else:
@@ -108,6 +110,10 @@ def _tie_points(rec, min_track: int = 3) -> np.ndarray:
 
 
 def _rover_args(p) -> None:
+    p.add_argument("--pivot-height", default="zcam", choices=["zcam", "fit"], help="0.97.0: the pivot's height on the "
+                   "azimuth axis - zcam (default: the Mastcam-Z centres' height with the head level, whatever "
+                   "cameras are rendered, so Navcam and Mastcam-Z products share one viewpoint) or fit (the frames' "
+                   "own fit, as before); use the same for mesh, depthmaps and ods")
     p.add_argument("--rover", action="store_true", help="the rover body and deck shown - the default since 0.96.1 "
                    "(kept for old command lines)")
     p.add_argument("--mask-rover", action="store_true", help="the rover masked out: the rover-masked cloud and the rover "
@@ -225,6 +231,13 @@ def add_parsers(sub) -> None:
                    "edge of the panorama: 0 = north in the first column (default)")
     p.add_argument("--north-center", action="store_true", help="north in the middle of the panorama (--azimuth0 -180), "
                    "for viewers that face the image centre")
+    p.add_argument("--tone-levels", default=None, metavar="FILE", help="0.97.0, --tone auto: the black point and "
+                   "the ground level of the 8-bit view kept in FILE (json) - read when it is there, else found on this "
+                   "panorama and written; give the rover-shown and the rover-masked run the same FILE and their "
+                   "16-to-8-bit scaling is identical")
+    p.add_argument("--no-depth", action="store_true", help="0.97.0: no depth products for the centre panorama "
+                   "(default with --eyes centre: <prefix>_ods_centre_depth.npz, _depth_16.png, _depth_linear.jpg, "
+                   "_depth_log.jpg - the range from the pivot along each pixel's ray)")
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and the square again from the "
                    "16-bit ones in the folder (--tone auto; no rendering)")
     p.add_argument("--stack-only", action="store_true", help="only stack the eye images already in the folder into "
@@ -328,7 +341,8 @@ def cmd_ods(a: argparse.Namespace) -> int:
         if out is None:
             project = _project(a.work)
             st, out = _station(project, _model(project), a)
-        r = retone(out, a.prefix if a.prefix is not None else find_prefix(out), top=a.stack_top)
+        r = retone(out, a.prefix if a.prefix is not None else find_prefix(out), top=a.stack_top,
+                   levels_file=a.tone_levels)
         print(f"{r['square']}  (levels {r['levels_16bit_units'][0]:.0f} / ground {r['levels_16bit_units'][1]:.0f} of the 16-bit scale, "
               f"{r['top']} eye on top)")
         return 0
@@ -355,7 +369,8 @@ def cmd_ods(a: argparse.Namespace) -> int:
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,
                          azimuth0_deg=-180.0 if a.north_center else a.azimuth0, prefix=a.prefix,
                          bits=a.bits, pds=a.pds, tone=a.tone, exposure16=a.exposure16,
-                         ground_fill=not a.no_ground_fill, mask_mast=not a.keep_mast)
+                         ground_fill=not a.no_ground_fill, mask_mast=not a.keep_mast,
+                         tone_levels_file=a.tone_levels, centre_depth=not a.no_depth)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: {e['file']}  coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "

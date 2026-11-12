@@ -285,7 +285,42 @@ def tone_levels(x: np.ndarray, lo: float, mid: float) -> np.ndarray:
     return np.clip(out, 0.0, 255.0)
 
 
-def retone(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int = 95) -> Dict[str, Any]:
+def shared_levels(path: Optional[PathLike], compute, scale: float = 1.0) -> Tuple[Tuple[float, float], str]:
+    """0.97.0 (Christian, 12 Nov 2026: "the scaling from 16 to 8 bits should be identical for the with and without
+    rover versions"): the (black point, ground level) of the 8-bit view from ``path`` when that file is there, else
+    from ``compute()`` - and then written to ``path``.  The file keeps them in 8-bit linear units (the 16-bit frame
+    scale / 64); ``scale``: the caller's units per 8-bit unit (64 x exposure16 for the 16-bit panorama files).
+    Returns (levels in the caller's units, "file" | "computed")."""
+    import json as _json
+    f = Path(path) if path else None
+    if f is not None and f.is_file():
+        d = _json.loads(f.read_text(encoding="utf-8"))
+        lo, mid = (float(v) for v in d["levels_8bit_linear_units"])
+        return (lo * scale, mid * scale), "file"
+    lo, mid = compute()
+    if f is not None:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(_json.dumps({"levels_8bit_linear_units": [lo / scale, mid / scale],
+                                  "meaning": "black point and the ground's median of the linear panorama, in the "
+                                             "frames' 16-bit scale / 64; view = tone_levels(linear, black, ground): "
+                                             f"ground -> {TERRAIN_GREY:g} of 255, linear to {KNEE:g}, then rolled off",
+                                  "note": "delete this file to have the levels found again on the next panorama"},
+                                 indent=1), encoding="utf-8")
+    return (float(lo), float(mid)), "computed"
+
+
+def _exposure16(out_dir: PathLike) -> float:
+    """The exposure16 the 16-bit panoramas of ``out_dir`` were written with (``ods.json``; 0.5 when not recorded)."""
+    import json as _json
+    try:
+        return float((_json.loads((Path(out_dir) / "ods.json").read_text(encoding="utf-8")).get("linear16") or {})
+                     .get("exposure16") or 0.5)
+    except (OSError, ValueError):
+        return 0.5
+
+
+def retone(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int = 95,
+           levels_file: Optional[PathLike] = None) -> Dict[str, Any]:
     """The 8-bit panoramas and the square again from the 16-bit ones in ``out_dir`` (no rendering): the levels from
     the left eye, used for both."""
     import cv2
@@ -299,7 +334,8 @@ def retone(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int 
             raise FileNotFoundError(f"{f}: no 16-bit panorama")
         a = a[..., :3].astype(np.float32)
         if levels is None:
-            levels = auto_levels(a)
+            k16 = 64.0 * _exposure16(out)
+            levels, _ = shared_levels(levels_file, lambda: auto_levels(a), scale=k16)
         v = np.rint(tone_levels(a, *levels)).astype(np.uint8)
         cv2.imwrite(str(out / f"{pre}ods_{eye}.png"), v)
         imgs[eye] = v

@@ -9,7 +9,7 @@ D:\\rover_blocks\\single_sites\\S003D2046 and so forth" - "the single sites shou
     python -m mppp single-sites --steps ods            only the panoramas (mesh and maps already there)
     python -m mppp single-sites --squares-only         only stack the eye images already there into the squares
     python -m mppp single-sites --list | --dry-run     what would run
-    python -m mppp single-sites --install DIR          write update_and_run_single_sites.bat into DIR
+    python -m mppp single-sites --install DIR          write run_single_site_ibr.bat into DIR
 
 Per station and variant (masked: the rover masked out; rover: the rover shown) the steps run as their own processes,
 ``python -m mppp dense | mesh | depthmaps | ods`` (the GPU step through the pipeline's GPU lock), into
@@ -33,15 +33,24 @@ PathLike = Union[str, Path]
 CONFIG = Path(__file__).resolve().parents[1] / "data" / "single_sites.json"
 VARIANTS = ("masked", "rover")
 STEPS = ("dense", "mesh", "depthmaps", "ods")
-BAT_NAME = "update_and_run_single_sites.bat"
+BAT_NAME = "run_single_site_ibr.bat"          # 0.97.0 (Christian, 12 Nov): was update_and_run_single_sites.bat
+OLD_BAT_NAME = "update_and_run_single_sites.bat"
+TONE_FILE = "tone_levels.json"                 # one per station, shared by its rover-shown and rover-masked panoramas
 
 BAT = r"""@echo off
-REM update_and_run_single_sites.bat [LABEL ...] [--steps ...]  (written by python -m mppp single-sites --install)
+REM run_single_site_ibr.bat [LABEL ...] [--steps ...]  (written by python -m mppp single-sites --install)
 REM 1. D:\code\MPPP fast-forwarded to the newest git bundle in %TRANSFER% - if that bundle is ahead of it
 REM    (a bundle behind it, e.g. after a pull from GitHub, is left alone; nothing is overwritten)
 REM 2. python -m mppp single-sites with the arguments given: the stations of src\mppp\data\single_sites.json
+REM    0.97.0: the Perseverance model in the rover mesh, the panorama blended in 16 bits, ONE 16-to-8-bit scaling per
+REM    station for the rover-shown and rover-masked versions (<station>\tone_levels.json), the per-image pictures as
+REM    jpg in photometry_jpg (rad, depth linear / log, normal, incidence, emission, phase, shadow), a centre panorama
+REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
+REM    examples:  run_single_site_ibr.bat S003D2046            one station
+REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
+REM               run_single_site_ibr.bat --dry-run            the commands, not run
 REM Nothing in this file names a version, so it never needs replacing.
-REM It also lives in scripts\windows of the repository (0.96.1): there it works on the tree it is in.  Everything
+REM It also lives in scripts\windows of the repository (0.97.0): there it works on the tree it is in.  Everything
 REM after the settings is one parenthesised block, read whole before it runs - the merge may replace this file.
 REM A copy put into scripts\windows by hand (untracked) is removed before the merge, which brings the tracked one.
 setlocal EnableDelayedExpansion
@@ -61,8 +70,8 @@ set "B="
     if errorlevel 1 (
       echo the newest bundle !B! is not ahead of %REPO% - the code is kept as it is
     ) else (
-      git ls-files --error-unmatch scripts/windows/update_and_run_single_sites.bat >nul 2>nul
-      if errorlevel 1 if exist scripts\windows\update_and_run_single_sites.bat del /q scripts\windows\update_and_run_single_sites.bat
+      git ls-files --error-unmatch scripts/windows/run_single_site_ibr.bat >nul 2>nul
+      if errorlevel 1 if exist scripts\windows\run_single_site_ibr.bat del /q scripts\windows\run_single_site_ibr.bat
       git merge -q --ff-only refs/remotes/bundle/main
       if errorlevel 1 ( echo fast-forward failed - send Claude the lines above & pause & exit /b 1 )
     )
@@ -78,7 +87,7 @@ set "B="
 
 
 SQUARES_BAT_NAME = "make_square.bat"
-SQUARES_BAT = BAT.replace("REM update_and_run_single_sites.bat [LABEL ...] [--steps ...]  (written by python -m mppp single-sites --install)",
+SQUARES_BAT = BAT.replace("REM run_single_site_ibr.bat [LABEL ...] [--steps ...]  (written by python -m mppp single-sites --install)",
                           "REM make_square.bat [LABEL ...]  (written by python -m mppp single-sites --install)")
 SQUARES_BAT = SQUARES_BAT.replace("REM 2. python -m mppp single-sites with the arguments given: the stations of src\\mppp\\data\\single_sites.json",
                                   "REM 2. python -m mppp single-sites --squares-only: every station's two eye images already there stacked into\n"
@@ -158,6 +167,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     argv.append("--photometry")
                 if step == "ods" and st.get("ods_exclude"):   # 10 Nov: pairs left out of the panorama
                     argv += ["--exclude", *[str(x) for x in st["ods_exclude"]]]
+                if step == "ods":                    # 0.97.0: one 16-to-8-bit scaling for both variants of a station
+                    argv += ["--tone-levels", str(base / TONE_FILE)]
                 argv += [str(x) for x in (cfg.get(f"{step}_args") or [])]      # 0.96.1: for every station
                 argv += [str(x) for x in st.get(f"{step}_args", [])]
                 cmds.append({"variant": v, "step": step, "argv": argv})
@@ -220,10 +231,13 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
         codes: Dict[str, Dict[str, int]] = {v: {} for v in run["variants"]}
         with open(base / "single_site_log.txt", "a", encoding="utf-8") as fh:
             if retone:
+                if (base / TONE_FILE).is_file():
+                    (base / TONE_FILE).unlink()          # found again on the first variant, used for both
                 for v in run["variants"]:
                     out = base / ("with_rover" if v == "rover" else "")
                     if any(out.glob("*ods_right_16.png")):
-                        codes[v]["retone"] = _run(["ods", "-", "--station", "x", "--retone", "--out", str(out)], fh)
+                        codes[v]["retone"] = _run(["ods", "-", "--station", "x", "--retone", "--out", str(out),
+                                                   "--tone-levels", str(base / TONE_FILE)], fh)
             elif squares_only:
                 for v in run["variants"]:
                     out = base / ("with_rover" if v == "rover" else "")
@@ -234,6 +248,8 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                                                    "--out", str(out)], fh)
             else:
                 failed = set()
+                if any(c["step"] == "ods" for c in run["commands"]) and (base / TONE_FILE).is_file():
+                    (base / TONE_FILE).unlink()          # 0.97.0: the levels of the run before are not carried over
                 for c in run["commands"]:
                     v = c["variant"]
                     if v in failed:
@@ -262,6 +278,8 @@ def install(dest: PathLike) -> Path:
     d.mkdir(parents=True, exist_ok=True)
     f = d / BAT_NAME
     f.write_bytes(BAT.replace("\r\n", "\n").replace("\n", "\r\n").encode("ascii"))
+    if (d / OLD_BAT_NAME).is_file():                  # 0.97.0: the bat of before, replaced by BAT_NAME
+        (d / OLD_BAT_NAME).unlink()
     g = d / SQUARES_BAT_NAME                          # 10 Nov: the squares alone, the left eye on top
     g.write_bytes(SQUARES_BAT.replace("\r\n", "\n").replace("\n", "\r\n").encode("ascii"))
     return f

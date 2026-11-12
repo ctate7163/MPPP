@@ -49,6 +49,41 @@ class Station:
                 "east_block": [float(v) for v in self.east]}
 
 
+# 0.97.0 (Christian, 12 Nov 2026: "The vertical height on the axis of azimuth rotations should be at the Mastcam-Z height
+# even when rendering navcam.  This will give consistency."): the cameras on the mast head, in the mast frame of the
+# 8 Nov note (origin: the elevation axis on the azimuth axis; forward along the level boresight, up) - metres
+HEAD_FORWARD_UP_M = {"N": (0.1269, 0.05745), "Z": (0.0238, 0.06125)}     # Navcam (chain), Mastcam-Z 34 mm (5 stations)
+ZCAM_HEIGHT_M = HEAD_FORWARD_UP_M["Z"][1]                                 # the Mastcam-Z centres above the elevation axis, level
+PIVOT_HEIGHTS = ("zcam", "fit")
+
+
+def mastcamz_height_pivot(pivot: np.ndarray, centres: np.ndarray, rotations: np.ndarray, groups: Sequence[str],
+                          up: Sequence[float]) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """The pivot moved along ``up`` to the height of the Mastcam-Z centres with the head level: each frame's centre
+    gives the height of the elevation axis (its own height less the camera's rise above the axis at its elevation,
+    ``up_c cos(el) + forward_c sin(el)``); the pivot goes ZCAM_HEIGHT_M above their median.  The same point whether
+    the station is rendered from Navcam or Mastcam-Z frames.  Returns (pivot, record)."""
+    u = np.asarray(up, float)
+    u = u / np.linalg.norm(u)
+    C = np.asarray(centres, float).reshape(-1, 3)
+    R = np.asarray(rotations, float).reshape(-1, 3, 3)
+    h = []
+    for Ci, Ri, g in zip(C, R, groups):
+        fam = str(g)[:1].upper()
+        if fam not in HEAD_FORWARD_UP_M:
+            continue
+        fwd, upc = HEAD_FORWARD_UP_M[fam]
+        s_ = float(np.clip((Ri.T @ np.array([0.0, 0.0, 1.0])) @ u, -1.0, 1.0))
+        h.append(float(Ci @ u) - (upc * float(np.sqrt(1.0 - s_ * s_)) + fwd * s_))
+    if not h:
+        return np.asarray(pivot, float), {"rule": "fit", "note": "no Navcam or Mastcam-Z frame: the fitted height kept"}
+    axis_h = float(np.median(h))
+    P = np.asarray(pivot, float)
+    new = P + u * (axis_h + ZCAM_HEIGHT_M - float(P @ u))
+    return new, {"rule": "zcam", "elevation_axis_height_spread_m": float(np.std(h)), "frames": len(h),
+                 "moved_up_m": float((new - P) @ u), "zcam_above_elevation_axis_m": ZCAM_HEIGHT_M}
+
+
 def parse_station(spec: str) -> Tuple[Optional[int], Optional[int], Optional[int]]:
     """``S003D1234`` / ``3_1234`` / ``3/1234`` -> (site, drive, None); ``sol:91`` -> (None, None, 91)."""
     s = str(spec).strip()
@@ -141,7 +176,7 @@ def fit_pivot(centres: np.ndarray, rotations: np.ndarray, groups: Sequence[str])
     return out
 
 
-def select_station(project, rec, spec: str, families: str = "N") -> Station:
+def select_station(project, rec, spec: str, families: str = "N", pivot_height: str = "zcam") -> Station:
     """The :class:`Station` ``spec`` of ``project`` (an :class:`mppp.sfm.project.SfmProject`) in the model ``rec``
     (a ``pycolmap.Reconstruction``, the block's native-pixel model): its registered images of ``families``, the
     pivot fit over them, and the ENU axes of the block frame (``error_input/block_frame.json`` when the export
@@ -179,6 +214,13 @@ def select_station(project, rec, spec: str, families: str = "N") -> Station:
                  pivot=np.asarray(fit["pivot"], float), R_block_from_enu=Rb)
     if Rb is not None:
         st.east, st.north, st.up = Rb @ np.array([1.0, 0, 0]), Rb @ np.array([0, 1.0, 0]), Rb @ np.array([0, 0, 1.0])
+    if pivot_height not in PIVOT_HEIGHTS:
+        raise ValueError(f"pivot_height {pivot_height!r}: one of {PIVOT_HEIGHTS}")
+    if pivot_height == "zcam":                       # 0.97.0: on the azimuth axis, at the Mastcam-Z height
+        st.pivot, hrec = mastcamz_height_pivot(st.pivot, np.array(C), np.array(R), G, st.up)
+        fit["pivot_fitted"] = np.asarray(fit["pivot"], float)
+        fit["pivot"] = st.pivot
+        fit["height"] = hrec
     st.pivot_fit = {k: (v.tolist() if isinstance(v, np.ndarray) else ({kk: vv.tolist() for kk, vv in v.items()} if isinstance(v, dict) and v and isinstance(next(iter(v.values())), np.ndarray) else v))
                     for k, v in fit.items()}
     return st

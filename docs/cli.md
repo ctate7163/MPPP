@@ -340,7 +340,7 @@ out) and `...\<label>\with_rover\` (rover shown). A failed step skips the rest o
 the whole station). Each station's output also goes to `single_site_log.txt` in its folder;
 `single_sites_summary.md` has a line per station and variant: the exit codes, how far the fused points reach, the
 ground plane, the panorama's coverage, whether the square is there. `--squares-only` only stacks the eye images
-already there. `--install DIR` writes `update_and_run_single_sites.bat` into DIR: it fast-forwards `D:\code\MPPP`
+already there. `--install DIR` writes `run_single_site_ibr.bat` into DIR: it fast-forwards `D:\code\MPPP`
 to the newest bundle in `D:\rover_blocks\_transfer` when that bundle is ahead (never back), then runs
 `mppp single-sites` with its arguments - it names no version, so it never needs replacing.
 
@@ -436,7 +436,7 @@ no depth / 3 masked / 4 plane) and 16-bit previews (the plane darker), validated
 observes, on the mesh and on the plane separately (`maps_report.md`: how far the flat stand-in is from the terrain); `--photometry` adds the
 photometric cube from the sun direction of the frame's row (`sun_enu` turned into the block frame): incidence,
 emission, phase and the cast shadow — `photometry/` (npz), `photometry_maps/` (COLMAP `.bin` arrays),
-`photometry_png/`, `photometry_report.json`.  **`ods`**: the omni-directional stereo panorama — equirectangular,
+`photometry_jpg/`, `photometry_report.json`.  **`ods`**: the omni-directional stereo panorama — equirectangular,
 `--width` × half, the eyes `--ipd` apart on the circle around the pivot — each eye's rays cast into the scene and
 every hit coloured from the source frame that sees it best (the smallest angle to the frame's axis, inside the
 frame and its mask): `<station>_ods_left.png`, `<station>_ods_right.png`, `<station>_ods_stereo_square.png/.jpg`

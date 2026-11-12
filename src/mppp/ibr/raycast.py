@@ -33,7 +33,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from typing import List, Any, Dict, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -220,6 +220,54 @@ def load_maps(path: PathLike) -> Dict[str, Any]:
     return out
 
 
+PREVIEW_DIR = "photometry_jpg"   # 0.97.0: every per-image picture of a station in one folder
+DEPTH_LINEAR_MAX_M = 30.0        # the linear depth picture runs from 0 to here (the mesh radius), saturating beyond
+DEPTH_LOG_RANGE_M = (0.5, 200.0)  # the log one
+JPEG_QUALITY = 92
+
+
+def depth_rgb(rng: np.ndarray, lab: np.ndarray, mode: str = "log") -> np.ndarray:
+    """A range map as a BGR picture: turbo over ``mode`` "log" (DEPTH_LOG_RANGE_M) or "linear" (0 to
+    DEPTH_LINEAR_MAX_M); the ground plane the same colours darker, the sky grey, masked dark red, none black."""
+    import cv2
+    rng = np.asarray(rng, np.float32)
+    v = np.zeros_like(rng)
+    ok = (lab == LABEL_MESH) | (lab == LABEL_PLANE)
+    if mode == "linear":
+        v[ok] = np.clip(rng[ok] / DEPTH_LINEAR_MAX_M, 0, 1)
+    else:
+        a, b = np.log10(DEPTH_LOG_RANGE_M[0]), np.log10(DEPTH_LOG_RANGE_M[1])
+        v[ok] = np.clip((np.log10(np.clip(rng[ok], *DEPTH_LOG_RANGE_M)) - a) / (b - a), 0, 1)
+    img = cv2.applyColorMap((v * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
+    pl = lab == LABEL_PLANE
+    img[pl] = (img[pl] * 0.55).astype(np.uint8)
+    img[lab == LABEL_FAR] = (160, 160, 160)
+    img[lab == LABEL_MASKED] = (40, 40, 120)
+    img[lab == LABEL_NONE] = 0
+    return img
+
+
+def preview_jpg(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> List[Path]:
+    """0.97.0 (Christian, 12 Nov 2026: "Put the depth maps and surfaces normal map in the photometry_jpg folder ...
+    Depth maps should be in two versions: linear and log"): ``<prefix>_depth_linear.jpg``, ``_depth_log.jpg``,
+    ``_normal.jpg``."""
+    import cv2
+    q = [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
+    lab = maps["label"]
+    Path(str(out_prefix)).parent.mkdir(parents=True, exist_ok=True)
+    outs = []
+    for mode in ("linear", "log"):
+        f = Path(str(out_prefix) + f"_depth_{mode}.jpg")
+        cv2.imwrite(str(f), depth_rgb(maps["range"], lab, mode), q)
+        outs.append(f)
+    n = maps["normal"]
+    nimg = ((n * 0.5 + 0.5) * 255).astype(np.uint8)[..., ::-1].copy()
+    nimg[(lab != LABEL_MESH) & (lab != LABEL_PLANE)] = 0
+    f = Path(str(out_prefix) + "_normal.jpg")
+    cv2.imwrite(str(f), nimg, q)
+    return outs + [f]
+
+
 def preview_png(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> Tuple[Path, Path]:
     """``<prefix>_depth.png`` (turbo over log range; far sphere grey, masked dark red, none black) and ``<prefix>_normal.png``."""
     import cv2
@@ -316,7 +364,7 @@ def cast_station(project, rec, station, scene: Scene, out_dir: PathLike, familie
                  zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None, previews: bool = True,
                  validate: bool = True, use_masks: bool = True) -> Dict[str, Any]:
     """The maps of every registered image of ``station`` (``families`` letters; or the ``images`` named) at
-    ``scale`` (Mastcam-Z at ``zcam_scale``), the previews and the validation -> ``out_dir/maps``, ``maps_png``,
+    ``scale`` (Mastcam-Z at ``zcam_scale``), the previews and the validation -> ``out_dir/maps``, ``photometry_jpg``,
     ``maps_report.json``.  Returns the report."""
     out = Path(out_dir)
     by_name = {im.name: (iid, im) for iid, im in rec.images.items()}
@@ -344,8 +392,8 @@ def cast_station(project, rec, station, scene: Scene, out_dir: PathLike, familie
         stem = Path(name).stem
         save_maps(out / "maps" / f"{stem}.npz", maps, image=name, scale=s, camera_model=cam.model.name,
                   width=maps["depth"].shape[1], height=maps["depth"].shape[0], station=station.label)
-        if previews:
-            preview_png(maps, out / "maps_png" / stem)
+        if previews:                                 # 0.97.0: jpg, with the photometry pictures
+            preview_jpg(maps, out / PREVIEW_DIR / stem)
         row = {"image": name, "scale": s, "coverage": coverage(maps)}
         if validate:
             row["sparse"] = validate_sparse(rec, iid, maps, s)

@@ -3,6 +3,37 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.0 — 2026-11-12
+
+**In short.** The Mastcam-Z joints get new blocks and a held-ratio test; a station held over several sols no longer
+fails a block; two independent validation tests and a ledger of what is validated; the single-station products
+share one viewpoint and one tone scale, and their pictures are jpg.
+
+- **Sites** (Christian, 12 Nov). `rose_river_falls` with 34, 63 and 110 mm and `knob_mountain_large` in
+  `zcam_consensus`; `overlook_mountain` is now site 52 from drive 2166 to 2750 (sols 1145-1157, four stations
+  excluded) with 48, 63, 79 and 110 mm - a new folder, `mars2020_sol_1145_overlook_mountain_zcam`; `hippo_pools`
+  with 34, 48, 63 and 110 mm, in `zcam_consensus`; `rockytop` keeps one 63 mm sequence, ZCAM08541, and gains ZCAM08537 at 110 mm. A site key
+  `"zcam_joint_exclude": [zooms]` leaves a site out of those zooms' joints (`calib zcam --zcam-take SITE` takes it);
+  no site uses it now.
+- **Alignment health.** `within_station_shift_spread_m` is judged on the one-sol stations; a station held over
+  several sols (an arm workspace) has its own check, `workspace_station_shift_spread_m`, which warns and cannot
+  fail. Saved reports are re-judged the same way, so Taylorfjellet enters the joints without a new alignment.
+- **`calib zcam --zcam-hold-ratio RATIO`.** Every eye's high / low focal ratio held; 1.0 is one state for both -
+  the test for a zoom whose states may not be separable (79 mm). A test run: never promoted;
+  `ratio_hold_test.json` in its folder.
+- **`mppp_studies.validation`** (new). `zpairs`: the Mastcam-Z rig rotation from ZL / ZR pairs alone (no Navcam,
+  no bundle adjustment). `deck_focal`: the Navcam focal law against temperature from single frames on the surveyed
+  deck targets. `ledger` (`ledger.json`): each claim with its independent evidence, value, standard error and
+  status; its table closes the freeze report.
+- **Single-station products** (`mppp.ibr`). The pivot sits on the azimuth axis at the Mastcam-Z height whatever
+  cameras are rendered (`--pivot-height zcam`, the default; `fit` is the old behaviour). `mppp ods --tone-levels
+  FILE`: the 16-to-8-bit levels found once and reused - the driver gives the rover-shown and rover-masked runs of a
+  station the same file. `--eyes left right centre`: a panorama from the pivot with its depth
+  (`_ods_centre_depth.npz`, `_depth_16.png`, `_depth_linear.jpg`, `_depth_log.jpg`). Per-image pictures are jpg in
+  `photometry_jpg/`: `_rad`, `_depth_linear`, `_depth_log`, `_normal`, `_incidence`, `_emission`, `_phase`,
+  `_shadow` (`maps_png/` and `photometry_png/` are no longer written).
+- **`run_single_site_ibr.bat`** replaces `update_and_run_single_sites.bat`.
+
 ## 0.96.1 — 2026-11-10
 
 **In short.** The with-rover station products get a floor at the rover deck, hardwired in the rover frame and

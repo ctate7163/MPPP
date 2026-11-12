@@ -1089,12 +1089,16 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     rover_ods = r0["commands"][4]["argv"]
     assert "--mask-rover" in r0["commands"][-1]["argv"]
     assert "--rover" in rover_ods and rover_ods[rover_ods.index("--out") + 1].endswith(str(Path("S003D2046") / "with_rover"))
-    assert rover_ods[-2:] == ["--bits", "16"]                                              # 0.96.1: the 16-bit panorama
+    assert rover_ods[-6:] == ["--bits", "16", "--eyes", "left", "right", "centre"]         # 0.97.0: 16 bits, the centre eye
+    tl = str(root / "single_sites" / "S003D2046" / "tone_levels.json")                     # 0.97.0: one scaling per station
+    assert rover_ods[rover_ods.index("--tone-levels") + 1] == tl
+    assert r0["commands"][-1]["argv"][r0["commands"][-1]["argv"].index("--tone-levels") + 1] == tl
     assert SS.plan(cfg, root, labels=["S026D0630"], steps=["ods"], variants=["masked"])[0]["commands"] == [
         {"variant": "masked", "step": "ods", "argv": ["ods", str(root / "mars2020_sol_0460_rockytop"), "--station", "26_630",
                                                       "--mask-rover", "--out", str(root / "single_sites" / "S026D0630"),
                                                       "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
-                                                      "--bits", "16"]}]
+                                                      "--tone-levels", str(root / "single_sites" / "S026D0630" / "tone_levels.json"),
+                                                      "--bits", "16", "--eyes", "left", "right", "centre"]}]
     with pytest.raises(KeyError):
         SS.plan(cfg, root, labels=["S999D9999"])
     # the run: the steps stood in for; Rockytop's dense step fails, so nothing else of it runs
@@ -1123,7 +1127,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert (root / "single_sites" / "S003D2046" / "single_site_log.txt").exists()
     f = SS.install(tmp_path / "inst")
     b = f.read_bytes()
-    assert f.name == "update_and_run_single_sites.bat" and b"\r\n" in b and b"python -m mppp single-sites %*" in b
+    assert f.name == "run_single_site_ibr.bat" and b"\r\n" in b and b"python -m mppp single-sites %*" in b
     assert b"7dbd5da" not in b and b"_transfer" in b and b"--ff-only" in b and b"merge-base --is-ancestor" in b
 
 
@@ -1280,7 +1284,7 @@ def test_squares_left_on_top_named_by_station(tmp_path):
     assert r["top"] == "left" and sq.shape == (16, 16, 3) and np.array_equal(sq[:8], L) and np.array_equal(sq[8:], R)
     f = SS.install(tmp_path / "bats")
     b = (tmp_path / "bats" / "make_square.bat").read_text()
-    assert f.name == "update_and_run_single_sites.bat" and "single-sites --squares-only %*" in b and "+main:" in b
+    assert f.name == "run_single_site_ibr.bat" and "single-sites --squares-only %*" in b and "+main:" in b
     assert "+main:refs/remotes/bundle/main" in f.read_text()
 
 
@@ -1510,3 +1514,55 @@ def test_mast_mask_from_the_rover_model():
     cloud = RD.mech_to_block(np.vstack([boom, boom + np.array([0.0, 0.0, 1.0])]), pose)
     near = RM.near_model(cloud, pose, near_m=RM.MAST_NEAR_M, parts=("mast",))
     assert near[: len(boom)].all() and not near[len(boom):].any()
+
+
+def test_pivot_at_mastcamz_height_and_shared_tone_levels(tmp_path):
+    """0.97.0 (Christian, 12 Nov 2026): the pivot on the azimuth axis at the Mastcam-Z height whatever cameras are
+    rendered; one 16-to-8-bit scaling for the rover-shown and the rover-masked panorama; the centre depth files; the
+    jpg pictures with linear and log depth."""
+    from scipy.spatial.transform import Rotation
+    from mppp.ibr import linear16 as L16
+    from mppp.ibr import station as S
+    up = np.array([0.0, 0.0, 1.0])
+    axis = np.array([2.0, -1.0, 5.0])                       # the elevation axis on the azimuth axis
+    C, R, G = [], [], []
+    for fam, el in (("N", -30.0), ("N", -5.0), ("Z", -30.0), ("Z", 10.0)):
+        fwd, upc = S.HEAD_FORWARD_UP_M[fam]
+        for az in range(0, 360, 45):
+            a, e = np.radians(az), np.radians(el)
+            view = np.array([np.sin(a) * np.cos(e), np.cos(a) * np.cos(e), np.sin(e)])
+            right = np.cross(view, up); right /= np.linalg.norm(right)
+            down = np.cross(view, right)
+            R.append(np.stack([right, down, view]))                           # world -> camera rows
+            hz = np.array([np.sin(a), np.cos(a), 0.0])
+            C.append(axis + hz * (fwd * np.cos(e) - upc * np.sin(e)) + up * (upc * np.cos(e) + fwd * np.sin(e)))
+            G.append(fam + "L")
+    C, R = np.array(C), np.array(R)
+    for sel in ([g[0] == "N" for g in G], [g[0] == "Z" for g in G]):          # Navcam frames alone, Mastcam-Z alone
+        sel = np.array(sel)
+        P, rec = S.mastcamz_height_pivot(axis + [0, 0, 0.3], C[sel], R[sel], [g for g, k in zip(G, sel) if k], up)
+        assert np.allclose(P, axis + up * S.ZCAM_HEIGHT_M, atol=1e-9) and rec["rule"] == "zcam"
+    # the levels: found once, written, then read - in the caller's units
+    f = tmp_path / "S1" / "tone_levels.json"
+    lv, src = L16.shared_levels(f, lambda: (2.0, 50.0))
+    assert src == "computed" and lv == (2.0, 50.0) and f.is_file()
+    lv2, src2 = L16.shared_levels(f, lambda: (9.0, 99.0))                      # the other variant: not found again
+    assert src2 == "file" and lv2 == (2.0, 50.0)
+    lv3, _ = L16.shared_levels(f, lambda: (0.0, 0.0), scale=32.0)              # the 16-bit files at exposure 0.5
+    assert lv3 == (64.0, 1600.0)
+    # the centre depth and the jpg pictures
+    rng = np.full((8, 16), 4.0, np.float32); lab = np.full((8, 16), RC.LABEL_MESH, np.uint8)
+    rng[0], lab[0] = RC.SKY_RANGE_M, RC.LABEL_FAR
+    rng[7], lab[7] = 0.0, RC.LABEL_NONE
+    d = O.write_centre_depth(tmp_path, "S1_rover", rng, lab)
+    z = np.load(d["files"]["npz"])
+    assert np.isinf(z["range"][0]).all() and (z["range"][7] == 0).all() and np.allclose(z["range"][3], 4.0)
+    import cv2
+    d16 = cv2.imread(d["files"]["png16"], cv2.IMREAD_UNCHANGED)
+    assert d16.dtype == np.uint16 and d16[3, 0] == 2000 and d16[0, 0] == 65535 and d16[7, 0] == 0
+    assert Path(d["files"]["linear"]).name == "S1_rover_ods_centre_depth_linear.jpg" and Path(d["files"]["log"]).is_file()
+    lin, lg = RC.depth_rgb(rng, lab, "linear"), RC.depth_rgb(rng, lab, "log")
+    assert lin.shape == (8, 16, 3) and not np.array_equal(lin[3], lg[3])
+    maps = {"range": rng, "label": lab, "normal": np.zeros((8, 16, 3), np.float32)}
+    names = sorted(p.name for p in RC.preview_jpg(maps, tmp_path / "photometry_jpg" / "IMG"))
+    assert names == ["IMG_depth_linear.jpg", "IMG_depth_log.jpg", "IMG_normal.jpg"]

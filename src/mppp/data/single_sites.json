@@ -1,5 +1,5 @@
 {
- "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (rover, masked; the rover shown is the default since 0.96.1, run first), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' / 'mesh_args' / 'depthmaps_args' / 'ods_args' for every station (and per station the same keys); 'ods_args' --bits 16: the panorama from 16-bit linear frames.",
+ "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (rover, masked; the rover shown is the default since 0.96.1, run first), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' / 'mesh_args' / 'depthmaps_args' / 'ods_args' for every station (and per station the same keys); 'ods_args' --bits 16: the panorama from 16-bit linear frames. 0.97.0 (Christian, 12 Nov 2026): run by run_single_site_ibr.bat; 'ods_args' --eyes left right centre adds the panorama from the pivot (<station>[_rover]_ods_centre.png, _centre_16.png) and its depth (_centre_depth.npz, _depth_16.png, _depth_linear.jpg, _depth_log.jpg); the driver gives both variants of a station one <out>/<label>/tone_levels.json so their 16-to-8-bit scaling is the same; the pivot is on the azimuth axis at the Mastcam-Z height (--pivot-height zcam, the default) whatever cameras are rendered.",
  "out": "single_sites",
  "variants": [
   "rover",
@@ -10,7 +10,11 @@
  ],
  "ods_args": [
   "--bits",
-  "16"
+  "16",
+  "--eyes",
+  "left",
+  "right",
+  "centre"
  ],
  "stations": {
   "S003D2046": {

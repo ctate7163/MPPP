@@ -155,6 +155,44 @@ def preview_png(pm: Dict[str, np.ndarray], out_prefix: PathLike) -> list:
     return outs
 
 
+def preview_jpg(pm: Dict[str, np.ndarray], out_prefix: PathLike, rad_image: Optional[PathLike] = None) -> list:
+    """0.97.0 (Christian, 12 Nov 2026: "In the photometry outputs, change png to jpg to save space and include an 8bit
+    rad version of the other products for easy comparison"): ``<prefix>_incidence.jpg`` (0-90 degrees),
+    ``_emission.jpg`` (0-90), ``_phase.jpg`` (0-180), ``_shadow.jpg`` and ``<prefix>_rad.jpg`` - the block's 8-bit RAD
+    frame (``rad_image``) on the maps' pixel grid."""
+    import cv2
+    from .raycast import JPEG_QUALITY
+    q = [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
+    Path(str(out_prefix)).parent.mkdir(parents=True, exist_ok=True)
+    outs = []
+    shape = pm["incidence"].shape[:2]
+    if rad_image is not None and Path(rad_image).is_file():
+        im = cv2.imread(str(rad_image), cv2.IMREAD_COLOR)
+        if im is not None:
+            if im.shape[:2] != shape:
+                im = cv2.resize(im, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
+            p = Path(str(out_prefix) + "_rad.jpg")
+            cv2.imwrite(str(p), im, q)
+            outs.append(p)
+    for k, vmax in (("incidence", 90.0), ("emission", 90.0), ("phase", 180.0)):
+        a = pm[k]
+        v = np.clip(np.nan_to_num(a, nan=0.0) / vmax, 0, 1)
+        img = cv2.applyColorMap((v * 255).astype(np.uint8), cv2.COLORMAP_VIRIDIS)
+        img[~np.isfinite(a)] = 0
+        p = Path(str(out_prefix) + f"_{k}.jpg")
+        cv2.imwrite(str(p), img, q)
+        outs.append(p)
+    if "shadow" in pm:
+        sh = pm["shadow"]
+        img = np.zeros(sh.shape + (3,), np.uint8)
+        img[sh == SHADOW_LIT] = (90, 200, 255)
+        img[sh == SHADOW_SHADOW] = (120, 40, 20)
+        p = Path(str(out_prefix) + "_shadow.jpg")
+        cv2.imwrite(str(p), img, q)
+        outs.append(p)
+    return outs
+
+
 def photometric_cube(project, rec, station, scene: Scene, maps_dir: PathLike, out_dir: PathLike, colmap_bins: bool = True,
                      previews: bool = True, with_shadow: bool = True) -> Dict[str, Any]:
     """The cube of the station: i / e / g / shadow for every image with maps in ``maps_dir`` (``<image>.npz`` from
@@ -191,8 +229,9 @@ def photometric_cube(project, rec, station, scene: Scene, maps_dir: PathLike, ou
         if colmap_bins:
             for k in ("incidence", "emission", "phase"):
                 write_colmap_array(out / "photometry_maps" / f"{name}.{k}.bin", pm[k])
-        if previews:
-            preview_png(pm, out / "photometry_png" / stem)
+        if previews:                                 # 0.97.0: jpg, beside the depth and normal pictures
+            from .raycast import PREVIEW_DIR
+            preview_jpg(pm, out / PREVIEW_DIR / stem, rad_image=Path(project.root) / "images" / name)
         ok = np.isfinite(pm["emission"])
         rows.append({"image": name, "sol": row.get("sol"), "lmst": row.get("lmst"), "sun_block": [round(float(v), 4) for v in sun],
                      "pixels": int(ok.sum()),
