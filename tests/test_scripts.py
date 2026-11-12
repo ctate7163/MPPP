@@ -518,7 +518,7 @@ def test_zcam_joints_097_bat():
     b = (ROOT / "scripts" / "windows" / "zcam_joints_097.bat").read_bytes()
     assert b"\r\n" in b and b.count(b"\n") == b.count(b"\r\n")
     t = b.decode("ascii")
-    assert "--sites rose_river_falls knob_mountain_large overlook_mountain hippo_pools rockytop" in t and "for %%Z in (63 79 110)" in t
+    assert "--sites rose_river_falls knob_mountain_large overlook_mountain hippo_pools rockytop rockytop_skinner" in t and "for %%Z in (63 79 110)" in t
     assert "--zcam-hold-ratio 1.0 --no-promote" in t and 'set "PROMOTE=--no-promote"' in t
     assert "mppp_studies.validation.zpairs" in t and "cmods_freeze2" in t
     assert not (ROOT / "scripts" / "windows" / "trial_joints_0p95.bat").exists()

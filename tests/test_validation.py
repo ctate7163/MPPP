@@ -49,5 +49,5 @@ def test_workspace_station_warns_and_sites_of_0p97():
     assert "zcam_joint_exclude" not in s["rockytop"] and s["rose_river_falls"]["zcam"] == [34, 63, 110]
     assert s["overlook_mountain"]["sols"] == [[1145, 1157]] and s["overlook_mountain"]["zcam"] == [48, 63, 79, 110]
     assert s["hippo_pools"]["zcam"] == [34, 48, 63, 110]
-    for n in ("rose_river_falls", "knob_mountain_large", "taylorfjellet", "overlook_mountain", "hippo_pools"):
+    for n in ("rose_river_falls", "knob_mountain_large", "taylorfjellet", "overlook_mountain", "hippo_pools", "rockytop_skinner"):
         assert n in t["groups"]["zcam_consensus"]

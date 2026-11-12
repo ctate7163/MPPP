@@ -32,7 +32,7 @@ echo %DATE% %TIME% zcam_joints_097: models %MPPP_CMODS%, root %ROOT%, %PROMOTE% 
 if /i "%~1"=="joints" goto joints
 
 echo ==== 1. the new blocks (hours)
-python "%MPPP_HOME%\scripts\run_sites.py" --root "%ROOT%" --sites rose_river_falls knob_mountain_large overlook_mountain hippo_pools rockytop --jobs 2 --zcam
+python "%MPPP_HOME%\scripts\run_sites.py" --root "%ROOT%" --sites rose_river_falls knob_mountain_large overlook_mountain hippo_pools rockytop rockytop_skinner --jobs 2 --zcam
 echo %DATE% %TIME% blocks: exit %ERRORLEVEL% >> "%LOG%"
 
 :joints
