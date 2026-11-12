@@ -31,6 +31,10 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   `jr_<run>.json` and `eod_report.json`). Without that folder the figure shows the shipped DJ32 fit and no points.
   The Hazcam rig trends were already in the set (newest `hazcam_fit_*`). The deck fiducial figure had red and blue
   swapped; fixed.
+- **Mastcam-Z rig trend figure in the Navcam figure's format** (Christian, 12 Nov): 2 x 2, pitch, roll, yaw (its
+  temperature slope removed to -20 C) against sol relative to the trend at sol 0, and the stereo cx against the lens
+  temperature; the same y limits, IFOV axes and panel letters. The joint has no rig drift model, so the lines are
+  least-squares fits to the blocks (`plots.zcam_rig_trend_fit`). The baseline column is gone.
 - **26 and 100 mm** are zooms MPPP aligns (`chal_rocks_large`, `seitah_overlook`). No focus model and no joint:
   their bin cameras start from the label model and refine in the block. 100 mm holds k2 = p1 = p2 = 0 as 79 mm does;
   nothing is held at 26 mm yet. Not aligned on real data before this release.

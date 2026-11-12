@@ -441,62 +441,122 @@ def plot_zcam_efl_vs_focus(res: Dict[str, Any], path: PathLike, dpi: int = FIG_D
     return Path(path)
 
 
+ZCAM_T0_DEGC = -20.0             # reference lens temperature of the Mastcam-Z rig figure (as the Navcam's T0)
+
+
+def zcam_rig_trend_fit(rows: Sequence[Dict[str, Any]], T0: float = ZCAM_T0_DEGC) -> Dict[str, Any]:
+    """Least-squares trends of the blocks' Mastcam-Z rig residuals (mdeg): pitch and roll linear in sol, yaw linear
+    in sol and in the lens temperature T (as the Navcam's yaw is shown with its temperature slope removed).  Per
+    angle {"a" (at sol 0, T0), "per_sol", "se_per_sol", "per_degC", "se_per_degC", "sd", "n"}."""
+    out = {}
+    for ang in ("pitch", "roll", "yaw"):
+        pts = [(float(r["sol"]), float(r.get("T_optics_degC", T0) if r.get("T_optics_degC") is not None else T0),
+                float(r[f"{ang}_mdeg"])) for r in rows if r.get("sol") is not None and r.get(f"{ang}_mdeg") is not None
+               and np.isfinite(r[f"{ang}_mdeg"])]
+        f = {"a": 0.0, "per_sol": 0.0, "se_per_sol": float("nan"), "per_degC": 0.0, "se_per_degC": float("nan"),
+             "sd": float("nan"), "n": len(pts)}
+        withT = ang == "yaw" and len(pts) >= 5 and np.ptp([p[1] for p in pts]) > 0
+        k = 3 if withT else 2
+        if len(pts) > k and np.ptp([p[0] for p in pts]) > 0:
+            x, T, y = (np.array(v, float) for v in zip(*pts))
+            A = np.c_[np.ones_like(x), x] if not withT else np.c_[np.ones_like(x), x, T - T0]
+            c = np.linalg.lstsq(A, y, rcond=None)[0]
+            r_ = y - A @ c
+            cov = float(r_ @ r_ / (len(y) - k)) * np.linalg.inv(A.T @ A)
+            se = np.sqrt(np.diag(cov))
+            f.update(a=float(c[0]), per_sol=float(c[1]), se_per_sol=float(se[1]), sd=float(np.sqrt(r_ @ r_ / (len(y) - k))))
+            if withT:
+                f.update(per_degC=float(c[2]), se_per_degC=float(se[2]))
+        out[ang] = f
+    return out
+
+
 def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_DPI, label: str = "",
-                         point_labels: bool = True) -> Optional[Path]:
-    """Mastcam-Z rig trends 2 x 4 (Christian, 20 Oct): the blocks' rig rotation residuals about the mean (yaw, pitch,
-    roll, mdeg) and their refined baseline minus the CAHV baseline (mm), against sol (top) and the lens temperature
-    (bottom), each with its least-squares line and slope +- se in the title.  ``model``: a calibration's
-    ``M2020_ZCAM034_focus_model.json`` (``rig.residuals.per_block``, ``rig.per_block``).  None without rig rows.
-    Panels lettered A, B ...; ``point_labels=False`` leaves out the block name at every point."""
+                         point_labels: bool = True, T0: float = ZCAM_T0_DEGC,
+                         ylims: Optional[Dict[str, Tuple[float, float]]] = None, knee_sol: Optional[float] = 250.0,
+                         ) -> Optional[Path]:
+    """Mastcam-Z rig trends in the format of the Navcam's :func:`plot_rig_trends` (Christian, 12 Nov 2026: "make the
+    zcam 34 rig trend figure identical in format to the ncam trends figure"): 2 x 2, 12.5 x 8.2 in; pitch (A), roll
+    (B) and yaw with its temperature slope removed to ``T0`` (C) of every block's own rig against the block's sol,
+    relative to the fitted trend at sol 0, with the trend line, the same y limits as the Navcam figure and a right
+    axis in Mastcam-Z pixels; D: the stereo pointing as ZR cx - ZL cx (px, relative to its value at ``T0``) against
+    the block lens temperature, the sol trend removed, with the slope and its +- se band and a right axis in mdeg.
+    The Mastcam-Z joint has no drift model, so the lines are least-squares fits to these points
+    (:func:`zcam_rig_trend_fit`); the dashed vertical lines are the Navcam knee (``knee_sol``) and ``T0``.
+    ``model``: a joint's ``M2020_ZCAM<zoom>_focus_model.json`` (``rig.residuals.per_block``).  None without rig rows."""
     rig = model.get("rig") or (model.get("calibration") or {}).get("rig") or {}
-    res = ((rig.get("residuals") or {}).get("per_block")) or []
-    pb = {r["block"]: r for r in rig.get("per_block") or []}
-    if not res:
+    rows = [r for r in ((rig.get("residuals") or {}).get("per_block")) or [] if r.get("sol") is not None]
+    if not rows:
         return None
     plt = _plt()
-    cols = [("yaw", "yaw_mdeg", "mdeg"), ("pitch", "pitch_mdeg", "mdeg"), ("roll", "roll_mdeg", "mdeg"),
-            ("baseline − CAHV", "dbaseline_mm", "mm")]
-    fig, axs = plt.subplots(2, 4, figsize=(15.5, 7.6), squeeze=False)
-    for j, (name, key, unit) in enumerate(cols):
-        rows = [dict(r, **{k: v for k, v in pb.get(r["block"], {}).items() if k not in r}) for r in res]
-        for i, (xk, xl, scale) in enumerate((("sol", "sol of the block", 1.0), ("T_optics_degC", "block lens temperature (°C)", 1.0))):
-            ax = axs[i][j]
-            pts = [(float(r[xk]), float(r[key]), r["block"]) for r in rows
-                   if r.get(xk) is not None and r.get(key) is not None and np.isfinite(r[key])]
-            if not pts:
-                ax.set_axis_off()
-                continue
-            x = np.array([p[0] for p in pts]); y = np.array([p[1] for p in pts])
-            ax.plot(x, y, "o", color="C0" if i == 0 else "C3", ms=6, mec="white", mew=0.5)
-            for xx, yy, n in (pts if point_labels else []):
-                ax.annotate(n.replace("mars2020_", "")[:18], (xx, yy), fontsize=6, alpha=0.6, xytext=(3, 3),
-                            textcoords="offset points")
-            title = f"{name}"
-            if len(x) >= 3 and np.ptp(x) > 0:
-                A = np.c_[np.ones_like(x), x - x.mean()]
-                b, *_ = np.linalg.lstsq(A, y, rcond=None)
-                r_ = y - A @ b
-                se = float(np.sqrt(r_ @ r_ / (len(y) - 2) / np.sum((x - x.mean()) ** 2)))
-                xs = np.linspace(x.min(), x.max(), 2)
-                ax.plot(xs, b[0] + b[1] * (xs - x.mean()), "-", color="0.3", lw=1)
-                per = 1000.0 if xk == "sol" else 1.0
-                z = b[1] / se if se > 0 else float("nan")
-                title += (f": {b[1] * per:+.2f} ± {se * per:.2f} {unit}/{'1000 sol' if xk == 'sol' else '°C'} (z {z:+.1f})"
-                          f"\nsd about the line {np.std(r_, ddof=2):.2f} {unit}")
-            ax.set_title(title, fontsize=8.5)
-            ax.axhline(0, color="0.6", lw=0.6)
-            ax.set_xlabel(xl, fontsize=8)
-            ax.set_ylabel(f"{name} ({unit})", fontsize=8)
-            ax.grid(alpha=0.3)
-    bc = rig.get("baseline_vs_cahv") or {}
-    sup = (f"Mastcam-Z 34 mm rig trends{(' ' + label) if label else ''}: {len(res)} blocks; rotation residuals about the "
-           f"mean rig; baseline {rig.get('baseline_m', float('nan')) * 1e3:.1f} mm")
-    if bc.get("mean_mm") is not None:
-        sup += f" ({bc['mean_mm']:+.2f} mm from the CAHV baselines, sd {bc.get('sd_mm') or float('nan'):.2f} mm)"
+    cams = model.get("cameras") or {}
+    f0 = [float(c["f0_px"]) for c in cams.values() if isinstance(c, dict) and c.get("f0_px")]
+    zoom = next((int(k[2:5]) for k in cams if str(k)[2:5].isdigit()), 34)
+    ifov = float(np.degrees(1.0 / (np.mean(f0) if f0 else 4735.0)) * 1e3)             # one pixel, mdeg
+    ylims = dict(RIG_TREND_YLIMS if ylims is None else ylims)
+    fit = zcam_rig_trend_fit(rows, T0)
+    names = [str(r["block"]).replace("mars2020_", "") for r in rows]
+    sol = np.array([r["sol"] for r in rows], float)
+    T = np.array([r.get("T_optics_degC") if r.get("T_optics_degC") is not None else np.nan for r in rows], float)
+    Tz = np.where(np.isfinite(T), T, T0)
+
+    def annotate(ax, x, y):
+        for xx, yy, n in (zip(x, y, names) if point_labels else []):
+            ax.annotate(n[:22], (xx, yy), fontsize=5.5, alpha=0.6, xytext=(3, 3), textcoords="offset points")
+    fig, axs = plt.subplots(2, 2, figsize=(12.5, 8.2))
+    ss = np.linspace(0, 2050, 400)
+    panels = {"pitch": axs[0][0], "roll": axs[0][1], "yaw": axs[1][0]}
+    for ang, ax in panels.items():
+        f = fit[ang]
+        y = np.array([r.get(f"{ang}_mdeg", np.nan) for r in rows], float) - f["a"]
+        if ang == "yaw":
+            y = y - f["per_degC"] * (Tz - T0)
+            lab = f"block rig, {f['per_degC']:+.3f} ± {f['se_per_degC']:.3f} mdeg/°C removed (to {T0:.0f} °C)"
+        else:
+            lab = "block rig (rig rotation free, cameras held)"
+        ax.plot(sol, y, "o", color="C0", label=lab)
+        ax.plot(ss, f["per_sol"] * ss, "-", color="C3", label="linear trend (fit to these blocks)")
+        annotate(ax, sol, y)
+        z = f["per_sol"] / f["se_per_sol"] if f["se_per_sol"] and np.isfinite(f["se_per_sol"]) else float("nan")
+        ax.set_title(f"{ang}: trend {1000 * f['per_sol']:+.2f} ± {1000 * f['se_per_sol']:.2f} mdeg/1000 sol (z {z:+.1f})\n"
+                     f"block sd about the trend {f['sd']:.2f} mdeg = {f['sd'] / ifov:.3f} px", fontsize=9)
+        ax.axhline(0, color="0.6", lw=0.8)
+        if knee_sol:
+            ax.axvline(knee_sol, color="0.4", ls="--", lw=0.8)
+        ax.set_xlabel("sol of the block", fontsize=8)
+        ax.set_ylabel(f"{ang} relative to the trend at sol 0 (mdeg)", fontsize=8)
+        ax.grid(alpha=0.3); ax.legend(fontsize=7, loc="lower right")
+        if ang in ylims:
+            _out_of_axis_note(ax, y, *ylims[ang], what="block(s)")
+        ax.set_xlim(0, 2050)
+        ax.secondary_yaxis("right", functions=(lambda m: m / ifov, lambda p: p * ifov)).set_ylabel(
+            "Mastcam-Z IFOV equivalent (px)", fontsize=8)
+    ax = axs[1][1]
+    fy = fit["yaw"]
+    ok = np.isfinite(T)
+    cx = (np.array([r.get("yaw_mdeg", np.nan) for r in rows], float) - fy["a"] - fy["per_sol"] * sol) / ifov
+    sl, se = fy["per_degC"] / ifov, fy["se_per_degC"] / ifov
+    if ok.any():
+        tt = np.linspace(np.nanmin(T) - 2, np.nanmax(T) + 2, 2)
+        ax.plot(T[ok], cx[ok], "o", color="C3", label="block stereo pointing as ZR cx − ZL cx (rig-yaw residual, sol trend removed)")
+        if np.isfinite(se):
+            ax.fill_between(tt, (sl - se) * (tt - T0), (sl + se) * (tt - T0), color="C3", alpha=0.12, lw=0)
+        ax.plot(tt, sl * (tt - T0), "-", color="C3", label=f"yaw against temperature: {sl:+.4f} ± {se:.4f} px/°C")
+        annotate(ax, T[ok], cx[ok])
+    ax.axhline(0, color="0.6", lw=0.8)
+    ax.axvline(T0, color="0.4", ls="--", lw=0.8)
+    zT = fy["per_degC"] / fy["se_per_degC"] if fy["se_per_degC"] and np.isfinite(fy["se_per_degC"]) else float("nan")
+    ax.set_xlabel("block median lens temperature (°C)", fontsize=8)
+    ax.set_ylabel(f"ZR cx − ZL cx relative to {T0:.0f} °C (px)", fontsize=8)
+    ax.set_title(f"stereo cx against temperature: yaw vs T {fy['per_degC']:+.2f} ± {fy['se_per_degC']:.2f} mdeg/°C (z {zT:+.1f})\n"
+                 f"(scatter about the line {fy['sd'] / ifov:.3f} px)", fontsize=9)
+    ax.grid(alpha=0.3); ax.legend(fontsize=7, loc="lower left")
+    ax.secondary_yaxis("right", functions=(lambda p: p * ifov, lambda m: m / ifov)).set_ylabel(
+        f"yaw equivalent about cx at {T0:.0f} °C (mdeg)", fontsize=8)
     panel_letters(axs)
-    fig.suptitle(sup, fontsize=10)
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
-    fig.savefig(path, dpi=dpi)
+    fig.suptitle(f"Mastcam-Z {zoom} mm rig trends{(' ' + label) if label else ''} ({len(rows)} blocks, one rig each; trends "
+                 f"referred to sol 0; right axes in Mastcam-Z IFOV, {ifov:.1f} mdeg)", fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.97)); fig.savefig(path, dpi=dpi)
     plt.close(fig)
     return Path(path)
 

@@ -177,4 +177,5 @@ def test_panel_letters_limits_and_unlabelled_versions(tmp_path, monkeypatch):
     zm = {"rig": {"residuals": {"per_block": rows}, "per_block": [], "baseline_m": 0.2428}}
     C.plot_zcam_rig_trends(zm, tmp_path / "z.png")
     C.plot_zcam_rig_trends(zm, tmp_path / "z_nolabels.png", point_labels=False)
-    assert [x[0] for x in seen[2]] == list("ABCDEFGH") and len(seen[3]) == 8
+    assert [x[0] for x in seen[2]] == list("ABCD") and len(seen[3]) == 4      # 0.97.0: the Navcam figure's 2 x 2 format
+    assert [x[1] for x in seen[2]][:3] == [(-10.0, 30.0), (-20.0, 20.0), (-20.0, 20.0)]
