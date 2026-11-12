@@ -69,6 +69,15 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   under the rover and across far-field gaps (`--no-fill`: the ground plane shows through, as before). On the
   Rockytop terrain cloud: 5,897 of 15,120 cells filled (452 of 1,620 at 30-50 m). The rover pose and model on a
   real station are not tested here (no reconstruction in the cloud session).
+- **Surface check in the rover-shown panorama** (Christian, 12 Nov: "nothing from the rover mask lands on the terrain
+  and nothing from the terrain mask lands on the rover ... where the disagreement is too much ... leave that a
+  brown fill color"). With the rover model in the mesh (`mesh_report.json: rover_triangles`), a frame's pixel inside
+  its rover mask may colour the model only, and a pixel outside it anything but the model (`ods.candidates`,
+  `SURFACE_CHECK`). The model where the check leaves no source is flat brown (0.8 x the panorama's median terrain
+  colour; `source` -5, dark brown in `provenance.png`); terrain without a source gets the ground fill as before, and
+  what is still left the same brown. `ods.json` counts the samples turned away and the brown share per eye. The mask
+  also covers the rover's shadow, so shadow pixels do not colour the terrain in this render. Tested on synthetic
+  scenes only.
 - **26 and 100 mm** are zooms MPPP aligns (`chal_rocks_large`, `seitah_overlook`). No focus model and no joint:
   their bin cameras start from the label model and refine in the block. 100 mm holds k2 = p1 = p2 = 0 as 79 mm does;
   nothing is held at 26 mm yet. Not aligned on real data before this release.

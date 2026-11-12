@@ -120,6 +120,8 @@ class SourceImage:
         self._dist: Optional[np.ndarray] = None
         self.gain = 1.0
         self.extra_mask: Optional[np.ndarray] = None      # True = may not be used (the mast-head hardware, rover shown)
+        self.rover_mask_file: Optional[Path] = None       # 0.97.0, rover shown: the rover mask kept for the surface check
+        self._rover: Optional[np.ndarray] = None
         self.linear_file: Optional[Path] = None           # 0.96.1: the 16-bit linear image (mppp.ibr.linear16)
         self.sat_file: Optional[Path] = None              # ... and its saturation mask
         self._sat: Optional[np.ndarray] = None
@@ -177,6 +179,25 @@ class SourceImage:
                 m = cv2.resize(m, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
             self._mask = None if m is None else (m > 0)
         return self._mask
+
+    def sample_rover(self, uv: np.ndarray) -> Optional[np.ndarray]:
+        """True where the pixel at ``uv`` is inside the frame's rover mask (rover hardware, and whatever else the mask
+        covers: its shadow); None without ``rover_mask_file``."""
+        if self.rover_mask_file is None or not Path(self.rover_mask_file).is_file():
+            return None
+        if self._rover is None:
+            import cv2
+            m = cv2.imread(str(self.rover_mask_file), cv2.IMREAD_GRAYSCALE)
+            if m is None:
+                self.rover_mask_file = None
+                return None
+            if m.shape[1] != self.W or m.shape[0] != self.H:
+                m = cv2.resize(m, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
+            self._rover = ~(m > 0)                            # the mask file: > 0 is terrain
+        uv = np.asarray(uv, float)
+        i = np.clip(np.rint(uv[:, 0]).astype(int), 0, self.W - 1)
+        j = np.clip(np.rint(uv[:, 1]).astype(int), 0, self.H - 1)
+        return self._rover[j, i]
 
     def sample_saturation(self, uv: np.ndarray) -> Optional[np.ndarray]:
         """The saturated share (0-1) at ``uv``; None for a frame without saturation (or an 8-bit source)."""
@@ -309,6 +330,8 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
         out.append(SourceImage(name, rec.cameras[im.camera_id], np.asarray(cw.rotation.matrix(), float),
                                np.asarray(im.projection_center(), float), Path(project.root) / "images" / name,
                                mf if (use_masks and mf.is_file()) else None, s))
+        if not use_masks and mf.is_file():                    # rover shown: the mask still says which pixels are rover
+            out[-1].rover_mask_file = mf
         if linear16 is not None:
             out[-1].linear_file, out[-1].sat_file = linear16[name]
     if not use_masks and mask_head_hardware and out:
@@ -343,11 +366,29 @@ def _smoothstep(x: np.ndarray) -> np.ndarray:
     return x * x * (3.0 - 2.0 * x)
 
 
-def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: np.ndarray, k_max: int = MAX_SOURCES_BLENDED):
+SURFACE_CHECK = True              # 0.97.0, rover shown: see candidates()
+BROWN_FILL_8BIT = (150.0, 105.0, 70.0)   # RGB, 8-bit units: the fill where the check leaves a surface without a source and
+#                                          the panorama has no terrain to take the colour from (else: the median terrain colour)
+BROWN_FILL_DARKEN = 0.8                  # the fill a little darker than the terrain, so it reads as fill
+
+
+def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: np.ndarray, k_max: int = MAX_SOURCES_BLENDED,
+               surface_check: Optional[bool] = None):
     """The surface hit of the rays (o, d) and, per ray, the best ``k_max`` sources that see it: {"label", "t",
     "k" (n, K) source index or -1, "uv" (n, K, 2), "dist" (n, K) edge distance in px, "short" (n, K) the source's
-    short side, "ang" (n, K) the parallax term}.  Ranked by the wide feather x the parallax term."""
+    short side, "ang" (n, K) the parallax term}.  Ranked by the wide feather x the parallax term.
+
+    ``surface_check`` (0.97.0; Christian, 12 Nov 2026: "nothing from the rover mask lands on the terrain and nothing
+    from the terrain mask lands on the rover"; default :data:`SURFACE_CHECK`): with the rover model in the mesh
+    (``scene.rover_triangles``) and a source that kept its rover mask (``rover_mask_file``: the rover-shown render),
+    a source pixel inside the rover mask may colour the rover model only, and one outside it anything but the model.
+    ``"rejected"``: [rover pixels kept off the terrain, terrain pixels kept off the rover] (samples)."""
+    if surface_check is None:
+        surface_check = SURFACE_CHECK
     hit = scene.cast(o, d)
+    on_rover = scene.on_rover(hit["tri"]) if (surface_check and hasattr(scene, "on_rover") and "tri" in hit) else None
+    rejected = [0, 0]
+    rej_px = np.zeros(len(d), bool)                          # rays with a source sample the check turned away
     lab = hit["label"]
     ok = lab != LABEL_NONE
     X = o + hit["t"][:, None] * d
@@ -371,6 +412,15 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
         dist = src.sample_edge_distance(uv[ij])
         keep = dist > EDGE_MARGIN_PX                          # inside the image, off the padding and the rover mask
         ij, dist = ij[keep], dist[keep]
+        if on_rover is not None and len(ij):                  # 0.97.0: rover pixels on the rover, terrain on terrain
+            rp = src.sample_rover(uv[ij])
+            if rp is not None:
+                surf = on_rover[ij]
+                rejected[0] += int((rp & ~surf).sum())
+                rejected[1] += int((~rp & surf).sum())
+                same = rp == surf
+                rej_px[ij[~same]] = True
+                ij, dist = ij[same], dist[same]
         if not len(ij):
             continue
         # visibility: nothing between the camera and X (within tau(z) of X; tau of at most 100 m: a point on the sky
@@ -405,7 +455,8 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
     use = none & (fb_k >= 0)                                 # nobody sees it unhidden: the best hidden view
     best["k"][use, 0], best["uv"][use, 0], best["dist"][use, 0] = fb_k[use], fb_uv[use], fb_dist[use]
     best["short"][use, 0], best["ang"][use, 0] = fb_short[use], 1.0
-    best.update(label=lab, t=hit["t"], ok=ok, hidden_fallback=use)
+    best.update(label=lab, t=hit["t"], ok=ok, hidden_fallback=use, rejected=rejected, rejected_px=rej_px,
+                on_rover=on_rover if on_rover is not None else np.zeros(n, bool))
     return best
 
 
@@ -479,6 +530,9 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     rng = np.zeros((height, width), np.float32)
     hidden = np.zeros((height, width), bool)
     ground = np.zeros((height, width), bool)                 # terrain at the ground plane's level (the ground fill's donors)
+    rej = [0, 0]                                             # the surface check's rejected samples
+    rover_px = np.zeros((height, width), bool)               # the rover model under the pixel
+    rej_map = np.zeros((height, width), bool)                # a source sample was turned away by the surface check
     u_ = np.asarray(up, float) / np.linalg.norm(up)
     pl = getattr(scene, "plane", None)
     t0 = time.time()
@@ -486,6 +540,9 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         r1 = min(height, r0 + rows_per_chunk)
         o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east, azimuth0_deg)
         c = candidates(scene, sources, o, d)
+        rej[0] += c["rejected"][0]; rej[1] += c["rejected"][1]
+        rover_px[r0:r1] = c["on_rover"].reshape(r1 - r0, width)
+        rej_map[r0:r1] = c["rejected_px"].reshape(r1 - r0, width)
         hidden[r0:r1] = c["hidden_fallback"].reshape(r1 - r0, width)
         n = len(d)
         low_acc = np.zeros((n, 3), np.float32)
@@ -527,18 +584,36 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
             tt = np.where(c["ok"] & np.isfinite(c["t"]), c["t"], 0.0)
             X = o + tt[:, None] * d
             hgt = (X @ pl["normal"] - pl["offset"]) / float(pl["normal"] @ u_)
-            g = has & ((c["label"] == LABEL_PLANE) | ((c["label"] == LABEL_MESH) & (np.abs(hgt) < GROUND_BAND_M)))
+            g = has & ~c["on_rover"] & ((c["label"] == LABEL_PLANE) | ((c["label"] == LABEL_MESH) & (np.abs(hgt) < GROUND_BAND_M)))
             ground[r0:r1] = g.reshape(r1 - r0, width)
         source[r0:r1] = np.where(has, strongest, -1).astype(np.int16).reshape(r1 - r0, width)
         label[r0:r1] = c["label"].reshape(r1 - r0, width)
         rng[r0:r1] = np.where(c["ok"], c["t"], 0).reshape(r1 - r0, width)
         if progress:
             progress(eye, r1, height, time.time() - t0)
+    brown = np.zeros(label.shape, bool)
+    checked = getattr(scene, "rover_triangles", None) is not None
+
+    def _brown(sel: np.ndarray) -> None:                     # 0.97.0 (Christian, 12 Nov 2026: "where the disagreement is
+        if not sel.any():                                    # too much ... leave that a brown fill color")
+            return
+        don = ground & (source >= 0)
+        col = (np.median(rgb[don].reshape(-1, 3).astype(np.float32), axis=0) if don.sum() >= 50
+               else np.asarray(BROWN_FILL_8BIT, np.float32))
+        rgb[sel] = np.clip(BROWN_FILL_DARKEN * col, 0, top).astype(rgb.dtype)
+        source[sel] = -5
+        brown[sel] = True
+    if checked:                                              # the rover model where the check left no source: flat brown,
+        _brown((source == -1) & rover_px & rej_map)          # before the crack and ground fills would paint over it
     filled = fill_cracks(rgb, source, label)
+    if checked:
+        _brown((source == -1) & rover_px)                    # the rest of the model nobody coloured
     gfill = fill_ground(rgb, source, ground) if ground_fill else np.zeros(label.shape, bool)
     sky = fill_sky(rgb, source, label) if sky_fill else np.zeros(label.shape, bool)
-    return {"rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
-            "sky_filled": sky, "ground_filled": gfill}
+    if checked:                                              # and any surface still without a source
+        _brown((source == -1) & ((label == LABEL_MESH) | (label == LABEL_PLANE)))
+    return {"brown_filled": brown, "rover": rover_px, "rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
+            "sky_filled": sky, "ground_filled": gfill, "surface_check_rejected": rej}
 
 
 GROUND_BAND_M = 0.25             # mesh this close to the ground plane counts as terrain for the ground fill
@@ -672,7 +747,7 @@ def fill_cracks(rgb: np.ndarray, source: np.ndarray, label: np.ndarray, max_px: 
     """Fill (in place) the small, thin holes - a surface but no source - from their edges; ``source`` = -2 there.
     Returns the filled mask."""
     import cv2
-    hole = ((source < 0) & (label != LABEL_NONE)).astype(np.uint8)
+    hole = ((source == -1) & (label != LABEL_NONE)).astype(np.uint8)
     filled = np.zeros(hole.shape, bool)
     if not hole.any():
         return filled
@@ -706,6 +781,7 @@ def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int) -> Pat
     img[source == -2] = (128, 128, 128)                       # cracks filled from their edges
     img[source == -3] = (230, 200, 160)                       # the sky filled above the frames (BGR: light blue)
     img[source == -4] = (90, 120, 150)                        # the ground filled as plain terrain (brown)
+    img[source == -5] = (40, 60, 110)                         # 0.97.0: the brown fill where the surface check left no source
     for k in range(max(0, n_sources)):
         m = source == k
         if not m.any():
@@ -935,6 +1011,10 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                 "far": float((lab == LABEL_FAR).sum() / n),
                                 "no_surface": float((lab == 0).sum() / n),
                                 "hidden_view_used": float(res["hidden_fallback"].sum() / n),
+                                "brown_filled": float(res["brown_filled"].sum() / n),
+                                "brown_filled_on_rover": float((res["brown_filled"] & res["rover"]).sum() / n),
+                                "surface_check_rejected_samples": {"rover_pixels_off_terrain": int(res["surface_check_rejected"][0]),
+                                                                   "terrain_pixels_off_rover": int(res["surface_check_rejected"][1])},
                                 "cracks_filled": float(res["filled"].sum() / n),
                                 "sky_filled": float(res["sky_filled"].sum() / n),
                                 "ground_filled": float(res["ground_filled"].sum() / n)},

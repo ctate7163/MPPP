@@ -777,6 +777,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
         log.info("mesh: floating surface - %d points and %d triangles removed (above the cameras, or less than %g m below "
                  "them beyond %g m; heights from the ground plane)", float_rep["points_dropped"], int(dropf.sum()),
                  FLOAT_CLEARANCE_M, FLOAT_BEYOND_M)
+    rover_tris = None
     fill_rep = None
     if fill:                                                    # 0.97.0: no holes, flattish ground under the rover
         V, F, fill_rep = fill_terrain(V, F, pivot, up, plane, radius_m, rover=rover_pose if rover_pose is not None else deck)
@@ -785,6 +786,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
     if deck is not None and terrain_only:
         if use_model:
             Vm, Fm = rover_model.model_in_block(deck, parts=rover_model_parts)
+            rover_tris = [int(len(F)), int(len(F) + len(Fm))]       # the model's triangles: last in mesh.ply
             F = np.vstack([np.asarray(F, np.int64), np.asarray(Fm, np.int64) + len(V)])
             V = np.vstack([V, Vm])
             deck_rep.update(model_triangles=int(len(Fm)), model_parts=list(rover_model_parts))
@@ -837,7 +839,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
                      "plane": {k: plane[k] for k in ("method", "radius_m", "tilt_deg", "height_below_pivot_m", "rms_m", "bins")
                                if k in plane},
                      "beyond": "a far sphere" if sphere else "the sky at infinity"},
-           "far_sphere": sphere, "rover_deck": deck_rep, "fill": fill_rep, "floating": float_rep, "coverage_by_range": coverage_by_range(V, F, pivot), "tau_m": {str(z): float(tau_m(z))
+           "far_sphere": sphere, "rover_deck": deck_rep, "rover_triangles": rover_tris, "fill": fill_rep, "floating": float_rep, "coverage_by_range": coverage_by_range(V, F, pivot), "tau_m": {str(z): float(tau_m(z))
            for z in (2, 5, 10, 15, 20, 30, 50, 85)}, "files": files, "seconds": round(time.time() - t0, 1)}
     (out / "mesh_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
     log.info("mesh: %d -> %d triangles (%s) within %g m of the axis; ground plane %s (tilt %.1f deg, %.2f m rms over %d "
@@ -859,8 +861,18 @@ def load_scene(out_dir: PathLike):
     gp = out / "ground_plane.json"
     if gp.is_file():
         plane = json.loads(gp.read_text(encoding="utf-8"))
-        return Scene(mesh, sphere, plane=plane, sky=sphere is None)
-    return Scene(mesh, sphere)
+        sc = Scene(mesh, sphere, plane=plane, sky=sphere is None)
+    else:
+        sc = Scene(mesh, sphere)
+    mr = out / "mesh_report.json"                           # 0.97.0: which triangles are the rover model
+    if mr.is_file():
+        try:
+            rt = json.loads(mr.read_text(encoding="utf-8")).get("rover_triangles")
+            if rt and int(rt[1]) > int(rt[0]) and int(rt[1]) <= len(mesh[1]):
+                sc.rover_triangles = (int(rt[0]), int(rt[1]))
+        except (ValueError, TypeError, json.JSONDecodeError):
+            pass
+    return sc
 
 
 def mesh_preview(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], out_png: PathLike, sphere: Optional[Tuple[np.ndarray, np.ndarray]] = None,

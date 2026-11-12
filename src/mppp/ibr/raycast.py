@@ -73,6 +73,15 @@ class Scene:
             gid = self.scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(_legacy(o3d, *sphere)))
             self.ids[int(gid)] = LABEL_FAR
         self.mesh_V, self.mesh_F = V, F
+        self.rover_triangles: Optional[Tuple[int, int]] = None     # 0.97.0: [first, end) of the rover model in the mesh
+
+    def on_rover(self, tri: np.ndarray) -> Optional[np.ndarray]:
+        """True where a mesh triangle index is one of the rover model's; None when the mesh holds no model."""
+        if self.rover_triangles is None:
+            return None
+        a, b = self.rover_triangles
+        t = np.asarray(tri)
+        return (t >= a) & (t < b)
 
     def _cast_geometry(self, origins: np.ndarray, dirs: np.ndarray) -> Dict[str, np.ndarray]:
         """The mesh and the finite sphere only (nearest hit)."""

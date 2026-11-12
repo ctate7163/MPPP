@@ -1634,3 +1634,46 @@ def test_fill_terrain_closes_holes_and_flattens_under_the_rover():
     assert under.sum() > 5 and np.abs(hit[under, 2] - 0.1 * hit[under, 0]).max() < 0.15    # flattish: the slope, not the junk
     hole = np.hypot(hit[:, 0] + 12, hit[:, 1]) < 2.5
     assert hole.sum() > 20 and np.abs(hit[hole, 2] - 0.1 * hit[hole, 0]).max() < 0.2
+
+
+def test_surface_check_keeps_rover_pixels_on_the_rover_and_terrain_on_terrain(tmp_path):
+    """0.97.0 (Christian, 12 Nov 2026: "nothing from the rover mask lands on the terrain and nothing from the terrain
+    mask lands on the rover ... where the disagreement is too much ... leave that a brown fill color"): a box (the
+    'rover model') on a ground mesh, one camera looking down; its mask calls a patch larger than the box 'rover'."""
+    import cv2
+    import pycolmap
+    from mppp.ibr import ods as O
+    from mppp.ibr.raycast import Scene
+    # the ground z = 0 (two triangles) and a box top at z = 0.5 over |x|, |y| < 0.5: the model, last in the mesh
+    Vg = np.array([[-5, -5, 0], [5, -5, 0], [5, 5, 0], [-5, 5, 0]], float)
+    Fg = np.array([[0, 1, 2], [0, 2, 3]])
+    Vb = np.array([[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]], float)
+    Fb = np.array([[0, 1, 2], [0, 2, 3]])
+    sc = Scene((np.vstack([Vg, Vb]), np.vstack([Fg, Fb + 4])))
+    sc.rover_triangles = (2, 4)
+    W = H = 200
+    cam = pycolmap.Camera(model="PINHOLE", width=W, height=H, params=[100.0, 100.0, 100.0, 100.0])
+    R = np.diag([1.0, -1.0, -1.0])                           # looking straight down from z = 4
+    C = np.array([0.0, 0.0, 4.0])
+    img = np.full((H, W, 3), 200, np.uint8)
+    cv2.imwrite(str(tmp_path / "im.png"), img)
+    mask = np.full((H, W), 255, np.uint8)                    # > 0: terrain
+    mask[70:130, 70:130] = 0                                 # 'rover': +-30 px = +-1.2 m on the ground, +-1.05 m at the box top
+    cv2.imwrite(str(tmp_path / "mask.png"), mask)
+    src = O.SourceImage("im.png", cam, R, C, tmp_path / "im.png", None, 1.0)
+    src.rover_mask_file = tmp_path / "mask.png"
+    # rays straight down onto: the box top (rover pixel, rover surface), the ground inside the mask patch (rover
+    # pixel, terrain: rejected), the ground outside (terrain pixel, terrain)
+    X = np.array([[0.0, 0.0], [0.9, 0.0], [2.0, 0.0]])
+    o = np.c_[X, np.full(3, 3.0)]
+    d = np.tile([0.0, 0.0, -1.0], (3, 1))
+    c = O.candidates(sc, [src], o, d)
+    assert list(c["on_rover"]) == [True, False, False]
+    assert list(c["k"][:, 0] >= 0) == [True, False, True] and c["rejected"] == [1, 0]
+    mask[:] = 255                                            # the mask says terrain everywhere: nothing lands on the box
+    cv2.imwrite(str(tmp_path / "mask.png"), mask)
+    src._rover = None
+    c = O.candidates(sc, [src], o, d)
+    assert list(c["k"][:, 0] >= 0) == [False, True, True] and c["rejected"] == [0, 1]
+    c = O.candidates(sc, [src], o, d, surface_check=False)   # the check off: as before
+    assert (c["k"][:, 0] >= 0).all()
