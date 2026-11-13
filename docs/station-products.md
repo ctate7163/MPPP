@@ -175,11 +175,11 @@ between a station's two variants.
 
 `docs/ods/index.html` is one static page (three.js, WebXR): it shows the `_360_3DTD` squares on a sphere per eye,
 with menus for station, variant and view, a link per view (`#<station>/<variant>/<view>`), drag and wheel on a
-screen, and in a headset: trigger = next station, grip = variant, A or X = view. A line at the bottom reports what
+screen and a choice of the eye shown there (left or right; the L key), and in a headset: trigger = next station, grip = variant, A or X = view. A line at the bottom reports what
 the device can show (maximum texture size, compressed-texture formats).
 
 - On the documentation site: <https://ctate7163.github.io/MPPP/ods/>.
-- To add stations: `mppp single-sites Sol0052_S003D2046 --publish docs/ods --publish-only` copies the stereo JPEGs (reduced
+- To add stations: `mppp single-sites Sol0052_S003D2046 --publish docs/ods --publish-only` copies the stereo JPEGs (the standard view; reduced
   to 8192) into `docs/ods/panos/` and lists them in `docs/ods/panos.json`; commit and push `docs/ods`.
 - Another image list: `.../ods/?index=URL` (same origin, or a host that allows cross-origin requests).
 

@@ -3,6 +3,15 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.18 — 2026-11-13
+
+- **Viewer:** on a screen a menu (and the L key) chooses which eye's panorama is shown, left or right; a headset
+  shows both as before. While a headset session runs the page's own camera carries neither eye's layer (three.js
+  adds each eye's layer to it; with the right eye chosen on the screen, the left eye of the headset would have
+  been given the right panorama too).
+- **The enhanced view is not published** (Christian: "don't upload the enhanced version to github"):
+  `mppp single-sites --publish` copies the standard view only; `--publish-views standard enhanced` as before.
+
 ## 0.97.17 — 2026-11-13
 
 - **A panorama's name is its block's name without a size word** (Christian: "the name of the ods should just be its

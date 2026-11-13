@@ -453,8 +453,8 @@ def add_parser(sub) -> None:
                         "viewer (docs/ods of the repository; the page is copied into DIR when it is another folder)")
     p.add_argument("--publish-only", action="store_true", help="with --publish: no steps, publish what --out holds")
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
-    p.add_argument("--publish-views", nargs="+", default=["standard", "enhanced"], metavar="VIEW",
-                   help="standard, enhanced, 'enhanced local' (default: standard enhanced)")
+    p.add_argument("--publish-views", nargs="+", default=["standard"], metavar="VIEW",
+                   help="standard, enhanced, 'enhanced local' (default: standard - 0.97.18: the enhanced view is not published)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")

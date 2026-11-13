@@ -1982,9 +1982,14 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     assert [p["id"] for p in doc["panos"]] == ["A0", "S1"]
     s1 = doc["panos"][1]
     assert s1["title"] == "One" and s1["yaw_deg"] == 90 and [v["key"] for v in s1["variants"]] == ["rover", "masked"]
-    assert s1["variants"][0]["views"] == {"standard": "panos/S1_rover_360_3DTD.jpg", "enhanced": "panos/S1_rover_enh_360_3DTD.jpg"}
-    assert cv2.imread(str(w / "panos" / "S1_enh_360_3DTD.jpg")).shape == (128, 128, 3)
-    assert not (w / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
+    assert s1["variants"][0]["views"] == {"standard": "panos/S1_rover_360_3DTD.jpg"}       # 0.97.18: no enhanced view
+    assert cv2.imread(str(w / "panos" / "S1_360_3DTD.jpg")).shape == (128, 128, 3)
+    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard",)
+    both = web.publish(r, tmp_path / "web2", width=128, views=("standard", "enhanced"))["panos"][0]         # on request
+    assert both["variants"][0]["views"]["enhanced"] == "panos/S1_rover_enh_360_3DTD.jpg"
+    assert not (tmp_path / "web2" / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
+    page = (Path(web.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    assert 'id="eye"' in page and "sessionstart" in page and "setEye" in page                  # the eye shown on a screen
     im = cv2.imread(str(web.label_pano(tmp_path / "t.jpg", width=512)))
     assert im.shape == (512, 512, 3)
     b, g, rr = im[:256].reshape(-1, 3).astype(int).sum(0)       # the top half carries the blue "LEFT EYE" (BGR)
