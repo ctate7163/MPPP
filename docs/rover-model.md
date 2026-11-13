@@ -47,6 +47,8 @@ camera model.
 6. **High-gain antenna** in one neutral pose (the dish to the right of its gimbal, tilted 45° forward and up).
 7. **UHF antenna:** the can's wall raised 10 % to the real rim, and NASA's domed cap replaced by a flat floor 5 cm
    inside the rim (the real can is open; the 5 cm is not measured). Its width is NASA's.
+8. **Dark block at the front right under the arm** moved 5 cm back and 2 cm to the right, to where the Navcam
+   pair of sol 52 shows it (good to about 2 cm).
 
 ## Articulation from the image labels
 

@@ -13,6 +13,7 @@ The scales are constants - the same for every image, station and run:
     <image>_emission.jpg       angle between the normal and the camera (deg), 0 .. 90 linear, VIRIDIS
     <image>_phase.jpg          angle Sun - surface - camera (deg), 0 .. 180 linear, VIRIDIS
     <image>_shadow.jpg         lit / shadow / unknown, three fixed colours
+    (the sky is white in every picture but the shadow one)
     <image>_rad.jpg            the block's 8-bit picture of the frame - a view, not radiance
 
 Every picture carries its scale as JSON in its XMP packet (``mppp:Scale``), and ``photometry_jpg/scales.json`` holds
@@ -42,7 +43,7 @@ NPZ_NOTE = "exact values: maps/<image>.npz (depth, range, normal) and photometry
 def scales() -> Dict[str, Dict[str, Any]]:
     """The scale of each picture, by its file-name suffix."""
     from .raycast import DEPTH_LINEAR_MAX_M, DEPTH_LOG_RANGE_M
-    special = {"ground_plane": "the same colours x 0.55", "sky": [160, 160, 160], "masked_rgb": [120, 40, 40], "none": [0, 0, 0]}
+    special = {"ground_plane": "the same colours x 0.55", "sky": [255, 255, 255], "masked_rgb": [120, 40, 40], "none": [0, 0, 0]}
     return {
         "depth_linear": {"quantity": "range from the camera centre", "units": "m", "map": "linear", "min": 0.0,
                          "max": float(DEPTH_LINEAR_MAX_M), "colormap": "TURBO", "value": "min + (max - min) * index / 255",
@@ -51,14 +52,14 @@ def scales() -> Dict[str, Dict[str, Any]]:
                       "max": float(DEPTH_LOG_RANGE_M[1]), "colormap": "TURBO",
                       "value": "10 ** (log10(min) + (log10(max) - log10(min)) * index / 255)", "special": special},
         "normal": {"quantity": "unit surface normal in the camera frame (x right, y down, z forward)", "units": "1",
-                   "map": "rgb", "value": "n = 2 * [R, G, B] / 255 - 1", "special": {"no surface": [0, 0, 0]}},
+                   "map": "rgb", "value": "n = 2 * [R, G, B] / 255 - 1", "special": {"sky": [255, 255, 255], "no surface": [0, 0, 0]}},
         "incidence": {"quantity": "angle between the surface normal and the Sun", "units": "deg", "map": "linear",
-                      "min": 0.0, "max": 90.0, "colormap": "VIRIDIS", "value": "max * index / 255", "special": {"none": [0, 0, 0]}},
+                      "min": 0.0, "max": 90.0, "colormap": "VIRIDIS", "value": "max * index / 255", "special": {"sky": [255, 255, 255], "none": [0, 0, 0]}},
         "emission": {"quantity": "angle between the surface normal and the direction to the camera", "units": "deg",
                      "map": "linear", "min": 0.0, "max": 90.0, "colormap": "VIRIDIS", "value": "max * index / 255",
-                     "special": {"none": [0, 0, 0]}},
+                     "special": {"sky": [255, 255, 255], "none": [0, 0, 0]}},
         "phase": {"quantity": "angle Sun - surface - camera", "units": "deg", "map": "linear", "min": 0.0, "max": 180.0,
-                  "colormap": "VIRIDIS", "value": "max * index / 255", "special": {"none": [0, 0, 0]}},
+                  "colormap": "VIRIDIS", "value": "max * index / 255", "special": {"sky": [255, 255, 255], "none": [0, 0, 0]}},
         "shadow": {"quantity": "cast shadow", "units": "class", "map": "classes",
                    "classes_rgb": {"0 unknown": [0, 0, 0], "1 lit": [255, 200, 90], "2 shadow": [20, 40, 120]}},
         "rad": {"quantity": "the block's 8-bit picture of the frame (white-balanced, tone-scaled)", "units": "none",
@@ -128,10 +129,12 @@ def decode(path: PathLike, scale: Optional[Dict[str, Any]] = None) -> Dict[str, 
     px = img.reshape(-1, 3).astype(np.float32)
     dark = px.max(axis=1) < 24                                      # black: no value
     if sc["map"] == "rgb":
+        white = (px.min(axis=1) > 235).reshape(img.shape[:2])            # the sky
+        out["sky"] = white
         n = 2.0 * img[..., ::-1].astype(np.float32) / 255.0 - 1.0
         ln = np.linalg.norm(n, axis=2, keepdims=True)
         n = n / np.maximum(ln, 1e-6)
-        n[dark.reshape(img.shape[:2])] = np.nan
+        n[dark.reshape(img.shape[:2]) | white] = np.nan
         out["value"] = n
         return out
     if sc["map"] == "classes":
@@ -163,6 +166,8 @@ def decode(path: PathLike, scale: Optional[Dict[str, Any]] = None) -> Dict[str, 
     else:
         v = 10.0 ** (np.log10(lo) + (np.log10(hi) - np.log10(lo)) * idx / 255.0)
     bad = dark | np.isin(i, extra)
+    if "sky" in sp:
+        out["sky"] = (i == extra[0]).reshape(img.shape[:2]) if extra else np.zeros(img.shape[:2], bool)
     v[bad] = np.nan
     out["value"] = v.reshape(img.shape[:2]).astype(np.float32)
     if plane_from is not None:

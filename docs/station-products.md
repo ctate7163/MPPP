@@ -40,7 +40,12 @@ shadow (0 unknown, 1 lit, 2 shadow). **These files are the numbers.**
 
 The shadows are cast by the station mesh and by the rover hardware that is not in it: the mast and its two booms,
 and the camera head turned to where it was when the image was taken (see [Rover model](rover-model.md)). With the
-terrain-only mesh the whole rover model casts shadows.
+terrain-only mesh the whole rover model casts shadows. A surface the Sun meets at more than 89 degrees is shadow
+too; gaps of a few pixels inside a shadow are closed, and the shadow is then grown by 3 pixels, so the stored map
+errs on the side of shadow.
+
+`--add-cameras F` adds the station's front Hazcam pair of the same sols (on in the station list); for its shadows
+the camera head is where the Navcam frame nearest in time had it.
 
 `photometry_jpg/` holds a picture of each map for looking at. Their colour scales are constants, the same for every
 image and run:
@@ -53,6 +58,7 @@ image and run:
 | `_incidence.jpg`, `_emission.jpg` | angle of the normal to the Sun, to the camera | 0 to 90 degrees, linear, VIRIDIS |
 | `_phase.jpg` | angle Sun - surface - camera | 0 to 180 degrees, linear, VIRIDIS |
 | `_shadow.jpg` | lit / shadow / unknown | three fixed colours |
+| all but the shadow picture | the sky | white |
 | `_rad.jpg` | the 8-bit picture of the frame | a view, not radiance |
 
 Each picture carries its scale as JSON in its XMP metadata (`mppp:Scale`), `photometry_jpg/scales.json` lists them
@@ -70,6 +76,12 @@ Frames of other cameras can fill in what the panorama's own frames do not see: `
 Hazcam pair of the same sols, which colours the ground under the arm. A fill frame has weight only where no regular
 frame sees the surface, and its colours are matched to the regular frames first, per channel, on the surface both
 see (`ods.json`, `fill_colour_match`). The regular frames are not changed.
+
+On surfaces nearer than 3 m - the rover, and the ground beside it - a frame is weighted by how little parallax it
+has against the panorama's ray, much more steeply than on the terrain. There a wrong depth in the mesh moves the
+picture by (the camera's distance from the ray) x (the depth error) / range squared: at 1.2 m, 20 cm and 5 cm
+make 23 pixels of a 16K panorama. The frame nearest the ray shows what the panorama should show whatever the
+model's shape.
 
 Files (the prefix is the station, with `_rover` for the with-rover variant):
 
@@ -103,11 +115,14 @@ farther than it is. These numbers are constants at the top of `mppp/ibr/ods.py` 
 
 ### The mark at the nadir
 
-Within 10 degrees of straight down the panorama shows no terrain (the mast, or filled-in ground). A disc there, in
-the colour of the panorama's sky, carries in black: "Mars 2020 Perseverance Rover", the sol and the site, "made by
-C. Tate" and the image credit (NASA/JPL for Navcam and Hazcam frames; NASA/JPL/MSSS/ASU when Mastcam-Z frames are
-in). It is in every colour panorama, not in the depth products; `ods.json` records its rows (`nadir_mark`), and
-`mppp ods --no-nadir-mark` leaves it out. The text reads upright looking down with north at the top.
+Within 10 degrees of straight down the panorama shows no terrain (the mast, or filled-in ground). A light blue
+disc there carries, in black, one line that runs once around it near the rim: "Mars 2020 Perseverance Rover", the
+sol and the site, "made by C. Tate" and the image credit (NASA/JPL for Navcam and Hazcam frames; NASA/JPL/MSSS/ASU
+when Mastcam-Z frames are in). In the flat image it is a straight line along the bottom, starting at north; in a
+headset it is a ring. The letters are made about 3 times too wide in the flat image, which leaves them about 3
+times too narrow in the headset: the strip is stretched 7 to 9 times there, and no letter can have its own shape in
+both. It is in every colour panorama, not in the depth products; `ods.json` records its rows (`nadir_mark`), and
+`mppp ods --no-nadir-mark` leaves it out.
 
 ### Sky and brightness
 

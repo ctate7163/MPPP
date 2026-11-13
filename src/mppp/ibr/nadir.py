@@ -4,11 +4,8 @@ black circle at the bottom with a white water mark that says Mars 2020 Persevera
 'made by C. Tate' with image credits").
 
 Straight down a panorama from the mast shows no terrain: the mast itself (masked) and, without the rover, ground
-that was filled in.  The pixels within ``NADIR_MARK_DEG`` of the nadir become a disc in the colour of the panorama's
-sky with black text (Christian, 13 Nov, later: "Make the water mark black text on a light background the same color
-as the sky"; first a black disc with white text).  The
-text is laid out as seen looking straight down with north at the top (east to the right), the same in both eyes
-(the eye separation is zero there).  It goes into every colour panorama (8-bit and 16-bit, eyes, centre, stacked,
+that was filled in.  The pixels within ``NADIR_MARK_DEG`` of the nadir become a light blue disc with black text that
+runs once around it near the rim (:func:`make_mark`), the same in both eyes (the eye separation is zero there).  It goes into every colour panorama (8-bit and 16-bit, eyes, centre, stacked,
 enhanced), not into the depth products; ``ods.json`` records it ("nadir_mark"), ``mppp ods --no-nadir-mark`` leaves
 it out.
 
@@ -26,8 +23,15 @@ TITLE = "Mars 2020 Perseverance Rover"
 AUTHOR = "made by C. Tate"
 CREDIT_NAVCAM = "NASA/JPL"
 CREDIT_ZCAM = "NASA/JPL/MSSS/ASU"
-SKY_FALLBACK_RGB = (201.0, 172.0, 135.0)     # 8-bit units, when the panorama shows no sky: a butterscotch Mars sky
-SKY_MIN_VALUE_8BIT = 150.0                    # "a light background": a darker sky colour is scaled up to this (its hue kept)
+BACKGROUND_RGB = (176.0, 212.0, 238.0)       # 8-bit units: light blue (Christian, 13 Nov 2026: "the water mark background
+#                                              should be light blue"; before: the panorama's sky colour, and black at first)
+BACKGROUND_LINEAR_FACTOR = 0.8               # in a linear 16-bit panorama: this x the 8-bit colour, in 8-bit linear units
+TEXT_SEPARATOR = "   -   "
+TEXT_SPAN_OF_CIRCLE = 0.94                   # the line takes this share of the full circle (the rest is the gap at north)
+TEXT_CENTRE_IN_BAND = 0.36                   # the line's middle, as a share of the disc's radius from its rim
+TEXT_MAX_HEIGHT_IN_BAND = 0.5                # the line is at most this share of the disc's radius tall
+SKY_FALLBACK_RGB = BACKGROUND_RGB            # (kept for callers of sky_colour)
+SKY_MIN_VALUE_8BIT = 150.0
 DISC_PX = 1024                        # the text is drawn on a square of this side, then turned into the panorama's rows
 FONTS = ("arialbd.ttf", "arial.ttf", "segoeui.ttf", "DejaVuSans-Bold.ttf", "DejaVuSans.ttf",
          "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf")
@@ -72,69 +76,62 @@ def _font(size: int):
     return None
 
 
-def disc_image(lines: Sequence[str], size: int = DISC_PX) -> np.ndarray:
-    """The text as seen looking down: (size, size) float32, 1 = text, 0 = background; the disc's rim at the square's edge."""
+def text_strip(text: str, height_px: int = 160) -> np.ndarray:
+    """One line of text as (h, w) float32, 1 = ink; cropped to the ink, ``height_px`` tall."""
     from PIL import Image, ImageDraw
-    img = Image.new("L", (size, size), 0)
-    dr = ImageDraw.Draw(img)
-    rel = [1.0, 1.0, 0.8, 0.8][:len(lines)] + [0.8] * max(0, len(lines) - 4)       # the title and the sol line larger
-    base = 0.085 * size
-    fonts, boxes = [], []
-    for attempt in range(12):                              # shrink until every line fits its chord of the disc
-        fonts = [_font(max(8, int(round(base * r)))) for r in rel]
-        if fonts[0] is None:
-            break
-        boxes = [dr.textbbox((0, 0), t, font=f) for t, f in zip(lines, fonts)]
-        gap = 0.45 * base
-        total = sum(b[3] - b[1] for b in boxes) + gap * (len(lines) - 1)
-        y, fits = 0.5 * size - 0.5 * total, total < 0.80 * size
-        for b in boxes:
-            h = b[3] - b[1]
-            far = max(abs(y - 0.5 * size), abs(y + h - 0.5 * size))                 # the line's farthest edge from the centre
-            chord = 2.0 * np.sqrt(max((0.46 * size) ** 2 - far ** 2, 0.0))
-            fits &= (b[2] - b[0]) <= chord
-            y += h + gap
-        if fits:
-            break
-        base *= 0.9
-    if fonts and fonts[0] is not None:
-        gap = 0.45 * base
-        total = sum(b[3] - b[1] for b in boxes) + gap * (len(lines) - 1)
-        y = 0.5 * size - 0.5 * total
-        for t, f, b in zip(lines, fonts, boxes):
-            dr.text((0.5 * size - 0.5 * (b[2] - b[0]) - b[0], y - b[1]), t, fill=255, font=f)
-            y += (b[3] - b[1]) + gap
-        return np.asarray(img, np.float32) / 255.0
-    import cv2                                             # no TrueType font on this machine: OpenCV's stroke font
-    a = np.zeros((size, size), np.uint8)
-    y = 0.30 * size
-    for t, r in zip(lines, rel):
-        fs = 0.0016 * size * r
-        while fs > 0.2 and cv2.getTextSize(t, cv2.FONT_HERSHEY_DUPLEX, fs, 2)[0][0] > 0.8 * size:
-            fs *= 0.9
-        (w, h), _ = cv2.getTextSize(t, cv2.FONT_HERSHEY_DUPLEX, fs, 2)
-        cv2.putText(a, t, (int(0.5 * size - 0.5 * w), int(y + h)), cv2.FONT_HERSHEY_DUPLEX, fs, 255, 2, cv2.LINE_AA)
-        y += h + 0.06 * size
-    return a.astype(np.float32) / 255.0
+    import cv2
+    f = _font(int(height_px))
+    if f is not None:
+        box = ImageDraw.Draw(Image.new("L", (8, 8))).textbbox((0, 0), text, font=f)
+        img = Image.new("L", (box[2] - box[0] + 8, box[3] - box[1] + 8), 0)
+        ImageDraw.Draw(img).text((4 - box[0], 4 - box[1]), text, fill=255, font=f)
+        a = np.asarray(img, np.float32) / 255.0
+    else:                                                  # no TrueType font on this machine: OpenCV's stroke font
+        fs = height_px / 30.0
+        (w, h), base = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, fs, 3)
+        im = np.zeros((h + base + 8, w + 8), np.uint8)
+        cv2.putText(im, text, (4, h + 4), cv2.FONT_HERSHEY_DUPLEX, fs, 255, 3, cv2.LINE_AA)
+        a = im.astype(np.float32) / 255.0
+    ys, xs = np.nonzero(a > 0.05)
+    return a[ys.min():ys.max() + 1, xs.min():xs.max() + 1] if len(ys) else a
 
 
 def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: float = NADIR_MARK_DEG,
               azimuth0_deg: float = 0.0) -> Dict[str, Any]:
     """The mark for an equirectangular image of ``width`` x ``height`` whose column 0 looks at ``azimuth0_deg``
     (east of north): {"row0": the first row of the disc, "alpha": (height - row0, width) float32, 1 = text,
-    "radius_deg", "lines"}."""
+    "radius_deg", "lines", "text", "stretch"}.
+
+    The text is one line that runs once around the disc near its rim, starting at north and reading towards the
+    east (Christian, 13 Nov 2026: "the text should wrap around the perimeter of the circle so that it can be read
+    in the cylindrical projection too").  In the equirectangular image it is a straight line along the bottom strip,
+    upright; looking down in a headset it is a ring with the letters' tops outwards.  A letter cannot have its own
+    shape in both: near the nadir the strip is stretched 1 / cos(elevation) times (7 times at -82 degrees).  The
+    letters are made ``stretch`` = the square root of that wider than they are in the flat image, so they are as much
+    too wide in the image as they are too narrow in the headset (about 2.7 times each)."""
     import cv2
     row0 = int(np.ceil(height * (180.0 - float(radius_deg)) / 180.0))
-    rows = np.arange(row0, height)
-    el = 90.0 - (rows + 0.5) * 180.0 / height                       # elevation of the row's centre (deg)
-    rho = np.clip((el + 90.0) / float(radius_deg), 0.0, 1.0)        # 0 at the nadir, 1 at the disc's rim
-    az = np.radians(float(azimuth0_deg) + (np.arange(width) + 0.5) * 360.0 / width)
-    disc = disc_image(lines)
-    half = 0.5 * disc.shape[0]
-    mx = (half + half * rho[:, None] * np.sin(az)[None, :]).astype(np.float32)      # east to the right
-    my = (half - half * rho[:, None] * np.cos(az)[None, :]).astype(np.float32)      # north at the top
-    alpha = cv2.remap(disc, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0.0)
-    return {"row0": row0, "alpha": alpha, "radius_deg": float(radius_deg), "lines": list(lines)}
+    band = height - row0
+    alpha = np.zeros((band, width), np.float32)
+    text = TEXT_SEPARATOR.join(lines)
+    strip = text_strip(text)
+    el_text = -(90.0 - (1.0 - TEXT_CENTRE_IN_BAND) * float(radius_deg))        # the elevation of the line's middle
+    stretch = float(np.sqrt(1.0 / max(np.cos(np.radians(el_text)), 1e-3)))
+    span = int(round(width * TEXT_SPAN_OF_CIRCLE))                             # the columns the text takes
+    h = int(round(span * strip.shape[0] / (strip.shape[1] * stretch)))         # its height for that stretch
+    h_max = max(4, int(TEXT_MAX_HEIGHT_IN_BAND * band))
+    if h > h_max:                                                              # a short text: no taller than this,
+        h = h_max                                                              # and it then takes less of the circle
+        span = min(span, int(round(h * stretch * strip.shape[1] / strip.shape[0])))
+    h = max(4, h)
+    t = cv2.resize(strip, (max(8, span), h), interpolation=cv2.INTER_AREA)
+    y0 = int(np.clip(round(TEXT_CENTRE_IN_BAND * band - 0.5 * h), 1, max(1, band - h - 1)))
+    x0 = int(round(((0.0 - float(azimuth0_deg)) % 360.0) / 360.0 * width + 0.5 * (width * TEXT_SPAN_OF_CIRCLE - span)
+                   + 0.5 * width * (1.0 - TEXT_SPAN_OF_CIRCLE)))               # from north, centred in its span
+    cols = (x0 + np.arange(t.shape[1])) % width
+    alpha[y0:y0 + t.shape[0], cols] = t[:band - y0]
+    return {"row0": row0, "alpha": alpha, "radius_deg": float(radius_deg), "lines": list(lines), "text": text,
+            "stretch": stretch, "text_height_px": int(h), "text_elevation_deg": float(el_text)}
 
 
 def sky_colour(img: np.ndarray, sky: Optional[np.ndarray], fallback, light: Optional[float] = None) -> np.ndarray:

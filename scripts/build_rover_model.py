@@ -18,6 +18,7 @@ The changes to NASA's model are described for users in docs/rover-model.md; the 
   (elbow, z) - arm.004 (wrist, z) - turret_obj (turret, y), turned from the model's deployed pose to the stow pose
   of the image labels' arm resolver angles (ARM_LABEL_STOW_DEG through ARM_LABEL_SIGN and ARM_LABEL_OFFSET_DEG).
 * The UHF antenna can: its wall raised to the real rim and the domed cap replaced by a flat floor (UHF_CAN_*).
+* Pieces of the body moved to where the images show them (BODY_COMPONENT_SHIFTS).
 * Not simplified since 0.97.7: NASA's triangles as they are (TARGET_FACES; 0.96.1-0.97.6 decimated every part).
 * scripts/export_rover_glb.py writes the result as docs/rover/perseverance_rmech.glb for use outside MPPP.
 """
@@ -206,6 +207,39 @@ def pose_hga(X: np.ndarray, F: np.ndarray, az_deg: float = HGA_AZ_DEG, tilt_deg:
     return np.vstack(Vs), np.vstack(Fs)
 
 
+# 0.97.8 (Christian, 13 Nov 2026, looking at the model's outline on NLF_0052_0671564132: "I also noticed this dark
+# object here.  In the model, it needs to move back"): connected pieces of the body that lie wholly inside a box
+# (RMECH, m) are moved by a vector (m).  The dark block at the front right under the arm: NASA's model has it 5 cm
+# too far forward and 2 cm too far left against the Van Zyl pair NLF / NRF_0052_0671564132 (its outline through a
+# projection fitted to each frame's own depth map, tried at 0 to -9 cm in x and 0, +2 cm in y; good to about 2 cm).
+BODY_COMPONENT_SHIFTS = [
+    {"name": "dark block at the front right under the arm", "box_min": (1.05, 0.24, 0.19), "box_max": (1.24, 0.40, 0.42),
+     "shift_m": (-0.05, 0.02, 0.0)},
+]
+
+
+def shift_components(v: np.ndarray, f: np.ndarray, shifts) -> list:
+    """Move (in place) every connected piece of the mesh (v, f) that lies wholly inside a shift's box; the report."""
+    import scipy.sparse as sp
+    import scipy.sparse.csgraph as cg
+    e = np.vstack([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
+    n, lab = cg.connected_components(sp.coo_matrix((np.ones(len(e)), (e[:, 0], e[:, 1])), shape=(len(v), len(v))), directed=False)
+    lo = np.full((n, 3), np.inf)
+    hi = np.full((n, 3), -np.inf)
+    np.minimum.at(lo, lab, v)
+    np.maximum.at(hi, lab, v)
+    used = np.zeros(n, bool)
+    used[lab[np.unique(f)]] = True
+    rep = []
+    for sh in shifts:
+        inside = used & np.all(lo >= np.asarray(sh["box_min"]), axis=1) & np.all(hi <= np.asarray(sh["box_max"]), axis=1)
+        sel = inside[lab]
+        v[sel] += np.asarray(sh["shift_m"], float)
+        rep.append({"name": sh["name"], "pieces": int(inside.sum()), "vertices": int(sel.sum()), "shift_m": list(sh["shift_m"])})
+        print(f"moved {int(inside.sum())} piece(s), {int(sel.sum())} vertices: {sh['name']} by {sh['shift_m']} m")
+    return rep
+
+
 def build(glb: Path, out: Path) -> dict:
     import open3d as o3d
     import trimesh
@@ -334,6 +368,9 @@ def build(glb: Path, out: Path) -> dict:
                 om.remove_triangles_by_mask(bad.tolist())
             om.remove_unreferenced_vertices()
         v, f = np.asarray(om.vertices), np.asarray(om.triangles)
+        if kind == "body" and BODY_COMPONENT_SHIFTS:
+            v = np.array(v, float)
+            rep_shift = shift_components(v, f, BODY_COMPONENT_SHIFTS)
         V.append(v)
         F.append(f + off)
         P.append(np.full(len(f), pid, np.uint8))

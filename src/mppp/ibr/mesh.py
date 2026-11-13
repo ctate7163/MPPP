@@ -956,26 +956,50 @@ def load_scene(out_dir: PathLike):
     return sc
 
 
+PREVIEW_HALF_WIDTH_M = 50.0          # the views from above of mesh_preview.png: +/- this, east and north
+
+
 def mesh_preview(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], out_png: PathLike, sphere: Optional[Tuple[np.ndarray, np.ndarray]] = None,
                  radius_m: float = DEFAULT_RADIUS_M, scene=None, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0)) -> Path:
-    """``mesh_preview.png``: a top-down view of the vertices coloured by range, and the range panorama from the pivot."""
+    """``mesh_preview.png``: two views from above - the vertices coloured by height (left) and by range from the pivot
+    (right), both linear, east to the right and north up, +/- ``PREVIEW_HALF_WIDTH_M`` - and under them the range
+    panorama from the pivot (0.97.8, Christian 13 Nov 2026: "two subplots in the top looking down ... height linear
+    on the left and range on the right.  The x and y limits should be +/- 50 meters")."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from .raycast import Scene, panorama_range
     P = np.asarray(pivot, float)
-    fig, axes = plt.subplots(2, 1, figsize=(10, 9), gridspec_kw={"height_ratios": [1.2, 1]})
-    ax = axes[0]
+    L = PREVIEW_HALF_WIDTH_M
+    fig = plt.figure(figsize=(11, 10.5))
+    gs = fig.add_gridspec(2, 2, height_ratios=[1.25, 1])
+    ax_h, ax_r, ax_p = fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1]), fig.add_subplot(gs[1, :])
+    axes = [None, ax_p]
     if len(V):
-        r = np.linalg.norm(V - P, axis=1)
-        idx = np.random.default_rng(0).choice(len(V), size=min(len(V), 200_000), replace=False)
-        sc = ax.scatter(V[idx, 0] - P[0], V[idx, 1] - P[1], c=r[idx], s=0.3, cmap="turbo", vmin=0, vmax=radius_m)
-        plt.colorbar(sc, ax=ax, label="range from the pivot (m)")
-    ax.plot(0, 0, "k+", ms=12)
-    ax.set_aspect("equal")
-    ax.set_xlabel("x - pivot (m)")
-    ax.set_ylabel("y - pivot (m)")
-    ax.set_title(f"mesh: {len(F)} triangles, top-down")
+        d = V - P
+        e, n_, h = d @ np.asarray(east, float), d @ np.asarray(north, float), d @ np.asarray(up, float)
+        box = (np.abs(e) <= L) & (np.abs(n_) <= L)
+        idx = np.flatnonzero(box)
+        if len(idx) > 300_000:
+            idx = np.random.default_rng(0).choice(idx, size=300_000, replace=False)
+        r = np.linalg.norm(d[idx], axis=1)
+        ring = (np.hypot(e[idx], n_[idx]) > 3.0) & (np.hypot(e[idx], n_[idx]) < 10.0)
+        h0 = float(np.median(h[idx][ring])) if ring.sum() > 50 else float(np.median(h[idx])) if len(idx) else 0.0
+        hh = h[idx] - h0                                     # height above the ground 3 to 10 m from the mast
+        lim = float(max(0.5, np.percentile(np.abs(hh), 98))) if len(idx) else 1.0
+        order = np.argsort(hh)                               # the higher points drawn last
+        sc = ax_h.scatter(e[idx][order], n_[idx][order], c=hh[order], s=0.3, cmap="turbo", vmin=-lim, vmax=lim, rasterized=True)
+        plt.colorbar(sc, ax=ax_h, label="height above the ground near the rover (m)", shrink=0.85)
+        sc = ax_r.scatter(e[idx], n_[idx], c=r, s=0.3, cmap="turbo", vmin=0, vmax=float(np.hypot(L, L)), rasterized=True)
+        plt.colorbar(sc, ax=ax_r, label="range from the pivot (m)", shrink=0.85)
+    for ax, title in ((ax_h, "height"), (ax_r, "range")):
+        ax.plot(0, 0, "k+", ms=12)
+        ax.set_aspect("equal")
+        ax.set_xlim(-L, L)
+        ax.set_ylim(-L, L)
+        ax.set_xlabel("east of the pivot (m)")
+        ax.set_ylabel("north of the pivot (m)")
+        ax.set_title(f"from above: {title}" + (f" ({len(F)} triangles)" if title == "height" else ""))
     if scene is None:
         scene = Scene((V, F), sphere)
     pan = panorama_range(scene, P, width=1440, up=up, north=north, east=east)

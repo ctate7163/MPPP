@@ -269,7 +269,7 @@ def depth_rgb(rng: np.ndarray, lab: np.ndarray, mode: str = "log") -> np.ndarray
     img = cv2.applyColorMap((v * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
     pl = lab == LABEL_PLANE
     img[pl] = (img[pl] * 0.55).astype(np.uint8)
-    img[lab == LABEL_FAR] = (160, 160, 160)
+    img[lab == LABEL_FAR] = (255, 255, 255)                  # 0.97.8: the sky white (grey before)
     img[lab == LABEL_MASKED] = (40, 40, 120)
     img[lab == LABEL_NONE] = 0
     return img
@@ -291,6 +291,7 @@ def preview_jpg(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> List[Path]
     n = maps["normal"]
     nimg = ((n * 0.5 + 0.5) * 255).astype(np.uint8)[..., ::-1].copy()
     nimg[(lab != LABEL_MESH) & (lab != LABEL_PLANE)] = 0
+    nimg[lab == LABEL_FAR] = 255                             # 0.97.8: the sky white
     f = Path(str(out_prefix) + "_normal.jpg")
     cv2.imwrite(str(f), nimg, q)
     from .scales import tag                         # 0.97.7: each picture carries its value scale (XMP mppp:Scale)

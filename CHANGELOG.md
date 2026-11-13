@@ -3,6 +3,29 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.8 — 2026-11-13
+
+**In short.** After the first 0.97.7 run at Van Zyl: the rover in the panorama, the mark, the shadows, the pictures.
+
+- **The rover in the panorama.** The full-detail model changed nothing visible: detail was not the limit. Measured
+  on NLF_0052_0671564132 (the model's depth edges on the frame): the model's outline is within 5 to 10 pixels
+  (half-resolution frame) on the arm's plate, 20 to 40 below the arm and at the shoulder - NASA's public model is
+  not the flight hardware there. At 1.2 m such errors are tens of pixels of a 16K panorama, because the frames were
+  weighted by their feather, which prefers a frame's middle, where its camera is farthest from the panorama's ray.
+  Now, on surfaces nearer than 3 m (`NEAR_BLEND_M`), the weight is the narrow feather x the parallax term to the
+  4th power, in both bands: the frame nearest the ray wins. **Not yet seen on data.**
+- **Model:** the dark block at the front right under the arm moved 5 cm back and 2 cm right (Christian: "it needs
+  to move back"; `BODY_COMPONENT_SHIFTS` in the builder, fitted on the NLF / NRF pair of sol 52).
+- **Nadir mark:** light blue; the text is one line around the rim, a straight line in the flat image.
+- **Shadows:** incidence above 89 degrees is shadow; hatching closed; grown by 3 pixels (`photometry.finish_shadow`).
+- **Pictures:** the sky is white in the depth, normal, incidence, emission and phase pictures (grey / black before).
+- **Front Hazcam** frames get their maps and photometric pictures (`mppp depthmaps --add-cameras F`, on in the
+  station list); their shadows take the head from the Navcam frame nearest in time.
+- **Hazcam colour match** found no shared pixel at Van Zyl (it looked only at what the mast sees). It now compares
+  on points of the terrain mesh within 12 m of the Hazcams.
+- **`mesh_preview.png`:** two views from above, height (left) and range (right), linear, east / north, +/- 50 m;
+  the panorama under them as before.
+
 ## 0.97.7 — 2026-11-13
 
 **In short.** Shadows from the mast, booms and camera head; a credit mark at the nadir; the front Hazcams fill in

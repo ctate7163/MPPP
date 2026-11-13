@@ -189,6 +189,9 @@ def add_parsers(sub) -> None:
                    "station's dense workspace, else all its frames)")
     p.add_argument("--sols", nargs="+", type=int, default=None, help="only the frames of these sols")
     p.add_argument("--photometry", action="store_true", help="then the photometric cube (incidence, emission, phase, shadow)")
+    p.add_argument("--add-cameras", default="", metavar="LETTERS",
+                   help="0.97.8: also the station's frames of these camera families taken on the same sols (F: the front "
+                        "Hazcam pair, R: the rear pair) - their maps and photometric pictures beside the others")
     p.add_argument("--no-shadow", action="store_true")
     p.add_argument("--no-preview", action="store_true")
     p.add_argument("--no-validate", action="store_true")
@@ -216,7 +219,7 @@ def add_parsers(sub) -> None:
                         "R: the rear pair); those of the same sols; default none")
     p.add_argument("--site-name", default=None, help="0.97.7: the site's name in the mark at the nadir (e.g. Rockytop)")
     p.add_argument("--no-nadir-mark", action="store_true", help="0.97.7: no disc with the credits at the nadir "
-                   "(default: within 10 deg of straight down, black text on the sky's colour - Mars 2020 Perseverance Rover, the sol and site, made by "
+                   "(default: within 10 deg of straight down, light blue, black text in one line around its rim - Mars 2020 Perseverance Rover, the sol and site, made by "
                    "C. Tate, the image credit)")
     p.add_argument("--nadir-mark-deg", type=float, default=None, help="the disc's angular radius (default 10)")
     p.add_argument("--scale", type=float, default=1.0, help="the Navcam frames sampled at this fraction of their own "
@@ -424,8 +427,15 @@ def cmd_depthmaps(a: argparse.Namespace) -> int:
     rec = _model(project)
     st, out = _station(project, rec, a)
     scene = _scene(out)
+    names = _frames(project, st, a)
+    if getattr(a, "add_cameras", ""):                # 0.97.8: e.g. the front Hazcam pair
+        from .ods import fill_frames
+        base = list(names) if names else [n for n in st.images if n[:1].upper() in set((a.cameras or "N").upper())]
+        more = fill_frames(project, rec, st, a.add_cameras, base)
+        log.info("depthmaps: %d more frame(s) of the camera families %r: %s", len(more), a.add_cameras, ", ".join(more) or "none at this station")
+        names = base + more
     rep = cast_station(project, rec, st, scene, out, families=a.cameras, scale=a.scale, zcam_scale=a.zcam_scale,
-                       images=_frames(project, st, a), previews=not a.no_preview, validate=not a.no_validate, use_masks=not a.rover)
+                       images=names, previews=not a.no_preview, validate=not a.no_validate, use_masks=not a.rover)
     print(f"{st.label}: {rep['n_images']} images -> {out / 'maps'}; {out / 'maps_report.md'}")
     if a.photometry:
         from .photometry import photometric_cube

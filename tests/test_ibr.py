@@ -204,11 +204,14 @@ def test_photometric_angles_on_a_plane_and_a_shadow():
     d_cam = maps["dirs_cam"][ground]
     assert np.allclose(pm["phase"][ground], np.degrees(np.arccos(np.clip(-d_cam @ (R @ sun), -1, 1))), atol=1e-4)
     sh = pm["shadow"]
-    assert (sh[ground] == PH.SHADOW_SHADOW).sum() > 50 and (sh[ground] == PH.SHADOW_LIT).sum() > 50
+    assert (sh[ground] == PH.SHADOW_SHADOW).sum() > 50 and (sh[ground] == PH.SHADOW_LIT).sum() > 10     # 0.97.8: grown by 3 px
     # the shadow lies on the near side of the wall: closer to the camera than the wall and at most 3/tan(25) m from it
     d_world = maps["dirs_cam"].reshape(-1, 3) @ R
     X = C + maps["range"].reshape(-1, 1) * d_world
-    shadowed = X[(sh.reshape(-1) == PH.SHADOW_SHADOW) & ground.reshape(-1)]
+    import cv2                                                               # 0.97.8: the stored shadow is grown by 3 px
+    core = cv2.erode((sh == PH.SHADOW_SHADOW).astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+    shadowed = X[core.reshape(-1) & ground.reshape(-1)]
+    assert len(shadowed) > 20
     assert np.all(shadowed[:, 1] < 6.0) and np.all(shadowed[:, 1] > 6.0 - 3.0 / np.tan(np.radians(sun_elev)) - 0.1)
 
 
@@ -2057,7 +2060,8 @@ def test_camera_head_follows_the_mast_angles_and_casts_a_shadow():
 
 
 def test_nadir_mark_lines_credit_and_disc():
-    """0.97.7: the black disc with the credits at the nadir; NASA/JPL for Navcam alone, with MSSS/ASU for Mastcam-Z."""
+    """0.97.8: a light blue disc at the nadir with the credits in one line around its rim; NASA/JPL for Navcam alone,
+    with MSSS/ASU for Mastcam-Z."""
     from mppp.ibr import nadir
     nav = ["NLF_0461_0707871340_000RAD_N0260630NCAM03461_0A0195J01.png", "FLF_0461_0707871340_000RAD_N0260630FHAZ00000_0A0195J01.png"]
     assert nadir.credit(nav) == "NASA/JPL" and nadir.credit(nav + ["ZL0_0464_x.png"]) == "NASA/JPL/MSSS/ASU"
@@ -2066,28 +2070,30 @@ def test_nadir_mark_lines_credit_and_disc():
     assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "made by C. Tate", "Image credit: NASA/JPL"]
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sols 686, 688"
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"])[1] == "Sols 686-687"
-    W, H = 2048, 1024
+    W, H = 4096, 2048
     m = nadir.make_mark(W, H, lines)
-    assert m["row0"] == int(np.ceil(H * 170 / 180)) and m["alpha"].shape == (H - m["row0"], W)
+    band = H - m["row0"]
+    assert m["row0"] == int(np.ceil(H * 170 / 180)) and m["alpha"].shape == (band, W)
+    assert "Rockytop" in m["text"] and 2.0 < m["stretch"] < 4.0
+    ink = m["alpha"] > 0.5
+    cols = np.flatnonzero(ink.any(axis=0))
+    rows = np.flatnonzero(ink.any(axis=1))
+    assert (cols.max() - cols.min()) > 0.85 * W                        # one line once around the circle
+    assert rows.max() < 0.75 * band and rows.min() >= 1                # near the rim, not at the nadir
+    assert not ink[:, :int(0.01 * W)].any()                            # the gap at north (column 0)
     img = np.full((H, W, 3), 100, np.uint8)
-    img[:H // 2] = (210, 180, 140)                                     # a sky
-    sky = np.zeros((H, W), bool)
-    sky[:H // 3] = True
-    bg = nadir.sky_colour(img, sky, nadir.SKY_FALLBACK_RGB)
-    assert list(bg) == [210, 180, 140]
-    assert list(nadir.sky_colour(img, None, nadir.SKY_FALLBACK_RGB)) == list(nadir.SKY_FALLBACK_RGB)
-    assert abs(nadir.sky_colour(img // 3, sky, (1, 1, 1), light=150.0).max() - 150.0) < 1e-6        # a dark sky made light
+    bg = np.asarray(nadir.BACKGROUND_RGB)[::-1]                        # BGR, as the images are written
     nadir.apply_mark(img, m, bg)
-    assert (img[H // 2:m["row0"]] == 100).all()                        # nothing above the disc
+    assert (img[:m["row0"]] == 100).all()                              # nothing above the disc
     low = img[m["row0"]:]
-    assert (low == np.array([210, 180, 140])).all(axis=2).mean() > 0.6 and low.max(axis=2).min() < 30     # sky colour, black text
+    assert (low == np.rint(bg)).all(axis=2).mean() > 0.8 and low.max(axis=2).min() < 30    # light blue, black text
+    assert low[..., 0].max() > low[..., 2].max()                        # blue (BGR channel 0) above red
     i16 = np.full((H, W, 3), 3000, np.uint16)
     nadir.apply_mark(i16, m, (50000, 40000, 30000))
     assert i16[m["row0"]:, :, 0].max() == 50000 and i16[m["row0"]:].min() < 2000
     with pytest.raises(ValueError):
         nadir.apply_mark(np.zeros((H, W // 2, 3), np.uint8), m, 255)
-    # the text is upright looking down with north up: turning column 0 by 90 deg shifts the columns by a quarter turn
-    m90 = nadir.make_mark(W, H, lines, azimuth0_deg=90.0)
+    m90 = nadir.make_mark(W, H, lines, azimuth0_deg=90.0)              # column 0 looks east: the text starts a quarter later
     assert np.abs(np.roll(m90["alpha"], W // 4, axis=1) - m["alpha"]).mean() < 0.01
 
 
@@ -2174,8 +2180,13 @@ def test_fill_frames_are_colour_matched_to_the_regular_ones(tmp_path):
     import pycolmap
     from mppp.ibr.ods import SourceImage, estimate_fill_colour
     from mppp.ibr.raycast import Scene
-    V = np.array([[-50, -50, 0], [50, -50, 0], [50, 50, 0], [-50, 50, 0]], float)
-    scene = Scene((V, np.array([[0, 1, 2], [0, 2, 3]])))
+    g = np.linspace(-6.0, 6.0, 25)                                     # a level ground of small triangles
+    xx, yy = np.meshgrid(g, g)
+    V = np.c_[xx.ravel(), yy.ravel(), np.zeros(xx.size)]
+    q = np.arange(xx.size).reshape(xx.shape)
+    Fq = np.vstack([np.c_[q[:-1, :-1].ravel(), q[:-1, 1:].ravel(), q[1:, :-1].ravel()],
+                    np.c_[q[1:, :-1].ravel(), q[:-1, 1:].ravel(), q[1:, 1:].ravel()]])
+    scene = Scene((V, Fq))
     cam = pycolmap.Camera(model="PINHOLE", width=400, height=400, params=[200.0, 200.0, 200.0, 200.0])
     Rdown = np.array([[1.0, 0, 0], [0, -1.0, 0], [0, 0, -1.0]])
     srcs = []
@@ -2187,11 +2198,29 @@ def test_fill_frames_are_colour_matched_to_the_regular_ones(tmp_path):
         srcs.append(SourceImage(name, cam, Rdown, np.array([cx, 0.0, 2.0]), f, None, 1.0))
         srcs[-1].fill_only = fill
     srcs[0].gain = 1.1
-    rep = estimate_fill_colour(scene, srcs, (0.0, 0.0, 2.0), width=512)
+    rep = estimate_fill_colour(scene, srcs, n_points=20000)
     fl = rep["cameras"]["FL"]
     assert fl["samples"] > 300 and np.allclose(fl["factor_rgb"], [1.1 * 100 / 125, 1.1, 1.1 * 100 / 80], rtol=0.01)
     assert np.allclose(fl["white_balance_ratio_rgb"], [0.8, 1.0, 1.25], rtol=0.01) and abs(fl["brightness"] - 1.1) < 0.02
     assert max(fl["scatter_rgb"]) < 0.01
     assert "FR" not in rep["cameras"]                                 # no regular frame within half an hour of it
     assert srcs[0].gain == 1.1 and np.allclose(srcs[1].gain, fl["factor_rgb"], rtol=1e-3) and srcs[2].gain == 1.0
-    assert estimate_fill_colour(scene, srcs[:1], (0.0, 0.0, 2.0), width=256)["cameras"] == {}
+    assert estimate_fill_colour(scene, srcs[:1])["cameras"] == {}
+
+
+def test_shadow_is_also_grazing_incidence_closed_and_grown():
+    """0.97.8: incidence above 89 deg is shadow; hatching is closed; the shadow grows by 3 px; no surface stays 0."""
+    from mppp.ibr import photometry as PH
+    sh = np.full((60, 80), PH.SHADOW_LIT, np.uint8)
+    sh[:5] = PH.SHADOW_UNKNOWN                                     # sky
+    sh[20:30, 20:40:2] = PH.SHADOW_SHADOW                          # hatching: every other column
+    inc = np.full((60, 80), 40.0, np.float32)
+    inc[45:50, 60:65] = 89.5                                       # a facet the Sun grazes
+    inc[:5] = np.nan
+    out = PH.finish_shadow(sh, inc)
+    assert (out[:5] == PH.SHADOW_UNKNOWN).all()
+    assert (out[20:30, 20:39] == PH.SHADOW_SHADOW).all()           # the hatching is one shadow
+    assert (out[45:50, 60:65] == PH.SHADOW_SHADOW).all() and out[42, 62] == PH.SHADOW_SHADOW and out[40, 62] == PH.SHADOW_LIT
+    assert out[17, 30] == PH.SHADOW_SHADOW and out[15, 30] == PH.SHADOW_LIT       # grown by 3 px, not by 5
+    raw = PH.finish_shadow(sh, inc, grow_px=0, close_px=0)
+    assert (raw[20:30, 21:40:2] == PH.SHADOW_LIT).all() and (raw[45:50, 60:65] == PH.SHADOW_SHADOW).all()

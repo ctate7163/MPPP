@@ -84,6 +84,35 @@ def shadow_map(scene: Scene, X_world: np.ndarray, sun_world: Sequence[float], va
     return out
 
 
+HEAD_FROM_NAVCAM_WITHIN_S = 1800.0     # a Hazcam frame's shadows: the head as in a Navcam frame at most this far in time
+SHADOW_INCIDENCE_DEG = 89.0     # 0.97.8: a surface the Sun meets at more than this is in shadow, whatever the ray says
+SHADOW_CLOSE_PX = 2            # ... the hatching of a surface near the terminator (the ray grazes its own facets) closed
+SHADOW_GROW_PX = 3             # ... and the shadow grown by this many pixels
+
+
+def finish_shadow(shadow: np.ndarray, incidence: np.ndarray, grow_px: int = SHADOW_GROW_PX, close_px: int = SHADOW_CLOSE_PX,
+                  incidence_deg: float = SHADOW_INCIDENCE_DEG) -> np.ndarray:
+    """The shadow map as it is stored (0.97.8; Christian, 13 Nov 2026: "dilate the shadowed areas by 3 pixels.  A
+    shadow can be defined as any surface with an incidence angle greater than 89 degrees.  Some borderline polygons
+    have hashmarks.  Those should be all shadow"): the cast shadow, or an incidence above ``incidence_deg``; gaps up
+    to 2 x ``close_px`` wide inside it closed; then grown by ``grow_px`` pixels.  Only pixels with a surface change
+    (0 stays 0)."""
+    import cv2
+    sh = np.asarray(shadow)
+    surface = sh != SHADOW_UNKNOWN
+    dark = (sh == SHADOW_SHADOW) | (surface & (np.nan_to_num(incidence, nan=0.0) > incidence_deg))
+    d = dark.astype(np.uint8)
+    if close_px > 0:
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * close_px + 1, 2 * close_px + 1))
+        d = cv2.morphologyEx(d, cv2.MORPH_CLOSE, k)
+    if grow_px > 0:
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * grow_px + 1, 2 * grow_px + 1))
+        d = cv2.dilate(d, k)
+    out = np.where(d > 0, SHADOW_SHADOW, SHADOW_LIT).astype(np.uint8)
+    out[~surface] = SHADOW_UNKNOWN
+    return out
+
+
 def photometric_maps(scene: Scene, maps: Dict[str, np.ndarray], R: np.ndarray, C: np.ndarray, sun_world: Sequence[float],
                      with_shadow: bool = True, extra=None) -> Dict[str, np.ndarray]:
     """The i / e / g (and shadow) maps of one image from its cast ``maps`` (:func:`mppp.ibr.raycast.cast_image`:
@@ -96,7 +125,7 @@ def photometric_maps(scene: Scene, maps: Dict[str, np.ndarray], R: np.ndarray, C
     if with_shadow:
         d_world = maps["dirs_cam"].reshape(-1, 3) @ R                       # R^T d
         X = np.asarray(C, float) + maps["range"].reshape(-1, 1) * d_world
-        out["shadow"] = shadow_map(scene, X, sun_world, valid, extra=extra)
+        out["shadow"] = finish_shadow(shadow_map(scene, X, sun_world, valid, extra=extra), out["incidence"])
     return out
 
 
@@ -172,7 +201,8 @@ def preview_png(pm: Dict[str, np.ndarray], out_prefix: PathLike) -> list:
     return outs
 
 
-def preview_jpg(pm: Dict[str, np.ndarray], out_prefix: PathLike, rad_image: Optional[PathLike] = None) -> list:
+def preview_jpg(pm: Dict[str, np.ndarray], out_prefix: PathLike, rad_image: Optional[PathLike] = None,
+                label: Optional[np.ndarray] = None) -> list:
     """0.97.0 (Christian, 12 Nov 2026: "In the photometry outputs, change png to jpg to save space and include an 8bit
     rad version of the other products for easy comparison"): ``<prefix>_incidence.jpg`` (0-90 degrees),
     ``_emission.jpg`` (0-90), ``_phase.jpg`` (0-180), ``_shadow.jpg`` and ``<prefix>_rad.jpg`` - the block's 8-bit RAD
@@ -196,6 +226,9 @@ def preview_jpg(pm: Dict[str, np.ndarray], out_prefix: PathLike, rad_image: Opti
         v = np.clip(np.nan_to_num(a, nan=0.0) / vmax, 0, 1)
         img = cv2.applyColorMap((v * 255).astype(np.uint8), cv2.COLORMAP_VIRIDIS)
         img[~np.isfinite(a)] = 0
+        if label is not None:                        # 0.97.8 (Christian, 13 Nov 2026: "make the sky white")
+            from .raycast import LABEL_FAR
+            img[np.asarray(label) == LABEL_FAR] = 255
         p = Path(str(out_prefix) + f"_{k}.jpg")
         cv2.imwrite(str(p), img, q)
         outs.append(p)
@@ -229,6 +262,12 @@ def photometric_cube(project, rec, station, scene: Scene, maps_dir: PathLike, ou
     rows_by_name = {r["name"]: r for r in project.images}
     by_name = {im.name: im for im in rec.images.values()}
     rows = []
+    mast_frames = []                                 # (sclk, R, eye) of the station's Navcam frames: where the head was
+    for n in station.images:
+        im_ = by_name.get(n)
+        t_ = Path(n).name[9:19]
+        if im_ is not None and im_.has_pose and Path(n).name[:2].upper() in ("NL", "NR") and t_.isdigit():
+            mast_frames.append((float(t_), np.asarray(im_.cam_from_world().rotation.matrix(), float), Path(n).name[1:2].upper()))
     for f in sorted(Path(maps_dir).glob("*.npz")):
         m = load_maps(f)
         name = m["meta"].get("image") or f.stem
@@ -254,8 +293,18 @@ def photometric_cube(project, rec, station, scene: Scene, maps_dir: PathLike, ou
             if rover_model.available():
                 fam = Path(name).name[:2].upper()
                 static = ("mast",) if scene.rover_triangles is not None else rover_model.SHADOW_PARTS
-                Vx, Fx, hinfo = rover_model.shadow_casters(rover_pose, R, eye={"NL": "L", "NR": "R"}.get(fam),
-                                                           static_parts=static, head=fam[:1] in "NZ")
+                R_head, eye, head_from = R, {"NL": "L", "NR": "R"}.get(fam), "this frame"
+                if fam[:1] not in "NZ":              # a Hazcam frame: the head where the Navcam frame nearest in time had it
+                    t = Path(name).name[9:19]
+                    near = min(mast_frames, key=lambda q: abs(q[0] - float(t))) if (mast_frames and t.isdigit()) else None
+                    if near is not None and abs(near[0] - float(t)) <= HEAD_FROM_NAVCAM_WITHIN_S:
+                        R_head, eye, head_from = near[1], near[2], f"the Navcam frame {abs(near[0] - float(t)):.0f} s away"
+                    else:
+                        R_head, head_from = None, "no Navcam frame near in time: no head"
+                Vx, Fx, hinfo = rover_model.shadow_casters(rover_pose, R_head, eye=eye, static_parts=static,
+                                                           head=R_head is not None)
+                if hinfo:
+                    hinfo["from"] = head_from
                 extra = occluder(Vx, Fx)
                 cast_info = {"rover_parts": list(static), "head": hinfo or None, "triangles": int(len(Fx))}
         pm = photometric_maps(scene, m, R, C, sun, with_shadow=with_shadow, extra=extra)
@@ -267,7 +316,7 @@ def photometric_cube(project, rec, station, scene: Scene, maps_dir: PathLike, ou
                 write_colmap_array(out / "photometry_maps" / f"{name}.{k}.bin", pm[k])
         if previews:                                 # 0.97.0: jpg, beside the depth and normal pictures
             from .raycast import PREVIEW_DIR
-            preview_jpg(pm, out / PREVIEW_DIR / stem, rad_image=Path(project.root) / "images" / name)
+            preview_jpg(pm, out / PREVIEW_DIR / stem, rad_image=Path(project.root) / "images" / name, label=m.get("label"))
         ok = np.isfinite(pm["emission"])
         rows.append({"image": name, "sol": row.get("sol"), "lmst": row.get("lmst"), "sun_block": [round(float(v), 4) for v in sun],
                      "pixels": int(ok.sum()),
