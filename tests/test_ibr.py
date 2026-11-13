@@ -379,12 +379,12 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert not (out / "far_sphere.ply").exists() and rep["scene"]["beyond"] == "the sky at infinity"
     gp = json.loads((out / "ground_plane.json").read_text(encoding="utf-8"))
     assert gp["method"] == "fit" and gp["tilt_deg"] < 0.5 and abs(gp["offset"]) < 0.05          # the plane z = 0
-    assert rep["scene"]["mesh_radius_m"] == 50.0                     # 0.97.0: the mesh to 50 m
+    assert rep["scene"]["mesh_radius_m"] == 75.0                     # 0.97.0: the mesh to 75 m
     assert rep["station"]["station"] == "S003D0010" and rep["points_file"].endswith("fused.ply")
     V, F = M.read_mesh(out / "mesh.ply")
     assert len(F) > 1000 and abs(float(np.median(V[:, 2]))) < 0.1                     # the ground plane, near z = 0
     cen, _, _ = M.triangle_geometry(V, F)
-    assert M.horizontal_distance(cen, rep["pivot_block_m"]).max() <= 100.05           # 0.97.0: the apron to twice the 50 m radius
+    assert M.horizontal_distance(cen, rep["pivot_block_m"]).max() <= 200.05           # 0.97.0: the apron to the plane's 200 m
 
     assert mppp_main(["depthmaps", work, "--station", "3_10", "--mask-rover", "--scale", "0.25", "--photometry", "--no-preview"]) == 0
     maps = sorted((out / "maps").glob("*.npz"))
@@ -594,7 +594,7 @@ def test_station_dense_options_reach_the_mesh_radius_and_are_set_on_pycolmap():
     po, fo = pycolmap.PatchMatchOptions(), pycolmap.StereoFusionOptions()
     assert po.filter_min_triangulation_angle == 3.0 and fo.min_num_pixels == 5   # COLMAP's defaults, still
     got = set_options(po, STATION_STEREO_OPTIONS)
-    assert po.filter_min_num_consistent == 1 and abs(po.filter_min_triangulation_angle - 0.4) < 1e-6
+    assert po.filter_min_num_consistent == 1 and abs(po.filter_min_triangulation_angle - 0.3) < 1e-6
     assert set(got) == set(STATION_STEREO_OPTIONS)
     set_options(fo, STATION_FUSION_OPTIONS)
     assert fo.min_num_pixels == 2 and isinstance(fo.min_num_pixels, int)
@@ -1745,8 +1745,8 @@ def test_sky_sphere_and_range_merge():
     assert h["label"][1] == LABEL_PLANE and 160 < h["t"][1] < 175              # the plane reaches the sphere
     sc.set_sky_sphere(0)
     assert sc.cast(o, d)["t"][0] == SKY_RANGE_M
-    assert np.allclose(O.range_merge([10, 50, 200, 1e6], 200.0), [1, 1, 0, 0], atol=1e-9)
-    assert 0.6 < O.range_merge(125.0, 200.0) < 0.8 and O.range_merge(500.0, None) == 1.0
+    assert np.allclose(O.range_merge([10, 75, 200, 1e6]), [1, 1, 0, 0], atol=1e-9)        # full to 75 m, zero from 200 m
+    assert 0.6 < O.range_merge(140.0) < 0.8 and O.range_merge(500.0, None) == 1.0 and O.SKY_RADIUS_M is None
     oL, _ = O.ods_rays(8, 4, (2, 3), np.zeros(3), 0.064, "left", share=np.linspace(0, 1, 8))
     assert np.allclose(np.linalg.norm(oL, axis=1), 0.032 * np.linspace(0, 1, 8))
 
@@ -1823,8 +1823,8 @@ def test_far_underlay_and_apron():
     V = np.repeat(np.c_[c, np.full(len(c), -1.5)], 3, axis=0) + np.tile([[0, 0, 0], [0.2, 0, 0], [0, 0.2, 0]], (len(c), 1))
     F = np.arange(len(V)).reshape(-1, 3)
     plane = {"normal": [0, 0, 1], "offset": -2.0, "centre": [0, 0, 0], "up": [0, 0, 1], "radius_m": 100.0}
-    V2, F2, rep = M.fill_terrain(V, F, (0, 0, 0), (0, 0, 1), plane, 50.0)
-    assert rep["underlay"]["apron_to_m"] == 100.0
+    V2, F2, rep = M.fill_terrain(V, F, (0, 0, 0), (0, 0, 1), plane, 50.0, apron_to_m=100.0)
+    assert rep["underlay"]["apron_to_m"] == 100.0 and M.FILL_APRON_TO_M == 200.0 and M.DEFAULT_RADIUS_M == 75.0
     sc = Scene((V2, F2), plane=plane, sky=True)
     az = np.radians(np.arange(0, 360, 1.0))
     for r, aim, lo, hi in ((35.0, -1.6, -1.65, -1.4), (75.0, -1.9, -1.95, -1.6), (99.0, -2.05, -2.01, -1.9)):

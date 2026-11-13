@@ -74,16 +74,17 @@ POLE_MERGE_DEG: Optional[Tuple[float, float]] = (30.0, 80.0)
 # 0.97.0 (Christian, 12 Nov 2026: "Fade the eye separation with range past the mesh edge, so the last terrain and the
 # sky do not jump in depth"): the eye separation is full to RANGE_MERGE_M[0] (the mesh's reach), falls as a cosine
 # and is zero from the sky sphere's radius; the range is that of the ray from the pivot, so both eyes fade alike.
-SKY_RADIUS_M: Optional[float] = 200.0
-RANGE_MERGE_FROM_M = 50.0
+SKY_RADIUS_M: Optional[float] = None        # 12 Nov, later (Christian: "the sky sphere can be at infinity"): no sphere
+RANGE_MERGE_FROM_M = 75.0                   # the eye separation full to the mesh's reach ...
+RANGE_MERGE_TO_M = 200.0                    # ... and zero from the ground plane's rim on: the plane blends terrain and sky
 
 
-def range_merge(range_m, sky_radius_m: Optional[float], from_m: float = RANGE_MERGE_FROM_M) -> np.ndarray:
-    """The share of the eye separation at ``range_m`` from the pivot (1 near, 0 from the sky sphere on)."""
+def range_merge(range_m, to_m: Optional[float] = RANGE_MERGE_TO_M, from_m: float = RANGE_MERGE_FROM_M) -> np.ndarray:
+    """The share of the eye separation at ``range_m`` from the pivot (1 near, 0 from ``to_m`` on)."""
     r = np.asarray(range_m, float)
-    if not sky_radius_m or sky_radius_m <= from_m:
+    if not to_m or to_m <= from_m:
         return np.ones_like(r)
-    return np.cos(0.5 * np.pi * np.clip((r - from_m) / (sky_radius_m - from_m), 0.0, 1.0))
+    return np.cos(0.5 * np.pi * np.clip((r - from_m) / (to_m - from_m), 0.0, 1.0))
 
 
 def pole_merge(el_rad, merge_deg=POLE_MERGE_DEG) -> np.ndarray:
@@ -549,7 +550,8 @@ def estimate_gains(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence
 def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], eye: str, width: int, height: int,
                ipd_m: float, rows_per_chunk: int = 128, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0),
                feather_px: float = FEATHER_PX, progress=None, sky_fill: bool = True,
-               azimuth0_deg: float = 0.0, linear: bool = False, ground_fill: bool = True, pole_merge_deg="default") -> Dict[str, np.ndarray]:
+               azimuth0_deg: float = 0.0, linear: bool = False, ground_fill: bool = True, pole_merge_deg="default",
+               range_merge_m=(RANGE_MERGE_FROM_M, RANGE_MERGE_TO_M)) -> Dict[str, np.ndarray]:
     """One eye's equirect: {"rgb" (H, W, 3) uint8 - or, ``linear``, float32 in 8-bit units up to 1024 (x 64 = the
     16-bit linear value) -, "source" (H, W) int16 (-1 none; the strongest source), "label"
     (H, W) uint8 surface label, "range" (H, W) float32}.  The two-band blend of the module doc, with each source's
@@ -571,9 +573,9 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     for r0 in range(0, height, rows_per_chunk):
         r1 = min(height, r0 + rows_per_chunk)
         rshare = None
-        if getattr(scene, "sky_radius_m", None) and eye in ("left", "right"):    # the range from the pivot's own ray
+        if range_merge_m and eye in ("left", "right"):          # the range from the pivot's own ray
             oc, dc = ods_rays(width, height, (r0, r1), P, 0.0, "centre", up, north, east, azimuth0_deg)
-            rshare = range_merge(scene.cast(oc, dc)["t"], scene.sky_radius_m)
+            rshare = range_merge(scene.cast(oc, dc)["t"], range_merge_m[1], range_merge_m[0])
         o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east, azimuth0_deg, pole_merge_deg=pole_merge_deg,
                         share=rshare)
         c = candidates(scene, sources, o, d)
@@ -1001,7 +1003,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     if hasattr(scene, "set_sky_sphere"):                 # 0.97.0: the sky on a sphere, the plane out to it
         scene.set_sky_sphere(SKY_RADIUS_M if isinstance(sky_radius_m, str) else sky_radius_m)
     rec_out: Dict[str, Any] = {"station": station.to_json(), "prefix": prefix, "width": width, "height": height, "ipd_m": ipd_m,
-                               "sky_radius_m": getattr(scene, "sky_radius_m", None), "range_merge_from_m": RANGE_MERGE_FROM_M,
+                               "sky_radius_m": getattr(scene, "sky_radius_m", None), "range_merge_m": [RANGE_MERGE_FROM_M, RANGE_MERGE_TO_M],
                                "pole_merge_deg": (list(POLE_MERGE_DEG) if POLE_MERGE_DEG else None) if isinstance(pole_merge_deg, str) else (list(pole_merge_deg) if pole_merge_deg else None),
                                "sources": [s.name for s in sources], "scale": scale, "zcam_scale": zcam_scale,
                                "rover": "shown" if not use_masks else "masked out",

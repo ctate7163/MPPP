@@ -249,7 +249,7 @@ def load_maps(path: PathLike) -> Dict[str, Any]:
 
 
 PREVIEW_DIR = "photometry_jpg"   # 0.97.0: every per-image picture of a station in one folder
-DEPTH_LINEAR_MAX_M = 50.0          # the linear depth picture: 0 to the mesh radius (0.97.0: 50 m, was 30)
+DEPTH_LINEAR_MAX_M = 75.0          # the linear depth picture: 0 to the mesh radius (0.97.0: 75 m; 50, 30 before)
 DEPTH_LOG_RANGE_M = (0.5, 200.0)  # the log one
 JPEG_QUALITY = 92
 

@@ -43,7 +43,8 @@ DENSE_MAX_IMAGE_SIZE = 2000        # the long side of the undistorted (working) 
 # 0.424 / tan(3 deg) = 8.1 m, and the far terrain of one station is seen by one stereo pair.  For a station (or an
 # --images subset): 0.4 deg (0.424 m / tan 0.4 deg = 61 m, the mesh radius), one consistent source, two pixels; the
 # mesh's range-dependent support check (tau(z)) and rubber-sheet removal clean what the looser filter lets through.
-STATION_STEREO_OPTIONS = {"min_triangulation_angle": 0.4, "filter_min_triangulation_angle": 0.4,
+# 0.97.0 (12 Nov, Christian: "the terrain should go out further to maybe 75 m"): 0.3 deg - 0.424 m / tan 0.3 deg = 81 m.
+STATION_STEREO_OPTIONS = {"min_triangulation_angle": 0.3, "filter_min_triangulation_angle": 0.3,
                           "filter_min_num_consistent": 1}
 STATION_FUSION_OPTIONS = {"min_num_pixels": 2}
 # 10 Nov 2026 (Christian: "try this with and without the rover body and deck shown"): the fusion without the rover

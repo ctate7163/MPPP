@@ -53,6 +53,18 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   median at 0.45, the colour x 1.2; what is brighter than the terrain's white clips. Replaces the rule of this morning.
 - **Single sites**: `--width PX` for one run (e.g. 16384, with `--out` to keep the panoramas there); the log is
   written line by line.
+- **Terrain to 75 m, plane to 200 m, sky at infinity** (Christian, 12 Nov, later: "the terrain should go out further to
+  maybe 75 m. the sky sphere can be at infinity, and a plane extending out to 200 m should blend between the terrain
+  and sky"). `mppp mesh` defaults: `--mesh-radius 75`, `--plane-radius 200`; the fill's apron runs from the mesh's rim
+  to the plane's (`FILL_APRON_TO_M`). The station stereo keeps points to 81 m (minimum triangulation angle 0.3 deg,
+  0.4 before: the stereo maps of a station are made again). In the panorama the sky is at infinity again
+  (`--sky-radius M` for a sphere) and the eye separation fades from 75 m to zero at 200 m.
+- **UHF antenna in the rover model** (Christian, in VR: the grey cylinder above the calibration targets "looks a little
+  out of place"). NASA's model has the can too small: through the label camera of NRF_0052_0671564560 its stand falls
+  on the stand but the can is 0.81 of the real one across and its top 1 deg low. The can is scaled 1.23 across and
+  1.14 in height from its base (`scripts/build_rover_model.py`, `UHF_CAN_*`); checked on that frame and on
+  NRF_0461_0707874458. The rover's placement was not the cause: the deck targets, the low-gain antenna's outline
+  (two frames, two sols) and the station's rover pose (16 frames, 0.21 deg) agree to 0.1-0.3 deg.
 - **Freeze window** (Christian, 12 Nov): a line when a block starts ("aligning <site>") and when it ends (verdict,
   images, residual, hours), and every half hour the last log line of each running block.
 - **Freeze on 0.97, from the beginning** (Christian, 12 Nov: "restart the freeze from the beginning using the

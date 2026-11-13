@@ -50,10 +50,12 @@ PathLike = Union[str, Path]
 
 NAVCAM_HALF_IFOV_RAD = 0.68e-3       # Navcam at half resolution (8K ODS sampling)
 NAVCAM_BASELINE_M = 0.424
-DEFAULT_RADIUS_M = 50.0             # the mesh: horizontal distance from the mast axis (10 Nov: 20 m, then 30; 12 Nov, 0.97.0: 50 m - Christian: "make sure it extends all the way to 50. The mesh can be extra simplified at that distances")
-DEFAULT_PLANE_RADIUS_M = 100.0      # the ground plane out to here (horizontal); then the sky at infinity
+DEFAULT_RADIUS_M = 75.0             # the mesh: horizontal distance from the mast axis (10 Nov: 20 m, then 30; 12 Nov, 0.97.0: 50 m - Christian: "make sure it extends all the way to 50. The mesh can be extra simplified at that distances")
+#                                     12 Nov, later: 75 m - "the terrain should go out further to maybe 75 m. the sky sphere can be at
+#                                     infinity, and a plane extending out to 200 m should blend between the terrain and sky")
+DEFAULT_PLANE_RADIUS_M = 200.0      # the ground plane out to here (horizontal); then the sky at infinity
 DEFAULT_FAR_RADIUS_M = 100.0        # the 0.96.0 prototype's finite far sphere (mppp mesh --far-radius)
-PLANE_RINGS_M = (3.0, 5.0, 7.5, 10.0, 15.0, 20.0, 30.0, 45.0, 65.0, 100.0)
+PLANE_RINGS_M = (3.0, 5.0, 7.5, 10.0, 15.0, 20.0, 30.0, 45.0, 65.0, 100.0, 140.0, 200.0)
 PLANE_SECTOR_DEG = 10.0
 PLANE_MAX_TILT_DEG = 20.0
 PLANE_MIN_BINS = 8
@@ -575,11 +577,11 @@ FILL_RING_RATIO = 1.06
 # don't appear as holes in the stereo view"): far from the mast the Poisson mesh is ragged - gaps smaller than a grid
 # cell, which the hole rule below does not see.  From FILL_UNDERLAY_FROM_M on every cell of the grid gets its two
 # triangles, FILL_UNDERLAY_DROP_M below the cell heights: a ray through a gap ends on it, at the terrain's range.
-# Past the mesh radius the grid goes on to FILL_APRON_FACTOR x the radius, its height falling to the ground plane's:
+# Past the mesh radius the grid goes on to FILL_APRON_TO_M (the ground plane's reach), its height falling to the plane's:
 # mesh and plane meet without a step.
 FILL_UNDERLAY_FROM_M = 20.0
 FILL_UNDERLAY_DROP_M = 0.05
-FILL_APRON_FACTOR = 2.0
+FILL_APRON_TO_M = 200.0
 FILL_MIN_COVER = 0.6              # a cell counts as covered when its triangles' area is this share of the cell's
 FILL_ROVER_REF_RADIUS_M = 5.0    # rover_keep_m: the ground's height from the triangles within this of the axis, off the footprint
 
@@ -594,7 +596,8 @@ def under_rover(X: np.ndarray, pose: Dict[str, Any]) -> np.ndarray:
 
 def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: Dict[str, Any],
                  radius_m: float, rover: Optional[Dict[str, Any]] = None,
-                 underlay: bool = True, rover_keep_m: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+                 underlay: bool = True, rover_keep_m: Optional[float] = None,
+                 apron_to_m: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """
     0.97.0 (Christian, 12 Nov 2026: "interpolate terrain under the rover so that it is flattish terrain without
     holes. The far field should interpolate over hole in the terrain. This is especially important behind the
@@ -636,7 +639,7 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
     edges = [0.0, FILL_RING0_M]
     while edges[-1] < radius_m:
         edges.append(min(edges[-1] * FILL_RING_RATIO, float(radius_m)))
-    apron_m = float(radius_m) * (FILL_APRON_FACTOR if underlay else 1.0)
+    apron_m = max(float(radius_m), float(apron_to_m if apron_to_m is not None else FILL_APRON_TO_M)) if underlay else float(radius_m)
     while edges[-1] < apron_m:                                  # the apron: past the mesh, down to the plane
         edges.append(min(edges[-1] * FILL_RING_RATIO, apron_m))
     edges = np.array(edges)
@@ -828,7 +831,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
     fill_rep = None
     if fill:                                                    # 0.97.0: no holes, flattish ground under the rover
         V, F, fill_rep = fill_terrain(V, F, pivot, up, plane, radius_m, rover=rover_pose if rover_pose is not None else deck,
-                                      rover_keep_m=rover_keep_m)
+                                      rover_keep_m=rover_keep_m, apron_to_m=plane_radius_m)
         log.info("mesh: terrain fill - %d of %d cells had no surface (%d triangles); %d triangles under the rover replaced",
                  fill_rep["filled"], fill_rep["cells"], fill_rep["triangles"], fill_rep["under_rover_triangles_removed"])
     if deck is not None and terrain_only:

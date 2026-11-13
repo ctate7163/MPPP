@@ -75,6 +75,14 @@ HGA_AXIS_XY_M = (-0.46, -0.475)          # RMECH: the gimbal's vertical (azimuth
 HGA_GIMBAL_M = (-0.436, -0.463, -0.25)   # RMECH: the top of the gimbal, where the dish's arm starts
 HGA_MODEL_AZ_DEG = 25.0                  # the direction of that arm in NASA's model (dish flat, pointing up)
 HGA_FIXED_BELOW_Z_M = -0.13              # RMECH z (down): components centred below this height do not turn (the base)
+# 0.97.0 (Christian, 12 Nov 2026, in VR: "the grey cylinder above the caltargets ... looks a little out of place"):
+# the UHF antenna's can is too small in NASA's model.  Through the label camera of NRF_0052_0671564560 its stand
+# falls on the stand, but the can is 0.81 of the real one across and its top 27 px (1 deg) low.  The can (the
+# geometry of the node above UHF_CAN_BELOW_Z_M) is scaled about its own axis and from its base.
+UHF_NODES = ("antenna_uhf",)
+UHF_CAN_BELOW_Z_M = -0.43         # RMECH z (down): the can is the geometry wholly above this height
+UHF_CAN_RADIAL = 1.23
+UHF_CAN_HEIGHT = 1.14
 DECK_TOP_MODEL_Y = 1.135
 # 0.97.0 (Christian, 12 Nov 2026: "find the fiducials on the 3D model deck and say if they are consistent with the
 # surveyed locations"): NASA's model carries the ten deck targets as discs of 24 mm radius.  The placement is the rigid
@@ -265,6 +273,9 @@ def build(glb: Path, out: Path) -> dict:
             fm = np.asarray(m.faces)
             if kind == "body":
                 v = turn_components(v, fm)
+            if under(i, UHF_NODES) and len(v) and v[:, 2].max() < UHF_CAN_BELOW_Z_M:      # the can, not its stand
+                c, zb = 0.5 * (v[:, :2].min(0) + v[:, :2].max(0)), v[:, 2].max()
+                v = np.c_[c + UHF_CAN_RADIAL * (v[:, :2] - c), zb + UHF_CAN_HEIGHT * (v[:, 2] - zb)]
             parts[kind].append(trimesh.Trimesh(v, fm, process=False))
     V, F, P, rep = [], [], [], {}
     off = 0

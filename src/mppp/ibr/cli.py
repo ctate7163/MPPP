@@ -1,7 +1,7 @@
 """
 mppp.ibr.cli - ``mppp mesh``, ``mppp depthmaps``, ``mppp ods`` on one finished block.
 
-    mppp mesh WORK --station 3_1234 [--points dense/fused.ply] [--colmap colmap.exe] [--mesh-radius 50] [--plane-radius 100]
+    mppp mesh WORK --station 3_1234 [--points dense/fused.ply] [--colmap colmap.exe] [--mesh-radius 75] [--plane-radius 200]
     mppp depthmaps WORK --station 3_1234 [--cameras N] [--scale 0.5] [--photometry]
     mppp ods WORK --station 3_1234 [--width 8192] [--ipd 0.064] [--cameras N]
 
@@ -138,7 +138,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--points", default=None, help="the fused dense cloud (default <project>/dense*/fused.ply, the newest)")
     p.add_argument("--colmap", default=None, help="the COLMAP executable: Delaunay over --dense-dir instead of Poisson")
     p.add_argument("--dense-dir", default=None, help="the dense workspace of the Delaunay mesher (default: --points' folder)")
-    p.add_argument("--mesh-radius", type=float, default=50.0, help="the mesh to this horizontal distance from the mast "
+    p.add_argument("--mesh-radius", type=float, default=75.0, help="the mesh to this horizontal distance from the mast "
                    "axis (m; default 30)")
     p.add_argument("--keep-under-rover", type=float, default=None, metavar="M",
                    help="0.97.0: under the rover's footprint keep the terrain within M metres of the ground's height "
@@ -147,7 +147,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--terrain-from", default=None, metavar="DIR",
                    help="0.97.0: the folder of this station's other variant (rover shown / masked) - its terrain mesh is used "
                         "as it is, with or without the rover model (no second surface run)")
-    p.add_argument("--plane-radius", type=float, default=100.0, help="the ground plane beyond the mesh, to this horizontal "
+    p.add_argument("--plane-radius", type=float, default=200.0, help="the ground plane beyond the mesh, to this horizontal "
                    "distance (m; default 100); the sky at infinity beyond")
     p.add_argument("--horizontal-plane", action="store_true", help="a horizontal ground plane at the median height "
                    "(default: fitted to the terrain's regional slope, up to 20 deg)")
@@ -201,8 +201,8 @@ def add_parsers(sub) -> None:
     p.add_argument("--width", type=int, default=8192)
     p.add_argument("--ipd", type=float, default=0.064, help="eye separation in metres")
     p.add_argument("--sky-radius", type=float, default=None, metavar="M",
-                   help="0.97.0: the sky on a sphere of this radius about the mast axis, the ground plane out to it, the "
-                        "eye separation fading from 50 m to zero there (default 200; 0: the sky at infinity as before)")
+                   help="0.97.0: the sky on a sphere of this radius about the mast axis and the ground plane out to it "
+                        "(default: the sky at infinity; the eye separation fades from 75 m to zero at 200 m either way)")
     p.add_argument("--pole-merge", type=float, nargs=2, default=None, metavar=("START", "END"),
                    help="0.97.0: elevation (deg, up or down) where the eye separation starts to fall and where it is "
                         "zero (default 30 80); --pole-merge 90 90: none")
