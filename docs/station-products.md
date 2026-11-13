@@ -117,7 +117,7 @@ farther than it is. These numbers are constants at the top of `mppp/ibr/ods.py` 
 
 Within 10 degrees of straight down the panorama shows no terrain (the mast, or filled-in ground). A light blue
 disc there carries, in black, one line that runs once around it near the rim: "Mars 2020 Perseverance Rover", the
-sol and the site, "made by C. Tate" and the image credit (NASA/JPL for Navcam and Hazcam frames; NASA/JPL/MSSS/ASU
+sol and the site, "made by C. Tate" and the image credit (NASA/JPL-Caltech/MSSS for Navcam and Hazcam frames; NASA/JPL-Caltech/MSSS/ASU
 when Mastcam-Z frames are in). In the flat image it is a straight line along the bottom, starting at north; in a
 headset it is a ring. The letters are made about 3 times too wide in the flat image, which leaves them about 3
 times too narrow in the headset: the strip is stretched 7 to 9 times there, and no letter can have its own shape in

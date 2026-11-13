@@ -3,6 +3,11 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.9 — 2026-11-13
+
+- **Nadir mark credit:** NASA/JPL-Caltech/MSSS for Navcam and Hazcam panoramas, NASA/JPL-Caltech/MSSS/ASU when
+  Mastcam-Z frames are in (was NASA/JPL and NASA/JPL/MSSS/ASU).
+
 ## 0.97.8 — 2026-11-13
 
 **In short.** After the first 0.97.7 run at Van Zyl: the rover in the panorama, the mark, the shadows, the pictures.

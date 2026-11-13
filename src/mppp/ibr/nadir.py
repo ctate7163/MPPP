@@ -9,8 +9,8 @@ runs once around it near the rim (:func:`make_mark`), the same in both eyes (the
 enhanced), not into the depth products; ``ods.json`` records it ("nadir_mark"), ``mppp ods --no-nadir-mark`` leaves
 it out.
 
-Image credit (Christian, 13 Nov): "NASA/JPL/MSSS/ASU for zcam products.  For just navcam, it should be just
-NASA/JPL."
+Image credit (Christian, 13 Nov, the last word of three): NASA/JPL-Caltech/MSSS for Navcam (and Hazcam) products,
+NASA/JPL-Caltech/MSSS/ASU when Mastcam-Z frames are in.
 """
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ import numpy as np
 NADIR_MARK_DEG = 10.0                 # the disc: everything within this angle of the nadir
 TITLE = "Mars 2020 Perseverance Rover"
 AUTHOR = "made by C. Tate"
-CREDIT_NAVCAM = "NASA/JPL"
-CREDIT_ZCAM = "NASA/JPL/MSSS/ASU"
+CREDIT_NAVCAM = "NASA/JPL-Caltech/MSSS"
+CREDIT_ZCAM = "NASA/JPL-Caltech/MSSS/ASU"
 BACKGROUND_RGB = (176.0, 212.0, 238.0)       # 8-bit units: light blue (Christian, 13 Nov 2026: "the water mark background
 #                                              should be light blue"; before: the panorama's sky colour, and black at first)
 BACKGROUND_LINEAR_FACTOR = 0.8               # in a linear 16-bit panorama: this x the 8-bit colour, in 8-bit linear units
@@ -38,7 +38,7 @@ FONTS = ("arialbd.ttf", "arial.ttf", "segoeui.ttf", "DejaVuSans-Bold.ttf", "Deja
 
 
 def credit(names: Sequence[str]) -> str:
-    """The image credit for the frames ``names``: with a Mastcam-Z frame among them NASA/JPL/MSSS/ASU, else NASA/JPL."""
+    """The image credit for the frames ``names``: with a Mastcam-Z frame among them CREDIT_ZCAM, else CREDIT_NAVCAM."""
     return CREDIT_ZCAM if any(str(n)[:1].upper() == "Z" for n in names) else CREDIT_NAVCAM
 
 

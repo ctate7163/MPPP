@@ -2060,14 +2060,14 @@ def test_camera_head_follows_the_mast_angles_and_casts_a_shadow():
 
 
 def test_nadir_mark_lines_credit_and_disc():
-    """0.97.8: a light blue disc at the nadir with the credits in one line around its rim; NASA/JPL for Navcam alone,
+    """0.97.8: a light blue disc at the nadir with the credits in one line around its rim; NASA/JPL-Caltech/MSSS for Navcam alone,
     with MSSS/ASU for Mastcam-Z."""
     from mppp.ibr import nadir
     nav = ["NLF_0461_0707871340_000RAD_N0260630NCAM03461_0A0195J01.png", "FLF_0461_0707871340_000RAD_N0260630FHAZ00000_0A0195J01.png"]
-    assert nadir.credit(nav) == "NASA/JPL" and nadir.credit(nav + ["ZL0_0464_x.png"]) == "NASA/JPL/MSSS/ASU"
+    assert nadir.credit(nav) == "NASA/JPL-Caltech/MSSS" and nadir.credit(nav + ["ZL0_0464_x.png"]) == "NASA/JPL-Caltech/MSSS/ASU"
     assert nadir.site_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and nadir.site_name(None) is None
     lines = nadir.mark_lines(nav, "Rockytop")
-    assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "made by C. Tate", "Image credit: NASA/JPL"]
+    assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "made by C. Tate", "Image credit: NASA/JPL-Caltech/MSSS"]
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sols 686, 688"
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"])[1] == "Sols 686-687"
     W, H = 4096, 2048
