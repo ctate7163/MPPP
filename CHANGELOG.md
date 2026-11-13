@@ -3,6 +3,22 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.17 — 2026-11-13
+
+- **A panorama's name is its block's name without a size word** (Christian: "the name of the ods should just be its
+  block name without any large, huge, or tiny additions"): in the nadir mark and in the viewer's title
+  (`nadir.block_name`: the site's label in `sites.json` without Large / Huge / Tiny / Small at its end). The
+  viewer's title was "Van Zyl Overlook Huge S003D2046"; it is "Van Zyl Overlook Sol0052_S003D2046". The stations
+  of the list carry no `name` any more, so two change in the mark: Sol0474_S026D0850 reads "Rockytop" (was
+  "Skinner Ridge") and Sol1411_S068D0142 "Witch Hazel Hill" (was "South Arm"). `"name"` still overrides.
+- **Lines in the sky at the frames' edges** (Christian: "there are still some blemishes in the sky"): the outermost
+  rows of a Navcam frame are darker than those just inside (NLF_0052_0671564560, 2560 x 1920: 4.7 % at the first
+  row, 1.6 % at the fourth, under 0.5 % from the seventh). A source gave pixels from 3 pixels of its edge; where it is the only frame that sees
+  a direction - the top of the coverage, in the sky - those rows drew a dark line. The margin is now 0.5 % of the
+  frame's short side (`EDGE_MARGIN_FRAC`; 9.6 pixels for that frame). The low band next to a frame's black padding
+  is blurred over the frame's own pixels only. **Not yet seen on a render**, and 1.6 % may not be the whole of
+  the line Christian saw; a frame that is brighter than the sky fill around it is not addressed.
+
 ## 0.97.16 — 2026-11-13
 
 - **Nadir mark:** the second row reads "Image credit: NASA/JPL-Caltech/MSSS   -   made by C. Tate" (the author was

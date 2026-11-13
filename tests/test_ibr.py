@@ -1126,6 +1126,15 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert rover_ods[-4:] == ["--bits", "16", "--fill-cameras", "F"]   # 0.97.7: the front Hazcams fill in
     assert rover_ods[rover_ods.index("--prefix") + 1] == "Sol0052_S003D2046_rover"           # 0.97.14: the files' names
     assert rover_ods[rover_ods.index("--site-name") + 1] == "Van Zyl Overlook"              # 0.97.7: for the nadir mark
+    from mppp.ibr.nadir import block_name                                                    # 0.97.17: the block's name
+    assert block_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and block_name("witch_hazel_large") == "Witch Hazel Hill"
+    assert block_name("taylorfjellet_large") == "Taylorfjellet" and block_name("rockytop") == "Rockytop"
+    assert block_name("not_a_site_tiny") == "Not A Site" and block_name(None) is None
+    assert all("name" not in v for v in cfg["stations"].values())
+    names = {k: next(c["argv"][c["argv"].index("--site-name") + 1] for c in r["commands"] if c["step"] == "ods") for k, r in
+             ((r["label"], r) for r in runs)}
+    assert names["Sol0474_S026D0850"] == "Rockytop" and names["Sol1411_S068D0142"] == "Witch Hazel Hill"
+    assert not any(w in n.lower().split() for n in names.values() for w in ("large", "huge", "tiny", "small"))
     tl = str(root / "single_sites" / "Sol0052_S003D2046" / "tone_levels.json")                     # 0.97.0: one scaling per station
     assert rover_ods[rover_ods.index("--tone-levels") + 1] == tl
     assert r0["commands"][-1]["argv"][r0["commands"][-1]["argv"].index("--tone-levels") + 1] == tl

@@ -141,6 +141,13 @@ def pole_merge(el_rad, merge_deg=POLE_MERGE_DEG, down_deg="same") -> np.ndarray:
 FEATHER_PX = 40.0                # (0.96.0 prototype) a source's weight fell to zero this close to its image border
 MAX_SOURCES_BLENDED = 4
 EDGE_MARGIN_PX = 3.0             # a source gives nothing within this many pixels of its border, padding or mask edge
+EDGE_MARGIN_FRAC = 0.005         # ... or within this share of its short side, whichever is more.  0.97.17 (Christian, 13
+#                                  Nov 2026: "there are still some blemishes in the sky"): a Navcam frame's outermost rows
+#                                  are darker than those just inside - measured on NLF_0052_0671564560 (2560 x 1920),
+#                                  against rows 10 to 16: 4.7 % at the first row, 1.6 % at the fourth, under 0.5 % from
+#                                  the seventh.  With 3 pixels the rows 4 to 6 were used, and where a frame is the only
+#                                  one that sees a direction (the top of the coverage, in the sky) they are a darker
+#                                  line.  Now 9.6 pixels for that frame.
                                  # (10 Nov: the frames' outermost rows are darker - a faint line where the sky fill starts)
 FEATHER_LOW_FRAC = 0.15          # the low band's feather: this fraction of the source's short side
 FEATHER_HIGH_FRAC = 0.03         # the detail band's feather
@@ -305,7 +312,15 @@ class SourceImage:
         if self._low is None:
             import cv2
             sig = max(0.8, LOW_SIGMA_FRAC * self.short_side)
-            self._low = cv2.GaussianBlur(self.rgb().astype(np.float32), (0, 0), sig)
+            img = self.rgb().astype(np.float32)
+            pad = self.padding()
+            if pad.any():                                        # 0.97.17: the blur over the frame's own pixels only -
+                ok = (~pad).astype(np.float32)                   # next to black padding the low band was pulled dark
+                den = cv2.GaussianBlur(ok, (0, 0), sig)          # and the detail band (image - low band) had a
+                low = cv2.GaussianBlur(img * ok[..., None], (0, 0), sig) / np.maximum(den, 1e-3)[..., None]   # bright rim
+                self._low = np.where(pad[..., None], img, low).astype(np.float32)
+            else:
+                self._low = cv2.GaussianBlur(img, (0, 0), sig)
         return self._low
 
     def padding(self) -> np.ndarray:
@@ -581,7 +596,7 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
             continue
         ij = cand.nonzero()[0]
         dist = src.sample_edge_distance(uv[ij])
-        keep = dist > EDGE_MARGIN_PX                          # inside the image, off the padding and the rover mask
+        keep = dist > max(EDGE_MARGIN_PX, EDGE_MARGIN_FRAC * src.short_side)   # inside the image, off the padding and the mask
         ij, dist = ij[keep], dist[keep]
         if on_rover is not None and len(ij):                  # 0.97.0: rover pixels on the rover, terrain on terrain
             rp = src.sample_rover(uv[ij])

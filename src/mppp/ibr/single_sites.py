@@ -201,8 +201,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     argv += ["--tone-levels", str(base / TONE_FILE)]
                     from .ods import ods_prefix          # 0.97.14: the files carry the station's code of the list
                     argv += ["--prefix", ods_prefix(lab, rover=v == "rover")]
-                    from .nadir import site_name         # 0.97.7: the site's name for the mark at the nadir
-                    nm = st.get("name") or site_name(st.get("site"))
+                    from .nadir import block_name        # 0.97.7: the name for the mark at the nadir; 0.97.17: the
+                    nm = st.get("name") or block_name(st.get("site"))    # block's name without its size word
                     if nm:
                         argv += ["--site-name", str(nm)]
                 if step == "mesh" and near:
@@ -485,7 +485,8 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         from . import web
         logging.basicConfig(level=logging.INFO, format="%(message)s")
         st = cfg.get("stations") or {}
-        titles = {k: {"title": v.get("title") or f"{str(v.get('site', '')).replace('_', ' ').title()} {k}".strip(),
+        from .nadir import block_name                    # 0.97.17: the block's name without its size word
+        titles = {k: {"title": v.get("title") or f"{v.get('name') or block_name(v.get('site')) or ''} {k}".strip(),
                       "note": v.get("web_note"), "yaw_deg": v.get("yaw_deg")} for k, v in st.items()}
         doc = web.publish(out_root, a.publish, stations=[r["label"] for r in runs], views=a.publish_views,
                           width=a.publish_width, titles=titles)
