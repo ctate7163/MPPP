@@ -281,7 +281,7 @@ def test_ods_rays_geometry():
     oR, dR = O.ods_rays(360, 180, (90, 91), P, 0.064, "right")
     assert np.allclose(np.linalg.norm(dL, axis=1), 1.0) and np.allclose(dL, dR)
     sep = oR - oL
-    assert np.allclose(np.linalg.norm(sep, axis=1), 0.064)                 # the eyes an IPD apart
+    assert np.allclose(np.linalg.norm(sep, axis=1), 0.064, rtol=1e-4)       # the eyes an IPD apart (row 90: 0.5 deg down)
     assert np.allclose(np.sum(sep * dL, axis=1), 0.0, atol=1e-12)          # across the view direction
     assert np.allclose(sep[:, 2], 0.0)                                      # in the horizontal plane
     assert np.allclose(np.linalg.norm((oL + oR) / 2 - P, axis=1), 0.0)
@@ -478,6 +478,7 @@ def test_ods_eyes_differ_by_the_parallax_of_the_baseline(tmp_path):
         v = int((90 - el) / 180 * H)
         D = h_cam / np.tan(np.radians(-el))
         expected = 2 * np.arcsin(0.032 / D) * W / (2 * np.pi)
+        expected *= float(O.pole_merge(np.radians(el), O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG))   # 0.97.1: cos(elevation)
         got = []
         for u0 in range(16, W - 96, 128):                               # windows inside the frames, off the seams
             a, b = L[v - 16:v + 16, u0:u0 + 64], Rr[v - 16:v + 16, u0:u0 + 64]
@@ -1681,24 +1682,26 @@ def test_surface_check_keeps_rover_pixels_on_the_rover_and_terrain_on_terrain(tm
 
 
 def test_ods_pole_merging():
-    """0.97.0 (12 Nov): the eye separation is full to 30 deg of elevation and zero from 80 deg, up and down."""
+    """0.97.0 (12 Nov): the eye separation falls towards the poles; 0.97.1: below the horizon as cos(elevation)."""
     from mppp.ibr import ods as O
     P = np.zeros(3)
-    assert np.allclose(O.pole_merge(np.radians([0, 30, -30, 80, -85, 90])), [1, 1, 1, 0, 0, 0], atol=1e-9)
-    assert 0.6 < O.pole_merge(np.radians(-55.0)) < 0.8
-    for row, want in ((90, 0.064), (20, 0.0), (160, 0.0)):                # horizon, 69.5 deg up... rows of a 180-row panorama
-        oL, _ = O.ods_rays(360, 180, (row, row + 1), P, 0.064, "left")
-        oR, _ = O.ods_rays(360, 180, (row, row + 1), P, 0.064, "right")
-        sep = np.linalg.norm(oR - oL, axis=1)
-        assert np.allclose(sep, sep[0])
-        if want:
-            assert np.allclose(sep, want)
-        else:
-            assert sep[0] < 0.064 * 0.4
-    oL, _ = O.ods_rays(360, 180, (175, 176), P, 0.064, "left")
-    assert np.allclose(oL, 0.0)                                           # 85.5 deg down: one image for both eyes
-    oL, _ = O.ods_rays(360, 180, (175, 176), P, 0.064, "left", pole_merge_deg=None)
-    assert np.allclose(np.linalg.norm(oL, axis=1), 0.032)
+    up = np.radians([0, 30, 55, 80, 90])
+    assert np.allclose(O.pole_merge(up)[[0, 1, 3, 4]], [1, 1, 0, 0], atol=1e-9) and 0.6 < O.pole_merge(up)[2] < 0.8
+    dn = np.radians([-30.0, -45.0, -60.0, -90.0])
+    assert np.allclose(O.pole_merge(dn, O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG), np.cos(dn), atol=1e-9)
+    assert np.allclose(O.pole_merge(np.radians([30.0]), O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG), 1.0)     # up: as before
+    def sep(row, **k):
+        oL, _ = O.ods_rays(360, 180, (row, row + 1), P, 0.064, "left", **k)
+        oR, _ = O.ods_rays(360, 180, (row, row + 1), P, 0.064, "right", **k)
+        s_ = np.linalg.norm(oR - oL, axis=1)
+        assert np.allclose(s_, s_[0])
+        return float(s_[0])
+    assert abs(sep(89) - 0.064) < 1e-4                                    # just above the horizon: full
+    assert abs(sep(120) - 0.064 * np.cos(np.radians(30.5))) < 1e-6        # 30.5 deg down
+    assert abs(sep(59) - 0.064) < 1e-4                                    # 30.5 deg up: still full
+    assert sep(175) < 0.064 * 0.1 and sep(4) < 1e-9                       # near the nadir; the zenith
+    assert abs(sep(175, pole_merge_deg=None) - 0.064) < 1e-9
+    assert abs(sep(120, pole_merge_deg={"up": None, "down": (30.0, 80.0)}) - 0.064 * np.cos(0.5 * np.pi * 0.5 / 50)) < 1e-6
 
 
 def test_exposure_and_enhanced_views(tmp_path):
@@ -1749,7 +1752,7 @@ def test_sky_sphere_and_range_merge():
     assert sc.cast(o, d)["t"][0] == SKY_RANGE_M
     assert np.allclose(O.range_merge([10, 75, 200, 1e6]), [1, 1, 0, 0], atol=1e-9)        # full to 75 m, zero from 200 m
     assert 0.6 < O.range_merge(140.0) < 0.8 and O.range_merge(500.0, None) == 1.0 and O.SKY_RADIUS_M is None
-    oL, _ = O.ods_rays(8, 4, (2, 3), np.zeros(3), 0.064, "left", share=np.linspace(0, 1, 8))
+    oL, _ = O.ods_rays(8, 4, (2, 3), np.zeros(3), 0.064, "left", share=np.linspace(0, 1, 8), pole_merge_deg=None)
     assert np.allclose(np.linalg.norm(oL, axis=1), 0.032 * np.linspace(0, 1, 8))
 
 

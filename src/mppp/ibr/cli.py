@@ -204,8 +204,10 @@ def add_parsers(sub) -> None:
                    help="0.97.0: the sky on a sphere of this radius about the mast axis and the ground plane out to it "
                         "(default: the sky at infinity; the eye separation fades from 75 m to zero at 200 m either way)")
     p.add_argument("--pole-merge", type=float, nargs=2, default=None, metavar=("START", "END"),
-                   help="0.97.0: elevation (deg, up or down) where the eye separation starts to fall and where it is "
-                        "zero (default 30 80); --pole-merge 90 90: none")
+                   help="0.97.0: above the horizon, the elevation (deg) where the eye separation starts to fall and where "
+                        "it is zero (default 30 80); 90 90: none")
+    p.add_argument("--pole-merge-down", type=float, nargs=2, default=None, metavar=("START", "END"),
+                   help="0.97.1: the same below the horizon (default 0 90: the share is cos(elevation)); 90 90: none")
     p.add_argument("--cameras", default="N")
     p.add_argument("--scale", type=float, default=1.0, help="the Navcam frames sampled at this fraction of their own "
                    "size (default 1, Christian 10 Nov: the half-resolution frames are 0.68 mrad a pixel, the 8K "
@@ -333,6 +335,15 @@ def _mesh_on_terrain(src: Path, out: Path, deck, st, a, parts) -> Optional[Dict[
     return rep
 
 
+def _pole_merge(a):
+    """The panorama's pole merging from --pole-merge / --pole-merge-down ("default": the module's)."""
+    if a.pole_merge is None and getattr(a, "pole_merge_down", None) is None:
+        return "default"
+    from .ods import POLE_MERGE_DEG, POLE_MERGE_DOWN_DEG
+    pair = lambda v, d: d if v is None else (None if v[0] >= 90 else tuple(v))      # noqa: E731
+    return {"up": pair(a.pole_merge, POLE_MERGE_DEG), "down": pair(getattr(a, "pole_merge_down", None), POLE_MERGE_DOWN_DEG)}
+
+
 def cmd_mesh(a: argparse.Namespace) -> int:
     from .mesh import ROVER_MODEL_PARTS, build_station_mesh, mesh_preview, read_mesh, read_points, read_points_normals
     project = _project(a.work)
@@ -444,7 +455,7 @@ def cmd_ods(a: argparse.Namespace) -> int:
     rec = _model(project)
     st, out = _station(project, rec, a)
     scene = _scene(out)
-    rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, sky_radius_m=("default" if a.sky_radius is None else a.sky_radius), pole_merge_deg=("default" if a.pole_merge is None else (None if a.pole_merge[0] >= 90 else tuple(a.pole_merge))), families=a.cameras, scale=a.scale,
+    rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, sky_radius_m=("default" if a.sky_radius is None else a.sky_radius), pole_merge_deg=_pole_merge(a), families=a.cameras, scale=a.scale,
                          zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,

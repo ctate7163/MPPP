@@ -3,12 +3,17 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
-## 0.97.0 — 2026-11-12
+## 0.97.1 — 2026-11-12
 
-**In short.** The Mastcam-Z joints get new blocks and a held-ratio test; a station held over several sols no longer
-fails a block; two independent validation tests and a ledger of what is validated; the single-station products
-share one viewpoint and one tone scale, and their pictures are jpg.
+**In short.** The station panoramas for the headset: eye separation merged towards the poles and faded with range, the
+terrain to 75 m with a watertight far field and a plane to 200 m, the rover model placed by its deck targets with the
+arm from the label angles, a 16-bit exposure per station and contrast-enhanced views; the freeze restarts on the 0.97
+rules.
 
+- **Pole merging below the horizon** (Christian, 12 Nov, Quest 3: "the pole merging helps a lot, but not quite enough
+  ... The -30 area still feels a little strained"). Below the horizon the eye separation is cos(elevation) - the fall
+  starts at the horizon and ends at the nadir (`ods.POLE_MERGE_DOWN_DEG`, `mppp ods --pole-merge-down START END`);
+  above it, 30 to 80 deg as in 0.97.0's last builds.
 - **Arm from the label joint angles** (Christian, 12 Nov). The model's joint angles are sign x resolver angle +
   offset with signs (+, -, -, -, -) and offsets (0, 0, -90, +90, 0) deg (`rover_model.arm_model_angles_deg`,
   `arm_is_stowed`): the rendered arm falls on the arm in six frames with the arm out (sols 18-1995) and its outline
@@ -97,6 +102,13 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   the eyes would both give. `wildcat_ridge` loses `zcam_joint_exclude` and is in the 63 mm joint.
   `zcam_joints_097.bat wildcat` aligns the block again and runs the three joints only (outputs `..._097w`). The
   list's fingerprint is in every Mastcam-Z run key, so any other Mastcam-Z block that is run again aligns again.
+
+## 0.97.0 — 2026-11-12
+
+**In short.** The Mastcam-Z joints get new blocks and a held-ratio test; a station held over several sols no longer
+fails a block; two independent validation tests and a ledger of what is validated; the single-station products
+share one viewpoint and one tone scale, and their pictures are jpg.
+
 - **Sites** (Christian, 12 Nov). Rockytop is split at sol 500: `wildcat_ridge` (sols 500-534) and `skinner_ridge`
   (460-499) replace `rockytop` in the Mastcam-Z groups; `rockytop` is as before. New in `zcam_consensus`:
   `rose_river_falls` (34, 63, 110 mm), `knob_mountain_large`, `hippo_pools` (34, 48, 63, 110 mm).

@@ -71,6 +71,11 @@ DEFAULT_IPD_M = 0.064
 # POLE_MERGE_DEG[0] of elevation (up or down), falls as a cosine and is zero from POLE_MERGE_DEG[1]: one image
 # for both eyes at the poles.  None: no merging (the panoramas before 12 Nov).
 POLE_MERGE_DEG: Optional[Tuple[float, float]] = (30.0, 80.0)
+# 0.97.1 (Christian, 12 Nov, Quest 3: "the pole merging helps a lot, but not quite enough. maybe the cosine fall off
+# should be from the horizon to the -90 el. The -30 area still feels a little strained"): below the horizon the fall
+# starts at the horizon and ends at the nadir - the share is cos(elevation): 0.87 at -30 deg (1 before), 0.71 at -45
+# (0.89), 0.5 at -60 (0.59).  Above the horizon POLE_MERGE_DEG as before (sky; nothing near).
+POLE_MERGE_DOWN_DEG: Optional[Tuple[float, float]] = (0.0, 90.0)
 # 0.97.0 (Christian, 12 Nov 2026: "Fade the eye separation with range past the mesh edge, so the last terrain and the
 # sky do not jump in depth"): the eye separation is full to RANGE_MERGE_M[0] (the mesh's reach), falls as a cosine
 # and is zero from the sky sphere's radius; the range is that of the ray from the pivot, so both eyes fade alike.
@@ -87,13 +92,21 @@ def range_merge(range_m, to_m: Optional[float] = RANGE_MERGE_TO_M, from_m: float
     return np.cos(0.5 * np.pi * np.clip((r - from_m) / (to_m - from_m), 0.0, 1.0))
 
 
-def pole_merge(el_rad, merge_deg=POLE_MERGE_DEG) -> np.ndarray:
-    """The share of the eye separation at elevation ``el_rad`` (1 at the horizon, 0 at the poles)."""
-    a = np.abs(np.degrees(np.asarray(el_rad, float)))
-    if not merge_deg:
-        return np.ones_like(a)
-    lo, hi = float(merge_deg[0]), float(merge_deg[1])
-    return np.cos(0.5 * np.pi * np.clip((a - lo) / max(hi - lo, 1e-9), 0.0, 1.0))
+def pole_merge(el_rad, merge_deg=POLE_MERGE_DEG, down_deg="same") -> np.ndarray:
+    """The share of the eye separation at elevation ``el_rad`` (1 at the horizon, 0 at the poles).  ``merge_deg``:
+    (start, end) above the horizon; ``down_deg``: below it ("same": as above).  None: no merging on that side."""
+    e = np.degrees(np.asarray(el_rad, float))
+    a = np.abs(e)
+
+    def side(md):
+        if not md:
+            return np.ones_like(a)
+        lo, hi = float(md[0]), float(md[1])
+        return np.cos(0.5 * np.pi * np.clip((a - lo) / max(hi - lo, 1e-9), 0.0, 1.0))
+    up_share = side(merge_deg)
+    return up_share if isinstance(down_deg, str) else np.where(e < 0, side(down_deg), up_share)
+
+
 FEATHER_PX = 40.0                # (0.96.0 prototype) a source's weight fell to zero this close to its image border
 MAX_SOURCES_BLENDED = 4
 EDGE_MARGIN_PX = 3.0             # a source gives nothing within this many pixels of its border, padding or mask edge
@@ -134,7 +147,12 @@ def ods_rays(width: int, height: int, rows: Tuple[int, int], pivot: Sequence[flo
     d = np.cos(E)[..., None] * h + np.sin(E)[..., None] * u
     sign = {"left": -1.0, "right": 1.0, "centre": 0.0, "center": 0.0}[eye]
     right = np.cross(h, u)                                                 # points to the viewer's right
-    share_ = pole_merge(E, POLE_MERGE_DEG if isinstance(pole_merge_deg, str) else pole_merge_deg)
+    if isinstance(pole_merge_deg, str):                                    # the defaults: up and down apart
+        share_ = pole_merge(E, POLE_MERGE_DEG, POLE_MERGE_DOWN_DEG)
+    elif isinstance(pole_merge_deg, dict):                                 # {"up": (a, b) | None, "down": (a, b) | None}
+        share_ = pole_merge(E, pole_merge_deg.get("up", POLE_MERGE_DEG), pole_merge_deg.get("down", POLE_MERGE_DOWN_DEG))
+    else:                                                                  # one pair (or None) for both sides
+        share_ = pole_merge(E, pole_merge_deg)
     if share is not None:                                                  # a further share per ray (the range fade)
         share_ = share_ * np.asarray(share, float).reshape(share_.shape)
     o = P + sign * (ipd_m / 2.0) * share_[..., None] * right
@@ -1004,7 +1022,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         scene.set_sky_sphere(SKY_RADIUS_M if isinstance(sky_radius_m, str) else sky_radius_m)
     rec_out: Dict[str, Any] = {"station": station.to_json(), "prefix": prefix, "width": width, "height": height, "ipd_m": ipd_m,
                                "sky_radius_m": getattr(scene, "sky_radius_m", None), "range_merge_m": [RANGE_MERGE_FROM_M, RANGE_MERGE_TO_M],
-                               "pole_merge_deg": (list(POLE_MERGE_DEG) if POLE_MERGE_DEG else None) if isinstance(pole_merge_deg, str) else (list(pole_merge_deg) if pole_merge_deg else None),
+                               "pole_merge_deg": ({"up": POLE_MERGE_DEG, "down": POLE_MERGE_DOWN_DEG} if isinstance(pole_merge_deg, str)
+                                                  else pole_merge_deg if isinstance(pole_merge_deg, dict)
+                                                  else (list(pole_merge_deg) if pole_merge_deg else None)),
                                "sources": [s.name for s in sources], "scale": scale, "zcam_scale": zcam_scale,
                                "rover": "shown" if not use_masks else "masked out",
                                "azimuth_of_column_0_deg": float(azimuth0_deg) % 360.0,
