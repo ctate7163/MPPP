@@ -270,6 +270,9 @@ def run_logged(fn: Callable[..., Any], work: PathLike, *args: Any, stage: str = 
     except Exception as e:                                               # noqa: BLE001 - recorded, then raised
         error = f"{type(e).__name__}: {e}"[:400]
         log(f"FAILED: {error}")
+        import traceback                                                 # 0.97.3: where it failed, in the run's log
+        for line in traceback.format_exc().rstrip().splitlines():
+            log("    | " + line)
     finally:
         root.removeHandler(handler)
         root.setLevel(old_level)

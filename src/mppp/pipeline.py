@@ -1327,6 +1327,18 @@ def align(work: PathLike, settings: Settings, stop_after: Optional[str] = None) 
     images = load_images(work, s, st.zooms)
     if stop_after == "manifest":
         return {"images": len(images)}
+    # 0.97.3 (Christian, 12 Nov 2026: "can the failed runs be recovered?"): a run that failed after its adjustment
+    # and export (Wildcat Ridge: 3.8 h, then a TypeError in the health table) is finished from what is on disk
+    if stop_after is None:
+        got = _adjusted_on_disk(root, key, len(images))
+        if got is not None:
+            proj, rec, summary = got
+            log.info("the adjustment and the export of this run key are on disk (the run before failed after them): "
+                     "health report and run_done only")
+            report, files = health(proj, rec)
+            report.update(summary=summary, files=files, run_key=key, project=str(proj.root), resumed=True)
+            report["run_done"] = finish(proj, report, summary, s, st.name, key, None)
+            return report
     # 0.95.0 (Christian, 27 Oct): a block being aligned again is not finished - run_done.json goes now, so a joint
     # that collects the group's blocks meanwhile waits for it (mppp calib) instead of reading a half-written project
     stale = project_dir(work, s.variant) / RUN_DONE
@@ -1359,6 +1371,28 @@ def align(work: PathLike, settings: Settings, stop_after: Optional[str] = None) 
         return report
     report["run_done"] = finish(proj, report, summary, s, st.name, key, info.get("form"))
     return report
+
+
+def _adjusted_on_disk(root: Path, key: str, n_images: int):
+    """``(project, rec, summary)`` when ``root`` holds the adjusted block and the export of a run with this key that
+    did not finish: ``run_settings.json`` names the key, there is no ``run_done.json``, ``error_input/summary.json``
+    (the last file :func:`reconstruct_project` writes) is newer than it and the project has ``n_images`` images.
+    None otherwise - the block is aligned in full."""
+    rs, sm = root / RUN_SETTINGS, root / "error_input" / "summary.json"
+    try:
+        if (root / RUN_DONE).is_file() or not (rs.is_file() and sm.is_file()) or sm.stat().st_mtime <= rs.stat().st_mtime:
+            return None
+        if json.loads(rs.read_text(encoding="utf-8")).get("run_key") != key:
+            return None
+        from .sfm import SfmProject
+        from .sfm.reconstruction import load_alignment
+        proj = SfmProject.load(root)
+        if len(proj.images) != n_images:
+            return None
+        return proj, load_alignment(proj), json.loads(sm.read_text(encoding="utf-8"))
+    except Exception as e:                                         # noqa: BLE001 - anything odd: the full run
+        log.info("no finished adjustment to continue from (%s: %s)", type(e).__name__, e)
+        return None
 
 
 def _warn_other_block(root: Path, st: Site) -> None:

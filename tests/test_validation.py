@@ -152,3 +152,45 @@ def test_hinge_fit_recovers_the_rates_before_and_after_the_knot():
     f = zcam_rig_trend_fit(rows, knee_sol=250.0)["pitch"]
     assert abs(f["early_per_sol"] - 0.025) < 1e-8 and abs(f["per_sol"] - 0.004) < 1e-8
     assert "early_per_sol" not in zcam_rig_trend_fit(rows)["pitch"]
+
+
+def test_health_table_with_a_warn_only_check():
+    """0.97.3: the workspace check has no fail limit; the table printed it with ``:g`` and every block with a
+    several-sol station failed at its end (Wildcat Ridge, freeze of 12 Nov 2026)."""
+    from mppp.sfm.health import health_table
+    rep = {"verdict": "warn", "note": "x", "checks": [
+        {"status": "warn", "section": "poses", "check": "workspace_station_shift_spread_m", "value": 0.65, "unit": "m",
+         "warn": 0.1, "fail": None, "note": "arm workspace"},
+        {"status": "pass", "section": "poses", "check": "within_station_shift_spread_m", "value": 0.01, "unit": "m",
+         "warn": 0.1, "fail": 0.3, "note": ""}]}
+    t = health_table(rep)
+    assert "no fail limit" in t and "fail 0.3" in t
+
+
+def test_adjusted_on_disk_only_for_an_unfinished_run_of_the_same_key(tmp_path, monkeypatch):
+    """0.97.3: a run that failed after its adjustment and export is finished from disk - only with the same run key,
+    no run_done.json, a summary newer than run_settings.json and the same number of images."""
+    import os
+    import mppp.pipeline as P
+    import mppp.sfm as S
+    import mppp.sfm.reconstruction as R
+    root = tmp_path
+    (root / "error_input").mkdir()
+    rs, sm = root / P.RUN_SETTINGS, root / "error_input" / "summary.json"
+    rs.write_text(json.dumps({"run_key": "k1"}))
+    sm.write_text(json.dumps({"tracks": 5}))
+    os.utime(rs, (1000, 1000)); os.utime(sm, (2000, 2000))
+
+    class Proj:
+        images = [1, 2, 3]
+        root = tmp_path
+    monkeypatch.setattr(S.SfmProject, "load", staticmethod(lambda r: Proj()))
+    monkeypatch.setattr(R, "load_alignment", lambda p: "rec")
+    assert P._adjusted_on_disk(root, "k1", 3)[1:] == ("rec", {"tracks": 5})
+    assert P._adjusted_on_disk(root, "k2", 3) is None                      # another key
+    assert P._adjusted_on_disk(root, "k1", 4) is None                      # another image set
+    os.utime(sm, (500, 500))
+    assert P._adjusted_on_disk(root, "k1", 3) is None                      # the summary is of a run before
+    os.utime(sm, (2000, 2000))
+    (root / P.RUN_DONE).write_text("{}")
+    assert P._adjusted_on_disk(root, "k1", 3) is None                      # finished: nothing to recover

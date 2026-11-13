@@ -904,7 +904,10 @@ def health_table(report: Dict[str, Any]) -> str:
     out.append("")
     for c in report["checks"]:
         v = "-" if c["value"] is None else (f"{c['value']:.4g}")
-        t = "" if c["warn"] is None else f"[warn {c['warn']:g} / fail {c['fail']:g}]"
+        # 0.97.3: a check that can only warn has no fail limit (0.97.0's workspace check made this line raise a
+        # TypeError at the end of every block with a station held over several sols - Wildcat Ridge, 12 Nov)
+        t = "" if c["warn"] is None else (f"[warn {c['warn']:g} / fail {c['fail']:g}]" if c["fail"] is not None
+                                          else f"[warn {c['warn']:g} / no fail limit]")
         out.append(f"{sym[c['status']]}  {c['section']:<13} {c['check']:<31} {v:>10} {c['unit']:<11} {t:<26} {c['note']}")
     cov = report.get("coverage_by_radius") or {}
     if cov.get("cameras"):

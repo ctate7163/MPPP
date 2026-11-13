@@ -1,0 +1,18 @@
+{
+ "title": "MPPP stereo panoramas",
+ "panos": [
+  {
+   "id": "orientation_test",
+   "title": "Orientation test (N at the left edge, left eye on top)",
+   "variants": [
+    {
+     "key": "test",
+     "label": "labelled pair",
+     "views": {
+      "standard": "panos/orientation_test_360_3DTD.jpg"
+     }
+    }
+   ]
+  }
+ ]
+}

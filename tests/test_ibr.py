@@ -1922,3 +1922,32 @@ def test_single_sites_skips_steps_that_are_up_to_date(tmp_path, monkeypatch):
     S.run_all(S.plan(cfg, tmp_path, out), out, force=True)
     assert len(ran) == 7
     assert b"MPPP_NO_PAUSE" in S.BAT.encode() and "exit /b !RC!" in S.BAT
+
+
+def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
+    """0.97.3: `mppp single-sites --publish`: the variants' _360_3DTD.jpg into panos/ (reduced), panos.json for the
+    page, entries of earlier runs kept; the labelled test pair is a square with the left eye on top."""
+    import cv2
+    from mppp.ibr import web
+    r = tmp_path / "out"
+    for sub, pre in (("", "S1"), ("with_rover", "S1_rover")):
+        (r / "S1" / sub).mkdir(parents=True, exist_ok=True)
+        for part in ("", "_enh", "_enhlocal"):
+            cv2.imwrite(str(r / "S1" / sub / f"{pre}{part}_360_3DTD.jpg"), np.zeros((256, 256, 3), np.uint8))
+    w = tmp_path / "web"
+    w.mkdir()
+    (w / "panos.json").write_text(json.dumps({"panos": [{"id": "A0", "variants": [{"key": "x", "views": {"standard": "a.jpg"}}]}]}))
+    doc = web.publish(r, w, width=128, titles={"S1": {"title": "One", "yaw_deg": 90, "note": None}})
+    assert [p["id"] for p in doc["panos"]] == ["A0", "S1"]
+    s1 = doc["panos"][1]
+    assert s1["title"] == "One" and s1["yaw_deg"] == 90 and [v["key"] for v in s1["variants"]] == ["rover", "masked"]
+    assert s1["variants"][0]["views"] == {"standard": "panos/S1_rover_360_3DTD.jpg", "enhanced": "panos/S1_rover_enh_360_3DTD.jpg"}
+    assert cv2.imread(str(w / "panos" / "S1_enh_360_3DTD.jpg")).shape == (128, 128, 3)
+    assert not (w / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
+    im = cv2.imread(str(web.label_pano(tmp_path / "t.jpg", width=512)))
+    assert im.shape == (512, 512, 3)
+    b, g, rr = im[:256].reshape(-1, 3).astype(int).sum(0)       # the top half carries the blue "LEFT EYE" (BGR)
+    assert b > rr
+    repo = Path(web.__file__).resolve().parents[3] / "docs" / "ods"
+    if repo.is_dir():
+        assert (repo / "index.html").is_file() and (repo / "vendor" / "three.module.min.js").is_file()

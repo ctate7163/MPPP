@@ -3,6 +3,25 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.3 — 2026-11-12
+
+**In short.** A fix for the freeze: blocks with a station held over several sols failed at their end; such runs are
+now finished from disk. A first web viewer for the stereo panoramas.
+
+- **Fix (blocks failed after their alignment):** the 0.97.0 workspace-station check has no fail limit and the health
+  table printed one (`TypeError: unsupported format string passed to NoneType.__format__`; Wildcat Ridge, 3.8 h, in
+  the freeze of 12 Nov). `health_table` prints "no fail limit".
+- **Recovery:** `mppp align` on a block whose last run of the same run key wrote its adjustment and export but no
+  `run_done.json` makes the health report and `run_done.json` only (`pipeline._adjusted_on_disk`: same key, the
+  summary newer than `run_settings.json`, same number of images).
+- A failed run writes its traceback to the run's `log.txt`.
+- **Web viewer (prototype):** `docs/ods/index.html` - one static page, three.js r170 in `docs/ods/vendor` (MIT), WebXR:
+  the `_360_3DTD.jpg` squares on one sphere per eye, station / variant / view menus, a link per view
+  (`#<station>/<variant>/<view>`), drag and wheel on a screen, trigger / grip / A-X in a headset. Served with the
+  documentation at `/ods/`. `mppp single-sites --publish DIR [--publish-only]` (`mppp.ibr.web`) copies the stereo
+  JPEGs (reduced to 8192) and writes `panos.json`. Checked in desktop Chrome with a labelled test pair
+  (`web.label_pano`); not yet in a headset.
+
 ## 0.97.2 — 2026-11-12
 
 **In short.** The single-site image-based-rendering run skips what is up to date and reports where it is; Three Forks

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import shutil
 import subprocess
 import sys
@@ -419,6 +420,13 @@ def add_parser(sub) -> None:
                    "16-bit ones already there (no rendering)")
     p.add_argument("--force", action="store_true", help="0.97.2: run every step again (default: a mesh, depthmaps or ods "
                    "step whose command, code, cloud and upstream steps are unchanged since its last good run is skipped)")
+    p.add_argument("--publish", metavar="DIR", default=None,
+                   help="0.97.3: after the run, the stations' stereo JPEGs into DIR/panos and DIR/panos.json for the web "
+                        "viewer (docs/ods of the repository; the page is copied into DIR when it is another folder)")
+    p.add_argument("--publish-only", action="store_true", help="with --publish: no steps, publish what --out holds")
+    p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
+    p.add_argument("--publish-views", nargs="+", default=["standard", "enhanced"], metavar="VIEW",
+                   help="standard, enhanced, 'enhanced local' (default: standard enhanced)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
@@ -443,4 +451,17 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
             for c in r["commands"]:
                 print(f"   [{c['variant']}] python -m mppp " + " ".join(c["argv"]))
         return 0
-    return run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone, force=getattr(a, "force", False))
+    rc = 0 if (a.publish and a.publish_only) else run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone,
+                                                          force=getattr(a, "force", False))
+    if a.publish:
+        from . import web
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+        st = cfg.get("stations") or {}
+        titles = {k: {"title": v.get("title") or f"{str(v.get('site', '')).replace('_', ' ').title()} {k}".strip(),
+                      "note": v.get("web_note"), "yaw_deg": v.get("yaw_deg")} for k, v in st.items()}
+        doc = web.publish(out_root, a.publish, stations=[r["label"] for r in runs], views=a.publish_views,
+                          width=a.publish_width, titles=titles)
+        if not web.install_viewer(a.publish):
+            print("the viewer page (docs/ods/index.html, vendor/) is not in this installation: copy it from the repository")
+        print(f"published: {len(doc['panos'])} stations in {Path(a.publish) / 'panos.json'}")
+    return rc

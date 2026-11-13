@@ -54,3 +54,8 @@ waypoint position priors. The alignment-health thresholds are provisional.
 MPPP is released under the Apache-2.0 license. All Mars 2020 images used by MPPP are public PDS products (Navcam:
 NASA/JPL-Caltech; Mastcam-Z: NASA/JPL-Caltech/ASU/MSSS). Source code:
 [github.com/ctate7163/MPPP](https://github.com/ctate7163/MPPP). To cite MPPP, see [Citing](citing.md).
+
+## Stereo panoramas
+
+Station panoramas made by `mppp single-sites` can be viewed in a browser or a headset on the
+[stereo panorama page](ods/index.html) (prototype).
