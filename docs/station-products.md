@@ -4,7 +4,7 @@ From a finished block MPPP makes the products of one **station** (one stop of th
 depth and photometric maps, and an omnidirectional stereo panorama that can be looked at in a headset. The code is
 `mppp.ibr` (the `[ibr]` extra: open3d). The commands and every option are in [Command line](cli.md).
 
-**See the result:** the [stereo panorama viewer](ods/index.html) (a prototype, below).
+**See the result:** the [stereo panorama viewer](ods/index.html){target="_blank" rel="noopener"} (a prototype, below).
 
 ## The steps
 
@@ -153,9 +153,9 @@ none); the constants are at the top of `mppp/ibr/ods.py`, and `ods.json` records
 
 Within 20 degrees of straight down the panorama shows no terrain worth keeping (the mast, or filled-in ground). A
 light blue disc there carries two rows of black text near its rim, each over at most half the circle and centred on
-the rover's front: "Mars 2020 Perseverance Rover" with the sol and the site, and "made by C. Tate" with the image
-credit (NASA/JPL-Caltech/MSSS for Navcam and Hazcam frames; NASA/JPL-Caltech/MSSS/ASU when Mastcam-Z frames are
-in). In the flat image they are two straight lines along the bottom; in a headset, facing the rover's front and
+the rover's front: "Mars 2020 Perseverance Rover" with the sol and the site, and the image credit
+(NASA/JPL-Caltech/MSSS for Navcam and Hazcam frames; NASA/JPL-Caltech/MSSS/ASU when Mastcam-Z frames are in)
+followed by "made by C. Tate". In the flat image they are two straight lines along the bottom; in a headset, facing the rover's front and
 looking down, they are two arcs ahead of you, upright. The letters are made about twice too wide in the flat image,
 which leaves them about twice too narrow in the headset: the strip is stretched 3 to 4 times there, and no letter
 can have its own shape in both. The first row is 1.6 times as tall as the second. The disc lies on the surface
@@ -175,11 +175,12 @@ between a station's two variants.
 
 `docs/ods/index.html` is one static page (three.js, WebXR): it shows the `_360_3DTD` squares on a sphere per eye,
 with menus for station, variant and view, a link per view (`#<station>/<variant>/<view>`), drag and wheel on a
-screen, and in a headset: trigger = next station, grip = variant, A or X = view. A line at the bottom reports what
+screen and a choice of the eye shown there (left or right; the L key), and in a headset: trigger = next station, grip = variant, A or X = view. A line at the bottom reports what
 the device can show (maximum texture size, compressed-texture formats).
 
-- On the documentation site: <https://ctate7163.github.io/MPPP/ods/>.
-- To add stations: `mppp single-sites Sol0052_S003D2046 --publish docs/ods --publish-only` copies the stereo JPEGs (reduced
+- On the documentation site: [https://ctate7163.github.io/MPPP/ods/](https://ctate7163.github.io/MPPP/ods/){target="_blank" rel="noopener"}
+  (opens in a new tab from these pages; GitHub's own rendering of the README does not allow that).
+- To add stations: `mppp single-sites Sol0052_S003D2046 --publish docs/ods --publish-only` copies the stereo JPEGs (the standard view; reduced
   to 8192) into `docs/ods/panos/` and lists them in `docs/ods/panos.json`; commit and push `docs/ods`.
 - Another image list: `.../ods/?index=URL` (same origin, or a host that allows cross-origin requests).
 

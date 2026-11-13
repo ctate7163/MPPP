@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>MPPP stereo panoramas</title>
 <!--
-  MPPP stereo 360 viewer (prototype, 0.97.3).  One static page: three.js (vendor/, r170, MIT) and panos.json.
+  MPPP stereo 360 viewer (prototype, 0.97.3; 0.97.18: the eye shown on a screen can be chosen).  One static page: three.js (vendor/, r170, MIT) and panos.json.
   Images: <name>_360_3DTD.jpg from `mppp ods` - square, the left eye on top of the right, each an equirectangular
   panorama whose left edge looks north with azimuth growing eastward.
   Link to one view:   .../ods/#<station>/<variant>/<view>      e.g.  #Sol0052_S003D2046/rover/enhanced
   Another image list: .../ods/?index=https://<same origin or CORS-enabled host>/panos.json
-  Keys: left / right arrows = station, V = variant, E = view, drag = look, wheel = zoom.
+  Keys: left / right arrows = station, V = variant, E = view, L = the other eye (on a screen), drag = look, wheel = zoom.
   Headset: trigger = next station, grip = variant, A or X button = view.
 -->
 <style>
@@ -32,6 +32,9 @@
   <select id="station" title="station"></select>
   <select id="variant" title="variant"></select>
   <select id="view" title="view"></select>
+  <select id="eye" title="which eye's panorama a screen shows (a headset shows both)">
+    <option value="left">left eye</option><option value="right">right eye</option>
+  </select>
   <button id="north" title="look north">N</button>
 </div>
 <div id="msg">loading the list ...</div>
@@ -55,7 +58,20 @@ document.body.appendChild(VRButton.createButton(renderer));
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.layers.enable(1);                       // on a screen: the left eye's image
+// On a screen one eye's panorama is shown: the left (layer 1) or the right (layer 2), chosen in the bar (0.97.18).
+// In a headset three.js gives its left camera layer 1 and its right camera layer 2 ON TOP OF this camera's layers,
+// so this camera must carry neither while a session runs - else one eye would be given both panoramas.
+let screenEye = 'left';
+function setEye(e) {
+  screenEye = e === 'right' ? 'right' : 'left';
+  camera.layers.set(0);
+  if (!renderer.xr.isPresenting) camera.layers.enable(screenEye === 'left' ? 1 : 2);
+  const sel = document.getElementById('eye');
+  if (sel) sel.value = screenEye;
+}
+setEye('left');
+renderer.xr.addEventListener('sessionstart', () => { camera.layers.set(0); });
+renderer.xr.addEventListener('sessionend', () => { setEye(screenEye); });
 const world = new THREE.Group();               // turned about the vertical for the start heading
 scene.add(world);
 
@@ -172,10 +188,12 @@ function fromHash() {
 $('station').onchange = e => { cur.s = +e.target.value; show(); };
 $('variant').onchange = e => { cur.v = +e.target.value; show(); };
 $('view').onchange = e => { cur.w = +e.target.value; show(); };
+$('eye').onchange = e => { setEye(e.target.value); };
 window.addEventListener('hashchange', () => { fromHash(); show(); });
 window.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') step('s', 1); else if (e.key === 'ArrowLeft') step('s', -1);
   else if (e.key === 'v' || e.key === 'V') step('v', 1); else if (e.key === 'e' || e.key === 'E') step('w', 1);
+  else if (e.key === 'l' || e.key === 'L') setEye(screenEye === 'left' ? 'right' : 'left');
 });
 
 // ---------------------------------------------------------------- looking around on a screen

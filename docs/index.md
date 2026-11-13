@@ -30,7 +30,7 @@ Gaussian splatting (see [Downstream exports](exports.md)).
 From a finished block MPPP also makes the products of one rover station: a cleaned mesh with a model of the rover,
 per-image depth and photometric maps, and a stereoscopic 360 degree panorama for a headset (see
 [Station products and the stereo panorama viewer](station-products.md)). The panoramas can be looked at on the
-[stereo panorama page](ods/index.html) (prototype).
+[stereo panorama page](ods/index.html){target="_blank" rel="noopener"} (prototype).
 
 The alignments also measure the cameras. MPPP versions the refined camera models, checks them across blocks and uses
 them as the default cameras for the next run (see [Camera models and calibration](calibration.md)).

@@ -61,13 +61,37 @@ def site_name(site_key: Optional[str]) -> Optional[str]:
     return " ".join(p.capitalize() for p in parts) or None
 
 
+SIZE_WORDS = ("tiny", "small", "large", "huge")
+
+
+def block_name(site_key: Optional[str]) -> Optional[str]:
+    """The block's name for a station's products (0.97.17; Christian, 13 Nov 2026: "the name of the ods should just
+    be its block name without any large, huge, or tiny additions"): the site's label in the site definitions
+    without a size word at its end - ``witch_hazel_large`` -> ``Witch Hazel Hill`` (label "Witch Hazel Hill
+    Large"); a key that is not in the definitions: :func:`site_name`."""
+    if not site_key:
+        return None
+    try:
+        from ..waypoints.sites import load_site_table
+        label = (load_site_table()["sites"].get(str(site_key)) or {}).get("label")
+    except Exception:                                      # noqa: BLE001 - then from the key
+        label = None
+    if not label:
+        return site_name(site_key)
+    parts = str(label).split()
+    while len(parts) > 1 and parts[-1].lower() in SIZE_WORDS:
+        parts.pop()
+    return " ".join(parts)
+
+
 def mark_lines(names: Sequence[str], site: Optional[str] = None, sols: Optional[Sequence[int]] = None) -> List[str]:
-    """The four lines: the rover, sol and site, the author, the image credit."""
+    """The four lines: the rover, sol and site, the image credit, the author (0.97.16; Christian, 13 Nov 2026: "put
+    'made by C. Tate' after the 'image credit: NASA/JPL...'" - the author was before the credit)."""
     s = sorted({int(x) for x in sols}) if sols else sols_of(names)
     sol = "" if not s else (f"Sol {s[0]}" if len(s) == 1 else f"Sols {s[0]}-{s[-1]}" if s[-1] - s[0] == len(s) - 1
                             else "Sols " + ", ".join(str(x) for x in s))
     where = " - ".join(x for x in (sol, site) if x)
-    return [x for x in (TITLE, where, AUTHOR, f"Image credit: {credit(names)}") if x]
+    return [x for x in (TITLE, where, f"Image credit: {credit(names)}", AUTHOR) if x]
 
 
 def _font(size: int):

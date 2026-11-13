@@ -160,11 +160,11 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
         vs = [v for v in (variants or st.get("variants") or cfg.get("variants") or VARIANTS)]
         frames = dict(st.get("frames") or {})
         ctx = [n if str(n).lower().endswith(".png") else f"{n}.png" for n in (st.get("context") or [])]
+        fa = frame_args(frames)
         if ctx:                                     # 0.97.15: context frames (another place or sol) - in the dense step
-            if not frames.get("images"):            # for the terrain, in the panorama as masked fill-only sources
-                raise ValueError(f"{lab}: 'context' needs the station's own frames listed in frames.images")
-            frames["images"] = list(dict.fromkeys(list(frames["images"]) + ctx))
-        fa = frame_args(frames) + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
+            fa += ["--add-images", *ctx]            # for the terrain (0.97.19: mppp dense --add-images, so a station
+            #                                         chosen by --scale or --sequence can have context frames too)
+        fa = fa + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
         near = st.get("nearby_m", cfg.get("nearby_m"))          # 0.97.0: the neighbours' frames constrain the ground
         if near:
             fa += ["--nearby-m", f"{float(near):g}"]
@@ -201,8 +201,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     argv += ["--tone-levels", str(base / TONE_FILE)]
                     from .ods import ods_prefix          # 0.97.14: the files carry the station's code of the list
                     argv += ["--prefix", ods_prefix(lab, rover=v == "rover")]
-                    from .nadir import site_name         # 0.97.7: the site's name for the mark at the nadir
-                    nm = st.get("name") or site_name(st.get("site"))
+                    from .nadir import block_name        # 0.97.7: the name for the mark at the nadir; 0.97.17: the
+                    nm = st.get("name") or block_name(st.get("site"))    # block's name without its size word
                     if nm:
                         argv += ["--site-name", str(nm)]
                 if step == "mesh" and near:
@@ -453,8 +453,8 @@ def add_parser(sub) -> None:
                         "viewer (docs/ods of the repository; the page is copied into DIR when it is another folder)")
     p.add_argument("--publish-only", action="store_true", help="with --publish: no steps, publish what --out holds")
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
-    p.add_argument("--publish-views", nargs="+", default=["standard", "enhanced"], metavar="VIEW",
-                   help="standard, enhanced, 'enhanced local' (default: standard enhanced)")
+    p.add_argument("--publish-views", nargs="+", default=["standard"], metavar="VIEW",
+                   help="standard, enhanced, 'enhanced local' (default: standard - 0.97.18: the enhanced view is not published)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
@@ -485,7 +485,8 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         from . import web
         logging.basicConfig(level=logging.INFO, format="%(message)s")
         st = cfg.get("stations") or {}
-        titles = {k: {"title": v.get("title") or f"{str(v.get('site', '')).replace('_', ' ').title()} {k}".strip(),
+        from .nadir import block_name                    # 0.97.17: the block's name without its size word
+        titles = {k: {"title": v.get("title") or f"{v.get('name') or block_name(v.get('site')) or ''} {k}".strip(),
                       "note": v.get("web_note"), "yaw_deg": v.get("yaw_deg")} for k, v in st.items()}
         doc = web.publish(out_root, a.publish, stations=[r["label"] for r in runs], views=a.publish_views,
                           width=a.publish_width, titles=titles)

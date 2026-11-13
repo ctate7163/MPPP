@@ -1126,12 +1126,22 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert rover_ods[-4:] == ["--bits", "16", "--fill-cameras", "F"]   # 0.97.7: the front Hazcams fill in
     assert rover_ods[rover_ods.index("--prefix") + 1] == "Sol0052_S003D2046_rover"           # 0.97.14: the files' names
     assert rover_ods[rover_ods.index("--site-name") + 1] == "Van Zyl Overlook"              # 0.97.7: for the nadir mark
+    from mppp.ibr.nadir import block_name                                                    # 0.97.17: the block's name
+    assert block_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and block_name("witch_hazel_large") == "Witch Hazel Hill"
+    assert block_name("taylorfjellet_large") == "Taylorfjellet" and block_name("rockytop") == "Rockytop"
+    assert block_name("not_a_site_tiny") == "Not A Site" and block_name(None) is None
+    assert all("name" not in v for v in cfg["stations"].values())
+    names = {k: next(c["argv"][c["argv"].index("--site-name") + 1] for c in r["commands"] if c["step"] == "ods") for k, r in
+             ((r["label"], r) for r in runs)}
+    assert names["Sol0474_S026D0850"] == "Rockytop" and names["Sol1411_S068D0142"] == "Witch Hazel Hill"
+    assert not any(w in n.lower().split() for n in names.values() for w in ("large", "huge", "tiny", "small"))
     tl = str(root / "single_sites" / "Sol0052_S003D2046" / "tone_levels.json")                     # 0.97.0: one scaling per station
     assert rover_ods[rover_ods.index("--tone-levels") + 1] == tl
     assert r0["commands"][-1]["argv"][r0["commands"][-1]["argv"].index("--tone-levels") + 1] == tl
     assert SS.plan(cfg, root, labels=["S026D0630"], steps=["ods"], variants=["masked"])[0]["commands"] == [
         {"variant": "masked", "step": "ods", "argv": ["ods", str(root / "mars2020_sol_0460_rockytop"), "--station", "26_630",
                                                       "--mask-rover", "--out", str(root / "single_sites" / "Sol0461_S026D0630"),
+                                                      "--context-images", *cfg["stations"]["Sol0461_S026D0630"]["context"],
                                                       "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
                                                       "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
                                                       "--tone-levels", str(root / "single_sites" / "Sol0461_S026D0630" / "tone_levels.json"),
@@ -1973,9 +1983,14 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     assert [p["id"] for p in doc["panos"]] == ["A0", "S1"]
     s1 = doc["panos"][1]
     assert s1["title"] == "One" and s1["yaw_deg"] == 90 and [v["key"] for v in s1["variants"]] == ["rover", "masked"]
-    assert s1["variants"][0]["views"] == {"standard": "panos/S1_rover_360_3DTD.jpg", "enhanced": "panos/S1_rover_enh_360_3DTD.jpg"}
-    assert cv2.imread(str(w / "panos" / "S1_enh_360_3DTD.jpg")).shape == (128, 128, 3)
-    assert not (w / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
+    assert s1["variants"][0]["views"] == {"standard": "panos/S1_rover_360_3DTD.jpg"}       # 0.97.18: no enhanced view
+    assert cv2.imread(str(w / "panos" / "S1_360_3DTD.jpg")).shape == (128, 128, 3)
+    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard",)
+    both = web.publish(r, tmp_path / "web2", width=128, views=("standard", "enhanced"))["panos"][0]         # on request
+    assert both["variants"][0]["views"]["enhanced"] == "panos/S1_rover_enh_360_3DTD.jpg"
+    assert not (tmp_path / "web2" / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
+    page = (Path(web.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    assert 'id="eye"' in page and "sessionstart" in page and "setEye" in page                  # the eye shown on a screen
     im = cv2.imread(str(web.label_pano(tmp_path / "t.jpg", width=512)))
     assert im.shape == (512, 512, 3)
     b, g, rr = im[:256].reshape(-1, 3).astype(int).sum(0)       # the top half carries the blue "LEFT EYE" (BGR)
@@ -2090,7 +2105,7 @@ def test_nadir_mark_lines_credit_and_disc():
     assert nadir.credit(nav) == "NASA/JPL-Caltech/MSSS" and nadir.credit(nav + ["ZL0_0464_x.png"]) == "NASA/JPL-Caltech/MSSS/ASU"
     assert nadir.site_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and nadir.site_name(None) is None
     lines = nadir.mark_lines(nav, "Rockytop")
-    assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "made by C. Tate", "Image credit: NASA/JPL-Caltech/MSSS"]
+    assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "Image credit: NASA/JPL-Caltech/MSSS", "made by C. Tate"]
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sols 686, 688"
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"])[1] == "Sols 686-687"
     W, H = 4096, 2048
@@ -2577,5 +2592,11 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
         assert a[i + 1:i + 9] == cx
     s87 = cfg["stations"]["Sol1792_S087D0000"]
     assert len(s87["frames"]["images"]) == 18 and len(s87["context"]) == 2 and all("N0860700" in n for n in s87["context"])
-    with pytest.raises(ValueError):
-        SS.plan({"stations": {"X": {"station": "1_2", "work": str(root), "frames": {"scale": 0.5}, "context": ["a"]}}}, root)
+    i = dense.index("--add-images")                                           # 0.97.19: the dense step's own option
+    assert dense[i + 1:i + 9] == cx and dense.index("--images") < i
+    rt = SS.plan(cfg, root, labels=["Sol0461_S026D0630"])[0]                  # a station chosen by --scale has them too
+    d2 = rt["commands"][0]["argv"]
+    assert "--scale" in d2 and "--images" not in d2 and len(cfg["stations"]["Sol0461_S026D0630"]["context"]) == 10
+    assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 11] == cfg["stations"]["Sol0461_S026D0630"]["context"]
+    assert cfg["stations"]["Sol0052_S003D2046"]["context"] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
+                                                               "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"]
