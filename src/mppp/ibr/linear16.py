@@ -321,16 +321,22 @@ def shared_levels(path: Optional[PathLike], compute, scale: float = 1.0) -> Tupl
 EXPOSURE16_TOP = 0.95            # auto exposure: the EXPOSURE16_PCT percentile of the brightest channel lands here
 EXPOSURE16_PCT = 99.99           #   (of 65535) - one linear gain per station, nothing clipped but 1 pixel in 10,000
 EXPOSURE16_RANGE = (0.5, 4.0)    #   within these factors of the frames' own 16-bit scale (0.5: the value before)
-# 12 Nov, later (Christian: "It looks too bland. The sky and rover deck can saturate at the expense of maximizing
-# contrast on the terrain"): the levels come from the terrain alone - the band of the panorama between ENH_BAND_DEG
-# below the horizon (past the deck, short of the sky) - and whatever is brighter than its white point clips.
-ENH_BAND_DEG = (-30.0, -2.0)     # elevation of the rows the levels are taken from
-ENH_LOW_PCT, ENH_HIGH_PCT = 0.5, 99.5   # black at this percentile of the band's darkest channel, white at this
-#                                         percentile of its brightest - one pair for the three channels (no tint)
-ENH_GROUND = 0.45                # ... and a gamma that puts the band's median here (of 1)
-ENH_GAMMA_RANGE = (1.0, 2.6)     #   display gamma within these
-ENH_CHROMA = 1.2                 # the colour (Lab a, b) of the 8-bit view times this
-CLAHE_CLIP, CLAHE_TILES = 2.0, (8, 16)   # local version: OpenCV CLAHE on the lightness, tiles (rows, columns)
+# 12 Nov, third rule (Christian: "too bland ... the sky and rover deck can saturate at the expense of maximizing
+# contrast on the terrain"; then "maybe gamma correction is not the right move. Maybe we need to rescale the high and
+# low points of the stretch before gamma"; chosen from six treatments of the Van Zyl panorama side by side):
+#   1. the display gamma first (ENH_GAMMA), on the linear values over the terrain's ENH_REF_PCT point;
+#   2. black and white at ENH_LOW_PCT / ENH_HIGH_PCT of the terrain band in that encoded space - the band of the
+#      panorama ENH_BAND_DEG below the horizon (past the deck, short of the sky); what is brighter clips;
+#   3. an S-curve of steepness ENH_S about the band's median.
+# The local version adds an unsharp mask on the lightness (radius ENH_LOCAL_SIGMA_FRAC of the width, amount
+# ENH_LOCAL_AMOUNT): a fixed linear filter, so both eyes get the same processing.
+ENH_BAND_DEG = (-30.0, -2.0)
+ENH_GAMMA = 2.2
+ENH_REF_PCT = 99.9
+ENH_LOW_PCT, ENH_HIGH_PCT = 1.0, 99.0
+ENH_S = 6.0
+ENH_LOCAL_SIGMA_FRAC = 0.0025
+ENH_LOCAL_AMOUNT = 0.8
 
 
 def auto_exposure16(x: np.ndarray, seen: Optional[np.ndarray] = None) -> float:
@@ -367,9 +373,8 @@ def shared_value(path: Optional[PathLike], key: str, compute):
     return v, "computed"
 
 
-def enhanced_levels(x: np.ndarray, seen: Optional[np.ndarray] = None) -> List[float]:
-    """[black, white, display gamma] of the enhanced view of a linear equirectangular panorama, in its own units:
-    from the terrain band alone (the rule above); the sky and the deck may clip."""
+def _terrain_band(x: np.ndarray, seen: Optional[np.ndarray] = None) -> np.ndarray:
+    """The seen pixels (n, 3) of the terrain band of an equirectangular panorama, subsampled."""
     x = np.asarray(x)
     H = x.shape[0]
     el = 90.0 - (np.arange(H) + 0.5) / H * 180.0
@@ -379,55 +384,49 @@ def enhanced_levels(x: np.ndarray, seen: Optional[np.ndarray] = None) -> List[fl
     step = max(1, int(np.sqrt(len(rows) * x.shape[1] / 2e6)))
     sub = x[rows[::step]][:, ::step].astype(np.float32)
     ok = sub.max(axis=2) > 0 if seen is None else np.asarray(seen)[rows[::step]][:, ::step]
-    if not ok.any():
-        return [0.0, 255.0, 2.2]
-    lo = float(np.percentile(sub[ok].min(axis=1), ENH_LOW_PCT))
-    hi = float(np.percentile(sub[ok].max(axis=1), ENH_HIGH_PCT))
-    hi = max(hi, lo + 1e-3)
-    med = float(np.median(sub[ok].mean(axis=1)))
-    n = float(np.clip((med - lo) / (hi - lo), 1e-4, 0.999))
-    gamma = float(np.clip(np.log(n) / np.log(ENH_GROUND), *ENH_GAMMA_RANGE))
-    return [lo, hi, gamma]
+    return sub[ok]
 
 
-def tone_enhanced(x: np.ndarray, lo: float, hi: float, gamma: float) -> np.ndarray:
-    """Linear values -> 0..255: (x - lo) / (hi - lo) clipped to 0..1, raised to 1 / gamma; one curve for the channels."""
-    n = np.clip((np.asarray(x, np.float32) - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
-    return 255.0 * n ** (1.0 / gamma)
+def enhanced_levels(x: np.ndarray, seen: Optional[np.ndarray] = None) -> List[float]:
+    """[reference, black, white, median] of the enhanced view of a linear equirectangular panorama: the reference
+    in the panorama's own units (the terrain band's ENH_REF_PCT point of the brightest channel), the others in the
+    gamma-encoded space (x / reference) ** (1 / ENH_GAMMA)."""
+    t = _terrain_band(x, seen)
+    if not len(t):
+        return [255.0, 0.0, 1.0, 0.5]
+    ref = max(float(np.percentile(t.max(axis=1), ENH_REF_PCT)), 1e-6)
+    g = np.clip(t / ref, 0.0, None) ** (1.0 / ENH_GAMMA)
+    lo = float(np.percentile(g.min(axis=1), ENH_LOW_PCT))
+    hi = max(float(np.percentile(g.max(axis=1), ENH_HIGH_PCT)), lo + 1e-3)
+    med = float(np.median(np.clip((g.mean(axis=1) - lo) / (hi - lo), 0.0, 1.0)))
+    return [ref, lo, hi, med]
 
 
-CLAHE_GAIN_BLUR_FRAC = 0.004     # the gain map smoothed over this share of the width: the eyes' disparity under it
+def tone_enhanced(x: np.ndarray, ref: float, lo: float, hi: float, med: float) -> np.ndarray:
+    """Linear values -> 0..255 by the rule above: gamma, the stretch between ``lo`` and ``hi``, the S-curve about
+    ``med``; one curve for the three channels."""
+    n = np.clip((np.clip(np.asarray(x, np.float32) / ref, 0.0, None) ** (1.0 / ENH_GAMMA) - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+    f = lambda t: 1.0 / (1.0 + np.exp(-ENH_S * (t - med)))            # noqa: E731
+    return np.clip(255.0 * (f(n) - f(0.0)) / (f(1.0) - f(0.0)), 0.0, 255.0)
 
 
-def local_gain(left8: np.ndarray, right8: np.ndarray) -> np.ndarray:
-    """One lightness gain map (H, W, float32) for both eyes of an 8-bit BGR equirectangular pair: CLAHE on the mean
-    of the two eyes' lightness, as output / input, smoothed, continuous across the 360-degree seam (Christian, 12
-    Nov 2026: "The enhlocal should have the same processing for both eyes")."""
+def local_contrast(bgr8: np.ndarray) -> np.ndarray:
+    """An unsharp mask on the lightness of an 8-bit BGR equirectangular image (the colour kept), continuous across
+    the 360-degree seam.  The same filter for any image: both eyes are treated alike."""
     import cv2
-    L = [cv2.cvtColor(v, cv2.COLOR_BGR2LAB)[..., 0].astype(np.float32) for v in (left8, right8)]
-    m = np.rint(0.5 * (L[0] + L[1])).astype(np.uint8)
-    W = m.shape[1]
-    pad = max(1, W // CLAHE_TILES[1])
-    wide = np.concatenate([m[:, -pad:], m, m[:, :pad]], axis=1)
-    cl = cv2.createCLAHE(clipLimit=CLAHE_CLIP, tileGridSize=(CLAHE_TILES[1] + 2, CLAHE_TILES[0]))
-    out = cl.apply(wide).astype(np.float32)
-    g = (out + 1.0) / (wide.astype(np.float32) + 1.0)
-    g = cv2.GaussianBlur(g, (0, 0), max(1.0, CLAHE_GAIN_BLUR_FRAC * W))
-    return g[:, pad:pad + W]
-
-
-def local_contrast(bgr8: np.ndarray, gain: np.ndarray) -> np.ndarray:
-    """The lightness of an 8-bit BGR image times ``gain`` (:func:`local_gain`), the colour kept."""
-    import cv2
-    lab = cv2.cvtColor(bgr8, cv2.COLOR_BGR2LAB)
-    lab[..., 0] = np.clip(np.rint(lab[..., 0].astype(np.float32) * gain), 0, 255).astype(np.uint8)
-    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+    W = bgr8.shape[1]
+    sigma = max(1.0, ENH_LOCAL_SIGMA_FRAC * W)
+    pad = int(4 * sigma) + 1
+    lab = cv2.cvtColor(np.concatenate([bgr8[:, -pad:], bgr8, bgr8[:, :pad]], axis=1), cv2.COLOR_BGR2LAB).astype(np.float32)
+    Lc = lab[..., 0]
+    lab[..., 0] = np.clip(Lc + ENH_LOCAL_AMOUNT * (Lc - cv2.GaussianBlur(Lc, (0, 0), sigma)), 0, 255)
+    return cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2BGR)[:, pad:pad + W]
 
 
 def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int = 95,
                    levels_file: Optional[PathLike] = None) -> Dict[str, Any]:
     """The contrast-enhanced secondary products from the 16-bit eye panoramas of ``out_dir`` (no rendering):
-      <prefix>_enh_360_3DTD.jpg        black / white points and gamma by the fixed rule (:func:`enhanced_levels`)
+      <prefix>_enh_360_3DTD.jpg        gamma, the terrain's stretch, an S-curve (:func:`tone_enhanced`)
       <prefix>_enhlocal_360_3DTD.jpg   the same, then local contrast (:func:`local_contrast`)
     Levels from the left eye (or the station's levels file), used for both eyes."""
     import cv2
@@ -443,26 +442,20 @@ def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quali
             raise FileNotFoundError(f"{f}: no 16-bit panorama")
         a = a[..., :3].astype(np.float32) / k16                      # 8-bit linear units, BGR
         if lv is None:
-            lv, _ = shared_value(levels_file, "enhanced_terrain_levels_8bit_linear_units", lambda: enhanced_levels(a))
-        v8 = np.rint(tone_enhanced(a, *lv)).astype(np.uint8)
-        if ENH_CHROMA != 1.0:                                       # the same for both eyes: a fixed factor
-            lab = cv2.cvtColor(v8, cv2.COLOR_BGR2LAB).astype(np.float32)
-            lab[..., 1:] = np.clip(128.0 + ENH_CHROMA * (lab[..., 1:] - 128.0), 0, 255)
-            v8 = cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2BGR)
-        eyes[eye] = v8
+            lv, _ = shared_value(levels_file, "enhanced_gamma_stretch_s_levels", lambda: enhanced_levels(a))
+        eyes[eye] = np.rint(tone_enhanced(a, *lv)).astype(np.uint8)
         del a
     other = "right" if top == "left" else "left"
     files = {}
-    gain = local_gain(eyes["left"], eyes["right"])                  # one map for both eyes
-    for tag, fn in (("enh", lambda v: v), ("enhlocal", lambda v: local_contrast(v, gain))):
+    for tag, fn in (("enh", lambda v: v), ("enhlocal", local_contrast)):
         sq = np.vstack([fn(eyes[top]), fn(eyes[other])])
         files[tag] = str(out / f"{pre}{tag}_{STACK_NAME}.jpg")
         cv2.imwrite(files[tag], sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
-    return {"levels_8bit_linear_units": {"black": lv[0], "white": lv[1], "gamma": lv[2]}, "files": files,
-            "rule": f"levels from the terrain band, elevation {ENH_BAND_DEG} deg: black {ENH_LOW_PCT} % of the darkest channel, "
-                    f"white {ENH_HIGH_PCT} % of the brightest (the sky and the deck may clip); gamma puts the band's "
-                    f"median at {ENH_GROUND} (within {ENH_GAMMA_RANGE}); colour x {ENH_CHROMA}; enhlocal: CLAHE clip "
-                    f"{CLAHE_CLIP}, tiles {CLAHE_TILES} on the mean lightness of the two eyes, one smoothed gain map for both"}
+    return {"levels": {"reference_8bit_linear_units": lv[0], "black": lv[1], "white": lv[2], "median": lv[3]}, "files": files,
+            "rule": f"gamma {ENH_GAMMA} on linear / reference (the terrain band's {ENH_REF_PCT} % point; band: elevation "
+                    f"{ENH_BAND_DEG} deg); black and white at {ENH_LOW_PCT} / {ENH_HIGH_PCT} % of the band in that space "
+                    f"(the sky and the deck may clip); S-curve {ENH_S} about the band's median; enhlocal: unsharp mask on "
+                    f"the lightness, sigma {ENH_LOCAL_SIGMA_FRAC} x width, amount {ENH_LOCAL_AMOUNT}"}
 
 
 def _exposure16(out_dir: PathLike) -> float:

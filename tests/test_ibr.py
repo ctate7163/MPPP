@@ -1078,14 +1078,14 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     installed batch file names no version."""
     from mppp.ibr import single_sites as SS
     cfg = SS.load_config()
-    assert set(cfg["stations"]) == {"S003D2046", "S026D0630", "S032D1184"}
+    assert set(cfg["stations"]) == {"S003D2046", "S026D0630", "S032D1184", "S026D0850"}
     assert len(cfg["stations"]["S003D2046"]["frames"]["images"]) == 12
     root = tmp_path / "rb"
     for f in ("mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop", "mars2020_sol_0413_threeforks_large"):
         (root / f).mkdir(parents=True)
     runs = SS.plan(cfg, root)
     assert [Path(r["work"]).name for r in runs] == ["mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop",
-                                                    "mars2020_sol_0413_threeforks_large"]
+                                                    "mars2020_sol_0413_threeforks_large", "mars2020_sol_0460_rockytop"]
     r0 = runs[0]
     steps = [(c["variant"], c["step"]) for c in r0["commands"]]
     assert steps == [("masked", "dense"), ("rover", "mesh"), ("rover", "depthmaps"), ("rover", "ods"),
@@ -1103,6 +1103,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
         {"variant": "masked", "step": "ods", "argv": ["ods", str(root / "mars2020_sol_0460_rockytop"), "--station", "26_630",
                                                       "--mask-rover", "--out", str(root / "single_sites" / "S026D0630"),
                                                       "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
+                                                      "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
                                                       "--tone-levels", str(root / "single_sites" / "S026D0630" / "tone_levels.json"),
                                                       "--bits", "16", "--eyes", "left", "right", "centre"]}]
     with pytest.raises(KeyError):
@@ -1710,11 +1711,12 @@ def test_exposure_and_enhanced_views(tmp_path):
     e = L.auto_exposure16(x)
     assert 0.5 <= e <= 4.0 and abs(x.max() * 64 * e - 0.95 * 65535) < 0.02 * 65535     # nothing clipped
     assert L.auto_exposure16(x * 100) == 0.5 and L.auto_exposure16(x * 0.01) == 4.0
-    lo, hi, g = L.enhanced_levels(x)
-    assert lo < 40 and 80 < hi < 130 and 1.0 <= g <= 2.6           # from the terrain band: the bright sky is not in it
-    v = L.tone_enhanced(x, lo, hi, g)
-    assert v.min() >= 0 and v.max() <= 255 and abs(np.median(v[32:].mean(axis=2)) / 255 - 0.45) < 0.08
+    ref, lo, hi, med = L.enhanced_levels(x)
+    assert 80 < ref < 140 and 0 <= lo < hi <= 1.01 and 0.2 < med < 0.8   # from the terrain band: the bright sky is not in it
+    v = L.tone_enhanced(x, ref, lo, hi, med)
+    assert v.min() >= 0 and v.max() <= 255 and 70 < np.median(v[32:].mean(axis=2)) < 185
     assert (v[:4] == 255).all()                                       # the sky clips
+    assert v[32:].std() > 1.5 * (255.0 * (x[32:] / x[32:].max())).std()   # more contrast on the terrain than a plain scale
     f = tmp_path / "levels.json"
     assert L.shared_value(f, "exposure16", lambda: 1.5) == (1.5, "computed")
     assert L.shared_value(f, "exposure16", lambda: 9.9) == (1.5, "file")
@@ -1726,7 +1728,7 @@ def test_exposure_and_enhanced_views(tmp_path):
     r = L.write_enhanced(tmp_path, "S1", levels_file=f)
     a = cv2.imread(r["files"]["enh"]); b = cv2.imread(r["files"]["enhlocal"])
     assert a.shape == (128, 128, 3) and b.shape == a.shape and r["files"]["enh"].endswith("S1_enh_360_3DTD.jpg")
-    assert "enhanced_terrain_levels_8bit_linear_units" in json.loads(f.read_text())
+    assert "enhanced_gamma_stretch_s_levels" in json.loads(f.read_text())
 
 
 def test_sky_sphere_and_range_merge():
@@ -1751,14 +1753,13 @@ def test_sky_sphere_and_range_merge():
     assert np.allclose(np.linalg.norm(oL, axis=1), 0.032 * np.linspace(0, 1, 8))
 
 
-def test_enhlocal_one_gain_for_both_eyes():
+def test_enhlocal_is_one_filter_for_both_eyes():
     from mppp.ibr import linear16 as L
     rng = np.random.default_rng(1)
-    a = rng.integers(20, 200, (64, 128, 3)).astype(np.uint8)
-    b = np.roll(a, 2, axis=1)
-    g = L.local_gain(a, b)
-    assert g.shape == (64, 128) and np.allclose(g, L.local_gain(b, a)) and g.min() > 0.3 and g.max() < 4
-    assert L.local_contrast(a, g).shape == a.shape
+    a = rng.integers(20, 200, (64, 256, 3)).astype(np.uint8)
+    b = np.roll(a, 7, axis=1)                                         # the other eye: the same scene, shifted
+    assert np.array_equal(np.roll(L.local_contrast(a), 7, axis=1), L.local_contrast(b))      # also across the seam
+    assert L.local_contrast(a).astype(float).std() > a.astype(float).std()
 
 
 def test_rover_mesh_on_the_masked_terrain(tmp_path):
@@ -1860,3 +1861,22 @@ def test_nearby_stations_and_width(tmp_path):
     assert mesh[mesh.index("--keep-under-rover") + 1] == "0.25"
     ods = [c["argv"] for c in cmds if c["step"] == "ods"][0]
     assert ods[-2:] == ["--width", "16384"]
+
+
+def test_a_boulder_is_not_floating():
+    """0.97.0 (12 Nov): a surface that climbs from the ground stays; the same heights with nothing under them go."""
+    from mppp.ibr import mesh as M
+    rng = np.random.default_rng(0)
+    g = np.c_[rng.uniform(-20, 20, (40000, 2)), np.zeros(40000)]                    # flat ground, z = 0
+    plane = {"normal": [0, 0, 1], "offset": 0.0, "centre": [0, 0, 2.0], "up": [0, 0, 1], "radius_m": 100.0}
+    pivot = (0.0, 0.0, 2.0)                                                         # the cameras 2 m up: 1 m allowed
+    z = rng.uniform(0, 1.6, 4000)
+    boulder = np.c_[8.0 + rng.uniform(-0.2, 0.2, 4000), rng.uniform(-0.7, 0.7, 4000), z]      # a face 1.6 m tall, 8 m away
+    floater = np.c_[-8.0 + rng.uniform(-0.2, 0.2, 800), rng.uniform(-0.7, 0.7, 800), rng.uniform(1.3, 1.6, 800)]
+    X = np.vstack([g, boulder, floater])
+    ground = M.local_ground(X, pivot, (0, 0, 1), plane)
+    fl = M.floating(X, pivot, (0, 0, 1), plane, ground=ground)
+    nb = slice(len(g), len(g) + len(boulder))
+    assert fl[nb].mean() < 0.02 and fl[len(g) + len(boulder):].mean() > 0.98 and fl[:len(g)].mean() < 0.01
+    old = M.floating(X, pivot, (0, 0, 1), plane, ground=ground, supported=False)
+    assert old[nb][z > 1.2].mean() > 0.9                                            # before: the boulder's top went

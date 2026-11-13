@@ -41,12 +41,13 @@
   "S026D0630": {
    "site": "rockytop",
    "station": "26_630",
-   "note": "Rockytop, sol 461: the 16 half-resolution Navcam frames (NCAM03461, 02461, 13461); one pair left out of the panorama (Christian, 10 Nov)",
+   "note": "Rockytop, sol 461: the 16 half-resolution Navcam frames (NCAM03461, 02461, 13461); the pair NCAM13461 0707875039 left out of the panorama (Christian, 10 Nov; 12 Nov: the NRF frame named too)",
    "frames": {
     "scale": 0.5
    },
    "ods_exclude": [
-    "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"
+    "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
+    "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"
    ]
   },
   "S032D1184": {
@@ -59,6 +60,14 @@
    "ods_exclude": [
     "NLF_0688_0728029302_791RAD_N0321184NCAM13688_0A0195J01"
    ]
+  },
+  "S026D0850": {
+   "site": "rockytop",
+   "station": "26_850",
+   "note": "Rockytop (Skinner Ridge), sol 474: the station of NRF_0474_0709027186_885RAD_N0260850NCAM13474, its half-resolution Navcam frames (Christian, 12 Nov: \"Add a forth site\")",
+   "frames": {
+    "scale": 0.5
+   }
   }
  }
 }

@@ -65,6 +65,18 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   1.14 in height from its base (`scripts/build_rover_model.py`, `UHF_CAN_*`); checked on that frame and on
   NRF_0461_0707874458. The rover's placement was not the cause: the deck targets, the low-gain antenna's outline
   (two frames, two sols) and the station's rover pose (16 frames, 0.21 deg) agree to 0.1-0.3 deg.
+- **A boulder is not floating** (Christian, 12 Nov, Rockytop: a boulder with good stereo coverage had "a gap in its
+  center"). The stereo depth map of NRF_0461_0707870987 holds the whole boulder (8.4 m away, 1.2-1.7 m tall); the
+  floating rule cut what stood more than 0.96 m above the local ground beyond 3 m. Now a surface that climbs from
+  the ground stays: in 0.5 m columns the points are followed up from the lowest while no step exceeds 0.3 m
+  (`mesh.floating(supported=True)`, `FLOAT_SUPPORT_*`).
+- **Single sites**: a fourth station, S026D0850 (Rockytop, sol 474, the station of NRF_0474_0709027186); at S026D0630
+  the NRF frame of the excluded pair NCAM13461 0707875039 is named in `ods_exclude` too.
+- **Enhanced views, third rule** (Christian: "i still don't like the enhanced image versions ... rescale the high and
+  low points of the stretch before gamma"). Chosen from six treatments of the Van Zyl panorama side by side: gamma 2.2
+  first, then black and white at 1 % and 99 % of the terrain band in that space, then an S-curve about the band's
+  median. `_enhlocal_` adds an unsharp mask on the lightness (0.25 % of the width, x 0.8) in place of CLAHE - a fixed
+  filter, the same for both eyes. No colour boost. Replaces the two rules of earlier today.
 - **Freeze window** (Christian, 12 Nov): a line when a block starts ("aligning <site>") and when it ends (verdict,
   images, residual, hours), and every half hour the last log line of each running block.
 - **Freeze on 0.97, from the beginning** (Christian, 12 Nov: "restart the freeze from the beginning using the

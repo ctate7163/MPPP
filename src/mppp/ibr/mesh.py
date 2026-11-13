@@ -480,6 +480,8 @@ FLOAT_GROUND_CELL_M = 2.0     # 0.97.0: the local ground under a point - a grid 
 FLOAT_GROUND_PERCENTILE = 20.0   # ... holding this percentile of its points' heights above the plane, median-smoothed
 FLOAT_GROUND_MIN_POINTS = 5
 FLOAT_GROUND_MAX_RISE = 0.30  # the local ground is taken no higher than this x the distance above the plane (17 deg)
+FLOAT_SUPPORT_CELL_M = 0.5    # 0.97.0: a column of this size whose points climb from the ground ...
+FLOAT_SUPPORT_GAP_M = 0.3     # ... in steps no larger than this is a boulder, not a floater
 FLOAT_RANGE_FRACTION = 0.05   # far terrain: the allowed height above the local ground grows to this x the distance
 
 
@@ -546,7 +548,7 @@ def ground_height(X: np.ndarray, pivot: Sequence[float], ground: Dict[str, Any])
 
 def floating(X: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: Dict[str, Any],
              clearance_m: float = FLOAT_CLEARANCE_M, beyond_m: float = FLOAT_BEYOND_M,
-             ground: Optional[Dict[str, Any]] = None) -> np.ndarray:
+             ground: Optional[Dict[str, Any]] = None, supported: bool = True) -> np.ndarray:
     """Points that cannot be surface seen from the mast (Christian, 10 Nov: "floating polygons should be removed ...
     everything above the cameras and every thing 1 meter below the camera beyond 3 meters"): above the cameras
     anywhere, or beyond ``beyond_m`` of the mast axis and higher than ``clearance_m`` below the cameras.
@@ -565,7 +567,35 @@ def floating(X: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: 
     if ground is None:
         return (h > hc) | ((r > beyond_m) & (h > hc - clearance_m))
     hl = h - ground_height(X, pivot, ground)
-    return ((r <= beyond_m) & (h > hc)) | ((r > beyond_m) & (hl > np.maximum(hc - clearance_m, FLOAT_RANGE_FRACTION * r)))
+    allow = np.maximum(hc - clearance_m, FLOAT_RANGE_FRACTION * r)
+    fl = ((r <= beyond_m) & (h > hc)) | ((r > beyond_m) & (hl > allow))
+    far = r > beyond_m
+    if supported and (fl & far).any():
+        # 0.97.0 (Christian, 12 Nov 2026, Rockytop: a 1.5 m boulder 8 m away, whole in the stereo depth map, had "a gap in
+        # its center"): a boulder is not floating - its surface goes down to the ground.  In columns of
+        # FLOAT_SUPPORT_CELL_M the points are followed upwards from the lowest one; while that one is within the allowed
+        # height and no step is larger than FLOAT_SUPPORT_GAP_M the points are supported and stay.
+        P0 = np.asarray(pivot, float)
+        u = np.asarray(up, float) / np.linalg.norm(up)
+        e_ = np.cross([0.0, 1.0, 0.0], u); e_ = e_ / np.linalg.norm(e_)
+        n_ = np.cross(u, e_)
+        idx = np.flatnonzero(far)
+        d = X[idx] - P0
+        ci = np.floor((d @ e_) / FLOAT_SUPPORT_CELL_M).astype(np.int64)
+        cj = np.floor((d @ n_) / FLOAT_SUPPORT_CELL_M).astype(np.int64)
+        key = (ci - ci.min()) * (int(cj.max() - cj.min()) + 1) + (cj - cj.min())
+        order = np.lexsort((hl[idx], key))
+        ks, hs, al = key[order], hl[idx][order], allow[idx][order]
+        start = np.r_[True, ks[1:] != ks[:-1]]
+        brk = np.r_[False, (hs[1:] - hs[:-1]) > FLOAT_SUPPORT_GAP_M] & ~start
+        first = np.flatnonzero(start)
+        seg = np.cumsum(start) - 1
+        cs = np.cumsum(brk)
+        ok = ((cs - cs[first][seg]) == 0) & (hs[first][seg] <= al[first][seg])
+        keep = np.zeros(len(X), bool)
+        keep[idx[order[ok]]] = True
+        fl &= ~keep
+    return fl
 
 
 ROVER_FOOTPRINT_X_M = (-1.75, 1.60)   # RMECH x of the ground the rover stands over (rear of the RTG to the stowed turret)
