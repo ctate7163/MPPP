@@ -49,6 +49,9 @@ camera model.
    inside the rim (the real can is open; the 5 cm is not measured). Its width is NASA's.
 8. **Dark block at the front right under the arm** moved 5 cm back and 2 cm to the right, to where the Navcam
    pair of sol 52 shows it (good to about 2 cm).
+9. **Front Hazcam lenses and housings** taken out of their own view: the Hazcams' optical centres lie inside
+   NASA's camera bodies, so every Hazcam ray met the model within 5 cm. Whatever a front Hazcam would see nearer
+   than 10 cm is removed (448 triangles).
 
 ## Articulation from the image labels
 

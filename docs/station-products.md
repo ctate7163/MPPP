@@ -40,11 +40,12 @@ shadow (0 unknown, 1 lit, 2 shadow). **These files are the numbers.**
 
 The shadows are cast by the station mesh and by the rover hardware that is not in it: the mast and its two booms,
 and the camera head turned to where it was when the image was taken (see [Rover model](rover-model.md)). With the
-terrain-only mesh the whole rover model casts shadows. A surface the Sun meets at more than 89 degrees is shadow
-too; gaps of a few pixels inside a shadow are closed, and the shadow is then grown by 3 pixels, so the stored map
-errs on the side of shadow.
+terrain-only mesh the whole rover model casts shadows. A surface the Sun meets at more than 86 degrees is shadow
+too. The mask is sharp: it is what the rays say, pixel by pixel, with no closing and no growing. The shadow ray
+starts 1 cm off the surface along the surface normal, so a surface the Sun only grazes does not shadow itself.
 
-`--add-cameras F` adds the station's front Hazcam pair of the same sols (on in the station list); for its shadows
+`--add-cameras F` adds the station's front Hazcam pair when it was taken within 2 hours of the Navcam frames (on
+in the station list); for its shadows
 the camera head is where the Navcam frame nearest in time had it.
 
 `photometry_jpg/` holds a picture of each map for looking at. Their colour scales are constants, the same for every
@@ -73,7 +74,7 @@ azimuth grows eastward, so it reads N, E, S, W from left to right; the top row i
 cast into the mesh and coloured from the station frames that see that point best, blended in two frequency bands.
 
 Frames of other cameras can fill in what the panorama's own frames do not see: `--fill-cameras F` adds the front
-Hazcam pair of the same sols, which colours the ground under the arm. A fill frame has weight only where no regular
+Hazcam pair when it was taken within 2 hours of them, which colours the ground under the arm. A fill frame has weight only where no regular
 frame sees the surface, and its colours are matched to the regular frames first, per channel, on the surface both
 see (`ods.json`, `fill_colour_match`). The regular frames are not changed.
 
@@ -90,8 +91,8 @@ Files (the prefix is the station, with `_rover` for the with-rover variant):
 | `<prefix>_360_3DTD.png`, `.jpg` | both eyes in one square, **the left eye on top** (8-bit) |
 | `<prefix>_360_3DTD_16.png` | the same in 16-bit linear radiance units: the record for colour work |
 | `<prefix>_enh_360_3DTD.jpg`, `_enhlocal_360_3DTD.jpg` | contrast-enhanced views (terrain stretched; sky and deck may clip) |
-| `<prefix>_ods_left`, `_right`, `_centre` `.png` / `_16.png` | the eyes apart, and the view from the pivot |
-| `<prefix>_ods_centre_depth.npz`, `_depth_16.png`, `_depth_*.jpg` | the range from the pivot for every pixel of the centre view |
+| `<prefix>_ods_left`, `_right` `.png` / `_16.png` | the eyes apart (`--eyes left right centre` adds the view from the pivot, a third more time) |
+| `<prefix>_ods_centre_depth.npz`, `_depth_16.png`, `_depth_*.jpg` | the range from the pivot for every pixel; from rays alone, seconds |
 | `provenance.png`, `ods.json` | which frame coloured what; every setting and the coverage |
 
 The PNG files are the data record; the JPEGs are for viewing. `_360_3DTD` in a file name is the convention headset

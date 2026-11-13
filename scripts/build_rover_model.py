@@ -19,6 +19,7 @@ The changes to NASA's model are described for users in docs/rover-model.md; the 
   of the image labels' arm resolver angles (ARM_LABEL_STOW_DEG through ARM_LABEL_SIGN and ARM_LABEL_OFFSET_DEG).
 * The UHF antenna can: its wall raised to the real rim and the domed cap replaced by a flat floor (UHF_CAN_*).
 * Pieces of the body moved to where the images show them (BODY_COMPONENT_SHIFTS).
+* The front Hazcams' own lenses and housings taken out of their view (HAZCAM_VIEWS, clear_camera_views).
 * Not simplified since 0.97.7: NASA's triangles as they are (TARGET_FACES; 0.96.1-0.97.6 decimated every part).
 * scripts/export_rover_glb.py writes the result as docs/rover/perseverance_rmech.glb for use outside MPPP.
 """
@@ -218,6 +219,48 @@ BODY_COMPONENT_SHIFTS = [
 ]
 
 
+# 0.97.11 (Christian, 13 Nov 2026: "the fhazcam renders from inside the rover model.  Remove the front lens in the 3d
+# model so that doesn't happen"): the front Hazcams' optical centres lie inside NASA's camera bodies - every ray of
+# a Hazcam met the model within 5 cm.  Whatever of the body a Hazcam would see nearer than HAZCAM_CLEAR_M within
+# HAZCAM_CLEAR_HALF_ANGLE_DEG of its axis is taken out (its own lens and housing; 448 triangles); after that the
+# model fills 5 % of the left Hazcam's view and 10 % of the right one's (arm, wheels, and for the right one the dark
+# block of BODY_COMPONENT_SHIFTS, 14 cm away - at 0.20 m a quarter of that block went too, so 0.10 m).  Centres and axes (RMECH)
+# from the deck_joint mast model of 7 Nov (fhaz: C_FL, R_FL, rig FR <- FL).
+HAZCAM_VIEWS = {"FL": {"centre": (1.0107, -0.0092, 0.4062), "axis": (0.8851, -0.1719, 0.4326)},
+                "FR": {"centre": (0.9988, 0.2393, 0.4004), "axis": (0.8854, 0.1731, 0.4313)}}
+HAZCAM_CLEAR_M = 0.10
+HAZCAM_CLEAR_HALF_ANGLE_DEG = 70.0
+
+
+def clear_camera_views(v: np.ndarray, f: np.ndarray, views=HAZCAM_VIEWS, clear_m: float = HAZCAM_CLEAR_M,
+                       half_angle_deg: float = HAZCAM_CLEAR_HALF_ANGLE_DEG, n_rays: int = 60000) -> np.ndarray:
+    """The triangles (bool, True = keep) left when everything a camera sees nearer than ``clear_m`` is peeled off."""
+    import open3d as o3d
+    keep = np.ones(len(f), bool)
+    rs = np.random.default_rng(1)
+    th = np.radians(half_angle_deg) * np.sqrt(rs.random(n_rays))
+    ph = 2 * np.pi * rs.random(n_rays)
+    local = np.c_[np.sin(th) * np.cos(ph), np.sin(th) * np.sin(ph), np.cos(th)]
+    for _ in range(60):
+        idx = np.flatnonzero(keep)
+        sc = o3d.t.geometry.RaycastingScene()
+        sc.add_triangles(o3d.core.Tensor(v.astype(np.float32)), o3d.core.Tensor(f[idx].astype(np.uint32)))
+        gone = set()
+        for cam in views.values():
+            z = np.asarray(cam["axis"], float)
+            z /= np.linalg.norm(z)
+            x = np.cross(z, [0.0, 0.0, 1.0])
+            x /= np.linalg.norm(x)
+            d = local @ np.array([x, np.cross(z, x), z])
+            a = sc.cast_rays(o3d.core.Tensor(np.c_[np.broadcast_to(np.asarray(cam["centre"], float), d.shape), d].astype(np.float32)))
+            t, pid = a["t_hit"].numpy(), a["primitive_ids"].numpy()
+            gone |= set(idx[pid[t < clear_m]].tolist())
+        if not gone:
+            break
+        keep[list(gone)] = False
+    return keep
+
+
 def shift_components(v: np.ndarray, f: np.ndarray, shifts) -> list:
     """Move (in place) every connected piece of the mesh (v, f) that lies wholly inside a shift's box; the report."""
     import scipy.sparse as sp
@@ -371,6 +414,10 @@ def build(glb: Path, out: Path) -> dict:
         if kind == "body" and BODY_COMPONENT_SHIFTS:
             v = np.array(v, float)
             rep_shift = shift_components(v, f, BODY_COMPONENT_SHIFTS)
+        if kind == "body" and HAZCAM_VIEWS:
+            kept = clear_camera_views(np.asarray(v, float), np.asarray(f))
+            print(f"front Hazcam views cleared: {int((~kept).sum())} triangles of the body within {HAZCAM_CLEAR_M} m removed")
+            f = np.asarray(f)[kept]
         V.append(v)
         F.append(f + off)
         P.append(np.full(len(f), pid, np.uint8))

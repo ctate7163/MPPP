@@ -388,10 +388,18 @@ def head_hardware_masks(sources: Sequence["SourceImage"], masks: Sequence[Option
     return out
 
 
+FILL_WITHIN_S = 7200.0            # a fill frame is taken within this of one of the panorama's own frames
+
+
+def _sclk(name: str) -> Optional[float]:
+    """The spacecraft clock (s) in a frame's name (``NLF_0461_0707871340_...``)."""
+    t = Path(str(name)).name[9:19]
+    return float(t) if t.isdigit() else None
+
+
 def fill_frames(project, rec, station, families: str, names: Sequence[str]) -> List[str]:
     """The station's registered frames of the camera ``families`` (letters; "F": the front Hazcams) for filling in
-    what the panorama's own frames ``names`` do not see - those taken on the sols of ``names`` (all of the station's
-    when there is none on those sols)."""
+    what the panorama's own frames ``names`` do not see - those taken within FILL_WITHIN_S of one of ``names``."""
     from .station import station_images
     if not families:
         return []
@@ -401,9 +409,18 @@ def fill_frames(project, rec, station, families: str, names: Sequence[str]) -> L
         return []
     by_name = {im.name: im for im in rec.images.values()}
     have = [r["name"] for r in rows if r["name"] in by_name and by_name[r["name"]].has_pose and r["name"] not in set(names)]
-    sols = {str(n)[4:8] for n in names}
-    same = [n for n in have if n[4:8] in sols]
-    return same or have
+    # 0.97.11 (Christian, 13 Nov 2026: "only include them if they are taken within 2 hours of the primary ncam"):
+    # by the spacecraft clock in the names; before, any frame of the same sol - or of any sol when none was
+    t0 = [t for t in (_sclk(n) for n in names) if t is not None]
+    out = []
+    for n in have:
+        t = _sclk(n)
+        if t is not None and t0 and min(abs(t - x) for x in t0) <= FILL_WITHIN_S:
+            out.append(n)
+    if have and not out:
+        log.info("fill frames: %d of the camera families %r at this station, none within %.0f h of the panorama's frames",
+                 len(have), families, FILL_WITHIN_S / 3600.0)
+    return out
 
 
 def station_sources(project, rec, station, families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0,
@@ -652,12 +669,6 @@ FILL_MATCH_RANGE = (0.4, 2.5)     # the factors are clipped to this
 FILL_MATCH_MAX_SCLK_S = 1800.0    # ... from regular frames taken within this many seconds of the fill frame
 FILL_MATCH_POINTS = 200_000       # terrain points tried
 FILL_MATCH_WITHIN_M = 12.0        # ... on the mesh within this distance of a fill camera
-
-
-def _sclk(name: str) -> Optional[float]:
-    """The spacecraft clock (s) in a frame's name (``NLF_0461_0707871340_...``)."""
-    t = str(name)[9:19]
-    return float(t) if t.isdigit() else None
 
 
 def estimate_fill_colour(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float] = (0, 0, 0), width: int = GAIN_PASS_WIDTH,
@@ -1475,6 +1486,22 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             rec_out["eyes"][eye].update(file_16bit=str(f16), above_8bit_range=over, clipped_in_16bit=clipped16)
         for s in sources:
             s.release()
+    if centre_depth and depth_rec is None:               # 0.97.11: the depth without the centre panorama's colours
+        td = time.time()                                 # (Christian, 13 Nov 2026: "skip the center render because it
+        rng_c = np.zeros((height, width), np.float32)    # takes 1/3 more time"): rays only, no frame is sampled
+        lab_c = np.zeros((height, width), np.uint8)
+        for r0 in range(0, height, rows_per_chunk):
+            r1 = min(height, r0 + rows_per_chunk)
+            oc, dc = ods_rays(width, height, (r0, r1), station.pivot, 0.0, "centre", station.up, station.north, station.east,
+                              azimuth0_deg)
+            hc = scene.cast(oc, dc)
+            lab_c[r0:r1] = hc["label"].reshape(r1 - r0, width)
+            rng_c[r0:r1] = np.where(hc["label"] != LABEL_NONE, hc["t"], 0).reshape(r1 - r0, width)
+        depth_rec = write_centre_depth(out, prefix, rng_c, lab_c)
+        depth_rec["seconds"] = round(time.time() - td, 1)
+        depth_rec["from"] = "rays from the pivot alone (no centre panorama rendered)"
+        log.info("ods: the depth from the pivot without the centre panorama (%.0f s)", depth_rec["seconds"])
+        del rng_c, lab_c
     if "left" in eyes and "right" in eyes:
         rec_out["stacked"] = stack_eyes(out, top=stack_top, prefix=prefix)
         if linear:

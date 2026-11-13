@@ -1100,7 +1100,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     rover_ods = r0["commands"][3]["argv"]
     assert "--mask-rover" in r0["commands"][-1]["argv"]
     assert "--rover" in rover_ods and rover_ods[rover_ods.index("--out") + 1].endswith(str(Path("S003D2046") / "with_rover"))
-    assert rover_ods[-8:] == ["--bits", "16", "--eyes", "left", "right", "centre", "--fill-cameras", "F"]   # 0.97.7: the front Hazcams fill in
+    assert rover_ods[-4:] == ["--bits", "16", "--fill-cameras", "F"]   # 0.97.7: the front Hazcams fill in
     assert rover_ods[rover_ods.index("--site-name") + 1] == "Van Zyl Overlook"              # 0.97.7: for the nadir mark
     tl = str(root / "single_sites" / "S003D2046" / "tone_levels.json")                     # 0.97.0: one scaling per station
     assert rover_ods[rover_ods.index("--tone-levels") + 1] == tl
@@ -1111,7 +1111,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
                                                       "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
                                                       "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
                                                       "--tone-levels", str(root / "single_sites" / "S026D0630" / "tone_levels.json"),
-                                                      "--site-name", "Rockytop", "--bits", "16", "--eyes", "left", "right", "centre", "--fill-cameras", "F"]}]
+                                                      "--site-name", "Rockytop", "--bits", "16", "--fill-cameras", "F"]}]
     with pytest.raises(KeyError):
         SS.plan(cfg, root, labels=["S999D9999"])
     # the run: the steps stood in for; Rockytop's dense step fails, so nothing else of it runs
@@ -2213,19 +2213,68 @@ def test_fill_frames_are_colour_matched_to_the_regular_ones(tmp_path):
     assert estimate_fill_colour(scene, srcs[:1])["cameras"] == {}
 
 
-def test_shadow_is_also_grazing_incidence_closed_and_grown():
-    """0.97.8: incidence above 89 deg is shadow; hatching is closed; the shadow grows by 3 px; no surface stays 0."""
+def test_shadow_is_sharp_and_takes_grazing_incidence():
+    """0.97.11: the mask is what the rays say, pixel by pixel, plus every surface with an incidence above 86 deg;
+    no closing, no growing (0.97.8 did both); no surface stays 0.  The shadow ray starts off the surface along its
+    normal, so a surface the Sun grazes does not shadow itself."""
     from mppp.ibr import photometry as PH
+    from mppp.ibr.raycast import Scene
+    assert PH.SHADOW_GROW_PX == 0 and PH.SHADOW_CLOSE_PX == 0 and 80.0 < PH.SHADOW_INCIDENCE_DEG < 89.0
     sh = np.full((60, 80), PH.SHADOW_LIT, np.uint8)
     sh[:5] = PH.SHADOW_UNKNOWN                                     # sky
-    sh[20:30, 20:40:2] = PH.SHADOW_SHADOW                          # hatching: every other column
+    sh[20:30, 20:40] = PH.SHADOW_SHADOW
     inc = np.full((60, 80), 40.0, np.float32)
-    inc[45:50, 60:65] = 89.5                                       # a facet the Sun grazes
+    inc[45:50, 60:65] = 87.5                                       # a facet the Sun grazes
+    inc[10:12, 10:12] = 84.0                                       # below the threshold
     inc[:5] = np.nan
     out = PH.finish_shadow(sh, inc)
     assert (out[:5] == PH.SHADOW_UNKNOWN).all()
-    assert (out[20:30, 20:39] == PH.SHADOW_SHADOW).all()           # the hatching is one shadow
-    assert (out[45:50, 60:65] == PH.SHADOW_SHADOW).all() and out[42, 62] == PH.SHADOW_SHADOW and out[40, 62] == PH.SHADOW_LIT
-    assert out[17, 30] == PH.SHADOW_SHADOW and out[15, 30] == PH.SHADOW_LIT       # grown by 3 px, not by 5
-    raw = PH.finish_shadow(sh, inc, grow_px=0, close_px=0)
-    assert (raw[20:30, 21:40:2] == PH.SHADOW_LIT).all() and (raw[45:50, 60:65] == PH.SHADOW_SHADOW).all()
+    want = (sh == PH.SHADOW_SHADOW)
+    want[45:50, 60:65] = True
+    assert ((out == PH.SHADOW_SHADOW) == want).all()               # exactly those pixels: sharp
+    grown = PH.finish_shadow(sh, inc, grow_px=3)
+    assert grown[17, 30] == PH.SHADOW_SHADOW and out[17, 30] == PH.SHADOW_LIT
+    # finely rippled ground the Sun grazes at 80 deg: no hatching with the ray lifted along the normal
+    g = np.linspace(-5.0, 5.0, 201)
+    xx, yy = np.meshgrid(g, g)
+    V = np.c_[xx.ravel(), yy.ravel(), 0.002 * np.sin(40 * xx.ravel())]          # 2 mm ripples
+    q = np.arange(xx.size).reshape(xx.shape)
+    F = np.vstack([np.c_[q[:-1, :-1].ravel(), q[:-1, 1:].ravel(), q[1:, :-1].ravel()],
+                   np.c_[q[1:, :-1].ravel(), q[:-1, 1:].ravel(), q[1:, 1:].ravel()]])
+    scene = Scene((V, F))
+    sun = np.array([np.cos(np.radians(10.0)), 0.0, np.sin(np.radians(10.0))])   # 10 deg above the horizon
+    rs = np.random.default_rng(0)
+    X = np.c_[rs.uniform(-3, 3, 4000), rs.uniform(-3, 3, 4000), np.zeros(4000)]
+    n = np.tile([0.0, 0.0, 1.0], (len(X), 1))
+    lit = PH.shadow_map(scene, X, sun, np.ones(len(X), bool), normal_world=n)
+    assert (lit == PH.SHADOW_LIT).mean() > 0.98                    # 2 mm ripples under a 1 cm lift: all lit
+    old = PH.shadow_map(scene, X, sun, np.ones(len(X), bool), lift_m=0.0)       # from the mean surface: hatching
+    assert 0.05 < (old == PH.SHADOW_SHADOW).mean() < 0.95
+
+
+def test_depth_without_the_centre_panorama_and_fill_frames_within_two_hours(tmp_path):
+    """0.97.11: the pivot's depth products are made from rays alone when the centre eye is not rendered; a fill
+    frame (a Hazcam) is taken only when it is within two hours of one of the panorama's own frames."""
+    from types import SimpleNamespace as NS
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    out = tmp_path / "ods"
+    rep = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
+    assert set(rep["eyes"]) == {"left", "right"} and not list(out.glob("*_ods_centre.png"))
+    d = rep["centre_depth"]
+    assert "rays from the pivot alone" in d["from"] and len(list(out.glob("*_ods_centre_depth.npz"))) == 1
+    z = np.load(next(out.glob("*_ods_centre_depth.npz")))
+    assert z["range"].shape == (128, 256) and np.isfinite(z["range"][100]).all() and z["range"][100].max() > 0.5
+    rep2 = O.render_station(proj, rec, st, scene, tmp_path / "nodepth", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32,
+                            centre_depth=False)
+    assert "centre_depth" not in rep2
+    # fill frames by the spacecraft clock
+    own = ["NLF_0100_0700000000_000RAD_N0030010NCAM00100_0A0195J01.png"]
+    haz = {"FLF_0100_0700003000_000RAD_N0030010FHAZ00100_0A0195J01.png": True,       # 50 minutes later
+           "FRF_0100_0700003000_000RAD_N0030010FHAZ00100_0A0195J01.png": True,
+           "FLF_0100_0700014000_000RAD_N0030010FHAZ00100_0A0195J01.png": True,       # 3.9 hours later
+           "FLF_0100_0700001000_000RAD_N0030010FHAZ00200_0A0195J01.png": False}      # in time, but without a pose
+    rows = [{"name": n, "site": 3, "drive": 10, "sol": 100} for n in own + list(haz)]
+    fake_rec = NS(images={i: NS(name=n, has_pose=haz.get(n, True)) for i, n in enumerate(own + list(haz))})
+    got = O.fill_frames(NS(images=rows), fake_rec, NS(label="S003D0010"), "F", own)
+    assert got == [n for n in haz if "0700003000" in n] and O.FILL_WITHIN_S == 7200.0
+    assert O.fill_frames(NS(images=rows), fake_rec, NS(label="S003D0010"), "", own) == []

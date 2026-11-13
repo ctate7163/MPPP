@@ -51,6 +51,9 @@ def angles(dirs_cam: np.ndarray, normal_cam: np.ndarray, sun_cam: Sequence[float
     return {"incidence": i, "emission": e, "phase": g}
 
 
+SHADOW_LIFT_M = 0.01            # the shadow ray starts this far off the surface, along its normal (see below)
+
+
 def occluder(V: np.ndarray, F: np.ndarray):
     """A ray-casting scene of extra shadow casters (triangles in the block frame), or None without triangles."""
     if V is None or F is None or not len(F):
@@ -61,18 +64,22 @@ def occluder(V: np.ndarray, F: np.ndarray):
     return sc
 
 
-def shadow_map(scene: Scene, X_world: np.ndarray, sun_world: Sequence[float], valid: np.ndarray, lift_m: float = 0.02,
-               extra=None) -> np.ndarray:
-    """0 unknown / 1 lit / 2 shadow per pixel: a ray from the surface point (lifted ``lift_m`` along the Sun
-    direction, off its own triangle) towards the Sun that hits the mesh means shadow.  ``extra`` (0.97.7): a scene
-    of :func:`occluder` - what casts a shadow and is not in the mesh (the rover's mast, booms and camera head)."""
+def shadow_map(scene: Scene, X_world: np.ndarray, sun_world: Sequence[float], valid: np.ndarray, lift_m: float = SHADOW_LIFT_M,
+               extra=None, normal_world: Optional[np.ndarray] = None) -> np.ndarray:
+    """0 unknown / 1 lit / 2 shadow per pixel: a ray from the surface point towards the Sun that hits the mesh means
+    shadow.  The ray starts ``lift_m`` off the surface along ``normal_world`` (the unit normals, on the side the
+    surface is seen from; 0.97.11) - without normals, along the Sun's direction as before.  ``extra`` (0.97.7): a
+    scene of :func:`occluder` - what casts a shadow and is not in the mesh (the rover's mast, booms and camera head)."""
     s = np.asarray(sun_world, float)
     s = s / np.linalg.norm(s)
     out = np.zeros(np.asarray(valid).shape, np.uint8)
     idx = np.flatnonzero(np.asarray(valid).reshape(-1))
     if not len(idx):
         return out
-    X = np.asarray(X_world, float).reshape(-1, 3)[idx] + lift_m * s
+    if normal_world is not None:
+        X = np.asarray(X_world, float).reshape(-1, 3)[idx] + lift_m * np.asarray(normal_world, float).reshape(-1, 3)[idx]
+    else:
+        X = np.asarray(X_world, float).reshape(-1, 3)[idx] + lift_m * s
     hit = scene.cast(X, np.broadcast_to(s, (len(idx), 3)))
     flat = out.reshape(-1)
     dark = np.isfinite(hit["t"]) & (hit["label"] == LABEL_MESH)
@@ -85,9 +92,15 @@ def shadow_map(scene: Scene, X_world: np.ndarray, sun_world: Sequence[float], va
 
 
 HEAD_FROM_NAVCAM_WITHIN_S = 1800.0     # a Hazcam frame's shadows: the head as in a Navcam frame at most this far in time
-SHADOW_INCIDENCE_DEG = 89.0     # 0.97.8: a surface the Sun meets at more than this is in shadow, whatever the ray says
-SHADOW_CLOSE_PX = 2            # ... the hatching of a surface near the terminator (the ray grazes its own facets) closed
-SHADOW_GROW_PX = 3             # ... and the shadow grown by this many pixels
+# 0.97.11 (Christian, 13 Nov 2026: "remove the shadow dilation.  Make sure that self occluded terrain and rover
+# occluded faces get sharp shadow masks.  The incidence angle threshold should have a few degrees [to] catch any
+# borderline faces"): the mask is what the rays say, pixel by pixel, plus every surface the Sun meets at more than
+# SHADOW_INCIDENCE_DEG.  The hatching of 0.97.7 came from where the shadow ray started: 2 cm from the surface along
+# the Sun's direction, which at grazing incidence is hardly off the surface at all (2 cm x cos i), so the ray met
+# its own facets on and off.  It now starts SHADOW_LIFT_M off the surface along the surface normal.
+SHADOW_INCIDENCE_DEG = 86.0     # a surface the Sun meets at more than this is in shadow, whatever the ray says
+SHADOW_CLOSE_PX = 0             # (0.97.8 closed gaps of 2 px and grew the shadow by 3 px; both off)
+SHADOW_GROW_PX = 0
 
 
 def finish_shadow(shadow: np.ndarray, incidence: np.ndarray, grow_px: int = SHADOW_GROW_PX, close_px: int = SHADOW_CLOSE_PX,
@@ -96,7 +109,7 @@ def finish_shadow(shadow: np.ndarray, incidence: np.ndarray, grow_px: int = SHAD
     shadow can be defined as any surface with an incidence angle greater than 89 degrees.  Some borderline polygons
     have hashmarks.  Those should be all shadow"): the cast shadow, or an incidence above ``incidence_deg``; gaps up
     to 2 x ``close_px`` wide inside it closed; then grown by ``grow_px`` pixels.  Only pixels with a surface change
-    (0 stays 0)."""
+    (0 stays 0).  0.97.11: no closing and no growing by default - the mask is sharp."""
     import cv2
     sh = np.asarray(shadow)
     surface = sh != SHADOW_UNKNOWN
@@ -125,7 +138,10 @@ def photometric_maps(scene: Scene, maps: Dict[str, np.ndarray], R: np.ndarray, C
     if with_shadow:
         d_world = maps["dirs_cam"].reshape(-1, 3) @ R                       # R^T d
         X = np.asarray(C, float) + maps["range"].reshape(-1, 1) * d_world
-        out["shadow"] = finish_shadow(shadow_map(scene, X, sun_world, valid, extra=extra), out["incidence"])
+        n_world = maps["normal"].reshape(-1, 3) @ R                         # R^T n: the normals in the block frame
+        toward = np.sum(n_world * (-d_world), axis=1) < 0                   # ... on the side the camera sees
+        n_world = np.where(toward[:, None], -n_world, n_world)
+        out["shadow"] = finish_shadow(shadow_map(scene, X, sun_world, valid, extra=extra, normal_world=n_world), out["incidence"])
     return out
 
 

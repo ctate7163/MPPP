@@ -272,7 +272,7 @@ def add_parsers(sub) -> None:
                    "panorama and written; give the rover-shown and the rover-masked run the same FILE and their "
                    "16-to-8-bit scaling is identical")
     p.add_argument("--no-depth", action="store_true", help="0.97.0: no depth products for the centre panorama "
-                   "(default with --eyes centre: <prefix>_ods_centre_depth.npz, _depth_16.png, _depth_linear.jpg, "
+                   "(default, since 0.97.11 with or without --eyes centre: <prefix>_ods_centre_depth.npz, _depth_16.png, _depth_linear.jpg, "
                    "_depth_log.jpg - the range from the pivot along each pixel's ray)")
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and the square again from the "
                    "16-bit ones in the folder (--tone auto; no rendering)")

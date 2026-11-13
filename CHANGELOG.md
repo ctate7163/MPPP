@@ -3,6 +3,18 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.11 — 2026-11-13
+
+- **Shadows sharp:** no growing, no closing. Incidence above 86 degrees is shadow (89 before). The shadow ray starts
+  1 cm off the surface along the surface normal; it started 2 cm along the Sun's direction, which at grazing
+  incidence is hardly off the surface - the cause of the hatching.
+- **No centre panorama** in the station list (a third of the render time); the depth from the pivot is still made,
+  from rays alone (16 s for 8K on two cores with a 2.4-million-triangle mesh). `--eyes left right centre` brings it back.
+- **Front Hazcams and the rover model:** every Hazcam ray met NASA's camera body within 5 cm (the optical centre is
+  inside it). The builder removes what a front Hazcam sees nearer than 10 cm (448 triangles).
+- **Hazcam frames only within 2 hours** of the panorama's Navcam frames (`ods.FILL_WITHIN_S`), for the fill and
+  for `mppp depthmaps --add-cameras`; before: the same sol, or any sol.
+
 ## 0.97.10 — 2026-11-13
 
 - **8K is the standard panorama again** (`DEFAULT_WIDTH = 8192`); `--width 16384` for 16K (`mppp ods` and
