@@ -2,27 +2,25 @@
  "title": "MPPP stereo panoramas",
  "panos": [
   {
-   "id": "S003D2046",
-   "title": "Van Zyl Overlook Huge S003D2046",
+   "id": "Sol0052_S003D2046",
+   "title": "Van Zyl Overlook Sol0052_S003D2046",
    "variants": [
     {
      "key": "rover",
      "label": "with the rover",
      "views": {
-      "standard": "panos/S003D2046_rover_360_3DTD.jpg",
-      "enhanced": "panos/S003D2046_rover_enh_360_3DTD.jpg"
+      "standard": "panos/Sol0052_S003D2046_rover_360_3DTD.jpg"
      }
     },
     {
      "key": "masked",
      "label": "terrain only",
      "views": {
-      "standard": "panos/S003D2046_360_3DTD.jpg",
-      "enhanced": "panos/S003D2046_enh_360_3DTD.jpg"
+      "standard": "panos/Sol0052_S003D2046_360_3DTD.jpg"
      }
     }
    ],
-   "mppp": "0.97.12",
+   "mppp": "0.97.15",
    "published": "2026-11-13"
   },
   {
