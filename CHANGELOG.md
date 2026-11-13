@@ -3,6 +3,13 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.12 — 2026-11-13
+
+- **Rover model, from the front Hazcam frames of sol 52:** the camera bodies still clipped the corners of the
+  Hazcam maps (the view was cleared to 70 degrees off the axis; the frame's corners are at 86). Cleared over the
+  whole field of view, and everything within 6 cm of each optical centre removed (5,186 triangles). The dark block
+  at the front right moved 4 mm down (its lower edge was about 25 pixels high in FRF_0052_0671563995).
+
 ## 0.97.11 — 2026-11-13
 
 - **Shadows sharp:** no growing, no closing. Incidence above 86 degrees is shadow (89 before). The shadow ray starts

@@ -48,10 +48,11 @@ camera model.
 7. **UHF antenna:** the can's wall raised 10 % to the real rim, and NASA's domed cap replaced by a flat floor 5 cm
    inside the rim (the real can is open; the 5 cm is not measured). Its width is NASA's.
 8. **Dark block at the front right under the arm** moved 5 cm back and 2 cm to the right, to where the Navcam
-   pair of sol 52 shows it (good to about 2 cm).
+   pair of sol 52 shows it (good to about 2 cm), and 4 mm down, from the right front Hazcam's frame of that sol.
 9. **Front Hazcam lenses and housings** taken out of their own view: the Hazcams' optical centres lie inside
    NASA's camera bodies, so every Hazcam ray met the model within 5 cm. Whatever a front Hazcam would see nearer
-   than 10 cm is removed (448 triangles).
+   than 10 cm anywhere in its field of view, and everything within 6 cm of its optical centre, is removed (5,186
+   triangles). The real camera hood that darkens the top of a Hazcam frame is not modelled.
 
 ## Articulation from the image labels
 

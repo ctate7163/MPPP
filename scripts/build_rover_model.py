@@ -213,23 +213,28 @@ def pose_hga(X: np.ndarray, F: np.ndarray, az_deg: float = HGA_AZ_DEG, tilt_deg:
 # (RMECH, m) are moved by a vector (m).  The dark block at the front right under the arm: NASA's model has it 5 cm
 # too far forward and 2 cm too far left against the Van Zyl pair NLF / NRF_0052_0671564132 (its outline through a
 # projection fitted to each frame's own depth map, tried at 0 to -9 cm in x and 0, +2 cm in y; good to about 2 cm).
+# 0.97.12: and 4 mm down - in the right front Hazcam's frame FRF_0052_0671563995, 15 cm away, its lower edge was
+# about 25 pixels (half-resolution frame) above the real one (Christian: "it should come down a little").
 BODY_COMPONENT_SHIFTS = [
     {"name": "dark block at the front right under the arm", "box_min": (1.05, 0.24, 0.19), "box_max": (1.24, 0.40, 0.42),
-     "shift_m": (-0.05, 0.02, 0.0)},
+     "shift_m": (-0.05, 0.02, 0.004)},
 ]
 
 
 # 0.97.11 (Christian, 13 Nov 2026: "the fhazcam renders from inside the rover model.  Remove the front lens in the 3d
 # model so that doesn't happen"): the front Hazcams' optical centres lie inside NASA's camera bodies - every ray of
 # a Hazcam met the model within 5 cm.  Whatever of the body a Hazcam would see nearer than HAZCAM_CLEAR_M within
-# HAZCAM_CLEAR_HALF_ANGLE_DEG of its axis is taken out (its own lens and housing; 448 triangles); after that the
+# HAZCAM_CLEAR_HALF_ANGLE_DEG of its axis is taken out, and everything within HAZCAM_BODY_M of its optical centre
+# (its own lens and body; 5,186 triangles in all since 0.97.12, 448 in 0.97.11); after that the
 # model fills 5 % of the left Hazcam's view and 10 % of the right one's (arm, wheels, and for the right one the dark
 # block of BODY_COMPONENT_SHIFTS, 14 cm away - at 0.20 m a quarter of that block went too, so 0.10 m).  Centres and axes (RMECH)
 # from the deck_joint mast model of 7 Nov (fhaz: C_FL, R_FL, rig FR <- FL).
 HAZCAM_VIEWS = {"FL": {"centre": (1.0107, -0.0092, 0.4062), "axis": (0.8851, -0.1719, 0.4326)},
                 "FR": {"centre": (0.9988, 0.2393, 0.4004), "axis": (0.8854, 0.1731, 0.4313)}}
 HAZCAM_CLEAR_M = 0.10
-HAZCAM_CLEAR_HALF_ANGLE_DEG = 70.0
+HAZCAM_CLEAR_HALF_ANGLE_DEG = 89.0    # 0.97.12: the whole field of view (the frame's corners are 86 deg off the axis;
+#                                       70 before, which left the camera body clipping the corners)
+HAZCAM_BODY_M = 0.06                  # 0.97.12: and every triangle this near the optical centre, in any direction
 
 
 def clear_camera_views(v: np.ndarray, f: np.ndarray, views=HAZCAM_VIEWS, clear_m: float = HAZCAM_CLEAR_M,
@@ -237,6 +242,9 @@ def clear_camera_views(v: np.ndarray, f: np.ndarray, views=HAZCAM_VIEWS, clear_m
     """The triangles (bool, True = keep) left when everything a camera sees nearer than ``clear_m`` is peeled off."""
     import open3d as o3d
     keep = np.ones(len(f), bool)
+    cen = v[f].mean(axis=1)
+    for cam in views.values():                           # the camera's own body, all round
+        keep &= np.linalg.norm(cen - np.asarray(cam["centre"], float), axis=1) > HAZCAM_BODY_M
     rs = np.random.default_rng(1)
     th = np.radians(half_angle_deg) * np.sqrt(rs.random(n_rays))
     ph = 2 * np.pi * rs.random(n_rays)
