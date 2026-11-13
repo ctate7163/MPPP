@@ -137,3 +137,18 @@ def test_deck_baseline_figure(tmp_path):
     assert abs(f["coef"][0] - 423.53) < 0.06 and f["n"] >= 38
     assert deck_baseline_figure(work, chain, tmp_path / "a.png", 60).stat().st_size > 10000
     assert deck_baseline_figure(tmp_path / "none", chain, tmp_path / "b.png", 60).stat().st_size > 10000
+
+
+def test_hinge_fit_recovers_the_rates_before_and_after_the_knot():
+    """0.97.2: y = a + late sol + (early - late) min(sol, knot); None without two points on each side."""
+    import numpy as np
+    from mppp_studies.calibration.plots import hinge_fit, zcam_rig_trend_fit
+    sol = np.array([10., 60, 120, 200, 300, 600, 900, 1400, 1900])
+    y = 2.0 + 0.004 * sol + (0.025 - 0.004) * np.minimum(sol, 250.0)
+    h = hinge_fit(sol, y, 250.0)
+    assert abs(h["a"] - 2.0) < 1e-6 and abs(h["late"] - 0.004) < 1e-8 and abs(h["early"] - 0.025) < 1e-8 and h["n_early"] == 4
+    assert hinge_fit(sol[3:], y[3:], 250.0) is None
+    rows = [{"sol": s, "pitch_mdeg": v, "roll_mdeg": 0.0, "yaw_mdeg": 0.0, "T_optics_degC": -20.0} for s, v in zip(sol, y)]
+    f = zcam_rig_trend_fit(rows, knee_sol=250.0)["pitch"]
+    assert abs(f["early_per_sol"] - 0.025) < 1e-8 and abs(f["per_sol"] - 0.004) < 1e-8
+    assert "early_per_sol" not in zcam_rig_trend_fit(rows)["pitch"]

@@ -49,6 +49,7 @@ REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
 REM    examples:  run_single_site_ibr.bat S003D2046            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
+REM set MPPP_NO_PAUSE=1 before it: no pause at the end, and the exit code is the run's (for unattended chains)
 REM Nothing in this file names a version, so it never needs replacing.
 REM It also lives in scripts\windows of the repository (0.97.0): there it works on the tree it is in.  Everything
 REM after the settings is one parenthesised block, read whole before it runs - the merge may replace this file.
@@ -80,8 +81,9 @@ set "B="
   echo %REPO%: !H0:~0,7! -^> !H1:~0,7!
   call scripts\windows\mppp_env.bat || ( pause & exit /b 1 )
   python -m mppp single-sites %*
-  pause
-  exit /b
+  set "RC=!errorlevel!"
+  if not defined MPPP_NO_PAUSE pause
+  exit /b !RC!
 )
 """
 
@@ -186,6 +188,57 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
     return runs
 
 
+STEP_OUTPUT = {"mesh": "mesh.ply", "depthmaps": "maps_report.md", "ods": "ods.json"}
+STATUS_FILE = "single_sites_status.json"
+
+
+def code_key() -> str:
+    """A hash of the code the steps run (the ``mppp.ibr`` sources and the dense step's): a step is made again when it
+    changes, not on every version number."""
+    import hashlib
+    h = hashlib.sha1()
+    here = Path(__file__).resolve().parent
+    for f in sorted(here.glob("*.py")) + [here.parent / "sfm" / "dense.py"]:
+        if f.is_file() and f.name != "single_sites.py":
+            h.update(f.name.encode() + f.read_bytes().replace(b"\r\n", b"\n"))
+    return h.hexdigest()[:16]
+
+
+def step_key(argv: Sequence[str], before: str, code: str, inputs: Sequence[PathLike] = ()) -> str:
+    """The identity of one step's run: its command, the code, the step before it (``before``: that step's key) and
+    the size and time of the files it reads (the fused cloud for the mesh)."""
+    import hashlib
+    parts = [code, before, *map(str, argv)]
+    for f in inputs:
+        f = Path(f)
+        parts.append(f"{f.name}:{f.stat().st_size}:{int(f.stat().st_mtime)}" if f.is_file() else f"{f.name}:-")
+    return hashlib.sha1("\n".join(parts).encode()).hexdigest()[:16]
+
+
+def step_record(out: PathLike, step: str) -> Path:
+    return Path(out) / f"step_{step}.json"
+
+
+def step_done(out: PathLike, step: str, key: str) -> bool:
+    """True when ``step`` already ran in ``out`` with this key, ended with exit 0 and its product is still there."""
+    f = step_record(out, step)
+    try:
+        rec = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return rec.get("key") == key and rec.get("exit") == 0 and (Path(out) / STEP_OUTPUT[step]).is_file()
+
+
+def _status(out_root: Path, **kw) -> None:
+    """``single_sites_status.json`` in the output root: what is running now (station, variant, step, since when) and
+    what is done - so the run can be read without asking (written whole each time)."""
+    try:
+        (out_root / STATUS_FILE).write_text(json.dumps(dict(kw, updated=time.strftime("%Y-%m-%dT%H:%M:%S")), indent=1),
+                                            encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _run(argv: List[str], log_fh) -> int:
     """``python -m mppp <argv>`` with its output to the console and the log."""
     cmd = [sys.executable, "-m", "mppp", *argv]
@@ -202,9 +255,18 @@ def _run(argv: List[str], log_fh) -> int:
     return int(p.returncode)
 
 
-def _summary_line(run: Dict[str, Any], variant: str, codes: Dict[str, int]) -> str:
+def _read(f: PathLike) -> Dict[str, Any]:
+    try:
+        return json.loads(Path(f).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _summary_line(run: Dict[str, Any], variant: str, codes: Dict[str, int], mins: Optional[Dict[str, float]] = None) -> str:
     out = Path(run["out"]) / ("with_rover" if variant == "rover" else "")
-    cells = [run["label"], variant, " ".join(f"{k} {v}" for k, v in codes.items()) or "-"]
+    mins = mins or {}
+    cells = [run["label"], variant, " ".join(f"{k} {v}" + (" (kept)" if k in mins and mins[k] is None else f" ({mins[k]:.0f} min)" if (mins.get(k) or 0) >= 0.5 else "")
+                                             for k, v in codes.items()) or "-"]
     try:
         m = json.loads((out / "mesh_report.json").read_text(encoding="utf-8"))
         rings = [r for r in m.get("points_by_ring") or [] if r["points"]]
@@ -224,14 +286,21 @@ def _summary_line(run: Dict[str, Any], variant: str, codes: Dict[str, int]) -> s
     return "| " + " | ".join(cells) + " |"
 
 
-def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool = False, retone: bool = False) -> int:
+def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool = False, retone: bool = False,
+            force: bool = False) -> int:
+    """Runs the plan.  0.97.2: a step whose command, code, inputs and upstream steps are those of its last successful
+    run in that folder is skipped (``step_<name>.json`` next to its products; ``force`` runs everything); the summary
+    has each step's minutes; ``single_sites_status.json`` says what is running."""
     out_root = Path(out_root)
+    code = code_key()
+    done: List[str] = []
+    t_run = time.strftime("%Y-%m-%dT%H:%M:%S")
     out_root.mkdir(parents=True, exist_ok=True)
     prev = out_root / "single_sites_summary.md"
     if prev.is_file():                                         # the run before, for comparison
         shutil.copy2(prev, out_root / "single_sites_summary_previous.md")
     lines = ["# Single-site runs", "", f"{time.strftime('%Y-%m-%d %H:%M')}", "",
-             "| station | variant | exit codes | fused points | ground plane | panorama (left eye) | square |",
+             "| station | variant | exit codes (minutes) | fused points | ground plane | panorama (left eye) | square |",
              "|---|---|---|---|---|---|---|"]
     bad = 0
     for run in runs:
@@ -239,6 +308,7 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
         base.mkdir(parents=True, exist_ok=True)
         print(f"\n######## {run['label']}: {run['note']}\n######## block {run['work']} -> {base}", flush=True)
         codes: Dict[str, Dict[str, int]] = {v: {} for v in run["variants"]}
+        mins: Dict[str, Dict[str, Optional[float]]] = {}
         with open(base / "single_site_log.txt", "a", encoding="utf-8") as fh:
             if retone:
                 if (base / TONE_FILE).is_file():
@@ -258,14 +328,48 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                                                    "--out", str(out)], fh)
             else:
                 failed = set()
-                if any(c["step"] == "ods" for c in run["commands"]) and (base / TONE_FILE).is_file():
-                    (base / TONE_FILE).unlink()          # 0.97.0: the levels of the run before are not carried over
+                ods_ran = False
+                ods_keys: List[str] = []                   # the station's ods steps so far: one scaling for its variants
+                work_ = Path(run["work"])
+                keys: Dict[str, str] = {}                  # the key of the last step of each variant ("" for dense)
                 for c in run["commands"]:
-                    v = c["variant"]
+                    v, step = c["variant"], c["step"]
                     if v in failed:
                         continue
-                    rc = _run(c["argv"], fh)
-                    codes[v][c["step"]] = rc
+                    vout = base / ("with_rover" if v == "rover" else "")
+                    _status(out_root, started=t_run, station=run["label"], variant=v, step=step,
+                            since=time.strftime("%Y-%m-%dT%H:%M:%S"), done=done, stations=[r["label"] for r in runs])
+                    t0 = time.time()
+                    if step == "dense":                    # its own cache (mppp dense: stereo and fusion records)
+                        rc = _run(c["argv"], fh)
+                    else:
+                        clouds = sorted((work_ / "colmap").glob(f"dense_{run['label']}*/fused.ply")) if step == "mesh" else []
+                        tf = c["argv"][c["argv"].index("--terrain-from") + 1] if "--terrain-from" in c["argv"] else None
+                        before = keys.get(v, "") + (json.dumps(_read(step_record(tf, "mesh")).get("key")) if tf else "")
+                        if step == "ods":                  # the second variant uses the first one's levels
+                            before += "".join(ods_keys)
+                        key = step_key(c["argv"], before, code, clouds)
+                        keys[v] = key
+                        if step == "ods":
+                            ods_keys.append(key)
+                        if not force and step_done(vout, step, key) and not (step == "ods" and ods_ran):
+                            print(f"######## {run['label']} {v}: {step} is up to date - skipped (--force runs it again)", flush=True)
+                            codes[v][step] = 0
+                            mins.setdefault(v, {})[step] = None
+                            continue
+                        step_record(vout, step).unlink(missing_ok=True)
+                        ods_ran = ods_ran or step == "ods"     # the levels are new: the station's next panorama follows
+                        if step == "ods" and len(ods_keys) == 1 and (base / TONE_FILE).is_file():
+                            (base / TONE_FILE).unlink()    # the levels are found again by the station's first panorama
+                        rc = _run(c["argv"], fh)
+                        if rc == 0:
+                            vout.mkdir(parents=True, exist_ok=True)
+                            step_record(vout, step).write_text(json.dumps(
+                                {"key": key, "exit": 0, "argv": c["argv"], "code": code, "minutes": round((time.time() - t0) / 60, 2),
+                                 "finished": time.strftime("%Y-%m-%dT%H:%M:%S")}, indent=1), encoding="utf-8")
+                    mins.setdefault(v, {})[step] = (time.time() - t0) / 60
+                    codes[v][step] = rc
+                    done.append(f"{run['label']} {v} {step}: exit {rc}, {(time.time() - t0) / 60:.1f} min")
                     if rc:
                         failed.add(v)
                         if c["step"] == "dense" and v == "masked":
@@ -277,7 +381,9 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                 shutil.copy2(f, base / dst)
         for v in run["variants"]:
             bad += any(codes[v].values())
-            lines.append(_summary_line(run, v, codes[v]))
+            lines.append(_summary_line(run, v, codes[v], mins.get(v)))
+    _status(out_root, started=t_run, station=None, step=None, finished=time.strftime("%Y-%m-%dT%H:%M:%S"), done=done,
+            stations=[r["label"] for r in runs], failed=int(bad))
     (out_root / "single_sites_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n" + "\n".join(lines[4:]) + f"\n\nsummary: {out_root / 'single_sites_summary.md'}")
     return 1 if bad else 0
@@ -311,6 +417,8 @@ def add_parser(sub) -> None:
                    "360_3DTD.jpg / .png")
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and squares again from the "
                    "16-bit ones already there (no rendering)")
+    p.add_argument("--force", action="store_true", help="0.97.2: run every step again (default: a mesh, depthmaps or ods "
+                   "step whose command, code, cloud and upstream steps are unchanged since its last good run is skipped)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
@@ -335,4 +443,4 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
             for c in r["commands"]:
                 print(f"   [{c['variant']}] python -m mppp " + " ".join(c["argv"]))
         return 0
-    return run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone)
+    return run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone, force=getattr(a, "force", False))

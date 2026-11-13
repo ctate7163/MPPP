@@ -1883,3 +1883,42 @@ def test_a_boulder_is_not_floating():
     assert fl[nb].mean() < 0.02 and fl[len(g) + len(boulder):].mean() > 0.98 and fl[:len(g)].mean() < 0.01
     old = M.floating(X, pivot, (0, 0, 1), plane, ground=ground, supported=False)
     assert old[nb][z > 1.2].mean() > 0.9                                            # before: the boulder's top went
+
+
+def test_single_sites_skips_steps_that_are_up_to_date(tmp_path, monkeypatch):
+    """0.97.2: a step with the same command, code, cloud and upstream steps as its last good run is skipped; a changed
+    mesh command runs the mesh and everything after it again; --force runs all; the status file names the last step."""
+    from mppp.ibr import single_sites as S
+    work = tmp_path / "blk"
+    (work / "colmap" / "dense_S1").mkdir(parents=True)
+    (work / "colmap" / "dense_S1" / "fused.ply").write_bytes(b"x")
+    cfg = {"stations": {"S1": {"station": "1_2", "work": str(work)}}, "variants": ["rover", "masked"]}
+    ran = []
+
+    def fake(argv, fh):
+        ran.append((argv[0], "--rover" in argv))
+        if argv[0] in S.STEP_OUTPUT:
+            out = Path(argv[argv.index("--out") + 1])
+            out.mkdir(parents=True, exist_ok=True)
+            (out / S.STEP_OUTPUT[argv[0]]).write_text("{}")
+        return 0
+    monkeypatch.setattr(S, "_run", fake)
+    out = tmp_path / "o"
+    runs = S.plan(cfg, tmp_path, out)
+    assert S.run_all(runs, out) == 0 and len(ran) == 7                     # dense + 2 x (mesh, depthmaps, ods)
+    ran.clear()
+    assert S.run_all(S.plan(cfg, tmp_path, out), out) == 0 and ran == [("dense", False)]      # dense has its own cache
+    st = json.loads((out / S.STATUS_FILE).read_text())
+    assert st["finished"] and st["failed"] == 0 and "kept" in (out / "single_sites_summary.md").read_text()
+    ran.clear()                                                            # the rover variant's panorama alone is made again:
+    S.step_record(out / "S1" / "with_rover", "ods").unlink()               # the masked one follows (shared levels)
+    S.run_all(S.plan(cfg, tmp_path, out), out)
+    assert ran == [("dense", False), ("ods", True), ("ods", False)]
+    ran.clear()
+    cfg["mesh_args"] = ["--mesh-radius", "60"]                             # a changed mesh: everything after it too
+    S.run_all(S.plan(cfg, tmp_path, out), out)
+    assert [r[0] for r in ran] == ["dense", "mesh", "depthmaps", "ods", "mesh", "depthmaps", "ods"]
+    ran.clear()
+    S.run_all(S.plan(cfg, tmp_path, out), out, force=True)
+    assert len(ran) == 7
+    assert b"MPPP_NO_PAUSE" in S.BAT.encode() and "exit /b !RC!" in S.BAT

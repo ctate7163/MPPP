@@ -148,7 +148,7 @@ def add_parsers(sub) -> None:
                    help="0.97.0: the folder of this station's other variant (rover shown / masked) - its terrain mesh is used "
                         "as it is, with or without the rover model (no second surface run)")
     p.add_argument("--plane-radius", type=float, default=200.0, help="the ground plane beyond the mesh, to this horizontal "
-                   "distance (m; default 100); the sky at infinity beyond")
+                   "distance (m; default 200); the sky at infinity beyond")
     p.add_argument("--horizontal-plane", action="store_true", help="a horizontal ground plane at the median height "
                    "(default: fitted to the terrain's regional slope, up to 20 deg)")
     p.add_argument("--no-tie-points", action="store_true", help="fit the plane to the fused points only (default: and the "
@@ -354,8 +354,6 @@ def cmd_mesh(a: argparse.Namespace) -> int:
     # --rover-cloud: the 0.96 way, the mesh from the cloud fused with the rover in it
     old_way = bool(a.rover and getattr(a, "rover_cloud", False))
     pts_file = _points_file(project, a.points, st.label, rover=old_way)
-    pts, nrm = read_points_normals(pts_file)
-    log.info("mesh: %d points from %s (%s)", len(pts), pts_file, "with normals" if nrm is not None else "no normals")
     terrain = None
     if old_way:                                   # the plane from the terrain alone, not the deck
         try:
@@ -375,14 +373,16 @@ def cmd_mesh(a: argparse.Namespace) -> int:
         log.info("rover deck: %d frames agree to %.2f deg / %.1f mm; rover tilt %.1f deg; floor %.2f x %.2f m -> %s",
                  d["frames"], d["rot_spread_deg"], d["pos_spread_mm"], d.get("rover_tilt_deg", float("nan")),
                  d["size_m"][0], d["size_m"][1], out / "rover_deck.json")
-    ties = None if a.no_tie_points else _tie_points(rec)
     rep = None
     if not old_way and getattr(a, "terrain_from", None) and (deck is not None or not a.rover):
         # 0.97.0 (Christian, 12 Nov 2026: "Build the terrain mesh once"): the rover-masked variant's mesh is this
         # variant's terrain - read it and set the model on it, no second Poisson run
         rep = _mesh_on_terrain(Path(a.terrain_from), out, deck if a.rover else None, st, a,
                                None if a.no_rover_model else (a.rover_model_parts or ROVER_MODEL_PARTS))
-    if rep is None:
+    if rep is None:                               # 0.97.2: the cloud and the tie points are read only when a surface is built
+        pts, nrm = read_points_normals(pts_file)
+        log.info("mesh: %d points from %s (%s)", len(pts), pts_file, "with normals" if nrm is not None else "no normals")
+        ties = None if a.no_tie_points else _tie_points(rec)
         rep = build_station_mesh(pts, st.pivot, out, normals=nrm, dense_dir=a.dense_dir or pts_file.parent, colmap_exe=a.colmap,
                                  radius_m=a.mesh_radius, far_radius_m=a.far_radius, target_triangles=a.target_triangles,
                                  poisson_depth=a.poisson_depth, station=st.to_json(), up=st.up, plane_radius_m=a.plane_radius,

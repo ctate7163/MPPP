@@ -187,15 +187,18 @@ def consensus_lines(cons: Sequence[Dict[str, Any]]) -> List[str]:
 
 
 def plot_block_lines(rows: Sequence[Dict[str, Any]], out: Optional[PathLike] = None, temperature: str = "T_optics_degC",
-                     figsize=(13, 9), dpi: int = 200, point_labels: bool = True):
+                     figsize=(13, 9), dpi: int = 200, point_labels: bool = True, state_levels: bool = True):
     """Offset a (top) and slope b (bottom) of every focus line against the block lens temperature, one column per
     parameter, one colour per eye and zoom, filled for the backlash state, open for the regular state.  Panels
-    lettered A, B ...; ``point_labels=False`` leaves out the block name at every point."""
+    lettered A, B ... in the titles; ``point_labels=False`` leaves out the block name at every point.  ``state_levels``:
+    in the offset row a horizontal line per eye at the median offset of its high-state lines (solid) and of its
+    low-state lines (dashed).  The file label "backlash" is the high state, "regular" the low state."""
     import matplotlib.pyplot as plt
-    fig, axs = plt.subplots(2, len(PARAMS), figsize=figsize, squeeze=False)
+    params = [pn for pn in PARAMS if any(r["param"] == pn for r in rows)] or list(PARAMS)   # 12 Nov: no empty columns
+    fig, axs = plt.subplots(2, len(params), figsize=(figsize[0] * max(len(params), 2) / len(PARAMS), figsize[1]), squeeze=False)
     groups = sorted({r["group"] for r in rows})
     colours = {g: f"C{i}" for i, g in enumerate(groups)}
-    for j, pn in enumerate(PARAMS):
+    for j, pn in enumerate(params):
         for i, k in enumerate(("a", "b")):
             ax = axs[i][j]
             for r in rows:
@@ -209,16 +212,25 @@ def plot_block_lines(rows: Sequence[Dict[str, Any]], out: Optional[PathLike] = N
                 if point_labels:
                     ax.annotate(r["block"][:10], (r[temperature], r[k]), fontsize=6, alpha=0.6, xytext=(3, 3),
                                 textcoords="offset points")
-            ax.set_title(f"{pn}: {'offset at the reference focus (px)' if k == 'a' else 'slope (px / count)'}", fontsize=9)
+            if state_levels and k == "a":       # 12 Nov: where the high (solid) and the low (dashed) state sit
+                for g in groups:
+                    for st, ls in (("backlash", "-"), ("regular", "--")):
+                        v = [r["a"] for r in rows if r["param"] == pn and r["group"] == g and r["state"] == st
+                             and r.get(temperature) is not None and r.get("a") is not None]
+                        if v:
+                            ax.axhline(float(np.median(v)), color=colours[g], ls=ls, lw=1.0, alpha=0.8, zorder=0)
+            # the panel letter inside the title (12 Nov: it sat on top of the title's first characters)
+            ax.set_title(f"{chr(ord('A') + i * len(params) + j)}   {pn}: "
+                         f"{'offset at the reference focus (px)' if k == 'a' else 'slope (px / count)'}", fontsize=9, loc="left")
             ax.set_xlabel({"T_optics_degC": "block Mastcam-Z lens temperature (HEAD_HTR) degC",
                            "T_fpa_degC": "block focal-plane temperature degC",
                            "T_navcam_degC": "block Navcam temperature degC"}.get(temperature, temperature), fontsize=8)
             ax.grid(alpha=0.3)
     handles = [plt.Line2D([], [], marker="o", ls="", color=colours[g], label=g) for g in groups]
-    handles += [plt.Line2D([], [], marker="o", ls="", mfc="k", mec="k", label="backlash state"),
-                plt.Line2D([], [], marker="o", ls="", mfc="none", mec="k", label="regular state")]
-    for n, ax in enumerate(axs.ravel()):           # panel letters A, B ... (Christian, 22 Oct)
-        ax.text(-0.02, 1.0, chr(ord("A") + n), transform=ax.transAxes, ha="right", va="bottom", fontsize=12, fontweight="bold")
+    handles += [plt.Line2D([], [], marker="o", ls="-" if state_levels else "", mfc="k", mec="k", color="k",
+                           label="high backlash state" + (" (line: median offset)" if state_levels else "")),
+                plt.Line2D([], [], marker="o", ls="--" if state_levels else "", mfc="none", mec="k", color="k",
+                           label="low backlash state" + (" (line: median offset)" if state_levels else ""))]
     fig.legend(handles=handles, loc="upper center", ncol=min(len(handles), 6), fontsize=8)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     if out:

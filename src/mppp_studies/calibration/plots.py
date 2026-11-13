@@ -17,11 +17,38 @@ from mppp.calib.constrain import (EYE_COLORS, FIG_DPI, IFOV_MDEG, NAVCAM_T0_DEGC
 PathLike = Union[str, Path]
 
 
+def hinge_fit(sol: Sequence[float], y: Sequence[float], knot: float, extra: Optional[np.ndarray] = None) -> Optional[Dict[str, float]]:
+    """0.97.2 (Christian, 12 Nov 2026: "a knee at 250 sols for yaw too and possibly roll"): least squares
+    ``y = a + late (sol) + (early - late) min(sol, knot) [+ c extra]`` - the rig law's form with sol0 = 0, so ``a`` is
+    the value at sol 0, ``late`` the rate after the knot and ``early`` the rate before it.  {"a", "late", "se_late",
+    "early", "se_early", "hinge" (early - late), "se_hinge", "z_hinge", "c", "se_c", "sd", "n", "n_early"}; None with
+    fewer than two points on either side of the knot or too few points for the terms."""
+    x, y = np.asarray(sol, float), np.asarray(y, float)
+    ok = np.isfinite(x) & np.isfinite(y) & (np.isfinite(extra) if extra is not None else True)
+    x, y = x[ok], y[ok]
+    cols = [np.ones_like(x), x, np.minimum(x, knot)] + ([np.asarray(extra, float)[ok]] if extra is not None else [])
+    k = len(cols)
+    if (x < knot).sum() < 2 or (x >= knot).sum() < 2 or len(x) <= k:
+        return None
+    A = np.c_[tuple(cols)]
+    c = np.linalg.lstsq(A, y, rcond=None)[0]
+    r = y - A @ c
+    s2 = float(r @ r / (len(y) - k))
+    cov = s2 * np.linalg.pinv(A.T @ A)
+    se_h = float(np.sqrt(cov[2, 2]))
+    return {"a": float(c[0]), "late": float(c[1]), "se_late": float(np.sqrt(cov[1, 1])), "early": float(c[1] + c[2]),
+            "se_early": float(np.sqrt(cov[1, 1] + cov[2, 2] + 2 * cov[1, 2])), "hinge": float(c[2]), "se_hinge": se_h,
+            "z_hinge": float(c[2] / se_h) if se_h > 0 else float("nan"), "c": float(c[3]) if extra is not None else 0.0,
+            "se_c": float(np.sqrt(cov[3, 3])) if extra is not None else float("nan"), "sd": float(np.sqrt(s2)),
+            "n": int(len(y)), "n_early": int((x < knot).sum()), "knot": float(knot)}
+
+
 def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], drift: Dict[str, Any], path: PathLike,
                     cx_inuse_px_per_degC: Optional[float] = None, label: str = "", sol_ref: float = 0.0,
                     T0: float = NAVCAM_T0_DEGC, model_label: str = "drift model",
                     ylims: Optional[Dict[str, Tuple[float, float]]] = None, dpi: int = FIG_DPI,
-                    cx_ylim: Optional[Tuple[float, float]] = STEREO_CX_YLIM, point_labels: bool = True) -> Path:
+                    cx_ylim: Optional[Tuple[float, float]] = STEREO_CX_YLIM, point_labels: bool = True,
+                    knee_fit: Optional[Sequence[str]] = ("yaw", "roll"), knee_sol: float = 250.0) -> Path:
     """
     Rig trends 2 x 2 (fig_rig.py, 12.5 x 8.2 in, dpi 200): pitch (UL), roll (UR) and yaw with its temperature
     slope removed to T0 (LL) of every block rig epoch against its median sol ("sol epoch"), each relative to the joint rig at
@@ -33,6 +60,9 @@ def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], dr
     -10 to +30, yaw and roll -20 to +20 mdeg), ``cx_ylim`` the stereo panel's primary axis (default
     :data:`STEREO_CX_YLIM`, -20 to -16 px; None = from the data); points outside are counted on the panel.
     Panels lettered A-D; ``point_labels=False`` leaves out the block name at every point.
+    ``knee_fit`` (0.97.2): the angles whose drift model has no knee get a hinge fitted to the plotted epochs
+    (:func:`hinge_fit`, knot at the model's or ``knee_sol``), drawn dashed with its rates in the title - a fit of this
+    figure only, not the law the block runs use.  The fits are returned in ``plot_rig_trends.last_knee_fits``.
     """
     plt = _plt()
     rr, cons = rig_residuals, consensus
@@ -52,6 +82,8 @@ def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], dr
     ss = np.linspace(0, 2050, 400)
     panels = {"pitch": axs[0][0], "roll": axs[0][1], "yaw": axs[1][0]}     # roll upper right (Christian, 22 Oct)
     yaw_T = rr["fits"]["yaw"]["vs_T"]
+    knee_fits: Dict[str, Dict[str, float]] = {}
+    plot_rig_trends.last_knee_fits = knee_fits
     for ang, ax in panels.items():
         tot = np.array([b[f"{ang}_mdeg"] for b in B]) + drift_offset_rel(drift, ang, sol, sol_ref)
         if ang == "yaw":
@@ -61,6 +93,17 @@ def plot_rig_trends(rig_residuals: Dict[str, Any], consensus: Dict[str, Any], dr
             lab = "block rig epoch (rig rotation free, cameras held)"
         ax.plot(sol, tot, "o", color="C0", label=lab)
         ax.plot(ss, drift_offset_rel(drift, ang, ss, sol_ref), "-", color="C3", label=model_label)
+        hf = None
+        if knee_fit and ang in knee_fit and drift.get(f"{ang}_early_mdeg_per_sol") is None:
+            kn = float(drift.get("knot_sol") or knee_sol)
+            hf = hinge_fit(sol, tot, kn)
+            if hf:
+                knee_fits[ang] = hf
+                ax.plot(ss, hf["a"] + hf["late"] * ss + hf["hinge"] * np.minimum(ss, kn), "--", color="C1", lw=1.4,
+                        label=f"knee fit to these epochs: {1e3 * hf['late']:+.2f} after, {1e3 * hf['early']:+.1f} ± "
+                              f"{1e3 * hf['se_early']:.1f} before sol {kn:.0f} (knee z {hf['z_hinge']:+.1f}, sd {hf['sd']:.2f} mdeg)")
+                if not drift.get("knot_sol"):
+                    ax.axvline(kn, color="0.4", ls="--", lw=0.8)
         annotate(ax, sol, tot, names)
         r = tot - drift_offset_rel(drift, ang, sol, sol_ref)
         rate = 1000 * (drift.get(f"{ang}_mdeg_per_sol") or 0.0)
@@ -444,7 +487,8 @@ def plot_zcam_efl_vs_focus(res: Dict[str, Any], path: PathLike, dpi: int = FIG_D
 ZCAM_T0_DEGC = -20.0             # reference lens temperature of the Mastcam-Z rig figure (as the Navcam's T0)
 
 
-def zcam_rig_trend_fit(rows: Sequence[Dict[str, Any]], T0: float = ZCAM_T0_DEGC) -> Dict[str, Any]:
+def zcam_rig_trend_fit(rows: Sequence[Dict[str, Any]], T0: float = ZCAM_T0_DEGC,
+                       knee_sol: Optional[float] = None) -> Dict[str, Any]:
     """Least-squares trends of the blocks' Mastcam-Z rig residuals (mdeg): pitch and roll linear in sol, yaw linear
     in sol and in the lens temperature T (as the Navcam's yaw is shown with its temperature slope removed).  Per
     angle {"a" (at sol 0, T0), "per_sol", "se_per_sol", "per_degC", "se_per_degC", "sd", "n"}."""
@@ -467,6 +511,14 @@ def zcam_rig_trend_fit(rows: Sequence[Dict[str, Any]], T0: float = ZCAM_T0_DEGC)
             f.update(a=float(c[0]), per_sol=float(c[1]), se_per_sol=float(se[1]), sd=float(np.sqrt(r_ @ r_ / (len(y) - k))))
             if withT:
                 f.update(per_degC=float(c[2]), se_per_degC=float(se[2]))
+        if knee_sol and len(pts) > k + 1:               # 0.97.2: the Navcam law's knee (rate before / after knee_sol)
+            x, T, y = (np.array(v, float) for v in zip(*pts))
+            h = hinge_fit(x, y, float(knee_sol), (T - T0) if withT else None)
+            if h:
+                f.update(a=h["a"], per_sol=h["late"], se_per_sol=h["se_late"], sd=h["sd"], early_per_sol=h["early"],
+                         se_early_per_sol=h["se_early"], hinge_z=h["z_hinge"], knee_sol=float(knee_sol), n_early=h["n_early"])
+                if withT:
+                    f.update(per_degC=h["c"], se_per_degC=h["se_c"])
         out[ang] = f
     return out
 
@@ -497,7 +549,7 @@ def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_D
     zoom = next((int(k[2:5]) for k in cams if str(k)[2:5].isdigit()), 34)
     ifov = float(np.degrees(1.0 / (np.mean(f0) if f0 else 4735.0)) * 1e3)             # one pixel, mdeg
     ylims = dict(RIG_TREND_YLIMS if ylims is None else ylims)
-    fit = zcam_rig_trend_fit(rows, T0)
+    fit = zcam_rig_trend_fit(rows, T0, knee_sol)
     names = [str(r["block"]).replace("mars2020_", "") for r in rows]
     sol = np.array([r["sol"] for r in rows], float)
     T = np.array([r.get("T_optics_degC") if r.get("T_optics_degC") is not None else np.nan for r in rows], float)
@@ -524,7 +576,10 @@ def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_D
         else:
             lab = "block rig (rig rotation free, cameras held)"
         ax.plot(sol, y, "o", color="C0", label=lab)
-        ax.plot(ss, f["per_sol"] * ss, "-", color="C3", label="linear trend (fit to these blocks)")
+        knee = f.get("early_per_sol") is not None
+        line = f["per_sol"] * ss + ((f["early_per_sol"] - f["per_sol"]) * np.minimum(ss, f["knee_sol"]) if knee else 0.0)
+        ax.plot(ss, line, "-", color="C3", label=(f"trend with a knee at sol {f['knee_sol']:.0f} (fit to these blocks, "
+                                                  f"{f['n_early']} before it)" if knee else "linear trend (fit to these blocks)"))
         if navcam_drift:
             nr = 1000 * (navcam_drift.get(f"{ang}_mdeg_per_sol") or 0.0)
             ne = navcam_drift.get(f"{ang}_early_mdeg_per_sol")
@@ -533,7 +588,9 @@ def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_D
                           + (f", {1000 * ne:+.1f} before sol {navcam_drift.get('knot_sol', 0):.0f}" if ne is not None else ""))
         annotate(ax, sol, y)
         z = f["per_sol"] / f["se_per_sol"] if f["se_per_sol"] and np.isfinite(f["se_per_sol"]) else float("nan")
-        ax.set_title(f"{ang}: trend {1000 * f['per_sol']:+.2f} ± {1000 * f['se_per_sol']:.2f} mdeg/1000 sol (z {z:+.1f})\n"
+        early = (f"; {1000 * f['early_per_sol']:+.1f} ± {1000 * f['se_early_per_sol']:.1f} before sol {f['knee_sol']:.0f} "
+                 f"(knee z {f['hinge_z']:+.1f})" if knee else "")
+        ax.set_title(f"{ang}: trend {1000 * f['per_sol']:+.2f} ± {1000 * f['se_per_sol']:.2f} mdeg/1000 sol (z {z:+.1f}){early}\n"
                      f"block sd about the trend {f['sd']:.2f} mdeg = {f['sd'] / ifov:.3f} px", fontsize=9)
         ax.axhline(0, color="0.6", lw=0.8)
         if knee_sol:
@@ -549,7 +606,9 @@ def plot_zcam_rig_trends(model: Dict[str, Any], path: PathLike, dpi: int = FIG_D
     ax = axs[1][1]
     fy = fit["yaw"]
     ok = np.isfinite(T)
-    cx = (np.array([r.get("yaw_mdeg", np.nan) for r in rows], float) - fy["a"] - fy["per_sol"] * sol) / ifov
+    yaw_sol = fy["per_sol"] * sol + ((fy["early_per_sol"] - fy["per_sol"]) * np.minimum(sol, fy["knee_sol"])
+                                     if fy.get("early_per_sol") is not None else 0.0)
+    cx = (np.array([r.get("yaw_mdeg", np.nan) for r in rows], float) - fy["a"] - yaw_sol) / ifov
     sl, se = fy["per_degC"] / ifov, fy["se_per_degC"] / ifov
     if ok.any():
         tt = np.linspace(np.nanmin(T) - 2, np.nanmax(T) + 2, 2)

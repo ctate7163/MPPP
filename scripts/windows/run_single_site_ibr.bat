@@ -10,6 +10,7 @@ REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
 REM    examples:  run_single_site_ibr.bat S003D2046            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
+REM set MPPP_NO_PAUSE=1 before it: no pause at the end, and the exit code is the run's (for unattended chains)
 REM Nothing in this file names a version, so it never needs replacing.
 REM It also lives in scripts\windows of the repository (0.97.0): there it works on the tree it is in.  Everything
 REM after the settings is one parenthesised block, read whole before it runs - the merge may replace this file.
@@ -41,6 +42,7 @@ set "B="
   echo %REPO%: !H0:~0,7! -^> !H1:~0,7!
   call scripts\windows\mppp_env.bat || ( pause & exit /b 1 )
   python -m mppp single-sites %*
-  pause
-  exit /b
+  set "RC=!errorlevel!"
+  if not defined MPPP_NO_PAUSE pause
+  exit /b !RC!
 )

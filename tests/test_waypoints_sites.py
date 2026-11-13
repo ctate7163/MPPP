@@ -260,7 +260,7 @@ def test_shipped_sites_v0p75():
                                    "belva_crater_large", "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools"]
     assert "threeforks_north" not in g["ecam_consensus"] and "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
     assert "navcam_consensus_v0p82" not in g
-    assert len(g["zcam34_consensus"]) == 14 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:3] == ["butler_landing", "chal_rocks_large", "rochette"]   # 9 Nov: butler_landing; 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back
+    assert len(g["zcam34_consensus"]) == 15 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:3] == ["butler_landing", "chal_rocks_large", "rochette"]   # 9 Nov: butler_landing; 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back
 
 
 def test_zcam34_dev_group_sites_have_the_zoom():

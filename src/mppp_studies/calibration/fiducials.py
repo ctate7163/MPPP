@@ -1287,7 +1287,7 @@ def fit_unsurveyed(pairs: List[Dict[str, Any]]) -> Dict[str, Any]:
 # ------------------------------------------------------------------------------------------------ one deck frame
 DECK_FRAME_DEFAULT = "NRF_1642_0812712250_112RAD_N0790870NCAM03642_0A0095J01"   # sol 1642, full resolution, -8.6 C:
 #                                                     all six rigid targets, TDF4 and both differential-bar targets
-DECK_INSET_HALF_PX = 14            # half-size of a target's inset (full-resolution px)
+DECK_INSET_HALF_PX = 8             # 12 Nov: 16 x 16 px insets (was 14); half-size of a target's inset (full-resolution px)
 MODEL_COLOURS = {"measured": "#ffd400", "label": "#e6007e", "constrained": "#00c8a0"}
 
 

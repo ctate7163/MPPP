@@ -3,6 +3,27 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.2 — 2026-11-12
+
+**In short.** The single-site image-based-rendering run skips what is up to date and reports where it is; Three Forks
+South joins the Mastcam-Z lists; the rig figures get a knee at sol 250.
+
+- **Single sites, less supervision** (`mppp single-sites`): a `mesh`, `depthmaps` or `ods` step whose command, code
+  (a hash of `mppp/ibr/*.py` and `sfm/dense.py`), fused cloud and upstream steps are those of its last good run in
+  that folder is skipped (`step_<name>.json` next to the products; `--force` runs all). When a station's first
+  panorama is made again the second follows, so the two variants keep one 16-to-8-bit scaling.
+  `single_sites_status.json` in the output root names the station, variant and step running; the summary has each
+  step's minutes. `run_single_site_ibr.bat`: `set MPPP_NO_PAUSE=1` for no pause and the run's exit code.
+- **`mppp mesh --terrain-from`** no longer reads the fused cloud and the tie points when the terrain is reused.
+  `--plane-radius` help said 100 m (it is 200).
+- **Sites:** `threeforks_south` in `zcam_consensus` and `zcam34_consensus` (Christian: to read the backlash state of
+  its 34 mm 360).
+- **Figures** (`mppp_studies`): `plots.hinge_fit`; the Navcam rig trends draw a knee fit at sol 250 for yaw and roll
+  (figure only; the promoted law keeps a pitch knee); the Mastcam-Z rig trends are fitted with a knee at sol 250;
+  the focus lines against temperature have the panel letter inside the title, no empty columns, and a line per eye at
+  the median offset of the high state (solid) and of the low state (dashed); the deck fiducial insets are 16 x 16 px
+  and a second figure is made from a frame of the first 100 sols (`--deck-frame-early`, sol 31 left).
+
 ## 0.97.1 — 2026-11-12
 
 **In short.** The station panoramas for the headset: eye separation merged towards the poles and faded with range, the

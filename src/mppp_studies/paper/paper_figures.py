@@ -52,6 +52,9 @@ SHIPPED_MAST_CHAIN = "deck_joint_mast_model_DJ32_20261107.json"
 DECK_FRAME = (r"D:\data\m2020\datadrive\01642\ids\rdr\ncam"
               r"\NRF_1642_0812712250_112RAD_N0790870NCAM03642_0A0095J01.IMG")
 
+# 12 Nov (Christian: "a second plot using an image in the first 100 sols"): the sol-31 full-resolution left frame
+DECK_FRAME_EARLY = (r"D:\data\m2020\datadrive\00031\ids\rdr\ncam"
+                    r"\NLF_0031_0669701705_000RAD_N0031044NCAM00600_0A00LLJ03.IMG")
 
 def finished_blocks(root: Path, group: str = "ecam_consensus"):
     """The block folders of a site group under ``root`` whose alignment finished (``colmap/run_done.json``)."""
@@ -180,6 +183,8 @@ def main(argv=None) -> int:
     ap.add_argument("--deck-frame", default=os.environ.get("MPPP_DECK_FRAME", DECK_FRAME),
                     help="0.97.0: one full-resolution Navcam RAD product (.IMG) of the deck for the fiducial figure "
                          "(default MPPP_DECK_FRAME or the sol-1642 frame under D:\\data\\m2020\\datadrive); - for none")
+    ap.add_argument("--deck-frame-early", default=os.environ.get("MPPP_DECK_FRAME_EARLY", DECK_FRAME_EARLY),
+                    help="0.97.2: a second deck frame from the first 100 sols for the same figure (_early); - for none")
     ap.add_argument("--deck-joint", default=os.environ.get("EOD_WORK", r"D:\rover_frame_eod"),
                     help="0.97.0: the deck_joint work folder (jr_<run>.json, eod_report.json) for the Navcam baseline "
                          "figure (default EOD_WORK or D:\\rover_frame_eod); without it the shipped DJ32 fit alone")
@@ -290,18 +295,20 @@ def main(argv=None) -> int:
                 if chain:
                     print(f"mast head figures: no deck_joint_mast_model.json under {a.root} - the shipped {SHIPPED_MAST_CHAIN}")
         # ---- 0.97.0: the deck fiducials of one frame through the label model and through the law + chain
-        if chain and a.deck_frame and a.deck_frame != "-":
-            if Path(a.deck_frame).is_file():
-                try:
-                    from mppp_studies.calibration import fiducials as FD
-                    dres = FD.deck_frame_models(a.deck_frame, chain, a.cmods)
-                    FD.plot_deck_frame(dres, out / f"deck_fiducials_label_vs_constrained_{tag}.png", dpi=a.dpi)
-                    (out / f"deck_fiducials_label_vs_constrained_{tag}.json").write_text(
-                        json.dumps({k: v for k, v in dres.items() if k != "image"}, indent=1), encoding="utf-8")
-                except Exception as e:                                     # noqa: BLE001
-                    print(f"deck fiducial figure: skipped ({type(e).__name__}: {e})")
-            else:
-                print(f"deck fiducial figure: {a.deck_frame} not found - skipped (--deck-frame or MPPP_DECK_FRAME)")
+        from mppp_studies.calibration import fiducials as FD
+        for dframe, dname in ((a.deck_frame, ""), (a.deck_frame_early, "_early")):       # 12 Nov: + a frame of sols 0-100
+            if not (chain and dframe and dframe != "-"):
+                continue
+            if not Path(dframe).is_file():
+                print(f"deck fiducial figure: {dframe} not found - skipped (--deck-frame{dname.replace('_', '-')})")
+                continue
+            try:
+                dres = FD.deck_frame_models(dframe, chain, a.cmods)
+                FD.plot_deck_frame(dres, out / f"deck_fiducials_label_vs_constrained{dname}_{tag}.png", dpi=a.dpi)
+                (out / f"deck_fiducials_label_vs_constrained{dname}_{tag}.json").write_text(
+                    json.dumps({k: v for k, v in dres.items() if k != "image"}, indent=1), encoding="utf-8")
+            except Exception as e:                                         # noqa: BLE001
+                print(f"deck fiducial figure: skipped ({type(e).__name__}: {e})")
         # ---- 0.97.0: the Navcam baseline of the deck_joint's station rigs against temperature and sol
         if chain:
             try:

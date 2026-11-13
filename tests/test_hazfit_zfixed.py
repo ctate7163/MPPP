@@ -162,9 +162,11 @@ def test_groups_and_block_sites():
     # 9 Nov (Christian): butler_landing (sols 1-14, site 3 drive 0000) in the zcam consensus
     # 0.97.0 (12 Nov): Rockytop split into the two ridges; four more sites
     assert g["zcam_consensus"] == ["butler_landing", "chal_rocks_large", "wildcat_ridge", "skinner_ridge", "taylorfjellet",
-                                   "seitah_overlook", "threeforks_north", "belva_crater_large", "marble_mountain",
-                                   "bright_angel", "pico_turquino", "south_arm", "overlook_mountain", "airey_hill",
-                                   "rose_river_falls", "knob_mountain_large", "hippo_pools"]
+                                   "seitah_overlook", "threeforks_north", "threeforks_south", "belva_crater_large",
+                                   "marble_mountain", "bright_angel", "pico_turquino", "south_arm", "overlook_mountain",
+                                   "airey_hill", "rose_river_falls", "knob_mountain_large", "hippo_pools"]
+    # 12 Nov (Christian): Three Forks South in, to read the backlash state of its 34 mm 360
+    assert "threeforks_south" in g["zcam34_consensus"]
     # 2 Nov (Christian): Cannery Passage, an unofficial 48 / 63 / 110 mm block (sols 543-552), in no group
     assert t["sites"]["cannery_passage"]["zcam"] == [48, 63, 110]
     assert not any("cannery_passage" in v for v in g.values())
