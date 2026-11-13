@@ -84,10 +84,10 @@ UHF_CAN_BELOW_Z_M = -0.43         # RMECH z (down): the can is the geometry whol
 # 13 Nov 2026 (Christian: "the gray cylinder uhf antenna looks mis-sized again"): that enlargement was wrong.  With
 # the model placed by the deck discs, the silhouette through the label cameras of four frames (NLF / NRF_0052_0671564560,
 # NLF_0474_0709026896, NLF_0688_0728025880) puts NASA's can on the real one at its original width; its wall ends
-# about 5 % below the real rim, and its domed cap is not there (the real can is open): width as modelled, height
-# 1.05, the cap flattened and set just inside the rim.
+# about 10 % below the real rim (its far edge), and its domed cap is not there (the real can is open): width as modelled, height
+# 1.10, the cap flattened and set just inside the rim.
 UHF_CAN_RADIAL = 1.0
-UHF_CAN_HEIGHT = 1.05
+UHF_CAN_HEIGHT = 1.10              # 13 Nov, later: to the far top rim (it blends into the ground; found on contrast-stretched crops)
 UHF_CAN_FLAT_TOP = True
 UHF_CAN_CAP_BELOW_RIM_M = 0.05     # the open can's inside: a floor this far below the rim (not measured)
 DECK_TOP_MODEL_Y = 1.135

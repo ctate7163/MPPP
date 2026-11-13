@@ -19,7 +19,8 @@ antenna at its real size.
   helped a lot"). The mesh stays at 75 m, the plane and the range fade end at 200 m.
 - **Rover model, UHF antenna:** the enlargement of 12 Nov (x 1.23 across, x 1.14 high) was wrong. Silhouettes through
   the label cameras of four frames (sols 52 left and right, 474, 688) put NASA's can on the real one at its original
-  width; its wall is 5 % short and its domed cap is not on the real, open can. Now: width x 1.0, height x 1.05, the
+  width; its wall is 10 % short of the far top rim (which blends into the ground behind it; found on contrast-stretched
+  crops) and its domed cap is not on the real, open can. Now: width x 1.0, height x 1.10, the
   cap a flat floor 5 cm inside the rim (that depth is not measured). `perseverance_rmech.npz` rebuilt.
 
 ## 0.97.4 — 2026-11-13
