@@ -421,7 +421,7 @@ usage: mppp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--col
 usage: mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--zcam-scale 1] [--images NAME ...]
                       [--photometry] [--no-shadow] [--no-preview] [--no-validate]
 usage: mppp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras N] [--scale 1] [--images ...]
-                      [--sky-radius 200] [--pole-merge 30 80] [--pole-merge-down 60 88] [--eyes left right centre]
+                      [--sky-radius 300] [--no-far-field] [--pole-merge 0 90] [--pole-merge-down 0 90] [--eyes left right centre]
                       [--fill-cameras F] [--site-name NAME] [--no-nadir-mark] [--nadir-mark-deg 20]
                       [--rows-per-chunk 128] [--exclude STEM ...] [--stack-top left] [--retone] [--stack-only]
                       [--prefix S003D2046] [--bits 16] [--pds DIR] [--tone soft]
@@ -436,7 +436,7 @@ surface no fused point supports within τ(z) = max(5 cm, 2 % z, 3 σz), everythi
 smoothing. Beyond the mesh: **the ground plane** out to `--plane-radius` (200 m) from the axis, fitted to the fused
 points and the block's tie points (seen by 3+ images) as the medians of 10 deg x range-ring bins and a Huber fit,
 so it follows the regional slope (`--horizontal-plane` for a level one; a tilt over 20 deg or too few bins falls
-back to it); it also fills the mesh's holes. Beyond the plane **the sky**, on a sphere of 200 m radius since 0.97.5
+back to it); it also fills the mesh's holes. Beyond the plane **the sky**, on a sphere of 300 m radius since 0.97.13 (200 m from 0.97.5)
 (`mppp ods --sky-radius`; at infinity before). The mesh has priority over
 the plane even where the plane is nearer, and only the mesh occludes. `mesh.ply`, `ground_plane.json` (the plane,
 its tilt and its misfit per ring), `mesh_report.json` (the fused points per ring from the axis, the coverage by
@@ -447,7 +447,7 @@ prototype's finite sphere instead of the sky.
 no depth / 3 masked / 4 plane) and 16-bit previews (the plane darker), validated against the sparse points the frame
 observes, on the mesh and on the plane separately (`maps_report.md`: how far the flat stand-in is from the terrain); `--photometry` adds the
 photometric cube from the sun direction of the frame's row (`sun_enu` turned into the block frame): incidence,
-emission, phase and the cast shadow — `photometry/` (npz), `photometry_maps/` (COLMAP `.bin` arrays),
+emission, phase and the cast shadow — `photometry/` (npz), `photometry_maps/` (COLMAP `.bin` arrays; only with `--colmap-bins` since 0.97.13),
 `photometry_jpg/`, `photometry_report.json`.  **`ods`**: the omni-directional stereo panorama — equirectangular,
 `--width` × half, the eyes `--ipd` apart on the circle around the pivot — each eye's rays cast into the scene and
 every hit coloured from the source frame that sees it best (the smallest angle to the frame's axis, inside the
@@ -466,8 +466,8 @@ saturated pixels are neutral) next to the 8-bit ones, which get a soft highlight
 cut).  `mesh` also removes floating surface: anything above the cameras, and beyond
 3 m of the mast axis anything less than 1 m below them, heights above the ground plane (`--keep-floating`).  
 
-The current behaviour in one place - the eye-separation rules (full to 30 deg up and 60 deg down, a near-surface
-limit at 2.5 m, a fade from 75 to 200 m), the sky filling and evening, the 16-bit product, the XMP metadata of the
+The current behaviour in one place - the eye separation (64 mm x cos(elevation) since 0.97.13), the far field
+(100 m, 300 m or infinity per direction), the sky filling and evening, the 16-bit product, the XMP metadata of the
 `_360_3DTD` files, the file list and the web viewer - is on [Station products](station-products.md). The paragraph
 above is the record of how the commands grew.
 

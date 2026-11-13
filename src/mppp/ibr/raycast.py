@@ -42,6 +42,13 @@ PathLike = Union[str, Path]
 
 LABEL_NONE, LABEL_MESH, LABEL_FAR, LABEL_MASKED, LABEL_PLANE = 0, 1, 2, 3, 4
 RANGE_BINS = ((0, 5), (5, 10), (10, 20), (20, 60), (60, 1e9))
+# 0.97.13 (Christian, 13 Nov 2026: "the large 100 m plane should not extend under the rover but only start about
+# 10 m from the center. under the rover should be interpolated from the mesh"): the plane is the regional slope - at
+# Taylorfjellet (tilt 13.8 deg, 4.4 m rms) it passes 0.25 to 0.3 m above the ground around the rover.  It stands in
+# for terrain only from PLANE_FROM_M of the mast axis on; nearer, the mesh is whole (mesh.fill_terrain: every cell
+# without surface is interpolated from the cells around it, and the cells with surface have that interpolation
+# under them) - a ray never needs the plane there.
+PLANE_FROM_M = 10.0
 SKY_RANGE_M = 1.0e6     # "infinity" for the rays that end on the sky: the 64 mm ODS baseline subtends 6e-8 rad there
 INVALID_ID = 4294967295
 
@@ -59,7 +66,7 @@ class Scene:
             n = np.asarray(plane["normal"], float)
             self.plane = {"normal": n / np.linalg.norm(n), "offset": float(plane["offset"]),
                           "centre": np.asarray(plane["centre"], float), "up": np.asarray(plane.get("up", (0, 0, 1)), float),
-                          "radius_m": float(plane["radius_m"])}
+                          "radius_m": float(plane["radius_m"]), "inner_m": float(plane.get("inner_m", PLANE_FROM_M))}
         self.sky = bool(sky)
         self.o3d = o3d
         self.scene = o3d.t.geometry.RaycastingScene()
@@ -75,6 +82,7 @@ class Scene:
         self.mesh_V, self.mesh_F = V, F
         self.rover_triangles: Optional[Tuple[int, int]] = None     # 0.97.0: [first, end) of the rover model in the mesh
         self.sky_radius_m: Optional[float] = None    # 0.97.0: the sky on a sphere of this radius about the plane's centre
+        self.far_field: Optional[Dict[str, Any]] = None   # 0.97.13: 1 / radius of the far surface per direction
 
     def set_sky_sphere(self, radius_m: Optional[float]) -> None:
         """0.97.0 (Christian, 12 Nov 2026: "the 3d terrain should probably stop at a 100 or 200 m radius sky sphere"
@@ -86,6 +94,29 @@ class Scene:
             return
         self.sky_radius_m = float(radius_m)
         self.plane["radius_m"] = float(radius_m)
+
+    def far_inverse_radius(self, dirs: np.ndarray) -> Optional[np.ndarray]:
+        """0.97.13: 1 / radius (1 / m; 0 = infinity) of the far surface along the unit directions ``dirs``, from
+        ``far_field`` = {"inv": (h, w) float, rows from elevation "el_top_deg" down to "el_bottom_deg", columns
+        around the full circle from azimuth 0 (north, eastward), "east", "north", "up"}; bilinear, wrapped in
+        azimuth, the first and the last row held beyond them.  None without a far field."""
+        ff = self.far_field
+        if ff is None:
+            return None
+        d = np.asarray(dirs, float)
+        inv = ff["inv"]
+        h, w = inv.shape
+        az = np.arctan2(d @ np.asarray(ff["east"], float), d @ np.asarray(ff["north"], float)) % (2 * np.pi)
+        el = np.degrees(np.arcsin(np.clip(d @ np.asarray(ff["up"], float), -1.0, 1.0)))
+        x = az / (2 * np.pi) * w - 0.5
+        y = np.clip((ff["el_top_deg"] - el) / max(ff["el_top_deg"] - ff["el_bottom_deg"], 1e-9) * h - 0.5, 0.0, h - 1.0)
+        x0 = np.floor(x).astype(int)
+        y0 = np.minimum(np.floor(y).astype(int), max(h - 2, 0))
+        fx, fy = x - x0, y - y0
+        y1 = np.minimum(y0 + 1, h - 1)
+        a, b = inv[y0, x0 % w], inv[y0, (x0 + 1) % w]
+        c, e = inv[y1, x0 % w], inv[y1, (x0 + 1) % w]
+        return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + e * fx) * fy
 
     def on_rover(self, tri: np.ndarray) -> Optional[np.ndarray]:
         """True where a mesh triangle index is one of the rover model's; None when the mesh holds no model."""
@@ -130,7 +161,8 @@ class Scene:
         X = o + np.where(ok, tt, 0.0)[:, None] * d
         v = X - pl["centre"]
         h = v - (v @ pl["up"])[:, None] * pl["up"]
-        ok &= np.linalg.norm(h, axis=1) <= pl["radius_m"]
+        hr = np.linalg.norm(h, axis=1)
+        ok &= (hr <= pl["radius_m"]) & (hr >= float(pl.get("inner_m", PLANE_FROM_M)))
         t[ok] = tt[ok]
         return t, ok
 
@@ -149,13 +181,17 @@ class Scene:
         if self.sky:
             miss = label == LABEL_NONE
             t[miss] = SKY_RANGE_M
-            if self.sky_radius_m and miss.any():                 # the sphere, from inside it (else infinity)
-                d = np.asarray(dirs, float)[miss]
+            if (self.sky_radius_m or self.far_field is not None) and self.plane is not None and miss.any():
+                d = np.asarray(dirs, float)[miss]                # the sphere, from inside it (else infinity); 0.97.13:
+                inv = self.far_inverse_radius(d)                 # its radius per direction from the far field
+                if inv is None:
+                    inv = np.full(len(d), 1.0 / self.sky_radius_m)
+                rad = 1.0 / np.maximum(inv, 1.0 / SKY_RANGE_M)
                 v = np.broadcast_to(np.asarray(origins, float), (len(label), 3))[miss] - self.plane["centre"]
                 b = np.einsum("ij,ij->i", v, d)
-                disc = b * b - (np.einsum("ij,ij->i", v, v) - self.sky_radius_m ** 2)
+                disc = b * b - (np.einsum("ij,ij->i", v, v) - rad ** 2)
                 ts = -b + np.sqrt(np.maximum(disc, 0.0))
-                t[miss] = np.where((disc > 0) & (ts > 0), ts, SKY_RANGE_M)
+                t[miss] = np.where((disc > 0) & (ts > 0) & (ts < SKY_RANGE_M), ts, SKY_RANGE_M)
             label[miss] = LABEL_FAR
             hit["normal"][miss] = 0.0
         return {"t": t, "label": label, "normal": hit["normal"], "tri": hit["tri"]}
@@ -275,7 +311,32 @@ def depth_rgb(rng: np.ndarray, lab: np.ndarray, mode: str = "log") -> np.ndarray
     return img
 
 
-def preview_jpg(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> List[Path]:
+NO_DATA_MAX_VALUE = 1            # a frame pixel at most this in every channel, in a region touching the border ...
+NO_DATA_MIN_FRAC = 0.002         # ... of at least this share of the frame, is the frame's black padding: no data
+
+
+def no_data_mask(image_file: PathLike, shape: Optional[Tuple[int, int]] = None) -> Optional[np.ndarray]:
+    """True where the frame ``image_file`` has no data: its black areas (MPPP pads subframes and reduced frames to
+    the full frame size with black) - pixels at most NO_DATA_MAX_VALUE in every channel, in a connected region that
+    touches the border and covers at least NO_DATA_MIN_FRAC of the frame.  ``shape`` (h, w): the mask at that size.
+    None when the file cannot be read."""
+    import cv2
+    im = cv2.imread(str(image_file), cv2.IMREAD_COLOR)
+    if im is None:
+        return None
+    z = (im.max(axis=2) <= NO_DATA_MAX_VALUE).astype(np.uint8)
+    pad = np.zeros(z.shape, bool)
+    if z.any():
+        n, lab, stats, _ = cv2.connectedComponentsWithStats(z, connectivity=4)
+        for k in np.unique(np.r_[lab[0], lab[-1], lab[:, 0], lab[:, -1]]):
+            if k and stats[k, cv2.CC_STAT_AREA] >= NO_DATA_MIN_FRAC * z.size:
+                pad |= lab == k
+    if shape is not None and tuple(shape) != pad.shape:
+        pad = cv2.resize(pad.astype(np.uint8), (int(shape[1]), int(shape[0])), interpolation=cv2.INTER_NEAREST) > 0
+    return pad
+
+
+def preview_jpg(maps: Dict[str, np.ndarray], out_prefix: PathLike, no_data: Optional[np.ndarray] = None) -> List[Path]:
     """0.97.0 (Christian, 12 Nov 2026: "Put the depth maps and surfaces normal map in the photometry_jpg folder ...
     Depth maps should be in two versions: linear and log"): ``<prefix>_depth_linear.jpg``, ``_depth_log.jpg``,
     ``_normal.jpg``."""
@@ -286,12 +347,17 @@ def preview_jpg(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> List[Path]
     outs = []
     for mode in ("linear", "log"):
         f = Path(str(out_prefix) + f"_depth_{mode}.jpg")
-        cv2.imwrite(str(f), depth_rgb(maps["range"], lab, mode), q)
+        dimg = depth_rgb(maps["range"], lab, mode)
+        if no_data is not None:                              # 0.97.13 (Christian, 13 Nov 2026: "the black areas in the
+            dimg[no_data] = 0                                # original images should also be black ... the no data flag")
+        cv2.imwrite(str(f), dimg, q)
         outs.append(f)
     n = maps["normal"]
     nimg = ((n * 0.5 + 0.5) * 255).astype(np.uint8)[..., ::-1].copy()
     nimg[(lab != LABEL_MESH) & (lab != LABEL_PLANE)] = 0
     nimg[lab == LABEL_FAR] = 255                             # 0.97.8: the sky white
+    if no_data is not None:
+        nimg[no_data] = 0
     f = Path(str(out_prefix) + "_normal.jpg")
     cv2.imwrite(str(f), nimg, q)
     from .scales import tag                         # 0.97.7: each picture carries its value scale (XMP mppp:Scale)
@@ -425,7 +491,8 @@ def cast_station(project, rec, station, scene: Scene, out_dir: PathLike, familie
         save_maps(out / "maps" / f"{stem}.npz", maps, image=name, scale=s, camera_model=cam.model.name,
                   width=maps["depth"].shape[1], height=maps["depth"].shape[0], station=station.label)
         if previews:                                 # 0.97.0: jpg, with the photometry pictures
-            preview_jpg(maps, out / PREVIEW_DIR / stem)
+            preview_jpg(maps, out / PREVIEW_DIR / stem,
+                        no_data=no_data_mask(Path(project.root) / "images" / name, maps["label"].shape))
         row = {"image": name, "scale": s, "coverage": coverage(maps)}
         if validate:
             row["sparse"] = validate_sparse(rec, iid, maps, s)

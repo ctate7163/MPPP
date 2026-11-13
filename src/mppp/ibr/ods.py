@@ -71,7 +71,7 @@ DEFAULT_IPD_M = 0.064
 # misalignment), and near surfaces (the deck 1 m below) carry far too much of it.  The eye separation is full to
 # POLE_MERGE_DEG[0] of elevation (up or down), falls as a cosine and is zero from POLE_MERGE_DEG[1]: one image
 # for both eyes at the poles.  None: no merging (the panoramas before 12 Nov).
-POLE_MERGE_DEG: Optional[Tuple[float, float]] = (30.0, 80.0)
+POLE_MERGE_DEG: Optional[Tuple[float, float]] = (0.0, 90.0)       # 0.97.13: cos(elevation); (30, 80) from 0.97.0
 # 0.97.1 (Christian, 12 Nov, Quest 3: "the pole merging helps a lot, but not quite enough. maybe the cosine fall off
 # should be from the horizon to the -90 el. The -30 area still feels a little strained"): below the horizon the fall
 # starts at the horizon and ends at the nadir - the share is cos(elevation): 0.87 at -30 deg (1 before), 0.71 at -45
@@ -82,20 +82,28 @@ POLE_MERGE_DEG: Optional[Tuple[float, float]] = (30.0, 80.0)
 # ground h below the eyes is seen h / cos(elevation) below them: 1.15 h at -30 deg, 1.41 h at -45, 2 h at -60.
 # Now the separation is full to -60 deg and merges only towards the nadir, and what strains the eyes is limited
 # where it arises - on near surfaces: NEAR_MERGE_M.
-POLE_MERGE_DOWN_DEG: Optional[Tuple[float, float]] = (60.0, 88.0)
+# 0.97.13 (Christian, 13 Nov, Quest 3, after 0.97.12: "The rover depth looks too far away relative to the terrain.
+# Let's return everything to true disparity and implement a cosine pole merging"): the range-dependent shares are off
+# (NEAR_MERGE_M and the range merge: they showed the deck 1.2 m away as if at 2.5 m, next to terrain at its true
+# range), and the one share left is cos(elevation), above and below the horizon.  What that does: everything along
+# one line of sight is seen 1 / cos(elevation) times farther - the rover and the terrain behind it alike, so their
+# depths stay in proportion - and flat ground h below the eyes is seen h / cos(elevation) below them (1.15 h at
+# -30 deg, 1.41 h at -45, 2 h at -60: the dip of 0.97.1).  (60, 88) from 0.97.5 to 0.97.12.
+POLE_MERGE_DOWN_DEG: Optional[Tuple[float, float]] = (0.0, 90.0)
 # The eye separation is full for surfaces from NEAR_MERGE_M[1] on and falls in proportion to the range below that
 # (never under the share NEAR_MERGE_MIN): a surface nearer than 2.5 m is shown as if at 2.5 m, so its disparity
 # stops at 64 mm / 2.5 m = 1.5 deg (the deck 1 m below the cameras had 3.7 deg).  Terrain at 2.5 m and beyond - with
 # the cameras 2 m up, everything more than 1.5 m out on flat ground - keeps its true depth: flat ground looks flat.
-NEAR_MERGE_M: Optional[float] = 2.5
+NEAR_MERGE_M: Optional[float] = None       # 0.97.13: off (2.5 from 0.97.5 to 0.97.12)
 NEAR_MERGE_MIN = 0.2
 # 0.97.0 (Christian, 12 Nov 2026: "Fade the eye separation with range past the mesh edge, so the last terrain and the
 # sky do not jump in depth"): the eye separation is full to RANGE_MERGE_M[0] (the mesh's reach), falls as a cosine
 # and is zero from the sky sphere's radius; the range is that of the ray from the pivot, so both eyes fade alike.
-SKY_RADIUS_M: Optional[float] = 200.0       # 13 Nov (Christian: "the sphere at 200 instead of infinity actually helped a
+SKY_RADIUS_M: Optional[float] = 300.0       # 0.97.13 (Christian: "Maybe move the 200 m sphere to 300 m"); 200: 13 Nov (Christian: "the sphere at 200 instead of infinity actually helped a
                                             # lot"); None on 12 Nov ("the sky sphere can be at infinity")
 RANGE_MERGE_FROM_M = 75.0                   # the eye separation full to the mesh's reach ...
 RANGE_MERGE_TO_M = 200.0                    # ... and zero from the ground plane's rim on: the plane blends terrain and sky
+RANGE_MERGE = False                         # 0.97.13: off - true disparity at every range (at 300 m it is 0.3 px of 8K)
 
 
 def range_merge(range_m, to_m: Optional[float] = RANGE_MERGE_TO_M, from_m: float = RANGE_MERGE_FROM_M) -> np.ndarray:
@@ -493,8 +501,26 @@ BROWN_FILL_DARKEN = 0.8                  # the fill a little darker than the ter
 # ray) x (the model's depth error) / range^2 - at 1.2 m, 20 cm off the ray and 5 cm of model error are 23 pixels of a
 # 16K panorama.  The Navcam frames are 4 to 21 cm off the ray depending on where in the frame the surface is; the
 # wide feather chose the frame's middle, which is the worst place.  None: the same weights everywhere, as before.
-NEAR_BLEND_M: Optional[float] = 3.0
+# 0.97.13 (Christian, 13 Nov, after 0.97.12: "The image blending could be smoother. The provenance should be a
+# smoother function when multiple images see the same surfaces. the mid and far distances terrain looks well
+# blended"): 0.97.8 gave near surfaces the narrow feather and the 4th power in both bands, switched on at 3 m: one
+# frame took nearly everything, with a hard change of frame where two were equally far from the ray, and a line on
+# the ground at 3 m.  Now the feathers are the terrain's everywhere (wide for the colour, narrow for the detail), and
+# only the parallax term's power rises on near surfaces, gradually: from the terrain's 1 (colour) and 3 (detail) at
+# NEAR_BLEND_M[1] to NEAR_LOW_POWER and NEAR_PARALLAX_POWER at NEAR_BLEND_M[0] and nearer.  The colour of a near
+# surface is again a blend of the frames that see it; its detail still comes mostly from the frame nearest the ray.
+NEAR_BLEND_M: Optional[Tuple[float, float]] = (2.0, 4.0)
+NEAR_LOW_POWER = 2.0
 NEAR_PARALLAX_POWER = 4.0
+
+
+def near_share(range_m) -> np.ndarray:
+    """How near a surface at ``range_m`` is for the blend: 1 up to NEAR_BLEND_M[0], 0 from NEAR_BLEND_M[1] on."""
+    r = np.asarray(range_m, float)
+    if not NEAR_BLEND_M:
+        return np.zeros_like(r, dtype=np.float32)
+    a, b = float(NEAR_BLEND_M[0]), float(NEAR_BLEND_M[1])
+    return (1.0 - _smoothstep((np.where(np.isfinite(r), r, b) - a) / max(b - a, 1e-9))).astype(np.float32)
 
 
 FILL_RANK = 1e-3                  # a fill-only source's rank among the candidates of a pixel (x its weight)
@@ -532,7 +558,7 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
     fb_dist = np.zeros(n, np.float32)
     fb_short = np.ones(n, np.float32)
     reg_max = np.zeros(n, np.float32)                        # 0.97.7: the strongest regular source's feather weight
-    near = (ok & (hit["t"] < NEAR_BLEND_M)) if NEAR_BLEND_M else np.zeros(n, bool)      # 0.97.8: see NEAR_BLEND_M
+    near = np.where(ok, near_share(hit["t"]), 0.0).astype(np.float32)      # 0.97.8 / 0.97.13: see NEAR_BLEND_M
     for k, src in enumerate(sources):
         uv, z, inside = src.project(X)
         cand = inside & ok
@@ -570,10 +596,7 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
         ang = np.arccos(np.clip(np.sum(v_src * d[ij], axis=1), -1, 1))
         aterm = 1.0 / (1.0 + ang / ANGLE_SCALE_RAD)
         feather = _smoothstep(dist / (FEATHER_LOW_FRAC * src.short_side)).astype(np.float32)
-        w = (feather * aterm).astype(np.float32) + 1e-6
-        nr = near[ij]
-        if nr.any():                                         # near: the narrow feather, the parallax term steep
-            w[nr] = (_smoothstep(dist[nr] / (FEATHER_HIGH_FRAC * src.short_side)) * aterm[nr] ** NEAR_PARALLAX_POWER).astype(np.float32) + 1e-6
+        w = (feather * aterm ** (1.0 + near[ij] * (NEAR_LOW_POWER - 1.0))).astype(np.float32) + 1e-6   # near: steeper
         if getattr(src, "fill_only", False):
             w = w * FILL_RANK                                # ranked after every regular source
         else:
@@ -605,6 +628,141 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
     best.update(label=lab, t=hit["t"], ok=ok, hidden_fallback=use, rejected=rejected, rejected_px=rej_px,
                 on_rover=on_rover if on_rover is not None else np.zeros(n, bool))
     return best
+
+
+# 0.97.13 (Christian, 13 Nov 2026: "we might need sky sphere at both 100 m, 200m and infinity and blend between them
+# favoring the sharpest one" ... "move the 200 m sphere to 300 m. and pay attention to the blending between the 100,
+# 300, and inf m spheres"): THE FAR FIELD.  What lies beyond the mesh and the ground plane - hills from 100 m to
+# kilometres, the sky - was painted on one sphere.  The frames' cameras are up to 0.4 m apart, so where two frames
+# overlap, a surface drawn at the wrong range is drawn twice: 0.4 m / 100 m against 0.4 m / infinity is 4 mrad, 5
+# pixels of an 8K panorama.  Before the eyes are rendered, the far directions are tried on each of FAR_RADII_M (the
+# sky sphere's radius is one of them; None = infinity): the frames that would be blended there are sampled, and the
+# cost of a radius is the spread of their detail bands (weighted as in the blend; of two frames: half the squared
+# difference), summed over a window of FAR_AGG_DEG.  The sharpest radius is the one with the least cost.  The
+# surface is one smooth field of 1 / radius per direction, not three shells with seams: a soft minimum over the
+# radii; where the costs do not tell the radii apart (one frame only, or sky without texture: FAR_DECISIVE) it
+# is the decided directions around (FAR_SPREAD_DEG), or the sky sphere's 1 / radius when there are none; smoothed
+# over FAR_SMOOTH_DEG, and equal to the sky sphere's at the ground
+# plane's rim, released over FAR_PIN_DEG above it - so plane and far field meet without a step in depth.
+FAR_FIELD = True
+FAR_RADII_M: Tuple[Optional[float], ...] = (100.0, None)     # with the sky sphere's radius: 100 m, 300 m, infinity
+FAR_EL_DEG = (-6.0, 30.0)        # the elevations tried (above: the sky sphere's radius held from the last row)
+FAR_WIDTH = 4096                 # on a panorama at most this wide (and half the output's width)
+FAR_AGG_DEG = 1.0                # the costs are summed over +/- this
+FAR_SMOOTH_DEG = 1.5             # the field's smoothing (Gaussian sigma)
+FAR_SPREAD_DEG = 8.0             # undecided directions take the decided ones within about this (Gaussian sigma) ...
+FAR_SPREAD_MIN = 0.02            # ... in full when the decided share around them is at least this
+FAR_NOISE = 1.0                  # the detail band's noise (8-bit units squared): costs this close are the same
+FAR_DECISIVE = 0.3               # (worst - best) / worst cost from which the choice counts in full
+FAR_PIN_FROM_DEG = -0.5          # the sky sphere's radius up to this elevation (the plane's rim is at about -0.4 deg) ...
+FAR_PIN_DEG = 2.5                # ... and the field's own value from this much above it
+
+
+def estimate_far_field(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], width: int,
+                       up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), rows_per_chunk: int = 128,
+                       radii: Optional[Sequence[Optional[float]]] = None) -> Optional[Dict[str, Any]]:
+    """The far field of the station (see FAR_FIELD): sets ``scene.far_field`` (read by :meth:`Scene.cast`) and
+    returns its record {"radii_m", "width", "rows", "share_nearest": {radius: share of the decided directions},
+    "decided_share", "median_radius_m", ...}; None (and no field) without a sky sphere or a far direction that
+    two frames see."""
+    import cv2
+    prior_r = getattr(scene, "sky_radius_m", None)
+    if not prior_r or getattr(scene, "plane", None) is None:
+        return None
+    t0 = time.time()
+    if radii is None:
+        radii = sorted({float(prior_r)} | {float(r) for r in FAR_RADII_M if r}) + ([None] if None in FAR_RADII_M else [])
+    w = int(min(FAR_WIDTH, max(256, width // 2)))
+    hf = w // 2
+    r_top = int(np.clip(np.floor((90.0 - FAR_EL_DEG[1]) / 180.0 * hf), 0, hf - 1))
+    r_bot = int(np.clip(np.ceil((90.0 - FAR_EL_DEG[0]) / 180.0 * hf), r_top + 1, hf))
+    h = r_bot - r_top
+    cost = np.zeros((len(radii), h, w), np.float32)
+    val = np.zeros((len(radii), h, w), np.float32)
+    far = np.zeros((h, w), bool)
+    keep_r, keep_f = scene.sky_radius_m, getattr(scene, "far_field", None)
+    try:
+        scene.far_field = None
+        for i, R in enumerate(radii):
+            scene.sky_radius_m = R
+            for r0 in range(r_top, r_bot, rows_per_chunk):
+                r1 = min(r_bot, r0 + rows_per_chunk)
+                o, d = ods_rays(w, hf, (r0, r1), pivot, 0.0, "centre", up, north, east)
+                sub = np.flatnonzero(scene.cast(o, d)["label"] == LABEL_FAR)
+                if i == 0:
+                    far[r0 - r_top:r1 - r_top].reshape(-1)[sub] = True
+                if not len(sub):
+                    continue
+                c = candidates(scene, sources, o[sub], d[sub], surface_check=False)
+                n = len(sub)
+                s0, s1, s2, sw2 = (np.zeros(n, np.float64) for _ in range(4))
+                for slot in range(c["k"].shape[1]):
+                    ks = c["k"][:, slot]
+                    for k in np.unique(ks[ks >= 0]):
+                        sel = np.flatnonzero(ks == k)
+                        src = sources[k]
+                        lo, full = src.sample_bands(c["uv"][sel, slot])
+                        hi = src.gain * (full - lo).mean(axis=1)
+                        wt = (_smoothstep(c["dist"][sel, slot] / (FEATHER_HIGH_FRAC * src.short_side)) * c["ang"][sel, slot] ** 3
+                              * c["fill_weight"][sel, slot]).astype(np.float64)
+                        s0[sel] += wt; s1[sel] += wt * hi; s2[sel] += wt * hi * hi; sw2[sel] += wt * wt
+                ok = s0 > 1e-9
+                share = np.zeros(n)                                    # 1 - sum w^2 / (sum w)^2: 0 one frame, 1/2 two alike
+                share[ok] = 1.0 - sw2[ok] / s0[ok] ** 2
+                two = share > 0.02
+                var = np.zeros(n)
+                var[two] = np.maximum(s2[two] / s0[two] - (s1[two] / s0[two]) ** 2, 0.0) / share[two]
+                cost[i, r0 - r_top:r1 - r_top].reshape(-1)[sub] = var
+                val[i, r0 - r_top:r1 - r_top].reshape(-1)[sub] = np.clip(2.0 * share, 0.0, 1.0)
+    finally:
+        scene.sky_radius_m, scene.far_field = keep_r, keep_f
+    for s_ in sources:
+        s_.release()
+    v = val.min(axis=0)                                                # seen by two frames at every radius
+    if float(v.sum()) < 50:
+        return None
+    ka = max(1, int(round(FAR_AGG_DEG / 360.0 * w)))
+    pad = 4 * max(ka, int(round(FAR_SPREAD_DEG / 360.0 * w))) + 2
+    wrap = lambda x: np.concatenate([x[:, -pad:], x, x[:, :pad]], axis=1)                      # noqa: E731
+    box = lambda x: cv2.blur(wrap(x), (2 * ka + 1, 2 * ka + 1), borderType=cv2.BORDER_REPLICATE)[:, pad:pad + w]   # noqa: E731
+    den = box(v)
+    agg = np.stack([box(cost[i] * v) / np.maximum(den, 1e-6) for i in range(len(radii))])
+    cmin, cmax = agg.min(axis=0), agg.max(axis=0)
+    conf = _smoothstep((cmax - cmin) / (cmax + FAR_NOISE) / FAR_DECISIVE) * np.clip(den / 0.2, 0.0, 1.0)
+    inv_r = np.array([0.0 if not R else 1.0 / float(R) for R in radii], np.float32)
+    p = np.exp(-(agg - cmin[None]) / (0.1 * cmin[None] + 0.1 * FAR_NOISE))
+    est = (p * inv_r[:, None, None]).sum(axis=0) / p.sum(axis=0)
+    prior = 1.0 / float(prior_r)
+    # where the frames do not tell (the middle of a frame that nobody overlaps, plain sky): the decided directions
+    # around, spread over FAR_SPREAD_DEG - not the sky sphere's radius in stripes between the overlaps
+    gauss = lambda x, sg_: cv2.GaussianBlur(wrap(x.astype(np.float32)), (0, 0), sg_, borderType=cv2.BORDER_REPLICATE)[:, pad:pad + w]   # noqa: E731
+    sw_ = max(1.0, FAR_SPREAD_DEG / 360.0 * w)
+    cden = gauss(conf, sw_)
+    spread = gauss(conf * est, sw_) / np.maximum(cden, 1e-6)
+    cw = np.clip(cden / FAR_SPREAD_MIN, 0.0, 1.0)
+    inv = conf * est + (1.0 - conf) * (cw * spread + (1.0 - cw) * prior)
+    inv = gauss(inv, max(0.5, FAR_SMOOTH_DEG / 360.0 * w))
+    el = 90.0 - (np.arange(r_top, r_bot) + 0.5) / hf * 180.0
+    pin = _smoothstep((el - FAR_PIN_FROM_DEG) / FAR_PIN_DEG)[:, None]
+    inv = (prior + pin * (inv - prior)).astype(np.float32)
+    scene.far_field = {"inv": inv, "el_top_deg": 90.0 - r_top / hf * 180.0, "el_bottom_deg": 90.0 - r_bot / hf * 180.0,
+                       "east": np.asarray(east, float), "north": np.asarray(north, float), "up": np.asarray(up, float),
+                       "confidence": conf.astype(np.float32), "estimate": est.astype(np.float32)}
+    dec = far & (conf > 0.5)
+    best = agg.argmin(axis=0)
+    name = lambda R: "infinity" if not R else f"{float(R):g} m"                                    # noqa: E731
+    out = {"radii_m": [None if not R else float(R) for R in radii], "width": w, "rows": [r_top, r_bot],
+           "elevation_deg": [float(FAR_EL_DEG[0]), float(FAR_EL_DEG[1])],
+           "far_directions": int(far.sum()), "seen_by_two_frames_share": float((far & (v > 0.5)).sum() / max(1, far.sum())),
+           "decided_share": float(dec.sum() / max(1, far.sum())),
+           "share_nearest": {name(R): float(((best == i) & dec).sum() / max(1, dec.sum())) for i, R in enumerate(radii)},
+           "median_radius_m_where_decided": (float(1.0 / max(np.median(inv[dec]), 1e-6)) if dec.any() else None),
+           "mean_cost": {name(R): float(agg[i][dec].mean()) if dec.any() else None for i, R in enumerate(radii)},
+           "seconds": round(time.time() - t0, 1),
+           "rule": "per far direction the radius whose frames agree best in their detail band (soft minimum over the "
+                   "radii; the sky sphere's radius where they do not tell: one frame, or no texture); one smooth field "
+                   "of 1 / radius, the sky sphere's at the ground plane's rim"}
+    return out
 
 
 def estimate_gains(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], width: int = GAIN_PASS_WIDTH,
@@ -794,7 +952,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
                ipd_m: float, rows_per_chunk: int = 128, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0),
                feather_px: float = FEATHER_PX, progress=None, sky_fill: bool = True,
                azimuth0_deg: float = 0.0, linear: bool = False, ground_fill: bool = True, pole_merge_deg="default",
-               range_merge_m=(RANGE_MERGE_FROM_M, RANGE_MERGE_TO_M), near_merge_m="default") -> Dict[str, np.ndarray]:
+               range_merge_m="default", near_merge_m="default") -> Dict[str, np.ndarray]:
     """One eye's equirect: {"rgb" (H, W, 3) uint8 - or, ``linear``, float32 in 8-bit units up to 1024 (x 64 = the
     16-bit linear value) -, "source" (H, W) int16 (-1 none; the strongest source), "label"
     (H, W) uint8 surface label, "range" (H, W) float32}.  The two-band blend of the module doc, with each source's
@@ -810,6 +968,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     rej = [0, 0]                                             # the surface check's rejected samples
     rover_px = np.zeros((height, width), bool)               # the rover model under the pixel
     rej_map = np.zeros((height, width), bool)                # a source sample was turned away by the surface check
+    prov = np.zeros((height, width, 3), np.uint8)            # 0.97.13: the provenance picture's colours (BGR), blended
     u_ = np.asarray(up, float) / np.linalg.norm(up)
     pl = getattr(scene, "plane", None)
     t0 = time.time()
@@ -818,6 +977,8 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         rshare = None
         if isinstance(near_merge_m, str):
             near_merge_m = NEAR_MERGE_M
+        if isinstance(range_merge_m, str):
+            range_merge_m = (RANGE_MERGE_FROM_M, RANGE_MERGE_TO_M) if RANGE_MERGE else None
         if (range_merge_m or near_merge_m) and eye in ("left", "right"):     # the range from the pivot's own ray
             oc, dc = ods_rays(width, height, (r0, r1), P, 0.0, "centre", up, north, east, azimuth0_deg)
             tc = scene.cast(oc, dc)["t"]
@@ -840,6 +1001,8 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         w_hi_sum = np.zeros(n, np.float32)
         strongest = np.full(n, -1, np.int32)
         strongest_w = np.zeros(n, np.float32)
+        prov_lo = np.zeros((n, 3), np.float32)                 # 0.97.13: the frames' colours by their weights
+        prov_hi = np.zeros((n, 3), np.float32)
         K = c["k"].shape[1]
         for slot in range(K):
             ks = c["k"][:, slot]
@@ -850,13 +1013,9 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
                 dist = c["dist"][sel, slot]
                 aterm = c["ang"][sel, slot]
                 fwt = c["fill_weight"][sel, slot]
-                w_lo = _smoothstep(dist / (FEATHER_LOW_FRAC * src.short_side)) * aterm * fwt
-                w_hi = _smoothstep(dist / (FEATHER_HIGH_FRAC * src.short_side)) * aterm ** 3 * fwt
-                nr = c["near"][sel]
-                if nr.any():                                     # 0.97.8: both bands from the frame with the least parallax
-                    wn = _smoothstep(dist[nr] / (FEATHER_HIGH_FRAC * src.short_side)) * aterm[nr] ** NEAR_PARALLAX_POWER * fwt[nr]
-                    w_lo, w_hi = np.array(w_lo, np.float32), np.array(w_hi, np.float32)
-                    w_lo[nr], w_hi[nr] = wn, wn
+                nr = c["near"][sel]                              # 0.97.13: 0 (terrain) to 1 (near): the powers rise
+                w_lo = _smoothstep(dist / (FEATHER_LOW_FRAC * src.short_side)) * aterm ** (1.0 + nr * (NEAR_LOW_POWER - 1.0)) * fwt
+                w_hi = _smoothstep(dist / (FEATHER_HIGH_FRAC * src.short_side)) * aterm ** (3.0 + nr * (NEAR_PARALLAX_POWER - 3.0)) * fwt
                 sat = src.sample_saturation(c["uv"][sel, slot])
                 if sat is not None:                              # a saturated pixel: another frame, where there is one
                     keep = (1.0 - SAT_DOWNWEIGHT * np.clip(sat, 0.0, 1.0)).astype(np.float32)
@@ -866,6 +1025,9 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
                 hi_acc[sel] += (g * (full - lo)) * w_hi[:, None]
                 w_low_sum[sel] += w_lo
                 w_hi_sum[sel] += w_hi
+                pc = _source_colour(k)
+                prov_lo[sel] += w_lo[:, None] * pc
+                prov_hi[sel] += w_hi[:, None] * pc
                 better = w_lo > strongest_w[sel]
                 strongest[sel[better]] = k
                 strongest_w[sel[better]] = w_lo[better]
@@ -879,9 +1041,16 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
             tt = np.where(c["ok"] & np.isfinite(c["t"]), c["t"], 0.0)
             X = o + tt[:, None] * d
             hgt = (X @ pl["normal"] - pl["offset"]) / float(pl["normal"] @ u_)
-            g = has & ~c["on_rover"] & ((c["label"] == LABEL_PLANE) | ((c["label"] == LABEL_MESH) & (np.abs(hgt) < GROUND_BAND_M)))
+            # 0.97.13: with the rover model in the mesh the model itself says what is rover - all other mesh is
+            # terrain, whatever its height above the regional plane (on a slope the ground near the rover is not
+            # within GROUND_BAND_M of it: Taylorfjellet, 0.3 m)
+            level = (np.abs(hgt) < GROUND_BAND_M) | (getattr(scene, "rover_triangles", None) is not None)
+            g = has & ~c["on_rover"] & ((c["label"] == LABEL_PLANE) | ((c["label"] == LABEL_MESH) & level))
             ground[r0:r1] = g.reshape(r1 - r0, width)
         source[r0:r1] = np.where(has, strongest, -1).astype(np.int16).reshape(r1 - r0, width)
+        pm = 0.5 * prov_lo / np.maximum(w_low_sum, 1e-6)[:, None] + 0.5 * prov_hi / np.maximum(w_hi_sum, 1e-6)[:, None]
+        pm[~hh] = (prov_lo / np.maximum(w_low_sum, 1e-6)[:, None])[~hh]
+        prov[r0:r1] = np.clip(np.rint(pm), 0, 255).astype(np.uint8).reshape(r1 - r0, width, 3)
         label[r0:r1] = c["label"].reshape(r1 - r0, width)
         rng[r0:r1] = np.where(c["ok"], c["t"], 0).reshape(r1 - r0, width)
         if progress:
@@ -911,7 +1080,8 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     if checked:                                              # and any surface still without a source
         _brown((source == -1) & ((label == LABEL_MESH) | (label == LABEL_PLANE)))
     return {"brown_filled": brown, "rover": rover_px, "rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
-            "sky_filled": sky, "sky_evened": evened, "ground_filled": gfill, "surface_check_rejected": rej}
+            "sky_filled": sky, "sky_evened": evened, "ground_filled": gfill, "surface_check_rejected": rej, "provenance": prov,
+            "sky_weight": evened.pop("weight", None)}
 
 
 GROUND_BAND_M = 0.25             # mesh this close to the ground plane counts as terrain for the ground fill
@@ -1088,6 +1258,7 @@ def even_sky(rgb: np.ndarray, label: np.ndarray, sky: Optional[np.ndarray] = Non
     margin = SKY_EVEN_MARGIN_DEG / 180.0 * h
     ramp = np.clip((skyline[None, :] - margin - np.arange(h)[:, None]) / max(1.0, margin), 0.0, 1.0).astype(np.float32)
     ms = ms * (ramp > 0)
+    out["weight"] = (ramp * (ms > 0.5)).astype(np.float32)                 # 0.97.13: 1 = sky well above the skyline
     sg = max(1.0, SKY_EVEN_SMOOTH_FRAC * w)
     pad = int(4 * sg) + int(SKY_EVEN_AZ_FRAC * w) + 2
     wrap = lambda x: np.concatenate([x[:, -pad:], x, x[:, :pad]], axis=1)
@@ -1166,10 +1337,25 @@ def fill_cracks(rgb: np.ndarray, source: np.ndarray, label: np.ndarray, max_px: 
     return filled
 
 
-def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int) -> Path:
-    """The source index per pixel as colours (golden-angle hues), black = no data."""
+def _source_colour(k: int) -> np.ndarray:
+    """The provenance colour (BGR, float32) of source ``k``: golden-angle hues."""
+    import cv2
+    hsv = np.array([[[int((k * 137.508) % 180), 200, 230]]], np.uint8)
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0, 0].astype(np.float32)
+
+
+def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int, mix: Optional[np.ndarray] = None) -> Path:
+    """Which frames coloured each pixel (golden-angle hues), black = no data.  ``mix`` (0.97.13; Christian, 13 Nov
+    2026: "The provenance should be a smoother function when multiple images see the same surfaces"): the frames'
+    colours mixed by their weights in the blend (the mean of the colour band's and the detail band's shares), (H,
+    W, 3) BGR - a pixel between two hues is a blend of the two frames; without it the strongest frame's colour alone
+    (the picture before 0.97.13).  The fills keep their flat colours: grey cracks, light blue sky fill, brown
+    ground fill, dark brown where the surface check left no source."""
     import cv2
     img = np.zeros(source.shape + (3,), np.uint8)
+    if mix is not None:
+        img[source >= 0] = mix[source >= 0]
+        n_sources = 0
     img[source == -2] = (128, 128, 128)                       # cracks filled from their edges
     img[source == -3] = (230, 200, 160)                       # the sky filled above the frames (BGR: light blue)
     img[source == -4] = (90, 120, 150)                        # the ground filled as plain terrain (brown)
@@ -1187,6 +1373,7 @@ def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int) -> Pat
 
 
 LINEAR_TOP = 65535.0 / 64.0      # the 16-bit ceiling in 8-bit units
+SKY_WEIGHT_NAME = "ods_sky_weight.png"   # 0.97.13: 8-bit, small: 255 = sky well above the skyline (see even_sky)
 SAT_DOWNWEIGHT = 0.98            # a saturated source pixel keeps this much less weight in the blend
 STACK_NAME = "360_3DTD"              # .png and .jpg: the left eye on top of the right (Christian, 10 Nov: "put the left view on
 #                                      top"); 0.97.0 (Christian, 12 Nov 2026: "remove '_ods_stereo_square' and add '_360_3DTD' to every top
@@ -1311,7 +1498,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    ground_fill: bool = True, mask_mast: bool = True,
                    tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True, pole_merge_deg="default", sky_radius_m="default",
                    fill_families: str = "", nadir_mark: bool = True, site_name: Optional[str] = None,
-                   nadir_mark_deg: Optional[float] = None) -> Dict[str, Any]:
+                   nadir_mark_deg: Optional[float] = None, far_field: Optional[bool] = None) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_360_3DTD.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``S003D2046`` / ``S003D2046_rover``); '' for the bare names.  Returns the record."""
@@ -1370,7 +1557,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     if hasattr(scene, "set_sky_sphere"):                 # 0.97.0: the sky on a sphere, the plane out to it
         scene.set_sky_sphere(SKY_RADIUS_M if isinstance(sky_radius_m, str) else sky_radius_m)
     rec_out: Dict[str, Any] = {"station": station.to_json(), "prefix": prefix, "width": width, "height": height, "ipd_m": ipd_m,
-                               "sky_radius_m": getattr(scene, "sky_radius_m", None), "range_merge_m": [RANGE_MERGE_FROM_M, RANGE_MERGE_TO_M], "near_merge_m": NEAR_MERGE_M,
+                               "sky_radius_m": getattr(scene, "sky_radius_m", None), "range_merge_m": ([RANGE_MERGE_FROM_M, RANGE_MERGE_TO_M] if RANGE_MERGE else None), "near_merge_m": NEAR_MERGE_M,
                                "pole_merge_deg": ({"up": POLE_MERGE_DEG, "down": POLE_MERGE_DOWN_DEG} if isinstance(pole_merge_deg, str)
                                                   else pole_merge_deg if isinstance(pole_merge_deg, dict)
                                                   else (list(pole_merge_deg) if pole_merge_deg else None)),
@@ -1380,7 +1567,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                "head_hardware_masked": [s.name for s in sources if s.extra_mask is not None and s.extra_mask.any()],
                                "mast_masked": [s.name for s in sources if getattr(s, "mast_masked", False)],
                                "fill_only_sources": [s.name for s in sources if s.fill_only],
-                               "near_blend": {"within_m": NEAR_BLEND_M, "parallax_power": NEAR_PARALLAX_POWER},
+                               "near_blend": {"range_m": NEAR_BLEND_M, "parallax_power_colour": NEAR_LOW_POWER, "parallax_power_detail": NEAR_PARALLAX_POWER},
                                "eyes": {}}
     mark = None
     if nadir_mark:                                       # 0.97.7: the black disc with the credits at the nadir
@@ -1394,14 +1581,37 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             log.warning("ods: no rover pose for the nadir mark (%s); its text is centred on north", e)
         mark = _nadir.make_mark(width, height, lines, _nadir.NADIR_MARK_DEG if nadir_mark_deg is None else nadir_mark_deg,
                                 azimuth0_deg, centre_azimuth_deg=fwd)
-        rec_out["nadir_mark"] = {"lines": lines, "text": mark["text"], "radius_deg": mark["radius_deg"], "first_row": mark["row0"],
+        # 0.97.13: the disc lies on the surface under the mast - the median depth below the pivot of what the rays at
+        # the disc's rim meet (the deck with the rover shown, the ground without)
+        rim = int(np.clip(mark["row0"], 0, height - 1))
+        o_, d_ = ods_rays(width, height, (rim, rim + 1), station.pivot, 0.0, "centre", station.up, station.north, station.east, azimuth0_deg)
+        h_ = scene.cast(o_, d_)
+        surf = (h_["label"] == LABEL_MESH) | (h_["label"] == LABEL_PLANE)
+        u_st = np.asarray(station.up, float) / np.linalg.norm(station.up)
+        below = -(h_["t"][surf, None] * d_[surf]) @ u_st
+        below = below[np.isfinite(below) & (below > 0.05)]
+        mark["depth_m"] = float(np.median(below)) if len(below) >= 8 else 2.0
+        rec_out["nadir_mark"] = {"depth_below_pivot_m": mark["depth_m"], "lines": lines, "text": mark["text"], "radius_deg": mark["radius_deg"], "first_row": mark["row0"],
                                  "text_centre_azimuth_deg": mark["centre_azimuth_deg"],
-                                 "note": "the rows from first_row down are a light blue disc with this text in black, ahead of the rover's front, not data; "
-                                         "in every colour panorama, not in the depth products"}
+                                 "note": "a light blue disc with this text in black, ahead of the rover's front, not data; it lies on the "
+                                         "horizontal plane depth_below_pivot_m below the pivot (each eye sees it with that plane's "
+                                         "disparity; from the pivot it covers the rows from first_row down); in every colour "
+                                         "panorama, not in the depth products"}
     if gains:
         g = estimate_gains(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
         rec_out["gains"] = g
         log.info("ods: gains over %d source pairs: %s", g["pairs"], ", ".join(f"{v:.3f}" for v in g["gains"].values()))
+    if hasattr(scene, "far_field"):
+        scene.far_field = None
+    if (FAR_FIELD if far_field is None else far_field) and getattr(scene, "sky_radius_m", None):       # 0.97.13
+        ff = estimate_far_field(scene, sources, station.pivot, width, rows_per_chunk=rows_per_chunk, **axes)
+        rec_out["far_field"] = ff or {"note": "no far direction that two frames see: the sky sphere alone"}
+        if ff:
+            log.info("ods: far field in %.0f s: %.0f %% of the far directions decided (%s); median radius there %.0f m",
+                     ff["seconds"], 100 * ff["decided_share"],
+                     ", ".join(f"{k} {100 * x:.0f} %" for k, x in ff["share_nearest"].items()), ff["median_radius_m_where_decided"] or 0)
+            np.savez_compressed(out / "far_field.npz", inverse_radius_per_m=scene.far_field["inv"],
+                                el_top_deg=scene.far_field["el_top_deg"], el_bottom_deg=scene.far_field["el_bottom_deg"])
     if any(s.fill_only for s in sources):                # 0.97.7: the fill frames' colours matched to the regular ones
         fc = estimate_fill_colour(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
         fc["linear_sources"] = bool(linear)
@@ -1417,7 +1627,22 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             else:
                 log.info("ods: %s not matched (%d shared pixels)", cam, r["samples"])
     levels, levels_from, depth_rec = None, None, None
+    mark0 = mark
     for eye in eyes:
+        if mark0 is not None and eye in ("left", "right"):       # 0.97.13: the mark as this eye sees it on the ground
+            m0 = max(0, mark0["row0"] - int(np.ceil(_nadir.GROUND_MARGIN_DEG / 180.0 * height)))
+            al = np.zeros((height - m0, width), np.float32)
+            ins = np.zeros((height - m0, width), bool)
+            for q0 in range(m0, height, rows_per_chunk):
+                q1 = min(height, q0 + rows_per_chunk)
+                oe, de = ods_rays(width, height, (q0, q1), station.pivot, ipd_m, eye, station.up, station.north, station.east,
+                                  azimuth0_deg, pole_merge_deg=pole_merge_deg)
+                al[q0 - m0:q1 - m0], ins[q0 - m0:q1 - m0] = _nadir.on_ground(mark0, height, oe, de, (q0, q1), station.pivot, station.up,
+                                                                           station.north, station.east, mark0["depth_m"], azimuth0_deg)
+            mark = dict(mark0, row0=m0, alpha=al, inside=ins)
+            del al, ins
+        elif mark0 is not None:
+            mark = mark0
         res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, pole_merge_deg=pole_merge_deg, rows_per_chunk=rows_per_chunk,
                          progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, linear=linear,
                          ground_fill=ground_fill, **axes)
@@ -1466,7 +1691,13 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         if eye in ("centre", "center") and centre_depth:     # 0.97.0: the panorama from the pivot, with its depth
             depth_rec = write_centre_depth(out, prefix, res["range"], res["label"])
         if eye == eyes[0]:
-            provenance_png(res["source"], out / "provenance.png", len(sources))
+            provenance_png(res["source"], out / "provenance.png", len(sources), mix=res.get("provenance"))
+            sw = res.get("sky_weight")                   # 0.97.13: where the enhanced views may smooth the sky
+            fsw = out / ((f"{prefix}_" if prefix else "") + SKY_WEIGHT_NAME)
+            if sw is not None:
+                cv2.imwrite(str(fsw), np.clip(np.rint(255.0 * sw), 0, 255).astype(np.uint8))
+            elif fsw.is_file():
+                fsw.unlink()
         lab = res["label"]
         n = lab.size
         rec_out["eyes"][eye] = {"file": str(f), "coverage": {"coloured": float((res["source"] >= 0).sum() / n),
@@ -1517,6 +1748,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 log.info("ods: removed the stale %s (now %s_%s)", n, prefix, n)
     rec_out["prefix"] = prefix
     if mark is not None:
+        mark0.update({k_: mark[k_] for k_ in ("bg8", "bg16") if k_ in mark})
         rec_out["nadir_mark"]["background_bgr_8bit"] = [float(x) for x in mark.get("bg8", [])]
         if "bg16" in mark:
             rec_out["nadir_mark"]["background_bgr_16bit"] = [float(x) for x in mark["bg16"]]

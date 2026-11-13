@@ -193,6 +193,9 @@ def add_parsers(sub) -> None:
                    help="0.97.8: also the station's frames of these camera families taken on the same sols (F: the front "
                         "Hazcam pair, R: the rear pair) - their maps and photometric pictures beside the others")
     p.add_argument("--no-shadow", action="store_true")
+    p.add_argument("--colmap-bins", action="store_true",
+                   help="0.97.13: also write photometry_maps/<image>.{incidence,emission,phase}.bin (COLMAP's dense-map "
+                        "format, 79 MB each for a full Navcam frame; off by default - the same values are in photometry/*.npz)")
     p.add_argument("--no-preview", action="store_true")
     p.add_argument("--no-validate", action="store_true")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
@@ -206,13 +209,15 @@ def add_parsers(sub) -> None:
     p.add_argument("--ipd", type=float, default=0.064, help="eye separation in metres")
     p.add_argument("--sky-radius", type=float, default=None, metavar="M",
                    help="0.97.0: the sky on a sphere of this radius about the mast axis and the ground plane out to it "
-                        "(default 200; the eye separation fades from 75 m to zero at 200 m)")
+                        "(default 300; beyond it the far field: --no-far-field)")
     p.add_argument("--pole-merge", type=float, nargs=2, default=None, metavar=("START", "END"),
                    help="0.97.0: above the horizon, the elevation (deg) where the eye separation starts to fall and where "
-                        "it is zero (default 30 80); 90 90: none")
+                        "it is zero (default 0 90 since 0.97.13: the cosine of the elevation; 30 80 before); 90 90: none")
     p.add_argument("--pole-merge-down", type=float, nargs=2, default=None, metavar=("START", "END"),
-                   help="0.97.1: the same below the horizon (default 60 88 since 0.97.5, with the near-surface limit "
-                        "of 2.5 m); 90 90: none")
+                   help="0.97.1: the same below the horizon (default 0 90 since 0.97.13; 60 88 from 0.97.5); 90 90: none")
+    p.add_argument("--no-far-field", action="store_true",
+                   help="0.97.13: the sky sphere alone beyond the ground plane (default: per direction the sharpest of "
+                        "100 m, the sky radius and infinity, blended)")
     p.add_argument("--cameras", default="N")
     p.add_argument("--fill-cameras", default="", metavar="LETTERS",
                    help="0.97.7: the station's frames of these camera families as fill-only sources - they colour what "
@@ -448,7 +453,7 @@ def cmd_depthmaps(a: argparse.Namespace) -> int:
             except Exception as e:                   # noqa: BLE001 - the shadows of the mesh alone
                 log.warning("depthmaps: no rover pose (%s); the shadows without the mast and the camera head", e)
         prep = photometric_cube(project, rec, st, scene, out / "maps", out, previews=not a.no_preview, with_shadow=not a.no_shadow,
-                                rover_pose=pose)
+                                rover_pose=pose, colmap_bins=a.colmap_bins)
         print(f"photometric cube: {prep['n_images']} images -> {out / 'photometry'}")
     return 0
 
@@ -485,7 +490,7 @@ def cmd_ods(a: argparse.Namespace) -> int:
     st, out = _station(project, rec, a)
     scene = _scene(out)
     rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, sky_radius_m=("default" if a.sky_radius is None else a.sky_radius), pole_merge_deg=_pole_merge(a), families=a.cameras, scale=a.scale,
-                         zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
+                         far_field=not a.no_far_field, zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,
                          azimuth0_deg=-180.0 if a.north_center else a.azimuth0, prefix=a.prefix,

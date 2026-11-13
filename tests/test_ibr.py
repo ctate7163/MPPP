@@ -643,7 +643,14 @@ def test_scene_mesh_then_plane_then_sky():
     keep = ~((np.abs(cen[:, 0] - 6) < 1.5) & (np.abs(cen[:, 1]) < 1.5))          # a hole 6 m east
     V, F = M.keep_triangles(V, F, keep)
     plane = {"normal": [0, 0, 1], "offset": 0.0, "centre": P, "up": [0, 0, 1], "radius_m": 100.0}
-    sc = RC.Scene((V, F), plane=plane, sky=True)
+    # 0.97.13: the plane starts PLANE_FROM_M (10 m) from the axis - nearer, a ray through a hole does not end on it
+    # (the mesh is made whole there by fill_terrain); "inner_m": 0 is the plane everywhere, as before
+    sc10 = RC.Scene((V, F), plane=plane, sky=True)
+    d6 = np.array([[6.0, 0.0, -2.0]]) / np.linalg.norm([6.0, 0.0, -2.0])
+    assert RC.PLANE_FROM_M == 10.0 and sc10.cast(P, d6)["label"][0] == RC.LABEL_FAR
+    d60 = np.array([[60.0, 0.0, -2.0]]) / np.linalg.norm([60.0, 0.0, -2.0])
+    assert sc10.cast(P, d60)["label"][0] == RC.LABEL_PLANE
+    sc = RC.Scene((V, F), plane=dict(plane, inner_m=0.0), sky=True)
 
     def ray(x, y, z):
         d = np.array([[x, y, z]], float) - P
@@ -1687,19 +1694,16 @@ def test_surface_check_keeps_rover_pixels_on_the_rover_and_terrain_on_terrain(tm
 
 
 def test_ods_pole_merging():
-    """0.97.0 (12 Nov): the eye separation falls towards the poles; 0.97.1: below the horizon as cos(elevation)."""
+    """0.97.0 (12 Nov): the eye separation falls towards the poles.  0.97.13: as cos(elevation) above and below the
+    horizon, and nothing else scales it (no near-surface limit, no fade with range): true disparity x cos(elevation)."""
     from mppp.ibr import ods as O
     P = np.zeros(3)
-    up = np.radians([0, 30, 55, 80, 90])
-    assert np.allclose(O.pole_merge(up)[[0, 1, 3, 4]], [1, 1, 0, 0], atol=1e-9) and 0.6 < O.pole_merge(up)[2] < 0.8
-    dn = np.radians([-30.0, -45.0, -60.0, -90.0])
-    # 0.97.5: no cosine law below the horizon (it made the ground dip): full to -60 deg, merged at the nadir; near
-    # surfaces are limited by range instead (near_merge)
-    assert np.allclose(O.pole_merge(dn, O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG), [1, 1, 1, 0], atol=1e-9)
-    assert 0.3 < float(O.pole_merge(np.radians(-75.0), O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG)) < 0.8
-    assert np.allclose(O.near_merge([1.0, 2.5, 10.0, 0.0, np.inf, 0.1]), [0.4, 1, 1, 1, 1, O.NEAR_MERGE_MIN])
-    assert np.allclose(O.near_merge([1.0], None), 1.0)
-    assert np.allclose(O.pole_merge(np.radians([30.0]), O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG), 1.0)     # up: as before
+    e = np.radians([0.0, 30.0, -30.0, 45.0, -60.0, 90.0, -90.0])
+    assert np.allclose(O.pole_merge(e, O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG), np.cos(e), atol=1e-12)
+    assert O.NEAR_MERGE_M is None and O.RANGE_MERGE is False
+    assert np.allclose(O.near_merge([1.0, 2.5, 10.0, 0.0, np.inf, 0.1], 2.5), [0.4, 1, 1, 1, 1, O.NEAR_MERGE_MIN])   # the 0.97.5 rule, kept
+    assert np.allclose(O.near_merge([1.0], None), 1.0) and np.allclose(O.near_merge([1.0]), 1.0)
+    assert np.allclose(O.pole_merge(np.radians([20.0, 30.0, -70.0]), (30.0, 80.0), (60.0, 88.0))[:2], 1.0)   # the old rule on request
     def sep(row, **k):
         oL, _ = O.ods_rays(360, 180, (row, row + 1), P, 0.064, "left", **k)
         oR, _ = O.ods_rays(360, 180, (row, row + 1), P, 0.064, "right", **k)
@@ -1707,9 +1711,9 @@ def test_ods_pole_merging():
         assert np.allclose(s_, s_[0])
         return float(s_[0])
     assert abs(sep(89) - 0.064) < 1e-4                                    # just above the horizon: full
-    assert abs(sep(120) - 0.064) < 1e-6                                   # 30.5 deg down: full (0.97.5)
-    assert abs(sep(59) - 0.064) < 1e-4                                    # 30.5 deg up: still full
-    assert sep(175) < 0.064 * 0.2 and sep(4) < 1e-9                       # near the nadir; the zenith
+    assert abs(sep(120) - 0.064 * np.cos(np.radians(30.5))) < 1e-6        # 30.5 deg down: cos(elevation) (0.97.13)
+    assert abs(sep(59) - 0.064 * np.cos(np.radians(30.5))) < 1e-6         # 30.5 deg up: the same
+    assert sep(175) < 0.064 * 0.2 and sep(4) < 0.064 * 0.1                # near the nadir; near the zenith
     assert abs(sep(175, pole_merge_deg=None) - 0.064) < 1e-9
     assert abs(sep(120, pole_merge_deg={"up": None, "down": (30.0, 80.0)}) - 0.064 * np.cos(0.5 * np.pi * 0.5 / 50)) < 1e-6
 
@@ -1761,7 +1765,7 @@ def test_sky_sphere_and_range_merge():
     sc.set_sky_sphere(0)
     assert sc.cast(o, d)["t"][0] == SKY_RANGE_M
     assert np.allclose(O.range_merge([10, 75, 200, 1e6]), [1, 1, 0, 0], atol=1e-9)        # full to 75 m, zero from 200 m
-    assert 0.6 < O.range_merge(140.0) < 0.8 and O.range_merge(500.0, None) == 1.0 and O.SKY_RADIUS_M == 200.0
+    assert 0.6 < O.range_merge(140.0) < 0.8 and O.range_merge(500.0, None) == 1.0 and O.SKY_RADIUS_M == 300.0
     oL, _ = O.ods_rays(8, 4, (2, 3), np.zeros(3), 0.064, "left", share=np.linspace(0, 1, 8), pole_merge_deg=None)
     assert np.allclose(np.linalg.norm(oL, axis=1), 0.032 * np.linspace(0, 1, 8))
 
@@ -2278,3 +2282,204 @@ def test_depth_without_the_centre_panorama_and_fill_frames_within_two_hours(tmp_
     got = O.fill_frames(NS(images=rows), fake_rec, NS(label="S003D0010"), "F", own)
     assert got == [n for n in haz if "0700003000" in n] and O.FILL_WITHIN_S == 7200.0
     assert O.fill_frames(NS(images=rows), fake_rec, NS(label="S003D0010"), "", own) == []
+
+
+def test_far_field_takes_the_radius_at_which_the_frames_agree(tmp_path):
+    """0.97.13: beyond the plane a textured wall 8 m away to the east and a texture at infinity to the west.  The
+    far field finds each (the costs of the radii differ where two frames overlap), is one smooth field, equals the
+    sky sphere's radius at the plane's rim, and the scene's far hits follow it."""
+    import cv2
+    proj, rec, st, scene = _ring_station(tmp_path, n=8, darken=1.0)
+    cam = rec.cameras[1]
+    P = np.asarray(st.pivot, float)
+
+    def tex(v):                                                              # a random grey per 2 deg cell of direction
+        az = np.degrees(np.arctan2(v[..., 0], v[..., 1])) % 360.0
+        el = np.degrees(np.arcsin(np.clip(v[..., 2] / np.linalg.norm(v, axis=-1), -1, 1)))
+        i, j = np.floor(az / 2.0).astype(np.int64), np.floor((el + 90.0) / 2.0).astype(np.int64)
+        return 60.0 + (((i * 73856093) ^ (j * 19349663)) % 140)
+    for im in rec.images.values():
+        Rm = np.asarray(im.cam_from_world().rotation.matrix())
+        C = np.asarray(im.projection_center())
+        m = RC.cast_image(scene, cam, Rm, C, scale=1.0)
+        _, dw, _ = RC.pixel_rays(cam, Rm, 1.0)
+        v = C - P
+        b = dw @ v
+        t = -b + np.sqrt(b * b - (v @ v - 8.0 ** 2))                         # the wall: a sphere of 8 m about the pivot
+        wall = (C + t[..., None] * dw) - P
+        far = np.where(dw[..., 0] > 0, tex(wall), tex(dw))
+        ground = 120.0 + 0.3 * (_world_texture(C + m["range"][..., None] * dw).astype(float) - 128.0)
+        cv2.imwrite(str(proj.root / "images" / im.name), np.clip(np.where(m["label"] == RC.LABEL_FAR, far, ground), 0, 255).astype(np.uint8))
+    srcs = O.station_sources(proj, rec, st, scale=1.0)
+    scene.set_sky_sphere(300.0)
+    axes = dict(up=st.up, north=st.north, east=st.east)
+    ff = O.estimate_far_field(scene, srcs, st.pivot, 1440, radii=(8.0, 300.0, None), rows_per_chunk=64, **axes)
+    assert ff["radii_m"] == [8.0, 300.0, None] and ff["decided_share"] > 0.05 and scene.far_field is not None
+    d = lambda az, el: np.array([[np.sin(np.radians(az)) * np.cos(np.radians(el)), np.cos(np.radians(az)) * np.cos(np.radians(el)),   # noqa: E731
+                                  np.sin(np.radians(el))]])
+    east = float(scene.far_inverse_radius(d(90.0, 6.0))[0])
+    west = float(scene.far_inverse_radius(d(270.0, 6.0))[0])
+    assert 1 / 12.0 < east < 1 / 6.0 and west < 1 / 150.0                     # the wall at 8 m; the far texture far
+    rim = float(scene.far_inverse_radius(d(90.0, -1.5))[0])
+    assert abs(rim - 1 / 300.0) < 1e-6                                       # at the plane's rim: the sky sphere's radius
+    inv = scene.far_field["inv"]
+    assert np.abs(np.diff(inv, axis=1)).max() < 0.1 * inv.max()              # no step from one direction to the next
+    mid = inv[:, inv.shape[1] // 8:3 * inv.shape[1] // 8][-40:-30]              # the east, a few degrees up: no stripes
+    assert mid.min() > 0.8 * mid.max()
+    t_e = scene.cast(P[None], d(90.0, 6.0))
+    t_w = scene.cast(P[None], d(270.0, 6.0))
+    assert t_e["label"][0] == RC.LABEL_FAR and abs(t_e["t"][0] - 1.0 / east) < 0.5 and t_w["t"][0] > 150.0
+    scene.far_field = None
+    assert abs(scene.cast(P[None], d(90.0, 6.0))["t"][0] - 300.0) < 1.0      # without the field: the sky sphere
+    # a sky without texture decides nothing (only the skyline itself has something to compare)
+    proj2, rec2, st2, scene2 = _ring_station(tmp_path / "flat", n=8, darken=1.0)
+    scene2.set_sky_sphere(300.0)
+    ff2 = O.estimate_far_field(scene2, O.station_sources(proj2, rec2, st2, scale=1.0), st2.pivot, 1440, radii=(8.0, 300.0, None),
+                               up=st2.up, north=st2.north, east=st2.east)
+    assert ff2 is None or ff2["decided_share"] < 0.1 < ff["decided_share"]
+    rep = O.render_station(proj, rec, st, scene, tmp_path / "ods_far", width=512, ipd_m=0.064, scale=1.0, rows_per_chunk=64, eyes=("left",))
+    assert "far_field" in rep and (tmp_path / "ods_far" / "far_field.npz").is_file() == ("radii_m" in rep["far_field"])
+    rep = O.render_station(proj, rec, st, scene, tmp_path / "ods_nofar", width=512, ipd_m=0.064, scale=1.0, rows_per_chunk=64,
+                           eyes=("left",), far_field=False)
+    assert "far_field" not in rep and scene.far_field is None
+
+
+def test_near_blend_is_gradual_and_the_provenance_is_a_mix(tmp_path):
+    """0.97.13: the near rule comes in gradually with range (no switch at 3 m), and provenance.png shows the frames'
+    shares: between two frames' areas the colours run into each other."""
+    import cv2
+    r = np.array([0.5, 2.0, 3.0, 4.0, 10.0, np.inf])
+    n = O.near_share(r)
+    assert np.allclose(n[[0, 1, 3, 4, 5]], [1, 1, 0, 0, 0]) and abs(n[2] - 0.5) < 1e-6
+    fine = O.near_share(np.linspace(1.5, 4.5, 301))
+    assert np.abs(np.diff(fine)).max() < 0.02 and O.NEAR_LOW_POWER < O.NEAR_PARALLAX_POWER
+    proj, rec, st, scene = _ring_station(tmp_path, n=6, darken=1.0)
+    out = tmp_path / "prov"
+    O.render_station(proj, rec, st, scene, out, width=720, ipd_m=0.064, scale=1.0, rows_per_chunk=60, eyes=("left",))
+    p = cv2.imread(str(out / "provenance.png"))
+    pure = {tuple(int(x) for x in np.clip(np.rint(O._source_colour(k)), 0, 255)) for k in range(6)}
+    v = int((90 + 35) / 180 * 360)                                           # 35 deg below the horizon: every frame's band
+    row = [tuple(int(x) for x in c) for c in p[v]]
+    assert sum(c in pure for c in row) > 0.2 * len(row)                      # a frame alone in its middle ...
+    mixed = [c for c in row if c not in pure and max(c) > 0]
+    assert len(mixed) > 0.2 * len(row)                                       # ... and a mix where two overlap
+    assert np.abs(np.diff(p[v].astype(int), axis=0)).max() < 60              # no jump from one frame's colour to the next
+    hard = np.zeros((4, 6), np.int16); hard[:, 3:] = 1; hard[0, 0] = -2
+    O.provenance_png(hard, tmp_path / "hard.png", 2)                          # without the mix: the strongest frame's colour
+    q = cv2.imread(str(tmp_path / "hard.png"))
+    assert tuple(int(x) for x in q[1, 0]) in pure and tuple(q[0, 0]) == (128, 128, 128)
+
+
+def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
+    """0.97.13: the first row is taller than the second; each eye sees the disc on the plane below the pivot, so the
+    eyes' pictures of it differ by that plane's disparity, and from the pivot it is the drawing itself."""
+    import cv2
+    from mppp.ibr import nadir
+    W, H = 4096, 2048
+    m = nadir.make_mark(W, H, nadir.mark_lines(["NLF_0052_a"], "Van Zyl Overlook"), centre_azimuth_deg=180.0)
+    assert m["rows"][0]["height_px"] >= 1.4 * m["rows"][1]["height_px"] and m["rows"][0]["span_deg"] <= 180.5
+    P, depth = np.array([1.0, 2.0, 3.0]), 0.9
+    m0 = m["row0"] - 46
+    got = {}
+    for eye in ("left", "right", "centre"):
+        o, d = O.ods_rays(W, H, (m0, H), P, 0.064, eye)
+        got[eye] = nadir.on_ground(m, H, o, d, (m0, H), P, (0, 0, 1), (0, 1, 0), (1, 0, 0), depth)
+    assert np.abs(got["centre"][0][46:] - m["alpha"]).max() < 1e-5 and not got["centre"][1][:45].any() and got["centre"][1][46:].all()
+    r = 46 + int(nadir.TEXT_ROWS_IN_BAND[0] * m["alpha"].shape[0])
+    x0 = W // 2 - 512
+    (dx, dy), _ = cv2.phaseCorrelate(got["left"][0][r - 12:r + 12, x0:x0 + 1024], got["right"][0][r - 12:r + 12, x0:x0 + 1024])
+    el = np.radians(m["rows"][0]["elevation_deg"])
+    expected = 0.064 * np.cos(el) / (depth / np.sin(-el)) / np.cos(el) / (2 * np.pi) * W      # share cos(el); 1 / cos(el): equirect
+    assert abs(abs(dx) - expected) < 0.1 * expected and abs(dy) < 0.5
+    img = np.full((H - m0, W, 3), 90, np.uint8)
+    nadir.apply_mark(img, dict(m, row0=0, alpha=got["left"][0], inside=got["left"][1]), (238, 212, 176))
+    assert (img[~got["left"][1]] == 90).all() and (img[got["left"][1]] != 90).any()
+    proj, rec, st, scene, Pp, colours = _station_scene(tmp_path)
+    rep = O.render_station(proj, rec, st, scene, tmp_path / "ods_mark", width=1024, ipd_m=0.064, scale=1.0, rows_per_chunk=64)
+    assert abs(rep["nadir_mark"]["depth_below_pivot_m"] - Pp[2]) < 0.05       # the plane z = 0 under the pivot
+    L = cv2.imread(str(tmp_path / "ods_mark" / "S003D0010_ods_left.png"))
+    Rr = cv2.imread(str(tmp_path / "ods_mark" / "S003D0010_ods_right.png"))
+    band = slice(rep["nadir_mark"]["first_row"], None)
+    assert (L[band] != Rr[band]).any(axis=2).mean() > 0.001                  # the text is shifted between the eyes
+
+
+def test_enhanced_views_smooth_the_sky(tmp_path):
+    """0.97.13: with the render's sky weight map the enhanced views replace the sky by its blur (a frame's edge in
+    the sky goes), leave the terrain and the skyline alone, and do not sharpen the sky."""
+    import cv2
+    from mppp.ibr import linear16 as L
+    H, W = 512, 1024
+    el = 90.0 - (np.arange(H) + 0.5) / H * 180.0
+    x = np.zeros((H, W, 3), np.float32)
+    x[:] = (120.0 + 30.0 * np.cos(np.radians(el)))[:, None, None]
+    x[60:140, 300:420] *= 1.06                                             # a frame 6 % brighter than the sky around it
+    x[el <= 0] = 60.0
+    x[300:, ::7] = 200.0                                                   # terrain texture, brighter than the sky
+    w = np.zeros((H // 4, W // 4), np.float32)
+    w[: int(0.45 * H // 4)] = 1.0                                          # sky to 9 deg above the horizon
+    before = x.copy()
+    y, wf = L.smooth_sky(x.copy(), w)
+    step = lambda a: abs(float(a[100, 299, 0]) - float(a[100, 301, 0]))    # noqa: E731
+    assert step(before) > 6.0 and step(y) < 1.0
+    assert np.array_equal(y[el <= 0], before[el <= 0]) and wf.shape == (H, W) and wf[10, 10] == 1.0 and wf[300, 10] == 0.0
+    g = np.clip(before, 0, 255).astype(np.uint8)
+    assert np.array_equal(L.local_contrast(g, np.ones((H, W), np.float32)), cv2.cvtColor(cv2.cvtColor(g, cv2.COLOR_BGR2LAB), cv2.COLOR_LAB2BGR))
+    assert not np.array_equal(L.local_contrast(g), L.local_contrast(g, np.ones((H, W), np.float32)))
+    out = tmp_path / "enh"
+    out.mkdir()
+    v16 = np.clip(before * 32.0, 0, 65535).astype(np.uint16)                # exposure16 0.5: 32 per 8-bit unit
+    for eye in ("left", "right"):
+        cv2.imwrite(str(out / f"S1_ods_{eye}_16.png"), v16)
+    (out / "ods.json").write_text(json.dumps({"linear16": {"exposure16": 0.5}}), encoding="utf-8")
+    r0 = L.write_enhanced(out, "S1")
+    a0 = cv2.imread(str(out / "S1_enh_360_3DTD.jpg"))
+    cv2.imwrite(str(out / f"S1_{O.SKY_WEIGHT_NAME}"), np.rint(255 * w).astype(np.uint8))
+    r1 = L.write_enhanced(out, "S1")
+    a1 = cv2.imread(str(out / "S1_enh_360_3DTD.jpg"))
+    assert r0["sky"].startswith("as rendered") and r1["sky"].startswith("smoothed")
+    edge = lambda a: abs(float(a[100, 296:299].mean()) - float(a[100, 302:305].mean()))      # noqa: E731
+    assert edge(a0) > 2.0 and edge(a1) <= 1.2
+    assert np.abs(a0[320:500].astype(int) - a1[320:500]).max() <= 2        # the terrain: the same picture
+
+
+def test_frame_black_padding_is_the_no_data_flag_in_the_pictures(tmp_path):
+    """0.97.13: where the frame itself is black padding (a subframe in the full frame) every photometry_jpg picture
+    is black; a dark rock inside the frame is not padding.  The plane fills no hole within 10 m; near cells with
+    surface get the interpolated surface under them."""
+    import cv2
+    from mppp.ibr import photometry as PH
+    H, W = 120, 160
+    frame = np.full((H, W, 3), 120, np.uint8)
+    frame[:, :40] = 0                                                          # the padding: a quarter of the frame
+    frame[60:64, 100:104] = 0                                                  # a black spot inside: data
+    f = tmp_path / "images" / "NLF_x.png"
+    f.parent.mkdir()
+    cv2.imwrite(str(f), frame)
+    nd = RC.no_data_mask(f, (H, W))
+    assert nd[:, :40].all() and not nd[:, 40:].any() and RC.no_data_mask(f, (60, 80)).shape == (60, 80)
+    assert RC.no_data_mask(tmp_path / "missing.png") is None
+    lab = np.full((H, W), RC.LABEL_MESH, np.uint8); lab[:30] = RC.LABEL_FAR
+    n = np.zeros((H, W, 3), np.float32); n[..., 2] = -1
+    files = RC.preview_jpg({"range": np.full((H, W), 5.0, np.float32), "label": lab, "normal": n}, tmp_path / "photometry_jpg" / "NLF_x", no_data=nd)
+    pm = {k: np.full((H, W), 40.0, np.float32) for k in ("incidence", "emission", "phase")}
+    pm["shadow"] = np.full((H, W), PH.SHADOW_LIT, np.uint8)
+    files += PH.preview_jpg(pm, tmp_path / "photometry_jpg" / "NLF_x", rad_image=f, label=lab)
+    assert len(files) == 8
+    for g in files:
+        im = cv2.imread(str(g))
+        assert im[5:, :36].max() < 12, g                                       # black in the padding, sky rows included
+        if not str(g).endswith("_rad.jpg"):
+            assert im[40:, 44:].max(axis=2).min() > 60, g                      # data where the frame has data
+            assert str(g).endswith("_shadow.jpg") or im[5:25, 60:].min() > 240, g   # the sky white
+    import inspect
+    assert inspect.signature(PH.photometric_cube).parameters["colmap_bins"].default is False and M.PREVIEW_HALF_WIDTH_M == 75.0
+    V, F = _terrain(n=41, size=20.0)
+    plane = {"normal": [0, 0, 1], "offset": 0.0, "centre": [0, 0, 2.0], "up": [0, 0, 1], "radius_m": 100.0}
+    V2, F2, rep = M.fill_terrain(V, F, [0, 0, 2.0], [0, 0, 1], plane, 20.0)
+    assert rep["underlay"]["near_triangles"] > 300 and rep["underlay"]["near_drop_m"] == M.FILL_NEAR_DROP_M
+    sc = RC.Scene((V2[:len(V2)], F2[len(F):]), plane=plane, sky=True)          # the fill alone: no ray inside 20 m gets through
+    az = np.radians(np.arange(0, 360, 7.0))
+    for r in (1.0, 5.0, 9.0, 15.0):
+        d = np.c_[r * np.cos(az), r * np.sin(az), np.full(len(az), -2.0)]
+        h = sc.cast(np.array([0, 0, 2.0]), d / np.linalg.norm(d, axis=1)[:, None])
+        assert (h["label"] == RC.LABEL_MESH).all() and np.all(np.abs(h["t"] * (2.0 / np.linalg.norm(d, axis=1)) - 2.0) < 0.6)

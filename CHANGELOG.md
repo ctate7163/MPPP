@@ -3,6 +3,48 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.13 — 2026-11-13
+
+**In short.** After the 0.97.12 run at Van Zyl in the headset (Christian): true disparity with a cosine pole merge,
+the mark on the ground, a gradual near blend, a far field in place of the one sky sphere, the sky of the enhanced
+views smoothed. **None of the rendering changes has been seen on data yet**; the sky smoothing has (Van Zyl).
+
+- **Eye separation: 64 mm x cos(elevation), nothing else.** The near-surface limit (2.5 m) and the fade with range
+  (75 to 200 m) are off; the pole merge is the cosine above and below the horizon (`POLE_MERGE_DEG`,
+  `POLE_MERGE_DOWN_DEG` = (0, 90); `NEAR_MERGE_M` None; `RANGE_MERGE` False). Along one line of sight everything
+  is seen 1 / cos(elevation) farther, rover and terrain alike; flat ground h below the eyes is seen
+  h / cos(elevation) below them (the dip of 0.97.1). Until 0.97.12 the deck at 1.2 m was shown at 2.5 m next to
+  terrain at its true range.
+- **The far field** (`ods.estimate_far_field`, `Scene.far_field`): beyond the ground plane each direction takes the
+  radius - 100 m, the sky sphere's 300 m (200 before), infinity - at which the overlapping frames agree best in
+  their detail band; one smooth field of 1 / radius, the sky sphere's at the plane's rim. `ods.json` `far_field`,
+  `far_field.npz`; `mppp ods --no-far-field`.
+- **Nadir mark:** the first row 1.6 times as tall as the second (it fills its half circle). The disc lies on the
+  surface under the mast (`nadir.on_ground`; `depth_below_pivot_m` in `ods.json`): each eye sees it with that
+  surface's disparity. Before, both eyes had the same picture - the mark at infinity.
+- **Near blend gradual:** 0.97.8 switched near surfaces (under 3 m) to the narrow feather and the 4th power of the
+  parallax term in both bands - one frame took nearly everything, with hard changes of frame and a line at 3 m.
+  Now the feathers are the terrain's, and the powers rise between 4 m and 2 m from 1 / 3 (colour / detail) to
+  2 / 4 (`NEAR_BLEND_M`, `NEAR_LOW_POWER`, `NEAR_PARALLAX_POWER`, `near_share`).
+- **`provenance.png`** shows the frames' colours mixed by their weights in the blend (the strongest frame's colour
+  alone before); the fills keep their flat colours.
+- **Enhanced views** (`_enh_`, `_enhlocal_`; made from the 16-bit eye panoramas, as before): the sky above the
+  skyline is replaced by its blur (Gaussian, 3 degrees), gets no local contrast, and half a level of noise against
+  8-bit contours (`linear16.smooth_sky`). The render writes the small map of where
+  (`<prefix>_ods_sky_weight.png`); `mppp ods --retone` on a folder without it leaves the sky as rendered.
+- **The ground plane starts 10 m from the mast axis** (`raycast.PLANE_FROM_M`; Christian: "the large 100 m plane
+  should not extend under the rover ... under the rover should be interpolated from the mesh"). The plane is the
+  regional slope: at Taylorfjellet (tilt 13.8 degrees, 4.4 m rms) it passes 0.25 to 0.3 m above the ground around
+  the rover. Nearer than 20 m the fill grid gets a second sheet of the interpolated surface 0.2 m under
+  the cell heights (`mesh.FILL_NEAR_DROP_M`), so a ray through a gap of the mesh ends there; cells without surface are interpolated as before.
+  With the rover model in the mesh, the panorama's ground fill takes its colours from all terrain mesh, not only
+  mesh within 0.25 m of the plane.
+- **No-data flag in the pictures:** where a frame is black padding, every `photometry_jpg` picture is black
+  (`raycast.no_data_mask`; recorded in the pictures' scale: `NoData`).
+- **`photometry_maps/*.bin` are no longer written** (79 MB each for a full Navcam frame; the values are in
+  `photometry/*.npz`). `mppp depthmaps --colmap-bins` writes them.
+- **`mesh_preview.png`:** the views from above reach +/- 75 m (50 before) - the mesh's reach.
+
 ## 0.97.12 — 2026-11-13
 
 - **Rover model, from the front Hazcam frames of sol 52:** the camera bodies still clipped the corners of the

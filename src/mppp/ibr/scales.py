@@ -38,6 +38,7 @@ import numpy as np
 PathLike = Union[str, Path]
 SCALES_FILE = "scales.json"
 NPZ_NOTE = "exact values: maps/<image>.npz (depth, range, normal) and photometry/<image>.npz (incidence, emission, phase, shadow)"
+NO_DATA_NOTE = "black [0, 0, 0] is the no-data flag: no surface, or the frame itself has no data there (its black padding)"
 
 
 def scales() -> Dict[str, Dict[str, Any]]:
@@ -84,7 +85,7 @@ def tag(path: PathLike, kind: Optional[str] = None) -> bool:
     if sc is None:
         return False
     try:
-        tag_fields(path, {"Product": kind, "Scale": json.dumps(sc), "ExactValues": NPZ_NOTE, "Software": f"MPPP {__version__}"})
+        tag_fields(path, {"Product": kind, "Scale": json.dumps(sc), "ExactValues": NPZ_NOTE, "NoData": NO_DATA_NOTE, "Software": f"MPPP {__version__}"})
     except (OSError, ValueError):
         return False
     return True
@@ -98,7 +99,7 @@ def write_scales(folder: PathLike) -> Path:
                                       "also carries its own in its XMP packet (mppp:Scale)",
                              "read_back": "from mppp.ibr.scales import decode; d = decode('<image>_emission.jpg'); d['value'] is "
                                           "float32 in d['units'], NaN where there is no value",
-                             "exact_values": NPZ_NOTE, "colormaps": "OpenCV COLORMAP_TURBO / COLORMAP_VIRIDIS, 256 entries; "
+                             "exact_values": NPZ_NOTE, "no_data": NO_DATA_NOTE, "colormaps": "OpenCV COLORMAP_TURBO / COLORMAP_VIRIDIS, 256 entries; "
                                                                     "index = the entry nearest to the pixel's colour",
                              "scales": scales()}, indent=1), encoding="utf-8")
     return f

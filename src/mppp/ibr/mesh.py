@@ -612,6 +612,10 @@ FILL_RING_RATIO = 1.06
 FILL_UNDERLAY_FROM_M = 20.0
 FILL_UNDERLAY_DROP_M = 0.05
 FILL_APRON_TO_M = 200.0
+# 0.97.13: nearer than FILL_UNDERLAY_FROM_M every cell gets a second sheet of the interpolated surface,
+# FILL_NEAR_DROP_M below the cell heights (deep enough not to cover a hollow beside a rock; a ray through a gap of the
+# mesh ends on it, not on the regional ground plane, which no longer reaches within raycast.PLANE_FROM_M of the axis).
+FILL_NEAR_DROP_M = 0.20
 FILL_MIN_COVER = 0.6              # a cell counts as covered when its triangles' area is this share of the cell's
 FILL_ROVER_REF_RADIUS_M = 5.0    # rover_keep_m: the ground's height from the triangles within this of the axis, off the footprint
 
@@ -748,13 +752,33 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
         else:
             Ff.append((a_, b_, c_)); Ff.append((a_, c_, d_))
     Ff = np.asarray(Ff, np.int64).reshape(-1, 3)
+    near_tris = 0
+    if underlay:                                                 # 0.97.13: a second sheet under every near cell - see
+        inner = edges[:-1] < FILL_UNDERLAY_FROM_M                # FILL_NEAR_DROP_M; it rises to the first sheet at the
+        ii, jj = np.nonzero(np.broadcast_to(inner[:, None], need.shape))    # ring where the far underlay starts: no slit
+        Fn = []
+        off = len(Vf)
+        for i, j in zip(ii, jj):
+            a_, b_, c_, d_ = (off + q for q in (idx(i, j), idx(i, j + 1), idx(i + 1, j + 1), idx(i + 1, j)))
+            if i == 0:
+                Fn.append((a_, c_, d_))
+            else:
+                Fn.append((a_, b_, c_)); Fn.append((a_, c_, d_))
+        if Fn:
+            r_end = float(edges[int(inner.sum())])
+            rn_ = np.broadcast_to(edges[:, None], nx.shape)
+            taper = np.clip((r_end - rn_) / max(0.25 * r_end, 1e-6), 0.0, 1.0)
+            Vf = np.vstack([Vf, (Xn - (FILL_NEAR_DROP_M * taper)[..., None] * u).reshape(-1, 3)])
+            Ff = np.vstack([Ff, np.asarray(Fn, np.int64)])
+            near_tris = len(Fn)
     rings = (0, 3, 10, 20, 30, 50, 1e9)
     inside = rc < radius_m                                       # the report: the mesh's own reach, not the apron
     by_ring = [{"ring_m": [lo, min(hi, float(radius_m))], "cells": int((inside & (rc >= lo) & (rc < hi)).sum() * na),
                 "filled": int(hole[inside & (rc >= lo) & (rc < hi)].sum())} for lo, hi in zip(rings[:-1], rings[1:])
                if lo < radius_m]
     rep.update(cells=int(inside.sum() * na), covered=int(covered.sum()), filled=int(hole[inside].sum()), triangles=int(len(Ff)),
-               underlay=({"from_m": FILL_UNDERLAY_FROM_M, "drop_m": FILL_UNDERLAY_DROP_M, "apron_to_m": apron_m}
+               underlay=({"from_m": FILL_UNDERLAY_FROM_M, "drop_m": FILL_UNDERLAY_DROP_M, "apron_to_m": apron_m,
+                          "near_drop_m": FILL_NEAR_DROP_M, "near_triangles": int(near_tris)}
                          if underlay else None),
                filled_by_ring=by_ring, grid={"az_step_deg": FILL_AZ_STEP_DEG, "rings": int(nr)})
     if len(Ff):
@@ -956,7 +980,7 @@ def load_scene(out_dir: PathLike):
     return sc
 
 
-PREVIEW_HALF_WIDTH_M = 50.0          # the views from above of mesh_preview.png: +/- this, east and north
+PREVIEW_HALF_WIDTH_M = 75.0          # the views from above of mesh_preview.png: +/- this, east and north
 
 
 def mesh_preview(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], out_png: PathLike, sphere: Optional[Tuple[np.ndarray, np.ndarray]] = None,

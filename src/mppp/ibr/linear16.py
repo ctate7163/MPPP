@@ -410,17 +410,66 @@ def tone_enhanced(x: np.ndarray, ref: float, lo: float, hi: float, med: float) -
     return np.clip(255.0 * (f(n) - f(0.0)) / (f(1.0) - f(0.0)), 0.0, 255.0)
 
 
-def local_contrast(bgr8: np.ndarray) -> np.ndarray:
+def local_contrast(bgr8: np.ndarray, sky_weight: Optional[np.ndarray] = None) -> np.ndarray:
     """An unsharp mask on the lightness of an 8-bit BGR equirectangular image (the colour kept), continuous across
-    the 360-degree seam.  The same filter for any image: both eyes are treated alike."""
+    the 360-degree seam.  The same filter for any image: both eyes are treated alike.  ``sky_weight`` (0.97.13; (H,
+    W) 0-1): no sharpening where it is 1 - in the sky there is no detail to bring out, only the steps between the
+    8-bit levels and the frames' seams."""
     import cv2
     W = bgr8.shape[1]
     sigma = max(1.0, ENH_LOCAL_SIGMA_FRAC * W)
     pad = int(4 * sigma) + 1
     lab = cv2.cvtColor(np.concatenate([bgr8[:, -pad:], bgr8, bgr8[:, :pad]], axis=1), cv2.COLOR_BGR2LAB).astype(np.float32)
     Lc = lab[..., 0]
-    lab[..., 0] = np.clip(Lc + ENH_LOCAL_AMOUNT * (Lc - cv2.GaussianBlur(Lc, (0, 0), sigma)), 0, 255)
+    amount = ENH_LOCAL_AMOUNT
+    if sky_weight is not None:
+        sw = np.asarray(sky_weight, np.float32)
+        amount = ENH_LOCAL_AMOUNT * (1.0 - np.concatenate([sw[:, -pad:], sw, sw[:, :pad]], axis=1))
+    lab[..., 0] = np.clip(Lc + amount * (Lc - cv2.GaussianBlur(Lc, (0, 0), sigma)), 0, 255)
     return cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2BGR)[:, pad:pad + W]
+
+
+ENH_SKY_SIGMA_DEG = 3.0          # 0.97.13: the sky of the enhanced views is the sky blurred by this (Gaussian sigma)
+ENH_SKY_WIDTH = 2048             # ... computed on a panorama of this width
+ENH_SKY_DITHER = 0.5             # ... with this much noise (8-bit levels, uniform +/-) so that 8 bits show no contours
+
+
+def smooth_sky(x: np.ndarray, sky_weight: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """The linear panorama ``x`` (H, W, 3 float32; changed in place) with its sky replaced by the sky blurred over
+    ENH_SKY_SIGMA_DEG (0.97.13; Christian, 13 Nov 2026: "the enhanced product should smooth the sky to avoid
+    artifacts"): the enhanced views stretch the terrain's contrast, and with it the sky's - the frames' edges and the
+    steps of the sky fill, invisible in the plain view, show.  ``sky_weight``: the small map the render wrote (1 =
+    sky well above the skyline; it fades to 0 at the skyline, so hills and horizon stay as they are).  The blur
+    averages sky pixels only (weighted by the map) and wraps around the panorama.  Returns (x, the weight at full
+    size)."""
+    import cv2
+    H, W = x.shape[:2]
+    w = min(ENH_SKY_WIDTH, W)
+    h = max(2, int(round(H * w / W)))
+    sw = cv2.resize(np.asarray(sky_weight, np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+    if float(sw.max()) <= 0:
+        return x, np.zeros((H, W), np.float32)
+    small = cv2.resize(x, (w, h), interpolation=cv2.INTER_AREA)
+    sg = max(1.0, ENH_SKY_SIGMA_DEG / 360.0 * w)
+    pad = int(4 * sg) + 1
+    wrap = lambda a: np.concatenate([a[:, -pad:], a, a[:, :pad]], axis=1)                       # noqa: E731
+    blur = lambda a: cv2.GaussianBlur(wrap(a), (0, 0), sg, borderType=cv2.BORDER_REPLICATE)[:, pad:pad + w]   # noqa: E731
+    den = np.maximum(blur(sw), 1e-4)
+    sm = np.dstack([blur(small[..., k] * sw) / den for k in range(3)])
+    full_w = np.empty((H, W), np.float32)
+    for r0 in range(0, H, 1024):                                           # in strips: no full-size float copies
+        r1 = min(H, r0 + 1024)
+        f = H / h
+        s0, s1 = max(0, int(r0 / f) - 2), min(h, int(np.ceil(r1 / f)) + 2)
+        n = max(1, int(round((s1 - s0) * f)))
+        off = min(max(0, int(round(r0 - s0 * f))), max(0, n - (r1 - r0)))
+        wt = np.clip(cv2.resize(sw[s0:s1], (W, n), interpolation=cv2.INTER_LINEAR)[off:off + (r1 - r0)], 0.0, 1.0)
+        full_w[r0:r1] = wt
+        if wt.max() <= 0:
+            continue
+        up = cv2.resize(sm[s0:s1], (W, n), interpolation=cv2.INTER_CUBIC)[off:off + (r1 - r0)]
+        x[r0:r1] = x[r0:r1] * (1.0 - wt[..., None]) + up * wt[..., None]
+    return x, full_w
 
 
 def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int = 95,
@@ -434,7 +483,11 @@ def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quali
     out = Path(out_dir)
     pre = f"{prefix}_" if prefix else ""
     k16 = UNITS_PER_8BIT * _exposure16(out)
-    lv, eyes = None, {}
+    lv, eyes, weights = None, {}, {}
+    from .ods import SKY_WEIGHT_NAME
+    sky_w = cv2.imread(str(out / f"{pre}{SKY_WEIGHT_NAME}"), cv2.IMREAD_GRAYSCALE)      # None: a folder rendered before 0.97.13
+    if sky_w is not None:
+        sky_w = sky_w.astype(np.float32) / 255.0
     for eye in ("left", "right"):
         f = out / f"{pre}ods_{eye}_16.png"
         a = cv2.imread(str(f), cv2.IMREAD_UNCHANGED)
@@ -443,15 +496,23 @@ def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quali
         a = a[..., :3].astype(np.float32) / k16                      # 8-bit linear units, BGR
         if lv is None:
             lv, _ = shared_value(levels_file, "enhanced_gamma_stretch_s_levels", lambda: enhanced_levels(a))
-        eyes[eye] = np.rint(tone_enhanced(a, *lv)).astype(np.uint8)
-        del a
+        if sky_w is not None:                                        # 0.97.13: the sky smoothed, in linear units
+            a, weights[eye] = smooth_sky(a, sky_w)
+        t = tone_enhanced(a, *lv)
+        if sky_w is not None:                                        # the same noise in both eyes: no depth of its own
+            noise = np.random.default_rng(20261113).uniform(-ENH_SKY_DITHER, ENH_SKY_DITHER, t.shape[:2]).astype(np.float32)
+            t = np.clip(t + (noise * weights[eye])[..., None], 0.0, 255.0)
+        eyes[eye] = np.rint(t).astype(np.uint8)
+        del a, t
     other = "right" if top == "left" else "left"
     files = {}
-    for tag, fn in (("enh", lambda v: v), ("enhlocal", local_contrast)):
-        sq = np.vstack([fn(eyes[top]), fn(eyes[other])])
+    for tag, fn in (("enh", lambda v, e: v), ("enhlocal", lambda v, e: local_contrast(v, weights.get(e)))):
+        sq = np.vstack([fn(eyes[top], top), fn(eyes[other], other)])
         files[tag] = str(out / f"{pre}{tag}_{STACK_NAME}.jpg")
         cv2.imwrite(files[tag], sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
     return {"levels": {"reference_8bit_linear_units": lv[0], "black": lv[1], "white": lv[2], "median": lv[3]}, "files": files,
+            "sky": (f"smoothed: Gaussian sigma {ENH_SKY_SIGMA_DEG} deg over the sky above the skyline, no local contrast "
+                    f"there, +/- {ENH_SKY_DITHER} level of noise" if sky_w is not None else "as rendered (no sky weight file)"),
             "rule": f"gamma {ENH_GAMMA} on linear / reference (the terrain band's {ENH_REF_PCT} % point; band: elevation "
                     f"{ENH_BAND_DEG} deg); black and white at {ENH_LOW_PCT} / {ENH_HIGH_PCT} % of the band in that space "
                     f"(the sky and the deck may clip); S-curve {ENH_S} about the band's median; enhlocal: unsharp mask on "

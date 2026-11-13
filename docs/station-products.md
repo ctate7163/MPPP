@@ -11,7 +11,7 @@ depth and photometric maps, and an omnidirectional stereo panorama that can be l
 | step | command | what it makes |
 |---|---|---|
 | dense | `mppp dense WORK --station S` | COLMAP patch-match stereo and fusion for the station's frames (`fused.ply`); cached, so a second run costs nothing |
-| mesh | `mppp mesh WORK --station S` | `mesh.ply`: the terrain out to 75 m, a ground plane beyond it to 200 m, the rover model |
+| mesh | `mppp mesh WORK --station S` | `mesh.ply`: the terrain out to 75 m, a ground plane beyond it to 200 m (300 m in `mppp ods`), the rover model |
 | depthmaps | `mppp depthmaps WORK --station S --photometry` | per image: depth, range, normal, incidence, emission, phase, cast shadow (also from the rover's mast, booms and camera head) |
 | ods | `mppp ods WORK --station S` | the stereo panorama and its companions |
 
@@ -27,10 +27,13 @@ unattended).
 
 - The terrain is a Poisson surface over the fused points within 75 m of the mast axis (`--mesh-radius`), cleaned of
   small components, of surface no point supports, and of surface floating above the ground.
-- Beyond it a ground plane fitted to the far points and tie points, out to 200 m (`--plane-radius`); it also lies
-  under the mesh's holes, and the ground under the rover is filled from the terrain around it.
+- Beyond it a ground plane fitted to the far points and tie points, out to 200 m (`--plane-radius`). The plane is
+  the regional slope, so it stands in for terrain only from 10 m of the mast axis on. Nearer, the mesh is made
+  whole from itself: cells without surface (under the rover, behind rocks) are interpolated from the cells around
+  them, and a second sheet of that interpolation lies 0.2 m under the terrain to catch a ray through a small gap.
 - With the rover shown, the [rover model](rover-model.md) is added at the station's rover pose.
-- The sky is a sphere of 200 m radius (`mppp ods --sky-radius`).
+- The sky is a sphere of 300 m radius (`mppp ods --sky-radius`), and the ground plane reaches to it. `mppp ods`
+  refines what lies beyond the plane per direction: see "The far field" below.
 
 ## The per-image maps
 
@@ -78,11 +81,25 @@ Hazcam pair when it was taken within 2 hours of them, which colours the ground u
 frame sees the surface, and its colours are matched to the regular frames first, per channel, on the surface both
 see (`ods.json`, `fill_colour_match`). The regular frames are not changed.
 
-On surfaces nearer than 3 m - the rover, and the ground beside it - a frame is weighted by how little parallax it
-has against the panorama's ray, much more steeply than on the terrain. There a wrong depth in the mesh moves the
-picture by (the camera's distance from the ray) x (the depth error) / range squared: at 1.2 m, 20 cm and 5 cm
-make 23 pixels of a 16K panorama. The frame nearest the ray shows what the panorama should show whatever the
-model's shape.
+On near surfaces - the rover, and the ground beside it - a frame is weighted more steeply by how little parallax it
+has against the panorama's ray. There a wrong depth in the mesh moves the picture by (the camera's distance from
+the ray) x (the depth error) / range squared: at 1.2 m, 20 cm and 5 cm make 23 pixels of a 16K panorama, and the
+frame nearest the ray shows what the panorama should show whatever the model's shape. The weight of a frame is its
+feather (wide for the colour band, narrow for the detail band) x the parallax term to a power: 1 (colour) and 3
+(detail) on the terrain, rising gradually between 4 m and 2 m to 2 and 4. The colour of a near surface is a blend of
+the frames that see it; its detail comes mostly from the frame nearest the ray.
+
+### The far field
+
+Beyond the ground plane lie hills from a hundred metres to kilometres, and the sky. The frames' cameras are up to
+0.4 m apart, so where two frames overlap, a surface drawn at the wrong range is drawn twice (0.4 m at 100 m against
+infinity: 5 pixels of an 8K panorama). Before the eyes are rendered, every far direction is tried at 100 m, at the
+sky sphere's 300 m and at infinity; the radius at which the overlapping frames agree best in their detail is the
+sharpest. The result is one smooth field of 1 / radius per direction, not three shells: a soft minimum over the
+three, filled from the decided directions around where the frames do not tell (one frame only, plain sky), smoothed
+over 1.5 degrees, and equal to the sky sphere's radius at the ground plane's rim, so the plane and the far field
+meet without a step. `ods.json` records it (`far_field`: the share decided, the shares nearest each radius),
+`far_field.npz` holds the field, and the depth products show it. `mppp ods --no-far-field` keeps the one sphere.
 
 Files (the prefix is the station, with `_rover` for the with-rover variant):
 
@@ -90,29 +107,33 @@ Files (the prefix is the station, with `_rover` for the with-rover variant):
 |---|---|
 | `<prefix>_360_3DTD.png`, `.jpg` | both eyes in one square, **the left eye on top** (8-bit) |
 | `<prefix>_360_3DTD_16.png` | the same in 16-bit linear radiance units: the record for colour work |
-| `<prefix>_enh_360_3DTD.jpg`, `_enhlocal_360_3DTD.jpg` | contrast-enhanced views (terrain stretched; sky and deck may clip) |
+| `<prefix>_enh_360_3DTD.jpg`, `_enhlocal_360_3DTD.jpg` | contrast-enhanced views, made from the 16-bit panoramas (terrain stretched; the sky smoothed; sky and deck may clip) |
+| `<prefix>_ods_sky_weight.png` | small map of the sky above the skyline: where the enhanced views smooth |
 | `<prefix>_ods_left`, `_right` `.png` / `_16.png` | the eyes apart (`--eyes left right centre` adds the view from the pivot, a third more time) |
 | `<prefix>_ods_centre_depth.npz`, `_depth_16.png`, `_depth_*.jpg` | the range from the pivot for every pixel; from rays alone, seconds |
-| `provenance.png`, `ods.json` | which frame coloured what; every setting and the coverage |
+| `provenance.png`, `ods.json` | which frames coloured what, their colours mixed by their weights; every setting and the coverage |
 
 The PNG files are the data record; the JPEGs are for viewing. `_360_3DTD` in a file name is the convention headset
 viewers read (360 degrees, 3D, top-down). The stacked files also carry XMP metadata (Google Photo Sphere
 `GPano`, `GSpherical:StereoMode = top-bottom`, and `mppp:` fields); there is no single standard for stereo stills,
 and a viewer that reads only `GPano` shows the square as one mono sphere.
 
-### How the stereo is made comfortable
+### The eye separation
 
-A strict omnidirectional stereo pair is right only at the horizon, so the eye separation (64 mm) is reduced where
-it would hurt:
+A strict omnidirectional stereo pair is right only at the horizon: towards a pole the columns' eye offsets turn
+with the azimuth, and a viewer looking down sees them misaligned. Since 0.97.13 the eye separation is
 
-- **towards the poles:** full to 30 degrees above the horizon and to 60 degrees below it, then merged to one image
-  at the zenith and the nadir;
-- **on near surfaces:** a surface nearer than 2.5 m gets range / 2.5 of the separation, so no disparity exceeds
-  1.5 degrees (the deck, 1 m below the cameras, would have 3.7). Terrain from 2.5 m on keeps its true depth;
-- **far away:** the separation fades from 75 m to zero at 200 m, where the mesh, the plane and the sky meet.
+    64 mm x cos(elevation)
 
-Where the separation is reduced by a share s, a point at distance d is seen at d / s: the deck looks flatter and
-farther than it is. These numbers are constants at the top of `mppp/ibr/ods.py` and are recorded in `ods.json`.
+above and below the horizon, and nothing else scales it: no limit on near surfaces, no fade with range (0.97.5
+to 0.97.12 had both, and the cosine only near the nadir).
+
+What the cosine does: with a share s of the separation a point at distance d is seen at d / s. Everything along
+one line of sight is seen 1 / cos(elevation) farther - the rover and the terrain behind it alike, so their depths
+stay in proportion. Flat ground h below the eyes is seen h / cos(elevation) below them: 1.15 h at -30 degrees,
+1.41 h at -45, 2 h at -60. The ground appears to dip towards the rover. `mppp ods --pole-merge START END` and
+`--pole-merge-down START END` set where the fall starts and ends on each side (`0 90` is the cosine; `90 90`
+none); the constants are at the top of `mppp/ibr/ods.py`, and `ods.json` records what was used.
 
 ### The mark at the nadir
 
@@ -123,8 +144,11 @@ credit (NASA/JPL-Caltech/MSSS for Navcam and Hazcam frames; NASA/JPL-Caltech/MSS
 in). In the flat image they are two straight lines along the bottom; in a headset, facing the rover's front and
 looking down, they are two arcs ahead of you, upright. The letters are made about twice too wide in the flat image,
 which leaves them about twice too narrow in the headset: the strip is stretched 3 to 4 times there, and no letter
-can have its own shape in both. The disc is in every colour panorama, not in the depth products; `ods.json` records
-its rows (`nadir_mark`), and `mppp ods --no-nadir-mark` leaves it out.
+can have its own shape in both. The first row is 1.6 times as tall as the second. The disc lies on the surface
+under the mast - the deck with the rover shown, the ground without (the median depth below the pivot of what is
+seen at the disc's rim, `depth_below_pivot_m`): each eye sees it with that surface's disparity, so it is at the
+surface's distance and not at infinity. The disc is in every colour panorama, not in the depth products; `ods.json`
+records it (`nadir_mark`), and `mppp ods --no-nadir-mark` leaves it out.
 
 ### Sky and brightness
 

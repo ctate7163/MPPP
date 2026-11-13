@@ -5,7 +5,9 @@ black circle at the bottom with a white water mark that says Mars 2020 Persevera
 
 Straight down a panorama from the mast shows no terrain: the mast itself (masked) and, without the rover, ground
 that was filled in.  The pixels within ``NADIR_MARK_DEG`` of the nadir become a light blue disc with two rows of black
-text near its rim, ahead of the rover (:func:`make_mark`), the same in both eyes (the eye separation is zero there).  It goes into every colour panorama (8-bit and 16-bit, eyes, centre, stacked,
+text near its rim, ahead of the rover (:func:`make_mark`).  0.97.13: the disc lies on the surface below the mast
+(:func:`on_ground`) - each eye sees it with that surface's disparity (until 0.97.12 it was the same picture in both
+eyes: at infinity).  It goes into every colour panorama (8-bit and 16-bit, eyes, centre, stacked,
 enhanced), not into the depth products; ``ods.json`` records it ("nadir_mark"), ``mppp ods --no-nadir-mark`` leaves
 it out.
 
@@ -28,8 +30,10 @@ BACKGROUND_RGB = (176.0, 212.0, 238.0)       # 8-bit units: light blue (Christia
 BACKGROUND_LINEAR_FACTOR = 0.8               # in a linear 16-bit panorama: this x the 8-bit colour, in 8-bit linear units
 TEXT_SEPARATOR = "   -   "
 TEXT_SPAN_OF_CIRCLE = 0.5                    # a row takes at most this share of the full circle
-TEXT_ROWS_IN_BAND = (0.13, 0.31)             # the rows' middles, as shares of the disc's radius from its rim (outer first)
-TEXT_MAX_HEIGHT_IN_BAND = 0.12               # a row is at most this share of the disc's radius tall
+TEXT_ROWS_IN_BAND = (0.14, 0.33)             # the rows' middles, as shares of the disc's radius from its rim (outer first)
+TEXT_MAX_HEIGHT_IN_BAND = (0.20, 0.09)       # a row is at most this share of the disc's radius tall; 0.97.13 (Christian,
+#                                              13 Nov 2026: "The top row of the water mark should have larger font"): the
+#                                              first row 0.20, the second 0.09 (0.12 both before): the first fills its half circle, 1.6 x the second
 SKY_FALLBACK_RGB = BACKGROUND_RGB            # (kept for callers of sky_colour)
 SKY_MIN_VALUE_8BIT = 150.0
 DISC_PX = 1024                        # the text is drawn on a square of this side, then turned into the panorama's rows
@@ -120,13 +124,13 @@ def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optiona
     rows_text = [TEXT_SEPARATOR.join(lines[:k]), TEXT_SEPARATOR.join(lines[k:])]
     rows_text = [t for t in rows_text if t]
     info = []
-    for text, centre in zip(rows_text, TEXT_ROWS_IN_BAND):
+    for text, centre, tall in zip(rows_text, TEXT_ROWS_IN_BAND, TEXT_MAX_HEIGHT_IN_BAND):
         strip = text_strip(text)
         el_text = -(90.0 - (1.0 - centre) * radius_deg)                        # the elevation of the row's middle
         stretch = float(np.sqrt(1.0 / max(np.cos(np.radians(el_text)), 1e-3)))
         span = int(round(width * TEXT_SPAN_OF_CIRCLE))                         # at most this many columns
         h = int(round(span * strip.shape[0] / (strip.shape[1] * stretch)))     # its height for that span
-        h_max = max(4, int(TEXT_MAX_HEIGHT_IN_BAND * band))
+        h_max = max(4, int(tall * band))
         if h > h_max:                                                          # no taller than this: it then takes
             h = h_max                                                          # less of the circle
             span = min(span, int(round(h * stretch * strip.shape[1] / strip.shape[0])))
@@ -169,9 +173,49 @@ def sky_colour(img: np.ndarray, sky: Optional[np.ndarray], fallback, light: Opti
     return c
 
 
+GROUND_MARGIN_DEG = 4.0               # an eye's mark is made for this many degrees above the disc's rim as well
+
+
+def on_ground(mark: Dict[str, Any], height: int, origins: np.ndarray, dirs: np.ndarray, rows: Sequence[int], pivot,
+              up, north, east, depth_m: float, azimuth0_deg: float = 0.0):
+    """The mark as one eye sees it lying on the ground (0.97.13; Christian, 13 Nov 2026: "It should be placed on the
+    ground so that it has the same distances as the ground"): the disc is a drawing on the horizontal plane
+    ``depth_m`` below ``pivot``.  ``origins``, ``dirs`` (n, 3): the eye's rays for the image rows ``rows`` = (r0, r1)
+    of a panorama ``height`` rows tall (all columns, row by row).  Each ray meets the plane at a point; the direction
+    from the pivot to that point is where the point is in the mark's own drawing (:func:`make_mark`, the panorama
+    from the pivot).  Returns (alpha, inside), both (r1 - r0, width): the text's share, and whether the pixel is on
+    the disc.  With eyes that are apart the two pictures differ by the disparity of that plane - the mark is seen at
+    the ground's distance, not at infinity; with no eye separation they are the mark itself."""
+    import cv2
+    a = mark["alpha"]
+    band, width = a.shape
+    r0, r1 = int(rows[0]), int(rows[1])
+    u, n_, e = (np.asarray(v, float) for v in (up, north, east))
+    P = np.asarray(pivot, float)
+    o = np.broadcast_to(np.asarray(origins, float), np.asarray(dirs).shape)
+    du = np.asarray(dirs, float) @ u
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = (-float(depth_m) - (o - P) @ u) / du
+    ok = (du < -1e-6) & np.isfinite(t) & (t > 0)
+    v = o + np.where(ok, t, 1.0)[:, None] * np.asarray(dirs, float) - P
+    rr = np.linalg.norm(v, axis=1)
+    el = np.degrees(np.arcsin(np.clip((v @ u) / np.maximum(rr, 1e-12), -1.0, 1.0)))
+    az = np.degrees(np.arctan2(v @ e, v @ n_))
+    x = (((az - float(azimuth0_deg)) % 360.0) / 360.0 * width - 0.5).astype(np.float32)
+    y = ((90.0 - el) / 180.0 * height - 0.5 - mark["row0"]).astype(np.float32)
+    inside = ok & (el <= -(90.0 - mark["radius_deg"]))
+    pad = 2
+    aw = np.concatenate([a[:, -pad:], a, a[:, :pad]], axis=1)
+    al = cv2.remap(aw, (x + pad).reshape(r1 - r0, width), np.clip(y, 0, band - 1).reshape(r1 - r0, width), cv2.INTER_LINEAR,
+                   borderMode=cv2.BORDER_REPLICATE)
+    inside = inside.reshape(r1 - r0, width)
+    return np.where(inside, al, 0.0).astype(np.float32), inside
+
+
 def apply_mark(img: np.ndarray, mark: Optional[Dict[str, Any]], background) -> np.ndarray:
     """The disc into ``img`` (H, W[, C]; in place): ``background`` (a number or one per channel, in the image's units
-    and channel order - :func:`sky_colour`) with the text in black."""
+    and channel order - :func:`sky_colour`) with the text in black.  A mark with "inside" (an eye's mark from
+    :func:`on_ground`; "row0" its first row) covers the pixels inside only."""
     if mark is None:
         return img
     r0, a = mark["row0"], mark["alpha"]
@@ -181,5 +225,9 @@ def apply_mark(img: np.ndarray, mark: Optional[Dict[str, Any]], background) -> n
     v = (1.0 - a)[..., None] * bg[None, None, :] if img.ndim == 3 else (1.0 - a) * float(bg.mean())
     if img.dtype.kind != "f":
         v = np.clip(np.rint(v), 0, np.iinfo(img.dtype).max)
-    img[r0:] = v.astype(img.dtype)
+    inside = mark.get("inside")
+    if inside is None:
+        img[r0:] = v.astype(img.dtype)
+    else:
+        img[r0:][inside] = v.astype(img.dtype)[inside]
     return img

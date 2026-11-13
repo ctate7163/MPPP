@@ -13,7 +13,7 @@ the block frame with the block's rotation away from label ENU (``R_block_from_en
 
 Output per image: ``photometry/<image>.npz`` (incidence, emission, phase as float16 degrees, shadow uint8:
 0 unknown, 1 lit, 2 shadow) - the **photometric cube** of the station (Christian, 9 Nov: "the per image depth maps
-and photometric cube from the cleaned up 3d mesh") - and, for COLMAP-aware tools, the same as
+and photometric cube from the cleaned up 3d mesh") - and, with ``colmap_bins`` (off since 0.97.13), the same as
 ``photometry_maps/<image>.{incidence,emission,phase}.bin`` in COLMAP's dense-map format.
 """
 from __future__ import annotations
@@ -229,6 +229,10 @@ def preview_jpg(pm: Dict[str, np.ndarray], out_prefix: PathLike, rad_image: Opti
     Path(str(out_prefix)).parent.mkdir(parents=True, exist_ok=True)
     outs = []
     shape = pm["incidence"].shape[:2]
+    no_data = None                                   # 0.97.13: the frame's black areas are black in every picture
+    if rad_image is not None and Path(rad_image).is_file():
+        from .raycast import no_data_mask
+        no_data = no_data_mask(rad_image, shape)
     if rad_image is not None and Path(rad_image).is_file():
         im = cv2.imread(str(rad_image), cv2.IMREAD_COLOR)
         if im is not None:
@@ -245,6 +249,8 @@ def preview_jpg(pm: Dict[str, np.ndarray], out_prefix: PathLike, rad_image: Opti
         if label is not None:                        # 0.97.8 (Christian, 13 Nov 2026: "make the sky white")
             from .raycast import LABEL_FAR
             img[np.asarray(label) == LABEL_FAR] = 255
+        if no_data is not None:
+            img[no_data] = 0
         p = Path(str(out_prefix) + f"_{k}.jpg")
         cv2.imwrite(str(p), img, q)
         outs.append(p)
@@ -253,6 +259,8 @@ def preview_jpg(pm: Dict[str, np.ndarray], out_prefix: PathLike, rad_image: Opti
         img = np.zeros(sh.shape + (3,), np.uint8)
         img[sh == SHADOW_LIT] = (90, 200, 255)
         img[sh == SHADOW_SHADOW] = (120, 40, 20)
+        if no_data is not None:
+            img[no_data] = 0
         p = Path(str(out_prefix) + "_shadow.jpg")
         cv2.imwrite(str(p), img, q)
         outs.append(p)
@@ -262,7 +270,7 @@ def preview_jpg(pm: Dict[str, np.ndarray], out_prefix: PathLike, rad_image: Opti
     return outs
 
 
-def photometric_cube(project, rec, station, scene: Scene, maps_dir: PathLike, out_dir: PathLike, colmap_bins: bool = True,
+def photometric_cube(project, rec, station, scene: Scene, maps_dir: PathLike, out_dir: PathLike, colmap_bins: bool = False,
                      previews: bool = True, with_shadow: bool = True, rover_pose: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The cube of the station: i / e / g / shadow for every image with maps in ``maps_dir`` (``<image>.npz`` from
     :func:`mppp.ibr.raycast.cast_station`), the Sun per image from the project rows.  Writes ``photometry/<image>.npz``,
