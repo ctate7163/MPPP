@@ -3,6 +3,25 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.5 — 2026-11-13
+
+**In short.** Flat ground when looking down, less strain on the deck, the sky back on a 200 m sphere, the UHF
+antenna at its real size.
+
+- **Eye separation below the horizon** (Christian, Quest 3: "when I look down the terrain looks like it dips down").
+  The cos(elevation) law of 0.97.1 was the cause: with a share s of the eye separation a point at distance d is seen
+  at d / s, so ground h below the eyes was seen h / cos(elevation) below them (1.41 h at -45 deg, 2 h at -60).
+  Now: full separation to -60 deg, merged from there to the nadir (`POLE_MERGE_DOWN_DEG = (60, 88)`), and a limit
+  where the strain arises: `NEAR_MERGE_M = 2.5` - a surface nearer than 2.5 m gets range / 2.5 of the separation
+  (at least 0.2), so no disparity exceeds 1.5 deg (the deck had 3.7). Terrain from 2.5 m on keeps its true depth.
+  Not yet seen in a headset.
+- **Sky sphere at 200 m again** (`SKY_RADIUS_M = 200`; Christian: "the sphere at 200 instead of infinity actually
+  helped a lot"). The mesh stays at 75 m, the plane and the range fade end at 200 m.
+- **Rover model, UHF antenna:** the enlargement of 12 Nov (x 1.23 across, x 1.14 high) was wrong. Silhouettes through
+  the label cameras of four frames (sols 52 left and right, 474, 688) put NASA's can on the real one at its original
+  width; its wall is 5 % short and its domed cap is not on the real, open can. Now: width x 1.0, height x 1.05, the
+  cap a flat floor 5 cm inside the rim (that depth is not measured). `perseverance_rmech.npz` rebuilt.
+
 ## 0.97.4 — 2026-11-13
 
 **In short.** Station panoramas at 16K by default, dark sky patches corrected, XMP in the stereo products.

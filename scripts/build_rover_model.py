@@ -81,8 +81,15 @@ HGA_FIXED_BELOW_Z_M = -0.13              # RMECH z (down): components centred be
 # geometry of the node above UHF_CAN_BELOW_Z_M) is scaled about its own axis and from its base.
 UHF_NODES = ("antenna_uhf",)
 UHF_CAN_BELOW_Z_M = -0.43         # RMECH z (down): the can is the geometry wholly above this height
-UHF_CAN_RADIAL = 1.23
-UHF_CAN_HEIGHT = 1.14
+# 13 Nov 2026 (Christian: "the gray cylinder uhf antenna looks mis-sized again"): that enlargement was wrong.  With
+# the model placed by the deck discs, the silhouette through the label cameras of four frames (NLF / NRF_0052_0671564560,
+# NLF_0474_0709026896, NLF_0688_0728025880) puts NASA's can on the real one at its original width; its wall ends
+# about 5 % below the real rim, and its domed cap is not there (the real can is open): width as modelled, height
+# 1.05, the cap flattened and set just inside the rim.
+UHF_CAN_RADIAL = 1.0
+UHF_CAN_HEIGHT = 1.05
+UHF_CAN_FLAT_TOP = True
+UHF_CAN_CAP_BELOW_RIM_M = 0.05     # the open can's inside: a floor this far below the rim (not measured)
 DECK_TOP_MODEL_Y = 1.135
 # 0.97.0 (Christian, 12 Nov 2026: "find the fiducials on the 3D model deck and say if they are consistent with the
 # surveyed locations"): NASA's model carries the ten deck targets as discs of 24 mm radius.  The placement is the rigid
@@ -276,6 +283,14 @@ def build(glb: Path, out: Path) -> dict:
             if under(i, UHF_NODES) and len(v) and v[:, 2].max() < UHF_CAN_BELOW_Z_M:      # the can, not its stand
                 c, zb = 0.5 * (v[:, :2].min(0) + v[:, :2].max(0)), v[:, 2].max()
                 v = np.c_[c + UHF_CAN_RADIAL * (v[:, :2] - c), zb + UHF_CAN_HEIGHT * (v[:, 2] - zb)]
+                if UHF_CAN_FLAT_TOP:                                   # nothing above the wall's top (z is down)
+                    rr = np.linalg.norm(v[:, :2] - c, axis=1)
+                    wall = rr > 0.97 * rr.max()
+                    if wall.any():                                     # the cap: a flat floor a little inside the rim
+                        zt = v[wall, 2].min()                          # (Christian, 13 Nov: "the sphere on the top
+                        cap = ~wall & (v[:, 2] < zt + 1e-6)            # center of the uhfa should be lower")
+                        v[cap, 2] = zt + UHF_CAN_CAP_BELOW_RIM_M
+                        v[:, 2] = np.maximum(v[:, 2], zt)
             parts[kind].append(trimesh.Trimesh(v, fm, process=False))
     V, F, P, rep = [], [], [], {}
     off = 0

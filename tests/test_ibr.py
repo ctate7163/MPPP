@@ -1688,7 +1688,12 @@ def test_ods_pole_merging():
     up = np.radians([0, 30, 55, 80, 90])
     assert np.allclose(O.pole_merge(up)[[0, 1, 3, 4]], [1, 1, 0, 0], atol=1e-9) and 0.6 < O.pole_merge(up)[2] < 0.8
     dn = np.radians([-30.0, -45.0, -60.0, -90.0])
-    assert np.allclose(O.pole_merge(dn, O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG), np.cos(dn), atol=1e-9)
+    # 0.97.5: no cosine law below the horizon (it made the ground dip): full to -60 deg, merged at the nadir; near
+    # surfaces are limited by range instead (near_merge)
+    assert np.allclose(O.pole_merge(dn, O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG), [1, 1, 1, 0], atol=1e-9)
+    assert 0.3 < float(O.pole_merge(np.radians(-75.0), O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG)) < 0.8
+    assert np.allclose(O.near_merge([1.0, 2.5, 10.0, 0.0, np.inf, 0.1]), [0.4, 1, 1, 1, 1, O.NEAR_MERGE_MIN])
+    assert np.allclose(O.near_merge([1.0], None), 1.0)
     assert np.allclose(O.pole_merge(np.radians([30.0]), O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG), 1.0)     # up: as before
     def sep(row, **k):
         oL, _ = O.ods_rays(360, 180, (row, row + 1), P, 0.064, "left", **k)
@@ -1697,9 +1702,9 @@ def test_ods_pole_merging():
         assert np.allclose(s_, s_[0])
         return float(s_[0])
     assert abs(sep(89) - 0.064) < 1e-4                                    # just above the horizon: full
-    assert abs(sep(120) - 0.064 * np.cos(np.radians(30.5))) < 1e-6        # 30.5 deg down
+    assert abs(sep(120) - 0.064) < 1e-6                                   # 30.5 deg down: full (0.97.5)
     assert abs(sep(59) - 0.064) < 1e-4                                    # 30.5 deg up: still full
-    assert sep(175) < 0.064 * 0.1 and sep(4) < 1e-9                       # near the nadir; the zenith
+    assert sep(175) < 0.064 * 0.2 and sep(4) < 1e-9                       # near the nadir; the zenith
     assert abs(sep(175, pole_merge_deg=None) - 0.064) < 1e-9
     assert abs(sep(120, pole_merge_deg={"up": None, "down": (30.0, 80.0)}) - 0.064 * np.cos(0.5 * np.pi * 0.5 / 50)) < 1e-6
 
@@ -1751,7 +1756,7 @@ def test_sky_sphere_and_range_merge():
     sc.set_sky_sphere(0)
     assert sc.cast(o, d)["t"][0] == SKY_RANGE_M
     assert np.allclose(O.range_merge([10, 75, 200, 1e6]), [1, 1, 0, 0], atol=1e-9)        # full to 75 m, zero from 200 m
-    assert 0.6 < O.range_merge(140.0) < 0.8 and O.range_merge(500.0, None) == 1.0 and O.SKY_RADIUS_M is None
+    assert 0.6 < O.range_merge(140.0) < 0.8 and O.range_merge(500.0, None) == 1.0 and O.SKY_RADIUS_M == 200.0
     oL, _ = O.ods_rays(8, 4, (2, 3), np.zeros(3), 0.064, "left", share=np.linspace(0, 1, 8), pole_merge_deg=None)
     assert np.allclose(np.linalg.norm(oL, axis=1), 0.032 * np.linspace(0, 1, 8))
 
