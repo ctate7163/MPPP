@@ -2600,3 +2600,37 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
     assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 11] == cfg["stations"]["Sol0461_S026D0630"]["context"]
     assert cfg["stations"]["Sol0052_S003D2046"]["context"] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
                                                                "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"]
+
+
+def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
+    """0.97.20 (Christian, 13 Nov 2026): the range and normal panoramas of the model through the panorama's rays;
+    masked pixels black in the depth pictures; the frame's copy next to them."""
+    import cv2
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    out = tmp_path / "ods"
+    rep = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
+    files = rep["geometry"]["files"]
+    assert sorted(files) == ["normal", "range_linear", "range_log"]
+    assert Path(files["range_log"]).name == "Sol0091_S003D0010_range_log_360_3DTD.jpg"
+    rl, nm = cv2.imread(files["range_log"]), cv2.imread(files["normal"])
+    assert rl.shape == (256, 256, 3) and nm.shape == rl.shape                 # the left eye on top of the right
+    g = nm[128 - 30, 10].astype(int)                                          # looking down at the flat ground: up
+    assert abs(g[0] - 255) < 12 and abs(g[1] - 128) < 12 and abs(g[2] - 128) < 12, g      # BGR: up in blue
+    near, far = rl[128 - 6, 10].astype(int), rl[64 + 12, 10].astype(int)      # steeply down against near the horizon
+    assert not np.array_equal(near, far)
+    from mppp.ibr import web as W
+    assert sorted(W.station_files(out)) == ["normal", "range linear", "range log", "standard"]
+    rep2 = O.render_station(proj, rec, st, scene, tmp_path / "o2", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
+    assert "geometry" not in rep2 and not list((tmp_path / "o2").glob("*range*"))
+    lab = np.full((8, 8), RC.LABEL_MESH, np.uint8)
+    lab[:4] = RC.LABEL_MASKED
+    for mode in ("log", "linear"):
+        img = RC.depth_rgb(np.full((8, 8), 5.0, np.float32), lab, mode)
+        assert not img[:4].any() and img[4:].any()
+    from mppp.ibr.scales import scales
+    assert scales()["depth_log"]["special"]["masked_rgb"] == [0, 0, 0]
+    src = tmp_path / "frame.png"
+    cv2.imwrite(str(src), np.full((20, 30, 3), 90, np.uint8))
+    f = RC.image_jpg(src, tmp_path / "photometry_jpg" / ("frame" + RC.IMAGE_SUFFIX))
+    assert f.name == "frame_image.jpg" and cv2.imread(str(f)).shape == (20, 30, 3)
+    assert RC.image_jpg(tmp_path / "missing.png", tmp_path / "x.jpg") is None

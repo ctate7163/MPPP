@@ -44,7 +44,7 @@ NO_DATA_NOTE = "black [0, 0, 0] is the no-data flag: no surface, or the frame it
 def scales() -> Dict[str, Dict[str, Any]]:
     """The scale of each picture, by its file-name suffix."""
     from .raycast import DEPTH_LINEAR_MAX_M, DEPTH_LOG_RANGE_M
-    special = {"ground_plane": "the same colours x 0.55", "sky": [255, 255, 255], "masked_rgb": [120, 40, 40], "none": [0, 0, 0]}
+    special = {"ground_plane": "the same colours x 0.55", "sky": [255, 255, 255], "masked_rgb": [0, 0, 0], "none": [0, 0, 0]}
     return {
         "depth_linear": {"quantity": "range from the camera centre", "units": "m", "map": "linear", "min": 0.0,
                          "max": float(DEPTH_LINEAR_MAX_M), "colormap": "TURBO", "value": "min + (max - min) * index / 255",

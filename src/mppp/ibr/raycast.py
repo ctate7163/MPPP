@@ -292,7 +292,8 @@ JPEG_QUALITY = 92
 
 def depth_rgb(rng: np.ndarray, lab: np.ndarray, mode: str = "log") -> np.ndarray:
     """A range map as a BGR picture: turbo over ``mode`` "log" (DEPTH_LOG_RANGE_M) or "linear" (0 to
-    DEPTH_LINEAR_MAX_M); the ground plane the same colours darker, the sky grey, masked dark red, none black."""
+    DEPTH_LINEAR_MAX_M); the ground plane the same colours darker, the sky white, masked and none black (0.97.20,
+    Christian, 13 Nov 2026: "the depth maps should have black for the masked out regions"; dark red before)."""
     import cv2
     rng = np.asarray(rng, np.float32)
     v = np.zeros_like(rng)
@@ -306,7 +307,7 @@ def depth_rgb(rng: np.ndarray, lab: np.ndarray, mode: str = "log") -> np.ndarray
     pl = lab == LABEL_PLANE
     img[pl] = (img[pl] * 0.55).astype(np.uint8)
     img[lab == LABEL_FAR] = (255, 255, 255)                  # 0.97.8: the sky white (grey before)
-    img[lab == LABEL_MASKED] = (40, 40, 120)
+    img[lab == LABEL_MASKED] = 0
     img[lab == LABEL_NONE] = 0
     return img
 
@@ -366,8 +367,24 @@ def preview_jpg(maps: Dict[str, np.ndarray], out_prefix: PathLike, no_data: Opti
     return outs + [f]
 
 
+IMAGE_SUFFIX = "_image.jpg"
+
+
+def image_jpg(image_file: PathLike, out_file: PathLike) -> Optional[Path]:
+    """0.97.20 (Christian, 13 Nov 2026: "put copies of the images in photometry_jpg"): the block's frame as a JPEG at
+    its own size next to its depth and normal pictures (``<image>_image.jpg``), unchanged otherwise.  None when the
+    frame cannot be read."""
+    import cv2
+    im = cv2.imread(str(image_file), cv2.IMREAD_COLOR)
+    if im is None:
+        return None
+    Path(out_file).parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(out_file), im, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+    return Path(out_file)
+
+
 def preview_png(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> Tuple[Path, Path]:
-    """``<prefix>_depth.png`` (turbo over log range; far sphere grey, masked dark red, none black) and ``<prefix>_normal.png``."""
+    """``<prefix>_depth.png`` (turbo over log range; far sphere grey, masked and none black) and ``<prefix>_normal.png``."""
     import cv2
     rng = maps["range"].astype(np.float32)
     lab = maps["label"]
@@ -379,7 +396,7 @@ def preview_png(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> Tuple[Path
     pl = lab == LABEL_PLANE
     img[pl] = (img[pl] * 0.55).astype(np.uint8)                        # the ground plane: the same colours, darker
     img[lab == LABEL_FAR] = (160, 160, 160)
-    img[lab == LABEL_MASKED] = (40, 40, 120)
+    img[lab == LABEL_MASKED] = 0
     img[lab == LABEL_NONE] = 0
     p1 = Path(str(out_prefix) + "_depth.png")
     p1.parent.mkdir(parents=True, exist_ok=True)
@@ -493,6 +510,7 @@ def cast_station(project, rec, station, scene: Scene, out_dir: PathLike, familie
         if previews:                                 # 0.97.0: jpg, with the photometry pictures
             preview_jpg(maps, out / PREVIEW_DIR / stem,
                         no_data=no_data_mask(Path(project.root) / "images" / name, maps["label"].shape))
+            image_jpg(Path(project.root) / "images" / name, out / PREVIEW_DIR / f"{stem}{IMAGE_SUFFIX}")
         row = {"image": name, "scale": s, "coverage": coverage(maps)}
         if validate:
             row["sparse"] = validate_sparse(rec, iid, maps, s)

@@ -22,7 +22,8 @@ PathLike = Union[str, Path]
 log = logging.getLogger(__name__)
 
 STACK = "_360_3DTD.jpg"
-VIEWS = {"standard": "", "enhanced": "_enh", "enhanced local": "_enhlocal"}      # view name -> file name part
+VIEWS = {"standard": "", "enhanced": "_enh", "enhanced local": "_enhlocal",      # view name -> file name part
+         "range log": "_range_log", "range linear": "_range_linear", "normal": "_normal"}   # 0.97.20: the model's
 VARIANTS = (("rover", "with_rover", "with the rover"), ("masked", "", "terrain only"))   # key, sub-folder, label
 DEFAULT_VIEWS = ("standard",)        # 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
 #                                      ("standard", "enhanced") before; mppp single-sites --publish-views brings it back

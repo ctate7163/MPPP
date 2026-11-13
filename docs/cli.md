@@ -421,7 +421,7 @@ usage: mppp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--col
 usage: mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--zcam-scale 1] [--images NAME ...]
                       [--photometry] [--no-shadow] [--no-preview] [--no-validate]
 usage: mppp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras N] [--scale 1] [--images ...]
-                      [--sky-radius 300] [--no-far-field] [--pole-merge 0 90] [--pole-merge-down 0 90] [--eyes left right centre]
+                      [--sky-radius 300] [--no-far-field] [--no-geometry] [--pole-merge 0 90] [--pole-merge-down 0 90] [--eyes left right centre]
                       [--fill-cameras F] [--site-name NAME] [--no-nadir-mark] [--nadir-mark-deg 20]
                       [--rows-per-chunk 128] [--exclude STEM ...] [--stack-top left] [--retone] [--stack-only]
                       [--prefix Sol0052_S003D2046] [--bits 16] [--pds DIR] [--tone soft]

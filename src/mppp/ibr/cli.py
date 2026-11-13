@@ -239,6 +239,9 @@ def add_parsers(sub) -> None:
     p.add_argument("--context-images", nargs="+", default=None, metavar="NAME",
                    help="0.97.15: frames of the block from another place or sol, for context: fill-only sources, their "
                         "rover mask always applied (also with --rover), never on the rover model")
+    p.add_argument("--no-geometry", action="store_true",
+                   help="0.97.20: without the range and normal panoramas of the model (<prefix>_range_log_360_3DTD.jpg, "
+                        "_range_linear_, _normal_)")
     p.add_argument("--no-far-field", action="store_true",
                    help="0.97.13: the sky sphere alone beyond the ground plane (default: per direction the sharpest of "
                         "100 m, the sky radius and infinity, blended)")
@@ -520,7 +523,7 @@ def cmd_ods(a: argparse.Namespace) -> int:
     st, out = _station(project, rec, a)
     scene = _scene(out)
     rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, sky_radius_m=("default" if a.sky_radius is None else a.sky_radius), pole_merge_deg=_pole_merge(a), families=a.cameras, scale=a.scale,
-                         far_field=not a.no_far_field, zcam_scale=a.zcam_scale, images=_own_frames(project, st, a),
+                         far_field=not a.no_far_field, geometry=not a.no_geometry, zcam_scale=a.zcam_scale, images=_own_frames(project, st, a),
                          context_images=_png(getattr(a, "context_images", None)), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,

@@ -69,6 +69,16 @@ image and run:
 | `_shadow.jpg` | lit / shadow / unknown | three fixed colours |
 | all but the shadow picture | the sky | white |
 | `_rad.jpg` | the 8-bit picture of the frame | a view, not radiance |
+| `_image.jpg` | the block's frame as it is, at its own size (0.97.20) | a copy for comparing with the maps |
+| depth and normal pictures | masked pixels (the rover, with the rover masked), no surface, the frame's black padding | black |
+
+The panorama step also writes the model alone through the panorama's own rays (0.97.20, for checking the model):
+`<station>_range_log_360_3DTD.jpg`, `<station>_range_linear_360_3DTD.jpg` and `<station>_normal_360_3DTD.jpg`, the
+left eye on top as in the colour panoramas. Range is from each eye's ray origin in the colours of the table above;
+the normal is in the station's frame, RGB = 127.5 (1 + [east, north, up]), so level ground is blue. No source frame
+is used, so a fault seen there is in the mesh, the plane, the rover model or the far field and not in the blending.
+`mppp ods --no-geometry` leaves them out; `mppp single-sites --publish-views standard "range log" normal` puts them
+in the viewer's list.
 
 Each picture carries its scale as JSON in its XMP metadata (`mppp:Scale`), `photometry_jpg/scales.json` lists them
 all, and `mppp.ibr.scales.decode(path)` returns the values as floats with their units. Read back from a JPEG, a
