@@ -20,6 +20,7 @@
   #bar select, #bar button { background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font: inherit; }
   #title { font-weight: 600; margin-right: 6px; }
   #note { position: fixed; left: 10px; bottom: 10px; right: 170px; color: #bbb; font-size: 12px; z-index: 2; text-shadow: 0 0 4px #000; }
+  #diag { position: fixed; right: 170px; bottom: 10px; color: #888; font-size: 11px; z-index: 2; text-shadow: 0 0 4px #000; text-align: right; }
   #msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 1;
          font-size: 16px; text-shadow: 0 0 6px #000; }
 </style>
@@ -35,6 +36,7 @@
 </div>
 <div id="msg">loading the list ...</div>
 <div id="note"></div>
+<div id="diag" title="what this device can show"></div>
 <script type="module">
 import * as THREE from 'three';
 import { VRButton } from './vendor/VRButton.js';
@@ -231,6 +233,22 @@ renderer.setAnimationLoop(() => {
   } else world.position.set(0, 0, 0);
   renderer.render(scene, camera);
 });
+
+// ---------------------------------------------------------------- what this device can show (0.97.4)
+function diagnostics() {
+  const gl = renderer.getContext();
+  const ext = n => !!gl.getExtension(n);
+  const d = { maxTexture: maxTex, maxCube: gl.getParameter(gl.MAX_CUBE_MAP_TEXTURE_SIZE), webgl2: renderer.capabilities.isWebGL2 !== false,
+              astc: ext('WEBGL_compressed_texture_astc'), etc2: ext('WEBGL_compressed_texture_etc'),
+              bc7: ext('EXT_texture_compression_bptc'), s3tc: ext('WEBGL_compressed_texture_s3tc'),
+              anisotropy: renderer.capabilities.getMaxAnisotropy(), memoryGB: navigator.deviceMemory || null, xr: !!navigator.xr };
+  const fmt = ['astc', 'etc2', 'bc7', 's3tc'].filter(k => d[k]).join(' ') || 'none';
+  $('diag').textContent = `max texture ${d.maxTexture} | compressed: ${fmt}` + (d.memoryGB ? ` | memory >= ${d.memoryGB} GB` : '') +
+    ` | 16K eye as one texture: ${d.maxTexture >= 16384 ? 'yes' : 'no'}`;
+  console.log('MPPP viewer diagnostics', JSON.stringify(d));
+  window.mpppDiagnostics = d;
+}
+diagnostics();
 
 // ---------------------------------------------------------------- start
 (async () => {

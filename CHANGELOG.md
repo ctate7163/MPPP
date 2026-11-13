@@ -3,6 +3,25 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.4 — 2026-11-13
+
+**In short.** Station panoramas at 16K by default, dark sky patches corrected, XMP in the stereo products.
+
+- **`mppp ods --width` default 16384** per eye (was 8192). The stacked `_360_3DTD` products are then 16384 x 16384;
+  `single-sites --publish` still reduces to 8192 for the web page.
+- **Dark patches in the sky** (Christian, 13 Nov: "dark splotches in the sky for over saturated images looking into
+  the sun"). Two causes addressed:
+  - the frame gains were estimated on clipped pixels too, which darkened whole frames by up to 16 %
+    (`estimate_gains` now leaves out samples within reach of a saturated pixel);
+  - `ods.even_sky`, after the sky fill: the smoothed sky is closed morphologically per channel (30 % of the width by
+    40 degrees), so dark valleys smaller than that are lifted to their rim; slopes, bright regions, far hills (the sky
+    ends at the highest sharp edge nearby) and the terrain are not changed; nothing is darkened. Tried on the four
+    stations' 8-bit panoramas; not yet rendered on the PC. The terrain under such sky is left as it is.
+- **XMP in `*_360_3DTD*.jpg / .png`** (`mppp.ibr.xmp`, no re-encoding): GPano (equirectangular, full sphere, heading),
+  GSpherical `StereoMode = top-bottom`, and `mppp:` fields (left eye on top, eye size, station). Written by `mppp ods`,
+  by `--retone` and by `--publish`.
+- **Viewer:** a diagnostics line (maximum texture size, compressed formats, whether a 16K eye fits one texture).
+
 ## 0.97.3 — 2026-11-12
 
 **In short.** A fix for the freeze: blocks with a station held over several sols failed at their end; such runs are

@@ -86,6 +86,12 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
             for v in views:
                 if v in files:
                     got[v] = "panos/" + _copy(files[v], web / "panos" / files[v].name, width, quality)["file"]
+                    try:                                         # a reduced copy was encoded again: its XMP with it
+                        from .xmp import read_xmp, tag_stereo
+                        if read_xmp(web / "panos" / files[v].name) is None:
+                            tag_stereo(web / "panos" / files[v].name, extra={"Station": d.name})
+                    except Exception:                            # noqa: BLE001
+                        pass
                     n += 1
             if got:
                 entry["variants"].append({"key": key, "label": label, "views": got})

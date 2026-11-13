@@ -1951,3 +1951,50 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     repo = Path(web.__file__).resolve().parents[3] / "docs" / "ods"
     if repo.is_dir():
         assert (repo / "index.html").is_file() and (repo / "vendor" / "three.module.min.js").is_file()
+
+
+def test_even_sky_lifts_a_dark_patch_and_leaves_the_far_hills():
+    """0.97.4: a dark patch in the sky (a frame that clipped towards the sun) is lifted to the sky around it; a far
+    hill (also "far", but with a sharp skyline) and the ground are not touched."""
+    from mppp.ibr import ods
+    H, W = 512, 1024
+    el = 90.0 - (np.arange(H) + 0.5) / H * 180.0
+    sky = 180.0 + 40.0 * np.cos(np.radians(el))[:, None] + 15.0 * np.cos(np.linspace(0, 2 * np.pi, W, endpoint=False))[None, :]
+    img = np.repeat(sky[..., None], 3, axis=2).astype(np.float32)
+    yy, xx = np.mgrid[0:H, 0:W]
+    patch = np.exp(-(((xx - 600) / 60.0) ** 2 + ((yy - 120) / 40.0) ** 2))
+    img *= (1.0 - 0.35 * patch)[..., None]                                 # 35 % dark at its centre, soft edges
+    label = np.full((H, W), ods.LABEL_MESH, np.uint8)
+    label[el > 0] = ods.LABEL_FAR
+    hill = (yy > 236) & (yy < 256) & (xx > 200) & (xx < 400)               # a far hill: no mesh there, a sharp edge
+    img[hill] = 90.0
+    img[el <= 0] = 80.0
+    rgb = np.clip(img, 0, 255).astype(np.uint8)
+    before = rgb.copy()
+    r = ods.even_sky(rgb, label)
+    assert r["pixels"] > 1000 and r["gain_max"] > 1.2
+    assert before[120, 600, 0] < 0.7 * sky[120, 600] and rgb[120, 600, 0] > 0.93 * sky[120, 600]
+    assert np.array_equal(rgb[hill], before[hill]) and np.array_equal(rgb[el <= 0], before[el <= 0])
+    assert abs(int(rgb[60, 100, 0]) - int(before[60, 100, 0])) <= 3        # clear sky far from the patch: as it was
+    assert rgb.min() >= before.min() and (rgb.astype(int) - before).min() >= 0   # nothing is darkened
+
+
+def test_xmp_is_written_into_jpeg_and_png_without_touching_the_pixels(tmp_path):
+    """0.97.4: the stereo packet (GPano, GSpherical top-bottom, mppp) in the _360_3DTD products; written twice it is
+    there once; a file that is not a square pair is left alone."""
+    import cv2
+    from mppp.ibr import xmp
+    im = np.random.default_rng(0).integers(0, 255, (256, 256, 3), dtype=np.uint8)
+    files = {"a_360_3DTD.jpg": im, "a_360_3DTD.png": im, "a_360_3DTD_16.png": im.astype(np.uint16) * 200}
+    for n, arr in files.items():
+        cv2.imwrite(str(tmp_path / n), arr)
+    before = {n: cv2.imread(str(tmp_path / n), cv2.IMREAD_UNCHANGED) for n in files}
+    cv2.imwrite(str(tmp_path / "wide_360_3DTD.png"), im[:128])
+    assert sorted(xmp.tag_folder(tmp_path)) == sorted(files) and sorted(xmp.tag_folder(tmp_path)) == sorted(files)
+    for n in files:
+        x = xmp.read_xmp(tmp_path / n)
+        assert x.count(b"<x:xmpmeta") == 1 and b"<GSpherical:StereoMode>top-bottom</GSpherical:StereoMode>" in x
+        assert b"<GPano:ProjectionType>equirectangular</GPano:ProjectionType>" in x and b"<mppp:TopEye>left</mppp:TopEye>" in x
+        assert np.array_equal(cv2.imread(str(tmp_path / n), cv2.IMREAD_UNCHANGED), before[n])
+        assert xmp.image_size(tmp_path / n) == (256, 256)
+    assert xmp.read_xmp(tmp_path / "wide_360_3DTD.png") is None

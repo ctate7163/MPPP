@@ -62,7 +62,7 @@ from .raycast import LABEL_FAR, LABEL_MESH, LABEL_NONE, LABEL_PLANE, Scene
 log = logging.getLogger("mppp.ibr.ods")
 PathLike = Union[str, Path]
 
-DEFAULT_WIDTH = 8192
+DEFAULT_WIDTH = 16384             # 0.97.4 (Christian, 13 Nov 2026: "render these at 16k by default"); was 8192
 DEFAULT_IPD_M = 0.064
 # 0.97.0 (Christian, 12 Nov 2026, Quest 3: "when I tilt my head down ... I go cross-eyed"): pole merging.  An ODS
 # pair is right only at the horizon: towards a pole each column keeps its own eye offset, so in a view looking down
@@ -529,6 +529,9 @@ def estimate_gains(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence
             low = sources[k].low()
             L = sources[k]._bilinear(low.mean(axis=2), c["uv"][sel])
             inner = c["dist"][sel] > 0.5 * FEATHER_LOW_FRAC * c["short"][sel]        # well inside: no edge effects
+            sat = sources[k].sample_saturation(c["uv"][sel])       # 0.97.4: a clipped pixel is darker than the scene was,
+            if sat is not None:                                    # so it says nothing about the frame's gain
+                inner = inner & ~(sat > GAIN_MAX_SATURATED)
             lum[sel] = np.where(inner & (L > 8.0), np.log(np.maximum(L, 1e-3)), np.nan)
         for a in range(K):
             for b in range(a + 1, K):
@@ -667,10 +670,11 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         _brown((source == -1) & rover_px)                    # the rest of the model nobody coloured
     gfill = fill_ground(rgb, source, ground) if ground_fill else np.zeros(label.shape, bool)
     sky = fill_sky(rgb, source, label) if sky_fill else np.zeros(label.shape, bool)
+    evened = even_sky(rgb, label) if sky_fill else {}
     if checked:                                              # and any surface still without a source
         _brown((source == -1) & ((label == LABEL_MESH) | (label == LABEL_PLANE)))
     return {"brown_filled": brown, "rover": rover_px, "rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
-            "sky_filled": sky, "ground_filled": gfill, "surface_check_rejected": rej}
+            "sky_filled": sky, "sky_evened": evened, "ground_filled": gfill, "surface_check_rejected": rej}
 
 
 GROUND_BAND_M = 0.25             # mesh this close to the ground plane counts as terrain for the ground fill
@@ -797,6 +801,100 @@ def fill_sky(rgb: np.ndarray, source: np.ndarray, label: np.ndarray) -> np.ndarr
     rgb[ys, xs] = np.clip((1 - ww) * rgb[ys, xs].astype(np.float32) + ww * fill, 0, top).astype(rgb.dtype)
     source[hole] = -3
     return changed
+
+
+GAIN_MAX_SATURATED = 0.02        # gain pairs leave out samples within reach of a saturated pixel (its blurred share)
+SKY_EVEN_WIDTH = 1024            # the sky is evened on a panorama of this width ...
+SKY_EVEN_AZ_FRAC = 0.30          # dark patches narrower than this share of the panorama's width,
+SKY_EVEN_EL_DEG = 40.0           #   or shorter than this in elevation, are lifted to the sky around them
+SKY_EVEN_SMOOTH_FRAC = 0.006     # the sky's brightness is compared after this blur (of the width)
+SKY_EVEN_MAX_GAIN = 2.5          # no pixel is brightened by more than this
+SKY_EVEN_MIN_GAIN = 1.02         # ... and patches less than 2 % dark are left alone
+SKY_EVEN_EDGE = 0.07             # a relative brightness step per pixel (at SKY_EVEN_WIDTH) above this is a skyline
+SKY_EVEN_MARGIN_DEG = 1.5        # the evening fades out over this much above the skyline
+SKY_EVEN_SKYLINE_FRAC = 0.06     # ... taken as the highest within this share of the width
+
+
+def even_sky(rgb: np.ndarray, label: np.ndarray, sky: Optional[np.ndarray] = None) -> Dict[str, Any]:
+    """Lift (in place) the dark patches of the sky (0.97.4; Christian, 13 Nov 2026: "dark splotches in the sky for
+    over saturated images looking into the sun").  A frame that clipped on the bright sky, or was matched darker than
+    its neighbours, leaves a patch darker than the sky around it; the real sky has no such holes.  The smoothed sky
+    brightness is closed morphologically (a maximum, then a minimum, over SKY_EVEN_AZ_FRAC of the width by
+    SKY_EVEN_EL_DEG; wrapped in azimuth): valleys smaller than that window are filled to their rim, slopes and bright
+    regions are unchanged.  Each sky pixel is multiplied by closed / smoothed (at least 1, at most SKY_EVEN_MAX_GAIN),
+    channel by channel (a patch's tint is lifted with it); fine texture stays.  ``sky``: the mask (default: far, above the horizon).
+    Returns {"pixels", "share_of_sky", "gain_p99", "gain_max"}."""
+    import cv2
+    from scipy.ndimage import distance_transform_edt, gaussian_filter, grey_closing, minimum_filter1d
+    H, W = label.shape
+    el_s = lambda n: 90.0 - (np.arange(n) + 0.5) / n * 180.0
+    el = 90.0 - (np.arange(H) + 0.5) / H * 180.0
+    m = ((label == LABEL_FAR) & (el > 0.0)[:, None]) if sky is None else np.asarray(sky, bool)
+    out = {"pixels": 0, "share_of_sky": 0.0, "gain_p99": 1.0, "gain_max": 1.0}
+    if m.sum() < 100:
+        return out
+    w = min(SKY_EVEN_WIDTH, W)
+    h = max(2, int(round(H * w / W)))
+    top = 255.0 if rgb.dtype == np.uint8 else LINEAR_TOP
+    small = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_AREA).astype(np.float32)
+    ms = cv2.resize(m.astype(np.float32), (w, h), interpolation=cv2.INTER_AREA)
+    # the far hills are "far" too: the sky ends, column by column, at the highest sharp edge (a skyline; a dark
+    # patch has soft edges) or surface pixel, and the evening fades out SKY_EVEN_MARGIN_DEG above it
+    Ls = gaussian_filter(small.mean(axis=2), 1.0, mode="nearest")
+    gy, gx = np.gradient(Ls)
+    edge = (np.hypot(gx, gy) / np.maximum(Ls, 1.0) > SKY_EVEN_EDGE) | (ms < 0.5)
+    edge[el_s(h) <= 0.0] = True
+    skyline = np.where(edge.any(axis=0), np.argmax(edge, axis=0), h).astype(np.float32)
+    k = max(3, int(round(SKY_EVEN_SKYLINE_FRAC * w)) | 1)                   # a hazy hill's edge is missed in places:
+    skyline = minimum_filter1d(skyline, size=k, mode="wrap")               # the highest skyline nearby holds
+    skyline = gaussian_filter(np.concatenate([skyline[-k:], skyline, skyline[:k]]), 0.25 * k, mode="nearest")[k:-k]
+    margin = SKY_EVEN_MARGIN_DEG / 180.0 * h
+    ramp = np.clip((skyline[None, :] - margin - np.arange(h)[:, None]) / max(1.0, margin), 0.0, 1.0).astype(np.float32)
+    ms = ms * (ramp > 0)
+    sg = max(1.0, SKY_EVEN_SMOOTH_FRAC * w)
+    pad = int(4 * sg) + int(SKY_EVEN_AZ_FRAC * w) + 2
+    wrap = lambda x: np.concatenate([x[:, -pad:], x, x[:, :pad]], axis=1)
+    den = gaussian_filter(wrap(ms), sg, mode="nearest")
+    inside = den > 0.05
+    if not inside.any():
+        return out
+    # off the sky the brightness continues from the nearest sky pixel: the horizon band is then a slope to the edge of
+    # the window, not a valley between the sky and nothing, and is left as it is
+    near = distance_transform_edt(~inside, return_distances=False, return_indices=True)
+    size = (max(3, int(round(SKY_EVEN_EL_DEG / 180.0 * h)) | 1), max(3, int(round(SKY_EVEN_AZ_FRAC * w)) | 1))
+    gain = np.ones((h, w, 3), np.float32)
+    for k in range(3):                                                     # each channel: the patch's tint goes with it
+        A = gaussian_filter(wrap(small[..., k] * ms), sg, mode="nearest") / np.maximum(den, 1e-6)
+        A = A[near[0], near[1]]
+        C = gaussian_filter(grey_closing(A, size=size, mode="nearest"), sg, mode="nearest")
+        g = np.where(inside & (A > 1.0), np.clip(C / np.maximum(A, 1e-6), 1.0, SKY_EVEN_MAX_GAIN), 1.0)[:, pad:pad + w]
+        gain[..., k] = g
+    gain = np.where(gain.max(axis=2, keepdims=True) < SKY_EVEN_MIN_GAIN, 1.0, gain).astype(np.float32)
+    gain = cv2.GaussianBlur(gain, (0, 0), max(1.0, 0.5 * sg), borderType=cv2.BORDER_REPLICATE)
+    gain = 1.0 + (gain - 1.0) * ramp[..., None]
+    if float(gain.max()) <= 1.0 + 1e-4:
+        return out
+    f = H / h
+    n_ch, g_max = 0, 1.0
+    for r0 in range(0, H, 1024):                                           # in strips: no full-size float copy
+        r1 = min(H, r0 + 1024)
+        if not m[r0:r1].any():
+            continue
+        s0, s1 = max(0, int(r0 / f) - 2), min(h, int(np.ceil(r1 / f)) + 2)
+        blk = cv2.resize(gain[s0:s1], (W, max(1, int(round((s1 - s0) * f)))), interpolation=cv2.INTER_CUBIC)
+        off = min(max(0, int(round(r0 - s0 * f))), max(0, blk.shape[0] - (r1 - r0)))
+        G = np.clip(blk[off:off + (r1 - r0)], 1.0, SKY_EVEN_MAX_GAIN)
+        if G.shape[0] < r1 - r0:
+            G = np.concatenate([G, np.repeat(G[-1:], r1 - r0 - G.shape[0], axis=0)])
+        G[~m[r0:r1]] = 1.0
+        rgb[r0:r1] = np.clip(rgb[r0:r1].astype(np.float32) * G, 0, top).astype(rgb.dtype)
+        gm = G.max(axis=2)
+        n_ch += int((gm > SKY_EVEN_MIN_GAIN).sum())
+        g_max = max(g_max, float(gm.max()))
+    gs = gain.max(axis=2)[ms > 0.5]
+    out.update(pixels=n_ch, share_of_sky=float(n_ch / max(1, m.sum())),
+               gain_p99=float(np.percentile(gs, 99)) if gs.size else 1.0, gain_max=g_max)
+    return out
 
 
 def fill_cracks(rgb: np.ndarray, source: np.ndarray, label: np.ndarray, max_px: int = HOLE_FILL_MAX_PX,
@@ -1127,6 +1225,12 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             "frames_saturated_share_max": max([f["saturated_share"] for f in fr], default=None),
             "frames_clipped_in_8bit_share_max": max([f["clipped_in_8bit_share"] for f in fr], default=None)}
     rec_out["seconds"] = round(time.time() - t0, 1)
+    try:                                                                    # 0.97.4: XMP in the stacked products
+        from .xmp import tag_folder
+        rec_out["xmp"] = tag_folder(out, heading_centre_deg=float(rec_out.get("azimuth_of_column_0_deg") or 0.0) + 180.0,
+                                    extra={"Station": str(getattr(station, "label", "") or prefix)})
+    except Exception as e:                                                  # noqa: BLE001 - the products are complete without it
+        log.warning("ods: XMP not written (%s: %s)", type(e).__name__, e)
     (out / "ods.json").write_text(json.dumps(rec_out, indent=1, default=float), encoding="utf-8")
     log.info("ods: %s -> %s (%.0f s)", station.label, out, rec_out["seconds"])
     return rec_out

@@ -198,7 +198,7 @@ def add_parsers(sub) -> None:
     p = sub.add_parser("ods", help="0.96: the stereoscopic panorama of the station - two equirect eye images (mppp.ibr.ods)")
     p.add_argument("work")
     p.add_argument("--station", required=True)
-    p.add_argument("--width", type=int, default=8192)
+    p.add_argument("--width", type=int, default=16384, help="per eye (default 16384 since 0.97.4; 8192 before)")
     p.add_argument("--ipd", type=float, default=0.064, help="eye separation in metres")
     p.add_argument("--sky-radius", type=float, default=None, metavar="M",
                    help="0.97.0: the sky on a sphere of this radius about the mast axis and the ground plane out to it "

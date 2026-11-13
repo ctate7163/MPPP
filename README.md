@@ -40,7 +40,7 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. MPPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.97.3** (`v0p97`): the core (`mppp`, the pipeline) and the research studies (`mppp_studies`) apart, the
+Version **0.97.4** (`v0p97`): the core (`mppp`, the pipeline) and the research studies (`mppp_studies`) apart, the
 freeze run as a driver of its own, and the first products past the block - per-image depth maps, the photometric
 cube and a stereoscopic panorama from a cleaned station mesh (0.96.1: a floor at the rover deck for the with-rover
 panoramas, the panoramas named by station). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are

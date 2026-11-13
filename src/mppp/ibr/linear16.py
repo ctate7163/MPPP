@@ -496,5 +496,10 @@ def retone(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int 
     cv2.imwrite(str(out / f"{pre}{STACK_NAME}.jpg"), sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
     drop_old_stacks(out, pre[:-1] if pre.endswith("_") else pre)
     enh = write_enhanced(out, prefix, top=top, jpeg_quality=jpeg_quality, levels_file=levels_file)
+    try:                                                                    # 0.97.4: the new files carry the XMP again
+        from .xmp import tag_folder
+        tag_folder(out)
+    except Exception:                                                       # noqa: BLE001
+        pass
     return {"levels_16bit_units": [float(v) for v in levels], "square": str(out / f"{pre}{STACK_NAME}.jpg"), "top": top,
             "enhanced": enh}
