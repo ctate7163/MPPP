@@ -3,6 +3,17 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.19 — 2026-11-13
+
+- **Context frames for Van Zyl and Rockytop** (Christian): `Sol0052_S003D2046` takes the NCAM00301 pair of sol 52
+  at S003D2016; `Sol0461_S026D0630` takes five pairs at S026D0522, S026D0470, S026D0756 (two) and S026D0694, sols
+  460 to 464. Both eyes of each frame Christian named.
+- `mppp dense --add-images NAME ...`: frames added to the subset however the station's frames are chosen; the
+  station list uses it for `context`, which no longer needs `frames.images`. A station's dense workspace is made
+  again when its context changes.
+- Documentation site: the links to the viewer open in a new tab. The link in the README on github.com cannot
+  (GitHub removes `target` from a README's links).
+
 ## 0.97.18 — 2026-11-13
 
 - **Viewer:** on a screen a menu (and the L key) chooses which eye's panorama is shown, left or right; a headset

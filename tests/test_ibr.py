@@ -1141,6 +1141,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert SS.plan(cfg, root, labels=["S026D0630"], steps=["ods"], variants=["masked"])[0]["commands"] == [
         {"variant": "masked", "step": "ods", "argv": ["ods", str(root / "mars2020_sol_0460_rockytop"), "--station", "26_630",
                                                       "--mask-rover", "--out", str(root / "single_sites" / "Sol0461_S026D0630"),
+                                                      "--context-images", *cfg["stations"]["Sol0461_S026D0630"]["context"],
                                                       "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
                                                       "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
                                                       "--tone-levels", str(root / "single_sites" / "Sol0461_S026D0630" / "tone_levels.json"),
@@ -2591,5 +2592,11 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
         assert a[i + 1:i + 9] == cx
     s87 = cfg["stations"]["Sol1792_S087D0000"]
     assert len(s87["frames"]["images"]) == 18 and len(s87["context"]) == 2 and all("N0860700" in n for n in s87["context"])
-    with pytest.raises(ValueError):
-        SS.plan({"stations": {"X": {"station": "1_2", "work": str(root), "frames": {"scale": 0.5}, "context": ["a"]}}}, root)
+    i = dense.index("--add-images")                                           # 0.97.19: the dense step's own option
+    assert dense[i + 1:i + 9] == cx and dense.index("--images") < i
+    rt = SS.plan(cfg, root, labels=["Sol0461_S026D0630"])[0]                  # a station chosen by --scale has them too
+    d2 = rt["commands"][0]["argv"]
+    assert "--scale" in d2 and "--images" not in d2 and len(cfg["stations"]["Sol0461_S026D0630"]["context"]) == 10
+    assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 11] == cfg["stations"]["Sol0461_S026D0630"]["context"]
+    assert cfg["stations"]["Sol0052_S003D2046"]["context"] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
+                                                               "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"]

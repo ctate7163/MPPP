@@ -1,5 +1,5 @@
 {
- "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (rover, masked; the rover shown is the default since 0.96.1, run first), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' / 'mesh_args' / 'depthmaps_args' / 'ods_args' for every station (and per station the same keys); 'ods_args' --bits 16: the panorama from 16-bit linear frames. 0.97.0 (Christian, 12 Nov 2026): run by run_single_site_ibr.bat; 'ods_args' --eyes left right centre adds the panorama from the pivot (<station>[_rover]_ods_centre.png, _centre_16.png) and its depth (_centre_depth.npz, _depth_16.png, _depth_linear.jpg, _depth_log.jpg); the driver gives both variants of a station one <out>/<label>/tone_levels.json so their 16-to-8-bit scaling is the same; the pivot is on the azimuth axis at the Mastcam-Z height (--pivot-height zcam, the default) whatever cameras are rendered. 0.97.7 (Christian, 13 Nov 2026): per station 'name', the site's name in the mark at the panorama's nadir (default: from 'site'); 'ods_args' --fill-cameras F: the station's front Hazcam pair colours the terrain the Navcam frames do not see (under the arm). 0.97.8: 'depthmaps_args' --add-cameras F: the front Hazcam pair also gets its depth and photometric maps. 0.97.11: the centre panorama is no longer rendered (it took a third of the time; --eyes left right centre in 'ods_args' brings it back); the depth from the pivot is still made, from rays alone. 0.97.14 (Christian, 13 Nov 2026): the stations' labels carry the sol of their frames, Sol0052_S003D2046 - the folder <out>/<label>/ and the files' prefix; the dense workspace in the block stays dense_S003D2046, and the old label still selects the station on the command line. 0.97.14: the per-image maps (depthmaps) are made for the terrain-only variant alone ('depthmaps_variants': [\"masked\"]; [\"rover\", \"masked\"] for both) and hold depth and normals; 'photometry': true (top level or per station) adds incidence, emission, phase and shadow. 0.97.15 (Christian, 13 Nov 2026): per station 'context' [names]: frames of the block from another place, or from this place on another sol - added to the dense step's frames (terrain) and given to mppp ods --context-images (fill-only sources, their rover mask applied in both variants, never on the rover model); needs frames.images. 0.97.17 (Christian, 13 Nov 2026: 'the name of the ods should just be its block name without any large, huge, or tiny additions'): the name in the mark and in the viewer's title is the block's label in sites.json without its size word (van_zyl_overlook_huge: Van Zyl Overlook; witch_hazel_large: Witch Hazel Hill); the stations carry no 'name' any more ('name' still overrides).",
+ "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (rover, masked; the rover shown is the default since 0.96.1, run first), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' / 'mesh_args' / 'depthmaps_args' / 'ods_args' for every station (and per station the same keys); 'ods_args' --bits 16: the panorama from 16-bit linear frames. 0.97.0 (Christian, 12 Nov 2026): run by run_single_site_ibr.bat; 'ods_args' --eyes left right centre adds the panorama from the pivot (<station>[_rover]_ods_centre.png, _centre_16.png) and its depth (_centre_depth.npz, _depth_16.png, _depth_linear.jpg, _depth_log.jpg); the driver gives both variants of a station one <out>/<label>/tone_levels.json so their 16-to-8-bit scaling is the same; the pivot is on the azimuth axis at the Mastcam-Z height (--pivot-height zcam, the default) whatever cameras are rendered. 0.97.7 (Christian, 13 Nov 2026): per station 'name', the site's name in the mark at the panorama's nadir (default: from 'site'); 'ods_args' --fill-cameras F: the station's front Hazcam pair colours the terrain the Navcam frames do not see (under the arm). 0.97.8: 'depthmaps_args' --add-cameras F: the front Hazcam pair also gets its depth and photometric maps. 0.97.11: the centre panorama is no longer rendered (it took a third of the time; --eyes left right centre in 'ods_args' brings it back); the depth from the pivot is still made, from rays alone. 0.97.14 (Christian, 13 Nov 2026): the stations' labels carry the sol of their frames, Sol0052_S003D2046 - the folder <out>/<label>/ and the files' prefix; the dense workspace in the block stays dense_S003D2046, and the old label still selects the station on the command line. 0.97.14: the per-image maps (depthmaps) are made for the terrain-only variant alone ('depthmaps_variants': [\"masked\"]; [\"rover\", \"masked\"] for both) and hold depth and normals; 'photometry': true (top level or per station) adds incidence, emission, phase and shadow. 0.97.15 (Christian, 13 Nov 2026): per station 'context' [names]: frames of the block from another place, or from this place on another sol - added to the dense step's frames (terrain) and given to mppp ods --context-images (fill-only sources, their rover mask applied in both variants, never on the rover model); 0.97.19: with any way of choosing the station's frames (mppp dense --add-images). 0.97.17 (Christian, 13 Nov 2026: 'the name of the ods should just be its block name without any large, huge, or tiny additions'): the name in the mark and in the viewer's title is the block's label in sites.json without its size word (van_zyl_overlook_huge: Van Zyl Overlook; witch_hazel_large: Witch Hazel Hill); the stations carry no 'name' any more ('name' still overrides).",
  "out": "single_sites",
  "variants": [
   "rover",
@@ -22,7 +22,7 @@
   "Sol0052_S003D2046": {
    "site": "van_zyl_overlook_huge",
    "station": "3_2046",
-   "note": "Van Zyl Overlook, sol 52: the six Navcam pairs NCAM00303, NCAM03052 x3, NCAM02052 x2 (Christian, 10 Nov)",
+   "note": "Van Zyl Overlook, sol 52: the six Navcam pairs NCAM00303, NCAM03052 x3, NCAM02052 x2 (Christian, 10 Nov) Context (13 Nov): the pair NCAM00301 of sol 52 at S003D2016, before the drive (quarter resolution).",
    "frames": {
     "images": [
      "NLF_0052_0671564132_350RAD_N0032046NCAM00303_0A0195J01.png",
@@ -38,18 +38,34 @@
      "NLF_0052_0671568531_150RAD_N0032046NCAM02052_0A0295J01.png",
      "NRF_0052_0671568531_150RAD_N0032046NCAM02052_0A0295J01.png"
     ]
-   }
+   },
+   "context": [
+    "NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
+    "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"
+   ]
   },
   "Sol0461_S026D0630": {
    "site": "rockytop",
    "station": "26_630",
-   "note": "Rockytop, sol 461: the 16 half-resolution Navcam frames (NCAM03461, 02461, 13461); the pair NCAM13461 0707875039 left out of the panorama (Christian, 10 Nov; 12 Nov: the NRF frame named too)",
+   "note": "Rockytop, sol 461: the 16 half-resolution Navcam frames (NCAM03461, 02461, 13461); the pair NCAM13461 0707875039 left out of the panorama (Christian, 10 Nov; 12 Nov: the NRF frame named too) Context (13 Nov): the pairs NCAM00301 of sol 461 at S026D0522, NCAM13460 of sol 460 at S026D0470, NCAM13464 x2 of sol 464 at S026D0756, NCAM00301 of sol 464 at S026D0694.",
    "frames": {
     "scale": 0.5
    },
    "ods_exclude": [
     "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
     "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"
+   ],
+   "context": [
+    "NLF_0461_0707867837_105RAD_N0260522NCAM00301_0A0295J01.png",
+    "NRF_0461_0707867837_105RAD_N0260522NCAM00301_0A0295J01.png",
+    "NLF_0460_0707783788_399RAD_N0260470NCAM13460_0A0195J01.png",
+    "NRF_0460_0707783788_399RAD_N0260470NCAM13460_0A0195J01.png",
+    "NLF_0464_0708143725_291RAD_N0260756NCAM13464_0A0195J01.png",
+    "NRF_0464_0708143725_291RAD_N0260756NCAM13464_0A0195J01.png",
+    "NLF_0464_0708143819_551RAD_N0260756NCAM13464_0A0195J01.png",
+    "NRF_0464_0708143819_551RAD_N0260756NCAM13464_0A0195J01.png",
+    "NLF_0464_0708136209_896RAD_N0260694NCAM00301_0A0295J01.png",
+    "NRF_0464_0708136209_896RAD_N0260694NCAM00301_0A0295J01.png"
    ]
   },
   "Sol0686_S032D1184": {

@@ -160,11 +160,11 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
         vs = [v for v in (variants or st.get("variants") or cfg.get("variants") or VARIANTS)]
         frames = dict(st.get("frames") or {})
         ctx = [n if str(n).lower().endswith(".png") else f"{n}.png" for n in (st.get("context") or [])]
+        fa = frame_args(frames)
         if ctx:                                     # 0.97.15: context frames (another place or sol) - in the dense step
-            if not frames.get("images"):            # for the terrain, in the panorama as masked fill-only sources
-                raise ValueError(f"{lab}: 'context' needs the station's own frames listed in frames.images")
-            frames["images"] = list(dict.fromkeys(list(frames["images"]) + ctx))
-        fa = frame_args(frames) + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
+            fa += ["--add-images", *ctx]            # for the terrain (0.97.19: mppp dense --add-images, so a station
+            #                                         chosen by --scale or --sequence can have context frames too)
+        fa = fa + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
         near = st.get("nearby_m", cfg.get("nearby_m"))          # 0.97.0: the neighbours' frames constrain the ground
         if near:
             fa += ["--nearby-m", f"{float(near):g}"]

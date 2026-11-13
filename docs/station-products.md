@@ -4,7 +4,7 @@ From a finished block MPPP makes the products of one **station** (one stop of th
 depth and photometric maps, and an omnidirectional stereo panorama that can be looked at in a headset. The code is
 `mppp.ibr` (the `[ibr]` extra: open3d). The commands and every option are in [Command line](cli.md).
 
-**See the result:** the [stereo panorama viewer](ods/index.html) (a prototype, below).
+**See the result:** the [stereo panorama viewer](ods/index.html){target="_blank" rel="noopener"} (a prototype, below).
 
 ## The steps
 
@@ -178,7 +178,8 @@ with menus for station, variant and view, a link per view (`#<station>/<variant>
 screen and a choice of the eye shown there (left or right; the L key), and in a headset: trigger = next station, grip = variant, A or X = view. A line at the bottom reports what
 the device can show (maximum texture size, compressed-texture formats).
 
-- On the documentation site: <https://ctate7163.github.io/MPPP/ods/>.
+- On the documentation site: [https://ctate7163.github.io/MPPP/ods/](https://ctate7163.github.io/MPPP/ods/){target="_blank" rel="noopener"}
+  (opens in a new tab from these pages; GitHub's own rendering of the README does not allow that).
 - To add stations: `mppp single-sites Sol0052_S003D2046 --publish docs/ods --publish-only` copies the stereo JPEGs (the standard view; reduced
   to 8192) into `docs/ods/panos/` and lists them in `docs/ods/panos.json`; commit and push `docs/ods`.
 - Another image list: `.../ods/?index=URL` (same origin, or a host that allows cross-origin requests).
