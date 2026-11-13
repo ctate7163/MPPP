@@ -86,6 +86,12 @@ Hazcam pair when it was taken within 2 hours of them, which colours the ground u
 frame sees the surface, and its colours are matched to the regular frames first, per channel, on the surface both
 see (`ods.json`, `fill_colour_match`). The regular frames are not changed.
 
+**Context frames** (`"context"` in the station list, `mppp ods --context-images`) are frames of the block taken
+from another place, or from this place on another sol. They add to the terrain in the dense step, and in the
+panorama they are fill-only sources like the Hazcam pair, with three differences: their rover mask is applied in
+both variants (the rover in them is somewhere else), they never colour the rover model, and each is colour-matched
+to the panorama on its own, whenever it was taken.
+
 On near surfaces - the rover, and the ground beside it - a frame is weighted more steeply by how little parallax it
 has against the panorama's ray. There a wrong depth in the mesh moves the picture by (the camera's distance from
 the ray) x (the depth error) / range squared: at 1.2 m, 20 cm and 5 cm make 23 pixels of a 16K panorama, and the

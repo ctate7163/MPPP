@@ -40,6 +40,14 @@ _DEFAULTS: Dict[str, Any] = {
     "color": {
         "enhance": True,
         "white_balance_ecam": [1.1, 1.4, 1.8],
+        # 0.97.15 (Christian, 13 Nov 2026: "I believe the Hazcam white balance. multiply those values by the white
+        # balance used in the pipeline processing and update as default"): the Hazcams (families F and R) - the
+        # Navcam balance x (1.004, 1, 1.113), what makes the front Hazcam pair's terrain the colour of the Navcam
+        # frames taken within the half hour at Van Zyl (sol 52, S003D2046: FL x (1.008, 1, 1.113), FR x (0.999, 1,
+        # 1.113) over 45,000 and 50,000 shared terrain points; mppp ods, fill_colour_match).  Measured on the front
+        # pair only; the rear pair has the same cameras and takes the same values.  None: the Navcam balance (as
+        # before 0.97.15).
+        "white_balance_hazcam": [1.104, 1.4, 2.004],
         "white_balance_zcam": [1.0, 1.3, 2.0],
         "white_balance_vce": [1.1, 1.0, 0.9],
         # a brightness factor per camera family applied with the white balance (N = Navcam, F/R = Hazcam,
@@ -211,7 +219,9 @@ def validate_config(cfg: Dict[str, Any]) -> None:
     fmts = cfg["export"]["formats"]
     if not fmts or any(f not in VALID_FORMATS for f in fmts):
         raise ValueError(f"export.formats must be a non-empty subset of {VALID_FORMATS}; got {fmts}")
-    for key in ("white_balance_ecam", "white_balance_zcam", "white_balance_vce"):
+    for key in ("white_balance_ecam", "white_balance_zcam", "white_balance_vce", "white_balance_hazcam"):
+        if key == "white_balance_hazcam" and cfg["color"].get(key) is None:
+            continue                                             # None: the Hazcams take the Navcam balance
         if len(cfg["color"][key]) != 3:
             raise ValueError(f"color.{key} must have three gains (R, G, B)")
     if cfg["color"]["scale_rad_to_int16"] <= 0 or cfg["color"]["scale_int8_to_int16"] <= 0:

@@ -58,7 +58,7 @@ Radiance is L = DN · `RADIANCE_SCALING_FACTOR` + `RADIANCE_OFFSET`. Pixels equa
 
 Scene brightness is normalised to an overhead Sun at a reference optical depth: L′ = L / s, s = μ exp[−(τ − τ_ref)/(6μ)], μ = max(sin e, μ_min), where e is the label solar elevation, τ is interpolated (periodically) in solar longitude from `mppp/data/M2020_taus_versus_L_s.csv`, τ_ref = 0.3 and μ_min = 0.2. The factor 6 is an empirical attenuation of total (direct plus diffuse) surface irradiance. This is a first-order, Lambertian, whole-image correction; it does not model shadows, sky illumination or the photometric function, and the τ table is a twelve-point seasonal climatology, not a per-sol measurement.
 
-Fixed per-camera white-balance gains are then applied (engineering cameras 1.1/1.4/1.8, Mastcam-Z 1.0/1.3/2.0, VCE 1.1/1.0/0.9), together with a brightness factor per camera family (`color.brightness_by_family`, v0p30: Navcam 0.9, so that nominally exposed frames stay off the top of the 8-bit range). These are aesthetic, not colorimetric.
+Fixed per-camera white-balance gains are then applied (Navcam 1.1/1.4/1.8, Hazcams 1.104/1.4/2.004 since 0.97.15, Mastcam-Z 1.0/1.3/2.0, VCE 1.1/1.0/0.9), together with a brightness factor per camera family (`color.brightness_by_family`, v0p30: Navcam 0.9, so that nominally exposed frames stay off the top of the 8-bit range). These are aesthetic, not colorimetric.
 
 The 16-bit product is round(L′ · 2×10⁵) clipped to [1, 65535]; it is linear in radiance and never gamma-encoded. The 8-bit product is the 16-bit value divided by 64 (optionally gamma-encoded), clipped to [1, 255]. Zero is reserved for invalid pixels in both.
 

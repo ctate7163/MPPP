@@ -3,6 +3,36 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.15 — 2026-11-13
+
+- **Hazcam white balance** (Christian: "I believe the Hazcam white balance. multiply those values by the white
+  balance used in the pipeline processing and update as default"): `color.white_balance_hazcam` =
+  [1.104, 1.4, 2.004] for the families F and R - the Navcam balance [1.1, 1.4, 1.8] x (1.004, 1, 1.113), from the
+  front Hazcam pair against the Navcam frames at Van Zyl, sol 52 (FL x (1.008, 1, 1.113), FR x (0.999, 1, 1.113)).
+  Measured on the front pair only; the rear pair takes the same values. `null`: the Navcam balance, as before.
+  A block processed earlier keeps its frames until it is processed again; then only its Hazcam frames are made
+  again (`reuse_existing`: `white_balance_changed`), and until then its 16-bit Hazcam frames keep the old balance
+  too, so they match its 8-bit ones. The brightness is not changed (the Hazcams came out 6 to 8 % brighter than
+  the Navcam frames on the same terrain; the Navcam's brightness factor is 0.9).
+- **Bug, since 0.97.0: the second variant's terrain was always built again.** `mppp mesh --terrain-from` compared
+  a field the report does not have (`station.label`), so "not this station's rover-masked terrain ... built again"
+  on every run (1.4 min at Van Zyl, 3 at Taylorfjellet). It compares the station's key now. **The reuse path has
+  not run on the PC before.**
+- **Bug, since 0.96.1: the 16-bit frames ignored the block's settings.** `linear16.block_config` merged the whole
+  snapshot file over the defaults; the settings are under its `config` key, so the frames were made with the
+  defaults of the installed version. No effect where a block was processed with the defaults.
+- **Context frames** (Christian: "include NLF_1790_... from a near location for context. Since it is from a
+  different location, it should be masked in both the with and without rover parts"): `"context": [names]` per
+  station in the station list, `mppp ods --context-images`. They go into the dense step (terrain) and into the
+  panorama as fill-only sources: their rover mask is applied in both variants, they never colour the rover model,
+  each is colour-matched to the panorama on its own, and their sols are not in the nadir mark. With the rover
+  shown, a view from a context frame through the place where the rover model stands counts as hidden.
+- **Station list:** `Sol1792_S087D0000` (Origny: 9 Navcam pairs of sol 1792; context: the NCAM03790 pair of sol
+  1790 at S086D0700) and `Sol1454_S071D0056` (Bell Island: 8 Navcam pairs of sol 1454; context: four pairs at
+  S071D0006, S071D0120, S071D0160 and this station on sol 1458).
+- Ground fill of the terrain-only panorama: its colours come from all of the terrain mesh, not only mesh within
+  0.25 m of the regional plane (the 0.97.13 change reached the with-rover variant only).
+
 ## 0.97.14 — 2026-11-13
 
 - **Station codes carry the sol** (Christian: "Add _Sol{sol, zfill 0}_ to the station codes. So S003D2046 should

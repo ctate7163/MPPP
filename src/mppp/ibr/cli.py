@@ -72,6 +72,21 @@ def _scene(out: Path):
     return load_scene(out)
 
 
+def _png(names) -> list:
+    """Frame names with their ``.png``."""
+    return [n if str(n).lower().endswith(".png") else f"{n}.png" for n in (names or [])]
+
+
+def _own_frames(project, st, a) -> Optional[list]:
+    """:func:`_frames` without the context frames (0.97.15: one of them can be at this station, on another sol)."""
+    names = _frames(project, st, a)
+    ctx = set(_png(getattr(a, "context_images", None)))
+    if not ctx:
+        return names
+    base = names if names is not None else [n for n in st.images if n[:1].upper() in set((getattr(a, "cameras", "N") or "N").upper())]
+    return [n for n in base if n not in ctx]
+
+
 def _frames(project, st, a) -> Optional[list]:
     """The frames for depthmaps / ods: ``--images``; else the frames the station's dense workspace was made from
     (``dense_<station>*/mppp_dense.json``: 10 Nov, the Van Zyl run - the panorama took all 16 frames of the station,
@@ -221,6 +236,9 @@ def add_parsers(sub) -> None:
                         "it is zero (default 0 90 since 0.97.13: the cosine of the elevation; 30 80 before); 90 90: none")
     p.add_argument("--pole-merge-down", type=float, nargs=2, default=None, metavar=("START", "END"),
                    help="0.97.1: the same below the horizon (default 0 90 since 0.97.13; 60 88 from 0.97.5); 90 90: none")
+    p.add_argument("--context-images", nargs="+", default=None, metavar="NAME",
+                   help="0.97.15: frames of the block from another place or sol, for context: fill-only sources, their "
+                        "rover mask always applied (also with --rover), never on the rover model")
     p.add_argument("--no-far-field", action="store_true",
                    help="0.97.13: the sky sphere alone beyond the ground plane (default: per direction the sharpest of "
                         "100 m, the sky radius and infinity, blended)")
@@ -326,7 +344,12 @@ def _mesh_on_terrain(src: Path, out: Path, deck, st, a, parts) -> Optional[Dict[
         rep = json.loads(need[2].read_text(encoding="utf-8"))
     except ValueError:
         return None
-    same = ((rep.get("station") or {}).get("label") == st.label
+    # 0.97.15, a bug since 0.97.0: the report's station is Station.to_json() - its code is under "station", there is
+    # no "label" - so this was never true and the second variant's terrain was always built again (Van Zyl, 13
+    # Nov: "not this station's rover-masked terrain with these settings - built again", 1.4 min; Taylorfjellet 3)
+    from .station import station_key
+    rs = rep.get("station") or {}
+    same = (station_key(str(rs.get("key") or rs.get("station") or rs.get("label") or "")) == st.key
             and abs(float((rep.get("scene") or {}).get("mesh_radius_m", -1)) - float(a.mesh_radius)) < 1e-6
             and bool((rep.get("fill") or {})) == (not getattr(a, "no_fill", False)))
     if not same:
@@ -353,7 +376,8 @@ def _mesh_on_terrain(src: Path, out: Path, deck, st, a, parts) -> Optional[Dict[
     out.mkdir(parents=True, exist_ok=True)
     write_mesh(out / "mesh.ply", V, F)
     shutil.copy2(need[1], out / "ground_plane.json")
-    rep.update(rover_deck=deck_rep if deck is not None else None, rover_triangles=tris, terrain_from=str(src),
+    rep.update(rover="shown" if tris else "masked out",          # 0.97.15: this variant's, not the source's
+               rover_deck=deck_rep if deck is not None else None, rover_triangles=tris, terrain_from=str(src),
                files={"mesh": str(out / "mesh.ply"), "ground_plane": str(out / "ground_plane.json")})
     log.info("mesh: the terrain of %s (%d triangles) with the rover model (%d triangles) - no second surface run",
              src, tris[0] if tris else len(F), (tris[1] - tris[0]) if tris else 0)
@@ -496,7 +520,8 @@ def cmd_ods(a: argparse.Namespace) -> int:
     st, out = _station(project, rec, a)
     scene = _scene(out)
     rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, sky_radius_m=("default" if a.sky_radius is None else a.sky_radius), pole_merge_deg=_pole_merge(a), families=a.cameras, scale=a.scale,
-                         far_field=not a.no_far_field, zcam_scale=a.zcam_scale, images=_frames(project, st, a), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
+                         far_field=not a.no_far_field, zcam_scale=a.zcam_scale, images=_own_frames(project, st, a),
+                         context_images=_png(getattr(a, "context_images", None)), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,
                          azimuth0_deg=-180.0 if a.north_center else a.azimuth0, prefix=a.prefix,

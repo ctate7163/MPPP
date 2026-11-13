@@ -106,9 +106,19 @@ def block_config(project) -> Dict[str, Any]:
             c = sorted(d.glob("mppp_config_v*.json"), key=lambda f: f.stat().st_mtime)
             if c:
                 import warnings
+                # 0.97.15, a bug since 0.96.1: the snapshot holds the settings under "config" (with the version and
+                # the run's facts beside them); the whole file was merged over the defaults, so its "config" was an
+                # unknown key and the 16-bit frames were made with TODAY'S defaults, not the block's settings
+                snap = json.loads(c[-1].read_text(encoding="utf-8"))
+                user = snap.get("config") if isinstance(snap.get("config"), dict) else snap
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    return load_config(c[-1])
+                    cfg = load_config(user)
+                # a block processed before the Hazcams had their own balance: its 8-bit Hazcam frames have the
+                # Navcam balance, and the 16-bit ones must match them
+                if "white_balance_hazcam" not in (user.get("color") or {}):
+                    cfg["color"]["white_balance_hazcam"] = None
+                return cfg
     raise FileNotFoundError(f"no processed/mppp_config_v*.json for {project.root}")
 
 

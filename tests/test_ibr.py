@@ -1096,7 +1096,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     from mppp.ibr import single_sites as SS
     cfg = SS.load_config()
     assert set(cfg["stations"]) == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
-                                    "Sol1635_S079D0732", "Sol1411_S068D0142"}
+                                    "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056"}
     assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12
     sa = cfg["stations"]["Sol1411_S068D0142"]                                 # 0.97.14: South Arm, sol 1411
     assert sa["site"] == "witch_hazel_large" and sa["station"] == "68_142" and len(sa["frames"]["images"]) == 18
@@ -1108,7 +1108,8 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert [Path(r["work"]).name for r in runs] == ["mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop",
                                                     "mars2020_sol_0413_threeforks_large", "mars2020_sol_0460_rockytop",
                                                     "mars2020_sol_1601_taylorfjellet_large",
-                                                    "mars2020_sol_1355_witch_hazel_large"]
+                                                    "mars2020_sol_1355_witch_hazel_large", "mars2020_sol_1765_origny_large",
+                                                    "mars2020_sol_1431_bell_island_large"]
     r0 = runs[0]
     steps = [(c["variant"], c["step"]) for c in r0["commands"]]
     assert steps == [("masked", "dense"), ("rover", "mesh"), ("rover", "ods"),             # 0.97.14: the maps for the
@@ -1806,10 +1807,10 @@ def test_rover_mesh_on_the_masked_terrain(tmp_path):
     V = np.array([[0, 0, 0.0], [1, 0, 0], [0, 1, 0]]); F = np.array([[0, 1, 2]])
     write_mesh(src / "mesh.ply", V, F)
     (src / "ground_plane.json").write_text("{}")
-    rep = {"rover": "masked out", "rover_triangles": None, "station": {"label": "S1"}, "scene": {"mesh_radius_m": 50.0},
+    rep = {"rover": "masked out", "rover_triangles": None, "station": {"station": "S1", "site": 1}, "scene": {"mesh_radius_m": 50.0},   # as Station.to_json() writes it
            "fill": {"filled": 1}}
     (src / "mesh_report.json").write_text(json.dumps(rep))
-    st = types.SimpleNamespace(label="S1"); a = types.SimpleNamespace(mesh_radius=50.0, no_fill=False)
+    st = types.SimpleNamespace(label="S1", key="S1"); a = types.SimpleNamespace(mesh_radius=50.0, no_fill=False)
     r = C._mesh_on_terrain(src, out, None, st, a, None)                       # no model parts: the terrain alone
     assert r["terrain_from"] == str(src) and len(read_mesh(out / "mesh.ply")[1]) == 1 and (out / "ground_plane.json").is_file()
     a.mesh_radius = 30.0
@@ -2500,3 +2501,81 @@ def test_frame_black_padding_is_the_no_data_flag_in_the_pictures(tmp_path):
         d = np.c_[r * np.cos(az), r * np.sin(az), np.full(len(az), -2.0)]
         h = sc.cast(np.array([0, 0, 2.0]), d / np.linalg.norm(d, axis=1)[:, None])
         assert (h["label"] == RC.LABEL_MESH).all() and np.all(np.abs(h["t"] * (2.0 / np.linalg.norm(d, axis=1)) - 2.0) < 0.6)
+
+
+def test_block_settings_reach_the_16bit_frames_and_the_terrain_is_reused(tmp_path):
+    """0.97.15, two old bugs: the block's settings snapshot holds them under "config" (they were not applied to the
+    16-bit frames); the report's station has no "label" (the second variant's terrain was always built again)."""
+    import mppp
+    from types import SimpleNamespace
+    from mppp.ibr import linear16 as L, cli as C
+    blk = tmp_path / "blk"
+    (blk / "processed").mkdir(parents=True)
+    (blk / "colmap").mkdir()
+    cfg = mppp.load_config({"color": {"brightness_by_family": {"N": 0.5}}})
+    old = json.loads(json.dumps(cfg))
+    del old["color"]["white_balance_hazcam"]
+    (blk / "processed" / "mppp_config_v0p97.json").write_text(json.dumps({"mppp_version": "0.97.4", "config": old}))
+    got = L.block_config(SimpleNamespace(root=blk / "colmap", settings={}))
+    assert got["color"]["brightness_by_family"]["N"] == 0.5                  # the block's own setting
+    assert got["color"]["white_balance_hazcam"] is None                      # processed before the Hazcam balance
+    (blk / "processed" / "mppp_config_v0p98.json").write_text(json.dumps({"config": cfg}))
+    os_ = __import__("os"); os_.utime(blk / "processed" / "mppp_config_v0p98.json", (2e9, 2e9))
+    assert L.block_config(SimpleNamespace(root=blk / "colmap", settings={}))["color"]["white_balance_hazcam"] == [1.104, 1.4, 2.004]
+    src, out = tmp_path / "first", tmp_path / "second"
+    src.mkdir()
+    V, F = _terrain(n=5, size=4.0)
+    M.write_mesh(src / "mesh.ply", V, F)
+    (src / "ground_plane.json").write_text(json.dumps({"normal": [0, 0, 1], "offset": 0.0, "centre": [0, 0, 2], "up": [0, 0, 1], "radius_m": 100.0}))
+    st = SimpleNamespace(label="Sol0052_S003D2046", key="S003D2046")
+    a = SimpleNamespace(mesh_radius=75.0, no_fill=False)
+    for station in ({"station": "S003D2046", "site": 3}, {"station": "Sol0052_S003D2046", "key": "S003D2046"}):   # a 0.97.12 report, a new one
+        (src / "mesh_report.json").write_text(json.dumps({"station": station, "scene": {"mesh_radius_m": 75.0}, "fill": {"cells": 1}}))
+        r = C._mesh_on_terrain(src, out, None, st, a, None)
+        assert r is not None and r["terrain_from"] == str(src) and (out / "mesh.ply").is_file()
+    (src / "mesh_report.json").write_text(json.dumps({"station": {"station": "S003D2047"}, "scene": {"mesh_radius_m": 75.0}, "fill": {"cells": 1}}))
+    assert C._mesh_on_terrain(src, out, None, st, a, None) is None           # another station's terrain is not taken
+
+
+def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
+    """0.97.15: a context frame (another place or sol) is a fill-only source whose rover mask is applied with the
+    rover shown too, it never colours the rover model, it is not one of the station's own frames, and the station
+    list passes it to the dense step and to the panorama."""
+    import cv2
+    from mppp.ibr import single_sites as SS
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    for n in st.images:
+        cv2.imwrite(str(proj.root / "masks" / (n + ".png")), np.full((300, 400), 255, np.uint8))
+    ctx = st.images[3]
+    srcs = O.station_sources(proj, rec, st, scale=1.0, use_masks=False, mask_head_hardware=False, context_images=[ctx])
+    by = {s.name: s for s in srcs}
+    assert [s.name for s in srcs if not s.context] == st.images[:3] and by[ctx].context and by[ctx].fill_only
+    assert by[ctx].mask_file is not None and by[ctx].rover_mask_file is None        # masked although the rover is shown
+    assert by[st.images[0]].mask_file is None and by[st.images[0]].rover_mask_file is not None
+    assert O._fill_key(by[ctx]) == Path(ctx).stem and O._fill_key(by[st.images[0]]) == "NL"
+    o, d = O.ods_rays(64, 32, (18, 30), st.pivot, 0.0, "centre", st.up, st.north, st.east)
+    only = [by[ctx]]
+    c = O.candidates(scene, only, o, d)
+    assert (c["k"] >= 0).any()                                                # it sees the ground ...
+    scene.rover_triangles = (0, scene.n_mesh_triangles)                       # ... and nothing of a mesh that is all rover
+    c2 = O.candidates(scene, only, o, d)
+    assert not (c2["k"][c2["label"] == RC.LABEL_MESH] >= 0).any()
+    scene.rover_triangles = None
+    rep = O.render_station(proj, rec, st, scene, tmp_path / "ods_ctx", width=256, ipd_m=0.064, scale=1.0, rows_per_chunk=64,
+                           eyes=("left",), context_images=[ctx, "NLF_missing.png"])
+    assert rep["context_sources"] == [ctx] and ctx in rep["fill_only_sources"] and ctx not in rep["sources"][:3]
+    cfg = SS.load_config()
+    root = tmp_path / "rb"
+    run = SS.plan(cfg, root, labels=["Sol1454_S071D0056"])[0]
+    assert Path(run["work"]).name == "mars2020_sol_1431_bell_island_large"
+    dense = run["commands"][0]["argv"]
+    ods = [c_["argv"] for c_ in run["commands"] if c_["step"] == "ods"]
+    cx = cfg["stations"]["Sol1454_S071D0056"]["context"]
+    assert len(cx) == 8 and all(n in dense for n in cx) and len(cfg["stations"]["Sol1454_S071D0056"]["frames"]["images"]) == 16
+    for a in ods:                                                             # both variants
+        i = a.index("--context-images")
+        assert a[i + 1:i + 9] == cx
+    s87 = cfg["stations"]["Sol1792_S087D0000"]
+    assert len(s87["frames"]["images"]) == 18 and len(s87["context"]) == 2 and all("N0860700" in n for n in s87["context"])
+    with pytest.raises(ValueError):
+        SS.plan({"stations": {"X": {"station": "1_2", "work": str(root), "frames": {"scale": 0.5}, "context": ["a"]}}}, root)

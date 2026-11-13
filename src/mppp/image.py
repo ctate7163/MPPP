@@ -313,6 +313,8 @@ class MPPPImage:
             wb = [1.0, 1.0, 1.0]
         elif self.fn.filter == "M":
             wb = c["white_balance_vce"]
+        elif self.fn.family in ("F", "R") and c.get("white_balance_hazcam") is not None:
+            wb = c["white_balance_hazcam"]                       # 0.97.15: the Hazcams' own balance
         elif self.fn.family in ("N", "F", "R"):
             wb = c["white_balance_ecam"]
         elif self.fn.family == "Z":

@@ -158,7 +158,13 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
         st = cfg["stations"][lab]
         work = block_folder(st, root)
         vs = [v for v in (variants or st.get("variants") or cfg.get("variants") or VARIANTS)]
-        fa = frame_args(st.get("frames") or {}) + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
+        frames = dict(st.get("frames") or {})
+        ctx = [n if str(n).lower().endswith(".png") else f"{n}.png" for n in (st.get("context") or [])]
+        if ctx:                                     # 0.97.15: context frames (another place or sol) - in the dense step
+            if not frames.get("images"):            # for the terrain, in the panorama as masked fill-only sources
+                raise ValueError(f"{lab}: 'context' needs the station's own frames listed in frames.images")
+            frames["images"] = list(dict.fromkeys(list(frames["images"]) + ctx))
+        fa = frame_args(frames) + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
         near = st.get("nearby_m", cfg.get("nearby_m"))          # 0.97.0: the neighbours' frames constrain the ground
         if near:
             fa += ["--nearby-m", f"{float(near):g}"]
@@ -187,6 +193,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                         continue
                     if st.get("photometry", cfg.get("photometry", False)):
                         argv.append("--photometry")
+                if step == "ods" and ctx:
+                    argv += ["--context-images", *ctx]
                 if step == "ods" and st.get("ods_exclude"):   # 10 Nov: pairs left out of the panorama
                     argv += ["--exclude", *[str(x) for x in st["ods_exclude"]]]
                 if step == "ods":                    # 0.97.0: one 16-to-8-bit scaling for both variants of a station

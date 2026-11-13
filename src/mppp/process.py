@@ -168,6 +168,18 @@ def _reference_from_meta(m: Dict[str, Any]) -> list:
     return [Path(m["source_product"]).stem, *m["pose"]["C_enu_m"], *m["pose"]["metashape_ypr_deg"]]
 
 
+def _hazcam_balance_changed(cfg: Dict[str, Any], m: Dict[str, Any]) -> bool:
+    """True for a Hazcam frame (family F or R, not a VCE product) whose recorded white balance is not the one
+    ``cfg`` gives it now."""
+    stem = Path(str(m.get("source_product", ""))).stem
+    if stem[:1].upper() not in ("F", "R") or stem[2:3].upper() == "M" or not (cfg.get("color") or {}).get("enhance"):
+        return False
+    c = cfg["color"]
+    want = c.get("white_balance_hazcam") if c.get("white_balance_hazcam") is not None else c["white_balance_ecam"]
+    got = m.get("white_balance")
+    return got is None or len(got) != 3 or any(abs(float(g) - float(w)) > 1e-9 for g, w in zip(got, want))
+
+
 def _exposure_rule(cfg: Dict[str, Any], m: Dict[str, Any]) -> Optional[str]:
     """Why a manifest entry falls under the exposure rules of ``cfg`` (None: it does not)."""
     sel = cfg.get("selection") or {}
@@ -215,8 +227,9 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[
         return {}, rep
     # skip_inference_at only affects the images of the listed stations: checked per image below
     # the exposure rules are checked per image below (a change does not invalidate the other images)
+    # 0.97.15: the Hazcam balance concerns the Hazcam frames alone - they are made again, the others reused
     per_image = {"masking.skip_inference_at", "selection.max_exposure_ms", "selection.max_centre_tint",
-                 "selection.exposure_filter_families"}
+                 "selection.exposure_filter_families", "color.white_balance_hazcam"}
     diff = [k for k in _config_diff(_canon(cfg), _canon(old_cfg)) if k not in per_image]
     if diff:
         rep.update(reason="configuration changed", config_changed=diff)
@@ -233,6 +246,8 @@ def reusable_images(out_dir: PathLike, cfg: Dict[str, Any], waypoints: Optional[
                                                              (m.get("filename") or {}).get("sequence"), stem)
         if _exposure_rule(cfg, m):                                        # now left out by the rules
             rep.setdefault("exposure_rule", []).append(stem)
+        elif _hazcam_balance_changed(cfg, m):                             # 0.97.15: a Hazcam frame at another balance
+            rep.setdefault("white_balance_changed", []).append(stem)
         elif bool((m.get("mask") or {}).get("inferred")) != want_inferred:
             rep["mask_inference_changed"].append(stem)                   # station added to / removed from the list
         elif outs and all(o.is_file() for o in outs):

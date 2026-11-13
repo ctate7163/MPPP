@@ -1,5 +1,5 @@
 {
- "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (rover, masked; the rover shown is the default since 0.96.1, run first), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' / 'mesh_args' / 'depthmaps_args' / 'ods_args' for every station (and per station the same keys); 'ods_args' --bits 16: the panorama from 16-bit linear frames. 0.97.0 (Christian, 12 Nov 2026): run by run_single_site_ibr.bat; 'ods_args' --eyes left right centre adds the panorama from the pivot (<station>[_rover]_ods_centre.png, _centre_16.png) and its depth (_centre_depth.npz, _depth_16.png, _depth_linear.jpg, _depth_log.jpg); the driver gives both variants of a station one <out>/<label>/tone_levels.json so their 16-to-8-bit scaling is the same; the pivot is on the azimuth axis at the Mastcam-Z height (--pivot-height zcam, the default) whatever cameras are rendered. 0.97.7 (Christian, 13 Nov 2026): per station 'name', the site's name in the mark at the panorama's nadir (default: from 'site'); 'ods_args' --fill-cameras F: the station's front Hazcam pair colours the terrain the Navcam frames do not see (under the arm). 0.97.8: 'depthmaps_args' --add-cameras F: the front Hazcam pair also gets its depth and photometric maps. 0.97.11: the centre panorama is no longer rendered (it took a third of the time; --eyes left right centre in 'ods_args' brings it back); the depth from the pivot is still made, from rays alone. 0.97.14 (Christian, 13 Nov 2026): the stations' labels carry the sol of their frames, Sol0052_S003D2046 - the folder <out>/<label>/ and the files' prefix; the dense workspace in the block stays dense_S003D2046, and the old label still selects the station on the command line. 0.97.14: the per-image maps (depthmaps) are made for the terrain-only variant alone ('depthmaps_variants': [\"masked\"]; [\"rover\", \"masked\"] for both) and hold depth and normals; 'photometry': true (top level or per station) adds incidence, emission, phase and shadow.",
+ "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (rover, masked; the rover shown is the default since 0.96.1, run first), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' / 'mesh_args' / 'depthmaps_args' / 'ods_args' for every station (and per station the same keys); 'ods_args' --bits 16: the panorama from 16-bit linear frames. 0.97.0 (Christian, 12 Nov 2026): run by run_single_site_ibr.bat; 'ods_args' --eyes left right centre adds the panorama from the pivot (<station>[_rover]_ods_centre.png, _centre_16.png) and its depth (_centre_depth.npz, _depth_16.png, _depth_linear.jpg, _depth_log.jpg); the driver gives both variants of a station one <out>/<label>/tone_levels.json so their 16-to-8-bit scaling is the same; the pivot is on the azimuth axis at the Mastcam-Z height (--pivot-height zcam, the default) whatever cameras are rendered. 0.97.7 (Christian, 13 Nov 2026): per station 'name', the site's name in the mark at the panorama's nadir (default: from 'site'); 'ods_args' --fill-cameras F: the station's front Hazcam pair colours the terrain the Navcam frames do not see (under the arm). 0.97.8: 'depthmaps_args' --add-cameras F: the front Hazcam pair also gets its depth and photometric maps. 0.97.11: the centre panorama is no longer rendered (it took a third of the time; --eyes left right centre in 'ods_args' brings it back); the depth from the pivot is still made, from rays alone. 0.97.14 (Christian, 13 Nov 2026): the stations' labels carry the sol of their frames, Sol0052_S003D2046 - the folder <out>/<label>/ and the files' prefix; the dense workspace in the block stays dense_S003D2046, and the old label still selects the station on the command line. 0.97.14: the per-image maps (depthmaps) are made for the terrain-only variant alone ('depthmaps_variants': [\"masked\"]; [\"rover\", \"masked\"] for both) and hold depth and normals; 'photometry': true (top level or per station) adds incidence, emission, phase and shadow. 0.97.15 (Christian, 13 Nov 2026): per station 'context' [names]: frames of the block from another place, or from this place on another sol - added to the dense step's frames (terrain) and given to mppp ods --context-images (fill-only sources, their rover mask applied in both variants, never on the rover model); needs frames.images.",
  "out": "single_sites",
  "variants": [
   "rover",
@@ -132,6 +132,74 @@
      "NRF_1411_0792200805_817RAD_N0680142NCAM13411_0A0195J01.png"
     ]
    }
+  },
+  "Sol1792_S087D0000": {
+   "name": "Origny",
+   "site": "origny_large",
+   "station": "87_0",
+   "note": "Origny, sol 1792: the nine Navcam pairs of station S087D0000 from NLF_1792_0826024369 to NLF_1792_0826025483 (Christian, 13 Nov 2026) - NCAM03792 x3, NCAM02792 x2, NCAM15792 x4, half resolution, 19 minutes; block mars2020_sol_1765_origny_large. Context: the pair NCAM03790 of sol 1790 at S086D0700, a near location - in the dense step for the terrain, in the panorama a masked fill-only source in both variants.",
+   "frames": {
+    "images": [
+     "NLF_1792_0826024369_050RAD_N0870000NCAM03792_0A0195J01.png",
+     "NRF_1792_0826024369_050RAD_N0870000NCAM03792_0A0195J01.png",
+     "NLF_1792_0826024544_987RAD_N0870000NCAM03792_0A0195J01.png",
+     "NRF_1792_0826024544_987RAD_N0870000NCAM03792_0A0195J01.png",
+     "NLF_1792_0826024684_987RAD_N0870000NCAM03792_0A0195J01.png",
+     "NRF_1792_0826024684_987RAD_N0870000NCAM03792_0A0195J01.png",
+     "NLF_1792_0826024892_659RAD_N0870000NCAM02792_0A0195J01.png",
+     "NRF_1792_0826024892_659RAD_N0870000NCAM02792_0A0195J01.png",
+     "NLF_1792_0826025029_660RAD_N0870000NCAM02792_0A0195J01.png",
+     "NRF_1792_0826025029_660RAD_N0870000NCAM02792_0A0195J01.png",
+     "NLF_1792_0826025226_895RAD_N0870000NCAM15792_0A0195J01.png",
+     "NRF_1792_0826025226_895RAD_N0870000NCAM15792_0A0195J01.png",
+     "NLF_1792_0826025313_005RAD_N0870000NCAM15792_0A0195J01.png",
+     "NRF_1792_0826025313_005RAD_N0870000NCAM15792_0A0195J01.png",
+     "NLF_1792_0826025394_993RAD_N0870000NCAM15792_0A0195J01.png",
+     "NRF_1792_0826025394_993RAD_N0870000NCAM15792_0A0195J01.png",
+     "NLF_1792_0826025483_902RAD_N0870000NCAM15792_0A0195J01.png",
+     "NRF_1792_0826025483_902RAD_N0870000NCAM15792_0A0195J01.png"
+    ]
+   },
+   "context": [
+    "NLF_1790_0825850514_020RAD_N0860700NCAM03790_0A0195J01.png",
+    "NRF_1790_0825850514_020RAD_N0860700NCAM03790_0A0195J01.png"
+   ]
+  },
+  "Sol1454_S071D0056": {
+   "name": "Bell Island",
+   "site": "bell_island_large",
+   "station": "71_56",
+   "note": "Bell Island, sol 1454: the eight Navcam pairs of station S071D0056 from NLF_1454_0796019913 to NLF_1454_0796020891 (Christian, 13 Nov 2026) - NCAM03454 x3, NCAM02454 x2, NCAM13454 x3, half resolution, 16 minutes; block mars2020_sol_1431_bell_island_large. Context (masked, fill only, both variants): the pairs NCAM00301 of sol 1454 at S071D0006 (quarter resolution), NCAM03461 of sol 1461 at S071D0120, NCAM03463 of sol 1463 at S071D0160, and NCAM00347 of sol 1458 at this station. Christian named one frame of each; both eyes are listed.",
+   "frames": {
+    "images": [
+     "NLF_1454_0796019913_441RAD_N0710056NCAM03454_0A0195J01.png",
+     "NRF_1454_0796019913_441RAD_N0710056NCAM03454_0A0195J01.png",
+     "NLF_1454_0796020048_410RAD_N0710056NCAM03454_0A0195J01.png",
+     "NRF_1454_0796020048_410RAD_N0710056NCAM03454_0A0195J01.png",
+     "NLF_1454_0796020183_395RAD_N0710056NCAM03454_0A0195J01.png",
+     "NRF_1454_0796020183_395RAD_N0710056NCAM03454_0A0195J01.png",
+     "NLF_1454_0796020375_613RAD_N0710056NCAM02454_0A0195J01.png",
+     "NRF_1454_0796020375_613RAD_N0710056NCAM02454_0A0195J01.png",
+     "NLF_1454_0796020524_612RAD_N0710056NCAM02454_0A0195J01.png",
+     "NRF_1454_0796020524_612RAD_N0710056NCAM02454_0A0195J01.png",
+     "NLF_1454_0796020684_800RAD_N0710056NCAM13454_0A0195J01.png",
+     "NRF_1454_0796020684_800RAD_N0710056NCAM13454_0A0195J01.png",
+     "NLF_1454_0796020806_785RAD_N0710056NCAM13454_0A0195J01.png",
+     "NRF_1454_0796020806_785RAD_N0710056NCAM13454_0A0195J01.png",
+     "NLF_1454_0796020891_824RAD_N0710056NCAM13454_0A0195J01.png",
+     "NRF_1454_0796020891_824RAD_N0710056NCAM13454_0A0195J01.png"
+    ]
+   },
+   "context": [
+    "NLF_1454_0796018503_020RAD_N0710006NCAM00301_0A0295J01.png",
+    "NRF_1454_0796018503_020RAD_N0710006NCAM00301_0A0295J01.png",
+    "NLF_1458_0796383537_112RAD_N0710056NCAM00347_0A0195J01.png",
+    "NRF_1458_0796383537_112RAD_N0710056NCAM00347_0A0195J01.png",
+    "NLF_1461_0796646337_240RAD_N0710120NCAM03461_0A0195J01.png",
+    "NRF_1461_0796646337_240RAD_N0710120NCAM03461_0A0195J01.png",
+    "NLF_1463_0796819232_724RAD_N0710160NCAM03463_0A0195J01.png",
+    "NRF_1463_0796819232_724RAD_N0710160NCAM03463_0A0195J01.png"
+   ]
   }
  },
  "depthmaps_args": [

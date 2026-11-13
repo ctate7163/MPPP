@@ -483,3 +483,32 @@ def test_mask_alpha_transparency():
     a = MPPPImage.rgba(im, 8, 0.5)[..., 3]
     assert a[0, 0] == 255 and a[0, 1] == 128
     assert MPPPImage.rgba(im, 8)[..., 3][0, 1] == 0 and MPPPImage.rgba(im, 16, 0.5)[..., 3][0, 1] == 32768
+
+
+def test_hazcam_white_balance_is_its_own_and_only_hazcam_frames_are_made_again(tmp_path):
+    """0.97.15: the Hazcams (F, R) have their own default balance - the Navcam's x (1.004, 1, 1.113); a block
+    processed before that reuses every frame but its Hazcam frames; None gives the Navcam balance."""
+    import json
+    from mppp import VERSION_TAG
+    from mppp.config import load_config
+    from mppp.process import reusable_images, _hazcam_balance_changed
+    cfg = load_config()
+    c = cfg["color"]
+    assert c["white_balance_ecam"] == [1.1, 1.4, 1.8] and c["white_balance_hazcam"] == [1.104, 1.4, 2.004]
+    assert abs(c["white_balance_hazcam"][2] / c["white_balance_ecam"][2] - 1.113) < 1e-3
+    assert load_config({"color": {"white_balance_hazcam": None}})["color"]["white_balance_hazcam"] is None
+    old = json.loads(json.dumps(cfg))
+    del old["color"]["white_balance_hazcam"]                                # a block of 0.97.14 and before
+    (tmp_path / f"mppp_config_{VERSION_TAG}.json").write_text(json.dumps({"config": old, "waypoints": {}}))
+    imgs = []
+    for stem in ("NLF_0052_0671564132_350RAD_N0032046NCAM00303_0A0195J01", "FLF_0052_0671563995_536RAD_N0032046FHAZ02003_0M0195J01",
+                 "RLF_0052_0671563999_536RAD_N0032046RHAZ02003_0M0195J01"):
+        (tmp_path / f"{stem}.png").write_bytes(b"x")
+        imgs.append({"source_product": f"{stem}.IMG", "outputs": {"png": f"{stem}.png"}, "white_balance": [1.1, 1.4, 1.8],
+                     "mask": {"inferred": bool(cfg["masking"].get("infer_mask"))}, "site": 3, "drive": 2046})
+    (tmp_path / f"mppp_manifest_{VERSION_TAG}.json").write_text(json.dumps({"images": imgs}))
+    have, rep = reusable_images(tmp_path, cfg)
+    assert list(have) == [imgs[0]["source_product"][:-4]] and not rep.get("reason")
+    assert sorted(s[:1] for s in rep["white_balance_changed"]) == ["F", "R"]
+    assert not _hazcam_balance_changed(cfg, dict(imgs[1], white_balance=[1.104, 1.4, 2.004]))
+    assert not _hazcam_balance_changed(load_config({"color": {"white_balance_hazcam": None}}), imgs[1])

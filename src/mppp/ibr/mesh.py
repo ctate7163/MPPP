@@ -972,7 +972,9 @@ def load_scene(out_dir: PathLike):
     mr = out / "mesh_report.json"                           # 0.97.0: which triangles are the rover model
     if mr.is_file():
         try:
-            rt = json.loads(mr.read_text(encoding="utf-8")).get("rover_triangles")
+            mrep = json.loads(mr.read_text(encoding="utf-8"))
+            rt = mrep.get("rover_triangles")
+            sc.mesh_is_terrain = mrep.get("rover") == "masked out"      # 0.97.15: a mesh of the rover-masked cloud
             if rt and int(rt[1]) > int(rt[0]) and int(rt[1]) <= len(mesh[1]):
                 sc.rover_triangles = (int(rt[0]), int(rt[1]))
         except (ValueError, TypeError, json.JSONDecodeError):

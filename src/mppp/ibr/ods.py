@@ -206,6 +206,7 @@ class SourceImage:
         self.extra_mask: Optional[np.ndarray] = None      # True = may not be used (the mast-head hardware, rover shown)
         self.rover_mask_file: Optional[Path] = None       # 0.97.0, rover shown: the rover mask kept for the surface check
         self.fill_only = False                            # 0.97.7: colours only what no regular source sees (a Hazcam frame)
+        self.context = False                              # 0.97.15: a frame from another place or sol (see station_sources)
         self._rover: Optional[np.ndarray] = None
         self.linear_file: Optional[Path] = None           # 0.96.1: the 16-bit linear image (mppp.ibr.linear16)
         self.sat_file: Optional[Path] = None              # ... and its saturation mask
@@ -434,12 +435,21 @@ def fill_frames(project, rec, station, families: str, names: Sequence[str]) -> L
 def station_sources(project, rec, station, families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0,
                     images: Optional[Sequence[str]] = None, use_masks: bool = True,
                     mask_head_hardware: bool = True, linear16: Optional[Dict[str, Any]] = None,
-                    mast_pose: Optional[Dict[str, Any]] = None, fill_images: Sequence[str] = ()) -> List[SourceImage]:
+                    mast_pose: Optional[Dict[str, Any]] = None, fill_images: Sequence[str] = (),
+                    context_images: Sequence[str] = ()) -> List[SourceImage]:
     """The station's frames as sources; ``use_masks=False`` (``mppp ods --rover``) lets the rover's own pixels in,
-    except the hardware fixed to the mast head (:func:`head_hardware_masks`) unless ``mask_head_hardware`` is off."""
+    except the hardware fixed to the mast head (:func:`head_hardware_masks`) unless ``mask_head_hardware`` is off.
+
+    ``context_images`` (0.97.15; Christian, 13 Nov 2026: "include NLF_1790_... from a near location for context.
+    Since it is from a different location, it should be masked in both the with and without rover parts"): frames of
+    the block taken from another place, or at this place on another sol.  They are fill-only sources (they colour
+    what the station's own frames do not see), their rover mask is always applied - the rover in them is somewhere
+    else, or in another state - and they never colour the rover model."""
     by_name = {im.name: im for im in rec.images.values()}
     names = list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())]
-    fill_names = [n for n in fill_images if n not in set(names)]      # 0.97.7: fill-only sources (fill_frames)
+    ctx = list(dict.fromkeys(context_images or ()))           # a context frame at this station is not one of its own
+    names = [n for n in names if n not in set(ctx)]
+    fill_names = [n for n in fill_images if n not in set(names) and n not in set(ctx)] + ctx      # 0.97.7: fill-only sources
     out = []
     for name in names + fill_names:
         im = by_name.get(name)
@@ -450,31 +460,36 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
         mf = Path(project.root) / "masks" / (name + ".png")
         out.append(SourceImage(name, rec.cameras[im.camera_id], np.asarray(cw.rotation.matrix(), float),
                                np.asarray(im.projection_center(), float), Path(project.root) / "images" / name,
-                               mf if (use_masks and mf.is_file()) else None, s))
-        if not use_masks and mf.is_file():                    # rover shown: the mask still says which pixels are rover
+                               mf if ((use_masks or name in ctx) and mf.is_file()) else None, s))
+        if not use_masks and mf.is_file() and name not in ctx:      # rover shown: the mask still says which pixels are rover
             out[-1].rover_mask_file = mf
         out[-1].fill_only = name in fill_names
+        out[-1].context = name in ctx
+        if name in ctx and not mf.is_file():
+            log.warning("ods: the context frame %s has no rover mask - its rover is not masked", name)
         if linear16 is not None:
             out[-1].linear_file, out[-1].sat_file = linear16[name]
     if not use_masks and mask_head_hardware and out:
         import cv2
         ms = []
-        for src in out:
+        own = [s_ for s_ in out if not s_.context]            # the context frames are masked already
+        for src in own:
             mf = Path(project.root) / "masks" / (src.name + ".png")
             m = cv2.imread(str(mf), cv2.IMREAD_GRAYSCALE) if mf.is_file() else None
             if m is not None and (m.shape[1] != src.W or m.shape[0] != src.H):
                 m = cv2.resize(m, (src.W, src.H), interpolation=cv2.INTER_NEAREST)
             ms.append(None if m is None else m > 0)
-        hw = head_hardware_masks(out, ms, station.up)
-        for src, h in zip(out, hw):
+        hw = head_hardware_masks(own, ms, station.up)
+        for src, h in zip(own, hw):
             src.extra_mask = h
         n = sum(1 for h in hw if h is not None and h.any())
-        log.info("ods: mast-head hardware masked in %d of %d frames (rover shown)", n, len(out))
+        log.info("ods: mast-head hardware masked in %d of %d frames (rover shown)", n, len(own))
     if not use_masks and mast_pose is not None and out:      # 0.96.1: the mast and its wind-sensor booms, from the model
         from .rover_model import available, mast_masks
         if available():
-            mm = mast_masks(out, mast_pose)
-            for src, m in zip(out, mm):
+            own = [s_ for s_ in out if not s_.context]
+            mm = mast_masks(own, mast_pose)
+            for src, m in zip(own, mm):
                 if m is not None:
                     src.extra_mask = m if src.extra_mask is None else (src.extra_mask | m)
                     src.mast_masked = True
@@ -577,6 +592,9 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
                 same = rp == surf
                 rej_px[ij[~same]] = True
                 ij, dist = ij[same], dist[same]
+        if on_rover is not None and getattr(src, "context", False) and len(ij):
+            keep = ~on_rover[ij]                             # 0.97.15: a context frame never colours the rover model
+            ij, dist = ij[keep], dist[keep]
         if not len(ij):
             continue
         # visibility: nothing between the camera and X (within tau(z) of X; tau of at most 100 m: a point on the sky
@@ -829,6 +847,12 @@ FILL_MATCH_POINTS = 200_000       # terrain points tried
 FILL_MATCH_WITHIN_M = 12.0        # ... on the mesh within this distance of a fill camera
 
 
+def _fill_key(src) -> str:
+    """The colour-match group of a fill source: its camera (``FL``), or - a context frame, whose light is its own -
+    the frame itself."""
+    return Path(src.name).stem if getattr(src, "context", False) else Path(src.name).name[:2].upper()
+
+
 def estimate_fill_colour(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float] = (0, 0, 0), width: int = GAIN_PASS_WIDTH,
                          up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), rows_per_chunk: int = 128, apply: bool = True,
                          n_points: int = FILL_MATCH_POINTS, within_m: float = FILL_MATCH_WITHIN_M) -> Dict[str, Any]:
@@ -915,14 +939,14 @@ def estimate_fill_colour(scene: Scene, sources: Sequence[SourceImage], pivot: Se
         best = np.full((len(X), 3), np.nan, np.float32)
         best_share = np.zeros(len(X), np.float32)
         for kr, tr, (cr, shr) in reg:
-            if tf is not None and tr is not None and abs(tr - tf) > FILL_MATCH_MAX_SCLK_S:
-                continue
+            if not getattr(sf, "context", False) and tf is not None and tr is not None and abs(tr - tf) > FILL_MATCH_MAX_SCLK_S:
+                continue                             # (a context frame is matched to the panorama whenever it was taken)
             g = np.asarray(sources[kr].gain, np.float32)
             better = np.isfinite(cr).all(axis=1) & (shr > best_share)
             best[better], best_share[better] = cr[better] * g, shr[better]
         both = np.isfinite(best).all(axis=1) & np.isfinite(cf).all(axis=1)
         if both.any():
-            cam = Path(sf.name).name[:2].upper()
+            cam = _fill_key(sf)
             logs.setdefault(cam, []).append(np.log(best[both] / cf[both]))
             frames.setdefault(cam, set()).add(sf.name)
         sf.release()
@@ -940,7 +964,7 @@ def estimate_fill_colour(scene: Scene, sources: Sequence[SourceImage], pivot: Se
                        scatter_rgb=[round(float(1.4826 * np.median(np.abs(v_[:, i] - med[i]))), 4) for i in range(3)])
             if apply:
                 for s_ in sources:
-                    if getattr(s_, "fill_only", False) and Path(s_.name).name[:2].upper() == cam:
+                    if getattr(s_, "fill_only", False) and _fill_key(s_) == cam:
                         s_.gain = f.astype(np.float32)
         else:
             rec["note"] = f"fewer than {FILL_MATCH_MIN_SAMPLES} shared points: no factor, the frames as processed"
@@ -1042,9 +1066,10 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
             X = o + tt[:, None] * d
             hgt = (X @ pl["normal"] - pl["offset"]) / float(pl["normal"] @ u_)
             # 0.97.13: with the rover model in the mesh the model itself says what is rover - all other mesh is
-            # terrain, whatever its height above the regional plane (on a slope the ground near the rover is not
+            # terrain (so it is in a mesh of the rover-masked cloud), whatever its height above the regional plane (on a slope the ground near the rover is not
             # within GROUND_BAND_M of it: Taylorfjellet, 0.3 m)
-            level = (np.abs(hgt) < GROUND_BAND_M) | (getattr(scene, "rover_triangles", None) is not None)
+            level = ((np.abs(hgt) < GROUND_BAND_M) | (getattr(scene, "rover_triangles", None) is not None)
+                     | bool(getattr(scene, "mesh_is_terrain", False)))      # 0.97.15: or the mesh is terrain alone
             g = has & ~c["on_rover"] & ((c["label"] == LABEL_PLANE) | ((c["label"] == LABEL_MESH) & level))
             ground[r0:r1] = g.reshape(r1 - r0, width)
         source[r0:r1] = np.where(has, strongest, -1).astype(np.int16).reshape(r1 - r0, width)
@@ -1498,7 +1523,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    ground_fill: bool = True, mask_mast: bool = True,
                    tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True, pole_merge_deg="default", sky_radius_m="default",
                    fill_families: str = "", nadir_mark: bool = True, site_name: Optional[str] = None,
-                   nadir_mark_deg: Optional[float] = None, far_field: Optional[bool] = None) -> Dict[str, Any]:
+                   nadir_mark_deg: Optional[float] = None, far_field: Optional[bool] = None,
+                   context_images: Sequence[str] = ()) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_360_3DTD.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``Sol0052_S003D2046`` / ``Sol0052_S003D2046_rover``); '' for the bare names.  Returns the record."""
@@ -1510,7 +1536,14 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     height = width // 2
     by_ = {im.name for im in rec.images.values() if im.has_pose}
     own = [n for n in (list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())]) if n in by_]
-    fill_names = fill_frames(project, rec, station, fill_families, own)
+    ctx_names = [n for n in dict.fromkeys(context_images or ()) if n in by_]         # 0.97.15: see station_sources
+    gone = [n for n in (context_images or ()) if n not in by_]
+    if gone:
+        log.warning("ods: %d context frame(s) not registered in the block, left out: %s", len(gone), ", ".join(gone))
+    own = [n for n in own if n not in set(ctx_names)]
+    fill_names = fill_frames(project, rec, station, fill_families, own) + ctx_names
+    if ctx_names:
+        log.info("ods: %d context frame(s), masked, fill only: %s", len(ctx_names), ", ".join(ctx_names))
     if fill_families:
         log.info("ods: %d fill-only frame(s) of the camera families %r: %s", len(fill_names), fill_families, ", ".join(fill_names) or "none at this station")
     lin, lin_rep = None, None
@@ -1518,7 +1551,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         from .linear16 import ensure_linear16, files as _lin_files
         by = {im.name for im in rec.images.values() if im.has_pose}
         want = [n for n in (list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())])
-                if n in by]
+                if n in by and n not in set(ctx_names)]
         lin_rep = ensure_linear16(project, want + fill_names, pds=pds)
         lost = [n for n in fill_names if n in lin_rep["missing"]]
         if lost:                                     # a fill frame without a 16-bit image is left out, not the 16 bits
@@ -1545,7 +1578,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             log.warning("ods: no rover pose for the mast mask (%s)", e)
     sources = station_sources(project, rec, station, families=families, scale=scale, zcam_scale=zcam_scale, images=images,
                               use_masks=use_masks, mask_head_hardware=mask_head_hardware, linear16=lin,
-                              mast_pose=mast_pose, fill_images=fill_names)
+                              mast_pose=mast_pose, fill_images=fill_names, context_images=ctx_names)
     if not sources:
         raise ValueError(f"station {station.label}: no source images of families {families!r} with a pose")
     axes = dict(up=station.up, north=station.north, east=station.east)
@@ -1567,12 +1600,13 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                "head_hardware_masked": [s.name for s in sources if s.extra_mask is not None and s.extra_mask.any()],
                                "mast_masked": [s.name for s in sources if getattr(s, "mast_masked", False)],
                                "fill_only_sources": [s.name for s in sources if s.fill_only],
+                               "context_sources": [s.name for s in sources if s.context],
                                "near_blend": {"range_m": NEAR_BLEND_M, "parallax_power_colour": NEAR_LOW_POWER, "parallax_power_detail": NEAR_PARALLAX_POWER},
                                "eyes": {}}
     mark = None
     if nadir_mark:                                       # 0.97.7: the black disc with the credits at the nadir
         from . import nadir as _nadir
-        lines = _nadir.mark_lines([s.name for s in sources], site_name)
+        lines = _nadir.mark_lines([s.name for s in sources if not s.context], site_name)   # the station's own sols
         fwd = 0.0
         try:                                             # the text ahead of the rover's front
             from .rover_deck import rover_pose as _rover_pose
