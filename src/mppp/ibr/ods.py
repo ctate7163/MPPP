@@ -140,6 +140,8 @@ ANGLE_SCALE_RAD = 0.02           # parallax term 1 / (1 + angle / this)
 GAIN_RANGE = (0.6, 1.6)
 HOLE_FILL_MAX_PX = 4000          # holes (a surface, no source) up to this many pixels are filled from their edges
 HOLE_FILL_MAX_WIDTH_PX = 24      # ... and only if thin: no pixel farther than this from the hole's edge
+HOLE_FILL_REF_WIDTH = 8192       # both for a panorama of this width (0.97.7: scaled for a wider one - at 16384 the
+#                                  same limits in pixels were half the angle, and cracks filled at 8K stayed open)
 PAD_MAX_VALUE = 1                # a source pixel this dark in every channel, in a region touching the border, is padding
 PAD_MIN_FRAC = 0.002             # ... when the region is at least this fraction of the image
 SKY_MIN_VALUE = 12               # the sky fill samples no pixel darker than this (no black or near-black areas)
@@ -194,6 +196,7 @@ class SourceImage:
         self.gain = 1.0
         self.extra_mask: Optional[np.ndarray] = None      # True = may not be used (the mast-head hardware, rover shown)
         self.rover_mask_file: Optional[Path] = None       # 0.97.0, rover shown: the rover mask kept for the surface check
+        self.fill_only = False                            # 0.97.7: colours only what no regular source sees (a Hazcam frame)
         self._rover: Optional[np.ndarray] = None
         self.linear_file: Optional[Path] = None           # 0.96.1: the 16-bit linear image (mppp.ibr.linear16)
         self.sat_file: Optional[Path] = None              # ... and its saturation mask
@@ -384,16 +387,35 @@ def head_hardware_masks(sources: Sequence["SourceImage"], masks: Sequence[Option
     return out
 
 
+def fill_frames(project, rec, station, families: str, names: Sequence[str]) -> List[str]:
+    """The station's registered frames of the camera ``families`` (letters; "F": the front Hazcams) for filling in
+    what the panorama's own frames ``names`` do not see - those taken on the sols of ``names`` (all of the station's
+    when there is none on those sols)."""
+    from .station import station_images
+    if not families:
+        return []
+    try:
+        _, rows = station_images(project.images, station.label, families)
+    except ValueError:
+        return []
+    by_name = {im.name: im for im in rec.images.values()}
+    have = [r["name"] for r in rows if r["name"] in by_name and by_name[r["name"]].has_pose and r["name"] not in set(names)]
+    sols = {str(n)[4:8] for n in names}
+    same = [n for n in have if n[4:8] in sols]
+    return same or have
+
+
 def station_sources(project, rec, station, families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0,
                     images: Optional[Sequence[str]] = None, use_masks: bool = True,
                     mask_head_hardware: bool = True, linear16: Optional[Dict[str, Any]] = None,
-                    mast_pose: Optional[Dict[str, Any]] = None) -> List[SourceImage]:
+                    mast_pose: Optional[Dict[str, Any]] = None, fill_images: Sequence[str] = ()) -> List[SourceImage]:
     """The station's frames as sources; ``use_masks=False`` (``mppp ods --rover``) lets the rover's own pixels in,
     except the hardware fixed to the mast head (:func:`head_hardware_masks`) unless ``mask_head_hardware`` is off."""
     by_name = {im.name: im for im in rec.images.values()}
     names = list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())]
+    fill_names = [n for n in fill_images if n not in set(names)]      # 0.97.7: fill-only sources (fill_frames)
     out = []
-    for name in names:
+    for name in names + fill_names:
         im = by_name.get(name)
         if im is None or not im.has_pose:
             continue
@@ -405,6 +427,7 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
                                mf if (use_masks and mf.is_file()) else None, s))
         if not use_masks and mf.is_file():                    # rover shown: the mask still says which pixels are rover
             out[-1].rover_mask_file = mf
+        out[-1].fill_only = name in fill_names
         if linear16 is not None:
             out[-1].linear_file, out[-1].sat_file = linear16[name]
     if not use_masks and mask_head_hardware and out:
@@ -445,6 +468,9 @@ BROWN_FILL_8BIT = (150.0, 105.0, 70.0)   # RGB, 8-bit units: the fill where the 
 BROWN_FILL_DARKEN = 0.8                  # the fill a little darker than the terrain, so it reads as fill
 
 
+FILL_RANK = 1e-3                  # a fill-only source's rank among the candidates of a pixel (x its weight)
+
+
 def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: np.ndarray, k_max: int = MAX_SOURCES_BLENDED,
                surface_check: Optional[bool] = None):
     """The surface hit of the rays (o, d) and, per ray, the best ``k_max`` sources that see it: {"label", "t",
@@ -476,6 +502,7 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
     fb_uv = np.zeros((n, 2), np.float32)
     fb_dist = np.zeros(n, np.float32)
     fb_short = np.ones(n, np.float32)
+    reg_max = np.zeros(n, np.float32)                        # 0.97.7: the strongest regular source's feather weight
     for k, src in enumerate(sources):
         uv, z, inside = src.project(X)
         cand = inside & ok
@@ -512,7 +539,12 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
         v_src /= np.linalg.norm(v_src, axis=1)[:, None]
         ang = np.arccos(np.clip(np.sum(v_src * d[ij], axis=1), -1, 1))
         aterm = 1.0 / (1.0 + ang / ANGLE_SCALE_RAD)
-        w = (_smoothstep(dist / (FEATHER_LOW_FRAC * src.short_side)) * aterm).astype(np.float32) + 1e-6
+        feather = _smoothstep(dist / (FEATHER_LOW_FRAC * src.short_side)).astype(np.float32)
+        w = (feather * aterm).astype(np.float32) + 1e-6
+        if getattr(src, "fill_only", False):
+            w = w * FILL_RANK                                # ranked after every regular source
+        else:
+            reg_max[ij] = np.maximum(reg_max[ij], feather)
         slot = np.argmin(best_w[ij], axis=1)                 # streaming top-K: replace the weakest kept
         take = w > best_w[ij, slot]
         ij, slot, w = ij[take], slot[take], w[take]
@@ -528,6 +560,14 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
     use = none & (fb_k >= 0)                                 # nobody sees it unhidden: the best hidden view
     best["k"][use, 0], best["uv"][use, 0], best["dist"][use, 0] = fb_k[use], fb_uv[use], fb_dist[use]
     best["short"][use, 0], best["ang"][use, 0] = fb_short[use], 1.0
+    # 0.97.7 (Christian, 13 Nov 2026: "add the fhaz cam image pair taken with the navcams to cover the terrain under
+    # the arm"): a fill-only source colours what the regular ones do not see, and comes in as their feather goes out
+    fill = np.array([bool(getattr(s_, "fill_only", False)) for s_ in sources] + [False])
+    fw = np.ones((n, K), np.float32)
+    if fill.any():
+        isf = fill[best["k"]]                                # (k = -1 reads the trailing False)
+        fw = np.where(isf, ((1.0 - reg_max) ** 2)[:, None], 1.0).astype(np.float32)
+    best["fill_weight"] = fw
     best.update(label=lab, t=hit["t"], ok=ok, hidden_fallback=use, rejected=rejected, rejected_px=rej_px,
                 on_rover=on_rover if on_rover is not None else np.zeros(n, bool))
     return best
@@ -590,6 +630,100 @@ def estimate_gains(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence
             "samples": int(sum(p[3] for p in pairs))}
 
 
+FILL_MATCH_MIN_SAMPLES = 300      # shared pixels a fill camera needs for its colour factors
+FILL_MATCH_RANGE = (0.4, 2.5)     # the factors are clipped to this
+FILL_MATCH_MAX_SCLK_S = 1800.0    # ... from regular frames taken within this many seconds of the fill frame
+
+
+def _sclk(name: str) -> Optional[float]:
+    """The spacecraft clock (s) in a frame's name (``NLF_0461_0707871340_...``)."""
+    t = str(name)[9:19]
+    return float(t) if t.isdigit() else None
+
+
+def estimate_fill_colour(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], width: int = GAIN_PASS_WIDTH,
+                         up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), rows_per_chunk: int = 128, apply: bool = True) -> Dict[str, Any]:
+    """Per fill camera (``FL``, ``FR``: the first two letters of the name) the factor per colour channel that makes
+    its frames match the regular sources on the surface both see (0.97.7; Christian, 13 Nov 2026: "The front hazcams
+    need a different processing white balance for its colors to be consistent with the Navcams.  Please try to
+    estimate that without changing ncam.  Just make fhaz images taken at the same time of day projected onto the
+    same terrain to be more navcams").
+
+    For every pixel of the centre panorama (at ``width``) that a fill frame and a regular frame both see unhidden and
+    well inside their edges, with neither clipped, and taken within FILL_MATCH_MAX_SCLK_S of each other:
+    r_c = (gain x low band of the regular frame)_c / (low band of the fill frame)_c, c = R, G, B.  The factor of a
+    camera is the median of r_c over its pixels.  The regular frames are not changed.  ``apply``: the fill sources'
+    ``gain`` becomes that factor (three numbers).  Returns {"cameras": {"FL": {"factor_rgb", "white_balance_ratio_rgb"
+    (the factor / its green: what to multiply the processing white balance by), "brightness" (the green factor),
+    "samples", "scatter_rgb" (the robust sd of log r), "frames"}}, ...}.  Meaningful as a white balance only when the
+    sources are the 16-bit linear frames (``mppp ods --bits 16``)."""
+    height = width // 2
+    fill = [bool(getattr(s_, "fill_only", False)) for s_ in sources]
+    out: Dict[str, Any] = {"cameras": {}, "method": "median over shared pixels of (gain x regular low band) / (fill low band) per channel; "
+                                                    f"frames within {FILL_MATCH_MAX_SCLK_S:g} s; centre panorama at {width} px"}
+    if not any(fill) or all(fill):
+        return out
+    logs: Dict[str, list] = {}
+    frames: Dict[str, set] = {}
+    for r0 in range(0, height, rows_per_chunk):
+        r1 = min(height, r0 + rows_per_chunk)
+        o, d = ods_rays(width, height, (r0, r1), pivot, 0.0, "centre", up, north, east)
+        c = candidates(scene, sources, o, d)
+        k = c["k"]
+        isf = np.array(fill + [False])[k]
+        ok = (k >= 0) & (c["dist"] > 0.5 * FEATHER_LOW_FRAC * c["short"]) & ~c["hidden_fallback"][:, None]
+        both = (ok & isf).any(axis=1) & (ok & ~isf).any(axis=1)
+        if not both.any():
+            continue
+        rows = np.flatnonzero(both)
+        col = np.full(k.shape + (3,), np.nan, np.float32)
+        for kk in np.unique(k[rows][ok[rows]]):
+            sel = (k == kk) & ok & both[:, None]
+            L = sources[kk]._bilinear(sources[kk].low(), c["uv"][sel])
+            sat = sources[kk].sample_saturation(c["uv"][sel])
+            if sat is not None:
+                L[sat > GAIN_MAX_SATURATED] = np.nan
+            L[(L < 4.0).any(axis=1)] = np.nan                    # too dark to form a ratio
+            g = sources[kk].gain if not fill[kk] else 1.0
+            col[sel] = L * np.asarray(g, np.float32)
+        for a in range(k.shape[1]):                              # a fill slot against the strongest regular slot
+            fa = rows[(ok & isf)[rows, a]]
+            if not len(fa):
+                continue
+            reg = np.where((ok & ~isf)[fa], c["dist"][fa] / c["short"][fa], -1.0)
+            b = np.argmax(reg, axis=1)
+            kf, kr = k[fa, a], k[fa, b]
+            ratio = np.log(col[fa, b] / col[fa, a])
+            for kfi in np.unique(kf):
+                tf = _sclk(sources[kfi].name)
+                m = kf == kfi
+                near = np.array([tf is None or _sclk(sources[x].name) is None
+                                 or abs(_sclk(sources[x].name) - tf) <= FILL_MATCH_MAX_SCLK_S for x in kr[m]])
+                v = ratio[m][near]
+                v = v[np.isfinite(v).all(axis=1)]
+                if len(v):
+                    cam = Path(sources[kfi].name).name[:2].upper()
+                    logs.setdefault(cam, []).append(v)
+                    frames.setdefault(cam, set()).add(sources[kfi].name)
+    for cam, parts in sorted(logs.items()):
+        v = np.vstack(parts)
+        rec: Dict[str, Any] = {"samples": int(len(v)), "frames": sorted(frames[cam])}
+        if len(v) >= FILL_MATCH_MIN_SAMPLES:
+            med = np.median(v, axis=0)
+            f = np.clip(np.exp(med), *FILL_MATCH_RANGE)
+            rec.update(factor_rgb=[round(float(x), 4) for x in f], brightness=round(float(f[1]), 4),
+                       white_balance_ratio_rgb=[round(float(x / f[1]), 4) for x in f],
+                       scatter_rgb=[round(float(1.4826 * np.median(np.abs(v[:, i] - med[i]))), 4) for i in range(3)])
+            if apply:
+                for s_ in sources:
+                    if getattr(s_, "fill_only", False) and Path(s_.name).name[:2].upper() == cam:
+                        s_.gain = f.astype(np.float32)
+        else:
+            rec["note"] = f"fewer than {FILL_MATCH_MIN_SAMPLES} shared pixels: no factor, the frames as processed"
+        out["cameras"][cam] = rec
+    return out
+
+
 def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], eye: str, width: int, height: int,
                ipd_m: float, rows_per_chunk: int = 128, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0),
                feather_px: float = FEATHER_PX, progress=None, sky_fill: bool = True,
@@ -649,8 +783,9 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
                 lo, full = src.sample_bands(c["uv"][sel, slot])
                 dist = c["dist"][sel, slot]
                 aterm = c["ang"][sel, slot]
-                w_lo = _smoothstep(dist / (FEATHER_LOW_FRAC * src.short_side)) * aterm
-                w_hi = _smoothstep(dist / (FEATHER_HIGH_FRAC * src.short_side)) * aterm ** 3
+                fwt = c["fill_weight"][sel, slot]
+                w_lo = _smoothstep(dist / (FEATHER_LOW_FRAC * src.short_side)) * aterm * fwt
+                w_hi = _smoothstep(dist / (FEATHER_HIGH_FRAC * src.short_side)) * aterm ** 3 * fwt
                 sat = src.sample_saturation(c["uv"][sel, slot])
                 if sat is not None:                              # a saturated pixel: another frame, where there is one
                     keep = (1.0 - SAT_DOWNWEIGHT * np.clip(sat, 0.0, 1.0)).astype(np.float32)
@@ -694,7 +829,9 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         brown[sel] = True
     if checked:                                              # the rover model where the check left no source: flat brown,
         _brown((source == -1) & rover_px & rej_map)          # before the crack and ground fills would paint over it
-    filled = fill_cracks(rgb, source, label)
+    kw = max(1.0, width / HOLE_FILL_REF_WIDTH)             # 0.97.7: the limits are angles - they grow with the panorama
+    filled = fill_cracks(rgb, source, label, max_px=int(HOLE_FILL_MAX_PX * kw * kw), max_width_px=HOLE_FILL_MAX_WIDTH_PX * kw,
+                         inpaint_px=int(round(5 * kw)))
     if checked:
         _brown((source == -1) & rover_px)                    # the rest of the model nobody coloured
     gfill = fill_ground(rgb, source, ground) if ground_fill else np.zeros(label.shape, bool)
@@ -927,7 +1064,7 @@ def even_sky(rgb: np.ndarray, label: np.ndarray, sky: Optional[np.ndarray] = Non
 
 
 def fill_cracks(rgb: np.ndarray, source: np.ndarray, label: np.ndarray, max_px: int = HOLE_FILL_MAX_PX,
-                max_width_px: float = HOLE_FILL_MAX_WIDTH_PX) -> np.ndarray:
+                max_width_px: float = HOLE_FILL_MAX_WIDTH_PX, inpaint_px: int = 5) -> np.ndarray:
     """Fill (in place) the small, thin holes - a surface but no source - from their edges; ``source`` = -2 there.
     Returns the filled mask."""
     import cv2
@@ -950,9 +1087,9 @@ def fill_cracks(rgb: np.ndarray, source: np.ndarray, label: np.ndarray, max_px: 
         y0, y1, x0, x1 = max(0, ys.min() - 8), min(rgb.shape[0], ys.max() + 9), max(0, xs.min() - 8), min(rgb.shape[1], xs.max() + 9)
         fm = filled[y0:y1, x0:x1].astype(np.uint8)
         if rgb.dtype == np.uint8:
-            sub = cv2.inpaint(np.ascontiguousarray(rgb[y0:y1, x0:x1]), fm, 5, cv2.INPAINT_TELEA)
+            sub = cv2.inpaint(np.ascontiguousarray(rgb[y0:y1, x0:x1]), fm, int(inpaint_px), cv2.INPAINT_TELEA)
         else:                                                # float: one channel at a time
-            sub = np.dstack([cv2.inpaint(np.ascontiguousarray(rgb[y0:y1, x0:x1, k]), fm, 5, cv2.INPAINT_TELEA) for k in range(3)])
+            sub = np.dstack([cv2.inpaint(np.ascontiguousarray(rgb[y0:y1, x0:x1, k]), fm, int(inpaint_px), cv2.INPAINT_TELEA) for k in range(3)])
         rgb[y0:y1, x0:x1][filled[y0:y1, x0:x1]] = sub[filled[y0:y1, x0:x1]]
         source[filled] = -2
     return filled
@@ -1101,7 +1238,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    mask_head_hardware: bool = True, azimuth0_deg: float = 0.0, prefix: Optional[str] = None,
                    bits: int = 8, pds: Optional[PathLike] = None, tone: str = "auto", exposure16: Union[float, str] = "auto",
                    ground_fill: bool = True, mask_mast: bool = True,
-                   tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True, pole_merge_deg="default", sky_radius_m="default") -> Dict[str, Any]:
+                   tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True, pole_merge_deg="default", sky_radius_m="default",
+                   fill_families: str = "", nadir_mark: bool = True, site_name: Optional[str] = None,
+                   nadir_mark_deg: Optional[float] = None) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_360_3DTD.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``S003D2046`` / ``S003D2046_rover``); '' for the bare names.  Returns the record."""
@@ -1111,13 +1250,25 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     if prefix is None:
         prefix = ods_prefix(station.label, rover=not use_masks)
     height = width // 2
+    by_ = {im.name for im in rec.images.values() if im.has_pose}
+    own = [n for n in (list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())]) if n in by_]
+    fill_names = fill_frames(project, rec, station, fill_families, own)
+    if fill_families:
+        log.info("ods: %d fill-only frame(s) of the camera families %r: %s", len(fill_names), fill_families, ", ".join(fill_names) or "none at this station")
     lin, lin_rep = None, None
     if int(bits) == 16:                              # 0.96.1: the frames as 16-bit linear images (mppp.ibr.linear16)
         from .linear16 import ensure_linear16, files as _lin_files
         by = {im.name for im in rec.images.values() if im.has_pose}
         want = [n for n in (list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())])
                 if n in by]
-        lin_rep = ensure_linear16(project, want, pds=pds)
+        lin_rep = ensure_linear16(project, want + fill_names, pds=pds)
+        lost = [n for n in fill_names if n in lin_rep["missing"]]
+        if lost:                                     # a fill frame without a 16-bit image is left out, not the 16 bits
+            log.warning("ods --bits 16: %d fill-only frame(s) left out (no 16-bit image): %s", len(lost), ", ".join(lost))
+            fill_names = [n for n in fill_names if n not in lost]
+            for n in lost:
+                lin_rep["missing"].pop(n, None)
+        want = want + fill_names
         if lin_rep["missing"]:
             for n, why in list(lin_rep["missing"].items())[:5]:
                 log.warning("ods --bits 16: %s: %s", n, why)
@@ -1136,7 +1287,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             log.warning("ods: no rover pose for the mast mask (%s)", e)
     sources = station_sources(project, rec, station, families=families, scale=scale, zcam_scale=zcam_scale, images=images,
                               use_masks=use_masks, mask_head_hardware=mask_head_hardware, linear16=lin,
-                              mast_pose=mast_pose)
+                              mast_pose=mast_pose, fill_images=fill_names)
     if not sources:
         raise ValueError(f"station {station.label}: no source images of families {families!r} with a pose")
     axes = dict(up=station.up, north=station.north, east=station.east)
@@ -1157,11 +1308,32 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                "azimuth_of_column_0_deg": float(azimuth0_deg) % 360.0,
                                "head_hardware_masked": [s.name for s in sources if s.extra_mask is not None and s.extra_mask.any()],
                                "mast_masked": [s.name for s in sources if getattr(s, "mast_masked", False)],
+                               "fill_only_sources": [s.name for s in sources if s.fill_only],
                                "eyes": {}}
+    mark = None
+    if nadir_mark:                                       # 0.97.7: the black disc with the credits at the nadir
+        from . import nadir as _nadir
+        lines = _nadir.mark_lines([s.name for s in sources], site_name)
+        mark = _nadir.make_mark(width, height, lines, _nadir.NADIR_MARK_DEG if nadir_mark_deg is None else nadir_mark_deg, azimuth0_deg)
+        rec_out["nadir_mark"] = {"lines": lines, "radius_deg": mark["radius_deg"], "first_row": mark["row0"],
+                                 "note": "the rows from first_row down are a disc in the sky's colour with this text in black, not data; "
+                                         "in every colour panorama, not in the depth products"}
     if gains:
         g = estimate_gains(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
         rec_out["gains"] = g
         log.info("ods: gains over %d source pairs: %s", g["pairs"], ", ".join(f"{v:.3f}" for v in g["gains"].values()))
+    if any(s.fill_only for s in sources):                # 0.97.7: the fill frames' colours matched to the regular ones
+        fc = estimate_fill_colour(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
+        fc["linear_sources"] = bool(linear)
+        if not linear:
+            fc["note"] = "8-bit sources: the factors match the pictures, they are not a white balance of the radiance"
+        rec_out["fill_colour_match"] = fc
+        for cam, r in fc["cameras"].items():
+            if "factor_rgb" in r:
+                log.info("ods: %s matched to the regular frames: x %s (R, G, B) over %d shared pixels; white balance x %s, "
+                         "brightness x %.3f", cam, r["factor_rgb"], r["samples"], r["white_balance_ratio_rgb"], r["brightness"])
+            else:
+                log.info("ods: %s not matched (%d shared pixels)", cam, r["samples"])
     levels, levels_from, depth_rec = None, None, None
     for eye in eyes:
         res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, pole_merge_deg=pole_merge_deg, rows_per_chunk=rows_per_chunk,
@@ -1179,7 +1351,14 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             k16 = 64.0 * float(exposure16)
             v16 = np.rint(res["rgb"][..., ::-1] * k16)
             clipped16 = float((v16.max(axis=2) > 65535).mean())
-            cv2.imwrite(str(f16), np.clip(v16, 0, 65535).astype(np.uint16))
+            v16 = np.clip(v16, 0, 65535).astype(np.uint16)
+            sky_px = (res["label"] == LABEL_FAR) & (res["source"] >= 0)     # the sky a frame coloured
+            if mark is not None:
+                if "bg16" not in mark:               # the sky's colour of the first eye, for every eye (BGR here)
+                    mark["bg16"] = _nadir.sky_colour(v16, sky_px, np.asarray(_nadir.SKY_FALLBACK_RGB)[::-1] * k16,
+                                                     light=_nadir.SKY_MIN_VALUE_8BIT * k16)
+                _nadir.apply_mark(v16, mark, mark["bg16"])
+            cv2.imwrite(str(f16), v16)
             del v16
             from .linear16 import auto_levels, tone_levels, tone_soft
             if tone == "auto":                       # the black and white points from the first eye, for both
@@ -1193,9 +1372,21 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             else:
                 view = tone_soft(res["rgb"]) if tone == "soft" else np.clip(res["rgb"], 0, 255)
             over = float((res["rgb"].max(axis=2) > 255.0).mean())
-            cv2.imwrite(str(f), np.rint(view[..., ::-1]).astype(np.uint8))
+            view8 = np.rint(view[..., ::-1]).astype(np.uint8)
+            if mark is not None:
+                if "bg8" not in mark:
+                    mark["bg8"] = _nadir.sky_colour(view8, sky_px, _nadir.SKY_FALLBACK_RGB[::-1], light=_nadir.SKY_MIN_VALUE_8BIT)
+                _nadir.apply_mark(view8, mark, mark["bg8"])
+            cv2.imwrite(str(f), view8)
+            del view8
         else:
-            cv2.imwrite(str(f), res["rgb"][..., ::-1])
+            view8 = np.ascontiguousarray(res["rgb"][..., ::-1])
+            if mark is not None:
+                if "bg8" not in mark:
+                    mark["bg8"] = _nadir.sky_colour(view8, (res["label"] == LABEL_FAR) & (res["source"] >= 0),
+                                                    _nadir.SKY_FALLBACK_RGB[::-1], light=_nadir.SKY_MIN_VALUE_8BIT)
+                _nadir.apply_mark(view8, mark, mark["bg8"])
+            cv2.imwrite(str(f), view8)
         if eye in ("centre", "center") and centre_depth:     # 0.97.0: the panorama from the pivot, with its depth
             depth_rec = write_centre_depth(out, prefix, res["range"], res["label"])
         if eye == eyes[0]:
@@ -1233,6 +1424,10 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 (out / n).unlink()
                 log.info("ods: removed the stale %s (now %s_%s)", n, prefix, n)
     rec_out["prefix"] = prefix
+    if mark is not None:
+        rec_out["nadir_mark"]["background_bgr_8bit"] = [float(x) for x in mark.get("bg8", [])]
+        if "bg16" in mark:
+            rec_out["nadir_mark"]["background_bgr_16bit"] = [float(x) for x in mark["bg16"]]
     if depth_rec:
         rec_out["centre_depth"] = depth_rec
     rec_out["view_levels_from"] = levels_from

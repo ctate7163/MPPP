@@ -293,6 +293,9 @@ def preview_jpg(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> List[Path]
     nimg[(lab != LABEL_MESH) & (lab != LABEL_PLANE)] = 0
     f = Path(str(out_prefix) + "_normal.jpg")
     cv2.imwrite(str(f), nimg, q)
+    from .scales import tag                         # 0.97.7: each picture carries its value scale (XMP mppp:Scale)
+    for g in outs + [f]:
+        tag(g)
     return outs + [f]
 
 

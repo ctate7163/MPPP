@@ -40,7 +40,7 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. MPPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.97.6** (`v0p97`): the core (`mppp`, the pipeline) and the research studies (`mppp_studies`) apart, the
+Version **0.97.7** (`v0p97`): the core (`mppp`, the pipeline) and the research studies (`mppp_studies`) apart, the
 freeze run as a driver of its own, and the products of one rover station past the block - a cleaned mesh with a
 model of the rover, per-image depth and photometric maps, and a 16K stereoscopic 360 degree panorama with a web
 viewer (below). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are
@@ -196,7 +196,7 @@ All Mars 2020 images used by MPPP, including the two test products in `tests/dat
 model was trained on, are public products of the NASA Planetary Data System (PDS). Credits: Navcam
 NASA/JPL-Caltech; Mastcam-Z NASA/JPL-Caltech/ASU/MSSS. The reconstruction masks, the mask model and the camera
 models in `src/mppp/data/cmods/` are the author's own work. The rover model is derived from NASA's "Mars
-Perseverance Rover, 3D Model" (credit NASA/JPL-Caltech), simplified and modified as described in `docs/rover-model.md`.
+Perseverance Rover, 3D Model" (credit NASA/JPL-Caltech), modified as described in `docs/rover-model.md`.
 The panorama viewer includes three.js (MIT license). The waypoint snapshot is a copy of the public Mars 2020
 waypoint table. The package contains no sensitive or non-public data.
 

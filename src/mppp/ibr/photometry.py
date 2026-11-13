@@ -51,9 +51,21 @@ def angles(dirs_cam: np.ndarray, normal_cam: np.ndarray, sun_cam: Sequence[float
     return {"incidence": i, "emission": e, "phase": g}
 
 
-def shadow_map(scene: Scene, X_world: np.ndarray, sun_world: Sequence[float], valid: np.ndarray, lift_m: float = 0.02) -> np.ndarray:
+def occluder(V: np.ndarray, F: np.ndarray):
+    """A ray-casting scene of extra shadow casters (triangles in the block frame), or None without triangles."""
+    if V is None or F is None or not len(F):
+        return None
+    import open3d as o3d
+    sc = o3d.t.geometry.RaycastingScene()
+    sc.add_triangles(o3d.core.Tensor(np.ascontiguousarray(V, np.float32)), o3d.core.Tensor(np.ascontiguousarray(F, np.uint32)))
+    return sc
+
+
+def shadow_map(scene: Scene, X_world: np.ndarray, sun_world: Sequence[float], valid: np.ndarray, lift_m: float = 0.02,
+               extra=None) -> np.ndarray:
     """0 unknown / 1 lit / 2 shadow per pixel: a ray from the surface point (lifted ``lift_m`` along the Sun
-    direction, off its own triangle) towards the Sun that hits the mesh means shadow."""
+    direction, off its own triangle) towards the Sun that hits the mesh means shadow.  ``extra`` (0.97.7): a scene
+    of :func:`occluder` - what casts a shadow and is not in the mesh (the rover's mast, booms and camera head)."""
     s = np.asarray(sun_world, float)
     s = s / np.linalg.norm(s)
     out = np.zeros(np.asarray(valid).shape, np.uint8)
@@ -63,12 +75,17 @@ def shadow_map(scene: Scene, X_world: np.ndarray, sun_world: Sequence[float], va
     X = np.asarray(X_world, float).reshape(-1, 3)[idx] + lift_m * s
     hit = scene.cast(X, np.broadcast_to(s, (len(idx), 3)))
     flat = out.reshape(-1)
-    flat[idx] = np.where(np.isfinite(hit["t"]) & (hit["label"] == LABEL_MESH), SHADOW_SHADOW, SHADOW_LIT)
+    dark = np.isfinite(hit["t"]) & (hit["label"] == LABEL_MESH)
+    if extra is not None:
+        import open3d as o3d
+        rays = np.ascontiguousarray(np.concatenate([X, np.broadcast_to(s, X.shape)], axis=1), np.float32)
+        dark |= extra.test_occlusions(o3d.core.Tensor(rays)).numpy()
+    flat[idx] = np.where(dark, SHADOW_SHADOW, SHADOW_LIT)
     return out
 
 
 def photometric_maps(scene: Scene, maps: Dict[str, np.ndarray], R: np.ndarray, C: np.ndarray, sun_world: Sequence[float],
-                     with_shadow: bool = True) -> Dict[str, np.ndarray]:
+                     with_shadow: bool = True, extra=None) -> Dict[str, np.ndarray]:
     """The i / e / g (and shadow) maps of one image from its cast ``maps`` (:func:`mppp.ibr.raycast.cast_image`:
     ``dirs_cam``, ``normal``, ``range``, ``label``), the world-to-camera rotation ``R``, the centre ``C`` and the
     Sun in the block frame."""
@@ -79,7 +96,7 @@ def photometric_maps(scene: Scene, maps: Dict[str, np.ndarray], R: np.ndarray, C
     if with_shadow:
         d_world = maps["dirs_cam"].reshape(-1, 3) @ R                       # R^T d
         X = np.asarray(C, float) + maps["range"].reshape(-1, 1) * d_world
-        out["shadow"] = shadow_map(scene, X, sun_world, valid)
+        out["shadow"] = shadow_map(scene, X, sun_world, valid, extra=extra)
     return out
 
 
@@ -190,14 +207,23 @@ def preview_jpg(pm: Dict[str, np.ndarray], out_prefix: PathLike, rad_image: Opti
         p = Path(str(out_prefix) + "_shadow.jpg")
         cv2.imwrite(str(p), img, q)
         outs.append(p)
+    from .scales import tag                         # 0.97.7: each picture carries its value scale (XMP mppp:Scale)
+    for g in outs:
+        tag(g)
     return outs
 
 
 def photometric_cube(project, rec, station, scene: Scene, maps_dir: PathLike, out_dir: PathLike, colmap_bins: bool = True,
-                     previews: bool = True, with_shadow: bool = True) -> Dict[str, Any]:
+                     previews: bool = True, with_shadow: bool = True, rover_pose: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The cube of the station: i / e / g / shadow for every image with maps in ``maps_dir`` (``<image>.npz`` from
     :func:`mppp.ibr.raycast.cast_station`), the Sun per image from the project rows.  Writes ``photometry/<image>.npz``,
-    the COLMAP ``.bin`` maps, previews and ``photometry_report.json``."""
+    the COLMAP ``.bin`` maps, previews and ``photometry_report.json``.
+
+    ``rover_pose`` (:func:`mppp.ibr.rover_deck.rover_pose`; 0.97.7, Christian 13 Nov 2026: "when rendering the
+    shadows, make sure to include the rover mast and booms"): the shadows are then also cast by the rover hardware
+    the mesh does not hold - the mast and its wind-sensor booms, the camera head turned to where the frame's own
+    camera was (:func:`mppp.ibr.rover_model.shadow_casters`), and with a terrain-only mesh the whole rover model.
+    The head of a frame is where that frame's camera had it; a Navcam pair is taken at one head pose."""
     from .raycast import load_maps, pixel_rays
     out = Path(out_dir)
     rows_by_name = {r["name"]: r for r in project.images}
@@ -222,7 +248,17 @@ def photometric_cube(project, rec, station, scene: Scene, maps_dir: PathLike, ou
         scale = float(m["meta"].get("scale", 1.0))
         d_cam, _, _ = pixel_rays(cam, R, scale)
         m["dirs_cam"] = d_cam
-        pm = photometric_maps(scene, m, R, C, sun, with_shadow=with_shadow)
+        extra, cast_info = None, None
+        if with_shadow and rover_pose is not None:
+            from . import rover_model
+            if rover_model.available():
+                fam = Path(name).name[:2].upper()
+                static = ("mast",) if scene.rover_triangles is not None else rover_model.SHADOW_PARTS
+                Vx, Fx, hinfo = rover_model.shadow_casters(rover_pose, R, eye={"NL": "L", "NR": "R"}.get(fam),
+                                                           static_parts=static, head=fam[:1] in "NZ")
+                extra = occluder(Vx, Fx)
+                cast_info = {"rover_parts": list(static), "head": hinfo or None, "triangles": int(len(Fx))}
+        pm = photometric_maps(scene, m, R, C, sun, with_shadow=with_shadow, extra=extra)
         stem = Path(name).stem
         save_photometry(out / "photometry" / f"{stem}.npz", pm, image=name, scale=scale, sun_block=[float(v) for v in sun],
                         sun_enu=row.get("sun_enu"), lmst=row.get("lmst"), sol=row.get("sol"))
@@ -237,11 +273,16 @@ def photometric_cube(project, rec, station, scene: Scene, maps_dir: PathLike, ou
                      "pixels": int(ok.sum()),
                      "incidence_deg": _stats(pm["incidence"][ok]), "emission_deg": _stats(pm["emission"][ok]),
                      "phase_deg": _stats(pm["phase"][ok]),
-                     "shadow_fraction": float((pm["shadow"] == SHADOW_SHADOW).sum() / max(1, ok.sum())) if "shadow" in pm else None})
+                     "shadow_fraction": float((pm["shadow"] == SHADOW_SHADOW).sum() / max(1, ok.sum())) if "shadow" in pm else None,
+                     "shadow_casters": cast_info})
         log.info("photometry: %s i %s e %s g %s", name, rows[-1]["incidence_deg"]["median"], rows[-1]["emission_deg"]["median"],
                  rows[-1]["phase_deg"]["median"])
     rep = {"station": station.label, "n_images": len(rows), "images": rows}
     out.mkdir(parents=True, exist_ok=True)
+    if previews:
+        from .raycast import PREVIEW_DIR
+        from .scales import write_scales
+        rep["picture_scales"] = str(write_scales(out / PREVIEW_DIR))
     (out / "photometry_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
     return rep
 

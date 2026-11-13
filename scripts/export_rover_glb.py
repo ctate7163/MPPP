@@ -16,7 +16,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-CREDIT = "NASA/JPL-Caltech (Mars Perseverance Rover, 3D Model); simplified and modified by MPPP"
+CREDIT = "NASA/JPL-Caltech (Mars Perseverance Rover, 3D Model); modified by MPPP"
 
 
 def main() -> int:

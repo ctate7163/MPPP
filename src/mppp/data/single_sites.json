@@ -1,5 +1,5 @@
 {
- "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (rover, masked; the rover shown is the default since 0.96.1, run first), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' / 'mesh_args' / 'depthmaps_args' / 'ods_args' for every station (and per station the same keys); 'ods_args' --bits 16: the panorama from 16-bit linear frames. 0.97.0 (Christian, 12 Nov 2026): run by run_single_site_ibr.bat; 'ods_args' --eyes left right centre adds the panorama from the pivot (<station>[_rover]_ods_centre.png, _centre_16.png) and its depth (_centre_depth.npz, _depth_16.png, _depth_linear.jpg, _depth_log.jpg); the driver gives both variants of a station one <out>/<label>/tone_levels.json so their 16-to-8-bit scaling is the same; the pivot is on the azimuth axis at the Mastcam-Z height (--pivot-height zcam, the default) whatever cameras are rendered.",
+ "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (rover, masked; the rover shown is the default since 0.96.1, run first), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' / 'mesh_args' / 'depthmaps_args' / 'ods_args' for every station (and per station the same keys); 'ods_args' --bits 16: the panorama from 16-bit linear frames. 0.97.0 (Christian, 12 Nov 2026): run by run_single_site_ibr.bat; 'ods_args' --eyes left right centre adds the panorama from the pivot (<station>[_rover]_ods_centre.png, _centre_16.png) and its depth (_centre_depth.npz, _depth_16.png, _depth_linear.jpg, _depth_log.jpg); the driver gives both variants of a station one <out>/<label>/tone_levels.json so their 16-to-8-bit scaling is the same; the pivot is on the azimuth axis at the Mastcam-Z height (--pivot-height zcam, the default) whatever cameras are rendered. 0.97.7 (Christian, 13 Nov 2026): per station 'name', the site's name in the mark at the panorama's nadir (default: from 'site'); 'ods_args' --fill-cameras F: the station's front Hazcam pair colours the terrain the Navcam frames do not see (under the arm).",
  "out": "single_sites",
  "variants": [
   "rover",
@@ -14,10 +14,13 @@
   "--eyes",
   "left",
   "right",
-  "centre"
+  "centre",
+  "--fill-cameras",
+  "F"
  ],
  "stations": {
   "S003D2046": {
+   "name": "Van Zyl Overlook",
    "site": "van_zyl_overlook_huge",
    "station": "3_2046",
    "note": "Van Zyl Overlook, sol 52: the six Navcam pairs NCAM00303, NCAM03052 x3, NCAM02052 x2 (Christian, 10 Nov)",
@@ -39,6 +42,7 @@
    }
   },
   "S026D0630": {
+   "name": "Rockytop",
    "site": "rockytop",
    "station": "26_630",
    "note": "Rockytop, sol 461: the 16 half-resolution Navcam frames (NCAM03461, 02461, 13461); the pair NCAM13461 0707875039 left out of the panorama (Christian, 10 Nov; 12 Nov: the NRF frame named too)",
@@ -51,6 +55,7 @@
    ]
   },
   "S032D1184": {
+   "name": "Three Forks",
    "site": "threeforks_large",
    "station": "32_1184",
    "note": "Three Forks, sols 686 and 688: the 26 half-resolution Navcam frames (NCAM02686, 03686, 12686, 03688, 13688); one pair left out of the panorama (Christian, 10 Nov)",
@@ -62,6 +67,7 @@
    ]
   },
   "S026D0850": {
+   "name": "Skinner Ridge",
    "site": "rockytop",
    "station": "26_850",
    "note": "Rockytop (Skinner Ridge), sol 474: the station of NRF_0474_0709027186_885RAD_N0260850NCAM13474, its half-resolution Navcam frames (Christian, 12 Nov: \"Add a forth site\")",

@@ -1096,7 +1096,8 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     rover_ods = r0["commands"][3]["argv"]
     assert "--mask-rover" in r0["commands"][-1]["argv"]
     assert "--rover" in rover_ods and rover_ods[rover_ods.index("--out") + 1].endswith(str(Path("S003D2046") / "with_rover"))
-    assert rover_ods[-6:] == ["--bits", "16", "--eyes", "left", "right", "centre"]         # 0.97.0: 16 bits, the centre eye
+    assert rover_ods[-8:] == ["--bits", "16", "--eyes", "left", "right", "centre", "--fill-cameras", "F"]   # 0.97.7: the front Hazcams fill in
+    assert rover_ods[rover_ods.index("--site-name") + 1] == "Van Zyl Overlook"              # 0.97.7: for the nadir mark
     tl = str(root / "single_sites" / "S003D2046" / "tone_levels.json")                     # 0.97.0: one scaling per station
     assert rover_ods[rover_ods.index("--tone-levels") + 1] == tl
     assert r0["commands"][-1]["argv"][r0["commands"][-1]["argv"].index("--tone-levels") + 1] == tl
@@ -1106,7 +1107,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
                                                       "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
                                                       "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
                                                       "--tone-levels", str(root / "single_sites" / "S026D0630" / "tone_levels.json"),
-                                                      "--bits", "16", "--eyes", "left", "right", "centre"]}]
+                                                      "--site-name", "Rockytop", "--bits", "16", "--eyes", "left", "right", "centre", "--fill-cameras", "F"]}]
     with pytest.raises(KeyError):
         SS.plan(cfg, root, labels=["S999D9999"])
     # the run: the steps stood in for; Rockytop's dense step fails, so nothing else of it runs
@@ -1464,7 +1465,7 @@ def test_rover_model_in_the_mesh(tmp_path):
     from mppp.ibr import rover_deck as RD, rover_model as RM
     assert RM.available()
     V, F, meta = RM.load()
-    assert meta["credit"] == "NASA/JPL-Caltech" and 40000 < len(F) < 80000 and meta["arm_stow_deg"] == [90.09, 16.37, 71.66, -88.18, 81.48] and "antenna" in meta["parts"]   # 0.97.0
+    assert meta["credit"] == "NASA/JPL-Caltech" and 150000 < len(F) < 250000 and meta["arm_stow_deg"] == [90.09, 16.37, 71.66, -88.18, 81.48] and "antenna" in meta["parts"]   # 0.97.0
     assert V[:, 0].min() < -1.6 and V[:, 0].max() < 1.5            # the RTG behind; the arm stowed, not reaching forward
     assert abs(V[:, 1]).max() < 1.4 and 1.05 < V[:, 2].max() < 1.2  # the wheels on the ground, 1.13 m below the deck top
     Vb, Fb, _ = RM.load(["body"])
@@ -2003,3 +2004,194 @@ def test_xmp_is_written_into_jpeg_and_png_without_touching_the_pixels(tmp_path):
         assert np.array_equal(cv2.imread(str(tmp_path / n), cv2.IMREAD_UNCHANGED), before[n])
         assert xmp.image_size(tmp_path / n) == (256, 256)
     assert xmp.read_xmp(tmp_path / "wide_360_3DTD.png") is None
+
+
+def test_camera_head_follows_the_mast_angles_and_casts_a_shadow():
+    """0.97.7: the head at the labels' RSM angles (180, 90 = the model's pose), the angles back from a camera
+    rotation, and the mast, booms and head as shadow casters on a plane that holds no rover."""
+    from mppp.ibr import rover_model
+    from mppp.ibr.photometry import occluder, shadow_map
+    from mppp.ibr.raycast import Scene
+    from mppp.ibr.rover_deck import MECH_IN_RNAV_M
+    if not rover_model.available():
+        pytest.skip("no rover model")
+    assert "head" in rover_model.load()[2]["parts"]
+    assert np.allclose(rover_model.head_transform_mech(180.0, 90.0), np.eye(4), atol=1e-12)
+    V0, F0 = rover_model.head_in_mech(180.0, 90.0)
+    V1, _ = rover_model.head_in_mech(270.0, 90.0)                    # a quarter turn about the azimuth axis
+    axis = np.array(rover_model.MAST_P_XY_RNAV_M) - MECH_IN_RNAV_M[:2]
+    r0, r1 = np.linalg.norm(V0[:, :2] - axis, axis=1), np.linalg.norm(V1[:, :2] - axis, axis=1)
+    assert np.allclose(r0, r1, atol=0.01) and np.allclose(V0[:, 2], V1[:, 2], atol=0.01)       # (the axis' 0.16 deg tilt)
+    assert V0[:, 0].max() - axis[0] > 0.1 and V1[:, 1].min() - axis[1] < -0.1    # forward -> to the left (y right)
+    Vd, _ = rover_model.head_in_mech(180.0, 45.0)                    # looking 45 deg down: the front of the head drops
+    assert Vd[np.argmax(V0[:, 0]), 2] > V0[np.argmax(V0[:, 0]), 2] + 0.03        # z is down
+    # the angles back from a Navcam rotation made by the chain's own formula
+    for az, el in ((10.0, 60.0), (255.0, 100.0), (123.4, 31.2)):
+        for eye in "LR":
+            R = (rover_model._rot(rover_model.NAVCAM_Q_ROTVEC_RAD[eye]) @ rover_model._ry(np.radians(el)).T
+                 @ rover_model._rz(np.radians(az)).T @ rover_model._rot(rover_model.MAST_W_ROTVEC_RAD))
+            got = rover_model.head_angles_deg(R, eye)
+            assert abs(got[0] - az) < 1e-6 and abs(got[1] - el) < 1e-6
+            rough = rover_model.head_angles_deg(R)
+            assert abs(rough[0] - az) < 5 and abs(rough[1] - el) < 5
+    # shadows: a level plane 1.1 m under the deck top (RNAV z = 0 is about the ground), the Sun 30 deg up in +x
+    pose = {"R_block_from_rnav": np.diag([1.0, -1.0, -1.0]), "t_block_from_rnav": np.zeros(3)}      # block z up
+    Vp = np.array([[-50, -50, 0], [50, -50, 0], [50, 50, 0], [-50, 50, 0]], float)
+    scene = Scene((Vp, np.array([[0, 1, 2], [0, 2, 3]])))
+    R_cam = (rover_model._rot(rover_model.NAVCAM_Q_ROTVEC_RAD["L"]) @ rover_model._ry(np.pi / 2).T @ rover_model._rz(np.pi).T
+             @ rover_model._rot(rover_model.MAST_W_ROTVEC_RAD)) @ np.asarray(pose["R_block_from_rnav"]).T
+    Vx, Fx, info = rover_model.shadow_casters(pose, R_cam, eye="L")
+    assert abs(info["az_deg"] - 180) < 1e-6 and abs(info["el_deg"] - 90) < 1e-6 and len(Fx) > 5000
+    sun = np.array([np.cos(np.radians(30)), 0.0, np.sin(np.radians(30))])
+    head_top = Vx[np.argmax(Vx[:, 2])]                               # the highest point: on the head
+    assert head_top[2] > 1.9                                         # about 2 m above the ground
+    under = head_top - sun * head_top[2] / sun[2]                    # where its shadow falls on the plane
+    X = np.array([under + [0, 0.0, 0], under + [0, 5.0, 0]])         # in the shadow, and 5 m to the side
+    valid = np.ones(2, bool)
+    assert list(shadow_map(scene, X, sun, valid)) == [1, 1]                               # the plane alone: lit
+    assert list(shadow_map(scene, X, sun, valid, extra=occluder(Vx, Fx))) == [2, 1]       # with the head: shadow
+    Vm, Fm, _ = rover_model.shadow_casters(pose, None, static_parts=("mast",), head=False)
+    assert 0 < len(Fm) < len(Fx)
+    Va, Fa, _ = rover_model.shadow_casters(pose, R_cam, eye="L", static_parts=rover_model.SHADOW_PARTS)
+    assert len(Fa) > 60000                                           # a terrain-only mesh: the whole rover casts
+
+
+def test_nadir_mark_lines_credit_and_disc():
+    """0.97.7: the black disc with the credits at the nadir; NASA/JPL for Navcam alone, with MSSS/ASU for Mastcam-Z."""
+    from mppp.ibr import nadir
+    nav = ["NLF_0461_0707871340_000RAD_N0260630NCAM03461_0A0195J01.png", "FLF_0461_0707871340_000RAD_N0260630FHAZ00000_0A0195J01.png"]
+    assert nadir.credit(nav) == "NASA/JPL" and nadir.credit(nav + ["ZL0_0464_x.png"]) == "NASA/JPL/MSSS/ASU"
+    assert nadir.site_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and nadir.site_name(None) is None
+    lines = nadir.mark_lines(nav, "Rockytop")
+    assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "made by C. Tate", "Image credit: NASA/JPL"]
+    assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sols 686, 688"
+    assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"])[1] == "Sols 686-687"
+    W, H = 2048, 1024
+    m = nadir.make_mark(W, H, lines)
+    assert m["row0"] == int(np.ceil(H * 170 / 180)) and m["alpha"].shape == (H - m["row0"], W)
+    img = np.full((H, W, 3), 100, np.uint8)
+    img[:H // 2] = (210, 180, 140)                                     # a sky
+    sky = np.zeros((H, W), bool)
+    sky[:H // 3] = True
+    bg = nadir.sky_colour(img, sky, nadir.SKY_FALLBACK_RGB)
+    assert list(bg) == [210, 180, 140]
+    assert list(nadir.sky_colour(img, None, nadir.SKY_FALLBACK_RGB)) == list(nadir.SKY_FALLBACK_RGB)
+    assert abs(nadir.sky_colour(img // 3, sky, (1, 1, 1), light=150.0).max() - 150.0) < 1e-6        # a dark sky made light
+    nadir.apply_mark(img, m, bg)
+    assert (img[H // 2:m["row0"]] == 100).all()                        # nothing above the disc
+    low = img[m["row0"]:]
+    assert (low == np.array([210, 180, 140])).all(axis=2).mean() > 0.6 and low.max(axis=2).min() < 30     # sky colour, black text
+    i16 = np.full((H, W, 3), 3000, np.uint16)
+    nadir.apply_mark(i16, m, (50000, 40000, 30000))
+    assert i16[m["row0"]:, :, 0].max() == 50000 and i16[m["row0"]:].min() < 2000
+    with pytest.raises(ValueError):
+        nadir.apply_mark(np.zeros((H, W // 2, 3), np.uint8), m, 255)
+    # the text is upright looking down with north up: turning column 0 by 90 deg shifts the columns by a quarter turn
+    m90 = nadir.make_mark(W, H, lines, azimuth0_deg=90.0)
+    assert np.abs(np.roll(m90["alpha"], W // 4, axis=1) - m["alpha"]).mean() < 0.01
+
+
+def test_fill_only_source_colours_only_what_the_others_do_not_see(tmp_path):
+    """0.97.7: a fill-only source (a Hazcam frame) has no weight where a regular source sees the surface well, and
+    full weight where none does."""
+    import cv2
+    import pycolmap
+    from mppp.ibr.ods import SourceImage, candidates
+    from mppp.ibr.raycast import Scene
+    V = np.array([[-50, -50, 0], [50, -50, 0], [50, 50, 0], [-50, 50, 0]], float)
+    scene = Scene((V, np.array([[0, 1, 2], [0, 2, 3]])))
+    cam = pycolmap.Camera(model="PINHOLE", width=400, height=400, params=[400.0, 400.0, 200.0, 200.0])
+    Rdown = np.array([[1.0, 0, 0], [0, -1.0, 0], [0, 0, -1.0]])        # looking straight down from z = 2
+    srcs = []
+    for i, (cx, fill) in enumerate(((0.0, False), (0.5, True))):       # the fill frame half a metre to the side
+        f = tmp_path / f"s{i}.png"
+        cv2.imwrite(str(f), np.full((400, 400, 3), 100 + 100 * i, np.uint8))
+        srcs.append(SourceImage(f.name, cam, Rdown, np.array([cx, 0.0, 2.0]), f, None, 1.0))
+        srcs[-1].fill_only = fill
+    o = np.array([[0.0, 0.0, 2.0]] * 2)
+    targets = np.array([[0.0, 0.0, 0.0], [1.3, 0.0, 0.0]])             # seen by both; seen by the fill frame only
+    d = targets - o
+    d /= np.linalg.norm(d, axis=1)[:, None]
+    c = candidates(scene, srcs, o, d)
+    k0, k1 = list(c["k"][0]), list(c["k"][1])
+    assert 0 in k0 and 1 in k0                                        # both are candidates of the shared point
+    assert c["fill_weight"][0, k0.index(1)] < 1e-3 and c["fill_weight"][0, k0.index(0)] == 1.0
+    assert 0 not in k1 and c["fill_weight"][1, k1.index(1)] == 1.0    # alone: the fill frame at full weight
+
+
+def test_picture_scales_are_attached_and_read_back(tmp_path):
+    """0.97.7: every photometry_jpg picture carries its value scale; decode() gives floats with units back."""
+    from mppp.ibr import photometry as PH, raycast as RC, scales as SC
+    H, W = 240, 320
+    yy, xx = np.mgrid[0:H, 0:W]
+    rng = (0.6 + 70.0 * xx / W).astype(np.float32)                                  # 0.6 .. 70 m, smooth
+    lab = np.full((H, W), RC.LABEL_MESH, np.uint8)
+    lab[:, W // 2:] = RC.LABEL_PLANE
+    lab[:20] = RC.LABEL_FAR
+    lab[-20:] = RC.LABEL_NONE
+    n = np.dstack([0.3 * np.sin(xx / 40.0), 0.3 * np.cos(yy / 40.0), -np.ones((H, W))]).astype(np.float32)
+    n /= np.linalg.norm(n, axis=2, keepdims=True)
+    files = RC.preview_jpg({"range": rng, "label": lab, "normal": n}, tmp_path / "photometry_jpg" / "NLF_x")
+    pm = {"incidence": (80.0 * xx / W).astype(np.float32), "emission": (85.0 * yy / H).astype(np.float32),
+          "phase": (170.0 * xx / W).astype(np.float32), "shadow": np.where(xx < W // 2, 1, 2).astype(np.uint8)}
+    pm["incidence"][:10] = np.nan
+    files += PH.preview_jpg(pm, tmp_path / "photometry_jpg" / "NLF_x")
+    assert len(files) == 7
+    surf = (lab == RC.LABEL_MESH) | (lab == RC.LABEL_PLANE)
+    inner = np.zeros((H, W), bool)
+    inner[30:-30, 10:-10] = True                                                     # off the class borders (JPEG blocks)
+    inner[:, W // 2 - 10:W // 2 + 10] = False
+    for f in files:
+        from mppp.ibr.xmp import read_fields
+        fields = read_fields(f)
+        assert fields["Product"] == SC.kind_of(f) and "npz" in fields["ExactValues"]
+        d = SC.decode(f)
+        assert d["scale"] == SC.scales()[d["kind"]]
+        if d["kind"] == "depth_linear":
+            assert d["units"] == "m" and np.nanmedian(np.abs(d["value"] - rng)[inner & surf]) < 1.0
+            assert np.isnan(d["value"][5, 5]) and np.isnan(d["value"][-5, 5])        # sky, nothing
+            assert d["ground_plane"][H // 2, W - 30] and not d["ground_plane"][H // 2, 30]
+        elif d["kind"] == "depth_log":
+            assert np.nanmedian(np.abs(d["value"] / rng - 1)[inner & surf]) < 0.05
+        elif d["kind"] == "normal":
+            cosang = np.clip(np.sum(d["value"] * n, axis=2), -1, 1)
+            assert np.degrees(np.arccos(np.nanmedian(cosang[inner & surf]))) < 3.0
+        elif d["kind"] in ("incidence", "emission", "phase"):
+            ok = inner & np.isfinite(pm[d["kind"]])
+            assert d["units"] == "deg" and np.nanmedian(np.abs(d["value"] - pm[d["kind"]])[ok]) < (2.5 if d["kind"] == "phase" else 1.5)
+        elif d["kind"] == "shadow":
+            assert (d["value"][inner] == pm["shadow"][inner]).mean() > 0.99
+    sj = json.loads(SC.write_scales(tmp_path / "photometry_jpg").read_text())
+    assert sj["scales"]["depth_linear"]["max"] == RC.DEPTH_LINEAR_MAX_M and sj["scales"]["phase"]["max"] == 180.0
+    with pytest.raises(ValueError):
+        SC.decode(tmp_path / "photometry_jpg" / "NLF_x_shadow.jpg", scale=SC.scales()["rad"])
+
+
+def test_fill_frames_are_colour_matched_to_the_regular_ones(tmp_path):
+    """0.97.7: per fill camera one factor per channel from the surface it shares with the regular frames; the
+    regular frames keep their gain."""
+    import cv2
+    import pycolmap
+    from mppp.ibr.ods import SourceImage, estimate_fill_colour
+    from mppp.ibr.raycast import Scene
+    V = np.array([[-50, -50, 0], [50, -50, 0], [50, 50, 0], [-50, 50, 0]], float)
+    scene = Scene((V, np.array([[0, 1, 2], [0, 2, 3]])))
+    cam = pycolmap.Camera(model="PINHOLE", width=400, height=400, params=[200.0, 200.0, 200.0, 200.0])
+    Rdown = np.array([[1.0, 0, 0], [0, -1.0, 0], [0, 0, -1.0]])
+    srcs = []
+    for name, rgb, cx, fill in (("NLF_0100_0700000000_a.png", (100, 100, 100), 0.0, False),
+                                ("FLF_0100_0700000100_a.png", (125, 100, 80), 0.3, True),      # the Hazcam: redder
+                                ("FRF_0100_0700009999_a.png", (50, 50, 50), -0.3, True)):      # hours later: not used
+        f = tmp_path / name
+        cv2.imwrite(str(f), np.full((400, 400, 3), rgb[::-1], np.uint8))
+        srcs.append(SourceImage(name, cam, Rdown, np.array([cx, 0.0, 2.0]), f, None, 1.0))
+        srcs[-1].fill_only = fill
+    srcs[0].gain = 1.1
+    rep = estimate_fill_colour(scene, srcs, (0.0, 0.0, 2.0), width=512)
+    fl = rep["cameras"]["FL"]
+    assert fl["samples"] > 300 and np.allclose(fl["factor_rgb"], [1.1 * 100 / 125, 1.1, 1.1 * 100 / 80], rtol=0.01)
+    assert np.allclose(fl["white_balance_ratio_rgb"], [0.8, 1.0, 1.25], rtol=0.01) and abs(fl["brightness"] - 1.1) < 0.02
+    assert max(fl["scatter_rgb"]) < 0.01
+    assert "FR" not in rep["cameras"]                                 # no regular frame within half an hour of it
+    assert srcs[0].gain == 1.1 and np.allclose(srcs[1].gain, fl["factor_rgb"], rtol=1e-3) and srcs[2].gain == 1.0
+    assert estimate_fill_colour(scene, srcs[:1], (0.0, 0.0, 2.0), width=256)["cameras"] == {}

@@ -12,7 +12,7 @@ Data provenance
 - The rover model (src/mppp/data/rover/perseverance_rmech.npz, docs/rover/perseverance_rmech.glb) is derived
   from NASA's "Mars Perseverance Rover, 3D Model"
   (https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/). Credit: NASA/JPL-Caltech. It was
-  simplified and modified by the author (docs/rover-model.md); NASA has not reviewed or endorsed this version.
+  modified by the author (docs/rover-model.md); NASA has not reviewed or endorsed this version.
 - The waypoint snapshot (src/mppp/data/M20_waypoints.json) is a copy of the public Mars 2020 rover
   waypoint table.
 - The package contains no sensitive or non-public data.

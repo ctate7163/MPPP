@@ -166,7 +166,7 @@ def add_parsers(sub) -> None:
                    "0.96.1: removed - anything above the cameras, and beyond 3 m of the mast axis anything less than "
                    "1 m below them; heights above the ground plane)")
     p.add_argument("--no-rover-model", action="store_true", help="rover shown: no Perseverance model in the mesh "
-                   "(default, 0.96.1: NASA's model, simplified, the arm stowed, placed by the rover pose - the fused "
+                   "(default, 0.96.1: NASA's model, the arm stowed, placed by the rover pose - the fused "
                    "points within 4 cm of it dropped; mppp.ibr.rover_model)")
     p.add_argument("--rover-model-parts", nargs="+", default=None, choices=["body", "arm", "arm_base", "suspension", "wheels", "antenna"],
                    help="only these parts of the model (default all; e.g. without suspension wheels on rough ground)")
@@ -210,6 +210,15 @@ def add_parsers(sub) -> None:
                    help="0.97.1: the same below the horizon (default 60 88 since 0.97.5, with the near-surface limit "
                         "of 2.5 m); 90 90: none")
     p.add_argument("--cameras", default="N")
+    p.add_argument("--fill-cameras", default="", metavar="LETTERS",
+                   help="0.97.7: the station's frames of these camera families as fill-only sources - they colour what "
+                        "the panorama's own frames do not see (F: the front Hazcam pair, for the terrain under the arm; "
+                        "R: the rear pair); those of the same sols; default none")
+    p.add_argument("--site-name", default=None, help="0.97.7: the site's name in the mark at the nadir (e.g. Rockytop)")
+    p.add_argument("--no-nadir-mark", action="store_true", help="0.97.7: no disc with the credits at the nadir "
+                   "(default: within 10 deg of straight down, black text on the sky's colour - Mars 2020 Perseverance Rover, the sol and site, made by "
+                   "C. Tate, the image credit)")
+    p.add_argument("--nadir-mark-deg", type=float, default=None, help="the disc's angular radius (default 10)")
     p.add_argument("--scale", type=float, default=1.0, help="the Navcam frames sampled at this fraction of their own "
                    "size (default 1, Christian 10 Nov: the half-resolution frames are 0.68 mrad a pixel, the 8K "
                    "panorama 0.77 - at 0.5 they were 1.36, coarser than the panorama)")
@@ -420,7 +429,15 @@ def cmd_depthmaps(a: argparse.Namespace) -> int:
     print(f"{st.label}: {rep['n_images']} images -> {out / 'maps'}; {out / 'maps_report.md'}")
     if a.photometry:
         from .photometry import photometric_cube
-        prep = photometric_cube(project, rec, st, scene, out / "maps", out, previews=not a.no_preview, with_shadow=not a.no_shadow)
+        pose = None
+        if not a.no_shadow:                          # 0.97.7: the mast, its booms and the camera head cast shadows too
+            from .rover_deck import rover_pose
+            try:
+                pose = rover_pose(project, rec, st.images)
+            except Exception as e:                   # noqa: BLE001 - the shadows of the mesh alone
+                log.warning("depthmaps: no rover pose (%s); the shadows without the mast and the camera head", e)
+        prep = photometric_cube(project, rec, st, scene, out / "maps", out, previews=not a.no_preview, with_shadow=not a.no_shadow,
+                                rover_pose=pose)
         print(f"photometric cube: {prep['n_images']} images -> {out / 'photometry'}")
     return 0
 
@@ -463,7 +480,9 @@ def cmd_ods(a: argparse.Namespace) -> int:
                          azimuth0_deg=-180.0 if a.north_center else a.azimuth0, prefix=a.prefix,
                          bits=a.bits, pds=a.pds, tone=a.tone, exposure16=a.exposure16,
                          ground_fill=not a.no_ground_fill, mask_mast=not a.keep_mast,
-                         tone_levels_file=a.tone_levels, centre_depth=not a.no_depth)
+                         tone_levels_file=a.tone_levels, centre_depth=not a.no_depth,
+                         fill_families=a.fill_cameras, nadir_mark=not a.no_nadir_mark, site_name=a.site_name,
+                         nadir_mark_deg=a.nadir_mark_deg)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: {e['file']}  coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "

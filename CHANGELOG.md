@@ -3,6 +3,37 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.7 — 2026-11-13
+
+**In short.** Shadows from the mast, booms and camera head; a credit mark at the nadir; the front Hazcams fill in
+under the arm, colour-matched to the Navcams; the per-image pictures carry their value scales; the rover model with
+NASA's full detail; crack filling scaled for 16K. None of it has been run on a real block yet.
+
+- **Shadows** (Christian: "make sure to include the rover mast and booms. Find how the mast resolver angles relate
+  to the mast's articulation in the 3d model"). The camera head is a new part of the rover model (`head`); the mast
+  tube and booms (`mast`) are fixed to the deck. A head point x is at X = P + Rot(G) Rz(az) (h + Ry(-el) x) for
+  the label's resolver azimuth and elevation, with the axes of the fitted mast chain; az = 180, el = 90 degrees is
+  forward and level, which is the pose of NASA's model (its Navcam housings within 2 cm of the chain's camera
+  centres). `rover_model.head_in_mech`, `head_transform_mech`, `head_angles_deg`, `shadow_casters`. `mppp depthmaps
+  --photometry` casts shadows from the mesh and from mast, booms and the head where each image's own camera had it;
+  with a terrain-only mesh from the whole rover. The panorama still leaves the mast out.
+- **Nadir mark** (`mppp.ibr.nadir`): within 10 degrees of straight down, a disc in the sky's colour with black text
+  - Mars 2020 Perseverance Rover, sol and site, made by C. Tate, image credit NASA/JPL (Navcam, Hazcam) or
+  NASA/JPL/MSSS/ASU (with Mastcam-Z). `--site-name`, `--no-nadir-mark`, `--nadir-mark-deg`; `name` per station in
+  `single_sites.json`. In every colour panorama, 16-bit included; recorded in `ods.json`.
+- **Front Hazcam fill** (`mppp ods --fill-cameras F`, on in `single_sites.json`): the station's front Hazcam pair
+  of the same sols colours only what no Navcam frame sees, coming in as the Navcam feather goes out.
+- **Hazcam colour** (`ods.estimate_fill_colour`): per camera (FL, FR) one factor per channel from the surface a
+  Hazcam and a Navcam frame both see, taken within 30 minutes of each other; applied to the fill frames in the
+  panorama, reported in `ods.json` (`fill_colour_match`: factor, white-balance ratio, brightness, scatter,
+  samples). The Navcam frames are not changed. Not yet in the image processing: that waits for confirmation.
+- **Picture scales** (`mppp.ibr.scales`): the `photometry_jpg` pictures have constant scales; each now carries its
+  scale in its XMP (`mppp:Scale`), `photometry_jpg/scales.json` lists them, `scales.decode(path)` gives floats with
+  units back. The exact values are in the `.npz` files, as before.
+- **Rover model**: no decimation any more - NASA's 197,539 triangles (was 71,331); `.npz` 1.9 MB, `.glb` 3.6 MB.
+- **16K**: the crack-fill limits (hole area, hole width, inpaint radius) were pixels of an 8K panorama; they now
+  scale with the width.
+
 ## 0.97.6 — 2026-11-13
 
 **In short.** The documentation brought up to date; the rover model hosted for other users, with its NASA credit.

@@ -185,3 +185,32 @@ def tag_folder(folder: PathLike, heading_centre_deg: float = 180.0, extra: Optio
             except (OSError, ValueError, struct.error):
                 continue
     return done
+
+
+def fields_xmp(fields: Dict[str, Any]) -> bytes:
+    """A packet of ``mppp:`` fields only (0.97.7: the value scale of a per-image picture, :mod:`mppp.ibr.scales`)."""
+    from xml.sax.saxutils import escape
+    body = "\n".join(f"   <mppp:{k}>{escape(str(v))}</mppp:{k}>" for k, v in fields.items())
+    return ('<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>\n'
+            '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="MPPP">\n'
+            ' <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
+            '  <rdf:Description rdf:about=""\n'
+            '    xmlns:mppp="https://github.com/ctate7163/MPPP/ns/1.0/">\n'
+            f'{body}\n'
+            '  </rdf:Description>\n </rdf:RDF>\n</x:xmpmeta>\n<?xpacket end="w"?>').encode("utf-8")
+
+
+def tag_fields(path: PathLike, fields: Dict[str, Any]) -> None:
+    """Write ``mppp:`` fields into a JPEG or PNG (no re-encoding)."""
+    path = Path(path)
+    (inject_png if path.suffix.lower() == ".png" else inject_jpeg)(path, fields_xmp(fields))
+
+
+def read_fields(path: PathLike) -> Dict[str, str]:
+    """The ``mppp:`` fields of an image's XMP packet ({} without one)."""
+    import re
+    from xml.sax.saxutils import unescape
+    x = read_xmp(path)
+    if not x:
+        return {}
+    return {k: unescape(v) for k, v in re.findall(r"<mppp:(\w+)>(.*?)</mppp:\1>", x.decode("utf-8", "replace"), flags=re.S)}

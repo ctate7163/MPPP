@@ -177,6 +177,10 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     argv += ["--exclude", *[str(x) for x in st["ods_exclude"]]]
                 if step == "ods":                    # 0.97.0: one 16-to-8-bit scaling for both variants of a station
                     argv += ["--tone-levels", str(base / TONE_FILE)]
+                    from .nadir import site_name         # 0.97.7: the site's name for the mark at the nadir
+                    nm = st.get("name") or site_name(st.get("site"))
+                    if nm:
+                        argv += ["--site-name", str(nm)]
                 if step == "mesh" and near:
                     argv += ["--keep-under-rover", f"{float(st.get('keep_under_rover_m', cfg.get('keep_under_rover_m', 0.25))):g}"]
                 argv += [str(x) for x in (cfg.get(f"{step}_args") or [])]      # 0.96.1: for every station

@@ -18,7 +18,7 @@ The changes to NASA's model are described for users in docs/rover-model.md; the 
   (elbow, z) - arm.004 (wrist, z) - turret_obj (turret, y), turned from the model's deployed pose to the stow pose
   of the image labels' arm resolver angles (ARM_LABEL_STOW_DEG through ARM_LABEL_SIGN and ARM_LABEL_OFFSET_DEG).
 * The UHF antenna can: its wall raised to the real rim and the domed cap replaced by a flat floor (UHF_CAN_*).
-* Simplified per part by quadric decimation (TARGET_FACES).
+* Not simplified since 0.97.7: NASA's triangles as they are (TARGET_FACES; 0.96.1-0.97.6 decimated every part).
 * scripts/export_rover_glb.py writes the result as docs/rover/perseverance_rmech.glb for use outside MPPP.
 """
 import argparse
@@ -105,8 +105,12 @@ ICP_MODEL_FROM_MECH = np.array([[1.000002, -0.000654, 0.000622, -0.000243],
                                 [0.000651, 1.000000, 0.000990, 0.000791],
                                 [-0.000623, -0.000989, 1.000002, 0.000798],
                                 [0.0, 0.0, 0.0, 1.0]])
-TARGET_FACES = {"body": 32000, "arm": 10000, "arm_base": 2300, "suspension": 8000, "wheels": 9000, "mast": 6000, "antenna": 6000}
-PARTS = ("body", "arm", "arm_base", "suspension", "wheels", "mast", "antenna")
+# 0.97.7 (Christian, 13 Nov 2026: "too many polygons were simplified.  Please restore the original polygon detail on
+# everything that the mast cameras see ... the forearm plate and the wheels are too simplified"): no part is
+# decimated any more - NASA's triangles as they are (197,000; before: body 32000, arm 10000, arm_base 2300,
+# suspension 8000, wheels 9000, mast 6000 - 71,000 in all).  A number here decimates that part to it.
+TARGET_FACES = {"body": None, "arm": None, "arm_base": None, "suspension": None, "wheels": None, "mast": None, "antenna": None, "head": None}
+PARTS = ("body", "arm", "arm_base", "suspension", "wheels", "mast", "antenna", "head")
 MAST_PARTS = ("bottom", "bottom.002", "bottom.003", "probe.001", "top", "probe")   # turn with the head's azimuth: the
 # mast tube and the wind-sensor booms on it; kept as the part "mast" (not for the mesh: for masking them in the
 # frames, mppp.ibr.rover_model.mast_mask), in the model's own azimuth - the head looking forward (0 deg)
@@ -257,19 +261,21 @@ def build(glb: Path, out: Path) -> dict:
     geo_nodes = {}                            # trimesh names its nodes <node>[_hash]; map them back by the mesh index
     mesh_names = [m.get("name") for m in g["meshes"]]
     parts = {p: [] for p in PARTS}
+    head_nodes = {}
     for i, n in enumerate(nodes):
         if "mesh" not in n:
             continue
         k = link_of(i)
-        if under(i, HEAD) or under(i, BELLY) or under(i, MOVING):
+        if under(i, BELLY) or under(i, MOVING):
             continue
+        is_head = under(i, HEAD)
         is_mast = under(i, MAST_PARTS)
         is_hga = under(i, HGA_NODES)
         if k is not None:
             kind, move = "arm", stow[k] @ np.linalg.inv(rest[k])
         else:
             nm = root_name(i)
-            kind = ("antenna" if is_hga else "mast" if is_mast else "arm_base" if nm.startswith(("arm.001", "arm_cable")) else "wheels" if nm.startswith("Wheels")
+            kind = ("head" if is_head else "antenna" if is_hga else "mast" if is_mast else "arm_base" if nm.startswith(("arm.001", "arm_cable")) else "wheels" if nm.startswith("Wheels")
                     else "suspension" if nm.startswith("suspension") else "body")
             move = np.eye(4)
         W = move @ world(i)
@@ -295,6 +301,8 @@ def build(glb: Path, out: Path) -> dict:
                         v[cap, 2] = zt + UHF_CAN_CAP_BELOW_RIM_M
                         v[:, 2] = np.maximum(v[:, 2], zt)
             parts[kind].append(trimesh.Trimesh(v, fm, process=False))
+            if kind == "head" and len(v):
+                head_nodes.setdefault(name_of[i], []).append(v)
     V, F, P, rep = [], [], [], {}
     off = 0
     for pid, kind in enumerate(PARTS):
@@ -309,7 +317,7 @@ def build(glb: Path, out: Path) -> dict:
         om.remove_degenerate_triangles()
         n0 = len(om.triangles)
         stray = 0
-        if n0 > TARGET_FACES[kind]:
+        if TARGET_FACES[kind] and n0 > TARGET_FACES[kind]:
             ref = o3d.t.geometry.RaycastingScene()
             ref.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(om))
             om = om.simplify_quadric_decimation(TARGET_FACES[kind])
@@ -337,7 +345,8 @@ def build(glb: Path, out: Path) -> dict:
             "frame": "RMECH (x forward, y right, z down, z 0 = the deck top), metres", "parts": list(PARTS),
             "arm_chain": list(ARM_CHAIN), "arm_axes": list(ARM_AXES), "arm_stow_deg": list(ARM_STOW_DEG), "report": rep,
             "hga": {"az_deg": HGA_AZ_DEG, "tilt_deg": HGA_TILT_DEG, "note": "a neutral pose, not the sol's pointing"},
-            "mast_axis_xy_m": axis_xy, "mast_model_azimuth_deg": 0.0}
+            "mast_axis_xy_m": axis_xy, "mast_model_azimuth_deg": 0.0,
+            "head_nodes_bounds_mech_m": {k: np.round([np.vstack(v).min(0), np.vstack(v).max(0)], 4).tolist() for k, v in head_nodes.items()}}
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out, vertices=V, faces=F, part=P, meta=json.dumps(meta))
     return meta

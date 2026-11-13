@@ -422,6 +422,7 @@ usage: mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--zcam-scale
                       [--photometry] [--no-shadow] [--no-preview] [--no-validate]
 usage: mppp ods       WORK --station ... [--width 16384] [--ipd 0.064] [--cameras N] [--scale 1] [--images ...]
                       [--sky-radius 200] [--pole-merge 30 80] [--pole-merge-down 60 88] [--eyes left right centre]
+                      [--fill-cameras F] [--site-name NAME] [--no-nadir-mark] [--nadir-mark-deg 10]
                       [--rows-per-chunk 128] [--exclude STEM ...] [--stack-top left] [--retone] [--stack-only]
                       [--prefix S003D2046] [--bits 16] [--pds DIR] [--tone soft]
 ```
