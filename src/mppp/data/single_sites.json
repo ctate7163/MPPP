@@ -1,10 +1,14 @@
 {
- "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (rover, masked; the rover shown is the default since 0.96.1, run first), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' / 'mesh_args' / 'depthmaps_args' / 'ods_args' for every station (and per station the same keys); 'ods_args' --bits 16: the panorama from 16-bit linear frames. 0.97.0 (Christian, 12 Nov 2026): run by run_single_site_ibr.bat; 'ods_args' --eyes left right centre adds the panorama from the pivot (<station>[_rover]_ods_centre.png, _centre_16.png) and its depth (_centre_depth.npz, _depth_16.png, _depth_linear.jpg, _depth_log.jpg); the driver gives both variants of a station one <out>/<label>/tone_levels.json so their 16-to-8-bit scaling is the same; the pivot is on the azimuth axis at the Mastcam-Z height (--pivot-height zcam, the default) whatever cameras are rendered. 0.97.7 (Christian, 13 Nov 2026): per station 'name', the site's name in the mark at the panorama's nadir (default: from 'site'); 'ods_args' --fill-cameras F: the station's front Hazcam pair colours the terrain the Navcam frames do not see (under the arm). 0.97.8: 'depthmaps_args' --add-cameras F: the front Hazcam pair also gets its depth and photometric maps. 0.97.11: the centre panorama is no longer rendered (it took a third of the time; --eyes left right centre in 'ods_args' brings it back); the depth from the pivot is still made, from rays alone.",
+ "_doc": "The single-station test sites of mppp.ibr (Christian, 10 Nov 2026: 'We'll use these three as the test sites ... the single sites should come from a config file'). python -m mppp single-sites [LABEL ...] runs them: the dense step in the block, then mesh / depthmaps --photometry / ods into <out>/<label>/ (rover masked out) and <out>/<label>/with_rover/ (rover shown). Per station: 'site' (a site of mppp/data/sites.json; the block is its Navcam WORK folder) or 'work' (a block folder), 'station' (S003D2046 / 3_2046), 'frames' (the dense step's frames: 'images' [names], 'scale' (0.5: the half-resolution frames), 'sequences' [NCAM...]); optional 'variants' (rover, masked; the rover shown is the default since 0.96.1, run first), 'ods_exclude' (frames left out of the panorama, both eyes of a pair: an NLF stem drops its NRF partner), 'mesh_args' / 'depthmaps_args' / 'ods_args' (extra arguments), 'note'. Top level: 'dense_args' / 'mesh_args' / 'depthmaps_args' / 'ods_args' for every station (and per station the same keys); 'ods_args' --bits 16: the panorama from 16-bit linear frames. 0.97.0 (Christian, 12 Nov 2026): run by run_single_site_ibr.bat; 'ods_args' --eyes left right centre adds the panorama from the pivot (<station>[_rover]_ods_centre.png, _centre_16.png) and its depth (_centre_depth.npz, _depth_16.png, _depth_linear.jpg, _depth_log.jpg); the driver gives both variants of a station one <out>/<label>/tone_levels.json so their 16-to-8-bit scaling is the same; the pivot is on the azimuth axis at the Mastcam-Z height (--pivot-height zcam, the default) whatever cameras are rendered. 0.97.7 (Christian, 13 Nov 2026): per station 'name', the site's name in the mark at the panorama's nadir (default: from 'site'); 'ods_args' --fill-cameras F: the station's front Hazcam pair colours the terrain the Navcam frames do not see (under the arm). 0.97.8: 'depthmaps_args' --add-cameras F: the front Hazcam pair also gets its depth and photometric maps. 0.97.11: the centre panorama is no longer rendered (it took a third of the time; --eyes left right centre in 'ods_args' brings it back); the depth from the pivot is still made, from rays alone. 0.97.14 (Christian, 13 Nov 2026): the stations' labels carry the sol of their frames, Sol0052_S003D2046 - the folder <out>/<label>/ and the files' prefix; the dense workspace in the block stays dense_S003D2046, and the old label still selects the station on the command line. 0.97.14: the per-image maps (depthmaps) are made for the terrain-only variant alone ('depthmaps_variants': [\"masked\"]; [\"rover\", \"masked\"] for both) and hold depth and normals; 'photometry': true (top level or per station) adds incidence, emission, phase and shadow.",
  "out": "single_sites",
  "variants": [
   "rover",
   "masked"
  ],
+ "depthmaps_variants": [
+  "masked"
+ ],
+ "photometry": false,
  "dense_args": [
   "--full-fov"
  ],
@@ -15,7 +19,7 @@
   "F"
  ],
  "stations": {
-  "S003D2046": {
+  "Sol0052_S003D2046": {
    "name": "Van Zyl Overlook",
    "site": "van_zyl_overlook_huge",
    "station": "3_2046",
@@ -37,7 +41,7 @@
     ]
    }
   },
-  "S026D0630": {
+  "Sol0461_S026D0630": {
    "name": "Rockytop",
    "site": "rockytop",
    "station": "26_630",
@@ -50,7 +54,7 @@
     "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"
    ]
   },
-  "S032D1184": {
+  "Sol0686_S032D1184": {
    "name": "Three Forks",
    "site": "threeforks_large",
    "station": "32_1184",
@@ -62,7 +66,7 @@
     "NLF_0688_0728029302_791RAD_N0321184NCAM13688_0A0195J01"
    ]
   },
-  "S026D0850": {
+  "Sol0474_S026D0850": {
    "name": "Skinner Ridge",
    "site": "rockytop",
    "station": "26_850",
@@ -71,7 +75,7 @@
     "scale": 0.5
    }
   },
-  "S079D0732": {
+  "Sol1635_S079D0732": {
    "name": "Taylorfjellet",
    "site": "taylorfjellet_large",
    "station": "79_732",
@@ -98,6 +102,34 @@
      "NRF_1635_0812087287_550RAD_N0790732NCAM15635_0A0095J01.png",
      "NLF_1635_0812087496_551RAD_N0790732NCAM15635_0A0095J01.png",
      "NRF_1635_0812087496_551RAD_N0790732NCAM15635_0A0095J01.png"
+    ]
+   }
+  },
+  "Sol1411_S068D0142": {
+   "name": "South Arm",
+   "site": "witch_hazel_large",
+   "station": "68_142",
+   "note": "South Arm, sol 1411: the nine Navcam pairs of station S068D0142 between NLF_1411_0792198225 and NLF_1411_0792200805 (Christian, 13 Nov 2026) - NCAM00709 (full resolution), NCAM03411 x3, NCAM02411 x2, NCAM13411 x3 (half resolution), 28 minutes; names as in the block mars2020_sol_1355_witch_hazel_large. The first pair of that range, NCAM00301 at 0792198225, is at station S068D0040 (before the drive, quarter resolution) and is not in the list: a single-station panorama takes the frames of one station. The front Hazcam pair FHAZ02008 (0792199409) fills under the arm.",
+   "frames": {
+    "images": [
+     "NLF_1411_0792199143_489RAD_N0680142NCAM00709_0A0095J04.png",
+     "NRF_1411_0792199143_489RAD_N0680142NCAM00709_0A1095J02.png",
+     "NLF_1411_0792199777_692RAD_N0680142NCAM03411_0A0195J01.png",
+     "NRF_1411_0792199777_692RAD_N0680142NCAM03411_0A0195J01.png",
+     "NLF_1411_0792199903_722RAD_N0680142NCAM03411_0A0195J01.png",
+     "NRF_1411_0792199903_722RAD_N0680142NCAM03411_0A0195J01.png",
+     "NLF_1411_0792200048_645RAD_N0680142NCAM03411_0A0195J01.png",
+     "NRF_1411_0792200048_645RAD_N0680142NCAM03411_0A0195J01.png",
+     "NLF_1411_0792200254_675RAD_N0680142NCAM02411_0A0195J01.png",
+     "NRF_1411_0792200254_675RAD_N0680142NCAM02411_0A0195J02.png",
+     "NLF_1411_0792200392_758RAD_N0680142NCAM02411_0A0195J01.png",
+     "NRF_1411_0792200392_758RAD_N0680142NCAM02411_0A0195J02.png",
+     "NLF_1411_0792200591_807RAD_N0680142NCAM13411_0A0195J01.png",
+     "NRF_1411_0792200591_807RAD_N0680142NCAM13411_0A0195J01.png",
+     "NLF_1411_0792200719_881RAD_N0680142NCAM13411_0A0195J01.png",
+     "NRF_1411_0792200719_881RAD_N0680142NCAM13411_0A0195J01.png",
+     "NLF_1411_0792200805_817RAD_N0680142NCAM13411_0A0195J01.png",
+     "NRF_1411_0792200805_817RAD_N0680142NCAM13411_0A0195J01.png"
     ]
    }
   }

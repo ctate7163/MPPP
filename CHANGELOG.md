@@ -3,6 +3,24 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.14 — 2026-11-13
+
+- **Station codes carry the sol** (Christian: "Add _Sol{sol, zfill 0}_ to the station codes. So S003D2046 should
+  become Sol0052_S003D2046"): `Sol0052_S003D2046` names a station's products - the folder
+  `single_sites\Sol0052_S003D2046`, the files `Sol0052_S003D2046_rover_360_3DTD.jpg` and so on, `station.json`,
+  the reports. The sol is that of the frames the product is made from (their first). `station.station_code`,
+  `station_key`, `sol_of_frames`; `Station.key` is the place alone (`S003D2046`). `--station` takes either form,
+  and `run_single_site_ibr.bat S003D2046` still selects `Sol0052_S003D2046`.
+  **Not renamed:** the dense workspace in the block (`colmap\dense_S003D2046` - renaming it would run the stereo
+  again), and the station keys of the block records, the selection reports and the calibration data
+  (`project.json`, deck joints, `EXCLUDE` lists): there a station is a place visited on many sols.
+- **Per-image maps for the terrain only, depth and normals only** (Christian): `mppp single-sites` runs
+  `depthmaps` for the terrain-only variant alone and without `--photometry`. In the station list
+  `"depthmaps_variants": ["rover", "masked"]` and `"photometry": true` bring the rest back.
+- **Station list:** the labels renamed (`Sol0052_S003D2046`, `Sol0461_S026D0630`, `Sol0686_S032D1184`,
+  `Sol0474_S026D0850`, `Sol1635_S079D0732`); new **`Sol1411_S068D0142`** (South Arm, sol 1411, block
+  `witch_hazel_large`): the nine Navcam pairs NCAM00709, NCAM03411 x3, NCAM02411 x2, NCAM13411 x3.
+
 ## 0.97.13 — 2026-11-13
 
 **In short.** After the 0.97.12 run at Van Zyl in the headset (Christian): true disparity with a cosine pole merge,

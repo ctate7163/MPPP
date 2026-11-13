@@ -424,7 +424,7 @@ usage: mppp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras
                       [--sky-radius 300] [--no-far-field] [--pole-merge 0 90] [--pole-merge-down 0 90] [--eyes left right centre]
                       [--fill-cameras F] [--site-name NAME] [--no-nadir-mark] [--nadir-mark-deg 20]
                       [--rows-per-chunk 128] [--exclude STEM ...] [--stack-top left] [--retone] [--stack-only]
-                      [--prefix S003D2046] [--bits 16] [--pds DIR] [--tone soft]
+                      [--prefix Sol0052_S003D2046] [--bits 16] [--pds DIR] [--tone soft]
 ```
 
 `--station` is `S026D0392`, `26_392` or `sol:461`.  **`mesh`**: the station's frames by camera family, the mast

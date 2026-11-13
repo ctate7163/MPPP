@@ -41,6 +41,11 @@ unattended).
 and a label per pixel; `photometry/<image>.npz` holds incidence, emission and phase (float16, degrees) and the cast
 shadow (0 unknown, 1 lit, 2 shadow). **These files are the numbers.**
 
+`mppp single-sites` makes the per-image maps for the terrain-only variant alone, and depth and normals only (since
+0.97.14): they were a fifth to a half of a station's run. In the station list `"photometry": true` adds the
+photometric maps and `"depthmaps_variants": ["rover", "masked"]` makes them with the rover shown as well. The
+panoramas do not need the per-image maps.
+
 The shadows are cast by the station mesh and by the rover hardware that is not in it: the mast and its two booms,
 and the camera head turned to where it was when the image was taken (see [Rover model](rover-model.md)). With the
 terrain-only mesh the whole rover model casts shadows. A surface the Sun meets at more than 86 degrees is shadow
@@ -101,7 +106,10 @@ over 1.5 degrees, and equal to the sky sphere's radius at the ground plane's rim
 meet without a step. `ods.json` records it (`far_field`: the share decided, the shares nearest each radius),
 `far_field.npz` holds the field, and the depth products show it. `mppp ods --no-far-field` keeps the one sphere.
 
-Files (the prefix is the station, with `_rover` for the with-rover variant):
+Files (the prefix is the station's code, with `_rover` for the with-rover variant). The code is
+`Sol<sol, 4 digits>_S<site, 3>D<drive, 4>`, for example `Sol0052_S003D2046`: the first sol of the frames the
+panorama is made from, then the rover's site and drive counters. The station's dense workspace in the block keeps
+the place alone (`dense_S003D2046`), and `--station` takes either form.
 
 | file | content |
 |---|---|
@@ -165,7 +173,7 @@ screen, and in a headset: trigger = next station, grip = variant, A or X = view.
 the device can show (maximum texture size, compressed-texture formats).
 
 - On the documentation site: <https://ctate7163.github.io/MPPP/ods/>.
-- To add stations: `mppp single-sites S003D2046 --publish docs/ods --publish-only` copies the stereo JPEGs (reduced
+- To add stations: `mppp single-sites Sol0052_S003D2046 --publish docs/ods --publish-only` copies the stereo JPEGs (reduced
   to 8192) into `docs/ods/panos/` and lists them in `docs/ods/panos.json`; commit and push `docs/ods`.
 - Another image list: `.../ods/?index=URL` (same origin, or a host that allows cross-origin requests).
 

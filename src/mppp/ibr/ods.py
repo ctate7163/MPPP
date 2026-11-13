@@ -1385,7 +1385,7 @@ OLD_NAMES = ("ods_left.png", "ods_right.png", "ods_stereo_square.png", "ods_ster
 
 def ods_prefix(station_label: str, rover: bool = False) -> str:
     """The file-name prefix of a station's panoramas (Christian, 10 Nov: "name the ods with a site and drive
-    prefix"): ``S003D2046`` / ``S003D2046_rover``."""
+    prefix"): ``Sol0052_S003D2046`` / ``Sol0052_S003D2046_rover``."""
     return f"{station_label}_rover" if rover else str(station_label)
 
 
@@ -1501,7 +1501,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    nadir_mark_deg: Optional[float] = None, far_field: Optional[bool] = None) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_360_3DTD.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
-    :func:`ods_prefix` (``S003D2046`` / ``S003D2046_rover``); '' for the bare names.  Returns the record."""
+    :func:`ods_prefix` (``Sol0052_S003D2046`` / ``Sol0052_S003D2046_rover``); '' for the bare names.  Returns the record."""
     import cv2
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)

@@ -65,8 +65,14 @@ def test_parse_station_and_pivot_fit():
     rows = [{"name": "NLF_1.png", "site": 3, "drive": 1234, "sol": 91}, {"name": "ZL0_2.png", "site": 3, "drive": 1234, "sol": 91},
             {"name": "NLF_3.png", "site": 3, "drive": 1300, "sol": 92}]
     label, got = station_images(rows, "sol:91", "N")
-    assert label == "S003D1234" and [r["name"] for r in got] == ["NLF_1.png"]
-    assert station_images(rows, "3_1300")[0] == "S003D1300"
+    assert label == "Sol0091_S003D1234" and [r["name"] for r in got] == ["NLF_1.png"]      # 0.97.14: the sol in the code
+    assert station_images(rows, "3_1300")[0] == "Sol0092_S003D1300"
+    assert station_images(rows, "Sol0052_S003D1300")[0] == "Sol0052_S003D1300"              # a code with its sol keeps it
+    from mppp.ibr.station import station_code, station_key, sol_of_frames
+    assert station_code(3, 2046, 52) == "Sol0052_S003D2046" and station_code(3, 2046) == "S003D2046"
+    assert station_key("Sol0052_S003D2046") == "S003D2046" == station_key("S003D2046")
+    assert parse_station("Sol0052_S003D2046") == (3, 2046, None)
+    assert sol_of_frames(["NLF_0054_1_x.png", "NRF_0052_1_x.png"]) == 52 and sol_of_frames(["x"]) is None
 
 
 # ----------------------------------------------------------------------------- mesh cleanup
@@ -295,11 +301,11 @@ def test_ods_rays_geometry():
 def test_ods_render_colours_each_direction_from_its_frame(tmp_path):
     import cv2
     proj, rec, st, scene, P, colours = _station_scene(tmp_path)
-    assert st.label == "S003D0010" and len(st.images) == 4 and st.pivot_fit["fallback"]   # four frames: the mean centre, flagged
+    assert st.label == "Sol0091_S003D0010" and len(st.images) == 4 and st.pivot_fit["fallback"]   # four frames: the mean centre, flagged
     out = tmp_path / "ods"
     O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
-    L = cv2.imread(str(out / "S003D0010_ods_left.png"))[..., ::-1]
-    Rr = cv2.imread(str(out / "S003D0010_ods_right.png"))[..., ::-1]
+    L = cv2.imread(str(out / "Sol0091_S003D0010_ods_left.png"))[..., ::-1]
+    Rr = cv2.imread(str(out / "Sol0091_S003D0010_ods_right.png"))[..., ::-1]
     assert L.shape == (128, 256, 3) and Rr.shape == L.shape and (out / "provenance.png").is_file()
     # looking north along the horizon (row 64 ~ elevation 0, column 0 azimuth 0): the north frame (red) colours it
     def at(img, az_deg, el_deg):
@@ -318,7 +324,7 @@ def test_ods_render_colours_each_direction_from_its_frame(tmp_path):
     assert at(L, 10.0, 85.0).sum() > 100
     O.render_station(proj, rec, st, scene, tmp_path / "nofill", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32,
                      sky_fill=False)
-    assert np.all(at(cv2.imread(str(tmp_path / "nofill" / "S003D0010_ods_left.png"))[..., ::-1], 10.0, 85.0) == 0)
+    assert np.all(at(cv2.imread(str(tmp_path / "nofill" / "Sol0091_S003D0010_ods_left.png"))[..., ::-1], 10.0, 85.0) == 0)
     rec_json = json.loads((out / "ods.json").read_text(encoding="utf-8"))
     cov = rec_json["eyes"]["left"]["coverage"]
     assert 0.2 < cov["coloured"] < 0.9 and cov["no_surface"] == 0.0 and rec_json["eyes"]["left"]["sources_used"] == 4
@@ -376,14 +382,14 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
 
     work = str(root.parent)
     assert mppp_main(["mesh", work, "--station", "3_10", "--mask-rover", "--poisson-depth", "7", "--target-triangles", "20000", "--no-preview"]) == 0
-    out = root / "ods" / "S003D0010"
+    out = root / "ods" / "Sol0091_S003D0010"
     rep = json.loads((out / "mesh_report.json").read_text(encoding="utf-8"))
     assert (out / "mesh.ply").is_file() and (out / "ground_plane.json").is_file() and rep["points"] == len(pts)
     assert not (out / "far_sphere.ply").exists() and rep["scene"]["beyond"] == "the sky at infinity"
     gp = json.loads((out / "ground_plane.json").read_text(encoding="utf-8"))
     assert gp["method"] == "fit" and gp["tilt_deg"] < 0.5 and abs(gp["offset"]) < 0.05          # the plane z = 0
     assert rep["scene"]["mesh_radius_m"] == 75.0                     # 0.97.0: the mesh to 75 m
-    assert rep["station"]["station"] == "S003D0010" and rep["points_file"].endswith("fused.ply")
+    assert rep["station"]["station"] == "Sol0091_S003D0010" and rep["points_file"].endswith("fused.ply")
     V, F = M.read_mesh(out / "mesh.ply")
     assert len(F) > 1000 and abs(float(np.median(V[:, 2]))) < 0.1                     # the ground plane, near z = 0
     cen, _, _ = M.triangle_geometry(V, F)
@@ -402,8 +408,8 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert ok.any() and np.all(inc[ok] >= 0) and np.all(inc[ok] <= 90)
 
     assert mppp_main(["ods", work, "--station", "3_10", "--mask-rover", "--width", "256", "--scale", "0.25", "--rows-per-chunk", "32"]) == 0
-    L = cv2.imread(str(out / "S003D0010_ods_left.png"))
-    Rr = cv2.imread(str(out / "S003D0010_ods_right.png"))
+    L = cv2.imread(str(out / "Sol0091_S003D0010_ods_left.png"))
+    Rr = cv2.imread(str(out / "Sol0091_S003D0010_ods_right.png"))
     assert L.shape == (128, 256, 3) and Rr.shape == L.shape
     oj = json.loads((out / "ods.json").read_text(encoding="utf-8"))
     assert oj["eyes"]["left"]["coverage"]["coloured"] > 0.2 and oj["eyes"]["left"]["sources_used"] == 4
@@ -418,7 +424,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     pcd2.points = o3d.utility.Vector3dVector(allp)
     pcd2.normals = o3d.utility.Vector3dVector(np.tile([0.0, 0.0, 1.0], (len(allp), 1)))
     o3d.io.write_point_cloud(str(root / "dense" / "fused_rover.ply"), pcd2)
-    outr = root / "ods" / "S003D0010_rover"
+    outr = root / "ods" / "Sol0091_S003D0010_rover"
     assert mppp_main(["mesh", work, "--station", "3_10", "--rover", "--rover-cloud", "--poisson-depth", "8",
                       "--target-triangles", "40000", "--no-preview"]) == 0
     rr = json.loads((outr / "mesh_report.json").read_text(encoding="utf-8"))
@@ -434,16 +440,16 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert rr["fill"]["triangles"] >= 0 and "filled_by_ring" in rr["fill"]
     assert mppp_main(["ods", work, "--station", "3_10", "--rover", "--width", "128", "--scale", "0.25"]) == 0
     assert json.loads((outr / "ods.json").read_text(encoding="utf-8"))["rover"] == "shown"
-    assert (out / "S003D0010_ods_left.png").is_file() and (outr / "S003D0010_rover_ods_left.png").is_file()     # both variants side by side
-    assert not (outr / "S003D0010_ods_left.png").is_file()                                    # 10 Nov: the station prefix
-    sq = cv2.imread(str(out / "S003D0010_360_3DTD.jpg"))                             # left eye on top: a square
-    assert sq.shape == (256, 256, 3) and (out / "S003D0010_360_3DTD.png").is_file()
-    Lp, Rp = cv2.imread(str(out / "S003D0010_ods_left.png")), cv2.imread(str(out / "S003D0010_ods_right.png"))
-    sqp = cv2.imread(str(out / "S003D0010_360_3DTD.png"))
+    assert (out / "Sol0091_S003D0010_ods_left.png").is_file() and (outr / "Sol0091_S003D0010_rover_ods_left.png").is_file()     # both variants side by side
+    assert not (outr / "Sol0091_S003D0010_ods_left.png").is_file()                                    # 10 Nov: the station prefix
+    sq = cv2.imread(str(out / "Sol0091_S003D0010_360_3DTD.jpg"))                             # left eye on top: a square
+    assert sq.shape == (256, 256, 3) and (out / "Sol0091_S003D0010_360_3DTD.png").is_file()
+    Lp, Rp = cv2.imread(str(out / "Sol0091_S003D0010_ods_left.png")), cv2.imread(str(out / "Sol0091_S003D0010_ods_right.png"))
+    sqp = cv2.imread(str(out / "Sol0091_S003D0010_360_3DTD.png"))
     assert np.array_equal(sqp[:128], Lp) and np.array_equal(sqp[128:], Rp)                   # 10 Nov: left on top
-    (out / "S003D0010_360_3DTD.png").unlink()
+    (out / "Sol0091_S003D0010_360_3DTD.png").unlink()
     assert mppp_main(["ods", work, "--station", "3_10", "--mask-rover", "--stack-only", "--stack-top", "right"]) == 0
-    assert np.array_equal(cv2.imread(str(out / "S003D0010_360_3DTD.png"))[:128], Rp)
+    assert np.array_equal(cv2.imread(str(out / "Sol0091_S003D0010_360_3DTD.png"))[:128], Rp)
 
 
 # ----------------------------------------------------------------------------- 9 Nov evening: what the Rockytop run found
@@ -473,8 +479,8 @@ def test_ods_eyes_differ_by_the_parallax_of_the_baseline(tmp_path):
     W = 2048
     out = tmp_path / "ods_tex"
     O.render_station(proj, rec, st, scene, out, width=W, ipd_m=0.064, scale=1.0, rows_per_chunk=128)
-    L = cv2.imread(str(out / "S003D0010_ods_left.png"), cv2.IMREAD_GRAYSCALE).astype(np.float32)
-    Rr = cv2.imread(str(out / "S003D0010_ods_right.png"), cv2.IMREAD_GRAYSCALE).astype(np.float32)
+    L = cv2.imread(str(out / "Sol0091_S003D0010_ods_left.png"), cv2.IMREAD_GRAYSCALE).astype(np.float32)
+    Rr = cv2.imread(str(out / "Sol0091_S003D0010_ods_right.png"), cv2.IMREAD_GRAYSCALE).astype(np.float32)
     H = L.shape[0]
     h_cam = P[2]                                                        # the plane is z = 0
     for el in (-35.0, -25.0):
@@ -519,7 +525,7 @@ def test_dense_subset_prepare_and_fusion_write_fused_ply(tmp_path, monkeypatch):
     rec.write(str(model))
     rows = json.loads((root / "project.json").read_text(encoding="utf-8"))["images"]
     for r in rows:
-        r.update(station="S003D0010", sequence="NCAM00001" if r["name"] < "NLF_3" else "NCAM00002", downsample_scale=1.0)
+        r.update(station="Sol0091_S003D0010", sequence="NCAM00001" if r["name"] < "NLF_3" else "NCAM00002", downsample_scale=1.0)
     proj = SfmProject(root, rows, {}, {}, [0.0, 0.0, 0.0], {"world_frame": "site3_enu"})
     proj.save()
     names = subset_images(proj, station="3_10", families="N", sequences=["NCAM00001"])
@@ -563,7 +569,7 @@ def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
     rec.write(str(root / "gui_native" / "sparse"))
     rows = json.loads((root / "project.json").read_text(encoding="utf-8"))["images"]
     for r in rows:
-        r.update(station="S003D0010", sequence="NCAM00001", downsample_scale=1.0)
+        r.update(station="Sol0091_S003D0010", sequence="NCAM00001", downsample_scale=1.0)
     SfmProject(root, rows, {}, {}, [0.0, 0.0, 0.0], {"world_frame": "site3_enu"}).save()
     calls = []
     monkeypatch.delenv("GPU_PYTHON", raising=False)
@@ -714,8 +720,8 @@ def test_ods_on_the_plane_and_sky_scene_the_sky_has_no_disparity(tmp_path):
     rep = O.render_station(proj, rec, st, scene, out, width=512, ipd_m=0.064, scale=1.0, rows_per_chunk=64)
     cov = rep["eyes"]["left"]["coverage"]
     assert cov["no_surface"] == 0.0 and cov["plane"] > 0.02 and cov["far"] > 0.3 and cov["mesh"] > 0.05
-    L = cv2.imread(str(out / "S003D0010_ods_left.png"), cv2.IMREAD_GRAYSCALE)
-    Rr = cv2.imread(str(out / "S003D0010_ods_right.png"), cv2.IMREAD_GRAYSCALE)
+    L = cv2.imread(str(out / "Sol0091_S003D0010_ods_left.png"), cv2.IMREAD_GRAYSCALE)
+    Rr = cv2.imread(str(out / "Sol0091_S003D0010_ods_right.png"), cv2.IMREAD_GRAYSCALE)
     v = int((90 - 10.0) / 180 * 256)                                            # 10 deg above the horizon: sky, seen
     row_l, row_r = L[v], Rr[v]
     seen = (row_l > 0) & (row_r > 0)
@@ -914,13 +920,13 @@ def test_blend_has_no_seams_between_exposures(tmp_path):
         prof = L[v0:v1].mean(axis=0)
         k = 9                                                                   # average out the 10 cm cells
         return np.convolve(prof, np.ones(k) / k, mode="valid"), L[v0:v1]
-    pg, Lg = band_profile(out_g / "S003D0010_ods_left.png")
-    pn, _ = band_profile(out_n / "S003D0010_ods_left.png")
+    pg, Lg = band_profile(out_g / "Sol0091_S003D0010_ods_left.png")
+    pn, _ = band_profile(out_n / "Sol0091_S003D0010_ods_left.png")
     # the truth: the same frames all at one exposure; the blends against it, column by column (the texture cancels)
     proj1, rec1, st1, scene1 = _ring_station(tmp_path / "same", n=6, darken=1.0)
     O.render_station(proj1, rec1, st1, scene1, tmp_path / "truth", width=720, ipd_m=0.064, scale=1.0, rows_per_chunk=60,
                      eyes=("left",), gains=False)
-    pt, _ = band_profile(tmp_path / "truth" / "S003D0010_ods_left.png")
+    pt, _ = band_profile(tmp_path / "truth" / "Sol0091_S003D0010_ods_left.png")
     qg, qn = pg / pt, pn / pt
     assert qg.min() / qg.max() > 0.95                                           # one level all round
     assert qn.min() / qn.max() < 0.8                                            # the exposures show without gains
@@ -1089,35 +1095,46 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     installed batch file names no version."""
     from mppp.ibr import single_sites as SS
     cfg = SS.load_config()
-    assert set(cfg["stations"]) == {"S003D2046", "S026D0630", "S032D1184", "S026D0850", "S079D0732"}
-    assert len(cfg["stations"]["S003D2046"]["frames"]["images"]) == 12
+    assert set(cfg["stations"]) == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
+                                    "Sol1635_S079D0732", "Sol1411_S068D0142"}
+    assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12
+    sa = cfg["stations"]["Sol1411_S068D0142"]                                 # 0.97.14: South Arm, sol 1411
+    assert sa["site"] == "witch_hazel_large" and sa["station"] == "68_142" and len(sa["frames"]["images"]) == 18
+    assert all("_1411_" in n and "N0680142" in n for n in sa["frames"]["images"])
     root = tmp_path / "rb"
     for f in ("mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop", "mars2020_sol_0413_threeforks_large"):
         (root / f).mkdir(parents=True)
     runs = SS.plan(cfg, root)
     assert [Path(r["work"]).name for r in runs] == ["mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop",
                                                     "mars2020_sol_0413_threeforks_large", "mars2020_sol_0460_rockytop",
-                                                    "mars2020_sol_1601_taylorfjellet_large"]
+                                                    "mars2020_sol_1601_taylorfjellet_large",
+                                                    "mars2020_sol_1355_witch_hazel_large"]
     r0 = runs[0]
     steps = [(c["variant"], c["step"]) for c in r0["commands"]]
-    assert steps == [("masked", "dense"), ("rover", "mesh"), ("rover", "depthmaps"), ("rover", "ods"),
-                     ("masked", "mesh"), ("masked", "depthmaps"), ("masked", "ods")]          # 0.97.0: one fusion, the terrain's
+    assert steps == [("masked", "dense"), ("rover", "mesh"), ("rover", "ods"),             # 0.97.14: the maps for the
+                     ("masked", "mesh"), ("masked", "depthmaps"), ("masked", "ods")]          # terrain only, no photometry
+    assert "--photometry" not in r0["commands"][4]["argv"]
+    both = SS.plan(dict(cfg, depthmaps_variants=["rover", "masked"], photometry=True), root, labels=["S003D2046"])[0]["commands"]
+    assert [c["variant"] for c in both if c["step"] == "depthmaps"] == ["rover", "masked"]
+    assert all("--photometry" in c["argv"] for c in both if c["step"] == "depthmaps")
     dense = r0["commands"][0]["argv"]
     assert dense[:4] == ["dense", r0["work"], "--station", "3_2046"] and dense.count("--images") == 1 and "--stereo" in dense
-    rover_ods = r0["commands"][3]["argv"]
+    rover_ods = r0["commands"][2]["argv"]
     assert "--mask-rover" in r0["commands"][-1]["argv"]
-    assert "--rover" in rover_ods and rover_ods[rover_ods.index("--out") + 1].endswith(str(Path("S003D2046") / "with_rover"))
+    assert "--rover" in rover_ods and rover_ods[rover_ods.index("--out") + 1].endswith(str(Path("Sol0052_S003D2046") / "with_rover"))
     assert rover_ods[-4:] == ["--bits", "16", "--fill-cameras", "F"]   # 0.97.7: the front Hazcams fill in
+    assert rover_ods[rover_ods.index("--prefix") + 1] == "Sol0052_S003D2046_rover"           # 0.97.14: the files' names
     assert rover_ods[rover_ods.index("--site-name") + 1] == "Van Zyl Overlook"              # 0.97.7: for the nadir mark
-    tl = str(root / "single_sites" / "S003D2046" / "tone_levels.json")                     # 0.97.0: one scaling per station
+    tl = str(root / "single_sites" / "Sol0052_S003D2046" / "tone_levels.json")                     # 0.97.0: one scaling per station
     assert rover_ods[rover_ods.index("--tone-levels") + 1] == tl
     assert r0["commands"][-1]["argv"][r0["commands"][-1]["argv"].index("--tone-levels") + 1] == tl
     assert SS.plan(cfg, root, labels=["S026D0630"], steps=["ods"], variants=["masked"])[0]["commands"] == [
         {"variant": "masked", "step": "ods", "argv": ["ods", str(root / "mars2020_sol_0460_rockytop"), "--station", "26_630",
-                                                      "--mask-rover", "--out", str(root / "single_sites" / "S026D0630"),
+                                                      "--mask-rover", "--out", str(root / "single_sites" / "Sol0461_S026D0630"),
                                                       "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
                                                       "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
-                                                      "--tone-levels", str(root / "single_sites" / "S026D0630" / "tone_levels.json"),
+                                                      "--tone-levels", str(root / "single_sites" / "Sol0461_S026D0630" / "tone_levels.json"),
+                                                      "--prefix", "Sol0461_S026D0630",
                                                       "--site-name", "Rockytop", "--bits", "16", "--fill-cameras", "F"]}]
     with pytest.raises(KeyError):
         SS.plan(cfg, root, labels=["S999D9999"])
@@ -1133,18 +1150,18 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
             out.mkdir(parents=True, exist_ok=True)
             (out / "ods.json").write_text(json.dumps({"eyes": {"left": {"coverage": {"mesh": 0.2, "plane": 0.3, "far": 0.5,
                                                                                       "coloured": 0.9}}}}), encoding="utf-8")
-            (out / "S003D0010_360_3DTD.jpg").write_bytes(b"x")
+            (out / "Sol0091_S003D0010_360_3DTD.jpg").write_bytes(b"x")
         return 0
     monkeypatch.setattr(SS, "_run", fake_run)
     rc = SS.run_all(runs, root / "single_sites")
     assert rc == 1                                                                     # one station failed
     rock = [c for c in calls if "26_630" in c]
     assert rock == [runs[1]["commands"][0]["argv"]]                                    # its dense step only
-    assert sum(1 for c in calls if "3_2046" in c) == 7 and sum(1 for c in calls if "32_1184" in c) == 7   # 0.97.0: one fusion
+    assert sum(1 for c in calls if "3_2046" in c) == 6 and sum(1 for c in calls if "32_1184" in c) == 6   # 0.97.14: maps for the terrain only
     summary = (root / "single_sites" / "single_sites_summary.md").read_text(encoding="utf-8")
-    assert summary.count("| S003D2046 |") == 2 and "| S026D0630 | masked | dense 1 |" in summary
+    assert summary.count("| Sol0052_S003D2046 |") == 2 and "| Sol0461_S026D0630 | masked | dense 1 |" in summary
     assert "mesh 20 %, plane 30 %, far 50 %" in summary
-    assert (root / "single_sites" / "S003D2046" / "single_site_log.txt").exists()
+    assert (root / "single_sites" / "Sol0052_S003D2046" / "single_site_log.txt").exists()
     f = SS.install(tmp_path / "inst")
     b = f.read_bytes()
     assert f.name == "run_single_site_ibr.bat" and b"\r\n" in b and b"python -m mppp single-sites %*" in b
@@ -1280,7 +1297,7 @@ def test_exclude_pairs_and_prefix(tmp_path):
     from mppp.ibr.ods import ods_file, ods_prefix, find_prefix, stack_file
     a, b = "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01", "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"
     assert _pair_key(a) == _pair_key(b + ".png") and _pair_key(a) != _pair_key(a.replace("0707875039", "0707875040"))
-    st = SimpleNamespace(label="S026D0630", images=[a + ".png", b + ".png", "NLF_0461_1_x.png", "NRF_0461_1_x.png"])
+    st = SimpleNamespace(label="Sol0461_S026D0630", key="S026D0630", images=[a + ".png", b + ".png", "NLF_0461_1_x.png", "NRF_0461_1_x.png"])
     proj = SimpleNamespace(root=tmp_path)
     got = _frames(proj, st, SimpleNamespace(images=None, sols=None, exclude=[a]))
     assert got == ["NLF_0461_1_x.png", "NRF_0461_1_x.png"]
@@ -1406,8 +1423,8 @@ def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
     out = tmp_path / "o16"
     r = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, bits=16, gains=False, exposure16=0.5)
     assert r["bits"] == 16 and r["linear16"]["rendered"] and not r["linear16"]["missing"]
-    L16 = cv2.imread(str(out / "S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)[..., ::-1]
-    L8 = cv2.imread(str(out / "S003D0010_ods_left.png"))[..., ::-1]
+    L16 = cv2.imread(str(out / "Sol0091_S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)[..., ::-1]
+    L8 = cv2.imread(str(out / "Sol0091_S003D0010_ods_left.png"))[..., ::-1]
     assert L16.dtype == np.uint16 and L16.shape == (128, 256, 3) and L8.dtype == np.uint8
     east = L16[70, 64]                                            # az 90: the green frame, 255 x 3 x 64, at exposure 0.5
     assert abs(int(east[1]) - 255 * 3 * 32) < 300 and east[0] < 300 and r["eyes"]["left"]["above_8bit_range"] > 0.2
@@ -1419,15 +1436,15 @@ def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
     assert (np.abs(north[:, 0].astype(int) - north[:, 1].astype(int)) < 300).any() and (north[:, 1] < 300).any()
     r2 = O.render_station(proj, rec, st, scene, tmp_path / "o16b", width=128, scale=0.5, rows_per_chunk=32, bits=16, gains=False,
                           exposure16=1.0, tone="clip", eyes=("left",))
-    e2 = cv2.imread(str(tmp_path / "o16b" / "S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)[35, 32]
+    e2 = cv2.imread(str(tmp_path / "o16b" / "Sol0091_S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)[35, 32]
     assert abs(int(e2[1]) - 255 * 3 * 64) < 300 and r2["linear16"]["view_levels_8bit_units"] is None
-    sq = cv2.imread(str(out / "S003D0010_360_3DTD_16.png"), cv2.IMREAD_UNCHANGED)
+    sq = cv2.imread(str(out / "Sol0091_S003D0010_360_3DTD_16.png"), cv2.IMREAD_UNCHANGED)
     assert sq.dtype == np.uint16 and sq.shape == (256, 256, 3) and np.array_equal(sq[:128], L16[..., ::-1])
-    assert (out / "S003D0010_360_3DTD.jpg").is_file()
+    assert (out / "Sol0091_S003D0010_360_3DTD.jpg").is_file()
     # a frame without its 16-bit image: the 8-bit panorama, and the record says so
     (d16 / st.images[1]).unlink()
     r8 = O.render_station(proj, rec, st, scene, tmp_path / "o8", width=128, scale=0.5, rows_per_chunk=32, bits=16, gains=False)
-    assert r8["bits"] == 8 and r8["linear16"]["missing"] and not (tmp_path / "o8" / "S003D0010_ods_left_16.png").is_file()
+    assert r8["bits"] == 8 and r8["linear16"]["missing"] and not (tmp_path / "o8" / "Sol0091_S003D0010_ods_left_16.png").is_file()
 
 
 def test_ground_fill_and_levels():
@@ -1919,7 +1936,7 @@ def test_single_sites_skips_steps_that_are_up_to_date(tmp_path, monkeypatch):
     monkeypatch.setattr(S, "_run", fake)
     out = tmp_path / "o"
     runs = S.plan(cfg, tmp_path, out)
-    assert S.run_all(runs, out) == 0 and len(ran) == 7                     # dense + 2 x (mesh, depthmaps, ods)
+    assert S.run_all(runs, out) == 0 and len(ran) == 6                     # dense + 2 x (mesh, ods) + the terrain's depthmaps
     ran.clear()
     assert S.run_all(S.plan(cfg, tmp_path, out), out) == 0 and ran == [("dense", False)]      # dense has its own cache
     st = json.loads((out / S.STATUS_FILE).read_text())
@@ -1931,10 +1948,10 @@ def test_single_sites_skips_steps_that_are_up_to_date(tmp_path, monkeypatch):
     ran.clear()
     cfg["mesh_args"] = ["--mesh-radius", "60"]                             # a changed mesh: everything after it too
     S.run_all(S.plan(cfg, tmp_path, out), out)
-    assert [r[0] for r in ran] == ["dense", "mesh", "depthmaps", "ods", "mesh", "depthmaps", "ods"]
+    assert [r[0] for r in ran] == ["dense", "mesh", "ods", "mesh", "depthmaps", "ods"]
     ran.clear()
     S.run_all(S.plan(cfg, tmp_path, out), out, force=True)
-    assert len(ran) == 7
+    assert len(ran) == 6
     assert b"MPPP_NO_PAUSE" in S.BAT.encode() and "exit /b !RC!" in S.BAT
 
 
@@ -2279,9 +2296,9 @@ def test_depth_without_the_centre_panorama_and_fill_frames_within_two_hours(tmp_
            "FLF_0100_0700001000_000RAD_N0030010FHAZ00200_0A0195J01.png": False}      # in time, but without a pose
     rows = [{"name": n, "site": 3, "drive": 10, "sol": 100} for n in own + list(haz)]
     fake_rec = NS(images={i: NS(name=n, has_pose=haz.get(n, True)) for i, n in enumerate(own + list(haz))})
-    got = O.fill_frames(NS(images=rows), fake_rec, NS(label="S003D0010"), "F", own)
+    got = O.fill_frames(NS(images=rows), fake_rec, NS(label="Sol0091_S003D0010"), "F", own)
     assert got == [n for n in haz if "0700003000" in n] and O.FILL_WITHIN_S == 7200.0
-    assert O.fill_frames(NS(images=rows), fake_rec, NS(label="S003D0010"), "", own) == []
+    assert O.fill_frames(NS(images=rows), fake_rec, NS(label="Sol0091_S003D0010"), "", own) == []
 
 
 def test_far_field_takes_the_radius_at_which_the_frames_agree(tmp_path):
@@ -2397,8 +2414,8 @@ def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
     proj, rec, st, scene, Pp, colours = _station_scene(tmp_path)
     rep = O.render_station(proj, rec, st, scene, tmp_path / "ods_mark", width=1024, ipd_m=0.064, scale=1.0, rows_per_chunk=64)
     assert abs(rep["nadir_mark"]["depth_below_pivot_m"] - Pp[2]) < 0.05       # the plane z = 0 under the pivot
-    L = cv2.imread(str(tmp_path / "ods_mark" / "S003D0010_ods_left.png"))
-    Rr = cv2.imread(str(tmp_path / "ods_mark" / "S003D0010_ods_right.png"))
+    L = cv2.imread(str(tmp_path / "ods_mark" / "Sol0091_S003D0010_ods_left.png"))
+    Rr = cv2.imread(str(tmp_path / "ods_mark" / "Sol0091_S003D0010_ods_right.png"))
     band = slice(rep["nadir_mark"]["first_row"], None)
     assert (L[band] != Rr[band]).any(axis=2).mean() > 0.001                  # the text is shifted between the eyes
 

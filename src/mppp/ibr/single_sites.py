@@ -2,10 +2,10 @@
 mppp.ibr.single_sites - the single-station test sites, from a config file (``mppp/data/single_sites.json``).
 
 Christian, 10 Nov 2026: "We'll use these three as the test sites. organize the outputs in
-D:\\rover_blocks\\single_sites\\S003D2046 and so forth" - "the single sites should come from a config file".
+D:\\rover_blocks\\single_sites\\Sol0052_S003D2046 and so forth" - "the single sites should come from a config file".
 
     python -m mppp single-sites                        every station of the config
-    python -m mppp single-sites S003D2046 S032D1184    those
+    python -m mppp single-sites Sol0052_S003D2046 Sol0686_S032D1184    those
     python -m mppp single-sites --steps ods            only the panoramas (mesh and maps already there)
     python -m mppp single-sites --squares-only         only stack the eye images already there into the squares
     python -m mppp single-sites --list | --dry-run     what would run
@@ -33,7 +33,9 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 PathLike = Union[str, Path]
 CONFIG = Path(__file__).resolve().parents[1] / "data" / "single_sites.json"
 VARIANTS = ("masked", "rover")
+from .station import station_key
 STEPS = ("dense", "mesh", "depthmaps", "ods")
+DEPTHMAPS_VARIANTS = ("masked",)     # 0.97.14: the per-image maps for the terrain only (config: "depthmaps_variants")
 BAT_NAME = "run_single_site_ibr.bat"          # 0.97.0 (Christian, 12 Nov): was update_and_run_single_sites.bat
 OLD_BAT_NAME = "update_and_run_single_sites.bat"
 TONE_FILE = "tone_levels.json"                 # one per station, shared by its rover-shown and rover-masked panoramas
@@ -47,7 +49,7 @@ REM    0.97.0: the Perseverance model in the rover mesh, the panorama blended in
 REM    station for the rover-shown and rover-masked versions (<station>\tone_levels.json), the per-image pictures as
 REM    jpg in photometry_jpg (rad, depth linear / log, normal, incidence, emission, phase, shadow), a centre panorama
 REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
-REM    examples:  run_single_site_ibr.bat S003D2046            one station
+REM    examples:  run_single_site_ibr.bat Sol0052_S003D2046            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
 REM set MPPP_NO_PAUSE=1 before it: no pause at the end, and the exit code is the run's (for unattended chains)
@@ -141,7 +143,13 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
     ``python -m mppp``), grouped by variant."""
     root = Path(root)
     out_root = Path(out_root) if out_root else root / cfg.get("out", "single_sites")
-    todo = list(labels) if labels else list(cfg["stations"])
+    from .station import station_key
+    by_key: Dict[str, List[str]] = {}                           # 0.97.14: Sol0052_S003D2046 still names Sol0052_Sol0052_S003D2046
+    for lab in cfg["stations"]:
+        by_key.setdefault(station_key(lab).upper(), []).append(lab)
+    todo = []
+    for lab in (list(labels) if labels else list(cfg["stations"])):
+        todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), [lab])
     unknown = [lab for lab in todo if lab not in cfg["stations"]]
     if unknown:
         raise KeyError(f"not in the config: {unknown} (there: {sorted(cfg['stations'])})")
@@ -172,11 +180,19 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     first = vs[0]                                               # by the variant that runs first
                     argv += ["--terrain-from", str(base if first == "masked" else base / "with_rover")]
                 if step == "depthmaps":
-                    argv.append("--photometry")
+                    # 0.97.14 (Christian, 13 Nov 2026: "Maps for one variant only. Only run for the terrain. render
+                    # depth and normals without photometry products by default"): the per-image maps took a fifth
+                    # (Van Zyl) to a half (Taylorfjellet, full-resolution frames) of a station's run
+                    if v not in (st.get("depthmaps_variants") or cfg.get("depthmaps_variants") or DEPTHMAPS_VARIANTS):
+                        continue
+                    if st.get("photometry", cfg.get("photometry", False)):
+                        argv.append("--photometry")
                 if step == "ods" and st.get("ods_exclude"):   # 10 Nov: pairs left out of the panorama
                     argv += ["--exclude", *[str(x) for x in st["ods_exclude"]]]
                 if step == "ods":                    # 0.97.0: one 16-to-8-bit scaling for both variants of a station
                     argv += ["--tone-levels", str(base / TONE_FILE)]
+                    from .ods import ods_prefix          # 0.97.14: the files carry the station's code of the list
+                    argv += ["--prefix", ods_prefix(lab, rover=v == "rover")]
                     from .nadir import site_name         # 0.97.7: the site's name for the mark at the nadir
                     nm = st.get("name") or site_name(st.get("site"))
                     if nm:
@@ -348,7 +364,7 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                     if step == "dense":                    # its own cache (mppp dense: stereo and fusion records)
                         rc = _run(c["argv"], fh)
                     else:
-                        clouds = sorted((work_ / "colmap").glob(f"dense_{run['label']}*/fused.ply")) if step == "mesh" else []
+                        clouds = sorted((work_ / "colmap").glob(f"dense_{station_key(run['label'])}*/fused.ply")) if step == "mesh" else []
                         tf = c["argv"][c["argv"].index("--terrain-from") + 1] if "--terrain-from" in c["argv"] else None
                         before = keys.get(v, "") + (json.dumps(_read(step_record(tf, "mesh")).get("key")) if tf else "")
                         if step == "ods":                  # the second variant uses the first one's levels
@@ -382,7 +398,7 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                         print(f"######## {run['label']} {v}: {c['step']} failed (exit {rc}) - the rest of this variant skipped")
         work = Path(run["work"])
         for name, dst in (("mppp_dense.json", "dense_workspace.json"), ("mppp_dense_run.json", "dense_run.json")):
-            for f in sorted((work / "colmap").glob(f"dense_{run['label']}*/{name}")):
+            for f in sorted((work / "colmap").glob(f"dense_{station_key(run['label'])}*/{name}")):
                 shutil.copy2(f, base / dst)
         for v in run["variants"]:
             bad += any(codes[v].values())

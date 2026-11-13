@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import logging
 import sys
 from pathlib import Path
@@ -49,7 +50,12 @@ def _station(project, rec, a):
     _rover(a)
     st = select_station(project, rec, a.station, families=getattr(a, "cameras", "N") or "N",
                         pivot_height=getattr(a, "pivot_height", None) or "zcam")
-    if getattr(a, "out", None):                      # 10 Nov: e.g. D:\rover_blocks\single_sites\S003D2046[\with_rover]
+    if not re.match(r"sol\d+_", str(a.station).strip(), re.I):   # 0.97.14: the code carries the sol of the frames used
+        from .station import sol_of_frames, station_code       # (--station Sol0052_S003D2046 names it outright)
+        sol = sol_of_frames(_frames(project, st, a) or [])
+        if sol is not None:
+            st.label = station_code(st.site, st.drive, sol)
+    if getattr(a, "out", None):                      # e.g. D:\rover_blocks\single_sites\Sol0052_S003D2046[\with_rover]
         out = Path(a.out)
     else:
         out = Path(project.root) / "ods" / (st.label + ("_rover" if getattr(a, "rover", False) else ""))
@@ -73,7 +79,7 @@ def _frames(project, st, a) -> Optional[list]:
     ``--sols``."""
     names = list(a.images) if getattr(a, "images", None) else None
     if names is None:
-        recs = sorted(Path(project.root).glob(f"dense_{st.label}*/mppp_dense.json"), key=lambda f: f.stat().st_mtime)
+        recs = sorted(Path(project.root).glob(f"dense_{st.key}*/mppp_dense.json"), key=lambda f: f.stat().st_mtime)
         if recs:
             sub = json.loads(recs[-1].read_text(encoding="utf-8")).get("subset") or []
             have = set(st.images)
@@ -134,7 +140,7 @@ def add_parsers(sub) -> None:
     p = sub.add_parser("mesh", help="0.96: the surface of one station of a finished block: a clean mesh to 30 m from the mast "
                        "axis, the ground plane to 100 m, the sky at infinity (mppp.ibr.mesh)")
     p.add_argument("work")
-    p.add_argument("--station", required=True, help="S003D1234 / 3_1234 / sol:91")
+    p.add_argument("--station", required=True, help="S003D1234 / Sol0052_S003D1234 / 3_1234 / sol:91")
     p.add_argument("--points", default=None, help="the fused dense cloud (default <project>/dense*/fused.ply, the newest)")
     p.add_argument("--colmap", default=None, help="the COLMAP executable: Delaunay over --dense-dir instead of Poisson")
     p.add_argument("--dense-dir", default=None, help="the dense workspace of the Delaunay mesher (default: --points' folder)")
@@ -160,7 +166,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--cameras", default="N", help="the station's frames for the pivot (default N)")
     p.add_argument("--no-preview", action="store_true")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
-                   "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
+                   "D:\\rover_blocks\\single_sites\\Sol0052_S003D2046; use the same --out for mesh, depthmaps and ods")
     _rover_args(p)
     p.add_argument("--keep-floating", action="store_true", help="keep surface floating above the terrain (default, "
                    "0.96.1: removed - anything above the cameras, and beyond 3 m of the mast axis anything less than "
@@ -199,7 +205,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--no-preview", action="store_true")
     p.add_argument("--no-validate", action="store_true")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
-                   "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
+                   "D:\\rover_blocks\\single_sites\\Sol0052_S003D2046; use the same --out for mesh, depthmaps and ods")
     _rover_args(p)
     p = sub.add_parser("ods", help="0.96: the stereoscopic panorama of the station - two equirect eye images (mppp.ibr.ods)")
     p.add_argument("work")
@@ -256,8 +262,8 @@ def add_parsers(sub) -> None:
                    "the frames (default: masked - the rover model's mast projected into every frame)")
     p.add_argument("--no-ground-fill", action="store_true", help="leave black what no frame coloured below the horizon "
                    "(default: filled as plain terrain from the terrain around it - under the rover, behind the arm)")
-    p.add_argument("--prefix", default=None, help="the panoramas' file-name prefix (default the station, S003D2046_ / "
-                   "S003D2046_rover_: S003D2046_ods_left.png ...; '' for the bare ods_left.png)")
+    p.add_argument("--prefix", default=None, help="the panoramas' file-name prefix (default the station, Sol0052_S003D2046_ / "
+                   "Sol0052_S003D2046_rover_: Sol0052_S003D2046_ods_left.png ...; '' for the bare ods_left.png)")
     p.add_argument("--rows-per-chunk", type=int, default=128)
     p.add_argument("--eyes", nargs="+", default=["left", "right"], choices=["left", "right", "centre"])
     p.add_argument("--no-gains", action="store_true", help="no gain compensation between the source frames")
@@ -284,7 +290,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--stack-only", action="store_true", help="only stack the eye images already in the folder into "
                    "360_3DTD.png / .jpg (no rendering)")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
-                   "D:\\rover_blocks\\single_sites\\S003D2046; use the same --out for mesh, depthmaps and ods")
+                   "D:\\rover_blocks\\single_sites\\Sol0052_S003D2046; use the same --out for mesh, depthmaps and ods")
     _rover_args(p)
 
 
@@ -372,11 +378,11 @@ def cmd_mesh(a: argparse.Namespace) -> int:
     # the rover-shown mesh is the terrain of the rover-masked cloud with the Perseverance model set on it;
     # --rover-cloud: the 0.96 way, the mesh from the cloud fused with the rover in it
     old_way = bool(a.rover and getattr(a, "rover_cloud", False))
-    pts_file = _points_file(project, a.points, st.label, rover=old_way)
+    pts_file = _points_file(project, a.points, st.key, rover=old_way)
     terrain = None
     if old_way:                                   # the plane from the terrain alone, not the deck
         try:
-            terrain = read_points(_points_file(project, None, st.label))
+            terrain = read_points(_points_file(project, None, st.key))
         except FileNotFoundError:
             log.warning("mesh --rover: no rover-masked fused.ply; the plane is fitted to the cloud with the rover in it")
     deck, pose = None, None

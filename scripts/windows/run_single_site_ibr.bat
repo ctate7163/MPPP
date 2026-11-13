@@ -7,7 +7,7 @@ REM    0.97.0: the Perseverance model in the rover mesh, the panorama blended in
 REM    station for the rover-shown and rover-masked versions (<station>\tone_levels.json), the per-image pictures as
 REM    jpg in photometry_jpg (rad, depth linear / log, normal, incidence, emission, phase, shadow), a centre panorama
 REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
-REM    examples:  run_single_site_ibr.bat S003D2046            one station
+REM    examples:  run_single_site_ibr.bat Sol0052_S003D2046            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
 REM set MPPP_NO_PAUSE=1 before it: no pause at the end, and the exit code is the run's (for unattended chains)

@@ -29,7 +29,7 @@ MIN_AZIMUTH_SPREAD_DEG = 60.0   # less: the pivot is poorly determined along the
 @dataclass
 class Station:
     """One station: its label, the names of its images, the pivot fit and the ENU axes in the block frame."""
-    label: str                                  # S003D1234
+    label: str                                  # Sol0052_S003D2046 (0.97.14; S003D2046 before): the products' name
     site: int
     drive: int
     sols: List[int]
@@ -41,8 +41,14 @@ class Station:
     north: np.ndarray = field(default_factory=lambda: np.array([0.0, 1.0, 0.0]))
     east: np.ndarray = field(default_factory=lambda: np.array([1.0, 0.0, 0.0]))
 
+    @property
+    def key(self) -> str:
+        """``S003D2046``: the place alone (site and drive), whatever the sol - the name of the station's dense
+        workspace and its key in the block's records."""
+        return f"S{self.site:03d}D{self.drive:04d}"
+
     def to_json(self) -> Dict[str, Any]:
-        return {"station": self.label, "site": self.site, "drive": self.drive, "sols": self.sols, "n_images": len(self.images),
+        return {"station": self.label, "key": self.key, "site": self.site, "drive": self.drive, "sols": self.sols, "n_images": len(self.images),
                 "images": self.images, "pivot_block_m": [float(v) for v in self.pivot], "pivot_fit": self.pivot_fit,
                 "R_block_from_enu": None if self.R_block_from_enu is None else np.asarray(self.R_block_from_enu).tolist(),
                 "up_block": [float(v) for v in self.up], "north_block": [float(v) for v in self.north],
@@ -84,9 +90,29 @@ def mastcamz_height_pivot(pivot: np.ndarray, centres: np.ndarray, rotations: np.
                  "moved_up_m": float((new - P) @ u), "zcam_above_elevation_axis_m": ZCAM_HEIGHT_M}
 
 
+def station_code(site: int, drive: int, sol: Optional[int] = None) -> str:
+    """The station's code in product names (0.97.14; Christian, 13 Nov 2026: "Add _Sol{sol, zfill 0}_ to the station
+    codes. So S003D2046 should become Sol0052_S003D2046"): ``Sol0052_S003D2046`` - the sol of the frames the
+    product is made from (their first), then the site and the drive.  Without a sol: ``S003D2046``."""
+    key = f"S{int(site):03d}D{int(drive):04d}"
+    return key if sol is None else f"Sol{int(sol):04d}_{key}"
+
+
+def station_key(code: str) -> str:
+    """``Sol0052_S003D2046`` -> ``S003D2046`` (a code without the sol is returned as it is)."""
+    return re.sub(r"^sol\d+_", "", str(code).strip(), flags=re.I)
+
+
+def sol_of_frames(names: Sequence[str]) -> Optional[int]:
+    """The first sol among the frame names (``NLF_0052_...``); None when no name carries one."""
+    sols = [int(str(n)[4:8]) for n in names if len(str(n)) > 8 and str(n)[4:8].isdigit()]
+    return min(sols) if sols else None
+
+
 def parse_station(spec: str) -> Tuple[Optional[int], Optional[int], Optional[int]]:
-    """``S003D1234`` / ``3_1234`` / ``3/1234`` -> (site, drive, None); ``sol:91`` -> (None, None, 91)."""
-    s = str(spec).strip()
+    """``S003D1234`` / ``Sol0052_S003D1234`` / ``3_1234`` / ``3/1234`` -> (site, drive, None); ``sol:91`` ->
+    (None, None, 91).  The sol of a ``Sol...`` code names the product; the station is the site and the drive."""
+    s = station_key(spec)
     m = re.fullmatch(r"sol:(\d+)", s, re.I)
     if m:
         return None, None, int(m.group(1))
@@ -115,7 +141,9 @@ def station_images(rows: Sequence[Dict[str, Any]], spec: str, families: Optional
         out = [r for r in out if str(r.get("name", ""))[:1].upper() in fams]
     if not out:
         raise ValueError(f"no frame at station {label} in the block")
-    return label, out
+    sols = [int(r["sol"]) for r in out if r.get("sol") is not None]
+    m = re.match(r"sol(\d+)_", str(spec).strip(), re.I)             # a code with its sol keeps it
+    return station_code(site, drive, int(m.group(1)) if m else (min(sols) if sols else None)), out
 
 
 def _group_of(name: str, row: Optional[Dict[str, Any]] = None) -> str:
