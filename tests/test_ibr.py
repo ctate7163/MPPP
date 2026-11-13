@@ -2090,7 +2090,7 @@ def test_nadir_mark_lines_credit_and_disc():
     assert nadir.credit(nav) == "NASA/JPL-Caltech/MSSS" and nadir.credit(nav + ["ZL0_0464_x.png"]) == "NASA/JPL-Caltech/MSSS/ASU"
     assert nadir.site_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and nadir.site_name(None) is None
     lines = nadir.mark_lines(nav, "Rockytop")
-    assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "made by C. Tate", "Image credit: NASA/JPL-Caltech/MSSS"]
+    assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "Image credit: NASA/JPL-Caltech/MSSS", "made by C. Tate"]
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sols 686, 688"
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"])[1] == "Sols 686-687"
     W, H = 4096, 2048

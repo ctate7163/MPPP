@@ -3,6 +3,11 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.16 — 2026-11-13
+
+- **Nadir mark:** the second row reads "Image credit: NASA/JPL-Caltech/MSSS   -   made by C. Tate" (the author was
+  before the credit).
+
 ## 0.97.15 — 2026-11-13
 
 - **Hazcam white balance** (Christian: "I believe the Hazcam white balance. multiply those values by the white

@@ -153,9 +153,9 @@ none); the constants are at the top of `mppp/ibr/ods.py`, and `ods.json` records
 
 Within 20 degrees of straight down the panorama shows no terrain worth keeping (the mast, or filled-in ground). A
 light blue disc there carries two rows of black text near its rim, each over at most half the circle and centred on
-the rover's front: "Mars 2020 Perseverance Rover" with the sol and the site, and "made by C. Tate" with the image
-credit (NASA/JPL-Caltech/MSSS for Navcam and Hazcam frames; NASA/JPL-Caltech/MSSS/ASU when Mastcam-Z frames are
-in). In the flat image they are two straight lines along the bottom; in a headset, facing the rover's front and
+the rover's front: "Mars 2020 Perseverance Rover" with the sol and the site, and the image credit
+(NASA/JPL-Caltech/MSSS for Navcam and Hazcam frames; NASA/JPL-Caltech/MSSS/ASU when Mastcam-Z frames are in)
+followed by "made by C. Tate". In the flat image they are two straight lines along the bottom; in a headset, facing the rover's front and
 looking down, they are two arcs ahead of you, upright. The letters are made about twice too wide in the flat image,
 which leaves them about twice too narrow in the headset: the strip is stretched 3 to 4 times there, and no letter
 can have its own shape in both. The first row is 1.6 times as tall as the second. The disc lies on the surface

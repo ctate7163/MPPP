@@ -62,12 +62,13 @@ def site_name(site_key: Optional[str]) -> Optional[str]:
 
 
 def mark_lines(names: Sequence[str], site: Optional[str] = None, sols: Optional[Sequence[int]] = None) -> List[str]:
-    """The four lines: the rover, sol and site, the author, the image credit."""
+    """The four lines: the rover, sol and site, the image credit, the author (0.97.16; Christian, 13 Nov 2026: "put
+    'made by C. Tate' after the 'image credit: NASA/JPL...'" - the author was before the credit)."""
     s = sorted({int(x) for x in sols}) if sols else sols_of(names)
     sol = "" if not s else (f"Sol {s[0]}" if len(s) == 1 else f"Sols {s[0]}-{s[-1]}" if s[-1] - s[0] == len(s) - 1
                             else "Sols " + ", ".join(str(x) for x in s))
     where = " - ".join(x for x in (sol, site) if x)
-    return [x for x in (TITLE, where, AUTHOR, f"Image credit: {credit(names)}") if x]
+    return [x for x in (TITLE, where, f"Image credit: {credit(names)}", AUTHOR) if x]
 
 
 def _font(size: int):
