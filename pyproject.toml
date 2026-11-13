@@ -54,7 +54,7 @@ where = ["src"]
 include = ["mppp*"]
 
 [tool.setuptools.package-data]
-mppp = ["data/*.json", "data/*.csv", "data/*.txt", "data/cmods/*.json", "data/cmods/*.md", "data/rover/*.npz"]
+mppp = ["data/*.json", "data/*.csv", "data/*.txt", "data/cmods/*.json", "data/cmods/*.md", "data/rover/*.npz", "data/rover/*.md"]
 mppp_studies = ["validation/*.json", "calibration/data/*.json"]
 
 [project.scripts]

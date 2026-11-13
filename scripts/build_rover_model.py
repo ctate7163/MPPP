@@ -6,17 +6,20 @@ and project the images onto it. The arm is stowed, so you would need to rotate t
 
     python scripts/build_rover_model.py 25042_Perseverance.glb [--out FILE]
 
+The changes to NASA's model are described for users in docs/rover-model.md; the numbers are the constants below.
+
 * Frame: the model is in metres, x left, y up, z forward, the wheels on y = 0; RMECH (x forward, y right, z down,
-  z 0 = the deck top) is x = z_model, y = -x_model, z = 1.135 - y_model, then the small rigid correction of an ICP of
-  the Van Zyl S003D2046 rover cloud onto the body (0.12 deg, 2-3 mm; 60 % of the cloud within 3 cm of the body).
+  z 0 = the deck top) is x = z_model, y = -x_model, z = 1.135 - y_model, then the rigid fit of seven fiducial discs
+  of the model's deck to their surveyed positions (2.2 mm rms; before 0.97.0 an ICP of the Van Zyl rover cloud).
 * Left out: the mast above its base and the head (they turn with the cameras), the parts under the belly.
 * The high-gain antenna (0.97.0): the part "antenna", in one neutral pose (HGA_AZ_DEG, HGA_TILT_DEG) - it points
   differently every sol, and the model does not follow it.
 * The arm: the chain arm.003 (shoulder azimuth, about its local y) - arm.002 (shoulder elevation, local z) - arm
-  (elbow, z) - arm.004 (wrist, z) - turret_obj (turret, y), turned from the model's deployed pose by ARM_STOW_DEG, the
-  fit of the five angles to the Van Zyl cloud of the stowed arm (78 % of the arm's cloud within 2 cm of it, 94 %
-  within 5 cm; the turret's own angle is the least certain).
+  (elbow, z) - arm.004 (wrist, z) - turret_obj (turret, y), turned from the model's deployed pose to the stow pose
+  of the image labels' arm resolver angles (ARM_LABEL_STOW_DEG through ARM_LABEL_SIGN and ARM_LABEL_OFFSET_DEG).
+* The UHF antenna can: its wall raised to the real rim and the domed cap replaced by a flat floor (UHF_CAN_*).
 * Simplified per part by quadric decimation (TARGET_FACES).
+* scripts/export_rover_glb.py writes the result as docs/rover/perseverance_rmech.glb for use outside MPPP.
 """
 import argparse
 import json

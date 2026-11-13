@@ -35,6 +35,12 @@ They need open3d in the Python that runs mppp (the base Python): `python -m pip 
 first release with a Windows wheel for Python 3.13). The dense step before them runs its patch-match in the CUDA
 python (`mppp_gpu`) by itself.
 
+`scripts\windows\run_single_site_ibr.bat [STATION ...]` updates `D:\code\MPPP` from the newest `mppp_*.bundle` in
+`D:\rover_blocks\_transfer` and runs `mppp single-sites` (dense, mesh, depth maps, panorama; both variants) into
+`D:\rover_blocks\single_sites`. Steps that are up to date are skipped; `single_sites_status.json` there says what is
+running. `set MPPP_NO_PAUSE=1` first for an unattended run. `--publish D:\code\MPPP\docs\ods --publish-only` puts the
+stereo JPEGs where the web viewer reads them (see [Station products](station-products.md)).
+
 ## Site maps: `scripts\windows\make_maps.bat`
 
 Double-click it (or `make_maps.bat dtm 300`, `make_maps.bat ortho`, `make_maps.bat both 450`): the six M20 site-map

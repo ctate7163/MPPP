@@ -3,6 +3,27 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.6 — 2026-11-13
+
+**In short.** The documentation brought up to date; the rover model hosted for other users, with its NASA credit.
+No change to any result.
+
+- **New pages:** `docs/station-products.md` (the station mesh, the maps, the panorama, its files, the eye-separation
+  rules, the web viewer and how to publish to it) and `docs/rover-model.md` (source and credit, what MPPP changed,
+  how the label joint angles give the articulation, what is not done). Both in the site navigation; the README has a
+  section that links the viewer, <https://ctate7163.github.io/MPPP/ods/>.
+- **The rover model for others:** `docs/rover/perseverance_rmech.glb` (one mesh per part, RMECH, metres;
+  `scripts/export_rover_glb.py` writes it from the packaged `.npz`). `NOTICE`, the README and
+  `src/mppp/data/rover/README.md` (now in the wheel) credit NASA/JPL-Caltech and say the model was modified.
+  `NOTICE` also names three.js (MIT), which the viewer page includes.
+- **Corrected statements.** README, `docs/index.md`, `docs/calibration.md`, the cmods README: the Navcam rig has a
+  knee in pitch (not a linear drift); Hazcam models ship since 0.94 (not "not promoted yet"); Mastcam-Z models ship
+  for 34, 63 and 110 mm (not 34 mm only). `docs/cli.md`: the defaults of today (mesh 75 m, plane and sky sphere
+  200 m, 16384 px), the options added since 0.97.0, no more "the viewer is future work". `docs/roadmap.md` rewritten.
+- **Help texts** of `mppp mesh --mesh-radius`, `--plane-radius`, `mppp ods --sky-radius`, `--pole-merge-down` and
+  `mppp single-sites --width` said the old defaults; the docstrings of `mppp.ibr.rover_model` and
+  `scripts/build_rover_model.py` described the placement and arm fit of 0.96.1.
+
 ## 0.97.5 — 2026-11-13
 
 **In short.** Flat ground when looking down, less strain on the deck, the sky back on a 200 m sphere, the UHF

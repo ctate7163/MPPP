@@ -25,9 +25,9 @@ The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping fr
     mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
     mppp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
     mppp calib zcam|nz|hazcam [--zoom Z] [--group G1,G2] [--navcam-group G] [--variant V] [--promote-if-ok]
-    mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 30] [--plane-radius 100]   0.96: one clean surface
+    mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 75] [--plane-radius 200]   0.96: one clean surface
     mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--photometry]   0.96: per-image depth / normal maps, the photometric cube
-    mppp ods WORK --station ... [--width 8192] [--ipd 0.064]                       0.96: the stereoscopic panorama, two eye images
+    mppp ods WORK --station ... [--width 16384] [--ipd 0.064]                      0.96: the stereoscopic panorama, two eye images
     mppp doctor                               what is set, what is missing (environment, dependencies, models)
     mppp version
 
@@ -330,8 +330,10 @@ station: `site` - a site of `sites.json`, whose Navcam WORK folder is the block 
 
 ```text
 usage: mppp single-sites [LABEL ...] [--config FILE] [--root D:\rover_blocks] [--out DIR]
-                         [--steps dense mesh depthmaps ods] [--variants masked rover]
-                         [--squares-only] [--list] [--dry-run] [--install DIR]
+                         [--steps dense mesh depthmaps ods] [--variants masked rover] [--width PX]
+                         [--force] [--squares-only] [--retone]
+                         [--publish DIR] [--publish-only] [--publish-width 8192] [--publish-views VIEW ...]
+                         [--list] [--dry-run] [--install DIR]
 ```
 
 Per station and variant the steps run as their own processes: `mppp dense` (stereo and fusion, then the fusion with
@@ -340,7 +342,13 @@ out) and `...\<label>\with_rover\` (rover shown). A failed step skips the rest o
 the whole station). Each station's output also goes to `single_site_log.txt` in its folder;
 `single_sites_summary.md` has a line per station and variant: the exit codes, how far the fused points reach, the
 ground plane, the panorama's coverage, whether the square is there. `--squares-only` only stacks the eye images
-already there. `--install DIR` writes `run_single_site_ibr.bat` into DIR: it fast-forwards `D:\code\MPPP`
+already there; `--retone` makes the 8-bit images again from the 16-bit ones. Since 0.97.2 a mesh, depthmaps or ods
+step whose command, code (`mppp/ibr`, `sfm/dense.py`), cloud and upstream steps are unchanged since its last good
+run is skipped (`--force` runs everything; `step_<name>.json` in the station's folder is the record), the second
+variant takes the first one's terrain mesh, and `single_sites_status.json` says what is running. `--publish DIR`
+(0.97.3) copies the stations' stereo JPEGs, reduced to `--publish-width`, into `DIR/panos` and lists them in
+`DIR/panos.json` for the web viewer (`docs/ods` of the repository; see
+[Station products](station-products.md)); `--publish-only` does only that. `--install DIR` writes `run_single_site_ibr.bat` into DIR: it fast-forwards `D:\code\MPPP`
 to the newest bundle in `D:\rover_blocks\_transfer` when that bundle is ahead (never back), then runs
 `mppp single-sites` with its arguments - it names no version, so it never needs replacing.
 
@@ -407,12 +415,14 @@ one **station** (a site and drive of the rover) of a finished block, under `<pro
 
 ```text
 usage: mppp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--colmap colmap.exe] [--dense-dir DIR]
-                      [--mesh-radius 30] [--plane-radius 100] [--horizontal-plane] [--no-tie-points]
-                      [--far-radius R] [--target-triangles 3000000] [--poisson-depth 10] [--cameras N] [--no-preview]
+                      [--mesh-radius 75] [--plane-radius 200] [--horizontal-plane] [--no-tie-points]
+                      [--terrain-from DIR] [--keep-under-rover M] [--pivot-height zcam]
+                      [--far-radius R] [--target-triangles 6000000] [--poisson-depth 10] [--cameras N] [--no-preview]
 usage: mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--zcam-scale 1] [--images NAME ...]
                       [--photometry] [--no-shadow] [--no-preview] [--no-validate]
-usage: mppp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras N] [--scale 1] [--images ...]
-                      [--rows-per-chunk 128] [--eyes left right] [--exclude STEM ...] [--stack-top left]
+usage: mppp ods       WORK --station ... [--width 16384] [--ipd 0.064] [--cameras N] [--scale 1] [--images ...]
+                      [--sky-radius 200] [--pole-merge 30 80] [--pole-merge-down 60 88] [--eyes left right centre]
+                      [--rows-per-chunk 128] [--exclude STEM ...] [--stack-top left] [--retone] [--stack-only]
                       [--prefix S003D2046] [--bits 16] [--pds DIR] [--tone soft]
 ```
 
@@ -421,17 +431,18 @@ pivot fitted from their centres and rotations (`station.json`), then the surface
 `dense*/fused.ply`, or `--points`): Poisson (open3d), or COLMAP's Delaunay mesher through `--colmap` over
 `--dense-dir`; then the cleanup of the 31 Oct plan — components under 1 %, rubber sheets (long thin triangles),
 surface no fused point supports within τ(z) = max(5 cm, 2 % z, 3 σz), everything farther than `--mesh-radius`
-(30 m) from the mast axis (horizontal distance; 10 Nov 2026) — the decimation to `--target-triangles`, Taubin
-smoothing. Beyond the mesh: **the ground plane** out to `--plane-radius` (100 m) from the axis, fitted to the fused
+(75 m since 0.97; 30 m before) from the mast axis (horizontal distance) — the decimation to `--target-triangles`, Taubin
+smoothing. Beyond the mesh: **the ground plane** out to `--plane-radius` (200 m) from the axis, fitted to the fused
 points and the block's tie points (seen by 3+ images) as the medians of 10 deg x range-ring bins and a Huber fit,
 so it follows the regional slope (`--horizontal-plane` for a level one; a tilt over 20 deg or too few bins falls
-back to it); it also fills the mesh's holes. Beyond the plane **the sky at infinity**. The mesh has priority over
+back to it); it also fills the mesh's holes. Beyond the plane **the sky**, on a sphere of 200 m radius since 0.97.5
+(`mppp ods --sky-radius`; at infinity before). The mesh has priority over
 the plane even where the plane is nearer, and only the mesh occludes. `mesh.ply`, `ground_plane.json` (the plane,
 its tilt and its misfit per ring), `mesh_report.json` (the fused points per ring from the axis, the coverage by
 range), `mesh_preview.png` (the plane outlined in the range panorama). `--far-radius R` gives the 0.96.0
 prototype's finite sphere instead of the sky.
 **`depthmaps`**: every frame of the station ray-cast through its own camera model into mesh, plane and sky at
-`--scale` of the native size: `maps/<image>.npz` (depth, range, normal, label 0 none / 1 mesh / 2 sky at infinity,
+`--scale` of the native size: `maps/<image>.npz` (depth, range, normal, label 0 none / 1 mesh / 2 sky,
 no depth / 3 masked / 4 plane) and 16-bit previews (the plane darker), validated against the sparse points the frame
 observes, on the mesh and on the plane separately (`maps_report.md`: how far the flat stand-in is from the terrain); `--photometry` adds the
 photometric cube from the sun direction of the frame's row (`sun_enu` turned into the block frame): incidence,
@@ -452,8 +463,12 @@ again from the PDS products (`<project>/images16/`; `--pds` or `MPPP_PDS`): `<st
 `_right_16.png`, `_360_3DTD_16.png` (uint16 linear, for colour work; what the 8-bit images clip at 255 is kept,
 saturated pixels are neutral) next to the 8-bit ones, which get a soft highlight roll-off (`--tone clip` for the old
 cut).  `mesh` also removes floating surface: anything above the cameras, and beyond
-3 m of the mast axis anything less than 1 m below them, heights above the ground plane (`--keep-floating`).  Any VR photo viewer that takes an equirectangular pair shows it; the
-viewer itself is future work.
+3 m of the mast axis anything less than 1 m below them, heights above the ground plane (`--keep-floating`).  
+
+The current behaviour in one place - the eye-separation rules (full to 30 deg up and 60 deg down, a near-surface
+limit at 2.5 m, a fade from 75 to 200 m), the sky filling and evening, the 16-bit product, the XMP metadata of the
+`_360_3DTD` files, the file list and the web viewer - is on [Station products](station-products.md). The paragraph
+above is the record of how the commands grew.
 
 ## mppp metashape
 

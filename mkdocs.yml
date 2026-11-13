@@ -32,6 +32,8 @@ nav:
   - Pipeline: pipeline.md
   - Camera models and calibration: calibration.md
   - Downstream exports: exports.md
+  - Station products and viewer: station-products.md
+  - Rover model: rover-model.md
   - Rover masks: masks.md
   - Command line: cli.md
   - Windows batch files: WINDOWS.md

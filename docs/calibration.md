@@ -19,8 +19,8 @@ fx, fy, cx, cy carry offsets for the images before the early-mission sol. NL is 
 (NR from NL) has one yaw for every temperature and a rotation drift linear in sol, with a hinge in the pitch rate.
 
 **Hazcam** (front FL, FR and rear RL, RR). The same form as the Navcam: fx, fy and k1 linear in temperature, an
-early-mission offset on fx, fy and a rig rotation drifting linearly with sol (`mppp calib hazcam`, below; no
-`M2020_FL.json` ... promoted yet). Without a model each image
+early-mission offset on fx, fy and a rig rotation drifting linearly with sol (`mppp calib hazcam`, below). First models of the four eyes
+and both rigs ship since 0.94 (23 Oct 2026, from one to six blocks each). Without a model each image
 starts from the `THIN_PRISM_FISHEYE` fitted by least squares to its own label CAHVORE over the whole frame
 (`mppp.calib.labelfit`, 0.93), in the label model's own camera frame so the pose prior is unchanged. The front
 Hazcams are central (E about 1e-7 m): 0.13-0.19 px rms. The rear Hazcams carry entrance-pupil terms of 3-9 mm; a
@@ -35,8 +35,8 @@ without a label model).
 
 **Mastcam-Z** (zooms 34, 48, 63, 79, 110 mm). One calibration per zoom, `FULL_OPENCV` at 1648 x 1200, a function of
 the focus count and the focus-motor backlash state only: fx and fy are lines in focus count per eye and state, k1
-and k2 are constant per eye, and there is no temperature term. 34 mm is calibrated; the other zooms start from the
-label CAHVOR of each image.
+and k2 are constant per eye, and there is no temperature term. Models ship for 34 mm (eight blocks) and, as first
+calibrations of two blocks each, for 63 and 110 mm; 48 and 79 mm start from the label CAHVOR of each image.
 
 The two backlash states are "backlash" (the default, about 0.95 % above the label focal length) and "regular" (low
 backlash, near the label; the images on the low-backlash list and those a block's focal fits find). The regular

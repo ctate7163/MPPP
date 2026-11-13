@@ -2,16 +2,15 @@
 mppp.ibr.rover_model - the Perseverance model in the station mesh (0.96.1, Christian 10 Nov 2026: "take this model
 of perseverance's, simplify it, add it to the mesh, and project the images onto it. The arm is stowed").
 
-``mppp/data/rover/perseverance_rmech.npz`` is NASA's glTF model (credit NASA/JPL-Caltech,
-https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/) simplified to 59,000 triangles in the rover
-mechanical frame RMECH (x forward, y right, z down, z 0 = the deck top; see :mod:`mppp.ibr.rover_deck`), built by
-``scripts/build_rover_model.py``: body, suspension and wheels as modelled, the arm turned to its stowed pose (the
-five joint angles fitted to the Van Zyl S003D2046 cloud, then - 0.97.0 - the turret turned half round, the wrist and
-the shoulder adjusted against a Rockytop frame: the drill points out, PIXL towards the mast), without what moves from
-image to image - the mast and head.  0.97.0: the high-gain antenna is the part "antenna" in one neutral pose (the
-dish to the right of its gimbal, tilted 45 deg to face forward and up; Christian, 12 Nov 2026); it points differently
-every sol and the model does not follow it.  Against the Van Zyl rover cloud (placed in RMECH by the label CAHVORE poses) 88 % of
-the cloud is within 3 cm of the model and 94 % within 5 cm.
+``mppp/data/rover/perseverance_rmech.npz`` is NASA's glTF model "Mars Perseverance Rover, 3D Model" (credit
+NASA/JPL-Caltech, https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/) simplified to 71,000
+triangles in the rover mechanical frame RMECH (x forward, y right, z down, z 0 = the deck top; see
+:mod:`mppp.ibr.rover_deck`), built by ``scripts/build_rover_model.py``.  What MPPP changed (docs/rover-model.md has
+the numbers): the model is placed by seven deck fiducial discs (2.2 mm rms); the arm is turned to its stowed pose
+from the arm joint angles of the image labels (:func:`arm_model_angles_deg`); the rear deck block, the high-gain
+antenna (the part "antenna", one neutral pose) and the UHF antenna can are adjusted to the Navcam images; the mast
+above its base and the camera head are left out (they turn with every image).  The model is one pose: a deployed
+arm, the antenna's pointing of a sol and the suspension on rough ground are not followed.
 
 With the rover shown, ``mppp mesh`` then
 1. drops the fused points within ``NEAR_M`` of the model (the model stands for them) - what is farther stays and is
@@ -42,7 +41,7 @@ def available() -> bool:
 
 def load(parts: Optional[Sequence[str]] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """(vertices (n, 3) in RMECH metres, faces (m, 3), meta) of the model, or of the named ``parts`` of it (body,
-    arm, arm_base, suspension, wheels)."""
+    arm, arm_base, suspension, wheels, mast, antenna; ``meta["parts"]``)."""
     if "raw" not in _cache:
         d = np.load(FILE)
         _cache["raw"] = (d["vertices"].astype(float), d["faces"].astype(np.int64), d["part"], json.loads(str(d["meta"])))

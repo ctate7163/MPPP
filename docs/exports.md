@@ -10,6 +10,9 @@ of every run. None of the exports re-aligns anything: the poses, cameras and tie
 | Metashape project | `mppp metashape WORK` | `<project>\metashape\` | Metashape's depth maps, meshes, textures, orthomosaics |
 | Nerfstudio (splatfacto) | `mppp nerfstudio WORK` | `<project>\nerfstudio\` | 3D Gaussian splatting |
 
+The products of one rover station - mesh, depth and photometric maps, the stereo panorama - are on their own page:
+[Station products and the stereo panorama viewer](station-products.md).
+
 On Windows, `scripts\windows\ecam_block.bat SITE` aligns a site's Navcam + Hazcam block and writes the Metashape and
 Nerfstudio exports in one go (`mppp run SITE --metashape --nerfstudio`).
 

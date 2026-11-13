@@ -1,43 +1,34 @@
 # Roadmap
 
-This page lists what is being worked on and planned after 0.95. Release notes are in the
+What is being worked on and planned. Release notes are in the
 [changelog](https://github.com/ctate7163/MPPP/blob/main/CHANGELOG.md).
 
-## Now: the 0.95 freeze
+## Now: the freeze run
 
-The camera models and the alignment code are frozen, and every block is run again from scratch with them:
+The camera models and the alignment rules are frozen, and every block is aligned again from scratch with them:
 
-- the Navcam tied joint;
-- the Mastcam-Z joints per zoom: 34, 48, 63, 79 and 110 mm;
-- the Hazcam temperature law;
-- the combined Navcam + Mastcam-Z 34 mm check.
+- the Navcam tied joint and its stereo rig (drift with sol, a knee at sol 250);
+- the Mastcam-Z joints per zoom: 34, 48, 63, 79 and 110 mm, with their two focus-backlash states;
+- the Hazcam fit;
+- the combined Navcam + Mastcam-Z 34 mm check, and the deck-fiducial adjustment that gives the rigs and the scale.
 
-The results of that run are the basis of the papers. The rover mask model trained on the v8 mask set
-(`mppp_mask_v4`, see [Rover masks](masks.md)) is prepared for release on Hugging Face.
+The results of that run are the basis of the papers, and its models replace the ones shipped with the package.
 
-## Next: stereo panoramas from the block's own images
+## Now: station panoramas
 
-The goal is an 8K omnidirectional-stereo (ODS) panorama of one rover station. The panorama is projected only from
-that station's images, keeps the alignment of the whole block, and is centred on the mast's centre of rotation,
-which is fitted from the station's own poses. Navcam comes first, then Mastcam-Z 34 mm. The steps:
+The station products are in place (see [Station products and the stereo panorama viewer](station-products.md)): a
+cleaned mesh with the rover model, per-image depth and photometric maps, a 16K stereo panorama, and a prototype web
+viewer. Open:
 
-1. **Navcam-only dense subset** (`mppp dense --navcam-only --station`). Navcam patch-match stereo at half
-   resolution, with references near the station and sources from the whole block.
-2. **Mesh, cleanup and a far-field sphere** (`mppp mesh`):
-   - a Delaunay mesh of the fused points;
-   - floaters, rubber sheets across occlusion edges and unsupported surface removed;
-   - terrain clipped at 20 m from the mast axis (10 Nov 2026), a ground plane fitted to the terrain beyond it to
-     100 m, and the sky at infinity beyond that, where the stereo disparity of an 8K panorama is under a pixel.
-3. **Per-image depth and normal maps** (`mppp depthmaps`). Each map is ray-cast from the mesh through the image's
-   exact camera model (THIN_PRISM_FISHEYE, FULL_OPENCV), so the depth maps of all images agree on one surface. The
-   Mastcam-Z frames, which are not used for the mesh, give an independent check.
-4. **Rendering** (`mppp ods`). For each pixel, the best source image is chosen, seams are feathered, and holes are
-   left black and flagged with their provenance.
-
-The normal maps also feed the photometric angle maps: incidence, emission and phase per pixel.
+- the viewer checked in a headset; tiled 16K / 32K images and zoom;
+- Mastcam-Z 34 mm frames in the panorama (they need the combined Navcam + Mastcam-Z block);
+- the rover model following the arm, the antenna and the suspension from the image labels
+  (see [Rover model](rover-model.md));
+- rendering the two variants in parallel.
 
 ## Later
 
-- A browser viewer for the blocks: meshes, splats and station panoramas; layers for instrument, time of day and
-  uncertainty; A→B measurement with its uncertainty; WebXR.
-- More Mastcam-Z zooms in the calibrated scope.
+- A browser viewer for whole blocks: meshes, splats and station panoramas; layers for instrument, time of day and
+  uncertainty; A to B measurement with its uncertainty.
+- Independent checks of the camera models: the Mastcam-Z calibration target as a scale monitor, Sun images for
+  heading, night-sky frames.

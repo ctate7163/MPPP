@@ -40,10 +40,10 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. MPPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.97.5** (`v0p97`): the core (`mppp`, the pipeline) and the research studies (`mppp_studies`) apart, the
-freeze run as a driver of its own, and the first products past the block - per-image depth maps, the photometric
-cube and a stereoscopic panorama from a cleaned station mesh (0.96.1: a floor at the rover deck for the with-rover
-panoramas, the panoramas named by station). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are
+Version **0.97.6** (`v0p97`): the core (`mppp`, the pipeline) and the research studies (`mppp_studies`) apart, the
+freeze run as a driver of its own, and the products of one rover station past the block - a cleaned mesh with a
+model of the rover, per-image depth and photometric maps, and a 16K stereoscopic 360 degree panorama with a web
+viewer (below). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are
 development releases; see [CHANGELOG.md](https://github.com/ctate7163/MPPP/blob/main/CHANGELOG.md).
 
 ## Install
@@ -123,22 +123,39 @@ the package copies; on a working machine the models in use live there - `mppp cm
 
 * **Navcam** — COLMAP `THIN_PRISM_FISHEYE` at the full 5120 × 3840 frame (sx1 = sy1 = 0 held); focal lengths,
   principal point and k1 linear in camera temperature, offsets for the early mission, and a stereo rig whose
-  rotation drifts linearly with sol. NL is the rig reference.
+  rotation drifts with sol, with a knee in the pitch rate at sol 250. NL is the rig reference.
 * **Hazcam** (front and rear) — the same form, with fx, fy and k1 linear in temperature, an early-mission offset and
-  a rig drift in sol (`mppp calib hazcam`, fitted from the blocks; not promoted yet). Without a model each image
+  a rig drift in sol (`mppp calib hazcam`, fitted from the blocks). First models of the four eyes and both rigs
+  ship since 0.94 (23 Oct 2026; one to six blocks each, three of the four eyes without a temperature term).
+  Without a model each image
   starts from a least-squares fit of the fisheye to its own label CAHVORE (0.13–0.19 px rms for the front pair; 2–4
   px for the rear pair, whose models carry several mm of entrance-pupil movement), and a block refines fx, fy, k1, k2
   (`hazcam_intrinsics`) and the rig rotation. Since 0.93.1 the Hazcam frames of a block's stations are in every
   block (`--hazcam none` leaves them out); they come in after the Navcam block, with the Navcam cameras and rig held.
 * **Mastcam-Z** — one model per zoom, a function of the focus count and the focus-motor backlash state only
-  (lines in focus per eye and state; p1 = p2 = k3 = 0 held). 34 mm is calibrated; the other zooms start from the
-  label CAHVOR. An image is in the high-focal-length state unless the low-backlash list or its own focal fit says
+  (lines in focus per eye and state; p1 = p2 = k3 = 0 held). Models ship for 34 mm (eight blocks) and, as first calibrations of two blocks each, for 63 and
+  110 mm; 48 and 79 mm start from the label CAHVOR. The freeze run fits all five zooms again; its models are not
+  in the package yet. An image is in the high-focal-length state unless the low-backlash list or its own focal fit says
   otherwise.
 
 New models enter with `python -m mppp_studies.calibration.promote_cmods <files> --note "..."` (validated against the
 form, logged in `cmods/CHANGES.md`; the replaced files stay in git history). The fits that produce them are the
 calibration study, `mppp_studies.calibration` (0.96.0: the core package reads the promoted models and never solves
 for them).
+
+## Station products and the stereo panorama viewer
+
+`mppp single-sites` (or `mppp dense`, `mesh`, `depthmaps`, `ods` one by one) makes the products of one rover station
+from a finished block: a cleaned terrain mesh out to 75 m with a ground plane and a sky sphere at 200 m, the rover
+model in it, per-image depth, normal, incidence, emission, phase and shadow maps, and an omnidirectional stereo
+panorama, 16384 x 8192 per eye, as PNG (8-bit and 16-bit linear) and JPEG. The stacked left-over-right files are
+named `..._360_3DTD` and carry XMP metadata for headset viewers.
+
+* The panoramas in a browser or a headset: **<https://ctate7163.github.io/MPPP/ods/>** (`docs/ods/`, a prototype;
+  `mppp single-sites --publish docs/ods` adds stations).
+* How they are made and what the files are: [docs/station-products.md](https://ctate7163.github.io/MPPP/station-products/).
+* The rover model (derived from NASA's Perseverance model, credit NASA/JPL-Caltech), for use by others:
+  [docs/rover-model.md](https://ctate7163.github.io/MPPP/rover-model/).
 
 ## GPU on Windows
 
@@ -154,19 +171,21 @@ time exceeds the per-block budget. `mppp align --gui` writes the files that open
 
 | path | content |
 |---|---|
-| `src/mppp/` | the pipeline: `pipeline` and `cli` (the workflow), `process` and `image` (PDS → images), `mask` (inference, the model files), `calib` (camera-model forms, the promoted models, their constraint to an image or block), `sfm` (COLMAP project, features, matching, the adjustment, exports, dense), `ibr` (mesh, depth and photometric cube, the stereoscopic panorama), `waypoints`, `waypoints` |
+| `src/mppp/` | the pipeline: `pipeline` and `cli` (the workflow), `process` and `image` (PDS → images), `mask` (inference, the model files), `calib` (camera-model forms, the promoted models, their constraint to an image or block), `sfm` (COLMAP project, features, matching, the adjustment, exports, dense), `ibr` (the station products: mesh, rover model, depth and photometric maps, the stereoscopic panorama, its publication for the web viewer), `waypoints` |
 | `src/mppp_studies/` | the studies (installed with the package, importing it, never imported by it): `calibration` (the camera-model solvers, their gates and promotion, the deck and fiducial studies, the chain driver of a freeze run), `error` (the reconstruction-error model), `mask_training` (training, audit, release of the mask model), `sites` (the site-map figures), `paper`, `misc` (what did not clearly belong anywhere) |
-| `src/mppp/data/` | site definitions, waypoint snapshot, optical-depth table, the camera models in use (`cmods/`), the mask-model registry |
+| `src/mppp/data/` | site definitions, waypoint snapshot, optical-depth table, the camera models in use (`cmods/`), the mask-model registry, the rover model (`rover/`), the single-station list (`single_sites.json`) |
 | `notebooks/` | `pipeline_example.ipynb` (the pipeline end to end on the example data) and `studies/` (one notebook per study) |
-| `scripts/` | the batch runs of the pipeline (`run_sites.py`, `process_sites.py`, `align_scape.py`, `stop_runs.py`, `check_sites.py`, `check_env.py`, `waypoint_check.py`); `windows/` the .bat wrappers |
+| `scripts/` | the batch runs of the pipeline (`run_sites.py`, `process_sites.py`, `align_scape.py`, `stop_runs.py`, `check_sites.py`, `check_env.py`, `waypoint_check.py`), `build_rover_model.py` and `export_rover_glb.py`; `windows/` the .bat wrappers |
 | `tests/` | pytest, one file per module; `tests/data/m20/` holds two public PDS products and the stored regression fixtures |
-| `docs/` | `methods.md` (conventions, equations, flagged assumptions), `calibration.md`, `exports.md`, `masks.md`, `roadmap.md`, `RELEASING.md`, `history/` (older changelogs and working notes) |
+| `docs/` | `methods.md` (conventions, equations, flagged assumptions), `calibration.md`, `exports.md`, `station-products.md`, `rover-model.md`, `masks.md`, `roadmap.md`, `ods/` (the panorama viewer and its images), `rover/` (the rover model as glTF), `RELEASING.md`, `history/` (older changelogs and working notes) |
 | `paper/` | the JOSS paper (`python -m mppp_studies.paper.build_paper` renders it) |
 
 ## Scope and limits
 
-Calibrated models exist for Navcam and Mastcam-Z at 34 mm; the Hazcams (label-fit start cameras, refined per block)
-and the other Mastcam-Z zooms are processed with start models and are not part of the tested scope yet. Scale comes from the Navcam stereo baseline together with
+The Navcam and Mastcam-Z 34 mm models are the tested scope. The Hazcam models and the Mastcam-Z 63 and 110 mm
+models are first calibrations from a few blocks; 48 and 79 mm start from the label models. The station products and
+the viewer are prototypes: the rover model is one pose (arm stowed), and the viewer has not been checked in a
+headset. Scale comes from the Navcam stereo baseline together with
 the waypoint position priors (1 m; 10 m for stations without a waypoint of their own); orientation from a weak
 attitude prior per frame. The alignment-health thresholds are provisional. See `docs/methods.md` for the flagged
 assumptions and `docs/calibration.md` for the calibration loop and its checks.
@@ -176,7 +195,9 @@ assumptions and `docs/calibration.md` for the calibration loop and its checks.
 All Mars 2020 images used by MPPP, including the two test products in `tests/data/m20/` and the images the mask
 model was trained on, are public products of the NASA Planetary Data System (PDS). Credits: Navcam
 NASA/JPL-Caltech; Mastcam-Z NASA/JPL-Caltech/ASU/MSSS. The reconstruction masks, the mask model and the camera
-models in `src/mppp/data/cmods/` are the author's own work. The waypoint snapshot is a copy of the public Mars 2020
+models in `src/mppp/data/cmods/` are the author's own work. The rover model is derived from NASA's "Mars
+Perseverance Rover, 3D Model" (credit NASA/JPL-Caltech), simplified and modified as described in `docs/rover-model.md`.
+The panorama viewer includes three.js (MIT license). The waypoint snapshot is a copy of the public Mars 2020
 waypoint table. The package contains no sensitive or non-public data.
 
 ## License and citation
