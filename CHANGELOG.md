@@ -3,6 +3,14 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.10 — 2026-11-13
+
+- **8K is the standard panorama again** (`DEFAULT_WIDTH = 8192`); `--width 16384` for 16K (`mppp ods` and
+  `mppp single-sites`).
+- **Nadir mark:** the disc twice as large (20 degrees); the text in two rows near the rim, each over at most half the
+  circle, centred on the rover's front, so it reads upright facing forward and looking down.
+- **Station list:** S079D0732 (Taylorfjellet, sol 1635, ten Navcam pairs NCAM03635 / 02635 / 15635).
+
 ## 0.97.9 — 2026-11-13
 
 - **Nadir mark credit:** NASA/JPL-Caltech/MSSS for Navcam and Hazcam panoramas, NASA/JPL-Caltech/MSSS/ASU when

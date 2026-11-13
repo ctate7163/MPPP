@@ -62,7 +62,8 @@ from .raycast import LABEL_FAR, LABEL_MESH, LABEL_NONE, LABEL_PLANE, Scene
 log = logging.getLogger("mppp.ibr.ods")
 PathLike = Union[str, Path]
 
-DEFAULT_WIDTH = 16384             # 0.97.4 (Christian, 13 Nov 2026: "render these at 16k by default"); was 8192
+DEFAULT_WIDTH = 8192              # 0.97.10 (Christian, 13 Nov 2026: "let's make 8k ods standard for now"); 16K: --width 16384
+#                                   (0.97.4 to 0.97.9: 16384)
 DEFAULT_IPD_M = 0.064
 # 0.97.0 (Christian, 12 Nov 2026, Quest 3: "when I tilt my head down ... I go cross-eyed"): pole merging.  An ODS
 # pair is right only at the horizon: towards a pole each column keeps its own eye offset, so in a view looking down
@@ -1374,9 +1375,17 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     if nadir_mark:                                       # 0.97.7: the black disc with the credits at the nadir
         from . import nadir as _nadir
         lines = _nadir.mark_lines([s.name for s in sources], site_name)
-        mark = _nadir.make_mark(width, height, lines, _nadir.NADIR_MARK_DEG if nadir_mark_deg is None else nadir_mark_deg, azimuth0_deg)
+        fwd = 0.0
+        try:                                             # the text ahead of the rover's front
+            from .rover_deck import rover_pose as _rover_pose
+            fwd = _nadir.forward_azimuth_deg(mast_pose or _rover_pose(project, rec, station.images), station.north, station.east)
+        except Exception as e:                           # noqa: BLE001 - then it starts at north
+            log.warning("ods: no rover pose for the nadir mark (%s); its text is centred on north", e)
+        mark = _nadir.make_mark(width, height, lines, _nadir.NADIR_MARK_DEG if nadir_mark_deg is None else nadir_mark_deg,
+                                azimuth0_deg, centre_azimuth_deg=fwd)
         rec_out["nadir_mark"] = {"lines": lines, "text": mark["text"], "radius_deg": mark["radius_deg"], "first_row": mark["row0"],
-                                 "note": "the rows from first_row down are a light blue disc with this text in black around its rim, not data; "
+                                 "text_centre_azimuth_deg": mark["centre_azimuth_deg"],
+                                 "note": "the rows from first_row down are a light blue disc with this text in black, ahead of the rover's front, not data; "
                                          "in every colour panorama, not in the depth products"}
     if gains:
         g = estimate_gains(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)

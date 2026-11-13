@@ -4,8 +4,8 @@ black circle at the bottom with a white water mark that says Mars 2020 Persevera
 'made by C. Tate' with image credits").
 
 Straight down a panorama from the mast shows no terrain: the mast itself (masked) and, without the rover, ground
-that was filled in.  The pixels within ``NADIR_MARK_DEG`` of the nadir become a light blue disc with black text that
-runs once around it near the rim (:func:`make_mark`), the same in both eyes (the eye separation is zero there).  It goes into every colour panorama (8-bit and 16-bit, eyes, centre, stacked,
+that was filled in.  The pixels within ``NADIR_MARK_DEG`` of the nadir become a light blue disc with two rows of black
+text near its rim, ahead of the rover (:func:`make_mark`), the same in both eyes (the eye separation is zero there).  It goes into every colour panorama (8-bit and 16-bit, eyes, centre, stacked,
 enhanced), not into the depth products; ``ods.json`` records it ("nadir_mark"), ``mppp ods --no-nadir-mark`` leaves
 it out.
 
@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
-NADIR_MARK_DEG = 10.0                 # the disc: everything within this angle of the nadir
+NADIR_MARK_DEG = 20.0                 # the disc: everything within this angle of the nadir (10 until 0.97.9)
 TITLE = "Mars 2020 Perseverance Rover"
 AUTHOR = "made by C. Tate"
 CREDIT_NAVCAM = "NASA/JPL-Caltech/MSSS"
@@ -27,9 +27,9 @@ BACKGROUND_RGB = (176.0, 212.0, 238.0)       # 8-bit units: light blue (Christia
 #                                              should be light blue"; before: the panorama's sky colour, and black at first)
 BACKGROUND_LINEAR_FACTOR = 0.8               # in a linear 16-bit panorama: this x the 8-bit colour, in 8-bit linear units
 TEXT_SEPARATOR = "   -   "
-TEXT_SPAN_OF_CIRCLE = 0.94                   # the line takes this share of the full circle (the rest is the gap at north)
-TEXT_CENTRE_IN_BAND = 0.36                   # the line's middle, as a share of the disc's radius from its rim
-TEXT_MAX_HEIGHT_IN_BAND = 0.5                # the line is at most this share of the disc's radius tall
+TEXT_SPAN_OF_CIRCLE = 0.5                    # a row takes at most this share of the full circle
+TEXT_ROWS_IN_BAND = (0.13, 0.31)             # the rows' middles, as shares of the disc's radius from its rim (outer first)
+TEXT_MAX_HEIGHT_IN_BAND = 0.12               # a row is at most this share of the disc's radius tall
 SKY_FALLBACK_RGB = BACKGROUND_RGB            # (kept for callers of sky_colour)
 SKY_MIN_VALUE_8BIT = 150.0
 DISC_PX = 1024                        # the text is drawn on a square of this side, then turned into the panorama's rows
@@ -96,42 +96,59 @@ def text_strip(text: str, height_px: int = 160) -> np.ndarray:
     return a[ys.min():ys.max() + 1, xs.min():xs.max() + 1] if len(ys) else a
 
 
-def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: float = NADIR_MARK_DEG,
-              azimuth0_deg: float = 0.0) -> Dict[str, Any]:
+def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optional[float] = None,
+              azimuth0_deg: float = 0.0, centre_azimuth_deg: float = 0.0) -> Dict[str, Any]:
     """The mark for an equirectangular image of ``width`` x ``height`` whose column 0 looks at ``azimuth0_deg``
     (east of north): {"row0": the first row of the disc, "alpha": (height - row0, width) float32, 1 = text,
-    "radius_deg", "lines", "text", "stretch"}.
+    "radius_deg", "lines", "text" (the two rows), "stretch", ...}.
 
-    The text is one line that runs once around the disc near its rim, starting at north and reading towards the
-    east (Christian, 13 Nov 2026: "the text should wrap around the perimeter of the circle so that it can be read
-    in the cylindrical projection too").  In the equirectangular image it is a straight line along the bottom strip,
-    upright; looking down in a headset it is a ring with the letters' tops outwards.  A letter cannot have its own
-    shape in both: near the nadir the strip is stretched 1 / cos(elevation) times (7 times at -82 degrees).  The
-    letters are made ``stretch`` = the square root of that wider than they are in the flat image, so they are as much
-    too wide in the image as they are too narrow in the headset (about 2.7 times each)."""
+    The text is two rows near the disc's rim, each over at most half the circle, centred on ``centre_azimuth_deg``
+    - the rover's forward direction (Christian, 13 Nov 2026: "two lines covering no more than half the circle ...
+    rotated to be read with the viewer facing the front of the rover and looking down").  The first row (the rover,
+    the sol and the site) is the outer one.  In the equirectangular image they are two straight lines along the
+    bottom strip, upright; looking down in a headset, facing the rover's front, they are two arcs ahead of the
+    nadir with the letters upright.  A letter cannot have its own shape in both: the strip is stretched
+    1 / cos(elevation) times (3.4 times at -73 degrees).  The letters are made the square root of that wider than
+    they are in the flat image (``stretch``), so they are as much too wide there as they are too narrow in the
+    headset."""
     import cv2
-    row0 = int(np.ceil(height * (180.0 - float(radius_deg)) / 180.0))
+    radius_deg = NADIR_MARK_DEG if radius_deg is None else float(radius_deg)
+    row0 = int(np.ceil(height * (180.0 - radius_deg) / 180.0))
     band = height - row0
     alpha = np.zeros((band, width), np.float32)
-    text = TEXT_SEPARATOR.join(lines)
-    strip = text_strip(text)
-    el_text = -(90.0 - (1.0 - TEXT_CENTRE_IN_BAND) * float(radius_deg))        # the elevation of the line's middle
-    stretch = float(np.sqrt(1.0 / max(np.cos(np.radians(el_text)), 1e-3)))
-    span = int(round(width * TEXT_SPAN_OF_CIRCLE))                             # the columns the text takes
-    h = int(round(span * strip.shape[0] / (strip.shape[1] * stretch)))         # its height for that stretch
-    h_max = max(4, int(TEXT_MAX_HEIGHT_IN_BAND * band))
-    if h > h_max:                                                              # a short text: no taller than this,
-        h = h_max                                                              # and it then takes less of the circle
-        span = min(span, int(round(h * stretch * strip.shape[1] / strip.shape[0])))
-    h = max(4, h)
-    t = cv2.resize(strip, (max(8, span), h), interpolation=cv2.INTER_AREA)
-    y0 = int(np.clip(round(TEXT_CENTRE_IN_BAND * band - 0.5 * h), 1, max(1, band - h - 1)))
-    x0 = int(round(((0.0 - float(azimuth0_deg)) % 360.0) / 360.0 * width + 0.5 * (width * TEXT_SPAN_OF_CIRCLE - span)
-                   + 0.5 * width * (1.0 - TEXT_SPAN_OF_CIRCLE)))               # from north, centred in its span
-    cols = (x0 + np.arange(t.shape[1])) % width
-    alpha[y0:y0 + t.shape[0], cols] = t[:band - y0]
-    return {"row0": row0, "alpha": alpha, "radius_deg": float(radius_deg), "lines": list(lines), "text": text,
-            "stretch": stretch, "text_height_px": int(h), "text_elevation_deg": float(el_text)}
+    k = (len(lines) + 1) // 2
+    rows_text = [TEXT_SEPARATOR.join(lines[:k]), TEXT_SEPARATOR.join(lines[k:])]
+    rows_text = [t for t in rows_text if t]
+    info = []
+    for text, centre in zip(rows_text, TEXT_ROWS_IN_BAND):
+        strip = text_strip(text)
+        el_text = -(90.0 - (1.0 - centre) * radius_deg)                        # the elevation of the row's middle
+        stretch = float(np.sqrt(1.0 / max(np.cos(np.radians(el_text)), 1e-3)))
+        span = int(round(width * TEXT_SPAN_OF_CIRCLE))                         # at most this many columns
+        h = int(round(span * strip.shape[0] / (strip.shape[1] * stretch)))     # its height for that span
+        h_max = max(4, int(TEXT_MAX_HEIGHT_IN_BAND * band))
+        if h > h_max:                                                          # no taller than this: it then takes
+            h = h_max                                                          # less of the circle
+            span = min(span, int(round(h * stretch * strip.shape[1] / strip.shape[0])))
+        h = max(4, h)
+        t = cv2.resize(strip, (max(8, span), h), interpolation=cv2.INTER_AREA)
+        y0 = int(np.clip(round(centre * band - 0.5 * h), 1, max(1, band - h - 1)))
+        x_mid = ((float(centre_azimuth_deg) - float(azimuth0_deg)) % 360.0) / 360.0 * width
+        cols = (int(round(x_mid - 0.5 * t.shape[1])) + np.arange(t.shape[1])) % width
+        alpha[y0:y0 + t.shape[0], cols] = np.maximum(alpha[y0:y0 + t.shape[0], cols], t[:band - y0])
+        info.append({"text": text, "stretch": stretch, "height_px": int(h), "elevation_deg": float(el_text),
+                     "span_deg": 360.0 * t.shape[1] / width})
+    return {"row0": row0, "alpha": alpha, "radius_deg": radius_deg, "lines": list(lines), "text": rows_text,
+            "rows": info, "stretch": info[0]["stretch"] if info else 1.0, "centre_azimuth_deg": float(centre_azimuth_deg) % 360.0}
+
+
+def forward_azimuth_deg(pose: Optional[Dict[str, Any]], north, east) -> float:
+    """The azimuth (deg east of north) the rover's front points to, from its pose in the block
+    (:func:`mppp.ibr.rover_deck.rover_pose`); 0 without a pose."""
+    if not pose:
+        return 0.0
+    f = np.asarray(pose["R_block_from_rnav"], float)[:, 0]              # RNAV x: forward
+    return float(np.degrees(np.arctan2(f @ np.asarray(east, float), f @ np.asarray(north, float))) % 360.0)
 
 
 def sky_colour(img: np.ndarray, sky: Optional[np.ndarray], fallback, light: Optional[float] = None) -> np.ndarray:

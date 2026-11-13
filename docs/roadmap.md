@@ -17,7 +17,7 @@ The results of that run are the basis of the papers, and its models replace the 
 ## Now: station panoramas
 
 The station products are in place (see [Station products and the stereo panorama viewer](station-products.md)): a
-cleaned mesh with the rover model, per-image depth and photometric maps, a 16K stereo panorama, and a prototype web
+cleaned mesh with the rover model, per-image depth and photometric maps, a stereo panorama (8K, or 16K on request), and a prototype web
 viewer. Open:
 
 - the viewer checked in a headset; tiled 16K / 32K images and zoom;

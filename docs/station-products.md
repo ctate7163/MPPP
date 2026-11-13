@@ -68,7 +68,7 @@ range) and 0.5 degrees (normal) on smooth surfaces, and worse at edges; for phot
 
 ## The panorama
 
-Each eye is an equirectangular image, **16384 x 8192** by default (`--width`): the left edge looks north and the
+Each eye is an equirectangular image, **8192 x 4096** by default (`--width 16384` for 16K: 16384 x 8192 per eye): the left edge looks north and the
 azimuth grows eastward, so it reads N, E, S, W from left to right; the top row is the zenith. Every pixel's ray is
 cast into the mesh and coloured from the station frames that see that point best, blended in two frequency bands.
 
@@ -115,14 +115,15 @@ farther than it is. These numbers are constants at the top of `mppp/ibr/ods.py` 
 
 ### The mark at the nadir
 
-Within 10 degrees of straight down the panorama shows no terrain (the mast, or filled-in ground). A light blue
-disc there carries, in black, one line that runs once around it near the rim: "Mars 2020 Perseverance Rover", the
-sol and the site, "made by C. Tate" and the image credit (NASA/JPL-Caltech/MSSS for Navcam and Hazcam frames; NASA/JPL-Caltech/MSSS/ASU
-when Mastcam-Z frames are in). In the flat image it is a straight line along the bottom, starting at north; in a
-headset it is a ring. The letters are made about 3 times too wide in the flat image, which leaves them about 3
-times too narrow in the headset: the strip is stretched 7 to 9 times there, and no letter can have its own shape in
-both. It is in every colour panorama, not in the depth products; `ods.json` records its rows (`nadir_mark`), and
-`mppp ods --no-nadir-mark` leaves it out.
+Within 20 degrees of straight down the panorama shows no terrain worth keeping (the mast, or filled-in ground). A
+light blue disc there carries two rows of black text near its rim, each over at most half the circle and centred on
+the rover's front: "Mars 2020 Perseverance Rover" with the sol and the site, and "made by C. Tate" with the image
+credit (NASA/JPL-Caltech/MSSS for Navcam and Hazcam frames; NASA/JPL-Caltech/MSSS/ASU when Mastcam-Z frames are
+in). In the flat image they are two straight lines along the bottom; in a headset, facing the rover's front and
+looking down, they are two arcs ahead of you, upright. The letters are made about twice too wide in the flat image,
+which leaves them about twice too narrow in the headset: the strip is stretched 3 to 4 times there, and no letter
+can have its own shape in both. The disc is in every colour panorama, not in the depth products; `ods.json` records
+its rows (`nadir_mark`), and `mppp ods --no-nadir-mark` leaves it out.
 
 ### Sky and brightness
 

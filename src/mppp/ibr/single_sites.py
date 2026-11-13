@@ -416,7 +416,7 @@ def add_parser(sub) -> None:
     p.add_argument("--steps", nargs="+", default=list(STEPS), choices=STEPS)
     p.add_argument("--variants", nargs="+", default=None, choices=VARIANTS)
     p.add_argument("--width", type=int, default=None, metavar="PX",
-                   help="0.97.0: the panorama's width for this run (default: the config's, else mppp ods' own, 16384) - give "
+                   help="0.97.0: the panorama's width for this run (default: the config's, else mppp ods' own, 8192; 16384 for 16K) - give "
                         "--out as well to keep the panoramas already made")
     p.add_argument("--squares-only", action="store_true", help="only stack the eye images already there into "
                    "360_3DTD.jpg / .png")

@@ -1082,14 +1082,15 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     installed batch file names no version."""
     from mppp.ibr import single_sites as SS
     cfg = SS.load_config()
-    assert set(cfg["stations"]) == {"S003D2046", "S026D0630", "S032D1184", "S026D0850"}
+    assert set(cfg["stations"]) == {"S003D2046", "S026D0630", "S032D1184", "S026D0850", "S079D0732"}
     assert len(cfg["stations"]["S003D2046"]["frames"]["images"]) == 12
     root = tmp_path / "rb"
     for f in ("mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop", "mars2020_sol_0413_threeforks_large"):
         (root / f).mkdir(parents=True)
     runs = SS.plan(cfg, root)
     assert [Path(r["work"]).name for r in runs] == ["mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop",
-                                                    "mars2020_sol_0413_threeforks_large", "mars2020_sol_0460_rockytop"]
+                                                    "mars2020_sol_0413_threeforks_large", "mars2020_sol_0460_rockytop",
+                                                    "mars2020_sol_1601_taylorfjellet_large"]
     r0 = runs[0]
     steps = [(c["variant"], c["step"]) for c in r0["commands"]]
     assert steps == [("masked", "dense"), ("rover", "mesh"), ("rover", "depthmaps"), ("rover", "ods"),
@@ -2071,16 +2072,17 @@ def test_nadir_mark_lines_credit_and_disc():
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sols 686, 688"
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"])[1] == "Sols 686-687"
     W, H = 4096, 2048
-    m = nadir.make_mark(W, H, lines)
+    m = nadir.make_mark(W, H, lines, centre_azimuth_deg=90.0)          # the rover's front to the east
     band = H - m["row0"]
-    assert m["row0"] == int(np.ceil(H * 170 / 180)) and m["alpha"].shape == (band, W)
-    assert "Rockytop" in m["text"] and 2.0 < m["stretch"] < 4.0
+    assert nadir.NADIR_MARK_DEG == 20.0 and m["row0"] == int(np.ceil(H * 160 / 180)) and m["alpha"].shape == (band, W)
+    assert len(m["text"]) == 2 and "Rockytop" in m["text"][0] and "C. Tate" in m["text"][1]       # two rows
     ink = m["alpha"] > 0.5
     cols = np.flatnonzero(ink.any(axis=0))
     rows = np.flatnonzero(ink.any(axis=1))
-    assert (cols.max() - cols.min()) > 0.85 * W                        # one line once around the circle
-    assert rows.max() < 0.75 * band and rows.min() >= 1                # near the rim, not at the nadir
-    assert not ink[:, :int(0.01 * W)].any()                            # the gap at north (column 0)
+    assert (cols.max() - cols.min()) <= 0.5 * W + 2                    # no more than half the circle
+    assert abs(0.5 * (cols.max() + cols.min()) - W / 4) < 0.02 * W     # centred on the rover's front (east = a quarter)
+    assert rows.max() < 0.45 * band and rows.min() >= 1                # near the rim
+    assert all(r["span_deg"] <= 180.5 for r in m["rows"])
     img = np.full((H, W, 3), 100, np.uint8)
     bg = np.asarray(nadir.BACKGROUND_RGB)[::-1]                        # BGR, as the images are written
     nadir.apply_mark(img, m, bg)
@@ -2093,8 +2095,11 @@ def test_nadir_mark_lines_credit_and_disc():
     assert i16[m["row0"]:, :, 0].max() == 50000 and i16[m["row0"]:].min() < 2000
     with pytest.raises(ValueError):
         nadir.apply_mark(np.zeros((H, W // 2, 3), np.uint8), m, 255)
-    m90 = nadir.make_mark(W, H, lines, azimuth0_deg=90.0)              # column 0 looks east: the text starts a quarter later
+    m90 = nadir.make_mark(W, H, lines, azimuth0_deg=90.0, centre_azimuth_deg=90.0)     # column 0 looks east
     assert np.abs(np.roll(m90["alpha"], W // 4, axis=1) - m["alpha"]).mean() < 0.01
+    assert abs(nadir.forward_azimuth_deg({"R_block_from_rnav": np.array([[0.0, 1, 0], [1.0, 0, 0], [0, 0, -1.0]])},
+                                         north=(0, 1, 0), east=(1, 0, 0)) - 0.0) < 1e-9          # RNAV x along block y = north
+    assert nadir.forward_azimuth_deg(None, (0, 1, 0), (1, 0, 0)) == 0.0
 
 
 def test_fill_only_source_colours_only_what_the_others_do_not_see(tmp_path):

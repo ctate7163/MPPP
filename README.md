@@ -40,9 +40,9 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. MPPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.97.9** (`v0p97`): the core (`mppp`, the pipeline) and the research studies (`mppp_studies`) apart, the
+Version **0.97.10** (`v0p97`): the core (`mppp`, the pipeline) and the research studies (`mppp_studies`) apart, the
 freeze run as a driver of its own, and the products of one rover station past the block - a cleaned mesh with a
-model of the rover, per-image depth and photometric maps, and a 16K stereoscopic 360 degree panorama with a web
+model of the rover, per-image depth and photometric maps, and a stereoscopic 360 degree panorama with a web
 viewer (below). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are
 development releases; see [CHANGELOG.md](https://github.com/ctate7163/MPPP/blob/main/CHANGELOG.md).
 
@@ -148,7 +148,7 @@ for them).
 `mppp single-sites` (or `mppp dense`, `mesh`, `depthmaps`, `ods` one by one) makes the products of one rover station
 from a finished block: a cleaned terrain mesh out to 75 m with a ground plane and a sky sphere at 200 m, the rover
 model in it, per-image depth, normal, incidence, emission, phase and shadow maps, and an omnidirectional stereo
-panorama, 16384 x 8192 per eye, as PNG (8-bit and 16-bit linear) and JPEG. The stacked left-over-right files are
+panorama, 8192 x 4096 per eye (16K with `--width 16384`), as PNG (8-bit and 16-bit linear) and JPEG. The stacked left-over-right files are
 named `..._360_3DTD` and carry XMP metadata for headset viewers.
 
 * The panoramas in a browser or a headset: **<https://ctate7163.github.io/MPPP/ods/>** (`docs/ods/`, a prototype;

@@ -201,7 +201,8 @@ def add_parsers(sub) -> None:
     p = sub.add_parser("ods", help="0.96: the stereoscopic panorama of the station - two equirect eye images (mppp.ibr.ods)")
     p.add_argument("work")
     p.add_argument("--station", required=True)
-    p.add_argument("--width", type=int, default=16384, help="per eye (default 16384 since 0.97.4; 8192 before)")
+    p.add_argument("--width", type=int, default=8192, help="per eye (default 8192; 16384 for a 16K panorama - the "
+                   "default from 0.97.4 to 0.97.9)")
     p.add_argument("--ipd", type=float, default=0.064, help="eye separation in metres")
     p.add_argument("--sky-radius", type=float, default=None, metavar="M",
                    help="0.97.0: the sky on a sphere of this radius about the mast axis and the ground plane out to it "
@@ -219,9 +220,9 @@ def add_parsers(sub) -> None:
                         "R: the rear pair); those of the same sols; default none")
     p.add_argument("--site-name", default=None, help="0.97.7: the site's name in the mark at the nadir (e.g. Rockytop)")
     p.add_argument("--no-nadir-mark", action="store_true", help="0.97.7: no disc with the credits at the nadir "
-                   "(default: within 10 deg of straight down, light blue, black text in one line around its rim - Mars 2020 Perseverance Rover, the sol and site, made by "
+                   "(default: within 20 deg of straight down, light blue, two rows of black text ahead of the rover - Mars 2020 Perseverance Rover, the sol and site, made by "
                    "C. Tate, the image credit)")
-    p.add_argument("--nadir-mark-deg", type=float, default=None, help="the disc's angular radius (default 10)")
+    p.add_argument("--nadir-mark-deg", type=float, default=None, help="the disc's angular radius (default 20)")
     p.add_argument("--scale", type=float, default=1.0, help="the Navcam frames sampled at this fraction of their own "
                    "size (default 1, Christian 10 Nov: the half-resolution frames are 0.68 mrad a pixel, the 8K "
                    "panorama 0.77 - at 0.5 they were 1.36, coarser than the panorama)")
