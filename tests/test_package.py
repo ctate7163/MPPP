@@ -83,7 +83,7 @@ def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
 
 def test_version():
     import mppp
-    assert mppp.__version__ == "0.97.24" and mppp.VERSION_TAG == "v0p97"
+    assert mppp.__version__ == "0.98.0" and mppp.VERSION_TAG == "v0p98"
     cff = (ROOT / "CITATION.cff").read_text()
     assert f"version: {mppp.__version__}" in cff
     assert f"## {mppp.__version__}" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")

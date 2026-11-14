@@ -3,6 +3,38 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.0 — 2026-11-14
+
+Christian: "please prepare the code needed to run all the single site ods in the json config file and upload them
+afterwards with the new rendered disk. Call this v0p98p0". `run_single_site_ibr.bat` with no arguments does that
+(0.97.24: every station of `single_sites.json`, both variants, then publish, commit and push). New in this version, the
+colour rules (Christian: "for the enhanced color, make sure that the bright rover and sky is compressed while bringing
+out detail from the shadows and the terrain. The shadows should not be clipped to black. The 16 bit images should have
+a universal scale to radiance, and the standard 8-bit version should be made from the 16 bit images and have the same
+range as the standard pipeline 8-bit images. When blending the images, make sure to preserve the noise canceling
+advantage of multiple frames seeing the same terrain"):
+
+- **16-bit panoramas on one scale.** `--exposure16` is 1 by default: the frames' own 16-bit scale at every station
+  (0.97: a gain per station between 0.5 and 4). `ods.json` `linear16.radiance` gives the value per unit radiance per
+  channel, the station's zenith scale, and what is not radiance (the blending gains, neutralised saturation, fills).
+  The 16-bit files are darker than in 0.97 by the gain that is gone (Van Zyl: 1.076).
+- **Standard 8-bit view from the 16-bit image, on the pipeline's 8-bit scale** (`--tone pipeline`, the default;
+  `linear16.tone_pipeline`): the 16-bit value / 64, value for value up to 235; above it each channel is rolled off by
+  itself, so highlights go to white as in the block's frames and are not cut (Van Zyl, with the rover: 2.8 % of the
+  pixels at 255 against 5.8 % cut). 0.97's rule (`--tone auto`: the ground's median to 100) made each station's own
+  range.
+- **Enhanced views clip at neither end** (`linear16.tone_enhanced`): the terrain band's 1 to 97 % span takes 0.06 to
+  0.88 of the 8 bits through the S-curve (5.5); darker values run down a toe that is black only at zero, brighter ones
+  (the deck, the sky) up a shoulder that is white only at infinity. Van Zyl with the rover: pixels at black 0.82 % to
+  0.16 % (those are no data), at white 1.77 % to 0.02 %; the terrain band's 1 % point 4 to 17 of 255, its median 112
+  to 123.
+- **Blending: more frames' worth on near terrain** (`ods.TERRAIN_DETAIL_POWER` 2.0, was 3.0): the detail band's
+  weight falls less steeply with the angle between a frame's ray and the eye's, so two frames that see the same
+  ground share it more evenly (from 5 m: 1.45 frames' worth against 1.2). Each eye's record in `ods.json` has
+  `effective_frames` (median, p10, p90 of (sum w)^2 / sum w^2 on terrain pixels; noise = one frame's / sqrt of it).
+  **Not seen on a real block**: the cost can be a softer detail band where the mesh is off. Set the constant back
+  to 3.0 if the terrain loses sharpness.
+
 ## 0.97.24 — 2026-11-14
 
 - **Nadir mark** (Christian: "make the blue circle 50% of its current size. Make the second row of text larger. Put a

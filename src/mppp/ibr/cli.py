@@ -271,13 +271,14 @@ def add_parsers(sub) -> None:
                    "not found")
     p.add_argument("--pds", default=None, help="--bits 16: the PDS archive (default MPPP_PDS, else the one the block's "
                    "manifest names)")
-    p.add_argument("--tone", default="auto", choices=["auto", "soft", "clip"], help="--bits 16: the 8-bit panorama "
-                   "from the linear one - auto (default: the exposure set on the ground - its median to 100 of 255 - the "
+    p.add_argument("--tone", default="pipeline", choices=["pipeline", "auto", "soft", "clip"], help="--bits 16: the 8-bit "
+                   "panorama from the 16-bit one - pipeline (default, 0.98.0: the scale of the block's 8-bit frames, value "
+                   "for value up to 235, each channel rolled off above), auto (0.97: the exposure set on the ground - its median to 100 of 255 - the "
                    "same for both eyes, the highlights rolled off and faded to white instead of clipped), soft "
                    "(unchanged to 190, the highlights rolled off) or clip (as the 8-bit pipeline: cut at 255)")
-    p.add_argument("--exposure16", default="auto", type=lambda v: v if v == "auto" else float(v),
-                   help="--bits 16: the 16-bit files at this factor of the frames' own 16-bit scale; auto (default, "
-                        "0.97.0): the largest gain between 0.5 and 4 that keeps the 99.99 %% point of the brightest "
+    p.add_argument("--exposure16", default=1.0, type=lambda v: v if v == "auto" else float(v),
+                   help="--bits 16: the 16-bit files at this factor of the frames' own 16-bit scale (default 1, 0.98.0: "
+                        "one scale to radiance at every station, recorded in ods.json); auto (0.97.0): the largest gain between 0.5 and 4 that keeps the 99.99 %% point of the brightest "
                         "channel at 95 %% of the range - one gain per station, kept in the levels file")
     p.add_argument("--keep-mast", action="store_true", help="rover shown: keep the mast and its wind-sensor booms in "
                    "the frames (default: masked - the rover model's mast projected into every frame)")

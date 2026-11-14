@@ -540,6 +540,13 @@ BROWN_FILL_DARKEN = 0.8                  # the fill a little darker than the ter
 # NEAR_BLEND_M[1] to NEAR_LOW_POWER and NEAR_PARALLAX_POWER at NEAR_BLEND_M[0] and nearer.  The colour of a near
 # surface is again a blend of the frames that see it; its detail still comes mostly from the frame nearest the ray.
 NEAR_BLEND_M: Optional[Tuple[float, float]] = (2.0, 4.0)
+TERRAIN_DETAIL_POWER = 2.0        # 0.98.0 (Christian, 14 Nov 2026: "When blending the images, make sure to preserve the noise
+#                                   canceling advantage of multiple frames seeing the same terrain"): the detail band's
+#                                   power on the parallax term for terrain.  3.0 until 0.97.24: with it the frame nearest
+#                                   the eye's ray took most of the weight inside about 20 m (two frames 0.4 m apart seen
+#                                   from 5 m: weights 1 : 0.11, 1.2 frames' worth; with 2.0: 1 : 0.23, 1.45), so the
+#                                   noise of one frame came through.  The cost of a lower power is a softer detail band
+#                                   where the mesh is off.  ods.json records the frames' worth per pixel (effective_frames).
 NEAR_LOW_POWER = 2.0
 NEAR_PARALLAX_POWER = 4.0
 
@@ -1007,6 +1014,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     rej = [0, 0]                                             # the surface check's rejected samples
     rover_px = np.zeros((height, width), bool)               # the rover model under the pixel
     rej_map = np.zeros((height, width), bool)                # a source sample was turned away by the surface check
+    neff_vals: List[np.ndarray] = []                         # 0.98.0: the detail band's frames' worth on terrain pixels
     prov = np.zeros((height, width, 3), np.uint8)            # 0.97.13: the provenance picture's colours (BGR), blended
     u_ = np.asarray(up, float) / np.linalg.norm(up)
     pl = getattr(scene, "plane", None)
@@ -1038,6 +1046,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         hi_acc = np.zeros((n, 3), np.float32)
         w_low_sum = np.zeros(n, np.float32)
         w_hi_sum = np.zeros(n, np.float32)
+        w_hi_sq = np.zeros(n, np.float32)                      # 0.98.0: for the frames' worth of the detail band
         strongest = np.full(n, -1, np.int32)
         strongest_w = np.zeros(n, np.float32)
         prov_lo = np.zeros((n, 3), np.float32)                 # 0.97.13: the frames' colours by their weights
@@ -1054,7 +1063,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
                 fwt = c["fill_weight"][sel, slot]
                 nr = c["near"][sel]                              # 0.97.13: 0 (terrain) to 1 (near): the powers rise
                 w_lo = _smoothstep(dist / (FEATHER_LOW_FRAC * src.short_side)) * aterm ** (1.0 + nr * (NEAR_LOW_POWER - 1.0)) * fwt
-                w_hi = _smoothstep(dist / (FEATHER_HIGH_FRAC * src.short_side)) * aterm ** (3.0 + nr * (NEAR_PARALLAX_POWER - 3.0)) * fwt
+                w_hi = _smoothstep(dist / (FEATHER_HIGH_FRAC * src.short_side)) * aterm ** (TERRAIN_DETAIL_POWER + nr * (NEAR_PARALLAX_POWER - TERRAIN_DETAIL_POWER)) * fwt
                 sat = src.sample_saturation(c["uv"][sel, slot])
                 if sat is not None:                              # a saturated pixel: another frame, where there is one
                     keep = (1.0 - SAT_DOWNWEIGHT * np.clip(sat, 0.0, 1.0)).astype(np.float32)
@@ -1064,6 +1073,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
                 hi_acc[sel] += (g * (full - lo)) * w_hi[:, None]
                 w_low_sum[sel] += w_lo
                 w_hi_sum[sel] += w_hi
+                w_hi_sq[sel] += w_hi * w_hi
                 pc = _source_colour(k)
                 prov_lo[sel] += w_lo[:, None] * pc
                 prov_hi[sel] += w_hi[:, None] * pc
@@ -1088,6 +1098,10 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
             g = has & ~c["on_rover"] & ((c["label"] == LABEL_PLANE) | ((c["label"] == LABEL_MESH) & level))
             ground[r0:r1] = g.reshape(r1 - r0, width)
         source[r0:r1] = np.where(has, strongest, -1).astype(np.int16).reshape(r1 - r0, width)
+        ne = np.where(w_hi_sq > 1e-12, w_hi_sum * w_hi_sum / np.maximum(w_hi_sq, 1e-12), 0.0)     # (sum w)^2 / sum w^2
+        terr = hh & (c["label"] == LABEL_MESH) & ~c["on_rover"]
+        if terr.any():
+            neff_vals.append(ne[terr][::7].astype(np.float32))
         pm = 0.5 * prov_lo / np.maximum(w_low_sum, 1e-6)[:, None] + 0.5 * prov_hi / np.maximum(w_hi_sum, 1e-6)[:, None]
         pm[~hh] = (prov_lo / np.maximum(w_low_sum, 1e-6)[:, None])[~hh]
         prov[r0:r1] = np.clip(np.rint(pm), 0, 255).astype(np.uint8).reshape(r1 - r0, width, 3)
@@ -1121,7 +1135,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         _brown((source == -1) & ((label == LABEL_MESH) | (label == LABEL_PLANE)))
     return {"brown_filled": brown, "rover": rover_px, "rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
             "sky_filled": sky, "sky_evened": evened, "ground_filled": gfill, "surface_check_rejected": rej, "provenance": prov,
-            "sky_weight": evened.pop("weight", None)}
+            "sky_weight": evened.pop("weight", None), "effective_frames": _effective_frames(neff_vals)}
 
 
 GROUND_BAND_M = 0.25             # mesh this close to the ground plane counts as terrain for the ground fill
@@ -1484,6 +1498,43 @@ def geometry_panorama(scene: Scene, station, out_dir: PathLike, prefix: str = ""
     return outs
 
 
+def _effective_frames(vals: Sequence[np.ndarray]) -> Optional[Dict[str, Any]]:
+    """The detail band's frames' worth on the terrain: (sum w)^2 / sum w^2 of the frames' weights per pixel - 1 when
+    one frame carries a pixel, n when n frames share it equally; the noise of the blend is that of a frame divided
+    by its square root."""
+    if not vals:
+        return None
+    v = np.concatenate(vals)
+    return {"median": float(np.median(v)), "mean": float(v.mean()), "p10": float(np.percentile(v, 10)), "p90": float(np.percentile(v, 90)),
+            "share_above_1p5": float((v > 1.5).mean()), "noise_factor_median": float(1.0 / np.sqrt(max(np.median(v), 1e-6))),
+            "detail_power": TERRAIN_DETAIL_POWER,
+            "meaning": "per terrain pixel of the mesh: (sum w)^2 / sum w^2 over the frames' detail-band weights; noise = one "
+                       "frame's / sqrt(this)"}
+
+
+def _radiance_record(frames: Sequence[Dict[str, Any]], exposure16: Optional[float]) -> Optional[Dict[str, Any]]:
+    """0.98.0 (Christian, 14 Nov 2026: "The 16 bit images should have a universal scale to radiance"): how a value of
+    the 16-bit panorama turns back into radiance.  A frame's 16-bit value is
+        radiance x white balance x brightness / zenith scale x scale_rad_to_int16
+    with the block's settings (the same at every station) and the frame's own zenith scale (the sun's height and the
+    opacity, :func:`mppp.radiometry.zenith_scale`; one 360 is taken within minutes, so it hardly varies in a station).
+    The panorama multiplies by exposure16 and by each frame's blending gain (median 1)."""
+    if not frames or exposure16 is None:
+        return None
+    z = np.array([f["scale_zenith"] if f.get("scale_zenith") else 1.0 for f in frames], float)
+    wb = np.asarray(frames[0]["white_balance"], float) * float(frames[0]["brightness"])
+    k = float(frames[0]["scale_rad_to_int16"]) * float(exposure16)
+    zm = float(np.median(z))
+    return {"units": "the units of the PDS RAD product (W m-2 sr-1 um-1)",
+            "value_per_unit_radiance_at_zenith_scale_1": [float(v) for v in wb * k],
+            "zenith_scale_median": zm, "zenith_scale_min_max": [float(z.min()), float(z.max())],
+            "radiance_rgb": "value / value_per_unit_radiance_at_zenith_scale_1 x zenith_scale_median",
+            "value_per_unit_radiance": [float(v) for v in wb * k / zm],
+            "same_at_every_station": "white balance, brightness, scale_rad_to_int16 and exposure16 (1 by default); the zenith scale "
+                                     "is the station's own - with it left in, the values compare as radiance scaled to a common sun",
+            "not_radiance": "the frames' blending gains (0.6-1.6, median 1; in this file), the saturated pixels made neutral, the fills"}
+
+
 def drop_old_stacks(out_dir: PathLike, prefix: str = "") -> List[str]:
     """Removes the same station's squares under the old name (``<prefix>_ods_stereo_square[_16].png/.jpg``), so a
     folder made again holds one top-down image per kind.  Returns the names removed."""
@@ -1578,7 +1629,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
                    gains: bool = True, stack_top: str = "left", sky_fill: bool = True,
                    mask_head_hardware: bool = True, azimuth0_deg: float = 0.0, prefix: Optional[str] = None,
-                   bits: int = 8, pds: Optional[PathLike] = None, tone: str = "auto", exposure16: Union[float, str] = "auto",
+                   bits: int = 8, pds: Optional[PathLike] = None, tone: str = "pipeline", exposure16: Union[float, str] = 1.0,
                    ground_fill: bool = True, mask_mast: bool = True,
                    tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True, pole_merge_deg="default", sky_radius_m="default",
                    fill_families: str = "", nadir_mark: bool = True, site_name: Optional[str] = None,
@@ -1756,18 +1807,22 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 mark["bg16"] = np.clip(np.asarray(_nadir.BACKGROUND_RGB)[::-1] * _nadir.BACKGROUND_LINEAR_FACTOR * k16, 0, 65535)
                 _nadir.apply_mark(v16, mark, mark["bg16"])                  # light blue (BGR here)
             cv2.imwrite(str(f16), v16)
+            from .linear16 import auto_levels, tone_levels, tone_soft, tone_pipeline
+            lin8 = v16[..., ::-1].astype(np.float32) / k16           # 0.98.0: the 8-bit view is made from the 16-bit image
             del v16
-            from .linear16 import auto_levels, tone_levels, tone_soft
-            if tone == "auto":                       # the black and white points from the first eye, for both
+            if tone == "pipeline":                   # 0.98.0 default: the scale of the block's own 8-bit frames
+                view = tone_pipeline(lin8)
+            elif tone == "auto":                       # the black and white points from the first eye, for both
                 if levels is None:                   # 0.97.0: or from the file the other variant wrote
                     from .linear16 import shared_levels
                     levels, levels_from = shared_levels(tone_levels_file,
                                                         lambda: auto_levels(res["rgb"], res["source"] >= 0))
                     log.info("ods: 8-bit view levels %.1f / %.1f (%s%s)", levels[0], levels[1], levels_from,
                              f": {tone_levels_file}" if tone_levels_file else "")
-                view = tone_levels(res["rgb"], *levels)
+                view = tone_levels(lin8, *levels)
             else:
-                view = tone_soft(res["rgb"]) if tone == "soft" else np.clip(res["rgb"], 0, 255)
+                view = tone_soft(lin8) if tone == "soft" else np.clip(lin8, 0, 255)
+            del lin8
             over = float((res["rgb"].max(axis=2) > 255.0).mean())
             view8 = np.rint(view[..., ::-1]).astype(np.uint8)
             if mark is not None:
@@ -1808,6 +1863,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                 "sources_used": int(len(np.unique(res["source"][res["source"] >= 0])))}
         if linear:
             rec_out["eyes"][eye].update(file_16bit=str(f16), above_8bit_range=over, clipped_in_16bit=clipped16)
+        rec_out["eyes"][eye]["effective_frames"] = res.get("effective_frames")      # 0.98.0
         for s in sources:
             s.release()
     if centre_depth and depth_rec is None:               # 0.97.11: the depth without the centre panorama's colours
@@ -1873,7 +1929,13 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             "view_tone": tone if linear else None,
             "view_levels_8bit_units": None if levels is None else [float(v) for v in levels],
             "exposure16": None if isinstance(exposure16, str) else float(exposure16),
-            "value_16bit": "the linear value x 64 x exposure16 (auto: the gain that puts the 99.99 % point of the brightest channel at 95 % of the range, 0.5-4)",
+            "value_16bit": "the linear value x 64 x exposure16.  exposure16 is 1 by default (0.98.0): every station on the frames' "
+                           "own scale, so one value is one radiance everywhere; 'auto' (0.97) set a gain per station",
+            "radiance": _radiance_record(fr, None if isinstance(exposure16, str) else float(exposure16)),
+            "view_8bit": {"pipeline": "the 16-bit value / (64 x exposure16), as the block's 8-bit frames, value for value up to 235; "
+                                      "each channel rolled off above it (255 at the 16-bit ceiling)",
+                          "auto": "the ground's median to 100 of 255, highlights rolled off", "soft": "unchanged to 190, rolled off above",
+                          "clip": "cut at 255"}.get(tone) if linear else None,
             "frames_saturated_share_max": max([f["saturated_share"] for f in fr], default=None),
             "frames_clipped_in_8bit_share_max": max([f["clipped_in_8bit_share"] for f in fr], default=None)}
     if geometry and set(eyes) >= {"left", "right"}:                         # 0.97.20: the model through the same rays

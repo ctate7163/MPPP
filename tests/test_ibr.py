@@ -1432,7 +1432,7 @@ def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
             sat[:, :200] = 255                                    # the left half of the red frame "saturated"
         cv2.imwrite(str(d16 / (Path(n).stem + ".sat.png")), sat)
     out = tmp_path / "o16"
-    r = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, bits=16, gains=False, exposure16=0.5)
+    r = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, bits=16, gains=False, exposure16=0.5, tone="auto")
     assert r["bits"] == 16 and r["linear16"]["rendered"] and not r["linear16"]["missing"]
     L16 = cv2.imread(str(out / "Sol0091_S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)[..., ::-1]
     L8 = cv2.imread(str(out / "Sol0091_S003D0010_ods_left.png"))[..., ::-1]
@@ -1497,7 +1497,7 @@ def test_retone_from_the_16bit_panoramas(tmp_path):
     r = retone(tmp_path, "S1_rover")
     sq = cv2.imread(str(tmp_path / "S1_rover_360_3DTD.jpg"))
     L8 = cv2.imread(str(tmp_path / "S1_rover_ods_left.png"))
-    assert sq.shape == (128, 128, 3) and 80 < np.median(L8[32:]) < 120 and L8[:32].min() > 180 and r["top"] == "left"
+    assert sq.shape == (128, 128, 3) and 60 < np.median(L8[32:]) < 120 and L8[:32].min() > 180 and r["top"] == "left"
 
 
 def test_rover_model_in_the_mesh(tmp_path):
@@ -1760,7 +1760,7 @@ def test_exposure_and_enhanced_views(tmp_path):
     assert 80 < ref < 140 and 0 <= lo < hi <= 1.01 and 0.2 < med < 0.8   # from the terrain band: the bright sky is not in it
     v = L.tone_enhanced(x, ref, lo, hi, med)
     assert v.min() >= 0 and v.max() <= 255 and 70 < np.median(v[32:].mean(axis=2)) < 185
-    assert (v[:4] == 255).all()                                       # the sky clips
+    assert (v[:4] > 250).all() and (v[:4] < 255).all()                # 0.98.0: the sky near white, not clipped
     assert v[32:].std() > 1.5 * (255.0 * (x[32:] / x[32:].max())).std()   # more contrast on the terrain than a plain scale
     f = tmp_path / "levels.json"
     assert L.shared_value(f, "exposure16", lambda: 1.5) == (1.5, "computed")
@@ -2488,7 +2488,7 @@ def test_enhanced_views_smooth_the_sky(tmp_path):
     a1 = cv2.imread(str(out / "S1_enh_360_3DTD.jpg"))
     assert r0["sky"].startswith("as rendered") and r1["sky"].startswith("smoothed")
     edge = lambda a: abs(float(a[100, 296:299].mean()) - float(a[100, 302:305].mean()))      # noqa: E731
-    assert edge(a0) > 2.0 and edge(a1) <= 1.2
+    assert edge(a0) > 2.0 and edge(a1) <= 0.7 * edge(a0)
     assert np.abs(a0[320:500].astype(int) - a1[320:500]).max() <= 2        # the terrain: the same picture
 
 
@@ -2730,3 +2730,44 @@ def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(t
     assert "single-sites --upload %*" in SS.BAT and "--no-upload" in SS.BAT
     a = SS.build_parser().parse_args(["--upload", "--no-upload"]) if hasattr(SS, "build_parser") else None
     assert a is None or a.no_upload
+
+
+def test_colour_0p98_pipeline_view_enhanced_without_clipping_radiance_record_and_frames_worth(tmp_path):
+    """0.98.0 (Christian, 14 Nov 2026): the standard 8-bit view is the 16-bit image on the pipeline's 8-bit scale; the
+    enhanced curve clips at neither end; the 16-bit scale is one for every station and ods.json says how to get back
+    to radiance; the blend records how many frames' worth each terrain pixel has."""
+    from mppp.ibr import linear16 as L
+    x = np.linspace(0.0, 1023.0, 2048, dtype=np.float32)[:, None] * np.ones((1, 3), np.float32)
+    y = L.tone_pipeline(x)
+    assert np.allclose(y[x[:, 0] <= 235], x[x[:, 0] <= 235]) and (np.diff(y[:, 0]) >= -1e-4).all() and 254.0 < y[-1, 0] <= 255.0
+    tinted = L.tone_pipeline(np.array([[900.0, 600.0, 500.0]], np.float32))[0]         # a highlight: to white, not to its tint
+    assert tinted.min() > 249.0
+    lv = [800.0, 0.18, 0.52, 0.5]
+    e = L.tone_enhanced(x, *lv)[:, 0]
+    assert (np.diff(e) >= -1e-4).all() and e[0] == 0.0 and e[-1] < 255.0
+    assert e[x[:, 0] > 2.0].min() > 0.5                                                # shadows: above black from 2 of 1023 on
+    span = (x[:, 0] / 800.0) ** (1 / 2.2)
+    inside = (span >= 0.18) & (span <= 0.52)
+    assert abs(e[inside].min() - 255 * L.ENH_OUT_LOW) < 2 and abs(e[inside].max() - 255 * L.ENH_OUT_HIGH) < 2
+    import cv2
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    d16 = Path(proj.root) / "images16"
+    d16.mkdir()
+    for n in st.images:                                              # 16-bit frames twice as bright as 8 bits hold
+        img8 = cv2.imread(str(Path(proj.root) / "images" / n), cv2.IMREAD_COLOR)
+        cv2.imwrite(str(d16 / n), (img8.astype(np.uint16) * 64 * 2))
+        cv2.imwrite(str(d16 / (Path(n).stem + ".sat.png")), np.zeros(img8.shape[:2], np.uint8))
+    r = O.render_station(proj, rec, st, scene, tmp_path / "o", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, bits=16, geometry=False, gains=False)
+    lin = r["linear16"]
+    assert lin["rendered"], lin
+    assert lin["exposure16"] == 1.0 and lin["view_tone"] == "pipeline"
+    rad = lin["radiance"]
+    if rad is not None:                                              # the synthetic block has frames' facts or not
+        assert len(rad["value_per_unit_radiance"]) == 3 and rad["zenith_scale_median"] > 0
+    ef = r["eyes"]["left"]["effective_frames"]
+    assert ef is None or (1.0 <= ef["median"] <= O.MAX_SOURCES_BLENDED and ef["detail_power"] == O.TERRAIN_DETAIL_POWER == 2.0)
+    L16 = cv2.imread(str(tmp_path / "o" / "Sol0091_S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)
+    L8 = cv2.imread(str(tmp_path / "o" / "Sol0091_S003D0010_ods_left.png"))
+    band = slice(20, 100)                                            # above the nadir mark
+    want = np.rint(L.tone_pipeline(L16[band].astype(np.float32) / 64.0))
+    assert np.abs(want - L8[band].astype(np.float32)).max() <= 1.0   # the view is the 16-bit image / 64, rolled off
