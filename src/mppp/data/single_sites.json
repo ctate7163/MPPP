@@ -79,6 +79,7 @@
     "NLF_0688_0728029302_791RAD_N0321184NCAM13688_0A0195J01"
    ]
   },
+  "Sol0690_S032D1184_Z34": {"experimental": true, "work": "mars2020_sol_0413_threeforks_north_zcam", "station": "32_1184", "frames": {"scale": 0.5}, "variants": ["masked"], "ods_args": ["--cameras", "Z", "--sols", "690", "--zcam-scale", "0.5", "--fill-cameras", "NF"], "note": "0.98.2, experimental (Christian, 14 Nov 2026: 'prepare a ods with z34 frames projected onto the ncam model. threeforks north should be the first attempt'): the terrain from the station's Navcam frames in the Navcam + Mastcam-Z block, the panorama from the 34 mm frames of sol 690 (ZCAM08692, 109 pairs) at half size - 0.42 mrad a pixel, still finer than an 8192-wide panorama's 0.77 - with the Navcam and front Hazcam frames filling what Mastcam-Z did not see. Run only when named."},
   "Sol0474_S026D0850": {
    "site": "rockytop",
    "station": "26_850",

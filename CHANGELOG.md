@@ -3,6 +3,135 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.3 — 2026-11-14
+
+Christian: "I want it to run in reverse order by default".
+
+- `mppp single-sites` with no station named runs the config's stations last to first (the newest sols first).
+  Stations named on the command line run in the order given.
+
+## 0.98.2 — 2026-11-14
+
+Two experiments. Neither changes the standard panoramas, and neither has run on a real block yet.
+
+Christian: "Prepare to render a rover that is textured from the navcam images ... rendering a retextured rover is an
+experiment, so keep the ods with the rover".
+
+- **The rover as a textured surface** (`mppp.ibr.rover_surface`). The Navcam sees the rover from the mast head only,
+  so the surface is built from there: the with-rover panorama from the pivot is the texture, and its depth gives a
+  vertex every 4 pixels where the rover model is. Cells across a jump in range are left open, and what the cameras
+  never saw is not in the mesh. Output: `<prefix>_rover_surface.glb` (binary glTF, metres about the pivot).
+- `mppp single-sites --rover-surface` renders the with-rover panorama from the pivot as well
+  (`--eyes left right centre`, about half as long again for that variant), builds the surface and publishes it.
+  A failure here never fails the run.
+- `<prefix>_ods_centre_depth.npz` now also holds `rover` (where the rover model is) when the centre panorama is rendered.
+- The viewer lays the surface on the terrain-only view. In a headset it stays where the head was when it appeared,
+  so it shifts against the terrain as the head moves. Key R shows and hides it.
+
+Christian: "prepare a ods with z34 frames projected onto the ncam model. threeforks north should be the first attempt."
+
+- New station `Sol0690_S032D1184_Z34` in `single_sites.json`: terrain from the station's Navcam frames, panorama from
+  the 34 mm frames of sol 690 at half size, Navcam and front Hazcam frames as fill, terrain-only variant.
+- A station marked `"experimental": true` runs only when it is named, so the batch file with no arguments still
+  renders the eight standard stations.
+
+## 0.98.1 — 2026-11-14
+
+Christian: "The first Z26 and z100 models promoted will need to be just from seitah and chal rocks tiny."
+
+- The freeze's zoom filter now lets a site's 26 mm frames through as well as its 100 mm frames
+  (`SITE_ZOOMS_WITHOUT_JOINT = (26, 100)`); before, 26 mm was dropped from every freeze block.
+- `chal_rocks_tiny` lists 26 mm (`[26, 34, 48, 63, 100]`); nothing happens if the sols hold no 26 mm frame.
+- The run key ignores 26 mm in the filter for sites that do not list it (`KEY_SITE_ONLY_ZOOMS = (26, 100)`),
+  so finished blocks of other sites are not queued again. The sites that list 26 or 100 mm
+  (Seitah Overlook, the three Chal Rocks sites) get a new key and run again.
+
+## 0.98.0 — 2026-11-14
+
+Christian: "please prepare the code needed to run all the single site ods in the json config file and upload them
+afterwards with the new rendered disk. Call this v0p98p0". `run_single_site_ibr.bat` with no arguments does that
+(0.97.24: every station of `single_sites.json`, both variants, then publish, commit and push). New in this version, the
+colour rules (Christian: "for the enhanced color, make sure that the bright rover and sky is compressed while bringing
+out detail from the shadows and the terrain. The shadows should not be clipped to black. The 16 bit images should have
+a universal scale to radiance, and the standard 8-bit version should be made from the 16 bit images and have the same
+range as the standard pipeline 8-bit images. When blending the images, make sure to preserve the noise canceling
+advantage of multiple frames seeing the same terrain"):
+
+- **16-bit panoramas on one scale.** `--exposure16` is 1 by default: the frames' own 16-bit scale at every station
+  (0.97: a gain per station between 0.5 and 4). `ods.json` `linear16.radiance` gives the value per unit radiance per
+  channel, the station's zenith scale, and what is not radiance (the blending gains, neutralised saturation, fills).
+  The 16-bit files are darker than in 0.97 by the gain that is gone (Van Zyl: 1.076).
+- **Standard 8-bit view from the 16-bit image, on the pipeline's 8-bit scale** (`--tone pipeline`, the default;
+  `linear16.tone_pipeline`): the 16-bit value / 64, value for value up to 235; above it each channel is rolled off by
+  itself, so highlights go to white as in the block's frames and are not cut (Van Zyl, with the rover: 2.8 % of the
+  pixels at 255 against 5.8 % cut). 0.97's rule (`--tone auto`: the ground's median to 100) made each station's own
+  range.
+- **Enhanced views clip at neither end** (`linear16.tone_enhanced`): the terrain band's 1 to 97 % span takes 0.06 to
+  0.88 of the 8 bits through the S-curve (5.5); darker values run down a toe that is black only at zero, brighter ones
+  (the deck, the sky) up a shoulder that is white only at infinity. Van Zyl with the rover: pixels at black 0.82 % to
+  0.16 % (those are no data), at white 1.77 % to 0.02 %; the terrain band's 1 % point 4 to 17 of 255, its median 112
+  to 123.
+- **Blending: more frames' worth on near terrain** (`ods.TERRAIN_DETAIL_POWER` 2.0, was 3.0): the detail band's
+  weight falls less steeply with the angle between a frame's ray and the eye's, so two frames that see the same
+  ground share it more evenly (from 5 m: 1.45 frames' worth against 1.2). Each eye's record in `ods.json` has
+  `effective_frames` (median, p10, p90 of (sum w)^2 / sum w^2 on terrain pixels; noise = one frame's / sqrt of it).
+  **Not seen on a real block**: the cost can be a softer detail band where the mesh is off. Set the constant back
+  to 3.0 if the terrain loses sharpness.
+
+## 0.97.24 — 2026-11-14
+
+- **Nadir mark** (Christian: "make the blue circle 50% of its current size. Make the second row of text larger. Put a
+  compass graphic with N, S, E, W directions in the center of the circle aligned with the true directions in the
+  ods"): the disc is 10 degrees from the nadir (20 before); the second row may be 0.16 of the disc's radius tall
+  (0.09) and take 0.6 of the circle (0.5), so it is 0.8 of the first row's height (0.45); a compass in the middle,
+  half the disc's radius wide on the ground (`nadir.compass_rose`): a ring with four ticks and a four-pointed star whose
+  solid, longer point is the panorama's north whatever way the rover faces. No letters (Christian, the same morning:
+  "those letters can be sideways or upside down depending on how the viewer is seeing them").
+- **The mark as a surface on the ground in the viewer** (Christian: "in the VR viewer, make that a 3d surface on the
+  ground. This will reduce the disparity effect making the text hard to read ... a circle a little larger than how it
+  appears in the ods at the level of the ground"): the panorama run writes `<station>_nadir_mark.png` (the mark from
+  above, north up, letters in their own shape on the ground; `nadir.write_texture`) and records `texture` and
+  `radius_m` in `ods.json`; `web.publish` copies it and gives each variant `ground_mark` {file, depth_m, radius_m} in
+  `panos.json`; the page lays a disc 1.15 times the mark's radius at that depth below the eyes, drawn by each eye's
+  own camera (key M hides it). Checked on a screen in headless Chrome with a synthetic station (the disc covers the
+  mark, N at north, E at east). **Not checked in a headset.**
+- **`run_single_site_ibr.bat` uploads when it is done** (Christian: "The ibr bat script should by default upload the
+  latest ods and other files to Github when it is done. how could this be made reliable?"): the batch file passes
+  `--upload`; `--no-upload` skips it. `web.upload`: the commit is made before the network is touched; a failed push
+  is tried three times 30 s apart and the commit goes up with the next upload; git never waits at a prompt and each
+  command has a 15 min limit; the remote's branch is read back after the push; a failure writes
+  `docs/ods/upload_pending.json` (ignored by git) and makes the run's exit code non-zero.
+
+## 0.97.23 — 2026-11-13
+
+- **Three Skinner Ridge 79 mm sequences on the low list** (Christian: "Do both of those things"): `483:ZCAM03394`,
+  `484:ZCAM03396`, `492:ZCAM03399`. In the 0.97.4 freeze block they ran as high and measure 0.997 to 1.001 of the
+  label focal length (sequence z -9.6, -10.7, -6.6). The list is not part of a block's run key: a finished block
+  takes the change only when it is run again.
+- **The state threshold follows the focus slope** (`backlash.STATE_LINES`, `state_threshold`). The left 34 mm low
+  state is not ratio 1: it falls with focus as the high state does (Three Forks South ZCAM08667: 1.0083 at focus
+  180, 1.0020 at 1212; the high line of Skinner Ridge 0.0059 to 0.0081 above it throughout). The threshold was
+  halfway between 1 and the high ratio, and with fewer than five high groups that ratio was a constant, so
+  near-focus low frames read as high. Now: where the high ratio is measured on the block, the threshold is half the
+  measured gap below it (ZL034 0.0072, ZR034 0.0087); a block with three or four high groups takes its own level and
+  the reference slope (source "measured level, reference slope"). A ratio from the focus model, and every other
+  zoom, are as before. Replayed on the two blocks' state files: Three Forks South 18 low groups that read undecided
+  or high now read low, none the other way; single-image high groups are nearer the threshold (10 go from
+  high to undecided at group level; the sequence rule still decides them). Rows carry `regular_ratio`.
+- **Run key: 100 mm in the freeze's zoom filter does not change the key of a site without 100 mm**
+  (`KEY_SITE_ONLY_ZOOMS`). With 0.97.22 alone, `freeze.bat --update-code` would have queued every finished
+  Mastcam-Z block again. Chal Rocks (three sizes) and Seitah Overlook do get new keys, as intended.
+
+## 0.97.22 — 2026-11-13
+
+- **100 mm at Chal Rocks and Seitah Overlook** (Christian: "Add z100 to it and chal rocks regular, tiny and large"):
+  `chal_rocks` and `chal_rocks_tiny` list 100 mm (`chal_rocks_large` and `seitah_overlook` did since 0.97.0). The
+  freeze dropped it all the same: its site runs pass `zcam_zooms_only` = the zooms with a joint (34, 48, 63, 79,
+  110), which removed 26 and 100 mm from every run, so neither zoom has been aligned in a freeze block. The filter
+  now keeps 100 mm (`run_pipeline.SITE_ZOOMS_WITHOUT_JOINT`); 26 mm is still dropped. The frames exist: the zoom
+  ladders ZCAM00033 / ZCAM00034 of sols 92-93 at Chal Rocks and ZCAM08114 of sol 121 at Seitah Overlook. Takes
+  effect in the freeze after `freeze.bat --update-code`; the four blocks are processed and run again.
+
 ## 0.97.21 — 2026-11-13
 
 - **`mppp single-sites --upload`** (Christian: "I'd also like the option to upload the ods after the one bat file

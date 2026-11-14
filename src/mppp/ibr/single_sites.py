@@ -52,8 +52,11 @@ REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
 REM    examples:  run_single_site_ibr.bat Sol0052_S003D2046            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
-REM               run_single_site_ibr.bat Sol0052_S003D2046 --upload     then publish, commit the panoramas, push
-REM               run_single_site_ibr.bat --publish-only --upload        no rendering: publish and push what is there
+REM               run_single_site_ibr.bat Sol0052_S003D2046 --no-upload  the run without the upload at its end
+REM               run_single_site_ibr.bat --publish-only                 no rendering: publish and push what is there
+REM    0.97.24: when the run is done its panoramas are published into docs\ods, committed and pushed to GitHub with
+REM    the code (--upload is given here; --no-upload after it wins).  A push that fails is tried three times and
+REM    the commit goes up with the next run: see "NOT uploaded" at the end and docs\ods\upload_pending.json.
 REM set MPPP_NO_PAUSE=1 before it: no pause at the end, and the exit code is the run's (for unattended chains)
 REM Nothing in this file names a version, so it never needs replacing.
 REM It also lives in scripts\windows of the repository (0.97.0): there it works on the tree it is in.  Everything
@@ -92,7 +95,7 @@ set "B="
   for /f %%h in ('git rev-parse HEAD') do set "H1=%%h"
   echo %REPO%: !H0:~0,7! -^> !H1:~0,7!
   call scripts\windows\mppp_env.bat || ( pause & exit /b 1 )
-  python -m mppp single-sites %*
+  python -m mppp single-sites --upload %*
   set "RC=!errorlevel!"
   if not defined MPPP_NO_PAUSE pause
   exit /b !RC!
@@ -106,7 +109,7 @@ SQUARES_BAT = BAT.replace("REM run_single_site_ibr.bat [LABEL ...] [--steps ...]
 SQUARES_BAT = SQUARES_BAT.replace("REM 2. python -m mppp single-sites with the arguments given: the stations of src\\mppp\\data\\single_sites.json",
                                   "REM 2. python -m mppp single-sites --squares-only: every station's two eye images already there stacked into\n"
                                   "REM    <station>[_rover]_360_3DTD.jpg / .png, the left eye on top (Christian, 10 Nov); nothing rendered")
-SQUARES_BAT = SQUARES_BAT.replace("python -m mppp single-sites %*", "python -m mppp single-sites --squares-only %*")
+SQUARES_BAT = SQUARES_BAT.replace("python -m mppp single-sites --upload %*", "python -m mppp single-sites --squares-only %*")
 assert "--squares-only %*" in SQUARES_BAT and "make_square.bat [LABEL" in SQUARES_BAT
 
 
@@ -147,7 +150,8 @@ def frame_args(frames: Dict[str, Any]) -> List[str]:
 
 
 def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = None, labels: Optional[Sequence[str]] = None,
-         steps: Sequence[str] = STEPS, variants: Optional[Sequence[str]] = None, ods_width: Optional[int] = None) -> List[Dict[str, Any]]:
+         steps: Sequence[str] = STEPS, variants: Optional[Sequence[str]] = None, ods_width: Optional[int] = None,
+         rover_surface: bool = False) -> List[Dict[str, Any]]:
     """The runs, in order: one entry per station with its block, its output folder and the commands (argv lists of
     ``python -m mppp``), grouped by variant."""
     root = Path(root)
@@ -157,8 +161,9 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
     for lab in cfg["stations"]:
         by_key.setdefault(station_key(lab).upper(), []).append(lab)
     todo = []
-    for lab in (list(labels) if labels else list(cfg["stations"])):
-        todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), [lab])
+    for lab in (list(labels) if labels else [k for k, v in cfg["stations"].items() if not v.get("experimental")][::-1]):   # 0.98.3 (Christian, 14 Nov 2026: "run in reverse order by default"): the config's last station first
+        todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), [lab])      # 0.98.2: an "experimental"
+        #                                                                                       station runs only when named
     unknown = [lab for lab in todo if lab not in cfg["stations"]]
     if unknown:
         raise KeyError(f"not in the config: {unknown} (there: {sorted(cfg['stations'])})")
@@ -220,6 +225,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                 argv += [str(x) for x in st.get(f"{step}_args", [])]
                 if step == "ods" and ods_width:      # after the config's arguments: the last --width counts
                     argv += ["--width", str(int(ods_width))]
+                if step == "ods" and rover_surface and v == "rover":     # 0.98.2 (experimental): the panorama from the
+                    argv += ["--eyes", "left", "right", "centre"]        # pivot too, for mppp.ibr.rover_surface
                 cmds.append({"variant": v, "step": step, "argv": argv})
         runs.append({"label": lab, "work": str(work), "out": str(base), "note": st.get("note", ""), "variants": vs,
                      "commands": cmds})
@@ -461,12 +468,17 @@ def add_parser(sub) -> None:
                    help="0.97.3: after the run, the stations' stereo JPEGs into DIR/panos and DIR/panos.json for the web "
                         "viewer (docs/ods of the repository; the page is copied into DIR when it is another folder)")
     p.add_argument("--publish-only", action="store_true", help="with --publish or --upload: no steps, publish what --out holds")
+    p.add_argument("--no-upload", action="store_true",
+                   help="0.97.24: no upload, also when --upload is given (run_single_site_ibr.bat gives it)")
     p.add_argument("--upload", action="store_true",
                    help="0.97.21: after the run, publish (into docs/ods of this checkout unless --publish names a folder), "
                         "commit the panoramas there and push the branch to origin - the code's commits go with it")
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
     p.add_argument("--publish-views", nargs="+", default=["standard"], metavar="VIEW",
                    help="standard, enhanced, 'enhanced local' (default: standard - 0.97.18: the enhanced view is not published)")
+    p.add_argument("--rover-surface", action="store_true",
+                   help="0.98.2, experimental: also render the with-rover panorama from the pivot and make the rover a "
+                        "textured surface from it (<prefix>_rover_surface.glb; the viewer lays it on the terrain-only view)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
@@ -484,17 +496,28 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         for lab, st in cfg["stations"].items():
             print(f"{lab}  {st['station']:>9}  {st.get('site') or st.get('work')}  {st.get('note', '')}")
         return 0
-    runs = plan(cfg, root, out_root, a.labels, a.steps, a.variants, ods_width=a.width)
+    runs = plan(cfg, root, out_root, a.labels, a.steps, a.variants, ods_width=a.width,
+                rover_surface=getattr(a, "rover_surface", False))
     if a.dry_run:
         for r in runs:
             print(f"{r['label']}: {r['work']} -> {r['out']}")
             for c in r["commands"]:
                 print(f"   [{c['variant']}] python -m mppp " + " ".join(c["argv"]))
         return 0
+    if getattr(a, "no_upload", False) or a.dry_run or a.squares_only:   # 0.97.24: the batch file asks for the upload by default
+        a.upload = False
     if getattr(a, "upload", False) and not a.publish:    # 0.97.21: the checkout's own viewer folder
         a.publish = str(Path(__file__).resolve().parents[3] / "docs" / "ods")
     rc = 0 if (a.publish and a.publish_only) else run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone,
                                                           force=getattr(a, "force", False))
+    if getattr(a, "rover_surface", False) and not a.squares_only:      # experimental: never fails the run
+        from . import rover_surface as _rs
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+        for r in runs:
+            try:
+                _rs.from_folder(Path(r["out"]) / "with_rover")
+            except Exception as e:                       # noqa: BLE001
+                print(f"rover surface of {r['label']}: failed ({e})")
     if a.publish:
         from . import web
         logging.basicConfig(level=logging.INFO, format="%(message)s")

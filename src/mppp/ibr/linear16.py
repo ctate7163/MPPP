@@ -249,6 +249,24 @@ def tone_soft(x: np.ndarray, knee: float = 190.0, top: float = 255.0) -> np.ndar
     return np.clip(x * s[..., None], 0.0, 255.0)
 
 
+PIPELINE_KNEE = 235.0            # 0.98.0: the standard 8-bit view is the pipeline's own 8-bit scale (16-bit / 64) up to here ...
+
+
+def tone_pipeline(x: np.ndarray) -> np.ndarray:
+    """0.98.0 (Christian, 14 Nov 2026: "the standard 8-bit version should be made from the 16 bit images and have the
+    same range as the standard pipeline 8-bit images"): linear values in 8-bit units (the 16-bit / 64) -> 0..255 on
+    the scale of the block's own 8-bit frames - value for value up to PIPELINE_KNEE; the 20 levels above it, where
+    those frames go flat white at 255, hold what the 16 bits have beyond.  Each channel is rolled off by itself, so
+    a highlight goes to white as it does in the pipeline's frames (rolled off together the channels keep the hue of
+    the white balance: the deck and the sky near the sun came out blue - Van Zyl, 14 Nov)."""
+    x = np.asarray(x, np.float32)
+    hi = 65535.0 / UNITS_PER_8BIT
+    t = np.clip((x - PIPELINE_KNEE) / (hi - PIPELINE_KNEE), 0.0, 1.0)
+    k = (hi - PIPELINE_KNEE) / (255.0 - PIPELINE_KNEE)                # slope 1 at the knee, 0 at the 16-bit ceiling
+    y = PIPELINE_KNEE + (255.0 - PIPELINE_KNEE) * (1.0 - (1.0 - t) ** k)
+    return np.clip(np.where(x > PIPELINE_KNEE, y, x), 0.0, 255.0)
+
+
 TERRAIN_GREY = 100.0             # the median of the ground lands here (8-bit), as in the 8-bit pipeline's frames
 KNEE = 170.0                     # linear up to here; above it the highlights roll off towards 255 ...
 DESATURATE = 0.85                # ... and lose this much of their colour by 3 shoulder widths above the knee
@@ -343,8 +361,15 @@ EXPOSURE16_RANGE = (0.5, 4.0)    #   within these factors of the frames' own 16-
 ENH_BAND_DEG = (-30.0, -2.0)
 ENH_GAMMA = 2.2
 ENH_REF_PCT = 99.9
-ENH_LOW_PCT, ENH_HIGH_PCT = 1.0, 99.0
-ENH_S = 6.0
+ENH_LOW_PCT, ENH_HIGH_PCT = 1.0, 97.0      # 99 until 0.97.24: with the rover shown the band's top 3 % is deck, not terrain
+ENH_S = 5.5                      # 6.0 until 0.97.24
+# 0.98.0 (Christian, 14 Nov 2026: "for the enhanced color, make sure that the bright rover and sky is compressed while
+# bringing out detail from the shadows and the terrain. The shadows should not be clipped to black"): nothing clips.
+# The terrain band's ENH_LOW_PCT..ENH_HIGH_PCT span takes ENH_OUT_LOW..ENH_OUT_HIGH of the 8 bits through the S-curve;
+# what is darker runs down a toe to black at zero radiance only; what is brighter (the deck, the sky) rolls off
+# towards white along a shoulder.  Both join the S-curve with its own slope.
+ENH_OUT_LOW = 0.06
+ENH_OUT_HIGH = 0.88
 ENH_LOCAL_SIGMA_FRAC = 0.0025
 ENH_LOCAL_AMOUNT = 0.8
 
@@ -413,11 +438,28 @@ def enhanced_levels(x: np.ndarray, seen: Optional[np.ndarray] = None) -> List[fl
 
 
 def tone_enhanced(x: np.ndarray, ref: float, lo: float, hi: float, med: float) -> np.ndarray:
-    """Linear values -> 0..255 by the rule above: gamma, the stretch between ``lo`` and ``hi``, the S-curve about
-    ``med``; one curve for the three channels."""
-    n = np.clip((np.clip(np.asarray(x, np.float32) / ref, 0.0, None) ** (1.0 / ENH_GAMMA) - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+    """Linear values -> 0..255 by the rule above: gamma; the terrain's span ``lo``..``hi`` through the S-curve about
+    ``med`` into ENH_OUT_LOW..ENH_OUT_HIGH of the range; a toe below it (black only at zero) and a shoulder above
+    it (white only at infinity).  One curve for the three channels; monotonic, nothing clipped (0.98.0; until
+    0.97.24 the span took the whole range and what lay outside it was black or white)."""
+    g = np.clip(np.asarray(x, np.float32) / ref, 0.0, None) ** (1.0 / ENH_GAMMA)
+    span = max(hi - lo, 1e-6)
+    n = (g - lo) / span
     f = lambda t: 1.0 / (1.0 + np.exp(-ENH_S * (t - med)))            # noqa: E731
-    return np.clip(255.0 * (f(n) - f(0.0)) / (f(1.0) - f(0.0)), 0.0, 255.0)
+    f0, f1 = float(f(0.0)), float(f(1.0))
+    A, B = ENH_OUT_LOW, ENH_OUT_HIGH
+    core = A + (B - A) * (f(np.clip(n, 0.0, 1.0)) - f0) / (f1 - f0)
+    s0 = (B - A) * ENH_S * f0 * (1.0 - f0) / (f1 - f0)               # the S-curve's slope at its ends
+    s1 = (B - A) * ENH_S * f1 * (1.0 - f1) / (f1 - f0)
+    n0 = -lo / span                                                   # where zero radiance is (<= 0)
+    out = core
+    if n0 < -1e-6:
+        p = float(np.clip(s0 * (-n0) / A, 0.4, 4.0))                  # the toe: A ((n - n0) / -n0) ** p, slope s0 at n = 0
+        toe = A * np.clip((n - n0) / (-n0), 0.0, 1.0) ** p
+        out = np.where(n < 0.0, toe, out)
+    sh = B + (1.0 - B) * (1.0 - np.exp(-s1 * np.clip(n - 1.0, 0.0, None) / (1.0 - B)))
+    out = np.where(n > 1.0, sh, out)
+    return np.clip(255.0 * out, 0.0, 255.0)
 
 
 def local_contrast(bgr8: np.ndarray, sky_weight: Optional[np.ndarray] = None) -> np.ndarray:
@@ -524,8 +566,10 @@ def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quali
             "sky": (f"smoothed: Gaussian sigma {ENH_SKY_SIGMA_DEG} deg over the sky above the skyline, no local contrast "
                     f"there, +/- {ENH_SKY_DITHER} level of noise" if sky_w is not None else "as rendered (no sky weight file)"),
             "rule": f"gamma {ENH_GAMMA} on linear / reference (the terrain band's {ENH_REF_PCT} % point; band: elevation "
-                    f"{ENH_BAND_DEG} deg); black and white at {ENH_LOW_PCT} / {ENH_HIGH_PCT} % of the band in that space "
-                    f"(the sky and the deck may clip); S-curve {ENH_S} about the band's median; enhlocal: unsharp mask on "
+                    f"{ENH_BAND_DEG} deg); the band's {ENH_LOW_PCT} to {ENH_HIGH_PCT} % span in that space takes "
+                    f"{ENH_OUT_LOW:g} to {ENH_OUT_HIGH:g} of the 8 bits through an S-curve {ENH_S} about its median; darker "
+                    f"values run down a toe (black at zero only), brighter ones (the deck, the sky) up a shoulder (white at "
+                    f"infinity only): nothing clips; enhlocal: unsharp mask on "
                     f"the lightness, sigma {ENH_LOCAL_SIGMA_FRAC} x width, amount {ENH_LOCAL_AMOUNT}"}
 
 
@@ -555,8 +599,8 @@ def retone(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int 
         a = a[..., :3].astype(np.float32)
         if levels is None:
             k16 = 64.0 * _exposure16(out)
-            levels, _ = shared_levels(levels_file, lambda: auto_levels(a), scale=k16)
-        v = np.rint(tone_levels(a, *levels)).astype(np.uint8)
+            levels = (0.0, 0.0)
+        v = np.rint(tone_pipeline(a / k16)).astype(np.uint8)        # 0.98.0: the pipeline's 8-bit scale (auto levels before)
         cv2.imwrite(str(out / f"{pre}ods_{eye}.png"), v)
         imgs[eye] = v
         del a

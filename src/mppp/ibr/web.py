@@ -40,6 +40,47 @@ def station_files(folder: PathLike) -> Dict[str, Path]:
     return out
 
 
+MARK_SCALE = 1.15                  # the viewer's ground disc is this much wider than the mark in the panorama
+
+
+def ground_mark(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
+    """0.97.24 (Christian, 14 Nov 2026: "in the VR viewer, make that a 3d surface on the ground ... a circle a little
+    larger than how it appears in the ods at the level of the ground"): the nadir mark of one variant's folder for the
+    page - its picture from above copied into ``web/panos`` and {"file", "depth_m" below the eyes, "radius_m" of the
+    disc the page draws (MARK_SCALE x the mark's own, the picture stretched over it), "mark_radius_m"}.  None when the
+    panorama run wrote no texture (before 0.97.24, or --no-nadir-mark)."""
+    for j in sorted(folder.glob("*ods.json")):
+        try:
+            m = json.loads(j.read_text(encoding="utf-8")).get("nadir_mark") or {}
+        except (OSError, ValueError):
+            continue
+        tex = folder / str(m.get("texture") or "")
+        if m.get("texture") and tex.is_file() and m.get("radius_m") and m.get("depth_below_pivot_m"):
+            dst = web / "panos" / tex.name
+            if not (dst.is_file() and dst.stat().st_mtime >= tex.stat().st_mtime):
+                shutil.copyfile(tex, dst)
+            return {"file": "panos/" + tex.name, "depth_m": round(float(m["depth_below_pivot_m"]), 4),
+                    "radius_m": round(MARK_SCALE * float(m["radius_m"]), 4), "mark_radius_m": round(float(m["radius_m"]), 4)}
+    return None
+
+
+def rover_surface(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
+    """0.98.2 (experimental): the rover's textured surface of a ``with_rover`` folder (``*_rover_surface.glb``,
+    :mod:`mppp.ibr.rover_surface`) copied into ``web/panos`` - {"file", "triangles"} for the page, which shows it on
+    the terrain-only panorama.  None when the folder has none."""
+    glb = next(iter(sorted(folder.glob("*_rover_surface.glb"))), None) if folder.is_dir() else None
+    if glb is None:
+        return None
+    dst = web / "panos" / glb.name
+    if not (dst.is_file() and dst.stat().st_mtime >= glb.stat().st_mtime):
+        shutil.copy2(glb, dst)
+    try:
+        n = json.loads(glb.with_suffix(".json").read_text(encoding="utf-8")).get("triangles")
+    except (OSError, ValueError):
+        n = None
+    return {"file": "panos/" + glb.name, "triangles": n, "experimental": True}
+
+
 def _copy(src: Path, dst: Path, width: int, quality: int) -> Dict[str, Any]:
     """``src`` to ``dst``, reduced to ``width`` (area filter) when wider; copied byte for byte otherwise.  Skipped when
     ``dst`` is newer than ``src``."""
@@ -96,7 +137,15 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
                         pass
                     n += 1
             if got:
-                entry["variants"].append({"key": key, "label": label, "views": got})
+                var = {"key": key, "label": label, "views": got}
+                gm = ground_mark(d / sub, web)
+                if gm:
+                    var["ground_mark"] = gm
+                if key == "masked":                      # 0.98.2 (experimental): the rover as a surface on the terrain
+                    rs = rover_surface(d / "with_rover", web)
+                    if rs:
+                        var["rover_surface"] = rs
+                entry["variants"].append(var)
         if entry["variants"]:
             old[d.name] = entry
             log.info("publish: %s (%s)", d.name, ", ".join(f"{v['key']}: {len(v['views'])}" for v in entry["variants"]))
@@ -152,45 +201,106 @@ def label_pano(path: PathLike, width: int = 2048) -> Path:
     return path
 
 
-def _git(repo: Path, *args: str) -> Tuple[int, str]:
+GIT_TIMEOUT_S = 900                # one git command (a push of several 10 MB panoramas on a slow line)
+PUSH_TRIES = 3                     # a push that fails for the network is tried again
+PUSH_WAIT_S = 30
+PENDING_NAME = "upload_pending.json"
+
+
+def _git(repo: Path, *args: str, timeout: Optional[int] = None) -> Tuple[int, str]:
+    """git in ``repo``: (exit code, output).  It never waits for a password or a merge message at a prompt (a run
+    with nobody at the keyboard would hang there): GIT_TERMINAL_PROMPT=0, and a time limit (exit 124)."""
+    import os
     import subprocess
-    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never", GIT_MERGE_AUTOEDIT="no")
+    try:
+        r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, env=env,
+                           timeout=timeout or GIT_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        return 124, f"git {args[0]}: no end after {timeout or GIT_TIMEOUT_S} s"
+    except OSError as e:
+        return 127, f"git: {e}"
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
-def upload(web_dir: PathLike, stations: Sequence[str] = (), remote: str = "origin") -> Dict[str, Any]:
+def upload(web_dir: PathLike, stations: Sequence[str] = (), remote: str = "origin", tries: int = PUSH_TRIES,
+           wait_s: float = PUSH_WAIT_S) -> Dict[str, Any]:
     """0.97.21 (Christian, 13 Nov 2026: "I'd also like the option to upload the ods after the one bat file
-    completes"): ``web_dir/panos`` and ``web_dir/panos.json`` committed in the repository that holds ``web_dir`` (those
-    paths only; nothing else that is changed or staged goes into the commit), then the branch pushed to ``remote`` -
-    with it every commit not yet there, so the code goes up too.  A push the remote refuses (it has commits this
-    checkout lacks) is followed by one ``git pull --no-rebase`` and a second push; a merge that conflicts is undone.
-    Nothing is forced and no history is rewritten.  Returns {"ok", "committed", "pushed", "message"}."""
+    completes"); 0.97.24 (14 Nov: "The ibr bat script should by default upload the latest ods and other files to
+    Github when it is done. how could this be made reliable?").
+
+    ``web_dir/panos`` and ``web_dir/panos.json`` are committed in the repository that holds ``web_dir`` (those paths
+    only; nothing else that is changed or staged goes into the commit), then the branch is pushed to ``remote`` -
+    with it every commit not yet there, so the code goes up too.  What makes it dependable:
+    - the panoramas are committed before the network is touched, so a push that fails loses nothing: the next
+      upload (any later run, or ``mppp single-sites --publish-only --upload``) sends that commit as well;
+    - a failed push is tried ``tries`` times ``wait_s`` apart; one the remote refuses because it has commits this
+      checkout lacks is followed by a ``git pull --no-rebase`` (a merge that conflicts is undone) and pushed again;
+    - git never waits at a prompt and every command has a time limit, so an unattended run cannot hang here;
+    - after the push the remote's branch is read back and compared with the local commit;
+    - what did not go through is written to ``web_dir/upload_pending.json`` (removed by the next upload that works)
+      and returned, so the run's summary and exit code show it.
+    Nothing is forced and no history is rewritten.  Returns {"ok", "committed", "pushed", "verified", "message"}."""
     from .. import __version__
     web = Path(web_dir).resolve()
+    pending = web / PENDING_NAME
+
+    def done(ok: bool, committed: bool, pushed: bool, message: str, verified: bool = False) -> Dict[str, Any]:
+        out = {"ok": ok, "committed": committed, "pushed": pushed, "verified": verified, "message": message}
+        try:
+            if ok:
+                pending.unlink(missing_ok=True)
+            else:
+                pending.write_text(json.dumps(dict(out, when=time.strftime("%Y-%m-%dT%H:%M:%S"), stations=list(stations)), indent=1),
+                                   encoding="utf-8")
+        except OSError:
+            pass
+        return out
     rc, top = _git(web, "rev-parse", "--show-toplevel")
     if rc:
-        return {"ok": False, "committed": False, "pushed": False, "message": f"{web} is not in a git repository: {top}"}
+        return done(False, False, False, f"{web} is not in a git repository: {top}")
     repo = Path(top)
+    if not _git(repo, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0]:      # 0.97.22: an unfinished merge - git refuses the commit
+        return done(False, False, False, f"{repo} has an unfinished merge: finish it (git status, git add the listed files, git commit "
+                    "--no-edit) or undo it (git merge --abort), then run this again")
     paths = [str(web / "panos"), str(web / "panos.json")]
     rc, out = _git(repo, "add", "--", *paths)
     if rc:
-        return {"ok": False, "committed": False, "pushed": False, "message": f"git add failed: {out}"}
+        return done(False, False, False, f"git add failed: {out}")
     committed = bool(_git(repo, "diff", "--cached", "--quiet", "--", *paths)[0])
     if committed:
         what = ", ".join(stations) if 0 < len(stations) <= 4 else f"{len(stations)} stations" if stations else "update"
         rc, out = _git(repo, "commit", "-m", f"Viewer: panoramas {what} (MPPP {__version__})", "--", *paths)
         if rc:
-            return {"ok": False, "committed": False, "pushed": False, "message": f"git commit failed: {out}"}
+            return done(False, False, False, f"git commit failed: {out}")
     rc, branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
-    rc, out = _git(repo, "push", remote, f"HEAD:{branch}")
-    if rc:                                               # the remote is ahead: merge it in once, then again
-        rc2, out2 = _git(repo, "pull", "--no-rebase", "--no-edit", remote, branch)
-        if rc2:
-            _git(repo, "merge", "--abort")
-            return {"ok": False, "committed": committed, "pushed": False,
-                    "message": f"push refused and the pull did not merge cleanly (undone; the commit is kept locally):\n{out}\n{out2}"}
+    if rc or branch == "HEAD":
+        return done(False, committed, False, f"{repo} is not on a branch (detached HEAD): nothing pushed; the commit is kept locally")
+    out = ""
+    pulled = False
+    for k in range(max(1, int(tries))):
         rc, out = _git(repo, "push", remote, f"HEAD:{branch}")
-        if rc:
-            return {"ok": False, "committed": committed, "pushed": False, "message": f"git push failed (the commit is kept locally):\n{out}"}
-    return {"ok": True, "committed": committed, "pushed": True,
-            "message": f"{'panoramas committed and ' if committed else 'no new panorama; '}{branch} pushed to {remote}"}
+        if not rc:
+            break
+        refused = any(w in out for w in ("[rejected]", "non-fast-forward", "fetch first"))
+        if refused and not pulled:                       # the remote is ahead: merge it in once, then again
+            pulled = True
+            rc2, out2 = _git(repo, "pull", "--no-rebase", "--no-edit", remote, branch)
+            if rc2:
+                _git(repo, "merge", "--abort")
+                return done(False, committed, False, "push refused and the pull did not merge cleanly (undone; the commit is kept "
+                            f"locally):\n{out}\n{out2}")
+            continue
+        if k + 1 < max(1, int(tries)):
+            log.warning("upload: push failed (try %d of %d), again in %.0f s: %s", k + 1, tries, wait_s, out.splitlines()[-1] if out else "")
+            time.sleep(max(0.0, float(wait_s)))
+    else:
+        rc = rc or 1
+    if rc:
+        return done(False, committed, False, f"git push failed after {tries} tries (the commit is kept locally and goes up with the "
+                    f"next upload):\n{out}")
+    local = _git(repo, "rev-parse", "HEAD")[1]
+    rc, ls = _git(repo, "ls-remote", remote, f"refs/heads/{branch}", timeout=120)
+    verified = (not rc) and ls.split()[:1] == [local]
+    return done(True, committed, True, f"{'panoramas committed and ' if committed else 'no new panorama; '}{branch} pushed to {remote}"
+                + (f" (read back: {local[:8]})" if verified else " (the remote could not be read back to check)"), verified)

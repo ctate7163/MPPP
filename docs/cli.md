@@ -466,6 +466,11 @@ saturated pixels are neutral) next to the 8-bit ones, which get a soft highlight
 cut).  `mesh` also removes floating surface: anything above the cameras, and beyond
 3 m of the mast axis anything less than 1 m below them, heights above the ground plane (`--keep-floating`).  
 
+Since 0.98.0 the 16-bit files are on one scale at every station (`--exposure16 1`; `ods.json` `linear16.radiance` says
+how a value turns back into radiance), the standard 8-bit panorama is the 16-bit one divided by 64 as in the block's
+8-bit frames, with each channel rolled off above 235 (`--tone pipeline`; `auto`, `soft` and `clip` are the earlier
+rules), and the enhanced views clip neither the shadows nor the highlights.
+
 The current behaviour in one place - the eye separation (64 mm x cos(elevation) since 0.97.13), the far field
 (100 m, 300 m or infinity per direction), the sky filling and evening, the 16-bit product, the XMP metadata of the
 `_360_3DTD` files, the file list and the web viewer - is on [Station products](station-products.md). The paragraph

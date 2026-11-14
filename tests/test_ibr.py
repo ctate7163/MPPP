@@ -1095,7 +1095,13 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     installed batch file names no version."""
     from mppp.ibr import single_sites as SS
     cfg = SS.load_config()
-    assert set(cfg["stations"]) == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
+    assert cfg["stations"]["Sol0690_S032D1184_Z34"]["experimental"] is True      # 0.98.2: runs only when named
+    assert {r["label"] for r in SS.plan(cfg, tmp_path)} == set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"}
+    z = SS.plan(cfg, tmp_path, labels=["Sol0690_S032D1184_Z34"])[0]["commands"]
+    assert [c["variant"] for c in z] == ["masked"] * 4 and z[-1]["argv"][-8:] == ["--cameras", "Z", "--sols", "690", "--zcam-scale", "0.5", "--fill-cameras", "NF"]
+    rs = [c for c in SS.plan(cfg, tmp_path, labels=["Sol0052_S003D2046"], rover_surface=True)[0]["commands"] if c["step"] == "ods"]
+    assert [c["argv"][-4:] == ["--eyes", "left", "right", "centre"] for c in rs] == [c["variant"] == "rover" for c in rs]
+    assert set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"} == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
                                     "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056"}
     assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12
     sa = cfg["stations"]["Sol1411_S068D0142"]                                 # 0.97.14: South Arm, sol 1411
@@ -1105,6 +1111,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     for f in ("mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop", "mars2020_sol_0413_threeforks_large"):
         (root / f).mkdir(parents=True)
     runs = SS.plan(cfg, root)
+    runs = runs[::-1]                                    # 0.98.3: with no station named the last one runs first
     assert [Path(r["work"]).name for r in runs] == ["mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop",
                                                     "mars2020_sol_0413_threeforks_large", "mars2020_sol_0460_rockytop",
                                                     "mars2020_sol_1601_taylorfjellet_large",
@@ -1175,7 +1182,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert (root / "single_sites" / "Sol0052_S003D2046" / "single_site_log.txt").exists()
     f = SS.install(tmp_path / "inst")
     b = f.read_bytes()
-    assert f.name == "run_single_site_ibr.bat" and b"\r\n" in b and b"python -m mppp single-sites %*" in b
+    assert f.name == "run_single_site_ibr.bat" and b"\r\n" in b and b"python -m mppp single-sites --upload %*" in b
     assert b"7dbd5da" not in b and b"_transfer" in b and b"--ff-only" in b and b"merge-base --is-ancestor" in b
 
 
@@ -1432,7 +1439,7 @@ def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
             sat[:, :200] = 255                                    # the left half of the red frame "saturated"
         cv2.imwrite(str(d16 / (Path(n).stem + ".sat.png")), sat)
     out = tmp_path / "o16"
-    r = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, bits=16, gains=False, exposure16=0.5)
+    r = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, bits=16, gains=False, exposure16=0.5, tone="auto")
     assert r["bits"] == 16 and r["linear16"]["rendered"] and not r["linear16"]["missing"]
     L16 = cv2.imread(str(out / "Sol0091_S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)[..., ::-1]
     L8 = cv2.imread(str(out / "Sol0091_S003D0010_ods_left.png"))[..., ::-1]
@@ -1497,7 +1504,7 @@ def test_retone_from_the_16bit_panoramas(tmp_path):
     r = retone(tmp_path, "S1_rover")
     sq = cv2.imread(str(tmp_path / "S1_rover_360_3DTD.jpg"))
     L8 = cv2.imread(str(tmp_path / "S1_rover_ods_left.png"))
-    assert sq.shape == (128, 128, 3) and 80 < np.median(L8[32:]) < 120 and L8[:32].min() > 180 and r["top"] == "left"
+    assert sq.shape == (128, 128, 3) and 60 < np.median(L8[32:]) < 120 and L8[:32].min() > 180 and r["top"] == "left"
 
 
 def test_rover_model_in_the_mesh(tmp_path):
@@ -1760,7 +1767,7 @@ def test_exposure_and_enhanced_views(tmp_path):
     assert 80 < ref < 140 and 0 <= lo < hi <= 1.01 and 0.2 < med < 0.8   # from the terrain band: the bright sky is not in it
     v = L.tone_enhanced(x, ref, lo, hi, med)
     assert v.min() >= 0 and v.max() <= 255 and 70 < np.median(v[32:].mean(axis=2)) < 185
-    assert (v[:4] == 255).all()                                       # the sky clips
+    assert (v[:4] > 250).all() and (v[:4] < 255).all()                # 0.98.0: the sky near white, not clipped
     assert v[32:].std() > 1.5 * (255.0 * (x[32:] / x[32:].max())).std()   # more contrast on the terrain than a plain scale
     f = tmp_path / "levels.json"
     assert L.shared_value(f, "exposure16", lambda: 1.5) == (1.5, "computed")
@@ -2111,15 +2118,32 @@ def test_nadir_mark_lines_credit_and_disc():
     W, H = 4096, 2048
     m = nadir.make_mark(W, H, lines, centre_azimuth_deg=90.0)          # the rover's front to the east
     band = H - m["row0"]
-    assert nadir.NADIR_MARK_DEG == 20.0 and m["row0"] == int(np.ceil(H * 160 / 180)) and m["alpha"].shape == (band, W)
+    assert nadir.NADIR_MARK_DEG == 10.0 and m["row0"] == int(np.ceil(H * 170 / 180)) and m["alpha"].shape == (band, W)   # 0.97.24: half the size
     assert len(m["text"]) == 2 and "Rockytop" in m["text"][0] and "C. Tate" in m["text"][1]       # two rows
-    ink = m["alpha"] > 0.5
+    text_rows = int(0.47 * band)                                       # the two rows of text; the compass is nearer the nadir
+    ink = m["alpha"][:text_rows] > 0.5
     cols = np.flatnonzero(ink.any(axis=0))
     rows = np.flatnonzero(ink.any(axis=1))
-    assert (cols.max() - cols.min()) <= 0.5 * W + 2                    # no more than half the circle
+    assert (cols.max() - cols.min()) <= 0.6 * W + 2                    # the first row half the circle at most, the second 0.6
     assert abs(0.5 * (cols.max() + cols.min()) - W / 4) < 0.02 * W     # centred on the rover's front (east = a quarter)
-    assert rows.max() < 0.45 * band and rows.min() >= 1                # near the rim
-    assert all(r["span_deg"] <= 180.5 for r in m["rows"])
+    assert rows.min() >= 1
+    assert m["rows"][0]["span_deg"] <= 180.5 and m["rows"][1]["span_deg"] <= 216.5
+    assert m["rows"][1]["height_px"] >= 0.7 * m["rows"][0]["height_px"]            # 0.97.24: the second row larger (0.45 before)
+    # 0.97.24: the compass in the middle, N at the panorama's north whatever way the rover faces
+    comp = m["alpha"][int(0.52 * band):] > 0.5
+    assert comp.any() and m["compass"]["radius_in_disc"] == 0.5
+    td = nadir.top_down(m, 512)                                        # seen from above: north up, east right
+    rose = nadir.compass_rose(256)
+    mid = td[128:384, 128:384]
+    c0 = np.corrcoef(mid.ravel(), rose.ravel())[0, 1]
+    assert c0 > 0.5 and all(np.corrcoef(np.rot90(mid, k).ravel(), rose.ravel())[0, 1] < c0 - 0.15 for k in (1, 2, 3))   # not turned
+    assert rose[30:118, 118:138].mean() > 2 * rose[138:226, 118:138].mean()        # the solid point is the north one
+    assert rose[30:118, 118:138].mean() > 2 * rose[118:138, 138:226].mean()        # (and not the east one); no letters
+    import cv2, tempfile
+    with tempfile.TemporaryDirectory() as td_:                         # the picture a viewer lays on the ground
+        t = cv2.imread(str(nadir.write_texture(m, Path(td_) / "mark.png", 256)), cv2.IMREAD_UNCHANGED)
+    assert t.shape == (256, 256, 4) and t[128, 5, 3] == 255 and t[2, 2, 3] == 0            # the disc; clear at the corners
+    assert tuple(int(v) for v in t[20, 128, :3]) == (238, 212, 176) or t[20, 128, :3].min() < 100   # light blue (BGR) or ink
     img = np.full((H, W, 3), 100, np.uint8)
     bg = np.asarray(nadir.BACKGROUND_RGB)[::-1]                        # BGR, as the images are written
     nadir.apply_mark(img, m, bg)
@@ -2410,7 +2434,7 @@ def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
     from mppp.ibr import nadir
     W, H = 4096, 2048
     m = nadir.make_mark(W, H, nadir.mark_lines(["NLF_0052_a"], "Van Zyl Overlook"), centre_azimuth_deg=180.0)
-    assert m["rows"][0]["height_px"] >= 1.4 * m["rows"][1]["height_px"] and m["rows"][0]["span_deg"] <= 180.5
+    assert m["rows"][0]["height_px"] > m["rows"][1]["height_px"] and m["rows"][0]["span_deg"] <= 180.5
     P, depth = np.array([1.0, 2.0, 3.0]), 0.9
     m0 = m["row0"] - 46
     got = {}
@@ -2471,7 +2495,7 @@ def test_enhanced_views_smooth_the_sky(tmp_path):
     a1 = cv2.imread(str(out / "S1_enh_360_3DTD.jpg"))
     assert r0["sky"].startswith("as rendered") and r1["sky"].startswith("smoothed")
     edge = lambda a: abs(float(a[100, 296:299].mean()) - float(a[100, 302:305].mean()))      # noqa: E731
-    assert edge(a0) > 2.0 and edge(a1) <= 1.2
+    assert edge(a0) > 2.0 and edge(a1) <= 0.7 * edge(a0)
     assert np.abs(a0[320:500].astype(int) - a1[320:500]).max() <= 2        # the terrain: the same picture
 
 
@@ -2675,3 +2699,123 @@ def test_web_upload_commits_the_panoramas_only_and_pushes(tmp_path):
     names = git(bare, "ls-tree", "-r", "--name-only", "main")
     assert "readme.txt" in names and "docs/ods/panos/S2_360_3DTD.jpg" in names
     assert not web.upload(tmp_path, [])["ok"]                                  # not a repository: said, not raised
+
+
+def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(tmp_path):
+    """0.97.24 (Christian, 14 Nov 2026): the nadir mark goes to the page as a surface for the ground (its picture
+    from above, the depth below the eyes, a radius a little over the mark's own); the upload is the batch file's
+    default, never waits at a prompt, tries a failed push again and leaves a marker when it did not go through."""
+    import subprocess
+    from mppp.ibr import web, single_sites as SS
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    out = tmp_path / "sites" / "Sol0091_S003D0010"
+    rep = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
+    nm = rep["nadir_mark"]
+    assert nm["radius_deg"] == 10.0 and (out / nm["texture"]).is_file() and nm["texture"].endswith("_nadir_mark.png")
+    assert abs(nm["radius_m"] - nm["depth_below_pivot_m"] * np.tan(np.radians(10.0))) < 1e-9
+    repo = tmp_path / "repo"
+    bare = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
+    subprocess.run(["git", "clone", "-q", str(bare), str(repo)], check=True)
+    for k, v in (("user.name", "t"), ("user.email", "t@example.org")):
+        subprocess.run(["git", "-C", str(repo), "config", k, v], check=True)
+    w = repo / "docs" / "ods"
+    doc = web.publish(tmp_path / "sites", w)
+    gm = doc["panos"][0]["variants"][0]["ground_mark"]
+    assert (w / gm["file"]).is_file() and gm["depth_m"] == round(nm["depth_below_pivot_m"], 4)
+    assert abs(gm["radius_m"] - web.MARK_SCALE * nm["radius_m"]) < 1e-3 and web.MARK_SCALE > 1.0     # a little larger
+    up = web.upload(w, ["Sol0091_S003D0010"], remote="nowhere", tries=2, wait_s=0)                    # the push cannot work
+    assert not up["ok"] and up["committed"] and not up["pushed"] and "2 tries" in up["message"]
+    assert json.loads((w / web.PENDING_NAME).read_text())["committed"] and "upload_pending" not in subprocess.run(
+        ["git", "-C", str(repo), "show", "--stat", "HEAD"], capture_output=True, text=True).stdout
+    ok = web.upload(w, ["Sol0091_S003D0010"])                          # the next upload sends the commit that was kept
+    assert ok["ok"] and ok["pushed"] and ok["verified"] and not ok["committed"] and not (w / web.PENDING_NAME).exists()
+    names = subprocess.run(["git", "-C", str(bare), "ls-tree", "-r", "--name-only", "main"], capture_output=True, text=True).stdout
+    assert "docs/ods/panos/Sol0091_S003D0010_nadir_mark.png" in names and "docs/ods/panos.json" in names
+    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    assert "ground_mark" in page and "CircleGeometry" in page
+    assert "single-sites --upload %*" in SS.BAT and "--no-upload" in SS.BAT
+    a = SS.build_parser().parse_args(["--upload", "--no-upload"]) if hasattr(SS, "build_parser") else None
+    assert a is None or a.no_upload
+
+
+def test_colour_0p98_pipeline_view_enhanced_without_clipping_radiance_record_and_frames_worth(tmp_path):
+    """0.98.0 (Christian, 14 Nov 2026): the standard 8-bit view is the 16-bit image on the pipeline's 8-bit scale; the
+    enhanced curve clips at neither end; the 16-bit scale is one for every station and ods.json says how to get back
+    to radiance; the blend records how many frames' worth each terrain pixel has."""
+    from mppp.ibr import linear16 as L
+    x = np.linspace(0.0, 1023.0, 2048, dtype=np.float32)[:, None] * np.ones((1, 3), np.float32)
+    y = L.tone_pipeline(x)
+    assert np.allclose(y[x[:, 0] <= 235], x[x[:, 0] <= 235]) and (np.diff(y[:, 0]) >= -1e-4).all() and 254.0 < y[-1, 0] <= 255.0
+    tinted = L.tone_pipeline(np.array([[900.0, 600.0, 500.0]], np.float32))[0]         # a highlight: to white, not to its tint
+    assert tinted.min() > 249.0
+    lv = [800.0, 0.18, 0.52, 0.5]
+    e = L.tone_enhanced(x, *lv)[:, 0]
+    assert (np.diff(e) >= -1e-4).all() and e[0] == 0.0 and e[-1] < 255.0
+    assert e[x[:, 0] > 2.0].min() > 0.5                                                # shadows: above black from 2 of 1023 on
+    span = (x[:, 0] / 800.0) ** (1 / 2.2)
+    inside = (span >= 0.18) & (span <= 0.52)
+    assert abs(e[inside].min() - 255 * L.ENH_OUT_LOW) < 2 and abs(e[inside].max() - 255 * L.ENH_OUT_HIGH) < 2
+    import cv2
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    d16 = Path(proj.root) / "images16"
+    d16.mkdir()
+    for n in st.images:                                              # 16-bit frames twice as bright as 8 bits hold
+        img8 = cv2.imread(str(Path(proj.root) / "images" / n), cv2.IMREAD_COLOR)
+        cv2.imwrite(str(d16 / n), (img8.astype(np.uint16) * 64 * 2))
+        cv2.imwrite(str(d16 / (Path(n).stem + ".sat.png")), np.zeros(img8.shape[:2], np.uint8))
+    r = O.render_station(proj, rec, st, scene, tmp_path / "o", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, bits=16, geometry=False, gains=False)
+    lin = r["linear16"]
+    assert lin["rendered"], lin
+    assert lin["exposure16"] == 1.0 and lin["view_tone"] == "pipeline"
+    rad = lin["radiance"]
+    if rad is not None:                                              # the synthetic block has frames' facts or not
+        assert len(rad["value_per_unit_radiance"]) == 3 and rad["zenith_scale_median"] > 0
+    ef = r["eyes"]["left"]["effective_frames"]
+    assert ef is None or (1.0 <= ef["median"] <= O.MAX_SOURCES_BLENDED and ef["detail_power"] == O.TERRAIN_DETAIL_POWER == 2.0)
+    L16 = cv2.imread(str(tmp_path / "o" / "Sol0091_S003D0010_ods_left_16.png"), cv2.IMREAD_UNCHANGED)
+    L8 = cv2.imread(str(tmp_path / "o" / "Sol0091_S003D0010_ods_left.png"))
+    band = slice(20, 100)                                            # above the nadir mark
+    want = np.rint(L.tone_pipeline(L16[band].astype(np.float32) / 64.0))
+    assert np.abs(want - L8[band].astype(np.float32)).max() <= 1.0   # the view is the 16-bit image / 64, rolled off
+import json, numpy as np, cv2
+from pathlib import Path
+from mppp.ibr import rover_surface as RS, web
+
+def test_rover_surface_from_the_centre_panorama(tmp_path):
+    W, H = 512, 256
+    rng = np.full((H, W), np.inf, np.float32); rover = np.zeros((H, W), bool)
+    rng[H // 2:] = 20.0                                   # terrain below the horizon
+    rover[150:230, :] = True; rng[150:230, :] = 1.5       # a band all the way round (crosses the seam)
+    rover[150:230, 200:260] = True; rng[150:230, 200:260] = 3.0   # a step in range: an edge
+    rover[240:, :] = True; rng[240:, :] = 1.0             # near the nadir: excluded with the mark
+    m = RS.build(rng, rover, step=4, exclude_below_deg=12.0)
+    V, UV, F = m["vertices"], m["uv"], m["triangles"]
+    assert len(F) > 1000 and F.max() < len(V) and m["rows"] == (150, 230)
+    r = np.linalg.norm(V, axis=1)
+    assert set(np.round(r, 3)) == {1.5, 3.0} and (V[:, 1] < 0).all()         # at their ranges, below the pivot
+    tr = r[F]                                                                 # no triangle across the step
+    assert (tr.max(axis=1) / tr.min(axis=1) < RS.EDGE_RATIO + 1e-6).all()
+    assert (np.ptp(UV[F][:, :, 0], axis=1) < 0.1).all() and UV[:, 0].max() > 1.0   # the seam's cells do not run backwards
+    assert UV[:, 1].min() >= 0 and UV[:, 1].max() <= 1
+    # column 128 of 512 looks east (+x), column 0 north (-z)
+    d = RS.directions(np.array([127.5, -0.5]), np.array([H / 2 - 0.5] * 2), W, H)
+    assert np.allclose(d, [[1, 0, 0], [0, 0, -1]], atol=1e-9)
+    # the folder round trip and the page's entry
+    out = tmp_path / "S" / "with_rover"; out.mkdir(parents=True)
+    np.savez_compressed(out / "x_rover_ods_centre_depth.npz", range=rng, label=np.ones((H, W), np.uint8), rover=rover.astype(np.uint8))
+    cv2.imwrite(str(out / "x_rover_ods_centre.png"), np.random.default_rng(0).integers(0, 255, (H, W, 3), dtype=np.uint8))
+    (out / "x_rover_ods.json").write_text(json.dumps({"nadir_mark": {"radius_deg": 12.0}}))
+    rec = RS.from_folder(out)
+    assert rec["experimental"] and rec["triangles"] > 1000 and rec["panorama_rows"] == [150, 230]
+    doc, binary = RS.read_glb((out / rec["file"]).read_bytes())
+    a = doc["accessors"]; assert a[0]["count"] == rec["vertices"] and a[2]["count"] == 3 * rec["triangles"]
+    iv = doc["bufferViews"][doc["images"][0]["bufferView"]]
+    img = cv2.imdecode(np.frombuffer(binary[iv["byteOffset"]:iv["byteOffset"] + iv["byteLength"]], np.uint8), 1)
+    assert img.shape == (80, W, 3) and doc["buffers"][0]["byteLength"] == len(binary)
+    np.savez_compressed(out / "y_ods_centre_depth.npz", range=rng, label=np.ones((H, W), np.uint8))
+    (out / "x_rover_ods_centre_depth.npz").unlink()
+    assert RS.from_folder(out) is None                    # a depth without the rover flag: nothing made
+    w = tmp_path / "web"; (w / "panos").mkdir(parents=True)
+    rs = web.rover_surface(out, w)
+    assert rs["file"] == "panos/" + rec["file"] and (w / rs["file"]).is_file() and web.rover_surface(tmp_path / "none", w) is None

@@ -246,6 +246,11 @@ class Settings:
             d.pop("zcam_rig_epoch_span_sols", None)  # 0.97.0: a site within 100 sols keeps its key
         if not d.get("zcam_zooms_only"):
             d.pop("zcam_zooms_only", None)           # 0.95.0: unset, the keys stay what they were
+        elif isinstance(d["zcam_zooms_only"], (list, tuple)) and isinstance(d.get("zcam_zooms"), (list, tuple)):
+            # 0.97.23: a zoom the filter lets through only for the sites that list it (100 mm, 0.97.22) is not part
+            # of the key of a site that does not have it - or every finished block would run again
+            have = {int(x) for x in d["zcam_zooms"]}
+            d["zcam_zooms_only"] = [x for x in d["zcam_zooms_only"] if int(x) not in KEY_SITE_ONLY_ZOOMS or int(x) in have]
         if not d.get("include_zcam"):
             d.pop("zcam_zooms_only", None)           # 0.95.0: a Mastcam-Z setting (Navcam keys stay)
             d.pop("zcam_line_zooms", None)           # 0.95.0: likewise
@@ -388,6 +393,9 @@ def effective_match_mode(s: "Settings", n_images: int) -> str:
     if s.match_mode == "exhaustive" and s.max_exhaustive_images and n_images > int(s.max_exhaustive_images):
         return "prior_pairs"
     return s.match_mode
+
+
+KEY_SITE_ONLY_ZOOMS = (26, 100)     # zooms without a joint that the freeze's filter keeps for the sites listing them
 
 
 def run_key(settings: Union[Settings, Dict[str, Any]], source: Optional[str] = None, variant: Optional[str] = None

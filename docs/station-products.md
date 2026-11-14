@@ -80,8 +80,15 @@ is used, so a fault seen there is in the mesh, the plane, the rover model or the
 `mppp ods --no-geometry` leaves them out; `mppp single-sites --publish-views standard "range log" normal` puts them
 in the viewer's list.
 
-`run_single_site_ibr.bat <station> --upload` publishes the station's panoramas into `docs/ods`, commits them and
-pushes the branch to GitHub when the run is done (0.97.21); `--publish-only --upload` does that without rendering.
+`run_single_site_ibr.bat <station>` publishes the station's panoramas into `docs/ods`, commits them and pushes the
+branch to GitHub when the run is done (0.97.24: by default; `--no-upload` skips it; `--publish-only` does it without
+rendering). A push that fails is tried three times, the commit is kept and goes up with the next run, and
+`docs/ods/upload_pending.json` says what did not go through.
+
+The mark at the nadir is a light blue disc 10 degrees from the nadir with two rows of text and a compass whose solid
+point is the panorama's north (no letters: they would be sideways or upside down for most viewers). `<station>_nadir_mark.png` is the same mark seen from above; the viewer page
+lays it on the ground as a real surface (`ground_mark` in `panos.json`: its depth below the eyes and its radius), so
+in a headset it has the disparity of a thing on the ground.
 
 Each picture carries its scale as JSON in its XMP metadata (`mppp:Scale`), `photometry_jpg/scales.json` lists them
 all, and `mppp.ibr.scales.decode(path)` returns the values as floats with their units. Read back from a JPEG, a
@@ -199,3 +206,20 @@ the device can show (maximum texture size, compressed-texture formats).
 
 Status: a prototype. It has been checked in a desktop browser with a labelled test pair; the stereo in a headset,
 tiled 16K / 32K images and zoom are not done.
+
+## Experimental: the rover as a textured surface (0.98.2)
+
+`python -m mppp single-sites <station> --rover-surface` also renders the with-rover panorama from the pivot and writes
+`with_rover/<prefix>_rover_surface.glb`: the rover as the Navcam saw it from the mast, as a mesh with that panorama as
+its texture. The viewer shows it on the terrain-only view (key R). The parts of the rover the cameras never saw are
+not in the mesh. To build it again from a folder that already has the centre panorama:
+
+```
+python -m mppp.ibr.rover_surface D:\rover_blocks\single_sites\Sol0052_S003D2046\with_rover
+```
+
+## Experimental: a Mastcam-Z panorama on the Navcam terrain (0.98.2)
+
+`python -m mppp single-sites Sol0690_S032D1184_Z34` renders the 34 mm frames of sol 690 at Three Forks onto the
+terrain made from the station's Navcam frames. Stations marked `"experimental": true` in `single_sites.json` run only
+when named.

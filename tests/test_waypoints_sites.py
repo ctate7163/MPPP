@@ -419,7 +419,10 @@ def test_chal_rocks_110mm():
     d = load_site_table()
     t = d["sites"]
     # 26 Oct (Christian): 79 and 110 mm out for now - 34, 48, 63 mm until the wider zooms have good models
-    assert t["chal_rocks_tiny"]["zcam"] == [34, 48, 63] and t["chal_rocks"]["zcam"] == [34, 48, 63, 79, 110]   # 0.95.1: 79 out; 30 Oct: back in
+    assert t["chal_rocks_tiny"]["zcam"] == [26, 34, 48, 63, 100] and t["chal_rocks"]["zcam"] == [34, 48, 63, 79, 100, 110]   # 0.97.22 (Christian, 13 Nov): 100 mm in
+    assert 100 in t["chal_rocks_large"]["zcam"]
+    from mppp_studies.calibration import run_pipeline as RP                  # the freeze's zoom filter lets a site's 100 mm through
+    assert RP.SITE_ZOOMS_WITHOUT_JOINT == (26, 100) and 100 not in RP.ZOOMS and 26 not in RP.ZOOMS
     assert t["taylorfjellet"]["zcam"] == [34, 48, 63, 79, 110]   # 0.95.1: 110 (zcam_include)
     assert t["rockytop"]["zcam"] == [34, 63, 79, 110] and set(t["rockytop"]["zcam_include"]) == {"110"}
     assert True  # 0.95.0 (Christian, 27 Oct): the 48 mm pair back, held at the model
