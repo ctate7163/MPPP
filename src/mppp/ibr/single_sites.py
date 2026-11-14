@@ -161,7 +161,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
     for lab in cfg["stations"]:
         by_key.setdefault(station_key(lab).upper(), []).append(lab)
     todo = []
-    for lab in (list(labels) if labels else [k for k, v in cfg["stations"].items() if not v.get("experimental")]):
+    for lab in (list(labels) if labels else [k for k, v in cfg["stations"].items() if not v.get("experimental")][::-1]):   # 0.98.3 (Christian, 14 Nov 2026: "run in reverse order by default"): the config's last station first
         todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), [lab])      # 0.98.2: an "experimental"
         #                                                                                       station runs only when named
     unknown = [lab for lab in todo if lab not in cfg["stations"]]

@@ -3,6 +3,13 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.3 — 2026-11-14
+
+Christian: "I want it to run in reverse order by default".
+
+- `mppp single-sites` with no station named runs the config's stations last to first (the newest sols first).
+  Stations named on the command line run in the order given.
+
 ## 0.98.2 — 2026-11-14
 
 Two experiments. Neither changes the standard panoramas, and neither has run on a real block yet.

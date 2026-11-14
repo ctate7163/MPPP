@@ -1111,6 +1111,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     for f in ("mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop", "mars2020_sol_0413_threeforks_large"):
         (root / f).mkdir(parents=True)
     runs = SS.plan(cfg, root)
+    runs = runs[::-1]                                    # 0.98.3: with no station named the last one runs first
     assert [Path(r["work"]).name for r in runs] == ["mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop",
                                                     "mars2020_sol_0413_threeforks_large", "mars2020_sol_0460_rockytop",
                                                     "mars2020_sol_1601_taylorfjellet_large",
