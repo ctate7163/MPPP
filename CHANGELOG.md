@@ -3,6 +3,17 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.1 — 2026-11-14
+
+Christian: "The first Z26 and z100 models promoted will need to be just from seitah and chal rocks tiny."
+
+- The freeze's zoom filter now lets a site's 26 mm frames through as well as its 100 mm frames
+  (`SITE_ZOOMS_WITHOUT_JOINT = (26, 100)`); before, 26 mm was dropped from every freeze block.
+- `chal_rocks_tiny` lists 26 mm (`[26, 34, 48, 63, 100]`); nothing happens if the sols hold no 26 mm frame.
+- The run key ignores 26 mm in the filter for sites that do not list it (`KEY_SITE_ONLY_ZOOMS = (26, 100)`),
+  so finished blocks of other sites are not queued again. The sites that list 26 or 100 mm
+  (Seitah Overlook, the three Chal Rocks sites) get a new key and run again.
+
 ## 0.98.0 — 2026-11-14
 
 Christian: "please prepare the code needed to run all the single site ods in the json config file and upload them

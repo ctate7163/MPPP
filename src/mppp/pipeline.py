@@ -395,7 +395,7 @@ def effective_match_mode(s: "Settings", n_images: int) -> str:
     return s.match_mode
 
 
-KEY_SITE_ONLY_ZOOMS = (100,)     # zooms without a joint that the freeze's filter keeps for the sites listing them
+KEY_SITE_ONLY_ZOOMS = (26, 100)     # zooms without a joint that the freeze's filter keeps for the sites listing them
 
 
 def run_key(settings: Union[Settings, Dict[str, Any]], source: Optional[str] = None, variant: Optional[str] = None
