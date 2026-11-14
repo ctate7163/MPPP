@@ -3,6 +3,32 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.21 — 2026-11-13
+
+- **`mppp single-sites --upload`** (Christian: "I'd also like the option to upload the ods after the one bat file
+  completes"): after the run the panoramas are published into `docs/ods` of the checkout (or the `--publish`
+  folder), `panos/` and `panos.json` are committed (those paths only) and the branch is pushed to `origin`, so
+  commits of the code not yet on GitHub go up with them (`web.upload`). A refused push is followed by one
+  `git pull --no-rebase` and a second push; a merge that conflicts is undone and reported. Nothing is forced. With
+  `--publish-only --upload` nothing is rendered. The run's exit code is non-zero when the upload fails.
+- `run_single_site_ibr.bat`: when the checkout and the newest bundle each have commits of their own (panoramas
+  committed on the PC), the bundle is merged; before, the bundle was skipped and the code stayed old.
+
+## 0.97.20 — 2026-11-13
+
+- **Range and normal panoramas** (Christian: "how hard would it be to render a ods of the range or normal map? that
+  would help checking the model during debugging and dev"): `mppp ods` writes `<station>_range_log_360_3DTD.jpg`,
+  `_range_linear_` and `_normal_` (`ods.geometry_panorama`, `--no-geometry` to skip): the scene cast along the same
+  rays as the colour panorama, both eyes, left on top. Range from each eye's ray origin in the colours of the
+  per-image depth pictures; the normal in the station's frame, RGB = 127.5 (1 + [east, north, up]). No source frame
+  is used. They carry the stereo metadata and are views the publisher knows (`"range log"`, `"range linear"`,
+  `"normal"`; not published by default). Checked on the synthetic station only: not yet run on a block.
+- **Masked pixels black in the depth pictures** (Christian: "the depth maps should have black for the masked out
+  regions"): dark red before (`raycast.depth_rgb`, `scales.json` `masked_rgb` [0, 0, 0]). The normal pictures had
+  them black already. The `.npz` label map still tells masked (3) from no surface (0).
+- **`<image>_image.jpg` in `photometry_jpg/`** (Christian: "put copies of the images in photometry_jpg"): the
+  block's frame as it is, at its own size, JPEG quality 92 (`raycast.image_jpg`).
+
 ## 0.97.19 — 2026-11-13
 
 - **Context frames for Van Zyl and Rockytop** (Christian): `Sol0052_S003D2046` takes the NCAM00301 pair of sol 52

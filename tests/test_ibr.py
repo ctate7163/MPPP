@@ -2600,3 +2600,78 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
     assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 11] == cfg["stations"]["Sol0461_S026D0630"]["context"]
     assert cfg["stations"]["Sol0052_S003D2046"]["context"] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
                                                                "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"]
+
+
+def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
+    """0.97.20 (Christian, 13 Nov 2026): the range and normal panoramas of the model through the panorama's rays;
+    masked pixels black in the depth pictures; the frame's copy next to them."""
+    import cv2
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    out = tmp_path / "ods"
+    rep = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
+    files = rep["geometry"]["files"]
+    assert sorted(files) == ["normal", "range_linear", "range_log"]
+    assert Path(files["range_log"]).name == "Sol0091_S003D0010_range_log_360_3DTD.jpg"
+    rl, nm = cv2.imread(files["range_log"]), cv2.imread(files["normal"])
+    assert rl.shape == (256, 256, 3) and nm.shape == rl.shape                 # the left eye on top of the right
+    g = nm[128 - 30, 10].astype(int)                                          # looking down at the flat ground: up
+    assert abs(g[0] - 255) < 12 and abs(g[1] - 128) < 12 and abs(g[2] - 128) < 12, g      # BGR: up in blue
+    near, far = rl[128 - 6, 10].astype(int), rl[64 + 12, 10].astype(int)      # steeply down against near the horizon
+    assert not np.array_equal(near, far)
+    from mppp.ibr import web as W
+    assert sorted(W.station_files(out)) == ["normal", "range linear", "range log", "standard"]
+    rep2 = O.render_station(proj, rec, st, scene, tmp_path / "o2", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
+    assert "geometry" not in rep2 and not list((tmp_path / "o2").glob("*range*"))
+    lab = np.full((8, 8), RC.LABEL_MESH, np.uint8)
+    lab[:4] = RC.LABEL_MASKED
+    for mode in ("log", "linear"):
+        img = RC.depth_rgb(np.full((8, 8), 5.0, np.float32), lab, mode)
+        assert not img[:4].any() and img[4:].any()
+    from mppp.ibr.scales import scales
+    assert scales()["depth_log"]["special"]["masked_rgb"] == [0, 0, 0]
+    src = tmp_path / "frame.png"
+    cv2.imwrite(str(src), np.full((20, 30, 3), 90, np.uint8))
+    f = RC.image_jpg(src, tmp_path / "photometry_jpg" / ("frame" + RC.IMAGE_SUFFIX))
+    assert f.name == "frame_image.jpg" and cv2.imread(str(f)).shape == (20, 30, 3)
+    assert RC.image_jpg(tmp_path / "missing.png", tmp_path / "x.jpg") is None
+
+
+def test_web_upload_commits_the_panoramas_only_and_pushes(tmp_path):
+    """0.97.21 (Christian, 13 Nov 2026): `mppp single-sites --upload` - the viewer's panoramas committed, the branch
+    pushed; other changes stay out of the commit; a remote that is ahead is merged in, nothing forced."""
+    import subprocess
+    from mppp.ibr import web
+
+    def git(cwd, *a):
+        return subprocess.run(["git", "-C", str(cwd), *a], capture_output=True, text=True, check=True).stdout.strip()
+    bare, repo, other = tmp_path / "remote.git", tmp_path / "repo", tmp_path / "other"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
+    subprocess.run(["git", "clone", "-q", str(bare), str(repo)], check=True)
+    for k, v in (("user.name", "t"), ("user.email", "t@example.org")):
+        git(repo, "config", k, v)
+    w = repo / "docs" / "ods"
+    (w / "panos").mkdir(parents=True)
+    (repo / "code.py").write_text("a = 1\n")
+    git(repo, "add", "code.py"); git(repo, "commit", "-q", "-m", "code"); git(repo, "push", "-q", "origin", "HEAD:main")
+    (w / "panos" / "S1_360_3DTD.jpg").write_bytes(b"jpeg")
+    (w / "panos.json").write_text("{}")
+    (repo / "code.py").write_text("a = 2\n")                                   # an unrelated change: not uploaded
+    up = web.upload(w, ["S1"])
+    assert up["ok"] and up["committed"] and up["pushed"], up
+    assert "docs/ods/panos/S1_360_3DTD.jpg" in git(bare, "ls-tree", "-r", "--name-only", "main")
+    assert git(bare, "show", "main:code.py") == "a = 1" and "code.py" in git(repo, "status", "--short")
+    assert "S1" in git(bare, "log", "-1", "--format=%s", "main")
+    again = web.upload(w, ["S1"])                                              # nothing new: no commit, still fine
+    assert again["ok"] and not again["committed"]
+    subprocess.run(["git", "clone", "-q", str(bare), str(other)], check=True)  # the remote moves ahead
+    for k, v in (("user.name", "o"), ("user.email", "o@example.org")):
+        git(other, "config", k, v)
+    (other / "readme.txt").write_text("x")
+    git(other, "add", "readme.txt"); git(other, "commit", "-q", "-m", "other"); git(other, "push", "-q", "origin", "HEAD:main")
+    git(repo, "checkout", "--", "code.py")
+    (w / "panos" / "S2_360_3DTD.jpg").write_bytes(b"jpeg2")
+    up2 = web.upload(w, ["S2"])
+    assert up2["ok"] and up2["pushed"], up2
+    names = git(bare, "ls-tree", "-r", "--name-only", "main")
+    assert "readme.txt" in names and "docs/ods/panos/S2_360_3DTD.jpg" in names
+    assert not web.upload(tmp_path, [])["ok"]                                  # not a repository: said, not raised

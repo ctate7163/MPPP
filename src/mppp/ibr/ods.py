@@ -1440,6 +1440,50 @@ def stack_file(out_dir: PathLike, prefix: str = "", ext: str = ".png", suffix: s
     return Path(out_dir) / f"{(prefix + '_') if prefix else ''}{STACK_NAME}{suffix}{ext}"
 
 
+GEOMETRY_VIEWS = ("range_log", "range_linear", "normal")
+
+
+def geometry_panorama(scene: Scene, station, out_dir: PathLike, prefix: str = "", width: int = 8192, ipd_m: float = 0.064,
+                      azimuth0_deg: float = 0.0, pole_merge_deg="default", rows_per_chunk: int = 64, top: str = "left") -> Dict[str, str]:
+    """0.97.20 (Christian, 13 Nov 2026: "how hard would it be to render a ods of the range or normal map? that would
+    help checking the model during debugging and dev"): the model alone, seen through the panorama's own rays -
+    ``<prefix>_range_log_360_3DTD.jpg``, ``_range_linear_`` and ``_normal_`` (left eye on top, as the colour ones).
+    Range: from each eye's ray origin, in the colours of the per-image depth pictures (:func:`raycast.depth_rgb`:
+    turbo, the ground plane darker, the sky white, nothing black).  Normal: in the station's frame,
+    [R, G, B] = 127.5 * (1 + [east, north, up]); the sky white, nothing black.  No source frame is used: a fault that
+    shows here is in the mesh, the plane, the rover model or the far field, not in the blending."""
+    import cv2
+    from .raycast import JPEG_QUALITY, depth_rgb
+    height = width // 2
+    e, n, u = (np.asarray(v, float) / np.linalg.norm(v) for v in (station.east, station.north, station.up))
+    enu = np.stack([e, n, u])
+    order = ("left", "right") if top == "left" else ("right", "left")
+    imgs = {k: np.zeros((2 * height, width, 3), np.uint8) for k in GEOMETRY_VIEWS}
+    for i, eye in enumerate(order):
+        for r0 in range(0, height, rows_per_chunk):
+            r1 = min(height, r0 + rows_per_chunk)
+            o, d = ods_rays(width, height, (r0, r1), station.pivot, ipd_m, eye, station.up, station.north, station.east,
+                            azimuth0_deg, pole_merge_deg=pole_merge_deg)
+            h = scene.cast(o, d)
+            lab = h["label"].reshape(r1 - r0, width)
+            rng = np.where(np.isfinite(h["t"]), h["t"], 0.0).reshape(r1 - r0, width)
+            rows = slice(i * height + r0, i * height + r1)
+            imgs["range_log"][rows] = depth_rgb(rng, lab, "log")
+            imgs["range_linear"][rows] = depth_rgb(rng, lab, "linear")
+            nm = (np.asarray(h["normal"], float) @ enu.T).reshape(r1 - r0, width, 3)
+            nimg = np.clip((nm * 0.5 + 0.5) * 255, 0, 255).astype(np.uint8)[..., ::-1].copy()      # BGR for OpenCV
+            nimg[(lab != LABEL_MESH) & (lab != LABEL_PLANE)] = 0
+            nimg[lab == LABEL_FAR] = 255
+            imgs["normal"][rows] = nimg
+    outs = {}
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    for k, im in imgs.items():
+        f = stack_file(out_dir, f"{prefix}_{k}" if prefix else k, ".jpg")
+        cv2.imwrite(str(f), im, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+        outs[k] = str(f)
+    return outs
+
+
 def drop_old_stacks(out_dir: PathLike, prefix: str = "") -> List[str]:
     """Removes the same station's squares under the old name (``<prefix>_ods_stereo_square[_16].png/.jpg``), so a
     folder made again holds one top-down image per kind.  Returns the names removed."""
@@ -1539,7 +1583,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True, pole_merge_deg="default", sky_radius_m="default",
                    fill_families: str = "", nadir_mark: bool = True, site_name: Optional[str] = None,
                    nadir_mark_deg: Optional[float] = None, far_field: Optional[bool] = None,
-                   context_images: Sequence[str] = ()) -> Dict[str, Any]:
+                   context_images: Sequence[str] = (), geometry: bool = True) -> Dict[str, Any]:
     """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_360_3DTD.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``Sol0052_S003D2046`` / ``Sol0052_S003D2046_rover``); '' for the bare names.  Returns the record."""
@@ -1821,6 +1865,16 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             "value_16bit": "the linear value x 64 x exposure16 (auto: the gain that puts the 99.99 % point of the brightest channel at 95 % of the range, 0.5-4)",
             "frames_saturated_share_max": max([f["saturated_share"] for f in fr], default=None),
             "frames_clipped_in_8bit_share_max": max([f["clipped_in_8bit_share"] for f in fr], default=None)}
+    if geometry and set(eyes) >= {"left", "right"}:                         # 0.97.20: the model through the same rays
+        tg = time.time()
+        rec_out["geometry"] = {"files": geometry_panorama(scene, station, out, prefix or "", width, ipd_m, azimuth0_deg, pole_merge_deg,
+                                                          rows_per_chunk, top=stack_top),
+                               "range": "from each eye's ray origin; colours as the per-image depth pictures (photometry_jpg/scales.json: "
+                                        "depth_log, depth_linear)",
+                               "normal": "station frame: [R, G, B] = 127.5 * (1 + [east, north, up]); sky white, nothing black",
+                               "note": "the model alone (mesh, plane, rover model, far field): no source frame is used"}
+        rec_out["geometry"]["seconds"] = round(time.time() - tg, 1)
+        log.info("ods: range and normal panoramas in %.0f s", rec_out["geometry"]["seconds"])
     rec_out["seconds"] = round(time.time() - t0, 1)
     try:                                                                    # 0.97.4: XMP in the stacked products
         from .xmp import tag_folder
