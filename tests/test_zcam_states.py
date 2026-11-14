@@ -194,3 +194,37 @@ def test_centre_offsets_where_the_centres_are_free():
     from pathlib import Path
     rp = (Path(__file__).resolve().parents[1] / "src" / "mppp_studies" / "calibration" / "run_pipeline.py").read_text()
     assert '"ZCAM_BIN_REFINE=focal_pp"' in rp
+
+
+def test_state_threshold_follows_the_focus_slope_and_the_three_skinner_ridge_sequences_are_low():
+    """0.97.23 (Christian, 13 Nov 2026: "Do both of those things"): the left 34 mm low state follows the high state's
+    focus slope (Three Forks South ZCAM08667: 1.0083 at focus 180, 1.0020 at 1212), so the threshold is half the
+    measured gap below the high line; a block with too few high groups for its own line takes the reference slope."""
+    from mppp.sfm import backlash as B
+    rows = [dict(camera_group="ZL034", focus_count=f, ratio_fit=r, fitted_unlisted=1, state=None)
+            for f, r in ((288, 1.0132), (894, 1.0096), (1068, 1.0087), (1002, 1.0070))]
+    ln = B.measured_backlash_lines(rows, 1.0, {})["ZL034"]
+    assert ln["source"] == "measured level, reference slope" and ln["b"] == B.STATE_LINES["ZL034"]["b"]
+    for focus, low in ((180, 1.0083), (312, 1.0061), (660, 1.0038), (1212, 1.0020)):       # the low-state groups of ZCAM08667
+        rb = B.backlash_ratio_at(ln, focus)
+        mid = B.state_threshold("ZL034", rb, 1.0)
+        assert low < mid - 0.0009 < rb, (focus, low, mid, rb)
+        assert low > 0.5 * (1.0 + 1.0087) or focus > 600          # the constant midpoint read the near-focus ones as high
+    assert B.state_threshold("ZL034", 1.0095, 1.0, measured=False) == pytest.approx(0.5 * (1.0 + 1.0095))   # a model ratio: as before
+    assert B.state_threshold("ZL079", 1.0095, 1.0) == pytest.approx(0.5 * (1.0 + 1.0095))                   # no reference: as before
+    lst = B.load_low_backlash()
+    for sol, seq in ((483, "ZCAM03394"), (484, "ZCAM03396"), (492, "ZCAM03399")):
+        for eye in ("ZL", "ZR"):
+            assert B.is_low_backlash({"name": f"{eye}0_{sol:04d}_0709830000_000RAD_N0260000{seq}_0790LMA01.png", "camera_group": f"{eye}079"}, lst)
+    assert not B.is_low_backlash({"name": "ZL0_0484_0709830000_000RAD_N0260000ZCAM08513_0340LMA01.png", "camera_group": "ZL034"}, lst)
+
+
+def test_run_key_of_a_site_without_100mm_ignores_100_in_the_zoom_filter(tmp_path):
+    """0.97.23: the freeze's filter keeps 100 mm (0.97.22); a site that lists none keeps its run key."""
+    from mppp import pipeline as P
+
+    def key(site, only):
+        _, s = P.resolve_site(site, P.Settings(include_zcam=True, zcam_zooms_only=only, scapes_root=str(tmp_path)))
+        return P.run_key(s)
+    assert key("wildcat_ridge", [34, 48, 63, 79, 110]) == key("wildcat_ridge", [34, 48, 63, 79, 100, 110])
+    assert key("chal_rocks_large", [34, 48, 63, 79, 110]) != key("chal_rocks_large", [34, 48, 63, 79, 100, 110])

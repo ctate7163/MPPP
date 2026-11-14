@@ -99,3 +99,6 @@ ZR:513:ZCAM08538  # Wildcat Ridge 63 mm, RIGHT eye only, low (Christian, 12 Nov 
 360:ZCAM08390  # Chal Rocks large 79 mm, both eyes, low (9 Nov 2026): as ZCAM07105; its bins have fy/fx +20,000 ppm (weak vertical geometry), so ZCAM07105 is the evidence that counts
 -435:ZCAM07114  # Three Forks North 34 mm clast-survey frame found HIGH (zcam-states 9 Nov; the zoom history agrees): the sequence-wide ZCAM07114_034 entry is too broad - one frame per sol, the state varies by sol
 -817:ZCAM07114  # Belva 34 mm clast-survey frame found HIGH (zcam-states 9 Nov; the zoom history agrees)
+483:ZCAM03394  # Skinner Ridge 79 mm, both eyes, low (Christian, 13 Nov 2026): the 0.97.4 freeze block's states report - ZL 0.9978, ZR 0.9981 of the label f (sequence z -9.6); it ran as high
+484:ZCAM03396  # Skinner Ridge 79 mm, both eyes, low (13 Nov 2026): ZL 0.9973, ZR 0.9979 (sequence z -10.7); it ran as high
+492:ZCAM03399  # Skinner Ridge 79 mm, both eyes, low (13 Nov 2026): ZL 1.0013, ZR 0.9989 (sequence z -6.6); it ran as high

@@ -499,6 +499,30 @@ def image_focal_fits(rec, project, min_observations: int = 20, loss_px: float = 
 
 
 REGULAR_MARGIN = 0.004       # groups this far above the regular state (ratio 1) enter the backlash-ratio fit
+# 0.97.23 (Christian, 13 Nov 2026: "Do both of those things" - the three Skinner Ridge sequences to the low list, and
+# the sloped line as the state threshold in every block).  Per camera group: the high (backlash) state's f / label f as
+# a line in focus count, ratio = a + b (focus - 600), and the gap from it down to the low (regular) state.
+#   a, b   Skinner Ridge, freeze block of 12 Nov 2026 (0.97.4): the high-state groups of ZCAM08513 and ZCAM08517
+#          (ZL034 27 groups, focus 162-1230; ZR034 28 groups, focus 216-1278), least squares
+#   gap    that line minus the low-state groups of Three Forks South ZCAM08667 (sol 670, 228 images, 13 Nov block):
+#          ZL034 0.0059-0.0081 over focus 180-1212 (mean 0.0072), ZR034 0.0067-0.0102 over focus 258-1266 (mean 0.0087)
+# The low state of ZL034 is not ratio 1: it follows the same slope (1.0083 at focus 180, 1.0020 at 1212), so a
+# threshold halfway between 1 and a constant high ratio read its near-focus frames as high.
+STATE_LINES: Dict[str, Dict[str, float]] = {
+    "ZL034": {"a": 1.0120, "b": -6.66e-6, "gap": 0.0072},
+    "ZR034": {"a": 1.0120, "b": -2.76e-6, "gap": 0.0087},
+}
+
+
+def state_threshold(group: Any, backlash_ratio: float, nav_scale: float = 1.0, measured: bool = True) -> float:
+    """The ratio that separates the two states of ``group`` where the high state's is ``backlash_ratio``: half the
+    measured gap below it for a group in :data:`STATE_LINES` whose high ratio was ``measured`` on the block; else
+    halfway to the regular state (``nav_scale``), as before 0.97.23 (a ratio from the focus model defines both
+    states by itself)."""
+    ref = STATE_LINES.get(str(group))
+    if ref and measured:
+        return float(backlash_ratio) - 0.5 * float(ref["gap"]) * float(nav_scale or 1.0)
+    return 0.5 * (float(nav_scale or 1.0) + float(backlash_ratio))
 
 
 def measured_backlash_lines(rows: Sequence[Dict[str, Any]], nav_scale: float = 1.0,
@@ -537,6 +561,13 @@ def measured_backlash_lines(rows: Sequence[Dict[str, Any]], nav_scale: float = 1
             w = np.array([p[2] for p in pts])
             b, _, _, _ = huber_fit(np.c_[np.ones(len(F)), F], y, w, floor=2e-4, iterations=20)
             out[g] = {"a": float(b[0]), "b": float(b[1]), "n": len(pts), "source": "measured line"}
+        elif len(pts) >= min_groups_const and g in STATE_LINES:
+            # 0.97.23: too few groups for a line of the block's own - its level, with the slope of STATE_LINES
+            w = np.array([p[2] for p in pts])
+            b = float(STATE_LINES[g]["b"])
+            f_mean = float(np.sum(w * np.array([p[0] for p in pts])) / np.sum(w))
+            out[g] = {"a": _wmedian(np.array([p[1] - b * (p[0] - f_mean) for p in pts]), w) - b * (f_mean - reference_focus),
+                      "b": b, "n": len(pts), "source": "measured level, reference slope"}
         elif len(pts) >= min_groups_const:
             out[g] = {"a": _wmedian(np.array([p[1] for p in pts]), np.array([p[2] for p in pts])), "b": 0.0,
                       "n": len(pts), "source": "measured constant"}
@@ -734,15 +765,17 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
             continue
         ln = lines.get(str(row["camera_group"]))
         rb = backlash_ratio_at(ln, row.get("focus_count")) if ln else DEFAULT_BACKLASH_RATIO * ns
-        mid = 0.5 * (ns + rb)
-        row.update({"backlash_ratio": rb, "threshold_ratio": mid})
+        mid = state_threshold(row["camera_group"], rb, ns,      # 0.97.23: half the measured gap below the high line
+                              measured=bool(ln) and str(ln.get("source", "")).startswith("measured"))
+        low = 2.0 * mid - rb                                      # the regular state's ratio at this focus
+        row.update({"backlash_ratio": rb, "threshold_ratio": mid, "regular_ratio": low})
         r_dec = row.get("ratio_fit") if row.get("ratio_fit") is not None else row.get("ratio")
         s_dec = row.get("sd_fit") if row.get("ratio_fit") is not None else row.get("sd")
         if r_dec is None:
             row.update({"z": None, "state": "undecided", "decided": False})
             continue
         z = (r_dec - mid) / s_dec
-        implausible = r_dec < ns - tolerance or r_dec > rb + tolerance
+        implausible = r_dec < min(ns, low) - tolerance or r_dec > rb + tolerance
         state = "undecided" if implausible else ("regular" if z < -z_min else ("backlash" if z > z_min else "undecided"))
         row.update({"z": float(z), "state": state, "decided": state != "undecided", "implausible": bool(implausible)})
     seqs = apply_sequence_states(rows, z_min=z_min) if sequence_rule else {}

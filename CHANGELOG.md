@@ -3,6 +3,26 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.23 — 2026-11-13
+
+- **Three Skinner Ridge 79 mm sequences on the low list** (Christian: "Do both of those things"): `483:ZCAM03394`,
+  `484:ZCAM03396`, `492:ZCAM03399`. In the 0.97.4 freeze block they ran as high and measure 0.997 to 1.001 of the
+  label focal length (sequence z -9.6, -10.7, -6.6). The list is not part of a block's run key: a finished block
+  takes the change only when it is run again.
+- **The state threshold follows the focus slope** (`backlash.STATE_LINES`, `state_threshold`). The left 34 mm low
+  state is not ratio 1: it falls with focus as the high state does (Three Forks South ZCAM08667: 1.0083 at focus
+  180, 1.0020 at 1212; the high line of Skinner Ridge 0.0059 to 0.0081 above it throughout). The threshold was
+  halfway between 1 and the high ratio, and with fewer than five high groups that ratio was a constant, so
+  near-focus low frames read as high. Now: where the high ratio is measured on the block, the threshold is half the
+  measured gap below it (ZL034 0.0072, ZR034 0.0087); a block with three or four high groups takes its own level and
+  the reference slope (source "measured level, reference slope"). A ratio from the focus model, and every other
+  zoom, are as before. Replayed on the two blocks' state files: Three Forks South 18 low groups that read undecided
+  or high now read low, none the other way; single-image high groups are nearer the threshold (10 go from
+  high to undecided at group level; the sequence rule still decides them). Rows carry `regular_ratio`.
+- **Run key: 100 mm in the freeze's zoom filter does not change the key of a site without 100 mm**
+  (`KEY_SITE_ONLY_ZOOMS`). With 0.97.22 alone, `freeze.bat --update-code` would have queued every finished
+  Mastcam-Z block again. Chal Rocks (three sizes) and Seitah Overlook do get new keys, as intended.
+
 ## 0.97.22 — 2026-11-13
 
 - **100 mm at Chal Rocks and Seitah Overlook** (Christian: "Add z100 to it and chal rocks regular, tiny and large"):
