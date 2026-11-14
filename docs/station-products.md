@@ -206,3 +206,20 @@ the device can show (maximum texture size, compressed-texture formats).
 
 Status: a prototype. It has been checked in a desktop browser with a labelled test pair; the stereo in a headset,
 tiled 16K / 32K images and zoom are not done.
+
+## Experimental: the rover as a textured surface (0.98.2)
+
+`python -m mppp single-sites <station> --rover-surface` also renders the with-rover panorama from the pivot and writes
+`with_rover/<prefix>_rover_surface.glb`: the rover as the Navcam saw it from the mast, as a mesh with that panorama as
+its texture. The viewer shows it on the terrain-only view (key R). The parts of the rover the cameras never saw are
+not in the mesh. To build it again from a folder that already has the centre panorama:
+
+```
+python -m mppp.ibr.rover_surface D:\rover_blocks\single_sites\Sol0052_S003D2046\with_rover
+```
+
+## Experimental: a Mastcam-Z panorama on the Navcam terrain (0.98.2)
+
+`python -m mppp single-sites Sol0690_S032D1184_Z34` renders the 34 mm frames of sol 690 at Three Forks onto the
+terrain made from the station's Navcam frames. Stations marked `"experimental": true` in `single_sites.json` run only
+when named.

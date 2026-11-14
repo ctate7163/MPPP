@@ -3,6 +3,31 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.2 — 2026-11-14
+
+Two experiments. Neither changes the standard panoramas, and neither has run on a real block yet.
+
+Christian: "Prepare to render a rover that is textured from the navcam images ... rendering a retextured rover is an
+experiment, so keep the ods with the rover".
+
+- **The rover as a textured surface** (`mppp.ibr.rover_surface`). The Navcam sees the rover from the mast head only,
+  so the surface is built from there: the with-rover panorama from the pivot is the texture, and its depth gives a
+  vertex every 4 pixels where the rover model is. Cells across a jump in range are left open, and what the cameras
+  never saw is not in the mesh. Output: `<prefix>_rover_surface.glb` (binary glTF, metres about the pivot).
+- `mppp single-sites --rover-surface` renders the with-rover panorama from the pivot as well
+  (`--eyes left right centre`, about half as long again for that variant), builds the surface and publishes it.
+  A failure here never fails the run.
+- `<prefix>_ods_centre_depth.npz` now also holds `rover` (where the rover model is) when the centre panorama is rendered.
+- The viewer lays the surface on the terrain-only view. In a headset it stays where the head was when it appeared,
+  so it shifts against the terrain as the head moves. Key R shows and hides it.
+
+Christian: "prepare a ods with z34 frames projected onto the ncam model. threeforks north should be the first attempt."
+
+- New station `Sol0690_S032D1184_Z34` in `single_sites.json`: terrain from the station's Navcam frames, panorama from
+  the 34 mm frames of sol 690 at half size, Navcam and front Hazcam frames as fill, terrain-only variant.
+- A station marked `"experimental": true` runs only when it is named, so the batch file with no arguments still
+  renders the eight standard stations.
+
 ## 0.98.1 — 2026-11-14
 
 Christian: "The first Z26 and z100 models promoted will need to be just from seitah and chal rocks tiny."

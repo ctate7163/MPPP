@@ -150,7 +150,8 @@ def frame_args(frames: Dict[str, Any]) -> List[str]:
 
 
 def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = None, labels: Optional[Sequence[str]] = None,
-         steps: Sequence[str] = STEPS, variants: Optional[Sequence[str]] = None, ods_width: Optional[int] = None) -> List[Dict[str, Any]]:
+         steps: Sequence[str] = STEPS, variants: Optional[Sequence[str]] = None, ods_width: Optional[int] = None,
+         rover_surface: bool = False) -> List[Dict[str, Any]]:
     """The runs, in order: one entry per station with its block, its output folder and the commands (argv lists of
     ``python -m mppp``), grouped by variant."""
     root = Path(root)
@@ -160,8 +161,9 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
     for lab in cfg["stations"]:
         by_key.setdefault(station_key(lab).upper(), []).append(lab)
     todo = []
-    for lab in (list(labels) if labels else list(cfg["stations"])):
-        todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), [lab])
+    for lab in (list(labels) if labels else [k for k, v in cfg["stations"].items() if not v.get("experimental")]):
+        todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), [lab])      # 0.98.2: an "experimental"
+        #                                                                                       station runs only when named
     unknown = [lab for lab in todo if lab not in cfg["stations"]]
     if unknown:
         raise KeyError(f"not in the config: {unknown} (there: {sorted(cfg['stations'])})")
@@ -223,6 +225,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                 argv += [str(x) for x in st.get(f"{step}_args", [])]
                 if step == "ods" and ods_width:      # after the config's arguments: the last --width counts
                     argv += ["--width", str(int(ods_width))]
+                if step == "ods" and rover_surface and v == "rover":     # 0.98.2 (experimental): the panorama from the
+                    argv += ["--eyes", "left", "right", "centre"]        # pivot too, for mppp.ibr.rover_surface
                 cmds.append({"variant": v, "step": step, "argv": argv})
         runs.append({"label": lab, "work": str(work), "out": str(base), "note": st.get("note", ""), "variants": vs,
                      "commands": cmds})
@@ -472,6 +476,9 @@ def add_parser(sub) -> None:
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
     p.add_argument("--publish-views", nargs="+", default=["standard"], metavar="VIEW",
                    help="standard, enhanced, 'enhanced local' (default: standard - 0.97.18: the enhanced view is not published)")
+    p.add_argument("--rover-surface", action="store_true",
+                   help="0.98.2, experimental: also render the with-rover panorama from the pivot and make the rover a "
+                        "textured surface from it (<prefix>_rover_surface.glb; the viewer lays it on the terrain-only view)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
@@ -489,7 +496,8 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         for lab, st in cfg["stations"].items():
             print(f"{lab}  {st['station']:>9}  {st.get('site') or st.get('work')}  {st.get('note', '')}")
         return 0
-    runs = plan(cfg, root, out_root, a.labels, a.steps, a.variants, ods_width=a.width)
+    runs = plan(cfg, root, out_root, a.labels, a.steps, a.variants, ods_width=a.width,
+                rover_surface=getattr(a, "rover_surface", False))
     if a.dry_run:
         for r in runs:
             print(f"{r['label']}: {r['work']} -> {r['out']}")
@@ -502,6 +510,14 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         a.publish = str(Path(__file__).resolve().parents[3] / "docs" / "ods")
     rc = 0 if (a.publish and a.publish_only) else run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone,
                                                           force=getattr(a, "force", False))
+    if getattr(a, "rover_surface", False) and not a.squares_only:      # experimental: never fails the run
+        from . import rover_surface as _rs
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+        for r in runs:
+            try:
+                _rs.from_folder(Path(r["out"]) / "with_rover")
+            except Exception as e:                       # noqa: BLE001
+                print(f"rover surface of {r['label']}: failed ({e})")
     if a.publish:
         from . import web
         logging.basicConfig(level=logging.INFO, format="%(message)s")

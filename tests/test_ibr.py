@@ -1095,7 +1095,13 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     installed batch file names no version."""
     from mppp.ibr import single_sites as SS
     cfg = SS.load_config()
-    assert set(cfg["stations"]) == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
+    assert cfg["stations"]["Sol0690_S032D1184_Z34"]["experimental"] is True      # 0.98.2: runs only when named
+    assert {r["label"] for r in SS.plan(cfg, tmp_path)} == set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"}
+    z = SS.plan(cfg, tmp_path, labels=["Sol0690_S032D1184_Z34"])[0]["commands"]
+    assert [c["variant"] for c in z] == ["masked"] * 4 and z[-1]["argv"][-8:] == ["--cameras", "Z", "--sols", "690", "--zcam-scale", "0.5", "--fill-cameras", "NF"]
+    rs = [c for c in SS.plan(cfg, tmp_path, labels=["Sol0052_S003D2046"], rover_surface=True)[0]["commands"] if c["step"] == "ods"]
+    assert [c["argv"][-4:] == ["--eyes", "left", "right", "centre"] for c in rs] == [c["variant"] == "rover" for c in rs]
+    assert set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"} == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
                                     "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056"}
     assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12
     sa = cfg["stations"]["Sol1411_S068D0142"]                                 # 0.97.14: South Arm, sol 1411
@@ -2771,3 +2777,44 @@ def test_colour_0p98_pipeline_view_enhanced_without_clipping_radiance_record_and
     band = slice(20, 100)                                            # above the nadir mark
     want = np.rint(L.tone_pipeline(L16[band].astype(np.float32) / 64.0))
     assert np.abs(want - L8[band].astype(np.float32)).max() <= 1.0   # the view is the 16-bit image / 64, rolled off
+import json, numpy as np, cv2
+from pathlib import Path
+from mppp.ibr import rover_surface as RS, web
+
+def test_rover_surface_from_the_centre_panorama(tmp_path):
+    W, H = 512, 256
+    rng = np.full((H, W), np.inf, np.float32); rover = np.zeros((H, W), bool)
+    rng[H // 2:] = 20.0                                   # terrain below the horizon
+    rover[150:230, :] = True; rng[150:230, :] = 1.5       # a band all the way round (crosses the seam)
+    rover[150:230, 200:260] = True; rng[150:230, 200:260] = 3.0   # a step in range: an edge
+    rover[240:, :] = True; rng[240:, :] = 1.0             # near the nadir: excluded with the mark
+    m = RS.build(rng, rover, step=4, exclude_below_deg=12.0)
+    V, UV, F = m["vertices"], m["uv"], m["triangles"]
+    assert len(F) > 1000 and F.max() < len(V) and m["rows"] == (150, 230)
+    r = np.linalg.norm(V, axis=1)
+    assert set(np.round(r, 3)) == {1.5, 3.0} and (V[:, 1] < 0).all()         # at their ranges, below the pivot
+    tr = r[F]                                                                 # no triangle across the step
+    assert (tr.max(axis=1) / tr.min(axis=1) < RS.EDGE_RATIO + 1e-6).all()
+    assert (np.ptp(UV[F][:, :, 0], axis=1) < 0.1).all() and UV[:, 0].max() > 1.0   # the seam's cells do not run backwards
+    assert UV[:, 1].min() >= 0 and UV[:, 1].max() <= 1
+    # column 128 of 512 looks east (+x), column 0 north (-z)
+    d = RS.directions(np.array([127.5, -0.5]), np.array([H / 2 - 0.5] * 2), W, H)
+    assert np.allclose(d, [[1, 0, 0], [0, 0, -1]], atol=1e-9)
+    # the folder round trip and the page's entry
+    out = tmp_path / "S" / "with_rover"; out.mkdir(parents=True)
+    np.savez_compressed(out / "x_rover_ods_centre_depth.npz", range=rng, label=np.ones((H, W), np.uint8), rover=rover.astype(np.uint8))
+    cv2.imwrite(str(out / "x_rover_ods_centre.png"), np.random.default_rng(0).integers(0, 255, (H, W, 3), dtype=np.uint8))
+    (out / "x_rover_ods.json").write_text(json.dumps({"nadir_mark": {"radius_deg": 12.0}}))
+    rec = RS.from_folder(out)
+    assert rec["experimental"] and rec["triangles"] > 1000 and rec["panorama_rows"] == [150, 230]
+    doc, binary = RS.read_glb((out / rec["file"]).read_bytes())
+    a = doc["accessors"]; assert a[0]["count"] == rec["vertices"] and a[2]["count"] == 3 * rec["triangles"]
+    iv = doc["bufferViews"][doc["images"][0]["bufferView"]]
+    img = cv2.imdecode(np.frombuffer(binary[iv["byteOffset"]:iv["byteOffset"] + iv["byteLength"]], np.uint8), 1)
+    assert img.shape == (80, W, 3) and doc["buffers"][0]["byteLength"] == len(binary)
+    np.savez_compressed(out / "y_ods_centre_depth.npz", range=rng, label=np.ones((H, W), np.uint8))
+    (out / "x_rover_ods_centre_depth.npz").unlink()
+    assert RS.from_folder(out) is None                    # a depth without the rover flag: nothing made
+    w = tmp_path / "web"; (w / "panos").mkdir(parents=True)
+    rs = web.rover_surface(out, w)
+    assert rs["file"] == "panos/" + rec["file"] and (w / rs["file"]).is_file() and web.rover_surface(tmp_path / "none", w) is None

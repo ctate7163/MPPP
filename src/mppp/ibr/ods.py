@@ -1597,7 +1597,8 @@ def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, pre
 DEPTH16_UNITS_PER_M = 500.0      # <prefix>_ods_centre_depth_16.png: uint16 = range (m) x this (2 mm steps, to 131 m)
 
 
-def write_centre_depth(out_dir: PathLike, prefix: str, rng: np.ndarray, label: np.ndarray) -> Dict[str, Any]:
+def write_centre_depth(out_dir: PathLike, prefix: str, rng: np.ndarray, label: np.ndarray,
+                       rover: Optional[np.ndarray] = None) -> Dict[str, Any]:
     """0.97.0 (Christian, 12 Nov 2026: "also make a version projected from the center rotation with a depth map"): the
     depth of the centre panorama - the range from the pivot along each pixel's ray, on the panorama's own grid -
     as ``<prefix>_ods_centre_depth.npz`` (float32 metres ``range``, uint8 ``label``; 0 = no surface, the sky inf),
@@ -1613,7 +1614,10 @@ def write_centre_depth(out_dir: PathLike, prefix: str, rng: np.ndarray, label: n
     r[lab == 0] = 0.0
     files = {"npz": ods_file(out, "centre_depth", prefix, ".npz"), "png16": ods_file(out, "centre_depth_16", prefix),
              "linear": ods_file(out, "centre_depth_linear", prefix, ".jpg"), "log": ods_file(out, "centre_depth_log", prefix, ".jpg")}
-    np.savez_compressed(files["npz"], range=r, label=lab)
+    if rover is not None:                                # 0.98.2: where the rover model is, for mppp.ibr.rover_surface
+        np.savez_compressed(files["npz"], range=r, label=lab, rover=np.asarray(rover, bool).astype(np.uint8))
+    else:
+        np.savez_compressed(files["npz"], range=r, label=lab)
     d16 = np.where(np.isfinite(r), np.clip(np.rint(r * DEPTH16_UNITS_PER_M), 0, 65535), 65535).astype(np.uint16)
     cv2.imwrite(str(files["png16"]), d16)
     for mode in ("linear", "log"):
@@ -1837,7 +1841,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 _nadir.apply_mark(view8, mark, mark["bg8"])
             cv2.imwrite(str(f), view8)
         if eye in ("centre", "center") and centre_depth:     # 0.97.0: the panorama from the pivot, with its depth
-            depth_rec = write_centre_depth(out, prefix, res["range"], res["label"])
+            depth_rec = write_centre_depth(out, prefix, res["range"], res["label"], rover=res.get("rover"))
         if eye == eyes[0]:
             provenance_png(res["source"], out / "provenance.png", len(sources), mix=res.get("provenance"))
             sw = res.get("sky_weight")                   # 0.97.13: where the enhanced views may smooth the sky

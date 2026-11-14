@@ -64,6 +64,23 @@ def ground_mark(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
     return None
 
 
+def rover_surface(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
+    """0.98.2 (experimental): the rover's textured surface of a ``with_rover`` folder (``*_rover_surface.glb``,
+    :mod:`mppp.ibr.rover_surface`) copied into ``web/panos`` - {"file", "triangles"} for the page, which shows it on
+    the terrain-only panorama.  None when the folder has none."""
+    glb = next(iter(sorted(folder.glob("*_rover_surface.glb"))), None) if folder.is_dir() else None
+    if glb is None:
+        return None
+    dst = web / "panos" / glb.name
+    if not (dst.is_file() and dst.stat().st_mtime >= glb.stat().st_mtime):
+        shutil.copy2(glb, dst)
+    try:
+        n = json.loads(glb.with_suffix(".json").read_text(encoding="utf-8")).get("triangles")
+    except (OSError, ValueError):
+        n = None
+    return {"file": "panos/" + glb.name, "triangles": n, "experimental": True}
+
+
 def _copy(src: Path, dst: Path, width: int, quality: int) -> Dict[str, Any]:
     """``src`` to ``dst``, reduced to ``width`` (area filter) when wider; copied byte for byte otherwise.  Skipped when
     ``dst`` is newer than ``src``."""
@@ -124,6 +141,10 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
                 gm = ground_mark(d / sub, web)
                 if gm:
                     var["ground_mark"] = gm
+                if key == "masked":                      # 0.98.2 (experimental): the rover as a surface on the terrain
+                    rs = rover_surface(d / "with_rover", web)
+                    if rs:
+                        var["rover_surface"] = rs
                 entry["variants"].append(var)
         if entry["variants"]:
             old[d.name] = entry
