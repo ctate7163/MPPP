@@ -3,6 +3,17 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.21 — 2026-11-13
+
+- **`mppp single-sites --upload`** (Christian: "I'd also like the option to upload the ods after the one bat file
+  completes"): after the run the panoramas are published into `docs/ods` of the checkout (or the `--publish`
+  folder), `panos/` and `panos.json` are committed (those paths only) and the branch is pushed to `origin`, so
+  commits of the code not yet on GitHub go up with them (`web.upload`). A refused push is followed by one
+  `git pull --no-rebase` and a second push; a merge that conflicts is undone and reported. Nothing is forced. With
+  `--publish-only --upload` nothing is rendered. The run's exit code is non-zero when the upload fails.
+- `run_single_site_ibr.bat`: when the checkout and the newest bundle each have commits of their own (panoramas
+  committed on the PC), the bundle is merged; before, the bundle was skipped and the code stayed old.
+
 ## 0.97.20 — 2026-11-13
 
 - **Range and normal panoramas** (Christian: "how hard would it be to render a ods of the range or normal map? that

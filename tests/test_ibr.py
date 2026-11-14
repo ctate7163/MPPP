@@ -2634,3 +2634,44 @@ def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
     f = RC.image_jpg(src, tmp_path / "photometry_jpg" / ("frame" + RC.IMAGE_SUFFIX))
     assert f.name == "frame_image.jpg" and cv2.imread(str(f)).shape == (20, 30, 3)
     assert RC.image_jpg(tmp_path / "missing.png", tmp_path / "x.jpg") is None
+
+
+def test_web_upload_commits_the_panoramas_only_and_pushes(tmp_path):
+    """0.97.21 (Christian, 13 Nov 2026): `mppp single-sites --upload` - the viewer's panoramas committed, the branch
+    pushed; other changes stay out of the commit; a remote that is ahead is merged in, nothing forced."""
+    import subprocess
+    from mppp.ibr import web
+
+    def git(cwd, *a):
+        return subprocess.run(["git", "-C", str(cwd), *a], capture_output=True, text=True, check=True).stdout.strip()
+    bare, repo, other = tmp_path / "remote.git", tmp_path / "repo", tmp_path / "other"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
+    subprocess.run(["git", "clone", "-q", str(bare), str(repo)], check=True)
+    for k, v in (("user.name", "t"), ("user.email", "t@example.org")):
+        git(repo, "config", k, v)
+    w = repo / "docs" / "ods"
+    (w / "panos").mkdir(parents=True)
+    (repo / "code.py").write_text("a = 1\n")
+    git(repo, "add", "code.py"); git(repo, "commit", "-q", "-m", "code"); git(repo, "push", "-q", "origin", "HEAD:main")
+    (w / "panos" / "S1_360_3DTD.jpg").write_bytes(b"jpeg")
+    (w / "panos.json").write_text("{}")
+    (repo / "code.py").write_text("a = 2\n")                                   # an unrelated change: not uploaded
+    up = web.upload(w, ["S1"])
+    assert up["ok"] and up["committed"] and up["pushed"], up
+    assert "docs/ods/panos/S1_360_3DTD.jpg" in git(bare, "ls-tree", "-r", "--name-only", "main")
+    assert git(bare, "show", "main:code.py") == "a = 1" and "code.py" in git(repo, "status", "--short")
+    assert "S1" in git(bare, "log", "-1", "--format=%s", "main")
+    again = web.upload(w, ["S1"])                                              # nothing new: no commit, still fine
+    assert again["ok"] and not again["committed"]
+    subprocess.run(["git", "clone", "-q", str(bare), str(other)], check=True)  # the remote moves ahead
+    for k, v in (("user.name", "o"), ("user.email", "o@example.org")):
+        git(other, "config", k, v)
+    (other / "readme.txt").write_text("x")
+    git(other, "add", "readme.txt"); git(other, "commit", "-q", "-m", "other"); git(other, "push", "-q", "origin", "HEAD:main")
+    git(repo, "checkout", "--", "code.py")
+    (w / "panos" / "S2_360_3DTD.jpg").write_bytes(b"jpeg2")
+    up2 = web.upload(w, ["S2"])
+    assert up2["ok"] and up2["pushed"], up2
+    names = git(bare, "ls-tree", "-r", "--name-only", "main")
+    assert "readme.txt" in names and "docs/ods/panos/S2_360_3DTD.jpg" in names
+    assert not web.upload(tmp_path, [])["ok"]                                  # not a repository: said, not raised

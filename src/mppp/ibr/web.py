@@ -14,7 +14,7 @@ import logging
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -150,3 +150,47 @@ def label_pano(path: PathLike, width: int = 2048) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(path), np.vstack(eyes), [cv2.IMWRITE_JPEG_QUALITY, 90])
     return path
+
+
+def _git(repo: Path, *args: str) -> Tuple[int, str]:
+    import subprocess
+    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    return r.returncode, (r.stdout + r.stderr).strip()
+
+
+def upload(web_dir: PathLike, stations: Sequence[str] = (), remote: str = "origin") -> Dict[str, Any]:
+    """0.97.21 (Christian, 13 Nov 2026: "I'd also like the option to upload the ods after the one bat file
+    completes"): ``web_dir/panos`` and ``web_dir/panos.json`` committed in the repository that holds ``web_dir`` (those
+    paths only; nothing else that is changed or staged goes into the commit), then the branch pushed to ``remote`` -
+    with it every commit not yet there, so the code goes up too.  A push the remote refuses (it has commits this
+    checkout lacks) is followed by one ``git pull --no-rebase`` and a second push; a merge that conflicts is undone.
+    Nothing is forced and no history is rewritten.  Returns {"ok", "committed", "pushed", "message"}."""
+    from .. import __version__
+    web = Path(web_dir).resolve()
+    rc, top = _git(web, "rev-parse", "--show-toplevel")
+    if rc:
+        return {"ok": False, "committed": False, "pushed": False, "message": f"{web} is not in a git repository: {top}"}
+    repo = Path(top)
+    paths = [str(web / "panos"), str(web / "panos.json")]
+    rc, out = _git(repo, "add", "--", *paths)
+    if rc:
+        return {"ok": False, "committed": False, "pushed": False, "message": f"git add failed: {out}"}
+    committed = bool(_git(repo, "diff", "--cached", "--quiet", "--", *paths)[0])
+    if committed:
+        what = ", ".join(stations) if 0 < len(stations) <= 4 else f"{len(stations)} stations" if stations else "update"
+        rc, out = _git(repo, "commit", "-m", f"Viewer: panoramas {what} (MPPP {__version__})", "--", *paths)
+        if rc:
+            return {"ok": False, "committed": False, "pushed": False, "message": f"git commit failed: {out}"}
+    rc, branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    rc, out = _git(repo, "push", remote, f"HEAD:{branch}")
+    if rc:                                               # the remote is ahead: merge it in once, then again
+        rc2, out2 = _git(repo, "pull", "--no-rebase", "--no-edit", remote, branch)
+        if rc2:
+            _git(repo, "merge", "--abort")
+            return {"ok": False, "committed": committed, "pushed": False,
+                    "message": f"push refused and the pull did not merge cleanly (undone; the commit is kept locally):\n{out}\n{out2}"}
+        rc, out = _git(repo, "push", remote, f"HEAD:{branch}")
+        if rc:
+            return {"ok": False, "committed": committed, "pushed": False, "message": f"git push failed (the commit is kept locally):\n{out}"}
+    return {"ok": True, "committed": committed, "pushed": True,
+            "message": f"{'panoramas committed and ' if committed else 'no new panorama; '}{branch} pushed to {remote}"}

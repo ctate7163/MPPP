@@ -80,6 +80,9 @@ is used, so a fault seen there is in the mesh, the plane, the rover model or the
 `mppp ods --no-geometry` leaves them out; `mppp single-sites --publish-views standard "range log" normal` puts them
 in the viewer's list.
 
+`run_single_site_ibr.bat <station> --upload` publishes the station's panoramas into `docs/ods`, commits them and
+pushes the branch to GitHub when the run is done (0.97.21); `--publish-only --upload` does that without rendering.
+
 Each picture carries its scale as JSON in its XMP metadata (`mppp:Scale`), `photometry_jpg/scales.json` lists them
 all, and `mppp.ibr.scales.decode(path)` returns the values as floats with their units. Read back from a JPEG, a
 value is good to about 0.2 degrees (incidence, emission), 0.4 degrees (phase), 0.15 m (linear range), 1 % (log

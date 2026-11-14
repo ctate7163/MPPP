@@ -42,8 +42,8 @@ TONE_FILE = "tone_levels.json"                 # one per station, shared by its 
 
 BAT = r"""@echo off
 REM run_single_site_ibr.bat [LABEL ...] [--steps ...]  (written by python -m mppp single-sites --install)
-REM 1. D:\code\MPPP fast-forwarded to the newest git bundle in %TRANSFER% - if that bundle is ahead of it
-REM    (a bundle behind it, e.g. after a pull from GitHub, is left alone; nothing is overwritten)
+REM 1. D:\code\MPPP fast-forwarded to the newest git bundle in %TRANSFER% - if that bundle is ahead of it; merged
+REM    when both have commits of their own (0.97.21); left alone when it already holds the bundle; nothing overwritten
 REM 2. python -m mppp single-sites with the arguments given: the stations of src\mppp\data\single_sites.json
 REM    0.97.0: the Perseverance model in the rover mesh, the panorama blended in 16 bits, ONE 16-to-8-bit scaling per
 REM    station for the rover-shown and rover-masked versions (<station>\tone_levels.json), the per-image pictures as
@@ -52,6 +52,8 @@ REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
 REM    examples:  run_single_site_ibr.bat Sol0052_S003D2046            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
+REM               run_single_site_ibr.bat Sol0052_S003D2046 --upload     then publish, commit the panoramas, push
+REM               run_single_site_ibr.bat --publish-only --upload        no rendering: publish and push what is there
 REM set MPPP_NO_PAUSE=1 before it: no pause at the end, and the exit code is the run's (for unattended chains)
 REM Nothing in this file names a version, so it never needs replacing.
 REM It also lives in scripts\windows of the repository (0.97.0): there it works on the tree it is in.  Everything
@@ -72,7 +74,14 @@ set "B="
     if errorlevel 1 ( echo fetch from !B! failed - send Claude the lines above & pause & exit /b 1 )
     git merge-base --is-ancestor HEAD refs/remotes/bundle/main
     if errorlevel 1 (
-      echo the newest bundle !B! is not ahead of %REPO% - the code is kept as it is
+      git merge-base --is-ancestor refs/remotes/bundle/main HEAD
+      if errorlevel 1 (
+        git merge -q --no-edit refs/remotes/bundle/main
+        if errorlevel 1 ( git merge --abort & echo the newest bundle !B! does not merge cleanly into %REPO% - send Claude the lines above & pause & exit /b 1 )
+        echo the newest bundle !B! merged into %REPO%
+      ) else (
+        echo %REPO% already holds the newest bundle !B!
+      )
     ) else (
       git ls-files --error-unmatch scripts/windows/run_single_site_ibr.bat >nul 2>nul
       if errorlevel 1 if exist scripts\windows\run_single_site_ibr.bat del /q scripts\windows\run_single_site_ibr.bat
@@ -451,7 +460,10 @@ def add_parser(sub) -> None:
     p.add_argument("--publish", metavar="DIR", default=None,
                    help="0.97.3: after the run, the stations' stereo JPEGs into DIR/panos and DIR/panos.json for the web "
                         "viewer (docs/ods of the repository; the page is copied into DIR when it is another folder)")
-    p.add_argument("--publish-only", action="store_true", help="with --publish: no steps, publish what --out holds")
+    p.add_argument("--publish-only", action="store_true", help="with --publish or --upload: no steps, publish what --out holds")
+    p.add_argument("--upload", action="store_true",
+                   help="0.97.21: after the run, publish (into docs/ods of this checkout unless --publish names a folder), "
+                        "commit the panoramas there and push the branch to origin - the code's commits go with it")
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
     p.add_argument("--publish-views", nargs="+", default=["standard"], metavar="VIEW",
                    help="standard, enhanced, 'enhanced local' (default: standard - 0.97.18: the enhanced view is not published)")
@@ -479,6 +491,8 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
             for c in r["commands"]:
                 print(f"   [{c['variant']}] python -m mppp " + " ".join(c["argv"]))
         return 0
+    if getattr(a, "upload", False) and not a.publish:    # 0.97.21: the checkout's own viewer folder
+        a.publish = str(Path(__file__).resolve().parents[3] / "docs" / "ods")
     rc = 0 if (a.publish and a.publish_only) else run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone,
                                                           force=getattr(a, "force", False))
     if a.publish:
@@ -493,4 +507,8 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         if not web.install_viewer(a.publish):
             print("the viewer page (docs/ods/index.html, vendor/) is not in this installation: copy it from the repository")
         print(f"published: {len(doc['panos'])} stations in {Path(a.publish) / 'panos.json'}")
+        if getattr(a, "upload", False):
+            up = web.upload(a.publish, [r["label"] for r in runs])
+            print(("uploaded: " if up["ok"] else "NOT uploaded: ") + up["message"])
+            rc = rc or (0 if up["ok"] else 1)
     return rc
