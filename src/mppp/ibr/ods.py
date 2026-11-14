@@ -1841,6 +1841,17 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 log.info("ods: removed the stale %s (now %s_%s)", n, prefix, n)
     rec_out["prefix"] = prefix
     if mark is not None:
+        try:                                             # 0.97.24: the mark seen from above, for a viewer's ground surface
+            tex = out / f"{(prefix + '_') if prefix else ''}{_nadir.TEXTURE_SUFFIX}"
+            _nadir.write_texture(mark0, tex)
+            rec_out["nadir_mark"].update({"texture": tex.name,
+                                          "radius_m": float(mark0["depth_m"] * np.tan(np.radians(mark0["radius_deg"]))),
+                                          "compass": mark0.get("compass"),
+                                          "texture_note": "the mark seen from above: north up, east to the right, the disc's rim at the "
+                                                          "picture's sides; on the ground it is radius_m wide at depth_below_pivot_m "
+                                                          "below the pivot (the viewer lays it there as a surface)"})
+        except Exception as e:                           # noqa: BLE001 - the panorama does not depend on it
+            log.warning("ods: the nadir mark's texture was not written (%s)", e)
         mark0.update({k_: mark[k_] for k_ in ("bg8", "bg16") if k_ in mark})
         rec_out["nadir_mark"]["background_bgr_8bit"] = [float(x) for x in mark.get("bg8", [])]
         if "bg16" in mark:

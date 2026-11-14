@@ -10,8 +10,11 @@ REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
 REM    examples:  run_single_site_ibr.bat Sol0052_S003D2046            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
-REM               run_single_site_ibr.bat Sol0052_S003D2046 --upload     then publish, commit the panoramas, push
-REM               run_single_site_ibr.bat --publish-only --upload        no rendering: publish and push what is there
+REM               run_single_site_ibr.bat Sol0052_S003D2046 --no-upload  the run without the upload at its end
+REM               run_single_site_ibr.bat --publish-only                 no rendering: publish and push what is there
+REM    0.97.24: when the run is done its panoramas are published into docs\ods, committed and pushed to GitHub with
+REM    the code (--upload is given here; --no-upload after it wins).  A push that fails is tried three times and
+REM    the commit goes up with the next run: see "NOT uploaded" at the end and docs\ods\upload_pending.json.
 REM set MPPP_NO_PAUSE=1 before it: no pause at the end, and the exit code is the run's (for unattended chains)
 REM Nothing in this file names a version, so it never needs replacing.
 REM It also lives in scripts\windows of the repository (0.97.0): there it works on the tree it is in.  Everything
@@ -50,7 +53,7 @@ set "B="
   for /f %%h in ('git rev-parse HEAD') do set "H1=%%h"
   echo %REPO%: !H0:~0,7! -^> !H1:~0,7!
   call scripts\windows\mppp_env.bat || ( pause & exit /b 1 )
-  python -m mppp single-sites %*
+  python -m mppp single-sites --upload %*
   set "RC=!errorlevel!"
   if not defined MPPP_NO_PAUSE pause
   exit /b !RC!

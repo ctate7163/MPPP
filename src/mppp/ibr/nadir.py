@@ -20,7 +20,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
-NADIR_MARK_DEG = 20.0                 # the disc: everything within this angle of the nadir (10 until 0.97.9)
+NADIR_MARK_DEG = 10.0                 # the disc: everything within this angle of the nadir.  0.97.24 (Christian, 14 Nov
+#                                       2026: "make the blue circle 50% of its current size"): 10 (20 since 0.97.9)
 TITLE = "Mars 2020 Perseverance Rover"
 AUTHOR = "made by C. Tate"
 CREDIT_NAVCAM = "NASA/JPL-Caltech/MSSS"
@@ -29,11 +30,17 @@ BACKGROUND_RGB = (176.0, 212.0, 238.0)       # 8-bit units: light blue (Christia
 #                                              should be light blue"; before: the panorama's sky colour, and black at first)
 BACKGROUND_LINEAR_FACTOR = 0.8               # in a linear 16-bit panorama: this x the 8-bit colour, in 8-bit linear units
 TEXT_SEPARATOR = "   -   "
-TEXT_SPAN_OF_CIRCLE = 0.5                    # a row takes at most this share of the full circle
-TEXT_ROWS_IN_BAND = (0.14, 0.33)             # the rows' middles, as shares of the disc's radius from its rim (outer first)
-TEXT_MAX_HEIGHT_IN_BAND = (0.20, 0.09)       # a row is at most this share of the disc's radius tall; 0.97.13 (Christian,
-#                                              13 Nov 2026: "The top row of the water mark should have larger font"): the
-#                                              first row 0.20, the second 0.09 (0.12 both before): the first fills its half circle, 1.6 x the second
+TEXT_SPAN_OF_CIRCLE = 0.5                    # (kept: the first row's share; see TEXT_SPAN_OF_ROW)
+TEXT_ROWS_IN_BAND = (0.13, 0.36)             # the rows' middles, as shares of the disc's radius from its rim (outer first)
+TEXT_MAX_HEIGHT_IN_BAND = (0.20, 0.16)       # a row is at most this share of the disc's radius tall.  0.97.24 (Christian,
+#                                              14 Nov 2026: "Make the second row of text larger"): the second 0.16 (0.09
+#                                              since 0.97.13) and over up to TEXT_SPAN_OF_ROW[1] of the circle
+TEXT_SPAN_OF_ROW = (0.5, 0.60)               # a row takes at most this share of the full circle (0.5 both until 0.97.23:
+#                                              the long credit line could not grow within half of its smaller circle)
+COMPASS_RADIUS_IN_DISC = 0.50                # 0.97.24 (Christian: "Put a compass graphic ... in the center of the circle
+#                                              aligned with the true directions in the ods"; later the same morning:
+#                                              without the letters): its radius on the ground as a share of the disc's
+COMPASS_PX = 768
 SKY_FALLBACK_RGB = BACKGROUND_RGB            # (kept for callers of sky_colour)
 SKY_MIN_VALUE_8BIT = 150.0
 DISC_PX = 1024                        # the text is drawn on a square of this side, then turned into the panorama's rows
@@ -124,8 +131,42 @@ def text_strip(text: str, height_px: int = 160) -> np.ndarray:
     return a[ys.min():ys.max() + 1, xs.min():xs.max() + 1] if len(ys) else a
 
 
+def compass_rose(size: int = COMPASS_PX) -> np.ndarray:
+    """The compass seen from above, north up and east to the right, as (size, size) float32 (1 = ink): a ring with a
+    tick at each of the four directions and a four-pointed star whose north point is solid and longer (the other
+    three are outlines).  No letters (Christian, 14 Nov 2026: "the compass mark does not need the n,s,e,w ... those
+    letters can be sideways or upside down depending on how the viewer is seeing them"): the solid point is north."""
+    from PIL import Image, ImageDraw
+    S = int(size)
+    c = 0.5 * S
+    img = Image.new("L", (S, S), 0)
+    d = ImageDraw.Draw(img)
+    r_out = 0.485 * S
+    lw = max(2, S // 110)
+    d.ellipse([c - r_out, c - r_out, c + r_out, c + r_out], outline=255, width=lw)
+    w = 0.075 * S                                              # half the width of a star point at the centre
+    for k, (dx, dy) in enumerate(((0, -1), (1, 0), (0, 1), (-1, 0))):       # N, E, S, W (image y down)
+        length = (0.44 if k == 0 else 0.33) * S
+        tip = (c + dx * length, c + dy * length)
+        a, b = (c - dy * w, c + dx * w), (c + dy * w, c - dx * w)
+        if k == 0:
+            d.polygon([tip, a, b], fill=255)
+        else:
+            d.line([a, tip, b, a], fill=255, width=max(2, S // 160))
+        d.line([(c + dx * 0.44 * S, c + dy * 0.44 * S), (c + dx * r_out, c + dy * r_out)], fill=255, width=lw)   # the tick
+    d.ellipse([c - 0.025 * S, c - 0.025 * S, c + 0.025 * S, c + 0.025 * S], fill=255)
+    return np.asarray(img, np.float32) / 255.0
+
+
+def _band_angles(band: int, width: int, radius_deg: float, azimuth0_deg: float):
+    """(angle from the nadir (band,), azimuth east of north (width,)), degrees, of the mark's pixel centres."""
+    rho = radius_deg * (1.0 - (np.arange(band) + 0.5) / band)
+    az = float(azimuth0_deg) + (np.arange(width) + 0.5) / width * 360.0
+    return rho, az
+
+
 def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optional[float] = None,
-              azimuth0_deg: float = 0.0, centre_azimuth_deg: float = 0.0) -> Dict[str, Any]:
+              azimuth0_deg: float = 0.0, centre_azimuth_deg: float = 0.0, stretch_power: float = 0.5) -> Dict[str, Any]:
     """The mark for an equirectangular image of ``width`` x ``height`` whose column 0 looks at ``azimuth0_deg``
     (east of north): {"row0": the first row of the disc, "alpha": (height - row0, width) float32, 1 = text,
     "radius_deg", "lines", "text" (the two rows), "stretch", ...}.
@@ -138,7 +179,8 @@ def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optiona
     nadir with the letters upright.  A letter cannot have its own shape in both: the strip is stretched
     1 / cos(elevation) times (3.4 times at -73 degrees).  The letters are made the square root of that wider than
     they are in the flat image (``stretch``), so they are as much too wide there as they are too narrow in the
-    headset."""
+    headset.  ``stretch_power`` 1 gives the letters their own shape on the ground (for :func:`write_texture`: a
+    viewer that lays the mark on the ground as a surface), 0 in the flat image."""
     import cv2
     radius_deg = NADIR_MARK_DEG if radius_deg is None else float(radius_deg)
     row0 = int(np.ceil(height * (180.0 - radius_deg) / 180.0))
@@ -148,11 +190,11 @@ def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optiona
     rows_text = [TEXT_SEPARATOR.join(lines[:k]), TEXT_SEPARATOR.join(lines[k:])]
     rows_text = [t for t in rows_text if t]
     info = []
-    for text, centre, tall in zip(rows_text, TEXT_ROWS_IN_BAND, TEXT_MAX_HEIGHT_IN_BAND):
+    for text, centre, tall, share in zip(rows_text, TEXT_ROWS_IN_BAND, TEXT_MAX_HEIGHT_IN_BAND, TEXT_SPAN_OF_ROW):
         strip = text_strip(text)
         el_text = -(90.0 - (1.0 - centre) * radius_deg)                        # the elevation of the row's middle
-        stretch = float(np.sqrt(1.0 / max(np.cos(np.radians(el_text)), 1e-3)))
-        span = int(round(width * TEXT_SPAN_OF_CIRCLE))                         # at most this many columns
+        stretch = float((1.0 / max(np.cos(np.radians(el_text)), 1e-3)) ** float(stretch_power))
+        span = int(round(width * share))                                       # at most this many columns
         h = int(round(span * strip.shape[0] / (strip.shape[1] * stretch)))     # its height for that span
         h_max = max(4, int(tall * band))
         if h > h_max:                                                          # no taller than this: it then takes
@@ -166,8 +208,76 @@ def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optiona
         alpha[y0:y0 + t.shape[0], cols] = np.maximum(alpha[y0:y0 + t.shape[0], cols], t[:band - y0])
         info.append({"text": text, "stretch": stretch, "height_px": int(h), "elevation_deg": float(el_text),
                      "span_deg": 360.0 * t.shape[1] / width})
+    compass = None
+    if COMPASS_RADIUS_IN_DISC > 0:
+        # the compass on the ground plane: a point of the plane at the angle rho from the nadir is tan(rho) from the
+        # disc's middle in units of the depth, so the rose is drawn with that radius - round on the ground, and with
+        # N at the azimuth 0 of the panorama
+        rose = compass_rose()
+        rho, az = _band_angles(band, width, radius_deg, azimuth0_deg)
+        r = np.tan(np.radians(rho)) / (COMPASS_RADIUS_IN_DISC * np.tan(np.radians(radius_deg)))      # 1 at the rose's rim
+        xe = r[:, None] * np.sin(np.radians(az))[None, :]
+        yn = r[:, None] * np.cos(np.radians(az))[None, :]
+        S = rose.shape[0]
+        mx = ((xe + 1.0) * 0.5 * S - 0.5).astype(np.float32)
+        my = ((1.0 - yn) * 0.5 * S - 0.5).astype(np.float32)
+        c = cv2.remap(rose, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0.0)
+        c[np.broadcast_to(r[:, None] > 1.0, c.shape)] = 0.0
+        alpha = np.maximum(alpha, c)
+        compass = {"radius_deg": float(np.degrees(np.arctan(COMPASS_RADIUS_IN_DISC * np.tan(np.radians(radius_deg))))),
+                   "radius_in_disc": COMPASS_RADIUS_IN_DISC, "north_azimuth_deg": 0.0,
+                   "note": "the solid point is the panorama's north (the station frame's); no letters"}
     return {"row0": row0, "alpha": alpha, "radius_deg": radius_deg, "lines": list(lines), "text": rows_text,
+            "azimuth0_deg": float(azimuth0_deg), "compass": compass, "size": (int(width), int(height)),
             "rows": info, "stretch": info[0]["stretch"] if info else 1.0, "centre_azimuth_deg": float(centre_azimuth_deg) % 360.0}
+
+
+TEXTURE_PX = 1024
+TEXTURE_SUFFIX = "nadir_mark.png"
+
+
+def top_down(mark: Dict[str, Any], size: int = TEXTURE_PX) -> np.ndarray:
+    """The mark as it lies on the ground, seen from above: (size, size) float32 ink, north up and east to the right,
+    the disc's rim touching the square's sides.  The inverse of what :func:`make_mark` does to the compass: a pixel
+    r disc radii from the middle is at the angle atan(r tan(radius)) from the nadir."""
+    import cv2
+    a = mark["alpha"]
+    band, width = a.shape
+    S = int(size)
+    g = (np.arange(S) + 0.5) / S * 2.0 - 1.0
+    xe, yn = np.meshgrid(g, -g)
+    r = np.hypot(xe, yn)
+    rho = np.degrees(np.arctan(r * np.tan(np.radians(mark["radius_deg"]))))
+    az = np.degrees(np.arctan2(xe, yn))
+    col = (((az - float(mark.get("azimuth0_deg", 0.0))) % 360.0) / 360.0 * width - 0.5).astype(np.float32)
+    row = ((1.0 - rho / mark["radius_deg"]) * band - 0.5).astype(np.float32)
+    pad = 2
+    aw = np.concatenate([a[:, -pad:], a, a[:, :pad]], axis=1)
+    out = cv2.remap(aw, col + pad, np.clip(row, 0, band - 1), cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    out[r > 1.0] = 0.0
+    return out.astype(np.float32)
+
+
+def write_texture(mark: Dict[str, Any], path, size: int = TEXTURE_PX):
+    """0.97.24 (Christian, 14 Nov 2026: "in the VR viewer, make that a 3d surface on the ground"): the mark as an RGBA
+    PNG for a viewer to lay on the ground as a real surface - the light blue disc with the ink in black, clear
+    outside the disc; north up, east to the right.  Its radius on the ground is depth x tan(radius_deg)."""
+    import cv2
+    w, h = mark.get("size") or (mark["alpha"].shape[1], 0)
+    if h:                                 # the letters in their own shape on the ground, not the panorama's compromise
+        mark = make_mark(w, h, mark["lines"], mark["radius_deg"], mark.get("azimuth0_deg", 0.0),
+                         mark.get("centre_azimuth_deg", 0.0), stretch_power=1.0)
+    ink = top_down(mark, size)
+    S = ink.shape[0]
+    g = (np.arange(S) + 0.5) / S * 2.0 - 1.0
+    r = np.hypot(*np.meshgrid(g, g))
+    cover = np.clip((1.0 - r) * S * 0.5, 0.0, 1.0)                        # one pixel of soft rim
+    rgba = np.zeros((S, S, 4), np.uint8)
+    rgb = (1.0 - ink)[..., None] * np.asarray(BACKGROUND_RGB)[None, None, :]
+    rgba[..., :3] = np.clip(np.rint(rgb), 0, 255).astype(np.uint8)[..., ::-1]     # BGR for OpenCV
+    rgba[..., 3] = np.rint(255 * cover).astype(np.uint8)
+    cv2.imwrite(str(path), rgba)
+    return path
 
 
 def forward_azimuth_deg(pose: Optional[Dict[str, Any]], north, east) -> float:

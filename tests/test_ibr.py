@@ -1175,7 +1175,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert (root / "single_sites" / "Sol0052_S003D2046" / "single_site_log.txt").exists()
     f = SS.install(tmp_path / "inst")
     b = f.read_bytes()
-    assert f.name == "run_single_site_ibr.bat" and b"\r\n" in b and b"python -m mppp single-sites %*" in b
+    assert f.name == "run_single_site_ibr.bat" and b"\r\n" in b and b"python -m mppp single-sites --upload %*" in b
     assert b"7dbd5da" not in b and b"_transfer" in b and b"--ff-only" in b and b"merge-base --is-ancestor" in b
 
 
@@ -2111,15 +2111,32 @@ def test_nadir_mark_lines_credit_and_disc():
     W, H = 4096, 2048
     m = nadir.make_mark(W, H, lines, centre_azimuth_deg=90.0)          # the rover's front to the east
     band = H - m["row0"]
-    assert nadir.NADIR_MARK_DEG == 20.0 and m["row0"] == int(np.ceil(H * 160 / 180)) and m["alpha"].shape == (band, W)
+    assert nadir.NADIR_MARK_DEG == 10.0 and m["row0"] == int(np.ceil(H * 170 / 180)) and m["alpha"].shape == (band, W)   # 0.97.24: half the size
     assert len(m["text"]) == 2 and "Rockytop" in m["text"][0] and "C. Tate" in m["text"][1]       # two rows
-    ink = m["alpha"] > 0.5
+    text_rows = int(0.47 * band)                                       # the two rows of text; the compass is nearer the nadir
+    ink = m["alpha"][:text_rows] > 0.5
     cols = np.flatnonzero(ink.any(axis=0))
     rows = np.flatnonzero(ink.any(axis=1))
-    assert (cols.max() - cols.min()) <= 0.5 * W + 2                    # no more than half the circle
+    assert (cols.max() - cols.min()) <= 0.6 * W + 2                    # the first row half the circle at most, the second 0.6
     assert abs(0.5 * (cols.max() + cols.min()) - W / 4) < 0.02 * W     # centred on the rover's front (east = a quarter)
-    assert rows.max() < 0.45 * band and rows.min() >= 1                # near the rim
-    assert all(r["span_deg"] <= 180.5 for r in m["rows"])
+    assert rows.min() >= 1
+    assert m["rows"][0]["span_deg"] <= 180.5 and m["rows"][1]["span_deg"] <= 216.5
+    assert m["rows"][1]["height_px"] >= 0.7 * m["rows"][0]["height_px"]            # 0.97.24: the second row larger (0.45 before)
+    # 0.97.24: the compass in the middle, N at the panorama's north whatever way the rover faces
+    comp = m["alpha"][int(0.52 * band):] > 0.5
+    assert comp.any() and m["compass"]["radius_in_disc"] == 0.5
+    td = nadir.top_down(m, 512)                                        # seen from above: north up, east right
+    rose = nadir.compass_rose(256)
+    mid = td[128:384, 128:384]
+    c0 = np.corrcoef(mid.ravel(), rose.ravel())[0, 1]
+    assert c0 > 0.5 and all(np.corrcoef(np.rot90(mid, k).ravel(), rose.ravel())[0, 1] < c0 - 0.15 for k in (1, 2, 3))   # not turned
+    assert rose[30:118, 118:138].mean() > 2 * rose[138:226, 118:138].mean()        # the solid point is the north one
+    assert rose[30:118, 118:138].mean() > 2 * rose[118:138, 138:226].mean()        # (and not the east one); no letters
+    import cv2, tempfile
+    with tempfile.TemporaryDirectory() as td_:                         # the picture a viewer lays on the ground
+        t = cv2.imread(str(nadir.write_texture(m, Path(td_) / "mark.png", 256)), cv2.IMREAD_UNCHANGED)
+    assert t.shape == (256, 256, 4) and t[128, 5, 3] == 255 and t[2, 2, 3] == 0            # the disc; clear at the corners
+    assert tuple(int(v) for v in t[20, 128, :3]) == (238, 212, 176) or t[20, 128, :3].min() < 100   # light blue (BGR) or ink
     img = np.full((H, W, 3), 100, np.uint8)
     bg = np.asarray(nadir.BACKGROUND_RGB)[::-1]                        # BGR, as the images are written
     nadir.apply_mark(img, m, bg)
@@ -2410,7 +2427,7 @@ def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
     from mppp.ibr import nadir
     W, H = 4096, 2048
     m = nadir.make_mark(W, H, nadir.mark_lines(["NLF_0052_a"], "Van Zyl Overlook"), centre_azimuth_deg=180.0)
-    assert m["rows"][0]["height_px"] >= 1.4 * m["rows"][1]["height_px"] and m["rows"][0]["span_deg"] <= 180.5
+    assert m["rows"][0]["height_px"] > m["rows"][1]["height_px"] and m["rows"][0]["span_deg"] <= 180.5
     P, depth = np.array([1.0, 2.0, 3.0]), 0.9
     m0 = m["row0"] - 46
     got = {}
@@ -2675,3 +2692,41 @@ def test_web_upload_commits_the_panoramas_only_and_pushes(tmp_path):
     names = git(bare, "ls-tree", "-r", "--name-only", "main")
     assert "readme.txt" in names and "docs/ods/panos/S2_360_3DTD.jpg" in names
     assert not web.upload(tmp_path, [])["ok"]                                  # not a repository: said, not raised
+
+
+def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(tmp_path):
+    """0.97.24 (Christian, 14 Nov 2026): the nadir mark goes to the page as a surface for the ground (its picture
+    from above, the depth below the eyes, a radius a little over the mark's own); the upload is the batch file's
+    default, never waits at a prompt, tries a failed push again and leaves a marker when it did not go through."""
+    import subprocess
+    from mppp.ibr import web, single_sites as SS
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    out = tmp_path / "sites" / "Sol0091_S003D0010"
+    rep = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
+    nm = rep["nadir_mark"]
+    assert nm["radius_deg"] == 10.0 and (out / nm["texture"]).is_file() and nm["texture"].endswith("_nadir_mark.png")
+    assert abs(nm["radius_m"] - nm["depth_below_pivot_m"] * np.tan(np.radians(10.0))) < 1e-9
+    repo = tmp_path / "repo"
+    bare = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
+    subprocess.run(["git", "clone", "-q", str(bare), str(repo)], check=True)
+    for k, v in (("user.name", "t"), ("user.email", "t@example.org")):
+        subprocess.run(["git", "-C", str(repo), "config", k, v], check=True)
+    w = repo / "docs" / "ods"
+    doc = web.publish(tmp_path / "sites", w)
+    gm = doc["panos"][0]["variants"][0]["ground_mark"]
+    assert (w / gm["file"]).is_file() and gm["depth_m"] == round(nm["depth_below_pivot_m"], 4)
+    assert abs(gm["radius_m"] - web.MARK_SCALE * nm["radius_m"]) < 1e-3 and web.MARK_SCALE > 1.0     # a little larger
+    up = web.upload(w, ["Sol0091_S003D0010"], remote="nowhere", tries=2, wait_s=0)                    # the push cannot work
+    assert not up["ok"] and up["committed"] and not up["pushed"] and "2 tries" in up["message"]
+    assert json.loads((w / web.PENDING_NAME).read_text())["committed"] and "upload_pending" not in subprocess.run(
+        ["git", "-C", str(repo), "show", "--stat", "HEAD"], capture_output=True, text=True).stdout
+    ok = web.upload(w, ["Sol0091_S003D0010"])                          # the next upload sends the commit that was kept
+    assert ok["ok"] and ok["pushed"] and ok["verified"] and not ok["committed"] and not (w / web.PENDING_NAME).exists()
+    names = subprocess.run(["git", "-C", str(bare), "ls-tree", "-r", "--name-only", "main"], capture_output=True, text=True).stdout
+    assert "docs/ods/panos/Sol0091_S003D0010_nadir_mark.png" in names and "docs/ods/panos.json" in names
+    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    assert "ground_mark" in page and "CircleGeometry" in page
+    assert "single-sites --upload %*" in SS.BAT and "--no-upload" in SS.BAT
+    a = SS.build_parser().parse_args(["--upload", "--no-upload"]) if hasattr(SS, "build_parser") else None
+    assert a is None or a.no_upload

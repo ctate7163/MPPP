@@ -52,8 +52,11 @@ REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
 REM    examples:  run_single_site_ibr.bat Sol0052_S003D2046            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
-REM               run_single_site_ibr.bat Sol0052_S003D2046 --upload     then publish, commit the panoramas, push
-REM               run_single_site_ibr.bat --publish-only --upload        no rendering: publish and push what is there
+REM               run_single_site_ibr.bat Sol0052_S003D2046 --no-upload  the run without the upload at its end
+REM               run_single_site_ibr.bat --publish-only                 no rendering: publish and push what is there
+REM    0.97.24: when the run is done its panoramas are published into docs\ods, committed and pushed to GitHub with
+REM    the code (--upload is given here; --no-upload after it wins).  A push that fails is tried three times and
+REM    the commit goes up with the next run: see "NOT uploaded" at the end and docs\ods\upload_pending.json.
 REM set MPPP_NO_PAUSE=1 before it: no pause at the end, and the exit code is the run's (for unattended chains)
 REM Nothing in this file names a version, so it never needs replacing.
 REM It also lives in scripts\windows of the repository (0.97.0): there it works on the tree it is in.  Everything
@@ -92,7 +95,7 @@ set "B="
   for /f %%h in ('git rev-parse HEAD') do set "H1=%%h"
   echo %REPO%: !H0:~0,7! -^> !H1:~0,7!
   call scripts\windows\mppp_env.bat || ( pause & exit /b 1 )
-  python -m mppp single-sites %*
+  python -m mppp single-sites --upload %*
   set "RC=!errorlevel!"
   if not defined MPPP_NO_PAUSE pause
   exit /b !RC!
@@ -106,7 +109,7 @@ SQUARES_BAT = BAT.replace("REM run_single_site_ibr.bat [LABEL ...] [--steps ...]
 SQUARES_BAT = SQUARES_BAT.replace("REM 2. python -m mppp single-sites with the arguments given: the stations of src\\mppp\\data\\single_sites.json",
                                   "REM 2. python -m mppp single-sites --squares-only: every station's two eye images already there stacked into\n"
                                   "REM    <station>[_rover]_360_3DTD.jpg / .png, the left eye on top (Christian, 10 Nov); nothing rendered")
-SQUARES_BAT = SQUARES_BAT.replace("python -m mppp single-sites %*", "python -m mppp single-sites --squares-only %*")
+SQUARES_BAT = SQUARES_BAT.replace("python -m mppp single-sites --upload %*", "python -m mppp single-sites --squares-only %*")
 assert "--squares-only %*" in SQUARES_BAT and "make_square.bat [LABEL" in SQUARES_BAT
 
 
@@ -461,6 +464,8 @@ def add_parser(sub) -> None:
                    help="0.97.3: after the run, the stations' stereo JPEGs into DIR/panos and DIR/panos.json for the web "
                         "viewer (docs/ods of the repository; the page is copied into DIR when it is another folder)")
     p.add_argument("--publish-only", action="store_true", help="with --publish or --upload: no steps, publish what --out holds")
+    p.add_argument("--no-upload", action="store_true",
+                   help="0.97.24: no upload, also when --upload is given (run_single_site_ibr.bat gives it)")
     p.add_argument("--upload", action="store_true",
                    help="0.97.21: after the run, publish (into docs/ods of this checkout unless --publish names a folder), "
                         "commit the panoramas there and push the branch to origin - the code's commits go with it")
@@ -491,6 +496,8 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
             for c in r["commands"]:
                 print(f"   [{c['variant']}] python -m mppp " + " ".join(c["argv"]))
         return 0
+    if getattr(a, "no_upload", False) or a.dry_run or a.squares_only:   # 0.97.24: the batch file asks for the upload by default
+        a.upload = False
     if getattr(a, "upload", False) and not a.publish:    # 0.97.21: the checkout's own viewer folder
         a.publish = str(Path(__file__).resolve().parents[3] / "docs" / "ods")
     rc = 0 if (a.publish and a.publish_only) else run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone,

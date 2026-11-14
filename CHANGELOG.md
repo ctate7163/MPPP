@@ -3,6 +3,30 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.24 — 2026-11-14
+
+- **Nadir mark** (Christian: "make the blue circle 50% of its current size. Make the second row of text larger. Put a
+  compass graphic with N, S, E, W directions in the center of the circle aligned with the true directions in the
+  ods"): the disc is 10 degrees from the nadir (20 before); the second row may be 0.16 of the disc's radius tall
+  (0.09) and take 0.6 of the circle (0.5), so it is 0.8 of the first row's height (0.45); a compass in the middle,
+  half the disc's radius wide on the ground (`nadir.compass_rose`): a ring with four ticks and a four-pointed star whose
+  solid, longer point is the panorama's north whatever way the rover faces. No letters (Christian, the same morning:
+  "those letters can be sideways or upside down depending on how the viewer is seeing them").
+- **The mark as a surface on the ground in the viewer** (Christian: "in the VR viewer, make that a 3d surface on the
+  ground. This will reduce the disparity effect making the text hard to read ... a circle a little larger than how it
+  appears in the ods at the level of the ground"): the panorama run writes `<station>_nadir_mark.png` (the mark from
+  above, north up, letters in their own shape on the ground; `nadir.write_texture`) and records `texture` and
+  `radius_m` in `ods.json`; `web.publish` copies it and gives each variant `ground_mark` {file, depth_m, radius_m} in
+  `panos.json`; the page lays a disc 1.15 times the mark's radius at that depth below the eyes, drawn by each eye's
+  own camera (key M hides it). Checked on a screen in headless Chrome with a synthetic station (the disc covers the
+  mark, N at north, E at east). **Not checked in a headset.**
+- **`run_single_site_ibr.bat` uploads when it is done** (Christian: "The ibr bat script should by default upload the
+  latest ods and other files to Github when it is done. how could this be made reliable?"): the batch file passes
+  `--upload`; `--no-upload` skips it. `web.upload`: the commit is made before the network is touched; a failed push
+  is tried three times 30 s apart and the commit goes up with the next upload; git never waits at a prompt and each
+  command has a 15 min limit; the remote's branch is read back after the push; a failure writes
+  `docs/ods/upload_pending.json` (ignored by git) and makes the run's exit code non-zero.
+
 ## 0.97.23 — 2026-11-13
 
 - **Three Skinner Ridge 79 mm sequences on the low list** (Christian: "Do both of those things"): `483:ZCAM03394`,

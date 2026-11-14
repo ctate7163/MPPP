@@ -109,6 +109,41 @@ for (const [eye, layer] of [['left', 1], ['right', 2]]) {      // three.js: the 
   spheres[eye] = m;
 }
 
+// ---------------------------------------------------------------- the nadir mark as a surface on the ground (0.97.24)
+// In the panorama the mark's two eyes come from an omnidirectional pair whose separation shrinks towards the nadir, so
+// straight down it sits at no sensible distance and its text is hard to read.  Here it is a real disc: a little wider
+// than the mark in the panorama (which it covers), lying depth_m below the eyes, drawn by both eye cameras of the
+// headset from where they are - its disparity is that of a thing on the ground.  panos.json gives each variant's
+// "ground_mark": {file, depth_m, radius_m}.  The picture is the mark from above, north up and east to the right:
+// a circle in the x-y plane turned to lie flat has its +y at north (-z) and its +x at east, as the spheres do.
+// M shows and hides it.
+const markMaterial = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+const markDisc = new THREE.Mesh(new THREE.CircleGeometry(1, 96), markMaterial);
+markDisc.rotation.x = -Math.PI / 2;
+markDisc.renderOrder = 2;                       // after the spheres
+markDisc.frustumCulled = false;
+markDisc.visible = false;
+world.add(markDisc);
+let markOn = true, markId = 0;
+async function showMark(gm) {
+  const id = ++markId;
+  markDisc.visible = false;
+  if (!gm || !gm.file || !(gm.depth_m > 0) || !(gm.radius_m > 0)) return;
+  try {
+    const bmp = await createImageBitmap(await (await fetch(new URL(gm.file, base).href)).blob(), { imageOrientation: 'flipY' });
+    if (id !== markId) { bmp.close(); return; }
+    const t = new THREE.Texture(bmp);
+    t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true;
+    t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    t.needsUpdate = true;
+    if (markMaterial.map) { const o = markMaterial.map; markMaterial.map = null; o.dispose(); if (o.image && o.image.close) o.image.close(); }
+    markMaterial.map = t; markMaterial.needsUpdate = true;
+    markDisc.scale.set(gm.radius_m, gm.radius_m, 1);
+    markDisc.position.set(0, -gm.depth_m, 0);
+    markDisc.visible = markOn;
+  } catch (e) { console.warn('ground mark', e); }
+}
+
 // ---------------------------------------------------------------- the list and the choice
 let panos = [], base = '', cur = { s: 0, v: 0, w: 0 }, texture = null, loadId = 0;
 const maxTex = renderer.capabilities.maxTextureSize;
@@ -159,6 +194,7 @@ async function show() {
     if (texture) { texture.dispose(); if (texture.image && texture.image.close) texture.image.close(); }
     texture = t;
     material.map = t; material.color.set(0xffffff); material.needsUpdate = true;
+    showMark(/^(standard|enhanced)/.test(names[cur.w]) ? vr.ground_mark : null);   // not over the range and normal views
     world.rotation.y = THREE.MathUtils.degToRad(p.yaw_deg || 0);  // the azimuth (deg east of north) straight ahead at the start
     $('note').textContent = [p.title || p.id, p.note, vr.label, `${bmp.width} x ${bmp.height}`, p.mppp ? `MPPP ${p.mppp}` : '']
       .filter(Boolean).join('  |  ');
@@ -194,6 +230,7 @@ window.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') step('s', 1); else if (e.key === 'ArrowLeft') step('s', -1);
   else if (e.key === 'v' || e.key === 'V') step('v', 1); else if (e.key === 'e' || e.key === 'E') step('w', 1);
   else if (e.key === 'l' || e.key === 'L') setEye(screenEye === 'left' ? 'right' : 'left');
+  else if (e.key === 'm' || e.key === 'M') { markOn = !markOn; markDisc.visible = markOn && !!markMaterial.map; }
 });
 
 // ---------------------------------------------------------------- looking around on a screen

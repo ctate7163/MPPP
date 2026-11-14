@@ -80,8 +80,15 @@ is used, so a fault seen there is in the mesh, the plane, the rover model or the
 `mppp ods --no-geometry` leaves them out; `mppp single-sites --publish-views standard "range log" normal` puts them
 in the viewer's list.
 
-`run_single_site_ibr.bat <station> --upload` publishes the station's panoramas into `docs/ods`, commits them and
-pushes the branch to GitHub when the run is done (0.97.21); `--publish-only --upload` does that without rendering.
+`run_single_site_ibr.bat <station>` publishes the station's panoramas into `docs/ods`, commits them and pushes the
+branch to GitHub when the run is done (0.97.24: by default; `--no-upload` skips it; `--publish-only` does it without
+rendering). A push that fails is tried three times, the commit is kept and goes up with the next run, and
+`docs/ods/upload_pending.json` says what did not go through.
+
+The mark at the nadir is a light blue disc 10 degrees from the nadir with two rows of text and a compass whose solid
+point is the panorama's north (no letters: they would be sideways or upside down for most viewers). `<station>_nadir_mark.png` is the same mark seen from above; the viewer page
+lays it on the ground as a real surface (`ground_mark` in `panos.json`: its depth below the eyes and its radius), so
+in a headset it has the disparity of a thing on the ground.
 
 Each picture carries its scale as JSON in its XMP metadata (`mppp:Scale`), `photometry_jpg/scales.json` lists them
 all, and `mppp.ibr.scales.decode(path)` returns the values as floats with their units. Read back from a JPEG, a
