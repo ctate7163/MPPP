@@ -41,6 +41,244 @@
    "published": "2026-11-14"
   },
   {
+   "id": "Sol0461_S026D0630",
+   "title": "Rockytop Sol0461_S026D0630",
+   "variants": [
+    {
+     "key": "rover",
+     "label": "with the rover",
+     "views": {
+      "standard": "panos/Sol0461_S026D0630_rover_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0461_S026D0630_rover_nadir_mark.png",
+      "depth_m": 0.8586,
+      "radius_m": 0.1741,
+      "mark_radius_m": 0.1514
+     }
+    },
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol0461_S026D0630_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0461_S026D0630_nadir_mark.png",
+      "depth_m": 1.9665,
+      "radius_m": 0.3988,
+      "mark_radius_m": 0.3467
+     }
+    }
+   ],
+   "mppp": "0.98.3",
+   "published": "2026-11-14"
+  },
+  {
+   "id": "Sol0474_S026D0850",
+   "title": "Rockytop Sol0474_S026D0850",
+   "variants": [
+    {
+     "key": "rover",
+     "label": "with the rover",
+     "views": {
+      "standard": "panos/Sol0474_S026D0850_rover_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0474_S026D0850_rover_nadir_mark.png",
+      "depth_m": 0.9085,
+      "radius_m": 0.1842,
+      "mark_radius_m": 0.1602
+     }
+    },
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol0474_S026D0850_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0474_S026D0850_nadir_mark.png",
+      "depth_m": 2.056,
+      "radius_m": 0.4169,
+      "mark_radius_m": 0.3625
+     }
+    }
+   ],
+   "mppp": "0.98.3",
+   "published": "2026-11-14"
+  },
+  {
+   "id": "Sol0686_S032D1184",
+   "title": "Three Forks Sol0686_S032D1184",
+   "variants": [
+    {
+     "key": "rover",
+     "label": "with the rover",
+     "views": {
+      "standard": "panos/Sol0686_S032D1184_rover_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0686_S032D1184_rover_nadir_mark.png",
+      "depth_m": 0.8464,
+      "radius_m": 0.1716,
+      "mark_radius_m": 0.1492
+     }
+    },
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol0686_S032D1184_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0686_S032D1184_nadir_mark.png",
+      "depth_m": 1.94,
+      "radius_m": 0.3934,
+      "mark_radius_m": 0.3421
+     }
+    }
+   ],
+   "mppp": "0.98.3",
+   "published": "2026-11-14"
+  },
+  {
+   "id": "Sol1411_S068D0142",
+   "title": "Witch Hazel Hill Sol1411_S068D0142",
+   "variants": [
+    {
+     "key": "rover",
+     "label": "with the rover",
+     "views": {
+      "standard": "panos/Sol1411_S068D0142_rover_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1411_S068D0142_rover_nadir_mark.png",
+      "depth_m": 1.2438,
+      "radius_m": 0.2522,
+      "mark_radius_m": 0.2193
+     }
+    },
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol1411_S068D0142_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1411_S068D0142_nadir_mark.png",
+      "depth_m": 1.9826,
+      "radius_m": 0.402,
+      "mark_radius_m": 0.3496
+     }
+    }
+   ],
+   "mppp": "0.98.3",
+   "published": "2026-11-14"
+  },
+  {
+   "id": "Sol1454_S071D0056",
+   "title": "Bell Island Sol1454_S071D0056",
+   "variants": [
+    {
+     "key": "rover",
+     "label": "with the rover",
+     "views": {
+      "standard": "panos/Sol1454_S071D0056_rover_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1454_S071D0056_rover_nadir_mark.png",
+      "depth_m": 0.8656,
+      "radius_m": 0.1755,
+      "mark_radius_m": 0.1526
+     }
+    },
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol1454_S071D0056_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1454_S071D0056_nadir_mark.png",
+      "depth_m": 2.0735,
+      "radius_m": 0.4205,
+      "mark_radius_m": 0.3656
+     }
+    }
+   ],
+   "mppp": "0.98.3",
+   "published": "2026-11-14"
+  },
+  {
+   "id": "Sol1635_S079D0732",
+   "title": "Taylorfjellet Sol1635_S079D0732",
+   "variants": [
+    {
+     "key": "rover",
+     "label": "with the rover",
+     "views": {
+      "standard": "panos/Sol1635_S079D0732_rover_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1635_S079D0732_rover_nadir_mark.png",
+      "depth_m": 0.8831,
+      "radius_m": 0.1791,
+      "mark_radius_m": 0.1557
+     }
+    },
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol1635_S079D0732_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1635_S079D0732_nadir_mark.png",
+      "depth_m": 2.0258,
+      "radius_m": 0.4108,
+      "mark_radius_m": 0.3572
+     }
+    }
+   ],
+   "mppp": "0.98.3",
+   "published": "2026-11-14"
+  },
+  {
+   "id": "Sol1792_S087D0000",
+   "title": "Origny Sol1792_S087D0000",
+   "variants": [
+    {
+     "key": "rover",
+     "label": "with the rover",
+     "views": {
+      "standard": "panos/Sol1792_S087D0000_rover_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1792_S087D0000_rover_nadir_mark.png",
+      "depth_m": 0.8509,
+      "radius_m": 0.1725,
+      "mark_radius_m": 0.15
+     }
+    },
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol1792_S087D0000_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1792_S087D0000_nadir_mark.png",
+      "depth_m": 1.9995,
+      "radius_m": 0.4054,
+      "mark_radius_m": 0.3526
+     }
+    }
+   ],
+   "mppp": "0.98.3",
+   "published": "2026-11-14"
+  },
+  {
    "id": "orientation_test",
    "title": "Orientation test (N at the left edge, left eye on top)",
    "variants": [
