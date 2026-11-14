@@ -171,6 +171,10 @@ def upload(web_dir: PathLike, stations: Sequence[str] = (), remote: str = "origi
     if rc:
         return {"ok": False, "committed": False, "pushed": False, "message": f"{web} is not in a git repository: {top}"}
     repo = Path(top)
+    if not _git(repo, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0]:      # 0.97.22: an unfinished merge - git refuses the commit
+        return {"ok": False, "committed": False, "pushed": False,
+                "message": f"{repo} has an unfinished merge: finish it (git status, git add the listed files, git commit "
+                           "--no-edit) or undo it (git merge --abort), then run this again"}
     paths = [str(web / "panos"), str(web / "panos.json")]
     rc, out = _git(repo, "add", "--", *paths)
     if rc:

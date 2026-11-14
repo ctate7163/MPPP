@@ -3,6 +3,16 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.97.22 — 2026-11-13
+
+- **100 mm at Chal Rocks and Seitah Overlook** (Christian: "Add z100 to it and chal rocks regular, tiny and large"):
+  `chal_rocks` and `chal_rocks_tiny` list 100 mm (`chal_rocks_large` and `seitah_overlook` did since 0.97.0). The
+  freeze dropped it all the same: its site runs pass `zcam_zooms_only` = the zooms with a joint (34, 48, 63, 79,
+  110), which removed 26 and 100 mm from every run, so neither zoom has been aligned in a freeze block. The filter
+  now keeps 100 mm (`run_pipeline.SITE_ZOOMS_WITHOUT_JOINT`); 26 mm is still dropped. The frames exist: the zoom
+  ladders ZCAM00033 / ZCAM00034 of sols 92-93 at Chal Rocks and ZCAM08114 of sol 121 at Seitah Overlook. Takes
+  effect in the freeze after `freeze.bat --update-code`; the four blocks are processed and run again.
+
 ## 0.97.21 — 2026-11-13
 
 - **`mppp single-sites --upload`** (Christian: "I'd also like the option to upload the ods after the one bat file

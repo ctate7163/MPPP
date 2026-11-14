@@ -79,6 +79,9 @@ ZCAM_GROUP, ECAM_GROUP, ZCAM34_JOINT = "zcam_consensus", "ecam_consensus", "zcam
 NAVCAM_GROUP = ECAM_GROUP                        # the name before 0.94.4
 ZOOMS = (34, 48, 63, 79, 110)       # 0.95.1 (Christian, 29 Oct: "leave z79 on so that we get a first promotable model"; Z110 too); 26 Oct-0.95.0: 34, 48, 63
 ALL_ZOOMS = (34, 48, 63, 79, 110)
+SITE_ZOOMS_WITHOUT_JOINT = (100,)   # 0.97.22 (Christian, 13 Nov 2026: "Add z100 to it [Seitah Overlook] and chal rocks regular, tiny and
+#                                     large"): no joint and no focus model, but a site that lists it keeps it in its run - the
+#                                     filter below dropped it (and 26 mm, which stays dropped) from every freeze run since 0.97.0
 LIGHTGLUE_AB_SITES = ("chal_rocks_tiny", "seitah_overlook_tiny")        # the lightglue_ab stage (24 Oct)
 
 
@@ -175,7 +178,8 @@ class Pipeline:
         if zcam and getattr(self.a, "zooms", None) and not getattr(self.a, "all_site_zooms", False):
             # 0.95.0 (Christian, 28 Oct): the Mastcam-Z runs keep the zooms being calibrated (--zooms, default
             # 34 48 63); the site's wider zooms wait for a pass of their own (--all-site-zooms: every zoom listed)
-            cmd += ["--set", "zcam_zooms_only=" + ",".join(str(int(z)) for z in self.a.zooms)]
+            keep = sorted({int(z) for z in self.a.zooms} | set(SITE_ZOOMS_WITHOUT_JOINT))
+            cmd += ["--set", "zcam_zooms_only=" + ",".join(str(z) for z in keep)]
         if getattr(self.a, "light", False):
             # 0.95.0 (Christian, 28 Oct): a calibration run skips the native text model, residuals, the Navcam-stage
             # export and the COLMAP GUI copy.  2 Nov 2026: the freeze run writes the full export by default - the
