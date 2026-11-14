@@ -10,6 +10,12 @@
      "label": "with the rover",
      "views": {
       "standard": "panos/Sol0052_S003D2046_rover_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0052_S003D2046_rover_nadir_mark.png",
+      "depth_m": 0.8477,
+      "radius_m": 0.1719,
+      "mark_radius_m": 0.1495
      }
     },
     {
@@ -17,11 +23,22 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol0052_S003D2046_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0052_S003D2046_nadir_mark.png",
+      "depth_m": 1.9633,
+      "radius_m": 0.3981,
+      "mark_radius_m": 0.3462
+     },
+     "rover_surface": {
+      "file": "panos/Sol0052_S003D2046_rover_rover_surface.glb",
+      "triangles": 680076,
+      "experimental": true
      }
     }
    ],
-   "mppp": "0.97.21",
-   "published": "2026-11-13"
+   "mppp": "0.98.3",
+   "published": "2026-11-14"
   },
   {
    "id": "orientation_test",
