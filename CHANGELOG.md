@@ -3,6 +3,50 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.4 — 2026-11-14
+
+**The viewer** (Christian: "Let's add some controls ...").
+
+- Headset controls: right trigger next station, left trigger the one before; thumbstick left / right turns the view
+  (60 degrees a second, kept from station to station); A shows a panel with the site name and sol (key I on a
+  screen); X steps through the colour views only; grip still switches variant.
+- The labelled test pair is gone from the list. The first entry is a welcome view: Van Zyl Overlook in washed-out
+  grey, NORTH / EAST / SOUTH / WEST in white in the sky, "MPPP stereo viewer - Mars 2020 Perseverance rover" 5 m
+  ahead, and a line of the controls. `publish` makes the grey picture when Van Zyl is published.
+- The ground disc is 1.30 x the mark (was 1.15), lies at the terrain's level in both variants, and is two parts:
+  the compass stays fixed to north, the text ring turns so that its text is upright for the viewer.
+- `panos.json` entries carry `site_name` and `sols`.
+
+**The sky** (Christian: "an extra check at the end to heal over any dark bands or other artifacts").
+
+- `heal_sky`, the last step: the sky is compared with its own smooth version (14 degrees along the azimuth,
+  0.7 degrees in elevation, so the brightening towards the horizon stays). Pixels more than a few percent from it,
+  or on a brightness step along the azimuth, are replaced by it. A clean sky is not touched. Tried on the Bell
+  Island and Origny panoramas: frame-shaped patches become a soft glow; the bright block right on Bell Island's
+  horizon is reduced, not removed (the heal fades out at the skyline).
+
+**The rover surface, experimental** (Christian: "too many blind spots on the deck and wheels ... too pixelated.
+Double the voxel resolution if there is headroom, and make sure that the rover does not have any occlusions no
+matter where the viewer moves the head within a .15 m radius").
+
+- The hole under the mast is closed: the panorama from the pivot no longer carries the nadir mark, so the surface
+  reaches the nadir (0.98.2 left out everything within 10.5 degrees of it - 20 to 28 % of the rover's pixels).
+- A vertex every 2 px (was 4), with the columns thinned towards the nadir (by 2, 4, 8, 16; the joints closed).
+  Over 2,000,000 triangles the step grows by one: Van Zyl is expected to land at 3 px (`--max-triangles`, `--step`).
+- Cells are cut along the diagonal that keeps more of them, so edges are less ragged.
+- A second layer behind every edge between two parts of the rover: the farther surface continued under the nearer
+  part, coloured from its own side, as far as a head 0.15 m from the pivot can see past the edge (`--head-radius`).
+- Rover pixels no frame coloured (flat brown in the panorama) take their surroundings' colour in the texture.
+- The depth file holds `rover` in every run and `unseen` when the centre panorama is rendered.
+
+**Other**
+
+- `single_sites.json`: a `work` given as a folder name is a block under the root (0.98.2's Mastcam-Z station
+  failed at once: "no project at mars2020_sol_0413_threeforks_north_zcam\colmap").
+- `sites.json`: `"zcam_hold"` - zooms a site keeps in its list and out of a run with a zoom filter. Chal Rocks
+  regular holds 100 mm and Chal Rocks large 26 and 100 mm, so their finished freeze blocks keep their run keys
+  (checked against the code before 0.97.22); Chal Rocks tiny and Seitah Overlook run again with 26 and 100 mm.
+
 ## 0.98.3 — 2026-11-14
 
 Christian: "I want it to run in reverse order by default".

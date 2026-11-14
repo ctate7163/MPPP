@@ -455,3 +455,22 @@ def test_maps_sync_study_waypoints(tmp_path, monkeypatch):
     assert hashlib.sha256((study / "M20_waypoints.json").read_bytes()).hexdigest() == w["_mppp_source"]["sha256"]
     r2 = sync_study_waypoints(study, refresh=False)
     assert "already current" in r2
+
+
+def test_zcam_hold_keeps_chal_rocks_regular_and_large_out_of_a_filtered_run():
+    """0.98.4 (Christian, 14 Nov 2026: "Remove chal rocks reg and large from the rerun list. Only rerun chal rocks
+    tiny to get the first z100 and Z26 alignment"): a site's "zcam_hold" zooms stay out of a run with a zoom filter,
+    so with 26 and 100 mm let through the filter the two sites align the zooms they did before (and keep their run
+    keys), while Chal Rocks tiny and Seitah Overlook gain 26 and 100 mm."""
+    from mppp import pipeline as P
+    from mppp.waypoints.sites import load_site_table
+    t = load_site_table()["sites"]
+    assert t["chal_rocks"]["zcam_hold"] == [100] and t["chal_rocks_large"]["zcam_hold"] == [26, 100]
+    only = [26, 34, 48, 63, 79, 100, 110]
+    z = lambda site, o: P.zcam_zooms(P.Settings(include_zcam=True, zcam_zooms_only=o), t[site])
+    assert z("chal_rocks", only) == [34, 48, 63, 79, 110] == z("chal_rocks_large", only)
+    assert z("chal_rocks_tiny", only) == [26, 34, 48, 63, 100] and z("seitah_overlook", only) == only
+    assert z("chal_rocks_large", None) == [26, 34, 48, 63, 79, 100, 110]            # without a filter: the whole list
+    k = lambda site, o: P.Settings(include_zcam=True, zcam_zooms=z(site, o), zcam_zooms_only=o).key_dict()
+    assert k("chal_rocks_large", only) == k("chal_rocks_large", [34, 48, 63, 79, 110])
+    assert k("chal_rocks_tiny", only) != k("chal_rocks_tiny", [34, 48, 63, 79, 110])

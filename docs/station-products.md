@@ -223,3 +223,11 @@ python -m mppp.ibr.rover_surface D:\rover_blocks\single_sites\Sol0052_S003D2046\
 `python -m mppp single-sites Sol0690_S032D1184_Z34` renders the 34 mm frames of sol 690 at Three Forks onto the
 terrain made from the station's Navcam frames. Stations marked `"experimental": true` in `single_sites.json` run only
 when named.
+
+### 0.98.4
+
+- The rover surface has two layers (the second continues the farther surface under the nearer parts' edges, for a
+  head within 0.15 m of the pivot), a vertex every 2 px where the triangle limit allows, and reaches the nadir.
+  Options of `python -m mppp.ibr.rover_surface`: `--step`, `--max-triangles`, `--head-radius`.
+- The sky's last step, `heal_sky`, replaces frame-shaped patches and bands by the sky's own smooth version.
+- Viewer: right / left trigger = next / previous station, thumbstick = turn, A = site and sol, X = colour view.

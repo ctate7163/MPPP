@@ -128,8 +128,9 @@ def load_config(path: Optional[PathLike] = None) -> Dict[str, Any]:
 
 def block_folder(st: Dict[str, Any], root: PathLike) -> Path:
     """The block of a station: ``work``, else the Navcam WORK folder of its ``site`` in the site definitions."""
-    if st.get("work"):
-        return Path(st["work"])
+    if st.get("work"):                                   # 0.98.4: a folder name alone is a block under the root (0.98.2's
+        w = Path(st["work"])                             # Mastcam-Z station was looked for in the current folder)
+        return w if w.is_absolute() or len(w.parts) > 1 else Path(root) / w
     from ..waypoints.sites import load_site_table, work_folder
     table = load_site_table()
     site = table["sites"].get(st["site"])

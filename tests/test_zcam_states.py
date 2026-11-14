@@ -227,4 +227,6 @@ def test_run_key_of_a_site_without_100mm_ignores_100_in_the_zoom_filter(tmp_path
         _, s = P.resolve_site(site, P.Settings(include_zcam=True, zcam_zooms_only=only, scapes_root=str(tmp_path)))
         return P.run_key(s)
     assert key("wildcat_ridge", [34, 48, 63, 79, 110]) == key("wildcat_ridge", [34, 48, 63, 79, 100, 110])
-    assert key("chal_rocks_large", [34, 48, 63, 79, 110]) != key("chal_rocks_large", [34, 48, 63, 79, 100, 110])
+    assert key("seitah_overlook", [34, 48, 63, 79, 110]) != key("seitah_overlook", [34, 48, 63, 79, 100, 110])
+    # 0.98.4: Chal Rocks large holds its 26 and 100 mm ("zcam_hold"), so its key does not change either
+    assert key("chal_rocks_large", [34, 48, 63, 79, 110]) == key("chal_rocks_large", [34, 48, 63, 79, 100, 110])

@@ -1131,10 +1131,11 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     gfill = fill_ground(rgb, source, ground) if ground_fill else np.zeros(label.shape, bool)
     sky = fill_sky(rgb, source, label) if sky_fill else np.zeros(label.shape, bool)
     evened = even_sky(rgb, label) if sky_fill else {}
+    healed = heal_sky(rgb, evened.get("weight")) if sky_fill else {}       # 0.98.4: the last check on the sky
     if checked:                                              # and any surface still without a source
         _brown((source == -1) & ((label == LABEL_MESH) | (label == LABEL_PLANE)))
     return {"brown_filled": brown, "rover": rover_px, "rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
-            "sky_filled": sky, "sky_evened": evened, "ground_filled": gfill, "surface_check_rejected": rej, "provenance": prov,
+            "sky_filled": sky, "sky_evened": evened, "sky_healed": healed, "ground_filled": gfill, "surface_check_rejected": rej, "provenance": prov,
             "sky_weight": evened.pop("weight", None), "effective_frames": _effective_frames(neff_vals)}
 
 
@@ -1356,6 +1357,88 @@ def even_sky(rgb: np.ndarray, label: np.ndarray, sky: Optional[np.ndarray] = Non
     gs = gain.max(axis=2)[ms > 0.5]
     out.update(pixels=n_ch, share_of_sky=float(n_ch / max(1, m.sum())),
                gain_p99=float(np.percentile(gs, 99)) if gs.size else 1.0, gain_max=g_max)
+    return out
+
+
+SKY_HEAL_SMOOTH_FRAC = 0.04      # the sky's own smooth version: a Gaussian of this share of the width in azimuth (14 degrees)
+SKY_HEAL_SMOOTH_EL_DEG = 0.7     # ... and of only this much in elevation: the sky's brightening towards the horizon is real and kept
+SKY_HEAL_RAMP = 3.0              # the heal reaches full strength this many times sooner above the skyline than the evening
+SKY_HEAL_MEDIAN_DEG = 90.0       # the reference is each row's running median over this much azimuth: a patch or band
+#                                  narrower than half of it is healed whole; a wider one only at its edges
+SKY_HEAL_FROM, SKY_HEAL_FULL = 0.025, 0.07   # a sky pixel this far (natural log) from the smooth sky starts to be
+#                                              replaced by it / is replaced fully
+SKY_HEAL_EDGE = 0.012            # ... and so is one at a brightness step per pixel (at SKY_EVEN_WIDTH) above this
+SKY_HEAL_GROW_FRAC = 0.006       # the replaced area grows by this share of the width, with a soft rim
+
+
+def heal_sky(rgb: np.ndarray, weight: Optional[np.ndarray]) -> Dict[str, Any]:
+    """0.98.4 (Christian, 14 Nov 2026: "The sky needs an extra check at the end to heal over any dark bands or other
+    artifacts"): the last step on the sky, in place.  The real sky has no edges and no bands; a frame that was
+    brighter, darker or tinted against its neighbours leaves both.  The sky (``weight``: 1 = sky well above the
+    skyline, from :func:`even_sky`, at its reduced size) is compared with its own smooth version - a Gaussian of
+    SKY_HEAL_SMOOTH_FRAC of the width along the azimuth and SKY_HEAL_SMOOTH_EL_DEG in elevation, of each row's running
+    median over SKY_HEAL_MEDIAN_DEG of azimuth (a patch narrower than half of that does not move it).
+    Where a pixel differs from it by more than SKY_HEAL_FROM (fully from SKY_HEAL_FULL), or lies on a brightness
+    step along the azimuth, it is replaced by the smooth sky; the replaced area is grown a little and has a soft rim.  A clean sky is
+    not touched.  Returns {"pixels", "share_of_sky", "max_log_difference"}."""
+    import cv2
+    from scipy.ndimage import gaussian_filter, maximum_filter
+    out = {"pixels": 0, "share_of_sky": 0.0, "max_log_difference": 0.0}
+    if weight is None or float(np.sum(weight)) < 100:
+        return out
+    H, W = rgb.shape[:2]
+    h, w = weight.shape
+    top = 255.0 if rgb.dtype == np.uint8 else LINEAR_TOP
+    small = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_AREA).astype(np.float32)
+    wt = np.asarray(weight, np.float32)
+    sg = (max(1.0, SKY_HEAL_SMOOTH_EL_DEG / 180.0 * h), max(2.0, SKY_HEAL_SMOOTH_FRAC * w))
+    pad = int(3 * sg[1]) + 2
+    wrap = lambda x: np.concatenate([x[:, -pad:], x, x[:, :pad]], axis=1)
+
+    def smooth(wgt):
+        den = gaussian_filter(wrap(wgt), sg, mode="nearest")
+        S = np.stack([gaussian_filter(wrap(small[..., k] * wgt), sg, mode="nearest") / np.maximum(den, 1e-6) for k in range(3)], axis=2)
+        return S[:, pad:pad + w], den[:, pad:pad + w]
+
+    L = np.maximum(small.mean(axis=2), 1.0)
+    S1, den = smooth(wt)
+    # the reference: each row's running median along the azimuth (SKY_HEAL_MEDIAN_DEG wide, wrapped) - a patch or
+    # band narrower than half of that does not move it - then smoothed.  Off the sky the row continues with S1.
+    from scipy.ndimage import median_filter
+    km = max(3, int(round(SKY_HEAL_MEDIAN_DEG / 360.0 * w)) | 1)
+    base = np.where((wt > 0.5)[..., None], small, S1)
+    pm = km // 2 + 1
+    ref = median_filter(np.concatenate([base[:, -pm:], base, base[:, :pm]], axis=1), size=(1, km, 1), mode="nearest")[:, pm:pm + w]
+    small_keep, small = small, ref
+    S2, _ = smooth(np.where(den > 1e-3, 1.0, 0.0).astype(np.float32))
+    small = small_keep
+    ok = (den > 1e-3) & (wt > 0)
+    dev = np.abs(np.log(np.maximum(small, 1.0) / np.maximum(S2, 1.0))).max(axis=2)      # any channel: a tint counts
+    dev = gaussian_filter(np.where(ok, dev, 0.0), 1.0, mode="nearest")
+    gy, gx = np.gradient(gaussian_filter(np.log(L), 1.0, mode="nearest"))
+    a = np.clip((dev - SKY_HEAL_FROM) / (SKY_HEAL_FULL - SKY_HEAL_FROM), 0.0, 1.0)
+    a = np.maximum(a, (np.abs(gx) > SKY_HEAL_EDGE).astype(np.float32))      # a step along the azimuth: a frame's side
+    a = np.where(ok, a, 0.0).astype(np.float32)
+    if float(a.max()) <= 0.0:
+        return out
+    grow = max(3, int(round(SKY_HEAL_GROW_FRAC * w)) | 1)
+    a = gaussian_filter(maximum_filter(a, size=grow, mode="wrap"), 0.5 * grow, mode="wrap")
+    a = (np.clip(a, 0.0, 1.0) * np.clip(SKY_HEAL_RAMP * wt, 0.0, 1.0)).astype(np.float32)    # nothing at the hills
+    out.update(pixels=int((a > 0.5).sum() * (H * W) / float(h * w)), share_of_sky=float((a > 0.5).sum() / max(1.0, float((wt > 0.5).sum()))),
+               max_log_difference=float(dev[ok].max()) if ok.any() else 0.0)
+    f = H / h
+    for r0 in range(0, H, 1024):                                   # in strips: no full-size float copy
+        r1 = min(H, r0 + 1024)
+        s0, s1 = max(0, int(r0 / f) - 2), min(h, int(np.ceil(r1 / f)) + 2)
+        if not (a[s0:s1] > 1e-3).any():
+            continue
+        n = max(1, int(round((s1 - s0) * f)))
+        off = min(max(0, int(round(r0 - s0 * f))), max(0, n - (r1 - r0)))
+        A = cv2.resize(a[s0:s1], (W, n), interpolation=cv2.INTER_LINEAR)[off:off + (r1 - r0), :, None]
+        S = cv2.resize(S2[s0:s1], (W, n), interpolation=cv2.INTER_CUBIC)[off:off + (r1 - r0)]
+        k = A.shape[0]
+        blk = rgb[r0:r0 + k].astype(np.float32)
+        rgb[r0:r0 + k] = np.clip(blk + A * (S - blk), 0, top).astype(rgb.dtype)
     return out
 
 
@@ -1598,7 +1681,7 @@ DEPTH16_UNITS_PER_M = 500.0      # <prefix>_ods_centre_depth_16.png: uint16 = ra
 
 
 def write_centre_depth(out_dir: PathLike, prefix: str, rng: np.ndarray, label: np.ndarray,
-                       rover: Optional[np.ndarray] = None) -> Dict[str, Any]:
+                       rover: Optional[np.ndarray] = None, unseen: Optional[np.ndarray] = None) -> Dict[str, Any]:
     """0.97.0 (Christian, 12 Nov 2026: "also make a version projected from the center rotation with a depth map"): the
     depth of the centre panorama - the range from the pivot along each pixel's ray, on the panorama's own grid -
     as ``<prefix>_ods_centre_depth.npz`` (float32 metres ``range``, uint8 ``label``; 0 = no surface, the sky inf),
@@ -1615,7 +1698,8 @@ def write_centre_depth(out_dir: PathLike, prefix: str, rng: np.ndarray, label: n
     files = {"npz": ods_file(out, "centre_depth", prefix, ".npz"), "png16": ods_file(out, "centre_depth_16", prefix),
              "linear": ods_file(out, "centre_depth_linear", prefix, ".jpg"), "log": ods_file(out, "centre_depth_log", prefix, ".jpg")}
     if rover is not None:                                # 0.98.2: where the rover model is, for mppp.ibr.rover_surface
-        np.savez_compressed(files["npz"], range=r, label=lab, rover=np.asarray(rover, bool).astype(np.uint8))
+        extra = {} if unseen is None else {"unseen": np.asarray(unseen, bool).astype(np.uint8)}     # 0.98.4: rover pixels
+        np.savez_compressed(files["npz"], range=r, label=lab, rover=np.asarray(rover, bool).astype(np.uint8), **extra)   # no frame coloured
     else:
         np.savez_compressed(files["npz"], range=r, label=lab)
     d16 = np.where(np.isfinite(r), np.clip(np.rint(r * DEPTH16_UNITS_PER_M), 0, 65535), 65535).astype(np.uint16)
@@ -1776,6 +1860,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 log.info("ods: %s not matched (%d shared pixels)", cam, r["samples"])
     levels, levels_from, depth_rec = None, None, None
     mark0 = mark
+    mark_seen = mark0 if mark0 is not None else {}
     for eye in eyes:
         if mark0 is not None and eye in ("left", "right"):       # 0.97.13: the mark as this eye sees it on the ground
             m0 = max(0, mark0["row0"] - int(np.ceil(_nadir.GROUND_MARGIN_DEG / 180.0 * height)))
@@ -1788,9 +1873,10 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 al[q0 - m0:q1 - m0], ins[q0 - m0:q1 - m0] = _nadir.on_ground(mark0, height, oe, de, (q0, q1), station.pivot, station.up,
                                                                            station.north, station.east, mark0["depth_m"], azimuth0_deg)
             mark = dict(mark0, row0=m0, alpha=al, inside=ins)
+            mark_seen = mark
             del al, ins
-        elif mark0 is not None:
-            mark = mark0
+        elif mark0 is not None:                                  # 0.98.4: the panorama from the pivot carries no mark - it is
+            mark = None                                          # the rover surface's texture (mppp.ibr.rover_surface)
         res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, pole_merge_deg=pole_merge_deg, rows_per_chunk=rows_per_chunk,
                          progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, linear=linear,
                          ground_fill=ground_fill, **axes)
@@ -1841,7 +1927,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 _nadir.apply_mark(view8, mark, mark["bg8"])
             cv2.imwrite(str(f), view8)
         if eye in ("centre", "center") and centre_depth:     # 0.97.0: the panorama from the pivot, with its depth
-            depth_rec = write_centre_depth(out, prefix, res["range"], res["label"], rover=res.get("rover"))
+            depth_rec = write_centre_depth(out, prefix, res["range"], res["label"], rover=res.get("rover"),
+                                           unseen=(res["brown_filled"] & res["rover"]) if res.get("rover") is not None else None)
         if eye == eyes[0]:
             provenance_png(res["source"], out / "provenance.png", len(sources), mix=res.get("provenance"))
             sw = res.get("sky_weight")                   # 0.97.13: where the enhanced views may smooth the sky
@@ -1874,6 +1961,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         td = time.time()                                 # (Christian, 13 Nov 2026: "skip the center render because it
         rng_c = np.zeros((height, width), np.float32)    # takes 1/3 more time"): rays only, no frame is sampled
         lab_c = np.zeros((height, width), np.uint8)
+        rov_c = np.zeros((height, width), bool) if hasattr(scene, "on_rover") else None
         for r0 in range(0, height, rows_per_chunk):
             r1 = min(height, r0 + rows_per_chunk)
             oc, dc = ods_rays(width, height, (r0, r1), station.pivot, 0.0, "centre", station.up, station.north, station.east,
@@ -1881,7 +1969,11 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             hc = scene.cast(oc, dc)
             lab_c[r0:r1] = hc["label"].reshape(r1 - r0, width)
             rng_c[r0:r1] = np.where(hc["label"] != LABEL_NONE, hc["t"], 0).reshape(r1 - r0, width)
-        depth_rec = write_centre_depth(out, prefix, rng_c, lab_c)
+            if rov_c is not None and "tri" in hc:                # 0.98.4: where the rover model is, here too
+                onr = scene.on_rover(hc["tri"])
+                if onr is not None:
+                    rov_c[r0:r1] = np.asarray(onr, bool).reshape(r1 - r0, width)
+        depth_rec = write_centre_depth(out, prefix, rng_c, lab_c, rover=rov_c)
         depth_rec["seconds"] = round(time.time() - td, 1)
         depth_rec["from"] = "rays from the pivot alone (no centre panorama rendered)"
         log.info("ods: the depth from the pivot without the centre panorama (%.0f s)", depth_rec["seconds"])
@@ -1912,10 +2004,11 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                                           "below the pivot (the viewer lays it there as a surface)"})
         except Exception as e:                           # noqa: BLE001 - the panorama does not depend on it
             log.warning("ods: the nadir mark's texture was not written (%s)", e)
-        mark0.update({k_: mark[k_] for k_ in ("bg8", "bg16") if k_ in mark})
-        rec_out["nadir_mark"]["background_bgr_8bit"] = [float(x) for x in mark.get("bg8", [])]
-        if "bg16" in mark:
-            rec_out["nadir_mark"]["background_bgr_16bit"] = [float(x) for x in mark["bg16"]]
+        mark0.update({k_: mark_seen[k_] for k_ in ("bg8", "bg16") if k_ in mark_seen})
+        rec_out["nadir_mark"]["in_centre_panorama"] = False
+        rec_out["nadir_mark"]["background_bgr_8bit"] = [float(x) for x in mark_seen.get("bg8", [])]
+        if "bg16" in mark_seen:
+            rec_out["nadir_mark"]["background_bgr_16bit"] = [float(x) for x in mark_seen["bg16"]]
     if depth_rec:
         rec_out["centre_depth"] = depth_rec
     rec_out["view_levels_from"] = levels_from
