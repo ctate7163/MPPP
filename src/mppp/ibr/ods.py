@@ -522,6 +522,10 @@ SURFACE_CHECK = True              # 0.97.0, rover shown: see candidates()
 BROWN_FILL_8BIT = (150.0, 105.0, 70.0)   # RGB, 8-bit units: the fill where the check leaves a surface without a source and
 #                                          the panorama has no terrain to take the colour from (else: the median terrain colour)
 BROWN_FILL_DARKEN = 0.8                  # the fill a little darker than the terrain, so it reads as fill
+ROVER_GREY_REL = 1.25                    # 0.98.12 (Christian, 15 Nov 2026: "The 3d rover models should not interpolate colors
+#                                          across the rover ... Make in images mars rover grey"): the rover model where no
+#                                          frame coloured it is a neutral grey this much brighter than the terrain's median
+#                                          (the deck reads lighter than the ground); never filled from neighbouring pixels
 
 
 # 0.97.8 (Christian, 13 Nov 2026, Van Zyl with the rover: "the 3d model rover looks just as bad"): on a surface this
@@ -1112,22 +1116,25 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     brown = np.zeros(label.shape, bool)
     checked = getattr(scene, "rover_triangles", None) is not None
 
-    def _brown(sel: np.ndarray) -> None:                     # 0.97.0 (Christian, 12 Nov 2026: "where the disagreement is
+    def _brown(sel: np.ndarray, grey: bool = False) -> None:  # 0.97.0 (Christian, 12 Nov 2026: "where the disagreement is
         if not sel.any():                                    # too much ... leave that a brown fill color")
             return
         don = ground & (source >= 0)
         col = (np.median(rgb[don].reshape(-1, 3).astype(np.float32), axis=0) if don.sum() >= 50
                else np.asarray(BROWN_FILL_8BIT, np.float32))
-        rgb[sel] = np.clip(BROWN_FILL_DARKEN * col, 0, top).astype(rgb.dtype)
+        if grey:                                             # 0.98.12: the rover a flat Mars-rover grey
+            col = np.full(3, ROVER_GREY_REL * float(np.mean(col)), np.float32)
+        rgb[sel] = np.clip((1.0 if grey else BROWN_FILL_DARKEN) * col, 0, top).astype(rgb.dtype)
         source[sel] = -5
         brown[sel] = True
-    if checked:                                              # the rover model where the check left no source: flat brown,
-        _brown((source == -1) & rover_px & rej_map)          # before the crack and ground fills would paint over it
+    if checked:                                              # the rover model where no frame coloured it: flat grey, before
+        _brown((source == -1) & rover_px, grey=True)         # the crack fill could carry colours across it (0.98.12; before:
+        #                                                      only where the check rejected, the rest after the crack fill)
     kw = max(1.0, width / HOLE_FILL_REF_WIDTH)             # 0.97.7: the limits are angles - they grow with the panorama
     filled = fill_cracks(rgb, source, label, max_px=int(HOLE_FILL_MAX_PX * kw * kw), max_width_px=HOLE_FILL_MAX_WIDTH_PX * kw,
                          inpaint_px=int(round(5 * kw)))
     if checked:
-        _brown((source == -1) & rover_px)                    # the rest of the model nobody coloured
+        _brown((source == -1) & rover_px, grey=True)         # the rest of the model nobody coloured
     gfill = fill_ground(rgb, source, ground) if ground_fill else np.zeros(label.shape, bool)
     sky = fill_sky(rgb, source, label) if sky_fill else np.zeros(label.shape, bool)
     evened = even_sky(rgb, label) if sky_fill else {}
@@ -1591,6 +1598,9 @@ def stack_file(out_dir: PathLike, prefix: str = "", ext: str = ".png", suffix: s
 
 
 GEOMETRY_VIEWS = ("range_log", "range_linear", "normal")
+GEOMETRY_WIDTH = 4096             # 0.98.12 (Christian, 15 Nov 2026: "Make those extra channels 4k and the same with the range
+#                                   map ... It doesn't need to be as high res as the ods"): the range and normal panoramas'
+#                                   width (the colour ones' until 0.98.11)
 
 
 def geometry_panorama(scene: Scene, station, out_dir: PathLike, prefix: str = "", width: int = 8192, ipd_m: float = 0.064,
@@ -1622,7 +1632,8 @@ def geometry_panorama(scene: Scene, station, out_dir: PathLike, prefix: str = ""
             imgs["range_linear"][rows] = depth_rgb(rng, lab, "linear")
             nm = (np.asarray(h["normal"], float) @ enu.T).reshape(r1 - r0, width, 3)
             nimg = np.clip((nm * 0.5 + 0.5) * 255, 0, 255).astype(np.uint8)[..., ::-1].copy()      # BGR for OpenCV
-            nimg[(lab != LABEL_MESH) & (lab != LABEL_PLANE)] = 0
+            nimg[lab != LABEL_MESH] = 0                      # 0.98.12 (Christian: "The normal map should not include the flat
+            #                                                    plane"): the mesh and the rover model only; the plane black
             nimg[lab == LABEL_FAR] = 255
             imgs["normal"][rows] = nimg
     outs = {}
@@ -2091,11 +2102,13 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             "frames_clipped_in_8bit_share_max": max([f["clipped_in_8bit_share"] for f in fr], default=None)}
     if geometry and set(eyes) >= {"left", "right"}:                         # 0.97.20: the model through the same rays
         tg = time.time()
-        rec_out["geometry"] = {"files": geometry_panorama(scene, station, out, prefix or "", width, ipd_m, azimuth0_deg, pole_merge_deg,
+        rec_out["geometry"] = {"files": geometry_panorama(scene, station, out, prefix or "", min(width, GEOMETRY_WIDTH), ipd_m, azimuth0_deg, pole_merge_deg,
                                                           rows_per_chunk, top=stack_top),
                                "range": "from each eye's ray origin; colours as the per-image depth pictures (photometry_jpg/scales.json: "
                                         "depth_log, depth_linear)",
-                               "normal": "station frame: [R, G, B] = 127.5 * (1 + [east, north, up]); sky white, nothing black",
+                               "normal": "station frame: [R, G, B] = 127.5 * (1 + [east, north, up]) on the mesh and the rover model; "
+                                         "the ground plane black (0.98.12), sky white",
+                               "width": min(width, GEOMETRY_WIDTH),
                                "note": "the model alone (mesh, plane, rover model, far field): no source frame is used"}
         rec_out["geometry"]["seconds"] = round(time.time() - tg, 1)
         log.info("ods: range and normal panoramas in %.0f s", rec_out["geometry"]["seconds"])

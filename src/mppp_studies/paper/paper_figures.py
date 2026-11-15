@@ -27,6 +27,12 @@ Writes, into ``--out`` (default ``<MPPP>/Claude outputs``):
                                               through the deck_joint chain (mppp_studies.calibration.zcam_mast_head) - --mast-chain
   zcam_mast_head_vs_zoom_<tag>.png            0.95.5: centre and image-centre pointing against zoom (+ the station
                                               table and the Z mount per zoom: zcam_mast_head_<tag>.json)
+  deck_fiducials_label_vs_constrained[_early]_<tag>.png   0.97.0: the deck fiducials of one Navcam frame (sol 1642; _early:
+                                         sol 31) through the label CAHVORE and the law + mast chain (+ .json) - --deck-frame
+  deck_fiducials_and_vfs[_early]_<tag>.png    0.98.10: the same with the vicarious fiducials of the deck joint
+                                         (data/vf_points_20261115.json: the 15 Nov replacements green, the tag corners
+                                         VF01a-d each labelled)
+  navcam_baseline_deck_joint_<tag>.png   0.97.0: the deck joint's Navcam baseline against temperature and sol
   site_map_<tag>.png                     the traverse map: figure 2 of ``mppp maps`` (crater | traverse, block table,
                                          1 m DTM where M20_DEMS has it); --site-map simple: plot_site_map
   undistorted_example.png                with --frame (mppp.colmap.plot_undistorted_example)

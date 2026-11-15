@@ -3,6 +3,24 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.12 — 2026-11-15
+
+Christian: "Include a version of the vf figure in the official make figures list. The normal map should not include
+the flat plane. Make those extra channels 4k and the same with the range map. Uploaded the range map too in log
+scale ... The 3d rover models should not interpolate colors across the rover especially at the bottom pole. Make in
+images mars rover grey."
+
+- `make_figures.bat` and `paper_figures` list `deck_fiducials_and_vfs[_early]_<tag>.png` (made since 0.98.10 with the
+  deck fiducial figure), the label-vs-constrained deck figure and the deck-joint baseline figure.
+- `ods.geometry_panorama`: the range and normal panoramas are 4096 wide (`GEOMETRY_WIDTH`; the colour ones stay
+  8192), and the normal panorama shows the mesh and the rover model only - the ground plane is black.
+- `web.publish` uploads `range log` with `standard` and `normal` (`DEFAULT_VIEWS`), and publishes the range and normal
+  views at most 4096 wide, so the 8k ones of earlier runs go up at 4k too.  The viewer's X button steps through all three.
+- The rover model where no frame coloured it is one flat neutral grey (`ROVER_GREY_REL` x the ground's median level),
+  painted before the crack fill, so no colour is carried across the rover in the panoramas.
+  `rover_surface.grey_unseen` does the same to the 3D rover's texture (it replaces `heal_unseen`, the nearest colour
+  smoothed, which smeared colours over the bottom pole), and the layer behind is no longer blurred.
+
 ## 0.98.11 — 2026-11-15
 
 Christian: "remove vf 19, 21, 05, 09 and 03.  Replace them with red dot candidates from this image ... replace the

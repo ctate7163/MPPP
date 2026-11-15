@@ -2010,7 +2010,18 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     xy = web.station_on_map("Sol0052_S003D2046", wp)
     assert xy and min(abs(xy[0] - a) + abs(xy[1] - b) for a, b in tr["xy"]) < 30 and web.station_on_map("nothing", wp) is None
     assert cv2.imread(str(w / "panos" / "S1_360_3DTD.jpg")).shape == (128, 128, 3)
-    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard", "normal")
+    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard", "normal", "range log")
+    # 0.98.12: the range and normal views at most GEOMETRY_WIDTH wide, whatever the colour width
+    for nm in ("S1_normal_360_3DTD.jpg", "S1_range_log_360_3DTD.jpg"):
+        cv2.imwrite(str(r / "S1" / nm), np.full((256, 256, 3), 90, np.uint8))
+    old, web.GEOMETRY_WIDTH = web.GEOMETRY_WIDTH, 64
+    try:
+        g = web.publish(r, tmp_path / "web4", width=128)["panos"][0]["variants"][0]["views"]
+    finally:
+        web.GEOMETRY_WIDTH = old
+    assert set(g) == {"standard", "normal", "range log"}
+    assert cv2.imread(str(tmp_path / "web4" / g["normal"])).shape == (64, 64, 3)
+    assert cv2.imread(str(tmp_path / "web4" / g["standard"])).shape == (128, 128, 3)
     both = web.publish(r, tmp_path / "web2", width=128, views=("standard", "enhanced"))["panos"][0]         # on request
     assert both["variants"][1]["views"]["enhanced"] == "panos/S1_rover_enh_360_3DTD.jpg"
     assert not (tmp_path / "web2" / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
@@ -2667,6 +2678,13 @@ def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
     assert sorted(W.station_files(out)) == ["normal", "range linear", "range log", "standard"]
     rep2 = O.render_station(proj, rec, st, scene, tmp_path / "o2", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
     assert "geometry" not in rep2 and not list((tmp_path / "o2").glob("*range*"))
+    old, O.GEOMETRY_WIDTH = O.GEOMETRY_WIDTH, 128                             # 0.98.12: the range and normal at most 4k
+    try:
+        rep3 = O.render_station(proj, rec, st, scene, tmp_path / "o3", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
+    finally:
+        O.GEOMETRY_WIDTH = old
+    assert cv2.imread(rep3["geometry"]["files"]["normal"]).shape == (128, 128, 3) and rep3["geometry"]["width"] == 128
+    assert O.GEOMETRY_WIDTH == 4096
     lab = np.full((8, 8), RC.LABEL_MESH, np.uint8)
     lab[:4] = RC.LABEL_MASKED
     for mode in ("log", "linear"):
@@ -2846,15 +2864,19 @@ def test_rover_surface_from_the_centre_panorama(tmp_path):
     cv2.imwrite(str(out / "x_rover_ods_centre.png"), img)
     (out / "x_rover_ods.json").write_text(json.dumps({"nadir_mark": {"radius_deg": 12.0, "in_centre_panorama": False}}))
     rec = RS.from_folder(out)
+    from mppp.ibr.ods import ROVER_GREY_REL as RS_GREY
     assert rec["experimental"] and rec["step_px"] == 2 and rec["panorama_rows"] == [600, H] and rec["nadir_excluded_deg"] is None
-    assert rec["unseen_pixels_healed"] == 800 and rec["behind"]["triangles"] > 500 and rec["behind"]["head_radius_m"] == 0.15
+    assert rec["unseen_pixels_grey"] == 800 and rec["behind"]["triangles"] > 500 and rec["behind"]["head_radius_m"] == 0.15
     doc, binary = RS.read_glb((out / rec["file"]).read_bytes())
     assert len(doc["meshes"][0]["primitives"]) == 2 and [x["name"] for x in doc["materials"]] == ["front", "behind"]
     a = doc["accessors"]; assert a[0]["count"] == rec["vertices"] and a[2]["count"] == 3 * rec["triangles"] and a[5]["count"] == 3 * rec["behind"]["triangles"]
     iv = doc["bufferViews"][doc["images"][0]["bufferView"]]
     tex = cv2.imdecode(np.frombuffer(binary[iv["byteOffset"]:iv["byteOffset"] + iv["byteLength"]], np.uint8), 1)
     assert tex.shape == (H - 600, W, 3) and doc["buffers"][0]["byteLength"] == len(binary)
-    assert abs(int(tex[110, 120, 0]) - 120) < 4                              # the unseen patch took its surroundings' colour
+    # 0.98.12: the unseen patch is one flat neutral grey (no colours carried in from around it)
+    patch = tex[700 - 600 + 3:720 - 600 - 3, 103:137].astype(int)
+    assert np.ptp(patch) <= 6 and abs(patch.mean() - RS_GREY * 120) < 6 and np.abs(np.diff(patch, axis=2)).max() <= 4
+    assert abs(int(tex[110, 120, 0]) - 150) < 4                              # 0.98.12: the unseen patch grey (1.25 x the ground), not its surroundings
     few = RS.from_folder(out, max_triangles=30000)                           # over the limit: a coarser step
     assert few["step_px"] > 2 and few["triangles"] + few["behind"]["triangles"] <= 30000
     (out / "x_rover_ods.json").write_text(json.dumps({"nadir_mark": {"radius_deg": 12.0}}))      # before 0.98.4: the mark is in the picture
@@ -2892,3 +2914,22 @@ def test_heal_sky_replaces_a_frame_shaped_patch_and_leaves_a_clean_sky():
     assert np.array_equal(bad[H // 2:], img[H // 2:])                      # nothing below the horizon
     far = np.s_[20:240, 0:150]                                             # sky far from both: its gradient kept
     assert np.abs(bad[far].astype(np.float32) - img[far]).max() <= 2
+
+
+def test_normal_panorama_leaves_out_the_ground_plane(tmp_path):
+    """0.98.12 (Christian, 15 Nov 2026: "The normal map should not include the flat plane"): plane pixels are black
+    in the normal panorama and keep their colours in the range one."""
+    import cv2
+    from types import SimpleNamespace
+
+    class Scene:
+        def cast(self, o, d):
+            n = len(d)
+            lab = np.where(d[:, 2] < -0.3, RC.LABEL_PLANE, RC.LABEL_MESH).astype(np.uint8)   # steeply down: the plane
+            return {"label": lab, "t": np.full(n, 5.0), "normal": np.tile([0.0, 0.0, 1.0], (n, 1))}
+    st = SimpleNamespace(east=[1, 0, 0], north=[0, 1, 0], up=[0, 0, 1], pivot=np.zeros(3))
+    f = O.geometry_panorama(Scene(), st, tmp_path, "x", width=128, rows_per_chunk=16)
+    nm, rl = cv2.imread(f["normal"]), cv2.imread(f["range_log"])
+    assert nm.shape == (128, 128, 3)
+    assert not nm[60].any() and nm[20].any()                 # left eye: row 60 looks steeply down (plane), row 20 up (mesh)
+    assert rl[60].any()

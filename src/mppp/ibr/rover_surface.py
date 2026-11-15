@@ -304,22 +304,23 @@ def read_glb(data: bytes) -> Tuple[Dict[str, Any], bytes]:
     return doc, data[28 + n:28 + n + m]
 
 
-def heal_unseen(img: np.ndarray, unseen: np.ndarray) -> int:
-    """The rover pixels no frame coloured (the panorama paints them one flat brown) take, in place, the colour of the
-    nearest coloured pixel, smoothed: a blind spot then reads as more of the surface around it.  Returns their count."""
-    import cv2
-    from scipy.ndimage import distance_transform_edt
+def grey_unseen(img: np.ndarray, unseen: np.ndarray, rover: Optional[np.ndarray] = None) -> int:
+    """0.98.12 (Christian, 15 Nov 2026: "The 3d rover models should not interpolate colors across the rover especially at
+    the bottom pole. Make in images mars rover grey"): the rover pixels no frame coloured take, in place, one flat
+    neutral grey (:data:`mppp.ibr.ods.ROVER_GREY_REL` x the ground's mean level below the horizon), as the panorama
+    paints them from 0.98.12 on - nothing is carried in from neighbouring pixels.  (0.98.4-0.98.11 filled them with the
+    nearest coloured pixel, smoothed: colours smeared across the rover, worst at the bottom pole.)  Returns their count."""
+    from .ods import ROVER_GREY_REL
     u = np.asarray(unseen, bool)
     n = int(u.sum())
-    if not n or n == u.size:
+    if not n:
         return 0
-    rr = np.flatnonzero(u.any(axis=1))
-    a, b = max(0, int(rr[0]) - 64), min(u.shape[0], int(rr[-1]) + 65)
-    m = u[a:b]
-    ir, ic = distance_transform_edt(m, return_distances=False, return_indices=True)
-    near = img[a:b][ir, ic]
-    soft = cv2.GaussianBlur(near, (0, 0), 6.0)
-    img[a:b][m] = soft[m]
+    H = img.shape[0]
+    low = np.zeros(u.shape, bool)
+    low[H // 2:] = True
+    don = low & ~u & (~np.asarray(rover, bool) if rover is not None else True)
+    lev = float(np.median(img[don].astype(np.float32))) if don.sum() >= 50 else 110.0
+    img[u] = np.clip(ROVER_GREY_REL * lev, 0, 255)
     return n
 
 
@@ -364,7 +365,7 @@ def from_folder(folder: PathLike, step: int = DEFAULT_STEP, out: Optional[PathLi
         if nm.get("in_centre_panorama", True):                   # before 0.98.4 the mark is painted there: left out
             below = nm.get("radius_deg")
         break
-    healed = heal_unseen(img, unseen) if unseen is not None else 0
+    healed = grey_unseen(img, unseen, rover) if unseen is not None else 0
     step = max(1, int(step))
     while True:
         m = build(rng, rover, azimuth0_deg=az0, step=step, exclude_below_deg=float(below) + 0.5 if below else None,
@@ -391,7 +392,7 @@ def from_folder(folder: PathLike, step: int = DEFAULT_STEP, out: Optional[PathLi
         rows, cols = m["grid"]
         grid_img = img[np.ix_(rows, cols)]                       # the panorama at the grid's vertices
         tb = grid_img[b["source"][..., 0], b["source"][..., 1]]  # ... each filled vertex with its far neighbour's colour
-        tb = cv2.GaussianBlur(np.ascontiguousarray(tb), (0, 0), 1.5)
+        tb = np.ascontiguousarray(tb)                            # 0.98.12: not blurred (no colours across edges)
         okb, encb = cv2.imencode(".jpg", tb, [cv2.IMWRITE_JPEG_QUALITY, 85])
         if okb:
             more.append((b["vertices"], b["uv"], b["triangles"], encb.tobytes()))
@@ -402,7 +403,7 @@ def from_folder(folder: PathLike, step: int = DEFAULT_STEP, out: Optional[PathLi
     rec = {"experimental": True, "vertices": int(len(m["vertices"])), "triangles": int(len(m["triangles"])),
            "step_px": int(step), "edge_ratio": EDGE_RATIO, "panorama_rows": [r0, r1], "texture_px": [int(tex.shape[1]), int(tex.shape[0])],
            "azimuth0_deg": az0, "frame": "metres about the pivot: x east, y up, z south",
-           "behind": brec, "unseen_pixels_healed": int(healed), "nadir_excluded_deg": (float(below) + 0.5) if below else None,
+           "behind": brec, "unseen_pixels_grey": int(healed), "nadir_excluded_deg": (float(below) + 0.5) if below else None,
            "rover_pixels": int(rover.sum()), "from": [npz.name, img_f.name]}
     glb = Path(out) if out else d / (stem + SUFFIX)
     glb.write_bytes(glb_bytes(m["vertices"], m["uv"], m["triangles"], enc.tobytes(), extras=rec, more=more))
