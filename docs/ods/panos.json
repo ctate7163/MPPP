@@ -85,39 +85,63 @@
    "title": "Van Zyl Overlook Sol0052_S003D2046",
    "variants": [
     {
-     "key": "rover",
-     "label": "with the rover",
-     "views": {
-      "standard": "panos/Sol0052_S003D2046_rover_360_3DTD.jpg"
-     },
-     "ground_mark": {
-      "file": "panos/Sol0052_S003D2046_rover_nadir_mark.png",
-      "depth_m": 0.8477,
-      "radius_m": 0.1719,
-      "mark_radius_m": 0.1495
-     }
-    },
-    {
      "key": "masked",
      "label": "terrain only",
      "views": {
-      "standard": "panos/Sol0052_S003D2046_360_3DTD.jpg"
+      "standard": "panos/Sol0052_S003D2046_360_3DTD.jpg",
+      "normal": "panos/Sol0052_S003D2046_normal_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0052_S003D2046_nadir_mark.png",
       "depth_m": 1.9633,
-      "radius_m": 0.3981,
-      "mark_radius_m": 0.3462
+      "radius_m": 0.45,
+      "mark_radius_m": 0.3462,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 310.51
+     }
+    },
+    {
+     "key": "rover",
+     "label": "terrain with rover (projected)",
+     "views": {
+      "standard": "panos/Sol0052_S003D2046_rover_360_3DTD.jpg",
+      "normal": "panos/Sol0052_S003D2046_rover_normal_360_3DTD.jpg"
+     }
+    },
+    {
+     "key": "rover3d",
+     "label": "terrain with rover (3D model)",
+     "views": {
+      "standard": "panos/Sol0052_S003D2046_360_3DTD.jpg",
+      "normal": "panos/Sol0052_S003D2046_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0052_S003D2046_nadir_mark.png",
+      "depth_m": 1.9633,
+      "radius_m": 0.45,
+      "mark_radius_m": 0.3462,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 310.51
      },
      "rover_surface": {
       "file": "panos/Sol0052_S003D2046_rover_rover_surface.glb",
-      "triangles": 680076,
+      "triangles": 1228066,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.3",
-   "published": "2026-11-14"
+   "mppp": "0.98.8",
+   "published": "2026-11-15",
+   "map": [
+    13169.6,
+    1469.0
+   ],
+   "sols": [
+    52
+   ],
+   "site_name": "Van Zyl Overlook"
   },
   {
    "id": "Sol0180_S007D0000",
