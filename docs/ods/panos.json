@@ -125,6 +125,69 @@
    "published": "2026-11-14"
   },
   {
+   "id": "Sol0565_S029D0000",
+   "title": "Enchanted Lake Sol0565_S029D0000",
+   "variants": [
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol0565_S029D0000_360_3DTD.jpg",
+      "normal": "panos/Sol0565_S029D0000_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0565_S029D0000_nadir_mark.png",
+      "depth_m": 1.9441,
+      "radius_m": 0.4456,
+      "mark_radius_m": 0.3428,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 324.28
+     }
+    },
+    {
+     "key": "rover",
+     "label": "terrain with rover (projected)",
+     "views": {
+      "standard": "panos/Sol0565_S029D0000_rover_360_3DTD.jpg",
+      "normal": "panos/Sol0565_S029D0000_rover_normal_360_3DTD.jpg"
+     }
+    },
+    {
+     "key": "rover3d",
+     "label": "terrain with rover (3D model)",
+     "views": {
+      "standard": "panos/Sol0565_S029D0000_360_3DTD.jpg",
+      "normal": "panos/Sol0565_S029D0000_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0565_S029D0000_nadir_mark.png",
+      "depth_m": 1.9441,
+      "radius_m": 0.4456,
+      "mark_radius_m": 0.3428,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 324.28
+     },
+     "rover_surface": {
+      "file": "panos/Sol0565_S029D0000_rover_rover_surface.glb",
+      "triangles": 1263837,
+      "experimental": true
+     }
+    }
+   ],
+   "mppp": "0.98.8",
+   "published": "2026-11-14",
+   "map": [
+    10319.1,
+    1823.1
+   ],
+   "sols": [
+    565
+   ],
+   "site_name": "Enchanted Lake"
+  },
+  {
    "id": "Sol0686_S032D1184",
    "title": "Three Forks Sol0686_S032D1184",
    "variants": [
