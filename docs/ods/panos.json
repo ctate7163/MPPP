@@ -18,6 +18,69 @@
    ]
   },
   {
+   "id": "Sol0009_S003D0000",
+   "title": "Butler Landing Site Sol0009_S003D0000",
+   "variants": [
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol0009_S003D0000_360_3DTD.jpg",
+      "normal": "panos/Sol0009_S003D0000_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0009_S003D0000_nadir_mark.png",
+      "depth_m": 1.942,
+      "radius_m": 0.4452,
+      "mark_radius_m": 0.3424,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 267.71
+     }
+    },
+    {
+     "key": "rover",
+     "label": "terrain with rover (projected)",
+     "views": {
+      "standard": "panos/Sol0009_S003D0000_rover_360_3DTD.jpg",
+      "normal": "panos/Sol0009_S003D0000_rover_normal_360_3DTD.jpg"
+     }
+    },
+    {
+     "key": "rover3d",
+     "label": "terrain with rover (3D model)",
+     "views": {
+      "standard": "panos/Sol0009_S003D0000_360_3DTD.jpg",
+      "normal": "panos/Sol0009_S003D0000_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0009_S003D0000_nadir_mark.png",
+      "depth_m": 1.942,
+      "radius_m": 0.4452,
+      "mark_radius_m": 0.3424,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 267.71
+     },
+     "rover_surface": {
+      "file": "panos/Sol0009_S003D0000_rover_rover_surface.glb",
+      "triangles": 1238837,
+      "experimental": true
+     }
+    }
+   ],
+   "mppp": "0.98.8",
+   "published": "2026-11-14",
+   "map": [
+    13099.1,
+    1461.6
+   ],
+   "sols": [
+    9
+   ],
+   "site_name": "Butler Landing Site"
+  },
+  {
    "id": "Sol0052_S003D2046",
    "title": "Van Zyl Overlook Sol0052_S003D2046",
    "variants": [
