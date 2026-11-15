@@ -296,7 +296,7 @@
    "note": "Rochette, sol 180: the 4 left and 5 right Navcam frames of station S007D0000 between the two frames Christian named (14 Nov 2026) - NCAM02180, NCAM03180; names as in the block mars2020_sol_0178_rochette_zcam. Context: 4 frames he named, both eyes where the block has them."
   },
   "Sol0204_S007D1836": {
-   "site": "seitah_north_large",
+   "site": "seitah_huge",
    "station": "7_1836",
    "frames": {
     "images": [
@@ -318,10 +318,10 @@
     "NLF_0204_0685057916_324RAD_N0071786NCAM00301_0A0295J01.png",
     "NRF_0204_0685057916_324RAD_N0071786NCAM00301_0A0295J01.png"
    ],
-   "note": "Seitah, sol 204: the 6 left and 6 right Navcam frames of station S007D1836 between the two frames Christian named (14 Nov 2026) - NCAM00718, NCAM02204, NCAM03204; names as in the block mars2020_sol_0202_seitah_north_large. Context: 2 frames he named, both eyes where the block has them."
+   "note": "Seitah, sol 204: the 6 left and 6 right Navcam frames of station S007D1836 between the two frames Christian named (14 Nov 2026) - NCAM00718, NCAM02204, NCAM03204; names as in the block mars2020_sol_0201_seitah_huge. Context: 2 frames he named, both eyes where the block has them. 0.98.9: in the Seitah huge block - Seitah North large has never been aligned."
   },
   "Sol0248_S008D0000": {
-   "site": "seitah_north_large",
+   "site": "seitah_huge",
    "station": "8_0",
    "frames": {
     "images": [
@@ -349,7 +349,7 @@
     "NLF_0239_0688165030_759RAD_N0072440NCAM03239_0A0195J02.png",
     "NRF_0239_0688165030_759RAD_N0072440NCAM03239_0A0195J02.png"
    ],
-   "note": "Seitah, sol 248: the 6 left and 6 right Navcam frames of station S008D0000 between the two frames Christian named (14 Nov 2026) - NCAM00303, NCAM02248, NCAM03248; names as in the block mars2020_sol_0202_seitah_north_large. Context: 8 frames he named, both eyes where the block has them."
+   "note": "Seitah, sol 248: the 6 left and 6 right Navcam frames of station S008D0000 between the two frames Christian named (14 Nov 2026) - NCAM00303, NCAM02248, NCAM03248; names as in the block mars2020_sol_0201_seitah_huge. Context: 8 frames he named, both eyes where the block has them. 0.98.9: in the Seitah huge block - Seitah North large has never been aligned."
   },
   "Sol0361_S011D0000": {
    "site": "chal_rocks_large",

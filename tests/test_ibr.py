@@ -1116,8 +1116,8 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     runs = SS.plan(cfg, root)
     runs = runs[::-1]                                    # 0.98.3: with no station named the last one runs first
     assert [Path(r["work"]).name for r in runs][8:] == [
-        "mars2020_sol_0001_butler_landing_zcam", "mars2020_sol_0178_rochette_zcam", "mars2020_sol_0202_seitah_north_large",
-        "mars2020_sol_0202_seitah_north_large", "mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0421_enchanted_lake_large",
+        "mars2020_sol_0001_butler_landing_zcam", "mars2020_sol_0178_rochette_zcam", "mars2020_sol_0201_seitah_huge",
+        "mars2020_sol_0201_seitah_huge", "mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0421_enchanted_lake_large",
         "mars2020_sol_1948_hippo_pools", "mars2020_sol_1962_marble_mountain", "mars2020_sol_1175_bright_angle_large"]          # 0.98.6: the eight new stations' blocks
     runs = runs[:8]
     assert [Path(r["work"]).name for r in runs] == ["mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop",

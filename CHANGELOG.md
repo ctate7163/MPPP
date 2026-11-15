@@ -3,6 +3,12 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.9 — 2026-11-15
+
+- `Sol0204_S007D1836` and `Sol0248_S008D0000` use the Seitah huge block: they failed at once on 14 Nov because
+  Seitah North large has never been aligned ("no model at ...seitah_north_large\colmap\sparse\cahv_ba"). Their
+  frames and context frames are all in Seitah huge.
+
 ## 0.98.8 — 2026-11-14
 
 Christian: "are there three modes? they should be: terrain only, terrain with rover proj, terrain with rover model.
