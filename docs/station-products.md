@@ -207,16 +207,22 @@ the device can show (maximum texture size, compressed-texture formats).
 Status: a prototype. It has been checked in a desktop browser with a labelled test pair; the stereo in a headset,
 tiled 16K / 32K images and zoom are not done.
 
-## Experimental: the rover as a textured surface (0.98.2)
+## The rover as a 3D model (0.98.14)
 
-`python -m mppp single-sites <station> --rover-surface` also renders the with-rover panorama from the pivot and writes
-`with_rover/<prefix>_rover_surface.glb`: the rover as the Navcam saw it from the mast, as a mesh with that panorama as
-its texture. The viewer shows it on the terrain-only view (key R). The parts of the rover the cameras never saw are
-not in the mesh. To build it again from a folder that already has the centre panorama:
+A station run also renders the with-rover panorama from the pivot and writes `with_rover/<prefix>_rover_surface.glb`:
+the Perseverance model where `mppp mesh --rover` put it (all its triangles, in metres about the pivot), the rows of
+that panorama that hold the rover, and their range. The viewer colours a point of the model with the panorama's pixel
+in its direction when it is the surface the pivot sees there (its distance against the range image, with a bias of
+12 mm + 1.2 %); what the pivot does not see was seen by no camera and is the rover grey. So the rover has no holes
+from any viewpoint and its edges are the model's. `<prefix>_rover_surface.json` gives the share of the model's area
+seen from the pivot. To build it again from a folder that already has the centre panorama:
 
 ```
 python -m mppp.ibr.rover_surface D:\rover_blocks\single_sites\Sol0052_S003D2046\with_rover
 ```
+
+On a screen, `.../ods/?head=0.15,0,0` puts the eye 0.15 m east of the pivot (east, up, south, metres) to look at the
+model's parallax. (0.98.2-0.98.13: a grid mesh cut from the panorama's depth, with a second layer behind its edges.)
 
 ## Experimental: a Mastcam-Z panorama on the Navcam terrain (0.98.2)
 
@@ -226,8 +232,6 @@ when named.
 
 ### 0.98.4
 
-- The rover surface has two layers (the second continues the farther surface under the nearer parts' edges, for a
-  head within 0.15 m of the pivot), a vertex every 2 px where the triangle limit allows, and reaches the nadir.
-  Options of `python -m mppp.ibr.rover_surface`: `--step`, `--max-triangles`, `--head-radius`.
+- (The rover surface of 0.98.4-0.98.13 had two grid layers; replaced by the model in 0.98.14.)
 - The sky's last step, `heal_sky`, replaces frame-shaped patches and bands by the sky's own smooth version.
 - Viewer: right / left trigger = next / previous station, thumbstick = turn, A = site and sol, X = colour view.

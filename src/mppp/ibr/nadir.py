@@ -35,9 +35,9 @@ TEXT_ROWS_IN_BAND = (0.10, 0.27, 0.43)       # the rows' middles, as shares of t
 #                                              0.98.7 (Christian, 14 Nov 2026: "Make the second row of text larger put the
 #                                              made by C. Tate on a third line"): three rows - the rover and the image
 #                                              credit, the sol and the site, the author; (0.13, 0.36) for two until 0.98.6
-TEXT_MAX_HEIGHT_IN_BAND = (0.13, 0.15, 0.09)  # a row is at most this share of the disc's radius tall (the second: 0.20 in
-#                                              0.98.7 - Christian, 14 Nov 2026: "give the middle row smaller font" -, 0.16
-#                                              in 0.97.24, 0.09 before)
+TEXT_MAX_HEIGHT_IN_BAND = (0.13, 0.125, 0.09)  # a row is at most this share of the disc's radius tall (the second: 0.15
+#                                              in 0.98.8-0.98.13 - Christian, 15 Nov 2026: "for the blue circle, make the
+#                                              middle line a little smaller font" -, 0.20 in 0.98.7, 0.16 in 0.97.24)
 TEXT_SPAN_OF_ROW = (0.5, 0.60, 0.30)         # a row takes at most this share of the full circle
 TEXT_INNER_EDGE_IN_DISC = 1.0 - (TEXT_ROWS_IN_BAND[-1] + 0.5 * TEXT_MAX_HEIGHT_IN_BAND[-1])     # where the text ends, towards the middle
 TEXT_AZIMUTH_FROM_FORWARD_DEG = 135.0        # 0.98.7 (Christian: "the blue circle with the blue text needs to rotate

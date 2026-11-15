@@ -3,6 +3,29 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.14 — 2026-11-15
+
+Christian: "the pan motion on the joystick should be faster. Tilt the info window back further so that it is easier to
+read from the wrist. Add low res ortho to the info map. for rockytop use a model made from the full ncam block
+alignment. The 3d model of the rover still has many occluded surfaces. The resolution of it looks good, but the edges
+look pixelated. the rover should not have a hole visible from any where within the 0.15 m radius. for the blue circle,
+make the middle line a little smaller font." and "the welcome screen should have color, just be a little more muted".
+
+- **The 3D rover is the Perseverance model itself** (`mppp.ibr.rover_surface`, rewritten): the model's triangles as
+  `mppp mesh --rover` placed them (179,426 at a station), coloured in the viewer from the pivot's panorama where the
+  pivot sees them (a per-pixel test against the panorama's range, bias 12 mm + 1.2 %, smooth over four range pixels)
+  and rover grey, lightly shaded, where no camera saw them.  No holes from any viewpoint; the edges are the model's.
+  The file drops from about 37 MB to about 5 MB a station.  The grid mesh with its second layer is gone.
+  The panorama record's key for the azimuth of column 0 was read under a wrong name before (always 0).
+- Viewer: antialiasing on; the stick turns at 150 deg/s (60); the info page leans back 69 deg (40); the map on it
+  lies over a low-resolution orbital picture (`web.traverse_ortho`: `panos/traverse_ortho.jpg`, 1024 px, from
+  `M20_ORTHOS` or `<root>/dem/m2020_trn/*rtho*.tif`; made once); on a screen `?head=x,y,z` moves the eye off the pivot.
+- The welcome picture keeps Van Zyl's colours, muted (`WELCOME_MUTE`); the grey one is removed.
+- `"terrain": "block"` in `single_sites.json` (both Rockytop stations): `mppp dense --whole-block` makes one cloud
+  from every Navcam frame of the block (`colmap/dense_block_N`, shared by the block's stations); the mesh is made
+  from it, the panorama from the station's own frames (`dense_<station>_block/mppp_dense.json`).
+- Nadir disc: the middle row at most 0.125 of the radius tall (0.15).
+
 ## 0.98.13 — 2026-11-15
 
 - The viewer (Christian: "switch the A and the X buttons"): X (left hand, where the page appears) opens the info page;

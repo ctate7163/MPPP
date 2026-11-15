@@ -35,6 +35,7 @@ CONFIG = Path(__file__).resolve().parents[1] / "data" / "single_sites.json"
 VARIANTS = ("masked", "rover")
 from .station import station_key
 STEPS = ("dense", "mesh", "depthmaps", "ods")
+BLOCK_WORKSPACE = "dense_block_N"       # mppp dense --whole-block --cameras N: the block's Navcam cloud ("terrain": "block")
 DEPTHMAPS_VARIANTS = ("masked",)     # 0.97.14: the per-image maps for the terrain only (config: "depthmaps_variants")
 BAT_NAME = "run_single_site_ibr.bat"          # 0.97.0 (Christian, 12 Nov): was update_and_run_single_sites.bat
 OLD_BAT_NAME = "update_and_run_single_sites.bat"
@@ -181,7 +182,13 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
             #                                         chosen by --scale or --sequence can have context frames too)
         fa = fa + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
         near = st.get("nearby_m", cfg.get("nearby_m"))          # 0.97.0: the neighbours' frames constrain the ground
-        if near:
+        block = st.get("terrain", cfg.get("terrain")) == "block"    # 0.98.14 (Christian, 15 Nov 2026: "for rockytop use a
+        #   model made from the full ncam block alignment"): the terrain from every Navcam frame of the block - one
+        #   cloud (colmap/dense_block_N) shared by the block's stations; the panorama still from the station's frames
+        if block:
+            fa = frame_args(frames) + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])] + ["--whole-block"]
+            near = None
+        elif near:
             fa += ["--nearby-m", f"{float(near):g}"]
         base = Path(out_root) / lab
         cmds: List[Dict[str, Any]] = []
@@ -220,7 +227,9 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     nm = st.get("name") or block_name(st.get("site"))    # block's name without its size word
                     if nm:
                         argv += ["--site-name", str(nm)]
-                if step == "mesh" and near:
+                if step == "mesh" and block:                 # the block's cloud, not an older one of the station alone
+                    argv += ["--points", str(Path(work) / "colmap" / BLOCK_WORKSPACE / "fused.ply")]
+                if step == "mesh" and (near or block):
                     argv += ["--keep-under-rover", f"{float(st.get('keep_under_rover_m', cfg.get('keep_under_rover_m', 0.25))):g}"]
                 argv += [str(x) for x in (cfg.get(f"{step}_args") or [])]      # 0.96.1: for every station
                 argv += [str(x) for x in st.get(f"{step}_args", [])]
@@ -390,6 +399,8 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                         rc = _run(c["argv"], fh)
                     else:
                         clouds = sorted((work_ / "colmap").glob(f"dense_{station_key(run['label'])}*/fused.ply")) if step == "mesh" else []
+                        if step == "mesh" and "--points" in c["argv"]:      # 0.98.14: the block's cloud
+                            clouds = [Path(c["argv"][c["argv"].index("--points") + 1])]
                         tf = c["argv"][c["argv"].index("--terrain-from") + 1] if "--terrain-from" in c["argv"] else None
                         before = keys.get(v, "") + (json.dumps(_read(step_record(tf, "mesh")).get("key")) if tf else "")
                         if step == "ods":                  # the second variant uses the first one's levels

@@ -589,6 +589,13 @@ def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
     assert kw["stereo_options"] == {"min_triangulation_angle": 1.0, "filter_min_triangulation_angle": 1.5,
                                     "filter_min_num_consistent": 2}
     assert kw["fusion_options"] == {"min_num_pixels": 3}
+    # 0.98.14: --whole-block - the block's frames in one shared workspace, the station's own frames recorded beside it
+    calls.clear()
+    assert mppp_main(["dense", str(root.parent), "--station", "3_10", "--whole-block", "--stereo", "--fusion"]) == 0
+    kw = calls[0][2]
+    assert kw["workspace"].endswith("dense_block_N") and len(kw["images"]) == len(rows) and kw["stereo_options"] == STATION_STEREO_OPTIONS
+    stub = json.loads((root / "dense_S003D0010_block" / "mppp_dense.json").read_text(encoding="utf-8"))
+    assert len(stub["subset"]) == 4 and stub["terrain"] == "block" and stub["points"].endswith("fused.ply")
 
 
 def test_station_dense_options_reach_the_mesh_radius_and_are_set_on_pycolmap():
@@ -2150,7 +2157,7 @@ def test_nadir_mark_lines_credit_and_disc():
     assert nadir.NADIR_MARK_DEG == 10.0 and m["row0"] == int(np.ceil(H * 170 / 180)) and m["alpha"].shape == (band, W)   # 0.97.24: half the size
     # 0.98.7: three rows - the rover and the credit, the sol and the site (the tallest), the author
     assert len(m["text"]) == 3 and "Rockytop" in m["text"][1] and m["text"][2] == "made by C. Tate" and "credit" in m["text"][0]
-    assert m["rows"][1]["height_px"] > m["rows"][0]["height_px"] > m["rows"][2]["height_px"]
+    assert m["rows"][1]["height_px"] >= m["rows"][0]["height_px"] > m["rows"][2]["height_px"]   # 0.98.14: the middle a little smaller
     assert nadir.COMPASS_RADIUS_IN_DISC < nadir.TEXT_INNER_EDGE_IN_DISC and nadir.TEXT_AZIMUTH_FROM_FORWARD_DEG == 135.0
     text_rows = int(0.47 * band)                                       # the rows of text; the compass is nearer the nadir
     ink = m["alpha"][:text_rows] > 0.5
@@ -2466,7 +2473,7 @@ def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
     from mppp.ibr import nadir
     W, H = 4096, 2048
     m = nadir.make_mark(W, H, nadir.mark_lines(["NLF_0052_a"], "Van Zyl Overlook"), centre_azimuth_deg=180.0)
-    assert m["rows"][1]["height_px"] > m["rows"][0]["height_px"] and m["rows"][0]["span_deg"] <= 180.5     # 0.98.7: the second is the larger
+    assert m["rows"][1]["height_px"] >= m["rows"][0]["height_px"] and m["rows"][0]["span_deg"] <= 180.5    # 0.98.14: no longer the larger
     P, depth = np.array([1.0, 2.0, 3.0]), 0.9
     m0 = m["row0"] - 46
     got = {}
@@ -2653,6 +2660,9 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
     rt = SS.plan(cfg, root, labels=["Sol0461_S026D0630"])[0]                  # a station chosen by --scale has them too
     d2 = rt["commands"][0]["argv"]
     assert "--scale" in d2 and "--images" not in d2 and len(cfg["stations"]["Sol0461_S026D0630"]["context"]) == 10
+    assert "--whole-block" in d2 and "--add-images" not in d2          # 0.98.14: Rockytop's terrain is the whole block's (they are in it)
+    cfg2 = json.loads(json.dumps(cfg)); cfg2["stations"]["Sol0461_S026D0630"].pop("terrain")
+    d2 = SS.plan(cfg2, root, labels=["Sol0461_S026D0630"])[0]["commands"][0]["argv"]
     assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 11] == cfg["stations"]["Sol0461_S026D0630"]["context"]
     assert cfg["stations"]["Sol0052_S003D2046"]["context"] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
                                                                "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"]
@@ -2817,76 +2827,113 @@ def test_colour_0p98_pipeline_view_enhanced_without_clipping_radiance_record_and
     band = slice(20, 100)                                            # above the nadir mark
     want = np.rint(L.tone_pipeline(L16[band].astype(np.float32) / 64.0))
     assert np.abs(want - L8[band].astype(np.float32)).max() <= 1.0   # the view is the 16-bit image / 64, rolled off
-def test_rover_surface_from_the_centre_panorama(tmp_path):
-    """0.98.2 / 0.98.4: the rover as a surface from the pivot's panorama and depth - no triangle across an edge, the
-    seam closed, the columns thinned towards the nadir without cracks, and a second layer that continues the farther
-    surface under a nearer part's edge as far as a head 0.15 m off the pivot can see."""
-    import json, numpy as np, cv2
+def test_rover_surface_is_the_model_coloured_from_the_pivot(tmp_path):
+    """0.98.14 (Christian, 15 Nov 2026: "The 3d model of the rover still has many occluded surfaces ... the edges look
+    pixelated. the rover should not have a hole visible from any where within the 0.15 m radius"): the surface is the
+    rover model of mesh.ply with all its triangles; the panorama from the pivot and its range go with it, and a point
+    of the model is coloured when it is the surface the pivot sees - a hidden one is grey."""
+    import json, numpy as np, cv2, open3d as o3d
     from mppp.ibr import rover_surface as RS, web
-    W, H = 2048, 1024
-    rng = np.full((H, W), np.inf, np.float32); rover = np.zeros((H, W), bool)
-    rng[H // 2:] = 20.0                                   # terrain below the horizon
-    rover[600:, :] = True; rng[600:, :] = 3.0             # the far part: all the way round and down to the nadir
-    rover[600:900, 800:1000] = True; rng[600:900, 800:1000] = 1.5      # a nearer part in front of it
-    m = RS.build(rng, rover, step=2)
-    V, UV, F = m["vertices"], m["uv"], m["triangles"]
-    assert len(F) > 20000 and F.max() < len(V) and m["rows"] == (600, H)
-    r = np.linalg.norm(V, axis=1)
-    assert r.min() > 1.49 and r.max() < 3.01 and (V[:, 1] < 0).all()         # at their ranges, below the pivot
-    tr = r[F]                                                                 # no triangle across the step
-    assert (tr.max(axis=1) / tr.min(axis=1) < RS.EDGE_RATIO + 1e-6).all()
-    assert (np.ptp(UV[F][:, :, 0], axis=1) < 0.1).all() and UV[:, 0].max() > 1.0   # the seam's cells do not run backwards
-    assert UV[:, 1].min() >= 0 and UV[:, 1].max() <= 1
-    bands = RS._bands(m["grid"][0], H, len(m["grid"][1]))
-    assert [b[2] for b in bands] == [1, 2, 4, 8, 16] and bands[0][1] == bands[1][0]      # thinner towards the nadir
-    full = RS.build(rng, rover, step=2, head_radius_m=0)                     # ... far fewer triangles than a full grid would have
-    assert full["behind"] is None and len(F) < 0.8 * 2 * (len(m["grid"][0]) - 1) * len(m["grid"][1])
-    # every edge of the mesh inside the far part is shared by two triangles: the bands' joints have no crack (T-vertices lie on the edge)
-    # the layer behind: at the far part's range, under the near part, reaching in from its edge by the head's reach
-    b = m["behind"]
-    rb = np.linalg.norm(b["vertices"], axis=1)
-    assert len(b["triangles"]) > 500 and abs(np.median(rb) - 3.0) < 0.01 and rb.min() > 2.9
-    reach = RS.HEAD_RADIUS_M * (1 / 1.5 - 1 / 3.0)                           # radians
-    az = np.degrees(np.arctan2(b["vertices"][:, 0], -b["vertices"][:, 2])) % 360
-    lo, hi = 800 / W * 360, 1000 / W * 360
-    inside = (az > lo + 0.5) & (az < hi - 0.5)
-    depth_in = np.minimum(az[inside] - lo, hi - az[inside])
-    assert inside.sum() > 200 and np.radians(depth_in.max()) >= 0.8 * reach
-    # column 512 of 2048 looks east (+x), column 0 north (-z)
-    d = RS.directions(np.array([511.5, -0.5]), np.array([H / 2 - 0.5] * 2), W, H)
-    assert np.allclose(d, [[1, 0, 0], [0, 0, -1]], atol=1e-9)
-    # the folder round trip and the page's entry
-    out = tmp_path / "S" / "with_rover"; out.mkdir(parents=True)
-    unseen = np.zeros((H, W), bool); unseen[700:720, 100:140] = True
-    np.savez_compressed(out / "x_rover_ods_centre_depth.npz", range=rng, label=np.ones((H, W), np.uint8), rover=rover.astype(np.uint8),
+    from mppp.ibr.mesh import write_mesh
+    W, H = 1024, 512
+    out = tmp_path / "S1" / "with_rover"; out.mkdir(parents=True)
+
+    def box(lo, hi):
+        x0, y0, z0 = lo; x1, y1, z1 = hi
+        V = np.array([[x, y, z] for x in (x0, x1) for y in (y0, y1) for z in (z0, z1)], float)
+        F = np.array([[0, 1, 3], [0, 3, 2], [4, 6, 7], [4, 7, 5], [0, 4, 5], [0, 5, 1], [2, 3, 7], [2, 7, 6], [0, 2, 6], [0, 6, 4], [1, 5, 7], [1, 7, 3]])
+        return V, F
+    # the block frame is east, north, up here; the pivot 1 m above a "deck" box with a small box standing on it
+    Vd, Fd = box((-1.0, -1.0, -1.3), (1.0, 1.0, -1.0))
+    Vs, Fs = box((0.3, -0.1, -1.0), (0.5, 0.1, -0.7))
+    Vt = np.array([[-5, -5, -2.0], [5, -5, -2.0], [5, 5, -2.0], [-5, 5, -2.0]], float); Ft = np.array([[0, 1, 2], [0, 2, 3]])
+    Vm, Fm = np.vstack([Vd, Vs]), np.vstack([Fd, Fs + len(Vd)])
+    write_mesh(out / "mesh.ply", np.vstack([Vt, Vm]), np.vstack([Ft, Fm + 4]))
+    (out / "mesh_report.json").write_text(json.dumps({"rover_triangles": [2, 2 + len(Fm)]}))
+    st = {"pivot_block_m": [0, 0, 0], "east_block": [1, 0, 0], "north_block": [0, 1, 0], "up_block": [0, 0, 1]}
+    (out / "S1_rover_ods.json").write_text(json.dumps({"station": st, "azimuth_of_column_0_deg": 30.0}))
+    sc = o3d.t.geometry.RaycastingScene()
+    sc.add_triangles(np.vstack([Vt, Vm]).astype(np.float32), np.vstack([Ft, Fm + 4]).astype(np.uint32))
+    C, R = np.meshgrid(np.arange(W), np.arange(H))
+    d = RS.directions(C, R, W, H, 30.0).reshape(-1, 3)
+    db = np.stack([d[:, 0], -d[:, 2], d[:, 1]], 1)                         # page (east, up, south) -> block (east, north, up)
+    h = sc.cast_rays(o3d.core.Tensor(np.hstack([np.zeros_like(db), db]).astype(np.float32)))
+    t, pid = h["t_hit"].numpy().reshape(H, W), h["primitive_ids"].numpy().reshape(H, W)
+    rng = np.where(np.isfinite(t), t, 0).astype(np.float32); rover = np.isfinite(t) & (pid >= 2)
+    img = np.full((H, W, 3), 120, np.uint8); img[rover] = (40, 90, 200)
+    unseen = np.zeros((H, W), bool); unseen[H - 30:H - 20, 100:140] = True
+    img[unseen] = 150
+    np.savez_compressed(out / "S1_rover_ods_centre_depth.npz", range=rng, label=(rng > 0).astype(np.uint8), rover=rover.astype(np.uint8),
                         unseen=unseen.astype(np.uint8))
-    img = np.full((H, W, 3), 120, np.uint8); img[700:720, 100:140] = (40, 80, 120)       # the flat brown of an unseen patch
-    cv2.imwrite(str(out / "x_rover_ods_centre.png"), img)
-    (out / "x_rover_ods.json").write_text(json.dumps({"nadir_mark": {"radius_deg": 12.0, "in_centre_panorama": False}}))
+    cv2.imwrite(str(out / "S1_rover_ods_centre.png"), img)
     rec = RS.from_folder(out)
-    from mppp.ibr.ods import ROVER_GREY_REL as RS_GREY
-    assert rec["experimental"] and rec["step_px"] == 2 and rec["panorama_rows"] == [600, H] and rec["nadir_excluded_deg"] is None
-    assert rec["unseen_pixels_grey"] == 800 and rec["behind"]["triangles"] > 500 and rec["behind"]["head_radius_m"] == 0.15
+    assert rec["triangles"] == len(Fm) == 24 and rec["vertices"] == 16                # every triangle of the model: no holes
     doc, binary = RS.read_glb((out / rec["file"]).read_bytes())
-    assert len(doc["meshes"][0]["primitives"]) == 2 and [x["name"] for x in doc["materials"]] == ["front", "behind"]
-    a = doc["accessors"]; assert a[0]["count"] == rec["vertices"] and a[2]["count"] == 3 * rec["triangles"] and a[5]["count"] == 3 * rec["behind"]["triangles"]
-    iv = doc["bufferViews"][doc["images"][0]["bufferView"]]
-    tex = cv2.imdecode(np.frombuffer(binary[iv["byteOffset"]:iv["byteOffset"] + iv["byteLength"]], np.uint8), 1)
-    assert tex.shape == (H - 600, W, 3) and doc["buffers"][0]["byteLength"] == len(binary)
-    # 0.98.12: the unseen patch is one flat neutral grey (no colours carried in from around it)
-    patch = tex[700 - 600 + 3:720 - 600 - 3, 103:137].astype(int)
-    assert np.ptp(patch) <= 6 and abs(patch.mean() - RS_GREY * 120) < 6 and np.abs(np.diff(patch, axis=2)).max() <= 4
-    assert abs(int(tex[110, 120, 0]) - 150) < 4                              # 0.98.12: the unseen patch grey (1.25 x the ground), not its surroundings
-    few = RS.from_folder(out, max_triangles=30000)                           # over the limit: a coarser step
-    assert few["step_px"] > 2 and few["triangles"] + few["behind"]["triangles"] <= 30000
-    (out / "x_rover_ods.json").write_text(json.dumps({"nadir_mark": {"radius_deg": 12.0}}))      # before 0.98.4: the mark is in the picture
-    old = RS.from_folder(out)
-    assert old["nadir_excluded_deg"] == 12.5 and old["panorama_rows"][1] < H
-    np.savez_compressed(out / "x_rover_ods_centre_depth.npz", range=rng, label=np.ones((H, W), np.uint8))
-    assert RS.from_folder(out) is None                    # a depth without the rover flag: nothing made
+    pr = doc["asset"]["extras"]["projection"]
+    assert pr == rec["projection"] and pr["azimuth0_deg"] == 30.0 and pr["width"] == W and pr["grey_rgb"] == [150, 150, 150]
+    bv = doc["bufferViews"]
+    V = np.frombuffer(binary, "<f4", count=16 * 3, offset=bv[0]["byteOffset"]).reshape(-1, 3)
+    assert np.allclose(sorted(V[:, 1])[:1], -1.3) and np.allclose(V[:, 1].max(), -0.7)      # y is up, about the pivot
+    tex = cv2.imdecode(np.frombuffer(binary, np.uint8, count=bv[2]["byteLength"], offset=bv[2]["byteOffset"]), cv2.IMREAD_COLOR)
+    depth = RS.decode_range(cv2.imdecode(np.frombuffer(binary, np.uint8, count=bv[3]["byteLength"], offset=bv[3]["byteOffset"]), cv2.IMREAD_COLOR))
+    r0, r1 = pr["rows"]
+    assert tex.shape == (r1 - r0, W, 3) and depth.shape == ((r1 - r0) // 2, W // 2) and pr["depth_px"] == [W // 2, (r1 - r0) // 2]
+    assert abs(float(depth.max()) - float(rng[rover].max())) < 0.02 and (depth[depth > 0] > 0.69).all()
+    # the pixel of a direction and back; the test the viewer makes
+    c, r, dist = RS.pixel_of(RS.directions(np.array([10.0, 700.0]), np.array([300.0, 400.0]), W, H, 30.0) * 2.5, W, H, 30.0)
+    assert np.allclose(c, [10.5, 700.5]) and np.allclose(r, [300.5, 400.5]) and np.allclose(dist, 2.5)
+    top = np.array([[0.6, -1.0, 0.3], [-0.5, -1.0, -0.4]])                    # on the deck top, in the open (x east, y up, z south)
+    behind = np.array([[0.60, -1.0, 0.0]])                                    # on the deck top behind the small box
+    under = np.array([[0.0, -1.3, 0.0]])                                      # the deck's underside
+    assert (RS.seen_from_pivot(top, depth, pr) == 1.0).all()
+    assert RS.seen_from_pivot(behind, depth, pr)[0] == 0.0 and RS.seen_from_pivot(under, depth, pr)[0] == 0.0
+    assert 0.05 < rec["area_seen_from_pivot"] < 0.5 and rec["unseen_pixels_grey"] == 400
+    # a folder without the model in its mesh, or without the rover flag: nothing made
+    (out / "mesh_report.json").write_text(json.dumps({"rover_triangles": None}))
+    assert RS.from_folder(out) is None
+    (out / "mesh_report.json").write_text(json.dumps({"rover_triangles": [2, 26]}))
+    np.savez_compressed(out / "S1_rover_ods_centre_depth.npz", range=rng, label=(rng > 0).astype(np.uint8))
+    assert RS.from_folder(out) is None
     w = tmp_path / "web"; (w / "panos").mkdir(parents=True)
     rs = web.rover_surface(out, w)
     assert rs["file"] == "panos/" + rec["file"] and (w / rs["file"]).is_file() and web.rover_surface(tmp_path / "none", w) is None
+
+
+def test_rover_surface_bias_on_the_perseverance_model():
+    """The viewer's "seen from the pivot" test on NASA's model: nearly every point the pivot sees passes it, nearly
+    none of the hidden ones (BIAS_M, BIAS_REL)."""
+    import numpy as np, open3d as o3d
+    from mppp.ibr import rover_model as RM, rover_surface as RS
+    from mppp.ibr.mesh import ROVER_MODEL_PARTS
+    if not RM.available():
+        pytest.skip("no rover model")
+    V, F, _ = RM.load(ROVER_MODEL_PARTS)
+    piv = np.array([0.711, 0.557, -0.845])                                     # the pivot in RMECH (x forward, y right, z down)
+    X = V - piv
+    P3 = np.stack([X[:, 1], -X[:, 2], -X[:, 0]], 1)                            # the page's frame, the rover heading north
+    W, H, step = 4096, 2048, 2
+    sc = o3d.t.geometry.RaycastingScene()
+    sc.add_triangles(P3.astype(np.float32), F.astype(np.uint32))
+    rows = np.arange(H // 2 + step // 2, H, step); cols = np.arange(step // 2, W, step)
+    C, R = np.meshgrid(cols, rows)
+    d = RS.directions(C, R, W, H).reshape(-1, 3)
+    t = sc.cast_rays(o3d.core.Tensor(np.hstack([np.zeros_like(d), d]).astype(np.float32)))["t_hit"].numpy().reshape(len(rows), len(cols))
+    depth = RS.decode_range(RS.encode_range(np.where(np.isfinite(t), t, 0)))
+    pr = {"width": W, "height": H, "rows": [H // 2, H], "azimuth0_deg": 0.0, "depth_step": step, "depth_offset_px": step // 2,
+          "bias_m": RS.BIAS_M, "bias_rel": RS.BIAS_REL}
+    a, b, c = P3[F[:, 0]], P3[F[:, 1]], P3[F[:, 2]]
+    area = 0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)
+    g = np.random.default_rng(0); n = 60000
+    f = g.choice(len(F), n, p=area / area.sum()); u, w = g.random(n), g.random(n)
+    fl = u + w > 1; u[fl], w[fl] = 1 - u[fl], 1 - w[fl]
+    Q = a[f] + u[:, None] * (b[f] - a[f]) + w[:, None] * (c[f] - a[f])
+    r = np.linalg.norm(Q, axis=1)
+    hit = sc.cast_rays(o3d.core.Tensor(np.hstack([np.zeros_like(Q), Q / r[:, None]]).astype(np.float32)))["t_hit"].numpy()
+    s = RS.seen_from_pivot(Q, depth, pr)
+    vis, hid = np.abs(hit - r) < 0.002, hit < r - 0.05
+    assert vis.sum() > 3000 and hid.sum() > 20000
+    assert s[vis].mean() > 0.95 and s[hid].mean() < 0.02
+
 
 
 def test_heal_sky_replaces_a_frame_shaped_patch_and_leaves_a_clean_sky():
@@ -2933,3 +2980,73 @@ def test_normal_panorama_leaves_out_the_ground_plane(tmp_path):
     assert nm.shape == (128, 128, 3)
     assert not nm[60].any() and nm[20].any()                 # left eye: row 60 looks steeply down (plane), row 20 up (mesh)
     assert rl[60].any()
+
+
+def test_block_terrain_station_plan():
+    """0.98.14 (Christian, 15 Nov 2026: "for rockytop use a model made from the full ncam block alignment"): a station
+    with "terrain": "block" - the dense step on the whole block, the mesh from the block's cloud, the ground under the
+    rover kept; the shipped Rockytop stations ask for it."""
+    from mppp.ibr import single_sites as SS
+    cfg = SS.load_config()
+    assert cfg["stations"]["Sol0461_S026D0630"]["terrain"] == cfg["stations"]["Sol0474_S026D0850"]["terrain"] == "block"
+    cmds = SS.plan(cfg, "R", labels=["Sol0474_S026D0850"])[0]["commands"]
+    dense = next(c["argv"] for c in cmds if c["step"] == "dense")
+    assert "--whole-block" in dense and "--add-images" not in dense and "--nearby-m" not in dense and dense[dense.index("--scale") + 1] == "0.5"
+    for c in cmds:
+        if c["step"] == "mesh":
+            p = Path(c["argv"][c["argv"].index("--points") + 1])
+            assert p.parts[-3:] == ("colmap", SS.BLOCK_WORKSPACE, "fused.ply") and "--keep-under-rover" in c["argv"]
+        if c["step"] == "ods":
+            assert "--context-images" in c["argv"] and "--points" not in c["argv"]
+    other = SS.plan(cfg, "R", labels=["Sol0052_S003D2046"])[0]["commands"]
+    assert not any("--whole-block" in c["argv"] or "--points" in c["argv"] for c in other)
+
+
+def test_welcome_picture_keeps_its_colour_and_the_map_gets_an_orthomosaic(tmp_path, monkeypatch):
+    """0.98.14 (Christian, 15 Nov 2026: "the welcome screen should have color, just be a little more muted" and "Add low
+    res ortho to the info map")."""
+    import cv2
+    from mppp.ibr import web
+    w = tmp_path / "web"; (w / "panos").mkdir(parents=True)
+    img = np.zeros((64, 64, 3), np.uint8); img[:] = (40, 90, 200)              # BGR: an orange
+    cv2.imwrite(str(w / "panos" / "S_360_3DTD.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 98])
+    (w / "panos" / f"{web.WELCOME_ID}{web.STACK}").write_bytes(b"old grey one")
+    e = web.welcome_pano(w, {"variants": [{"views": {"standard": "panos/S_360_3DTD.jpg"}}]})
+    f = w / e["variants"][0]["views"]["standard"]
+    m = cv2.imread(str(f)).reshape(-1, 3).mean(axis=0)
+    assert "muted" in f.name and not (w / "panos" / f"{web.WELCOME_ID}{web.STACK}").exists()
+    assert m[2] - m[0] > 60 and (m[2] - m[0]) < 0.75 * 160                    # still orange, less so
+    # the map's picture
+    rasterio = pytest.importorskip("rasterio")
+    pytest.importorskip("pyproj")
+    from rasterio.transform import from_origin
+    from mppp.waypoints.table import _props
+    wp, tr = web.traverse_map()
+    P = [_props(x) for x in wp["features"]]
+    P = [q for q in P if q.get("lon") is not None and q.get("easting") is not None]
+    lon, lat = np.array([q["lon"] for q in P]), np.array([q["lat"] for q in P])
+    R, res = 3396190.0, 20.0
+    x0, x1 = np.radians(lon.min() - 0.05) * R, np.radians(lon.max() + 0.05) * R
+    y0, y1 = np.radians(lat.min() - 0.05) * R, np.radians(lat.max() + 0.05) * R
+    a = np.full((int((y1 - y0) / res), int((x1 - x0) / res)), 100, np.uint8)
+    for q in P[::50]:                                                          # bright squares at waypoints
+        c, r = int((np.radians(q["lon"]) * R - x0) / res), int((y1 - np.radians(q["lat"]) * R) / res)
+        a[r - 4:r + 5, c - 4:c + 5] = 255
+    (tmp_path / "dem" / "m2020_trn").mkdir(parents=True)
+    with rasterio.open(tmp_path / "dem" / "m2020_trn" / "JEZ_orthoMosaic_test.tif", "w", driver="GTiff", height=a.shape[0], width=a.shape[1],
+                       count=1, dtype="uint8", crs="+proj=eqc +lat_ts=0 +lon_0=0 +R=3396190 +units=m +no_defs",
+                       transform=from_origin(x0, y1, res, res)) as d:
+        d.write(a, 1)
+    monkeypatch.delenv("M20_ORTHOS", raising=False)
+    o = web.traverse_ortho(wp, tr, w, root=tmp_path)
+    g = cv2.imread(str(w / o["file"]), 0)
+    assert g.shape == (web.ORTHO_PX, web.ORTHO_PX) and o["extent"][2] - o["extent"][0] == pytest.approx(o["extent"][3] - o["extent"][1], abs=0.2)
+    e0, n0 = tr["origin_en"]
+    bx0, by0, bx1, by1 = o["extent"]
+    hits = []
+    for q in P[::50]:
+        c = int((q["easting"] - e0 - bx0) / (bx1 - bx0) * g.shape[1]); r = int((by1 - (q["northing"] - n0)) / (by1 - by0) * g.shape[0])
+        hits.append(int(g[max(r - 1, 0):r + 2, max(c - 1, 0):c + 2].max()))
+    assert np.median(hits) > 200 and np.median(g) < 160                       # the picture is where the line is
+    assert web.traverse_ortho(wp, tr, w, root=tmp_path / "none", old=o) is o  # the same extent: not read again
+    assert web.traverse_ortho(wp, tr, tmp_path / "w2", root=tmp_path / "none") is None
