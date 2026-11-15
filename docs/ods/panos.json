@@ -250,34 +250,63 @@
    "title": "Rockytop Sol0461_S026D0630",
    "variants": [
     {
-     "key": "rover",
-     "label": "with the rover",
-     "views": {
-      "standard": "panos/Sol0461_S026D0630_rover_360_3DTD.jpg"
-     },
-     "ground_mark": {
-      "file": "panos/Sol0461_S026D0630_rover_nadir_mark.png",
-      "depth_m": 0.8586,
-      "radius_m": 0.1741,
-      "mark_radius_m": 0.1514
-     }
-    },
-    {
      "key": "masked",
      "label": "terrain only",
      "views": {
-      "standard": "panos/Sol0461_S026D0630_360_3DTD.jpg"
+      "standard": "panos/Sol0461_S026D0630_360_3DTD.jpg",
+      "normal": "panos/Sol0461_S026D0630_normal_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0461_S026D0630_nadir_mark.png",
       "depth_m": 1.9665,
-      "radius_m": 0.3988,
-      "mark_radius_m": 0.3467
+      "radius_m": 0.4508,
+      "mark_radius_m": 0.3467,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 24.97
+     }
+    },
+    {
+     "key": "rover",
+     "label": "terrain with rover (projected)",
+     "views": {
+      "standard": "panos/Sol0461_S026D0630_rover_360_3DTD.jpg",
+      "normal": "panos/Sol0461_S026D0630_rover_normal_360_3DTD.jpg"
+     }
+    },
+    {
+     "key": "rover3d",
+     "label": "terrain with rover (3D model)",
+     "views": {
+      "standard": "panos/Sol0461_S026D0630_360_3DTD.jpg",
+      "normal": "panos/Sol0461_S026D0630_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0461_S026D0630_nadir_mark.png",
+      "depth_m": 1.9665,
+      "radius_m": 0.4508,
+      "mark_radius_m": 0.3467,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 24.97
+     },
+     "rover_surface": {
+      "file": "panos/Sol0461_S026D0630_rover_rover_surface.glb",
+      "triangles": 1286521,
+      "experimental": true
      }
     }
    ],
-   "mppp": "0.98.3",
-   "published": "2026-11-14"
+   "mppp": "0.98.8",
+   "published": "2026-11-15",
+   "map": [
+    10583.6,
+    2295.3
+   ],
+   "sols": [
+    461
+   ],
+   "site_name": "Rockytop"
   },
   {
    "id": "Sol0474_S026D0850",
