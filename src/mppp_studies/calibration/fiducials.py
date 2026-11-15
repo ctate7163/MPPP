@@ -1300,13 +1300,13 @@ def resolver_angles(label) -> Tuple[float, float]:
     return float(ang[names.index("AZIMUTH FINAL-RESOLVER")]), float(ang[names.index("ELEVATION FINAL-RESOLVER")])
 
 
-VF_POINTS_FILE = "vf_points_ALL_20261114.json"
-VF_COLOURS = {"good": "#3fa9ff", "tag": "#ffffff", "weak": "#ff7a00"}
+VF_POINTS_FILE = "vf_points_20261115.json"          # 0.98.11: five VFs replaced (15 Nov); was vf_points_ALL_20261114.json
+VF_COLOURS = {"good": "#3fa9ff", "tag": "#ffffff", "weak": "#ff7a00", "new": "#5cff5c"}
 
 
 def load_vf_points(path: Optional[PathLike] = None) -> Optional[Dict[str, Any]]:
-    """The vicarious deck fiducials of the latest deck joint (``data/vf_points_ALL_20261114.json``: RNAV mm, jackknife
-    sd, archive rms, station-frame finds, the weak ones), or None when the file is missing."""
+    """The vicarious deck fiducials of the latest deck joint (``data/vf_points_20261115.json``: RNAV mm, jackknife
+    sd, archive rms, station-frame finds; the five new points of 15 Nov with their archive screening), or None when the file is missing."""
     f = Path(path) if path else Path(__file__).resolve().parent / "data" / VF_POINTS_FILE
     try:
         return json.loads(f.read_text(encoding="utf-8"))
@@ -1375,7 +1375,8 @@ def deck_frame_models(path: PathLike, chain: Union[PathLike, Dict[str, Any]], cm
             if not (0 <= xy[0] < Wf and 0 <= xy[1] < Hf):
                 continue
             out["vf"]["points"][k] = {"constrained": [float(xy[0]), float(xy[1])], "range_m": float(np.linalg.norm(Xc)),
-                                      "quality": "weak" if k in vf_doc.get("weak", []) else "tag" if k in vf_doc.get("tag", []) else "good",
+                                      "quality": ("new" if k in vf_doc.get("new", []) else "weak" if k in vf_doc.get("weak", []) else
+                                                  "tag" if k in vf_doc.get("tag", []) else "good"),
                                       "archive_rms_px": v.get("archive_rms_px"), "station_jackknife_sd_mm": v.get("station_jackknife_sd_mm"),
                                       "station_frames_kept": v.get("station_frames_kept"), "station_frames_tried": v.get("station_frames_tried")}
     a = np.asarray(img, np.float32)
@@ -1417,13 +1418,17 @@ def plot_deck_frame(res: Dict[str, Any], out_png: PathLike, dpi: int = 200, inse
         x, y = v["constrained"]
         c = VF_COLOURS[v["quality"]]
         ax.plot([x], [y], "^", ms=9, mfc="none", mec=c, mew=1.5)
-        if v["quality"] != "tag" or k == "VF01a":
-            near = [p for p in placed if abs(p[0] - x) < 260 and abs(p[1] - y) < 90]
-            off = (7, 6) if not near else (-38, -14) if len(near) == 1 else (7, -16)     # a neighbour: the other side
+        if v["quality"] == "tag":                    # 0.98.11: the four tag corners are four VFs, each labelled
+            ax.annotate(k, (x, y), xytext={"VF01a": (-34, 6), "VF01b": (6, 6), "VF01c": (6, -12), "VF01d": (-34, -12)}.get(k, (6, 6)),
+                        textcoords="offset points", color=c, fontsize=6.5, fontweight="bold",
+                        bbox=dict(boxstyle="round,pad=0.1", fc="black", ec="none", alpha=0.5))
             placed.append((x, y))
-            ax.annotate("VF01 (tag)" if v["quality"] == "tag" else k, (x, y), xytext=off, textcoords="offset points",
-                        color=c, fontsize=7.5, fontweight="bold",
-                        bbox=dict(boxstyle="round,pad=0.12", fc="black", ec="none", alpha=0.5))
+            continue
+        near = [p for p in placed if -150 < p[0] - x < 500 and -250 < p[1] - y < 260]   # 0.98.11: a label within ~25 pt
+        off = (7, 6) if not near else (-40, 4) if len(near) == 1 else (7, -16)         # a neighbour: the other side
+        placed.append((x, y))
+        ax.annotate(k, (x, y), xytext=off, textcoords="offset points", color=c, fontsize=7.5, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.12", fc="black", ec="none", alpha=0.5))
     ax.set_xticks([]); ax.set_yticks([])
     eye = {"L": "left", "R": "right"}.get(res["eye"], res["eye"])
     fig.suptitle(f"Deck fiducials in one {eye} Navcam frame: sol {res['sol']}, camera temperature T = {res['T']:.1f} °C, "
@@ -1455,19 +1460,24 @@ def plot_deck_frame(res: Dict[str, Any], out_png: PathLike, dpi: int = 200, inse
     if vfp:
         n = {q: sum(v["quality"] == q for v in vfp.values()) for q in VF_COLOURS}
         hnd += [Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLOURS["good"], mew=1.5,
-                       label=f"vicarious fiducial, constrained model ({n['good']} in view)"),
-                Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLOURS["weak"], mew=1.5,
-                       label=f"weak vicarious fiducial ({n['weak']} in view: archive rms > 0.9 px, jackknife > 0.15 mm or rarely found)")]
+                       label=f"vicarious fiducial, constrained model ({n['good']} in view)")]
+        if n["weak"]:
+            hnd.append(Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLOURS["weak"], mew=1.5,
+                              label=f"weak vicarious fiducial ({n['weak']} in view: archive rms > 0.9 px, jackknife > 0.15 mm or rarely found)"))
+        if n["new"]:
+            hnd.append(Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLOURS["new"], mew=1.5,
+                              label=f"new vicarious fiducial, 15 Nov ({n['new']} in view: replaces a weak one of the same number)"))
         if n["tag"]:
             hnd.append(Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLOURS["tag"], mew=1.5,
-                              label="VF01a-d: corners of the AprilTag on the arm-base housing"))
+                              label="VF01a-d: the four corners of the AprilTag on the arm-base housing (four VFs)"))
     leg = ax.legend(handles=hnd, loc="lower left", fontsize=9, framealpha=0.75, facecolor="black", edgecolor="none")
     for t in leg.get_texts():
         t.set_color("white")
     ax.text(0.995, 0.988, f"insets ±{h} px, full resolution; rms over the six surveyed rigid targets; "
-            "* not in the rms (TDF4 unsurveyed, LDIFF/RDIFF on the moving differential bar)"
-            + (f"\nvicarious fiducials: positions from the {res['vf'].get('date')} deck joint (101 stations) drawn where the constrained"
-               "\nmodel puts them - not measured in this frame, not checked for hiding by the mast or arm" if vfp else ""),
+            "\n* not in the rms (TDF4 unsurveyed, LDIFF/RDIFF on the moving differential bar)"
+            + (f"\nvicarious fiducials: positions from the 14 Nov deck joint (101 stations;"
+               "\nthe new ones from 51 archive frames) drawn where the constrained model puts them"
+               "\n - not measured in this frame, not checked for hiding by the mast or arm" if vfp else ""),
             transform=ax.transAxes, ha="right", va="top", fontsize=7, color="white",
             bbox=dict(fc="black", ec="none", alpha=0.55, pad=1.5))
     out_png = Path(out_png)

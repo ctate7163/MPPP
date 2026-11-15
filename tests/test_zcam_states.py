@@ -236,5 +236,21 @@ def test_vf_points_of_the_101_station_joint_ship_with_the_studies():
     """0.98.10: the deck fiducial figure can show the vicarious fiducials of the 14 Nov deck joint."""
     from mppp_studies.calibration import fiducials as FD
     d = FD.load_vf_points()
-    assert len(d["points"]) == 24 and set(d["weak"]) == {"VF03", "VF05", "VF09", "VF19", "VF21"}
+    assert len(d["points"]) == 24 and not d["weak"]
     assert all(len(v["rnav_mm"]) == 3 and -1700 < v["rnav_mm"][2] < -1000 for v in d["points"].values())
+
+
+def test_five_weak_vfs_replaced_by_the_15_nov_red_dots():
+    """0.98.11 (Christian, 15 Nov 2026: "remove vf 19, 21, 05, 09 and 03.  Replace them with red dot candidates ...
+    replace the removed numbers ... VF01a-d as four distinct vf"): the numbers are kept, the points are new, one at the
+    far (aft) end, and the tag corners stay four points."""
+    from mppp_studies.calibration import fiducials as FD
+    d = FD.load_vf_points()
+    new = {"VF03", "VF05", "VF09", "VF19", "VF21"}
+    assert set(d["new"]) == new and set(d["replaced_20261114"]) == new
+    for k in new:
+        a, b = d["points"][k]["rnav_mm"], d["replaced_20261114"][k]["rnav_mm"]
+        assert sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5 > 50          # a different point under the old number
+        assert d["points"][k]["screen_found"] >= 15
+    assert min(v["rnav_mm"][0] for v in d["points"].values()) < -1200        # past the old aft-most point (-894 mm)
+    assert [k for k in d["points"] if k.startswith("VF01")] == ["VF01a", "VF01b", "VF01c", "VF01d"]

@@ -3,6 +3,21 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.11 — 2026-11-15
+
+Christian: "remove vf 19, 21, 05, 09 and 03.  Replace them with red dot candidates from this image ... replace the
+removed numbers ... VF01a-d as four distinct vf."
+
+- `data/vf_points_20261115.json`: VF03, VF05, VF09, VF19 and VF21 are new points from the red dots on the sol 1642 NRF
+  frame (VF03 <- C15, VF05 <- C08, VF09 <- C10, VF19 <- C07, VF21 <- C01, the aft-most point so far at x = -1265 mm),
+  screened in 51 archive frames: found in 25/29, 32/49, 29/29, 18/27 and 22/27 of the frames where the rover model
+  leaves them visible, station jackknife 0.28-0.83 mm.  The old points are kept under `replaced_20261114`.
+- The deck fiducial figure draws the new points green and labels the tag corners VF01a-d one by one; the note moved
+  into four short lines so it no longer hides points at the top.
+- The deck-joint package side (`deck_joint_vf6_2026-11-15`, outside the repository): `vf_selected6.json` and
+  `vf6_migrate.py`, which drops the old marks under the reused names and measures the new points (and the tag
+  corners, with the AprilTag detector) in the station and archive frames on the drive.
+
 ## 0.98.10 — 2026-11-15
 
 Christian: "make a version of the deck fiducial figure that also shows the locations of the vfs".
