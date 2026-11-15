@@ -485,7 +485,9 @@ def add_parser(sub) -> None:
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
     p.add_argument("--publish-views", nargs="+", default=["standard", "normal"], metavar="VIEW",
                    help="standard, enhanced, 'enhanced local' (default: standard - 0.97.18: the enhanced view is not published)")
-    p.add_argument("--rover-surface", action="store_true",
+    p.add_argument("--no-rover-surface", dest="rover_surface", action="store_false",
+                   help="0.98.8: without the rover's 3D surface (and the panorama from the pivot it is made from)")
+    p.add_argument("--rover-surface", action="store_true", default=True,
                    help="0.98.2, experimental: also render the with-rover panorama from the pivot and make the rover a "
                         "textured surface from it (<prefix>_rover_surface.glb; the viewer lays it on the terrain-only view)")
     p.add_argument("--list", action="store_true", help="the stations of the config")

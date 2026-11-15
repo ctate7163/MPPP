@@ -25,10 +25,10 @@ log = logging.getLogger(__name__)
 STACK = "_360_3DTD.jpg"
 VIEWS = {"standard": "", "enhanced": "_enh", "enhanced local": "_enhlocal",      # view name -> file name part
          "range log": "_range_log", "range linear": "_range_linear", "normal": "_normal"}   # 0.97.20: the model's
-VARIANTS = (("masked", "", "terrain only"), ("rover", "with_rover", "terrain with rover"))   # key, sub-folder, label.  0.98.5
+VARIANTS = (("masked", "", "terrain only"), ("rover", "with_rover", "terrain with rover (projected)"))   # key, sub-folder, label.  0.98.5
 #   (Christian, 14 Nov 2026: "a third mode after the terrain only, terrain with rover, and terrain with 3D rover"): this
 #   order, and a third variant "rover3d" - the terrain-only pictures with the rover's surface - where a surface was made
-ROVER_3D = ("rover3d", "terrain with 3D rover")
+ROVER_3D = ("rover3d", "terrain with rover (3D model)")     # 0.98.8 (Christian: "terrain only, terrain with rover proj, terrain with rover model")
 DEFAULT_VIEWS = ("standard", "normal")   # 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
 #                                      ("standard", "enhanced") before; mppp single-sites --publish-views brings it back
 DEFAULT_WIDTH = 8192               # the square's side: 8192 x 8192 holds two 8192 x 4096 eyes (Quest 3: fine)
