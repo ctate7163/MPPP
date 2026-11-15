@@ -3,6 +3,16 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.8 — 2026-11-14
+
+Christian: "are there three modes? they should be: terrain only, terrain with rover proj, terrain with rover model.
+make the rover 3d model default on."
+
+- `mppp single-sites` makes the rover's 3D surface by default (`--no-rover-surface` turns it off): the with-rover
+  panorama is also rendered from the pivot, about a third more time for that variant.
+- The mark's middle row (sol and site) is smaller: at most 0.15 of the radius tall (0.20 in 0.98.7).
+- The three modes are labelled "terrain only", "terrain with rover (projected)" and "terrain with rover (3D model)".
+
 ## 0.98.7 — 2026-11-14
 
 Christian: "the blue circle with the blue text needs to rotate clockwise by 135 degrees. Make the second row of text
@@ -13,6 +23,8 @@ larger put the made by C. Tate on a third line."
 - Three rows: the rover and the image credit; the sol and the site, now the tallest (up to 0.20 of the radius, was
   0.16); "made by C. Tate" on its own. The compass is 0.45 of the disc (was 0.50) to make room.
 - The viewer cuts the disc into compass and text ring where the picture says (`ground_mark.split`).
+- New station `Sol1189_S054D1152` (Bright Angel large block; 10 + 10 Navcam frames between the two Christian named,
+  with the three context pairs he named).
 - In the viewer's headset disc the ring still turns to face the viewer, so the 135 degrees shows in the panorama's
   own mark and in other viewers.
 
