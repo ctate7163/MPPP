@@ -1989,12 +1989,22 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     doc = web.publish(r, w, width=128, titles={"S1": {"title": "One", "yaw_deg": 90, "note": None}})
     assert [p["id"] for p in doc["panos"]] == ["A0", "S1"]
     s1 = doc["panos"][1]
-    assert s1["title"] == "One" and s1["yaw_deg"] == 90 and [v["key"] for v in s1["variants"]] == ["rover", "masked"]
-    assert s1["variants"][0]["views"] == {"standard": "panos/S1_rover_360_3DTD.jpg"}       # 0.97.18: no enhanced view
+    assert s1["title"] == "One" and s1["yaw_deg"] == 90 and [v["key"] for v in s1["variants"]] == ["masked", "rover"]
+    assert [v["label"] for v in s1["variants"]] == ["terrain only", "terrain with rover"]             # 0.98.5: this order
+    assert s1["variants"][1]["views"] == {"standard": "panos/S1_rover_360_3DTD.jpg"}       # 0.97.18: no enhanced view
+    assert isinstance(doc.get("traverse", {}).get("xy"), list) and len(doc["traverse"]["xy"]) > 100   # 0.98.5: the map's line
+    # 0.98.5: with a rover surface the station has a third variant - the terrain-only pictures and the surface
+    (r / "S1" / "with_rover" / "S1_rover_rover_surface.glb").write_bytes(b"glTF")
+    three = web.publish(r, tmp_path / "web3", width=128)["panos"][0]["variants"]
+    assert [v["key"] for v in three] == ["masked", "rover", "rover3d"] and three[2]["label"] == "terrain with 3D rover"
+    assert three[2]["views"] == three[0]["views"] and three[2]["rover_surface"]["file"].endswith(".glb") and "rover_surface" not in three[0]
+    wp, tr = web.traverse_map()
+    xy = web.station_on_map("Sol0052_S003D2046", wp)
+    assert xy and min(abs(xy[0] - a) + abs(xy[1] - b) for a, b in tr["xy"]) < 30 and web.station_on_map("nothing", wp) is None
     assert cv2.imread(str(w / "panos" / "S1_360_3DTD.jpg")).shape == (128, 128, 3)
-    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard",)
+    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard", "normal")
     both = web.publish(r, tmp_path / "web2", width=128, views=("standard", "enhanced"))["panos"][0]         # on request
-    assert both["variants"][0]["views"]["enhanced"] == "panos/S1_rover_enh_360_3DTD.jpg"
+    assert both["variants"][1]["views"]["enhanced"] == "panos/S1_rover_enh_360_3DTD.jpg"
     assert not (tmp_path / "web2" / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
     page = (Path(web.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     assert 'id="eye"' in page and "sessionstart" in page and "setEye" in page                  # the eye shown on a screen

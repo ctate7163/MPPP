@@ -12,7 +12,8 @@
   Another image list: .../ods/?index=https://<same origin or CORS-enabled host>/panos.json
   Keys: left / right arrows = station, V = variant, E = view, I = info, L = the other eye (on a screen), drag = look, wheel = zoom.
   Headset (0.98.4): right trigger = next station, left trigger = the one before, thumbstick left / right = turn,
-  A = info (sol and site), X = the next colour view, grip = variant.
+  A = info page on the left hand (site, sol, map), X = the next view (standard, normal), grip = variant
+  (terrain only, terrain with rover, terrain with 3D rover).
 -->
 <style>
   html, body { margin: 0; height: 100%; background: #000; color: #eee; font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
@@ -262,44 +263,93 @@ function showWelcome(on) {
     welcome.add(place(textPanel([{ text: 'MPPP stereo viewer', px: 230, weight: 900 },
                                  { text: 'Mars 2020 Perseverance rover', px: 150, weight: 700 }]), az0, 14, 5, 4.2));
     welcome.add(place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
-                                 { text: 'A: sol and site   |   X: colour   |   grip: with or without the rover', px: 84, weight: 600 }],
+                                 { text: 'A: info and map   |   X: view   |   grip: rover on, off or 3D', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)' }), az0, -6, 5, 3.6));
   }
   welcome.visible = !!on;
 }
 
-// A: the sol and the site name, on a panel 2 m ahead of where the viewer looks when it is called.  A again hides it.
+// A (key I): a small page with the site, the sol and a map of the traverse with an x at this station.  In a headset
+// it is attached to the left hand, above the controller and tilted towards the eyes; without a left controller, and
+// on a screen, it hangs 2 m ahead of where the viewer looks.  A again puts it away.  (0.98.5)
 const infoPanel = new THREE.Group();
 infoPanel.visible = false;
 scene.add(infoPanel);
+let traverse = null, leftGrip = null;
+for (let i = 0; i < 2; i++) {
+  const g = renderer.xr.getControllerGrip(i);
+  g.addEventListener('connected', e => { if (e.data && e.data.handedness === 'left') leftGrip = g; });
+  g.addEventListener('disconnected', () => { if (leftGrip === g) { leftGrip = null; if (infoPanel.parent === g) { scene.add(infoPanel); infoPanel.visible = false; } } });
+  scene.add(g);
+}
 function infoLines() {
   const p = panos[cur.s] || {};
   const m = /^Sol(\d+)/.exec(p.id || '');
   const sols = (p.sols && p.sols.length) ? p.sols : (m ? [parseInt(m[1], 10)] : []);
   const sol = sols.length ? (sols.length > 1 ? `sols ${sols[0]}-${sols[sols.length - 1]}` : `sol ${sols[0]}`) : '';
-  return [p.site_name || p.title || p.id || '', sol, p.welcome ? '' : (p.id || '')].filter(Boolean);
+  return [p.site_name || p.title || p.id || '', sol, p.welcome ? '' : (p.id || '')];
 }
 function drawInfo() {
   while (infoPanel.children.length) { const o = infoPanel.children.pop(); o.material.map.dispose(); o.material.dispose(); o.geometry.dispose(); }
-  const l = infoLines();
-  const m = textPanel(l.map((t, i) => ({ text: t, px: i === 0 ? 200 : (i === 1 ? 170 : 90), weight: i < 2 ? 800 : 500, color: i === 2 ? '#ccc' : '#fff' })),
-                      { back: 'rgba(10,20,40,0.72)' });
-  m.scale.setScalar(1.3);
+  const p = panos[cur.s] || {}, [name, sol, id] = infoLines();
+  const hasMap = !!(traverse && traverse.xy && traverse.xy.length > 1);
+  const W = 1024, Hh = hasMap ? 1240 : 420, c = document.createElement('canvas'), g = c.getContext('2d');
+  c.width = W; c.height = Hh;
+  g.fillStyle = 'rgba(10,20,40,0.82)'; g.beginPath(); g.roundRect(0, 0, W, Hh, 40); g.fill();
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
+  const text = (t, y, px, weight, color) => {
+    g.font = `${weight} ${px}px system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+    while (g.measureText(t).width > W - 80 && px > 20) { px -= 4; g.font = `${weight} ${px}px system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`; }
+    g.fillStyle = color || '#fff'; g.fillText(t, W / 2, y);
+  };
+  text(name, 100, 96, 800); text(sol, 215, 84, 700); text(id, 320, 44, 500, '#bcd');
+  if (hasMap) {                                                  // north up; the same scale east and north
+    const x0 = 60, y0 = 400, S = W - 120, xy = traverse.xy;
+    let ax = Infinity, bx = -Infinity, ay = Infinity, by = -Infinity;
+    for (const [x, y] of xy) { ax = Math.min(ax, x); bx = Math.max(bx, x); ay = Math.min(ay, y); by = Math.max(by, y); }
+    const k = (S - 60) / Math.max(bx - ax, by - ay, 1), ox = x0 + (S - k * (bx - ax)) / 2, oy = y0 + (S - k * (by - ay)) / 2;
+    const X = x => ox + k * (x - ax), Y = y => oy + k * (by - y);
+    g.fillStyle = 'rgba(255,255,255,0.07)'; g.fillRect(x0, y0, S, S);
+    g.strokeStyle = '#9ab'; g.lineWidth = 5; g.lineJoin = 'round'; g.beginPath();
+    xy.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
+    g.stroke();
+    if (p.map) {
+      const mx = X(p.map[0]), my = Y(p.map[1]), r = 26;
+      g.strokeStyle = '#ff5a3c'; g.lineWidth = 12; g.lineCap = 'round'; g.beginPath();
+      g.moveTo(mx - r, my - r); g.lineTo(mx + r, my + r); g.moveTo(mx + r, my - r); g.lineTo(mx - r, my + r); g.stroke();
+    }
+    const km = 1000 * k, bar = km > S / 2 ? 0.5 : (km * 5 < S / 2 ? 5 : 1);       // a scale bar of 0.5, 1 or 5 km
+    g.strokeStyle = '#fff'; g.lineWidth = 6; g.lineCap = 'butt'; g.beginPath(); g.moveTo(x0 + 24, y0 + S - 30); g.lineTo(x0 + 24 + bar * km, y0 + S - 30); g.stroke();
+    g.textAlign = 'left'; g.font = '600 36px system-ui, sans-serif'; g.fillStyle = '#fff'; g.fillText(`${bar} km`, x0 + 24, y0 + S - 62);
+    g.textAlign = 'right'; g.fillText('N ↑', x0 + S - 20, y0 + 36);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, Hh / W),
+                           new THREE.MeshBasicMaterial({ map: t, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+  m.renderOrder = 5; m.frustumCulled = false;
   infoPanel.add(m);
 }
 const fwd = new THREE.Vector3();
 function toggleInfo() {
   if (infoPanel.visible) { infoPanel.visible = false; return; }
   drawInfo();
-  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
-  cam.getWorldDirection(fwd);
-  cam.getWorldPosition(infoPanel.position);
-  const hlen = Math.hypot(fwd.x, fwd.z) || 1;                    // level with the eyes' heading, a little below the gaze line
-  const el = Math.max(-0.6, Math.min(0.5, Math.atan2(fwd.y, hlen))) - 0.12;
-  const at = infoPanel.position.clone();
-  infoPanel.position.x += 2 * Math.cos(el) * fwd.x / hlen; infoPanel.position.z += 2 * Math.cos(el) * fwd.z / hlen;
-  infoPanel.position.y += 2 * Math.sin(el);
-  infoPanel.lookAt(at);
+  if (renderer.xr.isPresenting && leftGrip) {                    // on the left hand: 16 cm wide, above the controller
+    leftGrip.add(infoPanel);
+    infoPanel.position.set(0, 0.13, -0.04); infoPanel.rotation.set(-0.7, 0, 0); infoPanel.scale.setScalar(0.16);
+  } else {
+    scene.add(infoPanel);
+    const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+    cam.getWorldDirection(fwd);
+    cam.getWorldPosition(infoPanel.position);
+    const hlen = Math.hypot(fwd.x, fwd.z) || 1;                  // level with the eyes' heading, a little below the gaze line
+    const el = Math.max(-0.6, Math.min(0.5, Math.atan2(fwd.y, hlen))) - 0.12;
+    const at = infoPanel.position.clone();
+    infoPanel.position.x += 2 * Math.cos(el) * fwd.x / hlen; infoPanel.position.z += 2 * Math.cos(el) * fwd.z / hlen;
+    infoPanel.position.y += 2 * Math.sin(el);
+    infoPanel.scale.setScalar(1.0);
+    infoPanel.lookAt(at);
+  }
   infoPanel.visible = true;
 }
 
@@ -449,7 +499,7 @@ function buttons(dt) {                                           // button 4 is 
     if (!gp) continue;
     const b = gp.buttons[4];
     const was = held.get(src) || false, is = !!(b && b.pressed);
-    if (is && !was) { if (src.handedness === 'left') step('c', 1); else toggleInfo(); }      // X: colour view; A: info
+    if (is && !was) { if (src.handedness === 'left') step('w', 1); else toggleInfo(); }      // X: the next view (standard, normal ...); A: info
     held.set(src, is);
     const x = gp.axes.length >= 4 ? gp.axes[2] : (gp.axes[0] || 0);                          // thumbstick left / right
     if (Math.abs(x) > STICK_DEAD) {                                                          // right: the view turns to the right
@@ -508,6 +558,7 @@ diagnostics();
   try {
     const j = await (await fetch(index, { cache: 'no-cache' })).json();
     panos = j.panos || j;
+    traverse = j.traverse || null;
     if (j.title) { $('title').textContent = j.title; document.title = j.title; }
   } catch (e) { msg(`no image list at ${index.href} (${e.message || e})`); return; }
   if (!panos.length) { msg('the image list is empty'); return; }

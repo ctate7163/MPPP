@@ -3,6 +3,22 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.5 — 2026-11-14
+
+Christian: "Upload the ods sites as they finish processing. The 3d rover option tested in van zyl should be a third
+mode after the terrain only, terrain with rover, and terrain with 3D rover. Uploaded the normal maps too. The info
+button could bring up a little page attached to the left hand that has a little x on the map plus some text."
+
+- `mppp single-sites` publishes and uploads each station when its steps end, not all at the end
+  (`single_sites_status.json` lists each upload). An upload that fails is tried again after the last station.
+- Variants are listed as terrain only, terrain with rover, and - where a rover surface was made
+  (`--rover-surface`) - terrain with 3D rover (`rover3d`: the terrain-only pictures with the surface). The
+  terrain-only variant no longer shows the surface. The page now opens on terrain only.
+- The normal maps are published by default (`--publish-views standard normal`); X steps through the views.
+- A opens a page on the left hand (16 cm wide, above the controller): site, sol, station code and the traverse with
+  an x at the station, north up, with a scale bar. A again puts it away. Without a left controller, and on a screen
+  (key I), it hangs 2 m ahead. `panos.json` carries `traverse` and each station's `map` position.
+
 ## 0.98.4 — 2026-11-14
 
 **The viewer** (Christian: "Let's add some controls ...").
