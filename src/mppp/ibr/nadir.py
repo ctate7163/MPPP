@@ -31,15 +31,19 @@ BACKGROUND_RGB = (176.0, 212.0, 238.0)       # 8-bit units: light blue (Christia
 BACKGROUND_LINEAR_FACTOR = 0.8               # in a linear 16-bit panorama: this x the 8-bit colour, in 8-bit linear units
 TEXT_SEPARATOR = "   -   "
 TEXT_SPAN_OF_CIRCLE = 0.5                    # (kept: the first row's share; see TEXT_SPAN_OF_ROW)
-TEXT_ROWS_IN_BAND = (0.13, 0.36)             # the rows' middles, as shares of the disc's radius from its rim (outer first)
-TEXT_MAX_HEIGHT_IN_BAND = (0.20, 0.16)       # a row is at most this share of the disc's radius tall.  0.97.24 (Christian,
-#                                              14 Nov 2026: "Make the second row of text larger"): the second 0.16 (0.09
-#                                              since 0.97.13) and over up to TEXT_SPAN_OF_ROW[1] of the circle
-TEXT_SPAN_OF_ROW = (0.5, 0.60)               # a row takes at most this share of the full circle (0.5 both until 0.97.23:
-#                                              the long credit line could not grow within half of its smaller circle)
-COMPASS_RADIUS_IN_DISC = 0.50                # 0.97.24 (Christian: "Put a compass graphic ... in the center of the circle
-#                                              aligned with the true directions in the ods"; later the same morning:
-#                                              without the letters): its radius on the ground as a share of the disc's
+TEXT_ROWS_IN_BAND = (0.10, 0.27, 0.43)       # the rows' middles, as shares of the disc's radius from its rim (outer first).
+#                                              0.98.7 (Christian, 14 Nov 2026: "Make the second row of text larger put the
+#                                              made by C. Tate on a third line"): three rows - the rover and the image
+#                                              credit, the sol and the site, the author; (0.13, 0.36) for two until 0.98.6
+TEXT_MAX_HEIGHT_IN_BAND = (0.13, 0.20, 0.09)  # a row is at most this share of the disc's radius tall (the second: 0.16
+#                                              in 0.97.24, 0.09 before)
+TEXT_SPAN_OF_ROW = (0.5, 0.60, 0.30)         # a row takes at most this share of the full circle
+TEXT_INNER_EDGE_IN_DISC = 1.0 - (TEXT_ROWS_IN_BAND[-1] + 0.5 * TEXT_MAX_HEIGHT_IN_BAND[-1])     # where the text ends, towards the middle
+TEXT_AZIMUTH_FROM_FORWARD_DEG = 135.0        # 0.98.7 (Christian: "the blue circle with the blue text needs to rotate
+#                                              clockwise by 135 degrees"): the text's middle is this far clockwise (seen
+#                                              from above: north towards east) from the rover's forward direction
+COMPASS_RADIUS_IN_DISC = 0.45                # 0.97.24 (Christian: "Put a compass graphic ... in the center of the circle
+#                                              aligned with the true directions in the ods"); 0.50 until 0.98.6
 COMPASS_PX = 768
 SKY_FALLBACK_RGB = BACKGROUND_RGB            # (kept for callers of sky_colour)
 SKY_MIN_VALUE_8BIT = 150.0
@@ -186,8 +190,11 @@ def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optiona
     row0 = int(np.ceil(height * (180.0 - radius_deg) / 180.0))
     band = height - row0
     alpha = np.zeros((band, width), np.float32)
-    k = (len(lines) + 1) // 2
-    rows_text = [TEXT_SEPARATOR.join(lines[:k]), TEXT_SEPARATOR.join(lines[k:])]
+    if len(lines) == 4:                    # the rover and the credit; the sol and the site; the author (0.98.7)
+        rows_text = [TEXT_SEPARATOR.join([lines[0], lines[2]]), lines[1], lines[3]]
+    else:
+        k = (len(lines) + 1) // 2
+        rows_text = [TEXT_SEPARATOR.join(lines[:k]), TEXT_SEPARATOR.join(lines[k:])]
     rows_text = [t for t in rows_text if t]
     info = []
     for text, centre, tall, share in zip(rows_text, TEXT_ROWS_IN_BAND, TEXT_MAX_HEIGHT_IN_BAND, TEXT_SPAN_OF_ROW):

@@ -67,6 +67,9 @@ def ground_mark(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
             return {"file": "panos/" + tex.name, "depth_m": round(float(m["depth_below_pivot_m"]), 4),
                     "radius_m": round(MARK_SCALE * float(m["radius_m"]), 4), "mark_radius_m": round(float(m["radius_m"]), 4),
                     "radius_deg": float(m.get("radius_deg") or 10.0),
+                    # 0.98.7: where the page cuts the picture into the compass and the text ring - between the two
+                    "split": round(0.5 * (float((m.get("compass") or {}).get("radius_in_disc") or 0.5)
+                                          + float(m.get("text_inner_edge_in_disc") or 0.56)), 3),
                     "text_centre_azimuth_deg": round(float(m.get("text_centre_azimuth_deg") or 0.0), 2)}
     return None
 

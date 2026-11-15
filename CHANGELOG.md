@@ -3,6 +3,19 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.7 — 2026-11-14
+
+Christian: "the blue circle with the blue text needs to rotate clockwise by 135 degrees. Make the second row of text
+larger put the made by C. Tate on a third line."
+
+- The mark's text is centred 135 degrees clockwise (seen from above) from the rover's forward direction
+  (`TEXT_AZIMUTH_FROM_FORWARD_DEG`); it was centred on forward. The compass still points to north.
+- Three rows: the rover and the image credit; the sol and the site, now the tallest (up to 0.20 of the radius, was
+  0.16); "made by C. Tate" on its own. The compass is 0.45 of the disc (was 0.50) to make room.
+- The viewer cuts the disc into compass and text ring where the picture says (`ground_mark.split`).
+- In the viewer's headset disc the ring still turns to face the viewer, so the 135 degrees shows in the panorama's
+  own mark and in other viewers.
+
 ## 0.98.6 — 2026-11-14
 
 - **Eight more stations** in `single_sites.json` (Christian, 14 Nov 2026), each with the Navcam frames of its
