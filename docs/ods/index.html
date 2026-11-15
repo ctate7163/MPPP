@@ -10,8 +10,10 @@
   panorama whose left edge looks north with azimuth growing eastward.
   Link to one view:   .../ods/#<station>/<variant>/<view>      e.g.  #Sol0052_S003D2046/rover/enhanced
   Another image list: .../ods/?index=https://<same origin or CORS-enabled host>/panos.json
-  Keys: left / right arrows = station, V = variant, E = view, L = the other eye (on a screen), drag = look, wheel = zoom.
-  Headset: trigger = next station, grip = variant, A or X button = view.
+  Keys: left / right arrows = station, V = variant, E = view, I = info, L = the other eye (on a screen), drag = look, wheel = zoom.
+  Headset (0.98.4): right trigger = next station, left trigger = the one before, thumbstick left / right = turn,
+  A = info page on the left hand (site, sol, map), X = the next view (standard, normal), grip = variant
+  (terrain only, terrain with rover, terrain with 3D rover).
 -->
 <style>
   html, body { margin: 0; height: 100%; background: #000; color: #eee; font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
@@ -118,13 +120,25 @@ for (const [eye, layer] of [['left', 1], ['right', 2]]) {      // three.js: the 
 // a circle in the x-y plane turned to lie flat has its +y at north (-z) and its +x at east, as the spheres do.
 // M shows and hides it.
 const markMaterial = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
-const markDisc = new THREE.Mesh(new THREE.CircleGeometry(1, 96), markMaterial);
+// 0.98.4: the disc is two parts of the one picture.  The inner circle (the compass) stays fixed to north; the outer
+// ring (the text) turns about the vertical so that its text is upright for the viewer, whichever way they face.
+// It lies at ground level in both variants (panos.json gives the with-rover variant the terrain's depth).
+const MARK_SPLIT = 0.53;                        // the compass ends at 0.50 of the radius, the text begins at 0.56
+function discPart(g) {                          // texture coordinates of the whole picture: the unit disc in a square
+  const p = g.attributes.position, uv = g.attributes.uv;
+  for (let i = 0; i < p.count; i++) uv.setXY(i, (p.getX(i) + 1) / 2, (p.getY(i) + 1) / 2);
+  const m = new THREE.Mesh(g, markMaterial);
+  m.renderOrder = 2; m.frustumCulled = false;   // after the spheres
+  return m;
+}
+const markDisc = new THREE.Group();             // x east, y north before it is laid flat
+const markInner = discPart(new THREE.CircleGeometry(MARK_SPLIT, 96));
+const markOuter = discPart(new THREE.RingGeometry(MARK_SPLIT, 1, 96, 1));
+markDisc.add(markInner, markOuter);
 markDisc.rotation.x = -Math.PI / 2;
-markDisc.renderOrder = 2;                       // after the spheres
-markDisc.frustumCulled = false;
 markDisc.visible = false;
 world.add(markDisc);
-let markOn = true, markId = 0;
+let markOn = true, markId = 0, markTextAz = 0;
 async function showMark(gm) {
   const id = ++markId;
   markDisc.visible = false;
@@ -140,6 +154,7 @@ async function showMark(gm) {
     markMaterial.map = t; markMaterial.needsUpdate = true;
     markDisc.scale.set(gm.radius_m, gm.radius_m, 1);
     markDisc.position.set(0, -gm.depth_m, 0);
+    markTextAz = THREE.MathUtils.degToRad(gm.text_centre_azimuth_deg || 0);    // where the text's middle is in the picture
     markDisc.visible = markOn;
   } catch (e) { console.warn('ground mark', e); }
 }
@@ -151,14 +166,17 @@ async function showMark(gm) {
 // is a real surface, so it shifts against the terrain when the head moves.  The file is read here directly (one
 // mesh, float positions and texture coordinates, 32-bit indices, one JPEG).  R shows and hides it.
 // It hangs in "fixed", a group that stays where the head was when the surface appeared (the spheres follow the head).
-const roverMaterial = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
 const fixed = new THREE.Group();
 scene.add(fixed);
-let roverMesh = null, roverOn = true, roverId = 0, anchored = false;
+let roverParts = [], roverOn = true, roverId = 0, anchored = false;
 renderer.xr.addEventListener('sessionstart', () => { anchored = false; });
 function dropRover() {
-  if (roverMesh) { fixed.remove(roverMesh); roverMesh.geometry.dispose(); roverMesh = null; }
-  if (roverMaterial.map) { const o = roverMaterial.map; roverMaterial.map = null; o.dispose(); if (o.image && o.image.close) o.image.close(); }
+  for (const m of roverParts) {
+    fixed.remove(m); m.geometry.dispose();
+    const o = m.material.map; if (o) { o.dispose(); if (o.image && o.image.close) o.image.close(); }
+    m.material.dispose();
+  }
+  roverParts = [];
 }
 async function showRover(rs) {
   const id = ++roverId;
@@ -169,29 +187,174 @@ async function showRover(rs) {
     const dv = new DataView(buf);
     if (dv.getUint32(0, true) !== 0x46546C67) throw new Error('not a .glb file');
     const n = dv.getUint32(12, true), doc = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, n)));
-    const bin = 28 + n, view = i => doc.bufferViews[i], prim = doc.meshes[0].primitives[0];
+    const bin = 28 + n, view = i => doc.bufferViews[i];
     const arr = (acc, T, k) => { const a = doc.accessors[acc], v = view(a.bufferView); return new T(buf.slice(bin + (v.byteOffset || 0), bin + (v.byteOffset || 0) + a.count * k * T.BYTES_PER_ELEMENT)); };
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(arr(prim.attributes.POSITION, Float32Array, 3), 3));
-    g.setAttribute('uv', new THREE.BufferAttribute(arr(prim.attributes.TEXCOORD_0, Float32Array, 2), 2));
-    g.setIndex(new THREE.BufferAttribute(arr(prim.indices, Uint32Array, 1), 1));
-    const iv = view(doc.images[0].bufferView);
-    const bmp = await createImageBitmap(new Blob([new Uint8Array(buf, bin + (iv.byteOffset || 0), iv.byteLength)], { type: 'image/jpeg' }));
-    if (id !== roverId) { bmp.close(); g.dispose(); return; }
-    const t = new THREE.Texture(bmp);
-    t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = true;
-    t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-    t.needsUpdate = true;
-    roverMaterial.map = t; roverMaterial.needsUpdate = true;
-    roverMesh = new THREE.Mesh(g, roverMaterial);
-    roverMesh.renderOrder = 1; roverMesh.frustumCulled = false; roverMesh.visible = roverOn;
-    fixed.add(roverMesh);
+    const made = [];
+    for (const prim of doc.meshes[0].primitives) {              // 0.98.4: the front layer, then the layer behind
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(arr(prim.attributes.POSITION, Float32Array, 3), 3));
+      g.setAttribute('uv', new THREE.BufferAttribute(arr(prim.attributes.TEXCOORD_0, Float32Array, 2), 2));
+      g.setIndex(new THREE.BufferAttribute(arr(prim.indices, Uint32Array, 1), 1));
+      const img = doc.images[doc.textures[doc.materials[prim.material].pbrMetallicRoughness.baseColorTexture.index].source];
+      const iv = view(img.bufferView);
+      const bmp = await createImageBitmap(new Blob([new Uint8Array(buf, bin + (iv.byteOffset || 0), iv.byteLength)], { type: 'image/jpeg' }));
+      const t = new THREE.Texture(bmp);
+      t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = true;
+      t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      t.needsUpdate = true;
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, map: t }));
+      m.renderOrder = 1; m.frustumCulled = false; m.visible = roverOn;
+      made.push(m);
+    }
+    if (id !== roverId) { for (const m of made) { m.geometry.dispose(); m.material.map.dispose(); m.material.dispose(); } return; }
+    roverParts = made;
+    for (const m of made) fixed.add(m);
     anchored = false;
   } catch (e) { console.warn('rover surface', e); }
 }
 
+// ---------------------------------------------------------------- words in the scene (0.98.4)
+// Text is drawn on a canvas and shown on a flat panel: a real surface at a real distance, so both eyes agree on it.
+function textPanel(lines, opt = {}) {                            // lines: [{text, px, weight}] ; returns a Mesh 1 unit wide
+  const pad = 40, W = opt.width || 2048, font = l => `${l.weight || 800} ${l.px}px system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+  const c = document.createElement('canvas'), g = c.getContext('2d');
+  const Hpx = pad * 2 + lines.reduce((a, l) => a + l.px * 1.25, 0);
+  c.width = W; c.height = Math.ceil(Hpx);
+  if (opt.back) { g.fillStyle = opt.back; g.beginPath(); g.roundRect(0, 0, c.width, c.height, 48); g.fill(); }
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  let y = pad;
+  for (const l of lines) {
+    g.font = font(l);
+    let px = l.px;
+    while (g.measureText(l.text).width > W - 2 * pad && px > 12) { px -= 4; g.font = font({ ...l, px }); }
+    y += l.px * 0.625;
+    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = Math.max(4, px * 0.10); g.strokeText(l.text, W / 2, y);
+    g.fillStyle = l.color || '#fff'; g.fillText(l.text, W / 2, y);
+    y += l.px * 0.625;
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, c.height / c.width),
+                           new THREE.MeshBasicMaterial({ map: t, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+  m.renderOrder = 4; m.frustumCulled = false;
+  return m;
+}
+function place(m, azDeg, elDeg, dist, width) {                   // in the page's frame: north -z, east +x; facing the middle
+  const az = THREE.MathUtils.degToRad(azDeg), el = THREE.MathUtils.degToRad(elDeg);
+  m.position.set(dist * Math.cos(el) * Math.sin(az), dist * Math.sin(el), -dist * Math.cos(el) * Math.cos(az));
+  m.scale.setScalar(width);
+  m.lookAt(0, 0, 0);
+  return m;
+}
+
+// The welcome view (panos.json: an entry with "welcome": true; its picture is Van Zyl Overlook in grey): the four
+// directions in the sky in white, 40 m away, and the title a few metres ahead.  The words hang in "world", so they
+// keep their directions as the viewer turns.
+const welcome = new THREE.Group();
+welcome.visible = false;
+world.add(welcome);
+let welcomeBuilt = false;
+function showWelcome(on) {
+  if (on && !welcomeBuilt) {
+    welcomeBuilt = true;
+    for (const [name, az] of [['NORTH', 0], ['EAST', 90], ['SOUTH', 180], ['WEST', 270]])
+      welcome.add(place(textPanel([{ text: name, px: 300, weight: 800 }], { width: 1400 }), az, 32, 40, 14));
+    const az0 = THREE.MathUtils.radToDeg(yaw0);
+    welcome.add(place(textPanel([{ text: 'MPPP stereo viewer', px: 230, weight: 900 },
+                                 { text: 'Mars 2020 Perseverance rover', px: 150, weight: 700 }]), az0, 14, 5, 4.2));
+    welcome.add(place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
+                                 { text: 'A: info and map   |   X: view   |   grip: rover on, off or 3D', px: 84, weight: 600 }],
+                                { back: 'rgba(0,0,0,0.35)' }), az0, -6, 5, 3.6));
+  }
+  welcome.visible = !!on;
+}
+
+// A (key I): a small page with the site, the sol and a map of the traverse with an x at this station.  In a headset
+// it is attached to the left hand, above the controller and tilted towards the eyes; without a left controller, and
+// on a screen, it hangs 2 m ahead of where the viewer looks.  A again puts it away.  (0.98.5)
+const infoPanel = new THREE.Group();
+infoPanel.visible = false;
+scene.add(infoPanel);
+let traverse = null, leftGrip = null;
+for (let i = 0; i < 2; i++) {
+  const g = renderer.xr.getControllerGrip(i);
+  g.addEventListener('connected', e => { if (e.data && e.data.handedness === 'left') leftGrip = g; });
+  g.addEventListener('disconnected', () => { if (leftGrip === g) { leftGrip = null; if (infoPanel.parent === g) { scene.add(infoPanel); infoPanel.visible = false; } } });
+  scene.add(g);
+}
+function infoLines() {
+  const p = panos[cur.s] || {};
+  const m = /^Sol(\d+)/.exec(p.id || '');
+  const sols = (p.sols && p.sols.length) ? p.sols : (m ? [parseInt(m[1], 10)] : []);
+  const sol = sols.length ? (sols.length > 1 ? `sols ${sols[0]}-${sols[sols.length - 1]}` : `sol ${sols[0]}`) : '';
+  return [p.site_name || p.title || p.id || '', sol, p.welcome ? '' : (p.id || '')];
+}
+function drawInfo() {
+  while (infoPanel.children.length) { const o = infoPanel.children.pop(); o.material.map.dispose(); o.material.dispose(); o.geometry.dispose(); }
+  const p = panos[cur.s] || {}, [name, sol, id] = infoLines();
+  const hasMap = !!(traverse && traverse.xy && traverse.xy.length > 1);
+  const W = 1024, Hh = hasMap ? 1240 : 420, c = document.createElement('canvas'), g = c.getContext('2d');
+  c.width = W; c.height = Hh;
+  g.fillStyle = 'rgba(10,20,40,0.82)'; g.beginPath(); g.roundRect(0, 0, W, Hh, 40); g.fill();
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
+  const text = (t, y, px, weight, color) => {
+    g.font = `${weight} ${px}px system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+    while (g.measureText(t).width > W - 80 && px > 20) { px -= 4; g.font = `${weight} ${px}px system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`; }
+    g.fillStyle = color || '#fff'; g.fillText(t, W / 2, y);
+  };
+  text(name, 100, 96, 800); text(sol, 215, 84, 700); text(id, 320, 44, 500, '#bcd');
+  if (hasMap) {                                                  // north up; the same scale east and north
+    const x0 = 60, y0 = 400, S = W - 120, xy = traverse.xy;
+    let ax = Infinity, bx = -Infinity, ay = Infinity, by = -Infinity;
+    for (const [x, y] of xy) { ax = Math.min(ax, x); bx = Math.max(bx, x); ay = Math.min(ay, y); by = Math.max(by, y); }
+    const k = (S - 60) / Math.max(bx - ax, by - ay, 1), ox = x0 + (S - k * (bx - ax)) / 2, oy = y0 + (S - k * (by - ay)) / 2;
+    const X = x => ox + k * (x - ax), Y = y => oy + k * (by - y);
+    g.fillStyle = 'rgba(255,255,255,0.07)'; g.fillRect(x0, y0, S, S);
+    g.strokeStyle = '#9ab'; g.lineWidth = 5; g.lineJoin = 'round'; g.beginPath();
+    xy.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
+    g.stroke();
+    if (p.map) {
+      const mx = X(p.map[0]), my = Y(p.map[1]), r = 26;
+      g.strokeStyle = '#ff5a3c'; g.lineWidth = 12; g.lineCap = 'round'; g.beginPath();
+      g.moveTo(mx - r, my - r); g.lineTo(mx + r, my + r); g.moveTo(mx + r, my - r); g.lineTo(mx - r, my + r); g.stroke();
+    }
+    const km = 1000 * k, bar = km > S / 2 ? 0.5 : (km * 5 < S / 2 ? 5 : 1);       // a scale bar of 0.5, 1 or 5 km
+    g.strokeStyle = '#fff'; g.lineWidth = 6; g.lineCap = 'butt'; g.beginPath(); g.moveTo(x0 + 24, y0 + S - 30); g.lineTo(x0 + 24 + bar * km, y0 + S - 30); g.stroke();
+    g.textAlign = 'left'; g.font = '600 36px system-ui, sans-serif'; g.fillStyle = '#fff'; g.fillText(`${bar} km`, x0 + 24, y0 + S - 62);
+    g.textAlign = 'right'; g.fillText('N ↑', x0 + S - 20, y0 + 36);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, Hh / W),
+                           new THREE.MeshBasicMaterial({ map: t, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+  m.renderOrder = 5; m.frustumCulled = false;
+  infoPanel.add(m);
+}
+const fwd = new THREE.Vector3();
+function toggleInfo() {
+  if (infoPanel.visible) { infoPanel.visible = false; return; }
+  drawInfo();
+  if (renderer.xr.isPresenting && leftGrip) {                    // on the left hand: 16 cm wide, above the controller
+    leftGrip.add(infoPanel);
+    infoPanel.position.set(0, 0.13, -0.04); infoPanel.rotation.set(-0.7, 0, 0); infoPanel.scale.setScalar(0.16);
+  } else {
+    scene.add(infoPanel);
+    const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+    cam.getWorldDirection(fwd);
+    cam.getWorldPosition(infoPanel.position);
+    const hlen = Math.hypot(fwd.x, fwd.z) || 1;                  // level with the eyes' heading, a little below the gaze line
+    const el = Math.max(-0.6, Math.min(0.5, Math.atan2(fwd.y, hlen))) - 0.12;
+    const at = infoPanel.position.clone();
+    infoPanel.position.x += 2 * Math.cos(el) * fwd.x / hlen; infoPanel.position.z += 2 * Math.cos(el) * fwd.z / hlen;
+    infoPanel.position.y += 2 * Math.sin(el);
+    infoPanel.scale.setScalar(1.0);
+    infoPanel.lookAt(at);
+  }
+  infoPanel.visible = true;
+}
+
 // ---------------------------------------------------------------- the list and the choice
-let panos = [], base = '', cur = { s: 0, v: 0, w: 0 }, texture = null, loadId = 0;
+let panos = [], base = '', cur = { s: 0, v: 0, w: 0 }, texture = null, loadId = 0, yaw0 = 0, turn = 0;
 const maxTex = renderer.capabilities.maxTextureSize;
 
 function variants(p) { return p.variants || []; }
@@ -242,15 +405,24 @@ async function show() {
     material.map = t; material.color.set(0xffffff); material.needsUpdate = true;
     showMark(/^(standard|enhanced)/.test(names[cur.w]) ? vr.ground_mark : null);   // not over the range and normal views
     showRover(/^(standard|enhanced)/.test(names[cur.w]) ? vr.rover_surface : null);
-    world.rotation.y = THREE.MathUtils.degToRad(p.yaw_deg || 0);  // the azimuth (deg east of north) straight ahead at the start
+    yaw0 = THREE.MathUtils.degToRad(p.yaw_deg || 0);              // the azimuth (deg east of north) straight ahead at the start
+    world.rotation.y = yaw0 + turn;                               // ... and what the viewer has turned since (thumbstick)
+    showWelcome(!!p.welcome);
+    if (infoPanel.visible) drawInfo();
     $('note').textContent = [p.title || p.id, p.note, vr.label, `${bmp.width} x ${bmp.height}`, p.mppp ? `MPPP ${p.mppp}` : '']
       .filter(Boolean).join('  |  ');
     msg('');
   } catch (e) { if (id === loadId) msg(`could not load ${url}: ${e.message || e}`); }
 }
 
+const colour = k => /^(standard|enhanced)/.test(k);
 function step(what, d) {
   const p = panos[cur.s];
+  if (what === 'c') {                                            // X: the next colour view (not the range or normal views)
+    const names = views(p, cur.v);
+    for (let i = 1; i <= names.length; i++) { const j = (cur.w + i) % names.length; if (colour(names[j])) { cur.w = j; break; } }
+    show(); return;
+  }
   if (what === 's') cur.s = (cur.s + d + panos.length) % panos.length;
   if (what === 'v') cur.v = (cur.v + d + variants(p).length) % Math.max(variants(p).length, 1);
   if (what === 'w') cur.w = (cur.w + d + views(p, cur.v).length) % Math.max(views(p, cur.v).length, 1);
@@ -278,7 +450,8 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'v' || e.key === 'V') step('v', 1); else if (e.key === 'e' || e.key === 'E') step('w', 1);
   else if (e.key === 'l' || e.key === 'L') setEye(screenEye === 'left' ? 'right' : 'left');
   else if (e.key === 'm' || e.key === 'M') { markOn = !markOn; markDisc.visible = markOn && !!markMaterial.map; }
-  else if (e.key === 'r' || e.key === 'R') { roverOn = !roverOn; if (roverMesh) roverMesh.visible = roverOn; }
+  else if (e.key === 'r' || e.key === 'R') { roverOn = !roverOn; for (const m of roverParts) m.visible = roverOn; }
+  else if (e.key === 'i' || e.key === 'I') toggleInfo();
 });
 
 // ---------------------------------------------------------------- looking around on a screen
@@ -311,29 +484,52 @@ window.addEventListener('resize', () => {
 // ---------------------------------------------------------------- headset: controller buttons
 for (let i = 0; i < 2; i++) {
   const c = renderer.xr.getController(i);
-  c.addEventListener('selectstart', () => step('s', 1));         // trigger: next station
+  c.addEventListener('selectstart', e => step('s', e.data && e.data.handedness === 'left' ? -1 : 1));   // right trigger: next
+  //                                                                                       station; left trigger: the one before
   c.addEventListener('squeezestart', () => step('v', 1));        // grip: variant
   scene.add(c);
 }
 const held = new Map();
-function buttons() {                                             // A / X (button 4): view
+const TURN_DEG_S = 60, STICK_DEAD = 0.25;
+function buttons(dt) {                                           // button 4 is A on the right hand and X on the left
   const session = renderer.xr.getSession();
   if (!session) return;
   for (const src of session.inputSources) {
-    const b = src.gamepad && src.gamepad.buttons[4];
+    const gp = src.gamepad;
+    if (!gp) continue;
+    const b = gp.buttons[4];
     const was = held.get(src) || false, is = !!(b && b.pressed);
-    if (is && !was) step('w', 1);
+    if (is && !was) { if (src.handedness === 'left') step('w', 1); else toggleInfo(); }      // X: the next view (standard, normal ...); A: info
     held.set(src, is);
+    const x = gp.axes.length >= 4 ? gp.axes[2] : (gp.axes[0] || 0);                          // thumbstick left / right
+    if (Math.abs(x) > STICK_DEAD) {                                                          // right: the view turns to the right
+      turn += THREE.MathUtils.degToRad(TURN_DEG_S) * dt * Math.sign(x) * (Math.abs(x) - STICK_DEAD) / (1 - STICK_DEAD);
+      world.rotation.y = yaw0 + turn;
+    }
   }
 }
 
-const head = new THREE.Vector3();
+const head = new THREE.Vector3(), gaze = new THREE.Vector3(), upv = new THREE.Vector3(), clock = new THREE.Clock();
+function turnMarkText() {                                        // the ring's text upright for the viewer: its middle ahead of them
+  if (!markDisc.visible) return;
+  const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+  cam.getWorldDirection(gaze);
+  upv.set(0, 1, 0).applyQuaternion(cam.getWorldQuaternion(new THREE.Quaternion()));
+  gaze.add(upv);                                                 // looking straight down, "ahead" is where the head's top points
+  if (Math.hypot(gaze.x, gaze.z) < 1e-3) return;
+  const heading = Math.atan2(gaze.x, -gaze.z) + world.rotation.y;                 // east of the panorama's north
+  let d = -(heading - markTextAz) - markOuter.rotation.z;
+  d = Math.atan2(Math.sin(d), Math.cos(d));
+  markOuter.rotation.z += d * 0.15;                              // eased: it does not twitch with the head
+}
 renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  turnMarkText();
   if (renderer.xr.isPresenting) {                                // the spheres stay centred on the head: an omnidirectional
     renderer.xr.getCamera().getWorldPosition(head);              // stereo pair has no parallax to give for head movement
     world.position.copy(head);
     if (!anchored) { fixed.position.copy(head); anchored = true; }   // the rover surface stays there: it has parallax
-    buttons();
+    buttons(dt);
   } else { world.position.set(0, 0, 0); fixed.position.set(0, 0, 0); }
   fixed.rotation.y = world.rotation.y;
   renderer.render(scene, camera);
@@ -362,6 +558,7 @@ diagnostics();
   try {
     const j = await (await fetch(index, { cache: 'no-cache' })).json();
     panos = j.panos || j;
+    traverse = j.traverse || null;
     if (j.title) { $('title').textContent = j.title; document.title = j.title; }
   } catch (e) { msg(`no image list at ${index.href} (${e.message || e})`); return; }
   if (!panos.length) { msg('the image list is empty'); return; }

@@ -1989,12 +1989,22 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     doc = web.publish(r, w, width=128, titles={"S1": {"title": "One", "yaw_deg": 90, "note": None}})
     assert [p["id"] for p in doc["panos"]] == ["A0", "S1"]
     s1 = doc["panos"][1]
-    assert s1["title"] == "One" and s1["yaw_deg"] == 90 and [v["key"] for v in s1["variants"]] == ["rover", "masked"]
-    assert s1["variants"][0]["views"] == {"standard": "panos/S1_rover_360_3DTD.jpg"}       # 0.97.18: no enhanced view
+    assert s1["title"] == "One" and s1["yaw_deg"] == 90 and [v["key"] for v in s1["variants"]] == ["masked", "rover"]
+    assert [v["label"] for v in s1["variants"]] == ["terrain only", "terrain with rover"]             # 0.98.5: this order
+    assert s1["variants"][1]["views"] == {"standard": "panos/S1_rover_360_3DTD.jpg"}       # 0.97.18: no enhanced view
+    assert isinstance(doc.get("traverse", {}).get("xy"), list) and len(doc["traverse"]["xy"]) > 100   # 0.98.5: the map's line
+    # 0.98.5: with a rover surface the station has a third variant - the terrain-only pictures and the surface
+    (r / "S1" / "with_rover" / "S1_rover_rover_surface.glb").write_bytes(b"glTF")
+    three = web.publish(r, tmp_path / "web3", width=128)["panos"][0]["variants"]
+    assert [v["key"] for v in three] == ["masked", "rover", "rover3d"] and three[2]["label"] == "terrain with 3D rover"
+    assert three[2]["views"] == three[0]["views"] and three[2]["rover_surface"]["file"].endswith(".glb") and "rover_surface" not in three[0]
+    wp, tr = web.traverse_map()
+    xy = web.station_on_map("Sol0052_S003D2046", wp)
+    assert xy and min(abs(xy[0] - a) + abs(xy[1] - b) for a, b in tr["xy"]) < 30 and web.station_on_map("nothing", wp) is None
     assert cv2.imread(str(w / "panos" / "S1_360_3DTD.jpg")).shape == (128, 128, 3)
-    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard",)
+    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard", "normal")
     both = web.publish(r, tmp_path / "web2", width=128, views=("standard", "enhanced"))["panos"][0]         # on request
-    assert both["variants"][0]["views"]["enhanced"] == "panos/S1_rover_enh_360_3DTD.jpg"
+    assert both["variants"][1]["views"]["enhanced"] == "panos/S1_rover_enh_360_3DTD.jpg"
     assert not (tmp_path / "web2" / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
     page = (Path(web.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     assert 'id="eye"' in page and "sessionstart" in page and "setEye" in page                  # the eye shown on a screen
@@ -2778,44 +2788,96 @@ def test_colour_0p98_pipeline_view_enhanced_without_clipping_radiance_record_and
     band = slice(20, 100)                                            # above the nadir mark
     want = np.rint(L.tone_pipeline(L16[band].astype(np.float32) / 64.0))
     assert np.abs(want - L8[band].astype(np.float32)).max() <= 1.0   # the view is the 16-bit image / 64, rolled off
-import json, numpy as np, cv2
-from pathlib import Path
-from mppp.ibr import rover_surface as RS, web
-
 def test_rover_surface_from_the_centre_panorama(tmp_path):
-    W, H = 512, 256
+    """0.98.2 / 0.98.4: the rover as a surface from the pivot's panorama and depth - no triangle across an edge, the
+    seam closed, the columns thinned towards the nadir without cracks, and a second layer that continues the farther
+    surface under a nearer part's edge as far as a head 0.15 m off the pivot can see."""
+    import json, numpy as np, cv2
+    from mppp.ibr import rover_surface as RS, web
+    W, H = 2048, 1024
     rng = np.full((H, W), np.inf, np.float32); rover = np.zeros((H, W), bool)
     rng[H // 2:] = 20.0                                   # terrain below the horizon
-    rover[150:230, :] = True; rng[150:230, :] = 1.5       # a band all the way round (crosses the seam)
-    rover[150:230, 200:260] = True; rng[150:230, 200:260] = 3.0   # a step in range: an edge
-    rover[240:, :] = True; rng[240:, :] = 1.0             # near the nadir: excluded with the mark
-    m = RS.build(rng, rover, step=4, exclude_below_deg=12.0)
+    rover[600:, :] = True; rng[600:, :] = 3.0             # the far part: all the way round and down to the nadir
+    rover[600:900, 800:1000] = True; rng[600:900, 800:1000] = 1.5      # a nearer part in front of it
+    m = RS.build(rng, rover, step=2)
     V, UV, F = m["vertices"], m["uv"], m["triangles"]
-    assert len(F) > 1000 and F.max() < len(V) and m["rows"] == (150, 230)
+    assert len(F) > 20000 and F.max() < len(V) and m["rows"] == (600, H)
     r = np.linalg.norm(V, axis=1)
-    assert set(np.round(r, 3)) == {1.5, 3.0} and (V[:, 1] < 0).all()         # at their ranges, below the pivot
+    assert r.min() > 1.49 and r.max() < 3.01 and (V[:, 1] < 0).all()         # at their ranges, below the pivot
     tr = r[F]                                                                 # no triangle across the step
     assert (tr.max(axis=1) / tr.min(axis=1) < RS.EDGE_RATIO + 1e-6).all()
     assert (np.ptp(UV[F][:, :, 0], axis=1) < 0.1).all() and UV[:, 0].max() > 1.0   # the seam's cells do not run backwards
     assert UV[:, 1].min() >= 0 and UV[:, 1].max() <= 1
-    # column 128 of 512 looks east (+x), column 0 north (-z)
-    d = RS.directions(np.array([127.5, -0.5]), np.array([H / 2 - 0.5] * 2), W, H)
+    bands = RS._bands(m["grid"][0], H, len(m["grid"][1]))
+    assert [b[2] for b in bands] == [1, 2, 4, 8, 16] and bands[0][1] == bands[1][0]      # thinner towards the nadir
+    full = RS.build(rng, rover, step=2, head_radius_m=0)                     # ... far fewer triangles than a full grid would have
+    assert full["behind"] is None and len(F) < 0.8 * 2 * (len(m["grid"][0]) - 1) * len(m["grid"][1])
+    # every edge of the mesh inside the far part is shared by two triangles: the bands' joints have no crack (T-vertices lie on the edge)
+    # the layer behind: at the far part's range, under the near part, reaching in from its edge by the head's reach
+    b = m["behind"]
+    rb = np.linalg.norm(b["vertices"], axis=1)
+    assert len(b["triangles"]) > 500 and abs(np.median(rb) - 3.0) < 0.01 and rb.min() > 2.9
+    reach = RS.HEAD_RADIUS_M * (1 / 1.5 - 1 / 3.0)                           # radians
+    az = np.degrees(np.arctan2(b["vertices"][:, 0], -b["vertices"][:, 2])) % 360
+    lo, hi = 800 / W * 360, 1000 / W * 360
+    inside = (az > lo + 0.5) & (az < hi - 0.5)
+    depth_in = np.minimum(az[inside] - lo, hi - az[inside])
+    assert inside.sum() > 200 and np.radians(depth_in.max()) >= 0.8 * reach
+    # column 512 of 2048 looks east (+x), column 0 north (-z)
+    d = RS.directions(np.array([511.5, -0.5]), np.array([H / 2 - 0.5] * 2), W, H)
     assert np.allclose(d, [[1, 0, 0], [0, 0, -1]], atol=1e-9)
     # the folder round trip and the page's entry
     out = tmp_path / "S" / "with_rover"; out.mkdir(parents=True)
-    np.savez_compressed(out / "x_rover_ods_centre_depth.npz", range=rng, label=np.ones((H, W), np.uint8), rover=rover.astype(np.uint8))
-    cv2.imwrite(str(out / "x_rover_ods_centre.png"), np.random.default_rng(0).integers(0, 255, (H, W, 3), dtype=np.uint8))
-    (out / "x_rover_ods.json").write_text(json.dumps({"nadir_mark": {"radius_deg": 12.0}}))
+    unseen = np.zeros((H, W), bool); unseen[700:720, 100:140] = True
+    np.savez_compressed(out / "x_rover_ods_centre_depth.npz", range=rng, label=np.ones((H, W), np.uint8), rover=rover.astype(np.uint8),
+                        unseen=unseen.astype(np.uint8))
+    img = np.full((H, W, 3), 120, np.uint8); img[700:720, 100:140] = (40, 80, 120)       # the flat brown of an unseen patch
+    cv2.imwrite(str(out / "x_rover_ods_centre.png"), img)
+    (out / "x_rover_ods.json").write_text(json.dumps({"nadir_mark": {"radius_deg": 12.0, "in_centre_panorama": False}}))
     rec = RS.from_folder(out)
-    assert rec["experimental"] and rec["triangles"] > 1000 and rec["panorama_rows"] == [150, 230]
+    assert rec["experimental"] and rec["step_px"] == 2 and rec["panorama_rows"] == [600, H] and rec["nadir_excluded_deg"] is None
+    assert rec["unseen_pixels_healed"] == 800 and rec["behind"]["triangles"] > 500 and rec["behind"]["head_radius_m"] == 0.15
     doc, binary = RS.read_glb((out / rec["file"]).read_bytes())
-    a = doc["accessors"]; assert a[0]["count"] == rec["vertices"] and a[2]["count"] == 3 * rec["triangles"]
+    assert len(doc["meshes"][0]["primitives"]) == 2 and [x["name"] for x in doc["materials"]] == ["front", "behind"]
+    a = doc["accessors"]; assert a[0]["count"] == rec["vertices"] and a[2]["count"] == 3 * rec["triangles"] and a[5]["count"] == 3 * rec["behind"]["triangles"]
     iv = doc["bufferViews"][doc["images"][0]["bufferView"]]
-    img = cv2.imdecode(np.frombuffer(binary[iv["byteOffset"]:iv["byteOffset"] + iv["byteLength"]], np.uint8), 1)
-    assert img.shape == (80, W, 3) and doc["buffers"][0]["byteLength"] == len(binary)
-    np.savez_compressed(out / "y_ods_centre_depth.npz", range=rng, label=np.ones((H, W), np.uint8))
-    (out / "x_rover_ods_centre_depth.npz").unlink()
+    tex = cv2.imdecode(np.frombuffer(binary[iv["byteOffset"]:iv["byteOffset"] + iv["byteLength"]], np.uint8), 1)
+    assert tex.shape == (H - 600, W, 3) and doc["buffers"][0]["byteLength"] == len(binary)
+    assert abs(int(tex[110, 120, 0]) - 120) < 4                              # the unseen patch took its surroundings' colour
+    few = RS.from_folder(out, max_triangles=30000)                           # over the limit: a coarser step
+    assert few["step_px"] > 2 and few["triangles"] + few["behind"]["triangles"] <= 30000
+    (out / "x_rover_ods.json").write_text(json.dumps({"nadir_mark": {"radius_deg": 12.0}}))      # before 0.98.4: the mark is in the picture
+    old = RS.from_folder(out)
+    assert old["nadir_excluded_deg"] == 12.5 and old["panorama_rows"][1] < H
+    np.savez_compressed(out / "x_rover_ods_centre_depth.npz", range=rng, label=np.ones((H, W), np.uint8))
     assert RS.from_folder(out) is None                    # a depth without the rover flag: nothing made
     w = tmp_path / "web"; (w / "panos").mkdir(parents=True)
     rs = web.rover_surface(out, w)
     assert rs["file"] == "panos/" + rec["file"] and (w / rs["file"]).is_file() and web.rover_surface(tmp_path / "none", w) is None
+
+
+def test_heal_sky_replaces_a_frame_shaped_patch_and_leaves_a_clean_sky():
+    """0.98.4 (Christian, 14 Nov 2026: "The sky needs an extra check at the end to heal over any dark bands or other
+    artifacts"): a brighter rectangle in a sky that brightens towards the horizon is brought to the sky around it,
+    the horizon's own gradient stays, and a clean sky is not touched."""
+    import numpy as np
+    from mppp.ibr import ods
+    H, W = 512, 1024
+    el = (90.0 - (np.arange(H) + 0.5) / H * 180.0)[:, None]
+    sky = np.clip(120.0 + 60.0 * np.exp(-np.clip(el, 0, 90) / 15.0), 0, 255) * np.ones((1, W))
+    img = np.repeat(sky[..., None], 3, axis=2).astype(np.uint8)
+    img[H // 2:] = 60
+    weight = ((el > 3.0) * np.ones((1, W))).astype(np.float32)
+    clean = img.copy()
+    assert ods.heal_sky(clean, weight)["pixels"] == 0 and np.array_equal(clean, img)
+    bad = img.copy()
+    bad[100:180, 300:420] = np.clip(bad[100:180, 300:420].astype(np.float32) * 1.3, 0, 255).astype(np.uint8)   # a frame 30 % brighter
+    bad[60:200, 700:712] = (bad[60:200, 700:712] * 0.7).astype(np.uint8)                                          # a dark band
+    before = np.abs(bad.astype(np.float32) - img).max(axis=2)
+    rep = ods.heal_sky(bad, weight)
+    after = np.abs(bad.astype(np.float32) - img).max(axis=2)
+    assert rep["pixels"] > 5000 and before[140, 360] > 35 and after[140, 360] < 0.5 * before[140, 360]
+    assert after[130, 706] < 0.35 * before[130, 706]                       # the band is gone
+    assert np.array_equal(bad[H // 2:], img[H // 2:])                      # nothing below the horizon
+    far = np.s_[20:240, 0:150]                                             # sky far from both: its gradient kept
+    assert np.abs(bad[far].astype(np.float32) - img[far]).max() <= 2

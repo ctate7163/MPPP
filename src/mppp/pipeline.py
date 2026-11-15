@@ -501,6 +501,9 @@ def zcam_zooms(settings: Settings, site_rec: Optional[Dict[str, Any]]) -> List[i
     only = settings.zcam_zooms_only
     if only:                                     # 0.95.0: the run keeps the zooms being calibrated
         keep = {int(x) for x in ([only] if isinstance(only, (int, float)) else only)}
+        # 0.98.4 (Christian, 14 Nov 2026: "Remove chal rocks reg and large from the rerun list. Only rerun chal rocks
+        # tiny"): a site's "zcam_hold" zooms stay in its list and out of a filtered run, so its finished block keeps its key
+        keep -= {int(x) for x in ((site_rec or {}).get("zcam_hold") or ())}
         zooms = [x for x in zooms if x in keep]
     if set(zooms) - set(ZCAM_ZOOMS_ALL):
         raise ValueError(f"zcam_zooms = {zooms}: MPPP aligns the Mastcam-Z zooms {list(ZCAM_ZOOMS_ALL)} mm")

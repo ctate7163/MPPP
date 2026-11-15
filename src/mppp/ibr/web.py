@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -24,8 +25,11 @@ log = logging.getLogger(__name__)
 STACK = "_360_3DTD.jpg"
 VIEWS = {"standard": "", "enhanced": "_enh", "enhanced local": "_enhlocal",      # view name -> file name part
          "range log": "_range_log", "range linear": "_range_linear", "normal": "_normal"}   # 0.97.20: the model's
-VARIANTS = (("rover", "with_rover", "with the rover"), ("masked", "", "terrain only"))   # key, sub-folder, label
-DEFAULT_VIEWS = ("standard",)        # 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
+VARIANTS = (("masked", "", "terrain only"), ("rover", "with_rover", "terrain with rover"))   # key, sub-folder, label.  0.98.5
+#   (Christian, 14 Nov 2026: "a third mode after the terrain only, terrain with rover, and terrain with 3D rover"): this
+#   order, and a third variant "rover3d" - the terrain-only pictures with the rover's surface - where a surface was made
+ROVER_3D = ("rover3d", "terrain with 3D rover")
+DEFAULT_VIEWS = ("standard", "normal")   # 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
 #                                      ("standard", "enhanced") before; mppp single-sites --publish-views brings it back
 DEFAULT_WIDTH = 8192               # the square's side: 8192 x 8192 holds two 8192 x 4096 eyes (Quest 3: fine)
 
@@ -40,7 +44,8 @@ def station_files(folder: PathLike) -> Dict[str, Path]:
     return out
 
 
-MARK_SCALE = 1.15                  # the viewer's ground disc is this much wider than the mark in the panorama
+MARK_SCALE = 1.30                  # the viewer's ground disc is this much wider than the mark in the panorama.  1.15
+#                                    until 0.98.3 (Christian, 14 Nov 2026: "The blue disk should be a little larger")
 
 
 def ground_mark(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
@@ -60,7 +65,9 @@ def ground_mark(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
             if not (dst.is_file() and dst.stat().st_mtime >= tex.stat().st_mtime):
                 shutil.copyfile(tex, dst)
             return {"file": "panos/" + tex.name, "depth_m": round(float(m["depth_below_pivot_m"]), 4),
-                    "radius_m": round(MARK_SCALE * float(m["radius_m"]), 4), "mark_radius_m": round(float(m["radius_m"]), 4)}
+                    "radius_m": round(MARK_SCALE * float(m["radius_m"]), 4), "mark_radius_m": round(float(m["radius_m"]), 4),
+                    "radius_deg": float(m.get("radius_deg") or 10.0),
+                    "text_centre_azimuth_deg": round(float(m.get("text_centre_azimuth_deg") or 0.0), 2)}
     return None
 
 
@@ -79,6 +86,118 @@ def rover_surface(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
     except (OSError, ValueError):
         n = None
     return {"file": "panos/" + glb.name, "triangles": n, "experimental": True}
+
+
+WELCOME_ID = "welcome"
+WELCOME_STATION = "Sol0052_S003D2046"      # Van Zyl Overlook
+WELCOME_WIDTH = 4096
+WELCOME_GREY = (0.55, 0.20)                # the welcome picture: this x the grey of the station + this x white (washed out)
+OLD_TEST_ID = "orientation_test"           # the labelled test pair of before 0.98.4: taken off the list
+
+
+def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """0.98.4 (Christian, 14 Nov 2026: "Remove the fake ods. In its stead put van zyl grayed out with north south and
+    east in the sky in white letters ... MPPP stereo viewer for Mars 2020 Perseverance Rover in bold welcoming
+    letters a few meters from the viewer"): the list's first entry - Van Zyl Overlook's standard panorama in washed-out
+    grey, reduced to WELCOME_WIDTH.  The page draws the words over it (an entry with "welcome": true).  None when
+    Van Zyl is not published."""
+    import cv2
+    if not station_entry:
+        return None
+    var = next((v for v in station_entry.get("variants", []) if v.get("views", {}).get("standard")), None)
+    if var is None:
+        return None
+    src = web / var["views"]["standard"]
+    if not src.is_file():
+        return None
+    dst = web / "panos" / f"{WELCOME_ID}{STACK}"
+    if not (dst.is_file() and dst.stat().st_mtime >= src.stat().st_mtime):
+        img = cv2.imread(str(src), cv2.IMREAD_COLOR)
+        if img is None:
+            return None
+        if img.shape[1] > WELCOME_WIDTH:
+            img = cv2.resize(img, (WELCOME_WIDTH, WELCOME_WIDTH), interpolation=cv2.INTER_AREA)
+        g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        g = np.clip(WELCOME_GREY[0] * g + WELCOME_GREY[1] * 255.0, 0, 255).astype(np.uint8)
+        cv2.imwrite(str(dst), cv2.merge([g, g, g]), [cv2.IMWRITE_JPEG_QUALITY, 85])
+        try:
+            from .xmp import tag_stereo
+            tag_stereo(dst, extra={"Station": WELCOME_STATION})
+        except Exception:                                    # noqa: BLE001
+            pass
+    return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "MPPP stereo viewer",
+            "yaw_deg": station_entry.get("yaw_deg"),
+            "variants": [{"key": "welcome", "label": "welcome", "views": {"standard": "panos/" + dst.name}}]}
+
+
+TRAVERSE_POINTS = 400
+
+
+def traverse_map() -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """0.98.5 (Christian, 14 Nov 2026: "a little page attached to the left hand that has a little x on the map"): the
+    rover's traverse for the page's small map - (the waypoint table, {"origin_en": [E, N] metres, "xy": [[x, y], ...]
+    metres east and north of the origin, about TRAVERSE_POINTS of them in drive order}).  (None, None) without the table."""
+    try:
+        from ..waypoints.table import load_waypoints, _props, _en
+        wp = load_waypoints()
+        pts = []
+        for f in wp.get("features", []):
+            pr = _props(f)
+            en = _en(pr)
+            if en is not None and pr.get("sol") is not None:
+                pts.append((int(pr["sol"]), int(pr.get("site") or 0), int(pr.get("drive") or 0), float(en[0]), float(en[1])))
+        if len(pts) < 2:
+            return None, None
+        pts.sort()
+        e0, n0 = min(p[3] for p in pts), min(p[4] for p in pts)
+        k = max(1, len(pts) // TRAVERSE_POINTS)
+        keep = pts[::k] + ([pts[-1]] if (len(pts) - 1) % k else [])
+        return wp, {"origin_en": [round(e0, 1), round(n0, 1)], "xy": [[round(p[3] - e0, 1), round(p[4] - n0, 1)] for p in keep],
+                    "note": "metres east and north of origin_en (the mission's map frame); the rover's waypoints in order"}
+    except Exception as e:                                   # noqa: BLE001 - the map is an extra
+        log.info("publish: no traverse map (%s)", e)
+        return None, None
+
+
+def station_on_map(label: str, wp: Optional[Dict[str, Any]]) -> Optional[List[float]]:
+    """[x, y] of a station ("...S003D2046...") in the traverse map's metres, or None."""
+    m = re.search(r"S(\d{3})D(\d{4})", label)
+    if not m or not wp:
+        return None
+    try:
+        from ..waypoints.table import waypoint_for_site_drive, _props, _en
+        f = waypoint_for_site_drive(wp, int(m.group(1)), int(m.group(2)))
+        en = _en(_props(f)) if f else None
+        ens = [_en(_props(x)) for x in wp.get("features", [])]
+        ens = [x for x in ens if x is not None]
+        if en is None or not ens:
+            return None
+        return [round(float(en[0]) - min(x[0] for x in ens), 1), round(float(en[1]) - min(x[1] for x in ens), 1)]
+    except Exception:                                        # noqa: BLE001
+        return None
+
+
+def station_info(folder: Path) -> Dict[str, Any]:
+    """{"site_name", "sols"} of a variant's folder, from its panorama record's mark (the page's A button shows them)."""
+    for j in sorted(folder.glob("*ods.json")):
+        try:
+            m = json.loads(j.read_text(encoding="utf-8")).get("nadir_mark") or {}
+        except (OSError, ValueError):
+            continue
+        out: Dict[str, Any] = {}
+        for line in (m.get("lines") or []):
+            g = re.match(r"^Sols? ([0-9][0-9,\s\-]*?)(?: - (.+))?$", str(line).strip())
+            if not g:
+                continue
+            nums = [int(x) for x in re.findall(r"\d+", g.group(1))]
+            if "-" in g.group(1) and len(nums) == 2:
+                nums = list(range(nums[0], nums[1] + 1))
+            out["sols"] = sorted(set(nums))
+            if g.group(2):
+                out["site_name"] = g.group(2).strip()
+            break
+        return out
+    return {}
 
 
 def _copy(src: Path, dst: Path, width: int, quality: int) -> Dict[str, Any]:
@@ -113,6 +232,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         old = {p["id"]: p for p in json.loads(index.read_text(encoding="utf-8")).get("panos", [])}
     except (OSError, ValueError):
         old = {}
+    wp, traverse = traverse_map()
     bad = [v for v in views if v not in VIEWS]
     if bad:
         raise ValueError(f"views {bad}: one of {list(VIEWS)}")
@@ -120,6 +240,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
     for d in sorted(p for p in out_root.iterdir() if p.is_dir()):
         if stations and d.name not in stations:
             continue
+        third = None
         entry: Dict[str, Any] = {"id": d.name, "title": d.name, "variants": [], "mppp": __version__,
                                  "published": time.strftime("%Y-%m-%d")}
         entry.update({k: v for k, v in ((titles or {}).get(d.name) or {}).items() if v is not None})
@@ -141,15 +262,41 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
                 gm = ground_mark(d / sub, web)
                 if gm:
                     var["ground_mark"] = gm
-                if key == "masked":                      # 0.98.2 (experimental): the rover as a surface on the terrain
-                    rs = rover_surface(d / "with_rover", web)
-                    if rs:
-                        var["rover_surface"] = rs
                 entry["variants"].append(var)
+                if key == "masked":                      # 0.98.2 (experimental): the rover as a surface on the terrain;
+                    rs = rover_surface(d / "with_rover", web)        # 0.98.5: a variant of its own, listed last
+                    if rs:
+                        third = dict(var, key=ROVER_3D[0], label=ROVER_3D[1], rover_surface=rs)
+        # 0.98.4 (Christian, 14 Nov 2026: "always at ground level even when the rover is displayed"): with the rover in
+        # the picture the mark was put at the deck's depth under the mast; the page's disc lies on the terrain in both
+        # variants - the terrain-only variant's depth, the disc as wide there as it looks in the panorama
+        ground = next((v["ground_mark"] for v in entry["variants"] if v["key"] == "masked" and v.get("ground_mark")), None)
+        for v in entry["variants"]:
+            gm = v.get("ground_mark")
+            if ground and gm and v["key"] != "masked" and ground["depth_m"] > gm["depth_m"]:
+                r = float(ground["depth_m"]) * float(np.tan(np.radians(gm.get("radius_deg", 10.0))))
+                gm.update(depth_m=ground["depth_m"], mark_radius_m=round(r, 4), radius_m=round(MARK_SCALE * r, 4), at="the terrain's level")
+        if third is not None:
+            entry["variants"].append(third)
+        xy = traverse and station_on_map(d.name, wp)
+        if xy:
+            entry["map"] = xy
+        for key, sub, label in VARIANTS:                         # the A button's words
+            info = station_info(d / sub) if (d / sub).is_dir() else {}
+            if info:
+                entry.update({k: v for k, v in info.items() if k not in entry})
+                break
         if entry["variants"]:
             old[d.name] = entry
             log.info("publish: %s (%s)", d.name, ", ".join(f"{v['key']}: {len(v['views'])}" for v in entry["variants"]))
-    doc = {"title": title, "panos": [old[k] for k in sorted(old)]}
+    if old.pop(OLD_TEST_ID, None) is not None:                   # 0.98.4: "Remove the fake ods"
+        for f in (web / "panos").glob(OLD_TEST_ID + "*"):
+            f.unlink()
+    old.pop(WELCOME_ID, None)
+    first = welcome_pano(web, old.get(WELCOME_STATION))
+    doc = {"title": title, "panos": ([first] if first else []) + [old[k] for k in sorted(old)]}
+    if traverse:
+        doc["traverse"] = traverse
     index.write_text(json.dumps(doc, indent=1), encoding="utf-8")
     log.info("publish: %d stations listed in %s (%d images from this run)", len(doc["panos"]), index, n)
     return doc

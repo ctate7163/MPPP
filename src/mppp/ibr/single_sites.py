@@ -128,8 +128,9 @@ def load_config(path: Optional[PathLike] = None) -> Dict[str, Any]:
 
 def block_folder(st: Dict[str, Any], root: PathLike) -> Path:
     """The block of a station: ``work``, else the Navcam WORK folder of its ``site`` in the site definitions."""
-    if st.get("work"):
-        return Path(st["work"])
+    if st.get("work"):                                   # 0.98.4: a folder name alone is a block under the root (0.98.2's
+        w = Path(st["work"])                             # Mastcam-Z station was looked for in the current folder)
+        return w if w.is_absolute() or len(w.parts) > 1 else Path(root) / w
     from ..waypoints.sites import load_site_table, work_folder
     table = load_site_table()
     site = table["sites"].get(st["site"])
@@ -332,7 +333,7 @@ def _summary_line(run: Dict[str, Any], variant: str, codes: Dict[str, int], mins
 
 
 def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool = False, retone: bool = False,
-            force: bool = False) -> int:
+            force: bool = False, after_station=None) -> int:
     """Runs the plan.  0.97.2: a step whose command, code, inputs and upstream steps are those of its last successful
     run in that folder is skipped (``step_<name>.json`` next to its products; ``force`` runs everything); the summary
     has each step's minutes; ``single_sites_status.json`` says what is running."""
@@ -427,6 +428,14 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
         for v in run["variants"]:
             bad += any(codes[v].values())
             lines.append(_summary_line(run, v, codes[v], mins.get(v)))
+        if after_station is not None:                    # 0.98.5 (Christian, 14 Nov 2026: "Upload the ods sites as they
+            try:                                         # finish processing"): published and uploaded station by station
+                _status(out_root, started=t_run, station=run["label"], step="upload", since=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        done=done, stations=[r["label"] for r in runs])
+                done.append(f"{run['label']} upload: {after_station(run)}")
+            except Exception as e:                       # noqa: BLE001 - the next station still runs
+                done.append(f"{run['label']} upload: failed ({e})")
+                print(f"######## {run['label']}: publishing failed ({e})", flush=True)
     _status(out_root, started=t_run, station=None, step=None, finished=time.strftime("%Y-%m-%dT%H:%M:%S"), done=done,
             stations=[r["label"] for r in runs], failed=int(bad))
     (out_root / "single_sites_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -474,7 +483,7 @@ def add_parser(sub) -> None:
                    help="0.97.21: after the run, publish (into docs/ods of this checkout unless --publish names a folder), "
                         "commit the panoramas there and push the branch to origin - the code's commits go with it")
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
-    p.add_argument("--publish-views", nargs="+", default=["standard"], metavar="VIEW",
+    p.add_argument("--publish-views", nargs="+", default=["standard", "normal"], metavar="VIEW",
                    help="standard, enhanced, 'enhanced local' (default: standard - 0.97.18: the enhanced view is not published)")
     p.add_argument("--rover-surface", action="store_true",
                    help="0.98.2, experimental: also render the with-rover panorama from the pivot and make the rover a "
@@ -508,30 +517,44 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         a.upload = False
     if getattr(a, "upload", False) and not a.publish:    # 0.97.21: the checkout's own viewer folder
         a.publish = str(Path(__file__).resolve().parents[3] / "docs" / "ods")
-    rc = 0 if (a.publish and a.publish_only) else run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone,
-                                                          force=getattr(a, "force", False))
-    if getattr(a, "rover_surface", False) and not a.squares_only:      # experimental: never fails the run
-        from . import rover_surface as _rs
-        logging.basicConfig(level=logging.INFO, format="%(message)s")
-        for r in runs:
-            try:
-                _rs.from_folder(Path(r["out"]) / "with_rover")
-            except Exception as e:                       # noqa: BLE001
-                print(f"rover surface of {r['label']}: failed ({e})")
-    if a.publish:
+    st_cfg = cfg.get("stations") or {}
+
+    def finish(labels, quiet=False):
+        """The rover surfaces (--rover-surface), the publishing and the upload of these stations; a line saying what happened."""
+        if getattr(a, "rover_surface", False) and not a.squares_only:      # experimental: never fails the run
+            from . import rover_surface as _rs
+            logging.basicConfig(level=logging.INFO, format="%(message)s")
+            for r in runs:
+                if r["label"] in labels:
+                    try:
+                        _rs.from_folder(Path(r["out"]) / "with_rover")
+                    except Exception as e:               # noqa: BLE001
+                        print(f"rover surface of {r['label']}: failed ({e})")
+        if not a.publish:
+            return "not published"
         from . import web
         logging.basicConfig(level=logging.INFO, format="%(message)s")
-        st = cfg.get("stations") or {}
         from .nadir import block_name                    # 0.97.17: the block's name without its size word
         titles = {k: {"title": v.get("title") or f"{v.get('name') or block_name(v.get('site')) or ''} {k}".strip(),
-                      "note": v.get("web_note"), "yaw_deg": v.get("yaw_deg")} for k, v in st.items()}
-        doc = web.publish(out_root, a.publish, stations=[r["label"] for r in runs], views=a.publish_views,
-                          width=a.publish_width, titles=titles)
+                      "note": v.get("web_note"), "yaw_deg": v.get("yaw_deg")} for k, v in st_cfg.items()}
+        doc = web.publish(out_root, a.publish, stations=list(labels), views=a.publish_views, width=a.publish_width, titles=titles)
         if not web.install_viewer(a.publish):
             print("the viewer page (docs/ods/index.html, vendor/) is not in this installation: copy it from the repository")
-        print(f"published: {len(doc['panos'])} stations in {Path(a.publish) / 'panos.json'}")
+        msg = f"published: {len(doc['panos'])} stations in {Path(a.publish) / 'panos.json'}"
+        ok = True
         if getattr(a, "upload", False):
-            up = web.upload(a.publish, [r["label"] for r in runs])
-            print(("uploaded: " if up["ok"] else "NOT uploaded: ") + up["message"])
-            rc = rc or (0 if up["ok"] else 1)
+            up = web.upload(a.publish, list(labels))
+            ok = bool(up["ok"])
+            msg = ("uploaded: " if ok else "NOT uploaded: ") + up["message"]
+        if not quiet:
+            print(msg, flush=True)
+        finish.failed = getattr(finish, "failed", False) or not ok
+        return msg
+
+    each = (lambda run: finish([run["label"]])) if (a.publish and not a.publish_only and not a.squares_only) else None
+    rc = 0 if (a.publish and a.publish_only) else run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone,
+                                                          force=getattr(a, "force", False), after_station=each)
+    if each is None or getattr(finish, "failed", False):         # all at once, or again what an upload left behind
+        finish([r["label"] for r in runs])
+    rc = rc or (1 if getattr(finish, "failed", False) and getattr(a, "upload", False) else 0)
     return rc
