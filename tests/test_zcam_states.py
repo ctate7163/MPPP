@@ -230,3 +230,11 @@ def test_run_key_of_a_site_without_100mm_ignores_100_in_the_zoom_filter(tmp_path
     assert key("seitah_overlook", [34, 48, 63, 79, 110]) != key("seitah_overlook", [34, 48, 63, 79, 100, 110])
     # 0.98.4: Chal Rocks large holds its 26 and 100 mm ("zcam_hold"), so its key does not change either
     assert key("chal_rocks_large", [34, 48, 63, 79, 110]) == key("chal_rocks_large", [34, 48, 63, 79, 100, 110])
+
+
+def test_vf_points_of_the_101_station_joint_ship_with_the_studies():
+    """0.98.10: the deck fiducial figure can show the vicarious fiducials of the 14 Nov deck joint."""
+    from mppp_studies.calibration import fiducials as FD
+    d = FD.load_vf_points()
+    assert len(d["points"]) == 24 and set(d["weak"]) == {"VF03", "VF05", "VF09", "VF19", "VF21"}
+    assert all(len(v["rnav_mm"]) == 3 and -1700 < v["rnav_mm"][2] < -1000 for v in d["points"].values())

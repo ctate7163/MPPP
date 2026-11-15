@@ -3,6 +3,16 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.10 — 2026-11-15
+
+Christian: "make a version of the deck fiducial figure that also shows the locations of the vfs".
+
+- `make_figures` also writes `deck_fiducials_and_vfs_<tag>.png` (and `_early_`): the deck fiducial figure with the
+  vicarious fiducials drawn where the constrained model puts them (blue; the weak ones orange; the tag corners white).
+  They are not measured in the frame and not checked for hiding by the mast or arm.
+- `mppp_studies/calibration/data/vf_points_ALL_20261114.json`: the VFs of the 101-station deck joint of 14 Nov, with
+  their station-jackknife sd, archive residual and station-frame finds; `fiducials.load_vf_points()`.
+
 ## 0.98.9 — 2026-11-15
 
 - `Sol0204_S007D1836` and `Sol0248_S008D0000` use the Seitah huge block: they failed at once on 14 Nov because

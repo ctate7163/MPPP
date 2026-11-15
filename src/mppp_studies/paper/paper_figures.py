@@ -305,6 +305,8 @@ def main(argv=None) -> int:
             try:
                 dres = FD.deck_frame_models(dframe, chain, a.cmods)
                 FD.plot_deck_frame(dres, out / f"deck_fiducials_label_vs_constrained{dname}_{tag}.png", dpi=a.dpi)
+                if dres.get("vf", {}).get("points"):      # 0.98.10: the same figure with the vicarious fiducials
+                    FD.plot_deck_frame(dres, out / f"deck_fiducials_and_vfs{dname}_{tag}.png", dpi=a.dpi, show_vf=True)
                 (out / f"deck_fiducials_label_vs_constrained{dname}_{tag}.json").write_text(
                     json.dumps({k: v for k, v in dres.items() if k != "image"}, indent=1), encoding="utf-8")
             except Exception as e:                                         # noqa: BLE001
