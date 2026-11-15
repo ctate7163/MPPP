@@ -182,7 +182,7 @@ def station_on_map(label: str, wp: Optional[Dict[str, Any]]) -> Optional[List[fl
 
 
 def station_info(folder: Path) -> Dict[str, Any]:
-    """{"site_name", "sols"} of a variant's folder, from its panorama record's mark (the page's A button shows them)."""
+    """{"site_name", "sols"} of a variant's folder, from its panorama record's mark (the page's X button (A before 0.98.13) shows them)."""
     for j in sorted(folder.glob("*ods.json")):
         try:
             m = json.loads(j.read_text(encoding="utf-8")).get("nadir_mark") or {}
@@ -286,7 +286,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         xy = traverse and station_on_map(d.name, wp)
         if xy:
             entry["map"] = xy
-        for key, sub, label in VARIANTS:                         # the A button's words
+        for key, sub, label in VARIANTS:                         # the X button's words (info)
             info = station_info(d / sub) if (d / sub).is_dir() else {}
             if info:
                 entry.update({k: v for k, v in info.items() if k not in entry})

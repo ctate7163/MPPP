@@ -12,7 +12,7 @@
   Another image list: .../ods/?index=https://<same origin or CORS-enabled host>/panos.json
   Keys: left / right arrows = station, V = variant, E = view, I = info, L = the other eye (on a screen), drag = look, wheel = zoom.
   Headset (0.98.4): right trigger = next station, left trigger = the one before, thumbstick left / right = turn,
-  A = info page on the left hand (site, sol, map), X = the next view (standard, normal, range log), grip = variant
+  X = info page on the left hand (site, sol, map), A = the next view (standard, normal, range log), grip = variant   (0.98.13: A and X swapped)
   (terrain only, terrain with rover (projected), terrain with rover (3D model)).
 -->
 <style>
@@ -273,7 +273,7 @@ function showWelcome(on) {
     welcome.add(place(textPanel([{ text: 'MPPP stereo viewer', px: 230, weight: 900 },
                                  { text: 'Mars 2020 Perseverance rover', px: 150, weight: 700 }]), az0, 14, 5, 4.2));
     welcome.add(place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
-                                 { text: 'A: info and map   |   X: view   |   grip: rover on, off or 3D', px: 84, weight: 600 }],
+                                 { text: 'X: info and map   |   A: view   |   grip: rover on, off or 3D', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)' }), az0, -6, 5, 3.6));
   }
   welcome.visible = !!on;
@@ -509,7 +509,7 @@ function buttons(dt) {                                           // button 4 is 
     if (!gp) continue;
     const b = gp.buttons[4];
     const was = held.get(src) || false, is = !!(b && b.pressed);
-    if (is && !was) { if (src.handedness === 'left') step('w', 1); else toggleInfo(); }      // X: the next view (standard, normal ...); A: info
+    if (is && !was) { if (src.handedness === 'left') toggleInfo(); else step('w', 1); }      // 0.98.13: X (left): info; A (right): the next view
     held.set(src, is);
     const x = gp.axes.length >= 4 ? gp.axes[2] : (gp.axes[0] || 0);                          // thumbstick left / right
     if (Math.abs(x) > STICK_DEAD) {                                                          // right: the view turns to the right

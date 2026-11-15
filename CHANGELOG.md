@@ -3,6 +3,11 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.13 — 2026-11-15
+
+- The viewer (Christian: "switch the A and the X buttons"): X (left hand, where the page appears) opens the info page;
+  A (right hand) steps to the next view (standard, normal, range log).  The welcome text says so.
+
 ## 0.98.12 — 2026-11-15
 
 Christian: "Include a version of the vf figure in the official make figures list. The normal map should not include
