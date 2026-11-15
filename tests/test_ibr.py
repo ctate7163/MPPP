@@ -1101,7 +1101,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert [c["variant"] for c in z] == ["masked"] * 4 and z[-1]["argv"][-8:] == ["--cameras", "Z", "--sols", "690", "--zcam-scale", "0.5", "--fill-cameras", "NF"]
     rs = [c for c in SS.plan(cfg, tmp_path, labels=["Sol0052_S003D2046"], rover_surface=True)[0]["commands"] if c["step"] == "ods"]
     assert [c["argv"][-4:] == ["--eyes", "left", "right", "centre"] for c in rs] == [c["variant"] == "rover" for c in rs]
-    new98p6 = {"Sol0009_S003D0000", "Sol0180_S007D0000", "Sol0204_S007D1836", "Sol0248_S008D0000", "Sol0361_S011D0000", "Sol0565_S029D0000", "Sol1955_S091D0124", "Sol1965_S091D0806"}      # 0.98.6: eight more stations (Christian, 14 Nov 2026)
+    new98p6 = {"Sol0009_S003D0000", "Sol0180_S007D0000", "Sol0204_S007D1836", "Sol0248_S008D0000", "Sol0361_S011D0000", "Sol0565_S029D0000", "Sol1955_S091D0124", "Sol1965_S091D0806", "Sol1189_S054D1152"}      # 0.98.6, 0.98.7: eight more stations (Christian, 14 Nov 2026)
     assert new98p6 <= set(cfg["stations"]) and all(cfg["stations"][k]["frames"]["images"] and cfg["stations"][k]["context"] for k in new98p6)
     assert len(cfg["stations"]["Sol0474_S026D0850"]["context"]) == 6
     assert set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"} - new98p6 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
@@ -1118,7 +1118,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert [Path(r["work"]).name for r in runs][8:] == [
         "mars2020_sol_0001_butler_landing_zcam", "mars2020_sol_0178_rochette_zcam", "mars2020_sol_0202_seitah_north_large",
         "mars2020_sol_0202_seitah_north_large", "mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0421_enchanted_lake_large",
-        "mars2020_sol_1948_hippo_pools", "mars2020_sol_1962_marble_mountain"]          # 0.98.6: the eight new stations' blocks
+        "mars2020_sol_1948_hippo_pools", "mars2020_sol_1962_marble_mountain", "mars2020_sol_1175_bright_angle_large"]          # 0.98.6: the eight new stations' blocks
     runs = runs[:8]
     assert [Path(r["work"]).name for r in runs] == ["mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop",
                                                     "mars2020_sol_0413_threeforks_large", "mars2020_sol_0460_rockytop",

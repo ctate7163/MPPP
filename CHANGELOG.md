@@ -13,6 +13,8 @@ larger put the made by C. Tate on a third line."
 - Three rows: the rover and the image credit; the sol and the site, now the tallest (up to 0.20 of the radius, was
   0.16); "made by C. Tate" on its own. The compass is 0.45 of the disc (was 0.50) to make room.
 - The viewer cuts the disc into compass and text ring where the picture says (`ground_mark.split`).
+- New station `Sol1189_S054D1152` (Bright Angel large block; 10 + 10 Navcam frames between the two Christian named,
+  with the three context pairs he named).
 - In the viewer's headset disc the ring still turns to face the viewer, so the 135 degrees shows in the panorama's
   own mark and in other viewers.
 
