@@ -2137,8 +2137,11 @@ def test_nadir_mark_lines_credit_and_disc():
     m = nadir.make_mark(W, H, lines, centre_azimuth_deg=90.0)          # the rover's front to the east
     band = H - m["row0"]
     assert nadir.NADIR_MARK_DEG == 10.0 and m["row0"] == int(np.ceil(H * 170 / 180)) and m["alpha"].shape == (band, W)   # 0.97.24: half the size
-    assert len(m["text"]) == 2 and "Rockytop" in m["text"][0] and "C. Tate" in m["text"][1]       # two rows
-    text_rows = int(0.47 * band)                                       # the two rows of text; the compass is nearer the nadir
+    # 0.98.7: three rows - the rover and the credit, the sol and the site (the tallest), the author
+    assert len(m["text"]) == 3 and "Rockytop" in m["text"][1] and m["text"][2] == "made by C. Tate" and "credit" in m["text"][0]
+    assert m["rows"][1]["height_px"] > m["rows"][0]["height_px"] > m["rows"][2]["height_px"]
+    assert nadir.COMPASS_RADIUS_IN_DISC < nadir.TEXT_INNER_EDGE_IN_DISC and nadir.TEXT_AZIMUTH_FROM_FORWARD_DEG == 135.0
+    text_rows = int(0.47 * band)                                       # the rows of text; the compass is nearer the nadir
     ink = m["alpha"][:text_rows] > 0.5
     cols = np.flatnonzero(ink.any(axis=0))
     rows = np.flatnonzero(ink.any(axis=1))
@@ -2149,10 +2152,10 @@ def test_nadir_mark_lines_credit_and_disc():
     assert m["rows"][1]["height_px"] >= 0.7 * m["rows"][0]["height_px"]            # 0.97.24: the second row larger (0.45 before)
     # 0.97.24: the compass in the middle, N at the panorama's north whatever way the rover faces
     comp = m["alpha"][int(0.52 * band):] > 0.5
-    assert comp.any() and m["compass"]["radius_in_disc"] == 0.5
+    assert comp.any() and m["compass"]["radius_in_disc"] == 0.45
     td = nadir.top_down(m, 512)                                        # seen from above: north up, east right
-    rose = nadir.compass_rose(256)
-    mid = td[128:384, 128:384]
+    rose = nadir.compass_rose(230)                                     # 0.98.7: the compass is 0.45 of the disc
+    mid = td[141:371, 141:371]
     c0 = np.corrcoef(mid.ravel(), rose.ravel())[0, 1]
     assert c0 > 0.5 and all(np.corrcoef(np.rot90(mid, k).ravel(), rose.ravel())[0, 1] < c0 - 0.15 for k in (1, 2, 3))   # not turned
     assert rose[30:118, 118:138].mean() > 2 * rose[138:226, 118:138].mean()        # the solid point is the north one
@@ -2452,7 +2455,7 @@ def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
     from mppp.ibr import nadir
     W, H = 4096, 2048
     m = nadir.make_mark(W, H, nadir.mark_lines(["NLF_0052_a"], "Van Zyl Overlook"), centre_azimuth_deg=180.0)
-    assert m["rows"][0]["height_px"] > m["rows"][1]["height_px"] and m["rows"][0]["span_deg"] <= 180.5
+    assert m["rows"][1]["height_px"] > m["rows"][0]["height_px"] and m["rows"][0]["span_deg"] <= 180.5     # 0.98.7: the second is the larger
     P, depth = np.array([1.0, 2.0, 3.0]), 0.9
     m0 = m["row0"] - 46
     got = {}

@@ -132,9 +132,18 @@ function discPart(g) {                          // texture coordinates of the wh
   return m;
 }
 const markDisc = new THREE.Group();             // x east, y north before it is laid flat
-const markInner = discPart(new THREE.CircleGeometry(MARK_SPLIT, 96));
-const markOuter = discPart(new THREE.RingGeometry(MARK_SPLIT, 1, 96, 1));
-markDisc.add(markInner, markOuter);
+let markInner = null, markOuter = null, markSplit = 0;
+function cutMark(split) {                       // 0.98.7: the cut follows the picture (ground_mark.split)
+  if (split === markSplit) return;
+  const turn = markOuter ? markOuter.rotation.z : 0;
+  for (const m of [markInner, markOuter]) if (m) { markDisc.remove(m); m.geometry.dispose(); }
+  markInner = discPart(new THREE.CircleGeometry(split, 96));
+  markOuter = discPart(new THREE.RingGeometry(split, 1, 96, 1));
+  markOuter.rotation.z = turn;
+  markDisc.add(markInner, markOuter);
+  markSplit = split;
+}
+cutMark(MARK_SPLIT);
 markDisc.rotation.x = -Math.PI / 2;
 markDisc.visible = false;
 world.add(markDisc);
@@ -152,6 +161,7 @@ async function showMark(gm) {
     t.needsUpdate = true;
     if (markMaterial.map) { const o = markMaterial.map; markMaterial.map = null; o.dispose(); if (o.image && o.image.close) o.image.close(); }
     markMaterial.map = t; markMaterial.needsUpdate = true;
+    cutMark(gm.split > 0.2 && gm.split < 0.9 ? gm.split : MARK_SPLIT);
     markDisc.scale.set(gm.radius_m, gm.radius_m, 1);
     markDisc.position.set(0, -gm.depth_m, 0);
     markTextAz = THREE.MathUtils.degToRad(gm.text_centre_azimuth_deg || 0);    // where the text's middle is in the picture

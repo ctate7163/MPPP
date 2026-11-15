@@ -1865,7 +1865,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         except Exception as e:                           # noqa: BLE001 - then it starts at north
             log.warning("ods: no rover pose for the nadir mark (%s); its text is centred on north", e)
         mark = _nadir.make_mark(width, height, lines, _nadir.NADIR_MARK_DEG if nadir_mark_deg is None else nadir_mark_deg,
-                                azimuth0_deg, centre_azimuth_deg=fwd)
+                                azimuth0_deg, centre_azimuth_deg=fwd + _nadir.TEXT_AZIMUTH_FROM_FORWARD_DEG)
         # 0.97.13: the disc lies on the surface under the mast - the median depth below the pivot of what the rays at
         # the disc's rim meet (the deck with the rover shown, the ground without)
         rim = int(np.clip(mark["row0"], 0, height - 1))
@@ -2052,6 +2052,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             rec_out["nadir_mark"].update({"texture": tex.name,
                                           "radius_m": float(mark0["depth_m"] * np.tan(np.radians(mark0["radius_deg"]))),
                                           "compass": mark0.get("compass"),
+                                          "text_inner_edge_in_disc": float(_nadir.TEXT_INNER_EDGE_IN_DISC),
                                           "texture_note": "the mark seen from above: north up, east to the right, the disc's rim at the "
                                                           "picture's sides; on the ground it is radius_m wide at depth_below_pivot_m "
                                                           "below the pivot (the viewer lays it there as a surface)"})
