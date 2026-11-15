@@ -410,34 +410,64 @@
    "title": "Three Forks Sol0686_S032D1184",
    "variants": [
     {
-     "key": "rover",
-     "label": "with the rover",
-     "views": {
-      "standard": "panos/Sol0686_S032D1184_rover_360_3DTD.jpg"
-     },
-     "ground_mark": {
-      "file": "panos/Sol0686_S032D1184_rover_nadir_mark.png",
-      "depth_m": 0.8464,
-      "radius_m": 0.1716,
-      "mark_radius_m": 0.1492
-     }
-    },
-    {
      "key": "masked",
      "label": "terrain only",
      "views": {
-      "standard": "panos/Sol0686_S032D1184_360_3DTD.jpg"
+      "standard": "panos/Sol0686_S032D1184_360_3DTD.jpg",
+      "normal": "panos/Sol0686_S032D1184_normal_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0686_S032D1184_nadir_mark.png",
       "depth_m": 1.94,
-      "radius_m": 0.3934,
-      "mark_radius_m": 0.3421
+      "radius_m": 0.4447,
+      "mark_radius_m": 0.3421,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 305.52
+     }
+    },
+    {
+     "key": "rover",
+     "label": "terrain with rover (projected)",
+     "views": {
+      "standard": "panos/Sol0686_S032D1184_rover_360_3DTD.jpg",
+      "normal": "panos/Sol0686_S032D1184_rover_normal_360_3DTD.jpg"
+     }
+    },
+    {
+     "key": "rover3d",
+     "label": "terrain with rover (3D model)",
+     "views": {
+      "standard": "panos/Sol0686_S032D1184_360_3DTD.jpg",
+      "normal": "panos/Sol0686_S032D1184_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0686_S032D1184_nadir_mark.png",
+      "depth_m": 1.94,
+      "radius_m": 0.4447,
+      "mark_radius_m": 0.3421,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 305.52
+     },
+     "rover_surface": {
+      "file": "panos/Sol0686_S032D1184_rover_rover_surface.glb",
+      "triangles": 1228526,
+      "experimental": true
      }
     }
    ],
-   "mppp": "0.98.3",
-   "published": "2026-11-14"
+   "mppp": "0.98.8",
+   "published": "2026-11-15",
+   "map": [
+    10713.1,
+    1979.9
+   ],
+   "sols": [
+    686,
+    688
+   ],
+   "site_name": "Three Forks"
   },
   {
    "id": "Sol1189_S054D1152",
