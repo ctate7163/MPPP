@@ -57,6 +57,69 @@
    "published": "2026-11-14"
   },
   {
+   "id": "Sol0180_S007D0000",
+   "title": "Rochette Sol0180_S007D0000",
+   "variants": [
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol0180_S007D0000_360_3DTD.jpg",
+      "normal": "panos/Sol0180_S007D0000_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0180_S007D0000_nadir_mark.png",
+      "depth_m": 1.9477,
+      "radius_m": 0.4465,
+      "mark_radius_m": 0.3434,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 43.21
+     }
+    },
+    {
+     "key": "rover",
+     "label": "terrain with rover (projected)",
+     "views": {
+      "standard": "panos/Sol0180_S007D0000_rover_360_3DTD.jpg",
+      "normal": "panos/Sol0180_S007D0000_rover_normal_360_3DTD.jpg"
+     }
+    },
+    {
+     "key": "rover3d",
+     "label": "terrain with rover (3D model)",
+     "views": {
+      "standard": "panos/Sol0180_S007D0000_360_3DTD.jpg",
+      "normal": "panos/Sol0180_S007D0000_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0180_S007D0000_nadir_mark.png",
+      "depth_m": 1.9477,
+      "radius_m": 0.4465,
+      "mark_radius_m": 0.3434,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 43.21
+     },
+     "rover_surface": {
+      "file": "panos/Sol0180_S007D0000_rover_rover_surface.glb",
+      "triangles": 1222224,
+      "experimental": true
+     }
+    }
+   ],
+   "mppp": "0.98.8",
+   "published": "2026-11-14",
+   "map": [
+    12732.5,
+    638.4
+   ],
+   "sols": [
+    180
+   ],
+   "site_name": "Rochette"
+  },
+  {
    "id": "Sol0361_S011D0000",
    "title": "Chal Rocks and Sid Sol0361_S011D0000",
    "variants": [
