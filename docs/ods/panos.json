@@ -609,34 +609,63 @@
    "title": "Origny Sol1792_S087D0000",
    "variants": [
     {
-     "key": "rover",
-     "label": "with the rover",
-     "views": {
-      "standard": "panos/Sol1792_S087D0000_rover_360_3DTD.jpg"
-     },
-     "ground_mark": {
-      "file": "panos/Sol1792_S087D0000_rover_nadir_mark.png",
-      "depth_m": 0.8509,
-      "radius_m": 0.1725,
-      "mark_radius_m": 0.15
-     }
-    },
-    {
      "key": "masked",
      "label": "terrain only",
      "views": {
-      "standard": "panos/Sol1792_S087D0000_360_3DTD.jpg"
+      "standard": "panos/Sol1792_S087D0000_360_3DTD.jpg",
+      "normal": "panos/Sol1792_S087D0000_normal_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1792_S087D0000_nadir_mark.png",
       "depth_m": 1.9995,
-      "radius_m": 0.4054,
-      "mark_radius_m": 0.3526
+      "radius_m": 0.4583,
+      "mark_radius_m": 0.3526,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 155.27
+     }
+    },
+    {
+     "key": "rover",
+     "label": "terrain with rover (projected)",
+     "views": {
+      "standard": "panos/Sol1792_S087D0000_rover_360_3DTD.jpg",
+      "normal": "panos/Sol1792_S087D0000_rover_normal_360_3DTD.jpg"
+     }
+    },
+    {
+     "key": "rover3d",
+     "label": "terrain with rover (3D model)",
+     "views": {
+      "standard": "panos/Sol1792_S087D0000_360_3DTD.jpg",
+      "normal": "panos/Sol1792_S087D0000_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1792_S087D0000_nadir_mark.png",
+      "depth_m": 1.9995,
+      "radius_m": 0.4583,
+      "mark_radius_m": 0.3526,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 155.27
+     },
+     "rover_surface": {
+      "file": "panos/Sol1792_S087D0000_rover_rover_surface.glb",
+      "triangles": 1255596,
+      "experimental": true
      }
     }
    ],
-   "mppp": "0.98.3",
-   "published": "2026-11-14"
+   "mppp": "0.98.8",
+   "published": "2026-11-15",
+   "map": [
+    492.5,
+    459.7
+   ],
+   "sols": [
+    1792
+   ],
+   "site_name": "Origny"
   },
   {
    "id": "Sol1955_S091D0124",
