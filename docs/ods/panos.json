@@ -356,6 +356,69 @@
    ],
    "mppp": "0.98.3",
    "published": "2026-11-14"
+  },
+  {
+   "id": "Sol1965_S091D0806",
+   "title": "Marble Mountain Sol1965_S091D0806",
+   "variants": [
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol1965_S091D0806_360_3DTD.jpg",
+      "normal": "panos/Sol1965_S091D0806_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1965_S091D0806_nadir_mark.png",
+      "depth_m": 2.0009,
+      "radius_m": 0.4587,
+      "mark_radius_m": 0.3528,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 32.16
+     }
+    },
+    {
+     "key": "rover",
+     "label": "terrain with rover (projected)",
+     "views": {
+      "standard": "panos/Sol1965_S091D0806_rover_360_3DTD.jpg",
+      "normal": "panos/Sol1965_S091D0806_rover_normal_360_3DTD.jpg"
+     }
+    },
+    {
+     "key": "rover3d",
+     "label": "terrain with rover (3D model)",
+     "views": {
+      "standard": "panos/Sol1965_S091D0806_360_3DTD.jpg",
+      "normal": "panos/Sol1965_S091D0806_normal_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1965_S091D0806_nadir_mark.png",
+      "depth_m": 2.0009,
+      "radius_m": 0.4587,
+      "mark_radius_m": 0.3528,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 32.16
+     },
+     "rover_surface": {
+      "file": "panos/Sol1965_S091D0806_rover_rover_surface.glb",
+      "triangles": 1272912,
+      "experimental": true
+     }
+    }
+   ],
+   "mppp": "0.98.8",
+   "published": "2026-11-14",
+   "map": [
+    785.3,
+    1018.2
+   ],
+   "sols": [
+    1965
+   ],
+   "site_name": "Marble Mountain"
   }
  ],
  "traverse": {
