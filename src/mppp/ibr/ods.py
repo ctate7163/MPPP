@@ -1131,7 +1131,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     gfill = fill_ground(rgb, source, ground) if ground_fill else np.zeros(label.shape, bool)
     sky = fill_sky(rgb, source, label) if sky_fill else np.zeros(label.shape, bool)
     evened = even_sky(rgb, label) if sky_fill else {}
-    healed = heal_sky(rgb, evened.get("weight")) if sky_fill else {}       # 0.98.4: the last check on the sky
+    healed = heal_sky(rgb, evened.get("weight"), label) if sky_fill else {}       # 0.98.4: the last check on the sky
     if checked:                                              # and any surface still without a source
         _brown((source == -1) & ((label == LABEL_MESH) | (label == LABEL_PLANE)))
     return {"brown_filled": brown, "rover": rover_px, "rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
@@ -1371,7 +1371,58 @@ SKY_HEAL_EDGE = 0.012            # ... and so is one at a brightness step per pi
 SKY_HEAL_GROW_FRAC = 0.006       # the replaced area grows by this share of the width, with a soft rim
 
 
-def heal_sky(rgb: np.ndarray, weight: Optional[np.ndarray]) -> Dict[str, Any]:
+SKY_HEAL_RB_SHARE = 0.3          # ... a far pixel is sky when its red / blue is within this share of the way to the terrain's
+SKY_HEAL_LIGHT = 0.9             # ... and it is at least this bright against the sky just above ("the light sky")
+SKY_HEAL_LIGHT_ROWS_DEG = 2.0    #     (the median of the lowest rows of the known sky, this tall)
+SKY_HEAL_LINE_FRAC = 0.012       # the skyline found is the median over this share of the width: no column reaches lower alone
+SKY_HEAL_RB_MIN_GAP = 0.06       # the sky is told from far hills by red / blue when the terrain's exceeds the sky's by this
+
+
+def sky_to_skyline(rgb: np.ndarray, label: np.ndarray, weight: np.ndarray) -> np.ndarray:
+    """0.98.6 (Christian, 14 Nov 2026: the heal "needs to come down lower all the way to where the light sky meets
+    the horizon"): the sky's weight (at ``weight``'s size) carried down each column to the skyline.  :func:`even_sky`
+    stops 1.5 degrees above the highest edge nearby - and a frame's bright edge near the horizon is such an edge.
+    Here the sky is told from the far hills by colour: red / blue of the sky well above the skyline against that of
+    the terrain; a "far" pixel on the sky's side of the middle, reached from above without a break, is sky.  The
+    last row above the hills is left out.  Returns ``weight`` unchanged when the two colours are too alike."""
+    import cv2
+    h, w = weight.shape
+    small = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_AREA).astype(np.float32)
+    lab = cv2.resize(label.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+    rb = small[..., 0] / np.maximum(small[..., 2], 1.0)
+    known = weight > 0.5
+    terr = (lab == LABEL_MESH) | (lab == LABEL_PLANE)
+    if known.sum() < 50 or terr.sum() < 50:
+        return weight
+    r_sky, r_ter = float(np.median(rb[known])), float(np.median(rb[terr]))
+    if r_ter - r_sky < SKY_HEAL_RB_MIN_GAP:
+        return weight
+    from scipy.ndimage import median_filter, minimum_filter1d
+    L = small.mean(axis=2)
+    top = np.argmax(known, axis=0)                               # each column's first known sky row
+    has = known.any(axis=0)
+    rows = np.arange(h)[:, None]
+    bot = h - 1 - np.argmax(known[::-1], axis=0)                 # ... and its last
+    k = max(2, int(round(SKY_HEAL_LIGHT_ROWS_DEG / 180.0 * h)))
+    Lk = np.where(known & (rows > bot[None, :] - k), L, np.nan)
+    with np.errstate(all="ignore"):
+        L_above = np.nanmedian(Lk, axis=0)                       # the sky's brightness just above where the weight ends
+    L_above = np.where(np.isfinite(L_above), L_above, 0.0)
+    # sky: "far", on the sky's side in colour, and no darker than the sky above it (hazy far hills are darker)
+    cond = (lab == LABEL_FAR) & (rb < r_sky + SKY_HEAL_RB_SHARE * (r_ter - r_sky)) & (L >= SKY_HEAL_LIGHT * L_above[None, :])
+    run = np.where(rows >= top[None, :], cond | known, True)
+    reach = np.logical_and.accumulate(run, axis=0) & (rows >= top[None, :]) & has[None, :]
+    line = np.where(has, reach.sum(axis=0) + top, 0).astype(np.float32)          # the first row that is not sky
+    kw = max(3, int(round(SKY_HEAL_LINE_FRAC * w)) | 1)
+    pad = kw
+    lw = np.concatenate([line[-pad:], line, line[:pad]])
+    lw = minimum_filter1d(median_filter(lw, size=kw, mode="nearest"), size=3, mode="nearest")[pad:pad + w]      # no single
+    line = np.minimum(line, lw)                                  # column reaches lower than its neighbours' middle
+    reach = (rows < (line[None, :] - 1.0)) & (rows >= top[None, :]) & has[None, :]       # not the last row above the hills
+    return np.maximum(weight, reach.astype(np.float32))
+
+
+def heal_sky(rgb: np.ndarray, weight: Optional[np.ndarray], label: Optional[np.ndarray] = None) -> Dict[str, Any]:
     """0.98.4 (Christian, 14 Nov 2026: "The sky needs an extra check at the end to heal over any dark bands or other
     artifacts"): the last step on the sky, in place.  The real sky has no edges and no bands; a frame that was
     brighter, darker or tinted against its neighbours leaves both.  The sky (``weight``: 1 = sky well above the
@@ -1391,6 +1442,8 @@ def heal_sky(rgb: np.ndarray, weight: Optional[np.ndarray]) -> Dict[str, Any]:
     top = 255.0 if rgb.dtype == np.uint8 else LINEAR_TOP
     small = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_AREA).astype(np.float32)
     wt = np.asarray(weight, np.float32)
+    if label is not None:                                        # 0.98.6: down to the skyline
+        wt = sky_to_skyline(rgb, label, wt)
     sg = (max(1.0, SKY_HEAL_SMOOTH_EL_DEG / 180.0 * h), max(2.0, SKY_HEAL_SMOOTH_FRAC * w))
     pad = int(3 * sg[1]) + 2
     wrap = lambda x: np.concatenate([x[:, -pad:], x, x[:, :pad]], axis=1)

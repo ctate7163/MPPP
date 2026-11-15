@@ -3,6 +3,21 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.6 — 2026-11-14
+
+- **Eight more stations** in `single_sites.json` (Christian, 14 Nov 2026), each with the Navcam frames of its
+  station between the two frames he named and the context frames he named, taken from the blocks' own image lists:
+  `Sol0009_S003D0000` (Butler Landing block, 6 + 6 frames), `Sol0180_S007D0000` (Rochette, 4 + 5),
+  `Sol0204_S007D1836` and `Sol0248_S008D0000` (Seitah North large, 6 + 6 each), `Sol0361_S011D0000` (Van Zyl
+  Overlook block, named Chal Rocks; 5 + 4), `Sol0565_S029D0000` (Enchanted Lake large, 7 + 7),
+  `Sol1955_S091D0124` (Hippo Pools, 9 + 9), `Sol1965_S091D0806` (Marble Mountain, 8 + 8). One context frame is not
+  in its block (the right eye of sol 10, 0667835038). `Sol0474_S026D0850` gets three context pairs of sol 464.
+- **The sky heal reaches the skyline** (Christian: it "needs to come down lower all the way to where the light sky
+  meets the horizon"). The sky is carried down each column past the evening's 1.5-degree margin while the pixel is
+  "far", on the sky's side in red / blue and no darker than 0.9 x the sky above it; the line found is the median over
+  1.2 % of the width. On Bell Island the bright block on the horizon goes (a thin sliver of its edge is left); the
+  Rockytop and Origny panoramas, whose far hills are hazy, are not changed below the old limit.
+
 ## 0.98.5 — 2026-11-14
 
 Christian: "Upload the ods sites as they finish processing. The 3d rover option tested in van zyl should be a third
