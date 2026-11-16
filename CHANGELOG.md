@@ -3,6 +3,30 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.20 — 2026-11-16
+
+Christian (16 Nov): "add sol 1947 eod ods"; sols 1177, 1183, 1308 and 609 with their context, sol 33 as context at the
+first station; "The drop down list of ods should start with Sol 0xxx then have the site name ... put the site and drive
+numbers in the info window. The map in the info tab should be the same background as m20_mars_to_rover_sites_dtm figure
+D ... with the traverse and 2 km scale bar"; "render it from the high res dtm on the computer ... render it once and
+save it for reuse until it changes"; "instead of an orange x, make it square".
+
+- Panorama list: **Sol1947_S091D0000** (Hippo Pools, block terrain hippo_pools; context sol 1955 S091D0124, the sol 2022
+  NCAM03022 pairs, the sol 2022 mid-drive pair - 26 frames), **Sol1177_S054D0000** (context: the sol 1177 mid-drive pair
+  and the 360's NCAM14177 tier of the next morning), **Sol1183_S054D0866** (context: sols 1182 and 1185, 32 frames),
+  **Sol1308_S061D1678** (context: the sol 1307 and 1308 mid-drive pairs and the sol 1307 360), **Sol0609_S030D1172**
+  (Hidden Harbor; its block is not made yet; context: every sol 606 frame at S030D1096, by pattern). Sol0052_S003D2046:
+  + the sol 33 360 at S003D1374 as context.
+- Panoramas: a context name may be a pattern (`*`, `?`, `[`), expanded over the block's frames.
+- Viewer: the station list reads "Sol 0461 Rockytop"; the info page gives "Site 26, Drive 630" under the sol; its map is
+  figure 5's panel D blank (HiRISE DTM terrain, the traverse, a 2 km bar) with an orange square at the station; the
+  orthomosaic map of 0.98.14 stays as the fallback.
+- Maps: figure 8 (`mppp maps figures 8`, in `make_maps.bat`'s set): that map and a `.json` of its extent. Publishing from
+  `run_single_site_ibr.bat` draws it once on the HiRISE DTMs of `<root>\dem` into `<root>\dem\ods_info_map` and draws
+  it again only when the DTM files or the traverse's last sol change.
+- `run_sites.bat --sites NAME ...` (or `--group`) replaces the default group.
+- Single-site titles are the site name alone (the page adds the sol).
+
 ## 0.98.19 — 2026-11-16
 
 Christian (16 Nov): Rockytop panoramas "rendered from one large 3d model that includes all the medium res eod images

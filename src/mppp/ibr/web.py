@@ -265,6 +265,133 @@ def traverse_ortho(wp: Dict[str, Any], traverse: Dict[str, Any], web: Path, root
         return None
 
 
+DTM_MAP_FILE = "traverse_dtm.jpg"
+DTM_MAP_NAME = "m20_ods_traverse_map_dtm"     # mppp maps figures 8 --tag dtm (mapplot3.fig8): figure 5's panel D, blank
+DTM_MAP_RENDER_S = 1800
+
+
+def _lonlat_fit(wp: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
+    """The mission map frame as linear functions of longitude and latitude (easting = ce[0] lon + ce[1], ...)."""
+    from ..waypoints.table import _props
+    P = [_props(f) for f in wp.get("features", [])]
+    P = [q for q in P if all(q.get(k) is not None for k in ("lon", "lat", "easting", "northing"))]
+    return (np.polyfit([q["lon"] for q in P], [q["easting"] for q in P], 1),
+            np.polyfit([q["lat"] for q in P], [q["northing"] for q in P], 1))
+
+
+def dtm_files(root: Optional[PathLike]) -> List[str]:
+    """The HiRISE DTMs of ``<root>/dem`` as m20_dem_env.bat finds them (msr_trn, then m2020_trn), else ``M20_DEMS``."""
+    found = [str(f) for sub in ("msr_trn", "m2020_trn") for f in sorted((Path(root) / "dem" / sub).glob("*DTM*.tif"))] if root else []
+    return found or [x for x in os.environ.get("M20_DEMS", "").split(os.pathsep) if x and Path(x).is_file()]
+
+
+def dtm_map_dir(root: Optional[PathLike]) -> Optional[Path]:
+    """Where the info page's map is kept between runs: ``<root>/dem/ods_info_map`` (beside the DTMs)."""
+    return Path(root) / "dem" / "ods_info_map" if root else None
+
+
+def dtm_map_source(web: Path, root: Optional[PathLike] = None) -> Optional[Path]:
+    """The blank panel-D map: ``MPPP_ODS_MAP`` (a PNG with its .json), else the one kept in ``dtm_map_dir(root)``."""
+    env = os.environ.get("MPPP_ODS_MAP", "").strip()
+    if env:
+        return Path(env) if Path(env).is_file() and Path(env).with_suffix(".json").is_file() else None
+    d = dtm_map_dir(root)
+    found = [f for f in d.glob(f"{DTM_MAP_NAME}*.png") if f.with_suffix(".json").is_file()] if d and d.is_dir() else []
+    return max(found, key=lambda f: f.stat().st_mtime) if found else None
+
+
+def dtm_map_key(wp: Optional[Dict[str, Any]], root: Optional[PathLike]) -> Dict[str, Any]:
+    """What the kept map was drawn from: the DTM files and the last sol of the traverse - it is drawn again when either
+    changes."""
+    sols = []
+    try:
+        from ..waypoints.table import _props
+        sols = [int(_props(f)["sol"]) for f in (wp or {}).get("features", []) if _props(f).get("sol") is not None]
+    except Exception:                                        # noqa: BLE001
+        pass
+    return {"dtm_files": sorted(Path(x).name for x in dtm_files(root)), "last_sol": max(sols) if sols else None}
+
+
+def render_dtm_map(root: Optional[PathLike], key: Dict[str, Any]) -> Optional[Path]:
+    """``mppp maps figures 8 --background dtm --tag dtm`` (figure 5's panel D, blank) into ``dtm_map_dir(root)``,
+    drawn on the high-resolution HiRISE DTMs of ``<root>/dem``; ``key`` goes into its .json."""
+    import subprocess
+    import sys
+    out = dtm_map_dir(root)
+    if out is None:
+        return None
+    out.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ)
+    dems = dtm_files(root)
+    if dems:
+        env["M20_DEMS"] = os.pathsep.join(dems)
+    env["M20_BACKGROUND"] = "dtm"
+    log.info("publish: drawing the info page's map (figure 5 panel D, blank; %s) into %s",
+             f"{len(dems)} HiRISE DTMs" if dems else "no HiRISE DTM found: ~70 m terrain", out)
+    try:
+        r = subprocess.run([sys.executable, "-m", "mppp", "maps", "figures", "8", "--background", "dtm", "--tag", "dtm",
+                            "--out", str(out)], env=env, timeout=DTM_MAP_RENDER_S)
+        if r.returncode != 0:
+            log.info("publish: the map was not drawn (mppp maps figures 8: exit %d)", r.returncode)
+            return None
+    except Exception as e:                                   # noqa: BLE001 - the map is an extra
+        log.info("publish: the map was not drawn (%s: %s)", type(e).__name__, e)
+        return None
+    png = out / f"{DTM_MAP_NAME}.png"
+    if not png.is_file():
+        return None
+    meta = json.loads(png.with_suffix(".json").read_text(encoding="utf-8"))
+    meta["key"] = key
+    png.with_suffix(".json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
+    return png
+
+
+def traverse_dtm(wp: Dict[str, Any], traverse: Dict[str, Any], web: Path, root: Optional[PathLike] = None,
+                 old: Optional[Dict[str, Any]] = None, render: bool = True) -> Optional[Dict[str, Any]]:
+    """0.98.19 (Christian, 16 Nov 2026: "The map in the info tab should be the same background as
+    m20_mars_to_rover_sites_dtm figure D. Render a blank version of that with the traverse and 2 km scale bar. Put an
+    orange x over the ods' particular location"): the blank panel D as ``web/panos/traverse_dtm.jpg`` - {"file",
+    "extent": [x0, y0, x1, y1] in the traverse map's metres (north up), "px", "source", "background"}.  The traverse and
+    the scale bar are in the picture; the page draws the x.  (Christian, 16 Nov 2026: "render it from the high res dtm on the
+    computer. If it isn't there then, have the ibr script render it once and save it for reuse until it changes"):
+    drawn once on the HiRISE DTMs of ``<root>/dem`` and kept in ``<root>/dem/ods_info_map``; drawn again
+    (``render``) when the DTM files or the traverse's last sol differ from the kept one's.  None without one - the page then draws the orthomosaic map of 0.98.14."""
+    src = dtm_map_source(web, root)
+    if render and not os.environ.get("MPPP_ODS_MAP", "").strip():
+        key = dtm_map_key(wp, root)
+        try:
+            kept = json.loads(src.with_suffix(".json").read_text(encoding="utf-8")).get("key") if src else None
+        except (OSError, ValueError):
+            kept = None
+        if kept != key:                                      # none yet, other DTMs, or the rover has driven since
+            src = render_dtm_map(root, key) or src
+    if src is None:
+        return None
+    try:
+        meta = json.loads(src.with_suffix(".json").read_text(encoding="utf-8"))
+        dst = web / "panos" / DTM_MAP_FILE
+        stamp = f"{src.name} {int(src.stat().st_mtime)}"
+        if old and old.get("stamp") == stamp and dst.is_file():
+            return old
+        lo0, lo1, la0, la1 = meta["extent_lonlat"]
+        ce, cn = _lonlat_fit(wp)
+        e0, n0 = traverse["origin_en"]
+        extent = [round(float(np.polyval(ce, lo0) - e0), 1), round(float(np.polyval(cn, la0) - n0), 1),
+                  round(float(np.polyval(ce, lo1) - e0), 1), round(float(np.polyval(cn, la1) - n0), 1)]
+        import cv2
+        img = cv2.imread(str(src), cv2.IMREAD_COLOR)
+        if img is None:
+            return None
+        cv2.imwrite(str(dst), img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        log.info("publish: the info page's map %s from %s (%d x %d px)", dst.name, src, img.shape[1], img.shape[0])
+        return {"file": "panos/" + DTM_MAP_FILE, "extent": extent, "px": [int(img.shape[1]), int(img.shape[0])],
+                "stamp": stamp, "background": meta.get("background", ""),
+                "credit": "HiRISE DTM and terrain (NASA/JPL-Caltech/UArizona/USGS)"}
+    except Exception as e:                                   # noqa: BLE001 - the map is an extra
+        log.info("publish: no DTM map (%s: %s)", type(e).__name__, e)
+        return None
+
+
 def station_on_map(label: str, wp: Optional[Dict[str, Any]]) -> Optional[List[float]]:
     """[x, y] of a station ("...S003D2046...") in the traverse map's metres, or None."""
     m = re.search(r"S(\d{3})D(\d{4})", label)
@@ -326,12 +453,13 @@ def _copy(src: Path, dst: Path, width: int, quality: int) -> Dict[str, Any]:
 def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[str]] = None,
             views: Sequence[str] = DEFAULT_VIEWS, width: int = DEFAULT_WIDTH, quality: int = 88,
             titles: Optional[Dict[str, Dict[str, Any]]] = None, title: str = "MPPP stereo panoramas",
-            ortho_root: Optional[PathLike] = None) -> Dict[str, Any]:
+            ortho_root: Optional[PathLike] = None, render_map: bool = False) -> Dict[str, Any]:
     """Every station folder of ``out_root`` (the output of ``mppp single-sites``) that has a stereo JPEG, into
     ``web_dir``.  ``titles``: {station label: {"title", "note", "yaw_deg"}} (``yaw_deg``: the azimuth, degrees east
     of north, straight ahead when the page opens).  Stations already in ``panos.json`` and not in ``out_root`` stay
     listed.  ``ortho_root``: the folder whose ``dem/`` holds the orthomosaics for the map (default: ``out_root``'s
-    parent, the blocks' root).  Returns the list written."""
+    parent, the blocks' root).  ``render_map``: render the info page's map (mppp maps figures 8) when there is none.
+    Returns the list written."""
     from .. import __version__
     out_root, web = Path(out_root), Path(web_dir)
     (web / "panos").mkdir(parents=True, exist_ok=True)
@@ -349,6 +477,14 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         ortho = traverse_ortho(wp, traverse, web, root=ortho_root if ortho_root is not None else out_root.parent, old=was)
         if ortho:
             traverse["ortho"] = ortho
+        try:
+            was = (json.loads(index.read_text(encoding="utf-8")).get("traverse") or {}).get("dtm")
+        except (OSError, ValueError):
+            was = None
+        dtm = traverse_dtm(wp, traverse, web, root=ortho_root if ortho_root is not None else out_root.parent, old=was,
+                           render=render_map)
+        if dtm:
+            traverse["dtm"] = dtm
     bad = [v for v in views if v not in VIEWS]
     if bad:
         raise ValueError(f"views {bad}: one of {list(VIEWS)}")

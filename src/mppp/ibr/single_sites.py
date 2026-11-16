@@ -574,9 +574,10 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         from . import web
         logging.basicConfig(level=logging.INFO, format="%(message)s")
         from .nadir import block_name                    # 0.97.17: the block's name without its size word
-        titles = {k: {"title": v.get("title") or f"{v.get('name') or block_name(v.get('site')) or ''} {k}".strip(),
+        titles = {k: {"title": v.get("title") or v.get("name") or block_name(v.get("site")) or k,   # 0.98.19: the page puts "Sol 0xxx" before it
                       "note": v.get("web_note"), "yaw_deg": v.get("yaw_deg")} for k, v in st_cfg.items()}
-        doc = web.publish(out_root, a.publish, stations=list(labels), views=a.publish_views or web.DEFAULT_VIEWS, width=a.publish_width, titles=titles)
+        doc = web.publish(out_root, a.publish, stations=list(labels), views=a.publish_views or web.DEFAULT_VIEWS, width=a.publish_width, titles=titles,
+                          render_map=True)
         if not web.install_viewer(a.publish):
             print("the viewer page (docs/ods/index.html, vendor/) is not in this installation: copy it from the repository")
         msg = f"published: {len(doc['panos'])} stations in {Path(a.publish) / 'panos.json'}"

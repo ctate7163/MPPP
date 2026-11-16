@@ -355,25 +355,43 @@ function showWelcome(on) {
 const infoPanel = new THREE.Group();
 infoPanel.visible = false;
 scene.add(infoPanel);
-let traverse = null, leftGrip = null, orthoImage = null;
+let traverse = null, leftGrip = null, orthoImage = null, dtmImage = null;
 for (let i = 0; i < 2; i++) {
   const g = renderer.xr.getControllerGrip(i);
   g.addEventListener('connected', e => { if (e.data && e.data.handedness === 'left') leftGrip = g; });
   g.addEventListener('disconnected', () => { if (leftGrip === g) { leftGrip = null; if (infoPanel.parent === g) { scene.add(infoPanel); infoPanel.visible = false; } } });
   scene.add(g);
 }
+// 0.98.19 (Christian, 16 Nov 2026): "The drop down list of ods should start with Sol 0xxx then have the site name. No
+// need for the site and drive index. put the site and drive numbers in the info window."
+function solsOf(p) {
+  const m = /^Sol(\d+)/.exec(p.id || '');
+  return (p.sols && p.sols.length) ? p.sols : (m ? [parseInt(m[1], 10)] : []);
+}
+function siteName(p) {                                        // the title without the station label (lists before 0.98.19)
+  const t = (p.site_name || (p.title || '').replace(p.id || '\u0000', '')).replace(/\s+/g, ' ').trim();
+  return t || p.title || p.id || '';
+}
+function menuLabel(p) {
+  if (p.welcome) return p.title || 'Welcome';
+  const sols = solsOf(p);
+  return sols.length ? `Sol ${String(sols[0]).padStart(4, '0')} ${siteName(p)}` : siteName(p);
+}
 function infoLines() {
   const p = panos[cur.s] || {};
-  const m = /^Sol(\d+)/.exec(p.id || '');
-  const sols = (p.sols && p.sols.length) ? p.sols : (m ? [parseInt(m[1], 10)] : []);
+  const sols = solsOf(p);
   const sol = sols.length ? (sols.length > 1 ? `sols ${sols[0]}-${sols[sols.length - 1]}` : `sol ${sols[0]}`) : '';
-  return [p.site_name || p.title || p.id || '', sol, p.welcome ? '' : (p.id || '')];
+  const sd = /S(\d{3})D(\d{4})/.exec(p.id || '');
+  return [p.welcome ? (p.site_name || '') : siteName(p), sol,
+          p.welcome || !sd ? '' : `Site ${parseInt(sd[1], 10)}, Drive ${parseInt(sd[2], 10)}`];
 }
 function drawInfo() {
   while (infoPanel.children.length) { const o = infoPanel.children.pop(); o.material.map.dispose(); o.material.dispose(); o.geometry.dispose(); }
   const p = panos[cur.s] || {}, [name, sol, id] = infoLines();
   const hasMap = !!(traverse && traverse.xy && traverse.xy.length > 1);
-  const W = 1100, Hh = hasMap ? 400 + (W - 120) + 60 : 420, c = document.createElement('canvas'), g = c.getContext('2d');   // 0.98.15: the map
+  const dm = traverse && traverse.dtm, onDtm = !!(dtmImage && dm && dm.extent);    // 0.98.19: figure 5's panel D, blank
+  const W = 1100, Hh = onDtm ? 400 + Math.round((W - 120) * dtmImage.height / dtmImage.width) + 60
+                     : (hasMap ? 400 + (W - 120) + 60 : 420), c = document.createElement('canvas'), g = c.getContext('2d');   // 0.98.15: the map
   //                                                               fits (it ran 64 px past a 1240-px page) and the page is wider
   c.width = W; c.height = Hh;
   g.fillStyle = 'rgba(10,20,40,0.82)'; g.beginPath(); g.roundRect(0, 0, W, Hh, 40); g.fill();
@@ -383,8 +401,23 @@ function drawInfo() {
     while (g.measureText(t).width > W - 80 && px > 20) { px -= 4; g.font = `${weight} ${px}px system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`; }
     g.fillStyle = color || '#fff'; g.fillText(t, W / 2, y);
   };
-  text(name, 100, 96, 800); text(sol, 215, 84, 700); text(id, 320, 44, 500, '#bcd');
-  if (hasMap) {                                                  // north up; the same scale east and north
+  text(name, 100, 96, 800); text(sol, 215, 84, 700); text(id, 320, 56, 600, '#bcd');
+  const cross = (mx, my) => {              // 0.98.19 (Christian, 16 Nov 2026: "instead of an orange x, make it square"):
+    const r = 20;                          // an orange open square with a dark edge, the station at its centre
+    g.lineJoin = 'miter';
+    for (const [colour, w] of [['rgba(0,0,0,0.75)', 17], ['#ff9500', 9]]) {
+      g.strokeStyle = colour; g.lineWidth = w; g.strokeRect(mx - r, my - r, 2 * r, 2 * r);
+    }
+  };
+  if (onDtm) {                     // the traverse and the 2 km scale bar are in the picture; its edges are dm.extent
+    const x0 = 60, y0 = 400, S = W - 120, Sh = Math.round(S * dtmImage.height / dtmImage.width), e = dm.extent;
+    g.drawImage(dtmImage, x0, y0, S, Sh);
+    g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 2; g.strokeRect(x0, y0, S, Sh);
+    if (p.map) cross(x0 + (p.map[0] - e[0]) / (e[2] - e[0]) * S, y0 + (e[3] - p.map[1]) / (e[3] - e[1]) * Sh);
+    g.textAlign = 'right'; g.font = '600 36px system-ui, sans-serif'; g.fillStyle = '#fff';
+    g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 6; g.strokeText('N ↑', x0 + S - 20, y0 + 40); g.fillText('N ↑', x0 + S - 20, y0 + 40);
+    if (dm.credit) { g.font = '500 22px system-ui, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.8)'; g.textAlign = 'left'; g.fillText(dm.credit, x0, y0 + Sh + 34); }
+  } else if (hasMap) {                                           // north up; the same scale east and north
     const x0 = 60, y0 = 400, S = W - 120, xy = traverse.xy;
     let ax = Infinity, bx = -Infinity, ay = Infinity, by = -Infinity;
     for (const [x, y] of xy) { ax = Math.min(ax, x); bx = Math.max(bx, x); ay = Math.min(ay, y); by = Math.max(by, y); }
@@ -404,11 +437,7 @@ function drawInfo() {
     };
     if (orthoImage) line('rgba(0,0,0,0.55)', 9);                  // a dark edge, so the line reads on the picture
     line(orthoImage ? '#fff' : '#9ab', 4);
-    if (p.map) {
-      const mx = X(p.map[0]), my = Y(p.map[1]), r = 26;
-      g.strokeStyle = '#ff5a3c'; g.lineWidth = 12; g.lineCap = 'round'; g.beginPath();
-      g.moveTo(mx - r, my - r); g.lineTo(mx + r, my + r); g.moveTo(mx + r, my - r); g.lineTo(mx - r, my + r); g.stroke();
-    }
+    if (p.map) cross(X(p.map[0]), Y(p.map[1]));
     const km = 1000 * k, bar = km > S / 2 ? 0.5 : (km * 5 < S / 2 ? 5 : 1);       // a scale bar of 0.5, 1 or 5 km
     g.strokeStyle = '#fff'; g.lineWidth = 6; g.lineCap = 'butt'; g.beginPath(); g.moveTo(x0 + 24, y0 + S - 30); g.lineTo(x0 + 24 + bar * km, y0 + S - 30); g.stroke();
     g.textAlign = 'left'; g.font = '600 36px system-ui, sans-serif'; g.fillStyle = '#fff'; g.fillText(`${bar} km`, x0 + 24, y0 + S - 62);
@@ -456,7 +485,7 @@ function views(p, v) { return Object.keys((variants(p)[v] || {}).views || {}); }
 
 function fill() {
   const p = panos[cur.s];
-  $('station').innerHTML = panos.map((q, i) => `<option value="${i}">${q.title || q.id}</option>`).join('');
+  $('station').innerHTML = panos.map((q, i) => `<option value="${i}">${menuLabel(q)}</option>`).join('');
   $('station').value = cur.s;
   $('variant').innerHTML = variants(p).map((q, i) => `<option value="${i}">${q.label || q.key}</option>`).join('');
   $('variant').value = cur.v;
@@ -689,6 +718,9 @@ diagnostics();
     if (traverse && traverse.ortho && traverse.ortho.file)       // the map's orbital picture: small, fetched once
       fetch(new URL(traverse.ortho.file, base).href).then(r => r.blob()).then(createImageBitmap)
         .then(b => { orthoImage = b; if (infoPanel.visible) drawInfo(); }).catch(e => console.warn('map picture', e));
+    if (traverse && traverse.dtm && traverse.dtm.file)           // 0.98.19: the blank panel D (DTM, traverse, 2 km bar)
+      fetch(new URL(traverse.dtm.file, base).href).then(r => r.blob()).then(createImageBitmap)
+        .then(b => { dtmImage = b; if (infoPanel.visible) drawInfo(); }).catch(e => console.warn('DTM map', e));
     if (j.title) { $('title').textContent = j.title; document.title = j.title; }
   } catch (e) { msg(`no image list at ${index.href} (${e.message || e})`); return; }
   if (!panos.length) { msg('the image list is empty'); return; }

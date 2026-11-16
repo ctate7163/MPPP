@@ -34,6 +34,8 @@ REM 20 Oct: MPPP_SCAPES after mppp_env.bat (it may come from mppp_scapes.txt), e
 if not defined MPPP_SCAPES if exist "D:\rover_blocks" set "MPPP_SCAPES=D:\rover_blocks"
 if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx MPPP_SCAPES D:\rover_blocks & pause & exit /b 1)
 set "ROOT=%MPPP_SCAPES%"
+REM 0.98.19: run_sites.bat --sites hidden_harbor - a --sites or --group given replaces the group above
+echo.%* | findstr /i /c:"--sites" /c:"--group" >nul && set "WHICH="
 start "MPPP run_sites - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% %EXTRA% %*
 echo MPPP run_sites started in a minimised window. Log: "%ROOT%\run_sites_log.txt"
 echo Status of every site: check_sites.bat

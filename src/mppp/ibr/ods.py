@@ -1776,6 +1776,21 @@ def write_centre_depth(out_dir: PathLike, prefix: str, rng: np.ndarray, label: n
             "median_m": float(np.median(r[ok])) if ok.any() else None, "surface_share": float(ok.mean())}
 
 
+def expand_names(names: Optional[Sequence[str]], have) -> List[str]:
+    """0.98.19 (Christian, 16 Nov 2026: "add sol 609 with context from 606" - written before the block existed): a name
+    with * ? or [ is a pattern (fnmatch, case kept) over ``have``; the frames it matches, in name order, take its place.
+    A pattern matching nothing stays, so it is reported as not in the block."""
+    import fnmatch
+    out: List[str] = []
+    for n in names or ():
+        if any(c in str(n) for c in "*?["):
+            hit = sorted(fnmatch.filter(list(have), str(n)))
+            out += hit or [str(n)]
+        else:
+            out.append(str(n))
+    return out
+
+
 def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width: int = DEFAULT_WIDTH, ipd_m: float = DEFAULT_IPD_M,
                    families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None,
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
@@ -1798,6 +1813,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     height = width // 2
     by_ = {im.name for im in rec.images.values() if im.has_pose}
     own = [n for n in (list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())]) if n in by_]
+    context_images = expand_names(context_images, by_)       # 0.98.19: a name may be a pattern (N?F_0606_*N0301096*)
     ctx_names = [n for n in dict.fromkeys(context_images or ()) if n in by_]         # 0.97.15: see station_sources
     gone = [n for n in (context_images or ()) if n not in by_]
     if gone:
