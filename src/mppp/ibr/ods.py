@@ -215,6 +215,7 @@ class SourceImage:
         self.fill_only = False                            # 0.97.7: colours only what no regular source sees (a Hazcam frame)
         self.context = False                              # 0.97.15: a frame from another place or sol (see station_sources)
         self._rover: Optional[np.ndarray] = None
+        self.model_rover: Optional[np.ndarray] = None     # 0.98.22: the rover model's silhouette, where the mask has no rover
         self.linear_file: Optional[Path] = None           # 0.96.1: the 16-bit linear image (mppp.ibr.linear16)
         self.sat_file: Optional[Path] = None              # ... and its saturation mask
         self._sat: Optional[np.ndarray] = None
@@ -276,6 +277,11 @@ class SourceImage:
     def sample_rover(self, uv: np.ndarray) -> Optional[np.ndarray]:
         """True where the pixel at ``uv`` is inside the frame's rover mask (rover hardware, and whatever else the mask
         covers: its shadow); None without ``rover_mask_file``."""
+        if self.model_rover is not None and (self.rover_mask_file is None or not Path(self.rover_mask_file).is_file()):
+            uv = np.asarray(uv, float)
+            i = np.clip(np.rint(uv[:, 0]).astype(int), 0, self.W - 1)
+            j = np.clip(np.rint(uv[:, 1]).astype(int), 0, self.H - 1)
+            return self.model_rover[j, i]
         if self.rover_mask_file is None or not Path(self.rover_mask_file).is_file():
             return None
         if self._rover is None:
@@ -287,6 +293,8 @@ class SourceImage:
             if m.shape[1] != self.W or m.shape[0] != self.H:
                 m = cv2.resize(m, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
             self._rover = ~(m > 0)                            # the mask file: > 0 is terrain
+            if self.model_rover is not None:                  # 0.98.22: a mask that left the rover in
+                self._rover = self._rover | self.model_rover
         uv = np.asarray(uv, float)
         i = np.clip(np.rint(uv[:, 0]).astype(int), 0, self.W - 1)
         j = np.clip(np.rint(uv[:, 1]).astype(int), 0, self.H - 1)
@@ -451,6 +459,7 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
                     images: Optional[Sequence[str]] = None, use_masks: bool = True,
                     mask_head_hardware: bool = True, linear16: Optional[Dict[str, Any]] = None,
                     mast_pose: Optional[Dict[str, Any]] = None, fill_images: Sequence[str] = (),
+                    rover_pose: Optional[Dict[str, Any]] = None,
                     context_images: Sequence[str] = ()) -> List[SourceImage]:
     """The station's frames as sources; ``use_masks=False`` (``mppp ods --rover``) lets the rover's own pixels in,
     except the hardware fixed to the mast head (:func:`head_hardware_masks`) unless ``mask_head_hardware`` is off.
@@ -484,6 +493,8 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
             log.warning("ods: the context frame %s has no rover mask - its rover is not masked", name)
         if linear16 is not None:
             out[-1].linear_file, out[-1].sat_file = linear16[name]
+    if rover_pose is not None and out:
+        model_rover_masks(out, rover_pose, use_masks)
     if not use_masks and mask_head_hardware and out:
         import cv2
         ms = []
@@ -511,6 +522,53 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
             log.info("ods: the mast and its booms masked in %d of %d frames (the rover model at the rover pose)",
                      sum(1 for m in mm if m is not None), len(out))
     return out
+
+
+MODEL_MASK_MIN_LEFT = 0.5    # a frame's mask "left the rover in" when this share of the model's silhouette is terrain in it
+
+
+def model_rover_masks(sources, pose: Dict[str, Any], use_masks: bool = True) -> List[str]:
+    """0.98.22 (Christian, 16 Nov 2026: "for the z34 ods, somehow the z34 frames are not projecting on to the rover very
+    well. What is happening here and how to fix it?"): Three Forks north's sol 690 Mastcam-Z 360 (ZCAM08692), the deck
+    pan and the sol 688 Navcam 360 are processed without the mask model (``no_mask_inference_at``: the deck-fiducial
+    work wants the deck), so their rover was neither kept off the terrain (rover masked: the deck painted on the ground
+    from the Mastcam-Z's place, 0.2-0.5 m from the pivot - doubled and smeared hardware) nor recognised as rover (rover
+    shown: the surface check kept every one of their pixels off the rover model).  A frame whose mask is missing or
+    calls more than ``MODEL_MASK_MIN_LEFT`` of the rover model's silhouette terrain gets the silhouette instead: masked
+    out (``extra_mask``) for the terrain-only panorama, the rover pixels for the surface check with the rover shown
+    (``model_rover``).  Returns the names of the frames that got it."""
+    from . import rover_model
+    if not rover_model.available():
+        return []
+    try:
+        sil = rover_model.model_masks(sources, pose)
+    except Exception as e:                                   # noqa: BLE001 - the panorama without it
+        log.warning("ods: the rover model's silhouettes failed (%s)", e)
+        return []
+    got = []
+    for src, m in zip(sources, sil):
+        if m is None or not m.any():
+            continue
+        mf = src.mask_file if use_masks else src.rover_mask_file
+        left = 1.0
+        if mf is not None and Path(mf).is_file():
+            import cv2
+            mm = cv2.imread(str(mf), cv2.IMREAD_GRAYSCALE)
+            if mm is not None:
+                if mm.shape[1] != src.W or mm.shape[0] != src.H:
+                    mm = cv2.resize(mm, (src.W, src.H), interpolation=cv2.INTER_NEAREST)
+                left = float((mm[m] > 0).mean())
+        if left <= MODEL_MASK_MIN_LEFT:
+            continue
+        if use_masks:
+            src.extra_mask = m if src.extra_mask is None else (src.extra_mask | m)
+        else:
+            src.model_rover = m
+        got.append(src.name)
+    if got:
+        log.info("ods: %d frame(s) whose mask left the rover in take the rover model's silhouette (%s): %s", len(got),
+                 "masked out" if use_masks else "rover pixels", ", ".join(got[:6]) + (" ..." if len(got) > 6 else ""))
+    return got
 
 
 def _smoothstep(x: np.ndarray) -> np.ndarray:
@@ -1848,15 +1906,17 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             log.info("ods: 16-bit linear sources (%d frames, %d made now) from %s", len(want), lin_rep["made"], lin_rep["dir"])
     linear = lin is not None
     mast_pose = None
-    if not use_masks and mask_mast:                  # the rover in the block, for the mast's mask
-        try:
-            from .rover_deck import rover_pose
-            mast_pose = rover_pose(project, rec, station.images)
-        except Exception as e:                       # noqa: BLE001 - the panorama without that mask
-            log.warning("ods: no rover pose for the mast mask (%s)", e)
+    pose = None
+    try:                                             # the rover in the block: the mast's mask, the model's silhouettes
+        from .rover_deck import rover_pose
+        pose = rover_pose(project, rec, station.images)
+    except Exception as e:                           # noqa: BLE001 - the panorama without those masks
+        log.warning("ods: no rover pose for the model masks (%s)", e)
+    if not use_masks and mask_mast:
+        mast_pose = pose
     sources = station_sources(project, rec, station, families=families, scale=scale, zcam_scale=zcam_scale, images=images,
                               use_masks=use_masks, mask_head_hardware=mask_head_hardware, linear16=lin,
-                              mast_pose=mast_pose, fill_images=fill_names, context_images=ctx_names)
+                              mast_pose=mast_pose, fill_images=fill_names, context_images=ctx_names, rover_pose=pose)
     if not sources:
         raise ValueError(f"station {station.label}: no source images of families {families!r} with a pose")
     axes = dict(up=station.up, north=station.north, east=station.east)

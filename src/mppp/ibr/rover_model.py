@@ -106,9 +106,32 @@ def mast_masks(sources, pose: Dict[str, Any], dilate_frac: float = MAST_DILATE_F
     the rover - only the head turns - so the part is placed by the rover pose alone and its triangles are projected
     through each frame's own camera; at Van Zyl the white boom in the frames at azimuth 105 deg falls on the
     prediction.  The mask is grown by ``dilate_frac`` of the width."""
+    return silhouettes(sources, pose, ["mast"], dilate_frac)
+
+
+MODEL_DILATE_FRAC = 0.01          # the whole rover's silhouette grown by this share of the width (pose and model error)
+
+
+def model_masks(sources, pose: Dict[str, Any], dilate_frac: float = MODEL_DILATE_FRAC):
+    """0.98.22 (Christian, 16 Nov 2026: "for the z34 ods, somehow the z34 frames are not projecting on to the rover very
+    well"): per source frame the pixels of the whole rover model at the station's rover pose (True = rover), or None
+    where the rover is not in the frame - for frames whose learned mask leaves the rover in (Three Forks north's
+    ZCAM08692 and the sol 688 Navcam 360 are unmasked on purpose, for the deck-fiducial work).  The rover is always
+    the nearest thing to the mast, so its silhouette is its mask."""
+    _, _, meta = load()
+    parts = [p for p in meta["parts"] if p != "head"]          # the head turns with every image: not in one pose
+    return silhouettes(sources, pose, parts, dilate_frac, max_triangle_frac=0.6)
+
+
+def silhouettes(sources, pose: Dict[str, Any], parts: Optional[Sequence[str]] = None, dilate_frac: float = MODEL_DILATE_FRAC,
+                max_triangle_frac: float = 0.6):
+    """The model's parts ``parts`` (None: all) at ``pose`` projected through each source's camera and filled: per
+    source a bool image (True = model) grown by ``dilate_frac`` of the width, or None where none of it is in view.
+    Triangles wider than ``max_triangle_frac`` of the frame are left out (0.6 for the mast; 2 for the whole rover,
+    whose deck fills a Mastcam-Z frame)."""
     import cv2
     from .rover_deck import mech_to_block
-    V, F, _ = load(["mast"])
+    V, F, _ = load(parts)
     used = np.unique(F)
     remap = np.full(len(V), -1, np.int64)
     remap[used] = np.arange(len(used))
@@ -125,7 +148,7 @@ def mast_masks(sources, pose: Dict[str, Any], dilate_frac: float = MAST_DILATE_F
             continue
         p = uv[tri]                                              # (n, 3, 2)
         lo, hi = p.min(axis=1), p.max(axis=1)
-        vis = (hi[:, 0] >= 0) & (hi[:, 1] >= 0) & (lo[:, 0] < src.W) & (lo[:, 1] < src.H) & ((hi - lo).max(axis=1) < 0.6 * max(src.W, src.H))
+        vis = (hi[:, 0] >= 0) & (hi[:, 1] >= 0) & (lo[:, 0] < src.W) & (lo[:, 1] < src.H) & ((hi - lo).max(axis=1) < max_triangle_frac * max(src.W, src.H))
         if not vis.any():
             out.append(None)
             continue

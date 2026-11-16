@@ -1105,7 +1105,9 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert cfg["stations"]["Sol0690_S032D1184_Z34"]["experimental"] is True      # 0.98.2: runs only when named
     assert {r["label"] for r in SS.plan(cfg, tmp_path)} == set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"}
     z = SS.plan(cfg, tmp_path, labels=["Sol0690_S032D1184_Z34"])[0]["commands"]
-    assert [c["variant"] for c in z] == ["masked"] * 4 and z[-1]["argv"][-8:] == ["--cameras", "Z", "--sols", "690", "--zcam-scale", "0.5", "--fill-cameras", "NF"]
+    zm = [c for c in z if c["variant"] == "masked"]                              # 0.98.22: + the rover variant
+    assert len(zm) == 4 and {c["variant"] for c in z} == {"masked", "rover"}
+    assert zm[-1]["argv"][-8:] == ["--cameras", "Z", "--sols", "690", "--zcam-scale", "0.5", "--fill-cameras", "NF"]
     rs = [c for c in SS.plan(cfg, tmp_path, labels=["Sol0052_S003D2046"], rover_surface=True)[0]["commands"] if c["step"] == "ods"]
     assert [c["argv"][-4:] == ["--eyes", "left", "right", "centre"] for c in rs] == [c["variant"] == "rover" for c in rs]
     new98p6 = {"Sol0009_S003D0000", "Sol0180_S007D0000", "Sol0204_S007D1836", "Sol0248_S008D0000", "Sol0361_S011D0000", "Sol0565_S029D0000", "Sol1955_S091D0124", "Sol1965_S091D0806", "Sol1189_S054D1152"}      # 0.98.6, 0.98.7: eight more stations (Christian, 14 Nov 2026)
@@ -3174,3 +3176,39 @@ def test_stations_of_16_nov_and_context_patterns(tmp_path):
     assert Path(runs[0]["work"]).name == "mars2020_sol_0606_hidden_harbor"
     bat = (Path(SS.__file__).resolve().parents[3] / "scripts" / "windows" / "run_sites.bat").read_bytes()
     assert b'findstr /i /c:"--sites" /c:"--group" >nul && set "WHICH="' in bat and bat.count(b"\n") == bat.count(b"\r\n")
+
+
+def test_frames_whose_mask_left_the_rover_in_take_the_models_silhouette(tmp_path, monkeypatch):
+    """0.98.22 (Christian, 16 Nov 2026: "for the z34 ods, somehow the z34 frames are not projecting on to the rover very
+    well"): Three Forks north's Z34 360 is processed without the mask model (deck-fiducial work), so its rover was
+    painted on the ground (rover masked) and kept off the rover model (rover shown).  Such a frame takes the rover
+    model's silhouette; a frame whose mask does mask the rover keeps its mask."""
+    import cv2
+    from mppp.ibr import rover_model
+    img = np.full((60, 80, 3), 100, np.uint8)
+    cv2.imwrite(str(tmp_path / "a.png"), img)
+    good = np.full((60, 80), 255, np.uint8)
+    good[40:] = 0                                                               # masks the rover (bottom third)
+    cv2.imwrite(str(tmp_path / "good.png"), good)
+    cv2.imwrite(str(tmp_path / "open.png"), np.full((60, 80), 255, np.uint8))  # mask inference off: all terrain
+    cam = pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=80, height=60, params=np.array([50.0, 40.0, 30.0]))
+    sil = np.zeros((60, 80), bool)
+    sil[38:] = True
+    monkeypatch.setattr(rover_model, "available", lambda: True)
+    monkeypatch.setattr(rover_model, "model_masks", lambda sources, pose: [sil.copy() for _ in sources])
+    def srcs(mask_files):
+        return [O.SourceImage(f"Z{i}.png", cam, np.eye(3), np.zeros(3), tmp_path / "a.png", mf, 1.0)
+                for i, mf in enumerate(mask_files)]
+    s = srcs([tmp_path / "good.png", tmp_path / "open.png", None])
+    got = O.model_rover_masks(s, {"pose": 1}, use_masks=True)                   # terrain only: masked out
+    assert got == ["Z1.png", "Z2.png"] and s[0].extra_mask is None and s[1].extra_mask[50, 40] and not s[1].extra_mask[10, 40]
+    assert s[1].edge_distance()[50, 40] == 0 and s[1].edge_distance()[10, 40] > 5
+    r = srcs([None, None])                                                      # rover shown: rover pixels for the surface check
+    r[0].rover_mask_file = tmp_path / "open.png"
+    got = O.model_rover_masks(r, {"pose": 1}, use_masks=False)
+    assert got == ["Z0.png", "Z1.png"]
+    rp = r[0].sample_rover(np.array([[40.0, 50.0], [40.0, 10.0]]))
+    assert rp.tolist() == [True, False] and r[1].sample_rover(np.array([[40.0, 50.0]])).tolist() == [True]
+    if rover_model.FILE.is_file():                                              # the real model: no head, wide triangles
+        _, _, meta = rover_model.load()
+        assert "head" in meta["parts"]

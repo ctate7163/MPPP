@@ -3,6 +3,19 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.22 — 2026-11-16
+
+Christian (16 Nov): "for the z34 ods, somehow the z34 frames are not projecting on to the rover very well. What is
+happening here and how to fix it?"
+
+- Panoramas: Three Forks north's sol 690 Mastcam-Z 360 (ZCAM08692) and the sol 688 Navcam 360 are processed without
+  the mask model (`no_mask_inference_at`, for the deck-fiducial work), so the terrain-only Z34 panorama painted their
+  rover on the ground from the Mastcam-Z's place (doubled and smeared hardware), and with the rover shown the surface
+  check would keep all their pixels off the rover model. A frame whose mask is missing or leaves more than half of the
+  rover model's silhouette as terrain now takes the silhouette (`ods.model_rover_masks`, `rover_model.model_masks`,
+  all parts but the head): masked out without the rover, rover pixels with it.
+- The Z34 station (Sol0690_S032D1184_Z34) renders the rover variant too.
+
 ## 0.98.21 — 2026-11-16
 
 Christian (16 Nov): "Promote the latest z63 and z79 models. Is the 100 model also good enough? prepare an updated
