@@ -3,6 +3,16 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.24 — 2026-11-16
+
+Christian (16 Nov): "for the z34 ods, why does it say: ods --bits 16: 214 of 214 frames have no 16-bit image - THE
+PANORAMA IS RENDERED IN 8 BITS. If there are no 16-bit frames then it should generate them."
+
+- `ibr.linear16.archive_roots`: the 16-bit frames are made from the PDS products, looked for under `--pds`,
+  `MPPP_PDS` and the archive the block's manifest names - which was the Navcam/Hazcam tree (`...\m2020\datadrive`).
+  The Mastcam-Z products sit beside it (`...\m2020\zcam`), so every Mastcam-Z frame was "missing". Each root's
+  siblings and children `datadrive` and `zcam` are searched too.
+
 ## 0.98.23 — 2026-11-16
 
 Christian (16 Nov): "before freeze-3, let's just rerun chal rocks large and seitah overlook and run a zcam joint so

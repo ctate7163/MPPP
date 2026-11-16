@@ -143,10 +143,20 @@ def archive_roots(project, pds: Optional[PathLike] = None) -> List[Path]:
                 break
     except Exception:                                              # noqa: BLE001 - a hint only
         pass
-    seen, out = set(), []
+    # 0.98.24 (Christian, 16 Nov 2026: "for the z34 ods, why does it say: ods --bits 16: 214 of 214 frames have no
+    # 16-bit image ... If there are no 16-bit frames then it should generate them"): it does make them - when it
+    # finds the PDS products.  The Mastcam-Z products are not in the Navcam/Hazcam tree (D:\data\m2020\datadrive)
+    # but beside it (D:\data\m2020\zcam), and the roots above named only the datadrive: every Mastcam-Z frame was
+    # "missing".  Each root's archive siblings and children (datadrive, zcam) are searched too.
+    more: List[Path] = []
     for r in roots:
+        r = Path(r)
+        for c in (r, r / "datadrive", r / "zcam", r.parent / "zcam", r.parent / "datadrive"):
+            more.append(c)
+    seen, out = set(), []
+    for r in more:
         k = str(r).lower()
-        if k not in seen:
+        if k not in seen and (r in roots or Path(r).is_dir()):
             seen.add(k)
             out.append(r)
     return out
