@@ -64,8 +64,10 @@ from .rover_masks import mask_file
 log = logging.getLogger("rpp.ibr.ods")
 PathLike = Union[str, Path]
 
-DEFAULT_WIDTH = 8192              # 0.97.10 (Christian, 13 Nov 2026: "let's make 8k ods standard for now"); 16K: --width 16384
-#                                   (0.97.4 to 0.97.9: 16384)
+DEFAULT_WIDTH = 16384             # 0.98.30 (Christian, 16 Nov 2026: "Render the left and right ods eyes at 16k by default. Save
+#                                   8k versions for upload"): 16K per eye; rpp single-sites --upload / web.publish reduce
+#                                   the JPEGs to 8K (web.DEFAULT_WIDTH, area filter).  8192 from 0.97.10 ("let's make 8k ods
+#                                   standard for now"), 16384 from 0.97.4 to 0.97.9
 DEFAULT_IPD_M = 0.064
 # 0.97.0 (Christian, 12 Nov 2026, Quest 3: "when I tilt my head down ... I go cross-eyed"): pole merging.  An ODS
 # pair is right only at the horizon: towards a pole each column keeps its own eye offset, so in a view looking down
@@ -1690,10 +1692,18 @@ def geometry_panorama(scene: Scene, station, out_dir: PathLike, prefix: str = ""
             rows = slice(i * height + r0, i * height + r1)
             imgs["range_log"][rows] = depth_rgb(rng, lab, "log")
             imgs["range_linear"][rows] = depth_rgb(rng, lab, "linear")
-            nm = (np.asarray(h["normal"], float) @ enu.T).reshape(r1 - r0, width, 3)
+            nw = np.asarray(h["normal"], float)
+            nw = np.where((np.sum(nw * d, axis=1) > 0)[:, None], -nw, nw)     # 0.98.30: the side the eye sees (a triangle
+            #                                                                   wound the other way showed olive green)
+            nm = (nw @ enu.T).reshape(r1 - r0, width, 3)
             nimg = np.clip((nm * 0.5 + 0.5) * 255, 0, 255).astype(np.uint8)[..., ::-1].copy()      # BGR for OpenCV
             nimg[lab != LABEL_MESH] = 0                      # 0.98.12 (Christian: "The normal map should not include the flat
             #                                                    plane"): the mesh and the rover model only; the plane black
+            synth = _synthetic_surface(scene, h.get("tri"))  # 0.98.30 (Christian, 16 Nov 2026: "The normal map render should not
+            if synth is not None:                            # include the flat plane that extends out to the horizon. Somehow
+                nimg[synth.reshape(r1 - r0, width)] = 0      # the normal map keeps show the pea green flat plane under the
+            #                                                    rover"): the fill under the rover, the underlay and the apron
+            #                                                    out to 200 m and the deck floors are mesh too - black as well
             nimg[lab == LABEL_FAR] = 255
             imgs["normal"][rows] = nimg
     outs = {}
@@ -1703,6 +1713,21 @@ def geometry_panorama(scene: Scene, station, out_dir: PathLike, prefix: str = ""
         cv2.imwrite(str(f), im, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
         outs[k] = str(f)
     return outs
+
+
+def _synthetic_surface(scene: Scene, tri) -> Optional[np.ndarray]:
+    """0.98.30: True where a ray hit a mesh triangle that is neither the surface meshed from the cloud
+    (``scene.terrain_triangles``) nor the rover model - the terrain fill (under the rover, the underlay, the apron to the
+    ground plane's reach) and the deck floors.  None for a mesh made before 0.98.30 (no "terrain_triangles")."""
+    tt = getattr(scene, "terrain_triangles", None)
+    if tt is None or tri is None:
+        return None
+    t = np.asarray(tri)
+    keep = (t >= tt[0]) & (t < tt[1])
+    rv = scene.on_rover(t)
+    if rv is not None:
+        keep |= rv
+    return (t >= 0) & ~keep
 
 
 def _effective_frames(vals: Sequence[np.ndarray]) -> Optional[Dict[str, Any]]:

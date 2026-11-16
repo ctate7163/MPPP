@@ -378,10 +378,16 @@ ENH_S = 5.5                      # 6.0 until 0.97.24
 # The terrain band's ENH_LOW_PCT..ENH_HIGH_PCT span takes ENH_OUT_LOW..ENH_OUT_HIGH of the 8 bits through the S-curve;
 # what is darker runs down a toe to black at zero radiance only; what is brighter (the deck, the sky) rolls off
 # towards white along a shoulder.  Both join the S-curve with its own slope.
-ENH_OUT_LOW = 0.06
+ENH_OUT_LOW = 0.10              # 0.06 until 0.98.29 - 0.98.30 (Christian, 16 Nov 2026: "the enh and enhlocal should have a
+#                                 little less saturation and black clipping. Otherwise they look really good"): the
+#                                 terrain's darkest 1 % starts higher, and the toe below it with it
 ENH_OUT_HIGH = 0.88
+ENH_SATURATION = 0.85            # 0.98.30: the color's distance from its gray (Rec. 601 luma) after the curve - the curve
+#                                 acts on each channel alike and steepens the colors with the contrast (1.0 before)
 ENH_LOCAL_SIGMA_FRAC = 0.0025
 ENH_LOCAL_AMOUNT = 0.8
+ENH_LOCAL_KNEE = 40.0            # 0.98.30: the unsharp mask darkens a pixel at most by its lightness over this (and brightens
+#                                 it by its distance to white over it) - near black it fades out instead of clipping
 
 
 def auto_exposure16(x: np.ndarray, seen: Optional[np.ndarray] = None) -> float:
@@ -487,8 +493,20 @@ def local_contrast(bgr8: np.ndarray, sky_weight: Optional[np.ndarray] = None) ->
     if sky_weight is not None:
         sw = np.asarray(sky_weight, np.float32)
         amount = ENH_LOCAL_AMOUNT * (1.0 - np.concatenate([sw[:, -pad:], sw, sw[:, :pad]], axis=1))
-    lab[..., 0] = np.clip(Lc + amount * (Lc - cv2.GaussianBlur(Lc, (0, 0), sigma)), 0, 255)
-    return cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2BGR)[:, pad:pad + W]
+    detail = amount * (Lc - cv2.GaussianBlur(Lc, (0, 0), sigma))
+    room = np.where(detail < 0, Lc, 255.0 - Lc) / ENH_LOCAL_KNEE           # 0.98.30: no clipping at black (or white)
+    lab[..., 0] = np.clip(Lc + detail * np.clip(room, 0.0, 1.0), 0, 255)
+    return cv2.cvtColor(np.rint(lab).astype(np.uint8), cv2.COLOR_LAB2BGR)[:, pad:pad + W]
+
+
+def desaturate(bgr: np.ndarray, factor: float = None) -> np.ndarray:
+    """0.98.30: the colors of a BGR image (float, 0-255) drawn toward their gray (Rec. 601 luma) - ``factor`` (default
+    ENH_SATURATION) of their distance from it kept."""
+    f = ENH_SATURATION if factor is None else float(factor)
+    if f == 1.0:
+        return bgr
+    y = (0.114 * bgr[..., 0] + 0.587 * bgr[..., 1] + 0.299 * bgr[..., 2])[..., None]
+    return np.clip(y + f * (bgr - y), 0.0, 255.0)
 
 
 ENH_SKY_SIGMA_DEG = 3.0          # 0.97.13: the sky of the enhanced views is the sky blurred by this (Gaussian sigma)
@@ -560,7 +578,7 @@ def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quali
             lv, _ = shared_value(levels_file, "enhanced_gamma_stretch_s_levels", lambda: enhanced_levels(a))
         if sky_w is not None:                                        # 0.97.13: the sky smoothed, in linear units
             a, weights[eye] = smooth_sky(a, sky_w)
-        t = tone_enhanced(a, *lv)
+        t = desaturate(tone_enhanced(a, *lv))
         if sky_w is not None:                                        # the same noise in both eyes: no depth of its own
             noise = np.random.default_rng(20261113).uniform(-ENH_SKY_DITHER, ENH_SKY_DITHER, t.shape[:2]).astype(np.float32)
             t = np.clip(t + (noise * weights[eye])[..., None], 0.0, 255.0)
@@ -579,8 +597,9 @@ def write_enhanced(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quali
                     f"{ENH_BAND_DEG} deg); the band's {ENH_LOW_PCT} to {ENH_HIGH_PCT} % span in that space takes "
                     f"{ENH_OUT_LOW:g} to {ENH_OUT_HIGH:g} of the 8 bits through an S-curve {ENH_S} about its median; darker "
                     f"values run down a toe (black at zero only), brighter ones (the deck, the sky) up a shoulder (white at "
-                    f"infinity only): nothing clips; enhlocal: unsharp mask on "
-                    f"the lightness, sigma {ENH_LOCAL_SIGMA_FRAC} x width, amount {ENH_LOCAL_AMOUNT}"}
+                    f"infinity only): nothing clips; saturation x {ENH_SATURATION} about the luma; enhlocal: unsharp mask on "
+                    f"the lightness, sigma {ENH_LOCAL_SIGMA_FRAC} x width, amount {ENH_LOCAL_AMOUNT}, faded within "
+                    f"{ENH_LOCAL_KNEE:g} of black and white"}
 
 
 def _exposure16(out_dir: PathLike) -> float:

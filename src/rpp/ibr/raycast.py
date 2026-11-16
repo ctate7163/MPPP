@@ -81,6 +81,8 @@ class Scene:
             self.ids[int(gid)] = LABEL_FAR
         self.mesh_V, self.mesh_F = V, F
         self.rover_triangles: Optional[Tuple[int, int]] = None     # 0.97.0: [first, end) of the rover model in the mesh
+        self.terrain_triangles: Optional[Tuple[int, int]] = None   # 0.98.30: [first, end) of the surface from the cloud
+        #                                                            (mesh_report "terrain_triangles"; not fill, floors, model)
         self.sky_radius_m: Optional[float] = None    # 0.97.0: the sky on a sphere of this radius about the plane's centre
         self.far_field: Optional[Dict[str, Any]] = None   # 0.97.13: 1 / radius of the far surface per direction
 

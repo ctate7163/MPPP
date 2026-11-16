@@ -26,15 +26,21 @@ log = logging.getLogger(__name__)
 
 STACK = "_360_3DTD.jpg"
 VIEWS = {"standard": "", "enhanced": "_enh", "enhanced local": "_enhlocal",      # view name -> file name part
-         "range log": "_range_log", "range linear": "_range_linear", "normal": "_normal"}   # 0.97.20: the model's
+         "distance map": "_range_log", "distance map linear": "_range_linear", "normal map": "_normal"}   # 0.97.20: the model's
+# 0.98.30 (Christian, 16 Nov 2026: 'Change "normal" to "normal map" and "range log" to "distance map"'): the names the
+# viewer shows; panos.json entries published before keep their old names, which the page shows by the new ones
+OLD_VIEW_NAMES = {"normal": "normal map", "range log": "distance map", "range linear": "distance map linear"}
+GEOMETRY_PARTS = ("_range_log", "_range_linear", "_normal")
 VARIANTS = (("masked", "", "terrain only"), ("rover", "with_rover", "terrain with rover (projected)"))   # key, sub-folder, label.  0.98.5
 #   (Christian, 14 Nov 2026: "a third mode after the terrain only, terrain with rover, and terrain with 3D rover"): this
 #   order, and a third variant "rover3d" - the terrain-only pictures with the rover's surface - where a surface was made
 ROVER_3D = ("rover3d", "terrain with rover (3D model)")     # 0.98.8 (Christian: "terrain only, terrain with rover proj, terrain with rover model")
-DEFAULT_VIEWS = ("standard", "normal", "range log")   # 0.98.12 (Christian, 15 Nov 2026: "Uploaded the range map too in log scale"); ("standard", "normal") from 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
+DEFAULT_VIEWS = ("standard", "enhanced local", "normal map", "distance map")   # 0.98.30 (Christian, 16 Nov 2026: "Include the
+#   enhlocal image versions in the upload and let it be viewable as one of the skins that button B shows"); 0.98.12 (Christian, 15 Nov 2026: "Uploaded the range map too in log scale"); ("standard", "normal") from 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
 #                                      ("standard", "enhanced") before; rpp single-sites --publish-views brings it back
 GEOMETRY_WIDTH = 4096              # 0.98.12: the range and normal views are published at most this wide (the colour ones at width)
-DEFAULT_WIDTH = 8192               # the square's side: 8192 x 8192 holds two 8192 x 4096 eyes (Quest 3: fine)
+DEFAULT_WIDTH = 8192               # the square's side: 8192 x 8192 holds two 8192 x 4096 eyes (Quest 3: fine).  0.98.30:
+#                                    the panoramas are rendered at 16K (rpp ods); publishing reduces them to this (area filter)
 
 
 def station_files(folder: PathLike) -> Dict[str, Path]:
@@ -519,7 +525,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
             for v in views:
                 if v in files:
                     got[v] = "panos/" + _copy(files[v], web / "panos" / files[v].name,
-                                              min(width, GEOMETRY_WIDTH) if v.startswith(("range", "normal")) else width, quality)["file"]
+                                              min(width, GEOMETRY_WIDTH) if VIEWS[v] in GEOMETRY_PARTS else width, quality)["file"]
                     try:                                         # a reduced copy was encoded again: its XMP with it
                         from .xmp import read_xmp, tag_stereo
                         if read_xmp(web / "panos" / files[v].name) is None:

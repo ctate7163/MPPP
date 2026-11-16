@@ -1107,15 +1107,18 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     z = SS.plan(cfg, tmp_path, labels=["Sol0690_S032D1184_Z34"])[0]["commands"]
     zm = [c for c in z if c["variant"] == "masked"]                              # 0.98.22: + the rover variant
     assert len(zm) == 4 and {c["variant"] for c in z} == {"masked", "rover"}
-    assert zm[-1]["argv"][-8:] == ["--cameras", "Z", "--sols", "690", "--zcam-scale", "0.5", "--fill-cameras", "NF"]
+    assert "--context-images" in zm[-1]["argv"] and zm[-1]["argv"][-9:] == ["--cameras", "Z", "--sols", "690", "692", "--zcam-scale", "0.5", "--fill-cameras", "NF"]   # 0.98.30: + the sol 692 deck pan
     rs = [c for c in SS.plan(cfg, tmp_path, labels=["Sol0052_S003D2046"], rover_surface=True)[0]["commands"] if c["step"] == "ods"]
     assert [c["argv"][-4:] == ["--eyes", "left", "right", "centre"] for c in rs] == [c["variant"] == "rover" for c in rs]
     new98p6 = {"Sol0009_S003D0000", "Sol0180_S007D0000", "Sol0204_S007D1836", "Sol0248_S008D0000", "Sol0361_S011D0000", "Sol0565_S029D0000", "Sol1955_S091D0124", "Sol1965_S091D0806", "Sol1189_S054D1152"}      # 0.98.6, 0.98.7: eight more stations (Christian, 14 Nov 2026)
     assert new98p6 <= set(cfg["stations"]) and all(cfg["stations"][k]["frames"]["images"] and cfg["stations"][k]["context"] for k in new98p6)
     assert len(cfg["stations"]["Sol0474_S026D0850"]["context"]) == 68   # 0.98.19
+    new98p30 = {"Sol0073_S003D2430", "Sol0449_S026D0000", "Sol0670_S032D0672", "Sol0784_S039D0926", "Sol0816_S039D1418",
+                "Sol1601_S078D4716", "Sol1615_S079D0198", "Sol1883_S088D1722"}   # 0.98.30: a Navcam panorama at every Z34 360
+    assert all(cfg["stations"][k]["terrain"] == "block" and cfg["stations"][k]["work"].endswith("_zcam") for k in new98p30)
     assert set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"} - new98p6 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
                                     "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056", "Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000",
-                                    "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172"}   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 1947 / 2009 / 2022, Bright Angel 1177 / 1183, Pico Turquino 1308, Hidden Harbor 609
+                                    "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172"} | new98p30   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 1947 / 2009 / 2022, Bright Angel 1177 / 1183, Pico Turquino 1308, Hidden Harbor 609
     assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12
     sa = cfg["stations"]["Sol1411_S068D0142"]                                 # 0.97.14: South Arm, sol 1411
     assert sa["site"] == "witch_hazel_large" and sa["station"] == "68_142" and len(sa["frames"]["images"]) == 18
@@ -1126,7 +1129,8 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     runs = SS.plan(cfg, root)
     runs = runs[::-1]                                    # 0.98.3: with no station named the last one runs first
     runs = [r for r in runs if r["label"] not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000",
-                                                   "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172")]     # 0.98.19's nine (they run first)
+                                                   "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172")     # 0.98.19's nine (they run first)
+            and r["label"] not in new98p30]                                                            # 0.98.30's eight (first of all)
     assert [Path(r["work"]).name for r in runs][8:] == [
         "mars2020_sol_0001_butler_landing_zcam", "mars2020_sol_0178_rochette_zcam", "mars2020_sol_0201_seitah_huge",
         "mars2020_sol_0201_seitah_huge", "mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0421_enchanted_lake_large",
@@ -1788,7 +1792,8 @@ def test_exposure_and_enhanced_views(tmp_path):
     v = L.tone_enhanced(x, ref, lo, hi, med)
     assert v.min() >= 0 and v.max() <= 255 and 70 < np.median(v[32:].mean(axis=2)) < 185
     assert (v[:4] > 250).all() and (v[:4] < 255).all()                # 0.98.0: the sky near white, not clipped
-    assert v[32:].std() > 1.5 * (255.0 * (x[32:] / x[32:].max())).std()   # more contrast on the terrain than a plain scale
+    assert v[32:].std() > 1.4 * (255.0 * (x[32:] / x[32:].max())).std()   # more contrast on the terrain than a plain scale
+    #                                                                       (1.5 before 0.98.30: saturation x 0.85 now)
     f = tmp_path / "levels.json"
     assert L.shared_value(f, "exposure16", lambda: 1.5) == (1.5, "computed")
     assert L.shared_value(f, "exposure16", lambda: 9.9) == (1.5, "file")
@@ -2011,7 +2016,8 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     s1 = doc["panos"][1]
     assert s1["title"] == "One" and s1["yaw_deg"] == 90 and [v["key"] for v in s1["variants"]] == ["masked", "rover"]
     assert [v["label"] for v in s1["variants"]] == ["terrain only", "terrain with rover (projected)"]             # 0.98.5: this order
-    assert s1["variants"][1]["views"] == {"standard": "panos/S1_rover_360_3DTD.jpg"}       # 0.97.18: no enhanced view
+    assert s1["variants"][1]["views"] == {"standard": "panos/S1_rover_360_3DTD.jpg",       # 0.97.18: no enhanced view;
+                                          "enhanced local": "panos/S1_rover_enhlocal_360_3DTD.jpg"}   # 0.98.30: enhanced local
     assert isinstance(doc.get("traverse", {}).get("xy"), list) and len(doc["traverse"]["xy"]) > 100   # 0.98.5: the map's line
     # 0.98.5: with a rover surface the station has a third variant - the terrain-only pictures and the surface
     (r / "S1" / "with_rover" / "S1_rover_rover_surface.glb").write_bytes(b"glTF")
@@ -2022,7 +2028,7 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     xy = web.station_on_map("Sol0052_S003D2046", wp)
     assert xy and min(abs(xy[0] - a) + abs(xy[1] - b) for a, b in tr["xy"]) < 30 and web.station_on_map("nothing", wp) is None
     assert cv2.imread(str(w / "panos" / "S1_360_3DTD.jpg")).shape == (128, 128, 3)
-    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard", "normal", "range log")
+    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard", "enhanced local", "normal map", "distance map")
     # 0.98.12: the range and normal views at most GEOMETRY_WIDTH wide, whatever the colour width
     for nm in ("S1_normal_360_3DTD.jpg", "S1_range_log_360_3DTD.jpg"):
         cv2.imwrite(str(r / "S1" / nm), np.full((256, 256, 3), 90, np.uint8))
@@ -2031,8 +2037,8 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
         g = web.publish(r, tmp_path / "web4", width=128)["panos"][0]["variants"][0]["views"]
     finally:
         web.GEOMETRY_WIDTH = old
-    assert set(g) == {"standard", "normal", "range log"}
-    assert cv2.imread(str(tmp_path / "web4" / g["normal"])).shape == (64, 64, 3)
+    assert set(g) == {"standard", "enhanced local", "normal map", "distance map"}
+    assert cv2.imread(str(tmp_path / "web4" / g["normal map"])).shape == (64, 64, 3)
     assert cv2.imread(str(tmp_path / "web4" / g["standard"])).shape == (128, 128, 3)
     both = web.publish(r, tmp_path / "web2", width=128, views=("standard", "enhanced"))["panos"][0]         # on request
     assert both["variants"][1]["views"]["enhanced"] == "panos/S1_rover_enh_360_3DTD.jpg"
@@ -2691,7 +2697,7 @@ def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
     near, far = rl[128 - 6, 10].astype(int), rl[64 + 12, 10].astype(int)      # steeply down against near the horizon
     assert not np.array_equal(near, far)
     from rpp.ibr import web as W
-    assert sorted(W.station_files(out)) == ["normal", "range linear", "range log", "standard"]
+    assert sorted(W.station_files(out)) == ["distance map", "distance map linear", "normal map", "standard"]   # 0.98.30 names
     rep2 = O.render_station(proj, rec, st, scene, tmp_path / "o2", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
     assert "geometry" not in rep2 and not list((tmp_path / "o2").glob("*range*"))
     old, O.GEOMETRY_WIDTH = O.GEOMETRY_WIDTH, 128                             # 0.98.12: the range and normal at most 4k

@@ -77,8 +77,12 @@ The panorama step also writes the model alone through the panorama's own rays (0
 left eye on top as in the colour panoramas. Range is from each eye's ray origin in the colours of the table above;
 the normal is in the station's frame, RGB = 127.5 (1 + [east, north, up]), so level ground is blue. No source frame
 is used, so a fault seen there is in the mesh, the plane, the rover model or the far field and not in the blending.
-`rpp ods --no-geometry` leaves them out; `rpp single-sites --publish-views standard "range log" normal` puts them
-in the viewer's list.
+`rpp ods --no-geometry` leaves them out. The viewer lists them as "distance map" (log), "distance map linear" and
+"normal map" (0.98.30; "range log", "range linear" and "normal" before - those names still work in
+`--publish-views`). The upload's default views are standard, enhanced local, normal map and distance map. The normal
+map shows only the surface meshed from the cloud and the rover model: the fill under the rover, the apron to the
+ground plane's reach, the deck floors and the plane are black (a mesh made before 0.98.30 needs the mesh step again
+for this). The eyes are rendered at 16384 x 8192 (`rpp ods --width`); publishing reduces them to 8192.
 
 `run_single_site_ibr.bat <station>` publishes the station's panoramas into `docs/ods`, commits them and pushes the
 branch to GitHub when the run is done (0.97.24: by default; `--no-upload` skips it; `--publish-only` does it without

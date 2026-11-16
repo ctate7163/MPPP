@@ -3,6 +3,69 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.1 — 2026-11-16 (branch `rpp`)
+
+The panorama and viewer changes planned as 0.98.30 on `main` (that number went to the Knob Mountain consensus
+change, and `main` stays with freeze-3); `rpp` also has `main`'s 0.98.30 and 0.98.31 merged in.
+
+Christian (16 Nov): "Render the left and right ods eyes at 16k by default. Save 8k versions for upload. Include the
+enhlocal image versions in the upload and let it be viewable as one of the skins that button B shows. Change "normal"
+to "normal map" and "range log" to "distance map". The normal map render should not include the flat plane the
+extends out to the horizon. Somehow the normal map keeps show the pea green flat plane under the rover."; "the enl and
+enhlocal should have a little less saturation and black clipping"; "The B button should both hide the rover and return
+the terrain only view (not the the normal or depth map view)"; "the Sol0690_S032D1184_Z34 should include the z34 rover
+deck pan from sol 692. Use ncam images to fill in any holes."; "For the ods list, Include an ncam ods for every
+location where there is a z34 360 mosaic. Please build those 3d terrain models from all the ncam images in those
+blocks. Include mid drive imaging images for context."
+
+- **16K eyes by default:** `rpp ods --width` defaults to `ods.DEFAULT_WIDTH` = 16384. `web.publish` (and
+  `single-sites --upload`) still writes the 8K JPEGs (area filter). `--width 8192` renders 8K as before.
+- **The upload carries enhanced local:** `web.DEFAULT_VIEWS` = standard, enhanced local, normal map, distance map.
+- **New view names:** "normal" is "normal map", "range log" is "distance map", "range linear" is "distance map
+  linear". The files keep their parts (`_normal`, `_range_log`, `_range_linear`). `panos.json` entries published
+  before keep their old names; the page shows them by the new ones (`VIEW_LABEL`), and an old name in the URL or in
+  `--publish-views` still works (`web.OLD_VIEW_NAMES`).
+- **Normal map:** only the surface meshed from the cloud and the rover model. The terrain fill (under the rover, the
+  underlay, the apron to the ground plane's reach) and the deck floors were mesh triangles too and showed their up
+  normal (the pea green). `mesh_report.json` now records `terrain_triangles` (`fill_terrain` reports
+  `measured_triangles`), and `geometry_panorama` blacks out every other mesh triangle (`_synthetic_surface`).
+  Normals are turned toward the eye, so a triangle wound the other way no longer shows olive green. **A mesh made
+  before 0.99.1 has no `terrain_triangles`: run the mesh step again** to get the clean normal map.
+- **enh and enhlocal tone:** less black clipping (`ENH_OUT_LOW` 0.06 -> 0.10) and less saturation (`ENH_SATURATION`
+  0.85 of each color's distance from its luma). The enhlocal unsharp mask fades out within `ENH_LOCAL_KNEE` = 40 of
+  black and white instead of clipping. `rpp ods --retone` makes them again from the 16-bit panoramas without
+  rendering.
+- **Viewer, B:** the terrain-only variant (no rover) in a color view - standard, or the color view already shown -
+  never the normal or distance map. B again steps through the color skins (standard, enhanced local, ...). The 3D
+  rover is set again at the eyes' center whenever the station, the variant or the view changes and when R turns it
+  on.
+- **Welcome view** (Christian, 16 Nov: "make the made by and code: text smaller", then "make the made by and code
+  text solid black. The Rover Pho Viewer font should have blue fill and orange outsides, the same colors as used in
+  the blue circle and the orange on the maps"): the "Created by ..." and "Code: ..." lines are 56 px (80 before),
+  regular weight, solid black. The title "Rover Photogrammetry Viewer (RPV)" is light blue (the nadir disc's
+  `#b0d4ee`) with a thin orange outline (the map's `#ff9500`). The screen credit at the lower left is black, 9 px.
+- **Sol0690_S032D1184_Z34:** the panorama from ZCAM08692 (sol 690) and the rover-deck pan ZCAM05086 (sol 692, 60
+  pairs): `--sols 690 692`. Context (fill only; also in the dense step): 96 frames taken within 2.5 h of the 360's
+  LMST (13.3 h), within 20 m. They are the station's own Navcam and front Hazcam frames of sols 686 and 688;
+  NRF/NLF_0693_..._NCAM08111 (the frame Christian named and its pair); the sol 684 end-of-drive 360 at S032D1174;
+  NCAM08111 of sol 684; NCAM12681; and the Navcam sets of sols 413, 414 and 433 at Three Forks (the station note
+  lists them). `--fill-cameras` keeps only frames within 2 h by the clock, so the station's own Navcam frames of
+  other sols come in as context.
+- **A Navcam panorama at every Z34 360 mosaic:** eight new stations, each with `"terrain": "block"` (the dense step on
+  every Navcam frame of the Mastcam-Z block, `dense_block_N`). Each panorama is made from the end-of-drive 360 at the
+  place of the Z34 360. Context: the mid-drive frames (NCAM00301, NCAM08111) within 20 m.
+  - `Sol0073_S003D2430` (Chal Rocks, Z34 sol 78)
+  - `Sol0449_S026D0000` (Rose River Falls, sol 454; its `site` is `rose_river_falls` for the name, the block is
+    Knob Mountain's Mastcam-Z block)
+  - `Sol0670_S032D0672` (Three Forks South, sol 670)
+  - `Sol0784_S039D0926` and `Sol0816_S039D1418` (Belva Crater, sols 789 and 817)
+  - `Sol1601_S078D4716` and `Sol1615_S079D0198` (Taylorfjellet, sols 1603 and 1618)
+  - `Sol1883_S088D1722` (Olifants, sol 1889)
+
+  The places that already had one keep their stations unchanged: `Sol0009_S003D0000`, `Sol0502_S026D1222`,
+  `Sol0565_S029D0000`, `Sol0686_S032D1184`, `Sol1411_S068D0142` and `Sol1965_S091D0806`. Sol 965's 360 at S047D0000
+  (Airey Hill) is the rover-deck pan, not a mosaic of the terrain.
+
 ## 0.99.0 — 2026-11-16 (branch `rpp`)
 
 Christian (16 Nov): "The next version v0p99 will change the name to rpp for rover photogrammetry pipeline. ... we'll

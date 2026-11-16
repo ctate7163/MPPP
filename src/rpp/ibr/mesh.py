@@ -670,6 +670,7 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
                 drop &= ~keep_under
         rep["under_rover_triangles_removed"] = int(drop.sum())
         V, F = keep_triangles(V, F, ~drop)
+    rep["measured_triangles"] = int(len(F))                     # 0.98.30: the fill's triangles come after these
     edges = [0.0, FILL_RING0_M]
     while edges[-1] < radius_m:
         edges.append(min(edges[-1] * FILL_RING_RATIO, float(radius_m)))
@@ -883,11 +884,13 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
                  FLOAT_CLEARANCE_M, FLOAT_BEYOND_M)
     rover_tris = None
     fill_rep = None
+    terrain_tris = [0, int(len(F))]                             # 0.98.30: the surface from the cloud (not fill, floor, model)
     if fill:                                                    # 0.97.0: no holes, flattish ground under the rover
         V, F, fill_rep = fill_terrain(V, F, pivot, up, plane, radius_m, rover=rover_pose if rover_pose is not None else deck,
                                       rover_keep_m=rover_keep_m, apron_to_m=plane_radius_m)
         log.info("mesh: terrain fill - %d of %d cells had no surface (%d triangles); %d triangles under the rover replaced",
                  fill_rep["filled"], fill_rep["cells"], fill_rep["triangles"], fill_rep["under_rover_triangles_removed"])
+        terrain_tris = [0, int(fill_rep.get("measured_triangles", len(F)))]
     if deck is not None and terrain_only:
         if use_model:
             Vm, Fm = rover_model.model_in_block(deck, parts=rover_model_parts)
@@ -944,7 +947,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
                      "plane": {k: plane[k] for k in ("method", "radius_m", "tilt_deg", "height_below_pivot_m", "rms_m", "bins")
                                if k in plane},
                      "beyond": "a far sphere" if sphere else "the sky at infinity"},
-           "far_sphere": sphere, "rover_deck": deck_rep, "rover_triangles": rover_tris, "fill": fill_rep, "floating": float_rep, "coverage_by_range": coverage_by_range(V, F, pivot), "tau_m": {str(z): float(tau_m(z))
+           "far_sphere": sphere, "rover_deck": deck_rep, "rover_triangles": rover_tris, "terrain_triangles": terrain_tris, "fill": fill_rep, "floating": float_rep, "coverage_by_range": coverage_by_range(V, F, pivot), "tau_m": {str(z): float(tau_m(z))
            for z in (2, 5, 10, 15, 20, 30, 50, 85)}, "files": files, "seconds": round(time.time() - t0, 1)}
     (out / "mesh_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
     log.info("mesh: %d -> %d triangles (%s) within %g m of the axis; ground plane %s (tilt %.1f deg, %.2f m rms over %d "
@@ -977,6 +980,9 @@ def load_scene(out_dir: PathLike):
             sc.mesh_is_terrain = mrep.get("rover") == "masked out"      # 0.97.15: a mesh of the rover-masked cloud
             if rt and int(rt[1]) > int(rt[0]) and int(rt[1]) <= len(mesh[1]):
                 sc.rover_triangles = (int(rt[0]), int(rt[1]))
+            tt = mrep.get("terrain_triangles")                  # 0.98.30: the measured surface (the normal map's)
+            if tt and 0 <= int(tt[0]) < int(tt[1]) <= len(mesh[1]):
+                sc.terrain_triangles = (int(tt[0]), int(tt[1]))
         except (ValueError, TypeError, json.JSONDecodeError):
             pass
     return sc

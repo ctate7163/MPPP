@@ -3,7 +3,7 @@ rpp.ibr.cli - ``rpp mesh``, ``rpp depthmaps``, ``rpp ods`` on one finished block
 
     rpp mesh WORK --station 3_1234 [--points dense/fused.ply] [--colmap colmap.exe] [--mesh-radius 75] [--plane-radius 200]
     rpp depthmaps WORK --station 3_1234 [--cameras N] [--scale 0.5] [--photometry]
-    rpp ods WORK --station 3_1234 [--width 8192] [--ipd 0.064] [--cameras N]
+    rpp ods WORK --station 3_1234 [--width 16384] [--ipd 0.064] [--cameras N]
 
 ``WORK`` is the block folder (or its ``colmap`` project folder).  The station's products go to
 ``<project>/ods/<station>/``: ``station.json``, ``mesh.ply``, ``ground_plane.json``, ``mesh_report.json``,
@@ -225,8 +225,8 @@ def add_parsers(sub) -> None:
     p = sub.add_parser("ods", help="0.96: the stereoscopic panorama of the station - two equirect eye images (rpp.ibr.ods)")
     p.add_argument("work")
     p.add_argument("--station", required=True)
-    p.add_argument("--width", type=int, default=8192, help="per eye (default 8192; 16384 for a 16K panorama - the "
-                   "default from 0.97.4 to 0.97.9)")
+    p.add_argument("--width", type=int, default=None, help="per eye (default 16384, 0.98.30: 16K; publishing reduces "
+                   "the JPEGs to 8192; 8192 from 0.97.10 to 0.98.29)")
     p.add_argument("--ipd", type=float, default=0.064, help="eye separation in metres")
     p.add_argument("--sky-radius", type=float, default=None, metavar="M",
                    help="0.97.0: the sky on a sphere of this radius about the mast axis and the ground plane out to it "
@@ -493,7 +493,7 @@ def cmd_depthmaps(a: argparse.Namespace) -> int:
 
 
 def cmd_ods(a: argparse.Namespace) -> int:
-    from .ods import render_station, stack_eyes
+    from .ods import DEFAULT_WIDTH as ODS_DEFAULT_WIDTH, render_station, stack_eyes
     if a.retone:                                 # the 8-bit panoramas again from the 16-bit ones, no rendering
         from .linear16 import retone
         from .ods import find_prefix
@@ -523,7 +523,7 @@ def cmd_ods(a: argparse.Namespace) -> int:
     rec = _model(project)
     st, out = _station(project, rec, a)
     scene = _scene(out)
-    rep = render_station(project, rec, st, scene, out, width=a.width, ipd_m=a.ipd, sky_radius_m=("default" if a.sky_radius is None else a.sky_radius), pole_merge_deg=_pole_merge(a), families=a.cameras, scale=a.scale,
+    rep = render_station(project, rec, st, scene, out, width=a.width or ODS_DEFAULT_WIDTH, ipd_m=a.ipd, sky_radius_m=("default" if a.sky_radius is None else a.sky_radius), pole_merge_deg=_pole_merge(a), families=a.cameras, scale=a.scale,
                          far_field=not a.no_far_field, geometry=not a.no_geometry, zcam_scale=a.zcam_scale, images=_own_frames(project, st, a),
                          context_images=_png(getattr(a, "context_images", None)), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,

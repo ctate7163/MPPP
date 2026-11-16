@@ -502,7 +502,7 @@ def add_parser(sub) -> None:
     p.add_argument("--steps", nargs="+", default=list(STEPS), choices=STEPS)
     p.add_argument("--variants", nargs="+", default=None, choices=VARIANTS)
     p.add_argument("--width", type=int, default=None, metavar="PX",
-                   help="0.97.0: the panorama's width for this run (default: the config's, else rpp ods' own, 8192; 16384 for 16K) - give "
+                   help="0.97.0: the panorama's width for this run (default: the config's, else rpp ods' own, 16384 since 0.98.30; 8192 for 8K) - give "
                         "--out as well to keep the panoramas already made")
     p.add_argument("--squares-only", action="store_true", help="only stack the eye images already there into "
                    "360_3DTD.jpg / .png")
@@ -521,8 +521,9 @@ def add_parser(sub) -> None:
                         "commit the panoramas there and push the branch to origin - the code's commits go with it")
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
     p.add_argument("--publish-views", nargs="+", default=None, metavar="VIEW",
-                   help="standard, normal, 'range log', enhanced, ... (default: rpp.ibr.web.DEFAULT_VIEWS - 0.98.12: standard, "
-                        "normal, range log)")
+                   help="standard, 'enhanced local', 'normal map', 'distance map', enhanced, ... (default: "
+                        "rpp.ibr.web.DEFAULT_VIEWS - 0.98.30: standard, enhanced local, normal map, distance map; the old "
+                        "names normal and 'range log' are read too)")
     p.add_argument("--no-rover-surface", dest="rover_surface", action="store_false",
                    help="0.98.8: without the rover's 3D surface (and the panorama from the pivot it is made from)")
     p.add_argument("--rover-surface", action="store_true", default=True,
@@ -578,7 +579,7 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         from .nadir import block_name                    # 0.97.17: the block's name without its size word
         titles = {k: {"title": v.get("title") or v.get("name") or block_name(v.get("site")) or k,   # 0.98.19: the page puts "Sol 0xxx" before it
                       "note": v.get("web_note"), "yaw_deg": v.get("yaw_deg")} for k, v in st_cfg.items()}
-        doc = web.publish(out_root, a.publish, stations=list(labels), views=a.publish_views or web.DEFAULT_VIEWS, width=a.publish_width, titles=titles,
+        doc = web.publish(out_root, a.publish, stations=list(labels), views=[web.OLD_VIEW_NAMES.get(v, v) for v in (a.publish_views or web.DEFAULT_VIEWS)], width=a.publish_width, titles=titles,
                           render_map=True)
         if not web.install_viewer(a.publish):
             print("the viewer page (docs/ods/index.html, vendor/) is not in this installation: copy it from the repository")

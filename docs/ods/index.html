@@ -23,8 +23,12 @@ if (location.hostname === 'ctate7163.github.io' && /^\/(RPP|MPPP)\/ods(\/|$)/i.t
   0.98.19: W A S D held = look up / left / down / right, Shift+N / E / S / W = face that way, N = north, O = the front of the
   rover, level (0.98.28: its +x; 45 degrees down before); also the N E S W O cross at the upper right of the screen.
   Headset (0.98.4): right trigger = next station, left trigger = the one before, thumbstick left / right = turn,
-  X = info page on the left hand (site, sol, map), A = the next view (standard, normal, range log), grip = variant   (0.98.13: A and X swapped)
+  X = info page on the left hand (site, sol, map), A = the next view (standard, enhanced local, normal map, distance map),
+  grip = variant   (0.98.13: A and X swapped)
   0.98.28: Y = home (the welcome view, facing west), B = terrain only; on a screen the house button or H, and B.
+  0.98.30: B = terrain only (no rover) in a color view; B again = its next color skin (standard, enhanced local).
+  The 3D rover is set again at the eyes' center whenever the station, the variant or the view changes and when R
+  shows it.
   O = straight ahead of the rover (its +x, level); the N E S W O cross is at the upper right.
   (terrain only, terrain with rover (projected), terrain with rover (3D model)).
 -->
@@ -37,8 +41,11 @@ if (location.hostname === 'ctate7163.github.io' && /^\/(RPP|MPPP)\/ods(\/|$)/i.t
   #bar button#home { display: inline-flex; align-items: center; padding: 3px 7px; }
   #VRButton.rpv-big { width: 160px !important; left: calc(50% - 80px) !important; padding: 16px 8px !important;
                       font: bold 18px sans-serif !important; }   /* 0.98.28: larger where VR is supported */
-  #credit { position: fixed; left: 10px; bottom: 28px; color: #999; font-size: 11px; z-index: 2; text-shadow: 0 0 4px #000; }
-  #credit a { color: #9cf; }
+  /* 0.99.1 (Christian, 16 Nov 2026: "make the made by and code text solid black. The Rover Pho Viewer font should
+     have blue fill and orange outsides, the same colors as used in the blue circle and the orange on the maps"):
+     the credit black, 9 px (11 px, gray until 0.98.29); the title in the welcome view light blue in orange */
+  #credit { position: fixed; left: 10px; bottom: 28px; color: #000; font-size: 9px; font-weight: 400; z-index: 2; }
+  #credit a { color: #000; }
   #note { position: fixed; left: 10px; bottom: 10px; right: 170px; color: #bbb; font-size: 12px; z-index: 2; text-shadow: 0 0 4px #000; }
   #diag { position: fixed; right: 170px; bottom: 10px; color: #888; font-size: 11px; z-index: 2; text-shadow: 0 0 4px #000; text-align: right; }
   #compass { position: fixed; right: 12px; top: 52px; z-index: 2; display: grid;     /* 0.98.28: upper right (was mid-right) */
@@ -314,7 +321,9 @@ async function showRover(rs) {
 
 // ---------------------------------------------------------------- words in the scene (0.98.4)
 // Text is drawn on a canvas and shown on a flat panel: a real surface at a real distance, so both eyes agree on it.
-function textPanel(lines, opt = {}) {                            // lines: [{text, px, weight}] ; returns a Mesh 1 unit wide
+const MARK_BLUE = '#b0d4ee';      // 0.99.1: the nadir disc's light blue (nadir.BACKGROUND_RGB = 176, 212, 238)
+const MAP_ORANGE = '#ff9500';     // the orange of the station square on the map
+function textPanel(lines, opt = {}) {                            // lines: [{text, px, weight, color, outline}] ; returns a Mesh 1 unit wide
   const pad = 40, W = opt.width || 2048, font = l => `${l.weight || 800} ${l.px}px system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
   const c = document.createElement('canvas'), g = c.getContext('2d');
   const Hpx = pad * 2 + lines.reduce((a, l) => a + l.px * 1.25, 0);
@@ -327,7 +336,12 @@ function textPanel(lines, opt = {}) {                            // lines: [{tex
     let px = l.px;
     while (g.measureText(l.text).width > W - 2 * pad && px > 12) { px -= 4; g.font = font({ ...l, px }); }
     y += l.px * 0.625;
-    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = Math.max(4, px * 0.10); g.strokeText(l.text, W / 2, y);
+    if (l.outline) {                                             // 0.99.1: a colored outline (the title)
+      g.strokeStyle = l.outline; g.lineWidth = Math.max(3, px * 0.08); g.strokeText(l.text, W / 2, y);   // thin: not bold
+    } else if (l.plain) {                                        // 0.99.1: solid, no outline (the credit lines)
+    } else {
+      g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = Math.max(4, px * 0.10); g.strokeText(l.text, W / 2, y);
+    }
     g.fillStyle = l.color || '#fff'; g.fillText(l.text, W / 2, y);
     y += l.px * 0.625;
   }
@@ -373,12 +387,12 @@ function showWelcome(on) {
       welcome.add(place(textPanel([{ text: name, px: 300, weight: 800 }], { width: 1400 }), az, 32, 40, 14));
     // 0.98.19 (Christian, 16 Nov 2026: 'change the text to "Rover Photogrammetry Viewer". Put the text under West, and
     // make west the opening direction'): the title under WEST, which the page opens looking at
-    welcome.add(place(textPanel([{ text: VIEWER_NAME, px: 190, weight: 900 },
-                                 { text: CREDIT, px: 80, weight: 600 },
-                                 { text: 'Code: ' + CODE_URL.replace(/^https:\/\//, ''), px: 80, weight: 600, color: '#cfe8ff' },
+    welcome.add(place(textPanel([{ text: VIEWER_NAME, px: 190, weight: 900, color: MARK_BLUE, outline: MAP_ORANGE },
+                                 { text: CREDIT, px: 56, weight: 400, color: '#000', plain: true },   // 0.99.1: smaller (80 px), solid black
+                                 { text: 'Code: ' + CODE_URL.replace(/^https:\/\//, ''), px: 56, weight: 400, color: '#000', plain: true },
                                  { text: 'Mars 2020 Perseverance rover', px: 120, weight: 700 }]), WELCOME_AZ_DEG, 14, 5, 4.2));
     welcome.add(place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
-                                 { text: 'X: info and map   |   Y: home   |   A: view   |   B: terrain only', px: 84, weight: 600 },
+                                 { text: 'X: info and map   |   Y: home   |   A: view   |   B: terrain only (again: color skin)', px: 84, weight: 600 },
                                  { text: 'grip: rover on, off or 3D', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)' }), WELCOME_AZ_DEG, -6, 5, 3.6));
   }
@@ -443,7 +457,7 @@ function drawInfo() {
   const cross = (mx, my) => {              // 0.98.19 (Christian, 16 Nov 2026: "instead of an orange x, make it square"):
     const r = 20;                          // an orange open square with a dark edge, the station at its centre
     g.lineJoin = 'miter';
-    for (const [colour, w] of [['rgba(0,0,0,0.75)', 17], ['#ff9500', 9]]) {
+    for (const [colour, w] of [['rgba(0,0,0,0.75)', 17], [MAP_ORANGE, 9]]) {
       g.strokeStyle = colour; g.lineWidth = w; g.strokeRect(mx - r, my - r, 2 * r, 2 * r);
     }
   };
@@ -520,6 +534,10 @@ const maxTex = renderer.capabilities.maxTextureSize;
 
 function variants(p) { return p.variants || []; }
 function views(p, v) { return Object.keys((variants(p)[v] || {}).views || {}); }
+// 0.98.30 (Christian, 16 Nov 2026: 'Change "normal" to "normal map" and "range log" to "distance map"'): the names of
+// entries published before, shown (and accepted in a link) by the new ones
+const VIEW_LABEL = { 'normal': 'normal map', 'range log': 'distance map', 'range linear': 'distance map linear' };
+const viewLabel = k => VIEW_LABEL[k] || k;
 
 function fill() {
   const p = panos[cur.s];
@@ -527,7 +545,7 @@ function fill() {
   $('station').value = cur.s;
   $('variant').innerHTML = variants(p).map((q, i) => `<option value="${i}">${q.label || q.key}</option>`).join('');
   $('variant').value = cur.v;
-  $('view').innerHTML = views(p, cur.v).map((k, i) => `<option value="${i}">${k}</option>`).join('');
+  $('view').innerHTML = views(p, cur.v).map((k, i) => `<option value="${i}">${viewLabel(k)}</option>`).join('');
   $('view').value = cur.w;
 }
 
@@ -540,7 +558,8 @@ async function show() {
   fill();
   const vr = variants(p)[cur.v], file = vr && vr.views[names[cur.w]];
   if (!file) { msg('no image for this choice'); return; }
-  history.replaceState(null, '', `#${p.id}/${vr.key}/${names[cur.w]}`);
+  history.replaceState(null, '', `#${p.id}/${vr.key}/${viewLabel(names[cur.w])}`);
+  anchored = false;                                             // 0.98.30: the 3D rover set again at the eyes' center
   const id = ++loadId, url = new URL(file, base).href;
   msg(`loading ${p.title || p.id} ...`);
   try {
@@ -615,9 +634,24 @@ function goHome() {
   show();
 }
 function terrainOnly() {
-  const i = variants(panos[cur.s] || {}).findIndex(q => q.key === 'masked');
-  if (i < 0 || i === cur.v) return;
-  cur.v = i;
+  // 0.98.30 (Christian, 16 Nov 2026: "The B button should both hide the rover and return the terrain only view (not the
+  // normal or depth map view)" and "let [enhanced local] be viewable as one of the skins that button B shows"): B goes to
+  // the terrain-only panorama - no rover, a color view (standard; the color view shown, if it was one); B again steps
+  // through its color skins (standard, enhanced local, ...), never the normal or distance map
+  const p = panos[cur.s] || {};
+  const i = variants(p).findIndex(q => q.key === 'masked');
+  if (i < 0) return;
+  const names = views(p, i);
+  const cols = names.map((k, j) => j).filter(j => colour(names[j]));
+  if (!cols.length) return;
+  if (i === cur.v && colour(names[cur.w] || '')) {
+    if (cols.length < 2) return;
+    cur.w = cols[(cols.indexOf(cur.w) + 1) % cols.length];
+  } else {
+    const now = views(p, cur.v)[cur.w] || '';
+    const j = colour(now) ? names.indexOf(now) : -1;
+    cur.v = i; cur.w = j < 0 ? (names.indexOf('standard') >= 0 ? names.indexOf('standard') : cols[0]) : j;
+  }
   show();
 }
 $('home').onclick = goHome;
@@ -629,7 +663,7 @@ function fromHash() {
   cur.s = s;
   const v = variants(panos[s]).findIndex(q => q.key === vkey);
   cur.v = v < 0 ? 0 : v;
-  const w = views(panos[s], cur.v).indexOf(wkey);
+  const w = views(panos[s], cur.v).findIndex(k => k === wkey || viewLabel(k) === wkey);
   cur.w = w < 0 ? 0 : w;
 }
 
@@ -649,7 +683,7 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'v' || e.key === 'V') step('v', 1); else if (e.key === 'e' || e.key === 'E') step('w', 1);
   else if (e.key === 'l' || e.key === 'L') setEye(screenEye === 'left' ? 'right' : 'left');
   else if (e.key === 'm' || e.key === 'M') { markOn = !markOn; markDisc.visible = markOn && !!markMaterial.map; }
-  else if (e.key === 'r' || e.key === 'R') { roverOn = !roverOn; for (const m of roverParts) m.visible = roverOn; }
+  else if (e.key === 'r' || e.key === 'R') { roverOn = !roverOn; for (const m of roverParts) m.visible = roverOn; if (roverOn) anchored = false; }
   else if (e.key === 'i' || e.key === 'I') toggleInfo();
   else if (e.key === 'h' || e.key === 'H') goHome();                     // 0.98.28: as the headset's Y
   else if (e.key === 'b' || e.key === 'B') terrainOnly();                // 0.98.28: as the headset's B
@@ -739,7 +773,7 @@ function buttons(dt) {                           // xr-standard: button 4 is A (
     if (!gp) continue;
     const left = src.handedness === 'left';
     if (pressed(src, 4)) { if (left) toggleInfo(); else step('w', 1); }       // 0.98.13: X (left): info; A (right): the next view
-    if (pressed(src, 5)) { if (left) goHome(); else terrainOnly(); }          // 0.98.28: Y (left): home, facing west; B (right): terrain only
+    if (pressed(src, 5)) { if (left) goHome(); else terrainOnly(); }          // 0.98.28: Y (left): home, facing west; B (right): terrain only (0.98.30: color views; again, the next one)
     const x = gp.axes.length >= 4 ? gp.axes[2] : (gp.axes[0] || 0);                          // thumbstick left / right
     if (Math.abs(x) > STICK_DEAD) {                                                          // right: the view turns to the right
       turn += THREE.MathUtils.degToRad(TURN_DEG_S) * dt * Math.sign(x) * (Math.abs(x) - STICK_DEAD) / (1 - STICK_DEAD);
