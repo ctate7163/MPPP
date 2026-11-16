@@ -287,6 +287,14 @@ def _run_sites():
     return rs
 
 
+def _stub_finished(monkeypatch):
+    """The stub alignments' finished record: their own output files (a real one writes run_done.json with the run key;
+    0.98.26: an exit code 0 counts only with it)."""
+    import mppp.batch as B
+    monkeypatch.setattr(B, "finished", lambda work, variant, key: (
+        (Path(work) / "stub.json").is_file() or any(Path(work).glob("try_*")), "stub record"))
+
+
 _STUB = textwrap.dedent("""
     import sys, time, json, pathlib
     work = pathlib.Path(sys.argv[1])
@@ -300,6 +308,7 @@ _STUB = textwrap.dedent("""
 
 def test_run_sites_runs_two_sites_at_once(tmp_path, monkeypatch):
     rs = _run_sites()
+    _stub_finished(monkeypatch)
     monkeypatch.delenv("MPPP_JOBS", raising=False)
     assert rs.default_jobs() == 2
     monkeypatch.setenv("MPPP_JOBS", "3")
@@ -362,6 +371,28 @@ def test_prefetch_only_logs_failures(monkeypatch):
     assert not any("mask" in x for x in lines)
 
 
+def test_run_sites_counts_an_exit_0_without_a_finished_block_as_failed(tmp_path, monkeypatch):
+    """0.98.26 (16 Nov: the pre-freeze blocks killed by a Ctrl-C at 11:20 ended with exit code 0 - the Intel Fortran
+    runtime's handler - and run_sites went on as if they had finished)."""
+    rs = _run_sites()
+    _stub_finished(monkeypatch)
+    stub = tmp_path / "stub.py"
+    stub.write_text(textwrap.dedent("""
+        import sys, json, pathlib
+        work = pathlib.Path(sys.argv[1])
+        if "rockytop" in work.name:
+            (work / "stub.json").write_text(json.dumps({}))
+        sys.exit(0)                                   # rochette: "killed", no record, exit 0
+    """))
+    monkeypatch.setattr(rs, "child_cmd", lambda a, work: [sys.executable, str(stub), str(work)])
+    monkeypatch.setattr(rs, "prefetch", lambda log, sets: None)
+    root = tmp_path / "scapes"
+    assert rs.main(["--sites", "rockytop", "rochette", "--root", str(root), "--retries", "0"]) == 1
+    log = (root / "run_sites_log.txt").read_text()
+    assert "site rockytop: finished" in log
+    assert "site rochette: exit code 0 but the block is not finished" in log and "1 ok, 1 failed" in log
+
+
 def test_epipolar_candidates_memory_is_bounded_driving_toward_the_scene():
     """Rays along the baseline (the rover drove toward what it photographs) put many rays in wide windows: the
     gathered candidates stay bounded, and the result does not depend on the bound."""
@@ -388,6 +419,7 @@ def test_run_sites_runs_a_failed_site_again_on_its_own(tmp_path, monkeypatch):
     """0.94.4: a site that failed (23 Oct: two native crashes while two blocks ran) runs once more, alone, after the
     others; OpenBLAS is held to 8 threads in the alignments."""
     rs = _run_sites()
+    _stub_finished(monkeypatch)
     stub = tmp_path / "stub.py"
     stub.write_text(textwrap.dedent("""
         import sys, os, pathlib, time

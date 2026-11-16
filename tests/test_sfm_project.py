@@ -562,8 +562,12 @@ def test_zcam_focus_models_per_zoom(tmp_path):
     c = next(iter(out.values()))
     assert abs(c["params"][0] - (6600.0 + 0.1 * 200)) < 1e-6 and {"fx", "fy"} <= set(c["fixed_params"])
     assert abs(c["params"][2] - (820.0 + 0.01 * 200)) < 1e-9                # pp linear in focus about pp0's focus
-    rows63 = [{"camera_group": "ZL079", "focus_count": 700, "label_f_px": 6500.0} for _ in range(4)]
-    lab = _split_by_focus(rows63, {"ZL079": dict(base)}, {"ZL079": "Z"}, 30.0, "focal", model=m)   # no 79 mm model
+    # a zoom without a model keeps the label focal length (0.98.26: 79 mm has had a model since 0.98.21 - the test
+    # takes the first zoom that has none)
+    free = next(z for z in (26, 100, 79, 63) if z not in m["zooms"])
+    g = f"ZL{free:03d}"
+    rows63 = [{"camera_group": g, "focus_count": 700, "label_f_px": 6500.0} for _ in range(4)]
+    lab = _split_by_focus(rows63, {g: dict(base)}, {g: "Z"}, 30.0, "focal", model=m)
     assert abs(next(iter(lab.values()))["params"][0] - 6500.0) < 1e-6
 
 

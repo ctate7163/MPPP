@@ -3,6 +3,23 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.26 — 2026-11-16
+
+The pre-freeze-3 run (16 Nov, 11:14): both blocks were killed by a Ctrl-C at 11:20:41 (`forrtl: error (200):
+program aborting due to control-C event`), `run_sites` logged nothing more, the batch file wrote "blocks done
+(exit 0)" and started the joints on the old blocks.
+
+- `mppp_env.bat`: `FOR_DISABLE_CONSOLE_CTRL_HANDLER=1`. The Intel Fortran runtime that numpy/scipy load on Windows
+  catches Ctrl-C and ends the process with exit code 0; with its handler off a Ctrl-C is a Python
+  `KeyboardInterrupt` and the exit code says the run did not finish. Every batch file calls `mppp_env.bat`.
+- `run_sites.py`: a site whose process ends with exit code 0 counts as finished only with the block's finished
+  record (`run_done.json`) for this run key; otherwise "exit code 0 but the block is not finished - killed?" and it
+  counts as failed (and is retried once, as any failure).
+- The pre-freeze batch file was rewritten outside the repository (`run_prefreeze3b.bat`): the handler off, and the
+  joints only when every block finished.
+- `test_zcam_focus_models_per_zoom` assumed there is no 79 mm model (stale since 0.98.21, when Z79 was shipped): it
+  now takes the first zoom without a model. The full suite passes on 0.98.26 apart from the tests that need torch.
+
 ## 0.98.25 — 2026-11-16
 
 Christian (16 Nov): "the z34 without the rover still has a lot of hardware. you may need to rerun those images with
